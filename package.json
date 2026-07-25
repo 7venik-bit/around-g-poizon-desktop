@@ -1,0 +1,59 @@
+{
+  "name": "around-g-poizon-desktop",
+  "version": "1.1.0",
+  "description": "Around G POIZON local sourcing workspace",
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.mjs",
+    "dist": "npm run test && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "electron": "^37.2.3",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "kr.aroundg.poizon",
+    "productName": "Around G POIZON",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.mjs",
+      "preload.cjs",
+      "src/**/*",
+      "services/**/*",
+      "relay/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "7venik-bit",
+      "repo": "around-g-poizon-desktop",
+      "releaseType": "release"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Around G POIZON"
+    }
+  }
+}
