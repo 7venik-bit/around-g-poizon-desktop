@@ -125,7 +125,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("poizon:query", (_event, input) => queryPoizon(secretConfig(), input));
   ipcMain.handle("explorer:meta", () => explorerMetadata());
   ipcMain.handle("explorer:popular", (_event, input) => parsePopularProducts(input));
-  ipcMain.handle("explorer:popular-resolve", (_event, input) => resolvePopularProducts(secretConfig(), input));
+  ipcMain.handle("explorer:popular-resolve", (event, input) => resolvePopularProducts(secretConfig(), input, {
+    onProgress: (progress) => event.sender.send("explorer:popular-progress", progress),
+  }));
   ipcMain.handle("explorer:query", (_event, input) => queryExplorer(secretConfig(), input));
   ipcMain.handle("domestic:query", (_event, input) => queryDomesticProducts(input));
   ipcMain.handle("external:open", async (_event, url) => {
