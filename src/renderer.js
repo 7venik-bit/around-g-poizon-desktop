@@ -1,11 +1,11 @@
 const $ = (selector) => document.querySelector(selector);
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString("ko-KR")}원`;
 let state = { products: [], ledger: [], orders: [], favorites: [] };
-let entryCollection = "products";
+let entryCollection = "ledger";
 let explorerMeta = { brands: [], categories: [] };
 let selectedBrandId = null;
 let selectedCategory = "전체";
-let explorerProducts = [];
+let popularProcessing = false;
 
 function text(value) {
   const span = document.createElement("span");
@@ -13,16 +13,19 @@ function text(value) {
   return span.innerHTML;
 }
 
-function renderProducts() {
-  const body = $("#product-rows");
-  body.innerHTML = state.products.map((row) => `<tr>
-    <td><strong>${text(row.brand)}</strong></td><td>${text(row.name)}</td>
-    <td><code>${text(row.articleNumber)}</code></td><td><code>${text(row.spuId)}</code></td>
-    <td>${money(row.poizonPrice)}</td><td>${money(row.domesticPrice)}</td>
-    <td><button data-domestic="${row.id}">국내 가격 조회</button> <button data-search="${encodeURIComponent([row.brand,row.articleNumber,row.name].filter(Boolean).join(" "))}">네이버 열기</button> <button data-remove="products:${row.id}">삭제</button></td>
-  </tr>`).join("");
-  $("#product-empty").hidden = state.products.length > 0;
+function showRuntimeError(error) {
+  const status = $("#popular-status");
+  if (!status) return;
+  const message = error instanceof Error ? error.message : String(error || "UNKNOWN_ERROR");
+  status.className = "status error";
+  status.textContent = `처리 오류: ${message}`;
 }
+
+window.addEventListener("error", (event) => showRuntimeError(event.error || event.message));
+window.addEventListener("unhandledrejection", (event) => {
+  event.preventDefault();
+  showRuntimeError(event.reason);
+});
 
 function renderRecords(collection) {
   const host = $(`#${collection}-list`);
@@ -55,7 +58,6 @@ function renderCategoryButtons() {
 }
 
 function renderExplorerResults(title, products) {
-  explorerProducts = products;
   $("#explorer-results").hidden = false;
   $("#explorer-result-title").textContent = title;
   $("#explorer-result-count").textContent = `${products.length.toLocaleString("ko-KR")}개 표시`;
@@ -68,15 +70,13 @@ function renderExplorerResults(title, products) {
       <h3>${text(product.title || product.name)}</h3>
       <p>${text(product.brandName || product.brand || "")}</p>
       <div class="explorer-product-meta"><code>${text(product.articleNumber || "")}</code><span>${product.averagePrice || product.minPrice?.value ? money(product.averagePrice || product.minPrice.value) : ""}</span></div>
-      <div class="explorer-product-actions"><button data-explorer-add="${index}" class="primary">후보에 저장</button><button data-search="${encodeURIComponent([product.brandName, product.articleNumber, product.title || product.name].filter(Boolean).join(" "))}">국내 검색</button></div>
+      <div class="explorer-product-actions"><button data-search="${encodeURIComponent([product.brandName, product.articleNumber, product.title || product.name].filter(Boolean).join(" "))}" class="primary">국내 검색</button></div>
     </div>
   </article>`).join("") : `<div class="empty">조건에 맞는 상품이 없습니다.</div>`;
-  $("#explorer-results").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function refresh() {
   state = await window.aroundG.snapshot();
-  renderProducts();
   renderRecords("ledger");
   renderRecords("orders");
 }
@@ -97,38 +97,6 @@ document.addEventListener("click", async (event) => {
   }
   const query = event.target.dataset.search;
   if (query) await window.aroundG.openExternal(`https://search.naver.com/search.naver?where=shopping&query=${query}`);
-  const domesticId = event.target.dataset.domestic;
-  if (domesticId) {
-    const product = state.products.find((item) => item.id === domesticId);
-    if (!product) return;
-    const status = $("#query-status");
-    const queryText = [product.brand, product.articleNumber, product.name].filter(Boolean).join(" ");
-    status.className = "status";
-    status.textContent = "무신사·SSG·코오롱몰 가격을 조회하고 있습니다…";
-    try {
-      const result = await window.aroundG.queryDomestic({ query: queryText });
-      const priced = result.products.filter((item) => Number(item.price) > 0);
-      const lowest = priced.length ? Math.min(...priced.map((item) => Number(item.price))) : 0;
-      const sourceText = result.sources.map((source) => `${source.store} ${source.ok ? `${source.count}건` : "연결 실패"}`).join(" · ");
-      if (lowest) {
-        await window.aroundG.upsert("products", {
-          ...product,
-          domesticPrice: lowest,
-          domesticCheckedAt: new Date().toISOString(),
-          domesticSources: result.sources
-        });
-        await refresh();
-        status.className = "status success";
-        status.textContent = `국내 최저가 ${money(lowest)} · ${sourceText}`;
-      } else {
-        status.className = result.sources.some((source) => source.ok) ? "status" : "status error";
-        status.textContent = `가격 결과가 없습니다. ${sourceText}`;
-      }
-    } catch (error) {
-      status.className = "status error";
-      status.textContent = `국내 가격 조회 실패: ${error.message}`;
-    }
-  }
   const brandId = event.target.closest("[data-brand-id]")?.dataset.brandId;
   if (brandId) {
     selectedBrandId = Number(brandId);
@@ -141,24 +109,6 @@ document.addEventListener("click", async (event) => {
   if (category) {
     selectedCategory = category;
     renderCategoryButtons();
-  }
-  const explorerAdd = event.target.dataset.explorerAdd;
-  if (explorerAdd !== undefined) {
-    const product = explorerProducts[Number(explorerAdd)];
-    if (!product) return;
-    await window.aroundG.upsert("products", {
-      brand: product.brandName || product.brand || "",
-      name: product.title || product.name || "",
-      articleNumber: product.articleNumber || "",
-      spuId: product.globalSpuId || product.spuId || product.regionSpuId || "",
-      poizonPrice: product.averagePrice || product.minPrice?.value || 0,
-      sales30d: product.sales30d || 0,
-      category: product.categoryGroup || product.categoryName || "",
-      source: product.source || "poizon-explorer",
-    });
-    await refresh();
-    event.target.textContent = "저장됨";
-    event.target.disabled = true;
   }
 });
 
@@ -174,18 +124,23 @@ async function processPopular(textValue) {
   const status = $("#popular-status");
   const normalized = String(textValue || "").trim();
   if (!normalized) return;
+  if (popularProcessing) {
+    status.className = "status";
+    status.textContent = "이미 API 조회가 진행 중입니다.";
+    return;
+  }
+  popularProcessing = true;
   $("#popular-apply").disabled = true;
   status.className = "status";
   status.textContent = "품번을 추출하고 POIZON API에서 자동 조회하고 있습니다…";
-  const result = await window.aroundG.resolvePopular({ text: normalized });
-  if (!result.ok) {
-    status.className = "status error";
-    status.textContent = result.error.message;
-    $("#popular-apply").disabled = false;
-    return;
-  }
-  for (const product of result.products) {
-    await window.aroundG.upsert("products", {
+  try {
+    const result = await window.aroundG.resolvePopular({ text: normalized });
+    if (!result.ok) {
+      status.className = "status error";
+      status.textContent = result.error.message;
+      return;
+    }
+    const storedProducts = result.products.map((product) => ({
       brand: "",
       name: product.name,
       articleNumber: product.articleNumber,
@@ -198,16 +153,21 @@ async function processPopular(textValue) {
       poizonResultCount: product.apiResultCount || 0,
       poizonApiMatched: product.apiMatched,
       source: product.source,
-    });
+    }));
+    await window.aroundG.bulkUpsert("products", storedProducts);
+    await refresh();
+    status.className = result.matchedCount ? "status success" : "status error";
+    status.textContent = `${result.products.length}개 품번 처리 · API 일치 ${result.matchedCount}개 · 미일치 ${result.failedCount}개`;
+    renderExplorerResults("POIZON 인기상품", result.products.map((product) => ({
+      ...product,
+      hasSalesData: Number(product.sales30d) > 0,
+    })));
+  } catch (error) {
+    showRuntimeError(error);
+  } finally {
+    popularProcessing = false;
+    $("#popular-apply").disabled = false;
   }
-  await refresh();
-  status.className = result.matchedCount ? "status success" : "status error";
-  status.textContent = `${result.products.length}개 품번 처리 · API 일치 ${result.matchedCount}개 · 미일치 ${result.failedCount}개`;
-  renderExplorerResults("POIZON 인기상품", result.products.map((product) => ({
-    ...product,
-    hasSalesData: Number(product.sales30d) > 0,
-  })));
-  $("#popular-apply").disabled = false;
 }
 
 $("#popular-apply").addEventListener("click", () => processPopular($("#popular-paste").value));
@@ -306,38 +266,6 @@ $("#category-search").addEventListener("click", async () => {
   renderExplorerResults(`${selectedCategory} 카테고리 검색`, result.products);
 });
 
-$("#query-button").addEventListener("click", async () => {
-  const value = $("#query-value").value.trim();
-  if (!value) return;
-  const status = $("#query-status");
-  status.className = "status";
-  status.textContent = "POIZON 조회 중…";
-  const result = await window.aroundG.queryPoizon({ mode: $("#query-mode").value, value });
-  if (!result.ok) {
-    status.className = "status error";
-    status.textContent = `${result.error.message} (${result.error.code})`;
-    return;
-  }
-  status.className = "status success";
-  const candidates = Array.isArray(result.data)
-    ? result.data
-    : Array.isArray(result.data?.list) ? result.data.list : [result.data?.data || result.data || {}];
-  const payload = candidates[0] || {};
-  status.textContent = `조회가 완료되었습니다. ${candidates.length}개 결과 중 첫 결과를 로컬 상품 목록에 저장했습니다.`;
-  await window.aroundG.upsert("products", {
-    brand: payload.brandName || payload.brand || "",
-    name: payload.title || payload.productName || value,
-    articleNumber: payload.articleNumber || ($("#query-mode").value === "article" ? value : ""),
-    spuId: payload.spuId || payload.globalSpuId || payload.regionSpuId || ($("#query-mode").value === "spu" ? value : ""),
-    poizonPrice: payload.price || payload.salePrice || 0,
-    poizonResultCount: candidates.length,
-    poizonRegionSpuId: payload.regionSpuId || "",
-    poizonSkuIds: payload.skuIdList || [],
-    source: "poizon-api"
-  });
-  await refresh();
-});
-
 $("#import-button").addEventListener("click", async () => {
   const result = await window.aroundG.importExcel();
   if (!result.canceled) {
@@ -352,18 +280,16 @@ $("#export-button").addEventListener("click", async () => {
 
 function openEntry(collection) {
   entryCollection = collection;
-  $("#dialog-title").textContent = collection === "products" ? "상품 직접 추가" : collection === "ledger" ? "장부 추가" : "주문 추가";
+  $("#dialog-title").textContent = collection === "ledger" ? "장부 추가" : "주문 추가";
   ["#entry-brand","#entry-name","#entry-article","#entry-price"].forEach((selector) => $(selector).value = "");
   $("#entry-dialog").showModal();
 }
-$("#add-product").addEventListener("click", () => openEntry("products"));
 document.querySelectorAll(".add-record").forEach((button) => button.addEventListener("click", () => openEntry(button.dataset.collection)));
 $("#entry-save").addEventListener("click", async (event) => {
   event.preventDefault();
   if (!$("#entry-name").value.trim()) return;
   const base = { brand: $("#entry-brand").value.trim(), name: $("#entry-name").value.trim(), articleNumber: $("#entry-article").value.trim() };
-  if (entryCollection === "products") Object.assign(base, { poizonPrice: Number($("#entry-price").value || 0), source: "manual" });
-  else base.price = Number($("#entry-price").value || 0);
+  base.price = Number($("#entry-price").value || 0);
   await window.aroundG.upsert(entryCollection, base);
   $("#entry-dialog").close();
   await refresh();
