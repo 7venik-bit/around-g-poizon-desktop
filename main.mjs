@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell } from "electron";
 import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import readXlsxFile from "read-excel-file/node";
@@ -132,6 +132,43 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("explorer:meta", () => explorerMetadata());
   ipcMain.handle("explorer:popular", (_event, input) => parsePopularProducts(input));
+  ipcMain.handle("popular:clipboard-read", () => clipboard.readText());
+  ipcMain.handle("popular:workflow-get", () => {
+    const settings = store.snapshot().settings;
+    return {
+      period: settings.popularPeriod || "week",
+      compare: settings.popularCompare || "week",
+      unit: settings.popularUnit || "SPU",
+      limit: Number(settings.popularLimit || 30),
+      reminder: settings.popularReminder !== false,
+      lastSyncAt: settings.popularLastSyncAt || "",
+    };
+  });
+  ipcMain.handle("popular:workflow-save", async (_event, input) => {
+    const allowed = {
+      period: new Set(["day", "week", "month", "quarter"]),
+      compare: new Set(["none", "year", "day", "week", "month"]),
+      unit: new Set(["SPU", "SKU"]),
+      limit: new Set([10, 30, 50, 100]),
+    };
+    const next = {
+      popularPeriod: allowed.period.has(input.period) ? input.period : "week",
+      popularCompare: allowed.compare.has(input.compare) ? input.compare : "week",
+      popularUnit: allowed.unit.has(input.unit) ? input.unit : "SPU",
+      popularLimit: allowed.limit.has(Number(input.limit)) ? Number(input.limit) : 30,
+      popularReminder: input.reminder !== false,
+    };
+    if (input.markSynced) next.popularLastSyncAt = new Date().toISOString();
+    await store.setSettings(next);
+    return {
+      period: next.popularPeriod,
+      compare: next.popularCompare,
+      unit: next.popularUnit,
+      limit: next.popularLimit,
+      reminder: next.popularReminder,
+      lastSyncAt: next.popularLastSyncAt || store.snapshot().settings.popularLastSyncAt || "",
+    };
+  });
   ipcMain.handle("explorer:popular-resolve", (event, input) => resolvePopularProducts(secretConfig(), input, {
     onProgress: (progress) => {
       if (!event.sender.isDestroyed()) event.sender.send("explorer:popular-progress", progress);

@@ -6,6 +6,38 @@ let explorerMeta = { brands: [], categories: [] };
 let selectedBrandId = null;
 let selectedCategory = "전체";
 let popularProcessing = false;
+const SELLER_RANK_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
+
+function popularWorkflowInput(markSynced = false) {
+  return {
+    period: $("#popular-period").value,
+    compare: $("#popular-compare").value,
+    unit: $("#popular-unit").value,
+    limit: Number($("#popular-limit").value),
+    reminder: $("#popular-reminder").checked,
+    markSynced,
+  };
+}
+
+function renderPopularDue(lastSyncAt, reminder = true) {
+  const host = $("#popular-due");
+  if (!reminder) {
+    host.className = "status";
+    host.textContent = "갱신 알림 꺼짐";
+    return;
+  }
+  if (!lastSyncAt) {
+    host.className = "status error";
+    host.textContent = "첫 인기상품 갱신이 필요합니다.";
+    return;
+  }
+  const elapsedDays = Math.floor((Date.now() - new Date(lastSyncAt).getTime()) / 86_400_000);
+  const remaining = 14 - elapsedDays;
+  host.className = remaining <= 0 ? "status error" : "status success";
+  host.textContent = remaining <= 0
+    ? `2주 갱신일이 ${Math.abs(remaining)}일 지났습니다.`
+    : `마지막 갱신 ${elapsedDays}일 전 · 다음 갱신까지 ${remaining}일`;
+}
 
 function text(value) {
   const span = document.createElement("span");
@@ -134,7 +166,11 @@ async function processPopular(textValue) {
   status.className = "status";
   status.textContent = "품번을 추출하고 POIZON API에서 자동 조회하고 있습니다…";
   try {
-    const result = await window.aroundG.resolvePopular({ text: normalized });
+    const result = await window.aroundG.resolvePopular({
+      text: normalized,
+      limit: Number($("#popular-limit").value),
+      unit: $("#popular-unit").value,
+    });
     if (!result.ok) {
       status.className = "status error";
       status.textContent = result.error.message;
@@ -155,6 +191,8 @@ async function processPopular(textValue) {
       source: product.source,
     }));
     await window.aroundG.bulkUpsert("products", storedProducts);
+    const workflow = await window.aroundG.savePopularWorkflow(popularWorkflowInput(true));
+    renderPopularDue(workflow.lastSyncAt, workflow.reminder);
     await refresh();
     status.className = result.matchedCount ? "status success" : "status error";
     status.textContent = `${result.products.length}개 품번 처리 · API 일치 ${result.matchedCount}개 · 미일치 ${result.failedCount}개`;
@@ -171,6 +209,23 @@ async function processPopular(textValue) {
 }
 
 $("#popular-apply").addEventListener("click", () => processPopular($("#popular-paste").value));
+$("#popular-open").addEventListener("click", () => window.aroundG.openExternal(SELLER_RANK_URL));
+$("#popular-clipboard").addEventListener("click", async () => {
+  const clipboardText = await window.aroundG.readClipboardText();
+  if (!clipboardText.trim()) {
+    $("#popular-status").className = "status error";
+    $("#popular-status").textContent = "클립보드가 비어 있습니다. 판매자센터 인기상품 표를 먼저 복사해 주세요.";
+    return;
+  }
+  $("#popular-paste").value = clipboardText;
+  await processPopular(clipboardText);
+});
+for (const selector of ["#popular-period", "#popular-compare", "#popular-unit", "#popular-limit", "#popular-reminder"]) {
+  $(selector).addEventListener("change", async () => {
+    const workflow = await window.aroundG.savePopularWorkflow(popularWorkflowInput(false));
+    renderPopularDue(workflow.lastSyncAt, workflow.reminder);
+  });
+}
 window.aroundG.onPopularProgress((progress) => {
   $("#popular-status").className = "status";
   $("#popular-status").textContent = `POIZON API 조회 ${progress.completed}/${progress.total} · 일치 ${progress.matched}개`;
@@ -357,5 +412,12 @@ window.aroundG.onUpdateStatus((payload) => {
   $("#api-base-url").value = config.apiBaseUrl;
   $("#app-secret").placeholder = config.hasAppSecret ? "저장됨 · 변경할 때만 입력" : "필수";
   $("#access-token").placeholder = config.hasAccessToken ? "저장됨 · 변경할 때만 입력" : "선택 사항";
+  const popularWorkflow = await window.aroundG.getPopularWorkflow();
+  $("#popular-period").value = popularWorkflow.period;
+  $("#popular-compare").value = popularWorkflow.compare;
+  $("#popular-unit").value = popularWorkflow.unit;
+  $("#popular-limit").value = String(popularWorkflow.limit);
+  $("#popular-reminder").checked = popularWorkflow.reminder;
+  renderPopularDue(popularWorkflow.lastSyncAt, popularWorkflow.reminder);
   await refresh();
 })();

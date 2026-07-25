@@ -60,7 +60,8 @@ export async function resolvePopularProducts(config, input, { onProgress } = {})
   }
   let products;
   try {
-    products = parsePopularTable(input?.text).slice(0, 30);
+    const limit = [10, 30, 50, 100].includes(Number(input?.limit)) ? Number(input.limit) : 30;
+    products = parsePopularTable(input?.text).slice(0, limit);
   } catch (error) {
     return { ok: false, error: { code: "POPULAR_TABLE_INVALID", message: "판매자센터 표의 헤더와 상품 행을 함께 넣어 주세요.", detail: error.message } };
   }

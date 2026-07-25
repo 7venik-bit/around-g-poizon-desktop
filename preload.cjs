@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld("aroundG", {
   explorerMeta: () => ipcRenderer.invoke("explorer:meta"),
   parsePopular: (input) => ipcRenderer.invoke("explorer:popular", input),
   resolvePopular: (input) => ipcRenderer.invoke("explorer:popular-resolve", input),
+  readClipboardText: () => ipcRenderer.invoke("popular:clipboard-read"),
+  getPopularWorkflow: () => ipcRenderer.invoke("popular:workflow-get"),
+  savePopularWorkflow: (input) => ipcRenderer.invoke("popular:workflow-save", input),
   onPopularProgress: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on("explorer:popular-progress", handler);
