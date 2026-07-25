@@ -52,26 +52,33 @@ function headerIndex(headers, candidates) {
 }
 
 export function parsePopularTable(input) {
-  const lines = String(input || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (lines.length < 2) throw new Error("POPULAR_TABLE_ROWS_REQUIRED");
+  const physicalLines = String(input || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (physicalLines.length < 2) throw new Error("POPULAR_TABLE_ROWS_REQUIRED");
+  const lines = [physicalLines[0]];
+  for (const line of physicalLines.slice(1)) {
+    if (/^\d+[.)]?\s*\t/.test(line) || lines.length === 1) lines.push(line);
+    else lines[lines.length - 1] += ` ${line}`;
+  }
   const delimiter = delimiterFor(lines[0]);
   const headers = splitLine(lines[0], delimiter).map(clean);
   const rankIndex = headerIndex(headers, ["No", "순위", "번호"]);
-  const nameIndex = headerIndex(headers, ["상품정보", "상품명", "상품"]);
+  const nameIndex = headerIndex(headers, ["상품정보", "상품명", "상품", "Product"]);
   const articleIndex = headerIndex(headers, ["상품번호", "품번", "Article"]);
-  const priceIndex = headerIndex(headers, ["평균 거래가", "평균거래가", "거래가", "가격"]);
+  const priceIndex = headerIndex(headers, ["평균 거래가", "평균거래가", "거래가", "가격", "Average Price"]);
   const salesIndex = headerIndex(headers, ["최근 30일", "30일 판매", "판매량", "거래량"]);
   if (nameIndex < 0) throw new Error("POPULAR_TABLE_HEADER_NOT_FOUND");
 
   return lines.slice(1).flatMap((line, rowIndex) => {
     const cells = splitLine(line, delimiter).map(clean);
-    const name = cells[nameIndex] || "";
-    if (!name) return [];
-    const articleMatch = name.match(/\b[A-Z0-9][A-Z0-9._/-]{3,}\b/i);
+    const productInfo = cells[nameIndex] || "";
+    if (!productInfo) return [];
+    const articleMatch = productInfo.match(/\b(?=[A-Z0-9._/-]*\d)[A-Z0-9][A-Z0-9._/-]{3,}\b/i);
+    const articleNumber = cells[articleIndex] || articleMatch?.[0] || "";
+    const name = clean(productInfo.replace(articleNumber, "")) || productInfo;
     return [{
       rank: numberFrom(cells[rankIndex]) || rowIndex + 1,
       name,
-      articleNumber: cells[articleIndex] || articleMatch?.[0] || "",
+      articleNumber,
       averagePrice: numberFrom(cells[priceIndex]),
       sales30d: numberFrom(cells[salesIndex]),
       source: "seller-center-paste",
