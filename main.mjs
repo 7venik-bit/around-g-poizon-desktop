@@ -5,12 +5,16 @@ import readXlsxFile from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
 import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
-import { queryPoizon } from "./services/poizon.mjs";
+import { explorerMetadata, parsePopularProducts, queryExplorer, queryPoizon } from "./services/poizon.mjs";
 import { queryDomesticProducts } from "./relay/domestic-search.mjs";
 
 let store;
 const { autoUpdater } = pkg;
 let mainWindow;
+
+// 이 앱은 GPU 가속이 필요하지 않으며 일부 Windows 그래픽 드라이버의
+// GPU 프로세스 반복 종료를 피하기 위해 소프트웨어 렌더링을 사용합니다.
+app.disableHardwareAcceleration();
 
 function sendUpdateStatus(status, message, extra = {}) {
   mainWindow?.webContents.send("update:status", { status, message, ...extra });
@@ -119,6 +123,9 @@ app.whenReady().then(async () => {
     return publicConfig();
   });
   ipcMain.handle("poizon:query", (_event, input) => queryPoizon(secretConfig(), input));
+  ipcMain.handle("explorer:meta", () => explorerMetadata());
+  ipcMain.handle("explorer:popular", (_event, input) => parsePopularProducts(input));
+  ipcMain.handle("explorer:query", (_event, input) => queryExplorer(secretConfig(), input));
   ipcMain.handle("domestic:query", (_event, input) => queryDomesticProducts(input));
   ipcMain.handle("external:open", async (_event, url) => {
     const parsed = new URL(url);
