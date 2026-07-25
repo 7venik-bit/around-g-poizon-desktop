@@ -24,6 +24,19 @@ test("판매자센터 탭 구분 표를 인기상품으로 변환한다", () => 
   assert.equal(rows[0].sales30d, 42);
 });
 
+test("상품정보 셀의 품번과 상품명이 줄바꿈되어도 인식한다", () => {
+  const rows = parsePopularTable([
+    "No.\t상품정보\t검색 지수\t즐겨찾기 지수\t평균 거래가(KRW)\t최저 거래가(KRW)\t최고 거래가(KRW)",
+    "1.\tJI0079",
+    "Adidas Originals Samba\t주간 대비\t주간 대비\t91,720\t56,674\t153,302",
+    "2.\tB75806 Adidas Originals\t주간 대비\t주간 대비\t85,699\t52,029\t193,949",
+  ].join("\n"));
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].articleNumber, "JI0079");
+  assert.match(rows[0].name, /Adidas Originals/);
+  assert.equal(rows[0].averagePrice, 91720);
+});
+
 test("상품의 한글 카테고리를 탐색 그룹으로 분류한다", () => {
   assert.equal(categoryGroup({ level1CategoryName: "신발", categoryName: "스니커즈" }), "신발");
   assert.equal(categoryGroup({ level1CategoryName: "의류", categoryName: "다운 재킷" }), "아우터");
