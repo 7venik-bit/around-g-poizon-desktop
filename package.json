@@ -1,6 +1,6 @@
 {
   "name": "around-g-poizon-desktop",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Around G POIZON local sourcing workspace",
   "type": "module",
   "main": "main.mjs",
@@ -10,8 +10,9 @@
     "dist": "npm run test && electron-builder --win nsis"
   },
   "dependencies": {
-    "electron-updater": "^6.6.2",
-    "xlsx": "^0.18.5"
+    "electron-updater": "^6.8.9",
+    "read-excel-file": "^9.3.4",
+    "write-excel-file": "^4.1.1"
   },
   "devDependencies": {
     "electron": "^37.2.3",
