@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld("aroundG", {
   explorerMeta: () => ipcRenderer.invoke("explorer:meta"),
   parsePopular: (input) => ipcRenderer.invoke("explorer:popular", input),
   resolvePopular: (input) => ipcRenderer.invoke("explorer:popular-resolve", input),
+  onPopularProgress: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on("explorer:popular-progress", handler);
+    return () => ipcRenderer.removeListener("explorer:popular-progress", handler);
+  },
   queryExplorer: (input) => ipcRenderer.invoke("explorer:query", input),
   queryDomestic: (input) => ipcRenderer.invoke("domestic:query", input),
   importExcel: () => ipcRenderer.invoke("excel:import"),
