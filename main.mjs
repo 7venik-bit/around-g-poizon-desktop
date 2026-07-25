@@ -1,10 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import * as XLSX from "xlsx";
+import readXlsxFile from "read-excel-file/node";
+import writeXlsxFile from "write-excel-file/node";
 import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
 import { queryPoizon } from "./services/poizon.mjs";
+import { queryDomesticProducts } from "./relay/domestic-search.mjs";
 
 let store;
 const { autoUpdater } = pkg;
@@ -117,16 +119,21 @@ app.whenReady().then(async () => {
     return publicConfig();
   });
   ipcMain.handle("poizon:query", (_event, input) => queryPoizon(secretConfig(), input));
+  ipcMain.handle("domestic:query", (_event, input) => queryDomesticProducts(input));
   ipcMain.handle("external:open", async (_event, url) => {
     const parsed = new URL(url);
     if (!["https:", "http:"].includes(parsed.protocol)) throw new Error("INVALID_URL");
     await shell.openExternal(parsed.href);
   });
   ipcMain.handle("excel:import", async () => {
-    const result = await dialog.showOpenDialog({ properties: ["openFile"], filters: [{ name: "Excel", extensions: ["xlsx", "xls", "csv"] }] });
+    const result = await dialog.showOpenDialog({ properties: ["openFile"], filters: [{ name: "Excel", extensions: ["xlsx"] }] });
     if (result.canceled || !result.filePaths[0]) return { canceled: true };
-    const workbook = XLSX.read(await readFile(result.filePaths[0]));
-    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" });
+    const filePath = result.filePaths[0];
+    const sheet = await readXlsxFile(await readFile(filePath));
+    const headers = (sheet[0] || []).map((value) => String(value || "").trim());
+    const rows = sheet.slice(1).map((values) => Object.fromEntries(
+      headers.flatMap((header, index) => header ? [[header, values[index] ?? ""]] : [])
+    ));
     let imported = 0;
     for (const row of rows) {
       const articleNumber = String(row["상품번호"] || row.articleNumber || row["품번"] || "").trim();
@@ -149,11 +156,27 @@ app.whenReady().then(async () => {
     const result = await dialog.showSaveDialog({ defaultPath: `Around-G-${new Date().toISOString().slice(0, 10)}.xlsx`, filters: [{ name: "Excel", extensions: ["xlsx"] }] });
     if (result.canceled || !result.filePath) return { canceled: true };
     const data = store.snapshot();
-    const workbook = XLSX.utils.book_new();
+    const sheets = [];
     for (const [name, rows] of [["상품", data.products], ["장부", data.ledger], ["주문", data.orders], ["관심상품", data.favorites]]) {
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), name);
+      const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+      const cells = [
+        columns.map((value) => ({ value, fontWeight: "bold", backgroundColor: "#EAE4D8" })),
+        ...rows.map((row) => columns.map((key) => {
+          const raw = row[key];
+          const value = raw instanceof Date || ["string", "number", "boolean"].includes(typeof raw)
+            ? raw
+            : raw === null || raw === undefined ? null : JSON.stringify(raw);
+          return { value };
+        })),
+      ];
+      sheets.push({
+        data: cells,
+        sheet: name,
+        stickyRowsCount: 1,
+        columns: columns.map((key) => ({ width: Math.max(12, Math.min(36, key.length + 4)) })),
+      });
     }
-    await writeFile(result.filePath, XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
+    await writeXlsxFile(sheets).toFile(result.filePath);
     return { canceled: false, path: result.filePath };
   });
 
