@@ -1,12 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
-import { readFile } from "node:fs/promises";
+import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import readXlsxFile from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
 import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
-import { explorerMetadata, parsePopularProducts, queryExplorer, queryPoizon, resolvePopularProducts } from "./services/poizon.mjs";
-import { queryDomesticProducts } from "./relay/domestic-search.mjs";
+import { explorerMetadata, parsePopularProducts, queryExplorer, resolvePopularProducts } from "./services/poizon.mjs";
 
 let store;
 const { autoUpdater } = pkg;
@@ -78,6 +77,14 @@ function createWindow() {
     }
   });
   mainWindow = win;
+  win.webContents.on("render-process-gone", (_event, details) => {
+    const logLine = `${new Date().toISOString()} renderer-process-gone ${details.reason} exitCode=${details.exitCode}\n`;
+    appendFile(join(app.getPath("userData"), "around-g-crash.log"), logLine, "utf8").catch(() => {});
+    if (!win.isDestroyed() && details.reason !== "clean-exit") setTimeout(() => win.reload(), 800);
+  });
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
+  });
   win.loadFile(join(import.meta.dirname, "src", "index.html"));
 }
 
@@ -87,6 +94,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("store:snapshot", () => store.snapshot());
   ipcMain.handle("store:upsert", (_event, collection, item) => store.upsert(collection, item));
+  ipcMain.handle("store:bulk-upsert", (_event, collection, items) => store.bulkUpsert(collection, items));
   ipcMain.handle("store:remove", (_event, collection, id) => store.remove(collection, id));
   ipcMain.handle("collector:check", (_event, input) => store.updateCollector(input));
   ipcMain.handle("update:check", async () => {
@@ -122,14 +130,14 @@ app.whenReady().then(async () => {
     await store.setSettings(next);
     return publicConfig();
   });
-  ipcMain.handle("poizon:query", (_event, input) => queryPoizon(secretConfig(), input));
   ipcMain.handle("explorer:meta", () => explorerMetadata());
   ipcMain.handle("explorer:popular", (_event, input) => parsePopularProducts(input));
   ipcMain.handle("explorer:popular-resolve", (event, input) => resolvePopularProducts(secretConfig(), input, {
-    onProgress: (progress) => event.sender.send("explorer:popular-progress", progress),
+    onProgress: (progress) => {
+      if (!event.sender.isDestroyed()) event.sender.send("explorer:popular-progress", progress);
+    },
   }));
   ipcMain.handle("explorer:query", (_event, input) => queryExplorer(secretConfig(), input));
-  ipcMain.handle("domestic:query", (_event, input) => queryDomesticProducts(input));
   ipcMain.handle("external:open", async (_event, url) => {
     const parsed = new URL(url);
     if (!["https:", "http:"].includes(parsed.protocol)) throw new Error("INVALID_URL");
