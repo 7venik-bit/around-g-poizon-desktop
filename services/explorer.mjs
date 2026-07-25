@@ -51,7 +51,41 @@ function headerIndex(headers, candidates) {
   return headers.findIndex((header) => candidates.some((candidate) => header.includes(candidate)));
 }
 
+function parseVerticalPopularTable(input) {
+  const lines = String(input || "").split(/\r?\n/).map(clean).filter(Boolean);
+  const firstRank = lines.findIndex((line) => /^\d+[.)]?$/.test(line));
+  if (firstRank < 0 || !lines.slice(0, firstRank).some((line) => line.includes("상품정보"))) return null;
+  const rankIndexes = lines.flatMap((line, index) => /^\d+[.)]?$/.test(line) ? [index] : []);
+  const products = [];
+  for (let rankPosition = 0; rankPosition < rankIndexes.length; rankPosition += 1) {
+    const start = rankIndexes[rankPosition];
+    const end = rankIndexes[rankPosition + 1] ?? lines.length;
+    const cells = lines.slice(start + 1, end);
+    const articleIndex = cells.findIndex((value) => /^(?=[A-Z0-9._/-]*\d)[A-Z0-9][A-Z0-9._/-]{3,}$/i.test(value));
+    if (articleIndex < 0) continue;
+    const articleNumber = cells[articleIndex];
+    const name = cells.slice(articleIndex + 1).find((value) =>
+      value !== "주간 대비" && !/%$/.test(value) && !/^[\d,.]+(?:원)?$/.test(value)
+    ) || articleNumber;
+    const prices = cells.slice(articleIndex + 1)
+      .filter((value) => !/%$/.test(value) && /^[\d,]+(?:원)?$/.test(value))
+      .map(numberFrom)
+      .filter((value) => value > 0);
+    products.push({
+      rank: numberFrom(lines[start]) || rankPosition + 1,
+      name,
+      articleNumber,
+      averagePrice: prices[0] || 0,
+      sales30d: 0,
+      source: "seller-center-paste",
+    });
+  }
+  return products;
+}
+
 export function parsePopularTable(input) {
+  const verticalProducts = parseVerticalPopularTable(input);
+  if (verticalProducts?.length) return verticalProducts;
   const physicalLines = String(input || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (physicalLines.length < 2) throw new Error("POPULAR_TABLE_ROWS_REQUIRED");
   const lines = [physicalLines[0]];
@@ -68,7 +102,7 @@ export function parsePopularTable(input) {
   const salesIndex = headerIndex(headers, ["최근 30일", "30일 판매", "판매량", "거래량"]);
   if (nameIndex < 0) throw new Error("POPULAR_TABLE_HEADER_NOT_FOUND");
 
-  return lines.slice(1).flatMap((line, rowIndex) => {
+  const products = lines.slice(1).flatMap((line, rowIndex) => {
     const cells = splitLine(line, delimiter).map(clean);
     const productInfo = cells[nameIndex] || "";
     if (!productInfo) return [];
@@ -84,6 +118,8 @@ export function parsePopularTable(input) {
       source: "seller-center-paste",
     }];
   });
+  if (!products.length) throw new Error("POPULAR_TABLE_ROWS_REQUIRED");
+  return products;
 }
 
 export function categoryGroup(product) {
