@@ -5,7 +5,7 @@ import readXlsxFile from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
 import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
-import { explorerMetadata, parsePopularProducts, queryExplorer, queryPoizon } from "./services/poizon.mjs";
+import { explorerMetadata, parsePopularProducts, queryExplorer, queryPoizon, resolvePopularProducts } from "./services/poizon.mjs";
 import { queryDomesticProducts } from "./relay/domestic-search.mjs";
 
 let store;
@@ -125,6 +125,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("poizon:query", (_event, input) => queryPoizon(secretConfig(), input));
   ipcMain.handle("explorer:meta", () => explorerMetadata());
   ipcMain.handle("explorer:popular", (_event, input) => parsePopularProducts(input));
+  ipcMain.handle("explorer:popular-resolve", (_event, input) => resolvePopularProducts(secretConfig(), input));
   ipcMain.handle("explorer:query", (_event, input) => queryExplorer(secretConfig(), input));
   ipcMain.handle("domestic:query", (_event, input) => queryDomesticProducts(input));
   ipcMain.handle("external:open", async (_event, url) => {
