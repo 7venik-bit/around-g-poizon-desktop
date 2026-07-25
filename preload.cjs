@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   saveConfig: (config) => ipcRenderer.invoke("config:save", config),
   getConfig: () => ipcRenderer.invoke("config:get"),
   queryPoizon: (input) => ipcRenderer.invoke("poizon:query", input),
+  queryDomestic: (input) => ipcRenderer.invoke("domestic:query", input),
   importExcel: () => ipcRenderer.invoke("excel:import"),
   exportExcel: () => ipcRenderer.invoke("excel:export"),
   openExternal: (url) => ipcRenderer.invoke("external:open", url),
