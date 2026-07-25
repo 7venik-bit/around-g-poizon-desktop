@@ -54,7 +54,7 @@ export function parsePopularProducts(input) {
   }
 }
 
-export async function resolvePopularProducts(config, input) {
+export async function resolvePopularProducts(config, input, { onProgress } = {}) {
   if (!config.appKey || !config.appSecret) {
     return { ok: false, error: { code: "CONFIG_REQUIRED", message: "POIZON App Key와 App Secret을 먼저 저장하세요." } };
   }
@@ -65,17 +65,16 @@ export async function resolvePopularProducts(config, input) {
     return { ok: false, error: { code: "POPULAR_TABLE_INVALID", message: "판매자센터 표의 헤더와 상품 행을 함께 넣어 주세요.", detail: error.message } };
   }
 
-  let cursor = 0;
   const resolved = new Array(products.length);
-  const worker = async () => {
-    while (cursor < products.length) {
-      const index = cursor;
-      cursor += 1;
-      const product = products[index];
-      if (!product.articleNumber) {
-        resolved[index] = { ...product, apiMatched: false, apiError: "ARTICLE_NUMBER_NOT_FOUND" };
-        continue;
-      }
+  const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+  for (let index = 0; index < products.length; index += 1) {
+    const product = products[index];
+    if (!product.articleNumber) {
+      resolved[index] = { ...product, apiMatched: false, apiError: "ARTICLE_NUMBER_NOT_FOUND" };
+      continue;
+    }
+    let retryCount = 0;
+    while (retryCount < 2) {
       try {
         const data = await queryByArticleNumber({
           appKey: config.appKey,
@@ -97,12 +96,24 @@ export async function resolvePopularProducts(config, input) {
           brandId: match.brandId || "",
           categoryId: match.categoryId || "",
         };
+        break;
       } catch (error) {
-        resolved[index] = { ...product, apiMatched: false, apiError: error instanceof Error ? error.message : String(error) };
+        const message = error instanceof Error ? error.message : String(error);
+        retryCount += 1;
+        if (message.includes("400010007") && retryCount < 2) {
+          await wait(3_000);
+          continue;
+        }
+        resolved[index] = { ...product, apiMatched: false, apiError: message };
       }
     }
-  };
-  await Promise.all(Array.from({ length: Math.min(3, products.length) }, () => worker()));
+    onProgress?.({
+      completed: index + 1,
+      total: products.length,
+      matched: resolved.filter((item) => item?.apiMatched).length,
+    });
+    if (index < products.length - 1) await wait(1_050);
+  }
   return {
     ok: true,
     products: resolved,
