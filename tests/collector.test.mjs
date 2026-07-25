@@ -38,3 +38,18 @@ test("로컬 데이터는 재시작 후 유지된다", async () => {
   await second.load();
   assert.equal(second.list("products")[0].articleNumber, "TEST-1");
 });
+
+test("인기상품 여러 건을 한 번 저장하고 품번 중복을 갱신한다", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "around-g-"));
+  const store = new JsonStore(dir);
+  await store.load();
+  await store.bulkUpsert("products", [
+    { name: "상품 1", articleNumber: "A-1", poizonPrice: 100 },
+    { name: "상품 2", articleNumber: "A-2", poizonPrice: 200 },
+  ]);
+  await store.bulkUpsert("products", [
+    { name: "상품 1 수정", articleNumber: "A-1", poizonPrice: 150 },
+  ]);
+  assert.equal(store.list("products").length, 2);
+  assert.equal(store.list("products").find((row) => row.articleNumber === "A-1").poizonPrice, 150);
+});
