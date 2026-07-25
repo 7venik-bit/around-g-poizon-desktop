@@ -15,7 +15,7 @@ function renderProducts() {
     <td><strong>${text(row.brand)}</strong></td><td>${text(row.name)}</td>
     <td><code>${text(row.articleNumber)}</code></td><td><code>${text(row.spuId)}</code></td>
     <td>${money(row.poizonPrice)}</td><td>${money(row.domesticPrice)}</td>
-    <td><button data-search="${encodeURIComponent([row.brand,row.articleNumber,row.name].filter(Boolean).join(" "))}">국내 검색</button> <button data-remove="products:${row.id}">삭제</button></td>
+    <td><button data-domestic="${row.id}">국내 가격 조회</button> <button data-search="${encodeURIComponent([row.brand,row.articleNumber,row.name].filter(Boolean).join(" "))}">네이버 열기</button> <button data-remove="products:${row.id}">삭제</button></td>
   </tr>`).join("");
   $("#product-empty").hidden = state.products.length > 0;
 }
@@ -50,6 +50,38 @@ document.addEventListener("click", async (event) => {
   }
   const query = event.target.dataset.search;
   if (query) await window.aroundG.openExternal(`https://search.naver.com/search.naver?where=shopping&query=${query}`);
+  const domesticId = event.target.dataset.domestic;
+  if (domesticId) {
+    const product = state.products.find((item) => item.id === domesticId);
+    if (!product) return;
+    const status = $("#query-status");
+    const queryText = [product.brand, product.articleNumber, product.name].filter(Boolean).join(" ");
+    status.className = "status";
+    status.textContent = "무신사·SSG·코오롱몰 가격을 조회하고 있습니다…";
+    try {
+      const result = await window.aroundG.queryDomestic({ query: queryText });
+      const priced = result.products.filter((item) => Number(item.price) > 0);
+      const lowest = priced.length ? Math.min(...priced.map((item) => Number(item.price))) : 0;
+      const sourceText = result.sources.map((source) => `${source.store} ${source.ok ? `${source.count}건` : "연결 실패"}`).join(" · ");
+      if (lowest) {
+        await window.aroundG.upsert("products", {
+          ...product,
+          domesticPrice: lowest,
+          domesticCheckedAt: new Date().toISOString(),
+          domesticSources: result.sources
+        });
+        await refresh();
+        status.className = "status success";
+        status.textContent = `국내 최저가 ${money(lowest)} · ${sourceText}`;
+      } else {
+        status.className = result.sources.some((source) => source.ok) ? "status" : "status error";
+        status.textContent = `가격 결과가 없습니다. ${sourceText}`;
+      }
+    } catch (error) {
+      status.className = "status error";
+      status.textContent = `국내 가격 조회 실패: ${error.message}`;
+    }
+  }
 });
 
 $("#query-button").addEventListener("click", async () => {
@@ -65,14 +97,20 @@ $("#query-button").addEventListener("click", async () => {
     return;
   }
   status.className = "status success";
-  status.textContent = "조회가 완료되었습니다. 결과를 로컬 상품 목록에 저장했습니다.";
-  const payload = result.data?.data || result.data || {};
+  const candidates = Array.isArray(result.data)
+    ? result.data
+    : Array.isArray(result.data?.list) ? result.data.list : [result.data?.data || result.data || {}];
+  const payload = candidates[0] || {};
+  status.textContent = `조회가 완료되었습니다. ${candidates.length}개 결과 중 첫 결과를 로컬 상품 목록에 저장했습니다.`;
   await window.aroundG.upsert("products", {
     brand: payload.brandName || payload.brand || "",
     name: payload.title || payload.productName || value,
     articleNumber: payload.articleNumber || ($("#query-mode").value === "article" ? value : ""),
-    spuId: payload.spuId || ($("#query-mode").value === "spu" ? value : ""),
+    spuId: payload.spuId || payload.globalSpuId || payload.regionSpuId || ($("#query-mode").value === "spu" ? value : ""),
     poizonPrice: payload.price || payload.salePrice || 0,
+    poizonResultCount: candidates.length,
+    poizonRegionSpuId: payload.regionSpuId || "",
+    poizonSkuIds: payload.skuIdList || [],
     source: "poizon-api"
   });
   await refresh();
