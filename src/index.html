@@ -35,10 +35,13 @@
         </div>
 
         <section id="explorer-popular" class="panel explorer-panel active">
-          <small>MERCHANT RANK BOARD</small><h2>판매자센터 인기상품 표 붙여넣기</h2>
-          <p>No.·상품정보·평균 거래가·최근 30일 판매량이 포함된 표를 헤더부터 함께 복사해 붙여넣으세요.</p>
-          <textarea id="popular-paste" rows="7" placeholder="No.	상품정보	상품번호	평균 거래가	최근 30일 판매량&#10;1	나이키 에어포스 1	DD1391-100	129000	42"></textarea>
-          <div class="explorer-actions"><span id="popular-status" class="status"></span><button id="popular-apply" class="primary">인기리스트 적용</button></div>
+          <small>MERCHANT RANK BOARD</small><h2>판매자센터 인기상품 드래그 앤 드롭</h2>
+          <p>판매자센터 표를 헤더부터 선택해 아래 영역으로 끌어 놓거나 그대로 복사한 뒤 Ctrl+V를 누르세요. 품번을 인식하면 POIZON API가 자동으로 조회됩니다.</p>
+          <div id="popular-drop-zone" class="popular-drop-zone">
+            <div class="drop-guide"><strong>표를 이곳에 놓으세요</strong><span>텍스트 선택 드래그 · Ctrl+V · TSV/CSV/TXT 파일 지원</span></div>
+            <textarea id="popular-paste" rows="7" placeholder="No.	상품정보	검색 지수	즐겨찾기 지수	평균 거래가(KRW)	최저 거래가(KRW)	최고 거래가(KRW)&#10;1.	JI0079 Adidas Originals...			91,720	56,674	153,302"></textarea>
+          </div>
+          <div class="explorer-actions"><span id="popular-status" class="status">붙여넣거나 끌어 놓으면 자동으로 시작합니다.</span><button id="popular-apply">API 다시 찾기</button></div>
         </section>
 
         <section id="explorer-brand" class="panel explorer-panel">
