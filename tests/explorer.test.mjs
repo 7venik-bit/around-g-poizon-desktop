@@ -37,6 +37,41 @@ test("상품정보 셀의 품번과 상품명이 줄바꿈되어도 인식한다
   assert.equal(rows[0].averagePrice, 91720);
 });
 
+test("판매자센터 세로형 복사 텍스트를 상품 행으로 복원한다", () => {
+  const rows = parsePopularTable([
+    "No.\t상품정보\t",
+    "검색 지수",
+    "즐겨찾기 지수",
+    "평균 거래가(KRW)",
+    "최저 거래가(KRW)",
+    "최고 거래가(KRW)",
+    "최근 7일 검색 추세",
+    "1.\t",
+    "",
+    "JI0079",
+    "Adidas Originals Superstar 2 Skate Shoes",
+    "주간 대비",
+    "주간 대비",
+    "91,720",
+    "주간 대비",
+    "56,674",
+    "153,302",
+    "2.\t",
+    "",
+    "B75806",
+    "adidas originals Samba OG",
+    "주간 대비",
+    "주간 대비",
+    "85,699",
+    "52,029",
+    "193,949",
+  ].join("\n"));
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map((row) => row.articleNumber), ["JI0079", "B75806"]);
+  assert.equal(rows[0].averagePrice, 91720);
+  assert.match(rows[1].name, /Samba/);
+});
+
 test("상품의 한글 카테고리를 탐색 그룹으로 분류한다", () => {
   assert.equal(categoryGroup({ level1CategoryName: "신발", categoryName: "스니커즈" }), "신발");
   assert.equal(categoryGroup({ level1CategoryName: "의류", categoryName: "다운 재킷" }), "아우터");
