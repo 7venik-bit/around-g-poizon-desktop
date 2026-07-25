@@ -63,6 +63,7 @@ function renderExplorerResults(title, products) {
     ${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : ""}
     <div class="explorer-product-body">
       <span class="badge">${text(product.categoryGroup || "인기상품")}</span>
+      ${product.apiMatched ? `<span class="badge">API 연결</span>` : product.apiMatched === false ? `<span class="badge muted">API 미일치</span>` : ""}
       ${product.hasSalesData ? `<span class="badge">30일 ${Number(product.sales30d).toLocaleString("ko-KR")}건</span>` : `<span class="badge muted">판매량 미결합</span>`}
       <h3>${text(product.title || product.name)}</h3>
       <p>${text(product.brandName || product.brand || "")}</p>
@@ -169,12 +170,18 @@ document.querySelectorAll(".explorer-mode").forEach((button) => button.addEventL
 
 $("#brand-filter").addEventListener("input", (event) => renderBrandCards(event.target.value));
 
-$("#popular-apply").addEventListener("click", async () => {
+async function processPopular(textValue) {
   const status = $("#popular-status");
-  const result = await window.aroundG.parsePopular({ text: $("#popular-paste").value });
+  const normalized = String(textValue || "").trim();
+  if (!normalized) return;
+  $("#popular-apply").disabled = true;
+  status.className = "status";
+  status.textContent = "품번을 추출하고 POIZON API에서 자동 조회하고 있습니다…";
+  const result = await window.aroundG.resolvePopular({ text: normalized });
   if (!result.ok) {
     status.className = "status error";
-    status.textContent = "표의 헤더와 상품 행을 함께 붙여넣어 주세요.";
+    status.textContent = result.error.message;
+    $("#popular-apply").disabled = false;
     return;
   }
   for (const product of result.products) {
@@ -185,13 +192,64 @@ $("#popular-apply").addEventListener("click", async () => {
       poizonPrice: product.averagePrice,
       sales30d: product.sales30d,
       popularityRank: product.rank,
+      spuId: product.globalSpuId || product.spuId || product.regionSpuId || "",
+      poizonRegionSpuId: product.regionSpuId || "",
+      poizonSkuIds: product.skuIdList || [],
+      poizonResultCount: product.apiResultCount || 0,
+      poizonApiMatched: product.apiMatched,
       source: product.source,
     });
   }
   await refresh();
-  status.className = "status success";
-  status.textContent = `${result.products.length}개 인기상품을 저장하고 판매량 데이터를 결합했습니다.`;
-  renderExplorerResults("POIZON 인기상품", result.products.map((product) => ({ ...product, hasSalesData: true })));
+  status.className = result.matchedCount ? "status success" : "status error";
+  status.textContent = `${result.products.length}개 품번 처리 · API 일치 ${result.matchedCount}개 · 미일치 ${result.failedCount}개`;
+  renderExplorerResults("POIZON 인기상품", result.products.map((product) => ({
+    ...product,
+    hasSalesData: Number(product.sales30d) > 0,
+  })));
+  $("#popular-apply").disabled = false;
+}
+
+$("#popular-apply").addEventListener("click", () => processPopular($("#popular-paste").value));
+
+$("#popular-paste").addEventListener("paste", (event) => {
+  const pasted = event.clipboardData?.getData("text/plain") || "";
+  if (!pasted) return;
+  event.preventDefault();
+  $("#popular-paste").value = pasted;
+  processPopular(pasted);
+});
+
+const popularDropZone = $("#popular-drop-zone");
+for (const eventName of ["dragenter", "dragover"]) {
+  popularDropZone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    popularDropZone.classList.add("dragging");
+  });
+}
+for (const eventName of ["dragleave", "dragend"]) {
+  popularDropZone.addEventListener(eventName, () => popularDropZone.classList.remove("dragging"));
+}
+popularDropZone.addEventListener("drop", async (event) => {
+  event.preventDefault();
+  popularDropZone.classList.remove("dragging");
+  const file = event.dataTransfer?.files?.[0];
+  let dropped = event.dataTransfer?.getData("text/plain") || "";
+  if (file) {
+    if (!/\.(txt|csv|tsv)$/i.test(file.name) || file.size > 2_000_000) {
+      $("#popular-status").className = "status error";
+      $("#popular-status").textContent = "2MB 이하의 TXT·CSV·TSV 파일만 사용할 수 있습니다.";
+      return;
+    }
+    dropped = await file.text();
+  }
+  if (!dropped.trim()) {
+    $("#popular-status").className = "status error";
+    $("#popular-status").textContent = "드롭된 내용에서 표 텍스트를 찾지 못했습니다.";
+    return;
+  }
+  $("#popular-paste").value = dropped;
+  processPopular(dropped);
 });
 
 $("#brand-search").addEventListener("click", async () => {
