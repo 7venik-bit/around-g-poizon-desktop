@@ -211,6 +211,10 @@ async function processPopular(textValue) {
 }
 
 $("#popular-apply").addEventListener("click", () => processPopular($("#popular-paste").value));
+window.aroundG.onPopularProgress((progress) => {
+  $("#popular-status").className = "status";
+  $("#popular-status").textContent = `POIZON API 조회 ${progress.completed}/${progress.total} · 일치 ${progress.matched}개`;
+});
 
 $("#popular-paste").addEventListener("paste", (event) => {
   const pasted = event.clipboardData?.getData("text/plain") || "";
