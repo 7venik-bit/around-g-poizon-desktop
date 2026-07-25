@@ -7,6 +7,7 @@ tools/gh/
 tools/gh-config/
 gh-auth-*.out
 gh-auth-*.err
+gh-refresh.*
 gh_*_windows_amd64.zip
 *.log
 .env
