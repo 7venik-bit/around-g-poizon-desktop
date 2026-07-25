@@ -63,6 +63,26 @@ export class JsonStore {
     return structuredClone(next);
   }
 
+  async bulkUpsert(collection, items) {
+    const rows = this.data[collection];
+    if (!Array.isArray(rows)) throw new Error("UNKNOWN_COLLECTION");
+    if (!Array.isArray(items) || items.length > 500) throw new Error("BULK_ITEMS_INVALID");
+    const now = new Date().toISOString();
+    const updated = [];
+    for (const item of items) {
+      const id = item.id || crypto.randomUUID();
+      const index = rows.findIndex((row) => row.id === id || (
+        item.articleNumber && row.articleNumber === item.articleNumber
+      ));
+      const next = { ...(index >= 0 ? rows[index] : {}), ...item, id: index >= 0 ? rows[index].id : id, updatedAt: now };
+      if (index >= 0) rows[index] = next;
+      else rows.unshift(next);
+      updated.push(next);
+    }
+    await this.save();
+    return structuredClone(updated);
+  }
+
   async remove(collection, id) {
     const rows = this.data[collection];
     if (!Array.isArray(rows)) throw new Error("UNKNOWN_COLLECTION");
