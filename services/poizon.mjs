@@ -54,6 +54,63 @@ export function parsePopularProducts(input) {
   }
 }
 
+export async function resolvePopularProducts(config, input) {
+  if (!config.appKey || !config.appSecret) {
+    return { ok: false, error: { code: "CONFIG_REQUIRED", message: "POIZON App Key와 App Secret을 먼저 저장하세요." } };
+  }
+  let products;
+  try {
+    products = parsePopularTable(input?.text).slice(0, 30);
+  } catch (error) {
+    return { ok: false, error: { code: "POPULAR_TABLE_INVALID", message: "판매자센터 표의 헤더와 상품 행을 함께 넣어 주세요.", detail: error.message } };
+  }
+
+  let cursor = 0;
+  const resolved = new Array(products.length);
+  const worker = async () => {
+    while (cursor < products.length) {
+      const index = cursor;
+      cursor += 1;
+      const product = products[index];
+      if (!product.articleNumber) {
+        resolved[index] = { ...product, apiMatched: false, apiError: "ARTICLE_NUMBER_NOT_FOUND" };
+        continue;
+      }
+      try {
+        const data = await queryByArticleNumber({
+          appKey: config.appKey,
+          appSecret: config.appSecret,
+          articleNumber: product.articleNumber,
+          apiBaseUrl: config.apiBaseUrl,
+          timeZone: "Asia/Seoul",
+        });
+        const matches = Array.isArray(data) ? data : data?.contents || data?.list || [];
+        const match = matches[0] || {};
+        resolved[index] = {
+          ...product,
+          apiMatched: matches.length > 0,
+          apiResultCount: matches.length,
+          globalSpuId: match.globalSpuId || "",
+          regionSpuId: match.regionSpuId || "",
+          spuId: match.spuId || match.dwSpuId || "",
+          skuIdList: match.skuIdList || [],
+          brandId: match.brandId || "",
+          categoryId: match.categoryId || "",
+        };
+      } catch (error) {
+        resolved[index] = { ...product, apiMatched: false, apiError: error instanceof Error ? error.message : String(error) };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, products.length) }, () => worker()));
+  return {
+    ok: true,
+    products: resolved,
+    matchedCount: resolved.filter((product) => product.apiMatched).length,
+    failedCount: resolved.filter((product) => !product.apiMatched).length,
+  };
+}
+
 export async function queryExplorer(config, input) {
   if (!config.appKey || !config.appSecret) {
     return { ok: false, error: { code: "CONFIG_REQUIRED", message: "POIZON App Key와 App Secret을 먼저 저장하세요." } };
