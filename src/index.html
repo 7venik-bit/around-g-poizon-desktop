@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'none'">
+  <title>Around G POIZON</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <aside>
+    <div class="brand"><span>A</span><div><strong>Around G</strong><small>LOCAL WORKSPACE</small></div></div>
+    <nav>
+      <button class="nav active" data-view="products">상품 탐색</button>
+      <button class="nav" data-view="profit">수익 계산</button>
+      <button class="nav" data-view="ledger">구매 장부</button>
+      <button class="nav" data-view="orders">주문 관리</button>
+      <button class="nav" data-view="settings">연동 관리</button>
+    </nav>
+    <div class="local-state"><i></i><div><strong>로컬 저장 정상</strong><small>Cloudflare·Drive 없이 동작</small></div></div>
+  </aside>
+
+  <section class="shell">
+    <header>
+      <div><small>AROUND G CONTROL CENTER</small><h1 id="page-title">상품 탐색</h1></div>
+      <div class="header-actions"><button id="import-button">Excel 가져오기</button><button id="export-button" class="primary">전체 백업</button></div>
+    </header>
+    <main>
+      <section id="products" class="view active">
+        <div class="notice safe"><strong>안전 수집 모드</strong><span>75페이지·반복 페이지·보안 퍼즐에서는 자동 진행을 멈추고 Excel 가져오기로 전환합니다.</span></div>
+        <div class="panel search-panel">
+          <div><small>POIZON LOOKUP</small><h2>상품번호 또는 SPU ID 조회</h2><p>실패한 4xx 요청을 무한 재시도하지 않습니다.</p></div>
+          <div class="query-row">
+            <select id="query-mode"><option value="article">상품번호</option><option value="spu">SPU ID</option></select>
+            <input id="query-value" placeholder="예: SR123UPS11">
+            <button id="query-button" class="primary">조회</button>
+          </div>
+          <div id="query-status" class="status"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title"><div><small>LOCAL CANDIDATES</small><h2>상품 후보 목록</h2></div><button id="add-product">직접 추가</button></div>
+          <div class="table-wrap"><table><thead><tr><th>브랜드</th><th>상품</th><th>상품번호</th><th>SPU ID</th><th>POIZON</th><th>국내가</th><th></th></tr></thead><tbody id="product-rows"></tbody></table></div>
+          <div id="product-empty" class="empty">저장된 상품이 없습니다. Excel을 가져오거나 직접 추가하세요.</div>
+        </div>
+      </section>
+
+      <section id="profit" class="view">
+        <div class="grid two">
+          <div class="panel"><small>MARGIN CALCULATOR</small><h2>예상 수익 계산</h2>
+            <label>매입가<input id="cost" type="number" min="0" placeholder="0"></label>
+            <label>국제·국내 배송비<input id="shipping" type="number" min="0" placeholder="0"></label>
+            <label>기타 비용<input id="extra" type="number" min="0" placeholder="0"></label>
+            <label>판매 수수료 (%)<input id="fee" type="number" min="0" value="10"></label>
+            <div class="margin-buttons"><button data-margin="1">최소 1%</button><button data-margin="3">최소 3%</button><button data-margin="5">최소 5%</button><button data-margin="10">목표 10%</button></div>
+          </div>
+          <div class="panel result-card"><small>EXPECTED PRICE</small><strong id="sale-price">0원</strong><span>예상 판매가</span><dl><div><dt>예상 비용</dt><dd id="total-cost">0원</dd></div><div><dt>예상 순이익</dt><dd id="net-profit">0원</dd></div></dl></div>
+        </div>
+      </section>
+
+      <section id="ledger" class="view"><div class="panel"><div class="panel-title"><div><small>LOCAL LEDGER</small><h2>구매 장부</h2></div><button class="add-record" data-collection="ledger">장부 추가</button></div><div id="ledger-list" class="cards"></div></div></section>
+      <section id="orders" class="view"><div class="panel"><div class="panel-title"><div><small>ORDER TRACKER</small><h2>주문 관리</h2></div><button class="add-record" data-collection="orders">주문 추가</button></div><div id="orders-list" class="cards"></div></div></section>
+
+      <section id="settings" class="view">
+        <div class="grid two">
+          <form id="settings-form" class="panel">
+            <small>SECURE CONNECTION</small><h2>POIZON API 설정</h2><p>비밀값은 Windows 암호화 저장소로 보호합니다.</p>
+            <label>App Key<input id="app-key" autocomplete="off"></label>
+            <label>App Secret<input id="app-secret" type="password" autocomplete="new-password" placeholder="변경할 때만 입력"></label>
+            <label>Access Token<input id="access-token" type="password" autocomplete="new-password" placeholder="선택 사항"></label>
+            <label>API 주소<input id="api-base-url" value="https://open.poizon.com"></label>
+            <button class="primary" type="submit">암호화 저장</button><div id="settings-status" class="status"></div>
+          </form>
+          <div class="panel">
+            <small>COLLECTOR GUARD</small><h2>반복 방지 점검</h2><p>기존 확장의 무한 반복 조건을 로컬에서 검증합니다.</p>
+            <label>현재 페이지<input id="guard-page" type="number" value="1" min="1"></label>
+            <label>상품 목록 지문<input id="guard-fingerprint" placeholder="현재 목록을 식별하는 값"></label>
+            <label class="check"><input id="guard-captcha" type="checkbox"> 보안 퍼즐 표시 중</label>
+            <button id="guard-check" type="button">상태 확인</button><div id="guard-result" class="status"></div>
+          </div>
+          <div class="panel">
+            <small>GITHUB RELEASES</small><h2>프로그램 업데이트</h2>
+            <p>GitHub Releases에서 새 설치 버전을 확인합니다. 업데이트 전 로컬 자료는 그대로 유지됩니다.</p>
+            <button id="update-check" type="button">업데이트 확인</button>
+            <button id="update-install" type="button" class="primary" hidden>다운로드 및 설치</button>
+            <div id="update-status" class="status">자동 업데이트 경로: 7venik-bit/around-g-poizon-desktop</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </section>
+
+  <dialog id="entry-dialog"><form method="dialog"><h2 id="dialog-title">항목 추가</h2><label>브랜드<input id="entry-brand"></label><label>상품명<input id="entry-name" required></label><label>상품번호<input id="entry-article"></label><label>가격<input id="entry-price" type="number" min="0"></label><div class="dialog-actions"><button value="cancel">취소</button><button id="entry-save" value="default" class="primary">저장</button></div></form></dialog>
+  <script src="./renderer.js"></script>
+</body>
+</html>
