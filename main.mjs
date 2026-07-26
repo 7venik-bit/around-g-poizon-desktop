@@ -664,6 +664,13 @@ async function captureSellerCenterProducts() {
     }
   };
   const validProductCount = () => rankSlots.size;
+  const captureFrameWithTimeout = async (frame, timeoutMs = 2_500) => Promise.race([
+    frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true),
+    new Promise((_, reject) => setTimeout(
+      () => reject(new Error("seller frame capture timeout")),
+      timeoutMs,
+    )),
+  ]);
   sellerWindow.show();
   sellerWindow.focus();
   await dragSellerScrollbarToRatio(0);
@@ -704,7 +711,7 @@ async function captureSellerCenterProducts() {
     for (let observationRound = 0; observationRound < 3; observationRound += 1) {
       for (const frame of frames) {
         try {
-          const captured = await frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true);
+          const captured = await captureFrameWithTimeout(frame);
           if (!captured?.scopeVerified) continue;
           captures.push(captured);
           for (const node of captured.nodes || []) {
@@ -735,13 +742,14 @@ async function captureSellerCenterProducts() {
   for (let retryRound = 0; retryRound < 3 && rankSlots.size < limit; retryRound += 1) {
     const missingRanks = Array.from({ length: limit }, (_value, index) => index + 1)
       .filter((rank) => !rankSlots.has(rank));
-    for (const rank of missingRanks) {
+    for (let missingIndex = 0; missingIndex < missingRanks.length; missingIndex += 1) {
+      const rank = missingRanks[missingIndex];
       await dragSellerScrollbarToRatio((rank - 1) / Math.max(1, limit - 1));
       await wait(520 + retryRound * 180);
       for (let observationRound = 0; observationRound < 3; observationRound += 1) {
         for (const frame of frames) {
           try {
-            const captured = await frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true);
+            const captured = await captureFrameWithTimeout(frame);
             if (!captured?.scopeVerified) continue;
             captures.push(captured);
             for (const node of captured.nodes || []) {
@@ -754,12 +762,15 @@ async function captureSellerCenterProducts() {
         }
         await wait(240);
       }
+      const retryCompletion = (
+        retryRound + ((missingIndex + 1) / Math.max(1, missingRanks.length))
+      ) / 3;
       mainWindow?.webContents.send("seller:capture-progress", {
-        percent: Math.min(99, Math.round(12 + (rankSlots.size / limit) * 87)),
+        percent: Math.min(99, Math.round(86 + retryCompletion * 13)),
         count: rankSlots.size,
         target: limit,
         missing: limit - rankSlots.size,
-        message: `누락 순위 재수집 ${rankSlots.size}/${limit}개`,
+        message: `누락 순위 재수집 ${retryRound + 1}/3 · ${missingIndex + 1}/${missingRanks.length} 확인 · 상품 ${rankSlots.size}/${limit}개`,
       });
       if (rankSlots.size >= limit) break;
     }
