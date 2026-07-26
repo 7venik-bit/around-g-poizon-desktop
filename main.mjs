@@ -763,10 +763,10 @@ async function captureSellerCenterProducts() {
     for (const product of networkProducts.splice(0)) addConfirmedProduct(product);
     const currentCount = validProductCount();
     mainWindow?.webContents.send("seller:capture-progress", {
-      percent: Math.min(96, Math.max(12, Math.round(12 + (currentCount / limit) * 84))),
+      percent: Math.min(86, Math.max(12, Math.round(12 + (rankCheckpoint / limit) * 74))),
       count: currentCount,
       target: limit,
-      message: `천천히 드래그 ${rankCheckpoint}/${limit} · 상품 ${currentCount}개`,
+      message: `천천히 드래그 ${rankCheckpoint}/${limit}`,
     });
     if (currentCount >= limit) break;
   }
@@ -806,7 +806,7 @@ async function captureSellerCenterProducts() {
         count: rankSlots.size,
         target: limit,
         missing: limit - rankSlots.size,
-        message: `누락 순위 재수집 ${retryRound + 1}/3 · ${missingIndex + 1}/${missingRanks.length} 확인 · 상품 ${rankSlots.size}/${limit}개`,
+        message: `누락 순위 재수집 ${retryRound + 1}/3 · ${missingIndex + 1}/${missingRanks.length} 확인`,
       });
       if (rankSlots.size >= limit) break;
     }
