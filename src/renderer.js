@@ -415,28 +415,23 @@ $("#update-check").addEventListener("click", async () => {
   $("#update-mini").hidden = false;
   $("#update-mini-message").textContent = "GitHub Releases에서 새 버전을 확인하고 있습니다…";
   $("#update-progress-bar").style.width = "8%";
-  $("#update-status").className = "status";
-  $("#update-status").textContent = "GitHub Releases에서 새 버전을 확인하고 있습니다…";
+  $("#update-progress-text").textContent = "8%";
   const result = await window.aroundG.checkForUpdates();
   if (!result.ok) {
-    $("#update-status").className = "status error";
-    $("#update-status").textContent = result.message;
+    $("#update-mini-message").textContent = result.message;
+    $("#update-mini-note").textContent = "네트워크 연결을 확인한 뒤 다시 시도해 주세요.";
   }
 });
 async function downloadUpdate() {
-  $("#update-install").disabled = true;
   $("#update-mini-download").disabled = true;
   $("#update-mini").hidden = false;
   $("#update-mini-message").textContent = "업데이트 다운로드를 준비하고 있습니다…";
   const result = await window.aroundG.installUpdate();
   if (!result.ok) {
-    $("#update-status").className = "status error";
-    $("#update-status").textContent = result.message;
-    $("#update-install").disabled = false;
+    $("#update-mini-message").textContent = result.message;
     $("#update-mini-download").disabled = false;
   }
 }
-$("#update-install").addEventListener("click", downloadUpdate);
 $("#update-mini-download").addEventListener("click", downloadUpdate);
 $("#update-mini-close").addEventListener("click", () => {
   $("#update-mini").hidden = true;
@@ -453,9 +448,6 @@ $("#update-mini-restart").addEventListener("click", async () => {
 window.aroundG.onUpdateStatus((payload) => {
   const mini = $("#update-mini");
   mini.hidden = false;
-  $("#update-status").className = payload.status === "error" ? "status error" : "status success";
-  $("#update-status").textContent = payload.message;
-  $("#update-install").hidden = payload.status !== "available";
   $("#update-mini-message").textContent = payload.message;
   $("#update-mini-download").hidden = payload.status !== "available";
   $("#update-mini-restart").hidden = payload.status !== "downloaded";
@@ -464,9 +456,16 @@ window.aroundG.onUpdateStatus((payload) => {
       : payload.status === "downloading" ? Number(payload.percent || 0)
         : ["downloaded", "current"].includes(payload.status) ? 100 : 0;
   $("#update-progress-bar").style.width = `${Math.max(0, Math.min(100, progress))}%`;
+  $("#update-progress-text").textContent = `${Math.round(Math.max(0, Math.min(100, progress)))}%`;
+  const stepOrder = ["checking", "downloading", "downloaded"];
+  const activeStep = payload.status === "available" ? "downloading"
+    : payload.status === "current" ? "downloaded" : payload.status;
+  const activeIndex = stepOrder.indexOf(activeStep);
+  document.querySelectorAll("[data-update-step]").forEach((step, index) => {
+    step.classList.toggle("active", index === activeIndex);
+    step.classList.toggle("done", activeIndex >= 0 && index < activeIndex);
+  });
   if (payload.status === "downloaded") {
-    $("#update-install").hidden = true;
-    $("#update-status").textContent = `${payload.message} 준비되면 설치 및 자동 재시작을 눌러 주세요.`;
     $("#update-mini-note").textContent = "마지막 설치 단계에서만 잠시 재시작되며 자동으로 다시 열립니다.";
   } else if (payload.status === "downloading") {
     $("#update-mini-note").textContent = "다운로드 중에도 프로그램을 계속 사용할 수 있습니다.";

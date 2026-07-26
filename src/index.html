@@ -23,7 +23,7 @@
   <section class="shell">
     <header>
       <div><small>AROUND G CONTROL CENTER</small><h1 id="page-title">상품 탐색</h1></div>
-      <div class="header-actions"><button id="import-button">Excel 가져오기</button><button id="export-button" class="primary">전체 백업</button></div>
+      <div class="header-actions"><button id="update-check">업데이트</button><button id="import-button">Excel 가져오기</button><button id="export-button" class="primary">전체 백업</button></div>
     </header>
     <main>
       <section id="products" class="view active">
@@ -107,13 +107,6 @@
             <label class="check"><input id="guard-captcha" type="checkbox"> 보안 퍼즐 표시 중</label>
             <button id="guard-check" type="button">상태 확인</button><div id="guard-result" class="status"></div>
           </div>
-          <div class="panel">
-            <small>GITHUB RELEASES</small><h2>프로그램 업데이트</h2>
-            <p>GitHub Releases에서 새 설치 버전을 확인합니다. 업데이트 전 로컬 자료는 그대로 유지됩니다.</p>
-            <button id="update-check" type="button">업데이트 확인</button>
-            <button id="update-install" type="button" class="primary" hidden>다운로드 및 설치</button>
-            <div id="update-status" class="status">자동 업데이트 경로: 7venik-bit/around-g-poizon-desktop</div>
-          </div>
         </div>
       </section>
     </main>
@@ -123,7 +116,13 @@
   <aside id="update-mini" class="update-mini" hidden>
     <div class="update-mini-head"><strong>프로그램 업데이트</strong><button id="update-mini-close" type="button" aria-label="닫기">×</button></div>
     <p id="update-mini-message">새 버전을 확인하고 있습니다.</p>
+    <ol class="update-steps" aria-label="업데이트 진행 단계">
+      <li data-update-step="checking">버전 확인</li>
+      <li data-update-step="downloading">다운로드</li>
+      <li data-update-step="downloaded">설치 준비</li>
+    </ol>
     <div class="update-progress"><i id="update-progress-bar"></i></div>
+    <div id="update-progress-text" class="update-progress-text">0%</div>
     <small id="update-mini-note">다운로드 중에도 프로그램을 계속 사용할 수 있습니다.</small>
     <div class="update-mini-actions">
       <button id="update-mini-download" type="button" class="primary" hidden>다운로드</button>
