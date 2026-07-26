@@ -15,7 +15,7 @@
       <button class="nav" data-view="profit">수익 계산</button>
       <button class="nav" data-view="ledger">구매 장부</button>
       <button class="nav" data-view="orders">주문 관리</button>
-      <button class="nav nav-with-alert" data-view="settings"><span>연동 관리</span><b id="update-alert" class="nav-alert" hidden>새 버전</b></button>
+      <button class="nav" data-view="settings">연동 관리</button>
     </nav>
     <div class="local-state"><i></i><div><strong>로컬 저장 정상</strong><small>Cloudflare·Drive 없이 동작</small></div></div>
   </aside>
@@ -23,7 +23,7 @@
   <section class="shell">
     <header>
       <div><small>AROUND G CONTROL CENTER</small><h1 id="page-title">상품 탐색</h1></div>
-      <div class="header-actions"><button id="update-check">업데이트</button><button id="import-button">Excel 가져오기</button><button id="export-button" class="primary">전체 백업</button></div>
+      <div class="header-actions"><button id="update-check" class="update-button">업데이트<b id="update-alert" class="update-button-alert" hidden>NEW</b></button><button id="import-button">Excel 가져오기</button><button id="export-button" class="primary">전체 백업</button></div>
     </header>
     <main>
       <section id="products" class="view active">
