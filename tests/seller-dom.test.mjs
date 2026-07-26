@@ -18,6 +18,17 @@ test("가격이 없는 메뉴 텍스트는 상품으로 오인하지 않는다",
   assert.equal(products.length, 0);
 });
 
+test("순위와 품번 및 품명이 있으면 가격 셀이 분리되어도 상품 슬롯을 유지한다", () => {
+  const products = parseSellerDomNodes([{
+    text: "20.\nAQ1774-102\nNike EBERNON Synthetic Leather Low Top",
+    imageUrl: "",
+  }]);
+  assert.equal(products.length, 1);
+  assert.equal(products[0].rank, 20);
+  assert.equal(products[0].articleNumber, "AQ1774-102");
+  assert.equal(products[0].averagePrice, 0);
+});
+
 test("같은 품번은 가장 앞선 순위 한 건만 남긴다", () => {
   const products = dedupeSellerProducts([
     { rank: 19, articleNumber: "JI0079", name: "중복" },

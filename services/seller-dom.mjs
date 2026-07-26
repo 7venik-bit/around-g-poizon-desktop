@@ -26,13 +26,13 @@ export function parseSellerDomNodes(nodes, limit = 200) {
       .filter((line) => !ARTICLE_PATTERN.test(line) && /(?:\d{1,3},)+\d{3}|\d{4,}/.test(line))
       .map(price)
       .filter((value) => value >= 1_000);
-    if (!numericPrices.length) continue;
     const sameLineName = lines[codeIndex].replace(ARTICLE_PATTERN, "").trim();
     const name = (!ignored(sameLineName) && sameLineName)
       || lines.slice(codeIndex + 1).find((line) =>
       !ignored(line) && !ARTICLE_PATTERN.test(line) && !/^[\d,.%]+$/.test(line)
       ) || articleNumber;
     const rankLine = lines.slice(0, codeIndex).find((line) => /^\d{1,3}\.?$/.test(line));
+    if (!numericPrices.length && !rankLine) continue;
     const rank = Math.min(Number(String(rankLine || products.length + 1).replace(/\D/g, "")) || products.length + 1, 999);
     seen.add(articleNumber);
     products.push({

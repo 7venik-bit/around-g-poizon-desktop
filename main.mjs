@@ -712,16 +712,12 @@ async function captureSellerCenterProducts() {
   const limit = Math.min(Number(store.snapshot().settings.popularLimit || 200), 200);
   const capturedNodes = new Map();
   const rankSlots = new Map();
-  const articleSlots = new Map();
   const stableObservations = new Map();
   const addConfirmedProduct = (product) => {
     const rank = Number(product.rank || 0);
     const articleNumber = String(product.articleNumber || "").toUpperCase();
     if (rank < 1 || rank > limit || !articleNumber || rankSlots.has(rank)) return;
-    const previousRank = articleSlots.get(articleNumber);
-    if (previousRank && previousRank !== rank) return;
     rankSlots.set(rank, { ...product, articleNumber });
-    articleSlots.set(articleNumber, rank);
   };
   const addNodesToSlots = (nodes) => {
     for (const product of parseSellerDomNodes(nodes, limit)) {
@@ -826,9 +822,9 @@ async function captureSellerCenterProducts() {
   const validProducts = products.filter((product) => {
     const articleNumber = String(product.articleNumber || "").trim();
     const name = String(product.name || "").trim();
-    const hasRealArticle = /^(?=[A-Z0-9._/-]{4,30}$)(?=[A-Z0-9._/-]*[A-Z])(?=[A-Z0-9._/-]*\d)[A-Z0-9][A-Z0-9._/-]{3,29}$/i.test(articleNumber);
+    const hasRealArticle = /^[A-Z0-9][A-Z0-9._/-]{2,39}$/i.test(articleNumber);
     const isHeader = /^(?:SPU 기준|SKU 기준|SPU 기준 SKU 기준|상품정보|평균 거래가(?:\\(KRW\\))?)$/i.test(name);
-    return hasRealArticle && !isHeader && Number(product.averagePrice || 0) >= 1_000;
+    return hasRealArticle && !isHeader && Boolean(name);
   });
   if (!validProducts.length) {
     stopNetworkCapture();
@@ -839,13 +835,11 @@ async function captureSellerCenterProducts() {
     };
   }
   const preservedSlots = new Map();
-  const preservedArticles = new Set();
   for (const product of validProducts.sort((left, right) => Number(left.rank) - Number(right.rank))) {
     const rank = Number(product.rank || 0);
     const articleNumber = String(product.articleNumber || "").toUpperCase();
-    if (rank < 1 || rank > limit || preservedSlots.has(rank) || preservedArticles.has(articleNumber)) continue;
+    if (rank < 1 || rank > limit || preservedSlots.has(rank)) continue;
     preservedSlots.set(rank, { ...product, articleNumber });
-    preservedArticles.add(articleNumber);
   }
   products = Array.from({ length: limit }, (_value, index) => {
     const rank = index + 1;
