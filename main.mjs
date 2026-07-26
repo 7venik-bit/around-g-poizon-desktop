@@ -143,6 +143,46 @@ const sellerJumpScript = (rank, limit) => `(() => {
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+function extractSellerApiProducts(document, limit = 200) {
+  const products = [];
+  const visited = new Set();
+  const first = (value, keys) => keys.map((key) => value?.[key]).find((item) => item !== undefined && item !== null && item !== "");
+  const walk = (value, depth = 0) => {
+    if (!value || depth > 12 || typeof value !== "object" || visited.has(value)) return;
+    visited.add(value);
+    if (!Array.isArray(value)) {
+      const rank = Number(first(value, ["rank", "ranking", "rankNo", "sortNo", "orderNo", "no"]));
+      const articleNumber = String(first(value, [
+        "articleNumber", "articleNo", "styleNo", "spuCode", "productCode", "goodsCode", "skuCode"
+      ]) || "").trim().toUpperCase();
+      const name = String(first(value, [
+        "productName", "goodsName", "spuName", "spuTitle", "title", "name"
+      ]) || "").trim();
+      const averagePrice = Number(String(first(value, [
+        "averagePrice", "avgPrice", "transactionPrice", "dealPrice", "price"
+      ]) || "").replace(/[^0-9.]/g, ""));
+      if (rank >= 1 && rank <= limit && articleNumber && name && averagePrice >= 1_000) {
+        products.push({
+          rank,
+          rankDetected: true,
+          articleNumber,
+          name,
+          averagePrice,
+          lowestPrice: Number(first(value, ["lowestPrice", "minPrice", "lowPrice"])) || 0,
+          highestPrice: Number(first(value, ["highestPrice", "maxPrice", "highPrice"])) || 0,
+          logoUrl: String(first(value, ["imageUrl", "logoUrl", "cover", "picUrl", "imgUrl"]) || ""),
+          sales30d: 0,
+          source: "seller-center-network",
+          sellerCenterDirect: true,
+        });
+      }
+    }
+    for (const child of Array.isArray(value) ? value : Object.values(value)) walk(child, depth + 1);
+  };
+  walk(document);
+  return products;
+}
+
 async function executeAcrossSellerFrames(script) {
   const mainFrame = sellerWindow.webContents.mainFrame;
   const frames = [mainFrame, ...(mainFrame.framesInSubtree || [])]
@@ -477,10 +517,45 @@ async function captureSellerCenterProducts() {
   sellerWindow.show();
   sellerWindow.focus();
   await wait(700);
+  const networkProducts = [];
+  let debuggerListener;
+  let debuggerAttachedHere = false;
+  try {
+    if (!sellerWindow.webContents.debugger.isAttached()) {
+      sellerWindow.webContents.debugger.attach("1.3");
+      debuggerAttachedHere = true;
+    }
+    await sellerWindow.webContents.debugger.sendCommand("Network.enable");
+    debuggerListener = async (_event, method, params) => {
+      if (method !== "Network.responseReceived" || !["XHR", "Fetch"].includes(params?.type)) return;
+      if (!String(params?.response?.url || "").includes("seller.poizon.com")) return;
+      try {
+        const body = await sellerWindow.webContents.debugger.sendCommand("Network.getResponseBody", {
+          requestId: params.requestId,
+        });
+        const parsed = JSON.parse(body.base64Encoded
+          ? Buffer.from(body.body, "base64").toString("utf8")
+          : body.body);
+        networkProducts.push(...extractSellerApiProducts(parsed, Number(store.snapshot().settings.popularLimit || 200)));
+      } catch {
+        // JSON이 아닌 응답이나 보안 응답은 화면 안정화 수집으로 처리합니다.
+      }
+    };
+    sellerWindow.webContents.debugger.on("message", debuggerListener);
+  } catch {
+    debuggerAttachedHere = false;
+  }
+  const stopNetworkCapture = () => {
+    if (debuggerListener) sellerWindow?.webContents.debugger.removeListener("message", debuggerListener);
+    if (debuggerAttachedHere && sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.debugger.isAttached()) {
+      try { sellerWindow.webContents.debugger.detach(); } catch {}
+    }
+  };
   const conditionResults = await applySellerPopularConditions();
   mainWindow?.webContents.send("seller:capture-progress", { percent: 12, count: 0, message: "인기상품 조건 적용 완료" });
   const fullscreenCondition = conditionResults.find((condition) => condition.key === "fullscreen");
   if (!fullscreenCondition?.found) {
+    stopNetworkCapture();
     return {
       ok: false,
       message: `인기상품 전체화면 버튼을 누르지 못했습니다. 잘못된 9개 목록은 저장하지 않습니다.${fullscreenCondition?.x !== undefined ? ` 클릭 좌표 (${fullscreenCondition.x}, ${fullscreenCondition.y}), 대상 ${fullscreenCondition.targetTag || "없음"}` : ""}`,
@@ -494,47 +569,61 @@ async function captureSellerCenterProducts() {
   const capturedNodes = new Map();
   const rankSlots = new Map();
   const articleSlots = new Map();
+  const stableObservations = new Map();
+  const addConfirmedProduct = (product) => {
+    const rank = Number(product.rank || 0);
+    const articleNumber = String(product.articleNumber || "").toUpperCase();
+    if (rank < 1 || rank > limit || !articleNumber || rankSlots.has(rank)) return;
+    const previousRank = articleSlots.get(articleNumber);
+    if (previousRank && previousRank !== rank) return;
+    rankSlots.set(rank, { ...product, articleNumber });
+    articleSlots.set(articleNumber, rank);
+  };
   const addNodesToSlots = (nodes) => {
     for (const product of parseSellerDomNodes(nodes, limit)) {
       const rank = Number(product.rank || 0);
       const articleNumber = String(product.articleNumber || "").toUpperCase();
       if (!product.rankDetected || rank < 1 || rank > limit || !articleNumber) continue;
-      const previousRank = articleSlots.get(articleNumber);
-      if (previousRank && previousRank !== rank) {
-        if (previousRank < rank) continue;
-        rankSlots.delete(previousRank);
-      }
-      rankSlots.set(rank, product);
-      articleSlots.set(articleNumber, rank);
+      const signature = JSON.stringify([
+        articleNumber,
+        product.name,
+        Number(product.averagePrice || 0),
+        Number(product.lowestPrice || 0),
+        Number(product.highestPrice || 0),
+      ]);
+      const previous = stableObservations.get(rank);
+      const observation = previous?.signature === signature
+        ? { signature, count: previous.count + 1, product }
+        : { signature, count: 1, product };
+      stableObservations.set(rank, observation);
+      if (observation.count >= 2) addConfirmedProduct(product);
     }
   };
   const validProductCount = () => rankSlots.size;
   sellerWindow.show();
   sellerWindow.focus();
-  const bounds = sellerWindow.getContentBounds();
-  let inputPoint = { x: Math.floor(bounds.width * 0.55), y: Math.floor(bounds.height * 0.55) };
-  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", ...inputPoint });
-  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...inputPoint });
-  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...inputPoint });
-  sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "HOME" });
-  sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "HOME" });
-  await wait(700);
+  await executeAcrossSellerFrames(sellerJumpScript(1, limit));
+  await wait(900);
   let stableRounds = 0;
   let previousCount = 0;
   for (let page = 0; page < 180; page += 1) {
-    for (const frame of frames) {
-      try {
-        const captured = await frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true);
-        if (!captured?.scopeVerified) continue;
-        captures.push(captured);
-        for (const node of captured.nodes || []) {
-          capturedNodes.set(`${String(node.text || "")}\n${String(node.imageUrl || "")}`, node);
+    for (let observationRound = 0; observationRound < 3; observationRound += 1) {
+      for (const frame of frames) {
+        try {
+          const captured = await frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true);
+          if (!captured?.scopeVerified) continue;
+          captures.push(captured);
+          for (const node of captured.nodes || []) {
+            capturedNodes.set(`${String(node.text || "")}\n${String(node.imageUrl || "")}`, node);
+          }
+          addNodesToSlots(captured.nodes || []);
+        } catch {
+          // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
         }
-        addNodesToSlots(captured.nodes || []);
-      } catch {
-        // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
       }
+      await wait(240);
     }
+    for (const product of networkProducts.splice(0)) addConfirmedProduct(product);
     const currentCount = validProductCount();
     mainWindow?.webContents.send("seller:capture-progress", {
       percent: Math.min(96, Math.max(12, Math.round(12 + (currentCount / limit) * 84))),
@@ -546,27 +635,8 @@ async function captureSellerCenterProducts() {
     stableRounds = currentCount === previousCount ? stableRounds + 1 : 0;
     previousCount = currentCount;
     const domScroll = await executeAcrossSellerFrames(SELLER_SCROLL_SCRIPT);
-    if (stableRounds > 0 && stableRounds % 5 === 0) {
-      inputPoint = { x: Math.floor(bounds.width * 0.82), y: Math.floor(bounds.height * 0.55) };
-      sellerWindow.webContents.sendInputEvent({ type: "mouseMove", ...inputPoint });
-      sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "PAGEDOWN" });
-      sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "PAGEDOWN" });
-    }
-    if (stableRounds > 0 && stableRounds % 15 === 0) {
-      sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "END" });
-      sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "END" });
-    }
-    for (let wheel = 0; wheel < 3; wheel += 1) {
-      sellerWindow.webContents.sendInputEvent({
-        type: "mouseWheel",
-        deltaX: 0,
-        deltaY: domScroll?.moved ? 260 : 720,
-        canScroll: true,
-        ...inputPoint,
-      });
-      await wait(90);
-    }
-    await wait(domScroll?.moved ? 520 : 380);
+    await wait(domScroll?.moved ? 650 : 450);
+    if (!domScroll?.moved && stableRounds >= 8) break;
   }
   for (let retryRound = 0; retryRound < 3 && rankSlots.size < limit; retryRound += 1) {
     const missingRanks = Array.from({ length: limit }, (_value, index) => index + 1)
@@ -598,6 +668,7 @@ async function captureSellerCenterProducts() {
     }
   }
   if (!captures.length) {
+    stopNetworkCapture();
     return {
       ok: false,
       message: "판매자센터의 ‘인기상품’ 표 영역을 확인하지 못했습니다. ‘인기상품’ 제목과 SPU/SKU 기준이 함께 보이는 상태에서 다시 눌러 주세요.",
@@ -625,6 +696,7 @@ async function captureSellerCenterProducts() {
     return hasRealArticle && !isHeader && Number(product.averagePrice || 0) >= 1_000;
   });
   if (!validProducts.length) {
+    stopNetworkCapture();
     const frameSummary = captures.map((capture) => `${capture.title || "frame"}:${capture.text.length}`).join(", ");
     return {
       ok: false,
@@ -662,6 +734,7 @@ async function captureSellerCenterProducts() {
     missing: limit - preservedSlots.size,
     message: `1~${limit}번 순위 유지 · 상품 ${preservedSlots.size}개 · 누락 ${limit - preservedSlots.size}개`,
   });
+  stopNetworkCapture();
   const codes = products.map((product) => product.articleNumber).filter(Boolean);
   const imageMap = {};
   for (const code of codes) {
