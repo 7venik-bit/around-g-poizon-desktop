@@ -123,10 +123,14 @@ function renderDomestic(result) {
       : source.linkOnly ? "검색 링크" : source.ok ? "상품 없음" : "확인 실패";
     const confidenceClass = Number(product?.confidence || 0) >= 75 ? "high"
       : Number(product?.confidence || 0) >= 45 ? "medium" : "low";
+    const candidateName = product?.title || product?.name || product?.articleNumber || "";
     return `<div class="platform-row">
       <span class="platform-priority">${source.priority}</span>
       <strong>${text(source.store)}</strong>
-      ${product?.imageUrl ? `<img class="candidate-image" src="${text(product.imageUrl)}" alt="">` : `<span class="candidate-image empty">이미지 없음</span>`}
+      <div class="candidate-summary">
+        ${product?.imageUrl ? `<img class="candidate-image" src="${text(product.imageUrl)}" alt="${text(candidateName)}">` : `<span class="candidate-image empty">이미지 없음</span>`}
+        <span><b>${text(candidateName || source.store + " 검색 결과")}</b>${product?.price ? `<small>${money(product.price)}</small>` : ""}</span>
+      </div>
       <span class="stock-state ${sourceState}">${sourceLabel}</span>
       ${product ? `<span class="confidence ${confidenceClass}">신뢰도 ${Number(product.confidence || 0)}%</span>` : ""}
       <div class="size-list">${sizes.length
