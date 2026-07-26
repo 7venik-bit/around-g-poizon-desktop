@@ -59,54 +59,6 @@ const SELLER_CAPTURE_SCRIPT = `(async () => {
       collected.set(text + "\\n" + imageUrl, { text, imageUrl });
     }
   };
-  const articlePattern = /(?=[A-Z0-9._/-]{4,30}\\b)(?=[A-Z0-9._/-]*[A-Z])(?=[A-Z0-9._/-]*\\d)[A-Z0-9][A-Z0-9._/-]{3,29}/gi;
-  const uniqueArticleCount = () => new Set(
-    [...collected.values()].flatMap((node) => String(node.text || "").match(articlePattern) || [])
-      .map((code) => code.toUpperCase())
-  ).size;
-  const elementCandidates = [scope, ...scope.querySelectorAll("*")]
-    .filter((element) => element.scrollHeight > element.clientHeight + 80);
-  const possibleScrollers = [...new Set([document.scrollingElement, ...elementCandidates].filter(Boolean))];
-  const workingScrollers = [];
-  for (const candidate of possibleScrollers) {
-    const originalTop = Number(candidate.scrollTop || 0);
-    const maximum = Math.max(0, candidate.scrollHeight - candidate.clientHeight);
-    const probeTop = originalTop < maximum - 2 ? Math.min(maximum, originalTop + 80) : Math.max(0, originalTop - 80);
-    candidate.scrollTop = probeTop;
-    await new Promise((resolve) => setTimeout(resolve, 40));
-    if (Number(candidate.scrollTop || 0) !== originalTop) workingScrollers.push(candidate);
-    candidate.scrollTop = originalTop;
-  }
-  const scrollCandidates = workingScrollers
-    .sort((left, right) => (right.scrollHeight - right.clientHeight) - (left.scrollHeight - left.clientHeight))
-    .slice(0, 4);
-  for (const scroller of scrollCandidates) {
-    const originalTop = Number(scroller.scrollTop || 0);
-    let stableBottomRounds = 0;
-    let previousArticleCount = uniqueArticleCount();
-    scroller.scrollTop = 0;
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    for (let step = 0; step < 160; step += 1) {
-      collectVisibleRows();
-      if (uniqueArticleCount() >= 200) break;
-      const maximum = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-      const current = Number(scroller.scrollTop || 0);
-      const atBottom = current >= maximum - 2;
-      if (!atBottom) {
-        const page = Math.max(220, Math.floor(scroller.clientHeight * 0.72));
-        scroller.scrollTop = Math.min(maximum, current + page);
-      }
-      await new Promise((resolve) => setTimeout(resolve, atBottom ? 550 : 240));
-      const articleCount = uniqueArticleCount();
-      if (atBottom && articleCount === previousArticleCount) stableBottomRounds += 1;
-      else stableBottomRounds = 0;
-      previousArticleCount = articleCount;
-      if (stableBottomRounds >= 8 || collected.size >= 5000) break;
-    }
-    collectVisibleRows();
-    scroller.scrollTop = originalTop;
-    if (uniqueArticleCount() >= 200) break;
-  }
   collectVisibleRows();
   const nodes = [...collected.values()].slice(0, 5000);
   return {
@@ -405,13 +357,46 @@ async function captureSellerCenterProducts() {
   const frames = [sellerWindow.webContents.mainFrame, ...(sellerWindow.webContents.mainFrame.framesInSubtree || [])]
     .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
   const captures = [];
-  for (const frame of frames) {
-    try {
-      const captured = await frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true);
-      if (captured?.scopeVerified) captures.push(captured);
-    } catch {
-      // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
+  const limit = Math.min(Number(store.snapshot().settings.popularLimit || 200), 200);
+  const capturedNodes = new Map();
+  const articlePattern = /(?=[A-Z0-9._/-]{4,30}\b)(?=[A-Z0-9._/-]*[A-Z])(?=[A-Z0-9._/-]*\d)[A-Z0-9][A-Z0-9._/-]{3,29}/gi;
+  const uniqueArticleCount = () => new Set(
+    [...capturedNodes.values()].flatMap((node) => String(node.text || "").match(articlePattern) || [])
+      .map((code) => code.toUpperCase())
+  ).size;
+  sellerWindow.show();
+  sellerWindow.focus();
+  const bounds = sellerWindow.getContentBounds();
+  const inputPoint = { x: Math.floor(bounds.width * 0.55), y: Math.floor(bounds.height * 0.55) };
+  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", ...inputPoint });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...inputPoint });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...inputPoint });
+  sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "HOME" });
+  sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "HOME" });
+  await wait(700);
+  let stableRounds = 0;
+  let previousCount = 0;
+  for (let page = 0; page < 90; page += 1) {
+    for (const frame of frames) {
+      try {
+        const captured = await frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true);
+        if (!captured?.scopeVerified) continue;
+        captures.push(captured);
+        for (const node of captured.nodes || []) {
+          capturedNodes.set(`${String(node.text || "")}\n${String(node.imageUrl || "")}`, node);
+        }
+      } catch {
+        // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
+      }
     }
+    const currentCount = uniqueArticleCount();
+    if (currentCount >= limit) break;
+    stableRounds = currentCount === previousCount ? stableRounds + 1 : 0;
+    previousCount = currentCount;
+    if (stableRounds >= 10) break;
+    sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "PAGEDOWN" });
+    sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "PAGEDOWN" });
+    await wait(480);
   }
   if (!captures.length) {
     return {
@@ -419,7 +404,6 @@ async function captureSellerCenterProducts() {
       message: "판매자센터의 ‘인기상품’ 표 영역을 확인하지 못했습니다. ‘인기상품’ 제목과 SPU/SKU 기준이 함께 보이는 상태에서 다시 눌러 주세요.",
     };
   }
-  const limit = Math.min(Number(store.snapshot().settings.popularLimit || 200), 200);
   let products = [];
   for (const captured of captures) {
     const parsed = parsePopularProducts({ text: captured.text });
@@ -429,7 +413,7 @@ async function captureSellerCenterProducts() {
     const combined = parsePopularProducts({ text: captures.map((capture) => capture.text).join("\n") });
     if (combined.ok) products = combined.products;
   }
-  const nodes = captures.flatMap((capture) => capture.nodes || []);
+  const nodes = [...capturedNodes.values()];
   const nodeProducts = parseSellerDomNodes(nodes, limit);
   if (nodeProducts.length > products.length) products = nodeProducts;
   products = products.filter((product) => {
