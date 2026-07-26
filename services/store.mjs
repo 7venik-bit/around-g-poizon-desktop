@@ -11,6 +11,18 @@ const EMPTY = {
   collector: { status: "idle", lastPage: 0, lastFingerprint: "", repeatedPages: 0 }
 };
 
+async function replaceWithRetry(source, destination) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      await rename(source, destination);
+      return;
+    } catch (error) {
+      if (!["EPERM", "EBUSY", "EACCES"].includes(error?.code) || attempt === 5) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 40 * (attempt + 1)));
+    }
+  }
+}
+
 export class JsonStore {
   constructor(baseDir) {
     this.path = join(baseDir, "around-g-data.json");
@@ -41,7 +53,7 @@ export class JsonStore {
     this.queue = this.queue.then(async () => {
       const temporary = `${this.path}.tmp`;
       await writeFile(temporary, JSON.stringify(this.data, null, 2), "utf8");
-      await rename(temporary, this.path);
+      await replaceWithRetry(temporary, this.path);
     });
     return this.queue;
   }

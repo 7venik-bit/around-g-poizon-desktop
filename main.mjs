@@ -8,6 +8,7 @@ import { JsonStore } from "./services/store.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer } from "./services/poizon.mjs";
 import { queryDomesticProducts } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
+import { parseSellerDomNodes } from "./services/seller-dom.mjs";
 
 let store;
 const { autoUpdater } = pkg;
@@ -15,6 +16,21 @@ let mainWindow;
 let sellerWindow;
 let updateReady = false;
 const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
+const SELLER_CAPTURE_SCRIPT = `(() => {
+  const selector = "tr, [role='row'], li, [class*='row'], [class*='item'], [class*='product'], [class*='table']";
+  const nodes = [...document.querySelectorAll(selector)].flatMap((element) => {
+    const text = String(element.innerText || "").trim();
+    if (!text || text.length > 3000) return [];
+    const image = element.querySelector?.("img[src]") || element.parentElement?.querySelector?.("img[src]");
+    return [{ text, imageUrl: image?.src || "" }];
+  }).slice(0, 5000);
+  return {
+    text: String(document.body?.innerText || "").slice(0, 2000000),
+    title: document.title,
+    url: location.href,
+    nodes
+  };
+})()`;
 
 async function imageFingerprint(url) {
   if (!url) return null;
@@ -193,48 +209,49 @@ async function captureSellerCenterProducts() {
   if (!currentUrl.startsWith("https://seller.poizon.com/")) {
     return { ok: false, message: "판매자센터 인기상품 화면으로 이동해 주세요." };
   }
-  const captured = await sellerWindow.webContents.executeJavaScript(`(() => ({
-    text: String(document.body?.innerText || "").slice(0, 2000000),
-    title: document.title,
-    url: location.href
-  }))()`, true);
-  const parsed = parsePopularProducts({ text: captured.text });
-  if (!parsed.ok || !parsed.products.length) {
-    return {
-      ok: false,
-      message: "현재 화면에서 인기상품 표를 찾지 못했습니다. 전체 시장 데이터의 인기상품 표가 보이는 상태에서 다시 눌러 주세요.",
-    };
+  const frames = [sellerWindow.webContents.mainFrame, ...(sellerWindow.webContents.mainFrame.framesInSubtree || [])]
+    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
+  const captures = [];
+  for (const frame of frames) {
+    try {
+      captures.push(await frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true));
+    } catch {
+      // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
+    }
   }
   const limit = Math.min(Number(store.snapshot().settings.popularLimit || 200), 200);
-  const products = parsed.products.slice(0, limit);
+  let products = [];
+  for (const captured of captures) {
+    const parsed = parsePopularProducts({ text: captured.text });
+    if (parsed.ok && parsed.products.length > products.length) products = parsed.products;
+  }
+  if (!products.length) {
+    const combined = parsePopularProducts({ text: captures.map((capture) => capture.text).join("\n") });
+    if (combined.ok) products = combined.products;
+  }
+  const nodes = captures.flatMap((capture) => capture.nodes || []);
+  if (!products.length) products = parseSellerDomNodes(nodes, limit);
+  if (!products.length) {
+    const frameSummary = captures.map((capture) => `${capture.title || "frame"}:${capture.text.length}`).join(", ");
+    return {
+      ok: false,
+      message: `인기상품 행을 찾지 못했습니다. 인기상품 목록이 실제로 화면에 표시되고 로딩이 끝난 뒤 다시 눌러 주세요.${frameSummary ? ` (확인한 화면 ${captures.length}개)` : ""}`,
+    };
+  }
+  products = products.slice(0, limit);
   const codes = products.map((product) => product.articleNumber).filter(Boolean);
-  const imageMap = await sellerWindow.webContents.executeJavaScript(`(() => {
-    const codes = ${JSON.stringify(codes)};
-    const result = {};
-    const candidates = [...document.querySelectorAll("tr, [role='row'], li, a, [class*='row'], [class*='item'], [class*='product']")];
-    for (const code of codes) {
-      const matches = candidates
-        .filter((element) => String(element.innerText || "").includes(code))
-        .sort((left, right) => String(left.innerText || "").length - String(right.innerText || "").length);
-      for (const element of matches) {
-        let cursor = element;
-        for (let depth = 0; depth < 5 && cursor; depth += 1, cursor = cursor.parentElement) {
-          const image = cursor.querySelector?.("img[src]");
-          if (image?.src) {
-            result[code] = image.src;
-            break;
-          }
-        }
-        if (result[code]) break;
-      }
-    }
-    return result;
-  })()`, true).catch(() => ({}));
+  const imageMap = {};
+  for (const code of codes) {
+    const matchingNode = nodes
+      .filter((node) => node.imageUrl && String(node.text || "").includes(code))
+      .sort((left, right) => String(left.text || "").length - String(right.text || "").length)[0];
+    if (matchingNode) imageMap[code] = matchingNode.imageUrl;
+  }
   return {
     ok: true,
     source: "seller-center-direct",
     capturedAt: new Date().toISOString(),
-    pageUrl: captured.url,
+    pageUrl: currentUrl,
     products: products.map((product) => ({
       ...product,
       logoUrl: imageMap[product.articleNumber] || "",
