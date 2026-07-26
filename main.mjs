@@ -108,7 +108,7 @@ async function applySellerPopularConditions() {
                 return rect.width > 0 && rect.height > 0;
               });
             if (text.includes("SPU 기준") && text.includes("SKU 기준") && text.includes("상품정보") && buttons.length >= 2) {
-              panels.push({ panel, buttons, textLength: text.length });
+              panels.push({ panel, buttons, heading, textLength: text.length });
             }
           }
         }
@@ -121,7 +121,14 @@ async function applySellerPopularConditions() {
         const named = match.buttons.find((button) =>
           /전체|확대|fullscreen|expand/i.test(String(button.getAttribute("aria-label") || button.title || ""))
         );
-        const target = named || match.buttons[match.buttons.length - 1];
+        const headingRect = match.heading.getBoundingClientRect();
+        const headerButtons = match.buttons
+          .filter((button) => {
+            const buttonRect = button.getBoundingClientRect();
+            return buttonRect.top >= headingRect.top - 35 && buttonRect.top <= headingRect.bottom + 70;
+          })
+          .sort((left, right) => right.getBoundingClientRect().right - left.getBoundingClientRect().right);
+        const target = named || headerButtons[0] || match.buttons[match.buttons.length - 1];
         if (!target) return { found: false, label };
         target.click();
         return { found: true, selected: true, label };
@@ -354,6 +361,14 @@ async function captureSellerCenterProducts() {
     }
   }
   const conditionResults = await applySellerPopularConditions();
+  const fullscreenCondition = conditionResults.find((condition) => condition.key === "fullscreen");
+  if (!fullscreenCondition?.found) {
+    return {
+      ok: false,
+      message: "인기상품 전체화면 버튼을 누르지 못했습니다. 잘못된 9개 목록은 저장하지 않습니다. 판매자센터 인기상품 카드의 확대 아이콘이 보이는 상태에서 다시 시도해 주세요.",
+      conditions: conditionResults,
+    };
+  }
   const frames = [sellerWindow.webContents.mainFrame, ...(sellerWindow.webContents.mainFrame.framesInSubtree || [])]
     .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
   const captures = [];
@@ -367,7 +382,7 @@ async function captureSellerCenterProducts() {
   sellerWindow.show();
   sellerWindow.focus();
   const bounds = sellerWindow.getContentBounds();
-  const inputPoint = { x: Math.floor(bounds.width * 0.55), y: Math.floor(bounds.height * 0.55) };
+  let inputPoint = { x: Math.floor(bounds.width * 0.55), y: Math.floor(bounds.height * 0.55) };
   sellerWindow.webContents.sendInputEvent({ type: "mouseMove", ...inputPoint });
   sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...inputPoint });
   sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...inputPoint });
@@ -393,10 +408,22 @@ async function captureSellerCenterProducts() {
     if (currentCount >= limit) break;
     stableRounds = currentCount === previousCount ? stableRounds + 1 : 0;
     previousCount = currentCount;
-    if (stableRounds >= 10) break;
-    sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "PAGEDOWN" });
-    sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "PAGEDOWN" });
-    await wait(480);
+    if (stableRounds === 5) {
+      inputPoint = { x: Math.floor(bounds.width * 0.82), y: Math.floor(bounds.height * 0.55) };
+      sellerWindow.webContents.sendInputEvent({ type: "mouseMove", ...inputPoint });
+    }
+    if (stableRounds >= 15) break;
+    for (let wheel = 0; wheel < 3; wheel += 1) {
+      sellerWindow.webContents.sendInputEvent({
+        type: "mouseWheel",
+        deltaX: 0,
+        deltaY: 620,
+        canScroll: true,
+        ...inputPoint,
+      });
+      await wait(90);
+    }
+    await wait(420);
   }
   if (!captures.length) {
     return {
