@@ -411,7 +411,41 @@ $("#guard-check").addEventListener("click", async () => {
   $("#guard-result").textContent = result.status === "ready" ? "다음 단계 진행 가능" : result.reason;
 });
 
+let updateCloseTimer;
+let updateCloseInterval;
+let latestUpdateMeta = { version: "", releaseDate: "" };
+
+function cancelUpdateAutoClose() {
+  clearTimeout(updateCloseTimer);
+  clearInterval(updateCloseInterval);
+  $("#update-auto-close").hidden = true;
+}
+
+function scheduleUpdateAutoClose() {
+  cancelUpdateAutoClose();
+  let seconds = 5;
+  $("#update-auto-close").hidden = false;
+  $("#update-auto-close").textContent = `${seconds}초 뒤 자동으로 닫힙니다.`;
+  updateCloseInterval = setInterval(() => {
+    seconds -= 1;
+    $("#update-auto-close").textContent = `${seconds}초 뒤 자동으로 닫힙니다.`;
+  }, 1000);
+  updateCloseTimer = setTimeout(() => {
+    clearInterval(updateCloseInterval);
+    $("#update-mini").hidden = true;
+  }, 5000);
+}
+
+function formatUpdateDate(value) {
+  if (!value) return "날짜 정보 없음";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(date);
+}
+
 $("#update-check").addEventListener("click", async () => {
+  cancelUpdateAutoClose();
   $("#update-mini").hidden = false;
   $("#update-mini-message").textContent = "GitHub Releases에서 새 버전을 확인하고 있습니다…";
   $("#update-progress-bar").style.width = "8%";
@@ -423,6 +457,7 @@ $("#update-check").addEventListener("click", async () => {
   }
 });
 async function downloadUpdate() {
+  cancelUpdateAutoClose();
   $("#update-mini-download").disabled = true;
   $("#update-mini").hidden = false;
   $("#update-mini-message").textContent = "업데이트 다운로드를 준비하고 있습니다…";
@@ -434,6 +469,7 @@ async function downloadUpdate() {
 }
 $("#update-mini-download").addEventListener("click", downloadUpdate);
 $("#update-mini-close").addEventListener("click", () => {
+  cancelUpdateAutoClose();
   $("#update-mini").hidden = true;
 });
 $("#update-mini-restart").addEventListener("click", async () => {
@@ -448,6 +484,11 @@ $("#update-mini-restart").addEventListener("click", async () => {
 window.aroundG.onUpdateStatus((payload) => {
   const mini = $("#update-mini");
   mini.hidden = false;
+  if (payload.version) latestUpdateMeta.version = payload.version;
+  if (payload.releaseDate) latestUpdateMeta.releaseDate = payload.releaseDate;
+  $("#update-version").textContent = latestUpdateMeta.version || "현재 버전";
+  $("#update-date").textContent = formatUpdateDate(latestUpdateMeta.releaseDate);
+  $("#update-alert").hidden = payload.status !== "available" && payload.status !== "downloading" && payload.status !== "downloaded";
   $("#update-mini-message").textContent = payload.message;
   $("#update-mini-download").hidden = payload.status !== "available";
   $("#update-mini-restart").hidden = payload.status !== "downloaded";
@@ -466,12 +507,15 @@ window.aroundG.onUpdateStatus((payload) => {
     step.classList.toggle("done", activeIndex >= 0 && index < activeIndex);
   });
   if (payload.status === "downloaded") {
+    cancelUpdateAutoClose();
     $("#update-mini-note").textContent = "마지막 설치 단계에서만 잠시 재시작되며 자동으로 다시 열립니다.";
   } else if (payload.status === "downloading") {
+    cancelUpdateAutoClose();
     $("#update-mini-note").textContent = "다운로드 중에도 프로그램을 계속 사용할 수 있습니다.";
   } else if (payload.status === "current") {
     $("#update-mini-note").textContent = "현재 최신 버전을 사용하고 있습니다.";
   }
+  if (["available", "current", "error"].includes(payload.status)) scheduleUpdateAutoClose();
 });
 
 (async () => {

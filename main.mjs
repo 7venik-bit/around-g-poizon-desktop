@@ -160,12 +160,18 @@ function configureUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on("checking-for-update", () => sendUpdateStatus("checking", "새 버전을 확인하고 있습니다."));
-  autoUpdater.on("update-available", (info) => sendUpdateStatus("available", `새 버전 ${info.version}을 다운로드할 수 있습니다.`, { version: info.version }));
+  autoUpdater.on("update-available", (info) => sendUpdateStatus("available", `새 버전 ${info.version}을 다운로드할 수 있습니다.`, {
+    version: info.version,
+    releaseDate: info.releaseDate || ""
+  }));
   autoUpdater.on("update-not-available", () => sendUpdateStatus("current", "현재 최신 버전입니다."));
   autoUpdater.on("download-progress", (info) => sendUpdateStatus("downloading", `업데이트 다운로드 ${Math.round(info.percent)}%`, { percent: info.percent }));
   autoUpdater.on("update-downloaded", (info) => {
     updateReady = true;
-    sendUpdateStatus("downloaded", `버전 ${info.version} 다운로드가 완료되었습니다.`, { version: info.version });
+    sendUpdateStatus("downloaded", `버전 ${info.version} 다운로드가 완료되었습니다.`, {
+      version: info.version,
+      releaseDate: info.releaseDate || ""
+    });
   });
   autoUpdater.on("error", (error) => sendUpdateStatus("error", `업데이트 확인 실패: ${error.message}`));
 }
