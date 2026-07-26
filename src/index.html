@@ -37,24 +37,16 @@
         <section id="explorer-popular" class="panel explorer-panel active">
           <small>MERCHANT RANK BOARD</small><h2>판매자센터 인기상품 자동 검색</h2>
           <p>앱 전용 판매자센터 창에 로그인한 뒤 인기상품 화면을 직접 가져옵니다. 로그인 세션은 이 PC의 앱 전용 저장소에만 보관됩니다.</p>
-          <div class="popular-options">
-            <label>기준 시점<select id="popular-period"><option value="day">하루 전</option><option value="week" selected>일주일 전</option><option value="month">한 달 전</option><option value="quarter">최근 3개월</option></select></label>
-            <label>비교 기준<select id="popular-compare"><option value="none">비교 없음</option><option value="year">전기간 대비</option><option value="day">전일 대비</option><option value="week" selected>주간 대비</option><option value="month">월간 대비</option></select></label>
-            <label>상품 기준<select id="popular-unit"><option value="SPU" selected>SPU 기준</option><option value="SKU">SKU 기준</option></select></label>
-            <label>조회 수<select id="popular-limit"><option value="10">10개</option><option value="30" selected>30개</option><option value="50">50개</option><option value="100">100개</option><option value="200">200개</option></select></label>
-          </div>
           <div class="popular-workflow">
+            <label class="compact-limit">가져올 수<select id="popular-limit"><option value="10">10개</option><option value="30">30개</option><option value="50">50개</option><option value="100">100개</option><option value="200" selected>200개</option></select></label>
             <label class="check"><input id="popular-reminder" type="checkbox" checked> 2주마다 갱신 알림</label>
             <span id="popular-due" class="status"></span>
-            <button id="popular-open" type="button">판매자센터 로그인/열기</button>
+            <span class="session-kept">로그인 세션 자동 유지</span>
+            <button id="popular-open" type="button">판매자센터 열기</button>
             <button id="popular-capture" type="button" class="primary">현재 인기상품 가져오기</button>
-            <button id="popular-clipboard" type="button">클립보드 예비 가져오기</button>
           </div>
-          <div id="popular-drop-zone" class="popular-drop-zone">
-            <div class="drop-guide"><strong>표를 이곳에 놓으세요</strong><span>텍스트 선택 드래그 · Ctrl+V · TSV/CSV/TXT 파일 지원</span></div>
-            <textarea id="popular-paste" rows="7" placeholder="No.	상품정보	검색 지수	즐겨찾기 지수	평균 거래가(KRW)	최저 거래가(KRW)	최고 거래가(KRW)&#10;1.	JI0079 Adidas Originals...			91,720	56,674	153,302"></textarea>
-          </div>
-          <div class="explorer-actions"><span id="popular-status" class="status">판매자센터 로그인 창을 열어 주세요.</span><button id="popular-apply">Open API 보완 조회</button></div>
+          <div class="seller-direct-guide"><span>1</span><p><strong>판매자센터 열기</strong><small>최초 한 번 로그인하면 다음 실행부터 유지됩니다.</small></p><i>→</i><span>2</span><p><strong>인기상품 화면 선택</strong><small>기간·SPU·조회 수를 판매자센터에서 선택합니다.</small></p><i>→</i><span>3</span><p><strong>현재 인기상품 가져오기</strong><small>표와 상품 이미지를 앱으로 직접 불러옵니다.</small></p></div>
+          <div class="explorer-actions"><span id="popular-status" class="status">판매자센터를 열고 인기상품 화면에서 직접 가져오세요.</span></div>
         </section>
 
         <section id="explorer-brand" class="panel explorer-panel">

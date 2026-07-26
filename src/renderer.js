@@ -5,16 +5,15 @@ let entryCollection = "ledger";
 let explorerMeta = { brands: [], categories: [] };
 let selectedBrandId = null;
 let selectedCategory = "전체";
-let popularProcessing = false;
 let currentExplorerProducts = [];
 const domesticResults = new Map();
 let domesticBatchRunning = false;
 
 function popularWorkflowInput(markSynced = false) {
   return {
-    period: $("#popular-period").value,
-    compare: $("#popular-compare").value,
-    unit: $("#popular-unit").value,
+    period: "week",
+    compare: "week",
+    unit: "SPU",
     limit: Number($("#popular-limit").value),
     reminder: $("#popular-reminder").checked,
     markSynced,
@@ -234,66 +233,6 @@ document.querySelectorAll(".explorer-mode").forEach((button) => button.addEventL
 
 $("#brand-filter").addEventListener("input", (event) => renderBrandCards(event.target.value));
 
-async function processPopular(textValue) {
-  const status = $("#popular-status");
-  const normalized = String(textValue || "").trim();
-  if (!normalized) return;
-  if (popularProcessing) {
-    status.className = "status";
-    status.textContent = "이미 API 조회가 진행 중입니다.";
-    return;
-  }
-  popularProcessing = true;
-  $("#popular-apply").disabled = true;
-  status.className = "status";
-  status.textContent = "품번을 추출하고 POIZON API에서 자동 조회하고 있습니다…";
-  try {
-    const result = await window.aroundG.resolvePopular({
-      text: normalized,
-      limit: Number($("#popular-limit").value),
-      unit: $("#popular-unit").value,
-    });
-    if (!result.ok) {
-      status.className = "status error";
-      status.textContent = result.error.message;
-      return;
-    }
-    const storedProducts = result.products.map((product) => ({
-      brand: "",
-      name: product.name,
-      articleNumber: product.articleNumber,
-      poizonPrice: product.averagePrice,
-      sales30d: product.sales30d,
-      popularityRank: product.rank,
-      spuId: product.globalSpuId || product.spuId || product.regionSpuId || "",
-      poizonRegionSpuId: product.regionSpuId || "",
-      poizonSkuIds: product.skuIdList || [],
-      poizonResultCount: product.apiResultCount || 0,
-      poizonApiMatched: product.apiMatched,
-      logoUrl: product.logoUrl || "",
-      poizonTitle: product.apiTitle || "",
-      poizonBrandName: product.brandName || "",
-      source: product.source,
-    }));
-    await window.aroundG.bulkUpsert("products", storedProducts);
-    const workflow = await window.aroundG.savePopularWorkflow(popularWorkflowInput(true));
-    renderPopularDue(workflow.lastSyncAt, workflow.reminder);
-    await refresh();
-    status.className = result.matchedCount ? "status success" : "status error";
-    status.textContent = `${result.products.length}개 품번 처리 · API 일치 ${result.matchedCount}개 · 미일치 ${result.failedCount}개`;
-    renderExplorerResults("POIZON 인기상품", result.products.map((product) => ({
-      ...product,
-      hasSalesData: Number(product.sales30d) > 0,
-    })));
-  } catch (error) {
-    showRuntimeError(error);
-  } finally {
-    popularProcessing = false;
-    $("#popular-apply").disabled = false;
-  }
-}
-
-$("#popular-apply").addEventListener("click", () => processPopular($("#popular-paste").value));
 async function acceptSellerCenterProducts(products, sourceLabel) {
   const limited = products.slice(0, Number($("#popular-limit").value));
   const storedProducts = limited.map((product) => ({
@@ -340,23 +279,7 @@ $("#popular-capture").addEventListener("click", async () => {
     button.disabled = false;
   }
 });
-$("#popular-clipboard").addEventListener("click", async () => {
-  const clipboardText = await window.aroundG.readClipboardText();
-  if (!clipboardText.trim()) {
-    $("#popular-status").className = "status error";
-    $("#popular-status").textContent = "클립보드가 비어 있습니다. 판매자센터 인기상품 표를 먼저 복사해 주세요.";
-    return;
-  }
-  $("#popular-paste").value = clipboardText;
-  const parsed = await window.aroundG.parsePopular({ text: clipboardText });
-  if (!parsed.ok) {
-    $("#popular-status").className = "status error";
-    $("#popular-status").textContent = parsed.error.message;
-    return;
-  }
-  await acceptSellerCenterProducts(parsed.products, "클립보드 예비 가져오기");
-});
-for (const selector of ["#popular-period", "#popular-compare", "#popular-unit", "#popular-limit", "#popular-reminder"]) {
+for (const selector of ["#popular-limit", "#popular-reminder"]) {
   $(selector).addEventListener("change", async () => {
     const workflow = await window.aroundG.savePopularWorkflow(popularWorkflowInput(false));
     renderPopularDue(workflow.lastSyncAt, workflow.reminder);
@@ -383,56 +306,6 @@ $("#domestic-search-all").addEventListener("click", async () => {
   $("#domestic-batch-status").className = "status success";
   $("#domestic-batch-status").textContent = `국내 재고 검색 완료 ${completed}/${currentExplorerProducts.length}`;
 });
-window.aroundG.onPopularProgress((progress) => {
-  $("#popular-status").className = "status";
-  $("#popular-status").textContent = `POIZON API 조회 ${progress.completed}/${progress.total} · 일치 ${progress.matched}개`;
-});
-
-$("#popular-paste").addEventListener("paste", (event) => {
-  const pasted = event.clipboardData?.getData("text/plain") || "";
-  if (!pasted) return;
-  event.preventDefault();
-  $("#popular-paste").value = pasted;
-  window.aroundG.parsePopular({ text: pasted }).then((parsed) => {
-    if (parsed.ok) acceptSellerCenterProducts(parsed.products, "붙여넣기 가져오기");
-    else showRuntimeError(parsed.error?.message || "판매자센터 표를 읽지 못했습니다.");
-  });
-});
-
-const popularDropZone = $("#popular-drop-zone");
-for (const eventName of ["dragenter", "dragover"]) {
-  popularDropZone.addEventListener(eventName, (event) => {
-    event.preventDefault();
-    popularDropZone.classList.add("dragging");
-  });
-}
-for (const eventName of ["dragleave", "dragend"]) {
-  popularDropZone.addEventListener(eventName, () => popularDropZone.classList.remove("dragging"));
-}
-popularDropZone.addEventListener("drop", async (event) => {
-  event.preventDefault();
-  popularDropZone.classList.remove("dragging");
-  const file = event.dataTransfer?.files?.[0];
-  let dropped = event.dataTransfer?.getData("text/plain") || "";
-  if (file) {
-    if (!/\.(txt|csv|tsv)$/i.test(file.name) || file.size > 2_000_000) {
-      $("#popular-status").className = "status error";
-      $("#popular-status").textContent = "2MB 이하의 TXT·CSV·TSV 파일만 사용할 수 있습니다.";
-      return;
-    }
-    dropped = await file.text();
-  }
-  if (!dropped.trim()) {
-    $("#popular-status").className = "status error";
-    $("#popular-status").textContent = "드롭된 내용에서 표 텍스트를 찾지 못했습니다.";
-    return;
-  }
-  $("#popular-paste").value = dropped;
-  const parsed = await window.aroundG.parsePopular({ text: dropped });
-  if (parsed.ok) await acceptSellerCenterProducts(parsed.products, "드래그 앤 드롭 가져오기");
-  else showRuntimeError(parsed.error?.message || "판매자센터 표를 읽지 못했습니다.");
-});
-
 $("#brand-search").addEventListener("click", async () => {
   const status = $("#brand-status");
   status.className = "status";
@@ -611,9 +484,6 @@ window.aroundG.onUpdateStatus((payload) => {
   $("#app-secret").placeholder = config.hasAppSecret ? "저장됨 · 변경할 때만 입력" : "필수";
   $("#access-token").placeholder = config.hasAccessToken ? "저장됨 · 변경할 때만 입력" : "선택 사항";
   const popularWorkflow = await window.aroundG.getPopularWorkflow();
-  $("#popular-period").value = popularWorkflow.period;
-  $("#popular-compare").value = popularWorkflow.compare;
-  $("#popular-unit").value = popularWorkflow.unit;
   $("#popular-limit").value = String(popularWorkflow.limit);
   $("#popular-reminder").checked = popularWorkflow.reminder;
   renderPopularDue(popularWorkflow.lastSyncAt, popularWorkflow.reminder);

@@ -10,16 +10,8 @@ contextBridge.exposeInMainWorld("aroundG", {
   explorerMeta: () => ipcRenderer.invoke("explorer:meta"),
   openSellerCenter: () => ipcRenderer.invoke("seller:open"),
   captureSellerCenter: () => ipcRenderer.invoke("seller:capture"),
-  parsePopular: (input) => ipcRenderer.invoke("explorer:popular", input),
-  resolvePopular: (input) => ipcRenderer.invoke("explorer:popular-resolve", input),
-  readClipboardText: () => ipcRenderer.invoke("popular:clipboard-read"),
   getPopularWorkflow: () => ipcRenderer.invoke("popular:workflow-get"),
   savePopularWorkflow: (input) => ipcRenderer.invoke("popular:workflow-save", input),
-  onPopularProgress: (callback) => {
-    const handler = (_event, payload) => callback(payload);
-    ipcRenderer.on("explorer:popular-progress", handler);
-    return () => ipcRenderer.removeListener("explorer:popular-progress", handler);
-  },
   queryExplorer: (input) => ipcRenderer.invoke("explorer:query", input),
   searchDomestic: (input) => ipcRenderer.invoke("domestic:search", input),
   importExcel: () => ipcRenderer.invoke("excel:import"),

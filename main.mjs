@@ -1,11 +1,11 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, safeStorage, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, safeStorage, shell } from "electron";
 import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import readXlsxFile from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
 import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
-import { explorerMetadata, parsePopularProducts, queryExplorer, resolvePopularProducts } from "./services/poizon.mjs";
+import { explorerMetadata, parsePopularProducts, queryExplorer } from "./services/poizon.mjs";
 import { queryDomesticProducts } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
 
@@ -205,7 +205,7 @@ async function captureSellerCenterProducts() {
       message: "현재 화면에서 인기상품 표를 찾지 못했습니다. 전체 시장 데이터의 인기상품 표가 보이는 상태에서 다시 눌러 주세요.",
     };
   }
-  const limit = Math.min(Number(store.snapshot().settings.popularLimit || 30), 200);
+  const limit = Math.min(Number(store.snapshot().settings.popularLimit || 200), 200);
   const products = parsed.products.slice(0, limit);
   const codes = products.map((product) => product.articleNumber).filter(Boolean);
   const imageMap = await sellerWindow.webContents.executeJavaScript(`(() => {
@@ -297,15 +297,13 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle("seller:capture", () => captureSellerCenterProducts());
-  ipcMain.handle("explorer:popular", (_event, input) => parsePopularProducts(input));
-  ipcMain.handle("popular:clipboard-read", () => clipboard.readText());
   ipcMain.handle("popular:workflow-get", () => {
     const settings = store.snapshot().settings;
     return {
       period: settings.popularPeriod || "week",
       compare: settings.popularCompare || "week",
       unit: settings.popularUnit || "SPU",
-      limit: Number(settings.popularLimit || 30),
+      limit: Number(settings.popularLimit || 200),
       reminder: settings.popularReminder !== false,
       lastSyncAt: settings.popularLastSyncAt || "",
     };
@@ -321,7 +319,7 @@ app.whenReady().then(async () => {
       popularPeriod: allowed.period.has(input.period) ? input.period : "week",
       popularCompare: allowed.compare.has(input.compare) ? input.compare : "week",
       popularUnit: allowed.unit.has(input.unit) ? input.unit : "SPU",
-      popularLimit: allowed.limit.has(Number(input.limit)) ? Number(input.limit) : 30,
+      popularLimit: allowed.limit.has(Number(input.limit)) ? Number(input.limit) : 200,
       popularReminder: input.reminder !== false,
     };
     if (input.markSynced) next.popularLastSyncAt = new Date().toISOString();
@@ -335,11 +333,6 @@ app.whenReady().then(async () => {
       lastSyncAt: next.popularLastSyncAt || store.snapshot().settings.popularLastSyncAt || "",
     };
   });
-  ipcMain.handle("explorer:popular-resolve", (event, input) => resolvePopularProducts(secretConfig(), input, {
-    onProgress: (progress) => {
-      if (!event.sender.isDestroyed()) event.sender.send("explorer:popular-progress", progress);
-    },
-  }));
   ipcMain.handle("domestic:search", async (_event, input) => {
     try {
       const data = await queryDomesticProducts({ query: String(input?.query || "").trim() });
