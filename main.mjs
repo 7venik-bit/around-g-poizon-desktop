@@ -70,6 +70,44 @@ const SELLER_CAPTURE_SCRIPT = `(async () => {
     scannedNodeCount: nodes.length
   };
 })()`;
+const SELLER_SCROLL_SCRIPT = `(() => {
+  const root = document.scrollingElement || document.documentElement;
+  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
+    .filter((element, index, all) => all.indexOf(element) === index)
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
+      const visible = rect.width >= 280 && rect.height >= 160
+        && rect.bottom > 0 && rect.top < innerHeight;
+      const scrollStyle = /auto|scroll|overlay/i.test(style.overflowY);
+      const text = String(element.innerText || "");
+      const productTable = text.includes("SPU") && text.includes("SKU")
+        && /상품정보|평균\\s*거래가/.test(text);
+      const score = (productTable ? 1000000 : 0)
+        + (scrollStyle ? 100000 : 0)
+        + maximum
+        + Math.min(rect.width * rect.height, 500000);
+      return { element, maximum, visible, score };
+    })
+    .filter((candidate) => candidate.visible && candidate.maximum > 80)
+    .sort((left, right) => right.score - left.score);
+  const target = candidates[0];
+  if (!target) return { found: false, moved: false, atEnd: true };
+  const before = target.element.scrollTop;
+  const step = Math.max(420, Math.floor(target.element.clientHeight * 0.82));
+  target.element.scrollTop = Math.min(target.maximum, before + step);
+  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  const after = target.element.scrollTop;
+  return {
+    found: true,
+    moved: after > before,
+    atEnd: after >= target.maximum - 3,
+    before,
+    after,
+    maximum: target.maximum
+  };
+})()`;
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -438,24 +476,28 @@ async function captureSellerCenterProducts() {
     if (currentCount >= limit) break;
     stableRounds = currentCount === previousCount ? stableRounds + 1 : 0;
     previousCount = currentCount;
+    const domScroll = await executeAcrossSellerFrames(SELLER_SCROLL_SCRIPT);
     if (stableRounds > 0 && stableRounds % 5 === 0) {
       inputPoint = { x: Math.floor(bounds.width * 0.82), y: Math.floor(bounds.height * 0.55) };
       sellerWindow.webContents.sendInputEvent({ type: "mouseMove", ...inputPoint });
       sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "PAGEDOWN" });
       sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "PAGEDOWN" });
     }
-    if (stableRounds >= 30) break;
+    if (stableRounds > 0 && stableRounds % 15 === 0) {
+      sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "END" });
+      sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "END" });
+    }
     for (let wheel = 0; wheel < 3; wheel += 1) {
       sellerWindow.webContents.sendInputEvent({
         type: "mouseWheel",
         deltaX: 0,
-        deltaY: 620,
+        deltaY: domScroll?.moved ? 260 : 720,
         canScroll: true,
         ...inputPoint,
       });
       await wait(90);
     }
-    await wait(420);
+    await wait(domScroll?.moved ? 520 : 380);
   }
   if (!captures.length) {
     return {
