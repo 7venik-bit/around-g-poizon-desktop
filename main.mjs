@@ -65,11 +65,19 @@ const SELLER_CAPTURE_SCRIPT = `(async () => {
       .map((code) => code.toUpperCase())
   ).size;
   const elementCandidates = [scope, ...scope.querySelectorAll("*")]
-    .filter((element) => {
-      if (element.scrollHeight <= element.clientHeight + 80) return false;
-      return /auto|scroll|overlay/i.test(getComputedStyle(element).overflowY);
-    });
-  const scrollCandidates = [...new Set([document.scrollingElement, ...elementCandidates].filter(Boolean))]
+    .filter((element) => element.scrollHeight > element.clientHeight + 80);
+  const possibleScrollers = [...new Set([document.scrollingElement, ...elementCandidates].filter(Boolean))];
+  const workingScrollers = [];
+  for (const candidate of possibleScrollers) {
+    const originalTop = Number(candidate.scrollTop || 0);
+    const maximum = Math.max(0, candidate.scrollHeight - candidate.clientHeight);
+    const probeTop = originalTop < maximum - 2 ? Math.min(maximum, originalTop + 80) : Math.max(0, originalTop - 80);
+    candidate.scrollTop = probeTop;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    if (Number(candidate.scrollTop || 0) !== originalTop) workingScrollers.push(candidate);
+    candidate.scrollTop = originalTop;
+  }
+  const scrollCandidates = workingScrollers
     .sort((left, right) => (right.scrollHeight - right.clientHeight) - (left.scrollHeight - left.clientHeight))
     .slice(0, 4);
   for (const scroller of scrollCandidates) {
@@ -282,6 +290,9 @@ function configureUpdater() {
       version: info.version,
       releaseDate: info.releaseDate || ""
     });
+    setTimeout(() => {
+      if (updateReady) autoUpdater.quitAndInstall(true, true);
+    }, 3_000);
   });
   autoUpdater.on("error", (error) => sendUpdateStatus("error", `업데이트 확인 실패: ${error.message}`));
 }
@@ -493,7 +504,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("update:restart", () => {
     if (!updateReady) return { ok: false, message: "설치할 업데이트 다운로드가 완료되지 않았습니다." };
-    setImmediate(() => autoUpdater.quitAndInstall(false, true));
+    setImmediate(() => autoUpdater.quitAndInstall(true, true));
     return { ok: true };
   });
   ipcMain.handle("config:get", () => publicConfig());

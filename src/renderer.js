@@ -508,7 +508,7 @@ window.aroundG.onUpdateStatus((payload) => {
   });
   if (payload.status === "downloaded") {
     cancelUpdateAutoClose();
-    $("#update-mini-note").textContent = "마지막 설치 단계에서만 잠시 재시작되며 자동으로 다시 열립니다.";
+    $("#update-mini-note").textContent = "3초 뒤 프로그램이 종료되고 자동 설치된 후 다시 열립니다.";
   } else if (payload.status === "downloading") {
     cancelUpdateAutoClose();
     $("#update-mini-note").textContent = "다운로드 중에도 프로그램을 계속 사용할 수 있습니다.";

@@ -23,7 +23,23 @@
   <section class="shell">
     <header>
       <div><small>AROUND G CONTROL CENTER</small><h1 id="page-title">상품 탐색</h1></div>
-      <div class="header-actions"><button id="update-check" class="update-button">업데이트<b id="update-alert" class="update-button-alert" hidden>NEW</b></button><button id="import-button">Excel 가져오기</button><button id="export-button" class="primary">전체 백업</button></div>
+      <div class="header-actions">
+        <div class="update-anchor">
+          <button id="update-check" class="update-button">업데이트<b id="update-alert" class="update-button-alert" hidden>NEW</b></button>
+          <aside id="update-mini" class="update-mini" hidden>
+            <div class="update-mini-head"><strong>프로그램 업데이트</strong><button id="update-mini-close" type="button" aria-label="닫기">×</button></div>
+            <p id="update-mini-message">새 버전을 확인하고 있습니다.</p>
+            <dl class="update-meta"><div><dt>버전</dt><dd id="update-version">확인 중</dd></div><div><dt>업데이트 날짜</dt><dd id="update-date">확인 중</dd></div></dl>
+            <ol class="update-steps" aria-label="업데이트 진행 단계"><li data-update-step="checking">버전 확인</li><li data-update-step="downloading">다운로드</li><li data-update-step="downloaded">자동 설치</li></ol>
+            <div class="update-progress"><i id="update-progress-bar"></i></div>
+            <div id="update-progress-text" class="update-progress-text">0%</div>
+            <div id="update-auto-close" class="update-auto-close" hidden>5초 뒤 자동으로 닫힙니다.</div>
+            <small id="update-mini-note">다운로드 중에도 프로그램을 계속 사용할 수 있습니다.</small>
+            <div class="update-mini-actions"><button id="update-mini-download" type="button" class="primary" hidden>다운로드</button><button id="update-mini-restart" type="button" class="primary" hidden>지금 자동 설치</button></div>
+          </aside>
+        </div>
+        <button id="import-button">Excel 가져오기</button><button id="export-button" class="primary">전체 백업</button>
+      </div>
     </header>
     <main>
       <section id="products" class="view active">
@@ -112,27 +128,6 @@
   </section>
 
   <dialog id="entry-dialog"><form method="dialog"><h2 id="dialog-title">항목 추가</h2><label>브랜드<input id="entry-brand"></label><label>상품명<input id="entry-name" required></label><label>상품번호<input id="entry-article"></label><label>가격<input id="entry-price" type="number" min="0"></label><div class="dialog-actions"><button value="cancel">취소</button><button id="entry-save" value="default" class="primary">저장</button></div></form></dialog>
-  <aside id="update-mini" class="update-mini" hidden>
-    <div class="update-mini-head"><strong>프로그램 업데이트</strong><button id="update-mini-close" type="button" aria-label="닫기">×</button></div>
-    <p id="update-mini-message">새 버전을 확인하고 있습니다.</p>
-    <dl class="update-meta">
-      <div><dt>버전</dt><dd id="update-version">확인 중</dd></div>
-      <div><dt>업데이트 날짜</dt><dd id="update-date">확인 중</dd></div>
-    </dl>
-    <ol class="update-steps" aria-label="업데이트 진행 단계">
-      <li data-update-step="checking">버전 확인</li>
-      <li data-update-step="downloading">다운로드</li>
-      <li data-update-step="downloaded">설치 준비</li>
-    </ol>
-    <div class="update-progress"><i id="update-progress-bar"></i></div>
-    <div id="update-progress-text" class="update-progress-text">0%</div>
-    <div id="update-auto-close" class="update-auto-close" hidden>5초 뒤 자동으로 닫힙니다.</div>
-    <small id="update-mini-note">다운로드 중에도 프로그램을 계속 사용할 수 있습니다.</small>
-    <div class="update-mini-actions">
-      <button id="update-mini-download" type="button" class="primary" hidden>다운로드</button>
-      <button id="update-mini-restart" type="button" class="primary" hidden>설치 및 자동 재시작</button>
-    </div>
-  </aside>
   <script src="./renderer.js"></script>
 </body>
 </html>
