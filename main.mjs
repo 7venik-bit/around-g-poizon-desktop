@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, safeStorage, shell } from "electron";
 import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import readXlsxFile from "read-excel-file/node";
@@ -7,11 +7,71 @@ import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer, resolvePopularProducts } from "./services/poizon.mjs";
 import { queryDomesticProducts } from "./relay/domestic-search.mjs";
+import { scoreProductCandidate } from "./services/matcher.mjs";
 
 let store;
 const { autoUpdater } = pkg;
 let mainWindow;
 let updateReady = false;
+
+async function imageFingerprint(url) {
+  if (!url) return null;
+  const parsed = new URL(url);
+  if (!["https:", "http:"].includes(parsed.protocol)) return null;
+  const response = await fetch(parsed.href, { signal: AbortSignal.timeout(12_000) });
+  if (!response.ok) return null;
+  const length = Number(response.headers.get("content-length") || 0);
+  if (length > 5_000_000) return null;
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length > 5_000_000) return null;
+  const image = nativeImage.createFromBuffer(bytes);
+  if (image.isEmpty()) return null;
+  const bitmap = image.resize({ width: 8, height: 8, quality: "good" }).toBitmap();
+  const values = [];
+  for (let index = 0; index + 3 < bitmap.length; index += 4) {
+    values.push((bitmap[index] + bitmap[index + 1] + bitmap[index + 2]) / 3);
+  }
+  if (!values.length) return null;
+  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+  return values.map((value) => value >= average);
+}
+
+function fingerprintSimilarity(left, right) {
+  if (!left || !right || left.length !== right.length) return null;
+  const same = left.filter((value, index) => value === right[index]).length;
+  return same / left.length;
+}
+
+async function addMatchConfidence(data, input) {
+  const source = {
+    articleNumber: String(input.articleNumber || ""),
+    brand: String(input.brand || ""),
+    title: String(input.title || ""),
+  };
+  let products = data.products.map((product) => ({
+    ...product,
+    ...scoreProductCandidate(source, product),
+  }));
+  const sourceFingerprint = await imageFingerprint(input.imageUrl).catch(() => null);
+  if (sourceFingerprint) {
+    const bestByStore = new Map();
+    products.forEach((product, index) => {
+      const previous = bestByStore.get(product.store);
+      if (!previous || product.confidence > previous.confidence) bestByStore.set(product.store, { index, confidence: product.confidence });
+    });
+    await Promise.all([...bestByStore.values()].map(async ({ index }) => {
+      const candidateFingerprint = await imageFingerprint(products[index].imageUrl).catch(() => null);
+      const imageSimilarity = fingerprintSimilarity(sourceFingerprint, candidateFingerprint);
+      products[index] = { ...products[index], ...scoreProductCandidate(source, products[index], imageSimilarity) };
+    }));
+  }
+  const priorities = new Map(data.sources.map((sourceRow) => [sourceRow.store, sourceRow.priority]));
+  products = products.sort((left, right) =>
+    (priorities.get(left.store) || 99) - (priorities.get(right.store) || 99)
+    || right.confidence - left.confidence
+  );
+  return { ...data, products };
+}
 
 // 이 앱은 GPU 가속이 필요하지 않으며 일부 Windows 그래픽 드라이버의
 // GPU 프로세스 반복 종료를 피하기 위해 소프트웨어 렌더링을 사용합니다.
@@ -186,7 +246,8 @@ app.whenReady().then(async () => {
   }));
   ipcMain.handle("domestic:search", async (_event, input) => {
     try {
-      return { ok: true, data: await queryDomesticProducts({ query: String(input?.query || "").trim() }) };
+      const data = await queryDomesticProducts({ query: String(input?.query || "").trim() });
+      return { ok: true, data: await addMatchConfidence(data, input || {}) };
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }

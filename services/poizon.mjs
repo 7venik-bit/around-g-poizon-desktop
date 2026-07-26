@@ -21,6 +21,24 @@ function friendlyError(error) {
   return { code: "POIZON_FAILED", message: "POIZON 조회에 실패했습니다.", detail: raw, retryable: false };
 }
 
+function productImage(value, depth = 0) {
+  if (!value || depth > 3) return "";
+  if (typeof value === "string") return /^https?:\/\//i.test(value) ? value : "";
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = productImage(item, depth + 1);
+      if (found) return found;
+    }
+    return "";
+  }
+  if (typeof value !== "object") return "";
+  for (const key of ["logoUrl", "imageUrl", "mainImageUrl", "spuLogo", "logo", "image", "images", "picUrl"]) {
+    const found = productImage(value[key], depth + 1);
+    if (found) return found;
+  }
+  return "";
+}
+
 export async function queryPoizon(config, input) {
   const common = {
     appKey: config.appKey,
@@ -96,6 +114,9 @@ export async function resolvePopularProducts(config, input, { onProgress } = {})
           skuIdList: match.skuIdList || [],
           brandId: match.brandId || "",
           categoryId: match.categoryId || "",
+          logoUrl: productImage(match),
+          brandName: match.brandName || match.brand || "",
+          apiTitle: match.title || match.name || match.spuName || "",
         };
         break;
       } catch (error) {

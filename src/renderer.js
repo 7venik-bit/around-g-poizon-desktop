@@ -110,7 +110,10 @@ function renderDomestic(result) {
   if (!result) return `<span class="inventory-help">재고 검색을 누르면 공식몰 → 무신사 → 네이버 패션타운 → 백화점 → 아울렛 순서로 확인합니다.</span>`;
   if (result.loading) return `<span class="inventory-help">국내 플랫폼을 순서대로 확인하고 있습니다…</span>`;
   if (result.error) return `<span class="inventory-help error">국내 검색에 실패했습니다. 잠시 후 다시 시도해 주세요.</span>`;
-  const productsByStore = new Map((result.products || []).map((product) => [product.store, product]));
+  const productsByStore = new Map();
+  for (const product of result.products || []) {
+    if (!productsByStore.has(product.store)) productsByStore.set(product.store, product);
+  }
   return `<div class="platform-list">${(result.sources || []).map((source) => {
     const product = productsByStore.get(source.store);
     const sizes = product?.sizes || [];
@@ -120,13 +123,18 @@ function renderDomestic(result) {
     const sourceLabel = product
       ? product.inStock ? "구매 가능" : "재고 없음"
       : source.linkOnly ? "검색 링크" : source.ok ? "상품 없음" : "확인 실패";
+    const confidenceClass = Number(product?.confidence || 0) >= 75 ? "high"
+      : Number(product?.confidence || 0) >= 45 ? "medium" : "low";
     return `<div class="platform-row">
       <span class="platform-priority">${source.priority}</span>
       <strong>${text(source.store)}</strong>
+      ${product?.imageUrl ? `<img class="candidate-image" src="${text(product.imageUrl)}" alt="">` : `<span class="candidate-image empty">이미지 없음</span>`}
       <span class="stock-state ${sourceState}">${sourceLabel}</span>
+      ${product ? `<span class="confidence ${confidenceClass}">신뢰도 ${Number(product.confidence || 0)}%</span>` : ""}
       <div class="size-list">${sizes.length
         ? sizes.map((size) => `<span class="size-chip ${size.inStock ? "available" : "soldout"}">${text(size.label)}</span>`).join("")
         : product?.inStock ? `<span class="size-chip unknown">사이즈 확인 필요</span>` : ""}</div>
+      ${product ? `<div class="match-signals"><span>코드 ${text(product.signals?.code)}</span><span>상품명 ${text(product.signals?.title)}</span><span>이미지 ${text(product.signals?.image)}</span></div>` : ""}
       <button data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${product?.inStock ? "구매" : "검색"}</button>
     </div>`;
   }).join("")}</div>`;
@@ -167,7 +175,13 @@ async function searchDomesticAt(index) {
   const key = domesticKey(product, index);
   domesticResults.set(key, { loading: true, products: [], sources: [] });
   const query = [product.brandName || product.brand, product.articleNumber, product.title || product.name].filter(Boolean).join(" ");
-  const response = await window.aroundG.searchDomestic({ query });
+  const response = await window.aroundG.searchDomestic({
+    query,
+    articleNumber: product.articleNumber || "",
+    brand: product.brandName || product.brand || "",
+    title: product.apiTitle || product.title || product.name || "",
+    imageUrl: product.logoUrl || "",
+  });
   domesticResults.set(key, response.ok ? response.data : { products: [], sources: [], error: response.message });
   renderExplorerResults($("#explorer-result-title").textContent, currentExplorerProducts, true);
 }
@@ -257,6 +271,9 @@ async function processPopular(textValue) {
       poizonSkuIds: product.skuIdList || [],
       poizonResultCount: product.apiResultCount || 0,
       poizonApiMatched: product.apiMatched,
+      logoUrl: product.logoUrl || "",
+      poizonTitle: product.apiTitle || "",
+      poizonBrandName: product.brandName || "",
       source: product.source,
     }));
     await window.aroundG.bulkUpsert("products", storedProducts);
