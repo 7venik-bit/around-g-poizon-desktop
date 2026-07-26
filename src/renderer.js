@@ -263,7 +263,7 @@ async function acceptSellerCenterProducts(products, sourceLabel) {
 $("#popular-open").addEventListener("click", async () => {
   await window.aroundG.openSellerCenter();
   $("#popular-status").className = "status";
-  $("#popular-status").textContent = "앱 전용 판매자센터 창에서 로그인하고 인기상품 화면을 연 뒤 ‘현재 인기상품 가져오기’를 누르세요.";
+  $("#popular-status").textContent = "";
 });
 $("#popular-capture").addEventListener("click", async () => {
   const button = $("#popular-capture");
