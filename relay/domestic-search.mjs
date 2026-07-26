@@ -2,9 +2,10 @@ const MAX_QUERY_LENGTH = 120;
 const MAX_PRODUCTS_PER_STORE = 8;
 
 export const DOMESTIC_SEARCH_LINKS = {
-  "공식 홈페이지": (query) => `https://search.naver.com/search.naver?query=${encodeURIComponent(`${query} 공식몰`)}`,
   "무신사": (query) => `https://www.musinsa.com/search/goods?keyword=${encodeURIComponent(query)}`,
-  "네이버 패션타운": (query) => `https://search.shopping.naver.com/search/all?query=${encodeURIComponent(query)}`,
+  "네이버 브랜드직영몰": (query) => `https://shopping.naver.com/window/brand-fashion/store-brand?query=${encodeURIComponent(query)}`,
+  "네이버 백화점": (query) => `https://shopping.naver.com/window/brand-fashion/department?query=${encodeURIComponent(query)}`,
+  "네이버 아울렛": (query) => `https://shopping.naver.com/window/brand-fashion/outlet?query=${encodeURIComponent(query)}`,
   "SSG": (query) => `https://www.ssg.com/search.ssg?query=${encodeURIComponent(query)}`,
   "코오롱몰": (query) => `https://www.kolonmall.com/Search?keyword=${encodeURIComponent(query)}`,
 };
@@ -164,9 +165,10 @@ export async function queryDomesticProducts({ query, fetchImpl = fetch }) {
   if (normalizedQuery.length > MAX_QUERY_LENGTH) throw new Error("DOMESTIC_QUERY_TOO_LONG");
 
   const sources = [
-    { store: "공식 홈페이지", linkOnly: true },
     { store: "무신사", parser: parseMusinsaSearch },
-    { store: "네이버 패션타운", linkOnly: true },
+    { store: "네이버 브랜드직영몰", linkOnly: true },
+    { store: "네이버 백화점", linkOnly: true },
+    { store: "네이버 아울렛", linkOnly: true },
     { store: "SSG", parser: parseSsgSearch },
     { store: "코오롱몰", parser: (html) => parseKolonSearch(html, normalizedQuery) },
   ];

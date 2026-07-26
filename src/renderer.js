@@ -107,7 +107,7 @@ function domesticStatus(result) {
 }
 
 function renderDomestic(result) {
-  if (!result) return `<span class="inventory-help">재고 검색을 누르면 공식몰 → 무신사 → 네이버 패션타운 → 백화점 → 아울렛 순서로 확인합니다.</span>`;
+  if (!result) return `<span class="inventory-help">재고 검색을 누르면 무신사 → 네이버 패션타운(브랜드직영몰·백화점·아울렛) → 백화점 → 아울렛 순서로 확인합니다.</span>`;
   if (result.loading) return `<span class="inventory-help">국내 플랫폼을 순서대로 확인하고 있습니다…</span>`;
   if (result.error) return `<span class="inventory-help error">국내 검색에 실패했습니다. 잠시 후 다시 시도해 주세요.</span>`;
   const productsByStore = new Map();
