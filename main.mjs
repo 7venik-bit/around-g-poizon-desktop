@@ -140,6 +140,43 @@ const sellerJumpScript = (rank, limit) => `(() => {
   target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
   return { found: true, rank: requestedRank, position: target.element.scrollTop, maximum: target.maximum };
 })()`;
+const sellerScrollbarInfoScript = (ratio) => `(() => {
+  const requestedRatio = Math.max(0, Math.min(1, ${Number(ratio)}));
+  const root = document.scrollingElement || document.documentElement;
+  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
+    .filter((element, index, all) => all.indexOf(element) === index)
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
+      const text = String(element.innerText || "");
+      const productTable = text.includes("SPU") && text.includes("SKU")
+        && /상품정보|평균\\s*거래가/.test(text);
+      const scrollStyle = /auto|scroll|overlay/i.test(style.overflowY);
+      const visible = rect.width >= 280 && rect.height >= 160 && rect.bottom > 0 && rect.top < innerHeight;
+      return {
+        element,
+        rect,
+        maximum,
+        visible,
+        score: (productTable ? 1000000 : 0) + (scrollStyle ? 100000 : 0) + maximum
+      };
+    })
+    .filter((candidate) => candidate.visible && candidate.maximum > 80)
+    .sort((left, right) => right.score - left.score);
+  const target = candidates[0];
+  if (!target) return { found: false };
+  const thumbHeight = Math.max(28, target.rect.height * (target.element.clientHeight / target.element.scrollHeight));
+  const travel = Math.max(1, target.rect.height - thumbHeight);
+  const currentRatio = target.element.scrollTop / target.maximum;
+  return {
+    found: true,
+    x: Math.max(1, Math.floor(target.rect.right - 7)),
+    startY: Math.floor(target.rect.top + thumbHeight / 2 + travel * currentRatio),
+    endY: Math.floor(target.rect.top + thumbHeight / 2 + travel * requestedRatio),
+    ratio: requestedRatio
+  };
+})()`;
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -196,6 +233,27 @@ async function executeAcrossSellerFrames(script) {
     }
   }
   return { found: false };
+}
+
+async function dragSellerScrollbarToRatio(ratio) {
+  const info = await executeAcrossSellerFrames(sellerScrollbarInfoScript(ratio));
+  if (!info?.found || !sellerWindow || sellerWindow.isDestroyed()) return false;
+  sellerWindow.show();
+  sellerWindow.focus();
+  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: info.x, y: info.startY });
+  sellerWindow.webContents.sendInputEvent({
+    type: "mouseDown", button: "left", clickCount: 1, x: info.x, y: info.startY
+  });
+  const steps = Math.max(4, Math.min(18, Math.ceil(Math.abs(info.endY - info.startY) / 24)));
+  for (let step = 1; step <= steps; step += 1) {
+    const y = Math.round(info.startY + ((info.endY - info.startY) * step) / steps);
+    sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: info.x, y, movementX: 0, movementY: y - info.startY });
+    await wait(18);
+  }
+  sellerWindow.webContents.sendInputEvent({
+    type: "mouseUp", button: "left", clickCount: 1, x: info.x, y: info.endY
+  });
+  return true;
 }
 
 async function applySellerPopularConditions() {
@@ -602,11 +660,11 @@ async function captureSellerCenterProducts() {
   const validProductCount = () => rankSlots.size;
   sellerWindow.show();
   sellerWindow.focus();
-  await executeAcrossSellerFrames(sellerJumpScript(1, limit));
+  await dragSellerScrollbarToRatio(0);
   await wait(900);
-  let stableRounds = 0;
-  let previousCount = 0;
-  for (let page = 0; page < 180; page += 1) {
+  for (let rankCheckpoint = 1; rankCheckpoint <= limit; rankCheckpoint += 1) {
+    await dragSellerScrollbarToRatio((rankCheckpoint - 1) / Math.max(1, limit - 1));
+    await wait(360);
     for (let observationRound = 0; observationRound < 3; observationRound += 1) {
       for (const frame of frames) {
         try {
@@ -632,30 +690,28 @@ async function captureSellerCenterProducts() {
       message: `인기상품 ${currentCount}/${limit}개 읽는 중`,
     });
     if (currentCount >= limit) break;
-    stableRounds = currentCount === previousCount ? stableRounds + 1 : 0;
-    previousCount = currentCount;
-    const domScroll = await executeAcrossSellerFrames(SELLER_SCROLL_SCRIPT);
-    await wait(domScroll?.moved ? 650 : 450);
-    if (!domScroll?.moved && stableRounds >= 8) break;
   }
   for (let retryRound = 0; retryRound < 3 && rankSlots.size < limit; retryRound += 1) {
     const missingRanks = Array.from({ length: limit }, (_value, index) => index + 1)
       .filter((rank) => !rankSlots.has(rank));
     for (const rank of missingRanks) {
-      await executeAcrossSellerFrames(sellerJumpScript(rank, limit));
+      await dragSellerScrollbarToRatio((rank - 1) / Math.max(1, limit - 1));
       await wait(520 + retryRound * 180);
-      for (const frame of frames) {
-        try {
-          const captured = await frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true);
-          if (!captured?.scopeVerified) continue;
-          captures.push(captured);
-          for (const node of captured.nodes || []) {
-            capturedNodes.set(`${String(node.text || "")}\n${String(node.imageUrl || "")}`, node);
+      for (let observationRound = 0; observationRound < 3; observationRound += 1) {
+        for (const frame of frames) {
+          try {
+            const captured = await frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true);
+            if (!captured?.scopeVerified) continue;
+            captures.push(captured);
+            for (const node of captured.nodes || []) {
+              capturedNodes.set(`${String(node.text || "")}\n${String(node.imageUrl || "")}`, node);
+            }
+            addNodesToSlots(captured.nodes || []);
+          } catch {
+            // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
           }
-          addNodesToSlots(captured.nodes || []);
-        } catch {
-          // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
         }
+        await wait(240);
       }
       mainWindow?.webContents.send("seller:capture-progress", {
         percent: Math.min(99, Math.round(12 + (rankSlots.size / limit) * 87)),
