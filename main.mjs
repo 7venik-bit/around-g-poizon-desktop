@@ -696,7 +696,10 @@ async function captureSellerCenterProducts() {
         ? { signature, count: previous.count + 1, product }
         : { signature, count: 1, product };
       stableObservations.set(rank, observation);
-      if (observation.count >= 2) addConfirmedProduct(product);
+      // A detected rank is pasted directly into the matching 1-200 slot.
+      // Later observations may verify it, but a single valid row is never
+      // discarded merely because virtualization removed it from the screen.
+      addConfirmedProduct(product);
     }
   };
   const validProductCount = () => rankSlots.size;
@@ -707,71 +710,6 @@ async function captureSellerCenterProducts() {
       timeoutMs,
     )),
   ]);
-  const primarySelectionInfo = await executeAcrossSellerFrames(SELLER_SELECTION_INFO_SCRIPT);
-  if (primarySelectionInfo?.found) {
-    const previousClipboardText = clipboard.readText();
-    sellerWindow.webContents.sendInputEvent({
-      type: "mouseMove",
-      x: primarySelectionInfo.startX,
-      y: primarySelectionInfo.startY,
-    });
-    sellerWindow.webContents.sendInputEvent({
-      type: "mouseDown",
-      button: "left",
-      clickCount: 1,
-      x: primarySelectionInfo.startX,
-      y: primarySelectionInfo.startY,
-    });
-    const primarySelectionSteps = 240;
-    for (let step = 1; step <= primarySelectionSteps; step += 1) {
-      const approachSteps = 20;
-      const y = step <= approachSteps
-        ? Math.round(primarySelectionInfo.startY
-          + ((primarySelectionInfo.endY - primarySelectionInfo.startY) * step) / approachSteps)
-        : primarySelectionInfo.endY - (step % 2);
-      sellerWindow.webContents.sendInputEvent({
-        type: "mouseMove",
-        x: primarySelectionInfo.endX,
-        y,
-        movementX: 0,
-        movementY: 1,
-      });
-      if (step % 12 === 0) {
-        mainWindow?.webContents.send("seller:capture-progress", {
-          percent: Math.round((step / primarySelectionSteps) * 80),
-          count: rankSlots.size,
-          target: limit,
-          message: `1~${limit}위 선택 드래그 ${Math.round((step / primarySelectionSteps) * 100)}%`,
-        });
-      }
-      await wait(80);
-    }
-    sellerWindow.webContents.sendInputEvent({
-      type: "mouseUp",
-      button: "left",
-      clickCount: 1,
-      x: primarySelectionInfo.endX,
-      y: primarySelectionInfo.endY,
-    });
-    sellerWindow.webContents.copy();
-    await wait(350);
-    const pastedText = clipboard.readText();
-    if (pastedText && pastedText !== previousClipboardText) {
-      const pastedProducts = parsePopularProducts({ text: pastedText });
-      if (pastedProducts.ok) {
-        for (const product of pastedProducts.products) addConfirmedProduct(product);
-      }
-    }
-    clipboard.writeText(previousClipboardText);
-    mainWindow?.webContents.send("seller:capture-progress", {
-      percent: 82,
-      count: rankSlots.size,
-      target: limit,
-      missing: limit - rankSlots.size,
-      message: `드래그 데이터 붙여넣기 완료`,
-    });
-    showCollectorWindow();
-  }
   sellerWindow.show();
   sellerWindow.focus();
   await dragSellerScrollbarToRatio(0);
@@ -825,13 +763,12 @@ async function captureSellerCenterProducts() {
       }
       await wait(300);
     }
-    for (const product of networkProducts.splice(0)) addConfirmedProduct(product);
     const currentCount = validProductCount();
     mainWindow?.webContents.send("seller:capture-progress", {
       percent: Math.min(86, Math.max(12, Math.round(12 + (rankCheckpoint / limit) * 74))),
       count: currentCount,
       target: limit,
-      message: `천천히 드래그 ${rankCheckpoint}/${limit}`,
+      message: `${rankCheckpoint}번 슬롯에 ${rankCheckpoint}위 상품 확인 중`,
     });
     if (currentCount >= limit) break;
   }
@@ -874,74 +811,6 @@ async function captureSellerCenterProducts() {
         message: `누락 순위 재수집 ${retryRound + 1}/3 · ${missingIndex + 1}/${missingRanks.length} 확인`,
       });
       if (rankSlots.size >= limit) break;
-    }
-  }
-  if (rankSlots.size < limit && sellerWindow && !sellerWindow.isDestroyed()) {
-    const selectionInfo = await executeAcrossSellerFrames(SELLER_SELECTION_INFO_SCRIPT);
-    if (selectionInfo?.found) {
-      const previousClipboardText = clipboard.readText();
-      mainWindow?.webContents.send("seller:capture-progress", {
-        percent: 99,
-        count: rankSlots.size,
-        target: limit,
-        missing: limit - rankSlots.size,
-        message: `보조 수집 시작 · 1위부터 ${limit}위까지 선택 드래그 중`,
-      });
-      sellerWindow.webContents.sendInputEvent({
-        type: "mouseMove",
-        x: selectionInfo.startX,
-        y: selectionInfo.startY,
-      });
-      sellerWindow.webContents.sendInputEvent({
-        type: "mouseDown",
-        button: "left",
-        clickCount: 1,
-        x: selectionInfo.startX,
-        y: selectionInfo.startY,
-      });
-      const selectionSteps = 240;
-      for (let step = 1; step <= selectionSteps; step += 1) {
-        const approachSteps = 20;
-        const y = step <= approachSteps
-          ? Math.round(selectionInfo.startY
-            + ((selectionInfo.endY - selectionInfo.startY) * step) / approachSteps)
-          : selectionInfo.endY - (step % 2);
-        sellerWindow.webContents.sendInputEvent({
-          type: "mouseMove",
-          x: selectionInfo.endX,
-          y,
-          movementX: 0,
-          movementY: 1,
-        });
-        if (step % 12 === 0) {
-          mainWindow?.webContents.send("seller:capture-progress", {
-            percent: 99,
-            count: rankSlots.size,
-            target: limit,
-            missing: limit - rankSlots.size,
-            message: `보조 선택 드래그 ${Math.round((step / selectionSteps) * 100)}% · 기존 상품 유지`,
-          });
-        }
-        await wait(80);
-      }
-      sellerWindow.webContents.sendInputEvent({
-        type: "mouseUp",
-        button: "left",
-        clickCount: 1,
-        x: selectionInfo.endX,
-        y: selectionInfo.endY,
-      });
-      sellerWindow.webContents.copy();
-      await wait(350);
-      const selectedText = clipboard.readText();
-      if (selectedText && selectedText !== previousClipboardText) {
-        const auxiliary = parsePopularProducts({ text: selectedText });
-        if (auxiliary.ok) {
-          for (const product of auxiliary.products) addConfirmedProduct(product);
-        }
-      }
-      clipboard.writeText(previousClipboardText);
-      showCollectorWindow();
     }
   }
   if (!captures.length) {

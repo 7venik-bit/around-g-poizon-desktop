@@ -295,7 +295,10 @@ $("#popular-capture").addEventListener("click", async () => {
     }
     const applied = (result.conditions || []).filter((condition) => condition.found).length;
     await acceptSellerCenterProducts(result.products, `자동 조건 ${applied}/${result.conditions?.length || 6} 적용`);
-    await runDomesticBatch();
+    const completedProducts = result.products.filter((product) => !product.missingRank);
+    if (completedProducts.length === Number($("#popular-limit").value)) {
+      await runDomesticBatch();
+    }
   } finally {
     button.disabled = false;
   }
