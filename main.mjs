@@ -109,6 +109,50 @@ const SELLER_SCROLL_SCRIPT = `(() => {
     maximum: target.maximum
   };
 })()`;
+const SELLER_ROW_SCROLL_SCRIPT = `(() => {
+  const root = document.scrollingElement || document.documentElement;
+  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
+    .filter((element, index, all) => all.indexOf(element) === index)
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
+      const text = String(element.innerText || "");
+      const productTable = text.includes("SPU") && text.includes("SKU")
+        && /상품정보|평균\\s*거래가/.test(text);
+      return {
+        element,
+        maximum,
+        visible: rect.width >= 280 && rect.height >= 160 && rect.bottom > 0 && rect.top < innerHeight,
+        score: (productTable ? 1000000 : 0) + maximum,
+      };
+    })
+    .filter((candidate) => candidate.visible && candidate.maximum > 80)
+    .sort((left, right) => right.score - left.score);
+  const target = candidates[0];
+  if (!target) return { found: false, atEnd: true };
+  const rowHeights = [...target.element.querySelectorAll("tr, [role='row']")]
+    .map((row) => row.getBoundingClientRect().height)
+    .filter((height) => height >= 20 && height <= 180)
+    .sort((left, right) => left - right);
+  const medianHeight = rowHeights.length
+    ? rowHeights[Math.floor(rowHeights.length / 2)]
+    : 48;
+  // Move by less than one row so no virtualized row can pass between captures.
+  const step = Math.max(12, Math.min(48, Math.floor(medianHeight * 0.55)));
+  const before = target.element.scrollTop;
+  target.element.scrollTop = Math.min(target.maximum, before + step);
+  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  const after = target.element.scrollTop;
+  return {
+    found: true,
+    moved: after > before,
+    atEnd: after >= target.maximum - 2,
+    before,
+    after,
+    maximum: target.maximum,
+    step,
+  };
+})()`;
 const sellerJumpScript = (rank, limit) => `(() => {
   const requestedRank = ${Number(rank)};
   const requestedLimit = ${Number(limit)};
@@ -710,108 +754,53 @@ async function captureSellerCenterProducts() {
       timeoutMs,
     )),
   ]);
+  const captureVisibleSlots = async () => {
+    for (const frame of frames) {
+      try {
+        const captured = await captureFrameWithTimeout(frame);
+        if (!captured?.scopeVerified) continue;
+        captures.push(captured);
+        for (const node of captured.nodes || []) {
+          capturedNodes.set(`${String(node.text || "")}\n${String(node.imageUrl || "")}`, node);
+        }
+        addNodesToSlots(captured.nodes || []);
+      } catch {
+        // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
+      }
+    }
+  };
   sellerWindow.show();
   sellerWindow.focus();
-  await dragSellerScrollbarToRatio(0);
-  await wait(1_200);
-  const continuousDrag = await executeAcrossSellerFrames(sellerScrollbarInfoScript(1));
-  if (continuousDrag?.found) {
-    sellerWindow.webContents.sendInputEvent({
-      type: "mouseMove", x: continuousDrag.x, y: continuousDrag.startY
-    });
-    sellerWindow.webContents.sendInputEvent({
-      type: "mouseDown", button: "left", clickCount: 1, x: continuousDrag.x, y: continuousDrag.startY
-    });
-  }
-  // Native input events are sent directly to the seller webContents, so the
-  // collector can remain visible while the POIZON window is collected in the
-  // background.
   showCollectorWindow();
-  let previousDragY = continuousDrag?.startY || 0;
-  for (let rankCheckpoint = 1; rankCheckpoint <= limit; rankCheckpoint += 1) {
-    if (continuousDrag?.found) {
-      const targetY = Math.round(
-        continuousDrag.startY
-        + ((continuousDrag.endY - continuousDrag.startY) * (rankCheckpoint - 1)) / Math.max(1, limit - 1)
-      );
-      const movementSteps = 8;
-      for (let movement = 1; movement <= movementSteps; movement += 1) {
-        const y = Math.round(previousDragY + ((targetY - previousDragY) * movement) / movementSteps);
-        sellerWindow.webContents.sendInputEvent({
-          type: "mouseMove", x: continuousDrag.x, y, movementX: 0, movementY: y - previousDragY
-        });
-        await wait(24);
-      }
-      previousDragY = targetY;
-    } else {
-      await dragSellerScrollbarToRatio((rankCheckpoint - 1) / Math.max(1, limit - 1));
-    }
-    await wait(620);
-    for (let observationRound = 0; observationRound < 3; observationRound += 1) {
-      for (const frame of frames) {
-        try {
-          const captured = await captureFrameWithTimeout(frame);
-          if (!captured?.scopeVerified) continue;
-          captures.push(captured);
-          for (const node of captured.nodes || []) {
-            capturedNodes.set(`${String(node.text || "")}\n${String(node.imageUrl || "")}`, node);
-          }
-          addNodesToSlots(captured.nodes || []);
-        } catch {
-          // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
-        }
-      }
-      await wait(300);
-    }
-    const currentCount = validProductCount();
-    mainWindow?.webContents.send("seller:capture-progress", {
-      percent: Math.min(86, Math.max(12, Math.round(12 + (rankCheckpoint / limit) * 74))),
-      count: currentCount,
-      target: limit,
-      message: `${rankCheckpoint}번 슬롯에 ${rankCheckpoint}위 상품 확인 중`,
-    });
-    if (currentCount >= limit) break;
-  }
-  if (continuousDrag?.found) {
-    sellerWindow.webContents.sendInputEvent({
-      type: "mouseUp", button: "left", clickCount: 1, x: continuousDrag.x, y: previousDragY
-    });
-  }
-  for (let retryRound = 0; retryRound < 3 && rankSlots.size < limit; retryRound += 1) {
-    const missingRanks = Array.from({ length: limit }, (_value, index) => index + 1)
-      .filter((rank) => !rankSlots.has(rank));
-    for (let missingIndex = 0; missingIndex < missingRanks.length; missingIndex += 1) {
-      const rank = missingRanks[missingIndex];
-      await dragSellerScrollbarToRatio((rank - 1) / Math.max(1, limit - 1));
-      await wait(520 + retryRound * 180);
-      for (let observationRound = 0; observationRound < 3; observationRound += 1) {
-        for (const frame of frames) {
-          try {
-            const captured = await captureFrameWithTimeout(frame);
-            if (!captured?.scopeVerified) continue;
-            captures.push(captured);
-            for (const node of captured.nodes || []) {
-              capturedNodes.set(`${String(node.text || "")}\n${String(node.imageUrl || "")}`, node);
-            }
-            addNodesToSlots(captured.nodes || []);
-          } catch {
-            // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
-          }
-        }
-        await wait(240);
-      }
-      const retryCompletion = (
-        retryRound + ((missingIndex + 1) / Math.max(1, missingRanks.length))
-      ) / 3;
+  for (let pass = 0; pass < 3 && rankSlots.size < limit; pass += 1) {
+    await dragSellerScrollbarToRatio(0);
+    await wait(900);
+    let atEnd = false;
+    let iteration = 0;
+    while (!atEnd && iteration < 2_000 && rankSlots.size < limit) {
+      iteration += 1;
+      await captureVisibleSlots();
+      await wait(180);
+      const scrollResult = await executeAcrossSellerFrames(SELLER_ROW_SCROLL_SCRIPT);
+      if (!scrollResult?.found) break;
+      atEnd = Boolean(scrollResult.atEnd);
+      const tableRatio = scrollResult.maximum > 0
+        ? Math.min(1, scrollResult.after / scrollResult.maximum)
+        : 1;
+      const basePercent = pass === 0 ? 12 : 86 + ((pass - 1) * 6);
+      const passRange = pass === 0 ? 74 : 6;
       mainWindow?.webContents.send("seller:capture-progress", {
-        percent: Math.min(99, Math.round(86 + retryCompletion * 13)),
+        percent: Math.min(99, Math.round(basePercent + tableRatio * passRange)),
         count: rankSlots.size,
         target: limit,
         missing: limit - rankSlots.size,
-        message: `누락 순위 재수집 ${retryRound + 1}/3 · ${missingIndex + 1}/${missingRanks.length} 확인`,
+        message: pass === 0
+          ? `1~${limit}위 슬롯을 한 행씩 확인 중 · 표 위치 ${Math.round(tableRatio * 100)}%`
+          : `누락 슬롯 재확인 ${pass}/2 · 표 위치 ${Math.round(tableRatio * 100)}%`,
       });
-      if (rankSlots.size >= limit) break;
+      await wait(220);
     }
+    await captureVisibleSlots();
   }
   if (!captures.length) {
     stopNetworkCapture();
