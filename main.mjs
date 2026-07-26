@@ -707,6 +707,71 @@ async function captureSellerCenterProducts() {
       timeoutMs,
     )),
   ]);
+  const primarySelectionInfo = await executeAcrossSellerFrames(SELLER_SELECTION_INFO_SCRIPT);
+  if (primarySelectionInfo?.found) {
+    const previousClipboardText = clipboard.readText();
+    sellerWindow.webContents.sendInputEvent({
+      type: "mouseMove",
+      x: primarySelectionInfo.startX,
+      y: primarySelectionInfo.startY,
+    });
+    sellerWindow.webContents.sendInputEvent({
+      type: "mouseDown",
+      button: "left",
+      clickCount: 1,
+      x: primarySelectionInfo.startX,
+      y: primarySelectionInfo.startY,
+    });
+    const primarySelectionSteps = 240;
+    for (let step = 1; step <= primarySelectionSteps; step += 1) {
+      const approachSteps = 20;
+      const y = step <= approachSteps
+        ? Math.round(primarySelectionInfo.startY
+          + ((primarySelectionInfo.endY - primarySelectionInfo.startY) * step) / approachSteps)
+        : primarySelectionInfo.endY - (step % 2);
+      sellerWindow.webContents.sendInputEvent({
+        type: "mouseMove",
+        x: primarySelectionInfo.endX,
+        y,
+        movementX: 0,
+        movementY: 1,
+      });
+      if (step % 12 === 0) {
+        mainWindow?.webContents.send("seller:capture-progress", {
+          percent: Math.round((step / primarySelectionSteps) * 80),
+          count: rankSlots.size,
+          target: limit,
+          message: `1~${limit}위 선택 드래그 ${Math.round((step / primarySelectionSteps) * 100)}%`,
+        });
+      }
+      await wait(80);
+    }
+    sellerWindow.webContents.sendInputEvent({
+      type: "mouseUp",
+      button: "left",
+      clickCount: 1,
+      x: primarySelectionInfo.endX,
+      y: primarySelectionInfo.endY,
+    });
+    sellerWindow.webContents.copy();
+    await wait(350);
+    const pastedText = clipboard.readText();
+    if (pastedText && pastedText !== previousClipboardText) {
+      const pastedProducts = parsePopularProducts({ text: pastedText });
+      if (pastedProducts.ok) {
+        for (const product of pastedProducts.products) addConfirmedProduct(product);
+      }
+    }
+    clipboard.writeText(previousClipboardText);
+    mainWindow?.webContents.send("seller:capture-progress", {
+      percent: 82,
+      count: rankSlots.size,
+      target: limit,
+      missing: limit - rankSlots.size,
+      message: `드래그 데이터 붙여넣기 완료`,
+    });
+    showCollectorWindow();
+  }
   sellerWindow.show();
   sellerWindow.focus();
   await dragSellerScrollbarToRatio(0);

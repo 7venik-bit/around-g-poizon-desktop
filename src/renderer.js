@@ -295,6 +295,7 @@ $("#popular-capture").addEventListener("click", async () => {
     }
     const applied = (result.conditions || []).filter((condition) => condition.found).length;
     await acceptSellerCenterProducts(result.products, `자동 조건 ${applied}/${result.conditions?.length || 6} 적용`);
+    await runDomesticBatch();
   } finally {
     button.disabled = false;
   }
@@ -305,7 +306,7 @@ for (const selector of ["#popular-limit", "#popular-reminder"]) {
     renderPopularDue(workflow.lastSyncAt, workflow.reminder);
   });
 }
-$("#domestic-search-all").addEventListener("click", async () => {
+async function runDomesticBatch() {
   const button = $("#domestic-search-all");
   if (domesticBatchRunning) {
     domesticBatchRunning = false;
@@ -316,6 +317,7 @@ $("#domestic-search-all").addEventListener("click", async () => {
   domesticBatchRunning = true;
   button.textContent = "검색 중지";
   for (let index = 0; index < currentExplorerProducts.length && domesticBatchRunning; index += 1) {
+    if (currentExplorerProducts[index]?.missingRank) continue;
     $("#domestic-batch-status").className = "status";
     $("#domestic-batch-status").textContent = `국내 재고 검색 ${index + 1}/${currentExplorerProducts.length} · 플랫폼 요청 제한을 피하기 위해 순차 진행합니다.`;
     await searchDomesticAt(index);
@@ -325,7 +327,8 @@ $("#domestic-search-all").addEventListener("click", async () => {
   button.textContent = "표시 목록 국내 재고 검색";
   $("#domestic-batch-status").className = "status success";
   $("#domestic-batch-status").textContent = `국내 재고 검색 완료 ${completed}/${currentExplorerProducts.length}`;
-});
+}
+$("#domestic-search-all").addEventListener("click", runDomesticBatch);
 $("#brand-search").addEventListener("click", async () => {
   const status = $("#brand-status");
   status.className = "status";
