@@ -661,10 +661,36 @@ async function captureSellerCenterProducts() {
   sellerWindow.show();
   sellerWindow.focus();
   await dragSellerScrollbarToRatio(0);
-  await wait(900);
+  await wait(1_200);
+  const continuousDrag = await executeAcrossSellerFrames(sellerScrollbarInfoScript(1));
+  if (continuousDrag?.found) {
+    sellerWindow.webContents.sendInputEvent({
+      type: "mouseMove", x: continuousDrag.x, y: continuousDrag.startY
+    });
+    sellerWindow.webContents.sendInputEvent({
+      type: "mouseDown", button: "left", clickCount: 1, x: continuousDrag.x, y: continuousDrag.startY
+    });
+  }
+  let previousDragY = continuousDrag?.startY || 0;
   for (let rankCheckpoint = 1; rankCheckpoint <= limit; rankCheckpoint += 1) {
-    await dragSellerScrollbarToRatio((rankCheckpoint - 1) / Math.max(1, limit - 1));
-    await wait(360);
+    if (continuousDrag?.found) {
+      const targetY = Math.round(
+        continuousDrag.startY
+        + ((continuousDrag.endY - continuousDrag.startY) * (rankCheckpoint - 1)) / Math.max(1, limit - 1)
+      );
+      const movementSteps = 8;
+      for (let movement = 1; movement <= movementSteps; movement += 1) {
+        const y = Math.round(previousDragY + ((targetY - previousDragY) * movement) / movementSteps);
+        sellerWindow.webContents.sendInputEvent({
+          type: "mouseMove", x: continuousDrag.x, y, movementX: 0, movementY: y - previousDragY
+        });
+        await wait(24);
+      }
+      previousDragY = targetY;
+    } else {
+      await dragSellerScrollbarToRatio((rankCheckpoint - 1) / Math.max(1, limit - 1));
+    }
+    await wait(620);
     for (let observationRound = 0; observationRound < 3; observationRound += 1) {
       for (const frame of frames) {
         try {
@@ -679,7 +705,7 @@ async function captureSellerCenterProducts() {
           // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
         }
       }
-      await wait(240);
+      await wait(300);
     }
     for (const product of networkProducts.splice(0)) addConfirmedProduct(product);
     const currentCount = validProductCount();
@@ -687,9 +713,14 @@ async function captureSellerCenterProducts() {
       percent: Math.min(96, Math.max(12, Math.round(12 + (currentCount / limit) * 84))),
       count: currentCount,
       target: limit,
-      message: `인기상품 ${currentCount}/${limit}개 읽는 중`,
+      message: `천천히 드래그 ${rankCheckpoint}/${limit} · 상품 ${currentCount}개`,
     });
     if (currentCount >= limit) break;
+  }
+  if (continuousDrag?.found) {
+    sellerWindow.webContents.sendInputEvent({
+      type: "mouseUp", button: "left", clickCount: 1, x: continuousDrag.x, y: previousDragY
+    });
   }
   for (let retryRound = 0; retryRound < 3 && rankSlots.size < limit; retryRound += 1) {
     const missingRanks = Array.from({ length: limit }, (_value, index) => index + 1)
