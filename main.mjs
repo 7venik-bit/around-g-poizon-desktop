@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, safeStorage, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, safeStorage, shell } from "electron";
 import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import readXlsxFile from "read-excel-file/node";
@@ -175,6 +175,42 @@ const sellerScrollbarInfoScript = (ratio) => `(() => {
     startY: Math.floor(target.rect.top + thumbHeight / 2 + travel * currentRatio),
     endY: Math.floor(target.rect.top + thumbHeight / 2 + travel * requestedRatio),
     ratio: requestedRatio
+  };
+})()`;
+const SELLER_SELECTION_INFO_SCRIPT = `(() => {
+  const root = document.scrollingElement || document.documentElement;
+  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
+    .filter((element, index, all) => all.indexOf(element) === index)
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
+      const text = String(element.innerText || "");
+      const productTable = text.includes("SPU") && text.includes("SKU")
+        && /상품정보|평균\\s*거래가/.test(text);
+      return {
+        element,
+        rect,
+        maximum,
+        score: (productTable ? 1000000 : 0) + maximum,
+      };
+    })
+    .filter(({ rect, maximum }) =>
+      maximum > 80 && rect.width >= 280 && rect.height >= 160
+      && rect.bottom > 0 && rect.top < innerHeight
+    )
+    .sort((left, right) => right.score - left.score);
+  const target = candidates[0];
+  if (!target) return { found: false };
+  target.element.scrollTop = 0;
+  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  const rect = target.rect;
+  return {
+    found: true,
+    startX: Math.floor(rect.left + Math.min(120, rect.width * 0.12)),
+    startY: Math.floor(rect.top + Math.min(100, rect.height * 0.16)),
+    endX: Math.floor(rect.right - Math.min(100, rect.width * 0.08)),
+    endY: Math.floor(rect.bottom - 8),
+    maximum: target.maximum,
   };
 })()`;
 
@@ -773,6 +809,74 @@ async function captureSellerCenterProducts() {
         message: `누락 순위 재수집 ${retryRound + 1}/3 · ${missingIndex + 1}/${missingRanks.length} 확인 · 상품 ${rankSlots.size}/${limit}개`,
       });
       if (rankSlots.size >= limit) break;
+    }
+  }
+  if (rankSlots.size < limit && sellerWindow && !sellerWindow.isDestroyed()) {
+    const selectionInfo = await executeAcrossSellerFrames(SELLER_SELECTION_INFO_SCRIPT);
+    if (selectionInfo?.found) {
+      const previousClipboardText = clipboard.readText();
+      mainWindow?.webContents.send("seller:capture-progress", {
+        percent: 99,
+        count: rankSlots.size,
+        target: limit,
+        missing: limit - rankSlots.size,
+        message: `보조 수집 시작 · 1위부터 ${limit}위까지 선택 드래그 중`,
+      });
+      sellerWindow.webContents.sendInputEvent({
+        type: "mouseMove",
+        x: selectionInfo.startX,
+        y: selectionInfo.startY,
+      });
+      sellerWindow.webContents.sendInputEvent({
+        type: "mouseDown",
+        button: "left",
+        clickCount: 1,
+        x: selectionInfo.startX,
+        y: selectionInfo.startY,
+      });
+      const selectionSteps = 240;
+      for (let step = 1; step <= selectionSteps; step += 1) {
+        const approachSteps = 20;
+        const y = step <= approachSteps
+          ? Math.round(selectionInfo.startY
+            + ((selectionInfo.endY - selectionInfo.startY) * step) / approachSteps)
+          : selectionInfo.endY - (step % 2);
+        sellerWindow.webContents.sendInputEvent({
+          type: "mouseMove",
+          x: selectionInfo.endX,
+          y,
+          movementX: 0,
+          movementY: 1,
+        });
+        if (step % 12 === 0) {
+          mainWindow?.webContents.send("seller:capture-progress", {
+            percent: 99,
+            count: rankSlots.size,
+            target: limit,
+            missing: limit - rankSlots.size,
+            message: `보조 선택 드래그 ${Math.round((step / selectionSteps) * 100)}% · 기존 상품 유지`,
+          });
+        }
+        await wait(80);
+      }
+      sellerWindow.webContents.sendInputEvent({
+        type: "mouseUp",
+        button: "left",
+        clickCount: 1,
+        x: selectionInfo.endX,
+        y: selectionInfo.endY,
+      });
+      sellerWindow.webContents.copy();
+      await wait(350);
+      const selectedText = clipboard.readText();
+      if (selectedText && selectedText !== previousClipboardText) {
+        const auxiliary = parsePopularProducts({ text: selectedText });
+        if (auxiliary.ok) {
+          for (const product of auxiliary.products) addConfirmedProduct(product);
+        }
+      }
+      clipboard.writeText(previousClipboardText);
+      showCollectorWindow();
     }
   }
   if (!captures.length) {
