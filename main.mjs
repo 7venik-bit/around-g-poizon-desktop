@@ -8,7 +8,7 @@ import { JsonStore } from "./services/store.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer } from "./services/poizon.mjs";
 import { queryDomesticProducts } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
-import { dedupeSellerProducts, parseSellerDomNodes } from "./services/seller-dom.mjs";
+import { parseSellerDomNodes } from "./services/seller-dom.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
 
 let store;
@@ -616,27 +616,50 @@ async function captureSellerCenterProducts() {
   if (nodeProducts.length > products.length) products = nodeProducts;
   const slotProducts = [...rankSlots.values()].sort((left, right) => left.rank - right.rank);
   if (slotProducts.length > products.length) products = slotProducts;
-  products = products.filter((product) => {
+  const validProducts = products.filter((product) => {
     const articleNumber = String(product.articleNumber || "").trim();
     const name = String(product.name || "").trim();
     const hasRealArticle = /^(?=[A-Z0-9._/-]{4,30}$)(?=[A-Z0-9._/-]*[A-Z])(?=[A-Z0-9._/-]*\d)[A-Z0-9][A-Z0-9._/-]{3,29}$/i.test(articleNumber);
     const isHeader = /^(?:SPU 기준|SKU 기준|SPU 기준 SKU 기준|상품정보|평균 거래가(?:\\(KRW\\))?)$/i.test(name);
     return hasRealArticle && !isHeader && Number(product.averagePrice || 0) >= 1_000;
   });
-  products = dedupeSellerProducts(products, limit);
-  if (!products.length) {
+  if (!validProducts.length) {
     const frameSummary = captures.map((capture) => `${capture.title || "frame"}:${capture.text.length}`).join(", ");
     return {
       ok: false,
       message: `인기상품 표는 확인했지만 실제 품번과 가격이 있는 상품 행을 찾지 못했습니다. 표의 1위 상품 행이 보이도록 스크롤한 뒤 다시 눌러 주세요.${frameSummary ? ` (확인한 화면 ${captures.length}개)` : ""}`,
     };
   }
-  products = products.slice(0, limit);
+  const preservedSlots = new Map();
+  const preservedArticles = new Set();
+  for (const product of validProducts.sort((left, right) => Number(left.rank) - Number(right.rank))) {
+    const rank = Number(product.rank || 0);
+    const articleNumber = String(product.articleNumber || "").toUpperCase();
+    if (rank < 1 || rank > limit || preservedSlots.has(rank) || preservedArticles.has(articleNumber)) continue;
+    preservedSlots.set(rank, { ...product, articleNumber });
+    preservedArticles.add(articleNumber);
+  }
+  products = Array.from({ length: limit }, (_value, index) => {
+    const rank = index + 1;
+    return preservedSlots.get(rank) || {
+      rank,
+      articleNumber: "",
+      name: `${rank}번 상품 수집 누락`,
+      averagePrice: 0,
+      lowestPrice: 0,
+      highestPrice: 0,
+      sales30d: 0,
+      source: "seller-center-missing-slot",
+      missingRank: true,
+      sellerCenterDirect: true,
+    };
+  });
   mainWindow?.webContents.send("seller:capture-progress", {
     percent: 100,
-    count: products.length,
+    count: preservedSlots.size,
     target: limit,
-    message: `인기상품 ${products.length}개 읽기 완료`,
+    missing: limit - preservedSlots.size,
+    message: `1~${limit}번 순위 유지 · 상품 ${preservedSlots.size}개 · 누락 ${limit - preservedSlots.size}개`,
   });
   const codes = products.map((product) => product.articleNumber).filter(Boolean);
   const imageMap = {};

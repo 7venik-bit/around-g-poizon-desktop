@@ -151,6 +151,15 @@ function renderExplorerResults(title, products, preserveDomestic = false) {
     const key = domesticKey(product, index);
     const result = domesticResults.get(key);
     const status = domesticStatus(result);
+    if (product.missingRank) return `<article class="explorer-product-row missing-rank-slot">
+      <div class="rank-number">${product.rank || index + 1}</div>
+      <div class="product-summary missing-rank-summary">
+        <div class="image-placeholder">순위 유지</div>
+        <div><div class="product-badges"><span class="badge muted">수집 누락</span></div>
+        <h3>${text(product.name || `${index + 1}번 상품 수집 누락`)}</h3>
+        <p>원본 순위를 삭제하지 않고 빈 슬롯으로 유지합니다.</p></div>
+      </div>
+    </article>`;
     return `<article class="explorer-product-row">
       <div class="rank-number">${index + 1}</div>
       <div class="product-summary">
@@ -238,7 +247,7 @@ $("#brand-filter").addEventListener("input", (event) => renderBrandCards(event.t
 
 async function acceptSellerCenterProducts(products, sourceLabel) {
   const limited = products.slice(0, Number($("#popular-limit").value));
-  const storedProducts = limited.map((product) => ({
+  const storedProducts = limited.filter((product) => !product.missingRank).map((product) => ({
     brand: product.brandName || "",
     name: product.name,
     articleNumber: product.articleNumber,
