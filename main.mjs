@@ -408,11 +408,7 @@ async function captureSellerCenterProducts() {
   const captures = [];
   const limit = Math.min(Number(store.snapshot().settings.popularLimit || 200), 200);
   const capturedNodes = new Map();
-  const articlePattern = /(?=[A-Z0-9._/-]{4,30}\b)(?=[A-Z0-9._/-]*[A-Z])(?=[A-Z0-9._/-]*\d)[A-Z0-9][A-Z0-9._/-]{3,29}/gi;
-  const uniqueArticleCount = () => new Set(
-    [...capturedNodes.values()].flatMap((node) => String(node.text || "").match(articlePattern) || [])
-      .map((code) => code.toUpperCase())
-  ).size;
+  const validProductCount = () => parseSellerDomNodes([...capturedNodes.values()], limit).length;
   sellerWindow.show();
   sellerWindow.focus();
   const bounds = sellerWindow.getContentBounds();
@@ -425,7 +421,7 @@ async function captureSellerCenterProducts() {
   await wait(700);
   let stableRounds = 0;
   let previousCount = 0;
-  for (let page = 0; page < 90; page += 1) {
+  for (let page = 0; page < 180; page += 1) {
     for (const frame of frames) {
       try {
         const captured = await frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true);
@@ -438,15 +434,17 @@ async function captureSellerCenterProducts() {
         // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
       }
     }
-    const currentCount = uniqueArticleCount();
+    const currentCount = validProductCount();
     if (currentCount >= limit) break;
     stableRounds = currentCount === previousCount ? stableRounds + 1 : 0;
     previousCount = currentCount;
-    if (stableRounds === 5) {
+    if (stableRounds > 0 && stableRounds % 5 === 0) {
       inputPoint = { x: Math.floor(bounds.width * 0.82), y: Math.floor(bounds.height * 0.55) };
       sellerWindow.webContents.sendInputEvent({ type: "mouseMove", ...inputPoint });
+      sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "PAGEDOWN" });
+      sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "PAGEDOWN" });
     }
-    if (stableRounds >= 15) break;
+    if (stableRounds >= 30) break;
     for (let wheel = 0; wheel < 3; wheel += 1) {
       sellerWindow.webContents.sendInputEvent({
         type: "mouseWheel",
