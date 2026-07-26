@@ -159,10 +159,53 @@ async function fetchSearchPage(url, fetchImpl) {
   return response.text();
 }
 
-export async function queryDomesticProducts({ query, fetchImpl = fetch }) {
+async function enrichMusinsaOptions(products, fetchImpl) {
+  return Promise.all(products.map(async (product) => {
+    try {
+      const response = await fetchImpl(`https://api.musinsa.com/api2/dp/v1/plp/goods/${encodeURIComponent(product.id)}/options`, {
+        headers: {
+          Accept: "application/json",
+          "Accept-Language": "ko-KR,ko;q=0.9",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/138 Safari/537.36",
+        },
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!response.ok) return product;
+      const document = await response.json();
+      const flatten = (options) => (options || []).flatMap((option) => {
+        const children = flatten(option.goodsOptions);
+        if (children.length) return children;
+        if (!option.name && !option.code) return [];
+        return [{ label: String(option.name || option.code), inStock: option.outOfStock !== true }];
+      });
+      const sizes = flatten(document?.data?.goodsOptions);
+      return {
+        ...product,
+        sizes,
+        inStock: sizes.length ? sizes.some((size) => size.inStock) : product.inStock,
+      };
+    } catch {
+      return product;
+    }
+  }));
+}
+
+export async function queryDomesticProducts({
+  query,
+  articleNumber = "",
+  brand = "",
+  title = "",
+  fetchImpl = fetch,
+}) {
   const normalizedQuery = String(query || "").trim();
   if (!normalizedQuery) throw new Error("DOMESTIC_QUERY_REQUIRED");
   if (normalizedQuery.length > MAX_QUERY_LENGTH) throw new Error("DOMESTIC_QUERY_TOO_LONG");
+  const queryCandidates = [...new Set([
+    String(articleNumber || "").trim(),
+    [brand, articleNumber].filter(Boolean).join(" ").trim(),
+    normalizedQuery,
+    [brand, title].filter(Boolean).join(" ").trim(),
+  ].filter(Boolean))];
 
   const sources = [
     { store: "무신사", parser: parseMusinsaSearch },
@@ -173,11 +216,20 @@ export async function queryDomesticProducts({ query, fetchImpl = fetch }) {
     { store: "코오롱몰", parser: (html) => parseKolonSearch(html, normalizedQuery) },
   ];
   const results = await Promise.all(sources.map(async (source) => {
-    const searchUrl = DOMESTIC_SEARCH_LINKS[source.store](normalizedQuery);
+    const preferredQuery = queryCandidates[0] || normalizedQuery;
+    const searchUrl = DOMESTIC_SEARCH_LINKS[source.store](preferredQuery);
     if (source.linkOnly) return { store: source.store, ok: true, linkOnly: true, searchUrl, products: [] };
     try {
-      const html = await fetchSearchPage(searchUrl, fetchImpl);
-      const products = source.parser(html);
+      let products = [];
+      for (const candidate of queryCandidates) {
+        const candidateUrl = DOMESTIC_SEARCH_LINKS[source.store](candidate);
+        const html = await fetchSearchPage(candidateUrl, fetchImpl);
+        products = source.parser(html);
+        if (products.length) break;
+      }
+      if (source.store === "무신사" && products.length) {
+        products = await enrichMusinsaOptions(products, fetchImpl);
+      }
       return { store: source.store, ok: true, linkOnly: false, searchUrl, products };
     } catch {
       return { store: source.store, ok: false, linkOnly: false, searchUrl, products: [] };

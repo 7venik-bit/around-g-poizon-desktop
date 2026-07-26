@@ -607,7 +607,12 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("domestic:search", async (_event, input) => {
     try {
-      const data = await queryDomesticProducts({ query: String(input?.query || "").trim() });
+      const data = await queryDomesticProducts({
+        query: String(input?.query || "").trim(),
+        articleNumber: String(input?.articleNumber || "").trim(),
+        brand: String(input?.brand || "").trim(),
+        title: String(input?.title || "").trim(),
+      });
       return { ok: true, data: await addMatchConfidence(data, input || {}) };
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
