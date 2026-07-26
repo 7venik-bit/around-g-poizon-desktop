@@ -260,17 +260,23 @@ async function acceptSellerCenterProducts(products, sourceLabel) {
   })));
 }
 
-$("#popular-open").addEventListener("click", async () => {
-  await window.aroundG.openSellerCenter();
-  $("#popular-status").className = "status";
-  $("#popular-status").textContent = "";
+window.aroundG.onSellerCaptureProgress((progress) => {
+  const host = $("#popular-progress");
+  const percent = Math.max(0, Math.min(100, Number(progress.percent || 0)));
+  host.hidden = false;
+  host.querySelector("i").style.width = `${percent}%`;
+  host.querySelector("span").textContent = `${percent}% · ${progress.message || "상품 읽는 중"}`;
 });
 $("#popular-capture").addEventListener("click", async () => {
   const button = $("#popular-capture");
   button.disabled = true;
+  $("#popular-progress").hidden = false;
+  $("#popular-progress").querySelector("i").style.width = "0%";
+  $("#popular-progress").querySelector("span").textContent = "0% · 판매자센터 준비 중";
   $("#popular-status").className = "status";
-  $("#popular-status").textContent = "판매자센터 현재 화면의 인기상품 표와 이미지를 읽고 있습니다…";
+  $("#popular-status").textContent = "";
   try {
+    await window.aroundG.openSellerCenter();
     const result = await window.aroundG.captureSellerCenter();
     if (!result.ok) {
       $("#popular-status").className = "status error";

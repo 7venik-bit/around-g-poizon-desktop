@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld("aroundG", {
   explorerMeta: () => ipcRenderer.invoke("explorer:meta"),
   openSellerCenter: () => ipcRenderer.invoke("seller:open"),
   captureSellerCenter: () => ipcRenderer.invoke("seller:capture"),
+  onSellerCaptureProgress: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on("seller:capture-progress", handler);
+    return () => ipcRenderer.removeListener("seller:capture-progress", handler);
+  },
   getPopularWorkflow: () => ipcRenderer.invoke("popular:workflow-get"),
   savePopularWorkflow: (input) => ipcRenderer.invoke("popular:workflow-save", input),
   queryExplorer: (input) => ipcRenderer.invoke("explorer:query", input),

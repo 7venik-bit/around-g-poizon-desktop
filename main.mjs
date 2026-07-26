@@ -414,9 +414,22 @@ function openSellerCenterWindow() {
 
 async function captureSellerCenterProducts() {
   if (!sellerWindow || sellerWindow.isDestroyed()) {
-    return { ok: false, message: "판매자센터 창을 먼저 열고 로그인해 주세요." };
+    mainWindow?.webContents.send("seller:capture-progress", { percent: 2, count: 0, message: "판매자센터를 여는 중" });
+    openSellerCenterWindow();
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await wait(500);
+      if (sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.getURL()) break;
+    }
+    if (!sellerWindow || sellerWindow.isDestroyed()) {
+      return { ok: false, message: "판매자센터 창을 열지 못했습니다." };
+    }
   }
+  mainWindow?.webContents.send("seller:capture-progress", { percent: 5, count: 0, message: "로그인 세션 확인 중" });
   let currentUrl = sellerWindow.webContents.getURL();
+  for (let attempt = 0; attempt < 20 && !currentUrl; attempt += 1) {
+    await wait(500);
+    currentUrl = sellerWindow.webContents.getURL();
+  }
   if (!currentUrl.startsWith("https://seller.poizon.com/")) {
     return { ok: false, message: "판매자센터 인기상품 화면으로 이동해 주세요." };
   }
@@ -433,6 +446,7 @@ async function captureSellerCenterProducts() {
   sellerWindow.focus();
   await wait(700);
   const conditionResults = await applySellerPopularConditions();
+  mainWindow?.webContents.send("seller:capture-progress", { percent: 12, count: 0, message: "인기상품 조건 적용 완료" });
   const fullscreenCondition = conditionResults.find((condition) => condition.key === "fullscreen");
   if (!fullscreenCondition?.found) {
     return {
@@ -473,6 +487,12 @@ async function captureSellerCenterProducts() {
       }
     }
     const currentCount = validProductCount();
+    mainWindow?.webContents.send("seller:capture-progress", {
+      percent: Math.min(96, Math.max(12, Math.round(12 + (currentCount / limit) * 84))),
+      count: currentCount,
+      target: limit,
+      message: `인기상품 ${currentCount}/${limit}개 읽는 중`,
+    });
     if (currentCount >= limit) break;
     stableRounds = currentCount === previousCount ? stableRounds + 1 : 0;
     previousCount = currentCount;
@@ -533,6 +553,12 @@ async function captureSellerCenterProducts() {
     };
   }
   products = products.slice(0, limit);
+  mainWindow?.webContents.send("seller:capture-progress", {
+    percent: 100,
+    count: products.length,
+    target: limit,
+    message: `인기상품 ${products.length}개 읽기 완료`,
+  });
   const codes = products.map((product) => product.articleNumber).filter(Boolean);
   const imageMap = {};
   for (const code of codes) {
