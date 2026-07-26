@@ -274,7 +274,8 @@ $("#popular-capture").addEventListener("click", async () => {
       $("#popular-status").textContent = result.message;
       return;
     }
-    await acceptSellerCenterProducts(result.products, "직접 연결 성공");
+    const applied = (result.conditions || []).filter((condition) => condition.found).length;
+    await acceptSellerCenterProducts(result.products, `자동 조건 ${applied}/5 적용`);
   } finally {
     button.disabled = false;
   }

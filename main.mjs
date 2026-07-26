@@ -9,6 +9,7 @@ import { explorerMetadata, parsePopularProducts, queryExplorer } from "./service
 import { queryDomesticProducts } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
 import { parseSellerDomNodes } from "./services/seller-dom.mjs";
+import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
 
 let store;
 const { autoUpdater } = pkg;
@@ -31,6 +32,62 @@ const SELLER_CAPTURE_SCRIPT = `(() => {
     nodes
   };
 })()`;
+
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function executeAcrossSellerFrames(script) {
+  const mainFrame = sellerWindow.webContents.mainFrame;
+  const frames = [mainFrame, ...(mainFrame.framesInSubtree || [])]
+    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
+  for (const frame of frames) {
+    try {
+      const result = await frame.executeJavaScript(script, true);
+      if (result?.found) return result;
+    } catch {
+      // 접근할 수 없는 외부 프레임은 건너뜁니다.
+    }
+  }
+  return { found: false };
+}
+
+async function applySellerPopularConditions() {
+  const results = [];
+  for (const condition of SELLER_POPULAR_CONDITIONS) {
+    const script = `(() => {
+      const label = ${JSON.stringify(condition.label)};
+      const action = ${JSON.stringify(condition.action)};
+      const elements = [...document.querySelectorAll("label, button, [role='radio'], [role='checkbox'], [role='tab'], span, div, h1, h2, h3, h4")]
+        .filter((element) => String(element.innerText || element.textContent || "").trim() === label)
+        .sort((left, right) => String(left.innerText || "").length - String(right.innerText || "").length);
+      const ranked = elements.map((element) => {
+        const control = element.matches("label,button,[role='radio'],[role='checkbox'],[role='tab']")
+          ? element
+          : element.closest("label,button,[role='radio'],[role='checkbox'],[role='tab']");
+        const input = control?.querySelector?.("input") || (control?.matches?.("input") ? control : null);
+        return { element, control, input, interactive: Boolean(control || input) };
+      }).sort((left, right) => Number(right.interactive) - Number(left.interactive));
+      const target = ranked[0];
+      if (!target) return { found: false, label };
+      if (action === "scroll") {
+        target.element.scrollIntoView({ block: "center", behavior: "auto" });
+        return { found: true, selected: true, label };
+      }
+      const selected = Boolean(
+        target.input?.checked
+        || target.control?.getAttribute?.("aria-checked") === "true"
+        || target.control?.getAttribute?.("aria-selected") === "true"
+        || /active|selected|checked/i.test(String(target.control?.className || ""))
+      );
+      if (!selected) (target.control || target.element).click();
+      return { found: true, selected: true, alreadySelected: selected, label };
+    })()`;
+    const result = await executeAcrossSellerFrames(script);
+    results.push({ ...condition, ...result });
+    await wait(condition.action === "scroll" ? 250 : 650);
+  }
+  await wait(1_400);
+  return results;
+}
 
 async function imageFingerprint(url) {
   if (!url) return null;
@@ -205,10 +262,19 @@ async function captureSellerCenterProducts() {
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     return { ok: false, message: "판매자센터 창을 먼저 열고 로그인해 주세요." };
   }
-  const currentUrl = sellerWindow.webContents.getURL();
+  let currentUrl = sellerWindow.webContents.getURL();
   if (!currentUrl.startsWith("https://seller.poizon.com/")) {
     return { ok: false, message: "판매자센터 인기상품 화면으로 이동해 주세요." };
   }
+  if (!currentUrl.includes("/main/dataCenter/merchantRankBoard")) {
+    await sellerWindow.loadURL(SELLER_CENTER_URL);
+    await wait(1_800);
+    currentUrl = sellerWindow.webContents.getURL();
+    if (!currentUrl.includes("/main/dataCenter/merchantRankBoard")) {
+      return { ok: false, message: "판매자센터 로그인을 완료해 주세요. 로그인 세션은 다음 실행부터 자동으로 유지됩니다." };
+    }
+  }
+  const conditionResults = await applySellerPopularConditions();
   const frames = [sellerWindow.webContents.mainFrame, ...(sellerWindow.webContents.mainFrame.framesInSubtree || [])]
     .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
   const captures = [];
@@ -252,6 +318,7 @@ async function captureSellerCenterProducts() {
     source: "seller-center-direct",
     capturedAt: new Date().toISOString(),
     pageUrl: currentUrl,
+    conditions: conditionResults,
     products: products.map((product) => ({
       ...product,
       logoUrl: imageMap[product.articleNumber] || "",
