@@ -6,6 +6,9 @@ let explorerMeta = { brands: [], categories: [] };
 let selectedBrandId = null;
 let selectedCategory = "전체";
 let popularProcessing = false;
+let currentExplorerProducts = [];
+const domesticResults = new Map();
+let domesticBatchRunning = false;
 const SELLER_RANK_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
 
 function popularWorkflowInput(markSynced = false) {
@@ -89,22 +92,84 @@ function renderCategoryButtons() {
   ).join("");
 }
 
-function renderExplorerResults(title, products) {
+function domesticKey(product, index) {
+  return product.articleNumber || product.spuId || `row-${index}`;
+}
+
+function domesticStatus(result) {
+  if (!result) return { label: "확인 전", className: "pending" };
+  if (result.loading) return { label: "검색 중", className: "loading" };
+  if (result.error) return { label: "확인 실패", className: "error" };
+  const products = result.products || [];
+  if (!products.length) return { label: "상품 없음", className: "missing" };
+  if (!products.some((product) => product.inStock)) return { label: "재고 없음", className: "soldout" };
+  return { label: "구매 가능", className: "available" };
+}
+
+function renderDomestic(result) {
+  if (!result) return `<span class="inventory-help">재고 검색을 누르면 공식몰 → 무신사 → 네이버 패션타운 → 백화점 → 아울렛 순서로 확인합니다.</span>`;
+  if (result.loading) return `<span class="inventory-help">국내 플랫폼을 순서대로 확인하고 있습니다…</span>`;
+  if (result.error) return `<span class="inventory-help error">국내 검색에 실패했습니다. 잠시 후 다시 시도해 주세요.</span>`;
+  const productsByStore = new Map((result.products || []).map((product) => [product.store, product]));
+  return `<div class="platform-list">${(result.sources || []).map((source) => {
+    const product = productsByStore.get(source.store);
+    const sizes = product?.sizes || [];
+    const sourceState = product
+      ? product.inStock ? "available" : "soldout"
+      : source.linkOnly ? "link" : source.ok ? "missing" : "error";
+    const sourceLabel = product
+      ? product.inStock ? "구매 가능" : "재고 없음"
+      : source.linkOnly ? "검색 링크" : source.ok ? "상품 없음" : "확인 실패";
+    return `<div class="platform-row">
+      <span class="platform-priority">${source.priority}</span>
+      <strong>${text(source.store)}</strong>
+      <span class="stock-state ${sourceState}">${sourceLabel}</span>
+      <div class="size-list">${sizes.length
+        ? sizes.map((size) => `<span class="size-chip ${size.inStock ? "available" : "soldout"}">${text(size.label)}</span>`).join("")
+        : product?.inStock ? `<span class="size-chip unknown">사이즈 확인 필요</span>` : ""}</div>
+      <button data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${product?.inStock ? "구매" : "검색"}</button>
+    </div>`;
+  }).join("")}</div>`;
+}
+
+function renderExplorerResults(title, products, preserveDomestic = false) {
+  currentExplorerProducts = products;
+  if (!preserveDomestic) domesticResults.clear();
   $("#explorer-results").hidden = false;
   $("#explorer-result-title").textContent = title;
   $("#explorer-result-count").textContent = `${products.length.toLocaleString("ko-KR")}개 표시`;
-  $("#explorer-product-grid").innerHTML = products.length ? products.map((product, index) => `<article class="explorer-product">
-    ${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : ""}
-    <div class="explorer-product-body">
-      <span class="badge">${text(product.categoryGroup || "인기상품")}</span>
-      ${product.apiMatched ? `<span class="badge">API 연결</span>` : product.apiMatched === false ? `<span class="badge muted">API 미일치</span>` : ""}
-      ${product.hasSalesData ? `<span class="badge">30일 ${Number(product.sales30d).toLocaleString("ko-KR")}건</span>` : `<span class="badge muted">판매량 미결합</span>`}
-      <h3>${text(product.title || product.name)}</h3>
-      <p>${text(product.brandName || product.brand || "")}</p>
-      <div class="explorer-product-meta"><code>${text(product.articleNumber || "")}</code><span>${product.averagePrice || product.minPrice?.value ? money(product.averagePrice || product.minPrice.value) : ""}</span></div>
-      <div class="explorer-product-actions"><button data-search="${encodeURIComponent([product.brandName, product.articleNumber, product.title || product.name].filter(Boolean).join(" "))}" class="primary">국내 검색</button></div>
-    </div>
-  </article>`).join("") : `<div class="empty">조건에 맞는 상품이 없습니다.</div>`;
+  $("#explorer-product-grid").innerHTML = products.length ? products.map((product, index) => {
+    const key = domesticKey(product, index);
+    const result = domesticResults.get(key);
+    const status = domesticStatus(result);
+    return `<article class="explorer-product-row">
+      <div class="rank-number">${index + 1}</div>
+      <div class="product-summary">
+        ${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : `<div class="image-placeholder">POIZON</div>`}
+        <div>
+          <div class="product-badges"><span class="badge">${text(product.categoryGroup || "인기상품")}</span>${product.apiMatched ? `<span class="badge">API 연결</span>` : product.apiMatched === false ? `<span class="badge muted">API 미일치</span>` : ""}</div>
+          <h3>${text(product.title || product.name)}</h3>
+          <p>${text(product.brandName || product.brand || "")}</p>
+          <div class="explorer-product-meta"><code>${text(product.articleNumber || "")}</code><span>${product.averagePrice || product.minPrice?.value ? money(product.averagePrice || product.minPrice.value) : ""}</span></div>
+        </div>
+      </div>
+      <div class="domestic-inventory">
+        <div class="inventory-heading"><span class="inventory-status ${status.className}">${status.label}</span><button data-domestic="${encodeURIComponent(key)}" data-index="${index}" class="primary">국내 재고 검색</button></div>
+        ${renderDomestic(result)}
+      </div>
+    </article>`;
+  }).join("") : `<div class="empty">조건에 맞는 상품이 없습니다.</div>`;
+}
+
+async function searchDomesticAt(index) {
+  const product = currentExplorerProducts[index];
+  if (!product) return;
+  const key = domesticKey(product, index);
+  domesticResults.set(key, { loading: true, products: [], sources: [] });
+  const query = [product.brandName || product.brand, product.articleNumber, product.title || product.name].filter(Boolean).join(" ");
+  const response = await window.aroundG.searchDomestic({ query });
+  domesticResults.set(key, response.ok ? response.data : { products: [], sources: [], error: response.message });
+  renderExplorerResults($("#explorer-result-title").textContent, currentExplorerProducts, true);
 }
 
 async function refresh() {
@@ -129,6 +194,10 @@ document.addEventListener("click", async (event) => {
   }
   const query = event.target.dataset.search;
   if (query) await window.aroundG.openExternal(`https://search.naver.com/search.naver?where=shopping&query=${query}`);
+  const externalUrl = event.target.dataset.url;
+  if (externalUrl) await window.aroundG.openExternal(decodeURIComponent(externalUrl));
+  const domesticIndex = event.target.dataset.index;
+  if (event.target.dataset.domestic && domesticIndex !== undefined) await searchDomesticAt(Number(domesticIndex));
   const brandId = event.target.closest("[data-brand-id]")?.dataset.brandId;
   if (brandId) {
     selectedBrandId = Number(brandId);
@@ -226,6 +295,27 @@ for (const selector of ["#popular-period", "#popular-compare", "#popular-unit", 
     renderPopularDue(workflow.lastSyncAt, workflow.reminder);
   });
 }
+$("#domestic-search-all").addEventListener("click", async () => {
+  const button = $("#domestic-search-all");
+  if (domesticBatchRunning) {
+    domesticBatchRunning = false;
+    button.textContent = "표시 목록 국내 재고 검색";
+    $("#domestic-batch-status").textContent = "국내 재고 검색을 중지했습니다.";
+    return;
+  }
+  domesticBatchRunning = true;
+  button.textContent = "검색 중지";
+  for (let index = 0; index < currentExplorerProducts.length && domesticBatchRunning; index += 1) {
+    $("#domestic-batch-status").className = "status";
+    $("#domestic-batch-status").textContent = `국내 재고 검색 ${index + 1}/${currentExplorerProducts.length} · 플랫폼 요청 제한을 피하기 위해 순차 진행합니다.`;
+    await searchDomesticAt(index);
+  }
+  const completed = domesticResults.size;
+  domesticBatchRunning = false;
+  button.textContent = "표시 목록 국내 재고 검색";
+  $("#domestic-batch-status").className = "status success";
+  $("#domestic-batch-status").textContent = `국내 재고 검색 완료 ${completed}/${currentExplorerProducts.length}`;
+});
 window.aroundG.onPopularProgress((progress) => {
   $("#popular-status").className = "status";
   $("#popular-status").textContent = `POIZON API 조회 ${progress.completed}/${progress.total} · 일치 ${progress.matched}개`;

@@ -25,6 +25,7 @@ test("Musinsa parser extracts product data", () => {
         finalPrice: "129,000",
         normalPrice: 149000,
         thumbnail: "https://img.example/1.jpg",
+        optionList: [{ optionName: "270", stockQuantity: 2 }, { optionName: "275", stockQuantity: 0 }],
       }] }] } } },
     ] } } },
   };
@@ -32,6 +33,10 @@ test("Musinsa parser extracts product data", () => {
   assert.equal(result.length, 1);
   assert.equal(result[0].store, "무신사");
   assert.equal(result[0].price, 129000);
+  assert.deepEqual(result[0].sizes, [
+    { label: "270", inStock: true },
+    { label: "275", inStock: false },
+  ]);
 });
 
 test("SSG parser extracts product data", () => {
@@ -66,7 +71,15 @@ test("one domestic store failure does not stop the others", async () => {
     return { ok: true, status: 200, text: async () => emptyNextData };
   };
   const result = await queryDomesticProducts({ query: "DD1391-100", fetchImpl });
-  assert.equal(result.sources.length, 3);
+  assert.equal(result.sources.length, 5);
+  assert.deepEqual(result.sources.map((source) => source.store), [
+    "공식 홈페이지",
+    "무신사",
+    "네이버 패션타운",
+    "SSG",
+    "코오롱몰",
+  ]);
+  assert.deepEqual(result.sources.map((source) => source.priority), [1, 2, 3, 4, 5]);
   assert.equal(result.sources.find((source) => source.store === "SSG").ok, false);
-  assert.equal(result.sources.filter((source) => source.ok).length, 2);
+  assert.equal(result.sources.filter((source) => source.ok).length, 4);
 });

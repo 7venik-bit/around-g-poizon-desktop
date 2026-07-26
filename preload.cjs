@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("aroundG", {
     return () => ipcRenderer.removeListener("explorer:popular-progress", handler);
   },
   queryExplorer: (input) => ipcRenderer.invoke("explorer:query", input),
+  searchDomestic: (input) => ipcRenderer.invoke("domestic:search", input),
   importExcel: () => ipcRenderer.invoke("excel:import"),
   exportExcel: () => ipcRenderer.invoke("excel:export"),
   openExternal: (url) => ipcRenderer.invoke("external:open", url),

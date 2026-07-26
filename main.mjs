@@ -6,6 +6,7 @@ import writeXlsxFile from "write-excel-file/node";
 import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer, resolvePopularProducts } from "./services/poizon.mjs";
+import { queryDomesticProducts } from "./relay/domestic-search.mjs";
 
 let store;
 const { autoUpdater } = pkg;
@@ -149,7 +150,7 @@ app.whenReady().then(async () => {
       period: new Set(["day", "week", "month", "quarter"]),
       compare: new Set(["none", "year", "day", "week", "month"]),
       unit: new Set(["SPU", "SKU"]),
-      limit: new Set([10, 30, 50, 100]),
+      limit: new Set([10, 30, 50, 100, 200]),
     };
     const next = {
       popularPeriod: allowed.period.has(input.period) ? input.period : "week",
@@ -174,6 +175,13 @@ app.whenReady().then(async () => {
       if (!event.sender.isDestroyed()) event.sender.send("explorer:popular-progress", progress);
     },
   }));
+  ipcMain.handle("domestic:search", async (_event, input) => {
+    try {
+      return { ok: true, data: await queryDomesticProducts({ query: String(input?.query || "").trim() }) };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  });
   ipcMain.handle("explorer:query", (_event, input) => queryExplorer(secretConfig(), input));
   ipcMain.handle("external:open", async (_event, url) => {
     const parsed = new URL(url);

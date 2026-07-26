@@ -2,7 +2,9 @@ const MAX_QUERY_LENGTH = 120;
 const MAX_PRODUCTS_PER_STORE = 8;
 
 export const DOMESTIC_SEARCH_LINKS = {
+  "공식 홈페이지": (query) => `https://search.naver.com/search.naver?query=${encodeURIComponent(`${query} 공식몰`)}`,
   "무신사": (query) => `https://www.musinsa.com/search/goods?keyword=${encodeURIComponent(query)}`,
+  "네이버 패션타운": (query) => `https://search.shopping.naver.com/search/all?query=${encodeURIComponent(query)}`,
   "SSG": (query) => `https://www.ssg.com/search.ssg?query=${encodeURIComponent(query)}`,
   "코오롱몰": (query) => `https://www.kolonmall.com/Search?keyword=${encodeURIComponent(query)}`,
 };
@@ -18,6 +20,14 @@ function safeNumber(value) {
   return Number.isFinite(normalized) && normalized >= 0 ? normalized : undefined;
 }
 
+function absoluteUrl(value, origin, fallback) {
+  try {
+    return new URL(String(value || fallback), origin).href;
+  } catch {
+    return fallback;
+  }
+}
+
 function uniqueProducts(products) {
   const seen = new Set();
   return products.filter((product) => {
@@ -25,6 +35,23 @@ function uniqueProducts(products) {
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
+  });
+}
+
+function normalizeSizes(...candidates) {
+  const source = candidates.find((candidate) => Array.isArray(candidate)) || [];
+  return source.flatMap((option) => {
+    if (typeof option === "string" || typeof option === "number") {
+      return [{ label: String(option), inStock: true }];
+    }
+    if (!option || typeof option !== "object") return [];
+    const label = option.sizeName || option.optionName || option.name || option.label || option.value;
+    if (!label) return [];
+    const quantity = safeNumber(option.stockQuantity ?? option.stock ?? option.quantity);
+    return [{
+      label: String(label),
+      inStock: option.isSoldOut !== true && option.soldOutYn !== "Y" && quantity !== 0,
+    }];
   });
 }
 
@@ -49,8 +76,9 @@ export function parseMusinsaSearch(html) {
           price: safeNumber(item.finalPrice ?? item.couponPrice ?? item.price),
           originalPrice: safeNumber(item.normalPrice),
           imageUrl: String(item.thumbnail || ""),
-          url: String(item.goodsLinkUrl || `https://www.musinsa.com/products/${item.goodsNo}`),
+          url: absoluteUrl(item.goodsLinkUrl, "https://www.musinsa.com", `https://www.musinsa.com/products/${item.goodsNo}`),
           inStock: item.isSoldOut !== true,
+          sizes: normalizeSizes(item.optionList, item.options, item.sizes, item.stockList),
         });
       }
     }
@@ -79,8 +107,9 @@ export function parseSsgSearch(html) {
           price: safeNumber(item.finalPrice ?? item.priceInfo?.primaryPrice),
           originalPrice: safeNumber(item.strikeOutPrice ?? item.priceInfo?.strikeOutPrice),
           imageUrl: String(item.itemImgUrl || ""),
-          url: String(item.itemUrl || item.itemDetailLink || DOMESTIC_SEARCH_LINKS.SSG("")),
+          url: absoluteUrl(item.itemUrl || item.itemDetailLink, "https://www.ssg.com", DOMESTIC_SEARCH_LINKS.SSG("")),
           inStock: !item.soldOutMessage,
+          sizes: normalizeSizes(item.optionList, item.options, item.sizes, item.stockList),
         });
       }
     }
@@ -109,6 +138,7 @@ export function parseKolonSearch(html, requestedQuery = "") {
       imageUrl,
       url: `https://www.kolonmall.com/Product/${encodeURIComponent(code)}`,
       inStock: soldOutYn !== "Y",
+      sizes: [],
     });
   }
   return uniqueProducts(products).slice(0, MAX_PRODUCTS_PER_STORE);
@@ -134,27 +164,32 @@ export async function queryDomesticProducts({ query, fetchImpl = fetch }) {
   if (normalizedQuery.length > MAX_QUERY_LENGTH) throw new Error("DOMESTIC_QUERY_TOO_LONG");
 
   const sources = [
+    { store: "공식 홈페이지", linkOnly: true },
     { store: "무신사", parser: parseMusinsaSearch },
+    { store: "네이버 패션타운", linkOnly: true },
     { store: "SSG", parser: parseSsgSearch },
     { store: "코오롱몰", parser: (html) => parseKolonSearch(html, normalizedQuery) },
   ];
   const results = await Promise.all(sources.map(async (source) => {
     const searchUrl = DOMESTIC_SEARCH_LINKS[source.store](normalizedQuery);
+    if (source.linkOnly) return { store: source.store, ok: true, linkOnly: true, searchUrl, products: [] };
     try {
       const html = await fetchSearchPage(searchUrl, fetchImpl);
       const products = source.parser(html);
-      return { store: source.store, ok: true, searchUrl, products };
+      return { store: source.store, ok: true, linkOnly: false, searchUrl, products };
     } catch {
-      return { store: source.store, ok: false, searchUrl, products: [] };
+      return { store: source.store, ok: false, linkOnly: false, searchUrl, products: [] };
     }
   }));
 
   return {
     query: normalizedQuery,
     products: results.flatMap((result) => result.products),
-    sources: results.map(({ store, ok, searchUrl, products }) => ({
+    sources: results.map(({ store, ok, linkOnly, searchUrl, products }, priority) => ({
       store,
       ok,
+      linkOnly,
+      priority: priority + 1,
       count: products.length,
       searchUrl,
     })),
