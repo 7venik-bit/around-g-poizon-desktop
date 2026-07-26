@@ -17,7 +17,7 @@ let mainWindow;
 let sellerWindow;
 let updateReady = false;
 const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
-const SELLER_CAPTURE_SCRIPT = `(() => {
+const SELLER_CAPTURE_SCRIPT = `(async () => {
   const selector = "tr, [role='row'], li, [class*='row'], [class*='item'], [class*='product'], [class*='table']";
   const headings = [...document.querySelectorAll("h1, h2, h3, h4, strong, span, div")]
     .filter((element) => String(element.innerText || element.textContent || "").trim() === "인기상품");
@@ -49,18 +49,53 @@ const SELLER_CAPTURE_SCRIPT = `(() => {
   if (!scope) {
     return { text: "", title: document.title, url: location.href, nodes: [], scopeVerified: false };
   }
-  const nodes = [...scope.querySelectorAll(selector)].flatMap((element) => {
-    const text = String(element.innerText || "").trim();
-    if (!text || text.length > 3000) return [];
-    const image = element.querySelector?.("img[src]");
-    return [{ text, imageUrl: image?.src || "" }];
-  }).slice(0, 5000);
+  const collected = new Map();
+  const collectVisibleRows = () => {
+    for (const element of scope.querySelectorAll(selector)) {
+      const text = String(element.innerText || "").trim();
+      if (!text || text.length > 3000) continue;
+      const image = element.querySelector?.("img[src]");
+      const imageUrl = image?.src || "";
+      collected.set(text + "\\n" + imageUrl, { text, imageUrl });
+    }
+  };
+  const scrollCandidates = [scope, ...scope.querySelectorAll("*")]
+    .filter((element) => element.scrollHeight > element.clientHeight + 40)
+    .sort((left, right) => (right.scrollHeight - right.clientHeight) - (left.scrollHeight - left.clientHeight));
+  const scroller = scrollCandidates[0] || document.scrollingElement;
+  const originalTop = Number(scroller?.scrollTop || 0);
+  let unchanged = 0;
+  let previousTop = -1;
+  if (scroller) scroller.scrollTop = 0;
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  for (let step = 0; step < 120; step += 1) {
+    collectVisibleRows();
+    if (!scroller) break;
+    const maximum = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    const current = Number(scroller.scrollTop || 0);
+    if (current >= maximum - 2) {
+      unchanged += 1;
+      if (unchanged >= 3) break;
+    } else {
+      const page = Math.max(220, Math.floor(scroller.clientHeight * 0.78));
+      scroller.scrollTop = Math.min(maximum, current + page);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    const next = Number(scroller.scrollTop || 0);
+    unchanged = next === previousTop ? unchanged + 1 : 0;
+    previousTop = next;
+    if (collected.size >= 3000) break;
+  }
+  collectVisibleRows();
+  if (scroller) scroller.scrollTop = originalTop;
+  const nodes = [...collected.values()].slice(0, 5000);
   return {
-    text: String(scope.innerText || "").slice(0, 500000),
+    text: nodes.map((node) => node.text).join("\\n").slice(0, 1000000),
     title: document.title,
     url: location.href,
     nodes,
-    scopeVerified: true
+    scopeVerified: true,
+    scannedNodeCount: nodes.length
   };
 })()`;
 
@@ -372,7 +407,8 @@ async function captureSellerCenterProducts() {
     if (combined.ok) products = combined.products;
   }
   const nodes = captures.flatMap((capture) => capture.nodes || []);
-  if (!products.length) products = parseSellerDomNodes(nodes, limit);
+  const nodeProducts = parseSellerDomNodes(nodes, limit);
+  if (nodeProducts.length > products.length) products = nodeProducts;
   products = products.filter((product) => {
     const articleNumber = String(product.articleNumber || "").trim();
     const name = String(product.name || "").trim();
