@@ -51,3 +51,17 @@ export function parseSellerDomNodes(nodes, limit = 200) {
   }
   return products.sort((left, right) => left.rank - right.rank);
 }
+
+export function dedupeSellerProducts(products, limit = 200) {
+  const unique = new Map();
+  for (const product of Array.isArray(products) ? products : []) {
+    const key = String(product?.articleNumber || "").trim().toUpperCase();
+    if (!key) continue;
+    const previous = unique.get(key);
+    if (!previous || Number(product.rank || 999) < Number(previous.rank || 999)) unique.set(key, product);
+  }
+  return [...unique.values()]
+    .sort((left, right) => Number(left.rank || 999) - Number(right.rank || 999))
+    .slice(0, limit)
+    .map((product, index) => ({ ...product, articleNumber: String(product.articleNumber).toUpperCase(), rank: index + 1 }));
+}

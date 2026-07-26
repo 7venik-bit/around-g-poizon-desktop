@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseSellerDomNodes } from "../services/seller-dom.mjs";
+import { dedupeSellerProducts, parseSellerDomNodes } from "../services/seller-dom.mjs";
 
 test("판매자센터 가상 행에서 품번, 상품명, 가격과 이미지를 복원한다", () => {
   const products = parseSellerDomNodes([{
@@ -16,4 +16,16 @@ test("판매자센터 가상 행에서 품번, 상품명, 가격과 이미지를
 test("가격이 없는 메뉴 텍스트는 상품으로 오인하지 않는다", () => {
   const products = parseSellerDomNodes([{ text: "SPU 기준\nAQ1774-102\n검색 지수" }]);
   assert.equal(products.length, 0);
+});
+
+test("같은 품번은 가장 앞선 순위 한 건만 남긴다", () => {
+  const products = dedupeSellerProducts([
+    { rank: 19, articleNumber: "JI0079", name: "중복" },
+    { rank: 1, articleNumber: "ji0079", name: "원본" },
+    { rank: 3, articleNumber: "B75806", name: "다른 상품" },
+  ]);
+  assert.equal(products.length, 2);
+  assert.equal(products[0].articleNumber, "JI0079");
+  assert.equal(products[0].name, "원본");
+  assert.deepEqual(products.map((product) => product.rank), [1, 2]);
 });

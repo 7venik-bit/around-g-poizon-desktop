@@ -8,7 +8,7 @@ import { JsonStore } from "./services/store.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer } from "./services/poizon.mjs";
 import { queryDomesticProducts } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
-import { parseSellerDomNodes } from "./services/seller-dom.mjs";
+import { dedupeSellerProducts, parseSellerDomNodes } from "./services/seller-dom.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
 
 let store;
@@ -59,35 +59,47 @@ const SELLER_CAPTURE_SCRIPT = `(async () => {
       collected.set(text + "\\n" + imageUrl, { text, imageUrl });
     }
   };
-  const scrollCandidates = [scope, ...scope.querySelectorAll("*")]
-    .filter((element) => element.scrollHeight > element.clientHeight + 40)
-    .sort((left, right) => (right.scrollHeight - right.clientHeight) - (left.scrollHeight - left.clientHeight));
-  const scroller = scrollCandidates[0] || document.scrollingElement;
-  const originalTop = Number(scroller?.scrollTop || 0);
-  let unchanged = 0;
-  let previousTop = -1;
-  if (scroller) scroller.scrollTop = 0;
-  await new Promise((resolve) => setTimeout(resolve, 350));
-  for (let step = 0; step < 120; step += 1) {
-    collectVisibleRows();
-    if (!scroller) break;
-    const maximum = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-    const current = Number(scroller.scrollTop || 0);
-    if (current >= maximum - 2) {
-      unchanged += 1;
-      if (unchanged >= 3) break;
-    } else {
-      const page = Math.max(220, Math.floor(scroller.clientHeight * 0.78));
-      scroller.scrollTop = Math.min(maximum, current + page);
+  const articlePattern = /(?=[A-Z0-9._/-]{4,30}\\b)(?=[A-Z0-9._/-]*[A-Z])(?=[A-Z0-9._/-]*\\d)[A-Z0-9][A-Z0-9._/-]{3,29}/gi;
+  const uniqueArticleCount = () => new Set(
+    [...collected.values()].flatMap((node) => String(node.text || "").match(articlePattern) || [])
+      .map((code) => code.toUpperCase())
+  ).size;
+  const elementCandidates = [scope, ...scope.querySelectorAll("*")]
+    .filter((element) => {
+      if (element.scrollHeight <= element.clientHeight + 80) return false;
+      return /auto|scroll|overlay/i.test(getComputedStyle(element).overflowY);
+    });
+  const scrollCandidates = [...new Set([document.scrollingElement, ...elementCandidates].filter(Boolean))]
+    .sort((left, right) => (right.scrollHeight - right.clientHeight) - (left.scrollHeight - left.clientHeight))
+    .slice(0, 4);
+  for (const scroller of scrollCandidates) {
+    const originalTop = Number(scroller.scrollTop || 0);
+    let stableBottomRounds = 0;
+    let previousArticleCount = uniqueArticleCount();
+    scroller.scrollTop = 0;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    for (let step = 0; step < 160; step += 1) {
+      collectVisibleRows();
+      if (uniqueArticleCount() >= 200) break;
+      const maximum = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      const current = Number(scroller.scrollTop || 0);
+      const atBottom = current >= maximum - 2;
+      if (!atBottom) {
+        const page = Math.max(220, Math.floor(scroller.clientHeight * 0.72));
+        scroller.scrollTop = Math.min(maximum, current + page);
+      }
+      await new Promise((resolve) => setTimeout(resolve, atBottom ? 550 : 240));
+      const articleCount = uniqueArticleCount();
+      if (atBottom && articleCount === previousArticleCount) stableBottomRounds += 1;
+      else stableBottomRounds = 0;
+      previousArticleCount = articleCount;
+      if (stableBottomRounds >= 8 || collected.size >= 5000) break;
     }
-    await new Promise((resolve) => setTimeout(resolve, 220));
-    const next = Number(scroller.scrollTop || 0);
-    unchanged = next === previousTop ? unchanged + 1 : 0;
-    previousTop = next;
-    if (collected.size >= 3000) break;
+    collectVisibleRows();
+    scroller.scrollTop = originalTop;
+    if (uniqueArticleCount() >= 200) break;
   }
   collectVisibleRows();
-  if (scroller) scroller.scrollTop = originalTop;
   const nodes = [...collected.values()].slice(0, 5000);
   return {
     text: nodes.map((node) => node.text).join("\\n").slice(0, 1000000),
@@ -416,6 +428,7 @@ async function captureSellerCenterProducts() {
     const isHeader = /^(?:SPU 기준|SKU 기준|SPU 기준 SKU 기준|상품정보|평균 거래가(?:\\(KRW\\))?)$/i.test(name);
     return hasRealArticle && !isHeader && Number(product.averagePrice || 0) >= 1_000;
   });
+  products = dedupeSellerProducts(products, limit);
   if (!products.length) {
     const frameSummary = captures.map((capture) => `${capture.title || "frame"}:${capture.text.length}`).join(", ");
     return {
