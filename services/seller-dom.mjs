@@ -37,6 +37,7 @@ export function parseSellerDomNodes(nodes, limit = 200) {
     seen.add(articleNumber);
     products.push({
       rank,
+      rankDetected: Boolean(rankLine),
       articleNumber,
       name,
       averagePrice: numericPrices[0] || 0,

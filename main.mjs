@@ -108,6 +108,37 @@ const SELLER_SCROLL_SCRIPT = `(() => {
     maximum: target.maximum
   };
 })()`;
+const sellerJumpScript = (rank, limit) => `(() => {
+  const requestedRank = ${Number(rank)};
+  const requestedLimit = ${Number(limit)};
+  const root = document.scrollingElement || document.documentElement;
+  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
+    .filter((element, index, all) => all.indexOf(element) === index)
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
+      const text = String(element.innerText || "");
+      const productTable = text.includes("SPU") && text.includes("SKU")
+        && /상품정보|평균\\s*거래가/.test(text);
+      const scrollStyle = /auto|scroll|overlay/i.test(style.overflowY);
+      const visible = rect.width >= 280 && rect.height >= 160 && rect.bottom > 0 && rect.top < innerHeight;
+      return {
+        element,
+        maximum,
+        visible,
+        score: (productTable ? 1000000 : 0) + (scrollStyle ? 100000 : 0) + maximum
+      };
+    })
+    .filter((candidate) => candidate.visible && candidate.maximum > 80)
+    .sort((left, right) => right.score - left.score);
+  const target = candidates[0];
+  if (!target) return { found: false };
+  const ratio = Math.max(0, Math.min(1, (requestedRank - 1) / Math.max(1, requestedLimit - 1)));
+  target.element.scrollTop = Math.round(target.maximum * ratio);
+  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  return { found: true, rank: requestedRank, position: target.element.scrollTop, maximum: target.maximum };
+})()`;
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -460,7 +491,23 @@ async function captureSellerCenterProducts() {
   const captures = [];
   const limit = Math.min(Number(store.snapshot().settings.popularLimit || 200), 200);
   const capturedNodes = new Map();
-  const validProductCount = () => parseSellerDomNodes([...capturedNodes.values()], limit).length;
+  const rankSlots = new Map();
+  const articleSlots = new Map();
+  const addNodesToSlots = (nodes) => {
+    for (const product of parseSellerDomNodes(nodes, limit)) {
+      const rank = Number(product.rank || 0);
+      const articleNumber = String(product.articleNumber || "").toUpperCase();
+      if (!product.rankDetected || rank < 1 || rank > limit || !articleNumber) continue;
+      const previousRank = articleSlots.get(articleNumber);
+      if (previousRank && previousRank !== rank) {
+        if (previousRank < rank) continue;
+        rankSlots.delete(previousRank);
+      }
+      rankSlots.set(rank, product);
+      articleSlots.set(articleNumber, rank);
+    }
+  };
+  const validProductCount = () => rankSlots.size;
   sellerWindow.show();
   sellerWindow.focus();
   const bounds = sellerWindow.getContentBounds();
@@ -482,6 +529,7 @@ async function captureSellerCenterProducts() {
         for (const node of captured.nodes || []) {
           capturedNodes.set(`${String(node.text || "")}\n${String(node.imageUrl || "")}`, node);
         }
+        addNodesToSlots(captured.nodes || []);
       } catch {
         // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
       }
@@ -519,6 +567,35 @@ async function captureSellerCenterProducts() {
     }
     await wait(domScroll?.moved ? 520 : 380);
   }
+  for (let retryRound = 0; retryRound < 3 && rankSlots.size < limit; retryRound += 1) {
+    const missingRanks = Array.from({ length: limit }, (_value, index) => index + 1)
+      .filter((rank) => !rankSlots.has(rank));
+    for (const rank of missingRanks) {
+      await executeAcrossSellerFrames(sellerJumpScript(rank, limit));
+      await wait(520 + retryRound * 180);
+      for (const frame of frames) {
+        try {
+          const captured = await frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true);
+          if (!captured?.scopeVerified) continue;
+          captures.push(captured);
+          for (const node of captured.nodes || []) {
+            capturedNodes.set(`${String(node.text || "")}\n${String(node.imageUrl || "")}`, node);
+          }
+          addNodesToSlots(captured.nodes || []);
+        } catch {
+          // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
+        }
+      }
+      mainWindow?.webContents.send("seller:capture-progress", {
+        percent: Math.min(99, Math.round(12 + (rankSlots.size / limit) * 87)),
+        count: rankSlots.size,
+        target: limit,
+        missing: limit - rankSlots.size,
+        message: `누락 순위 재수집 ${rankSlots.size}/${limit}개`,
+      });
+      if (rankSlots.size >= limit) break;
+    }
+  }
   if (!captures.length) {
     return {
       ok: false,
@@ -537,6 +614,8 @@ async function captureSellerCenterProducts() {
   const nodes = [...capturedNodes.values()];
   const nodeProducts = parseSellerDomNodes(nodes, limit);
   if (nodeProducts.length > products.length) products = nodeProducts;
+  const slotProducts = [...rankSlots.values()].sort((left, right) => left.rank - right.rank);
+  if (slotProducts.length > products.length) products = slotProducts;
   products = products.filter((product) => {
     const articleNumber = String(product.articleNumber || "").trim();
     const name = String(product.name || "").trim();
