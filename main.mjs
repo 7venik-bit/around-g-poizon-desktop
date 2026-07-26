@@ -118,23 +118,22 @@ async function applySellerPopularConditions() {
         const rect = match.panel.getBoundingClientRect();
         const alreadyFullscreen = rect.width >= window.innerWidth * 0.82 && rect.height >= window.innerHeight * 0.72;
         if (alreadyFullscreen) return { found: true, selected: true, alreadySelected: true, label };
-        const named = match.controls.find((control) =>
-          /전체|확대|fullscreen|expand/i.test(String(control.getAttribute("aria-label") || control.title || control.className?.baseVal || control.className || ""))
-        );
         const headingRect = match.heading.getBoundingClientRect();
-        const headerControls = match.controls
-          .filter((control) => {
-            const controlRect = control.getBoundingClientRect();
-            return controlRect.top >= headingRect.top - 35 && controlRect.top <= headingRect.bottom + 70;
-          })
-          .sort((left, right) => right.getBoundingClientRect().right - left.getBoundingClientRect().right);
-        const target = named || headerControls[0] || match.controls[match.controls.length - 1];
-        if (!target) return { found: false, label };
-        const clickable = target.closest?.("button, [role='button'], [class*='icon']") || target;
-        clickable.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-        clickable.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
-        clickable.click();
-        return { found: true, selected: true, label };
+        const point = {
+          x: Math.max(0, Math.floor(rect.right - 18)),
+          y: Math.max(0, Math.floor((headingRect.top + headingRect.bottom) / 2)),
+        };
+        const target = document.elementFromPoint(point.x, point.y);
+        return {
+          found: Boolean(target),
+          selected: false,
+          requiresNativeClick: true,
+          x: point.x,
+          y: point.y,
+          targetTag: target?.tagName || "",
+          targetClass: String(target?.className?.baseVal || target?.className || "").slice(0, 120),
+          label
+        };
       }
       const elements = [...document.querySelectorAll("label, button, [role='radio'], [role='checkbox'], [role='tab'], span, div, h1, h2, h3, h4")]
         .filter((element) => String(element.innerText || element.textContent || "").trim() === label)
@@ -162,6 +161,14 @@ async function applySellerPopularConditions() {
       return { found: true, selected: true, alreadySelected: selected, label };
     })()`;
     let result = await executeAcrossSellerFrames(script);
+    if (condition.action === "fullscreen" && result.found && result.requiresNativeClick) {
+      sellerWindow.show();
+      sellerWindow.focus();
+      sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: result.x, y: result.y });
+      sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x: result.x, y: result.y });
+      await wait(120);
+      sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x: result.x, y: result.y });
+    }
     if (condition.action === "fullscreen" && result.found) {
       await wait(1_200);
       const verified = await executeAcrossSellerFrames(`(() => {
@@ -383,12 +390,16 @@ async function captureSellerCenterProducts() {
       return { ok: false, message: "판매자센터 로그인을 완료해 주세요. 로그인 세션은 다음 실행부터 자동으로 유지됩니다." };
     }
   }
+  sellerWindow.maximize();
+  sellerWindow.show();
+  sellerWindow.focus();
+  await wait(700);
   const conditionResults = await applySellerPopularConditions();
   const fullscreenCondition = conditionResults.find((condition) => condition.key === "fullscreen");
   if (!fullscreenCondition?.found) {
     return {
       ok: false,
-      message: "인기상품 전체화면 버튼을 누르지 못했습니다. 잘못된 9개 목록은 저장하지 않습니다. 판매자센터 인기상품 카드의 확대 아이콘이 보이는 상태에서 다시 시도해 주세요.",
+      message: `인기상품 전체화면 버튼을 누르지 못했습니다. 잘못된 9개 목록은 저장하지 않습니다.${fullscreenCondition?.x !== undefined ? ` 클릭 좌표 (${fullscreenCondition.x}, ${fullscreenCondition.y}), 대상 ${fullscreenCondition.targetTag || "없음"}` : ""}`,
       conditions: conditionResults,
     };
   }
