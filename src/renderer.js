@@ -275,7 +275,7 @@ $("#popular-capture").addEventListener("click", async () => {
       return;
     }
     const applied = (result.conditions || []).filter((condition) => condition.found).length;
-    await acceptSellerCenterProducts(result.products, `자동 조건 ${applied}/5 적용`);
+    await acceptSellerCenterProducts(result.products, `자동 조건 ${applied}/${result.conditions?.length || 6} 적용`);
   } finally {
     button.disabled = false;
   }

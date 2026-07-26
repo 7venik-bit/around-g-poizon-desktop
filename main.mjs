@@ -87,6 +87,38 @@ async function applySellerPopularConditions() {
     const script = `(() => {
       const label = ${JSON.stringify(condition.label)};
       const action = ${JSON.stringify(condition.action)};
+      if (action === "fullscreen") {
+        const headings = [...document.querySelectorAll("h1, h2, h3, h4, strong, span, div")]
+          .filter((element) => String(element.innerText || element.textContent || "").trim() === "인기상품");
+        const panels = [];
+        for (const heading of headings) {
+          let panel = heading.parentElement;
+          for (let depth = 0; panel && depth < 10; depth += 1, panel = panel.parentElement) {
+            const text = String(panel.innerText || "");
+            const buttons = [...panel.querySelectorAll("button, [role='button']")]
+              .filter((button) => {
+                const rect = button.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+              });
+            if (text.includes("SPU 기준") && text.includes("SKU 기준") && text.includes("상품정보") && buttons.length >= 2) {
+              panels.push({ panel, buttons, textLength: text.length });
+            }
+          }
+        }
+        panels.sort((left, right) => left.textLength - right.textLength);
+        const match = panels[0];
+        if (!match) return { found: false, label };
+        const rect = match.panel.getBoundingClientRect();
+        const alreadyFullscreen = rect.width >= window.innerWidth * 0.82 && rect.height >= window.innerHeight * 0.72;
+        if (alreadyFullscreen) return { found: true, selected: true, alreadySelected: true, label };
+        const named = match.buttons.find((button) =>
+          /전체|확대|fullscreen|expand/i.test(String(button.getAttribute("aria-label") || button.title || ""))
+        );
+        const target = named || match.buttons[match.buttons.length - 1];
+        if (!target) return { found: false, label };
+        target.click();
+        return { found: true, selected: true, label };
+      }
       const elements = [...document.querySelectorAll("label, button, [role='radio'], [role='checkbox'], [role='tab'], span, div, h1, h2, h3, h4")]
         .filter((element) => String(element.innerText || element.textContent || "").trim() === label)
         .sort((left, right) => String(left.innerText || "").length - String(right.innerText || "").length);
@@ -114,9 +146,9 @@ async function applySellerPopularConditions() {
     })()`;
     const result = await executeAcrossSellerFrames(script);
     results.push({ ...condition, ...result });
-    await wait(condition.action === "scroll" ? 250 : 650);
+    await wait(condition.action === "fullscreen" ? 1_800 : condition.action === "scroll" ? 250 : 650);
   }
-  await wait(1_400);
+  await wait(1_800);
   return results;
 }
 
