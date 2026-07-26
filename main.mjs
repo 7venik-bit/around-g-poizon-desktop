@@ -102,13 +102,13 @@ async function applySellerPopularConditions() {
           let panel = heading.parentElement;
           for (let depth = 0; panel && depth < 10; depth += 1, panel = panel.parentElement) {
             const text = String(panel.innerText || "");
-            const buttons = [...panel.querySelectorAll("button, [role='button']")]
-              .filter((button) => {
-                const rect = button.getBoundingClientRect();
-                return rect.width > 0 && rect.height > 0;
+            const controls = [...panel.querySelectorAll("button, [role='button'], svg, i, [class*='icon']")]
+              .filter((control) => {
+                const rect = control.getBoundingClientRect();
+                return rect.width >= 8 && rect.height >= 8 && rect.width <= 64 && rect.height <= 64;
               });
-            if (text.includes("SPU 기준") && text.includes("SKU 기준") && text.includes("상품정보") && buttons.length >= 2) {
-              panels.push({ panel, buttons, heading, textLength: text.length });
+            if (text.includes("SPU 기준") && text.includes("SKU 기준") && text.includes("상품정보") && controls.length >= 1) {
+              panels.push({ panel, controls, heading, textLength: text.length });
             }
           }
         }
@@ -118,19 +118,22 @@ async function applySellerPopularConditions() {
         const rect = match.panel.getBoundingClientRect();
         const alreadyFullscreen = rect.width >= window.innerWidth * 0.82 && rect.height >= window.innerHeight * 0.72;
         if (alreadyFullscreen) return { found: true, selected: true, alreadySelected: true, label };
-        const named = match.buttons.find((button) =>
-          /전체|확대|fullscreen|expand/i.test(String(button.getAttribute("aria-label") || button.title || ""))
+        const named = match.controls.find((control) =>
+          /전체|확대|fullscreen|expand/i.test(String(control.getAttribute("aria-label") || control.title || control.className?.baseVal || control.className || ""))
         );
         const headingRect = match.heading.getBoundingClientRect();
-        const headerButtons = match.buttons
-          .filter((button) => {
-            const buttonRect = button.getBoundingClientRect();
-            return buttonRect.top >= headingRect.top - 35 && buttonRect.top <= headingRect.bottom + 70;
+        const headerControls = match.controls
+          .filter((control) => {
+            const controlRect = control.getBoundingClientRect();
+            return controlRect.top >= headingRect.top - 35 && controlRect.top <= headingRect.bottom + 70;
           })
           .sort((left, right) => right.getBoundingClientRect().right - left.getBoundingClientRect().right);
-        const target = named || headerButtons[0] || match.buttons[match.buttons.length - 1];
+        const target = named || headerControls[0] || match.controls[match.controls.length - 1];
         if (!target) return { found: false, label };
-        target.click();
+        const clickable = target.closest?.("button, [role='button'], [class*='icon']") || target;
+        clickable.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+        clickable.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+        clickable.click();
         return { found: true, selected: true, label };
       }
       const elements = [...document.querySelectorAll("label, button, [role='radio'], [role='checkbox'], [role='tab'], span, div, h1, h2, h3, h4")]
@@ -158,7 +161,27 @@ async function applySellerPopularConditions() {
       if (!selected) (target.control || target.element).click();
       return { found: true, selected: true, alreadySelected: selected, label };
     })()`;
-    const result = await executeAcrossSellerFrames(script);
+    let result = await executeAcrossSellerFrames(script);
+    if (condition.action === "fullscreen" && result.found) {
+      await wait(1_200);
+      const verified = await executeAcrossSellerFrames(`(() => {
+        const headings = [...document.querySelectorAll("h1, h2, h3, h4, strong, span, div")]
+          .filter((element) => String(element.innerText || element.textContent || "").trim() === "인기상품");
+        for (const heading of headings) {
+          let panel = heading.parentElement;
+          for (let depth = 0; panel && depth < 10; depth += 1, panel = panel.parentElement) {
+            const text = String(panel.innerText || "");
+            const rect = panel.getBoundingClientRect();
+            if (text.includes("SPU 기준") && text.includes("SKU 기준")
+              && rect.width >= window.innerWidth * 0.82 && rect.height >= window.innerHeight * 0.72) {
+              return { found: true, expanded: true };
+            }
+          }
+        }
+        return { found: false, expanded: false };
+      })()`);
+      result = { ...result, found: verified.found, expanded: verified.expanded };
+    }
     results.push({ ...condition, ...result });
     await wait(condition.action === "fullscreen" ? 1_800 : condition.action === "scroll" ? 250 : 650);
   }
