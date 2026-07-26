@@ -127,6 +127,16 @@
   </section>
 
   <dialog id="entry-dialog"><form method="dialog"><h2 id="dialog-title">항목 추가</h2><label>브랜드<input id="entry-brand"></label><label>상품명<input id="entry-name" required></label><label>상품번호<input id="entry-article"></label><label>가격<input id="entry-price" type="number" min="0"></label><div class="dialog-actions"><button value="cancel">취소</button><button id="entry-save" value="default" class="primary">저장</button></div></form></dialog>
+  <aside id="update-mini" class="update-mini" hidden>
+    <div class="update-mini-head"><strong>프로그램 업데이트</strong><button id="update-mini-close" type="button" aria-label="닫기">×</button></div>
+    <p id="update-mini-message">새 버전을 확인하고 있습니다.</p>
+    <div class="update-progress"><i id="update-progress-bar"></i></div>
+    <small id="update-mini-note">다운로드 중에도 프로그램을 계속 사용할 수 있습니다.</small>
+    <div class="update-mini-actions">
+      <button id="update-mini-download" type="button" class="primary" hidden>다운로드</button>
+      <button id="update-mini-restart" type="button" class="primary" hidden>설치 및 자동 재시작</button>
+    </div>
+  </aside>
   <script src="./renderer.js"></script>
 </body>
 </html>

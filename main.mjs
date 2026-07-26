@@ -11,6 +11,7 @@ import { queryDomesticProducts } from "./relay/domestic-search.mjs";
 let store;
 const { autoUpdater } = pkg;
 let mainWindow;
+let updateReady = false;
 
 // 이 앱은 GPU 가속이 필요하지 않으며 일부 Windows 그래픽 드라이버의
 // GPU 프로세스 반복 종료를 피하기 위해 소프트웨어 렌더링을 사용합니다.
@@ -27,7 +28,10 @@ function configureUpdater() {
   autoUpdater.on("update-available", (info) => sendUpdateStatus("available", `새 버전 ${info.version}을 다운로드할 수 있습니다.`, { version: info.version }));
   autoUpdater.on("update-not-available", () => sendUpdateStatus("current", "현재 최신 버전입니다."));
   autoUpdater.on("download-progress", (info) => sendUpdateStatus("downloading", `업데이트 다운로드 ${Math.round(info.percent)}%`, { percent: info.percent }));
-  autoUpdater.on("update-downloaded", (info) => sendUpdateStatus("downloaded", `버전 ${info.version} 다운로드가 완료되었습니다.`, { version: info.version }));
+  autoUpdater.on("update-downloaded", (info) => {
+    updateReady = true;
+    sendUpdateStatus("downloaded", `버전 ${info.version} 다운로드가 완료되었습니다.`, { version: info.version });
+  });
   autoUpdater.on("error", (error) => sendUpdateStatus("error", `업데이트 확인 실패: ${error.message}`));
 }
 
@@ -119,6 +123,11 @@ app.whenReady().then(async () => {
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
+  });
+  ipcMain.handle("update:restart", () => {
+    if (!updateReady) return { ok: false, message: "설치할 업데이트 다운로드가 완료되지 않았습니다." };
+    setImmediate(() => autoUpdater.quitAndInstall(false, true));
+    return { ok: true };
   });
   ipcMain.handle("config:get", () => publicConfig());
   ipcMain.handle("config:save", async (_event, config) => {

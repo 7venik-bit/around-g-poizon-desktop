@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   ,
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
+  restartForUpdate: () => ipcRenderer.invoke("update:restart"),
   onUpdateStatus: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on("update:status", handler);
