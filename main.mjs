@@ -24,16 +24,27 @@ const SELLER_CAPTURE_SCRIPT = `(() => {
   const scopes = [];
   for (const heading of headings) {
     let candidate = heading.parentElement;
-    for (let depth = 0; candidate && depth < 9; depth += 1, candidate = candidate.parentElement) {
+    for (let depth = 0; candidate && depth < 12; depth += 1, candidate = candidate.parentElement) {
       const text = String(candidate.innerText || "");
-      if (text.includes("SPU 기준") && text.includes("SKU 기준")) {
+      const hasTableHeaders = text.includes("SPU 기준")
+        && text.includes("SKU 기준")
+        && text.includes("상품정보")
+        && /평균\\s*거래가/.test(text);
+      if (hasTableHeaders) {
         const rowCount = candidate.querySelectorAll(selector).length;
-        if (rowCount > 0) scopes.push({ element: candidate, textLength: text.length, rowCount });
-        break;
+        const articleCount = (text.match(/(?=[A-Z0-9._/-]{4,30}\\b)(?=[A-Z0-9._/-]*[A-Z])(?=[A-Z0-9._/-]*\\d)[A-Z0-9][A-Z0-9._/-]{3,29}/gi) || []).length;
+        const priceCount = (text.match(/(?:\\d{1,3},)+\\d{3}/g) || []).length;
+        if (rowCount >= 3 && articleCount >= 1 && priceCount >= 1) {
+          scopes.push({ element: candidate, textLength: text.length, rowCount, articleCount, priceCount });
+        }
       }
     }
   }
-  scopes.sort((left, right) => left.textLength - right.textLength || right.rowCount - left.rowCount);
+  scopes.sort((left, right) =>
+    left.textLength - right.textLength
+    || right.articleCount - left.articleCount
+    || right.priceCount - left.priceCount
+  );
   const scope = scopes[0]?.element;
   if (!scope) {
     return { text: "", title: document.title, url: location.href, nodes: [], scopeVerified: false };
@@ -330,11 +341,18 @@ async function captureSellerCenterProducts() {
   }
   const nodes = captures.flatMap((capture) => capture.nodes || []);
   if (!products.length) products = parseSellerDomNodes(nodes, limit);
+  products = products.filter((product) => {
+    const articleNumber = String(product.articleNumber || "").trim();
+    const name = String(product.name || "").trim();
+    const hasRealArticle = /^(?=[A-Z0-9._/-]{4,30}$)(?=[A-Z0-9._/-]*[A-Z])(?=[A-Z0-9._/-]*\d)[A-Z0-9][A-Z0-9._/-]{3,29}$/i.test(articleNumber);
+    const isHeader = /^(?:SPU 기준|SKU 기준|SPU 기준 SKU 기준|상품정보|평균 거래가(?:\\(KRW\\))?)$/i.test(name);
+    return hasRealArticle && !isHeader && Number(product.averagePrice || 0) >= 1_000;
+  });
   if (!products.length) {
     const frameSummary = captures.map((capture) => `${capture.title || "frame"}:${capture.text.length}`).join(", ");
     return {
       ok: false,
-      message: `인기상품 행을 찾지 못했습니다. 인기상품 목록이 실제로 화면에 표시되고 로딩이 끝난 뒤 다시 눌러 주세요.${frameSummary ? ` (확인한 화면 ${captures.length}개)` : ""}`,
+      message: `인기상품 표는 확인했지만 실제 품번과 가격이 있는 상품 행을 찾지 못했습니다. 표의 1위 상품 행이 보이도록 스크롤한 뒤 다시 눌러 주세요.${frameSummary ? ` (확인한 화면 ${captures.length}개)` : ""}`,
     };
   }
   products = products.slice(0, limit);
