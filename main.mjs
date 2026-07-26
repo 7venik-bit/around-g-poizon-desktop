@@ -12,7 +12,9 @@ import { scoreProductCandidate } from "./services/matcher.mjs";
 let store;
 const { autoUpdater } = pkg;
 let mainWindow;
+let sellerWindow;
 let updateReady = false;
+const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
 
 async function imageFingerprint(url) {
   if (!url) return null;
@@ -153,6 +155,95 @@ function createWindow() {
   win.loadFile(join(import.meta.dirname, "src", "index.html"));
 }
 
+function openSellerCenterWindow() {
+  if (sellerWindow && !sellerWindow.isDestroyed()) {
+    sellerWindow.show();
+    sellerWindow.focus();
+    return;
+  }
+  sellerWindow = new BrowserWindow({
+    width: 1500,
+    height: 940,
+    minWidth: 1000,
+    minHeight: 700,
+    title: "POIZON 판매자센터 · Around G 직접 연결",
+    backgroundColor: "#ffffff",
+    webPreferences: {
+      partition: "persist:around-g-poizon-seller",
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  sellerWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https:\/\//i.test(url)) shell.openExternal(url);
+    return { action: "deny" };
+  });
+  sellerWindow.on("closed", () => {
+    sellerWindow = null;
+  });
+  sellerWindow.loadURL(SELLER_CENTER_URL);
+}
+
+async function captureSellerCenterProducts() {
+  if (!sellerWindow || sellerWindow.isDestroyed()) {
+    return { ok: false, message: "판매자센터 창을 먼저 열고 로그인해 주세요." };
+  }
+  const currentUrl = sellerWindow.webContents.getURL();
+  if (!currentUrl.startsWith("https://seller.poizon.com/")) {
+    return { ok: false, message: "판매자센터 인기상품 화면으로 이동해 주세요." };
+  }
+  const captured = await sellerWindow.webContents.executeJavaScript(`(() => ({
+    text: String(document.body?.innerText || "").slice(0, 2000000),
+    title: document.title,
+    url: location.href
+  }))()`, true);
+  const parsed = parsePopularProducts({ text: captured.text });
+  if (!parsed.ok || !parsed.products.length) {
+    return {
+      ok: false,
+      message: "현재 화면에서 인기상품 표를 찾지 못했습니다. 전체 시장 데이터의 인기상품 표가 보이는 상태에서 다시 눌러 주세요.",
+    };
+  }
+  const limit = Math.min(Number(store.snapshot().settings.popularLimit || 30), 200);
+  const products = parsed.products.slice(0, limit);
+  const codes = products.map((product) => product.articleNumber).filter(Boolean);
+  const imageMap = await sellerWindow.webContents.executeJavaScript(`(() => {
+    const codes = ${JSON.stringify(codes)};
+    const result = {};
+    const candidates = [...document.querySelectorAll("tr, [role='row'], li, a, [class*='row'], [class*='item'], [class*='product']")];
+    for (const code of codes) {
+      const matches = candidates
+        .filter((element) => String(element.innerText || "").includes(code))
+        .sort((left, right) => String(left.innerText || "").length - String(right.innerText || "").length);
+      for (const element of matches) {
+        let cursor = element;
+        for (let depth = 0; depth < 5 && cursor; depth += 1, cursor = cursor.parentElement) {
+          const image = cursor.querySelector?.("img[src]");
+          if (image?.src) {
+            result[code] = image.src;
+            break;
+          }
+        }
+        if (result[code]) break;
+      }
+    }
+    return result;
+  })()`, true).catch(() => ({}));
+  return {
+    ok: true,
+    source: "seller-center-direct",
+    capturedAt: new Date().toISOString(),
+    pageUrl: captured.url,
+    products: products.map((product) => ({
+      ...product,
+      logoUrl: imageMap[product.articleNumber] || "",
+      sellerCenterDirect: true,
+      apiMatched: undefined,
+    })),
+  };
+}
+
 app.whenReady().then(async () => {
   store = new JsonStore(app.getPath("userData"));
   await store.load();
@@ -201,6 +292,11 @@ app.whenReady().then(async () => {
     return publicConfig();
   });
   ipcMain.handle("explorer:meta", () => explorerMetadata());
+  ipcMain.handle("seller:open", () => {
+    openSellerCenterWindow();
+    return { ok: true };
+  });
+  ipcMain.handle("seller:capture", () => captureSellerCenterProducts());
   ipcMain.handle("explorer:popular", (_event, input) => parsePopularProducts(input));
   ipcMain.handle("popular:clipboard-read", () => clipboard.readText());
   ipcMain.handle("popular:workflow-get", () => {

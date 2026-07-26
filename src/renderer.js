@@ -9,7 +9,6 @@ let popularProcessing = false;
 let currentExplorerProducts = [];
 const domesticResults = new Map();
 let domesticBatchRunning = false;
-const SELLER_RANK_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
 
 function popularWorkflowInput(markSynced = false) {
   return {
@@ -295,7 +294,52 @@ async function processPopular(textValue) {
 }
 
 $("#popular-apply").addEventListener("click", () => processPopular($("#popular-paste").value));
-$("#popular-open").addEventListener("click", () => window.aroundG.openExternal(SELLER_RANK_URL));
+async function acceptSellerCenterProducts(products, sourceLabel) {
+  const limited = products.slice(0, Number($("#popular-limit").value));
+  const storedProducts = limited.map((product) => ({
+    brand: product.brandName || "",
+    name: product.name,
+    articleNumber: product.articleNumber,
+    poizonPrice: product.averagePrice,
+    sales30d: product.sales30d,
+    popularityRank: product.rank,
+    logoUrl: product.logoUrl || "",
+    source: "seller-center-direct",
+  }));
+  await window.aroundG.bulkUpsert("products", storedProducts);
+  const workflow = await window.aroundG.savePopularWorkflow(popularWorkflowInput(true));
+  renderPopularDue(workflow.lastSyncAt, workflow.reminder);
+  await refresh();
+  $("#popular-status").className = "status success";
+  $("#popular-status").textContent = `${sourceLabel} · 판매자센터 인기상품 ${limited.length}개를 직접 가져왔습니다.`;
+  renderExplorerResults("POIZON 판매자센터 인기상품", limited.map((product) => ({
+    ...product,
+    hasSalesData: Number(product.sales30d) > 0,
+  })));
+}
+
+$("#popular-open").addEventListener("click", async () => {
+  await window.aroundG.openSellerCenter();
+  $("#popular-status").className = "status";
+  $("#popular-status").textContent = "앱 전용 판매자센터 창에서 로그인하고 인기상품 화면을 연 뒤 ‘현재 인기상품 가져오기’를 누르세요.";
+});
+$("#popular-capture").addEventListener("click", async () => {
+  const button = $("#popular-capture");
+  button.disabled = true;
+  $("#popular-status").className = "status";
+  $("#popular-status").textContent = "판매자센터 현재 화면의 인기상품 표와 이미지를 읽고 있습니다…";
+  try {
+    const result = await window.aroundG.captureSellerCenter();
+    if (!result.ok) {
+      $("#popular-status").className = "status error";
+      $("#popular-status").textContent = result.message;
+      return;
+    }
+    await acceptSellerCenterProducts(result.products, "직접 연결 성공");
+  } finally {
+    button.disabled = false;
+  }
+});
 $("#popular-clipboard").addEventListener("click", async () => {
   const clipboardText = await window.aroundG.readClipboardText();
   if (!clipboardText.trim()) {
@@ -304,7 +348,13 @@ $("#popular-clipboard").addEventListener("click", async () => {
     return;
   }
   $("#popular-paste").value = clipboardText;
-  await processPopular(clipboardText);
+  const parsed = await window.aroundG.parsePopular({ text: clipboardText });
+  if (!parsed.ok) {
+    $("#popular-status").className = "status error";
+    $("#popular-status").textContent = parsed.error.message;
+    return;
+  }
+  await acceptSellerCenterProducts(parsed.products, "클립보드 예비 가져오기");
 });
 for (const selector of ["#popular-period", "#popular-compare", "#popular-unit", "#popular-limit", "#popular-reminder"]) {
   $(selector).addEventListener("change", async () => {
@@ -343,7 +393,10 @@ $("#popular-paste").addEventListener("paste", (event) => {
   if (!pasted) return;
   event.preventDefault();
   $("#popular-paste").value = pasted;
-  processPopular(pasted);
+  window.aroundG.parsePopular({ text: pasted }).then((parsed) => {
+    if (parsed.ok) acceptSellerCenterProducts(parsed.products, "붙여넣기 가져오기");
+    else showRuntimeError(parsed.error?.message || "판매자센터 표를 읽지 못했습니다.");
+  });
 });
 
 const popularDropZone = $("#popular-drop-zone");
@@ -375,7 +428,9 @@ popularDropZone.addEventListener("drop", async (event) => {
     return;
   }
   $("#popular-paste").value = dropped;
-  processPopular(dropped);
+  const parsed = await window.aroundG.parsePopular({ text: dropped });
+  if (parsed.ok) await acceptSellerCenterProducts(parsed.products, "드래그 앤 드롭 가져오기");
+  else showRuntimeError(parsed.error?.message || "판매자센터 표를 읽지 못했습니다.");
 });
 
 $("#brand-search").addEventListener("click", async () => {

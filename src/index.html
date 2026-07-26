@@ -36,7 +36,7 @@
 
         <section id="explorer-popular" class="panel explorer-panel active">
           <small>MERCHANT RANK BOARD</small><h2>판매자센터 인기상품 자동 검색</h2>
-          <p>판매자센터에서 아래 조건으로 인기상품 표를 복사한 뒤 버튼을 누르세요. 클립보드의 품번을 인식해 POIZON 공식 API 상품정보와 자동으로 결합합니다.</p>
+          <p>앱 전용 판매자센터 창에 로그인한 뒤 인기상품 화면을 직접 가져옵니다. 로그인 세션은 이 PC의 앱 전용 저장소에만 보관됩니다.</p>
           <div class="popular-options">
             <label>기준 시점<select id="popular-period"><option value="day">하루 전</option><option value="week" selected>일주일 전</option><option value="month">한 달 전</option><option value="quarter">최근 3개월</option></select></label>
             <label>비교 기준<select id="popular-compare"><option value="none">비교 없음</option><option value="year">전기간 대비</option><option value="day">전일 대비</option><option value="week" selected>주간 대비</option><option value="month">월간 대비</option></select></label>
@@ -46,14 +46,15 @@
           <div class="popular-workflow">
             <label class="check"><input id="popular-reminder" type="checkbox" checked> 2주마다 갱신 알림</label>
             <span id="popular-due" class="status"></span>
-            <button id="popular-open" type="button">판매자센터 열기</button>
-            <button id="popular-clipboard" type="button" class="primary">클립보드 자동 검색</button>
+            <button id="popular-open" type="button">판매자센터 로그인/열기</button>
+            <button id="popular-capture" type="button" class="primary">현재 인기상품 가져오기</button>
+            <button id="popular-clipboard" type="button">클립보드 예비 가져오기</button>
           </div>
           <div id="popular-drop-zone" class="popular-drop-zone">
             <div class="drop-guide"><strong>표를 이곳에 놓으세요</strong><span>텍스트 선택 드래그 · Ctrl+V · TSV/CSV/TXT 파일 지원</span></div>
             <textarea id="popular-paste" rows="7" placeholder="No.	상품정보	검색 지수	즐겨찾기 지수	평균 거래가(KRW)	최저 거래가(KRW)	최고 거래가(KRW)&#10;1.	JI0079 Adidas Originals...			91,720	56,674	153,302"></textarea>
           </div>
-          <div class="explorer-actions"><span id="popular-status" class="status">표를 붙여넣거나 클립보드 자동 검색을 누르세요.</span><button id="popular-apply">API 다시 찾기</button></div>
+          <div class="explorer-actions"><span id="popular-status" class="status">판매자센터 로그인 창을 열어 주세요.</span><button id="popular-apply">Open API 보완 조회</button></div>
         </section>
 
         <section id="explorer-brand" class="panel explorer-panel">

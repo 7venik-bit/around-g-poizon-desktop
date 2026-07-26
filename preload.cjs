@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("aroundG", {
   saveConfig: (config) => ipcRenderer.invoke("config:save", config),
   getConfig: () => ipcRenderer.invoke("config:get"),
   explorerMeta: () => ipcRenderer.invoke("explorer:meta"),
+  openSellerCenter: () => ipcRenderer.invoke("seller:open"),
+  captureSellerCenter: () => ipcRenderer.invoke("seller:capture"),
   parsePopular: (input) => ipcRenderer.invoke("explorer:popular", input),
   resolvePopular: (input) => ipcRenderer.invoke("explorer:popular-resolve", input),
   readClipboardText: () => ipcRenderer.invoke("popular:clipboard-read"),
