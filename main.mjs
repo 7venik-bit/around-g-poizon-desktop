@@ -19,17 +19,37 @@ let updateReady = false;
 const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
 const SELLER_CAPTURE_SCRIPT = `(() => {
   const selector = "tr, [role='row'], li, [class*='row'], [class*='item'], [class*='product'], [class*='table']";
-  const nodes = [...document.querySelectorAll(selector)].flatMap((element) => {
+  const headings = [...document.querySelectorAll("h1, h2, h3, h4, strong, span, div")]
+    .filter((element) => String(element.innerText || element.textContent || "").trim() === "인기상품");
+  const scopes = [];
+  for (const heading of headings) {
+    let candidate = heading.parentElement;
+    for (let depth = 0; candidate && depth < 9; depth += 1, candidate = candidate.parentElement) {
+      const text = String(candidate.innerText || "");
+      if (text.includes("SPU 기준") && text.includes("SKU 기준")) {
+        const rowCount = candidate.querySelectorAll(selector).length;
+        if (rowCount > 0) scopes.push({ element: candidate, textLength: text.length, rowCount });
+        break;
+      }
+    }
+  }
+  scopes.sort((left, right) => left.textLength - right.textLength || right.rowCount - left.rowCount);
+  const scope = scopes[0]?.element;
+  if (!scope) {
+    return { text: "", title: document.title, url: location.href, nodes: [], scopeVerified: false };
+  }
+  const nodes = [...scope.querySelectorAll(selector)].flatMap((element) => {
     const text = String(element.innerText || "").trim();
     if (!text || text.length > 3000) return [];
-    const image = element.querySelector?.("img[src]") || element.parentElement?.querySelector?.("img[src]");
+    const image = element.querySelector?.("img[src]");
     return [{ text, imageUrl: image?.src || "" }];
   }).slice(0, 5000);
   return {
-    text: String(document.body?.innerText || "").slice(0, 2000000),
+    text: String(scope.innerText || "").slice(0, 500000),
     title: document.title,
     url: location.href,
-    nodes
+    nodes,
+    scopeVerified: true
   };
 })()`;
 
@@ -286,10 +306,17 @@ async function captureSellerCenterProducts() {
   const captures = [];
   for (const frame of frames) {
     try {
-      captures.push(await frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true));
+      const captured = await frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true);
+      if (captured?.scopeVerified) captures.push(captured);
     } catch {
       // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
     }
+  }
+  if (!captures.length) {
+    return {
+      ok: false,
+      message: "판매자센터의 ‘인기상품’ 표 영역을 확인하지 못했습니다. ‘인기상품’ 제목과 SPU/SKU 기준이 함께 보이는 상태에서 다시 눌러 주세요.",
+    };
   }
   const limit = Math.min(Number(store.snapshot().settings.popularLimit || 200), 200);
   let products = [];
@@ -297,7 +324,7 @@ async function captureSellerCenterProducts() {
     const parsed = parsePopularProducts({ text: captured.text });
     if (parsed.ok && parsed.products.length > products.length) products = parsed.products;
   }
-  if (!products.length) {
+  if (!products.length && captures.length > 1) {
     const combined = parsePopularProducts({ text: captures.map((capture) => capture.text).join("\n") });
     if (combined.ok) products = combined.products;
   }
