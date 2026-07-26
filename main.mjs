@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, safeStorage, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, safeStorage, shell } from "electron";
 import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import readXlsxFile from "read-excel-file/node";
@@ -13,6 +13,7 @@ import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
 
 let store;
 const { autoUpdater } = pkg;
+nativeTheme.themeSource = "light";
 let mainWindow;
 let sellerWindow;
 let updateReady = false;

@@ -208,7 +208,8 @@ document.addEventListener("click", async (event) => {
     document.querySelectorAll(".nav,.view").forEach((item) => item.classList.remove("active"));
     nav.classList.add("active");
     $(`#${nav.dataset.view}`).classList.add("active");
-    $("#page-title").textContent = nav.textContent;
+    const pageTitle = $("#page-title");
+    if (pageTitle) pageTitle.textContent = nav.textContent;
   }
   const remove = event.target.dataset.remove;
   if (remove) {
