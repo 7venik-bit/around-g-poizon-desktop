@@ -238,8 +238,7 @@ async function executeAcrossSellerFrames(script) {
 async function dragSellerScrollbarToRatio(ratio) {
   const info = await executeAcrossSellerFrames(sellerScrollbarInfoScript(ratio));
   if (!info?.found || !sellerWindow || sellerWindow.isDestroyed()) return false;
-  sellerWindow.show();
-  sellerWindow.focus();
+  sellerWindow.showInactive();
   sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: info.x, y: info.startY });
   sellerWindow.webContents.sendInputEvent({
     type: "mouseDown", button: "left", clickCount: 1, x: info.x, y: info.startY
@@ -512,6 +511,13 @@ function createWindow() {
   win.loadFile(join(import.meta.dirname, "src", "index.html"));
 }
 
+function showCollectorWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
 function openSellerCenterWindow() {
   if (sellerWindow && !sellerWindow.isDestroyed()) {
     sellerWindow.show();
@@ -671,6 +677,10 @@ async function captureSellerCenterProducts() {
       type: "mouseDown", button: "left", clickCount: 1, x: continuousDrag.x, y: continuousDrag.startY
     });
   }
+  // Native input events are sent directly to the seller webContents, so the
+  // collector can remain visible while the POIZON window is collected in the
+  // background.
+  showCollectorWindow();
   let previousDragY = continuousDrag?.startY || 0;
   for (let rankCheckpoint = 1; rankCheckpoint <= limit; rankCheckpoint += 1) {
     if (continuousDrag?.found) {
