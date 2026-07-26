@@ -238,7 +238,6 @@ async function executeAcrossSellerFrames(script) {
 async function dragSellerScrollbarToRatio(ratio) {
   const info = await executeAcrossSellerFrames(sellerScrollbarInfoScript(ratio));
   if (!info?.found || !sellerWindow || sellerWindow.isDestroyed()) return false;
-  sellerWindow.showInactive();
   sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: info.x, y: info.startY });
   sellerWindow.webContents.sendInputEvent({
     type: "mouseDown", button: "left", clickCount: 1, x: info.x, y: info.startY
@@ -252,6 +251,7 @@ async function dragSellerScrollbarToRatio(ratio) {
   sellerWindow.webContents.sendInputEvent({
     type: "mouseUp", button: "left", clickCount: 1, x: info.x, y: info.endY
   });
+  showCollectorWindow();
   return true;
 }
 
