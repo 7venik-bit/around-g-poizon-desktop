@@ -51,7 +51,11 @@ jobs:
             $tagCommit = git rev-list -n 1 $tag
             $headCommit = git rev-parse HEAD
             if ($tagCommit -ne $headCommit) {
-              throw "Release tag $tag already points to $tagCommit instead of $headCommit. Bump package.json before publishing."
+              git diff --quiet $tagCommit $headCommit -- . ':(exclude).github/workflows/release.yml'
+              if ($LASTEXITCODE -ne 0) {
+                throw "Release tag $tag already points to different application source. Bump package.json before publishing."
+              }
+              Write-Host "Reusing $tag because only the release workflow changed after the tag was created."
             }
           } else {
             git tag $tag
