@@ -41,6 +41,23 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Ensure release tag exists
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $tag = "v$version"
+          git fetch --tags --force
+          if (git rev-parse $tag 2>$null) {
+            $tagCommit = git rev-list -n 1 $tag
+            $headCommit = git rev-parse HEAD
+            if ($tagCommit -ne $headCommit) {
+              throw "Release tag $tag already points to $tagCommit instead of $headCommit. Bump package.json before publishing."
+            }
+          } else {
+            git tag $tag
+            git push origin $tag
+          }
+
       - name: Build and publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
