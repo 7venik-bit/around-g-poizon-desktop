@@ -1,11 +1,95 @@
 const MAX_QUERY_LENGTH = 120;
 const MAX_PRODUCTS_PER_STORE = 8;
 
+export function sanitizeDomesticQuery(value) {
+  return String(value || "")
+    .replace(/주간\s*대비(?:\s*[↑↓]?\s*\d+(?:\.\d+)?%)?/gi, " ")
+    .replace(/검색\s*지수|즐겨찾기\s*지수|평균\s*거래가|최저\s*거래가|최고\s*거래가|최근\s*7일\s*검색\s*추세/gi, " ")
+    .replace(/\b(?:KRW|SPU\s*기준|SKU\s*기준)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const naverSearch = (query) => {
+  const cleaned = sanitizeDomesticQuery(query);
+  return `https://search.naver.com/search.naver?where=shopping&query=${encodeURIComponent(cleaned)}`;
+};
+
+const OFFICIAL_BRAND_SEARCH = [
+  { name: "아디다스", aliases: ["adidas", "adidas originals", "아디다스"], productUrl: (query) => `https://www.adidas.co.kr/search?q=${encodeURIComponent(query)}` },
+  { name: "나이키", aliases: ["nike", "jordan", "나이키", "조던"], productUrl: (query) => `https://www.nike.com/kr/w?q=${encodeURIComponent(query)}&vst=${encodeURIComponent(query)}` },
+  { name: "뉴발란스", aliases: ["new balance", "뉴발란스"], productUrl: (query) => `https://www.nbkorea.com/product/searchResult.action?schWord=${encodeURIComponent(query)}` },
+  { name: "푸마", aliases: ["puma", "푸마"], productUrl: (query) => `https://kr.puma.com/kr/ko/search?q=${encodeURIComponent(query)}` },
+  { name: "언더아머", aliases: ["under armour", "언더아머"], productUrl: (query) => `https://www.underarmour.co.kr/ko-kr/search/?q=${encodeURIComponent(query)}` },
+  { name: "아식스", aliases: ["asics", "아식스"], productUrl: (query) => `https://www.asics.com/kr/ko-kr/search/?q=${encodeURIComponent(query)}` },
+  { name: "반스", aliases: ["vans", "반스"], productUrl: (query) => `https://www.vans.co.kr/search?query=${encodeURIComponent(query)}` },
+  { name: "크록스", aliases: ["crocs", "크록스"], productUrl: (query) => `https://www.crocs.co.kr/search?q=${encodeURIComponent(query)}` },
+  { name: "데상트", aliases: ["descente", "데상트"], productUrl: (query) => `https://dk-on.com/DESCENTE/search?keyword=${encodeURIComponent(query)}` },
+];
+
+function officialBrandEntry(brandOrQuery) {
+  const normalized = sanitizeDomesticQuery(brandOrQuery).toLowerCase();
+  return normalized && OFFICIAL_BRAND_SEARCH.find((entry) =>
+    entry.aliases.some((alias) => normalized.includes(alias) || alias.includes(normalized))
+  );
+}
+
+export function officialBrandSearchUrl(brand, query) {
+  const match = officialBrandEntry(brand || query);
+  const brandQuery = match?.name || sanitizeDomesticQuery(brand);
+  return `https://search.naver.com/search.naver?query=${encodeURIComponent(
+    brandQuery
+  )}`;
+}
+
+export function officialBrandProductSearchUrl(brand, query) {
+  const match = officialBrandEntry(brand || query);
+  const cleanedQuery = sanitizeDomesticQuery(query);
+  return match?.productUrl && cleanedQuery ? match.productUrl(cleanedQuery) : "";
+}
+
+const NAVER_BRAND_STORES = [
+  { aliases: ["adidas", "adidas originals", "아디다스"], slug: "adidas" },
+  { aliases: ["nike", "나이키"], slug: "nike" },
+  { aliases: ["new balance", "newbalance", "뉴발란스"], slug: "nbkorea" },
+  { aliases: ["puma", "푸마"], slug: "puma" },
+  { aliases: ["asics", "아식스"], slug: "asics" },
+  { aliases: ["crocs", "크록스"], slug: "crocs" },
+];
+
+function naverBrandStore(brandOrQuery) {
+  const normalized = sanitizeDomesticQuery(brandOrQuery).toLowerCase();
+  return NAVER_BRAND_STORES.find((entry) =>
+    entry.aliases.some((alias) => normalized.includes(alias) || alias.includes(normalized))
+  );
+}
+
+export function naverFashionTownUrl(channel, brand, query) {
+  const cleanedBrand = sanitizeDomesticQuery(brand);
+  const cleanedQuery = sanitizeDomesticQuery(query);
+  const matchedStore = naverBrandStore(cleanedBrand || cleanedQuery);
+  const searchBrand = matchedStore?.aliases[0] || cleanedBrand;
+  if (channel === "brand-store") {
+    if (matchedStore?.slug) {
+      return `https://brand.naver.com/${matchedStore.slug}/search?q=${encodeURIComponent(cleanedQuery)}`;
+    }
+    return `https://shopping.naver.com/window/search/fashion-group?q=${encodeURIComponent(
+      [searchBrand, cleanedQuery].filter(Boolean).join(" ")
+    )}`;
+  }
+  const section = channel === "department" ? "department" : "outlet";
+  return `https://shopping.naver.com/window/${section}/search?q=${encodeURIComponent(
+    [searchBrand, cleanedQuery].filter(Boolean).join(" ")
+  )}`;
+}
+
 export const DOMESTIC_SEARCH_LINKS = {
+  "브랜드 공식몰": (query) => naverSearch(query),
   "무신사": (query) => `https://www.musinsa.com/search/goods?keyword=${encodeURIComponent(query)}`,
-  "네이버 브랜드직영몰": (query) => `https://shopping.naver.com/window/brand-fashion/store-brand?query=${encodeURIComponent(query)}`,
-  "네이버 백화점": (query) => `https://shopping.naver.com/window/brand-fashion/department?query=${encodeURIComponent(query)}`,
-  "네이버 아울렛": (query) => `https://shopping.naver.com/window/brand-fashion/outlet?query=${encodeURIComponent(query)}`,
+  "네이버 패션타운": (query) => naverSearch(query),
+  "브랜드직영몰": (query) => naverSearch(query),
+  "백화점": (query) => naverSearch(query),
+  "아울렛": (query) => naverSearch(query),
   "SSG": (query) => `https://www.ssg.com/search.ssg?query=${encodeURIComponent(query)}`,
   "코오롱몰": (query) => `https://www.kolonmall.com/Search?keyword=${encodeURIComponent(query)}`,
 };
@@ -37,6 +121,63 @@ function uniqueProducts(products) {
     seen.add(key);
     return true;
   });
+}
+
+export function countLinkedSearchProducts(html, articleNumber = "") {
+  const source = String(html || "");
+  const ids = new Set();
+  const patterns = [
+    /\/products\/(\d{5,})/g,
+    /"productId"\s*:\s*"?([A-Z0-9_-]{5,})"?/gi,
+    /"nvMid"\s*:\s*"?(\d{8,})"?/g,
+    /"goodsNo"\s*:\s*"?([A-Z0-9_-]{5,})"?/gi,
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(source)) !== null) ids.add(match[1]);
+  }
+  if (ids.size) return Math.min(ids.size, 99);
+  const code = sanitizeDomesticQuery(articleNumber);
+  if (!code || /상품이 없습니다|검색 결과가 없습니다|검색결과 없음/i.test(source)) return 0;
+  const occurrences = source.toLowerCase().split(code.toLowerCase()).length - 1;
+  return occurrences >= 2 ? 1 : 0;
+}
+
+export function countRenderedChannelProducts(content, store = "", articleNumber = "") {
+  const source = String(content || "");
+  const articleCode = sanitizeDomesticQuery(articleNumber)
+    .split(/\s+/)[0]
+    .replace(/[^A-Z0-9]/gi, "")
+    .toUpperCase();
+  if (source.startsWith('{"productCards":')) {
+    try {
+      const cards = JSON.parse(source).productCards || [];
+      if (!articleCode) return 0;
+      const matchingProducts = new Set();
+      for (const card of cards) {
+        const cardText = String(card?.text || "")
+          .replace(/[^A-Z0-9]/gi, "")
+          .toUpperCase();
+        if (!cardText.includes(articleCode)) continue;
+        const productKey = String(card?.productUrl || card?.text || "");
+        if (productKey) matchingProducts.add(productKey);
+      }
+      return matchingProducts.size;
+    } catch {
+      return 0;
+    }
+  }
+  const channelLabel = String(store || "")
+    .replace(/^네이버\s*/, "")
+    .replace(/브랜드직영몰/, "브랜드직영몰");
+  if (channelLabel) {
+    const escaped = channelLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const labelled = source.match(new RegExp(`${escaped}\\s*([\\d,]+)\\s*개`, "i"));
+    if (labelled) return Math.min(Number(labelled[1].replace(/,/g, "")) || 0, 9999);
+  }
+  const total = source.match(/(?:총|전체|검색결과)\s*([0-9,]+)\s*(?:개|건)/i);
+  if (total) return Math.min(Number(total[1].replace(/,/g, "")) || 0, 9999);
+  return countLinkedSearchProducts(source, articleNumber);
 }
 
 function normalizeSizes(...candidates) {
@@ -195,30 +336,57 @@ export async function queryDomesticProducts({
   articleNumber = "",
   brand = "",
   title = "",
+  preferTitle = false,
+  verifyLinkCounts = false,
   fetchImpl = fetch,
 }) {
-  const normalizedQuery = String(query || "").trim();
+  const normalizedQuery = sanitizeDomesticQuery(query);
   if (!normalizedQuery) throw new Error("DOMESTIC_QUERY_REQUIRED");
   if (normalizedQuery.length > MAX_QUERY_LENGTH) throw new Error("DOMESTIC_QUERY_TOO_LONG");
-  const queryCandidates = [...new Set([
-    String(articleNumber || "").trim(),
-    [brand, articleNumber].filter(Boolean).join(" ").trim(),
+  const codeQueries = [
+    sanitizeDomesticQuery(articleNumber),
+    sanitizeDomesticQuery([brand, articleNumber].filter(Boolean).join(" ")),
+  ];
+  const titleQueries = [
+    sanitizeDomesticQuery([brand, title].filter(Boolean).join(" ")),
+    sanitizeDomesticQuery(title),
     normalizedQuery,
-    [brand, title].filter(Boolean).join(" ").trim(),
-  ].filter(Boolean))];
+  ];
+  const queryCandidates = [...new Set(
+    (preferTitle ? [...titleQueries, ...codeQueries] : [...codeQueries, ...titleQueries]).filter(Boolean)
+  )];
 
   const sources = [
+    { store: "브랜드 공식몰", linkOnly: true, officialBrand: true },
     { store: "무신사", parser: parseMusinsaSearch },
-    { store: "네이버 브랜드직영몰", linkOnly: true },
-    { store: "네이버 백화점", linkOnly: true },
-    { store: "네이버 아울렛", linkOnly: true },
+    { store: "네이버 브랜드직영몰", linkOnly: true, fashionTown: "brand-store" },
+    { store: "네이버 백화점", linkOnly: true, fashionTown: "department" },
+    { store: "네이버 아울렛", linkOnly: true, fashionTown: "outlet" },
     { store: "SSG", parser: parseSsgSearch },
-    { store: "코오롱몰", parser: (html) => parseKolonSearch(html, normalizedQuery) },
+    { store: "코오롱몰", parser: (html) => parseKolonSearch(html, articleNumber) },
   ];
   const results = await Promise.all(sources.map(async (source) => {
     const preferredQuery = queryCandidates[0] || normalizedQuery;
-    const searchUrl = DOMESTIC_SEARCH_LINKS[source.store](preferredQuery);
-    if (source.linkOnly) return { store: source.store, ok: true, linkOnly: true, searchUrl, products: [] };
+    const searchUrl = source.officialBrand
+      ? officialBrandSearchUrl(brand || title || normalizedQuery, preferredQuery)
+      : source.fashionTown
+        ? naverFashionTownUrl(source.fashionTown, brand || title, preferredQuery)
+        : DOMESTIC_SEARCH_LINKS[source.store](preferredQuery);
+    const officialProductUrl = source.officialBrand
+      ? officialBrandProductSearchUrl(brand || title || normalizedQuery, preferredQuery)
+      : "";
+    if (source.linkOnly) {
+      let count = 0;
+      if (verifyLinkCounts) {
+        try {
+          const html = await fetchSearchPage(officialProductUrl || searchUrl, fetchImpl);
+          count = countLinkedSearchProducts(html, articleNumber || preferredQuery);
+        } catch {
+          count = 0;
+        }
+      }
+      return { store: source.store, ok: true, linkOnly: true, searchUrl, officialProductUrl, count, products: [] };
+    }
     try {
       let products = [];
       for (const candidate of queryCandidates) {
@@ -232,20 +400,21 @@ export async function queryDomesticProducts({
       }
       return { store: source.store, ok: true, linkOnly: false, searchUrl, products };
     } catch {
-      return { store: source.store, ok: false, linkOnly: false, searchUrl, products: [] };
+      return { store: source.store, ok: false, linkOnly: false, searchUrl, officialProductUrl, products: [] };
     }
   }));
 
   return {
     query: normalizedQuery,
     products: results.flatMap((result) => result.products),
-    sources: results.map(({ store, ok, linkOnly, searchUrl, products }, priority) => ({
+    sources: results.map(({ store, ok, linkOnly, searchUrl, officialProductUrl, count, products }, priority) => ({
       store,
       ok,
       linkOnly,
       priority: priority + 1,
-      count: products.length,
+      count: Number.isFinite(count) ? count : products.length,
       searchUrl,
+      officialProductUrl,
     })),
   };
 }

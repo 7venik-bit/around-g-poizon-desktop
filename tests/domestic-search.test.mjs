@@ -71,8 +71,9 @@ test("one domestic store failure does not stop the others", async () => {
     return { ok: true, status: 200, text: async () => emptyNextData };
   };
   const result = await queryDomesticProducts({ query: "DD1391-100", fetchImpl });
-  assert.equal(result.sources.length, 6);
+  assert.equal(result.sources.length, 7);
   assert.deepEqual(result.sources.map((source) => source.store), [
+    "브랜드 공식몰",
     "무신사",
     "네이버 브랜드직영몰",
     "네이버 백화점",
@@ -80,7 +81,7 @@ test("one domestic store failure does not stop the others", async () => {
     "SSG",
     "코오롱몰",
   ]);
-  assert.deepEqual(result.sources.map((source) => source.priority), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(result.sources.map((source) => source.priority), [1, 2, 3, 4, 5, 6, 7]);
   assert.equal(result.sources.find((source) => source.store === "SSG").ok, false);
-  assert.equal(result.sources.filter((source) => source.ok).length, 5);
+  assert.equal(result.sources.filter((source) => source.ok).length, 6);
 });

@@ -1,0 +1,22 @@
+#filter-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 13px 0 4px;
+}
+
+#filter-summary span {
+  padding: 7px 10px;
+  border: 1px solid #b8ddcf;
+  border-radius: 999px;
+  background: #edfbf5;
+  color: #28745c;
+  font-size: 12px;
+}
+
+#filter-summary strong {
+  margin-left: auto;
+  color: #17618f;
+  font-size: 13px;
+}

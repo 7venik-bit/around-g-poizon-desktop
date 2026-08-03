@@ -142,13 +142,36 @@ export function normalizeBrandResult(data, salesByArticle = {}) {
   const rows = Array.isArray(data) ? data : data?.contents || data?.list || [];
   return rows.map((row) => {
     const articleNumber = clean(row.articleNumber);
+    const englishTitle = clean(
+      row.productNameEn
+      ?? row.englishProductName
+      ?? row.titleEn
+      ?? row.nameEn
+      ?? row.englishName
+      ?? row.productName
+      ?? row.title
+      ?? row.name,
+    );
     const apiSales = row.sales30d ?? row.recent30DaySales ?? row.soldCount30d;
+    const apiLocalSales = row.localSales30d
+      ?? row.localSellerSales30d
+      ?? row.localSellerRecent30DaySales
+      ?? row.localSellerSoldCount30d
+      ?? row.localRecent30DaySales
+      ?? row.sellerSales30d
+      ?? row.merchantSales30d
+      ?? row.localSellerSaleQuantity30Days;
     const sales30d = numberFrom(apiSales ?? salesByArticle[articleNumber]);
     return {
       ...row,
       articleNumber,
+      title: englishTitle,
+      name: englishTitle,
+      apiTitle: englishTitle,
       sales30d,
+      localSales30d: numberFrom(apiLocalSales),
       hasSalesData: apiSales !== undefined || salesByArticle[articleNumber] !== undefined,
+      hasLocalSalesData: apiLocalSales !== undefined,
       categoryGroup: categoryGroup(row),
     };
   });

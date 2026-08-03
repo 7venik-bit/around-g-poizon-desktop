@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>국내 재고·사이즈 확인</title>
+  <link rel="stylesheet" href="./inventory.css">
+  <link rel="stylesheet" href="./inventory-filter.css">
+</head>
+<body>
+  <header><div><small>AROUND G · DOMESTIC INVENTORY</small><h1 id="title">국내 재고·사이즈 확인</h1><p id="source"></p></div><div class="header-actions"><button id="clear-work" class="sub">현재 작업 지우기</button><button id="open-excel" class="sub">원본 Excel 열기</button></div></header>
+  <main>
+    <nav><label><input id="select-all" type="checkbox"> 전체 선택</label><b id="selected-count">0개 선택</b><i></i><button id="stop" class="sub" hidden>검색 중지</button><button id="search-selected">선택 상품 국내 재고·사이즈 검색</button></nav>
+    <div id="progress" hidden><span></span><b>0%</b></div>
+    <div id="filter-summary" hidden>
+      <span id="sales-filter-label"><b>최근 30일 판매량 30건 이상</b> · <b>현지 판매자 최근 30일 판매량 30건 이상</b></span>
+      <strong id="filter-count"></strong>
+    </div>
+    <p id="status">Excel 상품을 불러오는 중입니다.</p>
+    <section id="products"></section>
+  </main>
+  <script src="./inventory.js"></script>
+</body>
+</html>
