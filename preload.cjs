@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld("aroundG", {
   getBrandExportFolder: () => ipcRenderer.invoke("brand-export:get-folder"),
   listBrandExportFiles: () => ipcRenderer.invoke("brand-export:list-files"),
   clearBrandWorkHistory: () => ipcRenderer.invoke("brand-export:clear-session"),
+  onBrandWorkHistoryCleared: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on("brand-export:session-cleared", handler);
+    return () => ipcRenderer.removeListener("brand-export:session-cleared", handler);
+  },
   importBrandExcelFromPath: (path) => ipcRenderer.invoke("excel:import-brand-source", { path }),
   onBrandExportDetected: (callback) => {
     const handler = (_event, payload) => callback(payload);
