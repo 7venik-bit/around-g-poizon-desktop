@@ -1,5 +1,6 @@
 import {
   queryByArticleNumber,
+  queryBrandInfo,
   queryBySpuId,
   queryByBrandId
 } from "../relay/poizon-adapter.mjs";
@@ -18,7 +19,13 @@ function friendlyError(error) {
   if (/timeout|abort/i.test(raw)) {
     return { code: "POIZON_TIMEOUT", message: "POIZON 응답 시간이 초과되었습니다.", detail: raw, retryable: true };
   }
-  return { code: "POIZON_FAILED", message: "POIZON 조회에 실패했습니다.", detail: raw, retryable: false };
+  if (/401|unauthorized|signature|sign/i.test(raw)) {
+    return { code: "POIZON_AUTH_FAILED", message: "POIZON 인증 또는 서명 검증에 실패했습니다.", detail: raw, retryable: false };
+  }
+  if (/403|forbidden|permission/i.test(raw)) {
+    return { code: "POIZON_PERMISSION_REQUIRED", message: "현재 App Key에 브랜드 조회 API 권한이 없습니다.", detail: raw, retryable: false };
+  }
+  return { code: "POIZON_FAILED", message: `POIZON 조회에 실패했습니다. (${raw})`, detail: raw, retryable: false };
 }
 
 function productImage(value, depth = 0) {
@@ -62,6 +69,74 @@ export async function queryPoizon(config, input) {
 
 export function explorerMetadata() {
   return { brands: BRAND_CATALOG, categories: CATEGORY_GROUPS };
+}
+
+export function brandPageCount(total, reportedPages, pageSize = 100) {
+  return Math.min(
+    Math.max(Number(reportedPages || 0), Math.ceil(Number(total || 0) / Math.max(1, Number(pageSize) || 100)), 1),
+    10_000,
+  );
+}
+
+export async function discoverBrandCatalog(config, {
+  maximumBrandId = 5_000,
+  onProgress,
+} = {}) {
+  if (!config.appKey || !config.appSecret) {
+    return { ok: false, error: { code: "CONFIG_REQUIRED", message: "POIZON App Key와 App Secret을 먼저 저장하세요." } };
+  }
+  const ids = Array.from({ length: maximumBrandId }, (_value, index) => index + 1);
+  const batches = [];
+  for (let index = 0; index < ids.length; index += 50) batches.push(ids.slice(index, index + 50));
+  const brands = new Map(BRAND_CATALOG.map((brand) => [Number(brand.id), brand]));
+  let successfulBatchCount = 0;
+  let firstError = null;
+  for (let index = 0; index < batches.length; index += 1) {
+    try {
+      const data = await queryBrandInfo({
+        ...config,
+        brandIds: batches[index],
+        language: "ko",
+        timeZone: "Asia/Seoul",
+      });
+      const rows = Array.isArray(data) ? data : data?.contents || data?.list || [];
+      for (const row of rows) {
+        const id = Number(row?.id || row?.brandId);
+        const name = String(row?.name || row?.brandName || "").trim();
+        if (!Number.isSafeInteger(id) || id < 1 || !name) continue;
+        const english = String(row?.englishName || row?.nameEn || name).trim();
+        brands.set(id, {
+          id,
+          name: english,
+          ko: name,
+          logoUrl: String(row?.logoUrl || ""),
+        });
+      }
+      successfulBatchCount += 1;
+    } catch (error) {
+      firstError ||= error;
+      const raw = error instanceof Error ? error.message : String(error);
+      if (/400010007|401|403|unauthorized|forbidden|signature/i.test(raw)) {
+        return { ok: false, error: friendlyError(error) };
+      }
+    }
+    onProgress?.({
+      percent: Math.round(((index + 1) / batches.length) * 100),
+      completed: index + 1,
+      total: batches.length,
+      count: brands.size,
+    });
+  }
+  if (!successfulBatchCount) {
+    return { ok: false, error: friendlyError(firstError || new Error("BRAND_API_NO_SUCCESSFUL_RESPONSE")) };
+  }
+  return {
+    ok: true,
+    brands: [...brands.values()].sort((left, right) =>
+      left.name.localeCompare(right.name, "ko", { sensitivity: "base" })
+    ),
+    failedBatchCount: batches.length - successfulBatchCount,
+  };
 }
 
 export function parsePopularProducts(input) {
@@ -152,30 +227,71 @@ export async function queryExplorer(config, input) {
     const common = {
       appKey: config.appKey,
       appSecret: config.appSecret,
+      accessToken: config.accessToken || "",
       pageNum: input.pageNum || 1,
-      pageSize: Math.min(Number(input.pageSize) || 30, 100),
+      pageSize: 100,
       apiBaseUrl: config.apiBaseUrl,
       timeZone: "Asia/Seoul",
+      language: "en",
     };
     const brandIds = input.mode === "category" ? BRAND_CATALOG.map((brand) => brand.id) : [Number(input.brandId)];
-    const responses = input.mode === "category"
-      ? await Promise.allSettled(brandIds.map((brandId) => queryByBrandId({ ...common, brandIds: [brandId] })))
-      : [{ status: "fulfilled", value: await queryByBrandId({ ...common, brandIds }) }];
+    let responses;
+    if (input.mode === "category") {
+      responses = await Promise.allSettled(
+        brandIds.map((brandId) => queryByBrandId({ ...common, brandIds: [brandId] }))
+      );
+    } else {
+      try {
+        responses = [{ status: "fulfilled", value: await queryByBrandId({ ...common, brandIds }) }];
+      } catch (error) {
+        const raw = error instanceof Error ? error.message : String(error);
+        if (common.accessToken && /400010007|401|unauthorized|token|signature|sign/i.test(raw)) {
+          common.accessToken = "";
+          responses = [{ status: "fulfilled", value: await queryByBrandId({ ...common, brandIds }) }];
+        } else {
+          throw error;
+        }
+      }
+    }
+    if (input.mode === "brand" && input.allPages) {
+      const first = responses[0]?.value;
+      const responseTotal = Number(first?.total || first?.totalCount || first?.count || 0);
+      const pageCount = brandPageCount(
+        responseTotal,
+        first?.pages || first?.pageCount,
+        common.pageSize,
+      );
+      for (let pageNum = 2; pageNum <= pageCount; pageNum += 1) {
+        responses.push({
+          status: "fulfilled",
+          value: await queryByBrandId({ ...common, pageNum, brandIds }),
+        });
+        input.onProgress?.(pageNum, pageCount);
+      }
+    }
     const successful = responses.filter((response) => response.status === "fulfilled").map((response) => response.value);
     if (!successful.length) throw responses[0]?.reason || new Error("POIZON_FAILED");
-    let products = successful.flatMap((data) => normalizeBrandResult(data, input.salesByArticle || {}));
+    let products = successful.flatMap((data) => normalizeBrandResult(data));
     if (input.mode === "category" && input.category && input.category !== "전체") {
       products = products.filter((product) => product.categoryGroup === input.category);
     }
     const salesDataCount = products.filter((product) => product.hasSalesData).length;
-    if (input.minimumSales30) products = products.filter((product) => product.hasSalesData && product.sales30d >= 30);
+    const salesFilterApplied = Boolean(input.minimumSales30 && salesDataCount > 0);
+    if (salesFilterApplied) {
+      products = products.filter((product) => product.hasSalesData && product.sales30d >= 30);
+    }
     return {
       ok: true,
       products,
-      total: successful.reduce((sum, data) => sum + Number(data?.total || 0), 0) || products.length,
+      total: products.length,
+      sourceTotal: input.mode === "brand"
+        ? Number(successful[0]?.total || products.length)
+        : successful.reduce((sum, data) => sum + Number(data?.total || 0), 0) || products.length,
       pages: Math.max(...successful.map((data) => Number(data?.pages || 1))),
       pageNum: input.pageNum ?? 1,
       salesFilterAvailable: salesDataCount > 0,
+      salesFilterApplied,
+      salesDataCount,
       sourceCount: successful.length,
       failedSourceCount: responses.length - successful.length,
     };

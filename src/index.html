@@ -25,18 +25,19 @@
       <div></div>
       <div class="header-actions">
         <div class="update-anchor">
-          <button id="update-check" class="update-button">업데이트<b id="update-alert" class="update-button-alert" hidden>NEW</b></button>
-          <aside id="update-mini" class="update-mini" hidden>
-            <div class="update-mini-head"><strong>프로그램 업데이트</strong><button id="update-mini-close" type="button" aria-label="닫기">×</button></div>
-            <p id="update-mini-message">새 버전을 확인하고 있습니다.</p>
-            <dl class="update-meta"><div><dt>버전</dt><dd id="update-version">확인 중</dd></div><div><dt>업데이트 날짜</dt><dd id="update-date">확인 중</dd></div></dl>
-            <ol class="update-steps" aria-label="업데이트 진행 단계"><li data-update-step="checking">버전 확인</li><li data-update-step="downloading">다운로드</li><li data-update-step="downloaded">자동 설치</li></ol>
-            <div class="update-progress"><i id="update-progress-bar"></i></div>
-            <div id="update-progress-text" class="update-progress-text">0%</div>
-            <div id="update-auto-close" class="update-auto-close" hidden>5초 뒤 자동으로 닫힙니다.</div>
-            <small id="update-mini-note">다운로드 중에도 프로그램을 계속 사용할 수 있습니다.</small>
-            <div class="update-mini-actions"><button id="update-mini-download" type="button" class="primary" hidden>다운로드</button><button id="update-mini-restart" type="button" class="primary" hidden>지금 자동 설치</button></div>
-          </aside>
+          <button id="update-check" class="update-button">자동 업데이트<b id="update-alert" class="update-button-alert" hidden>NEW</b></button>
+          <div id="app-version-state" class="app-version-state" aria-live="polite">
+            <span>현재 버전 확인 중</span><i></i><strong>자동 확인 켜짐</strong>
+          </div>
+          <section id="update-panel" class="update-inline" aria-live="polite" hidden>
+            <div class="update-inline-head">
+              <span id="update-live-state" class="update-live-state"><i></i><strong id="update-title">자동 업데이트</strong></span>
+              <span id="update-progress-text" class="update-progress-text" hidden>0%</span>
+            </div>
+            <p id="update-message">새 버전을 자동으로 확인하고 있습니다.</p>
+            <div id="update-progress" class="update-progress" hidden><i></i></div>
+            <small id="update-help">프로그램 사용 중에도 자동으로 확인합니다.</small>
+          </section>
         </div>
         <button id="import-button">Excel 가져오기</button><button id="export-button" class="primary">전체 백업</button>
       </div>
@@ -51,12 +52,7 @@
 
         <section id="explorer-popular" class="panel explorer-panel active">
           <small>MERCHANT RANK BOARD</small><h2>판매자센터 인기상품 자동 검색</h2>
-          <p>판매자센터 로그인 후 일주일 전·주간 대비·판매 인기 높은 순·SPU 조건을 자동 선택하고 인기상품을 가져옵니다.</p>
           <div class="popular-workflow">
-            <label class="compact-limit">가져올 수<select id="popular-limit"><option value="10">10개</option><option value="30">30개</option><option value="50">50개</option><option value="100">100개</option><option value="200" selected>200개</option></select></label>
-            <label class="check"><input id="popular-reminder" type="checkbox" checked> 2주마다 갱신 알림</label>
-            <span id="popular-due" class="status"></span>
-            <span class="session-kept">로그인 세션 자동 유지</span>
             <button id="popular-capture" type="button" class="primary">현재 인기상품 가져오기</button>
           </div>
           <div id="popular-progress" class="capture-progress" hidden><i></i><span>0%</span></div>
@@ -65,11 +61,26 @@
 
         <section id="explorer-brand" class="panel explorer-panel">
           <small>POIZON BRAND SEARCH</small><h2>POIZON 한국 브랜드 상품 검색</h2>
-          <p>공식 API에서 선택한 브랜드 상품을 30개씩 조회합니다.</p>
-          <div class="brand-toolbar"><input id="brand-filter" placeholder="브랜드명 검색"><span id="brand-summary"></span></div>
-          <label class="sales-filter"><input id="brand-min-sales" type="checkbox" checked><span><strong>최근 30일 판매량 30건 이상만 검색</strong><small>판매자센터 인기상품 표의 품번과 결합된 상품에 정확히 적용됩니다.</small></span></label>
+          <div class="brand-toolbar"><input id="brand-filter" placeholder="브랜드명 검색"><button id="brand-sync" type="button">전체 브랜드 동기화</button><span id="brand-summary"></span></div>
+          <div class="brand-fetch-action brand-excel-flow">
+            <span><b>1</b> 브랜드 선택</span>
+            <span><b>2</b> 판매자센터 내보내기·다운로드 자동 실행</span>
+            <span><b>3</b> 완료 파일 목록에서 직접 열기</span>
+            <button id="brand-search" hidden disabled>사용 안 함</button>
+          </div>
+          <div id="brand-export-folder-path" class="brand-export-folder-path">저장 폴더: 바탕화면\Around G POIZON\POIZON 전체내보내기</div>
+          <div id="brand-export-job" class="brand-export-job" hidden>
+            <div id="brand-export-jobs-list" class="brand-export-jobs-list"></div>
+          </div>
+          <section class="brand-download-list" aria-label="다운로드 완료 파일">
+            <div class="brand-download-list-title"><strong>자동 다운로드 완료 파일 · 직접 선택 열기</strong><span><b id="brand-download-count">0개</b><button id="brand-download-clear" type="button">기록 삭제</button></span></div>
+            <div id="brand-download-files" class="brand-download-files">
+              <p class="empty">다운로드가 완료되면 여기에 표시됩니다.</p>
+            </div>
+          </section>
+          <div id="brand-progress" class="capture-progress" hidden><i></i><span>0%</span></div>
           <div id="brand-cards" class="brand-cards"></div>
-          <div class="explorer-actions"><span id="brand-status" class="status">브랜드를 선택해 주세요.</span><button id="brand-search" class="primary" disabled>선택 브랜드 검색</button></div>
+          <div class="explorer-actions"><span id="brand-status" class="status">새 수집 방식을 준비할 수 있도록 초기화되었습니다.</span></div>
         </section>
 
         <section id="explorer-category" class="panel explorer-panel">

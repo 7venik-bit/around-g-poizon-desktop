@@ -2,12 +2,25 @@ name: Build and publish Windows release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
+    paths:
+      - "main.mjs"
+      - "preload.cjs"
+      - "src/**"
+      - "services/**"
+      - "relay/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
 
 jobs:
   release:
