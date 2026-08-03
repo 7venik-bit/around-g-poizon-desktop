@@ -7,6 +7,8 @@ export const SPU_ID_PATH =
   "/dop/api/v1/pop/api/v1/intl-commodity/intl/spu/spu-basic-info/by-spu";
 export const BRAND_PRODUCTS_PATH =
   "/dop/api/v1/pop/api/v1/intl-commodity/intl/spu/spu-basic-info/by-brandId";
+export const BRAND_INFO_PATH =
+  "/dop/api/v1/pop/api/v1/intl-commodity/intl/brand/query/by-id";
 export const ORDER_LIST_PATH = "/dop/api/v1/pop/api/v1/order/generic_list";
 
 const ORDER_TYPES = new Set(["NORMAL_SALE", "CONSIGN", "PRE_SALE", "DIRECT"]);
@@ -33,6 +35,8 @@ function formEncode(value) {
 
 export function createPoizonSignature(params, appSecret) {
   if (!appSecret) throw new Error("POIZON_APP_SECRET_REQUIRED");
+  const normalizedSecret = String(appSecret).trim();
+  if (!normalizedSecret) throw new Error("POIZON_APP_SECRET_REQUIRED");
 
   const preSign = Object.keys(params)
     .filter((key) => params[key] !== undefined && params[key] !== null && params[key] !== "")
@@ -41,7 +45,7 @@ export function createPoizonSignature(params, appSecret) {
     .join("&");
 
   return createHash("md5")
-    .update(`${preSign}${appSecret}`, "utf8")
+    .update(`${preSign}${normalizedSecret}`, "utf8")
     .digest("hex")
     .toUpperCase();
 }
@@ -121,7 +125,13 @@ async function postSignedRequest({
 
   const responseCode = payload && typeof payload === "object" ? payload.code : undefined;
   if (responseCode !== undefined && String(responseCode) !== "200") {
-    throw new Error(`POIZON_API_${String(responseCode).replace(/[^A-Za-z0-9_-]/g, "_")}`);
+    const responseMessage = String(payload?.msg || payload?.message || "")
+      .replace(/[\r\n]+/g, " ")
+      .slice(0, 300);
+    throw new Error([
+      `POIZON_API_${String(responseCode).replace(/[^A-Za-z0-9_-]/g, "_")}`,
+      responseMessage,
+    ].filter(Boolean).join(":"));
   }
 
   return payload?.data ?? payload;
@@ -140,14 +150,14 @@ export async function queryByArticleNumber({
   fetchImpl = fetch,
   now = Date.now,
 }) {
-  if (!appKey) throw new Error("POIZON_APP_KEY_REQUIRED");
+  if (!String(appKey || "").trim()) throw new Error("POIZON_APP_KEY_REQUIRED");
 
   const normalizedArticleNumber = String(articleNumber || "").trim();
   if (!normalizedArticleNumber) throw new Error("ARTICLE_NUMBER_REQUIRED");
   if (normalizedArticleNumber.length > 120) throw new Error("ARTICLE_NUMBER_TOO_LONG");
 
   const requestBody = {
-    app_key: appKey,
+    app_key: String(appKey).trim(),
     articleNumber: normalizedArticleNumber,
     language,
     pageNum: positiveInteger(pageNum, 1, 10_000),
@@ -208,6 +218,7 @@ export async function queryBySpuId({
 export async function queryByBrandId({
   appKey,
   appSecret,
+  accessToken,
   brandIds,
   language = "ko",
   region = "KR",
@@ -218,7 +229,7 @@ export async function queryByBrandId({
   fetchImpl = fetch,
   now = Date.now,
 }) {
-  if (!appKey) throw new Error("POIZON_APP_KEY_REQUIRED");
+  if (!String(appKey || "").trim()) throw new Error("POIZON_APP_KEY_REQUIRED");
 
   const normalizedBrandIds = [...new Set((Array.isArray(brandIds) ? brandIds : [brandIds])
     .map((value) => Number(value))
@@ -227,7 +238,8 @@ export async function queryByBrandId({
   if (!normalizedBrandIds.length) throw new Error("POIZON_BRAND_ID_REQUIRED");
 
   const requestBody = {
-    app_key: appKey,
+    app_key: String(appKey).trim(),
+    access_token: optionalString(accessToken, 512),
     brandIdList: normalizedBrandIds,
     language,
     pageNum: positiveInteger(pageNum, 1, 10_000),
@@ -236,10 +248,43 @@ export async function queryByBrandId({
     timeZone,
     timestamp: Number(now()),
   };
+  if (!requestBody.access_token) delete requestBody.access_token;
 
   return postSignedRequest({
     path: BRAND_PRODUCTS_PATH,
     requestBody,
+    appSecret,
+    apiBaseUrl,
+    fetchImpl,
+  });
+}
+
+export async function queryBrandInfo({
+  appKey,
+  appSecret,
+  brandIds,
+  language = "ko",
+  timeZone = "Asia/Seoul",
+  apiBaseUrl = POIZON_API_BASE_URL,
+  fetchImpl = fetch,
+  now = Date.now,
+}) {
+  if (!String(appKey || "").trim()) throw new Error("POIZON_APP_KEY_REQUIRED");
+  const normalizedBrandIds = [...new Set((Array.isArray(brandIds) ? brandIds : [brandIds])
+    .map((value) => Number(value))
+    .filter((value) => Number.isSafeInteger(value) && value > 0))]
+    .slice(0, 50);
+  if (!normalizedBrandIds.length) throw new Error("POIZON_BRAND_ID_REQUIRED");
+
+  return postSignedRequest({
+    path: BRAND_INFO_PATH,
+    requestBody: {
+      app_key: String(appKey).trim(),
+      brandIds: normalizedBrandIds,
+      language,
+      timeZone,
+      timestamp: Number(now()),
+    },
     appSecret,
     apiBaseUrl,
     fetchImpl,
