@@ -259,8 +259,8 @@ function toggleBrandSelection(brandId) {
   renderBrandSelectionPanel();
 }
 
-async function exportNextSelectedBrand() {
-  acceptBrandWorkEvents = true;
+async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) {
+  if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return;
   if (!brandExportQueue.length) {
     activeExportBrand = null;
     renderBrandSelectionPanel();
@@ -301,7 +301,7 @@ async function exportNextSelectedBrand() {
     $("#brand-status").className = "status error";
     $("#brand-status").textContent = automation?.message || "판매자센터 데이터 가져오기 작업이 생성되지 않았습니다.";
     activeExportBrand = null;
-    setTimeout(exportNextSelectedBrand, 400);
+    setTimeout(() => exportNextSelectedBrand(generation), 400);
   } else {
     $("#brand-export-folder-path").textContent = `저장 폴더: ${automation.folder}`;
     const reusedState = automation.reused
@@ -315,7 +315,7 @@ async function exportNextSelectedBrand() {
       ? `${activeExportBrand.name} · 작업번호 ${automation.jobId} · ${automation.alreadySuccessful ? "기존 완료 파일 재다운로드 대기" : "기존 작업 감시 등록"}`
       : `${activeExportBrand.name} 요청 접수 완료${automation.jobId ? ` · 작업번호 ${automation.jobId}` : ""} · 다음 브랜드 등록 중`;
     activeExportBrand = null;
-    setTimeout(exportNextSelectedBrand, 400);
+    setTimeout(() => exportNextSelectedBrand(generation), 400);
   }
 }
 
@@ -883,10 +883,12 @@ document.addEventListener("click", async (event) => {
   if (event.target.closest("#brand-export-selected")) {
     brandExportQueue = explorerMeta.brands.filter((brand) => selectedBrandIds.has(Number(brand.id)));
     if (!brandExportQueue.length || activeExportBrand) return;
+    acceptBrandWorkEvents = true;
+    const generation = brandWorkHistoryGeneration;
     clearExplorerResults();
     brandWorkbenchProducts = [];
     renderBrandWorkbench();
-    exportNextSelectedBrand();
+    exportNextSelectedBrand(generation);
     return;
   }
   const brandId = event.target.closest("[data-brand-id]")?.dataset.brandId;
