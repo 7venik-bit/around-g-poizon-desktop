@@ -29,7 +29,7 @@ contextBridge.exposeInMainWorld("aroundG", {
     ipcRenderer.on("brand-export:session-cleared", handler);
     return () => ipcRenderer.removeListener("brand-export:session-cleared", handler);
   },
-  importBrandExcelFromPath: (path) => ipcRenderer.invoke("excel:import-brand-source", { path }),
+  importBrandExcelFromPath: (path, expectedBrand = "") => ipcRenderer.invoke("excel:import-brand-source", { path, expectedBrand }),
   onBrandExportDetected: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on("brand-export:detected", handler);

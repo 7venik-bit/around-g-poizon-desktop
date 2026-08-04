@@ -245,7 +245,7 @@ $("#open-excel").addEventListener("click", () => window.aroundG.openOriginalExce
 (async () => {
   const generation = ++workGeneration;
   $("#source").textContent = filePath;
-  const result = await window.aroundG.importBrandExcelFromPath(filePath);
+  const result = await window.aroundG.importBrandExcelFromPath(filePath, requestedBrand);
   if (generation !== workGeneration) return;
   if (!result?.ok) {
     $("#status").textContent = result?.message || "Excel 상품 데이터를 불러오지 못했습니다.";
