@@ -530,6 +530,19 @@ body .explorer-panel{border-color:var(--ui-line);background:#fff}
 .brand-card:disabled{cursor:wait;opacity:.72}
 .brand-card.download-complete{grid-template-columns:30px minmax(0,1fr) auto}
 .brand-download-complete{justify-self:end;padding:3px 6px;border:1px solid #86d0a5;border-radius:999px;color:#167348;background:#edf9f2;font-size:9px;font-style:normal;font-weight:800;white-space:nowrap}
+.brand-toolbar .brand-filter-field{position:relative;display:block;margin:0;width:min(460px,100%)}
+.brand-filter-field svg{position:absolute;left:14px;top:50%;width:18px;height:18px;transform:translateY(-50%);fill:none;stroke:#4d7da5;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.brand-toolbar .brand-filter-field input{width:100%;padding-left:42px}
+.brand-selection-actions{display:flex;align-items:center;gap:9px;margin:10px 0 4px;padding:10px 12px;border:1px solid #d6e5f1;border-radius:10px;background:#f8fbff}
+.brand-selection-actions svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.brand-multi-select-label{display:flex;align-items:center;gap:7px;color:#2d5f88;font-size:12px;font-weight:800}
+.brand-multi-select-label svg{color:#2d86c7}
+#brand-selected-count{margin-right:auto;color:#1873aa;font-size:12px}
+#brand-selection-clear{padding:7px 10px;font-size:11px}
+.brand-search-action{display:flex;align-items:center;gap:7px;padding:8px 13px;font-size:12px;font-weight:800}
+.brand-search-action.is-running svg{animation:brand-search-pulse 1s ease-in-out infinite alternate}
+@keyframes brand-search-pulse{to{opacity:.35;transform:scale(.88)}}
+@media(max-width:900px){.brand-selection-actions{flex-wrap:wrap}.brand-multi-select-label{margin-right:auto}#brand-selected-count{order:2;flex:1 0 100%}.brand-search-action{flex:1;justify-content:center}}
 .poizon-result-tabs{margin-bottom:10px;border-bottom:1px solid #e2e8f0}
 .poizon-result-tabs button{margin-bottom:-1px;border-radius:0;color:#77869a;background:transparent}
 .poizon-result-tabs button.active{border-bottom:2px solid var(--ui-blue);color:#1e69c6;background:transparent}

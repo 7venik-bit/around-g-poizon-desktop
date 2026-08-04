@@ -3,35 +3,51 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
+const indexHtml = await readFile(new URL("../src/index.html", import.meta.url), "utf8");
 
-test("brand picker removes the duplicate multi-selection summary panel", () => {
+test("brand picker keeps one compact multi-selection toolbar", () => {
   const layoutStart = renderer.indexOf("function setupBrandLayout");
   const layoutEnd = renderer.indexOf("function renderBrandWorkbench", layoutStart);
   const layout = renderer.slice(layoutStart, layoutEnd);
 
-  assert.match(layout, /picker\.append\(summary, toolbar, cards\)/);
+  assert.match(layout, /picker\.append\(summary, toolbar, selectionActions, cards\)/);
   assert.doesNotMatch(layout, /brand-selection-panel|brand-selection-chips|brand-selection-history/);
 });
 
-test("one brand-card click selects one brand and starts its export", () => {
+test("brand-card clicks toggle multiple selections without starting an export", () => {
   const clickStart = renderer.indexOf('document.addEventListener("click"');
   const clickEnd = renderer.indexOf('document.querySelectorAll(".explorer-mode")', clickStart);
   const clickHandler = renderer.slice(clickStart, clickEnd);
 
   assert.match(clickHandler, /closest\("\.brand-card\[data-brand-id\]"\)/);
-  assert.match(clickHandler, /const brand = selectSingleBrand\(brandButton\.dataset\.brandId\)/);
-  assert.match(clickHandler, /brandExportQueue = \[brand\]/);
-  assert.match(clickHandler, /void exportNextSelectedBrand\(generation\)/);
-  assert.doesNotMatch(clickHandler, /toggleBrandSelection\(brandId\);\s*return;\s*selectedBrandId/);
+  assert.match(clickHandler, /toggleBrandSelection\(brandButton\.dataset\.brandId\)/);
+  assert.doesNotMatch(clickHandler, /brandExportQueue = \[brand\]/);
+  assert.doesNotMatch(clickHandler, /void exportNextSelectedBrand\(generation\)/);
 });
 
-test("single-brand selection does not toggle off on a repeated click", () => {
-  const selectStart = renderer.indexOf("function selectSingleBrand");
-  const selectEnd = renderer.indexOf("async function exportNextSelectedBrand", selectStart);
+test("brand selection supports toggle-on and toggle-off", () => {
+  const selectStart = renderer.indexOf("function toggleBrandSelection");
+  const selectEnd = renderer.indexOf("function updateBrandSelectionControls", selectStart);
   const selection = renderer.slice(selectStart, selectEnd);
 
-  assert.match(selection, /selectedBrandIds\.clear\(\);\s*selectedBrandIds\.add\(id\)/);
-  assert.doesNotMatch(selection, /selectedBrandIds\.delete\(id\)/);
+  assert.match(selection, /selectedBrandIds\.has\(id\)/);
+  assert.match(selection, /selectedBrandIds\.add\(id\)/);
+  assert.match(selection, /selectedBrandIds\.delete\(id\)/);
+});
+
+test("selected-brand search queues every selected brand", () => {
+  assert.match(renderer, /function selectedBrandsForExport\(\)/);
+  assert.match(renderer, /brandExportQueue = \[\.\.\.selectedBrands\]/);
+  assert.match(renderer, /void exportNextSelectedBrand\(generation\)/);
+  assert.match(renderer, /#brand-export-selected/);
+});
+
+test("brand picker exposes accessible multi-select and search icons", () => {
+  assert.match(indexHtml, /class="brand-filter-field"/);
+  assert.match(indexHtml, /aria-label="브랜드 복수 선택 및 검색"/);
+  assert.match(indexHtml, /id="brand-export-selected"/);
+  assert.match(indexHtml, /<span>선택 브랜드 검색<\/span>/);
+  assert.match(indexHtml, /<svg aria-hidden="true" viewBox="0 0 24 24">/);
 });
 
 test("brand button shows down-complete whenever its data-center workbook was downloaded", () => {
