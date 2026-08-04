@@ -98,10 +98,9 @@ function normalizeBrandKey(value = "") {
 
 function hasCompletedBrandDownload(brand = {}) {
   const keys = new Set([normalizeBrandKey(brand.name), normalizeBrandKey(brand.ko)].filter(Boolean));
-  return downloadedBrandFiles.some((file) => {
-    if (file?.brandIntegrity?.ok === false) return false;
-    return keys.has(normalizeBrandKey(file.brandName || file.brand));
-  });
+  return downloadedBrandFiles.some((file) =>
+    keys.has(normalizeBrandKey(file.brandName || file.brand))
+  );
 }
 
 function renderDownloadedBrandFiles() {
@@ -141,29 +140,29 @@ function renderDownloadedBrandFiles() {
         ? `<img src="${text(meta.logoUrl)}" alt="${text(brandName)} 로고"><b>${text(brandName.slice(0, 1))}</b>`
         : `<b>${text(brandName.slice(0, 1))}</b>`;
       const historyRow = ({ file, index }) => `
-        <div class="brand-download-history-row${file.brandIntegrity?.ok === false ? " brand-download-mismatch" : ""}">
+        <div class="brand-download-history-row">
           <span></span>
-          <strong title="${text(file.path || "")}">${text(file.name || file.path || "Excel 파일")}${file.brandIntegrity?.ok === false ? `<small>${text(file.brandIntegrity.message || "브랜드 불일치")}</small>` : ""}</strong>
+          <strong title="${text(file.path || "")}">${text(file.name || file.path || "Excel 파일")}</strong>
           <code>${text(file.jobId || "-")}</code>
           <time>${text(brandTime(file.time))}</time>
           <span>${text(excelFileSize(file.size))}</span>
-          <button type="button" data-open-brand-file-index="${index}">${file.brandIntegrity?.ok === false ? "Excel 확인" : "Excel 열기"}</button>
+          <button type="button" data-open-brand-file-index="${index}">Excel 열기</button>
         </div>`;
       return `
-        <article class="brand-download-row-group${latest.file.brandIntegrity?.ok === false ? " brand-download-mismatch" : ""}">
+        <article class="brand-download-row-group">
           <div class="brand-download-row">
             <span class="brand-download-brand">
             <i class="brand-download-logo">${logo}</i>
             <span class="brand-download-name">
               <strong>${text(brandName)}</strong>
-              <small>${latest.file.brandIntegrity?.ok === false ? `브랜드 불일치 · 실제 ${text(latest.file.brandIntegrity.dominantBrand || "확인 불가")}` : "POIZON 원본 · 판매량 수동 입력"}</small>
+              <small>POIZON 원본 · 다운완료</small>
             </span>
             </span>
-            <strong class="brand-download-filename" title="${text(latest.file.path || "")}">${text(latest.file.name || latest.file.path || "Excel 파일")}${latest.file.brandIntegrity?.ok === false ? `<small>${text(latest.file.brandIntegrity.message || "브랜드 불일치")}</small>` : ""}</strong>
+            <strong class="brand-download-filename" title="${text(latest.file.path || "")}">${text(latest.file.name || latest.file.path || "Excel 파일")}</strong>
             <code>${text(latest.file.jobId || "-")}</code>
             <time>${text(brandTime(latest.file.time))}</time>
             <b class="brand-download-badge">${text(excelFileSize(latest.file.size))}</b>
-            <button type="button" data-open-brand-file-index="${latest.index}">${latest.file.brandIntegrity?.ok === false ? "Excel 확인" : "Excel 열기"}</button>
+            <button type="button" data-open-brand-file-index="${latest.index}">Excel 열기</button>
           </div>
           ${history.length ? `
             <details class="brand-download-history">
@@ -464,7 +463,7 @@ function renderBrandCards(filter = "") {
   $("#brand-cards").innerHTML = brands.map((brand) => {
     const downloadComplete = hasCompletedBrandDownload(brand);
     return `<button type="button" class="brand-card ${selectedBrandIds.has(Number(brand.id)) ? "selected" : ""}${downloadComplete ? " download-complete" : ""}" data-brand-id="${brand.id}" aria-pressed="${selectedBrandIds.has(Number(brand.id))}"${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
-    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong><small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>${downloadComplete ? '<em class="brand-download-complete">✓ 다운로드 완료</em>' : ""}
+    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong><small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>${downloadComplete ? '<em class="brand-download-complete">다운완료</em>' : ""}
   </button>`;
   }).join("");
   document.querySelectorAll(".brand-logo img").forEach((image) => {
@@ -1066,21 +1065,9 @@ async function importDetectedBrandExport(file, generation = brandWorkHistoryGene
     name: file.name,
     originalPath: file.path,
   });
-  if (file?.brandIntegrity?.ok === false) {
-    const actualBrand = file.brandIntegrity.dominantBrand || "확인 불가";
-    updateBrandExportJob(file?.jobId, `브랜드 불일치 · 실제 ${actualBrand}`, file?.brandName);
-    $("#brand-status").className = "status error";
-    $("#brand-status").textContent = file.brandIntegrity.message || "선택 브랜드와 Excel 브랜드가 일치하지 않습니다.";
-    const mismatchStatus = $("#excel-files-status");
-    if (mismatchStatus) {
-      mismatchStatus.className = "status error";
-      mismatchStatus.textContent = "불일치 파일은 삭제하지 않았으며 정상 자료로 처리하지 않았습니다. Excel 확인 버튼으로 원본을 확인할 수 있습니다.";
-    }
-    return true;
-  }
-  updateBrandExportJob(file?.jobId, "POIZON 원본 Excel 다운로드 완료", file?.brandName);
+  updateBrandExportJob(file?.jobId, "다운완료", file?.brandName);
   $("#brand-status").className = "status success";
-  $("#brand-status").textContent = `${selectedBrandName || "선택 브랜드"} POIZON 원본 Excel 다운로드 완료 · 받은 Excel 파일 메뉴에서 확인하세요.`;
+  $("#brand-status").textContent = `${expectedBrand || "선택 브랜드"} 다운완료 · 받은 Excel 파일 메뉴에서 확인하세요.`;
   const fileStatus = $("#excel-files-status");
   if (fileStatus) {
     fileStatus.className = "status success";
