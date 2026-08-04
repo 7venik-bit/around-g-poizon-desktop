@@ -47,6 +47,7 @@ import { countRenderedChannelProducts, queryDomesticProducts } from "./relay/dom
 import { scoreProductCandidate } from "./services/matcher.mjs";
 import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
+import { findNewSellerExportJob } from "./services/brand-export-jobs.mjs";
 
 let store;
 const { autoUpdater } = pkg;
@@ -1501,7 +1502,7 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
   return { ok: true, jobs: brandExportJobs.size };
 }
 
-async function readLatestSellerExportJob() {
+async function readSellerExportJobs() {
   if (!sellerWindow || sellerWindow.isDestroyed()) return null;
   if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
     await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
@@ -1517,16 +1518,16 @@ async function readLatestSellerExportJob() {
     const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")]
       .filter(visible)
       .filter((row) => /\\uC0C1\\uD488\\uAC80\\uC0C9\\s*\\uB0B4\\uBCF4\\uB0B4\\uAE30/i.test(textOf(row)));
-    const row = rows[0];
-    if (!row) return null;
-    const text = textOf(row);
-    const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
-    const firstCellText = textOf(cells[0]);
-    const id = firstCellText.match(/\\b\\d{9,}\\b/)?.[0]
-      || text.match(/\\b\\d{9,}\\b/)?.[0]
-      || "";
-    return { id, fingerprint: id || text.slice(0, 180), text };
-  })()`, true).catch(() => null);
+    return rows.map((row) => {
+      const text = textOf(row);
+      const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
+      const firstCellText = textOf(cells[0]);
+      const id = firstCellText.match(/\\b\\d{9,}\\b/)?.[0]
+        || text.match(/\\b\\d{9,}\\b/)?.[0]
+        || "";
+      return { id, fingerprint: id || text.slice(0, 180), text };
+    });
+  })()`, true).catch(() => []);
 }
 
 function normalizeBrandExportKey(value = "") {
@@ -1564,59 +1565,22 @@ async function rememberBrandExportJob(input = {}) {
   await store.setSettings({ brandExportJobCache: cache });
 }
 
-async function findReusableSellerExportJob(brandName = "", knownJobIds = []) {
-  const brandKey = normalizeBrandExportKey(brandName);
-  const savedCandidates = savedBrandExportJobs()
-    .filter((item) => normalizeBrandExportKey(item?.brandKey || item?.brandName) === brandKey)
-    .sort((left, right) => Number(right?.createdAt || 0) - Number(left?.createdAt || 0))
-    .slice(0, 20);
-  const candidates = [
-    ...knownJobIds.map((jobId) => ({ jobId: String(jobId || ""), brandName, brandKey, createdAt: 0 })),
-    ...savedCandidates,
-  ].filter((item, index, all) => item.jobId
-    && all.findIndex((candidate) => candidate.jobId === item.jobId) === index)
-    .slice(0, 20);
-  if (!candidates.length || !sellerWindow || sellerWindow.isDestroyed()) return null;
-  if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
-    await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
-  }
-  await new Promise((resolve) => setTimeout(resolve, 1200));
-  const candidateIds = candidates.map((item) => String(item.jobId || "")).filter(Boolean);
-  const portalJobs = await sellerWindow.webContents.executeJavaScript(`(() => {
-    const candidateIds = ${JSON.stringify(candidateIds)};
-    const visible = (element) => element && element.getBoundingClientRect().width > 0
-      && element.getBoundingClientRect().height > 0;
-    const textOf = (element) => String(element?.innerText || element?.textContent || "")
-      .replace(/\\s+/g, " ").trim();
-    const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")].filter(visible);
-    return candidateIds.map((jobId) => {
-      const row = rows.find((candidate) => {
-        const value = textOf(candidate);
-        return value.includes(jobId)
-          && /\\uC0C1\\uD488\\uAC80\\uC0C9\\s*\\uB0B4\\uBCF4\\uB0B4\\uAE30/i.test(value);
-      });
-      if (!row) return { jobId, state: "NOT_FOUND" };
-      const rowText = textOf(row);
-      if (/\\uC131\\uACF5|completed|success/i.test(rowText)) {
-        const hasDownload = [...row.querySelectorAll("a, button, [role='button']")]
-          .some((element) => /\\uB2E4\\uC6B4\\uB85C\\uB4DC|download/i.test([
-            textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"),
-            element.getAttribute("href"),
-          ].filter(Boolean).join(" ")));
-        return { jobId, state: hasDownload ? "SUCCESS" : "SUCCESS_WAITING_FOR_DOWNLOAD" };
-      }
-      if (/\\uCC98\\uB9AC\\s*\\uC911|processing|pending/i.test(rowText)) {
-        return { jobId, state: "PROCESSING" };
-      }
-      return { jobId, state: "UNAVAILABLE" };
-    });
-  })()`, true).catch(() => []);
-  // Completed jobs created before brand validation may contain another brand.
-  // Only continue an in-flight request; every completed brand export is recreated.
-  const reusable = portalJobs.find((item) => item.state === "PROCESSING");
-  if (!reusable) return null;
-  const cached = candidates.find((item) => String(item.jobId) === reusable.jobId);
-  return { ...cached, state: reusable.state };
+function brandExportJobOwner(jobId = "") {
+  const normalizedId = String(jobId || "").trim();
+  if (!normalizedId) return null;
+  const active = brandExportJobs.get(normalizedId);
+  if (active) return active;
+  return savedBrandExportJobs().find((item) => String(item?.jobId || "").trim() === normalizedId) || null;
+}
+
+function sellerBrandExportFailureMessage(code = "", brandName = "") {
+  const label = String(brandName || "선택 브랜드").trim();
+  const messages = {
+    BRAND_INPUT_NOT_APPLIED: `${label} 검색어가 판매자센터에 입력되지 않아 중단했습니다.`,
+    BRAND_RESULT_MISMATCH: `${label} 검색 결과가 확인되지 않아 내보내기를 중단했습니다. 기존 검색 결과는 다운로드하지 않습니다.`,
+    SEARCH_RESULT_NOT_UPDATED: `${label} 검색 결과가 새로 바뀌지 않아 내보내기를 중단했습니다. 기존 검색 결과는 다운로드하지 않습니다.`,
+  };
+  return messages[code] || `판매자센터 자동화 실패: ${code || "UNKNOWN"}`;
 }
 
 async function automateSellerBrandExport(input = {}) {
@@ -1646,51 +1610,9 @@ async function automateSellerBrandExport(input = {}) {
     pendingBrandExportName = "";
     return { ok: false, message: "판매자센터 창을 열지 못했습니다." };
   }
-  const reusableJob = await findReusableSellerExportJob(
-    brandName,
-    Array.isArray(input.knownJobIds) ? input.knownJobIds : [],
-  );
+  const baselineJobs = await readSellerExportJobs();
+  const baselineJobIds = new Set((baselineJobs || []).map((job) => String(job?.id || "").trim()).filter(Boolean));
   if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "작업 기록 삭제로 이전 요청을 중단했습니다." };
-  if (reusableJob?.jobId) {
-    const registeredJobId = String(reusableJob.jobId);
-    pendingBrandExportJobId = registeredJobId;
-    brandExportJobs.set(registeredJobId, {
-      jobId: registeredJobId,
-      brandName,
-      brandKo,
-      createdAt: Number(reusableJob.createdAt) || Date.now(),
-      downloadStarted: false,
-      reused: true,
-    });
-    await rememberBrandExportJob({
-      jobId: registeredJobId,
-      brandName,
-      brandKo,
-      createdAt: Number(reusableJob.createdAt) || Date.now(),
-      sessionGeneration,
-    });
-    const alreadySuccessful = reusableJob.state !== "PROCESSING";
-    mainWindow?.webContents.send("brand-export:progress", {
-      status: "job-reused",
-      brandName,
-      jobId: registeredJobId,
-      jobState: alreadySuccessful ? "기존 성공 작업 재사용" : "기존 처리 작업 이어받기",
-      message: `${brandName} · 작업번호 ${registeredJobId} · ${alreadySuccessful ? "완료 자료를 다시 다운로드합니다." : "진행 중인 작업을 이어서 감시합니다."}`,
-    });
-    brandExportJobPending = false;
-    sellerWindow.hide();
-    mainWindow?.show();
-    mainWindow?.focus();
-    if (!input.deferMonitor) void watchAllSellerExportJobsEveryTenSeconds();
-    return {
-      ok: true,
-      folder,
-      jobId: registeredJobId,
-      reused: true,
-      alreadySuccessful,
-    };
-  }
-  const baselineJob = await readLatestSellerExportJob();
   if (!sellerWindow.webContents.getURL().includes("/main/goods/search")) {
     await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
   }
@@ -2003,18 +1925,16 @@ async function automateSellerBrandExport(input = {}) {
     return {
       ok: false,
       code: searched?.code || searched?.step || "SELLER_AUTOMATION_FAILED",
-      message: `판매자센터 자동화 실패: ${searched?.code || searched?.step || "UNKNOWN"}`,
+      message: sellerBrandExportFailureMessage(searched?.code || searched?.step, brandName),
     };
   }
 
   let createdJob = null;
   const verificationStartedAt = Date.now();
   while (Date.now() - verificationStartedAt < 45000) {
-    const latestJob = await readLatestSellerExportJob();
-    if (latestJob?.fingerprint && latestJob.fingerprint !== baselineJob?.fingerprint) {
-      createdJob = latestJob;
-      break;
-    }
+    const currentJobs = await readSellerExportJobs();
+    createdJob = findNewSellerExportJob([...baselineJobIds], currentJobs || []);
+    if (createdJob) break;
     await new Promise((resolve) => setTimeout(resolve, 2500));
     if (sellerWindow && !sellerWindow.isDestroyed()) {
       await sellerWindow.webContents.reloadIgnoringCache();
@@ -2033,8 +1953,21 @@ async function automateSellerBrandExport(input = {}) {
     };
   }
   if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "작업 기록 삭제로 이전 요청을 중단했습니다." };
-  pendingBrandExportJobId = createdJob.id || "";
+  pendingBrandExportJobId = String(createdJob.id || "").trim();
   const registeredJobId = pendingBrandExportJobId;
+  const existingOwner = brandExportJobOwner(registeredJobId);
+  if (existingOwner) {
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    sellerWindow.hide();
+    showCollectorWindow();
+    return {
+      ok: false,
+      code: "EXPORT_JOB_ID_REUSED",
+      message: `새 작업번호가 생성되지 않았습니다. 기존 작업번호 ${registeredJobId}는 ${existingOwner.brandName || "다른 브랜드"} 작업에 이미 연결되어 있습니다.`,
+    };
+  }
   brandExportJobs.set(registeredJobId, {
     jobId: registeredJobId,
     brandName,

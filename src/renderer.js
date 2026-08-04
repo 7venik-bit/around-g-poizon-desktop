@@ -321,25 +321,10 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
   renderBrandCards($("#brand-filter")?.value || "");
   $("#brand-status").className = "status";
   $("#brand-status").textContent = `${activeExportBrand.name} 판매자센터 요청 생성 여부 확인 중`;
-  const brandKey = (value) => String(value || "")
-    .normalize("NFKC")
-    .trim()
-    .toLocaleLowerCase()
-    .replace(/[^a-z0-9가-힣]+/g, "");
-  const selectedBrandKey = brandKey(activeExportBrand.name);
-  const knownJobIds = [
-    ...downloadedBrandFiles
-      .filter((file) => brandKey(file.brandName || file.brand) === selectedBrandKey)
-      .map((file) => String(file.jobId || "")),
-    ...brandSelectionHistory
-      .filter((item) => brandKey(item.brandName) === selectedBrandKey)
-      .map((item) => String(item.jobId || "")),
-  ].filter((jobId, index, all) => jobId && all.indexOf(jobId) === index).slice(0, 20);
   const automation = await window.aroundG.automateSellerBrandExport({
     brandName: activeExportBrand.name || "",
     brandKo: activeExportBrand.ko || "",
     brandId: selectedBrandId,
-    knownJobIds,
     deferMonitor: true,
   });
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return;
@@ -351,15 +336,10 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     setTimeout(() => exportNextSelectedBrand(generation), 400);
   } else {
     renderBrandExportFolder(automation.folder);
-    const reusedState = automation.reused
-      ? (automation.alreadySuccessful ? "기존 성공 작업 재사용" : "기존 처리 작업 이어받기")
-      : "등록 완료 · 동시 감시 대기";
-    updateBrandExportJob(automation.jobId, reusedState, activeExportBrand.name);
-    recordBrandSelection(activeExportBrand, automation.reused ? reusedState : "전체 내보내기 요청", { jobId: automation.jobId });
+    updateBrandExportJob(automation.jobId, "등록 완료 · 동시 감시 대기", activeExportBrand.name);
+    recordBrandSelection(activeExportBrand, "전체 내보내기 요청", { jobId: automation.jobId });
     $("#brand-status").className = "status success";
-    $("#brand-status").textContent = automation.reused
-      ? `${activeExportBrand.name} · 작업번호 ${automation.jobId} · ${automation.alreadySuccessful ? "기존 완료 파일 재다운로드 대기" : "기존 작업 감시 등록"}`
-      : `${activeExportBrand.name} 요청 접수 완료${automation.jobId ? ` · 작업번호 ${automation.jobId}` : ""} · 다음 브랜드 등록 중`;
+    $("#brand-status").textContent = `${activeExportBrand.name} 요청 접수 완료${automation.jobId ? ` · 작업번호 ${automation.jobId}` : ""} · 다음 브랜드 등록 중`;
     activeExportBrand = null;
     setTimeout(() => exportNextSelectedBrand(generation), 400);
   }
