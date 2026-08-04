@@ -72,6 +72,7 @@ const SELLER_PRODUCT_SEARCH_URL = "https://seller.poizon.com/main/goods/search";
 const SELLER_EXPORT_CENTER_URL = "https://seller.poizon.com/main/exportCenter";
 const KR_POIZON_BRAND_LIST_URL = "https://kr.poizon.com/brand/list";
 const EN_POIZON_BRAND_LIST_URL = "https://www.poizon.com/brand/list";
+const APP_ICON_PATH = join(import.meta.dirname, "build", "icon.png");
 const SELLER_CAPTURE_SCRIPT = `(async () => {
   const selector = "tr, [role='row'], li, [class*='row'], [class*='item'], [class*='product'], [class*='table']";
   const headings = [...document.querySelectorAll("h1, h2, h3, h4, strong, span, div")]
@@ -627,6 +628,7 @@ async function renderedSearchSourceCount(source, articleNumber) {
   try {
     searchWindow = new BrowserWindow({
       show: false,
+      icon: APP_ICON_PATH,
       width: 1100,
       height: 800,
       webPreferences: {
@@ -895,6 +897,7 @@ function secretConfig() {
 
 function createWindow() {
   const win = new BrowserWindow({
+    icon: APP_ICON_PATH,
     width: 1440,
     height: 920,
     minWidth: 1040,
@@ -922,6 +925,7 @@ function createWindow() {
 
 function openInventoryWindow(filePath, brandName = "") {
   const inventoryWindow = new BrowserWindow({
+    icon: APP_ICON_PATH,
     width: 1380,
     height: 900,
     minWidth: 980,
@@ -983,6 +987,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
     return;
   }
   sellerWindow = new BrowserWindow({
+    icon: APP_ICON_PATH,
     show: visible,
     width: 1500,
     height: 940,
@@ -1989,6 +1994,7 @@ async function automateSellerBrandExport(input = {}) {
 async function syncBrandCatalogFromKrPoizon() {
   const window = new BrowserWindow({
     show: false,
+    icon: APP_ICON_PATH,
     width: 1280,
     height: 900,
     webPreferences: {
@@ -2043,6 +2049,7 @@ async function queryPublicBrandProducts(input) {
   }
   const window = new BrowserWindow({
     show: false,
+    icon: APP_ICON_PATH,
     width: 1280,
     height: 900,
     webPreferences: {
@@ -2816,6 +2823,7 @@ async function captureSellerBrandSales(input = {}) {
 }
 
 app.whenReady().then(async () => {
+  app.setAppUserModelId("kr.aroundg.poizon");
   store = new JsonStore(app.getPath("userData"));
   await store.load();
   if (process.argv.includes("--migrate-only")) {
