@@ -9,7 +9,12 @@ import {
   getPoizonWorksheetRows,
   repairPoizonWorksheetDimensions,
 } from "./services/poizon-xlsx.mjs";
-import { analyzeBrandMatch, brandMismatchMessage } from "./services/brand-integrity.mjs";
+import {
+  analyzeBrandMatch,
+  brandExportLabel,
+  brandMismatchMessage,
+  brandsMatch,
+} from "./services/brand-integrity.mjs";
 import {
   createPopularSlots,
   excelRowsToPopularProducts,
@@ -978,7 +983,8 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL) {
     // Electron must receive the destination before this event handler yields.
     // Waiting for an async mkdir here lets Windows open its Save As dialog first.
     mkdirSync(folder, { recursive: true });
-    const safeBrand = String(downloadJob.brandName || "").replace(/[\\/:*?"<>|]/g, "-").trim();
+    const exportBrand = brandExportLabel(downloadJob.brandName);
+    const safeBrand = String(exportBrand || "").replace(/[\\/:*?"<>|]/g, "-").trim();
     const fileName = safeBrand
       ? `${safeBrand}_${localFileTimestamp()}.xlsx`
       : `POIZON_${localFileTimestamp()}.xlsx`;
@@ -1006,7 +1012,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL) {
         mainWindow?.webContents.send("brand-export:detected", {
           path: filePath,
           name: fileName,
-          brandName: downloadJob.brandName,
+          brandName: exportBrand || downloadJob.brandName,
           jobId: downloadJobId,
         });
       } else {
@@ -1580,6 +1586,10 @@ async function automateSellerBrandExport(input = {}) {
     await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
   }
   await new Promise((resolve) => setTimeout(resolve, 1800));
+  const sellerBrandMatchKeys = [brandName, String(input.brandKo || "").trim()];
+  if (brandsMatch(brandName, "Jordan")) {
+    sellerBrandMatchKeys.push("Jordan", "조던", "乔丹");
+  }
   const searched = await sellerWindow.webContents.executeJavaScript(`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getBoundingClientRect().width > 0
@@ -1632,7 +1642,7 @@ async function automateSellerBrandExport(input = {}) {
           return { rowText, rowTexts, totalText, totalCount };
         };
         const beforeSearch = readSearchState();
-        const requestedBrandKeys = [${JSON.stringify(brandName)}, ${JSON.stringify(String(input.brandKo || "").trim())}]
+        const requestedBrandKeys = ${JSON.stringify(sellerBrandMatchKeys)}
           .map(normalize).filter(Boolean);
         const requestedBrandRatio = (state) => {
           const rows = Array.isArray(state?.rowTexts) ? state.rowTexts.filter(Boolean) : [];
