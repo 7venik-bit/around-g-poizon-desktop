@@ -26,9 +26,17 @@ export function brandsMatch(expected = "", observed = "") {
   const expectedKey = canonicalBrand(expected);
   const observedKey = canonicalBrand(observed);
   if (!expectedKey || !observedKey) return false;
+  if ((expectedKey === "nike" || expectedKey === "nikejordan")
+    && (observedKey === "nike" || observedKey === "jordan")) return true;
   if (expectedKey === observedKey) return true;
   return expectedKey.length >= 5 && observedKey.length >= 5
     && (expectedKey.includes(observedKey) || observedKey.includes(expectedKey));
+}
+
+export function brandExportLabel(value = "") {
+  const raw = String(value || "").trim();
+  const key = canonicalBrand(raw);
+  return key === "nike" || key === "nikejordan" ? "Nike_Jordan" : raw;
 }
 
 export function analyzeBrandMatch(expectedBrand = "", products = [], minimumRatio = 0.8) {
