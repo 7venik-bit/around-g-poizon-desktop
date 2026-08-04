@@ -13,6 +13,9 @@ test("normalizes punctuation and spacing", () => {
 
 test("matches known localized aliases", () => {
   assert.equal(brandsMatch("Adidas", "아디다스"), true);
+  assert.equal(brandsMatch("PUMA", "푸마"), true);
+  assert.equal(brandsMatch("PUMA", "彪马"), true);
+  assert.equal(brandsMatch("PUMA", "Jordan"), false);
   assert.equal(brandsMatch("Adidas", "Jordan"), false);
 });
 
@@ -34,4 +37,12 @@ test("accepts a workbook when at least 80 percent matches", () => {
 
 test("blocks missing brand data when an expected brand is supplied", () => {
   assert.equal(analyzeBrandMatch("Adidas", [{ title: "shoe" }]).ok, false);
+});
+
+
+test("blocks a Jordan workbook labeled as PUMA", () => {
+  const result = analyzeBrandMatch("PUMA", Array.from({ length: 993 }, () => ({ brandName: "Jordan" })));
+  assert.equal(result.ok, false);
+  assert.equal(result.dominantBrand, "Jordan");
+  assert.match(brandMismatchMessage(result), /요청: PUMA/);
 });
