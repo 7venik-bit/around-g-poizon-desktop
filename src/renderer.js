@@ -193,9 +193,21 @@ async function restoreDownloadedBrandFiles() {
   const result = await window.aroundG?.listBrandExportFiles?.();
   if (generation !== brandWorkHistoryGeneration) return;
   if (!result?.ok || !Array.isArray(result.files)) return;
-  const diskPaths = new Set(result.files.map((file) => String(file.path || "")));
-  downloadedBrandFiles = downloadedBrandFiles
-    .filter((file) => diskPaths.has(String(file.path || "")))
+  const savedByPath = new Map(downloadedBrandFiles.map((file) => [String(file.path || ""), file]));
+  downloadedBrandFiles = result.files
+    .map((file) => {
+      const path = String(file.path || "");
+      const saved = savedByPath.get(path) || {};
+      return {
+        ...saved,
+        ...file,
+        path,
+        brandName: String(saved.brandName || file.brandName || "선택 브랜드"),
+        jobId: String(saved.jobId || file.jobId || ""),
+        time: Number(file.time || file.mtimeMs || saved.time || 0),
+      };
+    })
+    .filter((file) => file.path)
     .sort((a, b) => Number(b.time || 0) - Number(a.time || 0))
     .slice(0, 500);
   localStorage.setItem("around-g-brand-download-files", JSON.stringify(downloadedBrandFiles));
@@ -1097,9 +1109,14 @@ async function importDetectedBrandExport(file, generation = brandWorkHistoryGene
   const result = await window.aroundG.importBrandExcelFromPath(file.path, expectedBrand);
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return false;
   if (!result.ok) {
+    const path = String(file?.path || "").trim();
+    if (path) completedBrandImportPaths.add(path);
+    if (result.code === "BRAND_EXCEL_MISMATCH") {
+      updateBrandExportJob(file?.jobId, "브랜드 불일치 · 파일 제외", expectedBrand);
+    }
     $("#brand-status").className = "status error";
     $("#brand-status").textContent = result.message || "감지된 파일이 POIZON 전체 내보내기 양식이 아닙니다.";
-    return;
+    return false;
   }
   retainSelectedBrandName(expectedBrand);
   addDownloadedBrandFile(file);
@@ -1156,7 +1173,9 @@ $("#brand-download-files").addEventListener("click", async (event) => {
   if (!button) return;
   const file = downloadedBrandFiles[Number(button.dataset.openBrandFileIndex)];
   if (!file?.path) return;
-  const result = await window.aroundG.openDownloadedBrandFile(file.path, file.brandName || file.brand || "");
+  // Historical filenames may carry the requested brand even when the workbook
+  // contains another brand. Direct opening derives the title from workbook data.
+  const result = await window.aroundG.openDownloadedBrandFile(file.path, "");
   if (!result?.ok) {
     $("#brand-status").className = "status error";
     $("#brand-status").textContent = `파일 열기 실패: ${result?.message || "파일을 찾을 수 없습니다."}`;
@@ -1557,7 +1576,7 @@ window.aroundG.onUpdateStatus((payload) => {
     const appInfo = await window.aroundG.getAppInfo();
     renderInstalledVersion(appInfo?.version, appInfo?.automaticUpdates !== false);
   } catch {
-    renderInstalledVersion("2.10.15", true);
+    renderInstalledVersion("2.10.16", true);
   }
   setupBrandLayout();
   try {

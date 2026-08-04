@@ -2,6 +2,7 @@ const KNOWN_ALIASES = [
   ["adidas", "아디다스", "阿迪达斯"],
   ["nike", "나이키", "耐克"],
   ["jordan", "jordanbrand", "조던", "乔丹"],
+  ["puma", "푸마", "彪马"],
   ["newbalance", "뉴발란스", "新百伦"],
   ["descente", "데상트", "迪桑特"],
 ];
