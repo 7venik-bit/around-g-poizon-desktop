@@ -2833,15 +2833,20 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("brand-export:list-files", () => listBrandExportFiles());
   ipcMain.handle("brand-export:clear-session", async () => {
-    for (const inventoryWindow of inventoryWindows) {
-      if (!inventoryWindow.isDestroyed()) inventoryWindow.close();
-    }
     brandExportJobs.clear();
-    await store.setSettings({ brandExportJobCache: [] });
     pendingBrandExportName = "";
     pendingBrandExportJobId = "";
+    activeBrandDownloadJobId = "";
+    brandExportJobPending = false;
+    brandDownloadStarted = false;
     lastBrandExportSignature = "__BASELINE_EXISTING_FILES__";
+    await store.setSettings({ brandExportJobCache: [] });
     mainWindow?.webContents.send("brand-export:session-cleared");
+    for (const inventoryWindow of inventoryWindows) {
+      if (!inventoryWindow.isDestroyed()) {
+        inventoryWindow.webContents.send("brand-export:session-cleared");
+      }
+    }
     return { ok: true };
   });
   ipcMain.handle("brand-export:select-folder", async () => {
