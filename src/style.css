@@ -143,7 +143,11 @@ body .shell>header{height:auto;min-height:82px;align-items:flex-start}
 .brand-excel-flow span b{width:24px;height:24px;display:grid;place-items:center;border-radius:50%;background:#2589c9;color:#fff}
 .brand-excel-flow em{color:#64788a;font-size:12px;font-style:normal}
 @media(max-width:1100px){.brand-excel-flow{grid-template-columns:1fr auto}.brand-excel-flow em{grid-column:2}}
-.brand-export-folder-path{margin:8px 0 0;padding:8px 12px;border-radius:9px;background:#f4f9fd;color:#52718b;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brand-export-folder-setting{display:flex;align-items:stretch;gap:8px;margin:8px 0 0}
+.brand-export-folder-path{min-width:0;flex:1;padding:8px 12px;border-radius:9px;background:#f4f9fd;color:#52718b;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brand-export-folder-select{flex:0 0 auto;padding:8px 14px;border:1px solid #bdd9eb;border-radius:9px;background:#fff;color:#356f94;font-size:11px;font-weight:800;cursor:pointer}
+.brand-export-folder-select:hover{border-color:#2589c9;color:#176da4;background:#f4faff}
+.brand-export-folder-select:disabled{cursor:wait;opacity:.65}
 .brand-export-job{margin:8px 0 0;padding:10px 14px;border:1px solid #9fd2f4;border-radius:10px;background:#eef8ff;color:#145a88;display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:13px}
 .brand-export-job[hidden]{display:none}
 .brand-export-job strong{font-size:14px}
@@ -570,6 +574,7 @@ body .explorer-panel{border-color:var(--ui-line);background:#fff}
   background:#dceafe;color:#236cc8;font-size:10px
 }
 .brand-export-folder-path{color:#77869a;background:#f7f9fc}
+.brand-export-folder-select{border-color:#d4dfeb;color:#246cc2;background:#fff}
 .brand-download-list{padding:0;border-color:#dbe5f0;border-radius:10px;background:#fff;overflow:hidden}
 .brand-download-list-title{margin:0;padding:10px 12px;border-bottom:1px solid #e4eaf2;color:#314967;background:#f8fafc}
 .brand-download-files{border:0;border-radius:0}

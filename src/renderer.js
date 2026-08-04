@@ -28,6 +28,16 @@ let acceptBrandWorkEvents = true;
 const WORK_HISTORY_RESET_KEY = "around-g-work-history-reset-v2.10.4";
 const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
 
+function renderBrandExportFolder(folder = "") {
+  const path = $("#brand-export-folder-path");
+  if (!path) return;
+  const normalizedFolder = String(folder || "").trim();
+  path.textContent = normalizedFolder
+    ? `자동 불러오기 폴더: ${normalizedFolder}`
+    : "자동 불러오기 폴더가 설정되지 않았습니다.";
+  path.title = normalizedFolder || "자동 불러오기 폴더가 설정되지 않았습니다.";
+}
+
 if (localStorage.getItem(WORK_HISTORY_RESET_KEY) !== "done") {
   [
     "around-g-selected-brand-name",
@@ -330,7 +340,7 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     activeExportBrand = null;
     setTimeout(() => exportNextSelectedBrand(generation), 400);
   } else {
-    $("#brand-export-folder-path").textContent = `저장 폴더: ${automation.folder}`;
+    renderBrandExportFolder(automation.folder);
     const reusedState = automation.reused
       ? (automation.alreadySuccessful ? "기존 성공 작업 재사용" : "기존 처리 작업 이어받기")
       : "등록 완료 · 동시 감시 대기";
@@ -943,7 +953,7 @@ document.addEventListener("click", async (event) => {
       $("#brand-status").className = "status error";
       $("#brand-status").textContent = automation.message || "판매자센터 데이터 가져오기 자동화에 실패했습니다.";
     } else {
-      $("#brand-export-folder-path").textContent = `저장 폴더: ${automation.folder}`;
+      renderBrandExportFolder(automation.folder);
       $("#brand-status").className = "status success";
       $("#brand-status").textContent = "전체 데이터를 요청했습니다. 다운로드가 끝나면 자동으로 불러옵니다.";
     }
@@ -1196,6 +1206,25 @@ $("#brand-download-clear")?.addEventListener("click", async () => {
   await window.aroundG?.clearBrandWorkHistory?.();
   $("#brand-status").className = "status success";
   $("#brand-status").textContent = "이전 작업 기록을 삭제했습니다. 원본 Excel 파일은 보존됩니다.";
+});
+$("#brand-export-folder-select")?.addEventListener("click", async () => {
+  const button = $("#brand-export-folder-select");
+  const status = $("#brand-status");
+  button.disabled = true;
+  button.textContent = "선택 중…";
+  try {
+    const result = await window.aroundG.selectBrandExportFolder();
+    if (result?.canceled) return;
+    renderBrandExportFolder(result?.folder);
+    status.className = "status success";
+    status.textContent = `자동 불러오기 폴더를 변경했습니다: ${result.folder}`;
+  } catch (error) {
+    status.className = "status error";
+    status.textContent = `폴더 지정 실패: ${error?.message || "폴더를 선택할 수 없습니다."}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = "폴더 지정";
+  }
 });
 window.aroundG.onBrandWorkHistoryCleared?.(() => clearBrandWorkHistoryUi());
 window.aroundG.onBrandExportProgress((progress) => {
@@ -1616,9 +1645,7 @@ window.aroundG.onUpdateStatus((payload) => {
   renderCategoryButtons();
   const config = await window.aroundG.getConfig();
   const exportFolder = await window.aroundG.getBrandExportFolder();
-  $("#brand-export-folder-path").textContent = exportFolder.folder
-    ? `자동 불러오기 폴더: ${exportFolder.folder}`
-    : "자동 불러오기 폴더가 설정되지 않았습니다.";
+  renderBrandExportFolder(exportFolder.folder);
   $("#app-key").value = config.appKey;
   $("#api-base-url").value = config.apiBaseUrl;
   $("#app-secret").placeholder = config.hasAppSecret ? "저장됨 · 변경할 때만 입력" : "필수";
