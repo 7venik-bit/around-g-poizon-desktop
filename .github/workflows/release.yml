@@ -87,6 +87,18 @@ jobs:
             throw "dist/latest.yml was not generated."
           }
 
+          $installerName = "Around-G-POIZON-Setup-$version.exe"
+          $blockmapName = "$installerName.blockmap"
+          $installerPath = Join-Path $installers[0].DirectoryName $installerName
+          $blockmapPath = Join-Path $blockmaps[0].DirectoryName $blockmapName
+          $oldInstallerName = $installers[0].Name
+
+          Move-Item -LiteralPath $installers[0].FullName -Destination $installerPath -Force
+          Move-Item -LiteralPath $blockmaps[0].FullName -Destination $blockmapPath -Force
+          $latestContent = Get-Content -LiteralPath $latest.FullName -Raw
+          $latestContent = $latestContent.Replace($oldInstallerName, $installerName)
+          Set-Content -LiteralPath $latest.FullName -Value $latestContent -NoNewline -Encoding utf8
+
           gh release view $tag --repo "$env:GITHUB_REPOSITORY" *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --repo "$env:GITHUB_REPOSITORY" --title $tag --generate-notes --verify-tag
@@ -96,10 +108,16 @@ jobs:
           }
 
           $assetPaths = @(
-            $installers[0].FullName
-            $blockmaps[0].FullName
+            $installerPath
+            $blockmapPath
             $latest.FullName
           )
+          $requiredNames = @(
+            $installerName
+            $blockmapName
+            "latest.yml"
+          )
+
           gh release upload $tag $assetPaths --repo "$env:GITHUB_REPOSITORY" --clobber
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to upload release assets for $tag."
@@ -107,10 +125,22 @@ jobs:
 
           $release = gh release view $tag --repo "$env:GITHUB_REPOSITORY" --json assets | ConvertFrom-Json
           $remoteNames = @($release.assets | ForEach-Object { $_.name })
-          foreach ($assetPath in $assetPaths) {
-            $assetName = Split-Path $assetPath -Leaf
-            if ($assetName -notin $remoteNames) {
-              throw "Release asset verification failed: $assetName is missing."
+          $obsoleteNames = @($remoteNames | Where-Object { $_ -notin $requiredNames })
+          foreach ($obsoleteName in $obsoleteNames) {
+            gh release delete-asset $tag $obsoleteName --repo "$env:GITHUB_REPOSITORY" --yes
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to remove obsolete release asset: $obsoleteName."
             }
+          }
+
+          $release = gh release view $tag --repo "$env:GITHUB_REPOSITORY" --json assets | ConvertFrom-Json
+          $remoteNames = @($release.assets | ForEach-Object { $_.name })
+          foreach ($requiredName in $requiredNames) {
+            if ($requiredName -notin $remoteNames) {
+              throw "Release asset verification failed: $requiredName is missing."
+            }
+          }
+          if ($remoteNames.Count -ne $requiredNames.Count) {
+            throw "Release asset verification failed: expected 3 assets, found $($remoteNames.Count)."
           }
           Write-Host "Verified release assets: $($remoteNames -join ', ')"
