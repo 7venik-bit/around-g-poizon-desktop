@@ -36,8 +36,15 @@ export function brandsMatch(expected = "", observed = "") {
 
 export function brandExportLabel(value = "") {
   const raw = String(value || "").trim();
-  const key = canonicalBrand(raw);
-  return key === "nike" || key === "nikejordan" ? "Nike_Jordan" : raw;
+  const normalized = normalizeBrandName(raw);
+  if (["nike", "나이키", "耐克"].some((name) => normalized === normalizeBrandName(name))) return "Nike";
+  if (["jordan", "jordanbrand", "조던", "乔丹"].some((name) => normalized === normalizeBrandName(name))) return "Jordan";
+  if ([
+    "adidasoriginals", "adidasoriginal", "adidasclassic", "adidasclassics",
+    "아디다스오리지널스", "아디다스오리지날스", "아디다스클래식",
+  ].some((name) => normalized === normalizeBrandName(name))) return "Adidas_Originals";
+  if (["adidas", "아디다스", "阿迪达斯"].some((name) => normalized === normalizeBrandName(name))) return "Adidas";
+  return raw;
 }
 
 export function analyzeBrandMatch(expectedBrand = "", products = [], minimumRatio = 0.8) {

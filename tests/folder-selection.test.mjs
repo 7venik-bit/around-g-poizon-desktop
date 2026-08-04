@@ -27,6 +27,6 @@ test("selected and restored folder paths use one consistent label renderer", asy
   const renderer = await readFile(join(root, "src/renderer.js"), "utf8");
 
   assert.match(renderer, /function renderBrandExportFolder\(folder = ""\)/);
-  assert.match(renderer, /원본 Excel 저장 폴더:/);
+  assert.match(renderer, /브랜드별 저장 폴더:/);
   assert.doesNotMatch(renderer, /`저장 폴더: \$\{automation\.folder\}`/);
 });

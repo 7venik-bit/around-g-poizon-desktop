@@ -72,11 +72,14 @@ test("blocks a Jordan workbook labeled as PUMA", () => {
 });
 
 
-test("uses the Nike_Jordan export label for Nike requests", () => {
-  assert.equal(brandExportLabel("Nike"), "Nike_Jordan");
-  assert.equal(brandExportLabel("나이키"), "Nike_Jordan");
-  assert.equal(brandExportLabel("Nike_Jordan"), "Nike_Jordan");
+test("uses separate export labels for Nike, Jordan, Adidas, and Adidas Originals", () => {
+  assert.equal(brandExportLabel("Nike"), "Nike");
+  assert.equal(brandExportLabel("나이키"), "Nike");
+  assert.equal(brandExportLabel("Jordan"), "Jordan");
+  assert.equal(brandExportLabel("조던"), "Jordan");
   assert.equal(brandExportLabel("Adidas"), "Adidas");
+  assert.equal(brandExportLabel("아디다스클래식"), "Adidas_Originals");
+  assert.equal(brandExportLabel("ADIDAS ORIGINALS"), "Adidas_Originals");
 });
 
 test("accepts Nike and Jordan workbooks for the Nike_Jordan bundle", () => {
