@@ -162,7 +162,7 @@ body .shell>header{height:auto;min-height:82px;align-items:flex-start}
 .brand-download-list-title span{display:flex;align-items:center;gap:8px}
 .brand-download-list-title button{padding:4px 9px;border:1px solid #bdd9eb;border-radius:7px;background:#fff;color:#356f94;font-size:10px;font-weight:700;cursor:pointer}
 .brand-download-files{display:block;overflow:hidden;border:1px solid #d2e6f5;border-radius:10px;background:#fff}
-.brand-download-list-head,.brand-download-row,.brand-download-history-row{display:grid;grid-template-columns:minmax(150px,1fr) minmax(250px,1.9fr) minmax(105px,.8fr) minmax(150px,1fr) 55px 58px;align-items:center;gap:10px}
+.brand-download-list-head,.brand-download-row,.brand-download-history-row{display:grid;grid-template-columns:minmax(150px,1fr) minmax(250px,1.9fr) minmax(105px,.8fr) minmax(150px,1fr) 55px 90px;align-items:center;gap:10px}
 .brand-download-list-head{padding:7px 10px;background:#eaf5fc;color:#54778f;font-size:10px;font-weight:700}
 .brand-download-row-group{border-top:1px solid #e6f0f7}
 .brand-download-row-group:first-of-type{border-top:0}
@@ -566,6 +566,13 @@ body .explorer-mode.active{
 }
 body .explorer-mode.active strong{color:#fff}
 body .explorer-panel{border-color:var(--ui-line);background:#fff}
+.raw-data-modes{width:min(100%,520px)}
+.raw-data-modes .explorer-mode{flex:1;min-width:210px}
+.excel-files-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:16px}
+.excel-files-heading p{max-width:560px;margin:2px 0 0;padding:10px 12px;border:1px solid #cfe0f3;border-radius:9px;color:#365f8c;background:#f2f7fd;font-size:12px}
+.excel-files-heading p b{color:#1e69c6}
+.excel-files-panel .brand-download-list{margin-top:0}
+.excel-files-panel .status{margin-top:12px}
 .brand-fetch-action{
   padding:10px 12px;border-color:#dbe6f1;border-radius:9px;
   color:#667993;background:#f7f9fc
@@ -673,4 +680,6 @@ body .explorer-panel{border-color:var(--ui-line);background:#fff}
   body .explorer-modes{width:100%}
   body .explorer-mode{min-width:0;flex:1;padding:8px 6px}
   body .explorer-mode strong{font-size:11px}
+  .raw-data-modes .explorer-mode{min-width:0}
+  .excel-files-heading{display:block}
 }

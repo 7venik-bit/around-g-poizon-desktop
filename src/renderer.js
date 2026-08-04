@@ -33,9 +33,9 @@ function renderBrandExportFolder(folder = "") {
   if (!path) return;
   const normalizedFolder = String(folder || "").trim();
   path.textContent = normalizedFolder
-    ? `자동 불러오기 폴더: ${normalizedFolder}`
-    : "자동 불러오기 폴더가 설정되지 않았습니다.";
-  path.title = normalizedFolder || "자동 불러오기 폴더가 설정되지 않았습니다.";
+    ? `원본 Excel 저장 폴더: ${normalizedFolder}`
+    : "원본 Excel 저장 폴더가 설정되지 않았습니다.";
+  path.title = normalizedFolder || "원본 Excel 저장 폴더가 설정되지 않았습니다.";
 }
 
 if (localStorage.getItem(WORK_HISTORY_RESET_KEY) !== "done") {
@@ -80,8 +80,11 @@ function brandTime(value = Date.now()) {
   }).format(new Date(value));
 }
 
-function isProcessedBrandExportName(value = "") {
-  return String(value).endsWith("_판매량30이상_정리.xlsx");
+function excelFileSize(value = 0) {
+  const bytes = Number(value || 0);
+  if (!bytes) return "-";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024)).toLocaleString("ko-KR")} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function renderDownloadedBrandFiles() {
@@ -114,7 +117,7 @@ function renderDownloadedBrandFiles() {
     : "0개";
   list.innerHTML = grouped.length
     ? `<div class="brand-download-list-head" aria-hidden="true">
-        <span>브랜드</span><span>최근 파일</span><span>작업번호</span><span>저장일</span><span>파일</span><span>열기</span>
+        <span>브랜드</span><span>원본 Excel 파일</span><span>작업번호</span><span>받은 시각</span><span>크기</span><span>열기</span>
       </div>${grouped.map(({ brandName, meta, files }) => {
       const [latest, ...history] = files;
       const logo = meta?.logoUrl
@@ -126,8 +129,8 @@ function renderDownloadedBrandFiles() {
           <strong title="${text(file.path || "")}">${text(file.name || file.path || "Excel 파일")}</strong>
           <code>${text(file.jobId || "-")}</code>
           <time>${text(brandTime(file.time))}</time>
-          <span></span>
-          <button type="button" data-open-brand-file-index="${index}">열기</button>
+          <span>${text(excelFileSize(file.size))}</span>
+          <button type="button" data-open-brand-file-index="${index}">Excel 열기</button>
         </div>`;
       return `
         <article class="brand-download-row-group">
@@ -136,14 +139,14 @@ function renderDownloadedBrandFiles() {
             <i class="brand-download-logo">${logo}</i>
             <span class="brand-download-name">
               <strong>${text(brandName)}</strong>
-              <small>${isProcessedBrandExportName(latest.file.name) ? "판매량 30건 자동 정리 완료" : "다운로드 완료"}</small>
+              <small>POIZON 원본 · 판매량 수동 입력</small>
             </span>
             </span>
             <strong class="brand-download-filename" title="${text(latest.file.path || "")}">${text(latest.file.name || latest.file.path || "Excel 파일")}</strong>
             <code>${text(latest.file.jobId || "-")}</code>
             <time>${text(brandTime(latest.file.time))}</time>
-            <b class="brand-download-badge">${files.length}개</b>
-            <button type="button" data-open-brand-file-index="${latest.index}">열기</button>
+            <b class="brand-download-badge">${text(excelFileSize(latest.file.size))}</b>
+            <button type="button" data-open-brand-file-index="${latest.index}">Excel 열기</button>
           </div>
           ${history.length ? `
             <details class="brand-download-history">
@@ -154,7 +157,7 @@ function renderDownloadedBrandFiles() {
             </details>` : ""}
         </article>`;
     }).join("")}`
-    : '<p class="empty">다운로드가 완료되면 여기에 표시됩니다.</p>';
+    : '<p class="empty">다운로드가 완료되면 원본 Excel 파일이 여기에 표시됩니다.</p>';
 }
 
 function addDownloadedBrandFile(file = {}) {
@@ -167,6 +170,7 @@ function addDownloadedBrandFile(file = {}) {
       brandName: String(file.brandName || selectedBrandName || "선택 브랜드"),
       jobId: String(file.jobId || ""),
       originalPath: String(file.originalPath || ""),
+      size: Number(file.size || 0),
       time: Number(file.time) || Date.now(),
     },
     ...downloadedBrandFiles.filter((item) => String(item.path || "") !== path),
@@ -1119,32 +1123,21 @@ $("#brand-data-search")?.addEventListener("input", renderBrandWorkbench);
 async function importDetectedBrandExport(file, generation = brandWorkHistoryGeneration) {
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return false;
   const expectedBrand = String(file?.brandName || selectedBrandName || "").trim();
-  $("#brand-status").className = "status";
-  $("#brand-status").textContent = `${expectedBrand || "선택 브랜드"} 다운로드 완료 · 판매량 30건 자동 정리 중`;
-  const result = await window.aroundG.importBrandExcelFromPath(file.path, expectedBrand);
-  if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return false;
-  if (!result.ok) {
-    const path = String(file?.path || "").trim();
-    if (path) completedBrandImportPaths.add(path);
-    if (result.code === "BRAND_EXCEL_MISMATCH") {
-      updateBrandExportJob(file?.jobId, "브랜드 불일치 · 파일 제외", expectedBrand);
-    }
-    $("#brand-status").className = "status error";
-    $("#brand-status").textContent = result.message || "감지된 파일이 POIZON 전체 내보내기 양식이 아닙니다.";
-    return false;
-  }
   retainSelectedBrandName(expectedBrand);
   addDownloadedBrandFile({
     ...file,
-    path: result.processedPath || result.path || file.path,
-    name: result.processedName || file.name,
-    originalPath: result.originalPath || file.path,
+    path: file.path,
+    name: file.name,
+    originalPath: file.path,
   });
-  brandWorkbenchProducts = result.products || [];
-  renderBrandWorkbench();
-  updateBrandExportJob(file?.jobId, "완료 · 판매량 30건 정리 및 자동 불러오기", file?.brandName);
+  updateBrandExportJob(file?.jobId, "POIZON 원본 Excel 다운로드 완료", file?.brandName);
   $("#brand-status").className = "status success";
-  $("#brand-status").textContent = `${selectedBrandName || "선택 브랜드"} 자동 정리·불러오기 완료 · 원본 ${Number(result.sourceRows || 0).toLocaleString("ko-KR")}행 → 판매량 조건 SKU ${Number(result.filteredRows || 0).toLocaleString("ko-KR")}행 → SPU 상품 ${brandWorkbenchProducts.length.toLocaleString("ko-KR")}개`;
+  $("#brand-status").textContent = `${selectedBrandName || "선택 브랜드"} POIZON 원본 Excel 다운로드 완료 · 받은 Excel 파일 메뉴에서 확인하세요.`;
+  const fileStatus = $("#excel-files-status");
+  if (fileStatus) {
+    fileStatus.className = "status success";
+    fileStatus.textContent = "원본 Excel을 그대로 보관했습니다. 두 판매량은 Excel에서 직접 입력할 수 있습니다.";
+  }
   return true;
 }
 
@@ -1159,14 +1152,14 @@ async function drainDetectedBrandImports() {
         queuedBrandImportPaths.delete(path);
         continue;
       }
-      updateBrandExportJob(file?.jobId, "다운로드 완료 · Excel 자동 불러오는 중", file?.brandName);
+      updateBrandExportJob(file?.jobId, "다운로드 완료 · 원본 Excel 등록 중", file?.brandName);
       try {
         const generation = brandWorkHistoryGeneration;
         const imported = await importDetectedBrandExport(file, generation);
         if (imported) completedBrandImportPaths.add(path);
       } catch (error) {
         $("#brand-status").className = "status error";
-        $("#brand-status").textContent = `Excel 자동 불러오기 실패: ${error?.message || "UNKNOWN_ERROR"}`;
+        $("#brand-status").textContent = `원본 Excel 등록 실패: ${error?.message || "UNKNOWN_ERROR"}`;
       } finally {
         queuedBrandImportPaths.delete(path);
       }
@@ -1181,11 +1174,11 @@ window.aroundG.onBrandExportDetected((file) => {
   if (!acceptBrandWorkEvents) return;
   const path = String(file?.path || "").trim();
   if (!path || completedBrandImportPaths.has(path) || queuedBrandImportPaths.has(path)) return;
-  updateBrandExportJob(file?.jobId, "다운로드 완료 · 브랜드 검증 대기", file?.brandName);
+  updateBrandExportJob(file?.jobId, "다운로드 완료 · 원본 Excel 등록 대기", file?.brandName);
   queuedBrandImportPaths.add(path);
   detectedBrandImportQueue.push(file);
   $("#brand-status").className = "status";
-  $("#brand-status").textContent = `${file?.brandName || "선택 브랜드"} 저장 완료 · Excel 자동 불러오기 대기 중`;
+  $("#brand-status").textContent = `${file?.brandName || "선택 브랜드"} 저장 완료 · 원본 Excel 목록에 등록 중`;
   void drainDetectedBrandImports();
 });
 $("#brand-download-files").addEventListener("click", async (event) => {
@@ -1193,19 +1186,19 @@ $("#brand-download-files").addEventListener("click", async (event) => {
   if (!button) return;
   const file = downloadedBrandFiles[Number(button.dataset.openBrandFileIndex)];
   if (!file?.path) return;
-  // Historical filenames may carry the requested brand even when the workbook
-  // contains another brand. Direct opening derives the title from workbook data.
-  const result = await window.aroundG.openDownloadedBrandFile(file.path, "");
+  const result = await window.aroundG.openOriginalExcelFile(file.path);
   if (!result?.ok) {
     $("#brand-status").className = "status error";
     $("#brand-status").textContent = `파일 열기 실패: ${result?.message || "파일을 찾을 수 없습니다."}`;
   }
 });
 $("#brand-download-clear")?.addEventListener("click", async () => {
-  clearBrandWorkHistoryUi();
-  await window.aroundG?.clearBrandWorkHistory?.();
-  $("#brand-status").className = "status success";
-  $("#brand-status").textContent = "이전 작업 기록을 삭제했습니다. 원본 Excel 파일은 보존됩니다.";
+  await restoreDownloadedBrandFiles();
+  const status = $("#excel-files-status");
+  if (status) {
+    status.className = "status success";
+    status.textContent = "저장 폴더의 원본 Excel 파일 목록을 새로고침했습니다.";
+  }
 });
 $("#brand-export-folder-select")?.addEventListener("click", async () => {
   const button = $("#brand-export-folder-select");
@@ -1217,7 +1210,7 @@ $("#brand-export-folder-select")?.addEventListener("click", async () => {
     if (result?.canceled) return;
     renderBrandExportFolder(result?.folder);
     status.className = "status success";
-    status.textContent = `자동 불러오기 폴더를 변경했습니다: ${result.folder}`;
+    status.textContent = `원본 Excel 저장 폴더를 변경했습니다: ${result.folder}`;
   } catch (error) {
     status.className = "status error";
     status.textContent = `폴더 지정 실패: ${error?.message || "폴더를 선택할 수 없습니다."}`;
