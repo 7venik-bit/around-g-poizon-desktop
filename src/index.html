@@ -11,7 +11,7 @@
   <aside>
     <div class="brand" aria-label="Around G"><span>G</span></div>
     <nav>
-      <button class="nav active" data-view="products">상품 탐색</button>
+      <button class="nav active" data-view="products">POIZON 원본 데이터</button>
       <button class="nav" data-view="profit">수익 계산</button>
       <button class="nav" data-view="ledger">구매 장부</button>
       <button class="nav" data-view="orders">주문 관리</button>
@@ -46,13 +46,12 @@
     </header>
     <main>
       <section id="products" class="view active">
-        <div class="explorer-modes">
-          <button class="explorer-mode active" data-explorer="popular"><strong>POIZON 인기상품</strong></button>
-          <button class="explorer-mode" data-explorer="brand"><strong>브랜드별 검색</strong></button>
-          <button class="explorer-mode" data-explorer="category"><strong>카테고리별 검색</strong></button>
+        <div class="explorer-modes raw-data-modes">
+          <button class="explorer-mode active" data-explorer="brand"><strong>원본 데이터 가져오기</strong></button>
+          <button class="explorer-mode" data-explorer="files"><strong>받은 Excel 파일</strong></button>
         </div>
 
-        <section id="explorer-popular" class="panel explorer-panel active">
+        <section id="explorer-popular" class="panel explorer-panel" hidden>
           <small>MERCHANT RANK BOARD</small><h2>판매자센터 인기상품 자동 검색</h2>
           <div class="popular-workflow">
             <button id="popular-capture" type="button" class="primary">현재 인기상품 가져오기</button>
@@ -61,34 +60,42 @@
           <div class="explorer-actions"><span id="popular-status" class="status"></span></div>
         </section>
 
-        <section id="explorer-brand" class="panel explorer-panel">
-          <small>POIZON BRAND SEARCH</small><h2>POIZON 한국 브랜드 상품 검색</h2>
+        <section id="explorer-brand" class="panel explorer-panel active">
+          <small>POIZON ORIGINAL EXPORT</small><h2>POIZON 원본 데이터 가져오기</h2>
           <div class="brand-toolbar"><input id="brand-filter" placeholder="브랜드명 검색"><button id="brand-sync" type="button">전체 브랜드 동기화</button><span id="brand-summary"></span></div>
           <div class="brand-fetch-action brand-excel-flow">
             <span><b>1</b> 브랜드 선택</span>
-            <span><b>2</b> 판매자센터 내보내기·다운로드 자동 실행</span>
-            <span><b>3</b> 완료 파일 목록에서 직접 열기</span>
+            <span><b>2</b> POIZON 원본 Excel 다운로드</span>
+            <span><b>3</b> 받은 Excel에서 판매량 직접 입력</span>
             <button id="brand-search" hidden disabled>사용 안 함</button>
           </div>
           <div class="brand-export-folder-setting">
-            <div id="brand-export-folder-path" class="brand-export-folder-path" title="자동 불러오기 폴더">자동 불러오기 폴더: 바탕화면\Around G POIZON\POIZON 전체내보내기</div>
+            <div id="brand-export-folder-path" class="brand-export-folder-path" title="원본 Excel 저장 폴더">원본 Excel 저장 폴더: 바탕화면\Around G POIZON\POIZON 전체내보내기</div>
             <button id="brand-export-folder-select" class="brand-export-folder-select" type="button">폴더 지정</button>
           </div>
           <div id="brand-export-job" class="brand-export-job" hidden>
             <div id="brand-export-jobs-list" class="brand-export-jobs-list"></div>
           </div>
-          <section class="brand-download-list" aria-label="다운로드 완료 파일">
-            <div class="brand-download-list-title"><strong>자동 다운로드 완료 파일 · 직접 선택 열기</strong><span><b id="brand-download-count">0개</b><button id="brand-download-clear" type="button">기록 삭제</button></span></div>
-            <div id="brand-download-files" class="brand-download-files">
-              <p class="empty">다운로드가 완료되면 여기에 표시됩니다.</p>
-            </div>
-          </section>
           <div id="brand-progress" class="capture-progress" hidden><i></i><span>0%</span></div>
           <div id="brand-cards" class="brand-cards"></div>
-          <div class="explorer-actions"><span id="brand-status" class="status">새 수집 방식을 준비할 수 있도록 초기화되었습니다.</span></div>
+          <div class="explorer-actions"><span id="brand-status" class="status">브랜드를 선택하면 POIZON 원본 Excel만 다운로드합니다.</span></div>
         </section>
 
-        <section id="explorer-category" class="panel explorer-panel">
+        <section id="explorer-files" class="panel explorer-panel excel-files-panel">
+          <div class="excel-files-heading">
+            <div><small>DOWNLOADED EXCEL</small><h2>받은 Excel 파일</h2></div>
+            <p><b>최근 30일 판매량</b>과 <b>현지 30일 판매량</b>은 원본 Excel에서 직접 입력하세요.</p>
+          </div>
+          <section class="brand-download-list" aria-label="다운로드 완료 원본 Excel 파일">
+            <div class="brand-download-list-title"><strong>POIZON 원본 Excel 파일</strong><span><b id="brand-download-count">0개</b><button id="brand-download-clear" type="button">목록 새로고침</button></span></div>
+            <div id="brand-download-files" class="brand-download-files">
+              <p class="empty">다운로드가 완료되면 원본 Excel 파일이 여기에 표시됩니다.</p>
+            </div>
+          </section>
+          <div id="excel-files-status" class="status">원본 파일은 자동으로 수정하거나 판매량 조건으로 정리하지 않습니다.</div>
+        </section>
+
+        <section id="explorer-category" class="panel explorer-panel" hidden>
           <small>POIZON API CATEGORY SEARCH</small><h2>POIZON API 카테고리별 상품 검색</h2>
           <p>검증된 브랜드의 공식 API 응답을 상품 카테고리 정보로 분류합니다.</p>
           <div id="category-buttons" class="category-buttons"></div>

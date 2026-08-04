@@ -834,11 +834,7 @@ async function listBrandExportFiles() {
         };
       }),
   );
-  const processedSourceNames = new Set(files
-    .filter((file) => isProcessedBrandExportName(file.name))
-    .map((file) => file.name.replace(PROCESSED_BRAND_EXPORT_SUFFIX, ".xlsx")));
-  const visibleFiles = files.filter((file) =>
-    isProcessedBrandExportName(file.name) || !processedSourceNames.has(file.name));
+  const visibleFiles = files.filter((file) => !isProcessedBrandExportName(file.name));
   visibleFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
   return { ok: true, folder, files: visibleFiles };
 }
