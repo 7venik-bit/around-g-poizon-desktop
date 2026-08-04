@@ -1576,7 +1576,7 @@ window.aroundG.onUpdateStatus((payload) => {
     const appInfo = await window.aroundG.getAppInfo();
     renderInstalledVersion(appInfo?.version, appInfo?.automaticUpdates !== false);
   } catch {
-    renderInstalledVersion("2.10.16", true);
+    renderInstalledVersion("2.10.17", true);
   }
   setupBrandLayout();
   try {
