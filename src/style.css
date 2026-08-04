@@ -184,6 +184,10 @@ body .shell>header{height:auto;min-height:82px;align-items:flex-start}
 .brand-download-history summary{padding:4px 10px 5px 44px;color:#3680aa;font-size:10px;font-weight:700;cursor:pointer}
 .brand-download-history-list{border-top:1px solid #edf3f7}
 .brand-download-history-row{min-height:36px;padding:4px 10px;background:#f8fbfd}
+.brand-download-filename small,.brand-download-history-row strong small{display:block;margin-top:3px;color:#b42318;font-size:9px;font-weight:750;white-space:normal}
+.brand-download-mismatch{border-color:#f0a7a0!important;background:#fff4f2!important}
+.brand-download-mismatch .brand-download-name small{color:#b42318;font-weight:800}
+.brand-download-mismatch .brand-download-filename,.brand-download-mismatch .brand-download-history-row strong{white-space:normal}
 @media(max-width:900px){.brand-download-list-head{display:none}.brand-download-row,.brand-download-history-row{grid-template-columns:minmax(130px,1fr) minmax(180px,1.5fr) 50px}.brand-download-row code,.brand-download-row time,.brand-download-history-row code,.brand-download-history-row time{display:none}.brand-download-history-row>span:first-child{display:block}.brand-download-history summary{padding-left:10px}.brand-download-list-title{align-items:flex-start;flex-direction:column;gap:3px}}
 
 /* Spreadsheet-style brand results: columns keep enough width for their

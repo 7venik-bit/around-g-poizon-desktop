@@ -37,6 +37,21 @@ test("file list opens the original workbook and excludes generated filtered copi
   ]);
 
   assert.match(renderer, /openOriginalExcelFile\(file\.path\)/);
-  assert.match(renderer, />Excel 열기<\/button>/);
+  assert.match(renderer, /Excel 열기/);
   assert.match(main, /visibleFiles = files\.filter\(\(file\) => !isProcessedBrandExportName\(file\.name\)\)/);
+});
+
+test("downloaded workbooks are brand-validated before normal registration", async () => {
+  const [renderer, main] = await Promise.all([
+    readFile(join(root, "src/renderer.js"), "utf8"),
+    readFile(join(root, "main.mjs"), "utf8"),
+  ]);
+
+  assert.match(main, /validateBrandExportFile\(filePath, \[/);
+  assert.match(main, /brandIntegrity,/);
+  assert.match(main, /brandExportFileValidationCache/);
+  assert.match(main, /if \(brandDownloadStarted\) return;/);
+  assert.match(renderer, /file\?\.brandIntegrity\?\.ok === false/);
+  assert.match(renderer, /불일치 파일은 삭제하지 않았으며 정상 자료로 처리하지 않았습니다/);
+  assert.match(renderer, /Excel 확인/);
 });
