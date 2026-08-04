@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, safeStorage, shell } from "electron";
 import { mkdirSync } from "node:fs";
 import { appendFile, mkdir, readFile, readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { readSheet } from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
 import {
@@ -9,6 +9,10 @@ import {
   getPoizonWorksheetRows,
   repairPoizonWorksheetDimensions,
 } from "./services/poizon-xlsx.mjs";
+import {
+  filterPoizonRowsByTotalSales,
+  POIZON_MINIMUM_TOTAL_SALES,
+} from "./services/poizon-sales-filter.mjs";
 import {
   analyzeBrandMatch,
   brandExportLabel,
@@ -779,6 +783,7 @@ function publicConfig() {
 
 const SELLER_EXPORT_POLL_INTERVAL_MS = 60 * 1000;
 const SELLER_EXPORT_MONITOR_TIMEOUT_MS = 60 * 60 * 1000;
+const PROCESSED_BRAND_EXPORT_SUFFIX = "_판매량30이상_정리.xlsx";
 
 function defaultBrandExportFolder() {
   return join(app.getPath("desktop"), "Around G POIZON", "POIZON 전체내보내기");
@@ -792,8 +797,18 @@ function currentBrandExportFolder() {
 function brandFromExportFileName(name = "") {
   return String(name)
     .replace(/\.xlsx$/i, "")
+    .replace(/_판매량30이상_정리$/i, "")
     .replace(/_\d{8}_\d{6}$/, "")
     .trim();
+}
+
+function isProcessedBrandExportName(name = "") {
+  return String(name).endsWith(PROCESSED_BRAND_EXPORT_SUFFIX);
+}
+
+function processedBrandExportName(name = "") {
+  const sourceName = String(name || "POIZON.xlsx");
+  return sourceName.replace(/\.xlsx$/i, PROCESSED_BRAND_EXPORT_SUFFIX);
 }
 
 async function listBrandExportFiles() {
@@ -817,8 +832,13 @@ async function listBrandExportFiles() {
         };
       }),
   );
-  files.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return { ok: true, folder, files };
+  const processedSourceNames = new Set(files
+    .filter((file) => isProcessedBrandExportName(file.name))
+    .map((file) => file.name.replace(PROCESSED_BRAND_EXPORT_SUFFIX, ".xlsx")));
+  const visibleFiles = files.filter((file) =>
+    isProcessedBrandExportName(file.name) || !processedSourceNames.has(file.name));
+  visibleFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return { ok: true, folder, files: visibleFiles };
 }
 
 async function scanBrandExportFolder() {
@@ -827,7 +847,10 @@ async function scanBrandExportFolder() {
   try {
     const entries = await readdir(folder, { withFileTypes: true });
     const candidates = await Promise.all(entries
-      .filter((entry) => entry.isFile() && /\.xlsx$/i.test(entry.name) && !entry.name.startsWith("~$"))
+      .filter((entry) => entry.isFile()
+        && /\.xlsx$/i.test(entry.name)
+        && !entry.name.startsWith("~$")
+        && !isProcessedBrandExportName(entry.name))
       .map(async (entry) => {
         const path = join(folder, entry.name);
         const info = await stat(path);
@@ -3062,10 +3085,30 @@ app.whenReady().then(async () => {
     }
     const fileBuffer = await readFile(filePath);
     const workbook = await readSheet(repairPoizonWorksheetDimensions(fileBuffer));
-    const sheet = getPoizonWorksheetRows(workbook);
-    if (!Array.isArray(sheet) || sheet.length < 2) {
+    const sourceSheet = getPoizonWorksheetRows(workbook);
+    if (!Array.isArray(sourceSheet) || sourceSheet.length < 2) {
       return { canceled: false, ok: false, message: "Excel 파일에 상품 데이터가 없습니다." };
     }
+    const filtered = filterPoizonRowsByTotalSales(sourceSheet, POIZON_MINIMUM_TOTAL_SALES);
+    if (!filtered.ok) {
+      return {
+        canceled: false,
+        ok: false,
+        code: filtered.code,
+        message: filtered.message,
+      };
+    }
+    if (filtered.filteredRows === 0) {
+      return {
+        canceled: false,
+        ok: false,
+        code: "POIZON_SALES_FILTER_EMPTY",
+        message: `중국 총 판매량과 현지 판매자 총 판매량이 모두 ${POIZON_MINIMUM_TOTAL_SALES}건 이상인 상품이 없습니다.`,
+        sourceRows: filtered.sourceRows,
+        filteredRows: 0,
+      };
+    }
+    const sheet = filtered.sheet;
     const headers = sheet[0] || [];
     const findColumn = (...names) => findPoizonColumn(headers, ...names);
     const columns = {
@@ -3096,14 +3139,14 @@ app.whenReady().then(async () => {
     };
     const rawMetric = (value) => String(value ?? "").trim();
     const productsByKey = new Map();
-    let sourceRows = 0;
+    let importedRows = 0;
     for (const row of sheet.slice(1)) {
       const spuId = String(cell(row, columns.spuId) ?? "").trim();
       const articleNumber = String(cell(row, columns.articleNumber) ?? "").trim();
       const title = String(cell(row, columns.title) ?? "").trim();
       if (!spuId && !articleNumber && !title) continue;
-      sourceRows += 1;
-      const key = spuId ? `SPU:${spuId}` : articleNumber ? `ARTICLE:${articleNumber.toUpperCase()}` : `ROW:${sourceRows}`;
+      importedRows += 1;
+      const key = spuId ? `SPU:${spuId}` : articleNumber ? `ARTICLE:${articleNumber.toUpperCase()}` : `ROW:${importedRows}`;
       const previous = productsByKey.get(key) || {};
       const option = String(cell(row, columns.option) ?? "").trim();
       const options = new Set(previous.options || []);
@@ -3113,7 +3156,7 @@ app.whenReady().then(async () => {
       const totalSales = numeric(cell(row, columns.totalSales));
       const localTotalSales = numeric(cell(row, columns.localTotalSales));
       const variant = {
-        sourceRow: sourceRows + 1,
+        sourceRow: importedRows + 1,
         skuId: String(cell(row, columns.skuId) ?? "").trim(),
         option,
         sales30d,
@@ -3180,11 +3223,45 @@ app.whenReady().then(async () => {
         brandIntegrity,
       };
     }
+    const processedName = processedBrandExportName(basename(filePath));
+    const processedPath = join(dirname(filePath), processedName);
+    const exportData = [
+      headers.map((value) => ({
+        value: String(value ?? ""),
+        fontWeight: "bold",
+        backgroundColor: "#DCECF8",
+      })),
+      ...filtered.rows.map((row) => row.map((raw, index) => {
+        if (index === filtered.totalSalesColumn || index === filtered.localTotalSalesColumn) {
+          return { value: Number(raw || 0), type: Number, format: "#,##0" };
+        }
+        const value = raw instanceof Date || ["string", "number", "boolean"].includes(typeof raw)
+          ? raw
+          : raw === null || raw === undefined ? null : String(raw);
+        return { value };
+      })),
+    ];
+    await writeXlsxFile([{
+      data: exportData,
+      sheet: "POIZON_30_PLUS",
+      stickyRowsCount: 1,
+      columns: headers.map((header, index) => ({
+        width: index === columns.title ? 54
+          : index === columns.image ? 38
+            : Math.max(12, Math.min(26, String(header || "").length + 6)),
+      })),
+    }]).toFile(processedPath);
     return {
       canceled: false,
       ok: true,
-      path: filePath,
-      sourceRows,
+      path: processedPath,
+      processedPath,
+      processedName,
+      originalPath: filePath,
+      sourceRows: filtered.sourceRows,
+      filteredRows: filtered.filteredRows,
+      uniqueSpuCount: products.length,
+      minimumSales: POIZON_MINIMUM_TOTAL_SALES,
       products,
       brandIntegrity,
     };
