@@ -1213,8 +1213,9 @@ window.aroundG.onBrandExportProgress((progress) => {
 });
 window.aroundG.onBrandExportError((error) => {
   if (!acceptBrandWorkEvents) return;
+  updateBrandExportJob(error?.jobId, error?.jobState || "데이터 가져오기 실패", error?.brandName);
   $("#brand-status").className = "status error";
-  $("#brand-status").textContent = `폴더 감시 오류: ${error.message || "UNKNOWN_ERROR"}`;
+  $("#brand-status").textContent = error.message || "데이터 가져오기 중 오류가 발생했습니다.";
 });
 $("#brand-data-download")?.addEventListener("click", async () => {
   if (!brandWorkbenchProducts.length) return;
