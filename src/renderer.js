@@ -296,6 +296,7 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     knownJobIds,
     deferMonitor: true,
   });
+  if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return;
   if (!automation?.ok) {
     recordBrandSelection(activeExportBrand, "데이터 가져오기 실패");
     $("#brand-status").className = "status error";
