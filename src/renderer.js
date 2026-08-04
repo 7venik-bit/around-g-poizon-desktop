@@ -296,19 +296,43 @@ function updateBrandExportJob(jobId = "", state = "", brandName = "") {
   }));
 }
 
-function selectSingleBrand(brandId) {
+function toggleBrandSelection(brandId) {
   const id = Number(brandId);
   const brand = explorerMeta.brands.find((item) => Number(item.id) === id);
   if (!brand) return null;
-  const changed = selectedBrandIds.size !== 1 || !selectedBrandIds.has(id);
-  selectedBrandIds.clear();
-  selectedBrandIds.add(id);
-  selectedBrandId = id;
-  retainSelectedBrandName(brand.name);
-  if (changed) recordBrandSelection(brand, "선택");
-  else saveBrandSelections();
+  if (selectedBrandIds.has(id)) {
+    selectedBrandIds.delete(id);
+  } else {
+    selectedBrandIds.add(id);
+    recordBrandSelection(brand, "선택");
+  }
+  selectedBrandId = selectedBrandIds.size === 1 ? [...selectedBrandIds][0] : null;
+  saveBrandSelections();
   renderBrandCards($("#brand-filter")?.value || "");
   return brand;
+}
+
+function updateBrandSelectionControls() {
+  const selectedCount = selectedBrandIds.size;
+  const count = $("#brand-selected-count");
+  const clear = $("#brand-selection-clear");
+  const search = $("#brand-export-selected");
+  const pickerSelection = $("#brand-picker-selection");
+  if (count) count.textContent = `${selectedCount}개 선택`;
+  if (clear) clear.disabled = selectedCount === 0 || brandSelectionBusy;
+  if (search) {
+    search.disabled = selectedCount === 0 || brandSelectionBusy;
+    search.classList.toggle("is-running", brandSelectionBusy);
+    const label = search.querySelector("span");
+    if (label) label.textContent = brandSelectionBusy ? "검색 등록 중" : "선택 브랜드 검색";
+  }
+  if (pickerSelection && !brandSelectionBusy) {
+    pickerSelection.textContent = selectedCount ? `${selectedCount}개 브랜드 선택` : "브랜드를 선택해 주세요";
+  }
+}
+
+function selectedBrandsForExport() {
+  return explorerMeta.brands.filter((brand) => selectedBrandIds.has(Number(brand.id)));
 }
 
 async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) {
@@ -365,9 +389,10 @@ function retainSelectedBrandName(brandName = "") {
 function setupBrandLayout() {
   const panel = $("#explorer-brand");
   const toolbar = panel?.querySelector(".brand-toolbar");
+  const selectionActions = panel?.querySelector(".brand-selection-actions");
   const cards = $("#brand-cards");
   const status = panel?.querySelector(".explorer-actions");
-  if (!panel || !toolbar || !cards || $("#brand-picker")) return;
+  if (!panel || !toolbar || !selectionActions || !cards || $("#brand-picker")) return;
 
   const picker = document.createElement("details");
   picker.id = "brand-picker";
@@ -381,7 +406,7 @@ function setupBrandLayout() {
   selection.textContent = selectedBrandName || "브랜드를 선택해 주세요";
   summary.append(title, selection);
 
-  picker.append(summary, toolbar, cards);
+  picker.append(summary, toolbar, selectionActions, cards);
   if (status) status.insertAdjacentElement("afterend", picker);
   else panel.append(picker);
 }
@@ -480,6 +505,7 @@ function renderBrandCards(filter = "") {
     image.addEventListener("error", () => image.remove(), { once: true });
   });
   $("#brand-summary").textContent = `${explorerMeta.brands.length}개 검증 브랜드 · ${brands.length}개 표시`;
+  updateBrandSelectionControls();
 }
 
 function renderCategoryButtons() {
@@ -895,15 +921,7 @@ document.addEventListener("click", async (event) => {
       $("#brand-status").textContent = `${activeExportBrand?.name || selectedBrandName || "선택 브랜드"} 원본 데이터 작업을 등록하고 있습니다.`;
       return;
     }
-    const brand = selectSingleBrand(brandButton.dataset.brandId);
-    if (!brand) return;
-    acceptBrandWorkEvents = true;
-    const generation = brandWorkHistoryGeneration;
-    brandExportQueue = [brand];
-    clearExplorerResults();
-    brandWorkbenchProducts = [];
-    renderBrandWorkbench();
-    void exportNextSelectedBrand(generation);
+    toggleBrandSelection(brandButton.dataset.brandId);
     return;
   }
   const category = event.target.closest("[data-category]")?.dataset.category;
@@ -922,6 +940,29 @@ document.querySelectorAll(".explorer-mode").forEach((button) => button.addEventL
 }));
 
 $("#brand-filter").addEventListener("input", (event) => renderBrandCards(event.target.value));
+$("#brand-selection-clear")?.addEventListener("click", () => {
+  if (brandSelectionBusy) return;
+  selectedBrandIds.clear();
+  selectedBrandId = null;
+  saveBrandSelections();
+  renderBrandCards($("#brand-filter")?.value || "");
+});
+$("#brand-export-selected")?.addEventListener("click", () => {
+  if (brandSelectionBusy || activeExportBrand) return;
+  const selectedBrands = selectedBrandsForExport();
+  if (!selectedBrands.length) return;
+  acceptBrandWorkEvents = true;
+  const generation = brandWorkHistoryGeneration;
+  brandExportQueue = [...selectedBrands];
+  brandSelectionBusy = true;
+  clearExplorerResults();
+  brandWorkbenchProducts = [];
+  renderBrandWorkbench();
+  renderBrandCards($("#brand-filter")?.value || "");
+  $("#brand-status").className = "status";
+  $("#brand-status").textContent = `${selectedBrands.length}개 브랜드 검색 작업을 순서대로 등록합니다.`;
+  void exportNextSelectedBrand(generation);
+});
 $("#brand-sync").addEventListener("click", async () => {
   const button = $("#brand-sync");
   const status = $("#brand-status");
