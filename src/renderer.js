@@ -23,6 +23,8 @@ const detectedBrandImportQueue = [];
 const queuedBrandImportPaths = new Set();
 const completedBrandImportPaths = new Set();
 let detectedBrandImportRunning = false;
+let brandWorkHistoryGeneration = 0;
+let acceptBrandWorkEvents = true;
 const WORK_HISTORY_RESET_KEY = "around-g-work-history-reset-v2.10.4";
 
 if (localStorage.getItem(WORK_HISTORY_RESET_KEY) !== "done") {
@@ -150,6 +152,8 @@ function addDownloadedBrandFile(file = {}) {
 }
 
 function clearBrandWorkHistoryUi() {
+  brandWorkHistoryGeneration += 1;
+  acceptBrandWorkEvents = false;
   downloadedBrandFiles = [];
   detectedBrandImportQueue.length = 0;
   queuedBrandImportPaths.clear();
@@ -176,7 +180,9 @@ function clearBrandWorkHistoryUi() {
 }
 
 async function restoreDownloadedBrandFiles() {
+  const generation = brandWorkHistoryGeneration;
   const result = await window.aroundG?.listBrandExportFiles?.();
+  if (generation !== brandWorkHistoryGeneration) return;
   if (!result?.ok || !Array.isArray(result.files)) return;
   const diskPaths = new Set(result.files.map((file) => String(file.path || "")));
   downloadedBrandFiles = downloadedBrandFiles
@@ -254,6 +260,7 @@ function toggleBrandSelection(brandId) {
 }
 
 async function exportNextSelectedBrand() {
+  acceptBrandWorkEvents = true;
   if (!brandExportQueue.length) {
     activeExportBrand = null;
     renderBrandSelectionPanel();
@@ -1070,11 +1077,13 @@ async function runDomesticBatch(options = {}) {
 }
 $("#domestic-search-all").addEventListener("click", () => runDomesticBatch());
 $("#brand-data-search")?.addEventListener("input", renderBrandWorkbench);
-async function importDetectedBrandExport(file) {
+async function importDetectedBrandExport(file, generation = brandWorkHistoryGeneration) {
+  if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return false;
   retainSelectedBrandName(file.brandName || selectedBrandName);
   $("#brand-status").className = "status";
   $("#brand-status").textContent = `${selectedBrandName || "선택 브랜드"} 다운로드 완료 확인 · ${file.name || file.path}`;
   const result = await window.aroundG.importBrandExcelFromPath(file.path);
+  if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return false;
   if (!result.ok) {
     $("#brand-status").className = "status error";
     $("#brand-status").textContent = result.message || "감지된 파일이 POIZON 전체 내보내기 양식이 아닙니다.";
@@ -1101,7 +1110,8 @@ async function drainDetectedBrandImports() {
       }
       updateBrandExportJob(file?.jobId, "다운로드 완료 · Excel 자동 불러오는 중", file?.brandName);
       try {
-        const imported = await importDetectedBrandExport(file);
+        const generation = brandWorkHistoryGeneration;
+        const imported = await importDetectedBrandExport(file, generation);
         if (imported) completedBrandImportPaths.add(path);
       } catch (error) {
         $("#brand-status").className = "status error";
@@ -1117,6 +1127,7 @@ async function drainDetectedBrandImports() {
 }
 
 window.aroundG.onBrandExportDetected((file) => {
+  if (!acceptBrandWorkEvents) return;
   const path = String(file?.path || "").trim();
   if (!path || completedBrandImportPaths.has(path) || queuedBrandImportPaths.has(path)) return;
   updateBrandExportJob(file?.jobId, "다운로드 완료 · 자동 불러오기 대기", file?.brandName);
@@ -1146,11 +1157,13 @@ $("#brand-download-clear")?.addEventListener("click", async () => {
 });
 window.aroundG.onBrandWorkHistoryCleared?.(() => clearBrandWorkHistoryUi());
 window.aroundG.onBrandExportProgress((progress) => {
+  if (!acceptBrandWorkEvents) return;
   updateBrandExportJob(progress?.jobId, progress?.jobState || "자동 감시 중", progress?.brandName);
   $("#brand-status").className = "status";
   $("#brand-status").textContent = progress?.message || "다운로드를 시작했습니다.";
 });
 window.aroundG.onBrandExportError((error) => {
+  if (!acceptBrandWorkEvents) return;
   $("#brand-status").className = "status error";
   $("#brand-status").textContent = `폴더 감시 오류: ${error.message || "UNKNOWN_ERROR"}`;
 });
