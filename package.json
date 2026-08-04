@@ -1,6 +1,6 @@
 {
   "name": "around-g-poizon-desktop",
-  "version": "2.10.22",
+  "version": "2.10.23",
   "description": "Around G POIZON local sourcing workspace",
   "type": "module",
   "main": "main.mjs",
@@ -29,12 +29,14 @@
     "files": [
       "main.mjs",
       "preload.cjs",
+      "build/icon.png",
       "src/**/*",
       "services/**/*",
       "relay/**/*",
       "package.json"
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
