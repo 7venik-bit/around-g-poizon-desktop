@@ -28,6 +28,7 @@ let brandWorkHistoryGeneration = 0;
 let acceptBrandWorkEvents = true;
 const WORK_HISTORY_RESET_KEY = "around-g-work-history-reset-v2.10.4";
 const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
+const DOWNLOAD_STATUS_MIGRATION_KEY = "around-g-download-status-v2.10.29";
 
 function renderBrandExportFolder(folder = "") {
   const path = $("#brand-export-folder-path");
@@ -48,6 +49,14 @@ if (localStorage.getItem(WORK_HISTORY_RESET_KEY) !== "done") {
   ].forEach((key) => localStorage.removeItem(key));
   localStorage.setItem(WORK_HISTORY_RESET_KEY, "done");
   selectedBrandName = "";
+}
+
+if (localStorage.getItem(DOWNLOAD_STATUS_MIGRATION_KEY) !== "done") {
+  // v2.10.27 could persist a validation result as the last visible job state.
+  // The download UI now reports only whether the data-center file was received,
+  // so discard that legacy state before the startup restore can render it.
+  localStorage.removeItem("around-g-last-brand-export-job");
+  localStorage.setItem(DOWNLOAD_STATUS_MIGRATION_KEY, "done");
 }
 
 try {
