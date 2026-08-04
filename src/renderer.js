@@ -26,6 +26,7 @@ let detectedBrandImportRunning = false;
 let brandWorkHistoryGeneration = 0;
 let acceptBrandWorkEvents = true;
 const WORK_HISTORY_RESET_KEY = "around-g-work-history-reset-v2.10.4";
+const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
 
 if (localStorage.getItem(WORK_HISTORY_RESET_KEY) !== "done") {
   [
@@ -43,6 +44,14 @@ try {
   brandSelectionHistory = JSON.parse(localStorage.getItem("around-g-brand-selection-history") || "[]");
   downloadedBrandFiles = JSON.parse(localStorage.getItem("around-g-brand-download-files") || "[]");
   if (!Array.isArray(downloadedBrandFiles)) downloadedBrandFiles = [];
+  if (localStorage.getItem(BRAND_INTEGRITY_MIGRATION_KEY) !== "done") {
+    // Older builds could save Jordan rows under an Adidas filename. Preserve the
+    // original Excel files, but discard their unverified UI history.
+    downloadedBrandFiles = [];
+    localStorage.removeItem("around-g-brand-download-files");
+    localStorage.removeItem("around-g-last-brand-export-job");
+    localStorage.setItem(BRAND_INTEGRITY_MIGRATION_KEY, "done");
+  }
 } catch {
   selectedBrandIds = new Set();
   brandSelectionHistory = [];
@@ -1082,16 +1091,18 @@ $("#domestic-search-all").addEventListener("click", () => runDomesticBatch());
 $("#brand-data-search")?.addEventListener("input", renderBrandWorkbench);
 async function importDetectedBrandExport(file, generation = brandWorkHistoryGeneration) {
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return false;
-  retainSelectedBrandName(file.brandName || selectedBrandName);
+  const expectedBrand = String(file?.brandName || selectedBrandName || "").trim();
   $("#brand-status").className = "status";
-  $("#brand-status").textContent = `${selectedBrandName || "선택 브랜드"} 다운로드 완료 확인 · ${file.name || file.path}`;
-  const result = await window.aroundG.importBrandExcelFromPath(file.path);
+  $("#brand-status").textContent = `${expectedBrand || "선택 브랜드"} 다운로드 완료 확인 · ${file.name || file.path}`;
+  const result = await window.aroundG.importBrandExcelFromPath(file.path, expectedBrand);
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return false;
   if (!result.ok) {
     $("#brand-status").className = "status error";
     $("#brand-status").textContent = result.message || "감지된 파일이 POIZON 전체 내보내기 양식이 아닙니다.";
     return;
   }
+  retainSelectedBrandName(expectedBrand);
+  addDownloadedBrandFile(file);
   brandWorkbenchProducts = result.products || [];
   renderBrandWorkbench();
   updateBrandExportJob(file?.jobId, "완료 · Excel 자동 불러오기 완료", file?.brandName);
@@ -1133,8 +1144,7 @@ window.aroundG.onBrandExportDetected((file) => {
   if (!acceptBrandWorkEvents) return;
   const path = String(file?.path || "").trim();
   if (!path || completedBrandImportPaths.has(path) || queuedBrandImportPaths.has(path)) return;
-  updateBrandExportJob(file?.jobId, "다운로드 완료 · 자동 불러오기 대기", file?.brandName);
-  addDownloadedBrandFile(file);
+  updateBrandExportJob(file?.jobId, "다운로드 완료 · 브랜드 검증 대기", file?.brandName);
   queuedBrandImportPaths.add(path);
   detectedBrandImportQueue.push(file);
   $("#brand-status").className = "status";
@@ -1547,7 +1557,7 @@ window.aroundG.onUpdateStatus((payload) => {
     const appInfo = await window.aroundG.getAppInfo();
     renderInstalledVersion(appInfo?.version, appInfo?.automaticUpdates !== false);
   } catch {
-    renderInstalledVersion("2.10.14", true);
+    renderInstalledVersion("2.10.15", true);
   }
   setupBrandLayout();
   try {
