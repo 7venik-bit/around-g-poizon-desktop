@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, safeStorage, shell } from "electron";
 import { mkdirSync } from "node:fs";
-import { appendFile, mkdir, readFile, readdir, stat } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { readSheet } from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
@@ -800,6 +800,28 @@ function currentBrandExportFolder() {
     || defaultBrandExportFolder();
 }
 
+function safeBrandExportLabel(value = "") {
+  return String(brandExportLabel(value) || "POIZON")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .trim() || "POIZON";
+}
+
+async function listBrandExportExcelEntries(folder) {
+  const files = [];
+  async function visit(directory) {
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await visit(path);
+      else if (entry.isFile() && /\.xlsx$/i.test(entry.name) && !entry.name.startsWith("~$")) {
+        files.push({ path, name: entry.name, directory });
+      }
+    }
+  }
+  await visit(folder);
+  return files;
+}
+
 function brandFromExportFileName(name = "") {
   return String(name)
     .replace(/\.xlsx$/i, "")
@@ -850,13 +872,14 @@ async function validateBrandExportFile(filePath, expectedBrands = []) {
 async function listBrandExportFiles() {
   const folder = currentBrandExportFolder();
   await mkdir(folder, { recursive: true });
-  const entries = await readdir(folder, { withFileTypes: true });
+  const entries = await listBrandExportExcelEntries(folder);
   const files = [];
   for (const entry of entries
-    .filter((entry) => entry.isFile() && /\.xlsx$/i.test(entry.name) && !entry.name.startsWith("~$"))) {
-        const path = join(folder, entry.name);
+    .filter((entry) => !isProcessedBrandExportName(entry.name))) {
+        const path = entry.path;
         const info = await stat(path);
-        const expectedBrand = brandFromExportFileName(entry.name);
+        const folderBrand = entry.directory === folder ? "" : basename(entry.directory);
+        const expectedBrand = folderBrand || brandFromExportFileName(entry.name);
         const brandIntegrity = await validateBrandExportFile(path, [expectedBrand]).catch((error) => ({
           ok: false,
           status: "invalid",
@@ -889,14 +912,11 @@ async function scanBrandExportFolder() {
   // brand before the completed download is validated.
   if (brandDownloadStarted) return;
   try {
-    const entries = await readdir(folder, { withFileTypes: true });
+    const entries = await listBrandExportExcelEntries(folder);
     const candidates = await Promise.all(entries
-      .filter((entry) => entry.isFile()
-        && /\.xlsx$/i.test(entry.name)
-        && !entry.name.startsWith("~$")
-        && !isProcessedBrandExportName(entry.name))
+      .filter((entry) => !isProcessedBrandExportName(entry.name))
       .map(async (entry) => {
-        const path = join(folder, entry.name);
+        const path = entry.path;
         const info = await stat(path);
         return { path, name: entry.name, mtimeMs: info.mtimeMs, size: info.size };
       }));
@@ -1070,13 +1090,14 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
     const folder = currentBrandExportFolder();
     // Electron must receive the destination before this event handler yields.
     // Waiting for an async mkdir here lets Windows open its Save As dialog first.
-    mkdirSync(folder, { recursive: true });
-    const exportBrand = brandExportLabel(downloadJob.brandName);
-    const safeBrand = String(exportBrand || "").replace(/[\\/:*?"<>|]/g, "-").trim();
+    const exportBrand = safeBrandExportLabel(downloadJob.brandName);
+    const brandFolder = join(folder, exportBrand);
+    mkdirSync(brandFolder, { recursive: true });
+    const safeBrand = exportBrand;
     const fileName = safeBrand
       ? `${safeBrand}_${localFileTimestamp()}.xlsx`
       : `POIZON_${localFileTimestamp()}.xlsx`;
-    const filePath = join(folder, fileName);
+    const filePath = join(brandFolder, fileName);
     item.setSavePath(filePath);
     mainWindow?.webContents.send("brand-export:progress", {
       status: "download-started",
@@ -1088,8 +1109,8 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
     item.once("done", async (_doneEvent, state) => {
       if (sessionGeneration !== brandWorkSessionGeneration) return;
       if (state === "completed") {
-        const info = await stat(filePath);
-        lastBrandExportSignature = `${filePath}:${info.mtimeMs}:${info.size}`;
+        let finalPath = filePath;
+        let finalName = fileName;
         const brandIntegrity = await validateBrandExportFile(filePath, [
           downloadJob.brandName,
           downloadJob.brandKo,
@@ -1101,6 +1122,25 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
           ratio: 0,
           message: `Excel 브랜드 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
         }));
+        const detectedBrand = brandIntegrity.dominantBrand
+          ? safeBrandExportLabel(brandIntegrity.dominantBrand)
+          : exportBrand;
+        if (detectedBrand !== exportBrand) {
+          const detectedFolder = join(folder, detectedBrand);
+          await mkdir(detectedFolder, { recursive: true });
+          finalName = `${detectedBrand}_${localFileTimestamp()}.xlsx`;
+          const detectedPath = join(detectedFolder, finalName);
+          try {
+            await rename(filePath, detectedPath);
+            finalPath = detectedPath;
+          } catch {
+            // Keep the completed workbook in its original requested-brand folder
+            // if Windows temporarily locks the file while the download closes.
+            finalName = fileName;
+          }
+        }
+        const info = await stat(finalPath);
+        lastBrandExportSignature = `${finalPath}:${info.mtimeMs}:${info.size}`;
         await rememberBrandExportJob({
           jobId: downloadJobId,
           brandName: downloadJob.brandName,
@@ -1109,9 +1149,9 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
           sessionGeneration,
         });
         mainWindow?.webContents.send("brand-export:detected", {
-          path: filePath,
-          name: fileName,
-          brandName: exportBrand || downloadJob.brandName,
+          path: finalPath,
+          name: finalName,
+          brandName: detectedBrand || exportBrand || downloadJob.brandName,
           jobId: downloadJobId,
           size: info.size,
           time: info.mtimeMs,

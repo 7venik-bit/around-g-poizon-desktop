@@ -35,7 +35,7 @@ function renderBrandExportFolder(folder = "") {
   if (!path) return;
   const normalizedFolder = String(folder || "").trim();
   path.textContent = normalizedFolder
-    ? `원본 Excel 저장 폴더: ${normalizedFolder}`
+    ? `브랜드별 저장 폴더: ${normalizedFolder}\\브랜드명`
     : "원본 Excel 저장 폴더가 설정되지 않았습니다.";
   path.title = normalizedFolder || "원본 Excel 저장 폴더가 설정되지 않았습니다.";
 }
