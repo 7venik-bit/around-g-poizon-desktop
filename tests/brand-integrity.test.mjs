@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   analyzeBrandMatch,
+  brandExportLabel,
   brandMismatchMessage,
   brandsMatch,
   normalizeBrandName,
@@ -17,6 +18,11 @@ test("matches known localized aliases", () => {
   assert.equal(brandsMatch("PUMA", "彪马"), true);
   assert.equal(brandsMatch("PUMA", "Jordan"), false);
   assert.equal(brandsMatch("Adidas", "Jordan"), false);
+  assert.equal(brandsMatch("Nike", "Jordan"), true);
+  assert.equal(brandsMatch("나이키", "조던"), true);
+  assert.equal(brandsMatch("Nike_Jordan", "Nike"), true);
+  assert.equal(brandsMatch("Nike_Jordan", "Jordan"), true);
+  assert.equal(brandsMatch("Jordan", "Nike"), false);
 });
 
 test("blocks a Jordan workbook labeled as Adidas", () => {
@@ -45,4 +51,21 @@ test("blocks a Jordan workbook labeled as PUMA", () => {
   assert.equal(result.ok, false);
   assert.equal(result.dominantBrand, "Jordan");
   assert.match(brandMismatchMessage(result), /요청: PUMA/);
+});
+
+
+test("uses the Nike_Jordan export label for Nike requests", () => {
+  assert.equal(brandExportLabel("Nike"), "Nike_Jordan");
+  assert.equal(brandExportLabel("나이키"), "Nike_Jordan");
+  assert.equal(brandExportLabel("Nike_Jordan"), "Nike_Jordan");
+  assert.equal(brandExportLabel("Adidas"), "Adidas");
+});
+
+test("accepts Nike and Jordan workbooks for the Nike_Jordan bundle", () => {
+  const mixed = [
+    ...Array.from({ length: 2 }, () => ({ brandName: "나이키" })),
+    ...Array.from({ length: 8 }, () => ({ brandName: "조던" })),
+  ];
+  assert.equal(analyzeBrandMatch("Nike_Jordan", mixed).ok, true);
+  assert.equal(analyzeBrandMatch("Nike", Array.from({ length: 10 }, () => ({ brandName: "조던" }))).ok, true);
 });
