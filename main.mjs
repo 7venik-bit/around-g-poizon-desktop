@@ -56,6 +56,7 @@ const brandExportJobs = new Map();
 const sellerDownloadSessions = new WeakSet();
 let brandExportMonitorRunning = false;
 let activeBrandDownloadJobId = "";
+let brandWorkSessionGeneration = 0;
 const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
 const SELLER_PRODUCT_SEARCH_URL = "https://seller.poizon.com/main/goods/search";
 const SELLER_EXPORT_CENTER_URL = "https://seller.poizon.com/main/exportCenter";
@@ -964,6 +965,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL) {
   const sellerSession = sellerWindow.webContents.session;
   if (!sellerDownloadSessions.has(sellerSession)) {
     sellerSession.on("will-download", (_event, item) => {
+    const sessionGeneration = brandWorkSessionGeneration;
     const downloadJobId = activeBrandDownloadJobId || pendingBrandExportJobId;
     const downloadJob = brandExportJobs.get(downloadJobId) || {
       brandName: pendingBrandExportName,
@@ -989,6 +991,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL) {
       message: `${downloadJob.brandName || "선택 브랜드"} 다운로드를 시작했습니다.`,
     });
     item.once("done", async (_doneEvent, state) => {
+      if (sessionGeneration !== brandWorkSessionGeneration) return;
       if (state === "completed") {
         const info = await stat(filePath);
         lastBrandExportSignature = `${filePath}:${info.mtimeMs}:${info.size}`;
@@ -997,6 +1000,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL) {
           brandName: downloadJob.brandName,
           createdAt: downloadJob.createdAt,
           lastDownloadedAt: Date.now(),
+          sessionGeneration,
         });
         mainWindow?.webContents.send("brand-export:detected", {
           path: filePath,
@@ -1430,6 +1434,8 @@ function savedBrandExportJobs() {
 }
 
 async function rememberBrandExportJob(input = {}) {
+  if (input.sessionGeneration !== undefined
+    && input.sessionGeneration !== brandWorkSessionGeneration) return;
   const jobId = String(input.jobId || "").trim();
   const brandName = String(input.brandName || "").trim();
   if (!jobId || !brandName) return;
@@ -1503,6 +1509,8 @@ async function findReusableSellerExportJob(brandName = "", knownJobIds = []) {
 }
 
 async function automateSellerBrandExport(input = {}) {
+  const sessionGeneration = brandWorkSessionGeneration;
+  const cleared = () => sessionGeneration !== brandWorkSessionGeneration;
   const brandName = String(input.brandName || "").trim();
   if (brandExportJobPending) {
     return {
@@ -1528,6 +1536,7 @@ async function automateSellerBrandExport(input = {}) {
     brandName,
     Array.isArray(input.knownJobIds) ? input.knownJobIds : [],
   );
+  if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "작업 기록 삭제로 이전 요청을 중단했습니다." };
   if (reusableJob?.jobId) {
     const registeredJobId = String(reusableJob.jobId);
     pendingBrandExportJobId = registeredJobId;
@@ -1542,6 +1551,7 @@ async function automateSellerBrandExport(input = {}) {
       jobId: registeredJobId,
       brandName,
       createdAt: Number(reusableJob.createdAt) || Date.now(),
+      sessionGeneration,
     });
     const alreadySuccessful = reusableJob.state !== "PROCESSING";
     mainWindow?.webContents.send("brand-export:progress", {
@@ -1884,6 +1894,7 @@ async function automateSellerBrandExport(input = {}) {
       message: "판매자센터에 새 데이터 파일 생성 작업이 등록되지 않았습니다. 다시 시도해 주세요.",
     };
   }
+  if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "작업 기록 삭제로 이전 요청을 중단했습니다." };
   pendingBrandExportJobId = createdJob.id || "";
   const registeredJobId = pendingBrandExportJobId;
   brandExportJobs.set(registeredJobId, {
@@ -1896,6 +1907,7 @@ async function automateSellerBrandExport(input = {}) {
     jobId: registeredJobId,
     brandName,
     createdAt: Date.now(),
+    sessionGeneration,
   });
   mainWindow?.webContents.send("brand-export:progress", {
     status: "job-created",
@@ -2833,15 +2845,21 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("brand-export:list-files", () => listBrandExportFiles());
   ipcMain.handle("brand-export:clear-session", async () => {
-    for (const inventoryWindow of inventoryWindows) {
-      if (!inventoryWindow.isDestroyed()) inventoryWindow.close();
-    }
+    brandWorkSessionGeneration += 1;
     brandExportJobs.clear();
-    await store.setSettings({ brandExportJobCache: [] });
     pendingBrandExportName = "";
     pendingBrandExportJobId = "";
+    activeBrandDownloadJobId = "";
+    brandExportJobPending = false;
+    brandDownloadStarted = false;
     lastBrandExportSignature = "__BASELINE_EXISTING_FILES__";
+    await store.setSettings({ brandExportJobCache: [] });
     mainWindow?.webContents.send("brand-export:session-cleared");
+    for (const inventoryWindow of inventoryWindows) {
+      if (!inventoryWindow.isDestroyed()) {
+        inventoryWindow.webContents.send("brand-export:session-cleared");
+      }
+    }
     return { ok: true };
   });
   ipcMain.handle("brand-export:select-folder", async () => {

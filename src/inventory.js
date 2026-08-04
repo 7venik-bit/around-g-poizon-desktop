@@ -16,6 +16,25 @@ const state = {
 const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const keyOf = (product, index) => String(product.spuId || product.articleNumber || `row-${index}`);
+let workGeneration = 0;
+
+function clearWorkScreen(message = "이전 작업 화면을 지웠습니다. 원본 Excel 파일은 보존됩니다.") {
+  workGeneration += 1;
+  state.products = [];
+  state.sourceProducts = [];
+  state.sourceRows = 0;
+  state.selected.clear();
+  state.searching = false;
+  state.stopped = true;
+  $("#products").innerHTML = "";
+  $("#filter-summary").hidden = true;
+  $("#sales-filter-controls").hidden = true;
+  $("#progress").hidden = true;
+  $("#source").textContent = "";
+  $("#title").textContent = "국내 재고·사이즈 확인";
+  $("#status").textContent = message;
+  updateSelection();
+}
 
 function salesData(product) {
   return salesPair(product, state.salesMode);
@@ -200,21 +219,16 @@ $("#select-all").addEventListener("change", (event) => {
 $("#search-selected").addEventListener("click", searchSelected);
 $("#stop").addEventListener("click", () => { state.stopped = true; });
 $("#clear-work").addEventListener("click", async () => {
-  state.products = [];
-  state.sourceProducts = [];
-  state.selected.clear();
-  state.searching = false;
-  state.stopped = true;
-  $("#products").innerHTML = "";
-  $("#filter-summary").hidden = true;
-  $("#sales-filter-controls").hidden = true;
-  $("#progress").hidden = true;
-  $("#source").textContent = "";
-  $("#title").textContent = "국내 재고·사이즈 확인";
-  $("#status").textContent = "이전 작업 화면을 지웠습니다. 원본 Excel 파일은 보존됩니다.";
-  updateSelection();
-  await window.aroundG?.clearBrandWorkHistory?.();
+  const button = $("#clear-work");
+  button.disabled = true;
+  clearWorkScreen();
+  const result = await window.aroundG?.clearBrandWorkHistory?.();
+  if (result?.ok === false) {
+    $("#status").textContent = result.message || "작업 기록을 지우지 못했습니다.";
+  }
+  button.disabled = false;
 });
+window.aroundG.onBrandWorkHistoryCleared?.(() => clearWorkScreen());
 $("#sales-filter-controls").addEventListener("input", (event) => {
   if (event.target.id === "sales-mode") state.salesMode = event.target.value;
   applySalesFilters();
@@ -229,8 +243,10 @@ $("#reset-filter").addEventListener("click", () => {
 $("#open-excel").addEventListener("click", () => window.aroundG.openOriginalExcelFile(filePath));
 
 (async () => {
+  const generation = ++workGeneration;
   $("#source").textContent = filePath;
   const result = await window.aroundG.importBrandExcelFromPath(filePath);
+  if (generation !== workGeneration) return;
   if (!result?.ok) {
     $("#status").textContent = result?.message || "Excel 상품 데이터를 불러오지 못했습니다.";
     return;
