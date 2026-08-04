@@ -1634,10 +1634,22 @@ async function automateSellerBrandExport(input = {}) {
         const beforeSearch = readSearchState();
         const requestedBrandKeys = [${JSON.stringify(brandName)}, ${JSON.stringify(String(input.brandKo || "").trim())}]
           .map(normalize).filter(Boolean);
-        const hasRequestedBrand = (state) => Array.isArray(state?.rowTexts)
-          && state.rowTexts.some((row) => requestedBrandKeys.some((key) => normalize(row).includes(key)));
+        const requestedBrandRatio = (state) => {
+          const rows = Array.isArray(state?.rowTexts) ? state.rowTexts.filter(Boolean) : [];
+          if (!rows.length || !requestedBrandKeys.length) return 0;
+          const matches = rows.filter((row) =>
+            requestedBrandKeys.some((key) => normalize(row).includes(key))
+          ).length;
+          return matches / rows.length;
+        };
+        const hasRequestedBrand = (state) => requestedBrandRatio(state) >= 0.8;
         input.focus();
         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+        if (setter) setter.call(input, "");
+        else input.value = "";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        await wait(120);
         if (setter) setter.call(input, ${JSON.stringify(brandName)});
         else input.value = ${JSON.stringify(brandName)};
         input.dispatchEvent(new Event("input", { bubbles: true }));
