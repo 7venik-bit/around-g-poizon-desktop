@@ -17,6 +17,7 @@ let selectedBrandIds = new Set();
 let brandSelectionHistory = [];
 let brandExportQueue = [];
 let activeExportBrand = null;
+let brandSelectionBusy = false;
 const brandExportJobs = new Map();
 let downloadedBrandFiles = [];
 const detectedBrandImportQueue = [];
@@ -85,6 +86,22 @@ function excelFileSize(value = 0) {
   if (!bytes) return "-";
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024)).toLocaleString("ko-KR")} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function normalizeBrandKey(value = "") {
+  return String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, "");
+}
+
+function hasCompletedBrandDownload(brand = {}) {
+  const keys = new Set([normalizeBrandKey(brand.name), normalizeBrandKey(brand.ko)].filter(Boolean));
+  return downloadedBrandFiles.some((file) => {
+    if (file?.brandIntegrity?.ok === false) return false;
+    return keys.has(normalizeBrandKey(file.brandName || file.brand));
+  });
 }
 
 function renderDownloadedBrandFiles() {
@@ -178,6 +195,7 @@ function addDownloadedBrandFile(file = {}) {
   ].slice(0, 500);
   localStorage.setItem("around-g-brand-download-files", JSON.stringify(downloadedBrandFiles));
   renderDownloadedBrandFiles();
+  renderBrandCards($("#brand-filter")?.value || "");
 }
 
 function clearBrandWorkHistoryUi() {
@@ -193,6 +211,7 @@ function clearBrandWorkHistoryUi() {
   selectedBrandName = "";
   brandExportQueue = [];
   activeExportBrand = null;
+  brandSelectionBusy = false;
   brandExportJobs.clear();
   [
     "around-g-selected-brand-name",
@@ -205,7 +224,8 @@ function clearBrandWorkHistoryUi() {
   $("#brand-export-jobs-list").innerHTML = "";
   renderDownloadedBrandFiles();
   renderBrandWorkbench();
-  renderBrandSelectionPanel();
+  retainSelectedBrandName("");
+  renderBrandCards($("#brand-filter")?.value || "");
 }
 
 async function restoreDownloadedBrandFiles() {
@@ -233,6 +253,7 @@ async function restoreDownloadedBrandFiles() {
     .slice(0, 500);
   localStorage.setItem("around-g-brand-download-files", JSON.stringify(downloadedBrandFiles));
   renderDownloadedBrandFiles();
+  renderBrandCards($("#brand-filter")?.value || "");
 }
 
 function recordBrandSelection(brand, action, details = {}) {
@@ -267,54 +288,37 @@ function updateBrandExportJob(jobId = "", state = "", brandName = "") {
   }));
 }
 
-function renderBrandSelectionPanel() {
-  if (!$("#brand-selection-panel")) return;
-  const selected = explorerMeta.brands.filter((brand) => selectedBrandIds.has(Number(brand.id)));
-  $("#brand-selection-count").textContent = `${selected.length}개 선택`;
-  $("#brand-export-selected").disabled = selected.length === 0 || Boolean(activeExportBrand);
-  $("#brand-clear-selected").disabled = selected.length === 0;
-  $("#brand-selection-chips").innerHTML = selected.length
-    ? selected.map((brand) => {
-      const entry = brandSelectionHistory.find((item) => item.brandId === Number(brand.id) && item.action === "추가");
-      return `<span class="brand-selection-chip"><strong>${text(brand.name)}</strong><small>${text(brandTime(entry?.time))}</small><button type="button" data-remove-brand-id="${brand.id}" aria-label="${text(brand.name)} 삭제">×</button></span>`;
-    }).join("")
-    : `<span class="brand-selection-empty">브랜드 카드를 눌러 복수 선택하세요.</span>`;
-  $("#brand-selection-history").innerHTML = brandSelectionHistory.length
-    ? brandSelectionHistory.slice(0, 20).map((item) => `<li><time>${text(brandTime(item.time))}</time><strong>${text(item.brandName)}</strong><span>${text(item.action)}${item.jobId ? ` · 작업번호 ${text(item.jobId)}` : ""}</span></li>`).join("")
-    : "<li>선택 기록이 없습니다.</li>";
-}
-
-function toggleBrandSelection(brandId) {
+function selectSingleBrand(brandId) {
   const id = Number(brandId);
   const brand = explorerMeta.brands.find((item) => Number(item.id) === id);
-  if (!brand) return;
-  if (selectedBrandIds.has(id)) {
-    selectedBrandIds.delete(id);
-    recordBrandSelection(brand, "삭제");
-  } else {
-    selectedBrandIds.add(id);
-    selectedBrandId = id;
-    retainSelectedBrandName(brand.name);
-    recordBrandSelection(brand, "추가");
-  }
+  if (!brand) return null;
+  const changed = selectedBrandIds.size !== 1 || !selectedBrandIds.has(id);
+  selectedBrandIds.clear();
+  selectedBrandIds.add(id);
+  selectedBrandId = id;
+  retainSelectedBrandName(brand.name);
+  if (changed) recordBrandSelection(brand, "선택");
+  else saveBrandSelections();
   renderBrandCards($("#brand-filter")?.value || "");
-  renderBrandSelectionPanel();
+  return brand;
 }
 
 async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) {
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return;
   if (!brandExportQueue.length) {
     activeExportBrand = null;
-    renderBrandSelectionPanel();
+    brandSelectionBusy = false;
+    renderBrandCards($("#brand-filter")?.value || "");
     $("#brand-status").className = "status success";
     $("#brand-status").textContent = `${brandExportJobs.size}개 브랜드 작업 등록 완료 · 작업번호별 동시 감시를 시작합니다.`;
     await window.aroundG.startSellerBrandExportMonitor();
     return;
   }
   activeExportBrand = brandExportQueue.shift();
+  brandSelectionBusy = true;
   selectedBrandId = Number(activeExportBrand.id);
   retainSelectedBrandName(activeExportBrand.name);
-  renderBrandSelectionPanel();
+  renderBrandCards($("#brand-filter")?.value || "");
   $("#brand-status").className = "status";
   $("#brand-status").textContent = `${activeExportBrand.name} 판매자센터 요청 생성 여부 확인 중`;
   const brandKey = (value) => String(value || "")
@@ -352,7 +356,6 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
       : "등록 완료 · 동시 감시 대기";
     updateBrandExportJob(automation.jobId, reusedState, activeExportBrand.name);
     recordBrandSelection(activeExportBrand, automation.reused ? reusedState : "전체 내보내기 요청", { jobId: automation.jobId });
-    renderBrandSelectionPanel();
     $("#brand-status").className = "status success";
     $("#brand-status").textContent = automation.reused
       ? `${activeExportBrand.name} · 작업번호 ${automation.jobId} · ${automation.alreadySuccessful ? "기존 완료 파일 재다운로드 대기" : "기존 작업 감시 등록"}`
@@ -390,23 +393,9 @@ function setupBrandLayout() {
   selection.textContent = selectedBrandName || "브랜드를 선택해 주세요";
   summary.append(title, selection);
 
-  const selectionPanel = document.createElement("section");
-  selectionPanel.id = "brand-selection-panel";
-  selectionPanel.className = "brand-selection-panel";
-  selectionPanel.innerHTML = `
-    <div class="brand-selection-head">
-      <div><strong>선택 브랜드</strong><span id="brand-selection-count">0개 선택</span></div>
-      <div>
-        <button type="button" id="brand-export-selected" class="primary">선택 브랜드 데이터 가져오기</button>
-        <button type="button" id="brand-clear-selected">전체 삭제</button>
-      </div>
-    </div>
-    <div id="brand-selection-chips" class="brand-selection-chips"></div>
-    <details class="brand-selection-log"><summary>선택 시간 및 변경 내역</summary><ol id="brand-selection-history"></ol></details>`;
-  picker.append(summary, toolbar, selectionPanel, cards);
+  picker.append(summary, toolbar, cards);
   if (status) status.insertAdjacentElement("afterend", picker);
   else panel.append(picker);
-  renderBrandSelectionPanel();
 }
 
 function renderBrandWorkbench() {
@@ -492,9 +481,12 @@ function renderBrandCards(filter = "") {
   const brands = explorerMeta.brands.filter((brand) =>
     !normalized || `${brand.name} ${brand.ko}`.toLowerCase().includes(normalized)
   );
-  $("#brand-cards").innerHTML = brands.map((brand) => `<button class="brand-card ${selectedBrandIds.has(Number(brand.id)) ? "selected" : ""}" data-brand-id="${brand.id}" aria-pressed="${selectedBrandIds.has(Number(brand.id))}">
-    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong><small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>
-  </button>`).join("");
+  $("#brand-cards").innerHTML = brands.map((brand) => {
+    const downloadComplete = hasCompletedBrandDownload(brand);
+    return `<button type="button" class="brand-card ${selectedBrandIds.has(Number(brand.id)) ? "selected" : ""}${downloadComplete ? " download-complete" : ""}" data-brand-id="${brand.id}" aria-pressed="${selectedBrandIds.has(Number(brand.id))}"${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
+    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong><small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>${downloadComplete ? '<em class="brand-download-complete">✓ 다운로드 완료</em>' : ""}
+  </button>`;
+  }).join("");
   document.querySelectorAll(".brand-logo img").forEach((image) => {
     image.addEventListener("load", () => image.parentElement?.classList.add("loaded"), { once: true });
     image.addEventListener("error", () => image.remove(), { once: true });
@@ -908,61 +900,23 @@ document.addEventListener("click", async (event) => {
   const domesticButton = event.target.closest("[data-domestic][data-index]");
   const domesticIndex = domesticButton?.dataset.index;
   if (domesticButton && domesticIndex !== undefined) await searchDomesticAt(Number(domesticIndex));
-  const removeBrandId = event.target.closest("[data-remove-brand-id]")?.dataset.removeBrandId;
-  if (removeBrandId) {
-    toggleBrandSelection(removeBrandId);
-    return;
-  }
-  if (event.target.closest("#brand-clear-selected")) {
-    explorerMeta.brands
-      .filter((brand) => selectedBrandIds.has(Number(brand.id)))
-      .forEach((brand) => recordBrandSelection(brand, "삭제"));
-    selectedBrandIds.clear();
-    saveBrandSelections();
-    renderBrandCards($("#brand-filter")?.value || "");
-    renderBrandSelectionPanel();
-    return;
-  }
-  if (event.target.closest("#brand-export-selected")) {
-    brandExportQueue = explorerMeta.brands.filter((brand) => selectedBrandIds.has(Number(brand.id)));
-    if (!brandExportQueue.length || activeExportBrand) return;
+  const brandButton = event.target.closest(".brand-card[data-brand-id]");
+  if (brandButton) {
+    if (brandSelectionBusy || activeExportBrand) {
+      $("#brand-status").className = "status";
+      $("#brand-status").textContent = `${activeExportBrand?.name || selectedBrandName || "선택 브랜드"} 원본 데이터 작업을 등록하고 있습니다.`;
+      return;
+    }
+    const brand = selectSingleBrand(brandButton.dataset.brandId);
+    if (!brand) return;
     acceptBrandWorkEvents = true;
     const generation = brandWorkHistoryGeneration;
+    brandExportQueue = [brand];
     clearExplorerResults();
     brandWorkbenchProducts = [];
     renderBrandWorkbench();
-    exportNextSelectedBrand(generation);
+    void exportNextSelectedBrand(generation);
     return;
-  }
-  const brandId = event.target.closest("[data-brand-id]")?.dataset.brandId;
-  if (brandId) {
-    toggleBrandSelection(brandId);
-    return;
-    selectedBrandId = Number(brandId);
-    renderBrandCards($("#brand-filter").value);
-    $("#brand-search").disabled = true;
-    $("#brand-search").textContent = "수집 기능 재설계 중";
-    const brand = explorerMeta.brands.find((item) => item.id === selectedBrandId);
-    retainSelectedBrandName(brand?.name || "");
-    if ($("#brand-picker")) $("#brand-picker").open = false;
-    clearExplorerResults();
-    brandWorkbenchProducts = [];
-    renderBrandWorkbench();
-    $("#brand-status").className = "status";
-    $("#brand-status").textContent = `${brand?.name || brandId} 판매자센터 전체 데이터 가져오기를 시작합니다.`;
-    const automation = await window.aroundG.automateSellerBrandExport({
-      brandName: brand?.name || "",
-      brandKo: brand?.ko || "",
-      brandId: selectedBrandId,
-    });
-    if (!automation.ok) {
-      $("#brand-status").className = "status error";
-      $("#brand-status").textContent = automation.message || "판매자센터 데이터 가져오기 자동화에 실패했습니다.";
-    } else {
-      renderBrandExportFolder(automation.folder);
-      $("#brand-status").className = "status success";
-      $("#brand-status").textContent = "전체 데이터를 요청했습니다. 다운로드가 끝나면 자동으로 불러옵니다.";
-    }
   }
   const category = event.target.closest("[data-category]")?.dataset.category;
   if (category) {
