@@ -444,6 +444,7 @@ body aside{
   background:linear-gradient(180deg,#0d1c36 0%,#132746 100%)
 }
 body .brand{padding:0 8px 24px;gap:10px}
+body .brand{justify-content:center}
 body .brand>span{
   width:38px;height:38px;border-radius:10px;
   color:#fff;background:linear-gradient(145deg,#327cf2,#54a4ff);
@@ -493,6 +494,7 @@ body .shell>header{
   box-shadow:0 1px 0 #243a60
 }
 .workspace-title{display:flex;align-items:center;gap:16px;min-height:42px}
+.workspace-title{gap:0}
 .workspace-title>div{display:flex;flex-direction:column;gap:1px}
 .workspace-title strong{font-size:15px;color:#fff}
 body .workspace-title small{color:#7f96b8;font-size:9px;letter-spacing:.12em}
