@@ -70,6 +70,10 @@ function brandTime(value = Date.now()) {
   }).format(new Date(value));
 }
 
+function isProcessedBrandExportName(value = "") {
+  return String(value).endsWith("_판매량30이상_정리.xlsx");
+}
+
 function renderDownloadedBrandFiles() {
   const list = $("#brand-download-files");
   const count = $("#brand-download-count");
@@ -122,7 +126,7 @@ function renderDownloadedBrandFiles() {
             <i class="brand-download-logo">${logo}</i>
             <span class="brand-download-name">
               <strong>${text(brandName)}</strong>
-              <small>다운로드 완료</small>
+              <small>${isProcessedBrandExportName(latest.file.name) ? "판매량 30건 자동 정리 완료" : "다운로드 완료"}</small>
             </span>
             </span>
             <strong class="brand-download-filename" title="${text(latest.file.path || "")}">${text(latest.file.name || latest.file.path || "Excel 파일")}</strong>
@@ -152,6 +156,7 @@ function addDownloadedBrandFile(file = {}) {
       name: String(file.name || ""),
       brandName: String(file.brandName || selectedBrandName || "선택 브랜드"),
       jobId: String(file.jobId || ""),
+      originalPath: String(file.originalPath || ""),
       time: Number(file.time) || Date.now(),
     },
     ...downloadedBrandFiles.filter((item) => String(item.path || "") !== path),
@@ -1105,7 +1110,7 @@ async function importDetectedBrandExport(file, generation = brandWorkHistoryGene
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return false;
   const expectedBrand = String(file?.brandName || selectedBrandName || "").trim();
   $("#brand-status").className = "status";
-  $("#brand-status").textContent = `${expectedBrand || "선택 브랜드"} 다운로드 완료 확인 · ${file.name || file.path}`;
+  $("#brand-status").textContent = `${expectedBrand || "선택 브랜드"} 다운로드 완료 · 판매량 30건 자동 정리 중`;
   const result = await window.aroundG.importBrandExcelFromPath(file.path, expectedBrand);
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return false;
   if (!result.ok) {
@@ -1119,12 +1124,17 @@ async function importDetectedBrandExport(file, generation = brandWorkHistoryGene
     return false;
   }
   retainSelectedBrandName(expectedBrand);
-  addDownloadedBrandFile(file);
+  addDownloadedBrandFile({
+    ...file,
+    path: result.processedPath || result.path || file.path,
+    name: result.processedName || file.name,
+    originalPath: result.originalPath || file.path,
+  });
   brandWorkbenchProducts = result.products || [];
   renderBrandWorkbench();
-  updateBrandExportJob(file?.jobId, "완료 · Excel 자동 불러오기 완료", file?.brandName);
+  updateBrandExportJob(file?.jobId, "완료 · 판매량 30건 정리 및 자동 불러오기", file?.brandName);
   $("#brand-status").className = "status success";
-  $("#brand-status").textContent = `${selectedBrandName || "선택 브랜드"} 자동 불러오기 완료 · Excel ${Number(result.sourceRows || 0).toLocaleString("ko-KR")}행 → 상품 ${brandWorkbenchProducts.length.toLocaleString("ko-KR")}개`;
+  $("#brand-status").textContent = `${selectedBrandName || "선택 브랜드"} 자동 정리·불러오기 완료 · 원본 ${Number(result.sourceRows || 0).toLocaleString("ko-KR")}행 → 판매량 조건 SKU ${Number(result.filteredRows || 0).toLocaleString("ko-KR")}행 → SPU 상품 ${brandWorkbenchProducts.length.toLocaleString("ko-KR")}개`;
   return true;
 }
 
