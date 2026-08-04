@@ -7,6 +7,7 @@ import writeXlsxFile from "write-excel-file/node";
 import {
   findPoizonColumn,
   getPoizonWorksheetRows,
+  readPoizonColumnValues,
   repairPoizonWorksheetDimensions,
 } from "./services/poizon-xlsx.mjs";
 import {
@@ -15,6 +16,7 @@ import {
 } from "./services/poizon-sales-filter.mjs";
 import {
   analyzeBrandMatch,
+  analyzeBrandValues,
   brandExportLabel,
   brandMismatchMessage,
   brandsMatch,
@@ -64,6 +66,7 @@ let brandExportJobPending = false;
 let brandDownloadStarted = false;
 const brandExportJobs = new Map();
 const sellerDownloadSessions = new WeakSet();
+const brandExportValidationCache = new Map();
 let brandExportMonitorRunning = false;
 let activeBrandDownloadJobId = "";
 let brandWorkSessionGeneration = 0;
@@ -813,27 +816,65 @@ function processedBrandExportName(name = "") {
   return sourceName.replace(/\.xlsx$/i, PROCESSED_BRAND_EXPORT_SUFFIX);
 }
 
+async function validateBrandExportFile(filePath, expectedBrands = []) {
+  const info = await stat(filePath);
+  const signature = `${filePath}:${info.mtimeMs}:${info.size}`;
+  if (brandExportValidationCache.has(signature)) return brandExportValidationCache.get(signature);
+  const saved = store?.snapshot()?.settings?.brandExportFileValidationCache;
+  const savedEntry = Array.isArray(saved)
+    ? saved.find((entry) => String(entry?.signature || "") === signature)
+    : null;
+  if (savedEntry?.result) {
+    brandExportValidationCache.set(signature, savedEntry.result);
+    return savedEntry.result;
+  }
+  const fileBuffer = await readFile(filePath);
+  const brandColumn = readPoizonColumnValues(fileBuffer, "상품 브랜드", "브랜드");
+  const observedBrands = brandColumn.values;
+  const integrity = analyzeBrandValues(expectedBrands, observedBrands);
+  const result = {
+    ...integrity,
+    status: integrity.ok ? "matched" : "mismatch",
+    message: integrity.ok ? "선택 브랜드와 Excel 브랜드가 일치합니다." : brandMismatchMessage(integrity),
+  };
+  brandExportValidationCache.set(signature, result);
+  const nextCache = [
+    { signature, result },
+    ...(Array.isArray(saved) ? saved : []).filter((entry) => String(entry?.signature || "") !== signature),
+  ].slice(0, 500);
+  await store?.setSettings({ brandExportFileValidationCache: nextCache });
+  return result;
+}
+
 async function listBrandExportFiles() {
   const folder = currentBrandExportFolder();
   await mkdir(folder, { recursive: true });
   const entries = await readdir(folder, { withFileTypes: true });
-  const files = await Promise.all(
-    entries
-      .filter((entry) => entry.isFile() && /\.xlsx$/i.test(entry.name) && !entry.name.startsWith("~$"))
-      .map(async (entry) => {
+  const files = [];
+  for (const entry of entries
+    .filter((entry) => entry.isFile() && /\.xlsx$/i.test(entry.name) && !entry.name.startsWith("~$"))) {
         const path = join(folder, entry.name);
         const info = await stat(path);
-        return {
+        const expectedBrand = brandFromExportFileName(entry.name);
+        const brandIntegrity = await validateBrandExportFile(path, [expectedBrand]).catch((error) => ({
+          ok: false,
+          status: "invalid",
+          expectedBrand,
+          dominantBrand: "",
+          ratio: 0,
+          message: `Excel 브랜드 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
+        }));
+        files.push({
           path,
           name: entry.name,
-          brandName: brandFromExportFileName(entry.name),
+          brandName: expectedBrand,
+          brandIntegrity,
           jobId: "",
           time: info.mtimeMs,
           mtimeMs: info.mtimeMs,
           size: info.size,
-        };
-      }),
-  );
+        });
+  }
   const visibleFiles = files.filter((file) => !isProcessedBrandExportName(file.name));
   visibleFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
   return { ok: true, folder, files: visibleFiles };
@@ -842,6 +883,10 @@ async function listBrandExportFiles() {
 async function scanBrandExportFolder() {
   const folder = currentBrandExportFolder();
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  // The will-download handler owns files created by the active POIZON job.
+  // Polling a partially written file can otherwise attach the previous job's
+  // brand before the completed download is validated.
+  if (brandDownloadStarted) return;
   try {
     const entries = await readdir(folder, { withFileTypes: true });
     const candidates = await Promise.all(entries
@@ -864,9 +909,19 @@ async function scanBrandExportFolder() {
     }
     if (signature === lastBrandExportSignature) return;
     lastBrandExportSignature = signature;
+    const expectedBrand = pendingBrandExportName || brandFromExportFileName(newest.name);
+    const brandIntegrity = await validateBrandExportFile(newest.path, [expectedBrand]).catch((error) => ({
+      ok: false,
+      status: "invalid",
+      expectedBrand,
+      dominantBrand: "",
+      ratio: 0,
+      message: `Excel 브랜드 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
+    }));
     mainWindow.webContents.send("brand-export:detected", {
       ...newest,
-      brandName: pendingBrandExportName,
+      brandName: expectedBrand,
+      brandIntegrity,
     });
   } catch (error) {
     mainWindow.webContents.send("brand-export:error", {
@@ -1006,6 +1061,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
     const downloadJobId = activeBrandDownloadJobId || pendingBrandExportJobId;
     const downloadJob = brandExportJobs.get(downloadJobId) || {
       brandName: pendingBrandExportName,
+      brandKo: "",
       jobId: downloadJobId,
     };
     downloadJob.downloadStarted = true;
@@ -1033,6 +1089,17 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
       if (state === "completed") {
         const info = await stat(filePath);
         lastBrandExportSignature = `${filePath}:${info.mtimeMs}:${info.size}`;
+        const brandIntegrity = await validateBrandExportFile(filePath, [
+          downloadJob.brandName,
+          downloadJob.brandKo,
+        ]).catch((error) => ({
+          ok: false,
+          status: "invalid",
+          expectedBrand: downloadJob.brandName,
+          dominantBrand: "",
+          ratio: 0,
+          message: `Excel 브랜드 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
+        }));
         await rememberBrandExportJob({
           jobId: downloadJobId,
           brandName: downloadJob.brandName,
@@ -1045,6 +1112,9 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
           name: fileName,
           brandName: exportBrand || downloadJob.brandName,
           jobId: downloadJobId,
+          size: info.size,
+          time: info.mtimeMs,
+          brandIntegrity,
         });
       } else {
         mainWindow?.webContents.send("brand-export:error", {
@@ -1477,10 +1547,12 @@ async function rememberBrandExportJob(input = {}) {
     && input.sessionGeneration !== brandWorkSessionGeneration) return;
   const jobId = String(input.jobId || "").trim();
   const brandName = String(input.brandName || "").trim();
+  const brandKo = String(input.brandKo || "").trim();
   if (!jobId || !brandName) return;
   const next = {
     jobId,
     brandName,
+    brandKo,
     brandKey: normalizeBrandExportKey(brandName),
     createdAt: Number(input.createdAt) || Date.now(),
     lastDownloadedAt: Number(input.lastDownloadedAt) || 0,
@@ -1551,6 +1623,7 @@ async function automateSellerBrandExport(input = {}) {
   const sessionGeneration = brandWorkSessionGeneration;
   const cleared = () => sessionGeneration !== brandWorkSessionGeneration;
   const brandName = String(input.brandName || "").trim();
+  const brandKo = String(input.brandKo || "").trim();
   if (brandExportJobPending) {
     return {
       ok: false,
@@ -1584,6 +1657,7 @@ async function automateSellerBrandExport(input = {}) {
     brandExportJobs.set(registeredJobId, {
       jobId: registeredJobId,
       brandName,
+      brandKo,
       createdAt: Number(reusableJob.createdAt) || Date.now(),
       downloadStarted: false,
       reused: true,
@@ -1591,6 +1665,7 @@ async function automateSellerBrandExport(input = {}) {
     await rememberBrandExportJob({
       jobId: registeredJobId,
       brandName,
+      brandKo,
       createdAt: Number(reusableJob.createdAt) || Date.now(),
       sessionGeneration,
     });
@@ -1963,12 +2038,14 @@ async function automateSellerBrandExport(input = {}) {
   brandExportJobs.set(registeredJobId, {
     jobId: registeredJobId,
     brandName,
+    brandKo,
     createdAt: Date.now(),
     downloadStarted: false,
   });
   await rememberBrandExportJob({
     jobId: registeredJobId,
     brandName,
+    brandKo,
     createdAt: Date.now(),
     sessionGeneration,
   });

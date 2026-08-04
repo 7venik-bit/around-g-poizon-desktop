@@ -5,6 +5,7 @@ const KNOWN_ALIASES = [
   ["puma", "푸마", "彪马"],
   ["newbalance", "뉴발란스", "新百伦"],
   ["descente", "데상트", "迪桑特"],
+  ["crocs", "크록스", "卡骆驰"],
 ];
 
 export function normalizeBrandName(value = "") {
@@ -55,6 +56,33 @@ export function analyzeBrandMatch(expectedBrand = "", products = [], minimumRati
   return {
     ok: Boolean(normalizeBrandName(expectedBrand)) && compared > 0 && ratio >= minimumRatio,
     expectedBrand: String(expectedBrand || "").trim(),
+    dominantBrand,
+    matched,
+    compared,
+    ratio,
+  };
+}
+
+export function analyzeBrandValues(expectedBrands = [], observedBrands = [], minimumRatio = 0.8) {
+  const accepted = (Array.isArray(expectedBrands) ? expectedBrands : [expectedBrands])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const observed = (observedBrands || [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const counts = new Map();
+  let matched = 0;
+  for (const value of observed) {
+    counts.set(value, (counts.get(value) || 0) + 1);
+    if (accepted.some((expected) => brandsMatch(expected, value))) matched += 1;
+  }
+  const compared = observed.length;
+  const ratio = compared ? matched / compared : 0;
+  const dominantBrand = [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || "";
+  return {
+    ok: accepted.length > 0 && compared > 0 && ratio >= minimumRatio,
+    expectedBrand: accepted[0] || "",
+    expectedBrands: accepted,
     dominantBrand,
     matched,
     compared,

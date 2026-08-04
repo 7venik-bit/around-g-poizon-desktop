@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   analyzeBrandMatch,
+  analyzeBrandValues,
   brandExportLabel,
   brandMismatchMessage,
   brandsMatch,
@@ -23,6 +24,23 @@ test("matches known localized aliases", () => {
   assert.equal(brandsMatch("Nike_Jordan", "Nike"), true);
   assert.equal(brandsMatch("Nike_Jordan", "Jordan"), true);
   assert.equal(brandsMatch("Jordan", "Nike"), false);
+  assert.equal(brandsMatch("Crocs", "크록스"), true);
+});
+
+test("blocks a Jordan workbook downloaded for Crocs", () => {
+  const result = analyzeBrandValues(["Crocs", "크록스"], Array.from({ length: 200 }, () => "조던"));
+  assert.equal(result.ok, false);
+  assert.equal(result.dominantBrand, "조던");
+  assert.equal(result.ratio, 0);
+  assert.match(brandMismatchMessage(result), /요청: Crocs/);
+});
+
+test("accepts Crocs localized workbook values at the 80 percent threshold", () => {
+  const observed = [
+    ...Array.from({ length: 8 }, () => "크록스"),
+    ...Array.from({ length: 2 }, () => "Crocs Kids"),
+  ];
+  assert.equal(analyzeBrandValues(["Crocs", "크록스"], observed).ok, true);
 });
 
 test("blocks a Jordan workbook labeled as Adidas", () => {
