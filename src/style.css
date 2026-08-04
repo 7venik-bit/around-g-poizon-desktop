@@ -332,97 +332,6 @@ html,body{
   .explorer-modes{grid-template-columns:repeat(3,minmax(0,1fr))}
   .brand-cards{grid-template-columns:repeat(auto-fit,minmax(108px,1fr))}
 }
-.brand-selection-panel {
-  margin: 8px 16px 4px;
-  padding: 10px 12px;
-  border: 1px solid #d3e7f5;
-  border-radius: 12px;
-  background: #fff;
-}
-
-.brand-selection-head,
-.brand-selection-head > div {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.brand-selection-head {
-  justify-content: space-between;
-}
-
-.brand-selection-head > div:first-child span {
-  color: #1689cf;
-  font-weight: 800;
-}
-
-.brand-selection-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.brand-selection-chip {
-  display: inline-grid;
-  grid-template-columns: auto auto 24px;
-  align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 4px 5px 4px 12px;
-  border: 1px solid #73bdf0;
-  border-radius: 999px;
-  color: #164f77;
-  background: #fff;
-}
-
-.brand-selection-chip small {
-  color: #6d8495;
-  font-size: 11px;
-}
-
-.brand-selection-chip button {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  color: #fff;
-  background: #2993d2;
-}
-
-.brand-selection-empty {
-  color: #758797;
-}
-
-.brand-selection-log {
-  margin-top: 10px;
-  color: #526d80;
-  font-size: 12px;
-}
-
-.brand-selection-log summary {
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.brand-selection-log ol {
-  max-height: 130px;
-  margin: 8px 0 0;
-  padding: 8px 8px 8px 28px;
-  overflow: auto;
-  border-radius: 10px;
-  background: #fff;
-}
-
-.brand-selection-log li {
-  display: grid;
-  grid-template-columns: 160px minmax(100px, 1fr) 80px;
-  gap: 10px;
-  padding: 4px;
-}
-
 /* v2.10.19 — calm navy workspace theme inspired by the supplied reference UI. */
 :root{
   --ui-navy:#10203d;
@@ -618,8 +527,9 @@ body .explorer-panel{border-color:var(--ui-line);background:#fff}
 .brand-card span{margin-left:7px}
 .brand-card small{display:none}
 .brand-card.selected{border-color:#4b93ee;background:#edf5ff;box-shadow:inset 0 0 0 1px #4b93ee}
-.brand-selection-panel{margin:7px 12px 3px;border-color:#dbe5f0;border-radius:8px;background:#f8fafc}
-.brand-selection-chip{min-height:30px;border-color:#9cc3f2;color:#245b9f;background:#fff}
+.brand-card:disabled{cursor:wait;opacity:.72}
+.brand-card.download-complete{grid-template-columns:30px minmax(0,1fr) auto}
+.brand-download-complete{justify-self:end;padding:3px 6px;border:1px solid #86d0a5;border-radius:999px;color:#167348;background:#edf9f2;font-size:9px;font-style:normal;font-weight:800;white-space:nowrap}
 .poizon-result-tabs{margin-bottom:10px;border-bottom:1px solid #e2e8f0}
 .poizon-result-tabs button{margin-bottom:-1px;border-radius:0;color:#77869a;background:transparent}
 .poizon-result-tabs button.active{border-bottom:2px solid var(--ui-blue);color:#1e69c6;background:transparent}
