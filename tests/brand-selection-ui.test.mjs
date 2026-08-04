@@ -53,3 +53,14 @@ test("download UI does not expose brand mismatch wording", () => {
   assert.doesNotMatch(renderer, /실제 \$\{actualBrand\}/);
   assert.match(renderer, /updateBrandExportJob\(file\?\.jobId, "다운완료"/);
 });
+
+test("upgrade clears the legacy persisted job state before startup restore", () => {
+  const migrationStart = renderer.indexOf('const DOWNLOAD_STATUS_MIGRATION_KEY');
+  const restoreStart = renderer.indexOf('const savedJob = JSON.parse(localStorage.getItem("around-g-last-brand-export-job")');
+  const migration = renderer.slice(migrationStart, restoreStart);
+
+  assert.ok(migrationStart >= 0);
+  assert.ok(restoreStart > migrationStart);
+  assert.match(migration, /around-g-download-status-v2\.10\.29/);
+  assert.match(migration, /localStorage\.removeItem\("around-g-last-brand-export-job"\)/);
+});
