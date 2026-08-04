@@ -25,7 +25,7 @@ test("download detection registers the raw workbook without automatic sales filt
 
   assert.match(workflow, /path: file\.path/);
   assert.match(workflow, /name: file\.name/);
-  assert.match(workflow, /POIZON 원본 Excel 다운로드 완료/);
+  assert.match(workflow, /다운완료/);
   assert.doesNotMatch(workflow, /importBrandExcelFromPath/);
   assert.doesNotMatch(workflow, /processedPath|processedName|filteredRows/);
 });
@@ -41,7 +41,7 @@ test("file list opens the original workbook and excludes generated filtered copi
   assert.match(main, /visibleFiles = files\.filter\(\(file\) => !isProcessedBrandExportName\(file\.name\)\)/);
 });
 
-test("downloaded workbooks are brand-validated before normal registration", async () => {
+test("downloaded workbooks keep internal validation while the UI registers download completion", async () => {
   const [renderer, main] = await Promise.all([
     readFile(join(root, "src/renderer.js"), "utf8"),
     readFile(join(root, "main.mjs"), "utf8"),
@@ -51,7 +51,6 @@ test("downloaded workbooks are brand-validated before normal registration", asyn
   assert.match(main, /brandIntegrity,/);
   assert.match(main, /brandExportFileValidationCache/);
   assert.match(main, /if \(brandDownloadStarted\) return;/);
-  assert.match(renderer, /file\?\.brandIntegrity\?\.ok === false/);
-  assert.match(renderer, /불일치 파일은 삭제하지 않았으며 정상 자료로 처리하지 않았습니다/);
-  assert.match(renderer, /Excel 확인/);
+  assert.match(renderer, /updateBrandExportJob\(file\?\.jobId, "다운완료"/);
+  assert.doesNotMatch(renderer, /브랜드 불일치/);
 });

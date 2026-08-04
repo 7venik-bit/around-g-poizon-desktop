@@ -34,7 +34,7 @@ test("single-brand selection does not toggle off on a repeated click", () => {
   assert.doesNotMatch(selection, /selectedBrandIds\.delete\(id\)/);
 });
 
-test("brand button shows download complete only for a registered valid workbook", () => {
+test("brand button shows down-complete whenever its data-center workbook was downloaded", () => {
   const cardsStart = renderer.indexOf("function renderBrandCards");
   const cardsEnd = renderer.indexOf("function renderCategoryButtons", cardsStart);
   const cards = renderer.slice(cardsStart, cardsEnd);
@@ -43,7 +43,13 @@ test("brand button shows download complete only for a registered valid workbook"
   const completed = renderer.slice(completedStart, completedEnd);
 
   assert.match(cards, /hasCompletedBrandDownload\(brand\)/);
-  assert.match(cards, /✓ 다운로드 완료/);
-  assert.match(completed, /brandIntegrity\?\.ok === false/);
+  assert.match(cards, />다운완료</);
+  assert.doesNotMatch(completed, /brandIntegrity\?\.ok === false/);
   assert.match(completed, /downloadedBrandFiles\.some/);
+});
+
+test("download UI does not expose brand mismatch wording", () => {
+  assert.doesNotMatch(renderer, /브랜드 불일치/);
+  assert.doesNotMatch(renderer, /실제 \$\{actualBrand\}/);
+  assert.match(renderer, /updateBrandExportJob\(file\?\.jobId, "다운완료"/);
 });
