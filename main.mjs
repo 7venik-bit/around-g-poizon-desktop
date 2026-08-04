@@ -9,6 +9,7 @@ import {
   getPoizonWorksheetRows,
   repairPoizonWorksheetDimensions,
 } from "./services/poizon-xlsx.mjs";
+import { analyzeBrandMatch, brandMismatchMessage } from "./services/brand-integrity.mjs";
 import {
   createPopularSlots,
   excelRowsToPopularProducts,
@@ -1500,9 +1501,9 @@ async function findReusableSellerExportJob(brandName = "", knownJobIds = []) {
       return { jobId, state: "UNAVAILABLE" };
     });
   })()`, true).catch(() => []);
-  const reusable = portalJobs.find((item) => item.state === "SUCCESS")
-    || portalJobs.find((item) => item.state === "SUCCESS_WAITING_FOR_DOWNLOAD")
-    || portalJobs.find((item) => item.state === "PROCESSING");
+  // Completed jobs created before brand validation may contain another brand.
+  // Only continue an in-flight request; every completed brand export is recreated.
+  const reusable = portalJobs.find((item) => item.state === "PROCESSING");
   if (!reusable) return null;
   const cached = candidates.find((item) => String(item.jobId) === reusable.jobId);
   return { ...cached, state: reusable.state };
@@ -1619,17 +1620,22 @@ async function automateSellerBrandExport(input = {}) {
         if (!input) return { ok: false, step: "SEARCH_INPUT_NOT_FOUND" };
         const readSearchState = () => {
           const rows = [...document.querySelectorAll("tbody tr")].filter(visible);
-          const rowText = rows.slice(0, 12).map((row) =>
+          const rowTexts = rows.slice(0, 30).map((row) =>
             String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim()
-          ).join("\\n");
+          );
+          const rowText = rowTexts.join("\\n");
           const totalText = [...document.querySelectorAll("body *")]
             .filter(visible)
             .map((element) => String(element.innerText || element.textContent || "").trim())
             .find((text) => /^총\\s*[\\d,]+\\s*건\\s*결과$/.test(text)) || "";
           const totalCount = Number(String(totalText).replace(/[^0-9]/g, "")) || 0;
-          return { rowText, totalText, totalCount };
+          return { rowText, rowTexts, totalText, totalCount };
         };
         const beforeSearch = readSearchState();
+        const requestedBrandKeys = [${JSON.stringify(brandName)}, ${JSON.stringify(String(input.brandKo || "").trim())}]
+          .map(normalize).filter(Boolean);
+        const hasRequestedBrand = (state) => Array.isArray(state?.rowTexts)
+          && state.rowTexts.some((row) => requestedBrandKeys.some((key) => normalize(row).includes(key)));
         input.focus();
         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
         if (setter) setter.call(input, ${JSON.stringify(brandName)});
@@ -1672,8 +1678,9 @@ async function automateSellerBrandExport(input = {}) {
             const narrowed = current.totalCount > 0
               && (!beforeSearch.totalCount || current.totalCount < beforeSearch.totalCount);
             const hasRows = current.rowText.length > 0;
+            const brandMatched = hasRequestedBrand(current);
             const signature = current.totalText + "\\n" + current.rowText;
-            if (changed && narrowed && hasRows) {
+            if (changed && narrowed && hasRows && brandMatched) {
               stableCount = signature === stableSignature ? stableCount + 1 : 1;
               stableSignature = signature;
               if (stableCount >= 3) return true;
@@ -1699,7 +1706,7 @@ async function automateSellerBrandExport(input = {}) {
           const current = readSearchState();
           return {
             ok: false,
-            step: "SEARCH_RESULT_NOT_UPDATED",
+            step: hasRequestedBrand(current) ? "SEARCH_RESULT_NOT_UPDATED" : "BRAND_RESULT_MISMATCH",
             beforeTotal: beforeSearch.totalCount,
             currentTotal: current.totalCount
           };
@@ -3022,6 +3029,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("excel:import-brand-source", async (_event, input = {}) => {
     let filePath = String(input.path || "").trim();
+    const expectedBrand = String(input.expectedBrand || "").trim();
     if (!filePath) {
       const result = await dialog.showOpenDialog({
         properties: ["openFile"],
@@ -3139,12 +3147,24 @@ app.whenReady().then(async () => {
         product.representativeOption = representative.option;
       }
     }
+    const products = [...productsByKey.values()];
+    const brandIntegrity = expectedBrand ? analyzeBrandMatch(expectedBrand, products) : null;
+    if (brandIntegrity && !brandIntegrity.ok) {
+      return {
+        canceled: false,
+        ok: false,
+        code: "BRAND_EXCEL_MISMATCH",
+        message: brandMismatchMessage(brandIntegrity),
+        brandIntegrity,
+      };
+    }
     return {
       canceled: false,
       ok: true,
       path: filePath,
       sourceRows,
-      products: [...productsByKey.values()],
+      products,
+      brandIntegrity,
     };
   });
   ipcMain.handle("excel:export", async () => {
