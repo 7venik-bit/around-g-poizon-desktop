@@ -1,3 +1,5 @@
+import { filterInventoryProducts, hasSalesMode, salesPair } from "../services/inventory-filter.mjs";
+
 const params = new URLSearchParams(location.search);
 const filePath = params.get("path") || "";
 const requestedBrand = params.get("brand") || "";
@@ -9,26 +11,14 @@ const state = {
   stopped: false,
   salesMode: "recent30",
   sourceRows: 0,
+  filters: { localMinimum: 30, localMaximum: null, chinaMinimum: 30, chinaMaximum: null },
 };
 const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const keyOf = (product, index) => String(product.spuId || product.articleNumber || `row-${index}`);
 
 function salesData(product) {
-  if (state.salesMode === "total") {
-    return {
-      local: Number(product.localTotalSales || 0),
-      china: Number(product.totalSales || 0),
-      localLabel: "현지 판매자 총 판매량",
-      chinaLabel: "중국 총 판매량",
-    };
-  }
-  return {
-    local: Number(product.localSales30d || 0),
-    china: Number(product.sales30d || 0),
-    localLabel: "현지 판매자 최근 30일 판매량",
-    chinaLabel: "최근 30일 판매량",
-  };
+  return salesPair(product, state.salesMode);
 }
 
 function qualifyingVariants(product) {
@@ -37,8 +27,38 @@ function qualifyingVariants(product) {
     : [product];
   return variants.filter((variant) => {
     const sales = salesData(variant);
-    return sales.local >= 30 && sales.china >= 30;
+    return sales.local >= state.filters.localMinimum
+      && (state.filters.localMaximum === null || sales.local <= state.filters.localMaximum)
+      && sales.china >= state.filters.chinaMinimum
+      && (state.filters.chinaMaximum === null || sales.china <= state.filters.chinaMaximum);
   });
+}
+
+function numberFilter(selector, fallback = null) {
+  const value = $(selector).value.trim();
+  if (value === "") return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
+}
+
+function applySalesFilters() {
+  state.filters = {
+    localMinimum: numberFilter("#local-min", 0),
+    localMaximum: numberFilter("#local-max"),
+    chinaMinimum: numberFilter("#china-min", 0),
+    chinaMaximum: numberFilter("#china-max"),
+  };
+  state.products = filterInventoryProducts(state.sourceProducts, { mode: state.salesMode, ...state.filters });
+  state.selected.clear();
+  const matchedRows = state.products.reduce((sum, product) => sum + product.filteredVariants.length, 0);
+  const metric = salesPair({}, state.salesMode);
+  const range = (minimum, maximum) => maximum === null ? `${minimum.toLocaleString("ko-KR")}건 이상` : `${minimum.toLocaleString("ko-KR")}~${maximum.toLocaleString("ko-KR")}건`;
+  $("#sales-filter-label").innerHTML = `<b>${esc(metric.localLabel)} ${range(state.filters.localMinimum, state.filters.localMaximum)}</b> · <b>${esc(metric.chinaLabel)} ${range(state.filters.chinaMinimum, state.filters.chinaMaximum)}</b>`;
+  $("#filter-count").textContent = `원본 상품 ${state.sourceProducts.length.toLocaleString()}개 · 옵션 ${state.sourceRows.toLocaleString()}행 → 조건 충족 상품 ${state.products.length.toLocaleString()}개 · 옵션 ${matchedRows.toLocaleString()}행`;
+  $("#status").textContent = state.products.length
+    ? `${metric.localLabel}과 ${metric.chinaLabel}을 같은 옵션 행에서 필터링했습니다.`
+    : "현재 판매량 범위에 맞는 옵션이 없습니다. 최소·최대값을 조정해 주세요.";
+  render();
 }
 
 function metricText(rawValue, numericValue) {
@@ -179,7 +199,7 @@ $("#select-all").addEventListener("change", (event) => {
 });
 $("#search-selected").addEventListener("click", searchSelected);
 $("#stop").addEventListener("click", () => { state.stopped = true; });
-$("#clear-work").addEventListener("click", () => {
+$("#clear-work").addEventListener("click", async () => {
   state.products = [];
   state.sourceProducts = [];
   state.selected.clear();
@@ -187,11 +207,24 @@ $("#clear-work").addEventListener("click", () => {
   state.stopped = true;
   $("#products").innerHTML = "";
   $("#filter-summary").hidden = true;
+  $("#sales-filter-controls").hidden = true;
   $("#progress").hidden = true;
   $("#source").textContent = "";
   $("#title").textContent = "국내 재고·사이즈 확인";
   $("#status").textContent = "이전 작업 화면을 지웠습니다. 원본 Excel 파일은 보존됩니다.";
   updateSelection();
+  await window.aroundG?.clearBrandWorkHistory?.();
+});
+$("#sales-filter-controls").addEventListener("input", (event) => {
+  if (event.target.id === "sales-mode") state.salesMode = event.target.value;
+  applySalesFilters();
+});
+$("#reset-filter").addEventListener("click", () => {
+  $("#local-min").value = "30";
+  $("#local-max").value = "";
+  $("#china-min").value = "30";
+  $("#china-max").value = "";
+  applySalesFilters();
 });
 $("#open-excel").addEventListener("click", () => window.aroundG.openOriginalExcelFile(filePath));
 
@@ -204,31 +237,17 @@ $("#open-excel").addEventListener("click", () => window.aroundG.openOriginalExce
   }
   state.sourceProducts = result.products || [];
   state.sourceRows = Number(result.sourceRows || 0);
-  const hasLocalSales30Column = state.sourceProducts.some((item) => item.hasLocalSalesData);
-  const hasSales30Column = state.sourceProducts.some((item) => item.hasSalesData);
-  const hasLocalTotalSalesColumn = state.sourceProducts.some((item) => item.hasLocalTotalSalesData);
-  const hasTotalSalesColumn = state.sourceProducts.some((item) => item.hasTotalSalesData);
-  const hasRecentPair = hasLocalSales30Column && hasSales30Column;
-  const hasTotalPair = hasLocalTotalSalesColumn && hasTotalSalesColumn;
+  const hasRecentPair = hasSalesMode(state.sourceProducts, "recent30");
+  const hasTotalPair = hasSalesMode(state.sourceProducts, "total");
   state.salesMode = hasRecentPair ? "recent30" : hasTotalPair ? "total" : "missing";
-  state.products = state.sourceProducts
-    .map((item) => ({
-      ...item,
-      filteredVariants: state.salesMode === "missing" ? [] : qualifyingVariants(item).sort((a, b) => {
-        const left = salesData(a);
-        const right = salesData(b);
-        return right.local - left.local || right.china - left.china;
-      }),
-    }))
-    .filter((item) => item.filteredVariants.length > 0)
-    .sort((a, b) => {
-      const left = salesData(a.filteredVariants[0] || a);
-      const right = salesData(b.filteredVariants[0] || b);
-      return right.local - left.local || right.china - left.china;
-    });
+  state.products = state.salesMode === "missing" ? [] : filterInventoryProducts(state.sourceProducts, { mode: state.salesMode, ...state.filters });
   const brand = requestedBrand || state.sourceProducts.find((item) => item.brandName)?.brandName || "POIZON";
   $("#title").textContent = `${brand} 국내 재고·사이즈 확인`;
   $("#filter-summary").hidden = false;
+  $("#sales-filter-controls").hidden = state.salesMode === "missing";
+  $("#sales-mode").value = state.salesMode === "missing" ? "recent30" : state.salesMode;
+  $("#sales-mode option[value='recent30']").disabled = !hasRecentPair;
+  $("#sales-mode option[value='total']").disabled = !hasTotalPair;
   $("#sales-filter-label").innerHTML = state.salesMode === "total"
     ? "<b>중국 총 판매량 30건 이상</b> · <b>현지 판매자 총 판매량 30건 이상</b>"
     : "<b>최근 30일 판매량 30건 이상</b> · <b>현지 판매자 최근 30일 판매량 30건 이상</b>";

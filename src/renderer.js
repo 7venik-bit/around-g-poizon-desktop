@@ -149,6 +149,32 @@ function addDownloadedBrandFile(file = {}) {
   renderDownloadedBrandFiles();
 }
 
+function clearBrandWorkHistoryUi() {
+  downloadedBrandFiles = [];
+  detectedBrandImportQueue.length = 0;
+  queuedBrandImportPaths.clear();
+  completedBrandImportPaths.clear();
+  brandWorkbenchProducts = [];
+  selectedBrandIds.clear();
+  brandSelectionHistory = [];
+  selectedBrandName = "";
+  brandExportQueue = [];
+  activeExportBrand = null;
+  brandExportJobs.clear();
+  [
+    "around-g-selected-brand-name",
+    "around-g-selected-brand-ids",
+    "around-g-brand-selection-history",
+    "around-g-brand-download-files",
+    "around-g-last-brand-export-job",
+  ].forEach((key) => localStorage.removeItem(key));
+  $("#brand-export-job").hidden = true;
+  $("#brand-export-jobs-list").innerHTML = "";
+  renderDownloadedBrandFiles();
+  renderBrandWorkbench();
+  renderBrandSelectionPanel();
+}
+
 async function restoreDownloadedBrandFiles() {
   const result = await window.aroundG?.listBrandExportFiles?.();
   if (!result?.ok || !Array.isArray(result.files)) return;
@@ -1113,25 +1139,12 @@ $("#brand-download-files").addEventListener("click", async (event) => {
   }
 });
 $("#brand-download-clear")?.addEventListener("click", async () => {
-  downloadedBrandFiles = [];
-  detectedBrandImportQueue.length = 0;
-  queuedBrandImportPaths.clear();
-  completedBrandImportPaths.clear();
-  brandWorkbenchProducts = [];
-  selectedBrandIds.clear();
-  brandSelectionHistory = [];
-  selectedBrandName = "";
-  localStorage.removeItem("around-g-selected-brand-name");
-  localStorage.removeItem("around-g-selected-brand-ids");
-  localStorage.removeItem("around-g-brand-selection-history");
-  localStorage.removeItem("around-g-brand-download-files");
+  clearBrandWorkHistoryUi();
   await window.aroundG?.clearBrandWorkHistory?.();
-  renderDownloadedBrandFiles();
-  renderBrandWorkbench();
-  renderBrandSelectionPanel();
   $("#brand-status").className = "status success";
   $("#brand-status").textContent = "이전 작업 기록을 삭제했습니다. 원본 Excel 파일은 보존됩니다.";
 });
+window.aroundG.onBrandWorkHistoryCleared?.(() => clearBrandWorkHistoryUi());
 window.aroundG.onBrandExportProgress((progress) => {
   updateBrandExportJob(progress?.jobId, progress?.jobState || "자동 감시 중", progress?.brandName);
   $("#brand-status").className = "status";
@@ -1518,7 +1531,7 @@ window.aroundG.onUpdateStatus((payload) => {
     const appInfo = await window.aroundG.getAppInfo();
     renderInstalledVersion(appInfo?.version, appInfo?.automaticUpdates !== false);
   } catch {
-    renderInstalledVersion("2.10.10", true);
+    renderInstalledVersion("2.10.13", true);
   }
   setupBrandLayout();
   try {
