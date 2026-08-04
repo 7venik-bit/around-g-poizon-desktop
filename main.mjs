@@ -967,16 +967,23 @@ function isPoizonExportDownloadUrl(value = "") {
   }
 }
 
-function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL) {
+function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
+  const visible = options.visible !== false;
   if (sellerWindow && !sellerWindow.isDestroyed()) {
-    sellerWindow.show();
-    sellerWindow.focus();
+    if (visible) {
+      sellerWindow.show();
+      sellerWindow.focus();
+    } else {
+      sellerWindow.hide();
+      showCollectorWindow();
+    }
     if (targetUrl && sellerWindow.webContents.getURL() !== targetUrl) {
       sellerWindow.loadURL(targetUrl);
     }
     return;
   }
   sellerWindow = new BrowserWindow({
+    show: visible,
     width: 1500,
     height: 940,
     minWidth: 1000,
@@ -1068,6 +1075,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL) {
     brandExportJobPending = false;
   });
   sellerWindow.loadURL(targetUrl);
+  if (!visible) showCollectorWindow();
 }
 
 async function waitForSellerExportAndDownload() {
@@ -1556,7 +1564,9 @@ async function automateSellerBrandExport(input = {}) {
   pendingBrandExportJobId = "";
   brandExportJobPending = true;
   brandDownloadStarted = false;
-  openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL);
+  // Brand export runs completely in the background. The user keeps working in
+  // Around G and opens Seller Center manually only when they explicitly choose to.
+  openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, { visible: false });
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     brandExportJobPending = false;
     pendingBrandExportName = "";
@@ -1938,8 +1948,8 @@ async function automateSellerBrandExport(input = {}) {
     pendingBrandExportName = "";
     pendingBrandExportJobId = "";
     brandExportJobPending = false;
-    sellerWindow.show();
-    sellerWindow.focus();
+    sellerWindow.hide();
+    showCollectorWindow();
     return {
       ok: false,
       code: "EXPORT_JOB_NOT_CREATED",
