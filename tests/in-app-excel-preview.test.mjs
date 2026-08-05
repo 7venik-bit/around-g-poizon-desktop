@@ -12,16 +12,30 @@ const [mainSource, rendererSource, htmlSource, cssSource] = await Promise.all([
 test("Excel preview is read-only and paginated in the main sourcing screen", () => {
   assert.match(mainSource, /import \{ readFirstDataSheet \} from "\.\/services\/excel-reader\.mjs"/);
   assert.match(mainSource, /async function previewExcelFile/);
-  assert.match(mainSource, /rows\.slice\(offset, offset \+ limit\)/);
+  assert.match(mainSource, /filtered\.entries\.slice\(offset, offset \+ limit\)/);
   assert.match(mainSource, /Math\.min\(200, Math\.max\(25,/);
   assert.match(rendererSource, /async function showExcelPreview/);
-  assert.match(rendererSource, /previewExcelFile\(file\.path, offset, 100\)/);
+  assert.match(rendererSource, /previewExcelFile\(file\.path, offset, 100, filters\)/);
   assert.match(rendererSource, /excel-preview-prev/);
   assert.match(rendererSource, /excel-preview-next/);
   assert.match(htmlSource, /읽기 전용|IN-APP EXCEL VIEWER/);
   assert.match(cssSource, /\.excel-preview-grid\{max-height:560px;overflow:auto/);
   assert.match(cssSource, /position:sticky;top:0/);
   assert.match(rendererSource, /Number\.isFinite\(Number\(result\.totalColumns\)\)/);
+});
+
+test("Excel preview filters both total-sales columns across all rows", async () => {
+  const preloadSource = await readFile(new URL("../preload.cjs", import.meta.url), "utf8");
+  assert.match(htmlSource, /id="excel-filter-min-total"[^>]+value="50"/);
+  assert.match(htmlSource, /id="excel-filter-min-local-total"[^>]+value="50"/);
+  assert.match(htmlSource, /id="excel-filter-match"/);
+  assert.match(htmlSource, /id="excel-filter-apply"/);
+  assert.match(htmlSource, /id="excel-filter-reset"/);
+  assert.match(mainSource, /filterPoizonPreviewRows\(workbook\.headers, workbook\.rows, input\.filters/);
+  assert.match(mainSource, /rowNumbers: pageEntries\.map/);
+  assert.match(rendererSource, /activeExcelPreview\.filters/);
+  assert.match(rendererSource, /필터 결과/);
+  assert.match(preloadSource, /previewExcelFile: \(path, offset = 0, limit = 100, filters = \{\}\)/);
 });
 
 test("shared Excel reader repairs POIZON A1 dimensions before preview and ordinary import", async () => {
