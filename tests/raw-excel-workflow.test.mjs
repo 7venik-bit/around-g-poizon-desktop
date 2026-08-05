@@ -25,19 +25,25 @@ test("download detection registers the raw workbook without automatic sales filt
 
   assert.match(workflow, /path: file\.path/);
   assert.match(workflow, /name: file\.name/);
-  assert.match(workflow, /다운완료/);
+  assert.match(workflow, /확인완료/);
   assert.doesNotMatch(workflow, /importBrandExcelFromPath/);
   assert.doesNotMatch(workflow, /processedPath|processedName|filteredRows/);
 });
 
-test("file list opens the original workbook and excludes generated filtered copies", async () => {
-  const [renderer, main] = await Promise.all([
+test("file list opens the original workbook inside the sourcing program and excludes generated filtered copies", async () => {
+  const [renderer, main, preload, html] = await Promise.all([
     readFile(join(root, "src/renderer.js"), "utf8"),
     readFile(join(root, "main.mjs"), "utf8"),
+    readFile(join(root, "preload.cjs"), "utf8"),
+    readFile(join(root, "src/index.html"), "utf8"),
   ]);
 
-  assert.match(renderer, /openOriginalExcelFile\(file\.path\)/);
-  assert.match(renderer, /Excel 열기/);
+  assert.match(renderer, /previewExcelFile\(file\.path, offset, 100\)/);
+  assert.match(renderer, /프로그램에서 보기/);
+  assert.doesNotMatch(renderer.slice(renderer.indexOf('\$("#brand-download-files").addEventListener("click"')), /openOriginalExcelFile/);
+  assert.match(preload, /previewExcelFile:.*ipcRenderer\.invoke\("excel:preview"/);
+  assert.match(main, /ipcMain\.handle\("excel:preview"/);
+  assert.match(html, /id="excel-preview-grid"/);
   assert.match(main, /visibleFiles = files\.filter\(\(file\) => !isProcessedBrandExportName\(file\.name\)\)/);
 });
 
@@ -51,6 +57,7 @@ test("downloaded workbooks keep internal validation while the UI registers downl
   assert.match(main, /brandIntegrity,/);
   assert.match(main, /brandExportFileValidationCache/);
   assert.match(main, /if \(brandDownloadStarted\) return;/);
-  assert.match(renderer, /updateBrandExportJob\(file\?\.jobId, "다운완료"/);
+  assert.match(renderer, /updateBrandExportJob\(file\?\.jobId, "확인완료"/);
+  assert.doesNotMatch(renderer, /100% 검증완료/);
   assert.doesNotMatch(renderer, /브랜드 불일치/);
 });
