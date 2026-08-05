@@ -21,9 +21,11 @@ test("new export job discovery waits without constant reloads", () => {
   assert.doesNotMatch(main, /verificationStartedAt < 45000/);
 });
 
-test("export center recognizes localized product-search export rows", () => {
-  assert.match(main, /내보내기\.\*상품/);
-  assert.match(main, /商品\.\*导出/);
+test("export center discovers job rows from stable job numbers", () => {
+  assert.match(main, /firstCellText\.match/);
+  assert.match(main, /looksLikeDataRow/);
+  assert.match(main, /\\d\{7,/);
+  assert.doesNotMatch(main, /상품\\s\*검색\.\*내보내기/);
 });
 
 test("release metadata is 2.10.51", () => {
