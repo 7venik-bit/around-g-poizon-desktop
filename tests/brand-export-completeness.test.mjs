@@ -17,8 +17,13 @@ test("brand export checks the computed last Seller Center page before clicking e
   assert.match(workflow, /lastSnapshot\.currentPage !== finalPageCount/);
   assert.match(workflow, /code: "PARTIAL_PRODUCT_COLLECTION"/);
   assert.doesNotMatch(workflow, /page <= 1_000/);
+  const exportClickIndex = Math.max(
+    workflow.lastIndexOf("clickLikeUser(exportButton)"),
+    workflow.lastIndexOf("exportButton.click()"),
+  );
+  assert.ok(exportClickIndex >= 0, "the verified export control must be clicked");
   assert.ok(
-    workflow.indexOf("lastSnapshot.currentPage !== finalPageCount") < workflow.lastIndexOf("exportButton.click()"),
+    workflow.indexOf("lastSnapshot.currentPage !== finalPageCount") < exportClickIndex,
     "the last-page guard must run before the export click",
   );
 });

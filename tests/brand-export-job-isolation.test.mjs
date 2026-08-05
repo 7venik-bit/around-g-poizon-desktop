@@ -15,7 +15,8 @@ test("every selected brand creates a fresh POIZON export job", () => {
 
   assert.match(workflow, /const baselineJobs = await readStableSellerExportJobs\(\)/);
   assert.match(workflow, /code: "EXPORT_CENTER_BASELINE_UNAVAILABLE"/);
-  assert.match(workflow, /if \(currentJobs\) createdJob = findNewSellerExportJob\(\[\.\.\.baselineJobIds\], currentJobs\)/);
+  assert.match(workflow, /if \(Array\.isArray\(currentJobs\)\) \{/);
+  assert.match(workflow, /createdJob = findNewSellerExportJob\(\[\.\.\.baselineJobIds\], currentJobs\)/);
   assert.doesNotMatch(workflow, /findReusableSellerExportJob|job-reused|reusableJob/);
 });
 
