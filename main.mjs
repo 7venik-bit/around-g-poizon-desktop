@@ -1150,8 +1150,8 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
       status: "download-started",
       brandName: downloadJob.brandName,
       jobId: downloadJobId,
-      jobState: "다운로드 중",
-      message: `${downloadJob.brandName || "선택 브랜드"} 다운로드를 시작했습니다.`,
+      jobState: "4단계/5 · Excel 다운로드 중",
+      message: `${downloadJob.brandName || "선택 브랜드"} · 4단계/5 · Excel 다운로드를 시작했습니다.`,
     });
     item.once("done", async (_doneEvent, state) => {
       if (sessionGeneration !== brandWorkSessionGeneration) return;
@@ -1455,11 +1455,11 @@ async function watchLatestSellerExportEveryTenSeconds() {
     })()`, true).catch(() => ({ state: "PAGE_NOT_READY" }));
 
     const stateLabel = {
-      WAITING_FOR_LATEST_JOB: "작업번호 확인 중",
-      PROCESSING: "처리 중 · 10초마다 자동 감시",
-      WAITING_FOR_SUCCESS: "성공 상태 대기 중",
-      WAITING_FOR_DOWNLOAD: "성공 · 다운로드 버튼 대기 중",
-      PAGE_NOT_READY: "다운로드 센터 확인 중",
+      WAITING_FOR_LATEST_JOB: "4단계/5 · 작업번호 행 확인 중",
+      PROCESSING: "4단계/5 · POIZON 파일 처리 중 · 10초마다 자동 감시",
+      WAITING_FOR_SUCCESS: "4단계/5 · POIZON 처리 완료 대기 중",
+      WAITING_FOR_DOWNLOAD: "4단계/5 · 다운로드 버튼 대기 중",
+      PAGE_NOT_READY: "4단계/5 · 다운로드센터 확인 중",
     }[result?.state];
     if (stateLabel) {
       mainWindow?.webContents.send("brand-export:progress", {
@@ -1477,8 +1477,8 @@ async function watchLatestSellerExportEveryTenSeconds() {
       mainWindow?.webContents.send("brand-export:progress", {
         status: "download-requested",
         jobId: pendingBrandExportJobId,
-        jobState: "성공 · 다운로드 자동 클릭",
-        message: `${pendingBrandExportName || "선택 브랜드"} 성공 확인 · 다운로드를 요청했습니다.`,
+        jobState: "4단계/5 · 처리 성공 · 다운로드 시작",
+        message: `${pendingBrandExportName || "선택 브랜드"} · 4단계/5 · POIZON 처리 성공 · 다운로드를 요청했습니다.`,
       });
     }
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
@@ -1556,12 +1556,12 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
         const job = brandExportJobs.get(status.jobId);
         if (!job) continue;
         const stateLabel = {
-          WAITING_FOR_ROW: "작업번호 확인 중",
-          PROCESSING: "처리 중 · 10초마다 감시",
-          WAITING_FOR_SUCCESS: "성공 상태 대기 중",
-          WAITING_FOR_DOWNLOAD: "성공 · 다운로드 버튼 대기",
-          PAGE_NOT_READY: "다운로드 센터 확인 중",
-          READY: "성공 · 다운로드 자동 클릭",
+          WAITING_FOR_ROW: "4단계/5 · 작업번호 행 확인 중",
+          PROCESSING: "4단계/5 · POIZON 파일 처리 중 · 10초마다 감시",
+          WAITING_FOR_SUCCESS: "4단계/5 · POIZON 처리 완료 대기 중",
+          WAITING_FOR_DOWNLOAD: "4단계/5 · 다운로드 버튼 대기",
+          PAGE_NOT_READY: "4단계/5 · 다운로드센터 확인 중",
+          READY: "4단계/5 · 처리 성공 · 다운로드 시작",
         }[status.state] || status.state;
         mainWindow?.webContents.send("brand-export:progress", {
           status: "monitoring",
@@ -1614,8 +1614,8 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
               status: "monitoring",
               brandName: job.brandName,
               jobId: ready.jobId,
-              jobState: "다운로드 버튼 재탐색",
-              message: `${job.brandName} · 작업번호 ${ready.jobId} · 다운로드 버튼을 다시 찾습니다.`,
+              jobState: "4단계/5 · 다운로드 버튼 재탐색",
+              message: `${job.brandName} · 4단계/5 · 작업번호 ${ready.jobId} · 다운로드 버튼을 다시 찾습니다.`,
             });
           }
         }
@@ -2241,8 +2241,8 @@ async function automateSellerBrandExport(input = {}) {
     mainWindow?.webContents.send("brand-export:progress", {
       status: "verifying-products",
       brandName,
-      jobState: `전체 상품 검증 ${attempt}/2`,
-      message: `${brandName} 전체 상품을 마지막 페이지까지 확인합니다. (${attempt}/2)`,
+      jobState: `1단계/5 · 상품 페이지 확인 중 · 검사 ${attempt}/2`,
+      message: `${brandName} · 1단계/5 · 상품 페이지 확인 중 · 검사 ${attempt}/2 (다운로드센터 작업 생성 전)`,
     });
     completeness = await verifyCompleteSellerExportAndClick(searched.expectedTotal);
     if (completeness?.ok) break;
@@ -2264,6 +2264,13 @@ async function automateSellerBrandExport(input = {}) {
         : sellerBrandExportFailureMessage(completeness?.code, brandName),
     };
   }
+
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "waiting-for-job-creation",
+    brandName,
+    jobState: "2단계/5 · 전체 내보내기 클릭 완료 · 새 작업번호 확인 중",
+    message: `${brandName} · 2단계/5 · 전체 내보내기 요청 완료 · 다운로드센터의 새 작업번호를 확인합니다.`,
+  });
 
   let createdJob = null;
   const verificationStartedAt = Date.now();
@@ -2324,8 +2331,8 @@ async function automateSellerBrandExport(input = {}) {
     status: "job-created",
     brandName,
     jobId: registeredJobId,
-    jobState: "등록 완료 · 동시 감시 대기",
-    message: `${brandName} 전체 내보내기 접수 · 작업번호 ${registeredJobId}`,
+    jobState: "3단계/5 · 작업번호 생성 완료 · 처리 대기",
+    message: `${brandName} · 3단계/5 · 새 작업번호 ${registeredJobId} 생성 완료 · POIZON 처리 대기`,
   });
   brandExportJobPending = false;
   sellerWindow.hide();

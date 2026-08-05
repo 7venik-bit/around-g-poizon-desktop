@@ -401,7 +401,7 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
   retainSelectedBrandName(activeExportBrand.name);
   renderBrandCards($("#brand-filter")?.value || "");
   $("#brand-status").className = "status";
-  $("#brand-status").textContent = `${activeExportBrand.name} 판매자센터 요청 생성 여부 확인 중`;
+  $("#brand-status").textContent = `${activeExportBrand.name} · 1단계/5 · 상품 페이지 확인 준비 중 (다운로드센터 작업 생성 전)`;
   const automation = await window.aroundG.automateSellerBrandExport({
     brandName: activeExportBrand.name || "",
     brandKo: activeExportBrand.ko || "",
@@ -417,10 +417,10 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     setTimeout(() => exportNextSelectedBrand(generation), 400);
   } else {
     renderBrandExportFolder(automation.folder);
-    updateBrandExportJob(automation.jobId, "등록 완료 · 동시 감시 대기", activeExportBrand.name);
+    updateBrandExportJob(automation.jobId, "3단계/5 · 작업번호 생성 완료 · 처리 대기", activeExportBrand.name);
     recordBrandSelection(activeExportBrand, "전체 내보내기 요청", { jobId: automation.jobId });
     $("#brand-status").className = "status success";
-    $("#brand-status").textContent = `${activeExportBrand.name} 요청 접수 완료${automation.jobId ? ` · 작업번호 ${automation.jobId}` : ""} · 다음 브랜드 등록 중`;
+    $("#brand-status").textContent = `${activeExportBrand.name} · 3단계/5 · 작업번호 생성 완료${automation.jobId ? ` · ${automation.jobId}` : ""} · 다음 브랜드 등록 중`;
     activeExportBrand = null;
     setTimeout(() => exportNextSelectedBrand(generation), 400);
   }
@@ -1192,7 +1192,7 @@ async function drainDetectedBrandImports() {
         queuedBrandImportPaths.delete(path);
         continue;
       }
-      updateBrandExportJob(file?.jobId, "다운로드 완료 · 원본 Excel 등록 중", file?.brandName);
+      updateBrandExportJob(file?.jobId, "5단계/5 · Excel 검증·프로그램 등록 중", file?.brandName);
       try {
         const generation = brandWorkHistoryGeneration;
         const imported = await importDetectedBrandExport(file, generation);
@@ -1214,11 +1214,11 @@ window.aroundG.onBrandExportDetected((file) => {
   if (!acceptBrandWorkEvents) return;
   const path = String(file?.path || "").trim();
   if (!path || completedBrandImportPaths.has(path) || queuedBrandImportPaths.has(path)) return;
-  updateBrandExportJob(file?.jobId, "다운로드 완료 · 원본 Excel 등록 대기", file?.brandName);
+  updateBrandExportJob(file?.jobId, "5단계/5 · Excel 다운로드 완료 · 검증 대기", file?.brandName);
   queuedBrandImportPaths.add(path);
   detectedBrandImportQueue.push(file);
   $("#brand-status").className = "status";
-  $("#brand-status").textContent = `${file?.brandName || "선택 브랜드"} 저장 완료 · 원본 Excel 목록에 등록 중`;
+  $("#brand-status").textContent = `${file?.brandName || "선택 브랜드"} · 5단계/5 · Excel 검증·프로그램 등록 중`;
   void drainDetectedBrandImports();
 });
 $("#brand-download-files").addEventListener("click", async (event) => {
