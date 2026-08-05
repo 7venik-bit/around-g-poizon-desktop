@@ -73,7 +73,7 @@ test("download UI does not expose brand mismatch wording", () => {
 
 test("upgrade clears the legacy persisted job state", () => {
   const migrationStart = renderer.indexOf('const DOWNLOAD_STATUS_MIGRATION_KEY');
-  const migrationEnd = renderer.indexOf("try {\n  selectedBrandIds", migrationStart);
+  const migrationEnd = renderer.search(/try \{\r?\n  selectedBrandIds/g);
   const migration = renderer.slice(migrationStart, migrationEnd);
 
   assert.ok(migrationStart >= 0);
