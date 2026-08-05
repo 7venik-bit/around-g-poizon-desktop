@@ -2,11 +2,12 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeThem
 import { mkdirSync } from "node:fs";
 import { appendFile, mkdir, readFile, readdir, rename, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { readSheet } from "read-excel-file/node";
+import readXlsxFile, { readSheet } from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
 import {
   findPoizonColumn,
   getPoizonWorksheetRows,
+  summarizePoizonRows,
   readPoizonColumnValues,
   repairPoizonWorksheetDimensions,
 } from "./services/poizon-xlsx.mjs";
@@ -1160,18 +1161,12 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
         let finalName = fileName;
         const expectedProductCount = Number(downloadJob.expectedProductCount || 0);
         const fileBuffer = await readFile(filePath);
-        const spuColumn = (() => {
-          try {
-            return readPoizonColumnValues(fileBuffer, "SPU ID", "SPU_ID", "SPUID");
-          } catch {
-            return { column: -1, header: "", values: [] };
-          }
-        })();
-        const actualProductCount = new Set(
-          spuColumn.values.map((value) => String(value || "").trim()).filter(Boolean),
-        ).size;
+        const workbook = await readSheet(repairPoizonWorksheetDimensions(fileBuffer));
+        const workbookSummary = summarizePoizonRows(getPoizonWorksheetRows(workbook));
+        const actualProductCount = workbookSummary.dataRowCount;
+        const summaryLabel = `전체 행 ${actualProductCount.toLocaleString("ko-KR")}개 · 고유 SPU ${workbookSummary.uniqueSpuCount.toLocaleString("ko-KR")}개 · 중복 ${workbookSummary.duplicateSpuCount.toLocaleString("ko-KR")}개 · 빈 SPU ${workbookSummary.blankSpuCount.toLocaleString("ko-KR")}개`;
         if (expectedProductCount > 0 && actualProductCount < expectedProductCount) {
-          const partialName = `${safeBrand}_부분다운로드_${actualProductCount}_of_${expectedProductCount}_${localFileTimestamp()}.xlsx`;
+          const partialName = `${safeBrand}_부분다운로드_${actualProductCount}_of_${expectedProductCount}_rows_${localFileTimestamp()}.xlsx`;
           const partialPath = join(brandFolder, partialName);
           try {
             await rename(filePath, partialPath);
@@ -1184,14 +1179,14 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
             status: "partial-download",
             brandName: downloadJob.brandName,
             jobId: downloadJobId,
-            jobState: `부분 다운로드 ${actualProductCount}/${expectedProductCount}개 · 실패`,
-            message: `${downloadJob.brandName || "선택 브랜드"} 부분 다운로드 ${actualProductCount.toLocaleString("ko-KR")}/${expectedProductCount.toLocaleString("ko-KR")}개 · 확인완료로 처리하지 않습니다.`,
+            jobState: `부분 다운로드 ${actualProductCount}/${expectedProductCount}행 · 실패`,
+            message: `${downloadJob.brandName || "선택 브랜드"} 부분 다운로드 ${actualProductCount.toLocaleString("ko-KR")}/${expectedProductCount.toLocaleString("ko-KR")}행 · ${summaryLabel} · 확인완료로 처리하지 않습니다.`,
           });
           mainWindow?.webContents.send("brand-export:error", {
             brandName: downloadJob.brandName,
             jobId: downloadJobId,
-            jobState: `부분 다운로드 ${actualProductCount}/${expectedProductCount}개 · 실패`,
-            message: `${downloadJob.brandName || "선택 브랜드"} Excel이 ${actualProductCount.toLocaleString("ko-KR")}/${expectedProductCount.toLocaleString("ko-KR")}개만 포함해 부분 파일로 보존했습니다.`,
+            jobState: `부분 다운로드 ${actualProductCount}/${expectedProductCount}행 · 실패`,
+            message: `${downloadJob.brandName || "선택 브랜드"} Excel이 ${actualProductCount.toLocaleString("ko-KR")}/${expectedProductCount.toLocaleString("ko-KR")}행만 포함해 부분 파일로 보존했습니다. ${summaryLabel}`,
             path: finalPath,
             name: finalName,
           });
@@ -1246,6 +1241,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
           size: info.size,
           time: info.mtimeMs,
           brandIntegrity,
+          workbookSummary,
         });
       } else {
         mainWindow?.webContents.send("brand-export:error", {
