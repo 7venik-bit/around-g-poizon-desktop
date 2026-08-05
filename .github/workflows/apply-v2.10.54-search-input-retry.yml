@@ -31,6 +31,21 @@ jobs:
       - name: Apply source fix
         run: python hotfix/apply-v2.10.54-search-input-retry.py
 
+      - name: Update frame-search regression check
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/brand-export-completeness.test.mjs")
+          source = path.read_text(encoding="utf-8")
+          old = r'assert.match(workflow, /const searched = await sellerWindow\.webContents\.executeJavaScript/);'
+          new = r'assert.match(workflow, /const runSellerSearch = \(targetFrame\) => targetFrame\.executeJavaScript/);'
+          if old not in source:
+              raise SystemExit("old single-frame assertion not found")
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          PY
+
       - name: Install dependencies
         run: npm ci
 
