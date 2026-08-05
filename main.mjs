@@ -1737,6 +1737,8 @@ function sellerBrandExportFailureMessage(code = "", brandName = "") {
     BRAND_RESULT_MISMATCH: `${label} 검색 결과가 확인되지 않아 내보내기를 중단했습니다. 기존 검색 결과는 다운로드하지 않습니다.`,
     SEARCH_RESULT_NOT_UPDATED: `${label} 검색 결과가 새로 바뀌지 않아 내보내기를 중단했습니다. 기존 검색 결과는 다운로드하지 않습니다.`,
     PARTIAL_PRODUCT_COLLECTION: `${label} 전체 상품 수집이 완료되지 않아 내보내기를 중단했습니다. 부분 파일은 다운로드하지 않습니다.`,
+    PRODUCT_PAGE_NOT_READY: `${label} 상품 수와 전체 페이지를 확인하지 못해 내보내기를 중단했습니다.`,
+    PRODUCT_LAST_PAGE_FAILED: `${label} 마지막 상품 페이지를 확인하지 못해 내보내기를 중단했습니다.`,
   };
   return messages[code] || `판매자센터 자동화 실패: ${code || "UNKNOWN"}`;
 }
@@ -1781,15 +1783,34 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
       for (let clickAttempt = 0; clickAttempt < 4; clickAttempt += 1) {
         const direct = [...document.querySelectorAll(".ant-pagination-item")]
           .find((item) => visible(item) && Number(item.textContent.trim()) === targetPage);
-        const next = [...document.querySelectorAll(".ant-pagination-next:not(.ant-pagination-disabled)")]
-          .find(visible);
-        const previous = [...document.querySelectorAll(".ant-pagination-prev:not(.ant-pagination-disabled)")]
-          .find(visible);
         const current = readPage().currentPage;
-        const target = direct || (targetPage > current ? next : previous);
-        const control = target?.querySelector("button,a") || target;
-        if (!control) return false;
-        control.click();
+        if (current === targetPage) return true;
+        const pagination = [...document.querySelectorAll(".ant-pagination")].find(visible);
+        const jumper = pagination?.querySelector(".ant-pagination-options-quick-jumper input");
+        if (direct) {
+          (direct.querySelector("button,a") || direct).click();
+        } else if (jumper) {
+          jumper.focus();
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+          if (setter) setter.call(jumper, String(targetPage));
+          else jumper.value = String(targetPage);
+          jumper.dispatchEvent(new Event("input", { bubbles: true }));
+          jumper.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true,
+          }));
+          jumper.dispatchEvent(new KeyboardEvent("keyup", {
+            key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true,
+          }));
+        } else {
+          const numbered = [...document.querySelectorAll(".ant-pagination-item")]
+            .filter(visible)
+            .map((item) => ({ item, page: Number(item.textContent.trim()) || 0 }))
+            .filter((entry) => entry.page > 0)
+            .sort((left, right) => right.page - left.page);
+          const boundary = targetPage > current ? numbered[0] : numbered[numbered.length - 1];
+          if (!boundary?.item || boundary.page === current) return false;
+          (boundary.item.querySelector("button,a") || boundary.item).click();
+        }
         for (let attempt = 0; attempt < 40; attempt += 1) {
           await wait(250);
           if (readPage().currentPage === targetPage) {
@@ -1821,53 +1842,32 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
       }
     }
 
-    if (readPage().currentPage !== 1 && !(await clickPage(1))) {
-      return { ok: false, code: "PRODUCT_PAGE_RESET_FAILED", expected: ${Number(expectedTotal) || 0}, actual: 0 };
+    let firstSnapshot = readPage();
+    for (let attempt = 0; attempt < 60 && (!firstSnapshot.total || !firstSnapshot.keys.length); attempt += 1) {
+      await wait(250);
+      firstSnapshot = readPage();
+    }
+    const expected = Math.max(${Number(expectedTotal) || 0}, firstSnapshot.total);
+    const finalPageCount = firstSnapshot.pageCount
+      || (expected > 0 && firstSnapshot.pageSize > 0 ? Math.ceil(expected / firstSnapshot.pageSize) : 0);
+    if (expected < 1 || finalPageCount < 1 || !firstSnapshot.keys.length) {
+      return { ok: false, code: "PRODUCT_PAGE_NOT_READY", expected, actual: 0, pageCount: finalPageCount };
     }
 
-    const uniqueProducts = new Set();
-    let observedTotal = 0;
-    let finalPageCount = 0;
-    for (let page = 1; page <= 1_000; page += 1) {
-      let stableSignature = "";
-      let stableCount = 0;
-      let snapshot = readPage();
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        await wait(250);
-        snapshot = readPage();
-        const signature = snapshot.currentPage + ":" + snapshot.keys.join("|");
-        if (snapshot.currentPage === page && snapshot.keys.length > 0) {
-          stableCount = signature === stableSignature ? stableCount + 1 : 1;
-          stableSignature = signature;
-          if (stableCount >= 3) break;
-        } else {
-          stableCount = 0;
-          stableSignature = "";
-        }
-      }
-      observedTotal = Math.max(observedTotal, snapshot.total);
-      finalPageCount = Math.max(finalPageCount, snapshot.pageCount);
-      for (const key of snapshot.keys) uniqueProducts.add(key);
-      if (!snapshot.pageCount || page >= snapshot.pageCount) break;
-      if (!(await clickPage(page + 1))) {
-        return {
-          ok: false,
-          code: "PRODUCT_PAGE_ADVANCE_FAILED",
-          expected: Math.max(${Number(expectedTotal) || 0}, observedTotal),
-          actual: uniqueProducts.size,
-          page,
-          pageCount: snapshot.pageCount,
-        };
-      }
+    if (finalPageCount > 1 && !(await clickPage(finalPageCount))) {
+      return { ok: false, code: "PRODUCT_LAST_PAGE_FAILED", expected, actual: 0, pageCount: finalPageCount };
     }
-
-    const expected = Math.max(${Number(expectedTotal) || 0}, observedTotal);
-    const actual = uniqueProducts.size;
-    if (expected < 1 || actual < expected) {
-      return { ok: false, code: "PARTIAL_PRODUCT_COLLECTION", expected, actual, pageCount: finalPageCount };
+    let lastSnapshot = readPage();
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      if (lastSnapshot.currentPage === finalPageCount && lastSnapshot.keys.length > 0) break;
+      await wait(250);
+      lastSnapshot = readPage();
     }
-    if (readPage().currentPage !== 1 && !(await clickPage(1))) {
-      return { ok: false, code: "PRODUCT_PAGE_RESET_FAILED", expected, actual, pageCount: finalPageCount };
+    if (lastSnapshot.currentPage !== finalPageCount || !lastSnapshot.keys.length) {
+      return { ok: false, code: "PRODUCT_LAST_PAGE_FAILED", expected, actual: 0, pageCount: finalPageCount };
+    }
+    if (lastSnapshot.total > 0 && lastSnapshot.total !== expected) {
+      return { ok: false, code: "PARTIAL_PRODUCT_COLLECTION", expected, actual: lastSnapshot.total, pageCount: finalPageCount };
     }
 
     const exportPattern = /^전체\\s*내보내기$/;
@@ -1877,14 +1877,21 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
         .find((element) => visible(element) && exportPattern.test(normalizedText(element)));
       if (!exportButton) await wait(250);
     }
-    if (!exportButton) return { ok: false, code: "EXPORT_BUTTON_NOT_FOUND_AFTER_VERIFICATION", expected, actual };
+    if (!exportButton) return { ok: false, code: "EXPORT_BUTTON_NOT_FOUND_AFTER_VERIFICATION", expected, actual: expected };
     if (exportButton.disabled || exportButton.getAttribute("aria-disabled") === "true") {
-      return { ok: false, code: "EXPORT_BUTTON_DISABLED_AFTER_VERIFICATION", expected, actual };
+      return { ok: false, code: "EXPORT_BUTTON_DISABLED_AFTER_VERIFICATION", expected, actual: expected };
     }
     exportButton.scrollIntoView({ block: "center", inline: "center" });
     exportButton.click();
     await wait(500);
-    return { ok: true, expected, actual, pageCount: finalPageCount };
+    return {
+      ok: true,
+      expected,
+      actual: expected,
+      pageCount: finalPageCount,
+      firstPageCount: firstSnapshot.keys.length,
+      lastPageCount: lastSnapshot.keys.length,
+    };
   })()`, true);
 }
 
@@ -1915,6 +1922,12 @@ async function automateSellerBrandExport(input = {}) {
     pendingBrandExportName = "";
     return { ok: false, message: "판매자센터 창을 열지 못했습니다." };
   }
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "checking-export-baseline",
+    brandName,
+    jobState: "준비 · 다운로드센터 기존 작업번호 확인 중",
+    message: `${brandName} · 다운로드센터의 기존 작업번호를 확인합니다. 아직 새 작업은 생성하지 않았습니다.`,
+  });
   const baselineJobs = await readStableSellerExportJobs();
   if (!baselineJobs) {
     pendingBrandExportName = "";
@@ -1930,6 +1943,12 @@ async function automateSellerBrandExport(input = {}) {
   }
   const baselineJobIds = new Set(baselineJobs.map((job) => String(job?.id || "").trim()).filter(Boolean));
   if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "작업 기록 삭제로 이전 요청을 중단했습니다." };
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "opening-product-search",
+    brandName,
+    jobState: "1단계/5 · 상품검색 화면 이동 중",
+    message: `${brandName} · POIZON 상품검색 화면으로 이동합니다.`,
+  });
   if (!sellerWindow.webContents.getURL().includes("/main/goods/search")) {
     await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
   }
@@ -1938,6 +1957,12 @@ async function automateSellerBrandExport(input = {}) {
   if (brandsMatch(brandName, "Jordan")) {
     sellerBrandMatchKeys.push("Jordan", "조던", "乔丹");
   }
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "searching-brand-products",
+    brandName,
+    jobState: "1단계/5 · 브랜드 입력·상품 검색 중",
+    message: `${brandName} · 브랜드를 입력하고 상품 검색을 실행합니다.`,
+  });
   const searched = await sellerWindow.webContents.executeJavaScript(`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getBoundingClientRect().width > 0
@@ -2236,13 +2261,20 @@ async function automateSellerBrandExport(input = {}) {
     };
   }
 
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "brand-search-complete",
+    brandName,
+    jobState: `1단계/5 · 검색 완료 · 총 ${Number(searched.expectedTotal || 0).toLocaleString("ko-KR")}개`,
+    message: `${brandName} · 상품 검색 완료 · 총 ${Number(searched.expectedTotal || 0).toLocaleString("ko-KR")}개 · 전체 페이지 수와 마지막 페이지를 확인합니다.`,
+  });
+
   let completeness = null;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     mainWindow?.webContents.send("brand-export:progress", {
       status: "verifying-products",
       brandName,
-      jobState: `1단계/5 · 상품 페이지 확인 중 · 검사 ${attempt}/2`,
-      message: `${brandName} · 1단계/5 · 상품 페이지 확인 중 · 검사 ${attempt}/2 (다운로드센터 작업 생성 전)`,
+      jobState: `1단계/5 · 전체 페이지 수·마지막 페이지 확인 중 · 검사 ${attempt}/2`,
+      message: `${brandName} · 1단계/5 · 전체 페이지 수와 마지막 페이지 확인 중 · 검사 ${attempt}/2 (다운로드센터 작업 생성 전)`,
     });
     completeness = await verifyCompleteSellerExportAndClick(searched.expectedTotal);
     if (completeness?.ok) break;
@@ -2269,7 +2301,7 @@ async function automateSellerBrandExport(input = {}) {
     status: "waiting-for-job-creation",
     brandName,
     jobState: "2단계/5 · 전체 내보내기 클릭 완료 · 새 작업번호 확인 중",
-    message: `${brandName} · 2단계/5 · 전체 내보내기 요청 완료 · 다운로드센터의 새 작업번호를 확인합니다.`,
+    message: `${brandName} · 총 ${Number(completeness.expected || 0).toLocaleString("ko-KR")}개 · ${Number(completeness.pageCount || 0).toLocaleString("ko-KR")}페이지 확인 완료 · 전체 내보내기 요청 완료 · 다운로드센터의 새 작업번호를 확인합니다.`,
   });
 
   let createdJob = null;
