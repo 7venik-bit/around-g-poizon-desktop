@@ -19,9 +19,11 @@ test("export uses the clickable control and completes every confirmation dialog"
   assert.match(main, /exportRetried = true/);
 });
 
-test("download center discovers jobs by job number instead of one localized label", () => {
+test("download center discovers jobs by number across frames instead of one localized label", () => {
   assert.match(main, /firstCellText\.match/);
-  assert.match(main, /looksLikeDataRow/);
+  assert.match(main, /const rowHint = cells\.length >= 2/);
+  assert.match(main, /readSellerExportJobsFromWindow/);
+  assert.match(main, /framesInSubtree/);
   assert.match(main, /\\d\{7,/);
   assert.doesNotMatch(main, /상품\\s\*검색\.\*내보내기/);
 });
