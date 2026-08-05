@@ -1654,7 +1654,7 @@ async function readSellerExportJobs() {
       .replace(/\\s+/g, " ").trim();
     const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")]
       .filter(visible)
-      .filter((row) => /\\uC0C1\\uD488\\uAC80\\uC0C9\\s*\\uB0B4\\uBCF4\\uB0B4\\uAE30/i.test(textOf(row)));
+      .filter((row) => /(?:상품\s*검색.*내보내기|내보내기.*상품\s*검색|商品.*导出|导出.*商品)/i.test(textOf(row)));
     const jobs = rows.map((row) => {
       const text = textOf(row);
       const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
@@ -1888,9 +1888,55 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
     if (exportButton.disabled || exportButton.getAttribute("aria-disabled") === "true") {
       return { ok: false, code: "EXPORT_BUTTON_DISABLED_AFTER_VERIFICATION", expected, actual: expected };
     }
-    exportButton.scrollIntoView({ block: "center", inline: "center" });
-    exportButton.click();
-    await wait(500);
+    const clickLikeUser = (element) => {
+      if (!element) return false;
+      element.scrollIntoView({ block: "center", inline: "center" });
+      element.focus?.();
+      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+        element.dispatchEvent(new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          button: 0,
+        }));
+      }
+      element.click?.();
+      return true;
+    };
+    clickLikeUser(exportButton);
+    await wait(700);
+
+    let confirmationObserved = false;
+    let confirmationClicked = false;
+    let requestAcknowledged = false;
+    const confirmationPattern = /^(?:확인|내보내기|생성|확정|제출|确认|确定|提交|导出)$/i;
+    const cancelPattern = /취소|닫기|取消|关闭/i;
+    const successPattern = /(?:내보내기|작업|파일).*(?:등록|생성|완료|성공)|(?:导出|任务).*(?:成功|已创建)/i;
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+      const dialogs = [...document.querySelectorAll(
+        ".ant-modal, .ant-modal-confirm, [role='dialog'], .ant-popover, .ant-drawer"
+      )].filter(visible);
+      if (dialogs.length) confirmationObserved = true;
+      const controls = dialogs.flatMap((dialog) =>
+        [...dialog.querySelectorAll("button, [role='button'], a")].filter(visible)
+      );
+      const confirmControl = controls.find((element) => {
+        const label = normalizedText(element);
+        return confirmationPattern.test(label) && !cancelPattern.test(label);
+      });
+      if (confirmControl) {
+        clickLikeUser(confirmControl);
+        confirmationClicked = true;
+        await wait(1_000);
+        break;
+      }
+      if (successPattern.test(normalizedText(document.body))) {
+        requestAcknowledged = true;
+        break;
+      }
+      await wait(250);
+    }
     return {
       ok: true,
       expected,
@@ -1898,6 +1944,9 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
       pageCount: finalPageCount,
       firstPageCount: firstSnapshot.keys.length,
       lastPageCount: lastSnapshot.keys.length,
+      confirmationObserved,
+      confirmationClicked,
+      requestAcknowledged,
     };
   })()`, true);
 }
@@ -2313,13 +2362,37 @@ async function automateSellerBrandExport(input = {}) {
 
   let createdJob = null;
   const verificationStartedAt = Date.now();
-  while (Date.now() - verificationStartedAt < 45000) {
+  const verificationTimeoutMs = 180000;
+  let lastReloadAt = 0;
+  let lastProgressAt = 0;
+  await new Promise((resolve) => setTimeout(resolve, 2500));
+  while (Date.now() - verificationStartedAt < verificationTimeoutMs) {
     const currentJobs = await readSellerExportJobs();
-    if (currentJobs) createdJob = findNewSellerExportJob([...baselineJobIds], currentJobs);
+    if (Array.isArray(currentJobs)) {
+      createdJob = findNewSellerExportJob([...baselineJobIds], currentJobs);
+    }
     if (createdJob) break;
+
+    const elapsedMs = Date.now() - verificationStartedAt;
+    if (elapsedMs - lastProgressAt >= 10000) {
+      lastProgressAt = elapsedMs;
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: "waiting-for-job-creation",
+        brandName,
+        jobState: `2단계/5 · 다운로드센터 작업 생성 대기 · ${Math.floor(elapsedMs / 1000)}초`,
+        message: `${brandName} · 전체 내보내기 요청 완료 · POIZON이 새 작업번호를 생성하는 중입니다. 화면을 반복 초기화하지 않고 기다립니다.`,
+      });
+    }
+
     await new Promise((resolve) => setTimeout(resolve, 2500));
-    if (sellerWindow && !sellerWindow.isDestroyed()) {
+    if (!sellerWindow || sellerWindow.isDestroyed()) break;
+    const currentUrl = sellerWindow.webContents.getURL();
+    if (!currentUrl.includes("/main/exportCenter")) {
+      await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
+      lastReloadAt = Date.now();
+    } else if (elapsedMs >= 15000 && Date.now() - lastReloadAt >= 15000) {
       await sellerWindow.webContents.reloadIgnoringCache();
+      lastReloadAt = Date.now();
     }
   }
   if (!createdJob) {
@@ -2331,7 +2404,12 @@ async function automateSellerBrandExport(input = {}) {
     return {
       ok: false,
       code: "EXPORT_JOB_NOT_CREATED",
-      message: "판매자센터에 새 데이터 파일 생성 작업이 등록되지 않았습니다. 다시 시도해 주세요.",
+      confirmationObserved: Boolean(completeness?.confirmationObserved),
+      confirmationClicked: Boolean(completeness?.confirmationClicked),
+      requestAcknowledged: Boolean(completeness?.requestAcknowledged),
+      message: completeness?.confirmationObserved && !completeness?.confirmationClicked
+        ? "POIZON 전체 내보내기 확인창을 완료하지 못했습니다. 확인창 처리 로직을 다시 점검해 주세요."
+        : "전체 내보내기 요청 후 3분 동안 다운로드센터의 새 작업번호가 확인되지 않았습니다. POIZON 처리 지연 또는 세션 상태를 확인해 주세요.",
     };
   }
   if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "작업 기록 삭제로 이전 요청을 중단했습니다." };
