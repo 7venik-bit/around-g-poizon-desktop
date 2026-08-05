@@ -517,10 +517,20 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return;
   if (!automation?.ok) {
     recordBrandSelection(activeExportBrand, "데이터 가져오기 실패");
-    $("#brand-status").className = "status error";
-    $("#brand-status").textContent = automation?.message || "판매자센터 데이터 가져오기 작업이 생성되지 않았습니다.";
+    const failedBrandName = activeExportBrand?.name || "선택 브랜드";
+    brandExportQueue = [];
     activeExportBrand = null;
-    setTimeout(() => exportNextSelectedBrand(generation), 400);
+    brandSelectionBusy = false;
+    renderBrandCards($("#brand-filter")?.value || "");
+    $("#brand-status").className = "status error";
+    $("#brand-status").textContent = `${failedBrandName} 작업 실패 · 나머지 선택 브랜드 자동 실행을 중단했습니다. · ${automation?.message || "판매자센터 데이터 가져오기 작업이 생성되지 않았습니다."}`;
+    if (brandExportJobs.size) {
+      touchBrandActivity("이미 등록된 작업만 계속 감시 중");
+      await window.aroundG.startSellerBrandExportMonitor();
+    } else {
+      stopBrandActivity();
+    }
+    return;
   } else {
     renderBrandExportFolder(automation.folder);
     updateBrandExportJob(automation.jobId, "3단계/5 · 작업번호 생성 완료 · 처리 대기", activeExportBrand.name);
