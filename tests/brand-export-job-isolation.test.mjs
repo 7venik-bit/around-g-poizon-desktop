@@ -38,7 +38,7 @@ test("an existing job number cannot be assigned to another brand", () => {
   assert.match(mainSource, /기존 작업번호 \$\{registeredJobId\}/);
 });
 
-test("an unreadable export center is never treated as an empty baseline", () => {
+test("an unreadable export center does not block real brand work", () => {
   const readStart = mainSource.indexOf("async function readSellerExportJobs");
   const readEnd = mainSource.indexOf("function normalizeBrandExportKey", readStart);
   const reader = mainSource.slice(readStart, readEnd);

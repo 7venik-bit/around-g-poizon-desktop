@@ -1639,38 +1639,89 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
   return { ok: true, jobs: brandExportJobs.size };
 }
 
+const SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT = `(() => {
+  const visible = (element) => element && element.getClientRects().length > 0;
+  const textOf = (element) => String(element?.innerText || element?.textContent || "")
+    .replace(/\s+/g, " ").trim();
+  const candidates = [...document.querySelectorAll(
+    "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']"
+  )].filter(visible);
+  const jobs = [];
+  const seen = new Set();
+  for (const element of candidates) {
+    const text = textOf(element);
+    if (!text || text.length > 2400) continue;
+    const cells = [...element.querySelectorAll("td, [role='cell'], [role='gridcell']")];
+    const firstCellText = textOf(cells[0]);
+    const id = firstCellText.match(/\b\d{7,}\b/)?.[0]
+      || text.match(/\b\d{7,}\b/)?.[0]
+      || "";
+    if (!id || seen.has(id)) continue;
+    const rowHint = cells.length >= 2
+      || /내보내기|다운로드|작업|export|download|task|导出|下载|任务|처리|成功/i.test(text);
+    if (!rowHint) continue;
+    seen.add(id);
+    jobs.push({ id, fingerprint: id, text: text.slice(0, 500) });
+  }
+  const bodyText = textOf(document.body);
+  const emptyState = /暂无数据|没有数据|暂无任务|데이터가\s*없|작업이\s*없|no\s*(?:data|task)/i.test(bodyText);
+  return { ready: jobs.length > 0 || emptyState, jobs };
+})()`;
+
+async function readSellerExportJobsFromWindow(targetWindow) {
+  if (!targetWindow || targetWindow.isDestroyed()) return null;
+  const mainFrame = targetWindow.webContents.mainFrame;
+  const frames = [mainFrame, ...(mainFrame.framesInSubtree || [])]
+    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
+  const jobsById = new Map();
+  let ready = false;
+  for (const frame of frames) {
+    try {
+      const snapshot = await frame.executeJavaScript(SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT, true);
+      if (snapshot?.ready) ready = true;
+      for (const job of snapshot?.jobs || []) {
+        const id = String(job?.id || "").trim();
+        if (id && !jobsById.has(id)) jobsById.set(id, job);
+      }
+    } catch {
+      // 접근할 수 없는 외부 프레임은 건너뛰고 나머지 프레임을 계속 확인합니다.
+    }
+  }
+  return ready || jobsById.size ? [...jobsById.values()] : null;
+}
+
 async function readSellerExportJobs() {
   if (!sellerWindow || sellerWindow.isDestroyed()) return null;
   if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
     await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
   }
-  await new Promise((resolve) => setTimeout(resolve, 1200));
-  const snapshot = await sellerWindow.webContents.executeJavaScript(`(() => {
-    const visible = (element) => element && element.getBoundingClientRect().width > 0
-      && element.getBoundingClientRect().height > 0;
-    const textOf = (element) => String(element?.innerText || element?.textContent || "")
-      .replace(/\\s+/g, " ").trim();
-    const normalize = (value) => String(value || "")
-      .replace(/\\s+/g, " ").trim();
-    const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")]
-      .filter(visible);
-    const jobs = rows.map((row) => {
-      const text = textOf(row);
-      const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
-      const firstCellText = textOf(cells[0]);
-      const id = firstCellText.match(/\b\d{7,}\b/)?.[0]
-        || text.match(/\b\d{7,}\b/)?.[0]
-        || "";
-      const looksLikeDataRow = cells.length >= 2 && Boolean(id);
-      return looksLikeDataRow
-        ? { id, fingerprint: id || text.slice(0, 240), text }
-        : null;
-    }).filter(Boolean);
-    const bodyText = textOf(document.body);
-    const emptyState = /\u6682\u65E0\u6570\u636E|\uB370\uC774\uD130\uAC00\s*\uC5C6|no\s*data/i.test(bodyText);
-    return { ready: jobs.length > 0 || emptyState, jobs };
-  })()`, true).catch(() => null);
-  return snapshot?.ready && Array.isArray(snapshot.jobs) ? snapshot.jobs : null;
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  return readSellerExportJobsFromWindow(sellerWindow);
+}
+
+async function readSellerExportBaselineSeparately() {
+  let baselineWindow;
+  try {
+    baselineWindow = new BrowserWindow({
+      show: false,
+      width: 1100,
+      height: 760,
+      webPreferences: {
+        partition: "persist:around-g-poizon-seller",
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        backgroundThrottling: false,
+      },
+    });
+    await baselineWindow.loadURL(SELLER_EXPORT_CENTER_URL);
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    return await readSellerExportJobsFromWindow(baselineWindow);
+  } catch {
+    return null;
+  } finally {
+    if (baselineWindow && !baselineWindow.isDestroyed()) baselineWindow.destroy();
+  }
 }
 
 async function readStableSellerExportJobs() {
@@ -2018,32 +2069,13 @@ async function automateSellerBrandExport(input = {}) {
     pendingBrandExportName = "";
     return { ok: false, message: "판매자센터 창을 열지 못했습니다." };
   }
-  mainWindow?.webContents.send("brand-export:progress", {
-    status: "checking-export-baseline",
-    brandName,
-    jobState: "준비 · 다운로드센터 기존 작업번호 확인 중",
-    message: `${brandName} · 다운로드센터의 기존 작업번호를 확인합니다. 아직 새 작업은 생성하지 않았습니다.`,
-  });
-  const baselineJobs = await readStableSellerExportJobs();
-  if (!baselineJobs) {
-    pendingBrandExportName = "";
-    pendingBrandExportJobId = "";
-    brandExportJobPending = false;
-    sellerWindow.hide();
-    showCollectorWindow();
-    return {
-      ok: false,
-      code: "EXPORT_CENTER_BASELINE_UNAVAILABLE",
-      message: `${brandName} 작업을 시작하지 않았습니다. 기존 작업번호 목록을 확인할 수 없어 과거 다른 브랜드 작업과 혼동될 위험이 있습니다.`,
-    };
-  }
-  const baselineJobIds = new Set(baselineJobs.map((job) => String(job?.id || "").trim()).filter(Boolean));
+  const baselinePromise = readSellerExportBaselineSeparately().catch(() => null);
   if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "작업 기록 삭제로 이전 요청을 중단했습니다." };
   mainWindow?.webContents.send("brand-export:progress", {
     status: "opening-product-search",
     brandName,
-    jobState: "1단계/5 · 상품검색 화면 이동 중",
-    message: `${brandName} · POIZON 상품검색 화면으로 이동합니다.`,
+    jobState: "1단계/5 · 실제 상품검색 시작",
+    message: `${brandName} · 판매자센터 상품검색 화면을 열고 실제 검색을 시작합니다.`,
   });
   if (!sellerWindow.webContents.getURL().includes("/main/goods/search")) {
     await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
@@ -2357,6 +2389,22 @@ async function automateSellerBrandExport(input = {}) {
     };
   }
 
+  const baselineJobs = await baselinePromise;
+  const baselineAvailable = Array.isArray(baselineJobs);
+  const baselineJobIds = new Set([
+    ...brandExportJobs.keys(),
+    ...savedBrandExportJobs().map((job) => String(job?.jobId || "").trim()),
+    ...(baselineJobs || []).map((job) => String(job?.id || "").trim()),
+  ].filter(Boolean));
+  if (!baselineAvailable) {
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "baseline-fallback",
+      brandName,
+      jobState: "1단계/5 · 상품검색 완료 · 작업번호 후행 확인 방식",
+      message: `${brandName} · 기존 작업번호 화면 판독은 생략하고 실제 내보내기 요청 이후 새 미사용 작업번호를 확인합니다.`,
+    });
+  }
+
   mainWindow?.webContents.send("brand-export:progress", {
     status: "brand-search-complete",
     brandName,
@@ -2405,11 +2453,27 @@ async function automateSellerBrandExport(input = {}) {
   const verificationTimeoutMs = 180000;
   let lastReloadAt = 0;
   let lastProgressAt = 0;
+  let fallbackCandidateJobId = "";
+  let fallbackCandidateStableReads = 0;
   await new Promise((resolve) => setTimeout(resolve, 2500));
   while (Date.now() - verificationStartedAt < verificationTimeoutMs) {
     const currentJobs = await readSellerExportJobs();
     if (Array.isArray(currentJobs)) {
-      createdJob = findNewSellerExportJob([...baselineJobIds], currentJobs);
+      const unusedJobs = currentJobs.filter((job) => !brandExportJobOwner(job?.id));
+      const candidate = findNewSellerExportJob([...baselineJobIds], unusedJobs);
+      if (candidate && baselineAvailable) {
+        createdJob = candidate;
+      } else if (candidate) {
+        const candidateId = String(candidate.id || "").trim();
+        fallbackCandidateStableReads = candidateId === fallbackCandidateJobId
+          ? fallbackCandidateStableReads + 1
+          : 1;
+        fallbackCandidateJobId = candidateId;
+        if (fallbackCandidateStableReads >= 2) createdJob = candidate;
+      } else {
+        fallbackCandidateJobId = "";
+        fallbackCandidateStableReads = 0;
+      }
     }
     if (createdJob) break;
 
@@ -2449,7 +2513,7 @@ async function automateSellerBrandExport(input = {}) {
       requestAcknowledged: Boolean(completeness?.requestAcknowledged),
       message: completeness?.confirmationObserved && !completeness?.confirmationClicked
         ? "POIZON 전체 내보내기 확인창을 완료하지 못했습니다. 확인창 처리 로직을 다시 점검해 주세요."
-        : "전체 내보내기 요청 후 3분 동안 다운로드센터의 새 작업번호가 확인되지 않았습니다. POIZON 처리 지연 또는 세션 상태를 확인해 주세요.",
+        : "실제 상품검색과 전체 내보내기 요청은 실행됐지만 3분 동안 새 미사용 작업번호를 확인하지 못했습니다. 다운로드센터 화면 구조 또는 로그인 세션을 확인해 주세요.",
     };
   }
   if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "작업 기록 삭제로 이전 요청을 중단했습니다." };

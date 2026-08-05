@@ -32,8 +32,8 @@ test("one failed brand stops the remaining automatic brand queue", () => {
   assert.match(renderer, /이미 등록된 작업만 계속 감시 중/);
 });
 
-test("release metadata is 2.10.51", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.51");
-  assert.equal(JSON.parse(lockSource).version, "2.10.51");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.51");
+test("release metadata is 2.10.52", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.52");
+  assert.equal(JSON.parse(lockSource).version, "2.10.52");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.52");
 });
