@@ -1,6 +1,6 @@
 import { findPoizonColumn } from "./poizon-xlsx.mjs";
 
-export const POIZON_MINIMUM_TOTAL_SALES = 30;
+export const POIZON_MINIMUM_TOTAL_SALES = 50;
 
 export function parsePoizonSalesMetric(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -62,7 +62,7 @@ export function filterPoizonRowsByTotalSales(sheet = [], minimum = POIZON_MINIMU
     sourceRows += 1;
     const totalSales = parsePoizonSalesMetric(row[totalSalesColumn]);
     const localTotalSales = parsePoizonSalesMetric(row[localTotalSalesColumn]);
-    if (totalSales < threshold || localTotalSales < threshold) continue;
+    if (totalSales < threshold && localTotalSales < threshold) continue;
 
     // The processed workbook should sort/filter as numbers instead of text such as
     // "100+" or "5,800+". The original workbook remains untouched.
@@ -85,5 +85,6 @@ export function filterPoizonRowsByTotalSales(sheet = [], minimum = POIZON_MINIMU
     minimum: threshold,
     totalSalesColumn,
     localTotalSalesColumn,
+    matchMode: "any",
   };
 }

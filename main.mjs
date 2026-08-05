@@ -792,7 +792,7 @@ function publicConfig() {
 
 const SELLER_EXPORT_POLL_INTERVAL_MS = 60 * 1000;
 const SELLER_EXPORT_MONITOR_TIMEOUT_MS = 60 * 60 * 1000;
-const PROCESSED_BRAND_EXPORT_SUFFIX = "_판매량30이상_정리.xlsx";
+const PROCESSED_BRAND_EXPORT_SUFFIX = "_총판매량50이상_OR_정리.xlsx";
 
 function defaultBrandExportFolder() {
   return join(app.getPath("desktop"), "Around G POIZON", "POIZON 전체내보내기");
@@ -828,13 +828,14 @@ async function listBrandExportExcelEntries(folder) {
 function brandFromExportFileName(name = "") {
   return String(name)
     .replace(/\.xlsx$/i, "")
+    .replace(/_총판매량50이상_OR_정리$/i, "")
     .replace(/_판매량30이상_정리$/i, "")
     .replace(/_\d{8}_\d{6}$/, "")
     .trim();
 }
 
 function isProcessedBrandExportName(name = "") {
-  return String(name).endsWith(PROCESSED_BRAND_EXPORT_SUFFIX);
+  return /_(?:총판매량50이상_OR|판매량30이상)_정리\.xlsx$/i.test(String(name));
 }
 
 function isPartialBrandExportName(name = "") {
@@ -3513,7 +3514,7 @@ app.whenReady().then(async () => {
         canceled: false,
         ok: false,
         code: "POIZON_SALES_FILTER_EMPTY",
-        message: `중국 총 판매량과 현지 판매자 총 판매량이 모두 ${POIZON_MINIMUM_TOTAL_SALES}건 이상인 상품이 없습니다.`,
+        message: `중국 총 판매량 또는 현지 판매자 총 판매량이 ${POIZON_MINIMUM_TOTAL_SALES}건 이상인 상품이 없습니다.`,
         sourceRows: filtered.sourceRows,
         filteredRows: 0,
       };
@@ -3653,7 +3654,7 @@ app.whenReady().then(async () => {
     ];
     await writeXlsxFile([{
       data: exportData,
-      sheet: "POIZON_30_PLUS",
+      sheet: "POIZON_TOTAL_50_OR",
       stickyRowsCount: 1,
       columns: headers.map((header, index) => ({
         width: index === columns.title ? 54
