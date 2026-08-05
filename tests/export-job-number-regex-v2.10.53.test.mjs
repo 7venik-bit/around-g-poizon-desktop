@@ -5,7 +5,7 @@ import test from "node:test";
 const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 
 test("seller export snapshot compiles a numeric job-number regex", () => {
-  const match = main.match(/const SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT = `([\s\S]*?)`;\n\nasync function readSellerExportJobsFromWindow/);
+  const match = main.match(/const SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT = `([\s\S]*?)`;\r?\n\r?\nasync function readSellerExportJobsFromWindow/);
   assert.ok(match, "snapshot script template must exist");
 
   const runtimeScript = Function(`return \`${match[1].replace(/`/g, "\\`")}\`;`)();
