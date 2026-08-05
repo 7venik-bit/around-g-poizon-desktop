@@ -10,7 +10,7 @@ const [mainSource, rendererSource, htmlSource, cssSource] = await Promise.all([
 ]);
 
 test("Excel preview is read-only and paginated in the main sourcing screen", () => {
-  assert.match(mainSource, /import readXlsxFile, \{ readSheet \} from "read-excel-file\/node"/);
+  assert.match(mainSource, /import \{ readFirstDataSheet \} from "\.\/services\/excel-reader\.mjs"/);
   assert.match(mainSource, /async function previewExcelFile/);
   assert.match(mainSource, /rows\.slice\(offset, offset \+ limit\)/);
   assert.match(mainSource, /Math\.min\(200, Math\.max\(25,/);
@@ -21,6 +21,7 @@ test("Excel preview is read-only and paginated in the main sourcing screen", () 
   assert.match(htmlSource, /읽기 전용|IN-APP EXCEL VIEWER/);
   assert.match(cssSource, /\.excel-preview-grid\{max-height:560px;overflow:auto/);
   assert.match(cssSource, /position:sticky;top:0/);
+  assert.match(rendererSource, /Number\.isFinite\(Number\(result\.totalColumns\)\)/);
 });
 
 test("downloaded file rows open the embedded preview without launching Windows Excel", () => {

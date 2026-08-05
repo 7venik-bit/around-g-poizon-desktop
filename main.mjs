@@ -2,8 +2,9 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeThem
 import { mkdirSync } from "node:fs";
 import { appendFile, mkdir, readFile, readdir, rename, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import readXlsxFile, { readSheet } from "read-excel-file/node";
+import { readSheet } from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
+import { readFirstDataSheet } from "./services/excel-reader.mjs";
 import {
   findPoizonColumn,
   getPoizonWorksheetRows,
@@ -926,7 +927,7 @@ async function previewExcelFile(input = {}) {
   const signature = `${filePath}:${info.mtimeMs}:${info.size}`;
   let workbook = excelPreviewCache.get(signature);
   if (!workbook) {
-    const rows = await readXlsxFile(await readFile(filePath));
+    const rows = await readFirstDataSheet(await readFile(filePath));
     const columnCount = rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
     workbook = {
       headers: Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(rows[0]?.[index]) || `열 ${index + 1}`),
@@ -3458,7 +3459,7 @@ app.whenReady().then(async () => {
     const result = await dialog.showOpenDialog({ properties: ["openFile"], filters: [{ name: "Excel", extensions: ["xlsx"] }] });
     if (result.canceled || !result.filePaths[0]) return { canceled: true };
     const filePath = result.filePaths[0];
-    const sheet = await readXlsxFile(await readFile(filePath));
+    const sheet = await readFirstDataSheet(await readFile(filePath));
     const headers = (sheet[0] || []).map((value) => String(value || "").trim());
     const rows = sheet.slice(1).map((values) => Object.fromEntries(
       headers.flatMap((header, index) => header ? [[header, values[index] ?? ""]] : [])
