@@ -28,6 +28,23 @@ jobs:
           node-version: "22"
           cache: npm
 
+      - name: Keep only behavior-critical patch steps
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("hotfix/apply-v2.10.52-start-real-work.py")
+          source = path.read_text(encoding="utf-8")
+          start = source.find("old_progress = ")
+          end = source.find("\n\nold_failure_text =", start)
+          if start < 0 or end < 0:
+              raise SystemExit("optional progress replacement block not found")
+          source = source[:start] + source[end + 2:]
+          source = source.replace("새 미사용 작업번호를 연속 확인 중", "새 미사용 작업번호를 확인합니다")
+          path.write_text(source, encoding="utf-8")
+          PY
+
       - name: Apply source fix
         run: python hotfix/apply-v2.10.52-start-real-work.py
 
