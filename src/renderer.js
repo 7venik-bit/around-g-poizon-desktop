@@ -31,6 +31,7 @@ let acceptBrandWorkEvents = true;
 const WORK_HISTORY_RESET_KEY = "around-g-work-history-reset-v2.10.4";
 const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
 const DOWNLOAD_STATUS_MIGRATION_KEY = "around-g-download-status-v2.10.29";
+const LIVE_JOB_UI_MIGRATION_KEY = "around-g-live-job-ui-v2.10.34";
 
 function renderBrandExportFolder(folder = "") {
   const path = $("#brand-export-folder-path");
@@ -59,6 +60,14 @@ if (localStorage.getItem(DOWNLOAD_STATUS_MIGRATION_KEY) !== "done") {
   // so discard that legacy state before the startup restore can render it.
   localStorage.removeItem("around-g-last-brand-export-job");
   localStorage.setItem(DOWNLOAD_STATUS_MIGRATION_KEY, "done");
+}
+
+if (localStorage.getItem(LIVE_JOB_UI_MIGRATION_KEY) !== "done") {
+  // A renderer restart cannot prove that a previously persisted POIZON job is
+  // still active. Restoring that number made an old brand look like the newly
+  // selected brand, so live jobs now exist only for the current app process.
+  localStorage.removeItem("around-g-last-brand-export-job");
+  localStorage.setItem(LIVE_JOB_UI_MIGRATION_KEY, "done");
 }
 
 try {
@@ -334,11 +343,6 @@ function updateBrandExportJob(jobId = "", state = "", brandName = "") {
   $("#brand-export-jobs-list").innerHTML = [...brandExportJobs.entries()]
     .map(([id, job]) => `<div class="brand-export-job-row"><strong>${text(job.brandName)}</strong><code>작업번호 ${text(id)}</code><span class="brand-export-job-state">${text(job.state)}</span></div>`)
     .join("");
-  localStorage.setItem("around-g-last-brand-export-job", JSON.stringify({
-    jobId: normalizedId,
-    state: state || "감시 중",
-    time: Date.now(),
-  }));
 }
 
 function toggleBrandSelection(brandId) {
@@ -998,7 +1002,13 @@ $("#brand-export-selected")?.addEventListener("click", () => {
   if (!selectedBrands.length) return;
   acceptBrandWorkEvents = true;
   const generation = brandWorkHistoryGeneration;
-  brandExportQueue = [...selectedBrands];
+  // Snapshot the exact brands shown as selected. Later catalog rendering or a
+  // stale singular brand name must never change the active export queue.
+  brandExportQueue = selectedBrands.map((brand) => ({
+    id: Number(brand.id),
+    name: String(brand.name || "").trim(),
+    ko: String(brand.ko || "").trim(),
+  }));
   brandSelectionBusy = true;
   clearExplorerResults();
   brandWorkbenchProducts = [];
@@ -1658,12 +1668,9 @@ window.aroundG.onUpdateStatus((payload) => {
     renderInstalledVersion("2.10.17", true);
   }
   setupBrandLayout();
-  try {
-    const savedJob = JSON.parse(localStorage.getItem("around-g-last-brand-export-job") || "null");
-    if (savedJob?.jobId) updateBrandExportJob(savedJob.jobId, savedJob.state || "마지막 작업");
-  } catch {
-    localStorage.removeItem("around-g-last-brand-export-job");
-  }
+  // Do not restore a job number as live work. The main process will emit
+  // progress only for jobs actually registered in this running session.
+  localStorage.removeItem("around-g-last-brand-export-job");
   window.aroundG.onBrandSyncProgress((progress) => {
     if (!brandProgressActive && selectedBrandId) return;
     const status = $("#brand-status");

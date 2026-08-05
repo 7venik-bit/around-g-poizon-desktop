@@ -1638,7 +1638,7 @@ async function readSellerExportJobs() {
     await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
   }
   await new Promise((resolve) => setTimeout(resolve, 1200));
-  return sellerWindow.webContents.executeJavaScript(`(() => {
+  const snapshot = await sellerWindow.webContents.executeJavaScript(`(() => {
     const visible = (element) => element && element.getBoundingClientRect().width > 0
       && element.getBoundingClientRect().height > 0;
     const textOf = (element) => String(element?.innerText || element?.textContent || "")
@@ -1648,7 +1648,7 @@ async function readSellerExportJobs() {
     const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")]
       .filter(visible)
       .filter((row) => /\\uC0C1\\uD488\\uAC80\\uC0C9\\s*\\uB0B4\\uBCF4\\uB0B4\\uAE30/i.test(textOf(row)));
-    return rows.map((row) => {
+    const jobs = rows.map((row) => {
       const text = textOf(row);
       const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
       const firstCellText = textOf(cells[0]);
@@ -1657,7 +1657,33 @@ async function readSellerExportJobs() {
         || "";
       return { id, fingerprint: id || text.slice(0, 180), text };
     });
-  })()`, true).catch(() => []);
+    const bodyText = textOf(document.body);
+    const emptyState = /\u6682\u65E0\u6570\u636E|\uB370\uC774\uD130\uAC00\s*\uC5C6|no\s*data/i.test(bodyText);
+    return { ready: jobs.length > 0 || emptyState, jobs };
+  })()`, true).catch(() => null);
+  return snapshot?.ready && Array.isArray(snapshot.jobs) ? snapshot.jobs : null;
+}
+
+async function readStableSellerExportJobs() {
+  let previousSignature = null;
+  let stableReads = 0;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const jobs = await readSellerExportJobs();
+    if (Array.isArray(jobs)) {
+      const signature = jobs.map((job) => String(job?.id || "").trim())
+        .filter(Boolean).sort().join("|");
+      if (signature === previousSignature) stableReads += 1;
+      else stableReads = 1;
+      previousSignature = signature;
+      if (stableReads >= 2) return jobs;
+    } else {
+      previousSignature = null;
+      stableReads = 0;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (!sellerWindow || sellerWindow.isDestroyed()) return null;
+  }
+  return null;
 }
 
 function normalizeBrandExportKey(value = "") {
@@ -1889,8 +1915,20 @@ async function automateSellerBrandExport(input = {}) {
     pendingBrandExportName = "";
     return { ok: false, message: "판매자센터 창을 열지 못했습니다." };
   }
-  const baselineJobs = await readSellerExportJobs();
-  const baselineJobIds = new Set((baselineJobs || []).map((job) => String(job?.id || "").trim()).filter(Boolean));
+  const baselineJobs = await readStableSellerExportJobs();
+  if (!baselineJobs) {
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    sellerWindow.hide();
+    showCollectorWindow();
+    return {
+      ok: false,
+      code: "EXPORT_CENTER_BASELINE_UNAVAILABLE",
+      message: `${brandName} 작업을 시작하지 않았습니다. 기존 작업번호 목록을 확인할 수 없어 과거 다른 브랜드 작업과 혼동될 위험이 있습니다.`,
+    };
+  }
+  const baselineJobIds = new Set(baselineJobs.map((job) => String(job?.id || "").trim()).filter(Boolean));
   if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "작업 기록 삭제로 이전 요청을 중단했습니다." };
   if (!sellerWindow.webContents.getURL().includes("/main/goods/search")) {
     await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
@@ -2231,7 +2269,7 @@ async function automateSellerBrandExport(input = {}) {
   const verificationStartedAt = Date.now();
   while (Date.now() - verificationStartedAt < 45000) {
     const currentJobs = await readSellerExportJobs();
-    createdJob = findNewSellerExportJob([...baselineJobIds], currentJobs || []);
+    if (currentJobs) createdJob = findNewSellerExportJob([...baselineJobIds], currentJobs);
     if (createdJob) break;
     await new Promise((resolve) => setTimeout(resolve, 2500));
     if (sellerWindow && !sellerWindow.isDestroyed()) {

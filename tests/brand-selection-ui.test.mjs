@@ -37,7 +37,7 @@ test("brand selection supports toggle-on and toggle-off", () => {
 
 test("selected-brand search queues every selected brand", () => {
   assert.match(renderer, /function selectedBrandsForExport\(\)/);
-  assert.match(renderer, /brandExportQueue = \[\.\.\.selectedBrands\]/);
+  assert.match(renderer, /brandExportQueue = selectedBrands\.map/);
   assert.match(renderer, /void exportNextSelectedBrand\(generation\)/);
   assert.match(renderer, /#brand-export-selected/);
 });
@@ -71,13 +71,19 @@ test("download UI does not expose brand mismatch wording", () => {
   assert.doesNotMatch(renderer, /100% 검증완료/);
 });
 
-test("upgrade clears the legacy persisted job state before startup restore", () => {
+test("upgrade clears the legacy persisted job state", () => {
   const migrationStart = renderer.indexOf('const DOWNLOAD_STATUS_MIGRATION_KEY');
-  const restoreStart = renderer.indexOf('const savedJob = JSON.parse(localStorage.getItem("around-g-last-brand-export-job")');
-  const migration = renderer.slice(migrationStart, restoreStart);
+  const migrationEnd = renderer.indexOf("try {\n  selectedBrandIds", migrationStart);
+  const migration = renderer.slice(migrationStart, migrationEnd);
 
   assert.ok(migrationStart >= 0);
-  assert.ok(restoreStart > migrationStart);
+  assert.ok(migrationEnd > migrationStart);
   assert.match(migration, /around-g-download-status-v2\.10\.29/);
   assert.match(migration, /localStorage\.removeItem\("around-g-last-brand-export-job"\)/);
+});
+
+test("a previous process job number is never restored as current live work", () => {
+  assert.match(renderer, /around-g-live-job-ui-v2\.10\.34/);
+  assert.doesNotMatch(renderer, /localStorage\.setItem\("around-g-last-brand-export-job"/);
+  assert.doesNotMatch(renderer, /if \(savedJob\?\.jobId\) updateBrandExportJob/);
 });
