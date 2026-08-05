@@ -28,6 +28,38 @@ jobs:
           node-version: "22"
           cache: npm
 
+      - name: Normalize patch structure
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("hotfix/apply-v2.10.52-start-real-work.py")
+          source = path.read_text(encoding="utf-8")
+
+          def dedent_named(text, name):
+              pattern = re.compile(rf"({name} = ''')(.*?)(''')", re.S)
+              match = pattern.search(text)
+              if not match:
+                  raise SystemExit(f"{name} block not found")
+              body = "\n".join(line[4:] if line.startswith("    ") else line for line in match.group(2).split("\n"))
+              return text[:match.start()] + match.group(1) + body + match.group(3) + text[match.end():]
+
+          for block_name in ("old_current", "new_current", "old_message", "new_message", "old_failure", "new_failure"):
+              source = dedent_named(source, block_name)
+
+          source = source.replace(
+              "'''      let lastReloadAt = 0;\n      let lastProgressAt = 0;'''",
+              "'''  let lastReloadAt = 0;\n  let lastProgressAt = 0;'''",
+          )
+          source = source.replace(
+              "'''      let lastReloadAt = 0;\n      let lastProgressAt = 0;\n      let fallbackCandidateJobId = \"\";\n      let fallbackCandidateStableReads = 0;'''",
+              "'''  let lastReloadAt = 0;\n  let lastProgressAt = 0;\n  let fallbackCandidateJobId = \"\";\n  let fallbackCandidateStableReads = 0;'''",
+          )
+          path.write_text(source, encoding="utf-8")
+          PY
+
       - name: Apply source fix
         run: python hotfix/apply-v2.10.52-start-real-work.py
 
