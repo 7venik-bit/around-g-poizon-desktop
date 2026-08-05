@@ -68,6 +68,7 @@ let brandDownloadStarted = false;
 const brandExportJobs = new Map();
 const sellerDownloadSessions = new WeakSet();
 const brandExportValidationCache = new Map();
+const excelPreviewCache = new Map();
 let brandExportMonitorRunning = false;
 let activeBrandDownloadJobId = "";
 let brandWorkSessionGeneration = 0;
@@ -908,6 +909,48 @@ async function listBrandExportFiles() {
   return { ok: true, folder, files: visibleFiles };
 }
 
+function excelPreviewCell(value) {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value.toISOString();
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+    ? value
+    : String(value);
+}
+
+async function previewExcelFile(input = {}) {
+  const filePath = String(input.path || "").trim();
+  if (!filePath) return { ok: false, message: "파일 경로가 없습니다." };
+  if (!/\.xlsx$/i.test(filePath)) return { ok: false, message: "Excel(.xlsx) 파일만 볼 수 있습니다." };
+  const info = await stat(filePath);
+  const signature = `${filePath}:${info.mtimeMs}:${info.size}`;
+  let workbook = excelPreviewCache.get(signature);
+  if (!workbook) {
+    const rows = await readXlsxFile(await readFile(filePath));
+    const columnCount = rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
+    workbook = {
+      headers: Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(rows[0]?.[index]) || `열 ${index + 1}`),
+      rows: rows.slice(1).map((row) => Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(row[index]))),
+      columnCount,
+    };
+    excelPreviewCache.set(signature, workbook);
+    while (excelPreviewCache.size > 3) excelPreviewCache.delete(excelPreviewCache.keys().next().value);
+  }
+  const limit = Math.min(200, Math.max(25, Number(input.limit) || 100));
+  const maximumOffset = Math.max(0, Math.floor(Math.max(0, workbook.rows.length - 1) / limit) * limit);
+  const offset = Math.min(maximumOffset, Math.max(0, Number(input.offset) || 0));
+  return {
+    ok: true,
+    path: filePath,
+    name: basename(filePath),
+    headers: workbook.headers,
+    rows: workbook.rows.slice(offset, offset + limit),
+    offset,
+    limit,
+    totalRows: workbook.rows.length,
+    totalColumns: workbook.columnCount,
+  };
+}
+
 async function scanBrandExportFolder() {
   const folder = currentBrandExportFolder();
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -1142,7 +1185,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
             brandName: downloadJob.brandName,
             jobId: downloadJobId,
             jobState: `부분 다운로드 ${actualProductCount}/${expectedProductCount}개 · 실패`,
-            message: `${downloadJob.brandName || "선택 브랜드"} 부분 다운로드 ${actualProductCount.toLocaleString("ko-KR")}/${expectedProductCount.toLocaleString("ko-KR")}개 · 다운완료로 처리하지 않습니다.`,
+            message: `${downloadJob.brandName || "선택 브랜드"} 부분 다운로드 ${actualProductCount.toLocaleString("ko-KR")}/${expectedProductCount.toLocaleString("ko-KR")}개 · 확인완료로 처리하지 않습니다.`,
           });
           mainWindow?.webContents.send("brand-export:error", {
             brandName: downloadJob.brandName,
@@ -3180,6 +3223,13 @@ app.whenReady().then(async () => {
     if (!filePath) return { ok: false, message: "파일 경로가 없습니다." };
     const error = await shell.openPath(filePath);
     return error ? { ok: false, message: error } : { ok: true };
+  });
+  ipcMain.handle("excel:preview", async (_event, input = {}) => {
+    try {
+      return await previewExcelFile(input);
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
   });
   ipcMain.handle("brand-export:list-files", () => listBrandExportFiles());
   ipcMain.handle("brand-export:clear-session", async () => {

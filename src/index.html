@@ -111,7 +111,20 @@
               <p class="empty">다운로드가 완료되면 원본 Excel 파일이 여기에 표시됩니다.</p>
             </div>
           </section>
-          <div id="excel-files-status" class="status">원본 파일은 자동으로 수정하거나 판매량 조건으로 정리하지 않습니다.</div>
+          <div id="excel-files-status" class="status">파일을 클릭하면 이 화면 안에서 원본 내용을 확인할 수 있습니다.</div>
+          <section id="excel-preview" class="excel-preview" hidden aria-live="polite">
+            <div class="excel-preview-head">
+              <div><small>IN-APP EXCEL VIEWER</small><h3 id="excel-preview-name">Excel 미리보기</h3><p id="excel-preview-summary"></p></div>
+              <button id="excel-preview-close" type="button">닫기</button>
+            </div>
+            <div id="excel-preview-loading" class="excel-preview-loading">Excel을 불러오는 중입니다.</div>
+            <div id="excel-preview-grid" class="excel-preview-grid" hidden><table><thead id="excel-preview-columns"></thead><tbody id="excel-preview-rows"></tbody></table></div>
+            <div id="excel-preview-pager" class="excel-preview-pager" hidden>
+              <button id="excel-preview-prev" type="button">이전 100행</button>
+              <strong id="excel-preview-page">1 / 1페이지</strong>
+              <button id="excel-preview-next" type="button">다음 100행</button>
+            </div>
+          </section>
         </section>
 
         <section id="explorer-category" class="panel explorer-panel" hidden>

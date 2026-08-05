@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   startSellerBrandExportMonitor: () => ipcRenderer.invoke("seller:start-brand-export-monitor"),
   openDownloadedBrandFile: (path, brand) => ipcRenderer.invoke("brand-export:open-file", { path, brand }),
   openOriginalExcelFile: (path) => ipcRenderer.invoke("brand-export:open-original", { path }),
+  previewExcelFile: (path, offset = 0, limit = 100) => ipcRenderer.invoke("excel:preview", { path, offset, limit }),
   selectBrandExportFolder: () => ipcRenderer.invoke("brand-export:select-folder"),
   getBrandExportFolder: () => ipcRenderer.invoke("brand-export:get-folder"),
   listBrandExportFiles: () => ipcRenderer.invoke("brand-export:list-files"),

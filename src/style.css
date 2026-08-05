@@ -180,6 +180,9 @@ body .shell>header{height:auto;min-height:82px;align-items:flex-start}
 .brand-download-row time,.brand-download-history-row time{color:#6c8496;font-size:10px;white-space:nowrap}
 .brand-download-badge{justify-self:start;padding:3px 7px;border-radius:999px;background:#e5f5ff;color:#1685c4;font-size:10px}
 .brand-download-row button,.brand-download-history-row button{min-width:48px;padding:5px 9px;border:1px solid #2794d2;border-radius:7px;background:#2794d2;color:#fff;font-size:11px;font-weight:700;cursor:pointer}
+.brand-download-row[role="button"],.brand-download-history-row[role="button"]{cursor:pointer}
+.brand-download-row:hover,.brand-download-history-row:hover,.brand-download-row.is-open,.brand-download-history-row.is-open{background:#eef6ff}
+.brand-download-row:focus-visible,.brand-download-history-row:focus-visible{outline:2px solid #2d7ff0;outline-offset:-2px}
 .brand-download-history{border-top:1px dashed #e3edf4;background:#f8fbfd}
 .brand-download-history summary{padding:4px 10px 5px 44px;color:#3680aa;font-size:10px;font-weight:700;cursor:pointer}
 .brand-download-history-list{border-top:1px solid #edf3f7}
@@ -486,6 +489,25 @@ body .explorer-panel{border-color:var(--ui-line);background:#fff}
 .excel-files-heading p b{color:#1e69c6}
 .excel-files-panel .brand-download-list{margin-top:0}
 .excel-files-panel .status{margin-top:12px}
+.excel-preview{margin-top:14px;border:1px solid #cddbeb;border-radius:12px;background:#fff;overflow:hidden;scroll-margin-top:80px}
+.excel-preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:13px 14px;border-bottom:1px solid #dfe7f0;background:#f7f9fc}
+.excel-preview-head small{color:#2d7ff0;font-size:9px;font-weight:800;letter-spacing:.08em}
+.excel-preview-head h3{margin:2px 0 0;color:#253b57;font-size:15px}
+.excel-preview-head p{margin:4px 0 0;color:#64758a;font-size:10px}
+.excel-preview-head button,.excel-preview-pager button{padding:6px 11px;border:1px solid #bfcde0;border-radius:7px;background:#fff;color:#365473;font-size:10px;font-weight:750;cursor:pointer}
+.excel-preview-head button:hover,.excel-preview-pager button:hover:not(:disabled){border-color:#2d7ff0;color:#1f6ed0}
+.excel-preview-loading{padding:48px;text-align:center;color:#52708f;font-size:12px}
+.excel-preview-loading.error{color:#b42318;background:#fff4f2}
+.excel-preview-grid{max-height:560px;overflow:auto;background:#fff}
+.excel-preview-grid table{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0;font-size:10px}
+.excel-preview-grid th,.excel-preview-grid td{min-width:105px;max-width:260px;height:30px;padding:5px 8px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;color:#30445e;background:#fff}
+.excel-preview-grid thead th{position:sticky;top:0;z-index:2;color:#fff;background:#263c5b;font-weight:800}
+.excel-preview-grid .excel-row-number{position:sticky;left:0;z-index:1;min-width:52px;width:52px;max-width:52px;text-align:right;color:#718096;background:#f0f4f8;font-variant-numeric:tabular-nums}
+.excel-preview-grid thead .excel-row-number{z-index:3;color:#dce6f2;background:#1d304b}
+.excel-preview-grid tbody tr:nth-child(even) td{background:#fafbfd}
+.excel-preview-pager{display:flex;align-items:center;justify-content:center;gap:14px;padding:10px;border-top:1px solid #dfe7f0;background:#f7f9fc}
+.excel-preview-pager strong{min-width:110px;text-align:center;color:#405b78;font-size:10px}
+.excel-preview-pager button:disabled{opacity:.45;cursor:default}
 .brand-fetch-action{
   padding:10px 12px;border-color:#dbe6f1;border-radius:9px;
   color:#667993;background:#f7f9fc

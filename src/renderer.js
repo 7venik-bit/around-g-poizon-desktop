@@ -20,6 +20,8 @@ let activeExportBrand = null;
 let brandSelectionBusy = false;
 const brandExportJobs = new Map();
 let downloadedBrandFiles = [];
+let activeExcelPreview = null;
+let excelPreviewRequestId = 0;
 const detectedBrandImportQueue = [];
 const queuedBrandImportPaths = new Set();
 const completedBrandImportPaths = new Set();
@@ -149,29 +151,29 @@ function renderDownloadedBrandFiles() {
         ? `<img src="${text(meta.logoUrl)}" alt="${text(brandName)} 로고"><b>${text(brandName.slice(0, 1))}</b>`
         : `<b>${text(brandName.slice(0, 1))}</b>`;
       const historyRow = ({ file, index }) => `
-        <div class="brand-download-history-row">
+        <div class="brand-download-history-row" data-open-brand-file-index="${index}" role="button" tabindex="0">
           <span></span>
           <strong title="${text(file.path || "")}">${text(file.name || file.path || "Excel 파일")}</strong>
           <code>${text(file.jobId || "-")}</code>
           <time>${text(brandTime(file.time))}</time>
           <span>${text(excelFileSize(file.size))}</span>
-          <button type="button" data-open-brand-file-index="${index}">Excel 열기</button>
+          <button type="button" data-open-brand-file-index="${index}">프로그램에서 보기</button>
         </div>`;
       return `
         <article class="brand-download-row-group">
-          <div class="brand-download-row">
+          <div class="brand-download-row" data-open-brand-file-index="${latest.index}" role="button" tabindex="0">
             <span class="brand-download-brand">
             <i class="brand-download-logo">${logo}</i>
             <span class="brand-download-name">
               <strong>${text(brandName)}</strong>
-              <small>POIZON 원본 · 다운완료</small>
+              <small>POIZON 원본 · 확인완료</small>
             </span>
             </span>
             <strong class="brand-download-filename" title="${text(latest.file.path || "")}">${text(latest.file.name || latest.file.path || "Excel 파일")}</strong>
             <code>${text(latest.file.jobId || "-")}</code>
             <time>${text(brandTime(latest.file.time))}</time>
             <b class="brand-download-badge">${text(excelFileSize(latest.file.size))}</b>
-            <button type="button" data-open-brand-file-index="${latest.index}">Excel 열기</button>
+            <button type="button" data-open-brand-file-index="${latest.index}">프로그램에서 보기</button>
           </div>
           ${history.length ? `
             <details class="brand-download-history">
@@ -183,6 +185,49 @@ function renderDownloadedBrandFiles() {
         </article>`;
     }).join("")}`
     : '<p class="empty">다운로드가 완료되면 원본 Excel 파일이 여기에 표시됩니다.</p>';
+}
+
+async function showExcelPreview(file, offset = 0) {
+  if (!file?.path) return;
+  const requestId = ++excelPreviewRequestId;
+  const preview = $("#excel-preview");
+  const loading = $("#excel-preview-loading");
+  const grid = $("#excel-preview-grid");
+  const pager = $("#excel-preview-pager");
+  preview.hidden = false;
+  loading.hidden = false;
+  loading.textContent = "Excel을 프로그램 안에서 불러오는 중입니다.";
+  grid.hidden = true;
+  pager.hidden = true;
+  $("#excel-preview-name").textContent = file.name || "Excel 미리보기";
+  preview.scrollIntoView({ behavior: "smooth", block: "start" });
+  const result = await window.aroundG.previewExcelFile(file.path, offset, 100);
+  if (requestId !== excelPreviewRequestId) return;
+  if (!result?.ok) {
+    activeExcelPreview = null;
+    loading.className = "excel-preview-loading error";
+    loading.textContent = `파일 열기 실패: ${result?.message || "파일을 읽을 수 없습니다."}`;
+    return;
+  }
+  activeExcelPreview = { file, offset: result.offset, limit: result.limit, totalRows: result.totalRows };
+  loading.className = "excel-preview-loading";
+  loading.hidden = true;
+  grid.hidden = false;
+  pager.hidden = false;
+  const startRow = result.totalRows ? result.offset + 1 : 0;
+  const endRow = Math.min(result.totalRows, result.offset + result.rows.length);
+  $("#excel-preview-summary").textContent = `읽기 전용 · ${result.totalRows.toLocaleString("ko-KR")}행 · ${result.totalColumns.toLocaleString("ko-KR")}열 · 현재 ${startRow.toLocaleString("ko-KR")}~${endRow.toLocaleString("ko-KR")}행`;
+  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-row-number">행</th>${result.headers.map((header) => `<th title="${text(header)}">${text(header)}</th>`).join("")}</tr>`;
+  $("#excel-preview-rows").innerHTML = result.rows.length
+    ? result.rows.map((row, index) => `<tr><th class="excel-row-number">${(result.offset + index + 2).toLocaleString("ko-KR")}</th>${row.map((cell) => `<td title="${text(cell)}">${text(cell)}</td>`).join("")}</tr>`).join("")
+    : `<tr><td class="empty" colspan="${Math.max(1, result.totalColumns + 1)}">표시할 데이터 행이 없습니다.</td></tr>`;
+  const totalPages = Math.max(1, Math.ceil(result.totalRows / result.limit));
+  const currentPage = Math.floor(result.offset / result.limit) + 1;
+  $("#excel-preview-page").textContent = `${currentPage.toLocaleString("ko-KR")} / ${totalPages.toLocaleString("ko-KR")}페이지`;
+  $("#excel-preview-prev").disabled = result.offset <= 0;
+  $("#excel-preview-next").disabled = result.offset + result.limit >= result.totalRows;
+  document.querySelectorAll(".brand-download-row.is-open,.brand-download-history-row.is-open").forEach((row) => row.classList.remove("is-open"));
+  document.querySelectorAll(`[data-open-brand-file-index="${downloadedBrandFiles.indexOf(file)}"]`).forEach((element) => element.closest(".brand-download-row,.brand-download-history-row")?.classList.add("is-open"));
 }
 
 function addDownloadedBrandFile(file = {}) {
@@ -1115,13 +1160,13 @@ async function importDetectedBrandExport(file, generation = brandWorkHistoryGene
     name: file.name,
     originalPath: file.path,
   });
-  updateBrandExportJob(file?.jobId, "다운완료", file?.brandName);
+  updateBrandExportJob(file?.jobId, "확인완료", file?.brandName);
   $("#brand-status").className = "status success";
-  $("#brand-status").textContent = `${expectedBrand || "선택 브랜드"} 다운완료 · 받은 Excel 파일 메뉴에서 확인하세요.`;
+  $("#brand-status").textContent = `${expectedBrand || "선택 브랜드"} 확인완료 · 받은 Excel 파일 메뉴에서 확인하세요.`;
   const fileStatus = $("#excel-files-status");
   if (fileStatus) {
     fileStatus.className = "status success";
-    fileStatus.textContent = "원본 Excel을 그대로 보관했습니다. 두 판매량은 Excel에서 직접 입력할 수 있습니다.";
+    fileStatus.textContent = "원본 Excel을 그대로 보관했습니다. 파일을 클릭하면 프로그램 안에서 확인할 수 있습니다.";
   }
   return true;
 }
@@ -1167,15 +1212,31 @@ window.aroundG.onBrandExportDetected((file) => {
   void drainDetectedBrandImports();
 });
 $("#brand-download-files").addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-open-brand-file-index]");
-  if (!button) return;
-  const file = downloadedBrandFiles[Number(button.dataset.openBrandFileIndex)];
+  const target = event.target.closest("[data-open-brand-file-index]");
+  if (!target) return;
+  const file = downloadedBrandFiles[Number(target.dataset.openBrandFileIndex)];
   if (!file?.path) return;
-  const result = await window.aroundG.openOriginalExcelFile(file.path);
-  if (!result?.ok) {
-    $("#brand-status").className = "status error";
-    $("#brand-status").textContent = `파일 열기 실패: ${result?.message || "파일을 찾을 수 없습니다."}`;
-  }
+  await showExcelPreview(file, 0);
+});
+$("#brand-download-files").addEventListener("keydown", (event) => {
+  if (!["Enter", " "].includes(event.key)) return;
+  const target = event.target.closest(".brand-download-row[data-open-brand-file-index],.brand-download-history-row[data-open-brand-file-index]");
+  if (!target) return;
+  event.preventDefault();
+  const file = downloadedBrandFiles[Number(target.dataset.openBrandFileIndex)];
+  if (file?.path) void showExcelPreview(file, 0);
+});
+$("#excel-preview-close")?.addEventListener("click", () => {
+  excelPreviewRequestId += 1;
+  activeExcelPreview = null;
+  $("#excel-preview").hidden = true;
+  document.querySelectorAll(".brand-download-row.is-open,.brand-download-history-row.is-open").forEach((row) => row.classList.remove("is-open"));
+});
+$("#excel-preview-prev")?.addEventListener("click", () => {
+  if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, Math.max(0, activeExcelPreview.offset - activeExcelPreview.limit));
+});
+$("#excel-preview-next")?.addEventListener("click", () => {
+  if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, activeExcelPreview.offset + activeExcelPreview.limit);
 });
 $("#brand-download-clear")?.addEventListener("click", async () => {
   await restoreDownloadedBrandFiles();

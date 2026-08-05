@@ -36,7 +36,7 @@ test("downloaded Excel is not marked complete when unique SPU count is short", (
   assert.match(mainSource, /readPoizonColumnValues\(fileBuffer, "SPU ID", "SPU_ID", "SPUID"\)/);
   assert.match(mainSource, /actualProductCount < expectedProductCount/);
   assert.match(mainSource, /부분다운로드_\$\{actualProductCount\}_of_\$\{expectedProductCount\}/);
-  assert.match(mainSource, /다운완료로 처리하지 않습니다/);
+  assert.match(mainSource, /확인완료로 처리하지 않습니다/);
   assert.match(rendererSource, /error\?\.jobState \|\| "데이터 가져오기 실패"/);
 });
 
