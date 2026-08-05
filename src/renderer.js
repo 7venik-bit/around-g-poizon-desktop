@@ -474,8 +474,8 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
   retainSelectedBrandName(activeExportBrand.name);
   renderBrandCards($("#brand-filter")?.value || "");
   $("#brand-status").className = "status";
-  $("#brand-status").textContent = `${activeExportBrand.name} · 1단계/5 · 상품 페이지 확인 준비 중 (다운로드센터 작업 생성 전)`;
-  touchBrandActivity(`${activeExportBrand.name} · 상품 페이지 확인 중`);
+  $("#brand-status").textContent = `${activeExportBrand.name} · 1단계/5 · 상품 검색 후 전체 페이지 수 확인 준비 중 (다운로드센터 작업 생성 전)`;
+  touchBrandActivity(`${activeExportBrand.name} · 상품 검색·전체 페이지 확인 중`);
   const automation = await window.aroundG.automateSellerBrandExport({
     brandName: activeExportBrand.name || "",
     brandKo: activeExportBrand.ko || "",
