@@ -133,9 +133,12 @@ function renderBrandExportJobs() {
   list.innerHTML = [...brandExportJobs.entries()]
     .map(([id, job]) => {
       const finished = brandJobIsFinished(job.state);
+      const stateClass = /실패|오류|중단|취소/.test(String(job.state || ""))
+        ? " is-error"
+        : finished ? " is-success" : " is-running";
       const running = finished ? "" : '<span class="brand-export-job-spinner" aria-hidden="true"></span>';
       const elapsed = finished ? "" : ` · ${brandActivityDuration(now - Number(job.startedAt || now))}`;
-      return `<div class="brand-export-job-row"><strong>${text(job.brandName)}</strong><code>작업번호 ${text(id)}</code><span class="brand-export-job-state">${running}${text(job.state)}${text(elapsed)}</span></div>`;
+      return `<div class="brand-export-job-row${stateClass}"><strong>${text(job.brandName)}</strong><code>작업번호 ${text(id)}</code><span class="brand-export-job-state">${running}${text(job.state)}${text(elapsed)}</span></div>`;
     })
     .join("");
 }
@@ -1250,7 +1253,11 @@ async function importDetectedBrandExport(file, generation = brandWorkHistoryGene
   const unfinishedJobs = [...brandExportJobs.values()].some((job) => !brandJobIsFinished(job.state));
   if (!brandExportQueue.length && !activeExportBrand && !unfinishedJobs) stopBrandActivity();
   $("#brand-status").className = "status success";
-  $("#brand-status").textContent = `${expectedBrand || "선택 브랜드"} 확인완료 · 받은 Excel 파일 메뉴에서 확인하세요.`;
+  const workbookSummary = file?.workbookSummary;
+  const countLabel = workbookSummary
+    ? ` · 전체 행 ${Number(workbookSummary.dataRowCount || 0).toLocaleString("ko-KR")}개 · 고유 SPU ${Number(workbookSummary.uniqueSpuCount || 0).toLocaleString("ko-KR")}개 · 중복 ${Number(workbookSummary.duplicateSpuCount || 0).toLocaleString("ko-KR")}개 · 빈 SPU ${Number(workbookSummary.blankSpuCount || 0).toLocaleString("ko-KR")}개`
+    : "";
+  $("#brand-status").textContent = `${expectedBrand || "선택 브랜드"} 확인완료${countLabel} · 받은 Excel 파일 메뉴에서 확인하세요.`;
   const fileStatus = $("#excel-files-status");
   if (fileStatus) {
     fileStatus.className = "status success";
