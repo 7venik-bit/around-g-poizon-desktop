@@ -269,7 +269,17 @@ function renderDownloadedBrandFiles() {
     : '<p class="empty">다운로드가 완료되면 원본 Excel 파일이 여기에 표시됩니다.</p>';
 }
 
-async function showExcelPreview(file, offset = 0) {
+function currentExcelPreviewFilters() {
+  return {
+    minimumTotal: $("#excel-filter-min-total")?.value ?? "",
+    maximumTotal: $("#excel-filter-max-total")?.value ?? "",
+    minimumLocalTotal: $("#excel-filter-min-local-total")?.value ?? "",
+    maximumLocalTotal: $("#excel-filter-max-local-total")?.value ?? "",
+    matchMode: $("#excel-filter-match")?.value === "all" ? "all" : "any",
+  };
+}
+
+async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewFilters()) {
   if (!file?.path) return;
   const requestId = ++excelPreviewRequestId;
   const preview = $("#excel-preview");
@@ -283,7 +293,7 @@ async function showExcelPreview(file, offset = 0) {
   pager.hidden = true;
   $("#excel-preview-name").textContent = file.name || "Excel 미리보기";
   preview.scrollIntoView({ behavior: "smooth", block: "start" });
-  const result = await window.aroundG.previewExcelFile(file.path, offset, 100);
+  const result = await window.aroundG.previewExcelFile(file.path, offset, 100, filters);
   if (requestId !== excelPreviewRequestId) return;
   if (!result?.ok) {
     activeExcelPreview = null;
@@ -295,17 +305,32 @@ async function showExcelPreview(file, offset = 0) {
   const totalColumns = Number.isFinite(Number(result.totalColumns)) ? Math.max(0, Number(result.totalColumns)) : 0;
   const headers = Array.isArray(result.headers) ? result.headers : [];
   const rows = Array.isArray(result.rows) ? result.rows : [];
-  activeExcelPreview = { file, offset: result.offset, limit: result.limit, totalRows };
+  const rowNumbers = Array.isArray(result.rowNumbers) ? result.rowNumbers : [];
+  const sourceTotalRows = Number.isFinite(Number(result.sourceTotalRows))
+    ? Math.max(0, Number(result.sourceTotalRows))
+    : totalRows;
+  activeExcelPreview = { file, offset: result.offset, limit: result.limit, totalRows, filters };
   loading.className = "excel-preview-loading";
   loading.hidden = true;
   grid.hidden = false;
   pager.hidden = false;
   const startRow = totalRows ? result.offset + 1 : 0;
   const endRow = Math.min(totalRows, result.offset + rows.length);
-  $("#excel-preview-summary").textContent = `읽기 전용 · ${totalRows.toLocaleString("ko-KR")}행 · ${totalColumns.toLocaleString("ko-KR")}열 · 현재 ${startRow.toLocaleString("ko-KR")}~${endRow.toLocaleString("ko-KR")}행`;
+  $("#excel-preview-summary").textContent = result.filterApplied
+    ? `읽기 전용 · 필터 결과 ${totalRows.toLocaleString("ko-KR")}행 / 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행 · ${totalColumns.toLocaleString("ko-KR")}열 · 현재 ${startRow.toLocaleString("ko-KR")}~${endRow.toLocaleString("ko-KR")}번째 결과`
+    : `읽기 전용 · ${totalRows.toLocaleString("ko-KR")}행 · ${totalColumns.toLocaleString("ko-KR")}열 · 현재 ${startRow.toLocaleString("ko-KR")}~${endRow.toLocaleString("ko-KR")}행`;
+  const missingColumns = [
+    result.totalSalesColumn < 0 ? "중국 총 판매량" : "",
+    result.localTotalSalesColumn < 0 ? "현지 판매자 총 판매량" : "",
+  ].filter(Boolean);
+  $("#excel-filter-status").textContent = missingColumns.length
+    ? `${missingColumns.join(" · ")} 열을 찾지 못해 해당 조건은 적용되지 않습니다.`
+    : result.filterApplied
+      ? `전체 ${sourceTotalRows.toLocaleString("ko-KR")}행 중 ${totalRows.toLocaleString("ko-KR")}행 · ${result.matchMode === "all" ? "두 조건 모두 충족(AND)" : "둘 중 하나 충족(OR)"}`
+      : `판매량 필터를 사용하지 않고 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행을 표시합니다.`;
   $("#excel-preview-columns").innerHTML = `<tr><th class="excel-row-number">행</th>${headers.map((header) => `<th title="${text(header)}">${text(header)}</th>`).join("")}</tr>`;
   $("#excel-preview-rows").innerHTML = rows.length
-    ? rows.map((row, index) => `<tr><th class="excel-row-number">${(result.offset + index + 2).toLocaleString("ko-KR")}</th>${row.map((cell) => `<td title="${text(cell)}">${text(cell)}</td>`).join("")}</tr>`).join("")
+    ? rows.map((row, index) => `<tr><th class="excel-row-number">${Number(rowNumbers[index] || result.offset + index + 2).toLocaleString("ko-KR")}</th>${row.map((cell) => `<td title="${text(cell)}">${text(cell)}</td>`).join("")}</tr>`).join("")
     : `<tr><td class="empty" colspan="${Math.max(1, totalColumns + 1)}">표시할 데이터 행이 없습니다.</td></tr>`;
   const totalPages = Math.max(1, Math.ceil(totalRows / result.limit));
   const currentPage = Math.floor(result.offset / result.limit) + 1;
@@ -1350,10 +1375,26 @@ $("#excel-preview-close")?.addEventListener("click", () => {
   document.querySelectorAll(".brand-download-row.is-open,.brand-download-history-row.is-open").forEach((row) => row.classList.remove("is-open"));
 });
 $("#excel-preview-prev")?.addEventListener("click", () => {
-  if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, Math.max(0, activeExcelPreview.offset - activeExcelPreview.limit));
+  if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, Math.max(0, activeExcelPreview.offset - activeExcelPreview.limit), activeExcelPreview.filters);
 });
 $("#excel-preview-next")?.addEventListener("click", () => {
-  if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, activeExcelPreview.offset + activeExcelPreview.limit);
+  if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, activeExcelPreview.offset + activeExcelPreview.limit, activeExcelPreview.filters);
+});
+$("#excel-filter-apply")?.addEventListener("click", () => {
+  if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, 0, currentExcelPreviewFilters());
+});
+$("#excel-preview-filters")?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || !activeExcelPreview) return;
+  event.preventDefault();
+  void showExcelPreview(activeExcelPreview.file, 0, currentExcelPreviewFilters());
+});
+$("#excel-filter-reset")?.addEventListener("click", () => {
+  $("#excel-filter-min-total").value = "";
+  $("#excel-filter-max-total").value = "";
+  $("#excel-filter-min-local-total").value = "";
+  $("#excel-filter-max-local-total").value = "";
+  $("#excel-filter-match").value = "any";
+  if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, 0, currentExcelPreviewFilters());
 });
 $("#brand-download-clear")?.addEventListener("click", async () => {
   await restoreDownloadedBrandFiles();

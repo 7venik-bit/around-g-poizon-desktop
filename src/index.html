@@ -124,6 +124,14 @@
               <div><small>IN-APP EXCEL VIEWER</small><h3 id="excel-preview-name">Excel 미리보기</h3><p id="excel-preview-summary"></p></div>
               <button id="excel-preview-close" type="button">닫기</button>
             </div>
+            <div id="excel-preview-filters" class="excel-preview-filters">
+              <label><span>중국 총 판매량</span><input id="excel-filter-min-total" type="number" min="0" value="50" placeholder="최소"><input id="excel-filter-max-total" type="number" min="0" placeholder="최대"></label>
+              <label><span>현지 판매자 총 판매량</span><input id="excel-filter-min-local-total" type="number" min="0" value="50" placeholder="최소"><input id="excel-filter-max-local-total" type="number" min="0" placeholder="최대"></label>
+              <select id="excel-filter-match" title="두 판매량 조건 결합 방식"><option value="any">둘 중 하나 충족 (OR)</option><option value="all">두 조건 모두 충족 (AND)</option></select>
+              <button id="excel-filter-apply" type="button" class="primary">필터 적용</button>
+              <button id="excel-filter-reset" type="button">전체 보기</button>
+              <small id="excel-filter-status"></small>
+            </div>
             <div id="excel-preview-loading" class="excel-preview-loading">Excel을 불러오는 중입니다.</div>
             <div id="excel-preview-grid" class="excel-preview-grid" hidden><table><thead id="excel-preview-columns"></thead><tbody id="excel-preview-rows"></tbody></table></div>
             <div id="excel-preview-pager" class="excel-preview-pager" hidden>

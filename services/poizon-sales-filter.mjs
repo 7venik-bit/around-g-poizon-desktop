@@ -19,6 +19,70 @@ export function parsePoizonSalesMetric(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function optionalSalesBoundary(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+}
+
+function hasSalesMetric(value) {
+  if (typeof value === "number") return Number.isFinite(value);
+  return /\d/.test(String(value ?? ""));
+}
+
+export function filterPoizonPreviewRows(headers = [], rows = [], filters = {}) {
+  const totalSalesColumn = findPoizonColumn(headers, "중국 총 판매량", "총 판매량");
+  const localTotalSalesColumn = findPoizonColumn(
+    headers,
+    "현지 판매자 총 판매량",
+    "현지판매자총판매량",
+  );
+  const minimumTotal = optionalSalesBoundary(filters.minimumTotal);
+  const maximumTotal = optionalSalesBoundary(filters.maximumTotal);
+  const minimumLocalTotal = optionalSalesBoundary(filters.minimumLocalTotal);
+  const maximumLocalTotal = optionalSalesBoundary(filters.maximumLocalTotal);
+  const matchMode = filters.matchMode === "all" ? "all" : "any";
+  const chinaActive = totalSalesColumn >= 0 && (minimumTotal !== null || maximumTotal !== null);
+  const localActive = localTotalSalesColumn >= 0
+    && (minimumLocalTotal !== null || maximumLocalTotal !== null);
+
+  const entries = (Array.isArray(rows) ? rows : []).map((row, index) => ({
+    values: Array.isArray(row) ? row : [],
+    sourceRowNumber: index + 2,
+  }));
+  const filteredEntries = entries.filter(({ values }) => {
+    const matches = [];
+    if (chinaActive) {
+      const raw = values[totalSalesColumn];
+      const value = parsePoizonSalesMetric(raw);
+      matches.push(hasSalesMetric(raw)
+        && (minimumTotal === null || value >= minimumTotal)
+        && (maximumTotal === null || value <= maximumTotal));
+    }
+    if (localActive) {
+      const raw = values[localTotalSalesColumn];
+      const value = parsePoizonSalesMetric(raw);
+      matches.push(hasSalesMetric(raw)
+        && (minimumLocalTotal === null || value >= minimumLocalTotal)
+        && (maximumLocalTotal === null || value <= maximumLocalTotal));
+    }
+    if (!matches.length) return true;
+    return matchMode === "all" ? matches.every(Boolean) : matches.some(Boolean);
+  });
+
+  return {
+    entries: filteredEntries,
+    sourceRows: entries.length,
+    filteredRows: filteredEntries.length,
+    totalSalesColumn,
+    localTotalSalesColumn,
+    chinaActive,
+    localActive,
+    filterApplied: chinaActive || localActive,
+    matchMode,
+  };
+}
+
 function populated(row = []) {
   return row.some((value) => String(value ?? "").trim());
 }
