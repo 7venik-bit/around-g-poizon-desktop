@@ -67,7 +67,8 @@ test("brand button shows down-complete whenever its data-center workbook was dow
 test("download UI does not expose brand mismatch wording", () => {
   assert.doesNotMatch(renderer, /브랜드 불일치/);
   assert.doesNotMatch(renderer, /실제 \$\{actualBrand\}/);
-  assert.match(renderer, /updateBrandExportJob\(file\?\.jobId, "다운완료"/);
+  assert.match(renderer, /updateBrandExportJob\(file\?\.jobId, "확인완료"/);
+  assert.doesNotMatch(renderer, /100% 검증완료/);
 });
 
 test("upgrade clears the legacy persisted job state before startup restore", () => {
