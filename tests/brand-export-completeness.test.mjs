@@ -47,7 +47,7 @@ test("brand export starts actual Seller Center work before optional baseline ins
   assert.match(workflow, /const baselinePromise = readSellerExportBaselineSeparately\(\)\.catch\(\(\) => null\)/);
   assert.match(workflow, /1단계\/5 · 실제 상품검색 시작/);
   assert.match(workflow, /1단계\/5 · 브랜드 입력·상품 검색 중/);
-  assert.match(workflow, /const searched = await sellerWindow\.webContents\.executeJavaScript/);
+  assert.match(workflow, /const runSellerSearch = \(targetFrame\) => targetFrame\.executeJavaScript/);
   assert.match(workflow, /const baselineJobs = await baselinePromise/);
   assert.match(workflow, /1단계\/5 · 상품검색 완료 · 작업번호 후행 확인 방식/);
   assert.match(workflow, /1단계\/5 · 검색 완료 · 총/);
