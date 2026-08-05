@@ -1,0 +1,40 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const [mainSource, rendererSource, htmlSource, cssSource] = await Promise.all([
+  readFile(new URL("../main.mjs", import.meta.url), "utf8"),
+  readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
+  readFile(new URL("../src/index.html", import.meta.url), "utf8"),
+  readFile(new URL("../src/style.css", import.meta.url), "utf8"),
+]);
+
+test("Excel preview is read-only and paginated in the main sourcing screen", () => {
+  assert.match(mainSource, /async function previewExcelFile/);
+  assert.match(mainSource, /rows\.slice\(offset, offset \+ limit\)/);
+  assert.match(mainSource, /Math\.min\(200, Math\.max\(25,/);
+  assert.match(rendererSource, /async function showExcelPreview/);
+  assert.match(rendererSource, /previewExcelFile\(file\.path, offset, 100\)/);
+  assert.match(rendererSource, /excel-preview-prev/);
+  assert.match(rendererSource, /excel-preview-next/);
+  assert.match(htmlSource, /읽기 전용|IN-APP EXCEL VIEWER/);
+  assert.match(cssSource, /\.excel-preview-grid\{max-height:560px;overflow:auto/);
+  assert.match(cssSource, /position:sticky;top:0/);
+});
+
+test("downloaded file rows open the embedded preview without launching Windows Excel", () => {
+  const clickStart = rendererSource.indexOf('$("#brand-download-files").addEventListener("click"');
+  const clickEnd = rendererSource.indexOf('$("#brand-download-clear")', clickStart);
+  const clickWorkflow = rendererSource.slice(clickStart, clickEnd);
+
+  assert.match(rendererSource, /data-open-brand-file-index/);
+  assert.match(rendererSource, /프로그램에서 보기/);
+  assert.match(clickWorkflow, /showExcelPreview\(file, 0\)/);
+  assert.doesNotMatch(clickWorkflow, /openOriginalExcelFile|shell\.openPath/);
+});
+
+test("successful original downloads use the concise confirmation label", () => {
+  assert.match(rendererSource, /POIZON 원본 · 확인완료/);
+  assert.match(rendererSource, /updateBrandExportJob\(file\?\.jobId, "확인완료"/);
+  assert.doesNotMatch(rendererSource, /100% 검증완료/);
+});
