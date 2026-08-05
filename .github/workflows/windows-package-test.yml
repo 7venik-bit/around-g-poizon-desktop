@@ -1,0 +1,66 @@
+name: Validate Windows package
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "main.mjs"
+      - "preload.cjs"
+      - "src/**"
+      - "services/**"
+      - "relay/**"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/windows-package-test.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build Windows installer
+        run: npx electron-builder --win nsis --publish never
+
+      - name: Verify package outputs
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $installers = @(Get-ChildItem -Path dist -File -Filter "*.exe")
+          $blockmaps = @(Get-ChildItem -Path dist -File -Filter "*.exe.blockmap")
+          $latest = Get-Item -Path "dist/latest.yml" -ErrorAction SilentlyContinue
+
+          if ($installers.Count -ne 1) {
+            throw "Expected exactly one Windows installer, found $($installers.Count)."
+          }
+          if ($blockmaps.Count -ne 1) {
+            throw "Expected exactly one installer blockmap, found $($blockmaps.Count)."
+          }
+          if ($null -eq $latest) {
+            throw "dist/latest.yml was not generated."
+          }
+
+          $latestContent = Get-Content -LiteralPath $latest.FullName -Raw
+          if ($latestContent -notmatch "version:\s*$([regex]::Escape($version))") {
+            throw "latest.yml does not contain version $version."
+          }
+          Write-Host "Windows installer, blockmap, and latest.yml were generated for $version."
