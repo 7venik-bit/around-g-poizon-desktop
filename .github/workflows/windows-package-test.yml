@@ -1,5 +1,6 @@
 name: Validate Windows package
 
+# This workflow builds the same NSIS artifacts used by automatic updates.
 on:
   pull_request:
     branches:
