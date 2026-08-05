@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld("aroundG", {
   openDownloadedBrandFile: (path, brand) => ipcRenderer.invoke("brand-export:open-file", { path, brand }),
   openOriginalExcelFile: (path) => ipcRenderer.invoke("brand-export:open-original", { path }),
   previewExcelFile: (path, offset = 0, limit = 100, filters = {}) => ipcRenderer.invoke("excel:preview", { path, offset, limit, filters }),
+  getExcelColumnLayout: (path, columnCount = 0) => ipcRenderer.invoke("excel:get-column-layout", { path, columnCount }),
+  updateExcelColumnLayout: (path, columnLayout = [], columnCount = 0) => ipcRenderer.invoke("excel:update-column-layout", { path, columnLayout, columnCount }),
   selectBrandExportFolder: () => ipcRenderer.invoke("brand-export:select-folder"),
   getBrandExportFolder: () => ipcRenderer.invoke("brand-export:get-folder"),
   listBrandExportFiles: () => ipcRenderer.invoke("brand-export:list-files"),
@@ -62,8 +64,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   exportExplorerExcel: (input) => ipcRenderer.invoke("excel:export-explorer", input),
   openExternal: (url) => ipcRenderer.invoke("external:open", url),
   openOfficialSearch: (input) => ipcRenderer.invoke("official:open-search", input),
-  collectorCheck: (input) => ipcRenderer.invoke("collector:check", input)
-  ,
+  collectorCheck: (input) => ipcRenderer.invoke("collector:check", input),
   getAppInfo: () => ipcRenderer.invoke("app:info"),
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
@@ -73,4 +74,12 @@ contextBridge.exposeInMainWorld("aroundG", {
     ipcRenderer.on("update:status", handler);
     return () => ipcRenderer.removeListener("update:status", handler);
   }
+});
+
+window.addEventListener("DOMContentLoaded", () => {
+  if (document.querySelector('script[data-excel-column-layout="true"]')) return;
+  const script = document.createElement("script");
+  script.src = "./excel-column-layout.js";
+  script.dataset.excelColumnLayout = "true";
+  document.head.appendChild(script);
 });
