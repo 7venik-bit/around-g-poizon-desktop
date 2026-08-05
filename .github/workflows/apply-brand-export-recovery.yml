@@ -7,6 +7,9 @@ on:
     paths:
       - "hotfix/apply_brand_export_recovery.py"
       - ".github/workflows/apply-brand-export-recovery.yml"
+      - "tests/brand-export-completeness.test.mjs"
+      - "tests/brand-export-job-isolation.test.mjs"
+      - "tests/search-service-menu.test.mjs"
 
 permissions:
   contents: write
