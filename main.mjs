@@ -1653,8 +1653,8 @@ const SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT = `(() => {
     if (!text || text.length > 2400) continue;
     const cells = [...element.querySelectorAll("td, [role='cell'], [role='gridcell']")];
     const firstCellText = textOf(cells[0]);
-    const id = firstCellText.match(/\b\d{7,}\b/)?.[0]
-      || text.match(/\b\d{7,}\b/)?.[0]
+    const id = firstCellText.match(/\\b\\d{7,}\\b/)?.[0]
+      || text.match(/\\b\\d{7,}\\b/)?.[0]
       || "";
     if (!id || seen.has(id)) continue;
     const rowHint = cells.length >= 2
