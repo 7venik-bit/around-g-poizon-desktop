@@ -1,0 +1,15 @@
+#excel-preview-filters{grid-template-columns:minmax(250px,1fr) minmax(290px,1fr) minmax(160px,.65fr) auto auto auto auto}
+#excel-hide-common-columns,#excel-show-hidden-columns{height:32px;padding:6px 9px;white-space:nowrap}
+#excel-preview-grid table{table-layout:fixed}
+.excel-layout-header{position:sticky!important;overflow:visible!important}
+#excel-preview-grid td[data-excel-column-index]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.excel-column-hidden{display:none!important}
+.excel-column-resizer{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;z-index:8}
+.excel-column-resizer:hover{background:#2d7ff055}
+body.excel-column-resizing{cursor:col-resize!important;user-select:none!important}
+.excel-column-menu{position:fixed;z-index:1000;display:grid;min-width:190px;padding:7px;border:1px solid #bdcbe0;border-radius:9px;background:#fff;box-shadow:0 12px 34px #203b5b33}
+.excel-column-menu[hidden]{display:none}
+.excel-column-menu strong{padding:7px 9px;color:#294766;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.excel-column-menu button{border:0;border-radius:6px;padding:8px 9px;background:transparent;text-align:left;color:#294766;font-size:11px}
+.excel-column-menu button:hover{background:#eaf3ff;color:#1768c5}
+@media(max-width:1200px){#excel-preview-filters{grid-template-columns:1fr 1fr auto auto}}

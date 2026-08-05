@@ -1,1 +1,0 @@
-Trigger verified Excel column layout hotfix through a normal pull-request merge.
