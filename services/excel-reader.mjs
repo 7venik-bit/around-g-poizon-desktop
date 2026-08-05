@@ -1,4 +1,5 @@
 import readXlsxFile, { readSheet } from "read-excel-file/node";
+import { repairPoizonWorksheetDimensions } from "./poizon-xlsx.mjs";
 
 function hasVisibleCell(rows = []) {
   return rows.some((row) => Array.isArray(row) && row.some((cell) => (
@@ -7,10 +8,11 @@ function hasVisibleCell(rows = []) {
 }
 
 export async function readFirstDataSheet(input) {
-  const firstSheet = await readSheet(input, 1);
+  const workbookInput = repairPoizonWorksheetDimensions(input);
+  const firstSheet = await readSheet(workbookInput, 1);
   if (hasVisibleCell(firstSheet)) return firstSheet;
 
-  const workbook = await readXlsxFile(input);
+  const workbook = await readXlsxFile(workbookInput);
   const populatedSheet = workbook.find((sheet) => hasVisibleCell(sheet?.data));
   return Array.isArray(populatedSheet?.data) ? populatedSheet.data : firstSheet;
 }
