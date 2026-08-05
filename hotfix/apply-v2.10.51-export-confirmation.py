@@ -14,28 +14,13 @@ def write(path, content):
     target.write_text(content, encoding="utf-8")
 
 
-def replace_once(path, old, new):
-    content = read(path)
-    if old not in content:
-        raise RuntimeError(f"Expected source not found in {path}: {old[:180]!r}")
-    write(path, content.replace(old, new, 1))
+main = read("main.mjs")
 
-
-replace_once(
-    "main.mjs",
-    '''    const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")]
-      .filter(visible)
-      .filter((row) => /(?:상품\\s*검색.*내보내기|내보내기.*상품\\s*검색|商品.*导出|导出.*商品)/i.test(textOf(row)));
-    const jobs = rows.map((row) => {
-      const text = textOf(row);
-      const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
-      const firstCellText = textOf(cells[0]);
-      const id = firstCellText.match(/\\b\\d{9,}\\b/)?.[0]
-        || text.match(/\\b\\d{9,}\\b/)?.[0]
-        || "";
-      return { id, fingerprint: id || text.slice(0, 180), text };
-    });''',
-    '''    const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")]
+# Replace download-center row discovery inside readSellerExportJobs.
+reader_start = main.index("async function readSellerExportJobs()")
+rows_start = main.index('    const rows = [...document.querySelectorAll("tbody tr, [role=\'row\'], tr")]', reader_start)
+body_start = main.index("    const bodyText = textOf(document.body);", rows_start)
+new_rows = '''    const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")]
       .filter(visible);
     const jobs = rows.map((row) => {
       const text = textOf(row);
@@ -50,66 +35,30 @@ replace_once(
       return looksLikeDataRow
         ? { id, fingerprint: id || text.slice(0, 240), text }
         : null;
-    }).filter(Boolean);''',
-)
+    }).filter(Boolean);
+'''
+main = main[:rows_start] + new_rows + main[body_start:]
 
-replace_once(
-    "main.mjs",
-    '''    const exportPattern = /^전체\\\\s*내보내기$/;
-    let exportButton = null;
-    for (let attempt = 0; attempt < 20 && !exportButton; attempt += 1) {
-      exportButton = [...document.querySelectorAll("button, [role='button'], a, span")]
-        .find((element) => visible(element) && exportPattern.test(normalizedText(element)));
-      if (!exportButton) await wait(250);
-    }''',
-    '''    const exportPattern = /^전체\\\\s*내보내기$/;
+# Resolve the visible label to its actual clickable control.
+verify_start = main.index("async function verifyCompleteSellerExportAndClick")
+export_start = main.index("    const exportPattern = /^전체", verify_start)
+disabled_start = main.index("    if (exportButton.disabled", export_start)
+new_export_lookup = '''    const exportPattern = /^전체\\\\s*내보내기$/;
     let exportButton = null;
     for (let attempt = 0; attempt < 20 && !exportButton; attempt += 1) {
       const labelElement = [...document.querySelectorAll("button, [role='button'], a, span")]
         .find((element) => visible(element) && exportPattern.test(normalizedText(element)));
       exportButton = labelElement?.closest?.("button, [role='button'], a") || labelElement || null;
       if (!exportButton) await wait(250);
-    }''',
-)
-
-replace_once(
-    "main.mjs",
-    '''    clickLikeUser(exportButton);
-    await wait(700);
-
-    let confirmationObserved = false;
-    let confirmationClicked = false;
-    let requestAcknowledged = false;
-    const confirmationPattern = /^(?:확인|내보내기|생성|확정|제출|确认|确定|提交|导出)$/i;
-    const cancelPattern = /취소|닫기|取消|关闭/i;
-    const successPattern = /(?:내보내기|작업|파일).*(?:등록|생성|완료|성공)|(?:导出|任务).*(?:成功|已创建)/i;
-    for (let attempt = 0; attempt < 32; attempt += 1) {
-      const dialogs = [...document.querySelectorAll(
-        ".ant-modal, .ant-modal-confirm, [role='dialog'], .ant-popover, .ant-drawer"
-      )].filter(visible);
-      if (dialogs.length) confirmationObserved = true;
-      const controls = dialogs.flatMap((dialog) =>
-        [...dialog.querySelectorAll("button, [role='button'], a")].filter(visible)
-      );
-      const confirmControl = controls.find((element) => {
-        const label = normalizedText(element);
-        return confirmationPattern.test(label) && !cancelPattern.test(label);
-      });
-      if (confirmControl) {
-        clickLikeUser(confirmControl);
-        confirmationClicked = true;
-        await wait(1_000);
-        break;
-      }
-      if (successPattern.test(normalizedText(document.body))) {
-        requestAcknowledged = true;
-        break;
-      }
-      await wait(250);
     }
-    return {
-      ok: true,''',
-    '''    clickLikeUser(exportButton);
+    if (!exportButton) return { ok: false, code: "EXPORT_BUTTON_NOT_FOUND_AFTER_VERIFICATION", expected, actual: expected };
+'''
+main = main[:export_start] + new_export_lookup + main[disabled_start:]
+
+# Complete every confirmation layer and verify that the request was accepted.
+confirmation_start = main.index("    clickLikeUser(exportButton);", export_start)
+return_start = main.index("    return {\n      ok: true,", confirmation_start)
+new_confirmation = '''    clickLikeUser(exportButton);
     await wait(700);
 
     let confirmationObserved = false;
@@ -177,23 +126,23 @@ replace_once(
         exportRetried,
       };
     }
-    return {
-      ok: true,''',
-)
+'''
+main = main[:confirmation_start] + new_confirmation + main[return_start:]
 
-replace_once(
-    "main.mjs",
-    '''      confirmationObserved,
+old_fields = '''      confirmationObserved,
       confirmationClicked,
       requestAcknowledged,
-    };''',
-    '''      confirmationObserved,
+    };'''
+new_fields = '''      confirmationObserved,
       confirmationClicked,
       confirmationClickCount,
       requestAcknowledged,
       exportRetried,
-    };''',
-)
+    };'''
+if old_fields not in main:
+    raise RuntimeError("confirmation result fields not found")
+main = main.replace(old_fields, new_fields, 1)
+write("main.mjs", main)
 
 package = json.loads(read("package.json"))
 package["version"] = "2.10.51"
