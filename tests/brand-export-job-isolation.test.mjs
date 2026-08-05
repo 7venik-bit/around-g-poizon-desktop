@@ -8,15 +8,17 @@ const [mainSource, rendererSource] = await Promise.all([
   readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
 ]);
 
-test("every selected brand creates a fresh POIZON export job", () => {
+test("every selected brand creates a fresh POIZON export job without a blocking baseline", () => {
   const start = mainSource.indexOf("async function automateSellerBrandExport");
   const end = mainSource.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = mainSource.slice(start, end);
 
-  assert.match(workflow, /const baselineJobs = await readStableSellerExportJobs\(\)/);
-  assert.match(workflow, /code: "EXPORT_CENTER_BASELINE_UNAVAILABLE"/);
-  assert.match(workflow, /if \(Array\.isArray\(currentJobs\)\) \{/);
-  assert.match(workflow, /createdJob = findNewSellerExportJob\(\[\.\.\.baselineJobIds\], currentJobs\)/);
+  assert.match(workflow, /const baselinePromise = readSellerExportBaselineSeparately\(\)\.catch\(\(\) => null\)/);
+  assert.match(workflow, /const baselineAvailable = Array\.isArray\(baselineJobs\)/);
+  assert.match(workflow, /unusedJobs = currentJobs\.filter\(\(job\) => !brandExportJobOwner\(job\?\.id\)\)/);
+  assert.match(workflow, /const candidate = findNewSellerExportJob\(\[\.\.\.baselineJobIds\], unusedJobs\)/);
+  assert.match(workflow, /fallbackCandidateStableReads >= 2/);
+  assert.doesNotMatch(workflow, /EXPORT_CENTER_BASELINE_UNAVAILABLE/);
   assert.doesNotMatch(workflow, /findReusableSellerExportJob|job-reused|reusableJob/);
 });
 
@@ -38,15 +40,21 @@ test("an existing job number cannot be assigned to another brand", () => {
   assert.match(mainSource, /기존 작업번호 \$\{registeredJobId\}/);
 });
 
-test("an unreadable export center is never treated as an empty baseline", () => {
-  const readStart = mainSource.indexOf("async function readSellerExportJobs");
+test("an unreadable export center falls back without blocking real brand work", () => {
+  const readStart = mainSource.indexOf("const SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT");
   const readEnd = mainSource.indexOf("function normalizeBrandExportKey", readStart);
   const reader = mainSource.slice(readStart, readEnd);
+  const workStart = mainSource.indexOf("async function automateSellerBrandExport");
+  const workEnd = mainSource.indexOf("async function syncBrandCatalogFromKrPoizon", workStart);
+  const workflow = mainSource.slice(workStart, workEnd);
 
-  assert.match(reader, /catch\(\(\) => null\)/);
-  assert.match(reader, /snapshot\?\.ready/);
-  assert.match(reader, /stableReads >= 2/);
-  assert.doesNotMatch(reader, /catch\(\(\) => \[\]\)/);
+  assert.match(reader, /readSellerExportJobsFromWindow/);
+  assert.match(reader, /framesInSubtree/);
+  assert.match(reader, /return ready \|\| jobsById\.size \? \[\.\.\.jobsById\.values\(\)\] : null/);
+  assert.match(reader, /async function readSellerExportBaselineSeparately/);
+  assert.match(workflow, /baseline-fallback/);
+  assert.match(workflow, /작업번호 후행 확인 방식/);
+  assert.doesNotMatch(workflow, /EXPORT_CENTER_BASELINE_UNAVAILABLE/);
 });
 
 test("renderer never sends old brand job numbers for reuse", () => {

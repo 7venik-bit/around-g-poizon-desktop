@@ -21,15 +21,17 @@ test("new export job discovery waits without constant reloads", () => {
   assert.doesNotMatch(main, /verificationStartedAt < 45000/);
 });
 
-test("export center discovers job rows from stable job numbers", () => {
+test("export center discovers job rows from stable job numbers across layouts and frames", () => {
   assert.match(main, /firstCellText\.match/);
-  assert.match(main, /looksLikeDataRow/);
+  assert.match(main, /const rowHint = cells\.length >= 2/);
+  assert.match(main, /jobsById/);
+  assert.match(main, /framesInSubtree/);
   assert.match(main, /\\d\{7,/);
   assert.doesNotMatch(main, /상품\\s\*검색\.\*내보내기/);
 });
 
-test("release metadata is 2.10.51", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.51");
-  assert.equal(JSON.parse(lockSource).version, "2.10.51");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.51");
+test("release metadata is 2.10.52", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.52");
+  assert.equal(JSON.parse(lockSource).version, "2.10.52");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.52");
 });

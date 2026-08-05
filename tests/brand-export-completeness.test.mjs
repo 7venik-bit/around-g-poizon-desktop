@@ -38,20 +38,34 @@ test("a partial collection is retried once without consuming a download", () => 
   assert.match(workflow, /전체 상품이 확인되지 않아 다운로드를 차단했습니다/);
 });
 
-test("brand export clearly separates pre-job verification from actual Seller Center work", () => {
+test("brand export starts actual Seller Center work before optional baseline inspection completes", () => {
   const start = mainSource.indexOf("async function automateSellerBrandExport");
   const end = mainSource.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = mainSource.slice(start, end);
 
-  assert.match(rendererSource, /1단계\/5 · 상품 검색 후 전체 페이지 수 확인 준비 중 \(다운로드센터 작업 생성 전\)/);
-  assert.match(workflow, /준비 · 다운로드센터 기존 작업번호 확인 중/);
-  assert.match(workflow, /1단계\/5 · 상품검색 화면 이동 중/);
+  assert.match(rendererSource, /1단계\/5 · 판매자센터 연결 후 실제 상품검색 시작 중/);
+  assert.match(workflow, /const baselinePromise = readSellerExportBaselineSeparately\(\)\.catch\(\(\) => null\)/);
+  assert.match(workflow, /1단계\/5 · 실제 상품검색 시작/);
   assert.match(workflow, /1단계\/5 · 브랜드 입력·상품 검색 중/);
+  assert.match(workflow, /const searched = await sellerWindow\.webContents\.executeJavaScript/);
+  assert.match(workflow, /const baselineJobs = await baselinePromise/);
+  assert.match(workflow, /1단계\/5 · 상품검색 완료 · 작업번호 후행 확인 방식/);
   assert.match(workflow, /1단계\/5 · 검색 완료 · 총/);
   assert.match(workflow, /1단계\/5 · 전체 페이지 수·마지막 페이지 확인 중/);
   assert.match(workflow, /2단계\/5 · 전체 내보내기 클릭 완료 · 새 작업번호 확인 중/);
   assert.match(workflow, /completeness\.pageCount/);
   assert.match(workflow, /3단계\/5 · 작업번호 생성 완료 · 처리 대기/);
+  assert.doesNotMatch(workflow, /EXPORT_CENTER_BASELINE_UNAVAILABLE/);
+  assert.ok(
+    workflow.indexOf("1단계/5 · 실제 상품검색 시작")
+      < workflow.indexOf("const baselineJobs = await baselinePromise"),
+    "actual product search must start before optional baseline inspection is awaited",
+  );
+  assert.ok(
+    workflow.indexOf("const searched = await sellerWindow.webContents.executeJavaScript")
+      < workflow.indexOf("const baselineJobs = await baselinePromise"),
+    "the real brand search must execute before baseline fallback is evaluated",
+  );
   assert.match(mainSource, /4단계\/5 · POIZON 파일 처리 중/);
   assert.match(mainSource, /4단계\/5 · Excel 다운로드 중/);
   assert.match(rendererSource, /5단계\/5 · Excel 검증·프로그램 등록 중/);
