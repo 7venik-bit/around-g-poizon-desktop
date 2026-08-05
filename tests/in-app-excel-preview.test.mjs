@@ -24,6 +24,14 @@ test("Excel preview is read-only and paginated in the main sourcing screen", () 
   assert.match(rendererSource, /Number\.isFinite\(Number\(result\.totalColumns\)\)/);
 });
 
+test("shared Excel reader repairs POIZON A1 dimensions before preview and ordinary import", async () => {
+  const readerSource = await readFile(new URL("../services/excel-reader.mjs", import.meta.url), "utf8");
+  assert.match(readerSource, /repairPoizonWorksheetDimensions\(input\)/);
+  assert.match(readerSource, /readSheet\(workbookInput, 1\)/);
+  assert.match(readerSource, /readXlsxFile\(workbookInput\)/);
+  assert.equal((mainSource.match(/readFirstDataSheet\(await readFile\(filePath\)\)/g) || []).length, 2);
+});
+
 test("downloaded file rows open the embedded preview without launching Windows Excel", () => {
   const clickStart = rendererSource.indexOf('$("#brand-download-files").addEventListener("click"');
   const clickEnd = rendererSource.indexOf('$("#brand-download-clear")', clickStart);
