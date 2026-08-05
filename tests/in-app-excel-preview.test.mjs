@@ -10,6 +10,7 @@ const [mainSource, rendererSource, htmlSource, cssSource] = await Promise.all([
 ]);
 
 test("Excel preview is read-only and paginated in the main sourcing screen", () => {
+  assert.match(mainSource, /import readXlsxFile, \{ readSheet \} from "read-excel-file\/node"/);
   assert.match(mainSource, /async function previewExcelFile/);
   assert.match(mainSource, /rows\.slice\(offset, offset \+ limit\)/);
   assert.match(mainSource, /Math\.min\(200, Math\.max\(25,/);

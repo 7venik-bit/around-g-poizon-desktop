@@ -97,6 +97,28 @@ export function getPoizonWorksheetRows(workbookResult) {
   return [];
 }
 
+export function summarizePoizonRows(rows = []) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { dataRowCount: 0, uniqueSpuCount: 0, duplicateSpuCount: 0, blankSpuCount: 0 };
+  }
+  const headers = Array.isArray(rows[0]) ? rows[0] : [];
+  const spuColumn = findPoizonColumn(headers, "SPU ID", "SPU_ID", "SPUID");
+  const dataRows = rows.slice(1).filter((row) =>
+    Array.isArray(row) && row.some((value) => String(value ?? "").trim()),
+  );
+  const spuValues = spuColumn < 0
+    ? []
+    : dataRows.map((row) => String(row[spuColumn] ?? "").trim());
+  const nonBlankSpuValues = spuValues.filter(Boolean);
+  const uniqueSpuCount = new Set(nonBlankSpuValues).size;
+  return {
+    dataRowCount: dataRows.length,
+    uniqueSpuCount,
+    duplicateSpuCount: Math.max(0, nonBlankSpuValues.length - uniqueSpuCount),
+    blankSpuCount: spuColumn < 0 ? dataRows.length : spuValues.filter((value) => !value).length,
+  };
+}
+
 export function readPoizonColumnValues(buffer, ...headerNames) {
   const archive = unzipSync(new Uint8Array(buffer));
   const sheetPath = Object.keys(archive).find((path) => WORKSHEET_PATH.test(path));

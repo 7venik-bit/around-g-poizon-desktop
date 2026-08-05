@@ -62,12 +62,27 @@ test("brand export clearly separates pre-job verification from actual Seller Cen
   );
 });
 
-test("downloaded Excel is not marked complete when unique SPU count is short", () => {
-  assert.match(mainSource, /readPoizonColumnValues\(fileBuffer, "SPU ID", "SPU_ID", "SPUID"\)/);
+test("downloaded Excel compares POIZON result count with data rows, not unique SPUs", () => {
+  assert.match(mainSource, /summarizePoizonRows\(getPoizonWorksheetRows\(workbook\)\)/);
+  assert.match(mainSource, /actualProductCount = workbookSummary\.dataRowCount/);
   assert.match(mainSource, /actualProductCount < expectedProductCount/);
   assert.match(mainSource, /부분다운로드_\$\{actualProductCount\}_of_\$\{expectedProductCount\}/);
+  assert.match(mainSource, /고유 SPU \$\{workbookSummary\.uniqueSpuCount/);
+  assert.match(mainSource, /중복 \$\{workbookSummary\.duplicateSpuCount/);
+  assert.match(mainSource, /빈 SPU \$\{workbookSummary\.blankSpuCount/);
   assert.match(mainSource, /확인완료로 처리하지 않습니다/);
   assert.match(rendererSource, /error\?\.jobState \|\| "데이터 가져오기 실패"/);
+});
+
+test("Excel reader is connected for both preview and ordinary import", () => {
+  assert.match(mainSource, /import readXlsxFile, \{ readSheet \} from "read-excel-file\/node"/);
+  assert.match(mainSource, /const rows = await readXlsxFile\(await readFile\(filePath\)\)/);
+  assert.match(mainSource, /const sheet = await readXlsxFile\(await readFile\(filePath\)\)/);
+});
+
+test("failed job rows render with a dedicated error class", () => {
+  assert.match(rendererSource, /\? " is-error"/);
+  assert.match(rendererSource, /brand-export-job-row\$\{stateClass\}/);
 });
 
 test("partial workbooks are preserved but excluded from completed file discovery", () => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { strToU8, zipSync } from "fflate";
-import { readPoizonColumnValues } from "../services/poizon-xlsx.mjs";
+import { readPoizonColumnValues, summarizePoizonRows } from "../services/poizon-xlsx.mjs";
 
 test("reads only the POIZON brand column from inline-string workbooks", () => {
   const sheet = `<?xml version="1.0" encoding="UTF-8"?>
@@ -16,4 +16,22 @@ test("reads only the POIZON brand column from inline-string workbooks", () => {
   assert.equal(result.column, 1);
   assert.equal(result.header, "상품 브랜드");
   assert.deepEqual(result.values, ["크록스", "조던"]);
+});
+
+test("summarizes Excel data rows separately from unique, duplicate, and blank SPUs", () => {
+  const summary = summarizePoizonRows([
+    ["SPU ID", "상품명"],
+    ["SPU-1", "첫 번째 옵션"],
+    ["SPU-1", "두 번째 옵션"],
+    ["SPU-2", "다른 상품"],
+    ["", "SPU가 비어 있는 상품"],
+    ["", ""],
+  ]);
+
+  assert.deepEqual(summary, {
+    dataRowCount: 4,
+    uniqueSpuCount: 2,
+    duplicateSpuCount: 1,
+    blankSpuCount: 1,
+  });
 });
