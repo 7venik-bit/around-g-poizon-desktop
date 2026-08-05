@@ -77,6 +77,13 @@ contextBridge.exposeInMainWorld("aroundG", {
 });
 
 window.addEventListener("DOMContentLoaded", () => {
+  if (!document.querySelector('link[data-excel-column-layout="true"]')) {
+    const stylesheet = document.createElement("link");
+    stylesheet.rel = "stylesheet";
+    stylesheet.href = "./excel-column-layout.css";
+    stylesheet.dataset.excelColumnLayout = "true";
+    document.head.appendChild(stylesheet);
+  }
   if (document.querySelector('script[data-excel-column-layout="true"]')) return;
   const script = document.createElement("script");
   script.src = "./excel-column-layout.js";
