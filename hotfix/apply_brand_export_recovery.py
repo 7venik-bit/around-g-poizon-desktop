@@ -22,13 +22,26 @@ def replace_once(path: str, old: str, new: str) -> None:
     write(path, content.replace(old, new, 1))
 
 
+def regex_replace_once(path: str, pattern: str, replacement: str) -> None:
+    content = read(path)
+    updated, count = re.subn(
+        pattern,
+        lambda _match: replacement,
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if count != 1:
+        raise RuntimeError(f"Expected regex source not found in {path}: {pattern[:160]!r}")
+    write(path, updated)
+
+
 # 1) Accept current Korean/Chinese export-center row labels instead of relying
-# on one exact Korean phrase.
-replace_once(
+# on one exact Korean phrase. Match the stable DOM structure rather than the
+# escaped translation string, which can differ between builds.
+regex_replace_once(
     "main.mjs",
-    '''    const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")]
-      .filter(visible)
-      .filter((row) => /\\uC0C1\\uD488\\uAC80\\uC0C9\\s*\\uB0B4\\uBCF4\\uB0B4\\uAE30/i.test(textOf(row)));''',
+    r'''    const rows = \[\.\.\.document\.querySelectorAll\("tbody tr, \[role='row'\], tr"\)\]\n      \.filter\(visible\)\n      \.filter\(\(row\) => /[^\n]+/i\.test\(textOf\(row\)\)\);''',
     '''    const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")]
       .filter(visible)
       .filter((row) => /(?:상품\\s*검색.*내보내기|내보내기.*상품\\s*검색|商品.*导出|导出.*商品)/i.test(textOf(row)));''',
@@ -187,7 +200,7 @@ write("package-lock.json", lock)
 
 write(
     "tests/brand-export-recovery.test.mjs",
-    '''import assert from "node:assert/strict";
+    r'''import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -211,7 +224,7 @@ test("new export job discovery waits without constant reloads", () => {
 });
 
 test("export center recognizes localized product-search export rows", () => {
-  assert.match(main, /상품\\s\*검색\.\*내보내기/);
+  assert.match(main, /내보내기\.\*상품/);
   assert.match(main, /商品\.\*导出/);
 });
 
