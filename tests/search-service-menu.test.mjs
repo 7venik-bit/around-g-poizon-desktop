@@ -18,6 +18,12 @@ test("restores the three POIZON search services in the sidebar", () => {
   assert.match(menuSource, /data-service-explorer="\$\{item\.id\}"/);
 });
 
+test("removes the redundant POIZON parent menu row", () => {
+  assert.match(menuSource, /productsNav\.hidden = true/);
+  assert.match(menuSource, /productsNav\.setAttribute\("aria-hidden", "true"\)/);
+  assert.match(menuSource, /productsNav\.tabIndex = -1/);
+});
+
 test("keeps the downloaded Excel screen separate from the three search services", () => {
   assert.match(menuSource, /\{ id: "files", label: "받은 Excel 파일", group: "files" \}/);
   assert.match(menuSource, /데이터 파일/);
@@ -41,6 +47,6 @@ test("bootstrap injects the sidebar menu and its stylesheet into the main window
   assert.match(menuCss, /\.search-service-button\.active/);
 });
 
-test("release version is 2.10.45", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.45");
+test("release version is 2.10.46", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.46");
 });
