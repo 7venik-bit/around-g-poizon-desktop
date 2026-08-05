@@ -13,6 +13,7 @@ import {
   repairPoizonWorksheetDimensions,
 } from "./services/poizon-xlsx.mjs";
 import {
+  filterPoizonPreviewRows,
   filterPoizonRowsByTotalSales,
   POIZON_MINIMUM_TOTAL_SALES,
 } from "./services/poizon-sales-filter.mjs";
@@ -938,19 +939,27 @@ async function previewExcelFile(input = {}) {
     excelPreviewCache.set(signature, workbook);
     while (excelPreviewCache.size > 3) excelPreviewCache.delete(excelPreviewCache.keys().next().value);
   }
+  const filtered = filterPoizonPreviewRows(workbook.headers, workbook.rows, input.filters || {});
   const limit = Math.min(200, Math.max(25, Number(input.limit) || 100));
-  const maximumOffset = Math.max(0, Math.floor(Math.max(0, workbook.rows.length - 1) / limit) * limit);
+  const maximumOffset = Math.max(0, Math.floor(Math.max(0, filtered.entries.length - 1) / limit) * limit);
   const offset = Math.min(maximumOffset, Math.max(0, Number(input.offset) || 0));
+  const pageEntries = filtered.entries.slice(offset, offset + limit);
   return {
     ok: true,
     path: filePath,
     name: basename(filePath),
     headers: workbook.headers,
-    rows: workbook.rows.slice(offset, offset + limit),
+    rows: pageEntries.map((entry) => entry.values),
+    rowNumbers: pageEntries.map((entry) => entry.sourceRowNumber),
     offset,
     limit,
-    totalRows: workbook.rows.length,
+    totalRows: filtered.filteredRows,
+    sourceTotalRows: filtered.sourceRows,
     totalColumns: workbook.columnCount,
+    totalSalesColumn: filtered.totalSalesColumn,
+    localTotalSalesColumn: filtered.localTotalSalesColumn,
+    filterApplied: filtered.filterApplied,
+    matchMode: filtered.matchMode,
   };
 }
 
