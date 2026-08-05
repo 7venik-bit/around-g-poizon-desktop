@@ -3,7 +3,7 @@
 
   const modes = [
     { id: "popular", label: "인기리스트", group: "search" },
-    { id: "brand", label: "포이즌 원본 데이터 가져오기", group: "search" },
+    { id: "brand", label: "브랜드 검색", group: "search" },
     { id: "category", label: "카테고리", group: "search" },
     { id: "files", label: "받은 Excel 파일", group: "files" },
   ];
