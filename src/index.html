@@ -88,7 +88,7 @@
             <span><b>3</b> 받은 Excel에서 판매량 직접 입력</span>
             <button id="brand-search" hidden disabled>사용 안 함</button>
           </div>
-          <div class="brand-export-folder-setting">
+          <div class="brand-export-folder-setting" hidden aria-hidden="true">
             <div id="brand-export-folder-path" class="brand-export-folder-path" title="브랜드별 원본 Excel 저장 폴더">브랜드별 저장: 바탕화면\Around G POIZON\POIZON 전체내보내기\브랜드명</div>
             <button id="brand-export-folder-select" class="brand-export-folder-select" type="button">폴더 지정</button>
           </div>
@@ -104,7 +104,7 @@
           </div>
           <div id="brand-progress" class="capture-progress" hidden><i></i><span>0%</span></div>
           <div id="brand-cards" class="brand-cards"></div>
-          <div class="explorer-actions"><span id="brand-status" class="status">브랜드를 선택하면 POIZON 원본 Excel만 다운로드합니다.</span></div>
+          <div class="explorer-actions" hidden aria-hidden="true"><span id="brand-status" class="status">브랜드를 선택하면 POIZON 원본 Excel만 다운로드합니다.</span></div>
         </section>
 
         <section id="explorer-files" class="panel explorer-panel excel-files-panel">
