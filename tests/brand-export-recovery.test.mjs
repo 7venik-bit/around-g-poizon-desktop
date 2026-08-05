@@ -26,8 +26,8 @@ test("export center recognizes localized product-search export rows", () => {
   assert.match(main, /商品\.\*导出/);
 });
 
-test("release metadata is 2.10.49", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.49");
-  assert.equal(JSON.parse(lockSource).version, "2.10.49");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.49");
+test("release metadata is 2.10.50", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.50");
+  assert.equal(JSON.parse(lockSource).version, "2.10.50");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.50");
 });
