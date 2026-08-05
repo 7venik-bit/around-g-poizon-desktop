@@ -38,6 +38,23 @@
   productsNav.setAttribute("aria-hidden", "true");
   productsNav.tabIndex = -1;
 
+  // Remove the redundant brand-screen heading and the three-step guide shown
+  // above the brand selector. Preserve only the hidden legacy button because
+  // the original renderer still reads its disabled state internally.
+  const brandPanel = document.querySelector("#explorer-brand");
+  const brandHeading = brandPanel?.querySelector(":scope > h2");
+  if (brandHeading) brandHeading.remove();
+  const brandFlow = brandPanel?.querySelector(":scope > .brand-fetch-action");
+  if (brandFlow) {
+    const legacyBrandSearch = brandFlow.querySelector("#brand-search");
+    if (legacyBrandSearch) {
+      legacyBrandSearch.hidden = true;
+      legacyBrandSearch.setAttribute("aria-hidden", "true");
+      brandPanel.prepend(legacyBrandSearch);
+    }
+    brandFlow.remove();
+  }
+
   const oldModes = document.querySelector(".raw-data-modes");
   if (oldModes) {
     oldModes.hidden = true;
