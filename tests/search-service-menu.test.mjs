@@ -11,19 +11,17 @@ const [bootstrap, menuSource, menuCss, html, packageSource] = await Promise.all(
 ]);
 
 test("restores the three POIZON search services in the sidebar", () => {
-  assert.match(menuSource, /인기리스트/);
-  assert.match(menuSource, /포이즌 원본 데이터 가져오기/);
-  assert.match(menuSource, /카테고리/);
+  assert.match(menuSource, /\{ id: "popular", label: "인기리스트"/);
+  assert.match(menuSource, /\{ id: "brand", label: "포이즌 원본 데이터 가져오기"/);
+  assert.match(menuSource, /\{ id: "category", label: "카테고리"/);
   assert.match(menuSource, /검색 서비스/);
-  assert.match(menuSource, /data-service-explorer=\\?"popular/);
-  assert.match(menuSource, /data-service-explorer=\\?"brand/);
-  assert.match(menuSource, /data-service-explorer=\\?"category/);
+  assert.match(menuSource, /data-service-explorer="\$\{item\.id\}"/);
 });
 
 test("keeps the downloaded Excel screen separate from the three search services", () => {
+  assert.match(menuSource, /\{ id: "files", label: "받은 Excel 파일", group: "files" \}/);
   assert.match(menuSource, /데이터 파일/);
-  assert.match(menuSource, /받은 Excel 파일/);
-  assert.match(menuSource, /data-service-explorer=\\?"files/);
+  assert.match(menuSource, /data-service-explorer="files"/);
 });
 
 test("sidebar buttons reactivate the existing explorer panels", () => {
