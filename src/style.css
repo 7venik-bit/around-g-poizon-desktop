@@ -165,6 +165,11 @@ body .shell>header{height:auto;min-height:82px;align-items:flex-start}
 .brand-export-job[hidden]{display:none}
 .brand-export-job strong{font-size:14px}
 .brand-export-job-state{padding:4px 9px;border-radius:999px;background:#d9f2e8;color:#087655;font-weight:700}
+.brand-export-job-row.is-running .brand-export-job-state{background:#e2f2ff;color:#176da4}
+.brand-export-job-row.is-error{background:#fff5f3;border:1px solid #f2c4bd}
+.brand-export-job-row.is-error code{color:#ae2e24}
+.brand-export-job-row.is-error .brand-export-job-state{background:#ffe5e1;color:#ae2e24}
+.brand-export-job-row.is-success .brand-export-job-state{background:#d9f2e8;color:#087655}
 .brand-export-jobs-list{display:grid;gap:7px;width:100%}
 .brand-export-job-row{display:grid;grid-template-columns:minmax(120px,.8fr) minmax(150px,1fr) minmax(170px,1.4fr);align-items:center;gap:10px;padding:7px 10px;border-radius:8px;background:#fff}
 .brand-export-job-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
