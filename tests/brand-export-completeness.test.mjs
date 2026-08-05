@@ -45,6 +45,10 @@ test("brand export clearly separates pre-job verification from actual Seller Cen
   assert.match(mainSource, /4단계\/5 · Excel 다운로드 중/);
   assert.match(rendererSource, /5단계\/5 · Excel 검증·프로그램 등록 중/);
   assert.match(rendererSource, /updateBrandExportJob\(file\?\.jobId, "확인완료"/);
+  assert.match(rendererSource, /touchBrandActivity\(progress\?\.jobState/);
+  assert.match(rendererSource, /POIZON 응답 대기 중 · 작업은 계속 실행 중/);
+  assert.match(rendererSource, /idleSeconds >= 60/);
+  assert.match(rendererSource, /brand-export-job-spinner/);
   assert.ok(
     workflow.indexOf("2단계/5 · 전체 내보내기 클릭 완료")
       < workflow.indexOf("findNewSellerExportJob"),

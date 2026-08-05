@@ -28,6 +28,10 @@ const completedBrandImportPaths = new Set();
 let detectedBrandImportRunning = false;
 let brandWorkHistoryGeneration = 0;
 let acceptBrandWorkEvents = true;
+let brandActivityTimer = null;
+let brandActivityStartedAt = 0;
+let brandActivityUpdatedAt = 0;
+let brandActivityMessage = "";
 const WORK_HISTORY_RESET_KEY = "around-g-work-history-reset-v2.10.4";
 const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
 const DOWNLOAD_STATUS_MIGRATION_KEY = "around-g-download-status-v2.10.29";
@@ -106,6 +110,72 @@ function excelFileSize(value = 0) {
   if (!bytes) return "-";
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024)).toLocaleString("ko-KR")} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function brandActivityDuration(milliseconds = 0) {
+  const totalSeconds = Math.max(0, Math.floor(Number(milliseconds || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+    : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function brandJobIsFinished(state = "") {
+  return /확인완료|완료됨|실패|오류|중단|취소/.test(String(state || ""));
+}
+
+function renderBrandExportJobs() {
+  const list = $("#brand-export-jobs-list");
+  if (!list) return;
+  const now = Date.now();
+  list.innerHTML = [...brandExportJobs.entries()]
+    .map(([id, job]) => {
+      const finished = brandJobIsFinished(job.state);
+      const running = finished ? "" : '<span class="brand-export-job-spinner" aria-hidden="true"></span>';
+      const elapsed = finished ? "" : ` · ${brandActivityDuration(now - Number(job.startedAt || now))}`;
+      return `<div class="brand-export-job-row"><strong>${text(job.brandName)}</strong><code>작업번호 ${text(id)}</code><span class="brand-export-job-state">${running}${text(job.state)}${text(elapsed)}</span></div>`;
+    })
+    .join("");
+}
+
+function renderBrandActivity() {
+  const panel = $("#brand-activity");
+  if (!panel || !brandActivityStartedAt) return;
+  const now = Date.now();
+  const idleSeconds = Math.max(0, Math.floor((now - brandActivityUpdatedAt) / 1000));
+  const waiting = idleSeconds >= 60;
+  panel.hidden = false;
+  panel.classList.toggle("is-waiting", waiting);
+  $("#brand-activity-title").textContent = waiting
+    ? "POIZON 응답 대기 중 · 작업은 계속 실행 중"
+    : brandActivityMessage || "작업 진행 중";
+  $("#brand-activity-elapsed").textContent = `진행 ${brandActivityDuration(now - brandActivityStartedAt)}`;
+  $("#brand-activity-updated").textContent = idleSeconds < 2 ? "방금 상태 갱신" : `${idleSeconds}초 전 상태 갱신`;
+  renderBrandExportJobs();
+}
+
+function touchBrandActivity(message = "") {
+  const now = Date.now();
+  if (!brandActivityStartedAt) brandActivityStartedAt = now;
+  brandActivityUpdatedAt = now;
+  if (message) brandActivityMessage = String(message);
+  if (!brandActivityTimer) brandActivityTimer = setInterval(renderBrandActivity, 1000);
+  renderBrandActivity();
+}
+
+function stopBrandActivity() {
+  if (brandActivityTimer) clearInterval(brandActivityTimer);
+  brandActivityTimer = null;
+  brandActivityStartedAt = 0;
+  brandActivityUpdatedAt = 0;
+  brandActivityMessage = "";
+  const panel = $("#brand-activity");
+  if (panel) {
+    panel.hidden = true;
+    panel.classList.remove("is-waiting");
+  }
 }
 
 function normalizeBrandKey(value = "") {
@@ -275,6 +345,7 @@ function clearBrandWorkHistoryUi() {
   activeExportBrand = null;
   brandSelectionBusy = false;
   brandExportJobs.clear();
+  stopBrandActivity();
   [
     "around-g-selected-brand-name",
     "around-g-selected-brand-ids",
@@ -338,11 +409,11 @@ function updateBrandExportJob(jobId = "", state = "", brandName = "") {
   brandExportJobs.set(normalizedId, {
     brandName: brandName || previous.brandName || "선택 브랜드",
     state: state || previous.state || "감시 중",
+    startedAt: previous.startedAt || Date.now(),
+    updatedAt: Date.now(),
   });
   panel.hidden = false;
-  $("#brand-export-jobs-list").innerHTML = [...brandExportJobs.entries()]
-    .map(([id, job]) => `<div class="brand-export-job-row"><strong>${text(job.brandName)}</strong><code>작업번호 ${text(id)}</code><span class="brand-export-job-state">${text(job.state)}</span></div>`)
-    .join("");
+  renderBrandExportJobs();
 }
 
 function toggleBrandSelection(brandId) {
@@ -392,6 +463,8 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     renderBrandCards($("#brand-filter")?.value || "");
     $("#brand-status").className = "status success";
     $("#brand-status").textContent = `${brandExportJobs.size}개 브랜드 작업 등록 완료 · 작업번호별 동시 감시를 시작합니다.`;
+    if (!brandExportJobs.size) stopBrandActivity();
+    else touchBrandActivity("POIZON 파일 처리 상태 자동 감시 중");
     await window.aroundG.startSellerBrandExportMonitor();
     return;
   }
@@ -402,6 +475,7 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
   renderBrandCards($("#brand-filter")?.value || "");
   $("#brand-status").className = "status";
   $("#brand-status").textContent = `${activeExportBrand.name} · 1단계/5 · 상품 페이지 확인 준비 중 (다운로드센터 작업 생성 전)`;
+  touchBrandActivity(`${activeExportBrand.name} · 상품 페이지 확인 중`);
   const automation = await window.aroundG.automateSellerBrandExport({
     brandName: activeExportBrand.name || "",
     brandKo: activeExportBrand.ko || "",
@@ -1016,6 +1090,8 @@ $("#brand-export-selected")?.addEventListener("click", () => {
   renderBrandCards($("#brand-filter")?.value || "");
   $("#brand-status").className = "status";
   $("#brand-status").textContent = `${selectedBrands.length}개 브랜드 검색 작업을 순서대로 등록합니다.`;
+  stopBrandActivity();
+  touchBrandActivity(`${selectedBrands.length}개 브랜드 작업 시작`);
   void exportNextSelectedBrand(generation);
 });
 $("#brand-sync").addEventListener("click", async () => {
@@ -1171,6 +1247,8 @@ async function importDetectedBrandExport(file, generation = brandWorkHistoryGene
     originalPath: file.path,
   });
   updateBrandExportJob(file?.jobId, "확인완료", file?.brandName);
+  const unfinishedJobs = [...brandExportJobs.values()].some((job) => !brandJobIsFinished(job.state));
+  if (!brandExportQueue.length && !activeExportBrand && !unfinishedJobs) stopBrandActivity();
   $("#brand-status").className = "status success";
   $("#brand-status").textContent = `${expectedBrand || "선택 브랜드"} 확인완료 · 받은 Excel 파일 메뉴에서 확인하세요.`;
   const fileStatus = $("#excel-files-status");
@@ -1279,6 +1357,7 @@ window.aroundG.onBrandWorkHistoryCleared?.(() => clearBrandWorkHistoryUi());
 window.aroundG.onBrandExportProgress((progress) => {
   if (!acceptBrandWorkEvents) return;
   updateBrandExportJob(progress?.jobId, progress?.jobState || "자동 감시 중", progress?.brandName);
+  touchBrandActivity(progress?.jobState || progress?.message || "POIZON 작업 진행 중");
   $("#brand-status").className = "status";
   $("#brand-status").textContent = progress?.message || "다운로드를 시작했습니다.";
 });
@@ -1287,6 +1366,8 @@ window.aroundG.onBrandExportError((error) => {
   updateBrandExportJob(error?.jobId, error?.jobState || "데이터 가져오기 실패", error?.brandName);
   $("#brand-status").className = "status error";
   $("#brand-status").textContent = error.message || "데이터 가져오기 중 오류가 발생했습니다.";
+  const unfinishedJobs = [...brandExportJobs.values()].some((job) => !brandJobIsFinished(job.state));
+  if (!brandExportQueue.length && !activeExportBrand && !unfinishedJobs) stopBrandActivity();
 });
 $("#brand-data-download")?.addEventListener("click", async () => {
   if (!brandWorkbenchProducts.length) return;

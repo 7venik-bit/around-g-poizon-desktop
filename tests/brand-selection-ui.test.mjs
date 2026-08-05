@@ -4,6 +4,7 @@ import test from "node:test";
 
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
 const indexHtml = await readFile(new URL("../src/index.html", import.meta.url), "utf8");
+const style = await readFile(new URL("../src/style.css", import.meta.url), "utf8");
 
 test("brand picker keeps one compact multi-selection toolbar", () => {
   const layoutStart = renderer.indexOf("function setupBrandLayout");
@@ -48,6 +49,16 @@ test("brand picker exposes accessible multi-select and search icons", () => {
   assert.match(indexHtml, /id="brand-export-selected"/);
   assert.match(indexHtml, /<span>선택 브랜드 검색<\/span>/);
   assert.match(indexHtml, /<svg aria-hidden="true" viewBox="0 0 24 24">/);
+});
+
+test("active brand work has a live spinner, elapsed time, and stale-response state", () => {
+  assert.match(indexHtml, /id="brand-activity"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.match(indexHtml, /id="brand-activity-elapsed"/);
+  assert.match(indexHtml, /id="brand-activity-updated"/);
+  assert.match(style, /@keyframes brand-activity-spin/);
+  assert.match(renderer, /setInterval\(renderBrandActivity, 1000\)/);
+  assert.match(renderer, /idleSeconds >= 60/);
+  assert.match(renderer, /stopBrandActivity\(\)/);
 });
 
 test("brand button shows down-complete whenever its data-center workbook was downloaded", () => {

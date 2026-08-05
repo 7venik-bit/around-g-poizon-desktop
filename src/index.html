@@ -92,6 +92,13 @@
             <div id="brand-export-folder-path" class="brand-export-folder-path" title="브랜드별 원본 Excel 저장 폴더">브랜드별 저장: 바탕화면\Around G POIZON\POIZON 전체내보내기\브랜드명</div>
             <button id="brand-export-folder-select" class="brand-export-folder-select" type="button">폴더 지정</button>
           </div>
+          <div id="brand-activity" class="brand-activity" role="status" aria-live="polite" hidden>
+            <span class="brand-activity-spinner" aria-hidden="true"></span>
+            <span class="brand-activity-copy">
+              <strong id="brand-activity-title">작업 진행 중</strong>
+              <small><span id="brand-activity-elapsed">진행 00:00</span><span aria-hidden="true"> · </span><span id="brand-activity-updated">방금 상태 갱신</span></small>
+            </span>
+          </div>
           <div id="brand-export-job" class="brand-export-job" hidden>
             <div id="brand-export-jobs-list" class="brand-export-jobs-list"></div>
           </div>
