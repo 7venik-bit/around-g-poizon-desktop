@@ -28,14 +28,14 @@ test("download center discovers jobs by number across frames instead of one loca
   assert.doesNotMatch(main, /상품\\s\*검색\.\*내보내기/);
 });
 
-test("one failed brand stops the remaining automatic brand queue", () => {
-  assert.match(renderer, /brandExportQueue = \[\]/);
-  assert.match(renderer, /나머지 선택 브랜드 자동 실행을 중단했습니다/);
-  assert.match(renderer, /이미 등록된 작업만 계속 감시 중/);
+test("one failed brand does not delete the remaining automatic brand queue", () => {
+  assert.match(renderer, /다음 \${remainingCount}개 브랜드 작업을 계속합니다/);
+  assert.match(renderer, /setTimeout\(\(\) => exportNextSelectedBrand\(generation\), 900\)/);
+  assert.doesNotMatch(renderer, /나머지 선택 브랜드 자동 실행을 중단했습니다/);
 });
 
-test("release metadata is 2.10.53", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.53");
-  assert.equal(JSON.parse(lockSource).version, "2.10.53");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.53");
+test("release metadata is 2.10.54", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.54");
+  assert.equal(JSON.parse(lockSource).version, "2.10.54");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.54");
 });

@@ -16,6 +16,7 @@ let selectedBrandName = localStorage.getItem("around-g-selected-brand-name") || 
 let selectedBrandIds = new Set();
 let brandSelectionHistory = [];
 let brandExportQueue = [];
+let brandExportFailureCount = 0;
 let activeExportBrand = null;
 let brandSelectionBusy = false;
 const brandExportJobs = new Map();
@@ -493,8 +494,12 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     activeExportBrand = null;
     brandSelectionBusy = false;
     renderBrandCards($("#brand-filter")?.value || "");
-    $("#brand-status").className = "status success";
-    $("#brand-status").textContent = `${brandExportJobs.size}개 브랜드 작업 등록 완료 · 작업번호별 동시 감시를 시작합니다.`;
+    const failureCount = brandExportFailureCount;
+    $("#brand-status").className = failureCount ? "status error" : "status success";
+    $("#brand-status").textContent = failureCount
+      ? `${brandExportJobs.size}개 브랜드 작업 등록 · ${failureCount}개 브랜드 실패 · 등록된 작업 감시를 계속합니다.`
+      : `${brandExportJobs.size}개 브랜드 작업 등록 완료 · 작업번호별 동시 감시를 시작합니다.`;
+    brandExportFailureCount = 0;
     if (!brandExportJobs.size) stopBrandActivity();
     else touchBrandActivity("POIZON 파일 처리 상태 자동 감시 중");
     await window.aroundG.startSellerBrandExportMonitor();
@@ -518,16 +523,33 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
   if (!automation?.ok) {
     recordBrandSelection(activeExportBrand, "데이터 가져오기 실패");
     const failedBrandName = activeExportBrand?.name || "선택 브랜드";
-    brandExportQueue = [];
+    const failureCode = String(automation?.code || "");
+    const remainingCount = brandExportQueue.length;
+    brandExportFailureCount += 1;
     activeExportBrand = null;
-    brandSelectionBusy = false;
+    if (failureCode === "SELLER_LOGIN_REQUIRED") {
+      brandExportQueue = [];
+      brandSelectionBusy = false;
+      renderBrandCards($("#brand-filter")?.value || "");
+      $("#brand-status").className = "status error";
+      $("#brand-status").textContent = `${failedBrandName} 작업 중 판매자센터 로그인이 필요합니다. 로그인 후 다시 실행해 주세요.`;
+      if (brandExportJobs.size) await window.aroundG.startSellerBrandExportMonitor();
+      else stopBrandActivity();
+      return;
+    }
+    brandSelectionBusy = remainingCount > 0;
     renderBrandCards($("#brand-filter")?.value || "");
     $("#brand-status").className = "status error";
-    $("#brand-status").textContent = `${failedBrandName} 작업 실패 · 나머지 선택 브랜드 자동 실행을 중단했습니다. · ${automation?.message || "판매자센터 데이터 가져오기 작업이 생성되지 않았습니다."}`;
+    $("#brand-status").textContent = remainingCount
+      ? `${failedBrandName} 작업 실패 · ${automation?.message || "판매자센터 자동화에 실패했습니다."} · 다음 ${remainingCount}개 브랜드 작업을 계속합니다.`
+      : `${failedBrandName} 작업 실패 · ${automation?.message || "판매자센터 자동화에 실패했습니다."}`;
     if (brandExportJobs.size) {
-      touchBrandActivity("이미 등록된 작업만 계속 감시 중");
+      touchBrandActivity("등록된 작업 감시와 남은 브랜드 실행을 계속합니다.");
       await window.aroundG.startSellerBrandExportMonitor();
-    } else {
+    }
+    if (remainingCount > 0) {
+      setTimeout(() => exportNextSelectedBrand(generation), 900);
+    } else if (!brandExportJobs.size) {
       stopBrandActivity();
     }
     return;
@@ -1136,6 +1158,7 @@ $("#brand-export-selected")?.addEventListener("click", () => {
   if (!selectedBrands.length) return;
   acceptBrandWorkEvents = true;
   const generation = brandWorkHistoryGeneration;
+  brandExportFailureCount = 0;
   // Snapshot the exact brands shown as selected. Later catalog rendering or a
   // stale singular brand name must never change the active export queue.
   brandExportQueue = selectedBrands.map((brand) => ({
