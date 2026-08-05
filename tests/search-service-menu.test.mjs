@@ -24,6 +24,14 @@ test("removes the redundant POIZON parent menu row", () => {
   assert.match(menuSource, /productsNav\.tabIndex = -1/);
 });
 
+test("removes the brand screen title and three-step guide", () => {
+  assert.match(html, /<h2>POIZON 원본 데이터 가져오기<\/h2>/);
+  assert.match(html, /class="brand-fetch-action brand-excel-flow"/);
+  assert.match(menuSource, /brandHeading\.remove\(\)/);
+  assert.match(menuSource, /brandFlow\.remove\(\)/);
+  assert.match(menuSource, /brandPanel\.prepend\(legacyBrandSearch\)/);
+});
+
 test("keeps the downloaded Excel screen separate from the three search services", () => {
   assert.match(menuSource, /\{ id: "files", label: "받은 Excel 파일", group: "files" \}/);
   assert.match(menuSource, /데이터 파일/);
@@ -47,6 +55,6 @@ test("bootstrap injects the sidebar menu and its stylesheet into the main window
   assert.match(menuCss, /\.search-service-button\.active/);
 });
 
-test("release version is 2.10.47", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.47");
+test("release version is 2.10.48", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.48");
 });
