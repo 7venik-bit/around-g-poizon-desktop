@@ -1,0 +1,49 @@
+name: Verify v2.10.53 release assets
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/verify-v2.10.53-release-assets.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify published updater assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v2.10.53"
+          expected_installer="Around-G-POIZON-Setup-2.10.53.exe"
+          expected_blockmap="${expected_installer}.blockmap"
+
+          for attempt in $(seq 1 30); do
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets >/tmp/release.json 2>/dev/null; then
+              mapfile -t names < <(jq -r '.assets[].name' /tmp/release.json | sort)
+              expected=("$expected_blockmap" "$expected_installer" "latest.yml")
+              mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+              if [[ "${names[*]}" == "${expected_sorted[*]}" ]]; then
+                break
+              fi
+            fi
+            if [[ "$attempt" == "30" ]]; then
+              echo "Release assets were not ready or did not match exactly."
+              cat /tmp/release.json 2>/dev/null || true
+              exit 1
+            fi
+            sleep 5
+          done
+
+          rm -rf /tmp/v2.10.53-release
+          mkdir -p /tmp/v2.10.53-release
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern latest.yml --dir /tmp/v2.10.53-release
+          grep -Eq '^version:[[:space:]]*2\.10\.53([[:space:]]*)$' /tmp/v2.10.53-release/latest.yml
+          grep -Fq "$expected_installer" /tmp/v2.10.53-release/latest.yml
+          printf 'Verified release assets: %s\n' "${names[*]}"
