@@ -1653,17 +1653,19 @@ async function readSellerExportJobs() {
     const normalize = (value) => String(value || "")
       .replace(/\\s+/g, " ").trim();
     const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")]
-      .filter(visible)
-      .filter((row) => /(?:상품\s*검색.*내보내기|내보내기.*상품\s*검색|商品.*导出|导出.*商品)/i.test(textOf(row)));
+      .filter(visible);
     const jobs = rows.map((row) => {
       const text = textOf(row);
       const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
       const firstCellText = textOf(cells[0]);
-      const id = firstCellText.match(/\\b\\d{9,}\\b/)?.[0]
-        || text.match(/\\b\\d{9,}\\b/)?.[0]
+      const id = firstCellText.match(/\b\d{7,}\b/)?.[0]
+        || text.match(/\b\d{7,}\b/)?.[0]
         || "";
-      return { id, fingerprint: id || text.slice(0, 180), text };
-    });
+      const looksLikeDataRow = cells.length >= 2 && Boolean(id);
+      return looksLikeDataRow
+        ? { id, fingerprint: id || text.slice(0, 240), text }
+        : null;
+    }).filter(Boolean);
     const bodyText = textOf(document.body);
     const emptyState = /\u6682\u65E0\u6570\u636E|\uB370\uC774\uD130\uAC00\s*\uC5C6|no\s*data/i.test(bodyText);
     return { ready: jobs.length > 0 || emptyState, jobs };
@@ -1880,8 +1882,9 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
     const exportPattern = /^전체\\s*내보내기$/;
     let exportButton = null;
     for (let attempt = 0; attempt < 20 && !exportButton; attempt += 1) {
-      exportButton = [...document.querySelectorAll("button, [role='button'], a, span")]
+      const labelElement = [...document.querySelectorAll("button, [role='button'], a, span")]
         .find((element) => visible(element) && exportPattern.test(normalizedText(element)));
+      exportButton = labelElement?.closest?.("button, [role='button'], a") || labelElement || null;
       if (!exportButton) await wait(250);
     }
     if (!exportButton) return { ok: false, code: "EXPORT_BUTTON_NOT_FOUND_AFTER_VERIFICATION", expected, actual: expected };
@@ -1909,11 +1912,13 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
 
     let confirmationObserved = false;
     let confirmationClicked = false;
+    let confirmationClickCount = 0;
     let requestAcknowledged = false;
-    const confirmationPattern = /^(?:확인|내보내기|생성|확정|제출|确认|确定|提交|导出)$/i;
+    let exportRetried = false;
+    const confirmationPattern = /^(?:확인|내보내기|생성|확정|제출|계속|确认|确定|提交|导出|继续)$/i;
     const cancelPattern = /취소|닫기|取消|关闭/i;
-    const successPattern = /(?:내보내기|작업|파일).*(?:등록|생성|완료|성공)|(?:导出|任务).*(?:成功|已创建)/i;
-    for (let attempt = 0; attempt < 32; attempt += 1) {
+    const successPattern = /(?:내보내기|작업|파일).*(?:등록|생성|완료|성공|접수)|(?:导出|任务).*(?:成功|已创建|已提交)/i;
+    for (let attempt = 0; attempt < 64; attempt += 1) {
       const dialogs = [...document.querySelectorAll(
         ".ant-modal, .ant-modal-confirm, [role='dialog'], .ant-popover, .ant-drawer"
       )].filter(visible);
@@ -1924,18 +1929,51 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
       const confirmControl = controls.find((element) => {
         const label = normalizedText(element);
         return confirmationPattern.test(label) && !cancelPattern.test(label);
+      }) || controls.find((element) => {
+        const label = normalizedText(element);
+        const className = String(element.className || "");
+        return /primary|confirm|ok/i.test(className) && !cancelPattern.test(label);
       });
       if (confirmControl) {
         clickLikeUser(confirmControl);
         confirmationClicked = true;
-        await wait(1_000);
-        break;
+        confirmationClickCount += 1;
+        await wait(900);
+        continue;
       }
       if (successPattern.test(normalizedText(document.body))) {
         requestAcknowledged = true;
         break;
       }
+      if (confirmationClickCount > 0 && dialogs.length === 0) {
+        await wait(1_200);
+        const remainingDialogs = [...document.querySelectorAll(
+          ".ant-modal, .ant-modal-confirm, [role='dialog'], .ant-popover, .ant-drawer"
+        )].filter(visible);
+        if (!remainingDialogs.length) {
+          requestAcknowledged = true;
+          break;
+        }
+      }
+      if (!confirmationObserved && !exportRetried && attempt == 12) {
+        clickLikeUser(exportButton);
+        exportRetried = true;
+        await wait(900);
+        continue;
+      }
       await wait(250);
+    }
+    if (!requestAcknowledged) {
+      return {
+        ok: false,
+        code: "EXPORT_REQUEST_NOT_CONFIRMED",
+        expected,
+        actual: expected,
+        confirmationObserved,
+        confirmationClicked,
+        confirmationClickCount,
+        exportRetried,
+      };
     }
     return {
       ok: true,
@@ -1946,7 +1984,9 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
       lastPageCount: lastSnapshot.keys.length,
       confirmationObserved,
       confirmationClicked,
+      confirmationClickCount,
       requestAcknowledged,
+      exportRetried,
     };
   })()`, true);
 }
