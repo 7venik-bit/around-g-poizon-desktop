@@ -148,6 +148,19 @@ body .shell>header{height:auto;min-height:82px;align-items:flex-start}
 .brand-export-folder-select{flex:0 0 auto;padding:8px 14px;border:1px solid #bdd9eb;border-radius:9px;background:#fff;color:#356f94;font-size:11px;font-weight:800;cursor:pointer}
 .brand-export-folder-select:hover{border-color:#2589c9;color:#176da4;background:#f4faff}
 .brand-export-folder-select:disabled{cursor:wait;opacity:.65}
+.brand-activity{display:flex;align-items:center;gap:11px;margin:8px 0 0;padding:10px 13px;border:1px solid #8fc9f2;border-radius:10px;background:#edf8ff;color:#145a88}
+.brand-activity[hidden]{display:none}
+.brand-activity-spinner,.brand-export-job-spinner{display:inline-block;flex:0 0 auto;border-radius:50%;border-style:solid;border-color:#b9dcf4;border-top-color:#167fc1;animation:brand-activity-spin .8s linear infinite}
+.brand-activity-spinner{width:20px;height:20px;border-width:3px}
+.brand-activity-copy{display:flex;min-width:0;flex-direction:column;gap:2px}
+.brand-activity-copy strong{font-size:13px}
+.brand-activity-copy small{color:#527b98;font-size:11px}
+.brand-activity.is-waiting{border-color:#edc66d;background:#fff9e9;color:#875b00}
+.brand-activity.is-waiting .brand-activity-spinner{border-color:#f1dda8;border-top-color:#c18408}
+.brand-activity.is-waiting .brand-activity-copy small{color:#8d702e}
+.brand-export-job-spinner{width:12px;height:12px;margin-right:6px;border-width:2px;vertical-align:-2px}
+@keyframes brand-activity-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.brand-activity-spinner,.brand-export-job-spinner{animation-duration:1.6s}}
 .brand-export-job{margin:8px 0 0;padding:10px 14px;border:1px solid #9fd2f4;border-radius:10px;background:#eef8ff;color:#145a88;display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:13px}
 .brand-export-job[hidden]{display:none}
 .brand-export-job strong{font-size:14px}
