@@ -31,6 +31,13 @@
     </button>`;
   productsNav.insertAdjacentElement("afterend", menu);
 
+  // The four service buttons below replace the redundant parent menu row.
+  // Keep its DOM node only because the original renderer uses it internally
+  // when activating the products view.
+  productsNav.hidden = true;
+  productsNav.setAttribute("aria-hidden", "true");
+  productsNav.tabIndex = -1;
+
   const oldModes = document.querySelector(".raw-data-modes");
   if (oldModes) {
     oldModes.hidden = true;
