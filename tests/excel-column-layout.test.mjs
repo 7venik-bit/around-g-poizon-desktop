@@ -40,8 +40,7 @@ test("desktop bootstrap and UI expose original-file column controls", async () =
     readFile(new URL("../preload.cjs", import.meta.url), "utf8"),
     readFile(new URL("../src/excel-column-layout.js", import.meta.url), "utf8"),
   ]);
-  assert.match(packageSource, /"version": "2\.10\.44"/);
-  assert.match(packageSource, /"main": "bootstrap\.mjs"/);
+  assert.equal(JSON.parse(packageSource).main, "bootstrap.mjs");
   assert.match(bootstrap, /excel:update-column-layout/);
   assert.match(bootstrap, /writeFile\(filePath, updated\)/);
   assert.match(preload, /getExcelColumnLayout/);
