@@ -1,9 +1,9 @@
 {
   "name": "around-g-poizon-desktop",
-  "version": "2.10.43",
+  "version": "2.10.44",
   "description": "Around G POIZON local sourcing workspace",
   "type": "module",
-  "main": "main.mjs",
+  "main": "bootstrap.mjs",
   "scripts": {
     "start": "electron .",
     "test": "node --test tests/*.test.mjs",
@@ -27,6 +27,7 @@
       "output": "dist"
     },
     "files": [
+      "bootstrap.mjs",
       "main.mjs",
       "preload.cjs",
       "build/icon.png",
