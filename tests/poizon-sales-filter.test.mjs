@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  filterPoizonPreviewRows,
   filterPoizonRowsByTotalSales,
   parsePoizonSalesMetric,
 } from "../services/poizon-sales-filter.mjs";
@@ -45,4 +46,44 @@ test("requires both POIZON total-sales columns", () => {
   ]);
   assert.equal(result.ok, false);
   assert.equal(result.code, "POIZON_TOTAL_SALES_COLUMNS_MISSING");
+});
+
+test("filters the complete Excel preview by either total-sales column and preserves source row numbers", () => {
+  const result = filterPoizonPreviewRows(
+    ["SPU ID", "중국 총 판매량", "현지 판매자 총 판매량"],
+    [
+      ["A", "49", "50"],
+      ["B", "5,800+", "12"],
+      ["C", "49", "49"],
+      ["D", "--", "100+"],
+    ],
+    { minimumTotal: 50, minimumLocalTotal: 50, matchMode: "any" },
+  );
+
+  assert.equal(result.sourceRows, 4);
+  assert.equal(result.filteredRows, 3);
+  assert.deepEqual(result.entries.map((entry) => entry.values[0]), ["A", "B", "D"]);
+  assert.deepEqual(result.entries.map((entry) => entry.sourceRowNumber), [2, 3, 5]);
+  assert.equal(result.filterApplied, true);
+});
+
+test("supports AND and minimum/maximum ranges in the Excel preview", () => {
+  const result = filterPoizonPreviewRows(
+    ["SPU ID", "중국 총 판매량", "현지 판매자 총 판매량"],
+    [
+      ["A", 50, 50],
+      ["B", 100, 49],
+      ["C", 101, 100],
+      ["D", "--", 80],
+    ],
+    {
+      minimumTotal: 50,
+      maximumTotal: 100,
+      minimumLocalTotal: 50,
+      maximumLocalTotal: 100,
+      matchMode: "all",
+    },
+  );
+
+  assert.deepEqual(result.entries.map((entry) => entry.values[0]), ["A"]);
 });
