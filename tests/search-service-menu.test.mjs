@@ -12,7 +12,7 @@ const [bootstrap, menuSource, menuCss, html, packageSource] = await Promise.all(
 
 test("restores the three POIZON search services in the sidebar", () => {
   assert.match(menuSource, /\{ id: "popular", label: "인기리스트"/);
-  assert.match(menuSource, /\{ id: "brand", label: "포이즌 원본 데이터 가져오기"/);
+  assert.match(menuSource, /\{ id: "brand", label: "브랜드 검색"/);
   assert.match(menuSource, /\{ id: "category", label: "카테고리"/);
   assert.match(menuSource, /검색 서비스/);
   assert.match(menuSource, /data-service-explorer="\$\{item\.id\}"/);
@@ -47,6 +47,6 @@ test("bootstrap injects the sidebar menu and its stylesheet into the main window
   assert.match(menuCss, /\.search-service-button\.active/);
 });
 
-test("release version is 2.10.46", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.46");
+test("release version is 2.10.47", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.47");
 });
