@@ -291,23 +291,27 @@ async function showExcelPreview(file, offset = 0) {
     loading.textContent = `파일 열기 실패: ${result?.message || "파일을 읽을 수 없습니다."}`;
     return;
   }
-  activeExcelPreview = { file, offset: result.offset, limit: result.limit, totalRows: result.totalRows };
+  const totalRows = Number.isFinite(Number(result.totalRows)) ? Math.max(0, Number(result.totalRows)) : 0;
+  const totalColumns = Number.isFinite(Number(result.totalColumns)) ? Math.max(0, Number(result.totalColumns)) : 0;
+  const headers = Array.isArray(result.headers) ? result.headers : [];
+  const rows = Array.isArray(result.rows) ? result.rows : [];
+  activeExcelPreview = { file, offset: result.offset, limit: result.limit, totalRows };
   loading.className = "excel-preview-loading";
   loading.hidden = true;
   grid.hidden = false;
   pager.hidden = false;
-  const startRow = result.totalRows ? result.offset + 1 : 0;
-  const endRow = Math.min(result.totalRows, result.offset + result.rows.length);
-  $("#excel-preview-summary").textContent = `읽기 전용 · ${result.totalRows.toLocaleString("ko-KR")}행 · ${result.totalColumns.toLocaleString("ko-KR")}열 · 현재 ${startRow.toLocaleString("ko-KR")}~${endRow.toLocaleString("ko-KR")}행`;
-  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-row-number">행</th>${result.headers.map((header) => `<th title="${text(header)}">${text(header)}</th>`).join("")}</tr>`;
-  $("#excel-preview-rows").innerHTML = result.rows.length
-    ? result.rows.map((row, index) => `<tr><th class="excel-row-number">${(result.offset + index + 2).toLocaleString("ko-KR")}</th>${row.map((cell) => `<td title="${text(cell)}">${text(cell)}</td>`).join("")}</tr>`).join("")
-    : `<tr><td class="empty" colspan="${Math.max(1, result.totalColumns + 1)}">표시할 데이터 행이 없습니다.</td></tr>`;
-  const totalPages = Math.max(1, Math.ceil(result.totalRows / result.limit));
+  const startRow = totalRows ? result.offset + 1 : 0;
+  const endRow = Math.min(totalRows, result.offset + rows.length);
+  $("#excel-preview-summary").textContent = `읽기 전용 · ${totalRows.toLocaleString("ko-KR")}행 · ${totalColumns.toLocaleString("ko-KR")}열 · 현재 ${startRow.toLocaleString("ko-KR")}~${endRow.toLocaleString("ko-KR")}행`;
+  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-row-number">행</th>${headers.map((header) => `<th title="${text(header)}">${text(header)}</th>`).join("")}</tr>`;
+  $("#excel-preview-rows").innerHTML = rows.length
+    ? rows.map((row, index) => `<tr><th class="excel-row-number">${(result.offset + index + 2).toLocaleString("ko-KR")}</th>${row.map((cell) => `<td title="${text(cell)}">${text(cell)}</td>`).join("")}</tr>`).join("")
+    : `<tr><td class="empty" colspan="${Math.max(1, totalColumns + 1)}">표시할 데이터 행이 없습니다.</td></tr>`;
+  const totalPages = Math.max(1, Math.ceil(totalRows / result.limit));
   const currentPage = Math.floor(result.offset / result.limit) + 1;
   $("#excel-preview-page").textContent = `${currentPage.toLocaleString("ko-KR")} / ${totalPages.toLocaleString("ko-KR")}페이지`;
   $("#excel-preview-prev").disabled = result.offset <= 0;
-  $("#excel-preview-next").disabled = result.offset + result.limit >= result.totalRows;
+  $("#excel-preview-next").disabled = result.offset + result.limit >= totalRows;
   document.querySelectorAll(".brand-download-row.is-open,.brand-download-history-row.is-open").forEach((row) => row.classList.remove("is-open"));
   document.querySelectorAll(`[data-open-brand-file-index="${downloadedBrandFiles.indexOf(file)}"]`).forEach((element) => element.closest(".brand-download-row,.brand-download-history-row")?.classList.add("is-open"));
 }

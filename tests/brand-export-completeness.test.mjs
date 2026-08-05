@@ -75,9 +75,9 @@ test("downloaded Excel compares POIZON result count with data rows, not unique S
 });
 
 test("Excel reader is connected for both preview and ordinary import", () => {
-  assert.match(mainSource, /import readXlsxFile, \{ readSheet \} from "read-excel-file\/node"/);
-  assert.match(mainSource, /const rows = await readXlsxFile\(await readFile\(filePath\)\)/);
-  assert.match(mainSource, /const sheet = await readXlsxFile\(await readFile\(filePath\)\)/);
+  assert.match(mainSource, /import \{ readFirstDataSheet \} from "\.\/services\/excel-reader\.mjs"/);
+  assert.match(mainSource, /const rows = await readFirstDataSheet\(await readFile\(filePath\)\)/);
+  assert.match(mainSource, /const sheet = await readFirstDataSheet\(await readFile\(filePath\)\)/);
 });
 
 test("failed job rows render with a dedicated error class", () => {
