@@ -1,0 +1,51 @@
+name: Apply brand export recovery
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "hotfix/apply_brand_export_recovery.py"
+      - ".github/workflows/apply-brand-export-recovery.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Apply recovery patch
+        run: python hotfix/apply_brand_export_recovery.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run complete tests
+        run: npm test
+
+      - name: Commit verified source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main.mjs package.json package-lock.json tests/brand-export-recovery.test.mjs
+          if git diff --cached --quiet; then
+            echo "No recovery changes to commit."
+          else
+            git commit -m "Release v2.10.49 brand export recovery"
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          fi
