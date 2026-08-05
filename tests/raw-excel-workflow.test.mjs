@@ -61,3 +61,10 @@ test("downloaded workbooks keep internal validation while the UI registers downl
   assert.doesNotMatch(renderer, /100% 검증완료/);
   assert.doesNotMatch(renderer, /브랜드 불일치/);
 });
+
+test("file discovery excludes both legacy and current filtered workbook copies", async () => {
+  const main = await readFile(join(root, "main.mjs"), "utf8");
+
+  assert.match(main, /총판매량50이상_OR\|판매량30이상/);
+  assert.match(main, /PROCESSED_BRAND_EXPORT_SUFFIX = "_총판매량50이상_OR_정리\.xlsx"/);
+});

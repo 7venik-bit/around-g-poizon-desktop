@@ -595,9 +595,9 @@ body .explorer-panel{border-color:var(--ui-line);background:#fff}
 .poizon-result-summary strong{color:#273e5c}
 .seller-result-table{max-height:68vh;border-color:#d9e2ed;border-radius:8px;background:#fff}
 .seller-result-head,.seller-result-row{
-  min-width:1260px;
+  min-width:1420px;
   width:100%;
-  grid-template-columns:minmax(390px,2.1fr) minmax(150px,.8fr) 135px 110px 120px 155px 112px;
+  grid-template-columns:minmax(390px,2.1fr) minmax(150px,.8fr) 135px 125px 155px 120px 155px 112px;
   gap:0
 }
 .seller-result-head{color:#fff;background:var(--ui-navy-2);font-size:10px}
@@ -612,6 +612,7 @@ body .explorer-panel{border-color:var(--ui-line);background:#fff}
 .seller-product-info code,.seller-product-info small{font-size:9px;color:#7a899b}
 .seller-brand-category strong{color:#29486e}
 .seller-local-sales{color:#2777d6}
+.seller-local-total-sales{color:#1668ad}
 .seller-result-row>button{margin:17px 10px;min-height:34px;padding:7px 8px;font-size:10px}
 .product-selection-toolbar{padding:9px 11px;border-radius:9px;border-color:#d9e3ef;background:#f8fafc;box-shadow:none}
 .explorer-product-row{border-color:#dce5ef;border-radius:10px;padding:12px;background:#fff}

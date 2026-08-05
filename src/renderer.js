@@ -818,13 +818,17 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
       <button type="button">브랜드⌄</button>
       <select id="brand-result-category"><option value="">카테고리⌄</option>${categories.map((category) => `<option value="${text(category)}">${text(category)}</option>`).join("")}</select>
       <select disabled><option>사이즈 유형⌄</option></select>
-      <input id="brand-result-min-total" type="number" min="0" placeholder="총 판매량 최소">
-      <input id="brand-result-max-total" type="number" min="0" placeholder="총 판매량 최대">
-      <input id="brand-result-min-local" type="number" min="0" placeholder="현지 30일 최소">
-      <input id="brand-result-max-local" type="number" min="0" placeholder="현지 30일 최대">
+      <input id="brand-result-min-total" type="number" min="0" value="50" placeholder="중국 총 판매량 최소" title="중국 총 판매량 최소">
+      <input id="brand-result-max-total" type="number" min="0" placeholder="중국 총 판매량 최대" title="중국 총 판매량 최대">
+      <input id="brand-result-min-local-total" type="number" min="0" value="50" placeholder="현지 판매자 총 판매량 최소" title="현지 판매자 총 판매량 최소">
+      <input id="brand-result-max-local-total" type="number" min="0" placeholder="현지 판매자 총 판매량 최대" title="현지 판매자 총 판매량 최대">
+      <select id="brand-result-sales-match" title="두 판매량 조건 결합 방식">
+        <option value="any">둘 중 하나 충족 (OR)</option>
+        <option value="all">두 조건 모두 충족 (AND)</option>
+      </select>
       <select id="brand-result-data-option">
         <option value="">누락값 포함</option>
-        <option value="available">두 판매량 확인 가능</option>
+        <option value="available">두 총 판매량 확인 가능</option>
         <option value="missing">누락값만 표시</option>
       </select>
       <button id="brand-result-reset" type="button" class="poizon-reset">초기화</button>
@@ -832,7 +836,7 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
     <div class="poizon-result-summary">
       <strong>총 ${Number(sourceTotal).toLocaleString("ko-KR")}건 결과</strong>
       <span id="brand-collection-audit">수집 ${allProducts.length.toLocaleString("ko-KR")}건</span>
-      <select id="brand-result-sort"><option value="total-desc">총 판매량 내림차순</option><option value="total-asc">총 판매량 오름차순</option><option value="local-desc">현지 30일 내림차순</option><option value="local-asc">현지 30일 오름차순</option></select>
+      <select id="brand-result-sort"><option value="total-desc">중국 총 판매량 내림차순</option><option value="total-asc">중국 총 판매량 오름차순</option><option value="local-total-desc">현지 판매자 총 판매량 내림차순</option><option value="local-total-asc">현지 판매자 총 판매량 오름차순</option></select>
       <label class="seller-select-all"><input id="brand-select-visible" type="checkbox"> 전체 선택</label>
       <strong id="brand-selected-count">0개 선택</strong>
       <button id="brand-clear-selection" type="button">선택 해제</button>
@@ -843,8 +847,8 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
     <div class="seller-result-table">
       <div class="seller-result-head">
         <span>POIZON 상품 정보</span><span>브랜드/카테고리</span>
-        <span>최근 30일 평균 거래가</span><span>총 판매량</span><span>최근 30일 판매량</span>
-        <span>현지 판매자 최근 30일 판매량</span><span>관리</span>
+        <span>최근 30일 평균 거래가</span><span>중국 총 판매량</span><span>현지 판매자 총 판매량</span>
+        <span>최근 30일 판매량</span><span>현지 판매자 최근 30일 판매량</span><span>관리</span>
       </div>
       <div id="brand-result-rows"></div>
     </div>`;
@@ -853,30 +857,42 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
     const category = $("#brand-result-category").value;
     const minTotalText = $("#brand-result-min-total").value;
     const maxTotalText = $("#brand-result-max-total").value;
-    const minLocalText = $("#brand-result-min-local").value;
-    const maxLocalText = $("#brand-result-max-local").value;
+    const minLocalTotalText = $("#brand-result-min-local-total").value;
+    const maxLocalTotalText = $("#brand-result-max-local-total").value;
     const minimumTotal = minTotalText === "" ? null : Math.max(0, Number(minTotalText));
     const maximumTotal = maxTotalText === "" ? null : Math.max(0, Number(maxTotalText));
-    const minimumLocal = minLocalText === "" ? null : Math.max(0, Number(minLocalText));
-    const maximumLocal = maxLocalText === "" ? null : Math.max(0, Number(maxLocalText));
+    const minimumLocalTotal = minLocalTotalText === "" ? null : Math.max(0, Number(minLocalTotalText));
+    const maximumLocalTotal = maxLocalTotalText === "" ? null : Math.max(0, Number(maxLocalTotalText));
+    const salesMatch = $("#brand-result-sales-match").value;
     const dataOption = $("#brand-result-data-option").value;
-    currentExplorerProducts = allProducts.filter((product) =>
-      (!category || (product.categoryName || product.category || "") === category)
-      && (minimumTotal === null || (product.hasTotalSalesData && Number(product.totalSales) >= minimumTotal))
-      && (maximumTotal === null || (product.hasTotalSalesData && Number(product.totalSales) <= maximumTotal))
-      && (minimumLocal === null || (product.hasLocalSalesData && Number(product.localSales30d) >= minimumLocal))
-      && (maximumLocal === null || (product.hasLocalSalesData && Number(product.localSales30d) <= maximumLocal))
-      && (dataOption !== "available" || (product.hasTotalSalesData && product.hasLocalSalesData))
-      && (dataOption !== "missing" || !product.hasTotalSalesData || !product.hasLocalSalesData)
-    );
+    currentExplorerProducts = allProducts.filter((product) => {
+      const chinaFilterActive = minimumTotal !== null || maximumTotal !== null;
+      const localFilterActive = minimumLocalTotal !== null || maximumLocalTotal !== null;
+      const chinaMatches = product.hasTotalSalesData
+        && (minimumTotal === null || Number(product.totalSales) >= minimumTotal)
+        && (maximumTotal === null || Number(product.totalSales) <= maximumTotal);
+      const localMatches = product.hasLocalTotalSalesData
+        && (minimumLocalTotal === null || Number(product.localTotalSales) >= minimumLocalTotal)
+        && (maximumLocalTotal === null || Number(product.localTotalSales) <= maximumLocalTotal);
+      const activeMatches = [
+        ...(chinaFilterActive ? [chinaMatches] : []),
+        ...(localFilterActive ? [localMatches] : []),
+      ];
+      const salesMatches = activeMatches.length === 0
+        || (salesMatch === "all" ? activeMatches.every(Boolean) : activeMatches.some(Boolean));
+      return (!category || (product.categoryName || product.category || "") === category)
+        && salesMatches
+        && (dataOption !== "available" || (product.hasTotalSalesData && product.hasLocalTotalSalesData))
+        && (dataOption !== "missing" || !product.hasTotalSalesData || !product.hasLocalTotalSalesData);
+    });
     const sort = $("#brand-result-sort").value;
     currentExplorerProducts.sort((left, right) => sort === "total-asc"
       ? Number(left.totalSales || 0) - Number(right.totalSales || 0)
-      : sort === "local-desc"
-        ? (Number(right.localSales30d || 0) - Number(left.localSales30d || 0))
+      : sort === "local-total-desc"
+        ? (Number(right.localTotalSales || 0) - Number(left.localTotalSales || 0))
           || (Number(right.totalSales || 0) - Number(left.totalSales || 0))
-        : sort === "local-asc"
-          ? Number(left.localSales30d || 0) - Number(right.localSales30d || 0)
+        : sort === "local-total-asc"
+          ? Number(left.localTotalSales || 0) - Number(right.localTotalSales || 0)
           : Number(right.totalSales || 0) - Number(left.totalSales || 0));
     $("#explorer-result-count").textContent = `${currentExplorerProducts.length.toLocaleString("ko-KR")}개 표시 / 전체 ${allProducts.length.toLocaleString("ko-KR")}개`;
     $("#brand-result-rows").innerHTML = currentExplorerProducts.length ? currentExplorerProducts.map((product, index) => `
@@ -891,6 +907,7 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
         <div class="seller-brand-category"><strong>${text(product.brandName || product.brand || "")}</strong><small>${text(product.categoryName || product.category || "")}</small></div>
         <b>${product.hasPriceData === false ? "데이터 없음" : money(product.averagePrice || product.minPrice?.value || 0)}</b>
         <b>${product.hasTotalSalesData ? text(product.totalSalesRaw || Number(product.totalSales || 0).toLocaleString("ko-KR")) : "확인 불가"}</b>
+        <b class="seller-local-total-sales">${product.hasLocalTotalSalesData ? text(product.localTotalSalesRaw || Number(product.localTotalSales || 0).toLocaleString("ko-KR")) : "확인 불가"}</b>
         <b>${product.hasSalesData === false ? "데이터 없음" : `${Number(product.sales30d || 0).toLocaleString("ko-KR")}+`}</b>
         <b class="seller-local-sales">${product.hasLocalSalesData ? text(product.localSales30dRaw || Number(product.localSales30d || 0).toLocaleString("ko-KR")) : "확인 불가"}</b>
         <button data-domestic="${encodeURIComponent(domesticKey(product, index))}" data-index="${index}" class="primary">국내 재고 검색</button>
@@ -916,14 +933,15 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
     });
     updateBrandSelection();
   };
-  ["#brand-result-category", "#brand-result-min-total", "#brand-result-max-total", "#brand-result-min-local", "#brand-result-max-local", "#brand-result-data-option", "#brand-result-sort"]
+  ["#brand-result-category", "#brand-result-min-total", "#brand-result-max-total", "#brand-result-min-local-total", "#brand-result-max-local-total", "#brand-result-sales-match", "#brand-result-data-option", "#brand-result-sort"]
     .forEach((selector) => $(selector).addEventListener("input", renderRows));
   $("#brand-result-reset").addEventListener("click", () => {
     $("#brand-result-category").value = "";
     $("#brand-result-min-total").value = "";
     $("#brand-result-max-total").value = "";
-    $("#brand-result-min-local").value = "";
-    $("#brand-result-max-local").value = "";
+    $("#brand-result-min-local-total").value = "";
+    $("#brand-result-max-local-total").value = "";
+    $("#brand-result-sales-match").value = "any";
     $("#brand-result-data-option").value = "";
     renderRows();
   });
