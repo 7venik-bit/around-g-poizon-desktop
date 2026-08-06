@@ -45,7 +45,7 @@ jobs:
               raise RuntimeError(f"batch progress html: expected one structural match, found {html_insert_count}")'''
           source, count = re.subn(
               r'html = replace_once\([\s\S]*?"batch progress html",\n\)',
-              replacement,
+              lambda _match: replacement,
               source,
               count=1,
           )
