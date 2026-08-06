@@ -26,6 +26,8 @@ const brandExportJobs = new Map();
 let downloadedBrandFiles = [];
 let activeExcelPreview = null;
 let excelPreviewRequestId = 0;
+const selectedExcelPreviewProducts = new Set();
+let activeExcelPreviewPath = "";
 const detectedBrandImportQueue = [];
 const queuedBrandImportPaths = new Set();
 const completedBrandImportPaths = new Set();
@@ -383,8 +385,38 @@ function currentExcelPreviewFilters() {
   };
 }
 
+function excelProductColumnIndex(headers = []) {
+  return headers.findIndex((header) => /^(상품\s*번호|품번|article\s*(number|no)?|product\s*(number|no)?|货号|商品编号)$/i.test(String(header || "").trim()));
+}
+
+function excelPreviewProductKey(filePath, row = [], rowNumber = 0, productColumn = -1) {
+  const productNumber = productColumn >= 0 ? String(row[productColumn] || "").trim() : "";
+  return `${brandImportPathKey(filePath)}::${productNumber || `row-${rowNumber}`}`;
+}
+
+function updateExcelPreviewSelectionUi(pageKeys = []) {
+  const uniquePageKeys = [...new Set(pageKeys)];
+  const selectedOnPage = uniquePageKeys.filter((key) => selectedExcelPreviewProducts.has(key)).length;
+  const selectPage = $("#excel-preview-select-page");
+  const count = $("#excel-preview-selected-count");
+  const clear = $("#excel-preview-selection-clear");
+  if (count) count.textContent = `${selectedExcelPreviewProducts.size.toLocaleString("ko-KR")}개 제품 선택`;
+  if (clear) clear.disabled = selectedExcelPreviewProducts.size === 0;
+  if (selectPage) {
+    selectPage.checked = uniquePageKeys.length > 0 && selectedOnPage === uniquePageKeys.length;
+    selectPage.indeterminate = selectedOnPage > 0 && selectedOnPage < uniquePageKeys.length;
+  }
+  document.querySelectorAll("[data-excel-product-select]").forEach((checkbox) => {
+    checkbox.checked = selectedExcelPreviewProducts.has(decodeURIComponent(checkbox.dataset.excelProductSelect));
+  });
+}
+
 async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewFilters()) {
   if (!file?.path) return;
+  if (activeExcelPreviewPath !== file.path) {
+    selectedExcelPreviewProducts.clear();
+    activeExcelPreviewPath = file.path;
+  }
   const requestId = ++excelPreviewRequestId;
   const preview = $("#excel-preview");
   const loading = $("#excel-preview-loading");
@@ -410,6 +442,8 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   const headers = Array.isArray(result.headers) ? result.headers : [];
   const rows = Array.isArray(result.rows) ? result.rows : [];
   const rowNumbers = Array.isArray(result.rowNumbers) ? result.rowNumbers : [];
+  const productColumn = excelProductColumnIndex(headers);
+  const pageProductKeys = rows.map((row, index) => excelPreviewProductKey(file.path, row, rowNumbers[index] || result.offset + index + 2, productColumn));
   const sourceTotalRows = Number.isFinite(Number(result.sourceTotalRows))
     ? Math.max(0, Number(result.sourceTotalRows))
     : totalRows;
@@ -432,10 +466,31 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
     : result.filterApplied
       ? `전체 ${sourceTotalRows.toLocaleString("ko-KR")}행 중 ${totalRows.toLocaleString("ko-KR")}행 · ${result.matchMode === "all" ? "두 조건 모두 충족(AND)" : "둘 중 하나 충족(OR)"}`
       : `판매량 필터를 사용하지 않고 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행을 표시합니다.`;
-  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-row-number">행</th>${headers.map((header) => `<th title="${text(header)}">${text(header)}</th>`).join("")}</tr>`;
+  $("#excel-preview-selection").hidden = false;
+  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th class="excel-row-number">행</th>${headers.map((header) => `<th title="${text(header)}">${text(header)}</th>`).join("")}</tr>`;
   $("#excel-preview-rows").innerHTML = rows.length
-    ? rows.map((row, index) => `<tr><th class="excel-row-number">${Number(rowNumbers[index] || result.offset + index + 2).toLocaleString("ko-KR")}</th>${row.map((cell) => `<td title="${text(cell)}">${text(cell)}</td>`).join("")}</tr>`).join("")
-    : `<tr><td class="empty" colspan="${Math.max(1, totalColumns + 1)}">표시할 데이터 행이 없습니다.</td></tr>`;
+    ? rows.map((row, index) => `<tr><td class="excel-product-select-column"><input type="checkbox" data-excel-product-select="${encodeURIComponent(pageProductKeys[index])}" aria-label="제품 선택"></td><th class="excel-row-number">${Number(rowNumbers[index] || result.offset + index + 2).toLocaleString("ko-KR")}</th>${row.map((cell) => `<td title="${text(cell)}">${text(cell)}</td>`).join("")}</tr>`).join("")
+    : `<tr><td class="empty" colspan="${Math.max(1, totalColumns + 2)}">표시할 데이터 행이 없습니다.</td></tr>`;
+  document.querySelectorAll("[data-excel-product-select]").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      const key = decodeURIComponent(checkbox.dataset.excelProductSelect);
+      if (checkbox.checked) selectedExcelPreviewProducts.add(key);
+      else selectedExcelPreviewProducts.delete(key);
+      updateExcelPreviewSelectionUi(pageProductKeys);
+    });
+  });
+  $("#excel-preview-select-page").onchange = (event) => {
+    [...new Set(pageProductKeys)].forEach((key) => {
+      if (event.target.checked) selectedExcelPreviewProducts.add(key);
+      else selectedExcelPreviewProducts.delete(key);
+    });
+    updateExcelPreviewSelectionUi(pageProductKeys);
+  };
+  $("#excel-preview-selection-clear").onclick = () => {
+    selectedExcelPreviewProducts.clear();
+    updateExcelPreviewSelectionUi(pageProductKeys);
+  };
+  updateExcelPreviewSelectionUi(pageProductKeys);
   const totalPages = Math.max(1, Math.ceil(totalRows / result.limit));
   const currentPage = Math.floor(result.offset / result.limit) + 1;
   $("#excel-preview-page").textContent = `${currentPage.toLocaleString("ko-KR")} / ${totalPages.toLocaleString("ko-KR")}페이지`;

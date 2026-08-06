@@ -141,6 +141,11 @@
               <button id="excel-filter-reset" type="button">전체 보기</button>
               <small id="excel-filter-status"></small>
             </div>
+            <div id="excel-preview-selection" class="excel-preview-selection" hidden>
+              <label><input id="excel-preview-select-page" type="checkbox"> 현재 페이지 전체 선택</label>
+              <strong id="excel-preview-selected-count">0개 제품 선택</strong>
+              <button id="excel-preview-selection-clear" type="button" disabled>선택 해제</button>
+            </div>
             <div id="excel-preview-loading" class="excel-preview-loading">Excel을 불러오는 중입니다.</div>
             <div id="excel-preview-grid" class="excel-preview-grid" hidden><table><thead id="excel-preview-columns"></thead><tbody id="excel-preview-rows"></tbody></table></div>
             <div id="excel-preview-pager" class="excel-preview-pager" hidden>
