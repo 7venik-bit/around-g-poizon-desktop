@@ -18,8 +18,8 @@ test("new downloads use brand and POIZON job number in the folder name", () => {
 
 test("folder job number is restored before the legacy cache and old brand-only folders remain supported", () => {
   assert.match(main, /function parseBrandExportFolderName/);
-  assert.match(main, /normalized\.match\(\/\^\(\.\*\)_\(\[0-9\]\{7,\}\)\$\//);
-  assert.match(main, /: \{ brandName: normalized, jobId: "" \}/);
+  assert.ok(main.includes('const matched = normalized.match(/^(.*)_([0-9]{7,})$/);'));
+  assert.ok(main.includes(': { brandName: normalized, jobId: "" };'));
   assert.match(main, /folderMeta\.jobId \|\| savedJob\?\.jobId/);
   assert.match(main, /folderMeta\.brandName \|\| brandFromExportFileName/);
   assert.match(main, /folderJobId \|\| \(matchingJobs\.length === 1/);
