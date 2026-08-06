@@ -1,0 +1,51 @@
+name: Apply v2.10.55 multi-brand download fix
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "hotfix/apply-v2.10.55-multi-brand-download-fix.py"
+      - ".github/workflows/apply-v2.10.55-multi-brand-download-fix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Apply source fix
+        run: python hotfix/apply-v2.10.55-multi-brand-download-fix.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run complete tests
+        run: npm test
+
+      - name: Commit verified source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main.mjs src/renderer.js preload.cjs package.json package-lock.json tests
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+          else
+            git commit -m "Release v2.10.55 fix multi-brand download mapping"
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          fi
