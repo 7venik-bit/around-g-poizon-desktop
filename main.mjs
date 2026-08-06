@@ -75,6 +75,7 @@ const brandExportValidationCache = new Map();
 const excelPreviewCache = new Map();
 let brandExportMonitorRunning = false;
 let brandExportMonitorRestartTimer;
+let brandExportAllCompleteSent = false;
 let activeBrandDownloadJobId = "";
 const brandDownloadPathsInProgress = new Set();
 let brandWorkSessionGeneration = 0;
@@ -1250,6 +1251,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
           brandDownloadPathsInProgress.delete(filePath);
           brandDownloadStarted = false;
           if (brandExportJobs.size) scheduleBrandExportMonitor(500);
+          else emitBrandExportAllComplete();
           return;
         }
         const brandIntegrity = await validateBrandExportFile(filePath, [
@@ -1314,13 +1316,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
       brandDownloadPathsInProgress.delete(filePath);
       brandDownloadStarted = false;
       if (brandExportJobs.size) scheduleBrandExportMonitor(500);
-      else {
-        mainWindow?.webContents.send("brand-export:progress", {
-          status: "all-complete",
-          jobState: "모든 작업 확인완료",
-          message: "선택한 브랜드의 POIZON 원본 Excel 다운로드와 프로그램 등록이 모두 완료되었습니다.",
-        });
-      }
+      else emitBrandExportAllComplete();
     });
     });
     sellerDownloadSessions.add(sellerSession);
@@ -1620,20 +1616,37 @@ async function readSellerMonitorStatuses(expectedIds = []) {
     const statuses = await Promise.race([
       frame.executeJavaScript(`(() => {
         const expectedIds = ${JSON.stringify(expectedIds)};
-        const visible = (element) => element && element.getClientRects().length > 0;
-        const textOf = (element) => String(element?.innerText || element?.textContent || "")
+        const usable = (element) => Boolean(element && element.isConnected);
+        const textOf = (element) => String(element?.textContent || element?.innerText || "")
           .replace(/\\s+/g, " ").trim();
-        const rows = [...document.querySelectorAll(
-          "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']"
-        )].filter(visible);
+        const selector = "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']";
+        const rowCandidates = [...document.querySelectorAll(selector)].filter(usable);
+        const findJobContainer = (jobId) => {
+          const direct = rowCandidates
+            .filter((candidate) => textOf(candidate).includes(jobId))
+            .sort((left, right) => textOf(left).length - textOf(right).length)[0];
+          if (direct) return direct;
+          const leaf = [...document.querySelectorAll("body *")]
+            .filter(usable)
+            .filter((element) => {
+              const value = textOf(element);
+              if (!value.includes(jobId) || value.length > 1000) return false;
+              return ![...element.children].some((child) => textOf(child).includes(jobId));
+            })
+            .sort((left, right) => textOf(left).length - textOf(right).length)[0];
+          return leaf?.closest("tr, [role='row'], [data-row-key], [class*='row'], [class*='item']")
+            || leaf?.parentElement
+            || leaf
+            || null;
+        };
         return expectedIds.map((jobId) => {
-          const row = rows.find((candidate) => textOf(candidate).includes(jobId));
+          const row = findJobContainer(jobId);
           if (!row) return { jobId, state: "WAITING_FOR_ROW" };
           const rowText = textOf(row);
-          if (/처리\\s*중|processing|pending/i.test(rowText)) return { jobId, state: "PROCESSING" };
-          if (!/성공|completed|success/i.test(rowText)) return { jobId, state: "WAITING_FOR_SUCCESS" };
+          if (/처리\\s*중|processing|pending|진행\\s*중/i.test(rowText)) return { jobId, state: "PROCESSING" };
+          if (!/성공|완료|completed|success/i.test(rowText)) return { jobId, state: "WAITING_FOR_SUCCESS" };
           const control = [...row.querySelectorAll("a, button, [role='button']")].find((element) => {
-            if (!visible(element) || element.disabled || element.getAttribute("aria-disabled") === "true") return false;
+            if (!usable(element) || element.disabled || element.getAttribute("aria-disabled") === "true") return false;
             return /다운로드|download/i.test([
               textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
             ].filter(Boolean).join(" "));
@@ -1665,14 +1678,28 @@ async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId 
   for (const frame of ordered) {
     const result = await frame.executeJavaScript(`(() => {
       const jobId = ${JSON.stringify(String(jobId))};
-      const visible = (element) => element && element.getClientRects().length > 0;
-      const textOf = (element) => String(element?.innerText || element?.textContent || "").replace(/\\s+/g, " ").trim();
-      const rows = [...document.querySelectorAll(
-        "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']"
-      )].filter(visible);
-      const row = rows.find((candidate) => textOf(candidate).includes(jobId));
+      const usable = (element) => Boolean(element && element.isConnected);
+      const textOf = (element) => String(element?.textContent || element?.innerText || "").replace(/\\s+/g, " ").trim();
+      const selector = "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']";
+      const rowCandidates = [...document.querySelectorAll(selector)].filter(usable);
+      const direct = rowCandidates
+        .filter((candidate) => textOf(candidate).includes(jobId))
+        .sort((left, right) => textOf(left).length - textOf(right).length)[0];
+      const leaf = direct ? null : [...document.querySelectorAll("body *")]
+        .filter(usable)
+        .filter((element) => textOf(element).includes(jobId)
+          && ![...element.children].some((child) => textOf(child).includes(jobId)))
+        .sort((left, right) => textOf(left).length - textOf(right).length)[0];
+      const row = direct
+        || leaf?.closest("tr, [role='row'], [data-row-key], [class*='row'], [class*='item']")
+        || leaf?.parentElement
+        || leaf
+        || null;
       const control = [...(row?.querySelectorAll("a, button, [role='button']") || [])].find((element) =>
-        visible(element) && /다운로드|download/i.test([
+        usable(element)
+        && !element.disabled
+        && element.getAttribute("aria-disabled") !== "true"
+        && /다운로드|download/i.test([
           textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
         ].filter(Boolean).join(" "))
       );
@@ -1682,8 +1709,16 @@ async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId 
         if (href && !/^javascript:/i.test(href)) href = new URL(href, location.href).href;
       } catch {}
       if (/^https:\\/\\//i.test(href)) return { clicked: true, href };
-      control.scrollIntoView({ block: "center", inline: "center" });
-      control.focus();
+      control.focus?.();
+      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+        control.dispatchEvent(new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          button: 0,
+        }));
+      }
       if (typeof control.click === "function") control.click();
       return { clicked: true, href: "" };
     })()`, true).catch(() => ({ clicked: false, href: "" }));
@@ -1692,8 +1727,29 @@ async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId 
   return { clicked: false, href: "" };
 }
 
+function emitBrandExportAllComplete() {
+  if (brandExportJobs.size || brandDownloadStarted || activeBrandDownloadJobId || brandDownloadPathsInProgress.size) return false;
+  if (brandExportMonitorRestartTimer) {
+    clearTimeout(brandExportMonitorRestartTimer);
+    brandExportMonitorRestartTimer = null;
+  }
+  if (brandExportAllCompleteSent) return true;
+  brandExportAllCompleteSent = true;
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "all-complete",
+    monitorSource: "dedicated-window",
+    jobState: "모든 작업 확인완료",
+    message: "선택한 브랜드의 POIZON 원본 Excel 다운로드와 프로그램 등록이 모두 완료되었습니다.",
+  });
+  return true;
+}
+
 function scheduleBrandExportMonitor(delayMs = 0) {
-  if (!brandExportJobs.size || brandExportMonitorRunning) return;
+  if (!brandExportJobs.size || brandExportMonitorRunning) {
+    if (!brandExportJobs.size) emitBrandExportAllComplete();
+    return;
+  }
+  brandExportAllCompleteSent = false;
   if (brandExportMonitorRestartTimer) clearTimeout(brandExportMonitorRestartTimer);
   brandExportMonitorRestartTimer = setTimeout(() => {
     brandExportMonitorRestartTimer = null;
@@ -1787,14 +1843,7 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
   } finally {
     brandExportMonitorRunning = false;
     if (brandExportJobs.size) scheduleBrandExportMonitor(3_000);
-    else {
-      mainWindow?.webContents.send("brand-export:progress", {
-        status: "all-complete",
-        monitorSource: "dedicated-window",
-        jobState: "모든 작업 확인완료",
-        message: "선택한 브랜드의 POIZON 원본 Excel 다운로드와 프로그램 등록이 모두 완료되었습니다.",
-      });
-    }
+    else emitBrandExportAllComplete();
   }
   return { ok: true, jobs: brandExportJobs.size };
 }
