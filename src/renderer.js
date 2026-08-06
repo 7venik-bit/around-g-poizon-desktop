@@ -150,7 +150,7 @@ function renderBrandCompletedJobs() {
   list.innerHTML = completed.map((file) => `
     <div class="brand-export-completed-row">
       <strong>${text(file.brandName || "선택 브랜드")}</strong>
-      <code>${file.jobId ? `작업번호 ${text(file.jobId)}` : "작업번호 확인 불가"}</code>
+      <code>${file.jobId ? `작업번호 ${text(file.jobId)}` : "과거 파일 · 작업번호 기록 없음"}</code>
       <time>${text(brandTime(file.time))}</time>
       <span>확인완료</span>
     </div>`).join("");

@@ -888,31 +888,43 @@ async function listBrandExportFiles() {
   const folder = currentBrandExportFolder();
   await mkdir(folder, { recursive: true });
   const entries = await listBrandExportExcelEntries(folder);
+  const preparedEntries = await Promise.all(entries
+    .filter((entry) => !isProcessedBrandExportName(entry.name) && !isPartialBrandExportName(entry.name))
+    .map(async (entry) => ({ entry, info: await stat(entry.path) })));
+  preparedEntries.sort((left, right) => right.info.mtimeMs - left.info.mtimeMs);
+  const usedJobIds = new Set();
   const files = [];
-  for (const entry of entries
-    .filter((entry) => !isProcessedBrandExportName(entry.name) && !isPartialBrandExportName(entry.name))) {
-        const path = entry.path;
-        const info = await stat(path);
-        const folderBrand = entry.directory === folder ? "" : basename(entry.directory);
-        const expectedBrand = folderBrand || brandFromExportFileName(entry.name);
-        const brandIntegrity = await validateBrandExportFile(path, [expectedBrand]).catch((error) => ({
-          ok: false,
-          status: "invalid",
-          expectedBrand,
-          dominantBrand: "",
-          ratio: 0,
-          message: `Excel 브랜드 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
-        }));
-        files.push({
-          path,
-          name: entry.name,
-          brandName: expectedBrand,
-          brandIntegrity,
-          jobId: "",
-          time: info.mtimeMs,
-          mtimeMs: info.mtimeMs,
-          size: info.size,
-        });
+  for (const { entry, info } of preparedEntries) {
+    const path = entry.path;
+    const folderBrand = entry.directory === folder ? "" : basename(entry.directory);
+    const expectedBrand = folderBrand || brandFromExportFileName(entry.name);
+    const savedJob = savedBrandExportJobForFile({
+      path,
+      name: entry.name,
+      brandName: expectedBrand,
+      mtimeMs: info.mtimeMs,
+    }, usedJobIds);
+    const recoveredJobId = String(savedJob?.jobId || "").trim();
+    if (recoveredJobId) usedJobIds.add(recoveredJobId);
+    const brandIntegrity = await validateBrandExportFile(path, [expectedBrand]).catch((error) => ({
+      ok: false,
+      status: "invalid",
+      expectedBrand,
+      dominantBrand: "",
+      ratio: 0,
+      message: `Excel 브랜드 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
+    }));
+    files.push({
+      path,
+      name: entry.name,
+      brandName: expectedBrand,
+      brandIntegrity,
+      jobId: recoveredJobId,
+      jobIdRecovered: Boolean(recoveredJobId),
+      time: info.mtimeMs,
+      mtimeMs: info.mtimeMs,
+      size: info.size,
+    });
   }
   const visibleFiles = files.filter((file) => !isProcessedBrandExportName(file.name));
   visibleFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
@@ -1275,6 +1287,9 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
           createdAt: downloadJob.createdAt,
           lastDownloadedAt: Date.now(),
           expectedProductCount,
+          filePath: finalPath,
+          fileName: finalName,
+          fileMtimeMs: info.mtimeMs,
           sessionGeneration,
         });
         mainWindow?.webContents.send("brand-export:detected", {
@@ -1839,6 +1854,65 @@ function savedBrandExportJobs() {
   return Array.isArray(saved) ? saved : [];
 }
 
+function normalizeSavedBrandExportPath(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/[\\/]+/g, "\\")
+    .toLocaleLowerCase();
+}
+
+function savedBrandExportJobForFile(input = {}, usedJobIds = new Set()) {
+  const pathKey = normalizeSavedBrandExportPath(input.path);
+  const fileNameKey = String(input.name || "").trim().toLocaleLowerCase();
+  const brandKey = normalizeBrandExportKey(input.brandName);
+  const mtimeMs = Number(input.mtimeMs || 0);
+  const candidates = savedBrandExportJobs()
+    .map((item) => ({
+      ...item,
+      jobId: String(item?.jobId || "").trim(),
+      brandName: String(item?.brandName || "").trim(),
+      brandKo: String(item?.brandKo || "").trim(),
+      filePath: String(item?.filePath || "").trim(),
+      fileName: String(item?.fileName || "").trim(),
+      fileMtimeMs: Number(item?.fileMtimeMs || 0),
+      lastDownloadedAt: Number(item?.lastDownloadedAt || 0),
+      createdAt: Number(item?.createdAt || 0),
+    }))
+    .filter((item) => item.jobId && item.lastDownloadedAt > 0 && !usedJobIds.has(item.jobId));
+  const exactPath = pathKey
+    ? candidates.find((item) => normalizeSavedBrandExportPath(item.filePath) === pathKey)
+    : null;
+  if (exactPath) return exactPath;
+  const brandMatches = (item) => {
+    if (!brandKey) return false;
+    return normalizeBrandExportKey(item.brandName) === brandKey
+      || normalizeBrandExportKey(item.brandKo) === brandKey;
+  };
+  const exactNameMatches = fileNameKey
+    ? candidates.filter((item) => item.fileName.toLocaleLowerCase() === fileNameKey && brandMatches(item))
+    : [];
+  if (exactNameMatches.length === 1) return exactNameMatches[0];
+  const brandCandidates = candidates.filter(brandMatches);
+  if (!brandCandidates.length) return null;
+  const scored = brandCandidates.map((item) => {
+    const referenceTime = item.fileMtimeMs || item.lastDownloadedAt || item.createdAt;
+    return {
+      item,
+      difference: mtimeMs > 0 && referenceTime > 0
+        ? Math.abs(mtimeMs - referenceTime)
+        : Number.POSITIVE_INFINITY,
+    };
+  }).sort((left, right) => left.difference - right.difference);
+  const nearest = scored[0];
+  const second = scored[1];
+  const maximumDifference = 24 * 60 * 60 * 1000;
+  if (nearest && nearest.difference <= maximumDifference
+    && (!second || second.difference - nearest.difference >= 30_000)) {
+    return nearest.item;
+  }
+  return brandCandidates.length === 1 ? brandCandidates[0] : null;
+}
+
 function restorePendingBrandExportJobs() {
   const cutoff = Date.now() - RESTORED_PENDING_JOB_MAX_AGE_MS;
   for (const saved of savedBrandExportJobs()) {
@@ -1883,6 +1957,9 @@ async function rememberBrandExportJob(input = {}) {
     createdAt: Number(input.createdAt) || Date.now(),
     lastDownloadedAt: Number(input.lastDownloadedAt) || 0,
     expectedProductCount: Number(input.expectedProductCount) || 0,
+    filePath: String(input.filePath || "").trim(),
+    fileName: String(input.fileName || "").trim(),
+    fileMtimeMs: Number(input.fileMtimeMs) || 0,
   };
   const cache = [
     next,
