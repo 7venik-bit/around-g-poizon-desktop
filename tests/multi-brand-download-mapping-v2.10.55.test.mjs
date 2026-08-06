@@ -18,7 +18,7 @@ test("only one POIZON download request owns the global browser download event", 
 });
 
 test("folder polling reports only a file matched to one current job", () => {
-  assert.match(main, /const expectedBrand = folderBrand \|\| brandFromExportFileName\(newest\.name\)/);
+  assert.match(main, /const expectedBrand = folderMeta\.brandName \|\| brandFromExportFileName\(newest\.name\)/);
   assert.match(main, /if \(!matchedJobId\) return/);
   assert.doesNotMatch(main, /brandFromExportFileName\(newest\.name\) \|\| pendingBrandExportName/);
   assert.match(main, /jobId: matchedJobId/);
