@@ -24,6 +24,7 @@ test("Seller Center appears only when login attention is required", () => {
   assert.match(captureBlock, /const revealSellerLogin = \(\) =>/);
   assert.match(captureBlock, /sellerWindow\.show\(\)/);
   assert.match(captureBlock, /sellerWindow\.focus\(\)/);
+  assert.match(captureBlock, /if \(!currentUrl\.startsWith\("https:\/\/seller\.poizon\.com\/"\)\) \{\n    revealSellerLogin\(\)/);
   assert.match(captureBlock, /revealSellerLogin\(\);[\s\S]*판매자센터 로그인을 완료해 주세요/);
 });
 
