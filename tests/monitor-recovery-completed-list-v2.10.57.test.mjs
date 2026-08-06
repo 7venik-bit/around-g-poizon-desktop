@@ -41,8 +41,8 @@ test("all-complete stops the activity only after renderer imports finish", () =>
   assert.match(renderer, /if \(!unfinished && !detectedBrandImportRunning && !detectedBrandImportQueue\.length\) stopBrandActivity\(\)/);
 });
 
-test("release metadata is 2.10.59", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.59");
-  assert.equal(JSON.parse(lockSource).version, "2.10.59");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.59");
+test("release metadata is 2.10.60", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.60");
+  assert.equal(JSON.parse(lockSource).version, "2.10.60");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.60");
 });

@@ -17,6 +17,8 @@ let selectedBrandIds = new Set();
 let brandSelectionHistory = [];
 let brandExportQueue = [];
 let brandExportFailureCount = 0;
+let brandBatchTotal = 0;
+const brandBatchStates = new Map();
 const BRAND_AUTOMATION_TIMEOUT_MS = 5 * 60 * 1000;
 let activeExportBrand = null;
 let brandSelectionBusy = false;
@@ -133,6 +135,45 @@ function brandJobIsDownloaded(state = "") {
   return /확인완료/.test(String(state || ""));
 }
 
+
+function brandBatchKey(value = "") {
+  return normalizeBrandKey(value) || String(value || "").trim().toLocaleLowerCase();
+}
+
+function updateBrandBatchState(brandName = "", state = "등록 대기", jobId = "") {
+  const key = brandBatchKey(brandName);
+  if (!key) return;
+  const previous = brandBatchStates.get(key) || {};
+  brandBatchStates.set(key, {
+    brandName: String(brandName || previous.brandName || "선택 브랜드").trim(),
+    state: String(state || previous.state || "등록 대기"),
+    jobId: String(jobId || previous.jobId || "").trim(),
+    updatedAt: Date.now(),
+  });
+  renderBrandBatchProgress();
+}
+
+function renderBrandBatchProgress() {
+  const panel = $("#brand-batch-progress");
+  const summary = $("#brand-batch-summary");
+  const list = $("#brand-batch-list");
+  if (!panel || !summary || !list) return;
+  const items = [...brandBatchStates.values()];
+  const total = Math.max(brandBatchTotal, items.length);
+  const completed = items.filter((item) => /확인완료/.test(item.state)).length;
+  const failed = items.filter((item) => /실패|오류|중단|취소/.test(item.state)).length;
+  const registered = items.filter((item) => Boolean(item.jobId)).length;
+  const processing = items.filter((item) => item.jobId && !/확인완료|실패|오류|중단|취소/.test(item.state)).length;
+  panel.hidden = total === 0;
+  summary.textContent = `등록 ${registered}/${total} · 처리 중 ${processing} · 완료 ${completed} · 실패 ${failed}`;
+  list.innerHTML = items.map((item) => {
+    const stateClass = /확인완료/.test(item.state) ? " is-complete"
+      : /실패|오류|중단|취소/.test(item.state) ? " is-error"
+        : item.jobId ? " is-processing" : " is-registering";
+    return `<div class="brand-batch-row${stateClass}"><strong>${text(item.brandName)}</strong><code>${item.jobId ? `작업번호 ${text(item.jobId)}` : "작업번호 생성 전"}</code><span>${text(item.state)}</span></div>`;
+  }).join("");
+}
+
 function renderBrandCompletedJobs() {
   const panel = $("#brand-export-completed");
   const list = $("#brand-export-completed-list");
@@ -175,6 +216,7 @@ function renderBrandExportJobs() {
     })
     .join("");
   renderBrandCompletedJobs();
+  renderBrandBatchProgress();
 }
 
 function renderBrandActivity() {
@@ -425,6 +467,9 @@ function clearBrandWorkHistoryUi() {
   activeExportBrand = null;
   brandSelectionBusy = false;
   brandExportJobs.clear();
+  brandBatchTotal = 0;
+  brandBatchStates.clear();
+  renderBrandBatchProgress();
   stopBrandActivity();
   [
     "around-g-selected-brand-name",
@@ -485,7 +530,9 @@ async function restorePendingBrandExportJobs() {
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration || !Array.isArray(jobs)) return;
   const pending = jobs.filter((job) => String(job?.jobId || "").trim() && String(job?.brandName || "").trim());
   if (!pending.length) return;
+  brandBatchTotal = Math.max(brandBatchTotal, pending.length);
   for (const job of pending) {
+    updateBrandBatchState(job.brandName, "재시작 복원 · 다운로드센터 확인 중", job.jobId);
     updateBrandExportJob(
       job.jobId,
       "재시작 복원 · 다운로드센터 성공 여부 확인 중",
@@ -606,6 +653,7 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
   renderBrandCards($("#brand-filter")?.value || "");
   $("#brand-status").className = "status";
   $("#brand-status").textContent = `${activeExportBrand.name} · 1단계/5 · 판매자센터 연결 후 실제 상품검색 시작 중`;
+  updateBrandBatchState(activeExportBrand.name, "상품검색·내보내기 등록 중");
   touchBrandActivity(`${activeExportBrand.name} · 실제 상품검색 실행 중`);
   const automationRequest = window.aroundG.automateSellerBrandExport({
     brandName: activeExportBrand.name || "",
@@ -631,6 +679,7 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     const failureCode = String(automation?.code || "");
     const remainingCount = brandExportQueue.length;
     brandExportFailureCount += 1;
+    updateBrandBatchState(failedBrandName, `실패 · ${failureCode || "자동화 오류"}`);
     activeExportBrand = null;
     if (failureCode === "SELLER_LOGIN_REQUIRED") {
       brandExportQueue = [];
@@ -661,6 +710,7 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
   } else {
     renderBrandExportFolder(automation.folder);
     updateBrandExportJob(automation.jobId, "3단계/5 · 작업번호 생성 완료 · 처리 대기", activeExportBrand.name);
+    updateBrandBatchState(activeExportBrand.name, "작업 생성 · POIZON 처리 대기", automation.jobId);
     recordBrandSelection(activeExportBrand, "전체 내보내기 요청", { jobId: automation.jobId });
     $("#brand-status").className = "status success";
     $("#brand-status").textContent = `${activeExportBrand.name} · 3단계/5 · 작업번호 생성 완료${automation.jobId ? ` · ${automation.jobId}` : ""} · 다음 브랜드 등록 중`;
@@ -1264,6 +1314,9 @@ $("#brand-export-selected")?.addEventListener("click", () => {
   acceptBrandWorkEvents = true;
   const generation = brandWorkHistoryGeneration;
   brandExportFailureCount = 0;
+  brandBatchTotal = selectedBrands.length;
+  brandBatchStates.clear();
+  selectedBrands.forEach((brand) => updateBrandBatchState(brand.name, "등록 대기"));
   // Snapshot the exact brands shown as selected. Later catalog rendering or a
   // stale singular brand name must never change the active export queue.
   brandExportQueue = selectedBrands.map((brand) => ({
@@ -1438,6 +1491,7 @@ async function importDetectedBrandExport(file, generation = brandWorkHistoryGene
     originalPath: file.path,
   });
   updateBrandExportJob(file?.jobId, "확인완료", file?.brandName);
+  updateBrandBatchState(expectedBrand, "확인완료", jobId);
   const unfinishedJobs = [...brandExportJobs.values()].some((job) => !brandJobIsFinished(job.state));
   if (!brandExportQueue.length && !activeExportBrand && !unfinishedJobs) stopBrandActivity();
   $("#brand-status").className = "status success";
@@ -1596,6 +1650,7 @@ window.aroundG.onBrandExportProgress((progress) => {
     return;
   }
   updateBrandExportJob(progress?.jobId, progress?.jobState || "자동 감시 중", progress?.brandName);
+  if (progress?.brandName) updateBrandBatchState(progress.brandName, progress?.jobState || "자동 감시 중", progress?.jobId);
   touchBrandActivity(progress?.jobState || progress?.message || "POIZON 작업 진행 중");
   $("#brand-status").className = progress?.status === "monitor-recovering" ? "status error" : "status";
   $("#brand-status").textContent = progress?.message || "다운로드를 시작했습니다.";
@@ -1603,6 +1658,7 @@ window.aroundG.onBrandExportProgress((progress) => {
 window.aroundG.onBrandExportError((error) => {
   if (!acceptBrandWorkEvents) return;
   updateBrandExportJob(error?.jobId, error?.jobState || "데이터 가져오기 실패", error?.brandName);
+  if (error?.brandName) updateBrandBatchState(error.brandName, error?.jobState || "데이터 가져오기 실패", error?.jobId);
   $("#brand-status").className = "status error";
   $("#brand-status").textContent = error.message || "데이터 가져오기 중 오류가 발생했습니다.";
   const unfinishedJobs = [...brandExportJobs.values()].some((job) => !brandJobIsFinished(job.state));

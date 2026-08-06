@@ -57,6 +57,7 @@ const { autoUpdater } = pkg;
 nativeTheme.themeSource = "light";
 let mainWindow;
 let sellerWindow;
+let sellerMonitorWindow;
 const inventoryWindows = new Set();
 let updateReady = false;
 let updateCheckTimer;
@@ -1564,6 +1565,133 @@ async function watchLatestSellerExportEveryTenSeconds() {
   });
 }
 
+
+function ensureSellerMonitorWindow() {
+  if (sellerMonitorWindow && !sellerMonitorWindow.isDestroyed()) return sellerMonitorWindow;
+  sellerMonitorWindow = new BrowserWindow({
+    icon: APP_ICON_PATH,
+    show: false,
+    skipTaskbar: true,
+    width: 1360,
+    height: 860,
+    title: "POIZON 다운로드 감시 · Around G",
+    backgroundColor: "#ffffff",
+    webPreferences: {
+      partition: "persist:around-g-poizon-seller",
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  sellerMonitorWindow.on("closed", () => {
+    sellerMonitorWindow = null;
+    if (brandExportJobs.size) scheduleBrandExportMonitor(3_000);
+  });
+  sellerMonitorWindow.loadURL(SELLER_EXPORT_CENTER_URL);
+  return sellerMonitorWindow;
+}
+
+function sellerMonitorFrames() {
+  if (!sellerMonitorWindow || sellerMonitorWindow.isDestroyed()) return [];
+  const mainFrame = sellerMonitorWindow.webContents.mainFrame;
+  return [mainFrame, ...(mainFrame.framesInSubtree || [])]
+    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
+}
+
+const SELLER_MONITOR_STATUS_PRIORITY = {
+  PAGE_NOT_READY: 0,
+  WAITING_FOR_ROW: 1,
+  WAITING_FOR_SUCCESS: 2,
+  PROCESSING: 3,
+  WAITING_FOR_DOWNLOAD: 4,
+  READY: 5,
+};
+
+async function readSellerMonitorStatuses(expectedIds = []) {
+  const monitor = ensureSellerMonitorWindow();
+  if (!monitor.webContents.getURL().includes("/main/exportCenter")) {
+    await monitor.loadURL(SELLER_EXPORT_CENTER_URL);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  const merged = new Map(expectedIds.map((jobId) => [jobId, { jobId, state: "WAITING_FOR_ROW" }]));
+  const frames = sellerMonitorFrames();
+  for (const frame of frames) {
+    const statuses = await Promise.race([
+      frame.executeJavaScript(`(() => {
+        const expectedIds = ${JSON.stringify(expectedIds)};
+        const visible = (element) => element && element.getClientRects().length > 0;
+        const textOf = (element) => String(element?.innerText || element?.textContent || "")
+          .replace(/\\s+/g, " ").trim();
+        const rows = [...document.querySelectorAll(
+          "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']"
+        )].filter(visible);
+        return expectedIds.map((jobId) => {
+          const row = rows.find((candidate) => textOf(candidate).includes(jobId));
+          if (!row) return { jobId, state: "WAITING_FOR_ROW" };
+          const rowText = textOf(row);
+          if (/처리\\s*중|processing|pending/i.test(rowText)) return { jobId, state: "PROCESSING" };
+          if (!/성공|completed|success/i.test(rowText)) return { jobId, state: "WAITING_FOR_SUCCESS" };
+          const control = [...row.querySelectorAll("a, button, [role='button']")].find((element) => {
+            if (!visible(element) || element.disabled || element.getAttribute("aria-disabled") === "true") return false;
+            return /다운로드|download/i.test([
+              textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
+            ].filter(Boolean).join(" "));
+          });
+          let href = String(control?.href || control?.getAttribute?.("href") || "");
+          try {
+            if (href && !/^javascript:/i.test(href)) href = new URL(href, location.href).href;
+          } catch {}
+          return { jobId, state: control ? "READY" : "WAITING_FOR_DOWNLOAD", href };
+        });
+      })()`, true),
+      new Promise((resolve) => setTimeout(() => resolve([]), 5_000)),
+    ]).catch(() => []);
+    for (const status of Array.isArray(statuses) ? statuses : []) {
+      const previous = merged.get(status.jobId);
+      if (!previous || SELLER_MONITOR_STATUS_PRIORITY[status.state] > SELLER_MONITOR_STATUS_PRIORITY[previous.state]) {
+        merged.set(status.jobId, { ...status, frameRoutingId: frame.routingId });
+      }
+    }
+  }
+  return expectedIds.map((jobId) => merged.get(jobId) || { jobId, state: "PAGE_NOT_READY" });
+}
+
+async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId = null) {
+  const frames = sellerMonitorFrames();
+  const ordered = preferredFrameRoutingId === null
+    ? frames
+    : [...frames].sort((left, right) => Number(right.routingId === preferredFrameRoutingId) - Number(left.routingId === preferredFrameRoutingId));
+  for (const frame of ordered) {
+    const result = await frame.executeJavaScript(`(() => {
+      const jobId = ${JSON.stringify(String(jobId))};
+      const visible = (element) => element && element.getClientRects().length > 0;
+      const textOf = (element) => String(element?.innerText || element?.textContent || "").replace(/\\s+/g, " ").trim();
+      const rows = [...document.querySelectorAll(
+        "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']"
+      )].filter(visible);
+      const row = rows.find((candidate) => textOf(candidate).includes(jobId));
+      const control = [...(row?.querySelectorAll("a, button, [role='button']") || [])].find((element) =>
+        visible(element) && /다운로드|download/i.test([
+          textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
+        ].filter(Boolean).join(" "))
+      );
+      if (!control) return { clicked: false, href: "" };
+      let href = String(control.href || control.getAttribute("href") || "");
+      try {
+        if (href && !/^javascript:/i.test(href)) href = new URL(href, location.href).href;
+      } catch {}
+      if (/^https:\\/\\//i.test(href)) return { clicked: true, href };
+      control.scrollIntoView({ block: "center", inline: "center" });
+      control.focus();
+      if (typeof control.click === "function") control.click();
+      return { clicked: true, href: "" };
+    })()`, true).catch(() => ({ clicked: false, href: "" }));
+    if (result?.clicked) return result;
+  }
+  return { clicked: false, href: "" };
+}
+
 function scheduleBrandExportMonitor(delayMs = 0) {
   if (!brandExportJobs.size || brandExportMonitorRunning) return;
   if (brandExportMonitorRestartTimer) clearTimeout(brandExportMonitorRestartTimer);
@@ -1582,51 +1710,8 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
   const pollIntervalMs = SELLER_MULTI_EXPORT_POLL_INTERVAL_MS;
   try {
     while (brandExportJobs.size && Date.now() - startedAt < timeoutMs) {
-      if (!sellerWindow || sellerWindow.isDestroyed()) break;
-      if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
-        await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1200));
       const expectedIds = [...brandExportJobs.keys()];
-      const statuses = await sellerWindow.webContents.executeJavaScript(`(() => {
-        const expectedIds = ${JSON.stringify(expectedIds)};
-        const visible = (element) => element && element.getBoundingClientRect().width > 0
-          && element.getBoundingClientRect().height > 0;
-        const textOf = (element) => String(element?.innerText || element?.textContent || "")
-          .replace(/\\s+/g, " ").trim();
-        const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")].filter(visible);
-        return expectedIds.map((jobId) => {
-          const row = rows.find((candidate) => {
-            const value = textOf(candidate);
-            return value.includes(jobId) && /\\uC0C1\\uD488\\uAC80\\uC0C9\\s*\\uB0B4\\uBCF4\\uB0B4\\uAE30/i.test(value);
-          });
-          if (!row) return { jobId, state: "WAITING_FOR_ROW" };
-          const rowText = textOf(row);
-          if (/\\uCC98\\uB9AC\\s*\\uC911|processing|pending/i.test(rowText)) {
-            return { jobId, state: "PROCESSING" };
-          }
-          if (!/\\uC131\\uACF5|completed|success/i.test(rowText)) {
-            return { jobId, state: "WAITING_FOR_SUCCESS" };
-          }
-          const download = [...row.querySelectorAll("a, button, [role='button']")].find((element) => {
-            if (!visible(element) || element.disabled || element.getAttribute("aria-disabled") === "true") return false;
-            return /\\uB2E4\\uC6B4\\uB85C\\uB4DC|download/i.test([
-              textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"),
-              element.getAttribute("href"),
-            ].filter(Boolean).join(" "));
-          });
-          let href = String(download?.href || download?.getAttribute?.("href") || "");
-          try {
-            if (href && !/^javascript:/i.test(href)) href = new URL(href, location.href).href;
-          } catch {}
-          return {
-            jobId,
-            state: download ? "READY" : "WAITING_FOR_DOWNLOAD",
-            href,
-          };
-        });
-      })()`, true).catch(() => expectedIds.map((jobId) => ({ jobId, state: "PAGE_NOT_READY" })));
-
+      const statuses = await readSellerMonitorStatuses(expectedIds);
       for (const status of statuses) {
         const job = brandExportJobs.get(status.jobId);
         if (!job) continue;
@@ -1635,11 +1720,12 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
           PROCESSING: "4단계/5 · POIZON 파일 처리 중 · 10초마다 감시",
           WAITING_FOR_SUCCESS: "4단계/5 · POIZON 처리 완료 대기 중",
           WAITING_FOR_DOWNLOAD: "4단계/5 · 다운로드 버튼 대기",
-          PAGE_NOT_READY: "4단계/5 · 다운로드센터 확인 중",
+          PAGE_NOT_READY: "4단계/5 · 다운로드센터 프레임 확인 중",
           READY: "4단계/5 · 처리 성공 · 다운로드 시작",
         }[status.state] || status.state;
         mainWindow?.webContents.send("brand-export:progress", {
           status: "monitoring",
+          monitorSource: "dedicated-window",
           brandName: job.brandName,
           jobId: status.jobId,
           jobState: stateLabel,
@@ -1661,64 +1747,42 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
       }
       const ready = activeBrandDownloadJobId ? null : statuses.find((status) => {
         const job = brandExportJobs.get(status.jobId);
-        return status.state === "READY"
-          && !job?.downloadStarted
-          && !job?.downloadRequestedAt;
+        return status.state === "READY" && !job?.downloadStarted && !job?.downloadRequestedAt;
       });
       if (ready) {
         const job = brandExportJobs.get(ready.jobId);
         activeBrandDownloadJobId = ready.jobId;
         job.downloadRequestedAt = Date.now();
-        if (/^https:\/\//i.test(ready.href)) {
-          sellerWindow.webContents.downloadURL(ready.href);
-        } else {
-          const clickResult = await sellerWindow.webContents.executeJavaScript(`(() => {
-            const jobId = ${JSON.stringify(ready.jobId)};
-            const textOf = (element) => String(element?.innerText || element?.textContent || "").replace(/\\s+/g, " ").trim();
-            const row = [...document.querySelectorAll("tbody tr, [role='row'], tr")]
-              .find((candidate) => textOf(candidate).includes(jobId));
-            const control = [...(row?.querySelectorAll("a, button, [role='button']") || [])]
-              .find((element) => /\\uB2E4\\uC6B4\\uB85C\\uB4DC|download/i.test(textOf(element)));
-            if (!control) return { clicked: false };
-            control.scrollIntoView({ block: "center", inline: "center" });
-            control.focus();
-            for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
-              control.dispatchEvent(new MouseEvent(type, {
-                bubbles: true,
-                cancelable: true,
-                composed: true,
-                view: window,
-                button: 0,
-              }));
-            }
-            if (typeof control.click === "function") control.click();
-            return { clicked: true };
-          })()`, true).catch(() => ({ clicked: false }));
-          if (!clickResult?.clicked) {
-            job.downloadRequestedAt = 0;
-            job.downloadStarted = false;
-            if (activeBrandDownloadJobId === ready.jobId) activeBrandDownloadJobId = "";
-            mainWindow?.webContents.send("brand-export:progress", {
-              status: "monitoring",
-              brandName: job.brandName,
-              jobId: ready.jobId,
-              jobState: "4단계/5 · 다운로드 버튼 재탐색",
-              message: `${job.brandName} · 4단계/5 · 작업번호 ${ready.jobId} · 다운로드 버튼을 다시 찾습니다.`,
-            });
-          }
+        const action = await requestSellerMonitorDownload(ready.jobId, ready.frameRoutingId);
+        if (action?.href) ensureSellerMonitorWindow().webContents.downloadURL(action.href);
+        if (!action?.clicked) {
+          job.downloadRequestedAt = 0;
+          job.downloadStarted = false;
+          if (activeBrandDownloadJobId === ready.jobId) activeBrandDownloadJobId = "";
+          mainWindow?.webContents.send("brand-export:progress", {
+            status: "monitoring",
+            monitorSource: "dedicated-window",
+            brandName: job.brandName,
+            jobId: ready.jobId,
+            jobState: "4단계/5 · 다운로드 버튼 재탐색",
+            message: `${job.brandName} · 작업번호 ${ready.jobId} · 모든 다운로드센터 프레임에서 버튼을 다시 찾습니다.`,
+          });
         }
       }
-
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-      if (sellerWindow && !sellerWindow.isDestroyed()) {
-        await sellerWindow.webContents.reloadIgnoringCache();
+      const monitor = ensureSellerMonitorWindow();
+      if (!monitor.webContents.getURL().includes("/main/exportCenter")) {
+        await monitor.loadURL(SELLER_EXPORT_CENTER_URL);
+      } else {
+        await monitor.webContents.reloadIgnoringCache();
       }
     }
   } catch (error) {
     mainWindow?.webContents.send("brand-export:progress", {
       status: "monitor-recovering",
+      monitorSource: "dedicated-window",
       jobState: "다운로드센터 감시 자동 복구 중",
-      message: `POIZON 다운로드센터 감시 오류를 자동 복구합니다: ${error instanceof Error ? error.message : String(error)}`,
+      message: `전용 감시 창 오류를 3초 후 자동 복구합니다: ${error instanceof Error ? error.message : String(error)}`,
     });
   } finally {
     brandExportMonitorRunning = false;
@@ -1726,6 +1790,7 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
     else {
       mainWindow?.webContents.send("brand-export:progress", {
         status: "all-complete",
+        monitorSource: "dedicated-window",
         jobState: "모든 작업 확인완료",
         message: "선택한 브랜드의 POIZON 원본 Excel 다운로드와 프로그램 등록이 모두 완료되었습니다.",
       });
@@ -3841,6 +3906,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     if (brandExportJobs.size && (!sellerWindow || sellerWindow.isDestroyed())) {
       openSellerCenterWindow(SELLER_EXPORT_CENTER_URL, { visible: false });
     }
+    if (brandExportJobs.size) ensureSellerMonitorWindow();
     scheduleBrandExportMonitor(0);
     return { ok: true, jobs: brandExportJobs.size };
   });
