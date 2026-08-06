@@ -7,12 +7,19 @@ on:
     paths:
       - scripts/apply-v2.10.65-folder-job-number.py
       - .github/workflows/apply-v2.10.65-folder-job-number.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/apply-v2.10.65-folder-job-number.py
+      - .github/workflows/apply-v2.10.65-folder-job-number.yml
 
 permissions:
   contents: write
 
 jobs:
   apply:
+    if: github.event_name == 'push' || github.head_ref == 'agent/v2.10.65-folder-job-number'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout patch branch
