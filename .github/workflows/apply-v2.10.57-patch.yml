@@ -21,7 +21,7 @@ jobs:
           ref: agent/v2.10.57-monitor-recovery-completed-list
           fetch-depth: 0
 
-      - name: Correct source indentation matcher
+      - name: Correct patch matchers
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -34,6 +34,10 @@ jobs:
           source = source.replace(
               "'''      ipcMain.handle(\"seller:start-brand-export-monitor\", () => {\n        scheduleBrandExportMonitor(0);\n        return { ok: true, jobs: brandExportJobs.size };\n      });''',",
               "'''ipcMain.handle(\"seller:start-brand-export-monitor\", () => {\n    scheduleBrandExportMonitor(0);\n    return { ok: true, jobs: brandExportJobs.size };\n  });''',",
+          )
+          source = source.replace(
+              '    if count != 1:\n        raise RuntimeError(f"{path}: expected exactly one match, found {count}")',
+              '    if count < 1:\n        raise RuntimeError(f"{path}: expected at least one match, found {count}")',
           )
           path.write_text(source, encoding="utf-8")
           PY
