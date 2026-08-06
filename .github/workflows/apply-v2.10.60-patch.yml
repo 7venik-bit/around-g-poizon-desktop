@@ -21,6 +21,41 @@ jobs:
           ref: agent/v2.10.60-separate-monitor-window
           fetch-depth: 0
 
+      - name: Correct current HTML matcher
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path('scripts/patch-v2.10.60.py')
+          source = path.read_text(encoding='utf-8')
+          replacement = '''html = replace_once(
+              html,
+              \'''          <div id="brand-export-job" class="brand-export-job" hidden>
+                <div class="brand-export-job-heading"><strong>진행 중·대기 작업</strong></div>
+                <div id="brand-export-jobs-list" class="brand-export-jobs-list"></div>
+              </div>\''',
+              \'''          <section id="brand-batch-progress" class="brand-batch-progress" hidden aria-live="polite">
+                <div class="brand-batch-progress-head"><strong>복수 브랜드 진행 현황</strong><span id="brand-batch-summary"></span></div>
+                <div id="brand-batch-list" class="brand-batch-list"></div>
+              </section>
+              <div id="brand-export-job" class="brand-export-job" hidden>
+                <div class="brand-export-job-heading"><strong>진행 중·대기 작업</strong></div>
+                <div id="brand-export-jobs-list" class="brand-export-jobs-list"></div>
+              </div>\''',
+              "batch progress html",
+          )'''
+          source, count = re.subn(
+              r'html = replace_once\([\s\S]*?"batch progress html",\n\)',
+              replacement,
+              source,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit(f'HTML patch section not found: {count}')
+          path.write_text(source, encoding='utf-8')
+          PY
+
       - name: Apply source patch
         run: python scripts/patch-v2.10.60.py
 
