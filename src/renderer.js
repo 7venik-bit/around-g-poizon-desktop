@@ -133,11 +133,37 @@ function brandJobIsDownloaded(state = "") {
   return /확인완료/.test(String(state || ""));
 }
 
+function renderBrandCompletedJobs() {
+  const panel = $("#brand-export-completed");
+  const list = $("#brand-export-completed-list");
+  const count = $("#brand-export-completed-count");
+  if (!panel || !list || !count) return;
+  const seen = new Set();
+  const completed = downloadedBrandFiles.filter((file) => {
+    const key = String(file.jobId || "").trim() || brandImportPathKey(file.path);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  panel.hidden = completed.length === 0;
+  count.textContent = `${completed.length}개`;
+  list.innerHTML = completed.map((file) => `
+    <div class="brand-export-completed-row">
+      <strong>${text(file.brandName || "선택 브랜드")}</strong>
+      <code>${file.jobId ? `작업번호 ${text(file.jobId)}` : "작업번호 확인 불가"}</code>
+      <time>${text(brandTime(file.time))}</time>
+      <span>확인완료</span>
+    </div>`).join("");
+}
+
 function renderBrandExportJobs() {
+  const panel = $("#brand-export-job");
   const list = $("#brand-export-jobs-list");
   if (!list) return;
   const now = Date.now();
-  list.innerHTML = [...brandExportJobs.entries()]
+  const activeEntries = [...brandExportJobs.entries()].filter(([_id, job]) => !brandJobIsDownloaded(job.state));
+  if (panel) panel.hidden = activeEntries.length === 0;
+  list.innerHTML = activeEntries
     .map(([id, job]) => {
       const finished = brandJobIsFinished(job.state);
       const stateClass = /실패|오류|중단|취소/.test(String(job.state || ""))
@@ -148,6 +174,7 @@ function renderBrandExportJobs() {
       return `<div class="brand-export-job-row${stateClass}"><strong>${text(job.brandName)}</strong><code>작업번호 ${text(id)}</code><span class="brand-export-job-state">${running}${text(job.state)}${text(elapsed)}</span></div>`;
     })
     .join("");
+  renderBrandCompletedJobs();
 }
 
 function renderBrandActivity() {
@@ -378,6 +405,7 @@ function addDownloadedBrandFile(file = {}) {
   ].slice(0, 500);
   localStorage.setItem("around-g-brand-download-files", JSON.stringify(downloadedBrandFiles));
   renderDownloadedBrandFiles();
+  renderBrandCompletedJobs();
   renderBrandCards($("#brand-filter")?.value || "");
 }
 
@@ -408,6 +436,7 @@ function clearBrandWorkHistoryUi() {
   $("#brand-export-job").hidden = true;
   $("#brand-export-jobs-list").innerHTML = "";
   renderDownloadedBrandFiles();
+  renderBrandCompletedJobs();
   renderBrandWorkbench();
   retainSelectedBrandName("");
   renderBrandCards($("#brand-filter")?.value || "");
@@ -446,6 +475,7 @@ async function restoreDownloadedBrandFiles() {
   });
   localStorage.setItem("around-g-brand-download-files", JSON.stringify(downloadedBrandFiles));
   renderDownloadedBrandFiles();
+  renderBrandCompletedJobs();
   renderBrandCards($("#brand-filter")?.value || "");
 }
 
@@ -1537,9 +1567,18 @@ $("#brand-export-folder-select")?.addEventListener("click", async () => {
 window.aroundG.onBrandWorkHistoryCleared?.(() => clearBrandWorkHistoryUi());
 window.aroundG.onBrandExportProgress((progress) => {
   if (!acceptBrandWorkEvents) return;
+  if (progress?.status === "all-complete") {
+    renderBrandExportJobs();
+    renderBrandCompletedJobs();
+    const unfinished = [...brandExportJobs.values()].some((job) => !brandJobIsFinished(job.state));
+    if (!unfinished && !detectedBrandImportRunning && !detectedBrandImportQueue.length) stopBrandActivity();
+    $("#brand-status").className = "status success";
+    $("#brand-status").textContent = progress?.message || "모든 작업이 확인완료되었습니다.";
+    return;
+  }
   updateBrandExportJob(progress?.jobId, progress?.jobState || "자동 감시 중", progress?.brandName);
   touchBrandActivity(progress?.jobState || progress?.message || "POIZON 작업 진행 중");
-  $("#brand-status").className = "status";
+  $("#brand-status").className = progress?.status === "monitor-recovering" ? "status error" : "status";
   $("#brand-status").textContent = progress?.message || "다운로드를 시작했습니다.";
 });
 window.aroundG.onBrandExportError((error) => {
@@ -1565,6 +1604,7 @@ $("#brand-data-download")?.addEventListener("click", async () => {
 retainSelectedBrandName();
 renderBrandWorkbench();
 renderDownloadedBrandFiles();
+renderBrandCompletedJobs();
 void restoreDownloadedBrandFiles();
 $("#brand-search").addEventListener("click", async () => {
   const button = $("#brand-search");

@@ -73,6 +73,7 @@ const sellerDownloadSessions = new WeakSet();
 const brandExportValidationCache = new Map();
 const excelPreviewCache = new Map();
 let brandExportMonitorRunning = false;
+let brandExportMonitorRestartTimer;
 let activeBrandDownloadJobId = "";
 const brandDownloadPathsInProgress = new Set();
 let brandWorkSessionGeneration = 0;
@@ -795,6 +796,7 @@ function publicConfig() {
 }
 
 const SELLER_EXPORT_POLL_INTERVAL_MS = 60 * 1000;
+const SELLER_MULTI_EXPORT_POLL_INTERVAL_MS = 10 * 1000;
 const SELLER_EXPORT_MONITOR_TIMEOUT_MS = 60 * 60 * 1000;
 const PROCESSED_BRAND_EXPORT_SUFFIX = "_총판매량50이상_OR_정리.xlsx";
 
@@ -1233,6 +1235,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
           if (activeBrandDownloadJobId === downloadJobId) activeBrandDownloadJobId = "";
           brandDownloadPathsInProgress.delete(filePath);
           brandDownloadStarted = false;
+          if (brandExportJobs.size) scheduleBrandExportMonitor(500);
           return;
         }
         const brandIntegrity = await validateBrandExportFile(filePath, [
@@ -1293,6 +1296,14 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
       if (activeBrandDownloadJobId === downloadJobId) activeBrandDownloadJobId = "";
       brandDownloadPathsInProgress.delete(filePath);
       brandDownloadStarted = false;
+      if (brandExportJobs.size) scheduleBrandExportMonitor(500);
+      else {
+        mainWindow?.webContents.send("brand-export:progress", {
+          status: "all-complete",
+          jobState: "모든 작업 확인완료",
+          message: "선택한 브랜드의 POIZON 원본 Excel 다운로드와 프로그램 등록이 모두 완료되었습니다.",
+        });
+      }
     });
     });
     sellerDownloadSessions.add(sellerSession);
@@ -1537,12 +1548,22 @@ async function watchLatestSellerExportEveryTenSeconds() {
   });
 }
 
+function scheduleBrandExportMonitor(delayMs = 0) {
+  if (!brandExportJobs.size || brandExportMonitorRunning) return;
+  if (brandExportMonitorRestartTimer) clearTimeout(brandExportMonitorRestartTimer);
+  brandExportMonitorRestartTimer = setTimeout(() => {
+    brandExportMonitorRestartTimer = null;
+    if (!brandExportJobs.size || brandExportMonitorRunning) return;
+    void watchAllSellerExportJobsEveryTenSeconds();
+  }, Math.max(0, Number(delayMs) || 0));
+}
+
 async function watchAllSellerExportJobsEveryTenSeconds() {
   if (brandExportMonitorRunning) return { ok: true, jobs: brandExportJobs.size };
   brandExportMonitorRunning = true;
   const startedAt = Date.now();
   const timeoutMs = SELLER_EXPORT_MONITOR_TIMEOUT_MS;
-  const pollIntervalMs = SELLER_EXPORT_POLL_INTERVAL_MS;
+  const pollIntervalMs = SELLER_MULTI_EXPORT_POLL_INTERVAL_MS;
   try {
     while (brandExportJobs.size && Date.now() - startedAt < timeoutMs) {
       if (!sellerWindow || sellerWindow.isDestroyed()) break;
@@ -1677,8 +1698,22 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
         await sellerWindow.webContents.reloadIgnoringCache();
       }
     }
+  } catch (error) {
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "monitor-recovering",
+      jobState: "다운로드센터 감시 자동 복구 중",
+      message: `POIZON 다운로드센터 감시 오류를 자동 복구합니다: ${error instanceof Error ? error.message : String(error)}`,
+    });
   } finally {
     brandExportMonitorRunning = false;
+    if (brandExportJobs.size) scheduleBrandExportMonitor(3_000);
+    else {
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: "all-complete",
+        jobState: "모든 작업 확인완료",
+        message: "선택한 브랜드의 POIZON 원본 Excel 다운로드와 프로그램 등록이 모두 완료되었습니다.",
+      });
+    }
   }
   return { ok: true, jobs: brandExportJobs.size };
 }
@@ -3695,7 +3730,7 @@ app.whenReady().then(async () => {
 });
 
 ipcMain.handle("seller:start-brand-export-monitor", () => {
-    void watchAllSellerExportJobsEveryTenSeconds();
+    scheduleBrandExportMonitor(0);
     return { ok: true, jobs: brandExportJobs.size };
   });
   ipcMain.handle("brand-export:open-file", async (_event, input = {}) => {
@@ -4191,6 +4226,7 @@ app.on("window-all-closed", () => {
 });
 app.on("before-quit", () => {
   if (brandExportPollTimer) clearInterval(brandExportPollTimer);
+  if (brandExportMonitorRestartTimer) clearTimeout(brandExportMonitorRestartTimer);
   if (updateCheckTimer) clearTimeout(updateCheckTimer);
   if (updateInstallTimer) clearTimeout(updateInstallTimer);
 });
