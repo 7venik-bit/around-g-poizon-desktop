@@ -19,6 +19,7 @@ test("startup asks before restoring unfinished POIZON downloads", () => {
 
 test("choosing later preserves jobs but prevents automatic monitor startup", () => {
   assert.match(bootstrap, /pendingBrandResumeDecision === "resume" \? jobs : \[\]/);
+  assert.match(bootstrap, /업데이트를 먼저 설치할 수 있습니다/);
   assert.match(bootstrap, /미다운로드 작업 기록은 삭제되지 않습니다/);
   const restore = renderer.match(/async function restorePendingBrandExportJobs[\s\S]*?\n}/)?.[0] || "";
   assert.match(restore, /if \(!pending\.length\) return/);
