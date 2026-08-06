@@ -1,0 +1,45 @@
+name: Verify v2.10.55 release assets
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/verify-v2.10.55-release-assets.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Verify published updater assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v2.10.55"
+          installer="Around-G-POIZON-Setup-2.10.55.exe"
+
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets > release.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const release = JSON.parse(fs.readFileSync('release.json', 'utf8'));
+          const names = release.assets.map((asset) => asset.name).sort();
+          const expected = [
+            'Around-G-POIZON-Setup-2.10.55.exe',
+            'Around-G-POIZON-Setup-2.10.55.exe.blockmap',
+            'latest.yml',
+          ].sort();
+          if (JSON.stringify(names) !== JSON.stringify(expected)) {
+            throw new Error(`Unexpected release assets: ${names.join(', ')}`);
+          }
+          NODE
+
+          mkdir -p verify
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "latest.yml" --dir verify
+          grep -Eq '^version:[[:space:]]*2\.10\.55$' verify/latest.yml
+          grep -Fq "$installer" verify/latest.yml
+          echo "Verified v2.10.55 installer, blockmap, and latest.yml."
