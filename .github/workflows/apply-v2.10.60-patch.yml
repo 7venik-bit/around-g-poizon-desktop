@@ -1,12 +1,6 @@
 name: Apply v2.10.60 separate monitor window patch
 
 on:
-  push:
-    branches:
-      - agent/v2.10.60-separate-monitor-window
-    paths:
-      - scripts/patch-v2.10.60.py
-      - .github/workflows/apply-v2.10.60-patch.yml
   pull_request:
     branches:
       - main
@@ -19,7 +13,6 @@ permissions:
 
 jobs:
   apply:
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout patch branch
