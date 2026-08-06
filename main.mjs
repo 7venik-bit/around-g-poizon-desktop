@@ -74,7 +74,9 @@ const brandExportValidationCache = new Map();
 const excelPreviewCache = new Map();
 let brandExportMonitorRunning = false;
 let activeBrandDownloadJobId = "";
+const brandDownloadPathsInProgress = new Set();
 let brandWorkSessionGeneration = 0;
+let brandExportAttemptGeneration = 0;
 let sellerProductFrameRoutingId = null;
 const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
 const SELLER_PRODUCT_SEARCH_URL = "https://seller.poizon.com/main/goods/search";
@@ -978,10 +980,10 @@ async function scanBrandExportFolder() {
       .map(async (entry) => {
         const path = entry.path;
         const info = await stat(path);
-        return { path, name: entry.name, mtimeMs: info.mtimeMs, size: info.size };
+        return { path, name: entry.name, directory: entry.directory, mtimeMs: info.mtimeMs, size: info.size };
       }));
     candidates.sort((left, right) => right.mtimeMs - left.mtimeMs);
-    const newest = candidates[0];
+    const newest = candidates.find((candidate) => !brandDownloadPathsInProgress.has(candidate.path));
     if (!newest) return;
     const signature = `${newest.path}:${newest.mtimeMs}:${newest.size}`;
     if (lastBrandExportSignature === "__BASELINE_EXISTING_FILES__") {
@@ -990,7 +992,13 @@ async function scanBrandExportFolder() {
     }
     if (signature === lastBrandExportSignature) return;
     lastBrandExportSignature = signature;
-    const expectedBrand = pendingBrandExportName || brandFromExportFileName(newest.name);
+    const folderBrand = newest.directory === folder ? "" : basename(newest.directory);
+    const expectedBrand = folderBrand || brandFromExportFileName(newest.name) || pendingBrandExportName;
+    const matchingJobs = [...brandExportJobs.entries()].filter(([_jobId, job]) =>
+      normalizeBrandExportKey(job?.brandName) === normalizeBrandExportKey(expectedBrand)
+      || normalizeBrandExportKey(job?.brandKo) === normalizeBrandExportKey(expectedBrand)
+    );
+    const matchedJobId = matchingJobs.length === 1 ? matchingJobs[0][0] : "";
     const brandIntegrity = await validateBrandExportFile(newest.path, [expectedBrand]).catch((error) => ({
       ok: false,
       status: "invalid",
@@ -1002,6 +1010,7 @@ async function scanBrandExportFolder() {
     mainWindow.webContents.send("brand-export:detected", {
       ...newest,
       brandName: expectedBrand,
+      jobId: matchedJobId,
       brandIntegrity,
     });
   } catch (error) {
@@ -1139,12 +1148,24 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
   if (!sellerDownloadSessions.has(sellerSession)) {
     sellerSession.on("will-download", (_event, item) => {
     const sessionGeneration = brandWorkSessionGeneration;
-    const downloadJobId = activeBrandDownloadJobId || pendingBrandExportJobId;
-    const downloadJob = brandExportJobs.get(downloadJobId) || {
-      brandName: pendingBrandExportName,
-      brandKo: "",
-      jobId: downloadJobId,
-    };
+    const requestedJobs = [...brandExportJobs.entries()]
+      .filter(([_jobId, job]) => Number(job?.downloadRequestedAt || 0) > 0 && !job?.downloadStarted)
+      .sort((left, right) => Number(left[1].downloadRequestedAt) - Number(right[1].downloadRequestedAt));
+    const lockedJobId = activeBrandDownloadJobId && brandExportJobs.has(activeBrandDownloadJobId)
+      ? activeBrandDownloadJobId
+      : "";
+    const downloadJobId = lockedJobId
+      || requestedJobs[0]?.[0]
+      || (brandExportJobs.size === 1 ? [...brandExportJobs.keys()][0] : "");
+    const downloadJob = brandExportJobs.get(downloadJobId);
+    if (!downloadJobId || !downloadJob) {
+      mainWindow?.webContents.send("brand-export:error", {
+        message: "다운로드 파일과 브랜드 작업번호를 안전하게 연결하지 못해 자동 저장을 중단했습니다.",
+      });
+      item.cancel();
+      return;
+    }
+    activeBrandDownloadJobId = downloadJobId;
     downloadJob.downloadStarted = true;
     brandDownloadStarted = true;
     const folder = currentBrandExportFolder();
@@ -1158,6 +1179,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
       ? `${safeBrand}_${localFileTimestamp()}.xlsx`
       : `POIZON_${localFileTimestamp()}.xlsx`;
     const filePath = join(brandFolder, fileName);
+    brandDownloadPathsInProgress.add(filePath);
     item.setSavePath(filePath);
     mainWindow?.webContents.send("brand-export:progress", {
       status: "download-started",
@@ -1204,6 +1226,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
           });
           brandExportJobs.delete(downloadJobId);
           if (activeBrandDownloadJobId === downloadJobId) activeBrandDownloadJobId = "";
+          brandDownloadPathsInProgress.delete(filePath);
           brandDownloadStarted = false;
           return;
         }
@@ -1248,7 +1271,8 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
         mainWindow?.webContents.send("brand-export:detected", {
           path: finalPath,
           name: finalName,
-          brandName: detectedBrand || exportBrand || downloadJob.brandName,
+          brandName: downloadJob.brandName || exportBrand,
+          detectedBrandName: detectedBrand || "",
           jobId: downloadJobId,
           size: info.size,
           time: info.mtimeMs,
@@ -1262,6 +1286,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
       }
       brandExportJobs.delete(downloadJobId);
       if (activeBrandDownloadJobId === downloadJobId) activeBrandDownloadJobId = "";
+      brandDownloadPathsInProgress.delete(filePath);
       brandDownloadStarted = false;
     });
     });
@@ -1581,11 +1606,22 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
       }
 
       const now = Date.now();
-      const ready = statuses.find((status) => {
+      if (activeBrandDownloadJobId) {
+        const activeJob = brandExportJobs.get(activeBrandDownloadJobId);
+        const requestAge = now - Number(activeJob?.downloadRequestedAt || now);
+        if (!activeJob || (!activeJob.downloadStarted && requestAge >= 120_000)) {
+          if (activeJob) {
+            activeJob.downloadRequestedAt = 0;
+            activeJob.downloadStarted = false;
+          }
+          activeBrandDownloadJobId = "";
+        }
+      }
+      const ready = activeBrandDownloadJobId ? null : statuses.find((status) => {
         const job = brandExportJobs.get(status.jobId);
         return status.state === "READY"
           && !job?.downloadStarted
-          && (!job?.downloadRequestedAt || now - job.downloadRequestedAt >= 8_000);
+          && !job?.downloadRequestedAt;
       });
       if (ready) {
         const job = brandExportJobs.get(ready.jobId);
@@ -1618,6 +1654,8 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
           })()`, true).catch(() => ({ clicked: false }));
           if (!clickResult?.clicked) {
             job.downloadRequestedAt = 0;
+            job.downloadStarted = false;
+            if (activeBrandDownloadJobId === ready.jobId) activeBrandDownloadJobId = "";
             mainWindow?.webContents.send("brand-export:progress", {
               status: "monitoring",
               brandName: job.brandName,
@@ -1811,6 +1849,8 @@ function sellerBrandExportFailureMessage(code = "", brandName = "") {
     SEARCH_INPUT_NOT_FOUND: `${label} 상품검색 입력창이 4회 재시도 후에도 표시되지 않았습니다. 판매자센터 화면 로딩 또는 로그인 상태를 확인해 주세요.`,
     SELLER_LOGIN_REQUIRED: `${label} 작업 중 판매자센터 로그인 화면이 확인됐습니다. 로그인 후 다시 실행해 주세요.`,
     SELLER_SEARCH_SCRIPT_ERROR: `${label} 상품검색 화면 제어 중 오류가 발생했습니다. 상품검색 화면을 다시 열어 재시도해 주세요.`,
+    SELLER_SEARCH_STAGE_TIMEOUT: `${label} 상품검색 응답이 70초 동안 없어 다음 브랜드로 이동합니다.`,
+    PRODUCT_VERIFICATION_TIMEOUT: `${label} 전체 페이지 확인이 70초 안에 끝나지 않아 다음 브랜드로 이동합니다.`,
     BRAND_INPUT_NOT_APPLIED: `${label} 검색어가 판매자센터에 입력되지 않아 중단했습니다.`,
     BRAND_RESULT_MISMATCH: `${label} 검색 결과가 확인되지 않아 내보내기를 중단했습니다. 기존 검색 결과는 다운로드하지 않습니다.`,
     SEARCH_RESULT_NOT_UPDATED: `${label} 검색 결과가 새로 바뀌지 않아 내보내기를 중단했습니다. 기존 검색 결과는 다운로드하지 않습니다.`,
@@ -2064,7 +2104,9 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
 
 async function automateSellerBrandExport(input = {}) {
   const sessionGeneration = brandWorkSessionGeneration;
-  const cleared = () => sessionGeneration !== brandWorkSessionGeneration;
+  const attemptGeneration = ++brandExportAttemptGeneration;
+  const cleared = () => sessionGeneration !== brandWorkSessionGeneration
+    || attemptGeneration !== brandExportAttemptGeneration;
   const brandName = String(input.brandName || "").trim();
   const brandKo = String(input.brandKo || "").trim();
   if (brandExportJobPending) {
@@ -2467,7 +2509,13 @@ async function automateSellerBrandExport(input = {}) {
     }
     for (const candidate of frameCandidates) {
       if (!candidate.probe?.inputCount && !candidate.probe?.hint) continue;
-      const result = await runSellerSearch(candidate.frame).catch((error) => ({
+      const result = await Promise.race([
+        runSellerSearch(candidate.frame),
+        new Promise((resolve) => setTimeout(() => resolve({
+          ok: false,
+          step: "SELLER_SEARCH_STAGE_TIMEOUT",
+        }), 70_000)),
+      ]).catch((error) => ({
         ok: false,
         step: "SELLER_SEARCH_SCRIPT_ERROR",
         detail: String(error?.message || error || ""),
@@ -2495,6 +2543,12 @@ async function automateSellerBrandExport(input = {}) {
       await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => null);
       await new Promise((resolve) => setTimeout(resolve, 2500 + searchInputAttempt * 1000));
     }
+  }
+  if (cleared()) {
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    return { ok: false, code: "BRAND_ATTEMPT_ABORTED", message: `${brandName} 작업 시간이 초과되어 다음 브랜드로 이동합니다.` };
   }
   if (!searched?.ok && searched?.step === "SEARCH_INPUT_NOT_FOUND") {
     searched = { ...searched, diagnostics: lastSearchDiagnostics };
@@ -2541,7 +2595,15 @@ async function automateSellerBrandExport(input = {}) {
       jobState: `1단계/5 · 전체 페이지 수·마지막 페이지 확인 중 · 검사 ${attempt}/2`,
       message: `${brandName} · 1단계/5 · 전체 페이지 수와 마지막 페이지 확인 중 · 검사 ${attempt}/2 (다운로드센터 작업 생성 전)`,
     });
-    completeness = await verifyCompleteSellerExportAndClick(searched.expectedTotal);
+    completeness = await Promise.race([
+      verifyCompleteSellerExportAndClick(searched.expectedTotal),
+      new Promise((resolve) => setTimeout(() => resolve({
+        ok: false,
+        code: "PRODUCT_VERIFICATION_TIMEOUT",
+        expected: Number(searched.expectedTotal || 0),
+        actual: 0,
+      }), 70_000)),
+    ]);
     if (completeness?.ok) break;
     if (completeness?.code !== "PARTIAL_PRODUCT_COLLECTION") break;
   }
@@ -2578,7 +2640,11 @@ async function automateSellerBrandExport(input = {}) {
   let fallbackCandidateStableReads = 0;
   await new Promise((resolve) => setTimeout(resolve, 2500));
   while (Date.now() - verificationStartedAt < verificationTimeoutMs) {
-    const currentJobs = await readSellerExportJobs();
+    if (cleared()) break;
+    const currentJobs = await Promise.race([
+      readSellerExportJobs(),
+      new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
+    ]);
     if (Array.isArray(currentJobs)) {
       const unusedJobs = currentJobs.filter((job) => !brandExportJobOwner(job?.id));
       const candidate = findNewSellerExportJob([...baselineJobIds], unusedJobs);
@@ -2619,6 +2685,12 @@ async function automateSellerBrandExport(input = {}) {
       await sellerWindow.webContents.reloadIgnoringCache();
       lastReloadAt = Date.now();
     }
+  }
+  if (cleared()) {
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    return { ok: false, code: "BRAND_ATTEMPT_ABORTED", message: `${brandName} 작업 시간이 초과되어 다음 브랜드로 이동합니다.` };
   }
   if (!createdJob) {
     pendingBrandExportName = "";
@@ -2677,6 +2749,8 @@ async function automateSellerBrandExport(input = {}) {
     message: `${brandName} · 3단계/5 · 새 작업번호 ${registeredJobId} 생성 완료 · POIZON 처리 대기`,
   });
   brandExportJobPending = false;
+  pendingBrandExportName = "";
+  pendingBrandExportJobId = "";
   sellerWindow.hide();
   mainWindow?.show();
   mainWindow?.focus();
@@ -3595,7 +3669,27 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle("seller:brand-export", (_event, input) => automateSellerBrandExport(input));
-  ipcMain.handle("seller:start-brand-export-monitor", () => {
+  ipcMain.handle("seller:abort-brand-export-attempt", async () => {
+  brandExportAttemptGeneration += 1;
+  brandExportJobPending = false;
+  pendingBrandExportName = "";
+  pendingBrandExportJobId = "";
+  sellerProductFrameRoutingId = null;
+  try {
+    sellerWindow?.webContents.stop();
+    if (sellerWindow && !sellerWindow.isDestroyed()) {
+      await Promise.race([
+        sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL),
+        new Promise((resolve) => setTimeout(resolve, 8_000)),
+      ]);
+      sellerWindow.hide();
+    }
+  } catch {}
+  showCollectorWindow();
+  return { ok: true };
+});
+
+ipcMain.handle("seller:start-brand-export-monitor", () => {
     void watchAllSellerExportJobsEveryTenSeconds();
     return { ok: true, jobs: brandExportJobs.size };
   });

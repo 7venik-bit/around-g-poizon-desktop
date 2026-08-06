@@ -17,6 +17,7 @@ let selectedBrandIds = new Set();
 let brandSelectionHistory = [];
 let brandExportQueue = [];
 let brandExportFailureCount = 0;
+const BRAND_AUTOMATION_TIMEOUT_MS = 5 * 60 * 1000;
 let activeExportBrand = null;
 let brandSelectionBusy = false;
 const brandExportJobs = new Map();
@@ -439,14 +440,32 @@ function updateBrandExportJob(jobId = "", state = "", brandName = "") {
   const normalizedId = String(jobId || "").trim();
   if (!normalizedId) return;
   const previous = brandExportJobs.get(normalizedId) || {};
+  const previousBrand = String(previous.brandName || "").trim();
+  const incomingBrand = String(brandName || "").trim();
+  const stableBrandName = previousBrand && previousBrand !== "선택 브랜드"
+    ? previousBrand
+    : incomingBrand || previousBrand || "선택 브랜드";
   brandExportJobs.set(normalizedId, {
-    brandName: brandName || previous.brandName || "선택 브랜드",
+    brandName: stableBrandName,
     state: state || previous.state || "감시 중",
     startedAt: previous.startedAt || Date.now(),
     updatedAt: Date.now(),
   });
   panel.hidden = false;
   renderBrandExportJobs();
+}
+
+function resolveRendererBrandJobId(file = {}) {
+  const explicit = String(file?.jobId || "").trim();
+  if (explicit) return explicit;
+  const key = normalizeBrandKey(file?.brandName || file?.detectedBrandName || "");
+  if (!key) return "";
+  const matches = [...brandExportJobs.entries()].filter(([_jobId, job]) =>
+    normalizeBrandKey(job?.brandName) === key
+  );
+  const unfinished = matches.filter(([_jobId, job]) => !brandJobIsFinished(job?.state));
+  if (unfinished.length === 1) return unfinished[0][0];
+  return matches.length === 1 ? matches[0][0] : "";
 }
 
 function toggleBrandSelection(brandId) {
@@ -513,12 +532,23 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
   $("#brand-status").className = "status";
   $("#brand-status").textContent = `${activeExportBrand.name} · 1단계/5 · 판매자센터 연결 후 실제 상품검색 시작 중`;
   touchBrandActivity(`${activeExportBrand.name} · 실제 상품검색 실행 중`);
-  const automation = await window.aroundG.automateSellerBrandExport({
+  const automationRequest = window.aroundG.automateSellerBrandExport({
     brandName: activeExportBrand.name || "",
     brandKo: activeExportBrand.ko || "",
     brandId: selectedBrandId,
     deferMonitor: true,
   });
+  const automation = await Promise.race([
+    automationRequest,
+    new Promise((resolve) => setTimeout(() => resolve({
+      ok: false,
+      code: "BRAND_AUTOMATION_TIMEOUT",
+      message: `${activeExportBrand?.name || "선택 브랜드"} 작업이 5분 안에 끝나지 않아 다음 브랜드로 이동합니다.`,
+    }), BRAND_AUTOMATION_TIMEOUT_MS)),
+  ]);
+  if (automation?.code === "BRAND_AUTOMATION_TIMEOUT") {
+    await window.aroundG.abortSellerBrandExportAttempt?.();
+  }
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return;
   if (!automation?.ok) {
     recordBrandSelection(activeExportBrand, "데이터 가져오기 실패");
@@ -1337,7 +1367,10 @@ async function importDetectedBrandExport(file, generation = brandWorkHistoryGene
   const countLabel = workbookSummary
     ? ` · 전체 행 ${Number(workbookSummary.dataRowCount || 0).toLocaleString("ko-KR")}개 · 고유 SPU ${Number(workbookSummary.uniqueSpuCount || 0).toLocaleString("ko-KR")}개 · 중복 ${Number(workbookSummary.duplicateSpuCount || 0).toLocaleString("ko-KR")}개 · 빈 SPU ${Number(workbookSummary.blankSpuCount || 0).toLocaleString("ko-KR")}개`
     : "";
-  $("#brand-status").textContent = `${expectedBrand || "선택 브랜드"} 확인완료${countLabel} · 받은 Excel 파일 메뉴에서 확인하세요.`;
+  const remainingJobs = [...brandExportJobs.values()].filter((job) => !brandJobIsFinished(job.state)).length;
+  $("#brand-status").textContent = remainingJobs
+    ? `${expectedBrand || "선택 브랜드"} 확인완료${countLabel} · 남은 ${remainingJobs}개 브랜드 작업을 계속 감시합니다.`
+    : `${expectedBrand || "선택 브랜드"} 확인완료${countLabel} · 받은 Excel 파일 메뉴에서 확인하세요.`;
   const fileStatus = $("#excel-files-status");
   if (fileStatus) {
     fileStatus.className = "status success";
@@ -1379,11 +1412,18 @@ window.aroundG.onBrandExportDetected((file) => {
   if (!acceptBrandWorkEvents) return;
   const path = String(file?.path || "").trim();
   if (!path || completedBrandImportPaths.has(path) || queuedBrandImportPaths.has(path)) return;
-  updateBrandExportJob(file?.jobId, "5단계/5 · Excel 다운로드 완료 · 검증 대기", file?.brandName);
+  const resolvedJobId = resolveRendererBrandJobId(file);
+  const registeredBrand = String(brandExportJobs.get(resolvedJobId)?.brandName || "").trim();
+  const normalizedFile = {
+    ...file,
+    jobId: resolvedJobId,
+    brandName: registeredBrand || file?.brandName || "선택 브랜드",
+  };
+  updateBrandExportJob(normalizedFile.jobId, "5단계/5 · Excel 다운로드 완료 · 검증 대기", normalizedFile.brandName);
   queuedBrandImportPaths.add(path);
-  detectedBrandImportQueue.push(file);
+  detectedBrandImportQueue.push(normalizedFile);
   $("#brand-status").className = "status";
-  $("#brand-status").textContent = `${file?.brandName || "선택 브랜드"} · 5단계/5 · Excel 검증·프로그램 등록 중`;
+  $("#brand-status").textContent = `${normalizedFile.brandName} · 5단계/5 · Excel 검증·프로그램 등록 중`;
   void drainDetectedBrandImports();
 });
 $("#brand-download-files").addEventListener("click", async (event) => {
