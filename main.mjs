@@ -933,10 +933,26 @@ async function listBrandExportFiles() {
       ratio: 0,
       message: `Excel 브랜드 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
     }));
+    const detectedBrand = String(brandIntegrity?.dominantBrand || "").trim();
+    const resolvedBrandName = detectedBrand || expectedBrand;
+    if (recoveredJobId && resolvedBrandName
+      && normalizeBrandExportKey(resolvedBrandName) !== normalizeBrandExportKey(savedJob?.brandName)) {
+      await rememberBrandExportJob({
+        jobId: recoveredJobId,
+        brandName: resolvedBrandName,
+        createdAt: Number(savedJob?.createdAt || info.mtimeMs),
+        lastDownloadedAt: Number(savedJob?.lastDownloadedAt || info.mtimeMs),
+        expectedProductCount: Number(savedJob?.expectedProductCount || 0),
+        filePath: path,
+        fileName: entry.name,
+        fileMtimeMs: info.mtimeMs,
+      });
+    }
     files.push({
       path,
       name: entry.name,
-      brandName: expectedBrand,
+      brandName: resolvedBrandName,
+      detectedBrandName: detectedBrand,
       brandIntegrity,
       jobId: recoveredJobId,
       jobIdRecovered: Boolean(recoveredJobId),
@@ -1290,6 +1306,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
         const detectedBrand = brandIntegrity.dominantBrand
           ? safeBrandExportLabel(brandIntegrity.dominantBrand)
           : exportBrand;
+        const resolvedBrandName = detectedBrand || downloadJob.brandName || exportBrand;
         if (detectedBrand !== exportBrand) {
           const detectedFolder = join(folder, brandExportFolderName(detectedBrand, downloadJobId));
           await mkdir(detectedFolder, { recursive: true });
@@ -1308,7 +1325,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
         lastBrandExportSignature = `${finalPath}:${info.mtimeMs}:${info.size}`;
         await rememberBrandExportJob({
           jobId: downloadJobId,
-          brandName: downloadJob.brandName,
+          brandName: resolvedBrandName,
           createdAt: downloadJob.createdAt,
           lastDownloadedAt: Date.now(),
           expectedProductCount,
@@ -1320,7 +1337,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
         mainWindow?.webContents.send("brand-export:detected", {
           path: finalPath,
           name: finalName,
-          brandName: downloadJob.brandName || exportBrand,
+          brandName: resolvedBrandName,
           detectedBrandName: detectedBrand || "",
           jobId: downloadJobId,
           size: info.size,

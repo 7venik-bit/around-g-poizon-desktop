@@ -1,0 +1,30 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const [main, renderer, packageSource, lockSource] = await Promise.all([
+  readFile(new URL("../main.mjs", import.meta.url), "utf8"),
+  readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
+  readFile(new URL("../package.json", import.meta.url), "utf8"),
+  readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
+]);
+
+test("the workbook brand repairs a wrongly connected POIZON job", () => {
+  assert.match(main, /const resolvedBrandName = detectedBrand \|\| downloadJob\.brandName \|\| exportBrand/);
+  assert.match(main, /brandName: resolvedBrandName/);
+  assert.match(main, /detectedBrandName: detectedBrand/);
+  assert.match(renderer, /const expectedBrand = detectedBrand \|\| registeredBrand/);
+  assert.match(renderer, /brandName: detectedBrand/);
+});
+
+test("startup file discovery repairs an older wrong brand cache", () => {
+  assert.match(main, /const resolvedBrandName = detectedBrand \|\| expectedBrand/);
+  assert.match(main, /normalizeBrandExportKey\(resolvedBrandName\) !== normalizeBrandExportKey\(savedJob\?\.brandName\)/);
+  assert.match(main, /jobId: recoveredJobId/);
+});
+
+test("release metadata is 2.10.67", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.67");
+  assert.equal(JSON.parse(lockSource).version, "2.10.67");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.67");
+});

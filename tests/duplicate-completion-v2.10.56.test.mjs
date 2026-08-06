@@ -24,7 +24,7 @@ test("one live job can complete only once even when the folder timestamp changes
   const importBlock = normalizedRenderer.match(
     /async function importDetectedBrandExport[\s\S]*?\n}\n\nasync function drainDetectedBrandImports/
   )?.[0] || "";
-  assert.match(importBlock, /const expectedBrand = registeredBrand/);
+  assert.match(importBlock, /const expectedBrand = detectedBrand \|\| registeredBrand/);
   assert.doesNotMatch(importBlock, /selectedBrandName/);
 });
 
@@ -40,8 +40,8 @@ test("completion status counts only downloaded jobs", () => {
   assert.match(renderer, /const completionLabel = `다운로드 완료 \$\{completedJobs\}\/\$\{jobs\.length\}개`/);
 });
 
-test("release metadata is 2.10.66", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.66");
-  assert.equal(JSON.parse(lockSource).version, "2.10.66");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.66");
+test("release metadata is 2.10.67", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.67");
+  assert.equal(JSON.parse(lockSource).version, "2.10.67");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.67");
 });

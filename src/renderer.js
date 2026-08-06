@@ -1503,8 +1503,17 @@ async function importDetectedBrandExport(file, generation = brandWorkHistoryGene
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return false;
   const jobId = String(file?.jobId || "").trim();
   const registeredBrand = String(brandExportJobs.get(jobId)?.brandName || "").trim();
-  const expectedBrand = registeredBrand;
+  const detectedBrand = String(file?.detectedBrandName || "").trim();
+  const expectedBrand = detectedBrand || registeredBrand;
   if (!jobId || !expectedBrand) return false;
+  if (detectedBrand && normalizeBrandKey(detectedBrand) !== normalizeBrandKey(registeredBrand)) {
+    const previous = brandExportJobs.get(jobId) || {};
+    brandExportJobs.set(jobId, {
+      ...previous,
+      brandName: detectedBrand,
+      updatedAt: Date.now(),
+    });
+  }
   retainSelectedBrandName(expectedBrand);
   addDownloadedBrandFile({
     ...file,
