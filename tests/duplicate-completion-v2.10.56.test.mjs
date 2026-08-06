@@ -8,6 +8,7 @@ const [main, renderer, packageSource, lockSource] = await Promise.all([
   readFile(new URL("../package.json", import.meta.url), "utf8"),
   readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
 ]);
+const normalizedRenderer = renderer.replace(/\r\n/g, "\n");
 
 test("restored Excel paths and job ids are registered as already completed", () => {
   assert.match(renderer, /function brandImportPathKey/);
@@ -20,7 +21,7 @@ test("one live job can complete only once even when the folder timestamp changes
   assert.match(renderer, /completedBrandImportJobIds\.has\(resolvedJobId\)/);
   assert.match(renderer, /if \(!resolvedJobId \|\| completedBrandImportJobIds\.has\(resolvedJobId\)\) return/);
   assert.match(renderer, /if \(!registeredBrand\) return/);
-  const importBlock = renderer.match(
+  const importBlock = normalizedRenderer.match(
     /async function importDetectedBrandExport[\s\S]*?\n}\n\nasync function drainDetectedBrandImports/
   )?.[0] || "";
   assert.match(importBlock, /const expectedBrand = registeredBrand/);
