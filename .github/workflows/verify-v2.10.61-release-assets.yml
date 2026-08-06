@@ -1,0 +1,45 @@
+name: Verify v2.10.61 release assets
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/verify-v2.10.61-release-assets.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify published updater assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="v2.10.61"
+          installer="Around-G-POIZON-Setup-2.10.61.exe"
+          gh release view "$tag" --repo "$REPOSITORY" --json assets > release.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          release = json.loads(Path("release.json").read_text(encoding="utf-8"))
+          names = sorted(asset["name"] for asset in release.get("assets", []))
+          expected = sorted([
+              "Around-G-POIZON-Setup-2.10.61.exe",
+              "Around-G-POIZON-Setup-2.10.61.exe.blockmap",
+              "latest.yml",
+          ])
+          if names != expected:
+              raise SystemExit(f"release asset mismatch: expected={expected}, actual={names}")
+          print("Verified asset names:", ", ".join(names))
+          PY
+          mkdir verify-release
+          gh release download "$tag" --repo "$REPOSITORY" --pattern latest.yml --dir verify-release
+          grep -Eq '^version:[[:space:]]*2\.10\.61([[:space:]]|$)' verify-release/latest.yml
+          grep -Fq "$installer" verify-release/latest.yml
+          echo "Verified latest.yml version and installer reference."
