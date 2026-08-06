@@ -20,13 +20,20 @@ test("registration and monitoring use separate seller-center windows with one lo
   assert.match(main, /monitorSource: "dedicated-window"/);
 });
 
-test("dedicated monitor searches every accessible frame and clicks in the matching frame", () => {
+test("dedicated monitor searches every accessible frame and never reloads the registration window", () => {
   assert.match(main, /function sellerMonitorFrames/);
   assert.match(main, /mainFrame\.framesInSubtree/);
   assert.match(main, /async function readSellerMonitorStatuses/);
   assert.match(main, /frameRoutingId: frame\.routingId/);
   assert.match(main, /async function requestSellerMonitorDownload/);
   assert.match(main, /모든 다운로드센터 프레임에서 버튼을 다시 찾습니다/);
+  const watchBlock = main.match(
+    /async function watchAllSellerExportJobsEveryTenSeconds[\s\S]*?\n}\n\nconst SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT/
+  )?.[0] || "";
+  assert.ok(watchBlock);
+  assert.match(watchBlock, /ensureSellerMonitorWindow\(\)/);
+  assert.match(watchBlock, /monitor\.webContents\.reloadIgnoringCache\(\)/);
+  assert.doesNotMatch(watchBlock, /sellerWindow\.webContents\.reloadIgnoringCache\(\)/);
 });
 
 test("multi-brand UI shows registration processing completion and failure counts", () => {
