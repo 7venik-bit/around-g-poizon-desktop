@@ -715,3 +715,171 @@ body .explorer-panel{border-color:var(--ui-line);background:#fff}
 .brand-batch-row.is-error{background:#fff5f3}.brand-batch-row.is-error span{color:#bd3a2d}
 .brand-batch-row.is-processing span{color:#1769c2}.brand-batch-row.is-registering span{color:#8c6417}
 @media(max-width:900px){.brand-batch-row{grid-template-columns:1fr}.brand-batch-row span{text-align:left}}
+
+
+/* v2.10.62 responsive text and overflow safeguards */
+:root{
+  font-family:"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;
+  text-rendering:optimizeLegibility;
+}
+button,input,select,textarea{font-family:inherit}
+
+/* Long live-status messages must grow vertically instead of being clipped. */
+.brand-activity{
+  align-items:flex-start;
+  min-height:62px;
+  overflow:visible;
+  padding:12px 14px;
+}
+.brand-activity-copy{
+  flex:1 1 auto;
+  width:100%;
+  overflow:visible;
+}
+.brand-activity-copy strong,
+.brand-activity-copy small,
+.brand-activity-copy small span{
+  min-width:0;
+  max-width:none;
+  white-space:normal;
+  overflow:visible;
+  text-overflow:clip;
+  overflow-wrap:anywhere;
+  word-break:keep-all;
+  line-height:1.45;
+}
+.brand-activity-copy strong{display:block;font-size:13px}
+.brand-activity-copy small{display:flex;flex-wrap:wrap;gap:2px 6px;font-size:11px}
+
+/* Active jobs use flexible columns and wrap every user-visible value. */
+.brand-export-job{display:block;overflow:visible;padding:12px 14px}
+.brand-export-job-heading{margin-bottom:8px}
+.brand-export-job-row{
+  grid-template-columns:minmax(96px,.75fr) minmax(150px,1fr) minmax(0,2.2fr);
+  align-items:start;
+  min-height:48px;
+  padding:9px 10px;
+}
+.brand-export-job-row strong,
+.brand-export-job-row code,
+.brand-export-job-state{
+  min-width:0;
+  max-width:none;
+  white-space:normal;
+  overflow:visible;
+  text-overflow:clip;
+  overflow-wrap:anywhere;
+  word-break:keep-all;
+  line-height:1.45;
+}
+.brand-export-job-state{
+  justify-self:stretch;
+  border-radius:12px;
+  padding:6px 10px;
+  text-align:left;
+}
+
+/* Batch summary and rows remain readable at Windows display scaling. */
+.brand-batch-progress-head{flex-wrap:wrap;gap:6px 12px}
+.brand-batch-progress-head strong,
+.brand-batch-progress-head span{
+  min-width:0;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:keep-all;
+  line-height:1.4;
+}
+.brand-batch-row{
+  grid-template-columns:minmax(96px,.75fr) minmax(150px,1fr) minmax(0,2.2fr);
+  align-items:start;
+  min-height:48px;
+}
+.brand-batch-row strong,
+.brand-batch-row code,
+.brand-batch-row span{
+  min-width:0;
+  max-width:none;
+  white-space:normal;
+  overflow:visible;
+  text-overflow:clip;
+  overflow-wrap:anywhere;
+  word-break:keep-all;
+  line-height:1.45;
+}
+.brand-batch-row span{text-align:left}
+
+/* Completed rows also expand when a historic label or timestamp is long. */
+.brand-export-completed-row{
+  grid-template-columns:minmax(110px,.85fr) minmax(170px,1.25fr) minmax(145px,1fr) minmax(82px,auto);
+  align-items:start;
+}
+.brand-export-completed-row strong,
+.brand-export-completed-row code,
+.brand-export-completed-row time,
+.brand-export-completed-row>span{
+  min-width:0;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:keep-all;
+  line-height:1.45;
+}
+.brand-export-completed-row>span{justify-self:end;text-align:center}
+
+/* Inline status text below the panels must never be one-line clipped. */
+.status,
+#brand-status{
+  height:auto;
+  min-height:20px;
+  white-space:normal;
+  overflow:visible;
+  text-overflow:clip;
+  overflow-wrap:anywhere;
+  word-break:keep-all;
+  line-height:1.55;
+}
+
+/* Brand cards show up to two lines instead of ellipsis-only labels. */
+.brand-card{
+  min-width:0;
+  height:auto;
+  min-height:58px;
+  align-items:center;
+}
+.brand-card span{min-width:0;overflow:visible}
+.brand-card strong{
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  max-width:100%;
+  white-space:normal;
+  overflow:hidden;
+  text-overflow:clip;
+  overflow-wrap:anywhere;
+  word-break:keep-all;
+  line-height:1.25;
+}
+.brand-card.download-complete{grid-template-columns:30px minmax(0,1fr) auto}
+
+@media(max-width:1180px){
+  .brand-export-job-row,
+  .brand-batch-row{
+    grid-template-columns:minmax(90px,.7fr) minmax(138px,.95fr) minmax(0,2fr);
+  }
+  .brand-export-completed-row{
+    grid-template-columns:minmax(100px,.8fr) minmax(155px,1.15fr) minmax(135px,1fr) minmax(78px,auto);
+  }
+}
+@media(max-width:900px){
+  .brand-export-job-row,
+  .brand-batch-row,
+  .brand-export-completed-row{
+    grid-template-columns:1fr;
+    gap:6px;
+  }
+  .brand-export-job-state,
+  .brand-export-completed-row>span{
+    justify-self:start;
+    width:100%;
+  }
+  .brand-batch-progress-head{align-items:flex-start;flex-direction:column}
+}
