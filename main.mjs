@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 50312)
+Total output lines: 4475
+
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, safeStorage, shell } from "electron";
 import { mkdirSync } from "node:fs";
 import { appendFile, mkdir, readFile, readdir, rename, stat } from "node:fs/promises";
@@ -2225,35 +2228,7 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
       return false;
     };
 
-    const sizeChanger = [...document.querySelectorAll(".ant-pagination-options-size-changer,.ant-pagination-options")]
-      .find(visible);
-    const selector = sizeChanger?.querySelector(".ant-select-selector");
-    if (selector) {
-      selector.click();
-      await wait(250);
-      const options = [...document.querySelectorAll('[role="option"],.ant-select-item-option')]
-        .filter(visible)
-        .map((element) => ({ element, size: Number(String(element.textContent || "").match(/\\d+/)?.[0] || 0) }))
-        .filter((entry) => entry.size > 0)
-        .sort((left, right) => right.size - left.size);
-      const currentSize = readPage().pageSize;
-      if (options[0] && options[0].size > currentSize) {
-        options[0].element.click();
-        await wait(1_200);
-      } else {
-        document.body.click();
-      }
-    }
-
-    let firstSnapshot = readPage();
-    for (let attempt = 0; attempt < 60 && (!firstSnapshot.total || !firstSnapshot.keys.length); attempt += 1) {
-      await wait(250);
-      firstSnapshot = readPage();
-    }
-    const expected = Math.max(${Number(expectedTotal) || 0}, firstSnapshot.total);
-    const finalPageCount = firstSnapshot.pageCount
-      || (expected > 0 && firstSnapshot.pageSize > 0 ? Math.ceil(expected / firstSnapshot.pageSize) : 0);
-    if (expected < 1 || finalPageCount < 1 || !firstSnapshot.keys.length) {
+    const sizeChanger = [...document.querySelectorAll(".ant-pagination-options-si…312 tokens truncated…eCount < 1 || !firstSnapshot.keys.length) {
       return { ok: false, code: "PRODUCT_PAGE_NOT_READY", expected, actual: 0, pageCount: finalPageCount };
     }
 
@@ -2308,7 +2283,6 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
     let confirmationClicked = false;
     let confirmationClickCount = 0;
     let requestAcknowledged = false;
-    let exportRetried = false;
     const confirmationPattern = /^(?:확인|내보내기|생성|확정|제출|계속|确认|确定|提交|导出|继续)$/i;
     const cancelPattern = /취소|닫기|取消|关闭/i;
     const successPattern = /(?:내보내기|작업|파일).*(?:등록|생성|완료|성공|접수)|(?:导出|任务).*(?:成功|已创建|已提交)/i;
@@ -2349,25 +2323,7 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
           break;
         }
       }
-      if (!confirmationObserved && !exportRetried && attempt == 12) {
-        clickLikeUser(exportButton);
-        exportRetried = true;
-        await wait(900);
-        continue;
-      }
       await wait(250);
-    }
-    if (!requestAcknowledged) {
-      return {
-        ok: false,
-        code: "EXPORT_REQUEST_NOT_CONFIRMED",
-        expected,
-        actual: expected,
-        confirmationObserved,
-        confirmationClicked,
-        confirmationClickCount,
-        exportRetried,
-      };
     }
     return {
       ok: true,
@@ -2380,7 +2336,7 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
       confirmationClicked,
       confirmationClickCount,
       requestAcknowledged,
-      exportRetried,
+      confirmationTimedOut: !requestAcknowledged,
     };
   })()`, true);
 }
@@ -2911,7 +2867,9 @@ async function automateSellerBrandExport(input = {}) {
     status: "waiting-for-job-creation",
     brandName,
     jobState: "2단계/5 · 전체 내보내기 클릭 완료 · 새 작업번호 확인 중",
-    message: `${brandName} · 총 ${Number(completeness.expected || 0).toLocaleString("ko-KR")}개 · ${Number(completeness.pageCount || 0).toLocaleString("ko-KR")}페이지 확인 완료 · 전체 내보내기 요청 완료 · 다운로드센터의 새 작업번호를 확인합니다.`,
+    message: completeness.requestAcknowledged
+      ? `${brandName} · 총 ${Number(completeness.expected || 0).toLocaleString("ko-KR")}개 · ${Number(completeness.pageCount || 0).toLocaleString("ko-KR")}페이지 확인 완료 · 전체 내보내기 요청 완료 · 다운로드센터의 새 작업번호를 확인합니다.`
+      : `${brandName} · 전체 내보내기 클릭 후 화면 확인 응답을 판독하지 못했지만 실패 처리하지 않고 다운로드센터의 새 작업번호로 최종 확인합니다.`,
   });
 
   let createdJob = null;
