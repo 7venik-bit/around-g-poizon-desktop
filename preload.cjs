@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   openSellerCenter: () => ipcRenderer.invoke("seller:open"),
   openSellerProductSearch: () => ipcRenderer.invoke("seller:open-product-search"),
   automateSellerBrandExport: (input) => ipcRenderer.invoke("seller:brand-export", input),
+  abortSellerBrandExportAttempt: () => ipcRenderer.invoke("seller:abort-brand-export-attempt"),
   startSellerBrandExportMonitor: () => ipcRenderer.invoke("seller:start-brand-export-monitor"),
   openDownloadedBrandFile: (path, brand) => ipcRenderer.invoke("brand-export:open-file", { path, brand }),
   openOriginalExcelFile: (path) => ipcRenderer.invoke("brand-export:open-original", { path }),
