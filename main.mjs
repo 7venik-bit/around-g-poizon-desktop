@@ -993,12 +993,17 @@ async function scanBrandExportFolder() {
     if (signature === lastBrandExportSignature) return;
     lastBrandExportSignature = signature;
     const folderBrand = newest.directory === folder ? "" : basename(newest.directory);
-    const expectedBrand = folderBrand || brandFromExportFileName(newest.name) || pendingBrandExportName;
+    const expectedBrand = folderBrand || brandFromExportFileName(newest.name);
+    if (!expectedBrand) return;
     const matchingJobs = [...brandExportJobs.entries()].filter(([_jobId, job]) =>
       normalizeBrandExportKey(job?.brandName) === normalizeBrandExportKey(expectedBrand)
       || normalizeBrandExportKey(job?.brandKo) === normalizeBrandExportKey(expectedBrand)
     );
     const matchedJobId = matchingJobs.length === 1 ? matchingJobs[0][0] : "";
+    // Existing files can receive a new OneDrive modification timestamp after
+    // startup. Only a file tied to one current POIZON job may emit a live
+    // completion event; historical files are restored through list-files.
+    if (!matchedJobId) return;
     const brandIntegrity = await validateBrandExportFile(newest.path, [expectedBrand]).catch((error) => ({
       ok: false,
       status: "invalid",
