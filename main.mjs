@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 50312)
-Total output lines: 4475
-
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, safeStorage, shell } from "electron";
 import { mkdirSync } from "node:fs";
 import { appendFile, mkdir, readFile, readdir, rename, stat } from "node:fs/promises";
@@ -2228,7 +2225,35 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
       return false;
     };
 
-    const sizeChanger = [...document.querySelectorAll(".ant-pagination-options-si…312 tokens truncated…eCount < 1 || !firstSnapshot.keys.length) {
+    const sizeChanger = [...document.querySelectorAll(".ant-pagination-options-size-changer,.ant-pagination-options")]
+      .find(visible);
+    const selector = sizeChanger?.querySelector(".ant-select-selector");
+    if (selector) {
+      selector.click();
+      await wait(250);
+      const options = [...document.querySelectorAll('[role="option"],.ant-select-item-option')]
+        .filter(visible)
+        .map((element) => ({ element, size: Number(String(element.textContent || "").match(/\\d+/)?.[0] || 0) }))
+        .filter((entry) => entry.size > 0)
+        .sort((left, right) => right.size - left.size);
+      const currentSize = readPage().pageSize;
+      if (options[0] && options[0].size > currentSize) {
+        options[0].element.click();
+        await wait(1_200);
+      } else {
+        document.body.click();
+      }
+    }
+
+    let firstSnapshot = readPage();
+    for (let attempt = 0; attempt < 60 && (!firstSnapshot.total || !firstSnapshot.keys.length); attempt += 1) {
+      await wait(250);
+      firstSnapshot = readPage();
+    }
+    const expected = Math.max(${Number(expectedTotal) || 0}, firstSnapshot.total);
+    const finalPageCount = firstSnapshot.pageCount
+      || (expected > 0 && firstSnapshot.pageSize > 0 ? Math.ceil(expected / firstSnapshot.pageSize) : 0);
+    if (expected < 1 || finalPageCount < 1 || !firstSnapshot.keys.length) {
       return { ok: false, code: "PRODUCT_PAGE_NOT_READY", expected, actual: 0, pageCount: finalPageCount };
     }
 
