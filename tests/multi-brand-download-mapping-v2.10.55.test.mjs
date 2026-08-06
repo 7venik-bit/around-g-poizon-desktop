@@ -24,7 +24,7 @@ test("folder polling recovers a job id by brand without using a stale pending br
 });
 
 test("registered job clears stale pending globals and keeps requested brand authoritative", () => {
-  assert.match(main, /pendingBrandExportName = "";\n  pendingBrandExportJobId = "";\n  sellerWindow\.hide/);
+  assert.match(main, /pendingBrandExportName = "";\r?\n  pendingBrandExportJobId = "";\r?\n  sellerWindow\.hide/);
   assert.match(main, /brandName: downloadJob\.brandName \|\| exportBrand/);
   assert.match(renderer, /stableBrandName/);
   assert.match(renderer, /resolveRendererBrandJobId/);
