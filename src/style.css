@@ -520,6 +520,8 @@ body .explorer-panel{border-color:var(--ui-line);background:#fff}
 .excel-preview-filters button{font-weight:800;cursor:pointer;white-space:nowrap}.excel-preview-filters button.primary{border-color:#287de0;background:#287de0;color:#fff}
 .excel-preview-filters>small{grid-column:1/-1;color:#526f8d;font-size:10px}
 @media(max-width:1100px){.excel-preview-filters{grid-template-columns:1fr 1fr}.excel-preview-filters label{grid-template-columns:1fr 80px 80px}}
+.excel-preview-selection{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #dfe7f0;background:#f8fbff;color:#31506f;font-size:10px}
+.excel-preview-selection[hidden]{display:none}.excel-preview-selection label{display:flex;align-items:center;gap:6px;margin:0}.excel-preview-selection input{width:15px;height:15px;accent-color:#287de0}.excel-preview-selection strong{margin-right:auto;color:#236cc8}.excel-preview-selection button{padding:5px 9px;border-radius:6px;font-size:10px}.excel-preview-selection button:disabled{opacity:.45;cursor:default}
 .excel-preview-loading{padding:48px;text-align:center;color:#52708f;font-size:12px}
 .excel-preview-loading.error{color:#b42318;background:#fff4f2}
 .excel-preview-grid{max-height:560px;overflow:auto;background:#fff}
@@ -528,6 +530,7 @@ body .explorer-panel{border-color:var(--ui-line);background:#fff}
 .excel-preview-grid thead th{position:sticky;top:0;z-index:2;color:#fff;background:#263c5b;font-weight:800}
 .excel-preview-grid .excel-row-number{position:sticky;left:0;z-index:1;min-width:52px;width:52px;max-width:52px;text-align:right;color:#718096;background:#f0f4f8;font-variant-numeric:tabular-nums}
 .excel-preview-grid thead .excel-row-number{z-index:3;color:#dce6f2;background:#1d304b}
+.excel-preview-grid .excel-product-select-column{position:sticky;left:0;z-index:2;min-width:48px;width:48px;max-width:48px;text-align:center;background:#f4f8fc}.excel-preview-grid thead .excel-product-select-column{z-index:4;color:#dce6f2;background:#1d304b}.excel-preview-grid .excel-product-select-column input{width:15px;height:15px;accent-color:#287de0}.excel-preview-grid .excel-product-select-column+.excel-row-number{left:48px}
 .excel-preview-grid tbody tr:nth-child(even) td{background:#fafbfd}
 .excel-preview-pager{display:flex;align-items:center;justify-content:center;gap:14px;padding:10px;border-top:1px solid #dfe7f0;background:#f7f9fc}
 .excel-preview-pager strong{min-width:110px;text-align:center;color:#405b78;font-size:10px}

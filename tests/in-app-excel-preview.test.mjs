@@ -38,6 +38,18 @@ test("Excel preview filters both total-sales columns across all rows", async () 
   assert.match(preloadSource, /previewExcelFile: \(path, offset = 0, limit = 100, filters = \{\}\)/);
 });
 
+test("brand Excel preview supports popular-list style product selection", () => {
+  assert.match(htmlSource, /id="excel-preview-select-page"/);
+  assert.match(htmlSource, /id="excel-preview-selected-count"/);
+  assert.match(htmlSource, /id="excel-preview-selection-clear"/);
+  assert.match(rendererSource, /const selectedExcelPreviewProducts = new Set\(\)/);
+  assert.match(rendererSource, /function excelPreviewProductKey/);
+  assert.match(rendererSource, /data-excel-product-select/);
+  assert.match(rendererSource, /updateExcelPreviewSelectionUi\(pageProductKeys\)/);
+  assert.match(cssSource, /\.excel-preview-selection/);
+  assert.match(cssSource, /\.excel-product-select-column/);
+});
+
 test("shared Excel reader repairs POIZON A1 dimensions before preview and ordinary import", async () => {
   const readerSource = await readFile(new URL("../services/excel-reader.mjs", import.meta.url), "utf8");
   assert.match(readerSource, /repairPoizonWorksheetDimensions\(input\)/);
