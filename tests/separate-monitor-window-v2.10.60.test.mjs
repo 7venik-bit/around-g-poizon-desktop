@@ -10,6 +10,7 @@ const [main, renderer, html, style, packageSource, lockSource] = await Promise.a
   readFile(new URL("../package.json", import.meta.url), "utf8"),
   readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
 ]);
+const normalizedMain = main.replace(/\r\n/g, "\n");
 
 test("registration and monitoring use separate seller-center windows with one login partition", () => {
   assert.match(main, /let sellerMonitorWindow/);
@@ -27,7 +28,7 @@ test("dedicated monitor searches every accessible frame and never reloads the re
   assert.match(main, /frameRoutingId: frame\.routingId/);
   assert.match(main, /async function requestSellerMonitorDownload/);
   assert.match(main, /모든 다운로드센터 프레임에서 버튼을 다시 찾습니다/);
-  const watchBlock = main.match(
+  const watchBlock = normalizedMain.match(
     /async function watchAllSellerExportJobsEveryTenSeconds[\s\S]*?\n}\n\nconst SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT/
   )?.[0] || "";
   assert.ok(watchBlock);
