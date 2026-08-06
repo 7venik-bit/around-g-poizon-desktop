@@ -10,7 +10,7 @@ const [main, packageSource, lockSource] = await Promise.all([
 
 test("new downloads use brand and POIZON job number in the folder name", () => {
   assert.match(main, /function brandExportFolderName/);
-  assert.match(main, /const safeJobId = String\(jobId \|\| ""\)\.replace\(\/\[\^0-9\]\//);
+  assert.ok(main.includes('const safeJobId = String(jobId || "").replace(/[^0-9]/g, "").trim();'));
   assert.match(main, /return safeJobId \? `\$\{safeBrand\}_\$\{safeJobId\}` : safeBrand/);
   assert.match(main, /join\(folder, brandExportFolderName\(exportBrand, downloadJobId\)\)/);
   assert.match(main, /join\(folder, brandExportFolderName\(detectedBrand, downloadJobId\)\)/);
