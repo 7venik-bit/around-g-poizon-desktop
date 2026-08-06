@@ -29,22 +29,20 @@ jobs:
           import re
           path = Path('scripts/patch-v2.10.60.py')
           source = path.read_text(encoding='utf-8')
-          replacement = '''html = replace_once(
+          replacement = '''html, html_insert_count = re.subn(
+              r'(?m)^(?P<indent>\\s*)<div id="brand-export-job" class="brand-export-job" hidden>',
+              lambda match: (
+                  f'{match.group("indent")}<section id="brand-batch-progress" class="brand-batch-progress" hidden aria-live="polite">\\n'
+                  f'{match.group("indent")}  <div class="brand-batch-progress-head"><strong>복수 브랜드 진행 현황</strong><span id="brand-batch-summary"></span></div>\\n'
+                  f'{match.group("indent")}  <div id="brand-batch-list" class="brand-batch-list"></div>\\n'
+                  f'{match.group("indent")}</section>\\n'
+                  f'{match.group("indent")}<div id="brand-export-job" class="brand-export-job" hidden>'
+              ),
               html,
-              \'''          <div id="brand-export-job" class="brand-export-job" hidden>
-                <div class="brand-export-job-heading"><strong>진행 중·대기 작업</strong></div>
-                <div id="brand-export-jobs-list" class="brand-export-jobs-list"></div>
-              </div>\''',
-              \'''          <section id="brand-batch-progress" class="brand-batch-progress" hidden aria-live="polite">
-                <div class="brand-batch-progress-head"><strong>복수 브랜드 진행 현황</strong><span id="brand-batch-summary"></span></div>
-                <div id="brand-batch-list" class="brand-batch-list"></div>
-              </section>
-              <div id="brand-export-job" class="brand-export-job" hidden>
-                <div class="brand-export-job-heading"><strong>진행 중·대기 작업</strong></div>
-                <div id="brand-export-jobs-list" class="brand-export-jobs-list"></div>
-              </div>\''',
-              "batch progress html",
-          )'''
+              count=1,
+          )
+          if html_insert_count != 1:
+              raise RuntimeError(f"batch progress html: expected one structural match, found {html_insert_count}")'''
           source, count = re.subn(
               r'html = replace_once\([\s\S]*?"batch progress html",\n\)',
               replacement,
