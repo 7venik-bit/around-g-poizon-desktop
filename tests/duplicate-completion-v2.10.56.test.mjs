@@ -29,7 +29,7 @@ test("one live job can complete only once even when the folder timestamp changes
 });
 
 test("folder polling never reports an unmatched historical file as live completion", () => {
-  assert.match(main, /const expectedBrand = folderBrand \|\| brandFromExportFileName\(newest\.name\)/);
+  assert.match(main, /const expectedBrand = folderMeta\.brandName \|\| brandFromExportFileName\(newest\.name\)/);
   assert.match(main, /if \(!matchedJobId\) return/);
   assert.doesNotMatch(main, /brandFromExportFileName\(newest\.name\) \|\| pendingBrandExportName/);
 });
@@ -40,8 +40,8 @@ test("completion status counts only downloaded jobs", () => {
   assert.match(renderer, /const completionLabel = `다운로드 완료 \$\{completedJobs\}\/\$\{jobs\.length\}개`/);
 });
 
-test("release metadata is 2.10.64", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.64");
-  assert.equal(JSON.parse(lockSource).version, "2.10.64");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.64");
+test("release metadata is 2.10.65", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.65");
+  assert.equal(JSON.parse(lockSource).version, "2.10.65");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.65");
 });

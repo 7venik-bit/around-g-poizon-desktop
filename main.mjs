@@ -818,6 +818,21 @@ function safeBrandExportLabel(value = "") {
     .trim() || "POIZON";
 }
 
+function brandExportFolderName(brandName = "", jobId = "") {
+  const safeBrand = safeBrandExportLabel(brandName);
+  const safeJobId = String(jobId || "").replace(/[^0-9]/g, "").trim();
+  return safeJobId ? `${safeBrand}_${safeJobId}` : safeBrand;
+}
+
+function parseBrandExportFolderName(folderName = "") {
+  const normalized = String(folderName || "").trim();
+  const matched = normalized.match(/^(.*)_([0-9]{7,})$/);
+  return matched
+    ? { brandName: String(matched[1] || "").trim(), jobId: matched[2] }
+    : { brandName: normalized, jobId: "" };
+}
+
+
 async function listBrandExportExcelEntries(folder) {
   const files = [];
   async function visit(directory) {
@@ -898,15 +913,17 @@ async function listBrandExportFiles() {
   const files = [];
   for (const { entry, info } of preparedEntries) {
     const path = entry.path;
-    const folderBrand = entry.directory === folder ? "" : basename(entry.directory);
-    const expectedBrand = folderBrand || brandFromExportFileName(entry.name);
+    const folderMeta = entry.directory === folder
+      ? { brandName: "", jobId: "" }
+      : parseBrandExportFolderName(basename(entry.directory));
+    const expectedBrand = folderMeta.brandName || brandFromExportFileName(entry.name);
     const savedJob = savedBrandExportJobForFile({
       path,
       name: entry.name,
       brandName: expectedBrand,
       mtimeMs: info.mtimeMs,
     }, usedJobIds);
-    const recoveredJobId = String(savedJob?.jobId || "").trim();
+    const recoveredJobId = String(folderMeta.jobId || savedJob?.jobId || "").trim();
     if (recoveredJobId) usedJobIds.add(recoveredJobId);
     const brandIntegrity = await validateBrandExportFile(path, [expectedBrand]).catch((error) => ({
       ok: false,
@@ -1009,14 +1026,19 @@ async function scanBrandExportFolder() {
     }
     if (signature === lastBrandExportSignature) return;
     lastBrandExportSignature = signature;
-    const folderBrand = newest.directory === folder ? "" : basename(newest.directory);
-    const expectedBrand = folderBrand || brandFromExportFileName(newest.name);
+    const folderMeta = newest.directory === folder
+      ? { brandName: "", jobId: "" }
+      : parseBrandExportFolderName(basename(newest.directory));
+    const expectedBrand = folderMeta.brandName || brandFromExportFileName(newest.name);
     if (!expectedBrand) return;
     const matchingJobs = [...brandExportJobs.entries()].filter(([_jobId, job]) =>
       normalizeBrandExportKey(job?.brandName) === normalizeBrandExportKey(expectedBrand)
       || normalizeBrandExportKey(job?.brandKo) === normalizeBrandExportKey(expectedBrand)
     );
-    const matchedJobId = matchingJobs.length === 1 ? matchingJobs[0][0] : "";
+    const folderJobId = folderMeta.jobId && brandExportJobs.has(folderMeta.jobId)
+      ? folderMeta.jobId
+      : "";
+    const matchedJobId = folderJobId || (matchingJobs.length === 1 ? matchingJobs[0][0] : "");
     // Existing files can receive a new OneDrive modification timestamp after
     // startup. Only a file tied to one current POIZON job may emit a live
     // completion event; historical files are restored through list-files.
@@ -1194,7 +1216,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
     // Electron must receive the destination before this event handler yields.
     // Waiting for an async mkdir here lets Windows open its Save As dialog first.
     const exportBrand = safeBrandExportLabel(downloadJob.brandName);
-    const brandFolder = join(folder, exportBrand);
+    const brandFolder = join(folder, brandExportFolderName(exportBrand, downloadJobId));
     mkdirSync(brandFolder, { recursive: true });
     const safeBrand = exportBrand;
     const fileName = safeBrand
@@ -1269,7 +1291,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
           ? safeBrandExportLabel(brandIntegrity.dominantBrand)
           : exportBrand;
         if (detectedBrand !== exportBrand) {
-          const detectedFolder = join(folder, detectedBrand);
+          const detectedFolder = join(folder, brandExportFolderName(detectedBrand, downloadJobId));
           await mkdir(detectedFolder, { recursive: true });
           finalName = `${detectedBrand}_${localFileTimestamp()}.xlsx`;
           const detectedPath = join(detectedFolder, finalName);

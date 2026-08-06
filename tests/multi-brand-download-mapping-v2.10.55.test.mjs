@@ -18,7 +18,7 @@ test("only one POIZON download request owns the global browser download event", 
 });
 
 test("folder polling reports only a file matched to one current job", () => {
-  assert.match(main, /const expectedBrand = folderBrand \|\| brandFromExportFileName\(newest\.name\)/);
+  assert.match(main, /const expectedBrand = folderMeta\.brandName \|\| brandFromExportFileName\(newest\.name\)/);
   assert.match(main, /if \(!matchedJobId\) return/);
   assert.doesNotMatch(main, /brandFromExportFileName\(newest\.name\) \|\| pendingBrandExportName/);
   assert.match(main, /jobId: matchedJobId/);
@@ -41,8 +41,8 @@ test("a stalled brand attempt is aborted and the remaining queue can continue", 
   assert.match(main, /PRODUCT_VERIFICATION_TIMEOUT/);
 });
 
-test("release metadata is 2.10.64", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.64");
-  assert.equal(JSON.parse(lockSource).version, "2.10.64");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.64");
+test("release metadata is 2.10.65", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.65");
+  assert.equal(JSON.parse(lockSource).version, "2.10.65");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.65");
 });
