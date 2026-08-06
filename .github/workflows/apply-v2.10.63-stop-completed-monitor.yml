@@ -1,0 +1,44 @@
+name: Apply v2.10.63 completed monitor patch
+
+on:
+  push:
+    branches:
+      - agent/v2.10.63-stop-completed-monitor
+    paths:
+      - scripts/apply-v2.10.63-stop-completed-monitor.py
+      - .github/workflows/apply-v2.10.63-stop-completed-monitor.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/apply-v2.10.63-stop-completed-monitor.py
+      - .github/workflows/apply-v2.10.63-stop-completed-monitor.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout patch branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/v2.10.63-stop-completed-monitor
+          fetch-depth: 0
+
+      - name: Apply patch
+        run: python scripts/apply-v2.10.63-stop-completed-monitor.py
+
+      - name: Remove temporary patch files
+        run: |
+          rm scripts/apply-v2.10.63-stop-completed-monitor.py
+          rm .github/workflows/apply-v2.10.63-stop-completed-monitor.yml
+
+      - name: Commit patched source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix v2.10.63 completed monitor termination"
+          git push origin HEAD:agent/v2.10.63-stop-completed-monitor
