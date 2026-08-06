@@ -2308,7 +2308,6 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
     let confirmationClicked = false;
     let confirmationClickCount = 0;
     let requestAcknowledged = false;
-    let exportRetried = false;
     const confirmationPattern = /^(?:확인|내보내기|생성|확정|제출|계속|确认|确定|提交|导出|继续)$/i;
     const cancelPattern = /취소|닫기|取消|关闭/i;
     const successPattern = /(?:내보내기|작업|파일).*(?:등록|생성|완료|성공|접수)|(?:导出|任务).*(?:成功|已创建|已提交)/i;
@@ -2349,25 +2348,7 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
           break;
         }
       }
-      if (!confirmationObserved && !exportRetried && attempt == 12) {
-        clickLikeUser(exportButton);
-        exportRetried = true;
-        await wait(900);
-        continue;
-      }
       await wait(250);
-    }
-    if (!requestAcknowledged) {
-      return {
-        ok: false,
-        code: "EXPORT_REQUEST_NOT_CONFIRMED",
-        expected,
-        actual: expected,
-        confirmationObserved,
-        confirmationClicked,
-        confirmationClickCount,
-        exportRetried,
-      };
     }
     return {
       ok: true,
@@ -2380,7 +2361,7 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
       confirmationClicked,
       confirmationClickCount,
       requestAcknowledged,
-      exportRetried,
+      confirmationTimedOut: !requestAcknowledged,
     };
   })()`, true);
 }
@@ -2911,7 +2892,9 @@ async function automateSellerBrandExport(input = {}) {
     status: "waiting-for-job-creation",
     brandName,
     jobState: "2단계/5 · 전체 내보내기 클릭 완료 · 새 작업번호 확인 중",
-    message: `${brandName} · 총 ${Number(completeness.expected || 0).toLocaleString("ko-KR")}개 · ${Number(completeness.pageCount || 0).toLocaleString("ko-KR")}페이지 확인 완료 · 전체 내보내기 요청 완료 · 다운로드센터의 새 작업번호를 확인합니다.`,
+    message: completeness.requestAcknowledged
+      ? `${brandName} · 총 ${Number(completeness.expected || 0).toLocaleString("ko-KR")}개 · ${Number(completeness.pageCount || 0).toLocaleString("ko-KR")}페이지 확인 완료 · 전체 내보내기 요청 완료 · 다운로드센터의 새 작업번호를 확인합니다.`
+      : `${brandName} · 전체 내보내기 클릭 후 화면 확인 응답을 판독하지 못했지만 실패 처리하지 않고 다운로드센터의 새 작업번호로 최종 확인합니다.`,
   });
 
   let createdJob = null;

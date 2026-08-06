@@ -25,8 +25,8 @@ test("batch, completed and brand-card labels remain readable", () => {
   assert.match(style, /@media\(max-width:900px\)[\s\S]*?grid-template-columns:1fr/);
 });
 
-test("release metadata is 2.10.65", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.65");
-  assert.equal(JSON.parse(lockSource).version, "2.10.65");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.65");
+test("release metadata is 2.10.66", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.66");
+  assert.equal(JSON.parse(lockSource).version, "2.10.66");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.66");
 });
