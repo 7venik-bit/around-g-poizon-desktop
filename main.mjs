@@ -3117,9 +3117,14 @@ async function queryPublicBrandProducts(input) {
 }
 
 async function captureSellerCenterProducts() {
+  const revealSellerLogin = () => {
+    if (!sellerWindow || sellerWindow.isDestroyed()) return;
+    sellerWindow.show();
+    sellerWindow.focus();
+  };
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     mainWindow?.webContents.send("seller:capture-progress", { percent: 2, count: 0, message: "판매자센터를 여는 중" });
-    openSellerCenterWindow();
+    openSellerCenterWindow(SELLER_CENTER_URL, { visible: false });
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await wait(500);
       if (sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.getURL()) break;
@@ -3128,6 +3133,10 @@ async function captureSellerCenterProducts() {
       return { ok: false, message: "판매자센터 창을 열지 못했습니다." };
     }
   }
+  if (sellerWindow && !sellerWindow.isDestroyed()) {
+    sellerWindow.hide();
+    showCollectorWindow();
+  }
   mainWindow?.webContents.send("seller:capture-progress", { percent: 5, count: 0, message: "로그인 세션 확인 중" });
   let currentUrl = sellerWindow.webContents.getURL();
   for (let attempt = 0; attempt < 20 && !currentUrl; attempt += 1) {
@@ -3135,6 +3144,7 @@ async function captureSellerCenterProducts() {
     currentUrl = sellerWindow.webContents.getURL();
   }
   if (!currentUrl.startsWith("https://seller.poizon.com/")) {
+    revealSellerLogin();
     return { ok: false, message: "판매자센터 인기상품 화면으로 이동해 주세요." };
   }
   if (!currentUrl.includes("/main/dataCenter/merchantRankBoard")) {
@@ -3142,6 +3152,7 @@ async function captureSellerCenterProducts() {
     await wait(1_800);
     currentUrl = sellerWindow.webContents.getURL();
     if (!currentUrl.includes("/main/dataCenter/merchantRankBoard")) {
+      revealSellerLogin();
       return { ok: false, message: "판매자센터 로그인을 완료해 주세요. 로그인 세션은 다음 실행부터 자동으로 유지됩니다." };
     }
   }
