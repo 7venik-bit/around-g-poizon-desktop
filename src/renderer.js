@@ -479,6 +479,25 @@ async function restoreDownloadedBrandFiles() {
   renderBrandCards($("#brand-filter")?.value || "");
 }
 
+async function restorePendingBrandExportJobs() {
+  const generation = brandWorkHistoryGeneration;
+  const jobs = await window.aroundG?.listPendingBrandExportJobs?.();
+  if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration || !Array.isArray(jobs)) return;
+  const pending = jobs.filter((job) => String(job?.jobId || "").trim() && String(job?.brandName || "").trim());
+  if (!pending.length) return;
+  for (const job of pending) {
+    updateBrandExportJob(
+      job.jobId,
+      "재시작 복원 · 다운로드센터 성공 여부 확인 중",
+      job.brandName,
+    );
+  }
+  touchBrandActivity(`미다운로드 작업 ${pending.length}개 복원 · POIZON 다운로드센터 감시 재개`);
+  $("#brand-status").className = "status";
+  $("#brand-status").textContent = `이전 실행의 미다운로드 작업 ${pending.length}개를 복원해 자동 감시를 재개합니다.`;
+  await window.aroundG.startSellerBrandExportMonitor();
+}
+
 function recordBrandSelection(brand, action, details = {}) {
   brandSelectionHistory.unshift({
     brandId: Number(brand.id),
@@ -1606,6 +1625,7 @@ renderBrandWorkbench();
 renderDownloadedBrandFiles();
 renderBrandCompletedJobs();
 void restoreDownloadedBrandFiles();
+void restorePendingBrandExportJobs();
 $("#brand-search").addEventListener("click", async () => {
   const button = $("#brand-search");
   const status = $("#brand-status");

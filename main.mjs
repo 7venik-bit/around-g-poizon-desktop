@@ -798,6 +798,7 @@ function publicConfig() {
 const SELLER_EXPORT_POLL_INTERVAL_MS = 60 * 1000;
 const SELLER_MULTI_EXPORT_POLL_INTERVAL_MS = 10 * 1000;
 const SELLER_EXPORT_MONITOR_TIMEOUT_MS = 60 * 60 * 1000;
+const RESTORED_PENDING_JOB_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const PROCESSED_BRAND_EXPORT_SUFFIX = "_총판매량50이상_OR_정리.xlsx";
 
 function defaultBrandExportFolder() {
@@ -1836,6 +1837,35 @@ function normalizeBrandExportKey(value = "") {
 function savedBrandExportJobs() {
   const saved = store?.snapshot()?.settings?.brandExportJobCache;
   return Array.isArray(saved) ? saved : [];
+}
+
+function restorePendingBrandExportJobs() {
+  const cutoff = Date.now() - RESTORED_PENDING_JOB_MAX_AGE_MS;
+  for (const saved of savedBrandExportJobs()) {
+    const jobId = String(saved?.jobId || "").trim();
+    const brandName = String(saved?.brandName || "").trim();
+    const createdAt = Number(saved?.createdAt || 0);
+    const lastDownloadedAt = Number(saved?.lastDownloadedAt || 0);
+    if (!jobId || !brandName || lastDownloadedAt > 0 || createdAt < cutoff) continue;
+    brandExportJobs.set(jobId, {
+      jobId,
+      brandName,
+      brandKo: String(saved?.brandKo || "").trim(),
+      createdAt,
+      expectedProductCount: Number(saved?.expectedProductCount || 0),
+      downloadStarted: false,
+      downloadRequestedAt: 0,
+      restored: true,
+    });
+  }
+  return [...brandExportJobs.entries()].map(([jobId, job]) => ({
+    jobId,
+    brandName: job.brandName,
+    brandKo: job.brandKo || "",
+    createdAt: Number(job.createdAt || 0),
+    expectedProductCount: Number(job.expectedProductCount || 0),
+    restored: Boolean(job.restored),
+  }));
 }
 
 async function rememberBrandExportJob(input = {}) {
@@ -3642,6 +3672,7 @@ app.whenReady().then(async () => {
     app.quit();
     return;
   }
+  restorePendingBrandExportJobs();
 
   ipcMain.handle("store:snapshot", () => store.snapshot());
   ipcMain.handle("store:upsert", (_event, collection, item) => store.upsert(collection, item));
@@ -3730,9 +3761,13 @@ app.whenReady().then(async () => {
 });
 
 ipcMain.handle("seller:start-brand-export-monitor", () => {
+    if (brandExportJobs.size && (!sellerWindow || sellerWindow.isDestroyed())) {
+      openSellerCenterWindow(SELLER_EXPORT_CENTER_URL, { visible: false });
+    }
     scheduleBrandExportMonitor(0);
     return { ok: true, jobs: brandExportJobs.size };
   });
+  ipcMain.handle("brand-export:pending-jobs", () => restorePendingBrandExportJobs());
   ipcMain.handle("brand-export:open-file", async (_event, input = {}) => {
     const filePath = String(input.path || "").trim();
     if (!filePath) return { ok: false, message: "열 파일 경로가 없습니다." };
