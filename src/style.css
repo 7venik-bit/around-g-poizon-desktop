@@ -702,3 +702,16 @@ body .explorer-panel{border-color:var(--ui-line);background:#fff}
   .brand-export-completed-row { grid-template-columns: 1fr 1fr; }
   .brand-export-completed-row > span { justify-self: start; }
 }
+
+
+.brand-batch-progress{margin:12px 0;border:1px solid #c8daf7;border-radius:14px;background:#f7fbff;overflow:hidden}
+.brand-batch-progress-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #dce8f8;color:#183d70}
+.brand-batch-progress-head span{font-weight:800;color:#1769c2}
+.brand-batch-list{display:grid;gap:1px;background:#dce8f8}
+.brand-batch-row{display:grid;grid-template-columns:minmax(120px,1fr) minmax(190px,1fr) minmax(260px,2fr);gap:12px;align-items:center;padding:11px 14px;background:#fff;color:#31445e}
+.brand-batch-row code{font-family:inherit;color:#225a9d;font-weight:700}
+.brand-batch-row span{text-align:right;font-weight:700}
+.brand-batch-row.is-complete{background:#f0fbf6}.brand-batch-row.is-complete span{color:#16825d}
+.brand-batch-row.is-error{background:#fff5f3}.brand-batch-row.is-error span{color:#bd3a2d}
+.brand-batch-row.is-processing span{color:#1769c2}.brand-batch-row.is-registering span{color:#8c6417}
+@media(max-width:900px){.brand-batch-row{grid-template-columns:1fr}.brand-batch-row span{text-align:left}}
