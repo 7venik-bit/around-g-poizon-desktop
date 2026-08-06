@@ -1,0 +1,38 @@
+name: Apply v2.10.59 file job recovery patch
+
+on:
+  push:
+    branches:
+      - agent/v2.10.59-recover-file-job-ids
+    paths:
+      - scripts/patch-v2.10.59.py
+      - .github/workflows/apply-v2.10.59-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout patch branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/v2.10.59-recover-file-job-ids
+          fetch-depth: 0
+
+      - name: Apply patch
+        run: python scripts/patch-v2.10.59.py
+
+      - name: Remove temporary patch files
+        run: |
+          rm scripts/patch-v2.10.59.py
+          rm .github/workflows/apply-v2.10.59-patch.yml
+
+      - name: Commit source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Release v2.10.59 recover Excel job ids"
+          git push origin HEAD:agent/v2.10.59-recover-file-job-ids
