@@ -21,6 +21,23 @@ jobs:
           ref: agent/v2.10.57-monitor-recovery-completed-list
           fetch-depth: 0
 
+      - name: Correct source indentation matcher
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/patch-v2.10.57.py")
+          source = path.read_text(encoding="utf-8")
+          source = source.replace(
+              "'''      ipcMain.handle(\"seller:start-brand-export-monitor\", () => {\n        void watchAllSellerExportJobsEveryTenSeconds();\n        return { ok: true, jobs: brandExportJobs.size };\n      });''',",
+              "'''ipcMain.handle(\"seller:start-brand-export-monitor\", () => {\n    void watchAllSellerExportJobsEveryTenSeconds();\n    return { ok: true, jobs: brandExportJobs.size };\n  });''',",
+          )
+          source = source.replace(
+              "'''      ipcMain.handle(\"seller:start-brand-export-monitor\", () => {\n        scheduleBrandExportMonitor(0);\n        return { ok: true, jobs: brandExportJobs.size };\n      });''',",
+              "'''ipcMain.handle(\"seller:start-brand-export-monitor\", () => {\n    scheduleBrandExportMonitor(0);\n    return { ok: true, jobs: brandExportJobs.size };\n  });''',",
+          )
+          path.write_text(source, encoding="utf-8")
+          PY
+
       - name: Apply patch
         run: python scripts/patch-v2.10.57.py
 
