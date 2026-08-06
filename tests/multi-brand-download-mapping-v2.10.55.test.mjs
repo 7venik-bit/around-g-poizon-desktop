@@ -25,9 +25,9 @@ test("folder polling reports only a file matched to one current job", () => {
   assert.match(main, /candidates\.find\(\(candidate\) => !brandDownloadPathsInProgress\.has\(candidate\.path\)\)/);
 });
 
-test("registered job clears stale pending globals and keeps requested brand authoritative", () => {
+test("registered job clears stale pending globals and lets the workbook repair the brand", () => {
   assert.match(main, /pendingBrandExportName = "";\r?\n  pendingBrandExportJobId = "";\r?\n  sellerWindow\.hide/);
-  assert.match(main, /brandName: downloadJob\.brandName \|\| exportBrand/);
+  assert.match(main, /const resolvedBrandName = detectedBrand \|\| downloadJob\.brandName \|\| exportBrand/);
   assert.match(renderer, /stableBrandName/);
   assert.match(renderer, /resolveRendererBrandJobId/);
 });
@@ -41,8 +41,8 @@ test("a stalled brand attempt is aborted and the remaining queue can continue", 
   assert.match(main, /PRODUCT_VERIFICATION_TIMEOUT/);
 });
 
-test("release metadata is 2.10.66", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.66");
-  assert.equal(JSON.parse(lockSource).version, "2.10.66");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.66");
+test("release metadata is 2.10.67", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.67");
+  assert.equal(JSON.parse(lockSource).version, "2.10.67");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.67");
 });

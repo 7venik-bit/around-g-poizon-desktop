@@ -17,11 +17,11 @@ test("download completion count excludes failed and still-running jobs", () => {
   );
 });
 
-test("detected Excel completion requires the registered live job brand", () => {
+test("detected Excel completion repairs the registered live job brand", () => {
   const importBlock = normalizedRenderer.match(
     /async function importDetectedBrandExport[\s\S]*?\n}\n\nasync function drainDetectedBrandImports/
   )?.[0] || "";
   assert.ok(importBlock);
-  assert.match(importBlock, /const expectedBrand = registeredBrand/);
+  assert.match(importBlock, /const expectedBrand = detectedBrand \|\| registeredBrand/);
   assert.doesNotMatch(importBlock, /selectedBrandName/);
 });
