@@ -29,7 +29,7 @@ test("one live job can complete only once even when the folder timestamp changes
 });
 
 test("folder polling never reports an unmatched historical file as live completion", () => {
-  assert.match(main, /const expectedBrand = folderBrand \|\| brandFromExportFileName\(newest\.name\)/);
+  assert.match(main, /const expectedBrand = folderMeta\.brandName \|\| brandFromExportFileName\(newest\.name\)/);
   assert.match(main, /if \(!matchedJobId\) return/);
   assert.doesNotMatch(main, /brandFromExportFileName\(newest\.name\) \|\| pendingBrandExportName/);
 });
