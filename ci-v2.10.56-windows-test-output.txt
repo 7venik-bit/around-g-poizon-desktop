@@ -1,0 +1,870 @@
+
+> around-g-poizon-desktop@2.10.56 test
+> node --test tests/*.test.mjs
+
+TAP version 13
+# Subtest: G branding is used by the interface and Windows package
+ok 1 - G branding is used by the interface and Windows package
+  ---
+  duration_ms: 17.7951
+  type: 'test'
+  ...
+# Subtest: brand export checks the computed last Seller Center page before clicking export
+ok 2 - brand export checks the computed last Seller Center page before clicking export
+  ---
+  duration_ms: 1.2395
+  type: 'test'
+  ...
+# Subtest: a partial collection is retried once without consuming a download
+ok 3 - a partial collection is retried once without consuming a download
+  ---
+  duration_ms: 0.2261
+  type: 'test'
+  ...
+# Subtest: brand export starts actual Seller Center work before optional baseline inspection completes
+ok 4 - brand export starts actual Seller Center work before optional baseline inspection completes
+  ---
+  duration_ms: 0.6069
+  type: 'test'
+  ...
+# Subtest: downloaded Excel compares POIZON result count with data rows, not unique SPUs
+ok 5 - downloaded Excel compares POIZON result count with data rows, not unique SPUs
+  ---
+  duration_ms: 0.3301
+  type: 'test'
+  ...
+# Subtest: Excel reader is connected for both preview and ordinary import
+ok 6 - Excel reader is connected for both preview and ordinary import
+  ---
+  duration_ms: 0.2286
+  type: 'test'
+  ...
+# Subtest: failed job rows render with a dedicated error class
+ok 7 - failed job rows render with a dedicated error class
+  ---
+  duration_ms: 0.1323
+  type: 'test'
+  ...
+# Subtest: partial workbooks are preserved but excluded from completed file discovery
+ok 8 - partial workbooks are preserved but excluded from completed file discovery
+  ---
+  duration_ms: 0.2442
+  type: 'test'
+  ...
+# Subtest: POIZON downloads are saved in separate brand folders
+ok 9 - POIZON downloads are saved in separate brand folders
+  ---
+  duration_ms: 23.7312
+  type: 'test'
+  ...
+# Subtest: brand export file discovery includes categorized subfolders
+ok 10 - brand export file discovery includes categorized subfolders
+  ---
+  duration_ms: 2.2657
+  type: 'test'
+  ...
+# Subtest: every selected brand creates a fresh POIZON export job without a blocking baseline
+ok 11 - every selected brand creates a fresh POIZON export job without a blocking baseline
+  ---
+  duration_ms: 1.4731
+  type: 'test'
+  ...
+# Subtest: an old latest row is never mistaken for a newly created job
+ok 12 - an old latest row is never mistaken for a newly created job
+  ---
+  duration_ms: 0.3677
+  type: 'test'
+  ...
+# Subtest: an existing job number cannot be assigned to another brand
+ok 13 - an existing job number cannot be assigned to another brand
+  ---
+  duration_ms: 0.3104
+  type: 'test'
+  ...
+# Subtest: an unreadable export center falls back without blocking real brand work
+ok 14 - an unreadable export center falls back without blocking real brand work
+  ---
+  duration_ms: 0.3005
+  type: 'test'
+  ...
+# Subtest: renderer never sends old brand job numbers for reuse
+ok 15 - renderer never sends old brand job numbers for reuse
+  ---
+  duration_ms: 0.2471
+  type: 'test'
+  ...
+# Subtest: brand search mismatch is explained and stops before export registration
+ok 16 - brand search mismatch is explained and stops before export registration
+  ---
+  duration_ms: 0.1997
+  type: 'test'
+  ...
+# Subtest: brand export completes the POIZON confirmation dialog
+ok 17 - brand export completes the POIZON confirmation dialog
+  ---
+  duration_ms: 1.2502
+  type: 'test'
+  ...
+# Subtest: new export job discovery waits without constant reloads
+ok 18 - new export job discovery waits without constant reloads
+  ---
+  duration_ms: 0.3418
+  type: 'test'
+  ...
+# Subtest: export center discovers job rows from stable job numbers across layouts and frames
+ok 19 - export center discovers job rows from stable job numbers across layouts and frames
+  ---
+  duration_ms: 0.3481
+  type: 'test'
+  ...
+# Subtest: release metadata is 2.10.56
+ok 20 - release metadata is 2.10.56
+  ---
+  duration_ms: 3.3014
+  type: 'test'
+  ...
+# Subtest: normalizes punctuation and spacing
+ok 21 - normalizes punctuation and spacing
+  ---
+  duration_ms: 2.2183
+  type: 'test'
+  ...
+# Subtest: matches known localized aliases
+ok 22 - matches known localized aliases
+  ---
+  duration_ms: 1.9743
+  type: 'test'
+  ...
+# Subtest: blocks a Jordan workbook downloaded for Crocs
+ok 23 - blocks a Jordan workbook downloaded for Crocs
+  ---
+  duration_ms: 10.0414
+  type: 'test'
+  ...
+# Subtest: accepts Crocs localized workbook values at the 80 percent threshold
+ok 24 - accepts Crocs localized workbook values at the 80 percent threshold
+  ---
+  duration_ms: 0.7395
+  type: 'test'
+  ...
+# Subtest: blocks a Jordan workbook labeled as Adidas
+ok 25 - blocks a Jordan workbook labeled as Adidas
+  ---
+  duration_ms: 5.8749
+  type: 'test'
+  ...
+# Subtest: accepts a workbook when at least 80 percent matches
+ok 26 - accepts a workbook when at least 80 percent matches
+  ---
+  duration_ms: 0.3195
+  type: 'test'
+  ...
+# Subtest: blocks missing brand data when an expected brand is supplied
+ok 27 - blocks missing brand data when an expected brand is supplied
+  ---
+  duration_ms: 0.3685
+  type: 'test'
+  ...
+# Subtest: blocks a Jordan workbook labeled as PUMA
+ok 28 - blocks a Jordan workbook labeled as PUMA
+  ---
+  duration_ms: 10.0688
+  type: 'test'
+  ...
+# Subtest: uses separate export labels for Nike, Jordan, Adidas, and Adidas Originals
+ok 29 - uses separate export labels for Nike, Jordan, Adidas, and Adidas Originals
+  ---
+  duration_ms: 0.6581
+  type: 'test'
+  ...
+# Subtest: accepts Nike and Jordan workbooks for the Nike_Jordan bundle
+ok 30 - accepts Nike and Jordan workbooks for the Nike_Jordan bundle
+  ---
+  duration_ms: 1.0191
+  type: 'test'
+  ...
+# Subtest: brand picker keeps one compact multi-selection toolbar
+ok 31 - brand picker keeps one compact multi-selection toolbar
+  ---
+  duration_ms: 1.3959
+  type: 'test'
+  ...
+# Subtest: brand-card clicks toggle multiple selections without starting an export
+ok 32 - brand-card clicks toggle multiple selections without starting an export
+  ---
+  duration_ms: 0.2518
+  type: 'test'
+  ...
+# Subtest: brand selection supports toggle-on and toggle-off
+ok 33 - brand selection supports toggle-on and toggle-off
+  ---
+  duration_ms: 0.3224
+  type: 'test'
+  ...
+# Subtest: selected-brand search queues every selected brand
+ok 34 - selected-brand search queues every selected brand
+  ---
+  duration_ms: 0.2413
+  type: 'test'
+  ...
+# Subtest: brand picker exposes accessible multi-select and search icons
+ok 35 - brand picker exposes accessible multi-select and search icons
+  ---
+  duration_ms: 0.2189
+  type: 'test'
+  ...
+# Subtest: active brand work has a live spinner, elapsed time, and stale-response state
+ok 36 - active brand work has a live spinner, elapsed time, and stale-response state
+  ---
+  duration_ms: 0.2746
+  type: 'test'
+  ...
+# Subtest: brand button shows down-complete whenever its data-center workbook was downloaded
+ok 37 - brand button shows down-complete whenever its data-center workbook was downloaded
+  ---
+  duration_ms: 0.237
+  type: 'test'
+  ...
+# Subtest: download UI does not expose brand mismatch wording
+ok 38 - download UI does not expose brand mismatch wording
+  ---
+  duration_ms: 0.3078
+  type: 'test'
+  ...
+# Subtest: upgrade clears the legacy persisted job state
+ok 39 - upgrade clears the legacy persisted job state
+  ---
+  duration_ms: 0.5998
+  type: 'test'
+  ...
+# Subtest: a previous process job number is never restored as current live work
+ok 40 - a previous process job number is never restored as current live work
+  ---
+  duration_ms: 0.5631
+  type: 'test'
+  ...
+# Subtest: 75페이지에서 Excel 전환을 요구한다
+ok 41 - 75페이지에서 Excel 전환을 요구한다
+  ---
+  duration_ms: 19.7567
+  type: 'test'
+  ...
+# Subtest: 보안 퍼즐에서는 자동 진행하지 않는다
+ok 42 - 보안 퍼즐에서는 자동 진행하지 않는다
+  ---
+  duration_ms: 4.3431
+  type: 'test'
+  ...
+# Subtest: 같은 페이지가 세 번 관찰되면 반복을 중단한다
+ok 43 - 같은 페이지가 세 번 관찰되면 반복을 중단한다
+  ---
+  duration_ms: 6.6011
+  type: 'test'
+  ...
+# Subtest: 로컬 데이터는 재시작 후 유지된다
+ok 44 - 로컬 데이터는 재시작 후 유지된다
+  ---
+  duration_ms: 7.6776
+  type: 'test'
+  ...
+# Subtest: 인기상품 여러 건을 한 번 저장하고 품번 중복을 갱신한다
+ok 45 - 인기상품 여러 건을 한 번 저장하고 품번 중복을 갱신한다
+  ---
+  duration_ms: 6.9945
+  type: 'test'
+  ...
+# Subtest: domestic search links safely encode a query
+ok 46 - domestic search links safely encode a query
+  ---
+  duration_ms: 1.937
+  type: 'test'
+  ...
+# Subtest: Musinsa parser extracts product data
+ok 47 - Musinsa parser extracts product data
+  ---
+  duration_ms: 2.7492
+  type: 'test'
+  ...
+# Subtest: SSG parser extracts product data
+ok 48 - SSG parser extracts product data
+  ---
+  duration_ms: 0.5549
+  type: 'test'
+  ...
+# Subtest: Kolon parser extracts embedded product data
+ok 49 - Kolon parser extracts embedded product data
+  ---
+  duration_ms: 0.5884
+  type: 'test'
+  ...
+# Subtest: one domestic store failure does not stop the others
+ok 50 - one domestic store failure does not stop the others
+  ---
+  duration_ms: 2.2126
+  type: 'test'
+  ...
+# Subtest: download completion count excludes failed and still-running jobs
+ok 51 - download completion count excludes failed and still-running jobs
+  ---
+  duration_ms: 1.1359
+  type: 'test'
+  ...
+# Subtest: detected Excel completion requires the registered live job brand
+not ok 52 - detected Excel completion requires the registered live job brand
+  ---
+  duration_ms: 7.0325
+  type: 'test'
+  location: 'D:\\a\\around-g-poizon-desktop\\around-g-poizon-desktop\\tests\\duplicate-completion-job-count-v2.10.56.test.mjs:19:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The expression evaluated to a falsy value:
+    
+      assert.ok(importBlock)
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: ''
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///D:/a/around-g-poizon-desktop/around-g-poizon-desktop/tests/duplicate-completion-job-count-v2.10.56.test.mjs:23:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: restored Excel paths and job ids are registered as already completed
+ok 53 - restored Excel paths and job ids are registered as already completed
+  ---
+  duration_ms: 1.1565
+  type: 'test'
+  ...
+# Subtest: one live job can complete only once even when the folder timestamp changes
+not ok 54 - one live job can complete only once even when the folder timestamp changes
+  ---
+  duration_ms: 1.1102
+  type: 'test'
+  location: 'D:\\a\\around-g-poizon-desktop\\around-g-poizon-desktop\\tests\\duplicate-completion-v2.10.56.test.mjs:19:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /const expectedBrand = registeredBrand/. Input:
+    
+    ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///D:/a/around-g-poizon-desktop/around-g-poizon-desktop/tests/duplicate-completion-v2.10.56.test.mjs:26:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: folder polling never reports an unmatched historical file as live completion
+ok 55 - folder polling never reports an unmatched historical file as live completion
+  ---
+  duration_ms: 0.3442
+  type: 'test'
+  ...
+# Subtest: completion status counts only downloaded jobs
+ok 56 - completion status counts only downloaded jobs
+  ---
+  duration_ms: 0.2462
+  type: 'test'
+  ...
+# Subtest: release metadata is 2.10.56
+ok 57 - release metadata is 2.10.56
+  ---
+  duration_ms: 2.397
+  type: 'test'
+  ...
+# Subtest: writes hidden and resized columns into worksheet XML
+ok 58 - writes hidden and resized columns into worksheet XML
+  ---
+  duration_ms: 9.569
+  type: 'test'
+  ...
+# Subtest: unhides a column without deleting worksheet data
+ok 59 - unhides a column without deleting worksheet data
+  ---
+  duration_ms: 3.6346
+  type: 'test'
+  ...
+# Subtest: desktop bootstrap and UI expose original-file column controls
+ok 60 - desktop bootstrap and UI expose original-file column controls
+  ---
+  duration_ms: 12.6748
+  type: 'test'
+  ...
+# Subtest: reads real workbook rows instead of treating workbook metadata as rows
+ok 61 - reads real workbook rows instead of treating workbook metadata as rows
+  ---
+  duration_ms: 81.905
+  type: 'test'
+  ...
+# Subtest: falls back to the first populated sheet when the first sheet is empty
+ok 62 - falls back to the first populated sheet when the first sheet is empty
+  ---
+  duration_ms: 41.5657
+  type: 'test'
+  ...
+# Subtest: repairs a POIZON worksheet whose declared dimension is incorrectly limited to A1
+ok 63 - repairs a POIZON worksheet whose declared dimension is incorrectly limited to A1
+  ---
+  duration_ms: 31.2925
+  type: 'test'
+  ...
+# Subtest: 검증된 주요 브랜드 카탈로그를 제공한다
+ok 64 - 검증된 주요 브랜드 카탈로그를 제공한다
+  ---
+  duration_ms: 1.4181
+  type: 'test'
+  ...
+# Subtest: 판매자센터 탭 구분 표를 인기상품으로 변환한다
+ok 65 - 판매자센터 탭 구분 표를 인기상품으로 변환한다
+  ---
+  duration_ms: 1.4801
+  type: 'test'
+  ...
+# Subtest: 상품정보 셀의 품번과 상품명이 줄바꿈되어도 인식한다
+ok 66 - 상품정보 셀의 품번과 상품명이 줄바꿈되어도 인식한다
+  ---
+  duration_ms: 1.493
+  type: 'test'
+  ...
+# Subtest: 판매자센터 세로형 복사 텍스트를 상품 행으로 복원한다
+ok 67 - 판매자센터 세로형 복사 텍스트를 상품 행으로 복원한다
+  ---
+  duration_ms: 1.4964
+  type: 'test'
+  ...
+# Subtest: 상품의 한글 카테고리를 탐색 그룹으로 분류한다
+ok 68 - 상품의 한글 카테고리를 탐색 그룹으로 분류한다
+  ---
+  duration_ms: 0.4368
+  type: 'test'
+  ...
+# Subtest: POIZON 상품과 판매자센터 30일 판매량을 품번으로 결합한다
+ok 69 - POIZON 상품과 판매자센터 30일 판매량을 품번으로 결합한다
+  ---
+  duration_ms: 0.3352
+  type: 'test'
+  ...
+# Subtest: seller export snapshot compiles a numeric job-number regex
+ok 70 - seller export snapshot compiles a numeric job-number regex
+  ---
+  duration_ms: 1.5024
+  type: 'test'
+  ...
+# Subtest: release metadata is 2.10.56
+ok 71 - release metadata is 2.10.56
+  ---
+  duration_ms: 6.5576
+  type: 'test'
+  ...
+# Subtest: export uses the clickable control and completes every confirmation dialog
+ok 72 - export uses the clickable control and completes every confirmation dialog
+  ---
+  duration_ms: 1.3323
+  type: 'test'
+  ...
+# Subtest: download center discovers jobs by number across frames instead of one localized label
+ok 73 - download center discovers jobs by number across frames instead of one localized label
+  ---
+  duration_ms: 0.3753
+  type: 'test'
+  ...
+# Subtest: one failed brand does not delete the remaining automatic brand queue
+ok 74 - one failed brand does not delete the remaining automatic brand queue
+  ---
+  duration_ms: 0.2993
+  type: 'test'
+  ...
+# Subtest: release metadata is 2.10.56
+ok 75 - release metadata is 2.10.56
+  ---
+  duration_ms: 2.3828
+  type: 'test'
+  ...
+# Subtest: brand export folder button is visible and invokes the persisted folder chooser
+ok 76 - brand export folder button is visible and invokes the persisted folder chooser
+  ---
+  duration_ms: 15.1836
+  type: 'test'
+  ...
+# Subtest: selected and restored folder paths use one consistent label renderer
+ok 77 - selected and restored folder paths use one consistent label renderer
+  ---
+  duration_ms: 2.2282
+  type: 'test'
+  ...
+# Subtest: Excel preview is read-only and paginated in the main sourcing screen
+ok 78 - Excel preview is read-only and paginated in the main sourcing screen
+  ---
+  duration_ms: 1.2251
+  type: 'test'
+  ...
+# Subtest: Excel preview filters both total-sales columns across all rows
+ok 79 - Excel preview filters both total-sales columns across all rows
+  ---
+  duration_ms: 4.8344
+  type: 'test'
+  ...
+# Subtest: shared Excel reader repairs POIZON A1 dimensions before preview and ordinary import
+ok 80 - shared Excel reader repairs POIZON A1 dimensions before preview and ordinary import
+  ---
+  duration_ms: 1.0722
+  type: 'test'
+  ...
+# Subtest: downloaded file rows open the embedded preview without launching Windows Excel
+ok 81 - downloaded file rows open the embedded preview without launching Windows Excel
+  ---
+  duration_ms: 0.3416
+  type: 'test'
+  ...
+# Subtest: successful original downloads use the concise confirmation label
+ok 82 - successful original downloads use the concise confirmation label
+  ---
+  duration_ms: 0.2263
+  type: 'test'
+  ...
+# Subtest: inventory filters the same option row for recent and total sales
+ok 83 - inventory filters the same option row for recent and total sales
+  ---
+  duration_ms: 2.0468
+  type: 'test'
+  ...
+# Subtest: inventory supports independent minimum and maximum sales ranges
+ok 84 - inventory supports independent minimum and maximum sales ranges
+  ---
+  duration_ms: 0.1993
+  type: 'test'
+  ...
+# Subtest: sales modes are available only when both matching columns exist
+ok 85 - sales modes are available only when both matching columns exist
+  ---
+  duration_ms: 0.229
+  type: 'test'
+  ...
+# Subtest: 상품코드, 상품명, 이미지 유사도를 종합 점수로 계산한다
+ok 86 - 상품코드, 상품명, 이미지 유사도를 종합 점수로 계산한다
+  ---
+  duration_ms: 1.4344
+  type: 'test'
+  ...
+# Subtest: 이미지를 확인할 수 없으면 점수를 임의로 부여하지 않는다
+ok 87 - 이미지를 확인할 수 없으면 점수를 임의로 부여하지 않는다
+  ---
+  duration_ms: 0.2698
+  type: 'test'
+  ...
+# Subtest: only one POIZON download request owns the global browser download event
+ok 88 - only one POIZON download request owns the global browser download event
+  ---
+  duration_ms: 1.1043
+  type: 'test'
+  ...
+# Subtest: folder polling reports only a file matched to one current job
+ok 89 - folder polling reports only a file matched to one current job
+  ---
+  duration_ms: 0.3837
+  type: 'test'
+  ...
+# Subtest: registered job clears stale pending globals and keeps requested brand authoritative
+ok 90 - registered job clears stale pending globals and keeps requested brand authoritative
+  ---
+  duration_ms: 0.3437
+  type: 'test'
+  ...
+# Subtest: a stalled brand attempt is aborted and the remaining queue can continue
+ok 91 - a stalled brand attempt is aborted and the remaining queue can continue
+  ---
+  duration_ms: 0.2978
+  type: 'test'
+  ...
+# Subtest: release metadata is 2.10.56
+ok 92 - release metadata is 2.10.56
+  ---
+  duration_ms: 2.3109
+  type: 'test'
+  ...
+# Subtest: normalizes POIZON sales values
+ok 93 - normalizes POIZON sales values
+  ---
+  duration_ms: 1.3916
+  type: 'test'
+  ...
+# Subtest: keeps rows where either total sales column is at least 50
+ok 94 - keeps rows where either total sales column is at least 50
+  ---
+  duration_ms: 2.7147
+  type: 'test'
+  ...
+# Subtest: requires both POIZON total-sales columns
+ok 95 - requires both POIZON total-sales columns
+  ---
+  duration_ms: 0.2149
+  type: 'test'
+  ...
+# Subtest: filters the complete Excel preview by either total-sales column and preserves source row numbers
+ok 96 - filters the complete Excel preview by either total-sales column and preserves source row numbers
+  ---
+  duration_ms: 0.5379
+  type: 'test'
+  ...
+# Subtest: supports AND and minimum/maximum ranges in the Excel preview
+ok 97 - supports AND and minimum/maximum ranges in the Excel preview
+  ---
+  duration_ms: 0.3403
+  type: 'test'
+  ...
+# Subtest: reads only the POIZON brand column from inline-string workbooks
+ok 98 - reads only the POIZON brand column from inline-string workbooks
+  ---
+  duration_ms: 9.1858
+  type: 'test'
+  ...
+# Subtest: summarizes Excel data rows separately from unique, duplicate, and blank SPUs
+ok 99 - summarizes Excel data rows separately from unique, duplicate, and blank SPUs
+  ---
+  duration_ms: 0.8298
+  type: 'test'
+  ...
+# Subtest: menu leads with POIZON original data and downloaded Excel files
+ok 100 - menu leads with POIZON original data and downloaded Excel files
+  ---
+  duration_ms: 10.0269
+  type: 'test'
+  ...
+# Subtest: download detection registers the raw workbook without automatic sales filtering
+ok 101 - download detection registers the raw workbook without automatic sales filtering
+  ---
+  duration_ms: 1.9059
+  type: 'test'
+  ...
+# Subtest: file list opens the original workbook inside the sourcing program and excludes generated filtered copies
+ok 102 - file list opens the original workbook inside the sourcing program and excludes generated filtered copies
+  ---
+  duration_ms: 4.0431
+  type: 'test'
+  ...
+# Subtest: downloaded workbooks keep internal validation while the UI registers download completion
+ok 103 - downloaded workbooks keep internal validation while the UI registers download completion
+  ---
+  duration_ms: 2.952
+  type: 'test'
+  ...
+# Subtest: file discovery excludes both legacy and current filtered workbook copies
+ok 104 - file discovery excludes both legacy and current filtered workbook copies
+  ---
+  duration_ms: 1.9326
+  type: 'test'
+  ...
+# Subtest: baseline inspection is parallel and never blocks actual product search
+ok 105 - baseline inspection is parallel and never blocks actual product search
+  ---
+  duration_ms: 1.1135
+  type: 'test'
+  ...
+# Subtest: fallback job discovery requires the same unused job number twice
+ok 106 - fallback job discovery requires the same unused job number twice
+  ---
+  duration_ms: 0.2336
+  type: 'test'
+  ...
+# Subtest: UI reports activity only when actual product search starts
+ok 107 - UI reports activity only when actual product search starts
+  ---
+  duration_ms: 1.0731
+  type: 'test'
+  ...
+# Subtest: release metadata is 2.10.56
+ok 108 - release metadata is 2.10.56
+  ---
+  duration_ms: 2.4179
+  type: 'test'
+  ...
+# Subtest: release build and local asset validation happen before tag creation
+ok 109 - release build and local asset validation happen before tag creation
+  ---
+  duration_ms: 1.0331
+  type: 'test'
+  ...
+# Subtest: release workflow verifies all three updater assets
+ok 110 - release workflow verifies all three updater assets
+  ---
+  duration_ms: 0.2797
+  type: 'test'
+  ...
+# Subtest: pull requests build the real Windows installer
+ok 111 - pull requests build the real Windows installer
+  ---
+  duration_ms: 0.1601
+  type: 'test'
+  ...
+# Subtest: release metadata is synchronized at 2.10.56
+ok 112 - release metadata is synchronized at 2.10.56
+  ---
+  duration_ms: 1.466
+  type: 'test'
+  ...
+# Subtest: seller search input is retried across frames and localized controls
+ok 113 - seller search input is retried across frames and localized controls
+  ---
+  duration_ms: 1.143
+  type: 'test'
+  ...
+# Subtest: a failed brand keeps the remaining selected brand queue
+ok 114 - a failed brand keeps the remaining selected brand queue
+  ---
+  duration_ms: 0.2684
+  type: 'test'
+  ...
+# Subtest: release metadata is 2.10.56
+ok 115 - release metadata is 2.10.56
+  ---
+  duration_ms: 2.2626
+  type: 'test'
+  ...
+# Subtest: restores the three POIZON search services in the sidebar
+ok 116 - restores the three POIZON search services in the sidebar
+  ---
+  duration_ms: 1.0604
+  type: 'test'
+  ...
+# Subtest: removes the redundant POIZON parent menu row
+ok 117 - removes the redundant POIZON parent menu row
+  ---
+  duration_ms: 0.1701
+  type: 'test'
+  ...
+# Subtest: removes the brand screen title and three-step guide
+ok 118 - removes the brand screen title and three-step guide
+  ---
+  duration_ms: 0.3159
+  type: 'test'
+  ...
+# Subtest: keeps the downloaded Excel screen separate from the three search services
+ok 119 - keeps the downloaded Excel screen separate from the three search services
+  ---
+  duration_ms: 0.1796
+  type: 'test'
+  ...
+# Subtest: sidebar buttons reactivate the existing explorer panels
+ok 120 - sidebar buttons reactivate the existing explorer panels
+  ---
+  duration_ms: 0.2009
+  type: 'test'
+  ...
+# Subtest: bootstrap injects the sidebar menu and its stylesheet into the main window
+ok 121 - bootstrap injects the sidebar menu and its stylesheet into the main window
+  ---
+  duration_ms: 0.1811
+  type: 'test'
+  ...
+# Subtest: release version is 2.10.56
+ok 122 - release version is 2.10.56
+  ---
+  duration_ms: 0.3431
+  type: 'test'
+  ...
+# Subtest: 판매자센터 인기상품 조건을 요청한 순서로 적용한다
+ok 123 - 판매자센터 인기상품 조건을 요청한 순서로 적용한다
+  ---
+  duration_ms: 1.4652
+  type: 'test'
+  ...
+# Subtest: 판매자센터 가상 행에서 품번, 상품명, 가격과 이미지를 복원한다
+ok 124 - 판매자센터 가상 행에서 품번, 상품명, 가격과 이미지를 복원한다
+  ---
+  duration_ms: 3.2372
+  type: 'test'
+  ...
+# Subtest: 가격이 없는 메뉴 텍스트는 상품으로 오인하지 않는다
+ok 125 - 가격이 없는 메뉴 텍스트는 상품으로 오인하지 않는다
+  ---
+  duration_ms: 0.3057
+  type: 'test'
+  ...
+# Subtest: 순위와 품번 및 품명이 있으면 가격 셀이 분리되어도 상품 슬롯을 유지한다
+ok 126 - 순위와 품번 및 품명이 있으면 가격 셀이 분리되어도 상품 슬롯을 유지한다
+  ---
+  duration_ms: 0.5853
+  type: 'test'
+  ...
+# Subtest: 같은 품번은 가장 앞선 순위 한 건만 남긴다
+ok 127 - 같은 품번은 가장 앞선 순위 한 건만 남긴다
+  ---
+  duration_ms: 1.1188
+  type: 'test'
+  ...
+# Subtest: selected-brand export keeps Seller Center hidden
+ok 128 - selected-brand export keeps Seller Center hidden
+  ---
+  duration_ms: 1.1438
+  type: 'test'
+  ...
+# Subtest: manual Seller Center actions remain visible by default
+ok 129 - manual Seller Center actions remain visible by default
+  ---
+  duration_ms: 0.3147
+  type: 'test'
+  ...
+# Subtest: startup service modules load with all adapter exports
+ok 130 - startup service modules load with all adapter exports
+  ---
+  duration_ms: 8.8427
+  type: 'test'
+  ...
+# Subtest: brand results expose separate China and local-seller total-sales filters
+ok 131 - brand results expose separate China and local-seller total-sales filters
+  ---
+  duration_ms: 1.2022
+  type: 'test'
+  ...
+# Subtest: local total-sales filter uses localTotalSales instead of local 30-day sales
+ok 132 - local total-sales filter uses localTotalSales instead of local 30-day sales
+  ---
+  duration_ms: 0.2518
+  type: 'test'
+  ...
+# Subtest: inventory clear invalidates a delayed Excel import
+ok 133 - inventory clear invalidates a delayed Excel import
+  ---
+  duration_ms: 0.8444
+  type: 'test'
+  ...
+# Subtest: main renderer ignores stale work events after clear
+ok 134 - main renderer ignores stale work events after clear
+  ---
+  duration_ms: 0.3068
+  type: 'test'
+  ...
+# Subtest: clear broadcasts to inventory windows without closing them
+ok 135 - clear broadcasts to inventory windows without closing them
+  ---
+  duration_ms: 0.2936
+  type: 'test'
+  ...
+# Subtest: main process ignores downloads and exports from the cleared generation
+ok 136 - main process ignores downloads and exports from the cleared generation
+  ---
+  duration_ms: 0.185
+  type: 'test'
+  ...
+1..136
+# tests 136
+# suites 0
+# pass 134
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1433.224
