@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [main, renderer, html, packageSource, lockSource] = await Promise.all([
+const [main, rendererSource, html, packageSource, lockSource] = await Promise.all([
   readFile(new URL("../main.mjs", import.meta.url), "utf8"),
   readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
   readFile(new URL("../src/index.html", import.meta.url), "utf8"),
   readFile(new URL("../package.json", import.meta.url), "utf8"),
   readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
 ]);
+const renderer = rendererSource.replace(/\r\n/g, "\n");
 
 test("multi-brand monitor polls every ten seconds and self-recovers", () => {
   assert.match(main, /SELLER_MULTI_EXPORT_POLL_INTERVAL_MS = 10 \* 1000/);
@@ -20,6 +21,7 @@ test("multi-brand monitor polls every ten seconds and self-recovers", () => {
 
 test("finishing a download continues remaining jobs and emits all-complete", () => {
   assert.match(main, /if \(brandExportJobs\.size\) scheduleBrandExportMonitor\(500\)/);
+  assert.match(main, /function emitBrandExportAllComplete/);
   assert.match(main, /status: "all-complete"/);
   assert.match(main, /모든 작업 확인완료/);
   assert.match(main, /ipcMain\.handle\("seller:start-brand-export-monitor"[\s\S]*?scheduleBrandExportMonitor\(0\)/);
@@ -36,13 +38,20 @@ test("completed downloads render in a separate persistent list", () => {
   assert.match(renderer, /progress\?\.status === "all-complete"/);
 });
 
-test("all-complete stops the activity only after renderer imports finish", () => {
-  assert.match(renderer, /!detectedBrandImportRunning && !detectedBrandImportQueue\.length/);
-  assert.match(renderer, /if \(!unfinished && !detectedBrandImportRunning && !detectedBrandImportQueue\.length\) stopBrandActivity\(\)/);
+test("all-complete stops activity only after the final renderer import drains", () => {
+  assert.match(renderer, /let brandMainAllComplete = false/);
+  const finalizer = renderer.match(
+    /function finalizeBrandActivityAfterMainCompletion\(\) \{[\s\S]*?\n}\n\nfunction normalizeBrandKey/
+  )?.[0] || "";
+  assert.ok(finalizer);
+  assert.match(finalizer, /detectedBrandImportRunning \|\| detectedBrandImportQueue\.length/);
+  assert.match(finalizer, /stopBrandActivity\(\)/);
+  assert.match(renderer, /else finalizeBrandActivityAfterMainCompletion\(\)/);
+  assert.match(renderer, /brandMainAllComplete = true/);
 });
 
-test("release metadata is 2.10.62", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.62");
-  assert.equal(JSON.parse(lockSource).version, "2.10.62");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.62");
+test("release metadata is 2.10.63", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.63");
+  assert.equal(JSON.parse(lockSource).version, "2.10.63");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.63");
 });

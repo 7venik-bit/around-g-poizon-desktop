@@ -37,6 +37,7 @@ let brandActivityTimer = null;
 let brandActivityStartedAt = 0;
 let brandActivityUpdatedAt = 0;
 let brandActivityMessage = "";
+let brandMainAllComplete = false;
 const WORK_HISTORY_RESET_KEY = "around-g-work-history-reset-v2.10.4";
 const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
 const DOWNLOAD_STATUS_MIGRATION_KEY = "around-g-download-status-v2.10.29";
@@ -255,6 +256,26 @@ function stopBrandActivity() {
     panel.hidden = true;
     panel.classList.remove("is-waiting");
   }
+}
+
+function finalizeBrandActivityAfterMainCompletion() {
+  if (!brandMainAllComplete || detectedBrandImportRunning || detectedBrandImportQueue.length) return false;
+  for (const [jobId, job] of brandExportJobs.entries()) {
+    if (!brandJobIsFinished(job.state)) {
+      brandExportJobs.set(jobId, { ...job, state: "완료됨", updatedAt: Date.now() });
+    }
+  }
+  for (const [key, item] of brandBatchStates.entries()) {
+    if (item.jobId && !/확인완료|실패|오류|중단|취소/.test(item.state)) {
+      brandBatchStates.set(key, { ...item, state: "확인완료", updatedAt: Date.now() });
+    }
+  }
+  renderBrandExportJobs();
+  renderBrandBatchProgress();
+  stopBrandActivity();
+  const activePanel = $("#brand-export-job");
+  if (activePanel) activePanel.hidden = true;
+  return true;
 }
 
 function normalizeBrandKey(value = "") {
@@ -1312,6 +1333,7 @@ $("#brand-export-selected")?.addEventListener("click", () => {
   const selectedBrands = selectedBrandsForExport();
   if (!selectedBrands.length) return;
   acceptBrandWorkEvents = true;
+  brandMainAllComplete = false;
   const generation = brandWorkHistoryGeneration;
   brandExportFailureCount = 0;
   brandBatchTotal = selectedBrands.length;
@@ -1544,6 +1566,7 @@ async function drainDetectedBrandImports() {
   } finally {
     detectedBrandImportRunning = false;
     if (detectedBrandImportQueue.length) void drainDetectedBrandImports();
+    else finalizeBrandActivityAfterMainCompletion();
   }
 }
 
@@ -1641,10 +1664,9 @@ window.aroundG.onBrandWorkHistoryCleared?.(() => clearBrandWorkHistoryUi());
 window.aroundG.onBrandExportProgress((progress) => {
   if (!acceptBrandWorkEvents) return;
   if (progress?.status === "all-complete") {
-    renderBrandExportJobs();
+    brandMainAllComplete = true;
     renderBrandCompletedJobs();
-    const unfinished = [...brandExportJobs.values()].some((job) => !brandJobIsFinished(job.state));
-    if (!unfinished && !detectedBrandImportRunning && !detectedBrandImportQueue.length) stopBrandActivity();
+    finalizeBrandActivityAfterMainCompletion();
     $("#brand-status").className = "status success";
     $("#brand-status").textContent = progress?.message || "모든 작업이 확인완료되었습니다.";
     return;
