@@ -10,6 +10,7 @@ const [style, packageSource, lockSource] = await Promise.all([
 
 test("live status and job rows wrap instead of clipping", () => {
   assert.match(style, /v2\.10\.62 responsive text and overflow safeguards/);
+  assert.match(style, /"Segoe UI","Malgun Gothic","Apple SD Gothic Neo"/);
   assert.match(style, /\.brand-activity-copy strong,[\s\S]*?white-space:normal/);
   assert.match(style, /\.brand-export-job-row\{[\s\S]*?grid-template-columns:minmax\(96px/);
   assert.match(style, /\.brand-export-job-state\{[\s\S]*?border-radius:12px/);
@@ -19,6 +20,7 @@ test("live status and job rows wrap instead of clipping", () => {
 test("batch, completed and brand-card labels remain readable", () => {
   assert.match(style, /\.brand-batch-row strong,[\s\S]*?word-break:keep-all/);
   assert.match(style, /\.brand-export-completed-row\{[\s\S]*?align-items:start/);
+  assert.match(style, /\.brand-card strong\{[\s\S]*?white-space:normal/);
   assert.match(style, /\.brand-card strong\{[\s\S]*?-webkit-line-clamp:2/);
   assert.match(style, /@media\(max-width:900px\)[\s\S]*?grid-template-columns:1fr/);
 });
