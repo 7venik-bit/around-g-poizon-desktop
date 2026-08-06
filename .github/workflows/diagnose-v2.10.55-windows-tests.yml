@@ -1,0 +1,51 @@
+name: Diagnose v2.10.55 Windows tests
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/diagnose-v2.10.55-windows-tests.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-latest
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Capture Windows test output
+        shell: pwsh
+        run: |
+          npm test *> ci-v2.10.55-windows-test-output.txt
+          $code = $LASTEXITCODE
+          Set-Content -Path ci-v2.10.55-windows-test-exit.txt -Value $code -NoNewline
+          Get-Content ci-v2.10.55-windows-test-output.txt
+          exit 0
+
+      - name: Commit diagnostics
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ci-v2.10.55-windows-test-output.txt ci-v2.10.55-windows-test-exit.txt
+          if (-not (git diff --cached --quiet)) {
+            git commit -m "Record v2.10.55 Windows test diagnostics"
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          }
