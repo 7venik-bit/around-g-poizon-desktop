@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
+const normalizedRenderer = renderer.replace(/\r\n/g, "\n");
 
 test("download completion count excludes failed and still-running jobs", () => {
   assert.match(renderer, /function brandJobIsDownloaded/);
@@ -17,7 +18,7 @@ test("download completion count excludes failed and still-running jobs", () => {
 });
 
 test("detected Excel completion requires the registered live job brand", () => {
-  const importBlock = renderer.match(
+  const importBlock = normalizedRenderer.match(
     /async function importDetectedBrandExport[\s\S]*?\n}\n\nasync function drainDetectedBrandImports/
   )?.[0] || "";
   assert.ok(importBlock);
