@@ -1,26 +1,19 @@
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def replace_exact(path: Path, old: str, new: str, count: int = 1) -> None:
-    source = path.read_text(encoding="utf-8")
-    actual = source.count(old)
-    if actual != count:
-        raise RuntimeError(f"{path}: expected {count} matches, found {actual}")
-    path.write_text(source.replace(old, new, count), encoding="utf-8")
-
 
 main = ROOT / "main.mjs"
 source = main.read_text(encoding="utf-8")
 
-anchor = '''function safeBrandExportLabel(value = "") {
-  return String(brandExportLabel(value) || "POIZON")
-    .replace(/[\\/:*?"<>|]/g, "-")
-    .trim() || "POIZON";
-}
-'''
-helpers = anchor + '''
+safe_label_match = re.search(
+    r'function safeBrandExportLabel\(value = ""\) \{[\s\S]*?\n\}',
+    source,
+)
+if not safe_label_match:
+    raise RuntimeError("safeBrandExportLabel function not found")
+helpers = '''
+
 function brandExportFolderName(brandName = "", jobId = "") {
   const safeBrand = safeBrandExportLabel(brandName);
   const safeJobId = String(jobId || "").replace(/[^0-9]/g, "").trim();
@@ -35,9 +28,7 @@ function parseBrandExportFolderName(folderName = "") {
     : { brandName: normalized, jobId: "" };
 }
 '''
-if source.count(anchor) != 1:
-    raise RuntimeError("safeBrandExportLabel anchor not found exactly once")
-source = source.replace(anchor, helpers, 1)
+source = source[:safe_label_match.end()] + helpers + source[safe_label_match.end():]
 
 old_list = '''    const path = entry.path;
     const folderBrand = entry.directory === folder ? "" : basename(entry.directory);
@@ -64,7 +55,7 @@ new_list = '''    const path = entry.path;
     const recoveredJobId = String(folderMeta.jobId || savedJob?.jobId || "").trim();
 '''
 if source.count(old_list) != 1:
-    raise RuntimeError("listBrandExportFiles folder block not found")
+    raise RuntimeError(f"listBrandExportFiles folder block found {source.count(old_list)} times")
 source = source.replace(old_list, new_list, 1)
 
 old_scan = '''    const folderBrand = newest.directory === folder ? "" : basename(newest.directory);
@@ -91,7 +82,7 @@ new_scan = '''    const folderMeta = newest.directory === folder
     const matchedJobId = folderJobId || (matchingJobs.length === 1 ? matchingJobs[0][0] : "");
 '''
 if source.count(old_scan) != 1:
-    raise RuntimeError("scanBrandExportFolder folder block not found")
+    raise RuntimeError(f"scanBrandExportFolder folder block found {source.count(old_scan)} times")
 source = source.replace(old_scan, new_scan, 1)
 
 old_download_folder = '''    const exportBrand = safeBrandExportLabel(downloadJob.brandName);
@@ -101,7 +92,7 @@ new_download_folder = '''    const exportBrand = safeBrandExportLabel(downloadJo
     const brandFolder = join(folder, brandExportFolderName(exportBrand, downloadJobId));
 '''
 if source.count(old_download_folder) != 1:
-    raise RuntimeError("download folder block not found")
+    raise RuntimeError(f"download folder block found {source.count(old_download_folder)} times")
 source = source.replace(old_download_folder, new_download_folder, 1)
 
 old_detected_folder = '''          const detectedFolder = join(folder, detectedBrand);
@@ -109,7 +100,7 @@ old_detected_folder = '''          const detectedFolder = join(folder, detectedB
 new_detected_folder = '''          const detectedFolder = join(folder, brandExportFolderName(detectedBrand, downloadJobId));
 '''
 if source.count(old_detected_folder) != 1:
-    raise RuntimeError("detected folder block not found")
+    raise RuntimeError(f"detected folder block found {source.count(old_detected_folder)} times")
 source = source.replace(old_detected_folder, new_detected_folder, 1)
 
 main.write_text(source, encoding="utf-8")
@@ -127,7 +118,7 @@ for path in sorted((ROOT / "tests").glob("*.test.mjs")):
         path.write_text(text.replace("2.10.64", "2.10.65"), encoding="utf-8")
 
 new_test = ROOT / "tests" / "brand-folder-job-number-v2.10.65.test.mjs"
-new_test.write_text('''import assert from "node:assert/strict";
+new_test.write_text(r'''import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -146,7 +137,7 @@ test("new downloads use brand and POIZON job number in the folder name", () => {
 
 test("folder job number is restored before the legacy cache and old brand-only folders remain supported", () => {
   assert.match(main, /function parseBrandExportFolderName/);
-  assert.match(main, /\^\(\.\*\)_\(\[0-9\]\{7,\}\)\$/);
+  assert.match(main, /normalized\.match\(\/\^\(\.\*\)_\(\[0-9\]\{7,\}\)\$\//);
   assert.match(main, /folderMeta\.jobId \|\| savedJob\?\.jobId/);
   assert.match(main, /folderMeta\.brandName \|\| brandFromExportFileName/);
   assert.match(main, /folderJobId \|\| \(matchingJobs\.length === 1/);
