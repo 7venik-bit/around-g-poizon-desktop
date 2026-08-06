@@ -20,7 +20,11 @@ test("one live job can complete only once even when the folder timestamp changes
   assert.match(renderer, /completedBrandImportJobIds\.has\(resolvedJobId\)/);
   assert.match(renderer, /if \(!resolvedJobId \|\| completedBrandImportJobIds\.has\(resolvedJobId\)\) return/);
   assert.match(renderer, /if \(!registeredBrand\) return/);
-  assert.doesNotMatch(renderer, /file\?\.brandName \|\| selectedBrandName/);
+  const importBlock = renderer.match(
+    /async function importDetectedBrandExport[\s\S]*?\n}\n\nasync function drainDetectedBrandImports/
+  )?.[0] || "";
+  assert.match(importBlock, /const expectedBrand = registeredBrand/);
+  assert.doesNotMatch(importBlock, /selectedBrandName/);
 });
 
 test("folder polling never reports an unmatched historical file as live completion", () => {
@@ -29,8 +33,10 @@ test("folder polling never reports an unmatched historical file as live completi
   assert.doesNotMatch(main, /brandFromExportFileName\(newest\.name\) \|\| pendingBrandExportName/);
 });
 
-test("completion status exposes a unique completed count", () => {
-  assert.match(renderer, /const completionLabel = `완료 \$\{completedJobs\}\/\$\{jobs\.length\}개`/);
+test("completion status counts only downloaded jobs", () => {
+  assert.match(renderer, /function brandJobIsDownloaded/);
+  assert.match(renderer, /const completedJobs = jobs\.filter\(\(job\) => brandJobIsDownloaded\(job\.state\)\)\.length/);
+  assert.match(renderer, /const completionLabel = `다운로드 완료 \$\{completedJobs\}\/\$\{jobs\.length\}개`/);
 });
 
 test("release metadata is 2.10.56", () => {

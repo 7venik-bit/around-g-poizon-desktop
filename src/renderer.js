@@ -129,6 +129,10 @@ function brandJobIsFinished(state = "") {
   return /확인완료|완료됨|실패|오류|중단|취소/.test(String(state || ""));
 }
 
+function brandJobIsDownloaded(state = "") {
+  return /확인완료/.test(String(state || ""));
+}
+
 function renderBrandExportJobs() {
   const list = $("#brand-export-jobs-list");
   if (!list) return;
@@ -1375,8 +1379,8 @@ async function importDetectedBrandExport(file, generation = brandWorkHistoryGene
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return false;
   const jobId = String(file?.jobId || "").trim();
   const registeredBrand = String(brandExportJobs.get(jobId)?.brandName || "").trim();
-  const expectedBrand = String(registeredBrand || file?.brandName || "").trim();
-  if (!jobId || !registeredBrand || !expectedBrand) return false;
+  const expectedBrand = registeredBrand;
+  if (!jobId || !expectedBrand) return false;
   retainSelectedBrandName(expectedBrand);
   addDownloadedBrandFile({
     ...file,
@@ -1394,8 +1398,8 @@ async function importDetectedBrandExport(file, generation = brandWorkHistoryGene
     : "";
   const jobs = [...brandExportJobs.values()];
   const remainingJobs = jobs.filter((job) => !brandJobIsFinished(job.state)).length;
-  const completedJobs = jobs.length - remainingJobs;
-  const completionLabel = `완료 ${completedJobs}/${jobs.length}개`;
+  const completedJobs = jobs.filter((job) => brandJobIsDownloaded(job.state)).length;
+  const completionLabel = `다운로드 완료 ${completedJobs}/${jobs.length}개`;
   $("#brand-status").textContent = remainingJobs
     ? `${expectedBrand} 확인완료${countLabel} · ${completionLabel} · 남은 ${remainingJobs}개 브랜드 작업을 계속 감시합니다.`
     : `${expectedBrand} 확인완료${countLabel} · ${completionLabel} · 받은 Excel 파일 메뉴에서 확인하세요.`;
