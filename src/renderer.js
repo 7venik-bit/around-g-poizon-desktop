@@ -28,6 +28,7 @@ let activeExcelPreview = null;
 let excelPreviewRequestId = 0;
 const selectedExcelPreviewProducts = new Set();
 let activeExcelPreviewPath = "";
+let excelFilesListScrollPosition = 0;
 const detectedBrandImportQueue = [];
 const queuedBrandImportPaths = new Set();
 const completedBrandImportPaths = new Set();
@@ -345,7 +346,7 @@ function renderDownloadedBrandFiles() {
           <code>${text(file.jobId || "-")}</code>
           <time>${text(brandTime(file.time))}</time>
           <span>${text(excelFileSize(file.size))}</span>
-          <button type="button" data-open-brand-file-index="${index}">프로그램에서 보기</button>
+          <button type="button" data-open-brand-file-index="${index}">데이터 보기</button>
         </div>`;
       return `
         <article class="brand-download-row-group">
@@ -361,7 +362,7 @@ function renderDownloadedBrandFiles() {
             <code>${text(latest.file.jobId || "-")}</code>
             <time>${text(brandTime(latest.file.time))}</time>
             <b class="brand-download-badge">${text(excelFileSize(latest.file.size))}</b>
-            <button type="button" data-open-brand-file-index="${latest.index}">프로그램에서 보기</button>
+            <button type="button" data-open-brand-file-index="${latest.index}">데이터 보기</button>
           </div>
           ${history.length ? `
             <details class="brand-download-history">
@@ -411,6 +412,14 @@ function updateExcelPreviewSelectionUi(pageKeys = []) {
 
 async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewFilters()) {
   if (!file?.path) return;
+  const filesPanel = $("#explorer-files");
+  const productsView = $("#products");
+  if (!filesPanel?.classList.contains("excel-preview-mode")) {
+    excelFilesListScrollPosition = window.scrollY;
+  }
+  filesPanel?.classList.add("excel-preview-mode");
+  productsView?.classList.add("excel-data-view-open");
+  document.body.classList.add("excel-preview-active");
   if (activeExcelPreviewPath !== file.path) {
     selectedExcelPreviewProducts.clear();
     activeExcelPreviewPath = file.path;
@@ -426,7 +435,7 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   grid.hidden = true;
   pager.hidden = true;
   $("#excel-preview-name").textContent = file.name || "Excel 미리보기";
-  preview.scrollIntoView({ behavior: "smooth", block: "start" });
+  filesPanel?.scrollIntoView({ behavior: "auto", block: "start" });
   const result = await window.aroundG.previewExcelFile(file.path, offset, 100, filters);
   if (requestId !== excelPreviewRequestId) return;
   if (!result?.ok) {
@@ -1671,7 +1680,11 @@ $("#excel-preview-close")?.addEventListener("click", () => {
   excelPreviewRequestId += 1;
   activeExcelPreview = null;
   $("#excel-preview").hidden = true;
+  $("#explorer-files")?.classList.remove("excel-preview-mode");
+  $("#products")?.classList.remove("excel-data-view-open");
+  document.body.classList.remove("excel-preview-active");
   document.querySelectorAll(".brand-download-row.is-open,.brand-download-history-row.is-open").forEach((row) => row.classList.remove("is-open"));
+  requestAnimationFrame(() => window.scrollTo({ top: excelFilesListScrollPosition, left: 0, behavior: "auto" }));
 });
 $("#excel-preview-prev")?.addEventListener("click", () => {
   if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, Math.max(0, activeExcelPreview.offset - activeExcelPreview.limit), activeExcelPreview.filters);

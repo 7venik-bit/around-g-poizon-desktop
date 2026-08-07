@@ -39,7 +39,7 @@ test("file list opens the original workbook inside the sourcing program and excl
   ]);
 
   assert.match(renderer, /previewExcelFile\(file\.path, offset, 100, filters\)/);
-  assert.match(renderer, /프로그램에서 보기/);
+  assert.match(renderer, /데이터 보기/);
   assert.doesNotMatch(renderer.slice(renderer.indexOf('\$("#brand-download-files").addEventListener("click"')), /openOriginalExcelFile/);
   assert.match(preload, /previewExcelFile:.*ipcRenderer\.invoke\("excel:preview"/);
   assert.match(main, /ipcMain\.handle\("excel:preview"/);

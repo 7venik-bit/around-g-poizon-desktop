@@ -67,9 +67,21 @@ test("downloaded file rows open the embedded preview without launching Windows E
   const clickWorkflow = rendererSource.slice(clickStart, clickEnd);
 
   assert.match(rendererSource, /data-open-brand-file-index/);
-  assert.match(rendererSource, /프로그램에서 보기/);
+  assert.match(rendererSource, /데이터 보기/);
   assert.match(clickWorkflow, /showExcelPreview\(file, 0\)/);
   assert.doesNotMatch(clickWorkflow, /openOriginalExcelFile|shell\.openPath/);
+});
+
+test("Excel preview replaces the file list and restores its scroll position", () => {
+  assert.match(htmlSource, /id="excel-preview-close"[^>]*>← 파일 목록으로</);
+  assert.match(rendererSource, /let excelFilesListScrollPosition = 0/);
+  assert.match(rendererSource, /classList\.add\("excel-preview-mode"\)/);
+  assert.match(rendererSource, /classList\.add\("excel-data-view-open"\)/);
+  assert.match(rendererSource, /classList\.add\("excel-preview-active"\)/);
+  assert.match(rendererSource, /window\.scrollTo\(\{ top: excelFilesListScrollPosition/);
+  assert.match(cssSource, /\.excel-files-panel\.excel-preview-mode\{height:calc\(100vh - 166px\)/);
+  assert.match(cssSource, /\.excel-files-panel\.excel-preview-mode \.excel-preview-grid\{flex:1;min-height:0;max-height:none\}/);
+  assert.match(cssSource, /body\.excel-preview-active\{overflow:hidden\}/);
 });
 
 test("successful original downloads use the concise confirmation label", () => {
