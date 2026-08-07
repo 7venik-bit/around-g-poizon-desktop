@@ -15,6 +15,7 @@ import {
 import {
   filterPoizonPreviewRows,
   filterPoizonRowsByTotalSales,
+  parsePoizonSalesMetric,
   POIZON_MINIMUM_TOTAL_SALES,
 } from "./services/poizon-sales-filter.mjs";
 import {
@@ -974,6 +975,65 @@ function excelPreviewCell(value) {
     : String(value);
 }
 
+function buildExcelPreviewProducts(headers = [], entries = []) {
+  const column = (...names) => findPoizonColumn(headers, ...names);
+  const columns = {
+    spuId: column("SPU ID", "SPU_ID"), image: column("SPU 이미지", "상품 이미지", "이미지"),
+    articleNumber: column("상품 번호", "상품번호", "품번"), title: column("상품명", "영문 상품명"),
+    brand: column("상품 브랜드", "브랜드"), category1: column("카테고리 대분류", "대분류"),
+    category2: column("카테고리 중분류", "중분류"), category3: column("카테고리 소분류", "소분류"),
+    averagePrice: column("최근 30일간 평균 거래가", "최근 30일 평균 거래가"),
+    sales30d: column("최근 30일 판매량", "최근30일판매량"),
+    localSales30d: column("현지 판매자 최근 30일 판매량", "현지판매자최근30일판매량"),
+    totalSales: column("중국 총 판매량", "총 판매량"),
+    localTotalSales: column("현지 판매자 총 판매량", "현지판매자총판매량"),
+    option: column("사이즈/옵션/색상", "옵션"), skuId: column("SKU ID", "SKU_ID"),
+  };
+  const cell = (row, index) => index >= 0 ? row[index] : "";
+  const raw = (row, index) => String(cell(row, index) ?? "").trim();
+  const grouped = new Map();
+  for (const entry of entries) {
+    const row = entry.values || [];
+    const spuId = raw(row, columns.spuId);
+    const articleNumber = raw(row, columns.articleNumber);
+    const title = raw(row, columns.title);
+    if (!spuId && !articleNumber && !title) continue;
+    const key = articleNumber ? `ARTICLE:${articleNumber.toUpperCase()}` : spuId ? `SPU:${spuId}` : `ROW:${entry.sourceRowNumber}`;
+    const previous = grouped.get(key) || { optionKeys: new Set(), variants: [] };
+    const optionKey = raw(row, columns.skuId) || raw(row, columns.option) || String(entry.sourceRowNumber);
+    previous.optionKeys.add(optionKey);
+    const variant = {
+      totalSales: parsePoizonSalesMetric(cell(row, columns.totalSales)), totalSalesRaw: raw(row, columns.totalSales),
+      localTotalSales: parsePoizonSalesMetric(cell(row, columns.localTotalSales)), localTotalSalesRaw: raw(row, columns.localTotalSales),
+      sales30d: parsePoizonSalesMetric(cell(row, columns.sales30d)), sales30dRaw: raw(row, columns.sales30d),
+      localSales30d: parsePoizonSalesMetric(cell(row, columns.localSales30d)), localSales30dRaw: raw(row, columns.localSales30d),
+    };
+    previous.variants.push(variant);
+    Object.assign(previous, {
+      key, spuId: previous.spuId || spuId, articleNumber: previous.articleNumber || articleNumber,
+      title: previous.title || title, brandName: previous.brandName || raw(row, columns.brand),
+      logoUrl: previous.logoUrl || raw(row, columns.image),
+      categoryName: previous.categoryName || [columns.category1, columns.category2, columns.category3].map((index) => raw(row, index)).filter(Boolean).join(" / "),
+      averagePrice: Math.max(Number(previous.averagePrice || 0), parsePoizonSalesMetric(cell(row, columns.averagePrice))),
+    });
+    grouped.set(key, previous);
+  }
+  return [...grouped.values()].map((product) => {
+    const representative = product.variants.reduce((best, variant) => !best
+      || variant.localTotalSales > best.localTotalSales
+      || (variant.localTotalSales === best.localTotalSales && variant.totalSales > best.totalSales) ? variant : best, null) || {};
+    return {
+      key: product.key, spuId: product.spuId || "", articleNumber: product.articleNumber || "", title: product.title || "",
+      brandName: product.brandName || "", logoUrl: product.logoUrl || "", categoryName: product.categoryName || "",
+      averagePrice: product.averagePrice || 0, optionCount: product.optionKeys.size,
+      totalSales: representative.totalSales || 0, totalSalesRaw: representative.totalSalesRaw || "",
+      localTotalSales: representative.localTotalSales || 0, localTotalSalesRaw: representative.localTotalSalesRaw || "",
+      sales30d: representative.sales30d || 0, sales30dRaw: representative.sales30dRaw || "",
+      localSales30d: representative.localSales30d || 0, localSales30dRaw: representative.localSales30dRaw || "",
+    };
+  });
+}
+
 async function previewExcelFile(input = {}) {
   const filePath = String(input.path || "").trim();
   if (!filePath) return { ok: false, message: "파일 경로가 없습니다." };
@@ -994,20 +1054,28 @@ async function previewExcelFile(input = {}) {
   }
   const filtered = filterPoizonPreviewRows(workbook.headers, workbook.rows, input.filters || {});
   const limit = Math.min(200, Math.max(25, Number(input.limit) || 100));
-  const maximumOffset = Math.max(0, Math.floor(Math.max(0, filtered.entries.length - 1) / limit) * limit);
+  const productView = input.filters?.productView !== false;
+  const products = productView ? buildExcelPreviewProducts(workbook.headers, filtered.entries) : [];
+  const sourceTotalProducts = productView ? buildExcelPreviewProducts(workbook.headers, workbook.rows.map((values, index) => ({ values, sourceRowNumber: index + 2 }))).length : 0;
+  const resultCount = productView ? products.length : filtered.entries.length;
+  const maximumOffset = Math.max(0, Math.floor(Math.max(0, resultCount - 1) / limit) * limit);
   const offset = Math.min(maximumOffset, Math.max(0, Number(input.offset) || 0));
   const pageEntries = filtered.entries.slice(offset, offset + limit);
+  const pageProducts = products.slice(offset, offset + limit);
   return {
     ok: true,
     path: filePath,
     name: basename(filePath),
     headers: workbook.headers,
-    rows: pageEntries.map((entry) => entry.values),
-    rowNumbers: pageEntries.map((entry) => entry.sourceRowNumber),
+    rows: productView ? [] : pageEntries.map((entry) => entry.values),
+    rowNumbers: productView ? [] : pageEntries.map((entry) => entry.sourceRowNumber),
+    products: pageProducts,
+    productView,
     offset,
     limit,
-    totalRows: filtered.filteredRows,
+    totalRows: resultCount,
     sourceTotalRows: filtered.sourceRows,
+    sourceTotalProducts,
     totalColumns: workbook.columnCount,
     totalSalesColumn: filtered.totalSalesColumn,
     localTotalSalesColumn: filtered.localTotalSalesColumn,

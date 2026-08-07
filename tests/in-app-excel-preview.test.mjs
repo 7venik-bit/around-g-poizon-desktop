@@ -36,7 +36,7 @@ test("Excel preview filters both total-sales columns across all rows", async () 
   assert.match(htmlSource, /id="excel-filter-apply"/);
   assert.match(htmlSource, /id="excel-filter-reset"/);
   assert.match(mainSource, /filterPoizonPreviewRows\(workbook\.headers, workbook\.rows, input\.filters/);
-  assert.match(mainSource, /rowNumbers: pageEntries\.map/);
+  assert.match(mainSource, /rowNumbers: productView \? \[\] : pageEntries\.map/);
   assert.match(rendererSource, /activeExcelPreview\.filters/);
   assert.match(rendererSource, /필터 결과/);
   assert.match(preloadSource, /previewExcelFile: \(path, offset = 0, limit = 100, filters = \{\}\)/);
@@ -46,6 +46,19 @@ test("Excel filter controls share one bottom line", () => {
   assert.match(cssSource, /\.excel-preview-filters label\{display:grid;grid-template-columns:1fr;gap:5px;align-self:stretch;margin:0/);
   assert.match(cssSource, /\.excel-preview-filters label>span\{display:flex;align-items:center;min-height:14px;line-height:14px\}/);
   assert.match(cssSource, /\.excel-preview-filters label>input,\.excel-preview-filters label>select\{width:100%\}/);
+});
+
+test("Excel defaults to a grouped product-search view with raw-data fallback", () => {
+  assert.match(mainSource, /function buildExcelPreviewProducts/);
+  assert.match(mainSource, /const productView = input\.filters\?\.productView !== false/);
+  assert.match(mainSource, /sourceTotalProducts/);
+  assert.match(htmlSource, /id="excel-view-products"[^>]*class="active"[^>]*>상품 보기/);
+  assert.match(htmlSource, /id="excel-view-raw"[^>]*>원본 데이터 보기/);
+  assert.match(rendererSource, /renderExcelProductRows/);
+  assert.match(rendererSource, /data-excel-search-product/);
+  assert.match(rendererSource, /선택 상품 일괄 검색/);
+  assert.match(rendererSource, /brandName, product\.articleNumber, product\.title/);
+  assert.match(cssSource, /\.excel-preview\.product-view \.excel-preview-grid table/);
 });
 
 test("brand Excel preview supports popular-list style product selection", () => {

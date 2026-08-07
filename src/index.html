@@ -131,7 +131,7 @@
           <section id="excel-preview" class="excel-preview" hidden aria-live="polite">
             <div class="excel-preview-head">
               <div><small>IN-APP EXCEL VIEWER</small><h3 id="excel-preview-name">Excel 미리보기</h3><p id="excel-preview-summary"></p></div>
-              <button id="excel-preview-close" type="button">← 파일 목록으로</button>
+              <div class="excel-preview-head-actions"><button id="excel-view-products" type="button" class="active">상품 보기</button><button id="excel-view-raw" type="button">원본 데이터 보기</button><button id="excel-preview-close" type="button">← 파일 목록으로</button></div>
             </div>
             <div id="excel-preview-filters" class="excel-preview-filters">
               <label><span>중국 총 판매량</span><input id="excel-filter-min-total" type="number" min="0" value="50" placeholder="최소 판매량"></label>
@@ -145,6 +145,7 @@
               <label><input id="excel-preview-select-page" type="checkbox"> 현재 페이지 전체 선택</label>
               <strong id="excel-preview-selected-count">0개 제품 선택</strong>
               <button id="excel-preview-selection-clear" type="button" disabled>선택 해제</button>
+              <button id="excel-preview-search-selected" type="button" class="primary" disabled>선택 상품 일괄 검색</button>
             </div>
             <div id="excel-preview-loading" class="excel-preview-loading">Excel을 불러오는 중입니다.</div>
             <div id="excel-preview-grid" class="excel-preview-grid" hidden><table><thead id="excel-preview-columns"></thead><tbody id="excel-preview-rows"></tbody></table></div>

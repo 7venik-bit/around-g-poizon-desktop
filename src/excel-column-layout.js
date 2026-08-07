@@ -97,6 +97,7 @@
 
   async function loadLayout() {
     const preview = previewState();
+    if (preview?.viewMode === "products") return;
     const filePath = String(preview?.file?.path || "").trim();
     const headers = assignColumnIndexes();
     if (!filePath || !headers.length) return;
