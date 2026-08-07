@@ -4,6 +4,7 @@ import {
   DOMESTIC_SEARCH_LINKS,
   OFFICIAL_BRAND_SEARCH,
   countRenderedChannelProducts,
+  domesticChannelUrl,
   naverFashionTownUrl,
   officialBrandProductSearchUrl,
   officialBrandSearchUrl,
@@ -46,9 +47,10 @@ const officialStoreCases = [
   ["반스", "VN000D5IBKA", "vans.co.kr"],
   ["크록스", "209651-001", "crocs.co.kr"],
   ["데상트", "SN123LSN11", "dk-on.com"],
+  ["온", "3ME10100264", "on.com"],
 ];
 
-test("all nine registered official stores build an HTTPS article search URL", () => {
+test("all curated official stores build an HTTPS article search URL", () => {
   assert.equal(OFFICIAL_BRAND_SEARCH.length, officialStoreCases.length);
   for (const [brand, articleNumber, host] of officialStoreCases) {
     const url = new URL(officialBrandProductSearchUrl(brand, articleNumber));
@@ -69,11 +71,47 @@ test("all registered official-store product URL shapes match their exact article
     ["반스", "VN000D5IBKA", "https://www.vans.co.kr/product/old-skool/VN000D5IBKA"],
     ["크록스", "209651-001", "https://www.crocs.co.kr/p/classic/209651.html?color=001"],
     ["데상트", "SN123LSN11", "https://dk-on.com/DESCENTE/product/detail/SN123LSN11"],
+    ["온", "3ME10100264", "https://www.on.com/ko-kr/products/cloudtilt-m-3me1010/mens/eclipse-black-shoes-3ME10100264"],
   ];
   for (const [brand, articleNumber, productUrl] of fixtures) {
     const rendered = JSON.stringify({ productCards: [{ productUrl, text: `${brand} 공식 상품` }] });
     assert.equal(countRenderedChannelProducts(rendered, "브랜드 공식몰", articleNumber), 1, brand);
   }
+});
+
+test("department and outlet channels use their own search scopes", () => {
+  const cases = [
+    ["ssg-department", /department\.ssg\.com/],
+    ["ssg-outlet", /siteNo=7008/],
+    ["lotte-department", /mallFilter=.*%EB%B0%B1%ED%99%94%EC%A0%90/],
+    ["lotte-outlet", /mallFilter=.*%EC%95%84%EC%9A%B8%EB%A0%9B/],
+  ];
+  for (const [channel, expected] of cases) {
+    const url = domesticChannelUrl(channel, "온", "3ME10100264");
+    assert.match(url, expected);
+    assert.match(decodeURIComponent(url), /온 3ME10100264/);
+  }
+});
+
+test("a zero channel tab overrides unrelated matching recommendations", () => {
+  const rendered = JSON.stringify({
+    pageText: "전체 1개 백화점 0개 해외직구 1개 검색된 상품이 없습니다.",
+    productCards: [{ productUrl: "https://example.test/product/3ME10100264", text: "해외직구 On 3ME10100264" }],
+  });
+  assert.equal(countRenderedChannelProducts(rendered, "네이버 백화점", "3ME10100264"), 0);
+});
+
+test("a marketplace result must match both the article and the brand", () => {
+  const wrongBrand = JSON.stringify({
+    pageText: "검색 결과",
+    productCards: [{ productUrl: "https://example.test/product/3ME10100264", text: "나이키 3ME10100264" }],
+  });
+  const correctBrand = JSON.stringify({
+    pageText: "검색 결과",
+    productCards: [{ productUrl: "https://example.test/product/3ME10100264", text: "On Cloudtilt 3ME10100264" }],
+  });
+  assert.equal(countRenderedChannelProducts(wrongBrand, "SSG 백화점", "3ME10100264", "온"), 0);
+  assert.equal(countRenderedChannelProducts(correctBrand, "SSG 백화점", "3ME10100264", "온"), 1);
 });
 
 test("official-store matching can use article metadata in a product card", () => {
@@ -172,22 +210,26 @@ test("one domestic store failure does not stop the others", async () => {
     return { ok: true, status: 200, text: async () => emptyNextData };
   };
   const result = await queryDomesticProducts({ query: "DD1391-100", brand: "나이키", fetchImpl });
-  assert.equal(result.sources.length, 7);
+  assert.equal(result.sources.length, 11);
   assert.deepEqual(result.sources.map((source) => source.store), [
     "브랜드 공식몰",
     "무신사",
     "네이버 공식 브랜드스토어",
     "네이버 백화점",
     "네이버 아울렛",
+    "SSG 백화점",
+    "SSG 아울렛",
+    "롯데온 백화점",
+    "롯데온 아울렛",
     "SSG",
     "코오롱몰",
   ]);
-  assert.deepEqual(result.sources.map((source) => source.priority), [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(result.sources.map((source) => source.priority), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   assert.equal(result.sources.find((source) => source.store === "SSG").ok, false);
-  assert.equal(result.sources.filter((source) => source.ok).length, 6);
+  assert.equal(result.sources.filter((source) => source.ok).length, 10);
   assert.deepEqual(
     result.sources.filter((source) => source.renderCount).map((source) => source.store),
-    ["브랜드 공식몰", "무신사", "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛"]
+    ["브랜드 공식몰", "무신사", "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛", "SSG 백화점", "SSG 아울렛", "롯데온 백화점", "롯데온 아울렛"]
   );
 });
 

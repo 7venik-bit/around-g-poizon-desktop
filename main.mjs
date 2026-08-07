@@ -651,7 +651,7 @@ async function addMatchConfidence(data, input) {
   return { ...data, products, sources };
 }
 
-async function renderedSearchSourceCount(source, articleNumber) {
+async function renderedSearchSourceCount(source, articleNumber, brand = "") {
   const url = String(source.officialProductUrl || source.searchUrl || "");
   if (!/^https:\/\//i.test(url)) return Number(source.count || 0);
   let searchWindow;
@@ -705,12 +705,12 @@ async function renderedSearchSourceCount(source, articleNumber) {
       }
       const pageText = String(document.body?.innerText || "").slice(0, 20000);
       const pageBlocked = /captcha|보안\s*확인|자동\s*입력|로봇|접속.{0,12}(?:제한|차단)|서비스.{0,12}(?:제한|지연)|비정상적인\s*접근/i.test(pageText);
-      return JSON.stringify({ productCards, pageBlocked });
+      return JSON.stringify({ productCards, pageBlocked, pageText });
     })()`, true);
     try {
       if (JSON.parse(content)?.pageBlocked) return null;
     } catch {}
-    return countRenderedChannelProducts(content, source.store, articleNumber);
+    return countRenderedChannelProducts(content, source.store, articleNumber, brand);
   } catch {
     return null;
   } finally {
@@ -718,7 +718,7 @@ async function renderedSearchSourceCount(source, articleNumber) {
   }
 }
 
-async function addRenderedSearchCounts(data, articleNumber) {
+async function addRenderedSearchCounts(data, articleNumber, brand = "") {
   const sources = await Promise.all(data.sources.map(async (source) => {
     if (source.officialStatus && source.officialStatus !== OFFICIAL_DOMAIN_STATUS.VERIFIED) {
       return { ...source, countVerified: false, verificationFailed: false };
@@ -733,7 +733,7 @@ async function addRenderedSearchCounts(data, articleNumber) {
     if (!source.linkOnly && source.ok && Number(source.count || 0) > 0) {
       return { ...source, countVerified: true, verificationFailed: false };
     }
-    const count = await renderedSearchSourceCount(source, articleNumber);
+    const count = await renderedSearchSourceCount(source, articleNumber, brand);
     return {
       ...source,
       count: Number.isFinite(count) ? count : 0,
@@ -816,11 +816,20 @@ async function loadAuditPage(auditWindow, url) {
   return auditWindow.webContents.executeJavaScript(`(() => {
     const text = String(document.body?.innerText || "").slice(0, 20000);
     const blocked = /captcha|보안\\s*확인|자동\\s*입력|비정상적인\\s*접근|로봇이 아닙니다|접속.{0,12}(?:제한|차단)/i.test(text);
-    const candidates = [...document.querySelectorAll("a[href]")].map((link) => ({
-      url: String(link.href || ""),
-      title: String(link.innerText || link.getAttribute("aria-label") || link.title || "").trim().slice(0, 300),
-      rel: String(link.rel || ""),
-    })).filter((item) => /^https?:/i.test(item.url));
+    const imageSource = (image) => String(image?.currentSrc || image?.src || image?.getAttribute?.("data-src") || "").trim();
+    const candidates = [...document.querySelectorAll("a[href]")].map((link) => {
+      const block = link.closest("li, article, section, [class*='item'], [class*='result'], [class*='card']") || link.parentElement;
+      return {
+        url: String(link.href || ""),
+        title: String(link.innerText || link.getAttribute("aria-label") || link.title || "").trim().slice(0, 300),
+        rel: String(link.rel || ""),
+        imageUrl: imageSource(block?.querySelector("img") || link.querySelector("img")),
+      };
+    }).filter((item) => /^https?:/i.test(item.url));
+    const logoUrls = [...new Set([
+      ...[...document.querySelectorAll("img[alt*='logo' i], img[class*='logo' i], img[id*='logo' i], header img")].map(imageSource),
+      ...[...document.querySelectorAll("link[rel*='icon']")].map((link) => String(link.href || "")),
+    ].filter((item) => /^https?:/i.test(item)))].slice(0, 8);
     let searchTemplate = "";
     for (const form of [...document.forms]) {
       if (String(form.method || "get").toLowerCase() === "post") continue;
@@ -833,22 +842,48 @@ async function loadAuditPage(auditWindow, url) {
         break;
       } catch {}
     }
-    return { candidates, blocked, text, pageTitle: String(document.title || ""), finalUrl: String(location.href), searchTemplate };
+    return { candidates, logoUrls, blocked, text, pageTitle: String(document.title || ""), finalUrl: String(location.href), searchTemplate };
   })()`, true);
+}
+
+async function compareOfficialBrandLogos(sourceLogoUrl, candidateLogoUrls) {
+  const sourceFingerprint = await imageFingerprint(sourceLogoUrl).catch(() => null);
+  if (!sourceFingerprint) return { compared: false, similarity: 0 };
+  const urls = [...new Set((Array.isArray(candidateLogoUrls) ? candidateLogoUrls : [])
+    .map((value) => String(value || "").trim()).filter((value) => /^https?:/i.test(value)))].slice(0, 8);
+  if (!urls.length) return { compared: false, similarity: 0 };
+  const similarities = await Promise.all(urls.map(async (url) => {
+    const fingerprint = await imageFingerprint(url).catch(() => null);
+    return fingerprint ? fingerprintSimilarity(sourceFingerprint, fingerprint) : null;
+  }));
+  const compared = similarities.some(Number.isFinite);
+  return {
+    compared,
+    similarity: compared ? Math.max(...similarities.filter(Number.isFinite)) : 0,
+  };
 }
 
 async function auditOneOfficialDomain(auditWindow, record) {
   const brand = record.brandKo || record.brandName;
   let discovery;
   try {
-    discovery = await loadAuditPage(auditWindow, officialDomainDiscoveryUrl(brand));
+    discovery = await loadAuditPage(auditWindow, officialDomainDiscoveryUrl(brand, record.brandName));
   } catch {
     return { record: failedOfficialDomainAuditRecord(record, "DISCOVERY_LOAD_FAILED"), blocked: false };
   }
   if (discovery.blocked) {
     return { record: failedOfficialDomainAuditRecord(record, "DISCOVERY_BLOCKED"), blocked: true };
   }
-  const candidates = rankOfficialDomainCandidates(discovery.candidates, brand);
+  const discoveryLogoCandidates = (discovery.candidates || []).filter((candidate) => candidate.imageUrl).slice(0, 8);
+  const discoveryLogoScores = await Promise.all(discoveryLogoCandidates.map(async (candidate) => ({
+    candidate,
+    comparison: await compareOfficialBrandLogos(record.brandLogoUrl, [candidate.imageUrl]),
+  })));
+  const logoScoreByUrl = new Map(discoveryLogoScores.map(({ candidate, comparison }) => [candidate.url, comparison.similarity]));
+  const candidates = rankOfficialDomainCandidates((discovery.candidates || []).map((candidate) => ({
+    ...candidate,
+    logoSimilarity: logoScoreByUrl.get(candidate.url) || 0,
+  })), brand);
   if (!candidates.length) {
     return { record: failedOfficialDomainAuditRecord(record, "CANDIDATE_NOT_FOUND"), blocked: false };
   }
@@ -856,12 +891,15 @@ async function auditOneOfficialDomain(auditWindow, record) {
     try {
       const page = await loadAuditPage(auditWindow, candidate.url);
       if (page.blocked) continue;
+      const logoComparison = await compareOfficialBrandLogos(record.brandLogoUrl, [candidate.imageUrl, ...(page.logoUrls || [])]);
       const next = auditedOfficialDomainRecord(record, {
         candidateUrl: candidate.url,
         finalUrl: page.finalUrl,
         pageTitle: page.pageTitle,
         pageText: page.text,
         searchTemplate: page.searchTemplate,
+        logoCompared: logoComparison.compared,
+        logoSimilarity: logoComparison.similarity,
       });
       if (next.status !== OFFICIAL_DOMAIN_STATUS.PENDING) return { record: next, blocked: false };
     } catch {
@@ -4460,7 +4498,11 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       });
       let matched = await addMatchConfidence(data, input || {});
       if (input?.verifyLinkCounts === true) {
-        matched = await addRenderedSearchCounts(matched, String(input?.articleNumber || ""));
+        matched = await addRenderedSearchCounts(
+          matched,
+          String(input?.articleNumber || ""),
+          String(input?.brand || "")
+        );
       }
       return { ok: true, data: matched };
     } catch (error) {
