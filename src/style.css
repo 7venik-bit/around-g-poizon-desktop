@@ -507,6 +507,12 @@ body .explorer-panel{border-color:var(--ui-line);background:#fff}
 .excel-files-heading p b{color:#1e69c6}
 .excel-files-panel .brand-download-list{margin-top:0}
 .excel-files-panel .status{margin-top:12px}
+.view.excel-data-view-open>.raw-data-modes{display:none}
+body.excel-preview-active{overflow:hidden}
+.excel-files-panel.excel-preview-mode{height:calc(100vh - 166px);min-height:560px;margin:0;padding:0;overflow:hidden}
+.excel-files-panel.excel-preview-mode>.excel-files-heading,.excel-files-panel.excel-preview-mode>.brand-download-list,.excel-files-panel.excel-preview-mode>#excel-files-status{display:none}
+.excel-files-panel.excel-preview-mode .excel-preview{display:flex;height:100%;min-height:0;flex-direction:column;margin:0;border:0;border-radius:0}
+.excel-files-panel.excel-preview-mode .excel-preview-grid{flex:1;min-height:0;max-height:none}
 .excel-preview{margin-top:14px;border:1px solid #cddbeb;border-radius:12px;background:#fff;overflow:hidden;scroll-margin-top:80px}
 .excel-preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:13px 14px;border-bottom:1px solid #dfe7f0;background:#f7f9fc}
 .excel-preview-head small{color:#2d7ff0;font-size:9px;font-weight:800;letter-spacing:.08em}
