@@ -14,6 +14,9 @@ test("the desktop can audit every official domain with checkpoints and safe paus
   assert.match(mainSource, /await persistOfficialDomainAudit/);
   assert.match(mainSource, /await wait\(4_000\)/);
   assert.match(mainSource, /DISCOVERY_BLOCKED/);
+  assert.match(mainSource, /compareOfficialBrandLogos/);
+  assert.match(mainSource, /brandLogoUrl/);
+  assert.match(mainSource, /logoSimilarity/);
   assert.match(mainSource, /official-domain:audit-start/);
   assert.match(mainSource, /official-domain:audit-stop/);
   assert.match(preloadSource, /startOfficialDomainAudit/);

@@ -1,6 +1,7 @@
 import {
   OFFICIAL_DOMAIN_STATUS,
   VERIFIED_OFFICIAL_BRANDS,
+  normalizeOfficialBrand,
   officialSearchUrlFromRecord,
   verifiedOfficialBrand,
 } from "../services/official-domain-registry.mjs";
@@ -78,6 +79,21 @@ export function naverFashionTownUrl(channel, brand, query) {
   )}`;
 }
 
+export function domesticChannelUrl(channel, brand, query) {
+  const terms = sanitizeDomesticQuery([brand, query].filter(Boolean).join(" "));
+  if (channel === "ssg-department") {
+    return `https://department.ssg.com/search.ssg?query=${encodeURIComponent(terms)}`;
+  }
+  if (channel === "ssg-outlet") {
+    return `https://www.ssg.com/search.ssg?target=all&siteNo=7008&query=${encodeURIComponent(terms)}`;
+  }
+  if (channel === "lotte-department" || channel === "lotte-outlet") {
+    const area = channel === "lotte-department" ? "백화점" : "아울렛";
+    return `https://www.lotteon.com/search/search/search.ecn?render=search&platform=pc&q=${encodeURIComponent(terms)}&mallFilter=${encodeURIComponent(area)}`;
+  }
+  return "";
+}
+
 export const DOMESTIC_SEARCH_LINKS = {
   "브랜드 공식몰": (query) => naverSearch(query),
   "무신사": (query) => `https://www.musinsa.com/search/goods?keyword=${encodeURIComponent(query)}`,
@@ -138,20 +154,37 @@ export function countLinkedSearchProducts(html, articleNumber = "") {
   return occurrences >= 2 ? 1 : 0;
 }
 
-export function countRenderedChannelProducts(content, store = "", articleNumber = "") {
+export function countRenderedChannelProducts(content, store = "", articleNumber = "", brand = "") {
   const source = String(content || "");
   const articleCode = sanitizeDomesticQuery(articleNumber)
     .split(/\s+/)[0]
     .replace(/[^A-Z0-9]/gi, "")
     .toUpperCase();
-  if (source.startsWith('{"productCards":')) {
+  if (source.trimStart().startsWith("{")) {
     try {
-      const cards = JSON.parse(source).productCards || [];
+      const rendered = JSON.parse(source);
+      if (!Array.isArray(rendered?.productCards)) throw new Error("RENDERED_PRODUCT_CARDS_MISSING");
+      const cards = rendered.productCards || [];
+      const pageText = String(rendered.pageText || "");
+      const scopedLabels = String(store || "").includes("공식 브랜드스토어")
+        ? ["브랜드직영몰", "공식브랜드", "브랜드스토어"]
+        : String(store || "").includes("백화점") ? ["백화점"]
+          : String(store || "").includes("아울렛") ? ["아울렛"] : [];
+      for (const label of scopedLabels) {
+        const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const scoped = pageText.match(new RegExp(`${escaped}\\s*([\\d,]+)\\s*개`, "i"));
+        if (scoped) return Math.min(Number(scoped[1].replace(/,/g, "")) || 0, 9999);
+      }
+      if (scopedLabels.length && /검색된\s*상품이\s*없습니다|검색\s*결과가\s*없습니다|상품이\s*없습니다/i.test(pageText)) return 0;
       if (!articleCode) return 0;
+      const seed = verifiedOfficialBrand(brand);
+      const brandKeys = [brand, ...(seed?.aliases || [])].map(normalizeOfficialBrand).filter(Boolean);
+      const requiresBrandMatch = /^(?:네이버|SSG|롯데온)/.test(String(store || "")) && brandKeys.length > 0;
       const matchingProducts = new Set();
       for (const card of cards) {
         const productUrl = String(card?.productUrl || "");
-        const cardText = `${String(card?.text || "")} ${String(card?.markup || "")} ${productUrl}`
+        const rawCardText = `${String(card?.text || "")} ${String(card?.markup || "")} ${productUrl}`;
+        const cardText = rawCardText
           .replace(/[^A-Z0-9]/gi, "")
           .toUpperCase();
         let articleMatched = cardText.includes(articleCode);
@@ -164,6 +197,12 @@ export function countRenderedChannelProducts(content, store = "", articleNumber 
           articleMatched = new RegExp(`${escapedBase}[^#\\s]{0,160}(?:color|colour|variant)[^=]{0,24}=${escapedColor}(?:&|$)`, "i").test(decodedUrl);
         }
         if (!articleMatched) continue;
+        if (requiresBrandMatch) {
+          const evidence = normalizeOfficialBrand(rawCardText);
+          const tokens = rawCardText.toLowerCase().split(/[^a-z0-9가-힣]+/).map(normalizeOfficialBrand).filter(Boolean);
+          const brandMatched = brandKeys.some((key) => key.length <= 3 ? tokens.includes(key) : evidence.includes(key));
+          if (!brandMatched) continue;
+        }
         const productKey = String(productUrl || card?.text || "");
         if (productKey) matchingProducts.add(productKey);
       }
@@ -386,6 +425,10 @@ export async function queryDomesticProducts({
     { store: "네이버 공식 브랜드스토어", linkOnly: true, fashionTown: "brand-store", renderCount: true },
     { store: "네이버 백화점", linkOnly: true, fashionTown: "department", renderCount: true },
     { store: "네이버 아울렛", linkOnly: true, fashionTown: "outlet", renderCount: true },
+    { store: "SSG 백화점", linkOnly: true, domesticChannel: "ssg-department", renderCount: true },
+    { store: "SSG 아울렛", linkOnly: true, domesticChannel: "ssg-outlet", renderCount: true },
+    { store: "롯데온 백화점", linkOnly: true, domesticChannel: "lotte-department", renderCount: true },
+    { store: "롯데온 아울렛", linkOnly: true, domesticChannel: "lotte-outlet", renderCount: true },
     { store: "SSG", parser: parseSsgSearch },
     { store: "코오롱몰", parser: (html) => parseKolonSearch(html, articleNumber) },
   ];
@@ -395,6 +438,8 @@ export async function queryDomesticProducts({
       ? officialBrandSearchUrl(brand || title || normalizedQuery, preferredQuery)
       : source.fashionTown
         ? naverFashionTownUrl(source.fashionTown, brand || title, preferredQuery)
+        : source.domesticChannel
+          ? domesticChannelUrl(source.domesticChannel, brand || title, preferredQuery)
         : DOMESTIC_SEARCH_LINKS[source.store](preferredQuery);
     const officialProductUrl = source.officialBrand
       ? officialBrandProductSearchUrl(brand || title || normalizedQuery, preferredQuery, officialBrandRecord)

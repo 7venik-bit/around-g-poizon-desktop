@@ -15,6 +15,7 @@ export const VERIFIED_OFFICIAL_BRANDS = Object.freeze([
   { name: "반스", aliases: ["vans", "반스"], domain: "vans.co.kr", homepageUrl: "https://www.vans.co.kr/", searchTemplate: "https://www.vans.co.kr/search?query={query}" },
   { name: "크록스", aliases: ["crocs", "크록스"], domain: "crocs.co.kr", homepageUrl: "https://www.crocs.co.kr/", searchTemplate: "https://www.crocs.co.kr/search?q={query}" },
   { name: "데상트", aliases: ["descente", "데상트"], domain: "dk-on.com", homepageUrl: "https://dk-on.com/DESCENTE", searchTemplate: "https://dk-on.com/DESCENTE/search?keyword={query}" },
+  { name: "온", aliases: ["on", "on running", "onrunning", "온", "온러닝"], domain: "on.com", homepageUrl: "https://www.on.com/ko-kr/", searchTemplate: "https://www.on.com/ko-kr/search?q={query}" },
 ]);
 
 const BLOCKED_CANDIDATE_HOSTS = [
@@ -64,6 +65,7 @@ export function createOfficialDomainRegistry(brands, existing = []) {
       brandId: Number(brand?.id ?? brand?.brandId) || 0,
       brandName: String(brand?.name || "").trim(),
       brandKo: String(brand?.ko || brand?.name || "").trim(),
+      brandLogoUrl: String(brand?.logoUrl || "").trim(),
       status: OFFICIAL_DOMAIN_STATUS.PENDING,
       domain: "",
       homepageUrl: "",
@@ -77,6 +79,7 @@ export function createOfficialDomainRegistry(brands, existing = []) {
       brandId: Number(brand?.id ?? brand?.brandId) || saved.brandId || 0,
       brandName: String(brand?.name || saved.brandName || "").trim(),
       brandKo: String(brand?.ko || brand?.name || saved.brandKo || "").trim(),
+      brandLogoUrl: String(brand?.logoUrl || saved.brandLogoUrl || "").trim(),
     });
     if (seed && base.status !== OFFICIAL_DOMAIN_STATUS.VERIFIED) {
       Object.assign(base, {
@@ -121,8 +124,9 @@ export function officialDomainRegistrySummary(registry) {
   return summary;
 }
 
-export function officialDomainDiscoveryUrl(brand) {
-  const terms = [String(brand || "").trim(), "공식 홈페이지"].filter(Boolean).join(" ");
+export function officialDomainDiscoveryUrl(brand, alternateBrand = "") {
+  const names = [...new Set([brand, alternateBrand].map((value) => String(value || "").trim()).filter(Boolean))];
+  const terms = [...names, "공식 홈페이지"].join(" ");
   return `https://search.naver.com/search.naver?query=${encodeURIComponent(terms)}`;
 }
 
@@ -139,7 +143,12 @@ export function rankOfficialDomainCandidates(candidates, brand) {
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const url = String(candidate?.url || "").trim();
     const title = String(candidate?.title || "").trim();
-    const validation = validateOfficialDomainCandidate({ brand, candidateUrl: url, pageTitle: title });
+    const validation = validateOfficialDomainCandidate({
+      brand,
+      candidateUrl: url,
+      pageTitle: title,
+      logoSimilarity: candidate?.logoSimilarity,
+    });
     if (!validation.valid) continue;
     const host = candidateHost(url);
     if (!host || unique.has(host)) continue;
@@ -149,8 +158,13 @@ export function rankOfficialDomainCandidates(candidates, brand) {
     const score = (hostKey.includes(brandKey) ? 60 : 0)
       + (titleKey.includes(brandKey) ? 30 : 0)
       + (/공식|official|official site|공식 홈페이지/i.test(title) ? 25 : 0)
+      + (Number(candidate?.logoSimilarity || 0) >= 0.88 ? 45 : 0)
       + (String(candidate?.rel || "").includes("noopener") ? 1 : 0);
-    if (score >= 50) unique.set(host, { url, title, host, score });
+    if (score >= 50) unique.set(host, {
+      url, title, host, score,
+      imageUrl: String(candidate?.imageUrl || ""),
+      logoSimilarity: Number(candidate?.logoSimilarity || 0),
+    });
   }
   return [...unique.values()].sort((left, right) => right.score - left.score).slice(0, 5);
 }
@@ -161,6 +175,7 @@ export function auditedOfficialDomainRecord(record, evidence, now = new Date().t
     candidateUrl: evidence?.finalUrl || evidence?.candidateUrl,
     pageTitle: evidence?.pageTitle,
     pageText: evidence?.pageText,
+    logoSimilarity: evidence?.logoSimilarity,
   });
   const attempts = Number(record?.verificationAttempts || 0) + 1;
   if (!validation.valid) {
@@ -200,6 +215,8 @@ export function auditedOfficialDomainRecord(record, evidence, now = new Date().t
       finalUrl: String(evidence?.finalUrl || ""),
       pageTitle: String(evidence?.pageTitle || "").slice(0, 300),
       hasBrandEvidence: true,
+      logoCompared: Boolean(evidence?.logoCompared),
+      logoSimilarity: Number(evidence?.logoSimilarity || 0),
       hasSearchForm: Boolean(searchTemplate),
     },
   };
@@ -215,7 +232,7 @@ export function failedOfficialDomainAuditRecord(record, errorCode, now = new Dat
   };
 }
 
-export function validateOfficialDomainCandidate({ brand, candidateUrl, pageTitle = "", pageText = "" } = {}) {
+export function validateOfficialDomainCandidate({ brand, candidateUrl, pageTitle = "", pageText = "", logoSimilarity = 0 } = {}) {
   let parsed;
   try {
     parsed = new URL(String(candidateUrl || ""));
@@ -232,7 +249,7 @@ export function validateOfficialDomainCandidate({ brand, candidateUrl, pageTitle
   const rawEvidence = `${host} ${pageTitle} ${String(pageText).slice(0, 5000)}`;
   const evidence = normalizeOfficialBrand(rawEvidence);
   const evidenceTokens = rawEvidence.toLowerCase().split(/[^a-z0-9가-힣]+/).map(normalizeOfficialBrand).filter(Boolean);
-  const matchesBrand = brandKeys.some((brandKey) => brandKey.length <= 3
+  const matchesBrand = Number(logoSimilarity || 0) >= 0.88 || brandKeys.some((brandKey) => brandKey.length <= 3
     ? evidenceTokens.includes(brandKey)
     : evidence.includes(brandKey));
   if (!brandKeys.length || !matchesBrand) {

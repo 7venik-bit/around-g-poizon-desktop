@@ -73,7 +73,7 @@ test("a visited official page is checked separately from search support", () => 
 });
 
 test("curated official stores are verified and build direct product searches", () => {
-  assert.equal(VERIFIED_OFFICIAL_BRANDS.length, 9);
+  assert.equal(VERIFIED_OFFICIAL_BRANDS.length, 10);
   const registry = createOfficialDomainRegistry(VERIFIED_OFFICIAL_BRANDS.map((entry, index) => ({
     id: index + 1,
     name: entry.aliases[0],
@@ -84,6 +84,29 @@ test("curated official stores are verified and build direct product searches", (
     assert.equal(new URL(officialSearchUrlFromRecord(record, "STYLE 001")).protocol, "https:");
     assert.match(officialSearchUrlFromRecord(record, "STYLE 001"), /STYLE%20001/);
   }
+});
+
+test("On is linked to its Korean official homepage and exact article search", () => {
+  const [record] = createOfficialDomainRegistry([{
+    id: 555,
+    name: "On",
+    ko: "온",
+    logoUrl: "https://poizon.example/on-logo.png",
+  }]);
+  assert.equal(record.status, OFFICIAL_DOMAIN_STATUS.VERIFIED);
+  assert.equal(record.domain, "on.com");
+  assert.equal(record.brandLogoUrl, "https://poizon.example/on-logo.png");
+  assert.match(officialSearchUrlFromRecord(record, "3ME10100264"), /on\.com\/ko-kr\/search/);
+});
+
+test("strong logo evidence can recover a candidate whose short brand name is ambiguous", () => {
+  const validation = validateOfficialDomainCandidate({
+    brand: "온",
+    candidateUrl: "https://official.example/",
+    pageTitle: "Swiss performance running shoes",
+    logoSimilarity: 0.92,
+  });
+  assert.equal(validation.valid, true);
 });
 
 test("existing reviewed records survive a catalog refresh", () => {
