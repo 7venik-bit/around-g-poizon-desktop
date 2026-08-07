@@ -77,6 +77,11 @@ test("brand Excel preview supports popular-list style product selection", () => 
   assert.match(cssSource, /\.excel-product-select-column/);
 });
 
+test("official Nike verification accepts Korean /t/ product links", () => {
+  assert.match(mainSource, /products\?\|goods\|product\|\(\?:\[a-z\]\{2\}\\\\\/\)\?t/);
+  assert.doesNotMatch(mainSource, /if \(!text\) continue;/);
+});
+
 test("shared Excel reader repairs POIZON A1 dimensions before preview and ordinary import", async () => {
   const readerSource = await readFile(new URL("../services/excel-reader.mjs", import.meta.url), "utf8");
   assert.match(readerSource, /repairPoizonWorksheetDimensions\(input\)/);

@@ -2,11 +2,23 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DOMESTIC_SEARCH_LINKS,
+  countRenderedChannelProducts,
   parseKolonSearch,
   parseMusinsaSearch,
   parseSsgSearch,
   queryDomesticProducts,
 } from "../relay/domestic-search.mjs";
+
+test("Nike official result recognizes a Korean /t/ product URL by article number", () => {
+  const rendered = JSON.stringify({
+    productCards: [{
+      productUrl: "https://www.nike.com/kr/t/air-superfly-womens-shoes-v6MNQ3id/IB5824-001",
+      text: "나이키 에어 슈퍼플라이 여성 신발",
+    }],
+  });
+  assert.equal(countRenderedChannelProducts(rendered, "브랜드 공식몰", "IB5824-001"), 1);
+  assert.equal(countRenderedChannelProducts(rendered, "브랜드 공식몰", "IB5824-002"), 0);
+});
 
 test("domestic search links safely encode a query", () => {
   const query = "나이키 DD1391-100";

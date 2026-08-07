@@ -155,7 +155,7 @@ export function countRenderedChannelProducts(content, store = "", articleNumber 
       if (!articleCode) return 0;
       const matchingProducts = new Set();
       for (const card of cards) {
-        const cardText = String(card?.text || "")
+        const cardText = `${String(card?.text || "")} ${String(card?.productUrl || "")}`
           .replace(/[^A-Z0-9]/gi, "")
           .toUpperCase();
         if (!cardText.includes(articleCode)) continue;
