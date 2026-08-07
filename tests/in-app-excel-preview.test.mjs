@@ -28,6 +28,9 @@ test("Excel preview filters both total-sales columns across all rows", async () 
   const preloadSource = await readFile(new URL("../preload.cjs", import.meta.url), "utf8");
   assert.match(htmlSource, /id="excel-filter-min-total"[^>]+value="50"/);
   assert.match(htmlSource, /id="excel-filter-min-local-total"[^>]+value="50"/);
+  assert.doesNotMatch(htmlSource, /id="excel-filter-max-total"/);
+  assert.doesNotMatch(htmlSource, /id="excel-filter-max-local-total"/);
+  assert.doesNotMatch(rendererSource, /#excel-filter-max-total|#excel-filter-max-local-total/);
   assert.match(htmlSource, /id="excel-filter-match"/);
   assert.match(htmlSource, /id="excel-filter-apply"/);
   assert.match(htmlSource, /id="excel-filter-reset"/);
