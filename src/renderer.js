@@ -378,9 +378,7 @@ function renderDownloadedBrandFiles() {
 function currentExcelPreviewFilters() {
   return {
     minimumTotal: $("#excel-filter-min-total")?.value ?? "",
-    maximumTotal: $("#excel-filter-max-total")?.value ?? "",
     minimumLocalTotal: $("#excel-filter-min-local-total")?.value ?? "",
-    maximumLocalTotal: $("#excel-filter-max-local-total")?.value ?? "",
     matchMode: $("#excel-filter-match")?.value === "all" ? "all" : "any",
   };
 }
@@ -1691,9 +1689,7 @@ $("#excel-preview-filters")?.addEventListener("keydown", (event) => {
 });
 $("#excel-filter-reset")?.addEventListener("click", () => {
   $("#excel-filter-min-total").value = "";
-  $("#excel-filter-max-total").value = "";
   $("#excel-filter-min-local-total").value = "";
-  $("#excel-filter-max-local-total").value = "";
   $("#excel-filter-match").value = "any";
   if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, 0, currentExcelPreviewFilters());
 });
