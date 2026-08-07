@@ -92,6 +92,7 @@ test("official-store verification failures are not shown as a confirmed zero", (
   assert.match(mainSource, /pageBlocked/);
   assert.match(mainSource, /verificationFailed: !Number\.isFinite\(count\)/);
   assert.match(rendererSource, /source\.verificationFailed/);
+  assert.match(rendererSource, /Number\(source\.count \|\| 0\) > 0[\s\S]*?"없음"/);
   assert.match(rendererSource, /확인 실패/);
 });
 
