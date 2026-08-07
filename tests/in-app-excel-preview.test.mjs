@@ -58,6 +58,10 @@ test("Excel defaults to a grouped product-search view with raw-data fallback", (
   assert.match(rendererSource, /data-excel-search-product/);
   assert.match(rendererSource, /선택 상품 일괄 검색/);
   assert.match(rendererSource, /brandName, product\.articleNumber, product\.title/);
+  const productColumns = rendererSource.match(/excel-preview-columns"\)\.innerHTML = `<tr>(.*?)<\/tr>`/)?.[1] || "";
+  assert.doesNotMatch(productColumns, /중국 30일|현지 30일|옵션/);
+  assert.match(productColumns, /중국 총판매.*현지 총판매.*상품 검색/);
+  assert.match(rendererSource, /excel-product-search-detail"><td colspan="10"/);
   assert.match(cssSource, /\.excel-preview\.product-view \.excel-preview-grid table/);
 });
 
