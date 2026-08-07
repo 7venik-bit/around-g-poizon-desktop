@@ -187,12 +187,12 @@
       const common = document.createElement("button");
       common.id = "excel-hide-common-columns";
       common.type = "button";
-      common.textContent = "불필요 열 자동 숨김";
+      common.textContent = "필요한 열만 보기";
       common.addEventListener("click", hideCommonColumns);
       const showAll = document.createElement("button");
       showAll.id = "excel-show-hidden-columns";
       showAll.type = "button";
-      showAll.textContent = "숨긴 열 모두 표시";
+      showAll.textContent = "모든 열 보기";
       showAll.hidden = true;
       showAll.addEventListener("click", showAllColumns);
       const status = document.querySelector("#excel-filter-status");
@@ -223,7 +223,7 @@
     const style = document.createElement("style");
     style.dataset.excelColumnLayoutStyle = "true";
     style.textContent = `
-      #excel-preview-filters{grid-template-columns:minmax(250px,1fr) minmax(290px,1fr) minmax(160px,.65fr) auto auto auto auto}
+      #excel-preview-filters{grid-template-columns:minmax(150px,1fr) minmax(180px,1.2fr) minmax(180px,1fr) repeat(4,auto)}
       #excel-hide-common-columns,#excel-show-hidden-columns{height:32px;padding:6px 9px;white-space:nowrap}
       #excel-preview-grid table{table-layout:fixed}
       .excel-layout-header{position:sticky!important;overflow:visible!important}
@@ -237,7 +237,7 @@
       .excel-column-menu strong{padding:7px 9px;color:#294766;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .excel-column-menu button{border:0;border-radius:6px;padding:8px 9px;background:transparent;text-align:left;color:#294766;font-size:11px}
       .excel-column-menu button:hover{background:#eaf3ff;color:#1768c5}
-      @media(max-width:1200px){#excel-preview-filters{grid-template-columns:1fr 1fr auto auto}}
+      @media(max-width:1100px){#excel-preview-filters{grid-template-columns:1fr 1fr}}
     `;
     document.head.appendChild(style);
   }

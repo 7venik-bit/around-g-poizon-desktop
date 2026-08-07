@@ -32,6 +32,7 @@ test("Excel preview filters both total-sales columns across all rows", async () 
   assert.doesNotMatch(htmlSource, /id="excel-filter-max-local-total"/);
   assert.doesNotMatch(rendererSource, /#excel-filter-max-total|#excel-filter-max-local-total/);
   assert.match(htmlSource, /id="excel-filter-match"/);
+  assert.match(htmlSource, /<span>필터 조건<\/span><select id="excel-filter-match"/);
   assert.match(htmlSource, /id="excel-filter-apply"/);
   assert.match(htmlSource, /id="excel-filter-reset"/);
   assert.match(mainSource, /filterPoizonPreviewRows\(workbook\.headers, workbook\.rows, input\.filters/);
@@ -39,6 +40,12 @@ test("Excel preview filters both total-sales columns across all rows", async () 
   assert.match(rendererSource, /activeExcelPreview\.filters/);
   assert.match(rendererSource, /필터 결과/);
   assert.match(preloadSource, /previewExcelFile: \(path, offset = 0, limit = 100, filters = \{\}\)/);
+});
+
+test("Excel filter controls share one bottom line", () => {
+  assert.match(cssSource, /\.excel-preview-filters label\{display:grid;grid-template-columns:1fr;gap:5px;align-self:stretch;margin:0/);
+  assert.match(cssSource, /\.excel-preview-filters label>span\{display:flex;align-items:center;min-height:14px;line-height:14px\}/);
+  assert.match(cssSource, /\.excel-preview-filters label>input,\.excel-preview-filters label>select\{width:100%\}/);
 });
 
 test("brand Excel preview supports popular-list style product selection", () => {
