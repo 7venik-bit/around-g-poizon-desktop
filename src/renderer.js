@@ -429,7 +429,7 @@ function excelProductMetric(raw, value) {
 function renderExcelProductRows(file, products = []) {
   const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.articleNumber || product.spuId || product.key}`);
   products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
-  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>평균가격</th><th>중국 총판매</th><th>현지 총판매</th><th>중국 30일</th><th>현지 30일</th><th>옵션</th><th>상품 검색</th></tr>`;
+  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>평균가격</th><th>중국 총판매</th><th>현지 총판매</th><th>상품 검색</th></tr>`;
   $("#excel-preview-rows").innerHTML = products.length ? products.map((product, index) => {
     const key = pageKeys[index];
     const result = excelPreviewSearchResults.get(key);
@@ -441,11 +441,9 @@ function renderExcelProductRows(file, products = []) {
       <td>${text(product.brandName || "-")}</td><td title="${text(product.categoryName)}">${text(product.categoryName || "-")}</td>
       <td>${product.averagePrice ? money(product.averagePrice) : "-"}</td>
       <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td><td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
-      <td>${excelProductMetric(product.sales30dRaw, product.sales30d)}</td><td>${excelProductMetric(product.localSales30dRaw, product.localSales30d)}</td>
-      <td>${Number(product.optionCount || 0).toLocaleString("ko-KR")}개</td>
       <td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${result?.loading ? "disabled" : ""}>${status}</button></td>
-    </tr>${result && !result.loading ? `<tr class="excel-product-search-detail"><td colspan="13">${renderDomestic(result)}</td></tr>` : ""}`;
-  }).join("") : `<tr><td class="empty" colspan="13">조건에 맞는 상품이 없습니다.</td></tr>`;
+    </tr>${result && !result.loading ? `<tr class="excel-product-search-detail"><td colspan="10">${renderDomestic(result)}</td></tr>` : ""}`;
+  }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
   return pageKeys;
 }
 

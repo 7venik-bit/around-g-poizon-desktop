@@ -543,7 +543,7 @@ body.excel-preview-active{overflow:hidden}
 .excel-preview-grid tbody tr:nth-child(even) td{background:#fafbfd}
 .excel-preview.product-view #excel-hide-common-columns,.excel-preview.product-view #excel-show-hidden-columns{display:none}
 .excel-preview:not(.product-view) #excel-preview-search-selected{display:none}
-.excel-preview.product-view .excel-preview-grid table{width:1180px;min-width:100%;table-layout:fixed}
+.excel-preview.product-view .excel-preview-grid table{width:1000px;min-width:100%;table-layout:fixed}
 .excel-preview.product-view .excel-preview-grid th,.excel-preview.product-view .excel-preview-grid td{min-width:0;max-width:none}
 .excel-preview.product-view .excel-preview-grid th:nth-child(1),.excel-preview.product-view .excel-preview-grid td:nth-child(1){width:48px}
 .excel-preview.product-view .excel-preview-grid th:nth-child(2),.excel-preview.product-view .excel-preview-grid td:nth-child(2){width:62px}
@@ -552,9 +552,8 @@ body.excel-preview-active{overflow:hidden}
 .excel-preview.product-view .excel-preview-grid th:nth-child(5),.excel-preview.product-view .excel-preview-grid td:nth-child(5){width:86px}
 .excel-preview.product-view .excel-preview-grid th:nth-child(6),.excel-preview.product-view .excel-preview-grid td:nth-child(6){width:135px}
 .excel-preview.product-view .excel-preview-grid th:nth-child(7),.excel-preview.product-view .excel-preview-grid td:nth-child(7){width:86px}
-.excel-preview.product-view .excel-preview-grid th:nth-child(n+8):nth-child(-n+11),.excel-preview.product-view .excel-preview-grid td:nth-child(n+8):nth-child(-n+11){width:70px}
-.excel-preview.product-view .excel-preview-grid th:nth-child(12),.excel-preview.product-view .excel-preview-grid td:nth-child(12){width:48px}
-.excel-preview.product-view .excel-preview-grid th:nth-child(13),.excel-preview.product-view .excel-preview-grid td:nth-child(13){width:95px}
+.excel-preview.product-view .excel-preview-grid th:nth-child(n+8):nth-child(-n+9),.excel-preview.product-view .excel-preview-grid td:nth-child(n+8):nth-child(-n+9){width:78px}
+.excel-preview.product-view .excel-preview-grid th:nth-child(10),.excel-preview.product-view .excel-preview-grid td:nth-child(10){width:105px}
 .excel-product-image img{display:block;width:42px;height:42px;object-fit:contain;margin:auto;border-radius:6px;background:#fff}.excel-product-row td{height:54px}.excel-product-search{width:100%;padding:6px 7px;border-color:#287de0;color:#1768c5;font-size:10px;font-weight:800}.excel-product-search-detail td{padding:8px 12px!important;background:#f8fbff!important;white-space:normal!important}
 .excel-preview-pager{display:flex;align-items:center;justify-content:center;gap:14px;padding:10px;border-top:1px solid #dfe7f0;background:#f7f9fc}
 .excel-preview-pager strong{min-width:110px;text-align:center;color:#405b78;font-size:10px}
