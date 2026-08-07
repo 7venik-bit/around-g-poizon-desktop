@@ -1126,7 +1126,7 @@ function domesticStatus(result) {
 }
 
 function renderDomestic(result) {
-  if (!result) return `<span class="inventory-help">재고 검색을 누르면 브랜드 공식몰 → 무신사 → 네이버 패션타운 → 브랜드직영몰 → 백화점 → 아울렛 순서로 확인합니다.</span>`;
+  if (!result) return `<span class="inventory-help">재고 검색을 누르면 브랜드 공식몰 → 무신사 → 네이버 공식 브랜드스토어 → 백화점 → 아울렛 순서로 확인합니다.</span>`;
   if (result.loading) return `<span class="inventory-help">국내 플랫폼을 순서대로 확인하고 있습니다…</span>`;
   if (result.error) return `<span class="inventory-help error">국내 검색에 실패했습니다. 잠시 후 다시 시도해 주세요.</span>`;
   const products = (result.products || []).filter((product) => product && (product.name || product.title));
@@ -1155,10 +1155,15 @@ function renderDomestic(result) {
       <button data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${product?.inStock ? "구매" : "확인"}</button>
     </div>`;
   }).join("");
+  const sourceResult = (source) => source.verificationFailed
+    ? `<small class="source-check-failed">확인 실패</small>`
+    : source.countVerified
+      ? `<b class="source-count">${Number(source.count || 0) > 0 ? Number(source.count) : "없음"}</b>`
+      : `<small>결과 확인</small>`;
   const directLinks = (result.sources || []).map((source) =>
     source.officialProductUrl
-      ? `<button class="source-link" data-official-discovery="${encodeURIComponent(source.searchUrl)}" data-official-product="${encodeURIComponent(source.officialProductUrl)}"><span>${text(source.store)}</span>${source.verificationFailed ? `<small class="source-check-failed">확인 실패</small>` : source.countVerified ? `<b class="source-count">${Number(source.count || 0)}</b>` : `<small>결과 확인</small>`}</button>`
-      : `<button class="source-link" data-url="${encodeURIComponent(source.searchUrl)}"><span>${text(source.store)}</span>${source.officialStatus === "pending" ? `<small>도메인 확인 필요</small>` : source.officialStatus === "no_official_store" ? `<small>등록된 공식몰 없음</small>` : source.officialStatus === "search_unsupported" ? `<small>사이트 검색 미지원</small>` : source.verificationFailed ? `<small class="source-check-failed">확인 실패</small>` : source.countVerified ? `<b class="source-count">${Number(source.count || 0)}</b>` : `<small>결과 확인</small>`}</button>`
+      ? `<button class="source-link" data-official-discovery="${encodeURIComponent(source.searchUrl)}" data-official-product="${encodeURIComponent(source.officialProductUrl)}"><span>${text(source.store)}</span>${sourceResult(source)}</button>`
+      : `<button class="source-link" data-url="${encodeURIComponent(source.searchUrl)}"><span>${text(source.store)}</span>${source.officialStatus === "pending" ? `<small>도메인 확인 필요</small>` : source.officialStatus === "no_official_store" ? `<small>등록된 공식몰 없음</small>` : source.officialStatus === "search_unsupported" ? `<small>사이트 검색 미지원</small>` : sourceResult(source)}</button>`
   ).join("");
   return `<div class="platform-list">${productRows || `<span class="inventory-help">일치하는 국내 판매 상품을 찾지 못했습니다.</span>`}</div>
     ${directLinks ? `<div class="source-links">${directLinks}</div>` : ""}`;

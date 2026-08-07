@@ -32,11 +32,7 @@ function officialBrandEntry(brandOrQuery) {
 }
 
 export function officialBrandSearchUrl(brand, query) {
-  const match = officialBrandEntry(brand || query);
-  const brandQuery = match?.name || sanitizeDomesticQuery(brand);
-  const productQuery = sanitizeDomesticQuery(query);
-  const terms = [...new Set([brandQuery, productQuery, "공식몰"].filter(Boolean))].join(" ");
-  return `https://search.naver.com/search.naver?query=${encodeURIComponent(terms)}`;
+  return naverFashionTownUrl("brand-store", brand, query);
 }
 
 export function officialBrandProductSearchUrl(brand, query, officialBrandRecord = null) {
@@ -72,10 +68,14 @@ export function naverFashionTownUrl(channel, brand, query) {
     if (matchedStore?.slug) {
       return `https://brand.naver.com/${matchedStore.slug}/search?q=${encodeURIComponent(cleanedQuery)}`;
     }
-    return naverSearch([searchBrand, cleanedQuery, "공식스토어"].filter(Boolean).join(" "));
+    return `https://shopping.naver.com/window/search/fashion-group?q=${encodeURIComponent(
+      [searchBrand, cleanedQuery].filter(Boolean).join(" ")
+    )}`;
   }
-  const sectionLabel = channel === "department" ? "백화점" : "아울렛";
-  return naverSearch([searchBrand, cleanedQuery, sectionLabel].filter(Boolean).join(" "));
+  const section = channel === "department" ? "department" : "outlet";
+  return `https://shopping.naver.com/window/${section}/search?q=${encodeURIComponent(
+    [searchBrand, cleanedQuery].filter(Boolean).join(" ")
+  )}`;
 }
 
 export const DOMESTIC_SEARCH_LINKS = {
@@ -383,7 +383,7 @@ export async function queryDomesticProducts({
   const sources = [
     { store: officialStoreLabel, linkOnly: true, officialBrand: true, renderCount: officialStatus === OFFICIAL_DOMAIN_STATUS.VERIFIED, officialStatus },
     { store: "무신사", parser: parseMusinsaSearch, renderCount: true },
-    { store: "네이버 브랜드직영몰", linkOnly: true, fashionTown: "brand-store", renderCount: true },
+    { store: "네이버 공식 브랜드스토어", linkOnly: true, fashionTown: "brand-store", renderCount: true },
     { store: "네이버 백화점", linkOnly: true, fashionTown: "department", renderCount: true },
     { store: "네이버 아울렛", linkOnly: true, fashionTown: "outlet", renderCount: true },
     { store: "SSG", parser: parseSsgSearch },

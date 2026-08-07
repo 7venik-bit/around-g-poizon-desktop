@@ -13,24 +13,26 @@ import {
   queryDomesticProducts,
 } from "../relay/domestic-search.mjs";
 
-test("every catalog brand gets an article-specific official-store discovery search", () => {
+test("every catalog brand uses the Fashion Town brand-store search without an official-mall keyword", () => {
   const url = decodeURIComponent(officialBrandSearchUrl("살로몬", "L47581100"));
+  assert.match(url, /shopping\.naver\.com\/window\/search\/fashion-group/);
   assert.match(url, /살로몬/);
   assert.match(url, /L47581100/);
-  assert.match(url, /공식몰/);
+  assert.doesNotMatch(url, /공식몰|공식스토어/);
   assert.equal(officialBrandProductSearchUrl("살로몬", "L47581100"), "");
 });
 
 test("every catalog brand gets article-specific Naver channel searches", () => {
   const cases = [
-    ["brand-store", "공식스토어"],
-    ["department", "백화점"],
-    ["outlet", "아울렛"],
+    ["brand-store", /\/window\/search\/fashion-group/],
+    ["department", /\/window\/department\/search/],
+    ["outlet", /\/window\/outlet\/search/],
   ];
-  for (const [channel, label] of cases) {
+  for (const [channel, path] of cases) {
     const url = decodeURIComponent(naverFashionTownUrl(channel, "살로몬", "L47581100"));
     assert.match(url, /L47581100/);
-    assert.match(url, new RegExp(label));
+    assert.match(url, path);
+    assert.doesNotMatch(url, /공식몰|공식스토어/);
   }
 });
 
@@ -174,7 +176,7 @@ test("one domestic store failure does not stop the others", async () => {
   assert.deepEqual(result.sources.map((source) => source.store), [
     "브랜드 공식몰",
     "무신사",
-    "네이버 브랜드직영몰",
+    "네이버 공식 브랜드스토어",
     "네이버 백화점",
     "네이버 아울렛",
     "SSG",
@@ -185,7 +187,7 @@ test("one domestic store failure does not stop the others", async () => {
   assert.equal(result.sources.filter((source) => source.ok).length, 6);
   assert.deepEqual(
     result.sources.filter((source) => source.renderCount).map((source) => source.store),
-    ["브랜드 공식몰", "무신사", "네이버 브랜드직영몰", "네이버 백화점", "네이버 아울렛"]
+    ["브랜드 공식몰", "무신사", "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛"]
   );
 });
 
