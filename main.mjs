@@ -33,6 +33,8 @@ import {
 import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
 import {
+  FULL_BRAND_CATALOG_MINIMUM,
+  brandCatalogNeedsSync,
   mergeLocalizedBrandCatalog,
   parseKrPoizonBrandData,
   parsePublicBrandProducts,
@@ -40,6 +42,16 @@ import {
   publicBrandPageCount,
   publicBrandPath,
 } from "./services/brand-catalog.mjs";
+import {
+  OFFICIAL_DOMAIN_STATUS,
+  auditedOfficialDomainRecord,
+  createOfficialDomainRegistry,
+  failedOfficialDomainAuditRecord,
+  officialDomainDiscoveryUrl,
+  officialDomainRecordForBrand,
+  officialDomainRegistrySummary,
+  rankOfficialDomainCandidates,
+} from "./services/official-domain-registry.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer } from "./services/poizon.mjs";
 import {
   extractSellerBrandApiProducts,
@@ -76,6 +88,9 @@ const brandExportValidationCache = new Map();
 const excelPreviewCache = new Map();
 let brandExportMonitorRunning = false;
 let brandExportMonitorRestartTimer;
+let officialDomainAuditRunning = false;
+let officialDomainAuditStopRequested = false;
+let officialDomainAuditWindow = null;
 let brandExportAllCompleteSent = false;
 let activeBrandDownloadJobId = "";
 const brandDownloadPathsInProgress = new Set();
@@ -657,30 +672,47 @@ async function renderedSearchSourceCount(source, articleNumber) {
     ]);
     await wait(2_500);
     const content = await searchWindow.webContents.executeJavaScript(`(() => {
+      const expectedArticle = ${JSON.stringify(String(articleNumber || ""))};
+      const expectedCompact = expectedArticle.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+      const expectedBase = expectedArticle.split(/[-_]/)[0].replace(/[^A-Z0-9]/gi, "").toUpperCase();
+      const matchesExpected = (value) => {
+        const compact = String(value || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+        return Boolean(expectedCompact && compact.includes(expectedCompact))
+          || Boolean(expectedBase.length >= 5 && compact.includes(expectedBase));
+      };
       const visible = (element) => {
         const style = window.getComputedStyle(element);
         const rect = element.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
       };
       const productLinks = [...document.querySelectorAll("a[href]")]
-        .filter(visible)
-        .filter((link) => /\\/(?:products?|goods|product|(?:[a-z]{2}\\/)?t)\\//i.test(link.href));
+        .filter((link) => visible(link) || matchesExpected(link.href) || matchesExpected(link.outerHTML))
+        .filter((link) => /\\/(?:p|pd|products?|goods|product|(?:[a-z]{2}\\/)?t)\\//i.test(link.href)
+          || /productDetail\\.action/i.test(link.href)
+          || matchesExpected(link.href)
+          || matchesExpected(link.outerHTML));
       const seen = new Set();
       const productCards = [];
       for (const link of productLinks) {
-        const productUrl = String(link.href || "").split("?")[0];
+        const productUrl = String(link.href || "").split("#")[0];
         if (!productUrl || seen.has(productUrl)) continue;
         const card = link.closest("li, article, [class*='product'], [class*='item'], [class*='card']")
           || link.parentElement;
         const text = String(card?.innerText || link.innerText || "").trim();
+        const markup = String(card?.outerHTML || link.outerHTML || "").slice(0, 5000);
         seen.add(productUrl);
-        productCards.push({ productUrl, text });
+        productCards.push({ productUrl, text, markup });
       }
-      return JSON.stringify({ productCards });
+      const pageText = String(document.body?.innerText || "").slice(0, 20000);
+      const pageBlocked = /captcha|보안\s*확인|자동\s*입력|로봇|접속.{0,12}(?:제한|차단)|서비스.{0,12}(?:제한|지연)|비정상적인\s*접근/i.test(pageText);
+      return JSON.stringify({ productCards, pageBlocked });
     })()`, true);
+    try {
+      if (JSON.parse(content)?.pageBlocked) return null;
+    } catch {}
     return countRenderedChannelProducts(content, source.store, articleNumber);
   } catch {
-    return 0;
+    return null;
   } finally {
     if (searchWindow && !searchWindow.isDestroyed()) searchWindow.destroy();
   }
@@ -688,11 +720,206 @@ async function renderedSearchSourceCount(source, articleNumber) {
 
 async function addRenderedSearchCounts(data, articleNumber) {
   const sources = await Promise.all(data.sources.map(async (source) => {
-    if (!source.linkOnly) return source;
+    if (source.officialStatus && source.officialStatus !== OFFICIAL_DOMAIN_STATUS.VERIFIED) {
+      return { ...source, countVerified: false, verificationFailed: false };
+    }
+    if (!source.renderCount) {
+      return {
+        ...source,
+        countVerified: source.ok === true,
+        verificationFailed: source.ok === false,
+      };
+    }
+    if (!source.linkOnly && source.ok && Number(source.count || 0) > 0) {
+      return { ...source, countVerified: true, verificationFailed: false };
+    }
     const count = await renderedSearchSourceCount(source, articleNumber);
-    return { ...source, count, countVerified: true };
+    return {
+      ...source,
+      count: Number.isFinite(count) ? count : 0,
+      countVerified: Number.isFinite(count),
+      verificationFailed: !Number.isFinite(count),
+    };
   }));
   return { ...data, sources };
+}
+
+function brandsWithOfficialDomainStatus(brands, registry) {
+  const statusById = new Map((Array.isArray(registry) ? registry : []).map((record) =>
+    [Number(record.brandId), record.status]));
+  const statusByName = new Map((Array.isArray(registry) ? registry : []).flatMap((record) =>
+    [record.brandName, record.brandKo].filter(Boolean).map((name) => [String(name).trim().toLowerCase(), record.status])));
+  return (Array.isArray(brands) ? brands : []).map((brand) => ({
+    ...brand,
+    officialDomainStatus: statusById.get(Number(brand.id ?? brand.brandId))
+      || statusByName.get(String(brand.ko || brand.name || "").trim().toLowerCase())
+      || OFFICIAL_DOMAIN_STATUS.PENDING,
+  }));
+}
+
+async function ensureOfficialDomainRegistry(brands) {
+  const settings = store.snapshot().settings;
+  const current = Array.isArray(settings.officialBrandRegistry) ? settings.officialBrandRegistry : [];
+  const registry = createOfficialDomainRegistry(brands, current);
+  const changed = registry.length !== current.length || registry.some((record, index) =>
+    JSON.stringify(record) !== JSON.stringify(current[index]));
+  if (changed) {
+    await store.setSettings({
+      officialBrandRegistry: registry,
+      officialBrandRegistryUpdatedAt: new Date().toISOString(),
+    });
+  }
+  return registry;
+}
+
+function officialDomainAuditSnapshot(registry, extra = {}) {
+  const saved = store.snapshot().settings.officialDomainAudit || {};
+  return {
+    running: officialDomainAuditRunning,
+    state: officialDomainAuditRunning ? "running" : String(saved.state || "idle"),
+    currentBrand: String(saved.currentBrand || ""),
+    processed: Number(saved.processed || 0),
+    blocked: Boolean(saved.blocked),
+    lastError: String(saved.lastError || ""),
+    updatedAt: String(saved.updatedAt || ""),
+    ...officialDomainRegistrySummary(registry),
+    ...extra,
+  };
+}
+
+function sendOfficialDomainAuditProgress(registry, extra = {}) {
+  const payload = officialDomainAuditSnapshot(registry, extra);
+  mainWindow?.webContents.send("official-domain:audit-progress", payload);
+  return payload;
+}
+
+function createOfficialDomainAuditWindow() {
+  const auditWindow = new BrowserWindow({
+    show: false,
+    width: 1100,
+    height: 800,
+    webPreferences: {
+      partition: "persist:around-g-official-domain-audit",
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  auditWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  auditWindow.webContents.session.on("will-download", (_event, item) => item.cancel());
+  return auditWindow;
+}
+
+async function loadAuditPage(auditWindow, url) {
+  await auditWindow.loadURL(url);
+  await wait(900);
+  return auditWindow.webContents.executeJavaScript(`(() => {
+    const text = String(document.body?.innerText || "").slice(0, 20000);
+    const blocked = /captcha|보안\\s*확인|자동\\s*입력|비정상적인\\s*접근|로봇이 아닙니다|접속.{0,12}(?:제한|차단)/i.test(text);
+    const candidates = [...document.querySelectorAll("a[href]")].map((link) => ({
+      url: String(link.href || ""),
+      title: String(link.innerText || link.getAttribute("aria-label") || link.title || "").trim().slice(0, 300),
+      rel: String(link.rel || ""),
+    })).filter((item) => /^https?:/i.test(item.url));
+    let searchTemplate = "";
+    for (const form of [...document.forms]) {
+      if (String(form.method || "get").toLowerCase() === "post") continue;
+      const input = form.querySelector('input[type="search"], input[name="q"], input[name="query"], input[name="keyword"], input[name*="search" i]');
+      if (!input) continue;
+      try {
+        const target = new URL(form.action || location.href, location.href);
+        target.searchParams.set(input.name || "q", "{query}");
+        searchTemplate = target.href.replace(/%7Bquery%7D/gi, "{query}");
+        break;
+      } catch {}
+    }
+    return { candidates, blocked, text, pageTitle: String(document.title || ""), finalUrl: String(location.href), searchTemplate };
+  })()`, true);
+}
+
+async function auditOneOfficialDomain(auditWindow, record) {
+  const brand = record.brandKo || record.brandName;
+  let discovery;
+  try {
+    discovery = await loadAuditPage(auditWindow, officialDomainDiscoveryUrl(brand));
+  } catch {
+    return { record: failedOfficialDomainAuditRecord(record, "DISCOVERY_LOAD_FAILED"), blocked: false };
+  }
+  if (discovery.blocked) {
+    return { record: failedOfficialDomainAuditRecord(record, "DISCOVERY_BLOCKED"), blocked: true };
+  }
+  const candidates = rankOfficialDomainCandidates(discovery.candidates, brand);
+  if (!candidates.length) {
+    return { record: failedOfficialDomainAuditRecord(record, "CANDIDATE_NOT_FOUND"), blocked: false };
+  }
+  for (const candidate of candidates) {
+    try {
+      const page = await loadAuditPage(auditWindow, candidate.url);
+      if (page.blocked) continue;
+      const next = auditedOfficialDomainRecord(record, {
+        candidateUrl: candidate.url,
+        finalUrl: page.finalUrl,
+        pageTitle: page.pageTitle,
+        pageText: page.text,
+        searchTemplate: page.searchTemplate,
+      });
+      if (next.status !== OFFICIAL_DOMAIN_STATUS.PENDING) return { record: next, blocked: false };
+    } catch {
+      // 다음 후보 도메인을 확인한다.
+    }
+  }
+  return { record: failedOfficialDomainAuditRecord(record, "CANDIDATE_VALIDATION_FAILED"), blocked: false };
+}
+
+async function persistOfficialDomainAudit(registry, audit) {
+  await store.setSettings({
+    officialBrandRegistry: registry,
+    officialBrandRegistryUpdatedAt: new Date().toISOString(),
+    officialDomainAudit: { ...audit, updatedAt: new Date().toISOString() },
+  });
+}
+
+async function runOfficialDomainAudit() {
+  if (officialDomainAuditRunning) return;
+  officialDomainAuditRunning = true;
+  officialDomainAuditStopRequested = false;
+  const brands = store.snapshot().settings.brandCatalog || explorerMetadata().brands;
+  let registry = await ensureOfficialDomainRegistry(brands);
+  let processed = 0;
+  let blocked = false;
+  let lastError = "";
+  officialDomainAuditWindow = createOfficialDomainAuditWindow();
+  try {
+    await persistOfficialDomainAudit(registry, { state: "running", currentBrand: "", processed: 0, blocked: false, lastError: "" });
+    for (let index = 0; index < registry.length; index += 1) {
+      if (officialDomainAuditStopRequested) break;
+      const record = registry[index];
+      if (record.status !== OFFICIAL_DOMAIN_STATUS.PENDING) continue;
+      const currentBrand = record.brandKo || record.brandName;
+      sendOfficialDomainAuditProgress(registry, { state: "running", currentBrand, processed, blocked: false, lastError: "" });
+      const result = await auditOneOfficialDomain(officialDomainAuditWindow, record);
+      registry[index] = result.record;
+      processed += 1;
+      blocked = result.blocked;
+      lastError = result.record.lastVerificationError || "";
+      if (processed % 5 === 0 || blocked) {
+        await persistOfficialDomainAudit(registry, { state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError });
+      }
+      sendOfficialDomainAuditProgress(registry, { state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError });
+      if (blocked) break;
+      await wait(4_000);
+    }
+  } finally {
+    if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) officialDomainAuditWindow.destroy();
+    officialDomainAuditWindow = null;
+    officialDomainAuditRunning = false;
+    const summary = officialDomainRegistrySummary(registry);
+    const state = blocked ? "blocked"
+      : officialDomainAuditStopRequested ? "paused"
+        : summary.unchecked ? "paused" : summary.pending ? "completed_with_pending" : "completed";
+    await persistOfficialDomainAudit(registry, { state, currentBrand: "", processed, blocked, lastError });
+    sendOfficialDomainAuditProgress(registry, { running: false, state, currentBrand: "", processed, blocked, lastError });
+  }
 }
 
 // 이 앱은 GPU 가속이 필요하지 않으며 일부 Windows 그래픽 드라이버의
@@ -3134,19 +3361,29 @@ async function syncBrandCatalogFromKrPoizon() {
     );
     if (!source) throw new Error("KR_POIZON_BRAND_DATA_NOT_FOUND");
     const koreanBrands = parseKrPoizonBrandData(source);
-    await window.loadURL(EN_POIZON_BRAND_LIST_URL);
-    const englishSource = await window.webContents.executeJavaScript(
-      `document.querySelector("#__NEXT_DATA__")?.textContent || ""`,
-      true
-    );
-    if (!englishSource) throw new Error("EN_POIZON_BRAND_DATA_NOT_FOUND");
-    const englishBrands = parseKrPoizonBrandData(englishSource);
+    let englishBrands = [];
+    try {
+      await window.loadURL(EN_POIZON_BRAND_LIST_URL);
+      const englishSource = await window.webContents.executeJavaScript(
+        `document.querySelector("#__NEXT_DATA__")?.textContent || ""`,
+        true
+      );
+      if (englishSource) englishBrands = parseKrPoizonBrandData(englishSource);
+    } catch {
+      // 한국 공식 목록만 완전하면 전체 브랜드 검색을 막지 않는다.
+    }
     const brands = mergeLocalizedBrandCatalog(koreanBrands, englishBrands);
-    if (!Array.isArray(brands) || brands.length < 100) {
+    if (!Array.isArray(brands) || brands.length < FULL_BRAND_CATALOG_MINIMUM) {
       throw new Error(`KR_POIZON_BRAND_COUNT_INVALID_${brands?.length || 0}`);
     }
     await store.setSettings({ brandCatalog: brands, brandCatalogUpdatedAt: new Date().toISOString() });
-    return { ok: true, brands, source: KR_POIZON_BRAND_LIST_URL };
+    const officialBrandRegistry = await ensureOfficialDomainRegistry(brands);
+    return {
+      ok: true,
+      brands: brandsWithOfficialDomainStatus(brands, officialBrandRegistry),
+      officialDomainSummary: officialDomainRegistrySummary(officialBrandRegistry),
+      source: KR_POIZON_BRAND_LIST_URL,
+    };
   } catch (error) {
     return {
       ok: false,
@@ -4008,10 +4245,20 @@ app.whenReady().then(async () => {
     await store.setSettings(next);
     return publicConfig();
   });
-  ipcMain.handle("explorer:meta", () => {
-    const cached = store.snapshot().settings.brandCatalog;
+  ipcMain.handle("explorer:meta", async () => {
+    const settings = store.snapshot().settings;
+    const cached = settings.brandCatalog;
     const brands = Array.isArray(cached) && cached.length ? cached : explorerMetadata().brands;
-    return { ...explorerMetadata(), brands: prioritizeBrandCatalog(brands) };
+    const officialBrandRegistry = await ensureOfficialDomainRegistry(brands);
+    return {
+      ...explorerMetadata(),
+      brands: prioritizeBrandCatalog(brandsWithOfficialDomainStatus(brands, officialBrandRegistry)),
+      officialDomainSummary: officialDomainRegistrySummary(officialBrandRegistry),
+      officialDomainAudit: officialDomainAuditSnapshot(officialBrandRegistry),
+      brandCatalogUpdatedAt: String(settings.brandCatalogUpdatedAt || ""),
+      needsBrandSync: brandCatalogNeedsSync(cached, settings.brandCatalogUpdatedAt),
+      fullBrandMinimum: FULL_BRAND_CATALOG_MINIMUM,
+    };
   });
   ipcMain.handle("explorer:sync-brands", async () => {
     mainWindow?.webContents.send("explorer:brand-progress", { percent: 10, count: 0 });
@@ -4021,6 +4268,22 @@ app.whenReady().then(async () => {
       count: result.ok ? result.brands.length : 0,
     });
     return result;
+  });
+  ipcMain.handle("official-domain:audit-status", async () => {
+    const settings = store.snapshot().settings;
+    const brands = settings.brandCatalog || explorerMetadata().brands;
+    const registry = await ensureOfficialDomainRegistry(brands);
+    return officialDomainAuditSnapshot(registry);
+  });
+  ipcMain.handle("official-domain:audit-start", async () => {
+    if (!officialDomainAuditRunning) void runOfficialDomainAudit();
+    const settings = store.snapshot().settings;
+    const registry = await ensureOfficialDomainRegistry(settings.brandCatalog || explorerMetadata().brands);
+    return { ok: true, audit: officialDomainAuditSnapshot(registry, { running: true, state: "running" }) };
+  });
+  ipcMain.handle("official-domain:audit-stop", () => {
+    officialDomainAuditStopRequested = true;
+    return { ok: true };
   });
   ipcMain.handle("seller:open", () => {
     openSellerCenterWindow();
@@ -4182,6 +4445,10 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   });
   ipcMain.handle("domestic:search", async (_event, input) => {
     try {
+      const officialBrandRecord = officialDomainRecordForBrand(
+        store.snapshot().settings.officialBrandRegistry,
+        String(input?.brand || "").trim()
+      );
       const data = await queryDomesticProducts({
         query: String(input?.query || "").trim(),
         articleNumber: String(input?.articleNumber || "").trim(),
@@ -4189,6 +4456,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         title: String(input?.title || "").trim(),
         preferTitle: !String(input?.imageUrl || "").trim(),
         verifyLinkCounts: false,
+        officialBrandRecord,
       });
       let matched = await addMatchConfidence(data, input || {});
       if (input?.verifyLinkCounts === true) {

@@ -31,8 +31,16 @@ test("completed downloads render in a separate persistent list", () => {
   assert.match(html, /id="brand-export-completed"/);
   assert.match(html, /id="brand-export-completed-list"/);
   assert.match(html, /id="brand-export-completed-count"/);
+  assert.match(html, /id="brand-export-completed-latest"/);
+  assert.match(html, /id="brand-export-completed-more"/);
   assert.match(renderer, /function renderBrandCompletedJobs/);
   assert.match(renderer, /const completed = downloadedBrandFiles\.filter/);
+  assert.match(renderer, /brandGroups\.slice\(0, 3\)/);
+  assert.match(renderer, /이전 기록 \$\{file\.historyCount\}건/);
+  const completedRenderer = renderer.match(
+    /function renderBrandCompletedJobs\(\) \{[\s\S]*?\n}\n\nfunction renderBrandExportJobs/
+  )?.[0] || "";
+  assert.doesNotMatch(completedRenderer, />확인완료<\/span>/);
   assert.match(renderer, /const activeEntries = \[\.\.\.brandExportJobs\.entries\(\)\]\.filter/);
   assert.match(renderer, /renderBrandCompletedJobs\(\);/);
   assert.match(renderer, /progress\?\.status === "all-complete"/);
@@ -50,8 +58,8 @@ test("all-complete stops activity only after the final renderer import drains", 
   assert.match(renderer, /brandMainAllComplete = true/);
 });
 
-test("release metadata is 2.10.74", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.74");
-  assert.equal(JSON.parse(lockSource).version, "2.10.74");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.74");
+test("release metadata is 2.10.76", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.76");
+  assert.equal(JSON.parse(lockSource).version, "2.10.76");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.76");
 });

@@ -30,8 +30,8 @@ test("export center discovers job rows from stable job numbers across layouts an
   assert.doesNotMatch(main, /상품\\s\*검색\.\*내보내기/);
 });
 
-test("release metadata is 2.10.74", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.74");
-  assert.equal(JSON.parse(lockSource).version, "2.10.74");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.74");
+test("release metadata is 2.10.76", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.76");
+  assert.equal(JSON.parse(lockSource).version, "2.10.76");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.76");
 });

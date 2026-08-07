@@ -77,9 +77,29 @@ test("brand Excel preview supports popular-list style product selection", () => 
   assert.match(cssSource, /\.excel-product-select-column/);
 });
 
-test("official Nike verification accepts Korean /t/ product links", () => {
-  assert.match(mainSource, /products\?\|goods\|product\|\(\?:\[a-z\]\{2\}\\\\\/\)\?t/);
-  assert.doesNotMatch(mainSource, /if \(!text\) continue;/);
+test("official-store verification supports every registered URL family and embedded article metadata", () => {
+  assert.match(mainSource, /p\|pd\|products\?\|goods\|product/);
+  assert.match(mainSource, /productDetail\\\\\.action/);
+  assert.match(mainSource, /matchesExpected\(link\.href\)/);
+  assert.match(mainSource, /matchesExpected\(link\.outerHTML\)/);
+  assert.match(mainSource, /productCards\.push\(\{ productUrl, text, markup \}\)/);
+  assert.match(mainSource, /split\("#"\)\[0\]/);
+  assert.doesNotMatch(mainSource, /String\(link\.href \|\| ""\)\.split\("\?"\)/);
+});
+
+test("official-store verification failures are not shown as a confirmed zero", () => {
+  assert.match(mainSource, /return null/);
+  assert.match(mainSource, /pageBlocked/);
+  assert.match(mainSource, /verificationFailed: !Number\.isFinite\(count\)/);
+  assert.match(rendererSource, /source\.verificationFailed/);
+  assert.match(rendererSource, /확인 실패/);
+});
+
+test("official store, Musinsa, and Naver sources all render numeric result badges", () => {
+  assert.match(mainSource, /if \(!source\.renderCount\)/);
+  assert.match(mainSource, /!source\.linkOnly && source\.ok && Number\(source\.count \|\| 0\) > 0/);
+  assert.match(rendererSource, /const directLinks = \(result\.sources \|\| \[\]\)\.map/);
+  assert.doesNotMatch(rendererSource, /filter\(\(source\) => source\.linkOnly\)\.map/);
 });
 
 test("shared Excel reader repairs POIZON A1 dimensions before preview and ordinary import", async () => {

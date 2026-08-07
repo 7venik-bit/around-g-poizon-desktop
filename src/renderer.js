@@ -24,6 +24,7 @@ let activeExportBrand = null;
 let brandSelectionBusy = false;
 const brandExportJobs = new Map();
 let downloadedBrandFiles = [];
+let brandCompletedShowAll = false;
 let activeExcelPreview = null;
 let excelPreviewRequestId = 0;
 const selectedExcelPreviewProducts = new Set();
@@ -188,23 +189,39 @@ function renderBrandCompletedJobs() {
   const panel = $("#brand-export-completed");
   const list = $("#brand-export-completed-list");
   const count = $("#brand-export-completed-count");
-  if (!panel || !list || !count) return;
+  const latest = $("#brand-export-completed-latest");
+  const toggle = $("#brand-export-completed-toggle");
+  const more = $("#brand-export-completed-more");
+  if (!panel || !list || !count || !latest || !toggle || !more) return;
   const seen = new Set();
   const completed = downloadedBrandFiles.filter((file) => {
     const key = String(file.jobId || "").trim() || brandImportPathKey(file.path);
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
-  });
+  }).sort((left, right) => Number(right.time || 0) - Number(left.time || 0));
+  const grouped = new Map();
+  for (const file of completed) {
+    const brandName = String(file.brandName || "선택 브랜드").trim();
+    const key = brandBatchKey(brandName) || brandName;
+    const group = grouped.get(key);
+    if (group) group.historyCount += 1;
+    else grouped.set(key, { ...file, brandName, historyCount: 0 });
+  }
+  const brandGroups = [...grouped.values()];
+  const visibleGroups = brandCompletedShowAll ? brandGroups : brandGroups.slice(0, 3);
   panel.hidden = completed.length === 0;
-  count.textContent = `${completed.length}개`;
-  list.innerHTML = completed.map((file) => `
+  count.textContent = `${completed.length}건`;
+  latest.textContent = completed[0] ? `최근 ${completed[0].brandName || "선택 브랜드"} · ${brandTime(completed[0].time)}` : "";
+  toggle.textContent = panel.open ? "목록 접기" : "목록 보기";
+  list.innerHTML = visibleGroups.map((file) => `
     <div class="brand-export-completed-row">
-      <strong>${text(file.brandName || "선택 브랜드")}</strong>
+      <div class="brand-export-completed-brand"><strong>${text(file.brandName)}</strong>${file.historyCount ? `<small>이전 기록 ${file.historyCount}건</small>` : ""}</div>
       <code>${file.jobId ? `작업번호 ${text(file.jobId)}` : "과거 파일 · 작업번호 기록 없음"}</code>
       <time>${text(brandTime(file.time))}</time>
-      <span>확인완료</span>
     </div>`).join("");
+  more.hidden = !panel.open || brandGroups.length <= 3;
+  more.textContent = brandCompletedShowAll ? "최근 3개 브랜드만 보기" : `전체 브랜드 보기 (${brandGroups.length}개)`;
 }
 
 function renderBrandExportJobs() {
@@ -982,11 +999,39 @@ function salesByArticle() {
     .map((product) => [product.articleNumber, Number(product.sales30d)]));
 }
 
+function renderOfficialDomainAudit(audit = {}) {
+  const total = Number(audit.total || explorerMeta.officialDomainSummary?.total || 0);
+  const inspected = Number(audit.inspected || 0);
+  const verified = Number(audit.verified || 0);
+  const unsupported = Number(audit.searchUnsupported || 0);
+  const pending = Number(audit.pending || 0);
+  const percent = total ? Math.min(100, Math.round((inspected / total) * 100)) : 0;
+  const status = $("#official-domain-audit-status");
+  const button = $("#official-domain-audit-toggle");
+  if (!status || !button) return;
+  const stateLabel = audit.state === "blocked" ? "보안 확인으로 일시 정지"
+    : audit.state === "paused" ? "일시 정지"
+      : audit.state === "completed_with_pending" ? "1차 전수검사 완료·미확정 검토 필요"
+        : audit.state === "completed" ? "전체 검증 완료"
+          : audit.running ? "검증 진행 중" : "대기";
+  const current = audit.currentBrand ? ` · 현재 ${audit.currentBrand}` : "";
+  status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%) · 공식몰 검색 확인 ${verified.toLocaleString("ko-KR")} · 검색 미지원 ${unsupported.toLocaleString("ko-KR")} · 미확정 ${pending.toLocaleString("ko-KR")}${current}`;
+  button.dataset.running = audit.running ? "true" : "false";
+  button.textContent = audit.running ? "검증 일시 정지" : inspected ? "검증 계속" : "전체 검증 시작";
+  button.classList.toggle("primary", !audit.running);
+  explorerMeta.officialDomainAudit = audit;
+  explorerMeta.officialDomainSummary = {
+    ...(explorerMeta.officialDomainSummary || {}), total, verified, pending,
+    searchUnsupported: unsupported, noOfficialStore: Number(audit.noOfficialStore || 0),
+  };
+}
+
 function renderBrandCards(filter = "") {
   const normalized = filter.trim().toLowerCase();
-  const brands = explorerMeta.brands.filter((brand) =>
+  const matchedBrands = explorerMeta.brands.filter((brand) =>
     !normalized || `${brand.name} ${brand.ko}`.toLowerCase().includes(normalized)
   );
+  const brands = matchedBrands.slice(0, normalized ? 300 : 200);
   $("#brand-cards").innerHTML = brands.map((brand) => {
     const downloadComplete = hasCompletedBrandDownload(brand);
     return `<button type="button" class="brand-card ${selectedBrandIds.has(Number(brand.id)) ? "selected" : ""}${downloadComplete ? " download-complete" : ""}" data-brand-id="${brand.id}" aria-pressed="${selectedBrandIds.has(Number(brand.id))}"${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
@@ -997,7 +1042,12 @@ function renderBrandCards(filter = "") {
     image.addEventListener("load", () => image.parentElement?.classList.add("loaded"), { once: true });
     image.addEventListener("error", () => image.remove(), { once: true });
   });
-  $("#brand-summary").textContent = `${explorerMeta.brands.length}개 검증 브랜드 · ${brands.length}개 표시`;
+  const limited = matchedBrands.length > brands.length ? ` · 상위 ${brands.length}개 표시` : ` · ${brands.length}개 표시`;
+  const domainSummary = explorerMeta.officialDomainSummary || {};
+  const domainStatus = domainSummary.total
+    ? ` · 공식몰 확인 ${Number(domainSummary.verified || 0).toLocaleString("ko-KR")}개 · 검증 대기 ${Number(domainSummary.pending || 0).toLocaleString("ko-KR")}개`
+    : "";
+  $("#brand-summary").textContent = `${explorerMeta.brands.length.toLocaleString("ko-KR")}개 POIZON 브랜드${domainStatus} · 검색 결과 ${matchedBrands.length.toLocaleString("ko-KR")}개${limited}`;
   updateBrandSelectionControls();
 }
 
@@ -1105,10 +1155,10 @@ function renderDomestic(result) {
       <button data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${product?.inStock ? "구매" : "확인"}</button>
     </div>`;
   }).join("");
-  const directLinks = (result.sources || []).filter((source) => source.linkOnly).map((source) =>
+  const directLinks = (result.sources || []).map((source) =>
     source.officialProductUrl
-      ? `<button class="source-link" data-official-discovery="${encodeURIComponent(source.searchUrl)}" data-official-product="${encodeURIComponent(source.officialProductUrl)}"><span>${text(source.store)}</span>${source.countVerified ? `<b class="source-count">${Number(source.count || 0)}</b>` : `<small>결과 확인</small>`}</button>`
-      : `<button class="source-link" data-url="${encodeURIComponent(source.searchUrl)}"><span>${text(source.store)}</span>${source.countVerified ? `<b class="source-count">${Number(source.count || 0)}</b>` : `<small>결과 확인</small>`}</button>`
+      ? `<button class="source-link" data-official-discovery="${encodeURIComponent(source.searchUrl)}" data-official-product="${encodeURIComponent(source.officialProductUrl)}"><span>${text(source.store)}</span>${source.verificationFailed ? `<small class="source-check-failed">확인 실패</small>` : source.countVerified ? `<b class="source-count">${Number(source.count || 0)}</b>` : `<small>결과 확인</small>`}</button>`
+      : `<button class="source-link" data-url="${encodeURIComponent(source.searchUrl)}"><span>${text(source.store)}</span>${source.officialStatus === "pending" ? `<small>도메인 확인 필요</small>` : source.officialStatus === "no_official_store" ? `<small>등록된 공식몰 없음</small>` : source.officialStatus === "search_unsupported" ? `<small>사이트 검색 미지원</small>` : source.verificationFailed ? `<small class="source-check-failed">확인 실패</small>` : source.countVerified ? `<b class="source-count">${Number(source.count || 0)}</b>` : `<small>결과 확인</small>`}</button>`
   ).join("");
   return `<div class="platform-list">${productRows || `<span class="inventory-help">일치하는 국내 판매 상품을 찾지 못했습니다.</span>`}</div>
     ${directLinks ? `<div class="source-links">${directLinks}</div>` : ""}`;
@@ -1487,25 +1537,38 @@ $("#brand-export-selected")?.addEventListener("click", () => {
   touchBrandActivity(`${selectedBrands.length}개 브랜드 작업 시작`);
   void exportNextSelectedBrand(generation);
 });
-$("#brand-sync").addEventListener("click", async () => {
+async function syncFullBrandCatalog({ automatic = false } = {}) {
   const button = $("#brand-sync");
   const status = $("#brand-status");
   button.disabled = true;
   status.className = "status";
-  status.textContent = "POIZON 한국 브랜드 목록을 불러오는 중…";
+  status.textContent = automatic ? "POIZON 공식 브랜드 전체 목록을 자동으로 갱신하는 중…" : "POIZON 공식 브랜드 전체 목록을 불러오는 중…";
   const result = await window.aroundG.syncBrands();
   button.disabled = false;
   if (!result.ok) {
     status.className = "status error";
     status.textContent = [result.error?.message, result.error?.code].filter(Boolean).join(" · ") || "브랜드 동기화에 실패했습니다.";
-    return;
+    return false;
   }
-  explorerMeta.brands = result.brands;
+  explorerMeta = await window.aroundG.explorerMeta();
   selectedBrandId = null;
   $("#brand-search").disabled = true;
   renderBrandCards($("#brand-filter").value);
   status.className = "status success";
-  status.textContent = `POIZON 브랜드 ${result.brands.length.toLocaleString("ko-KR")}개 동기화 완료`;
+  status.textContent = `POIZON 공식 브랜드 ${result.brands.length.toLocaleString("ko-KR")}개 검색 등록 완료`;
+  return true;
+}
+$("#brand-sync").addEventListener("click", () => syncFullBrandCatalog());
+$("#official-domain-audit-toggle")?.addEventListener("click", async () => {
+  const button = $("#official-domain-audit-toggle");
+  button.disabled = true;
+  if (button.dataset.running === "true") {
+    await window.aroundG.stopOfficialDomainAudit();
+  } else {
+    const result = await window.aroundG.startOfficialDomainAudit();
+    if (result?.audit) renderOfficialDomainAudit(result.audit);
+  }
+  button.disabled = false;
 });
 
 async function acceptSellerCenterProducts(products, sourceLabel) {
@@ -1884,6 +1947,14 @@ $("#brand-data-download")?.addEventListener("click", async () => {
 retainSelectedBrandName();
 renderBrandWorkbench();
 renderDownloadedBrandFiles();
+$("#brand-export-completed")?.addEventListener("toggle", () => {
+  if (!$("#brand-export-completed")?.open) brandCompletedShowAll = false;
+  renderBrandCompletedJobs();
+});
+$("#brand-export-completed-more")?.addEventListener("click", () => {
+  brandCompletedShowAll = !brandCompletedShowAll;
+  renderBrandCompletedJobs();
+});
 renderBrandCompletedJobs();
 void restoreDownloadedBrandFiles();
 void restorePendingBrandExportJobs();
@@ -2269,10 +2340,21 @@ window.aroundG.onUpdateStatus((payload) => {
       status.textContent = "";
     }
   });
+  window.aroundG.onOfficialDomainAuditProgress((audit) => {
+    renderOfficialDomainAudit(audit);
+    renderBrandCards($("#brand-filter")?.value || "");
+  });
   explorerMeta = await window.aroundG.explorerMeta();
+  renderOfficialDomainAudit(explorerMeta.officialDomainAudit || {});
   renderDownloadedBrandFiles();
   renderBrandCards();
   renderCategoryButtons();
+  if (explorerMeta.needsBrandSync) await syncFullBrandCatalog({ automatic: true });
+  if (Number(explorerMeta.officialDomainAudit?.unchecked || 0) > 0
+    && explorerMeta.officialDomainAudit?.state !== "blocked") {
+    const auditStart = await window.aroundG.startOfficialDomainAudit();
+    if (auditStart?.audit) renderOfficialDomainAudit(auditStart.audit);
+  }
   const config = await window.aroundG.getConfig();
   const exportFolder = await window.aroundG.getBrandExportFolder();
   renderBrandExportFolder(exportFolder.folder);

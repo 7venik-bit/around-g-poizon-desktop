@@ -20,13 +20,14 @@ test("live status and job rows wrap instead of clipping", () => {
 test("batch, completed and brand-card labels remain readable", () => {
   assert.match(style, /\.brand-batch-row strong,[\s\S]*?word-break:keep-all/);
   assert.match(style, /\.brand-export-completed-row\{[\s\S]*?align-items:start/);
+  assert.match(style, /\.brand-export-completed-list \{ display: grid; max-height: 220px; overflow: auto; \}/);
   assert.match(style, /\.brand-card strong\{[\s\S]*?white-space:normal/);
   assert.match(style, /\.brand-card strong\{[\s\S]*?-webkit-line-clamp:2/);
   assert.match(style, /@media\(max-width:900px\)[\s\S]*?grid-template-columns:1fr/);
 });
 
-test("release metadata is 2.10.74", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.74");
-  assert.equal(JSON.parse(lockSource).version, "2.10.74");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.74");
+test("release metadata is 2.10.76", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.76");
+  assert.equal(JSON.parse(lockSource).version, "2.10.76");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.76");
 });

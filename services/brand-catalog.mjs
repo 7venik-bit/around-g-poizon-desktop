@@ -1,3 +1,12 @@
+export const FULL_BRAND_CATALOG_MINIMUM = 3300;
+export const BRAND_CATALOG_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function brandCatalogNeedsSync(brands, updatedAt = "", now = Date.now()) {
+  if (!Array.isArray(brands) || brands.length < FULL_BRAND_CATALOG_MINIMUM) return true;
+  const updatedTime = Date.parse(String(updatedAt || ""));
+  return !Number.isFinite(updatedTime) || Math.max(0, Number(now) - updatedTime) > BRAND_CATALOG_MAX_AGE_MS;
+}
+
 export function parseKrPoizonBrandData(input) {
   const root = typeof input === "string" ? JSON.parse(input) : input;
   const found = new Map();
