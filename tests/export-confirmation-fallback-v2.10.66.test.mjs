@@ -20,8 +20,8 @@ test("an unobserved export acknowledgement continues to job-number discovery", (
   assert.match(main, /findNewSellerExportJob/);
 });
 
-test("release metadata is 2.10.70", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.70");
-  assert.equal(JSON.parse(lockSource).version, "2.10.70");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.70");
+test("release metadata is 2.10.71", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.71");
+  assert.equal(JSON.parse(lockSource).version, "2.10.71");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.71");
 });

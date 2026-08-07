@@ -47,6 +47,7 @@ test("desktop bootstrap and UI expose original-file column controls", async () =
   assert.match(preload, /excel-column-layout\.js/);
   assert.match(ui, /contextmenu/);
   assert.match(ui, /pointermove/);
-  assert.match(ui, /불필요 열 자동 숨김/);
+  assert.match(ui, /필요한 열만 보기/);
+  assert.match(ui, /모든 열 보기/);
   assert.match(ui, /실제 원본 Excel에도 저장했습니다/);
 });
