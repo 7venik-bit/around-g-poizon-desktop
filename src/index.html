@@ -70,6 +70,10 @@
             <button id="brand-sync" type="button">전체 브랜드 동기화</button>
             <span id="brand-summary"></span>
           </div>
+          <div class="official-domain-audit" aria-live="polite">
+            <div><strong>공식몰 전체 검증</strong><span id="official-domain-audit-status">검증 상태를 확인하는 중입니다.</span></div>
+            <button id="official-domain-audit-toggle" type="button">전체 검증 시작</button>
+          </div>
           <div class="brand-selection-actions" aria-label="브랜드 복수 선택 및 검색">
             <span class="brand-multi-select-label">
               <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="4" width="6" height="6" rx="1"></rect><path d="m4.5 7 1.4 1.4L8 5.8"></path><rect x="3" y="14" width="6" height="6" rx="1"></rect><path d="m4.5 17 1.4 1.4L8 15.8M13 7h8M13 17h8"></path></svg>
@@ -107,10 +111,11 @@
             <div class="brand-export-job-heading"><strong>진행 중·대기 작업</strong></div>
             <div id="brand-export-jobs-list" class="brand-export-jobs-list"></div>
           </div>
-          <section id="brand-export-completed" class="brand-export-completed" hidden aria-label="확인완료 작업 목록">
-            <div class="brand-export-completed-heading"><strong>확인완료 목록</strong><span id="brand-export-completed-count">0개</span></div>
+          <details id="brand-export-completed" class="brand-export-completed" hidden>
+            <summary class="brand-export-completed-heading"><strong>확인완료 <span id="brand-export-completed-count">0건</span></strong><small id="brand-export-completed-latest"></small><span id="brand-export-completed-toggle">목록 보기</span></summary>
             <div id="brand-export-completed-list" class="brand-export-completed-list"></div>
-          </section>
+            <button id="brand-export-completed-more" class="brand-export-completed-more" type="button" hidden>전체 기록 보기</button>
+          </details>
           <div id="brand-progress" class="capture-progress" hidden><i></i><span>0%</span></div>
           <div id="brand-cards" class="brand-cards"></div>
           <div class="explorer-actions" hidden aria-hidden="true"><span id="brand-status" class="status">브랜드를 선택하면 POIZON 원본 Excel만 다운로드합니다.</span></div>

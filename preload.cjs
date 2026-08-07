@@ -9,6 +9,14 @@ contextBridge.exposeInMainWorld("aroundG", {
   getConfig: () => ipcRenderer.invoke("config:get"),
   explorerMeta: () => ipcRenderer.invoke("explorer:meta"),
   syncBrands: () => ipcRenderer.invoke("explorer:sync-brands"),
+  getOfficialDomainAudit: () => ipcRenderer.invoke("official-domain:audit-status"),
+  startOfficialDomainAudit: () => ipcRenderer.invoke("official-domain:audit-start"),
+  stopOfficialDomainAudit: () => ipcRenderer.invoke("official-domain:audit-stop"),
+  onOfficialDomainAuditProgress: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on("official-domain:audit-progress", handler);
+    return () => ipcRenderer.removeListener("official-domain:audit-progress", handler);
+  },
   onBrandSyncProgress: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on("explorer:brand-progress", handler);

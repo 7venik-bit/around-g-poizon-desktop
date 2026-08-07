@@ -2,12 +2,88 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DOMESTIC_SEARCH_LINKS,
+  OFFICIAL_BRAND_SEARCH,
   countRenderedChannelProducts,
+  naverFashionTownUrl,
+  officialBrandProductSearchUrl,
+  officialBrandSearchUrl,
   parseKolonSearch,
   parseMusinsaSearch,
   parseSsgSearch,
   queryDomesticProducts,
 } from "../relay/domestic-search.mjs";
+
+test("every catalog brand gets an article-specific official-store discovery search", () => {
+  const url = decodeURIComponent(officialBrandSearchUrl("살로몬", "L47581100"));
+  assert.match(url, /살로몬/);
+  assert.match(url, /L47581100/);
+  assert.match(url, /공식몰/);
+  assert.equal(officialBrandProductSearchUrl("살로몬", "L47581100"), "");
+});
+
+test("every catalog brand gets article-specific Naver channel searches", () => {
+  const cases = [
+    ["brand-store", "공식스토어"],
+    ["department", "백화점"],
+    ["outlet", "아울렛"],
+  ];
+  for (const [channel, label] of cases) {
+    const url = decodeURIComponent(naverFashionTownUrl(channel, "살로몬", "L47581100"));
+    assert.match(url, /L47581100/);
+    assert.match(url, new RegExp(label));
+  }
+});
+
+const officialStoreCases = [
+  ["아디다스", "JH5469", "adidas.co.kr"],
+  ["나이키", "IB5824-001", "nike.com"],
+  ["뉴발란스", "U9060BLK", "nbkorea.com"],
+  ["푸마", "398846-31", "puma.com"],
+  ["언더아머", "1379296-001", "underarmour.co.kr"],
+  ["아식스", "1203A537-001", "asics.com"],
+  ["반스", "VN000D5IBKA", "vans.co.kr"],
+  ["크록스", "209651-001", "crocs.co.kr"],
+  ["데상트", "SN123LSN11", "dk-on.com"],
+];
+
+test("all nine registered official stores build an HTTPS article search URL", () => {
+  assert.equal(OFFICIAL_BRAND_SEARCH.length, officialStoreCases.length);
+  for (const [brand, articleNumber, host] of officialStoreCases) {
+    const url = new URL(officialBrandProductSearchUrl(brand, articleNumber));
+    assert.equal(url.protocol, "https:");
+    assert.match(url.hostname, new RegExp(host.replaceAll(".", "\\."), "i"));
+    assert.match(decodeURIComponent(url.href), new RegExp(articleNumber, "i"));
+  }
+});
+
+test("all registered official-store product URL shapes match their exact article", () => {
+  const fixtures = [
+    ["아디다스", "JH5469", "https://www.adidas.co.kr/삼바-og/JH5469.html"],
+    ["나이키", "IB5824-001", "https://www.nike.com/kr/t/air-superfly/v6MNQ3id/IB5824-001"],
+    ["뉴발란스", "U9060BLK", "https://www.nbkorea.com/product/productDetail.action?styleCode=U9060BLK"],
+    ["푸마", "398846-31", "https://kr.puma.com/kr/ko/pd/speedcat-og/398846.html?dwvar_398846_color=31"],
+    ["언더아머", "1379296-001", "https://www.underarmour.co.kr/ko-kr/p/shoes/1379296.html?dwvar_1379296_color=001"],
+    ["아식스", "1203A537-001", "https://www.asics.com/kr/ko-kr/gel-kayano/p/AK_1203A537-001.html"],
+    ["반스", "VN000D5IBKA", "https://www.vans.co.kr/product/old-skool/VN000D5IBKA"],
+    ["크록스", "209651-001", "https://www.crocs.co.kr/p/classic/209651.html?color=001"],
+    ["데상트", "SN123LSN11", "https://dk-on.com/DESCENTE/product/detail/SN123LSN11"],
+  ];
+  for (const [brand, articleNumber, productUrl] of fixtures) {
+    const rendered = JSON.stringify({ productCards: [{ productUrl, text: `${brand} 공식 상품` }] });
+    assert.equal(countRenderedChannelProducts(rendered, "브랜드 공식몰", articleNumber), 1, brand);
+  }
+});
+
+test("official-store matching can use article metadata in a product card", () => {
+  const rendered = JSON.stringify({
+    productCards: [{
+      productUrl: "https://example.test/p/product-slug",
+      text: "공식 상품",
+      markup: '<article data-style-code="VN000D5IBKA"><a href="/p/product-slug">보기</a></article>',
+    }],
+  });
+  assert.equal(countRenderedChannelProducts(rendered, "브랜드 공식몰", "VN000D5IBKA"), 1);
+});
 
 test("Nike official result recognizes a Korean /t/ product URL by article number", () => {
   const rendered = JSON.stringify({
@@ -18,6 +94,17 @@ test("Nike official result recognizes a Korean /t/ product URL by article number
   });
   assert.equal(countRenderedChannelProducts(rendered, "브랜드 공식몰", "IB5824-001"), 1);
   assert.equal(countRenderedChannelProducts(rendered, "브랜드 공식몰", "IB5824-002"), 0);
+});
+
+test("PUMA official result recognizes /pd/ URL and separated color query", () => {
+  const rendered = JSON.stringify({
+    productCards: [{
+      productUrl: "https://kr.puma.com/kr/ko/pd/speedcat-og/398846.html?dwvar_398846_color=31",
+      text: "스피드캣 OG Speedcat OG 149,000원",
+    }],
+  });
+  assert.equal(countRenderedChannelProducts(rendered, "브랜드 공식몰", "398846-31"), 1);
+  assert.equal(countRenderedChannelProducts(rendered, "브랜드 공식몰", "398846-32"), 0);
 });
 
 test("domestic search links safely encode a query", () => {
@@ -82,7 +169,7 @@ test("one domestic store failure does not stop the others", async () => {
     if (String(url).includes("ssg.com")) return { ok: false, status: 403, text: async () => "" };
     return { ok: true, status: 200, text: async () => emptyNextData };
   };
-  const result = await queryDomesticProducts({ query: "DD1391-100", fetchImpl });
+  const result = await queryDomesticProducts({ query: "DD1391-100", brand: "나이키", fetchImpl });
   assert.equal(result.sources.length, 7);
   assert.deepEqual(result.sources.map((source) => source.store), [
     "브랜드 공식몰",
@@ -96,4 +183,41 @@ test("one domestic store failure does not stop the others", async () => {
   assert.deepEqual(result.sources.map((source) => source.priority), [1, 2, 3, 4, 5, 6, 7]);
   assert.equal(result.sources.find((source) => source.store === "SSG").ok, false);
   assert.equal(result.sources.filter((source) => source.ok).length, 6);
+  assert.deepEqual(
+    result.sources.filter((source) => source.renderCount).map((source) => source.store),
+    ["브랜드 공식몰", "무신사", "네이버 브랜드직영몰", "네이버 백화점", "네이버 아울렛"]
+  );
+});
+
+test("an unverified brand is not reported as a verified official-store zero", async () => {
+  const emptyNextData = `<script id="__NEXT_DATA__">${JSON.stringify({ props: { pageProps: { dehydratedState: { queries: [] } } } })}</script>`;
+  const fetchImpl = async () => ({ ok: true, status: 200, text: async () => emptyNextData });
+  const result = await queryDomesticProducts({ query: "L47581100", brand: "살로몬", fetchImpl });
+  const official = result.sources[0];
+  assert.equal(official.store, "공식몰 검증 대기");
+  assert.equal(official.officialStatus, "pending");
+  assert.equal(official.renderCount, false);
+  assert.equal(official.officialProductUrl, "");
+});
+
+test("a transient Musinsa server failure is retried once", async () => {
+  const dataWithOneProduct = `<script id="__NEXT_DATA__">${JSON.stringify({
+    props: { pageProps: { dehydratedState: { queries: [
+      { state: { data: { pages: [{ items: [{ goodsNo: 501, goodsName: "재시도 상품" }] }] } } },
+    ] } } },
+  })}</script>`;
+  const emptyData = `<script id="__NEXT_DATA__">${JSON.stringify({ props: { pageProps: { dehydratedState: { queries: [] } } } })}</script>`;
+  let musinsaCalls = 0;
+  const fetchImpl = async (url) => {
+    if (String(url).includes("musinsa.com/search/goods")) {
+      musinsaCalls += 1;
+      if (musinsaCalls === 1) return { ok: false, status: 503, text: async () => "" };
+      return { ok: true, status: 200, text: async () => dataWithOneProduct };
+    }
+    if (String(url).includes("api.musinsa.com")) return { ok: false, status: 404, json: async () => ({}) };
+    return { ok: true, status: 200, text: async () => emptyData };
+  };
+  const result = await queryDomesticProducts({ query: "TEST-501", articleNumber: "TEST-501", fetchImpl });
+  assert.equal(musinsaCalls, 2);
+  assert.equal(result.sources.find((source) => source.store === "무신사")?.count, 1);
 });
