@@ -664,7 +664,7 @@ async function renderedSearchSourceCount(source, articleNumber) {
       };
       const productLinks = [...document.querySelectorAll("a[href]")]
         .filter(visible)
-        .filter((link) => /\\/(?:products?|goods|product)\\//i.test(link.href));
+        .filter((link) => /\\/(?:products?|goods|product|(?:[a-z]{2}\\/)?t)\\//i.test(link.href));
       const seen = new Set();
       const productCards = [];
       for (const link of productLinks) {
@@ -673,7 +673,6 @@ async function renderedSearchSourceCount(source, articleNumber) {
         const card = link.closest("li, article, [class*='product'], [class*='item'], [class*='card']")
           || link.parentElement;
         const text = String(card?.innerText || link.innerText || "").trim();
-        if (!text) continue;
         seen.add(productUrl);
         productCards.push({ productUrl, text });
       }
