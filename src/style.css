@@ -515,6 +515,7 @@ body.excel-preview-active{overflow:hidden}
 .excel-files-panel.excel-preview-mode .excel-preview-grid{flex:1;min-height:0;max-height:none}
 .excel-preview{margin-top:14px;border:1px solid #cddbeb;border-radius:12px;background:#fff;overflow:hidden;scroll-margin-top:80px}
 .excel-preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:13px 14px;border-bottom:1px solid #dfe7f0;background:#f7f9fc}
+.excel-preview-head-actions{display:flex;align-items:center;gap:6px}.excel-preview-head-actions button.active{border-color:#287de0;background:#287de0;color:#fff}
 .excel-preview-head small{color:#2d7ff0;font-size:9px;font-weight:800;letter-spacing:.08em}
 .excel-preview-head h3{margin:2px 0 0;color:#253b57;font-size:15px}
 .excel-preview-head p{margin:4px 0 0;color:#64758a;font-size:10px}
@@ -540,6 +541,21 @@ body.excel-preview-active{overflow:hidden}
 .excel-preview-grid thead .excel-row-number{z-index:3;color:#dce6f2;background:#1d304b}
 .excel-preview-grid .excel-product-select-column{position:sticky;left:0;z-index:2;min-width:48px;width:48px;max-width:48px;text-align:center;background:#f4f8fc}.excel-preview-grid thead .excel-product-select-column{z-index:4;color:#dce6f2;background:#1d304b}.excel-preview-grid .excel-product-select-column input{width:15px;height:15px;accent-color:#287de0}.excel-preview-grid .excel-product-select-column+.excel-row-number{left:48px}
 .excel-preview-grid tbody tr:nth-child(even) td{background:#fafbfd}
+.excel-preview.product-view #excel-hide-common-columns,.excel-preview.product-view #excel-show-hidden-columns{display:none}
+.excel-preview:not(.product-view) #excel-preview-search-selected{display:none}
+.excel-preview.product-view .excel-preview-grid table{width:1180px;min-width:100%;table-layout:fixed}
+.excel-preview.product-view .excel-preview-grid th,.excel-preview.product-view .excel-preview-grid td{min-width:0;max-width:none}
+.excel-preview.product-view .excel-preview-grid th:nth-child(1),.excel-preview.product-view .excel-preview-grid td:nth-child(1){width:48px}
+.excel-preview.product-view .excel-preview-grid th:nth-child(2),.excel-preview.product-view .excel-preview-grid td:nth-child(2){width:62px}
+.excel-preview.product-view .excel-preview-grid th:nth-child(3),.excel-preview.product-view .excel-preview-grid td:nth-child(3){width:105px}
+.excel-preview.product-view .excel-preview-grid th:nth-child(4),.excel-preview.product-view .excel-preview-grid td:nth-child(4){width:180px}
+.excel-preview.product-view .excel-preview-grid th:nth-child(5),.excel-preview.product-view .excel-preview-grid td:nth-child(5){width:86px}
+.excel-preview.product-view .excel-preview-grid th:nth-child(6),.excel-preview.product-view .excel-preview-grid td:nth-child(6){width:135px}
+.excel-preview.product-view .excel-preview-grid th:nth-child(7),.excel-preview.product-view .excel-preview-grid td:nth-child(7){width:86px}
+.excel-preview.product-view .excel-preview-grid th:nth-child(n+8):nth-child(-n+11),.excel-preview.product-view .excel-preview-grid td:nth-child(n+8):nth-child(-n+11){width:70px}
+.excel-preview.product-view .excel-preview-grid th:nth-child(12),.excel-preview.product-view .excel-preview-grid td:nth-child(12){width:48px}
+.excel-preview.product-view .excel-preview-grid th:nth-child(13),.excel-preview.product-view .excel-preview-grid td:nth-child(13){width:95px}
+.excel-product-image img{display:block;width:42px;height:42px;object-fit:contain;margin:auto;border-radius:6px;background:#fff}.excel-product-row td{height:54px}.excel-product-search{width:100%;padding:6px 7px;border-color:#287de0;color:#1768c5;font-size:10px;font-weight:800}.excel-product-search-detail td{padding:8px 12px!important;background:#f8fbff!important;white-space:normal!important}
 .excel-preview-pager{display:flex;align-items:center;justify-content:center;gap:14px;padding:10px;border-top:1px solid #dfe7f0;background:#f7f9fc}
 .excel-preview-pager strong{min-width:110px;text-align:center;color:#405b78;font-size:10px}
 .excel-preview-pager button:disabled{opacity:.45;cursor:default}
