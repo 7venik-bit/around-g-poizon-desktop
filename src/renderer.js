@@ -1018,6 +1018,7 @@ function renderOfficialDomainAudit(audit = {}) {
     retrying: "재시도 중",
     saved: "검사 결과 저장 중",
     security_wait: "보안 확인 대기 중",
+    timed_out: "응답 지연·다음 브랜드로 이동",
   }[String(audit.phase || "")] || "";
   const stateLabel = audit.state === "cooldown" ? `보안 확인 대기 · ${resumeTime || "10분 후"} 자동 재개`
     : audit.state === "blocked" ? "보안 확인으로 일시 정지"

@@ -93,6 +93,7 @@ let officialDomainAuditRunning = false;
 let officialDomainAuditStopRequested = false;
 let officialDomainAuditWindow = null;
 let officialDomainAuditResumeTimer = null;
+let officialDomainAuditAbortCurrent = null;
 let brandExportAllCompleteSent = false;
 let activeBrandDownloadJobId = "";
 const brandDownloadPathsInProgress = new Set();
@@ -860,7 +861,10 @@ async function loadAuditPage(auditWindow, url) {
     clearTimeout(timeout);
   }
   await wait(900);
-  return auditWindow.webContents.executeJavaScript(`(() => {
+  let analysisTimeout;
+  try {
+    return await Promise.race([
+      auditWindow.webContents.executeJavaScript(`(() => {
     const text = String(document.body?.innerText || "").slice(0, 20000);
     const blocked = /captcha|보안\\s*확인|자동\\s*입력|비정상적인\\s*접근|로봇이 아닙니다|접속.{0,12}(?:제한|차단)/i.test(text);
     const imageSource = (image) => String(image?.currentSrc || image?.src || image?.getAttribute?.("data-src") || "").trim();
@@ -889,8 +893,15 @@ async function loadAuditPage(auditWindow, url) {
         break;
       } catch {}
     }
-    return { candidates, logoUrls, blocked, text, pageTitle: String(document.title || ""), finalUrl: String(location.href), searchTemplate };
-  })()`, true);
+        return { candidates, logoUrls, blocked, text, pageTitle: String(document.title || ""), finalUrl: String(location.href), searchTemplate };
+      })()`, true),
+      new Promise((_, reject) => {
+        analysisTimeout = setTimeout(() => reject(new Error("OFFICIAL_DOMAIN_ANALYSIS_TIMEOUT")), OFFICIAL_DOMAIN_AUDIT_ANALYSIS_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(analysisTimeout);
+  }
 }
 
 async function compareOfficialBrandLogos(sourceLogoUrl, candidateLogoUrls) {
@@ -910,6 +921,20 @@ async function compareOfficialBrandLogos(sourceLogoUrl, candidateLogoUrls) {
   };
 }
 
+async function compareOfficialBrandLogosWithinLimit(sourceLogoUrl, candidateLogoUrls) {
+  let timeout;
+  try {
+    return await Promise.race([
+      compareOfficialBrandLogos(sourceLogoUrl, candidateLogoUrls),
+      new Promise((resolve) => {
+        timeout = setTimeout(() => resolve({ compared: false, similarity: 0, timedOut: true }), OFFICIAL_DOMAIN_AUDIT_LOGO_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
   const brand = record.brandKo || record.brandName;
   let discovery;
@@ -926,13 +951,13 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
   onPhase("logo_compare");
   const discoveryLogoScores = await Promise.all(discoveryLogoCandidates.map(async (candidate) => ({
     candidate,
-    comparison: await compareOfficialBrandLogos(record.brandLogoUrl, [candidate.imageUrl]),
+    comparison: await compareOfficialBrandLogosWithinLimit(record.brandLogoUrl, [candidate.imageUrl]),
   })));
   const logoScoreByUrl = new Map(discoveryLogoScores.map(({ candidate, comparison }) => [candidate.url, comparison.similarity]));
   const candidates = rankOfficialDomainCandidates((discovery.candidates || []).map((candidate) => ({
     ...candidate,
     logoSimilarity: logoScoreByUrl.get(candidate.url) || 0,
-  })), brand);
+  })), brand).slice(0, OFFICIAL_DOMAIN_AUDIT_MAX_CANDIDATES);
   if (!candidates.length) {
     return { record: failedOfficialDomainAuditRecord(record, "CANDIDATE_NOT_FOUND"), blocked: false };
   }
@@ -941,7 +966,7 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
       onPhase("official_site");
       const page = await loadAuditPage(auditWindow, candidate.url);
       if (page.blocked) continue;
-      const logoComparison = await compareOfficialBrandLogos(record.brandLogoUrl, [candidate.imageUrl, ...(page.logoUrls || [])]);
+      const logoComparison = await compareOfficialBrandLogosWithinLimit(record.brandLogoUrl, [candidate.imageUrl, ...(page.logoUrls || [])]);
       const next = auditedOfficialDomainRecord(record, {
         candidateUrl: candidate.url,
         finalUrl: page.finalUrl,
@@ -992,7 +1017,41 @@ async function runOfficialDomainAudit() {
         state: "running", currentBrand, processed, blocked: false, lastError: "", phase, attempt,
       });
       progress(attempt === 1 ? "starting" : "retrying");
-      const result = await auditOneOfficialDomain(officialDomainAuditWindow, record, progress);
+      const activeWindow = officialDomainAuditWindow;
+      let brandTimeout;
+      let abortCurrent;
+      const abortPromise = new Promise((resolve) => {
+        abortCurrent = () => resolve({ aborted: true });
+        officialDomainAuditAbortCurrent = abortCurrent;
+      });
+      const timeoutPromise = new Promise((resolve) => {
+        brandTimeout = setTimeout(() => {
+          if (activeWindow && !activeWindow.isDestroyed()) activeWindow.destroy();
+          resolve({
+            record: failedOfficialDomainAuditRecord(record, "BRAND_AUDIT_TIMEOUT"),
+            blocked: false,
+            timedOut: true,
+          });
+        }, OFFICIAL_DOMAIN_AUDIT_BRAND_TIMEOUT_MS);
+      });
+      let result;
+      try {
+        result = await Promise.race([
+          auditOneOfficialDomain(activeWindow, record, progress),
+          timeoutPromise,
+          abortPromise,
+        ]);
+      } finally {
+        clearTimeout(brandTimeout);
+        if (officialDomainAuditAbortCurrent === abortCurrent) officialDomainAuditAbortCurrent = null;
+      }
+      if (result?.aborted || officialDomainAuditStopRequested) return null;
+      if (result?.timedOut) {
+        progress("timed_out");
+        if (officialDomainAuditWindow === activeWindow) {
+          officialDomainAuditWindow = createOfficialDomainAuditWindow();
+        }
+      }
       registry[index] = result.record;
       processed += 1;
       blocked = result.blocked;
@@ -1021,6 +1080,7 @@ async function runOfficialDomainAudit() {
       }
     }
   } finally {
+    officialDomainAuditAbortCurrent = null;
     if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) officialDomainAuditWindow.destroy();
     officialDomainAuditWindow = null;
     officialDomainAuditRunning = false;
@@ -1055,6 +1115,10 @@ const UPDATE_RETRY_INTERVAL_MS = 15 * 60 * 1_000;
 const UPDATE_INSTALL_RETRY_MS = 30 * 1_000;
 const OFFICIAL_DOMAIN_AUDIT_COOLDOWN_MS = 10 * 60 * 1_000;
 const OFFICIAL_DOMAIN_AUDIT_PAGE_TIMEOUT_MS = 20_000;
+const OFFICIAL_DOMAIN_AUDIT_ANALYSIS_TIMEOUT_MS = 8_000;
+const OFFICIAL_DOMAIN_AUDIT_LOGO_TIMEOUT_MS = 10_000;
+const OFFICIAL_DOMAIN_AUDIT_BRAND_TIMEOUT_MS = 45_000;
+const OFFICIAL_DOMAIN_AUDIT_MAX_CANDIDATES = 2;
 
 function scheduleUpdateCheck(delayMs = UPDATE_CHECK_INTERVAL_MS) {
   if (!app.isPackaged || updateReady) return;
@@ -4418,6 +4482,12 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("official-domain:audit-stop", () => {
     officialDomainAuditStopRequested = true;
+    officialDomainAuditAbortCurrent?.();
+    officialDomainAuditAbortCurrent = null;
+    if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) {
+      officialDomainAuditWindow.destroy();
+    }
+    officialDomainAuditWindow = null;
     clearTimeout(officialDomainAuditResumeTimer);
     officialDomainAuditResumeTimer = null;
     return { ok: true };

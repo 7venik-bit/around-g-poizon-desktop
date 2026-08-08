@@ -12,7 +12,14 @@ test("the desktop can audit every official domain with checkpoints and safe paus
   assert.match(mainSource, /async function runOfficialDomainAudit/);
   assert.match(mainSource, /officialDomainAuditQueue\(registry\)/);
   assert.match(mainSource, /OFFICIAL_DOMAIN_AUDIT_PAGE_TIMEOUT_MS = 20_000/);
+  assert.match(mainSource, /OFFICIAL_DOMAIN_AUDIT_ANALYSIS_TIMEOUT_MS = 8_000/);
+  assert.match(mainSource, /OFFICIAL_DOMAIN_AUDIT_LOGO_TIMEOUT_MS = 10_000/);
+  assert.match(mainSource, /OFFICIAL_DOMAIN_AUDIT_BRAND_TIMEOUT_MS = 45_000/);
+  assert.match(mainSource, /OFFICIAL_DOMAIN_AUDIT_MAX_CANDIDATES = 2/);
   assert.match(mainSource, /OFFICIAL_DOMAIN_PAGE_TIMEOUT/);
+  assert.match(mainSource, /OFFICIAL_DOMAIN_ANALYSIS_TIMEOUT/);
+  assert.match(mainSource, /BRAND_AUDIT_TIMEOUT/);
+  assert.match(mainSource, /officialDomainAuditAbortCurrent\?\.\(\)/);
   assert.match(mainSource, /backgroundThrottling: false/);
   assert.match(mainSource, /deferredIndices/);
   assert.match(mainSource, /processAuditIndex\(index, 2\)/);
