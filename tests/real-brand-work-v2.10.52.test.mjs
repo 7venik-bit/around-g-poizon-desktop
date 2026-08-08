@@ -27,8 +27,8 @@ test("UI reports activity only when actual product search starts", () => {
   assert.match(renderer, /실제 상품검색 실행 중/);
 });
 
-test("release metadata is 2.10.81", () => {
-  assert.equal(JSON.parse(pkg).version, "2.10.81");
-  assert.equal(JSON.parse(lock).version, "2.10.81");
-  assert.equal(JSON.parse(lock).packages[""].version, "2.10.81");
+test("release metadata is 2.10.82", () => {
+  assert.equal(JSON.parse(pkg).version, "2.10.82");
+  assert.equal(JSON.parse(lock).version, "2.10.82");
+  assert.equal(JSON.parse(lock).packages[""].version, "2.10.82");
 });

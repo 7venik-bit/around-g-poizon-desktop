@@ -11,6 +11,11 @@ test("the desktop can audit every official domain with checkpoints and safe paus
   ]);
   assert.match(mainSource, /async function runOfficialDomainAudit/);
   assert.match(mainSource, /officialDomainAuditQueue\(registry\)/);
+  assert.match(mainSource, /OFFICIAL_DOMAIN_AUDIT_PAGE_TIMEOUT_MS = 20_000/);
+  assert.match(mainSource, /OFFICIAL_DOMAIN_PAGE_TIMEOUT/);
+  assert.match(mainSource, /backgroundThrottling: false/);
+  assert.match(mainSource, /deferredIndices/);
+  assert.match(mainSource, /processAuditIndex\(index, 2\)/);
   assert.match(mainSource, /for \(const index of auditQueue\)/);
   assert.match(mainSource, /await persistOfficialDomainAudit/);
   assert.match(mainSource, /await wait\(4_000\)/);
@@ -36,5 +41,8 @@ test("full verification starts after the complete brand catalog is available", a
   const rendererSource = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
   assert.match(rendererSource, /if \(explorerMeta\.needsBrandSync\) await syncFullBrandCatalog/);
   assert.match(rendererSource, /officialDomainAudit\?\.unchecked/);
+  assert.match(rendererSource, /네이버 검색 중/);
+  assert.match(rendererSource, /공식 홈페이지 연결 확인 중/);
+  assert.match(rendererSource, /2차 확인/);
   assert.match(rendererSource, /await window\.aroundG\.startOfficialDomainAudit/);
 });
