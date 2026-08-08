@@ -1009,7 +1009,9 @@ function renderOfficialDomainAudit(audit = {}) {
   const status = $("#official-domain-audit-status");
   const button = $("#official-domain-audit-toggle");
   if (!status || !button) return;
-  const stateLabel = audit.state === "blocked" ? "보안 확인으로 일시 정지"
+  const resumeTime = audit.resumeAt ? new Date(audit.resumeAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) : "";
+  const stateLabel = audit.state === "cooldown" ? `보안 확인 대기 · ${resumeTime || "10분 후"} 자동 재개`
+    : audit.state === "blocked" ? "보안 확인으로 일시 정지"
     : audit.state === "paused" ? "일시 정지"
       : audit.state === "completed_with_pending" ? "1차 전수검사 완료·미확정 검토 필요"
         : audit.state === "completed" ? "전체 검증 완료"
@@ -2374,7 +2376,7 @@ window.aroundG.onUpdateStatus((payload) => {
   renderCategoryButtons();
   if (explorerMeta.needsBrandSync) await syncFullBrandCatalog({ automatic: true });
   if (Number(explorerMeta.officialDomainAudit?.unchecked || 0) > 0
-    && explorerMeta.officialDomainAudit?.state !== "blocked") {
+    && explorerMeta.officialDomainAudit?.state !== "cooldown") {
     const auditStart = await window.aroundG.startOfficialDomainAudit();
     if (auditStart?.audit) renderOfficialDomainAudit(auditStart.audit);
   }
