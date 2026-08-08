@@ -790,6 +790,15 @@ async function ensureOfficialDomainRegistry(brands) {
   return registry;
 }
 
+function safeOfficialDomainRegistry(brands) {
+  const saved = store.snapshot().settings.officialBrandRegistry;
+  const registry = createOfficialDomainRegistry(brands, Array.isArray(saved) ? saved : []);
+  // Persisting thousands of domain records is maintenance work; it must never
+  // block the brand picker from rendering.
+  void ensureOfficialDomainRegistry(brands).catch(() => {});
+  return registry;
+}
+
 function officialDomainAuditSnapshot(registry, extra = {}) {
   const saved = store.snapshot().settings.officialDomainAudit || {};
   return {
@@ -4305,7 +4314,9 @@ app.whenReady().then(async () => {
     const settings = store.snapshot().settings;
     const cached = settings.brandCatalog;
     const brands = Array.isArray(cached) && cached.length ? cached : explorerMetadata().brands;
-    const officialBrandRegistry = await ensureOfficialDomainRegistry(brands);
+    // Brand selection must remain available even when the much larger official
+    // domain registry cannot be persisted or refreshed.
+    const officialBrandRegistry = safeOfficialDomainRegistry(brands);
     return {
       ...explorerMetadata(),
       brands: prioritizeBrandCatalog(brandsWithOfficialDomainStatus(brands, officialBrandRegistry)),
@@ -4323,7 +4334,16 @@ app.whenReady().then(async () => {
       percent: result.ok ? 100 : 0,
       count: result.ok ? result.brands.length : 0,
     });
-    return result;
+    if (result.ok) return result;
+    const settings = store.snapshot().settings;
+    const preserved = Array.isArray(settings.brandCatalog) && settings.brandCatalog.length
+      ? settings.brandCatalog
+      : explorerMetadata().brands;
+    return {
+      ...result,
+      preservedBrands: prioritizeBrandCatalog(preserved),
+      preservedCount: preserved.length,
+    };
   });
   ipcMain.handle("official-domain:audit-status", async () => {
     const settings = store.snapshot().settings;

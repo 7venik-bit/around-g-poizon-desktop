@@ -10,6 +10,7 @@ const EMPTY = {
   settings: {},
   collector: { status: "idle", lastPage: 0, lastFingerprint: "", repeatedPages: 0 }
 };
+const BRAND_CATALOG_BACKUP_MINIMUM = 3300;
 
 async function replaceWithRetry(source, destination) {
   for (let attempt = 0; attempt < 6; attempt += 1) {
@@ -26,6 +27,7 @@ async function replaceWithRetry(source, destination) {
 export class JsonStore {
   constructor(baseDir) {
     this.path = join(baseDir, "around-g-data.json");
+    this.brandCatalogBackupPath = join(baseDir, "around-g-brand-catalog.json");
     this.data = structuredClone(EMPTY);
     this.queue = Promise.resolve();
   }
@@ -41,6 +43,22 @@ export class JsonStore {
         await rename(this.path, backup);
       }
       await this.save();
+    }
+    const currentCatalog = this.data?.settings?.brandCatalog;
+    if (!Array.isArray(currentCatalog) || currentCatalog.length < BRAND_CATALOG_BACKUP_MINIMUM) {
+      try {
+        const backupCatalog = JSON.parse(await readFile(this.brandCatalogBackupPath, "utf8"));
+        if (Array.isArray(backupCatalog) && backupCatalog.length >= BRAND_CATALOG_BACKUP_MINIMUM) {
+          this.data.settings = {
+            ...(this.data.settings || {}),
+            brandCatalog: backupCatalog,
+            brandCatalogUpdatedAt: this.data.settings?.brandCatalogUpdatedAt || new Date().toISOString(),
+          };
+          await this.save();
+        }
+      } catch {
+        // 이전 버전에는 별도 브랜드 복구 파일이 없을 수 있다.
+      }
     }
     return this.snapshot();
   }
@@ -107,6 +125,16 @@ export class JsonStore {
   async setSettings(settings) {
     this.data.settings = { ...this.data.settings, ...settings };
     await this.save();
+    if (Array.isArray(settings?.brandCatalog)
+      && settings.brandCatalog.length >= BRAND_CATALOG_BACKUP_MINIMUM) {
+      const temporary = `${this.brandCatalogBackupPath}.tmp`;
+      try {
+        await writeFile(temporary, JSON.stringify(settings.brandCatalog), "utf8");
+        await replaceWithRetry(temporary, this.brandCatalogBackupPath);
+      } catch {
+        // 주 데이터 저장 성공을 별도 복구 파일 오류로 되돌리지 않는다.
+      }
+    }
   }
 
   async updateCollector(input) {
