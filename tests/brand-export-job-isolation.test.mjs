@@ -70,13 +70,17 @@ test("brand search mismatch is explained and stops before export registration", 
   assert.match(mainSource, /SEARCH_RESULT_NOT_UPDATED: `\$\{label\} 검색 결과가 새로 바뀌지 않아 내보내기를 중단했습니다/);
 });
 
-test("seller brand search restores the previously working React input and result checks", () => {
+test("seller brand search restores React input and accepts verified brand rows without a changing header total", () => {
   assert.match(mainSource, /applyValue\(""\)/);
   assert.match(mainSource, /applyValue\(\$\{JSON\.stringify\(brandName\)\}\)/);
   assert.match(mainSource, /input\.dispatchEvent\(new Event\("input"/);
   assert.match(mainSource, /input\.dispatchEvent\(new Event\("change"/);
-  assert.match(mainSource, /const narrowed = current\.totalCount/);
-  assert.match(mainSource, /changed && narrowed && hasRows && brandMatched/);
+  assert.doesNotMatch(mainSource, /const narrowed = current\.totalCount/);
+  assert.match(mainSource, /changed && hasRows && brandMatched/);
+  assert.match(mainSource, /POIZON keeps the header total/);
+  assert.match(mainSource, /searchVerified: true/);
+  assert.match(mainSource, /sortVerified: true/);
+  assert.match(mainSource, /브랜드 검색·30일 판매량 내림차순 확인 완료/);
 });
 
 test("each brand starts on a fresh seller product-search page and retries stale results", () => {
