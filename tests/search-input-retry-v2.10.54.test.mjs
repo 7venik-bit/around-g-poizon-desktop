@@ -18,6 +18,7 @@ test("seller search input is retried across frames and localized controls", () =
   assert.match(main, /SELLER_LOGIN_REQUIRED/);
   assert.match(main, /SELLER_SECURITY_CHECK_REQUIRED/);
   assert.match(main, /70_000/);
+  assert.match(main, /40_000/);
   assert.match(main, /applyValue\(""\)/);
   assert.match(main, /applyValue\(\$\{JSON\.stringify\(brandName\)\}\)/);
   assert.match(main, /BRAND_INPUT_NOT_APPLIED/);
@@ -29,8 +30,8 @@ test("a failed brand keeps the remaining selected brand queue", () => {
   assert.doesNotMatch(renderer, /나머지 선택 브랜드 자동 실행을 중단했습니다/);
 });
 
-test("release metadata is 2.10.92", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.92");
-  assert.equal(JSON.parse(lockSource).version, "2.10.92");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.92");
+test("release metadata is 2.10.93", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.93");
+  assert.equal(JSON.parse(lockSource).version, "2.10.93");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.93");
 });
