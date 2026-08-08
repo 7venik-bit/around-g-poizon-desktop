@@ -18,10 +18,16 @@ test("an unobserved export acknowledgement continues to job-number discovery", (
   assert.doesNotMatch(confirmationBlock, /clickLikeUser\(exportButton\)[\s\S]*clickLikeUser\(exportButton\)/);
   assert.match(main, /const verificationTimeoutMs = 180000/);
   assert.match(main, /findNewSellerExportJob/);
+  const workflow = main.slice(
+    main.indexOf("async function automateSellerBrandExport"),
+    main.indexOf("async function syncBrandCatalogFromKrPoizon"),
+  );
+  assert.match(workflow, /exportClicked: true/);
+  assert.doesNotMatch(workflow, /verifyCompleteSellerExportAndClick\(/);
 });
 
-test("release metadata is 2.10.96", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.96");
-  assert.equal(JSON.parse(lockSource).version, "2.10.96");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.96");
+test("release metadata is 2.10.97", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.97");
+  assert.equal(JSON.parse(lockSource).version, "2.10.97");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.97");
 });
