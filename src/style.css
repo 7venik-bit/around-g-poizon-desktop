@@ -601,8 +601,8 @@ body.excel-preview-active{overflow:hidden}
 .brand-card small{display:none}
 .brand-card.selected{border-color:#4b93ee;background:#edf5ff;box-shadow:inset 0 0 0 1px #4b93ee}
 .brand-card:disabled{cursor:wait;opacity:.72}
-.brand-card.download-complete{grid-template-columns:30px minmax(0,1fr) auto}
-.brand-download-complete{justify-self:end;padding:3px 6px;border:1px solid #86d0a5;border-radius:999px;color:#167348;background:#edf9f2;font-size:9px;font-style:normal;font-weight:800;white-space:nowrap}
+.brand-card.download-complete{grid-template-columns:30px minmax(0,1fr)}
+.brand-download-complete{align-self:center;margin-top:3px;padding:2px 6px;border:1px solid #86d0a5;border-radius:999px;color:#167348;background:#edf9f2;font-size:9px;font-style:normal;font-weight:800;line-height:1.2;white-space:nowrap}
 .brand-toolbar .brand-filter-field{position:relative;display:block;margin:0;width:min(460px,100%)}
 .brand-filter-field svg{position:absolute;left:14px;top:50%;width:18px;height:18px;transform:translateY(-50%);fill:none;stroke:#4d7da5;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 .brand-toolbar .brand-filter-field input{width:100%;padding-left:42px}
@@ -625,6 +625,7 @@ body.excel-preview-active{overflow:hidden}
 .brand-multi-select-label{display:flex;align-items:center;gap:7px;color:#2d5f88;font-size:12px;font-weight:800}
 .brand-multi-select-label svg{color:#2d86c7}
 #brand-selected-count{margin-right:auto;color:#1873aa;font-size:12px}
+#brand-sync{padding:7px 10px;font-size:11px}
 #brand-selection-clear{padding:7px 10px;font-size:11px}
 .brand-search-action{display:flex;align-items:center;gap:7px;padding:8px 13px;font-size:12px;font-weight:800}
 .brand-search-action.is-running svg{animation:brand-search-pulse 1s ease-in-out infinite alternate}
@@ -907,7 +908,7 @@ button,input,select,textarea{font-family:inherit}
   word-break:keep-all;
   line-height:1.25;
 }
-.brand-card.download-complete{grid-template-columns:30px minmax(0,1fr) auto}
+.brand-card.download-complete{grid-template-columns:30px minmax(0,1fr)}
 
 @media(max-width:1180px){
   .brand-export-job-row,

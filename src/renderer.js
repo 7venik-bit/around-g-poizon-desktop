@@ -779,17 +779,13 @@ function updateBrandSelectionControls() {
   const count = $("#brand-selected-count");
   const clear = $("#brand-selection-clear");
   const search = $("#brand-export-selected");
-  const pickerSelection = $("#brand-picker-selection");
   if (count) count.textContent = `${selectedCount}개 선택`;
   if (clear) clear.disabled = selectedCount === 0 || brandSelectionBusy;
   if (search) {
     search.disabled = selectedCount === 0 || brandSelectionBusy;
     search.classList.toggle("is-running", brandSelectionBusy);
     const label = search.querySelector("span");
-    if (label) label.textContent = brandSelectionBusy ? "검색 등록 중" : "선택 브랜드 검색";
-  }
-  if (pickerSelection && !brandSelectionBusy) {
-    pickerSelection.textContent = selectedCount ? `${selectedCount}개 브랜드 선택` : "브랜드를 선택해 주세요";
+    if (label) label.textContent = brandSelectionBusy ? "검색 등록 중" : "브랜드 검색";
   }
 }
 
@@ -889,8 +885,6 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
 
 function retainSelectedBrandName(brandName = "") {
   selectedBrandName = String(brandName || selectedBrandName || "").trim();
-  const pickerSelection = $("#brand-picker-selection");
-  if (pickerSelection) pickerSelection.textContent = selectedBrandName || "브랜드를 선택해 주세요";
   if (selectedBrandName) {
     localStorage.setItem("around-g-selected-brand-name", selectedBrandName);
   }
@@ -911,10 +905,7 @@ function setupBrandLayout() {
   const summary = document.createElement("summary");
   const title = document.createElement("span");
   title.textContent = "브랜드 선택 목록";
-  const selection = document.createElement("strong");
-  selection.id = "brand-picker-selection";
-  selection.textContent = selectedBrandName || "브랜드를 선택해 주세요";
-  summary.append(title, selection);
+  summary.append(title);
 
   picker.append(summary, toolbar, selectionActions, cards);
   if (status) status.insertAdjacentElement("afterend", picker);
@@ -1048,7 +1039,7 @@ function renderBrandCards(filter = "") {
   $("#brand-cards").innerHTML = brands.map((brand) => {
     const downloadComplete = hasCompletedBrandDownload(brand);
     return `<button type="button" class="brand-card ${selectedBrandIds.has(Number(brand.id)) ? "selected" : ""}${downloadComplete ? " download-complete" : ""}" data-brand-id="${brand.id}" aria-pressed="${selectedBrandIds.has(Number(brand.id))}"${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
-    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong><small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>${downloadComplete ? '<em class="brand-download-complete">다운완료</em>' : ""}
+    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${downloadComplete ? '<em class="brand-download-complete">다운완료</em>' : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>
   </button>`;
   }).join("");
   document.querySelectorAll(".brand-logo img").forEach((image) => {
