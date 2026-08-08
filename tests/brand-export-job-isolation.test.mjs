@@ -70,28 +70,20 @@ test("brand search mismatch is explained and stops before export registration", 
   assert.match(mainSource, /SEARCH_RESULT_NOT_UPDATED: `\$\{label\} 검색 결과가 새로 바뀌지 않아 내보내기를 중단했습니다/);
 });
 
-test("seller brand search accepts changed results without requiring a lower total count", () => {
-  assert.doesNotMatch(mainSource, /const narrowed = current\.totalCount/);
-  assert.match(mainSource, /\(changed \|\| searchRequestObserved\(\)\) && hasRows && resultBelongsToRequest/);
-  assert.match(mainSource, /const inputHasRequestedBrand = \(\) =>/);
-  assert.match(mainSource, /const submittedRequestedBrand = inputHasRequestedBrand\(\)/);
-  assert.match(mainSource, /const exactProductSearchHint =/);
-  assert.match(mainSource, /const sameContainer = Boolean\(inputForm && inputForm\.contains\(element\)\)/);
+test("seller brand search restores the previously working React input and result checks", () => {
+  assert.match(mainSource, /applyValue\(""\)/);
+  assert.match(mainSource, /applyValue\(\$\{JSON\.stringify\(brandName\)\}\)/);
+  assert.match(mainSource, /input\.dispatchEvent\(new Event\("input"/);
+  assert.match(mainSource, /input\.dispatchEvent\(new Event\("change"/);
+  assert.match(mainSource, /const narrowed = current\.totalCount/);
+  assert.match(mainSource, /changed && narrowed && hasRows && brandMatched/);
 });
 
 test("each brand starts on a fresh seller product-search page and retries stale results", () => {
   assert.match(mainSource, /Every brand starts from a fresh product-search document/);
   assert.match(mainSource, /await sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\);/);
-  assert.match(mainSource, /const retryableStaleResult = \["BRAND_INPUT_NOT_APPLIED", "BRAND_RESULT_MISMATCH", "SEARCH_RESULT_NOT_UPDATED"\]/);
-  assert.match(mainSource, /검색 응답이 확인되지 않아 상품검색 화면을 새로 열고 실제 입력 방식으로 재시도합니다/);
-  assert.match(mainSource, /sellerWindow\.webContents\.insertText\(brandName\)/);
-  assert.match(mainSource, /type: "mouseDown"/);
-  assert.match(mainSource, /type: "mouseUp"/);
-  assert.match(mainSource, /keyCode: "ENTER"/);
-  assert.match(mainSource, /__aroundgSearchResourceBaseline/);
-  assert.match(mainSource, /prepared\.inputVerified = verifiedInput\.found && verifiedInput\.value === brandName/);
-  assert.match(mainSource, /검색어 검증 완료 · 검색 실행 확인 중/);
-  assert.doesNotMatch(mainSource, /실제 검색어 입력 완료/);
+  assert.match(mainSource, /const retryableStaleResult = \["BRAND_RESULT_MISMATCH", "SEARCH_RESULT_NOT_UPDATED"\]/);
+  assert.match(mainSource, /검색 결과가 갱신되지 않아 상품검색 화면을 새로 열고 같은 브랜드를 재시도합니다/);
+  assert.match(mainSource, /이전 방식으로 브랜드 입력·검색 실행 중/);
   assert.match(mainSource, /SELLER_SECURITY_CHECK_REQUIRED/);
-  assert.match(mainSource, /searchRequestObserved/);
 });
