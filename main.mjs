@@ -2977,6 +2977,7 @@ async function automateSellerBrandExport(input = {}) {
       };
     })()`, true);
     if (!prepared?.ok) return prepared;
+    sellerWindow.webContents.focus();
     sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "CONTROL" });
     sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
     sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
@@ -2985,6 +2986,18 @@ async function automateSellerBrandExport(input = {}) {
     sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "BACKSPACE" });
     await sellerWindow.webContents.insertText(brandName);
     await new Promise((resolve) => setTimeout(resolve, 350));
+    const verifiedInput = await targetFrame.executeJavaScript(`(() => {
+      const input = document.querySelector("[data-aroundg-search-target='true']");
+      return {
+        found: Boolean(input),
+        value: String(input?.value || "").trim(),
+      };
+    })()`, true).catch(() => ({ found: false, value: "" }));
+    prepared.actualValue = verifiedInput.value;
+    prepared.inputVerified = verifiedInput.found && verifiedInput.value === brandName;
+    if (!prepared.inputVerified) {
+      return { ...prepared, ok: false, step: "BRAND_INPUT_NOT_APPLIED" };
+    }
     if (prepared.searchX > 0 && prepared.searchY > 0
       && targetFrame.routingId === sellerWindow.webContents.mainFrame.routingId) {
       sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: prepared.searchX, y: prepared.searchY });
@@ -3108,12 +3121,6 @@ async function automateSellerBrandExport(input = {}) {
           input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
           input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
         };
-        if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
-          applyValue("");
-          await wait(160);
-          applyValue(${JSON.stringify(brandName)});
-          await wait(350);
-        }
         if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
           return { ok: false, step: "BRAND_INPUT_NOT_APPLIED" };
         }
@@ -3397,12 +3404,15 @@ async function automateSellerBrandExport(input = {}) {
     for (const candidate of frameCandidates) {
       if (!candidate.probe?.inputCount && !candidate.probe?.hint) continue;
       const prepared = await focusSellerSearchInput(candidate.frame).catch(() => ({ ok: false }));
-      if (!prepared?.ok) continue;
+      if (!prepared?.ok) {
+        searched = { ok: false, step: prepared?.step || "SEARCH_INPUT_NOT_FOUND", diagnostics: prepared };
+        continue;
+      }
       mainWindow?.webContents.send("brand-export:progress", {
         status: "searching-brand-products",
         brandName,
-        jobState: `1단계/5 · 실제 검색어 입력 완료 · ${brandName}`,
-        message: `${brandName} · ${prepared.placeholder || "상품검색"} 입력칸에 실제 검색어 입력 완료 · ${prepared.searchButton || "Enter"}를 실제 ${prepared.submittedBy === "actual-mouse" ? "마우스" : "키보드"} 입력으로 실행했습니다.`,
+        jobState: `1단계/5 · 검색어 검증 완료 · 검색 실행 확인 중 · ${brandName}`,
+        message: `${brandName} · 숨겨진 ${prepared.placeholder || "상품검색"} 입력칸에서 검색어 일치를 확인했습니다. 검색 응답을 확인한 후 다음 단계로 진행합니다.`,
       });
       const result = await Promise.race([
         runSellerSearch(candidate.frame),
@@ -3427,7 +3437,7 @@ async function automateSellerBrandExport(input = {}) {
       }
       searched = result;
     }
-    const retryableStaleResult = ["BRAND_RESULT_MISMATCH", "SEARCH_RESULT_NOT_UPDATED"].includes(searched?.step);
+    const retryableStaleResult = ["BRAND_INPUT_NOT_APPLIED", "BRAND_RESULT_MISMATCH", "SEARCH_RESULT_NOT_UPDATED"].includes(searched?.step);
     if (searched?.ok || (searched?.step && searched.step !== "SEARCH_INPUT_NOT_FOUND" && !retryableStaleResult)) break;
     mainWindow?.webContents.send("brand-export:progress", {
       status: "retrying-search-input",
