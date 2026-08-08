@@ -1559,8 +1559,18 @@ async function syncFullBrandCatalog({ automatic = false } = {}) {
   const result = await window.aroundG.syncBrands();
   button.disabled = false;
   if (!result.ok) {
+    try {
+      const preservedMeta = await window.aroundG.explorerMeta();
+      if (Array.isArray(preservedMeta?.brands) && preservedMeta.brands.length) {
+        explorerMeta = preservedMeta;
+        renderBrandCards($("#brand-filter")?.value || "");
+      }
+    } catch {}
     status.className = "status error";
-    status.textContent = [result.error?.message, result.error?.code].filter(Boolean).join(" · ") || "브랜드 동기화에 실패했습니다.";
+    const preservedCount = Number(result.preservedCount || explorerMeta.brands?.length || 0);
+    status.textContent = preservedCount
+      ? `새 목록 갱신에 실패해 저장된 브랜드 ${preservedCount.toLocaleString("ko-KR")}개를 유지합니다.`
+      : [result.error?.message, result.error?.code].filter(Boolean).join(" · ") || "브랜드 동기화에 실패했습니다.";
     return false;
   }
   explorerMeta = await window.aroundG.explorerMeta();

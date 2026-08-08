@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile as readFileFromDisk, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   BRAND_CATALOG_MAX_AGE_MS,
@@ -8,6 +11,7 @@ import {
   parseKrPoizonBrandData,
 } from "../services/brand-catalog.mjs";
 import { officialBrandSearchUrl } from "../relay/domestic-search.mjs";
+import { JsonStore } from "../services/store.mjs";
 
 test("the requested 3,388-brand catalog is accepted as a complete searchable catalog", () => {
   const source = {
@@ -29,6 +33,24 @@ test("the requested 3,388-brand catalog is accepted as a complete searchable cat
   }
 });
 
+test("a complete brand catalog survives loss of the primary settings entry", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "around-g-brand-catalog-"));
+  const complete = Array.from({ length: 3388 }, (_value, index) => ({
+    id: index + 1,
+    name: `Brand ${index + 1}`,
+    ko: `브랜드 ${index + 1}`,
+  }));
+  const first = new JsonStore(directory);
+  await first.load();
+  await first.setSettings({ brandCatalog: complete, brandCatalogUpdatedAt: new Date().toISOString() });
+  const primary = JSON.parse(await readFileFromDisk(join(directory, "around-g-data.json"), "utf8"));
+  delete primary.settings.brandCatalog;
+  await writeFile(join(directory, "around-g-data.json"), JSON.stringify(primary), "utf8");
+  const restored = new JsonStore(directory);
+  await restored.load();
+  assert.equal(restored.snapshot().settings.brandCatalog.length, 3388);
+});
+
 test("missing, partial, and stale brand catalogs automatically request a refresh", () => {
   const complete = Array.from({ length: 3388 }, () => ({}));
   const now = Date.parse("2026-08-07T12:00:00Z");
@@ -39,9 +61,10 @@ test("missing, partial, and stale brand catalogs automatically request a refresh
 });
 
 test("the desktop automatically syncs the full catalog and keeps brand filtering responsive", async () => {
-  const [mainSource, rendererSource] = await Promise.all([
+  const [mainSource, rendererSource, storeSource] = await Promise.all([
     readFile(new URL("../main.mjs", import.meta.url), "utf8"),
     readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
+    readFile(new URL("../services/store.mjs", import.meta.url), "utf8"),
   ]);
   assert.match(mainSource, /brands\.length < FULL_BRAND_CATALOG_MINIMUM/);
   assert.match(mainSource, /let englishBrands = \[\]/);
@@ -52,4 +75,9 @@ test("the desktop automatically syncs the full catalog and keeps brand filtering
   assert.match(mainSource, /ensureOfficialDomainRegistry/);
   assert.match(rendererSource, /개 POIZON 브랜드/);
   assert.match(rendererSource, /공식몰 확인/);
+  assert.match(mainSource, /safeOfficialDomainRegistry/);
+  assert.match(mainSource, /preservedBrands/);
+  assert.match(rendererSource, /저장된 브랜드/);
+  assert.match(storeSource, /around-g-brand-catalog\.json/);
+  assert.match(storeSource, /BRAND_CATALOG_BACKUP_MINIMUM/);
 });
