@@ -72,7 +72,7 @@ test("brand search mismatch is explained and stops before export registration", 
 
 test("seller brand search accepts changed results without requiring a lower total count", () => {
   assert.doesNotMatch(mainSource, /const narrowed = current\.totalCount/);
-  assert.match(mainSource, /changed && current\.totalCount > 0 && hasRows && resultBelongsToRequest/);
+  assert.match(mainSource, /\(changed \|\| searchRequestObserved\(\)\) && hasRows && resultBelongsToRequest/);
   assert.match(mainSource, /const inputHasRequestedBrand = \(\) =>/);
   assert.match(mainSource, /const submittedRequestedBrand = inputHasRequestedBrand\(\)/);
   assert.match(mainSource, /const exactProductSearchHint =/);
@@ -83,5 +83,8 @@ test("each brand starts on a fresh seller product-search page and retries stale 
   assert.match(mainSource, /Every brand starts from a fresh product-search document/);
   assert.match(mainSource, /await sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\);/);
   assert.match(mainSource, /const retryableStaleResult = \["BRAND_RESULT_MISMATCH", "SEARCH_RESULT_NOT_UPDATED"\]/);
-  assert.match(mainSource, /검색 결과가 갱신되지 않아 상품검색 화면을 새로 열고 같은 브랜드를 재시도합니다/);
+  assert.match(mainSource, /검색 응답이 확인되지 않아 상품검색 화면을 새로 열고 실제 입력 방식으로 재시도합니다/);
+  assert.match(mainSource, /sellerWindow\.webContents\.insertText\(brandName\)/);
+  assert.match(mainSource, /SELLER_SECURITY_CHECK_REQUIRED/);
+  assert.match(mainSource, /searchRequestObserved/);
 });
