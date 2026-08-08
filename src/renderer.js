@@ -843,7 +843,11 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     const failureCode = String(automation?.code || "");
     const remainingCount = brandExportQueue.length;
     brandExportFailureCount += 1;
-    updateBrandBatchState(failedBrandName, `실패 · ${failureCode || "자동화 오류"}`);
+    const failureReason = String(automation?.diagnostics?.reason || "").trim();
+    updateBrandBatchState(
+      failedBrandName,
+      `실패 · ${failureCode || "자동화 오류"}${failureReason ? ` · ${failureReason}` : ""}`,
+    );
     activeExportBrand = null;
     if (failureCode === "SELLER_LOGIN_REQUIRED") {
       brandExportQueue = [];
