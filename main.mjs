@@ -2629,7 +2629,8 @@ function sellerBrandExportFailureMessage(code = "", brandName = "") {
     SEARCH_INPUT_NOT_FOUND: `${label} 상품검색 입력창이 4회 재시도 후에도 표시되지 않았습니다. 판매자센터 화면 로딩 또는 로그인 상태를 확인해 주세요.`,
     SELLER_LOGIN_REQUIRED: `${label} 작업 중 판매자센터 로그인 화면이 확인됐습니다. 로그인 후 다시 실행해 주세요.`,
     SELLER_SEARCH_SCRIPT_ERROR: `${label} 상품검색 화면 제어 중 오류가 발생했습니다. 상품검색 화면을 다시 열어 재시도해 주세요.`,
-    SELLER_SEARCH_STAGE_TIMEOUT: `${label} 상품검색 응답이 70초 동안 없어 다음 브랜드로 이동합니다.`,
+    SELLER_SEARCH_STAGE_TIMEOUT: `${label} 상품검색 응답이 30초 동안 없어 다음 브랜드로 이동합니다.`,
+    SELLER_SECURITY_CHECK_REQUIRED: `${label} 검색 중 POIZON 보안 확인 화면이 표시됐습니다. 판매자센터에서 보안 확인을 완료한 뒤 다시 실행해 주세요.`,
     PRODUCT_VERIFICATION_TIMEOUT: `${label} 전체 페이지 확인이 70초 안에 끝나지 않아 다음 브랜드로 이동합니다.`,
     BRAND_INPUT_NOT_APPLIED: `${label} 검색어가 판매자센터에 입력되지 않아 중단했습니다.`,
     BRAND_RESULT_MISMATCH: `${label} 검색 결과가 확인되지 않아 내보내기를 중단했습니다. 기존 검색 결과는 다운로드하지 않습니다.`,
@@ -2915,6 +2916,54 @@ async function automateSellerBrandExport(input = {}) {
     jobState: "1단계/5 · 브랜드 입력·상품 검색 중",
     message: `${brandName} · 브랜드를 입력하고 상품 검색을 실행합니다.`,
   });
+  const focusSellerSearchInput = async (targetFrame) => {
+    const prepared = await targetFrame.executeJavaScript(`(() => {
+      const visible = (element) => element && element.getBoundingClientRect().width > 0
+        && element.getBoundingClientRect().height > 0;
+      const textOf = (element) => String(element?.innerText || element?.textContent || "")
+        .replace(/\\s+/g, " ").trim();
+      const inputs = [...document.querySelectorAll("input, textarea")]
+        .filter(visible)
+        .filter((element) => !element.disabled && !element.readOnly)
+        .filter((element) => !["hidden", "password", "file", "checkbox", "radio"].includes(String(element.type || "text").toLowerCase()));
+      const ranked = inputs.map((element) => {
+        const rect = element.getBoundingClientRect();
+        const attributes = [element.placeholder, element.getAttribute("aria-label"), element.name, element.id]
+          .filter(Boolean).join(" ");
+        const context = textOf(element.closest("form, .ant-form-item, [class*='search'], [class*='filter']") || element.parentElement);
+        return {
+          element,
+          score: (/상품명.{0,8}상품번호.{0,8}브랜드|상품정보|product.{0,8}brand|商品.{0,8}品牌/i.test(attributes) ? 3000 : 0)
+            + (/상품|상품명|브랜드|품번|검색|product|brand|spu|sku|商品|品牌|货号/i.test(attributes) ? 1000 : 0)
+            + (/상품|브랜드|품번|검색|product|brand|spu|sku|商品|品牌|货号/i.test(context) ? 300 : 0)
+            + (rect.top >= 0 && rect.top < 360 ? 120 : 0)
+            + Math.min(180, Math.round(rect.width)),
+        };
+      }).sort((left, right) => right.score - left.score);
+      const input = ranked[0]?.element;
+      if (!input || ranked[0].score < 200) return { ok: false, inputCount: inputs.length };
+      document.querySelectorAll("[data-aroundg-search-target]").forEach((element) => element.removeAttribute("data-aroundg-search-target"));
+      input.setAttribute("data-aroundg-search-target", "true");
+      input.scrollIntoView({ block: "center", inline: "center" });
+      input.focus();
+      input.select?.();
+      return {
+        ok: true,
+        placeholder: String(input.placeholder || input.getAttribute("aria-label") || "상품검색"),
+        value: String(input.value || ""),
+      };
+    })()`, true);
+    if (!prepared?.ok) return prepared;
+    sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "CONTROL" });
+    sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
+    sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
+    sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "CONTROL" });
+    sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "BACKSPACE" });
+    sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "BACKSPACE" });
+    await sellerWindow.webContents.insertText(brandName);
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    return prepared;
+  };
   const runSellerSearch = (targetFrame) => targetFrame.executeJavaScript(`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getBoundingClientRect().width > 0
@@ -2977,20 +3026,22 @@ async function automateSellerBrandExport(input = {}) {
         };
         const searchInputs = inputs.map((element) => ({ element, score: inputScore(element) }))
           .sort((left, right) => right.score - left.score);
-        const input = searchInputs[0]?.element || null;
+        const input = document.querySelector("[data-aroundg-search-target='true']")
+          || searchInputs[0]?.element || null;
         if (!input || searchInputs[0].score < 200) {
           return { ok: false, step: "SEARCH_INPUT_NOT_FOUND", inputCount: inputs.length };
         }
         const readSearchState = () => {
-          const rows = [...document.querySelectorAll("tbody tr")].filter(visible);
+          const rows = [...document.querySelectorAll("tbody tr, [role='row'], [class*='table-row'], [class*='virtual-list'] [class*='row']")]
+            .filter((row, index, all) => all.indexOf(row) === index)
+            .filter(visible)
+            .filter((row) => !row.closest("thead") && textOf(row).length > 2);
           const rowTexts = rows.slice(0, 30).map((row) =>
             String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim()
           );
           const rowText = rowTexts.join("\\n");
-          const totalText = [...document.querySelectorAll("body *")]
-            .filter(visible)
-            .map((element) => String(element.innerText || element.textContent || "").trim())
-            .find((text) => /^총\\s*[\\d,]+\\s*건\\s*결과$/.test(text)) || "";
+          const bodyText = textOf(document.body);
+          const totalText = bodyText.match(/총\\s*[\\d,]+\\s*(?:건|개)(?:\\s*결과)?|[\\d,]+\\s*(?:건|개)\\s*결과|共\\s*[\\d,]+\\s*(?:条|件)/)?.[0] || "";
           const totalCount = Number(String(totalText).replace(/[^0-9]/g, "")) || 0;
           return { rowText, rowTexts, totalText, totalCount };
         };
@@ -3022,10 +3073,12 @@ async function automateSellerBrandExport(input = {}) {
           input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
           input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
         };
-        applyValue("");
-        await wait(160);
-        applyValue(${JSON.stringify(brandName)});
-        await wait(350);
+        if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
+          applyValue("");
+          await wait(160);
+          applyValue(${JSON.stringify(brandName)});
+          await wait(350);
+        }
         if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
           return { ok: false, step: "BRAND_INPUT_NOT_APPLIED" };
         }
@@ -3063,10 +3116,14 @@ async function automateSellerBrandExport(input = {}) {
           }
         };
         const submittedRequestedBrand = inputHasRequestedBrand();
+        const resourceBaseline = performance.getEntriesByType("resource").length;
+        const searchResourcePattern = /goods|product|search|list|spu|sku/i;
+        const searchRequestObserved = () => performance.getEntriesByType("resource")
+          .slice(resourceBaseline).some((entry) => searchResourcePattern.test(String(entry.name || "")));
         const waitForSearchUpdate = async () => {
           let stableSignature = "";
           let stableCount = 0;
-          for (let attempt = 0; attempt < 60; attempt += 1) {
+          for (let attempt = 0; attempt < 24; attempt += 1) {
             await wait(250);
             const current = readSearchState();
             const changed = current.rowText !== beforeSearch.rowText || current.totalText !== beforeSearch.totalText;
@@ -3075,7 +3132,7 @@ async function automateSellerBrandExport(input = {}) {
             const queryMatched = inputHasRequestedBrand();
             const resultBelongsToRequest = brandMatched || queryMatched || submittedRequestedBrand;
             const signature = current.totalText + "\\n" + current.rowText;
-            if (changed && current.totalCount > 0 && hasRows && resultBelongsToRequest) {
+            if ((changed || searchRequestObserved()) && hasRows && resultBelongsToRequest) {
               stableCount = signature === stableSignature ? stableCount + 1 : 1;
               stableSignature = signature;
               if (stableCount >= 3) return true;
@@ -3093,10 +3150,6 @@ async function automateSellerBrandExport(input = {}) {
           pressEnter();
           searchApplied = await waitForSearchUpdate();
         }
-        if (!searchApplied && search) {
-          clickLikeUser(search);
-          searchApplied = await waitForSearchUpdate();
-        }
         if (!searchApplied) {
           const current = readSearchState();
           const queryMatched = inputHasRequestedBrand();
@@ -3109,6 +3162,8 @@ async function automateSellerBrandExport(input = {}) {
             beforeInputValue,
             queryMatched,
             resultChanged,
+            searchButton: textOf(search),
+            searchRequestObserved: searchRequestObserved(),
           };
         }
 
@@ -3253,11 +3308,14 @@ async function automateSellerBrandExport(input = {}) {
       ok: true,
       sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC",
       expectedTotal: verifiedSearch.totalCount,
+      searchInput: String(input.placeholder || input.getAttribute("aria-label") || "상품검색"),
+      searchButton: textOf(search),
+      searchRequestObserved: searchRequestObserved(),
     };
   })()`, true);
   let searched = null;
   let lastSearchDiagnostics = null;
-  for (let searchInputAttempt = 1; searchInputAttempt <= 4; searchInputAttempt += 1) {
+  for (let searchInputAttempt = 1; searchInputAttempt <= 2; searchInputAttempt += 1) {
     const frames = sellerWindowFrames();
     const frameCandidates = [];
     for (const frame of frames) {
@@ -3275,6 +3333,7 @@ async function automateSellerBrandExport(input = {}) {
             inputCount: inputs.length,
             hint,
             login: /login|signin|passport/i.test(location.href),
+            security: /보안\s*확인|본인\s*확인|captcha|verification|验证码|安全验证/i.test(body),
           };
         })()`, true);
         frameCandidates.push({ frame, probe });
@@ -3293,14 +3352,27 @@ async function automateSellerBrandExport(input = {}) {
       searched = { ok: false, step: "SELLER_LOGIN_REQUIRED", diagnostics: loginFrame.probe };
       break;
     }
+    const securityFrame = frameCandidates.find((candidate) => candidate.probe?.security);
+    if (securityFrame) {
+      searched = { ok: false, step: "SELLER_SECURITY_CHECK_REQUIRED", diagnostics: securityFrame.probe };
+      break;
+    }
     for (const candidate of frameCandidates) {
       if (!candidate.probe?.inputCount && !candidate.probe?.hint) continue;
+      const prepared = await focusSellerSearchInput(candidate.frame).catch(() => ({ ok: false }));
+      if (!prepared?.ok) continue;
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: "searching-brand-products",
+        brandName,
+        jobState: `1단계/5 · 실제 검색어 입력 완료 · ${brandName}`,
+        message: `${brandName} · ${prepared.placeholder || "상품검색"} 입력칸에 실제 검색어를 입력하고 검색 버튼을 실행합니다.`,
+      });
       const result = await Promise.race([
         runSellerSearch(candidate.frame),
         new Promise((resolve) => setTimeout(() => resolve({
           ok: false,
           step: "SELLER_SEARCH_STAGE_TIMEOUT",
-        }), 70_000)),
+        }), 30_000)),
       ]).catch((error) => ({
         ok: false,
         step: "SELLER_SEARCH_SCRIPT_ERROR",
@@ -3323,12 +3395,12 @@ async function automateSellerBrandExport(input = {}) {
     mainWindow?.webContents.send("brand-export:progress", {
       status: "retrying-search-input",
       brandName,
-      jobState: `1단계/5 · 상품검색 화면 초기화·재시도 ${searchInputAttempt}/4`,
+      jobState: `1단계/5 · 상품검색 화면 초기화·재시도 ${searchInputAttempt}/2`,
       message: retryableStaleResult
-        ? `${brandName} · 검색 결과가 갱신되지 않아 상품검색 화면을 새로 열고 같은 브랜드를 재시도합니다. (${searchInputAttempt}/4)`
-        : `${brandName} · 판매자센터 검색 입력창이 아직 표시되지 않아 상품검색 화면을 다시 열고 재시도합니다. (${searchInputAttempt}/4)`,
+        ? `${brandName} · 검색 응답이 확인되지 않아 상품검색 화면을 새로 열고 실제 입력 방식으로 재시도합니다. (${searchInputAttempt}/2)`
+        : `${brandName} · 판매자센터 검색 입력창이 아직 표시되지 않아 상품검색 화면을 다시 열고 재시도합니다. (${searchInputAttempt}/2)`,
     });
-    if (searchInputAttempt < 4) {
+    if (searchInputAttempt < 2) {
       await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => null);
       await new Promise((resolve) => setTimeout(resolve, 2500 + searchInputAttempt * 1000));
     }
@@ -3373,7 +3445,7 @@ async function automateSellerBrandExport(input = {}) {
     status: "brand-search-complete",
     brandName,
     jobState: `1단계/5 · 검색 완료 · 총 ${Number(searched.expectedTotal || 0).toLocaleString("ko-KR")}개`,
-    message: `${brandName} · 상품 검색 완료 · 총 ${Number(searched.expectedTotal || 0).toLocaleString("ko-KR")}개 · 전체 페이지 수와 마지막 페이지를 확인합니다.`,
+    message: `${brandName} · 검색어 입력과 ${searched.searchButton || "검색"} 실행 확인 · 총 ${Number(searched.expectedTotal || 0).toLocaleString("ko-KR")}개 · 전체 페이지 수와 마지막 페이지를 확인합니다.`,
   });
 
   let completeness = null;
