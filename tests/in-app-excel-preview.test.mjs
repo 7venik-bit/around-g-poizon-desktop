@@ -82,7 +82,8 @@ test("official-store verification supports every registered URL family and embed
   assert.match(mainSource, /productDetail\\\\\.action/);
   assert.match(mainSource, /matchesExpected\(link\.href\)/);
   assert.match(mainSource, /matchesExpected\(link\.outerHTML\)/);
-  assert.match(mainSource, /productCards\.push\(\{ productUrl, text, markup \}\)/);
+  assert.match(mainSource, /productCards\.push\(\{ productUrl, text, markup, imageUrl, title, price \}\)/);
+  assert.match(mainSource, /itemView\\\\\.ssg/);
   assert.match(mainSource, /split\("#"\)\[0\]/);
   assert.doesNotMatch(mainSource, /String\(link\.href \|\| ""\)\.split\("\?"\)/);
 });

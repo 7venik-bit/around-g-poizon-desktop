@@ -1120,6 +1120,9 @@ function domesticStatus(result) {
   if (result.loading) return { label: "검색 중", className: "loading" };
   if (result.error) return { label: "확인 실패", className: "error" };
   const products = result.products || [];
+  const verifiedCount = (result.sources || []).reduce((sum, source) =>
+    sum + (source.countVerified ? Number(source.count || 0) : 0), 0);
+  if (!products.length && verifiedCount > 0) return { label: "판매처 발견", className: "available" };
   if (!products.length) return { label: "상품 없음", className: "missing" };
   if (!products.some((product) => product.inStock)) return { label: "재고 없음", className: "soldout" };
   return { label: "구매 가능", className: "available" };
@@ -1130,6 +1133,8 @@ function renderDomestic(result) {
   if (result.loading) return `<span class="inventory-help">국내 플랫폼을 순서대로 확인하고 있습니다…</span>`;
   if (result.error) return `<span class="inventory-help error">국내 검색에 실패했습니다. 잠시 후 다시 시도해 주세요.</span>`;
   const products = (result.products || []).filter((product) => product && (product.name || product.title));
+  const verifiedCount = (result.sources || []).reduce((sum, source) =>
+    sum + (source.countVerified ? Number(source.count || 0) : 0), 0);
   const sourceByStore = new Map((result.sources || []).map((source) => [source.store, source]));
   const productRows = products.map((product) => {
     const source = sourceByStore.get(product.store) || {};
@@ -1165,7 +1170,10 @@ function renderDomestic(result) {
       ? `<button class="source-link" data-official-discovery="${encodeURIComponent(source.searchUrl)}" data-official-product="${encodeURIComponent(source.officialProductUrl)}"><span>${text(source.store)}</span>${sourceResult(source)}</button>`
       : `<button class="source-link" data-url="${encodeURIComponent(source.searchUrl)}"><span>${text(source.store)}</span>${source.officialStatus === "pending" ? `<small>도메인 확인 필요</small>` : source.officialStatus === "no_official_store" ? `<small>등록된 공식몰 없음</small>` : source.officialStatus === "search_unsupported" ? `<small>사이트 검색 미지원</small>` : sourceResult(source)}</button>`
   ).join("");
-  return `<div class="platform-list">${productRows || `<span class="inventory-help">일치하는 국내 판매 상품을 찾지 못했습니다.</span>`}</div>
+  const emptyMessage = verifiedCount > 0
+    ? `판매처에서 ${verifiedCount}개 결과를 확인했습니다. 상세 상품은 아래 판매처에서 확인해 주세요.`
+    : "일치하는 국내 판매 상품을 찾지 못했습니다.";
+  return `<div class="platform-list">${productRows || `<span class="inventory-help">${emptyMessage}</span>`}</div>
     ${directLinks ? `<div class="source-links">${directLinks}</div>` : ""}`;
 }
 

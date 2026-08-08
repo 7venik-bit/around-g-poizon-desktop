@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   DOMESTIC_SEARCH_LINKS,
   OFFICIAL_BRAND_SEARCH,
+  analyzeRenderedChannelProducts,
+  countLinkedSearchProducts,
   countRenderedChannelProducts,
   domesticChannelUrl,
   naverFashionTownUrl,
@@ -145,6 +147,32 @@ test("PUMA official result recognizes /pd/ URL and separated color query", () =>
   });
   assert.equal(countRenderedChannelProducts(rendered, "브랜드 공식몰", "398846-31"), 1);
   assert.equal(countRenderedChannelProducts(rendered, "브랜드 공식몰", "398846-32"), 0);
+});
+
+test("SSG and Lotte dynamic product links become visible product candidates", () => {
+  const fixtures = [
+    ["SSG 백화점", "https://department.ssg.com/item/itemView.ssg?itemId=1000612345", "나이키 에어맥스 IO9554-100 169,000원"],
+    ["롯데온 백화점", "https://www.lotteon.com/p/product/LO1234567890", "나이키 페가수스 HQ7540-100 159,000원"],
+  ];
+  for (const [store, productUrl, text] of fixtures) {
+    const articleNumber = text.match(/[A-Z]{2}\d{4}-\d{3}/)?.[0];
+    const result = analyzeRenderedChannelProducts(JSON.stringify({
+      pageText: "검색 결과",
+      productCards: [{ productUrl, text, title: text, imageUrl: "https://img.example/product.jpg", price: "159,000원" }],
+    }), store, articleNumber, "나이키");
+    assert.equal(result.count, 1, store);
+    assert.equal(result.products.length, 1, store);
+    assert.equal(result.products[0].articleNumber, articleNumber, store);
+  }
+});
+
+test("malformed rendered data is a verification failure, not a confirmed zero", () => {
+  assert.equal(countRenderedChannelProducts('{"pageText":"partial"}', "SSG 백화점", "IO9554-100", "나이키"), null);
+});
+
+test("query metadata repetitions are not counted as products", () => {
+  const html = '<meta content="IO9554-100"><title>IO9554-100 검색</title><a href="/help">도움말</a>';
+  assert.equal(countLinkedSearchProducts(html, "IO9554-100"), 0);
 });
 
 test("domestic search links safely encode a query", () => {

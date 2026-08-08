@@ -59,7 +59,7 @@ import {
   mergeSellerBrandProducts,
   sellerBrandDiagnostics,
 } from "./services/seller-brand-sales.mjs";
-import { countRenderedChannelProducts, queryDomesticProducts } from "./relay/domestic-search.mjs";
+import { analyzeRenderedChannelProducts, queryDomesticProducts } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
 import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
@@ -651,9 +651,9 @@ async function addMatchConfidence(data, input) {
   return { ...data, products, sources };
 }
 
-async function renderedSearchSourceCount(source, articleNumber, brand = "") {
+async function renderedSearchSourceResult(source, articleNumber, brand = "") {
   const url = String(source.officialProductUrl || source.searchUrl || "");
-  if (!/^https:\/\//i.test(url)) return Number(source.count || 0);
+  if (!/^https:\/\//i.test(url)) return { count: Number(source.count || 0), products: [] };
   let searchWindow;
   try {
     searchWindow = new BrowserWindow({
@@ -670,7 +670,15 @@ async function renderedSearchSourceCount(source, articleNumber, brand = "") {
       searchWindow.loadURL(url),
       new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 12_000)),
     ]);
-    await wait(2_500);
+    // Dynamic commerce pages render and lazy-load after navigation. Give them
+    // time to settle and scroll enough to materialize the first result cards.
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      await wait(attempt === 0 ? 1_200 : 650);
+      await searchWindow.webContents.executeJavaScript(`(() => {
+        const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        window.scrollTo(0, Math.min(maxY, window.scrollY + Math.max(500, window.innerHeight * 0.8)));
+      })()`, true).catch(() => {});
+    }
     const content = await searchWindow.webContents.executeJavaScript(`(() => {
       const expectedArticle = ${JSON.stringify(String(articleNumber || ""))};
       const expectedCompact = expectedArticle.replace(/[^A-Z0-9]/gi, "").toUpperCase();
@@ -689,6 +697,7 @@ async function renderedSearchSourceCount(source, articleNumber, brand = "") {
         .filter((link) => visible(link) || matchesExpected(link.href) || matchesExpected(link.outerHTML))
         .filter((link) => /\\/(?:p|pd|products?|goods|product|(?:[a-z]{2}\\/)?t)\\//i.test(link.href)
           || /productDetail\\.action/i.test(link.href)
+          || /\\/item\\/itemView\\.ssg/i.test(link.href)
           || matchesExpected(link.href)
           || matchesExpected(link.outerHTML));
       const seen = new Set();
@@ -696,12 +705,16 @@ async function renderedSearchSourceCount(source, articleNumber, brand = "") {
       for (const link of productLinks) {
         const productUrl = String(link.href || "").split("#")[0];
         if (!productUrl || seen.has(productUrl)) continue;
-        const card = link.closest("li, article, [class*='product'], [class*='item'], [class*='card']")
+        const card = link.closest("li, article, [data-product-id], [data-item-id], [class*='product-card'], [class*='goods-item'], [class*='item-card']")
           || link.parentElement;
         const text = String(card?.innerText || link.innerText || "").trim();
-        const markup = String(card?.outerHTML || link.outerHTML || "").slice(0, 5000);
+        const markup = String(card?.outerHTML || link.outerHTML || "").slice(0, 2500);
+        const image = card?.querySelector?.("img");
+        const imageUrl = String(image?.currentSrc || image?.src || "");
+        const title = String(image?.alt || link.getAttribute("aria-label") || text.split("\\n")[0] || "").trim();
+        const price = text.match(/[\\d,]+\\s*원/)?.[0] || "";
         seen.add(productUrl);
-        productCards.push({ productUrl, text, markup });
+        productCards.push({ productUrl, text, markup, imageUrl, title, price });
       }
       const pageText = String(document.body?.innerText || "").slice(0, 20000);
       const pageBlocked = /captcha|보안\s*확인|자동\s*입력|로봇|접속.{0,12}(?:제한|차단)|서비스.{0,12}(?:제한|지연)|비정상적인\s*접근/i.test(pageText);
@@ -710,7 +723,7 @@ async function renderedSearchSourceCount(source, articleNumber, brand = "") {
     try {
       if (JSON.parse(content)?.pageBlocked) return null;
     } catch {}
-    return countRenderedChannelProducts(content, source.store, articleNumber, brand);
+    return analyzeRenderedChannelProducts(content, source.store, articleNumber, brand);
   } catch {
     return null;
   } finally {
@@ -719,6 +732,7 @@ async function renderedSearchSourceCount(source, articleNumber, brand = "") {
 }
 
 async function addRenderedSearchCounts(data, articleNumber, brand = "") {
+  const discoveredProducts = [];
   const sources = await Promise.all(data.sources.map(async (source) => {
     if (source.officialStatus && source.officialStatus !== OFFICIAL_DOMAIN_STATUS.VERIFIED) {
       return { ...source, countVerified: false, verificationFailed: false };
@@ -733,7 +747,9 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "") {
     if (!source.linkOnly && source.ok && Number(source.count || 0) > 0) {
       return { ...source, countVerified: true, verificationFailed: false };
     }
-    const count = await renderedSearchSourceCount(source, articleNumber, brand);
+    const result = await renderedSearchSourceResult(source, articleNumber, brand);
+    if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
+    const count = result?.count;
     return {
       ...source,
       count: Number.isFinite(count) ? count : 0,
@@ -741,7 +757,9 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "") {
       verificationFailed: !Number.isFinite(count),
     };
   }));
-  return { ...data, sources };
+  const products = [...(data.products || []), ...discoveredProducts].filter((product, index, all) =>
+    index === all.findIndex((candidate) => `${candidate.store}:${candidate.id || candidate.url}` === `${product.store}:${product.id || product.url}`));
+  return { ...data, products, sources };
 }
 
 function brandsWithOfficialDomainStatus(brands, registry) {
