@@ -12,6 +12,7 @@ test("brand picker keeps one compact multi-selection toolbar", () => {
   const layout = renderer.slice(layoutStart, layoutEnd);
 
   assert.match(layout, /picker\.append\(summary, toolbar, selectionActions, cards\)/);
+  assert.doesNotMatch(layout, /brand-picker-selection|브랜드를 선택해 주세요/);
   assert.doesNotMatch(layout, /brand-selection-panel|brand-selection-chips|brand-selection-history/);
 });
 
@@ -47,7 +48,8 @@ test("brand picker exposes accessible multi-select and search icons", () => {
   assert.match(indexHtml, /class="brand-filter-field"/);
   assert.match(indexHtml, /aria-label="브랜드 복수 선택 및 검색"/);
   assert.match(indexHtml, /id="brand-export-selected"/);
-  assert.match(indexHtml, /<span>선택 브랜드 검색<\/span>/);
+  assert.match(indexHtml, /<span>브랜드 검색<\/span>/);
+  assert.match(indexHtml, /id="brand-selected-count"[\s\S]*id="brand-sync"[\s\S]*id="brand-selection-clear"[\s\S]*id="brand-export-selected"/);
   assert.match(indexHtml, /<svg aria-hidden="true" viewBox="0 0 24 24">/);
 });
 
@@ -71,6 +73,8 @@ test("brand button shows down-complete whenever its data-center workbook was dow
 
   assert.match(cards, /hasCompletedBrandDownload\(brand\)/);
   assert.match(cards, />다운완료</);
+  assert.match(cards, /<strong>\$\{text\(brand\.name\)\}<\/strong>\$\{downloadComplete/);
+  assert.match(style, /\.brand-card\.download-complete\{grid-template-columns:30px minmax\(0,1fr\)\}/);
   assert.doesNotMatch(completed, /brandIntegrity\?\.ok === false/);
   assert.match(completed, /downloadedBrandFiles\.some/);
 });
