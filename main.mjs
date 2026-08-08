@@ -2629,7 +2629,7 @@ function sellerBrandExportFailureMessage(code = "", brandName = "") {
     SEARCH_INPUT_NOT_FOUND: `${label} 상품검색 입력창이 4회 재시도 후에도 표시되지 않았습니다. 판매자센터 화면 로딩 또는 로그인 상태를 확인해 주세요.`,
     SELLER_LOGIN_REQUIRED: `${label} 작업 중 판매자센터 로그인 화면이 확인됐습니다. 로그인 후 다시 실행해 주세요.`,
     SELLER_SEARCH_SCRIPT_ERROR: `${label} 상품검색 화면 제어 중 오류가 발생했습니다. 상품검색 화면을 다시 열어 재시도해 주세요.`,
-    SELLER_SEARCH_STAGE_TIMEOUT: `${label} 상품검색 응답이 30초 동안 없어 다음 브랜드로 이동합니다.`,
+    SELLER_SEARCH_STAGE_TIMEOUT: `${label} 상품검색 단계가 40초 안에 끝나지 않아 페이지를 초기화했습니다. 이전 검색 작업은 종료되었습니다.`,
     SELLER_SECURITY_CHECK_REQUIRED: `${label} 검색 중 POIZON 보안 확인 화면이 표시됐습니다. 판매자센터에서 보안 확인을 완료한 뒤 다시 실행해 주세요.`,
     PRODUCT_VERIFICATION_TIMEOUT: `${label} 전체 페이지 확인이 70초 안에 끝나지 않아 다음 브랜드로 이동합니다.`,
     BRAND_INPUT_NOT_APPLIED: `${label} 검색어가 판매자센터에 입력되지 않아 중단했습니다.`,
@@ -3180,11 +3180,7 @@ async function automateSellerBrandExport(input = {}) {
         };
         if (search) clickLikeUser(search);
         else pressEnter();
-        let searchApplied = await waitForSearchUpdate();
-        if (!searchApplied) {
-          pressEnter();
-          searchApplied = await waitForSearchUpdate();
-        }
+        const searchApplied = await waitForSearchUpdate();
         if (!searchApplied) {
           const current = readSearchState();
           return {
@@ -3192,6 +3188,10 @@ async function automateSellerBrandExport(input = {}) {
             step: hasRequestedBrand(current) ? "SEARCH_RESULT_NOT_UPDATED" : "BRAND_RESULT_MISMATCH",
             beforeTotal: beforeSearch.totalCount,
             currentTotal: current.totalCount,
+            inputValue: String(input.value || "").trim(),
+            searchButtonFound: Boolean(search),
+            resultChanged: current.rowText !== beforeSearch.rowText || current.totalText !== beforeSearch.totalText,
+            brandMatchRatio: requestedBrandRatio(current),
           };
         }
 
@@ -3397,7 +3397,7 @@ async function automateSellerBrandExport(input = {}) {
         new Promise((resolve) => setTimeout(() => resolve({
           ok: false,
           step: "SELLER_SEARCH_STAGE_TIMEOUT",
-        }), 30_000)),
+        }), 40_000)),
       ]).catch((error) => ({
         ok: false,
         step: "SELLER_SEARCH_SCRIPT_ERROR",
@@ -3415,17 +3415,19 @@ async function automateSellerBrandExport(input = {}) {
       }
       searched = result;
     }
-    const retryableStaleResult = ["BRAND_RESULT_MISMATCH", "SEARCH_RESULT_NOT_UPDATED"].includes(searched?.step);
+    const timedOutSearch = searched?.step === "SELLER_SEARCH_STAGE_TIMEOUT";
+    const retryableStaleResult = ["BRAND_RESULT_MISMATCH", "SEARCH_RESULT_NOT_UPDATED", "SELLER_SEARCH_STAGE_TIMEOUT"].includes(searched?.step);
     if (searched?.ok || (searched?.step && searched.step !== "SEARCH_INPUT_NOT_FOUND" && !retryableStaleResult)) break;
     mainWindow?.webContents.send("brand-export:progress", {
       status: "retrying-search-input",
       brandName,
       jobState: `1단계/5 · 상품검색 화면 초기화·재시도 ${searchInputAttempt}/2`,
       message: retryableStaleResult
-        ? `${brandName} · 검색 결과가 갱신되지 않아 상품검색 화면을 새로 열고 같은 브랜드를 재시도합니다. (${searchInputAttempt}/2)`
+        ? `${brandName} · ${timedOutSearch ? "검색 단계 제한시간이 지나 이전 실행을 종료하고" : "검색 결과가 갱신되지 않아"} 상품검색 화면을 새로 열고 같은 브랜드를 재시도합니다. (${searchInputAttempt}/2)`
         : `${brandName} · 판매자센터 검색 입력창이 아직 표시되지 않아 상품검색 화면을 다시 열고 재시도합니다. (${searchInputAttempt}/2)`,
     });
-    if (searchInputAttempt < 2) {
+    if (searchInputAttempt < 2 || timedOutSearch) {
+      sellerWindow.webContents.stop();
       await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => null);
       await new Promise((resolve) => setTimeout(resolve, 2500 + searchInputAttempt * 1000));
     }
@@ -3443,10 +3445,19 @@ async function automateSellerBrandExport(input = {}) {
     pendingBrandExportName = "";
     pendingBrandExportJobId = "";
     brandExportJobPending = false;
+    const diagnostics = [
+      searched?.inputValue ? `입력값 ${searched.inputValue}` : "",
+      searched?.searchButtonFound === false ? "검색 버튼 미확인" : "",
+      searched?.resultChanged === false ? "상품 행 변경 없음" : "",
+      Number.isFinite(Number(searched?.brandMatchRatio))
+        ? `브랜드 일치율 ${Math.round(Number(searched.brandMatchRatio) * 100)}%`
+        : "",
+    ].filter(Boolean).join(" · ");
     return {
       ok: false,
       code: searched?.code || searched?.step || "SELLER_AUTOMATION_FAILED",
-      message: sellerBrandExportFailureMessage(searched?.code || searched?.step, brandName),
+      message: `${sellerBrandExportFailureMessage(searched?.code || searched?.step, brandName)}${diagnostics ? ` (${diagnostics})` : ""}`,
+      diagnostics: searched,
     };
   }
 
