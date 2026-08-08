@@ -8,11 +8,23 @@ import {
   failedOfficialDomainAuditRecord,
   officialDomainRecordForBrand,
   officialDomainDiscoveryUrl,
+  officialDomainAuditQueue,
   officialDomainRegistrySummary,
   officialSearchUrlFromRecord,
   rankOfficialDomainCandidates,
   validateOfficialDomainCandidate,
 } from "../services/official-domain-registry.mjs";
+
+test("audit resumes with unchecked brands before retrying unresolved brands", () => {
+  const registry = [
+    { status: OFFICIAL_DOMAIN_STATUS.PENDING, lastCheckedAt: "2026-08-08T01:00:00.000Z", verificationAttempts: 1 },
+    { status: OFFICIAL_DOMAIN_STATUS.VERIFIED, verifiedAt: "2026-08-08T01:01:00.000Z" },
+    { status: OFFICIAL_DOMAIN_STATUS.PENDING, lastCheckedAt: "", verificationAttempts: 0 },
+    { status: OFFICIAL_DOMAIN_STATUS.PENDING, lastCheckedAt: "2026-08-08T02:00:00.000Z", verificationAttempts: 2 },
+    { status: OFFICIAL_DOMAIN_STATUS.PENDING, lastCheckedAt: "", verificationAttempts: 0 },
+  ];
+  assert.deepEqual(officialDomainAuditQueue(registry), [2, 4, 0, 3]);
+});
 
 test("the complete POIZON catalog gets an explicit official-domain status", () => {
   const brands = Array.from({ length: 3388 }, (_value, index) => ({

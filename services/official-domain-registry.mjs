@@ -124,6 +124,20 @@ export function officialDomainRegistrySummary(registry) {
   return summary;
 }
 
+export function officialDomainAuditQueue(registry) {
+  const rows = Array.isArray(registry) ? registry : [];
+  const pending = rows.map((record, index) => ({ record, index }))
+    .filter(({ record }) => record?.status === OFFICIAL_DOMAIN_STATUS.PENDING);
+  const unchecked = pending.filter(({ record }) => !record.lastCheckedAt);
+  const attempted = pending.filter(({ record }) => record.lastCheckedAt)
+    .sort((left, right) =>
+      Number(left.record.verificationAttempts || 0) - Number(right.record.verificationAttempts || 0)
+      || Date.parse(left.record.lastCheckedAt || 0) - Date.parse(right.record.lastCheckedAt || 0));
+  // Finish one complete pass before retrying unresolved brands. This prevents
+  // every resume from starting again at the first unresolved record.
+  return [...unchecked, ...attempted].map(({ index }) => index);
+}
+
 export function officialDomainDiscoveryUrl(brand, alternateBrand = "") {
   const names = [...new Set([brand, alternateBrand].map((value) => String(value || "").trim()).filter(Boolean))];
   const terms = [...names, "공식 홈페이지"].join(" ");

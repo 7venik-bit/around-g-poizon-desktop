@@ -50,6 +50,7 @@ import {
   officialDomainDiscoveryUrl,
   officialDomainRecordForBrand,
   officialDomainRegistrySummary,
+  officialDomainAuditQueue,
   rankOfficialDomainCandidates,
 } from "./services/official-domain-registry.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer } from "./services/poizon.mjs";
@@ -91,6 +92,7 @@ let brandExportMonitorRestartTimer;
 let officialDomainAuditRunning = false;
 let officialDomainAuditStopRequested = false;
 let officialDomainAuditWindow = null;
+let officialDomainAuditResumeTimer = null;
 let brandExportAllCompleteSent = false;
 let activeBrandDownloadJobId = "";
 const brandDownloadPathsInProgress = new Set();
@@ -946,6 +948,8 @@ async function persistOfficialDomainAudit(registry, audit) {
 
 async function runOfficialDomainAudit() {
   if (officialDomainAuditRunning) return;
+  clearTimeout(officialDomainAuditResumeTimer);
+  officialDomainAuditResumeTimer = null;
   officialDomainAuditRunning = true;
   officialDomainAuditStopRequested = false;
   const brands = store.snapshot().settings.brandCatalog || explorerMetadata().brands;
@@ -956,7 +960,8 @@ async function runOfficialDomainAudit() {
   officialDomainAuditWindow = createOfficialDomainAuditWindow();
   try {
     await persistOfficialDomainAudit(registry, { state: "running", currentBrand: "", processed: 0, blocked: false, lastError: "" });
-    for (let index = 0; index < registry.length; index += 1) {
+    const auditQueue = officialDomainAuditQueue(registry);
+    for (const index of auditQueue) {
       if (officialDomainAuditStopRequested) break;
       const record = registry[index];
       if (record.status !== OFFICIAL_DOMAIN_STATUS.PENDING) continue;
@@ -979,11 +984,20 @@ async function runOfficialDomainAudit() {
     officialDomainAuditWindow = null;
     officialDomainAuditRunning = false;
     const summary = officialDomainRegistrySummary(registry);
-    const state = blocked ? "blocked"
+    const resumeAt = blocked && !officialDomainAuditStopRequested
+      ? new Date(Date.now() + OFFICIAL_DOMAIN_AUDIT_COOLDOWN_MS).toISOString()
+      : "";
+    const state = blocked ? "cooldown"
       : officialDomainAuditStopRequested ? "paused"
         : summary.unchecked ? "paused" : summary.pending ? "completed_with_pending" : "completed";
-    await persistOfficialDomainAudit(registry, { state, currentBrand: "", processed, blocked, lastError });
-    sendOfficialDomainAuditProgress(registry, { running: false, state, currentBrand: "", processed, blocked, lastError });
+    await persistOfficialDomainAudit(registry, { state, currentBrand: "", processed, blocked, lastError, resumeAt });
+    sendOfficialDomainAuditProgress(registry, { running: false, state, currentBrand: "", processed, blocked, lastError, resumeAt });
+    if (blocked && !officialDomainAuditStopRequested) {
+      officialDomainAuditResumeTimer = setTimeout(() => {
+        officialDomainAuditResumeTimer = null;
+        void runOfficialDomainAudit();
+      }, OFFICIAL_DOMAIN_AUDIT_COOLDOWN_MS);
+    }
   }
 }
 
@@ -998,6 +1012,7 @@ function sendUpdateStatus(status, message, extra = {}) {
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 const UPDATE_RETRY_INTERVAL_MS = 15 * 60 * 1_000;
 const UPDATE_INSTALL_RETRY_MS = 30 * 1_000;
+const OFFICIAL_DOMAIN_AUDIT_COOLDOWN_MS = 10 * 60 * 1_000;
 
 function scheduleUpdateCheck(delayMs = UPDATE_CHECK_INTERVAL_MS) {
   if (!app.isPackaged || updateReady) return;
@@ -4352,6 +4367,8 @@ app.whenReady().then(async () => {
     return officialDomainAuditSnapshot(registry);
   });
   ipcMain.handle("official-domain:audit-start", async () => {
+    clearTimeout(officialDomainAuditResumeTimer);
+    officialDomainAuditResumeTimer = null;
     if (!officialDomainAuditRunning) void runOfficialDomainAudit();
     const settings = store.snapshot().settings;
     const registry = await ensureOfficialDomainRegistry(settings.brandCatalog || explorerMetadata().brands);
@@ -4359,6 +4376,8 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("official-domain:audit-stop", () => {
     officialDomainAuditStopRequested = true;
+    clearTimeout(officialDomainAuditResumeTimer);
+    officialDomainAuditResumeTimer = null;
     return { ok: true };
   });
   ipcMain.handle("seller:open", () => {
