@@ -2947,10 +2947,33 @@ async function automateSellerBrandExport(input = {}) {
       input.scrollIntoView({ block: "center", inline: "center" });
       input.focus();
       input.select?.();
+      const inputRect = input.getBoundingClientRect();
+      const inputForm = input.closest("form, .ant-form, [class*='search'], [class*='filter']");
+      const searchButton = [...document.querySelectorAll("button, [role='button']")]
+        .filter(visible)
+        .filter((element) => /검색\\s*및\\s*입찰|^검색$|^검색하기$|搜索|查询|search/i.test(textOf(element)))
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          const sameContainer = Boolean(inputForm && inputForm.contains(element));
+          const verticalDistance = Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2));
+          const horizontalDistance = Math.abs(rect.left - inputRect.right);
+          return {
+            element,
+            rect,
+            score: (sameContainer ? 3000 : 0)
+              + (/검색\\s*및\\s*입찰/.test(textOf(element)) ? 1200 : 0)
+              + (verticalDistance < 60 ? 700 : 0)
+              - Math.min(600, verticalDistance + horizontalDistance / 3),
+          };
+        }).sort((left, right) => right.score - left.score)[0];
+      window.__aroundgSearchResourceBaseline = performance.getEntriesByType("resource").length;
       return {
         ok: true,
         placeholder: String(input.placeholder || input.getAttribute("aria-label") || "상품검색"),
         value: String(input.value || ""),
+        searchButton: searchButton ? textOf(searchButton.element) : "",
+        searchX: searchButton ? Math.round(searchButton.rect.left + searchButton.rect.width / 2) : 0,
+        searchY: searchButton ? Math.round(searchButton.rect.top + searchButton.rect.height / 2) : 0,
       };
     })()`, true);
     if (!prepared?.ok) return prepared;
@@ -2962,6 +2985,18 @@ async function automateSellerBrandExport(input = {}) {
     sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "BACKSPACE" });
     await sellerWindow.webContents.insertText(brandName);
     await new Promise((resolve) => setTimeout(resolve, 350));
+    if (prepared.searchX > 0 && prepared.searchY > 0
+      && targetFrame.routingId === sellerWindow.webContents.mainFrame.routingId) {
+      sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: prepared.searchX, y: prepared.searchY });
+      sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: prepared.searchX, y: prepared.searchY, button: "left", clickCount: 1 });
+      sellerWindow.webContents.sendInputEvent({ type: "mouseUp", x: prepared.searchX, y: prepared.searchY, button: "left", clickCount: 1 });
+      prepared.submittedBy = "actual-mouse";
+    } else {
+      sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "ENTER" });
+      sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "ENTER" });
+      prepared.submittedBy = "actual-enter";
+    }
+    await new Promise((resolve) => setTimeout(resolve, 650));
     return prepared;
   };
   const runSellerSearch = (targetFrame) => targetFrame.executeJavaScript(`(async () => {
@@ -3116,7 +3151,9 @@ async function automateSellerBrandExport(input = {}) {
           }
         };
         const submittedRequestedBrand = inputHasRequestedBrand();
-        const resourceBaseline = performance.getEntriesByType("resource").length;
+        const resourceBaseline = Number(window.__aroundgSearchResourceBaseline
+          ?? performance.getEntriesByType("resource").length);
+        delete window.__aroundgSearchResourceBaseline;
         const searchResourcePattern = /goods|product|search|list|spu|sku/i;
         const searchRequestObserved = () => performance.getEntriesByType("resource")
           .slice(resourceBaseline).some((entry) => searchResourcePattern.test(String(entry.name || "")));
@@ -3365,7 +3402,7 @@ async function automateSellerBrandExport(input = {}) {
         status: "searching-brand-products",
         brandName,
         jobState: `1단계/5 · 실제 검색어 입력 완료 · ${brandName}`,
-        message: `${brandName} · ${prepared.placeholder || "상품검색"} 입력칸에 실제 검색어를 입력하고 검색 버튼을 실행합니다.`,
+        message: `${brandName} · ${prepared.placeholder || "상품검색"} 입력칸에 실제 검색어 입력 완료 · ${prepared.searchButton || "Enter"}를 실제 ${prepared.submittedBy === "actual-mouse" ? "마우스" : "키보드"} 입력으로 실행했습니다.`,
       });
       const result = await Promise.race([
         runSellerSearch(candidate.frame),
