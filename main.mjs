@@ -2633,7 +2633,6 @@ function sellerBrandExportFailureMessage(code = "", brandName = "") {
     SELLER_SECURITY_CHECK_REQUIRED: `${label} 검색 중 POIZON 보안 확인 화면이 표시됐습니다. 판매자센터에서 보안 확인을 완료한 뒤 다시 실행해 주세요.`,
     PRODUCT_VERIFICATION_TIMEOUT: `${label} 전체 페이지 확인이 70초 안에 끝나지 않아 다음 브랜드로 이동합니다.`,
     BRAND_INPUT_NOT_APPLIED: `${label} 검색어가 판매자센터에 입력되지 않아 중단했습니다.`,
-    EXACT_SELLER_SEARCH_FAILED: `${label} 판매자센터의 정확한 브랜드 검색 결과를 확인하지 못했습니다. 검색 화면을 초기화한 뒤 다시 시도합니다.`,
     BRAND_RESULT_MISMATCH: `${label} 검색 결과가 확인되지 않아 내보내기를 중단했습니다. 기존 검색 결과는 다운로드하지 않습니다.`,
     SEARCH_RESULT_NOT_UPDATED: `${label} 검색 결과가 새로 바뀌지 않아 내보내기를 중단했습니다. 기존 검색 결과는 다운로드하지 않습니다.`,
     PARTIAL_PRODUCT_COLLECTION: `${label} 전체 상품 수집이 완료되지 않아 내보내기를 중단했습니다. 부분 파일은 다운로드하지 않습니다.`,
@@ -2865,172 +2864,6 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
   })()`, true);
 }
 
-async function applyExactSellerBrandSearch(targetFrame, brandNames = []) {
-  const names = [...new Set((brandNames || []).map((value) => String(value || "").trim()).filter(Boolean))];
-  if (!names.length) return { ok: false, step: "EXACT_SELLER_SEARCH_FAILED", reason: "BRAND_NAME_EMPTY" };
-  return targetFrame.executeJavaScript(`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getClientRects().length > 0;
-    const normalize = (value) => String(value || "").normalize("NFKC").replace(/[^\\p{L}\\p{N}]+/gu, "").toLowerCase();
-    const names = ${JSON.stringify(names)};
-    const keys = names.map(normalize).filter(Boolean);
-    const rows = () => [...document.querySelectorAll("table tbody tr")]
-      .filter(visible)
-      .map((row) => String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim())
-      .filter(Boolean);
-    const signature = () => rows().slice(0, 30).join("\\n");
-    const beforeRows = signature();
-    const brandRatio = () => {
-      const current = rows().slice(0, 30);
-      if (!current.length) return 0;
-      return current.filter((row) => keys.some((key) => normalize(row).includes(key))).length / current.length;
-    };
-    const waitForVerifiedRows = async () => {
-      let stable = 0;
-      let previous = "";
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        await wait(250);
-        const current = signature();
-        const ratio = brandRatio();
-        if (current && current !== beforeRows && ratio >= 0.8) {
-          stable = current === previous ? stable + 1 : 1;
-          previous = current;
-          if (stable >= 3) return { ok: true, ratio, rowCount: rows().length };
-        } else {
-          stable = 0;
-          previous = "";
-        }
-      }
-      return { ok: false, ratio: brandRatio(), rowCount: rows().length };
-    };
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-    const setValue = (input, value) => {
-      input.focus();
-      if (setter) setter.call(input, value);
-      else input.value = value;
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    };
-    // Restore the original working Seller Center flow: use the product-search
-    // input on the main goods/search document first. Do not guess another
-    // input merely because it exists in an embedded frame.
-    let restoredInput = null;
-    let restoredButton = null;
-    for (let attempt = 0; attempt < 80; attempt += 1) {
-      restoredInput = [...document.querySelectorAll("input")].find((element) =>
-        visible(element) && /상품명\/상품번호\/브랜드\/카테고리\/시리즈/.test(element.placeholder || "")
-      ) || null;
-      restoredButton = [...document.querySelectorAll("button,[role=button]")]
-        .filter(visible)
-        .find((button) => /검색\s*및\s*입찰|^검색$|^검색하기$|搜索|查询/i.test(button.textContent.trim())) || null;
-      if (restoredInput && restoredButton) break;
-      await wait(250);
-    }
-    if (restoredInput && restoredButton) {
-      setValue(restoredInput, names[0]);
-      await wait(350);
-      if (String(restoredInput.value || "").trim() !== names[0]) {
-        return { ok: false, step: "EXACT_SELLER_SEARCH_FAILED", reason: "RESTORED_INPUT_NOT_APPLIED" };
-      }
-      restoredButton.click();
-      const verified = await waitForVerifiedRows();
-      if (!verified.ok) {
-        return {
-          ok: false,
-          step: "EXACT_SELLER_SEARCH_FAILED",
-          reason: "RESTORED_RESULT_NOT_VERIFIED",
-          route: "RESTORED_MAIN_PRODUCT_SEARCH",
-          selected: names[0],
-          ...verified,
-        };
-      }
-      window.__aroundgExactBrandSearchVerified = {
-        keys,
-        route: "RESTORED_MAIN_PRODUCT_SEARCH",
-        selected: names[0],
-        ratio: verified.ratio,
-      };
-      return {
-        ok: true,
-        route: "RESTORED_MAIN_PRODUCT_SEARCH",
-        selected: names[0],
-        ratio: verified.ratio,
-        rowCount: verified.rowCount,
-      };
-    }
-    const ownText = (element) => [...element.childNodes]
-      .filter((node) => node.nodeType === Node.TEXT_NODE)
-      .map((node) => node.textContent).join("").trim();
-    const brandLabel = [...document.querySelectorAll("button,[role=button],label,span,div")]
-      .filter((element) => visible(element) && (ownText(element) === "브랜드" || element.textContent.trim() === "브랜드"))
-      .sort((left, right) => left.getBoundingClientRect().width - right.getBoundingClientRect().width)[0];
-    const brandButton = brandLabel?.closest("button,[role=button],.ant-select,.ant-dropdown-trigger,.semi-select,.semi-dropdown-trigger")
-      || brandLabel;
-    let route = "";
-    let selected = "";
-    if (brandButton) {
-      brandButton.click();
-      await wait(500);
-      const popup = [...document.querySelectorAll('[role="tooltip"],[role="dialog"],.ant-popover,.ant-dropdown,.ant-select-dropdown,.semi-portal,.semi-popover,.semi-select-dropdown')]
-        .filter(visible).at(-1) || document.body;
-      const filterInput = [...popup.querySelectorAll("input")]
-        .find((element) => visible(element) && ["text", "search", ""].includes(element.type));
-      for (const name of names) {
-        if (filterInput) {
-          setValue(filterInput, name);
-          await wait(300);
-        }
-        let option;
-        for (let attempt = 0; attempt < 12 && !option; attempt += 1) {
-          await wait(250);
-          option = [...document.querySelectorAll('.ant-popover:not(.ant-popover-hidden) li.ant-list-item,[role=option],.ant-select-item-option,.semi-select-option')]
-            .filter(visible)
-            .find((element) => keys.some((key) => normalize(element.textContent).includes(key)));
-        }
-        if (!option) continue;
-        selected = option.textContent.trim();
-        option.click();
-        await wait(250);
-        const confirm = [...document.querySelectorAll("button,[role=button]")]
-          .find((button) => visible(button) && /^(확인|적용|검색)$/.test(button.textContent.trim()));
-        confirm?.click();
-        route = "EXACT_BRAND_FILTER";
-        break;
-      }
-    }
-    if (!route) {
-      const searchInput = [...document.querySelectorAll("input")].find((element) =>
-        visible(element) && /상품명\\/상품번호\\/브랜드\\/카테고리\\/시리즈/.test(element.placeholder || "")
-      ) || [...document.querySelectorAll("input")].filter(visible)
-        .filter((element) => ["text", "search", ""].includes(element.type))
-        .sort((left, right) => right.getBoundingClientRect().width - left.getBoundingClientRect().width)[0];
-      const searchButton = [...document.querySelectorAll("button,[role=button]")]
-        .filter(visible).find((button) => /검색\\s*및\\s*입찰/.test(button.textContent.trim()));
-      if (!searchInput || !searchButton) {
-        return { ok: false, step: "EXACT_SELLER_SEARCH_FAILED", reason: "EXACT_INPUT_OR_BUTTON_NOT_FOUND" };
-      }
-      setValue(searchInput, names[0]);
-      await wait(350);
-      if (String(searchInput.value || "").trim() !== names[0]) {
-        return { ok: false, step: "EXACT_SELLER_SEARCH_FAILED", reason: "EXACT_INPUT_NOT_APPLIED" };
-      }
-      searchButton.click();
-      selected = names[0];
-      route = "TOP_PRODUCT_SEARCH";
-    }
-    const verified = await waitForVerifiedRows();
-    if (!verified.ok) {
-      return { ok: false, step: "EXACT_SELLER_SEARCH_FAILED", reason: "EXACT_RESULT_NOT_VERIFIED", route, selected, ...verified };
-    }
-    window.__aroundgExactBrandSearchVerified = { keys, route, selected, ratio: verified.ratio };
-    return { ok: true, route, selected, ratio: verified.ratio, rowCount: verified.rowCount };
-  })()`, true).catch((error) => ({
-    ok: false,
-    step: "EXACT_SELLER_SEARCH_FAILED",
-    reason: String(error?.message || error || "SCRIPT_ERROR"),
-  }));
-}
-
 async function automateSellerBrandExport(input = {}) {
   const sessionGeneration = brandWorkSessionGeneration;
   const attemptGeneration = ++brandExportAttemptGeneration;
@@ -3068,24 +2901,11 @@ async function automateSellerBrandExport(input = {}) {
     jobState: "1단계/5 · 실제 상품검색 시작",
     message: `${brandName} · 판매자센터 상품검색 화면을 열고 실제 검색을 시작합니다.`,
   });
-  // Every brand starts from a fresh product-search document. Reusing the same
-  // React page can keep the previous brand's internal form state even when the
-  // visible input value has changed, so the next Search click does nothing.
-  await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
+  if (!sellerWindow.webContents.getURL().includes("/main/goods/search")) {
+    await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
+  }
   await new Promise((resolve) => setTimeout(resolve, 3500));
-  const sellerBrandAliasGroups = [
-    ["Columbia", "컬럼비아", "哥伦比亚"],
-    ["Patagonia", "파타고니아", "巴塔哥尼亚"],
-    ["Tommy Hilfiger", "타미힐피거", "汤米希尔费格"],
-    ["FILA", "휠라", "斐乐"],
-    ["Reebok", "리복", "锐步"],
-  ];
-  const brandKoInput = String(input.brandKo || "").trim();
-  const sellerBrandMatchKeys = [brandName, brandKoInput];
-  const localizedAliases = sellerBrandAliasGroups.find((aliases) =>
-    aliases.some((alias) => brandsMatch(brandName, alias) || brandsMatch(brandKoInput, alias))
-  );
-  if (localizedAliases) sellerBrandMatchKeys.push(...localizedAliases);
+  const sellerBrandMatchKeys = [brandName, String(input.brandKo || "").trim()];
   if (brandsMatch(brandName, "Jordan")) {
     sellerBrandMatchKeys.push("Jordan", "조던", "乔丹");
   }
@@ -3095,102 +2915,6 @@ async function automateSellerBrandExport(input = {}) {
     jobState: "1단계/5 · 브랜드 입력·상품 검색 중",
     message: `${brandName} · 브랜드를 입력하고 상품 검색을 실행합니다.`,
   });
-  const focusSellerSearchInput = async (targetFrame) => {
-    const prepared = await targetFrame.executeJavaScript(`(() => {
-      const visible = (element) => element && element.getBoundingClientRect().width > 0
-        && element.getBoundingClientRect().height > 0;
-      const textOf = (element) => String(element?.innerText || element?.textContent || "")
-        .replace(/\\s+/g, " ").trim();
-      const inputs = [...document.querySelectorAll("input, textarea")]
-        .filter(visible)
-        .filter((element) => !element.disabled && !element.readOnly)
-        .filter((element) => !["hidden", "password", "file", "checkbox", "radio"].includes(String(element.type || "text").toLowerCase()));
-      const ranked = inputs.map((element) => {
-        const rect = element.getBoundingClientRect();
-        const attributes = [element.placeholder, element.getAttribute("aria-label"), element.name, element.id]
-          .filter(Boolean).join(" ");
-        const context = textOf(element.closest("form, .ant-form-item, [class*='search'], [class*='filter']") || element.parentElement);
-        return {
-          element,
-          score: (/상품명.{0,8}상품번호.{0,8}브랜드|상품정보|product.{0,8}brand|商品.{0,8}品牌/i.test(attributes) ? 3000 : 0)
-            + (/상품|상품명|브랜드|품번|검색|product|brand|spu|sku|商品|品牌|货号/i.test(attributes) ? 1000 : 0)
-            + (/상품|브랜드|품번|검색|product|brand|spu|sku|商品|品牌|货号/i.test(context) ? 300 : 0)
-            + (rect.top >= 0 && rect.top < 360 ? 120 : 0)
-            + Math.min(180, Math.round(rect.width)),
-        };
-      }).sort((left, right) => right.score - left.score);
-      const input = ranked[0]?.element;
-      if (!input || ranked[0].score < 200) return { ok: false, inputCount: inputs.length };
-      document.querySelectorAll("[data-aroundg-search-target]").forEach((element) => element.removeAttribute("data-aroundg-search-target"));
-      input.setAttribute("data-aroundg-search-target", "true");
-      input.scrollIntoView({ block: "center", inline: "center" });
-      input.focus();
-      input.select?.();
-      const inputRect = input.getBoundingClientRect();
-      const inputForm = input.closest("form, .ant-form, [class*='search'], [class*='filter']");
-      const searchButton = [...document.querySelectorAll("button, [role='button']")]
-        .filter(visible)
-        .filter((element) => /검색\\s*및\\s*입찰|^검색$|^검색하기$|搜索|查询|search/i.test(textOf(element)))
-        .map((element) => {
-          const rect = element.getBoundingClientRect();
-          const sameContainer = Boolean(inputForm && inputForm.contains(element));
-          const verticalDistance = Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2));
-          const horizontalDistance = Math.abs(rect.left - inputRect.right);
-          return {
-            element,
-            rect,
-            score: (sameContainer ? 3000 : 0)
-              + (/검색\\s*및\\s*입찰/.test(textOf(element)) ? 1200 : 0)
-              + (verticalDistance < 60 ? 700 : 0)
-              - Math.min(600, verticalDistance + horizontalDistance / 3),
-          };
-        }).sort((left, right) => right.score - left.score)[0];
-      window.__aroundgSearchResourceBaseline = performance.getEntriesByType("resource").length;
-      return {
-        ok: true,
-        placeholder: String(input.placeholder || input.getAttribute("aria-label") || "상품검색"),
-        value: String(input.value || ""),
-        searchButton: searchButton ? textOf(searchButton.element) : "",
-        searchX: searchButton ? Math.round(searchButton.rect.left + searchButton.rect.width / 2) : 0,
-        searchY: searchButton ? Math.round(searchButton.rect.top + searchButton.rect.height / 2) : 0,
-      };
-    })()`, true);
-    if (!prepared?.ok) return prepared;
-    sellerWindow.webContents.focus();
-    sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "CONTROL" });
-    sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
-    sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
-    sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "CONTROL" });
-    sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "BACKSPACE" });
-    sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "BACKSPACE" });
-    await sellerWindow.webContents.insertText(brandName);
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    const verifiedInput = await targetFrame.executeJavaScript(`(() => {
-      const input = document.querySelector("[data-aroundg-search-target='true']");
-      return {
-        found: Boolean(input),
-        value: String(input?.value || "").trim(),
-      };
-    })()`, true).catch(() => ({ found: false, value: "" }));
-    prepared.actualValue = verifiedInput.value;
-    prepared.inputVerified = verifiedInput.found && verifiedInput.value === brandName;
-    if (!prepared.inputVerified) {
-      return { ...prepared, ok: false, step: "BRAND_INPUT_NOT_APPLIED" };
-    }
-    if (prepared.searchX > 0 && prepared.searchY > 0
-      && targetFrame.routingId === sellerWindow.webContents.mainFrame.routingId) {
-      sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: prepared.searchX, y: prepared.searchY });
-      sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: prepared.searchX, y: prepared.searchY, button: "left", clickCount: 1 });
-      sellerWindow.webContents.sendInputEvent({ type: "mouseUp", x: prepared.searchX, y: prepared.searchY, button: "left", clickCount: 1 });
-      prepared.submittedBy = "actual-mouse";
-    } else {
-      sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "ENTER" });
-      sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "ENTER" });
-      prepared.submittedBy = "actual-enter";
-    }
-    await new Promise((resolve) => setTimeout(resolve, 650));
-    return prepared;
-  };
   const runSellerSearch = (targetFrame) => targetFrame.executeJavaScript(`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getBoundingClientRect().width > 0
@@ -3256,16 +2980,15 @@ async function automateSellerBrandExport(input = {}) {
           return { ok: false, step: "SEARCH_INPUT_NOT_FOUND", inputCount: inputs.length };
         }
         const readSearchState = () => {
-          const rows = [...document.querySelectorAll("tbody tr, [role='row'], [class*='table-row'], [class*='virtual-list'] [class*='row']")]
-            .filter((row, index, all) => all.indexOf(row) === index)
-            .filter(visible)
-            .filter((row) => !row.closest("thead") && textOf(row).length > 2);
+          const rows = [...document.querySelectorAll("tbody tr")].filter(visible);
           const rowTexts = rows.slice(0, 30).map((row) =>
             String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim()
           );
           const rowText = rowTexts.join("\\n");
-          const bodyText = textOf(document.body);
-          const totalText = bodyText.match(/총\\s*[\\d,]+\\s*(?:건|개)(?:\\s*결과)?|[\\d,]+\\s*(?:건|개)\\s*결과|共\\s*[\\d,]+\\s*(?:条|件)/)?.[0] || "";
+          const totalText = [...document.querySelectorAll("body *")]
+            .filter(visible)
+            .map((element) => String(element.innerText || element.textContent || "").trim())
+            .find((text) => /^총\\s*[\\d,]+\\s*건\\s*결과$/.test(text)) || "";
           const totalCount = Number(String(totalText).replace(/[^0-9]/g, "")) || 0;
           return { rowText, rowTexts, totalText, totalCount };
         };
@@ -3281,15 +3004,87 @@ async function automateSellerBrandExport(input = {}) {
           return matches / rows.length;
         };
         const hasRequestedBrand = (state) => requestedBrandRatio(state) >= 0.8;
-        const exactSearchState = window.__aroundgExactBrandSearchVerified;
-        const exactSearchVerified = Boolean(exactSearchState && hasRequestedBrand(beforeSearch));
-        delete window.__aroundgExactBrandSearchVerified;
-        if (!exactSearchVerified) {
+        const valuePrototype = input instanceof HTMLTextAreaElement
+          ? HTMLTextAreaElement.prototype
+          : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(valuePrototype, "value")?.set;
+        const applyValue = (value) => {
+          input.focus();
+          if (setter) setter.call(input, value);
+          else input.value = value;
+          input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+        };
+        applyValue("");
+        await wait(160);
+        applyValue(${JSON.stringify(brandName)});
+        await wait(350);
+        if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
+          return { ok: false, step: "BRAND_INPUT_NOT_APPLIED" };
+        }
+        const buttons = [...document.querySelectorAll("button, [role='button']")].filter(visible);
+        const inputRect = input.getBoundingClientRect();
+        const searchCandidates = buttons.filter((element) =>
+          /검색\\s*및\\s*입찰|^검색$|^검색하기$|搜索|查询|search/i.test(String(element.innerText || element.textContent || "").trim())
+        );
+        const search = searchCandidates.find((element) => {
+          const rect = element.getBoundingClientRect();
+          return Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2)) < 90;
+        }) || searchCandidates[0];
+        const pressEnter = () => {
+          input.focus();
+          for (const type of ["keydown", "keypress", "keyup"]) {
+            input.dispatchEvent(new KeyboardEvent(type, {
+              key: "Enter",
+              code: "Enter",
+              keyCode: 13,
+              which: 13,
+              bubbles: true,
+              cancelable: true
+            }));
+          }
+        };
+        const waitForSearchUpdate = async () => {
+          let stableSignature = "";
+          let stableCount = 0;
+          for (let attempt = 0; attempt < 60; attempt += 1) {
+            await wait(250);
+            const current = readSearchState();
+            const changed = current.rowText !== beforeSearch.rowText || current.totalText !== beforeSearch.totalText;
+            const narrowed = current.totalCount > 0
+              && (!beforeSearch.totalCount || current.totalCount < beforeSearch.totalCount);
+            const hasRows = current.rowText.length > 0;
+            const brandMatched = hasRequestedBrand(current);
+            const signature = current.totalText + "\\n" + current.rowText;
+            if (changed && narrowed && hasRows && brandMatched) {
+              stableCount = signature === stableSignature ? stableCount + 1 : 1;
+              stableSignature = signature;
+              if (stableCount >= 3) return true;
+            } else {
+              stableCount = 0;
+              stableSignature = "";
+            }
+          }
+          return false;
+        };
+        if (search) clickLikeUser(search);
+        else pressEnter();
+        let searchApplied = await waitForSearchUpdate();
+        if (!searchApplied) {
+          pressEnter();
+          searchApplied = await waitForSearchUpdate();
+        }
+        if (!searchApplied && search) {
+          clickLikeUser(search);
+          searchApplied = await waitForSearchUpdate();
+        }
+        if (!searchApplied) {
+          const current = readSearchState();
           return {
             ok: false,
-            step: "EXACT_SELLER_SEARCH_FAILED",
-            reason: "VERIFIED_SEARCH_STATE_MISSING",
-            brandMatchRatio: requestedBrandRatio(beforeSearch),
+            step: hasRequestedBrand(current) ? "SEARCH_RESULT_NOT_UPDATED" : "BRAND_RESULT_MISMATCH",
+            beforeTotal: beforeSearch.totalCount,
+            currentTotal: current.totalCount
           };
         }
 
@@ -3432,15 +3227,13 @@ async function automateSellerBrandExport(input = {}) {
     const verifiedSearch = readSearchState();
     return {
       ok: true,
-      searchVerified: true,
       sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC",
-      sortVerified: true,
       expectedTotal: verifiedSearch.totalCount,
     };
   })()`, true);
   let searched = null;
   let lastSearchDiagnostics = null;
-  for (let searchInputAttempt = 1; searchInputAttempt <= 2; searchInputAttempt += 1) {
+  for (let searchInputAttempt = 1; searchInputAttempt <= 4; searchInputAttempt += 1) {
     const frames = sellerWindowFrames();
     const frameCandidates = [];
     for (const frame of frames) {
@@ -3458,7 +3251,6 @@ async function automateSellerBrandExport(input = {}) {
             inputCount: inputs.length,
             hint,
             login: /login|signin|passport/i.test(location.href),
-            security: /보안\s*확인|본인\s*확인|captcha|verification|验证码|安全验证/i.test(body),
           };
         })()`, true);
         frameCandidates.push({ frame, probe });
@@ -3467,45 +3259,24 @@ async function automateSellerBrandExport(input = {}) {
       }
     }
     frameCandidates.sort((left, right) =>
-      Number(right.frame.routingId === sellerWindow.webContents.mainFrame.routingId)
-        - Number(left.frame.routingId === sellerWindow.webContents.mainFrame.routingId)
-      || Number(right.probe?.inputCount > 0) - Number(left.probe?.inputCount > 0)
+      Number(right.probe?.inputCount > 0) - Number(left.probe?.inputCount > 0)
       || Number(right.probe?.hint) - Number(left.probe?.hint)
+      || Number(right.frame.routingId === sellerWindow.webContents.mainFrame.routingId)
+        - Number(left.frame.routingId === sellerWindow.webContents.mainFrame.routingId)
     );
     const loginFrame = frameCandidates.find((candidate) => candidate.probe?.login);
     if (loginFrame) {
       searched = { ok: false, step: "SELLER_LOGIN_REQUIRED", diagnostics: loginFrame.probe };
       break;
     }
-    const securityFrame = frameCandidates.find((candidate) => candidate.probe?.security);
-    if (securityFrame) {
-      searched = { ok: false, step: "SELLER_SECURITY_CHECK_REQUIRED", diagnostics: securityFrame.probe };
-      break;
-    }
     for (const candidate of frameCandidates) {
       if (!candidate.probe?.inputCount && !candidate.probe?.hint) continue;
-      mainWindow?.webContents.send("brand-export:progress", {
-        status: "searching-brand-products",
-        brandName,
-        jobState: `1단계/5 · 이전 방식으로 브랜드 입력·검색 실행 중 · ${brandName}`,
-        message: `${brandName} · 정상 작동했던 이전 방식으로 브랜드를 입력하고 검색 버튼을 실행합니다.`,
-      });
       const result = await Promise.race([
-        (async () => {
-          const exactSearch = await applyExactSellerBrandSearch(candidate.frame, sellerBrandMatchKeys);
-          if (!exactSearch?.ok) return exactSearch;
-          mainWindow?.webContents.send("brand-export:progress", {
-            status: "brand-search-verified",
-            brandName,
-            jobState: `1단계/5 · 실제 브랜드 검색 결과 확인 · ${brandName}`,
-            message: `${brandName} · 판매자센터 검색 결과 행의 브랜드 일치를 확인했습니다. 30일 판매량 정렬을 진행합니다.`,
-          });
-          return runSellerSearch(candidate.frame);
-        })(),
+        runSellerSearch(candidate.frame),
         new Promise((resolve) => setTimeout(() => resolve({
           ok: false,
           step: "SELLER_SEARCH_STAGE_TIMEOUT",
-        }), 40_000)),
+        }), 70_000)),
       ]).catch((error) => ({
         ok: false,
         step: "SELLER_SEARCH_SCRIPT_ERROR",
@@ -3517,28 +3288,20 @@ async function automateSellerBrandExport(input = {}) {
         sellerProductFrameRoutingId = candidate.frame.routingId;
         break;
       }
-      const frameDoesNotContainProductSearch = result?.step === "SEARCH_INPUT_NOT_FOUND"
-        || (result?.step === "EXACT_SELLER_SEARCH_FAILED"
-          && result?.reason === "EXACT_INPUT_OR_BUTTON_NOT_FOUND");
-      if (!frameDoesNotContainProductSearch) {
+      if (result?.step !== "SEARCH_INPUT_NOT_FOUND") {
         searched = result;
         break;
       }
       searched = result;
     }
-    const timedOutSearch = searched?.step === "SELLER_SEARCH_STAGE_TIMEOUT";
-    const retryableStaleResult = ["EXACT_SELLER_SEARCH_FAILED", "BRAND_RESULT_MISMATCH", "SEARCH_RESULT_NOT_UPDATED", "SELLER_SEARCH_STAGE_TIMEOUT"].includes(searched?.step);
-    if (searched?.ok || (searched?.step && searched.step !== "SEARCH_INPUT_NOT_FOUND" && !retryableStaleResult)) break;
+    if (searched?.ok || (searched?.step && searched.step !== "SEARCH_INPUT_NOT_FOUND")) break;
     mainWindow?.webContents.send("brand-export:progress", {
       status: "retrying-search-input",
       brandName,
-      jobState: `1단계/5 · 상품검색 화면 초기화·재시도 ${searchInputAttempt}/2`,
-      message: retryableStaleResult
-        ? `${brandName} · ${timedOutSearch ? "검색 단계 제한시간이 지나 이전 실행을 종료하고" : "검색 결과가 갱신되지 않아"} 상품검색 화면을 새로 열고 같은 브랜드를 재시도합니다. (${searchInputAttempt}/2)`
-        : `${brandName} · 판매자센터 검색 입력창이 아직 표시되지 않아 상품검색 화면을 다시 열고 재시도합니다. (${searchInputAttempt}/2)`,
+      jobState: `1단계/5 · 검색 입력창 재탐색 ${searchInputAttempt}/4`,
+      message: `${brandName} · 판매자센터 검색 입력창이 아직 표시되지 않아 상품검색 화면을 다시 열고 재시도합니다. (${searchInputAttempt}/4)`,
     });
-    if (searchInputAttempt < 2 || timedOutSearch) {
-      sellerWindow.webContents.stop();
+    if (searchInputAttempt < 4) {
       await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => null);
       await new Promise((resolve) => setTimeout(resolve, 2500 + searchInputAttempt * 1000));
     }
@@ -3556,20 +3319,10 @@ async function automateSellerBrandExport(input = {}) {
     pendingBrandExportName = "";
     pendingBrandExportJobId = "";
     brandExportJobPending = false;
-    const diagnostics = [
-      searched?.inputValue ? `입력값 ${searched.inputValue}` : "",
-      searched?.searchButtonFound === false ? "검색 버튼 미확인" : "",
-      searched?.resultChanged === false ? "상품 행 변경 없음" : "",
-      searched?.reason ? `원인 ${searched.reason}` : "",
-      Number.isFinite(Number(searched?.brandMatchRatio))
-        ? `브랜드 일치율 ${Math.round(Number(searched.brandMatchRatio) * 100)}%`
-        : "",
-    ].filter(Boolean).join(" · ");
     return {
       ok: false,
       code: searched?.code || searched?.step || "SELLER_AUTOMATION_FAILED",
-      message: `${sellerBrandExportFailureMessage(searched?.code || searched?.step, brandName)}${diagnostics ? ` (${diagnostics})` : ""}`,
-      diagnostics: searched,
+      message: sellerBrandExportFailureMessage(searched?.code || searched?.step, brandName),
     };
   }
 
@@ -3592,8 +3345,8 @@ async function automateSellerBrandExport(input = {}) {
   mainWindow?.webContents.send("brand-export:progress", {
     status: "brand-search-complete",
     brandName,
-    jobState: `1단계/5 · 브랜드 검색·30일 판매량 내림차순 확인 완료`,
-    message: `${brandName} · 상품 행의 브랜드 일치와 현지 판매자 최근 30일 판매량 내림차순 적용을 확인했습니다. 전체 페이지와 마지막 페이지를 확인합니다.`,
+    jobState: `1단계/5 · 검색 완료 · 총 ${Number(searched.expectedTotal || 0).toLocaleString("ko-KR")}개`,
+    message: `${brandName} · 상품 검색 완료 · 총 ${Number(searched.expectedTotal || 0).toLocaleString("ko-KR")}개 · 전체 페이지 수와 마지막 페이지를 확인합니다.`,
   });
 
   let completeness = null;
