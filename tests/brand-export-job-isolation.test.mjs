@@ -69,3 +69,12 @@ test("brand search mismatch is explained and stops before export registration", 
   assert.match(mainSource, /BRAND_RESULT_MISMATCH: `\$\{label\} 검색 결과가 확인되지 않아 내보내기를 중단했습니다/);
   assert.match(mainSource, /SEARCH_RESULT_NOT_UPDATED: `\$\{label\} 검색 결과가 새로 바뀌지 않아 내보내기를 중단했습니다/);
 });
+
+test("seller brand search accepts changed results without requiring a lower total count", () => {
+  assert.doesNotMatch(mainSource, /const narrowed = current\.totalCount/);
+  assert.match(mainSource, /changed && current\.totalCount > 0 && hasRows && resultBelongsToRequest/);
+  assert.match(mainSource, /const inputHasRequestedBrand = \(\) =>/);
+  assert.match(mainSource, /const submittedRequestedBrand = inputHasRequestedBrand\(\)/);
+  assert.match(mainSource, /const exactProductSearchHint =/);
+  assert.match(mainSource, /const sameContainer = Boolean\(inputForm && inputForm\.contains\(element\)\)/);
+});

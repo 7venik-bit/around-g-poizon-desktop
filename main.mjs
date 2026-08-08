@@ -2966,8 +2966,10 @@ async function automateSellerBrandExport(input = {}) {
           ].filter(Boolean).join(" ");
           const context = textOf(element.closest("form, .ant-form-item, [class*='form'], [class*='search']") || element.parentElement);
           const strongHint = /상품|상품명|브랜드|품번|검색|product|brand|article|spu|sku|商品|品牌|货号|搜索|查询/i.test(attributes);
+          const exactProductSearchHint = /상품명.{0,8}상품번호.{0,8}브랜드|상품정보|product.{0,8}brand|商品.{0,8}品牌/i.test(attributes);
           const contextHint = /상품|브랜드|품번|검색|product|brand|spu|sku|商品|品牌|货号/i.test(context);
-          return (strongHint ? 1000 : 0)
+          return (exactProductSearchHint ? 3000 : 0)
+            + (strongHint ? 1000 : 0)
             + (contextHint ? 300 : 0)
             + (rect.top >= 0 && rect.top < 360 ? 120 : 0)
             + Math.min(180, Math.round(rect.width));
@@ -2992,6 +2994,7 @@ async function automateSellerBrandExport(input = {}) {
           return { rowText, rowTexts, totalText, totalCount };
         };
         const beforeSearch = readSearchState();
+        const beforeInputValue = normalize(input.value);
         const requestedBrandKeys = ${JSON.stringify(sellerBrandMatchKeys)}
           .map(normalize).filter(Boolean);
         const requestedBrandRatio = (state) => {
@@ -3003,6 +3006,10 @@ async function automateSellerBrandExport(input = {}) {
           return matches / rows.length;
         };
         const hasRequestedBrand = (state) => requestedBrandRatio(state) >= 0.8;
+        const inputHasRequestedBrand = () => {
+          const value = normalize(input.value);
+          return Boolean(value && requestedBrandKeys.some((key) => value === key || value.includes(key)));
+        };
         const valuePrototype = input instanceof HTMLTextAreaElement
           ? HTMLTextAreaElement.prototype
           : HTMLInputElement.prototype;
@@ -3026,10 +3033,21 @@ async function automateSellerBrandExport(input = {}) {
         const searchCandidates = buttons.filter((element) =>
           /검색\\s*및\\s*입찰|^검색$|^검색하기$|搜索|查询|search/i.test(String(element.innerText || element.textContent || "").trim())
         );
-        const search = searchCandidates.find((element) => {
+        const inputForm = input.closest("form, .ant-form, [class*='search'], [class*='filter']");
+        const search = searchCandidates.map((element) => {
           const rect = element.getBoundingClientRect();
-          return Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2)) < 90;
-        }) || searchCandidates[0];
+          const label = String(element.innerText || element.textContent || "").trim();
+          const sameContainer = Boolean(inputForm && inputForm.contains(element));
+          const verticalDistance = Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2));
+          const horizontalDistance = Math.abs(rect.left - inputRect.right);
+          return {
+            element,
+            score: (sameContainer ? 3000 : 0)
+              + (/검색\\s*및\\s*입찰/.test(label) ? 1200 : 0)
+              + (verticalDistance < 60 ? 700 : 0)
+              - Math.min(600, verticalDistance + horizontalDistance / 3),
+          };
+        }).sort((left, right) => right.score - left.score)[0]?.element || null;
         const pressEnter = () => {
           input.focus();
           for (const type of ["keydown", "keypress", "keyup"]) {
@@ -3043,6 +3061,7 @@ async function automateSellerBrandExport(input = {}) {
             }));
           }
         };
+        const submittedRequestedBrand = inputHasRequestedBrand();
         const waitForSearchUpdate = async () => {
           let stableSignature = "";
           let stableCount = 0;
@@ -3050,12 +3069,12 @@ async function automateSellerBrandExport(input = {}) {
             await wait(250);
             const current = readSearchState();
             const changed = current.rowText !== beforeSearch.rowText || current.totalText !== beforeSearch.totalText;
-            const narrowed = current.totalCount > 0
-              && (!beforeSearch.totalCount || current.totalCount < beforeSearch.totalCount);
             const hasRows = current.rowText.length > 0;
             const brandMatched = hasRequestedBrand(current);
+            const queryMatched = inputHasRequestedBrand();
+            const resultBelongsToRequest = brandMatched || queryMatched || submittedRequestedBrand;
             const signature = current.totalText + "\\n" + current.rowText;
-            if (changed && narrowed && hasRows && brandMatched) {
+            if (changed && current.totalCount > 0 && hasRows && resultBelongsToRequest) {
               stableCount = signature === stableSignature ? stableCount + 1 : 1;
               stableSignature = signature;
               if (stableCount >= 3) return true;
@@ -3079,11 +3098,16 @@ async function automateSellerBrandExport(input = {}) {
         }
         if (!searchApplied) {
           const current = readSearchState();
+          const queryMatched = inputHasRequestedBrand();
+          const resultChanged = current.rowText !== beforeSearch.rowText || current.totalText !== beforeSearch.totalText;
           return {
             ok: false,
-            step: hasRequestedBrand(current) ? "SEARCH_RESULT_NOT_UPDATED" : "BRAND_RESULT_MISMATCH",
+            step: hasRequestedBrand(current) || queryMatched || submittedRequestedBrand ? "SEARCH_RESULT_NOT_UPDATED" : "BRAND_RESULT_MISMATCH",
             beforeTotal: beforeSearch.totalCount,
-            currentTotal: current.totalCount
+            currentTotal: current.totalCount,
+            beforeInputValue,
+            queryMatched,
+            resultChanged,
           };
         }
 
