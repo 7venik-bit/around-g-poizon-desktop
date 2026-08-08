@@ -3149,12 +3149,13 @@ async function automateSellerBrandExport(input = {}) {
             await wait(250);
             const current = readSearchState();
             const changed = current.rowText !== beforeSearch.rowText || current.totalText !== beforeSearch.totalText;
-            const narrowed = current.totalCount > 0
-              && (!beforeSearch.totalCount || current.totalCount < beforeSearch.totalCount);
             const hasRows = current.rowText.length > 0;
             const brandMatched = hasRequestedBrand(current);
             const signature = current.totalText + "\\n" + current.rowText;
-            if (changed && narrowed && hasRows && brandMatched) {
+            // POIZON keeps the header total (for example 9,900) unchanged after a
+            // successful brand search. Advance only when the actual product rows
+            // change and at least 80% of those rows belong to the requested brand.
+            if (changed && hasRows && brandMatched) {
               stableCount = signature === stableSignature ? stableCount + 1 : 1;
               stableSignature = signature;
               if (stableCount >= 3) return true;
@@ -3321,7 +3322,9 @@ async function automateSellerBrandExport(input = {}) {
     const verifiedSearch = readSearchState();
     return {
       ok: true,
+      searchVerified: true,
       sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC",
+      sortVerified: true,
       expectedTotal: verifiedSearch.totalCount,
     };
   })()`, true);
@@ -3454,8 +3457,8 @@ async function automateSellerBrandExport(input = {}) {
   mainWindow?.webContents.send("brand-export:progress", {
     status: "brand-search-complete",
     brandName,
-    jobState: `1단계/5 · 검색 완료 · 총 ${Number(searched.expectedTotal || 0).toLocaleString("ko-KR")}개`,
-    message: `${brandName} · 이전 방식의 상품검색 완료 · 총 ${Number(searched.expectedTotal || 0).toLocaleString("ko-KR")}개 · 전체 페이지 수와 마지막 페이지를 확인합니다.`,
+    jobState: `1단계/5 · 브랜드 검색·30일 판매량 내림차순 확인 완료`,
+    message: `${brandName} · 상품 행의 브랜드 일치와 현지 판매자 최근 30일 판매량 내림차순 적용을 확인했습니다. 전체 페이지와 마지막 페이지를 확인합니다.`,
   });
 
   let completeness = null;
