@@ -77,6 +77,8 @@ test("seller brand search uses the exact proven route and accepts only verified 
   assert.match(mainSource, /route = "EXACT_BRAND_FILTER"/);
   assert.match(mainSource, /route = "TOP_PRODUCT_SEARCH"/);
   assert.match(mainSource, /window\.__aroundgExactBrandSearchVerified/);
+  assert.match(mainSource, /RESTORED_MAIN_PRODUCT_SEARCH/);
+  assert.match(mainSource, /restoredInput && restoredButton/);
   assert.match(mainSource, /input\.dispatchEvent\(new Event\("input"/);
   assert.match(mainSource, /input\.dispatchEvent\(new Event\("change"/);
   assert.match(mainSource, /ratio >= 0\.8/);
@@ -102,4 +104,6 @@ test("each brand starts on a fresh seller product-search page and retries stale 
   assert.match(mainSource, /상품검색 화면을 새로 열고 같은 브랜드를 재시도합니다/);
   assert.match(mainSource, /이전 방식으로 브랜드 입력·검색 실행 중/);
   assert.match(mainSource, /SELLER_SECURITY_CHECK_REQUIRED/);
+  assert.match(mainSource, /right\.frame\.routingId === sellerWindow\.webContents\.mainFrame\.routingId/);
+  assert.match(mainSource, /frameDoesNotContainProductSearch/);
 });

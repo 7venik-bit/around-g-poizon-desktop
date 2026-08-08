@@ -2911,6 +2911,53 @@ async function applyExactSellerBrandSearch(targetFrame, brandNames = []) {
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
     };
+    // Restore the original working Seller Center flow: use the product-search
+    // input on the main goods/search document first. Do not guess another
+    // input merely because it exists in an embedded frame.
+    let restoredInput = null;
+    let restoredButton = null;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      restoredInput = [...document.querySelectorAll("input")].find((element) =>
+        visible(element) && /상품명\/상품번호\/브랜드\/카테고리\/시리즈/.test(element.placeholder || "")
+      ) || null;
+      restoredButton = [...document.querySelectorAll("button,[role=button]")]
+        .filter(visible)
+        .find((button) => /검색\s*및\s*입찰|^검색$|^검색하기$|搜索|查询/i.test(button.textContent.trim())) || null;
+      if (restoredInput && restoredButton) break;
+      await wait(250);
+    }
+    if (restoredInput && restoredButton) {
+      setValue(restoredInput, names[0]);
+      await wait(350);
+      if (String(restoredInput.value || "").trim() !== names[0]) {
+        return { ok: false, step: "EXACT_SELLER_SEARCH_FAILED", reason: "RESTORED_INPUT_NOT_APPLIED" };
+      }
+      restoredButton.click();
+      const verified = await waitForVerifiedRows();
+      if (!verified.ok) {
+        return {
+          ok: false,
+          step: "EXACT_SELLER_SEARCH_FAILED",
+          reason: "RESTORED_RESULT_NOT_VERIFIED",
+          route: "RESTORED_MAIN_PRODUCT_SEARCH",
+          selected: names[0],
+          ...verified,
+        };
+      }
+      window.__aroundgExactBrandSearchVerified = {
+        keys,
+        route: "RESTORED_MAIN_PRODUCT_SEARCH",
+        selected: names[0],
+        ratio: verified.ratio,
+      };
+      return {
+        ok: true,
+        route: "RESTORED_MAIN_PRODUCT_SEARCH",
+        selected: names[0],
+        ratio: verified.ratio,
+        rowCount: verified.rowCount,
+      };
+    }
     const ownText = (element) => [...element.childNodes]
       .filter((node) => node.nodeType === Node.TEXT_NODE)
       .map((node) => node.textContent).join("").trim();
@@ -3420,10 +3467,10 @@ async function automateSellerBrandExport(input = {}) {
       }
     }
     frameCandidates.sort((left, right) =>
-      Number(right.probe?.inputCount > 0) - Number(left.probe?.inputCount > 0)
-      || Number(right.probe?.hint) - Number(left.probe?.hint)
-      || Number(right.frame.routingId === sellerWindow.webContents.mainFrame.routingId)
+      Number(right.frame.routingId === sellerWindow.webContents.mainFrame.routingId)
         - Number(left.frame.routingId === sellerWindow.webContents.mainFrame.routingId)
+      || Number(right.probe?.inputCount > 0) - Number(left.probe?.inputCount > 0)
+      || Number(right.probe?.hint) - Number(left.probe?.hint)
     );
     const loginFrame = frameCandidates.find((candidate) => candidate.probe?.login);
     if (loginFrame) {
@@ -3470,7 +3517,10 @@ async function automateSellerBrandExport(input = {}) {
         sellerProductFrameRoutingId = candidate.frame.routingId;
         break;
       }
-      if (result?.step !== "SEARCH_INPUT_NOT_FOUND") {
+      const frameDoesNotContainProductSearch = result?.step === "SEARCH_INPUT_NOT_FOUND"
+        || (result?.step === "EXACT_SELLER_SEARCH_FAILED"
+          && result?.reason === "EXACT_INPUT_OR_BUTTON_NOT_FOUND");
+      if (!frameDoesNotContainProductSearch) {
         searched = result;
         break;
       }
