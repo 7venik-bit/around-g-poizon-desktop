@@ -66,18 +66,21 @@ test("renderer never sends old brand job numbers for reuse", () => {
 });
 
 test("brand search mismatch is explained and stops before export registration", () => {
+  assert.match(mainSource, /EXACT_SELLER_SEARCH_FAILED: `\$\{label\} 판매자센터의 정확한 브랜드 검색 결과를 확인하지 못했습니다/);
   assert.match(mainSource, /BRAND_RESULT_MISMATCH: `\$\{label\} 검색 결과가 확인되지 않아 내보내기를 중단했습니다/);
   assert.match(mainSource, /SEARCH_RESULT_NOT_UPDATED: `\$\{label\} 검색 결과가 새로 바뀌지 않아 내보내기를 중단했습니다/);
 });
 
-test("seller brand search restores React input and accepts verified brand rows without a changing header total", () => {
-  assert.match(mainSource, /applyValue\(""\)/);
-  assert.match(mainSource, /applyValue\(\$\{JSON\.stringify\(brandName\)\}\)/);
+test("seller brand search uses the exact proven route and accepts only verified brand rows", () => {
+  assert.match(mainSource, /async function applyExactSellerBrandSearch/);
+  assert.ok(mainSource.includes("상품명\\\\/상품번호\\\\/브랜드\\\\/카테고리\\\\/시리즈"));
+  assert.match(mainSource, /route = "EXACT_BRAND_FILTER"/);
+  assert.match(mainSource, /route = "TOP_PRODUCT_SEARCH"/);
+  assert.match(mainSource, /window\.__aroundgExactBrandSearchVerified/);
   assert.match(mainSource, /input\.dispatchEvent\(new Event\("input"/);
   assert.match(mainSource, /input\.dispatchEvent\(new Event\("change"/);
-  assert.doesNotMatch(mainSource, /const narrowed = current\.totalCount/);
-  assert.match(mainSource, /changed && hasRows && brandMatched/);
-  assert.match(mainSource, /POIZON keeps the header total/);
+  assert.match(mainSource, /ratio >= 0\.8/);
+  assert.match(mainSource, /VERIFIED_SEARCH_STATE_MISSING/);
   assert.match(mainSource, /searchVerified: true/);
   assert.match(mainSource, /sortVerified: true/);
   assert.match(mainSource, /브랜드 검색·30일 판매량 내림차순 확인 완료/);
@@ -86,17 +89,15 @@ test("seller brand search restores React input and accepts verified brand rows w
   assert.match(mainSource, /\["Tommy Hilfiger", "타미힐피거", "汤米希尔费格"\]/);
   assert.match(mainSource, /\["FILA", "휠라", "斐乐"\]/);
   assert.match(mainSource, /\["Reebok", "리복", "锐步"\]/);
-  assert.match(mainSource, /const searchApplied = await waitForSearchUpdate\(\)/);
-  assert.doesNotMatch(mainSource, /if \(!searchApplied\) \{\s*pressEnter\(\)/);
   assert.match(mainSource, /SELLER_SEARCH_STAGE_TIMEOUT"\]/);
   assert.match(mainSource, /sellerWindow\.webContents\.stop\(\)/);
-  assert.match(mainSource, /brandMatchRatio: requestedBrandRatio\(current\)/);
+  assert.match(mainSource, /brandMatchRatio: requestedBrandRatio\(beforeSearch\)/);
 });
 
 test("each brand starts on a fresh seller product-search page and retries stale results", () => {
   assert.match(mainSource, /Every brand starts from a fresh product-search document/);
   assert.match(mainSource, /await sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\);/);
-  assert.match(mainSource, /const retryableStaleResult = \["BRAND_RESULT_MISMATCH", "SEARCH_RESULT_NOT_UPDATED", "SELLER_SEARCH_STAGE_TIMEOUT"\]/);
+  assert.match(mainSource, /const retryableStaleResult = \["EXACT_SELLER_SEARCH_FAILED", "BRAND_RESULT_MISMATCH", "SEARCH_RESULT_NOT_UPDATED", "SELLER_SEARCH_STAGE_TIMEOUT"\]/);
   assert.match(mainSource, /검색 결과가 갱신되지 않아/);
   assert.match(mainSource, /상품검색 화면을 새로 열고 같은 브랜드를 재시도합니다/);
   assert.match(mainSource, /이전 방식으로 브랜드 입력·검색 실행 중/);
