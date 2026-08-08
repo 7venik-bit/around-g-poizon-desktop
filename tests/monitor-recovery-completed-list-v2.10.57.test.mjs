@@ -58,8 +58,8 @@ test("all-complete stops activity only after the final renderer import drains", 
   assert.match(renderer, /brandMainAllComplete = true/);
 });
 
-test("release metadata is 2.10.96", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.96");
-  assert.equal(JSON.parse(lockSource).version, "2.10.96");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.96");
+test("release metadata is 2.10.97", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.97");
+  assert.equal(JSON.parse(lockSource).version, "2.10.97");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.97");
 });

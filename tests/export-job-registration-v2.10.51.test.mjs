@@ -15,7 +15,7 @@ test("export uses one click and falls back to download-center job confirmation",
   assert.match(main, /confirmationClickCount \+= 1/);
   assert.match(main, /remainingDialogs/);
   assert.match(main, /confirmationTimedOut: !requestAcknowledged/);
-  assert.match(main, /실패 처리하지 않고 다운로드센터의 새 작업번호로 최종 확인합니다/);
+  assert.match(main, /정상 작동 기준과 동일하게 전체 내보내기를 실행했습니다\. 다운로드센터의 새 작업번호를 확인합니다/);
   assert.doesNotMatch(main, /EXPORT_REQUEST_NOT_CONFIRMED/);
   assert.doesNotMatch(main, /exportRetried/);
 });
@@ -35,8 +35,8 @@ test("one failed brand does not delete the remaining automatic brand queue", () 
   assert.doesNotMatch(renderer, /나머지 선택 브랜드 자동 실행을 중단했습니다/);
 });
 
-test("release metadata is 2.10.96", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.96");
-  assert.equal(JSON.parse(lockSource).version, "2.10.96");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.96");
+test("release metadata is 2.10.97", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.97");
+  assert.equal(JSON.parse(lockSource).version, "2.10.97");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.97");
 });

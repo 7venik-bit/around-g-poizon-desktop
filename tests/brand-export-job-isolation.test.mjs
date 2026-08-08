@@ -70,7 +70,7 @@ test("brand search mismatch is explained and stops before export registration", 
   assert.match(mainSource, /SEARCH_RESULT_NOT_UPDATED: `\$\{label\} 검색 결과가 새로 바뀌지 않아 내보내기를 중단했습니다/);
 });
 
-test("seller brand search is restored to the v2.10.81 input and search service", () => {
+test("seller brand search follows the proven project artifact flow", () => {
   assert.doesNotMatch(mainSource, /async function applyExactSellerBrandSearch/);
   assert.doesNotMatch(mainSource, /EXACT_SELLER_SEARCH_FAILED/);
   assert.match(mainSource, /applyValue\(""\)/);
@@ -78,13 +78,16 @@ test("seller brand search is restored to the v2.10.81 input and search service",
   assert.match(mainSource, /input\.dispatchEvent\(new Event\("input"/);
   assert.match(mainSource, /input\.dispatchEvent\(new Event\("change"/);
   assert.match(mainSource, /const searchApplied = await waitForSearchUpdate|let searchApplied = await waitForSearchUpdate/);
-  assert.match(mainSource, /const narrowed = current\.totalCount/);
+  assert.doesNotMatch(mainSource, /const narrowed = current\.totalCount/);
+  assert.match(mainSource, /changed && hasRows && brandMatched/);
+  assert.match(mainSource, /keeps the visible "총 9,900건" label/);
+  assert.match(mainSource, /EXPORT_BUTTON_NOT_FOUND_AFTER_SORT/);
   assert.match(mainSource, /searchInputAttempt <= 4/);
   assert.match(mainSource, /SELLER_SEARCH_STAGE_TIMEOUT/);
 });
 
 test("the restored search service reopens the product-search page up to four times", () => {
-  assert.match(mainSource, /if \(!sellerWindow\.webContents\.getURL\(\)\.includes\("\/main\/goods\/search"\)\)/);
+  assert.match(mainSource, /await sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\);/);
   assert.match(mainSource, /검색 입력창 재탐색 \$\{searchInputAttempt\}\/4/);
   assert.match(mainSource, /if \(searchInputAttempt < 4\)/);
 });

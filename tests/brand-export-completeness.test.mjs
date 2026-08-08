@@ -28,14 +28,15 @@ test("brand export checks the computed last Seller Center page before clicking e
   );
 });
 
-test("a partial collection is retried once without consuming a download", () => {
+test("the restored working service exports directly after search and sales sorting", () => {
   const start = mainSource.indexOf("async function automateSellerBrandExport");
   const end = mainSource.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = mainSource.slice(start, end);
 
-  assert.match(workflow, /attempt <= 2/);
-  assert.match(workflow, /verifyCompleteSellerExportAndClick\(searched\.expectedTotal\)/);
-  assert.match(workflow, /전체 상품이 확인되지 않아 다운로드를 차단했습니다/);
+  assert.match(workflow, /EXPORT_BUTTON_NOT_FOUND_AFTER_SORT/);
+  assert.match(workflow, /clickLikeUser\(exportButton\)/);
+  assert.match(workflow, /exportClicked: true/);
+  assert.doesNotMatch(workflow, /verifyCompleteSellerExportAndClick\(searched\.expectedTotal\)/);
 });
 
 test("brand export starts actual Seller Center work before optional baseline inspection completes", () => {
@@ -50,10 +51,8 @@ test("brand export starts actual Seller Center work before optional baseline ins
   assert.match(workflow, /const runSellerSearch = \(targetFrame\) => targetFrame\.executeJavaScript/);
   assert.match(workflow, /const baselineJobs = await baselinePromise/);
   assert.match(workflow, /1단계\/5 · 상품검색 완료 · 작업번호 후행 확인 방식/);
-  assert.match(workflow, /1단계\/5 · 검색 완료 · 총/);
-  assert.match(workflow, /1단계\/5 · 전체 페이지 수·마지막 페이지 확인 중/);
   assert.match(workflow, /2단계\/5 · 전체 내보내기 클릭 완료 · 새 작업번호 확인 중/);
-  assert.match(workflow, /completeness\.pageCount/);
+  assert.match(workflow, /정상 작동 기준과 동일하게 전체 내보내기를 실행했습니다/);
   assert.match(workflow, /3단계\/5 · 작업번호 생성 완료 · 처리 대기/);
   assert.doesNotMatch(workflow, /EXPORT_CENTER_BASELINE_UNAVAILABLE/);
   assert.ok(

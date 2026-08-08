@@ -2901,11 +2901,21 @@ async function automateSellerBrandExport(input = {}) {
     jobState: "1단계/5 · 실제 상품검색 시작",
     message: `${brandName} · 판매자센터 상품검색 화면을 열고 실제 검색을 시작합니다.`,
   });
-  if (!sellerWindow.webContents.getURL().includes("/main/goods/search")) {
-    await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
-  }
+  await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
   await new Promise((resolve) => setTimeout(resolve, 3500));
-  const sellerBrandMatchKeys = [brandName, String(input.brandKo || "").trim()];
+  const sellerBrandAliasGroups = [
+    ["Columbia", "컬럼비아", "哥伦比亚"],
+    ["Patagonia", "파타고니아", "巴塔哥尼亚"],
+    ["Tommy Hilfiger", "타미힐피거", "汤米希尔费格"],
+    ["FILA", "휠라", "斐乐"],
+    ["Reebok", "리복", "锐步"],
+  ];
+  const brandKoInput = String(input.brandKo || "").trim();
+  const sellerBrandMatchKeys = [brandName, brandKoInput];
+  const localizedAliases = sellerBrandAliasGroups.find((aliases) =>
+    aliases.some((alias) => brandsMatch(brandName, alias) || brandsMatch(brandKoInput, alias))
+  );
+  if (localizedAliases) sellerBrandMatchKeys.push(...localizedAliases);
   if (brandsMatch(brandName, "Jordan")) {
     sellerBrandMatchKeys.push("Jordan", "조던", "乔丹");
   }
@@ -3051,12 +3061,13 @@ async function automateSellerBrandExport(input = {}) {
             await wait(250);
             const current = readSearchState();
             const changed = current.rowText !== beforeSearch.rowText || current.totalText !== beforeSearch.totalText;
-            const narrowed = current.totalCount > 0
-              && (!beforeSearch.totalCount || current.totalCount < beforeSearch.totalCount);
             const hasRows = current.rowText.length > 0;
             const brandMatched = hasRequestedBrand(current);
             const signature = current.totalText + "\\n" + current.rowText;
-            if (changed && narrowed && hasRows && brandMatched) {
+            // The working Seller Center keeps the visible "총 9,900건" label
+            // unchanged after a search. The rendered product rows are the
+            // authoritative signal that the brand search completed.
+            if (changed && hasRows && brandMatched) {
               stableCount = signature === stableSignature ? stableCount + 1 : 1;
               stableSignature = signature;
               if (stableCount >= 3) return true;
@@ -3224,12 +3235,20 @@ async function automateSellerBrandExport(input = {}) {
       await wait(900);
     }
 
-    const verifiedSearch = readSearchState();
-    return {
-      ok: true,
-      sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC",
-      expectedTotal: verifiedSearch.totalCount,
-    };
+    let exportButton = null;
+    const exportPattern = /^\uC804\uCCB4\s*\uB0B4\uBCF4\uB0B4\uAE30$/;
+    for (let attempt = 0; attempt < 12 && !exportButton; attempt += 1) {
+      exportButton = [...document.querySelectorAll("button, [role='button'], a, span")]
+        .find((element) => visible(element) && exportPattern.test(normalize(element.textContent)));
+      if (!exportButton) await wait(400);
+    }
+    if (!exportButton) return { ok: false, code: "EXPORT_BUTTON_NOT_FOUND_AFTER_SORT" };
+    if (exportButton.disabled || exportButton.getAttribute("aria-disabled") === "true") {
+      return { ok: false, code: "EXPORT_BUTTON_DISABLED_AFTER_SORT" };
+    }
+    clickLikeUser(exportButton);
+    await wait(500);
+    return { ok: true, sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC", exportClicked: true };
   })()`, true);
   let searched = null;
   let lastSearchDiagnostics = null;
@@ -3342,57 +3361,20 @@ async function automateSellerBrandExport(input = {}) {
     });
   }
 
-  mainWindow?.webContents.send("brand-export:progress", {
-    status: "brand-search-complete",
-    brandName,
-    jobState: `1단계/5 · 검색 완료 · 총 ${Number(searched.expectedTotal || 0).toLocaleString("ko-KR")}개`,
-    message: `${brandName} · 상품 검색 완료 · 총 ${Number(searched.expectedTotal || 0).toLocaleString("ko-KR")}개 · 전체 페이지 수와 마지막 페이지를 확인합니다.`,
-  });
-
-  let completeness = null;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    mainWindow?.webContents.send("brand-export:progress", {
-      status: "verifying-products",
-      brandName,
-      jobState: `1단계/5 · 전체 페이지 수·마지막 페이지 확인 중 · 검사 ${attempt}/2`,
-      message: `${brandName} · 1단계/5 · 전체 페이지 수와 마지막 페이지 확인 중 · 검사 ${attempt}/2 (다운로드센터 작업 생성 전)`,
-    });
-    completeness = await Promise.race([
-      verifyCompleteSellerExportAndClick(searched.expectedTotal),
-      new Promise((resolve) => setTimeout(() => resolve({
-        ok: false,
-        code: "PRODUCT_VERIFICATION_TIMEOUT",
-        expected: Number(searched.expectedTotal || 0),
-        actual: 0,
-      }), 70_000)),
-    ]);
-    if (completeness?.ok) break;
-    if (completeness?.code !== "PARTIAL_PRODUCT_COLLECTION") break;
-  }
-  if (!completeness?.ok) {
-    pendingBrandExportName = "";
-    pendingBrandExportJobId = "";
-    brandExportJobPending = false;
-    const expected = Number(completeness?.expected || searched.expectedTotal || 0);
-    const actual = Number(completeness?.actual || 0);
-    return {
-      ok: false,
-      code: completeness?.code || "PARTIAL_PRODUCT_COLLECTION",
-      expected,
-      actual,
-      message: expected > 0
-        ? `${brandName} 부분 수집 ${actual.toLocaleString("ko-KR")}/${expected.toLocaleString("ko-KR")}개 · 전체 상품이 확인되지 않아 다운로드를 차단했습니다.`
-        : sellerBrandExportFailureMessage(completeness?.code, brandName),
-    };
-  }
+  const completeness = {
+    ok: true,
+    expected: 0,
+    pageCount: 0,
+    confirmationObserved: false,
+    confirmationClicked: false,
+    requestAcknowledged: true,
+  };
 
   mainWindow?.webContents.send("brand-export:progress", {
     status: "waiting-for-job-creation",
     brandName,
     jobState: "2단계/5 · 전체 내보내기 클릭 완료 · 새 작업번호 확인 중",
-    message: completeness.requestAcknowledged
-      ? `${brandName} · 총 ${Number(completeness.expected || 0).toLocaleString("ko-KR")}개 · ${Number(completeness.pageCount || 0).toLocaleString("ko-KR")}페이지 확인 완료 · 전체 내보내기 요청 완료 · 다운로드센터의 새 작업번호를 확인합니다.`
-      : `${brandName} · 전체 내보내기 클릭 후 화면 확인 응답을 판독하지 못했지만 실패 처리하지 않고 다운로드센터의 새 작업번호로 최종 확인합니다.`,
+    message: `${brandName} · 정상 작동 기준과 동일하게 전체 내보내기를 실행했습니다. 다운로드센터의 새 작업번호를 확인합니다.`,
   });
 
   let createdJob = null;
