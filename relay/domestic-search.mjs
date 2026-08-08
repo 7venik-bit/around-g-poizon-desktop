@@ -150,11 +150,13 @@ export function countLinkedSearchProducts(html, articleNumber = "") {
   if (ids.size) return Math.min(ids.size, 99);
   const code = sanitizeDomesticQuery(articleNumber);
   if (!code || /상품이 없습니다|검색 결과가 없습니다|검색결과 없음/i.test(source)) return 0;
-  const occurrences = source.toLowerCase().split(code.toLowerCase()).length - 1;
-  return occurrences >= 2 ? 1 : 0;
+  // A query string is commonly repeated in page metadata and recommendation
+  // widgets.  It is not product evidence unless it is attached to a known
+  // product identifier/link shape.
+  return 0;
 }
 
-export function countRenderedChannelProducts(content, store = "", articleNumber = "", brand = "") {
+export function analyzeRenderedChannelProducts(content, store = "", articleNumber = "", brand = "") {
   const source = String(content || "");
   const articleCode = sanitizeDomesticQuery(articleNumber)
     .split(/\s+/)[0]
@@ -173,14 +175,18 @@ export function countRenderedChannelProducts(content, store = "", articleNumber 
       for (const label of scopedLabels) {
         const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const scoped = pageText.match(new RegExp(`${escaped}\\s*([\\d,]+)\\s*개`, "i"));
-        if (scoped) return Math.min(Number(scoped[1].replace(/,/g, "")) || 0, 9999);
+        // Channel totals are useful only as an authoritative zero. Positive
+        // tab totals can include recommendations or the unfiltered channel.
+        if (scoped && Number(scoped[1].replace(/,/g, "")) === 0) return { count: 0, products: [] };
       }
-      if (scopedLabels.length && /검색된\s*상품이\s*없습니다|검색\s*결과가\s*없습니다|상품이\s*없습니다/i.test(pageText)) return 0;
-      if (!articleCode) return 0;
+      if (/검색된\s*상품이\s*없습니다|검색\s*결과가\s*없습니다|상품이\s*없습니다|검색결과\s*없음/i.test(pageText)) {
+        return { count: 0, products: [] };
+      }
+      if (!articleCode) return { count: 0, products: [] };
       const seed = verifiedOfficialBrand(brand);
       const brandKeys = [brand, ...(seed?.aliases || [])].map(normalizeOfficialBrand).filter(Boolean);
       const requiresBrandMatch = /^(?:네이버|SSG|롯데온)/.test(String(store || "")) && brandKeys.length > 0;
-      const matchingProducts = new Set();
+      const matchingProducts = new Map();
       for (const card of cards) {
         const productUrl = String(card?.productUrl || "");
         const rawCardText = `${String(card?.text || "")} ${String(card?.markup || "")} ${productUrl}`;
@@ -204,11 +210,25 @@ export function countRenderedChannelProducts(content, store = "", articleNumber 
           if (!brandMatched) continue;
         }
         const productKey = String(productUrl || card?.text || "");
-        if (productKey) matchingProducts.add(productKey);
+        if (productKey && !matchingProducts.has(productKey)) {
+          matchingProducts.set(productKey, {
+            store,
+            id: productKey,
+            url: productUrl,
+            title: String(card?.title || card?.text || `${store} 검색 결과`).trim().slice(0, 240),
+            articleNumber,
+            imageUrl: String(card?.imageUrl || ""),
+            price: safeNumber(card?.price),
+            inStock: true,
+            sizes: [],
+            confidence: 90,
+            signals: { code: "일치", title: "판매처 결과", image: card?.imageUrl ? "확인" : "없음" },
+          });
+        }
       }
-      return matchingProducts.size;
+      return { count: matchingProducts.size, products: [...matchingProducts.values()] };
     } catch {
-      return 0;
+      return null;
     }
   }
   const channelLabel = String(store || "")
@@ -217,11 +237,15 @@ export function countRenderedChannelProducts(content, store = "", articleNumber 
   if (channelLabel) {
     const escaped = channelLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const labelled = source.match(new RegExp(`${escaped}\\s*([\\d,]+)\\s*개`, "i"));
-    if (labelled) return Math.min(Number(labelled[1].replace(/,/g, "")) || 0, 9999);
+    if (labelled) return { count: Math.min(Number(labelled[1].replace(/,/g, "")) || 0, 9999), products: [] };
   }
   const total = source.match(/(?:총|전체|검색결과)\s*([0-9,]+)\s*(?:개|건)/i);
-  if (total) return Math.min(Number(total[1].replace(/,/g, "")) || 0, 9999);
-  return countLinkedSearchProducts(source, articleNumber);
+  if (total) return { count: Math.min(Number(total[1].replace(/,/g, "")) || 0, 9999), products: [] };
+  return { count: countLinkedSearchProducts(source, articleNumber), products: [] };
+}
+
+export function countRenderedChannelProducts(content, store = "", articleNumber = "", brand = "") {
+  return analyzeRenderedChannelProducts(content, store, articleNumber, brand)?.count ?? null;
 }
 
 function normalizeSizes(...candidates) {
