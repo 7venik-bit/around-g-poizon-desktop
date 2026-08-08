@@ -810,6 +810,8 @@ function officialDomainAuditSnapshot(registry, extra = {}) {
     processed: Number(saved.processed || 0),
     blocked: Boolean(saved.blocked),
     lastError: String(saved.lastError || ""),
+    phase: String(saved.phase || ""),
+    attempt: Number(saved.attempt || 0),
     updatedAt: String(saved.updatedAt || ""),
     ...officialDomainRegistrySummary(registry),
     ...extra,
@@ -832,6 +834,7 @@ function createOfficialDomainAuditWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: false,
     },
   });
   auditWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -840,7 +843,22 @@ function createOfficialDomainAuditWindow() {
 }
 
 async function loadAuditPage(auditWindow, url) {
-  await auditWindow.loadURL(url);
+  let timeout;
+  try {
+    await Promise.race([
+      auditWindow.loadURL(url),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("OFFICIAL_DOMAIN_PAGE_TIMEOUT")), OFFICIAL_DOMAIN_AUDIT_PAGE_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (error) {
+    if (String(error?.message || error) === "OFFICIAL_DOMAIN_PAGE_TIMEOUT") {
+      auditWindow.webContents.stop();
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   await wait(900);
   return auditWindow.webContents.executeJavaScript(`(() => {
     const text = String(document.body?.innerText || "").slice(0, 20000);
@@ -892,10 +910,11 @@ async function compareOfficialBrandLogos(sourceLogoUrl, candidateLogoUrls) {
   };
 }
 
-async function auditOneOfficialDomain(auditWindow, record) {
+async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
   const brand = record.brandKo || record.brandName;
   let discovery;
   try {
+    onPhase("naver_search");
     discovery = await loadAuditPage(auditWindow, officialDomainDiscoveryUrl(brand, record.brandName));
   } catch {
     return { record: failedOfficialDomainAuditRecord(record, "DISCOVERY_LOAD_FAILED"), blocked: false };
@@ -904,6 +923,7 @@ async function auditOneOfficialDomain(auditWindow, record) {
     return { record: failedOfficialDomainAuditRecord(record, "DISCOVERY_BLOCKED"), blocked: true };
   }
   const discoveryLogoCandidates = (discovery.candidates || []).filter((candidate) => candidate.imageUrl).slice(0, 8);
+  onPhase("logo_compare");
   const discoveryLogoScores = await Promise.all(discoveryLogoCandidates.map(async (candidate) => ({
     candidate,
     comparison: await compareOfficialBrandLogos(record.brandLogoUrl, [candidate.imageUrl]),
@@ -918,6 +938,7 @@ async function auditOneOfficialDomain(auditWindow, record) {
   }
   for (const candidate of candidates) {
     try {
+      onPhase("official_site");
       const page = await loadAuditPage(auditWindow, candidate.url);
       if (page.blocked) continue;
       const logoComparison = await compareOfficialBrandLogos(record.brandLogoUrl, [candidate.imageUrl, ...(page.logoUrls || [])]);
@@ -961,23 +982,43 @@ async function runOfficialDomainAudit() {
   try {
     await persistOfficialDomainAudit(registry, { state: "running", currentBrand: "", processed: 0, blocked: false, lastError: "" });
     const auditQueue = officialDomainAuditQueue(registry);
-    for (const index of auditQueue) {
-      if (officialDomainAuditStopRequested) break;
+    const deferredIndices = [];
+    const processAuditIndex = async (index, attempt) => {
+      if (officialDomainAuditStopRequested) return null;
       const record = registry[index];
-      if (record.status !== OFFICIAL_DOMAIN_STATUS.PENDING) continue;
+      if (record.status !== OFFICIAL_DOMAIN_STATUS.PENDING) return;
       const currentBrand = record.brandKo || record.brandName;
-      sendOfficialDomainAuditProgress(registry, { state: "running", currentBrand, processed, blocked: false, lastError: "" });
-      const result = await auditOneOfficialDomain(officialDomainAuditWindow, record);
+      const progress = (phase) => sendOfficialDomainAuditProgress(registry, {
+        state: "running", currentBrand, processed, blocked: false, lastError: "", phase, attempt,
+      });
+      progress(attempt === 1 ? "starting" : "retrying");
+      const result = await auditOneOfficialDomain(officialDomainAuditWindow, record, progress);
       registry[index] = result.record;
       processed += 1;
       blocked = result.blocked;
       lastError = result.record.lastVerificationError || "";
       if (processed % 5 === 0 || blocked) {
-        await persistOfficialDomainAudit(registry, { state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError });
+        await persistOfficialDomainAudit(registry, { state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError, phase: blocked ? "security_wait" : "saved", attempt });
       }
-      sendOfficialDomainAuditProgress(registry, { state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError });
-      if (blocked) break;
+      sendOfficialDomainAuditProgress(registry, { state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError, phase: blocked ? "security_wait" : "saved", attempt });
+      return result;
+    };
+    for (const index of auditQueue) {
+      if (officialDomainAuditStopRequested) break;
+      const result = await processAuditIndex(index, 1);
+      if (result?.blocked) break;
+      if (result?.record?.status === OFFICIAL_DOMAIN_STATUS.PENDING) deferredIndices.push(index);
       await wait(4_000);
+    }
+    if (!blocked && !officialDomainAuditStopRequested && deferredIndices.length) {
+      if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) officialDomainAuditWindow.destroy();
+      officialDomainAuditWindow = createOfficialDomainAuditWindow();
+      for (const index of deferredIndices) {
+        if (officialDomainAuditStopRequested) break;
+        const result = await processAuditIndex(index, 2);
+        if (result?.blocked) break;
+        await wait(4_000);
+      }
     }
   } finally {
     if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) officialDomainAuditWindow.destroy();
@@ -1013,6 +1054,7 @@ const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 const UPDATE_RETRY_INTERVAL_MS = 15 * 60 * 1_000;
 const UPDATE_INSTALL_RETRY_MS = 30 * 1_000;
 const OFFICIAL_DOMAIN_AUDIT_COOLDOWN_MS = 10 * 60 * 1_000;
+const OFFICIAL_DOMAIN_AUDIT_PAGE_TIMEOUT_MS = 20_000;
 
 function scheduleUpdateCheck(delayMs = UPDATE_CHECK_INTERVAL_MS) {
   if (!app.isPackaged || updateReady) return;

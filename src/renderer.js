@@ -1010,13 +1010,23 @@ function renderOfficialDomainAudit(audit = {}) {
   const button = $("#official-domain-audit-toggle");
   if (!status || !button) return;
   const resumeTime = audit.resumeAt ? new Date(audit.resumeAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) : "";
+  const phaseLabel = {
+    starting: "검색 준비 중",
+    naver_search: "네이버 검색 중",
+    logo_compare: "브랜드 로고 확인 중",
+    official_site: "공식 홈페이지 연결 확인 중",
+    retrying: "재시도 중",
+    saved: "검사 결과 저장 중",
+    security_wait: "보안 확인 대기 중",
+  }[String(audit.phase || "")] || "";
   const stateLabel = audit.state === "cooldown" ? `보안 확인 대기 · ${resumeTime || "10분 후"} 자동 재개`
     : audit.state === "blocked" ? "보안 확인으로 일시 정지"
     : audit.state === "paused" ? "일시 정지"
       : audit.state === "completed_with_pending" ? "1차 전수검사 완료·미확정 검토 필요"
         : audit.state === "completed" ? "전체 검증 완료"
           : audit.running ? "검증 진행 중" : "대기";
-  const current = audit.currentBrand ? ` · 현재 ${audit.currentBrand}` : "";
+  const attempt = Number(audit.attempt || 0);
+  const current = audit.currentBrand ? ` · 현재 ${audit.currentBrand}${phaseLabel ? ` · ${phaseLabel}` : ""}${attempt === 2 ? " · 2차 확인" : ""}` : "";
   status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%) · 공식몰 검색 확인 ${verified.toLocaleString("ko-KR")} · 검색 미지원 ${unsupported.toLocaleString("ko-KR")} · 미확정 ${pending.toLocaleString("ko-KR")}${current}`;
   button.dataset.running = audit.running ? "true" : "false";
   button.textContent = audit.running ? "검증 일시 정지" : inspected ? "검증 계속" : "전체 검증 시작";
