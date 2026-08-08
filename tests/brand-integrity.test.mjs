@@ -25,6 +25,11 @@ test("matches known localized aliases", () => {
   assert.equal(brandsMatch("Nike_Jordan", "Jordan"), true);
   assert.equal(brandsMatch("Jordan", "Nike"), false);
   assert.equal(brandsMatch("Crocs", "크록스"), true);
+  assert.equal(brandsMatch("Columbia", "컬럼비아"), true);
+  assert.equal(brandsMatch("Patagonia", "파타고니아"), true);
+  assert.equal(brandsMatch("Tommy Hilfiger", "타미힐피거"), true);
+  assert.equal(brandsMatch("FILA", "휠라"), true);
+  assert.equal(brandsMatch("Reebok", "리복"), true);
 });
 
 test("blocks a Jordan workbook downloaded for Crocs", () => {

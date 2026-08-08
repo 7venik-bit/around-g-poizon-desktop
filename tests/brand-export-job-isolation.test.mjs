@@ -81,6 +81,11 @@ test("seller brand search restores React input and accepts verified brand rows w
   assert.match(mainSource, /searchVerified: true/);
   assert.match(mainSource, /sortVerified: true/);
   assert.match(mainSource, /브랜드 검색·30일 판매량 내림차순 확인 완료/);
+  assert.match(mainSource, /\["Columbia", "컬럼비아", "哥伦比亚"\]/);
+  assert.match(mainSource, /\["Patagonia", "파타고니아", "巴塔哥尼亚"\]/);
+  assert.match(mainSource, /\["Tommy Hilfiger", "타미힐피거", "汤米希尔费格"\]/);
+  assert.match(mainSource, /\["FILA", "휠라", "斐乐"\]/);
+  assert.match(mainSource, /\["Reebok", "리복", "锐步"\]/);
 });
 
 test("each brand starts on a fresh seller product-search page and retries stale results", () => {
