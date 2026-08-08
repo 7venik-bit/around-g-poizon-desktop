@@ -2900,9 +2900,10 @@ async function automateSellerBrandExport(input = {}) {
     jobState: "1단계/5 · 실제 상품검색 시작",
     message: `${brandName} · 판매자센터 상품검색 화면을 열고 실제 검색을 시작합니다.`,
   });
-  if (!sellerWindow.webContents.getURL().includes("/main/goods/search")) {
-    await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
-  }
+  // Every brand starts from a fresh product-search document. Reusing the same
+  // React page can keep the previous brand's internal form state even when the
+  // visible input value has changed, so the next Search click does nothing.
+  await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
   await new Promise((resolve) => setTimeout(resolve, 3500));
   const sellerBrandMatchKeys = [brandName, String(input.brandKo || "").trim()];
   if (brandsMatch(brandName, "Jordan")) {
@@ -3317,12 +3318,15 @@ async function automateSellerBrandExport(input = {}) {
       }
       searched = result;
     }
-    if (searched?.ok || (searched?.step && searched.step !== "SEARCH_INPUT_NOT_FOUND")) break;
+    const retryableStaleResult = ["BRAND_RESULT_MISMATCH", "SEARCH_RESULT_NOT_UPDATED"].includes(searched?.step);
+    if (searched?.ok || (searched?.step && searched.step !== "SEARCH_INPUT_NOT_FOUND" && !retryableStaleResult)) break;
     mainWindow?.webContents.send("brand-export:progress", {
       status: "retrying-search-input",
       brandName,
-      jobState: `1단계/5 · 검색 입력창 재탐색 ${searchInputAttempt}/4`,
-      message: `${brandName} · 판매자센터 검색 입력창이 아직 표시되지 않아 상품검색 화면을 다시 열고 재시도합니다. (${searchInputAttempt}/4)`,
+      jobState: `1단계/5 · 상품검색 화면 초기화·재시도 ${searchInputAttempt}/4`,
+      message: retryableStaleResult
+        ? `${brandName} · 검색 결과가 갱신되지 않아 상품검색 화면을 새로 열고 같은 브랜드를 재시도합니다. (${searchInputAttempt}/4)`
+        : `${brandName} · 판매자센터 검색 입력창이 아직 표시되지 않아 상품검색 화면을 다시 열고 재시도합니다. (${searchInputAttempt}/4)`,
     });
     if (searchInputAttempt < 4) {
       await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => null);

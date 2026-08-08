@@ -78,3 +78,10 @@ test("seller brand search accepts changed results without requiring a lower tota
   assert.match(mainSource, /const exactProductSearchHint =/);
   assert.match(mainSource, /const sameContainer = Boolean\(inputForm && inputForm\.contains\(element\)\)/);
 });
+
+test("each brand starts on a fresh seller product-search page and retries stale results", () => {
+  assert.match(mainSource, /Every brand starts from a fresh product-search document/);
+  assert.match(mainSource, /await sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\);/);
+  assert.match(mainSource, /const retryableStaleResult = \["BRAND_RESULT_MISMATCH", "SEARCH_RESULT_NOT_UPDATED"\]/);
+  assert.match(mainSource, /검색 결과가 갱신되지 않아 상품검색 화면을 새로 열고 같은 브랜드를 재시도합니다/);
+});
