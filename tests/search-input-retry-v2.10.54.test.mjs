@@ -22,6 +22,8 @@ test("seller search input is retried across frames and localized controls", () =
   assert.match(main, /insertText\(brandName\)/);
   assert.match(main, /submittedBy = "actual-mouse"/);
   assert.match(main, /submittedBy = "actual-enter"/);
+  assert.match(main, /BRAND_INPUT_NOT_APPLIED/);
+  assert.match(main, /sellerWindow\.webContents\.focus\(\)/);
 });
 
 test("a failed brand keeps the remaining selected brand queue", () => {
@@ -30,8 +32,8 @@ test("a failed brand keeps the remaining selected brand queue", () => {
   assert.doesNotMatch(renderer, /나머지 선택 브랜드 자동 실행을 중단했습니다/);
 });
 
-test("release metadata is 2.10.88", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.88");
-  assert.equal(JSON.parse(lockSource).version, "2.10.88");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.88");
+test("release metadata is 2.10.89", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.89");
+  assert.equal(JSON.parse(lockSource).version, "2.10.89");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.89");
 });
