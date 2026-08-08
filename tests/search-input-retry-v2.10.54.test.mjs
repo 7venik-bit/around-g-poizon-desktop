@@ -22,6 +22,7 @@ test("seller search input is retried across frames and localized controls", () =
   assert.match(main, /applyExactSellerBrandSearch\(candidate\.frame, sellerBrandMatchKeys\)/);
   assert.match(main, /EXACT_SELLER_SEARCH_FAILED/);
   assert.match(main, /실제 브랜드 검색 결과 확인/);
+  assert.match(main, /RESTORED_MAIN_PRODUCT_SEARCH/);
 });
 
 test("a failed brand keeps the remaining selected brand queue", () => {
@@ -30,8 +31,8 @@ test("a failed brand keeps the remaining selected brand queue", () => {
   assert.doesNotMatch(renderer, /나머지 선택 브랜드 자동 실행을 중단했습니다/);
 });
 
-test("release metadata is 2.10.94", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.94");
-  assert.equal(JSON.parse(lockSource).version, "2.10.94");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.94");
+test("release metadata is 2.10.95", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.95");
+  assert.equal(JSON.parse(lockSource).version, "2.10.95");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.95");
 });
