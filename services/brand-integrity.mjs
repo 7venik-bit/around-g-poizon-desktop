@@ -6,6 +6,11 @@ const KNOWN_ALIASES = [
   ["newbalance", "뉴발란스", "新百伦"],
   ["descente", "데상트", "迪桑特"],
   ["crocs", "크록스", "卡骆驰"],
+  ["columbia", "컬럼비아", "哥伦比亚"],
+  ["patagonia", "파타고니아", "巴塔哥尼亚"],
+  ["tommyhilfiger", "타미힐피거", "汤米希尔费格"],
+  ["fila", "휠라", "斐乐"],
+  ["reebok", "리복", "锐步"],
 ];
 
 export function normalizeBrandName(value = "") {

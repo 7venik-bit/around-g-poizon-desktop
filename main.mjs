@@ -2906,7 +2906,19 @@ async function automateSellerBrandExport(input = {}) {
   // visible input value has changed, so the next Search click does nothing.
   await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
   await new Promise((resolve) => setTimeout(resolve, 3500));
-  const sellerBrandMatchKeys = [brandName, String(input.brandKo || "").trim()];
+  const sellerBrandAliasGroups = [
+    ["Columbia", "컬럼비아", "哥伦比亚"],
+    ["Patagonia", "파타고니아", "巴塔哥尼亚"],
+    ["Tommy Hilfiger", "타미힐피거", "汤米希尔费格"],
+    ["FILA", "휠라", "斐乐"],
+    ["Reebok", "리복", "锐步"],
+  ];
+  const brandKoInput = String(input.brandKo || "").trim();
+  const sellerBrandMatchKeys = [brandName, brandKoInput];
+  const localizedAliases = sellerBrandAliasGroups.find((aliases) =>
+    aliases.some((alias) => brandsMatch(brandName, alias) || brandsMatch(brandKoInput, alias))
+  );
+  if (localizedAliases) sellerBrandMatchKeys.push(...localizedAliases);
   if (brandsMatch(brandName, "Jordan")) {
     sellerBrandMatchKeys.push("Jordan", "조던", "乔丹");
   }
@@ -3330,7 +3342,7 @@ async function automateSellerBrandExport(input = {}) {
   })()`, true);
   let searched = null;
   let lastSearchDiagnostics = null;
-  for (let searchInputAttempt = 1; searchInputAttempt <= 4; searchInputAttempt += 1) {
+  for (let searchInputAttempt = 1; searchInputAttempt <= 2; searchInputAttempt += 1) {
     const frames = sellerWindowFrames();
     const frameCandidates = [];
     for (const frame of frames) {
@@ -3385,7 +3397,7 @@ async function automateSellerBrandExport(input = {}) {
         new Promise((resolve) => setTimeout(() => resolve({
           ok: false,
           step: "SELLER_SEARCH_STAGE_TIMEOUT",
-        }), 70_000)),
+        }), 30_000)),
       ]).catch((error) => ({
         ok: false,
         step: "SELLER_SEARCH_SCRIPT_ERROR",
@@ -3408,12 +3420,12 @@ async function automateSellerBrandExport(input = {}) {
     mainWindow?.webContents.send("brand-export:progress", {
       status: "retrying-search-input",
       brandName,
-      jobState: `1단계/5 · 상품검색 화면 초기화·재시도 ${searchInputAttempt}/4`,
+      jobState: `1단계/5 · 상품검색 화면 초기화·재시도 ${searchInputAttempt}/2`,
       message: retryableStaleResult
-        ? `${brandName} · 검색 결과가 갱신되지 않아 상품검색 화면을 새로 열고 같은 브랜드를 재시도합니다. (${searchInputAttempt}/4)`
-        : `${brandName} · 판매자센터 검색 입력창이 아직 표시되지 않아 상품검색 화면을 다시 열고 재시도합니다. (${searchInputAttempt}/4)`,
+        ? `${brandName} · 검색 결과가 갱신되지 않아 상품검색 화면을 새로 열고 같은 브랜드를 재시도합니다. (${searchInputAttempt}/2)`
+        : `${brandName} · 판매자센터 검색 입력창이 아직 표시되지 않아 상품검색 화면을 다시 열고 재시도합니다. (${searchInputAttempt}/2)`,
     });
-    if (searchInputAttempt < 4) {
+    if (searchInputAttempt < 2) {
       await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => null);
       await new Promise((resolve) => setTimeout(resolve, 2500 + searchInputAttempt * 1000));
     }
