@@ -85,6 +85,10 @@ test("each brand starts on a fresh seller product-search page and retries stale 
   assert.match(mainSource, /const retryableStaleResult = \["BRAND_RESULT_MISMATCH", "SEARCH_RESULT_NOT_UPDATED"\]/);
   assert.match(mainSource, /검색 응답이 확인되지 않아 상품검색 화면을 새로 열고 실제 입력 방식으로 재시도합니다/);
   assert.match(mainSource, /sellerWindow\.webContents\.insertText\(brandName\)/);
+  assert.match(mainSource, /type: "mouseDown"/);
+  assert.match(mainSource, /type: "mouseUp"/);
+  assert.match(mainSource, /keyCode: "ENTER"/);
+  assert.match(mainSource, /__aroundgSearchResourceBaseline/);
   assert.match(mainSource, /SELLER_SECURITY_CHECK_REQUIRED/);
   assert.match(mainSource, /searchRequestObserved/);
 });
