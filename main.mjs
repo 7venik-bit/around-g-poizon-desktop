@@ -3091,7 +3091,11 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
     input.scrollIntoView({ block: "center", inline: "center" });
     input.focus();
     input.select?.();
-    return { ok: true };
+    return {
+      ok: true,
+      searchX: Math.round(buttonRect.left + buttonRect.width / 2),
+      searchY: Math.round(buttonRect.top + buttonRect.height / 2),
+    };
   })()`, true).catch(() => ({ ok: false, step: "KEYBOARD_FOCUS_FAILED" }));
   if (!focused?.ok || !sellerWindow || sellerWindow.isDestroyed()) return focused;
   sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
@@ -3103,7 +3107,7 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   // on a fixed deadline instead of blocking the entire brand queue forever.
   void sellerWindow.webContents.insertText(String(brandName));
   await new Promise((resolve) => setTimeout(resolve, 1200));
-  return Promise.race([
+  const verified = await Promise.race([
     targetFrame.executeJavaScript(`(() => {
     const active = document.activeElement;
     const value = String(active?.value || "").trim();
@@ -3118,6 +3122,17 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
       step: "REAL_KEYBOARD_INPUT_VERIFY_TIMEOUT",
     }), 3_000)),
   ]).catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_VERIFY_FAILED" }));
+  if (!verified?.ok || !sellerWindow || sellerWindow.isDestroyed()) return verified;
+  const x = Number(focused.searchX);
+  const y = Number(focused.searchY);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return { ...verified, ok: false, step: "REAL_SEARCH_BUTTON_COORDINATES_MISSING" };
+  }
+  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  return { ...verified, submitted: true, step: "REAL_SEARCH_BUTTON_CLICKED" };
 }
 
 async function automateSellerBrandExport(input = {}) {
@@ -3345,9 +3360,13 @@ async function automateSellerBrandExport(input = {}) {
         const requestedBrandRatio = (state) => {
           const rows = Array.isArray(state?.rowTexts) ? state.rowTexts.filter(Boolean) : [];
           if (!rows.length || !requestedBrandKeys.length) return 0;
-          const matches = rows.filter((row) =>
-            requestedBrandKeys.some((key) => normalize(row).includes(key))
-          ).length;
+          const matches = rows.filter((row) => requestedBrandKeys.some((key) => {
+            const normalizedKey = normalize(key).toLocaleLowerCase();
+            if (normalizedKey.length > 3) return normalize(row).toLocaleLowerCase().includes(normalizedKey);
+            const tokens = String(row || "").toLocaleLowerCase()
+              .split(/[^a-z0-9가-힣]+/).filter(Boolean);
+            return tokens.includes(String(key || "").trim().toLocaleLowerCase());
+          })).length;
           return matches / rows.length;
         };
         const hasRequestedBrand = (state) => requestedBrandRatio(state) >= 0.8;

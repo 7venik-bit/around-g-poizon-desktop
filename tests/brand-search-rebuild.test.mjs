@@ -29,6 +29,10 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.doesNotMatch(workflow, /\.\.\.officialAliases/);
   assert.ok(workflow.includes(String.raw`const pageSizePattern = /^20\\s*건\\s*\\/\\s*페이지$/i;`));
   assert.ok(workflow.includes(String.raw`/\\d+\\s*건\\s*\\/\\s*페이지/i.test(textOf(element))`));
+  assert.match(main, /step: "REAL_SEARCH_BUTTON_CLICKED"/);
+  assert.match(main, /sendInputEvent\(\{ type: "mouseDown", button: "left"/);
+  assert.match(workflow, /normalizedKey\.length > 3/);
+  assert.match(workflow, /tokens\.includes/);
 });
 
 test("selected brands run sequentially with a twenty-minute limit", () => {
