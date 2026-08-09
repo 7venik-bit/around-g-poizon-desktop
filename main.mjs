@@ -2712,7 +2712,7 @@ function currentSellerProductFrame() {
 function sellerBrandExportFailureMessage(code = "", brandName = "") {
   const label = String(brandName || "선택 브랜드").trim();
   const messages = {
-    SEARCH_INPUT_NOT_FOUND: `${label} 상품검색 입력창이 4회 재시도 후에도 표시되지 않았습니다. 판매자센터 화면 로딩 또는 로그인 상태를 확인해 주세요.`,
+    SEARCH_INPUT_NOT_FOUND: `${label} 상품검색 입력창이 표시되지 않았습니다. 시간 간격을 두고 다시 진행합니다.`,
     SELLER_LOGIN_REQUIRED: `${label} 작업 중 판매자센터 로그인 화면이 확인됐습니다. 로그인 후 다시 실행해 주세요.`,
     SELLER_SEARCH_SCRIPT_ERROR: `${label} 상품검색 화면 제어 중 오류가 발생했습니다. 상품검색 화면을 다시 열어 재시도해 주세요.`,
     SELLER_SEARCH_STAGE_TIMEOUT: `${label} 상품검색 단계가 40초 안에 끝나지 않아 페이지를 초기화했습니다. 이전 검색 작업은 종료되었습니다.`,
@@ -3508,7 +3508,9 @@ async function automateSellerBrandExport(input = {}) {
             // fast response the first snapshot can already be the filtered
             // result, so matching rows are authoritative even when the DOM no
             // longer differs from that snapshot.
-            if (hasRows && brandMatched) {
+            const requestedInputConfirmed = normalize(input.value).toLocaleLowerCase()
+              === normalize(${JSON.stringify(brandName)}).toLocaleLowerCase();
+            if (hasRows && (brandMatched || (alreadySubmitted && requestedInputConfirmed))) {
               stableCount = signature === stableSignature ? stableCount + 1 : 1;
               stableSignature = signature;
               if (stableCount >= 3) return true;
@@ -3749,13 +3751,13 @@ async function automateSellerBrandExport(input = {}) {
   })()`, true);
   let searched = null;
   let lastSearchDiagnostics = null;
-  for (let searchInputAttempt = 1; searchInputAttempt <= 4; searchInputAttempt += 1) {
+  for (let searchInputAttempt = 1; searchInputAttempt <= 1; searchInputAttempt += 1) {
     const frames = sellerWindowFrames();
     const frameCandidates = [];
     mainWindow?.webContents.send("brand-export:progress", {
       status: "probing-search-frame",
       brandName,
-      jobState: `1단계/5 · 상품검색 입력창 연결 중 · ${searchInputAttempt}/4`,
+      jobState: "1단계/5 · 상품검색 입력창 연결 중",
       message: `${brandName} · 응답하지 않는 POIZON 내부 프레임은 4초 후 건너뜁니다.`,
     });
     const probedFrames = await Promise.all(frames.map(async (frame) => {
@@ -3815,6 +3817,11 @@ async function automateSellerBrandExport(input = {}) {
           ? `${brandName} · 판매자센터 상단 상품검색 입력을 확인하고 검색 및 입찰을 실행합니다.`
           : `${brandName} · 실제 키보드 입력이 확인되지 않아 기존 입력 방식으로 즉시 재시도합니다.`,
       });
+      if (!realKeyboardInput?.ok) {
+        searched = realKeyboardInput || { ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" };
+        lastSearchDiagnostics = candidate.probe;
+        break;
+      }
       const result = await Promise.race([
         runSellerSearch(candidate.frame, Boolean(realKeyboardInput?.submitted)),
         new Promise((resolve) => setTimeout(() => resolve({
@@ -3839,16 +3846,6 @@ async function automateSellerBrandExport(input = {}) {
       searched = result;
     }
     if (searched?.ok || (searched?.step && searched.step !== "SEARCH_INPUT_NOT_FOUND")) break;
-    mainWindow?.webContents.send("brand-export:progress", {
-      status: "retrying-search-input",
-      brandName,
-      jobState: `1단계/5 · 검색 입력창 재탐색 ${searchInputAttempt}/4`,
-      message: `${brandName} · 판매자센터 검색 입력창이 아직 표시되지 않아 상품검색 화면을 다시 열고 재시도합니다. (${searchInputAttempt}/4)`,
-    });
-    if (searchInputAttempt < 4) {
-      await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => null);
-      await new Promise((resolve) => setTimeout(resolve, 2500 + searchInputAttempt * 1000));
-    }
   }
   if (cleared()) {
     brandExportJobPending = false;

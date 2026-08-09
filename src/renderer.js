@@ -20,6 +20,8 @@ let brandExportFailureCount = 0;
 let brandBatchTotal = 0;
 const brandBatchStates = new Map();
 const BRAND_AUTOMATION_TIMEOUT_MS = 20 * 60 * 1000;
+const BRAND_INPUT_RETRY_DELAY_MS = 60 * 1000;
+const BRAND_INPUT_RETRY_LIMIT = 2;
 let activeExportBrand = null;
 let brandSelectionBusy = false;
 const brandExportJobs = new Map();
@@ -822,6 +824,16 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     return;
   }
   activeExportBrand = brandExportQueue.shift();
+  const retryWaitMs = Math.max(0, Number(activeExportBrand?.retryAfter || 0) - Date.now());
+  if (retryWaitMs > 0) {
+    brandExportQueue.unshift(activeExportBrand);
+    activeExportBrand = null;
+    brandSelectionBusy = true;
+    $("#brand-status").className = "status";
+    $("#brand-status").textContent = `입력 실패 브랜드를 ${Math.ceil(retryWaitMs / 1000)}초 후 다시 진행합니다.`;
+    setTimeout(() => exportNextSelectedBrand(generation), retryWaitMs);
+    return;
+  }
   brandSelectionBusy = true;
   selectedBrandId = Number(activeExportBrand.id);
   retainSelectedBrandName(activeExportBrand.name);
@@ -854,12 +866,30 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     recordBrandSelection(activeExportBrand, "데이터 가져오기 실패");
     const failedBrandName = activeExportBrand?.name || "선택 브랜드";
     const failureCode = String(automation?.code || "");
+    const inputRetryCodes = new Set([
+      "SEARCH_INPUT_NOT_FOUND",
+      "REAL_KEYBOARD_INPUT_FAILED",
+      "REAL_KEYBOARD_INPUT_VERIFY_TIMEOUT",
+      "REAL_KEYBOARD_INPUT_VERIFY_FAILED",
+      "BRAND_INPUT_NOT_APPLIED",
+    ]);
+    const retryCount = Number(activeExportBrand?.retryCount || 0);
+    const shouldRetryInput = inputRetryCodes.has(failureCode) && retryCount < BRAND_INPUT_RETRY_LIMIT;
+    if (shouldRetryInput) {
+      brandExportQueue.push({
+        ...activeExportBrand,
+        retryCount: retryCount + 1,
+        retryAfter: Date.now() + BRAND_INPUT_RETRY_DELAY_MS,
+      });
+    }
     const remainingCount = brandExportQueue.length;
-    brandExportFailureCount += 1;
+    if (!shouldRetryInput) brandExportFailureCount += 1;
     const failureReason = String(automation?.diagnostics?.reason || "").trim();
     updateBrandBatchState(
       failedBrandName,
-      `실패 · ${failureCode || "자동화 오류"}${failureReason ? ` · ${failureReason}` : ""}`,
+      shouldRetryInput
+        ? `입력 지연 · 60초 후 재진행 ${retryCount + 1}/${BRAND_INPUT_RETRY_LIMIT}`
+        : `실패 · ${failureCode || "자동화 오류"}${failureReason ? ` · ${failureReason}` : ""}`,
     );
     activeExportBrand = null;
     if (failureCode === "SELLER_LOGIN_REQUIRED") {
@@ -874,8 +904,10 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     }
     brandSelectionBusy = remainingCount > 0;
     renderBrandCards($("#brand-filter")?.value || "");
-    $("#brand-status").className = "status error";
-    $("#brand-status").textContent = remainingCount
+    $("#brand-status").className = shouldRetryInput ? "status" : "status error";
+    $("#brand-status").textContent = shouldRetryInput
+      ? `${failedBrandName} 입력이 확인되지 않아 60초 후 다시 진행합니다. 다른 선택 브랜드를 먼저 처리합니다.`
+      : remainingCount
       ? `${failedBrandName} 작업 실패 · ${automation?.message || "판매자센터 자동화에 실패했습니다."} · 다음 ${remainingCount}개 브랜드 작업을 계속합니다.`
       : `${failedBrandName} 작업 실패 · ${automation?.message || "판매자센터 자동화에 실패했습니다."}`;
     if (brandExportJobs.size) {
