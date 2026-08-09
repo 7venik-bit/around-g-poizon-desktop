@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeThem
 import { mkdirSync } from "node:fs";
 import { appendFile, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { execFile } from "node:child_process";
 import { readSheet } from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
 import { readFirstDataSheet } from "./services/excel-reader.mjs";
@@ -3054,6 +3055,53 @@ async function clickSellerDownloadCenterShortcut(targetFrame) {
   })()`, true);
 }
 
+function moveWindowsCursorAndClick(screenX, screenY) {
+  if (process.platform !== "win32") return Promise.resolve({ ok: false, reason: "WINDOWS_ONLY" });
+  const x = Math.round(Number(screenX));
+  const y = Math.round(Number(screenY));
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return Promise.resolve({ ok: false, reason: "INVALID_SCREEN_COORDINATES" });
+  }
+  const script = `
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class AroundGCursor {
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+}
+'@
+$point = New-Object AroundGCursor+POINT
+[AroundGCursor]::GetCursorPos([ref]$point) | Out-Null
+$startX = $point.X
+$startY = $point.Y
+$targetX = ${x}
+$targetY = ${y}
+for ($step = 1; $step -le 18; $step++) {
+  $nextX = [Math]::Round($startX + (($targetX - $startX) * $step / 18))
+  $nextY = [Math]::Round($startY + (($targetY - $startY) * $step / 18))
+  [AroundGCursor]::SetCursorPos($nextX, $nextY) | Out-Null
+  Start-Sleep -Milliseconds 15
+}
+[AroundGCursor]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+Start-Sleep -Milliseconds 70
+[AroundGCursor]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+`;
+  return new Promise((resolve) => {
+    execFile("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-WindowStyle", "Hidden",
+      "-Command", script,
+    ], { windowsHide: true, timeout: 5_000 }, (error) => {
+      resolve(error ? { ok: false, reason: String(error.message || error) } : { ok: true });
+    });
+  });
+}
+
+
 async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     return { ok: false, step: "SELLER_WINDOW_NOT_AVAILABLE" };
@@ -3128,11 +3176,22 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) {
     return { ...verified, ok: false, step: "REAL_SEARCH_BUTTON_COORDINATES_MISSING" };
   }
-  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
-  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
-  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
+  const contentBounds = sellerWindow.getContentBounds();
+  const screenX = Math.round(contentBounds.x + x);
+  const screenY = Math.round(contentBounds.y + y);
+  const physicalClick = await moveWindowsCursorAndClick(screenX, screenY);
+  if (!physicalClick.ok) {
+    sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
+    sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
+    sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
+  }
   await new Promise((resolve) => setTimeout(resolve, 120));
-  return { ...verified, submitted: true, step: "REAL_SEARCH_BUTTON_CLICKED" };
+  return {
+    ...verified,
+    submitted: true,
+    physicalCursorMoved: physicalClick.ok,
+    step: physicalClick.ok ? "PHYSICAL_SEARCH_BUTTON_CLICKED" : "REAL_SEARCH_BUTTON_CLICKED",
+  };
 }
 
 async function automateSellerBrandExport(input = {}) {
