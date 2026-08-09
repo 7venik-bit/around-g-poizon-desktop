@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, safeStorage, shell } from "electron";
 import { mkdirSync } from "node:fs";
-import { appendFile, mkdir, readFile, readdir, rename, stat } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { readSheet } from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
@@ -1658,6 +1658,7 @@ function isPoizonExportDownloadUrl(value = "") {
 
 function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
   const visible = options.visible !== false;
+  const deferNavigation = options.deferNavigation === true;
   if (sellerWindow && !sellerWindow.isDestroyed()) {
     if (visible) {
       sellerWindow.show();
@@ -1666,7 +1667,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
       sellerWindow.hide();
       showCollectorWindow();
     }
-    if (targetUrl && sellerWindow.webContents.getURL() !== targetUrl) {
+    if (!deferNavigation && targetUrl && sellerWindow.webContents.getURL() !== targetUrl) {
       sellerWindow.loadURL(targetUrl);
     }
     return;
@@ -1867,7 +1868,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
     sellerWindow = null;
     brandExportJobPending = false;
   });
-  sellerWindow.loadURL(targetUrl);
+  if (!deferNavigation && targetUrl) sellerWindow.loadURL(targetUrl);
   if (!visible) showCollectorWindow();
 }
 
@@ -2901,6 +2902,20 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
   })()`, true);
 }
 
+async function captureSellerDiagnostic(brandName = "", stage = "error") {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return "";
+  try {
+    const folder = join(app.getPath("userData"), "seller-diagnostics");
+    await mkdir(folder, { recursive: true });
+    const filePath = join(folder, `${safeBrandExportLabel(brandName) || "brand"}_${stage}_${localFileTimestamp()}.png`);
+    const image = await sellerWindow.webContents.capturePage();
+    await writeFile(filePath, image.toPNG());
+    return filePath;
+  } catch {
+    return "";
+  }
+}
+
 async function automateSellerBrandExport(input = {}) {
   const sessionGeneration = brandWorkSessionGeneration;
   const attemptGeneration = ++brandExportAttemptGeneration;
@@ -2924,7 +2939,7 @@ async function automateSellerBrandExport(input = {}) {
   brandDownloadStarted = false;
   // Brand export runs completely in the background. The user keeps working in
   // Around G and opens Seller Center manually only when they explicitly choose to.
-  openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, { visible: false });
+  openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, { visible: false, deferNavigation: true });
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     brandExportJobPending = false;
     pendingBrandExportName = "";
@@ -2935,11 +2950,36 @@ async function automateSellerBrandExport(input = {}) {
   mainWindow?.webContents.send("brand-export:progress", {
     status: "opening-product-search",
     brandName,
-    jobState: "1단계/5 · 실제 상품검색 시작",
-    message: `${brandName} · 판매자센터 상품검색 화면을 열고 실제 검색을 시작합니다.`,
+    jobState: "1단계/5 · 판매자센터 연결 시도",
+    message: `${brandName} · 판매자센터 상품검색 화면 연결을 시도합니다.`,
   });
-  await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
+  try {
+    await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
+  } catch (error) {
+    const diagnosticPath = await captureSellerDiagnostic(brandName, "page-load-failed");
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    return {
+      ok: false,
+      code: "SELLER_PAGE_LOAD_FAILED",
+      message: `${brandName} 판매자센터 상품검색 페이지 연결에 실패했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
+      diagnostics: { reason: String(error?.message || error || ""), path: diagnosticPath },
+    };
+  }
   await new Promise((resolve) => setTimeout(resolve, 3500));
+  const connectedPage = await sellerWindow.webContents.executeJavaScript(`(() => ({
+    url: location.href,
+    title: document.title,
+    readyState: document.readyState,
+    login: /login|signin|passport/i.test(location.href),
+    inputCount: document.querySelectorAll("input, textarea").length,
+  }))()`, true).catch(() => ({ url: sellerWindow.webContents.getURL(), readyState: "unknown", inputCount: 0 }));
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: connectedPage.login ? "seller-login-required" : "seller-page-connected",
+    brandName,
+    jobState: connectedPage.login ? "1단계/5 · 판매자센터 로그인 필요" : "1단계/5 · 판매자센터 페이지 연결 확인",
+    message: `${brandName} · URL ${connectedPage.url || "확인 불가"} · 문서 ${connectedPage.readyState || "unknown"} · 입력 요소 ${Number(connectedPage.inputCount || 0)}개`,
+  });
   const sellerBrandAliasGroups = [
     ["Columbia", "컬럼비아", "哥伦比亚"],
     ["Patagonia", "파타고니아", "巴塔哥尼亚"],
@@ -3285,7 +3325,15 @@ async function automateSellerBrandExport(input = {}) {
     }
     clickLikeUser(exportButton);
     await wait(500);
-    return { ok: true, sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC", exportClicked: true };
+    const verifiedState = readSearchState();
+    return {
+      ok: true,
+      sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC",
+      exportClicked: true,
+      inputValue: String(input.value || "").trim(),
+      resultRowCount: verifiedState.rowTexts.length,
+      firstResult: verifiedState.rowTexts[0] || "",
+    };
   })()`, true);
   let searched = null;
   let lastSearchDiagnostics = null;
@@ -3372,15 +3420,24 @@ async function automateSellerBrandExport(input = {}) {
     searched = { ...searched, diagnostics: lastSearchDiagnostics };
   }
   if (!searched?.ok) {
+    const diagnosticPath = await captureSellerDiagnostic(brandName, String(searched?.step || "search-failed").toLowerCase());
     pendingBrandExportName = "";
     pendingBrandExportJobId = "";
     brandExportJobPending = false;
     return {
       ok: false,
       code: searched?.code || searched?.step || "SELLER_AUTOMATION_FAILED",
-      message: sellerBrandExportFailureMessage(searched?.code || searched?.step, brandName),
+      message: `${sellerBrandExportFailureMessage(searched?.code || searched?.step, brandName)}${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
+      diagnostics: { ...(searched?.diagnostics || {}), path: diagnosticPath },
     };
   }
+
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "seller-search-evidence",
+    brandName,
+    jobState: "2단계/5 · 검색·결과·전체 내보내기 실행 확인",
+    message: `${brandName} · 입력값 ${searched.inputValue || "확인 불가"} · 결과 행 ${Number(searched.resultRowCount || 0)}개 · 첫 결과 ${String(searched.firstResult || "").slice(0, 80)} · 전체 내보내기 클릭 확인`,
+  });
 
   const baselineJobs = await baselinePromise;
   const baselineAvailable = Array.isArray(baselineJobs);

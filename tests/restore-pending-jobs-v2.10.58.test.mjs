@@ -41,8 +41,8 @@ test("renderer rebuilds pending rows before restarting monitor", () => {
   assert.match(renderer, /await window\.aroundG\.startSellerBrandExportMonitor\(\)/);
 });
 
-test("release metadata is 2.10.103", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.103");
-  assert.equal(JSON.parse(lockSource).version, "2.10.103");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.103");
+test("release metadata is 2.10.104", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.104");
+  assert.equal(JSON.parse(lockSource).version, "2.10.104");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.104");
 });

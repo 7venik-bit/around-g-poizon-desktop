@@ -284,6 +284,10 @@ function stopBrandActivity() {
   }
 }
 
+$("#brand-seller-diagnostic")?.addEventListener("click", () => {
+  void window.aroundG.openSellerProductSearch();
+});
+
 function finalizeBrandActivityAfterMainCompletion() {
   if (!brandMainAllComplete || detectedBrandImportRunning || detectedBrandImportQueue.length) return false;
   for (const [jobId, job] of brandExportJobs.entries()) {

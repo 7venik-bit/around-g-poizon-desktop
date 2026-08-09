@@ -66,6 +66,8 @@ test("active brand work has a live spinner, elapsed time, and stale-response sta
   assert.match(indexHtml, /id="brand-activity"[^>]*role="status"[^>]*aria-live="polite"/);
   assert.match(indexHtml, /id="brand-activity-elapsed"/);
   assert.match(indexHtml, /id="brand-activity-updated"/);
+  assert.match(indexHtml, /id="brand-seller-diagnostic"[^>]*>진단 창 보기<\/button>/);
+  assert.match(renderer, /openSellerProductSearch\(\)/);
   assert.match(style, /@keyframes brand-activity-spin/);
   assert.match(renderer, /setInterval\(renderBrandActivity, 1000\)/);
   assert.match(renderer, /idleSeconds >= 60/);
