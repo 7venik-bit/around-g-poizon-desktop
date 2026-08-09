@@ -2992,6 +2992,57 @@ async function confirmSellerExportRequest(targetFrame) {
   })()`, true);
 }
 
+async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
+  const focused = await targetFrame.executeJavaScript(`(() => {
+    const visible = (element) => element && element.getBoundingClientRect().width > 0
+      && element.getBoundingClientRect().height > 0;
+    const textOf = (element) => String(element?.innerText || element?.textContent || "")
+      .replace(/\\s+/g, " ").trim();
+    const searchButton = [...document.querySelectorAll("button, [role='button']")]
+      .filter(visible)
+      .find((element) => /^검색\\s*및\\s*입찰$/.test(textOf(element)));
+    if (!searchButton) return { ok: false, step: "EXACT_SEARCH_BUTTON_NOT_FOUND" };
+    const buttonRect = searchButton.getBoundingClientRect();
+    const input = [...document.querySelectorAll("input, textarea")]
+      .filter(visible)
+      .filter((element) => !element.disabled && !element.readOnly)
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          element,
+          verticalDistance: Math.abs(
+            (rect.top + rect.height / 2) - (buttonRect.top + buttonRect.height / 2)
+          ),
+          horizontalGap: buttonRect.left - rect.right,
+        };
+      })
+      .filter((candidate) => candidate.verticalDistance < 24
+        && candidate.horizontalGap >= -4 && candidate.horizontalGap < 80)
+      .sort((left, right) => left.horizontalGap - right.horizontalGap)[0]?.element;
+    if (!input) return { ok: false, step: "EXACT_SEARCH_INPUT_NOT_FOUND" };
+    input.scrollIntoView({ block: "center", inline: "center" });
+    input.focus();
+    input.select?.();
+    return { ok: true };
+  })()`, true).catch(() => ({ ok: false, step: "KEYBOARD_FOCUS_FAILED" }));
+  if (!focused?.ok || !sellerWindow || sellerWindow.isDestroyed()) return focused;
+  sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
+  sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
+  sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "Backspace" });
+  sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "Backspace" });
+  await sellerWindow.webContents.insertText(String(brandName));
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  return targetFrame.executeJavaScript(`(() => {
+    const active = document.activeElement;
+    const value = String(active?.value || "").trim();
+    return {
+      ok: value === ${JSON.stringify(String(brandName))},
+      step: value === ${JSON.stringify(String(brandName))} ? "REAL_KEYBOARD_INPUT_CONFIRMED" : "REAL_KEYBOARD_INPUT_FAILED",
+      inputValue: value,
+    };
+  })()`, true).catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_VERIFY_FAILED" }));
+}
+
 async function automateSellerBrandExport(input = {}) {
   const sessionGeneration = brandWorkSessionGeneration;
   const attemptGeneration = ++brandExportAttemptGeneration;
@@ -3219,10 +3270,12 @@ async function automateSellerBrandExport(input = {}) {
           }));
           input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
         };
-        applyValue("");
-        await wait(160);
-        applyValue(${JSON.stringify(brandName)});
-        await wait(700);
+        if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
+          applyValue("");
+          await wait(160);
+          applyValue(${JSON.stringify(brandName)});
+          await wait(700);
+        }
         if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
           return {
             ok: false,
@@ -3497,6 +3550,18 @@ async function automateSellerBrandExport(input = {}) {
     }
     for (const candidate of frameCandidates) {
       if (!candidate.probe?.inputCount && !candidate.probe?.hint) continue;
+      const keyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, brandName);
+      if (!keyboardInput?.ok) {
+        lastSearchDiagnostics = { ...candidate.probe, keyboardInput };
+        searched = { ok: false, step: keyboardInput?.step || "REAL_KEYBOARD_INPUT_FAILED" };
+        continue;
+      }
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: "seller-keyboard-input-confirmed",
+        brandName,
+        jobState: `1단계/5 · 실제 키보드 입력 확인 · ${brandName}`,
+        message: `${brandName} · POIZON 최상단 상품검색 입력창에 실제 키보드 입력을 확인했습니다.`,
+      });
       const result = await Promise.race([
         runSellerSearch(candidate.frame),
         new Promise((resolve) => setTimeout(() => resolve({

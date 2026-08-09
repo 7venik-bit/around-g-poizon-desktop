@@ -42,6 +42,12 @@ test("seller search targets the proven global query beside Search and Bid", () =
   assert.match(mainSource, /input\._valueTracker/);
   assert.match(mainSource, /input\._valueTracker\.setValue\(previousValue\)/);
   assert.match(mainSource, /actualInputValue: String\(input\.value/);
+  assert.match(mainSource, /typeSellerBrandWithRealKeyboard/);
+  assert.match(mainSource, /sendInputEvent\(\{ type: "keyDown", keyCode: "A", modifiers: \["control"\] \}\)/);
+  assert.match(mainSource, /sendInputEvent\(\{ type: "keyDown", keyCode: "Backspace" \}\)/);
+  assert.match(mainSource, /webContents\.insertText\(String\(brandName\)\)/);
+  assert.match(mainSource, /REAL_KEYBOARD_INPUT_CONFIRMED/);
+  assert.match(mainSource, /실제 키보드 입력 확인/);
 });
 
 test("manual Seller Center actions remain visible by default", () => {
