@@ -3607,12 +3607,12 @@ async function automateSellerBrandExport(input = {}) {
       await wait(900);
     }
 
-    const pageSizePattern = /^20\\s*건\\s*\/\\s*페이지$/i;
+    const pageSizePattern = /^20\\s*건\\s*\\/\\s*페이지$/i;
     const pageSizeControls = [...document.querySelectorAll(
       ".ant-select-selection-item, [role='combobox'], [class*='select']"
     )].filter(visible);
     let pageSizeControl = pageSizeControls.find((element) =>
-      /\\d+\\s*건\\s*\/\\s*페이지/i.test(textOf(element))
+      /\\d+\\s*건\\s*\\/\\s*페이지/i.test(textOf(element))
     );
     if (!pageSizeControl) {
       return { ok: false, code: "PAGE_SIZE_CONTROL_NOT_FOUND" };
