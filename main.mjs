@@ -3225,7 +3225,7 @@ async function automateSellerBrandExport(input = {}) {
     ["Reebok", "리복", "锐步"],
   ];
   const brandKoInput = String(input.brandKo || "").trim();
-  const sellerBrandMatchKeys = [brandName, brandKoInput, ...officialAliases];
+  const sellerBrandMatchKeys = [brandName, brandKoInput];
   const localizedAliases = sellerBrandAliasGroups.find((aliases) =>
     aliases.some((alias) => brandsMatch(brandName, alias) || brandsMatch(brandKoInput, alias))
   );
