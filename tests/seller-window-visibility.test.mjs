@@ -35,8 +35,8 @@ test("seller automation navigates once and emits evidence instead of optimistic 
   assert.match(mainSource, /Promise\.all\(frames\.map/);
   assert.match(mainSource, /응답하지 않는 POIZON 내부 프레임은 4초 후 건너뜁니다/);
   assert.match(mainSource, /pauseOfficialDomainAuditForSellerAutomation/);
-  assert.match(mainSource, /공식몰 전체 검증을 잠시 멈추고 POIZON 브랜드 검색을 우선 실행합니다/);
-  assert.match(mainSource, /officialDomainAuditSellerResumeTimer = setTimeout\(resumeWhenSellerIdle, 60_000\)/);
+  assert.match(mainSource, /공식몰 전체 검증을 멈추고 POIZON 브랜드 검색을 우선 실행합니다/);
+  assert.match(mainSource, /검증 계속 버튼을 누를 때만 재개됩니다/);
 });
 
 test("seller search targets the proven global query beside Search and Bid", () => {

@@ -29,7 +29,6 @@ test("the desktop can audit every official domain with checkpoints and safe paus
   assert.match(mainSource, /await wait\(OFFICIAL_DOMAIN_AUDIT_BETWEEN_BRANDS_MS\)/);
   assert.doesNotMatch(mainSource, /await wait\(4_000\)/);
   assert.match(mainSource, /DISCOVERY_BLOCKED/);
-  assert.match(mainSource, /OFFICIAL_DOMAIN_AUDIT_COOLDOWN_MS/);
   assert.match(mainSource, /officialDomainAuditResumeTimer/);
   assert.match(mainSource, /compareOfficialBrandLogos/);
   assert.match(mainSource, /brandLogoUrl/);
@@ -43,18 +42,24 @@ test("the desktop can audit every official domain with checkpoints and safe paus
   assert.match(preloadSource, /onOfficialDomainAuditProgress/);
   assert.match(rendererSource, /renderOfficialDomainAudit/);
   assert.match(rendererSource, /검증 일시 정지/);
-  assert.match(rendererSource, /자동 재개/);
+  assert.match(rendererSource, /검증 계속 버튼을 눌러주세요/);
   assert.match(rendererSource, /startOfficialDomainAudit/);
   assert.match(htmlSource, /id="official-domain-audit-toggle"/);
   assert.match(htmlSource, /공식몰 전체 검증/);
 });
 
-test("full verification starts after the complete brand catalog is available", async () => {
-  const rendererSource = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
+test("full verification remains stopped after startup until the user continues it", async () => {
+  const [rendererSource, mainSource] = await Promise.all([
+    readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
+    readFile(new URL("../main.mjs", import.meta.url), "utf8"),
+  ]);
   assert.match(rendererSource, /if \(explorerMeta\.needsBrandSync\) await syncFullBrandCatalog/);
-  assert.match(rendererSource, /officialDomainAudit\?\.unchecked/);
   assert.match(rendererSource, /네이버 검색 중/);
   assert.match(rendererSource, /공식 홈페이지 연결 확인 중/);
   assert.match(rendererSource, /2차 확인/);
+  const startup = rendererSource.slice(rendererSource.lastIndexOf("(async () => {"));
+  assert.doesNotMatch(startup, /startOfficialDomainAudit/);
+  assert.match(rendererSource, /official-domain-audit-toggle/);
   assert.match(rendererSource, /await window\.aroundG\.startOfficialDomainAudit/);
+  assert.doesNotMatch(mainSource, /setTimeout\(\(\) => \{\s*officialDomainAuditResumeTimer = null;\s*void runOfficialDomainAudit/);
 });

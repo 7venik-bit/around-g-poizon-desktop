@@ -1017,7 +1017,6 @@ function renderOfficialDomainAudit(audit = {}) {
   const status = $("#official-domain-audit-status");
   const button = $("#official-domain-audit-toggle");
   if (!status || !button) return;
-  const resumeTime = audit.resumeAt ? new Date(audit.resumeAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) : "";
   const phaseLabel = {
     starting: "검색 준비 중",
     naver_search: "네이버 검색 중",
@@ -1028,8 +1027,8 @@ function renderOfficialDomainAudit(audit = {}) {
     security_wait: "보안 확인 대기 중",
     timed_out: "응답 지연·다음 브랜드로 이동",
   }[String(audit.phase || "")] || "";
-  const stateLabel = audit.state === "cooldown" ? `보안 확인 대기 · ${resumeTime || "10분 후"} 자동 재개`
-    : audit.state === "blocked" ? "보안 확인으로 일시 정지"
+  const stateLabel = audit.state === "cooldown" ? "보안 확인으로 일시 정지 · 검증 계속 버튼을 눌러주세요"
+    : audit.state === "blocked" ? "보안 확인으로 일시 정지 · 검증 계속 버튼을 눌러주세요"
     : audit.state === "paused" ? "일시 정지"
       : audit.state === "completed_with_pending" ? "1차 전수검사 완료·미확정 검토 필요"
         : audit.state === "completed" ? "전체 검증 완료"
@@ -2418,11 +2417,6 @@ window.aroundG.onUpdateStatus((payload) => {
   renderBrandCards();
   renderCategoryButtons();
   if (explorerMeta.needsBrandSync) await syncFullBrandCatalog({ automatic: true });
-  if (Number(explorerMeta.officialDomainAudit?.unchecked || 0) > 0
-    && explorerMeta.officialDomainAudit?.state !== "cooldown") {
-    const auditStart = await window.aroundG.startOfficialDomainAudit();
-    if (auditStart?.audit) renderOfficialDomainAudit(auditStart.audit);
-  }
   const config = await window.aroundG.getConfig();
   const exportFolder = await window.aroundG.getBrandExportFolder();
   renderBrandExportFolder(exportFolder.folder);

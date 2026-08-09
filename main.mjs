@@ -94,7 +94,6 @@ let officialDomainAuditRunning = false;
 let officialDomainAuditStopRequested = false;
 let officialDomainAuditWindow = null;
 let officialDomainAuditResumeTimer = null;
-let officialDomainAuditSellerResumeTimer = null;
 let officialDomainAuditAbortCurrent = null;
 let brandExportAllCompleteSent = false;
 let activeBrandDownloadJobId = "";
@@ -807,9 +806,11 @@ function safeOfficialDomainRegistry(brands) {
 
 function officialDomainAuditSnapshot(registry, extra = {}) {
   const saved = store.snapshot().settings.officialDomainAudit || {};
+  const savedState = String(saved.state || "idle");
   return {
     running: officialDomainAuditRunning,
-    state: officialDomainAuditRunning ? "running" : String(saved.state || "idle"),
+    state: officialDomainAuditRunning ? "running"
+      : ["running", "cooldown", "blocked"].includes(savedState) ? "paused" : savedState,
     currentBrand: String(saved.currentBrand || ""),
     processed: Number(saved.processed || 0),
     blocked: Boolean(saved.blocked),
@@ -1089,20 +1090,12 @@ async function runOfficialDomainAudit() {
     officialDomainAuditWindow = null;
     officialDomainAuditRunning = false;
     const summary = officialDomainRegistrySummary(registry);
-    const resumeAt = blocked && !officialDomainAuditStopRequested
-      ? new Date(Date.now() + OFFICIAL_DOMAIN_AUDIT_COOLDOWN_MS).toISOString()
-      : "";
-    const state = blocked ? "cooldown"
+    const resumeAt = "";
+    const state = blocked ? "paused"
       : officialDomainAuditStopRequested ? "paused"
         : summary.unchecked ? "paused" : summary.pending ? "completed_with_pending" : "completed";
     await persistOfficialDomainAudit(registry, { state, currentBrand: "", processed, blocked, lastError, resumeAt });
     sendOfficialDomainAuditProgress(registry, { running: false, state, currentBrand: "", processed, blocked, lastError, resumeAt });
-    if (blocked && !officialDomainAuditStopRequested) {
-      officialDomainAuditResumeTimer = setTimeout(() => {
-        officialDomainAuditResumeTimer = null;
-        void runOfficialDomainAudit();
-      }, OFFICIAL_DOMAIN_AUDIT_COOLDOWN_MS);
-    }
   }
 }
 
@@ -1110,8 +1103,6 @@ function pauseOfficialDomainAuditForSellerAutomation() {
   const shouldResume = officialDomainAuditRunning || Boolean(officialDomainAuditResumeTimer);
   clearTimeout(officialDomainAuditResumeTimer);
   officialDomainAuditResumeTimer = null;
-  clearTimeout(officialDomainAuditSellerResumeTimer);
-  officialDomainAuditSellerResumeTimer = null;
   if (shouldResume) {
     officialDomainAuditStopRequested = true;
     officialDomainAuditAbortCurrent?.();
@@ -1121,17 +1112,7 @@ function pauseOfficialDomainAuditForSellerAutomation() {
     }
     officialDomainAuditWindow = null;
   }
-  if (!shouldResume) return false;
-  const resumeWhenSellerIdle = () => {
-    if (brandExportJobPending) {
-      officialDomainAuditSellerResumeTimer = setTimeout(resumeWhenSellerIdle, 30_000);
-      return;
-    }
-    officialDomainAuditSellerResumeTimer = null;
-    if (!officialDomainAuditRunning) void runOfficialDomainAudit();
-  };
-  officialDomainAuditSellerResumeTimer = setTimeout(resumeWhenSellerIdle, 60_000);
-  return true;
+  return shouldResume;
 }
 
 // 이 앱은 GPU 가속이 필요하지 않으며 일부 Windows 그래픽 드라이버의
@@ -1145,7 +1126,6 @@ function sendUpdateStatus(status, message, extra = {}) {
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 const UPDATE_RETRY_INTERVAL_MS = 15 * 60 * 1_000;
 const UPDATE_INSTALL_RETRY_MS = 30 * 1_000;
-const OFFICIAL_DOMAIN_AUDIT_COOLDOWN_MS = 10 * 60 * 1_000;
 const OFFICIAL_DOMAIN_AUDIT_PAGE_TIMEOUT_MS = 20_000;
 const OFFICIAL_DOMAIN_AUDIT_ANALYSIS_TIMEOUT_MS = 8_000;
 const OFFICIAL_DOMAIN_AUDIT_LOGO_TIMEOUT_MS = 10_000;
@@ -3161,7 +3141,7 @@ async function automateSellerBrandExport(input = {}) {
       status: "official-audit-paused-for-seller",
       brandName,
       jobState: "1단계/5 · 공식몰 검증 분리 · 판매자센터 연결 준비",
-      message: `${brandName} · 공식몰 전체 검증을 잠시 멈추고 POIZON 브랜드 검색을 우선 실행합니다. 검증 기록은 유지되며 이후 자동 재개됩니다.`,
+      message: `${brandName} · 공식몰 전체 검증을 멈추고 POIZON 브랜드 검색을 우선 실행합니다. 검증 기록은 유지되며 검증 계속 버튼을 누를 때만 재개됩니다.`,
     });
   }
   const folder = currentBrandExportFolder();
@@ -4916,8 +4896,6 @@ app.whenReady().then(async () => {
   ipcMain.handle("official-domain:audit-start", async () => {
     clearTimeout(officialDomainAuditResumeTimer);
     officialDomainAuditResumeTimer = null;
-    clearTimeout(officialDomainAuditSellerResumeTimer);
-    officialDomainAuditSellerResumeTimer = null;
     if (!officialDomainAuditRunning) void runOfficialDomainAudit();
     const settings = store.snapshot().settings;
     const registry = await ensureOfficialDomainRegistry(settings.brandCatalog || explorerMetadata().brands);
@@ -4933,8 +4911,6 @@ app.whenReady().then(async () => {
     officialDomainAuditWindow = null;
     clearTimeout(officialDomainAuditResumeTimer);
     officialDomainAuditResumeTimer = null;
-    clearTimeout(officialDomainAuditSellerResumeTimer);
-    officialDomainAuditSellerResumeTimer = null;
     return { ok: true };
   });
   ipcMain.handle("seller:open", () => {
@@ -5497,4 +5473,5 @@ app.on("before-quit", () => {
   if (brandExportMonitorRestartTimer) clearTimeout(brandExportMonitorRestartTimer);
   if (updateCheckTimer) clearTimeout(updateCheckTimer);
   if (updateInstallTimer) clearTimeout(updateInstallTimer);
+  if (officialDomainAuditResumeTimer) clearTimeout(officialDomainAuditResumeTimer);
 });
