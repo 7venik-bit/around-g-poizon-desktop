@@ -104,7 +104,7 @@ let sellerProductFrameRoutingId = null;
 const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
 const SELLER_PRODUCT_SEARCH_URL = "https://seller.poizon.com/main/goods/search";
 const SELLER_EXPORT_CENTER_URL = "https://seller.poizon.com/main/exportCenter";
-const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 5 * 60 * 1000;
+const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 20 * 60 * 1000;
 const KR_POIZON_BRAND_LIST_URL = "https://kr.poizon.com/brand/list";
 const EN_POIZON_BRAND_LIST_URL = "https://www.poizon.com/brand/list";
 const APP_ICON_PATH = join(import.meta.dirname, "build", "icon.png");
@@ -1735,8 +1735,8 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
     mkdirSync(brandFolder, { recursive: true });
     const safeBrand = exportBrand;
     const fileName = safeBrand
-      ? `${safeBrand}_${localFileTimestamp()}.xlsx`
-      : `POIZON_${localFileTimestamp()}.xlsx`;
+      ? `${downloadJobId}_${safeBrand}_${localFileTimestamp()}.xlsx`
+      : `${downloadJobId}_POIZON_${localFileTimestamp()}.xlsx`;
     const filePath = join(brandFolder, fileName);
     brandDownloadPathsInProgress.add(filePath);
     item.setSavePath(filePath);
@@ -3120,6 +3120,858 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   ]).catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_VERIFY_FAILED" }));
 }
 
+async function automateSellerBrandExport(input = {}) {
+  const sessionGeneration = brandWorkSessionGeneration;
+  const attemptGeneration = ++brandExportAttemptGeneration;
+  const cleared = () => sessionGeneration !== brandWorkSessionGeneration
+    || attemptGeneration !== brandExportAttemptGeneration;
+  const brandName = String(input.brandName || "").trim();
+  const brandKo = String(input.brandKo || "").trim();
+  if (brandExportJobPending) {
+    return {
+      ok: false,
+      code: "EXPORT_ALREADY_PENDING",
+      message: "이미 POIZON 데이터를 가져오고 있습니다. 같은 작업을 다시 만들지 않습니다.",
+    };
+  }
+  if (!brandName) return { ok: false, message: "선택한 브랜드명이 없습니다." };
+  const officialAuditPaused = pauseOfficialDomainAuditForSellerAutomation();
+  if (officialAuditPaused) {
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "official-audit-paused-for-seller",
+      brandName,
+      jobState: "1단계/5 · 공식몰 검증 분리 · 판매자센터 연결 준비",
+      message: `${brandName} · 공식몰 전체 검증을 멈추고 POIZON 브랜드 검색을 우선 실행합니다. 검증 기록은 유지되며 검증 계속 버튼을 누를 때만 재개됩니다.`,
+    });
+  }
+  const folder = currentBrandExportFolder();
+  await mkdir(folder, { recursive: true });
+  pendingBrandExportName = brandName;
+  pendingBrandExportJobId = "";
+  brandExportJobPending = true;
+  brandDownloadStarted = false;
+  // Show the exact Electron Seller Center window that is being automated.
+  // A separately opened Chrome window is a different browser session and does
+  // not reflect this automation, which previously made real work look idle.
+  openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, {
+    visible: false,
+    activate: false,
+    deferNavigation: true,
+  });
+  if (!sellerWindow || sellerWindow.isDestroyed()) {
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    return { ok: false, message: "판매자센터 창을 열지 못했습니다." };
+  }
+  const baselinePromise = readSellerExportBaselineSeparately().catch(() => null);
+  if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "작업 기록 삭제로 이전 요청을 중단했습니다." };
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "opening-product-search",
+    brandName,
+    jobState: "1단계/5 · 판매자센터 연결 시도",
+    message: `${brandName} · 판매자센터 상품검색 화면 연결을 시도합니다.`,
+  });
+  try {
+    await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
+  } catch (error) {
+    const diagnosticPath = await captureSellerDiagnostic(brandName, "page-load-failed");
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    return {
+      ok: false,
+      code: "SELLER_PAGE_LOAD_FAILED",
+      message: `${brandName} 판매자센터 상품검색 페이지 연결에 실패했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
+      diagnostics: { reason: String(error?.message || error || ""), path: diagnosticPath },
+    };
+  }
+  await new Promise((resolve) => setTimeout(resolve, 3500));
+  // Keep the same persistent Seller Center session and automation path used by
+  // the popular-list collector, but leave the native window minimized while
+  // brand search, export registration, and download-center monitoring run.
+  // backgroundThrottling is disabled on this BrowserWindow, so minimizing it
+  // does not pause the seller automation.
+  if (sellerWindow && !sellerWindow.isDestroyed()) {
+    sellerWindow.showInactive();
+    sellerWindow.minimize();
+    showCollectorWindow();
+  }
+  const connectedPage = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => ({
+    url: location.href,
+    title: document.title,
+    readyState: document.readyState,
+    login: /login|signin|passport/i.test(location.href),
+    inputCount: document.querySelectorAll("input, textarea").length,
+  }))()`, 4_000, { url: sellerWindow.webContents.getURL(), readyState: "timeout", inputCount: 0 });
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: connectedPage.login ? "seller-login-required" : "seller-page-connected",
+    brandName,
+    jobState: connectedPage.login ? "1단계/5 · 판매자센터 로그인 필요" : "1단계/5 · 판매자센터 페이지 연결 확인",
+    message: `${brandName} · URL ${connectedPage.url || "확인 불가"} · 문서 ${connectedPage.readyState || "unknown"} · 입력 요소 ${Number(connectedPage.inputCount || 0)}개`,
+  });
+  if (connectedPage.login) {
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    return {
+      ok: false,
+      code: "SELLER_LOGIN_REQUIRED",
+      message: `${brandName} 작업을 진행하려면 POIZON 판매자센터 로그인이 필요합니다.`,
+    };
+  }
+  const sellerBrandAliasGroups = [
+    ["Columbia", "컬럼비아", "哥伦比亚"],
+    ["Patagonia", "파타고니아", "巴塔哥尼亚"],
+    ["Tommy Hilfiger", "타미힐피거", "汤米希尔费格"],
+    ["FILA", "휠라", "斐乐"],
+    ["Reebok", "리복", "锐步"],
+  ];
+  const brandKoInput = String(input.brandKo || "").trim();
+  const sellerBrandMatchKeys = [brandName, brandKoInput, ...officialAliases];
+  const localizedAliases = sellerBrandAliasGroups.find((aliases) =>
+    aliases.some((alias) => brandsMatch(brandName, alias) || brandsMatch(brandKoInput, alias))
+  );
+  if (localizedAliases) sellerBrandMatchKeys.push(...localizedAliases);
+  if (brandsMatch(brandName, "Jordan")) {
+    sellerBrandMatchKeys.push("Jordan", "조던", "乔丹");
+  }
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "searching-brand-products",
+    brandName,
+    jobState: "1단계/5 · 브랜드 입력·상품 검색 중",
+    message: `${brandName} · 브랜드를 입력하고 상품 검색을 실행합니다.`,
+  });
+  const runSellerSearch = (targetFrame) => targetFrame.executeJavaScript(`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getBoundingClientRect().width > 0
+      && element.getBoundingClientRect().height > 0;
+    const textOf = (element) => String(element?.innerText || element?.textContent || "")
+      .replace(/\\s+/g, " ").trim();
+    const normalize = (value) => String(value || "").replace(/\\s+/g, "").trim();
+    const clickLikeUser = (element) => {
+      if (!element) return false;
+      element.scrollIntoView({ block: "center", inline: "center" });
+      element.focus?.();
+      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+        element.dispatchEvent(new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          button: 0,
+        }));
+      }
+      element.click?.();
+      return true;
+    };
+    const findVisibleByText = (selector, pattern) =>
+      [...document.querySelectorAll(selector)].filter(visible)
+        .find((element) => pattern.test(textOf(element)));
+        const roots = [document];
+        for (let rootIndex = 0; rootIndex < roots.length; rootIndex += 1) {
+          const root = roots[rootIndex];
+          for (const element of root.querySelectorAll("*")) {
+            if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
+          }
+        }
+        const inputs = roots.flatMap((root) => [...root.querySelectorAll("input, textarea")])
+          .filter((element, index, all) => all.indexOf(element) === index)
+          .filter(visible)
+          .filter((element) => {
+            const type = String(element.type || "text").toLowerCase();
+            return !element.disabled && !element.readOnly
+              && !["hidden", "password", "date", "datetime-local", "month", "time", "file", "checkbox", "radio"].includes(type);
+          });
+        // The proven Seller Center flow uses the global product query input at
+        // the very top of the page: [상품 정보] [query] [검색 및 입찰]. Do not
+        // confuse it with one of the many product-filter inputs below it.
+        const exactSearchButtons = roots.flatMap((root) =>
+          [...root.querySelectorAll("button, [role='button']")]
+        ).filter((element, index, all) => all.indexOf(element) === index)
+          .filter(visible)
+          .filter((element) => /^검색\\s*및\\s*입찰$/.test(textOf(element)));
+        const exactSearchButton = exactSearchButtons
+          .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top)[0] || null;
+        const exactButtonRect = exactSearchButton?.getBoundingClientRect();
+        const exactInput = exactButtonRect
+          ? inputs.map((element) => {
+              const rect = element.getBoundingClientRect();
+              const verticalDistance = Math.abs(
+                (rect.top + rect.height / 2) - (exactButtonRect.top + exactButtonRect.height / 2)
+              );
+              const horizontalGap = exactButtonRect.left - rect.right;
+              return { element, verticalDistance, horizontalGap, top: rect.top };
+            }).filter((candidate) => candidate.verticalDistance < 24
+              && candidate.horizontalGap >= -4 && candidate.horizontalGap < 80)
+            .sort((left, right) => left.horizontalGap - right.horizontalGap)[0]?.element || null
+          : null;
+        const inputScore = (element) => {
+          const rect = element.getBoundingClientRect();
+          const attributes = [
+            element.placeholder,
+            element.getAttribute("aria-label"),
+            element.getAttribute("name"),
+            element.getAttribute("id"),
+            element.getAttribute("data-placeholder"),
+          ].filter(Boolean).join(" ");
+          const context = textOf(element.closest("form, .ant-form-item, [class*='form'], [class*='search']") || element.parentElement);
+          const strongHint = /상품|상품명|브랜드|품번|검색|product|brand|article|spu|sku|商品|品牌|货号|搜索|查询/i.test(attributes);
+          const contextHint = /상품|브랜드|품번|검색|product|brand|spu|sku|商品|品牌|货号/i.test(context);
+          return (strongHint ? 1000 : 0)
+            + (contextHint ? 300 : 0)
+            + (rect.top >= 0 && rect.top < 360 ? 120 : 0)
+            + Math.min(180, Math.round(rect.width));
+        };
+        const searchInputs = inputs.map((element) => ({ element, score: inputScore(element) }))
+          .sort((left, right) => right.score - left.score);
+        const input = exactInput || searchInputs[0]?.element || null;
+        if (!input || (!exactInput && searchInputs[0].score < 200)) {
+          return { ok: false, step: "SEARCH_INPUT_NOT_FOUND", inputCount: inputs.length };
+        }
+        const readSearchState = () => {
+          const rows = [...document.querySelectorAll("tbody tr")].filter(visible);
+          const rowTexts = rows.slice(0, 30).map((row) =>
+            String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim()
+          );
+          const rowText = rowTexts.join("\\n");
+          const totalText = [...document.querySelectorAll("body *")]
+            .filter(visible)
+            .map((element) => String(element.innerText || element.textContent || "").trim())
+            .find((text) => /^총\\s*[\\d,]+\\s*건\\s*결과$/.test(text)) || "";
+          const totalCount = Number(String(totalText).replace(/[^0-9]/g, "")) || 0;
+          return { rowText, rowTexts, totalText, totalCount };
+        };
+        const beforeSearch = readSearchState();
+        const requestedBrandKeys = ${JSON.stringify(sellerBrandMatchKeys)}
+          .map(normalize).filter(Boolean);
+        const requestedBrandRatio = (state) => {
+          const rows = Array.isArray(state?.rowTexts) ? state.rowTexts.filter(Boolean) : [];
+          if (!rows.length || !requestedBrandKeys.length) return 0;
+          const matches = rows.filter((row) =>
+            requestedBrandKeys.some((key) => normalize(row).includes(key))
+          ).length;
+          return matches / rows.length;
+        };
+        const hasRequestedBrand = (state) => requestedBrandRatio(state) >= 0.8;
+        const valuePrototype = input instanceof HTMLTextAreaElement
+          ? HTMLTextAreaElement.prototype
+          : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(valuePrototype, "value")?.set;
+        const applyValue = (value) => {
+          const previousValue = String(input.value || "");
+          input.focus();
+          if (setter) setter.call(input, value);
+          else input.value = value;
+          // POIZON uses a React-controlled global search input. Reset React's
+          // value tracker to the previous DOM value so the synthetic input
+          // event is recognized as a real user change instead of being ignored
+          // and immediately rendered back to an empty string.
+          if (input._valueTracker && typeof input._valueTracker.setValue === "function") {
+            input._valueTracker.setValue(previousValue);
+          }
+          input.dispatchEvent(new InputEvent("input", {
+            bubbles: true,
+            composed: true,
+            inputType: value ? "insertText" : "deleteContentBackward",
+            data: value || null,
+          }));
+          input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+        };
+        if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
+          applyValue("");
+          await wait(160);
+          applyValue(${JSON.stringify(brandName)});
+          await wait(700);
+        }
+        if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
+          return {
+            ok: false,
+            step: "BRAND_INPUT_NOT_APPLIED",
+            actualInputValue: String(input.value || "").trim(),
+            expectedInputValue: ${JSON.stringify(brandName)},
+          };
+        }
+        const buttons = [...document.querySelectorAll("button, [role='button']")].filter(visible);
+        const inputRect = input.getBoundingClientRect();
+        const searchCandidates = buttons.filter((element) =>
+          /검색\\s*및\\s*입찰|^검색$|^검색하기$|搜索|查询|search/i.test(String(element.innerText || element.textContent || "").trim())
+        );
+        const search = exactSearchButton || searchCandidates.find((element) => {
+          const rect = element.getBoundingClientRect();
+          return Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2)) < 90;
+        }) || searchCandidates[0];
+        const pressEnter = () => {
+          input.focus();
+          for (const type of ["keydown", "keypress", "keyup"]) {
+            input.dispatchEvent(new KeyboardEvent(type, {
+              key: "Enter",
+              code: "Enter",
+              keyCode: 13,
+              which: 13,
+              bubbles: true,
+              cancelable: true
+            }));
+          }
+        };
+        const waitForSearchUpdate = async () => {
+          let stableSignature = "";
+          let stableCount = 0;
+          for (let attempt = 0; attempt < 60; attempt += 1) {
+            await wait(250);
+            const current = readSearchState();
+            const changed = current.rowText !== beforeSearch.rowText || current.totalText !== beforeSearch.totalText;
+            const hasRows = current.rowText.length > 0;
+            const brandMatched = hasRequestedBrand(current);
+            const signature = current.totalText + "\\n" + current.rowText;
+            // The working Seller Center keeps the visible "총 9,900건" label
+            // unchanged after a search. The rendered product rows are the
+            // authoritative signal that the brand search completed.
+            if (changed && hasRows && brandMatched) {
+              stableCount = signature === stableSignature ? stableCount + 1 : 1;
+              stableSignature = signature;
+              if (stableCount >= 3) return true;
+            } else {
+              stableCount = 0;
+              stableSignature = "";
+            }
+          }
+          return false;
+        };
+        if (search) clickLikeUser(search);
+        else pressEnter();
+        let searchApplied = await waitForSearchUpdate();
+        if (!searchApplied) {
+          pressEnter();
+          searchApplied = await waitForSearchUpdate();
+        }
+        if (!searchApplied && search) {
+          clickLikeUser(search);
+          searchApplied = await waitForSearchUpdate();
+        }
+        if (!searchApplied
+          && ${JSON.stringify(brandKoInput)} !== ""
+          && ${JSON.stringify(brandKoInput)} !== ${JSON.stringify(brandName)}) {
+          applyValue("");
+          await wait(160);
+          applyValue(${JSON.stringify(brandKoInput)});
+          await wait(700);
+          if (search) clickLikeUser(search);
+          else pressEnter();
+          searchApplied = await waitForSearchUpdate();
+          if (!searchApplied) {
+            pressEnter();
+            searchApplied = await waitForSearchUpdate();
+          }
+        }
+        if (!searchApplied) {
+          const current = readSearchState();
+          return {
+            ok: false,
+            step: hasRequestedBrand(current) ? "SEARCH_RESULT_NOT_UPDATED" : "BRAND_RESULT_MISMATCH",
+            beforeTotal: beforeSearch.totalCount,
+            currentTotal: current.totalCount
+          };
+        }
+
+    const localSalesPattern = /\\uD604\\uC9C0\\s*\\uD310\\uB9E4\\uC790\\s*\\uCD5C\\uADFC\\s*30\\uC77C\\s*\\uD310\\uB9E4\\uB7C9/;
+    const localSalesHeaderText = [...document.querySelectorAll(
+      "th, [role='columnheader'], thead td, thead div"
+    )].filter(visible)
+      .filter((element) => localSalesPattern.test(textOf(element)))
+      .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
+    if (!localSalesHeaderText) {
+      return { ok: false, step: "LOCAL_SELLER_30D_COLUMN_NOT_FOUND" };
+    }
+
+    let localSalesHeader = localSalesHeaderText.closest(
+      "th, [role='columnheader'], thead td"
+    );
+    if (!localSalesHeader) {
+      localSalesHeader = localSalesHeaderText;
+      for (let depth = 0; depth < 6 && localSalesHeader.parentElement; depth += 1) {
+        const parent = localSalesHeader.parentElement;
+        const rect = parent.getBoundingClientRect();
+        if (rect.width > 70 && rect.width < 360 && localSalesPattern.test(textOf(parent))) {
+          localSalesHeader = parent;
+        } else {
+          break;
+        }
+      }
+    }
+
+    const textRect = localSalesHeaderText.getBoundingClientRect();
+    const headerRect = localSalesHeader.getBoundingClientRect();
+    const headerSearchRoot = localSalesHeader.closest("thead, [role='row']")
+      || localSalesHeader.parentElement
+      || document;
+
+    const scoreCandidate = (element) => {
+      const target = element.closest?.("button, [role='button'], [class*='sort'], [class*='filter'], [aria-label], [title]")
+        || element;
+      const rect = target.getBoundingClientRect();
+      const hint = [
+        target.getAttribute?.("aria-label"),
+        target.getAttribute?.("title"),
+        target.className,
+        target.textContent
+      ].filter(Boolean).join(" ");
+      const centerY = (headerRect.top + headerRect.bottom) / 2;
+      const distance = Math.abs(rect.left - textRect.right) + Math.abs((rect.top + rect.bottom) / 2 - centerY);
+      const compact = rect.width > 0 && rect.width <= 56 && rect.height > 0 && rect.height <= 56;
+      const inHeader = rect.left >= headerRect.left - 8
+        && rect.right <= headerRect.right + 12
+        && rect.top >= headerRect.top - 8
+        && rect.bottom <= headerRect.bottom + 8;
+      const rightOfHeaderText = rect.left >= textRect.right - 6
+        && rect.left <= textRect.right + 72;
+      return {
+        target,
+        score: (/sort|filter|desc|order/i.test(hint) ? 100 : 0)
+          + (rightOfHeaderText ? 90 : 0)
+          + (compact ? 45 : 0)
+          + (inHeader ? 35 : 0)
+          - Math.min(distance, 160)
+      };
+    };
+
+    const candidateMap = new Map();
+    for (const element of headerSearchRoot.querySelectorAll(
+      "button, [role='button'], [class*='sort'], [class*='filter'], [aria-label], [title], svg, i, span"
+    )) {
+      if (!visible(element)) continue;
+      const candidate = scoreCandidate(element);
+      if (!candidateMap.has(candidate.target)) {
+        candidateMap.set(candidate.target, candidate);
+      }
+    }
+    const sortCandidates = [...candidateMap.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12)
+      .map((entry) => entry.target);
+
+    const centerY = (headerRect.top + headerRect.bottom) / 2;
+    const probePoints = [
+      [textRect.right + 6, centerY],
+      [textRect.right + 13, centerY],
+      [textRect.right + 21, centerY],
+      [headerRect.right - 8, centerY],
+      [headerRect.right - 15, centerY],
+      [headerRect.right - 10, headerRect.bottom - 10]
+    ];
+
+    const descendingPattern = /^\uB0B4\uB9BC\uCC28\uC21C$/;
+    const findDescending = () => [...document.querySelectorAll(
+      "button, [role='button'], [role='menuitem'], label, li, span, div"
+    )].find((el) => visible(el) && descendingPattern.test(normalize(el.textContent)));
+
+    const clickAt = (x, y) => {
+      const target = document.elementFromPoint(x, y);
+      if (!target) return false;
+      target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: x, clientY: y }));
+      target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: x, clientY: y }));
+      target.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: x, clientY: y }));
+      return true;
+    };
+
+    let descending = findDescending();
+    for (const candidate of sortCandidates) {
+      if (descending) break;
+      clickLikeUser(candidate);
+      await wait(450);
+      descending = findDescending();
+    }
+    for (const [x, y] of probePoints) {
+      if (descending) break;
+      clickAt(x, y);
+      await wait(450);
+      descending = findDescending();
+    }
+    if (!descending) {
+      return { ok: false, code: "LOCAL_SALES_SORT_ICON_NOT_FOUND" };
+    }
+
+    clickLikeUser(descending);
+    await wait(350);
+
+    const confirmPattern = /^\uD655\uC778$/;
+    const findConfirm = () => [...document.querySelectorAll(
+      "button, [role='button'], a, span, div"
+    )].find((el) => visible(el) && confirmPattern.test(normalize(el.textContent)));
+    let confirmControl = findConfirm();
+    if (!confirmControl) {
+      return { ok: false, code: "LOCAL_SALES_SORT_CONFIRM_NOT_FOUND" };
+    }
+    clickLikeUser(confirmControl);
+    await wait(700);
+    confirmControl = findConfirm();
+    if (confirmControl) {
+      clickLikeUser(confirmControl);
+      await wait(900);
+    }
+
+    const pageSizePattern = /^20\\s*건\\s*\/\\s*페이지$/i;
+    const pageSizeControls = [...document.querySelectorAll(
+      ".ant-select-selection-item, [role='combobox'], [class*='select']"
+    )].filter(visible);
+    let pageSizeControl = pageSizeControls.find((element) =>
+      /\\d+\\s*건\\s*\/\\s*페이지/i.test(textOf(element))
+    );
+    if (!pageSizeControl) {
+      return { ok: false, code: "PAGE_SIZE_CONTROL_NOT_FOUND" };
+    }
+    if (!pageSizePattern.test(textOf(pageSizeControl))) {
+      clickLikeUser(pageSizeControl.closest("[role='combobox'], .ant-select") || pageSizeControl);
+      await wait(450);
+      const pageSizeOption = [...document.querySelectorAll(
+        "[role='option'], .ant-select-item-option, li, [class*='option']"
+      )].filter(visible).find((element) => pageSizePattern.test(textOf(element)));
+      if (!pageSizeOption) {
+        return { ok: false, code: "PAGE_SIZE_20_OPTION_NOT_FOUND" };
+      }
+      clickLikeUser(pageSizeOption);
+      await wait(900);
+      pageSizeControl = [...document.querySelectorAll(
+        ".ant-select-selection-item, [role='combobox'], [class*='select']"
+      )].filter(visible).find((element) => pageSizePattern.test(textOf(element)));
+      if (!pageSizeControl) {
+        return { ok: false, code: "PAGE_SIZE_20_NOT_APPLIED" };
+      }
+    }
+
+    let exportButton = null;
+    const exportPattern = /^\uC804\uCCB4\s*\uB0B4\uBCF4\uB0B4\uAE30$/;
+    for (let attempt = 0; attempt < 12 && !exportButton; attempt += 1) {
+      exportButton = [...document.querySelectorAll("button, [role='button'], a, span")]
+        .find((element) => visible(element) && exportPattern.test(normalize(element.textContent)));
+      if (!exportButton) await wait(400);
+    }
+    if (!exportButton) return { ok: false, code: "EXPORT_BUTTON_NOT_FOUND_AFTER_SORT" };
+    if (exportButton.disabled || exportButton.getAttribute("aria-disabled") === "true") {
+      return { ok: false, code: "EXPORT_BUTTON_DISABLED_AFTER_SORT" };
+    }
+    clickLikeUser(exportButton);
+    await wait(500);
+    const verifiedState = readSearchState();
+    return {
+      ok: true,
+      sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC",
+      pageSize: 20,
+      exportClicked: true,
+      inputValue: String(input.value || "").trim(),
+      resultRowCount: verifiedState.rowTexts.length,
+      firstResult: verifiedState.rowTexts[0] || "",
+    };
+  })()`, true);
+  let searched = null;
+  let lastSearchDiagnostics = null;
+  for (let searchInputAttempt = 1; searchInputAttempt <= 4; searchInputAttempt += 1) {
+    const frames = sellerWindowFrames();
+    const frameCandidates = [];
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "probing-search-frame",
+      brandName,
+      jobState: `1단계/5 · 상품검색 입력창 연결 중 · ${searchInputAttempt}/4`,
+      message: `${brandName} · 응답하지 않는 POIZON 내부 프레임은 4초 후 건너뜁니다.`,
+    });
+    const probedFrames = await Promise.all(frames.map(async (frame) => {
+      const probe = await executeSellerFrameWithTimeout(frame, `(() => {
+          const visible = (element) => element && element.getClientRects().length > 0;
+          const inputs = [...document.querySelectorAll("input, textarea")].filter(visible)
+            .filter((element) => !element.disabled && !element.readOnly);
+          const body = String(document.body?.innerText || "").slice(0, 1200);
+          const hint = /상품|브랜드|품번|검색|SPU|SKU|product|brand|商品|品牌|货号|搜索/i.test(body);
+          return {
+            url: location.href,
+            title: document.title,
+            readyState: document.readyState,
+            inputCount: inputs.length,
+            hint,
+            login: /login|signin|passport/i.test(location.href),
+          };
+        })()`, 4_000, null);
+      return probe ? { frame, probe } : null;
+    }));
+    frameCandidates.push(...probedFrames.filter(Boolean));
+    frameCandidates.sort((left, right) =>
+      Number(right.probe?.inputCount > 0) - Number(left.probe?.inputCount > 0)
+      || Number(right.probe?.hint) - Number(left.probe?.hint)
+      || Number(right.frame.routingId === sellerWindow.webContents.mainFrame.routingId)
+        - Number(left.frame.routingId === sellerWindow.webContents.mainFrame.routingId)
+    );
+    const loginFrame = frameCandidates.find((candidate) => candidate.probe?.login);
+    if (loginFrame) {
+      searched = { ok: false, step: "SELLER_LOGIN_REQUIRED", diagnostics: loginFrame.probe };
+      break;
+    }
+    for (const candidate of frameCandidates) {
+      if (!candidate.probe?.inputCount && !candidate.probe?.hint) continue;
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: "searching-brand-products",
+        brandName,
+        jobState: `1단계/5 · 브랜드 입력·상품 검색 중 · ${brandName}`,
+        message: `${brandName} · 기존 검색 서비스 방식으로 브랜드를 입력하고 검색을 실행합니다.`,
+      });
+      const result = await Promise.race([
+        runSellerSearch(candidate.frame),
+        new Promise((resolve) => setTimeout(() => resolve({
+          ok: false,
+          step: "SELLER_SEARCH_STAGE_TIMEOUT",
+        }), 70_000)),
+      ]).catch((error) => ({
+        ok: false,
+        step: "SELLER_SEARCH_SCRIPT_ERROR",
+        detail: String(error?.message || error || ""),
+      }));
+      lastSearchDiagnostics = candidate.probe;
+      if (result?.ok) {
+        searched = result;
+        sellerProductFrameRoutingId = candidate.frame.routingId;
+        break;
+      }
+      if (result?.step !== "SEARCH_INPUT_NOT_FOUND") {
+        searched = result;
+        break;
+      }
+      searched = result;
+    }
+    if (searched?.ok || (searched?.step && searched.step !== "SEARCH_INPUT_NOT_FOUND")) break;
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "retrying-search-input",
+      brandName,
+      jobState: `1단계/5 · 검색 입력창 재탐색 ${searchInputAttempt}/4`,
+      message: `${brandName} · 판매자센터 검색 입력창이 아직 표시되지 않아 상품검색 화면을 다시 열고 재시도합니다. (${searchInputAttempt}/4)`,
+    });
+    if (searchInputAttempt < 4) {
+      await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => null);
+      await new Promise((resolve) => setTimeout(resolve, 2500 + searchInputAttempt * 1000));
+    }
+  }
+  if (cleared()) {
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    return { ok: false, code: "BRAND_ATTEMPT_ABORTED", message: `${brandName} 작업 시간이 초과되어 다음 브랜드로 이동합니다.` };
+  }
+  if (!searched?.ok && searched?.step === "SEARCH_INPUT_NOT_FOUND") {
+    searched = { ...searched, diagnostics: lastSearchDiagnostics };
+  }
+  if (!searched?.ok) {
+    const diagnosticPath = await captureSellerDiagnostic(brandName, String(searched?.step || "search-failed").toLowerCase());
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    return {
+      ok: false,
+      code: searched?.code || searched?.step || "SELLER_AUTOMATION_FAILED",
+      message: `${sellerBrandExportFailureMessage(searched?.code || searched?.step, brandName)}${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
+      diagnostics: { ...(searched?.diagnostics || {}), path: diagnosticPath },
+    };
+  }
+
+  const productFrame = sellerWindowFrames().find((frame) => frame.routingId === sellerProductFrameRoutingId)
+    || sellerWindow.webContents.mainFrame;
+  const exportConfirmation = await confirmSellerExportRequest(productFrame).catch(() => ({
+    ok: false,
+    confirmationObserved: false,
+    confirmationClicked: false,
+    requestAcknowledged: false,
+  }));
+  if (!exportConfirmation?.ok || !exportConfirmation?.requestAcknowledged) {
+    const diagnosticPath = await captureSellerDiagnostic(brandName, "export-confirmation-failed");
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    return {
+      ok: false,
+      code: "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED",
+      message: `${brandName} 전체 내보내기 최종 확인을 완료하지 못했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
+      diagnostics: { ...exportConfirmation, path: diagnosticPath },
+    };
+  }
+
+  const downloadCenterShortcut = await clickSellerDownloadCenterShortcut(productFrame).catch(() => ({
+    ok: false,
+    clicked: false,
+    code: "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND",
+  }));
+  if (!downloadCenterShortcut?.ok || !downloadCenterShortcut?.clicked) {
+    const diagnosticPath = await captureSellerDiagnostic(brandName, "download-center-shortcut-not-found");
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    return {
+      ok: false,
+      code: downloadCenterShortcut?.code || "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND",
+      message: `${brandName} 내보내기 후 다운로드센터 바로 가기 버튼을 찾지 못했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
+      diagnostics: { ...downloadCenterShortcut, path: diagnosticPath },
+    };
+  }
+
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "seller-search-evidence",
+    brandName,
+    jobState: "2단계/5 · 전체 내보내기·다운로드센터 이동 완료",
+    message: `${brandName} · 입력값 ${searched.inputValue || "확인 불가"} · 현지 30일 내림차순 · 20건/페이지 · 전체 내보내기 · 다운로드센터 바로 가기 클릭 완료`,
+  });
+
+  const baselineJobs = await baselinePromise;
+  const baselineAvailable = Array.isArray(baselineJobs);
+  const baselineJobIds = new Set([
+    ...brandExportJobs.keys(),
+    ...savedBrandExportJobs().map((job) => String(job?.jobId || "").trim()),
+    ...(baselineJobs || []).map((job) => String(job?.id || "").trim()),
+  ].filter(Boolean));
+  if (!baselineAvailable) {
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "baseline-fallback",
+      brandName,
+      jobState: "1단계/5 · 상품검색 완료 · 작업번호 후행 확인 방식",
+      message: `${brandName} · 기존 작업번호 화면 판독은 생략하고 실제 내보내기 요청 이후 새 미사용 작업번호를 확인합니다.`,
+    });
+  }
+
+  const completeness = {
+    ok: true,
+    expected: 0,
+    pageCount: 0,
+    confirmationObserved: Boolean(exportConfirmation.confirmationObserved),
+    confirmationClicked: Boolean(exportConfirmation.confirmationClicked),
+    requestAcknowledged: Boolean(exportConfirmation.requestAcknowledged),
+  };
+
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "waiting-for-job-creation",
+    brandName,
+    jobState: "2단계/5 · 전체 내보내기 클릭 완료 · 새 작업번호 확인 중",
+    message: `${brandName} · 정상 작동 기준과 동일하게 전체 내보내기를 실행했습니다. 다운로드센터의 새 작업번호를 확인합니다.`,
+  });
+
+  let createdJob = null;
+  const verificationStartedAt = Date.now();
+  const verificationTimeoutMs = 180000;
+  let lastReloadAt = 0;
+  let lastProgressAt = 0;
+  let fallbackCandidateJobId = "";
+  let fallbackCandidateStableReads = 0;
+  await new Promise((resolve) => setTimeout(resolve, 2500));
+  while (Date.now() - verificationStartedAt < verificationTimeoutMs) {
+    if (cleared()) break;
+    const currentJobs = await Promise.race([
+      readSellerExportJobsFromMonitor(),
+      new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
+    ]);
+    if (Array.isArray(currentJobs)) {
+      const unusedJobs = currentJobs.filter((job) => !brandExportJobOwner(job?.id));
+      const candidate = findNewSellerExportJob([...baselineJobIds], unusedJobs);
+      if (candidate && baselineAvailable) {
+        createdJob = candidate;
+      } else if (candidate) {
+        const candidateId = String(candidate.id || "").trim();
+        fallbackCandidateStableReads = candidateId === fallbackCandidateJobId
+          ? fallbackCandidateStableReads + 1
+          : 1;
+        fallbackCandidateJobId = candidateId;
+        if (fallbackCandidateStableReads >= 2) createdJob = candidate;
+      } else {
+        fallbackCandidateJobId = "";
+        fallbackCandidateStableReads = 0;
+      }
+    }
+    if (createdJob) break;
+
+    const elapsedMs = Date.now() - verificationStartedAt;
+    if (elapsedMs - lastProgressAt >= 10000) {
+      lastProgressAt = elapsedMs;
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: "waiting-for-job-creation",
+        brandName,
+        jobState: `2단계/5 · 다운로드센터 작업 생성 대기 · ${Math.floor(elapsedMs / 1000)}초`,
+        message: `${brandName} · 전체 내보내기 요청 완료 · POIZON이 새 작업번호를 생성하는 중입니다. 화면을 반복 초기화하지 않고 기다립니다.`,
+      });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    const monitor = ensureSellerMonitorWindow();
+    if (elapsedMs >= 15000 && Date.now() - lastReloadAt >= 15000) {
+      await monitor.webContents.reloadIgnoringCache();
+      lastReloadAt = Date.now();
+    }
+  }
+  if (cleared()) {
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    return { ok: false, code: "BRAND_ATTEMPT_ABORTED", message: `${brandName} 작업 시간이 초과되어 다음 브랜드로 이동합니다.` };
+  }
+  if (!createdJob) {
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    sellerWindow.hide();
+    showCollectorWindow();
+    return {
+      ok: false,
+      code: "EXPORT_JOB_NOT_CREATED",
+      confirmationObserved: Boolean(completeness?.confirmationObserved),
+      confirmationClicked: Boolean(completeness?.confirmationClicked),
+      requestAcknowledged: Boolean(completeness?.requestAcknowledged),
+      message: completeness?.confirmationObserved && !completeness?.confirmationClicked
+        ? "POIZON 전체 내보내기 확인창을 완료하지 못했습니다. 확인창 처리 로직을 다시 점검해 주세요."
+        : "실제 상품검색과 전체 내보내기 요청은 실행됐지만 3분 동안 새 미사용 작업번호를 확인하지 못했습니다. 다운로드센터 화면 구조 또는 로그인 세션을 확인해 주세요.",
+    };
+  }
+  if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "작업 기록 삭제로 이전 요청을 중단했습니다." };
+  pendingBrandExportJobId = String(createdJob.id || "").trim();
+  const registeredJobId = pendingBrandExportJobId;
+  const existingOwner = brandExportJobOwner(registeredJobId);
+  if (existingOwner) {
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    sellerWindow.hide();
+    showCollectorWindow();
+    return {
+      ok: false,
+      code: "EXPORT_JOB_ID_REUSED",
+      message: `새 작업번호가 생성되지 않았습니다. 기존 작업번호 ${registeredJobId}는 ${existingOwner.brandName || "다른 브랜드"} 작업에 이미 연결되어 있습니다.`,
+    };
+  }
+  brandExportJobs.set(registeredJobId, {
+    jobId: registeredJobId,
+    brandName,
+    brandKo,
+    createdAt: Date.now(),
+    downloadStarted: false,
+    expectedProductCount: Number(completeness.expected || searched.expectedTotal || 0),
+  });
+  await rememberBrandExportJob({
+    jobId: registeredJobId,
+    brandName,
+    brandKo,
+    createdAt: Date.now(),
+    expectedProductCount: Number(completeness.expected || searched.expectedTotal || 0),
+    sessionGeneration,
+  });
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "job-created",
+    brandName,
+    jobId: registeredJobId,
+    jobState: "3단계/5 · 작업번호 생성 완료 · 처리 대기",
+    message: `${brandName} · 3단계/5 · 새 작업번호 ${registeredJobId} 생성 완료 · POIZON 처리 대기`,
+  });
+  brandExportJobPending = false;
+  pendingBrandExportName = "";
+  pendingBrandExportJobId = "";
+  sellerWindow.hide();
+  mainWindow?.show();
+  mainWindow?.focus();
+  if (!input.deferMonitor) void watchAllSellerExportJobsEveryTenSeconds();
+  return {
+    ok: true,
+    folder,
+    jobId: registeredJobId,
+    expectedProductCount: Number(completeness.expected || searched.expectedTotal || 0),
+  };
+}
+
 async function syncBrandCatalogFromKrPoizon() {
   const window = new BrowserWindow({
     show: false,
@@ -4088,6 +4940,57 @@ app.whenReady().then(async () => {
     openSellerCenterWindow();
     return { ok: true };
   });
+  ipcMain.handle("seller:open-product-search", () => {
+    openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL);
+    return { ok: true };
+  });
+  const abortSellerBrandExportAttempt = async () => {
+  brandExportAttemptGeneration += 1;
+  brandExportJobPending = false;
+  pendingBrandExportName = "";
+  pendingBrandExportJobId = "";
+  sellerProductFrameRoutingId = null;
+  try {
+    sellerWindow?.webContents.stop();
+    if (sellerWindow && !sellerWindow.isDestroyed()) {
+      await Promise.race([
+        sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL),
+        new Promise((resolve) => setTimeout(resolve, 8_000)),
+      ]);
+      sellerWindow.hide();
+    }
+  } catch {}
+  showCollectorWindow();
+  return { ok: true };
+  };
+  ipcMain.handle("seller:brand-export", async (_event, input) => {
+    let timeout;
+    const timedOut = new Promise((resolve) => {
+      timeout = setTimeout(() => resolve({
+        ok: false,
+        code: "BRAND_AUTOMATION_TIMEOUT",
+        message: `${String(input?.brandName || "선택 브랜드")} 작업이 20분 안에 끝나지 않아 강제 종료했습니다. 다음 브랜드로 이동합니다.`,
+      }), SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS);
+    });
+    const result = await Promise.race([automateSellerBrandExport(input), timedOut]);
+    clearTimeout(timeout);
+    if (result?.code === "BRAND_AUTOMATION_TIMEOUT") {
+      await abortSellerBrandExportAttempt();
+      return { ...result, aborted: true };
+    }
+    return result;
+  });
+  ipcMain.handle("seller:abort-brand-export-attempt", abortSellerBrandExportAttempt);
+
+ipcMain.handle("seller:start-brand-export-monitor", () => {
+    if (brandExportJobs.size && (!sellerWindow || sellerWindow.isDestroyed())) {
+      openSellerCenterWindow(SELLER_EXPORT_CENTER_URL, { visible: false });
+    }
+    if (brandExportJobs.size) ensureSellerMonitorWindow();
+    scheduleBrandExportMonitor(0);
+    return { ok: true, jobs: brandExportJobs.size };
+  });
+  ipcMain.handle("brand-export:pending-jobs", () => restorePendingBrandExportJobs());
   ipcMain.handle("brand-export:open-file", async (_event, input = {}) => {
     const filePath = String(input.path || "").trim();
     if (!filePath) return { ok: false, message: "열 파일 경로가 없습니다." };
