@@ -25,7 +25,9 @@ test("the desktop can audit every official domain with checkpoints and safe paus
   assert.match(mainSource, /processAuditIndex\(index, 2\)/);
   assert.match(mainSource, /for \(const index of auditQueue\)/);
   assert.match(mainSource, /await persistOfficialDomainAudit/);
-  assert.match(mainSource, /await wait\(4_000\)/);
+  assert.match(mainSource, /const OFFICIAL_DOMAIN_AUDIT_BETWEEN_BRANDS_MS = 750/);
+  assert.match(mainSource, /await wait\(OFFICIAL_DOMAIN_AUDIT_BETWEEN_BRANDS_MS\)/);
+  assert.doesNotMatch(mainSource, /await wait\(4_000\)/);
   assert.match(mainSource, /DISCOVERY_BLOCKED/);
   assert.match(mainSource, /OFFICIAL_DOMAIN_AUDIT_COOLDOWN_MS/);
   assert.match(mainSource, /officialDomainAuditResumeTimer/);

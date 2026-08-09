@@ -41,8 +41,8 @@ test("a stalled brand attempt is aborted and the remaining queue can continue", 
   assert.match(main, /PRODUCT_VERIFICATION_TIMEOUT/);
 });
 
-test("release metadata is 2.10.98", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.98");
-  assert.equal(JSON.parse(lockSource).version, "2.10.98");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.98");
+test("release metadata is 2.10.99", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.99");
+  assert.equal(JSON.parse(lockSource).version, "2.10.99");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.99");
 });

@@ -60,7 +60,7 @@ test("missing, partial, and stale brand catalogs automatically request a refresh
   assert.equal(brandCatalogNeedsSync(complete, new Date(now - BRAND_CATALOG_MAX_AGE_MS - 1).toISOString(), now), true);
 });
 
-test("the desktop automatically syncs the full catalog and keeps brand filtering responsive", async () => {
+test("the desktop automatically syncs and displays the full catalog", async () => {
   const [mainSource, rendererSource, storeSource] = await Promise.all([
     readFile(new URL("../main.mjs", import.meta.url), "utf8"),
     readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
@@ -71,7 +71,8 @@ test("the desktop automatically syncs the full catalog and keeps brand filtering
   assert.doesNotMatch(mainSource, /throw new Error\("EN_POIZON_BRAND_DATA_NOT_FOUND"\)/);
   assert.match(mainSource, /needsBrandSync: brandCatalogNeedsSync/);
   assert.match(rendererSource, /syncFullBrandCatalog\(\{ automatic: true \}\)/);
-  assert.match(rendererSource, /matchedBrands\.slice\(0, normalized \? 300 : 200\)/);
+  assert.match(rendererSource, /const brands = matchedBrands;/);
+  assert.doesNotMatch(rendererSource, /matchedBrands\.slice\(0, normalized \? 300 : 200\)/);
   assert.match(mainSource, /ensureOfficialDomainRegistry/);
   assert.match(rendererSource, /개 POIZON 브랜드/);
   assert.match(rendererSource, /공식몰 확인/);
