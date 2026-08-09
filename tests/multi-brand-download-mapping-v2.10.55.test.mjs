@@ -43,14 +43,18 @@ test("a completed job removed during download cannot be selected again by a stal
 test("a stalled brand attempt is aborted and the remaining queue can continue", () => {
   assert.match(renderer, /BRAND_AUTOMATION_TIMEOUT_MS = 5 \* 60 \* 1000/);
   assert.match(renderer, /abortSellerBrandExportAttempt/);
+  assert.match(renderer, /automation\?\.code === "BRAND_AUTOMATION_TIMEOUT" && !automation\?\.aborted/);
   assert.match(preload, /seller:abort-brand-export-attempt/);
+  assert.match(main, /SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 5 \* 60 \* 1000/);
+  assert.match(main, /Promise\.race\(\[automateSellerBrandExport\(input\), timedOut\]\)/);
+  assert.match(main, /return \{ \.\.\.result, aborted: true \}/);
   assert.match(main, /brandExportAttemptGeneration \+= 1/);
   assert.match(main, /SELLER_SEARCH_STAGE_TIMEOUT/);
   assert.match(main, /PRODUCT_VERIFICATION_TIMEOUT/);
 });
 
-test("release metadata is 2.10.101", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.101");
-  assert.equal(JSON.parse(lockSource).version, "2.10.101");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.101");
+test("release metadata is 2.10.102", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.102");
+  assert.equal(JSON.parse(lockSource).version, "2.10.102");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.102");
 });

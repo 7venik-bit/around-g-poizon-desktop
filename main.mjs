@@ -104,6 +104,7 @@ let sellerProductFrameRoutingId = null;
 const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
 const SELLER_PRODUCT_SEARCH_URL = "https://seller.poizon.com/main/goods/search";
 const SELLER_EXPORT_CENTER_URL = "https://seller.poizon.com/main/exportCenter";
+const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 5 * 60 * 1000;
 const KR_POIZON_BRAND_LIST_URL = "https://kr.poizon.com/brand/list";
 const EN_POIZON_BRAND_LIST_URL = "https://www.poizon.com/brand/list";
 const APP_ICON_PATH = join(import.meta.dirname, "build", "icon.png");
@@ -4519,8 +4520,7 @@ app.whenReady().then(async () => {
     openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL);
     return { ok: true };
   });
-  ipcMain.handle("seller:brand-export", (_event, input) => automateSellerBrandExport(input));
-  ipcMain.handle("seller:abort-brand-export-attempt", async () => {
+  const abortSellerBrandExportAttempt = async () => {
   brandExportAttemptGeneration += 1;
   brandExportJobPending = false;
   pendingBrandExportName = "";
@@ -4538,7 +4538,25 @@ app.whenReady().then(async () => {
   } catch {}
   showCollectorWindow();
   return { ok: true };
-});
+  };
+  ipcMain.handle("seller:brand-export", async (_event, input) => {
+    let timeout;
+    const timedOut = new Promise((resolve) => {
+      timeout = setTimeout(() => resolve({
+        ok: false,
+        code: "BRAND_AUTOMATION_TIMEOUT",
+        message: `${String(input?.brandName || "선택 브랜드")} 작업이 5분 안에 끝나지 않아 강제 종료했습니다. 다음 브랜드로 이동합니다.`,
+      }), SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS);
+    });
+    const result = await Promise.race([automateSellerBrandExport(input), timedOut]);
+    clearTimeout(timeout);
+    if (result?.code === "BRAND_AUTOMATION_TIMEOUT") {
+      await abortSellerBrandExportAttempt();
+      return { ...result, aborted: true };
+    }
+    return result;
+  });
+  ipcMain.handle("seller:abort-brand-export-attempt", abortSellerBrandExportAttempt);
 
 ipcMain.handle("seller:start-brand-export-monitor", () => {
     if (brandExportJobs.size && (!sellerWindow || sellerWindow.isDestroyed())) {
