@@ -44,8 +44,8 @@ test("renderer stops activity after the final Excel import drains", () => {
   assert.match(renderer, /stopBrandActivity\(\)/);
 });
 
-test("release metadata is 2.10.115", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.115");
-  assert.equal(JSON.parse(lockSource).version, "2.10.115");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.115");
+test("release metadata is 2.10.116", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.116");
+  assert.equal(JSON.parse(lockSource).version, "2.10.116");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.116");
 });

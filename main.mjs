@@ -3154,7 +3154,7 @@ async function automateSellerBrandExport(input = {}) {
   // A separately opened Chrome window is a different browser session and does
   // not reflect this automation, which previously made real work look idle.
   openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, {
-    visible: true,
+    visible: false,
     activate: false,
     deferNavigation: true,
   });
@@ -3185,6 +3185,16 @@ async function automateSellerBrandExport(input = {}) {
     };
   }
   await new Promise((resolve) => setTimeout(resolve, 3500));
+  // Keep the same persistent Seller Center session and automation path used by
+  // the popular-list collector, but leave the native window minimized while
+  // brand search, export registration, and download-center monitoring run.
+  // backgroundThrottling is disabled on this BrowserWindow, so minimizing it
+  // does not pause the seller automation.
+  if (sellerWindow && !sellerWindow.isDestroyed()) {
+    sellerWindow.showInactive();
+    sellerWindow.minimize();
+    showCollectorWindow();
+  }
   const connectedPage = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => ({
     url: location.href,
     title: document.title,

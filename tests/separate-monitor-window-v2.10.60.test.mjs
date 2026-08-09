@@ -54,8 +54,8 @@ test("multi-brand UI shows registration processing completion and failure counts
   assert.match(style, /\.brand-batch-row\.is-error/);
 });
 
-test("release metadata is 2.10.115", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.115");
-  assert.equal(JSON.parse(lockSource).version, "2.10.115");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.115");
+test("release metadata is 2.10.116", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.116");
+  assert.equal(JSON.parse(lockSource).version, "2.10.116");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.116");
 });
