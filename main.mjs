@@ -1658,11 +1658,16 @@ function isPoizonExportDownloadUrl(value = "") {
 
 function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
   const visible = options.visible !== false;
+  const activate = options.activate !== false;
   const deferNavigation = options.deferNavigation === true;
   if (sellerWindow && !sellerWindow.isDestroyed()) {
     if (visible) {
-      sellerWindow.show();
-      sellerWindow.focus();
+      if (activate) {
+        sellerWindow.show();
+        sellerWindow.focus();
+      } else {
+        sellerWindow.showInactive();
+      }
     } else {
       sellerWindow.hide();
       showCollectorWindow();
@@ -1674,7 +1679,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
   }
   sellerWindow = new BrowserWindow({
     icon: APP_ICON_PATH,
-    show: visible,
+    show: visible && activate,
     width: 1500,
     height: 940,
     minWidth: 1000,
@@ -1868,6 +1873,11 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
     sellerWindow = null;
     brandExportJobPending = false;
   });
+  if (visible && !activate) {
+    sellerWindow.once("ready-to-show", () => {
+      if (sellerWindow && !sellerWindow.isDestroyed()) sellerWindow.showInactive();
+    });
+  }
   if (!deferNavigation && targetUrl) sellerWindow.loadURL(targetUrl);
   if (!visible) showCollectorWindow();
 }
@@ -2940,7 +2950,11 @@ async function automateSellerBrandExport(input = {}) {
   // Show the exact Electron Seller Center window that is being automated.
   // A separately opened Chrome window is a different browser session and does
   // not reflect this automation, which previously made real work look idle.
-  openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, { visible: true, deferNavigation: true });
+  openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, {
+    visible: true,
+    activate: false,
+    deferNavigation: true,
+  });
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     brandExportJobPending = false;
     pendingBrandExportName = "";
