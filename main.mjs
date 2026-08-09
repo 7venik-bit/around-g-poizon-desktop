@@ -3174,7 +3174,7 @@ async function confirmSellerExportRequestPhysical(targetFrame) {
 async function clickSellerDownloadCenterShortcutPhysical(targetFrame) {
   const clicked = await physicalClickSellerElement(targetFrame, `
     return [...document.querySelectorAll("a,button,[role='button'],span")].filter(visible)
-      .find((element) => /^다운로드\\s*센터\\s*바로\\s*가기$/.test(textOf(element)))
+      .find((element) => /^(?:다운로드\\s*센터\\s*)?바로\\s*가기$/.test(textOf(element)))
       ?.closest("a,button,[role='button']") || null;
   `, "PHYSICAL_DOWNLOAD_CENTER", 15_000);
   return { ok: clicked.ok, clicked: clicked.ok, code: clicked.ok ? "" : "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND" };
@@ -5162,6 +5162,26 @@ app.whenReady().then(async () => {
     return result;
   });
   ipcMain.handle("seller:abort-brand-export-attempt", abortSellerBrandExportAttempt);
+
+  ipcMain.handle("seller:stop-brand-work", async () => {
+    brandWorkSessionGeneration += 1;
+    if (brandExportMonitorRestartTimer) {
+      clearTimeout(brandExportMonitorRestartTimer);
+      brandExportMonitorRestartTimer = null;
+    }
+    brandExportJobs.clear();
+    brandExportAllCompleteSent = true;
+    brandDownloadStarted = false;
+    activeBrandDownloadJobId = "";
+    await store.setSettings({ brandExportJobCache: [] });
+    await abortSellerBrandExportAttempt();
+    if (sellerMonitorWindow && !sellerMonitorWindow.isDestroyed()) {
+      sellerMonitorWindow.webContents.stop();
+      sellerMonitorWindow.destroy();
+    }
+    sellerMonitorWindow = null;
+    return { ok: true, stopped: true };
+  });
 
 ipcMain.handle("seller:start-brand-export-monitor", () => {
     if (brandExportJobs.size && (!sellerWindow || sellerWindow.isDestroyed())) {

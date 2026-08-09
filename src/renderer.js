@@ -291,7 +291,7 @@ $("#brand-seller-diagnostic")?.addEventListener("click", () => {
 });
 
 $("#brand-stop-current")?.addEventListener("click", () => {
-  if (!brandSelectionBusy && !activeExportBrand) return;
+  if (!brandSelectionBusy && !activeExportBrand && !brandExportJobs.size) return;
   $("#brand-export-selected")?.click();
 });
 
@@ -799,7 +799,7 @@ function updateBrandSelectionControls() {
     const label = search.querySelector("span");
     if (label) label.textContent = brandSelectionBusy ? "작업 중지" : "브랜드 검색";
   }
-  if (stopCurrent) stopCurrent.disabled = !brandSelectionBusy && !activeExportBrand;
+  if (stopCurrent) stopCurrent.disabled = !brandSelectionBusy && !activeExportBrand && !brandExportJobs.size;
 }
 
 function selectedBrandsForExport() {
@@ -1581,27 +1581,32 @@ $("#brand-selection-clear")?.addEventListener("click", () => {
   renderBrandCards($("#brand-filter")?.value || "");
 });
 $("#brand-export-selected")?.addEventListener("click", async () => {
-  if (brandSelectionBusy || activeExportBrand) {
+  if (brandSelectionBusy || activeExportBrand || brandExportJobs.size) {
     const stoppedBrand = String(activeExportBrand?.name || "").trim();
     brandWorkHistoryGeneration += 1;
+    acceptBrandWorkEvents = false;
     brandExportQueue = [];
+    detectedBrandImportQueue.length = 0;
+    queuedBrandImportPaths.clear();
     activeExportBrand = null;
     if (stoppedBrand) updateBrandBatchState(stoppedBrand, "사용자 중지");
     for (const [key, item] of brandBatchStates.entries()) {
-      if (!item.jobId && !brandJobIsFinished(item.state)) {
+      if (!brandJobIsFinished(item.state)) {
         brandBatchStates.set(key, { ...item, state: "사용자 중지", updatedAt: Date.now() });
+      }
+    }
+    for (const [jobId, job] of brandExportJobs.entries()) {
+      if (!brandJobIsFinished(job.state)) {
+        brandExportJobs.set(jobId, { ...job, state: "사용자 중지", updatedAt: Date.now() });
       }
     }
     renderBrandBatchProgress();
     stopBrandActivity();
     $("#brand-status").className = "status";
-    $("#brand-status").textContent = brandExportJobs.size
-      ? "브랜드 검색 등록을 중지했습니다. 이미 생성된 작업번호의 다운로드 감시는 계속합니다."
-      : "브랜드 검색 작업을 중지했습니다.";
-    await window.aroundG.abortSellerBrandExportAttempt?.();
+    $("#brand-status").textContent = "브랜드 검색과 다운로드 감시를 모두 중지했습니다.";
+    await window.aroundG.stopSellerBrandWork?.();
     brandSelectionBusy = false;
     renderBrandCards($("#brand-filter")?.value || "");
-    if (brandExportJobs.size) await window.aroundG.startSellerBrandExportMonitor();
     return;
   }
   const selectedBrands = selectedBrandsForExport();

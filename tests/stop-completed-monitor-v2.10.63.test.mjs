@@ -44,8 +44,22 @@ test("renderer stops activity after the final Excel import drains", () => {
   assert.match(renderer, /stopBrandActivity\(\)/);
 });
 
-test("release metadata is 2.10.131", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.131");
-  assert.equal(JSON.parse(lockSource).version, "2.10.131");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.131");
+test("manual stop cancels automation, retries, and download monitoring immediately", () => {
+  assert.match(renderer, /acceptBrandWorkEvents = false/);
+  assert.match(renderer, /detectedBrandImportQueue\.length = 0/);
+  assert.match(renderer, /await window\.aroundG\.stopSellerBrandWork\?\.\(\)/);
+  assert.match(renderer, /brandSelectionBusy \|\| activeExportBrand \|\| brandExportJobs\.size/);
+  assert.match(renderer, /brandExportJobs\.set\(jobId, \{ \.\.\.job, state: "사용자 중지"/);
+  assert.doesNotMatch(renderer, /이미 생성된 작업번호의 다운로드 감시는 계속합니다/);
+  assert.match(main, /ipcMain\.handle\("seller:stop-brand-work"/);
+  assert.match(main, /clearTimeout\(brandExportMonitorRestartTimer\)/);
+  assert.match(main, /brandExportJobs\.clear\(\)/);
+  assert.match(main, /await abortSellerBrandExportAttempt\(\)/);
+  assert.match(main, /sellerMonitorWindow\.destroy\(\)/);
+});
+
+test("release metadata is 2.10.132", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.132");
+  assert.equal(JSON.parse(lockSource).version, "2.10.132");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.132");
 });
