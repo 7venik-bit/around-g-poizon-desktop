@@ -11,9 +11,10 @@ test("selected-brand export shows the exact Seller Center window being automated
 
   assert.match(
     automationSource,
-    /openSellerCenterWindow\(SELLER_PRODUCT_SEARCH_URL, \{ visible: true, deferNavigation: true \}\)/,
+    /openSellerCenterWindow\(SELLER_PRODUCT_SEARCH_URL, \{[\s\S]*?visible: true,[\s\S]*?activate: false,[\s\S]*?deferNavigation: true/,
   );
   assert.match(automationSource, /separately opened Chrome window is a different browser session/);
+  assert.match(mainSource, /sellerWindow\.showInactive\(\)/);
 });
 
 test("seller automation navigates once and emits evidence instead of optimistic progress", () => {
@@ -43,6 +44,7 @@ test("manual Seller Center actions remain visible by default", () => {
   const openSource = mainSource.slice(openStart, openEnd);
 
   assert.match(openSource, /const visible = options\.visible !== false/);
-  assert.match(openSource, /show: visible/);
+  assert.match(openSource, /const activate = options\.activate !== false/);
+  assert.match(openSource, /show: visible && activate/);
   assert.match(mainSource, /ipcMain\.handle\("seller:open", \(\) => \{\s*openSellerCenterWindow\(\)/);
 });
