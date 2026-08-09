@@ -284,15 +284,6 @@ function stopBrandActivity() {
   }
 }
 
-$("#brand-seller-diagnostic")?.addEventListener("click", () => {
-  void window.aroundG.openSellerProductSearch();
-});
-
-$("#brand-stop-current")?.addEventListener("click", () => {
-  if (!brandSelectionBusy && !activeExportBrand) return;
-  $("#brand-export-selected")?.click();
-});
-
 function finalizeBrandActivityAfterMainCompletion() {
   if (!brandMainAllComplete || detectedBrandImportRunning || detectedBrandImportQueue.length) return false;
   for (const [jobId, job] of brandExportJobs.entries()) {
@@ -802,102 +793,6 @@ function updateBrandSelectionControls() {
 
 function selectedBrandsForExport() {
   return explorerMeta.brands.filter((brand) => selectedBrandIds.has(Number(brand.id)));
-}
-
-async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) {
-  if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return;
-  if (!brandExportQueue.length) {
-    activeExportBrand = null;
-    brandSelectionBusy = false;
-    renderBrandCards($("#brand-filter")?.value || "");
-    const failureCount = brandExportFailureCount;
-    $("#brand-status").className = failureCount ? "status error" : "status success";
-    $("#brand-status").textContent = failureCount
-      ? `${brandExportJobs.size}개 브랜드 작업 등록 · ${failureCount}개 브랜드 실패 · 등록된 작업 감시를 계속합니다.`
-      : `${brandExportJobs.size}개 브랜드 작업 등록 완료 · 작업번호별 동시 감시를 시작합니다.`;
-    brandExportFailureCount = 0;
-    if (!brandExportJobs.size) stopBrandActivity();
-    else touchBrandActivity("POIZON 파일 처리 상태 자동 감시 중");
-    await window.aroundG.startSellerBrandExportMonitor();
-    return;
-  }
-  activeExportBrand = brandExportQueue.shift();
-  brandSelectionBusy = true;
-  selectedBrandId = Number(activeExportBrand.id);
-  retainSelectedBrandName(activeExportBrand.name);
-  renderBrandCards($("#brand-filter")?.value || "");
-  $("#brand-status").className = "status";
-  $("#brand-status").textContent = `${activeExportBrand.name} · 1단계/5 · 판매자센터 연결 후 실제 상품검색 시작 중`;
-  updateBrandBatchState(activeExportBrand.name, "상품검색·내보내기 등록 중");
-  touchBrandActivity(`${activeExportBrand.name} · 실제 상품검색 실행 중`);
-  const automationRequest = window.aroundG.automateSellerBrandExport({
-    brandName: activeExportBrand.name || "",
-    brandKo: activeExportBrand.ko || "",
-    brandId: selectedBrandId,
-    deferMonitor: true,
-  });
-  const automation = await Promise.race([
-    automationRequest,
-    new Promise((resolve) => setTimeout(() => resolve({
-      ok: false,
-      code: "BRAND_AUTOMATION_TIMEOUT",
-      message: `${activeExportBrand?.name || "선택 브랜드"} 작업이 5분 안에 끝나지 않아 다음 브랜드로 이동합니다.`,
-    }), BRAND_AUTOMATION_TIMEOUT_MS)),
-  ]);
-  if (automation?.code === "BRAND_AUTOMATION_TIMEOUT" && !automation?.aborted) {
-    // The main process owns the hard timeout as well. Do not block queue
-    // recovery while its hidden Seller Center page is being reset.
-    void window.aroundG.abortSellerBrandExportAttempt?.();
-  }
-  if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return;
-  if (!automation?.ok) {
-    recordBrandSelection(activeExportBrand, "데이터 가져오기 실패");
-    const failedBrandName = activeExportBrand?.name || "선택 브랜드";
-    const failureCode = String(automation?.code || "");
-    const remainingCount = brandExportQueue.length;
-    brandExportFailureCount += 1;
-    const failureReason = String(automation?.diagnostics?.reason || "").trim();
-    updateBrandBatchState(
-      failedBrandName,
-      `실패 · ${failureCode || "자동화 오류"}${failureReason ? ` · ${failureReason}` : ""}`,
-    );
-    activeExportBrand = null;
-    if (failureCode === "SELLER_LOGIN_REQUIRED") {
-      brandExportQueue = [];
-      brandSelectionBusy = false;
-      renderBrandCards($("#brand-filter")?.value || "");
-      $("#brand-status").className = "status error";
-      $("#brand-status").textContent = `${failedBrandName} 작업 중 판매자센터 로그인이 필요합니다. 로그인 후 다시 실행해 주세요.`;
-      if (brandExportJobs.size) await window.aroundG.startSellerBrandExportMonitor();
-      else stopBrandActivity();
-      return;
-    }
-    brandSelectionBusy = remainingCount > 0;
-    renderBrandCards($("#brand-filter")?.value || "");
-    $("#brand-status").className = "status error";
-    $("#brand-status").textContent = remainingCount
-      ? `${failedBrandName} 작업 실패 · ${automation?.message || "판매자센터 자동화에 실패했습니다."} · 다음 ${remainingCount}개 브랜드 작업을 계속합니다.`
-      : `${failedBrandName} 작업 실패 · ${automation?.message || "판매자센터 자동화에 실패했습니다."}`;
-    if (brandExportJobs.size) {
-      touchBrandActivity("등록된 작업 감시와 남은 브랜드 실행을 계속합니다.");
-      await window.aroundG.startSellerBrandExportMonitor();
-    }
-    if (remainingCount > 0) {
-      setTimeout(() => exportNextSelectedBrand(generation), 900);
-    } else if (!brandExportJobs.size) {
-      stopBrandActivity();
-    }
-    return;
-  } else {
-    renderBrandExportFolder(automation.folder);
-    updateBrandExportJob(automation.jobId, "3단계/5 · 작업번호 생성 완료 · 처리 대기", activeExportBrand.name);
-    updateBrandBatchState(activeExportBrand.name, "작업 생성 · POIZON 처리 대기", automation.jobId);
-    recordBrandSelection(activeExportBrand, "전체 내보내기 요청", { jobId: automation.jobId });
-    $("#brand-status").className = "status success";
-    $("#brand-status").textContent = `${activeExportBrand.name} · 3단계/5 · 작업번호 생성 완료${automation.jobId ? ` · ${automation.jobId}` : ""} · 다음 브랜드 등록 중`;
-    activeExportBrand = null;
-    setTimeout(() => exportNextSelectedBrand(generation), 400);
-  }
 }
 
 function retainSelectedBrandName(brandName = "") {
@@ -1543,57 +1438,6 @@ $("#brand-selection-clear")?.addEventListener("click", () => {
   saveBrandSelections();
   renderBrandCards($("#brand-filter")?.value || "");
 });
-$("#brand-export-selected")?.addEventListener("click", async () => {
-  if (brandSelectionBusy || activeExportBrand) {
-    const stoppedBrand = String(activeExportBrand?.name || "").trim();
-    brandWorkHistoryGeneration += 1;
-    brandExportQueue = [];
-    activeExportBrand = null;
-    if (stoppedBrand) updateBrandBatchState(stoppedBrand, "사용자 중지");
-    for (const [key, item] of brandBatchStates.entries()) {
-      if (!item.jobId && !brandJobIsFinished(item.state)) {
-        brandBatchStates.set(key, { ...item, state: "사용자 중지", updatedAt: Date.now() });
-      }
-    }
-    renderBrandBatchProgress();
-    stopBrandActivity();
-    $("#brand-status").className = "status";
-    $("#brand-status").textContent = brandExportJobs.size
-      ? "브랜드 검색 등록을 중지했습니다. 이미 생성된 작업번호의 다운로드 감시는 계속합니다."
-      : "브랜드 검색 작업을 중지했습니다.";
-    await window.aroundG.abortSellerBrandExportAttempt?.();
-    brandSelectionBusy = false;
-    renderBrandCards($("#brand-filter")?.value || "");
-    if (brandExportJobs.size) await window.aroundG.startSellerBrandExportMonitor();
-    return;
-  }
-  const selectedBrands = selectedBrandsForExport();
-  if (!selectedBrands.length) return;
-  acceptBrandWorkEvents = true;
-  brandMainAllComplete = false;
-  const generation = brandWorkHistoryGeneration;
-  brandExportFailureCount = 0;
-  brandBatchTotal = selectedBrands.length;
-  brandBatchStates.clear();
-  selectedBrands.forEach((brand) => updateBrandBatchState(brand.name, "등록 대기"));
-  // Snapshot the exact brands shown as selected. Later catalog rendering or a
-  // stale singular brand name must never change the active export queue.
-  brandExportQueue = selectedBrands.map((brand) => ({
-    id: Number(brand.id),
-    name: String(brand.name || "").trim(),
-    ko: String(brand.ko || "").trim(),
-  }));
-  brandSelectionBusy = true;
-  clearExplorerResults();
-  brandWorkbenchProducts = [];
-  renderBrandWorkbench();
-  renderBrandCards($("#brand-filter")?.value || "");
-  $("#brand-status").className = "status";
-  $("#brand-status").textContent = `${selectedBrands.length}개 브랜드 검색 작업을 순서대로 등록합니다.`;
-  stopBrandActivity();
-  touchBrandActivity(`${selectedBrands.length}개 브랜드 작업 시작`);
-  void exportNextSelectedBrand(generation);
-});
 async function syncFullBrandCatalog({ automatic = false } = {}) {
   const button = $("#brand-sync");
   const status = $("#brand-status");
@@ -2024,7 +1868,6 @@ $("#brand-export-completed-more")?.addEventListener("click", () => {
 });
 renderBrandCompletedJobs();
 void restoreDownloadedBrandFiles();
-void restorePendingBrandExportJobs();
 $("#brand-search").addEventListener("click", async () => {
   const button = $("#brand-search");
   const status = $("#brand-status");
