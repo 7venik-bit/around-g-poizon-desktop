@@ -27,6 +27,8 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.match(workflow, /typeSellerBrandWithRealKeyboard\(candidate\.frame, brandName\)/);
   assert.match(workflow, /seller-brand-input-confirmed/);
   assert.doesNotMatch(workflow, /\.\.\.officialAliases/);
+  assert.ok(workflow.includes(String.raw`const pageSizePattern = /^20\\\\s*건\\\\s*\\\\/\\\\s*페이지$/i;`));
+  assert.ok(workflow.includes(String.raw`/\\\\d+\\\\s*건\\\\s*\\\\/\\\\s*페이지/i.test(textOf(element))`));
 });
 
 test("selected brands run sequentially with a twenty-minute limit", () => {
