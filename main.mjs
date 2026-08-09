@@ -3508,7 +3508,9 @@ async function automateSellerBrandExport(input = {}) {
             // fast response the first snapshot can already be the filtered
             // result, so matching rows are authoritative even when the DOM no
             // longer differs from that snapshot.
-            if (hasRows && brandMatched) {
+            const requestedInputConfirmed = normalize(input.value).toLocaleLowerCase()
+              === normalize(${JSON.stringify(brandName)}).toLocaleLowerCase();
+            if (hasRows && (brandMatched || (alreadySubmitted && requestedInputConfirmed))) {
               stableCount = signature === stableSignature ? stableCount + 1 : 1;
               stableSignature = signature;
               if (stableCount >= 3) return true;
