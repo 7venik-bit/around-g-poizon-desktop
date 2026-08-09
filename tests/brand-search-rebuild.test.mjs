@@ -35,11 +35,11 @@ test("selected brands run sequentially with a twenty-minute limit", () => {
 });
 
 test("download center tracks each brand by its generated job number", () => {
-  assert.match(main, /brandExportJobs\.set\(jobId, \{/);
-  assert.match(main, /brandName,/);
+  assert.match(main, /pendingBrandExportJobId = String\(createdJob\.id/);
+  assert.match(main, /const registeredJobId = pendingBrandExportJobId/);
+  assert.match(main, /brandExportJobs\.set\(registeredJobId, \{[\s\S]*?brandName,[\s\S]*?brandKo/);
   assert.match(main, /readSellerExportJobsFromMonitor\(\)/);
-  assert.match(main, /const job = jobs\.find\(\(item\) => item\.jobId === jobId\)/);
-  assert.match(main, /pendingBrandExportJobId = jobId/);
+  assert.match(main, /jobId: registeredJobId/);
 });
 
 test("successful downloads use job number, brand, and timestamp", () => {
