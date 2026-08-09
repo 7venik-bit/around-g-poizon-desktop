@@ -46,7 +46,7 @@ test("brand export starts actual Seller Center work before optional baseline ins
 
   assert.match(rendererSource, /1단계\/5 · 판매자센터 연결 후 실제 상품검색 시작 중/);
   assert.match(workflow, /const baselinePromise = readSellerExportBaselineSeparately\(\)\.catch\(\(\) => null\)/);
-  assert.match(workflow, /1단계\/5 · 실제 상품검색 시작/);
+  assert.match(workflow, /1단계\/5 · 판매자센터 연결 시도/);
   assert.match(workflow, /1단계\/5 · 브랜드 입력·상품 검색 중/);
   assert.match(workflow, /const runSellerSearch = \(targetFrame\) => targetFrame\.executeJavaScript/);
   assert.match(workflow, /const baselineJobs = await baselinePromise/);
@@ -56,7 +56,7 @@ test("brand export starts actual Seller Center work before optional baseline ins
   assert.match(workflow, /3단계\/5 · 작업번호 생성 완료 · 처리 대기/);
   assert.doesNotMatch(workflow, /EXPORT_CENTER_BASELINE_UNAVAILABLE/);
   assert.ok(
-    workflow.indexOf("1단계/5 · 실제 상품검색 시작")
+    workflow.indexOf("1단계/5 · 판매자센터 연결 시도")
       < workflow.indexOf("const baselineJobs = await baselinePromise"),
     "actual product search must start before optional baseline inspection is awaited",
   );

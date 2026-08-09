@@ -159,6 +159,7 @@ body .shell>header{height:auto;min-height:82px;align-items:flex-start}
 .brand-activity.is-waiting{border-color:#edc66d;background:#fff9e9;color:#875b00}
 .brand-activity.is-waiting .brand-activity-spinner{border-color:#f1dda8;border-top-color:#c18408}
 .brand-activity.is-waiting .brand-activity-copy small{color:#8d702e}
+.brand-activity #brand-seller-diagnostic{margin-left:auto;white-space:nowrap;background:#fff;border:1px solid currentColor;color:inherit}
 .brand-export-job-spinner{width:12px;height:12px;margin-right:6px;border-width:2px;vertical-align:-2px}
 @keyframes brand-activity-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.brand-activity-spinner,.brand-export-job-spinner{animation-duration:1.6s}}
