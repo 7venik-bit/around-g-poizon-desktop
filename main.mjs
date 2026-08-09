@@ -3200,9 +3200,17 @@ async function automateSellerBrandExport(input = {}) {
           : HTMLInputElement.prototype;
         const setter = Object.getOwnPropertyDescriptor(valuePrototype, "value")?.set;
         const applyValue = (value) => {
+          const previousValue = String(input.value || "");
           input.focus();
           if (setter) setter.call(input, value);
           else input.value = value;
+          // POIZON uses a React-controlled global search input. Reset React's
+          // value tracker to the previous DOM value so the synthetic input
+          // event is recognized as a real user change instead of being ignored
+          // and immediately rendered back to an empty string.
+          if (input._valueTracker && typeof input._valueTracker.setValue === "function") {
+            input._valueTracker.setValue(previousValue);
+          }
           input.dispatchEvent(new InputEvent("input", {
             bubbles: true,
             composed: true,
@@ -3214,9 +3222,14 @@ async function automateSellerBrandExport(input = {}) {
         applyValue("");
         await wait(160);
         applyValue(${JSON.stringify(brandName)});
-        await wait(350);
+        await wait(700);
         if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
-          return { ok: false, step: "BRAND_INPUT_NOT_APPLIED" };
+          return {
+            ok: false,
+            step: "BRAND_INPUT_NOT_APPLIED",
+            actualInputValue: String(input.value || "").trim(),
+            expectedInputValue: ${JSON.stringify(brandName)},
+          };
         }
         const buttons = [...document.querySelectorAll("button, [role='button']")].filter(visible);
         const inputRect = input.getBoundingClientRect();
