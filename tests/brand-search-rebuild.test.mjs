@@ -34,6 +34,14 @@ test("selected brands run sequentially with a twenty-minute limit", () => {
   assert.match(renderer, /setTimeout\(\(\) => exportNextSelectedBrand\(generation\), 400\)/);
 });
 
+test("download center tracks each brand by its generated job number", () => {
+  assert.match(main, /brandExportJobs\.set\(jobId, \{/);
+  assert.match(main, /brandName,/);
+  assert.match(main, /readSellerExportJobsFromMonitor\(\)/);
+  assert.match(main, /const job = jobs\.find\(\(item\) => item\.jobId === jobId\)/);
+  assert.match(main, /pendingBrandExportJobId = jobId/);
+});
+
 test("successful downloads use job number, brand, and timestamp", () => {
   assert.match(main, /\`\$\{downloadJobId\}_\$\{safeBrand\}_\$\{localFileTimestamp\(\)\}\.xlsx\`/);
   assert.match(main, /status: "download-started"/);
