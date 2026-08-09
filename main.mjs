@@ -3566,28 +3566,10 @@ async function automateSellerBrandExport(input = {}) {
     for (const candidate of frameCandidates) {
       if (!candidate.probe?.inputCount && !candidate.probe?.hint) continue;
       mainWindow?.webContents.send("brand-export:progress", {
-        status: "seller-keyboard-input-started",
+        status: "searching-brand-products",
         brandName,
-        jobState: `1단계/5 · 실제 키보드 입력 시작 · ${brandName}`,
-        message: `${brandName} · POIZON 최상단 검색창을 활성화하고 실제 키보드 입력을 시작합니다.`,
-      });
-      const keyboardInput = await Promise.race([
-        typeSellerBrandWithRealKeyboard(candidate.frame, brandName),
-        new Promise((resolve) => setTimeout(() => resolve({
-          ok: false,
-          step: "REAL_KEYBOARD_INPUT_TIMEOUT",
-        }), 6_000)),
-      ]);
-      if (!keyboardInput?.ok) {
-        lastSearchDiagnostics = { ...candidate.probe, keyboardInput };
-        searched = { ok: false, step: keyboardInput?.step || "REAL_KEYBOARD_INPUT_FAILED" };
-        continue;
-      }
-      mainWindow?.webContents.send("brand-export:progress", {
-        status: "seller-keyboard-input-confirmed",
-        brandName,
-        jobState: `1단계/5 · 실제 키보드 입력 확인 · ${brandName}`,
-        message: `${brandName} · POIZON 최상단 상품검색 입력창에 실제 키보드 입력을 확인했습니다.`,
+        jobState: `1단계/5 · 브랜드 입력·상품 검색 중 · ${brandName}`,
+        message: `${brandName} · 기존 검색 서비스 방식으로 브랜드를 입력하고 검색을 실행합니다.`,
       });
       const result = await Promise.race([
         runSellerSearch(candidate.frame),

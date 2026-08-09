@@ -42,17 +42,12 @@ test("seller search targets the proven global query beside Search and Bid", () =
   assert.match(mainSource, /input\._valueTracker/);
   assert.match(mainSource, /input\._valueTracker\.setValue\(previousValue\)/);
   assert.match(mainSource, /actualInputValue: String\(input\.value/);
-  assert.match(mainSource, /typeSellerBrandWithRealKeyboard/);
-  assert.match(mainSource, /sendInputEvent\(\{ type: "keyDown", keyCode: "A", modifiers: \["control"\] \}\)/);
-  assert.match(mainSource, /sendInputEvent\(\{ type: "keyDown", keyCode: "Backspace" \}\)/);
-  assert.match(mainSource, /webContents\.insertText\(String\(brandName\)\)/);
-  assert.match(mainSource, /REAL_KEYBOARD_INPUT_CONFIRMED/);
-  assert.match(mainSource, /실제 키보드 입력 확인/);
-  assert.match(mainSource, /sellerWindow\.focus\(\)/);
-  assert.match(mainSource, /void sellerWindow\.webContents\.insertText/);
-  assert.match(mainSource, /REAL_KEYBOARD_INPUT_TIMEOUT/);
-  assert.match(mainSource, /6_000/);
-  assert.match(mainSource, /실제 키보드 입력 시작/);
+  const automationStart = mainSource.indexOf("async function automateSellerBrandExport");
+  const automationEnd = mainSource.indexOf("async function syncBrandCatalogFromKrPoizon", automationStart);
+  const automationSource = mainSource.slice(automationStart, automationEnd);
+  assert.doesNotMatch(automationSource, /typeSellerBrandWithRealKeyboard\(candidate\.frame/);
+  assert.match(automationSource, /runSellerSearch\(candidate\.frame\)/);
+  assert.match(automationSource, /기존 검색 서비스 방식으로 브랜드를 입력하고 검색을 실행합니다/);
 });
 
 test("manual Seller Center actions remain visible by default", () => {
