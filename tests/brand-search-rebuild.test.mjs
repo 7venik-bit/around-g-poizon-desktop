@@ -29,7 +29,11 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.doesNotMatch(workflow, /\.\.\.officialAliases/);
   assert.ok(workflow.includes(String.raw`const pageSizePattern = /^20\\s*건\\s*\\/\\s*페이지$/i;`));
   assert.ok(workflow.includes(String.raw`/\\d+\\s*건\\s*\\/\\s*페이지/i.test(textOf(element))`));
-  assert.match(main, /step: "REAL_SEARCH_BUTTON_CLICKED"/);
+  assert.match(main, /"REAL_SEARCH_BUTTON_CLICKED"/);
+  assert.match(main, /step: physicalClick\.ok \? "PHYSICAL_SEARCH_BUTTON_CLICKED"/);
+  assert.match(main, /SetCursorPos/);
+  assert.match(main, /for \(\$step = 1; \$step -le 18; \$step\+\+\)/);
+  assert.match(main, /execFile\("powershell\.exe"/);
   assert.match(main, /sendInputEvent\(\{ type: "mouseDown", button: "left"/);
   assert.match(workflow, /normalizedKey\.length > 3/);
   assert.match(workflow, /tokens\.includes/);
