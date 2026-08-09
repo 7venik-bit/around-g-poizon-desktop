@@ -73,6 +73,7 @@ export function createOfficialDomainRegistry(brands, existing = []) {
       candidateUrl: "",
       verificationSource: "",
       verifiedAt: "",
+      verifiedAliases: [],
     };
     if (saved) Object.assign(base, saved, {
       registryId: brandRegistryId(brand),
@@ -89,6 +90,7 @@ export function createOfficialDomainRegistry(brands, existing = []) {
         searchTemplate: seed.searchTemplate,
         verificationSource: "curated",
         verifiedAt: "2026-08-07T00:00:00.000Z",
+        verifiedAliases: [...seed.aliases],
       });
     }
     return base;
@@ -98,9 +100,23 @@ export function createOfficialDomainRegistry(brands, existing = []) {
 export function officialDomainRecordForBrand(registry, brand) {
   const normalized = normalizeOfficialBrand(brand);
   if (!normalized) return null;
-  return (Array.isArray(registry) ? registry : []).find((record) =>
+  const rows = Array.isArray(registry) ? registry : [];
+  const exact = rows.find((record) =>
+    [record.brandName, record.brandKo].map(normalizeOfficialBrand).some((name) => name === normalized));
+  if (exact) return exact;
+  if (normalized.length < 4) return null;
+  return rows.find((record) =>
     [record.brandName, record.brandKo].map(normalizeOfficialBrand).some((name) =>
-      name && (name === normalized || name.includes(normalized) || normalized.includes(name)))) || null;
+      name.length >= 4 && (name.includes(normalized) || normalized.includes(name)))) || null;
+}
+
+export function officialDomainSearchAliases(record) {
+  if (![OFFICIAL_DOMAIN_STATUS.VERIFIED, OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED].includes(record?.status)) return [];
+  return [...new Set([
+    record?.brandName,
+    record?.brandKo,
+    ...(Array.isArray(record?.verifiedAliases) ? record.verifiedAliases : []),
+  ].map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
 export function officialSearchUrlFromRecord(record, query) {
@@ -225,6 +241,12 @@ export function auditedOfficialDomainRecord(record, evidence, now = new Date().t
     verificationAttempts: attempts,
     lastCheckedAt: now,
     lastVerificationError: "",
+    verifiedAliases: [...new Set([
+      record?.brandName,
+      record?.brandKo,
+      ...(Array.isArray(record?.verifiedAliases) ? record.verifiedAliases : []),
+      evidence?.verifiedAlias,
+    ].map((value) => String(value || "").trim()).filter(Boolean))],
     evidence: {
       finalUrl: String(evidence?.finalUrl || ""),
       pageTitle: String(evidence?.pageTitle || "").slice(0, 300),

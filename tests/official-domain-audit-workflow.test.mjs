@@ -34,6 +34,9 @@ test("the desktop can audit every official domain with checkpoints and safe paus
   assert.match(mainSource, /compareOfficialBrandLogos/);
   assert.match(mainSource, /brandLogoUrl/);
   assert.match(mainSource, /logoSimilarity/);
+  assert.match(mainSource, /verifiedAlias: candidate\.title/);
+  assert.match(mainSource, /officialDomainSearchAliases\(officialRecord\)/);
+  assert.match(mainSource, /sellerBrandMatchKeys = \[brandName, brandKoInput, \.\.\.officialAliases\]/);
   assert.match(mainSource, /official-domain:audit-start/);
   assert.match(mainSource, /official-domain:audit-stop/);
   assert.match(preloadSource, /startOfficialDomainAudit/);

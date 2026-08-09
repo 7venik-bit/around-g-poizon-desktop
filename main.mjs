@@ -49,6 +49,7 @@ import {
   failedOfficialDomainAuditRecord,
   officialDomainDiscoveryUrl,
   officialDomainRecordForBrand,
+  officialDomainSearchAliases,
   officialDomainRegistrySummary,
   officialDomainAuditQueue,
   rankOfficialDomainCandidates,
@@ -975,6 +976,7 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
         searchTemplate: page.searchTemplate,
         logoCompared: logoComparison.compared,
         logoSimilarity: logoComparison.similarity,
+        verifiedAlias: candidate.title,
       });
       if (next.status !== OFFICIAL_DOMAIN_STATUS.PENDING) return { record: next, blocked: false };
     } catch {
@@ -2609,6 +2611,12 @@ async function rememberBrandExportJob(input = {}) {
   const jobId = String(input.jobId || "").trim();
   const brandName = String(input.brandName || "").trim();
   const brandKo = String(input.brandKo || "").trim();
+  const officialRegistry = safeOfficialDomainRegistry(
+    store.snapshot().settings.brandCatalog || explorerMetadata().brands
+  );
+  const officialRecord = officialDomainRecordForBrand(officialRegistry, brandName)
+    || officialDomainRecordForBrand(officialRegistry, brandKo);
+  const officialAliases = officialDomainSearchAliases(officialRecord);
   if (!jobId || !brandName) return;
   const next = {
     jobId,
@@ -2939,7 +2947,7 @@ async function automateSellerBrandExport(input = {}) {
     ["Reebok", "리복", "锐步"],
   ];
   const brandKoInput = String(input.brandKo || "").trim();
-  const sellerBrandMatchKeys = [brandName, brandKoInput];
+  const sellerBrandMatchKeys = [brandName, brandKoInput, ...officialAliases];
   const localizedAliases = sellerBrandAliasGroups.find((aliases) =>
     aliases.some((alias) => brandsMatch(brandName, alias) || brandsMatch(brandKoInput, alias))
   );

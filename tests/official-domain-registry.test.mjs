@@ -7,6 +7,7 @@ import {
   auditedOfficialDomainRecord,
   failedOfficialDomainAuditRecord,
   officialDomainRecordForBrand,
+  officialDomainSearchAliases,
   officialDomainDiscoveryUrl,
   officialDomainAuditQueue,
   officialDomainRegistrySummary,
@@ -63,6 +64,10 @@ test("a visited official page is checked separately from search support", () => 
   }, "2026-08-07T03:00:00.000Z");
   assert.equal(verified.status, OFFICIAL_DOMAIN_STATUS.VERIFIED);
   assert.equal(verified.evidence.hasSearchForm, true);
+  assert.deepEqual(
+    officialDomainSearchAliases({ ...verified, verifiedAliases: ["Salomon", "살로몬"] }),
+    ["Salomon", "살로몬"],
+  );
 
   const unsupported = auditedOfficialDomainRecord(record, {
     candidateUrl: "https://salomon.co.kr/",
@@ -82,6 +87,15 @@ test("a visited official page is checked separately from search support", () => 
   const failed = failedOfficialDomainAuditRecord(record, "CANDIDATE_NOT_FOUND");
   assert.equal(failed.status, OFFICIAL_DOMAIN_STATUS.PENDING);
   assert.equal(failed.verificationAttempts, 1);
+});
+
+test("short ambiguous names require an exact POIZON-to-Naver registry match", () => {
+  const registry = createOfficialDomainRegistry([
+    { id: 1, name: "DKNY", ko: "디케이엔와이" },
+    { id: 2, name: "DK", ko: "디케이" },
+  ]);
+  assert.equal(officialDomainRecordForBrand(registry, "DK")?.brandId, 2);
+  assert.equal(officialDomainRecordForBrand(registry.slice(0, 1), "DK"), null);
 });
 
 test("curated official stores are verified and build direct product searches", () => {
