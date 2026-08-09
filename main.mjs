@@ -3239,238 +3239,86 @@ async function automateSellerBrandExport(input = {}) {
     jobState: "1단계/5 · 브랜드 입력·상품 검색 중",
     message: `${brandName} · 브랜드를 입력하고 상품 검색을 실행합니다.`,
   });
-  const runSellerSearch = (targetFrame) => targetFrame.executeJavaScript(`(async () => {
+  const applyExactSellerBrandFilter = (targetFrame, names) => targetFrame.executeJavaScript(`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getBoundingClientRect().width > 0
-      && element.getBoundingClientRect().height > 0;
-    const textOf = (element) => String(element?.innerText || element?.textContent || "")
-      .replace(/\\s+/g, " ").trim();
+    const visible = (element) => element && element.getClientRects().length > 0;
+    const ownText = (element) => [...element.childNodes]
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent).join("").trim();
+    const normalizedNames = ${JSON.stringify(names)}.map((value) => String(value || "").trim()).filter(Boolean);
+    const globalReset = [...document.querySelectorAll("button,[role=button]")].find((button) =>
+      visible(button) && button.textContent.trim() === "초기화"
+    );
+    if (globalReset) { globalReset.click(); await wait(700); }
+    const brandLabel = [...document.querySelectorAll("button,[role=button],label,span,div")]
+      .filter((element) => visible(element) && (ownText(element) === "브랜드" || element.textContent.trim() === "브랜드"))
+      .sort((left, right) => left.getBoundingClientRect().width - right.getBoundingClientRect().width)[0];
+    const brandButton = brandLabel?.closest("button,[role=button],.ant-select,.ant-dropdown-trigger,.semi-select,.semi-dropdown-trigger") || brandLabel;
+    if (!brandButton) return { ok: false, step: "SEARCH_INPUT_NOT_FOUND", reason: "BRAND_BUTTON_NOT_FOUND" };
+    brandButton.click();
+    await wait(500);
+    const popup = [...document.querySelectorAll('[role="tooltip"],[role="dialog"],.ant-popover,.ant-dropdown,.ant-select-dropdown,.semi-portal,.semi-popover,.semi-select-dropdown')]
+      .filter(visible).at(-1) || document.body;
+    const input = [...popup.querySelectorAll("input")].find((element) =>
+      visible(element) && ["text", "search", ""].includes(String(element.type || "").toLowerCase()) && !element.disabled && !element.readOnly
+    );
+    if (!input) return { ok: false, step: "SEARCH_INPUT_NOT_FOUND", reason: "BRAND_POPUP_INPUT_NOT_FOUND" };
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    for (const name of normalizedNames) {
+      const previousValue = String(input.value || "");
+      input.focus();
+      if (setter) setter.call(input, ""); else input.value = "";
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "deleteContentBackward", data: null }));
+      await wait(120);
+      if (setter) setter.call(input, name); else input.value = name;
+      if (input._valueTracker && typeof input._valueTracker.setValue === "function") input._valueTracker.setValue(previousValue);
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: name }));
+      input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+      await wait(450);
+      let option = null;
+      for (let attempt = 0; attempt < 24 && !option; attempt += 1) {
+        const candidates = [...document.querySelectorAll('.ant-popover:not(.ant-popover-hidden) li.ant-list-item,[role=option],.ant-select-item-option,.semi-select-option')].filter(visible);
+        const expected = name.toLocaleLowerCase();
+        option = candidates.find((element) => {
+          const value = String(element.textContent || "").replace(/\\s+/g, " ").trim().toLocaleLowerCase();
+          return value === expected || value.startsWith(expected + " ") || value.includes(expected);
+        });
+        if (!option) await wait(250);
+      }
+      if (!option) continue;
+      option.scrollIntoView({ block: "center" });
+      option.click();
+      await wait(300);
+      const confirm = [...document.querySelectorAll("button,[role=button]")].find((button) =>
+        visible(button) && /^(확인|적용|검색)$/.test(String(button.textContent || "").trim())
+      );
+      confirm?.click();
+      await wait(1200);
+      return { ok: true, selected: String(option.textContent || "").trim(), inputValue: name, route: "EXACT_BRAND_FILTER" };
+    }
+    return { ok: false, step: "BRAND_OPTION_NOT_FOUND", reason: "ENGLISH_AND_KOREAN_OPTIONS_NOT_FOUND", attempted: normalizedNames };
+  })()`, true);
+
+  const runSellerSearch = (targetFrame, selectedBrand) => targetFrame.executeJavaScript(`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getClientRects().length > 0;
+    const textOf = (element) => String(element?.innerText || element?.textContent || "").replace(/\\s+/g, " ").trim();
     const normalize = (value) => String(value || "").replace(/\\s+/g, "").trim();
     const clickLikeUser = (element) => {
       if (!element) return false;
       element.scrollIntoView({ block: "center", inline: "center" });
       element.focus?.();
-      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
-        element.dispatchEvent(new MouseEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          view: window,
-          button: 0,
-        }));
-      }
+      element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window, button: 0 }));
+      element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window, button: 0 }));
       element.click?.();
       return true;
     };
-    const findVisibleByText = (selector, pattern) =>
-      [...document.querySelectorAll(selector)].filter(visible)
-        .find((element) => pattern.test(textOf(element)));
-        const roots = [document];
-        for (let rootIndex = 0; rootIndex < roots.length; rootIndex += 1) {
-          const root = roots[rootIndex];
-          for (const element of root.querySelectorAll("*")) {
-            if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
-          }
-        }
-        const inputs = roots.flatMap((root) => [...root.querySelectorAll("input, textarea")])
-          .filter((element, index, all) => all.indexOf(element) === index)
-          .filter(visible)
-          .filter((element) => {
-            const type = String(element.type || "text").toLowerCase();
-            return !element.disabled && !element.readOnly
-              && !["hidden", "password", "date", "datetime-local", "month", "time", "file", "checkbox", "radio"].includes(type);
-          });
-        // The proven Seller Center flow uses the global product query input at
-        // the very top of the page: [상품 정보] [query] [검색 및 입찰]. Do not
-        // confuse it with one of the many product-filter inputs below it.
-        const exactSearchButtons = roots.flatMap((root) =>
-          [...root.querySelectorAll("button, [role='button']")]
-        ).filter((element, index, all) => all.indexOf(element) === index)
-          .filter(visible)
-          .filter((element) => /^검색\\s*및\\s*입찰$/.test(textOf(element)));
-        const exactSearchButton = exactSearchButtons
-          .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top)[0] || null;
-        const exactButtonRect = exactSearchButton?.getBoundingClientRect();
-        const exactInput = exactButtonRect
-          ? inputs.map((element) => {
-              const rect = element.getBoundingClientRect();
-              const verticalDistance = Math.abs(
-                (rect.top + rect.height / 2) - (exactButtonRect.top + exactButtonRect.height / 2)
-              );
-              const horizontalGap = exactButtonRect.left - rect.right;
-              return { element, verticalDistance, horizontalGap, top: rect.top };
-            }).filter((candidate) => candidate.verticalDistance < 24
-              && candidate.horizontalGap >= -4 && candidate.horizontalGap < 80)
-            .sort((left, right) => left.horizontalGap - right.horizontalGap)[0]?.element || null
-          : null;
-        const inputScore = (element) => {
-          const rect = element.getBoundingClientRect();
-          const attributes = [
-            element.placeholder,
-            element.getAttribute("aria-label"),
-            element.getAttribute("name"),
-            element.getAttribute("id"),
-            element.getAttribute("data-placeholder"),
-          ].filter(Boolean).join(" ");
-          const context = textOf(element.closest("form, .ant-form-item, [class*='form'], [class*='search']") || element.parentElement);
-          const strongHint = /상품|상품명|브랜드|품번|검색|product|brand|article|spu|sku|商品|品牌|货号|搜索|查询/i.test(attributes);
-          const contextHint = /상품|브랜드|품번|검색|product|brand|spu|sku|商品|品牌|货号/i.test(context);
-          return (strongHint ? 1000 : 0)
-            + (contextHint ? 300 : 0)
-            + (rect.top >= 0 && rect.top < 360 ? 120 : 0)
-            + Math.min(180, Math.round(rect.width));
-        };
-        const searchInputs = inputs.map((element) => ({ element, score: inputScore(element) }))
-          .sort((left, right) => right.score - left.score);
-        const input = exactInput || searchInputs[0]?.element || null;
-        if (!input || (!exactInput && searchInputs[0].score < 200)) {
-          return { ok: false, step: "SEARCH_INPUT_NOT_FOUND", inputCount: inputs.length };
-        }
-        const readSearchState = () => {
-          const rows = [...document.querySelectorAll("tbody tr")].filter(visible);
-          const rowTexts = rows.slice(0, 30).map((row) =>
-            String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim()
-          );
-          const rowText = rowTexts.join("\\n");
-          const totalText = [...document.querySelectorAll("body *")]
-            .filter(visible)
-            .map((element) => String(element.innerText || element.textContent || "").trim())
-            .find((text) => /^총\\s*[\\d,]+\\s*건\\s*결과$/.test(text)) || "";
-          const totalCount = Number(String(totalText).replace(/[^0-9]/g, "")) || 0;
-          return { rowText, rowTexts, totalText, totalCount };
-        };
-        const beforeSearch = readSearchState();
-        const requestedBrandKeys = ${JSON.stringify(sellerBrandMatchKeys)}
-          .map(normalize).filter(Boolean);
-        const requestedBrandRatio = (state) => {
-          const rows = Array.isArray(state?.rowTexts) ? state.rowTexts.filter(Boolean) : [];
-          if (!rows.length || !requestedBrandKeys.length) return 0;
-          const matches = rows.filter((row) =>
-            requestedBrandKeys.some((key) => normalize(row).includes(key))
-          ).length;
-          return matches / rows.length;
-        };
-        const hasRequestedBrand = (state) => requestedBrandRatio(state) >= 0.8;
-        const valuePrototype = input instanceof HTMLTextAreaElement
-          ? HTMLTextAreaElement.prototype
-          : HTMLInputElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(valuePrototype, "value")?.set;
-        const applyValue = (value) => {
-          const previousValue = String(input.value || "");
-          input.focus();
-          if (setter) setter.call(input, value);
-          else input.value = value;
-          // POIZON uses a React-controlled global search input. Reset React's
-          // value tracker to the previous DOM value so the synthetic input
-          // event is recognized as a real user change instead of being ignored
-          // and immediately rendered back to an empty string.
-          if (input._valueTracker && typeof input._valueTracker.setValue === "function") {
-            input._valueTracker.setValue(previousValue);
-          }
-          input.dispatchEvent(new InputEvent("input", {
-            bubbles: true,
-            composed: true,
-            inputType: value ? "insertText" : "deleteContentBackward",
-            data: value || null,
-          }));
-          input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-        };
-        if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
-          applyValue("");
-          await wait(160);
-          applyValue(${JSON.stringify(brandName)});
-          await wait(700);
-        }
-        if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
-          return {
-            ok: false,
-            step: "BRAND_INPUT_NOT_APPLIED",
-            actualInputValue: String(input.value || "").trim(),
-            expectedInputValue: ${JSON.stringify(brandName)},
-          };
-        }
-        const buttons = [...document.querySelectorAll("button, [role='button']")].filter(visible);
-        const inputRect = input.getBoundingClientRect();
-        const searchCandidates = buttons.filter((element) =>
-          /검색\\s*및\\s*입찰|^검색$|^검색하기$|搜索|查询|search/i.test(String(element.innerText || element.textContent || "").trim())
-        );
-        const search = exactSearchButton || searchCandidates.find((element) => {
-          const rect = element.getBoundingClientRect();
-          return Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2)) < 90;
-        }) || searchCandidates[0];
-        const pressEnter = () => {
-          input.focus();
-          for (const type of ["keydown", "keypress", "keyup"]) {
-            input.dispatchEvent(new KeyboardEvent(type, {
-              key: "Enter",
-              code: "Enter",
-              keyCode: 13,
-              which: 13,
-              bubbles: true,
-              cancelable: true
-            }));
-          }
-        };
-        const waitForSearchUpdate = async () => {
-          let stableSignature = "";
-          let stableCount = 0;
-          for (let attempt = 0; attempt < 60; attempt += 1) {
-            await wait(250);
-            const current = readSearchState();
-            const changed = current.rowText !== beforeSearch.rowText || current.totalText !== beforeSearch.totalText;
-            const hasRows = current.rowText.length > 0;
-            const brandMatched = hasRequestedBrand(current);
-            const signature = current.totalText + "\\n" + current.rowText;
-            // The working Seller Center keeps the visible "총 9,900건" label
-            // unchanged after a search. The rendered product rows are the
-            // authoritative signal that the brand search completed.
-            if (changed && hasRows && brandMatched) {
-              stableCount = signature === stableSignature ? stableCount + 1 : 1;
-              stableSignature = signature;
-              if (stableCount >= 3) return true;
-            } else {
-              stableCount = 0;
-              stableSignature = "";
-            }
-          }
-          return false;
-        };
-        if (search) clickLikeUser(search);
-        else pressEnter();
-        let searchApplied = await waitForSearchUpdate();
-        if (!searchApplied) {
-          pressEnter();
-          searchApplied = await waitForSearchUpdate();
-        }
-        if (!searchApplied && search) {
-          clickLikeUser(search);
-          searchApplied = await waitForSearchUpdate();
-        }
-        if (!searchApplied
-          && ${JSON.stringify(brandKoInput)} !== ""
-          && ${JSON.stringify(brandKoInput)} !== ${JSON.stringify(brandName)}) {
-          applyValue("");
-          await wait(160);
-          applyValue(${JSON.stringify(brandKoInput)});
-          await wait(700);
-          if (search) clickLikeUser(search);
-          else pressEnter();
-          searchApplied = await waitForSearchUpdate();
-          if (!searchApplied) {
-            pressEnter();
-            searchApplied = await waitForSearchUpdate();
-          }
-        }
-        if (!searchApplied) {
-          const current = readSearchState();
-          return {
-            ok: false,
-            step: hasRequestedBrand(current) ? "SEARCH_RESULT_NOT_UPDATED" : "BRAND_RESULT_MISMATCH",
-            beforeTotal: beforeSearch.totalCount,
-            currentTotal: current.totalCount
-          };
-        }
-
+    const input = { value: ${JSON.stringify(selectedBrand)} };
+    const readSearchState = () => {
+      const rowTexts = [...document.querySelectorAll("tbody tr")].filter(visible).slice(0, 30)
+        .map((row) => String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim());
+      return { rowTexts, rowText: rowTexts.join("\\n") };
+    };
     const localSalesPattern = /\\uD604\\uC9C0\\s*\\uD310\\uB9E4\\uC790\\s*\\uCD5C\\uADFC\\s*30\\uC77C\\s*\\uD310\\uB9E4\\uB7C9/;
     const localSalesHeaderText = [...document.querySelectorAll(
       "th, [role='columnheader'], thead td, thead div"
@@ -3707,14 +3555,24 @@ async function automateSellerBrandExport(input = {}) {
         status: "searching-brand-products",
         brandName,
         jobState: `1단계/5 · 브랜드 입력·상품 검색 중 · ${brandName}`,
-        message: `${brandName} · 기존 검색 서비스 방식으로 브랜드를 입력하고 검색을 실행합니다.`,
+        message: `${brandName} · 판매자센터 브랜드 필터를 열고 영문명부터 입력합니다.`,
       });
       const result = await Promise.race([
-        runSellerSearch(candidate.frame),
+        (async () => {
+          const filtered = await applyExactSellerBrandFilter(candidate.frame, [brandName, brandKo]);
+          if (!filtered?.ok) return filtered;
+          mainWindow?.webContents.send("brand-export:progress", {
+            status: "brand-filter-applied",
+            brandName,
+            jobState: `1단계/5 · 브랜드 입력 완료 · ${filtered.inputValue || brandName}`,
+            message: `${brandName} · 판매자센터 브랜드 필터 입력과 옵션 선택을 완료했습니다.`,
+          });
+          return runSellerSearch(candidate.frame, filtered.inputValue || filtered.selected || brandName);
+        })(),
         new Promise((resolve) => setTimeout(() => resolve({
           ok: false,
           step: "SELLER_SEARCH_STAGE_TIMEOUT",
-        }), 70_000)),
+        }), 90_000)),
       ]).catch((error) => ({
         ok: false,
         step: "SELLER_SEARCH_SCRIPT_ERROR",
