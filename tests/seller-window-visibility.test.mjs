@@ -4,17 +4,16 @@ import test from "node:test";
 
 const mainSource = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 
-test("selected-brand export keeps Seller Center hidden", () => {
+test("selected-brand export shows the exact Seller Center window being automated", () => {
   const automationStart = mainSource.indexOf("async function automateSellerBrandExport");
   const automationEnd = mainSource.indexOf("async function syncBrandCatalogFromKrPoizon", automationStart);
   const automationSource = mainSource.slice(automationStart, automationEnd);
 
   assert.match(
     automationSource,
-    /openSellerCenterWindow\(SELLER_PRODUCT_SEARCH_URL, \{ visible: false, deferNavigation: true \}\)/,
+    /openSellerCenterWindow\(SELLER_PRODUCT_SEARCH_URL, \{ visible: true, deferNavigation: true \}\)/,
   );
-  assert.doesNotMatch(automationSource, /sellerWindow\.show\(\)/);
-  assert.doesNotMatch(automationSource, /sellerWindow\.focus\(\)/);
+  assert.match(automationSource, /separately opened Chrome window is a different browser session/);
 });
 
 test("seller automation navigates once and emits evidence instead of optimistic progress", () => {

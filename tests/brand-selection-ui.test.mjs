@@ -53,6 +53,14 @@ test("the running brand-search button stops the current and queued registrations
   assert.match(renderer, /이미 생성된 작업번호의 다운로드 감시는 계속합니다/);
 });
 
+test("the activity panel has an always-visible real stop control", () => {
+  assert.match(indexHtml, /id="brand-stop-current"[^>]*>작업 중단<\/button>/);
+  assert.match(renderer, /\$\("#brand-stop-current"\)\?\.addEventListener\("click"/);
+  assert.match(renderer, /\$\("#brand-export-selected"\)\?\.click\(\)/);
+  assert.match(renderer, /stopCurrent\.disabled = !brandSelectionBusy && !activeExportBrand/);
+  assert.match(style, /#brand-stop-current/);
+});
+
 test("brand picker exposes accessible multi-select and search icons", () => {
   assert.match(indexHtml, /class="brand-filter-field"/);
   assert.match(indexHtml, /aria-label="브랜드 복수 선택 및 검색"/);

@@ -160,6 +160,9 @@ body .shell>header{height:auto;min-height:82px;align-items:flex-start}
 .brand-activity.is-waiting .brand-activity-spinner{border-color:#f1dda8;border-top-color:#c18408}
 .brand-activity.is-waiting .brand-activity-copy small{color:#8d702e}
 .brand-activity #brand-seller-diagnostic{margin-left:auto;white-space:nowrap;background:#fff;border:1px solid currentColor;color:inherit}
+.brand-activity #brand-stop-current{margin-left:auto;white-space:nowrap;background:#fff0f0;border:1px solid #d83b32;color:#b42318}
+.brand-activity #brand-stop-current:disabled{opacity:.45;cursor:not-allowed}
+.brand-activity #brand-stop-current+#brand-seller-diagnostic{margin-left:6px}
 .brand-export-job-spinner{width:12px;height:12px;margin-right:6px;border-width:2px;vertical-align:-2px}
 @keyframes brand-activity-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.brand-activity-spinner,.brand-export-job-spinner{animation-duration:1.6s}}

@@ -288,6 +288,11 @@ $("#brand-seller-diagnostic")?.addEventListener("click", () => {
   void window.aroundG.openSellerProductSearch();
 });
 
+$("#brand-stop-current")?.addEventListener("click", () => {
+  if (!brandSelectionBusy && !activeExportBrand) return;
+  $("#brand-export-selected")?.click();
+});
+
 function finalizeBrandActivityAfterMainCompletion() {
   if (!brandMainAllComplete || detectedBrandImportRunning || detectedBrandImportQueue.length) return false;
   for (const [jobId, job] of brandExportJobs.entries()) {
@@ -783,6 +788,7 @@ function updateBrandSelectionControls() {
   const count = $("#brand-selected-count");
   const clear = $("#brand-selection-clear");
   const search = $("#brand-export-selected");
+  const stopCurrent = $("#brand-stop-current");
   if (count) count.textContent = `${selectedCount}개 선택`;
   if (clear) clear.disabled = selectedCount === 0 || brandSelectionBusy;
   if (search) {
@@ -791,6 +797,7 @@ function updateBrandSelectionControls() {
     const label = search.querySelector("span");
     if (label) label.textContent = brandSelectionBusy ? "작업 중지" : "브랜드 검색";
   }
+  if (stopCurrent) stopCurrent.disabled = !brandSelectionBusy && !activeExportBrand;
 }
 
 function selectedBrandsForExport() {

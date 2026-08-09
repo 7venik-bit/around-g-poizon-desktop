@@ -2937,9 +2937,10 @@ async function automateSellerBrandExport(input = {}) {
   pendingBrandExportJobId = "";
   brandExportJobPending = true;
   brandDownloadStarted = false;
-  // Brand export runs completely in the background. The user keeps working in
-  // Around G and opens Seller Center manually only when they explicitly choose to.
-  openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, { visible: false, deferNavigation: true });
+  // Show the exact Electron Seller Center window that is being automated.
+  // A separately opened Chrome window is a different browser session and does
+  // not reflect this automation, which previously made real work look idle.
+  openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, { visible: true, deferNavigation: true });
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     brandExportJobPending = false;
     pendingBrandExportName = "";
