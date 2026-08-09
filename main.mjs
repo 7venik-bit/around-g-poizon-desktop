@@ -2107,9 +2107,9 @@ function ensureSellerMonitorWindow() {
   return sellerMonitorWindow;
 }
 
-function sellerMonitorFrames() {
-  if (!sellerMonitorWindow || sellerMonitorWindow.isDestroyed()) return [];
-  const mainFrame = sellerMonitorWindow.webContents.mainFrame;
+function sellerMonitorFrames(targetWindow = sellerMonitorWindow) {
+  if (!targetWindow || targetWindow.isDestroyed()) return [];
+  const mainFrame = targetWindow.webContents.mainFrame;
   return [mainFrame, ...(mainFrame.framesInSubtree || [])]
     .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
 }
@@ -2130,8 +2130,16 @@ async function readSellerMonitorStatuses(expectedIds = []) {
   }
   await new Promise((resolve) => setTimeout(resolve, 1200));
   const merged = new Map(expectedIds.map((jobId) => [jobId, { jobId, state: "WAITING_FOR_ROW" }]));
-  const frames = sellerMonitorFrames();
-  for (const frame of frames) {
+  const sources = [
+    { name: "seller", window: sellerWindow },
+    { name: "monitor", window: monitor },
+  ].filter((source, index, all) => source.window
+    && !source.window.isDestroyed()
+    && source.window.webContents.getURL().includes("/main/exportCenter")
+    && all.findIndex((candidate) => candidate.window === source.window) === index);
+  for (const source of sources) {
+    const frames = sellerMonitorFrames(source.window);
+    for (const frame of frames) {
     const statuses = await Promise.race([
       frame.executeJavaScript(`(() => {
         const expectedIds = ${JSON.stringify(expectedIds)};
@@ -2182,15 +2190,23 @@ async function readSellerMonitorStatuses(expectedIds = []) {
     for (const status of Array.isArray(statuses) ? statuses : []) {
       const previous = merged.get(status.jobId);
       if (!previous || SELLER_MONITOR_STATUS_PRIORITY[status.state] > SELLER_MONITOR_STATUS_PRIORITY[previous.state]) {
-        merged.set(status.jobId, { ...status, frameRoutingId: frame.routingId });
+        merged.set(status.jobId, {
+          ...status,
+          frameRoutingId: frame.routingId,
+          windowSource: source.name,
+        });
       }
     }
+  }
   }
   return expectedIds.map((jobId) => merged.get(jobId) || { jobId, state: "PAGE_NOT_READY" });
 }
 
-async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId = null) {
-  const frames = sellerMonitorFrames();
+async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId = null, windowSource = "monitor") {
+  const targetWindow = windowSource === "seller" && sellerWindow && !sellerWindow.isDestroyed()
+    ? sellerWindow
+    : ensureSellerMonitorWindow();
+  const frames = sellerMonitorFrames(targetWindow);
   const ordered = preferredFrameRoutingId === null
     ? frames
     : [...frames].sort((left, right) => Number(right.routingId === preferredFrameRoutingId) - Number(left.routingId === preferredFrameRoutingId));
@@ -2241,7 +2257,7 @@ async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId 
       if (typeof control.click === "function") control.click();
       return { clicked: true, href: "" };
     })()`, true).catch(() => ({ clicked: false, href: "" }));
-    if (result?.clicked) return result;
+    if (result?.clicked) return { ...result, targetWindow };
   }
   return { clicked: false, href: "" };
 }
@@ -2328,8 +2344,10 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
         const job = brandExportJobs.get(ready.jobId);
         activeBrandDownloadJobId = ready.jobId;
         job.downloadRequestedAt = Date.now();
-        const action = await requestSellerMonitorDownload(ready.jobId, ready.frameRoutingId);
-        if (action?.href) ensureSellerMonitorWindow().webContents.downloadURL(action.href);
+        const action = await requestSellerMonitorDownload(ready.jobId, ready.frameRoutingId, ready.windowSource);
+        if (action?.href && action?.targetWindow && !action.targetWindow.isDestroyed()) {
+          action.targetWindow.webContents.downloadURL(action.href);
+        }
         if (!action?.clicked) {
           job.downloadRequestedAt = 0;
           job.downloadStarted = false;

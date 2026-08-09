@@ -37,6 +37,14 @@ test("dedicated monitor searches every accessible frame and never reloads the re
   assert.doesNotMatch(watchBlock, /sellerWindow\.webContents\.reloadIgnoringCache\(\)/);
 });
 
+test("completed jobs are detected and downloaded from the live seller window as well as the hidden monitor", () => {
+  assert.match(main, /\{ name: "seller", window: sellerWindow \}/);
+  assert.match(main, /\{ name: "monitor", window: monitor \}/);
+  assert.match(main, /windowSource: source\.name/);
+  assert.match(main, /requestSellerMonitorDownload\(ready\.jobId, ready\.frameRoutingId, ready\.windowSource\)/);
+  assert.match(main, /action\.targetWindow\.webContents\.downloadURL\(action\.href\)/);
+});
+
 test("multi-brand UI shows registration processing completion and failure counts", () => {
   assert.match(html, /id="brand-batch-progress"/);
   assert.match(html, /id="brand-batch-summary"/);
@@ -46,8 +54,8 @@ test("multi-brand UI shows registration processing completion and failure counts
   assert.match(style, /\.brand-batch-row\.is-error/);
 });
 
-test("release metadata is 2.10.97", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.97");
-  assert.equal(JSON.parse(lockSource).version, "2.10.97");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.97");
+test("release metadata is 2.10.98", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.98");
+  assert.equal(JSON.parse(lockSource).version, "2.10.98");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.98");
 });
