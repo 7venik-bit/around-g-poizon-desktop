@@ -1039,7 +1039,9 @@ function renderBrandCards(filter = "") {
   const matchedBrands = explorerMeta.brands.filter((brand) =>
     !normalized || `${brand.name} ${brand.ko}`.toLowerCase().includes(normalized)
   );
-  const brands = matchedBrands.slice(0, normalized ? 300 : 200);
+  // The synchronized catalog is the selectable source of truth. Do not hide
+  // most brands behind the former 200/300-card display cap.
+  const brands = matchedBrands;
   $("#brand-cards").innerHTML = brands.map((brand) => {
     const downloadComplete = hasCompletedBrandDownload(brand);
     return `<button type="button" class="brand-card ${selectedBrandIds.has(Number(brand.id)) ? "selected" : ""}${downloadComplete ? " download-complete" : ""}" data-brand-id="${brand.id}" aria-pressed="${selectedBrandIds.has(Number(brand.id))}"${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
@@ -1050,7 +1052,7 @@ function renderBrandCards(filter = "") {
     image.addEventListener("load", () => image.parentElement?.classList.add("loaded"), { once: true });
     image.addEventListener("error", () => image.remove(), { once: true });
   });
-  const limited = matchedBrands.length > brands.length ? ` · 상위 ${brands.length}개 표시` : ` · ${brands.length}개 표시`;
+  const limited = ` · ${brands.length.toLocaleString("ko-KR")}개 표시`;
   const domainSummary = explorerMeta.officialDomainSummary || {};
   const domainStatus = domainSummary.total
     ? ` · 공식몰 확인 ${Number(domainSummary.verified || 0).toLocaleString("ko-KR")}개 · 검증 대기 ${Number(domainSummary.pending || 0).toLocaleString("ko-KR")}개`

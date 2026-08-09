@@ -1067,7 +1067,7 @@ async function runOfficialDomainAudit() {
       const result = await processAuditIndex(index, 1);
       if (result?.blocked) break;
       if (result?.record?.status === OFFICIAL_DOMAIN_STATUS.PENDING) deferredIndices.push(index);
-      await wait(4_000);
+      await wait(OFFICIAL_DOMAIN_AUDIT_BETWEEN_BRANDS_MS);
     }
     if (!blocked && !officialDomainAuditStopRequested && deferredIndices.length) {
       if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) officialDomainAuditWindow.destroy();
@@ -1076,7 +1076,7 @@ async function runOfficialDomainAudit() {
         if (officialDomainAuditStopRequested) break;
         const result = await processAuditIndex(index, 2);
         if (result?.blocked) break;
-        await wait(4_000);
+        await wait(OFFICIAL_DOMAIN_AUDIT_BETWEEN_BRANDS_MS);
       }
     }
   } finally {
@@ -1118,6 +1118,7 @@ const OFFICIAL_DOMAIN_AUDIT_PAGE_TIMEOUT_MS = 20_000;
 const OFFICIAL_DOMAIN_AUDIT_ANALYSIS_TIMEOUT_MS = 8_000;
 const OFFICIAL_DOMAIN_AUDIT_LOGO_TIMEOUT_MS = 10_000;
 const OFFICIAL_DOMAIN_AUDIT_BRAND_TIMEOUT_MS = 45_000;
+const OFFICIAL_DOMAIN_AUDIT_BETWEEN_BRANDS_MS = 750;
 const OFFICIAL_DOMAIN_AUDIT_MAX_CANDIDATES = 2;
 
 function scheduleUpdateCheck(delayMs = UPDATE_CHECK_INTERVAL_MS) {
