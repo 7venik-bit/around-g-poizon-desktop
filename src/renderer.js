@@ -833,8 +833,10 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
       message: `${activeExportBrand?.name || "선택 브랜드"} 작업이 5분 안에 끝나지 않아 다음 브랜드로 이동합니다.`,
     }), BRAND_AUTOMATION_TIMEOUT_MS)),
   ]);
-  if (automation?.code === "BRAND_AUTOMATION_TIMEOUT") {
-    await window.aroundG.abortSellerBrandExportAttempt?.();
+  if (automation?.code === "BRAND_AUTOMATION_TIMEOUT" && !automation?.aborted) {
+    // The main process owns the hard timeout as well. Do not block queue
+    // recovery while its hidden Seller Center page is being reset.
+    void window.aroundG.abortSellerBrandExportAttempt?.();
   }
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return;
   if (!automation?.ok) {

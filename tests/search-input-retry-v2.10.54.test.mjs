@@ -29,8 +29,8 @@ test("a failed brand keeps the remaining selected brand queue", () => {
   assert.doesNotMatch(renderer, /나머지 선택 브랜드 자동 실행을 중단했습니다/);
 });
 
-test("release metadata is 2.10.101", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.101");
-  assert.equal(JSON.parse(lockSource).version, "2.10.101");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.101");
+test("release metadata is 2.10.102", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.102");
+  assert.equal(JSON.parse(lockSource).version, "2.10.102");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.102");
 });
