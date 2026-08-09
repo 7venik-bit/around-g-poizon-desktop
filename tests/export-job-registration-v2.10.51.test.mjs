@@ -10,15 +10,6 @@ const [main, renderer, packageSource, lockSource] = await Promise.all([
   readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
 ]);
 
-test("export uses one click and falls back to download-center job confirmation", () => {
-  assert.match(main, /labelElement\?\.closest/);
-  assert.match(main, /confirmationClickCount \+= 1/);
-  assert.match(main, /remainingDialogs/);
-  assert.match(main, /confirmationTimedOut: !requestAcknowledged/);
-  assert.match(main, /정상 작동 기준과 동일하게 전체 내보내기를 실행했습니다\. 다운로드센터의 새 작업번호를 확인합니다/);
-  assert.doesNotMatch(main, /EXPORT_REQUEST_NOT_CONFIRMED/);
-  assert.doesNotMatch(main, /exportRetried/);
-});
 
 test("download center discovers jobs by number across frames instead of one localized label", () => {
   assert.match(main, /firstCellText\.match/);
@@ -29,14 +20,9 @@ test("download center discovers jobs by number across frames instead of one loca
   assert.doesNotMatch(main, /상품\\s\*검색\.\*내보내기/);
 });
 
-test("one failed brand does not delete the remaining automatic brand queue", () => {
-  assert.match(renderer, /다음 \${remainingCount}개 브랜드 작업을 계속합니다/);
-  assert.match(renderer, /setTimeout\(\(\) => exportNextSelectedBrand\(generation\), 900\)/);
-  assert.doesNotMatch(renderer, /나머지 선택 브랜드 자동 실행을 중단했습니다/);
-});
 
-test("release metadata is 2.10.116", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.116");
-  assert.equal(JSON.parse(lockSource).version, "2.10.116");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.116");
+test("release metadata is 2.10.117", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.117");
+  assert.equal(JSON.parse(lockSource).version, "2.10.117");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.117");
 });

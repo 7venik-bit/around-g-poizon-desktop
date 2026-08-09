@@ -19,7 +19,7 @@ let brandExportQueue = [];
 let brandExportFailureCount = 0;
 let brandBatchTotal = 0;
 const brandBatchStates = new Map();
-const BRAND_AUTOMATION_TIMEOUT_MS = 5 * 60 * 1000;
+const BRAND_AUTOMATION_TIMEOUT_MS = 20 * 60 * 1000;
 let activeExportBrand = null;
 let brandSelectionBusy = false;
 const brandExportJobs = new Map();
@@ -841,7 +841,7 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     new Promise((resolve) => setTimeout(() => resolve({
       ok: false,
       code: "BRAND_AUTOMATION_TIMEOUT",
-      message: `${activeExportBrand?.name || "선택 브랜드"} 작업이 5분 안에 끝나지 않아 다음 브랜드로 이동합니다.`,
+      message: `${activeExportBrand?.name || "선택 브랜드"} 작업이 20분 안에 끝나지 않아 다음 브랜드로 이동합니다.`,
     }), BRAND_AUTOMATION_TIMEOUT_MS)),
   ]);
   if (automation?.code === "BRAND_AUTOMATION_TIMEOUT" && !automation?.aborted) {

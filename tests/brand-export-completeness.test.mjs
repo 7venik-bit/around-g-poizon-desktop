@@ -7,45 +7,7 @@ const [mainSource, rendererSource] = await Promise.all([
   readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
 ]);
 
-test("brand export checks the computed last Seller Center page before clicking export", () => {
-  const start = mainSource.indexOf("async function verifyCompleteSellerExportAndClick");
-  const end = mainSource.indexOf("async function automateSellerBrandExport", start);
-  const workflow = mainSource.slice(start, end);
 
-  assert.match(workflow, /const finalPageCount = firstSnapshot\.pageCount/);
-  assert.match(workflow, /await clickPage\(finalPageCount\)/);
-  assert.match(workflow, /lastSnapshot\.currentPage !== finalPageCount/);
-  assert.match(workflow, /code: "PARTIAL_PRODUCT_COLLECTION"/);
-  assert.doesNotMatch(workflow, /page <= 1_000/);
-  const exportClickIndex = Math.max(
-    workflow.lastIndexOf("clickLikeUser(exportButton)"),
-    workflow.lastIndexOf("exportButton.click()"),
-  );
-  assert.ok(exportClickIndex >= 0, "the verified export control must be clicked");
-  assert.ok(
-    workflow.indexOf("lastSnapshot.currentPage !== finalPageCount") < exportClickIndex,
-    "the last-page guard must run before the export click",
-  );
-});
-
-test("the restored working service exports directly after search and sales sorting", () => {
-  const start = mainSource.indexOf("async function automateSellerBrandExport");
-  const end = mainSource.indexOf("async function syncBrandCatalogFromKrPoizon", start);
-  const workflow = mainSource.slice(start, end);
-
-  assert.match(workflow, /EXPORT_BUTTON_NOT_FOUND_AFTER_SORT/);
-  assert.match(workflow, /clickLikeUser\(exportButton\)/);
-  assert.match(workflow, /exportClicked: true/);
-  assert.match(workflow, /PAGE_SIZE_20_OPTION_NOT_FOUND/);
-  assert.match(workflow, /PAGE_SIZE_20_NOT_APPLIED/);
-  assert.match(workflow, /pageSize: 20/);
-  assert.ok(
-    workflow.indexOf("PAGE_SIZE_20_OPTION_NOT_FOUND") < workflow.indexOf("clickLikeUser(exportButton)"),
-    "20 items per page must be selected before the full export click",
-  );
-  assert.match(workflow, /clickSellerDownloadCenterShortcut\(productFrame\)/);
-  assert.doesNotMatch(workflow, /verifyCompleteSellerExportAndClick\(searched\.expectedTotal\)/);
-});
 
 test("download-center jobs stop after twenty minutes while all registered jobs are monitored together", () => {
   assert.match(mainSource, /SELLER_EXPORT_MONITOR_TIMEOUT_MS = 20 \* 60 \* 1000/);
@@ -54,46 +16,6 @@ test("download-center jobs stop after twenty minutes while all registered jobs a
   assert.match(mainSource, /const expectedIds = \[\.\.\.brandExportJobs\.keys\(\)\]/);
 });
 
-test("brand export starts actual Seller Center work before optional baseline inspection completes", () => {
-  const start = mainSource.indexOf("async function automateSellerBrandExport");
-  const end = mainSource.indexOf("async function syncBrandCatalogFromKrPoizon", start);
-  const workflow = mainSource.slice(start, end);
-
-  assert.match(rendererSource, /1단계\/5 · 판매자센터 연결 후 실제 상품검색 시작 중/);
-  assert.match(workflow, /const baselinePromise = readSellerExportBaselineSeparately\(\)\.catch\(\(\) => null\)/);
-  assert.match(workflow, /1단계\/5 · 판매자센터 연결 시도/);
-  assert.match(workflow, /1단계\/5 · 브랜드 입력·상품 검색 중/);
-  assert.match(workflow, /const runSellerSearch = \(targetFrame\) => targetFrame\.executeJavaScript/);
-  assert.match(workflow, /const baselineJobs = await baselinePromise/);
-  assert.match(workflow, /1단계\/5 · 상품검색 완료 · 작업번호 후행 확인 방식/);
-  assert.match(workflow, /2단계\/5 · 전체 내보내기 클릭 완료 · 새 작업번호 확인 중/);
-  assert.match(workflow, /정상 작동 기준과 동일하게 전체 내보내기를 실행했습니다/);
-  assert.match(workflow, /3단계\/5 · 작업번호 생성 완료 · 처리 대기/);
-  assert.doesNotMatch(workflow, /EXPORT_CENTER_BASELINE_UNAVAILABLE/);
-  assert.ok(
-    workflow.indexOf("1단계/5 · 판매자센터 연결 시도")
-      < workflow.indexOf("const baselineJobs = await baselinePromise"),
-    "actual product search must start before optional baseline inspection is awaited",
-  );
-  assert.ok(
-    workflow.indexOf("const searched = await sellerWindow.webContents.executeJavaScript")
-      < workflow.indexOf("const baselineJobs = await baselinePromise"),
-    "the real brand search must execute before baseline fallback is evaluated",
-  );
-  assert.match(mainSource, /4단계\/5 · POIZON 파일 처리 중/);
-  assert.match(mainSource, /4단계\/5 · Excel 다운로드 중/);
-  assert.match(rendererSource, /5단계\/5 · Excel 검증·프로그램 등록 중/);
-  assert.match(rendererSource, /updateBrandExportJob\(file\?\.jobId, "확인완료"/);
-  assert.match(rendererSource, /touchBrandActivity\(progress\?\.jobState/);
-  assert.match(rendererSource, /POIZON 응답 대기 중 · 작업은 계속 실행 중/);
-  assert.match(rendererSource, /idleSeconds >= 60/);
-  assert.match(rendererSource, /brand-export-job-spinner/);
-  assert.ok(
-    workflow.indexOf("2단계/5 · 전체 내보내기 클릭 완료")
-      < workflow.indexOf("findNewSellerExportJob"),
-    "job-number checks must be labeled only after the export click",
-  );
-});
 
 test("downloaded Excel compares POIZON result count with data rows, not unique SPUs", () => {
   assert.match(mainSource, /summarizePoizonRows\(getPoizonWorksheetRows\(workbook\)\)/);

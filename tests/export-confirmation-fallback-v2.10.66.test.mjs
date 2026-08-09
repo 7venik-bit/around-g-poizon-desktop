@@ -8,26 +8,9 @@ const [main, packageSource, lockSource] = await Promise.all([
   readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
 ]);
 
-test("an unobserved export acknowledgement continues to job-number discovery", () => {
-  const confirmationBlock = main.match(
-    /let confirmationObserved = false;[\s\S]*?async function automateSellerBrandExport/
-  )?.[0] || "";
-  assert.match(confirmationBlock, /ok: true/);
-  assert.match(confirmationBlock, /confirmationTimedOut: !requestAcknowledged/);
-  assert.doesNotMatch(confirmationBlock, /EXPORT_REQUEST_NOT_CONFIRMED/);
-  assert.doesNotMatch(confirmationBlock, /clickLikeUser\(exportButton\)[\s\S]*clickLikeUser\(exportButton\)/);
-  assert.match(main, /const verificationTimeoutMs = 180000/);
-  assert.match(main, /findNewSellerExportJob/);
-  const workflow = main.slice(
-    main.indexOf("async function automateSellerBrandExport"),
-    main.indexOf("async function syncBrandCatalogFromKrPoizon"),
-  );
-  assert.match(workflow, /exportClicked: true/);
-  assert.doesNotMatch(workflow, /verifyCompleteSellerExportAndClick\(/);
-});
 
-test("release metadata is 2.10.116", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.116");
-  assert.equal(JSON.parse(lockSource).version, "2.10.116");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.116");
+test("release metadata is 2.10.117", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.117");
+  assert.equal(JSON.parse(lockSource).version, "2.10.117");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.117");
 });

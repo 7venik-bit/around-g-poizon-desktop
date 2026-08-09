@@ -104,7 +104,7 @@ let sellerProductFrameRoutingId = null;
 const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
 const SELLER_PRODUCT_SEARCH_URL = "https://seller.poizon.com/main/goods/search";
 const SELLER_EXPORT_CENTER_URL = "https://seller.poizon.com/main/exportCenter";
-const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 5 * 60 * 1000;
+const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 20 * 60 * 1000;
 const KR_POIZON_BRAND_LIST_URL = "https://kr.poizon.com/brand/list";
 const EN_POIZON_BRAND_LIST_URL = "https://www.poizon.com/brand/list";
 const APP_ICON_PATH = join(import.meta.dirname, "build", "icon.png");
@@ -1735,8 +1735,8 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
     mkdirSync(brandFolder, { recursive: true });
     const safeBrand = exportBrand;
     const fileName = safeBrand
-      ? `${safeBrand}_${localFileTimestamp()}.xlsx`
-      : `POIZON_${localFileTimestamp()}.xlsx`;
+      ? `${downloadJobId}_${safeBrand}_${localFileTimestamp()}.xlsx`
+      : `${downloadJobId}_POIZON_${localFileTimestamp()}.xlsx`;
     const filePath = join(brandFolder, fileName);
     brandDownloadPathsInProgress.add(filePath);
     item.setSavePath(filePath);
@@ -3446,6 +3446,21 @@ async function automateSellerBrandExport(input = {}) {
           clickLikeUser(search);
           searchApplied = await waitForSearchUpdate();
         }
+        if (!searchApplied
+          && ${JSON.stringify(brandKoInput)} !== ""
+          && ${JSON.stringify(brandKoInput)} !== ${JSON.stringify(brandName)}) {
+          applyValue("");
+          await wait(160);
+          applyValue(${JSON.stringify(brandKoInput)});
+          await wait(700);
+          if (search) clickLikeUser(search);
+          else pressEnter();
+          searchApplied = await waitForSearchUpdate();
+          if (!searchApplied) {
+            pressEnter();
+            searchApplied = await waitForSearchUpdate();
+          }
+        }
         if (!searchApplied) {
           const current = readSearchState();
           return {
@@ -4817,8 +4832,6 @@ app.whenReady().then(async () => {
     app.quit();
     return;
   }
-  restorePendingBrandExportJobs();
-
   ipcMain.handle("store:snapshot", () => store.snapshot());
   ipcMain.handle("store:upsert", (_event, collection, item) => store.upsert(collection, item));
   ipcMain.handle("store:bulk-upsert", (_event, collection, items) => store.bulkUpsert(collection, items));
@@ -4956,7 +4969,7 @@ app.whenReady().then(async () => {
       timeout = setTimeout(() => resolve({
         ok: false,
         code: "BRAND_AUTOMATION_TIMEOUT",
-        message: `${String(input?.brandName || "선택 브랜드")} 작업이 5분 안에 끝나지 않아 강제 종료했습니다. 다음 브랜드로 이동합니다.`,
+        message: `${String(input?.brandName || "선택 브랜드")} 작업이 20분 안에 끝나지 않아 강제 종료했습니다. 다음 브랜드로 이동합니다.`,
       }), SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS);
     });
     const result = await Promise.race([automateSellerBrandExport(input), timedOut]);

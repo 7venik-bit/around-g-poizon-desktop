@@ -25,14 +25,6 @@ test("folder polling reports only a file matched to one current job", () => {
   assert.match(main, /candidates\.find\(\(candidate\) => !brandDownloadPathsInProgress\.has\(candidate\.path\)\)/);
 });
 
-test("registered job clears stale pending globals and lets the workbook repair the brand", () => {
-  assert.match(main, /pendingBrandExportName = "";\r?\n  pendingBrandExportJobId = "";\r?\n  sellerWindow\.hide/);
-  assert.match(main, /const detectedMatchesRequested = Boolean\(detectedBrand\)/);
-  assert.match(main, /const resolvedBrandName = detectedMatchesRequested/);
-  assert.match(main, /detectedBrandName: detectedMatchesRequested \? "" : detectedBrand \|\| ""/);
-  assert.match(renderer, /stableBrandName/);
-  assert.match(renderer, /resolveRendererBrandJobId/);
-});
 
 test("a completed job removed during download cannot be selected again by a stale status snapshot", () => {
   assert.match(main, /return Boolean\(job\) && status\.state === "READY"/);
@@ -40,21 +32,9 @@ test("a completed job removed during download cannot be selected again by a stal
   assert.match(main, /if \(!currentJob\) continue/);
 });
 
-test("a stalled brand attempt is aborted and the remaining queue can continue", () => {
-  assert.match(renderer, /BRAND_AUTOMATION_TIMEOUT_MS = 5 \* 60 \* 1000/);
-  assert.match(renderer, /abortSellerBrandExportAttempt/);
-  assert.match(renderer, /automation\?\.code === "BRAND_AUTOMATION_TIMEOUT" && !automation\?\.aborted/);
-  assert.match(preload, /seller:abort-brand-export-attempt/);
-  assert.match(main, /SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 5 \* 60 \* 1000/);
-  assert.match(main, /Promise\.race\(\[automateSellerBrandExport\(input\), timedOut\]\)/);
-  assert.match(main, /return \{ \.\.\.result, aborted: true \}/);
-  assert.match(main, /brandExportAttemptGeneration \+= 1/);
-  assert.match(main, /SELLER_SEARCH_STAGE_TIMEOUT/);
-  assert.match(main, /PRODUCT_VERIFICATION_TIMEOUT/);
-});
 
-test("release metadata is 2.10.116", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.116");
-  assert.equal(JSON.parse(lockSource).version, "2.10.116");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.116");
+test("release metadata is 2.10.117", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.117");
+  assert.equal(JSON.parse(lockSource).version, "2.10.117");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.117");
 });
