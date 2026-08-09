@@ -3185,7 +3185,9 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
     sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
     sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
   }
-  await new Promise((resolve) => setTimeout(resolve, 120));
+  // Keep the Seller Center active long enough for its real click handler to
+  // start the request before the caller minimizes the window.
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
   return {
     ...verified,
     submitted: true,
@@ -3502,7 +3504,11 @@ async function automateSellerBrandExport(input = {}) {
             // The working Seller Center keeps the visible "총 9,900건" label
             // unchanged after a search. The rendered product rows are the
             // authoritative signal that the brand search completed.
-            if (changed && hasRows && brandMatched) {
+            // The physical click happens before this verifier starts. On a
+            // fast response the first snapshot can already be the filtered
+            // result, so matching rows are authoritative even when the DOM no
+            // longer differs from that snapshot.
+            if (hasRows && brandMatched) {
               stableCount = signature === stableSignature ? stableCount + 1 : 1;
               stableSignature = signature;
               if (stableCount >= 3) return true;
