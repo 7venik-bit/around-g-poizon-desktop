@@ -3098,6 +3098,88 @@ Start-Sleep -Milliseconds 70
   });
 }
 
+async function physicalClickSellerElement(targetFrame, locatorScript, step, timeoutMs = 8_000) {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: `${step}_WINDOW_MISSING` };
+  sellerWindow.show();
+  sellerWindow.focus();
+  sellerWindow.webContents.focus();
+  const startedAt = Date.now();
+  let point = null;
+  while (!point && Date.now() - startedAt < timeoutMs) {
+    point = await targetFrame.executeJavaScript(`(() => {
+      const visible = (element) => element && element.getBoundingClientRect().width > 0
+        && element.getBoundingClientRect().height > 0;
+      const textOf = (element) => String(element?.innerText || element?.textContent || "")
+        .replace(/\\s+/g, " ").trim();
+      const element = (() => { ${locatorScript} })();
+      if (!element || !visible(element)) return null;
+      element.scrollIntoView?.({ block: "center", inline: "center" });
+      const rect = element.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, label: textOf(element) };
+    })()`, true).catch(() => null);
+    if (!point) await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  if (!point) return { ok: false, step: `${step}_NOT_FOUND` };
+  const bounds = sellerWindow.getContentBounds();
+  const clicked = await moveWindowsCursorAndClick(bounds.x + point.x, bounds.y + point.y);
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  return clicked.ok ? { ok: true, step, label: point.label } : { ok: false, step: `${step}_CLICK_FAILED` };
+}
+
+async function performPhysicalSellerSortAndExport(targetFrame) {
+  const sort = await physicalClickSellerElement(targetFrame, `
+    const pattern = /현지\\s*판매자\\s*최근\\s*30일\\s*판매량/;
+    const label = [...document.querySelectorAll("th,[role='columnheader'],thead td,thead div")]
+      .filter(visible).find((element) => pattern.test(textOf(element)));
+    if (!label) return null;
+    const header = label.closest("th,[role='columnheader'],thead td") || label;
+    const candidates = [...header.querySelectorAll("button,[role='button'],[class*='sort'],svg,i")].filter(visible);
+    return candidates.sort((a, b) => b.getBoundingClientRect().left - a.getBoundingClientRect().left)[0]
+      || header;
+  `, "PHYSICAL_LOCAL_SALES_SORT");
+  if (!sort.ok) return sort;
+  const descending = await physicalClickSellerElement(targetFrame, `
+    return [...document.querySelectorAll("button,[role='button'],[role='menuitem'],li,span,div")]
+      .filter(visible).find((element) => /^내림차순$/.test(textOf(element)));
+  `, "PHYSICAL_DESCENDING");
+  if (!descending.ok) return descending;
+  const confirm = await physicalClickSellerElement(targetFrame, `
+    const dialogs = [...document.querySelectorAll("[role='dialog'],.ant-popover,.ant-dropdown,.ant-modal")].filter(visible);
+    const root = dialogs.at(-1) || document;
+    return [...root.querySelectorAll("button,[role='button'],a,span")]
+      .filter(visible).find((element) => /^확인$/.test(textOf(element)))?.closest("button,[role='button'],a") || null;
+  `, "PHYSICAL_SORT_CONFIRM");
+  if (!confirm.ok) return confirm;
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  const exportClick = await physicalClickSellerElement(targetFrame, `
+    return [...document.querySelectorAll("button,[role='button'],a,span")]
+      .filter(visible).find((element) => /^전체\\s*내보내기$/.test(textOf(element)))?.closest("button,[role='button'],a") || null;
+  `, "PHYSICAL_EXPORT");
+  return exportClick.ok ? { ok: true, sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC", exportClicked: true } : exportClick;
+}
+
+async function confirmSellerExportRequestPhysical(targetFrame) {
+  const clicked = await physicalClickSellerElement(targetFrame, `
+    const dialogs = [...document.querySelectorAll(".ant-modal,.ant-modal-confirm,[role='dialog']")].filter(visible);
+    const dialog = dialogs.at(-1);
+    if (!dialog) return null;
+    return [...dialog.querySelectorAll("button,[role='button'],a")].filter(visible)
+      .find((element) => /^(?:확인|내보내기|생성|확정|제출|계속)$/.test(textOf(element))) || null;
+  `, "PHYSICAL_EXPORT_CONFIRM", 15_000);
+  return clicked.ok
+    ? { ok: true, confirmationObserved: true, confirmationClicked: true, requestAcknowledged: true }
+    : { ok: false, confirmationObserved: false, confirmationClicked: false, requestAcknowledged: false };
+}
+
+async function clickSellerDownloadCenterShortcutPhysical(targetFrame) {
+  const clicked = await physicalClickSellerElement(targetFrame, `
+    return [...document.querySelectorAll("a,button,[role='button'],span")].filter(visible)
+      .find((element) => /^다운로드\\s*센터\\s*바로\\s*가기$/.test(textOf(element)))
+      ?.closest("a,button,[role='button']") || null;
+  `, "PHYSICAL_DOWNLOAD_CENTER", 15_000);
+  return { ok: clicked.ok, clicked: clicked.ok, code: clicked.ok ? "" : "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND" };
+}
+
 
 async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   if (!sellerWindow || sellerWindow.isDestroyed()) {
@@ -3557,6 +3639,17 @@ async function automateSellerBrandExport(input = {}) {
           };
         }
 
+        // The remaining controls must be operated through the visible Windows
+        // cursor. Return after the product search has actually updated so the
+        // outer workflow can perform sorting and export physically.
+        const searchedState = readSearchState();
+        return {
+          ok: true,
+          inputValue: String(input.value || "").trim(),
+          resultRowCount: searchedState.rowTexts.length,
+          firstResult: searchedState.rowTexts[0] || "",
+        };
+
     const localSalesPattern = /\\uD604\\uC9C0\\s*\\uD310\\uB9E4\\uC790\\s*\\uCD5C\\uADFC\\s*30\\uC77C\\s*\\uD310\\uB9E4\\uB7C9/;
     const localSalesHeaderText = [...document.querySelectorAll(
       "th, [role='columnheader'], thead td, thead div"
@@ -3804,8 +3897,18 @@ async function automateSellerBrandExport(input = {}) {
       }));
       lastSearchDiagnostics = candidate.probe;
       if (result?.ok) {
-        searched = result;
-        sellerProductFrameRoutingId = candidate.frame.routingId;
+        const postSearch = await performPhysicalSellerSortAndExport(candidate.frame)
+          .catch((error) => ({
+            ok: false,
+            step: "PHYSICAL_POST_SEARCH_FAILED",
+            detail: String(error?.message || error || ""),
+          }));
+        if (postSearch?.ok) {
+          searched = { ...result, ...postSearch };
+          sellerProductFrameRoutingId = candidate.frame.routingId;
+          break;
+        }
+        searched = postSearch;
         break;
       }
       if (result?.step !== "SEARCH_INPUT_NOT_FOUND") {
@@ -3840,7 +3943,7 @@ async function automateSellerBrandExport(input = {}) {
 
   const productFrame = sellerWindowFrames().find((frame) => frame.routingId === sellerProductFrameRoutingId)
     || sellerWindow.webContents.mainFrame;
-  const exportConfirmation = await confirmSellerExportRequest(productFrame).catch(() => ({
+  const exportConfirmation = await confirmSellerExportRequestPhysical(productFrame).catch(() => ({
     ok: false,
     confirmationObserved: false,
     confirmationClicked: false,
@@ -3859,7 +3962,7 @@ async function automateSellerBrandExport(input = {}) {
     };
   }
 
-  const downloadCenterShortcut = await clickSellerDownloadCenterShortcut(productFrame).catch(() => ({
+  const downloadCenterShortcut = await clickSellerDownloadCenterShortcutPhysical(productFrame).catch(() => ({
     ok: false,
     clicked: false,
     code: "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND",
