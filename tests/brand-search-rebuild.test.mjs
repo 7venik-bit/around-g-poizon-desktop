@@ -24,6 +24,8 @@ test("brand workflow connects directly and searches English before Korean fallba
   const korean = workflow.indexOf("applyValue(${JSON.stringify(brandKoInput)})");
   assert.ok(english >= 0 && korean > english);
   assert.match(workflow, /if \(!searchApplied[\s\S]*brandKoInput/);
+  assert.match(workflow, /typeSellerBrandWithRealKeyboard\(candidate\.frame, brandName\)/);
+  assert.match(workflow, /seller-brand-input-confirmed/);
 });
 
 test("selected brands run sequentially with a twenty-minute limit", () => {

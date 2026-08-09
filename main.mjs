@@ -3709,6 +3709,25 @@ async function automateSellerBrandExport(input = {}) {
         jobState: `1단계/5 · 브랜드 입력·상품 검색 중 · ${brandName}`,
         message: `${brandName} · 기존 검색 서비스 방식으로 브랜드를 입력하고 검색을 실행합니다.`,
       });
+      // POIZON's top product-search box is React-controlled. Enter the brand
+      // through Electron's real keyboard path, as in the recorded manual flow,
+      // before clicking the adjacent search button in runSellerSearch.
+      const realKeyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, brandName)
+        .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
+      if (sellerWindow && !sellerWindow.isDestroyed()) {
+        sellerWindow.minimize();
+        showCollectorWindow();
+      }
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: realKeyboardInput?.ok ? "seller-brand-input-confirmed" : "seller-brand-input-fallback",
+        brandName,
+        jobState: realKeyboardInput?.ok
+          ? `1단계/5 · 상품검색 브랜드 입력 완료 · ${brandName}`
+          : `1단계/5 · 상품검색 입력 재시도 · ${brandName}`,
+        message: realKeyboardInput?.ok
+          ? `${brandName} · 판매자센터 상단 상품검색 입력을 확인하고 검색 및 입찰을 실행합니다.`
+          : `${brandName} · 실제 키보드 입력이 확인되지 않아 기존 입력 방식으로 즉시 재시도합니다.`,
+      });
       const result = await Promise.race([
         runSellerSearch(candidate.frame),
         new Promise((resolve) => setTimeout(() => resolve({
