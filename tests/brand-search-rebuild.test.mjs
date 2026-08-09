@@ -27,8 +27,14 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.match(workflow, /typeSellerBrandWithRealKeyboard\(candidate\.frame, brandName\)/);
   assert.match(workflow, /seller-brand-input-confirmed/);
   assert.doesNotMatch(workflow, /\.\.\.officialAliases/);
-  assert.ok(workflow.includes(String.raw`const pageSizePattern = /^20\\s*(?:건|개|条)?\\s*\\/\\s*(?:페이지|page)?$/i;`));
-  assert.ok(workflow.includes(String.raw`/\\d+\\s*건\\s*\\/\\s*페이지/i.test(textOf(element))`));
+  assert.ok(workflow.includes(String.raw`const pageSizePattern = /^20\\s*(?:건|개|条)?\\s*(?:\\/\\s*(?:페이지|page))?$/i;`));
+  assert.match(workflow, /window\.scrollTo\(\{ top: Math\.max/);
+  assert.match(workflow, /for \(let attempt = 0; attempt < 12 && !pageSizeOption/);
+  assert.match(workflow, /dropdown portals do not/);
+  const keepVisible = workflow.indexOf("sellerWindow.show();");
+  const runSearch = workflow.indexOf("runSellerSearch(candidate.frame");
+  const minimizeAfterShortcut = workflow.indexOf("sellerWindow.minimize();", runSearch);
+  assert.ok(keepVisible >= 0 && runSearch > keepVisible && minimizeAfterShortcut > runSearch);
   assert.match(main, /"REAL_SEARCH_BUTTON_CLICKED"/);
   assert.match(main, /runSellerSearch\(candidate\.frame, Boolean\(realKeyboardInput\?\.submitted\)\)/);
   assert.match(main, /if \(!alreadySubmitted\) \{/);
