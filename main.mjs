@@ -2724,9 +2724,6 @@ function sellerBrandExportFailureMessage(code = "", brandName = "") {
     PARTIAL_PRODUCT_COLLECTION: `${label} 전체 상품 수집이 완료되지 않아 내보내기를 중단했습니다. 부분 파일은 다운로드하지 않습니다.`,
     PRODUCT_PAGE_NOT_READY: `${label} 상품 수와 전체 페이지를 확인하지 못해 내보내기를 중단했습니다.`,
     PRODUCT_LAST_PAGE_FAILED: `${label} 마지막 상품 페이지를 확인하지 못해 내보내기를 중단했습니다.`,
-    PAGE_SIZE_CONTROL_NOT_FOUND: `${label} 상품검색 결과의 페이지당 표시 개수 선택창을 찾지 못했습니다.`,
-    PAGE_SIZE_20_OPTION_NOT_FOUND: `${label} 상품검색 결과에서 20건/페이지 항목을 찾지 못했습니다.`,
-    PAGE_SIZE_20_NOT_APPLIED: `${label} 상품검색 결과를 20건/페이지로 변경하지 못했습니다.`,
     DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND: `${label} 내보내기 후 다운로드센터 바로 가기 버튼을 찾지 못했습니다.`,
   };
   return messages[code] || `판매자센터 자동화 실패: ${code || "UNKNOWN"}`;
@@ -3696,41 +3693,6 @@ async function automateSellerBrandExport(input = {}) {
       await wait(900);
     }
 
-    window.scrollTo({ top: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight), behavior: "smooth" });
-    await wait(1_200);
-    const pageSizePattern = /^20\\s*(?:건|개|条)?\\s*(?:\\/\\s*(?:페이지|page))?$/i;
-    const anyPageSizePattern = /\\d+\\s*(?:건|개|条)?\\s*(?:\\/\\s*(?:페이지|page))?/i;
-    const pageSizeControls = [...document.querySelectorAll(
-      ".ant-select-selection-item, [role='combobox'], [class*='select']"
-    )].filter(visible);
-    let pageSizeControl = pageSizeControls.find((element) =>
-      anyPageSizePattern.test(textOf(element))
-    );
-    if (!pageSizeControl) {
-      return { ok: false, code: "PAGE_SIZE_CONTROL_NOT_FOUND" };
-    }
-    if (!pageSizePattern.test(textOf(pageSizeControl))) {
-      clickLikeUser(pageSizeControl.closest("[role='combobox'], .ant-select") || pageSizeControl);
-      let pageSizeOption = null;
-      for (let attempt = 0; attempt < 12 && !pageSizeOption; attempt += 1) {
-        await wait(250);
-        pageSizeOption = [...document.querySelectorAll(
-          "[role='option'], .ant-select-item-option, li, [class*='option'], [class*='dropdown'] div"
-        )].filter(visible).find((element) => pageSizePattern.test(textOf(element)));
-      }
-      if (!pageSizeOption) {
-        return { ok: false, code: "PAGE_SIZE_20_OPTION_NOT_FOUND" };
-      }
-      clickLikeUser(pageSizeOption);
-      await wait(900);
-      pageSizeControl = [...document.querySelectorAll(
-        ".ant-select-selection-item, [role='combobox'], [class*='select']"
-      )].filter(visible).find((element) => pageSizePattern.test(textOf(element)));
-      if (!pageSizeControl) {
-        return { ok: false, code: "PAGE_SIZE_20_NOT_APPLIED" };
-      }
-    }
-
     let exportButton = null;
     const exportPattern = /^\uC804\uCCB4\s*\uB0B4\uBCF4\uB0B4\uAE30$/;
     for (let attempt = 0; attempt < 12 && !exportButton; attempt += 1) {
@@ -3748,7 +3710,6 @@ async function automateSellerBrandExport(input = {}) {
     return {
       ok: true,
       sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC",
-      pageSize: 20,
       exportClicked: true,
       inputValue: String(input.value || "").trim(),
       resultRowCount: verifiedState.rowTexts.length,
@@ -3810,9 +3771,8 @@ async function automateSellerBrandExport(input = {}) {
       const realKeyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, brandName)
         .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
       if (sellerWindow && !sellerWindow.isDestroyed()) {
-        // Keep the Seller Center visible while sorting, scrolling, selecting
-        // 20 rows, exporting, and confirming. Its dropdown portals do not
-        // reliably open while the window is minimized.
+        // Keep the Seller Center visible while sorting, exporting, and
+        // confirming. Minimize only after the download-center shortcut.
         sellerWindow.show();
         sellerWindow.focus();
       }
@@ -3927,7 +3887,7 @@ async function automateSellerBrandExport(input = {}) {
     status: "seller-search-evidence",
     brandName,
     jobState: "2단계/5 · 전체 내보내기·다운로드센터 이동 완료",
-    message: `${brandName} · 입력값 ${searched.inputValue || "확인 불가"} · 현지 30일 내림차순 · 20건/페이지 · 전체 내보내기 · 다운로드센터 바로 가기 클릭 완료`,
+    message: `${brandName} · 입력값 ${searched.inputValue || "확인 불가"} · 현지 30일 내림차순 · 전체 내보내기 · 다운로드센터 바로 가기 클릭 완료`,
   });
 
   const baselineJobs = await baselinePromise;

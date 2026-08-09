@@ -876,9 +876,6 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
       "BRAND_INPUT_NOT_APPLIED",
       "LOCAL_SALES_SORT_ICON_NOT_FOUND",
       "LOCAL_SALES_SORT_CONFIRM_NOT_FOUND",
-      "PAGE_SIZE_CONTROL_NOT_FOUND",
-      "PAGE_SIZE_20_OPTION_NOT_FOUND",
-      "PAGE_SIZE_20_NOT_APPLIED",
       "EXPORT_BUTTON_NOT_FOUND_AFTER_SORT",
     ]);
     const retryCount = Number(activeExportBrand?.retryCount || 0);

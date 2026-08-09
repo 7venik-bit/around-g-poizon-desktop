@@ -27,10 +27,8 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.match(workflow, /typeSellerBrandWithRealKeyboard\(candidate\.frame, brandName\)/);
   assert.match(workflow, /seller-brand-input-confirmed/);
   assert.doesNotMatch(workflow, /\.\.\.officialAliases/);
-  assert.ok(workflow.includes(String.raw`const pageSizePattern = /^20\\s*(?:건|개|条)?\\s*(?:\\/\\s*(?:페이지|page))?$/i;`));
-  assert.match(workflow, /window\.scrollTo\(\{ top: Math\.max/);
-  assert.match(workflow, /for \(let attempt = 0; attempt < 12 && !pageSizeOption/);
-  assert.match(workflow, /dropdown portals do not/);
+  assert.doesNotMatch(workflow, /pageSizePattern|PAGE_SIZE_20|PAGE_SIZE_CONTROL/);
+  assert.doesNotMatch(workflow, /20건\/페이지/);
   const keepVisible = workflow.indexOf("sellerWindow.show();");
   const runSearch = workflow.indexOf("runSellerSearch(candidate.frame");
   const minimizeAfterShortcut = workflow.indexOf("sellerWindow.minimize();", runSearch);
