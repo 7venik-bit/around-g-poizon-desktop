@@ -3174,7 +3174,7 @@ async function confirmSellerExportRequestPhysical(targetFrame) {
 async function clickSellerDownloadCenterShortcutPhysical(targetFrame) {
   const clicked = await physicalClickSellerElement(targetFrame, `
     return [...document.querySelectorAll("a,button,[role='button'],span")].filter(visible)
-      .find((element) => /^다운로드\\s*센터\\s*바로\\s*가기$/.test(textOf(element)))
+      .find((element) => /^(?:다운로드\\s*센터\\s*)?바로\\s*가기$/.test(textOf(element)))
       ?.closest("a,button,[role='button']") || null;
   `, "PHYSICAL_DOWNLOAD_CENTER", 15_000);
   return { ok: clicked.ok, clicked: clicked.ok, code: clicked.ok ? "" : "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND" };
