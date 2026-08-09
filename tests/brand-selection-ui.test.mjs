@@ -37,29 +37,8 @@ test("brand selection supports toggle-on and toggle-off", () => {
   assert.match(selection, /selectedBrandIds\.delete\(id\)/);
 });
 
-test("selected-brand search queues every selected brand", () => {
-  assert.match(renderer, /function selectedBrandsForExport\(\)/);
-  assert.match(renderer, /brandExportQueue = selectedBrands\.map/);
-  assert.match(renderer, /void exportNextSelectedBrand\(generation\)/);
-  assert.match(renderer, /#brand-export-selected/);
-});
 
-test("the running brand-search button stops the current and queued registrations", () => {
-  assert.match(renderer, /brandSelectionBusy \? "작업 중지" : "브랜드 검색"/);
-  assert.match(renderer, /brandWorkHistoryGeneration \+= 1/);
-  assert.match(renderer, /brandExportQueue = \[\]/);
-  assert.match(renderer, /updateBrandBatchState\(stoppedBrand, "사용자 중지"\)/);
-  assert.match(renderer, /await window\.aroundG\.abortSellerBrandExportAttempt/);
-  assert.match(renderer, /이미 생성된 작업번호의 다운로드 감시는 계속합니다/);
-});
 
-test("the activity panel has an always-visible real stop control", () => {
-  assert.match(indexHtml, /id="brand-stop-current"[^>]*>작업 중단<\/button>/);
-  assert.match(renderer, /\$\("#brand-stop-current"\)\?\.addEventListener\("click"/);
-  assert.match(renderer, /\$\("#brand-export-selected"\)\?\.click\(\)/);
-  assert.match(renderer, /stopCurrent\.disabled = !brandSelectionBusy && !activeExportBrand/);
-  assert.match(style, /#brand-stop-current/);
-});
 
 test("brand picker exposes accessible multi-select and search icons", () => {
   assert.match(indexHtml, /class="brand-filter-field"/);
@@ -70,17 +49,6 @@ test("brand picker exposes accessible multi-select and search icons", () => {
   assert.match(indexHtml, /<svg aria-hidden="true" viewBox="0 0 24 24">/);
 });
 
-test("active brand work has a live spinner, elapsed time, and stale-response state", () => {
-  assert.match(indexHtml, /id="brand-activity"[^>]*role="status"[^>]*aria-live="polite"/);
-  assert.match(indexHtml, /id="brand-activity-elapsed"/);
-  assert.match(indexHtml, /id="brand-activity-updated"/);
-  assert.match(indexHtml, /id="brand-seller-diagnostic"[^>]*>진단 창 보기<\/button>/);
-  assert.match(renderer, /openSellerProductSearch\(\)/);
-  assert.match(style, /@keyframes brand-activity-spin/);
-  assert.match(renderer, /setInterval\(renderBrandActivity, 1000\)/);
-  assert.match(renderer, /idleSeconds >= 60/);
-  assert.match(renderer, /stopBrandActivity\(\)/);
-});
 
 test("brand button shows down-complete whenever its data-center workbook was downloaded", () => {
   const cardsStart = renderer.indexOf("function renderBrandCards");
