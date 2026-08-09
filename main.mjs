@@ -1216,7 +1216,7 @@ function publicConfig() {
 
 const SELLER_EXPORT_POLL_INTERVAL_MS = 60 * 1000;
 const SELLER_MULTI_EXPORT_POLL_INTERVAL_MS = 10 * 1000;
-const SELLER_EXPORT_MONITOR_TIMEOUT_MS = 60 * 60 * 1000;
+const SELLER_EXPORT_MONITOR_TIMEOUT_MS = 20 * 60 * 1000;
 const RESTORED_PENDING_JOB_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const PROCESSED_BRAND_EXPORT_SUFFIX = "_총판매량50이상_OR_정리.xlsx";
 
@@ -2317,11 +2317,23 @@ function scheduleBrandExportMonitor(delayMs = 0) {
 async function watchAllSellerExportJobsEveryTenSeconds() {
   if (brandExportMonitorRunning) return { ok: true, jobs: brandExportJobs.size };
   brandExportMonitorRunning = true;
-  const startedAt = Date.now();
   const timeoutMs = SELLER_EXPORT_MONITOR_TIMEOUT_MS;
   const pollIntervalMs = SELLER_MULTI_EXPORT_POLL_INTERVAL_MS;
   try {
-    while (brandExportJobs.size && Date.now() - startedAt < timeoutMs) {
+    while (brandExportJobs.size) {
+      const now = Date.now();
+      for (const [jobId, job] of [...brandExportJobs.entries()]) {
+        if (now - Number(job?.createdAt || now) < timeoutMs) continue;
+        brandExportJobs.delete(jobId);
+        if (activeBrandDownloadJobId === jobId) activeBrandDownloadJobId = "";
+        mainWindow?.webContents.send("brand-export:error", {
+          brandName: job.brandName,
+          jobId,
+          jobState: "실패 · POIZON 성공 대기 20분 초과",
+          message: `${job.brandName} · 작업번호 ${jobId} · POIZON 성공 상태를 20분 동안 확인하지 못해 감시를 종료했습니다.`,
+        });
+      }
+      if (!brandExportJobs.size) break;
       const expectedIds = [...brandExportJobs.keys()];
       const statuses = await readSellerMonitorStatuses(expectedIds);
       for (const status of statuses) {
@@ -2345,10 +2357,10 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
         });
       }
 
-      const now = Date.now();
+      const statusCheckedAt = Date.now();
       if (activeBrandDownloadJobId) {
         const activeJob = brandExportJobs.get(activeBrandDownloadJobId);
-        const requestAge = now - Number(activeJob?.downloadRequestedAt || now);
+        const requestAge = statusCheckedAt - Number(activeJob?.downloadRequestedAt || statusCheckedAt);
         if (!activeJob || (!activeJob.downloadStarted && requestAge >= 120_000)) {
           if (activeJob) {
             activeJob.downloadRequestedAt = 0;
@@ -2695,6 +2707,10 @@ function sellerBrandExportFailureMessage(code = "", brandName = "") {
     PARTIAL_PRODUCT_COLLECTION: `${label} 전체 상품 수집이 완료되지 않아 내보내기를 중단했습니다. 부분 파일은 다운로드하지 않습니다.`,
     PRODUCT_PAGE_NOT_READY: `${label} 상품 수와 전체 페이지를 확인하지 못해 내보내기를 중단했습니다.`,
     PRODUCT_LAST_PAGE_FAILED: `${label} 마지막 상품 페이지를 확인하지 못해 내보내기를 중단했습니다.`,
+    PAGE_SIZE_CONTROL_NOT_FOUND: `${label} 상품검색 결과의 페이지당 표시 개수 선택창을 찾지 못했습니다.`,
+    PAGE_SIZE_20_OPTION_NOT_FOUND: `${label} 상품검색 결과에서 20건/페이지 항목을 찾지 못했습니다.`,
+    PAGE_SIZE_20_NOT_APPLIED: `${label} 상품검색 결과를 20건/페이지로 변경하지 못했습니다.`,
+    DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND: `${label} 내보내기 후 다운로드센터 바로 가기 버튼을 찾지 못했습니다.`,
   };
   return messages[code] || `판매자센터 자동화 실패: ${code || "UNKNOWN"}`;
 }
@@ -2989,6 +3005,36 @@ async function confirmSellerExportRequest(targetFrame) {
       confirmationClicked,
       requestAcknowledged: !confirmationObserved,
     };
+  })()`, true);
+}
+
+async function clickSellerDownloadCenterShortcut(targetFrame) {
+  return targetFrame.executeJavaScript(`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getBoundingClientRect().width > 0
+      && element.getBoundingClientRect().height > 0;
+    const textOf = (element) => String(element?.innerText || element?.textContent || "")
+      .replace(/\\s+/g, " ").trim();
+    const pattern = /^(?:다운로드센터\\s*바로\\s*가기|다운로드\\s*센터\\s*바로\\s*가기)$/;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const control = [...document.querySelectorAll("a, button, [role='button'], span")]
+        .filter(visible)
+        .find((element) => pattern.test(textOf(element)));
+      if (control) {
+        const target = control.closest("a, button, [role='button']") || control;
+        target.scrollIntoView?.({ block: "center", inline: "center" });
+        target.focus?.();
+        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+          target.dispatchEvent(new MouseEvent(type, {
+            bubbles: true, cancelable: true, composed: true, view: window, button: 0,
+          }));
+        }
+        target.click?.();
+        return { ok: true, clicked: true, label: textOf(control) };
+      }
+      await wait(250);
+    }
+    return { ok: false, clicked: false, code: "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND" };
   })()`, true);
 }
 
@@ -3502,6 +3548,35 @@ async function automateSellerBrandExport(input = {}) {
       await wait(900);
     }
 
+    const pageSizePattern = /^20\\s*건\\s*\/\\s*페이지$/i;
+    const pageSizeControls = [...document.querySelectorAll(
+      ".ant-select-selection-item, [role='combobox'], [class*='select']"
+    )].filter(visible);
+    let pageSizeControl = pageSizeControls.find((element) =>
+      /\\d+\\s*건\\s*\/\\s*페이지/i.test(textOf(element))
+    );
+    if (!pageSizeControl) {
+      return { ok: false, code: "PAGE_SIZE_CONTROL_NOT_FOUND" };
+    }
+    if (!pageSizePattern.test(textOf(pageSizeControl))) {
+      clickLikeUser(pageSizeControl.closest("[role='combobox'], .ant-select") || pageSizeControl);
+      await wait(450);
+      const pageSizeOption = [...document.querySelectorAll(
+        "[role='option'], .ant-select-item-option, li, [class*='option']"
+      )].filter(visible).find((element) => pageSizePattern.test(textOf(element)));
+      if (!pageSizeOption) {
+        return { ok: false, code: "PAGE_SIZE_20_OPTION_NOT_FOUND" };
+      }
+      clickLikeUser(pageSizeOption);
+      await wait(900);
+      pageSizeControl = [...document.querySelectorAll(
+        ".ant-select-selection-item, [role='combobox'], [class*='select']"
+      )].filter(visible).find((element) => pageSizePattern.test(textOf(element)));
+      if (!pageSizeControl) {
+        return { ok: false, code: "PAGE_SIZE_20_NOT_APPLIED" };
+      }
+    }
+
     let exportButton = null;
     const exportPattern = /^\uC804\uCCB4\s*\uB0B4\uBCF4\uB0B4\uAE30$/;
     for (let attempt = 0; attempt < 12 && !exportButton; attempt += 1) {
@@ -3519,6 +3594,7 @@ async function automateSellerBrandExport(input = {}) {
     return {
       ok: true,
       sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC",
+      pageSize: 20,
       exportClicked: true,
       inputValue: String(input.value || "").trim(),
       resultRowCount: verifiedState.rowTexts.length,
@@ -3649,11 +3725,29 @@ async function automateSellerBrandExport(input = {}) {
     };
   }
 
+  const downloadCenterShortcut = await clickSellerDownloadCenterShortcut(productFrame).catch(() => ({
+    ok: false,
+    clicked: false,
+    code: "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND",
+  }));
+  if (!downloadCenterShortcut?.ok || !downloadCenterShortcut?.clicked) {
+    const diagnosticPath = await captureSellerDiagnostic(brandName, "download-center-shortcut-not-found");
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    return {
+      ok: false,
+      code: downloadCenterShortcut?.code || "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND",
+      message: `${brandName} 내보내기 후 다운로드센터 바로 가기 버튼을 찾지 못했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
+      diagnostics: { ...downloadCenterShortcut, path: diagnosticPath },
+    };
+  }
+
   mainWindow?.webContents.send("brand-export:progress", {
     status: "seller-search-evidence",
     brandName,
-    jobState: "2단계/5 · 검색·결과·전체 내보내기 최종 확인 완료",
-    message: `${brandName} · 입력값 ${searched.inputValue || "확인 불가"} · 결과 행 ${Number(searched.resultRowCount || 0)}개 · 첫 결과 ${String(searched.firstResult || "").slice(0, 80)} · 전체 내보내기 최종 확인 완료`,
+    jobState: "2단계/5 · 전체 내보내기·다운로드센터 이동 완료",
+    message: `${brandName} · 입력값 ${searched.inputValue || "확인 불가"} · 현지 30일 내림차순 · 20건/페이지 · 전체 내보내기 · 다운로드센터 바로 가기 클릭 완료`,
   });
 
   const baselineJobs = await baselinePromise;

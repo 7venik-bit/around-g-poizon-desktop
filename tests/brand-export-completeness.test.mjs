@@ -36,7 +36,22 @@ test("the restored working service exports directly after search and sales sorti
   assert.match(workflow, /EXPORT_BUTTON_NOT_FOUND_AFTER_SORT/);
   assert.match(workflow, /clickLikeUser\(exportButton\)/);
   assert.match(workflow, /exportClicked: true/);
+  assert.match(workflow, /PAGE_SIZE_20_OPTION_NOT_FOUND/);
+  assert.match(workflow, /PAGE_SIZE_20_NOT_APPLIED/);
+  assert.match(workflow, /pageSize: 20/);
+  assert.ok(
+    workflow.indexOf("PAGE_SIZE_20_OPTION_NOT_FOUND") < workflow.indexOf("clickLikeUser(exportButton)"),
+    "20 items per page must be selected before the full export click",
+  );
+  assert.match(workflow, /clickSellerDownloadCenterShortcut\(productFrame\)/);
   assert.doesNotMatch(workflow, /verifyCompleteSellerExportAndClick\(searched\.expectedTotal\)/);
+});
+
+test("download-center jobs stop after twenty minutes while all registered jobs are monitored together", () => {
+  assert.match(mainSource, /SELLER_EXPORT_MONITOR_TIMEOUT_MS = 20 \* 60 \* 1000/);
+  assert.match(mainSource, /while \(brandExportJobs\.size\)/);
+  assert.match(mainSource, /POIZON 성공 대기 20분 초과/);
+  assert.match(mainSource, /const expectedIds = \[\.\.\.brandExportJobs\.keys\(\)\]/);
 });
 
 test("brand export starts actual Seller Center work before optional baseline inspection completes", () => {
