@@ -94,6 +94,7 @@ let officialDomainAuditRunning = false;
 let officialDomainAuditStopRequested = false;
 let officialDomainAuditWindow = null;
 let officialDomainAuditResumeTimer = null;
+let officialDomainAuditSellerResumeTimer = null;
 let officialDomainAuditAbortCurrent = null;
 let brandExportAllCompleteSent = false;
 let activeBrandDownloadJobId = "";
@@ -1103,6 +1104,34 @@ async function runOfficialDomainAudit() {
       }, OFFICIAL_DOMAIN_AUDIT_COOLDOWN_MS);
     }
   }
+}
+
+function pauseOfficialDomainAuditForSellerAutomation() {
+  const shouldResume = officialDomainAuditRunning || Boolean(officialDomainAuditResumeTimer);
+  clearTimeout(officialDomainAuditResumeTimer);
+  officialDomainAuditResumeTimer = null;
+  clearTimeout(officialDomainAuditSellerResumeTimer);
+  officialDomainAuditSellerResumeTimer = null;
+  if (shouldResume) {
+    officialDomainAuditStopRequested = true;
+    officialDomainAuditAbortCurrent?.();
+    officialDomainAuditAbortCurrent = null;
+    if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) {
+      officialDomainAuditWindow.destroy();
+    }
+    officialDomainAuditWindow = null;
+  }
+  if (!shouldResume) return false;
+  const resumeWhenSellerIdle = () => {
+    if (brandExportJobPending) {
+      officialDomainAuditSellerResumeTimer = setTimeout(resumeWhenSellerIdle, 30_000);
+      return;
+    }
+    officialDomainAuditSellerResumeTimer = null;
+    if (!officialDomainAuditRunning) void runOfficialDomainAudit();
+  };
+  officialDomainAuditSellerResumeTimer = setTimeout(resumeWhenSellerIdle, 60_000);
+  return true;
 }
 
 // 이 앱은 GPU 가속이 필요하지 않으며 일부 Windows 그래픽 드라이버의
@@ -2685,6 +2714,13 @@ function sellerWindowFrames() {
     .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
 }
 
+async function executeSellerFrameWithTimeout(frame, script, timeoutMs = 4_000, fallback = null) {
+  return Promise.race([
+    frame.executeJavaScript(script, true),
+    new Promise((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
+  ]).catch(() => fallback);
+}
+
 function currentSellerProductFrame() {
   const frames = sellerWindowFrames();
   return frames.find((frame) => frame.routingId === sellerProductFrameRoutingId)
@@ -3119,6 +3155,15 @@ async function automateSellerBrandExport(input = {}) {
     };
   }
   if (!brandName) return { ok: false, message: "선택한 브랜드명이 없습니다." };
+  const officialAuditPaused = pauseOfficialDomainAuditForSellerAutomation();
+  if (officialAuditPaused) {
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "official-audit-paused-for-seller",
+      brandName,
+      jobState: "1단계/5 · 공식몰 검증 분리 · 판매자센터 연결 준비",
+      message: `${brandName} · 공식몰 전체 검증을 잠시 멈추고 POIZON 브랜드 검색을 우선 실행합니다. 검증 기록은 유지되며 이후 자동 재개됩니다.`,
+    });
+  }
   const folder = currentBrandExportFolder();
   await mkdir(folder, { recursive: true });
   pendingBrandExportName = brandName;
@@ -3160,19 +3205,28 @@ async function automateSellerBrandExport(input = {}) {
     };
   }
   await new Promise((resolve) => setTimeout(resolve, 3500));
-  const connectedPage = await sellerWindow.webContents.executeJavaScript(`(() => ({
+  const connectedPage = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => ({
     url: location.href,
     title: document.title,
     readyState: document.readyState,
     login: /login|signin|passport/i.test(location.href),
     inputCount: document.querySelectorAll("input, textarea").length,
-  }))()`, true).catch(() => ({ url: sellerWindow.webContents.getURL(), readyState: "unknown", inputCount: 0 }));
+  }))()`, 4_000, { url: sellerWindow.webContents.getURL(), readyState: "timeout", inputCount: 0 });
   mainWindow?.webContents.send("brand-export:progress", {
     status: connectedPage.login ? "seller-login-required" : "seller-page-connected",
     brandName,
     jobState: connectedPage.login ? "1단계/5 · 판매자센터 로그인 필요" : "1단계/5 · 판매자센터 페이지 연결 확인",
     message: `${brandName} · URL ${connectedPage.url || "확인 불가"} · 문서 ${connectedPage.readyState || "unknown"} · 입력 요소 ${Number(connectedPage.inputCount || 0)}개`,
   });
+  if (connectedPage.login) {
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    return {
+      ok: false,
+      code: "SELLER_LOGIN_REQUIRED",
+      message: `${brandName} 작업을 진행하려면 POIZON 판매자센터 로그인이 필요합니다.`,
+    };
+  }
   const sellerBrandAliasGroups = [
     ["Columbia", "컬럼비아", "哥伦比亚"],
     ["Patagonia", "파타고니아", "巴塔哥尼亚"],
@@ -3606,9 +3660,14 @@ async function automateSellerBrandExport(input = {}) {
   for (let searchInputAttempt = 1; searchInputAttempt <= 4; searchInputAttempt += 1) {
     const frames = sellerWindowFrames();
     const frameCandidates = [];
-    for (const frame of frames) {
-      try {
-        const probe = await frame.executeJavaScript(`(() => {
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "probing-search-frame",
+      brandName,
+      jobState: `1단계/5 · 상품검색 입력창 연결 중 · ${searchInputAttempt}/4`,
+      message: `${brandName} · 응답하지 않는 POIZON 내부 프레임은 4초 후 건너뜁니다.`,
+    });
+    const probedFrames = await Promise.all(frames.map(async (frame) => {
+      const probe = await executeSellerFrameWithTimeout(frame, `(() => {
           const visible = (element) => element && element.getClientRects().length > 0;
           const inputs = [...document.querySelectorAll("input, textarea")].filter(visible)
             .filter((element) => !element.disabled && !element.readOnly);
@@ -3622,12 +3681,10 @@ async function automateSellerBrandExport(input = {}) {
             hint,
             login: /login|signin|passport/i.test(location.href),
           };
-        })()`, true);
-        frameCandidates.push({ frame, probe });
-      } catch {
-        // Cross-origin or detached frames are ignored.
-      }
-    }
+        })()`, 4_000, null);
+      return probe ? { frame, probe } : null;
+    }));
+    frameCandidates.push(...probedFrames.filter(Boolean));
     frameCandidates.sort((left, right) =>
       Number(right.probe?.inputCount > 0) - Number(left.probe?.inputCount > 0)
       || Number(right.probe?.hint) - Number(left.probe?.hint)
@@ -4859,6 +4916,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("official-domain:audit-start", async () => {
     clearTimeout(officialDomainAuditResumeTimer);
     officialDomainAuditResumeTimer = null;
+    clearTimeout(officialDomainAuditSellerResumeTimer);
+    officialDomainAuditSellerResumeTimer = null;
     if (!officialDomainAuditRunning) void runOfficialDomainAudit();
     const settings = store.snapshot().settings;
     const registry = await ensureOfficialDomainRegistry(settings.brandCatalog || explorerMetadata().brands);
@@ -4874,6 +4933,8 @@ app.whenReady().then(async () => {
     officialDomainAuditWindow = null;
     clearTimeout(officialDomainAuditResumeTimer);
     officialDomainAuditResumeTimer = null;
+    clearTimeout(officialDomainAuditSellerResumeTimer);
+    officialDomainAuditSellerResumeTimer = null;
     return { ok: true };
   });
   ipcMain.handle("seller:open", () => {
