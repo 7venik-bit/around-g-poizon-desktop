@@ -3043,6 +3043,29 @@ async function automateSellerBrandExport(input = {}) {
             return !element.disabled && !element.readOnly
               && !["hidden", "password", "date", "datetime-local", "month", "time", "file", "checkbox", "radio"].includes(type);
           });
+        // The proven Seller Center flow uses the global product query input at
+        // the very top of the page: [상품 정보] [query] [검색 및 입찰]. Do not
+        // confuse it with one of the many product-filter inputs below it.
+        const exactSearchButtons = roots.flatMap((root) =>
+          [...root.querySelectorAll("button, [role='button']")]
+        ).filter((element, index, all) => all.indexOf(element) === index)
+          .filter(visible)
+          .filter((element) => /^검색\\s*및\\s*입찰$/.test(textOf(element)));
+        const exactSearchButton = exactSearchButtons
+          .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top)[0] || null;
+        const exactButtonRect = exactSearchButton?.getBoundingClientRect();
+        const exactInput = exactButtonRect
+          ? inputs.map((element) => {
+              const rect = element.getBoundingClientRect();
+              const verticalDistance = Math.abs(
+                (rect.top + rect.height / 2) - (exactButtonRect.top + exactButtonRect.height / 2)
+              );
+              const horizontalGap = exactButtonRect.left - rect.right;
+              return { element, verticalDistance, horizontalGap, top: rect.top };
+            }).filter((candidate) => candidate.verticalDistance < 24
+              && candidate.horizontalGap >= -4 && candidate.horizontalGap < 80)
+            .sort((left, right) => left.horizontalGap - right.horizontalGap)[0]?.element || null
+          : null;
         const inputScore = (element) => {
           const rect = element.getBoundingClientRect();
           const attributes = [
@@ -3062,8 +3085,8 @@ async function automateSellerBrandExport(input = {}) {
         };
         const searchInputs = inputs.map((element) => ({ element, score: inputScore(element) }))
           .sort((left, right) => right.score - left.score);
-        const input = searchInputs[0]?.element || null;
-        if (!input || searchInputs[0].score < 200) {
+        const input = exactInput || searchInputs[0]?.element || null;
+        if (!input || (!exactInput && searchInputs[0].score < 200)) {
           return { ok: false, step: "SEARCH_INPUT_NOT_FOUND", inputCount: inputs.length };
         }
         const readSearchState = () => {
@@ -3099,7 +3122,12 @@ async function automateSellerBrandExport(input = {}) {
           input.focus();
           if (setter) setter.call(input, value);
           else input.value = value;
-          input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+          input.dispatchEvent(new InputEvent("input", {
+            bubbles: true,
+            composed: true,
+            inputType: value ? "insertText" : "deleteContentBackward",
+            data: value || null,
+          }));
           input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
         };
         applyValue("");
@@ -3114,7 +3142,7 @@ async function automateSellerBrandExport(input = {}) {
         const searchCandidates = buttons.filter((element) =>
           /검색\\s*및\\s*입찰|^검색$|^검색하기$|搜索|查询|search/i.test(String(element.innerText || element.textContent || "").trim())
         );
-        const search = searchCandidates.find((element) => {
+        const search = exactSearchButton || searchCandidates.find((element) => {
           const rect = element.getBoundingClientRect();
           return Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2)) < 90;
         }) || searchCandidates[0];

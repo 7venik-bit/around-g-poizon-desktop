@@ -28,6 +28,16 @@ test("seller automation navigates once and emits evidence instead of optimistic 
   assert.match(mainSource, /captureSellerDiagnostic/);
 });
 
+test("seller search targets the proven global query beside Search and Bid", () => {
+  assert.ok(mainSource.includes("/^검색\\\\s*및\\\\s*입찰$/"));
+  assert.match(mainSource, /const exactSearchButton = exactSearchButtons/);
+  assert.match(mainSource, /candidate\.verticalDistance < 24/);
+  assert.match(mainSource, /candidate\.horizontalGap >= -4 && candidate\.horizontalGap < 80/);
+  assert.match(mainSource, /const input = exactInput \|\| searchInputs\[0\]/);
+  assert.match(mainSource, /const search = exactSearchButton \|\| searchCandidates/);
+  assert.match(mainSource, /new InputEvent\("input"/);
+});
+
 test("manual Seller Center actions remain visible by default", () => {
   const openStart = mainSource.indexOf("function openSellerCenterWindow");
   const openEnd = mainSource.indexOf("async function waitForSellerExportAndDownload", openStart);
