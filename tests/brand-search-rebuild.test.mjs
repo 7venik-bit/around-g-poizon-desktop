@@ -42,6 +42,10 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.match(main, /"PHYSICAL_EXPORT"/);
   assert.match(main, /confirmSellerExportRequestPhysical\(productFrame\)/);
   assert.match(main, /clickSellerDownloadCenterShortcutPhysical\(productFrame\)/);
+  const exportConfirm = main.indexOf("confirmSellerExportRequestPhysical(productFrame)");
+  const shortcutClick = main.indexOf("clickSellerDownloadCenterShortcutPhysical(productFrame)");
+  assert.ok(exportConfirm >= 0 && shortcutClick > exportConfirm);
+  assert.match(main, /\(\?:다운로드\\\\s\*센터\\\\s\*\)\?바로\\\\s\*가기/);
   assert.match(main, /if \(!alreadySubmitted\) \{/);
   assert.match(workflow, /searchInputAttempt <= 1/);
   assert.doesNotMatch(workflow, /searchInputAttempt <= 4/);
