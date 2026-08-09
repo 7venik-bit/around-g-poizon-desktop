@@ -3315,7 +3315,7 @@ async function automateSellerBrandExport(input = {}) {
     jobState: "1단계/5 · 브랜드 입력·상품 검색 중",
     message: `${brandName} · 브랜드를 입력하고 상품 검색을 실행합니다.`,
   });
-  const runSellerSearch = (targetFrame) => targetFrame.executeJavaScript(`(async () => {
+  const runSellerSearch = (targetFrame, searchAlreadySubmitted = false) => targetFrame.executeJavaScript(`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getBoundingClientRect().width > 0
       && element.getBoundingClientRect().height > 0;
@@ -3519,14 +3519,17 @@ async function automateSellerBrandExport(input = {}) {
           }
           return false;
         };
-        if (search) clickLikeUser(search);
-        else pressEnter();
+        const alreadySubmitted = ${JSON.stringify(Boolean(searchAlreadySubmitted))};
+        if (!alreadySubmitted) {
+          if (search) clickLikeUser(search);
+          else pressEnter();
+        }
         let searchApplied = await waitForSearchUpdate();
-        if (!searchApplied) {
+        if (!searchApplied && !alreadySubmitted) {
           pressEnter();
           searchApplied = await waitForSearchUpdate();
         }
-        if (!searchApplied && search) {
+        if (!searchApplied && !alreadySubmitted && search) {
           clickLikeUser(search);
           searchApplied = await waitForSearchUpdate();
         }
@@ -3813,7 +3816,7 @@ async function automateSellerBrandExport(input = {}) {
           : `${brandName} · 실제 키보드 입력이 확인되지 않아 기존 입력 방식으로 즉시 재시도합니다.`,
       });
       const result = await Promise.race([
-        runSellerSearch(candidate.frame),
+        runSellerSearch(candidate.frame, Boolean(realKeyboardInput?.submitted)),
         new Promise((resolve) => setTimeout(() => resolve({
           ok: false,
           step: "SELLER_SEARCH_STAGE_TIMEOUT",
