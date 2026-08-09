@@ -26,8 +26,8 @@ test("an unobserved export acknowledgement continues to job-number discovery", (
   assert.doesNotMatch(workflow, /verifyCompleteSellerExportAndClick\(/);
 });
 
-test("release metadata is 2.10.107", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.107");
-  assert.equal(JSON.parse(lockSource).version, "2.10.107");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.107");
+test("release metadata is 2.10.108", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.108");
+  assert.equal(JSON.parse(lockSource).version, "2.10.108");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.108");
 });

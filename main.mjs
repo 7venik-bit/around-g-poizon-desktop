@@ -2469,6 +2469,15 @@ async function readSellerExportJobs() {
   return readSellerExportJobsFromWindow(sellerWindow);
 }
 
+async function readSellerExportJobsFromMonitor() {
+  const monitor = ensureSellerMonitorWindow();
+  if (!monitor.webContents.getURL().includes("/main/exportCenter")) {
+    await monitor.loadURL(SELLER_EXPORT_CENTER_URL);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  return readSellerExportJobsFromWindow(monitor);
+}
+
 async function readSellerExportBaselineSeparately() {
   let baselineWindow;
   try {
@@ -2924,6 +2933,63 @@ async function captureSellerDiagnostic(brandName = "", stage = "error") {
   } catch {
     return "";
   }
+}
+
+async function confirmSellerExportRequest(targetFrame) {
+  return targetFrame.executeJavaScript(`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getBoundingClientRect().width > 0
+      && element.getBoundingClientRect().height > 0;
+    const textOf = (element) => String(element?.innerText || element?.textContent || "")
+      .replace(/\\s+/g, " ").trim();
+    const clickLikeUser = (element) => {
+      element?.scrollIntoView?.({ block: "center", inline: "center" });
+      element?.focus?.();
+      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+        element?.dispatchEvent(new MouseEvent(type, {
+          bubbles: true, cancelable: true, composed: true, view: window, button: 0,
+        }));
+      }
+      element?.click?.();
+    };
+    const confirmPattern = /^(?:확인|내보내기|생성|확정|제출|계속|确认|确定|提交|导出|继续)$/i;
+    const cancelPattern = /취소|닫기|取消|关闭/i;
+    let confirmationObserved = false;
+    let confirmationClicked = false;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const dialogs = [...document.querySelectorAll(
+        ".ant-modal, .ant-modal-confirm, [role='dialog'], .ant-popover, .ant-drawer"
+      )].filter(visible);
+      if (dialogs.length) confirmationObserved = true;
+      const controls = dialogs.flatMap((dialog) =>
+        [...dialog.querySelectorAll("button, [role='button'], a")].filter(visible)
+      );
+      const confirmControl = controls.find((element) => {
+        const label = textOf(element);
+        return confirmPattern.test(label) && !cancelPattern.test(label);
+      }) || controls.find((element) => {
+        const label = textOf(element);
+        return /primary|confirm|ok/i.test(String(element.className || ""))
+          && !cancelPattern.test(label);
+      });
+      if (confirmControl) {
+        clickLikeUser(confirmControl);
+        confirmationClicked = true;
+        await wait(900);
+        continue;
+      }
+      if (confirmationClicked && !dialogs.length) {
+        return { ok: true, confirmationObserved, confirmationClicked, requestAcknowledged: true };
+      }
+      await wait(250);
+    }
+    return {
+      ok: !confirmationObserved,
+      confirmationObserved,
+      confirmationClicked,
+      requestAcknowledged: !confirmationObserved,
+    };
+  })()`, true);
 }
 
 async function automateSellerBrandExport(input = {}) {
@@ -3475,11 +3541,32 @@ async function automateSellerBrandExport(input = {}) {
     };
   }
 
+  const productFrame = sellerWindowFrames().find((frame) => frame.routingId === sellerProductFrameRoutingId)
+    || sellerWindow.webContents.mainFrame;
+  const exportConfirmation = await confirmSellerExportRequest(productFrame).catch(() => ({
+    ok: false,
+    confirmationObserved: false,
+    confirmationClicked: false,
+    requestAcknowledged: false,
+  }));
+  if (!exportConfirmation?.ok || !exportConfirmation?.requestAcknowledged) {
+    const diagnosticPath = await captureSellerDiagnostic(brandName, "export-confirmation-failed");
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    return {
+      ok: false,
+      code: "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED",
+      message: `${brandName} 전체 내보내기 최종 확인을 완료하지 못했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
+      diagnostics: { ...exportConfirmation, path: diagnosticPath },
+    };
+  }
+
   mainWindow?.webContents.send("brand-export:progress", {
     status: "seller-search-evidence",
     brandName,
-    jobState: "2단계/5 · 검색·결과·전체 내보내기 실행 확인",
-    message: `${brandName} · 입력값 ${searched.inputValue || "확인 불가"} · 결과 행 ${Number(searched.resultRowCount || 0)}개 · 첫 결과 ${String(searched.firstResult || "").slice(0, 80)} · 전체 내보내기 클릭 확인`,
+    jobState: "2단계/5 · 검색·결과·전체 내보내기 최종 확인 완료",
+    message: `${brandName} · 입력값 ${searched.inputValue || "확인 불가"} · 결과 행 ${Number(searched.resultRowCount || 0)}개 · 첫 결과 ${String(searched.firstResult || "").slice(0, 80)} · 전체 내보내기 최종 확인 완료`,
   });
 
   const baselineJobs = await baselinePromise;
@@ -3502,9 +3589,9 @@ async function automateSellerBrandExport(input = {}) {
     ok: true,
     expected: 0,
     pageCount: 0,
-    confirmationObserved: false,
-    confirmationClicked: false,
-    requestAcknowledged: true,
+    confirmationObserved: Boolean(exportConfirmation.confirmationObserved),
+    confirmationClicked: Boolean(exportConfirmation.confirmationClicked),
+    requestAcknowledged: Boolean(exportConfirmation.requestAcknowledged),
   };
 
   mainWindow?.webContents.send("brand-export:progress", {
@@ -3525,7 +3612,7 @@ async function automateSellerBrandExport(input = {}) {
   while (Date.now() - verificationStartedAt < verificationTimeoutMs) {
     if (cleared()) break;
     const currentJobs = await Promise.race([
-      readSellerExportJobs(),
+      readSellerExportJobsFromMonitor(),
       new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
     ]);
     if (Array.isArray(currentJobs)) {
@@ -3559,13 +3646,9 @@ async function automateSellerBrandExport(input = {}) {
     }
 
     await new Promise((resolve) => setTimeout(resolve, 2500));
-    if (!sellerWindow || sellerWindow.isDestroyed()) break;
-    const currentUrl = sellerWindow.webContents.getURL();
-    if (!currentUrl.includes("/main/exportCenter")) {
-      await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
-      lastReloadAt = Date.now();
-    } else if (elapsedMs >= 15000 && Date.now() - lastReloadAt >= 15000) {
-      await sellerWindow.webContents.reloadIgnoringCache();
+    const monitor = ensureSellerMonitorWindow();
+    if (elapsedMs >= 15000 && Date.now() - lastReloadAt >= 15000) {
+      await monitor.webContents.reloadIgnoringCache();
       lastReloadAt = Date.now();
     }
   }

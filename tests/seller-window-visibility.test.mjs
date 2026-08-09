@@ -24,7 +24,10 @@ test("seller automation navigates once and emits evidence instead of optimistic 
   assert.match(mainSource, /jobState: connectedPage\.login \? "1단계\/5 · 판매자센터 로그인 필요" : "1단계\/5 · 판매자센터 페이지 연결 확인"/);
   assert.match(mainSource, /inputValue: String\(input\.value/);
   assert.match(mainSource, /resultRowCount: verifiedState\.rowTexts\.length/);
-  assert.match(mainSource, /전체 내보내기 클릭 확인/);
+  assert.match(mainSource, /전체 내보내기 최종 확인 완료/);
+  assert.match(mainSource, /confirmSellerExportRequest/);
+  assert.match(mainSource, /EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED/);
+  assert.match(mainSource, /readSellerExportJobsFromMonitor\(\)/);
   assert.match(mainSource, /captureSellerDiagnostic/);
 });
 
