@@ -15,15 +15,18 @@ test("brand-search UI remains available", () => {
   assert.match(html, /id="brand-cards"/);
 });
 
-test("brand workflow connects directly and searches English before Korean fallback", () => {
+test("brand workflow uses the exact Seller Center brand filter with English then Korean fallback", () => {
   const start = main.indexOf("async function automateSellerBrandExport");
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = main.slice(start, end);
   assert.match(workflow, /loadURL\(SELLER_PRODUCT_SEARCH_URL\)/);
-  const english = workflow.indexOf("applyValue(${JSON.stringify(brandName)})");
-  const korean = workflow.indexOf("applyValue(${JSON.stringify(brandKoInput)})");
-  assert.ok(english >= 0 && korean > english);
-  assert.match(workflow, /if \(!searchApplied[\s\S]*brandKoInput/);
+  assert.match(workflow, /applyExactSellerBrandFilter\(candidate\.frame, \[brandName, brandKo\]\)/);
+  assert.match(workflow, /ownText\(element\) === "브랜드"/);
+  assert.match(workflow, /BRAND_POPUP_INPUT_NOT_FOUND/);
+  assert.match(workflow, /for \(const name of normalizedNames\)/);
+  assert.match(workflow, /EXACT_BRAND_FILTER/);
+  assert.match(workflow, /brand-filter-applied/);
+  assert.doesNotMatch(workflow, /기존 검색 서비스 방식으로 브랜드를 입력/);
 });
 
 test("selected brands run sequentially with a twenty-minute limit", () => {
