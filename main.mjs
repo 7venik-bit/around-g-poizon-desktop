@@ -3696,22 +3696,28 @@ async function automateSellerBrandExport(input = {}) {
       await wait(900);
     }
 
-    const pageSizePattern = /^20\\s*(?:건|개|条)?\\s*\\/\\s*(?:페이지|page)?$/i;
+    window.scrollTo({ top: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight), behavior: "smooth" });
+    await wait(1_200);
+    const pageSizePattern = /^20\\s*(?:건|개|条)?\\s*(?:\\/\\s*(?:페이지|page))?$/i;
+    const anyPageSizePattern = /\\d+\\s*(?:건|개|条)?\\s*(?:\\/\\s*(?:페이지|page))?/i;
     const pageSizeControls = [...document.querySelectorAll(
       ".ant-select-selection-item, [role='combobox'], [class*='select']"
     )].filter(visible);
     let pageSizeControl = pageSizeControls.find((element) =>
-      /\\d+\\s*건\\s*\\/\\s*페이지/i.test(textOf(element))
+      anyPageSizePattern.test(textOf(element))
     );
     if (!pageSizeControl) {
       return { ok: false, code: "PAGE_SIZE_CONTROL_NOT_FOUND" };
     }
     if (!pageSizePattern.test(textOf(pageSizeControl))) {
       clickLikeUser(pageSizeControl.closest("[role='combobox'], .ant-select") || pageSizeControl);
-      await wait(450);
-      const pageSizeOption = [...document.querySelectorAll(
-        "[role='option'], .ant-select-item-option, li, [class*='option']"
-      )].filter(visible).find((element) => pageSizePattern.test(textOf(element)));
+      let pageSizeOption = null;
+      for (let attempt = 0; attempt < 12 && !pageSizeOption; attempt += 1) {
+        await wait(250);
+        pageSizeOption = [...document.querySelectorAll(
+          "[role='option'], .ant-select-item-option, li, [class*='option'], [class*='dropdown'] div"
+        )].filter(visible).find((element) => pageSizePattern.test(textOf(element)));
+      }
       if (!pageSizeOption) {
         return { ok: false, code: "PAGE_SIZE_20_OPTION_NOT_FOUND" };
       }
@@ -3804,8 +3810,11 @@ async function automateSellerBrandExport(input = {}) {
       const realKeyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, brandName)
         .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
       if (sellerWindow && !sellerWindow.isDestroyed()) {
-        sellerWindow.minimize();
-        showCollectorWindow();
+        // Keep the Seller Center visible while sorting, scrolling, selecting
+        // 20 rows, exporting, and confirming. Its dropdown portals do not
+        // reliably open while the window is minimized.
+        sellerWindow.show();
+        sellerWindow.focus();
       }
       mainWindow?.webContents.send("brand-export:progress", {
         status: realKeyboardInput?.ok ? "seller-brand-input-confirmed" : "seller-brand-input-fallback",
@@ -3906,6 +3915,12 @@ async function automateSellerBrandExport(input = {}) {
       message: `${brandName} 내보내기 후 다운로드센터 바로 가기 버튼을 찾지 못했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
       diagnostics: { ...downloadCenterShortcut, path: diagnosticPath },
     };
+  }
+
+  if (sellerWindow && !sellerWindow.isDestroyed()) {
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    sellerWindow.minimize();
+    showCollectorWindow();
   }
 
   mainWindow?.webContents.send("brand-export:progress", {
