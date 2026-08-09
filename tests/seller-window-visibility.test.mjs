@@ -39,6 +39,9 @@ test("seller search targets the proven global query beside Search and Bid", () =
   assert.match(mainSource, /const input = exactInput \|\| searchInputs\[0\]/);
   assert.match(mainSource, /const search = exactSearchButton \|\| searchCandidates/);
   assert.match(mainSource, /new InputEvent\("input"/);
+  assert.match(mainSource, /input\._valueTracker/);
+  assert.match(mainSource, /input\._valueTracker\.setValue\(previousValue\)/);
+  assert.match(mainSource, /actualInputValue: String\(input\.value/);
 });
 
 test("manual Seller Center actions remain visible by default", () => {
