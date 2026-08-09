@@ -803,7 +803,9 @@ function updateBrandSelectionControls() {
 }
 
 function selectedBrandsForExport() {
-  return explorerMeta.brands.filter((brand) => selectedBrandIds.has(Number(brand.id)));
+  return [...selectedBrandIds]
+    .map((brandId) => explorerMeta.brands.find((brand) => Number(brand.id) === Number(brandId)))
+    .filter(Boolean);
 }
 
 async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) {
@@ -866,17 +868,23 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     recordBrandSelection(activeExportBrand, "데이터 가져오기 실패");
     const failedBrandName = activeExportBrand?.name || "선택 브랜드";
     const failureCode = String(automation?.code || "");
-    const inputRetryCodes = new Set([
+    const recoverableRetryCodes = new Set([
       "SEARCH_INPUT_NOT_FOUND",
       "REAL_KEYBOARD_INPUT_FAILED",
       "REAL_KEYBOARD_INPUT_VERIFY_TIMEOUT",
       "REAL_KEYBOARD_INPUT_VERIFY_FAILED",
       "BRAND_INPUT_NOT_APPLIED",
+      "LOCAL_SALES_SORT_ICON_NOT_FOUND",
+      "LOCAL_SALES_SORT_CONFIRM_NOT_FOUND",
+      "PAGE_SIZE_CONTROL_NOT_FOUND",
+      "PAGE_SIZE_20_OPTION_NOT_FOUND",
+      "PAGE_SIZE_20_NOT_APPLIED",
+      "EXPORT_BUTTON_NOT_FOUND_AFTER_SORT",
     ]);
     const retryCount = Number(activeExportBrand?.retryCount || 0);
-    const shouldRetryInput = inputRetryCodes.has(failureCode) && retryCount < BRAND_INPUT_RETRY_LIMIT;
+    const shouldRetryInput = recoverableRetryCodes.has(failureCode) && retryCount < BRAND_INPUT_RETRY_LIMIT;
     if (shouldRetryInput) {
-      brandExportQueue.push({
+      brandExportQueue.unshift({
         ...activeExportBrand,
         retryCount: retryCount + 1,
         retryAfter: Date.now() + BRAND_INPUT_RETRY_DELAY_MS,
@@ -906,7 +914,7 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     renderBrandCards($("#brand-filter")?.value || "");
     $("#brand-status").className = shouldRetryInput ? "status" : "status error";
     $("#brand-status").textContent = shouldRetryInput
-      ? `${failedBrandName} 입력이 확인되지 않아 60초 후 다시 진행합니다. 다른 선택 브랜드를 먼저 처리합니다.`
+      ? `${failedBrandName} 단계를 완료하지 못해 60초 후 같은 브랜드를 다시 진행합니다. 완료 전에는 다음 브랜드로 이동하지 않습니다.`
       : remainingCount
       ? `${failedBrandName} 작업 실패 · ${automation?.message || "판매자센터 자동화에 실패했습니다."} · 다음 ${remainingCount}개 브랜드 작업을 계속합니다.`
       : `${failedBrandName} 작업 실패 · ${automation?.message || "판매자센터 자동화에 실패했습니다."}`;

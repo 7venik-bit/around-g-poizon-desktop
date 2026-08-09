@@ -3696,7 +3696,7 @@ async function automateSellerBrandExport(input = {}) {
       await wait(900);
     }
 
-    const pageSizePattern = /^20\\s*건\\s*\\/\\s*페이지$/i;
+    const pageSizePattern = /^20\\s*(?:건|개|条)?\\s*\\/\\s*(?:페이지|page)?$/i;
     const pageSizeControls = [...document.querySelectorAll(
       ".ant-select-selection-item, [role='combobox'], [class*='select']"
     )].filter(visible);

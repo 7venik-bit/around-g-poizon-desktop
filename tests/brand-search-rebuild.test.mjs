@@ -27,7 +27,7 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.match(workflow, /typeSellerBrandWithRealKeyboard\(candidate\.frame, brandName\)/);
   assert.match(workflow, /seller-brand-input-confirmed/);
   assert.doesNotMatch(workflow, /\.\.\.officialAliases/);
-  assert.ok(workflow.includes(String.raw`const pageSizePattern = /^20\\s*건\\s*\\/\\s*페이지$/i;`));
+  assert.ok(workflow.includes(String.raw`const pageSizePattern = /^20\\s*(?:건|개|条)?\\s*\\/\\s*(?:페이지|page)?$/i;`));
   assert.ok(workflow.includes(String.raw`/\\d+\\s*건\\s*\\/\\s*페이지/i.test(textOf(element))`));
   assert.match(main, /"REAL_SEARCH_BUTTON_CLICKED"/);
   assert.match(main, /runSellerSearch\(candidate\.frame, Boolean\(realKeyboardInput\?\.submitted\)\)/);
@@ -53,8 +53,10 @@ test("selected brands run sequentially with a twenty-minute limit", () => {
   assert.match(renderer, /setTimeout\(\(\) => exportNextSelectedBrand\(generation\), 400\)/);
   assert.match(renderer, /const BRAND_INPUT_RETRY_DELAY_MS = 60 \* 1000/);
   assert.match(renderer, /const BRAND_INPUT_RETRY_LIMIT = 2/);
-  assert.match(renderer, /brandExportQueue\.push\(\{/);
+  assert.match(renderer, /brandExportQueue\.unshift\(\{/);
   assert.match(renderer, /retryAfter: Date\.now\(\) \+ BRAND_INPUT_RETRY_DELAY_MS/);
+  assert.match(renderer, /return \[\.\.\.selectedBrandIds\]/);
+  assert.match(renderer, /완료 전에는 다음 브랜드로 이동하지 않습니다/);
 });
 
 test("download center tracks each brand by its generated job number", () => {
