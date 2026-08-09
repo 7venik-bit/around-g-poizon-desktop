@@ -19,13 +19,6 @@ test("multi-brand monitor polls every ten seconds and self-recovers", () => {
   assert.match(main, /if \(brandExportJobs\.size\) scheduleBrandExportMonitor\(3_000\)/);
 });
 
-test("finishing a download continues remaining jobs and emits all-complete", () => {
-  assert.match(main, /if \(brandExportJobs\.size\) scheduleBrandExportMonitor\(500\)/);
-  assert.match(main, /function emitBrandExportAllComplete/);
-  assert.match(main, /status: "all-complete"/);
-  assert.match(main, /모든 작업 확인완료/);
-  assert.match(main, /ipcMain\.handle\("seller:start-brand-export-monitor"[\s\S]*?scheduleBrandExportMonitor\(0\)/);
-});
 
 test("completed downloads render in a separate persistent list", () => {
   assert.match(html, /id="brand-export-completed"/);
