@@ -35,6 +35,13 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.ok(keepVisible >= 0 && runSearch > keepVisible && minimizeAfterShortcut > runSearch);
   assert.match(main, /"REAL_SEARCH_BUTTON_CLICKED"/);
   assert.match(main, /runSellerSearch\(candidate\.frame, Boolean\(realKeyboardInput\?\.submitted\)\)/);
+  assert.match(main, /performPhysicalSellerSortAndExport\(candidate\.frame\)/);
+  assert.match(main, /"PHYSICAL_LOCAL_SALES_SORT"/);
+  assert.match(main, /"PHYSICAL_DESCENDING"/);
+  assert.match(main, /"PHYSICAL_SORT_CONFIRM"/);
+  assert.match(main, /"PHYSICAL_EXPORT"/);
+  assert.match(main, /confirmSellerExportRequestPhysical\(productFrame\)/);
+  assert.match(main, /clickSellerDownloadCenterShortcutPhysical\(productFrame\)/);
   assert.match(main, /if \(!alreadySubmitted\) \{/);
   assert.match(workflow, /searchInputAttempt <= 1/);
   assert.doesNotMatch(workflow, /searchInputAttempt <= 4/);
