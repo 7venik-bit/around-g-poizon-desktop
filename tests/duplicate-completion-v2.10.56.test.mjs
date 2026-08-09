@@ -40,8 +40,8 @@ test("completion status counts only downloaded jobs", () => {
   assert.match(renderer, /const completionLabel = `다운로드 완료 \$\{completedJobs\}\/\$\{jobs\.length\}개`/);
 });
 
-test("release metadata is 2.10.117", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.117");
-  assert.equal(JSON.parse(lockSource).version, "2.10.117");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.117");
+test("release metadata is 2.10.119", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.119");
+  assert.equal(JSON.parse(lockSource).version, "2.10.119");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.119");
 });
