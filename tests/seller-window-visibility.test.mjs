@@ -48,6 +48,11 @@ test("seller search targets the proven global query beside Search and Bid", () =
   assert.match(mainSource, /webContents\.insertText\(String\(brandName\)\)/);
   assert.match(mainSource, /REAL_KEYBOARD_INPUT_CONFIRMED/);
   assert.match(mainSource, /실제 키보드 입력 확인/);
+  assert.match(mainSource, /sellerWindow\.focus\(\)/);
+  assert.match(mainSource, /void sellerWindow\.webContents\.insertText/);
+  assert.match(mainSource, /REAL_KEYBOARD_INPUT_TIMEOUT/);
+  assert.match(mainSource, /6_000/);
+  assert.match(mainSource, /실제 키보드 입력 시작/);
 });
 
 test("manual Seller Center actions remain visible by default", () => {
