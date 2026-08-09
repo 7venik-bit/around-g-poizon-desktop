@@ -10,9 +10,9 @@ const [main, renderer, packageSource, lockSource] = await Promise.all([
 ]);
 
 test("the workbook brand repairs a wrongly connected POIZON job", () => {
-  assert.match(main, /const resolvedBrandName = detectedBrand \|\| downloadJob\.brandName \|\| exportBrand/);
+  assert.match(main, /const resolvedBrandName = detectedMatchesRequested/);
   assert.match(main, /brandName: resolvedBrandName/);
-  assert.match(main, /detectedBrandName: detectedBrand/);
+  assert.match(main, /detectedBrandName: detectedMatchesRequested \? "" : detectedBrand \|\| ""/);
   assert.match(renderer, /const expectedBrand = detectedBrand \|\| registeredBrand/);
   assert.match(renderer, /brandName: detectedBrand/);
 });
@@ -23,8 +23,8 @@ test("startup file discovery repairs an older wrong brand cache", () => {
   assert.match(main, /jobId: recoveredJobId/);
 });
 
-test("release metadata is 2.10.99", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.99");
-  assert.equal(JSON.parse(lockSource).version, "2.10.99");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.99");
+test("release metadata is 2.10.100", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.100");
+  assert.equal(JSON.parse(lockSource).version, "2.10.100");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.100");
 });

@@ -1787,8 +1787,14 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
         const detectedBrand = brandIntegrity.dominantBrand
           ? safeBrandExportLabel(brandIntegrity.dominantBrand)
           : exportBrand;
-        const resolvedBrandName = detectedBrand || downloadJob.brandName || exportBrand;
-        if (detectedBrand !== exportBrand) {
+        const detectedMatchesRequested = Boolean(detectedBrand) && [
+          downloadJob.brandName,
+          downloadJob.brandKo,
+        ].filter(Boolean).some((expected) => brandsMatch(detectedBrand, expected));
+        const resolvedBrandName = detectedMatchesRequested
+          ? downloadJob.brandName
+          : detectedBrand || downloadJob.brandName || exportBrand;
+        if (detectedBrand && !detectedMatchesRequested && detectedBrand !== exportBrand) {
           const detectedFolder = join(folder, brandExportFolderName(detectedBrand, downloadJobId));
           await mkdir(detectedFolder, { recursive: true });
           finalName = `${detectedBrand}_${localFileTimestamp()}.xlsx`;
@@ -1819,7 +1825,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
           path: finalPath,
           name: finalName,
           brandName: resolvedBrandName,
-          detectedBrandName: detectedBrand || "",
+          detectedBrandName: detectedMatchesRequested ? "" : detectedBrand || "",
           jobId: downloadJobId,
           size: info.size,
           time: info.mtimeMs,
@@ -2339,10 +2345,11 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
       }
       const ready = activeBrandDownloadJobId ? null : statuses.find((status) => {
         const job = brandExportJobs.get(status.jobId);
-        return status.state === "READY" && !job?.downloadStarted && !job?.downloadRequestedAt;
+        return Boolean(job) && status.state === "READY" && !job.downloadStarted && !job.downloadRequestedAt;
       });
       if (ready) {
         const job = brandExportJobs.get(ready.jobId);
+        if (!job) continue;
         activeBrandDownloadJobId = ready.jobId;
         job.downloadRequestedAt = Date.now();
         const action = await requestSellerMonitorDownload(ready.jobId, ready.frameRoutingId, ready.windowSource);
@@ -2350,16 +2357,18 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
           action.targetWindow.webContents.downloadURL(action.href);
         }
         if (!action?.clicked) {
-          job.downloadRequestedAt = 0;
-          job.downloadStarted = false;
+          const currentJob = brandExportJobs.get(ready.jobId);
+          if (!currentJob) continue;
+          currentJob.downloadRequestedAt = 0;
+          currentJob.downloadStarted = false;
           if (activeBrandDownloadJobId === ready.jobId) activeBrandDownloadJobId = "";
           mainWindow?.webContents.send("brand-export:progress", {
             status: "monitoring",
             monitorSource: "dedicated-window",
-            brandName: job.brandName,
+            brandName: currentJob.brandName,
             jobId: ready.jobId,
             jobState: "4단계/5 · 다운로드 버튼 재탐색",
-            message: `${job.brandName} · 작업번호 ${ready.jobId} · 모든 다운로드센터 프레임에서 버튼을 다시 찾습니다.`,
+            message: `${currentJob.brandName} · 작업번호 ${ready.jobId} · 모든 다운로드센터 프레임에서 버튼을 다시 찾습니다.`,
           });
         }
       }
