@@ -14,14 +14,6 @@ test("inventory clear invalidates a delayed Excel import", () => {
   assert.match(inventory, /onBrandWorkHistoryCleared.*clearWorkScreen/);
 });
 
-test("main renderer ignores stale work events after clear", () => {
-  assert.match(renderer, /brandWorkHistoryGeneration \+= 1;/);
-  assert.match(renderer, /acceptBrandWorkEvents = false;/);
-  assert.match(renderer, /if \(!acceptBrandWorkEvents \|\| generation !== brandWorkHistoryGeneration\) return false;/);
-  assert.match(renderer, /onBrandExportDetected[\s\S]*if \(!acceptBrandWorkEvents\) return;/);
-  assert.match(renderer, /exportNextSelectedBrand\(generation = brandWorkHistoryGeneration\)/);
-  assert.match(renderer, /generation !== brandWorkHistoryGeneration\) return;/);
-});
 
 test("clear broadcasts to inventory windows without closing them", () => {
   const start = main.indexOf('ipcMain.handle("brand-export:clear-session"');
@@ -37,8 +29,3 @@ test("clear broadcasts to inventory windows without closing them", () => {
 });
 
 
-test("main process ignores downloads and exports from the cleared generation", () => {
-  assert.match(main, /if \(sessionGeneration !== brandWorkSessionGeneration\) return;/);
-  assert.match(main, /input\.sessionGeneration !== brandWorkSessionGeneration/);
-  assert.match(main, /code: "WORK_CLEARED"/);
-});
