@@ -5163,6 +5163,26 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("seller:abort-brand-export-attempt", abortSellerBrandExportAttempt);
 
+  ipcMain.handle("seller:stop-brand-work", async () => {
+    brandWorkSessionGeneration += 1;
+    if (brandExportMonitorRestartTimer) {
+      clearTimeout(brandExportMonitorRestartTimer);
+      brandExportMonitorRestartTimer = null;
+    }
+    brandExportJobs.clear();
+    brandExportAllCompleteSent = true;
+    brandDownloadStarted = false;
+    activeBrandDownloadJobId = "";
+    await store.setSettings({ brandExportJobCache: [] });
+    await abortSellerBrandExportAttempt();
+    if (sellerMonitorWindow && !sellerMonitorWindow.isDestroyed()) {
+      sellerMonitorWindow.webContents.stop();
+      sellerMonitorWindow.destroy();
+    }
+    sellerMonitorWindow = null;
+    return { ok: true, stopped: true };
+  });
+
 ipcMain.handle("seller:start-brand-export-monitor", () => {
     if (brandExportJobs.size && (!sellerWindow || sellerWindow.isDestroyed())) {
       openSellerCenterWindow(SELLER_EXPORT_CENTER_URL, { visible: false });
