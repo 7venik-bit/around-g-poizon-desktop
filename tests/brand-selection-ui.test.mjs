@@ -44,6 +44,15 @@ test("selected-brand search queues every selected brand", () => {
   assert.match(renderer, /#brand-export-selected/);
 });
 
+test("the running brand-search button stops the current and queued registrations", () => {
+  assert.match(renderer, /brandSelectionBusy \? "작업 중지" : "브랜드 검색"/);
+  assert.match(renderer, /brandWorkHistoryGeneration \+= 1/);
+  assert.match(renderer, /brandExportQueue = \[\]/);
+  assert.match(renderer, /updateBrandBatchState\(stoppedBrand, "사용자 중지"\)/);
+  assert.match(renderer, /await window\.aroundG\.abortSellerBrandExportAttempt/);
+  assert.match(renderer, /이미 생성된 작업번호의 다운로드 감시는 계속합니다/);
+});
+
 test("brand picker exposes accessible multi-select and search icons", () => {
   assert.match(indexHtml, /class="brand-filter-field"/);
   assert.match(indexHtml, /aria-label="브랜드 복수 선택 및 검색"/);

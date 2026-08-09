@@ -782,10 +782,10 @@ function updateBrandSelectionControls() {
   if (count) count.textContent = `${selectedCount}개 선택`;
   if (clear) clear.disabled = selectedCount === 0 || brandSelectionBusy;
   if (search) {
-    search.disabled = selectedCount === 0 || brandSelectionBusy;
+    search.disabled = brandSelectionBusy ? false : selectedCount === 0;
     search.classList.toggle("is-running", brandSelectionBusy);
     const label = search.querySelector("span");
-    if (label) label.textContent = brandSelectionBusy ? "검색 등록 중" : "브랜드 검색";
+    if (label) label.textContent = brandSelectionBusy ? "작업 중지" : "브랜드 검색";
   }
 }
 
@@ -1533,8 +1533,30 @@ $("#brand-selection-clear")?.addEventListener("click", () => {
   saveBrandSelections();
   renderBrandCards($("#brand-filter")?.value || "");
 });
-$("#brand-export-selected")?.addEventListener("click", () => {
-  if (brandSelectionBusy || activeExportBrand) return;
+$("#brand-export-selected")?.addEventListener("click", async () => {
+  if (brandSelectionBusy || activeExportBrand) {
+    const stoppedBrand = String(activeExportBrand?.name || "").trim();
+    brandWorkHistoryGeneration += 1;
+    brandExportQueue = [];
+    activeExportBrand = null;
+    if (stoppedBrand) updateBrandBatchState(stoppedBrand, "사용자 중지");
+    for (const [key, item] of brandBatchStates.entries()) {
+      if (!item.jobId && !brandJobIsFinished(item.state)) {
+        brandBatchStates.set(key, { ...item, state: "사용자 중지", updatedAt: Date.now() });
+      }
+    }
+    renderBrandBatchProgress();
+    stopBrandActivity();
+    $("#brand-status").className = "status";
+    $("#brand-status").textContent = brandExportJobs.size
+      ? "브랜드 검색 등록을 중지했습니다. 이미 생성된 작업번호의 다운로드 감시는 계속합니다."
+      : "브랜드 검색 작업을 중지했습니다.";
+    await window.aroundG.abortSellerBrandExportAttempt?.();
+    brandSelectionBusy = false;
+    renderBrandCards($("#brand-filter")?.value || "");
+    if (brandExportJobs.size) await window.aroundG.startSellerBrandExportMonitor();
+    return;
+  }
   const selectedBrands = selectedBrandsForExport();
   if (!selectedBrands.length) return;
   acceptBrandWorkEvents = true;
