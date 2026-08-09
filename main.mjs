@@ -2993,6 +2993,12 @@ async function confirmSellerExportRequest(targetFrame) {
 }
 
 async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
+  if (!sellerWindow || sellerWindow.isDestroyed()) {
+    return { ok: false, step: "SELLER_WINDOW_NOT_AVAILABLE" };
+  }
+  sellerWindow.show();
+  sellerWindow.focus();
+  sellerWindow.webContents.focus();
   const focused = await targetFrame.executeJavaScript(`(() => {
     const visible = (element) => element && element.getBoundingClientRect().width > 0
       && element.getBoundingClientRect().height > 0;
@@ -3030,9 +3036,13 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
   sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "Backspace" });
   sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "Backspace" });
-  await sellerWindow.webContents.insertText(String(brandName));
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  return targetFrame.executeJavaScript(`(() => {
+  // Electron can leave insertText's returned promise pending while a web page
+  // is processing focus. Send it without awaiting and verify the visible value
+  // on a fixed deadline instead of blocking the entire brand queue forever.
+  void sellerWindow.webContents.insertText(String(brandName));
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  return Promise.race([
+    targetFrame.executeJavaScript(`(() => {
     const active = document.activeElement;
     const value = String(active?.value || "").trim();
     return {
@@ -3040,7 +3050,12 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
       step: value === ${JSON.stringify(String(brandName))} ? "REAL_KEYBOARD_INPUT_CONFIRMED" : "REAL_KEYBOARD_INPUT_FAILED",
       inputValue: value,
     };
-  })()`, true).catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_VERIFY_FAILED" }));
+    })()`, true),
+    new Promise((resolve) => setTimeout(() => resolve({
+      ok: false,
+      step: "REAL_KEYBOARD_INPUT_VERIFY_TIMEOUT",
+    }), 3_000)),
+  ]).catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_VERIFY_FAILED" }));
 }
 
 async function automateSellerBrandExport(input = {}) {
@@ -3550,7 +3565,19 @@ async function automateSellerBrandExport(input = {}) {
     }
     for (const candidate of frameCandidates) {
       if (!candidate.probe?.inputCount && !candidate.probe?.hint) continue;
-      const keyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, brandName);
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: "seller-keyboard-input-started",
+        brandName,
+        jobState: `1단계/5 · 실제 키보드 입력 시작 · ${brandName}`,
+        message: `${brandName} · POIZON 최상단 검색창을 활성화하고 실제 키보드 입력을 시작합니다.`,
+      });
+      const keyboardInput = await Promise.race([
+        typeSellerBrandWithRealKeyboard(candidate.frame, brandName),
+        new Promise((resolve) => setTimeout(() => resolve({
+          ok: false,
+          step: "REAL_KEYBOARD_INPUT_TIMEOUT",
+        }), 6_000)),
+      ]);
       if (!keyboardInput?.ok) {
         lastSearchDiagnostics = { ...candidate.probe, keyboardInput };
         searched = { ok: false, step: keyboardInput?.step || "REAL_KEYBOARD_INPUT_FAILED" };
