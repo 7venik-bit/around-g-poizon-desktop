@@ -1951,25 +1951,68 @@ $("#excel-preview-grid")?.addEventListener("click", (event) => {
   if (!button) return;
   void searchExcelPreviewProduct(decodeURIComponent(button.dataset.excelSearchProduct));
 });
-$("#excel-preview-profit")?.addEventListener("click", () => {
-  const products = [...selectedExcelPreviewProducts]
-    .map((key) => excelPreviewProductCache.get(key))
-    .filter(Boolean);
-  if (!products.length) return;
-  const pricedProducts = products.filter((product) => Number(product.averagePrice || 0) > 0);
-  const totalPurchasePrice = pricedProducts.reduce((sum, product) => sum + Number(product.averagePrice || 0), 0);
-  if (!totalPurchasePrice) {
-    $("#excel-filter-status").textContent = "선택 상품에 평균가격이 없어 수익을 계산할 수 없습니다.";
-    return;
+$("#excel-preview-profit")?.addEventListener("click", async () => {
+  const button = $("#excel-preview-profit");
+  const keys = [...selectedExcelPreviewProducts].filter((key) => excelPreviewProductCache.has(key));
+  if (!keys.length) return;
+  button.disabled = true;
+  button.textContent = "국내 가격 확인 중…";
+  for (const key of keys) {
+    if (!excelPreviewSearchResults.has(key) || excelPreviewSearchResults.get(key)?.error) {
+      await searchExcelPreviewProduct(key);
+    }
   }
-  $("#cost").value = String(Math.round(totalPurchasePrice));
+  const shipping = Number($("#shipping").value || 0);
+  const extra = Number($("#extra").value || 0);
+  const feeRate = Number($("#fee").value || 0) / 100;
+  const comparisons = keys.map((key) => {
+    const product = excelPreviewProductCache.get(key);
+    const result = excelPreviewSearchResults.get(key);
+    const domestic = (result?.products || [])
+      .filter((candidate) => Number(candidate?.price || 0) > 0)
+      .sort((left, right) => Number(right?.inStock) - Number(left?.inStock) || Number(left.price) - Number(right.price))[0];
+    const poizonPrice = Number(product?.averagePrice || 0);
+    const domesticPrice = Number(domestic?.price || 0);
+    const totalCost = poizonPrice + shipping + extra;
+    const netProfit = domesticPrice > 0 ? domesticPrice * (1 - feeRate) - totalCost : 0;
+    const marginRate = domesticPrice > 0 ? netProfit / domesticPrice * 100 : 0;
+    return { product, domestic, poizonPrice, domesticPrice, totalCost, netProfit, marginRate };
+  });
+  const comparable = comparisons.filter((item) => item.poizonPrice > 0 && item.domesticPrice > 0);
+  const totals = comparable.reduce((sum, item) => ({
+    poizonPrice: sum.poizonPrice + item.poizonPrice,
+    domesticPrice: sum.domesticPrice + item.domesticPrice,
+    totalCost: sum.totalCost + item.totalCost,
+    netProfit: sum.netProfit + item.netProfit,
+  }), { poizonPrice: 0, domesticPrice: 0, totalCost: 0, netProfit: 0 });
+  $("#cost").value = String(Math.round(totals.poizonPrice));
+  $("#sale-price").textContent = money(totals.domesticPrice);
+  $("#sale-price-label").textContent = "국내 최저가 합계";
+  $("#total-cost").textContent = money(totals.totalCost);
+  $("#net-profit").textContent = money(totals.netProfit);
   const summary = $("#profit-selection-summary");
-  if (summary) {
-    summary.hidden = false;
-    summary.textContent = `선택 ${products.length.toLocaleString("ko-KR")}개 중 가격 확인 ${pricedProducts.length.toLocaleString("ko-KR")}개 · 평균가격 합계 ${money(totalPurchasePrice)} · 목표 수익률 10%`;
-  }
+  summary.hidden = false;
+  summary.textContent = `선택 ${keys.length.toLocaleString("ko-KR")}개 · 국내 가격 비교 완료 ${comparable.length.toLocaleString("ko-KR")}개 · 판매 수수료 ${Number($("#fee").value || 0).toLocaleString("ko-KR")}%`;
+  $("#profit-comparison").hidden = false;
+  $("#profit-comparison-count").textContent = `${comparable.length.toLocaleString("ko-KR")}개 비교`;
+  $("#profit-comparison-rows").innerHTML = comparisons.map((item) => `<tr>
+    <td><b>${text(item.product?.articleNumber || "-")}</b><small>${text(item.product?.title || "")}</small></td>
+    <td>${item.poizonPrice ? money(item.poizonPrice) : "가격 없음"}</td>
+    <td>${item.domesticPrice ? money(item.domesticPrice) : "검색 결과 없음"}</td>
+    <td>${text(item.domestic?.store || "-")}</td>
+    <td>${item.poizonPrice ? money(item.totalCost) : "-"}</td>
+    <td class="${item.netProfit >= 0 ? "profit-positive" : "profit-negative"}">${item.domesticPrice ? money(item.netProfit) : "-"}</td>
+    <td class="${item.marginRate >= 0 ? "profit-positive" : "profit-negative"}">${item.domesticPrice ? `${item.marginRate.toFixed(1)}%` : "-"}</td>
+  </tr>`).join("");
   document.querySelector('.nav[data-view="profit"]')?.click();
-  calculate(10);
+  button.textContent = "수익계산";
+  updateExcelPreviewSelectionUi(excelPreviewPageKeys);
+});
+$("#profit-back-to-list")?.addEventListener("click", () => {
+  document.querySelector('.nav[data-view="products"]')?.click();
+  requestAnimationFrame(() => {
+    if (activeExcelPreview) $("#excel-preview")?.scrollIntoView({ behavior: "auto", block: "start" });
+  });
 });
 $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   if (excelPreviewBatchSearching) {
@@ -2316,6 +2359,7 @@ function profitResult(costValue, shippingValue, extraValue, feePercent, marginPe
 function calculate(margin) {
   const result = profitResult($("#cost").value, $("#shipping").value, $("#extra").value, $("#fee").value, margin);
   $("#sale-price").textContent = money(result.price);
+  $("#sale-price-label").textContent = "예상 판매가";
   $("#total-cost").textContent = money(result.cost);
   $("#net-profit").textContent = money(result.netProfit);
 }

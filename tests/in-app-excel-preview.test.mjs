@@ -80,11 +80,24 @@ test("brand Excel preview supports popular-list style product selection", () => 
 test("selected Excel products calculate profit immediately from their average prices", () => {
   assert.match(htmlSource, /id="excel-preview-selection-clear"[\s\S]*id="excel-preview-profit"[^>]*>수익계산<[\s\S]*id="excel-preview-search-selected"/);
   assert.match(htmlSource, /id="profit-selection-summary"/);
-  assert.match(rendererSource, /const totalPurchasePrice = pricedProducts\.reduce/);
+  assert.match(rendererSource, /국내 가격 확인 중/);
+  assert.match(rendererSource, /excelPreviewSearchResults\.get\(key\)/);
+  assert.match(rendererSource, /const poizonPrice = Number\(product\?\.averagePrice/);
+  assert.match(rendererSource, /const domesticPrice = Number\(domestic\?\.price/);
+  assert.match(rendererSource, /const netProfit = domesticPrice > 0/);
   assert.match(rendererSource, /document\.querySelector\('\.nav\[data-view="profit"\]'\)\?\.click\(\)/);
-  assert.match(rendererSource, /calculate\(10\)/);
   assert.match(rendererSource, /function profitResult/);
+  assert.match(htmlSource, /POIZON·국내 쇼핑몰 가격 비교/);
+  assert.match(htmlSource, /id="profit-comparison-rows"/);
   assert.match(cssSource, /#excel-preview-profit/);
+});
+
+test("profit result returns to the preserved Excel product list", () => {
+  assert.match(htmlSource, /id="profit-back-to-list"[^>]*>← 상품 리스트로<\/button>/);
+  assert.match(rendererSource, /#profit-back-to-list/);
+  assert.match(rendererSource, /\.nav\[data-view="products"\]/);
+  assert.match(rendererSource, /if \(activeExcelPreview\) \$\("#excel-preview"\)\?\.scrollIntoView/);
+  assert.match(cssSource, /\.profit-panel-head/);
 });
 
 test("official-store verification supports every registered URL family and embedded article metadata", () => {
