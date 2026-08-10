@@ -929,7 +929,12 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     $("#brand-status").className = "status success";
     $("#brand-status").textContent = `${activeExportBrand.name} · 작업번호 생성 확인 완료${automation.jobId ? ` · ${automation.jobId}` : ""} · 다음 브랜드로 이동합니다.`;
     activeExportBrand = null;
-    setTimeout(() => exportNextSelectedBrand(generation), 400);
+    // Do not leave the next brand to an unobserved timer. The renderer can
+    // refresh several job/progress rows when the first job number arrives,
+    // which previously allowed the queued callback to be lost. Continue the
+    // snapshotted queue directly after the job number is confirmed.
+    await exportNextSelectedBrand(generation);
+    return;
   }
 }
 
