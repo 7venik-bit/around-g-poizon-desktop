@@ -3172,12 +3172,45 @@ async function confirmSellerExportRequestPhysical(targetFrame) {
 }
 
 async function clickSellerDownloadCenterShortcutPhysical(targetFrame) {
-  const clicked = await physicalClickSellerElement(targetFrame, `
-    return [...document.querySelectorAll("a,button,[role='button'],span")].filter(visible)
-      .find((element) => /^(?:다운로드\\s*센터\\s*)?바로\\s*가기$/.test(textOf(element)))
-      ?.closest("a,button,[role='button']") || null;
-  `, "PHYSICAL_DOWNLOAD_CENTER", 15_000);
-  return { ok: clicked.ok, clicked: clicked.ok, code: clicked.ok ? "" : "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND" };
+  const mainFrame = sellerWindow?.webContents?.mainFrame;
+  const frames = [mainFrame, targetFrame, ...sellerWindowFrames()]
+    .filter(Boolean)
+    .filter((frame, index, all) =>
+      all.findIndex((candidate) => candidate.routingId === frame.routingId) === index
+    );
+  const locator = `
+    const controls = [...document.querySelectorAll("a,button,[role='button']")].filter(visible);
+    return controls.find((element) => {
+      const label = textOf(element);
+      const href = String(element.href || element.getAttribute?.("href") || "");
+      return /exportCenter/i.test(href)
+        || /^(?:다운로드\\s*센터.*(?:바로\\s*가기|이동)|바로\\s*가기)$/.test(label);
+    }) || null;
+  `;
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    for (const frame of frames) {
+      const clicked = await physicalClickSellerElement(
+        frame,
+        locator,
+        "PHYSICAL_DOWNLOAD_CENTER",
+        700,
+      );
+      if (clicked.ok) {
+        const navigationDeadline = Date.now() + 10_000;
+        while (Date.now() < navigationDeadline) {
+          const currentUrl = String(sellerWindow?.webContents?.getURL?.() || "");
+          if (/\/main\/exportCenter(?:[/?#]|$)/i.test(currentUrl)) {
+            return { ok: true, clicked: true, navigated: true, url: currentUrl };
+          }
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        return { ok: true, clicked: true, navigated: false };
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  return { ok: false, clicked: false, code: "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND" };
 }
 
 
