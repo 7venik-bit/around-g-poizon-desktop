@@ -15,7 +15,8 @@ test("confirmed job numbers advance through the whole queue before monitoring st
   assert.match(queueFinished, /startSellerBrandExportMonitor/);
   assert.doesNotMatch(perBrand, /startSellerBrandExportMonitor/);
   assert.match(perBrand, /작업번호 생성 확인 완료/);
-  assert.match(perBrand, /exportNextSelectedBrand\(generation\), 400/);
+  assert.match(perBrand, /await exportNextSelectedBrand\(generation\)/);
+  assert.doesNotMatch(perBrand, /setTimeout\(\(\) => exportNextSelectedBrand\(generation\), 400\)/);
 });
 
 test("the renderer no longer presents download registration as step-five validation", () => {
