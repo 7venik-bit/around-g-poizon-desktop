@@ -478,7 +478,18 @@ export async function queryDomesticProducts({
           count = 0;
         }
       }
-      return { store: source.store, ok: true, linkOnly: true, renderCount: source.renderCount, officialStatus: source.officialStatus, searchUrl, officialProductUrl, count, products: [] };
+      return {
+        store: source.store,
+        ok: true,
+        linkOnly: true,
+        renderCount: source.renderCount,
+        officialStatus: source.officialStatus,
+        searchUrl,
+        officialSearchUrl: source.officialBrand ? officialProductUrl : "",
+        officialProductUrl,
+        count,
+        products: [],
+      };
     }
     try {
       let products = [];
@@ -500,7 +511,7 @@ export async function queryDomesticProducts({
   return {
     query: normalizedQuery,
     products: results.flatMap((result) => result.products),
-    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, searchUrl, officialProductUrl, count, products }, priority) => ({
+    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, searchUrl, officialSearchUrl, officialProductUrl, count, products }, priority) => ({
       store,
       ok,
       linkOnly,
@@ -509,6 +520,7 @@ export async function queryDomesticProducts({
       priority: priority + 1,
       count: Number.isFinite(count) ? count : products.length,
       searchUrl,
+      officialSearchUrl: officialSearchUrl || "",
       officialProductUrl,
     })),
   };
