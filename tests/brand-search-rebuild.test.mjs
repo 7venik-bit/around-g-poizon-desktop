@@ -70,7 +70,8 @@ test("selected brands run sequentially with a twenty-minute limit", () => {
   assert.match(main, /const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 20 \* 60 \* 1000/);
   assert.match(renderer, /brandExportQueue = selectedBrands\.map/);
   assert.match(renderer, /activeExportBrand = brandExportQueue\.shift\(\)/);
-  assert.match(renderer, /setTimeout\(\(\) => exportNextSelectedBrand\(generation\), 400\)/);
+  assert.match(renderer, /await exportNextSelectedBrand\(generation\)/);
+  assert.doesNotMatch(renderer, /setTimeout\(\(\) => exportNextSelectedBrand\(generation\), 400\)/);
   assert.match(renderer, /const BRAND_INPUT_RETRY_DELAY_MS = 60 \* 1000/);
   assert.match(renderer, /const BRAND_INPUT_RETRY_LIMIT = 2/);
   assert.match(renderer, /brandExportQueue\.unshift\(\{/);
