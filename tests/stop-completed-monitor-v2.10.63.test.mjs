@@ -26,6 +26,19 @@ test("hidden download request does not require a visible button", () => {
   assert.match(requester, /element\.isConnected/);
   assert.match(requester, /pointerdown/);
   assert.doesNotMatch(requester, /getClientRects\(\)\.length > 0/);
+  assert.match(requester, /jobNumberMatched/);
+  assert.match(requester, /workSucceeded/);
+  assert.match(requester, /completionConfirmed/);
+  assert.match(requester, /DOWNLOAD_CONDITIONS_NOT_MET/);
+});
+
+test("download monitoring requires matching job number, success state, and completion time", () => {
+  const reader = main.match(/async function readSellerMonitorStatuses[\s\S]*?\n}\n\nasync function requestSellerMonitorDownload/)?.[0] || "";
+  assert.match(reader, /const jobNumberText = textOf\(cells\[0\]\)/);
+  assert.match(reader, /const workStateText = textOf\(cells\[3\]\)/);
+  assert.match(reader, /const completionText = textOf\(cells\[5\]\)/);
+  assert.match(reader, /WAITING_FOR_COMPLETION/);
+  assert.match(main, /status\.jobNumberMatched[\s\S]*status\.workSucceeded[\s\S]*status\.completionConfirmed/);
 });
 
 test("all-complete is emitted once and cancels monitor restart", () => {
@@ -58,8 +71,8 @@ test("manual stop cancels automation, retries, and download monitoring immediate
   assert.match(main, /sellerMonitorWindow\.destroy\(\)/);
 });
 
-test("release metadata is 2.10.138", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.138");
-  assert.equal(JSON.parse(lockSource).version, "2.10.138");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.138");
+test("release metadata is 2.10.139", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.139");
+  assert.equal(JSON.parse(lockSource).version, "2.10.139");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.139");
 });
