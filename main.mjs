@@ -3405,6 +3405,30 @@ async function automateSellerBrandExport(input = {}) {
       message: `${brandName} 작업을 진행하려면 POIZON 판매자센터 로그인이 필요합니다.`,
     };
   }
+  // Freeze the download-center job list before clicking "전체 내보내기".
+  // Waiting until after the export allowed the newly-created job to leak into
+  // the baseline, so the first job could never be recognized as new.
+  let baselineJobs = await baselinePromise;
+  if (!Array.isArray(baselineJobs)) {
+    baselineJobs = await Promise.race([
+      readSellerExportJobsFromMonitor(),
+      new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
+    ]).catch(() => null);
+  }
+  const baselineAvailable = Array.isArray(baselineJobs);
+  const baselineJobIds = new Set([
+    ...brandExportJobs.keys(),
+    ...savedBrandExportJobs().map((job) => String(job?.jobId || "").trim()),
+    ...(baselineJobs || []).map((job) => String(job?.id || "").trim()),
+  ].filter(Boolean));
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: baselineAvailable ? "job-baseline-ready" : "job-baseline-fallback",
+    brandName,
+    jobState: "기존 작업번호 확인 완료 · 상품검색 시작",
+    message: baselineAvailable
+      ? `${brandName} · 내보내기 전 기존 작업번호 ${baselineJobIds.size}개를 고정했습니다.`
+      : `${brandName} · 저장된 미사용 작업번호를 제외하고 새 작업번호를 확인합니다.`,
+  });
   const sellerBrandAliasGroups = [
     ["Columbia", "컬럼비아", "哥伦比亚"],
     ["Patagonia", "파타고니아", "巴塔哥尼亚"],
@@ -4008,22 +4032,6 @@ async function automateSellerBrandExport(input = {}) {
     jobState: "2단계/5 · 전체 내보내기·다운로드센터 이동 완료",
     message: `${brandName} · 입력값 ${searched.inputValue || "확인 불가"} · 현지 30일 내림차순 · 전체 내보내기 · 다운로드센터 바로 가기 클릭 완료`,
   });
-
-  const baselineJobs = await baselinePromise;
-  const baselineAvailable = Array.isArray(baselineJobs);
-  const baselineJobIds = new Set([
-    ...brandExportJobs.keys(),
-    ...savedBrandExportJobs().map((job) => String(job?.jobId || "").trim()),
-    ...(baselineJobs || []).map((job) => String(job?.id || "").trim()),
-  ].filter(Boolean));
-  if (!baselineAvailable) {
-    mainWindow?.webContents.send("brand-export:progress", {
-      status: "baseline-fallback",
-      brandName,
-      jobState: "1단계/5 · 상품검색 완료 · 작업번호 후행 확인 방식",
-      message: `${brandName} · 기존 작업번호 화면 판독은 생략하고 실제 내보내기 요청 이후 새 미사용 작업번호를 확인합니다.`,
-    });
-  }
 
   const completeness = {
     ok: true,

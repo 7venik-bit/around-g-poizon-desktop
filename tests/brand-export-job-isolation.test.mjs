@@ -21,6 +21,18 @@ test("an old latest row is never mistaken for a newly created job", () => {
   assert.equal(created?.id, "1004731042");
 });
 
+test("the export job baseline is frozen before product search and export", () => {
+  const baselineAwait = mainSource.indexOf("let baselineJobs = await baselinePromise");
+  const searchStart = mainSource.indexOf("const sellerBrandAliasGroups", baselineAwait);
+  const exportClick = mainSource.indexOf("performPhysicalSellerSortAndExport", searchStart);
+  assert.ok(baselineAwait >= 0 && searchStart > baselineAwait && exportClick > searchStart);
+  assert.match(mainSource, /readSellerExportJobsFromMonitor\(\)/);
+  assert.doesNotMatch(
+    mainSource.slice(exportClick, mainSource.indexOf("const completeness", exportClick)),
+    /await baselinePromise/,
+  );
+});
+
 
 
 test("renderer never sends old brand job numbers for reuse", () => {
@@ -35,5 +47,4 @@ test("brand search mismatch is explained and stops before export registration", 
   assert.match(mainSource, /BRAND_RESULT_MISMATCH: `\$\{label\} 검색 결과가 확인되지 않아 내보내기를 중단했습니다/);
   assert.match(mainSource, /SEARCH_RESULT_NOT_UPDATED: `\$\{label\} 검색 결과가 새로 바뀌지 않아 내보내기를 중단했습니다/);
 });
-
 
