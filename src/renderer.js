@@ -817,8 +817,8 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     const failureCount = brandExportFailureCount;
     $("#brand-status").className = failureCount ? "status error" : "status success";
     $("#brand-status").textContent = failureCount
-      ? `${brandExportJobs.size}개 브랜드 작업 등록 · ${failureCount}개 브랜드 실패 · 등록된 작업 감시를 계속합니다.`
-      : `${brandExportJobs.size}개 브랜드 작업 등록 완료 · 작업번호별 동시 감시를 시작합니다.`;
+      ? `전체 작업번호 생성 확인 완료 · ${failureCount}개 브랜드 실패 · 생성된 작업은 함께 대기합니다.`
+      : `전체 ${brandExportJobs.size}개 브랜드 작업번호 생성 확인 완료 · 이제 처리 완료를 함께 대기합니다.`;
     brandExportFailureCount = 0;
     if (!brandExportJobs.size) stopBrandActivity();
     else touchBrandActivity("POIZON 파일 처리 상태 자동 감시 중");
@@ -903,8 +903,7 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
       renderBrandCards($("#brand-filter")?.value || "");
       $("#brand-status").className = "status error";
       $("#brand-status").textContent = `${failedBrandName} 작업 중 판매자센터 로그인이 필요합니다. 로그인 후 다시 실행해 주세요.`;
-      if (brandExportJobs.size) await window.aroundG.startSellerBrandExportMonitor();
-      else stopBrandActivity();
+      stopBrandActivity();
       return;
     }
     brandSelectionBusy = remainingCount > 0;
@@ -915,10 +914,7 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
       : remainingCount
       ? `${failedBrandName} 작업 실패 · ${automation?.message || "판매자센터 자동화에 실패했습니다."} · 다음 ${remainingCount}개 브랜드 작업을 계속합니다.`
       : `${failedBrandName} 작업 실패 · ${automation?.message || "판매자센터 자동화에 실패했습니다."}`;
-    if (brandExportJobs.size) {
-      touchBrandActivity("등록된 작업 감시와 남은 브랜드 실행을 계속합니다.");
-      await window.aroundG.startSellerBrandExportMonitor();
-    }
+    if (brandExportJobs.size) touchBrandActivity("남은 브랜드의 작업번호 생성을 계속합니다.");
     if (remainingCount > 0) {
       setTimeout(() => exportNextSelectedBrand(generation), 900);
     } else if (!brandExportJobs.size) {
@@ -927,11 +923,11 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     return;
   } else {
     renderBrandExportFolder(automation.folder);
-    updateBrandExportJob(automation.jobId, "3단계/5 · 작업번호 생성 완료 · 처리 대기", activeExportBrand.name);
-    updateBrandBatchState(activeExportBrand.name, "작업 생성 · POIZON 처리 대기", automation.jobId);
+    updateBrandExportJob(automation.jobId, "작업번호 생성 확인 완료 · 전체 등록 대기", activeExportBrand.name);
+    updateBrandBatchState(activeExportBrand.name, "작업번호 생성 확인 · 다음 브랜드 이동", automation.jobId);
     recordBrandSelection(activeExportBrand, "전체 내보내기 요청", { jobId: automation.jobId });
     $("#brand-status").className = "status success";
-    $("#brand-status").textContent = `${activeExportBrand.name} · 3단계/5 · 작업번호 생성 완료${automation.jobId ? ` · ${automation.jobId}` : ""} · 다음 브랜드 등록 중`;
+    $("#brand-status").textContent = `${activeExportBrand.name} · 작업번호 생성 확인 완료${automation.jobId ? ` · ${automation.jobId}` : ""} · 다음 브랜드로 이동합니다.`;
     activeExportBrand = null;
     setTimeout(() => exportNextSelectedBrand(generation), 400);
   }
@@ -1828,10 +1824,7 @@ async function importDetectedBrandExport(file, generation = brandWorkHistoryGene
   const unfinishedJobs = [...brandExportJobs.values()].some((job) => !brandJobIsFinished(job.state));
   if (!brandExportQueue.length && !activeExportBrand && !unfinishedJobs) stopBrandActivity();
   $("#brand-status").className = "status success";
-  const workbookSummary = file?.workbookSummary;
-  const countLabel = workbookSummary
-    ? ` · 전체 행 ${Number(workbookSummary.dataRowCount || 0).toLocaleString("ko-KR")}개 · 고유 SPU ${Number(workbookSummary.uniqueSpuCount || 0).toLocaleString("ko-KR")}개 · 중복 ${Number(workbookSummary.duplicateSpuCount || 0).toLocaleString("ko-KR")}개 · 빈 SPU ${Number(workbookSummary.blankSpuCount || 0).toLocaleString("ko-KR")}개`
-    : "";
+  const countLabel = "";
   const jobs = [...brandExportJobs.values()];
   const remainingJobs = jobs.filter((job) => !brandJobIsFinished(job.state)).length;
   const completedJobs = jobs.filter((job) => brandJobIsDownloaded(job.state)).length;
@@ -1859,7 +1852,7 @@ async function drainDetectedBrandImports() {
         queuedBrandImportPaths.delete(pathKey);
         continue;
       }
-      updateBrandExportJob(jobId, "5단계/5 · Excel 검증·프로그램 등록 중", file?.brandName);
+      updateBrandExportJob(jobId, "Excel 다운로드 등록 중", file?.brandName);
       try {
         const generation = brandWorkHistoryGeneration;
         const imported = await importDetectedBrandExport(file, generation);
@@ -1894,11 +1887,11 @@ window.aroundG.onBrandExportDetected((file) => {
     jobId: resolvedJobId,
     brandName: registeredBrand,
   };
-  updateBrandExportJob(normalizedFile.jobId, "5단계/5 · Excel 다운로드 완료 · 검증 대기", normalizedFile.brandName);
+  updateBrandExportJob(normalizedFile.jobId, "Excel 다운로드 완료 · 프로그램 등록 중", normalizedFile.brandName);
   queuedBrandImportPaths.add(pathKey);
   detectedBrandImportQueue.push(normalizedFile);
   $("#brand-status").className = "status";
-  $("#brand-status").textContent = `${normalizedFile.brandName} · 5단계/5 · Excel 검증·프로그램 등록 중`;
+  $("#brand-status").textContent = `${normalizedFile.brandName} · Excel 다운로드 완료 · 프로그램에 등록합니다.`;
   void drainDetectedBrandImports();
 });
 $("#brand-download-files").addEventListener("click", async (event) => {
