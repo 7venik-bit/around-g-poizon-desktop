@@ -817,8 +817,8 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     const failureCount = brandExportFailureCount;
     $("#brand-status").className = failureCount ? "status error" : "status success";
     $("#brand-status").textContent = failureCount
-      ? `전체 작업번호 생성 확인 완료 · ${failureCount}개 브랜드 실패 · 생성된 작업은 함께 대기합니다.`
-      : `전체 ${brandExportJobs.size}개 브랜드 작업번호 생성 확인 완료 · 이제 처리 완료를 함께 대기합니다.`;
+      ? `전체 브랜드 내보내기 완료 · ${failureCount}개 브랜드 실패 · 다운로드센터 감시를 시작합니다.`
+      : `전체 ${brandExportJobs.size}개 브랜드 내보내기 완료 · 다운로드센터를 갱신하며 성공 파일을 확인합니다.`;
     brandExportFailureCount = 0;
     if (!brandExportJobs.size) stopBrandActivity();
     else touchBrandActivity("POIZON 파일 처리 상태 자동 감시 중");
@@ -923,16 +923,16 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     return;
   } else {
     renderBrandExportFolder(automation.folder);
-    updateBrandExportJob(automation.jobId, "작업번호 생성 확인 완료 · 전체 등록 대기", activeExportBrand.name);
-    updateBrandBatchState(activeExportBrand.name, "작업번호 생성 확인 · 다음 브랜드 이동", automation.jobId);
+    updateBrandExportJob(automation.jobId, "2단계 완료 · 전체 브랜드 내보내기 대기", activeExportBrand.name);
+    updateBrandBatchState(activeExportBrand.name, "2단계 완료 · 다음 브랜드 내보내기", automation.jobId);
     recordBrandSelection(activeExportBrand, "전체 내보내기 요청", { jobId: automation.jobId });
     $("#brand-status").className = "status success";
-    $("#brand-status").textContent = `${activeExportBrand.name} · 작업번호 생성 확인 완료${automation.jobId ? ` · ${automation.jobId}` : ""} · 다음 브랜드로 이동합니다.`;
+    $("#brand-status").textContent = `${activeExportBrand.name} · 2단계 내보내기 완료${automation.jobId ? ` · ${automation.jobId}` : ""} · 다음 브랜드를 시작합니다.`;
     activeExportBrand = null;
     // Do not leave the next brand to an unobserved timer. The renderer can
     // refresh several job/progress rows when the first job number arrives,
     // which previously allowed the queued callback to be lost. Continue the
-    // snapshotted queue directly after the job number is confirmed.
+    // snapshotted queue directly after step two is confirmed.
     await exportNextSelectedBrand(generation);
     return;
   }

@@ -3998,28 +3998,10 @@ async function automateSellerBrandExport(input = {}) {
     };
   }
 
-  const productFrame = sellerWindowFrames().find((frame) => frame.routingId === sellerProductFrameRoutingId)
-    || sellerWindow.webContents.mainFrame;
-  // POIZON registers the export immediately after "전체 내보내기".
-  // The observed flow has no mandatory second confirmation dialog.
-  const downloadCenterShortcut = await clickSellerDownloadCenterShortcutPhysical(productFrame).catch(() => ({
-    ok: false,
-    clicked: false,
-    code: "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND",
-  }));
-  if (!downloadCenterShortcut?.ok || !downloadCenterShortcut?.clicked) {
-    const diagnosticPath = await captureSellerDiagnostic(brandName, "download-center-shortcut-not-found");
-    pendingBrandExportName = "";
-    pendingBrandExportJobId = "";
-    brandExportJobPending = false;
-    return {
-      ok: false,
-      code: downloadCenterShortcut?.code || "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND",
-      message: `${brandName} 내보내기 후 다운로드센터 바로 가기 버튼을 찾지 못했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
-      diagnostics: { ...downloadCenterShortcut, path: diagnosticPath },
-    };
-  }
-
+  // Keep the registration window on product search. Navigating it to the
+  // download center removed the search input needed by the next queued brand.
+  // The separate monitor identifies only the new job here; full refresh,
+  // completion checks, and downloads start after the whole queue is drained.
   if (sellerWindow && !sellerWindow.isDestroyed()) {
     await new Promise((resolve) => setTimeout(resolve, 800));
     sellerWindow.minimize();
@@ -4029,24 +4011,24 @@ async function automateSellerBrandExport(input = {}) {
   mainWindow?.webContents.send("brand-export:progress", {
     status: "seller-search-evidence",
     brandName,
-    jobState: "2단계/5 · 전체 내보내기·다운로드센터 이동 완료",
-    message: `${brandName} · 입력값 ${searched.inputValue || "확인 불가"} · 현지 30일 내림차순 · 전체 내보내기 · 다운로드센터 바로 가기 클릭 완료`,
+    jobState: "2단계/5 · 전체 내보내기 완료 · 다음 브랜드 준비",
+    message: `${brandName} · 입력값 ${searched.inputValue || "확인 불가"} · 현지 30일 내림차순 · 전체 내보내기 완료 · 상품검색 화면 유지`,
   });
 
   const completeness = {
     ok: true,
     expected: 0,
     pageCount: 0,
-    confirmationObserved: Boolean(exportConfirmation.confirmationObserved),
-    confirmationClicked: Boolean(exportConfirmation.confirmationClicked),
-    requestAcknowledged: Boolean(exportConfirmation.requestAcknowledged),
+    confirmationObserved: false,
+    confirmationClicked: false,
+    requestAcknowledged: true,
   };
 
   mainWindow?.webContents.send("brand-export:progress", {
     status: "waiting-for-job-creation",
     brandName,
     jobState: "2단계/5 · 전체 내보내기 클릭 완료 · 새 작업번호 확인 중",
-    message: `${brandName} · 정상 작동 기준과 동일하게 전체 내보내기를 실행했습니다. 다운로드센터의 새 작업번호를 확인합니다.`,
+    message: `${brandName} · 전체 내보내기를 완료했습니다. 별도 확인 창에서 새 작업번호만 확인한 뒤 다음 브랜드로 이동합니다.`,
   });
 
   let createdJob = null;

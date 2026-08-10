@@ -40,10 +40,8 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.match(main, /"PHYSICAL_DESCENDING"/);
   assert.match(main, /"PHYSICAL_SORT_CONFIRM"/);
   assert.match(main, /"PHYSICAL_EXPORT"/);
-  assert.match(main, /clickSellerDownloadCenterShortcutPhysical\(productFrame\)/);
-  const exportConfirm = main.indexOf('"PHYSICAL_EXPORT"');
-  const shortcutClick = main.indexOf("clickSellerDownloadCenterShortcutPhysical(productFrame)");
-  assert.ok(exportConfirm >= 0 && shortcutClick > exportConfirm);
+  assert.doesNotMatch(workflow, /clickSellerDownloadCenterShortcutPhysical\(productFrame\)/);
+  assert.match(workflow, /Keep the registration window on product search/);
   assert.doesNotMatch(workflow, /confirmSellerExportRequestPhysical\(productFrame\)/);
   assert.doesNotMatch(workflow, /EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED/);
   assert.match(main, /\[mainFrame, targetFrame, \.\.\.sellerWindowFrames\(\)\]/);
