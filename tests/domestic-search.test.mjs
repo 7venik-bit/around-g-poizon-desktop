@@ -297,6 +297,18 @@ test("an unverified brand is not reported as a verified official-store zero", as
   assert.equal(official.officialProductUrl, "");
 });
 
+test("official-store search and verified product-detail URLs remain distinct", async () => {
+  const result = await queryDomesticProducts({
+    query: "아디다스 IH0274",
+    articleNumber: "IH0274",
+    brand: "아디다스",
+    fetchImpl: async () => ({ ok: true, text: async () => "" }),
+  });
+  const official = result.sources.find((source) => source.store === "브랜드 공식몰");
+  assert.match(official.officialSearchUrl, /adidas\.co\.kr\/search/);
+  assert.equal(official.officialProductUrl, official.officialSearchUrl);
+});
+
 test("a transient Musinsa server failure is retried once", async () => {
   const dataWithOneProduct = `<script id="__NEXT_DATA__">${JSON.stringify({
     props: { pageProps: { dehydratedState: { queries: [

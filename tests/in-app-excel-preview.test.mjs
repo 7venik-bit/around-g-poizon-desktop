@@ -120,6 +120,15 @@ test("official-store verification supports every registered URL family and embed
   assert.doesNotMatch(mainSource, /String\(link\.href \|\| ""\)\.split\("\?"\)/);
 });
 
+test("official-store links are enabled only after an exact product detail is verified", () => {
+  assert.match(rendererSource, /공식몰 상품 없음/);
+  assert.match(rendererSource, /공식몰 검색 전/);
+  assert.match(rendererSource, /source\.countVerified && source\.officialProductUrl/);
+  assert.doesNotMatch(rendererSource, /data-official-discovery=/);
+  assert.match(mainSource, /officialProductMissing: isOfficialStore/);
+  assert.match(mainSource, /officialSearchUrl: isOfficialStore/);
+});
+
 test("official-store verification failures are not shown as a confirmed zero", () => {
   assert.match(mainSource, /return null/);
   assert.match(mainSource, /pageBlocked/);
