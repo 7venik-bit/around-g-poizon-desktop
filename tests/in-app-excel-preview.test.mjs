@@ -26,13 +26,14 @@ test("Excel preview is read-only and paginated in the main sourcing screen", () 
 
 test("Excel preview filters both total-sales columns across all rows", async () => {
   const preloadSource = await readFile(new URL("../preload.cjs", import.meta.url), "utf8");
-  assert.match(htmlSource, /id="excel-filter-min-total"[^>]+value="50"/);
-  assert.match(htmlSource, /id="excel-filter-min-local-total"[^>]+value="50"/);
+  assert.match(htmlSource, /id="excel-filter-min-total"[^>]+value="30"[^>]+readonly/);
+  assert.match(htmlSource, /id="excel-filter-min-local-total"[^>]+value="30"[^>]+readonly/);
   assert.doesNotMatch(htmlSource, /id="excel-filter-max-total"/);
   assert.doesNotMatch(htmlSource, /id="excel-filter-max-local-total"/);
   assert.doesNotMatch(rendererSource, /#excel-filter-max-total|#excel-filter-max-local-total/);
-  assert.match(htmlSource, /id="excel-filter-match"/);
-  assert.match(htmlSource, /<span>필터 조건<\/span><select id="excel-filter-match"/);
+  assert.doesNotMatch(htmlSource, /id="excel-filter-match"/);
+  assert.doesNotMatch(htmlSource, /둘 중 하나 충족 \(OR\)/);
+  assert.match(htmlSource, /두 조건 모두 충족 \(AND\)/);
   assert.match(htmlSource, /id="excel-filter-apply"/);
   assert.match(htmlSource, /id="excel-filter-reset"/);
   assert.match(mainSource, /filterPoizonPreviewRows\(workbook\.headers, workbook\.rows, input\.filters/);

@@ -31,6 +31,7 @@ function hasSalesMetric(value) {
 }
 
 export function filterPoizonPreviewRows(headers = [], rows = [], filters = {}) {
+  const fixedTotalAnd = filters.fixedTotalAnd === true;
   const totalSalesColumn = findPoizonColumn(headers, "중국 총 판매량", "총 판매량");
   const localTotalSalesColumn = findPoizonColumn(
     headers,
@@ -41,7 +42,7 @@ export function filterPoizonPreviewRows(headers = [], rows = [], filters = {}) {
   const maximumTotal = optionalSalesBoundary(filters.maximumTotal);
   const minimumLocalTotal = optionalSalesBoundary(filters.minimumLocalTotal);
   const maximumLocalTotal = optionalSalesBoundary(filters.maximumLocalTotal);
-  const matchMode = filters.matchMode === "all" ? "all" : "any";
+  const matchMode = fixedTotalAnd || filters.matchMode === "all" ? "all" : "any";
   const chinaActive = totalSalesColumn >= 0 && (minimumTotal !== null || maximumTotal !== null);
   const localActive = localTotalSalesColumn >= 0
     && (minimumLocalTotal !== null || maximumLocalTotal !== null);

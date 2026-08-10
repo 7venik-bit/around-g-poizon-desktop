@@ -1514,6 +1514,7 @@ async function previewExcelFile(input = {}) {
     offset,
     limit,
     totalRows: resultCount,
+    filteredSourceRows: filtered.entries.length,
     sourceTotalRows: filtered.sourceRows,
     sourceTotalProducts,
     totalColumns: workbook.columnCount,
