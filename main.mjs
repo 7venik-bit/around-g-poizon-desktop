@@ -4151,8 +4151,8 @@ async function automateSellerBrandExport(input = {}) {
     status: "job-created",
     brandName,
     jobId: registeredJobId,
-    jobState: "3단계/5 · 작업번호 생성 완료 · 처리 대기",
-    message: `${brandName} · 3단계/5 · 새 작업번호 ${registeredJobId} 생성 완료 · POIZON 처리 대기`,
+    jobState: "작업번호 생성 확인 완료 · 전체 등록 대기",
+    message: `${brandName} · 새 작업번호 ${registeredJobId} 생성 확인 완료 · 다음 브랜드로 이동`,
   });
   brandExportJobPending = false;
   pendingBrandExportName = "";
