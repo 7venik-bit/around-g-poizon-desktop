@@ -166,6 +166,31 @@ test("SSG and Lotte dynamic product links become visible product candidates", ()
   }
 });
 
+test("SSG department Korean brand result confirms stock for an English brand query", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    pageText: "아디다스 IH0274 검색 결과입니다.",
+    pageBlocked: false,
+    productCards: [{
+      productUrl: "https://department.ssg.com/item/itemView.ssg?itemId=1000612345",
+      text: "아디다스 남녀공용 데일리 캐주얼 운동화 IH0274 스피리테인 2.0 98,100원",
+      title: "아디다스 스피리테인 2.0 IH0274",
+      imageUrl: "https://img.example/ih0274.jpg",
+      price: "98,100원",
+    }],
+  }), "SSG 백화점", "IH0274", "Adidas");
+  assert.equal(result?.count, 1);
+  assert.equal(result?.products[0]?.inStock, true);
+  assert.equal(result?.products[0]?.price, 98100);
+});
+
+test("rendered SSG cards take priority over a stale block phrase elsewhere on the page", async () => {
+  const mainSource = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../main.mjs", import.meta.url), "utf8"));
+  assert.match(mainSource, /parsedContent\?\.pageBlocked && !parsedContent\?\.productCards\?\.length/);
+  assert.match(mainSource, /\[class\*='cunit'\]/);
+  assert.match(mainSource, /SEARCH_PAGE_TIMEOUT[\s\S]*30_000/);
+  assert.match(mainSource, /persist:around-g-domestic-search/);
+});
+
 test("malformed rendered data is a verification failure, not a confirmed zero", () => {
   assert.equal(countRenderedChannelProducts('{"pageText":"partial"}', "SSG 백화점", "IO9554-100", "나이키"), null);
 });

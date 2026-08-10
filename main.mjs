@@ -668,18 +668,20 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "") {
       width: 1100,
       height: 800,
       webPreferences: {
+        partition: "persist:around-g-domestic-search",
         sandbox: true,
         backgroundThrottling: false,
       },
     });
+    searchWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
     await Promise.race([
       searchWindow.loadURL(url),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 12_000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 30_000)),
     ]);
     // Dynamic commerce pages render and lazy-load after navigation. Give them
     // time to settle and scroll enough to materialize the first result cards.
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      await wait(attempt === 0 ? 1_200 : 650);
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await wait(attempt === 0 ? 2_000 : 800);
       await searchWindow.webContents.executeJavaScript(`(() => {
         const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
         window.scrollTo(0, Math.min(maxY, window.scrollY + Math.max(500, window.innerHeight * 0.8)));
@@ -711,13 +713,14 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "") {
       for (const link of productLinks) {
         const productUrl = String(link.href || "").split("#")[0];
         if (!productUrl || seen.has(productUrl)) continue;
-        const card = link.closest("li, article, [data-product-id], [data-item-id], [class*='product-card'], [class*='goods-item'], [class*='item-card']")
+        const card = link.closest("li, article, [data-product-id], [data-item-id], [class*='product-card'], [class*='goods-item'], [class*='item-card'], [class*='cunit'], [class*='mnemitem'], [class*='mnemitem'], [class*='item_unit']")
           || link.parentElement;
         const text = String(card?.innerText || link.innerText || "").trim();
         const markup = String(card?.outerHTML || link.outerHTML || "").slice(0, 2500);
         const image = card?.querySelector?.("img");
-        const imageUrl = String(image?.currentSrc || image?.src || "");
-        const title = String(image?.alt || link.getAttribute("aria-label") || text.split("\\n")[0] || "").trim();
+        const imageUrl = String(image?.currentSrc || image?.src || image?.dataset?.src || image?.dataset?.original || "");
+        const titleElement = card?.querySelector?.("[class*='title'], [class*='name'], strong");
+        const title = String(image?.alt || link.getAttribute("aria-label") || titleElement?.textContent || text.split("\\n")[0] || "").trim();
         const price = text.match(/[\\d,]+\\s*원/)?.[0] || "";
         seen.add(productUrl);
         productCards.push({ productUrl, text, markup, imageUrl, title, price });
@@ -727,7 +730,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "") {
       return JSON.stringify({ productCards, pageBlocked, pageText });
     })()`, true);
     try {
-      if (JSON.parse(content)?.pageBlocked) return null;
+      const parsedContent = JSON.parse(content);
+      if (parsedContent?.pageBlocked && !parsedContent?.productCards?.length) return null;
     } catch {}
     return analyzeRenderedChannelProducts(content, source.store, articleNumber, brand);
   } catch {
