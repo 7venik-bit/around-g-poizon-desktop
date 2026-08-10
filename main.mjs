@@ -2150,8 +2150,9 @@ const SELLER_MONITOR_STATUS_PRIORITY = {
   WAITING_FOR_ROW: 1,
   WAITING_FOR_SUCCESS: 2,
   PROCESSING: 3,
-  WAITING_FOR_DOWNLOAD: 4,
-  READY: 5,
+  WAITING_FOR_COMPLETION: 4,
+  WAITING_FOR_DOWNLOAD: 5,
+  READY: 6,
 };
 
 async function readSellerMonitorStatuses(expectedIds = []) {
@@ -2201,9 +2202,21 @@ async function readSellerMonitorStatuses(expectedIds = []) {
           const row = findJobContainer(jobId);
           if (!row) return { jobId, state: "WAITING_FOR_ROW" };
           const rowText = textOf(row);
-          if (/처리\\s*중|processing|pending|진행\\s*중/i.test(rowText)) return { jobId, state: "PROCESSING" };
-          if (!/성공|완료|completed|success/i.test(rowText)) return { jobId, state: "WAITING_FOR_SUCCESS" };
-          const control = [...row.querySelectorAll("a, button, [role='button']")].find((element) => {
+          const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
+          const jobNumberText = textOf(cells[0]);
+          const workStateText = textOf(cells[3]);
+          const completionText = textOf(cells[5]);
+          const jobNumberMatched = new RegExp("(?:^|\\\\D)" + jobId + "(?:\\\\D|$)").test(jobNumberText || rowText);
+          const workSucceeded = /^(?:성공|success|completed)$/i.test(workStateText);
+          const completionConfirmed = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/.test(completionText);
+          if (!jobNumberMatched) return { jobId, state: "WAITING_FOR_ROW" };
+          if (/처리\\s*중|processing|pending|진행\\s*중/i.test(workStateText || rowText)) {
+            return { jobId, state: "PROCESSING", workStateText, completionText };
+          }
+          if (!workSucceeded) return { jobId, state: "WAITING_FOR_SUCCESS", workStateText, completionText };
+          if (!completionConfirmed) return { jobId, state: "WAITING_FOR_COMPLETION", workStateText, completionText };
+          const downloadCell = cells[6] || row;
+          const control = [...downloadCell.querySelectorAll("a, button, [role='button']")].find((element) => {
             if (!usable(element) || element.disabled || element.getAttribute("aria-disabled") === "true") return false;
             return /다운로드|download/i.test([
               textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
@@ -2213,7 +2226,16 @@ async function readSellerMonitorStatuses(expectedIds = []) {
           try {
             if (href && !/^javascript:/i.test(href)) href = new URL(href, location.href).href;
           } catch {}
-          return { jobId, state: control ? "READY" : "WAITING_FOR_DOWNLOAD", href };
+          return {
+            jobId,
+            state: control ? "READY" : "WAITING_FOR_DOWNLOAD",
+            href,
+            workStateText,
+            completionText,
+            jobNumberMatched,
+            workSucceeded,
+            completionConfirmed,
+          };
         });
       })()`, true),
       new Promise((resolve) => setTimeout(() => resolve([]), 5_000)),
@@ -2261,7 +2283,27 @@ async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId 
         || leaf?.parentElement
         || leaf
         || null;
-      const control = [...(row?.querySelectorAll("a, button, [role='button']") || [])].find((element) =>
+      if (!row) return { clicked: false, href: "", reason: "JOB_ROW_NOT_FOUND" };
+      const rowText = textOf(row);
+      const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
+      const jobNumberText = textOf(cells[0]);
+      const workStateText = textOf(cells[3]);
+      const completionText = textOf(cells[5]);
+      const jobNumberMatched = new RegExp("(?:^|\\\\D)" + jobId + "(?:\\\\D|$)").test(jobNumberText || rowText);
+      const workSucceeded = /^(?:성공|success|completed)$/i.test(workStateText);
+      const completionConfirmed = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/.test(completionText);
+      if (!jobNumberMatched || !workSucceeded || !completionConfirmed) {
+        return {
+          clicked: false,
+          href: "",
+          reason: "DOWNLOAD_CONDITIONS_NOT_MET",
+          jobNumberMatched,
+          workSucceeded,
+          completionConfirmed,
+        };
+      }
+      const downloadCell = cells[6] || row;
+      const control = [...downloadCell.querySelectorAll("a, button, [role='button']")].find((element) =>
         usable(element)
         && !element.disabled
         && element.getAttribute("aria-disabled") !== "true"
@@ -2353,6 +2395,7 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
           WAITING_FOR_ROW: "4단계/5 · 작업번호 행 확인 중",
           PROCESSING: "4단계/5 · POIZON 파일 처리 중 · 10초마다 감시",
           WAITING_FOR_SUCCESS: "4단계/5 · POIZON 처리 완료 대기 중",
+          WAITING_FOR_COMPLETION: "4단계/5 · 작업 완료 시각 확인 중",
           WAITING_FOR_DOWNLOAD: "4단계/5 · 다운로드 버튼 대기",
           PAGE_NOT_READY: "4단계/5 · 다운로드센터 프레임 확인 중",
           READY: "4단계/5 · 처리 성공 · 다운로드 시작",
@@ -2381,7 +2424,13 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
       }
       const ready = activeBrandDownloadJobId ? null : statuses.find((status) => {
         const job = brandExportJobs.get(status.jobId);
-        return Boolean(job) && status.state === "READY" && !job.downloadStarted && !job.downloadRequestedAt;
+        return Boolean(job)
+          && status.state === "READY"
+          && status.jobNumberMatched
+          && status.workSucceeded
+          && status.completionConfirmed
+          && !job.downloadStarted
+          && !job.downloadRequestedAt;
       });
       if (ready) {
         const job = brandExportJobs.get(ready.jobId);

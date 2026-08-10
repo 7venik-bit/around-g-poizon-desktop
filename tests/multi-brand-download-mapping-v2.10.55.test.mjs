@@ -27,14 +27,17 @@ test("folder polling reports only a file matched to one current job", () => {
 
 
 test("a completed job removed during download cannot be selected again by a stale status snapshot", () => {
-  assert.match(main, /return Boolean\(job\) && status\.state === "READY"/);
+  assert.match(main, /return Boolean\(job\)[\s\S]*status\.state === "READY"/);
+  assert.match(main, /status\.jobNumberMatched/);
+  assert.match(main, /status\.workSucceeded/);
+  assert.match(main, /status\.completionConfirmed/);
   assert.match(main, /const currentJob = brandExportJobs\.get\(ready\.jobId\)/);
   assert.match(main, /if \(!currentJob\) continue/);
 });
 
 
-test("release metadata is 2.10.138", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.138");
-  assert.equal(JSON.parse(lockSource).version, "2.10.138");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.138");
+test("release metadata is 2.10.139", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.139");
+  assert.equal(JSON.parse(lockSource).version, "2.10.139");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.139");
 });
