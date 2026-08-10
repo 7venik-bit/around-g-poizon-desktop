@@ -1971,12 +1971,14 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
     const domestic = (result?.products || [])
       .filter((candidate) => Number(candidate?.price || 0) > 0)
       .sort((left, right) => Number(right?.inStock) - Number(left?.inStock) || Number(left.price) - Number(right.price))[0];
+    const domesticSource = (result?.sources || []).find((source) => source?.store === domestic?.store);
+    const purchaseUrl = String(domestic?.url || domesticSource?.officialProductUrl || domesticSource?.searchUrl || "");
     const poizonPrice = Number(product?.averagePrice || 0);
     const domesticPrice = Number(domestic?.price || 0);
     const totalCost = poizonPrice + shipping + extra;
     const netProfit = domesticPrice > 0 ? domesticPrice * (1 - feeRate) - totalCost : 0;
     const marginRate = domesticPrice > 0 ? netProfit / domesticPrice * 100 : 0;
-    return { product, domestic, poizonPrice, domesticPrice, totalCost, netProfit, marginRate };
+    return { product, domestic, purchaseUrl, poizonPrice, domesticPrice, totalCost, netProfit, marginRate };
   });
   const comparable = comparisons.filter((item) => item.poizonPrice > 0 && item.domesticPrice > 0);
   const totals = comparable.reduce((sum, item) => ({
@@ -1999,7 +2001,9 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
     <td><b>${text(item.product?.articleNumber || "-")}</b><small>${text(item.product?.title || "")}</small></td>
     <td>${item.poizonPrice ? money(item.poizonPrice) : "가격 없음"}</td>
     <td>${item.domesticPrice ? money(item.domesticPrice) : "검색 결과 없음"}</td>
-    <td>${text(item.domestic?.store || "-")}</td>
+    <td>${item.purchaseUrl
+      ? `<button type="button" class="profit-store-link" data-url="${encodeURIComponent(item.purchaseUrl)}" title="구매 페이지 열기">${text(item.domestic?.store || "판매처 열기")} ↗</button>`
+      : "-"}</td>
     <td>${item.poizonPrice ? money(item.totalCost) : "-"}</td>
     <td class="${item.netProfit >= 0 ? "profit-positive" : "profit-negative"}">${item.domesticPrice ? money(item.netProfit) : "-"}</td>
     <td class="${item.marginRate >= 0 ? "profit-positive" : "profit-negative"}">${item.domesticPrice ? `${item.marginRate.toFixed(1)}%` : "-"}</td>

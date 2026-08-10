@@ -539,6 +539,7 @@ body.excel-preview-active{overflow:hidden}
 .excel-preview-selection #excel-preview-profit{border-color:#2d7ff0;color:#1768c5;background:#eef6ff;font-weight:800}.profit-selection-summary{padding:10px 12px;border:1px solid #b9d9f2;border-radius:9px;background:#eef7ff;color:#205f91;font-size:12px;font-weight:750}
 .profit-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.profit-panel-head h2{margin-bottom:0}.profit-panel-head #profit-back-to-list{padding:8px 12px;border-color:#8fc6ed;color:#1768a3;background:#eef7ff;font-size:11px;font-weight:800;white-space:nowrap}
 .profit-comparison table{min-width:980px}.profit-comparison td:first-child{display:grid;gap:3px;min-width:220px}.profit-comparison td:first-child small{color:#6b7f94;letter-spacing:0}.profit-positive{color:#087a56;font-weight:800}.profit-negative{color:#b42318;font-weight:800}
+.profit-store-link{padding:5px 8px;border:1px solid #9bc9ea;border-radius:7px;background:#eef7ff;color:#1768a3;font-size:11px;font-weight:800}.profit-store-link:hover{border-color:#2589c9;background:#e1f2ff}
 .excel-preview-loading{padding:48px;text-align:center;color:#52708f;font-size:12px}
 .excel-preview-loading.error{color:#b42318;background:#fff4f2}
 .excel-preview-grid{max-height:560px;overflow:auto;background:#fff}

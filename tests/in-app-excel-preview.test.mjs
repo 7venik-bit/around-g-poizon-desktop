@@ -100,6 +100,15 @@ test("profit result returns to the preserved Excel product list", () => {
   assert.match(cssSource, /\.profit-panel-head/);
 });
 
+test("profit comparison store names open their matched purchase links", () => {
+  assert.match(rendererSource, /const purchaseUrl = String\(domestic\?\.url \|\| domesticSource\?\.officialProductUrl \|\| domesticSource\?\.searchUrl/);
+  assert.match(rendererSource, /class="profit-store-link" data-url="\$\{encodeURIComponent\(item\.purchaseUrl\)\}"/);
+  assert.match(rendererSource, /title="구매 페이지 열기"/);
+  assert.match(rendererSource, /event\.target\.closest\("\[data-url\]"\)/);
+  assert.match(rendererSource, /window\.aroundG\.openExternal\(resolvedUrl\)/);
+  assert.match(cssSource, /\.profit-store-link/);
+});
+
 test("official-store verification supports every registered URL family and embedded article metadata", () => {
   assert.match(mainSource, /p\|pd\|products\?\|goods\|product/);
   assert.match(mainSource, /productDetail\\\\\.action/);
