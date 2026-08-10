@@ -412,9 +412,10 @@ function renderDownloadedBrandFiles() {
 
 function currentExcelPreviewFilters() {
   return {
-    minimumTotal: $("#excel-filter-min-total")?.value ?? "",
-    minimumLocalTotal: $("#excel-filter-min-local-total")?.value ?? "",
-    matchMode: $("#excel-filter-match")?.value === "all" ? "all" : "any",
+    minimumTotal: $("#excel-filter-min-total")?.value ?? "30",
+    minimumLocalTotal: $("#excel-filter-min-local-total")?.value ?? "30",
+    fixedTotalAnd: true,
+    matchMode: "all",
     productView: excelPreviewProductMode,
   };
 }
@@ -549,6 +550,9 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   const sourceTotalProducts = Number.isFinite(Number(result.sourceTotalProducts))
     ? Math.max(0, Number(result.sourceTotalProducts))
     : totalRows;
+  const filteredSourceRows = Number.isFinite(Number(result.filteredSourceRows))
+    ? Math.max(0, Number(result.filteredSourceRows))
+    : totalRows;
   activeExcelPreview = { file, offset: result.offset, limit: result.limit, totalRows, filters, viewMode: result.productView ? "products" : "raw" };
   preview.classList.toggle("product-view", Boolean(result.productView));
   $("#excel-view-products").classList.toggle("active", Boolean(result.productView));
@@ -560,7 +564,7 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   const startRow = totalRows ? result.offset + 1 : 0;
   const endRow = Math.min(totalRows, result.offset + rows.length);
   $("#excel-preview-summary").textContent = result.productView
-    ? `상품 검색용 보기 · 필터 결과 ${totalRows.toLocaleString("ko-KR")}개 / 전체 ${sourceTotalProducts.toLocaleString("ko-KR")}개 제품 · 현재 ${startRow.toLocaleString("ko-KR")}~${Math.min(totalRows, result.offset + products.length).toLocaleString("ko-KR")}번째 제품`
+    ? `총판매량 AND 원본 ${filteredSourceRows.toLocaleString("ko-KR")}행 · 고유 상품 ${totalRows.toLocaleString("ko-KR")}개 / 전체 ${sourceTotalProducts.toLocaleString("ko-KR")}개 제품 · 현재 ${startRow.toLocaleString("ko-KR")}~${Math.min(totalRows, result.offset + products.length).toLocaleString("ko-KR")}번째 제품`
     : result.filterApplied
       ? `원본 데이터 · 필터 결과 ${totalRows.toLocaleString("ko-KR")}행 / 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행 · ${totalColumns.toLocaleString("ko-KR")}열 · 현재 ${startRow.toLocaleString("ko-KR")}~${endRow.toLocaleString("ko-KR")}번째 결과`
       : `원본 데이터 · ${totalRows.toLocaleString("ko-KR")}행 · ${totalColumns.toLocaleString("ko-KR")}열 · 현재 ${startRow.toLocaleString("ko-KR")}~${endRow.toLocaleString("ko-KR")}행`;
@@ -572,8 +576,8 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
     ? `${missingColumns.join(" · ")} 열을 찾지 못해 해당 조건은 적용되지 않습니다.`
     : result.filterApplied
       ? result.productView
-        ? `전체 ${sourceTotalProducts.toLocaleString("ko-KR")}개 제품 중 ${totalRows.toLocaleString("ko-KR")}개 · ${result.matchMode === "all" ? "두 조건 모두 충족(AND)" : "둘 중 하나 충족(OR)"}`
-        : `전체 ${sourceTotalRows.toLocaleString("ko-KR")}행 중 ${totalRows.toLocaleString("ko-KR")}행 · ${result.matchMode === "all" ? "두 조건 모두 충족(AND)" : "둘 중 하나 충족(OR)"}`
+        ? `원본 ${filteredSourceRows.toLocaleString("ko-KR")}행 · 고유 상품 ${totalRows.toLocaleString("ko-KR")}개 · 중국·현지 총판매량 모두 30 이상(AND)`
+        : `전체 ${sourceTotalRows.toLocaleString("ko-KR")}행 중 ${totalRows.toLocaleString("ko-KR")}행 · 중국·현지 총판매량 모두 30 이상(AND)`
       : `판매량 필터를 사용하지 않고 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행을 표시합니다.`;
   $("#excel-preview-selection").hidden = false;
   if (result.productView) {
@@ -1308,7 +1312,14 @@ function renderExplorerResults(title, products, preserveDomestic = false) {
   bindExplorerSelectionControls();
 }
 
-function renderBrandSellerResults(title, products, sourceTotal = products.length) {
+function totalSalesAndMatched(product, chinaMinimum = 30, localMinimum = 30) {
+  return Boolean(product?.hasTotalSalesData)
+    && Boolean(product?.hasLocalTotalSalesData)
+    && Number(product.totalSales) >= chinaMinimum
+    && Number(product.localTotalSales) >= localMinimum;
+}
+
+function renderBrandSellerResults(title, products, sourceTotal = products.length, comparison = {}) {
   const allProducts = [...products];
   brandWorkbenchProducts = allProducts;
   renderBrandWorkbench();
@@ -1325,25 +1336,15 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
       <button type="button">브랜드⌄</button>
       <select id="brand-result-category"><option value="">카테고리⌄</option>${categories.map((category) => `<option value="${text(category)}">${text(category)}</option>`).join("")}</select>
       <select disabled><option>사이즈 유형⌄</option></select>
-      <input id="brand-result-min-total" type="number" min="0" value="50" placeholder="중국 총 판매량 최소" title="중국 총 판매량 최소">
-      <input id="brand-result-max-total" type="number" min="0" placeholder="중국 총 판매량 최대" title="중국 총 판매량 최대">
-      <input id="brand-result-min-local-total" type="number" min="0" value="50" placeholder="현지 판매자 총 판매량 최소" title="현지 판매자 총 판매량 최소">
-      <input id="brand-result-max-local-total" type="number" min="0" placeholder="현지 판매자 총 판매량 최대" title="현지 판매자 총 판매량 최대">
-      <select id="brand-result-sales-match" title="두 판매량 조건 결합 방식">
-        <option value="any">둘 중 하나 충족 (OR)</option>
-        <option value="all">두 조건 모두 충족 (AND)</option>
-      </select>
-      <select id="brand-result-data-option">
-        <option value="">누락값 포함</option>
-        <option value="available">두 총 판매량 확인 가능</option>
-        <option value="missing">누락값만 표시</option>
-      </select>
+      <input id="brand-result-min-total" type="number" min="30" value="30" readonly title="중국 총 판매량 30건 이상 고정">
+      <input id="brand-result-min-local-total" type="number" min="30" value="30" readonly title="현지 판매자 총 판매량 30건 이상 고정">
+      <strong class="seller-filter-fixed">두 조건 모두 충족 (AND)</strong>
       <button id="brand-result-reset" type="button" class="poizon-reset">초기화</button>
     </div>
     <div class="poizon-result-summary">
       <strong>총 ${Number(sourceTotal).toLocaleString("ko-KR")}건 결과</strong>
-      <span id="brand-collection-audit">수집 ${allProducts.length.toLocaleString("ko-KR")}건</span>
-      <select id="brand-result-sort"><option value="total-desc">중국 총 판매량 내림차순</option><option value="total-asc">중국 총 판매량 오름차순</option><option value="local-total-desc">현지 판매자 총 판매량 내림차순</option><option value="local-total-asc">현지 판매자 총 판매량 오름차순</option></select>
+      <span id="brand-collection-audit">판매자센터 AND ${Number(comparison.sellerCount || 0).toLocaleString("ko-KR")}개 · 프로그램 AND ${Number(comparison.programCount || 0).toLocaleString("ko-KR")}개 · 차이 ${Number(comparison.difference || 0).toLocaleString("ko-KR")}개</span>
+      <select id="brand-result-sort"><option value="local-desc">현지 판매자 총 판매량 내림차순</option><option value="china-desc">중국 총 판매량 내림차순</option></select>
       <label class="seller-select-all"><input id="brand-select-visible" type="checkbox"> 전체 선택</label>
       <strong id="brand-selected-count">0개 선택</strong>
       <button id="brand-clear-selection" type="button">선택 해제</button>
@@ -1362,45 +1363,17 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
 
   const renderRows = () => {
     const category = $("#brand-result-category").value;
-    const minTotalText = $("#brand-result-min-total").value;
-    const maxTotalText = $("#brand-result-max-total").value;
-    const minLocalTotalText = $("#brand-result-min-local-total").value;
-    const maxLocalTotalText = $("#brand-result-max-local-total").value;
-    const minimumTotal = minTotalText === "" ? null : Math.max(0, Number(minTotalText));
-    const maximumTotal = maxTotalText === "" ? null : Math.max(0, Number(maxTotalText));
-    const minimumLocalTotal = minLocalTotalText === "" ? null : Math.max(0, Number(minLocalTotalText));
-    const maximumLocalTotal = maxLocalTotalText === "" ? null : Math.max(0, Number(maxLocalTotalText));
-    const salesMatch = $("#brand-result-sales-match").value;
-    const dataOption = $("#brand-result-data-option").value;
+    const minimumTotal = Math.max(30, Number($("#brand-result-min-total").value) || 30);
+    const minimumLocalTotal = Math.max(30, Number($("#brand-result-min-local-total").value) || 30);
     currentExplorerProducts = allProducts.filter((product) => {
-      const chinaFilterActive = minimumTotal !== null || maximumTotal !== null;
-      const localFilterActive = minimumLocalTotal !== null || maximumLocalTotal !== null;
-      const chinaMatches = product.hasTotalSalesData
-        && (minimumTotal === null || Number(product.totalSales) >= minimumTotal)
-        && (maximumTotal === null || Number(product.totalSales) <= maximumTotal);
-      const localMatches = product.hasLocalTotalSalesData
-        && (minimumLocalTotal === null || Number(product.localTotalSales) >= minimumLocalTotal)
-        && (maximumLocalTotal === null || Number(product.localTotalSales) <= maximumLocalTotal);
-      const activeMatches = [
-        ...(chinaFilterActive ? [chinaMatches] : []),
-        ...(localFilterActive ? [localMatches] : []),
-      ];
-      const salesMatches = activeMatches.length === 0
-        || (salesMatch === "all" ? activeMatches.every(Boolean) : activeMatches.some(Boolean));
       return (!category || (product.categoryName || product.category || "") === category)
-        && salesMatches
-        && (dataOption !== "available" || (product.hasTotalSalesData && product.hasLocalTotalSalesData))
-        && (dataOption !== "missing" || !product.hasTotalSalesData || !product.hasLocalTotalSalesData);
+        && totalSalesAndMatched(product, minimumTotal, minimumLocalTotal);
     });
     const sort = $("#brand-result-sort").value;
-    currentExplorerProducts.sort((left, right) => sort === "total-asc"
-      ? Number(left.totalSales || 0) - Number(right.totalSales || 0)
-      : sort === "local-total-desc"
-        ? (Number(right.localTotalSales || 0) - Number(left.localTotalSales || 0))
-          || (Number(right.totalSales || 0) - Number(left.totalSales || 0))
-        : sort === "local-total-asc"
-          ? Number(left.localTotalSales || 0) - Number(right.localTotalSales || 0)
-          : Number(right.totalSales || 0) - Number(left.totalSales || 0));
+    currentExplorerProducts.sort((left, right) => sort === "china-desc"
+      ? Number(right.totalSales || 0) - Number(left.totalSales || 0)
+      : (Number(right.localTotalSales || 0) - Number(left.localTotalSales || 0))
+        || (Number(right.totalSales || 0) - Number(left.totalSales || 0)));
     $("#explorer-result-count").textContent = `${currentExplorerProducts.length.toLocaleString("ko-KR")}개 표시 / 전체 ${allProducts.length.toLocaleString("ko-KR")}개`;
     $("#brand-result-rows").innerHTML = currentExplorerProducts.length ? currentExplorerProducts.map((product, index) => `
       <article class="seller-result-row">
@@ -1440,16 +1413,13 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
     });
     updateBrandSelection();
   };
-  ["#brand-result-category", "#brand-result-min-total", "#brand-result-max-total", "#brand-result-min-local-total", "#brand-result-max-local-total", "#brand-result-sales-match", "#brand-result-data-option", "#brand-result-sort"]
+  ["#brand-result-category", "#brand-result-sort"]
     .forEach((selector) => $(selector).addEventListener("input", renderRows));
   $("#brand-result-reset").addEventListener("click", () => {
     $("#brand-result-category").value = "";
-    $("#brand-result-min-total").value = "";
-    $("#brand-result-max-total").value = "";
-    $("#brand-result-min-local-total").value = "";
-    $("#brand-result-max-local-total").value = "";
-    $("#brand-result-sales-match").value = "any";
-    $("#brand-result-data-option").value = "";
+    $("#brand-result-min-total").value = "30";
+    $("#brand-result-min-local-total").value = "30";
+    $("#brand-result-sort").value = "local-desc";
     renderRows();
   });
   $("#brand-select-visible").addEventListener("change", (event) => {
@@ -2069,9 +2039,8 @@ $("#excel-preview-filters")?.addEventListener("keydown", (event) => {
   void showExcelPreview(activeExcelPreview.file, 0, currentExcelPreviewFilters());
 });
 $("#excel-filter-reset")?.addEventListener("click", () => {
-  $("#excel-filter-min-total").value = "";
-  $("#excel-filter-min-local-total").value = "";
-  $("#excel-filter-match").value = "any";
+  $("#excel-filter-min-total").value = "30";
+  $("#excel-filter-min-local-total").value = "30";
   if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, 0, currentExcelPreviewFilters());
 });
 $("#brand-download-clear")?.addEventListener("click", async () => {
@@ -2308,7 +2277,13 @@ $("#brand-search").addEventListener("click", async () => {
     status.textContent = missingCount
       ? `수집 완료 · 판매자센터 표시 총계 ${sourceTotal.toLocaleString("ko-KR")}건 · 상품번호/SPU 기준 고유 상품 ${products.length.toLocaleString("ko-KR")}개 · 표시 총계 차이 ${missingCount.toLocaleString("ko-KR")}건`
       : `판매자센터 원본 ${sourceTotal.toLocaleString("ko-KR")}건 전체 수집 완료 · POIZON API ${apiProducts.length.toLocaleString("ko-KR")}건과 품번 연결`;
-    renderBrandSellerResults(`${brand?.name || ""} 브랜드 검색`, products, sourceTotal);
+    const sellerCount = sellerResult.products.filter((product) => totalSalesAndMatched(product, 30, 30)).length;
+    const programCount = products.filter((product) => totalSalesAndMatched(product, 30, 30)).length;
+    renderBrandSellerResults(`${brand?.name || ""} 브랜드 검색`, products, sourceTotal, {
+      sellerCount,
+      programCount,
+      difference: Math.abs(sellerCount - programCount),
+    });
   } finally {
     brandProgressActive = false;
     button.disabled = false;

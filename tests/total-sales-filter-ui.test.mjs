@@ -4,24 +4,23 @@ import test from "node:test";
 
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
 
-test("brand results expose separate China and local-seller total-sales filters", () => {
-  assert.match(renderer, /id="brand-result-min-total"[^>]+value="50"[^>]+중국 총 판매량 최소/);
-  assert.match(renderer, /id="brand-result-min-local-total"[^>]+value="50"[^>]+현지 판매자 총 판매량 최소/);
-  assert.match(renderer, /id="brand-result-max-local-total"[^>]+현지 판매자 총 판매량 최대/);
-  assert.match(renderer, /id="brand-result-sales-match"/);
-  assert.match(renderer, /둘 중 하나 충족 \(OR\)/);
+test("brand results fix both total-sales filters to 30 and AND", () => {
+  assert.match(renderer, /id="brand-result-min-total"[^>]+value="30"[^>]+readonly/);
+  assert.match(renderer, /id="brand-result-min-local-total"[^>]+value="30"[^>]+readonly/);
   assert.match(renderer, /두 조건 모두 충족 \(AND\)/);
+  assert.doesNotMatch(renderer, /id="brand-result-sales-match"/);
+  assert.doesNotMatch(renderer, /둘 중 하나 충족 \(OR\)/);
 });
 
-test("local total-sales filter uses localTotalSales instead of local 30-day sales", () => {
+test("fixed AND uses both total-sales metrics and compares source counts", () => {
   const start = renderer.indexOf("function renderBrandSellerResults");
   const end = renderer.indexOf("function clearExplorerResults", start);
   const source = renderer.slice(start, end);
 
-  assert.match(source, /product\.hasLocalTotalSalesData/);
-  assert.match(source, /Number\(product\.localTotalSales\) >= minimumLocalTotal/);
-  assert.match(source, /activeMatches\.some\(Boolean\)/);
-  assert.match(source, /activeMatches\.every\(Boolean\)/);
-  assert.match(source, /현지 판매자 총 판매량 내림차순/);
-  assert.match(source, /class="seller-local-total-sales"/);
+  assert.match(renderer, /Boolean\(product\?\.hasTotalSalesData\)/);
+  assert.match(renderer, /Boolean\(product\?\.hasLocalTotalSalesData\)/);
+  assert.match(renderer, /Number\(product\.totalSales\) >= chinaMinimum/);
+  assert.match(renderer, /Number\(product\.localTotalSales\) >= localMinimum/);
+  assert.match(source, /판매자센터 AND/);
+  assert.match(source, /프로그램 AND/);
 });

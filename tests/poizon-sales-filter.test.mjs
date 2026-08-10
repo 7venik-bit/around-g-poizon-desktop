@@ -87,3 +87,19 @@ test("supports AND and minimum/maximum ranges in the Excel preview", () => {
 
   assert.deepEqual(result.entries.map((entry) => entry.values[0]), ["A"]);
 });
+
+test("fixed total-sales preview requires both China and local values", () => {
+  const headers = ["SPU ID", "중국 총 판매량", "현지 판매자 총 판매량"];
+  const rows = [
+    ["A", "30+", "30+"],
+    ["B", "100+", "--"],
+    ["C", "29", "80+"],
+  ];
+  const result = filterPoizonPreviewRows(headers, rows, {
+    fixedTotalAnd: true,
+    minimumTotal: 30,
+    minimumLocalTotal: 30,
+  });
+  assert.equal(result.matchMode, "all");
+  assert.deepEqual(result.entries.map((entry) => entry.values[0]), ["A"]);
+});

@@ -141,9 +141,9 @@
               <div class="excel-preview-head-actions"><button id="excel-view-products" type="button" class="active">상품 보기</button><button id="excel-view-raw" type="button">원본 데이터 보기</button><button id="excel-preview-close" type="button">← 파일 목록으로</button></div>
             </div>
             <div id="excel-preview-filters" class="excel-preview-filters">
-              <label><span>중국 총 판매량</span><input id="excel-filter-min-total" type="number" min="0" value="50" placeholder="최소 판매량"></label>
-              <label><span>현지 판매자 총 판매량</span><input id="excel-filter-min-local-total" type="number" min="0" value="50" placeholder="최소 판매량"></label>
-              <label><span>필터 조건</span><select id="excel-filter-match" title="두 판매량 조건 결합 방식"><option value="any">둘 중 하나 충족 (OR)</option><option value="all">두 조건 모두 충족 (AND)</option></select></label>
+              <label><span>중국 총 판매량</span><input id="excel-filter-min-total" type="number" min="30" value="30" readonly title="30건 이상 고정"></label>
+              <label><span>현지 판매자 총 판매량</span><input id="excel-filter-min-local-total" type="number" min="30" value="30" readonly title="30건 이상 고정"></label>
+              <strong class="excel-filter-fixed">두 조건 모두 충족 (AND)</strong>
               <button id="excel-filter-apply" type="button" class="primary">필터 적용</button>
               <button id="excel-filter-reset" type="button">전체 보기</button>
               <small id="excel-filter-status"></small>
