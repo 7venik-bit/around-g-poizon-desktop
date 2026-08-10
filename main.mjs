@@ -3976,25 +3976,8 @@ async function automateSellerBrandExport(input = {}) {
 
   const productFrame = sellerWindowFrames().find((frame) => frame.routingId === sellerProductFrameRoutingId)
     || sellerWindow.webContents.mainFrame;
-  const exportConfirmation = await confirmSellerExportRequestPhysical(productFrame).catch(() => ({
-    ok: false,
-    confirmationObserved: false,
-    confirmationClicked: false,
-    requestAcknowledged: false,
-  }));
-  if (!exportConfirmation?.ok || !exportConfirmation?.requestAcknowledged) {
-    const diagnosticPath = await captureSellerDiagnostic(brandName, "export-confirmation-failed");
-    pendingBrandExportName = "";
-    pendingBrandExportJobId = "";
-    brandExportJobPending = false;
-    return {
-      ok: false,
-      code: "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED",
-      message: `${brandName} 전체 내보내기 최종 확인을 완료하지 못했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
-      diagnostics: { ...exportConfirmation, path: diagnosticPath },
-    };
-  }
-
+  // POIZON registers the export immediately after "전체 내보내기".
+  // The observed flow has no mandatory second confirmation dialog.
   const downloadCenterShortcut = await clickSellerDownloadCenterShortcutPhysical(productFrame).catch(() => ({
     ok: false,
     clicked: false,
