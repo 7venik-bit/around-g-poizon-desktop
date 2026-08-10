@@ -1,6 +1,6 @@
 {
   "name": "around-g-poizon-desktop",
-  "version": "2.10.139",
+  "version": "2.10.140",
   "description": "Around G POIZON local sourcing workspace",
   "type": "module",
   "main": "bootstrap.mjs",

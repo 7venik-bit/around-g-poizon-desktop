@@ -434,9 +434,11 @@ function updateExcelPreviewSelectionUi(pageKeys = []) {
   const selectPage = $("#excel-preview-select-page");
   const count = $("#excel-preview-selected-count");
   const clear = $("#excel-preview-selection-clear");
+  const profit = $("#excel-preview-profit");
   const search = $("#excel-preview-search-selected");
   if (count) count.textContent = `${selectedExcelPreviewProducts.size.toLocaleString("ko-KR")}개 제품 선택`;
   if (clear) clear.disabled = selectedExcelPreviewProducts.size === 0;
+  if (profit) profit.disabled = selectedExcelPreviewProducts.size === 0;
   if (search) {
     search.disabled = selectedExcelPreviewProducts.size === 0 && !excelPreviewBatchSearching;
     search.textContent = excelPreviewBatchSearching ? "검색 중지" : "선택 상품 일괄 검색";
@@ -1949,6 +1951,26 @@ $("#excel-preview-grid")?.addEventListener("click", (event) => {
   if (!button) return;
   void searchExcelPreviewProduct(decodeURIComponent(button.dataset.excelSearchProduct));
 });
+$("#excel-preview-profit")?.addEventListener("click", () => {
+  const products = [...selectedExcelPreviewProducts]
+    .map((key) => excelPreviewProductCache.get(key))
+    .filter(Boolean);
+  if (!products.length) return;
+  const pricedProducts = products.filter((product) => Number(product.averagePrice || 0) > 0);
+  const totalPurchasePrice = pricedProducts.reduce((sum, product) => sum + Number(product.averagePrice || 0), 0);
+  if (!totalPurchasePrice) {
+    $("#excel-filter-status").textContent = "선택 상품에 평균가격이 없어 수익을 계산할 수 없습니다.";
+    return;
+  }
+  $("#cost").value = String(Math.round(totalPurchasePrice));
+  const summary = $("#profit-selection-summary");
+  if (summary) {
+    summary.hidden = false;
+    summary.textContent = `선택 ${products.length.toLocaleString("ko-KR")}개 중 가격 확인 ${pricedProducts.length.toLocaleString("ko-KR")}개 · 평균가격 합계 ${money(totalPurchasePrice)} · 목표 수익률 10%`;
+  }
+  document.querySelector('.nav[data-view="profit"]')?.click();
+  calculate(10);
+});
 $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   if (excelPreviewBatchSearching) {
     excelPreviewBatchSearching = false;
@@ -2283,14 +2305,19 @@ $("#entry-save").addEventListener("click", async (event) => {
   await refresh();
 });
 
-function calculate(margin) {
-  const cost = Number($("#cost").value || 0) + Number($("#shipping").value || 0) + Number($("#extra").value || 0);
-  const fee = Number($("#fee").value || 0) / 100;
-  const target = Number(margin || 0) / 100;
+function profitResult(costValue, shippingValue, extraValue, feePercent, marginPercent) {
+  const cost = Number(costValue || 0) + Number(shippingValue || 0) + Number(extraValue || 0);
+  const fee = Number(feePercent || 0) / 100;
+  const target = Number(marginPercent || 0) / 100;
   const price = cost > 0 && 1 - fee - target > 0 ? Math.ceil(cost / (1 - fee - target) / 100) * 100 : 0;
-  $("#sale-price").textContent = money(price);
-  $("#total-cost").textContent = money(cost);
-  $("#net-profit").textContent = money(price * (1 - fee) - cost);
+  return { cost, price, netProfit: price * (1 - fee) - cost };
+}
+
+function calculate(margin) {
+  const result = profitResult($("#cost").value, $("#shipping").value, $("#extra").value, $("#fee").value, margin);
+  $("#sale-price").textContent = money(result.price);
+  $("#total-cost").textContent = money(result.cost);
+  $("#net-profit").textContent = money(result.netProfit);
 }
 document.querySelectorAll("[data-margin]").forEach((button) => button.addEventListener("click", () => calculate(button.dataset.margin)));
 

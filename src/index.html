@@ -152,6 +152,7 @@
               <label><input id="excel-preview-select-page" type="checkbox"> 현재 페이지 전체 선택</label>
               <strong id="excel-preview-selected-count">0개 제품 선택</strong>
               <button id="excel-preview-selection-clear" type="button" disabled>선택 해제</button>
+              <button id="excel-preview-profit" type="button" disabled>수익계산</button>
               <button id="excel-preview-search-selected" type="button" class="primary" disabled>선택 상품 일괄 검색</button>
             </div>
             <div id="excel-preview-loading" class="excel-preview-loading">Excel을 불러오는 중입니다.</div>
@@ -183,6 +184,7 @@
       <section id="profit" class="view">
         <div class="grid two">
           <div class="panel"><small>MARGIN CALCULATOR</small><h2>예상 수익 계산</h2>
+            <p id="profit-selection-summary" class="profit-selection-summary" hidden></p>
             <label>매입가<input id="cost" type="number" min="0" placeholder="0"></label>
             <label>국제·국내 배송비<input id="shipping" type="number" min="0" placeholder="0"></label>
             <label>기타 비용<input id="extra" type="number" min="0" placeholder="0"></label>

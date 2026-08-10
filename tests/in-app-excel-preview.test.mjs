@@ -77,6 +77,16 @@ test("brand Excel preview supports popular-list style product selection", () => 
   assert.match(cssSource, /\.excel-product-select-column/);
 });
 
+test("selected Excel products calculate profit immediately from their average prices", () => {
+  assert.match(htmlSource, /id="excel-preview-selection-clear"[\s\S]*id="excel-preview-profit"[^>]*>수익계산<[\s\S]*id="excel-preview-search-selected"/);
+  assert.match(htmlSource, /id="profit-selection-summary"/);
+  assert.match(rendererSource, /const totalPurchasePrice = pricedProducts\.reduce/);
+  assert.match(rendererSource, /document\.querySelector\('\.nav\[data-view="profit"\]'\)\?\.click\(\)/);
+  assert.match(rendererSource, /calculate\(10\)/);
+  assert.match(rendererSource, /function profitResult/);
+  assert.match(cssSource, /#excel-preview-profit/);
+});
+
 test("official-store verification supports every registered URL family and embedded article metadata", () => {
   assert.match(mainSource, /p\|pd\|products\?\|goods\|product/);
   assert.match(mainSource, /productDetail\\\\\.action/);
