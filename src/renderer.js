@@ -1080,7 +1080,10 @@ function renderOfficialDomainAudit(audit = {}) {
           : audit.running ? "검증 진행 중" : "대기";
   const attempt = Number(audit.attempt || 0);
   const current = audit.currentBrand ? ` · 현재 ${audit.currentBrand}${phaseLabel ? ` · ${phaseLabel}` : ""}${attempt === 2 ? " · 2차 확인" : ""}` : "";
-  status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%) · 공식몰·상품검색 확인 ${verified.toLocaleString("ko-KR")} · 공식몰 확인·상품검색 연결 불가 ${unsupported.toLocaleString("ko-KR")} · 공식몰 추가 확인 필요 ${pending.toLocaleString("ko-KR")} · 국내 공식몰 없음 확인 ${noOfficialStore.toLocaleString("ko-KR")}${current}`;
+  const notFoundExcel = audit.notFoundExcelPath
+    ? ` · 네이버 공식몰 미발견 Excel ${Number(audit.notFoundCount || 0).toLocaleString("ko-KR")}개 저장`
+    : audit.notFoundExportError ? " · 미발견 Excel 저장 실패" : "";
+  status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%) · 공식몰·상품검색 확인 ${verified.toLocaleString("ko-KR")} · 공식몰 확인·상품검색 연결 불가 ${unsupported.toLocaleString("ko-KR")} · 공식몰 미발견·재확인 필요 ${pending.toLocaleString("ko-KR")}${current}${notFoundExcel}`;
   button.dataset.running = audit.running ? "true" : "false";
   button.textContent = audit.running ? "검증 일시 정지" : inspected ? "검증 계속" : "전체 검증 시작";
   button.classList.toggle("primary", !audit.running);
