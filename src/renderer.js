@@ -457,6 +457,11 @@ function excelProductMetric(raw, value) {
   return text(String(raw || "").trim() || Number(value || 0).toLocaleString("ko-KR"));
 }
 
+function verifiedExcelProductPoizonPrice(product) {
+  if (!product?.transactionPriceVerified) return 0;
+  return Number(product.averagePrice || 0);
+}
+
 function renderExcelProductRows(file, products = []) {
   const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.articleNumber || product.spuId || product.key}`);
   products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
@@ -464,13 +469,14 @@ function renderExcelProductRows(file, products = []) {
   $("#excel-preview-rows").innerHTML = products.length ? products.map((product, index) => {
     const key = pageKeys[index];
     const result = excelPreviewSearchResults.get(key);
+    const poizonPrice = verifiedExcelProductPoizonPrice(product);
     const status = result?.loading ? "검색 중…" : result?.error ? "검색 실패" : result ? `${(result.products || []).length}개 결과` : "상품 검색";
     return `<tr class="excel-product-row">
       <td class="excel-product-select-column"><input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택"></td>
       <td class="excel-product-image">${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : "-"}</td>
       <td><b>${text(product.articleNumber || "-")}</b></td><td title="${text(product.title)}">${text(product.title || "-")}</td>
       <td>${text(product.brandName || "-")}</td><td title="${text(product.categoryName)}">${text(product.categoryName || "-")}</td>
-      <td>${product.averagePrice ? money(product.averagePrice) : "-"}</td>
+      <td title="${text(poizonPrice ? `${product.transactionOption || "옵션"} · 판매량 ${product.transactionOptionSales || 0}건` : (result?.poizonTransaction?.message || "거래내역 확인 전"))}">${poizonPrice ? money(poizonPrice) : result?.loading ? "확인 중…" : result?.poizonTransaction ? "확인 실패" : "확인 전"}</td>
       <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td><td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
       <td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${result?.loading ? "disabled" : ""}>${status}</button></td>
     </tr>${result && !result.loading ? `<tr class="excel-product-search-detail"><td colspan="10">${renderDomestic(result)}</td></tr>` : ""}`;
@@ -490,7 +496,11 @@ async function searchExcelPreviewProduct(key) {
   if (poizonTransaction?.ok && Number(poizonTransaction.price || 0) > 0) {
     product.averagePrice = Number(poizonTransaction.price);
     product.transactionSales30d = Number(poizonTransaction.sales30d || 0);
+    product.transactionOption = String(poizonTransaction.option || "");
+    product.transactionOptionSales = Number(poizonTransaction.optionSales || 0);
     product.transactionPriceVerified = true;
+  } else {
+    product.transactionPriceVerified = false;
   }
   const query = [product.brandName, product.articleNumber, product.title].filter(Boolean).join(" ");
   const response = await window.aroundG.searchDomestic({
@@ -1983,7 +1993,7 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
       .sort((left, right) => Number(right?.inStock) - Number(left?.inStock) || Number(left.price) - Number(right.price))[0];
     const domesticSource = (result?.sources || []).find((source) => source?.store === domestic?.store);
     const purchaseUrl = String(domestic?.url || domesticSource?.officialProductUrl || domesticSource?.searchUrl || "");
-    const poizonPrice = Number(product?.averagePrice || 0);
+    const poizonPrice = verifiedExcelProductPoizonPrice(product);
     const domesticPrice = Number(domestic?.price || 0);
     const totalCost = poizonPrice + shipping + extra;
     const netProfit = domesticPrice > 0 ? domesticPrice * (1 - feeRate) - totalCost : 0;
