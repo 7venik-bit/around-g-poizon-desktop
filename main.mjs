@@ -5123,6 +5123,22 @@ async function lookupSellerTransactionPrice(input = {}) {
   }
   sellerWindow.show();
   sellerWindow.focus();
+  await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getClientRects().length > 0;
+    const back = [...document.querySelectorAll("button,a,[role=button],span")].filter((element) =>
+      visible(element) && element.getBoundingClientRect().left > innerWidth * 0.55
+    ).find((element) => /뒤로가기/.test(element.textContent.trim()));
+    const close = [...document.querySelectorAll("button,[role=button]")].filter((element) =>
+      visible(element) && element.getBoundingClientRect().left > innerWidth * 0.55
+    )
+      .find((element) => /닫기|close/i.test((element.getAttribute("aria-label") || "") + " " + (element.title || "")));
+    const target = back?.closest("button,a,[role=button]") || back || close;
+    if (!target) return false;
+    target.click();
+    await wait(500);
+    return true;
+  })()`, true).catch(() => false);
   const searched = await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
@@ -5151,9 +5167,15 @@ async function lookupSellerTransactionPrice(input = {}) {
       const salesIndex = headers.findIndex((header) => /최근\s*30일\s*판매량/.test(header) && !/현지/.test(header));
       const salesRaw = salesIndex >= 0 ? String(cells[salesIndex]?.innerText || "") : "";
       const rowText = String(row.innerText || "");
-      const dataButton = [...row.querySelectorAll("a,button,[role=button],span")].filter(visible)
+      const dataLabel = [...row.querySelectorAll("a,button,[role=button],span")].filter(visible)
         .find((element) => /상품\s*데이터/.test(element.textContent.trim()));
-      const expandButton = [...row.querySelectorAll("button,[role=button]")].filter(visible)[0];
+      const dataButton = dataLabel?.closest("a,button,[role=button]") || dataLabel;
+      const expandButton = [...row.querySelectorAll("button,[role=button]")].filter((element) => {
+        if (!visible(element) || element.querySelector('input[type="checkbox"]')) return false;
+        const rect = element.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        return rect.width <= 56 && rect.height <= 56 && rect.left < rowRect.left + 180;
+      })[0];
       const target = dataButton || expandButton || row;
       target.click();
       return { ok: true, salesRaw, rowText };
@@ -5185,13 +5207,34 @@ async function lookupSellerTransactionPrice(input = {}) {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      const target = [...document.querySelectorAll("button,a,[role=tab],span,div")].filter(visible)
+      const panels = [...document.querySelectorAll("[role=dialog],.ant-drawer,.ant-drawer-content,aside,section,div")]
+        .filter((element) => {
+          if (!visible(element)) return false;
+          const rect = element.getBoundingClientRect();
+          return rect.left > innerWidth * 0.55 && rect.width > 260
+            && /상품\s*데이터|입찰\s*현황/.test(element.innerText || "")
+            && String(element.innerText || "").toUpperCase().replace(/[^A-Z0-9]/g, "").includes(${JSON.stringify(articleNumber.toUpperCase().replace(/[^A-Z0-9]/g, ""))});
+        })
+        .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
+      const panel = panels[0];
+      const label = [...(panel?.querySelectorAll("[role=tab],button,a,span,div") || [])].filter(visible)
         .filter((element) => /^(?:거래\s*내역|거래\s*기록)$/.test(element.textContent.trim()))
         .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
+      const target = label?.closest("[role=tab],button,a") || label;
       if (target) {
+        target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+        target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
         target.click();
-        await wait(800);
-        return true;
+        for (let confirm = 0; confirm < 20; confirm += 1) {
+          await wait(200);
+          const active = target.getAttribute("aria-selected") === "true"
+            || /active|selected/.test(target.className || "")
+            || [...(panel?.querySelectorAll("[role=tab],button,a,span") || [])]
+              .some((element) => visible(element)
+                && /^(?:거래\s*내역|거래\s*기록)$/.test(element.textContent.trim())
+                && (element.getAttribute("aria-selected") === "true" || /active|selected/.test(element.className || "")));
+          if (active || /거래\s*유형|거래\s*시간|최근\s*거래/.test(panel?.innerText || "")) return true;
+        }
       }
       await wait(200);
     }
@@ -5210,10 +5253,17 @@ async function lookupSellerTransactionPrice(input = {}) {
         .filter((element) => visible(element) && /거래\s*내역|거래\s*기록/.test(element.innerText || ""))
         .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
       const panel = panels[0] || document.body;
-      const rows = [...panel.querySelectorAll("tr,[role=row],li")].filter(visible).map((row) => ({
+      const candidates = [...panel.querySelectorAll("tr,[role=row],li,div,span,p")].filter((row) => {
+        if (!visible(row)) return false;
+        const rect = row.getBoundingClientRect();
+        const ownText = String(row.innerText || "");
+        if (rect.height > 140 || !/[₩￦원]/.test(ownText)) return false;
+        return ![...row.children].some((child) => /[₩￦원]/.test(child.innerText || "") && child.getBoundingClientRect().height <= 140);
+      });
+      const rows = candidates.map((row) => ({
         text: String(row.innerText || ""),
         cells: [...row.querySelectorAll("td,[role=gridcell]")].map((cell) => String(cell.innerText || "")),
-      })).filter((row) => /[₩￦원]/.test(row.text));
+      }));
       const scroller = [panel, ...panel.querySelectorAll("div,section")]
         .filter((element) => element.scrollHeight > element.clientHeight + 20)
         .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0];
@@ -5229,6 +5279,14 @@ async function lookupSellerTransactionPrice(input = {}) {
     await wait(250);
   }
   const result = highestQualifiedTransactionPrice({ sales30d: salesRaw, rows: capturedRows });
+  await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
+    const visible = (element) => element && element.getClientRects().length > 0;
+    const labels = [...document.querySelectorAll("button,a,[role=button],span")].filter(visible);
+    const back = labels.find((element) => /뒤로가기/.test(element.textContent.trim()));
+    const target = back?.closest("button,a,[role=button]") || back;
+    if (target) target.click();
+    return Boolean(target);
+  })()`, true).catch(() => false);
   showCollectorWindow();
   if (!result.price) {
     return { ok: false, eligible: true, code: "TRANSACTION_PRICE_NOT_FOUND", sales30d: result.sales30d, message: `${articleNumber} 거래내역 가격을 찾지 못했습니다.` };
