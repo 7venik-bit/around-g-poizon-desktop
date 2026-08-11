@@ -1285,7 +1285,8 @@ function publicConfig() {
 
 const SELLER_EXPORT_POLL_INTERVAL_MS = 60 * 1000;
 const SELLER_MULTI_EXPORT_POLL_INTERVAL_MS = 10 * 1000;
-const SELLER_EXPORT_MONITOR_TIMEOUT_MS = 20 * 60 * 1000;
+const SELLER_EXPORT_MONITOR_DELAY_WARNING_MS = 20 * 60 * 1000;
+const SELLER_EXPORT_MONITOR_TIMEOUT_MS = 60 * 60 * 1000;
 const RESTORED_PENDING_JOB_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const PROCESSED_BRAND_EXPORT_SUFFIX = "_총판매량50이상_OR_정리.xlsx";
 
@@ -2433,19 +2434,6 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
   const pollIntervalMs = SELLER_MULTI_EXPORT_POLL_INTERVAL_MS;
   try {
     while (brandExportJobs.size) {
-      const now = Date.now();
-      for (const [jobId, job] of [...brandExportJobs.entries()]) {
-        if (now - Number(job?.createdAt || now) < timeoutMs) continue;
-        brandExportJobs.delete(jobId);
-        if (activeBrandDownloadJobId === jobId) activeBrandDownloadJobId = "";
-        mainWindow?.webContents.send("brand-export:error", {
-          brandName: job.brandName,
-          jobId,
-          jobState: "실패 · POIZON 성공 대기 20분 초과",
-          message: `${job.brandName} · 작업번호 ${jobId} · POIZON 성공 상태를 20분 동안 확인하지 못해 감시를 종료했습니다.`,
-        });
-      }
-      if (!brandExportJobs.size) break;
       const expectedIds = [...brandExportJobs.keys()];
       const statuses = await readSellerMonitorStatuses(expectedIds);
       for (const status of statuses) {
@@ -2516,6 +2504,32 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
             message: `${currentJob.brandName} · 작업번호 ${ready.jobId} · 모든 다운로드센터 프레임에서 버튼을 다시 찾습니다.`,
           });
         }
+      }
+      const statusByJobId = new Map(statuses.map((status) => [status.jobId, status]));
+      for (const [jobId, job] of [...brandExportJobs.entries()]) {
+        const age = statusCheckedAt - Number(job?.createdAt || statusCheckedAt);
+        const status = statusByJobId.get(jobId);
+        if (age >= SELLER_EXPORT_MONITOR_DELAY_WARNING_MS && !job.delayWarningSent) {
+          job.delayWarningSent = true;
+          mainWindow?.webContents.send("brand-export:progress", {
+            status: "monitoring",
+            monitorSource: "dedicated-window",
+            brandName: job.brandName,
+            jobId,
+            jobState: "POIZON 처리 지연 · 감시 계속",
+            message: `${job.brandName} · 작업번호 ${jobId} · 20분이 지났지만 다운로드가 완료될 때까지 계속 감시합니다.`,
+          });
+        }
+        const poizonAlreadySucceeded = Boolean(status?.workSucceeded && status?.completionConfirmed);
+        if (age < timeoutMs || poizonAlreadySucceeded || job.downloadStarted || job.downloadRequestedAt) continue;
+        brandExportJobs.delete(jobId);
+        if (activeBrandDownloadJobId === jobId) activeBrandDownloadJobId = "";
+        mainWindow?.webContents.send("brand-export:error", {
+          brandName: job.brandName,
+          jobId,
+          jobState: "실패 · POIZON 성공 대기 60분 초과",
+          message: `${job.brandName} · 작업번호 ${jobId} · POIZON 성공 상태를 60분 동안 확인하지 못해 감시를 종료했습니다.`,
+        });
       }
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
       const monitor = ensureSellerMonitorWindow();

@@ -9,10 +9,13 @@ const [mainSource, rendererSource] = await Promise.all([
 
 
 
-test("download-center jobs stop after twenty minutes while all registered jobs are monitored together", () => {
-  assert.match(mainSource, /SELLER_EXPORT_MONITOR_TIMEOUT_MS = 20 \* 60 \* 1000/);
+test("download-center jobs warn after twenty minutes and keep successful jobs until download", () => {
+  assert.match(mainSource, /SELLER_EXPORT_MONITOR_DELAY_WARNING_MS = 20 \* 60 \* 1000/);
+  assert.match(mainSource, /SELLER_EXPORT_MONITOR_TIMEOUT_MS = 60 \* 60 \* 1000/);
   assert.match(mainSource, /while \(brandExportJobs\.size\)/);
-  assert.match(mainSource, /POIZON 성공 대기 20분 초과/);
+  assert.match(mainSource, /POIZON 처리 지연 · 감시 계속/);
+  assert.match(mainSource, /poizonAlreadySucceeded/);
+  assert.match(mainSource, /POIZON 성공 대기 60분 초과/);
   assert.match(mainSource, /const expectedIds = \[\.\.\.brandExportJobs\.keys\(\)\]/);
 });
 
