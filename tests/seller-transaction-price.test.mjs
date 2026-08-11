@@ -33,6 +33,22 @@ test("전체 거래내역에서 판매량 30건 이상인 옵션 중 최고가�
   });
 });
 
+test("BD7632 실제 옵션 표에서는 300 사이즈를 제외하고 290 사이즈 75,000원을 선택한다", () => {
+  const rows = [
+    { option: "270", price: 70000, sales: "400+" },
+    { option: "275", price: 70000, sales: "400+" },
+    { option: "280", price: 64000, sales: "300+" },
+    { option: "285", price: 73000, sales: "96" },
+    { option: "290", price: 75000, sales: "56" },
+    { option: "295", price: 73000, sales: "45" },
+    { option: "300", price: 79000, sales: "21" },
+  ];
+  const result = highestQualifiedOptionPrice({ rows, minimumSales: 30 });
+  assert.equal(result.price, 75000);
+  assert.equal(result.option, "290");
+  assert.equal(result.optionSales, 56);
+});
+
 test("거래내역은 최근 30일 판매량 30건 이상일 때 최고가격을 선택한다", () => {
   const rows = [
     { cells: ["₩95,000", "중국 일반판매", "225"] },
@@ -67,10 +83,12 @@ test("엑셀 상품 검색은 거래내역 검증 가격을 평균가격 필드�
   assert.match(main, /label\?\.closest\("\[role=tab\],button,a"\) \|\| label/);
   assert.match(main, /aria-selected/);
   assert.match(main, /뒤로가기/);
-  assert.match(main, /ALL_OPTIONS_NOT_SELECTED/);
+  assert.match(main, /OPTION_CONTROL_NOT_FOUND/);
   assert.match(main, /highestQualifiedOptionPrice\(\{ rows: uniqueRows, minimumSales: 30 \}\)/);
   assert.match(main, /includes\(.*articleNumber\.toUpperCase/);
   assert.match(preload, /lookupSellerTransactionPrice/);
   assert.match(renderer, /product\.averagePrice = Number\(poizonTransaction\.price\)/);
+  assert.match(renderer, /product\.transactionOptionSales = Number\(poizonTransaction\.optionSales/);
+  assert.match(renderer, /verifiedExcelProductPoizonPrice\(product\)/);
   assert.match(renderer, /<th>옵션별 최고가<\/th>/);
 });

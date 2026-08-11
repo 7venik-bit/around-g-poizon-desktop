@@ -5233,87 +5233,116 @@ async function lookupSellerTransactionPrice(input = {}) {
     showCollectorWindow();
     return { ok: false, code: "TRANSACTION_TAB_NOT_FOUND", message: `${articleNumber} 거래내역을 열지 못했습니다.` };
   }
-  const allOptionsSelected = await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const optionControl = await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
-    const panels = [...document.querySelectorAll("[role=dialog],.ant-drawer-content,.ant-drawer,aside,section,div")]
-      .filter((element) => visible(element) && /거래\s*내역|거래\s*기록/.test(element.innerText || ""))
-      .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
+    const panels = [...document.querySelectorAll(".ant-drawer-content,[role=dialog],aside,.ant-drawer,section")]
+      .filter((element) => {
+        if (!visible(element)) return false;
+        const rect = element.getBoundingClientRect();
+        return rect.left > innerWidth * 0.55 && rect.width > 240
+          && /거래\s*내역|거래\s*기록/.test(element.innerText || "");
+      }).sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
     const panel = panels[0] || document.body;
-    const native = [...panel.querySelectorAll("select")].find(visible);
-    if (native) {
-      const option = [...native.options].find((item) => /^전체(?:\s|\(|$)/.test(item.textContent.trim()));
-      if (!option) return false;
-      native.value = option.value;
-      native.dispatchEvent(new Event("input", { bubbles: true }));
-      native.dispatchEvent(new Event("change", { bubbles: true }));
-      await wait(500);
-      return true;
-    }
-    const controls = [...panel.querySelectorAll("[role=combobox],button,[aria-haspopup=listbox],input")].filter(visible);
-    const control = controls.find((element) => /전체|옵션\s*선택/.test((element.innerText || element.value || element.placeholder || "").trim()));
-    if (!control) return false;
-    control.click();
-    await wait(250);
-    const options = [...document.querySelectorAll("[role=option],li,div,span")].filter(visible)
+    const controls = [...panel.querySelectorAll("select,[role=combobox],button,[aria-haspopup=listbox],input,.ant-select-selector")].filter(visible);
+    const control = controls.find((element) => /전체|옵션\s*선택/.test((element.innerText || element.value || element.placeholder || element.parentElement?.innerText || "").trim()));
+    if (!control) return null;
+    const target = control.closest("select,[role=combobox],button,[aria-haspopup=listbox],.ant-select-selector") || control;
+    const rect = target.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, text: String(target.innerText || target.value || target.parentElement?.innerText || "") };
+  })()`, true).catch(() => null);
+  if (!optionControl) {
+    showCollectorWindow();
+    return { ok: false, code: "OPTION_CONTROL_NOT_FOUND", message: `${articleNumber} 거래내역의 옵션 선택창을 찾지 못했습니다.` };
+  }
+  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(optionControl.x), y: Math.round(optionControl.y) });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: Math.round(optionControl.x), y: Math.round(optionControl.y), button: "left", clickCount: 1 });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", x: Math.round(optionControl.x), y: Math.round(optionControl.y), button: "left", clickCount: 1 });
+  await wait(400);
+  const allOption = await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
+    const visible = (element) => element && element.getClientRects().length > 0;
+    const options = [...document.querySelectorAll("[role=option],.ant-select-item-option,li")].filter(visible)
       .filter((element) => /^전체(?:\s|\(|$)/.test(element.textContent.trim()))
       .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
     const option = options[0];
-    if (option) (option.closest("[role=option],li,button") || option).click();
-    await wait(500);
-    return /전체/.test((control.innerText || control.value || "") + " " + (option?.textContent || ""));
-  })()`, true).catch(() => false);
-  if (!allOptionsSelected) {
-    showCollectorWindow();
-    return { ok: false, code: "ALL_OPTIONS_NOT_SELECTED", message: `${articleNumber} 거래내역의 전체 옵션을 선택하지 못했습니다.` };
+    if (!option) return null;
+    const rect = option.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`, true).catch(() => null);
+  if (allOption) {
+    sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(allOption.x), y: Math.round(allOption.y) });
+    sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: Math.round(allOption.x), y: Math.round(allOption.y), button: "left", clickCount: 1 });
+    sellerWindow.webContents.sendInputEvent({ type: "mouseUp", x: Math.round(allOption.x), y: Math.round(allOption.y), button: "left", clickCount: 1 });
+  } else {
+    sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "ESC" });
+    sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "ESC" });
   }
+  await wait(700);
   const capturedRows = [];
   let previousScroll = -1;
   for (let pass = 0; pass < 40; pass += 1) {
     const capture = await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
       const visible = (element) => element && element.getClientRects().length > 0;
-      const panels = [...document.querySelectorAll("[role=dialog],.ant-drawer-content,.ant-drawer,aside,section,div")]
-        .filter((element) => visible(element) && /거래\s*내역|거래\s*기록/.test(element.innerText || ""))
-        .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
+      const panels = [...document.querySelectorAll(".ant-drawer-content,[role=dialog],aside,.ant-drawer,section")]
+        .filter((element) => {
+          if (!visible(element)) return false;
+          const rect = element.getBoundingClientRect();
+          return rect.left > innerWidth * 0.55 && rect.width > 240
+            && /거래\s*내역|거래\s*기록/.test(element.innerText || "");
+        }).sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
       const panel = panels[0] || document.body;
-      const candidates = [...panel.querySelectorAll("tr,[role=row],li,div")].filter((row) => {
-        if (!visible(row)) return false;
-        const rect = row.getBoundingClientRect();
-        const ownText = String(row.innerText || "");
-        const beforePrice = ownText.split(/[₩￦]/)[0].trim();
-        if (rect.height > 120 || rect.width < 180 || !beforePrice || !/[₩￦]/.test(ownText) || !/판매량/.test(ownText)) return false;
-        return ![...row.children].some((child) => {
-          const childText = String(child.innerText || "");
-          return visible(child) && child.getBoundingClientRect().width >= 180
-            && childText.split(/[₩￦]/)[0].trim() && /[₩￦]/.test(childText) && /판매량/.test(childText);
-        });
-      });
-      const rows = candidates.map((row) => {
-        const text = String(row.innerText || "").trim();
-        const option = text.split(/[₩￦]/)[0].trim().replace(/\s+/g, " ");
-        const priceBlocks = [...row.querySelectorAll("td,[role=gridcell],div,span")].filter((element) => {
-          const value = String(element.innerText || "");
-          return visible(element) && /[₩￦]/.test(value) && /판매량/.test(value)
-            && ![...element.children].some((child) => /[₩￦]/.test(child.innerText || "") && /판매량/.test(child.innerText || ""));
-        });
-        const firstPriceBlock = priceBlocks[0]?.innerText || text.slice(text.search(/[₩￦]/));
-        const price = Number((firstPriceBlock.match(/[₩￦]\s*([\d,]+)/)?.[1] || "").replace(/,/g, ""));
-        const sales = (firstPriceBlock.match(/판매량\s*(<?\s*[\d,]+)\+?/i)?.[1] || "").trim();
-        return { text, option, price, sales };
-      }).filter((row) => row.price && row.sales);
+      const leafText = [...panel.querySelectorAll("span,p,div,td")].filter((element) => {
+        if (!visible(element)) return false;
+        const value = String(element.innerText || "").trim();
+        if (!value || value.length > 80) return false;
+        return ![...element.children].some((child) => String(child.innerText || "").trim() === value);
+      }).map((element) => ({ element, text: String(element.innerText || "").trim(), rect: element.getBoundingClientRect() }));
+      const priceNodes = leafText.filter((node) => /^[₩￦]\s*[\d,]+(?:\s*-\s*[₩￦]?\s*[\d,]+)?$/.test(node.text));
+      const rows = [];
+      const grouped = [];
+      for (const node of priceNodes) {
+        let group = grouped.find((item) => Math.abs(item.y - node.rect.top) < 8);
+        if (!group) { group = { y: node.rect.top, prices: [] }; grouped.push(group); }
+        group.prices.push(node);
+      }
+      for (const group of grouped) {
+        const firstPrice = group.prices.sort((a, b) => a.rect.left - b.rect.left)[0];
+        const salesNode = leafText.filter((node) => /판매량\s*<?\s*[\d,]+\+?/i.test(node.text)
+          && Math.abs(node.rect.left - firstPrice.rect.left) < 65
+          && node.rect.top >= firstPrice.rect.top - 5 && node.rect.top <= firstPrice.rect.bottom + 34)
+          .sort((a, b) => a.rect.top - b.rect.top)[0];
+        const labels = leafText.filter((node) => node.rect.right <= firstPrice.rect.left + 8
+          && node.rect.left >= panel.getBoundingClientRect().left
+          && node.rect.top >= firstPrice.rect.top - 25 && node.rect.bottom <= (salesNode?.rect.bottom || firstPrice.rect.bottom + 30) + 10
+          && !/[₩￦]|판매량/.test(node.text))
+          .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
+        const option = [...new Set(labels.map((node) => node.text))].join(" ").replace(/\s+/g, " ").trim();
+        const price = Number((firstPrice.text.match(/[₩￦]\s*([\d,]+)/)?.[1] || "").replace(/,/g, ""));
+        const sales = (salesNode?.text.match(/판매량\s*(<?\s*[\d,]+)\+?/i)?.[1] || "").trim();
+        if (option && price && sales) rows.push({ text: option + " " + firstPrice.text + " " + salesNode.text, option, price, sales });
+      }
       const scroller = [panel, ...panel.querySelectorAll("div,section")]
-        .filter((element) => element.scrollHeight > element.clientHeight + 20)
-        .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0];
-      if (!scroller) return { rows, scrollTop: 0, atEnd: true };
-      const before = scroller.scrollTop;
-      scroller.scrollTop = Math.min(scroller.scrollHeight, before + Math.max(160, scroller.clientHeight * 0.75));
-      scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
-      return { rows, scrollTop: scroller.scrollTop, atEnd: scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4 };
+        .filter((element) => {
+          if (!visible(element) || element.scrollHeight <= element.clientHeight + 20) return false;
+          const rect = element.getBoundingClientRect();
+          return rect.left >= panel.getBoundingClientRect().left - 2 && rect.width > 180;
+        }).sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0];
+      if (!scroller) return { rows, scrollTop: 0, atEnd: true, scrollPoint: null };
+      const rect = scroller.getBoundingClientRect();
+      return {
+        rows,
+        scrollTop: scroller.scrollTop,
+        atEnd: scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4,
+        scrollPoint: { x: rect.left + rect.width / 2, y: Math.min(rect.bottom - 20, rect.top + rect.height * 0.72) },
+      };
     })()`, true).catch(() => ({ rows: [], atEnd: true, scrollTop: 0 }));
     capturedRows.push(...(capture.rows || []));
     if (capture.atEnd || Number(capture.scrollTop) === previousScroll) break;
     previousScroll = Number(capture.scrollTop);
-    await wait(250);
+    if (capture.scrollPoint) {
+      sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(capture.scrollPoint.x), y: Math.round(capture.scrollPoint.y) });
+      sellerWindow.webContents.sendInputEvent({ type: "mouseWheel", x: Math.round(capture.scrollPoint.x), y: Math.round(capture.scrollPoint.y), deltaY: 420, deltaX: 0, canScroll: true });
+    }
+    await wait(350);
   }
   const uniqueRows = [...new Map(capturedRows.map((row) => [`${row.option}|${row.price}|${row.sales}`, row])).values()];
   const result = highestQualifiedOptionPrice({ rows: uniqueRows, minimumSales: 30 });
