@@ -69,7 +69,7 @@ import {
 import { analyzeRenderedChannelProducts, queryDomesticProducts } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
 import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";
-import { highestQualifiedTransactionPrice } from "./services/seller-transaction-price.mjs";
+import { highestQualifiedOptionPrice } from "./services/seller-transaction-price.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
 import { findNewSellerExportJob } from "./services/brand-export-jobs.mjs";
 
@@ -5192,17 +5192,6 @@ async function lookupSellerTransactionPrice(input = {}) {
     const matches = [...rowText.matchAll(/(?:^|\s)(<?\s*[\d,]+)\+?(?=\s|$)/g)].map((match) => match[1]);
     salesRaw = matches.at(-1) || "";
   }
-  const salesCheck = highestQualifiedTransactionPrice({ sales30d: salesRaw, rows: [] });
-  if (!salesCheck.eligible) {
-    showCollectorWindow();
-    return {
-      ok: false,
-      eligible: false,
-      code: "RECENT_SALES_BELOW_30",
-      sales30d: salesCheck.sales30d,
-      message: `${articleNumber} 최근 30일 판매량이 30건 미만입니다.`,
-    };
-  }
   const transactionTab = await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
@@ -5244,6 +5233,40 @@ async function lookupSellerTransactionPrice(input = {}) {
     showCollectorWindow();
     return { ok: false, code: "TRANSACTION_TAB_NOT_FOUND", message: `${articleNumber} 거래내역을 열지 못했습니다.` };
   }
+  const allOptionsSelected = await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getClientRects().length > 0;
+    const panels = [...document.querySelectorAll("[role=dialog],.ant-drawer-content,.ant-drawer,aside,section,div")]
+      .filter((element) => visible(element) && /거래\s*내역|거래\s*기록/.test(element.innerText || ""))
+      .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
+    const panel = panels[0] || document.body;
+    const native = [...panel.querySelectorAll("select")].find(visible);
+    if (native) {
+      const option = [...native.options].find((item) => /^전체(?:\s|\(|$)/.test(item.textContent.trim()));
+      if (!option) return false;
+      native.value = option.value;
+      native.dispatchEvent(new Event("input", { bubbles: true }));
+      native.dispatchEvent(new Event("change", { bubbles: true }));
+      await wait(500);
+      return true;
+    }
+    const controls = [...panel.querySelectorAll("[role=combobox],button,[aria-haspopup=listbox],input")].filter(visible);
+    const control = controls.find((element) => /전체|옵션\s*선택/.test((element.innerText || element.value || element.placeholder || "").trim()));
+    if (!control) return false;
+    control.click();
+    await wait(250);
+    const options = [...document.querySelectorAll("[role=option],li,div,span")].filter(visible)
+      .filter((element) => /^전체(?:\s|\(|$)/.test(element.textContent.trim()))
+      .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
+    const option = options[0];
+    if (option) (option.closest("[role=option],li,button") || option).click();
+    await wait(500);
+    return /전체/.test((control.innerText || control.value || "") + " " + (option?.textContent || ""));
+  })()`, true).catch(() => false);
+  if (!allOptionsSelected) {
+    showCollectorWindow();
+    return { ok: false, code: "ALL_OPTIONS_NOT_SELECTED", message: `${articleNumber} 거래내역의 전체 옵션을 선택하지 못했습니다.` };
+  }
   const capturedRows = [];
   let previousScroll = -1;
   for (let pass = 0; pass < 40; pass += 1) {
@@ -5253,17 +5276,31 @@ async function lookupSellerTransactionPrice(input = {}) {
         .filter((element) => visible(element) && /거래\s*내역|거래\s*기록/.test(element.innerText || ""))
         .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
       const panel = panels[0] || document.body;
-      const candidates = [...panel.querySelectorAll("tr,[role=row],li,div,span,p")].filter((row) => {
+      const candidates = [...panel.querySelectorAll("tr,[role=row],li,div")].filter((row) => {
         if (!visible(row)) return false;
         const rect = row.getBoundingClientRect();
         const ownText = String(row.innerText || "");
-        if (rect.height > 140 || !/[₩￦원]/.test(ownText)) return false;
-        return ![...row.children].some((child) => /[₩￦원]/.test(child.innerText || "") && child.getBoundingClientRect().height <= 140);
+        const beforePrice = ownText.split(/[₩￦]/)[0].trim();
+        if (rect.height > 120 || rect.width < 180 || !beforePrice || !/[₩￦]/.test(ownText) || !/판매량/.test(ownText)) return false;
+        return ![...row.children].some((child) => {
+          const childText = String(child.innerText || "");
+          return visible(child) && child.getBoundingClientRect().width >= 180
+            && childText.split(/[₩￦]/)[0].trim() && /[₩￦]/.test(childText) && /판매량/.test(childText);
+        });
       });
-      const rows = candidates.map((row) => ({
-        text: String(row.innerText || ""),
-        cells: [...row.querySelectorAll("td,[role=gridcell]")].map((cell) => String(cell.innerText || "")),
-      }));
+      const rows = candidates.map((row) => {
+        const text = String(row.innerText || "").trim();
+        const option = text.split(/[₩￦]/)[0].trim().replace(/\s+/g, " ");
+        const priceBlocks = [...row.querySelectorAll("td,[role=gridcell],div,span")].filter((element) => {
+          const value = String(element.innerText || "");
+          return visible(element) && /[₩￦]/.test(value) && /판매량/.test(value)
+            && ![...element.children].some((child) => /[₩￦]/.test(child.innerText || "") && /판매량/.test(child.innerText || ""));
+        });
+        const firstPriceBlock = priceBlocks[0]?.innerText || text.slice(text.search(/[₩￦]/));
+        const price = Number((firstPriceBlock.match(/[₩￦]\s*([\d,]+)/)?.[1] || "").replace(/,/g, ""));
+        const sales = (firstPriceBlock.match(/판매량\s*(<?\s*[\d,]+)\+?/i)?.[1] || "").trim();
+        return { text, option, price, sales };
+      }).filter((row) => row.price && row.sales);
       const scroller = [panel, ...panel.querySelectorAll("div,section")]
         .filter((element) => element.scrollHeight > element.clientHeight + 20)
         .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0];
@@ -5278,7 +5315,8 @@ async function lookupSellerTransactionPrice(input = {}) {
     previousScroll = Number(capture.scrollTop);
     await wait(250);
   }
-  const result = highestQualifiedTransactionPrice({ sales30d: salesRaw, rows: capturedRows });
+  const uniqueRows = [...new Map(capturedRows.map((row) => [`${row.option}|${row.price}|${row.sales}`, row])).values()];
+  const result = highestQualifiedOptionPrice({ rows: uniqueRows, minimumSales: 30 });
   await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
     const labels = [...document.querySelectorAll("button,a,[role=button],span")].filter(visible);
@@ -5289,9 +5327,9 @@ async function lookupSellerTransactionPrice(input = {}) {
   })()`, true).catch(() => false);
   showCollectorWindow();
   if (!result.price) {
-    return { ok: false, eligible: true, code: "TRANSACTION_PRICE_NOT_FOUND", sales30d: result.sales30d, message: `${articleNumber} 거래내역 가격을 찾지 못했습니다.` };
+    return { ok: false, eligible: false, code: "QUALIFIED_OPTION_PRICE_NOT_FOUND", sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0, message: `${articleNumber} 판매량 30건 이상인 옵션 가격을 찾지 못했습니다.` };
   }
-  return { ok: true, articleNumber, ...result, source: "seller-product-transaction-history" };
+  return { ok: true, articleNumber, sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0, ...result, source: "seller-product-transaction-history-options" };
 }
 
 app.whenReady().then(async () => {

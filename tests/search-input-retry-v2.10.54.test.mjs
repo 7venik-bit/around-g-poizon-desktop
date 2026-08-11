@@ -11,8 +11,8 @@ const [main, renderer, packageSource, lockSource] = await Promise.all([
 
 
 
-test("release metadata is 2.10.153", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.153");
-  assert.equal(JSON.parse(lockSource).version, "2.10.153");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.153");
+test("release metadata is 2.10.154", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.154");
+  assert.equal(JSON.parse(lockSource).version, "2.10.154");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.154");
 });
