@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   },
   openSellerCenter: () => ipcRenderer.invoke("seller:open"),
   openSellerProductSearch: () => ipcRenderer.invoke("seller:open-product-search"),
+  lookupSellerTransactionPrice: (input) => ipcRenderer.invoke("seller:lookup-transaction-price", input),
   automateSellerBrandExport: (input) => ipcRenderer.invoke("seller:brand-export", input),
   abortSellerBrandExportAttempt: () => ipcRenderer.invoke("seller:abort-brand-export-attempt"),
   stopSellerBrandWork: () => ipcRenderer.invoke("seller:stop-brand-work"),
