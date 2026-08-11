@@ -15,6 +15,7 @@ import {
   parseSsgSearch,
   queryDomesticProducts,
 } from "../relay/domestic-search.mjs";
+import { OFFICIAL_DOMAIN_STATUS } from "../services/official-domain-registry.mjs";
 
 test("every catalog brand uses the Fashion Town brand-store search without an official-mall keyword", () => {
   const url = decodeURIComponent(officialBrandSearchUrl("살로몬", "L47581100"));
@@ -266,10 +267,10 @@ test("one domestic store failure does not stop the others", async () => {
   assert.equal(result.sources.length, 11);
   assert.deepEqual(result.sources.map((source) => source.store), [
     "브랜드 공식몰",
-    "무신사",
     "네이버 공식 브랜드스토어",
     "네이버 백화점",
     "네이버 아울렛",
+    "무신사",
     "SSG 백화점",
     "SSG 아울렛",
     "롯데온 백화점",
@@ -282,7 +283,7 @@ test("one domestic store failure does not stop the others", async () => {
   assert.equal(result.sources.filter((source) => source.ok).length, 10);
   assert.deepEqual(
     result.sources.filter((source) => source.renderCount).map((source) => source.store),
-    ["브랜드 공식몰", "무신사", "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛", "SSG 백화점", "SSG 아울렛", "롯데온 백화점", "롯데온 아울렛"]
+    ["브랜드 공식몰", "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛", "무신사", "SSG 백화점", "SSG 아울렛", "롯데온 백화점", "롯데온 아울렛"]
   );
 });
 
@@ -291,9 +292,27 @@ test("an unverified brand is not reported as a verified official-store zero", as
   const fetchImpl = async () => ({ ok: true, status: 200, text: async () => emptyNextData });
   const result = await queryDomesticProducts({ query: "L47581100", brand: "살로몬", fetchImpl });
   const official = result.sources[0];
-  assert.equal(official.store, "공식몰 검증 대기");
+  assert.equal(official.store, "공식몰 추가 확인 필요");
   assert.equal(official.officialStatus, "pending");
   assert.equal(official.renderCount, false);
+  assert.equal(official.officialProductUrl, "");
+});
+
+test("a verified official homepage stays usable when product search is unsupported", async () => {
+  const result = await queryDomesticProducts({
+    query: "L47581100",
+    brand: "살로몬",
+    officialBrandRecord: {
+      status: OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED,
+      homepageUrl: "https://salomon.co.kr/",
+      searchTemplate: "",
+    },
+    fetchImpl: async () => ({ ok: true, status: 200, text: async () => "" }),
+  });
+  const official = result.sources[0];
+  assert.equal(official.store, "브랜드 공식몰");
+  assert.equal(official.officialStatus, OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED);
+  assert.equal(official.homepageUrl, "https://salomon.co.kr/");
   assert.equal(official.officialProductUrl, "");
 });
 

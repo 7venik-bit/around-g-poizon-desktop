@@ -440,15 +440,22 @@ export async function queryDomesticProducts({
   const knownOfficial = officialBrandEntry(brand || title || normalizedQuery);
   const officialStatus = officialBrandRecord?.status || (knownOfficial ? OFFICIAL_DOMAIN_STATUS.VERIFIED : OFFICIAL_DOMAIN_STATUS.PENDING);
   const officialStoreLabel = officialStatus === OFFICIAL_DOMAIN_STATUS.VERIFIED ? "브랜드 공식몰"
-    : officialStatus === OFFICIAL_DOMAIN_STATUS.NO_OFFICIAL_STORE ? "공식몰 없음"
-      : officialStatus === OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED ? "공식몰 검색 미지원"
-        : "공식몰 검증 대기";
+    : officialStatus === OFFICIAL_DOMAIN_STATUS.NO_OFFICIAL_STORE ? "국내 공식몰 없음 확인"
+      : officialStatus === OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED ? "브랜드 공식몰"
+        : "공식몰 추가 확인 필요";
   const sources = [
-    { store: officialStoreLabel, linkOnly: true, officialBrand: true, renderCount: officialStatus === OFFICIAL_DOMAIN_STATUS.VERIFIED, officialStatus },
-    { store: "무신사", parser: parseMusinsaSearch, renderCount: true },
+    {
+      store: officialStoreLabel,
+      linkOnly: true,
+      officialBrand: true,
+      renderCount: officialStatus === OFFICIAL_DOMAIN_STATUS.VERIFIED,
+      officialStatus,
+      homepageUrl: String(officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl || ""),
+    },
     { store: "네이버 공식 브랜드스토어", linkOnly: true, fashionTown: "brand-store", renderCount: true },
     { store: "네이버 백화점", linkOnly: true, fashionTown: "department", renderCount: true },
     { store: "네이버 아울렛", linkOnly: true, fashionTown: "outlet", renderCount: true },
+    { store: "무신사", parser: parseMusinsaSearch, renderCount: true },
     { store: "SSG 백화점", linkOnly: true, domesticChannel: "ssg-department", renderCount: true },
     { store: "SSG 아울렛", linkOnly: true, domesticChannel: "ssg-outlet", renderCount: true },
     { store: "롯데온 백화점", linkOnly: true, domesticChannel: "lotte-department", renderCount: true },
@@ -456,7 +463,11 @@ export async function queryDomesticProducts({
     { store: "SSG", parser: parseSsgSearch },
     { store: "코오롱몰", parser: (html) => parseKolonSearch(html, articleNumber) },
   ];
-  const results = await Promise.all(sources.map(async (source) => {
+  // Keep the source order observable and deterministic. Each brand/product is
+  // checked from the official mall through the domestic channels one at a
+  // time, so a blocked source cannot hide which step failed.
+  const results = [];
+  for (const source of sources) {
     const preferredQuery = queryCandidates[0] || normalizedQuery;
     const searchUrl = source.officialBrand
       ? officialBrandSearchUrl(brand || title || normalizedQuery, preferredQuery)
@@ -478,18 +489,20 @@ export async function queryDomesticProducts({
           count = 0;
         }
       }
-      return {
+      results.push({
         store: source.store,
         ok: true,
         linkOnly: true,
         renderCount: source.renderCount,
         officialStatus: source.officialStatus,
+        homepageUrl: source.homepageUrl || "",
         searchUrl,
         officialSearchUrl: source.officialBrand ? officialProductUrl : "",
         officialProductUrl,
         count,
         products: [],
-      };
+      });
+      continue;
     }
     try {
       let products = [];
@@ -502,21 +515,22 @@ export async function queryDomesticProducts({
       if (source.store === "무신사" && products.length) {
         products = await enrichMusinsaOptions(products, fetchImpl);
       }
-      return { store: source.store, ok: true, linkOnly: false, renderCount: source.renderCount, searchUrl, products };
+      results.push({ store: source.store, ok: true, linkOnly: false, renderCount: source.renderCount, searchUrl, products });
     } catch {
-      return { store: source.store, ok: false, linkOnly: false, renderCount: source.renderCount, searchUrl, officialProductUrl, products: [] };
+      results.push({ store: source.store, ok: false, linkOnly: false, renderCount: source.renderCount, searchUrl, officialProductUrl, products: [] });
     }
-  }));
+  }
 
   return {
     query: normalizedQuery,
     products: results.flatMap((result) => result.products),
-    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, searchUrl, officialSearchUrl, officialProductUrl, count, products }, priority) => ({
+    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, count, products }, priority) => ({
       store,
       ok,
       linkOnly,
       renderCount: Boolean(renderCount),
       officialStatus: officialStatus || "",
+      homepageUrl: homepageUrl || "",
       priority: priority + 1,
       count: Number.isFinite(count) ? count : products.length,
       searchUrl,
