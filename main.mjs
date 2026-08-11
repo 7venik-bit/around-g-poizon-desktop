@@ -55,6 +55,10 @@ import {
   officialDomainAuditQueue,
   rankOfficialDomainCandidates,
 } from "./services/official-domain-registry.mjs";
+import {
+  naverOfficialStoreNotFoundRows,
+  naverOfficialStoreNotFoundWorkbookData,
+} from "./services/official-domain-not-found.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer } from "./services/poizon.mjs";
 import {
   extractSellerBrandApiProducts,
@@ -832,6 +836,9 @@ function officialDomainAuditSnapshot(registry, extra = {}) {
     lastError: String(saved.lastError || ""),
     phase: String(saved.phase || ""),
     attempt: Number(saved.attempt || 0),
+    notFoundExcelPath: String(saved.notFoundExcelPath || store.snapshot().settings.officialDomainNotFoundExcelPath || ""),
+    notFoundCount: Number(saved.notFoundCount || store.snapshot().settings.officialDomainNotFoundCount || 0),
+    notFoundExportError: String(saved.notFoundExportError || ""),
     updatedAt: String(saved.updatedAt || ""),
     ...officialDomainRegistrySummary(registry),
     ...extra,
@@ -842,6 +849,27 @@ function sendOfficialDomainAuditProgress(registry, extra = {}) {
   const payload = officialDomainAuditSnapshot(registry, extra);
   mainWindow?.webContents.send("official-domain:audit-progress", payload);
   return payload;
+}
+
+async function exportNaverOfficialStoreNotFoundExcel(registry) {
+  const rows = naverOfficialStoreNotFoundRows(registry);
+  const folder = currentBrandExportFolder();
+  await mkdir(folder, { recursive: true });
+  const filePath = join(folder, "네이버_공식몰_미발견_브랜드.xlsx");
+  await writeXlsxFile(naverOfficialStoreNotFoundWorkbookData(rows), {
+    sheet: "공식몰 미발견",
+    stickyRowsCount: 1,
+    columns: [
+      { width: 8 }, { width: 14 }, { width: 26 }, { width: 24 }, { width: 24 },
+      { width: 48 }, { width: 12 }, { width: 24 }, { width: 64 },
+    ],
+  }).toFile(filePath);
+  await store.setSettings({
+    officialDomainNotFoundExcelPath: filePath,
+    officialDomainNotFoundCount: rows.length,
+    officialDomainNotFoundExcelUpdatedAt: new Date().toISOString(),
+  });
+  return { path: filePath, count: rows.length };
 }
 
 function createOfficialDomainAuditWindow() {
@@ -855,6 +883,11 @@ function createOfficialDomainAuditWindow() {
       nodeIntegration: false,
       sandbox: true,
       backgroundThrottling: false,
+      // Third-party official malls occasionally execute legacy page scripts
+      // (for example msDropDown) that open a native JavaScript error dialog.
+      // The audit runs hidden, so those dialogs must never block the 3,400
+      // brand verification queue or appear over the Around G window.
+      disableDialogs: true,
     },
   });
   auditWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -1109,8 +1142,20 @@ async function runOfficialDomainAudit() {
     const state = blocked ? "paused"
       : officialDomainAuditStopRequested ? "paused"
         : summary.unchecked ? "paused" : summary.pending ? "completed_with_pending" : "completed";
-    await persistOfficialDomainAudit(registry, { state, currentBrand: "", processed, blocked, lastError, resumeAt });
-    sendOfficialDomainAuditProgress(registry, { running: false, state, currentBrand: "", processed, blocked, lastError, resumeAt });
+    let notFoundExcel = { path: "", count: 0, error: "" };
+    try {
+      notFoundExcel = { ...await exportNaverOfficialStoreNotFoundExcel(registry), error: "" };
+    } catch (error) {
+      notFoundExcel.error = error instanceof Error ? error.message : String(error || "EXCEL_EXPORT_FAILED");
+    }
+    const finalAudit = {
+      state, currentBrand: "", processed, blocked, lastError, resumeAt,
+      notFoundExcelPath: notFoundExcel.path,
+      notFoundCount: notFoundExcel.count,
+      notFoundExportError: notFoundExcel.error,
+    };
+    await persistOfficialDomainAudit(registry, finalAudit);
+    sendOfficialDomainAuditProgress(registry, { running: false, ...finalAudit });
   }
 }
 
