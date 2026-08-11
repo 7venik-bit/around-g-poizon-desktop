@@ -2,10 +2,36 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
+  highestQualifiedOptionPrice,
   highestQualifiedTransactionPrice,
+  qualifiedOptionPrices,
   recentThirtyDaySales,
   transactionPrices,
 } from "../services/seller-transaction-price.mjs";
+
+test("전체 거래내역에서 판매량 30건 이상인 옵션 중 최고가를 선택한다", () => {
+  const rows = [
+    { option: "ALL", price: 82000, sales: "300+" },
+    { option: "블랙 KR 90", price: 55000, sales: "40" },
+    { option: "블랙 KR 95", price: 76000, sales: "29" },
+    { option: "블랙 KR 100", price: 68000, sales: "100+" },
+  ];
+  assert.deepEqual(qualifiedOptionPrices(rows), [
+    { option: "블랙 KR 90", price: 55000, sales: 40 },
+    { option: "블랙 KR 100", price: 68000, sales: 100 },
+  ]);
+  assert.deepEqual(highestQualifiedOptionPrice({ rows }), {
+    eligible: true,
+    price: 68000,
+    option: "블랙 KR 100",
+    optionSales: 100,
+    qualifiedOptionCount: 2,
+    options: [
+      { option: "블랙 KR 90", price: 55000, sales: 40 },
+      { option: "블랙 KR 100", price: 68000, sales: 100 },
+    ],
+  });
+});
 
 test("거래내역은 최근 30일 판매량 30건 이상일 때 최고가격을 선택한다", () => {
   const rows = [
@@ -41,10 +67,10 @@ test("엑셀 상품 검색은 거래내역 검증 가격을 평균가격 필드�
   assert.match(main, /label\?\.closest\("\[role=tab\],button,a"\) \|\| label/);
   assert.match(main, /aria-selected/);
   assert.match(main, /뒤로가기/);
-  assert.match(main, /querySelectorAll\("tr,\[role=row\],li,div,span,p"\)/);
+  assert.match(main, /ALL_OPTIONS_NOT_SELECTED/);
+  assert.match(main, /highestQualifiedOptionPrice\(\{ rows: uniqueRows, minimumSales: 30 \}\)/);
   assert.match(main, /includes\(.*articleNumber\.toUpperCase/);
-  assert.match(main, /highestQualifiedTransactionPrice\(\{ sales30d: salesRaw, rows: capturedRows \}\)/);
   assert.match(preload, /lookupSellerTransactionPrice/);
   assert.match(renderer, /product\.averagePrice = Number\(poizonTransaction\.price\)/);
-  assert.match(renderer, /<th>평균가격<\/th>/);
+  assert.match(renderer, /<th>옵션별 최고가<\/th>/);
 });

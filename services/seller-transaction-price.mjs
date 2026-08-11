@@ -22,6 +22,34 @@ export function transactionPrices(rows = []) {
   return prices;
 }
 
+export function qualifiedOptionPrices(rows = [], minimumSales = 30) {
+  const options = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const text = String(row?.text || "").trim();
+    const option = String(row?.option || "").trim();
+    if (/^ALL$/i.test(option) || /^ALL\b/i.test(text)) continue;
+    const price = numberFrom(row?.price);
+    const sales = recentThirtyDaySales(row?.sales);
+    if (price >= 1_000 && price <= 100_000_000 && sales >= minimumSales) {
+      options.push({ option, price, sales });
+    }
+  }
+  return options;
+}
+
+export function highestQualifiedOptionPrice({ rows, minimumSales = 30 } = {}) {
+  const options = qualifiedOptionPrices(rows, minimumSales);
+  const highest = options.reduce((best, option) => option.price > (best?.price || 0) ? option : best, null);
+  return {
+    eligible: Boolean(highest),
+    price: highest?.price || 0,
+    option: highest?.option || "",
+    optionSales: highest?.sales || 0,
+    qualifiedOptionCount: options.length,
+    options,
+  };
+}
+
 export function highestQualifiedTransactionPrice({ sales30d, rows, minimumSales = 30 } = {}) {
   const sales = recentThirtyDaySales(sales30d);
   if (sales < minimumSales) {
