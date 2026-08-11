@@ -96,7 +96,7 @@ export function parseSellerDomNodes(nodes, limit = 200) {
       name,
       averagePrice: numericPrices[0] || 0,
       lowestPrice: numericPrices[1] || 0,
-      highestPrice: numericPrices[2] || 0,
+      highestPrice: numericPrices.length ? Math.max(...numericPrices) : 0,
       sales30d: 0,
       source: "seller-center-dom",
       logoUrl: String(node?.imageUrl || ""),
