@@ -1468,7 +1468,6 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
     brand: column("상품 브랜드", "브랜드"), category1: column("카테고리 대분류", "대분류"),
     category2: column("카테고리 중분류", "중분류"), category3: column("카테고리 소분류", "소분류"),
     averagePrice: column("최근 30일간 평균 거래가", "최근 30일 평균 거래가"),
-    highestPrice: column("사이트 최고가격", "최고가격", "최고 가격", "최고 거래가"),
     sales30d: column("최근 30일 판매량", "최근30일판매량"),
     localSales30d: column("현지 판매자 최근 30일 판매량", "현지판매자최근30일판매량"),
     totalSales: column("중국 총 판매량", "총 판매량"),
@@ -1501,7 +1500,6 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
       logoUrl: previous.logoUrl || raw(row, columns.image),
       categoryName: previous.categoryName || [columns.category1, columns.category2, columns.category3].map((index) => raw(row, index)).filter(Boolean).join(" / "),
       averagePrice: Math.max(Number(previous.averagePrice || 0), parsePoizonSalesMetric(cell(row, columns.averagePrice))),
-      highestPrice: Math.max(Number(previous.highestPrice || 0), parsePoizonSalesMetric(cell(row, columns.highestPrice))),
     });
     grouped.set(key, previous);
   }
@@ -1512,7 +1510,7 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
     return {
       key: product.key, spuId: product.spuId || "", articleNumber: product.articleNumber || "", title: product.title || "",
       brandName: product.brandName || "", logoUrl: product.logoUrl || "", categoryName: product.categoryName || "",
-      averagePrice: product.averagePrice || 0, highestPrice: product.highestPrice || product.averagePrice || 0, optionCount: product.optionKeys.size,
+      averagePrice: product.averagePrice || 0, optionCount: product.optionKeys.size,
       totalSales: representative.totalSales || 0, totalSalesRaw: representative.totalSalesRaw || "",
       localTotalSales: representative.localTotalSales || 0, localTotalSalesRaw: representative.localTotalSalesRaw || "",
       sales30d: representative.sales30d || 0, sales30dRaw: representative.sales30dRaw || "",
@@ -5726,7 +5724,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     const rows = Array.isArray(input.products) ? input.products : [];
     const headers = [
       "선택", "상품 이미지", "상품 번호", "영문 상품명", "SPU ID", "브랜드", "카테고리",
-      "사이트 최고가격", "중국 구매자 페이지 노출",
+      "최근 30일 평균 거래가", "중국 구매자 페이지 노출",
       "총 판매량", "현지 판매자 총 판매량",
       "최근 30일 판매량", "현지 판매자 최근 30일 판매량",
     ];
@@ -5755,7 +5753,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         { value: String(row.categoryName || row.category || "") },
         row.hasPriceData === false
           ? { value: "데이터 없음" }
-          : { value: Number(row.highestPrice || row.highPrice || row.maxPrice?.value || row.averagePrice || 0), type: Number, format: "#,##0" },
+          : { value: Number(row.averagePrice || 0), type: Number, format: "#,##0" },
         row.hasBuyerExposureData === false
           ? { value: "데이터 없음" }
           : { value: Number(row.buyerExposure || 0), type: Number, format: "#,##0" },
