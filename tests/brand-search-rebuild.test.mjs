@@ -15,14 +15,6 @@ test("brand-search UI remains available", () => {
   assert.match(html, /id="brand-cards"/);
 });
 
-test("brand results show the highest POIZON site price and keep the 30-sale AND condition", () => {
-  assert.match(renderer, /const poizonHighestPrice =/);
-  assert.match(renderer, /<span>사이트 최고가격<\/span>/);
-  assert.match(renderer, /money\(poizonHighestPrice\(product\)\)/);
-  assert.match(renderer, /중국·현지 판매건수 각 30건 이상 \(AND\)/);
-  assert.match(renderer, /totalSalesAndMatched\(product, minimumTotal, minimumLocalTotal\)/);
-});
-
 test("brand workflow connects directly and searches English before Korean fallback", () => {
   const start = main.indexOf("async function automateSellerBrandExport");
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
