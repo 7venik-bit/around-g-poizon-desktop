@@ -9,13 +9,16 @@ const [mainSource, rendererSource] = await Promise.all([
 
 
 
-test("download-center jobs warn after twenty minutes and keep successful jobs until download", () => {
+test("download-center jobs warn after twenty minutes and never expire before download", () => {
   assert.match(mainSource, /SELLER_EXPORT_MONITOR_DELAY_WARNING_MS = 20 \* 60 \* 1000/);
-  assert.match(mainSource, /SELLER_EXPORT_MONITOR_TIMEOUT_MS = 60 \* 60 \* 1000/);
+  assert.doesNotMatch(mainSource, /SELLER_EXPORT_MONITOR_TIMEOUT_MS/);
   assert.match(mainSource, /while \(brandExportJobs\.size\)/);
   assert.match(mainSource, /POIZON 처리 지연 · 감시 계속/);
-  assert.match(mainSource, /poizonAlreadySucceeded/);
-  assert.match(mainSource, /POIZON 성공 대기 60분 초과/);
+  assert.doesNotMatch(mainSource, /POIZON 성공 대기 \d+분 초과/);
+  assert.doesNotMatch(mainSource, /POIZON 데이터(?: 파일| 가져오기).*30분 안에/);
+  assert.match(mainSource, /async function waitForSellerExportAndDownload\(\)[\s\S]*?while \(true\)/);
+  assert.match(mainSource, /async function waitForSellerExportAndAutoDownload\(\)[\s\S]*?while \(true\)/);
+  assert.match(mainSource, /async function watchLatestSellerExportEveryTenSeconds\(\)[\s\S]*?while \(true\)/);
   assert.match(mainSource, /const expectedIds = \[\.\.\.brandExportJobs\.keys\(\)\]/);
 });
 
