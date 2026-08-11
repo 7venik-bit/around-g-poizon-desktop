@@ -16,5 +16,8 @@ test("full verification remains stopped after startup until the user continues i
   assert.doesNotMatch(startup, /startOfficialDomainAudit/);
   assert.match(rendererSource, /official-domain-audit-toggle/);
   assert.match(rendererSource, /await window\.aroundG\.startOfficialDomainAudit/);
+  assert.match(rendererSource, /syncFullBrandCatalog\(\{ startVerification: true \}\)/);
+  assert.match(rendererSource, /if \(startVerification\) \{[\s\S]*startOfficialDomainAudit/);
+  assert.match(rendererSource, /automatic = false, startVerification = !automatic/);
   assert.doesNotMatch(mainSource, /setTimeout\(\(\) => \{\s*officialDomainAuditResumeTimer = null;\s*void runOfficialDomainAudit/);
 });

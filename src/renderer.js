@@ -1057,6 +1057,7 @@ function renderOfficialDomainAudit(audit = {}) {
   const verified = Number(audit.verified || 0);
   const unsupported = Number(audit.searchUnsupported || 0);
   const pending = Number(audit.pending || 0);
+  const noOfficialStore = Number(audit.noOfficialStore || 0);
   const percent = total ? Math.min(100, Math.round((inspected / total) * 100)) : 0;
   const status = $("#official-domain-audit-status");
   const button = $("#official-domain-audit-toggle");
@@ -1074,19 +1075,19 @@ function renderOfficialDomainAudit(audit = {}) {
   const stateLabel = audit.state === "cooldown" ? "보안 확인으로 일시 정지 · 검증 계속 버튼을 눌러주세요"
     : audit.state === "blocked" ? "보안 확인으로 일시 정지 · 검증 계속 버튼을 눌러주세요"
     : audit.state === "paused" ? "일시 정지"
-      : audit.state === "completed_with_pending" ? "1차 전수검사 완료·미확정 검토 필요"
+      : audit.state === "completed_with_pending" ? "1차 전수검사 완료·공식몰 추가 확인 필요"
         : audit.state === "completed" ? "전체 검증 완료"
           : audit.running ? "검증 진행 중" : "대기";
   const attempt = Number(audit.attempt || 0);
   const current = audit.currentBrand ? ` · 현재 ${audit.currentBrand}${phaseLabel ? ` · ${phaseLabel}` : ""}${attempt === 2 ? " · 2차 확인" : ""}` : "";
-  status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%) · 공식몰 검색 확인 ${verified.toLocaleString("ko-KR")} · 검색 미지원 ${unsupported.toLocaleString("ko-KR")} · 미확정 ${pending.toLocaleString("ko-KR")}${current}`;
+  status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%) · 공식몰·상품검색 확인 ${verified.toLocaleString("ko-KR")} · 공식몰 확인·상품검색 연결 불가 ${unsupported.toLocaleString("ko-KR")} · 공식몰 추가 확인 필요 ${pending.toLocaleString("ko-KR")} · 국내 공식몰 없음 확인 ${noOfficialStore.toLocaleString("ko-KR")}${current}`;
   button.dataset.running = audit.running ? "true" : "false";
   button.textContent = audit.running ? "검증 일시 정지" : inspected ? "검증 계속" : "전체 검증 시작";
   button.classList.toggle("primary", !audit.running);
   explorerMeta.officialDomainAudit = audit;
   explorerMeta.officialDomainSummary = {
     ...(explorerMeta.officialDomainSummary || {}), total, verified, pending,
-    searchUnsupported: unsupported, noOfficialStore: Number(audit.noOfficialStore || 0),
+    searchUnsupported: unsupported, noOfficialStore,
   };
 }
 
@@ -1234,13 +1235,16 @@ function renderDomestic(result) {
   const directLinks = (result.sources || []).map((source) => {
     if (source.officialStatus) {
       if (source.officialStatus === "pending") {
-        return `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>공식몰 검증 대기</small></button>`;
+        return `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>공식몰 추가 확인 필요</small></button>`;
       }
       if (source.officialStatus === "no_official_store") {
-        return `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>등록된 공식몰 없음</small></button>`;
+        return `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>국내 공식몰 없음 확인</small></button>`;
       }
       if (source.officialStatus === "search_unsupported") {
-        return `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>공식몰 검색 미지원</small></button>`;
+        const homepageUrl = String(source.homepageUrl || "");
+        return homepageUrl
+          ? `<button class="source-link" type="button" data-url="${encodeURIComponent(homepageUrl)}"><span>${text(source.store)}</span><small>공식몰 확인·상품검색 연결 불가</small></button>`
+          : `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>공식몰 확인·상품검색 연결 불가</small></button>`;
       }
       if (source.verificationFailed) {
         return `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small class="source-check-failed">공식몰 확인 실패</small></button>`;
@@ -1628,7 +1632,7 @@ $("#brand-export-selected")?.addEventListener("click", async () => {
   touchBrandActivity(`${selectedBrands.length}개 브랜드 작업 시작`);
   void exportNextSelectedBrand(generation);
 });
-async function syncFullBrandCatalog({ automatic = false } = {}) {
+async function syncFullBrandCatalog({ automatic = false, startVerification = !automatic } = {}) {
   const button = $("#brand-sync");
   const status = $("#brand-status");
   button.disabled = true;
@@ -1657,9 +1661,14 @@ async function syncFullBrandCatalog({ automatic = false } = {}) {
   renderBrandCards($("#brand-filter").value);
   status.className = "status success";
   status.textContent = `POIZON 공식 브랜드 ${result.brands.length.toLocaleString("ko-KR")}개 검색 등록 완료`;
+  if (startVerification) {
+    const auditResult = await window.aroundG.startOfficialDomainAudit();
+    if (auditResult?.audit) renderOfficialDomainAudit(auditResult.audit);
+    status.textContent = `POIZON 공식 브랜드 ${result.brands.length.toLocaleString("ko-KR")}개 동기화 완료 · 브랜드 순서대로 공식몰 검증을 시작합니다.`;
+  }
   return true;
 }
-$("#brand-sync").addEventListener("click", () => syncFullBrandCatalog());
+$("#brand-sync").addEventListener("click", () => syncFullBrandCatalog({ startVerification: true }));
 $("#official-domain-audit-toggle")?.addEventListener("click", async () => {
   const button = $("#official-domain-audit-toggle");
   button.disabled = true;
