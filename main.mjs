@@ -69,6 +69,7 @@ import {
 import { analyzeRenderedChannelProducts, queryDomesticProducts } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
 import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";
+import { highestQualifiedTransactionPrice } from "./services/seller-transaction-price.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
 import { findNewSellerExportJob } from "./services/brand-export-jobs.mjs";
 
@@ -95,6 +96,7 @@ const brandExportValidationCache = new Map();
 const excelPreviewCache = new Map();
 let brandExportMonitorRunning = false;
 let brandExportMonitorRestartTimer;
+let sellerTransactionLookupQueue = Promise.resolve();
 let officialDomainAuditRunning = false;
 let officialDomainAuditStopRequested = false;
 let officialDomainAuditWindow = null;
@@ -5101,6 +5103,139 @@ async function captureSellerBrandSales(input = {}) {
   };
 }
 
+async function lookupSellerTransactionPrice(input = {}) {
+  const articleNumber = String(input.articleNumber || "").trim();
+  if (!articleNumber) return { ok: false, code: "ARTICLE_REQUIRED", message: "상품번호가 없습니다." };
+  if (!sellerWindow || sellerWindow.isDestroyed()) openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL);
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.getURL()) break;
+    await wait(300);
+  }
+  if (!sellerWindow || sellerWindow.isDestroyed()) {
+    return { ok: false, code: "SELLER_WINDOW_UNAVAILABLE", message: "판매자센터 창을 열지 못했습니다." };
+  }
+  if (!sellerWindow.webContents.getURL().includes("/main/goods/search")) {
+    await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
+    await wait(1_500);
+  }
+  if (!sellerWindow.webContents.getURL().includes("/main/goods/search")) {
+    return { ok: false, code: "SELLER_LOGIN_REQUIRED", message: "판매자센터 로그인을 확인해 주세요." };
+  }
+  sellerWindow.show();
+  sellerWindow.focus();
+  const searched = await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getClientRects().length > 0;
+    const article = ${JSON.stringify(articleNumber)};
+    const normalize = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const inputs = [...document.querySelectorAll("input")].filter(visible);
+    const input = inputs.find((element) => /상품명|상품번호|브랜드|카테고리|시리즈/.test(element.placeholder || ""))
+      || inputs.sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0];
+    const button = [...document.querySelectorAll("button,[role=button]")].filter(visible)
+      .find((element) => /검색\s*및\s*입찰|^검색$/.test(element.textContent.trim()));
+    if (!input || !button) return { ok: false, code: "SEARCH_CONTROL_NOT_FOUND" };
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    setter.call(input, article);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    button.click();
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await wait(250);
+      const rows = [...document.querySelectorAll("tr,[role=row]")].filter(visible);
+      const row = rows.find((element) => normalize(element.innerText).includes(normalize(article)));
+      if (!row) continue;
+      const table = row.closest("table,[role=table],[role=grid]");
+      const headers = [...(table?.querySelectorAll("thead th,[role=columnheader]") || [])]
+        .map((element) => element.innerText.trim());
+      const cells = [...row.querySelectorAll("td,[role=gridcell]")];
+      const salesIndex = headers.findIndex((header) => /최근\s*30일\s*판매량/.test(header) && !/현지/.test(header));
+      const salesRaw = salesIndex >= 0 ? String(cells[salesIndex]?.innerText || "") : "";
+      const rowText = String(row.innerText || "");
+      const dataButton = [...row.querySelectorAll("a,button,[role=button],span")].filter(visible)
+        .find((element) => /상품\s*데이터/.test(element.textContent.trim()));
+      const expandButton = [...row.querySelectorAll("button,[role=button]")].filter(visible)[0];
+      const target = dataButton || expandButton || row;
+      target.click();
+      return { ok: true, salesRaw, rowText };
+    }
+    return { ok: false, code: "PRODUCT_ROW_NOT_FOUND" };
+  })()`, true).catch(() => ({ ok: false, code: "PRODUCT_SEARCH_FAILED" }));
+  if (!searched?.ok) {
+    showCollectorWindow();
+    return { ok: false, code: searched?.code || "PRODUCT_SEARCH_FAILED", message: `${articleNumber} 상품을 찾지 못했습니다.` };
+  }
+  let salesRaw = String(searched.salesRaw || "").trim();
+  if (!salesRaw) {
+    const rowText = String(searched.rowText || "");
+    const matches = [...rowText.matchAll(/(?:^|\s)(<?\s*[\d,]+)\+?(?=\s|$)/g)].map((match) => match[1]);
+    salesRaw = matches.at(-1) || "";
+  }
+  const salesCheck = highestQualifiedTransactionPrice({ sales30d: salesRaw, rows: [] });
+  if (!salesCheck.eligible) {
+    showCollectorWindow();
+    return {
+      ok: false,
+      eligible: false,
+      code: "RECENT_SALES_BELOW_30",
+      sales30d: salesCheck.sales30d,
+      message: `${articleNumber} 최근 30일 판매량이 30건 미만입니다.`,
+    };
+  }
+  const transactionTab = await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getClientRects().length > 0;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const target = [...document.querySelectorAll("button,a,[role=tab],span,div")].filter(visible)
+        .filter((element) => /^(?:거래\s*내역|거래\s*기록)$/.test(element.textContent.trim()))
+        .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
+      if (target) {
+        target.click();
+        await wait(800);
+        return true;
+      }
+      await wait(200);
+    }
+    return false;
+  })()`, true).catch(() => false);
+  if (!transactionTab) {
+    showCollectorWindow();
+    return { ok: false, code: "TRANSACTION_TAB_NOT_FOUND", message: `${articleNumber} 거래내역을 열지 못했습니다.` };
+  }
+  const capturedRows = [];
+  let previousScroll = -1;
+  for (let pass = 0; pass < 40; pass += 1) {
+    const capture = await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
+      const visible = (element) => element && element.getClientRects().length > 0;
+      const panels = [...document.querySelectorAll("[role=dialog],.ant-drawer-content,.ant-drawer,aside,section,div")]
+        .filter((element) => visible(element) && /거래\s*내역|거래\s*기록/.test(element.innerText || ""))
+        .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
+      const panel = panels[0] || document.body;
+      const rows = [...panel.querySelectorAll("tr,[role=row],li")].filter(visible).map((row) => ({
+        text: String(row.innerText || ""),
+        cells: [...row.querySelectorAll("td,[role=gridcell]")].map((cell) => String(cell.innerText || "")),
+      })).filter((row) => /[₩￦원]/.test(row.text));
+      const scroller = [panel, ...panel.querySelectorAll("div,section")]
+        .filter((element) => element.scrollHeight > element.clientHeight + 20)
+        .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0];
+      if (!scroller) return { rows, scrollTop: 0, atEnd: true };
+      const before = scroller.scrollTop;
+      scroller.scrollTop = Math.min(scroller.scrollHeight, before + Math.max(160, scroller.clientHeight * 0.75));
+      scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+      return { rows, scrollTop: scroller.scrollTop, atEnd: scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4 };
+    })()`, true).catch(() => ({ rows: [], atEnd: true, scrollTop: 0 }));
+    capturedRows.push(...(capture.rows || []));
+    if (capture.atEnd || Number(capture.scrollTop) === previousScroll) break;
+    previousScroll = Number(capture.scrollTop);
+    await wait(250);
+  }
+  const result = highestQualifiedTransactionPrice({ sales30d: salesRaw, rows: capturedRows });
+  showCollectorWindow();
+  if (!result.price) {
+    return { ok: false, eligible: true, code: "TRANSACTION_PRICE_NOT_FOUND", sales30d: result.sales30d, message: `${articleNumber} 거래내역 가격을 찾지 못했습니다.` };
+  }
+  return { ok: true, articleNumber, ...result, source: "seller-product-transaction-history" };
+}
+
 app.whenReady().then(async () => {
   app.setAppUserModelId("kr.aroundg.poizon");
   store = new JsonStore(app.getPath("userData"));
@@ -5220,6 +5355,11 @@ app.whenReady().then(async () => {
   ipcMain.handle("seller:open-product-search", () => {
     openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL);
     return { ok: true };
+  });
+  ipcMain.handle("seller:lookup-transaction-price", (_event, input) => {
+    const queued = sellerTransactionLookupQueue.then(() => lookupSellerTransactionPrice(input));
+    sellerTransactionLookupQueue = queued.catch(() => undefined);
+    return queued;
   });
   const abortSellerBrandExportAttempt = async () => {
   brandExportAttemptGeneration += 1;

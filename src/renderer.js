@@ -484,12 +484,21 @@ async function searchExcelPreviewProduct(key) {
   excelPreviewSearchResults.set(key, { loading: true, products: [], sources: [] });
   const file = activeExcelPreview?.file;
   if (file) renderExcelProductRows(file, excelPreviewPageProducts);
+  const poizonTransaction = await window.aroundG.lookupSellerTransactionPrice({
+    articleNumber: product.articleNumber || "",
+  });
+  if (poizonTransaction?.ok && Number(poizonTransaction.price || 0) > 0) {
+    product.averagePrice = Number(poizonTransaction.price);
+    product.transactionSales30d = Number(poizonTransaction.sales30d || 0);
+    product.transactionPriceVerified = true;
+  }
   const query = [product.brandName, product.articleNumber, product.title].filter(Boolean).join(" ");
   const response = await window.aroundG.searchDomestic({
     query, articleNumber: product.articleNumber || "", brand: product.brandName || "",
     title: product.title || "", imageUrl: product.logoUrl || "", verifyLinkCounts: true,
   });
-  excelPreviewSearchResults.set(key, response.ok ? response.data : { products: [], sources: [], error: response.message });
+  const result = response.ok ? response.data : { products: [], sources: [], error: response.message };
+  excelPreviewSearchResults.set(key, { ...result, poizonTransaction });
   if (file) renderExcelProductRows(file, excelPreviewPageProducts);
   updateExcelPreviewSelectionUi(excelPreviewPageProducts.map((item) => `${brandImportPathKey(file?.path)}::${item.articleNumber || item.spuId || item.key}`));
 }
