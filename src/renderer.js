@@ -1,5 +1,16 @@
 const $ = (selector) => document.querySelector(selector);
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString("ko-KR")}원`;
+const poizonHighestPrice = (product = {}) => {
+  const explicit = [
+    product.highestPrice,
+    product.highPrice,
+    product.maxPrice?.value,
+    typeof product.maxPrice === "number" ? product.maxPrice : 0,
+    product.poizonHighestPrice,
+  ].map(Number).filter((value) => Number.isFinite(value) && value > 0);
+  if (explicit.length) return Math.max(...explicit);
+  return Number(product.averagePrice || product.poizonPrice || product.minPrice?.value || 0);
+};
 let state = { products: [], ledger: [], orders: [], favorites: [] };
 let entryCollection = "ledger";
 let explorerMeta = { brands: [], categories: [] };
@@ -460,7 +471,7 @@ function excelProductMetric(raw, value) {
 function renderExcelProductRows(file, products = []) {
   const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.articleNumber || product.spuId || product.key}`);
   products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
-  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>평균가격</th><th>중국 총판매</th><th>현지 총판매</th><th>상품 검색</th></tr>`;
+  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>최고가격</th><th>중국 총판매</th><th>현지 총판매</th><th>상품 검색</th></tr>`;
   $("#excel-preview-rows").innerHTML = products.length ? products.map((product, index) => {
     const key = pageKeys[index];
     const result = excelPreviewSearchResults.get(key);
@@ -470,7 +481,7 @@ function renderExcelProductRows(file, products = []) {
       <td class="excel-product-image">${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : "-"}</td>
       <td><b>${text(product.articleNumber || "-")}</b></td><td title="${text(product.title)}">${text(product.title || "-")}</td>
       <td>${text(product.brandName || "-")}</td><td title="${text(product.categoryName)}">${text(product.categoryName || "-")}</td>
-      <td>${product.averagePrice ? money(product.averagePrice) : "-"}</td>
+      <td>${poizonHighestPrice(product) ? money(poizonHighestPrice(product)) : "-"}</td>
       <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td><td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
       <td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${result?.loading ? "disabled" : ""}>${status}</button></td>
     </tr>${result && !result.loading ? `<tr class="excel-product-search-detail"><td colspan="10">${renderDomestic(result)}</td></tr>` : ""}`;
@@ -999,7 +1010,7 @@ function renderBrandWorkbench() {
       <td>${text(product.spuId || product.globalSpuId || "")}</td>
       <td>${text(product.brandName || product.brand || "")}</td>
       <td>${text(product.categoryName || product.category || "")}</td>
-      <td>${product.hasPriceData === false ? "" : money(product.averagePrice || product.minPrice?.value || 0)}</td>
+      <td>${product.hasPriceData === false ? "" : money(poizonHighestPrice(product))}</td>
       <td>${product.hasSalesData === false ? "" : Number(product.sales30d || 0).toLocaleString("ko-KR")}</td>
       <td>${product.hasLocalSalesData === false ? "" : Number(product.localSales30d || 0).toLocaleString("ko-KR")}</td>
       <td>${product.hasTotalSalesData === false ? "" : Number(product.totalSales || 0).toLocaleString("ko-KR")}</td>
@@ -1306,7 +1317,7 @@ function renderExplorerResults(title, products, preserveDomestic = false) {
           <div class="product-badges"><span class="badge">${text(product.categoryGroup || "인기상품")}</span>${product.apiMatched ? `<span class="badge">API 연결</span>` : product.apiMatched === false ? `<span class="badge muted">API 미일치</span>` : ""}</div>
           <h3>${text(product.title || product.name)}</h3>
           <p>${text(product.brandName || product.brand || "")}</p>
-          <div class="explorer-product-meta"><code>${text(product.articleNumber || "")}</code><span>${product.averagePrice || product.minPrice?.value ? money(product.averagePrice || product.minPrice.value) : ""}</span></div>
+          <div class="explorer-product-meta"><code>${text(product.articleNumber || "")}</code><span>${poizonHighestPrice(product) ? money(poizonHighestPrice(product)) : ""}</span></div>
         </div>
       </div>
       <label class="product-select-option"><input type="checkbox" data-product-select="${encodeURIComponent(key)}" ${selectedExplorerKeys.has(key) ? "checked" : ""}> 선택</label>
@@ -1345,7 +1356,7 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
       <select disabled><option>사이즈 유형⌄</option></select>
       <input id="brand-result-min-total" type="number" min="30" value="30" readonly title="중국 총 판매량 30건 이상 고정">
       <input id="brand-result-min-local-total" type="number" min="30" value="30" readonly title="현지 판매자 총 판매량 30건 이상 고정">
-      <strong class="seller-filter-fixed">두 조건 모두 충족 (AND)</strong>
+      <strong class="seller-filter-fixed">중국·현지 판매건수 각 30건 이상 (AND)</strong>
       <button id="brand-result-reset" type="button" class="poizon-reset">초기화</button>
     </div>
     <div class="poizon-result-summary">
@@ -1362,7 +1373,7 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
     <div class="seller-result-table">
       <div class="seller-result-head">
         <span>POIZON 상품 정보</span><span>브랜드/카테고리</span>
-        <span>최근 30일 평균 거래가</span><span>중국 총 판매량</span><span>현지 판매자 총 판매량</span>
+        <span>사이트 최고가격</span><span>중국 총 판매량</span><span>현지 판매자 총 판매량</span>
         <span>최근 30일 판매량</span><span>현지 판매자 최근 30일 판매량</span><span>관리</span>
       </div>
       <div id="brand-result-rows"></div>
@@ -1392,7 +1403,7 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
           ${product.spuId ? `<small>SPU_ID：${text(product.spuId)}</small>` : ""}</div>
         </div>
         <div class="seller-brand-category"><strong>${text(product.brandName || product.brand || "")}</strong><small>${text(product.categoryName || product.category || "")}</small></div>
-        <b>${product.hasPriceData === false ? "데이터 없음" : money(product.averagePrice || product.minPrice?.value || 0)}</b>
+        <b>${product.hasPriceData === false ? "데이터 없음" : money(poizonHighestPrice(product))}</b>
         <b>${product.hasTotalSalesData ? text(product.totalSalesRaw || Number(product.totalSales || 0).toLocaleString("ko-KR")) : "확인 불가"}</b>
         <b class="seller-local-total-sales">${product.hasLocalTotalSalesData ? text(product.localTotalSalesRaw || Number(product.localTotalSales || 0).toLocaleString("ko-KR")) : "확인 불가"}</b>
         <b>${product.hasSalesData === false ? "데이터 없음" : `${Number(product.sales30d || 0).toLocaleString("ko-KR")}+`}</b>
@@ -1690,7 +1701,7 @@ async function acceptSellerCenterProducts(products, sourceLabel) {
     brand: product.brandName || "",
     name: product.name,
     articleNumber: product.articleNumber,
-    poizonPrice: product.averagePrice,
+    poizonPrice: poizonHighestPrice(product),
     sales30d: product.sales30d,
     popularityRank: product.rank,
     logoUrl: product.logoUrl || "",
@@ -1974,7 +1985,7 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
       .sort((left, right) => Number(right?.inStock) - Number(left?.inStock) || Number(left.price) - Number(right.price))[0];
     const domesticSource = (result?.sources || []).find((source) => source?.store === domestic?.store);
     const purchaseUrl = String(domestic?.url || domesticSource?.officialProductUrl || domesticSource?.searchUrl || "");
-    const poizonPrice = Number(product?.averagePrice || 0);
+    const poizonPrice = poizonHighestPrice(product);
     const domesticPrice = Number(domestic?.price || 0);
     const totalCost = poizonPrice + shipping + extra;
     const netProfit = domesticPrice > 0 ? domesticPrice * (1 - feeRate) - totalCost : 0;
@@ -2232,6 +2243,7 @@ $("#brand-search").addEventListener("click", async () => {
         ...apiProduct,
         ...sellerProduct,
         averagePrice: Number(sellerProduct.hasPriceData ? sellerProduct.averagePrice : (apiProduct.averagePrice ?? apiProduct.poizonPrice ?? 0)),
+        highestPrice: poizonHighestPrice({ ...apiProduct, ...sellerProduct }),
         buyerExposure: Number(sellerProduct.hasBuyerExposureData ? sellerProduct.buyerExposure : (apiProduct.buyerExposure ?? 0)),
         sales30d: Number(sellerProduct.hasSalesData ? sellerProduct.sales30d : (apiProduct.sales30d ?? 0)),
         localSales30d: Number(sellerProduct.hasLocalSalesData ? sellerProduct.localSales30d : (apiProduct.localSales30d ?? 0)),
@@ -2241,7 +2253,7 @@ $("#brand-search").addEventListener("click", async () => {
         localSales30dRaw: sellerProduct.localSales30dRaw ?? apiProduct.localSales30dRaw ?? "",
         totalSalesRaw: sellerProduct.totalSalesRaw ?? apiProduct.totalSalesRaw ?? "",
         localTotalSalesRaw: sellerProduct.localTotalSalesRaw ?? apiProduct.localTotalSalesRaw ?? "",
-        hasPriceData: sellerProduct.hasPriceData ?? Boolean(apiProduct.averagePrice || apiProduct.minPrice?.value),
+        hasPriceData: sellerProduct.hasPriceData ?? Boolean(poizonHighestPrice(apiProduct)),
         hasBuyerExposureData: sellerProduct.hasBuyerExposureData ?? Boolean(apiProduct.buyerExposure),
         hasSalesData: sellerProduct.hasSalesData ?? apiProduct.hasSalesData ?? false,
         hasLocalSalesData: sellerProduct.hasLocalSalesData ?? apiProduct.hasLocalSalesData ?? false,

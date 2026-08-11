@@ -10,6 +10,7 @@ test("판매자센터 가상 행에서 품번, 상품명, 가격과 이미지를
   assert.equal(products.length, 1);
   assert.equal(products[0].articleNumber, "JI0079");
   assert.equal(products[0].averagePrice, 91720);
+  assert.equal(products[0].highestPrice, 153302);
   assert.equal(products[0].logoUrl, "https://img.example/ji0079.jpg");
 });
 

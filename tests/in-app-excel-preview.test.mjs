@@ -78,12 +78,12 @@ test("brand Excel preview supports popular-list style product selection", () => 
   assert.match(cssSource, /\.excel-product-select-column/);
 });
 
-test("selected Excel products calculate profit immediately from their average prices", () => {
+test("selected Excel products calculate profit immediately from their highest POIZON prices", () => {
   assert.match(htmlSource, /id="excel-preview-selection-clear"[\s\S]*id="excel-preview-profit"[^>]*>수익계산<[\s\S]*id="excel-preview-search-selected"/);
   assert.match(htmlSource, /id="profit-selection-summary"/);
   assert.match(rendererSource, /국내 가격 확인 중/);
   assert.match(rendererSource, /excelPreviewSearchResults\.get\(key\)/);
-  assert.match(rendererSource, /const poizonPrice = Number\(product\?\.averagePrice/);
+  assert.match(rendererSource, /const poizonPrice = poizonHighestPrice\(product\)/);
   assert.match(rendererSource, /const domesticPrice = Number\(domestic\?\.price/);
   assert.match(rendererSource, /const netProfit = domesticPrice > 0/);
   assert.match(rendererSource, /document\.querySelector\('\.nav\[data-view="profit"\]'\)\?\.click\(\)/);
