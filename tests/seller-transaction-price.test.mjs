@@ -38,6 +38,11 @@ test("엑셀 상품 검색은 거래내역 검증 가격을 평균가격 필드�
   ]);
   assert.match(main, /seller:lookup-transaction-price/);
   assert.match(main, /거래\\s\*내역\|거래\\s\*기록/);
+  assert.match(main, /label\?\.closest\("\[role=tab\],button,a"\) \|\| label/);
+  assert.match(main, /aria-selected/);
+  assert.match(main, /뒤로가기/);
+  assert.match(main, /querySelectorAll\("tr,\[role=row\],li,div,span,p"\)/);
+  assert.match(main, /includes\(.*articleNumber\.toUpperCase/);
   assert.match(main, /highestQualifiedTransactionPrice\(\{ sales30d: salesRaw, rows: capturedRows \}\)/);
   assert.match(preload, /lookupSellerTransactionPrice/);
   assert.match(renderer, /product\.averagePrice = Number\(poizonTransaction\.price\)/);
