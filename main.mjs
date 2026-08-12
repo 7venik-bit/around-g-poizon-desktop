@@ -5177,8 +5177,9 @@ async function lookupSellerTransactionPrice(input = {}) {
         return rect.width <= 56 && rect.height <= 56 && rect.left < rowRect.left + 180;
       })[0];
       const target = dataButton || expandButton || row;
-      target.click();
-      return { ok: true, salesRaw, rowText };
+      target.scrollIntoView({ block: "center", inline: "center" });
+      const rect = target.getBoundingClientRect();
+      return { ok: true, salesRaw, rowText, clickPoint: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } };
     }
     return { ok: false, code: "PRODUCT_ROW_NOT_FOUND" };
   })()`, true).catch(() => ({ ok: false, code: "PRODUCT_SEARCH_FAILED" }));
@@ -5186,52 +5187,83 @@ async function lookupSellerTransactionPrice(input = {}) {
     showCollectorWindow();
     return { ok: false, code: searched?.code || "PRODUCT_SEARCH_FAILED", message: `${articleNumber} 상품을 찾지 못했습니다.` };
   }
+  if (!searched.clickPoint) {
+    showCollectorWindow();
+    return { ok: false, code: "PRODUCT_DATA_CLICK_POINT_NOT_FOUND", message: `${articleNumber} 상품 데이터 버튼 위치를 찾지 못했습니다.` };
+  }
+  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(searched.clickPoint.x), y: Math.round(searched.clickPoint.y) });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: Math.round(searched.clickPoint.x), y: Math.round(searched.clickPoint.y), button: "left", clickCount: 1 });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", x: Math.round(searched.clickPoint.x), y: Math.round(searched.clickPoint.y), button: "left", clickCount: 1 });
+  const productPanelOpened = await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getClientRects().length > 0;
+    const article = ${JSON.stringify(articleNumber.toUpperCase().replace(/[^A-Z0-9]/g, ""))};
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const panel = [...document.querySelectorAll(".ant-drawer-content,[role=dialog],aside,.ant-drawer,section")].find((element) => {
+        if (!visible(element)) return false;
+        const rect = element.getBoundingClientRect();
+        const content = String(element.innerText || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+        return rect.left > innerWidth * 0.55 && rect.width > 240 && /상품\s*데이터/.test(element.innerText || "") && content.includes(article);
+      });
+      if (panel) return true;
+      await wait(250);
+    }
+    return false;
+  })()`, true).catch(() => false);
+  if (!productPanelOpened) {
+    showCollectorWindow();
+    return { ok: false, code: "PRODUCT_DATA_PANEL_NOT_OPENED", message: `${articleNumber} 상품 데이터 화면으로 전환되지 않았습니다.` };
+  }
   let salesRaw = String(searched.salesRaw || "").trim();
   if (!salesRaw) {
     const rowText = String(searched.rowText || "");
     const matches = [...rowText.matchAll(/(?:^|\s)(<?\s*[\d,]+)\+?(?=\s|$)/g)].map((match) => match[1]);
     salesRaw = matches.at(-1) || "";
   }
-  const transactionTab = await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
+  const transactionTabPoint = await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
+    const visible = (element) => element && element.getClientRects().length > 0;
+    const panels = [...document.querySelectorAll(".ant-drawer-content,[role=dialog],aside,.ant-drawer,section")]
+      .filter((element) => {
+        if (!visible(element)) return false;
+        const rect = element.getBoundingClientRect();
+        return rect.left > innerWidth * 0.55 && rect.width > 240 && /상품\s*데이터/.test(element.innerText || "");
+      }).sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
+    const panel = panels[0];
+    const label = [...(panel?.querySelectorAll("[role=tab],button,a,span,div") || [])].filter(visible)
+      .filter((element) => /^(?:거래\s*내역|거래\s*기록)$/.test(element.textContent.trim()))
+      .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
+    const target = label?.closest("[role=tab],button,a") || label;
+    if (!target) return null;
+    target.scrollIntoView({ block: "center", inline: "center" });
+    const rect = target.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`, true).catch(() => null);
+  if (!transactionTabPoint) {
+    showCollectorWindow();
+    return { ok: false, code: "TRANSACTION_TAB_NOT_FOUND", message: `${articleNumber} 거래내역을 열지 못했습니다.` };
+  }
+  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(transactionTabPoint.x), y: Math.round(transactionTabPoint.y) });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: Math.round(transactionTabPoint.x), y: Math.round(transactionTabPoint.y), button: "left", clickCount: 1 });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", x: Math.round(transactionTabPoint.x), y: Math.round(transactionTabPoint.y), button: "left", clickCount: 1 });
+  const transactionTabOpened = await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      const panels = [...document.querySelectorAll("[role=dialog],.ant-drawer,.ant-drawer-content,aside,section,div")]
-        .filter((element) => {
-          if (!visible(element)) return false;
-          const rect = element.getBoundingClientRect();
-          return rect.left > innerWidth * 0.55 && rect.width > 260
-            && /상품\s*데이터|입찰\s*현황/.test(element.innerText || "")
-            && String(element.innerText || "").toUpperCase().replace(/[^A-Z0-9]/g, "").includes(${JSON.stringify(articleNumber.toUpperCase().replace(/[^A-Z0-9]/g, ""))});
-        })
-        .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
-      const panel = panels[0];
-      const label = [...(panel?.querySelectorAll("[role=tab],button,a,span,div") || [])].filter(visible)
-        .filter((element) => /^(?:거래\s*내역|거래\s*기록)$/.test(element.textContent.trim()))
-        .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
-      const target = label?.closest("[role=tab],button,a") || label;
-      if (target) {
-        target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-        target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-        target.click();
-        for (let confirm = 0; confirm < 20; confirm += 1) {
-          await wait(200);
-          const active = target.getAttribute("aria-selected") === "true"
-            || /active|selected/.test(target.className || "")
-            || [...(panel?.querySelectorAll("[role=tab],button,a,span") || [])]
-              .some((element) => visible(element)
-                && /^(?:거래\s*내역|거래\s*기록)$/.test(element.textContent.trim())
-                && (element.getAttribute("aria-selected") === "true" || /active|selected/.test(element.className || "")));
-          if (active || /거래\s*유형|거래\s*시간|최근\s*거래/.test(panel?.innerText || "")) return true;
-        }
-      }
-      await wait(200);
+      const panel = [...document.querySelectorAll(".ant-drawer-content,[role=dialog],aside,.ant-drawer,section")].find((element) => {
+        if (!visible(element)) return false;
+        const rect = element.getBoundingClientRect();
+        return rect.left > innerWidth * 0.55 && rect.width > 240
+          && /거래\s*내역|거래\s*기록/.test(element.innerText || "")
+          && /전체\s*\(옵션\s*선택\)|옵션\s*선택/.test(element.innerText || "");
+      });
+      if (panel) return true;
+      await wait(250);
     }
     return false;
   })()`, true).catch(() => false);
-  if (!transactionTab) {
+  if (!transactionTabOpened) {
     showCollectorWindow();
-    return { ok: false, code: "TRANSACTION_TAB_NOT_FOUND", message: `${articleNumber} 거래내역을 열지 못했습니다.` };
+    return { ok: false, code: "TRANSACTION_TAB_NOT_OPENED", message: `${articleNumber} 거래내역 화면으로 전환되지 않았습니다.` };
   }
   const optionControl = await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
