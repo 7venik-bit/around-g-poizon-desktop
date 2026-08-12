@@ -5275,7 +5275,7 @@ async function lookupSellerTransactionPrice(input = {}) {
       // row wrapper. With an exact article query, a single visible
       // "상품 데이터" action is the searched product and can safely be used
       // only as a trigger for the internal detail response.
-      if (!row && attempt >= 12 && normalize(document.body?.innerText || "").includes(normalizedArticle)) {
+      if (!row && attempt >= 12) {
         const actions = [...document.querySelectorAll("a,button,[role=button],span,div")]
           .filter((element) => visible(element) && /상품\s*데이터/.test(element.textContent.trim()))
           .sort((left, right) => {
@@ -5283,7 +5283,19 @@ async function lookupSellerTransactionPrice(input = {}) {
             const rightRect = right.getBoundingClientRect();
             return leftRect.width * leftRect.height - rightRect.width * rightRect.height;
           });
-        const action = actions[0];
+        // POIZON often omits the searched article number from the rendered
+        // virtual row even though the exact search returned products. Rank an
+        // action whose ancestors contain the article first; otherwise use the
+        // first visible result action. The search request itself is exact, so
+        // requiring the article to be rendered again creates a false
+        // "product not found" result.
+        const action = actions.find((item) => {
+          let candidate = item;
+          for (let depth = 0; candidate && depth < 12; depth += 1, candidate = candidate.parentElement) {
+            if (normalize(candidate.innerText).includes(normalizedArticle)) return true;
+          }
+          return false;
+        }) || actions[0];
         if (action) {
           let candidate = action;
           for (let depth = 0; candidate && depth < 12; depth += 1, candidate = candidate.parentElement) {
@@ -5292,7 +5304,7 @@ async function lookupSellerTransactionPrice(input = {}) {
               break;
             }
           }
-          row ||= action.parentElement;
+          row ||= action.parentElement || action;
         }
       }
       if (!row) continue;
@@ -5313,11 +5325,17 @@ async function lookupSellerTransactionPrice(input = {}) {
       target.click();
       return { ok: true, salesRaw, rowText, productDataClicked: true };
     }
-    return { ok: false, code: "PRODUCT_ROW_NOT_FOUND" };
+    const visibleDataActions = [...document.querySelectorAll("a,button,[role=button],span,div")]
+      .filter((element) => visible(element) && /상품\s*데이터/.test(element.textContent.trim())).length;
+    return { ok: false, code: "PRODUCT_ROW_NOT_FOUND", visibleDataActions };
   })()`, true).catch(() => ({ ok: false, code: "PRODUCT_SEARCH_FAILED" }));
   if (!searched?.ok) {
     showCollectorWindow();
-    return { ok: false, code: searched?.code || "PRODUCT_SEARCH_FAILED", message: `${articleNumber} 상품을 찾지 못했습니다.` };
+    return {
+      ok: false,
+      code: searched?.code || "PRODUCT_SEARCH_FAILED",
+      message: `${articleNumber} 검색 결과 열기 실패 · 상품 데이터 버튼 ${Number(searched?.visibleDataActions || 0)}개`,
+    };
   }
   if (!searched.productDataClicked) {
     showCollectorWindow();
