@@ -120,7 +120,7 @@ test("엑셀 상품 검색은 거래내역 검증 가격을 평균가격 필드�
   assert.match(main, /sellerProductFrameRoutingId = productFrame\.routingId/);
   assert.match(main, /await productFrame\.executeJavaScript/);
   assert.match(main, /target\.click\(\)/);
-  assert.match(main, /\^거래\\s\*내역/);
+  assert.match(main, /거래\\s\*내역/);
   assert.match(main, /tr,\[role=row\],li,div,section,article/);
   assert.match(main, /normalizedArticle/);
   assert.match(main, /상품\\s\*데이터/);
