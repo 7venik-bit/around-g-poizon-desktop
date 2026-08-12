@@ -5253,26 +5253,38 @@ async function lookupSellerTransactionPrice(input = {}) {
     button.click();
     for (let attempt = 0; attempt < 40; attempt += 1) {
       await wait(250);
-      const rows = [...document.querySelectorAll("tr,[role=row]")].filter(visible);
-      const row = rows.find((element) => normalize(element.innerText).includes(normalize(article)));
+      // POIZON renders search results as virtual div rows, not only table rows.
+      // Locate the smallest visible result container that contains both the
+      // exact article number and the row's "상품 데이터" action.
+      const normalizedArticle = normalize(article);
+      const candidates = [...document.querySelectorAll("tr,[role=row],li,div,section,article")]
+        .filter((element) => {
+          if (!visible(element)) return false;
+          const value = normalize(element.innerText);
+          if (!value.includes(normalizedArticle)) return false;
+          return [...element.querySelectorAll("a,button,[role=button],span,div")]
+            .some((item) => visible(item) && /^상품\s*데이터$/.test(item.textContent.trim()));
+        })
+        .sort((left, right) => {
+          const leftRect = left.getBoundingClientRect();
+          const rightRect = right.getBoundingClientRect();
+          return leftRect.width * leftRect.height - rightRect.width * rightRect.height;
+        });
+      const row = candidates[0];
       if (!row) continue;
-      const table = row.closest("table,[role=table],[role=grid]");
-      const headers = [...(table?.querySelectorAll("thead th,[role=columnheader]") || [])]
-        .map((element) => element.innerText.trim());
-      const cells = [...row.querySelectorAll("td,[role=gridcell]")];
-      const salesIndex = headers.findIndex((header) => /최근\s*30일\s*판매량/.test(header) && !/현지/.test(header));
-      const salesRaw = salesIndex >= 0 ? String(cells[salesIndex]?.innerText || "") : "";
       const rowText = String(row.innerText || "");
-      const dataLabel = [...row.querySelectorAll("a,button,[role=button],span")].filter(visible)
-        .find((element) => /상품\s*데이터/.test(element.textContent.trim()));
-      const dataButton = dataLabel?.closest("a,button,[role=button]") || dataLabel;
-      const expandButton = [...row.querySelectorAll("button,[role=button]")].filter((element) => {
-        if (!visible(element) || element.querySelector('input[type="checkbox"]')) return false;
-        const rect = element.getBoundingClientRect();
-        const rowRect = row.getBoundingClientRect();
-        return rect.width <= 56 && rect.height <= 56 && rect.left < rowRect.left + 180;
-      })[0];
-      const target = dataButton || expandButton || row;
+      const salesMatch = rowText.match(/(?:최근\s*30일\s*판매량\D*)(<?\s*[\d,]+\+?)/i);
+      const salesRaw = String(salesMatch?.[1] || "").trim();
+      const dataLabels = [...row.querySelectorAll("a,button,[role=button],span,div")]
+        .filter((element) => visible(element) && /^상품\s*데이터$/.test(element.textContent.trim()))
+        .sort((left, right) => {
+          const leftRect = left.getBoundingClientRect();
+          const rightRect = right.getBoundingClientRect();
+          return leftRect.width * leftRect.height - rightRect.width * rightRect.height;
+        });
+      const dataLabel = dataLabels[0];
+      const target = dataLabel?.closest("a,button,[role=button]") || dataLabel;
+      if (!target) continue;
       target.scrollIntoView({ block: "center", inline: "center" });
       target.click();
       return { ok: true, salesRaw, rowText, productDataClicked: true };
@@ -5327,7 +5339,7 @@ async function lookupSellerTransactionPrice(input = {}) {
       }).sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
     const panel = panels[0];
     const label = [...(panel?.querySelectorAll("[role=tab],button,a,span,div") || [])].filter(visible)
-      .filter((element) => /^입찰\s*현황$/.test(element.textContent.trim()))
+      .filter((element) => /^거래\s*내역(?:\s*>|\s*›)?$/.test(element.textContent.trim()))
       .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
     const target = label?.closest("[role=tab],button,a") || label;
     if (!target) return null;
@@ -5338,7 +5350,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   if (!transactionHistoryTabPoint) {
     await stopTransactionNetworkCapture();
     showCollectorWindow();
-    return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_FOUND", message: `${articleNumber} 입찰 현황 탭을 찾지 못했습니다.` };
+    return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_FOUND", message: `${articleNumber} 상품 데이터의 거래 내역 링크를 찾지 못했습니다.` };
   }
   const transactionHistoryTabOpened = await productFrame.executeJavaScript(String.raw`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -5348,7 +5360,7 @@ async function lookupSellerTransactionPrice(input = {}) {
         if (!visible(element)) return false;
         const rect = element.getBoundingClientRect();
         return rect.left > innerWidth * 0.55 && rect.width > 240
-          && /입찰\s*현황/.test(element.innerText || "")
+          && /거래\s*내역/.test(element.innerText || "")
           && /전체\s*\(옵션\s*선택\)|옵션\s*선택/.test(element.innerText || "");
       });
       if (panel) return true;
@@ -5359,7 +5371,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   if (!transactionHistoryTabOpened) {
     await stopTransactionNetworkCapture();
     showCollectorWindow();
-    return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_OPENED", message: `${articleNumber} 입찰 현황 화면으로 전환되지 않았습니다.` };
+    return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_OPENED", message: `${articleNumber} 거래 내역 화면으로 전환되지 않았습니다.` };
   }
   const optionControl = await productFrame.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
@@ -5368,7 +5380,7 @@ async function lookupSellerTransactionPrice(input = {}) {
         if (!visible(element)) return false;
         const rect = element.getBoundingClientRect();
         return rect.left > innerWidth * 0.55 && rect.width > 240
-          && /입찰\s*현황/.test(element.innerText || "");
+          && /거래\s*내역/.test(element.innerText || "");
       }).sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
     const panel = panels[0] || document.body;
     const controls = [...panel.querySelectorAll("select,[role=combobox],button,[aria-haspopup=listbox],input,.ant-select-selector")].filter(visible);
@@ -5381,7 +5393,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   if (!optionControl) {
     await stopTransactionNetworkCapture();
     showCollectorWindow();
-    return { ok: false, code: "OPTION_CONTROL_NOT_FOUND", message: `${articleNumber} 입찰 현황의 전체 옵션 선택창을 찾지 못했습니다.` };
+    return { ok: false, code: "OPTION_CONTROL_NOT_FOUND", message: `${articleNumber} 거래 내역의 전체 옵션 선택창을 찾지 못했습니다.` };
   }
   await wait(400);
   const allOption = await productFrame.executeJavaScript(String.raw`(() => {
@@ -5409,7 +5421,7 @@ async function lookupSellerTransactionPrice(input = {}) {
           if (!visible(element)) return false;
           const rect = element.getBoundingClientRect();
           return rect.left > innerWidth * 0.55 && rect.width > 240
-            && /입찰\s*현황/.test(element.innerText || "");
+            && /거래\s*내역/.test(element.innerText || "");
         }).sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
       const panel = panels[0] || document.body;
       const leafText = [...panel.querySelectorAll("span,p,div,td")].filter((element) => {
@@ -5496,7 +5508,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   showCollectorWindow();
   if (!result.price) {
     sellerWindow.showInactive();
-    return { ok: false, eligible: false, code: "QUALIFIED_OPTION_PRICE_NOT_FOUND", sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0, message: `${articleNumber} 입찰 현황에서 판매량 30건 이상인 옵션 가격을 찾지 못했습니다.` };
+    return { ok: false, eligible: false, code: "QUALIFIED_OPTION_PRICE_NOT_FOUND", sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0, message: `${articleNumber} 거래 내역에서 판매량 30건 이상인 옵션 가격을 찾지 못했습니다.` };
   }
   sellerWindow.hide();
   return {
