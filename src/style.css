@@ -940,3 +940,45 @@ button,input,select,textarea{font-family:inherit}
   }
   .brand-batch-progress-head{align-items:flex-start;flex-direction:column}
 }
+
+
+.poizon-size-cell {
+  min-width: 260px;
+  vertical-align: top;
+}
+
+.poizon-size-table {
+  display: grid;
+  gap: 3px;
+  min-width: 250px;
+  font-size: 12px;
+}
+
+.poizon-size-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 1.25fr) minmax(74px, 1fr) minmax(54px, .72fr);
+  gap: 8px;
+  align-items: center;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: #f6f8fb;
+  color: #415064;
+}
+
+.poizon-size-row span:nth-child(2),
+.poizon-size-row span:nth-child(3) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.poizon-size-head {
+  font-weight: 700;
+  background: #e7eef8;
+  color: #233b5c;
+}
+
+.poizon-size-row.qualified {
+  background: #e7f7ee;
+  color: #17653b;
+  font-weight: 650;
+}
