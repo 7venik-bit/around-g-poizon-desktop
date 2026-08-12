@@ -129,6 +129,11 @@ test("엑셀 상품 검색은 거래내역 검증 가격을 평균가격 필드�
   assert.match(main, /\}\) \|\| actions\[0\]/);
   assert.doesNotMatch(main, /!row && attempt >= 12 && normalize\(document\.body/);
   assert.match(main, /visibleDataActions/);
+  assert.match(main, /physicalSellerPointClick\(searched\.productDataPoint/);
+  assert.match(main, /physicalSellerPointClick\(transactionHistoryTabPoint/);
+  assert.match(main, /physicalSellerPointClick\(optionControl/);
+  assert.match(main, /physicalSellerPointClick\(allOption/);
+  assert.match(main, /moveWindowsCursorAndClick\(bounds\.x \+ x, bounds\.y \+ y\)/);
   assert.match(main, /label\?\.closest\("\[role=tab\],button,a"\) \|\| label/);
   assert.match(main, /PRODUCT_DATA_PANEL_NOT_OPENED/);
   assert.match(main, /TRANSACTION_HISTORY_TAB_NOT_OPENED/);
