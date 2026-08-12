@@ -5251,7 +5251,7 @@ async function lookupSellerTransactionPrice(input = {}) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
     button.click();
-    for (let attempt = 0; attempt < 40; attempt += 1) {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
       await wait(250);
       // POIZON renders search results as virtual div rows, not only table rows.
       // Locate the smallest visible result container that contains both the
@@ -5263,20 +5263,44 @@ async function lookupSellerTransactionPrice(input = {}) {
           const value = normalize(element.innerText);
           if (!value.includes(normalizedArticle)) return false;
           return [...element.querySelectorAll("a,button,[role=button],span,div")]
-            .some((item) => visible(item) && /^상품\s*데이터$/.test(item.textContent.trim()));
+            .some((item) => visible(item) && /상품\s*데이터/.test(item.textContent.trim()));
         })
         .sort((left, right) => {
           const leftRect = left.getBoundingClientRect();
           const rightRect = right.getBoundingClientRect();
           return leftRect.width * leftRect.height - rightRect.width * rightRect.height;
         });
-      const row = candidates[0];
+      let row = candidates[0];
+      // Network search can finish before the virtual list exposes a stable
+      // row wrapper. With an exact article query, a single visible
+      // "상품 데이터" action is the searched product and can safely be used
+      // only as a trigger for the internal detail response.
+      if (!row && attempt >= 12 && normalize(document.body?.innerText || "").includes(normalizedArticle)) {
+        const actions = [...document.querySelectorAll("a,button,[role=button],span,div")]
+          .filter((element) => visible(element) && /상품\s*데이터/.test(element.textContent.trim()))
+          .sort((left, right) => {
+            const leftRect = left.getBoundingClientRect();
+            const rightRect = right.getBoundingClientRect();
+            return leftRect.width * leftRect.height - rightRect.width * rightRect.height;
+          });
+        const action = actions[0];
+        if (action) {
+          let candidate = action;
+          for (let depth = 0; candidate && depth < 12; depth += 1, candidate = candidate.parentElement) {
+            if (normalize(candidate.innerText).includes(normalizedArticle)) {
+              row = candidate;
+              break;
+            }
+          }
+          row ||= action.parentElement;
+        }
+      }
       if (!row) continue;
       const rowText = String(row.innerText || "");
       const salesMatch = rowText.match(/(?:최근\s*30일\s*판매량\D*)(<?\s*[\d,]+\+?)/i);
       const salesRaw = String(salesMatch?.[1] || "").trim();
       const dataLabels = [...row.querySelectorAll("a,button,[role=button],span,div")]
-        .filter((element) => visible(element) && /^상품\s*데이터$/.test(element.textContent.trim()))
+        .filter((element) => visible(element) && /상품\s*데이터/.test(element.textContent.trim()))
         .sort((left, right) => {
           const leftRect = left.getBoundingClientRect();
           const rightRect = right.getBoundingClientRect();
@@ -5308,7 +5332,9 @@ async function lookupSellerTransactionPrice(input = {}) {
         if (!visible(element)) return false;
         const rect = element.getBoundingClientRect();
         const content = String(element.innerText || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-        return rect.left > innerWidth * 0.55 && rect.width > 240 && /상품\s*데이터/.test(element.innerText || "") && content.includes(article);
+        return rect.left > innerWidth * 0.55 && rect.width > 240
+          && /상품\s*데이터/.test(element.innerText || "")
+          && (content.includes(article) || /거래\s*내역|가격\s*추이/.test(element.innerText || ""));
       });
       if (panel) return true;
       await wait(250);
@@ -5339,7 +5365,7 @@ async function lookupSellerTransactionPrice(input = {}) {
       }).sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
     const panel = panels[0];
     const label = [...(panel?.querySelectorAll("[role=tab],button,a,span,div") || [])].filter(visible)
-      .filter((element) => /^거래\s*내역(?:\s*>|\s*›)?$/.test(element.textContent.trim()))
+      .filter((element) => /거래\s*내역/.test(element.textContent.trim()))
       .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
     const target = label?.closest("[role=tab],button,a") || label;
     if (!target) return null;
