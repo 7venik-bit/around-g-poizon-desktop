@@ -5309,7 +5309,7 @@ async function lookupSellerTransactionPrice(input = {}) {
       }).sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
     const panel = panels[0];
     const label = [...(panel?.querySelectorAll("[role=tab],button,a,span,div") || [])].filter(visible)
-      .filter((element) => /^거래\s*내역$/.test(element.textContent.trim()))
+      .filter((element) => /^입찰\s*현황$/.test(element.textContent.trim()))
       .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
     const target = label?.closest("[role=tab],button,a") || label;
     if (!target) return null;
@@ -5320,7 +5320,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   if (!transactionHistoryTabPoint) {
     await stopTransactionNetworkCapture();
     showCollectorWindow();
-    return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_FOUND", message: `${articleNumber} 거래 내역 탭을 찾지 못했습니다.` };
+    return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_FOUND", message: `${articleNumber} 입찰 현황 탭을 찾지 못했습니다.` };
   }
   sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(transactionHistoryTabPoint.x), y: Math.round(transactionHistoryTabPoint.y) });
   sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: Math.round(transactionHistoryTabPoint.x), y: Math.round(transactionHistoryTabPoint.y), button: "left", clickCount: 1 });
@@ -5333,7 +5333,7 @@ async function lookupSellerTransactionPrice(input = {}) {
         if (!visible(element)) return false;
         const rect = element.getBoundingClientRect();
         return rect.left > innerWidth * 0.55 && rect.width > 240
-          && /거래\s*내역/.test(element.innerText || "")
+          && /입찰\s*현황/.test(element.innerText || "")
           && /전체\s*\(옵션\s*선택\)|옵션\s*선택/.test(element.innerText || "");
       });
       if (panel) return true;
@@ -5344,7 +5344,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   if (!transactionHistoryTabOpened) {
     await stopTransactionNetworkCapture();
     showCollectorWindow();
-    return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_OPENED", message: `${articleNumber} 거래 내역 화면으로 전환되지 않았습니다.` };
+    return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_OPENED", message: `${articleNumber} 입찰 현황 화면으로 전환되지 않았습니다.` };
   }
   const optionControl = await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
@@ -5353,7 +5353,7 @@ async function lookupSellerTransactionPrice(input = {}) {
         if (!visible(element)) return false;
         const rect = element.getBoundingClientRect();
         return rect.left > innerWidth * 0.55 && rect.width > 240
-          && /거래\s*내역/.test(element.innerText || "");
+          && /입찰\s*현황/.test(element.innerText || "");
       }).sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
     const panel = panels[0] || document.body;
     const controls = [...panel.querySelectorAll("select,[role=combobox],button,[aria-haspopup=listbox],input,.ant-select-selector")].filter(visible);
@@ -5366,7 +5366,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   if (!optionControl) {
     await stopTransactionNetworkCapture();
     showCollectorWindow();
-    return { ok: false, code: "OPTION_CONTROL_NOT_FOUND", message: `${articleNumber} 거래 내역의 전체 옵션 선택창을 찾지 못했습니다.` };
+    return { ok: false, code: "OPTION_CONTROL_NOT_FOUND", message: `${articleNumber} 입찰 현황의 전체 옵션 선택창을 찾지 못했습니다.` };
   }
   sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(optionControl.x), y: Math.round(optionControl.y) });
   sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: Math.round(optionControl.x), y: Math.round(optionControl.y), button: "left", clickCount: 1 });
@@ -5401,7 +5401,7 @@ async function lookupSellerTransactionPrice(input = {}) {
           if (!visible(element)) return false;
           const rect = element.getBoundingClientRect();
           return rect.left > innerWidth * 0.55 && rect.width > 240
-            && /거래\s*내역/.test(element.innerText || "");
+            && /입찰\s*현황/.test(element.innerText || "");
         }).sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
       const panel = panels[0] || document.body;
       const leafText = [...panel.querySelectorAll("span,p,div,td")].filter((element) => {
@@ -5410,7 +5410,7 @@ async function lookupSellerTransactionPrice(input = {}) {
         if (!value || value.length > 80) return false;
         return ![...element.children].some((child) => String(child.innerText || "").trim() === value);
       }).map((element) => ({ element, text: String(element.innerText || "").trim(), rect: element.getBoundingClientRect() }));
-      const priceNodes = leafText.filter((node) => /^[₩￦]\s*[\d,]+(?:\s*-\s*[₩￦]?\s*[\d,]+)?$/.test(node.text));
+      const priceNodes = leafText.filter((node) => /^(?:[₩￦]\s*[\d,]+(?:\s*-\s*[₩￦]?\s*[\d,]+)?|[\d,]+\s*원)$/.test(node.text));
       const rows = [];
       const grouped = [];
       for (const node of priceNodes) {
@@ -5427,10 +5427,10 @@ async function lookupSellerTransactionPrice(input = {}) {
         const labels = leafText.filter((node) => node.rect.right <= firstPrice.rect.left + 8
           && node.rect.left >= panel.getBoundingClientRect().left
           && node.rect.top >= firstPrice.rect.top - 25 && node.rect.bottom <= (salesNode?.rect.bottom || firstPrice.rect.bottom + 30) + 10
-          && !/[₩￦]|판매량/.test(node.text))
+          && !/[₩￦원]|판매량/.test(node.text))
           .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
         const option = [...new Set(labels.map((node) => node.text))].join(" ").replace(/\s+/g, " ").trim();
-        const price = Number((firstPrice.text.match(/[₩￦]\s*([\d,]+)/)?.[1] || "").replace(/,/g, ""));
+        const price = Number((firstPrice.text.match(/(?:[₩￦]\s*)?([\d,]+)\s*원?/)?.[1] || "").replace(/,/g, ""));
         const sales = (salesNode?.text.match(/판매량\s*[:：]?\s*(<?\s*[\d,]+)\+?/i)?.[1] || "").trim();
         if (option && price && sales) rows.push({ text: option + " " + firstPrice.text + " " + salesNode.text, option, price, sales });
       }
@@ -5488,7 +5488,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   showCollectorWindow();
   if (!result.price) {
     sellerWindow.showInactive();
-    return { ok: false, eligible: false, code: "QUALIFIED_OPTION_PRICE_NOT_FOUND", sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0, message: `${articleNumber} 판매량 30건 이상인 옵션 가격을 찾지 못했습니다.` };
+    return { ok: false, eligible: false, code: "QUALIFIED_OPTION_PRICE_NOT_FOUND", sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0, message: `${articleNumber} 입찰 현황에서 판매량 30건 이상인 옵션 가격을 찾지 못했습니다.` };
   }
   sellerWindow.hide();
   return {
