@@ -5120,7 +5120,28 @@ async function lookupSellerTransactionPrice(input = {}) {
     return { ok: false, code: "SELLER_LOGIN_REQUIRED", message: "판매자센터 로그인을 확인해 주세요." };
   }
   sellerWindow.showInactive();
-  await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
+  let productFrame = null;
+  for (let attempt = 0; attempt < 40 && !productFrame; attempt += 1) {
+    const frames = sellerWindowFrames();
+    const probes = await Promise.all(frames.map(async (frame) => ({
+      frame,
+      matched: await executeSellerFrameWithTimeout(frame, `(() => {
+        const visible = (element) => element && element.getClientRects().length > 0;
+        const inputs = [...document.querySelectorAll("input")].filter(visible);
+        const buttons = [...document.querySelectorAll("button,[role=button]")].filter(visible);
+        return inputs.some((element) => /상품명|상품번호|브랜드|카테고리|시리즈/.test(element.placeholder || ""))
+          && buttons.some((element) => /검색\\s*및\\s*입찰|^검색$/.test(element.textContent.trim()));
+      })()`, 2_000, false),
+    })));
+    productFrame = probes.find((candidate) => candidate.matched)?.frame || null;
+    if (!productFrame) await wait(250);
+  }
+  if (!productFrame) {
+    showCollectorWindow();
+    return { ok: false, code: "SEARCH_CONTROL_NOT_FOUND", message: `${articleNumber} 상품검색 내부 화면을 찾지 못했습니다.` };
+  }
+  sellerProductFrameRoutingId = productFrame.routingId;
+  await productFrame.executeJavaScript(String.raw`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
     const back = [...document.querySelectorAll("button,a,[role=button],span")].filter((element) =>
@@ -5178,7 +5199,7 @@ async function lookupSellerTransactionPrice(input = {}) {
     };
     sellerDebugger.on("message", transactionDebuggerListener);
   } catch {}
-  await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
+  await productFrame.executeJavaScript(String.raw`(() => {
     const storageKey = "__aroundGOptionResponses";
     window[storageKey] = [];
     const record = (url, body) => {
@@ -5214,7 +5235,7 @@ async function lookupSellerTransactionPrice(input = {}) {
     }
     return true;
   })()`, true).catch(() => false);
-  const searched = await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
+  const searched = await productFrame.executeJavaScript(String.raw`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
     const article = ${JSON.stringify(articleNumber)};
@@ -5269,7 +5290,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(searched.clickPoint.x), y: Math.round(searched.clickPoint.y) });
   sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: Math.round(searched.clickPoint.x), y: Math.round(searched.clickPoint.y), button: "left", clickCount: 1 });
   sellerWindow.webContents.sendInputEvent({ type: "mouseUp", x: Math.round(searched.clickPoint.x), y: Math.round(searched.clickPoint.y), button: "left", clickCount: 1 });
-  const productPanelOpened = await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
+  const productPanelOpened = await productFrame.executeJavaScript(String.raw`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
     const article = ${JSON.stringify(articleNumber.toUpperCase().replace(/[^A-Z0-9]/g, ""))};
@@ -5295,11 +5316,11 @@ async function lookupSellerTransactionPrice(input = {}) {
     const matches = [...rowText.matchAll(/(?:^|\s)(<?\s*[\d,]+)\+?(?=\s|$)/g)].map((match) => match[1]);
     salesRaw = matches.at(-1) || "";
   }
-  await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
+  await productFrame.executeJavaScript(String.raw`(() => {
     window.__aroundGOptionResponses = [];
     return true;
   })()`, true).catch(() => false);
-  const transactionHistoryTabPoint = await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
+  const transactionHistoryTabPoint = await productFrame.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
     const panels = [...document.querySelectorAll(".ant-drawer-content,[role=dialog],aside,.ant-drawer,section")]
       .filter((element) => {
@@ -5325,7 +5346,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(transactionHistoryTabPoint.x), y: Math.round(transactionHistoryTabPoint.y) });
   sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: Math.round(transactionHistoryTabPoint.x), y: Math.round(transactionHistoryTabPoint.y), button: "left", clickCount: 1 });
   sellerWindow.webContents.sendInputEvent({ type: "mouseUp", x: Math.round(transactionHistoryTabPoint.x), y: Math.round(transactionHistoryTabPoint.y), button: "left", clickCount: 1 });
-  const transactionHistoryTabOpened = await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
+  const transactionHistoryTabOpened = await productFrame.executeJavaScript(String.raw`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
     for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -5346,7 +5367,7 @@ async function lookupSellerTransactionPrice(input = {}) {
     showCollectorWindow();
     return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_OPENED", message: `${articleNumber} 입찰 현황 화면으로 전환되지 않았습니다.` };
   }
-  const optionControl = await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
+  const optionControl = await productFrame.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
     const panels = [...document.querySelectorAll(".ant-drawer-content,[role=dialog],aside,.ant-drawer,section")]
       .filter((element) => {
@@ -5372,7 +5393,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: Math.round(optionControl.x), y: Math.round(optionControl.y), button: "left", clickCount: 1 });
   sellerWindow.webContents.sendInputEvent({ type: "mouseUp", x: Math.round(optionControl.x), y: Math.round(optionControl.y), button: "left", clickCount: 1 });
   await wait(400);
-  const allOption = await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
+  const allOption = await productFrame.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
     const options = [...document.querySelectorAll("[role=option],.ant-select-item-option,li")].filter(visible)
       .filter((element) => /^전체(?:\s|\(|$)/.test(element.textContent.trim()))
@@ -5394,7 +5415,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   const capturedRows = [];
   let previousScroll = -1;
   for (let pass = 0; pass < 40; pass += 1) {
-    const capture = await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
+    const capture = await productFrame.executeJavaScript(String.raw`(() => {
       const visible = (element) => element && element.getClientRects().length > 0;
       const panels = [...document.querySelectorAll(".ant-drawer-content,[role=dialog],aside,.ant-drawer,section")]
         .filter((element) => {
@@ -5461,7 +5482,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   const uniqueRows = [...new Map(capturedRows.map((row) => [`${row.option}|${row.price}|${row.sales}`, row])).values()];
   await wait(500);
   await stopTransactionNetworkCapture();
-  const sellerResponses = await sellerWindow.webContents.executeJavaScript(String.raw`(() => Array.isArray(window.__aroundGOptionResponses)
+  const sellerResponses = await productFrame.executeJavaScript(String.raw`(() => Array.isArray(window.__aroundGOptionResponses)
     ? window.__aroundGOptionResponses.slice(-80)
     : [])()`, true).catch(() => []);
   const responseRows = optionRowsFromSellerResponses(transactionNetworkResponses.length
@@ -5477,7 +5498,7 @@ async function lookupSellerTransactionPrice(input = {}) {
     ])
   ).values()];
   const result = highestQualifiedOptionPrice({ rows: priceRows, minimumSales: 30 });
-  await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
+  await productFrame.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
     const labels = [...document.querySelectorAll("button,a,[role=button],span")].filter(visible);
     const back = labels.find((element) => /뒤로가기/.test(element.textContent.trim()));
