@@ -357,6 +357,26 @@ const SELLER_SELECTION_INFO_SCRIPT = `(() => {
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+async function physicalSellerPointClick(point, settleMilliseconds = 900) {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return false;
+  const x = Math.round(Number(point?.x));
+  const y = Math.round(Number(point?.y));
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+  sellerWindow.show();
+  sellerWindow.focus();
+  const bounds = sellerWindow.getContentBounds();
+  const moved = await moveWindowsCursorAndClick(bounds.x + x, bounds.y + y).catch(() => ({ ok: false }));
+  if (!moved?.ok) {
+    sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
+    await wait(80);
+    sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
+    await wait(100);
+    sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
+  }
+  await wait(settleMilliseconds);
+  return true;
+}
+
 function extractSellerApiProducts(document, limit = 200) {
   const products = [];
   const visited = new Set();
@@ -5322,8 +5342,16 @@ async function lookupSellerTransactionPrice(input = {}) {
       const target = dataLabel?.closest("a,button,[role=button]") || dataLabel;
       if (!target) continue;
       target.scrollIntoView({ block: "center", inline: "center" });
-      target.click();
-      return { ok: true, salesRaw, rowText, productDataClicked: true };
+      const rect = target.getBoundingClientRect();
+      return {
+        ok: true,
+        salesRaw,
+        rowText,
+        productDataPoint: {
+          x: Math.round(rect.left + rect.width / 2),
+          y: Math.round(rect.top + rect.height / 2),
+        },
+      };
     }
     const visibleDataActions = [...document.querySelectorAll("a,button,[role=button],span,div")]
       .filter((element) => visible(element) && /상품\s*데이터/.test(element.textContent.trim())).length;
@@ -5337,7 +5365,8 @@ async function lookupSellerTransactionPrice(input = {}) {
       message: `${articleNumber} 검색 결과 열기 실패 · 상품 데이터 버튼 ${Number(searched?.visibleDataActions || 0)}개`,
     };
   }
-  if (!searched.productDataClicked) {
+  const productDataClicked = await physicalSellerPointClick(searched.productDataPoint, 1_400);
+  if (!productDataClicked) {
     showCollectorWindow();
     return { ok: false, code: "PRODUCT_DATA_CLICK_POINT_NOT_FOUND", message: `${articleNumber} 상품 데이터 버튼을 클릭하지 못했습니다.` };
   }
@@ -5388,14 +5417,15 @@ async function lookupSellerTransactionPrice(input = {}) {
     const target = label?.closest("[role=tab],button,a") || label;
     if (!target) return null;
     target.scrollIntoView({ block: "center", inline: "center" });
-    target.click();
-    return true;
+    const rect = target.getBoundingClientRect();
+    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
   })()`, true).catch(() => null);
   if (!transactionHistoryTabPoint) {
     await stopTransactionNetworkCapture();
     showCollectorWindow();
     return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_FOUND", message: `${articleNumber} 상품 데이터의 거래 내역 링크를 찾지 못했습니다.` };
   }
+  await physicalSellerPointClick(transactionHistoryTabPoint, 1_200);
   const transactionHistoryTabOpened = await productFrame.executeJavaScript(String.raw`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
@@ -5431,14 +5461,20 @@ async function lookupSellerTransactionPrice(input = {}) {
     const control = controls.find((element) => /전체|옵션\s*선택/.test((element.innerText || element.value || element.placeholder || element.parentElement?.innerText || "").trim()));
     if (!control) return null;
     const target = control.closest("select,[role=combobox],button,[aria-haspopup=listbox],.ant-select-selector") || control;
-    target.click();
-    return { opened: true, text: String(target.innerText || target.value || target.parentElement?.innerText || "") };
+    const rect = target.getBoundingClientRect();
+    return {
+      opened: true,
+      text: String(target.innerText || target.value || target.parentElement?.innerText || ""),
+      x: Math.round(rect.left + rect.width / 2),
+      y: Math.round(rect.top + rect.height / 2),
+    };
   })()`, true).catch(() => null);
   if (!optionControl) {
     await stopTransactionNetworkCapture();
     showCollectorWindow();
     return { ok: false, code: "OPTION_CONTROL_NOT_FOUND", message: `${articleNumber} 거래 내역의 전체 옵션 선택창을 찾지 못했습니다.` };
   }
+  await physicalSellerPointClick(optionControl, 500);
   await wait(400);
   const allOption = await productFrame.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
@@ -5447,10 +5483,12 @@ async function lookupSellerTransactionPrice(input = {}) {
       .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
     const option = options[0];
     if (!option) return null;
-    option.click();
-    return true;
+    const rect = option.getBoundingClientRect();
+    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
   })()`, true).catch(() => null);
-  if (!allOption) {
+  if (allOption) {
+    await physicalSellerPointClick(allOption, 900);
+  } else {
     sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "ESC" });
     sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "ESC" });
   }
