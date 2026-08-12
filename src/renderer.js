@@ -462,6 +462,23 @@ function verifiedExcelProductPoizonPrice(product) {
   return Number(product.averagePrice || 0);
 }
 
+function renderPoizonSizeOptions(product, transaction) {
+  const options = Array.isArray(product?.transactionSizeOptions)
+    ? product.transactionSizeOptions
+    : Array.isArray(transaction?.sizeOptions) ? transaction.sizeOptions : [];
+  if (!options.length) return "";
+  return `<div class="poizon-size-table" role="table" aria-label="POIZON 사이즈별 가격과 판매량">
+    <div class="poizon-size-row poizon-size-head" role="row">
+      <span>사이즈</span><span>가격</span><span>판매량</span>
+    </div>
+    ${options.map((option) => `<div class="poizon-size-row ${Number(option.sales || 0) >= 30 ? "qualified" : ""}" role="row">
+      <span>${text(option.option || "-")}</span>
+      <span>${money(Number(option.price || 0))}</span>
+      <span>${Number(option.sales || 0).toLocaleString("ko-KR")}건</span>
+    </div>`).join("")}
+  </div>`;
+}
+
 function poizonTransactionFailureLabel(transaction) {
   const labels = {
     PRODUCT_DATA_PANEL_NOT_OPENED: "상품 데이터 전환 실패",
@@ -481,7 +498,7 @@ function poizonTransactionFailureLabel(transaction) {
 function renderExcelProductRows(file, products = []) {
   const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.articleNumber || product.spuId || product.key}`);
   products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
-  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>옵션별 최고가</th><th>중국 총판매</th><th>현지 총판매</th><th>상품 검색</th></tr>`;
+  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>사이즈별 가격·판매량</th><th>중국 총판매</th><th>현지 총판매</th><th>상품 검색</th></tr>`;
   $("#excel-preview-rows").innerHTML = products.length ? products.map((product, index) => {
     const key = pageKeys[index];
     const result = excelPreviewSearchResults.get(key);
@@ -492,7 +509,12 @@ function renderExcelProductRows(file, products = []) {
       <td class="excel-product-image">${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : "-"}</td>
       <td><b>${text(product.articleNumber || "-")}</b></td><td title="${text(product.title)}">${text(product.title || "-")}</td>
       <td>${text(product.brandName || "-")}</td><td title="${text(product.categoryName)}">${text(product.categoryName || "-")}</td>
-      <td title="${text(poizonPrice ? `${product.transactionOption || "옵션"} · 판매량 ${product.transactionOptionSales || 0}건` : (result?.poizonTransaction?.message || "거래내역 확인 전"))}">${poizonPrice ? money(poizonPrice) : result?.loading ? "확인 중…" : result?.poizonTransaction ? poizonTransactionFailureLabel(result.poizonTransaction) : "확인 전"}</td>
+      <td class="poizon-size-cell" title="${text(poizonPrice ? `30건 이상 최고가 · ${product.transactionOption || "옵션"} · ${product.transactionOptionSales || 0}건` : (result?.poizonTransaction?.message || "거래내역 확인 전"))}">
+        ${renderPoizonSizeOptions(product, result?.poizonTransaction)
+          || (poizonPrice ? `<b>30건 이상 최고가 ${money(poizonPrice)}</b>`
+            : result?.loading ? "확인 중…"
+              : result?.poizonTransaction ? poizonTransactionFailureLabel(result.poizonTransaction) : "확인 전")}
+      </td>
       <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td><td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
       <td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${result?.loading ? "disabled" : ""}>${status}</button></td>
     </tr>${result && !result.loading ? `<tr class="excel-product-search-detail"><td colspan="10">${renderDomestic(result)}</td></tr>` : ""}`;
@@ -514,8 +536,22 @@ async function searchExcelPreviewProduct(key) {
     product.transactionSales30d = Number(poizonTransaction.sales30d || 0);
     product.transactionOption = String(poizonTransaction.option || "");
     product.transactionOptionSales = Number(poizonTransaction.optionSales || 0);
+    product.transactionSizeOptions = Array.isArray(poizonTransaction.sizeOptions)
+      ? poizonTransaction.sizeOptions.map((option) => ({
+        option: String(option.option || ""),
+        price: Number(option.price || 0),
+        sales: Number(option.sales || 0),
+      }))
+      : [];
     product.transactionPriceVerified = true;
   } else {
+    product.transactionSizeOptions = Array.isArray(poizonTransaction?.sizeOptions)
+      ? poizonTransaction.sizeOptions.map((option) => ({
+        option: String(option.option || ""),
+        price: Number(option.price || 0),
+        sales: Number(option.sales || 0),
+      }))
+      : [];
     product.transactionPriceVerified = false;
   }
   const query = [product.brandName, product.articleNumber, product.title].filter(Boolean).join(" ");
