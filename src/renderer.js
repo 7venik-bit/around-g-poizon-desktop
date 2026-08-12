@@ -465,8 +465,8 @@ function verifiedExcelProductPoizonPrice(product) {
 function poizonTransactionFailureLabel(transaction) {
   const labels = {
     PRODUCT_DATA_PANEL_NOT_OPENED: "상품 데이터 전환 실패",
-    BID_STATUS_TAB_NOT_FOUND: "입찰 현황 찾기 실패",
-    BID_STATUS_TAB_NOT_OPENED: "입찰 현황 전환 실패",
+    TRANSACTION_HISTORY_TAB_NOT_FOUND: "거래 내역 찾기 실패",
+    TRANSACTION_HISTORY_TAB_NOT_OPENED: "거래 내역 전환 실패",
     OPTION_CONTROL_NOT_FOUND: "전체 옵션 선택 실패",
     QUALIFIED_OPTION_PRICE_NOT_FOUND: "판매 30건 이상 없음",
   };
