@@ -52,6 +52,11 @@ test("전체 거래내역에서 판매량 30건 이상인 옵션 중 최고가�
     { option: "블랙 KR 90", price: 55000, sales: 40 },
     { option: "블랙 KR 100", price: 68000, sales: 100 },
   ]);
+  assert.deepEqual(qualifiedOptionPrices(rows, 0), [
+    { option: "블랙 KR 90", price: 55000, sales: 40 },
+    { option: "블랙 KR 95", price: 76000, sales: 29 },
+    { option: "블랙 KR 100", price: 68000, sales: 100 },
+  ]);
   assert.deepEqual(highestQualifiedOptionPrice({ rows }), {
     eligible: true,
     price: 68000,
@@ -118,7 +123,9 @@ test("엑셀 상품 검색은 거래내역 검증 가격을 평균가격 필드�
   assert.match(main, /\^거래\\s\*내역/);
   assert.match(main, /tr,\[role=row\],li,div,section,article/);
   assert.match(main, /normalizedArticle/);
-  assert.match(main, /\^상품\\s\*데이터\$/);
+  assert.match(main, /상품\\s\*데이터/);
+  assert.match(main, /attempt < 120/);
+  assert.match(main, /single visible/);
   assert.match(main, /label\?\.closest\("\[role=tab\],button,a"\) \|\| label/);
   assert.match(main, /PRODUCT_DATA_PANEL_NOT_OPENED/);
   assert.match(main, /TRANSACTION_HISTORY_TAB_NOT_OPENED/);
