@@ -747,9 +747,30 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "") {
         const imageUrl = String(image?.currentSrc || image?.src || image?.dataset?.src || image?.dataset?.original || "");
         const titleElement = card?.querySelector?.("[class*='title'], [class*='name'], strong");
         const title = String(image?.alt || link.getAttribute("aria-label") || titleElement?.textContent || text.split("\\n")[0] || "").trim();
-        const price = text.match(/[\\d,]+\\s*원/)?.[0] || "";
+        const priceCandidates = [...(card?.querySelectorAll?.("del,s,strike,strong,b,em,span,p,div") || [])]
+          .map((element) => {
+            const value = String(element.textContent || "").trim();
+            if (!/^[\\d,]+\\s*원$/.test(value)) return null;
+            const style = getComputedStyle(element);
+            const struck = /line-through/.test(style.textDecorationLine || style.textDecoration || "")
+              || Boolean(element.closest("del,s,strike"));
+            const className = String(element.className?.baseVal || element.className || "");
+            const rgb = String(style.color || "").match(/\\d+/g)?.map(Number) || [];
+            const red = rgb.length >= 3 && rgb[0] > rgb[1] * 1.35 && rgb[0] > rgb[2] * 1.35;
+            const amount = Number(value.replace(/[^0-9]/g, ""));
+            const score = (struck ? -1000 : 0) + (red ? 80 : 0)
+              + (/sale|discount|final|current|price/i.test(className) ? 35 : 0)
+              + (Number(style.fontWeight) >= 600 || /bold/i.test(style.fontWeight) ? 15 : 0);
+            return { value, amount, struck, score };
+          }).filter(Boolean)
+          .filter((candidate) => !candidate.struck && candidate.amount > 0)
+          .sort((left, right) => right.score - left.score || left.amount - right.amount);
+        const price = priceCandidates[0]?.value || text.match(/[\\d,]+\\s*원/)?.[0] || "";
+        const originalPrice = [...(card?.querySelectorAll?.("del,s,strike") || [])]
+          .map((element) => String(element.textContent || "").trim())
+          .find((value) => /^[\\d,]+\\s*원$/.test(value)) || "";
         seen.add(productUrl);
-        productCards.push({ productUrl, text, markup, imageUrl, title, price });
+        productCards.push({ productUrl, text, markup, imageUrl, title, price, originalPrice });
       }
       const pageText = String(document.body?.innerText || "").slice(0, 20000);
       const pageBlocked = /captcha|보안\s*확인|자동\s*입력|로봇|접속.{0,12}(?:제한|차단)|서비스.{0,12}(?:제한|지연)|비정상적인\s*접근/i.test(pageText);

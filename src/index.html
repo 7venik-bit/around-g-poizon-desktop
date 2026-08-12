@@ -188,12 +188,12 @@
             <label>매입가<input id="cost" type="number" min="0" placeholder="0"></label>
             <label>국제·국내 배송비<input id="shipping" type="number" min="0" placeholder="0"></label>
             <label>기타 비용<input id="extra" type="number" min="0" placeholder="0"></label>
-            <label>판매 수수료 (%)<input id="fee" type="number" min="0" value="10"></label>
+            <label>POIZON 수수료<input id="fee" type="text" value="카테고리별 자동 적용" readonly></label>
             <div class="margin-buttons"><button data-margin="1">최소 1%</button><button data-margin="3">최소 3%</button><button data-margin="5">최소 5%</button><button data-margin="10">목표 10%</button></div>
           </div>
           <div class="panel result-card"><small>PRICE COMPARISON</small><strong id="sale-price">0원</strong><span id="sale-price-label">예상 판매가</span><dl><div><dt>예상 비용</dt><dd id="total-cost">0원</dd></div><div><dt>예상 순이익</dt><dd id="net-profit">0원</dd></div></dl></div>
         </div>
-        <section id="profit-comparison" class="panel profit-comparison" hidden><div class="panel-title"><div><small>POIZON VS KOREA</small><h2>POIZON·국내 쇼핑몰 가격 비교</h2></div><strong id="profit-comparison-count"></strong></div><div class="table-wrap"><table><thead><tr><th>상품</th><th>POIZON 가격</th><th>국내 최저가</th><th>판매처</th><th>총비용</th><th>예상 순이익</th><th>수익률</th></tr></thead><tbody id="profit-comparison-rows"></tbody></table></div></section>
+        <section id="profit-comparison" class="panel profit-comparison" hidden><div class="panel-title"><div><small>POIZON VS KOREA</small><h2>POIZON·국내 쇼핑몰 가격 비교</h2></div><strong id="profit-comparison-count"></strong></div><div class="table-wrap"><table><thead><tr><th>상품</th><th>POIZON 판매가</th><th>국내 매입가</th><th>구매처</th><th>총 매입비용</th><th>예상 순이익</th><th>수익률</th></tr></thead><tbody id="profit-comparison-rows"></tbody></table></div></section>
       </section>
 
       <section id="ledger" class="view"><div class="panel"><div class="panel-title"><div><small>LOCAL LEDGER</small><h2>구매 장부</h2></div><button class="add-record" data-collection="ledger">장부 추가</button></div><div id="ledger-list" class="cards"></div></div></section>

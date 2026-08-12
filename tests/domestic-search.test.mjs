@@ -184,6 +184,21 @@ test("SSG department Korean brand result confirms stock for an English brand que
   assert.equal(result?.products[0]?.price, 98100);
 });
 
+test("네이버 할인 상품은 취소선 정상가와 실제 판매가를 구분한다", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    pageText: "아디다스 IH1321 검색 결과",
+    productCards: [{
+      productUrl: "https://shopping.naver.com/window-products/outlet/13001191642",
+      text: "아디다스 R71 IH1321 109,000원 20% 87,200원",
+      title: "아디다스 R71 IH1321",
+      price: "87,200원",
+      originalPrice: "109,000원",
+    }],
+  }), "네이버 아울렛", "IH1321", "아디다스");
+  assert.equal(result?.products[0]?.price, 87200);
+  assert.equal(result?.products[0]?.originalPrice, 109000);
+});
+
 test("rendered SSG cards take priority over a stale block phrase elsewhere on the page", async () => {
   const mainSource = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../main.mjs", import.meta.url), "utf8"));
   assert.match(mainSource, /parsedContent\?\.pageBlocked && !parsedContent\?\.productCards\?\.length/);

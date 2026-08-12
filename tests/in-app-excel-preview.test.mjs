@@ -86,7 +86,11 @@ test("selected Excel products calculate profit from the verified list price", ()
   assert.match(rendererSource, /excelPreviewSearchResults\.get\(key\)/);
   assert.match(rendererSource, /const poizonPrice = verifiedExcelProductPoizonPrice\(product\)/);
   assert.match(rendererSource, /const domesticPrice = Number\(domestic\?\.price/);
-  assert.match(rendererSource, /const netProfit = domesticPrice > 0/);
+  assert.match(rendererSource, /const poizonFee = poizonServiceFee\(poizonPrice, product\?\.categoryName\)/);
+  assert.match(rendererSource, /const totalCost = domesticPrice \+ shipping \+ extra/);
+  assert.match(rendererSource, /poizonSettlement - totalCost/);
+  assert.match(rendererSource, /netProfit \/ totalCost \* 100/);
+  assert.match(rendererSource, /Math\.min\(45_000, Math\.max\(minimum/);
   assert.match(rendererSource, /document\.querySelector\('\.nav\[data-view="profit"\]'\)\?\.click\(\)/);
   assert.match(rendererSource, /function profitResult/);
   assert.match(htmlSource, /POIZON·국내 쇼핑몰 가격 비교/);
@@ -123,7 +127,10 @@ test("official-store verification supports every registered URL family and embed
   assert.match(mainSource, /productDetail\\\\\.action/);
   assert.match(mainSource, /matchesExpected\(link\.href\)/);
   assert.match(mainSource, /matchesExpected\(link\.outerHTML\)/);
-  assert.match(mainSource, /productCards\.push\(\{ productUrl, text, markup, imageUrl, title, price \}\)/);
+  assert.match(mainSource, /productCards\.push\(\{ productUrl, text, markup, imageUrl, title, price, originalPrice \}\)/);
+  assert.match(mainSource, /line-through/);
+  assert.match(mainSource, /!candidate\.struck/);
+  assert.match(mainSource, /right\.score - left\.score \|\| left\.amount - right\.amount/);
   assert.match(mainSource, /itemView\\\\\.ssg/);
   assert.match(mainSource, /split\("#"\)\[0\]/);
   assert.doesNotMatch(mainSource, /String\(link\.href \|\| ""\)\.split\("\?"\)/);
