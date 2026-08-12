@@ -461,6 +461,15 @@ function verifiedExcelProductPoizonPrice(product) {
   return Number(product?.averagePrice || 0);
 }
 
+function poizonServiceFee(price, categoryName = "") {
+  const amount = Number(price || 0);
+  if (amount <= 0) return 0;
+  const premiumCategory = /가방|캐리어|시계|액세서리/.test(String(categoryName || ""));
+  const rate = premiumCategory ? 0.14 : 0.10;
+  const minimum = premiumCategory ? 18_000 : 15_000;
+  return Math.min(45_000, Math.max(minimum, Math.round(amount * rate)));
+}
+
 function renderExcelProductRows(file, products = []) {
   const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.articleNumber || product.spuId || product.key}`);
   products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
@@ -1971,7 +1980,6 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
   }
   const shipping = Number($("#shipping").value || 0);
   const extra = Number($("#extra").value || 0);
-  const feeRate = Number($("#fee").value || 0) / 100;
   const comparisons = keys.map((key) => {
     const product = excelPreviewProductCache.get(key);
     const result = excelPreviewSearchResults.get(key);
@@ -1982,10 +1990,12 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
     const purchaseUrl = String(domestic?.url || domesticSource?.officialProductUrl || domesticSource?.searchUrl || "");
     const poizonPrice = verifiedExcelProductPoizonPrice(product);
     const domesticPrice = Number(domestic?.price || 0);
-    const totalCost = poizonPrice + shipping + extra;
-    const netProfit = domesticPrice > 0 ? domesticPrice * (1 - feeRate) - totalCost : 0;
-    const marginRate = domesticPrice > 0 ? netProfit / domesticPrice * 100 : 0;
-    return { product, domestic, purchaseUrl, poizonPrice, domesticPrice, totalCost, netProfit, marginRate };
+    const poizonFee = poizonServiceFee(poizonPrice, product?.categoryName);
+    const poizonSettlement = poizonPrice - poizonFee;
+    const totalCost = domesticPrice + shipping + extra;
+    const netProfit = poizonPrice > 0 && domesticPrice > 0 ? poizonSettlement - totalCost : 0;
+    const marginRate = totalCost > 0 ? netProfit / totalCost * 100 : 0;
+    return { product, domestic, purchaseUrl, poizonPrice, domesticPrice, poizonFee, poizonSettlement, totalCost, netProfit, marginRate };
   });
   const comparable = comparisons.filter((item) => item.poizonPrice > 0 && item.domesticPrice > 0);
   const totals = comparable.reduce((sum, item) => ({
@@ -1994,14 +2004,14 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
     totalCost: sum.totalCost + item.totalCost,
     netProfit: sum.netProfit + item.netProfit,
   }), { poizonPrice: 0, domesticPrice: 0, totalCost: 0, netProfit: 0 });
-  $("#cost").value = String(Math.round(totals.poizonPrice));
-  $("#sale-price").textContent = money(totals.domesticPrice);
-  $("#sale-price-label").textContent = "국내 최저가 합계";
+  $("#cost").value = String(Math.round(totals.domesticPrice));
+  $("#sale-price").textContent = money(totals.poizonPrice);
+  $("#sale-price-label").textContent = "POIZON 판매가 합계";
   $("#total-cost").textContent = money(totals.totalCost);
   $("#net-profit").textContent = money(totals.netProfit);
   const summary = $("#profit-selection-summary");
   summary.hidden = false;
-  summary.textContent = `선택 ${keys.length.toLocaleString("ko-KR")}개 · 국내 가격 비교 완료 ${comparable.length.toLocaleString("ko-KR")}개 · 판매 수수료 ${Number($("#fee").value || 0).toLocaleString("ko-KR")}%`;
+  summary.textContent = `선택 ${keys.length.toLocaleString("ko-KR")}개 · 국내 매입가 확인 ${comparable.length.toLocaleString("ko-KR")}개 · POIZON 카테고리별 수수료 자동 적용`;
   $("#profit-comparison").hidden = false;
   $("#profit-comparison-count").textContent = `${comparable.length.toLocaleString("ko-KR")}개 비교`;
   $("#profit-comparison-rows").innerHTML = comparisons.map((item) => `<tr>
@@ -2009,7 +2019,7 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
     <td>${item.poizonPrice ? money(item.poizonPrice) : "가격 없음"}</td>
     <td>${item.domesticPrice ? money(item.domesticPrice) : "검색 결과 없음"}</td>
     <td>${item.purchaseUrl
-      ? `<button type="button" class="profit-store-link" data-url="${encodeURIComponent(item.purchaseUrl)}" title="구매 페이지 열기">${text(item.domestic?.store || "판매처 열기")} ↗</button>`
+      ? `<button type="button" class="profit-store-link" data-url="${encodeURIComponent(item.purchaseUrl)}" title="구매 페이지 열기">${text(item.domestic?.store || "구매처 열기")} ↗</button>`
       : "-"}</td>
     <td>${item.poizonPrice ? money(item.totalCost) : "-"}</td>
     <td class="${item.netProfit >= 0 ? "profit-positive" : "profit-negative"}">${item.poizonPrice && item.domesticPrice ? money(item.netProfit) : "계산 불가"}</td>

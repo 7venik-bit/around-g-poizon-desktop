@@ -219,6 +219,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
             articleNumber,
             imageUrl: String(card?.imageUrl || ""),
             price: safeNumber(card?.price),
+            originalPrice: safeNumber(card?.originalPrice),
             inStock: true,
             sizes: [],
             confidence: 90,
