@@ -93,6 +93,10 @@ test("엑셀 상품 검색은 거래내역 검증 가격을 평균가격 필드�
     readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
   ]);
   assert.match(main, /seller:lookup-transaction-price/);
+  assert.match(main, /sellerWindowFrames\(\)/);
+  assert.match(main, /sellerProductFrameRoutingId = productFrame\.routingId/);
+  assert.match(main, /await productFrame\.executeJavaScript/);
+  assert.match(main, /target\.click\(\)/);
   assert.match(main, /\^입찰\\s\*현황\$/);
   assert.match(main, /label\?\.closest\("\[role=tab\],button,a"\) \|\| label/);
   assert.match(main, /PRODUCT_DATA_PANEL_NOT_OPENED/);
