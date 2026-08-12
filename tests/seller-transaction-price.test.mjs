@@ -23,6 +23,24 @@ test("판매자센터 내부 응답에서 옵션 가격과 판매량을 직접 �
   assert.equal(result.option, "290");
 });
 
+test("분리된 중첩 응답에서도 옵션, 가격, 30일 판매량을 결합한다", () => {
+  const rows = optionRowsFromSellerResponses([{ body: JSON.stringify({
+    data: {
+      skuList: [{
+        sizeName: "블랙 KR 100",
+        statistics: { saleNum30Days: 83 },
+        quote: { bidPrice: 68000 },
+      }],
+    },
+  }) }]);
+  assert.deepEqual(rows, [{
+    option: "블랙 KR 100",
+    price: 68000,
+    sales: 83,
+    text: "블랙 KR 100 68000 83",
+  }]);
+});
+
 test("전체 거래내역에서 판매량 30건 이상인 옵션 중 최고가를 선택한다", () => {
   const rows = [
     { option: "ALL", price: 82000, sales: "300+" },
@@ -110,7 +128,8 @@ test("엑셀 상품 검색은 거래내역 검증 가격을 평균가격 필드�
   assert.match(main, /Network\.getResponseBody/);
   assert.match(main, /transactionNetworkResponses/);
   assert.match(main, /pendingTransactionRequests/);
-  assert.match(main, /optionRowsFromSellerResponses\(transactionNetworkResponses\.length/);
+  assert.match(main, /\.\.\.transactionNetworkResponses/);
+  assert.match(main, /\.\.\.sellerResponses/);
   assert.match(main, /\[\.\.\.uniqueRows, \.\.\.responseRows\]/);
   assert.match(main, /seller-product-transaction-history-options\+api/);
   assert.match(main, /뒤로가기/);

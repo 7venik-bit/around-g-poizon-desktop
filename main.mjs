@@ -5484,9 +5484,10 @@ async function lookupSellerTransactionPrice(input = {}) {
   const sellerResponses = await productFrame.executeJavaScript(String.raw`(() => Array.isArray(window.__aroundGOptionResponses)
     ? window.__aroundGOptionResponses.slice(-80)
     : [])()`, true).catch(() => []);
-  const responseRows = optionRowsFromSellerResponses(transactionNetworkResponses.length
-    ? transactionNetworkResponses
-    : sellerResponses);
+  const responseRows = optionRowsFromSellerResponses([
+    ...transactionNetworkResponses,
+    ...sellerResponses,
+  ]);
   // The seller API can return partial/background payloads. Never let one
   // incomplete API row discard valid option rows collected from the visible
   // transaction-history list.
@@ -5508,7 +5509,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   showCollectorWindow();
   if (!result.price) {
     sellerWindow.showInactive();
-    return { ok: false, eligible: false, code: "QUALIFIED_OPTION_PRICE_NOT_FOUND", sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0, message: `${articleNumber} 거래 내역에서 판매량 30건 이상인 옵션 가격을 찾지 못했습니다.` };
+    return { ok: false, eligible: false, code: "QUALIFIED_OPTION_PRICE_NOT_FOUND", sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0, message: `${articleNumber} 옵션 가격 확인 실패 · 화면 ${uniqueRows.length}행 · 응답 ${responseRows.length}행 · 판매 30건 이상 0행` };
   }
   sellerWindow.hide();
   return {
