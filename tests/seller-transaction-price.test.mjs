@@ -140,7 +140,12 @@ test("엑셀 상품 검색은 거래내역 검증 가격을 평균가격 필드�
   assert.match(renderer, /product\.averagePrice = Number\(poizonTransaction\.price\)/);
   assert.match(renderer, /product\.transactionOptionSales = Number\(poizonTransaction\.optionSales/);
   assert.match(renderer, /verifiedExcelProductPoizonPrice\(product\)/);
-  assert.match(renderer, /<th>옵션별 최고가<\/th>/);
+  assert.match(renderer, /<th>사이즈별 가격·판매량<\/th>/);
+  assert.match(renderer, /transactionSizeOptions/);
+  assert.match(renderer, /renderPoizonSizeOptions/);
+  assert.match(renderer, /사이즈<\/span><span>가격<\/span><span>판매량/);
+  assert.match(main, /qualifiedOptionPrices\(priceRows, 0\)/);
+  assert.match(main, /sizeOptions/);
   assert.match(renderer, /PRODUCT_DATA_PANEL_NOT_OPENED: "상품 데이터 전환 실패"/);
   assert.match(renderer, /QUALIFIED_OPTION_PRICE_NOT_FOUND: "판매 30건 이상 없음"/);
 });
