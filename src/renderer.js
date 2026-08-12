@@ -470,9 +470,9 @@ function poizonTransactionFailureLabel(transaction) {
     PRODUCT_SEARCH_FAILED: "상품 검색 실패",
     PRODUCT_DATA_CLICK_POINT_NOT_FOUND: "상품 데이터 클릭 실패",
     SELLER_LOGIN_REQUIRED: "판매자센터 로그인 필요",
-    TRANSACTION_HISTORY_TAB_NOT_FOUND: "입찰 현황 찾기 실패",
-    TRANSACTION_HISTORY_TAB_NOT_OPENED: "입찰 현황 전환 실패",
-    OPTION_CONTROL_NOT_FOUND: "입찰 현황 전체 선택 실패",
+    TRANSACTION_HISTORY_TAB_NOT_FOUND: "거래 내역 찾기 실패",
+    TRANSACTION_HISTORY_TAB_NOT_OPENED: "거래 내역 전환 실패",
+    OPTION_CONTROL_NOT_FOUND: "전체 옵션 선택 실패",
     QUALIFIED_OPTION_PRICE_NOT_FOUND: "판매 30건 이상 없음",
   };
   return labels[String(transaction?.code || "")] || "확인 실패";
