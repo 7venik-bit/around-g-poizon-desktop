@@ -3192,8 +3192,7 @@ Start-Sleep -Milliseconds 70
 
 async function physicalClickSellerElement(targetFrame, locatorScript, step, timeoutMs = 8_000) {
   if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: `${step}_WINDOW_MISSING` };
-  sellerWindow.show();
-  sellerWindow.focus();
+  sellerWindow.showInactive();
   sellerWindow.webContents.focus();
   const startedAt = Date.now();
   let point = null;
@@ -3310,8 +3309,7 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     return { ok: false, step: "SELLER_WINDOW_NOT_AVAILABLE" };
   }
-  sellerWindow.show();
-  sellerWindow.focus();
+  sellerWindow.showInactive();
   sellerWindow.webContents.focus();
   const focused = await targetFrame.executeJavaScript(`(() => {
     const visible = (element) => element && element.getBoundingClientRect().width > 0
@@ -5121,8 +5119,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   if (!sellerWindow.webContents.getURL().includes("/main/goods/search")) {
     return { ok: false, code: "SELLER_LOGIN_REQUIRED", message: "판매자센터 로그인을 확인해 주세요." };
   }
-  sellerWindow.show();
-  sellerWindow.focus();
+  sellerWindow.showInactive();
   await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
@@ -5139,6 +5136,48 @@ async function lookupSellerTransactionPrice(input = {}) {
     await wait(500);
     return true;
   })()`, true).catch(() => false);
+  const transactionNetworkResponses = [];
+  const pendingTransactionRequests = new Set();
+  const transactionBodyTasks = new Set();
+  let transactionCaptureActive = true;
+  let transactionDebuggerListener;
+  let transactionDebuggerAttachedHere = false;
+  const stopTransactionNetworkCapture = async () => {
+    transactionCaptureActive = false;
+    await Promise.allSettled([...transactionBodyTasks]);
+    try {
+      if (transactionDebuggerListener) sellerWindow?.webContents.debugger.removeListener("message", transactionDebuggerListener);
+      if (transactionDebuggerAttachedHere && sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.debugger.isAttached()) {
+        sellerWindow.webContents.debugger.detach();
+      }
+    } catch {}
+  };
+  try {
+    const sellerDebugger = sellerWindow.webContents.debugger;
+    if (!sellerDebugger.isAttached()) {
+      sellerDebugger.attach("1.3");
+      transactionDebuggerAttachedHere = true;
+    }
+    await sellerDebugger.sendCommand("Network.enable");
+    transactionDebuggerListener = (_event, method, params) => {
+      if (method === "Network.responseReceived" && transactionCaptureActive && ["XHR", "Fetch"].includes(params?.type)) {
+        pendingTransactionRequests.add(params.requestId);
+        return;
+      }
+      if (method !== "Network.loadingFinished" || !pendingTransactionRequests.has(params?.requestId)) return;
+      pendingTransactionRequests.delete(params.requestId);
+      const task = sellerDebugger.sendCommand("Network.getResponseBody", { requestId: params.requestId })
+        .then((payload) => {
+          const body = payload?.base64Encoded
+            ? Buffer.from(payload.body || "", "base64").toString("utf8")
+            : String(payload?.body || "");
+          if (/^\s*[\[{]/.test(body) && body.length <= 5_000_000) transactionNetworkResponses.push({ body });
+        }).catch(() => {});
+      transactionBodyTasks.add(task);
+      task.finally(() => transactionBodyTasks.delete(task));
+    };
+    sellerDebugger.on("message", transactionDebuggerListener);
+  } catch {}
   await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
     const storageKey = "__aroundGOptionResponses";
     window[storageKey] = [];
@@ -5279,6 +5318,7 @@ async function lookupSellerTransactionPrice(input = {}) {
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   })()`, true).catch(() => null);
   if (!transactionHistoryTabPoint) {
+    await stopTransactionNetworkCapture();
     showCollectorWindow();
     return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_FOUND", message: `${articleNumber} 거래 내역 탭을 찾지 못했습니다.` };
   }
@@ -5302,6 +5342,7 @@ async function lookupSellerTransactionPrice(input = {}) {
     return false;
   })()`, true).catch(() => false);
   if (!transactionHistoryTabOpened) {
+    await stopTransactionNetworkCapture();
     showCollectorWindow();
     return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_OPENED", message: `${articleNumber} 거래 내역 화면으로 전환되지 않았습니다.` };
   }
@@ -5323,6 +5364,7 @@ async function lookupSellerTransactionPrice(input = {}) {
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, text: String(target.innerText || target.value || target.parentElement?.innerText || "") };
   })()`, true).catch(() => null);
   if (!optionControl) {
+    await stopTransactionNetworkCapture();
     showCollectorWindow();
     return { ok: false, code: "OPTION_CONTROL_NOT_FOUND", message: `${articleNumber} 거래 내역의 전체 옵션 선택창을 찾지 못했습니다.` };
   }
@@ -5417,10 +5459,14 @@ async function lookupSellerTransactionPrice(input = {}) {
     await wait(350);
   }
   const uniqueRows = [...new Map(capturedRows.map((row) => [`${row.option}|${row.price}|${row.sales}`, row])).values()];
+  await wait(500);
+  await stopTransactionNetworkCapture();
   const sellerResponses = await sellerWindow.webContents.executeJavaScript(String.raw`(() => Array.isArray(window.__aroundGOptionResponses)
     ? window.__aroundGOptionResponses.slice(-80)
     : [])()`, true).catch(() => []);
-  const responseRows = optionRowsFromSellerResponses(sellerResponses);
+  const responseRows = optionRowsFromSellerResponses(transactionNetworkResponses.length
+    ? transactionNetworkResponses
+    : sellerResponses);
   const priceRows = responseRows.length ? responseRows : uniqueRows;
   const result = highestQualifiedOptionPrice({ rows: priceRows, minimumSales: 30 });
   await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
@@ -5433,8 +5479,10 @@ async function lookupSellerTransactionPrice(input = {}) {
   })()`, true).catch(() => false);
   showCollectorWindow();
   if (!result.price) {
+    sellerWindow.showInactive();
     return { ok: false, eligible: false, code: "QUALIFIED_OPTION_PRICE_NOT_FOUND", sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0, message: `${articleNumber} 판매량 30건 이상인 옵션 가격을 찾지 못했습니다.` };
   }
+  sellerWindow.hide();
   return {
     ok: true,
     articleNumber,
