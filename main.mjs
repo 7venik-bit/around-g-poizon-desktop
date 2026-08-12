@@ -5274,8 +5274,8 @@ async function lookupSellerTransactionPrice(input = {}) {
       })[0];
       const target = dataButton || expandButton || row;
       target.scrollIntoView({ block: "center", inline: "center" });
-      const rect = target.getBoundingClientRect();
-      return { ok: true, salesRaw, rowText, clickPoint: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } };
+      target.click();
+      return { ok: true, salesRaw, rowText, productDataClicked: true };
     }
     return { ok: false, code: "PRODUCT_ROW_NOT_FOUND" };
   })()`, true).catch(() => ({ ok: false, code: "PRODUCT_SEARCH_FAILED" }));
@@ -5283,13 +5283,10 @@ async function lookupSellerTransactionPrice(input = {}) {
     showCollectorWindow();
     return { ok: false, code: searched?.code || "PRODUCT_SEARCH_FAILED", message: `${articleNumber} 상품을 찾지 못했습니다.` };
   }
-  if (!searched.clickPoint) {
+  if (!searched.productDataClicked) {
     showCollectorWindow();
-    return { ok: false, code: "PRODUCT_DATA_CLICK_POINT_NOT_FOUND", message: `${articleNumber} 상품 데이터 버튼 위치를 찾지 못했습니다.` };
+    return { ok: false, code: "PRODUCT_DATA_CLICK_POINT_NOT_FOUND", message: `${articleNumber} 상품 데이터 버튼을 클릭하지 못했습니다.` };
   }
-  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(searched.clickPoint.x), y: Math.round(searched.clickPoint.y) });
-  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: Math.round(searched.clickPoint.x), y: Math.round(searched.clickPoint.y), button: "left", clickCount: 1 });
-  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", x: Math.round(searched.clickPoint.x), y: Math.round(searched.clickPoint.y), button: "left", clickCount: 1 });
   const productPanelOpened = await productFrame.executeJavaScript(String.raw`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
@@ -5335,17 +5332,14 @@ async function lookupSellerTransactionPrice(input = {}) {
     const target = label?.closest("[role=tab],button,a") || label;
     if (!target) return null;
     target.scrollIntoView({ block: "center", inline: "center" });
-    const rect = target.getBoundingClientRect();
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    target.click();
+    return true;
   })()`, true).catch(() => null);
   if (!transactionHistoryTabPoint) {
     await stopTransactionNetworkCapture();
     showCollectorWindow();
     return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_FOUND", message: `${articleNumber} 입찰 현황 탭을 찾지 못했습니다.` };
   }
-  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(transactionHistoryTabPoint.x), y: Math.round(transactionHistoryTabPoint.y) });
-  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: Math.round(transactionHistoryTabPoint.x), y: Math.round(transactionHistoryTabPoint.y), button: "left", clickCount: 1 });
-  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", x: Math.round(transactionHistoryTabPoint.x), y: Math.round(transactionHistoryTabPoint.y), button: "left", clickCount: 1 });
   const transactionHistoryTabOpened = await productFrame.executeJavaScript(String.raw`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
@@ -5381,17 +5375,14 @@ async function lookupSellerTransactionPrice(input = {}) {
     const control = controls.find((element) => /전체|옵션\s*선택/.test((element.innerText || element.value || element.placeholder || element.parentElement?.innerText || "").trim()));
     if (!control) return null;
     const target = control.closest("select,[role=combobox],button,[aria-haspopup=listbox],.ant-select-selector") || control;
-    const rect = target.getBoundingClientRect();
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, text: String(target.innerText || target.value || target.parentElement?.innerText || "") };
+    target.click();
+    return { opened: true, text: String(target.innerText || target.value || target.parentElement?.innerText || "") };
   })()`, true).catch(() => null);
   if (!optionControl) {
     await stopTransactionNetworkCapture();
     showCollectorWindow();
     return { ok: false, code: "OPTION_CONTROL_NOT_FOUND", message: `${articleNumber} 입찰 현황의 전체 옵션 선택창을 찾지 못했습니다.` };
   }
-  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(optionControl.x), y: Math.round(optionControl.y) });
-  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: Math.round(optionControl.x), y: Math.round(optionControl.y), button: "left", clickCount: 1 });
-  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", x: Math.round(optionControl.x), y: Math.round(optionControl.y), button: "left", clickCount: 1 });
   await wait(400);
   const allOption = await productFrame.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
@@ -5400,14 +5391,10 @@ async function lookupSellerTransactionPrice(input = {}) {
       .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
     const option = options[0];
     if (!option) return null;
-    const rect = option.getBoundingClientRect();
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    option.click();
+    return true;
   })()`, true).catch(() => null);
-  if (allOption) {
-    sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(allOption.x), y: Math.round(allOption.y) });
-    sellerWindow.webContents.sendInputEvent({ type: "mouseDown", x: Math.round(allOption.x), y: Math.round(allOption.y), button: "left", clickCount: 1 });
-    sellerWindow.webContents.sendInputEvent({ type: "mouseUp", x: Math.round(allOption.x), y: Math.round(allOption.y), button: "left", clickCount: 1 });
-  } else {
+  if (!allOption) {
     sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "ESC" });
     sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "ESC" });
   }
