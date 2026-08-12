@@ -104,6 +104,8 @@ test("엑셀 상품 검색은 거래내역 검증 가격을 평균가격 필드�
   assert.match(main, /transactionNetworkResponses/);
   assert.match(main, /pendingTransactionRequests/);
   assert.match(main, /optionRowsFromSellerResponses\(transactionNetworkResponses\.length/);
+  assert.match(main, /\[\.\.\.uniqueRows, \.\.\.responseRows\]/);
+  assert.match(main, /seller-product-transaction-history-options\+api/);
   assert.match(main, /뒤로가기/);
   assert.match(main, /OPTION_CONTROL_NOT_FOUND/);
   assert.match(main, /highestQualifiedOptionPrice\(\{ rows: priceRows, minimumSales: 30 \}\)/);
