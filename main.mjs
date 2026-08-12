@@ -5730,11 +5730,6 @@ app.whenReady().then(async () => {
     openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL);
     return { ok: true };
   });
-  ipcMain.handle("seller:lookup-transaction-price", (_event, input) => {
-    const queued = sellerTransactionLookupQueue.then(() => lookupSellerTransactionPrice(input));
-    sellerTransactionLookupQueue = queued.catch(() => undefined);
-    return queued;
-  });
   const abortSellerBrandExportAttempt = async () => {
   brandExportAttemptGeneration += 1;
   brandExportJobPending = false;

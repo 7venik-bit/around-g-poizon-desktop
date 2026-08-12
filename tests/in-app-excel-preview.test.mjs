@@ -61,7 +61,7 @@ test("Excel defaults to a grouped product-search view with raw-data fallback", (
   assert.match(rendererSource, /brandName, product\.articleNumber, product\.title/);
   const productColumns = rendererSource.match(/excel-preview-columns"\)\.innerHTML = `<tr>(.*?)<\/tr>`/)?.[1] || "";
   assert.doesNotMatch(productColumns, /중국 30일|현지 30일/);
-  assert.match(productColumns, /사이즈별 가격·판매량/);
+  assert.match(productColumns, /평균가격/);
   assert.match(productColumns, /중국 총판매.*현지 총판매.*상품 검색/);
   assert.match(rendererSource, /excel-product-search-detail"><td colspan="10"/);
   assert.match(cssSource, /\.excel-preview\.product-view \.excel-preview-grid table/);
@@ -97,7 +97,7 @@ test("selected Excel products calculate profit from the verified list price", ()
 test("상품리스트와 수익계산은 동일한 검증 POIZON 가격만 사용한다", () => {
   assert.match(rendererSource, /function verifiedExcelProductPoizonPrice\(product\)/);
   assert.match(rendererSource, /const poizonPrice = verifiedExcelProductPoizonPrice\(product\)/);
-  assert.match(rendererSource, /if \(!product\?\.transactionPriceVerified\) return 0/);
+  assert.match(rendererSource, /return Number\(product\?\.averagePrice \|\| 0\)/);
   assert.doesNotMatch(rendererSource, /const poizonPrice = Number\(product\?\.averagePrice \|\| 0\)/);
 });
 

@@ -458,47 +458,13 @@ function excelProductMetric(raw, value) {
 }
 
 function verifiedExcelProductPoizonPrice(product) {
-  if (!product?.transactionPriceVerified) return 0;
-  return Number(product.averagePrice || 0);
-}
-
-function renderPoizonSizeOptions(product, transaction) {
-  const options = Array.isArray(product?.transactionSizeOptions)
-    ? product.transactionSizeOptions
-    : Array.isArray(transaction?.sizeOptions) ? transaction.sizeOptions : [];
-  if (!options.length) return "";
-  return `<div class="poizon-size-table" role="table" aria-label="POIZON 사이즈별 가격과 판매량">
-    <div class="poizon-size-row poizon-size-head" role="row">
-      <span>사이즈</span><span>가격</span><span>판매량</span>
-    </div>
-    ${options.map((option) => `<div class="poizon-size-row ${Number(option.sales || 0) >= 30 ? "qualified" : ""}" role="row">
-      <span>${text(option.option || "-")}</span>
-      <span>${money(Number(option.price || 0))}</span>
-      <span>${Number(option.sales || 0).toLocaleString("ko-KR")}건</span>
-    </div>`).join("")}
-  </div>`;
-}
-
-function poizonTransactionFailureLabel(transaction) {
-  const labels = {
-    PRODUCT_DATA_PANEL_NOT_OPENED: "상품 데이터 전환 실패",
-    SEARCH_CONTROL_NOT_FOUND: "상품 검색창 찾기 실패",
-    PRODUCT_ROW_NOT_FOUND: "상품 검색 결과 없음",
-    PRODUCT_SEARCH_FAILED: "상품 검색 실패",
-    PRODUCT_DATA_CLICK_POINT_NOT_FOUND: "상품 데이터 클릭 실패",
-    SELLER_LOGIN_REQUIRED: "판매자센터 로그인 필요",
-    TRANSACTION_HISTORY_TAB_NOT_FOUND: "거래 내역 찾기 실패",
-    TRANSACTION_HISTORY_TAB_NOT_OPENED: "거래 내역 전환 실패",
-    OPTION_CONTROL_NOT_FOUND: "전체 옵션 선택 실패",
-    QUALIFIED_OPTION_PRICE_NOT_FOUND: "판매 30건 이상 없음",
-  };
-  return labels[String(transaction?.code || "")] || "확인 실패";
+  return Number(product?.averagePrice || 0);
 }
 
 function renderExcelProductRows(file, products = []) {
   const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.articleNumber || product.spuId || product.key}`);
   products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
-  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>사이즈별 가격·판매량</th><th>중국 총판매</th><th>현지 총판매</th><th>상품 검색</th></tr>`;
+  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>평균가격</th><th>중국 총판매</th><th>현지 총판매</th><th>상품 검색</th></tr>`;
   $("#excel-preview-rows").innerHTML = products.length ? products.map((product, index) => {
     const key = pageKeys[index];
     const result = excelPreviewSearchResults.get(key);
@@ -509,12 +475,7 @@ function renderExcelProductRows(file, products = []) {
       <td class="excel-product-image">${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : "-"}</td>
       <td><b>${text(product.articleNumber || "-")}</b></td><td title="${text(product.title)}">${text(product.title || "-")}</td>
       <td>${text(product.brandName || "-")}</td><td title="${text(product.categoryName)}">${text(product.categoryName || "-")}</td>
-      <td class="poizon-size-cell" title="${text(poizonPrice ? `30건 이상 최고가 · ${product.transactionOption || "옵션"} · ${product.transactionOptionSales || 0}건` : (result?.poizonTransaction?.message || "거래내역 확인 전"))}">
-        ${renderPoizonSizeOptions(product, result?.poizonTransaction)
-          || (poizonPrice ? `<b>30건 이상 최고가 ${money(poizonPrice)}</b>`
-            : result?.loading ? "확인 중…"
-              : result?.poizonTransaction ? poizonTransactionFailureLabel(result.poizonTransaction) : "확인 전")}
-      </td>
+      <td>${poizonPrice ? money(poizonPrice) : "가격 없음"}</td>
       <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td><td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
       <td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${result?.loading ? "disabled" : ""}>${status}</button></td>
     </tr>${result && !result.loading ? `<tr class="excel-product-search-detail"><td colspan="10">${renderDomestic(result)}</td></tr>` : ""}`;
@@ -528,39 +489,13 @@ async function searchExcelPreviewProduct(key) {
   excelPreviewSearchResults.set(key, { loading: true, products: [], sources: [] });
   const file = activeExcelPreview?.file;
   if (file) renderExcelProductRows(file, excelPreviewPageProducts);
-  const poizonTransaction = await window.aroundG.lookupSellerTransactionPrice({
-    articleNumber: product.articleNumber || "",
-  });
-  if (poizonTransaction?.ok && Number(poizonTransaction.price || 0) > 0) {
-    product.averagePrice = Number(poizonTransaction.price);
-    product.transactionSales30d = Number(poizonTransaction.sales30d || 0);
-    product.transactionOption = String(poizonTransaction.option || "");
-    product.transactionOptionSales = Number(poizonTransaction.optionSales || 0);
-    product.transactionSizeOptions = Array.isArray(poizonTransaction.sizeOptions)
-      ? poizonTransaction.sizeOptions.map((option) => ({
-        option: String(option.option || ""),
-        price: Number(option.price || 0),
-        sales: Number(option.sales || 0),
-      }))
-      : [];
-    product.transactionPriceVerified = true;
-  } else {
-    product.transactionSizeOptions = Array.isArray(poizonTransaction?.sizeOptions)
-      ? poizonTransaction.sizeOptions.map((option) => ({
-        option: String(option.option || ""),
-        price: Number(option.price || 0),
-        sales: Number(option.sales || 0),
-      }))
-      : [];
-    product.transactionPriceVerified = false;
-  }
   const query = [product.brandName, product.articleNumber, product.title].filter(Boolean).join(" ");
   const response = await window.aroundG.searchDomestic({
     query, articleNumber: product.articleNumber || "", brand: product.brandName || "",
     title: product.title || "", imageUrl: product.logoUrl || "", verifyLinkCounts: true,
   });
   const result = response.ok ? response.data : { products: [], sources: [], error: response.message };
-  excelPreviewSearchResults.set(key, { ...result, poizonTransaction });
+  excelPreviewSearchResults.set(key, result);
   if (file) renderExcelProductRows(file, excelPreviewPageProducts);
   updateExcelPreviewSelectionUi(excelPreviewPageProducts.map((item) => `${brandImportPathKey(file?.path)}::${item.articleNumber || item.spuId || item.key}`));
 }
@@ -2077,8 +2012,8 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
       ? `<button type="button" class="profit-store-link" data-url="${encodeURIComponent(item.purchaseUrl)}" title="구매 페이지 열기">${text(item.domestic?.store || "판매처 열기")} ↗</button>`
       : "-"}</td>
     <td>${item.poizonPrice ? money(item.totalCost) : "-"}</td>
-    <td class="${item.netProfit >= 0 ? "profit-positive" : "profit-negative"}">${item.domesticPrice ? money(item.netProfit) : "-"}</td>
-    <td class="${item.marginRate >= 0 ? "profit-positive" : "profit-negative"}">${item.domesticPrice ? `${item.marginRate.toFixed(1)}%` : "-"}</td>
+    <td class="${item.netProfit >= 0 ? "profit-positive" : "profit-negative"}">${item.poizonPrice && item.domesticPrice ? money(item.netProfit) : "계산 불가"}</td>
+    <td class="${item.marginRate >= 0 ? "profit-positive" : "profit-negative"}">${item.poizonPrice && item.domesticPrice ? `${item.marginRate.toFixed(1)}%` : "계산 불가"}</td>
   </tr>`).join("");
   document.querySelector('.nav[data-view="profit"]')?.click();
   button.textContent = "수익계산";
