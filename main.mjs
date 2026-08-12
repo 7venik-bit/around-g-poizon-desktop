@@ -69,7 +69,7 @@ import {
 import { analyzeRenderedChannelProducts, queryDomesticProducts } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
 import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";
-import { highestQualifiedOptionPrice, optionRowsFromSellerResponses } from "./services/seller-transaction-price.mjs";
+import { highestQualifiedOptionPrice, optionRowsFromSellerResponses, qualifiedOptionPrices } from "./services/seller-transaction-price.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
 import { findNewSellerExportJob } from "./services/brand-export-jobs.mjs";
 
@@ -5497,6 +5497,8 @@ async function lookupSellerTransactionPrice(input = {}) {
       row,
     ])
   ).values()];
+  const sizeOptions = qualifiedOptionPrices(priceRows, 0)
+    .sort((left, right) => String(left.option || "").localeCompare(String(right.option || ""), "ko", { numeric: true }));
   const result = highestQualifiedOptionPrice({ rows: priceRows, minimumSales: 30 });
   await productFrame.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
@@ -5509,7 +5511,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   showCollectorWindow();
   if (!result.price) {
     sellerWindow.showInactive();
-    return { ok: false, eligible: false, code: "QUALIFIED_OPTION_PRICE_NOT_FOUND", sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0, message: `${articleNumber} 옵션 가격 확인 실패 · 화면 ${uniqueRows.length}행 · 응답 ${responseRows.length}행 · 판매 30건 이상 0행` };
+    return { ok: false, eligible: false, code: "QUALIFIED_OPTION_PRICE_NOT_FOUND", sizeOptions, sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0, message: `${articleNumber} 옵션 가격 확인 실패 · 화면 ${uniqueRows.length}행 · 응답 ${responseRows.length}행 · 판매 30건 이상 0행` };
   }
   sellerWindow.hide();
   return {
@@ -5517,6 +5519,7 @@ async function lookupSellerTransactionPrice(input = {}) {
     articleNumber,
     sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0,
     ...result,
+    sizeOptions,
     source: uniqueRows.length && responseRows.length
       ? "seller-product-transaction-history-options+api"
       : responseRows.length
