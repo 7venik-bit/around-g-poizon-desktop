@@ -52,7 +52,7 @@ export function highestQualifiedOptionPrice({ rows, minimumSales = 30 } = {}) {
 
 const normalizedKey = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9가-힣一-龥]/g, "");
 const priceKey = (key) => /price|amount|가격|금액|售价|价格|價/.test(normalizedKey(key));
-const salesKey = (key) => /sales|sold|saleqty|salecount|tradecount|dealcount|volume|판매량|销量|銷量|成交量/.test(normalizedKey(key));
+const salesKey = (key) => /sales|sold|sale.*(?:qty|count|num|volume)|trade.*(?:qty|count|num|volume)|deal.*(?:qty|count|num|volume)|volume|판매량|销量|銷量|成交量/.test(normalizedKey(key));
 const optionKey = (key) => /size|option|spec|sku.*name|sizename|사이즈|옵션|尺码|規格/.test(normalizedKey(key));
 
 function plausibleValues(record, predicate, { minimum = 0, maximum = Number.MAX_SAFE_INTEGER } = {}) {
@@ -63,27 +63,42 @@ function plausibleValues(record, predicate, { minimum = 0, maximum = Number.MAX_
 export function optionRowsFromSellerResponses(responses = []) {
   const rows = [];
   const seen = new Set();
-  const visit = (value, depth = 0) => {
-    if (depth > 14 || value == null) return;
+  const visit = (value, depth = 0, context = {}) => {
+    if (depth > 16 || value == null) return;
     if (Array.isArray(value)) {
-      value.forEach((item) => visit(item, depth + 1));
+      value.forEach((item) => visit(item, depth + 1, context));
       return;
     }
     if (typeof value !== "object") return;
-    const prices = plausibleValues(value, priceKey, { minimum: 1_000, maximum: 100_000_000 });
-    const salesValues = plausibleValues(value, salesKey, { minimum: 0, maximum: 100_000_000 });
-    const optionEntry = Object.entries(value).find(([key, item]) => optionKey(key) && ["string", "number"].includes(typeof item));
-    if (prices.length && salesValues.length && optionEntry) {
-      const option = String(optionEntry[1] ?? "").trim();
-      const price = Math.max(...prices);
-      const sales = Math.max(...salesValues);
-      const id = `${option}|${price}|${sales}`;
-      if (option && !seen.has(id)) {
+
+    // POIZON response shapes vary: option, sales and price can live on a
+    // parent object and its nested quote/statistic objects. Carry the nearest
+    // values down instead of requiring all three fields on the same object.
+    const optionEntry = Object.entries(value)
+      .find(([key, item]) => optionKey(key) && ["string", "number"].includes(typeof item));
+    const localPrices = plausibleValues(value, priceKey, { minimum: 1_000, maximum: 100_000_000 });
+    const localSales = plausibleValues(value, salesKey, { minimum: 0, maximum: 100_000_000 });
+    const nextContext = {
+      option: String(optionEntry?.[1] ?? context.option ?? "").trim(),
+      prices: localPrices.length ? localPrices : (context.prices || []),
+      sales: localSales.length ? localSales : (context.sales || []),
+    };
+
+    if (nextContext.option && nextContext.prices.length && nextContext.sales.length) {
+      const price = Math.max(...nextContext.prices);
+      const sales = Math.max(...nextContext.sales);
+      const id = `${nextContext.option}|${price}|${sales}`;
+      if (!seen.has(id)) {
         seen.add(id);
-        rows.push({ option, price, sales, text: `${option} ${price} ${sales}` });
+        rows.push({
+          option: nextContext.option,
+          price,
+          sales,
+          text: `${nextContext.option} ${price} ${sales}`,
+        });
       }
     }
-    Object.values(value).forEach((item) => visit(item, depth + 1));
+    Object.values(value).forEach((item) => visit(item, depth + 1, nextContext));
   };
   for (const response of Array.isArray(responses) ? responses : []) {
     let payload = response?.body ?? response;
