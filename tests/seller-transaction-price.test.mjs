@@ -4,10 +4,24 @@ import test from "node:test";
 import {
   highestQualifiedOptionPrice,
   highestQualifiedTransactionPrice,
+  optionRowsFromSellerResponses,
   qualifiedOptionPrices,
   recentThirtyDaySales,
   transactionPrices,
 } from "../services/seller-transaction-price.mjs";
+
+test("판매자센터 내부 응답에서 옵션 가격과 판매량을 직접 추출한다", () => {
+  const responses = [{ body: JSON.stringify({ data: { skuList: [
+    { sizeName: "285", buyerPrice: 73000, salesCount: 96 },
+    { sizeName: "290", buyerPrice: 75000, salesCount: 56 },
+    { sizeName: "300", buyerPrice: 79000, salesCount: 21 },
+  ] } }) }];
+  const rows = optionRowsFromSellerResponses(responses);
+  assert.equal(rows.length, 3);
+  const result = highestQualifiedOptionPrice({ rows, minimumSales: 30 });
+  assert.equal(result.price, 75000);
+  assert.equal(result.option, "290");
+});
 
 test("전체 거래내역에서 판매량 30건 이상인 옵션 중 최고가를 선택한다", () => {
   const rows = [
@@ -85,13 +99,17 @@ test("엑셀 상품 검색은 거래내역 검증 가격을 평균가격 필드�
   assert.match(main, /BID_STATUS_TAB_NOT_OPENED/);
   assert.match(main, /sendInputEvent\(\{ type: "mouseDown"/);
   assert.match(main, /판매량\\s\*\[:：\]\?/);
+  assert.match(main, /__aroundGOptionResponses/);
+  assert.match(main, /optionRowsFromSellerResponses\(sellerResponses\)/);
   assert.match(main, /뒤로가기/);
   assert.match(main, /OPTION_CONTROL_NOT_FOUND/);
-  assert.match(main, /highestQualifiedOptionPrice\(\{ rows: uniqueRows, minimumSales: 30 \}\)/);
+  assert.match(main, /highestQualifiedOptionPrice\(\{ rows: priceRows, minimumSales: 30 \}\)/);
   assert.match(main, /content\.includes\(article\)/);
   assert.match(preload, /lookupSellerTransactionPrice/);
   assert.match(renderer, /product\.averagePrice = Number\(poizonTransaction\.price\)/);
   assert.match(renderer, /product\.transactionOptionSales = Number\(poizonTransaction\.optionSales/);
   assert.match(renderer, /verifiedExcelProductPoizonPrice\(product\)/);
   assert.match(renderer, /<th>옵션별 최고가<\/th>/);
+  assert.match(renderer, /PRODUCT_DATA_PANEL_NOT_OPENED: "상품 데이터 전환 실패"/);
+  assert.match(renderer, /QUALIFIED_OPTION_PRICE_NOT_FOUND: "판매 30건 이상 없음"/);
 });
