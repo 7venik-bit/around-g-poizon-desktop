@@ -69,7 +69,7 @@ import {
 import { analyzeRenderedChannelProducts, queryDomesticProducts } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
 import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";
-import { highestQualifiedOptionPrice } from "./services/seller-transaction-price.mjs";
+import { highestQualifiedOptionPrice, optionRowsFromSellerResponses } from "./services/seller-transaction-price.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
 import { findNewSellerExportJob } from "./services/brand-export-jobs.mjs";
 
@@ -5139,6 +5139,42 @@ async function lookupSellerTransactionPrice(input = {}) {
     await wait(500);
     return true;
   })()`, true).catch(() => false);
+  await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
+    const storageKey = "__aroundGOptionResponses";
+    window[storageKey] = [];
+    const record = (url, body) => {
+      const text = String(body || "");
+      if (!text || text.length > 3_000_000) return;
+      if (!/price|sales|sold|volume|size|sku|option|价格|售价|销量|尺码|판매량|가격/i.test(text)) return;
+      window[storageKey].push({ url: String(url || ""), body: text, time: Date.now() });
+      if (window[storageKey].length > 80) window[storageKey].splice(0, window[storageKey].length - 80);
+    };
+    if (!window.__aroundGFetchHooked && typeof window.fetch === "function") {
+      window.__aroundGFetchHooked = true;
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (...args) => {
+        const response = await originalFetch(...args);
+        response.clone().text().then((body) => record(response.url || args[0], body)).catch(() => {});
+        return response;
+      };
+    }
+    if (!window.__aroundGXhrHooked && window.XMLHttpRequest) {
+      window.__aroundGXhrHooked = true;
+      const originalOpen = XMLHttpRequest.prototype.open;
+      const originalSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+        this.__aroundGUrl = url;
+        return originalOpen.call(this, method, url, ...rest);
+      };
+      XMLHttpRequest.prototype.send = function(...args) {
+        this.addEventListener("load", () => {
+          try { if (!this.responseType || this.responseType === "text") record(this.responseURL || this.__aroundGUrl, this.responseText); } catch {}
+        }, { once: true });
+        return originalSend.apply(this, args);
+      };
+    }
+    return true;
+  })()`, true).catch(() => false);
   const searched = await sellerWindow.webContents.executeJavaScript(String.raw`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
@@ -5377,7 +5413,12 @@ async function lookupSellerTransactionPrice(input = {}) {
     await wait(350);
   }
   const uniqueRows = [...new Map(capturedRows.map((row) => [`${row.option}|${row.price}|${row.sales}`, row])).values()];
-  const result = highestQualifiedOptionPrice({ rows: uniqueRows, minimumSales: 30 });
+  const sellerResponses = await sellerWindow.webContents.executeJavaScript(String.raw`(() => Array.isArray(window.__aroundGOptionResponses)
+    ? window.__aroundGOptionResponses.slice(-80)
+    : [])()`, true).catch(() => []);
+  const responseRows = optionRowsFromSellerResponses(sellerResponses);
+  const priceRows = responseRows.length ? responseRows : uniqueRows;
+  const result = highestQualifiedOptionPrice({ rows: priceRows, minimumSales: 30 });
   await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
     const labels = [...document.querySelectorAll("button,a,[role=button],span")].filter(visible);
@@ -5390,7 +5431,13 @@ async function lookupSellerTransactionPrice(input = {}) {
   if (!result.price) {
     return { ok: false, eligible: false, code: "QUALIFIED_OPTION_PRICE_NOT_FOUND", sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0, message: `${articleNumber} 판매량 30건 이상인 옵션 가격을 찾지 못했습니다.` };
   }
-  return { ok: true, articleNumber, sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0, ...result, source: "seller-product-bid-status-options" };
+  return {
+    ok: true,
+    articleNumber,
+    sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0,
+    ...result,
+    source: responseRows.length ? "seller-product-option-api" : "seller-product-bid-status-options",
+  };
 }
 
 app.whenReady().then(async () => {

@@ -462,6 +462,17 @@ function verifiedExcelProductPoizonPrice(product) {
   return Number(product.averagePrice || 0);
 }
 
+function poizonTransactionFailureLabel(transaction) {
+  const labels = {
+    PRODUCT_DATA_PANEL_NOT_OPENED: "상품 데이터 전환 실패",
+    BID_STATUS_TAB_NOT_FOUND: "입찰 현황 찾기 실패",
+    BID_STATUS_TAB_NOT_OPENED: "입찰 현황 전환 실패",
+    OPTION_CONTROL_NOT_FOUND: "전체 옵션 선택 실패",
+    QUALIFIED_OPTION_PRICE_NOT_FOUND: "판매 30건 이상 없음",
+  };
+  return labels[String(transaction?.code || "")] || "확인 실패";
+}
+
 function renderExcelProductRows(file, products = []) {
   const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.articleNumber || product.spuId || product.key}`);
   products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
@@ -476,7 +487,7 @@ function renderExcelProductRows(file, products = []) {
       <td class="excel-product-image">${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : "-"}</td>
       <td><b>${text(product.articleNumber || "-")}</b></td><td title="${text(product.title)}">${text(product.title || "-")}</td>
       <td>${text(product.brandName || "-")}</td><td title="${text(product.categoryName)}">${text(product.categoryName || "-")}</td>
-      <td title="${text(poizonPrice ? `${product.transactionOption || "옵션"} · 판매량 ${product.transactionOptionSales || 0}건` : (result?.poizonTransaction?.message || "거래내역 확인 전"))}">${poizonPrice ? money(poizonPrice) : result?.loading ? "확인 중…" : result?.poizonTransaction ? "확인 실패" : "확인 전"}</td>
+      <td title="${text(poizonPrice ? `${product.transactionOption || "옵션"} · 판매량 ${product.transactionOptionSales || 0}건` : (result?.poizonTransaction?.message || "거래내역 확인 전"))}">${poizonPrice ? money(poizonPrice) : result?.loading ? "확인 중…" : result?.poizonTransaction ? poizonTransactionFailureLabel(result.poizonTransaction) : "확인 전"}</td>
       <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td><td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
       <td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${result?.loading ? "disabled" : ""}>${status}</button></td>
     </tr>${result && !result.loading ? `<tr class="excel-product-search-detail"><td colspan="10">${renderDomestic(result)}</td></tr>` : ""}`;
