@@ -63,6 +63,17 @@ function plausibleValues(record, predicate, { minimum = 0, maximum = Number.MAX_
 export function optionRowsFromSellerResponses(responses = []) {
   const rows = [];
   const seen = new Set();
+  const descendantValues = (value, predicate, depth = 0, values = []) => {
+    if (depth > 8 || value == null || typeof value !== "object") return values;
+    if (!Array.isArray(value)) {
+      values.push(...plausibleValues(value, predicate, {
+        minimum: predicate === priceKey ? 1_000 : 0,
+        maximum: 100_000_000,
+      }));
+    }
+    Object.values(value).forEach((item) => descendantValues(item, predicate, depth + 1, values));
+    return values;
+  };
   const visit = (value, depth = 0, context = {}) => {
     if (depth > 16 || value == null) return;
     if (Array.isArray(value)) {
@@ -78,10 +89,18 @@ export function optionRowsFromSellerResponses(responses = []) {
       .find(([key, item]) => optionKey(key) && ["string", "number"].includes(typeof item));
     const localPrices = plausibleValues(value, priceKey, { minimum: 1_000, maximum: 100_000_000 });
     const localSales = plausibleValues(value, salesKey, { minimum: 0, maximum: 100_000_000 });
+    const option = String(optionEntry?.[1] ?? context.option ?? "").trim();
+    // When an option is present, price/statistics are commonly stored in
+    // separate sibling objects below that SKU. Collect the whole option
+    // subtree before falling back to inherited values.
+    const subtreePrices = optionEntry ? descendantValues(value, priceKey) : [];
+    const subtreeSales = optionEntry ? descendantValues(value, salesKey) : [];
     const nextContext = {
-      option: String(optionEntry?.[1] ?? context.option ?? "").trim(),
-      prices: localPrices.length ? localPrices : (context.prices || []),
-      sales: localSales.length ? localSales : (context.sales || []),
+      option,
+      prices: subtreePrices.length ? subtreePrices
+        : localPrices.length ? localPrices : (context.prices || []),
+      sales: subtreeSales.length ? subtreeSales
+        : localSales.length ? localSales : (context.sales || []),
     };
 
     if (nextContext.option && nextContext.prices.length && nextContext.sales.length) {
