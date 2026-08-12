@@ -109,58 +109,19 @@ test("최근 30일 판매량이 30건 미만이면 거래 최고가격을 적용
   }), { eligible: false, sales30d: 29, price: 0, transactionCount: 0 });
 });
 
-test("엑셀 상품 검색은 거래내역 검증 가격을 평균가격 필드에 표시한다", async () => {
+test("엑셀 상품 검색은 옵션 자동화를 사용하지 않고 원본 평균가격을 유지한다", async () => {
   const [main, preload, renderer] = await Promise.all([
     readFile(new URL("../main.mjs", import.meta.url), "utf8"),
     readFile(new URL("../preload.cjs", import.meta.url), "utf8"),
     readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
   ]);
-  assert.match(main, /seller:lookup-transaction-price/);
-  assert.match(main, /sellerWindowFrames\(\)/);
-  assert.match(main, /sellerProductFrameRoutingId = productFrame\.routingId/);
-  assert.match(main, /await productFrame\.executeJavaScript/);
-  assert.match(main, /target\.click\(\)/);
-  assert.match(main, /거래\\s\*내역/);
-  assert.match(main, /tr,\[role=row\],li,div,section,article/);
-  assert.match(main, /normalizedArticle/);
-  assert.match(main, /상품\\s\*데이터/);
-  assert.match(main, /attempt < 120/);
-  assert.match(main, /single visible/);
-  assert.match(main, /\}\) \|\| actions\[0\]/);
-  assert.doesNotMatch(main, /!row && attempt >= 12 && normalize\(document\.body/);
-  assert.match(main, /visibleDataActions/);
-  assert.match(main, /physicalSellerPointClick\(searched\.productDataPoint/);
-  assert.match(main, /physicalSellerPointClick\(transactionHistoryTabPoint/);
-  assert.match(main, /physicalSellerPointClick\(optionControl/);
-  assert.match(main, /physicalSellerPointClick\(allOption/);
-  assert.match(main, /moveWindowsCursorAndClick\(bounds\.x \+ x, bounds\.y \+ y\)/);
-  assert.match(main, /label\?\.closest\("\[role=tab\],button,a"\) \|\| label/);
-  assert.match(main, /PRODUCT_DATA_PANEL_NOT_OPENED/);
-  assert.match(main, /TRANSACTION_HISTORY_TAB_NOT_OPENED/);
-  assert.match(main, /sendInputEvent\(\{ type: "mouseDown"/);
-  assert.match(main, /판매량\\s\*\[:：\]\?/);
-  assert.match(main, /__aroundGOptionResponses/);
-  assert.match(main, /Network\.getResponseBody/);
-  assert.match(main, /transactionNetworkResponses/);
-  assert.match(main, /pendingTransactionRequests/);
-  assert.match(main, /\.\.\.transactionNetworkResponses/);
-  assert.match(main, /\.\.\.sellerResponses/);
-  assert.match(main, /\[\.\.\.uniqueRows, \.\.\.responseRows\]/);
-  assert.match(main, /seller-product-transaction-history-options\+api/);
-  assert.match(main, /뒤로가기/);
-  assert.match(main, /OPTION_CONTROL_NOT_FOUND/);
-  assert.match(main, /highestQualifiedOptionPrice\(\{ rows: priceRows, minimumSales: 30 \}\)/);
-  assert.match(main, /content\.includes\(article\)/);
-  assert.match(preload, /lookupSellerTransactionPrice/);
-  assert.match(renderer, /product\.averagePrice = Number\(poizonTransaction\.price\)/);
-  assert.match(renderer, /product\.transactionOptionSales = Number\(poizonTransaction\.optionSales/);
+  assert.doesNotMatch(main, /ipcMain\.handle\("seller:lookup-transaction-price"/);
+  assert.doesNotMatch(preload, /lookupSellerTransactionPrice/);
+  assert.doesNotMatch(renderer, /lookupSellerTransactionPrice/);
   assert.match(renderer, /verifiedExcelProductPoizonPrice\(product\)/);
-  assert.match(renderer, /<th>사이즈별 가격·판매량<\/th>/);
-  assert.match(renderer, /transactionSizeOptions/);
-  assert.match(renderer, /renderPoizonSizeOptions/);
-  assert.match(renderer, /사이즈<\/span><span>가격<\/span><span>판매량/);
-  assert.match(main, /qualifiedOptionPrices\(priceRows, 0\)/);
-  assert.match(main, /sizeOptions/);
-  assert.match(renderer, /PRODUCT_DATA_PANEL_NOT_OPENED: "상품 데이터 전환 실패"/);
-  assert.match(renderer, /QUALIFIED_OPTION_PRICE_NOT_FOUND: "판매 30건 이상 없음"/);
+  assert.match(renderer, /return Number\(product\?\.averagePrice \|\| 0\)/);
+  assert.match(renderer, /<th>평균가격<\/th>/);
+  assert.doesNotMatch(renderer, /사이즈별 가격·판매량/);
+  assert.doesNotMatch(renderer, /transactionSizeOptions/);
+  assert.match(renderer, /item\.poizonPrice && item\.domesticPrice \? money\(item\.netProfit\) : "계산 불가"/);
 });
