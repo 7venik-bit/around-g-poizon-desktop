@@ -5467,7 +5467,15 @@ async function lookupSellerTransactionPrice(input = {}) {
   const responseRows = optionRowsFromSellerResponses(transactionNetworkResponses.length
     ? transactionNetworkResponses
     : sellerResponses);
-  const priceRows = responseRows.length ? responseRows : uniqueRows;
+  // The seller API can return partial/background payloads. Never let one
+  // incomplete API row discard valid option rows collected from the visible
+  // transaction-history list.
+  const priceRows = [...new Map(
+    [...uniqueRows, ...responseRows].map((row) => [
+      `${String(row?.option || "").trim()}|${Number(row?.price || 0)}|${String(row?.sales || "").trim()}`,
+      row,
+    ])
+  ).values()];
   const result = highestQualifiedOptionPrice({ rows: priceRows, minimumSales: 30 });
   await sellerWindow.webContents.executeJavaScript(String.raw`(() => {
     const visible = (element) => element && element.getClientRects().length > 0;
@@ -5488,7 +5496,11 @@ async function lookupSellerTransactionPrice(input = {}) {
     articleNumber,
     sales30d: Number(String(salesRaw).replace(/[^0-9]/g, "")) || 0,
     ...result,
-    source: responseRows.length ? "seller-product-transaction-api" : "seller-product-transaction-history-options",
+    source: uniqueRows.length && responseRows.length
+      ? "seller-product-transaction-history-options+api"
+      : responseRows.length
+        ? "seller-product-transaction-api"
+        : "seller-product-transaction-history-options",
   };
 }
 
