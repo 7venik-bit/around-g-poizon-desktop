@@ -134,6 +134,16 @@ function uniqueProducts(products) {
   });
 }
 
+export function exactArticleIdentityMatch(value, articleNumber = "") {
+  const expected = sanitizeDomesticQuery(articleNumber).trim().toUpperCase();
+  const parts = expected.split(/[^A-Z0-9]+/).filter(Boolean);
+  if (!parts.length) return false;
+  const escaped = parts.map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const separator = parts.length > 1 ? "[-_\\s./]+" : "";
+  const pattern = escaped.join(separator);
+  return new RegExp(`(?:^|[^A-Z0-9])${pattern}(?=$|[^A-Z0-9])`, "i").test(String(value || ""));
+}
+
 export function countLinkedSearchProducts(html, articleNumber = "") {
   const source = String(html || "");
   const ids = new Set();
@@ -158,10 +168,7 @@ export function countLinkedSearchProducts(html, articleNumber = "") {
 
 export function analyzeRenderedChannelProducts(content, store = "", articleNumber = "", brand = "") {
   const source = String(content || "");
-  const articleCode = sanitizeDomesticQuery(articleNumber)
-    .split(/\s+/)[0]
-    .replace(/[^A-Z0-9]/gi, "")
-    .toUpperCase();
+  const articleCode = sanitizeDomesticQuery(articleNumber).trim();
   if (source.trimStart().startsWith("{")) {
     try {
       const rendered = JSON.parse(source);
@@ -189,13 +196,17 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
       const matchingProducts = new Map();
       for (const card of cards) {
         const productUrl = String(card?.productUrl || "");
-        const rawCardText = `${String(card?.text || "")} ${String(card?.markup || "")} ${productUrl}`;
-        const cardText = rawCardText
-          .replace(/[^A-Z0-9]/gi, "")
-          .toUpperCase();
-        let articleMatched = cardText.includes(articleCode);
+        const titleText = String(card?.title || "").trim();
+        const cardBodyText = String(card?.text || "").trim();
+        const trustedOfficialCard = String(store || "") === "브랜드 공식몰";
+        const identityText = trustedOfficialCard
+          ? `${titleText} ${cardBodyText} ${String(card?.markup || "")} ${productUrl}`.trim()
+          : titleText || cardBodyText;
+        const rawCardText = `${titleText} ${cardBodyText}`.trim();
+        let articleMatched = exactArticleIdentityMatch(identityText, articleCode);
         const variantStyle = sanitizeDomesticQuery(articleNumber).toUpperCase().match(/^([A-Z0-9]{5,})[-_]([A-Z0-9]{1,6})$/);
-        if (!articleMatched && variantStyle && productUrl) {
+        const numericOnlyVariant = variantStyle && /^\d+$/.test(variantStyle[1]) && /^\d+$/.test(variantStyle[2]);
+        if (!articleMatched && variantStyle && (!numericOnlyVariant || trustedOfficialCard) && productUrl) {
           const [, baseCode, colorCode] = variantStyle;
           const decodedUrl = decodeURIComponent(productUrl).replace(/&amp;/gi, "&");
           const escapedBase = baseCode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

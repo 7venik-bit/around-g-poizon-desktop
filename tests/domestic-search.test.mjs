@@ -7,6 +7,7 @@ import {
   countLinkedSearchProducts,
   countRenderedChannelProducts,
   domesticChannelUrl,
+  exactArticleIdentityMatch,
   naverFashionTownUrl,
   officialBrandProductSearchUrl,
   officialBrandSearchUrl,
@@ -197,6 +198,42 @@ test("네이버 할인 상품은 취소선 정상가와 실제 판매가를 구�
   }), "네이버 아울렛", "IH1321", "아디다스");
   assert.equal(result?.products[0]?.price, 87200);
   assert.equal(result?.products[0]?.originalPrice, 109000);
+});
+
+test("숫자형 품번은 개별 상품 제목에서 정확히 일치할 때만 인정한다", () => {
+  assert.equal(exactArticleIdentityMatch("레고 테크닉 42226-1 자동차", "42226-1"), true);
+  assert.equal(exactArticleIdentityMatch("레고 테크닉 42226 1 자동차", "42226-1"), true);
+  assert.equal(exactArticleIdentityMatch("레고 테크닉 142226-1 자동차", "42226-1"), false);
+  assert.equal(exactArticleIdentityMatch("레고 테크닉 42226-10 자동차", "42226-1"), false);
+});
+
+test("검색 URL과 HTML 공통문구의 레고 품번은 상품 일치 근거가 아니다", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    pageText: "LEGO 42226-1 검색 결과",
+    productCards: [{
+      productUrl: "https://shopping.naver.com/window/search?q=LEGO%2042226-1&product=999",
+      markup: '<article data-query="LEGO 42226-1">추천 상품</article>',
+      text: "레고 시티 경찰차 60312 29,900원",
+      title: "레고 시티 경찰차 60312",
+      price: "29,900원",
+    }],
+  }), "네이버 아울렛", "42226-1", "LEGO");
+  assert.equal(result?.count, 0);
+  assert.deepEqual(result?.products, []);
+});
+
+test("정확한 레고 품번이 상품 제목에 있으면 검색 결과로 인정한다", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    pageText: "LEGO 42226-1 검색 결과",
+    productCards: [{
+      productUrl: "https://shopping.naver.com/window-products/123",
+      text: "레고 테크닉 42226-1 129,000원",
+      title: "LEGO 테크닉 42226-1",
+      price: "129,000원",
+    }],
+  }), "네이버 아울렛", "42226-1", "LEGO");
+  assert.equal(result?.count, 1);
+  assert.equal(result?.products[0]?.price, 129000);
 });
 
 test("rendered SSG cards take priority over a stale block phrase elsewhere on the page", async () => {
