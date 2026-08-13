@@ -15,6 +15,13 @@ test("brand-search UI remains available", () => {
   assert.match(html, /id="brand-cards"/);
 });
 
+test("completed download history does not block a new brand search", () => {
+  assert.match(renderer, /function hasActiveBrandExportJobs\(\)/);
+  assert.match(renderer, /some\(\(job\) => !brandJobIsFinished\(job\?\.state\)\)/);
+  assert.match(renderer, /brandSelectionBusy \|\| activeExportBrand \|\| hasActiveBrandExportJobs\(\)/);
+  assert.doesNotMatch(renderer, /brandSelectionBusy \|\| activeExportBrand \|\| brandExportJobs\.size\) \{/);
+});
+
 test("brand workflow connects directly and searches English before Korean fallback", () => {
   const start = main.indexOf("async function automateSellerBrandExport");
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);

@@ -820,13 +820,17 @@ function updateBrandSelectionControls() {
     const label = search.querySelector("span");
     if (label) label.textContent = brandSelectionBusy ? "작업 중지" : "브랜드 검색";
   }
-  if (stopCurrent) stopCurrent.disabled = !brandSelectionBusy && !activeExportBrand && !brandExportJobs.size;
+  if (stopCurrent) stopCurrent.disabled = !brandSelectionBusy && !activeExportBrand && !hasActiveBrandExportJobs();
 }
 
 function selectedBrandsForExport() {
   return [...selectedBrandIds]
     .map((brandId) => explorerMeta.brands.find((brand) => Number(brand.id) === Number(brandId)))
     .filter(Boolean);
+}
+
+function hasActiveBrandExportJobs() {
+  return [...brandExportJobs.values()].some((job) => !brandJobIsFinished(job?.state));
 }
 
 async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) {
@@ -1595,7 +1599,7 @@ $("#brand-selection-clear")?.addEventListener("click", () => {
   renderBrandCards($("#brand-filter")?.value || "");
 });
 $("#brand-export-selected")?.addEventListener("click", async () => {
-  if (brandSelectionBusy || activeExportBrand || brandExportJobs.size) {
+  if (brandSelectionBusy || activeExportBrand || hasActiveBrandExportJobs()) {
     const stoppedBrand = String(activeExportBrand?.name || "").trim();
     brandWorkHistoryGeneration += 1;
     acceptBrandWorkEvents = false;
