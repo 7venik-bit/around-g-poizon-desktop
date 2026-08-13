@@ -139,13 +139,20 @@ test("official-store verification supports every registered URL family and embed
   assert.doesNotMatch(mainSource, /String\(link\.href \|\| ""\)\.split\("\?"\)/);
 });
 
-test("official-store links are enabled only after an exact product detail is verified", () => {
+test("official-store result distinguishes verified product links from manual search links", () => {
   assert.match(rendererSource, /공식몰 상품 없음/);
-  assert.match(rendererSource, /공식몰 검색 전/);
+  assert.match(rendererSource, /공식몰 검색/);
   assert.match(rendererSource, /source\.countVerified && source\.officialProductUrl/);
   assert.doesNotMatch(rendererSource, /data-official-discovery=/);
   assert.match(mainSource, /officialProductMissing: isOfficialStore/);
   assert.match(mainSource, /officialSearchUrl: isOfficialStore/);
+});
+
+test("official-mall button remains clickable for direct manual verification", () => {
+  assert.match(rendererSource, /const officialOpenUrl = String/);
+  assert.match(rendererSource, /source\.officialProductUrl \|\| source\.officialSearchUrl \|\| source\.homepageUrl \|\| source\.searchUrl/);
+  assert.match(rendererSource, /return officialButton\("공식몰 검색"\)/);
+  assert.match(rendererSource, /officialButton\("공식몰 상품 없음·직접 확인"\)/);
 });
 
 test("unavailable verification is presented to the operator as product missing", () => {
