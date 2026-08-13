@@ -41,7 +41,7 @@ test("completed jobs are detected and downloaded from the live seller window as 
   assert.match(main, /\{ name: "seller", window: sellerWindow \}/);
   assert.match(main, /\{ name: "monitor", window: monitor \}/);
   assert.match(main, /windowSource: source\.name/);
-  assert.match(main, /requestSellerMonitorDownload\(ready\.jobId, ready\.frameRoutingId, ready\.windowSource\)/);
+  assert.match(main, /requestSellerMonitorDownload\(ready\.jobId, ready\.frameRoutingId, ready\.windowSource,/);
   assert.match(main, /action\.targetWindow\.webContents\.downloadURL\(action\.href\)/);
 });
 
@@ -54,8 +54,8 @@ test("multi-brand UI shows registration processing completion and failure counts
   assert.match(style, /\.brand-batch-row\.is-error/);
 });
 
-test("release metadata is 2.10.172", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.172");
-  assert.equal(JSON.parse(lockSource).version, "2.10.172");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.172");
+test("release metadata is 2.10.173", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.173");
+  assert.equal(JSON.parse(lockSource).version, "2.10.173");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.173");
 });

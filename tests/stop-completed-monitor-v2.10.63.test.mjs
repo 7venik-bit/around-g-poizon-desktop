@@ -34,11 +34,23 @@ test("hidden download request does not require a visible button", () => {
 
 test("download monitoring requires matching job number, success state, and completion time", () => {
   const reader = main.match(/async function readSellerMonitorStatuses[\s\S]*?\n}\n\nasync function requestSellerMonitorDownload/)?.[0] || "";
-  assert.match(reader, /const jobNumberText = textOf\(cells\[0\]\)/);
-  assert.match(reader, /const workStateText = textOf\(cells\[3\]\)/);
-  assert.match(reader, /const completionText = textOf\(cells\[5\]\)/);
+  assert.match(reader, /const compactNumber/);
+  assert.match(reader, /cellTexts\.find/);
+  assert.match(reader, /const completionText = dates\.at\(-1\)/);
   assert.match(reader, /WAITING_FOR_COMPLETION/);
   assert.match(main, /status\.jobNumberMatched[\s\S]*status\.workSucceeded[\s\S]*status\.completionConfirmed/);
+});
+
+test("restored jobs recover already-completed rows by start and completion timestamps", () => {
+  const reader = main.match(/async function readSellerMonitorStatuses[\s\S]*?\n}\n\nasync function requestSellerMonitorDownload/)?.[0] || "";
+  const requester = main.match(/async function requestSellerMonitorDownload[\s\S]*?\n}\n\nfunction emitBrandExportAllComplete/)?.[0] || "";
+  assert.match(reader, /expected\.restored && expected\.createdAt > 0/);
+  assert.match(reader, /expected\.createdAt - 5 \* 60_000/);
+  assert.match(reader, /expected\.createdAt \+ 60 \* 60_000/);
+  assert.match(main, /recovered: Boolean\(ready\.recovered\)/);
+  assert.match(requester, /rowLocator\.recovered/);
+  assert.match(requester, /value\.includes\(rowLocator\.startText\)/);
+  assert.match(requester, /value\.includes\(rowLocator\.completionText\)/);
 });
 
 test("all-complete is emitted once and cancels monitor restart", () => {
@@ -71,8 +83,8 @@ test("manual stop cancels automation, retries, and download monitoring immediate
   assert.match(main, /sellerMonitorWindow\.destroy\(\)/);
 });
 
-test("release metadata is 2.10.172", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.172");
-  assert.equal(JSON.parse(lockSource).version, "2.10.172");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.172");
+test("release metadata is 2.10.173", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.173");
+  assert.equal(JSON.parse(lockSource).version, "2.10.173");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.173");
 });

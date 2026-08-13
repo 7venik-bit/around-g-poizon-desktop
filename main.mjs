@@ -2256,25 +2256,41 @@ async function readSellerMonitorStatuses(expectedIds = []) {
   for (const source of sources) {
     const frames = sellerMonitorFrames(source.window);
     for (const frame of frames) {
+    const expectedJobs = expectedIds.map((jobId) => {
+      const job = brandExportJobs.get(jobId);
+      return { jobId, restored: Boolean(job?.restored), createdAt: Number(job?.createdAt || 0) };
+    });
     const statuses = await Promise.race([
       frame.executeJavaScript(`(() => {
-        const expectedIds = ${JSON.stringify(expectedIds)};
+        const expectedJobs = ${JSON.stringify(expectedJobs)};
         const usable = (element) => Boolean(element && element.isConnected);
         const textOf = (element) => String(element?.textContent || element?.innerText || "")
           .replace(/\\s+/g, " ").trim();
+        const compactNumber = (value) => String(value || "").replace(/\\D/g, "");
+        const datePattern = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/g;
+        const parseDate = (value) => {
+          const normalized = String(value || "").replace(/[/.]/g, "-");
+          const time = Date.parse(normalized.replace(" ", "T"));
+          return Number.isFinite(time) ? time : 0;
+        };
         const selector = "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']";
         const rowCandidates = [...document.querySelectorAll(selector)].filter(usable);
         const findJobContainer = (jobId) => {
           const direct = rowCandidates
-            .filter((candidate) => textOf(candidate).includes(jobId))
+            .filter((candidate) => textOf(candidate).includes(jobId)
+              || compactNumber(textOf(candidate)).includes(compactNumber(jobId)))
             .sort((left, right) => textOf(left).length - textOf(right).length)[0];
           if (direct) return direct;
           const leaf = [...document.querySelectorAll("body *")]
             .filter(usable)
             .filter((element) => {
               const value = textOf(element);
-              if (!value.includes(jobId) || value.length > 1000) return false;
-              return ![...element.children].some((child) => textOf(child).includes(jobId));
+              const matched = value.includes(jobId) || compactNumber(value).includes(compactNumber(jobId));
+              if (!matched || value.length > 1000) return false;
+              return ![...element.children].some((child) => {
+                const childText = textOf(child);
+                return childText.includes(jobId) || compactNumber(childText).includes(compactNumber(jobId));
+              });
             })
             .sort((left, right) => textOf(left).length - textOf(right).length)[0];
           return leaf?.closest("tr, [role='row'], [data-row-key], [class*='row'], [class*='item']")
@@ -2282,15 +2298,47 @@ async function readSellerMonitorStatuses(expectedIds = []) {
             || leaf
             || null;
         };
-        return expectedIds.map((jobId) => {
-          const row = findJobContainer(jobId);
-          if (!row) return { jobId, state: "WAITING_FOR_ROW" };
+        const usedRows = new Set();
+        const parsedRows = rowCandidates.map((row) => {
           const rowText = textOf(row);
           const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
-          const jobNumberText = textOf(cells[0]);
-          const workStateText = textOf(cells[3]);
-          const completionText = textOf(cells[5]);
-          const jobNumberMatched = new RegExp("(?:^|\\\\D)" + jobId + "(?:\\\\D|$)").test(jobNumberText || rowText);
+          const cellTexts = cells.map(textOf);
+          const dates = cellTexts.flatMap((value) => value.match(datePattern) || []);
+          const workStateText = cellTexts.find((value) => /^(?:성공|success|completed)$/i.test(value)) || "";
+          const controls = [...row.querySelectorAll("a, button, [role='button']")];
+          const control = controls.find((element) => usable(element)
+            && !element.disabled
+            && element.getAttribute("aria-disabled") !== "true"
+            && /다운로드|download/i.test([
+              textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
+            ].filter(Boolean).join(" ")));
+          return { row, rowText, cells, dates, workStateText, control, startAt: parseDate(dates[0]) };
+        });
+        return expectedJobs.map((expected) => {
+          const { jobId } = expected;
+          let row = findJobContainer(jobId);
+          let recovered = false;
+          if (!row && expected.restored && expected.createdAt > 0) {
+            const candidates = parsedRows.filter((item) => !usedRows.has(item.row)
+              && item.control
+              && /^(?:성공|success|completed)$/i.test(item.workStateText)
+              && item.dates.length > 0
+              && item.startAt >= expected.createdAt - 5 * 60_000
+              && item.startAt <= expected.createdAt + 60 * 60_000)
+              .sort((left, right) => Math.abs(left.startAt - expected.createdAt) - Math.abs(right.startAt - expected.createdAt));
+            row = candidates[0]?.row || null;
+            recovered = Boolean(row);
+          }
+          if (!row) return { jobId, state: "WAITING_FOR_ROW" };
+          usedRows.add(row);
+          const rowText = textOf(row);
+          const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
+          const cellTexts = cells.map(textOf);
+          const dates = cellTexts.flatMap((value) => value.match(datePattern) || []);
+          const workStateText = cellTexts.find((value) => /^(?:성공|success|completed)$/i.test(value)) || cellTexts[3] || "";
+          const startText = dates[0] || "";
+          const completionText = dates.at(-1) || "";
+          const jobNumberMatched = recovered || compactNumber(rowText).includes(compactNumber(jobId));
           const workSucceeded = /^(?:성공|success|completed)$/i.test(workStateText);
           const completionConfirmed = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/.test(completionText);
           if (!jobNumberMatched) return { jobId, state: "WAITING_FOR_ROW" };
@@ -2299,8 +2347,7 @@ async function readSellerMonitorStatuses(expectedIds = []) {
           }
           if (!workSucceeded) return { jobId, state: "WAITING_FOR_SUCCESS", workStateText, completionText };
           if (!completionConfirmed) return { jobId, state: "WAITING_FOR_COMPLETION", workStateText, completionText };
-          const downloadCell = cells[6] || row;
-          const control = [...downloadCell.querySelectorAll("a, button, [role='button']")].find((element) => {
+          const control = [...row.querySelectorAll("a, button, [role='button']")].find((element) => {
             if (!usable(element) || element.disabled || element.getAttribute("aria-disabled") === "true") return false;
             return /다운로드|download/i.test([
               textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
@@ -2316,6 +2363,8 @@ async function readSellerMonitorStatuses(expectedIds = []) {
             href,
             workStateText,
             completionText,
+            startText,
+            recovered,
             jobNumberMatched,
             workSucceeded,
             completionConfirmed,
@@ -2339,7 +2388,7 @@ async function readSellerMonitorStatuses(expectedIds = []) {
   return expectedIds.map((jobId) => merged.get(jobId) || { jobId, state: "PAGE_NOT_READY" });
 }
 
-async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId = null, windowSource = "monitor") {
+async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId = null, windowSource = "monitor", rowLocator = {}) {
   const targetWindow = windowSource === "seller" && sellerWindow && !sellerWindow.isDestroyed()
     ? sellerWindow
     : ensureSellerMonitorWindow();
@@ -2350,19 +2399,28 @@ async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId 
   for (const frame of ordered) {
     const result = await frame.executeJavaScript(`(() => {
       const jobId = ${JSON.stringify(String(jobId))};
+      const rowLocator = ${JSON.stringify(rowLocator || {})};
       const usable = (element) => Boolean(element && element.isConnected);
       const textOf = (element) => String(element?.textContent || element?.innerText || "").replace(/\\s+/g, " ").trim();
       const selector = "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']";
       const rowCandidates = [...document.querySelectorAll(selector)].filter(usable);
+      const compactNumber = (value) => String(value || "").replace(/\\D/g, "");
       const direct = rowCandidates
-        .filter((candidate) => textOf(candidate).includes(jobId))
+        .filter((candidate) => textOf(candidate).includes(jobId)
+          || compactNumber(textOf(candidate)).includes(compactNumber(jobId)))
         .sort((left, right) => textOf(left).length - textOf(right).length)[0];
       const leaf = direct ? null : [...document.querySelectorAll("body *")]
         .filter(usable)
         .filter((element) => textOf(element).includes(jobId)
           && ![...element.children].some((child) => textOf(child).includes(jobId)))
         .sort((left, right) => textOf(left).length - textOf(right).length)[0];
+      const recoveredRow = rowLocator.recovered ? rowCandidates.find((candidate) => {
+        const value = textOf(candidate);
+        return (!rowLocator.startText || value.includes(rowLocator.startText))
+          && (!rowLocator.completionText || value.includes(rowLocator.completionText));
+      }) : null;
       const row = direct
+        || recoveredRow
         || leaf?.closest("tr, [role='row'], [data-row-key], [class*='row'], [class*='item']")
         || leaf?.parentElement
         || leaf
@@ -2370,10 +2428,12 @@ async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId 
       if (!row) return { clicked: false, href: "", reason: "JOB_ROW_NOT_FOUND" };
       const rowText = textOf(row);
       const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
-      const jobNumberText = textOf(cells[0]);
-      const workStateText = textOf(cells[3]);
-      const completionText = textOf(cells[5]);
-      const jobNumberMatched = new RegExp("(?:^|\\\\D)" + jobId + "(?:\\\\D|$)").test(jobNumberText || rowText);
+      const cellTexts = cells.map(textOf);
+      const datePattern = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/g;
+      const dates = cellTexts.flatMap((value) => value.match(datePattern) || []);
+      const workStateText = cellTexts.find((value) => /^(?:성공|success|completed)$/i.test(value)) || cellTexts[3] || "";
+      const completionText = dates.at(-1) || "";
+      const jobNumberMatched = Boolean(rowLocator.recovered) || compactNumber(rowText).includes(compactNumber(jobId));
       const workSucceeded = /^(?:성공|success|completed)$/i.test(workStateText);
       const completionConfirmed = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/.test(completionText);
       if (!jobNumberMatched || !workSucceeded || !completionConfirmed) {
@@ -2386,8 +2446,7 @@ async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId 
           completionConfirmed,
         };
       }
-      const downloadCell = cells[6] || row;
-      const control = [...downloadCell.querySelectorAll("a, button, [role='button']")].find((element) =>
+      const control = [...row.querySelectorAll("a, button, [role='button']")].find((element) =>
         usable(element)
         && !element.disabled
         && element.getAttribute("aria-disabled") !== "true"
@@ -2507,7 +2566,11 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
         if (!job) continue;
         activeBrandDownloadJobId = ready.jobId;
         job.downloadRequestedAt = Date.now();
-        const action = await requestSellerMonitorDownload(ready.jobId, ready.frameRoutingId, ready.windowSource);
+        const action = await requestSellerMonitorDownload(ready.jobId, ready.frameRoutingId, ready.windowSource, {
+          recovered: Boolean(ready.recovered),
+          startText: ready.startText || "",
+          completionText: ready.completionText || "",
+        });
         if (action?.href && action?.targetWindow && !action.targetWindow.isDestroyed()) {
           action.targetWindow.webContents.downloadURL(action.href);
         }
@@ -4201,7 +4264,7 @@ async function automateSellerBrandExport(input = {}) {
       mainWindow?.webContents.send("brand-export:progress", {
         status: "waiting-for-job-creation",
         brandName,
-        jobState: `2단계/5 · 다운로드센터 작업 생성 대기 · ${Math.floor(elapsedMs / 1000)}초`,
+        jobState: `2단계/5 · 다운��드센터 작업 생성 대기 · ${Math.floor(elapsedMs / 1000)}초`,
         message: `${brandName} · 전체 내보내기 요청 완료 · POIZON이 새 작업번호를 생성하는 중입니다. 화면을 반복 초기화하지 않고 기다립니다.`,
       });
     }
