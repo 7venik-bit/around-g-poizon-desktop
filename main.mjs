@@ -54,6 +54,9 @@ import {
   officialDomainRegistrySummary,
   officialDomainAuditQueue,
   rankOfficialDomainCandidates,
+  rankNaverOfficialStoreCandidates,
+  naverOfficialStoreRecord,
+  noOfficialStoreRecord,
 } from "./services/official-domain-registry.mjs";
 import {
   naverOfficialStoreNotFoundRows,
@@ -1066,9 +1069,6 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
     ...candidate,
     logoSimilarity: logoScoreByUrl.get(candidate.url) || 0,
   })), brand).slice(0, OFFICIAL_DOMAIN_AUDIT_MAX_CANDIDATES);
-  if (!candidates.length) {
-    return { record: failedOfficialDomainAuditRecord(record, "CANDIDATE_NOT_FOUND"), blocked: false };
-  }
   for (const candidate of candidates) {
     try {
       onPhase("official_site");
@@ -1090,7 +1090,16 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
       // 다음 후보 도메인을 확인한다.
     }
   }
-  return { record: failedOfficialDomainAuditRecord(record, "CANDIDATE_VALIDATION_FAILED"), blocked: false };
+  // A Korean brand homepage always wins. Only after every homepage candidate
+  // fails do we accept an exact brand.naver.com official brand store.
+  const naverStores = rankNaverOfficialStoreCandidates(discovery.candidates || [], brand);
+  if (naverStores.length) {
+    onPhase("official_site");
+    return { record: naverOfficialStoreRecord(record, naverStores[0]), blocked: false };
+  }
+  // Both approved domestic routes were checked. Do not leave the brand in an
+  // endless pending state or connect an overseas/marketplace result.
+  return { record: noOfficialStoreRecord(record), blocked: false };
 }
 
 async function persistOfficialDomainAudit(registry, audit) {
