@@ -4264,7 +4264,7 @@ async function automateSellerBrandExport(input = {}) {
       mainWindow?.webContents.send("brand-export:progress", {
         status: "waiting-for-job-creation",
         brandName,
-        jobState: `2단계/5 · 다운��드센터 작업 생성 대기 · ${Math.floor(elapsedMs / 1000)}초`,
+        jobState: `2단계/5 · 다운로드센터 작업 생성 대기 · ${Math.floor(elapsedMs / 1000)}초`,
         message: `${brandName} · 전체 내보내기 요청 완료 · POIZON이 새 작업번호를 생성하는 중입니다. 화면을 반복 초기화하지 않고 기다립니다.`,
       });
     }
