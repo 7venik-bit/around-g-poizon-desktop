@@ -2080,8 +2080,8 @@ $("#excel-preview-filters")?.addEventListener("keydown", (event) => {
   void showExcelPreview(activeExcelPreview.file, 0, currentExcelPreviewFilters());
 });
 $("#excel-filter-reset")?.addEventListener("click", () => {
-  $("#excel-filter-min-total").value = "30";
-  $("#excel-filter-min-local-total").value = "30";
+  $("#excel-filter-min-total").value = "";
+  $("#excel-filter-min-local-total").value = "";
   if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, 0, currentExcelPreviewFilters());
 });
 $("#brand-download-clear")?.addEventListener("click", async () => {

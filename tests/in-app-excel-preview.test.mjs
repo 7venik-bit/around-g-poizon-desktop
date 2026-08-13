@@ -26,8 +26,11 @@ test("Excel preview is read-only and paginated in the main sourcing screen", () 
 
 test("Excel preview filters both total-sales columns across all rows", async () => {
   const preloadSource = await readFile(new URL("../preload.cjs", import.meta.url), "utf8");
-  assert.match(htmlSource, /id="excel-filter-min-total"[^>]+value="30"[^>]+readonly/);
-  assert.match(htmlSource, /id="excel-filter-min-local-total"[^>]+value="30"[^>]+readonly/);
+  assert.match(htmlSource, /id="excel-filter-min-total"[^>]+min="0"[^>]+value="30"/);
+  assert.match(htmlSource, /id="excel-filter-min-local-total"[^>]+min="0"[^>]+value="30"/);
+  assert.doesNotMatch(htmlSource, /id="excel-filter-min-(?:local-)?total"[^>]+readonly/);
+  assert.match(rendererSource, /#excel-filter-min-total"\)\.value = ""/);
+  assert.match(rendererSource, /#excel-filter-min-local-total"\)\.value = ""/);
   assert.doesNotMatch(htmlSource, /id="excel-filter-max-total"/);
   assert.doesNotMatch(htmlSource, /id="excel-filter-max-local-total"/);
   assert.doesNotMatch(rendererSource, /#excel-filter-max-total|#excel-filter-max-local-total/);
