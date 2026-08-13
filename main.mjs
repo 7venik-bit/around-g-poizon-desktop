@@ -804,7 +804,12 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "") {
     if (!source.linkOnly && source.ok && Number(source.count || 0) > 0) {
       return { ...source, countVerified: true, verificationFailed: false };
     }
-    const result = await renderedSearchSourceResult(source, articleNumber, brand);
+    const renderAttempts = /^SSG\s/.test(String(source.store || "")) ? 2 : 1;
+    let result = null;
+    for (let attempt = 0; attempt < renderAttempts && !result; attempt += 1) {
+      if (attempt > 0) await wait(1_500);
+      result = await renderedSearchSourceResult(source, articleNumber, brand);
+    }
     if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
     const count = result?.count;
     const isOfficialStore = source.store === "브랜드 공식몰";

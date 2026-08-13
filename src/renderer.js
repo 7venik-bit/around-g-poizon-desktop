@@ -1212,7 +1212,7 @@ function domesticStatus(result) {
   const verifiedCount = (result.sources || []).reduce((sum, source) =>
     sum + (source.countVerified ? Number(source.count || 0) : 0), 0);
   if (!products.length && verifiedCount > 0) return { label: "판매처 발견", className: "available" };
-  if (!products.length) return { label: "상품 없음", className: "missing" };
+  if (!products.length) return { label: "없음", className: "missing" };
   if (!products.some((product) => product.inStock)) return { label: "재고 없음", className: "soldout" };
   return { label: "구매 가능", className: "available" };
 }
