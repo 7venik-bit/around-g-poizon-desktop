@@ -6,6 +6,7 @@ import {
   weeklySiteHealthSummary,
 } from "../services/weekly-site-health.mjs";
 
+// Release validation for the v2.10.182 scheduled health-check workflow.
 test("수요일 밤 12시는 목요일 00:00로 예약한다", () => {
   const wednesday = new Date(2026, 7, 12, 15, 30);
   const next = nextWeeklySiteHealthAt(wednesday);
