@@ -1470,7 +1470,7 @@ async function listBrandExportFiles() {
     const detectedBrand = String(brandIntegrity?.dominantBrand || "").trim();
     const resolvedBrandName = detectedBrand || expectedBrand;
     if (recoveredJobId && resolvedBrandName
-      && normalizeBrandExportKey(resolvedBrandName) !== normalizeBrandExportKey(savedJob?.brandName)) {
+      && !brandsMatch(resolvedBrandName, savedJob?.brandName)) {
       await rememberBrandExportJob({
         jobId: recoveredJobId,
         brandName: resolvedBrandName,
@@ -1650,8 +1650,8 @@ async function scanBrandExportFolder() {
     const expectedBrand = folderMeta.brandName || brandFromExportFileName(newest.name);
     if (!expectedBrand) return;
     const matchingJobs = [...brandExportJobs.entries()].filter(([_jobId, job]) =>
-      normalizeBrandExportKey(job?.brandName) === normalizeBrandExportKey(expectedBrand)
-      || normalizeBrandExportKey(job?.brandKo) === normalizeBrandExportKey(expectedBrand)
+      brandsMatch(job?.brandName, expectedBrand)
+      || brandsMatch(job?.brandKo, expectedBrand)
     );
     const folderJobId = folderMeta.jobId && brandExportJobs.has(folderMeta.jobId)
       ? folderMeta.jobId
@@ -2792,8 +2792,8 @@ function savedBrandExportJobForFile(input = {}, usedJobIds = new Set()) {
   if (exactPath) return exactPath;
   const brandMatches = (item) => {
     if (!brandKey) return false;
-    return normalizeBrandExportKey(item.brandName) === brandKey
-      || normalizeBrandExportKey(item.brandKo) === brandKey;
+    return brandsMatch(item.brandName, input.brandName)
+      || brandsMatch(item.brandKo, input.brandName);
   };
   const exactNameMatches = fileNameKey
     ? candidates.filter((item) => item.fileName.toLocaleLowerCase() === fileNameKey && brandMatches(item))

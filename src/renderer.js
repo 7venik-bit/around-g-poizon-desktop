@@ -323,6 +323,15 @@ function normalizeBrandKey(value = "") {
     .replace(/[^a-z0-9가-힣]+/g, "");
 }
 
+function rendererBrandsMatch(left = "", right = "") {
+  const leftKey = normalizeBrandKey(left);
+  const rightKey = normalizeBrandKey(right);
+  if (!leftKey || !rightKey) return false;
+  if (leftKey === rightKey) return true;
+  return leftKey.length >= 5 && rightKey.length >= 5
+    && (leftKey.includes(rightKey) || rightKey.includes(leftKey));
+}
+
 function brandImportPathKey(value = "") {
   return String(value || "")
     .trim()
@@ -331,10 +340,10 @@ function brandImportPathKey(value = "") {
 }
 
 function hasCompletedBrandDownload(brand = {}) {
-  const keys = new Set([normalizeBrandKey(brand.name), normalizeBrandKey(brand.ko)].filter(Boolean));
-  return downloadedBrandFiles.some((file) =>
-    keys.has(normalizeBrandKey(file.brandName || file.brand))
-  );
+  const names = [brand.name, brand.ko].filter(Boolean);
+  return downloadedBrandFiles.some((file) => names.some((name) =>
+    rendererBrandsMatch(name, file.brandName || file.brand)
+  ));
 }
 
 function renderDownloadedBrandFiles() {
@@ -783,7 +792,7 @@ function resolveRendererBrandJobId(file = {}) {
   const key = normalizeBrandKey(file?.brandName || file?.detectedBrandName || "");
   if (!key) return "";
   const matches = [...brandExportJobs.entries()].filter(([_jobId, job]) =>
-    normalizeBrandKey(job?.brandName) === key
+    rendererBrandsMatch(job?.brandName, file?.brandName || file?.detectedBrandName)
   );
   const unfinished = matches.filter(([_jobId, job]) => !brandJobIsFinished(job?.state));
   if (unfinished.length === 1) return unfinished[0][0];
