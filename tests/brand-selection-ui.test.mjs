@@ -64,6 +64,14 @@ test("brand button shows down-complete whenever its data-center workbook was dow
   assert.match(style, /\.brand-card\.download-complete\{grid-template-columns:30px minmax\(0,1fr\)\}/);
   assert.doesNotMatch(completed, /brandIntegrity\?\.ok === false/);
   assert.match(completed, /downloadedBrandFiles\.some/);
+  assert.match(completed, /rendererBrandsMatch/);
+});
+
+test("download completion accepts POIZON brand-name variants such as Polo Ralph Lauren", () => {
+  const matcherStart = renderer.indexOf("function rendererBrandsMatch");
+  const matcherEnd = renderer.indexOf("function brandImportPathKey", matcherStart);
+  const matcher = renderer.slice(matcherStart, matcherEnd);
+  assert.match(matcher, /leftKey\.includes\(rightKey\) \|\| rightKey\.includes\(leftKey\)/);
 });
 
 test("download UI does not expose brand mismatch wording", () => {

@@ -19,12 +19,12 @@ test("the workbook brand repairs a wrongly connected POIZON job", () => {
 
 test("startup file discovery repairs an older wrong brand cache", () => {
   assert.match(main, /const resolvedBrandName = detectedBrand \|\| expectedBrand/);
-  assert.match(main, /normalizeBrandExportKey\(resolvedBrandName\) !== normalizeBrandExportKey\(savedJob\?\.brandName\)/);
+  assert.match(main, /!brandsMatch\(resolvedBrandName, savedJob\?\.brandName\)/);
   assert.match(main, /jobId: recoveredJobId/);
 });
 
-test("release metadata is 2.10.177", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.177");
-  assert.equal(JSON.parse(lockSource).version, "2.10.177");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.177");
+test("release metadata is 2.10.178", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.178");
+  assert.equal(JSON.parse(lockSource).version, "2.10.178");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.178");
 });
