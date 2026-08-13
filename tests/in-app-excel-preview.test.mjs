@@ -156,6 +156,10 @@ test("official-store verification failures are not shown as a confirmed zero", (
 
 test("official store, Musinsa, and Naver sources all render numeric result badges", () => {
   assert.match(mainSource, /if \(!source\.renderCount\)/);
+  assert.match(mainSource, /\^SSG\\s/);
+  assert.match(mainSource, /renderAttempts && !result/);
+  assert.match(mainSource, /attempt > 0\) await wait\(1_500\)/);
+  assert.match(rendererSource, /label: "없음", className: "missing"/);
   assert.match(mainSource, /!source\.linkOnly && source\.ok && Number\(source\.count \|\| 0\) > 0/);
   assert.match(rendererSource, /const directLinks = \(result\.sources \|\| \[\]\)\.map/);
   assert.doesNotMatch(rendererSource, /filter\(\(source\) => source\.linkOnly\)\.map/);
