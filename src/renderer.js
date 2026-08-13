@@ -1122,6 +1122,27 @@ function renderOfficialDomainAudit(audit = {}) {
   };
 }
 
+function renderWeeklySiteHealth(health = {}) {
+  const panel = $("#weekly-site-health");
+  const status = $("#weekly-site-health-status");
+  const report = $("#weekly-site-health-report");
+  const button = $("#weekly-site-health-run");
+  if (!panel || !status || !report || !button) return;
+  panel.classList.toggle("running", Boolean(health.running));
+  panel.classList.toggle("success", !health.running && health.state === "completed");
+  panel.classList.toggle("error", !health.running && ["failed", "completed_with_errors"].includes(health.state));
+  const completed = Number(health.completed || 0);
+  const total = Number(health.total || 0);
+  const progress = health.running && total ? ` (${completed}/${total})` : "";
+  status.textContent = `${health.message || "매주 수요일 밤 12시에 모든 연동 서버를 자동 점검합니다."}${progress}`;
+  const nextRun = health.nextRunAt ? new Date(health.nextRunAt).toLocaleString("ko-KR") : "";
+  report.textContent = health.reportPath
+    ? `Excel 보고서: ${health.reportPath}${nextRun ? ` · 다음 점검 ${nextRun}` : ""}`
+    : nextRun ? `다음 점검 ${nextRun}` : "";
+  button.disabled = Boolean(health.running);
+  button.textContent = health.running ? "점검 중…" : "지금 점검";
+}
+
 function renderBrandCards(filter = "") {
   const normalized = filter.trim().toLowerCase();
   const matchedBrands = explorerMeta.brands.filter((brand) =>
@@ -2534,6 +2555,13 @@ window.aroundG.onUpdateStatus((payload) => {
   }
 });
 
+$("#weekly-site-health-run")?.addEventListener("click", async () => {
+  renderWeeklySiteHealth({ running: true, message: "모든 연동 서버 정기점검을 시작합니다." });
+  const result = await window.aroundG.runWeeklySiteHealth();
+  renderWeeklySiteHealth(result || {});
+});
+window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
+
 (async () => {
   try {
     const appInfo = await window.aroundG.getAppInfo();
@@ -2541,6 +2569,7 @@ window.aroundG.onUpdateStatus((payload) => {
   } catch {
     renderInstalledVersion("2.10.17", true);
   }
+  renderWeeklySiteHealth(await window.aroundG.getWeeklySiteHealth());
   setupBrandLayout();
   // Do not restore a job number as live work. The main process will emit
   // progress only for jobs actually registered in this running session.

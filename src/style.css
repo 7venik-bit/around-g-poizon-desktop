@@ -628,6 +628,14 @@ body.excel-preview-active{overflow:hidden}
 .official-domain-audit strong{font-size:13px;color:#173f73}
 .official-domain-audit span{font-size:11px;color:#5b6f88;line-height:1.45}
 .official-domain-audit button{flex:0 0 auto}
+.weekly-site-health{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:10px 0;padding:12px 14px;border:1px solid #cfe0f2;border-radius:12px;background:#f7fbff}
+.weekly-site-health>div{display:flex;min-width:0;flex-direction:column;gap:3px}
+.weekly-site-health strong{font-size:13px;color:#173f73}
+.weekly-site-health span,.weekly-site-health small{font-size:11px;color:#5b6f88;line-height:1.45;overflow-wrap:anywhere}
+.weekly-site-health.running{border-color:#76a9df;background:#eef6ff}
+.weekly-site-health.error{border-color:#e6a3a3;background:#fff5f5}
+.weekly-site-health.success{border-color:#8bc7a3;background:#f3fbf6}
+.weekly-site-health button{flex:0 0 auto}
 .brand-selection-actions{display:flex;align-items:center;gap:9px;margin:10px 0 4px;padding:10px 12px;border:1px solid #d6e5f1;border-radius:10px;background:#f8fbff}
 .brand-selection-actions svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .brand-multi-select-label{display:flex;align-items:center;gap:7px;color:#2d5f88;font-size:12px;font-weight:800}
