@@ -1265,28 +1265,31 @@ function renderDomestic(result) {
       : `<small>결과 확인</small>`;
   const directLinks = (result.sources || []).map((source) => {
     if (source.officialStatus) {
+      const officialOpenUrl = String(
+        source.officialProductUrl || source.officialSearchUrl || source.homepageUrl || source.searchUrl || ""
+      );
+      const officialButton = (label, badgeClass = "") => officialOpenUrl
+        ? `<button class="source-link" type="button" data-url="${encodeURIComponent(officialOpenUrl)}"><span>${text(source.store)}</span><small${badgeClass ? ` class="${badgeClass}"` : ""}>${label}</small></button>`
+        : `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small${badgeClass ? ` class="${badgeClass}"` : ""}>${label}</small></button>`;
       if (source.officialStatus === "pending") {
-        return `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>공식몰 추가 확인 필요</small></button>`;
+        return officialButton("공식몰 검색");
       }
       if (source.officialStatus === "no_official_store") {
-        return `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>국내 공식몰 없음 확인</small></button>`;
+        return officialButton("국내 공식몰 없음 확인");
       }
       if (source.officialStatus === "search_unsupported") {
-        const homepageUrl = String(source.homepageUrl || "");
-        return homepageUrl
-          ? `<button class="source-link" type="button" data-url="${encodeURIComponent(homepageUrl)}"><span>${text(source.store)}</span><small>공식몰 확인·상품검색 연결 불가</small></button>`
-          : `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>공식몰 확인·상품검색 연결 불가</small></button>`;
+        return officialButton("공식몰 열기·사이트 검색 미지원");
       }
       if (source.verificationFailed) {
-        return `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>상품없음</small></button>`;
+        return officialButton("상품없음·직접 확인");
       }
       if (source.countVerified && source.officialProductUrl) {
         return `<button class="source-link" type="button" data-url="${encodeURIComponent(source.officialProductUrl)}"><span>${text(source.store)}</span><b class="source-count">상품 연결</b></button>`;
       }
       if (source.countVerified || source.officialProductMissing) {
-        return `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>공식몰 상품 없음</small></button>`;
+        return officialButton("공식몰 상품 없음·직접 확인");
       }
-      return `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>공식몰 검색 전</small></button>`;
+      return officialButton("공식몰 검색");
     }
     return `<button class="source-link" type="button" data-url="${encodeURIComponent(source.searchUrl)}"><span>${text(source.store)}</span>${source.officialStatus === "pending" ? `<small>도메인 확인 필요</small>` : source.officialStatus === "no_official_store" ? `<small>등록된 공식몰 없음</small>` : source.officialStatus === "search_unsupported" ? `<small>사이트 검색 미지원</small>` : sourceResult(source)}</button>`;
   }).join("");
