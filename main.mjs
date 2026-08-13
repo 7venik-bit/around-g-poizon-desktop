@@ -1215,6 +1215,30 @@ async function runOfficialDomainAudit() {
   }
 }
 
+async function startImmediateOfficialMallLinkage() {
+  const version = app.getVersion();
+  const settings = store.snapshot().settings;
+  if (settings.immediateOfficialMallLinkageVersion === version) return;
+  await store.setSettings({
+    immediateOfficialMallLinkageVersion: version,
+    immediateOfficialMallLinkageStartedAt: new Date().toISOString(),
+  });
+  mainWindow?.webContents.send("official-domain:audit-progress", {
+    ...officialDomainAuditSnapshot(safeOfficialDomainRegistry(settings.brandCatalog || explorerMetadata().brands)),
+    running: true,
+    state: "running",
+    phase: "starting",
+    currentBrand: "전체 브랜드 목록 동기화",
+  });
+  const syncResult = await syncBrandCatalogFromKrPoizon().catch((error) => ({ ok: false, error }));
+  const refreshedSettings = store.snapshot().settings;
+  const brands = syncResult?.ok && Array.isArray(syncResult.brands) && syncResult.brands.length
+    ? syncResult.brands
+    : refreshedSettings.brandCatalog || explorerMetadata().brands;
+  await ensureOfficialDomainRegistry(brands);
+  await runOfficialDomainAudit();
+}
+
 function pauseOfficialDomainAuditForSellerAutomation() {
   const shouldResume = officialDomainAuditRunning || Boolean(officialDomainAuditResumeTimer);
   clearTimeout(officialDomainAuditResumeTimer);
@@ -6552,6 +6576,10 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   createWindow();
   startBrandExportFolderPolling();
   scheduleWeeklySiteHealthCheck();
+  // v2.10.183 operator-requested one-time run: link every pending official
+  // mall immediately after the update. The persisted version marker prevents
+  // this long-running audit from restarting on every app launch.
+  if (app.isPackaged) setTimeout(() => void startImmediateOfficialMallLinkage(), 8_000);
   if (app.isPackaged) scheduleUpdateCheck(5_000);
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
