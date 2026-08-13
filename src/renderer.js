@@ -1216,7 +1216,7 @@ function bindExplorerSelectionControls() {
 function domesticStatus(result) {
   if (!result) return { label: "확인 전", className: "pending" };
   if (result.loading) return { label: "검색 중", className: "loading" };
-  if (result.error) return { label: "확인 실패", className: "error" };
+  if (result.error) return { label: "상품없음", className: "missing" };
   const products = result.products || [];
   const verifiedCount = (result.sources || []).reduce((sum, source) =>
     sum + (source.countVerified ? Number(source.count || 0) : 0), 0);
@@ -1229,7 +1229,7 @@ function domesticStatus(result) {
 function renderDomestic(result) {
   if (!result) return `<span class="inventory-help">재고 검색을 누르면 공식몰 → 무신사 → 네이버·SSG·롯데온의 공식스토어·백화점·아울렛을 각각 확인합니다.</span>`;
   if (result.loading) return `<span class="inventory-help">국내 플랫폼을 순서대로 확인하고 있습니다…</span>`;
-  if (result.error) return `<span class="inventory-help error">국내 검색에 실패했습니다. 잠시 후 다시 시도해 주세요.</span>`;
+  if (result.error) return `<span class="inventory-help">상품없음</span>`;
   const products = (result.products || []).filter((product) => product && (product.name || product.title));
   const verifiedCount = (result.sources || []).reduce((sum, source) =>
     sum + (source.countVerified ? Number(source.count || 0) : 0), 0);
@@ -1259,7 +1259,7 @@ function renderDomestic(result) {
     </div>`;
   }).join("");
   const sourceResult = (source) => source.verificationFailed
-    ? `<small class="source-check-failed">확인 실패</small>`
+    ? `<small>상품없음</small>`
     : source.countVerified
       ? `<b class="source-count">${Number(source.count || 0) > 0 ? Number(source.count) : "없음"}</b>`
       : `<small>결과 확인</small>`;
@@ -1278,7 +1278,7 @@ function renderDomestic(result) {
           : `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>공식몰 확인·상품검색 연결 불가</small></button>`;
       }
       if (source.verificationFailed) {
-        return `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small class="source-check-failed">공식몰 확인 실패</small></button>`;
+        return `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small>상품없음</small></button>`;
       }
       if (source.countVerified && source.officialProductUrl) {
         return `<button class="source-link" type="button" data-url="${encodeURIComponent(source.officialProductUrl)}"><span>${text(source.store)}</span><b class="source-count">상품 연결</b></button>`;
