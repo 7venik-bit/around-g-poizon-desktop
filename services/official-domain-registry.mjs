@@ -199,6 +199,61 @@ export function rankOfficialDomainCandidates(candidates, brand) {
   return [...unique.values()].sort((left, right) => right.score - left.score).slice(0, 5);
 }
 
+export function rankNaverOfficialStoreCandidates(candidates, brand) {
+  const brandKey = normalizeOfficialBrand(brand);
+  if (!brandKey) return [];
+  const unique = new Map();
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    let parsed;
+    try { parsed = new URL(String(candidate?.url || "")); } catch { continue; }
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    if (host !== "brand.naver.com") continue;
+    const evidence = normalizeOfficialBrand(`${candidate?.title || ""} ${parsed.pathname}`);
+    if (!evidence.includes(brandKey)) continue;
+    const slug = parsed.pathname.split("/").filter(Boolean)[0];
+    if (!slug || unique.has(slug)) continue;
+    unique.set(slug, {
+      url: `https://brand.naver.com/${slug}`,
+      title: String(candidate?.title || ""),
+      slug,
+      score: /공식|official|브랜드스토어/i.test(String(candidate?.title || "")) ? 100 : 70,
+    });
+  }
+  return [...unique.values()].sort((a, b) => b.score - a.score);
+}
+
+export function naverOfficialStoreRecord(record, candidate, now = new Date().toISOString()) {
+  const slug = String(candidate?.slug || "").trim();
+  if (!slug) return failedOfficialDomainAuditRecord(record, "NAVER_OFFICIAL_STORE_INVALID", now);
+  return {
+    ...record,
+    status: OFFICIAL_DOMAIN_STATUS.VERIFIED,
+    domain: "brand.naver.com",
+    homepageUrl: `https://brand.naver.com/${slug}`,
+    searchTemplate: `https://brand.naver.com/${slug}/search?q={query}`,
+    candidateUrl: `https://brand.naver.com/${slug}`,
+    verificationSource: "naver-official-brand-store",
+    verifiedAt: now,
+    verificationAttempts: Number(record?.verificationAttempts || 0) + 1,
+    lastCheckedAt: now,
+    lastVerificationError: "",
+  };
+}
+
+export function noOfficialStoreRecord(record, now = new Date().toISOString()) {
+  return {
+    ...record,
+    status: OFFICIAL_DOMAIN_STATUS.NO_OFFICIAL_STORE,
+    domain: "",
+    homepageUrl: "",
+    searchTemplate: "",
+    verificationSource: "domestic-homepage-and-naver-store-not-found",
+    verificationAttempts: Number(record?.verificationAttempts || 0) + 1,
+    lastCheckedAt: now,
+    lastVerificationError: "",
+  };
+}
+
 export function auditedOfficialDomainRecord(record, evidence, now = new Date().toISOString()) {
   const validation = validateOfficialDomainCandidate({
     brand: record?.brandKo || record?.brandName,

@@ -13,6 +13,9 @@ import {
   officialDomainRegistrySummary,
   officialSearchUrlFromRecord,
   rankOfficialDomainCandidates,
+  rankNaverOfficialStoreCandidates,
+  naverOfficialStoreRecord,
+  noOfficialStoreRecord,
   validateOfficialDomainCandidate,
 } from "../services/official-domain-registry.mjs";
 
@@ -25,6 +28,27 @@ test("audit resumes with unchecked brands before retrying unresolved brands", ()
     { status: OFFICIAL_DOMAIN_STATUS.PENDING, lastCheckedAt: "", verificationAttempts: 0 },
   ];
   assert.deepEqual(officialDomainAuditQueue(registry), [2, 4, 0, 3]);
+});
+
+test("국내 공식 홈페이지 다음으로 네이버 공식 브랜드스토어만 연결한다", () => {
+  const candidates = rankNaverOfficialStoreCandidates([
+    { url: "https://brand.naver.com/salomon/search?q=shoe", title: "살로몬 공식 브랜드스토어" },
+    { url: "https://smartstore.naver.com/random", title: "살로몬 판매점" },
+    { url: "https://brand.naver.com/other", title: "다른 브랜드 공식몰" },
+  ], "살로몬");
+  assert.equal(candidates.length, 1);
+  const [base] = createOfficialDomainRegistry([{ id: 1, name: "Salomon", ko: "살로몬" }]);
+  const linked = naverOfficialStoreRecord(base, candidates[0]);
+  assert.equal(linked.homepageUrl, "https://brand.naver.com/salomon");
+  assert.equal(linked.searchTemplate, "https://brand.naver.com/salomon/search?q={query}");
+  assert.equal(linked.verificationSource, "naver-official-brand-store");
+});
+
+test("국내 공식 홈페이지와 네이버 공식스토어가 모두 없으면 공식몰 없음이다", () => {
+  const [base] = createOfficialDomainRegistry([{ id: 2, name: "No Store", ko: "공식몰없는브랜드" }]);
+  const missing = noOfficialStoreRecord(base);
+  assert.equal(missing.status, OFFICIAL_DOMAIN_STATUS.NO_OFFICIAL_STORE);
+  assert.equal(missing.verificationSource, "domestic-homepage-and-naver-store-not-found");
 });
 
 test("the complete POIZON catalog gets an explicit official-domain status", () => {
