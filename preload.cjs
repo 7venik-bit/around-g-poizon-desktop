@@ -17,6 +17,13 @@ contextBridge.exposeInMainWorld("aroundG", {
     ipcRenderer.on("official-domain:audit-progress", handler);
     return () => ipcRenderer.removeListener("official-domain:audit-progress", handler);
   },
+  getWeeklySiteHealth: () => ipcRenderer.invoke("weekly-site-health:status"),
+  runWeeklySiteHealth: () => ipcRenderer.invoke("weekly-site-health:run"),
+  onWeeklySiteHealthStatus: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on("weekly-site-health:status", handler);
+    return () => ipcRenderer.removeListener("weekly-site-health:status", handler);
+  },
   onBrandSyncProgress: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on("explorer:brand-progress", handler);

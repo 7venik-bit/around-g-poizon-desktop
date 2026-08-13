@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, safeStorage, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, shell } from "electron";
 import { mkdirSync } from "node:fs";
 import { appendFile, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -72,6 +72,11 @@ import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/selle
 import { highestQualifiedOptionPrice, optionRowsFromSellerResponses, qualifiedOptionPrices } from "./services/seller-transaction-price.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
 import { findNewSellerExportJob } from "./services/brand-export-jobs.mjs";
+import {
+  SITE_HEALTH_TARGETS,
+  nextWeeklySiteHealthAt,
+  weeklySiteHealthSummary,
+} from "./services/weekly-site-health.mjs";
 
 let store;
 const { autoUpdater } = pkg;
@@ -101,6 +106,8 @@ let officialDomainAuditRunning = false;
 let officialDomainAuditStopRequested = false;
 let officialDomainAuditWindow = null;
 let officialDomainAuditResumeTimer = null;
+let weeklySiteHealthTimer = null;
+let weeklySiteHealthRunning = false;
 let officialDomainAuditAbortCurrent = null;
 let brandExportAllCompleteSent = false;
 let activeBrandDownloadJobId = "";
@@ -115,6 +122,7 @@ const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 20 * 60 * 1000;
 const KR_POIZON_BRAND_LIST_URL = "https://kr.poizon.com/brand/list";
 const EN_POIZON_BRAND_LIST_URL = "https://www.poizon.com/brand/list";
 const APP_ICON_PATH = join(import.meta.dirname, "build", "icon.png");
+const SITE_HEALTH_TIMEOUT_MS = 25_000;
 const SELLER_CAPTURE_SCRIPT = `(async () => {
   const selector = "tr, [role='row'], li, [class*='row'], [class*='item'], [class*='product'], [class*='table']";
   const headings = [...document.querySelectorAll("h1, h2, h3, h4, strong, span, div")]
@@ -5699,6 +5707,169 @@ async function lookupSellerTransactionPrice(input = {}) {
   };
 }
 
+function sendWeeklySiteHealthStatus(payload = {}) {
+  const status = {
+    ...store?.snapshot()?.settings?.weeklySiteHealth,
+    ...payload,
+    scheduleLabel: "매주 수요일 밤 12시",
+    nextRunAt: nextWeeklySiteHealthAt(new Date()).toISOString(),
+  };
+  mainWindow?.webContents.send("weekly-site-health:status", status);
+  return status;
+}
+
+async function inspectSiteHealthTarget(target) {
+  const startedAt = new Date();
+  try {
+    const response = await fetch(target.url, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(SITE_HEALTH_TIMEOUT_MS),
+      headers: {
+        "accept-language": "ko-KR,ko;q=0.9,en;q=0.7",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 AroundG-SiteHealth/1.0",
+      },
+    });
+    const endedAt = new Date();
+    // 401/403 means that the server itself responded and a login/security
+    // session is required. Record it separately instead of misreporting a
+    // network outage.
+    const reachable = response.status > 0 && response.status < 500;
+    return {
+      ...target,
+      ok: reachable,
+      result: reachable ? (response.ok ? "정상" : "접속 가능·로그인/보안 확인 필요") : "오류",
+      statusCode: response.status,
+      responseMs: endedAt.getTime() - startedAt.getTime(),
+      startedAt: startedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+      finalUrl: response.url || target.url,
+      error: reachable ? "" : `HTTP ${response.status}`,
+    };
+  } catch (error) {
+    const endedAt = new Date();
+    return {
+      ...target,
+      ok: false,
+      result: "오류",
+      statusCode: 0,
+      responseMs: endedAt.getTime() - startedAt.getTime(),
+      startedAt: startedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+      finalUrl: target.url,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function reportTimestamp(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}`;
+}
+
+async function writeWeeklySiteHealthReport(startedAt, endedAt, results, summary) {
+  const folder = currentBrandExportFolder();
+  await mkdir(folder, { recursive: true });
+  const filePath = join(folder, `연동서버_정기점검_${reportTimestamp(startedAt)}.xlsx`);
+  const nextRun = nextWeeklySiteHealthAt(endedAt);
+  const overview = [
+    ["항목", "내용"],
+    ["점검 구분", "연동 서버 주간 정기점검"],
+    ["점검 일정", "매주 수요일 밤 12시 (목요일 00:00)"],
+    ["점검 시작", startedAt.toLocaleString("ko-KR")],
+    ["점검 종료", endedAt.toLocaleString("ko-KR")],
+    ["전체 결과", summary.ok ? "전체 정상" : `${summary.failed}개 사이트 점검 필요`],
+    ["정상", summary.passed],
+    ["점검 필요", summary.failed],
+    ["다음 점검 예정", nextRun.toLocaleString("ko-KR")],
+  ];
+  const detail = [
+    ["번호", "연동 서버", "점검 주소", "점검 시작", "점검 종료", "HTTP 상태", "응답 시간(ms)", "점검 결과", "오류 내용"],
+    ...results.map((result, index) => [
+      index + 1,
+      result.name,
+      result.finalUrl || result.url,
+      new Date(result.startedAt).toLocaleString("ko-KR"),
+      new Date(result.endedAt).toLocaleString("ko-KR"),
+      result.statusCode || "응답 없음",
+      result.responseMs,
+      result.result,
+      result.error || "",
+    ]),
+  ];
+  const workbook = (rows, widths) => ({
+    data: rows.map((row, rowIndex) => row.map((value) => rowIndex === 0
+      ? { value, fontWeight: "bold", backgroundColor: "#DCECF8" }
+      : { value })),
+    columns: widths.map((width) => ({ width })),
+    stickyRowsCount: 1,
+  });
+  await writeXlsxFile([
+    { ...workbook(overview, [24, 64]), sheet: "점검 요약" },
+    { ...workbook(detail, [8, 24, 68, 24, 24, 14, 18, 28, 54]), sheet: "서버별 점검 결과" },
+  ]).toFile(filePath);
+  return filePath;
+}
+
+async function runWeeklySiteHealthCheck({ manual = false } = {}) {
+  if (weeklySiteHealthRunning) return sendWeeklySiteHealthStatus({ running: true, message: "연동 서버 정기점검이 이미 진행 중입니다." });
+  weeklySiteHealthRunning = true;
+  const startedAt = new Date();
+  sendWeeklySiteHealthStatus({ running: true, state: "running", startedAt: startedAt.toISOString(), message: "모든 연동 서버 정기점검을 시작했습니다.", completed: 0, total: SITE_HEALTH_TARGETS.length });
+  const results = [];
+  try {
+    for (const target of SITE_HEALTH_TARGETS) {
+      sendWeeklySiteHealthStatus({ running: true, state: "running", message: `${target.name} 연동 상태를 점검하고 있습니다.`, completed: results.length, total: SITE_HEALTH_TARGETS.length });
+      results.push(await inspectSiteHealthTarget(target));
+    }
+    const endedAt = new Date();
+    const summary = weeklySiteHealthSummary(results);
+    const reportPath = await writeWeeklySiteHealthReport(startedAt, endedAt, results, summary);
+    const message = summary.ok
+      ? `연동 서버 ${summary.total}곳 정기점검이 모두 정상 완료되었습니다.`
+      : `정기점검 완료: ${summary.passed}곳 정상, ${summary.failed}곳 점검이 필요합니다.`;
+    const saved = {
+      running: false,
+      state: summary.ok ? "completed" : "completed_with_errors",
+      manual,
+      startedAt: startedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+      lastRunAt: endedAt.toISOString(),
+      message,
+      reportPath,
+      results,
+      ...summary,
+    };
+    await store.setSettings({ weeklySiteHealth: saved });
+    sendWeeklySiteHealthStatus(saved);
+    if (Notification.isSupported()) new Notification({ title: "Around G 정기점검 완료", body: `${message}\nExcel 보고서가 저장되었습니다.` }).show();
+    return saved;
+  } catch (error) {
+    const failed = {
+      running: false,
+      state: "failed",
+      startedAt: startedAt.toISOString(),
+      endedAt: new Date().toISOString(),
+      message: `정기점검 처리 오류: ${error instanceof Error ? error.message : String(error)}`,
+      results,
+    };
+    await store.setSettings({ weeklySiteHealth: failed });
+    sendWeeklySiteHealthStatus(failed);
+    return failed;
+  } finally {
+    weeklySiteHealthRunning = false;
+    scheduleWeeklySiteHealthCheck();
+  }
+}
+
+function scheduleWeeklySiteHealthCheck() {
+  if (weeklySiteHealthTimer) clearTimeout(weeklySiteHealthTimer);
+  const now = new Date();
+  const next = nextWeeklySiteHealthAt(now);
+  weeklySiteHealthTimer = setTimeout(() => void runWeeklySiteHealthCheck(), Math.max(1_000, next.getTime() - now.getTime()));
+  weeklySiteHealthTimer.unref?.();
+  sendWeeklySiteHealthStatus({ nextRunAt: next.toISOString() });
+}
+
 app.whenReady().then(async () => {
   app.setAppUserModelId("kr.aroundg.poizon");
   store = new JsonStore(app.getPath("userData"));
@@ -5811,6 +5982,8 @@ app.whenReady().then(async () => {
     officialDomainAuditResumeTimer = null;
     return { ok: true };
   });
+  ipcMain.handle("weekly-site-health:status", () => sendWeeklySiteHealthStatus());
+  ipcMain.handle("weekly-site-health:run", () => runWeeklySiteHealthCheck({ manual: true }));
   ipcMain.handle("seller:open", () => {
     openSellerCenterWindow();
     return { ok: true };
@@ -6378,6 +6551,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   configureUpdater();
   createWindow();
   startBrandExportFolderPolling();
+  scheduleWeeklySiteHealthCheck();
   if (app.isPackaged) scheduleUpdateCheck(5_000);
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -6393,4 +6567,5 @@ app.on("before-quit", () => {
   if (updateCheckTimer) clearTimeout(updateCheckTimer);
   if (updateInstallTimer) clearTimeout(updateInstallTimer);
   if (officialDomainAuditResumeTimer) clearTimeout(officialDomainAuditResumeTimer);
+  if (weeklySiteHealthTimer) clearTimeout(weeklySiteHealthTimer);
 });
