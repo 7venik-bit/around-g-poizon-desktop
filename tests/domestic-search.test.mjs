@@ -236,6 +236,28 @@ test("정확한 레고 품번이 상품 제목에 있으면 검색 결과로 인
   assert.equal(result?.products[0]?.price, 129000);
 });
 
+test("네이버 단일 결과는 품번이 생략돼도 브랜드와 상품명이 일치하면 인정한다", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    productCards: [{
+      productUrl: "https://shopping.naver.com/window-products/1234567890",
+      title: "[코오롱스포츠] 남성 데이팩 베이직 쇼츠",
+      text: "코오롱스포츠 브랜드직영몰 남성 데이팩 베이직 쇼츠 78,000원",
+      imageUrl: "https://example.com/shorts.jpg",
+    }],
+    pageText: "전체 1개 브랜드직영몰 1개 백화점 0개 아울렛 0개",
+  }), "네이버 공식 브랜드스토어", "TLPOM26699", "코오롱스포츠", "코오롱스포츠 DAYPACK 남성 데이팩 베이직 쇼츠 TLPOM26699");
+  assert.equal(result.count, 1);
+  assert.equal(result.products[0].articleNumber, "TLPOM26699");
+});
+
+test("네이버 결과가 여러 개면 상품명만으로 품번 일치를 추정하지 않는다", () => {
+  const card = { productUrl: "https://shopping.naver.com/window-products/1", title: "코오롱스포츠 남성 데이팩 베이직 쇼츠", text: "78,000원" };
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    productCards: [card, { ...card, productUrl: "https://shopping.naver.com/window-products/2" }], pageText: "전체 2개",
+  }), "네이버 공식 브랜드스토어", "TLPOM26699", "코오롱스포츠", "코오롱스포츠 DAYPACK 남성 데이팩 베이직 쇼츠");
+  assert.equal(result.count, 0);
+});
+
 test("rendered SSG cards take priority over a stale block phrase elsewhere on the page", async () => {
   const mainSource = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../main.mjs", import.meta.url), "utf8"));
   assert.match(mainSource, /parsedContent\?\.pageBlocked && !parsedContent\?\.productCards\?\.length/);

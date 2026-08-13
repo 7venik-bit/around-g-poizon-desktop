@@ -683,7 +683,7 @@ async function addMatchConfidence(data, input) {
   return { ...data, products, sources };
 }
 
-async function renderedSearchSourceResult(source, articleNumber, brand = "") {
+async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "") {
   const url = String(source.officialProductUrl || source.searchUrl || "");
   if (!/^https:\/\//i.test(url)) return { count: Number(source.count || 0), products: [] };
   let searchWindow;
@@ -780,7 +780,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "") {
       const parsedContent = JSON.parse(content);
       if (parsedContent?.pageBlocked && !parsedContent?.productCards?.length) return null;
     } catch {}
-    return analyzeRenderedChannelProducts(content, source.store, articleNumber, brand);
+    return analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
   } catch {
     return null;
   } finally {
@@ -788,7 +788,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "") {
   }
 }
 
-async function addRenderedSearchCounts(data, articleNumber, brand = "") {
+async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "") {
   const discoveredProducts = [];
   const sources = await Promise.all(data.sources.map(async (source) => {
     if (source.officialStatus && source.officialStatus !== OFFICIAL_DOMAIN_STATUS.VERIFIED) {
@@ -808,7 +808,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "") {
     let result = null;
     for (let attempt = 0; attempt < renderAttempts && !result; attempt += 1) {
       if (attempt > 0) await wait(1_500);
-      result = await renderedSearchSourceResult(source, articleNumber, brand);
+      result = await renderedSearchSourceResult(source, articleNumber, brand, title);
     }
     if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
     const count = result?.count;
@@ -6026,7 +6026,8 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         matched = await addRenderedSearchCounts(
           matched,
           String(input?.articleNumber || ""),
-          String(input?.brand || "")
+          String(input?.brand || ""),
+          String(input?.title || "")
         );
       }
       return { ok: true, data: matched };

@@ -166,7 +166,18 @@ export function countLinkedSearchProducts(html, articleNumber = "") {
   return 0;
 }
 
-export function analyzeRenderedChannelProducts(content, store = "", articleNumber = "", brand = "") {
+function titleIdentityMatch(candidate = "", expected = "") {
+  const ignored = new Set(["남성", "여성", "공용", "정품", "공식", "신상", "상품"]);
+  const tokens = (value) => String(value || "").toLocaleLowerCase()
+    .split(/[^a-z0-9가-힣]+/)
+    .filter((token) => token.length >= 2 && !ignored.has(token));
+  const candidateTokens = new Set(tokens(candidate));
+  const expectedTokens = [...new Set(tokens(expected))];
+  const shared = expectedTokens.filter((token) => candidateTokens.has(token));
+  return shared.length >= 2 && shared.length / Math.max(1, Math.min(expectedTokens.length, candidateTokens.size)) >= 0.4;
+}
+
+export function analyzeRenderedChannelProducts(content, store = "", articleNumber = "", brand = "", expectedTitle = "") {
   const source = String(content || "");
   const articleCode = sanitizeDomesticQuery(articleNumber).trim();
   if (source.trimStart().startsWith("{")) {
@@ -213,11 +224,20 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           const escapedColor = colorCode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           articleMatched = new RegExp(`${escapedBase}[^#\\s]{0,160}(?:color|colour|variant)[^=]{0,24}=${escapedColor}(?:&|$)`, "i").test(decodedUrl);
         }
+        const evidence = normalizeOfficialBrand(rawCardText);
+        const tokens = rawCardText.toLowerCase().split(/[^a-z0-9가-힣]+/).map(normalizeOfficialBrand).filter(Boolean);
+        const brandMatched = !requiresBrandMatch
+          || brandKeys.some((key) => key.length <= 3 ? tokens.includes(key) : evidence.includes(key));
+        // Naver Fashion Town often omits the model number from the visible
+        // product title.  A single result may still be accepted when its brand
+        // and descriptive title both match the POIZON row.  This deliberately
+        // excludes generic/multiple-result pages, preserving exact-code checks.
+        if (!articleMatched && /^네이버\s/.test(String(store || "")) && cards.length === 1
+          && brandMatched && titleIdentityMatch(rawCardText, expectedTitle)) {
+          articleMatched = true;
+        }
         if (!articleMatched) continue;
         if (requiresBrandMatch) {
-          const evidence = normalizeOfficialBrand(rawCardText);
-          const tokens = rawCardText.toLowerCase().split(/[^a-z0-9가-힣]+/).map(normalizeOfficialBrand).filter(Boolean);
-          const brandMatched = brandKeys.some((key) => key.length <= 3 ? tokens.includes(key) : evidence.includes(key));
           if (!brandMatched) continue;
         }
         const productKey = String(productUrl || card?.text || "");
