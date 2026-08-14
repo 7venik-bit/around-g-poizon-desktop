@@ -36,6 +36,18 @@ test("이전 판매순위 기록은 제외하고 가장 최근 200건만 사용�
   ], brands, 200);
   assert.deepEqual(ranked.map((brand) => brand.id), [144]);
 });
+
+test("카테고리 검색은 기존 인기리스트 200건 수집 후 연관 브랜드 조회를 시작한다", async () => {
+  const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
+  const categoryHandler = renderer.slice(
+    renderer.indexOf('$("#category-search").addEventListener'),
+    renderer.indexOf('$("#import-button").addEventListener'),
+  );
+  assert.match(categoryHandler, /capturePopularProducts\(\{ runDomestic: false, renderResults: false \}\)/);
+  assert.match(categoryHandler, /await window\.aroundG\.queryExplorer/);
+  assert.ok(categoryHandler.indexOf("capturePopularProducts") < categoryHandler.indexOf("queryExplorer"));
+  assert.match(renderer, /return \{ ok: true, products: storedProducts \}/);
+});
 import { officialBrandSearchUrl } from "../relay/domestic-search.mjs";
 import { JsonStore } from "../services/store.mjs";
 

@@ -1745,7 +1745,7 @@ $("#official-domain-audit-toggle")?.addEventListener("click", async () => {
   button.disabled = false;
 });
 
-async function acceptSellerCenterProducts(products, sourceLabel) {
+async function acceptSellerCenterProducts(products, sourceLabel, options = {}) {
   const limited = products.slice(0, 200);
   const storedProducts = limited.filter((product) => !product.missingRank).map((product) => ({
     brand: product.brandName || "",
@@ -1762,10 +1762,13 @@ async function acceptSellerCenterProducts(products, sourceLabel) {
   await refresh();
   $("#popular-status").className = "status success";
   $("#popular-status").textContent = `${sourceLabel} · 판매자센터 인기상품 ${limited.length}개를 직접 가져왔습니다.`;
-  renderExplorerResults("POIZON 판매자센터 인기상품", limited.map((product) => ({
-    ...product,
-    hasSalesData: Number(product.sales30d) > 0,
-  })));
+  if (options.renderResults !== false) {
+    renderExplorerResults("POIZON 판매자센터 인기상품", limited.map((product) => ({
+      ...product,
+      hasSalesData: Number(product.sales30d) > 0,
+    })));
+  }
+  return storedProducts;
 }
 
 window.aroundG.onSellerCaptureProgress((progress) => {
@@ -1775,7 +1778,7 @@ window.aroundG.onSellerCaptureProgress((progress) => {
   host.querySelector("i").style.width = `${percent}%`;
   host.querySelector("span").textContent = `${percent}%`;
 });
-$("#popular-capture").addEventListener("click", async () => {
+async function capturePopularProducts(options = {}) {
   const button = $("#popular-capture");
   button.disabled = true;
   $("#popular-progress").hidden = false;
@@ -1789,13 +1792,13 @@ $("#popular-capture").addEventListener("click", async () => {
     if (!result.ok) {
       $("#popular-status").className = "status error";
       $("#popular-status").textContent = result.message;
-      return;
+      return { ok: false, message: result.message };
     }
     const excelResult = await window.aroundG.stagePopularProductsInExcel(result.products);
     if (!excelResult.ok) {
       $("#popular-status").className = "status error";
       $("#popular-status").textContent = `Excel 저장 또는 다시 불러오기 실패: ${excelResult.message}`;
-      return;
+      return { ok: false, message: `Excel 저장 또는 다시 불러오기 실패: ${excelResult.message}` };
     }
     const verifiedProducts = excelResult.products;
     const missingRanks = Array.isArray(excelResult.missing) ? excelResult.missing : [];
@@ -1803,17 +1806,28 @@ $("#popular-capture").addEventListener("click", async () => {
       ? ` · 누락 ${missingRanks.length}개 (${missingRanks.join(", ")})`
       : " · 누락 0개";
     const sourceLabel = `바탕화면 Excel 재검증 완료 ${excelResult.imported}/200${missingLabel} · ${excelResult.path}`;
-    await acceptSellerCenterProducts(verifiedProducts, sourceLabel);
+    const storedProducts = await acceptSellerCenterProducts(verifiedProducts, sourceLabel, {
+      renderResults: options.renderResults !== false,
+    });
     const completedProducts = verifiedProducts.filter((product) => !product.missingRank);
-    if (completedProducts.length > 0) {
+    if (options.runDomestic !== false && completedProducts.length > 0) {
       await runDomesticBatch();
-    } else {
+    } else if (options.runDomestic !== false) {
       $("#domestic-batch-status").className = "status error";
       $("#domestic-batch-status").textContent = "재검증된 상품이 없어 국내 재고 검색을 시작하지 않았습니다.";
     }
+    return { ok: true, products: storedProducts };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || "인기리스트 수집 실패");
+    $("#popular-status").className = "status error";
+    $("#popular-status").textContent = message;
+    return { ok: false, message };
   } finally {
     button.disabled = false;
   }
+}
+$("#popular-capture").addEventListener("click", async () => {
+  await capturePopularProducts();
 });
 async function runDomesticBatch(options = {}) {
   const selectedOnly = Boolean(options?.selectedOnly);
@@ -2370,25 +2384,38 @@ $("#brand-search").addEventListener("click", async () => {
 });
 
 $("#category-search").addEventListener("click", async () => {
+  const button = $("#category-search");
   const status = $("#category-status");
+  button.disabled = true;
   status.className = "status";
-  status.textContent = "검증 브랜드를 조회하고 카테고리를 분류하는 중…";
-  const result = await window.aroundG.queryExplorer({
-    mode: "category",
-    category: selectedCategory,
-    pageNum: 1,
-    pageSize: 100,
-    minimumSales30: $("#category-min-sales").checked,
-    salesByArticle: salesByArticle(),
-  });
-  if (!result.ok) {
-    status.className = "status error";
-    status.textContent = result.error.message;
-    return;
+  status.textContent = "1단계/3 · 기존 인기리스트에서 판매순위 200건을 가져오는 중…";
+  try {
+    const popularResult = await capturePopularProducts({ runDomestic: false, renderResults: false });
+    if (!popularResult.ok) {
+      status.className = "status error";
+      status.textContent = `인기리스트 수집 실패 · ${popularResult.message}`;
+      return;
+    }
+    status.textContent = "2단계/3 · 판매순위 브랜드를 추출하고 중복을 제거하는 중…";
+    const result = await window.aroundG.queryExplorer({
+      mode: "category",
+      category: selectedCategory,
+      pageNum: 1,
+      pageSize: 100,
+      minimumSales30: $("#category-min-sales").checked,
+      salesByArticle: salesByArticle(),
+    });
+    if (!result.ok) {
+      status.className = "status error";
+      status.textContent = result.error.message;
+      return;
+    }
+    status.className = "status success";
+    status.textContent = `${selectedCategory} ${result.products.length}개 분류 완료 · 판매순위 200건 연관 브랜드 ${result.sourceCount}/${result.rankedBrandCount || result.sourceCount}개 응답${result.failedSourceCount ? ` · ${result.failedSourceCount}개 재시도 실패` : ""}`;
+    renderExplorerResults(`${selectedCategory} 카테고리 검색`, result.products);
+  } finally {
+    button.disabled = false;
   }
-  status.className = "status success";
-  status.textContent = `${selectedCategory} ${result.products.length}개 분류 완료 · 판매순위 200건 연관 브랜드 ${result.sourceCount}/${result.rankedBrandCount || result.sourceCount}개 응답${result.failedSourceCount ? ` · ${result.failedSourceCount}개 재시도 실패` : ""}`;
-  renderExplorerResults(`${selectedCategory} 카테고리 검색`, result.products);
 });
 
 $("#import-button").addEventListener("click", async () => {
