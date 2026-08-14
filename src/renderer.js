@@ -2425,10 +2425,15 @@ function updateCategoryLoading({ title, brandName, brandLogoUrl, phase, complete
   if (title) $("#category-loading-title").textContent = title;
   if (brandName) {
     $("#category-box-brand").textContent = brandName;
+    $("#category-courier-brand").textContent = brandName;
     const logo = $("#category-box-logo");
     logo.hidden = !brandLogoUrl;
     logo.src = brandLogoUrl || "";
     logo.onerror = () => { logo.hidden = true; };
+    const courierLogo = $("#category-courier-logo");
+    courierLogo.hidden = !brandLogoUrl;
+    courierLogo.src = brandLogoUrl || "";
+    courierLogo.onerror = () => { courierLogo.hidden = true; };
     const box = $("#category-brand-box");
     box.classList.remove("is-waiting");
     box.classList.add("is-new");
@@ -2461,8 +2466,10 @@ function startCategoryLoading() {
   clearInterval(categoryLoadingTimer);
   $("#category-loading").hidden = false;
   $("#category-box-brand").textContent = "준비 중";
+  $("#category-courier-brand").textContent = "준비";
   $("#category-brand-box").classList.add("is-waiting");
   $("#category-box-logo").hidden = true;
+  $("#category-courier-logo").hidden = true;
   categoryCompletedBrands = [];
   $("#category-completed-boxes").innerHTML = "";
   $("#category-loading-bar").style.width = "1%";

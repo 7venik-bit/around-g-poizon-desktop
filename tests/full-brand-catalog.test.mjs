@@ -90,8 +90,12 @@ test("카테고리 검색 결과와 재미있는 브랜드 상자 진행 화면�
   assert.match(renderer, /categoryCompletedBrands/);
   assert.match(html, /id="category-box-logo"/);
   assert.match(html, /id="category-courier"/);
+  assert.match(html, /id="category-courier-logo"/);
+  assert.match(html, /id="category-courier-brand"/);
   assert.match(html, /id="category-completed-boxes"/);
   assert.match(style, /@keyframes scanner-line/);
+  assert.match(style, /@keyframes courier-carry-to-belt/);
+  assert.match(style, /@keyframes courier-hand-off/);
   assert.doesNotMatch(html, />BRAND</);
   assert.match(storeSource, /categorySearches: \[\]/);
 });
