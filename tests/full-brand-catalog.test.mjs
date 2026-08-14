@@ -37,6 +37,23 @@ test("이전 판매순위 기록은 제외하고 가장 최근 200건만 사용�
   assert.deepEqual(ranked.map((brand) => brand.id), [144]);
 });
 
+test("브랜드 열이 비어 있어도 인기상품 이름에서 가장 구체적인 브랜드를 추출한다", () => {
+  const brands = [
+    { id: 1, name: "Adidas", ko: "아디다스" },
+    { id: 2, name: "Adidas Originals", ko: "아디다스 오리지널스" },
+    { id: 3, name: "Coach", ko: "코치" },
+    { id: 4, name: "Crocs", ko: "크록스" },
+    { id: 5, name: "Nike", ko: "나이키" },
+  ];
+  const ranked = salesRankedBrands([
+    { popularityRank: 180, name: "COACH City Artist Bag" },
+    { popularityRank: 186, name: "Crocs Crush Clog" },
+    { popularityRank: 191, name: "Adidas Originals Campus" },
+    { popularityRank: 197, name: "Nike SB Force 58" },
+  ], brands, 200);
+  assert.deepEqual(ranked.map((brand) => brand.id), [3, 4, 2, 5]);
+});
+
 test("카테고리 검색은 기존 인기리스트 200건 수집 후 연관 브랜드 조회를 시작한다", async () => {
   const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
   const categoryHandler = renderer.slice(
