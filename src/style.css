@@ -1069,3 +1069,7 @@ button,input,select,textarea{font-family:inherit}
 @keyframes courier-walking-bob{from{transform:scaleX(-1) translateY(0) rotate(-2deg)}to{transform:scaleX(-1) translateY(-3px) rotate(2deg)}}
 @keyframes courier-hand-off{0%,70%{transform:translate(0,0) rotate(-3deg);opacity:1}82%{transform:translate(10px,13px) rotate(0);opacity:1}83%,100%{transform:translate(10px,13px);opacity:0}}
 @media(prefers-reduced-motion:reduce){.sorting-worker.sender.is-loading,.sorting-worker.sender.is-loading .courier-person,.sorting-worker.sender.is-loading .courier-package{animation-duration:.01ms}.brand-box:not(.is-waiting){animation-delay:0s}}
+
+/* Domestic-stock result toggle. */
+.result-tools{flex-wrap:wrap;justify-content:flex-end}
+.result-tools #domestic-stock-filter.active{border-color:#0aaa7b;background:#e7f8f2;color:#087555;box-shadow:0 0 0 2px #0aaa7b22}

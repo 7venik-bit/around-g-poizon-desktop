@@ -6,8 +6,10 @@ let explorerMeta = { brands: [], categories: [] };
 let selectedBrandId = null;
 let selectedCategory = "전체";
 let currentExplorerProducts = [];
+let allExplorerProducts = [];
 const domesticResults = new Map();
 const selectedExplorerKeys = new Set();
+let domesticStockOnly = false;
 let domesticBatchRunning = false;
 let domesticBatchVerifyCounts = false;
 let brandProgressActive = false;
@@ -1261,6 +1263,28 @@ function domesticStatus(result) {
   return { label: "구매 가능", className: "available" };
 }
 
+function hasDomesticStock(result) {
+  return Boolean(result && !result.loading && !result.error
+    && (result.products || []).some((product) => product?.inStock));
+}
+
+function domesticStockProducts() {
+  return allExplorerProducts.filter((product, index) =>
+    hasDomesticStock(domesticResults.get(domesticKey(product, index))));
+}
+
+function updateDomesticStockFilter() {
+  const button = $("#domestic-stock-filter");
+  if (!button) return;
+  const availableCount = domesticStockProducts().length;
+  button.hidden = allExplorerProducts.length === 0;
+  button.classList.toggle("active", domesticStockOnly);
+  button.setAttribute("aria-pressed", String(domesticStockOnly));
+  button.textContent = domesticStockOnly
+    ? `전체 상품 보기 · 국내 재고 ${availableCount.toLocaleString("ko-KR")}개`
+    : `국내 재고만 보기 · ${availableCount.toLocaleString("ko-KR")}개`;
+}
+
 function renderDomestic(result) {
   if (!result) return `<span class="inventory-help">재고 검색을 누르면 공식몰 → 무신사 → 네이버·SSG·롯데온의 공식스토어·백화점·아울렛을 각각 확인합니다.</span>`;
   if (result.loading) return `<span class="inventory-help">국내 플랫폼을 순서대로 확인하고 있습니다…</span>`;
@@ -1336,6 +1360,10 @@ function renderDomestic(result) {
 }
 
 function renderExplorerResults(title, products, preserveDomestic = false) {
+  if (!preserveDomestic) {
+    allExplorerProducts = [...products];
+    domesticStockOnly = false;
+  }
   currentExplorerProducts = products;
   if (!preserveDomestic) {
     domesticResults.clear();
@@ -1343,7 +1371,9 @@ function renderExplorerResults(title, products, preserveDomestic = false) {
   }
   $("#explorer-results").hidden = false;
   $("#explorer-result-title").textContent = title;
-  $("#explorer-result-count").textContent = `${products.length.toLocaleString("ko-KR")}개 표시`;
+  $("#explorer-result-count").textContent = domesticStockOnly
+    ? `국내 재고 ${products.length.toLocaleString("ko-KR")}개 표시 / 전체 ${allExplorerProducts.length.toLocaleString("ko-KR")}개`
+    : `${products.length.toLocaleString("ko-KR")}개 표시`;
   $("#explorer-product-grid").innerHTML = products.length ? `
     <div class="product-selection-toolbar">
       <label><input id="select-visible-products" type="checkbox"> 전체 선택</label>
@@ -1381,8 +1411,9 @@ function renderExplorerResults(title, products, preserveDomestic = false) {
         ${renderDomestic(result)}
       </div>
     </article>`;
-  }).join("")}` : `<div class="empty">조건에 맞는 상품이 없습니다.</div>`;
+  }).join("")}` : `<div class="empty">${domesticStockOnly ? "국내 재고가 확인된 상품이 없습니다." : "조건에 맞는 상품이 없습니다."}</div>`;
   bindExplorerSelectionControls();
+  updateDomesticStockFilter();
 }
 
 function totalSalesAndMatched(product, chinaMinimum = 30, localMinimum = 30) {
@@ -1400,6 +1431,9 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
     .sort((a, b) => String(a).localeCompare(String(b), "ko"));
   domesticResults.clear();
   selectedExplorerKeys.clear();
+  allExplorerProducts = [];
+  domesticStockOnly = false;
+  $("#domestic-stock-filter").hidden = true;
   $("#explorer-results").hidden = false;
   $("#explorer-result-title").textContent = title;
   $("#explorer-result-count").textContent = "";
@@ -1531,6 +1565,8 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
 function clearExplorerResults() {
   domesticBatchRunning = false;
   currentExplorerProducts = [];
+  allExplorerProducts = [];
+  domesticStockOnly = false;
   domesticResults.clear();
   $("#explorer-results").hidden = true;
   $("#explorer-result-title").textContent = "탐색 결과";
@@ -1539,10 +1575,11 @@ function clearExplorerResults() {
   $("#domestic-batch-status").className = "status";
   $("#domestic-batch-status").textContent = "";
   $("#domestic-search-all").textContent = "표시 목록 국내 재고 검색";
+  updateDomesticStockFilter();
 }
 
-async function searchDomesticAt(index) {
-  const product = currentExplorerProducts[index];
+async function searchDomesticAt(index, sourceProducts = currentExplorerProducts) {
+  const product = sourceProducts[index];
   if (!product) return;
   const key = domesticKey(product, index);
   domesticResults.set(key, { loading: true, products: [], sources: [] });
@@ -1556,7 +1593,8 @@ async function searchDomesticAt(index) {
     verifyLinkCounts: !domesticBatchRunning || domesticBatchVerifyCounts,
   });
   domesticResults.set(key, response.ok ? response.data : { products: [], sources: [], error: response.message });
-  renderExplorerResults($("#explorer-result-title").textContent, currentExplorerProducts, true);
+  const visibleProducts = domesticStockOnly ? domesticStockProducts() : allExplorerProducts;
+  renderExplorerResults($("#explorer-result-title").textContent, visibleProducts, true);
 }
 
 async function refresh() {
@@ -1862,7 +1900,8 @@ async function runDomesticBatch(options = {}) {
   domesticBatchVerifyCounts = selectedOnly;
   button.textContent = "검색 중지";
   updateExplorerSelectionUi();
-  const searchableIndexes = currentExplorerProducts
+  const batchProducts = [...(allExplorerProducts.length ? allExplorerProducts : currentExplorerProducts)];
+  const searchableIndexes = batchProducts
     .map((product, index) => ({ product, index }))
     .filter(({ product, index }) => !product?.missingRank
       && (!selectedOnly || selectedExplorerKeys.has(domesticKey(product, index))))
@@ -1885,7 +1924,7 @@ async function runDomesticBatch(options = {}) {
     $("#domestic-batch-status").textContent = selectedOnly
       ? `국내 재고 및 네이버 결과 확인 ${processed + 1}/${searchableIndexes.length}`
       : `국내 재고 검색 ${processed + 1}/${searchableIndexes.length} · 누락 슬롯은 유지하고 확보된 상품부터 진행합니다.`;
-    await searchDomesticAt(index);
+    await searchDomesticAt(index, batchProducts);
     processed += 1;
   }
   domesticBatchRunning = false;
@@ -1893,10 +1932,15 @@ async function runDomesticBatch(options = {}) {
   button.textContent = "표시 목록 국내 재고 검색";
   updateExplorerSelectionUi();
   $("#domestic-batch-status").className = "status success";
-  const missingCount = currentExplorerProducts.length - searchableIndexes.length;
+  const missingCount = batchProducts.length - searchableIndexes.length;
   $("#domestic-batch-status").textContent = `국내 재고 검색 완료 ${processed}/${searchableIndexes.length} · 원본 누락 슬롯 ${missingCount}개 유지`;
 }
 $("#domestic-search-all").addEventListener("click", () => runDomesticBatch());
+$("#domestic-stock-filter").addEventListener("click", () => {
+  domesticStockOnly = !domesticStockOnly;
+  const products = domesticStockOnly ? domesticStockProducts() : allExplorerProducts;
+  renderExplorerResults($("#explorer-result-title").textContent, products, true);
+});
 $("#brand-data-search")?.addEventListener("input", renderBrandWorkbench);
 async function importDetectedBrandExport(file, generation = brandWorkHistoryGeneration) {
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return false;
