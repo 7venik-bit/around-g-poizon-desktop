@@ -8,6 +8,9 @@ import { BRAND_CATALOG, CATEGORY_GROUPS, normalizeBrandResult, parsePopularTable
 
 function friendlyError(error) {
   const raw = error instanceof Error ? error.message : String(error);
+  if (raw.includes("CATEGORY_SEARCH_CANCELLED")) {
+    return { code: "CATEGORY_SEARCH_CANCELLED", message: "카테고리 검색을 중단했습니다.", detail: raw, retryable: true };
+  }
   if (raw.includes("400010007")) {
     return {
       code: "POIZON_REQUEST_REJECTED",
@@ -255,7 +258,9 @@ export async function queryExplorer(config, input) {
     if (input.mode === "category") {
       responses = [];
       const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+      const productKeys = new Set();
       for (let brandIndex = 0; brandIndex < brandIds.length; brandIndex += 1) {
+        if (input.shouldStop?.()) throw new Error("CATEGORY_SEARCH_CANCELLED");
         const brandId = brandIds[brandIndex];
         const brandPages = [];
         let firstError = null;
@@ -266,12 +271,14 @@ export async function queryExplorer(config, input) {
             const total = Number(first?.total || first?.totalCount || first?.count || 0);
             const pages = brandPageCount(total, first?.pages || first?.pageCount, common.pageSize);
             for (let pageNum = 2; pageNum <= pages; pageNum += 1) {
+              if (input.shouldStop?.()) throw new Error("CATEGORY_SEARCH_CANCELLED");
               brandPages.push(await queryByBrandId({ ...common, pageNum, brandIds: [brandId] }));
               await wait(250);
             }
             firstError = null;
             break;
           } catch (error) {
+            if (input.shouldStop?.()) throw new Error("CATEGORY_SEARCH_CANCELLED");
             firstError = error;
             brandPages.length = 0;
             if (attempt < 2) await wait(1_500);
@@ -280,7 +287,12 @@ export async function queryExplorer(config, input) {
         responses.push(firstError
           ? { status: "rejected", reason: firstError }
           : { status: "fulfilled", value: brandPages });
-        input.onProgress?.(brandIndex + 1, brandIds.length);
+        if (!firstError) {
+          for (const product of brandPages.flatMap((page) => normalizeBrandResult(page))) {
+            productKeys.add(`${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || ""}`);
+          }
+        }
+        input.onProgress?.(brandIndex + 1, brandIds.length, { count: productKeys.size, brandId });
         if (brandIndex < brandIds.length - 1) await wait(500);
       }
     } else {
