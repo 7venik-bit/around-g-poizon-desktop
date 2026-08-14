@@ -21,8 +21,8 @@ test("download center discovers jobs by number across frames instead of one loca
 });
 
 
-test("release metadata is 2.10.187", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.187");
-  assert.equal(JSON.parse(lockSource).version, "2.10.187");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.187");
+test("release metadata is 2.10.188", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.188");
+  assert.equal(JSON.parse(lockSource).version, "2.10.188");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.188");
 });

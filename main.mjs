@@ -42,6 +42,7 @@ import {
   prioritizeBrandCatalog,
   publicBrandPageCount,
   publicBrandPath,
+  salesRankedBrands,
 } from "./services/brand-catalog.mjs";
 import {
   OFFICIAL_DOMAIN_STATUS,
@@ -6266,20 +6267,29 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
   });
-  ipcMain.handle("explorer:query", (_event, input) =>
-    queryExplorer(secretConfig(), {
+  ipcMain.handle("explorer:query", (_event, input) => {
+    const settings = store.snapshot().settings;
+    const catalog = settings.brandCatalog || explorerMetadata().brands;
+    const rankedBrands = input?.mode === "category"
+      ? salesRankedBrands(store.snapshot().products, catalog, 200)
+      : [];
+    return queryExplorer(secretConfig(), {
       ...input,
+      brandIds: input?.mode === "category" ? rankedBrands.map((brand) => brand.id) : input?.brandIds,
+      rankedBrandCount: rankedBrands.length,
       onProgress: (pageNum, pageCount) => {
         const percent = Math.min(70, Math.max(2, Math.round((pageNum / Math.max(1, pageCount)) * 70)));
         mainWindow?.webContents.send("explorer:brand-progress", {
           percent,
           pageNum,
           pageCount,
-          message: `POIZON API ${pageNum}/${pageCount}페이지 수집 중`,
+          message: input?.mode === "category"
+            ? `판매순위 연관 브랜드 ${pageNum}/${pageCount} 조회 중`
+            : `POIZON API ${pageNum}/${pageCount}페이지 수집 중`,
         });
       },
-    })
-  );
+    });
+  });
   ipcMain.handle("external:open", async (_event, url) => {
     const parsed = new URL(url);
     if (!["https:", "http:"].includes(parsed.protocol)) throw new Error("INVALID_URL");

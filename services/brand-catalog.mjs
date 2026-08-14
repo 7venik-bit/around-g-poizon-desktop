@@ -73,6 +73,40 @@ export function prioritizeBrandCatalog(brands) {
   }));
 }
 
+export function salesRankedBrands(products, brands, rankingLimit = 200) {
+  const normalized = (value) => String(value || "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, "");
+  const catalog = Array.isArray(brands) ? brands : [];
+  const byId = new Map(catalog.map((brand) => [Number(brand.id), brand]));
+  const candidates = (Array.isArray(products) ? products : [])
+    .filter((product) => Number(product?.popularityRank) > 0);
+  const latestRankingTime = Math.max(...candidates.map((product) => Date.parse(String(product.updatedAt || "")))
+    .filter(Number.isFinite), 0);
+  const rankedRows = candidates
+    .filter((product) => !latestRankingTime || Date.parse(String(product.updatedAt || "")) === latestRankingTime)
+    .sort((left, right) => Number(left.popularityRank) - Number(right.popularityRank))
+    .slice(0, Math.max(1, Number(rankingLimit) || 200));
+  const selected = new Map();
+  for (const product of rankedRows) {
+    let brand = byId.get(Number(product.brandId));
+    if (!brand) {
+      const names = [product.brandName, product.brand].map(normalized).filter(Boolean);
+      brand = catalog.find((candidate) => {
+        const candidateNames = [candidate.name, candidate.ko].map(normalized).filter(Boolean);
+        return names.some((name) => candidateNames.some((candidateName) =>
+          name === candidateName || (name.length >= 5 && candidateName.length >= 5
+            && (name.includes(candidateName) || candidateName.includes(name)))));
+      });
+    }
+    if (brand && !selected.has(Number(brand.id))) {
+      selected.set(Number(brand.id), { ...brand, salesRank: Number(product.popularityRank) });
+    }
+  }
+  return [...selected.values()];
+}
+
 export function mergeLocalizedBrandCatalog(koreanBrands, englishBrands) {
   const englishById = new Map((englishBrands || []).map((brand) => [Number(brand.id), brand]));
   return prioritizeBrandCatalog((koreanBrands || []).map((brand) => {
