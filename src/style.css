@@ -1073,3 +1073,53 @@ button,input,select,textarea{font-family:inherit}
 /* Domestic-stock result toggle. */
 .result-tools{flex-wrap:wrap;justify-content:flex-end}
 .result-tools #domestic-stock-filter.active{border-color:#0aaa7b;background:#e7f8f2;color:#087555;box-shadow:0 0 0 2px #0aaa7b22}
+
+/* Unified flat warehouse characters and product cards replace platform emoji. */
+.sorting-worker{animation:none}
+.warehouse-person{position:relative;display:block;width:52px;height:62px;font-size:0;filter:drop-shadow(0 5px 5px #16365e20)}
+.warehouse-person span{position:absolute;display:block;box-sizing:border-box}
+.warehouse-person .person-head{z-index:4;left:21px;top:5px;width:17px;height:19px;border:2px solid #193a5f;border-radius:48% 48% 44% 44%;background:#f2bd8f}
+.warehouse-person .person-cap{z-index:5;left:17px;top:1px;width:24px;height:11px;border-radius:12px 12px 3px 3px;background:#2f80ed;transform:rotate(-4deg)}
+.warehouse-person .person-cap::after{content:"";position:absolute;right:-7px;bottom:0;width:10px;height:3px;border-radius:3px;background:#2269c4}
+.warehouse-person .person-body{z-index:3;left:17px;top:23px;width:24px;height:25px;border:2px solid #193a5f;border-radius:7px 7px 4px 4px;background:#2f80ed}
+.warehouse-person .person-body::after{content:"";position:absolute;left:4px;right:4px;top:7px;height:3px;border-radius:2px;background:#90c2ff}
+.warehouse-person .person-arm,.warehouse-person .person-leg{z-index:2;width:8px;border:2px solid #193a5f;border-radius:8px;transform-origin:50% 2px}
+.warehouse-person .person-arm{top:27px;height:25px;background:#f2bd8f}
+.warehouse-person .person-arm.front{left:37px;transform:rotate(-36deg)}
+.warehouse-person .person-arm.back{left:13px;transform:rotate(30deg)}
+.warehouse-person .person-leg{top:45px;height:22px;background:#223d64}
+.warehouse-person .person-leg.front{left:31px;transform:rotate(-10deg)}
+.warehouse-person .person-leg.back{left:19px;transform:rotate(12deg)}
+.sorting-worker.sender.is-loading .person-arm.front{animation:modern-arm-front .24s ease-in-out 4 alternate}
+.sorting-worker.sender.is-loading .person-arm.back{animation:modern-arm-back .24s ease-in-out 4 alternate}
+.sorting-worker.sender.is-loading .person-leg.front{animation:modern-leg-front .24s ease-in-out 4 alternate}
+.sorting-worker.sender.is-loading .person-leg.back{animation:modern-leg-back .24s ease-in-out 4 alternate}
+.receiver-person .person-hair{z-index:5;left:19px;top:2px;width:20px;height:11px;border-radius:12px 12px 3px 3px;background:#243c5a}
+.receiver-person .person-body{background:#18a57c}
+.receiver-person .person-body::after{background:#92e2ca}
+.receiver-person .person-arm.front{left:38px;transform:rotate(-55deg);animation:receiver-hand-off 1.15s ease-in-out infinite alternate}
+.receiver-person .person-arm.back{left:12px;transform:rotate(48deg);animation:receiver-hand-off-back 1.15s ease-in-out infinite alternate}
+.courier-package,.brand-box{background:linear-gradient(145deg,#e8a34b,#cf7928);border-color:#a95d17;box-shadow:0 5px 12px #57320c2b}
+.parcel-mark{position:absolute!important;inset:auto 5px 4px!important;height:2px!important;border-radius:2px;background:#7d450f!important;opacity:.24}
+.parcel-mark::before,.parcel-mark::after{content:"";position:absolute;bottom:0;width:2px;height:10px;background:#7d450f}
+.parcel-mark::before{left:28%}.parcel-mark::after{right:28%}
+.sorting-items{gap:7px}
+.sorting-items .product-card{position:relative;display:grid;place-items:center;height:40px;border:1px solid #d7e1ec;border-radius:10px;background:linear-gradient(145deg,#fff,#f3f7fb);box-shadow:0 4px 10px #193a5f12;animation:modern-item-float 1.8s ease-in-out infinite}
+.product-card i,.product-card i::before,.product-card i::after{position:absolute;display:block;box-sizing:border-box;content:""}
+.product-card i{position:relative;width:27px;height:22px}
+.product-card.shoe i{top:4px;height:13px;border:2px solid #6b62d9;border-radius:10px 5px 5px 4px;background:#aaa4f3;transform:skewX(-10deg)}
+.product-card.shoe i::before{left:-5px;bottom:-4px;width:34px;height:5px;border-radius:5px;background:#463e9f}
+.product-card.shirt i{width:25px;height:23px;border-radius:4px;background:#3bc18f;clip-path:polygon(0 17%,28% 0,40% 14%,60% 14%,72% 0,100% 17%,84% 45%,75% 36%,75% 100%,25% 100%,25% 36%,16% 45%)}
+.product-card.bag i{top:5px;width:25px;height:18px;border:2px solid #9b6698;border-radius:4px;background:#d4a0d0}
+.product-card.bag i::before{left:5px;top:-10px;width:11px;height:10px;border:2px solid #9b6698;border-bottom:0;border-radius:8px 8px 0 0}
+.product-card.cap i{top:4px;width:24px;height:15px;border-radius:14px 14px 5px 5px;background:#5b91df}
+.product-card.cap i::after{right:-7px;bottom:-2px;width:15px;height:5px;border-radius:0 8px 8px 0;background:#356cad;transform:rotate(7deg)}
+.sorting-items .product-card:nth-child(2){animation-delay:.2s}.sorting-items .product-card:nth-child(3){animation-delay:.4s}.sorting-items .product-card:nth-child(4){animation-delay:.6s}
+@keyframes modern-arm-front{from{transform:rotate(-36deg)}to{transform:rotate(22deg)}}
+@keyframes modern-arm-back{from{transform:rotate(30deg)}to{transform:rotate(-22deg)}}
+@keyframes modern-leg-front{from{transform:rotate(-18deg)}to{transform:rotate(18deg)}}
+@keyframes modern-leg-back{from{transform:rotate(18deg)}to{transform:rotate(-18deg)}}
+@keyframes receiver-hand-off{from{transform:rotate(-55deg)}to{transform:rotate(-78deg) translateY(-2px)}}
+@keyframes receiver-hand-off-back{from{transform:rotate(48deg)}to{transform:rotate(70deg) translateY(-2px)}}
+@keyframes modern-item-float{0%,100%{transform:translateY(1px);opacity:.72}50%{transform:translateY(-4px);opacity:1;box-shadow:0 7px 14px #2f80ed20}}
+@media(prefers-reduced-motion:reduce){.sorting-worker.sender.is-loading .person-arm,.sorting-worker.sender.is-loading .person-leg,.receiver-person .person-arm,.sorting-items .product-card{animation-duration:.01ms}}
