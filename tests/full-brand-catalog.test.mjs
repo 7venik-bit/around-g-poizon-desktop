@@ -85,7 +85,13 @@ test("카테고리 검색 결과와 재미있는 브랜드 상자 진행 화면�
   assert.match(preload, /cancelCategorySearch: \(\) => ipcRenderer\.invoke\("explorer:cancel-category"\)/);
   assert.match(main, /ipcMain\.handle\("explorer:cancel-category"/);
   assert.match(main, /rankedBrands\.find\(\(brand\) => Number\(brand\.id\) === Number\(detail\.brandId\)\)/);
+  assert.match(main, /brandLogoUrl:/);
   assert.match(renderer, /progress\.phase === "start"/);
+  assert.match(renderer, /categoryCompletedBrands/);
+  assert.match(html, /id="category-box-logo"/);
+  assert.match(html, /id="category-courier"/);
+  assert.match(html, /id="category-completed-boxes"/);
+  assert.match(style, /@keyframes scanner-line/);
   assert.doesNotMatch(html, />BRAND</);
   assert.match(storeSource, /categorySearches: \[\]/);
 });
