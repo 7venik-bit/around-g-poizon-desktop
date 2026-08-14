@@ -15,6 +15,7 @@ let categorySearchActive = false;
 let categorySearchRunId = 0;
 let categoryLoadingStartedAt = 0;
 let categoryLoadingTimer = null;
+let categoryCompletedBrands = [];
 let brandWorkbenchProducts = [];
 let selectedBrandName = localStorage.getItem("around-g-selected-brand-name") || "";
 let selectedBrandIds = new Set();
@@ -2410,17 +2411,33 @@ async function pruneCategorySearchHistory() {
   if (expired.length) state.categorySearches = searches.filter((entry) => !expired.some((old) => old.id === entry.id));
 }
 
-function updateCategoryLoading({ title, brandName, completed, total, count, percent } = {}) {
+function updateCategoryLoading({ title, brandName, brandLogoUrl, phase, completed, total, count, percent } = {}) {
   const host = $("#category-loading");
   if (!host) return;
   host.hidden = false;
   if (title) $("#category-loading-title").textContent = title;
   if (brandName) {
     $("#category-box-brand").textContent = brandName;
+    const logo = $("#category-box-logo");
+    logo.hidden = !brandLogoUrl;
+    logo.src = brandLogoUrl || "";
+    logo.onerror = () => { logo.hidden = true; };
     const box = $("#category-brand-box");
     box.classList.remove("is-waiting");
     box.classList.add("is-new");
     requestAnimationFrame(() => requestAnimationFrame(() => box.classList.remove("is-new")));
+    if (phase === "start") {
+      const courier = $("#category-courier");
+      courier.classList.remove("is-loading");
+      requestAnimationFrame(() => courier.classList.add("is-loading"));
+    }
+    if (phase === "complete" && !categoryCompletedBrands.some((entry) => entry.name === brandName)) {
+      categoryCompletedBrands.push({ name: brandName, logoUrl: brandLogoUrl || "" });
+      categoryCompletedBrands = categoryCompletedBrands.slice(-6);
+      $("#category-completed-boxes").innerHTML = categoryCompletedBrands.map((entry) => entry.logoUrl
+        ? `<span title="${text(entry.name)}"><img src="${text(entry.logoUrl)}" alt="${text(entry.name)}"></span>`
+        : `<span title="${text(entry.name)}"><b>${text(entry.name.slice(0, 4))}</b></span>`).join("");
+    }
   }
   const done = Number(completed || 0);
   const maximum = Number(total || 0);
@@ -2438,6 +2455,9 @@ function startCategoryLoading() {
   $("#category-loading").hidden = false;
   $("#category-box-brand").textContent = "준비 중";
   $("#category-brand-box").classList.add("is-waiting");
+  $("#category-box-logo").hidden = true;
+  categoryCompletedBrands = [];
+  $("#category-completed-boxes").innerHTML = "";
   $("#category-loading-bar").style.width = "1%";
   $("#category-loading-count").textContent = "브랜드 0/0 · 상품 0개 분류";
   categoryLoadingTimer = setInterval(() => {
@@ -2744,6 +2764,8 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
           ? `${progress.brandName || "브랜드"} 상자를 전달하는 중…`
           : `${progress.brandName || "브랜드"} 상자를 열어 상품을 분류했습니다.`,
         brandName: progress.brandName || "BRAND",
+        brandLogoUrl: progress.brandLogoUrl || "",
+        phase: progress.phase,
         completed,
         total,
         count: Number(progress.count || 0),
