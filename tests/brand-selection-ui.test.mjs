@@ -60,11 +60,40 @@ test("brand button shows down-complete whenever its data-center workbook was dow
 
   assert.match(cards, /hasCompletedBrandDownload\(brand\)/);
   assert.match(cards, />다운완료</);
-  assert.match(cards, /<strong>\$\{text\(brand\.name\)\}<\/strong>\$\{downloadComplete/);
+  assert.match(cards, /<strong>\$\{text\(brand\.name\)\}<\/strong>[\s\S]*?\$\{downloadComplete/);
   assert.match(style, /\.brand-card\.download-complete\{grid-template-columns:30px minmax\(0,1fr\)\}/);
   assert.doesNotMatch(completed, /brandIntegrity\?\.ok === false/);
   assert.match(completed, /downloadedBrandFiles\.some/);
   assert.match(completed, /rendererBrandsMatch/);
+});
+
+test("brand button shows an orange official badge only for linked official stores", () => {
+  const cardsStart = renderer.indexOf("function renderBrandCards");
+  const cardsEnd = renderer.indexOf("function renderCategoryButtons", cardsStart);
+  const cards = renderer.slice(cardsStart, cardsEnd);
+
+  assert.match(cards, /\["verified", "search_unsupported"\]\.includes/);
+  assert.match(cards, /class="brand-official-badge" aria-label="공식몰 연동 완료">공식</);
+  assert.match(cards, /officialLinked \? " official-linked"/);
+  assert.match(style, /\.brand-official-badge\{[\s\S]*?background:#f28c28/);
+});
+
+test("brand button shows the linked domain and a gray no-store badge", () => {
+  const cardsStart = renderer.indexOf("function renderBrandCards");
+  const cardsEnd = renderer.indexOf("function renderCategoryButtons", cardsStart);
+  const cards = renderer.slice(cardsStart, cardsEnd);
+
+  assert.match(cards, /officialHomepageUrl/);
+  assert.match(cards, /brand-official-domain/);
+  assert.match(cards, /brand-official-badge missing/);
+  assert.match(cards, />공식몰 없음</);
+  assert.match(style, /\.brand-official-badge\.missing\{[^}]*background:#8b939e/);
+});
+
+test("official-domain progress updates the matching brand card immediately", () => {
+  assert.match(renderer, /audit\?\.updatedBrand/);
+  assert.match(renderer, /updated\.officialDomainStatus = String\(audit\.updatedBrand\.status/);
+  assert.match(renderer, /updated\.officialHomepageUrl = String\(audit\.updatedBrand\.homepageUrl/);
 });
 
 test("download completion accepts POIZON brand-name variants such as Polo Ralph Lauren", () => {
