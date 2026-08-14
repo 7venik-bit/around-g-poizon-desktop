@@ -66,7 +66,7 @@ test("카테고리 검색은 기존 인기리스트 200건 수집 후 연관 브
   assert.match(renderer, /return \{ ok: true, products: storedProducts \}/);
 });
 
-test("카테고리 검색 결과와 재미있는 브랜드 상자 진행 화면을 보존한다", async () => {
+test("카테고리 검색 결과와 현대적인 브랜드 물류 진행 화면을 보존한다", async () => {
   const [renderer, html, style, preload, main, storeSource] = await Promise.all([
     readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
     readFile(new URL("../src/index.html", import.meta.url), "utf8"),
@@ -75,8 +75,8 @@ test("카테고리 검색 결과와 재미있는 브랜드 상자 진행 화면�
     readFile(new URL("../main.mjs", import.meta.url), "utf8"),
     readFile(new URL("../services/store.mjs", import.meta.url), "utf8"),
   ]);
-  assert.match(html, /id="category-brand-box"[\s\S]*id="category-box-brand"[\s\S]*📦/);
-  assert.match(html, /👟[\s\S]*👕[\s\S]*👜[\s\S]*🧢/);
+  assert.match(html, /id="category-brand-box"[\s\S]*id="category-box-brand"[\s\S]*parcel-mark/);
+  assert.match(html, /product-card shoe[\s\S]*product-card shirt[\s\S]*product-card bag[\s\S]*product-card cap/);
   assert.match(style, /@keyframes box-delivery/);
   assert.match(renderer, /categorySearchCacheId/);
   assert.match(renderer, /CATEGORY_SEARCH_RETENTION_MS = 30 \* 24 \* 60 \* 60 \* 1000/);
