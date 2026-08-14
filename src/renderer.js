@@ -2387,7 +2387,7 @@ $("#category-search").addEventListener("click", async () => {
     return;
   }
   status.className = "status success";
-  status.textContent = `${selectedCategory} ${result.products.length}개 분류 완료 · 브랜드 ${result.sourceCount}개 응답${result.failedSourceCount ? ` · ${result.failedSourceCount}개 일시 실패` : ""}`;
+  status.textContent = `${selectedCategory} ${result.products.length}개 분류 완료 · 판매순위 200건 연관 브랜드 ${result.sourceCount}/${result.rankedBrandCount || result.sourceCount}개 응답${result.failedSourceCount ? ` · ${result.failedSourceCount}개 재시도 실패` : ""}`;
   renderExplorerResults(`${selectedCategory} 카테고리 검색`, result.products);
 });
 

@@ -237,12 +237,52 @@ export async function queryExplorer(config, input) {
       // a fallback for mixed-language POIZON responses.
       language: input.mode === "category" ? "ko" : "en",
     };
-    const brandIds = input.mode === "category" ? BRAND_CATALOG.map((brand) => brand.id) : [Number(input.brandId)];
+    const brandIds = input.mode === "category"
+      ? [...new Set((Array.isArray(input.brandIds) ? input.brandIds : [])
+        .map(Number).filter((value) => Number.isSafeInteger(value) && value > 0))].slice(0, 200)
+      : [Number(input.brandId)];
+    if (input.mode === "category" && !brandIds.length) {
+      return {
+        ok: false,
+        error: {
+          code: "SALES_RANKED_BRANDS_REQUIRED",
+          message: "판매순위 상위 200건에서 연관 브랜드를 찾지 못했습니다. 판매순위 데이터를 먼저 가져와 주세요.",
+          retryable: false,
+        },
+      };
+    }
     let responses;
     if (input.mode === "category") {
-      responses = await Promise.allSettled(
-        brandIds.map((brandId) => queryByBrandId({ ...common, brandIds: [brandId] }))
-      );
+      responses = [];
+      const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+      for (let brandIndex = 0; brandIndex < brandIds.length; brandIndex += 1) {
+        const brandId = brandIds[brandIndex];
+        const brandPages = [];
+        let firstError = null;
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+          try {
+            const first = await queryByBrandId({ ...common, pageNum: 1, brandIds: [brandId] });
+            brandPages.push(first);
+            const total = Number(first?.total || first?.totalCount || first?.count || 0);
+            const pages = brandPageCount(total, first?.pages || first?.pageCount, common.pageSize);
+            for (let pageNum = 2; pageNum <= pages; pageNum += 1) {
+              brandPages.push(await queryByBrandId({ ...common, pageNum, brandIds: [brandId] }));
+              await wait(250);
+            }
+            firstError = null;
+            break;
+          } catch (error) {
+            firstError = error;
+            brandPages.length = 0;
+            if (attempt < 2) await wait(1_500);
+          }
+        }
+        responses.push(firstError
+          ? { status: "rejected", reason: firstError }
+          : { status: "fulfilled", value: brandPages });
+        input.onProgress?.(brandIndex + 1, brandIds.length);
+        if (brandIndex < brandIds.length - 1) await wait(500);
+      }
     } else {
       try {
         responses = [{ status: "fulfilled", value: await queryByBrandId({ ...common, brandIds }) }];
@@ -272,9 +312,16 @@ export async function queryExplorer(config, input) {
         input.onProgress?.(pageNum, pageCount);
       }
     }
-    const successful = responses.filter((response) => response.status === "fulfilled").map((response) => response.value);
+    const successfulBrands = responses.filter((response) => response.status === "fulfilled");
+    const successful = successfulBrands.flatMap((response) =>
+      input.mode === "category" ? response.value : [response.value]);
     if (!successful.length) throw responses[0]?.reason || new Error("POIZON_FAILED");
-    let products = successful.flatMap((data) => normalizeBrandResult(data));
+    const uniqueProducts = new Map();
+    for (const product of successful.flatMap((data) => normalizeBrandResult(data))) {
+      const key = `${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || ""}`;
+      if (!uniqueProducts.has(key)) uniqueProducts.set(key, product);
+    }
+    let products = [...uniqueProducts.values()];
     if (input.mode === "category" && input.category && input.category !== "전체") {
       products = products.filter((product) => product.categoryGroup === input.category);
     }
@@ -289,14 +336,18 @@ export async function queryExplorer(config, input) {
       total: products.length,
       sourceTotal: input.mode === "brand"
         ? Number(successful[0]?.total || products.length)
-        : successful.reduce((sum, data) => sum + Number(data?.total || 0), 0) || products.length,
+        : successfulBrands.reduce((sum, response) => {
+          const firstPage = response.value?.[0];
+          return sum + Number(firstPage?.total || firstPage?.totalCount || 0);
+        }, 0) || products.length,
       pages: Math.max(...successful.map((data) => Number(data?.pages || 1))),
       pageNum: input.pageNum ?? 1,
       salesFilterAvailable: salesDataCount > 0,
       salesFilterApplied,
       salesDataCount,
-      sourceCount: successful.length,
-      failedSourceCount: responses.length - successful.length,
+      sourceCount: input.mode === "category" ? successfulBrands.length : successful.length,
+      failedSourceCount: responses.length - successfulBrands.length,
+      rankedBrandCount: Number(input.rankedBrandCount || brandIds.length),
     };
   } catch (error) {
     return { ok: false, error: friendlyError(error) };
