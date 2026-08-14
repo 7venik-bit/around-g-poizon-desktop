@@ -6267,22 +6267,32 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
   });
+  let categorySearchGeneration = 0;
+  ipcMain.handle("explorer:cancel-category", () => {
+    categorySearchGeneration += 1;
+    return { ok: true };
+  });
   ipcMain.handle("explorer:query", (_event, input) => {
     const settings = store.snapshot().settings;
     const catalog = settings.brandCatalog || explorerMetadata().brands;
     const rankedBrands = input?.mode === "category"
       ? salesRankedBrands(store.snapshot().products, catalog, 200)
       : [];
+    const requestGeneration = categorySearchGeneration;
     return queryExplorer(secretConfig(), {
       ...input,
       brandIds: input?.mode === "category" ? rankedBrands.map((brand) => brand.id) : input?.brandIds,
       rankedBrandCount: rankedBrands.length,
-      onProgress: (pageNum, pageCount) => {
+      shouldStop: () => input?.mode === "category" && requestGeneration !== categorySearchGeneration,
+      onProgress: (pageNum, pageCount, detail = {}) => {
         const percent = Math.min(70, Math.max(2, Math.round((pageNum / Math.max(1, pageCount)) * 70)));
         mainWindow?.webContents.send("explorer:brand-progress", {
+          context: input?.mode === "category" ? "category" : "brand",
           percent,
           pageNum,
           pageCount,
+          count: Number(detail.count || 0),
+          brandName: input?.mode === "category" ? String(rankedBrands[pageNum - 1]?.name || rankedBrands[pageNum - 1]?.ko || "") : "",
           message: input?.mode === "category"
             ? `판매순위 연관 브랜드 ${pageNum}/${pageCount} 조회 중`
             : `POIZON API ${pageNum}/${pageCount}페이지 수집 중`,

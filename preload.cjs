@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   getPopularWorkflow: () => ipcRenderer.invoke("popular:workflow-get"),
   savePopularWorkflow: (input) => ipcRenderer.invoke("popular:workflow-save", input),
   queryExplorer: (input) => ipcRenderer.invoke("explorer:query", input),
+  cancelCategorySearch: () => ipcRenderer.invoke("explorer:cancel-category"),
   searchDomestic: (input) => ipcRenderer.invoke("domestic:search", input),
   importExcel: () => ipcRenderer.invoke("excel:import"),
   exportExcel: () => ipcRenderer.invoke("excel:export"),

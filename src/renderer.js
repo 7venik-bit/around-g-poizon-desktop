@@ -11,6 +11,10 @@ const selectedExplorerKeys = new Set();
 let domesticBatchRunning = false;
 let domesticBatchVerifyCounts = false;
 let brandProgressActive = false;
+let categorySearchActive = false;
+let categorySearchRunId = 0;
+let categoryLoadingStartedAt = 0;
+let categoryLoadingTimer = null;
 let brandWorkbenchProducts = [];
 let selectedBrandName = localStorage.getItem("around-g-selected-brand-name") || "";
 let selectedBrandIds = new Set();
@@ -1777,6 +1781,12 @@ window.aroundG.onSellerCaptureProgress((progress) => {
   host.hidden = false;
   host.querySelector("i").style.width = `${percent}%`;
   host.querySelector("span").textContent = `${percent}%`;
+  if (categorySearchActive) {
+    updateCategoryLoading({
+      title: `인기리스트 상품을 상자에 담는 중 · ${Number(progress.completed || 0)}/200`,
+      percent: Math.min(32, percent * 0.32),
+    });
+  }
 });
 async function capturePopularProducts(options = {}) {
   const button = $("#popular-capture");
@@ -2383,38 +2393,150 @@ $("#brand-search").addEventListener("click", async () => {
   }
 });
 
+const CATEGORY_SEARCH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+function categorySearchDate() {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Seoul" }).format(new Date());
+}
+
+function categorySearchCacheId(category, minimumSales30) {
+  return `category:${categorySearchDate()}:${category}:${minimumSales30 ? "sales30" : "all"}`;
+}
+
+async function pruneCategorySearchHistory() {
+  const searches = Array.isArray(state.categorySearches) ? state.categorySearches : [];
+  const expired = searches.filter((entry) => Date.now() - Date.parse(String(entry.createdAt || entry.updatedAt || "")) > CATEGORY_SEARCH_RETENTION_MS);
+  for (const entry of expired) await window.aroundG.remove("categorySearches", entry.id);
+  if (expired.length) state.categorySearches = searches.filter((entry) => !expired.some((old) => old.id === entry.id));
+}
+
+function updateCategoryLoading({ title, brandName, completed, total, count, percent } = {}) {
+  const host = $("#category-loading");
+  if (!host) return;
+  host.hidden = false;
+  if (title) $("#category-loading-title").textContent = title;
+  if (brandName) {
+    $("#category-box-brand").textContent = brandName;
+    const box = $("#category-brand-box");
+    box.classList.add("is-new");
+    requestAnimationFrame(() => requestAnimationFrame(() => box.classList.remove("is-new")));
+  }
+  const done = Number(completed || 0);
+  const maximum = Number(total || 0);
+  const products = Number(count || 0);
+  if (maximum || products) {
+    $("#category-loading-count").textContent = `브랜드 ${done}/${maximum} · 상품 ${products.toLocaleString("ko-KR")}개 분류`;
+  }
+  if (Number.isFinite(Number(percent))) $("#category-loading-bar").style.width = `${Math.max(0, Math.min(100, Number(percent)))}%`;
+}
+
+function startCategoryLoading() {
+  categorySearchActive = true;
+  categoryLoadingStartedAt = Date.now();
+  clearInterval(categoryLoadingTimer);
+  $("#category-loading").hidden = false;
+  $("#category-loading-bar").style.width = "1%";
+  $("#category-loading-count").textContent = "브랜드 0/0 · 상품 0개 분류";
+  categoryLoadingTimer = setInterval(() => {
+    const seconds = Math.floor((Date.now() - categoryLoadingStartedAt) / 1000);
+    $("#category-loading-time").textContent = `경과 ${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  }, 1_000);
+}
+
+function finishCategoryLoading({ keepVisible = false } = {}) {
+  categorySearchActive = false;
+  clearInterval(categoryLoadingTimer);
+  categoryLoadingTimer = null;
+  if (!keepVisible) $("#category-loading").hidden = true;
+}
+
+$("#category-search-stop").addEventListener("click", async () => {
+  categorySearchRunId += 1;
+  categorySearchActive = false;
+  $("#category-search-stop").disabled = true;
+  $("#category-loading-title").textContent = "현재 요청을 안전하게 중단하는 중…";
+  await window.aroundG.cancelCategorySearch();
+  finishCategoryLoading({ keepVisible: true });
+  $("#category-status").className = "status error";
+  $("#category-status").textContent = "카테고리 검색을 중단했습니다. 저장된 완료 결과는 그대로 유지됩니다.";
+  $("#category-search").disabled = false;
+  $("#category-search-stop").disabled = false;
+});
+
 $("#category-search").addEventListener("click", async () => {
+  const runId = ++categorySearchRunId;
   const button = $("#category-search");
   const status = $("#category-status");
+  const minimumSales30 = $("#category-min-sales").checked;
   button.disabled = true;
+  $("#category-search-stop").disabled = false;
+  startCategoryLoading();
   status.className = "status";
-  status.textContent = "1단계/3 · 기존 인기리스트에서 판매순위 200건을 가져오는 중…";
+  status.textContent = "1단계/3 · 저장된 검색 결과를 확인하는 중…";
   try {
+    await refresh();
+    await pruneCategorySearchHistory();
+    const cacheId = categorySearchCacheId(selectedCategory, minimumSales30);
+    const cached = (state.categorySearches || []).find((entry) => entry.id === cacheId && Array.isArray(entry.products));
+    if (cached) {
+      updateCategoryLoading({ title: "오늘 정리한 상자를 바로 꺼냈습니다! ✅", completed: cached.sourceCount, total: cached.rankedBrandCount, count: cached.products.length, percent: 100 });
+      status.className = "status success";
+      status.textContent = `${selectedCategory} 저장 결과 ${cached.products.length.toLocaleString("ko-KR")}개 · ${new Date(cached.createdAt).toLocaleString("ko-KR")} 검색`;
+      renderExplorerResults(`${selectedCategory} 카테고리 검색 · 저장 결과`, cached.products);
+      window.setTimeout(() => finishCategoryLoading(), 1_800);
+      return;
+    }
+    status.textContent = "1단계/3 · 기존 인기리스트에서 판매순위 200건을 가져오는 중…";
+    updateCategoryLoading({ title: "인기리스트 상품을 브랜드 상자에 담는 중…", percent: 3 });
     const popularResult = await capturePopularProducts({ runDomestic: false, renderResults: false });
+    if (runId !== categorySearchRunId) return;
     if (!popularResult.ok) {
       status.className = "status error";
       status.textContent = `인기리스트 수집 실패 · ${popularResult.message}`;
+      finishCategoryLoading();
       return;
     }
     status.textContent = "2단계/3 · 판매순위 브랜드를 추출하고 중복을 제거하는 중…";
+    updateCategoryLoading({ title: "브랜드 이름표를 붙이고 중복 상자를 정리하는 중…", percent: 34 });
     const result = await window.aroundG.queryExplorer({
       mode: "category",
       category: selectedCategory,
       pageNum: 1,
       pageSize: 100,
-      minimumSales30: $("#category-min-sales").checked,
+      minimumSales30,
       salesByArticle: salesByArticle(),
     });
+    if (runId !== categorySearchRunId) return;
     if (!result.ok) {
       status.className = "status error";
       status.textContent = result.error.message;
+      finishCategoryLoading();
       return;
     }
     status.className = "status success";
     status.textContent = `${selectedCategory} ${result.products.length}개 분류 완료 · 판매순위 200건 연관 브랜드 ${result.sourceCount}/${result.rankedBrandCount || result.sourceCount}개 응답${result.failedSourceCount ? ` · ${result.failedSourceCount}개 재시도 실패` : ""}`;
     renderExplorerResults(`${selectedCategory} 카테고리 검색`, result.products);
+    await window.aroundG.upsert("categorySearches", {
+      id: cacheId,
+      category: selectedCategory,
+      minimumSales30,
+      createdAt: new Date().toISOString(),
+      products: result.products,
+      sourceCount: result.sourceCount,
+      failedSourceCount: result.failedSourceCount,
+      rankedBrandCount: result.rankedBrandCount,
+      sourceTotal: result.sourceTotal,
+      complete: true,
+    });
+    updateCategoryLoading({ title: "상자 개봉과 상품 분류를 완료했습니다! ✅", completed: result.sourceCount, total: result.rankedBrandCount, count: result.products.length, percent: 100 });
+    window.setTimeout(() => finishCategoryLoading(), 1_800);
+  } catch (error) {
+    if (runId !== categorySearchRunId) return;
+    status.className = "status error";
+    status.textContent = `카테고리 검색 오류 · ${error instanceof Error ? error.message : String(error)}`;
+    finishCategoryLoading();
   } finally {
-    button.disabled = false;
+    if (runId === categorySearchRunId) button.disabled = false;
   }
 });
 
@@ -2611,6 +2733,20 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   // progress only for jobs actually registered in this running session.
   localStorage.removeItem("around-g-last-brand-export-job");
   window.aroundG.onBrandSyncProgress((progress) => {
+    if (progress?.context === "category" && categorySearchActive) {
+      const completed = Number(progress.pageNum || 0);
+      const total = Number(progress.pageCount || 0);
+      updateCategoryLoading({
+        title: `${progress.brandName || "브랜드"} 상자를 열어 상품을 분류하는 중…`,
+        brandName: progress.brandName || "BRAND",
+        completed,
+        total,
+        count: Number(progress.count || 0),
+        percent: 35 + (total ? (completed / total) * 63 : 0),
+      });
+      $("#category-status").textContent = `3단계/3 · ${progress.brandName || "브랜드"} 상품 조회 ${completed}/${total}`;
+      return;
+    }
     if (!brandProgressActive && selectedBrandId) return;
     const status = $("#brand-status");
     const loading = $("#brand-progress");
@@ -2650,4 +2786,5 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   $("#app-secret").placeholder = config.hasAppSecret ? "저장됨 · 변경할 때만 입력" : "필수";
   $("#access-token").placeholder = config.hasAccessToken ? "저장됨 · 변경할 때만 입력" : "선택 사항";
   await refresh();
+  await pruneCategorySearchHistory();
 })();

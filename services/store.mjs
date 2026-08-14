@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 const EMPTY = {
   version: 1,
   products: [],
+  categorySearches: [],
   ledger: [],
   orders: [],
   favorites: [],
