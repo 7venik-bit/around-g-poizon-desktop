@@ -1778,15 +1778,23 @@ async function acceptSellerCenterProducts(products, sourceLabel, options = {}) {
 
 window.aroundG.onSellerCaptureProgress((progress) => {
   const host = $("#popular-progress");
-  const percent = Math.max(0, Math.min(100, Number(progress.percent || 0)));
+  const reportedPercent = Number(progress.percent);
+  const percent = Number.isFinite(reportedPercent)
+    ? Math.max(0, Math.min(100, reportedPercent))
+    : Number.parseFloat(host.querySelector("i").style.width) || 0;
   host.hidden = false;
   host.querySelector("i").style.width = `${percent}%`;
   host.querySelector("span").textContent = `${percent}%`;
+  if (progress.message) $("#popular-status").textContent = progress.message;
   if (categorySearchActive) {
     updateCategoryLoading({
-      title: `인기리스트 상품을 상자에 담는 중 · ${Number(progress.completed || 0)}/200`,
+      title: progress.message || `인기리스트 상품을 상자에 담는 중 · ${Number(progress.completed || 0)}/200`,
       percent: Math.min(32, percent * 0.32),
     });
+    if (progress.attentionRequired) {
+      $("#category-status").className = "status error";
+      $("#category-status").textContent = progress.message;
+    }
   }
 });
 async function capturePopularProducts(options = {}) {
@@ -1798,7 +1806,6 @@ async function capturePopularProducts(options = {}) {
   $("#popular-status").className = "status";
   $("#popular-status").textContent = "";
   try {
-    await window.aroundG.openSellerCenter();
     const result = await window.aroundG.captureSellerCenter();
     if (!result.ok) {
       $("#popular-status").className = "status error";

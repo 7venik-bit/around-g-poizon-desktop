@@ -1823,6 +1823,17 @@ function showCollectorWindow() {
   mainWindow.focus();
 }
 
+function minimizeSellerAutomationWindow(message = "POIZON 판매자센터를 백그라운드에서 실행 중입니다.") {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return;
+  sellerWindow.showInactive();
+  if (!sellerWindow.isMinimized()) sellerWindow.minimize();
+  showCollectorWindow();
+  mainWindow?.webContents.send("seller:capture-progress", {
+    background: true,
+    message,
+  });
+}
+
 function localFileTimestamp(date = new Date()) {
   const two = (value) => String(value).padStart(2, "0");
   return `${date.getFullYear()}${two(date.getMonth() + 1)}${two(date.getDate())}_${two(date.getHours())}${two(date.getMinutes())}${two(date.getSeconds())}`;
@@ -4579,8 +4590,13 @@ async function queryPublicBrandProducts(input) {
 async function captureSellerCenterProducts() {
   const revealSellerLogin = () => {
     if (!sellerWindow || sellerWindow.isDestroyed()) return;
+    if (sellerWindow.isMinimized()) sellerWindow.restore();
     sellerWindow.show();
     sellerWindow.focus();
+    mainWindow?.webContents.send("seller:capture-progress", {
+      attentionRequired: true,
+      message: "POIZON 로그인 또는 보안 확인이 필요해 판매자센터 창을 표시했습니다.",
+    });
   };
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     mainWindow?.webContents.send("seller:capture-progress", { percent: 2, count: 0, message: "판매자센터를 여는 중" });
@@ -4594,8 +4610,7 @@ async function captureSellerCenterProducts() {
     }
   }
   if (sellerWindow && !sellerWindow.isDestroyed()) {
-    sellerWindow.hide();
-    showCollectorWindow();
+    minimizeSellerAutomationWindow("POIZON 로그인 세션을 백그라운드에서 확인 중입니다.");
   }
   mainWindow?.webContents.send("seller:capture-progress", { percent: 5, count: 0, message: "로그인 세션 확인 중" });
   let currentUrl = sellerWindow.webContents.getURL();
@@ -4617,8 +4632,7 @@ async function captureSellerCenterProducts() {
     }
   }
   sellerWindow.maximize();
-  sellerWindow.show();
-  sellerWindow.focus();
+  minimizeSellerAutomationWindow("POIZON 인기상품 조건을 백그라운드에서 적용 중입니다.");
   await wait(700);
   const networkProducts = [];
   let debuggerListener;
@@ -4754,9 +4768,7 @@ async function captureSellerCenterProducts() {
       }
     }
   };
-  sellerWindow.show();
-  sellerWindow.focus();
-  showCollectorWindow();
+  minimizeSellerAutomationWindow("POIZON 인기상품 200건을 백그라운드에서 수집 중입니다.");
   for (let pass = 0; pass < 3 && rankSlots.size < limit; pass += 1) {
     await dragSellerScrollbarToRatio(0);
     await wait(900);
