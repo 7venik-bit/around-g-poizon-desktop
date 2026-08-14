@@ -846,16 +846,23 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
 }
 
 function brandsWithOfficialDomainStatus(brands, registry) {
-  const statusById = new Map((Array.isArray(registry) ? registry : []).map((record) =>
-    [Number(record.brandId), record.status]));
-  const statusByName = new Map((Array.isArray(registry) ? registry : []).flatMap((record) =>
-    [record.brandName, record.brandKo].filter(Boolean).map((name) => [String(name).trim().toLowerCase(), record.status])));
-  return (Array.isArray(brands) ? brands : []).map((brand) => ({
-    ...brand,
-    officialDomainStatus: statusById.get(Number(brand.id ?? brand.brandId))
-      || statusByName.get(String(brand.ko || brand.name || "").trim().toLowerCase())
-      || OFFICIAL_DOMAIN_STATUS.PENDING,
-  }));
+  const compactRecord = (record) => record ? ({
+    status: record.status,
+    homepageUrl: String(record.homepageUrl || ""),
+  }) : null;
+  const recordById = new Map((Array.isArray(registry) ? registry : []).map((record) =>
+    [Number(record.brandId), compactRecord(record)]));
+  const recordByName = new Map((Array.isArray(registry) ? registry : []).flatMap((record) =>
+    [record.brandName, record.brandKo].filter(Boolean).map((name) => [String(name).trim().toLowerCase(), compactRecord(record)])));
+  return (Array.isArray(brands) ? brands : []).map((brand) => {
+    const official = recordById.get(Number(brand.id ?? brand.brandId))
+      || recordByName.get(String(brand.ko || brand.name || "").trim().toLowerCase());
+    return {
+      ...brand,
+      officialDomainStatus: official?.status || OFFICIAL_DOMAIN_STATUS.PENDING,
+      officialHomepageUrl: official?.homepageUrl || "",
+    };
+  });
 }
 
 async function ensureOfficialDomainRegistry(brands) {
@@ -1177,7 +1184,15 @@ async function runOfficialDomainAudit() {
       if (processed % 5 === 0 || blocked) {
         await persistOfficialDomainAudit(registry, { state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError, phase: blocked ? "security_wait" : "saved", attempt });
       }
-      sendOfficialDomainAuditProgress(registry, { state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError, phase: blocked ? "security_wait" : "saved", attempt });
+      sendOfficialDomainAuditProgress(registry, {
+        state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError,
+        phase: blocked ? "security_wait" : "saved", attempt,
+        updatedBrand: {
+          brandId: Number(result.record.brandId),
+          status: result.record.status,
+          homepageUrl: String(result.record.homepageUrl || ""),
+        },
+      });
       return result;
     };
     for (const index of auditQueue) {
@@ -1227,9 +1242,11 @@ async function runOfficialDomainAudit() {
 async function startImmediateOfficialMallLinkage() {
   const version = app.getVersion();
   const settings = store.snapshot().settings;
-  if (settings.immediateOfficialMallLinkageVersion === version) return;
+  const initialBrands = settings.brandCatalog || explorerMetadata().brands;
+  const initialRegistry = safeOfficialDomainRegistry(initialBrands);
+  const initialSummary = officialDomainRegistrySummary(initialRegistry);
+  if (settings.immediateOfficialMallLinkageVersion === version && !initialSummary.pending) return;
   await store.setSettings({
-    immediateOfficialMallLinkageVersion: version,
     immediateOfficialMallLinkageStartedAt: new Date().toISOString(),
   });
   mainWindow?.webContents.send("official-domain:audit-progress", {
@@ -1246,6 +1263,14 @@ async function startImmediateOfficialMallLinkage() {
     : refreshedSettings.brandCatalog || explorerMetadata().brands;
   await ensureOfficialDomainRegistry(brands);
   await runOfficialDomainAudit();
+  const completedRegistry = safeOfficialDomainRegistry(brands);
+  const completedSummary = officialDomainRegistrySummary(completedRegistry);
+  if (!completedSummary.pending) {
+    await store.setSettings({
+      immediateOfficialMallLinkageVersion: version,
+      immediateOfficialMallLinkageCompletedAt: new Date().toISOString(),
+    });
+  }
 }
 
 function pauseOfficialDomainAuditForSellerAutomation() {

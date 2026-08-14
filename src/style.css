@@ -910,6 +910,42 @@ button,input,select,textarea{font-family:inherit}
   height:auto;
   min-height:58px;
   align-items:center;
+  position:relative;
+}
+.brand-card.official-linked,.brand-card.official-missing{margin-top:13px}
+.brand-official-badge{
+  position:absolute;
+  left:50%;
+  top:-13px;
+  z-index:2;
+  transform:translateX(-50%);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:34px;
+  height:20px;
+  padding:0 8px;
+  border:2px solid #fff;
+  border-radius:999px;
+  background:#f28c28;
+  box-shadow:0 2px 5px rgba(150,78,10,.22);
+  color:#fff;
+  font-size:10px;
+  font-style:normal;
+  font-weight:800;
+  line-height:1;
+}
+.brand-official-badge.missing{min-width:62px;background:#8b939e;box-shadow:0 2px 5px rgba(57,65,75,.18)}
+.brand-card .brand-official-domain{
+  display:block;
+  max-width:112px;
+  overflow:hidden;
+  color:#d36b0e;
+  font-size:9px;
+  font-weight:700;
+  line-height:1.25;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
 .brand-card span{min-width:0;overflow:visible}
 .brand-card strong{

@@ -22,3 +22,15 @@ test("full verification remains stopped after startup until the user continues i
   assert.match(mainSource, /partition: "persist:around-g-official-domain-audit"[\s\S]*disableDialogs: true/);
   assert.doesNotMatch(mainSource, /setTimeout\(\(\) => \{\s*officialDomainAuditResumeTimer = null;\s*void runOfficialDomainAudit/);
 });
+
+test("an interrupted version audit is not marked complete while brands remain pending", async () => {
+  const mainSource = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
+  const start = mainSource.indexOf("async function startImmediateOfficialMallLinkage");
+  const end = mainSource.indexOf("function pauseOfficialDomainAuditForSellerAutomation", start);
+  const linkage = mainSource.slice(start, end);
+
+  assert.match(linkage, /immediateOfficialMallLinkageVersion === version && !initialSummary\.pending/);
+  assert.match(linkage, /await runOfficialDomainAudit\(\)/);
+  assert.match(linkage, /if \(!completedSummary\.pending\)/);
+  assert.match(linkage, /immediateOfficialMallLinkageCompletedAt/);
+});

@@ -1113,7 +1113,7 @@ function renderOfficialDomainAudit(audit = {}) {
     : audit.notFoundExportError ? " · 미발견 Excel 저장 실패" : "";
   status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%) · 공식몰·상품검색 확인 ${verified.toLocaleString("ko-KR")} · 공식몰 확인·상품검색 연결 불가 ${unsupported.toLocaleString("ko-KR")} · 공식몰 미발견·재확인 필요 ${pending.toLocaleString("ko-KR")}${current}${notFoundExcel}`;
   button.dataset.running = audit.running ? "true" : "false";
-  button.textContent = audit.running ? "검증 일시 정지" : inspected ? "검증 계속" : "전체 검증 시작";
+  button.textContent = audit.running ? "검증 일시 정지" : pending ? "미연동 브랜드 재점검" : inspected ? "검증 완료" : "전체 검증 시작";
   button.classList.toggle("primary", !audit.running);
   explorerMeta.officialDomainAudit = audit;
   explorerMeta.officialDomainSummary = {
@@ -1153,8 +1153,15 @@ function renderBrandCards(filter = "") {
   const brands = matchedBrands;
   $("#brand-cards").innerHTML = brands.map((brand) => {
     const downloadComplete = hasCompletedBrandDownload(brand);
-    return `<button type="button" class="brand-card ${selectedBrandIds.has(Number(brand.id)) ? "selected" : ""}${downloadComplete ? " download-complete" : ""}" data-brand-id="${brand.id}" aria-pressed="${selectedBrandIds.has(Number(brand.id))}"${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
-    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${downloadComplete ? '<em class="brand-download-complete">다운완료</em>' : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>
+    const officialLinked = ["verified", "search_unsupported"].includes(String(brand.officialDomainStatus || ""));
+    const officialMissing = String(brand.officialDomainStatus || "") === "no_official_store";
+    const officialDomain = (() => {
+      try { return new URL(String(brand.officialHomepageUrl || "")).hostname.replace(/^www\./, ""); } catch { return ""; }
+    })();
+    return `<button type="button" class="brand-card ${selectedBrandIds.has(Number(brand.id)) ? "selected" : ""}${downloadComplete ? " download-complete" : ""}${officialLinked ? " official-linked" : ""}${officialMissing ? " official-missing" : ""}" data-brand-id="${brand.id}" aria-pressed="${selectedBrandIds.has(Number(brand.id))}"${officialDomain ? ` title="공식몰: ${text(brand.officialHomepageUrl)}"` : ""}${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
+    ${officialLinked ? '<em class="brand-official-badge" aria-label="공식몰 연동 완료">공식</em>' : ""}
+    ${officialMissing ? '<em class="brand-official-badge missing" aria-label="국내 공식몰 없음">공식몰 없음</em>' : ""}
+    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${officialDomain ? `<small class="brand-official-domain">${text(officialDomain)}</small>` : ""}${downloadComplete ? '<em class="brand-download-complete">다운완료</em>' : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>
   </button>`;
   }).join("");
   document.querySelectorAll(".brand-logo img").forEach((image) => {
@@ -2590,6 +2597,13 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
     }
   });
   window.aroundG.onOfficialDomainAuditProgress((audit) => {
+    if (audit?.updatedBrand) {
+      const updated = explorerMeta.brands.find((brand) => Number(brand.id) === Number(audit.updatedBrand.brandId));
+      if (updated) {
+        updated.officialDomainStatus = String(audit.updatedBrand.status || "pending");
+        updated.officialHomepageUrl = String(audit.updatedBrand.homepageUrl || "");
+      }
+    }
     renderOfficialDomainAudit(audit);
     renderBrandCards($("#brand-filter")?.value || "");
   });
