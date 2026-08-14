@@ -126,15 +126,21 @@ export function categoryGroup(product) {
   const text = clean([
     product.level1CategoryName,
     product.level2CategoryName,
+    product.level3CategoryName,
     product.categoryName,
+    product.category,
+    product.productName,
+    product.productNameEn,
+    product.englishProductName,
+    product.name,
     product.title,
   ].join(" ")).toLowerCase();
-  if (/아우터|재킷|자켓|점퍼|코트|패딩|다운/.test(text)) return "아우터";
-  if (/신발|슈즈|운동화|구두|샌들|슬리퍼|부츠|스니커/.test(text)) return "신발";
-  if (/가방|백팩|크로스백|토트백|파우치/.test(text)) return "가방";
-  if (/모자|캡|비니|햇/.test(text)) return "모자";
-  if (/액세서리|주얼리|시계|벨트|양말|안경|스카프/.test(text)) return "액세서리";
-  if (/의류|상의|하의|티셔츠|셔츠|팬츠|바지|스커트|드레스|속옷/.test(text)) return "의류";
+  if (/아우터|재킷|자켓|점퍼|코트|패딩|다운|\b(?:outerwear|jacket|coat|parka|puffer|windbreaker)\b/.test(text)) return "아우터";
+  if (/신발|슈즈|운동화|구두|샌들|슬리퍼|부츠|스니커|\b(?:footwear|shoes?|sneakers?|trainers?|boots?|sandals?|slippers?|clogs?|mules?|loafers?)\b/.test(text)) return "신발";
+  if (/가방|백팩|크로스백|토트백|파우치|\b(?:bags?|backpacks?|crossbody|totes?|pouches?|luggage|duffels?)\b/.test(text)) return "가방";
+  if (/모자|캡|비니|햇|\b(?:headwear|hats?|caps?|beanies?|bucket hats?)\b/.test(text)) return "모자";
+  if (/액세서리|주얼리|시계|벨트|양말|안경|스카프|\b(?:accessories|jewelry|watches?|belts?|socks?|eyewear|glasses|scarves?|wallets?|gloves?)\b/.test(text)) return "액세서리";
+  if (/의류|상의|하의|티셔츠|셔츠|팬츠|바지|스커트|드레스|속옷|\b(?:apparel|clothing|shirts?|tees?|t-shirts?|pants?|trousers?|shorts?|skirts?|dresses?|underwear|hoodies?|sweatshirts?|jerseys?)\b/.test(text)) return "의류";
   return "기타";
 }
 

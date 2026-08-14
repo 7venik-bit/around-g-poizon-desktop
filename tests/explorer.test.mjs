@@ -78,6 +78,14 @@ test("상품의 한글 카테고리를 탐색 그룹으로 분류한다", () => 
   assert.equal(categoryGroup({ categoryName: "백팩" }), "가방");
 });
 
+test("POIZON 영문 카테고리와 상품명도 탐색 그룹으로 분류한다", () => {
+  assert.equal(categoryGroup({ level1CategoryName: "Footwear", productNameEn: "Air Max Shoes" }), "신발");
+  assert.equal(categoryGroup({ categoryName: "Sneakers", title: "Running Trainer" }), "신발");
+  assert.equal(categoryGroup({ categoryName: "Apparel", productName: "Down Jacket" }), "아우터");
+  assert.equal(categoryGroup({ productNameEn: "Nike Crew Socks Combo Set Teenagers" }), "액세서리");
+  assert.equal(categoryGroup({ level2CategoryName: "Baseball Caps" }), "모자");
+});
+
 test("POIZON 상품과 판매자센터 30일 판매량을 품번으로 결합한다", () => {
   const rows = normalizeBrandResult({
     contents: [{
