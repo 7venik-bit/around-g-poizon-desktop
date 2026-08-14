@@ -80,6 +80,10 @@ export function salesRankedBrands(products, brands, rankingLimit = 200) {
     .replace(/[^a-z0-9가-힣]+/g, "");
   const catalog = Array.isArray(brands) ? brands : [];
   const byId = new Map(catalog.map((brand) => [Number(brand.id), brand]));
+  const searchableCatalog = catalog.flatMap((brand) => [brand.name, brand.ko]
+    .map((name) => ({ brand, name: normalized(name) }))
+    .filter((entry) => entry.name.length >= 3))
+    .sort((left, right) => right.name.length - left.name.length);
   const candidates = (Array.isArray(products) ? products : [])
     .filter((product) => Number(product?.popularityRank) > 0);
   const latestRankingTime = Math.max(...candidates.map((product) => Date.parse(String(product.updatedAt || "")))
@@ -99,6 +103,17 @@ export function salesRankedBrands(products, brands, rankingLimit = 200) {
           name === candidateName || (name.length >= 5 && candidateName.length >= 5
             && (name.includes(candidateName) || candidateName.includes(name)))));
       });
+    }
+    if (!brand) {
+      const productText = normalized([
+        product.name,
+        product.title,
+        product.apiTitle,
+        product.productName,
+        product.productNameEn,
+        product.englishProductName,
+      ].filter(Boolean).join(" "));
+      brand = searchableCatalog.find((entry) => productText.includes(entry.name))?.brand;
     }
     if (brand && !selected.has(Number(brand.id))) {
       selected.set(Number(brand.id), { ...brand, salesRank: Number(product.popularityRank) });
