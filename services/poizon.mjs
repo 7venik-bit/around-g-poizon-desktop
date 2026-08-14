@@ -232,7 +232,10 @@ export async function queryExplorer(config, input) {
       pageSize: 100,
       apiBaseUrl: config.apiBaseUrl,
       timeZone: "Asia/Seoul",
-      language: "en",
+      // Category labels must be requested in Korean because the UI groups by
+      // Korean category names. The classifier still accepts English fields as
+      // a fallback for mixed-language POIZON responses.
+      language: input.mode === "category" ? "ko" : "en",
     };
     const brandIds = input.mode === "category" ? BRAND_CATALOG.map((brand) => brand.id) : [Number(input.brandId)];
     let responses;
