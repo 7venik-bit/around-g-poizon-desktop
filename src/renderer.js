@@ -2418,6 +2418,7 @@ function updateCategoryLoading({ title, brandName, completed, total, count, perc
   if (brandName) {
     $("#category-box-brand").textContent = brandName;
     const box = $("#category-brand-box");
+    box.classList.remove("is-waiting");
     box.classList.add("is-new");
     requestAnimationFrame(() => requestAnimationFrame(() => box.classList.remove("is-new")));
   }
@@ -2435,6 +2436,8 @@ function startCategoryLoading() {
   categoryLoadingStartedAt = Date.now();
   clearInterval(categoryLoadingTimer);
   $("#category-loading").hidden = false;
+  $("#category-box-brand").textContent = "준비 중";
+  $("#category-brand-box").classList.add("is-waiting");
   $("#category-loading-bar").style.width = "1%";
   $("#category-loading-count").textContent = "브랜드 0/0 · 상품 0개 분류";
   categoryLoadingTimer = setInterval(() => {
@@ -2737,7 +2740,9 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
       const completed = Number(progress.pageNum || 0);
       const total = Number(progress.pageCount || 0);
       updateCategoryLoading({
-        title: `${progress.brandName || "브랜드"} 상자를 열어 상품을 분류하는 중…`,
+        title: progress.phase === "start"
+          ? `${progress.brandName || "브랜드"} 상자를 전달하는 중…`
+          : `${progress.brandName || "브랜드"} 상자를 열어 상품을 분류했습니다.`,
         brandName: progress.brandName || "BRAND",
         completed,
         total,

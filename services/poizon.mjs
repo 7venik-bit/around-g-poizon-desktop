@@ -262,6 +262,7 @@ export async function queryExplorer(config, input) {
       for (let brandIndex = 0; brandIndex < brandIds.length; brandIndex += 1) {
         if (input.shouldStop?.()) throw new Error("CATEGORY_SEARCH_CANCELLED");
         const brandId = brandIds[brandIndex];
+        input.onProgress?.(brandIndex, brandIds.length, { count: productKeys.size, brandId, phase: "start" });
         const brandPages = [];
         let firstError = null;
         for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -292,7 +293,7 @@ export async function queryExplorer(config, input) {
             productKeys.add(`${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || ""}`);
           }
         }
-        input.onProgress?.(brandIndex + 1, brandIds.length, { count: productKeys.size, brandId });
+        input.onProgress?.(brandIndex + 1, brandIds.length, { count: productKeys.size, brandId, phase: "complete" });
         if (brandIndex < brandIds.length - 1) await wait(500);
       }
     } else {
