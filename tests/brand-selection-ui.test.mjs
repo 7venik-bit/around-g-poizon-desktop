@@ -37,6 +37,18 @@ test("brand selection supports toggle-on and toggle-off", () => {
   assert.match(selection, /selectedBrandIds\.delete\(id\)/);
 });
 
+test("selected brand button shows a check and the second click clears it", () => {
+  const cardsStart = renderer.indexOf("function renderBrandCards");
+  const cardsEnd = renderer.indexOf("function renderCategoryButtons", cardsStart);
+  const cards = renderer.slice(cardsStart, cardsEnd);
+
+  assert.match(cards, /const selected = selectedBrandIds\.has\(Number\(brand\.id\)\)/);
+  assert.match(cards, /class="brand-selection-check" aria-hidden="true">✓<\/i>/);
+  assert.match(cards, /aria-pressed="\$\{selected\}"/);
+  assert.match(style, /\.brand-selection-check\{[\s\S]*?display:none/);
+  assert.match(style, /\.brand-card\.selected \.brand-selection-check\{display:inline-flex\}/);
+});
+
 
 
 
