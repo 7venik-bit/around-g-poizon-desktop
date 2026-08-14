@@ -1153,12 +1153,14 @@ function renderBrandCards(filter = "") {
   const brands = matchedBrands;
   $("#brand-cards").innerHTML = brands.map((brand) => {
     const downloadComplete = hasCompletedBrandDownload(brand);
+    const selected = selectedBrandIds.has(Number(brand.id));
     const officialLinked = ["verified", "search_unsupported"].includes(String(brand.officialDomainStatus || ""));
     const officialMissing = String(brand.officialDomainStatus || "") === "no_official_store";
     const officialDomain = (() => {
       try { return new URL(String(brand.officialHomepageUrl || "")).hostname.replace(/^www\./, ""); } catch { return ""; }
     })();
-    return `<button type="button" class="brand-card ${selectedBrandIds.has(Number(brand.id)) ? "selected" : ""}${downloadComplete ? " download-complete" : ""}${officialLinked ? " official-linked" : ""}${officialMissing ? " official-missing" : ""}" data-brand-id="${brand.id}" aria-pressed="${selectedBrandIds.has(Number(brand.id))}"${officialDomain ? ` title="공식몰: ${text(brand.officialHomepageUrl)}"` : ""}${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
+    return `<button type="button" class="brand-card ${selected ? "selected" : ""}${downloadComplete ? " download-complete" : ""}${officialLinked ? " official-linked" : ""}${officialMissing ? " official-missing" : ""}" data-brand-id="${brand.id}" aria-pressed="${selected}"${officialDomain ? ` title="공식몰: ${text(brand.officialHomepageUrl)}"` : ""}${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
+    <i class="brand-selection-check" aria-hidden="true">✓</i>
     ${officialLinked ? '<em class="brand-official-badge" aria-label="공식몰 연동 완료">공식</em>' : ""}
     ${officialMissing ? '<em class="brand-official-badge missing" aria-label="국내 공식몰 없음">공식몰 없음</em>' : ""}
     <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${officialDomain ? `<small class="brand-official-domain">${text(officialDomain)}</small>` : ""}${downloadComplete ? '<em class="brand-download-complete">다운완료</em>' : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>

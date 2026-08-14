@@ -913,6 +913,27 @@ button,input,select,textarea{font-family:inherit}
   position:relative;
 }
 .brand-card.official-linked,.brand-card.official-missing{margin-top:13px}
+.brand-selection-check{
+  position:absolute;
+  top:5px;
+  right:6px;
+  z-index:3;
+  display:none;
+  width:20px;
+  height:20px;
+  align-items:center;
+  justify-content:center;
+  border:2px solid #fff;
+  border-radius:50%;
+  background:#287de0;
+  box-shadow:0 2px 5px rgba(20,72,135,.25);
+  color:#fff;
+  font-size:13px;
+  font-style:normal;
+  font-weight:900;
+  line-height:1;
+}
+.brand-card.selected .brand-selection-check{display:inline-flex}
 .brand-official-badge{
   position:absolute;
   left:50%;
