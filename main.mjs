@@ -6292,7 +6292,8 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
           pageNum,
           pageCount,
           count: Number(detail.count || 0),
-          brandName: input?.mode === "category" ? String(rankedBrands[pageNum - 1]?.name || rankedBrands[pageNum - 1]?.ko || "") : "",
+          phase: String(detail.phase || "progress"),
+          brandName: input?.mode === "category" ? String(rankedBrands.find((brand) => Number(brand.id) === Number(detail.brandId))?.name || "") : "",
           message: input?.mode === "category"
             ? `판매순위 연관 브랜드 ${pageNum}/${pageCount} 조회 중`
             : `POIZON API ${pageNum}/${pageCount}페이지 수집 중`,

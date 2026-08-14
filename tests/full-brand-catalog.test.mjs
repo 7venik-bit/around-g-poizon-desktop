@@ -84,6 +84,9 @@ test("카테고리 검색 결과와 재미있는 브랜드 상자 진행 화면�
   assert.match(renderer, /cancelCategorySearch\(\)/);
   assert.match(preload, /cancelCategorySearch: \(\) => ipcRenderer\.invoke\("explorer:cancel-category"\)/);
   assert.match(main, /ipcMain\.handle\("explorer:cancel-category"/);
+  assert.match(main, /rankedBrands\.find\(\(brand\) => Number\(brand\.id\) === Number\(detail\.brandId\)\)/);
+  assert.match(renderer, /progress\.phase === "start"/);
+  assert.doesNotMatch(html, />BRAND</);
   assert.match(storeSource, /categorySearches: \[\]/);
 });
 import { officialBrandSearchUrl } from "../relay/domestic-search.mjs";
