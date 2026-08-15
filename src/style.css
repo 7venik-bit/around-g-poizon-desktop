@@ -1192,3 +1192,4 @@ button,input,select,textarea{font-family:inherit}
 @keyframes lift-product-from-box{0%,72%{transform:translateY(0) scale(.7);opacity:0}78%{opacity:1}88%,96%{transform:translateY(-31px) scale(1);opacity:1}100%{transform:translate(34px,-34px) scale(.72);opacity:0}}
 @media(max-width:850px){.sorting-scene{grid-template-columns:130px minmax(180px,1fr) 115px}.sorting-items{grid-column:1/-1}}
 @media(prefers-reduced-motion:reduce){.sender.is-loading .truck-door,.sender.is-loading .courier-person,.sender.is-loading .courier-package,.receiver.is-working *,.brand-box,.sorting-conveyor::after{animation-duration:.01ms}}
+.confidence.official{background:#dff7ee;color:#047857;border:1px solid #9fdfc8}

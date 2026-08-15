@@ -620,13 +620,19 @@ async function applySellerPopularConditions() {
 
 async function imageFingerprint(url) {
   if (!url) return null;
-  const parsed = new URL(url);
-  if (!["https:", "http:"].includes(parsed.protocol)) return null;
-  const response = await fetch(parsed.href, { signal: AbortSignal.timeout(12_000) });
-  if (!response.ok) return null;
-  const length = Number(response.headers.get("content-length") || 0);
-  if (length > 5_000_000) return null;
-  const bytes = Buffer.from(await response.arrayBuffer());
+  let bytes;
+  if (/^data:image\//i.test(String(url))) {
+    const encoded = String(url).split(",", 2)[1] || "";
+    bytes = Buffer.from(encoded, /;base64,/i.test(String(url)) ? "base64" : "utf8");
+  } else {
+    const parsed = new URL(url);
+    if (!["https:", "http:"].includes(parsed.protocol)) return null;
+    const response = await fetch(parsed.href, { signal: AbortSignal.timeout(12_000) });
+    if (!response.ok) return null;
+    const length = Number(response.headers.get("content-length") || 0);
+    if (length > 5_000_000) return null;
+    bytes = Buffer.from(await response.arrayBuffer());
+  }
   if (bytes.length > 5_000_000) return null;
   const image = nativeImage.createFromBuffer(bytes);
   if (image.isEmpty()) return null;
@@ -669,6 +675,24 @@ async function addMatchConfidence(data, input) {
       products[index] = { ...products[index], ...scoreProductCandidate(source, products[index], imageSimilarity) };
     }));
   }
+  products = products.map((product) => {
+    const exactOfficialProduct = product.store === "브랜드 공식몰"
+      && /^https?:\/\//i.test(String(product.url || ""))
+      && Number(product.signals?.codeScore || 0) === 1
+      && product.articleConflict !== true
+      && product.signals?.codeConflict !== true;
+    if (!exactOfficialProduct) return product;
+    return {
+      ...product,
+      confidence: 95,
+      productMatchConfidence: 95,
+      officialStoreVerified: true,
+      sourceTrustLabel: "공식몰 확인완료",
+      imageVerificationLabel: product.imageVerifiedFromDetail
+        ? "상세 이미지 확인완료"
+        : product.imageVerifiedFromCard ? "공식몰 이미지 확인" : "이미지 확인 필요",
+    };
+  });
   const priorities = new Map(data.sources.map((sourceRow) => [sourceRow.store, sourceRow.priority]));
   products = products.sort((left, right) =>
     (priorities.get(left.store) || 99) - (priorities.get(right.store) || 99)
@@ -682,9 +706,27 @@ async function addMatchConfidence(data, input) {
     const imageScore = product.signals?.imageScore;
     if (codeConflict) return false;
     if (codeMatched) return true;
-    if (!hasSourceImage) return titleScore >= 70;
-    return titleScore >= 55 && Number(imageScore || 0) >= 82;
+    if (product.store === "브랜드 공식몰") return false;
+    if (!hasSourceImage) return titleScore >= 80;
+    return titleScore >= 70 && Number(imageScore || 0) >= 95;
   });
+  const uniqueProducts = new Map();
+  for (const product of products) {
+    let urlIdentity = "";
+    try {
+      const parsed = new URL(String(product.url || ""));
+      parsed.search = "";
+      parsed.hash = "";
+      urlIdentity = parsed.href.toLocaleLowerCase();
+    } catch {}
+    const exactCode = String(product.detectedArticleNumber || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const identity = exactCode
+      ? `${product.store}:code:${exactCode}`
+      : `${product.store}:url:${urlIdentity}`;
+    const previous = uniqueProducts.get(identity);
+    if (!previous || Number(product.confidence || 0) > Number(previous.confidence || 0)) uniqueProducts.set(identity, product);
+  }
+  products = [...uniqueProducts.values()];
   const verifiedCounts = products.reduce((counts, product) => {
     const store = String(product.store || "");
     if (store) counts.set(store, (counts.get(store) || 0) + 1);
