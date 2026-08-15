@@ -70,12 +70,15 @@ test("brand button shows down-complete whenever its data-center workbook was dow
   const completedEnd = renderer.indexOf("function renderDownloadedBrandFiles", completedStart);
   const completed = renderer.slice(completedStart, completedEnd);
 
-  assert.match(cards, /hasCompletedBrandDownload\(brand\)/);
+  assert.match(cards, /latestCompletedBrandDownload\(brand\)/);
   assert.match(cards, />다운완료</);
+  assert.match(cards, /brand-download-date/);
+  assert.match(cards, /latestCompletedBrandDownload\(brand\)/);
+  assert.match(cards, /brandDownloadCardTime/);
   assert.match(cards, /<strong>\$\{text\(brand\.name\)\}<\/strong>[\s\S]*?\$\{downloadComplete/);
   assert.match(style, /\.brand-card\.download-complete\{grid-template-columns:30px minmax\(0,1fr\)\}/);
   assert.doesNotMatch(completed, /brandIntegrity\?\.ok === false/);
-  assert.match(completed, /downloadedBrandFiles\.some/);
+  assert.match(completed, /downloadedBrandFiles[\s\S]*\.filter/);
   assert.match(completed, /rendererBrandsMatch/);
 });
 
