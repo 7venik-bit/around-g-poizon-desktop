@@ -144,6 +144,12 @@ export function exactArticleIdentityMatch(value, articleNumber = "") {
   return new RegExp(`(?:^|[^A-Z0-9])${pattern}(?=$|[^A-Z0-9])`, "i").test(String(value || ""));
 }
 
+function articleIdentityTokens(value = "") {
+  return [...new Set((String(value || "").toUpperCase().match(/[A-Z0-9]+(?:[-_][A-Z0-9]+)*/g) || [])
+    .map((token) => token.replace(/[^A-Z0-9]/g, ""))
+    .filter((token) => token.length >= 6 && token.length <= 28 && /[A-Z]/.test(token) && /\d/.test(token)))];
+}
+
 export function countLinkedSearchProducts(html, articleNumber = "") {
   const source = String(html || "");
   const ids = new Set();
@@ -214,6 +220,10 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           ? `${titleText} ${cardBodyText} ${String(card?.markup || "")} ${productUrl}`.trim()
           : titleText || cardBodyText;
         const rawCardText = `${titleText} ${cardBodyText}`.trim();
+        const expectedCompact = articleCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
+        const detectedArticleNumbers = articleIdentityTokens(rawCardText);
+        const exactDetectedArticle = detectedArticleNumbers.find((code) => code === expectedCompact) || "";
+        const conflictingArticle = detectedArticleNumbers.some((code) => code !== expectedCompact);
         let articleMatched = exactArticleIdentityMatch(identityText, articleCode);
         const variantStyle = sanitizeDomesticQuery(articleNumber).toUpperCase().match(/^([A-Z0-9]{5,})[-_]([A-Z0-9]{1,6})$/);
         const numericOnlyVariant = variantStyle && /^\d+$/.test(variantStyle[1]) && /^\d+$/.test(variantStyle[2]);
@@ -232,10 +242,11 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // product title.  A single result may still be accepted when its brand
         // and descriptive title both match the POIZON row.  This deliberately
         // excludes generic/multiple-result pages, preserving exact-code checks.
-        if (!articleMatched && /^네이버\s/.test(String(store || "")) && cards.length === 1
+        if (!conflictingArticle && !articleMatched && /^네이버\s/.test(String(store || "")) && cards.length === 1
           && brandMatched && titleIdentityMatch(rawCardText, expectedTitle)) {
           articleMatched = true;
         }
+        if (conflictingArticle) articleMatched = false;
         if (!articleMatched) continue;
         if (requiresBrandMatch) {
           if (!brandMatched) continue;
@@ -248,13 +259,15 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
             url: productUrl,
             title: String(card?.title || card?.text || `${store} 검색 결과`).trim().slice(0, 240),
             articleNumber,
+            detectedArticleNumber: exactDetectedArticle || detectedArticleNumbers[0] || "",
+            articleConflict: conflictingArticle,
             imageUrl: String(card?.imageUrl || ""),
             price: safeNumber(card?.price),
             originalPrice: safeNumber(card?.originalPrice),
             inStock: true,
             sizes: [],
-            confidence: 90,
-            signals: { code: "일치", title: "판매처 결과", image: card?.imageUrl ? "확인" : "없음" },
+            confidence: exactDetectedArticle ? 95 : 75,
+            signals: { code: exactDetectedArticle ? "일치" : "정보 없음", title: "판매처 결과", image: card?.imageUrl ? "확인" : "없음" },
           });
         }
       }
@@ -480,7 +493,8 @@ export async function queryDomesticProducts({
       store: officialStoreLabel,
       linkOnly: true,
       officialBrand: true,
-      renderCount: officialStatus === OFFICIAL_DOMAIN_STATUS.VERIFIED,
+      renderCount: [OFFICIAL_DOMAIN_STATUS.VERIFIED, OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED].includes(officialStatus)
+        && Boolean(String(officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl || "")),
       officialStatus,
       homepageUrl: String(officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl || ""),
     },
