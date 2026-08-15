@@ -1773,8 +1773,22 @@ $("#brand-export-selected")?.addEventListener("click", async () => {
   }
   const selectedBrands = selectedBrandsForExport();
   if (!selectedBrands.length) return;
-  acceptBrandWorkEvents = true;
+  // Existing Excel files remain in the received-file history, but every
+  // explicit search click must create a fresh POIZON job number and download.
+  // Reset only the live run state before building the new queue.
+  acceptBrandWorkEvents = false;
+  const freshSession = await window.aroundG.beginSellerBrandSearchSession?.();
+  if (freshSession && freshSession.ok === false) {
+    $("#brand-status").className = "status error";
+    $("#brand-status").textContent = freshSession.message || "새 브랜드 검색 세션을 시작하지 못했습니다.";
+    return;
+  }
+  brandWorkHistoryGeneration += 1;
+  brandExportJobs.clear();
   brandMainAllComplete = false;
+  detectedBrandImportQueue.length = 0;
+  queuedBrandImportPaths.clear();
+  acceptBrandWorkEvents = true;
   const generation = brandWorkHistoryGeneration;
   brandExportFailureCount = 0;
   brandBatchTotal = selectedBrands.length;
