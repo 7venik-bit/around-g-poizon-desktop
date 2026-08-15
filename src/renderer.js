@@ -359,10 +359,22 @@ function brandImportPathKey(value = "") {
 }
 
 function hasCompletedBrandDownload(brand = {}) {
+  return Boolean(latestCompletedBrandDownload(brand));
+}
+
+function latestCompletedBrandDownload(brand = {}) {
   const names = [brand.name, brand.ko].filter(Boolean);
-  return downloadedBrandFiles.some((file) => names.some((name) =>
-    rendererBrandsMatch(name, file.brandName || file.brand)
-  ));
+  return downloadedBrandFiles
+    .filter((file) => names.some((name) => rendererBrandsMatch(name, file.brandName || file.brand)))
+    .sort((left, right) => Number(right.time || right.mtimeMs || right.lastDownloadedAt || 0)
+      - Number(left.time || left.mtimeMs || left.lastDownloadedAt || 0))[0] || null;
+}
+
+function brandDownloadCardTime(value = 0) {
+  const date = new Date(Number(value || 0));
+  if (!Number.isFinite(date.getTime()) || date.getTime() <= 0) return "날짜 확인 불가";
+  const two = (number) => String(number).padStart(2, "0");
+  return `${date.getFullYear()}.${two(date.getMonth() + 1)}.${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}`;
 }
 
 function renderDownloadedBrandFiles() {
@@ -1216,7 +1228,9 @@ function renderBrandCards(filter = "") {
   // most brands behind the former 200/300-card display cap.
   const brands = matchedBrands;
   $("#brand-cards").innerHTML = brands.map((brand) => {
-    const downloadComplete = hasCompletedBrandDownload(brand);
+    const latestDownload = latestCompletedBrandDownload(brand);
+    const downloadComplete = Boolean(latestDownload);
+    const latestDownloadTime = brandDownloadCardTime(latestDownload?.time || latestDownload?.mtimeMs || latestDownload?.lastDownloadedAt);
     const selected = selectedBrandIds.has(Number(brand.id));
     const officialLinked = ["verified", "search_unsupported"].includes(String(brand.officialDomainStatus || ""));
     const officialMissing = String(brand.officialDomainStatus || "") === "no_official_store";
@@ -1227,7 +1241,7 @@ function renderBrandCards(filter = "") {
     <i class="brand-selection-check" aria-hidden="true">✓</i>
     ${officialLinked ? '<em class="brand-official-badge" aria-label="공식몰 연동 완료">공식</em>' : ""}
     ${officialMissing ? '<em class="brand-official-badge missing" aria-label="국내 공식몰 없음">공식몰 없음</em>' : ""}
-    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${brand.salesPriority ? `<small class="brand-sales-rank">판매 상위 ${Number(brand.salesRank).toLocaleString("ko-KR")}위</small>` : ""}${officialDomain ? `<small class="brand-official-domain">${text(officialDomain)}</small>` : ""}${downloadComplete ? '<em class="brand-download-complete">다운완료</em>' : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>
+    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${brand.salesPriority ? `<small class="brand-sales-rank">판매 상위 ${Number(brand.salesRank).toLocaleString("ko-KR")}위</small>` : ""}${officialDomain ? `<small class="brand-official-domain">${text(officialDomain)}</small>` : ""}${downloadComplete ? `<em class="brand-download-complete">다운완료</em><small class="brand-download-date">${text(latestDownloadTime)}</small>` : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>
   </button>`;
   }).join("");
   document.querySelectorAll(".brand-logo img").forEach((image) => {
