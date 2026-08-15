@@ -9,6 +9,39 @@ import {
 const MAX_QUERY_LENGTH = 120;
 const MAX_PRODUCTS_PER_STORE = 8;
 
+export const DOMESTIC_RETAILER_GROUPS = {
+  "온라인 편집샵": [
+    "OK몰", "카시나", "S.I.VILLAGE", "ABC마트", "그랜드스테이지", "온더스팟", "폴더",
+    "슈마커", "웍스아웃", "튠", "플랫폼샵", "훕시티", "29CM", "무신사", "아이엠샵",
+    "W컨셉", "EQL", "하이츠스토어",
+  ],
+  "병행수입 정품업체": [
+    "인퓨전프로젝트", "브릭맨션", "하하몰", "다움스포츠", "한아이엔티", "스포츠커넥션",
+    "풋팝", "럭스보이", "대림코퍼레이션", "업셋", "가방팝", "베이지2", "슈텐커머스",
+    "리앤한", "꼬르소밀라노", "트렌드메카", "밀라니즈", "오보화", "넥스트젠팩", "비블루",
+    "소호몰", "아르떼모아", "디몬트", "바이스트", "라벨루쏘", "구템즈", "비비아노",
+    "까르피", "FABSTYLE",
+  ],
+};
+
+const RETAILER_ALIASES = [
+  ["OK몰", /okmall|오케이몰|ok몰/i], ["카시나", /kasina|카시나/i], ["S.I.VILLAGE", /s\.?i\.?\s*village|에스아이빌리지/i],
+  ["ABC마트", /abc\s*mart|abc마트/i], ["그랜드스테이지", /grand\s*stage|그랜드스테이지/i], ["온더스팟", /on\s*the\s*spot|온더스팟/i],
+  ["폴더", /folderstyle|폴더스타일|\b폴더\b/i], ["슈마커", /shoemarker|슈마커/i], ["웍스아웃", /worksout|웍스아웃/i],
+  ["튠", /\btune\b|\b튠\b/i], ["플랫폼샵", /platformshop|플랫폼샵/i], ["훕시티", /hoopcity|훕시티/i],
+  ["29CM", /29cm/i], ["무신사", /musinsa|무신사/i], ["아이엠샵", /iamshop|아이엠샵/i],
+  ["W컨셉", /w\.?concept|w컨셉/i], ["EQL", /\beql\b/i], ["하이츠스토어", /heights[- ]?store|하이츠스토어/i],
+  ...DOMESTIC_RETAILER_GROUPS["병행수입 정품업체"].map((name) => [name, new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")]),
+];
+
+function detectedRetailer(value = "") {
+  const matched = RETAILER_ALIASES.find(([, pattern]) => pattern.test(String(value || "")));
+  if (!matched) return "";
+  const [name] = matched;
+  const group = DOMESTIC_RETAILER_GROUPS["온라인 편집샵"].includes(name) ? "온라인 편집샵" : "병행수입 정품업체";
+  return `${group} · ${name}`;
+}
+
 export function sanitizeDomesticQuery(value) {
   return String(value || "")
     .replace(/주간\s*대비(?:\s*[↑↓]?\s*\d+(?:\.\d+)?%)?/gi, " ")
@@ -86,6 +119,12 @@ export function domesticChannelUrl(channel, brand, query) {
   }
   if (channel === "ssg-outlet") {
     return `https://www.ssg.com/search.ssg?target=all&siteNo=7008&query=${encodeURIComponent(terms)}`;
+  }
+  if (channel === "ssg-general") {
+    return `https://www.ssg.com/search.ssg?target=all&query=${encodeURIComponent(terms)}`;
+  }
+  if (channel === "lotte-general") {
+    return `https://www.lotteon.com/search/search/search.ecn?render=search&platform=pc&q=${encodeURIComponent(terms)}`;
   }
   if (channel === "lotte-department" || channel === "lotte-outlet") {
     const area = channel === "lotte-department" ? "백화점" : "아울렛";
@@ -201,15 +240,15 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         const scoped = pageText.match(new RegExp(`${escaped}\\s*([\\d,]+)\\s*개`, "i"));
         // Channel totals are useful only as an authoritative zero. Positive
         // tab totals can include recommendations or the unfiltered channel.
-        if (scoped && Number(scoped[1].replace(/,/g, "")) === 0) return { count: 0, products: [] };
+        if (scoped && Number(scoped[1].replace(/,/g, "")) === 0) return { count: 0, products: [], absenceConfirmed: true };
       }
       if (/검색된\s*상품이\s*없습니다|검색\s*결과가\s*없습니다|상품이\s*없습니다|검색결과\s*없음/i.test(pageText)) {
-        return { count: 0, products: [] };
+        return { count: 0, products: [], absenceConfirmed: true };
       }
-      if (!articleCode) return { count: 0, products: [] };
+      if (!articleCode) return { count: 0, products: [], absenceConfirmed: false };
       const seed = verifiedOfficialBrand(brand);
       const brandKeys = [brand, ...(seed?.aliases || [])].map(normalizeOfficialBrand).filter(Boolean);
-      const requiresBrandMatch = /^(?:네이버|SSG|롯데온)/.test(String(store || "")) && brandKeys.length > 0;
+      const requiresBrandMatch = /^(?:네이버|SSG|롯데온|병행수입·편집샵)/.test(String(store || "")) && brandKeys.length > 0;
       const matchingProducts = new Map();
       for (const card of cards) {
         const productUrl = String(card?.productUrl || "");
@@ -258,6 +297,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         if (!matchingProducts.has(productKey)) {
           matchingProducts.set(productKey, {
             store,
+            retailerName: store === "병행수입·편집샵" ? detectedRetailer(rawCardText) : "",
             id: productKey,
             url: productUrl,
             title: String(card?.title || card?.text || `${store} 검색 결과`).trim().slice(0, 240),
@@ -275,7 +315,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           });
         }
       }
-      return { count: matchingProducts.size, products: [...matchingProducts.values()] };
+      return { count: matchingProducts.size, products: [...matchingProducts.values()], absenceConfirmed: false };
     } catch {
       return null;
     }
@@ -506,11 +546,13 @@ export async function queryDomesticProducts({
     { store: "네이버 백화점", linkOnly: true, fashionTown: "department", renderCount: true },
     { store: "네이버 아울렛", linkOnly: true, fashionTown: "outlet", renderCount: true },
     { store: "무신사", parser: parseMusinsaSearch, renderCount: true },
+    { store: "SSG", linkOnly: true, domesticChannel: "ssg-general", renderCount: true },
     { store: "SSG 백화점", linkOnly: true, domesticChannel: "ssg-department", renderCount: true },
     { store: "SSG 아울렛", linkOnly: true, domesticChannel: "ssg-outlet", renderCount: true },
+    { store: "롯데온", linkOnly: true, domesticChannel: "lotte-general", renderCount: true },
     { store: "롯데온 백화점", linkOnly: true, domesticChannel: "lotte-department", renderCount: true },
     { store: "롯데온 아울렛", linkOnly: true, domesticChannel: "lotte-outlet", renderCount: true },
-    { store: "SSG", parser: parseSsgSearch },
+    { store: "병행수입·편집샵", linkOnly: true, retailerDiscovery: true, renderCount: true },
     { store: "코오롱몰", parser: (html) => parseKolonSearch(html, articleNumber) },
   ];
   // Keep the source order observable and deterministic. Each brand/product is
@@ -523,6 +565,8 @@ export async function queryDomesticProducts({
       ? officialBrandSearchUrl(brand || title || normalizedQuery, preferredQuery)
       : source.fashionTown
         ? naverFashionTownUrl(source.fashionTown, brand || title, preferredQuery)
+        : source.retailerDiscovery
+          ? naverSearch([brand, preferredQuery].filter(Boolean).join(" "))
         : source.domesticChannel
           ? domesticChannelUrl(source.domesticChannel, brand || title, preferredQuery)
         : DOMESTIC_SEARCH_LINKS[source.store](preferredQuery);

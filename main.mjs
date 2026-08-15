@@ -1015,6 +1015,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     }
     if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
     const count = result?.count;
+    const absenceConfirmed = result?.absenceConfirmed === true;
     const isOfficialStore = source.store === "브랜드 공식몰";
     const verifiedOfficialProductUrl = isOfficialStore
       ? String((result?.products || []).find((product) => /^https?:\/\//i.test(String(product?.url || "")))?.url || "")
@@ -1022,14 +1023,16 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     return {
       ...source,
       count: Number.isFinite(count) ? count : 0,
-      countVerified: Number.isFinite(count),
+      countVerified: Number.isFinite(count) && (Number(count) > 0 || absenceConfirmed),
       verificationFailed: !Number.isFinite(count),
+      verificationPending: Number.isFinite(count) && Number(count) === 0 && !absenceConfirmed,
+      absenceConfirmed,
       // The official search URL and a verified product-detail URL are
       // intentionally separate. A search page must never be presented as a
       // purchase link merely because the brand has a supported search form.
       officialSearchUrl: isOfficialStore ? String(source.officialProductUrl || "") : "",
       officialProductUrl: verifiedOfficialProductUrl,
-      officialProductMissing: isOfficialStore && Number.isFinite(count) && Number(count) === 0,
+      officialProductMissing: isOfficialStore && absenceConfirmed,
     };
   }));
   const products = [...(data.products || []), ...discoveredProducts].filter((product, index, all) =>

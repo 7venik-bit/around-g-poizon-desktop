@@ -349,30 +349,32 @@ test("one domestic store failure does not stop the others", async () => {
     props: { pageProps: { dehydratedState: { queries: [] } } },
   })}</script>`;
   const fetchImpl = async (url) => {
-    if (String(url).includes("ssg.com")) return { ok: false, status: 403, text: async () => "" };
+    if (String(url).includes("kolonmall.com")) return { ok: false, status: 403, text: async () => "" };
     return { ok: true, status: 200, text: async () => emptyNextData };
   };
   const result = await queryDomesticProducts({ query: "DD1391-100", brand: "나이키", fetchImpl });
-  assert.equal(result.sources.length, 11);
+  assert.equal(result.sources.length, 13);
   assert.deepEqual(result.sources.map((source) => source.store), [
     "브랜드 공식몰",
     "네이버 공식 브랜드스토어",
     "네이버 백화점",
     "네이버 아울렛",
     "무신사",
+    "SSG",
     "SSG 백화점",
     "SSG 아울렛",
+    "롯데온",
     "롯데온 백화점",
     "롯데온 아울렛",
-    "SSG",
+    "병행수입·편집샵",
     "코오롱몰",
   ]);
-  assert.deepEqual(result.sources.map((source) => source.priority), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-  assert.equal(result.sources.find((source) => source.store === "SSG").ok, false);
-  assert.equal(result.sources.filter((source) => source.ok).length, 10);
+  assert.deepEqual(result.sources.map((source) => source.priority), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  assert.equal(result.sources.find((source) => source.store === "코오롱몰").ok, false);
+  assert.equal(result.sources.filter((source) => source.ok).length, 12);
   assert.deepEqual(
     result.sources.filter((source) => source.renderCount).map((source) => source.store),
-    ["브랜드 공식몰", "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛", "무신사", "SSG 백화점", "SSG 아울렛", "롯데온 백화점", "롯데온 아울렛"]
+    ["브랜드 공식몰", "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛", "무신사", "SSG", "SSG 백화점", "SSG 아울렛", "롯데온", "롯데온 백화점", "롯데온 아울렛", "병행수입·편집샵"]
   );
 });
 
