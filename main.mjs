@@ -699,6 +699,61 @@ async function addMatchConfidence(data, input) {
   return { ...data, products, sources };
 }
 
+async function officialDetailImage(searchWindow, productUrl, officialPageUrl = "") {
+  try {
+    const target = new URL(String(productUrl || ""));
+    const official = new URL(String(officialPageUrl || productUrl || ""));
+    const sameOfficialHost = target.hostname === official.hostname
+      || target.hostname.endsWith(`.${official.hostname}`)
+      || official.hostname.endsWith(`.${target.hostname}`);
+    if (target.protocol !== "https:" || !sameOfficialHost) return "";
+    await Promise.race([
+      searchWindow.loadURL(target.href),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("OFFICIAL_DETAIL_TIMEOUT")), 20_000)),
+    ]);
+    await wait(1_200);
+    return String(await searchWindow.webContents.executeJavaScript(`(() => {
+      const absolute = (value) => {
+        try { return new URL(String(value || "").trim(), location.href).href; } catch { return ""; }
+      };
+      const usable = (value) => {
+        const url = absolute(value);
+        return /^https:\\/\\//i.test(url) && !/logo|icon|sprite|badge|banner|placeholder|loading|no[-_]?image|\\.svg(?:$|\\?)/i.test(url) ? url : "";
+      };
+      const productJsonImages = [...document.querySelectorAll('script[type="application/ld+json"]')].flatMap((node) => {
+        try {
+          const parsed = JSON.parse(node.textContent || "null");
+          const values = Array.isArray(parsed) ? parsed : [parsed];
+          return values.flatMap((value) => {
+            const entries = Array.isArray(value?.['@graph']) ? value['@graph'] : [value];
+            return entries.filter((entry) => String(entry?.['@type'] || "").toLowerCase().includes("product"))
+              .flatMap((entry) => Array.isArray(entry?.image) ? entry.image : [entry?.image]);
+          });
+        } catch { return []; }
+      }).map((value) => typeof value === "string" ? value : value?.url || value?.contentUrl).map(usable).filter(Boolean);
+      if (productJsonImages[0]) return productJsonImages[0];
+      const metaImage = usable(document.querySelector('meta[property="og:image"]')?.content)
+        || usable(document.querySelector('meta[name="twitter:image"]')?.content);
+      if (metaImage) return metaImage;
+      const candidates = [...document.querySelectorAll('main img, [itemprop="image"], [class*="product" i] img, [class*="goods" i] img')]
+        .map((image) => {
+          const srcset = String(image.srcset || image.getAttribute("data-srcset") || "").split(",").pop()?.trim().split(/\\s+/)[0];
+          const url = usable(image.currentSrc || image.getAttribute("data-original") || image.getAttribute("data-src") || srcset || image.src);
+          const rect = image.getBoundingClientRect();
+          const label = [image.alt, image.className, image.id, image.closest('a')?.href].join(" ");
+          const score = (rect.width >= 180 && rect.height >= 180 ? 80 : 0)
+            + (image.naturalWidth >= 500 || image.naturalHeight >= 500 ? 60 : 0)
+            + (/main|대표|detail|product|goods/i.test(label) ? 30 : 0)
+            - (/logo|icon|swatch|color|thumb|banner/i.test(label) ? 100 : 0);
+          return { url, score };
+        }).filter((candidate) => candidate.url).sort((left, right) => right.score - left.score);
+      return candidates[0]?.url || "";
+    })()`, true));
+  } catch {
+    return "";
+  }
+}
+
 async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "") {
   const interactiveOfficialSearch = source.store === "브랜드 공식몰"
     && !String(source.officialProductUrl || "")
@@ -837,7 +892,21 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const parsedContent = JSON.parse(content);
       if (parsedContent?.pageBlocked && !parsedContent?.productCards?.length) return null;
     } catch {}
-    return analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
+    const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
+    if (source.store !== "브랜드 공식몰" || !Array.isArray(analyzed?.products)) return analyzed;
+    const officialPageUrl = String(source.homepageUrl || source.officialProductUrl || source.searchUrl || "");
+    const products = [];
+    for (const product of analyzed.products.slice(0, 12)) {
+      const detailImageUrl = await officialDetailImage(searchWindow, product.url, officialPageUrl);
+      products.push({
+        ...product,
+        // Never replace a failed detail-page lookup with an image borrowed
+        // from a neighbouring search card.
+        imageUrl: detailImageUrl,
+        imageVerifiedFromDetail: Boolean(detailImageUrl),
+      });
+    }
+    return { ...analyzed, count: products.length, products };
   } catch {
     return null;
   } finally {

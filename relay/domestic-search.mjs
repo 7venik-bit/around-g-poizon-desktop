@@ -251,8 +251,11 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         if (requiresBrandMatch) {
           if (!brandMatched) continue;
         }
-        const productKey = String(productUrl || card?.text || "");
-        if (productKey && !matchingProducts.has(productKey)) {
+        // A text-only search suggestion is not a purchasable product.  Keep
+        // official results only when the card owns a real product-detail URL.
+        if (!/^https?:\/\//i.test(productUrl)) continue;
+        const productKey = productUrl;
+        if (!matchingProducts.has(productKey)) {
           matchingProducts.set(productKey, {
             store,
             id: productKey,

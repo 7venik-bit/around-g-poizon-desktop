@@ -418,6 +418,24 @@ test("official-store search and verified product-detail URLs remain distinct", a
   assert.equal(official.officialProductUrl, official.officialSearchUrl);
 });
 
+test("official-store text matches without a product-detail URL are discarded", () => {
+  const content = JSON.stringify({
+    pageText: "데상트 SR123UTS11 검색 결과",
+    productCards: [
+      { productUrl: "", text: "#SR123UTS11", title: "#SR123UTS11", imageUrl: "" },
+      {
+        productUrl: "https://dk-on.com/DESCENTE/goods/SR123UTS11",
+        text: "SR123UTS11 데상트 반팔 티셔츠",
+        title: "데상트 반팔 티셔츠",
+        imageUrl: "https://cdn.example/search-card.jpg",
+      },
+    ],
+  });
+  const result = analyzeRenderedChannelProducts(content, "브랜드 공식몰", "SR123UTS11", "데상트", "데상트 반팔 티셔츠");
+  assert.equal(result.count, 1);
+  assert.equal(result.products[0].url, "https://dk-on.com/DESCENTE/goods/SR123UTS11");
+});
+
 test("a transient Musinsa server failure is retried once", async () => {
   const dataWithOneProduct = `<script id="__NEXT_DATA__">${JSON.stringify({
     props: { pageProps: { dehydratedState: { queries: [
