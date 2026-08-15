@@ -6398,6 +6398,34 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     }
   });
   ipcMain.handle("brand-export:list-files", () => listBrandExportFiles());
+  ipcMain.handle("brand-export:trash-files", async (_event, paths = []) => {
+    const requested = [...new Set((Array.isArray(paths) ? paths : []).map((value) => String(value || "").trim()).filter(Boolean))].slice(0, 500);
+    const root = resolve(currentBrandExportFolder());
+    let deleted = 0;
+    const failed = [];
+    for (const requestedPath of requested) {
+      const target = resolve(requestedPath);
+      const nested = relative(root, target);
+      if (!nested || nested.startsWith("..") || resolve(root, nested) !== target || !/\.xlsx$/i.test(target)) {
+        failed.push({ path: requestedPath, message: "허용된 Excel 저장 폴더 밖의 파일입니다." });
+        continue;
+      }
+      try {
+        const info = await stat(target);
+        if (!info.isFile()) throw new Error("Excel 파일이 아닙니다.");
+        await shell.trashItem(target);
+        deleted += 1;
+      } catch (error) {
+        failed.push({ path: requestedPath, message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return {
+      ok: failed.length === 0,
+      deleted,
+      failed,
+      message: failed.length ? `${deleted}개 삭제 · ${failed.length}개 실패` : "",
+    };
+  });
   ipcMain.handle("brand-export:clear-session", async () => {
     brandWorkSessionGeneration += 1;
     brandExportJobs.clear();

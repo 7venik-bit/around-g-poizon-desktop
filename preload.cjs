@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   selectBrandExportFolder: () => ipcRenderer.invoke("brand-export:select-folder"),
   getBrandExportFolder: () => ipcRenderer.invoke("brand-export:get-folder"),
   listBrandExportFiles: () => ipcRenderer.invoke("brand-export:list-files"),
+  trashBrandExportFiles: (paths) => ipcRenderer.invoke("brand-export:trash-files", paths),
   clearBrandWorkHistory: () => ipcRenderer.invoke("brand-export:clear-session"),
   onBrandWorkHistoryCleared: (callback) => {
     const handler = () => callback();
