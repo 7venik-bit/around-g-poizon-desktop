@@ -2819,6 +2819,17 @@ function renderBackupStatus(payload = {}) {
     : payload.state === "syncing" ? "OneDrive 백업 중"
       : payload.state === "disconnected" ? "OneDrive 로그인 필요" : "OneDrive 확인 필요";
   $("#backup-state-message").textContent = payload.message || "백업 상태를 확인합니다";
+  const lamps = $("#onedrive-lamps");
+  if (lamps) {
+    lamps.classList.remove("checking", "connected", "syncing", "warning", "disconnected");
+    lamps.classList.add(payload.state || "warning");
+    const lampLabel = payload.state === "connected"
+      ? "OneDrive 정상 연결"
+      : payload.state === "syncing" ? "OneDrive 백업 진행 중"
+        : payload.state === "disconnected" ? "OneDrive 연결 끊김" : "OneDrive 연결 확인 필요";
+    lamps.setAttribute("aria-label", lampLabel);
+    lamps.title = lampLabel;
+  }
 }
 window.aroundG.onBackupStatus(renderBackupStatus);
 $("#backup-state")?.addEventListener("click", async () => renderBackupStatus(await window.aroundG.runBackup()));
