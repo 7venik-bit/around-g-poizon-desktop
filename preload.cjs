@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   openSellerCenter: () => ipcRenderer.invoke("seller:open"),
   openSellerProductSearch: () => ipcRenderer.invoke("seller:open-product-search"),
   automateSellerBrandExport: (input) => ipcRenderer.invoke("seller:brand-export", input),
+  beginSellerBrandSearchSession: () => ipcRenderer.invoke("seller:begin-brand-search-session"),
   abortSellerBrandExportAttempt: () => ipcRenderer.invoke("seller:abort-brand-export-attempt"),
   stopSellerBrandWork: () => ipcRenderer.invoke("seller:stop-brand-work"),
   startSellerBrandExportMonitor: () => ipcRenderer.invoke("seller:start-brand-export-monitor"),
