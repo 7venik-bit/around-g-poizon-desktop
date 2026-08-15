@@ -422,6 +422,7 @@ body .local-state{
 body .local-state i{background:#29c484;box-shadow:0 0 0 4px #29c4841c}
 body .local-state strong{font-size:11px}
 body .local-state small{color:#7890b5;font-size:9px}
+body .local-state{cursor:pointer}body .local-state.warning,body .local-state.disconnected{border-color:#d97706;background:#3b2a20}body .local-state.warning i,body .local-state.disconnected i{background:#f59e0b;box-shadow:0 0 0 4px #f59e0b22}body .local-state.syncing i{animation:backup-pulse 1s ease-in-out infinite}@keyframes backup-pulse{50%{opacity:.35;transform:scale(.72)}}
 .shell{grid-column:2;min-width:0}
 body .shell>header{
   min-height:68px;

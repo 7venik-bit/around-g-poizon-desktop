@@ -2809,6 +2809,20 @@ window.aroundG.onUpdateStatus((payload) => {
   }
 });
 
+function renderBackupStatus(payload = {}) {
+  const panel = $("#backup-state");
+  if (!panel) return;
+  panel.classList.remove("connected", "syncing", "warning", "disconnected");
+  panel.classList.add(payload.state || "warning");
+  $("#backup-state-title").textContent = payload.state === "connected"
+    ? "OneDrive 백업 정상"
+    : payload.state === "syncing" ? "OneDrive 백업 중"
+      : payload.state === "disconnected" ? "OneDrive 로그인 필요" : "OneDrive 확인 필요";
+  $("#backup-state-message").textContent = payload.message || "백업 상태를 확인합니다";
+}
+window.aroundG.onBackupStatus(renderBackupStatus);
+$("#backup-state")?.addEventListener("click", async () => renderBackupStatus(await window.aroundG.runBackup()));
+
 $("#weekly-site-health-run")?.addEventListener("click", async () => {
   renderWeeklySiteHealth({ running: true, message: "모든 연동 서버 정기점검을 시작합니다." });
   const result = await window.aroundG.runWeeklySiteHealth();
@@ -2823,6 +2837,7 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   } catch {
     renderInstalledVersion("2.10.17", true);
   }
+  renderBackupStatus(await window.aroundG.getBackupStatus());
   renderWeeklySiteHealth(await window.aroundG.getWeeklySiteHealth());
   setupBrandLayout();
   // Do not restore a job number as live work. The main process will emit

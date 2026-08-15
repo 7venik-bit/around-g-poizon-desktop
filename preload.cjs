@@ -88,6 +88,13 @@ contextBridge.exposeInMainWorld("aroundG", {
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
   restartForUpdate: () => ipcRenderer.invoke("update:restart"),
+  getBackupStatus: () => ipcRenderer.invoke("backup:status"),
+  runBackup: () => ipcRenderer.invoke("backup:run"),
+  onBackupStatus: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on("backup:status", handler);
+    return () => ipcRenderer.removeListener("backup:status", handler);
+  },
   onUpdateStatus: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on("update:status", handler);

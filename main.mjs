@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, shell } from "electron";
 import { mkdirSync } from "node:fs";
-import { appendFile, copyFile, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { appendFile, copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { readSheet } from "read-excel-file/node";
@@ -93,6 +93,7 @@ let updateReady = false;
 let updateCheckTimer;
 let updateInstallTimer;
 let updateCheckInFlight = false;
+let oneDriveBackupStatus = { state: "checking", message: "OneDrive 연결을 확인하고 있습니다." };
 let brandExportPollTimer;
 let lastBrandExportSignature = "__BASELINE_EXISTING_FILES__";
 let pendingBrandExportName = "";
@@ -1433,6 +1434,116 @@ function oneDriveBrandExportFolder() {
 function oneDrivePopularExportFolder() {
   const root = oneDrivePoizonBackupRoot();
   return root ? join(root, "인기상품 원본") : "";
+}
+
+function oneDriveInstallFolder() {
+  const root = oneDriveRootFolder();
+  return root ? join(root, "Around G POIZON", "설치 파일") : "";
+}
+
+function oneDriveSettingsFolder() {
+  const root = oneDriveRootFolder();
+  return root ? join(root, "Around G POIZON", "설정 복구") : "";
+}
+
+function portableBackupPath() {
+  const folder = oneDriveSettingsFolder();
+  return folder ? join(folder, "Around-G-POIZON-복구.json") : "";
+}
+
+function publicPortableSnapshot() {
+  const snapshot = store.snapshot();
+  const settings = { ...(snapshot.settings || {}) };
+  for (const key of [
+    "appSecretEncrypted", "accessTokenEncrypted", "brandExportFolder",
+    "oneDrivePoizonBackupRoot", "brandExportJobCache", "brandExportFileValidationCache",
+  ]) delete settings[key];
+  return { ...snapshot, settings, collector: { status: "idle", lastPage: 0, lastFingerprint: "", repeatedPages: 0 } };
+}
+
+function setOneDriveBackupStatus(state, message, extra = {}) {
+  oneDriveBackupStatus = { state, message, folder: oneDriveRootFolder(), ...extra };
+  mainWindow?.webContents.send("backup:status", oneDriveBackupStatus);
+}
+
+async function writePortableOneDriveBackup() {
+  const filePath = portableBackupPath();
+  if (!filePath) throw new Error("ONEDRIVE_NOT_CONNECTED");
+  await mkdir(dirname(filePath), { recursive: true });
+  const temporary = `${filePath}.tmp`;
+  await writeFile(temporary, JSON.stringify(publicPortableSnapshot(), null, 2), "utf8");
+  await rename(temporary, filePath);
+  return filePath;
+}
+
+async function restorePortableOneDriveBackupIfFresh(hadLocalData) {
+  if (hadLocalData) return { restored: false };
+  const filePath = portableBackupPath();
+  if (!filePath) return { restored: false };
+  try {
+    const backup = JSON.parse(await readFile(filePath, "utf8"));
+    await store.restorePortableBackup(backup);
+    return { restored: true, filePath };
+  } catch (error) {
+    if (error?.code === "ENOENT") return { restored: false };
+    throw error;
+  }
+}
+
+async function removeOldOneDriveInstallers(folder, keepName) {
+  const entries = await readdir(folder, { withFileTypes: true });
+  let removed = 0;
+  for (const entry of entries) {
+    if (!entry.isFile() || entry.name === keepName || !/^Around-G-POIZON-Setup-.*\.exe$/i.test(entry.name)) continue;
+    await unlink(join(folder, entry.name));
+    removed += 1;
+  }
+  return removed;
+}
+
+async function backupCurrentInstallerToOneDrive() {
+  const folder = oneDriveInstallFolder();
+  if (!folder) throw new Error("ONEDRIVE_NOT_CONNECTED");
+  await mkdir(folder, { recursive: true });
+  const version = app.getVersion();
+  const fileName = `Around-G-POIZON-Setup-${version}.exe`;
+  const destination = join(folder, fileName);
+  const existing = await stat(destination).catch(() => null);
+  if (!existing?.size) {
+    const url = `https://github.com/7venik-bit/around-g-poizon-desktop/releases/download/v${version}/${fileName}`;
+    const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(10 * 60 * 1_000) });
+    if (!response.ok) throw new Error(`INSTALLER_DOWNLOAD_${response.status}`);
+    const temporary = `${destination}.download`;
+    await writeFile(temporary, Buffer.from(await response.arrayBuffer()));
+    await rename(temporary, destination);
+  }
+  const removed = await removeOldOneDriveInstallers(folder, fileName);
+  await writeFile(join(folder, "새 PC 설치 안내.txt"), [
+    "Around G POIZON 새 PC 설치 안내", "", `1. ${fileName} 파일을 실행합니다.`,
+    "2. 기존 PC와 같은 OneDrive 계정으로 로그인합니다.",
+    "3. 프로그램을 처음 실행하면 설정과 POIZON 자료를 자동 복구합니다.",
+    "4. POIZON 및 외부 사이트 로그인은 보안을 위해 새 PC에서 다시 진행합니다.",
+  ].join("\r\n"), "utf8");
+  return { destination, removed };
+}
+
+async function runOneDriveRecoveryBackup() {
+  if (!oneDriveRootFolder()) {
+    setOneDriveBackupStatus("disconnected", "OneDrive 로그인이 필요합니다. 백업이 중지되었습니다.");
+    return { ok: false, ...oneDriveBackupStatus };
+  }
+  try {
+    setOneDriveBackupStatus("syncing", "OneDrive에 최신 설치본과 설정을 백업하고 있습니다.");
+    const settingsPath = await writePortableOneDriveBackup();
+    const installer = app.isPackaged ? await backupCurrentInstallerToOneDrive() : { destination: "", removed: 0 };
+    setOneDriveBackupStatus("connected", "최신 설치본 1개와 설정이 안전하게 백업되었습니다.", {
+      settingsPath, installerPath: installer.destination, removedInstallers: installer.removed,
+    });
+    return { ok: true, ...oneDriveBackupStatus };
+  } catch (error) {
+    setOneDriveBackupStatus("warning", `OneDrive 백업 확인 필요: ${error instanceof Error ? error.message : String(error)}`);
+    return { ok: false, ...oneDriveBackupStatus };
+  }
 }
 
 function sameFolder(left = "", right = "") {
@@ -6027,12 +6138,15 @@ function scheduleWeeklySiteHealthCheck() {
 
 app.whenReady().then(async () => {
   app.setAppUserModelId("kr.aroundg.poizon");
-  store = new JsonStore(app.getPath("userData"));
+  const userDataFolder = app.getPath("userData");
+  const hadLocalData = Boolean(await stat(join(userDataFolder, "around-g-data.json")).catch(() => null));
+  store = new JsonStore(userDataFolder);
   await store.load();
   if (process.argv.includes("--migrate-only")) {
     app.quit();
     return;
   }
+  await restorePortableOneDriveBackupIfFresh(hadLocalData).catch(() => {});
   await initializeOneDrivePoizonBackup();
   ipcMain.handle("store:snapshot", () => store.snapshot());
   ipcMain.handle("store:upsert", (_event, collection, item) => store.upsert(collection, item));
@@ -6045,6 +6159,8 @@ app.whenReady().then(async () => {
     packaged: app.isPackaged,
     automaticUpdates: app.isPackaged,
   }));
+  ipcMain.handle("backup:status", () => oneDriveBackupStatus);
+  ipcMain.handle("backup:run", () => runOneDriveRecoveryBackup());
   ipcMain.handle("update:check", async () => {
     if (!app.isPackaged) return { ok: false, message: "개발 모드에서는 업데이트를 확인하지 않습니다." };
     return checkForUpdatesAutomatically();
@@ -6728,6 +6844,8 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
 
   configureUpdater();
   createWindow();
+  setTimeout(() => void runOneDriveRecoveryBackup(), 1_500);
+  setInterval(() => void runOneDriveRecoveryBackup(), 30 * 60 * 1_000).unref?.();
   startBrandExportFolderPolling();
   scheduleWeeklySiteHealthCheck();
   // v2.10.183 operator-requested one-time run: link every pending official
