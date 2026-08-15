@@ -656,12 +656,14 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
     result.totalSalesColumn < 0 ? "중국 총 판매량" : "",
     result.localTotalSalesColumn < 0 ? "현지 판매자 총 판매량" : "",
   ].filter(Boolean);
+  const diagnostics = result.filterDiagnostics || {};
+  const diagnosticText = result.filterApplied && !missingColumns.length
+    ? `전체 상품 ${Number(diagnostics.sourceProducts || 0).toLocaleString("ko-KR")}개 · 중국 조건 ${Number(diagnostics.chinaQualifiedProducts || 0).toLocaleString("ko-KR")}개 · 현지 조건 ${Number(diagnostics.localQualifiedProducts || 0).toLocaleString("ko-KR")}개 · 최종 AND ${Number(diagnostics.filteredProducts || 0).toLocaleString("ko-KR")}개 · 값 누락 중국 ${Number(diagnostics.missingChinaProducts || 0).toLocaleString("ko-KR")}개/현지 ${Number(diagnostics.missingLocalProducts || 0).toLocaleString("ko-KR")}개 · 적용 열 ${text(diagnostics.totalSalesHeader || "-")}(${Number(diagnostics.totalSalesColumnNumber || 0)}열), ${text(diagnostics.localTotalSalesHeader || "-")}(${Number(diagnostics.localTotalSalesColumnNumber || 0)}열)`
+    : "";
   $("#excel-filter-status").textContent = missingColumns.length
     ? `${missingColumns.join(" · ")} 열을 찾지 못해 해당 조건은 적용되지 않습니다.`
     : result.filterApplied
-      ? result.productView
-        ? `원본 ${filteredSourceRows.toLocaleString("ko-KR")}행 · 고유 상품 ${totalRows.toLocaleString("ko-KR")}개 · 중국·현지 총판매량 모두 30 이상(AND)`
-        : `전체 ${sourceTotalRows.toLocaleString("ko-KR")}행 중 ${totalRows.toLocaleString("ko-KR")}행 · 중국·현지 총판매량 모두 30 이상(AND)`
+      ? diagnosticText
       : `판매량 필터를 사용하지 않고 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행을 표시합니다.`;
   $("#excel-preview-selection").hidden = false;
   if (result.productView) {
