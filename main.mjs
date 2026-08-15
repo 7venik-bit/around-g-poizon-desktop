@@ -1501,6 +1501,7 @@ function sendUpdateStatus(status, message, extra = {}) {
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 const UPDATE_RETRY_INTERVAL_MS = 15 * 60 * 1_000;
 const UPDATE_INSTALL_RETRY_MS = 30 * 1_000;
+const SELLER_LOGIN_WAIT_MS = 10 * 60 * 1_000;
 const OFFICIAL_DOMAIN_AUDIT_PAGE_TIMEOUT_MS = 20_000;
 const OFFICIAL_DOMAIN_AUDIT_ANALYSIS_TIMEOUT_MS = 8_000;
 const OFFICIAL_DOMAIN_AUDIT_LOGO_TIMEOUT_MS = 10_000;
@@ -1594,7 +1595,9 @@ function publicConfig() {
     apiBaseUrl: settings.apiBaseUrl || "https://open.poizon.com",
     brandExportFolder: settings.brandExportFolder || "",
     hasAppSecret: Boolean(settings.appSecretEncrypted),
-    hasAccessToken: Boolean(settings.accessTokenEncrypted)
+    hasAccessToken: Boolean(settings.accessTokenEncrypted),
+    poizonLoginId: settings.poizonLoginId || "",
+    hasPoizonPassword: Boolean(settings.poizonPasswordEncrypted),
   };
 }
 
@@ -1654,7 +1657,7 @@ function publicPortableSnapshot() {
   const snapshot = store.snapshot();
   const settings = { ...(snapshot.settings || {}) };
   for (const key of [
-    "appSecretEncrypted", "accessTokenEncrypted", "brandExportFolder",
+    "appSecretEncrypted", "accessTokenEncrypted", "poizonLoginId", "poizonPasswordEncrypted", "brandExportFolder",
     "oneDrivePoizonBackupRoot", "brandExportJobCache", "brandExportFileValidationCache",
   ]) delete settings[key];
   return { ...snapshot, settings, collector: { status: "idle", lastPage: 0, lastFingerprint: "", repeatedPages: 0 } };
@@ -3387,6 +3390,91 @@ async function executeSellerFrameWithTimeout(frame, script, timeoutMs = 4_000, f
   ]).catch(() => fallback);
 }
 
+async function sellerPageRequiresLogin() {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return true;
+  const url = String(sellerWindow.webContents.getURL() || "");
+  if (/login|signin|passport|auth/i.test(url) || !url.startsWith("https://seller.poizon.com/")) return true;
+  const state = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => {
+    const text = String(document.body?.innerText || "").slice(0, 2500);
+    return {
+      password: Boolean(document.querySelector('input[type="password"]')),
+      loginText: /登录|登入|sign\\s*in|log\\s*in/i.test(text),
+      sellerText: /商品|品牌|销售|导出|POIZON|得物/i.test(text),
+    };
+  })()`, 4_000, { password: false, loginText: false, sellerText: false });
+  return Boolean(state?.password || (state?.loginText && !state?.sellerText));
+}
+
+async function submitStoredSellerCredentials() {
+  const settings = store.snapshot().settings || {};
+  const loginId = String(settings.poizonLoginId || "").trim();
+  const password = decrypted(settings.poizonPasswordEncrypted);
+  if (!loginId || !password || !sellerWindow || sellerWindow.isDestroyed()) return { ok: false, stored: false };
+  for (const frame of sellerWindowFrames()) {
+    const result = await executeSellerFrameWithTimeout(frame, `(() => {
+      const visible = (element) => element && element.getClientRects().length > 0 && !element.disabled;
+      const passwordInput = [...document.querySelectorAll('input[type="password"]')].find(visible);
+      const idInputs = [...document.querySelectorAll('input:not([type]), input[type="text"], input[type="email"], input[type="tel"]')].filter(visible);
+      const idInput = idInputs.find((element) => /user|account|email|phone|login|아이디|账号|帐号|手机号/i.test([
+        element.name, element.id, element.placeholder, element.autocomplete,
+      ].join(' '))) || idInputs[0];
+      if (!idInput || !passwordInput) return { ok: false, step: 'LOGIN_INPUTS_NOT_FOUND' };
+      const setValue = (element, value) => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        setter ? setter.call(element, value) : (element.value = value);
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      setValue(idInput, ${JSON.stringify(loginId)});
+      setValue(passwordInput, ${JSON.stringify(password)});
+      const buttons = [...document.querySelectorAll('button, input[type="submit"], [role="button"]')].filter(visible);
+      const submit = buttons.find((element) => /登录|登入|sign\\s*in|log\\s*in/i.test(String(element.innerText || element.value || element.getAttribute('aria-label') || '')))
+        || buttons.find((element) => element.type === 'submit');
+      if (!submit) return { ok: false, step: 'LOGIN_BUTTON_NOT_FOUND' };
+      submit.click();
+      return { ok: true, step: 'STORED_CREDENTIALS_SUBMITTED' };
+    })()`, 5_000, { ok: false, step: "LOGIN_FRAME_TIMEOUT" });
+    if (result?.ok) return { ...result, stored: true };
+  }
+  return { ok: false, stored: true };
+}
+
+async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
+  if (!await sellerPageRequiresLogin()) return { ok: true, reused: true };
+  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, code: "SELLER_WINDOW_CLOSED" };
+  if (sellerWindow.isMinimized()) sellerWindow.restore();
+  sellerWindow.show();
+  sellerWindow.focus();
+  const automatic = await submitStoredSellerCredentials();
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "seller-login-waiting",
+    brandName,
+    jobState: automatic.ok ? "자동 로그인 중 · 완료 후 검색 재개" : "로그인 확인 대기 · 완료 후 검색 재개",
+    message: automatic.ok
+      ? `${brandName} · 암호화 저장된 계정으로 POIZON 자동 로그인을 진행합니다.`
+      : `${brandName} · POIZON 로그인이 필요합니다. 로그인 후 브랜드 검색이 자동으로 이어집니다.`,
+  });
+  const deadline = Date.now() + SELLER_LOGIN_WAIT_MS;
+  while (Date.now() < deadline) {
+    await wait(1_000);
+    if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, code: "SELLER_WINDOW_CLOSED" };
+    if (await sellerPageRequiresLogin()) continue;
+    if (!String(sellerWindow.webContents.getURL() || "").includes("/main/goods/search")) {
+      await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => {});
+      await wait(2_000);
+      if (await sellerPageRequiresLogin()) continue;
+    }
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "seller-login-restored",
+      brandName,
+      jobState: "로그인 완료 · 브랜드 검색 자동 재개",
+      message: `${brandName} · POIZON 로그인 완료 후 브랜드 검색을 자동으로 계속합니다.`,
+    });
+    return { ok: true, reused: false };
+  }
+  return { ok: false, code: "SELLER_LOGIN_TIMEOUT" };
+}
+
 function currentSellerProductFrame() {
   const frames = sellerWindowFrames();
   return frames.find((frame) => frame.routingId === sellerProductFrameRoutingId)
@@ -4056,6 +4144,18 @@ async function automateSellerBrandExport(input = {}) {
     };
   }
   await new Promise((resolve) => setTimeout(resolve, 3500));
+  const login = await ensureSellerLoginBeforeBrandSearch(brandName);
+  if (!login.ok) {
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    return {
+      ok: false,
+      code: login.code || "SELLER_LOGIN_REQUIRED",
+      message: login.code === "SELLER_LOGIN_TIMEOUT"
+        ? `${brandName} · 10분 동안 로그인이 확인되지 않아 작업을 중단했습니다.`
+        : `${brandName} · POIZON 로그인 창이 닫혀 작업을 중단했습니다.`,
+    };
+  }
   // Keep the same persistent Seller Center session and automation path used by
   // the popular-list collector, but leave the native window minimized while
   // brand search, export registration, and download-center monitoring run.
@@ -6397,10 +6497,12 @@ app.whenReady().then(async () => {
   ipcMain.handle("config:save", async (_event, config) => {
     const next = {
       appKey: String(config.appKey || "").trim(),
-      apiBaseUrl: String(config.apiBaseUrl || "https://open.poizon.com").trim()
+      apiBaseUrl: String(config.apiBaseUrl || "https://open.poizon.com").trim(),
+      poizonLoginId: String(config.poizonLoginId || "").trim(),
     };
     if (config.appSecret) next.appSecretEncrypted = encrypted(config.appSecret);
     if (config.accessToken) next.accessTokenEncrypted = encrypted(config.accessToken);
+    if (config.poizonPassword) next.poizonPasswordEncrypted = encrypted(config.poizonPassword);
     await store.setSettings(next);
     return publicConfig();
   });
