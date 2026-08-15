@@ -100,6 +100,8 @@ test("brand button shows the linked domain and a gray no-store badge", () => {
   assert.match(cards, /brand-official-badge missing/);
   assert.match(cards, />공식몰 없음</);
   assert.match(style, /\.brand-official-badge\.missing\{[^}]*background:#8b939e/);
+  assert.match(style, /\.brand-official-badge\{[^}]*white-space:nowrap/);
+  assert.match(style, /\.brand-official-badge\.missing\{[^}]*min-width:70px[^}]*height:22px[^}]*padding:0 9px/);
 });
 
 test("official-domain progress updates the matching brand card immediately", () => {
