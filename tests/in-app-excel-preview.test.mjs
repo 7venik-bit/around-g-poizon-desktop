@@ -130,7 +130,7 @@ test("official-store verification supports every registered URL family and embed
   assert.match(mainSource, /productDetail\\\\\.action/);
   assert.match(mainSource, /matchesExpected\(link\.href\)/);
   assert.match(mainSource, /matchesExpected\(link\.outerHTML\)/);
-  assert.match(mainSource, /productCards\.push\(\{ productUrl, text, markup, imageUrl, title, price, originalPrice \}\)/);
+  assert.match(mainSource, /productCards\.push\(\{ productUrl, text, markup, imageUrl, imageLinkedToProduct, title, price, originalPrice \}\)/);
   assert.match(mainSource, /line-through/);
   assert.match(mainSource, /!candidate\.struck/);
   assert.match(mainSource, /right\.score - left\.score \|\| left\.amount - right\.amount/);

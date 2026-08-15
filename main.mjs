@@ -699,7 +699,7 @@ async function addMatchConfidence(data, input) {
   return { ...data, products, sources };
 }
 
-async function officialDetailImage(searchWindow, productUrl, officialPageUrl = "") {
+async function officialDetailImage(searchWindow, productUrl, officialPageUrl = "", linkedSearchImageUrl = "") {
   try {
     const target = new URL(String(productUrl || ""));
     const official = new URL(String(officialPageUrl || productUrl || ""));
@@ -708,11 +708,13 @@ async function officialDetailImage(searchWindow, productUrl, officialPageUrl = "
       || official.hostname.endsWith(`.${target.hostname}`);
     if (target.protocol !== "https:" || !sameOfficialHost) return "";
     await Promise.race([
-      searchWindow.loadURL(target.href),
+      searchWindow.loadURL(target.href).catch((error) => {
+        if (!/ERR_ABORTED/i.test(String(error?.message || ""))) throw error;
+      }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("OFFICIAL_DETAIL_TIMEOUT")), 20_000)),
     ]);
     await wait(1_200);
-    return String(await searchWindow.webContents.executeJavaScript(`(() => {
+    const detailImageUrl = String(await searchWindow.webContents.executeJavaScript(`(() => {
       const absolute = (value) => {
         try { return new URL(String(value || "").trim(), location.href).href; } catch { return ""; }
       };
@@ -749,6 +751,24 @@ async function officialDetailImage(searchWindow, productUrl, officialPageUrl = "
         }).filter((candidate) => candidate.url).sort((left, right) => right.score - left.score);
       return candidates[0]?.url || "";
     })()`, true));
+    const selectedImageUrl = detailImageUrl || String(linkedSearchImageUrl || "");
+    if (!/^https?:\/\//i.test(selectedImageUrl)) return "";
+    const response = await searchWindow.webContents.session.fetch(selectedImageUrl, {
+      headers: { Referer: target.href },
+    });
+    if (!response.ok) return "";
+    const declaredLength = Number(response.headers.get("content-length") || 0);
+    if (declaredLength > 8_000_000) return "";
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!bytes.length || bytes.length > 8_000_000) return "";
+    const image = nativeImage.createFromBuffer(bytes);
+    if (image.isEmpty()) return "";
+    const size = image.getSize();
+    const scale = Math.min(1, 480 / Math.max(size.width, size.height, 1));
+    const preview = scale < 1
+      ? image.resize({ width: Math.max(1, Math.round(size.width * scale)), height: Math.max(1, Math.round(size.height * scale)), quality: "good" })
+      : image;
+    return preview.toDataURL();
   } catch {
     return "";
   }
@@ -855,8 +875,15 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           || link.parentElement;
         const text = String(card?.innerText || link.innerText || "").trim();
         const markup = String(card?.outerHTML || link.outerHTML || "").slice(0, 2500);
-        const image = card?.querySelector?.("img");
-        const imageUrl = String(image?.currentSrc || image?.src || image?.dataset?.src || image?.dataset?.original || "");
+        const sameProductLinks = [link, ...(card?.querySelectorAll?.("a[href]") || [])]
+          .filter((candidate) => String(candidate.href || "").split("#")[0] === productUrl);
+        const linkedImages = sameProductLinks.flatMap((candidate) => [...candidate.querySelectorAll("img")]);
+        const image = linkedImages.find((candidate) => {
+          const value = String(candidate.currentSrc || candidate.dataset?.original || candidate.dataset?.src || candidate.src || "");
+          return value && !/logo|icon|sprite|badge|banner|placeholder|loading|swatch|color/i.test([value, candidate.alt, candidate.className].join(" "));
+        });
+        const imageUrl = String(image?.currentSrc || image?.dataset?.original || image?.dataset?.src || image?.src || "");
+        const imageLinkedToProduct = Boolean(imageUrl);
         const titleElement = card?.querySelector?.("[class*='title'], [class*='name'], strong");
         const title = String(image?.alt || link.getAttribute("aria-label") || titleElement?.textContent || text.split("\\n")[0] || "").trim();
         const priceCandidates = [...(card?.querySelectorAll?.("del,s,strike,strong,b,em,span,p,div") || [])]
@@ -882,7 +909,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           .map((element) => String(element.textContent || "").trim())
           .find((value) => /^[\\d,]+\\s*원$/.test(value)) || "";
         seen.add(productUrl);
-        productCards.push({ productUrl, text, markup, imageUrl, title, price, originalPrice });
+        productCards.push({ productUrl, text, markup, imageUrl, imageLinkedToProduct, title, price, originalPrice });
       }
       const pageText = String(document.body?.innerText || "").slice(0, 20000);
       const pageBlocked = /captcha|보안\s*확인|자동\s*입력|로봇|접속.{0,12}(?:제한|차단)|서비스.{0,12}(?:제한|지연)|비정상적인\s*접근/i.test(pageText);
@@ -897,7 +924,12 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     const officialPageUrl = String(source.homepageUrl || source.officialProductUrl || source.searchUrl || "");
     const products = [];
     for (const product of analyzed.products.slice(0, 12)) {
-      const detailImageUrl = await officialDetailImage(searchWindow, product.url, officialPageUrl);
+      const detailImageUrl = await officialDetailImage(
+        searchWindow,
+        product.url,
+        officialPageUrl,
+        product.imageVerifiedFromCard ? product.imageUrl : "",
+      );
       products.push({
         ...product,
         // Never replace a failed detail-page lookup with an image borrowed
