@@ -450,7 +450,10 @@ body .workspace-title small{color:#7f96b8;font-size:9px;letter-spacing:.12em}
 .window-dots.connected i:nth-child(3){animation:onedrive-connected-pulse 1.8s ease-in-out infinite;box-shadow:0 0 9px #3da4ff}
 .window-dots.warning i:nth-child(1),.window-dots.warning i:nth-child(2){animation:onedrive-warning-pulse 1s ease-in-out infinite}
 .window-dots.disconnected i:nth-child(1){animation:onedrive-disconnected-pulse .62s steps(2,end) infinite;box-shadow:0 0 10px #ff8a34}
+.window-dots.sourcing i{animation:poizon-work-lamp-chase 1.05s ease-in-out infinite!important}
+.window-dots.sourcing i:nth-child(1){animation-delay:0s!important}.window-dots.sourcing i:nth-child(2){animation-delay:.18s!important}.window-dots.sourcing i:nth-child(3){animation-delay:.36s!important}
 @keyframes onedrive-lamp-chase{0%,65%,100%{opacity:.25;transform:scale(.78);box-shadow:none}28%{opacity:1;transform:scale(1.18);box-shadow:0 0 10px currentColor}}
+@keyframes poizon-work-lamp-chase{0%,58%,100%{opacity:.2;transform:scale(.72);box-shadow:none}18%,34%{opacity:1;transform:scale(1.22);box-shadow:0 0 12px currentColor}}
 @keyframes onedrive-connected-pulse{0%,100%{opacity:.5;transform:scale(.88)}50%{opacity:1;transform:scale(1.2)}}
 @keyframes onedrive-warning-pulse{0%,100%{opacity:.3;transform:scale(.85)}50%{opacity:1;transform:scale(1.12)}}
 @keyframes onedrive-disconnected-pulse{0%,45%{opacity:1;transform:scale(1.18)}46%,100%{opacity:.18;transform:scale(.78)}}
@@ -797,7 +800,8 @@ body.excel-preview-active{overflow:hidden}
 .brand-batch-progress-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #dce8f8;color:#183d70}
 .brand-batch-progress-head span{font-weight:800;color:#1769c2}
 .brand-batch-list{display:grid;gap:1px;background:#dce8f8}
-.brand-batch-columns,.brand-batch-row{display:grid;grid-template-columns:54px minmax(120px,1fr) minmax(170px,1fr) minmax(170px,1fr) minmax(240px,2fr);gap:12px;align-items:center}
+.brand-batch-columns,.brand-batch-row{display:grid;grid-template-columns:44px 54px minmax(120px,1fr) minmax(170px,1fr) minmax(170px,1fr) minmax(240px,2fr);gap:12px;align-items:center}
+.brand-batch-actions{display:flex;align-items:center;gap:7px;margin-left:auto}.brand-batch-actions label{display:flex;align-items:center;gap:5px;margin:0;font-size:11px}.brand-batch-actions input,.brand-batch-check input{width:16px;height:16px;margin:0;accent-color:#2d7ff0}.brand-batch-actions button{padding:6px 9px;font-size:10px}.brand-batch-actions button.danger{border-color:#e69b93;color:#b42318;background:#fff}.brand-batch-check{display:grid;margin:0;place-items:center}
 .brand-batch-columns{padding:8px 14px;background:#edf5ff;color:#62758e;font-size:12px;font-weight:800;border-bottom:1px solid #d8e6f5}
 .brand-batch-row{padding:11px 14px;background:#fff;color:#31445e}
 .brand-batch-order{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:9px;background:#eaf3ff;color:#1769c2}
@@ -807,7 +811,7 @@ body.excel-preview-active{overflow:hidden}
 .brand-batch-row.is-complete{background:#f0fbf6}.brand-batch-row.is-complete span{color:#16825d}
 .brand-batch-row.is-error{background:#fff5f3}.brand-batch-row.is-error span{color:#bd3a2d}
 .brand-batch-row.is-processing span{color:#1769c2}.brand-batch-row.is-registering span{color:#8c6417}
-@media(max-width:900px){.brand-batch-columns{display:none}.brand-batch-row{grid-template-columns:40px 1fr}.brand-batch-row code,.brand-batch-row time,.brand-batch-row span{grid-column:2}.brand-batch-row span{text-align:left}}
+@media(max-width:900px){.brand-batch-columns{display:none}.brand-batch-row{grid-template-columns:28px 40px 1fr}.brand-batch-row code,.brand-batch-row time,.brand-batch-row span{grid-column:3}.brand-batch-row span{text-align:left}}
 
 
 /* v2.10.62 responsive text and overflow safeguards */
@@ -883,7 +887,7 @@ button,input,select,textarea{font-family:inherit}
   line-height:1.4;
 }
 .brand-batch-row{
-  grid-template-columns:54px minmax(96px,.75fr) minmax(150px,1fr) minmax(145px,1fr) minmax(0,2.2fr);
+  grid-template-columns:44px 54px minmax(96px,.75fr) minmax(150px,1fr) minmax(145px,1fr) minmax(0,2.2fr);
   align-items:start;
   min-height:48px;
 }

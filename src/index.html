@@ -114,8 +114,8 @@
             <button id="brand-seller-diagnostic" type="button">진단 창 보기</button>
           </div>
           <section id="brand-batch-progress" class="brand-batch-progress" hidden aria-live="polite">
-            <div class="brand-batch-progress-head"><strong>진행 현황 · 작업번호 생성 브랜드 목록</strong><span id="brand-batch-summary"></span></div>
-            <div class="brand-batch-columns" aria-hidden="true"><span>순서</span><span>브랜드</span><span>POIZON 작업번호</span><span>생성 시각</span><span>현재 상태</span></div>
+            <div class="brand-batch-progress-head"><strong>진행 현황 · 작업번호 생성 브랜드 목록</strong><span id="brand-batch-summary"></span><div class="brand-batch-actions"><label><input id="brand-batch-select-all" type="checkbox"> 전체 선택</label><button id="brand-batch-delete" class="danger" type="button" disabled>선택 삭제</button></div></div>
+            <div class="brand-batch-columns" aria-hidden="true"><span>선택</span><span>순서</span><span>브랜드</span><span>POIZON 작업번호</span><span>생성 시각</span><span>현재 상태</span></div>
             <div id="brand-batch-list" class="brand-batch-list"></div>
           </section>
           <div id="brand-export-job" class="brand-export-job" hidden>
@@ -228,6 +228,11 @@
             <label>App Secret<input id="app-secret" type="password" autocomplete="new-password" placeholder="변경할 때만 입력"></label>
             <label>Access Token<input id="access-token" type="password" autocomplete="new-password" placeholder="선택 사항"></label>
             <label>API 주소<input id="api-base-url" value="https://open.poizon.com"></label>
+            <hr>
+            <h3>POIZON 판매자센터 자동 로그인</h3>
+            <p>아이디와 비밀번호는 이 PC의 Windows 암호화 저장소에만 보관하며 OneDrive 백업에는 포함하지 않습니다.</p>
+            <label>POIZON 아이디<input id="poizon-login-id" autocomplete="username" placeholder="판매자센터 아이디"></label>
+            <label>POIZON 비밀번호<input id="poizon-password" type="password" autocomplete="new-password" placeholder="변경할 때만 입력"></label>
             <button class="primary" type="submit">암호화 저장</button><div id="settings-status" class="status"></div>
           </form>
           <div class="panel">
