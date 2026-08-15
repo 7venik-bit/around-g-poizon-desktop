@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
-import { readFile, writeFile } from "node:fs/promises";
-import { applyExcelColumnLayout, readExcelColumnLayout } from "./services/excel-column-layout.mjs";
+import { readFile } from "node:fs/promises";
+import { readExcelColumnLayout } from "./services/excel-column-layout.mjs";
 
 const nativeIpcHandle = ipcMain.handle.bind(ipcMain);
 let pendingBrandResumeDecision = "unasked";
@@ -71,13 +71,11 @@ ipcMain.handle("excel:get-column-layout", async (_event, input = {}) => {
 ipcMain.handle("excel:update-column-layout", async (_event, input = {}) => {
   try {
     const filePath = excelPath(input);
-    const original = await readFile(filePath);
-    const updated = applyExcelColumnLayout(original, input.columnLayout || []);
-    await writeFile(filePath, updated);
     return {
       ok: true,
       path: filePath,
-      columnLayout: readExcelColumnLayout(updated, Number(input.columnCount) || 256),
+      columnLayout: Array.isArray(input.columnLayout) ? input.columnLayout : [],
+      displayOnly: true,
     };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : String(error) };

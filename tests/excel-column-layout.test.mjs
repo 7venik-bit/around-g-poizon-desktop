@@ -33,7 +33,7 @@ test("unhides a column without deleting worksheet data", () => {
   assert.match(xml, /<sheetData>/);
 });
 
-test("desktop bootstrap and UI expose original-file column controls", async () => {
+test("desktop column controls never rewrite the original Excel file", async () => {
   const [packageSource, bootstrap, preload, ui] = await Promise.all([
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../bootstrap.mjs", import.meta.url), "utf8"),
@@ -42,7 +42,8 @@ test("desktop bootstrap and UI expose original-file column controls", async () =
   ]);
   assert.equal(JSON.parse(packageSource).main, "bootstrap.mjs");
   assert.match(bootstrap, /excel:update-column-layout/);
-  assert.match(bootstrap, /writeFile\(filePath, updated\)/);
+  assert.doesNotMatch(bootstrap, /writeFile\(filePath, updated\)/);
+  assert.match(bootstrap, /displayOnly: true/);
   assert.match(preload, /getExcelColumnLayout/);
   assert.match(preload, /excel-column-layout\.js/);
   assert.match(ui, /contextmenu/);
@@ -50,5 +51,5 @@ test("desktop bootstrap and UI expose original-file column controls", async () =
   assert.match(ui, /필요한 열만 보기/);
   assert.match(ui, /모든 열 보기/);
   assert.match(ui, /preview\?\.viewMode === "products"/);
-  assert.match(ui, /실제 원본 Excel에도 저장했습니다/);
+  assert.match(ui, /원본 Excel 파일은 변경하지 않았습니다/);
 });

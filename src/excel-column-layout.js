@@ -124,7 +124,7 @@
     const preview = previewState();
     const filePath = String(preview?.file?.path || state.filePath || "").trim();
     if (!filePath) return;
-    setStatus("열 설정을 실제 원본 Excel에 저장하는 중입니다.");
+    setStatus("열 설정을 현재 화면에 적용하는 중입니다.");
     const result = await window.aroundG.updateExcelColumnLayout(filePath, state.layout, state.columnCount);
     if (!result?.ok) {
       setStatus(`열 설정 저장 실패: ${result?.message || "원본 Excel을 수정할 수 없습니다."}`, true);
@@ -132,7 +132,7 @@
     }
     state.layout = Array.isArray(result.columnLayout) ? result.columnLayout : state.layout;
     applyLayout();
-    setStatus(`${message} · 실제 원본 Excel에도 저장했습니다.`);
+    setStatus(`${message} · 원본 Excel 파일은 변경하지 않았습니다.`);
   }
 
   function visibleColumnCount() {
