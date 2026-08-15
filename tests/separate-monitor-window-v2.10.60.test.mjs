@@ -48,14 +48,19 @@ test("completed jobs are detected and downloaded from the live seller window as 
 test("multi-brand UI shows registration processing completion and failure counts", () => {
   assert.match(html, /id="brand-batch-progress"/);
   assert.match(html, /id="brand-batch-summary"/);
+  assert.match(html, /진행 현황 · 작업번호 생성 브랜드 목록/);
+  assert.match(html, /POIZON 작업번호/);
+  assert.match(renderer, /작업번호 생성 \$\{registered\}\/\$\{total\}/);
+  assert.match(renderer, /createdAt: Number\(previous\.createdAt \|\| \(normalizedJobId \? Date\.now\(\) : 0\)\)/);
+  assert.match(renderer, /class="brand-batch-order"/);
   assert.match(renderer, /const brandBatchStates = new Map/);
-  assert.match(renderer, /등록 \$\{registered\}\/\$\{total\} · 처리 중 \$\{processing\} · 완료 \$\{completed\} · 실패 \$\{failed\}/);
+  assert.match(renderer, /작업번호 생성 \$\{registered\}\/\$\{total\} · 처리 중 \$\{processing\} · 완료 \$\{completed\} · 실패 \$\{failed\}/);
   assert.match(style, /\.brand-batch-row\.is-complete/);
   assert.match(style, /\.brand-batch-row\.is-error/);
 });
 
-test("release metadata is 2.10.213", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.213");
-  assert.equal(JSON.parse(lockSource).version, "2.10.213");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.213");
+test("release metadata is 2.10.214", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.214");
+  assert.equal(JSON.parse(lockSource).version, "2.10.214");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.214");
 });
