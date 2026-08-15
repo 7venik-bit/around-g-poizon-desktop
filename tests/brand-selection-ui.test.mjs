@@ -110,6 +110,16 @@ test("official-domain progress updates the matching brand card immediately", () 
   assert.match(renderer, /updated\.officialHomepageUrl = String\(audit\.updatedBrand\.homepageUrl/);
 });
 
+test("batch progress keeps only one brand row for each POIZON job number", () => {
+  const updateStart = renderer.indexOf("function updateBrandBatchState");
+  const updateEnd = renderer.indexOf("function renderBrandBatchProgress", updateStart);
+  const update = renderer.slice(updateStart, updateEnd);
+
+  assert.match(update, /const normalizedJobId = String\(jobId \|\| ""\)\.trim\(\)/);
+  assert.match(update, /String\(existing\?\.jobId \|\| ""\)\.trim\(\) === normalizedJobId/);
+  assert.match(update, /brandBatchStates\.delete\(existingKey\)/);
+});
+
 test("download completion accepts POIZON brand-name variants such as Polo Ralph Lauren", () => {
   const matcherStart = renderer.indexOf("function rendererBrandsMatch");
   const matcherEnd = renderer.indexOf("function brandImportPathKey", matcherStart);
