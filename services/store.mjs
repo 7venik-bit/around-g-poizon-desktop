@@ -138,6 +138,19 @@ export class JsonStore {
     }
   }
 
+  async restorePortableBackup(backup) {
+    if (!backup || typeof backup !== "object" || Number(backup.version || 0) !== 1) {
+      throw new Error("PORTABLE_BACKUP_INVALID");
+    }
+    this.data = {
+      ...structuredClone(EMPTY),
+      ...structuredClone(backup),
+      settings: { ...(backup.settings || {}) },
+    };
+    await this.save();
+    return this.snapshot();
+  }
+
   async updateCollector(input) {
     const previous = this.data.collector;
     const samePage = input.page === previous.lastPage && input.fingerprint === previous.lastFingerprint;
