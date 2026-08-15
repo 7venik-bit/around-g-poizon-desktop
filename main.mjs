@@ -677,10 +677,13 @@ async function addMatchConfidence(data, input) {
   const hasSourceImage = Boolean(String(input.imageUrl || "").trim());
   products = products.filter((product) => {
     const codeMatched = Number(product.signals?.codeScore || 0) === 1;
+    const codeConflict = product.articleConflict === true || product.signals?.codeConflict === true;
     const titleScore = Number(product.signals?.titleScore || 0);
     const imageScore = product.signals?.imageScore;
-    if (!hasSourceImage) return codeMatched || titleScore >= 35;
-    return codeMatched || titleScore >= 35 || (Number(imageScore || 0) >= 75 && titleScore >= 15);
+    if (codeConflict) return false;
+    if (codeMatched) return true;
+    if (!hasSourceImage) return titleScore >= 70;
+    return titleScore >= 55 && Number(imageScore || 0) >= 82;
   });
   const verifiedCounts = products.reduce((counts, product) => {
     const store = String(product.store || "");
@@ -697,7 +700,10 @@ async function addMatchConfidence(data, input) {
 }
 
 async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "") {
-  const url = String(source.officialProductUrl || source.searchUrl || "");
+  const interactiveOfficialSearch = source.store === "브랜드 공식몰"
+    && !String(source.officialProductUrl || "")
+    && /^https:\/\//i.test(String(source.homepageUrl || ""));
+  const url = String(source.officialProductUrl || (interactiveOfficialSearch ? source.homepageUrl : source.searchUrl) || "");
   if (!/^https:\/\//i.test(url)) return { count: Number(source.count || 0), products: [] };
   let searchWindow;
   try {
@@ -717,6 +723,44 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       searchWindow.loadURL(url),
       new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 30_000)),
     ]);
+    if (interactiveOfficialSearch) {
+      const searchQuery = String(articleNumber || title || "").trim();
+      let submitted = false;
+      for (let attempt = 0; attempt < 6 && !submitted; attempt += 1) {
+        submitted = await searchWindow.webContents.executeJavaScript(`(() => {
+          const query = ${JSON.stringify(String(articleNumber || title || ""))};
+          const visible = (element) => {
+            if (!element) return false;
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+          };
+          let input = [...document.querySelectorAll('input[type="search"],input[name*="search" i],input[name="q" i],input[name*="query" i],input[name*="keyword" i],input[name*="schWord" i]')].find(visible);
+          if (!input) {
+            const opener = [...document.querySelectorAll('button,a,[role="button"]')].find((element) => {
+              const label = [element.getAttribute("aria-label"), element.getAttribute("title"), element.className, element.textContent].join(" ");
+              return visible(element) && /search|검색/i.test(label);
+            });
+            opener?.click();
+            return false;
+          }
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+          setter ? setter.call(input, query) : (input.value = query);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+          input.focus();
+          const form = input.form;
+          const submit = form?.querySelector('button[type="submit"],input[type="submit"]');
+          if (submit && visible(submit)) submit.click();
+          else if (form?.requestSubmit) form.requestSubmit();
+          else input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }));
+          return true;
+        })()`, true).catch(() => false);
+        if (!submitted) await wait(600);
+      }
+      if (!submitted || !searchQuery) return null;
+      await wait(2_000);
+    }
     // Dynamic commerce pages render and lazy-load after navigation. Give them
     // time to settle and scroll enough to materialize the first result cards.
     for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -804,7 +848,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
 async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "") {
   const discoveredProducts = [];
   const sources = await Promise.all(data.sources.map(async (source) => {
-    if (source.officialStatus && source.officialStatus !== OFFICIAL_DOMAIN_STATUS.VERIFIED) {
+    if (source.officialStatus && ![
+      OFFICIAL_DOMAIN_STATUS.VERIFIED,
+      OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED,
+    ].includes(source.officialStatus)) {
       return { ...source, countVerified: false, verificationFailed: false };
     }
     if (!source.renderCount) {
@@ -6475,6 +6522,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
           String(input?.brand || ""),
           String(input?.title || "")
         );
+        matched = await addMatchConfidence(matched, input || {});
       }
       return { ok: true, data: matched };
     } catch (error) {

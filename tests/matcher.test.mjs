@@ -21,3 +21,13 @@ test("이미지를 확인할 수 없으면 점수를 임의로 부여하지 않�
   assert.equal(result.signals.image, "확인 불가");
   assert.ok(result.confidence < 30);
 });
+
+test("상품명이 비슷해도 실제 상품코드가 다르면 충돌로 판정한다", () => {
+  const result = scoreProductCandidate(
+    { articleNumber: "3ACP6601N", brand: "MLB", title: "에이스 언스트럭쳐 볼캡 LA Black" },
+    { brand: "MLB", title: "시그니처 언스트럭쳐 볼캡 LA Blue 3ACPB245N" },
+    0.95,
+  );
+  assert.equal(result.signals.codeConflict, true);
+  assert.equal(result.signals.code, "불일치");
+});

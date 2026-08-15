@@ -118,6 +118,21 @@ test("a marketplace result must match both the article and the brand", () => {
   assert.equal(countRenderedChannelProducts(correctBrand, "SSG 백화점", "3ME10100264", "온"), 1);
 });
 
+test("an MLB result with a different explicit article is never relabeled as the requested article", () => {
+  const rendered = JSON.stringify({
+    pageText: "MLB 공식몰 검색 결과 104개",
+    productCards: [{
+      productUrl: "https://shopping.naver.com/window-products/brandfashion/124925333777",
+      title: "[MLB] 시그니처 언스트럭쳐 볼캡 LA Blue 3ACPB245N",
+      text: "MLB 공식 상품 43,000원",
+      imageUrl: "https://example.test/blue-cap.jpg",
+    }],
+  });
+  const result = analyzeRenderedChannelProducts(rendered, "네이버 공식 브랜드스토어", "3ACP6601N", "MLB", "에이스 언스트럭쳐 볼캡 LA Black");
+  assert.equal(result.count, 0);
+  assert.deepEqual(result.products, []);
+});
+
 test("official-store matching can use article metadata in a product card", () => {
   const rendered = JSON.stringify({
     productCards: [{
@@ -388,6 +403,7 @@ test("a verified official homepage stays usable when product search is unsupport
   assert.equal(official.officialStatus, OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED);
   assert.equal(official.homepageUrl, "https://salomon.co.kr/");
   assert.equal(official.officialProductUrl, "");
+  assert.equal(official.renderCount, true);
 });
 
 test("official-store search and verified product-detail URLs remain distinct", async () => {
