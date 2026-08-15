@@ -55,7 +55,7 @@ test("Excel filter controls share one bottom line", () => {
   assert.match(cssSource, /\.excel-preview-filters label>input,\.excel-preview-filters label>select\{width:100%\}/);
 });
 
-test("Excel defaults to the complete raw sheet with optional grouped product view", () => {
+test("Excel defaults to the complete raw sheet with optional grouped product view", async () => {
   assert.match(mainSource, /function buildExcelPreviewProducts/);
   assert.match(mainSource, /const productView = input\.filters\?\.productView !== false/);
   assert.match(mainSource, /sourceTotalProducts/);
@@ -63,6 +63,11 @@ test("Excel defaults to the complete raw sheet with optional grouped product vie
   assert.match(htmlSource, /원본 Excel 전체 보기/);
   assert.match(rendererSource, /#excel-view-products"\)\?\.classList\.toggle/);
   assert.match(rendererSource, /#excel-view-raw"\)\?\.classList\.toggle/);
+  assert.match(rendererSource, /function excelImageColumn/);
+  assert.match(rendererSource, /class="excel-image-cell"/);
+  assert.match(cssSource, /\.excel-row-number\{[^}]*width:40px!important/);
+  assert.match(cssSource, /\.excel-image-cell img\{[^}]*width:46px;height:46px/);
+  assert.match(await readFile(new URL("../src/excel-column-layout.js", import.meta.url), "utf8"), /#excel-preview-columns th"\)\]\.slice\(2\)/);
   assert.match(rendererSource, /let excelPreviewProductMode = false/);
   assert.match(rendererSource, /filters = \{ \.\.\.filters, productView: false \}/);
   assert.match(rendererSource, /renderExcelProductRows/);
