@@ -61,6 +61,8 @@ test("Excel defaults to the complete raw sheet with optional grouped product vie
   assert.match(mainSource, /sourceTotalProducts/);
   assert.doesNotMatch(htmlSource, /id="excel-view-products"|id="excel-view-raw"/);
   assert.match(htmlSource, /원본 Excel 전체 보기/);
+  assert.match(rendererSource, /#excel-view-products"\)\?\.classList\.toggle/);
+  assert.match(rendererSource, /#excel-view-raw"\)\?\.classList\.toggle/);
   assert.match(rendererSource, /let excelPreviewProductMode = false/);
   assert.match(rendererSource, /filters = \{ \.\.\.filters, productView: false \}/);
   assert.match(rendererSource, /renderExcelProductRows/);
