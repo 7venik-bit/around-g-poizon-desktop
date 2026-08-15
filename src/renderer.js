@@ -46,6 +46,7 @@ let excelPreviewPageKeys = [];
 let excelPreviewBatchSearching = false;
 const excelPreviewProductCache = new Map();
 const excelPreviewSearchResults = new Map();
+const domesticIdentitySearchCache = new Map();
 const detectedBrandImportQueue = [];
 const queuedBrandImportPaths = new Set();
 const completedBrandImportPaths = new Set();
@@ -499,6 +500,39 @@ function verifiedExcelProductPoizonPrice(product) {
   return Number(product?.averagePrice || 0);
 }
 
+function normalizedProductIdentity(value = "") {
+  return String(value || "").toLocaleLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+}
+
+function productCrossCheckIdentity(product = {}) {
+  const article = normalizedProductIdentity(product.articleNumber || product.productCode || product.spuId);
+  const brandCode = normalizedProductIdentity(product.brandCode || product.brandId);
+  const brand = normalizedProductIdentity(product.brandName || product.brand);
+  if (article) return `code:${brandCode || brand}:${article}`;
+  const title = normalizedProductIdentity(product.apiTitle || product.title || product.name);
+  const image = String(product.logoUrl || product.imageUrl || "").trim().split(/[?#]/)[0].toLocaleLowerCase();
+  // An image is supporting evidence only.  It can never identify or merge a
+  // product unless the normalized brand and full title are also identical.
+  return `text:${brandCode || brand}:${title}:${image}`;
+}
+
+async function cachedDomesticSearch(product, verifyLinkCounts = true) {
+  const identity = productCrossCheckIdentity(product);
+  if (domesticIdentitySearchCache.has(identity)) return domesticIdentitySearchCache.get(identity);
+  const request = window.aroundG.searchDomestic({
+    query: [product.brandName || product.brand, product.articleNumber || product.productCode, product.title || product.name].filter(Boolean).join(" "),
+    articleNumber: product.articleNumber || product.productCode || "",
+    brand: product.brandName || product.brand || "",
+    title: product.apiTitle || product.title || product.name || "",
+    imageUrl: product.logoUrl || product.imageUrl || "",
+    verifyLinkCounts,
+  });
+  domesticIdentitySearchCache.set(identity, request);
+  const response = await request;
+  if (!response?.ok) domesticIdentitySearchCache.delete(identity);
+  return response;
+}
+
 function poizonServiceFee(price, categoryName = "") {
   const amount = Number(price || 0);
   if (amount <= 0) return 0;
@@ -536,11 +570,7 @@ async function searchExcelPreviewProduct(key) {
   excelPreviewSearchResults.set(key, { loading: true, products: [], sources: [] });
   const file = activeExcelPreview?.file;
   if (file) renderExcelProductRows(file, excelPreviewPageProducts);
-  const query = [product.brandName, product.articleNumber, product.title].filter(Boolean).join(" ");
-  const response = await window.aroundG.searchDomestic({
-    query, articleNumber: product.articleNumber || "", brand: product.brandName || "",
-    title: product.title || "", imageUrl: product.logoUrl || "", verifyLinkCounts: true,
-  });
+  const response = await cachedDomesticSearch(product, true);
   const result = response.ok ? response.data : { products: [], sources: [], error: response.message };
   excelPreviewSearchResults.set(key, result);
   if (file) renderExcelProductRows(file, excelPreviewPageProducts);
@@ -1323,6 +1353,13 @@ function renderDomestic(result) {
     const confidenceClass = Number(product?.confidence || 0) >= 75 ? "high"
       : Number(product?.confidence || 0) >= 45 ? "medium" : "low";
     const candidateName = product?.title || product?.name || product?.articleNumber || "";
+    const officialVerified = product?.officialStoreVerified === true;
+    const confidenceLabel = officialVerified
+      ? text(product.sourceTrustLabel || "공식몰 확인완료")
+      : `신뢰도 ${Number(product.confidence || 0)}%`;
+    const matchSignals = officialVerified
+      ? `<span>품번 정확히 일치</span><span>상품 일치도 ${Number(product.productMatchConfidence || 95)}%</span><span>${text(product.imageVerificationLabel || "이미지 확인 필요")}</span>`
+      : `<span>코드 ${text(product.signals?.code)}</span><span>상품명 ${text(product.signals?.title)}</span><span>이미지 ${text(product.signals?.image)}</span>`;
     return `<div class="platform-row">
       <span class="platform-priority">${source.priority || ""}</span>
       <strong>${text(product.store)}</strong>
@@ -1331,11 +1368,11 @@ function renderDomestic(result) {
         <span><b>${text(candidateName || source.store + " 검색 결과")}</b>${product?.price ? `<small>${money(product.price)}</small>` : ""}</span>
       </div>
       <span class="stock-state ${sourceState}">${sourceLabel}</span>
-      <span class="confidence ${confidenceClass}">신뢰도 ${Number(product.confidence || 0)}%</span>
+      <span class="confidence ${confidenceClass} ${officialVerified ? "official" : ""}">${confidenceLabel}</span>
       <div class="size-list">${sizes.length
         ? sizes.map((size) => `<span class="size-chip ${size.inStock ? "available" : "soldout"}">${text(size.label)}</span>`).join("")
         : `<span class="size-chip unknown">사이즈 정보 없음</span>`}</div>
-      <div class="match-signals"><span>코드 ${text(product.signals?.code)}</span><span>상품명 ${text(product.signals?.title)}</span><span>이미지 ${text(product.signals?.image)}</span></div>
+      <div class="match-signals">${matchSignals}</div>
       <button data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${product?.inStock ? "구매" : "확인"}</button>
     </div>`;
   }).join("");
@@ -1590,6 +1627,7 @@ function clearExplorerResults() {
   allExplorerProducts = [];
   domesticStockOnly = false;
   domesticResults.clear();
+  domesticIdentitySearchCache.clear();
   $("#explorer-results").hidden = true;
   $("#explorer-result-title").textContent = "탐색 결과";
   $("#explorer-result-count").textContent = "";
@@ -1605,15 +1643,7 @@ async function searchDomesticAt(index, sourceProducts = currentExplorerProducts)
   if (!product) return;
   const key = domesticKey(product, index);
   domesticResults.set(key, { loading: true, products: [], sources: [] });
-  const query = [product.brandName || product.brand, product.articleNumber, product.title || product.name].filter(Boolean).join(" ");
-  const response = await window.aroundG.searchDomestic({
-    query,
-    articleNumber: product.articleNumber || "",
-    brand: product.brandName || product.brand || "",
-    title: product.apiTitle || product.title || product.name || "",
-    imageUrl: product.logoUrl || "",
-    verifyLinkCounts: !domesticBatchRunning || domesticBatchVerifyCounts,
-  });
+  const response = await cachedDomesticSearch(product, !domesticBatchRunning || domesticBatchVerifyCounts);
   domesticResults.set(key, response.ok ? response.data : { products: [], sources: [], error: response.message });
   const visibleProducts = domesticStockOnly ? domesticStockProducts() : allExplorerProducts;
   renderExplorerResults($("#explorer-result-title").textContent, visibleProducts, true);

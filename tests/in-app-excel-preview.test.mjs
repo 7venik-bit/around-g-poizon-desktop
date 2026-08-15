@@ -61,7 +61,8 @@ test("Excel defaults to a grouped product-search view with raw-data fallback", (
   assert.match(rendererSource, /renderExcelProductRows/);
   assert.match(rendererSource, /data-excel-search-product/);
   assert.match(rendererSource, /선택 상품 일괄 검색/);
-  assert.match(rendererSource, /brandName, product\.articleNumber, product\.title/);
+  assert.match(rendererSource, /cachedDomesticSearch\(product, true\)/);
+  assert.match(rendererSource, /productCrossCheckIdentity/);
   const productColumns = rendererSource.match(/excel-preview-columns"\)\.innerHTML = `<tr>(.*?)<\/tr>`/)?.[1] || "";
   assert.doesNotMatch(productColumns, /중국 30일|현지 30일/);
   assert.match(productColumns, /평균가격/);
