@@ -26,6 +26,7 @@ let brandExportQueue = [];
 let brandExportFailureCount = 0;
 let brandBatchTotal = 0;
 const brandBatchStates = new Map();
+const selectedBrandBatchKeys = new Set();
 const BRAND_AUTOMATION_TIMEOUT_MS = 20 * 60 * 1000;
 const BRAND_INPUT_RETRY_DELAY_MS = 60 * 1000;
 const BRAND_INPUT_RETRY_LIMIT = 2;
@@ -190,6 +191,9 @@ function renderBrandBatchProgress() {
   const list = $("#brand-batch-list");
   if (!panel || !summary || !list) return;
   const items = [...brandBatchStates.values()];
+  for (const key of [...selectedBrandBatchKeys]) {
+    if (!brandBatchStates.has(key)) selectedBrandBatchKeys.delete(key);
+  }
   const total = Math.max(brandBatchTotal, items.length);
   const completed = items.filter((item) => /확인완료/.test(item.state)).length;
   const failed = items.filter((item) => /실패|오류|중단|취소/.test(item.state)).length;
@@ -198,13 +202,41 @@ function renderBrandBatchProgress() {
   panel.hidden = total === 0;
   summary.textContent = `작업번호 생성 ${registered}/${total} · 처리 중 ${processing} · 완료 ${completed} · 실패 ${failed}`;
   list.innerHTML = items.map((item, index) => {
+    const key = brandBatchKey(item.brandName);
     const stateClass = /확인완료/.test(item.state) ? " is-complete"
       : /실패|오류|중단|취소/.test(item.state) ? " is-error"
         : item.jobId ? " is-processing" : " is-registering";
     const createdTime = item.createdAt ? brandTime(item.createdAt) : "생성 대기";
-    return `<div class="brand-batch-row${stateClass}"><b class="brand-batch-order">${index + 1}</b><strong>${text(item.brandName)}</strong><code>${item.jobId ? text(item.jobId) : "생성 전"}</code><time>${text(createdTime)}</time><span>${text(item.state)}</span></div>`;
+    return `<div class="brand-batch-row${stateClass}" data-brand-batch-key="${text(key)}"><label class="brand-batch-check"><input type="checkbox" ${selectedBrandBatchKeys.has(key) ? "checked" : ""} aria-label="${text(item.brandName)} 선택"></label><b class="brand-batch-order">${index + 1}</b><strong>${text(item.brandName)}</strong><code>${item.jobId ? text(item.jobId) : "생성 전"}</code><time>${text(createdTime)}</time><span>${text(item.state)}</span></div>`;
   }).join("");
+  const selectAll = $("#brand-batch-select-all");
+  const deleteButton = $("#brand-batch-delete");
+  if (selectAll) {
+    selectAll.checked = items.length > 0 && selectedBrandBatchKeys.size === items.length;
+    selectAll.indeterminate = selectedBrandBatchKeys.size > 0 && selectedBrandBatchKeys.size < items.length;
+  }
+  if (deleteButton) deleteButton.disabled = selectedBrandBatchKeys.size === 0;
 }
+
+$("#brand-batch-list")?.addEventListener("change", (event) => {
+  const checkbox = event.target.closest('input[type="checkbox"]');
+  const row = checkbox?.closest("[data-brand-batch-key]");
+  const key = String(row?.dataset.brandBatchKey || "");
+  if (!key) return;
+  checkbox.checked ? selectedBrandBatchKeys.add(key) : selectedBrandBatchKeys.delete(key);
+  renderBrandBatchProgress();
+});
+$("#brand-batch-select-all")?.addEventListener("change", (event) => {
+  selectedBrandBatchKeys.clear();
+  if (event.target.checked) for (const key of brandBatchStates.keys()) selectedBrandBatchKeys.add(key);
+  renderBrandBatchProgress();
+});
+$("#brand-batch-delete")?.addEventListener("click", () => {
+  for (const key of selectedBrandBatchKeys) brandBatchStates.delete(key);
+  selectedBrandBatchKeys.clear();
+  brandBatchTotal = brandBatchStates.size;
+  renderBrandBatchProgress();
+});
 
 function renderBrandCompletedJobs() {
   const panel = $("#brand-export-completed");
@@ -921,6 +953,15 @@ function updateBrandSelectionControls() {
     if (label) label.textContent = brandSelectionBusy ? "작업 중지" : "브랜드 검색";
   }
   if (stopCurrent) stopCurrent.disabled = !brandSelectionBusy && !activeExportBrand && !hasActiveBrandExportJobs();
+  const lamps = $("#onedrive-lamps");
+  if (lamps) {
+    const sourcing = brandSelectionBusy || Boolean(activeExportBrand) || hasActiveBrandExportJobs();
+    lamps.classList.toggle("sourcing", sourcing);
+    if (sourcing) {
+      lamps.setAttribute("aria-label", "POIZON 자동 로그인·소싱 작업 진행 중");
+      lamps.title = "POIZON 자동 로그인·소싱 작업 진행 중";
+    }
+  }
 }
 
 function selectedBrandsForExport() {
@@ -2811,9 +2852,10 @@ document.querySelectorAll("[data-margin]").forEach((button) => button.addEventLi
 
 $("#settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value });
+  await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value });
   $("#app-secret").value = "";
   $("#access-token").value = "";
+  $("#poizon-password").value = "";
   $("#settings-status").className = "status success";
   $("#settings-status").textContent = "Windows 암호화 저장소에 설정했습니다.";
 });
@@ -3038,6 +3080,8 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   $("#api-base-url").value = config.apiBaseUrl;
   $("#app-secret").placeholder = config.hasAppSecret ? "저장됨 · 변경할 때만 입력" : "필수";
   $("#access-token").placeholder = config.hasAccessToken ? "저장됨 · 변경할 때만 입력" : "선택 사항";
+  $("#poizon-login-id").value = config.poizonLoginId || "";
+  $("#poizon-password").placeholder = config.hasPoizonPassword ? "암호화 저장됨 · 변경할 때만 입력" : "자동 로그인에 필요";
   await refresh();
   await pruneCategorySearchHistory();
 })();
