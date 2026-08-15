@@ -156,14 +156,16 @@ test("official-mall button remains clickable for direct manual verification", ()
   assert.match(rendererSource, /officialButton\("공식몰 상품 없음·직접 확인"\)/);
 });
 
-test("unavailable verification is presented to the operator as product missing", () => {
+test("unavailable verification is never misreported as confirmed product absence", () => {
   assert.match(mainSource, /return null/);
   assert.match(mainSource, /pageBlocked/);
   assert.match(mainSource, /verificationFailed: !Number\.isFinite\(count\)/);
   assert.match(rendererSource, /source\.verificationFailed/);
   assert.match(rendererSource, /Number\(source\.count \|\| 0\) > 0[\s\S]*?"없음"/);
-  assert.doesNotMatch(rendererSource, /확인 실패/);
-  assert.match(rendererSource, /상품없음/);
+  assert.match(rendererSource, /확인 실패/);
+  assert.match(rendererSource, /추가 확인/);
+  assert.match(mainSource, /verificationPending/);
+  assert.match(mainSource, /absenceConfirmed/);
 });
 
 test("official store, Musinsa, and Naver sources all render numeric result badges", () => {
@@ -171,7 +173,8 @@ test("official store, Musinsa, and Naver sources all render numeric result badge
   assert.match(mainSource, /\^SSG\\s/);
   assert.match(mainSource, /renderAttempts && !result/);
   assert.match(mainSource, /attempt > 0\) await wait\(1_500\)/);
-  assert.match(rendererSource, /label: "없음", className: "missing"/);
+  assert.match(rendererSource, /label: "추가 확인 필요", className: "pending"/);
+  assert.match(rendererSource, /label: "없음 확인", className: "missing"/);
   assert.match(mainSource, /!source\.linkOnly && source\.ok && Number\(source\.count \|\| 0\) > 0/);
   assert.match(rendererSource, /const directLinks = \(result\.sources \|\| \[\]\)\.map/);
   assert.doesNotMatch(rendererSource, /filter\(\(source\) => source\.linkOnly\)\.map/);

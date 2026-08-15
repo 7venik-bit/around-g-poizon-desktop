@@ -1309,8 +1309,10 @@ function domesticStatus(result) {
   const products = result.products || [];
   const verifiedCount = (result.sources || []).reduce((sum, source) =>
     sum + (source.countVerified ? Number(source.count || 0) : 0), 0);
+  const needsReview = (result.sources || []).some((source) => source.verificationPending || source.verificationFailed);
   if (!products.length && verifiedCount > 0) return { label: "판매처 발견", className: "available" };
-  if (!products.length) return { label: "없음", className: "missing" };
+  if (!products.length && needsReview) return { label: "추가 확인 필요", className: "pending" };
+  if (!products.length) return { label: "없음 확인", className: "missing" };
   if (!products.some((product) => product.inStock)) return { label: "재고 없음", className: "soldout" };
   return { label: "구매 가능", className: "available" };
 }
@@ -1362,7 +1364,7 @@ function renderDomestic(result) {
       : `<span>코드 ${text(product.signals?.code)}</span><span>상품명 ${text(product.signals?.title)}</span><span>이미지 ${text(product.signals?.image)}</span>`;
     return `<div class="platform-row">
       <span class="platform-priority">${source.priority || ""}</span>
-      <strong>${text(product.store)}</strong>
+      <strong>${text(product.retailerName || product.store)}</strong>
       <div class="candidate-summary ${product?.imageUrl ? "" : "no-image"}">
         ${product?.imageUrl ? `<img class="candidate-image" src="${text(product.imageUrl)}" alt="${text(candidateName)}">` : ""}
         <span><b>${text(candidateName || source.store + " 검색 결과")}</b>${product?.price ? `<small>${money(product.price)}</small>` : ""}</span>
@@ -1377,7 +1379,9 @@ function renderDomestic(result) {
     </div>`;
   }).join("");
   const sourceResult = (source) => source.verificationFailed
-    ? `<small>상품없음</small>`
+    ? `<small>확인 실패</small>`
+    : source.verificationPending
+      ? `<small>추가 확인</small>`
     : source.countVerified
       ? `<b class="source-count">${Number(source.count || 0) > 0 ? Number(source.count) : "없음"}</b>`
       : `<small>결과 확인</small>`;
