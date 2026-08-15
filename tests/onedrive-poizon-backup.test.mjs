@@ -6,6 +6,9 @@ import { join } from "node:path";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const main = await readFile(join(root, "main.mjs"), "utf8");
+const renderer = await readFile(join(root, "src", "renderer.js"), "utf8");
+const html = await readFile(join(root, "src", "index.html"), "utf8");
+const css = await readFile(join(root, "src", "style.css"), "utf8");
 
 test("POIZON Excel files prefer a dedicated OneDrive backup tree", () => {
   assert.match(main, /process\.env\.OneDriveConsumer, process\.env\.OneDrive, process\.env\.OneDriveCommercial/);
@@ -39,4 +42,12 @@ test("a fresh PC restores portable data and warns when OneDrive is disconnected"
   assert.match(main, /store\.restorePortableBackup\(backup\)/);
   assert.match(main, /OneDrive 로그인이 필요합니다\. 백업이 중지되었습니다\./);
   assert.match(main, /ipcMain\.handle\("backup:status"/);
+});
+
+test("the three header lamps animate with the OneDrive connection state", () => {
+  assert.match(html, /id="onedrive-lamps"/);
+  assert.match(renderer, /lamps\.classList\.add\(payload\.state/);
+  assert.match(css, /onedrive-lamp-chase/);
+  assert.match(css, /window-dots\.connected i:nth-child\(3\)/);
+  assert.match(css, /window-dots\.disconnected i:nth-child\(1\)/);
 });
