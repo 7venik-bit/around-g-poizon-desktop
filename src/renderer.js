@@ -656,8 +656,8 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
     : totalRows;
   activeExcelPreview = { file, offset: result.offset, limit: result.limit, totalRows, filters, viewMode: result.productView ? "products" : "raw" };
   preview.classList.toggle("product-view", Boolean(result.productView));
-  $("#excel-view-products").classList.toggle("active", Boolean(result.productView));
-  $("#excel-view-raw").classList.toggle("active", !result.productView);
+  $("#excel-view-products")?.classList.toggle("active", Boolean(result.productView));
+  $("#excel-view-raw")?.classList.toggle("active", !result.productView);
   loading.className = "excel-preview-loading";
   loading.hidden = true;
   grid.hidden = false;
