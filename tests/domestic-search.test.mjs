@@ -428,12 +428,14 @@ test("official-store text matches without a product-detail URL are discarded", (
         text: "SR123UTS11 데상트 반팔 티셔츠",
         title: "데상트 반팔 티셔츠",
         imageUrl: "https://cdn.example/search-card.jpg",
+        imageLinkedToProduct: true,
       },
     ],
   });
   const result = analyzeRenderedChannelProducts(content, "브랜드 공식몰", "SR123UTS11", "데상트", "데상트 반팔 티셔츠");
   assert.equal(result.count, 1);
   assert.equal(result.products[0].url, "https://dk-on.com/DESCENTE/goods/SR123UTS11");
+  assert.equal(result.products[0].imageVerifiedFromCard, true);
 });
 
 test("a transient Musinsa server failure is retried once", async () => {

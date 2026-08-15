@@ -265,6 +265,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
             detectedArticleNumber: exactDetectedArticle || detectedArticleNumbers[0] || "",
             articleConflict: conflictingArticle,
             imageUrl: String(card?.imageUrl || ""),
+            imageVerifiedFromCard: card?.imageLinkedToProduct === true,
             price: safeNumber(card?.price),
             originalPrice: safeNumber(card?.originalPrice),
             inStock: true,
