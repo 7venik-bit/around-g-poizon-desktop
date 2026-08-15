@@ -185,7 +185,7 @@ body .shell>header{height:auto;min-height:82px;align-items:flex-start}
 .brand-download-list-title span{display:flex;align-items:center;gap:8px}
 .brand-download-list-title button{padding:4px 9px;border:1px solid #bdd9eb;border-radius:7px;background:#fff;color:#356f94;font-size:10px;font-weight:700;cursor:pointer}
 .brand-download-files{display:block;overflow:hidden;border:1px solid #d2e6f5;border-radius:10px;background:#fff}
-.brand-download-list-head,.brand-download-row,.brand-download-history-row{display:grid;grid-template-columns:minmax(150px,1fr) minmax(250px,1.9fr) minmax(105px,.8fr) minmax(150px,1fr) 55px 90px;align-items:center;gap:10px}
+.brand-download-list-head,.brand-download-row,.brand-download-history-row{display:grid;grid-template-columns:34px minmax(150px,1fr) minmax(250px,1.9fr) minmax(105px,.8fr) minmax(150px,1fr) 55px 90px;align-items:center;gap:10px}
 .brand-download-list-head{padding:7px 10px;background:#eaf5fc;color:#54778f;font-size:10px;font-weight:700}
 .brand-download-row-group{border-top:1px solid #e6f0f7}
 .brand-download-row-group:first-of-type{border-top:0}
@@ -203,6 +203,7 @@ body .shell>header{height:auto;min-height:82px;align-items:flex-start}
 .brand-download-row time,.brand-download-history-row time{color:#6c8496;font-size:10px;white-space:nowrap}
 .brand-download-badge{justify-self:start;padding:3px 7px;border-radius:999px;background:#e5f5ff;color:#1685c4;font-size:10px}
 .brand-download-row button,.brand-download-history-row button{min-width:48px;padding:5px 9px;border:1px solid #2794d2;border-radius:7px;background:#2794d2;color:#fff;font-size:11px;font-weight:700;cursor:pointer}
+.brand-download-check{display:grid;margin:0;place-items:center}.brand-download-check input,.brand-download-select-all input{width:16px;height:16px;margin:0;accent-color:#2d7ff0}.brand-download-select-all{display:flex!important;grid-template-columns:auto auto!important;align-items:center;gap:5px!important;margin:0!important;font-size:10px!important}.brand-download-list-title button.danger{border-color:#ef9a91;color:#b42318}.brand-download-list-title button.danger:not(:disabled):hover{background:#fff0ee}.brand-download-list-title button:disabled{cursor:not-allowed;opacity:.45}
 .brand-download-row[role="button"],.brand-download-history-row[role="button"]{cursor:pointer}
 .brand-download-row:hover,.brand-download-history-row:hover,.brand-download-row.is-open,.brand-download-history-row.is-open{background:#eef6ff}
 .brand-download-row:focus-visible,.brand-download-history-row:focus-visible{outline:2px solid #2d7ff0;outline-offset:-2px}
@@ -214,7 +215,7 @@ body .shell>header{height:auto;min-height:82px;align-items:flex-start}
 .brand-download-mismatch{border-color:#f0a7a0!important;background:#fff4f2!important}
 .brand-download-mismatch .brand-download-name small{color:#b42318;font-weight:800}
 .brand-download-mismatch .brand-download-filename,.brand-download-mismatch .brand-download-history-row strong{white-space:normal}
-@media(max-width:900px){.brand-download-list-head{display:none}.brand-download-row,.brand-download-history-row{grid-template-columns:minmax(130px,1fr) minmax(180px,1.5fr) 50px}.brand-download-row code,.brand-download-row time,.brand-download-history-row code,.brand-download-history-row time{display:none}.brand-download-history-row>span:first-child{display:block}.brand-download-history summary{padding-left:10px}.brand-download-list-title{align-items:flex-start;flex-direction:column;gap:3px}}
+@media(max-width:900px){.brand-download-list-head{display:none}.brand-download-row,.brand-download-history-row{grid-template-columns:34px minmax(130px,1fr) minmax(180px,1.5fr) 55px 50px}.brand-download-row code,.brand-download-row time,.brand-download-history-row code,.brand-download-history-row time{display:none}.brand-download-history-row>.brand-download-check+span{display:block}.brand-download-history summary{padding-left:10px}.brand-download-list-title{align-items:flex-start;flex-direction:column;gap:3px}}
 
 /* Spreadsheet-style brand results: columns keep enough width for their
    contents and the product description is never clipped. */

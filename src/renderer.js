@@ -33,6 +33,7 @@ let activeExportBrand = null;
 let brandSelectionBusy = false;
 const brandExportJobs = new Map();
 let downloadedBrandFiles = [];
+const selectedDownloadedFilePaths = new Set();
 let brandCompletedShowAll = false;
 let activeExcelPreview = null;
 let excelPreviewRequestId = 0;
@@ -391,7 +392,7 @@ function renderDownloadedBrandFiles() {
     : "0개";
   list.innerHTML = grouped.length
     ? `<div class="brand-download-list-head" aria-hidden="true">
-        <span>브랜드</span><span>원본 Excel 파일</span><span>작업번호</span><span>받은 시각</span><span>크기</span><span>열기</span>
+        <span>선택</span><span>브랜드</span><span>원본 Excel 파일</span><span>작업번호</span><span>받은 시각</span><span>크기</span><span>열기</span>
       </div>${grouped.map(({ brandName, meta, files }) => {
       const [latest, ...history] = files;
       const logo = meta?.logoUrl
@@ -399,6 +400,7 @@ function renderDownloadedBrandFiles() {
         : `<b>${text(brandName.slice(0, 1))}</b>`;
       const historyRow = ({ file, index }) => `
         <div class="brand-download-history-row" data-open-brand-file-index="${index}" role="button" tabindex="0">
+          <label class="brand-download-check"><input type="checkbox" data-select-brand-file-index="${index}" ${selectedDownloadedFilePaths.has(brandImportPathKey(file.path)) ? "checked" : ""} aria-label="${text(file.name || "Excel 파일")} 선택"></label>
           <span></span>
           <strong title="${text(file.path || "")}">${text(file.name || file.path || "Excel 파일")}</strong>
           <code>${text(file.jobId || "-")}</code>
@@ -409,6 +411,7 @@ function renderDownloadedBrandFiles() {
       return `
         <article class="brand-download-row-group">
           <div class="brand-download-row" data-open-brand-file-index="${latest.index}" role="button" tabindex="0">
+            <label class="brand-download-check"><input type="checkbox" data-select-brand-file-index="${latest.index}" ${selectedDownloadedFilePaths.has(brandImportPathKey(latest.file.path)) ? "checked" : ""} aria-label="${text(latest.file.name || "Excel 파일")} 선택"></label>
             <span class="brand-download-brand">
             <i class="brand-download-logo">${logo}</i>
             <span class="brand-download-name">
@@ -432,6 +435,17 @@ function renderDownloadedBrandFiles() {
         </article>`;
     }).join("")}`
     : '<p class="empty">다운로드가 완료되면 원본 Excel 파일이 여기에 표시됩니다.</p>';
+  const selectedCount = downloadedBrandFiles.filter((file) => selectedDownloadedFilePaths.has(brandImportPathKey(file.path))).length;
+  const selectAll = $("#brand-download-select-all");
+  const deleteButton = $("#brand-download-delete");
+  if (selectAll) {
+    selectAll.checked = downloadedBrandFiles.length > 0 && selectedCount === downloadedBrandFiles.length;
+    selectAll.indeterminate = selectedCount > 0 && selectedCount < downloadedBrandFiles.length;
+  }
+  if (deleteButton) {
+    deleteButton.disabled = selectedCount === 0;
+    deleteButton.textContent = selectedCount ? `선택 삭제 ${selectedCount}개` : "선택 삭제";
+  }
 }
 
 function currentExcelPreviewFilters() {
@@ -2048,11 +2062,42 @@ window.aroundG.onBrandExportDetected((file) => {
   void drainDetectedBrandImports();
 });
 $("#brand-download-files").addEventListener("click", async (event) => {
+  const selector = event.target.closest("[data-select-brand-file-index]");
+  if (selector) {
+    event.stopPropagation();
+    const file = downloadedBrandFiles[Number(selector.dataset.selectBrandFileIndex)];
+    const pathKey = brandImportPathKey(file?.path);
+    if (pathKey) selector.checked ? selectedDownloadedFilePaths.add(pathKey) : selectedDownloadedFilePaths.delete(pathKey);
+    renderDownloadedBrandFiles();
+    return;
+  }
   const target = event.target.closest("[data-open-brand-file-index]");
   if (!target) return;
   const file = downloadedBrandFiles[Number(target.dataset.openBrandFileIndex)];
   if (!file?.path) return;
   await showExcelPreview(file, 0);
+});
+$("#brand-download-select-all")?.addEventListener("change", (event) => {
+  selectedDownloadedFilePaths.clear();
+  if (event.target.checked) downloadedBrandFiles.forEach((file) => selectedDownloadedFilePaths.add(brandImportPathKey(file.path)));
+  renderDownloadedBrandFiles();
+});
+$("#brand-download-delete")?.addEventListener("click", async () => {
+  const selected = downloadedBrandFiles.filter((file) => selectedDownloadedFilePaths.has(brandImportPathKey(file.path)));
+  if (!selected.length || !window.confirm(`선택한 Excel 파일 ${selected.length}개를 휴지통으로 이동할까요?`)) return;
+  const button = $("#brand-download-delete");
+  button.disabled = true;
+  button.textContent = "삭제 중…";
+  const result = await window.aroundG.trashBrandExportFiles(selected.map((file) => file.path));
+  selectedDownloadedFilePaths.clear();
+  await restoreDownloadedBrandFiles();
+  const status = $("#excel-files-status");
+  if (status) {
+    status.className = result?.ok ? "status success" : "status error";
+    status.textContent = result?.ok
+      ? `${Number(result.deleted || 0)}개 파일을 휴지통으로 이동했습니다.`
+      : result?.message || "선택한 파일을 삭제하지 못했습니다.";
+  }
 });
 $("#brand-download-files").addEventListener("keydown", (event) => {
   if (!["Enter", " "].includes(event.key)) return;
