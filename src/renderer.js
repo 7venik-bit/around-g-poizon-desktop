@@ -178,6 +178,7 @@ function updateBrandBatchState(brandName = "", state = "등록 대기", jobId = 
     brandName: String(brandName || previous.brandName || "선택 브랜드").trim(),
     state: String(state || previous.state || "등록 대기"),
     jobId: String(normalizedJobId || previous.jobId || "").trim(),
+    createdAt: Number(previous.createdAt || (normalizedJobId ? Date.now() : 0)),
     updatedAt: Date.now(),
   });
   renderBrandBatchProgress();
@@ -195,12 +196,13 @@ function renderBrandBatchProgress() {
   const registered = items.filter((item) => Boolean(item.jobId)).length;
   const processing = items.filter((item) => item.jobId && !/확인완료|실패|오류|중단|취소/.test(item.state)).length;
   panel.hidden = total === 0;
-  summary.textContent = `등록 ${registered}/${total} · 처리 중 ${processing} · 완료 ${completed} · 실패 ${failed}`;
-  list.innerHTML = items.map((item) => {
+  summary.textContent = `작업번호 생성 ${registered}/${total} · 처리 중 ${processing} · 완료 ${completed} · 실패 ${failed}`;
+  list.innerHTML = items.map((item, index) => {
     const stateClass = /확인완료/.test(item.state) ? " is-complete"
       : /실패|오류|중단|취소/.test(item.state) ? " is-error"
         : item.jobId ? " is-processing" : " is-registering";
-    return `<div class="brand-batch-row${stateClass}"><strong>${text(item.brandName)}</strong><code>${item.jobId ? `작업번호 ${text(item.jobId)}` : "작업번호 생성 전"}</code><span>${text(item.state)}</span></div>`;
+    const createdTime = item.createdAt ? brandTime(item.createdAt) : "생성 대기";
+    return `<div class="brand-batch-row${stateClass}"><b class="brand-batch-order">${index + 1}</b><strong>${text(item.brandName)}</strong><code>${item.jobId ? text(item.jobId) : "생성 전"}</code><time>${text(createdTime)}</time><span>${text(item.state)}</span></div>`;
   }).join("");
 }
 
