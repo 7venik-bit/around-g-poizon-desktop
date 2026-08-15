@@ -40,6 +40,7 @@ import {
   parseKrPoizonBrandData,
   parsePublicBrandProducts,
   prioritizeBrandCatalog,
+  prioritizeBrandCatalogBySales,
   publicBrandPageCount,
   publicBrandPath,
   salesRankedBrands,
@@ -6395,7 +6396,11 @@ app.whenReady().then(async () => {
     const officialBrandRegistry = safeOfficialDomainRegistry(brands);
     return {
       ...explorerMetadata(),
-      brands: prioritizeBrandCatalog(brandsWithOfficialDomainStatus(brands, officialBrandRegistry)),
+      brands: prioritizeBrandCatalogBySales(
+        store.snapshot().products,
+        brandsWithOfficialDomainStatus(brands, officialBrandRegistry),
+        200
+      ),
       officialDomainSummary: officialDomainRegistrySummary(officialBrandRegistry),
       officialDomainAudit: officialDomainAuditSnapshot(officialBrandRegistry),
       brandCatalogUpdatedAt: String(settings.brandCatalogUpdatedAt || ""),
