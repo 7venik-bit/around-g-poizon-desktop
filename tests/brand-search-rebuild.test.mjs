@@ -20,6 +20,20 @@ test("completed download history does not block a new brand search", () => {
   assert.match(renderer, /some\(\(job\) => !brandJobIsFinished\(job\?\.state\)\)/);
   assert.match(renderer, /brandSelectionBusy \|\| activeExportBrand \|\| hasActiveBrandExportJobs\(\)/);
   assert.doesNotMatch(renderer, /brandSelectionBusy \|\| activeExportBrand \|\| brandExportJobs\.size\) \{/);
+  assert.match(renderer, /await window\.aroundG\.beginSellerBrandSearchSession/);
+  assert.match(renderer, /brandExportJobs\.clear\(\)/);
+  assert.match(preload, /beginSellerBrandSearchSession: \(\) => ipcRenderer\.invoke\("seller:begin-brand-search-session"\)/);
+  assert.match(main, /ipcMain\.handle\("seller:begin-brand-search-session"/);
+  assert.match(main, /historicalJobCount: savedBrandExportJobs\(\)\.length/);
+});
+
+test("a new search session preserves history only as a baseline and clears live job ownership", () => {
+  const start = main.indexOf('ipcMain.handle("seller:begin-brand-search-session"');
+  const end = main.indexOf('ipcMain.handle("seller:abort-brand-export-attempt"', start);
+  const session = main.slice(start, end);
+  assert.match(session, /brandWorkSessionGeneration \+= 1/);
+  assert.match(session, /brandExportJobs\.clear\(\)/);
+  assert.doesNotMatch(session, /brandExportJobCache: \[\]/);
 });
 
 test("brand workflow connects directly and searches English before Korean fallback", () => {
