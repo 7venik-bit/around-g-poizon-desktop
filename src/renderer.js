@@ -477,6 +477,18 @@ function excelProductColumnIndex(headers = []) {
   return headers.findIndex((header) => /^(상품\s*번호|품번|article\s*(number|no)?|product\s*(number|no)?|货号|商品编号)$/i.test(String(header || "").trim()));
 }
 
+function excelImageColumn(header = "") {
+  return /^(?:SPU\s*이미지|SKU\s*이미지|상품\s*이미지|이미지)$/i.test(String(header || "").trim());
+}
+
+function renderRawExcelCell(cell, header = "", columnIndex = 0) {
+  const value = String(cell ?? "").trim();
+  if (excelImageColumn(header) && /^https:\/\//i.test(value)) {
+    return `<td class="excel-image-cell" data-excel-column-index="${columnIndex}" title="${text(value)}"><img src="${text(value)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true"></td>`;
+  }
+  return `<td data-excel-column-index="${columnIndex}" title="${text(cell)}">${text(cell)}</td>`;
+}
+
 function excelPreviewProductKey(filePath, row = [], rowNumber = 0, productColumn = -1) {
   const productNumber = productColumn >= 0 ? String(row[productColumn] || "").trim() : "";
   return `${brandImportPathKey(filePath)}::${productNumber || `row-${rowNumber}`}`;
@@ -686,9 +698,9 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   if (result.productView) {
     renderExcelProductRows(file, products);
   } else {
-    $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th class="excel-row-number">행</th>${headers.map((header) => `<th title="${text(header)}">${text(header)}</th>`).join("")}</tr>`;
+    $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th class="excel-row-number">행</th>${headers.map((header, columnIndex) => `<th class="${excelImageColumn(header) ? "excel-image-column" : ""}" data-excel-column-index="${columnIndex}" title="${text(header)}">${text(header)}</th>`).join("")}</tr>`;
     $("#excel-preview-rows").innerHTML = rows.length
-      ? rows.map((row, index) => `<tr><td class="excel-product-select-column"><input type="checkbox" data-excel-product-select="${encodeURIComponent(pageProductKeys[index])}" aria-label="제품 선택"></td><th class="excel-row-number">${Number(rowNumbers[index] || result.offset + index + 2).toLocaleString("ko-KR")}</th>${row.map((cell) => `<td title="${text(cell)}">${text(cell)}</td>`).join("")}</tr>`).join("")
+      ? rows.map((row, index) => `<tr><td class="excel-product-select-column"><input type="checkbox" data-excel-product-select="${encodeURIComponent(pageProductKeys[index])}" aria-label="제품 선택"></td><th class="excel-row-number">${Number(rowNumbers[index] || result.offset + index + 2).toLocaleString("ko-KR")}</th>${row.map((cell, columnIndex) => renderRawExcelCell(cell, headers[columnIndex], columnIndex)).join("")}</tr>`).join("")
       : `<tr><td class="empty" colspan="${Math.max(1, totalColumns + 2)}">표시할 데이터 행이 없습니다.</td></tr>`;
   }
   $("#excel-preview-select-page").onchange = (event) => {

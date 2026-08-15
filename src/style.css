@@ -561,10 +561,13 @@ body.excel-preview-active{overflow:hidden}
 .excel-preview-grid table{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0;font-size:10px}
 .excel-preview-grid th,.excel-preview-grid td{min-width:105px;max-width:260px;height:30px;padding:5px 8px;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;color:#30445e;background:#fff}
 .excel-preview-grid thead th{position:sticky;top:0;z-index:2;color:#fff;background:#263c5b;font-weight:800}
-.excel-preview-grid .excel-row-number{position:sticky;left:0;z-index:1;min-width:52px;width:52px;max-width:52px;text-align:right;color:#718096;background:#f0f4f8;font-variant-numeric:tabular-nums}
+.excel-preview-grid .excel-row-number{position:sticky;left:0;z-index:1;min-width:40px!important;width:40px!important;max-width:40px!important;padding-left:4px;padding-right:4px;text-align:right;color:#718096;background:#f0f4f8;font-variant-numeric:tabular-nums}
 .excel-preview-grid thead .excel-row-number{z-index:3;color:#dce6f2;background:#1d304b}
 .excel-preview-grid .excel-product-select-column{position:sticky;left:0;z-index:2;min-width:48px;width:48px;max-width:48px;text-align:center;background:#f4f8fc}.excel-preview-grid thead .excel-product-select-column{z-index:4;color:#dce6f2;background:#1d304b}.excel-preview-grid .excel-product-select-column input{width:15px;height:15px;accent-color:#287de0}.excel-preview-grid .excel-product-select-column+.excel-row-number{left:48px}
 .excel-preview-grid tbody tr:nth-child(even) td{background:#fafbfd}
+.excel-preview-grid .excel-image-column,.excel-preview-grid .excel-image-cell{min-width:68px;width:68px;max-width:68px;text-align:center}
+.excel-preview-grid .excel-image-cell{height:54px;padding:3px}
+.excel-preview-grid .excel-image-cell img{display:block;width:46px;height:46px;margin:auto;object-fit:contain;border-radius:5px;background:#fff}
 .excel-preview.product-view #excel-hide-common-columns,.excel-preview.product-view #excel-show-hidden-columns{display:none}
 .excel-preview:not(.product-view) #excel-preview-search-selected{display:none}
 .excel-preview.product-view .excel-preview-grid table{width:1000px;min-width:100%;table-layout:fixed}

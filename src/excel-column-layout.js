@@ -39,7 +39,7 @@
   }
 
   function headerCells() {
-    return [...document.querySelectorAll("#excel-preview-columns th")].slice(1);
+    return [...document.querySelectorAll("#excel-preview-columns th")].slice(2);
   }
 
   function assignColumnIndexes() {
@@ -56,7 +56,7 @@
       }
     });
     document.querySelectorAll("#excel-preview-rows tr").forEach((row) => {
-      [...row.querySelectorAll("td")].forEach((cell, index) => {
+      [...row.querySelectorAll("td")].slice(1).forEach((cell, index) => {
         cell.dataset.excelColumnIndex = String(index);
       });
     });
