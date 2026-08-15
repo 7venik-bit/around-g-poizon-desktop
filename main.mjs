@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, shell } from "electron";
 import { mkdirSync } from "node:fs";
-import { appendFile, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { appendFile, copyFile, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { readSheet } from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
@@ -1405,12 +1405,38 @@ const RESTORED_PENDING_JOB_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const PROCESSED_BRAND_EXPORT_SUFFIX = "_총판매량50이상_OR_정리.xlsx";
 
 function defaultBrandExportFolder() {
-  return join(app.getPath("desktop"), "Around G POIZON", "POIZON 전체내보내기");
+  return oneDriveBrandExportFolder()
+    || join(app.getPath("desktop"), "Around G POIZON", "POIZON 전체내보내기");
 }
 
 function currentBrandExportFolder() {
   return String(store?.snapshot()?.settings?.brandExportFolder || "").trim()
     || defaultBrandExportFolder();
+}
+
+function oneDriveRootFolder() {
+  return [process.env.OneDriveConsumer, process.env.OneDrive, process.env.OneDriveCommercial]
+    .map((value) => String(value || "").trim())
+    .find(Boolean) || "";
+}
+
+function oneDrivePoizonBackupRoot() {
+  const root = oneDriveRootFolder();
+  return root ? join(root, "Around G POIZON", "POIZON 다운로드 백업") : "";
+}
+
+function oneDriveBrandExportFolder() {
+  const root = oneDrivePoizonBackupRoot();
+  return root ? join(root, "브랜드 원본") : "";
+}
+
+function oneDrivePopularExportFolder() {
+  const root = oneDrivePoizonBackupRoot();
+  return root ? join(root, "인기상품 원본") : "";
+}
+
+function sameFolder(left = "", right = "") {
+  return resolve(String(left || "")).toLocaleLowerCase() === resolve(String(right || "")).toLocaleLowerCase();
 }
 
 function safeBrandExportLabel(value = "") {
@@ -1448,6 +1474,64 @@ async function listBrandExportExcelEntries(folder) {
   }
   await visit(folder);
   return files;
+}
+
+async function copyExcelTree(sourceFolder, destinationFolder) {
+  if (!sourceFolder || !destinationFolder || sameFolder(sourceFolder, destinationFolder)) return 0;
+  let entries = [];
+  try {
+    entries = await listBrandExportExcelEntries(sourceFolder);
+  } catch {
+    return 0;
+  }
+  let copied = 0;
+  for (const entry of entries) {
+    const nestedPath = relative(sourceFolder, entry.path);
+    if (!nestedPath || nestedPath.startsWith("..")) continue;
+    const destination = join(destinationFolder, nestedPath);
+    await mkdir(dirname(destination), { recursive: true });
+    const sourceInfo = await stat(entry.path);
+    const destinationInfo = await stat(destination).catch(() => null);
+    if (destinationInfo?.size === sourceInfo.size) continue;
+    await copyFile(entry.path, destination);
+    copied += 1;
+  }
+  return copied;
+}
+
+async function initializeOneDrivePoizonBackup() {
+  const backupRoot = oneDrivePoizonBackupRoot();
+  const brandFolder = oneDriveBrandExportFolder();
+  const popularFolder = oneDrivePopularExportFolder();
+  if (!backupRoot || !brandFolder || !popularFolder) return { enabled: false, copied: 0 };
+  await mkdir(brandFolder, { recursive: true });
+  await mkdir(popularFolder, { recursive: true });
+  const previousBrandFolder = String(store.snapshot().settings.brandExportFolder || "").trim()
+    || join(app.getPath("desktop"), "Around G POIZON", "POIZON 전체내보내기");
+  const copiedBrands = await copyExcelTree(previousBrandFolder, brandFolder);
+  const legacyPopularFolder = join(app.getPath("desktop"), "Around G POIZON");
+  let copiedPopular = 0;
+  try {
+    const entries = await readdir(legacyPopularFolder, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !/^POIZON-인기상품-원본-.*\.xlsx$/i.test(entry.name)) continue;
+      const source = join(legacyPopularFolder, entry.name);
+      const destination = join(popularFolder, entry.name);
+      const sourceInfo = await stat(source);
+      const destinationInfo = await stat(destination).catch(() => null);
+      if (destinationInfo?.size === sourceInfo.size) continue;
+      await copyFile(source, destination);
+      copiedPopular += 1;
+    }
+  } catch {
+    // A fresh installation may not have any desktop POIZON files yet.
+  }
+  await store.setSettings({
+    brandExportFolder: brandFolder,
+    oneDrivePoizonBackupRoot: backupRoot,
+    oneDrivePoizonBackupEnabled: true,
+  });
+  return { enabled: true, copied: copiedBrands + copiedPopular, folder: backupRoot };
 }
 
 function brandFromExportFileName(name = "") {
@@ -5949,6 +6033,7 @@ app.whenReady().then(async () => {
     app.quit();
     return;
   }
+  await initializeOneDrivePoizonBackup();
   ipcMain.handle("store:snapshot", () => store.snapshot());
   ipcMain.handle("store:upsert", (_event, collection, item) => store.upsert(collection, item));
   ipcMain.handle("store:bulk-upsert", (_event, collection, items) => store.bulkUpsert(collection, items));
@@ -6188,7 +6273,8 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     try {
       const limit = 200;
       const slots = createPopularSlots(products, limit);
-      const folder = join(app.getPath("desktop"), "Around G POIZON");
+      const folder = oneDrivePopularExportFolder()
+        || join(app.getPath("desktop"), "Around G POIZON");
       await mkdir(folder, { recursive: true });
       const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
       const filePath = join(folder, `POIZON-인기상품-원본-${stamp}.xlsx`);
