@@ -5,6 +5,7 @@ import {
   officialSearchUrlFromRecord,
   verifiedOfficialBrand,
 } from "../services/official-domain-registry.mjs";
+import { brandSearchQueries } from "../services/brand-search-profile.mjs";
 
 const MAX_QUERY_LENGTH = 120;
 const MAX_PRODUCTS_PER_STORE = 8;
@@ -508,23 +509,19 @@ export async function queryDomesticProducts({
   preferTitle = false,
   verifyLinkCounts = false,
   officialBrandRecord = null,
+  searchStrategy = "brand_code",
   fetchImpl = fetch,
 }) {
   const normalizedQuery = sanitizeDomesticQuery(query);
   if (!normalizedQuery) throw new Error("DOMESTIC_QUERY_REQUIRED");
   if (normalizedQuery.length > MAX_QUERY_LENGTH) throw new Error("DOMESTIC_QUERY_TOO_LONG");
-  const codeQueries = [
-    sanitizeDomesticQuery(articleNumber),
-    sanitizeDomesticQuery([brand, articleNumber].filter(Boolean).join(" ")),
-  ];
-  const titleQueries = [
-    sanitizeDomesticQuery([brand, title].filter(Boolean).join(" ")),
-    sanitizeDomesticQuery(title),
-    normalizedQuery,
-  ];
-  const queryCandidates = [...new Set(
-    (preferTitle ? [...titleQueries, ...codeQueries] : [...codeQueries, ...titleQueries]).filter(Boolean)
-  )];
+  const queryCandidates = brandSearchQueries({
+    strategy: preferTitle && searchStrategy === "brand_code" ? "brand_title" : searchStrategy,
+    brand,
+    articleNumber,
+    title,
+    query: normalizedQuery,
+  }).map(sanitizeDomesticQuery).filter(Boolean);
 
   const knownOfficial = officialBrandEntry(brand || title || normalizedQuery);
   const officialStatus = officialBrandRecord?.status || (knownOfficial ? OFFICIAL_DOMAIN_STATUS.VERIFIED : OFFICIAL_DOMAIN_STATUS.PENDING);
@@ -617,6 +614,8 @@ export async function queryDomesticProducts({
 
   return {
     query: normalizedQuery,
+    searchStrategy,
+    queryCandidates,
     products: results.flatMap((result) => result.products),
     sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, count, products }, priority) => ({
       store,
