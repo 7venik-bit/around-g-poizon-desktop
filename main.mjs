@@ -6515,6 +6515,31 @@ app.whenReady().then(async () => {
     }
     return result;
   });
+  ipcMain.handle("seller:begin-brand-search-session", async () => {
+    // A click on "브랜드 검색" always starts a new POIZON export request.
+    // Keep the saved cache only as a baseline so an old job number can never
+    // be claimed by this run, while clearing active monitoring state that
+    // belongs to the previous completed run.
+    brandWorkSessionGeneration += 1;
+    brandExportAttemptGeneration += 1;
+    brandExportJobs.clear();
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandDownloadStarted = false;
+    activeBrandDownloadJobId = "";
+    brandExportAllCompleteSent = false;
+    lastBrandExportSignature = "__NEW_BRAND_SEARCH_SESSION__";
+    if (brandExportMonitorRestartTimer) {
+      clearTimeout(brandExportMonitorRestartTimer);
+      brandExportMonitorRestartTimer = null;
+    }
+    return {
+      ok: true,
+      sessionGeneration: brandWorkSessionGeneration,
+      historicalJobCount: savedBrandExportJobs().length,
+    };
+  });
   ipcMain.handle("seller:abort-brand-export-attempt", abortSellerBrandExportAttempt);
 
   ipcMain.handle("seller:stop-brand-work", async () => {
