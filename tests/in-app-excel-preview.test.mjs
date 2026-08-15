@@ -26,8 +26,11 @@ test("Excel preview is read-only and paginated in the main sourcing screen", () 
 
 test("Excel preview filters both total-sales columns across all rows", async () => {
   const preloadSource = await readFile(new URL("../preload.cjs", import.meta.url), "utf8");
-  assert.match(htmlSource, /id="excel-filter-min-total"[^>]+min="0"[^>]+value="30"/);
-  assert.match(htmlSource, /id="excel-filter-min-local-total"[^>]+min="0"[^>]+value="30"/);
+  assert.match(htmlSource, /id="excel-filter-min-total"[^>]+min="0"/);
+  assert.match(htmlSource, /id="excel-filter-min-local-total"[^>]+min="0"/);
+  assert.doesNotMatch(htmlSource, /id="excel-filter-min-(?:local-)?total"[^>]+value=/);
+  assert.match(rendererSource, /minimumTotal: \$\("#excel-filter-min-total"\)\?\.value \?\? ""/);
+  assert.match(rendererSource, /minimumLocalTotal: \$\("#excel-filter-min-local-total"\)\?\.value \?\? ""/);
   assert.doesNotMatch(htmlSource, /id="excel-filter-min-(?:local-)?total"[^>]+readonly/);
   assert.match(rendererSource, /#excel-filter-min-total"\)\.value = ""/);
   assert.match(rendererSource, /#excel-filter-min-local-total"\)\.value = ""/);
@@ -52,12 +55,14 @@ test("Excel filter controls share one bottom line", () => {
   assert.match(cssSource, /\.excel-preview-filters label>input,\.excel-preview-filters label>select\{width:100%\}/);
 });
 
-test("Excel defaults to a grouped product-search view with raw-data fallback", () => {
+test("Excel defaults to the complete raw sheet with optional grouped product view", () => {
   assert.match(mainSource, /function buildExcelPreviewProducts/);
   assert.match(mainSource, /const productView = input\.filters\?\.productView !== false/);
   assert.match(mainSource, /sourceTotalProducts/);
-  assert.match(htmlSource, /id="excel-view-products"[^>]*class="active"[^>]*>상품 보기/);
-  assert.match(htmlSource, /id="excel-view-raw"[^>]*>원본 데이터 보기/);
+  assert.doesNotMatch(htmlSource, /id="excel-view-products"|id="excel-view-raw"/);
+  assert.match(htmlSource, /원본 Excel 전체 보기/);
+  assert.match(rendererSource, /let excelPreviewProductMode = false/);
+  assert.match(rendererSource, /filters = \{ \.\.\.filters, productView: false \}/);
   assert.match(rendererSource, /renderExcelProductRows/);
   assert.match(rendererSource, /data-excel-search-product/);
   assert.match(rendererSource, /선택 상품 일괄 검색/);
