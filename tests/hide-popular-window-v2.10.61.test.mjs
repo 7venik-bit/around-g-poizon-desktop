@@ -30,8 +30,8 @@ test("Seller Center appears only when login attention is required", () => {
   assert.match(captureBlock, /revealSellerLogin\(\);[\s\S]*판매자센터 로그인을 완료해 주세요/);
 });
 
-test("release metadata is 2.10.209", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.209");
-  assert.equal(JSON.parse(lockSource).version, "2.10.209");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.209");
+test("release metadata is 2.10.210", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.210");
+  assert.equal(JSON.parse(lockSource).version, "2.10.210");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.210");
 });

@@ -122,6 +122,17 @@ export function salesRankedBrands(products, brands, rankingLimit = 200) {
   return [...selected.values()];
 }
 
+export function prioritizeBrandCatalogBySales(products, brands, rankingLimit = 200) {
+  const catalog = prioritizeBrandCatalog(brands);
+  const ranked = salesRankedBrands(products, catalog, rankingLimit);
+  if (!ranked.length) return catalog;
+  const rankedIds = new Set(ranked.map((brand) => Number(brand.id)));
+  return [
+    ...ranked.map((brand) => ({ ...brand, salesPriority: true })),
+    ...catalog.filter((brand) => !rankedIds.has(Number(brand.id))),
+  ];
+}
+
 export function mergeLocalizedBrandCatalog(koreanBrands, englishBrands) {
   const englishById = new Map((englishBrands || []).map((brand) => [Number(brand.id), brand]));
   return prioritizeBrandCatalog((koreanBrands || []).map((brand) => {

@@ -9,8 +9,25 @@ import {
   FULL_BRAND_CATALOG_MINIMUM,
   brandCatalogNeedsSync,
   salesRankedBrands,
+  prioritizeBrandCatalogBySales,
   parseKrPoizonBrandData,
 } from "../services/brand-catalog.mjs";
+
+test("최근 판매순위 브랜드를 전체 브랜드 선택 목록 최상단에 배치한다", () => {
+  const brands = [
+    { id: 1, name: "Adidas", ko: "아디다스" },
+    { id: 2, name: "Nike", ko: "나이키" },
+    { id: 3, name: "MLB", ko: "엠엘비" },
+    { id: 4, name: "Zegna", ko: "제냐" },
+  ];
+  const sorted = prioritizeBrandCatalogBySales([
+    { popularityRank: 8, brand: "MLB" },
+    { popularityRank: 2, brand: "Zegna" },
+  ], brands, 200);
+  assert.deepEqual(sorted.map((brand) => brand.id), [4, 3, 2, 1]);
+  assert.deepEqual(sorted.slice(0, 2).map((brand) => brand.salesRank), [2, 8]);
+  assert.equal(sorted[0].salesPriority, true);
+});
 
 test("판매순위 상위 200건에서 연관 브랜드만 순서대로 추출한다", () => {
   const brands = [
