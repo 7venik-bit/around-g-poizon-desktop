@@ -626,6 +626,7 @@ body.excel-preview-active{overflow:hidden}
 .brand-card:disabled{cursor:wait;opacity:.72}
 .brand-card.download-complete{grid-template-columns:30px minmax(0,1fr)}
 .brand-download-complete{align-self:center;margin-top:3px;padding:2px 6px;border:1px solid #86d0a5;border-radius:999px;color:#167348;background:#edf9f2;font-size:9px;font-style:normal;font-weight:800;line-height:1.2;white-space:nowrap}
+.brand-card .brand-download-date{display:block;width:max-content;max-width:100%;margin-top:2px;color:#16825d;font-size:9px;font-weight:800;line-height:1.2;white-space:nowrap}
 .brand-toolbar .brand-filter-field{position:relative;display:block;margin:0;width:min(460px,100%)}
 .brand-filter-field svg{position:absolute;left:14px;top:50%;width:18px;height:18px;transform:translateY(-50%);fill:none;stroke:#4d7da5;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 .brand-toolbar .brand-filter-field input{width:100%;padding-left:42px}
