@@ -163,11 +163,19 @@ function brandBatchKey(value = "") {
 function updateBrandBatchState(brandName = "", state = "등록 대기", jobId = "") {
   const key = brandBatchKey(brandName);
   if (!key) return;
+  const normalizedJobId = String(jobId || "").trim();
+  if (normalizedJobId) {
+    for (const [existingKey, existing] of brandBatchStates.entries()) {
+      if (existingKey !== key && String(existing?.jobId || "").trim() === normalizedJobId) {
+        brandBatchStates.delete(existingKey);
+      }
+    }
+  }
   const previous = brandBatchStates.get(key) || {};
   brandBatchStates.set(key, {
     brandName: String(brandName || previous.brandName || "선택 브랜드").trim(),
     state: String(state || previous.state || "등록 대기"),
-    jobId: String(jobId || previous.jobId || "").trim(),
+    jobId: String(normalizedJobId || previous.jobId || "").trim(),
     updatedAt: Date.now(),
   });
   renderBrandBatchProgress();
