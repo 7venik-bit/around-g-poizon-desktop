@@ -2076,6 +2076,18 @@ async function previewExcelFile(input = {}) {
     localTotalSalesColumn: filtered.localTotalSalesColumn,
     filterApplied: filtered.filterApplied,
     matchMode: filtered.matchMode,
+    filterDiagnostics: {
+      sourceProducts: filtered.sourceProducts,
+      filteredProducts: filtered.filteredProducts,
+      chinaQualifiedProducts: filtered.chinaQualifiedProducts,
+      localQualifiedProducts: filtered.localQualifiedProducts,
+      missingChinaProducts: filtered.missingChinaProducts,
+      missingLocalProducts: filtered.missingLocalProducts,
+      totalSalesHeader: filtered.totalSalesColumn >= 0 ? workbook.headers[filtered.totalSalesColumn] : "",
+      localTotalSalesHeader: filtered.localTotalSalesColumn >= 0 ? workbook.headers[filtered.localTotalSalesColumn] : "",
+      totalSalesColumnNumber: filtered.totalSalesColumn >= 0 ? filtered.totalSalesColumn + 1 : 0,
+      localTotalSalesColumnNumber: filtered.localTotalSalesColumn >= 0 ? filtered.localTotalSalesColumn + 1 : 0,
+    },
   };
 }
 
