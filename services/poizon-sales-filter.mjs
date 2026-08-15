@@ -46,30 +46,57 @@ export function filterPoizonPreviewRows(headers = [], rows = [], filters = {}) {
   const chinaActive = totalSalesColumn >= 0 && (minimumTotal !== null || maximumTotal !== null);
   const localActive = localTotalSalesColumn >= 0
     && (minimumLocalTotal !== null || maximumLocalTotal !== null);
+  const spuIdColumn = findPoizonColumn(headers, "SPU ID", "SPU_ID", "SPUID");
+  const articleNumberColumn = findPoizonColumn(headers, "상품 번호", "상품번호", "품번");
 
   const entries = (Array.isArray(rows) ? rows : []).map((row, index) => ({
     values: Array.isArray(row) ? row : [],
     sourceRowNumber: index + 2,
   }));
-  const filteredEntries = entries.filter(({ values }) => {
+  const groups = new Map();
+  for (const entry of entries) {
+    const spuId = spuIdColumn >= 0 ? String(entry.values[spuIdColumn] ?? "").trim() : "";
+    const articleNumber = articleNumberColumn >= 0 ? String(entry.values[articleNumberColumn] ?? "").trim().toUpperCase() : "";
+    const key = spuId ? `SPU:${spuId}` : articleNumber ? `ARTICLE:${articleNumber}` : `ROW:${entry.sourceRowNumber}`;
+    const group = groups.get(key) || {
+      key,
+      entries: [],
+      chinaValues: [],
+      localValues: [],
+    };
+    group.entries.push(entry);
+    const chinaRaw = totalSalesColumn >= 0 ? entry.values[totalSalesColumn] : "";
+    const localRaw = localTotalSalesColumn >= 0 ? entry.values[localTotalSalesColumn] : "";
+    if (hasSalesMetric(chinaRaw)) group.chinaValues.push(parsePoizonSalesMetric(chinaRaw));
+    if (hasSalesMetric(localRaw)) group.localValues.push(parsePoizonSalesMetric(localRaw));
+    groups.set(key, group);
+  }
+  const productGroups = [...groups.values()].map((group) => ({
+    ...group,
+    chinaValue: group.chinaValues.length ? Math.max(...group.chinaValues) : null,
+    localValue: group.localValues.length ? Math.max(...group.localValues) : null,
+  }));
+  const inRange = (value, minimum, maximum) => value !== null
+    && (minimum === null || value >= minimum)
+    && (maximum === null || value <= maximum);
+  const chinaQualifiedProducts = productGroups.filter((group) =>
+    !chinaActive || inRange(group.chinaValue, minimumTotal, maximumTotal)).length;
+  const localQualifiedProducts = productGroups.filter((group) =>
+    !localActive || inRange(group.localValue, minimumLocalTotal, maximumLocalTotal)).length;
+  const missingChinaProducts = productGroups.filter((group) => group.chinaValue === null).length;
+  const missingLocalProducts = productGroups.filter((group) => group.localValue === null).length;
+  const matchedGroups = productGroups.filter((group) => {
     const matches = [];
     if (chinaActive) {
-      const raw = values[totalSalesColumn];
-      const value = parsePoizonSalesMetric(raw);
-      matches.push(hasSalesMetric(raw)
-        && (minimumTotal === null || value >= minimumTotal)
-        && (maximumTotal === null || value <= maximumTotal));
+      matches.push(inRange(group.chinaValue, minimumTotal, maximumTotal));
     }
     if (localActive) {
-      const raw = values[localTotalSalesColumn];
-      const value = parsePoizonSalesMetric(raw);
-      matches.push(hasSalesMetric(raw)
-        && (minimumLocalTotal === null || value >= minimumLocalTotal)
-        && (maximumLocalTotal === null || value <= maximumLocalTotal));
+      matches.push(inRange(group.localValue, minimumLocalTotal, maximumLocalTotal));
     }
     if (!matches.length) return true;
     return matchMode === "all" ? matches.every(Boolean) : matches.some(Boolean);
   });
+  const filteredEntries = matchedGroups.flatMap((group) => group.entries);
 
   return {
     entries: filteredEntries,
@@ -81,6 +108,14 @@ export function filterPoizonPreviewRows(headers = [], rows = [], filters = {}) {
     localActive,
     filterApplied: chinaActive || localActive,
     matchMode,
+    sourceProducts: productGroups.length,
+    filteredProducts: matchedGroups.length,
+    chinaQualifiedProducts,
+    localQualifiedProducts,
+    missingChinaProducts,
+    missingLocalProducts,
+    spuIdColumn,
+    articleNumberColumn,
   };
 }
 

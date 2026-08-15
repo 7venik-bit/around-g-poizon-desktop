@@ -103,3 +103,35 @@ test("fixed total-sales preview requires both China and local values", () => {
   assert.equal(result.matchMode, "all");
   assert.deepEqual(result.entries.map((entry) => entry.values[0]), ["A"]);
 });
+
+test("SKU 행별 값이 나뉘어 있어도 SPU 상품 단위로 합친 후 AND 필터를 적용한다", () => {
+  const headers = ["SPU ID", "상품 번호", "중국 총 판매량", "현지 판매자 총 판매량", "SKU ID"];
+  const rows = [
+    ["100", "ABC-1", "100+", "--", "S1"],
+    ["100", "ABC-1", "--", "40", "S2"],
+    ["200", "DEF-2", "80", "29", "S3"],
+  ];
+  const result = filterPoizonPreviewRows(headers, rows, {
+    fixedTotalAnd: true,
+    minimumTotal: 30,
+    minimumLocalTotal: 30,
+  });
+  assert.equal(result.sourceProducts, 2);
+  assert.equal(result.filteredProducts, 1);
+  assert.equal(result.chinaQualifiedProducts, 2);
+  assert.equal(result.localQualifiedProducts, 1);
+  assert.deepEqual(result.entries.map((entry) => entry.values[4]), ["S1", "S2"]);
+});
+
+test("SPU ID가 없으면 상품번호로 SKU를 묶고 판매량 누락 상품을 진단한다", () => {
+  const headers = ["상품 번호", "중국 총 판매량", "현지 판매자 총 판매량"];
+  const result = filterPoizonPreviewRows(headers, [
+    ["ABC-1", "50", ""],
+    ["ABC-1", "", "60"],
+    ["DEF-2", "", ""],
+  ], { fixedTotalAnd: true, minimumTotal: 30, minimumLocalTotal: 30 });
+  assert.equal(result.sourceProducts, 2);
+  assert.equal(result.filteredProducts, 1);
+  assert.equal(result.missingChinaProducts, 1);
+  assert.equal(result.missingLocalProducts, 1);
+});
