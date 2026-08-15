@@ -66,6 +66,11 @@ import {
 } from "./services/official-domain-not-found.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer } from "./services/poizon.mjs";
 import {
+  brandSearchProfileKey,
+  recordBrandSearchOutcome,
+  selectBrandSearchStrategy,
+} from "./services/brand-search-profile.mjs";
+import {
   extractSellerBrandApiProducts,
   mergeSellerBrandPages,
   mergeSellerBrandProducts,
@@ -6680,8 +6685,12 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   });
   ipcMain.handle("domestic:search", async (_event, input) => {
     try {
+      const settings = store.snapshot().settings;
+      const profileKey = brandSearchProfileKey(input?.brand, input?.brandId);
+      const searchProfiles = settings.brandSearchProfiles || {};
+      const searchStrategy = selectBrandSearchStrategy(searchProfiles[profileKey]);
       const officialBrandRecord = officialDomainRecordForBrand(
-        store.snapshot().settings.officialBrandRegistry,
+        settings.officialBrandRegistry,
         String(input?.brand || "").trim()
       );
       const data = await queryDomesticProducts({
@@ -6692,6 +6701,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         preferTitle: !String(input?.imageUrl || "").trim(),
         verifyLinkCounts: false,
         officialBrandRecord,
+        searchStrategy,
       });
       let matched = await addMatchConfidence(data, input || {});
       if (input?.verifyLinkCounts === true) {
@@ -6703,7 +6713,30 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         );
         matched = await addMatchConfidence(matched, input || {});
       }
-      return { ok: true, data: matched };
+      const exactMatch = matched.products.some((product) =>
+        Number(product.signals?.codeScore || 0) === 1
+        && product.articleConflict !== true
+        && product.signals?.codeConflict !== true
+      );
+      const brandSearchProfiles = recordBrandSearchOutcome(searchProfiles, {
+        brand: String(input?.brand || "").trim(),
+        brandId: String(input?.brandId || "").trim(),
+        strategy: searchStrategy,
+        exactMatch,
+        resultCount: matched.products.length,
+      });
+      await store.setSettings({ brandSearchProfiles });
+      return {
+        ok: true,
+        data: {
+          ...matched,
+          searchLearning: {
+            strategy: searchStrategy,
+            exactMatch,
+            saved: true,
+          },
+        },
+      };
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }

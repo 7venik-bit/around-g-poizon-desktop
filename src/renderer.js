@@ -523,6 +523,7 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
     query: [product.brandName || product.brand, product.articleNumber || product.productCode, product.title || product.name].filter(Boolean).join(" "),
     articleNumber: product.articleNumber || product.productCode || "",
     brand: product.brandName || product.brand || "",
+    brandId: product.brandCode || product.brandId || "",
     title: product.apiTitle || product.title || product.name || "",
     imageUrl: product.logoUrl || product.imageUrl || "",
     verifyLinkCounts,
