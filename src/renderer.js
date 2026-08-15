@@ -40,7 +40,7 @@ let excelPreviewRequestId = 0;
 const selectedExcelPreviewProducts = new Set();
 let activeExcelPreviewPath = "";
 let excelFilesListScrollPosition = 0;
-let excelPreviewProductMode = true;
+let excelPreviewProductMode = false;
 let excelPreviewPageProducts = [];
 let excelPreviewPageKeys = [];
 let excelPreviewBatchSearching = false;
@@ -465,8 +465,8 @@ function renderDownloadedBrandFiles() {
 
 function currentExcelPreviewFilters() {
   return {
-    minimumTotal: $("#excel-filter-min-total")?.value ?? "30",
-    minimumLocalTotal: $("#excel-filter-min-local-total")?.value ?? "30",
+    minimumTotal: $("#excel-filter-min-total")?.value ?? "",
+    minimumLocalTotal: $("#excel-filter-min-local-total")?.value ?? "",
     fixedTotalAnd: true,
     matchMode: "all",
     productView: excelPreviewProductMode,
@@ -603,11 +603,14 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   productsView?.classList.add("excel-data-view-open");
   document.body.classList.add("excel-preview-active");
   if (activeExcelPreviewPath !== file.path) {
+    $("#excel-filter-min-total").value = "";
+    $("#excel-filter-min-local-total").value = "";
+    filters = { ...filters, minimumTotal: "", minimumLocalTotal: "" };
     selectedExcelPreviewProducts.clear();
     excelPreviewProductCache.clear();
     excelPreviewSearchResults.clear();
-    excelPreviewProductMode = true;
-    filters = { ...filters, productView: true };
+    excelPreviewProductMode = false;
+    filters = { ...filters, productView: false };
     activeExcelPreviewPath = file.path;
   }
   const requestId = ++excelPreviewRequestId;
@@ -2177,7 +2180,7 @@ $("#brand-download-files").addEventListener("keydown", (event) => {
 $("#excel-preview-close")?.addEventListener("click", () => {
   excelPreviewRequestId += 1;
   activeExcelPreview = null;
-  excelPreviewProductMode = true;
+  excelPreviewProductMode = false;
   excelPreviewBatchSearching = false;
   $("#excel-preview").hidden = true;
   $("#explorer-files")?.classList.remove("excel-preview-mode");
