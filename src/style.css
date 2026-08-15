@@ -914,7 +914,7 @@ button,input,select,textarea{font-family:inherit}
   align-items:center;
   position:relative;
 }
-.brand-card.official-linked,.brand-card.official-missing{margin-top:13px}
+.brand-card.official-linked,.brand-card.official-missing{margin-top:15px}
 .brand-selection-check{
   position:absolute;
   top:5px;
@@ -957,8 +957,9 @@ button,input,select,textarea{font-family:inherit}
   font-style:normal;
   font-weight:800;
   line-height:1;
+  white-space:nowrap;
 }
-.brand-official-badge.missing{min-width:62px;background:#8b939e;box-shadow:0 2px 5px rgba(57,65,75,.18)}
+.brand-official-badge.missing{min-width:70px;height:22px;padding:0 9px;background:#8b939e;box-shadow:0 2px 5px rgba(57,65,75,.18)}
 .brand-card .brand-official-domain{
   display:block;
   max-width:112px;
