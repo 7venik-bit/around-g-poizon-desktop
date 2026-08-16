@@ -2072,7 +2072,9 @@ async function previewExcelFile(input = {}) {
   const maximumOffset = Math.max(0, Math.floor(Math.max(0, resultCount - 1) / limit) * limit);
   const offset = Math.min(maximumOffset, Math.max(0, Number(input.offset) || 0));
   const pageEntries = filtered.entries.slice(offset, offset + limit);
-  const pageProducts = products.slice(offset, offset + limit);
+  const pageProducts = productView
+    ? products.slice(offset, offset + limit)
+    : buildExcelPreviewProducts(workbook.headers, pageEntries);
   return {
     ok: true,
     path: filePath,
