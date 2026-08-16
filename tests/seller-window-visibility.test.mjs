@@ -19,17 +19,23 @@ test("manual Seller Center actions remain visible by default", () => {
 });
 
 
-test("brand search hides POIZON during result transition and shows it only for physical clicks", () => {
+test("brand search remains hidden and never moves the Windows cursor", () => {
   const workflowStart = mainSource.indexOf("async function automateSellerBrandExport");
   const workflowEnd = mainSource.indexOf("async function syncBrandCatalogFromKrPoizon", workflowStart);
   const workflow = mainSource.slice(workflowStart, workflowEnd);
-  const keyboardInput = workflow.indexOf("typeSellerBrandWithRealKeyboard");
-  const minimizeAfterInput = workflow.indexOf("sellerWindow.minimize();", keyboardInput);
-  const searchWait = workflow.indexOf("runSellerSearch(candidate.frame", keyboardInput);
-  const physicalSort = workflow.indexOf("performPhysicalSellerSortAndExport", searchWait);
-  assert.ok(keyboardInput >= 0);
-  assert.ok(minimizeAfterInput > keyboardInput && minimizeAfterInput < searchWait);
-  assert.ok(physicalSort > searchWait);
-  assert.match(workflow, /정렬 클릭 순간에만 잠깐 표시합니다/);
-  assert.match(mainSource, /async function physicalClickSellerElement[\s\S]*sellerWindow\.showInactive\(\)/);
+  const clickStart = mainSource.indexOf("async function physicalClickSellerElement");
+  const clickEnd = mainSource.indexOf("async function performPhysicalSellerSortAndExport", clickStart);
+  const clickSource = mainSource.slice(clickStart, clickEnd);
+  const inputStart = mainSource.indexOf("async function typeSellerBrandWithRealKeyboard");
+  const inputEnd = mainSource.indexOf("async function automateSellerBrandExport", inputStart);
+  const inputSource = mainSource.slice(inputStart, inputEnd);
+
+  assert.match(workflow, /POIZON 창을 표시하지 않고 결과 확인·정렬·내보내기를 백그라운드에서 진행합니다/);
+  assert.doesNotMatch(workflow, /sellerWindow\.(?:show|showInactive|minimize|focus)\(/);
+  assert.match(workflow, /sellerWindow\.hide\(\)/);
+  assert.match(clickSource, /backgroundClicked: true/);
+  assert.doesNotMatch(clickSource, /moveWindowsCursorAndClick|showInactive|\.focus\(\)/);
+  assert.match(inputSource, /step: "BACKGROUND_SEARCH_BUTTON_CLICKED"/);
+  assert.match(inputSource, /physicalCursorMoved: false/);
+  assert.doesNotMatch(inputSource, /moveWindowsCursorAndClick|showInactive/);
 });
