@@ -664,7 +664,9 @@ body.excel-preview-active{overflow:hidden}
 .brand-multi-select-label svg{color:#2d86c7}
 #brand-selected-count{margin-right:auto;color:#1873aa;font-size:12px}
 #brand-sync{padding:7px 10px;font-size:11px}
-#brand-selection-clear{padding:7px 10px;font-size:11px}
+#brand-selection-clear,#brand-move-top{padding:7px 10px;font-size:11px}
+.brand-card.brand-pinned{position:relative;border-color:#f2b84b;background:linear-gradient(180deg,#fffdf4,#fff)}
+.brand-pinned-badge{position:absolute;left:10px;top:-9px;padding:2px 7px;border-radius:999px;background:#f59e0b;color:#fff;font-size:9px;font-style:normal;font-weight:800;box-shadow:0 2px 6px #b66b1738}
 .brand-search-action{display:flex;align-items:center;gap:7px;padding:8px 13px;font-size:12px;font-weight:800}
 .brand-search-action.is-running svg{animation:brand-search-pulse 1s ease-in-out infinite alternate}
 @keyframes brand-search-pulse{to{opacity:.35;transform:scale(.88)}}
