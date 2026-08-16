@@ -1286,18 +1286,13 @@ function renderBrandCards(filter = "") {
   const matchedBrands = explorerMeta.brands.filter((brand) =>
     !normalized || `${brand.name} ${brand.ko}`.toLowerCase().includes(normalized)
   );
-  // The synchronized catalog is the selectable source of truth. Do not hide
-  // most brands behind the former 200/300-card display cap.
+  // Frequently used brands live in their own persistent group. The full list
+  // excludes them so the same brand is never shown twice.
   const pinnedOrder = new Map(pinnedBrandIds.map((id, index) => [Number(id), index]));
-  const brands = matchedBrands.map((brand, sourceIndex) => ({ brand, sourceIndex }))
-    .sort((left, right) => {
-      const leftPinned = pinnedOrder.has(Number(left.brand.id));
-      const rightPinned = pinnedOrder.has(Number(right.brand.id));
-      if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
-      if (leftPinned) return pinnedOrder.get(Number(left.brand.id)) - pinnedOrder.get(Number(right.brand.id));
-      return left.sourceIndex - right.sourceIndex;
-    }).map(({ brand }) => brand);
-  $("#brand-cards").innerHTML = brands.map((brand) => {
+  const pinnedBrands = matchedBrands.filter((brand) => pinnedOrder.has(Number(brand.id)))
+    .sort((left, right) => pinnedOrder.get(Number(left.id)) - pinnedOrder.get(Number(right.id)));
+  const regularBrands = matchedBrands.filter((brand) => !pinnedOrder.has(Number(brand.id)));
+  const brandMarkup = (brands) => brands.map((brand) => {
     const latestDownload = latestCompletedBrandDownload(brand);
     const downloadComplete = Boolean(latestDownload);
     const latestDownloadTime = brandDownloadCardTime(latestDownload?.time || latestDownload?.mtimeMs || latestDownload?.lastDownloadedAt);
@@ -1316,11 +1311,18 @@ function renderBrandCards(filter = "") {
     <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${brand.salesPriority ? `<small class="brand-sales-rank">판매 상위 ${Number(brand.salesRank).toLocaleString("ko-KR")}위</small>` : ""}${officialDomain ? `<small class="brand-official-domain">${text(officialDomain)}</small>` : ""}${downloadComplete ? `<em class="brand-download-complete">다운완료</em><small class="brand-download-date">${text(latestDownloadTime)}</small>` : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>
   </button>`;
   }).join("");
+  $("#frequent-brand-cards").innerHTML = brandMarkup(pinnedBrands);
+  $("#brand-cards").innerHTML = brandMarkup(regularBrands);
+  const frequentGroup = $("#frequent-brand-group");
+  frequentGroup.hidden = pinnedBrands.length === 0;
+  $("#frequent-brand-count").textContent = `${pinnedBrands.length.toLocaleString("ko-KR")}개`;
+  $("#all-brand-count").textContent = `${regularBrands.length.toLocaleString("ko-KR")}개`;
   document.querySelectorAll(".brand-logo img").forEach((image) => {
     image.addEventListener("load", () => image.parentElement?.classList.add("loaded"), { once: true });
     image.addEventListener("error", () => image.remove(), { once: true });
   });
-  const limited = ` · ${brands.length.toLocaleString("ko-KR")}개 표시`;
+  const visibleCount = pinnedBrands.length + regularBrands.length;
+  const limited = ` · ${visibleCount.toLocaleString("ko-KR")}개 표시`;
   const domainSummary = explorerMeta.officialDomainSummary || {};
   const domainStatus = domainSummary.total
     ? ` · 공식몰 확인 ${Number(domainSummary.verified || 0).toLocaleString("ko-KR")}개 · 검증 대기 ${Number(domainSummary.pending || 0).toLocaleString("ko-KR")}개`

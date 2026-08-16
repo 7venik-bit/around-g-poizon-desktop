@@ -10,7 +10,12 @@ test("selected brands can be moved to a persistent frequently-used group", () =>
   assert.match(html, /id="brand-move-top"[^>]*>즐겨찾는 브랜드 선택</);
   assert.match(renderer, /around-g-pinned-brand-ids/);
   assert.match(renderer, /pinnedBrandIds = \[\.\.\.selected,/);
-  assert.match(renderer, /pinnedOrder\.has\(Number\(left\.brand\.id\)\)/);
+  assert.match(html, /id="frequent-brand-group"/);
+  assert.match(html, /id="frequent-brand-cards"/);
+  assert.match(html, /id="all-brand-title"/);
+  assert.match(renderer, /const pinnedBrands = matchedBrands\.filter/);
+  assert.match(renderer, /const regularBrands = matchedBrands\.filter/);
+  assert.match(renderer, /frequentGroup\.hidden = pinnedBrands\.length === 0/);
 });
 
 test("pinned brands are visually identified and the list scrolls to the top", () => {
@@ -26,4 +31,12 @@ test("favorite brands can be removed from the right side or restored with select
   assert.match(renderer, /selectedPinnedIds/);
   assert.match(renderer, /선택한 즐겨찾기 .*원래 위치로 되돌렸습니다/);
   assert.match(css, /\.brand-pinned-remove/);
+});
+
+test("favorite and full brand areas have separate visual containers", () => {
+  assert.match(css, /\.brand-list-group\{/);
+  assert.match(css, /\.frequent-brand-group\{/);
+  assert.match(css, /\.all-brand-group\{/);
+  assert.match(renderer, /\$\("#frequent-brand-cards"\)\.innerHTML = brandMarkup\(pinnedBrands\)/);
+  assert.match(renderer, /\$\("#brand-cards"\)\.innerHTML = brandMarkup\(regularBrands\)/);
 });
