@@ -3405,38 +3405,112 @@ async function sellerPageRequiresLogin() {
   return Boolean(state?.password || (state?.loginText && !state?.sellerText));
 }
 
+async function setSellerLoginStatusOverlay(state = "checking", title = "", detail = "") {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return;
+  const colors = {
+    checking: ["#2563eb", "#eff6ff"],
+    filling: ["#d97706", "#fffbeb"],
+    success: ["#059669", "#ecfdf5"],
+    error: ["#dc2626", "#fef2f2"],
+  };
+  const [accent, background] = colors[state] || colors.checking;
+  const script = `(() => {
+    let panel = document.getElementById("around-g-login-status");
+    if (!panel) {
+      panel = document.createElement("section");
+      panel.id = "around-g-login-status";
+      panel.style.cssText = "position:fixed;z-index:2147483647;right:24px;top:24px;width:320px;box-sizing:border-box;padding:15px 17px;border-radius:12px;font-family:Arial,'Malgun Gothic',sans-serif;box-shadow:0 10px 35px rgba(0,0,0,.28);";
+      document.documentElement.appendChild(panel);
+    }
+    panel.style.border = "2px solid " + ${JSON.stringify(accent)};
+    panel.style.background = ${JSON.stringify(background)};
+    panel.style.color = "#172033";
+    panel.innerHTML = '<strong style="display:block;color:${String(accent)};font-size:15px;margin-bottom:6px"></strong><span style="display:block;font-size:12px;line-height:1.5"></span>';
+    panel.querySelector("strong").textContent = ${JSON.stringify(title)};
+    panel.querySelector("span").textContent = ${JSON.stringify(detail)};
+    return true;
+  })()`;
+  await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, script, 3_000, false).catch(() => false);
+}
+
 async function submitStoredSellerCredentials() {
   const settings = store.snapshot().settings || {};
   const loginId = String(settings.poizonLoginId || "").trim();
-  const password = decrypted(settings.poizonPasswordEncrypted);
-  if (!loginId || !password || !sellerWindow || sellerWindow.isDestroyed()) return { ok: false, stored: false };
+  let password = "";
+  try {
+    password = decrypted(settings.poizonPasswordEncrypted);
+  } catch {
+    await setSellerLoginStatusOverlay("error", "저장 비밀번호 확인 실패", "연동 관리에서 POIZON 비밀번호를 다시 저장해 주세요.");
+    return { ok: false, stored: false, step: "PASSWORD_DECRYPT_FAILED" };
+  }
+  if (!loginId || !password) {
+    await setSellerLoginStatusOverlay("error", "POIZON 계정 저장 필요", "Around G POIZON의 연동 관리에서 아이디와 비밀번호를 암호화 저장해 주세요.");
+    return { ok: false, stored: false, step: "STORED_CREDENTIALS_MISSING" };
+  }
+  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, stored: true, step: "SELLER_WINDOW_CLOSED" };
+  await setSellerLoginStatusOverlay("checking", "저장 계정 확인 완료", "로그인 입력칸을 찾고 있습니다.");
+  let lastResult = { ok: false, step: "LOGIN_INPUTS_NOT_FOUND" };
   for (const frame of sellerWindowFrames()) {
-    const result = await executeSellerFrameWithTimeout(frame, `(() => {
-      const visible = (element) => element && element.getClientRects().length > 0 && !element.disabled;
-      const passwordInput = [...document.querySelectorAll('input[type="password"]')].find(visible);
-      const idInputs = [...document.querySelectorAll('input:not([type]), input[type="text"], input[type="email"], input[type="tel"]')].filter(visible);
+    const result = await executeSellerFrameWithTimeout(frame, `(async () => {
+      const roots = [document];
+      for (let index = 0; index < roots.length; index += 1) {
+        for (const element of roots[index].querySelectorAll('*')) {
+          if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
+        }
+      }
+      const queryAll = (selector) => roots.flatMap((root) => [...root.querySelectorAll(selector)]);
+      const visible = (element) => {
+        if (!element || element.disabled) return false;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+      };
+      const passwordInput = queryAll('input[type="password"], input[autocomplete="current-password"]').find(visible);
+      const idInputs = queryAll('input:not([type]), input[type="text"], input[type="email"], input[type="tel"], input[autocomplete="username"]').filter(visible);
       const idInput = idInputs.find((element) => /user|account|email|phone|login|아이디|휴대폰|이메일|전화번호|账号|帐号|手机号/i.test([
         element.name, element.id, element.placeholder, element.autocomplete,
       ].join(' '))) || idInputs[0];
-      if (!idInput || !passwordInput) return { ok: false, step: 'LOGIN_INPUTS_NOT_FOUND' };
+      if (!idInput || !passwordInput) return { ok: false, step: 'LOGIN_INPUTS_NOT_FOUND', inputs: idInputs.length, passwords: passwordInput ? 1 : 0 };
       const setValue = (element, value) => {
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        element.focus();
+        const prototype = Object.getPrototypeOf(element);
+        const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+          || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
         setter ? setter.call(element, value) : (element.value = value);
-        element.dispatchEvent(new Event('input', { bubbles: true }));
-        element.dispatchEvent(new Event('change', { bubbles: true }));
+        element.setAttribute('value', value);
+        element.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+        element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true, key: 'Unidentified' }));
+        element.blur();
       };
       setValue(idInput, ${JSON.stringify(loginId)});
       setValue(passwordInput, ${JSON.stringify(password)});
-      const buttons = [...document.querySelectorAll('button, input[type="submit"], [role="button"]')].filter(visible);
-      const submit = buttons.find((element) => /로그인|登录|登入|sign\\s*in|log\\s*in/i.test(String(element.innerText || element.value || element.getAttribute('aria-label') || '')))
-        || buttons.find((element) => element.type === 'submit');
-      if (!submit) return { ok: false, step: 'LOGIN_BUTTON_NOT_FOUND' };
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      if (!String(idInput.value || '').trim() || !String(passwordInput.value || '')) {
+        return { ok: false, step: 'LOGIN_VALUES_REJECTED' };
+      }
+      const buttons = queryAll('button, input[type="submit"], [role="button"], a').filter(visible);
+      const submit = buttons.find((element) => /로그인|登录|登入|sign\\s*in|log\\s*in/i.test(String(element.innerText || element.textContent || element.value || element.getAttribute('aria-label') || '')))
+        || buttons.find((element) => element.type === 'submit')
+        || idInput.closest('form')?.querySelector('button, input[type="submit"]');
+      if (!submit) return { ok: false, step: 'LOGIN_BUTTON_NOT_FOUND', filled: true };
+      if (submit.disabled) return { ok: false, step: 'LOGIN_BUTTON_DISABLED', filled: true };
+      submit.focus();
       submit.click();
-      return { ok: true, step: 'STORED_CREDENTIALS_SUBMITTED' };
-    })()`, 5_000, { ok: false, step: "LOGIN_FRAME_TIMEOUT" });
+      return { ok: true, step: 'STORED_CREDENTIALS_SUBMITTED', filled: true };
+    })()`, 7_000, { ok: false, step: "LOGIN_FRAME_TIMEOUT" });
+    lastResult = result || lastResult;
+    if (result?.filled) {
+      await setSellerLoginStatusOverlay(
+        result.ok ? "filling" : "error",
+        result.ok ? "ID·비밀번호 자동 입력 완료" : "로그인 버튼 확인 필요",
+        result.ok ? "로그인 버튼을 눌렀습니다. 판매자센터 진입을 확인하고 있습니다." : `입력은 완료했지만 버튼 실행에 실패했습니다. (${result.step || "UNKNOWN"})`
+      );
+    }
     if (result?.ok) return { ...result, stored: true };
   }
-  return { ok: false, stored: true };
+  await setSellerLoginStatusOverlay("error", "로그인 입력칸 인식 실패", `화면 입력칸을 찾지 못했습니다. 자동으로 다시 시도합니다. (${lastResult.step || "UNKNOWN"})`);
+  return { ...lastResult, ok: false, stored: true };
 }
 
 async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
@@ -3474,6 +3548,7 @@ async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
       await wait(2_000);
       if (await sellerPageRequiresLogin()) continue;
     }
+    await setSellerLoginStatusOverlay("success", "자동 로그인 테스트 성공 완료", "POIZON 판매자센터 진입을 확인했습니다. 브랜드 검색을 자동으로 계속합니다.");
     mainWindow?.webContents.send("brand-export:progress", {
       status: "seller-login-restored",
       brandName,
