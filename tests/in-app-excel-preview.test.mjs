@@ -64,10 +64,10 @@ test("Excel defaults to the complete raw sheet with optional grouped product vie
   assert.match(rendererSource, /#excel-view-products"\)\?\.classList\.toggle/);
   assert.match(rendererSource, /#excel-view-raw"\)\?\.classList\.toggle/);
   assert.match(rendererSource, /function renderRawExcelCell/);
-  assert.doesNotMatch(rendererSource, /function renderRawExcelCell[\\s\\S]{0,500}<img/);
-  assert.match(rendererSource, /#excel-preview-selection"\\)\\.hidden = !result\\.productView/);
+  assert.doesNotMatch(rendererSource, /function renderRawExcelCell[\s\S]{0,500}<img/);
+  assert.match(rendererSource, /#excel-preview-selection"\)\.hidden = !result\.productView/);
   assert.match(rendererSource, /원본 Excel 그대로/);
-  assert.match(await readFile(new URL("../src/excel-column-layout.js", import.meta.url), "utf8"), /viewMode === "products" \\|\\| preview\\?\\.viewMode === "raw"/);
+  assert.match(await readFile(new URL("../src/excel-column-layout.js", import.meta.url), "utf8"), /viewMode === "products" \|\| preview\?\.viewMode === "raw"/);
   assert.match(rendererSource, /let excelPreviewProductMode = false/);
   assert.match(rendererSource, /filters = \{ \.\.\.filters, productView: excelPreviewProductMode \}/);
   assert.match(rendererSource, /renderExcelProductRows/);
