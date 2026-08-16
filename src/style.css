@@ -1231,3 +1231,31 @@ button,input,select,textarea{font-family:inherit}
 @media(max-width:850px){
   .brand-list-group-heading{align-items:flex-start;flex-direction:column}
 }
+
+
+/* Give official site addresses a full-width row at the bottom of each card. */
+.brand-card:has(> .brand-official-domain){
+  min-height:58px;
+  grid-template-rows:auto auto;
+  align-content:center;
+  row-gap:2px
+}
+.brand-card > .brand-official-domain{
+  grid-column:1 / -1;
+  grid-row:2;
+  display:block;
+  width:100%;
+  max-width:100%;
+  margin:0;
+  overflow:visible;
+  color:#e86f00;
+  font-size:8px;
+  font-style:normal;
+  font-weight:700;
+  line-height:1.15;
+  text-align:center;
+  text-overflow:clip;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-all
+}
