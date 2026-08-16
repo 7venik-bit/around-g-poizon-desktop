@@ -177,8 +177,9 @@ test("the desktop automatically syncs and displays the full catalog", async () =
   assert.doesNotMatch(mainSource, /throw new Error\("EN_POIZON_BRAND_DATA_NOT_FOUND"\)/);
   assert.match(mainSource, /needsBrandSync: brandCatalogNeedsSync/);
   assert.match(rendererSource, /syncFullBrandCatalog\(\{ automatic: true \}\)/);
-  assert.match(rendererSource, /const brands = matchedBrands\.map\(\(brand, sourceIndex\)/);
-  assert.match(rendererSource, /return left\.sourceIndex - right\.sourceIndex/);
+  assert.match(rendererSource, /const pinnedBrands = matchedBrands\\.filter/);
+  assert.match(rendererSource, /const regularBrands = matchedBrands\\.filter/);
+  assert.match(rendererSource, /brandMarkup\\(regularBrands\\)/);
   assert.doesNotMatch(rendererSource, /matchedBrands\.slice\(0, normalized \? 300 : 200\)/);
   assert.match(mainSource, /ensureOfficialDomainRegistry/);
   assert.match(rendererSource, /개 POIZON 브랜드/);
