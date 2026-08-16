@@ -701,13 +701,15 @@ async function searchExcelPreviewProduct(key) {
   if (!product) return;
   excelPreviewSearchResults.set(key, { loading: true, products: [], sources: [] });
   const file = activeExcelPreview?.file;
-  if (file) renderExcelProductRows(file, excelPreviewPageProducts);
+  if (file && activeExcelPreview?.viewMode === "products") renderExcelProductRows(file, excelPreviewPageProducts);
+  else if (file) void showExcelPreview(file, activeExcelPreview?.offset || 0, activeExcelPreview?.filters || currentExcelPreviewFilters(), { preserveFilters: true });
   const response = await cachedDomesticSearch(product, true);
   const result = response.ok ? response.data : { products: [], sources: [], error: response.message };
   excelPreviewSearchResults.set(key, result);
   if (file?.path) persistExcelSearchResults(file.path);
-  if (file) renderExcelProductRows(file, excelPreviewPageProducts);
-  updateExcelPreviewSelectionUi(excelPreviewPageProducts.map((item) => `${brandImportPathKey(file?.path)}::${item.articleNumber || item.spuId || item.key}`));
+  if (file && activeExcelPreview?.viewMode === "products") renderExcelProductRows(file, excelPreviewPageProducts);
+  else if (file) void showExcelPreview(file, activeExcelPreview?.offset || 0, activeExcelPreview?.filters || currentExcelPreviewFilters(), { preserveFilters: true });
+  updateExcelPreviewSelectionUi(excelPreviewPageProducts.map((item) => `${brandImportPathKey(file?.path)}::${item.key || item.articleNumber || item.spuId}`));
 }
 
 async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewFilters(), options = {}) {
@@ -776,9 +778,17 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   const rowNumbers = Array.isArray(result.rowNumbers) ? result.rowNumbers : [];
   const productColumn = excelProductColumnIndex(headers);
   excelPreviewPageProducts = products;
+  const productsByRow = new Map(products.map((product) => [Number(product.sourceRowNumber), product]));
+  const pageProductsByRow = rows.map((_row, index) => productsByRow.get(Number(rowNumbers[index] || result.offset + index + 2)) || null);
   const pageProductKeys = result.productView
     ? products.map((product) => `${brandImportPathKey(file.path)}::${product.key || product.articleNumber || product.spuId}`)
-    : rows.map((row, index) => excelPreviewProductKey(file.path, row, rowNumbers[index] || result.offset + index + 2, productColumn));
+    : pageProductsByRow.map((product, index) => product
+      ? `${brandImportPathKey(file.path)}::${product.key || product.articleNumber || product.spuId}`
+      : excelPreviewProductKey(file.path, rows[index], rowNumbers[index] || result.offset + index + 2, productColumn));
+  products.forEach((product) => {
+    const key = `${brandImportPathKey(file.path)}::${product.key || product.articleNumber || product.spuId}`;
+    excelPreviewProductCache.set(key, product);
+  });
   excelPreviewPageKeys = pageProductKeys;
   const sourceTotalRows = Number.isFinite(Number(result.sourceTotalRows))
     ? Math.max(0, Number(result.sourceTotalRows))
@@ -819,14 +829,20 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
     : result.filterApplied
       ? diagnosticText
       : result.productView ? `판매량 필터를 사용하지 않고 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행을 표시합니다.` : "원본 Excel의 행·열·빈칸·값 순서를 변경하지 않고 표시합니다.";
-  $("#excel-preview-selection").hidden = !result.productView;
+  $("#excel-preview-selection").hidden = false;
   if (result.productView) {
     renderExcelProductRows(file, products);
   } else {
-    $("#excel-preview-columns").innerHTML = `<tr>${headers.map((header, columnIndex) => `<th data-excel-column-index="${columnIndex}" title="${text(header)}">${text(header)}</th>`).join("")}</tr>`;
+    $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th>${headers.map((header, columnIndex) => `<th data-excel-column-index="${columnIndex}" title="${text(header)}">${text(header)}</th>`).join("")}<th>국내 상품검색</th></tr>`;
     $("#excel-preview-rows").innerHTML = rows.length
-      ? rows.map((row) => `<tr>${row.map((cell, columnIndex) => renderRawExcelCell(cell, headers[columnIndex], columnIndex)).join("")}</tr>`).join("")
-      : `<tr><td class="empty" colspan="${Math.max(1, totalColumns)}">표시할 데이터 행이 없습니다.</td></tr>`;
+      ? rows.map((row, index) => {
+          const product = pageProductsByRow[index];
+          const key = pageProductKeys[index];
+          const searchResult = product ? excelPreviewSearchResults.get(key) : null;
+          const buttonText = searchResult?.loading ? "검색 중…" : searchResult?.error ? "검색 실패" : searchResult ? `${(searchResult.products || []).length}개 결과` : "국내 상품검색";
+          return `<tr><td class="excel-product-select-column">${product ? `<input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택">` : ""}</td>${row.map((cell, columnIndex) => renderRawExcelCell(cell, headers[columnIndex], columnIndex)).join("")}<td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${!product || searchResult?.loading ? "disabled" : ""}>${buttonText}</button></td></tr>${searchResult && !searchResult.loading ? `<tr class="excel-product-search-detail"><td colspan="${Math.max(1, totalColumns + 2)}">${renderDomestic(searchResult)}</td></tr>` : ""}`;
+        }).join("")
+      : `<tr><td class="empty" colspan="${Math.max(1, totalColumns + 2)}">표시할 데이터 행이 없습니다.</td></tr>`;
   }
   $("#excel-preview-select-page").onchange = (event) => {
     [...new Set(pageProductKeys)].forEach((key) => {
