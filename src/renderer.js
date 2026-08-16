@@ -566,11 +566,7 @@ function excelImageColumn(header = "") {
   return /^(?:SPU\s*이미지|SKU\s*이미지|상품\s*이미지|이미지)$/i.test(String(header || "").trim());
 }
 
-function renderRawExcelCell(cell, header = "", columnIndex = 0) {
-  const value = String(cell ?? "").trim();
-  if (excelImageColumn(header) && /^https:\/\//i.test(value)) {
-    return `<td class="excel-image-cell" data-excel-column-index="${columnIndex}" title="${text(value)}"><img src="${text(value)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true"></td>`;
-  }
+function renderRawExcelCell(cell, _header = "", columnIndex = 0) {
   return `<td data-excel-column-index="${columnIndex}" title="${text(cell)}">${text(cell)}</td>`;
 }
 
@@ -804,7 +800,7 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
       : `필터 미적용 · 원본 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행 · 고유 상품 ${totalRows.toLocaleString("ko-KR")}개 · 현재 ${startRow.toLocaleString("ko-KR")}~${Math.min(totalRows, result.offset + products.length).toLocaleString("ko-KR")}번째 제품`
     : result.filterApplied
       ? `원본 데이터 · 필터 결과 ${totalRows.toLocaleString("ko-KR")}행 / 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행 · ${totalColumns.toLocaleString("ko-KR")}열 · 현재 ${startRow.toLocaleString("ko-KR")}~${endRow.toLocaleString("ko-KR")}번째 결과`
-      : `원본 데이터 · ${totalRows.toLocaleString("ko-KR")}행 · ${totalColumns.toLocaleString("ko-KR")}열 · 현재 ${startRow.toLocaleString("ko-KR")}~${endRow.toLocaleString("ko-KR")}행`;
+      : `원본 Excel 그대로 · ${totalRows.toLocaleString("ko-KR")}행 · ${totalColumns.toLocaleString("ko-KR")}열 · 현재 ${startRow.toLocaleString("ko-KR")}~${endRow.toLocaleString("ko-KR")}행`;
   const missingColumns = [
     result.totalSalesColumn < 0 ? "중국 총 판매량" : "",
     result.localTotalSalesColumn < 0 ? "현지 판매자 총 판매량" : "",
@@ -817,15 +813,15 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
     ? `${missingColumns.join(" · ")} 열을 찾지 못해 해당 조건은 적용되지 않습니다.`
     : result.filterApplied
       ? diagnosticText
-      : `판매량 필터를 사용하지 않고 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행을 표시합니다.`;
-  $("#excel-preview-selection").hidden = false;
+      : result.productView ? `판매량 필터를 사용하지 않고 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행을 표시합니다.` : "원본 Excel의 행·열·빈칸·값 순서를 변경하지 않고 표시합니다.";
+  $("#excel-preview-selection").hidden = !result.productView;
   if (result.productView) {
     renderExcelProductRows(file, products);
   } else {
-    $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th class="excel-row-number">행</th>${headers.map((header, columnIndex) => `<th class="${excelImageColumn(header) ? "excel-image-column" : ""}" data-excel-column-index="${columnIndex}" title="${text(header)}">${text(header)}</th>`).join("")}</tr>`;
+    $("#excel-preview-columns").innerHTML = `<tr>${headers.map((header, columnIndex) => `<th data-excel-column-index="${columnIndex}" title="${text(header)}">${text(header)}</th>`).join("")}</tr>`;
     $("#excel-preview-rows").innerHTML = rows.length
-      ? rows.map((row, index) => `<tr><td class="excel-product-select-column"><input type="checkbox" data-excel-product-select="${encodeURIComponent(pageProductKeys[index])}" aria-label="제품 선택"></td><th class="excel-row-number">${Number(rowNumbers[index] || result.offset + index + 2).toLocaleString("ko-KR")}</th>${row.map((cell, columnIndex) => renderRawExcelCell(cell, headers[columnIndex], columnIndex)).join("")}</tr>`).join("")
-      : `<tr><td class="empty" colspan="${Math.max(1, totalColumns + 2)}">표시할 데이터 행이 없습니다.</td></tr>`;
+      ? rows.map((row) => `<tr>${row.map((cell, columnIndex) => renderRawExcelCell(cell, headers[columnIndex], columnIndex)).join("")}</tr>`).join("")
+      : `<tr><td class="empty" colspan="${Math.max(1, totalColumns)}">표시할 데이터 행이 없습니다.</td></tr>`;
   }
   $("#excel-preview-select-page").onchange = (event) => {
     [...new Set(pageProductKeys)].forEach((key) => {
