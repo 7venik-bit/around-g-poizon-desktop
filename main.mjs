@@ -6935,6 +6935,12 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     openInventoryWindow(filePath, String(input.brand || "").trim());
     return { ok: true };
   });
+  ipcMain.handle("brand-export:reveal-file", async (_event, input = {}) => {
+    const filePath = String(input.path || "").trim();
+    if (!filePath) return { ok: false, message: "파일 경로가 없습니다." };
+    shell.showItemInFolder(filePath);
+    return { ok: true };
+  });
   ipcMain.handle("brand-export:open-original", async (_event, input = {}) => {
     const filePath = String(input.path || "").trim();
     if (!filePath) return { ok: false, message: "파일 경로가 없습니다." };

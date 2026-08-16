@@ -229,3 +229,16 @@ test("successful original downloads use the concise confirmation label", () => {
   assert.match(rendererSource, /updateBrandExportJob\(file\?\.jobId, "확인완료"/);
   assert.doesNotMatch(rendererSource, /100% 검증완료/);
 });
+
+test("completed brand downloads open integrated product search by job-linked Excel", () => {
+  assert.match(htmlSource, /id="brand-product-workspace"/);
+  assert.match(htmlSource, /id="brand-integrated-preview-host"/);
+  assert.match(rendererSource, /data-completed-action="search">상품검색/);
+  assert.match(rendererSource, /data-completed-action="excel">Excel 보기/);
+  assert.match(rendererSource, /data-completed-action="folder">폴더 열기/);
+  assert.match(rendererSource, /openIntegratedBrandExcel\(file/);
+  assert.match(rendererSource, /minimumTotal: minimum/);
+  assert.match(rendererSource, /minimumLocalTotal: minimum/);
+  assert.match(rendererSource, /EXCEL_SEARCH_RESULTS_KEY/);
+  assert.match(rendererSource, /persistExcelSearchResults/);
+});

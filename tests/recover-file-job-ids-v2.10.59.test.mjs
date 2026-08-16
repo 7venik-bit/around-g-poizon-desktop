@@ -31,8 +31,8 @@ test("legacy files without any surviving cache are labeled as historical records
   assert.doesNotMatch(renderer, /작업번호 확인 불가/);
 });
 
-test("release metadata is 2.10.234", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.234");
-  assert.equal(JSON.parse(lockSource).version, "2.10.234");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.234");
+test("release metadata is 2.10.235", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.235");
+  assert.equal(JSON.parse(lockSource).version, "2.10.235");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.235");
 });
