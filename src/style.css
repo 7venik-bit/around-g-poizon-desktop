@@ -572,7 +572,6 @@ body.excel-preview-active{overflow:hidden}
 .excel-preview-grid .excel-image-cell{height:54px;padding:3px}
 .excel-preview-grid .excel-image-cell img{display:block;width:46px;height:46px;margin:auto;object-fit:contain;border-radius:5px;background:#fff}
 .excel-preview.product-view #excel-hide-common-columns,.excel-preview.product-view #excel-show-hidden-columns{display:none}
-.excel-preview:not(.product-view) #excel-preview-search-selected{display:none}
 .excel-preview.product-view .excel-preview-grid table{width:1000px;min-width:100%;table-layout:fixed}
 .excel-preview.product-view .excel-preview-grid th,.excel-preview.product-view .excel-preview-grid td{min-width:0;max-width:none}
 .excel-preview.product-view .excel-preview-grid th:nth-child(1),.excel-preview.product-view .excel-preview-grid td:nth-child(1){width:48px}

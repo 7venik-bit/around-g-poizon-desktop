@@ -543,7 +543,7 @@ function updateExcelPreviewSelectionUi(pageKeys = []) {
   if (profit) profit.disabled = selectedExcelPreviewProducts.size === 0;
   if (search) {
     search.disabled = selectedExcelPreviewProducts.size === 0 && !excelPreviewBatchSearching;
-    search.textContent = excelPreviewBatchSearching ? "검색 중지" : "선택 상품 일괄 검색";
+    search.textContent = excelPreviewBatchSearching ? "검색 중지" : "상품검색";
   }
   if (selectPage) {
     selectPage.checked = uniquePageKeys.length > 0 && selectedOnPage === uniquePageKeys.length;
