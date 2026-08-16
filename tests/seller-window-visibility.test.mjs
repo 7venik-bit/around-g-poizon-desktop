@@ -17,3 +17,19 @@ test("manual Seller Center actions remain visible by default", () => {
   assert.match(openSource, /show: visible && activate/);
   assert.match(mainSource, /ipcMain\.handle\("seller:open", \(\) => \{\s*openSellerCenterWindow\(\)/);
 });
+
+
+test("brand search hides POIZON during result transition and shows it only for physical clicks", () => {
+  const workflowStart = mainSource.indexOf("async function automateSellerBrandExport");
+  const workflowEnd = mainSource.indexOf("async function syncBrandCatalogFromKrPoizon", workflowStart);
+  const workflow = mainSource.slice(workflowStart, workflowEnd);
+  const keyboardInput = workflow.indexOf("typeSellerBrandWithRealKeyboard");
+  const minimizeAfterInput = workflow.indexOf("sellerWindow.minimize();", keyboardInput);
+  const searchWait = workflow.indexOf("runSellerSearch(candidate.frame", keyboardInput);
+  const physicalSort = workflow.indexOf("performPhysicalSellerSortAndExport", searchWait);
+  assert.ok(keyboardInput >= 0);
+  assert.ok(minimizeAfterInput > keyboardInput && minimizeAfterInput < searchWait);
+  assert.ok(physicalSort > searchWait);
+  assert.match(workflow, /정렬 클릭 순간에만 잠깐 표시합니다/);
+  assert.match(mainSource, /async function physicalClickSellerElement[\s\S]*sellerWindow\.showInactive\(\)/);
+});
