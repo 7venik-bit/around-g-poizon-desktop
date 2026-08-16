@@ -60,7 +60,7 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.match(main, /waiting-for-seller-result-navigation/);
   assert.match(main, /\[targetFrame, sellerWindow\.webContents\.mainFrame, \.\.\.sellerWindowFrames\(\)\]/);
   assert.match(main, /document\.readyState === "loading"/);
-  assert.match(main, /PHYSICAL_LOCAL_SALES_SORT_NOT_FOUND_AFTER_NAVIGATION/);
+  assert.match(main, /\$\{step\}_NOT_FOUND_AFTER_NAVIGATION/);
   assert.match(main, /"PHYSICAL_LOCAL_SALES_SORT"/);
   assert.match(main, /"PHYSICAL_DESCENDING"/);
   assert.match(main, /"PHYSICAL_SORT_CONFIRM"/);
