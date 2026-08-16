@@ -4094,31 +4094,53 @@ Start-Sleep -Milliseconds 70
   });
 }
 
-async function physicalClickSellerElement(targetFrame, locatorScript, step, timeoutMs = 8_000) {
+async function physicalClickSellerElement(targetFrame, locatorScript, step, timeoutMs = 20_000) {
   if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: `${step}_WINDOW_MISSING` };
   sellerWindow.showInactive();
   sellerWindow.webContents.focus();
   const startedAt = Date.now();
   let point = null;
   while (!point && Date.now() - startedAt < timeoutMs) {
-    point = await targetFrame.executeJavaScript(`(() => {
-      const visible = (element) => element && element.getBoundingClientRect().width > 0
-        && element.getBoundingClientRect().height > 0;
-      const textOf = (element) => String(element?.innerText || element?.textContent || "")
-        .replace(/\\s+/g, " ").trim();
-      const element = (() => { ${locatorScript} })();
-      if (!element || !visible(element)) return null;
-      element.scrollIntoView?.({ block: "center", inline: "center" });
-      const rect = element.getBoundingClientRect();
-      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, label: textOf(element) };
-    })()`, true).catch(() => null);
-    if (!point) await new Promise((resolve) => setTimeout(resolve, 250));
+    // A POIZON search can replace its WebFrameMain while the result screen is
+    // opening. Rebuild the candidates on every poll instead of holding the
+    // pre-navigation frame, otherwise sorting stops on a destroyed frame.
+    const frames = [targetFrame, sellerWindow.webContents.mainFrame, ...sellerWindowFrames()]
+      .filter(Boolean)
+      .filter((frame, index, all) =>
+        all.findIndex((candidate) => candidate.routingId === frame.routingId) === index
+      );
+    for (const frame of frames) {
+      const located = await frame.executeJavaScript(`(() => {
+        if (document.readyState === "loading") return null;
+        const visible = (element) => element && element.getBoundingClientRect().width > 0
+          && element.getBoundingClientRect().height > 0;
+        const textOf = (element) => String(element?.innerText || element?.textContent || "")
+          .replace(/\\s+/g, " ").trim();
+        const element = (() => { ${locatorScript} })();
+        if (!element || !visible(element)) return null;
+        element.scrollIntoView?.({ block: "center", inline: "center" });
+        const rect = element.getBoundingClientRect();
+        return {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+          label: textOf(element),
+          url: location.href,
+        };
+      })()`, true).catch(() => null);
+      if (located) {
+        point = { ...located, frameRoutingId: frame.routingId };
+        break;
+      }
+    }
+    if (!point) await new Promise((resolve) => setTimeout(resolve, 300));
   }
-  if (!point) return { ok: false, step: `${step}_NOT_FOUND` };
+  if (!point) return { ok: false, step: `${step}_NOT_FOUND_AFTER_NAVIGATION` };
   const bounds = sellerWindow.getContentBounds();
   const clicked = await moveWindowsCursorAndClick(bounds.x + point.x, bounds.y + point.y);
   await new Promise((resolve) => setTimeout(resolve, 700));
-  return clicked.ok ? { ok: true, step, label: point.label } : { ok: false, step: `${step}_CLICK_FAILED` };
+  return clicked.ok
+    ? { ok: true, step, label: point.label, frameRoutingId: point.frameRoutingId, url: point.url }
+    : { ok: false, step: `${step}_CLICK_FAILED` };
 }
 
 async function performPhysicalSellerSortAndExport(targetFrame) {
@@ -4960,6 +4982,13 @@ async function automateSellerBrandExport(input = {}) {
       }));
       lastSearchDiagnostics = candidate.probe;
       if (result?.ok) {
+        mainWindow?.webContents.send("brand-export:progress", {
+          status: "waiting-for-seller-result-navigation",
+          brandName,
+          jobState: `2단계/5 · 결과 화면 전환 확인 중 · ${brandName}`,
+          message: `${brandName} · 새 결과 화면과 정렬 항목을 다시 연결한 뒤 자동으로 계속합니다.`,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 1_200));
         const postSearch = await performPhysicalSellerSortAndExport(candidate.frame)
           .catch((error) => ({
             ok: false,
