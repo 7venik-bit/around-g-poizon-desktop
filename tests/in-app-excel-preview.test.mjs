@@ -64,7 +64,7 @@ test("Excel defaults to the complete raw sheet with optional grouped product vie
   assert.match(rendererSource, /#excel-view-products"\)\?\.classList\.toggle/);
   assert.match(rendererSource, /#excel-view-raw"\)\?\.classList\.toggle/);
   assert.match(rendererSource, /function renderRawExcelCell/);
-  assert.doesNotMatch(rendererSource, /function renderRawExcelCell[\s\S]{0,500}<img/);
+  assert.match(rendererSource, /function renderRawExcelCell[\s\S]{0,700}<img/);
   assert.match(rendererSource, /#excel-preview-selection"\)\.hidden = !result\.productView/);
   assert.match(rendererSource, /원본 Excel 그대로/);
   assert.match(await readFile(new URL("../src/excel-column-layout.js", import.meta.url), "utf8"), /viewMode === "products" \|\| preview\?\.viewMode === "raw"/);
@@ -258,6 +258,6 @@ test("integrated product search opens raw rows and groups products only on manua
 test("raw Excel view bypasses grouping, filtering, and display-only columns", () => {
   assert.match(mainSource, /const filtered = productView[\s\S]*workbook\.rows\.map\(\(values, index\) => \(\{ values, sourceRowNumber: index \+ 2 \}\)\)/);
   assert.match(mainSource, /headers: Array\.from\(\{ length: columnCount \}, \(_unused, index\) => excelPreviewCell\(rows\[0\]\?\.\[index\]\)\)/);
-  assert.doesNotMatch(rendererSource, /else \{[\s\S]{0,400}excel-product-select-column/);
+  assert.doesNotMatch(rendererSource, /else \{[\s\S]{0,400}excel-product-select-column/);\n  assert.match(rendererSource, /aria-label="제품 이미지 크게 보기"/);
   assert.match(rendererSource, /rows\.map\(\(row\) => `<tr>\$\{row\.map/);
 });
