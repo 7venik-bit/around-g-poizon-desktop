@@ -4949,10 +4949,12 @@ async function automateSellerBrandExport(input = {}) {
       const realKeyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, brandName)
         .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
       if (sellerWindow && !sellerWindow.isDestroyed()) {
-        // Keep the Seller Center visible while sorting, exporting, and
-        // confirming. Minimize only after the download-center shortcut.
-        sellerWindow.show();
-        sellerWindow.focus();
+        // Real keyboard and search-button input needs a visible native window,
+        // but the result transition does not. Return to the Around G screen
+        // immediately; sorting briefly reveals the window again only while the
+        // physical cursor is operating the required controls.
+        sellerWindow.minimize();
+        showCollectorWindow();
       }
       mainWindow?.webContents.send("brand-export:progress", {
         status: realKeyboardInput?.ok ? "seller-brand-input-confirmed" : "seller-brand-input-fallback",
@@ -4986,7 +4988,7 @@ async function automateSellerBrandExport(input = {}) {
           status: "waiting-for-seller-result-navigation",
           brandName,
           jobState: `2단계/5 · 결과 화면 전환 확인 중 · ${brandName}`,
-          message: `${brandName} · 새 결과 화면과 정렬 항목을 다시 연결한 뒤 자동으로 계속합니다.`,
+          message: `${brandName} · POIZON 창을 최소화한 상태에서 결과 화면을 확인하고, 정렬 클릭 순간에만 잠깐 표시합니다.`,
         });
         await new Promise((resolve) => setTimeout(resolve, 1_200));
         const postSearch = await performPhysicalSellerSortAndExport(candidate.frame)
