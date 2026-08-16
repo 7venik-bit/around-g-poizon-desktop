@@ -40,3 +40,11 @@ test("favorite and full brand areas have separate visual containers", () => {
   assert.match(renderer, /\$\("#frequent-brand-cards"\)\.innerHTML = brandMarkup\(pinnedBrands\)/);
   assert.match(renderer, /\$\("#brand-cards"\)\.innerHTML = brandMarkup\(regularBrands\)/);
 });
+
+test("official site address uses a separate full-width bottom row", () => {
+  assert.match(renderer, /<\/span>\$\{officialDomain \? `<small class="brand-official-domain"/);
+  assert.match(css, /\.brand-card > \.brand-official-domain/);
+  assert.match(css, /grid-column:1 \/ -1/);
+  assert.match(css, /overflow-wrap:anywhere/);
+  assert.match(css, /word-break:break-all/);
+});
