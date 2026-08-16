@@ -69,7 +69,7 @@ test("Excel defaults to the complete raw sheet with optional grouped product vie
   assert.match(cssSource, /\.excel-image-cell img\{[^}]*width:46px;height:46px/);
   assert.match(await readFile(new URL("../src/excel-column-layout.js", import.meta.url), "utf8"), /#excel-preview-columns th"\)\]\.slice\(2\)/);
   assert.match(rendererSource, /let excelPreviewProductMode = false/);
-  assert.match(rendererSource, /filters = \{ \.\.\.filters, productView: false \}/);
+  assert.match(rendererSource, /filters = \{ \.\.\.filters, productView: excelPreviewProductMode \}/);
   assert.match(rendererSource, /renderExcelProductRows/);
   assert.match(rendererSource, /data-excel-search-product/);
   assert.match(rendererSource, /search\.textContent = excelPreviewBatchSearching \? "검색 중지" : "상품검색"/);
