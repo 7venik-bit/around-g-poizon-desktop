@@ -238,16 +238,18 @@ async function openIntegratedBrandExcel(file, productSearch = false) {
   const minimum = "";
   $("#excel-filter-min-total").value = "";
   $("#excel-filter-min-local-total").value = "";
-  $("#brand-product-workspace-title").textContent = `${file.brandName || "선택 브랜드"} · ${productSearch ? "상품검색" : "원본 Excel"}`;
+  $("#brand-product-workspace-title").textContent = `${file.brandName || "선택 브랜드"} · 원본 Excel 전체 보기`;
   $("#brand-product-workspace-meta").textContent = `작업번호 ${file.jobId || "-"} · ${file.name || file.path}`;
-  excelPreviewProductMode = Boolean(productSearch);
+  // Always start with the untouched worksheet rows. Product grouping and
+  // filters are optional manual actions chosen by the user afterward.
+  excelPreviewProductMode = false;
   await showExcelPreview(file, 0, {
     minimumTotal: minimum,
     minimumLocalTotal: minimum,
     fixedTotalAnd: true,
     matchMode: "all",
-    productView: Boolean(productSearch),
-  }, { integrated: true, preserveFilters: false, productView: Boolean(productSearch) });
+    productView: false,
+  }, { integrated: true, preserveFilters: false, productView: false });
 }
 
 $("#brand-export-completed-list")?.addEventListener("click", async (event) => {
