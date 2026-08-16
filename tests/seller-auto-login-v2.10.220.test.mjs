@@ -45,3 +45,15 @@ test("Korean login form is filled from Integration settings and retried after as
   assert.match(renderer, /POIZON 아이디와 비밀번호를 기억했습니다/);
   assert.match(renderer, /브랜드 검색 시 자동 입력/);
 });
+
+test("login window shows verified progress and success only after seller entry", () => {
+  assert.match(main, /setSellerLoginStatusOverlay/);
+  assert.match(main, /저장 계정 확인 완료/);
+  assert.match(main, /ID·비밀번호 자동 입력 완료/);
+  assert.match(main, /자동 로그인 테스트 성공 완료/);
+  assert.match(main, /POIZON 계정 저장 필요/);
+  assert.match(main, /LOGIN_INPUTS_NOT_FOUND/);
+  assert.match(main, /element\.shadowRoot/);
+  assert.match(main, /style\.visibility !== 'hidden'/);
+  assert.match(main, /await setSellerLoginStatusOverlay\("success".*seller-login-restored/s);
+});
