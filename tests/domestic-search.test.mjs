@@ -8,6 +8,7 @@ import {
   countRenderedChannelProducts,
   domesticChannelUrl,
   exactArticleIdentityMatch,
+  isSsgOfficialBrandHall,
   naverFashionTownUrl,
   officialBrandProductSearchUrl,
   officialBrandSearchUrl,
@@ -460,4 +461,33 @@ test("a transient Musinsa server failure is retried once", async () => {
   const result = await queryDomesticProducts({ query: "TEST-501", articleNumber: "TEST-501", fetchImpl });
   assert.equal(musinsaCalls, 2);
   assert.equal(result.sources.find((source) => source.store === "무신사")?.count, 1);
+});
+
+test("SSG Descente official brand hall outranks edit-shop discovery classification", () => {
+  assert.equal(isSsgOfficialBrandHall({
+    brand: "데상트",
+    url: "https://www.ssg.com/item/itemView.ssg?itemId=1000833166393",
+    text: "본사직영 데상트 브랜드관 [데상트 공식] 데상트 공식브랜드관",
+  }), true);
+
+  const rendered = JSON.stringify({
+    pageText: "",
+    productCards: [{
+      productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000833166393",
+      title: "[데상트 공식] 터프 스몰 워딩 폴로 반팔 티셔츠 SR323UPS74",
+      text: "본사직영 데상트 브랜드관 데상트 공식브랜드관 SR323UPS74",
+      markup: "<span>브랜드관</span>",
+    }],
+  });
+  const result = analyzeRenderedChannelProducts(rendered, "병행수입·편집샵", "SR323UPS74", "데상트");
+  assert.equal(result.products.length, 1);
+  assert.equal(result.products[0].store, "SSG 브랜드 공식관");
+  assert.equal(result.products[0].retailerName, "브랜드 공식관 · 본사직영");
+  assert.equal(result.products[0].officialStoreVerified, true);
+});
+
+test("SSG official classification requires a listed brand and official evidence", () => {
+  assert.equal(isSsgOfficialBrandHall({ brand: "데상트", url: "https://www.ssg.com/item/1", text: "일반 판매상품 데상트" }), false);
+  assert.equal(isSsgOfficialBrandHall({ brand: "임의브랜드", url: "https://www.ssg.com/item/1", text: "본사직영 브랜드관" }), false);
+  assert.equal(isSsgOfficialBrandHall({ brand: "데상트", url: "https://example.com/item/1", text: "본사직영 데상트 브랜드관" }), false);
 });
