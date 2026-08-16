@@ -72,7 +72,7 @@ test("Excel defaults to the complete raw sheet with optional grouped product vie
   assert.match(rendererSource, /filters = \{ \.\.\.filters, productView: false \}/);
   assert.match(rendererSource, /renderExcelProductRows/);
   assert.match(rendererSource, /data-excel-search-product/);
-  assert.match(rendererSource, /선택 상품 일괄 검색/);
+  assert.match(rendererSource, /search\.textContent = excelPreviewBatchSearching \? "검색 중지" : "상품검색"/);
   assert.match(rendererSource, /cachedDomesticSearch\(product, true\)/);
   assert.match(rendererSource, /productCrossCheckIdentity/);
   const productColumns = rendererSource.match(/excel-preview-columns"\)\.innerHTML = `<tr>(.*?)<\/tr>`/)?.[1] || "";
@@ -92,11 +92,12 @@ test("brand Excel preview supports popular-list style product selection", () => 
   assert.match(rendererSource, /data-excel-product-select/);
   assert.match(rendererSource, /updateExcelPreviewSelectionUi\(pageProductKeys\)/);
   assert.match(cssSource, /\.excel-preview-selection/);
+  assert.doesNotMatch(cssSource, /\.excel-preview:not\(\.product-view\) #excel-preview-search-selected\{display:none\}/);
   assert.match(cssSource, /\.excel-product-select-column/);
 });
 
 test("selected Excel products calculate profit from the verified list price", () => {
-  assert.match(htmlSource, /id="excel-preview-selection-clear"[\s\S]*id="excel-preview-profit"[^>]*>수익계산<[\s\S]*id="excel-preview-search-selected"/);
+  assert.match(htmlSource, /id="excel-preview-selection-clear"[\s\S]*id="excel-preview-search-selected"[^>]*>상품검색<[\s\S]*id="excel-preview-profit"[^>]*>수익계산</);
   assert.match(htmlSource, /id="profit-selection-summary"/);
   assert.match(rendererSource, /국내 가격 확인 중/);
   assert.match(rendererSource, /excelPreviewSearchResults\.get\(key\)/);
