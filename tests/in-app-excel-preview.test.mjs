@@ -57,6 +57,7 @@ test("Excel filter controls share one bottom line", () => {
 
 test("Excel defaults to the complete raw sheet with optional grouped product view", async () => {
   assert.match(mainSource, /function buildExcelPreviewProducts/);
+  assert.doesNotMatch(mainSource, /const grouped = new Map\(\)/);
   assert.match(mainSource, /const productView = input\.filters\?\.productView !== false/);
   assert.match(mainSource, /sourceTotalProducts/);
   assert.doesNotMatch(htmlSource, /id="excel-view-products"|id="excel-view-raw"/);
@@ -243,23 +244,25 @@ test("completed brand downloads open integrated product search by job-linked Exc
   assert.match(rendererSource, /persistExcelSearchResults/);
 });
 
-test("integrated product search opens raw rows and groups products only on manual request", () => {
+test("integrated product search keeps original rows and opens product search only on manual request", () => {
   assert.match(rendererSource, /excelPreviewProductMode = false/);
   assert.match(rendererSource, /productView: false/);
   assert.match(rendererSource, /excel-view-products"[\s\S]*excelPreviewProductMode = true/);
   assert.match(rendererSource, /activeExcelPreview\?\.viewMode !== "products"/);
   assert.match(rendererSource, /상품 목록 준비 중/);
   assert.match(rendererSource, /productView: true/);
+  assert.match(rendererSource, /product\.key \|\| product\.articleNumber \|\| product\.spuId/);
   assert.match(rendererSource, /excelPreviewProductCache\.has\(key\)/);
   assert.match(rendererSource, /검색을 완료했습니다/);
 });
 
 
-test("raw Excel view bypasses grouping, filtering, and display-only columns", () => {
+test("raw Excel view preserves original rows and display-only columns", () => {
   assert.match(mainSource, /const filtered = productView[\s\S]*workbook\.rows\.map\(\(values, index\) => \(\{ values, sourceRowNumber: index \+ 2 \}\)\)/);
   assert.match(mainSource, /headers: Array\.from\(\{ length: columnCount \}, \(_unused, index\) => excelPreviewCell\(rows\[0\]\?\.\[index\]\)\)/);
   assert.doesNotMatch(rendererSource, /else \{[\s\S]{0,400}excel-product-select-column/);
   assert.match(rendererSource, /aria-label="제품 이미지 크게 보기"/);
-  assert.match(rendererSource, /value === "--" \|\| value === "-" \? "" : cell/);
+  assert.match(rendererSource, /!value \|\| value === "--" \|\| value === "-" \|\| \/\^<\\s\*5/);
+  assert.match(rendererSource, /\? "숨김" : cell/);
   assert.match(rendererSource, /rows\.map\(\(row\) => `<tr>\$\{row\.map/);
 });
