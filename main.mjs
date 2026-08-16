@@ -1988,46 +1988,36 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
   };
   const cell = (row, index) => index >= 0 ? row[index] : "";
   const raw = (row, index) => String(cell(row, index) ?? "").trim();
-  const grouped = new Map();
-  for (const entry of entries) {
+  return entries.flatMap((entry) => {
     const row = entry.values || [];
     const spuId = raw(row, columns.spuId);
     const articleNumber = raw(row, columns.articleNumber);
     const title = raw(row, columns.title);
-    if (!spuId && !articleNumber && !title) continue;
-    const key = articleNumber ? `ARTICLE:${articleNumber.toUpperCase()}` : spuId ? `SPU:${spuId}` : `ROW:${entry.sourceRowNumber}`;
-    const previous = grouped.get(key) || { optionKeys: new Set(), variants: [] };
-    const optionKey = raw(row, columns.skuId) || raw(row, columns.option) || String(entry.sourceRowNumber);
-    previous.optionKeys.add(optionKey);
-    const variant = {
-      totalSales: parsePoizonSalesMetric(cell(row, columns.totalSales)), totalSalesRaw: raw(row, columns.totalSales),
-      localTotalSales: parsePoizonSalesMetric(cell(row, columns.localTotalSales)), localTotalSalesRaw: raw(row, columns.localTotalSales),
-      sales30d: parsePoizonSalesMetric(cell(row, columns.sales30d)), sales30dRaw: raw(row, columns.sales30d),
-      localSales30d: parsePoizonSalesMetric(cell(row, columns.localSales30d)), localSales30dRaw: raw(row, columns.localSales30d),
-    };
-    previous.variants.push(variant);
-    Object.assign(previous, {
-      key, spuId: previous.spuId || spuId, articleNumber: previous.articleNumber || articleNumber,
-      title: previous.title || title, brandName: previous.brandName || raw(row, columns.brand),
-      logoUrl: previous.logoUrl || raw(row, columns.image),
-      categoryName: previous.categoryName || [columns.category1, columns.category2, columns.category3].map((index) => raw(row, index)).filter(Boolean).join(" / "),
-      averagePrice: Math.max(Number(previous.averagePrice || 0), parsePoizonSalesMetric(cell(row, columns.averagePrice))),
-    });
-    grouped.set(key, previous);
-  }
-  return [...grouped.values()].map((product) => {
-    const representative = product.variants.reduce((best, variant) => !best
-      || variant.localTotalSales > best.localTotalSales
-      || (variant.localTotalSales === best.localTotalSales && variant.totalSales > best.totalSales) ? variant : best, null) || {};
-    return {
-      key: product.key, spuId: product.spuId || "", articleNumber: product.articleNumber || "", title: product.title || "",
-      brandName: product.brandName || "", logoUrl: product.logoUrl || "", categoryName: product.categoryName || "",
-      averagePrice: product.averagePrice || 0, optionCount: product.optionKeys.size,
-      totalSales: representative.totalSales || 0, totalSalesRaw: representative.totalSalesRaw || "",
-      localTotalSales: representative.localTotalSales || 0, localTotalSalesRaw: representative.localTotalSalesRaw || "",
-      sales30d: representative.sales30d || 0, sales30dRaw: representative.sales30dRaw || "",
-      localSales30d: representative.localSales30d || 0, localSales30dRaw: representative.localSales30dRaw || "",
-    };
+    const skuId = raw(row, columns.skuId);
+    const option = raw(row, columns.option);
+    if (!spuId && !articleNumber && !title && !skuId) return [];
+    return [{
+      key: `ROW:${entry.sourceRowNumber}:${skuId || articleNumber || spuId}`,
+      sourceRowNumber: entry.sourceRowNumber,
+      spuId,
+      skuId,
+      option,
+      articleNumber,
+      title,
+      brandName: raw(row, columns.brand),
+      logoUrl: raw(row, columns.image),
+      categoryName: [columns.category1, columns.category2, columns.category3].map((index) => raw(row, index)).filter(Boolean).join(" / "),
+      averagePrice: parsePoizonSalesMetric(cell(row, columns.averagePrice)),
+      optionCount: 1,
+      totalSales: parsePoizonSalesMetric(cell(row, columns.totalSales)),
+      totalSalesRaw: raw(row, columns.totalSales),
+      localTotalSales: parsePoizonSalesMetric(cell(row, columns.localTotalSales)),
+      localTotalSalesRaw: raw(row, columns.localTotalSales),
+      sales30d: parsePoizonSalesMetric(cell(row, columns.sales30d)),
+      sales30dRaw: raw(row, columns.sales30d),
+      localSales30d: parsePoizonSalesMetric(cell(row, columns.localSales30d)),
+      localSales30dRaw: raw(row, columns.localSales30d),
+    }];
   });
 }
 
@@ -2050,8 +2040,17 @@ async function previewExcelFile(input = {}) {
     while (excelPreviewCache.size > 3) excelPreviewCache.delete(excelPreviewCache.keys().next().value);
   }
   const productView = input.filters?.productView !== false;
-  const filtered = productView
-    ? filterPoizonPreviewRows(workbook.headers, workbook.rows, input.filters || {})
+  const manualRawFilter = !productView && [
+    input.filters?.minimumTotal,
+    input.filters?.maximumTotal,
+    input.filters?.minimumLocalTotal,
+    input.filters?.maximumLocalTotal,
+  ].some((value) => value !== null && value !== undefined && String(value).trim() !== "");
+  const filtered = productView || manualRawFilter
+    ? filterPoizonPreviewRows(workbook.headers, workbook.rows, {
+        ...(input.filters || {}),
+        rowLevel: manualRawFilter,
+      })
     : {
         entries: workbook.rows.map((values, index) => ({ values, sourceRowNumber: index + 2 })),
         sourceRows: workbook.rows.length,
