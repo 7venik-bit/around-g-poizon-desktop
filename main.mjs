@@ -2042,16 +2042,31 @@ async function previewExcelFile(input = {}) {
     const rows = await readFirstDataSheet(await readFile(filePath));
     const columnCount = rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
     workbook = {
-      headers: Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(rows[0]?.[index]) || `열 ${index + 1}`),
+      headers: Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(rows[0]?.[index])),
       rows: rows.slice(1).map((row) => Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(row[index]))),
       columnCount,
     };
     excelPreviewCache.set(signature, workbook);
     while (excelPreviewCache.size > 3) excelPreviewCache.delete(excelPreviewCache.keys().next().value);
   }
-  const filtered = filterPoizonPreviewRows(workbook.headers, workbook.rows, input.filters || {});
-  const limit = Math.min(200, Math.max(25, Number(input.limit) || 100));
   const productView = input.filters?.productView !== false;
+  const filtered = productView
+    ? filterPoizonPreviewRows(workbook.headers, workbook.rows, input.filters || {})
+    : {
+        entries: workbook.rows.map((values, index) => ({ values, sourceRowNumber: index + 2 })),
+        sourceRows: workbook.rows.length,
+        sourceProducts: workbook.rows.length,
+        filteredProducts: workbook.rows.length,
+        chinaQualifiedProducts: workbook.rows.length,
+        localQualifiedProducts: workbook.rows.length,
+        missingChinaProducts: 0,
+        missingLocalProducts: 0,
+        totalSalesColumn: -1,
+        localTotalSalesColumn: -1,
+        filterApplied: false,
+        matchMode: "all",
+      };
+  const limit = Math.min(200, Math.max(25, Number(input.limit) || 100));
   const products = productView ? buildExcelPreviewProducts(workbook.headers, filtered.entries) : [];
   const sourceTotalProducts = productView ? buildExcelPreviewProducts(workbook.headers, workbook.rows.map((values, index) => ({ values, sourceRowNumber: index + 2 }))).length : 0;
   const resultCount = productView ? products.length : filtered.entries.length;
