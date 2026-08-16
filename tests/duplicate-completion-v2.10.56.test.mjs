@@ -20,7 +20,8 @@ test("restored Excel paths and job ids are registered as already completed", () 
 test("one live job can complete only once even when the folder timestamp changes", () => {
   assert.match(renderer, /completedBrandImportJobIds\.has\(resolvedJobId\)/);
   assert.match(renderer, /if \(!resolvedJobId \|\| completedBrandImportJobIds\.has\(resolvedJobId\)\) return/);
-  assert.match(renderer, /if \(!registeredBrand\) return/);
+  assert.match(renderer, /const resolvedBrandName = workbookBrand \|\| registeredBrand/);
+  assert.match(renderer, /if \(!resolvedBrandName\) return/);
   const importBlock = normalizedRenderer.match(
     /async function importDetectedBrandExport[\s\S]*?\n}\n\nasync function drainDetectedBrandImports/
   )?.[0] || "";
