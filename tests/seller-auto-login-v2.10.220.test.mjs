@@ -35,3 +35,13 @@ test("brand progress rows support checkbox selection and selected deletion", () 
   assert.match(renderer, /selectedBrandBatchKeys/);
   assert.match(renderer, /brandBatchStates\.delete\(key\)/);
 });
+
+test("Korean login form is filled from Integration settings and retried after async render", () => {
+  assert.match(main, /아이디\|휴대폰\|이메일\|전화번호/);
+  assert.match(main, /로그인\|登录\|登入/);
+  assert.match(main, /lastAutoLoginAttemptAt/);
+  assert.match(main, /Date\.now\(\) - lastAutoLoginAttemptAt >= 2_500/);
+  assert.match(main, /automatic = await submitStoredSellerCredentials\(\)/);
+  assert.match(renderer, /POIZON 아이디와 비밀번호를 기억했습니다/);
+  assert.match(renderer, /브랜드 검색 시 자동 입력/);
+});
