@@ -566,7 +566,11 @@ function excelImageColumn(header = "") {
   return /^(?:SPU\s*이미지|SKU\s*이미지|상품\s*이미지|이미지)$/i.test(String(header || "").trim());
 }
 
-function renderRawExcelCell(cell, _header = "", columnIndex = 0) {
+function renderRawExcelCell(cell, header = "", columnIndex = 0) {
+  const value = String(cell ?? "").trim();
+  if (excelImageColumn(header) && /^https:\/\//i.test(value)) {
+    return `<td class="excel-image-cell" data-excel-column-index="${columnIndex}" title="${text(value)}"><a href="${text(value)}" target="_blank" rel="noreferrer" aria-label="제품 이미지 크게 보기"><img src="${text(value)}" alt="제품 이미지" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('a').hidden=true"></a></td>`;
+  }
   return `<td data-excel-column-index="${columnIndex}" title="${text(cell)}">${text(cell)}</td>`;
 }
 
