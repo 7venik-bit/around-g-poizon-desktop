@@ -266,3 +266,14 @@ test("raw Excel view preserves original rows and display-only columns", () => {
   assert.match(rendererSource, /\? "숨김" : cell/);
   assert.match(rendererSource, /rows\.map\(\(row\) => `<tr>\$\{row\.map/);
 });
+
+
+test("raw Excel rows restore domestic platform search without grouping products", () => {
+  assert.match(mainSource, /buildExcelPreviewProducts\(workbook\.headers, pageEntries\)/);
+  assert.match(rendererSource, /<th>국내 상품검색<\/th>/);
+  assert.match(rendererSource, /data-excel-search-product/);
+  assert.match(rendererSource, /productsByRow/);
+  assert.match(rendererSource, /pageProductsByRow/);
+  assert.match(rendererSource, /activeExcelPreview\?\.viewMode === "products"/);
+  assert.match(rendererSource, /showExcelPreview\(file, activeExcelPreview\?\.offset/);
+});
