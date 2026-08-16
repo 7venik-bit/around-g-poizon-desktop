@@ -1309,7 +1309,6 @@ function renderBrandCards(filter = "") {
       try { return new URL(String(brand.officialHomepageUrl || "")).hostname.replace(/^www\./, ""); } catch { return ""; }
     })();
     return `<button type="button" class="brand-card ${selected ? "selected" : ""}${pinned ? " brand-pinned" : ""}${downloadComplete ? " download-complete" : ""}${officialLinked ? " official-linked" : ""}${officialMissing ? " official-missing" : ""}" data-brand-id="${brand.id}" aria-pressed="${selected}"${officialDomain ? ` title="공식몰: ${text(brand.officialHomepageUrl)}"` : ""}${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
-    <i class="brand-selection-check" aria-hidden="true">✓</i>
     ${pinned ? `<i class="brand-pinned-remove" role="button" tabindex="0" data-brand-unpin="${brand.id}" aria-label="${text(brand.name)} 즐겨찾기 삭제" title="즐겨찾기 삭제">×</i>` : ""}
     ${pinned ? '<em class="brand-pinned-badge" aria-label="자주사용 브랜드">자주사용</em>' : ""}
     ${officialLinked ? '<em class="brand-official-badge" aria-label="공식몰 연동 완료">공식</em>' : ""}
