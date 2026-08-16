@@ -1190,3 +1190,44 @@ button,input,select,textarea{font-family:inherit}
 @media(max-width:850px){.sorting-scene{grid-template-columns:130px minmax(180px,1fr) 115px}.sorting-items{grid-column:1/-1}}
 @media(prefers-reduced-motion:reduce){.sender.is-loading .truck-door,.sender.is-loading .courier-person,.sender.is-loading .courier-package,.receiver.is-working *,.brand-box,.sorting-conveyor::after{animation-duration:.01ms}}
 .confidence.official{background:#dff7ee;color:#047857;border:1px solid #9fdfc8}
+
+
+/* Separate frequently-used brands from the full catalog. */
+.brand-list-group{
+  margin-top:14px;
+  padding:12px;
+  border:1px solid #d8e4f2;
+  border-radius:14px;
+  background:#fff
+}
+.brand-list-group[hidden]{display:none}
+.brand-list-group-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:10px
+}
+.brand-list-group-heading>div{display:flex;align-items:center;gap:8px}
+.brand-list-group-heading strong{color:#203b62;font-size:14px}
+.brand-list-group-heading span{
+  padding:3px 8px;
+  border-radius:999px;
+  color:#477199;
+  background:#edf4fb;
+  font-size:11px;
+  font-weight:800
+}
+.brand-list-group-heading small{color:#7a899c;font-size:11px}
+.frequent-brand-group{
+  border-color:#a9c9f8;
+  background:linear-gradient(180deg,#f4f8ff 0%,#fff 100%);
+  box-shadow:0 6px 18px #2d7ff00d
+}
+.frequent-brand-group .brand-list-group-heading strong{color:#1e63c6}
+.frequent-brand-group .brand-list-group-heading span{color:#fff;background:#2d7ff0}
+.frequent-brand-cards{padding-bottom:2px;border-bottom:0}
+.all-brand-group{margin-top:12px}
+@media(max-width:850px){
+  .brand-list-group-heading{align-items:flex-start;flex-direction:column}
+}
