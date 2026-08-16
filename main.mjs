@@ -3443,8 +3443,19 @@ async function submitStoredSellerCredentialsWithAccessibility(loginId, password)
       attachedHere = true;
     }
     await client.sendCommand("Accessibility.enable");
-    const tree = await client.sendCommand("Accessibility.getFullAXTree");
-    const nodes = Array.isArray(tree?.nodes) ? tree.nodes.filter((node) => !node.ignored && node.backendDOMNodeId) : [];
+    const pageTree = await client.sendCommand("Page.getFrameTree");
+    const frameIds = [];
+    const collectFrames = (entry) => {
+      if (entry?.frame?.id) frameIds.push(entry.frame.id);
+      for (const child of entry?.childFrames || []) collectFrames(child);
+    };
+    collectFrames(pageTree?.frameTree);
+    const axTrees = await Promise.all((frameIds.length ? frameIds : [undefined]).map((frameId) =>
+      client.sendCommand("Accessibility.getFullAXTree", frameId ? { frameId } : {})
+        .catch(() => ({ nodes: [] }))
+    ));
+    const nodes = axTrees.flatMap((tree) => Array.isArray(tree?.nodes) ? tree.nodes : [])
+      .filter((node) => !node.ignored && node.backendDOMNodeId);
     const role = (node) => String(node?.role?.value || "").toLowerCase();
     const label = (node) => [
       node?.name?.value,
