@@ -3433,6 +3433,69 @@ async function setSellerLoginStatusOverlay(state = "checking", title = "", detai
   await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, script, 3_000, false).catch(() => false);
 }
 
+async function submitStoredSellerCredentialsWithAccessibility(loginId, password) {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: "SELLER_WINDOW_CLOSED" };
+  const client = sellerWindow.webContents.debugger;
+  let attachedHere = false;
+  try {
+    if (!client.isAttached()) {
+      client.attach("1.3");
+      attachedHere = true;
+    }
+    await client.sendCommand("Accessibility.enable");
+    const pageTree = await client.sendCommand("Page.getFrameTree");
+    const frameIds = [];
+    const collectFrames = (entry) => {
+      if (entry?.frame?.id) frameIds.push(entry.frame.id);
+      for (const child of entry?.childFrames || []) collectFrames(child);
+    };
+    collectFrames(pageTree?.frameTree);
+    const axTrees = await Promise.all((frameIds.length ? frameIds : [undefined]).map((frameId) =>
+      client.sendCommand("Accessibility.getFullAXTree", frameId ? { frameId } : {})
+        .catch(() => ({ nodes: [] }))
+    ));
+    const nodes = axTrees.flatMap((tree) => Array.isArray(tree?.nodes) ? tree.nodes : [])
+      .filter((node) => !node.ignored && node.backendDOMNodeId);
+    const role = (node) => String(node?.role?.value || "").toLowerCase();
+    const label = (node) => [
+      node?.name?.value,
+      node?.description?.value,
+      ...(node?.properties || []).map((property) => property?.value?.value),
+    ].filter(Boolean).join(" ");
+    const textboxes = nodes.filter((node) => /textbox|textfield|input/.test(role(node)));
+    const passwordNode = textboxes.find((node) => /비밀번호|password|密码|passcode/i.test(label(node)));
+    const idNode = textboxes.find((node) =>
+      node !== passwordNode && /휴대폰|전화|이메일|아이디|phone|email|account|username|手机号|邮箱|账号/i.test(label(node))
+    ) || textboxes.find((node) => node !== passwordNode);
+    const loginButton = nodes.find((node) =>
+      /button|link/.test(role(node)) && /로그인|登录|登入|sign\s*in|log\s*in/i.test(label(node))
+    );
+    if (!idNode || !passwordNode) {
+      return { ok: false, step: "ACCESSIBILITY_LOGIN_INPUTS_NOT_FOUND", axNodes: nodes.length, textboxes: textboxes.length };
+    }
+    const replaceFocusedText = async (node, value) => {
+      await client.sendCommand("DOM.focus", { backendNodeId: node.backendDOMNodeId });
+      await client.sendCommand("Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", modifiers: 2 });
+      await client.sendCommand("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: 2 });
+      await client.sendCommand("Input.insertText", { text: value });
+      await wait(150);
+    };
+    await replaceFocusedText(idNode, loginId);
+    await replaceFocusedText(passwordNode, password);
+    if (!loginButton) return { ok: false, filled: true, step: "ACCESSIBILITY_LOGIN_BUTTON_NOT_FOUND" };
+    await client.sendCommand("DOM.focus", { backendNodeId: loginButton.backendDOMNodeId });
+    await client.sendCommand("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter" });
+    await client.sendCommand("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter" });
+    return { ok: true, filled: true, step: "ACCESSIBILITY_CREDENTIALS_SUBMITTED" };
+  } catch (error) {
+    return { ok: false, step: "ACCESSIBILITY_LOGIN_FAILED", reason: String(error?.message || error || "") };
+  } finally {
+    if (attachedHere && client.isAttached()) {
+      try { client.detach(); } catch {}
+    }
+  }
+}
+
 async function submitStoredSellerCredentials() {
   const settings = store.snapshot().settings || {};
   const loginId = String(settings.poizonLoginId || "").trim();
@@ -3509,8 +3572,23 @@ async function submitStoredSellerCredentials() {
     }
     if (result?.ok) return { ...result, stored: true };
   }
-  await setSellerLoginStatusOverlay("error", "로그인 입력칸 인식 실패", `화면 입력칸을 찾지 못했습니다. 자동으로 다시 시도합니다. (${lastResult.step || "UNKNOWN"})`);
-  return { ...lastResult, ok: false, stored: true };
+  const accessibilityResult = await submitStoredSellerCredentialsWithAccessibility(loginId, password);
+  if (accessibilityResult?.filled) {
+    await setSellerLoginStatusOverlay(
+      accessibilityResult.ok ? "filling" : "error",
+      accessibilityResult.ok ? "ID·비밀번호 실제 입력 완료" : "로그인 버튼 확인 필요",
+      accessibilityResult.ok
+        ? "POIZON 화면 요소를 직접 찾아 입력했습니다. 판매자센터 진입을 확인하고 있습니다."
+        : `입력은 완료했지만 버튼 실행에 실패했습니다. (${accessibilityResult.step || "UNKNOWN"})`
+    );
+  }
+  if (accessibilityResult?.ok) return { ...accessibilityResult, stored: true };
+  await setSellerLoginStatusOverlay(
+    "error",
+    "로그인 입력칸 인식 실패",
+    `일반 화면과 접근성 화면에서 입력칸을 찾지 못했습니다. 자동으로 다시 시도합니다. (${accessibilityResult?.step || lastResult.step || "UNKNOWN"})`
+  );
+  return { ...(accessibilityResult || lastResult), ok: false, stored: true };
 }
 
 async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
