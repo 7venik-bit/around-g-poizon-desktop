@@ -260,7 +260,7 @@ test("integrated product search keeps original rows and opens product search onl
 test("raw Excel view preserves original rows and display-only columns", () => {
   assert.match(mainSource, /const filtered = productView[\s\S]*workbook\.rows\.map\(\(values, index\) => \(\{ values, sourceRowNumber: index \+ 2 \}\)\)/);
   assert.match(mainSource, /headers: Array\.from\(\{ length: columnCount \}, \(_unused, index\) => excelPreviewCell\(rows\[0\]\?\.\[index\]\)\)/);
-  assert.doesNotMatch(rendererSource, /else \{[\s\S]{0,400}excel-product-select-column/);
+  assert.match(rendererSource, /else \{[\s\S]{0,500}excel-product-select-column/);
   assert.match(rendererSource, /aria-label="제품 이미지 크게 보기"/);
   assert.match(rendererSource, /!value \|\| value === "--" \|\| value === "-" \|\| \/\^<\\s\*5/);
   assert.match(rendererSource, /\? "숨김" : cell/);
