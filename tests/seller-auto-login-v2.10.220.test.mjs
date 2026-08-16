@@ -60,6 +60,7 @@ test("login window shows verified progress and success only after seller entry",
 
 test("visually rendered POIZON fields fall back to real accessibility input", () => {
   assert.match(main, /submitStoredSellerCredentialsWithAccessibility/);
+  assert.match(main, /Page\.getFrameTree/);
   assert.match(main, /Accessibility\.getFullAXTree/);
   assert.match(main, /DOM\.focus/);
   assert.match(main, /Input\.insertText/);
