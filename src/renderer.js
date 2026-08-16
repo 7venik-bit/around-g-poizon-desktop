@@ -1310,6 +1310,7 @@ function renderBrandCards(filter = "") {
     })();
     return `<button type="button" class="brand-card ${selected ? "selected" : ""}${pinned ? " brand-pinned" : ""}${downloadComplete ? " download-complete" : ""}${officialLinked ? " official-linked" : ""}${officialMissing ? " official-missing" : ""}" data-brand-id="${brand.id}" aria-pressed="${selected}"${officialDomain ? ` title="공식몰: ${text(brand.officialHomepageUrl)}"` : ""}${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
     <i class="brand-selection-check" aria-hidden="true">✓</i>
+    ${pinned ? `<i class="brand-pinned-remove" role="button" tabindex="0" data-brand-unpin="${brand.id}" aria-label="${text(brand.name)} 즐겨찾기 삭제" title="즐겨찾기 삭제">×</i>` : ""}
     ${pinned ? '<em class="brand-pinned-badge" aria-label="자주사용 브랜드">자주사용</em>' : ""}
     ${officialLinked ? '<em class="brand-official-badge" aria-label="공식몰 연동 완료">공식</em>' : ""}
     ${officialMissing ? '<em class="brand-official-badge missing" aria-label="국내 공식몰 없음">공식몰 없음</em>' : ""}
@@ -1797,6 +1798,20 @@ document.addEventListener("click", async (event) => {
   const domesticButton = event.target.closest("[data-domestic][data-index]");
   const domesticIndex = domesticButton?.dataset.index;
   if (domesticButton && domesticIndex !== undefined) await searchDomesticAt(Number(domesticIndex));
+  const unpinButton = event.target.closest("[data-brand-unpin]");
+  if (unpinButton) {
+    if (brandSelectionBusy || activeExportBrand) return;
+    const brandId = Number(unpinButton.dataset.brandUnpin);
+    const brand = explorerMeta.brands.find((item) => Number(item.id) === brandId);
+    pinnedBrandIds = pinnedBrandIds.filter((id) => Number(id) !== brandId);
+    selectedBrandIds.delete(brandId);
+    selectedBrandId = selectedBrandIds.size === 1 ? [...selectedBrandIds][0] : null;
+    saveBrandSelections();
+    renderBrandCards($("#brand-filter")?.value || "");
+    $("#brand-status").className = "status success";
+    $("#brand-status").textContent = `${brand?.name || "브랜드"} 즐겨찾기를 삭제하고 원래 위치로 되돌렸습니다.`;
+    return;
+  }
   const brandButton = event.target.closest(".brand-card[data-brand-id]");
   if (brandButton) {
     if (brandSelectionBusy || activeExportBrand) {
@@ -1830,15 +1845,24 @@ $("#brand-move-top")?.addEventListener("click", () => {
   saveBrandSelections();
   renderBrandCards($("#brand-filter")?.value || "");
   $("#brand-status").className = "status success";
-  $("#brand-status").textContent = `선택한 ${selected.length}개 브랜드를 자주사용 목록 상단에 고정했습니다.`;
+  $("#brand-status").textContent = `선택한 ${selected.length}개 브랜드를 즐겨찾기에 추가하고 상단으로 이동했습니다.`;
   $("#brand-cards")?.scrollTo({ top: 0, behavior: "smooth" });
 });
 $("#brand-selection-clear")?.addEventListener("click", () => {
   if (brandSelectionBusy) return;
+  const selectedPinned = [...selectedBrandIds].filter((id) => pinnedBrandIds.includes(Number(id)));
+  if (selectedPinned.length) {
+    const selectedPinnedIds = new Set(selectedPinned.map(Number));
+    pinnedBrandIds = pinnedBrandIds.filter((id) => !selectedPinnedIds.has(Number(id)));
+  }
   selectedBrandIds.clear();
   selectedBrandId = null;
   saveBrandSelections();
   renderBrandCards($("#brand-filter")?.value || "");
+  if (selectedPinned.length) {
+    $("#brand-status").className = "status success";
+    $("#brand-status").textContent = `선택한 즐겨찾기 ${selectedPinned.length}개를 해제하고 원래 위치로 되돌렸습니다.`;
+  }
 });
 $("#brand-export-selected")?.addEventListener("click", async () => {
   if (brandSelectionBusy || activeExportBrand || hasActiveBrandExportJobs()) {

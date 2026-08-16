@@ -7,7 +7,7 @@ const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), 
 const css = await readFile(new URL("../src/style.css", import.meta.url), "utf8");
 
 test("selected brands can be moved to a persistent frequently-used group", () => {
-  assert.match(html, /id="brand-move-top"[^>]*>선택 상단 이동</);
+  assert.match(html, /id="brand-move-top"[^>]*>즐겨찾는 브랜드 선택</);
   assert.match(renderer, /around-g-pinned-brand-ids/);
   assert.match(renderer, /pinnedBrandIds = \[\.\.\.selected,/);
   assert.match(renderer, /pinnedOrder\.has\(Number\(left\.brand\.id\)\)/);
@@ -15,7 +15,15 @@ test("selected brands can be moved to a persistent frequently-used group", () =>
 
 test("pinned brands are visually identified and the list scrolls to the top", () => {
   assert.match(renderer, /brand-pinned-badge/);
-  assert.match(renderer, /자주사용 목록 상단에 고정했습니다/);
+  assert.match(renderer, /즐겨찾기에 추가하고 상단으로 이동했습니다/);
   assert.match(renderer, /scrollTo\(\{ top: 0, behavior: "smooth" \}\)/);
   assert.match(css, /\.brand-card\.brand-pinned/);
+});
+
+test("favorite brands can be removed from the right side or restored with selection clear", () => {
+  assert.match(renderer, /data-brand-unpin/);
+  assert.match(renderer, /즐겨찾기를 삭제하고 원래 위치로 되돌렸습니다/);
+  assert.match(renderer, /selectedPinnedIds/);
+  assert.match(renderer, /선택한 즐겨찾기 .*원래 위치로 되돌렸습니다/);
+  assert.match(css, /\.brand-pinned-remove/);
 });
