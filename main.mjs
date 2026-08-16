@@ -2343,9 +2343,26 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
       jobState: "4단계/5 · Excel 다운로드 중",
       message: `${downloadJob.brandName || "선택 브랜드"} · 4단계/5 · Excel 다운로드를 시작했습니다.`,
     });
-    item.once("done", async (_doneEvent, state) => {
+    item.once("done", (_doneEvent, state) => {
+      void (async () => {
       if (sessionGeneration !== brandWorkSessionGeneration) return;
       if (state === "completed") {
+        // Persist the terminal download state before workbook inspection. If a
+        // later Excel/brand validation step fails, this job must never be
+        // downloaded or monitored again.
+        const completedInfo = await stat(filePath);
+        await rememberBrandExportJob({
+          jobId: downloadJobId,
+          brandName: downloadJob.brandName,
+          brandKo: downloadJob.brandKo,
+          createdAt: downloadJob.createdAt,
+          lastDownloadedAt: Date.now(),
+          expectedProductCount: Number(downloadJob.expectedProductCount || 0),
+          filePath,
+          fileName,
+          fileMtimeMs: completedInfo.mtimeMs,
+          sessionGeneration,
+        });
         let finalPath = filePath;
         let finalName = fileName;
         const expectedProductCount = Number(downloadJob.expectedProductCount || 0);
@@ -2379,12 +2396,6 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
             path: finalPath,
             name: finalName,
           });
-          brandExportJobs.delete(downloadJobId);
-          if (activeBrandDownloadJobId === downloadJobId) activeBrandDownloadJobId = "";
-          brandDownloadPathsInProgress.delete(filePath);
-          brandDownloadStarted = false;
-          if (brandExportJobs.size) scheduleBrandExportMonitor(500);
-          else emitBrandExportAllComplete();
           return;
         }
         const brandIntegrity = await validateBrandExportFile(filePath, [
@@ -2451,12 +2462,27 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
           message: `브랜드 데이터 저장 실패: ${state}`,
         });
       }
-      brandExportJobs.delete(downloadJobId);
-      if (activeBrandDownloadJobId === downloadJobId) activeBrandDownloadJobId = "";
-      brandDownloadPathsInProgress.delete(filePath);
-      brandDownloadStarted = false;
-      if (brandExportJobs.size) scheduleBrandExportMonitor(500);
-      else emitBrandExportAllComplete();
+      })().catch((error) => {
+        mainWindow?.webContents.send("brand-export:error", {
+          brandName: downloadJob.brandName,
+          jobId: downloadJobId,
+          jobState: state === "completed" ? "다운로드 완료 · Excel 확인 오류" : "다운로드 실패",
+          message: state === "completed"
+            ? `${downloadJob.brandName || "선택 브랜드"} 파일 다운로드는 완료됐으며 반복 감시를 종료합니다. Excel 확인 오류: ${error instanceof Error ? error.message : String(error)}`
+            : `브랜드 데이터 저장 실패: ${error instanceof Error ? error.message : String(error)}`,
+          path: filePath,
+          name: fileName,
+        });
+      }).finally(() => {
+        // Terminal cleanup is unconditional: a completed/failed Electron
+        // download must not leave its job in the polling queue forever.
+        brandExportJobs.delete(downloadJobId);
+        if (activeBrandDownloadJobId === downloadJobId) activeBrandDownloadJobId = "";
+        brandDownloadPathsInProgress.delete(filePath);
+        brandDownloadStarted = false;
+        if (brandExportJobs.size) scheduleBrandExportMonitor(500);
+        else emitBrandExportAllComplete();
+      });
     });
     });
     sellerDownloadSessions.add(sellerSession);
