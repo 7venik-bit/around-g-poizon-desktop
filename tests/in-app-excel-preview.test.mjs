@@ -42,7 +42,7 @@ test("Excel preview filters both total-sales columns across all rows", async () 
   assert.match(htmlSource, /두 조건 모두 충족 \(AND\)/);
   assert.match(htmlSource, /id="excel-filter-apply"/);
   assert.match(htmlSource, /id="excel-filter-reset"/);
-  assert.match(mainSource, /filterPoizonPreviewRows\(workbook\.headers, workbook\.rows, input\.filters/);
+  assert.match(mainSource, /filterPoizonPreviewRows\(workbook\.headers, workbook\.rows, \{/);
   assert.match(mainSource, /rowNumbers: productView \? \[\] : pageEntries\.map/);
   assert.match(rendererSource, /activeExcelPreview\.filters/);
   assert.match(rendererSource, /필터 결과/);
