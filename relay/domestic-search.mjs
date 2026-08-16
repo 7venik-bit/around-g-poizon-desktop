@@ -25,6 +25,27 @@ export const DOMESTIC_RETAILER_GROUPS = {
   ],
 };
 
+
+export const SSG_OFFICIAL_BRAND_HALLS = Object.freeze([
+  { name: "데상트", aliases: ["descente", "데상트"] },
+]);
+
+export function isSsgOfficialBrandHall({ brand = "", url = "", text = "" } = {}) {
+  let host = "";
+  try { host = new URL(String(url || "")).hostname.toLowerCase(); } catch {}
+  if (!(host === "ssg.com" || host.endsWith(".ssg.com"))) return false;
+  const record = SSG_OFFICIAL_BRAND_HALLS.find((entry) =>
+    entry.aliases.some((alias) => normalizeOfficialBrand(alias) === normalizeOfficialBrand(brand))
+  );
+  if (!record) return false;
+  const evidence = String(text || "");
+  const brandMentioned = record.aliases.some((alias) =>
+    normalizeOfficialBrand(evidence).includes(normalizeOfficialBrand(alias))
+  );
+  const officialMarker = /본사\s*직영|공식\s*브랜드관|브랜드관|\[[^\]]*공식\]|공식\s*(?:몰|스토어)/i.test(evidence);
+  return brandMentioned && officialMarker;
+}
+
 const RETAILER_ALIASES = [
   ["OK몰", /okmall|오케이몰|ok몰/i], ["카시나", /kasina|카시나/i], ["S.I.VILLAGE", /s\.?i\.?\s*village|에스아이빌리지/i],
   ["ABC마트", /abc\s*mart|abc마트/i], ["그랜드스테이지", /grand\s*stage|그랜드스테이지/i], ["온더스팟", /on\s*the\s*spot|온더스팟/i],
@@ -295,10 +316,17 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // official results only when the card owns a real product-detail URL.
         if (!/^https?:\/\//i.test(productUrl)) continue;
         const productKey = productUrl;
+        const ssgOfficialBrandHall = isSsgOfficialBrandHall({
+          brand,
+          url: productUrl,
+          text: `${rawCardText} ${String(card?.markup || "")}`,
+        });
         if (!matchingProducts.has(productKey)) {
           matchingProducts.set(productKey, {
-            store,
-            retailerName: store === "병행수입·편집샵" ? detectedRetailer(rawCardText) : "",
+            store: ssgOfficialBrandHall ? "SSG 브랜드 공식관" : store,
+            retailerName: ssgOfficialBrandHall
+              ? "브랜드 공식관 · 본사직영"
+              : store === "병행수입·편집샵" ? detectedRetailer(rawCardText) : "",
             id: productKey,
             url: productUrl,
             title: String(card?.title || card?.text || `${store} 검색 결과`).trim().slice(0, 240),
@@ -311,7 +339,8 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
             originalPrice: safeNumber(card?.originalPrice),
             inStock: true,
             sizes: [],
-            confidence: exactDetectedArticle ? 95 : 75,
+            confidence: ssgOfficialBrandHall ? 100 : exactDetectedArticle ? 95 : 75,
+            officialStoreVerified: ssgOfficialBrandHall,
             signals: { code: exactDetectedArticle ? "일치" : "정보 없음", title: "판매처 결과", image: card?.imageUrl ? "확인" : "없음" },
           });
         }
