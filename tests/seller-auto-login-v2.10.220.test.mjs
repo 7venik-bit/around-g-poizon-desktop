@@ -57,3 +57,13 @@ test("login window shows verified progress and success only after seller entry",
   assert.match(main, /style\.visibility !== 'hidden'/);
   assert.match(main, /await setSellerLoginStatusOverlay\("success".*seller-login-restored/s);
 });
+
+test("visually rendered POIZON fields fall back to real accessibility input", () => {
+  assert.match(main, /submitStoredSellerCredentialsWithAccessibility/);
+  assert.match(main, /Accessibility\.getFullAXTree/);
+  assert.match(main, /DOM\.focus/);
+  assert.match(main, /Input\.insertText/);
+  assert.match(main, /ACCESSIBILITY_CREDENTIALS_SUBMITTED/);
+  assert.match(main, /ID·비밀번호 실제 입력 완료/);
+  assert.match(main, /accessibilityResult\?\.ok/);
+});
