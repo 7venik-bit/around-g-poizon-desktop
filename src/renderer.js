@@ -232,9 +232,12 @@ function downloadedFileByEncodedPath(encodedPath = "") {
 
 async function openIntegratedBrandExcel(file, productSearch = false) {
   if (!file?.path) return;
-  const minimum = productSearch ? "30" : "";
-  $("#excel-filter-min-total").value = minimum;
-  $("#excel-filter-min-local-total").value = minimum;
+  // Opening a downloaded workbook must never apply a sales filter on the
+  // user's behalf. Filters run only after the user enters values and presses
+  // the manual "필터 적용" button.
+  const minimum = "";
+  $("#excel-filter-min-total").value = "";
+  $("#excel-filter-min-local-total").value = "";
   $("#brand-product-workspace-title").textContent = `${file.brandName || "선택 브랜드"} · ${productSearch ? "상품검색" : "원본 Excel"}`;
   $("#brand-product-workspace-meta").textContent = `작업번호 ${file.jobId || "-"} · ${file.name || file.path}`;
   excelPreviewProductMode = Boolean(productSearch);
@@ -244,7 +247,7 @@ async function openIntegratedBrandExcel(file, productSearch = false) {
     fixedTotalAnd: true,
     matchMode: "all",
     productView: Boolean(productSearch),
-  }, { integrated: true, preserveFilters: true, productView: Boolean(productSearch) });
+  }, { integrated: true, preserveFilters: false, productView: Boolean(productSearch) });
 }
 
 $("#brand-export-completed-list")?.addEventListener("click", async (event) => {
@@ -794,7 +797,9 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   const startRow = totalRows ? result.offset + 1 : 0;
   const endRow = Math.min(totalRows, result.offset + rows.length);
   $("#excel-preview-summary").textContent = result.productView
-    ? `총판매량 AND 원본 ${filteredSourceRows.toLocaleString("ko-KR")}행 · 고유 상품 ${totalRows.toLocaleString("ko-KR")}개 / 전체 ${sourceTotalProducts.toLocaleString("ko-KR")}개 제품 · 현재 ${startRow.toLocaleString("ko-KR")}~${Math.min(totalRows, result.offset + products.length).toLocaleString("ko-KR")}번째 제품`
+    ? result.filterApplied
+      ? `수동 필터 적용 · 원본 ${filteredSourceRows.toLocaleString("ko-KR")}행 · 고유 상품 ${totalRows.toLocaleString("ko-KR")}개 / 전체 ${sourceTotalProducts.toLocaleString("ko-KR")}개 제품 · 현재 ${startRow.toLocaleString("ko-KR")}~${Math.min(totalRows, result.offset + products.length).toLocaleString("ko-KR")}번째 제품`
+      : `필터 미적용 · 원본 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행 · 고유 상품 ${totalRows.toLocaleString("ko-KR")}개 · 현재 ${startRow.toLocaleString("ko-KR")}~${Math.min(totalRows, result.offset + products.length).toLocaleString("ko-KR")}번째 제품`
     : result.filterApplied
       ? `원본 데이터 · 필터 결과 ${totalRows.toLocaleString("ko-KR")}행 / 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행 · ${totalColumns.toLocaleString("ko-KR")}열 · 현재 ${startRow.toLocaleString("ko-KR")}~${endRow.toLocaleString("ko-KR")}번째 결과`
       : `원본 데이터 · ${totalRows.toLocaleString("ko-KR")}행 · ${totalColumns.toLocaleString("ko-KR")}열 · 현재 ${startRow.toLocaleString("ko-KR")}~${endRow.toLocaleString("ko-KR")}행`;
