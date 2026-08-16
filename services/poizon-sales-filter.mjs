@@ -53,6 +53,46 @@ export function filterPoizonPreviewRows(headers = [], rows = [], filters = {}) {
     values: Array.isArray(row) ? row : [],
     sourceRowNumber: index + 2,
   }));
+  if (filters.rowLevel === true) {
+    const inRange = (value, minimum, maximum) => value !== null
+      && (minimum === null || value >= minimum)
+      && (maximum === null || value <= maximum);
+    const rowMetrics = entries.map((entry) => {
+      const chinaRaw = totalSalesColumn >= 0 ? entry.values[totalSalesColumn] : "";
+      const localRaw = localTotalSalesColumn >= 0 ? entry.values[localTotalSalesColumn] : "";
+      return {
+        entry,
+        chinaValue: hasSalesMetric(chinaRaw) ? parsePoizonSalesMetric(chinaRaw) : null,
+        localValue: hasSalesMetric(localRaw) ? parsePoizonSalesMetric(localRaw) : null,
+      };
+    });
+    const filteredEntries = rowMetrics.filter(({ chinaValue, localValue }) => {
+      const matches = [];
+      if (chinaActive) matches.push(inRange(chinaValue, minimumTotal, maximumTotal));
+      if (localActive) matches.push(inRange(localValue, minimumLocalTotal, maximumLocalTotal));
+      if (!matches.length) return true;
+      return matchMode === "all" ? matches.every(Boolean) : matches.some(Boolean);
+    }).map(({ entry }) => entry);
+    return {
+      entries: filteredEntries,
+      sourceRows: entries.length,
+      filteredRows: filteredEntries.length,
+      totalSalesColumn,
+      localTotalSalesColumn,
+      chinaActive,
+      localActive,
+      filterApplied: chinaActive || localActive,
+      matchMode,
+      sourceProducts: entries.length,
+      filteredProducts: filteredEntries.length,
+      chinaQualifiedProducts: rowMetrics.filter(({ chinaValue }) => !chinaActive || inRange(chinaValue, minimumTotal, maximumTotal)).length,
+      localQualifiedProducts: rowMetrics.filter(({ localValue }) => !localActive || inRange(localValue, minimumLocalTotal, maximumLocalTotal)).length,
+      missingChinaProducts: rowMetrics.filter(({ chinaValue }) => chinaValue === null).length,
+      missingLocalProducts: rowMetrics.filter(({ localValue }) => localValue === null).length,
+      spuIdColumn,
+      articleNumberColumn,
+    };
+  }
   const groups = new Map();
   for (const entry of entries) {
     const spuId = spuIdColumn >= 0 ? String(entry.values[spuIdColumn] ?? "").trim() : "";

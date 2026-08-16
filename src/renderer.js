@@ -571,7 +571,7 @@ function renderRawExcelCell(cell, header = "", columnIndex = 0) {
   if (excelImageColumn(header) && /^https:\/\//i.test(value)) {
     return `<td class="excel-image-cell" data-excel-column-index="${columnIndex}" title="${text(value)}"><a href="${text(value)}" target="_blank" rel="noreferrer" aria-label="제품 이미지 크게 보기"><img src="${text(value)}" alt="제품 이미지" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('a').hidden=true"></a></td>`;
   }
-  const displayValue = value === "--" || value === "-" ? "" : cell;
+  const displayValue = !value || value === "--" || value === "-" || /^<\s*5(?:\.0+)?$/.test(value) ? "숨김" : cell;
   return `<td data-excel-column-index="${columnIndex}" title="${text(displayValue)}">${text(displayValue)}</td>`;
 }
 
@@ -656,7 +656,7 @@ function poizonServiceFee(price, categoryName = "") {
 }
 
 function renderExcelProductRows(file, products = []) {
-  const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.articleNumber || product.spuId || product.key}`);
+  const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.key || product.articleNumber || product.spuId}`);
   products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
   $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>평균가격</th><th>중국 총판매</th><th>현지 총판매</th><th>상품 검색</th></tr>`;
   $("#excel-preview-rows").innerHTML = products.length ? products.map((product, index) => {
@@ -777,7 +777,7 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   const productColumn = excelProductColumnIndex(headers);
   excelPreviewPageProducts = products;
   const pageProductKeys = result.productView
-    ? products.map((product) => `${brandImportPathKey(file.path)}::${product.articleNumber || product.spuId || product.key}`)
+    ? products.map((product) => `${brandImportPathKey(file.path)}::${product.key || product.articleNumber || product.spuId}`)
     : rows.map((row, index) => excelPreviewProductKey(file.path, row, rowNumbers[index] || result.offset + index + 2, productColumn));
   excelPreviewPageKeys = pageProductKeys;
   const sourceTotalRows = Number.isFinite(Number(result.sourceTotalRows))
