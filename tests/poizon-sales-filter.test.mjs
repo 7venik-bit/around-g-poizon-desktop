@@ -135,3 +135,22 @@ test("SPU ID가 없으면 상품번호로 SKU를 묶고 판매량 누락 상품�
   assert.equal(result.missingChinaProducts, 1);
   assert.equal(result.missingLocalProducts, 1);
 });
+
+
+test("raw Excel manual AND filter keeps only rows that individually satisfy both conditions", () => {
+  const headers = ["SPU ID", "중국 총 판매량", "현지 판매자 총 판매량", "SKU ID"];
+  const rows = [
+    ["100", "200+", "6", "S1"],
+    ["100", "55", "<5", "S2"],
+    ["100", "200+", "30", "S3"],
+    ["200", "700+", "39", "S4"],
+  ];
+  const result = filterPoizonPreviewRows(headers, rows, {
+    rowLevel: true,
+    fixedTotalAnd: true,
+    minimumTotal: 100,
+    minimumLocalTotal: 25,
+  });
+  assert.deepEqual(result.entries.map((entry) => entry.values[3]), ["S3", "S4"]);
+  assert.equal(result.filteredRows, 2);
+});
