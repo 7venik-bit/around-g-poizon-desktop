@@ -63,11 +63,11 @@ test("Excel defaults to the complete raw sheet with optional grouped product vie
   assert.match(htmlSource, /원본 Excel 전체 보기/);
   assert.match(rendererSource, /#excel-view-products"\)\?\.classList\.toggle/);
   assert.match(rendererSource, /#excel-view-raw"\)\?\.classList\.toggle/);
-  assert.match(rendererSource, /function excelImageColumn/);
-  assert.match(rendererSource, /class="excel-image-cell"/);
-  assert.match(cssSource, /\.excel-row-number\{[^}]*width:40px!important/);
-  assert.match(cssSource, /\.excel-image-cell img\{[^}]*width:46px;height:46px/);
-  assert.match(await readFile(new URL("../src/excel-column-layout.js", import.meta.url), "utf8"), /#excel-preview-columns th"\)\]\.slice\(2\)/);
+  assert.match(rendererSource, /function renderRawExcelCell/);
+  assert.doesNotMatch(rendererSource, /function renderRawExcelCell[\\s\\S]{0,500}<img/);
+  assert.match(rendererSource, /#excel-preview-selection"\\)\\.hidden = !result\\.productView/);
+  assert.match(rendererSource, /원본 Excel 그대로/);
+  assert.match(await readFile(new URL("../src/excel-column-layout.js", import.meta.url), "utf8"), /viewMode === "products" \\|\\| preview\\?\\.viewMode === "raw"/);
   assert.match(rendererSource, /let excelPreviewProductMode = false/);
   assert.match(rendererSource, /filters = \{ \.\.\.filters, productView: excelPreviewProductMode \}/);
   assert.match(rendererSource, /renderExcelProductRows/);
@@ -252,4 +252,12 @@ test("integrated product search opens raw rows and groups products only on manua
   assert.match(rendererSource, /productView: true/);
   assert.match(rendererSource, /excelPreviewProductCache\.has\(key\)/);
   assert.match(rendererSource, /검색을 완료했습니다/);
+});
+
+
+test("raw Excel view bypasses grouping, filtering, and display-only columns", () => {
+  assert.match(mainSource, /const filtered = productView[\s\S]*workbook\.rows\.map\(\(values, index\) => \(\{ values, sourceRowNumber: index \+ 2 \}\)\)/);
+  assert.match(mainSource, /headers: Array\.from\(\{ length: columnCount \}, \(_unused, index\) => excelPreviewCell\(rows\[0\]\?\.\[index\]\)\)/);
+  assert.doesNotMatch(rendererSource, /else \{[\s\S]{0,400}excel-product-select-column/);
+  assert.match(rendererSource, /rows\.map\(\(row\) => `<tr>\$\{row\.map/);
 });
