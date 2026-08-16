@@ -55,7 +55,7 @@ test("Excel filter controls share one bottom line", () => {
   assert.match(cssSource, /\.excel-preview-filters label>input,\.excel-preview-filters label>select\{width:100%\}/);
 });
 
-test("Excel defaults to the complete raw sheet with optional grouped product view", async () => {
+test("Excel defaults to complete raw rows with optional product search view", async () => {
   assert.match(mainSource, /function buildExcelPreviewProducts/);
   assert.doesNotMatch(mainSource, /const grouped = new Map\(\)/);
   assert.match(mainSource, /const productView = input\.filters\?\.productView !== false/);
@@ -66,7 +66,7 @@ test("Excel defaults to the complete raw sheet with optional grouped product vie
   assert.match(rendererSource, /#excel-view-raw"\)\?\.classList\.toggle/);
   assert.match(rendererSource, /function renderRawExcelCell/);
   assert.match(rendererSource, /function renderRawExcelCell[\s\S]{0,700}<img/);
-  assert.match(rendererSource, /#excel-preview-selection"\)\.hidden = !result\.productView/);
+  assert.match(rendererSource, /#excel-preview-selection"\)\.hidden = false/);
   assert.match(rendererSource, /원본 Excel 그대로/);
   assert.match(await readFile(new URL("../src/excel-column-layout.js", import.meta.url), "utf8"), /viewMode === "products" \|\| preview\?\.viewMode === "raw"/);
   assert.match(rendererSource, /let excelPreviewProductMode = false/);
