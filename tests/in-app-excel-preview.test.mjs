@@ -258,6 +258,7 @@ test("integrated product search opens raw rows and groups products only on manua
 test("raw Excel view bypasses grouping, filtering, and display-only columns", () => {
   assert.match(mainSource, /const filtered = productView[\s\S]*workbook\.rows\.map\(\(values, index\) => \(\{ values, sourceRowNumber: index \+ 2 \}\)\)/);
   assert.match(mainSource, /headers: Array\.from\(\{ length: columnCount \}, \(_unused, index\) => excelPreviewCell\(rows\[0\]\?\.\[index\]\)\)/);
-  assert.doesNotMatch(rendererSource, /else \{[\s\S]{0,400}excel-product-select-column/);\n  assert.match(rendererSource, /aria-label="제품 이미지 크게 보기"/);
+  assert.doesNotMatch(rendererSource, /else \{[\s\S]{0,400}excel-product-select-column/);
+  assert.match(rendererSource, /aria-label="제품 이미지 크게 보기"/);
   assert.match(rendererSource, /rows\.map\(\(row\) => `<tr>\$\{row\.map/);
 });
