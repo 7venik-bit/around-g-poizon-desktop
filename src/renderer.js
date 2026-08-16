@@ -21,6 +21,7 @@ let categoryCompletedBrands = [];
 let brandWorkbenchProducts = [];
 let selectedBrandName = localStorage.getItem("around-g-selected-brand-name") || "";
 let selectedBrandIds = new Set();
+let pinnedBrandIds = [];
 let brandSelectionHistory = [];
 let brandExportQueue = [];
 let brandExportFailureCount = 0;
@@ -104,6 +105,7 @@ if (localStorage.getItem(LIVE_JOB_UI_MIGRATION_KEY) !== "done") {
 
 try {
   selectedBrandIds = new Set(JSON.parse(localStorage.getItem("around-g-selected-brand-ids") || "[]").map(Number));
+  pinnedBrandIds = JSON.parse(localStorage.getItem("around-g-pinned-brand-ids") || "[]").map(Number).filter(Number.isFinite);
   brandSelectionHistory = JSON.parse(localStorage.getItem("around-g-brand-selection-history") || "[]");
   downloadedBrandFiles = JSON.parse(localStorage.getItem("around-g-brand-download-files") || "[]");
   if (!Array.isArray(downloadedBrandFiles)) downloadedBrandFiles = [];
@@ -117,12 +119,14 @@ try {
   }
 } catch {
   selectedBrandIds = new Set();
+  pinnedBrandIds = [];
   brandSelectionHistory = [];
   downloadedBrandFiles = [];
 }
 
 function saveBrandSelections() {
   localStorage.setItem("around-g-selected-brand-ids", JSON.stringify([...selectedBrandIds]));
+  localStorage.setItem("around-g-pinned-brand-ids", JSON.stringify(pinnedBrandIds));
   localStorage.setItem("around-g-brand-selection-history", JSON.stringify(brandSelectionHistory.slice(0, 100)));
 }
 
@@ -942,10 +946,12 @@ function updateBrandSelectionControls() {
   const selectedCount = selectedBrandIds.size;
   const count = $("#brand-selected-count");
   const clear = $("#brand-selection-clear");
+  const moveTop = $("#brand-move-top");
   const search = $("#brand-export-selected");
   const stopCurrent = $("#brand-stop-current");
   if (count) count.textContent = `${selectedCount}개 선택`;
   if (clear) clear.disabled = selectedCount === 0 || brandSelectionBusy;
+  if (moveTop) moveTop.disabled = selectedCount === 0 || brandSelectionBusy;
   if (search) {
     search.disabled = brandSelectionBusy ? false : selectedCount === 0;
     search.classList.toggle("is-running", brandSelectionBusy);
@@ -1282,19 +1288,29 @@ function renderBrandCards(filter = "") {
   );
   // The synchronized catalog is the selectable source of truth. Do not hide
   // most brands behind the former 200/300-card display cap.
-  const brands = matchedBrands;
+  const pinnedOrder = new Map(pinnedBrandIds.map((id, index) => [Number(id), index]));
+  const brands = matchedBrands.map((brand, sourceIndex) => ({ brand, sourceIndex }))
+    .sort((left, right) => {
+      const leftPinned = pinnedOrder.has(Number(left.brand.id));
+      const rightPinned = pinnedOrder.has(Number(right.brand.id));
+      if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
+      if (leftPinned) return pinnedOrder.get(Number(left.brand.id)) - pinnedOrder.get(Number(right.brand.id));
+      return left.sourceIndex - right.sourceIndex;
+    }).map(({ brand }) => brand);
   $("#brand-cards").innerHTML = brands.map((brand) => {
     const latestDownload = latestCompletedBrandDownload(brand);
     const downloadComplete = Boolean(latestDownload);
     const latestDownloadTime = brandDownloadCardTime(latestDownload?.time || latestDownload?.mtimeMs || latestDownload?.lastDownloadedAt);
     const selected = selectedBrandIds.has(Number(brand.id));
+    const pinned = pinnedOrder.has(Number(brand.id));
     const officialLinked = ["verified", "search_unsupported"].includes(String(brand.officialDomainStatus || ""));
     const officialMissing = String(brand.officialDomainStatus || "") === "no_official_store";
     const officialDomain = (() => {
       try { return new URL(String(brand.officialHomepageUrl || "")).hostname.replace(/^www\./, ""); } catch { return ""; }
     })();
-    return `<button type="button" class="brand-card ${selected ? "selected" : ""}${downloadComplete ? " download-complete" : ""}${officialLinked ? " official-linked" : ""}${officialMissing ? " official-missing" : ""}" data-brand-id="${brand.id}" aria-pressed="${selected}"${officialDomain ? ` title="공식몰: ${text(brand.officialHomepageUrl)}"` : ""}${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
+    return `<button type="button" class="brand-card ${selected ? "selected" : ""}${pinned ? " brand-pinned" : ""}${downloadComplete ? " download-complete" : ""}${officialLinked ? " official-linked" : ""}${officialMissing ? " official-missing" : ""}" data-brand-id="${brand.id}" aria-pressed="${selected}"${officialDomain ? ` title="공식몰: ${text(brand.officialHomepageUrl)}"` : ""}${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
     <i class="brand-selection-check" aria-hidden="true">✓</i>
+    ${pinned ? '<em class="brand-pinned-badge" aria-label="자주사용 브랜드">자주사용</em>' : ""}
     ${officialLinked ? '<em class="brand-official-badge" aria-label="공식몰 연동 완료">공식</em>' : ""}
     ${officialMissing ? '<em class="brand-official-badge missing" aria-label="국내 공식몰 없음">공식몰 없음</em>' : ""}
     <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${brand.salesPriority ? `<small class="brand-sales-rank">판매 상위 ${Number(brand.salesRank).toLocaleString("ko-KR")}위</small>` : ""}${officialDomain ? `<small class="brand-official-domain">${text(officialDomain)}</small>` : ""}${downloadComplete ? `<em class="brand-download-complete">다운완료</em><small class="brand-download-date">${text(latestDownloadTime)}</small>` : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>
@@ -1807,6 +1823,16 @@ document.querySelectorAll(".explorer-mode").forEach((button) => button.addEventL
 }));
 
 $("#brand-filter").addEventListener("input", (event) => renderBrandCards(event.target.value));
+$("#brand-move-top")?.addEventListener("click", () => {
+  if (brandSelectionBusy || !selectedBrandIds.size) return;
+  const selected = [...selectedBrandIds].map(Number);
+  pinnedBrandIds = [...selected, ...pinnedBrandIds.filter((id) => !selectedBrandIds.has(Number(id)))];
+  saveBrandSelections();
+  renderBrandCards($("#brand-filter")?.value || "");
+  $("#brand-status").className = "status success";
+  $("#brand-status").textContent = `선택한 ${selected.length}개 브랜드를 자주사용 목록 상단에 고정했습니다.`;
+  $("#brand-cards")?.scrollTo({ top: 0, behavior: "smooth" });
+});
 $("#brand-selection-clear")?.addEventListener("click", () => {
   if (brandSelectionBusy) return;
   selectedBrandIds.clear();
