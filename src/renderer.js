@@ -237,13 +237,14 @@ async function openIntegratedBrandExcel(file, productSearch = false) {
   $("#excel-filter-min-local-total").value = minimum;
   $("#brand-product-workspace-title").textContent = `${file.brandName || "선택 브랜드"} · ${productSearch ? "상품검색" : "원본 Excel"}`;
   $("#brand-product-workspace-meta").textContent = `작업번호 ${file.jobId || "-"} · ${file.name || file.path}`;
+  excelPreviewProductMode = Boolean(productSearch);
   await showExcelPreview(file, 0, {
     minimumTotal: minimum,
     minimumLocalTotal: minimum,
     fixedTotalAnd: true,
     matchMode: "all",
-    productView: false,
-  }, { integrated: true, preserveFilters: true });
+    productView: Boolean(productSearch),
+  }, { integrated: true, preserveFilters: true, productView: Boolean(productSearch) });
 }
 
 $("#brand-export-completed-list")?.addEventListener("click", async (event) => {
@@ -738,8 +739,8 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
     selectedExcelPreviewProducts.clear();
     excelPreviewProductCache.clear();
     restoreSavedExcelSearchResults(file.path);
-    excelPreviewProductMode = false;
-    filters = { ...filters, productView: false };
+    excelPreviewProductMode = Boolean(options.productView ?? filters.productView);
+    filters = { ...filters, productView: excelPreviewProductMode };
     activeExcelPreviewPath = file.path;
   }
   const requestId = ++excelPreviewRequestId;
@@ -2494,15 +2495,34 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     updateExcelPreviewSelectionUi([]);
     return;
   }
+  const button = $("#excel-preview-search-selected");
+  if (activeExcelPreview?.viewMode !== "products") {
+    button.disabled = true;
+    button.textContent = "상품 목록 준비 중…";
+    excelPreviewProductMode = true;
+    await showExcelPreview(
+      activeExcelPreview.file,
+      0,
+      { ...activeExcelPreview.filters, productView: true },
+      { integrated: excelPreviewIntegrated, preserveFilters: true, productView: true },
+    );
+  }
   const keys = [...selectedExcelPreviewProducts].filter((key) => excelPreviewProductCache.has(key));
-  if (!keys.length) return;
+  if (!keys.length) {
+    button.disabled = false;
+    button.textContent = "상품검색";
+    $("#excel-filter-status").textContent = "선택한 행에서 검색 가능한 상품번호를 찾지 못했습니다.";
+    return;
+  }
   excelPreviewBatchSearching = true;
   updateExcelPreviewSelectionUi([]);
+  $("#excel-filter-status").textContent = `선택 상품 ${keys.length.toLocaleString("ko-KR")}개를 검색하고 있습니다.`;
   for (const key of keys) {
     if (!excelPreviewBatchSearching) break;
     await searchExcelPreviewProduct(key);
   }
   excelPreviewBatchSearching = false;
+  $("#excel-filter-status").textContent = `선택 상품 ${keys.length.toLocaleString("ko-KR")}개 검색을 완료했습니다.`;
   updateExcelPreviewSelectionUi(excelPreviewPageKeys);
 });
 $("#excel-preview-prev")?.addEventListener("click", () => {
