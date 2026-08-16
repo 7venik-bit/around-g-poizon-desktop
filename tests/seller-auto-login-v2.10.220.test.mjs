@@ -68,3 +68,16 @@ test("visually rendered POIZON fields fall back to real accessibility input", ()
   assert.match(main, /ID·비밀번호 실제 입력 완료/);
   assert.match(main, /accessibilityResult\?\.ok/);
 });
+
+
+test("blocked login DOM falls back to real mouse clicks and keyboard paste", () => {
+  assert.match(main, /submitStoredSellerCredentialsWithRealMouse/);
+  assert.match(main, /contents\.sendInputEvent/);
+  assert.match(main, /clipboard\.readText\(\)/);
+  assert.match(main, /clipboard\.writeText\(value\)/);
+  assert.match(main, /await click\(0\.72, 0\.30\)/);
+  assert.match(main, /await click\(0\.72, 0\.365\)/);
+  assert.match(main, /await click\(0\.72, 0\.428\)/);
+  assert.match(main, /REAL_MOUSE_CREDENTIALS_SUBMITTED/);
+  assert.match(main, /ID·비밀번호 실제 마우스 입력 완료/);
+});
