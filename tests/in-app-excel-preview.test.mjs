@@ -243,9 +243,10 @@ test("completed brand downloads open integrated product search by job-linked Exc
   assert.match(rendererSource, /persistExcelSearchResults/);
 });
 
-test("integrated product search opens grouped products and hydrates the search cache", () => {
-  assert.match(rendererSource, /excelPreviewProductMode = Boolean\(productSearch\)/);
-  assert.match(rendererSource, /productView: Boolean\(productSearch\)/);
+test("integrated product search opens raw rows and groups products only on manual request", () => {
+  assert.match(rendererSource, /excelPreviewProductMode = false/);
+  assert.match(rendererSource, /productView: false/);
+  assert.match(rendererSource, /excel-view-products"[\s\S]*excelPreviewProductMode = true/);
   assert.match(rendererSource, /activeExcelPreview\?\.viewMode !== "products"/);
   assert.match(rendererSource, /상품 목록 준비 중/);
   assert.match(rendererSource, /productView: true/);
