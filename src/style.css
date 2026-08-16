@@ -1258,3 +1258,12 @@ button,input,select,textarea{font-family:inherit}
   overflow-wrap:anywhere;
   word-break:break-all
 }
+
+.brand-product-workspace{margin:12px 0 16px;border:1px solid #8fc6ed;border-radius:12px;background:#f8fcff;overflow:hidden}
+.brand-product-workspace[hidden]{display:none}
+.brand-product-workspace-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;background:#eaf5ff;border-bottom:1px solid #cce3f5}
+.brand-product-workspace-head>div{display:grid;gap:3px}.brand-product-workspace-head strong{color:#145a88;font-size:14px}.brand-product-workspace-head small{color:#5e7b91;font-size:10px}
+.brand-product-workspace-head button{padding:6px 10px;border:1px solid #9bc9e8;border-radius:7px;background:#fff;color:#24698f;font-weight:750}
+.brand-product-workspace .excel-preview{margin:0;border:0;border-radius:0}
+.brand-export-completed-row{grid-template-columns:minmax(150px,1fr) minmax(150px,1fr) minmax(150px,.8fr) auto}
+.brand-export-completed-actions{display:flex;gap:5px;justify-content:flex-end}.brand-export-completed-actions button{padding:5px 8px;border:1px solid #9bc9e8;border-radius:7px;background:#fff;color:#24698f;font-size:10px;font-weight:750}.brand-export-completed-actions button.primary{background:#287de0;color:#fff;border-color:#287de0}
