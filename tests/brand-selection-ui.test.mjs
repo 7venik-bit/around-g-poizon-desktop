@@ -22,7 +22,7 @@ test("brand-card clicks toggle multiple selections without starting an export", 
   const clickHandler = renderer.slice(clickStart, clickEnd);
 
   assert.match(clickHandler, /closest\("\.brand-card\[data-brand-id\]"\)/);
-  assert.match(clickHandler, /toggleBrandSelection\(brandButton\.dataset\.brandId\)/);
+  assert.match(clickHandler, /toggleBrandSelection\(brandButton\.dataset\.brandId, brandButton\)/);
   assert.doesNotMatch(clickHandler, /brandExportQueue = \[brand\]/);
   assert.doesNotMatch(clickHandler, /void exportNextSelectedBrand\(generation\)/);
 });
