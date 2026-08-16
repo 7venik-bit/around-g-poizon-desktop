@@ -69,7 +69,7 @@ test("Excel defaults to the complete raw sheet with optional grouped product vie
   assert.match(cssSource, /\.excel-image-cell img\{[^}]*width:46px;height:46px/);
   assert.match(await readFile(new URL("../src/excel-column-layout.js", import.meta.url), "utf8"), /#excel-preview-columns th"\)\]\.slice\(2\)/);
   assert.match(rendererSource, /let excelPreviewProductMode = false/);
-  assert.match(rendererSource, /filters = \{ \.\.\.filters, productView: false \}/);
+  assert.match(rendererSource, /filters = \{ \.\.\.filters, productView: excelPreviewProductMode \}/);
   assert.match(rendererSource, /renderExcelProductRows/);
   assert.match(rendererSource, /data-excel-search-product/);
   assert.match(rendererSource, /search\.textContent = excelPreviewBatchSearching \? "검색 중지" : "상품검색"/);
@@ -241,4 +241,14 @@ test("completed brand downloads open integrated product search by job-linked Exc
   assert.match(rendererSource, /minimumLocalTotal: minimum/);
   assert.match(rendererSource, /EXCEL_SEARCH_RESULTS_KEY/);
   assert.match(rendererSource, /persistExcelSearchResults/);
+});
+
+test("integrated product search opens grouped products and hydrates the search cache", () => {
+  assert.match(rendererSource, /excelPreviewProductMode = Boolean\(productSearch\)/);
+  assert.match(rendererSource, /productView: Boolean\(productSearch\)/);
+  assert.match(rendererSource, /activeExcelPreview\?\.viewMode !== "products"/);
+  assert.match(rendererSource, /상품 목록 준비 중/);
+  assert.match(rendererSource, /productView: true/);
+  assert.match(rendererSource, /excelPreviewProductCache\.has\(key\)/);
+  assert.match(rendererSource, /검색을 완료했습니다/);
 });
