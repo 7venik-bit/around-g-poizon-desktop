@@ -4096,8 +4096,8 @@ Start-Sleep -Milliseconds 70
 
 async function physicalClickSellerElement(targetFrame, locatorScript, step, timeoutMs = 20_000) {
   if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: `${step}_WINDOW_MISSING` };
-  sellerWindow.showInactive();
-  sellerWindow.webContents.focus();
+  sellerWindow.hide();
+  showCollectorWindow();
   const startedAt = Date.now();
   let point = null;
   while (!point && Date.now() - startedAt < timeoutMs) {
@@ -4120,11 +4120,25 @@ async function physicalClickSellerElement(targetFrame, locatorScript, step, time
         if (!element || !visible(element)) return null;
         element.scrollIntoView?.({ block: "center", inline: "center" });
         const rect = element.getBoundingClientRect();
+        const eventOptions = {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          button: 0,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + rect.height / 2,
+        };
+        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+          element.dispatchEvent(new MouseEvent(type, eventOptions));
+        }
+        element.click?.();
         return {
-          x: rect.left + rect.width / 2,
-          y: rect.top + rect.height / 2,
+          x: eventOptions.clientX,
+          y: eventOptions.clientY,
           label: textOf(element),
           url: location.href,
+          backgroundClicked: true,
         };
       })()`, true).catch(() => null);
       if (located) {
@@ -4135,11 +4149,9 @@ async function physicalClickSellerElement(targetFrame, locatorScript, step, time
     if (!point) await new Promise((resolve) => setTimeout(resolve, 300));
   }
   if (!point) return { ok: false, step: `${step}_NOT_FOUND_AFTER_NAVIGATION` };
-  const bounds = sellerWindow.getContentBounds();
-  const clicked = await moveWindowsCursorAndClick(bounds.x + point.x, bounds.y + point.y);
   await new Promise((resolve) => setTimeout(resolve, 700));
-  return clicked.ok
-    ? { ok: true, step, label: point.label, frameRoutingId: point.frameRoutingId, url: point.url }
+  return point.backgroundClicked
+    ? { ok: true, step, label: point.label, frameRoutingId: point.frameRoutingId, url: point.url, background: true }
     : { ok: false, step: `${step}_CLICK_FAILED` };
 }
 
@@ -4235,8 +4247,9 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     return { ok: false, step: "SELLER_WINDOW_NOT_AVAILABLE" };
   }
-  sellerWindow.showInactive();
+  sellerWindow.hide();
   sellerWindow.webContents.focus();
+  showCollectorWindow();
   const focused = await targetFrame.executeJavaScript(`(() => {
     const visible = (element) => element && element.getBoundingClientRect().width > 0
       && element.getBoundingClientRect().height > 0;
@@ -4304,23 +4317,18 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) {
     return { ...verified, ok: false, step: "REAL_SEARCH_BUTTON_COORDINATES_MISSING" };
   }
-  const contentBounds = sellerWindow.getContentBounds();
-  const screenX = Math.round(contentBounds.x + x);
-  const screenY = Math.round(contentBounds.y + y);
-  const physicalClick = await moveWindowsCursorAndClick(screenX, screenY);
-  if (!physicalClick.ok) {
-    sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
-    sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
-    sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
-  }
-  // Keep the Seller Center active long enough for its real click handler to
-  // start the request before the caller minimizes the window.
+  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
   await new Promise((resolve) => setTimeout(resolve, 1_500));
+  sellerWindow.hide();
+  showCollectorWindow();
   return {
     ...verified,
     submitted: true,
-    physicalCursorMoved: physicalClick.ok,
-    step: physicalClick.ok ? "PHYSICAL_SEARCH_BUTTON_CLICKED" : "REAL_SEARCH_BUTTON_CLICKED",
+    physicalCursorMoved: false,
+    background: true,
+    step: "BACKGROUND_SEARCH_BUTTON_CLICKED",
   };
 }
 
@@ -4407,8 +4415,7 @@ async function automateSellerBrandExport(input = {}) {
   // backgroundThrottling is disabled on this BrowserWindow, so minimizing it
   // does not pause the seller automation.
   if (sellerWindow && !sellerWindow.isDestroyed()) {
-    sellerWindow.showInactive();
-    sellerWindow.minimize();
+    sellerWindow.hide();
     showCollectorWindow();
   }
   const connectedPage = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => ({
@@ -4943,17 +4950,14 @@ async function automateSellerBrandExport(input = {}) {
         jobState: `1단계/5 · 브랜드 입력·상품 검색 중 · ${brandName}`,
         message: `${brandName} · 기존 검색 서비스 방식으로 브랜드를 입력하고 검색을 실행합니다.`,
       });
-      // POIZON's top product-search box is React-controlled. Enter the brand
-      // through Electron's real keyboard path, as in the recorded manual flow,
-      // before clicking the adjacent search button in runSellerSearch.
+      // Keep the POIZON window hidden and send input directly through Electron's
+      // background webContents path so monitor focus and the Windows cursor stay untouched.
       const realKeyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, brandName)
         .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
       if (sellerWindow && !sellerWindow.isDestroyed()) {
-        // Real keyboard and search-button input needs a visible native window,
-        // but the result transition does not. Return to the Around G screen
-        // immediately; sorting briefly reveals the window again only while the
-        // physical cursor is operating the required controls.
-        sellerWindow.minimize();
+        // The Seller Center stays hidden for input, result transition, sorting,
+        // export registration, and download monitoring.
+        sellerWindow.hide();
         showCollectorWindow();
       }
       mainWindow?.webContents.send("brand-export:progress", {
@@ -4988,7 +4992,7 @@ async function automateSellerBrandExport(input = {}) {
           status: "waiting-for-seller-result-navigation",
           brandName,
           jobState: `2단계/5 · 결과 화면 전환 확인 중 · ${brandName}`,
-          message: `${brandName} · POIZON 창을 최소화한 상태에서 결과 화면을 확인하고, 정렬 클릭 순간에만 잠깐 표시합니다.`,
+          message: `${brandName} · POIZON 창을 표시하지 않고 결과 확인·정렬·내보내기를 백그라운드에서 진행합니다.`,
         });
         await new Promise((resolve) => setTimeout(resolve, 1_200));
         const postSearch = await performPhysicalSellerSortAndExport(candidate.frame)
@@ -5041,7 +5045,7 @@ async function automateSellerBrandExport(input = {}) {
   // completion checks, and downloads start after the whole queue is drained.
   if (sellerWindow && !sellerWindow.isDestroyed()) {
     await new Promise((resolve) => setTimeout(resolve, 800));
-    sellerWindow.minimize();
+    sellerWindow.hide();
     showCollectorWindow();
   }
 
