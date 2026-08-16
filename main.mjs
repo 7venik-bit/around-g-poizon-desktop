@@ -3496,6 +3496,57 @@ async function submitStoredSellerCredentialsWithAccessibility(loginId, password)
   }
 }
 
+
+async function submitStoredSellerCredentialsWithRealMouse(loginId, password) {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: "SELLER_WINDOW_CLOSED" };
+  let previousClipboard = "";
+  try {
+    const viewport = await executeSellerFrameWithTimeout(
+      sellerWindow.webContents.mainFrame,
+      "({ width: Math.round(innerWidth), height: Math.round(innerHeight) })",
+      3_000,
+      null
+    );
+    const width = Number(viewport?.width || 0);
+    const height = Number(viewport?.height || 0);
+    if (width < 800 || height < 500) {
+      return { ok: false, step: "REAL_MOUSE_VIEWPORT_TOO_SMALL", width, height };
+    }
+    if (sellerWindow.isMinimized()) sellerWindow.restore();
+    sellerWindow.show();
+    sellerWindow.focus();
+    const contents = sellerWindow.webContents;
+    previousClipboard = clipboard.readText();
+    const click = async (xRatio, yRatio) => {
+      const x = Math.round(width * xRatio);
+      const y = Math.round(height * yRatio);
+      contents.sendInputEvent({ type: "mouseMove", x, y });
+      contents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+      contents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+      await wait(180);
+    };
+    const paste = async (value) => {
+      contents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
+      contents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
+      clipboard.writeText(value);
+      contents.sendInputEvent({ type: "keyDown", keyCode: "V", modifiers: ["control"] });
+      contents.sendInputEvent({ type: "keyUp", keyCode: "V", modifiers: ["control"] });
+      await wait(250);
+    };
+    // POIZON seller login card stays at these responsive viewport ratios.
+    await click(0.72, 0.30);
+    await paste(loginId);
+    await click(0.72, 0.365);
+    await paste(password);
+    await click(0.72, 0.428);
+    return { ok: true, filled: true, step: "REAL_MOUSE_CREDENTIALS_SUBMITTED" };
+  } catch (error) {
+    return { ok: false, step: "REAL_MOUSE_LOGIN_FAILED", reason: String(error?.message || error || "") };
+  } finally {
+    try { clipboard.writeText(previousClipboard); } catch {}
+  }
+}
+
 async function submitStoredSellerCredentials() {
   const settings = store.snapshot().settings || {};
   const loginId = String(settings.poizonLoginId || "").trim();
@@ -3583,12 +3634,21 @@ async function submitStoredSellerCredentials() {
     );
   }
   if (accessibilityResult?.ok) return { ...accessibilityResult, stored: true };
+  const realMouseResult = await submitStoredSellerCredentialsWithRealMouse(loginId, password);
+  if (realMouseResult?.ok) {
+    await setSellerLoginStatusOverlay(
+      "filling",
+      "ID·비밀번호 실제 마우스 입력 완료",
+      "로그인 버튼을 직접 눌렀습니다. 판매자센터 진입을 확인하고 있습니다."
+    );
+    return { ...realMouseResult, stored: true };
+  }
   await setSellerLoginStatusOverlay(
     "error",
-    "로그인 입력칸 인식 실패",
-    `일반 화면과 접근성 화면에서 입력칸을 찾지 못했습니다. 자동으로 다시 시도합니다. (${accessibilityResult?.step || lastResult.step || "UNKNOWN"})`
+    "로그인 실제 입력 실패",
+    `저장 계정의 실제 마우스 입력을 다시 시도합니다. (${realMouseResult?.step || accessibilityResult?.step || lastResult.step || "UNKNOWN"})`
   );
-  return { ...(accessibilityResult || lastResult), ok: false, stored: true };
+  return { ...(realMouseResult || accessibilityResult || lastResult), ok: false, stored: true };
 }
 
 async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
