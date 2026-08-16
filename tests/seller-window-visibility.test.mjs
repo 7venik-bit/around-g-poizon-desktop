@@ -33,7 +33,8 @@ test("brand search remains hidden and never moves the Windows cursor", () => {
   assert.match(workflow, /POIZON 창을 표시하지 않고 결과 확인·정렬·내보내기를 백그라운드에서 진행합니다/);
   assert.doesNotMatch(workflow, /sellerWindow\.(?:show|showInactive|minimize|focus)\(/);
   assert.match(workflow, /sellerWindow\.hide\(\)/);
-  assert.match(clickSource, /backgroundClicked: true/);
+  assert.match(clickSource, /sellerWindow\.webContents\.sendInputEvent\(\{ type: "mouseDown"/);
+  assert.match(clickSource, /sellerWindow\.hide\(\)/);
   assert.doesNotMatch(clickSource, /moveWindowsCursorAndClick|showInactive|\.focus\(\)/);
   assert.match(inputSource, /step: "BACKGROUND_SEARCH_BUTTON_CLICKED"/);
   assert.match(inputSource, /physicalCursorMoved: false/);
