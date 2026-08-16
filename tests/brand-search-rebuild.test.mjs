@@ -63,10 +63,10 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.match(main, /\[targetFrame, sellerWindow\.webContents\.mainFrame, \.\.\.sellerWindowFrames\(\)\]/);
   assert.match(main, /document\.readyState === "loading"/);
   assert.match(main, /\$\{step\}_NOT_FOUND_AFTER_NAVIGATION/);
-  assert.match(main, /"PHYSICAL_LOCAL_SALES_SORT"/);
-  assert.match(main, /"PHYSICAL_DESCENDING"/);
-  assert.match(main, /"PHYSICAL_SORT_CONFIRM"/);
-  assert.match(main, /"PHYSICAL_EXPORT"/);
+  assert.match(main, /"BACKGROUND_LOCAL_SALES_SORT"/);
+  assert.match(main, /"BACKGROUND_DESCENDING"/);
+  assert.match(main, /"BACKGROUND_SORT_CONFIRM"/);
+  assert.match(main, /"BACKGROUND_EXPORT"/);
   assert.doesNotMatch(workflow, /clickSellerDownloadCenterShortcutPhysical\(productFrame\)/);
   assert.match(workflow, /Keep the registration window on product search/);
   assert.doesNotMatch(workflow, /confirmSellerExportRequestPhysical\(productFrame\)/);

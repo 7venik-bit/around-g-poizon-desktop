@@ -4120,25 +4120,11 @@ async function physicalClickSellerElement(targetFrame, locatorScript, step, time
         if (!element || !visible(element)) return null;
         element.scrollIntoView?.({ block: "center", inline: "center" });
         const rect = element.getBoundingClientRect();
-        const eventOptions = {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          view: window,
-          button: 0,
-          clientX: rect.left + rect.width / 2,
-          clientY: rect.top + rect.height / 2,
-        };
-        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
-          element.dispatchEvent(new MouseEvent(type, eventOptions));
-        }
-        element.click?.();
         return {
-          x: eventOptions.clientX,
-          y: eventOptions.clientY,
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
           label: textOf(element),
           url: location.href,
-          backgroundClicked: true,
         };
       })()`, true).catch(() => null);
       if (located) {
@@ -4149,10 +4135,22 @@ async function physicalClickSellerElement(targetFrame, locatorScript, step, time
     if (!point) await new Promise((resolve) => setTimeout(resolve, 300));
   }
   if (!point) return { ok: false, step: `${step}_NOT_FOUND_AFTER_NAVIGATION` };
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  return point.backgroundClicked
-    ? { ok: true, step, label: point.label, frameRoutingId: point.frameRoutingId, url: point.url, background: true }
-    : { ok: false, step: `${step}_CLICK_FAILED` };
+  const x = Math.round(Number(point.x));
+  const y = Math.round(Number(point.y));
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return { ok: false, step: `${step}_CLICK_COORDINATES_MISSING` };
+  }
+  // Electron's virtual input reaches React/Ant Design handlers like a native
+  // click, while the BrowserWindow remains hidden and the Windows cursor stays
+  // completely untouched.
+  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  sellerWindow.hide();
+  showCollectorWindow();
+  return { ok: true, step, label: point.label, frameRoutingId: point.frameRoutingId, url: point.url, background: true };
 }
 
 async function performPhysicalSellerSortAndExport(targetFrame) {
@@ -4165,25 +4163,25 @@ async function performPhysicalSellerSortAndExport(targetFrame) {
     const candidates = [...header.querySelectorAll("button,[role='button'],[class*='sort'],svg,i")].filter(visible);
     return candidates.sort((a, b) => b.getBoundingClientRect().left - a.getBoundingClientRect().left)[0]
       || header;
-  `, "PHYSICAL_LOCAL_SALES_SORT");
+  `, "BACKGROUND_LOCAL_SALES_SORT");
   if (!sort.ok) return sort;
   const descending = await physicalClickSellerElement(targetFrame, `
     return [...document.querySelectorAll("button,[role='button'],[role='menuitem'],li,span,div")]
       .filter(visible).find((element) => /^내림차순$/.test(textOf(element)));
-  `, "PHYSICAL_DESCENDING");
+  `, "BACKGROUND_DESCENDING");
   if (!descending.ok) return descending;
   const confirm = await physicalClickSellerElement(targetFrame, `
     const dialogs = [...document.querySelectorAll("[role='dialog'],.ant-popover,.ant-dropdown,.ant-modal")].filter(visible);
     const root = dialogs.at(-1) || document;
     return [...root.querySelectorAll("button,[role='button'],a,span")]
       .filter(visible).find((element) => /^확인$/.test(textOf(element)))?.closest("button,[role='button'],a") || null;
-  `, "PHYSICAL_SORT_CONFIRM");
+  `, "BACKGROUND_SORT_CONFIRM");
   if (!confirm.ok) return confirm;
   await new Promise((resolve) => setTimeout(resolve, 900));
   const exportClick = await physicalClickSellerElement(targetFrame, `
     return [...document.querySelectorAll("button,[role='button'],a,span")]
       .filter(visible).find((element) => /^전체\\s*내보내기$/.test(textOf(element)))?.closest("button,[role='button'],a") || null;
-  `, "PHYSICAL_EXPORT");
+  `, "BACKGROUND_EXPORT");
   return exportClick.ok ? { ok: true, sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC", exportClicked: true } : exportClick;
 }
 
