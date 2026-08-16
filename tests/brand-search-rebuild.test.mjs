@@ -50,10 +50,12 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.doesNotMatch(workflow, /\.\.\.officialAliases/);
   assert.doesNotMatch(workflow, /pageSizePattern|PAGE_SIZE_20|PAGE_SIZE_CONTROL/);
   assert.doesNotMatch(workflow, /20건\/페이지/);
-  const keepVisible = workflow.indexOf("sellerWindow.show();");
-  const runSearch = workflow.indexOf("runSellerSearch(candidate.frame");
-  const minimizeAfterShortcut = workflow.indexOf("sellerWindow.minimize();", runSearch);
-  assert.ok(keepVisible >= 0 && runSearch > keepVisible && minimizeAfterShortcut > runSearch);
+  const realInput = workflow.indexOf("typeSellerBrandWithRealKeyboard(candidate.frame");
+  const minimizeAfterInput = workflow.indexOf("sellerWindow.minimize();", realInput);
+  const runSearch = workflow.indexOf("runSellerSearch(candidate.frame", realInput);
+  const physicalSort = workflow.indexOf("performPhysicalSellerSortAndExport(candidate.frame", runSearch);
+  assert.ok(realInput >= 0 && minimizeAfterInput > realInput && minimizeAfterInput < runSearch);
+  assert.ok(physicalSort > runSearch);
   assert.match(main, /"REAL_SEARCH_BUTTON_CLICKED"/);
   assert.match(main, /runSellerSearch\(candidate\.frame, Boolean\(realKeyboardInput\?\.submitted\)\)/);
   assert.match(main, /performPhysicalSellerSortAndExport\(candidate\.frame\)/);
