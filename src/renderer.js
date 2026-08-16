@@ -892,7 +892,7 @@ function recordBrandSelection(brand, action, details = {}) {
   saveBrandSelections();
 }
 
-function updateBrandExportJob(jobId = "", state = "", brandName = "") {
+function updateBrandExportJob(jobId = "", state = "", brandName = "", options = {}) {
   const panel = $("#brand-export-job");
   if (!panel) return;
   const normalizedId = String(jobId || "").trim();
@@ -900,9 +900,11 @@ function updateBrandExportJob(jobId = "", state = "", brandName = "") {
   const previous = brandExportJobs.get(normalizedId) || {};
   const previousBrand = String(previous.brandName || "").trim();
   const incomingBrand = String(brandName || "").trim();
-  const stableBrandName = previousBrand && previousBrand !== "선택 브랜드"
-    ? previousBrand
-    : incomingBrand || previousBrand || "선택 브랜드";
+  const stableBrandName = options.replaceBrand && incomingBrand
+    ? incomingBrand
+    : previousBrand && previousBrand !== "선택 브랜드"
+      ? previousBrand
+      : incomingBrand || previousBrand || "선택 브랜드";
   brandExportJobs.set(normalizedId, {
     brandName: stableBrandName,
     state: state || previous.state || "감시 중",
@@ -2222,17 +2224,35 @@ window.aroundG.onBrandExportDetected((file) => {
   const resolvedJobId = resolveRendererBrandJobId(file);
   if (!resolvedJobId || completedBrandImportJobIds.has(resolvedJobId)) return;
   const registeredBrand = String(brandExportJobs.get(resolvedJobId)?.brandName || "").trim();
-  if (!registeredBrand) return;
+  const workbookBrand = String(file?.brandName || file?.detectedBrandName || "").trim();
+  const resolvedBrandName = workbookBrand || registeredBrand;
+  if (!resolvedBrandName) return;
+  const corrected = Boolean(registeredBrand && workbookBrand
+    && !rendererBrandsMatch(registeredBrand, workbookBrand));
   const normalizedFile = {
     ...file,
     jobId: resolvedJobId,
-    brandName: registeredBrand,
+    brandName: resolvedBrandName,
+    registeredBrandName: corrected ? registeredBrand : "",
+    brandNameCorrected: corrected,
   };
-  updateBrandExportJob(normalizedFile.jobId, "Excel 다운로드 완료 · 프로그램 등록 중", normalizedFile.brandName);
+  updateBrandExportJob(
+    normalizedFile.jobId,
+    corrected ? "Excel 실제 브랜드로 자동 교정 · 프로그램 등록 중" : "Excel 다운로드 완료 · 프로그램 등록 중",
+    normalizedFile.brandName,
+    { replaceBrand: true },
+  );
+  updateBrandBatchState(
+    normalizedFile.brandName,
+    corrected ? "Excel 실제 브랜드로 자동 교정 · 등록 중" : "Excel 다운로드 완료 · 등록 중",
+    normalizedFile.jobId,
+  );
   queuedBrandImportPaths.add(pathKey);
   detectedBrandImportQueue.push(normalizedFile);
-  $("#brand-status").className = "status";
-  $("#brand-status").textContent = `${normalizedFile.brandName} · Excel 다운로드 완료 · 프로그램에 등록합니다.`;
+  $("#brand-status").className = corrected ? "status success" : "status";
+  $("#brand-status").textContent = corrected
+    ? `${registeredBrand} → ${normalizedFile.brandName} · Excel 실제 브랜드로 생성 목록을 자동 교정했습니다.`
+    : `${normalizedFile.brandName} · Excel 다운로드 완료 · 프로그램에 등록합니다.`;
   void drainDetectedBrandImports();
 });
 $("#brand-download-files").addEventListener("click", async (event) => {
