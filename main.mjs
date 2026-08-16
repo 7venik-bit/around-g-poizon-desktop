@@ -3415,7 +3415,7 @@ async function submitStoredSellerCredentials() {
       const visible = (element) => element && element.getClientRects().length > 0 && !element.disabled;
       const passwordInput = [...document.querySelectorAll('input[type="password"]')].find(visible);
       const idInputs = [...document.querySelectorAll('input:not([type]), input[type="text"], input[type="email"], input[type="tel"]')].filter(visible);
-      const idInput = idInputs.find((element) => /user|account|email|phone|login|아이디|账号|帐号|手机号/i.test([
+      const idInput = idInputs.find((element) => /user|account|email|phone|login|아이디|휴대폰|이메일|전화번호|账号|帐号|手机号/i.test([
         element.name, element.id, element.placeholder, element.autocomplete,
       ].join(' '))) || idInputs[0];
       if (!idInput || !passwordInput) return { ok: false, step: 'LOGIN_INPUTS_NOT_FOUND' };
@@ -3428,7 +3428,7 @@ async function submitStoredSellerCredentials() {
       setValue(idInput, ${JSON.stringify(loginId)});
       setValue(passwordInput, ${JSON.stringify(password)});
       const buttons = [...document.querySelectorAll('button, input[type="submit"], [role="button"]')].filter(visible);
-      const submit = buttons.find((element) => /登录|登入|sign\\s*in|log\\s*in/i.test(String(element.innerText || element.value || element.getAttribute('aria-label') || '')))
+      const submit = buttons.find((element) => /로그인|登录|登入|sign\\s*in|log\\s*in/i.test(String(element.innerText || element.value || element.getAttribute('aria-label') || '')))
         || buttons.find((element) => element.type === 'submit');
       if (!submit) return { ok: false, step: 'LOGIN_BUTTON_NOT_FOUND' };
       submit.click();
@@ -3445,7 +3445,8 @@ async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
   if (sellerWindow.isMinimized()) sellerWindow.restore();
   sellerWindow.show();
   sellerWindow.focus();
-  const automatic = await submitStoredSellerCredentials();
+  let automatic = await submitStoredSellerCredentials();
+  let lastAutoLoginAttemptAt = Date.now();
   mainWindow?.webContents.send("brand-export:progress", {
     status: "seller-login-waiting",
     brandName,
@@ -3458,7 +3459,16 @@ async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
   while (Date.now() < deadline) {
     await wait(1_000);
     if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, code: "SELLER_WINDOW_CLOSED" };
-    if (await sellerPageRequiresLogin()) continue;
+    if (await sellerPageRequiresLogin()) {
+      // The Korean login form is rendered asynchronously. Keep retrying the
+      // encrypted credentials after its inputs appear instead of trying only
+      // once while the page is still empty.
+      if (Date.now() - lastAutoLoginAttemptAt >= 2_500) {
+        automatic = await submitStoredSellerCredentials();
+        lastAutoLoginAttemptAt = Date.now();
+      }
+      continue;
+    }
     if (!String(sellerWindow.webContents.getURL() || "").includes("/main/goods/search")) {
       await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => {});
       await wait(2_000);
