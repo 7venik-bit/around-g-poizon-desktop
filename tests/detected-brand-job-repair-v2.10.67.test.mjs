@@ -27,8 +27,8 @@ test("startup file discovery repairs an older wrong brand cache", () => {
   assert.match(main, /jobId: recoveredJobId/);
 });
 
-test("release metadata is 2.10.230", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.230");
-  assert.equal(JSON.parse(lockSource).version, "2.10.230");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.230");
+test("release metadata is 2.10.231", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.231");
+  assert.equal(JSON.parse(lockSource).version, "2.10.231");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.231");
 });
