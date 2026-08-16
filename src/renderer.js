@@ -2903,12 +2903,16 @@ document.querySelectorAll("[data-margin]").forEach((button) => button.addEventLi
 
 $("#settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value });
+  const saved = await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value });
   $("#app-secret").value = "";
   $("#access-token").value = "";
   $("#poizon-password").value = "";
+  $("#poizon-login-id").value = saved.poizonLoginId || "";
+  $("#poizon-password").placeholder = saved.hasPoizonPassword ? "암호화 저장됨 · 브랜드 검색 시 자동 입력" : "자동 로그인에 필요";
   $("#settings-status").className = "status success";
-  $("#settings-status").textContent = "Windows 암호화 저장소에 설정했습니다.";
+  $("#settings-status").textContent = saved.poizonLoginId && saved.hasPoizonPassword
+    ? "POIZON 아이디와 비밀번호를 기억했습니다. 브랜드 검색 시 자동 로그인합니다."
+    : "Windows 암호화 저장소에 설정했습니다.";
 });
 $("#guard-check").addEventListener("click", async () => {
   const result = await window.aroundG.collectorCheck({ page:Number($("#guard-page").value), fingerprint:$("#guard-fingerprint").value, captcha:$("#guard-captcha").checked });
