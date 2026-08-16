@@ -1014,19 +1014,35 @@ function resolveRendererBrandJobId(file = {}) {
   return matches.length === 1 ? matches[0][0] : "";
 }
 
-function toggleBrandSelection(brandId) {
+function toggleBrandSelection(brandId, brandButton = null) {
   const id = Number(brandId);
   const brand = explorerMeta.brands.find((item) => Number(item.id) === id);
   if (!brand) return null;
-  if (selectedBrandIds.has(id)) {
-    selectedBrandIds.delete(id);
-  } else {
+  const selected = !selectedBrandIds.has(id);
+  if (selected) {
     selectedBrandIds.add(id);
     recordBrandSelection(brand, "선택");
+  } else {
+    selectedBrandIds.delete(id);
+    saveBrandSelections();
   }
   selectedBrandId = selectedBrandIds.size === 1 ? [...selectedBrandIds][0] : null;
-  saveBrandSelections();
-  renderBrandCards($("#brand-filter")?.value || "");
+
+  // Update only the clicked card. Rebuilding all 3,000+ brand cards on every
+  // click made the selection feedback appear several seconds late.
+  if (brandButton) {
+    brandButton.classList.toggle("selected", selected);
+    brandButton.setAttribute("aria-pressed", String(selected));
+    brandButton.classList.remove("selection-feedback");
+    void brandButton.offsetWidth;
+    brandButton.classList.add("selection-feedback");
+  }
+  updateBrandSelectionControls();
+  const status = $("#brand-status");
+  if (status) {
+    status.className = selected ? "status success" : "status";
+    status.textContent = `${brand.name} ${selected ? "선택됨" : "선택 해제됨"} · 총 ${selectedBrandIds.size}개 선택`;
+  }
   return brand;
 }
 
@@ -1908,7 +1924,7 @@ document.addEventListener("click", async (event) => {
       $("#brand-status").textContent = `${activeExportBrand?.name || selectedBrandName || "선택 브랜드"} 원본 데이터 작업을 등록하고 있습니다.`;
       return;
     }
-    toggleBrandSelection(brandButton.dataset.brandId);
+    toggleBrandSelection(brandButton.dataset.brandId, brandButton);
     return;
   }
   const category = event.target.closest("[data-category]")?.dataset.category;

@@ -1267,3 +1267,7 @@ button,input,select,textarea{font-family:inherit}
 .brand-product-workspace .excel-preview{margin:0;border:0;border-radius:0}
 .brand-export-completed-row{grid-template-columns:minmax(150px,1fr) minmax(150px,1fr) minmax(150px,.8fr) auto}
 .brand-export-completed-actions{display:flex;gap:5px;justify-content:flex-end}.brand-export-completed-actions button{padding:5px 8px;border:1px solid #9bc9e8;border-radius:7px;background:#fff;color:#24698f;font-size:10px;font-weight:750}.brand-export-completed-actions button.primary{background:#287de0;color:#fff;border-color:#287de0}
+
+/* Immediate brand-selection feedback without rebuilding the 3,000+ card catalog. */
+.brand-card.selection-feedback{animation:brand-selection-feedback .2s ease-out}
+@keyframes brand-selection-feedback{0%{transform:scale(.97)}100%{transform:scale(1)}}
