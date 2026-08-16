@@ -55,7 +55,7 @@ test("Excel filter controls share one bottom line", () => {
   assert.match(cssSource, /\.excel-preview-filters label>input,\.excel-preview-filters label>select\{width:100%\}/);
 });
 
-test("Excel defaults to the complete raw sheet with optional grouped product view", async () => {
+test("Excel defaults to complete raw rows with optional product search view", async () => {
   assert.match(mainSource, /function buildExcelPreviewProducts/);
   assert.doesNotMatch(mainSource, /const grouped = new Map\(\)/);
   assert.match(mainSource, /const productView = input\.filters\?\.productView !== false/);
@@ -66,7 +66,7 @@ test("Excel defaults to the complete raw sheet with optional grouped product vie
   assert.match(rendererSource, /#excel-view-raw"\)\?\.classList\.toggle/);
   assert.match(rendererSource, /function renderRawExcelCell/);
   assert.match(rendererSource, /function renderRawExcelCell[\s\S]{0,700}<img/);
-  assert.match(rendererSource, /#excel-preview-selection"\)\.hidden = !result\.productView/);
+  assert.match(rendererSource, /#excel-preview-selection"\)\.hidden = false/);
   assert.match(rendererSource, /원본 Excel 그대로/);
   assert.match(await readFile(new URL("../src/excel-column-layout.js", import.meta.url), "utf8"), /viewMode === "products" \|\| preview\?\.viewMode === "raw"/);
   assert.match(rendererSource, /let excelPreviewProductMode = false/);
@@ -260,9 +260,20 @@ test("integrated product search keeps original rows and opens product search onl
 test("raw Excel view preserves original rows and display-only columns", () => {
   assert.match(mainSource, /const filtered = productView[\s\S]*workbook\.rows\.map\(\(values, index\) => \(\{ values, sourceRowNumber: index \+ 2 \}\)\)/);
   assert.match(mainSource, /headers: Array\.from\(\{ length: columnCount \}, \(_unused, index\) => excelPreviewCell\(rows\[0\]\?\.\[index\]\)\)/);
-  assert.doesNotMatch(rendererSource, /else \{[\s\S]{0,400}excel-product-select-column/);
+  assert.match(rendererSource, /else \{[\s\S]{0,500}excel-product-select-column/);
   assert.match(rendererSource, /aria-label="제품 이미지 크게 보기"/);
   assert.match(rendererSource, /!value \|\| value === "--" \|\| value === "-" \|\| \/\^<\\s\*5/);
   assert.match(rendererSource, /\? "숨김" : cell/);
-  assert.match(rendererSource, /rows\.map\(\(row\) => `<tr>\$\{row\.map/);
+  assert.match(rendererSource, /rows\.map\(\(row, index\) =>/);
+});
+
+
+test("raw Excel rows restore domestic platform search without grouping products", () => {
+  assert.match(mainSource, /buildExcelPreviewProducts\(workbook\.headers, pageEntries\)/);
+  assert.match(rendererSource, /<th>국내 상품검색<\/th>/);
+  assert.match(rendererSource, /data-excel-search-product/);
+  assert.match(rendererSource, /productsByRow/);
+  assert.match(rendererSource, /pageProductsByRow/);
+  assert.match(rendererSource, /activeExcelPreview\?\.viewMode === "products"/);
+  assert.match(rendererSource, /showExcelPreview\(file, activeExcelPreview\?\.offset/);
 });
