@@ -142,12 +142,14 @@ function showResults(article, data) {
       return `<span class="size ${unavailable ? "none" : ""}">${esc(value)}</span>`;
     }).join("");
     const url = item.url || item.link || "";
+    const stockClass = item.inStock === true ? "" : item.inStock === false ? "none" : "unknown";
+    const stockLabel = item.inStock === true ? "재고 있음" : item.inStock === false ? "품절" : "확인 필요";
     return `<div class="candidate">
       <span class="store">${esc(item.store || item.mallName || item.source || "국내 판매처")}</span>
       <strong>${esc(item.title || item.name || item.articleNumber || "검색 결과")}</strong>
-      <span class="stock ${item.inStock === false ? "none" : ""}">${item.inStock === false ? "재고 없음" : "재고 있음"}</span>
-      <div class="sizes">${sizes || "<span>사이즈 정보 없음</span>"}</div>
-      ${url ? `<button class="open-link" data-url="${esc(url)}">구매</button>` : ""}
+      <span class="stock ${stockClass}"${stockClass === "unknown" ? ' style="color:#8b590e;background:#fff0d8"' : ""}>${stockLabel}</span>
+      <div class="sizes">${sizes || "<span>옵션 확인 필요</span>"}</div>
+      ${url ? `<button class="open-link" data-url="${esc(url)}">${item.inStock === true ? "구매" : "확인"}</button>` : ""}
     </div>`;
   }).join("");
 }

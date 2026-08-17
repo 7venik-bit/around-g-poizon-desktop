@@ -80,6 +80,7 @@ import {
   analyzeRenderedChannelProducts,
   classifySsgProductEvidence,
   detectedRetailer,
+  normalizeRenderedStockEvidence,
   queryDomesticProducts,
 } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
@@ -973,10 +974,12 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       if (parsedContent?.pageBlocked && !parsedContent?.productCards?.length) return null;
     } catch {}
     const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
-    if (/^SSG(?:\s|$)/.test(String(source.store || "")) && Array.isArray(analyzed?.products)) {
+    let detailed = analyzed;
+    if (Array.isArray(analyzed?.products)) {
       const products = [];
       for (const product of analyzed.products.slice(0, 8)) {
         let detailText = "";
+        let stockEvidence = normalizeRenderedStockEvidence();
         try {
           await Promise.race([
             searchWindow.loadURL(product.url),
@@ -987,29 +990,57 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             `String(document.body?.innerText || "").slice(0, 60000)`,
             true,
           ).catch(() => "");
+          const rawStock = await searchWindow.webContents.executeJavaScript(`(() => {
+            const visible = (element) => {
+              if (!element) return false;
+              const style = getComputedStyle(element);
+              const rect = element.getBoundingClientRect();
+              return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+            };
+            const sold = (element) => element.disabled
+              || element.getAttribute("aria-disabled") === "true"
+              || /disabled|sold.?out|품절|재고.?없음/i.test([element.className, element.textContent].join(" "));
+            const optionNodes = [
+              ...document.querySelectorAll("select option"),
+              ...document.querySelectorAll('[class*="size" i] button,[class*="option" i] button,[data-option],[data-size],[role="option"]'),
+            ];
+            const options = optionNodes.slice(0, 160).map((element) => ({
+              label: String(element.getAttribute("data-size") || element.getAttribute("data-option") || element.textContent || "").replace(/\\s+/g, " ").trim(),
+              inStock: !sold(element),
+            }));
+            const purchaseAvailable = [...document.querySelectorAll('button,a,[role="button"]')].some((element) =>
+              visible(element) && !sold(element) && /구매|바로구매|장바구니|BUY\s*NOW|ADD\s*TO\s*(?:BAG|CART)/i.test(element.textContent || element.getAttribute("aria-label") || "")
+            );
+            return { pageText: String(document.body?.innerText || "").slice(0, 60000), purchaseAvailable, options };
+          })()`, true).catch(() => null);
+          if (rawStock) stockEvidence = normalizeRenderedStockEvidence(rawStock);
         } catch {}
         const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
-        const classification = classifySsgProductEvidence({ brand, url: product.url, text: evidence });
+        const isSsg = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(String(product.url || ""));
+        const classification = isSsg
+          ? classifySsgProductEvidence({ brand, url: product.url, text: evidence })
+          : String(product.ssgClassification || "");
         const retailer = detectedRetailer(evidence);
         products.push({
           ...product,
-          store: classification === "official_brand"
+          store: isSsg && classification === "official_brand"
             ? "SSG 브랜드 공식관"
-            : classification === "parallel_import" ? "SSG 병행수입" : source.store,
-          retailerName: classification === "official_brand"
+            : isSsg && classification === "parallel_import" ? "SSG 병행수입" : product.store,
+          retailerName: isSsg && classification === "official_brand"
             ? "브랜드 공식관 · 공식수입"
-            : classification === "parallel_import" ? (retailer || "병행수입 상품") : "",
-          officialStoreVerified: classification === "official_brand",
+            : isSsg && classification === "parallel_import" ? (retailer || "병행수입 상품") : product.retailerName,
+          officialStoreVerified: isSsg ? classification === "official_brand" : product.officialStoreVerified,
           ssgClassification: classification,
           ssgDetailVerified: Boolean(detailText),
+          ...stockEvidence,
         });
       }
-      return { ...analyzed, count: products.length, products };
+      detailed = { ...analyzed, count: products.length, products };
     }
-    if (source.store !== "브랜드 공식몰" || !Array.isArray(analyzed?.products)) return analyzed;
+    if (source.store !== "브랜드 공식몰" || !Array.isArray(detailed?.products)) return detailed;
     const officialPageUrl = String(source.homepageUrl || source.officialProductUrl || source.searchUrl || "");
     const products = [];
-    for (const product of analyzed.products.slice(0, 12)) {
+    for (const product of detailed.products.slice(0, 12)) {
       const detailImageUrl = await officialDetailImage(
         searchWindow,
         product.url,
@@ -1024,7 +1055,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         imageVerifiedFromDetail: Boolean(detailImageUrl),
       });
     }
-    return { ...analyzed, count: products.length, products };
+    return { ...detailed, count: products.length, products };
   } catch {
     return null;
   } finally {
