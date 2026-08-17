@@ -252,18 +252,18 @@ const CONTENT_ONLY_HOSTS = new Set([
 export function isPlatformShoppingProductUrl(value = "") {
   let parsed;
   try { parsed = new URL(String(value || "")); } catch { return false; }
-  const host = parsed.hostname.toLowerCase().replace(/^www\\./, "");
-  const path = `${parsed.pathname}${parsed.search}`.toLowerCase();
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  const path = \`\${parsed.pathname}\${parsed.search}\`.toLowerCase();
   if (CONTENT_ONLY_HOSTS.has(host)) return false;
-  if (["smartstore.naver.com", "m.smartstore.naver.com", "brand.naver.com"].includes(host)) return /\\/products\\/\\d+/.test(path);
-  if (["shopping.naver.com", "search.shopping.naver.com"].includes(host)) return /\\/(?:catalog|window-products|products?)\\//.test(path);
-  if (host === "ssg.com" || host.endsWith(".ssg.com")) return /\\/item\\//.test(path) || /itemview\\.ssg/.test(path);
-  if (host === "lotteon.com" || host.endsWith(".lotteon.com")) return /\\/p\\/product\\//.test(path);
-  if (host === "coupang.com" || host.endsWith(".coupang.com")) return /\\/vp\\/products\\//.test(path);
-  if (host === "musinsa.com" || host.endsWith(".musinsa.com")) return /\\/products?\\//.test(path);
-  if (host === "29cm.co.kr" || host.endsWith(".29cm.co.kr")) return /\\/product\\//.test(path);
-  if (host.endsWith("wconcept.co.kr")) return /\\/product\\//.test(path);
-  if (host.endsWith("11st.co.kr")) return /\\/products?\\//.test(path) || /productno=\\d+/.test(path);
+  if (["smartstore.naver.com", "m.smartstore.naver.com", "brand.naver.com"].includes(host)) return /\/products\/\d+/.test(path);
+  if (["shopping.naver.com", "search.shopping.naver.com"].includes(host)) return /\/(?:catalog|window-products|products?)\//.test(path);
+  if (host === "ssg.com" || host.endsWith(".ssg.com")) return /\/item\//.test(path) || /itemview\.ssg/.test(path);
+  if (host === "lotteon.com" || host.endsWith(".lotteon.com")) return /\/p\/product\//.test(path);
+  if (host === "coupang.com" || host.endsWith(".coupang.com")) return /\/vp\/products\//.test(path);
+  if (host === "musinsa.com" || host.endsWith(".musinsa.com")) return /\/products?\//.test(path);
+  if (host === "29cm.co.kr" || host.endsWith(".29cm.co.kr")) return /\/product\//.test(path);
+  if (host.endsWith("wconcept.co.kr")) return /\/product\//.test(path);
+  if (host.endsWith("11st.co.kr")) return /\/products?\//.test(path) || /productno=\d+/.test(path);
   if (host.endsWith("gmarket.co.kr") || host.endsWith("auction.co.kr")) return /item|goods/.test(path);
   return false;
 }
