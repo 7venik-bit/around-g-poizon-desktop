@@ -244,6 +244,30 @@ function titleIdentityMatch(candidate = "", expected = "") {
   return shared.length >= 2 && shared.length / Math.max(1, Math.min(expectedTokens.length, candidateTokens.size)) >= 0.4;
 }
 
+const CONTENT_ONLY_HOSTS = new Set([
+  "blog.naver.com", "m.blog.naver.com", "cafe.naver.com", "m.cafe.naver.com",
+  "kin.naver.com", "news.naver.com", "post.naver.com", "tv.naver.com", "in.naver.com",
+]);
+
+export function isPlatformShoppingProductUrl(value = "") {
+  let parsed;
+  try { parsed = new URL(String(value || "")); } catch { return false; }
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  const path = (parsed.pathname + parsed.search).toLowerCase();
+  if (CONTENT_ONLY_HOSTS.has(host)) return false;
+  if (["smartstore.naver.com", "m.smartstore.naver.com", "brand.naver.com"].includes(host)) return /\/products\/\d+/.test(path);
+  if (["shopping.naver.com", "search.shopping.naver.com"].includes(host)) return /\/(?:catalog|window-products|products?)\//.test(path);
+  if (host === "ssg.com" || host.endsWith(".ssg.com")) return /\/item\//.test(path) || /itemview\.ssg/.test(path);
+  if (host === "lotteon.com" || host.endsWith(".lotteon.com")) return /\/p\/product\//.test(path);
+  if (host === "coupang.com" || host.endsWith(".coupang.com")) return /\/vp\/products\//.test(path);
+  if (host === "musinsa.com" || host.endsWith(".musinsa.com")) return /\/products?\//.test(path);
+  if (host === "29cm.co.kr" || host.endsWith(".29cm.co.kr")) return /\/product\//.test(path);
+  if (host.endsWith("wconcept.co.kr")) return /\/product\//.test(path);
+  if (host.endsWith("11st.co.kr")) return /\/products?\//.test(path) || /productno=\d+/.test(path);
+  if (host.endsWith("gmarket.co.kr") || host.endsWith("auction.co.kr")) return /item|goods/.test(path);
+  return false;
+}
+
 export function analyzeRenderedChannelProducts(content, store = "", articleNumber = "", brand = "", expectedTitle = "") {
   const source = String(content || "");
   const articleCode = sanitizeDomesticQuery(articleNumber).trim();
@@ -315,6 +339,8 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // A text-only search suggestion is not a purchasable product.  Keep
         // official results only when the card owns a real product-detail URL.
         if (!/^https?:\/\//i.test(productUrl)) continue;
+        // Editing-shop and parallel-import results must be real shopping-platform product pages.
+        if (String(store || "") === "병행수입·편집샵" && !isPlatformShoppingProductUrl(productUrl)) continue;
         const productKey = productUrl;
         const ssgOfficialBrandHall = isSsgOfficialBrandHall({
           brand,
