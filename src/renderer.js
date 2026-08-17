@@ -1598,7 +1598,7 @@ function renderDomestic(result) {
   const regularProducts = products.filter((product) => !parallelProducts.includes(product));
   const productRows = regularProducts.map((product) => renderProductRow(product)).join("");
   const parallelProductRows = parallelProducts.map((product) => renderProductRow(product, "상품 소싱")).join("");
-  const sourceResult = (source) => /^네이버\s/.test(String(source.store || ""))
+  const sourceResult = (source) => (/^네이버\s/.test(String(source.store || "")) || source.store === "무신사")
     ? `<b class="source-count">${Number(source.count || 0) > 0 ? 1 : 0}</b>`
     : source.verificationFailed
       ? `<small>확인 실패</small>`
