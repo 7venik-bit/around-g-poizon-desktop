@@ -4,6 +4,7 @@ import {
   DOMESTIC_SEARCH_LINKS,
   OFFICIAL_BRAND_SEARCH,
   analyzeRenderedChannelProducts,
+  classifySsgProductEvidence,
   isPlatformShoppingProductUrl,
   countLinkedSearchProducts,
   countRenderedChannelProducts,
@@ -18,6 +19,32 @@ import {
   parseSsgSearch,
   queryDomesticProducts,
 } from "../relay/domestic-search.mjs";
+
+test("SSG 브랜드 검색은 공식수입·공식브랜드관 증빙과 병행수입업체를 구분한다", () => {
+  assert.equal(classifySsgProductEvidence({
+    brand: "나이키",
+    url: "https://www.ssg.com/item/itemView.ssg?itemId=1000190212238",
+    text: "공식수입 [나이키코리아공식] NIKE 공식브랜드관 DC6479-100",
+  }), "official_brand");
+  assert.equal(classifySsgProductEvidence({
+    brand: "나이키",
+    url: "https://www.ssg.com/item/itemView.ssg?itemId=1000673689289",
+    text: "구템즈 병행수입 나이키 DD8959-100",
+  }), "parallel_import");
+});
+
+test("SSG 정확 품번 검색 결과를 확인했지만 일치 상품이 없으면 상품 없음으로 확정한다", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    productCards: [{
+      productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000000000001",
+      title: "나이키 다른 상품 AB1234-001",
+      text: "나이키 다른 상품 AB1234-001",
+    }],
+    pageText: "SSG 통합검색 상품 1개",
+  }), "SSG", "DD8959-100", "나이키");
+  assert.equal(result.count, 0);
+  assert.equal(result.absenceConfirmed, true);
+});
 
 test("편집샵·병행수입 검색은 쇼핑 플랫폼 상품 상세 주소만 허용한다", () => {
   assert.equal(isPlatformShoppingProductUrl("https://blog.naver.com/wjsepdyt/223774129711"), false);

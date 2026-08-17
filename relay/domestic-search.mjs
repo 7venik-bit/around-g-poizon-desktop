@@ -34,16 +34,24 @@ export function isSsgOfficialBrandHall({ brand = "", url = "", text = "" } = {})
   let host = "";
   try { host = new URL(String(url || "")).hostname.toLowerCase(); } catch {}
   if (!(host === "ssg.com" || host.endsWith(".ssg.com"))) return false;
-  const record = SSG_OFFICIAL_BRAND_HALLS.find((entry) =>
+  const curated = SSG_OFFICIAL_BRAND_HALLS.find((entry) =>
     entry.aliases.some((alias) => normalizeOfficialBrand(alias) === normalizeOfficialBrand(brand))
   );
-  if (!record) return false;
+  const official = verifiedOfficialBrand(brand);
+  const aliases = [...new Set([brand, ...(curated?.aliases || []), ...(official?.aliases || [])].filter(Boolean))];
+  if (!aliases.length) return false;
   const evidence = String(text || "");
-  const brandMentioned = record.aliases.some((alias) =>
+  const brandMentioned = aliases.some((alias) =>
     normalizeOfficialBrand(evidence).includes(normalizeOfficialBrand(alias))
   );
-  const officialMarker = /본사\s*직영|공식\s*브랜드관|브랜드관|\[[^\]]*공식\]|공식\s*(?:몰|스토어)/i.test(evidence);
+  const officialMarker = /본사\s*직영|공식\s*수입|공식\s*브랜드관|브랜드관|\[[^\]]*(?:코리아)?\s*공식\]|(?:코리아|KOREA)\s*공식|공식\s*(?:몰|스토어|판매처)/i.test(evidence);
   return brandMentioned && officialMarker;
+}
+
+export function classifySsgProductEvidence({ brand = "", url = "", text = "" } = {}) {
+  if (isSsgOfficialBrandHall({ brand, url, text })) return "official_brand";
+  if (detectedRetailer(text) || /병행\s*수입|해외\s*직구|구매\s*대행/i.test(String(text || ""))) return "parallel_import";
+  return "marketplace";
 }
 
 const RETAILER_ALIASES = [
@@ -342,17 +350,20 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // Editing-shop and parallel-import results must be real shopping-platform product pages.
         if (String(store || "") === "병행수입·편집샵" && !isPlatformShoppingProductUrl(productUrl)) continue;
         const productKey = productUrl;
-        const ssgOfficialBrandHall = isSsgOfficialBrandHall({
-          brand,
-          url: productUrl,
-          text: `${rawCardText} ${String(card?.markup || "")}`,
-        });
+        const ssgEvidence = `${rawCardText} ${String(card?.markup || "")}`;
+        const ssgClassification = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(productUrl)
+          ? classifySsgProductEvidence({ brand, url: productUrl, text: ssgEvidence })
+          : "";
+        const ssgOfficialBrandHall = ssgClassification === "official_brand";
+        const parallelRetailer = detectedRetailer(rawCardText);
+        const isSsgParallelImport = ssgClassification === "parallel_import";
         if (!matchingProducts.has(productKey)) {
           matchingProducts.set(productKey, {
-            store: ssgOfficialBrandHall ? "SSG 브랜드 공식관" : store,
+            store: ssgOfficialBrandHall ? "SSG 브랜드 공식관" : isSsgParallelImport ? "SSG 병행수입" : store,
             retailerName: ssgOfficialBrandHall
               ? "브랜드 공식관 · 본사직영"
-              : store === "병행수입·편집샵" ? detectedRetailer(rawCardText) : "",
+              : isSsgParallelImport ? (parallelRetailer || "병행수입 상품")
+                : store === "병행수입·편집샵" ? parallelRetailer : "",
             id: productKey,
             url: productUrl,
             title: String(card?.title || card?.text || `${store} 검색 결과`).trim().slice(0, 240),
@@ -367,11 +378,18 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
             sizes: [],
             confidence: ssgOfficialBrandHall ? 100 : exactDetectedArticle ? 95 : 75,
             officialStoreVerified: ssgOfficialBrandHall,
+            ssgClassification,
             signals: { code: exactDetectedArticle ? "일치" : "정보 없음", title: "판매처 결과", image: card?.imageUrl ? "확인" : "없음" },
           });
         }
       }
-      return { count: matchingProducts.size, products: [...matchingProducts.values()], absenceConfirmed: false };
+      const exactSsgSearchChecked = /^SSG(?:\s|$)/.test(String(store || "")) && cards.length > 0;
+      return {
+        count: matchingProducts.size,
+        products: [...matchingProducts.values()],
+        absenceConfirmed: matchingProducts.size === 0 && exactSsgSearchChecked,
+        ssgSearchChecked: /^SSG(?:\s|$)/.test(String(store || "")),
+      };
     } catch {
       return null;
     }
