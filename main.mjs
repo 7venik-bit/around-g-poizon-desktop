@@ -79,6 +79,7 @@ import {
 import {
   analyzeRenderedChannelProducts,
   classifySsgProductEvidence,
+  resolveSsgProductClassification,
   detectedRetailer,
   normalizeRenderedStockEvidence,
   queryDomesticProducts,
@@ -947,10 +948,13 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       for (const link of productLinks) {
         const productUrl = String(link.href || "").split("#")[0];
         if (!productUrl || seen.has(productUrl)) continue;
-        const card = link.closest("li, article, [data-product-id], [data-item-id], [class*='product-card'], [class*='goods-item'], [class*='item-card'], [class*='cunit'], [class*='mnemitem'], [class*='mnemitem'], [class*='item_unit']")
+        const card = link.closest("li, article, [data-product-id], [data-item-id], [class*='product-card'], [class*='goods-item'], [class*='item-card'], [class*='cunit'], [class*='mnemitem'], [class*='item_unit'], [class*='itemUnit'], [class*='item_grid'], [class*='product_unit']")
           || link.parentElement;
         const text = String(card?.innerText || link.innerText || "").trim();
-        const markup = String(card?.outerHTML || link.outerHTML || "").slice(0, 2500);
+        // SSG places its brand and "본사직영" badges near the product title,
+        // sometimes outside the immediate anchor. Keep enough of the owning
+        // card to classify the seller without borrowing evidence from another card.
+        const markup = String(card?.outerHTML || link.outerHTML || "").slice(0, 8000);
         const sameProductLinks = [link, ...(card?.querySelectorAll?.("a[href]") || [])]
           .filter((candidate) => String(candidate.href || "").split("#")[0] === productUrl);
         const linkedImages = sameProductLinks.flatMap((candidate) => [...candidate.querySelectorAll("img")]);
@@ -1043,9 +1047,12 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         } catch {}
         const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
         const isSsg = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(String(product.url || ""));
-        const classification = isSsg
+        const detailClassification = isSsg
           ? classifySsgProductEvidence({ brand, url: product.url, text: evidence })
           : String(product.ssgClassification || "");
+        const classification = isSsg
+          ? resolveSsgProductClassification(detailClassification, product.ssgClassification)
+          : detailClassification;
         const retailer = detectedRetailer(evidence);
         products.push({
           ...product,
@@ -1053,7 +1060,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             ? "SSG 브랜드 공식관"
             : isSsg && classification === "parallel_import" ? "SSG 병행수입" : product.store,
           retailerName: isSsg && classification === "official_brand"
-            ? "브랜드 공식관 · 공식수입"
+            ? (/본사\s*직영/i.test(evidence) || /본사\s*직영/i.test(String(product.retailerName || ""))
+              ? "브랜드 공식관 · 본사직영" : "브랜드 공식관 · 공식수입")
             : isSsg && classification === "parallel_import" ? (retailer || "병행수입 상품") : product.retailerName,
           officialStoreVerified: isSsg ? classification === "official_brand" : product.officialStoreVerified,
           ssgClassification: classification,

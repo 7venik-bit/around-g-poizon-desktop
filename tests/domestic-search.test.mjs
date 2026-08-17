@@ -20,6 +20,7 @@ import {
   parseMusinsaSearch,
   parseSsgSearch,
   queryDomesticProducts,
+  resolveSsgProductClassification,
 } from "../relay/domestic-search.mjs";
 
 test("모든 국내 판매처 상세페이지 재고를 세 단계로 판정한다", () => {
@@ -62,6 +63,27 @@ test("SSG 브랜드 검색은 공식수입·공식브랜드관 증빙과 병행�
     url: "https://www.ssg.com/item/itemView.ssg?itemId=1000854826548",
     text: "검은 원형 NIKE 로고 정품",
   }), "marketplace");
+});
+
+test("SSG 정확 품번의 본사직영 브랜드 상품을 공식 판매 결과로 표시한다", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    productCards: [{
+      productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000987654321",
+      title: "[데상트 공식] 터프 반팔 티셔츠 블랙 SR323UTS71",
+      text: "데상트 본사직영 5% 57,950원 무료배송",
+      markup: '<li class="cunit"><span class="badge">본사직영</span><strong>데상트</strong><a href="/item/itemView.ssg?itemId=1000987654321">SR323UTS71</a></li>',
+    }],
+    pageText: "데상트 데상트 SR323UTS71 검색 결과",
+  }), "SSG", "SR323UTS71", "데상트");
+  assert.equal(result.count, 1);
+  assert.equal(result.products[0].store, "SSG 브랜드 공식관");
+  assert.equal(result.products[0].retailerName, "브랜드 공식관 · 본사직영");
+  assert.equal(result.products[0].officialStoreVerified, true);
+});
+
+test("SSG 검색 카드의 본사직영 판정은 상세페이지에 문구가 없어도 유지한다", () => {
+  assert.equal(resolveSsgProductClassification("marketplace", "official_brand"), "official_brand");
+  assert.equal(resolveSsgProductClassification("parallel_import", "official_brand"), "parallel_import");
 });
 
 test("SSG 정확 품번 검색 결과를 확인했지만 일치 상품이 없으면 상품 없음으로 확정한다", () => {
