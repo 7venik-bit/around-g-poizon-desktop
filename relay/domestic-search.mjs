@@ -21,7 +21,7 @@ export const DOMESTIC_RETAILER_GROUPS = {
     "풋팝", "럭스보이", "대림코퍼레이션", "업셋", "가방팝", "베이지2", "슈텐커머스",
     "리앤한", "꼬르소밀라노", "트렌드메카", "밀라니즈", "오보화", "넥스트젠팩", "비블루",
     "소호몰", "아르떼모아", "디몬트", "바이스트", "라벨루쏘", "구템즈", "비비아노",
-    "까르피", "FABSTYLE",
+    "까르피", "FABSTYLE", "베이직",
   ],
 };
 
@@ -49,8 +49,12 @@ export function isSsgOfficialBrandHall({ brand = "", url = "", text = "" } = {})
 }
 
 export function classifySsgProductEvidence({ brand = "", url = "", text = "" } = {}) {
-  if (isSsgOfficialBrandHall({ brand, url, text })) return "official_brand";
+  // A parallel importer may use the brand logo and may also describe its goods
+  // as genuine or formally customs-cleared. Registered importer/seller evidence
+  // therefore takes precedence over visual brand marks and generic "official"
+  // wording found elsewhere on an SSG detail page.
   if (detectedRetailer(text) || /병행\s*수입|해외\s*직구|구매\s*대행/i.test(String(text || ""))) return "parallel_import";
+  if (isSsgOfficialBrandHall({ brand, url, text })) return "official_brand";
   return "marketplace";
 }
 
@@ -61,10 +65,11 @@ const RETAILER_ALIASES = [
   ["튠", /\btune\b|\b튠\b/i], ["플랫폼샵", /platformshop|플랫폼샵/i], ["훕시티", /hoopcity|훕시티/i],
   ["29CM", /29cm/i], ["무신사", /musinsa|무신사/i], ["아이엠샵", /iamshop|아이엠샵/i],
   ["W컨셉", /w\.?concept|w컨셉/i], ["EQL", /\beql\b/i], ["하이츠스토어", /heights[- ]?store|하이츠스토어/i],
+  ["베이직", /\bBAZIC\b|베이직/i],
   ...DOMESTIC_RETAILER_GROUPS["병행수입 정품업체"].map((name) => [name, new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")]),
 ];
 
-function detectedRetailer(value = "") {
+export function detectedRetailer(value = "") {
   const matched = RETAILER_ALIASES.find(([, pattern]) => pattern.test(String(value || "")));
   if (!matched) return "";
   const [name] = matched;

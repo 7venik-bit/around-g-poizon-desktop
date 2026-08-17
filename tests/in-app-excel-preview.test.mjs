@@ -195,7 +195,7 @@ test("official store, Musinsa, and Naver sources all render numeric result badge
 });
 
 test("SSG 일반·백화점·아울렛 검색은 화면 지연을 고려해 세 번 확인한다", () => {
-  assert.ok(mainSource.includes('const renderAttempts = /^SSG(?:\\s|$)/.test(String(source.store || "")) ? 3 : 1;'));
+  assert.match(mainSource, /\^SSG\(\?:\\s\|\$\)\/\.test[\s\S]*\? 3 : 1/);
 });
 
 test("shared Excel reader repairs POIZON A1 dimensions before preview and ordinary import", async () => {
