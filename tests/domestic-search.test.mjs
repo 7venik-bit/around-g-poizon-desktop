@@ -12,7 +12,9 @@ import {
   domesticChannelUrl,
   exactArticleIdentityMatch,
   isSsgOfficialBrandHall,
+  internalPortalSearchQuery,
   naverFashionTownUrl,
+  naverFashionTownPortalUrl,
   normalizeRenderedStockEvidence,
   officialBrandProductSearchUrl,
   officialBrandSearchUrl,
@@ -136,6 +138,27 @@ test("every catalog brand gets article-specific Naver channel searches", () => {
     assert.match(url, path);
     assert.doesNotMatch(url, /공식몰|공식스토어/);
   }
+});
+
+test("네이버는 검색어 URL로 바로 가지 않고 포털 내부 검색창을 사용한다", async () => {
+  assert.equal(naverFashionTownPortalUrl("brand-store"), "https://shopping.naver.com/window/fashion-group");
+  assert.equal(naverFashionTownPortalUrl("department"), "https://shopping.naver.com/window/department");
+  assert.equal(internalPortalSearchQuery("데상트", "데상트 SR123UTS15"), "데상트 SR123UTS15");
+  assert.equal(internalPortalSearchQuery("데상트", "SR123UTS15"), "데상트 SR123UTS15");
+  const result = await queryDomesticProducts({
+    query: "데상트 SR123UTS15",
+    articleNumber: "SR123UTS15",
+    brand: "데상트",
+    fetchImpl: async () => ({
+      ok: true,
+      text: async () => '<script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"dehydratedState":{"queries":[]}}}}</script>',
+    }),
+  });
+  const naver = result.sources.find((source) => source.store === "네이버 공식 브랜드스토어");
+  assert.equal(naver.searchUrl, "https://shopping.naver.com/window/fashion-group");
+  assert.equal(naver.interactiveSearch, true);
+  assert.equal(naver.searchQuery, "데상트 SR123UTS15");
+  assert.doesNotMatch(naver.searchUrl, /query=|q=/);
 });
 
 const officialStoreCases = [

@@ -855,6 +855,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   const interactiveOfficialSearch = source.store === "브랜드 공식몰"
     && !String(source.officialProductUrl || "")
     && /^https:\/\//i.test(String(source.homepageUrl || ""));
+  const interactiveSiteSearch = interactiveOfficialSearch || source.interactiveSearch === true;
   const url = String(source.officialProductUrl || (interactiveOfficialSearch ? source.homepageUrl : source.searchUrl) || "");
   if (!/^https:\/\//i.test(url)) return { count: Number(source.count || 0), products: [] };
   let searchWindow;
@@ -875,12 +876,12 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       searchWindow.loadURL(url),
       new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 30_000)),
     ]);
-    if (interactiveOfficialSearch) {
-      const searchQuery = String(articleNumber || title || "").trim();
+    if (interactiveSiteSearch) {
+      const searchQuery = String(source.searchQuery || articleNumber || title || "").trim();
       let submitted = false;
       for (let attempt = 0; attempt < 6 && !submitted; attempt += 1) {
         submitted = await searchWindow.webContents.executeJavaScript(`(() => {
-          const query = ${JSON.stringify(String(articleNumber || title || ""))};
+          const query = ${JSON.stringify(String(source.searchQuery || articleNumber || title || ""))};
           const visible = (element) => {
             if (!element) return false;
             const style = getComputedStyle(element);
@@ -1125,13 +1126,17 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
     const count = result?.count;
     const absenceConfirmed = result?.absenceConfirmed === true;
+    const isNaverChannel = /^네이버\s/.test(String(source.store || ""));
+    const displayCount = Number.isFinite(count)
+      ? (isNaverChannel ? (Number(count) > 0 ? 1 : 0) : Number(count))
+      : 0;
     const isOfficialStore = source.store === "브랜드 공식몰";
     const verifiedOfficialProductUrl = isOfficialStore
       ? String((result?.products || []).find((product) => /^https?:\/\//i.test(String(product?.url || "")))?.url || "")
       : String(source.officialProductUrl || "");
     return {
       ...source,
-      count: Number.isFinite(count) ? count : 0,
+      count: displayCount,
       countVerified: Number.isFinite(count) && (Number(count) > 0 || absenceConfirmed),
       verificationFailed: !Number.isFinite(count),
       verificationPending: Number.isFinite(count) && Number(count) === 0 && !absenceConfirmed,

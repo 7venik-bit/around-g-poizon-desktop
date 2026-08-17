@@ -1598,13 +1598,15 @@ function renderDomestic(result) {
   const regularProducts = products.filter((product) => !parallelProducts.includes(product));
   const productRows = regularProducts.map((product) => renderProductRow(product)).join("");
   const parallelProductRows = parallelProducts.map((product) => renderProductRow(product, "상품 소싱")).join("");
-  const sourceResult = (source) => source.verificationFailed
-    ? `<small>확인 실패</small>`
-    : source.verificationPending
-      ? `<small>추가 확인</small>`
-    : source.countVerified
-      ? `<b class="source-count">${Number(source.count || 0) > 0 ? Number(source.count) : "없음"}</b>`
-      : `<small>결과 확인</small>`;
+  const sourceResult = (source) => /^네이버\s/.test(String(source.store || ""))
+    ? `<b class="source-count">${Number(source.count || 0) > 0 ? 1 : 0}</b>`
+    : source.verificationFailed
+      ? `<small>확인 실패</small>`
+      : source.verificationPending
+        ? `<small>추가 확인</small>`
+      : source.countVerified
+        ? `<b class="source-count">${Number(source.count || 0) > 0 ? Number(source.count) : "없음"}</b>`
+        : `<small>결과 확인</small>`;
   const directLinks = (result.sources || []).map((source) => {
     if (source.store === "병행수입·편집샵" && (!source.countVerified || Number(source.count || 0) <= 0)) return "";
     if (source.officialStatus) {

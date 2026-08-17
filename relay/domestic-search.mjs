@@ -160,6 +160,22 @@ export function naverFashionTownUrl(channel, brand, query) {
   )}`;
 }
 
+export function naverFashionTownPortalUrl(channel) {
+  if (channel === "department") return "https://shopping.naver.com/window/department";
+  if (channel === "outlet") return "https://shopping.naver.com/window/outlet";
+  return "https://shopping.naver.com/window/fashion-group";
+}
+
+export function internalPortalSearchQuery(brand = "", query = "") {
+  const cleanBrand = sanitizeDomesticQuery(brand);
+  const cleanQuery = sanitizeDomesticQuery(query);
+  if (!cleanBrand) return cleanQuery;
+  const brandKey = normalizeOfficialBrand(cleanBrand);
+  const queryTokens = cleanQuery.split(/\s+/).filter(Boolean);
+  const alreadyContainsBrand = queryTokens.some((token) => normalizeOfficialBrand(token) === brandKey);
+  return alreadyContainsBrand ? cleanQuery : [cleanBrand, cleanQuery].filter(Boolean).join(" ");
+}
+
 export function domesticChannelUrl(channel, brand, query) {
   const terms = sanitizeDomesticQuery([brand, query].filter(Boolean).join(" "));
   if (channel === "ssg-department") {
@@ -687,7 +703,7 @@ export async function queryDomesticProducts({
     const searchUrl = source.officialBrand
       ? officialBrandSearchUrl(brand || title || normalizedQuery, preferredQuery)
       : source.fashionTown
-        ? naverFashionTownUrl(source.fashionTown, brand || title, preferredQuery)
+        ? naverFashionTownPortalUrl(source.fashionTown)
         : source.retailerDiscovery
           ? naverSearch([brand, preferredQuery].filter(Boolean).join(" "))
         : source.domesticChannel
@@ -716,6 +732,8 @@ export async function queryDomesticProducts({
         searchUrl,
         officialSearchUrl: source.officialBrand ? officialProductUrl : "",
         officialProductUrl,
+        interactiveSearch: Boolean(source.fashionTown),
+        searchQuery: source.fashionTown ? internalPortalSearchQuery(brand || title, preferredQuery) : "",
         count,
         products: [],
       });
@@ -746,7 +764,7 @@ export async function queryDomesticProducts({
     // Companies are shown only after an exact-model product is verified.
     // A registry entry alone must never look like a matching sourcing result.
     parallelImportCompanies: [],
-    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, count, products }, priority) => ({
+    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, interactiveSearch, searchQuery, count, products }, priority) => ({
       store,
       ok,
       linkOnly,
@@ -758,6 +776,8 @@ export async function queryDomesticProducts({
       searchUrl,
       officialSearchUrl: officialSearchUrl || "",
       officialProductUrl,
+      interactiveSearch: Boolean(interactiveSearch),
+      searchQuery: searchQuery || "",
     })),
   };
 }

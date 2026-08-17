@@ -192,6 +192,9 @@ test("official store, Musinsa, and Naver sources all render numeric result badge
   assert.match(mainSource, /!source\.linkOnly && source\.ok && Number\(source\.count \|\| 0\) > 0/);
   assert.match(rendererSource, /const directLinks = \(result\.sources \|\| \[\]\)\.map/);
   assert.doesNotMatch(rendererSource, /filter\(\(source\) => source\.linkOnly\)\.map/);
+  assert.match(mainSource, /isNaverChannel \? \(Number\(count\) > 0 \? 1 : 0\)/);
+  assert.match(rendererSource, /Number\(source\.count \|\| 0\) > 0 \? 1 : 0/);
+  assert.match(rendererSource, /sourceResult = \(source\) => \/\^네이버/);
 });
 
 test("SSG 일반·백화점·아울렛 검색은 화면 지연을 고려해 세 번 확인한다", () => {
