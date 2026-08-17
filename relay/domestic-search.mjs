@@ -339,6 +339,8 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // A text-only search suggestion is not a purchasable product.  Keep
         // official results only when the card owns a real product-detail URL.
         if (!/^https?:\/\//i.test(productUrl)) continue;
+        // Editing-shop and parallel-import results must be real shopping-platform product pages.
+        if (String(store || "") === "병행수입·편집샵" && !isPlatformShoppingProductUrl(productUrl)) continue;
         const productKey = productUrl;
         const ssgOfficialBrandHall = isSsgOfficialBrandHall({
           brand,
