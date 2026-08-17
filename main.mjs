@@ -1001,7 +1001,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       if (parsedContent?.pageBlocked && !parsedContent?.productCards?.length) return null;
     } catch {}
     const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
-    let detailed = analyzed;
+    const resolvedSearchUrl = String(searchWindow.webContents.getURL() || url);
+    let detailed = analyzed ? { ...analyzed, resolvedSearchUrl } : analyzed;
     if (Array.isArray(analyzed?.products)) {
       const products = [];
       for (const product of analyzed.products.slice(0, 8)) {
@@ -1070,7 +1071,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           ...stockEvidence,
         });
       }
-      detailed = { ...analyzed, count: products.length, products };
+      detailed = { ...analyzed, resolvedSearchUrl, count: products.length, products };
     }
     if (source.store !== "브랜드 공식몰" || !Array.isArray(detailed?.products)) return detailed;
     const officialPageUrl = String(source.homepageUrl || source.officialProductUrl || source.searchUrl || "");
@@ -1136,6 +1137,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       : String(source.officialProductUrl || "");
     return {
       ...source,
+      searchUrl: String(result?.resolvedSearchUrl || source.searchUrl || ""),
       count: displayCount,
       countVerified: Number.isFinite(count) && (Number(count) > 0 || absenceConfirmed),
       verificationFailed: !Number.isFinite(count),
