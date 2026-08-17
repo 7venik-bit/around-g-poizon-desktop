@@ -253,7 +253,7 @@ export function isPlatformShoppingProductUrl(value = "") {
   let parsed;
   try { parsed = new URL(String(value || "")); } catch { return false; }
   const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
-  const path = \`\${parsed.pathname}\${parsed.search}\`.toLowerCase();
+  const path = (parsed.pathname + parsed.search).toLowerCase();
   if (CONTENT_ONLY_HOSTS.has(host)) return false;
   if (["smartstore.naver.com", "m.smartstore.naver.com", "brand.naver.com"].includes(host)) return /\/products\/\d+/.test(path);
   if (["shopping.naver.com", "search.shopping.naver.com"].includes(host)) return /\/(?:catalog|window-products|products?)\//.test(path);
