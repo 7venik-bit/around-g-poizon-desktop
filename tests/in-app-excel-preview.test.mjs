@@ -170,6 +170,10 @@ test("official-mall button remains clickable for direct manual verification", ()
   assert.match(rendererSource, /officialButton\("공식몰 상품 없음·직접 확인"\)/);
 });
 
+test("MLB 공식몰 검색창은 품번 입력을 지원한다", () => {
+  assert.match(mainSource, /input\[placeholder\*="검색어"\]/);
+});
+
 test("unavailable verification is never misreported as confirmed product absence", () => {
   assert.match(mainSource, /return null/);
   assert.match(mainSource, /pageBlocked/);

@@ -889,7 +889,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             const rect = element.getBoundingClientRect();
             return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
           };
-          let input = [...document.querySelectorAll('input[type="search"],input[name*="search" i],input[name="q" i],input[name*="query" i],input[name*="keyword" i],input[name*="schWord" i]')].find(visible);
+          let input = [...document.querySelectorAll('input[type="search"],input[placeholder*="검색어"],input[name*="search" i],input[name="q" i],input[name*="query" i],input[name*="keyword" i],input[name*="schWord" i]')].find(visible);
           if (!input) {
             const opener = [...document.querySelectorAll('button,a,[role="button"]')].find((element) => {
               const label = [element.getAttribute("aria-label"), element.getAttribute("title"), element.className, element.textContent].join(" ");

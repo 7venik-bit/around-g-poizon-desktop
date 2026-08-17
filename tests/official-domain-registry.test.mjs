@@ -123,7 +123,7 @@ test("short ambiguous names require an exact POIZON-to-Naver registry match", ()
 });
 
 test("curated official stores are verified and build direct product searches", () => {
-  assert.equal(VERIFIED_OFFICIAL_BRANDS.length, 10);
+  assert.equal(VERIFIED_OFFICIAL_BRANDS.length, 11);
   const registry = createOfficialDomainRegistry(VERIFIED_OFFICIAL_BRANDS.map((entry, index) => ({
     id: index + 1,
     name: entry.aliases[0],
@@ -134,6 +134,13 @@ test("curated official stores are verified and build direct product searches", (
     assert.equal(new URL(officialSearchUrlFromRecord(record, "STYLE 001")).protocol, "https:");
     assert.match(officialSearchUrlFromRecord(record, "STYLE 001"), /STYLE%20001/);
   }
+});
+
+test("MLB is linked to the Korean official mall internal search", () => {
+  const mlb = VERIFIED_OFFICIAL_BRANDS.find((entry) => entry.name === "MLB");
+  assert.equal(mlb.homepageUrl, "https://www.mlb-korea.com/?gf=A");
+  assert.equal(mlb.interactiveSearch, true);
+  assert.equal(mlb.searchTemplate, "https://www.mlb-korea.com/search?searchText={query}&gf=A");
 });
 
 test("On is linked to its Korean official homepage and exact article search", () => {

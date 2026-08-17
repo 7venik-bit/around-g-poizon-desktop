@@ -19,6 +19,7 @@ import {
   normalizeRenderedStockEvidence,
   officialBrandProductSearchUrl,
   officialBrandSearchUrl,
+  officialBrandUsesInternalSearch,
   parseKolonSearch,
   parseMusinsaSearch,
   parseSsgSearch,
@@ -162,6 +163,25 @@ test("네이버는 검색어 URL로 바로 가지 않고 포털 내부 검색창
   assert.doesNotMatch(naver.searchUrl, /query=|q=/);
 });
 
+test("MLB 공식몰은 홈페이지에 들어간 뒤 정확한 품번을 검색창에 입력한다", async () => {
+  assert.equal(officialBrandUsesInternalSearch("MLB"), true);
+  const result = await queryDomesticProducts({
+    query: "MLB 3ASXCA12N-50WHS",
+    articleNumber: "3ASXCA12N-50WHS",
+    brand: "MLB",
+    title: "청키 라이너 뉴욕양키스",
+    fetchImpl: async () => ({
+      ok: true,
+      text: async () => '<script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"dehydratedState":{"queries":[]}}}}</script>',
+    }),
+  });
+  const official = result.sources.find((source) => source.store === "브랜드 공식몰");
+  assert.equal(official.homepageUrl, "https://www.mlb-korea.com/?gf=A");
+  assert.equal(official.officialProductUrl, "");
+  assert.equal(official.interactiveSearch, true);
+  assert.equal(official.searchQuery, "3ASXCA12N-50WHS");
+});
+
 test("병행수입 검색은 네이버 통합검색이 아닌 쇼핑 포털 내부 검색을 사용한다", async () => {
   assert.equal(naverShoppingPortalUrl(), "https://shopping.naver.com/home");
   const result = await queryDomesticProducts({
@@ -204,6 +224,7 @@ const officialStoreCases = [
   ["반스", "VN000D5IBKA", "vans.co.kr"],
   ["크록스", "209651-001", "crocs.co.kr"],
   ["데상트", "SN123LSN11", "dk-on.com"],
+  ["MLB", "3ASXCA12N-50WHS", "mlb-korea.com"],
   ["온", "3ME10100264", "on.com"],
 ];
 
