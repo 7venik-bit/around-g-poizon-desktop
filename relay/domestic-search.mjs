@@ -195,11 +195,12 @@ export function domesticChannelUrl(channel, brand, query) {
     return `https://www.ssg.com/search.ssg?target=all&query=${encodeURIComponent(terms)}`;
   }
   if (channel === "lotte-general") {
-    return `https://www.lotteon.com/search/search/search.ecn?render=search&platform=pc&q=${encodeURIComponent(terms)}`;
+    return `https://www.lotteon.com/csearch/search/search?render=search&platform=pc&q=${encodeURIComponent(terms)}&sort=ranking`;
   }
   if (channel === "lotte-department" || channel === "lotte-outlet") {
     const area = channel === "lotte-department" ? "백화점" : "아울렛";
-    return `https://www.lotteon.com/search/search/search.ecn?render=search&platform=pc&q=${encodeURIComponent(terms)}&mallFilter=${encodeURIComponent(area)}`;
+    const mallScope = channel === "lotte-department" ? "&mallId=2" : `&mallFilter=${encodeURIComponent(area)}`;
+    return `https://www.lotteon.com/csearch/search/search?render=search&platform=pc&q=${encodeURIComponent(terms)}&sort=ranking${mallScope}`;
   }
   return "";
 }
