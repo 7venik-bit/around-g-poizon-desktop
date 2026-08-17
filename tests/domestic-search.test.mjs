@@ -180,6 +180,20 @@ test("병행수입 검색은 네이버 통합검색이 아닌 쇼핑 포털 내�
   assert.doesNotMatch(parallel.searchUrl, /search\.naver\.com|query=|q=/);
 });
 
+test("무신사 검색 카드에 품번이 없어도 같은 브랜드 상세페이지 검증 후보로 유지한다", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    productCards: [{
+      productUrl: "https://www.musinsa.com/products/2311096",
+      title: "엠엘비(MLB) 청키 라이너 NY (White)",
+      text: "엠엘비 125,100원",
+    }],
+    pageText: "무신사 검색 결과",
+  }), "무신사", "3ASXCA12N-50WHS", "MLB");
+  assert.equal(result.count, 1);
+  assert.equal(result.products[0].detailArticleVerificationRequired, true);
+  assert.equal(result.products[0].url, "https://www.musinsa.com/products/2311096");
+});
+
 const officialStoreCases = [
   ["아디다스", "JH5469", "adidas.co.kr"],
   ["나이키", "IB5824-001", "nike.com"],
@@ -201,6 +215,13 @@ test("all curated official stores build an HTTPS article search URL", () => {
     assert.match(url.hostname, new RegExp(host.replaceAll(".", "\\."), "i"));
     assert.match(decodeURIComponent(url.href), new RegExp(articleNumber, "i"));
   }
+});
+
+test("SSG channel queries do not repeat a brand already present in the search terms", () => {
+  const url = domesticChannelUrl("ssg-department", "MLB", "MLB 3ASXCA12N-50WHS");
+  const parsed = new URL(url);
+  assert.equal(parsed.hostname, "department.ssg.com");
+  assert.equal(parsed.searchParams.get("query"), "MLB 3ASXCA12N-50WHS");
 });
 
 test("all registered official-store product URL shapes match their exact article", () => {

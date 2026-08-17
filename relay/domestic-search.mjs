@@ -181,7 +181,10 @@ export function internalPortalSearchQuery(brand = "", query = "") {
 }
 
 export function domesticChannelUrl(channel, brand, query) {
-  const terms = sanitizeDomesticQuery([brand, query].filter(Boolean).join(" "));
+  // Search strategies already include the brand in most brand+article queries.
+  // Avoid sending duplicated terms such as "MLB MLB 3ASX...", which can make
+  // SSG return a generic/blocked result instead of the exact department item.
+  const terms = internalPortalSearchQuery(brand, query);
   if (channel === "ssg-department") {
     return `https://department.ssg.com/search.ssg?query=${encodeURIComponent(terms)}`;
   }
@@ -340,7 +343,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
       if (!articleCode) return { count: 0, products: [], absenceConfirmed: false };
       const seed = verifiedOfficialBrand(brand);
       const brandKeys = [brand, ...(seed?.aliases || [])].map(normalizeOfficialBrand).filter(Boolean);
-      const requiresBrandMatch = /^(?:네이버|SSG|롯데온|병행수입·편집샵)/.test(String(store || "")) && brandKeys.length > 0;
+      const requiresBrandMatch = /^(?:네이버|무신사|SSG|롯데온|병행수입·편집샵)/.test(String(store || "")) && brandKeys.length > 0;
       const requiresExactParallelModel = String(store || "") === "병행수입·편집샵";
       const matchingProducts = new Map();
       for (const card of cards) {
@@ -370,6 +373,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         const tokens = rawCardText.toLowerCase().split(/[^a-z0-9가-힣]+/).map(normalizeOfficialBrand).filter(Boolean);
         const brandMatched = !requiresBrandMatch
           || brandKeys.some((key) => key.length <= 3 ? tokens.includes(key) : evidence.includes(key));
+        let detailArticleVerificationRequired = false;
         // Naver Fashion Town often omits the model number from the visible
         // product title.  A single result may still be accepted when its brand
         // and descriptive title both match the POIZON row.  This deliberately
@@ -377,6 +381,15 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         if (!conflictingArticle && !articleMatched && /^네이버\s/.test(String(store || "")) && cards.length === 1
           && brandMatched && titleIdentityMatch(rawCardText, expectedTitle)) {
           articleMatched = true;
+        }
+        // Musinsa search cards commonly omit the manufacturer's article number
+        // even though the product detail page exposes it under "품번". Keep a
+        // same-brand product as a provisional candidate and verify the exact
+        // article on its own detail page before it can be displayed.
+        if (!conflictingArticle && !articleMatched && String(store || "") === "무신사" && brandMatched
+          && /:\/\/(?:[^/]+\.)?musinsa\.com\/products?\//i.test(productUrl)) {
+          articleMatched = true;
+          detailArticleVerificationRequired = true;
         }
         if (conflictingArticle) articleMatched = false;
         // Naver can fill an exact-code query page with visually similar
@@ -413,6 +426,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
             articleNumber,
             detectedArticleNumber: exactDetectedArticle || detectedArticleNumbers[0] || "",
             articleConflict: conflictingArticle,
+            detailArticleVerificationRequired,
             imageUrl: String(card?.imageUrl || ""),
             imageVerifiedFromCard: card?.imageLinkedToProduct === true,
             price: safeNumber(card?.price),

@@ -192,9 +192,9 @@ test("official store, Musinsa, and Naver sources all render numeric result badge
   assert.match(mainSource, /!source\.linkOnly && source\.ok && Number\(source\.count \|\| 0\) > 0/);
   assert.match(rendererSource, /const directLinks = \(result\.sources \|\| \[\]\)\.map/);
   assert.doesNotMatch(rendererSource, /filter\(\(source\) => source\.linkOnly\)\.map/);
-  assert.match(mainSource, /isNaverChannel \? \(Number\(count\) > 0 \? 1 : 0\)/);
+  assert.match(mainSource, /isBinaryPresenceChannel \? \(Number\(count\) > 0 \? 1 : 0\)/);
   assert.match(rendererSource, /Number\(source\.count \|\| 0\) > 0 \? 1 : 0/);
-  assert.match(rendererSource, /sourceResult = \(source\) => \/\^네이버/);
+  assert.match(rendererSource, /sourceResult = \(source\) => \(\/\^네이버/);
 });
 
 test("SSG 일반·백화점·아울렛 검색은 화면 지연을 고려해 세 번 확인한다", () => {
@@ -212,6 +212,13 @@ test("화면 검색 상품도 상세페이지에서 재고와 옵션을 확인�
 test("병행수입 버튼은 내부 검색을 마친 네이버 쇼핑 결과 주소를 사용한다", () => {
   assert.match(mainSource, /resolvedSearchUrl = String\(searchWindow\.webContents\.getURL/);
   assert.match(mainSource, /searchUrl: String\(result\?\.resolvedSearchUrl \|\| source\.searchUrl/);
+});
+
+test("무신사 후보는 상세페이지의 정확한 품번 확인 후 1 또는 0으로 표시한다", () => {
+  assert.match(mainSource, /product\.detailArticleVerificationRequired/);
+  assert.match(mainSource, /exactArticleIdentityMatch\(detailText, articleNumber\)/);
+  assert.match(mainSource, /source\.store === "무신사"/);
+  assert.match(rendererSource, /source\.store === "무신사"/);
 });
 
 test("shared Excel reader repairs POIZON A1 dimensions before preview and ordinary import", async () => {

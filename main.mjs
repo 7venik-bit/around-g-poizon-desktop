@@ -79,6 +79,7 @@ import {
 import {
   analyzeRenderedChannelProducts,
   classifySsgProductEvidence,
+  exactArticleIdentityMatch,
   resolveSsgProductClassification,
   detectedRetailer,
   normalizeRenderedStockEvidence,
@@ -1047,6 +1048,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           })()`, true).catch(() => null);
           if (rawStock) stockEvidence = normalizeRenderedStockEvidence(rawStock);
         } catch {}
+        if (product.detailArticleVerificationRequired
+          && !exactArticleIdentityMatch(detailText, articleNumber)) continue;
         const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
         const isSsg = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(String(product.url || ""));
         const detailClassification = isSsg
@@ -1127,9 +1130,9 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
     const count = result?.count;
     const absenceConfirmed = result?.absenceConfirmed === true;
-    const isNaverChannel = /^네이버\s/.test(String(source.store || ""));
+    const isBinaryPresenceChannel = /^네이버\s/.test(String(source.store || "")) || source.store === "무신사";
     const displayCount = Number.isFinite(count)
-      ? (isNaverChannel ? (Number(count) > 0 ? 1 : 0) : Number(count))
+      ? (isBinaryPresenceChannel ? (Number(count) > 0 ? 1 : 0) : Number(count))
       : 0;
     const isOfficialStore = source.store === "브랜드 공식몰";
     const verifiedOfficialProductUrl = isOfficialStore
