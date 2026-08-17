@@ -4,6 +4,7 @@ import {
   DOMESTIC_SEARCH_LINKS,
   OFFICIAL_BRAND_SEARCH,
   analyzeRenderedChannelProducts,
+  isPlatformShoppingProductUrl,
   countLinkedSearchProducts,
   countRenderedChannelProducts,
   domesticChannelUrl,
@@ -17,6 +18,21 @@ import {
   parseSsgSearch,
   queryDomesticProducts,
 } from "../relay/domestic-search.mjs";
+
+test("편집샵·병행수입 검색은 쇼핑 플랫폼 상품 상세 주소만 허용한다", () => {
+  assert.equal(isPlatformShoppingProductUrl("https://blog.naver.com/wjsepdyt/223774129711"), false);
+  assert.equal(isPlatformShoppingProductUrl("https://cafe.naver.com/example/123"), false);
+  assert.equal(isPlatformShoppingProductUrl("https://brand.naver.com/sample/products/123456789"), true);
+  assert.equal(isPlatformShoppingProductUrl("https://shopping.naver.com/window-products/brandfashion/124925333777"), true);
+  assert.equal(isPlatformShoppingProductUrl("https://www.ssg.com/item/itemView.ssg?itemId=1000833166393"), true);
+  const rendered = JSON.stringify({ productCards: [
+    { productUrl: "https://blog.naver.com/wjsepdyt/223774129711", text: "데상트 SR323UPS74 병행수입" },
+    { productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000833166393", text: "데상트 SR323UPS74 정품" },
+  ] });
+  const result = analyzeRenderedChannelProducts(rendered, "병행수입·편집샵", "SR323UPS74", "데상트");
+  assert.equal(result.count, 1);
+  assert.equal(result.products[0].url.includes("ssg.com/item/"), true);
+});
 import { OFFICIAL_DOMAIN_STATUS } from "../services/official-domain-registry.mjs";
 
 test("every catalog brand uses the Fashion Town brand-store search without an official-mall keyword", () => {
