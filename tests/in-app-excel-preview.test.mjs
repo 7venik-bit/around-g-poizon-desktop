@@ -274,7 +274,7 @@ test("raw Excel view preserves original rows and display-only columns", () => {
   assert.match(mainSource, /headers: Array\.from\(\{ length: columnCount \}, \(_unused, index\) => excelPreviewCell\(rows\[0\]\?\.\[index\]\)\)/);
   assert.match(rendererSource, /else \{[\s\S]{0,500}excel-product-select-column/);
   assert.match(rendererSource, /aria-label="제품 이미지 크게 보기"/);
-  assert.match(rendererSource, /!value \|\| value === "--" \|\| value === "-" \|\| \/\^<\\s\*5/);
+  assert.match(rendererSource, /const displayValue = !value \? "숨김" : cell/);
   assert.match(rendererSource, /\? "숨김" : cell/);
   assert.match(rendererSource, /rows\.map\(\(row, index\) =>/);
 });
