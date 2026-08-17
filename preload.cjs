@@ -81,6 +81,14 @@ contextBridge.exposeInMainWorld("aroundG", {
   queryExplorer: (input) => ipcRenderer.invoke("explorer:query", input),
   cancelCategorySearch: () => ipcRenderer.invoke("explorer:cancel-category"),
   searchDomestic: (input) => ipcRenderer.invoke("domestic:search", input),
+  listDomesticLogins: () => ipcRenderer.invoke("domestic-login:list"),
+  openDomesticLogin: (sourceId) => ipcRenderer.invoke("domestic-login:open", sourceId),
+  clearDomesticLogin: (sourceId) => ipcRenderer.invoke("domestic-login:clear", sourceId),
+  onDomesticLoginChanged: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on("domestic-login:changed", handler);
+    return () => ipcRenderer.removeListener("domestic-login:changed", handler);
+  },
   importExcel: () => ipcRenderer.invoke("excel:import"),
   exportExcel: () => ipcRenderer.invoke("excel:export"),
   exportExplorerExcel: (input) => ipcRenderer.invoke("excel:export-explorer", input),

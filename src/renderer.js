@@ -1567,7 +1567,7 @@ function renderDomestic(result) {
     const source = sourceByStore.get(product.store) || {};
     const sizes = product?.sizes || [];
     const sourceState = product.inStock === true ? "available" : product.inStock === false ? "soldout" : "pending";
-    const sourceLabel = product.inStock === true ? "재고 있음" : product.inStock === false ? "품절" : "확인 필요";
+    const sourceLabel = product.stockStatus === "login_required" ? "로그인 필요" : product.inStock === true ? "재고 있음" : product.inStock === false ? "품절" : "확인 필요";
     const confidenceClass = Number(product?.confidence || 0) >= 75 ? "high"
       : Number(product?.confidence || 0) >= 45 ? "medium" : "low";
     const candidateName = product?.title || product?.name || product?.articleNumber || "";
@@ -3072,6 +3072,28 @@ function calculate(margin) {
 }
 document.querySelectorAll("[data-margin]").forEach((button) => button.addEventListener("click", () => calculate(button.dataset.margin)));
 
+async function renderDomesticLoginStatuses() {
+  const list = $("#domestic-login-list");
+  if (!list || !window.aroundG.listDomesticLogins) return;
+  list.innerHTML = '<div class="domestic-login-empty">로그인 상태 확인 중…</div>';
+  const sources = await window.aroundG.listDomesticLogins().catch(() => []);
+  list.innerHTML = sources.map((source) => `
+    <div class="domestic-login-row" data-source-id="${escapeHtml(source.id)}">
+      <div><strong>${escapeHtml(source.name)}</strong><span class="domestic-login-state ${source.hasSession ? "saved" : "required"}">${source.hasSession ? "세션 저장됨" : "로그인 필요"}</span></div>
+      <div class="domestic-login-actions"><button type="button" data-domestic-login>${source.hasSession ? "다시 로그인" : "로그인"}</button>${source.hasSession ? '<button type="button" data-domestic-clear>연동 해제</button>' : ""}</div>
+    </div>`).join("") || '<div class="domestic-login-empty">표시할 소싱몰이 없습니다.</div>';
+}
+
+$("#domestic-login-refresh")?.addEventListener("click", renderDomesticLoginStatuses);
+$("#domestic-login-list")?.addEventListener("click", async (event) => {
+  const row = event.target.closest("[data-source-id]");
+  if (!row) return;
+  if (event.target.closest("[data-domestic-login]")) await window.aroundG.openDomesticLogin(row.dataset.sourceId);
+  if (event.target.closest("[data-domestic-clear]")) await window.aroundG.clearDomesticLogin(row.dataset.sourceId);
+  await renderDomesticLoginStatuses();
+});
+window.aroundG.onDomesticLoginChanged?.(() => renderDomesticLoginStatuses());
+
 $("#settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const saved = await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value });
@@ -3308,6 +3330,7 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   $("#access-token").placeholder = config.hasAccessToken ? "저장됨 · 변경할 때만 입력" : "선택 사항";
   $("#poizon-login-id").value = config.poizonLoginId || "";
   $("#poizon-password").placeholder = config.hasPoizonPassword ? "암호화 저장됨 · 변경할 때만 입력" : "자동 로그인에 필요";
+  await renderDomesticLoginStatuses();
   await refresh();
   await pruneCategorySearchHistory();
 })();

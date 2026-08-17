@@ -435,7 +435,10 @@ function normalizeSizes(...candidates) {
   });
 }
 
-export function normalizeRenderedStockEvidence({ pageText = "", purchaseAvailable = false, options = [] } = {}) {
+export function normalizeRenderedStockEvidence({ pageText = "", purchaseAvailable = false, options = [], loginRequired = false } = {}) {
+  if (loginRequired) {
+    return { inStock: null, sizes: [], stockStatus: "login_required", stockVerified: false };
+  }
   const unique = new Map();
   for (const option of Array.isArray(options) ? options : []) {
     const label = String(option?.label ?? option?.name ?? option ?? "").replace(/\s+/g, " ").trim();
