@@ -1563,7 +1563,7 @@ function renderDomestic(result) {
   const verifiedCount = (result.sources || []).reduce((sum, source) =>
     sum + (source.countVerified ? Number(source.count || 0) : 0), 0);
   const sourceByStore = new Map((result.sources || []).map((source) => [source.store, source]));
-  const productRows = products.map((product) => {
+  const renderProductRow = (product, sourcingLabel = "") => {
     const source = sourceByStore.get(product.store) || {};
     const sizes = product?.sizes || [];
     const sourceState = product.inStock ? "available" : "soldout";
@@ -1591,9 +1591,13 @@ function renderDomestic(result) {
         ? sizes.map((size) => `<span class="size-chip ${size.inStock ? "available" : "soldout"}">${text(size.label)}</span>`).join("")
         : `<span class="size-chip unknown">사이즈 정보 없음</span>`}</div>
       <div class="match-signals">${matchSignals}</div>
-      <button data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${product?.inStock ? "구매" : "확인"}</button>
+      <button data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${sourcingLabel || (product?.inStock ? "구매" : "확인")}</button>
     </div>`;
-  }).join("");
+  };
+  const parallelProducts = products.filter((product) => String(product?.retailerName || "").startsWith("병행수입 정품업체"));
+  const regularProducts = products.filter((product) => !parallelProducts.includes(product));
+  const productRows = regularProducts.map((product) => renderProductRow(product)).join("");
+  const parallelProductRows = parallelProducts.map((product) => renderProductRow(product, "상품 소싱")).join("");
   const sourceResult = (source) => source.verificationFailed
     ? `<small>확인 실패</small>`
     : source.verificationPending
@@ -1601,6 +1605,7 @@ function renderDomestic(result) {
     : source.countVerified
       ? `<b class="source-count">${Number(source.count || 0) > 0 ? Number(source.count) : "없음"}</b>`
       : `<small>결과 확인</small>`;
+  const parallelSources = result.parallelImportCompanies || [];
   const directLinks = (result.sources || []).map((source) => {
     if (source.officialStatus) {
       const officialOpenUrl = String(
@@ -1631,10 +1636,12 @@ function renderDomestic(result) {
     }
     return `<button class="source-link" type="button" data-url="${encodeURIComponent(source.searchUrl)}"><span>${text(source.store)}</span>${source.officialStatus === "pending" ? `<small>도메인 확인 필요</small>` : source.officialStatus === "no_official_store" ? `<small>등록된 공식몰 없음</small>` : source.officialStatus === "search_unsupported" ? `<small>사이트 검색 미지원</small>` : sourceResult(source)}</button>`;
   }).join("");
+  const parallelImportLinks = parallelSources.map((source) => `<button class="source-link parallel-source-link" type="button" data-url="${encodeURIComponent(source.searchUrl)}"><span>${text(source.name)}</span><small>상품 소싱</small></button>`).join("");
   const emptyMessage = verifiedCount > 0
     ? `판매처에서 ${verifiedCount}개 결과를 확인했습니다. 상세 상품은 아래 판매처에서 확인해 주세요.`
     : "일치하는 국내 판매 상품을 찾지 못했습니다.";
   return `<div class="platform-list">${productRows || `<span class="inventory-help">${emptyMessage}</span>`}</div>
+    ${parallelProductRows || parallelImportLinks ? `<section class="parallel-import-panel"><div class="parallel-import-heading"><strong>병행수입업체</strong><small>등록 업체 ${parallelSources.length.toLocaleString("ko-KR")}곳 · 쇼핑 플랫폼 상품만 검색</small></div>${parallelProductRows ? `<div class="platform-list">${parallelProductRows}</div>` : ""}${parallelImportLinks ? `<div class="source-links parallel-import-links">${parallelImportLinks}</div>` : ""}</section>` : ""}
     ${directLinks ? `<div class="source-links">${directLinks}</div>` : ""}`;
 }
 

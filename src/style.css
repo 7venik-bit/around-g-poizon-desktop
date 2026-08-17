@@ -1271,3 +1271,4 @@ button,input,select,textarea{font-family:inherit}
 /* Immediate brand-selection feedback without rebuilding the 3,000+ card catalog. */
 .brand-card.selection-feedback{animation:brand-selection-feedback .2s ease-out}
 @keyframes brand-selection-feedback{0%{transform:scale(.97)}100%{transform:scale(1)}}
+\n.parallel-import-panel{margin-top:10px;padding:10px;border:1px solid #ffb24a;border-radius:12px;background:#fffaf2}.parallel-import-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;color:#8a4b00}.parallel-import-heading small{color:#90683b}.parallel-import-links{max-height:210px;overflow:auto;align-content:start}.parallel-source-link{border-color:#ffb24a!important;background:#fff!important}.parallel-source-link small{color:#b45c00!important;font-weight:800}\n
