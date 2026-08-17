@@ -672,7 +672,11 @@ export async function queryDomesticProducts({
     searchStrategy,
     queryCandidates,
     products: results.flatMap((result) => result.products),
-    parallelImportCompanies: DOMESTIC_RETAILER_GROUPS["병행수입 정품업체"].map((name) => ({\n      name,\n      searchUrl: naverSearch([brand, queryCandidates[0] || normalizedQuery, name].filter(Boolean).join(" ")),\n    })),\n    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, count, products }, priority) => ({
+    parallelImportCompanies: DOMESTIC_RETAILER_GROUPS["병행수입 정품업체"].map((name) => ({
+      name,
+      searchUrl: naverSearch([brand, queryCandidates[0] || normalizedQuery, name].filter(Boolean).join(" ")),
+    })),
+    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, count, products }, priority) => ({
       store,
       ok,
       linkOnly,
