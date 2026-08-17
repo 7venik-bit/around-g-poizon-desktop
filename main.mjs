@@ -1013,7 +1013,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     if (!source.linkOnly && source.ok && Number(source.count || 0) > 0) {
       return { ...source, countVerified: true, verificationFailed: false };
     }
-    const renderAttempts = /^SSG\s/.test(String(source.store || "")) ? 2 : 1;
+    const renderAttempts = /^SSG(?:\s|$)/.test(String(source.store || "")) ? 3 : 1;
     let result = null;
     for (let attempt = 0; attempt < renderAttempts && !result; attempt += 1) {
       if (attempt > 0) await wait(1_500);
