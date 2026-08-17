@@ -5,6 +5,7 @@ import {
   OFFICIAL_BRAND_SEARCH,
   analyzeRenderedChannelProducts,
   classifySsgProductEvidence,
+  detectedRetailer,
   isPlatformShoppingProductUrl,
   countLinkedSearchProducts,
   countRenderedChannelProducts,
@@ -31,6 +32,17 @@ test("SSG 브랜드 검색은 공식수입·공식브랜드관 증빙과 병행�
     url: "https://www.ssg.com/item/itemView.ssg?itemId=1000673689289",
     text: "구템즈 병행수입 나이키 DD8959-100",
   }), "parallel_import");
+  assert.equal(classifySsgProductEvidence({
+    brand: "나이키",
+    url: "https://www.ssg.com/item/itemView.ssg?itemId=1000854826548",
+    text: "NIKE 로고 정식 통관 정품 BAZIC 베이직 누적매출",
+  }), "parallel_import");
+  assert.equal(detectedRetailer("BAZIC 정식 통관 정품"), "병행수입 정품업체 · 베이직");
+  assert.equal(classifySsgProductEvidence({
+    brand: "나이키",
+    url: "https://www.ssg.com/item/itemView.ssg?itemId=1000854826548",
+    text: "검은 원형 NIKE 로고 정품",
+  }), "marketplace");
 });
 
 test("SSG 정확 품번 검색 결과를 확인했지만 일치 상품이 없으면 상품 없음으로 확정한다", () => {

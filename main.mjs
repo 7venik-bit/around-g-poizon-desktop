@@ -76,7 +76,12 @@ import {
   mergeSellerBrandProducts,
   sellerBrandDiagnostics,
 } from "./services/seller-brand-sales.mjs";
-import { analyzeRenderedChannelProducts, queryDomesticProducts } from "./relay/domestic-search.mjs";
+import {
+  analyzeRenderedChannelProducts,
+  classifySsgProductEvidence,
+  detectedRetailer,
+  queryDomesticProducts,
+} from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
 import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";
 import { highestQualifiedOptionPrice, optionRowsFromSellerResponses, qualifiedOptionPrices } from "./services/seller-transaction-price.mjs";
@@ -968,6 +973,39 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       if (parsedContent?.pageBlocked && !parsedContent?.productCards?.length) return null;
     } catch {}
     const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
+    if (/^SSG(?:\s|$)/.test(String(source.store || "")) && Array.isArray(analyzed?.products)) {
+      const products = [];
+      for (const product of analyzed.products.slice(0, 8)) {
+        let detailText = "";
+        try {
+          await Promise.race([
+            searchWindow.loadURL(product.url),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("SSG_DETAIL_TIMEOUT")), 15_000)),
+          ]);
+          await wait(1_500);
+          detailText = await searchWindow.webContents.executeJavaScript(
+            `String(document.body?.innerText || "").slice(0, 60000)`,
+            true,
+          ).catch(() => "");
+        } catch {}
+        const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
+        const classification = classifySsgProductEvidence({ brand, url: product.url, text: evidence });
+        const retailer = detectedRetailer(evidence);
+        products.push({
+          ...product,
+          store: classification === "official_brand"
+            ? "SSG 브랜드 공식관"
+            : classification === "parallel_import" ? "SSG 병행수입" : source.store,
+          retailerName: classification === "official_brand"
+            ? "브랜드 공식관 · 공식수입"
+            : classification === "parallel_import" ? (retailer || "병행수입 상품") : "",
+          officialStoreVerified: classification === "official_brand",
+          ssgClassification: classification,
+          ssgDetailVerified: Boolean(detailText),
+        });
+      }
+      return { ...analyzed, count: products.length, products };
+    }
     if (source.store !== "브랜드 공식몰" || !Array.isArray(analyzed?.products)) return analyzed;
     const officialPageUrl = String(source.homepageUrl || source.officialProductUrl || source.searchUrl || "");
     const products = [];
