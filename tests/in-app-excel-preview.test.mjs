@@ -209,6 +209,11 @@ test("화면 검색 상품도 상세페이지에서 재고와 옵션을 확인�
   assert.match(rendererSource, /product\.inStock === false \? "품절" : "확인 필요"/);
 });
 
+test("병행수입 버튼은 내부 검색을 마친 네이버 쇼핑 결과 주소를 사용한다", () => {
+  assert.match(mainSource, /resolvedSearchUrl = String\(searchWindow\.webContents\.getURL/);
+  assert.match(mainSource, /searchUrl: String\(result\?\.resolvedSearchUrl \|\| source\.searchUrl/);
+});
+
 test("shared Excel reader repairs POIZON A1 dimensions before preview and ordinary import", async () => {
   const readerSource = await readFile(new URL("../services/excel-reader.mjs", import.meta.url), "utf8");
   assert.match(readerSource, /repairPoizonWorksheetDimensions\(input\)/);

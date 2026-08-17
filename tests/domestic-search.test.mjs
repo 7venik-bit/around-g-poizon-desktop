@@ -15,6 +15,7 @@ import {
   internalPortalSearchQuery,
   naverFashionTownUrl,
   naverFashionTownPortalUrl,
+  naverShoppingPortalUrl,
   normalizeRenderedStockEvidence,
   officialBrandProductSearchUrl,
   officialBrandSearchUrl,
@@ -159,6 +160,24 @@ test("네이버는 검색어 URL로 바로 가지 않고 포털 내부 검색창
   assert.equal(naver.interactiveSearch, true);
   assert.equal(naver.searchQuery, "데상트 SR123UTS15");
   assert.doesNotMatch(naver.searchUrl, /query=|q=/);
+});
+
+test("병행수입 검색은 네이버 통합검색이 아닌 쇼핑 포털 내부 검색을 사용한다", async () => {
+  assert.equal(naverShoppingPortalUrl(), "https://shopping.naver.com/home");
+  const result = await queryDomesticProducts({
+    query: "데상트 SR123UTS15",
+    articleNumber: "SR123UTS15",
+    brand: "데상트",
+    fetchImpl: async () => ({
+      ok: true,
+      text: async () => '<script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"dehydratedState":{"queries":[]}}}}</script>',
+    }),
+  });
+  const parallel = result.sources.find((source) => source.store === "병행수입·편집샵");
+  assert.equal(parallel.searchUrl, "https://shopping.naver.com/home");
+  assert.equal(parallel.interactiveSearch, true);
+  assert.equal(parallel.searchQuery, "데상트 SR123UTS15");
+  assert.doesNotMatch(parallel.searchUrl, /search\.naver\.com|query=|q=/);
 });
 
 const officialStoreCases = [

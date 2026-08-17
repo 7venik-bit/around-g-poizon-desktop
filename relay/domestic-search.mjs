@@ -166,6 +166,10 @@ export function naverFashionTownPortalUrl(channel) {
   return "https://shopping.naver.com/window/fashion-group";
 }
 
+export function naverShoppingPortalUrl() {
+  return "https://shopping.naver.com/home";
+}
+
 export function internalPortalSearchQuery(brand = "", query = "") {
   const cleanBrand = sanitizeDomesticQuery(brand);
   const cleanQuery = sanitizeDomesticQuery(query);
@@ -705,7 +709,7 @@ export async function queryDomesticProducts({
       : source.fashionTown
         ? naverFashionTownPortalUrl(source.fashionTown)
         : source.retailerDiscovery
-          ? naverSearch([brand, preferredQuery].filter(Boolean).join(" "))
+          ? naverShoppingPortalUrl()
         : source.domesticChannel
           ? domesticChannelUrl(source.domesticChannel, brand || title, preferredQuery)
         : DOMESTIC_SEARCH_LINKS[source.store](preferredQuery);
@@ -732,8 +736,9 @@ export async function queryDomesticProducts({
         searchUrl,
         officialSearchUrl: source.officialBrand ? officialProductUrl : "",
         officialProductUrl,
-        interactiveSearch: Boolean(source.fashionTown),
-        searchQuery: source.fashionTown ? internalPortalSearchQuery(brand || title, preferredQuery) : "",
+        interactiveSearch: Boolean(source.fashionTown || source.retailerDiscovery),
+        searchQuery: source.fashionTown || source.retailerDiscovery
+          ? internalPortalSearchQuery(brand || title, preferredQuery) : "",
         count,
         products: [],
       });
