@@ -571,7 +571,7 @@ function renderRawExcelCell(cell, header = "", columnIndex = 0) {
   if (excelImageColumn(header) && /^https:\/\//i.test(value)) {
     return `<td class="excel-image-cell" data-excel-column-index="${columnIndex}" title="${text(value)}"><a href="${text(value)}" target="_blank" rel="noreferrer" aria-label="제품 이미지 크게 보기"><img src="${text(value)}" alt="제품 이미지" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('a').hidden=true"></a></td>`;
   }
-  const displayValue = !value || value === "--" || value === "-" || /^<\s*5(?:\.0+)?$/.test(value) ? "숨김" : cell;
+  const displayValue = !value ? "숨김" : cell;
   return `<td data-excel-column-index="${columnIndex}" title="${text(displayValue)}">${text(displayValue)}</td>`;
 }
 
