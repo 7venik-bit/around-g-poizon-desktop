@@ -15,6 +15,7 @@ export const VERIFIED_OFFICIAL_BRANDS = Object.freeze([
   { name: "반스", aliases: ["vans", "반스"], domain: "vans.co.kr", homepageUrl: "https://www.vans.co.kr/", searchTemplate: "https://www.vans.co.kr/search?query={query}" },
   { name: "크록스", aliases: ["crocs", "크록스"], domain: "crocs.co.kr", homepageUrl: "https://www.crocs.co.kr/", searchTemplate: "https://www.crocs.co.kr/search?q={query}" },
   { name: "데상트", aliases: ["descente", "데상트"], domain: "dk-on.com", homepageUrl: "https://dk-on.com/DESCENTE", searchTemplate: "https://dk-on.com/DESCENTE/search?keyword={query}" },
+  { name: "MLB", aliases: ["mlb", "엠엘비"], domain: "mlb-korea.com", homepageUrl: "https://www.mlb-korea.com/?gf=A", searchTemplate: "https://www.mlb-korea.com/search?searchText={query}&gf=A", interactiveSearch: true },
   { name: "온", aliases: ["on", "on running", "onrunning", "온", "온러닝"], domain: "on.com", homepageUrl: "https://www.on.com/ko-kr/", searchTemplate: "https://www.on.com/ko-kr/search?q={query}" },
 ]);
 
@@ -70,6 +71,7 @@ export function createOfficialDomainRegistry(brands, existing = []) {
       domain: "",
       homepageUrl: "",
       searchTemplate: "",
+      interactiveSearch: false,
       candidateUrl: "",
       verificationSource: "",
       verifiedAt: "",
@@ -88,6 +90,7 @@ export function createOfficialDomainRegistry(brands, existing = []) {
         domain: seed.domain,
         homepageUrl: seed.homepageUrl,
         searchTemplate: seed.searchTemplate,
+        interactiveSearch: seed.interactiveSearch === true,
         verificationSource: "curated",
         verifiedAt: "2026-08-07T00:00:00.000Z",
         verifiedAliases: [...seed.aliases],

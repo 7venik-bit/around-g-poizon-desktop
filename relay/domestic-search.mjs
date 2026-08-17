@@ -125,6 +125,13 @@ export function officialBrandProductSearchUrl(brand, query, officialBrandRecord 
   return match?.searchTemplate ? String(match.searchTemplate).replaceAll("{query}", encodeURIComponent(cleanedQuery)) : "";
 }
 
+export function officialBrandUsesInternalSearch(brand, officialBrandRecord = null) {
+  if (officialBrandRecord?.interactiveSearch === true) return true;
+  const homepage = String(officialBrandRecord?.homepageUrl || "");
+  if (/(?:^|\.)mlb-korea\.com/i.test((() => { try { return new URL(homepage).hostname; } catch { return ""; } })())) return true;
+  return officialBrandEntry(brand)?.interactiveSearch === true;
+}
+
 const NAVER_BRAND_STORES = [
   { aliases: ["adidas", "adidas originals", "아디다스"], slug: "adidas" },
   { aliases: ["nike", "나이키"], slug: "nike" },
@@ -728,7 +735,9 @@ export async function queryDomesticProducts({
         : source.domesticChannel
           ? domesticChannelUrl(source.domesticChannel, brand || title, preferredQuery)
         : DOMESTIC_SEARCH_LINKS[source.store](preferredQuery);
-    const officialProductUrl = source.officialBrand
+    const interactiveOfficialSearch = source.officialBrand
+      && officialBrandUsesInternalSearch(brand || title || normalizedQuery, officialBrandRecord);
+    const officialProductUrl = source.officialBrand && !interactiveOfficialSearch
       ? officialBrandProductSearchUrl(brand || title || normalizedQuery, preferredQuery, officialBrandRecord)
       : "";
     if (source.linkOnly) {
@@ -751,9 +760,11 @@ export async function queryDomesticProducts({
         searchUrl,
         officialSearchUrl: source.officialBrand ? officialProductUrl : "",
         officialProductUrl,
-        interactiveSearch: Boolean(source.fashionTown || source.retailerDiscovery),
-        searchQuery: source.fashionTown || source.retailerDiscovery
-          ? internalPortalSearchQuery(brand || title, preferredQuery) : "",
+        interactiveSearch: Boolean(source.fashionTown || source.retailerDiscovery || interactiveOfficialSearch),
+        searchQuery: interactiveOfficialSearch
+          ? sanitizeDomesticQuery(articleNumber || title || preferredQuery)
+          : source.fashionTown || source.retailerDiscovery
+            ? internalPortalSearchQuery(brand || title, preferredQuery) : "",
         count,
         products: [],
       });
