@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, session, shell } from "electron";
 import { mkdirSync } from "node:fs";
 import { appendFile, copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -101,6 +101,28 @@ let mainWindow;
 let sellerWindow;
 let sellerMonitorWindow;
 const inventoryWindows = new Set();
+const domesticLoginWindows = new Map();
+const DOMESTIC_SEARCH_PARTITION = "persist:around-g-domestic-search";
+const DOMESTIC_LOGIN_SOURCES = [
+  { id: "musinsa", name: "무신사", url: "https://www.musinsa.com/", domains: ["musinsa.com"] },
+  { id: "ssg", name: "SSG·신세계백화점", url: "https://www.ssg.com/", domains: ["ssg.com"] },
+  { id: "lotte", name: "롯데온·롯데백화점", url: "https://www.lotteon.com/", domains: ["lotteon.com"] },
+  { id: "wconcept", name: "W컨셉", url: "https://www.wconcept.co.kr/", domains: ["wconcept.co.kr"] },
+  { id: "okmall", name: "OK몰", url: "https://www.okmall.com/", domains: ["okmall.com"] },
+  { id: "sivillage", name: "신세계V·S.I.VILLAGE", url: "https://www.sivillage.com/", domains: ["sivillage.com"] },
+  { id: "abcmart", name: "ABC마트", url: "https://abcmart.a-rt.com/", domains: ["a-rt.com"] },
+  { id: "kasina", name: "카시나", url: "https://www.kasina.co.kr/", domains: ["kasina.co.kr"] },
+  { id: "onthespot", name: "온더스팟", url: "https://www.onthespot.co.kr/", domains: ["onthespot.co.kr"] },
+  { id: "folder", name: "폴더", url: "https://www.folderstyle.com/", domains: ["folderstyle.com"] },
+  { id: "shoemarker", name: "슈마커", url: "https://www.shoemarker.co.kr/", domains: ["shoemarker.co.kr"] },
+  { id: "worksout", name: "웍스아웃·칼하트WIP", url: "https://worksout.co.kr/", domains: ["worksout.co.kr"] },
+  { id: "heights", name: "하이츠", url: "https://heights-store.com/", domains: ["heights-store.com"] },
+  { id: "eql", name: "EQL", url: "https://www.eqlstore.com/", domains: ["eqlstore.com"] },
+  { id: "hfashion", name: "H패션몰", url: "https://www.hfashionmall.com/", domains: ["hfashionmall.com"] },
+  { id: "29cm", name: "29CM", url: "https://www.29cm.co.kr/", domains: ["29cm.co.kr"] },
+  { id: "nike", name: "나이키 공식몰", url: "https://www.nike.com/kr/", domains: ["nike.com"] },
+  { id: "adidas", name: "아디다스 공식몰", url: "https://www.adidas.co.kr/", domains: ["adidas.co.kr"] },
+];
 let updateReady = false;
 let updateCheckTimer;
 let updateInstallTimer;
@@ -842,7 +864,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       width: 1100,
       height: 800,
       webPreferences: {
-        partition: "persist:around-g-domestic-search",
+        partition: DOMESTIC_SEARCH_PARTITION,
         sandbox: true,
         backgroundThrottling: false,
       },
@@ -1011,7 +1033,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             const purchaseAvailable = [...document.querySelectorAll('button,a,[role="button"]')].some((element) =>
               visible(element) && !sold(element) && /구매|바로구매|장바구니|BUY\s*NOW|ADD\s*TO\s*(?:BAG|CART)/i.test(element.textContent || element.getAttribute("aria-label") || "")
             );
-            return { pageText: String(document.body?.innerText || "").slice(0, 60000), purchaseAvailable, options };
+            const pageText = String(document.body?.innerText || "").slice(0, 60000);
+            const loginRequired = /(?:login|signin|member\/login|auth\/login)/i.test(location.href)
+              || [...document.querySelectorAll('input[type="password"]')].some(visible)
+              || /로그인\s*(?:후|이\s*필요|해주세요)|회원\s*로그인/i.test(pageText.slice(0, 8000));
+            return { pageText, purchaseAvailable, options, loginRequired };
           })()`, true).catch(() => null);
           if (rawStock) stockEvidence = normalizeRenderedStockEvidence(rawStock);
         } catch {}
@@ -6814,6 +6840,71 @@ function scheduleWeeklySiteHealthCheck() {
   sendWeeklySiteHealthStatus({ nextRunAt: next.toISOString() });
 }
 
+function domesticLoginSource(sourceId) {
+  return DOMESTIC_LOGIN_SOURCES.find((source) => source.id === String(sourceId || ""));
+}
+
+async function domesticLoginStatuses() {
+  const persistentSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
+  return Promise.all(DOMESTIC_LOGIN_SOURCES.map(async (source) => {
+    const cookieGroups = await Promise.all(source.domains.map((domain) => persistentSession.cookies.get({ domain }).catch(() => [])));
+    const cookies = cookieGroups.flat();
+    return {
+      id: source.id,
+      name: source.name,
+      url: source.url,
+      hasSession: cookies.length > 0,
+      windowOpen: Boolean(domesticLoginWindows.get(source.id) && !domesticLoginWindows.get(source.id).isDestroyed()),
+    };
+  }));
+}
+
+async function openDomesticLogin(sourceId) {
+  const source = domesticLoginSource(sourceId);
+  if (!source) return { ok: false, message: "지원하지 않는 소싱몰입니다." };
+  const existing = domesticLoginWindows.get(source.id);
+  if (existing && !existing.isDestroyed()) {
+    existing.show();
+    existing.focus();
+    return { ok: true, opened: true };
+  }
+  const loginWindow = new BrowserWindow({
+    title: `${source.name} 로그인 · Around G`,
+    width: 1280,
+    height: 860,
+    show: true,
+    autoHideMenuBar: true,
+    webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, contextIsolation: true },
+  });
+  domesticLoginWindows.set(source.id, loginWindow);
+  loginWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https:\/\//i.test(url)) loginWindow.loadURL(url).catch(() => {});
+    return { action: "deny" };
+  });
+  loginWindow.on("closed", () => {
+    domesticLoginWindows.delete(source.id);
+    mainWindow?.webContents.send("domestic-login:changed", { sourceId: source.id });
+  });
+  await loginWindow.loadURL(source.url).catch(() => {});
+  return { ok: true, opened: true };
+}
+
+async function clearDomesticLogin(sourceId) {
+  const source = domesticLoginSource(sourceId);
+  if (!source) return { ok: false, message: "지원하지 않는 소싱몰입니다." };
+  const persistentSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
+  for (const domain of source.domains) {
+    const cookies = await persistentSession.cookies.get({ domain }).catch(() => []);
+    for (const cookie of cookies) {
+      const scheme = cookie.secure ? "https" : "http";
+      const host = String(cookie.domain || domain).replace(/^\./, "");
+      await persistentSession.cookies.remove(`${scheme}://${host}${cookie.path || "/"}`, cookie.name).catch(() => {});
+    }
+  }
+  domesticLoginWindows.get(source.id)?.close();
+  return { ok: true };
+}
+
 app.whenReady().then(async () => {
   app.setAppUserModelId("kr.aroundg.poizon");
   const userDataFolder = app.getPath("userData");
@@ -6861,6 +6952,9 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle("config:get", () => publicConfig());
+  ipcMain.handle("domestic-login:list", () => domesticLoginStatuses());
+  ipcMain.handle("domestic-login:open", (_event, sourceId) => openDomesticLogin(sourceId));
+  ipcMain.handle("domestic-login:clear", (_event, sourceId) => clearDomesticLogin(sourceId));
   ipcMain.handle("config:save", async (_event, config) => {
     const next = {
       appKey: String(config.appKey || "").trim(),
