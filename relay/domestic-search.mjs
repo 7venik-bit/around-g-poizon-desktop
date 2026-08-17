@@ -379,7 +379,9 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
             imageVerifiedFromCard: card?.imageLinkedToProduct === true,
             price: safeNumber(card?.price),
             originalPrice: safeNumber(card?.originalPrice),
-            inStock: true,
+            // Search cards do not prove that a purchasable option remains.
+            // The hidden detail-page pass resolves this to true/false when possible.
+            inStock: null,
             sizes: [],
             confidence: ssgOfficialBrandHall ? 100 : exactDetectedArticle ? 95 : 75,
             officialStoreVerified: ssgOfficialBrandHall,
@@ -431,6 +433,31 @@ function normalizeSizes(...candidates) {
       inStock: option.isSoldOut !== true && option.soldOutYn !== "Y" && quantity !== 0,
     }];
   });
+}
+
+export function normalizeRenderedStockEvidence({ pageText = "", purchaseAvailable = false, options = [] } = {}) {
+  const unique = new Map();
+  for (const option of Array.isArray(options) ? options : []) {
+    const label = String(option?.label ?? option?.name ?? option ?? "").replace(/\s+/g, " ").trim();
+    if (!label || label.length > 32 || /선택(?:해\s*주세요)?|옵션|수량|컬러|색상/i.test(label)) continue;
+    const key = label.toUpperCase();
+    const inStock = typeof option === "object" ? option.inStock !== false : true;
+    if (!unique.has(key) || inStock) unique.set(key, { label, inStock });
+  }
+  const sizes = [...unique.values()];
+  const text = String(pageText || "");
+  const soldOut = /(?:일시\s*)?품절|판매\s*(?:종료|중지)|재입고\s*알림|SOLD\s*OUT|OUT\s*OF\s*STOCK/i.test(text);
+  const availableOption = sizes.some((size) => size.inStock);
+  const unavailableOptionsOnly = sizes.length > 0 && !availableOption;
+  const inStock = availableOption ? true
+    : unavailableOptionsOnly || (soldOut && !purchaseAvailable) ? false
+      : purchaseAvailable ? true : null;
+  return {
+    inStock,
+    sizes,
+    stockStatus: inStock === true ? "available" : inStock === false ? "soldout" : "unknown",
+    stockVerified: inStock !== null,
+  };
 }
 
 export function parseMusinsaSearch(html) {

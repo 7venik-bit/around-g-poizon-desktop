@@ -13,6 +13,7 @@ import {
   exactArticleIdentityMatch,
   isSsgOfficialBrandHall,
   naverFashionTownUrl,
+  normalizeRenderedStockEvidence,
   officialBrandProductSearchUrl,
   officialBrandSearchUrl,
   parseKolonSearch,
@@ -20,6 +21,24 @@ import {
   parseSsgSearch,
   queryDomesticProducts,
 } from "../relay/domestic-search.mjs";
+
+test("모든 국내 판매처 상세페이지 재고를 세 단계로 판정한다", () => {
+  assert.deepEqual(normalizeRenderedStockEvidence({
+    purchaseAvailable: true,
+    options: [
+      { label: "250", inStock: false },
+      { label: "255", inStock: true },
+      { label: "선택해주세요", inStock: true },
+    ],
+  }), {
+    inStock: true,
+    sizes: [{ label: "250", inStock: false }, { label: "255", inStock: true }],
+    stockStatus: "available",
+    stockVerified: true,
+  });
+  assert.equal(normalizeRenderedStockEvidence({ pageText: "현재 상품은 품절되었습니다" }).inStock, false);
+  assert.equal(normalizeRenderedStockEvidence({ pageText: "상품 상세정보" }).inStock, null);
+});
 
 test("SSG 브랜드 검색은 공식수입·공식브랜드관 증빙과 병행수입업체를 구분한다", () => {
   assert.equal(classifySsgProductEvidence({
@@ -239,7 +258,7 @@ test("SSG and Lotte dynamic product links become visible product candidates", ()
   }
 });
 
-test("SSG department Korean brand result confirms stock for an English brand query", () => {
+test("SSG department Korean brand result waits for detail-page stock evidence", () => {
   const result = analyzeRenderedChannelProducts(JSON.stringify({
     pageText: "아디다스 IH0274 검색 결과입니다.",
     pageBlocked: false,
@@ -252,7 +271,7 @@ test("SSG department Korean brand result confirms stock for an English brand que
     }],
   }), "SSG 백화점", "IH0274", "Adidas");
   assert.equal(result?.count, 1);
-  assert.equal(result?.products[0]?.inStock, true);
+  assert.equal(result?.products[0]?.inStock, null);
   assert.equal(result?.products[0]?.price, 98100);
 });
 

@@ -1566,8 +1566,8 @@ function renderDomestic(result) {
   const renderProductRow = (product, sourcingLabel = "") => {
     const source = sourceByStore.get(product.store) || {};
     const sizes = product?.sizes || [];
-    const sourceState = product.inStock ? "available" : "soldout";
-    const sourceLabel = product.inStock ? "재고 있음" : "재고 없음";
+    const sourceState = product.inStock === true ? "available" : product.inStock === false ? "soldout" : "pending";
+    const sourceLabel = product.inStock === true ? "재고 있음" : product.inStock === false ? "품절" : "확인 필요";
     const confidenceClass = Number(product?.confidence || 0) >= 75 ? "high"
       : Number(product?.confidence || 0) >= 45 ? "medium" : "low";
     const candidateName = product?.title || product?.name || product?.articleNumber || "";
@@ -1589,9 +1589,9 @@ function renderDomestic(result) {
       <span class="confidence ${confidenceClass} ${officialVerified ? "official" : ""}">${confidenceLabel}</span>
       <div class="size-list">${sizes.length
         ? sizes.map((size) => `<span class="size-chip ${size.inStock ? "available" : "soldout"}">${text(size.label)}</span>`).join("")
-        : `<span class="size-chip unknown">사이즈 정보 없음</span>`}</div>
+        : `<span class="size-chip unknown">옵션 확인 필요</span>`}</div>
       <div class="match-signals">${matchSignals}</div>
-      <button data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${sourcingLabel || (product?.inStock ? "구매" : "확인")}</button>
+      <button data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${sourcingLabel || (product?.inStock === true ? "구매" : "확인")}</button>
     </div>`;
   };
   const parallelProducts = products.filter((product) => String(product?.retailerName || "").startsWith("병행수입 정품업체"));
