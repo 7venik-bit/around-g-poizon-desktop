@@ -1605,8 +1605,8 @@ function renderDomestic(result) {
     : source.countVerified
       ? `<b class="source-count">${Number(source.count || 0) > 0 ? Number(source.count) : "없음"}</b>`
       : `<small>결과 확인</small>`;
-  const parallelSources = result.parallelImportCompanies || [];
   const directLinks = (result.sources || []).map((source) => {
+    if (source.store === "병행수입·편집샵" && (!source.countVerified || Number(source.count || 0) <= 0)) return "";
     if (source.officialStatus) {
       const officialOpenUrl = String(
         source.officialProductUrl || source.officialSearchUrl || source.homepageUrl || source.searchUrl || ""
@@ -1636,12 +1636,11 @@ function renderDomestic(result) {
     }
     return `<button class="source-link" type="button" data-url="${encodeURIComponent(source.searchUrl)}"><span>${text(source.store)}</span>${source.officialStatus === "pending" ? `<small>도메인 확인 필요</small>` : source.officialStatus === "no_official_store" ? `<small>등록된 공식몰 없음</small>` : source.officialStatus === "search_unsupported" ? `<small>사이트 검색 미지원</small>` : sourceResult(source)}</button>`;
   }).join("");
-  const parallelImportLinks = parallelSources.map((source) => `<button class="source-link parallel-source-link" type="button" data-url="${encodeURIComponent(source.searchUrl)}"><span>${text(source.name)}</span><small>상품 소싱</small></button>`).join("");
   const emptyMessage = verifiedCount > 0
     ? `판매처에서 ${verifiedCount}개 결과를 확인했습니다. 상세 상품은 아래 판매처에서 확인해 주세요.`
     : "일치하는 국내 판매 상품을 찾지 못했습니다.";
   return `<div class="platform-list">${productRows || `<span class="inventory-help">${emptyMessage}</span>`}</div>
-    ${parallelProductRows || parallelImportLinks ? `<section class="parallel-import-panel"><div class="parallel-import-heading"><strong>병행수입업체</strong><small>등록 업체 ${parallelSources.length.toLocaleString("ko-KR")}곳 · 쇼핑 플랫폼 상품만 검색</small></div>${parallelProductRows ? `<div class="platform-list">${parallelProductRows}</div>` : ""}${parallelImportLinks ? `<div class="source-links parallel-import-links">${parallelImportLinks}</div>` : ""}</section>` : ""}
+    ${parallelProductRows ? `<section class="parallel-import-panel"><div class="parallel-import-heading"><strong>병행수입업체</strong><small>요청한 모델번호가 정확히 일치하는 상품만 표시</small></div><div class="platform-list">${parallelProductRows}</div></section>` : ""}
     ${directLinks ? `<div class="source-links">${directLinks}</div>` : ""}`;
 }
 

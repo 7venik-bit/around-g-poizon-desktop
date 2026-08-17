@@ -21,15 +21,17 @@ test("editorial and parallel-import seller catalogs participate in discovery", (
   for (const name of ["인퓨전프로젝트", "다움스포츠", "트렌드메카", "라벨루쏘", "구템즈", "FABSTYLE"]) assert.ok(parallel.includes(name));
   assert.ok(relay.includes('store: "병행수입·편집샵"'));
   assert.ok(relay.includes("retailerName"));
-  assert.ok(relay.includes("parallelImportCompanies:"));
+  assert.ok(relay.includes("parallelImportCompanies: []"));
   assert.ok(relay.includes("queryCandidates[0]"));
 });
 
-test("병행수입업체는 전용 칸과 업체별 상품 소싱 버튼으로 표시된다", () => {
+test("병행수입업체는 정확한 모델 상품이 확인된 경우에만 전용 칸으로 표시된다", () => {
   assert.ok(renderer.includes("parallel-import-panel"));
   assert.ok(renderer.includes(">병행수입업체<"));
-  assert.ok(renderer.includes("parallelImportLinks"));
-  assert.ok(renderer.includes(">상품 소싱<"));
+  assert.ok(renderer.includes("parallelProductRows ?"));
+  assert.ok(renderer.includes("모델번호가 정확히 일치"));
+  assert.ok(renderer.includes('source.store === "병행수입·편집샵" && (!source.countVerified || Number(source.count || 0) <= 0)'));
+  assert.ok(renderer.includes('renderProductRow(product, "상품 소싱")'));
   assert.ok(style.includes(".parallel-import-panel"));
 });
 
