@@ -55,6 +55,6 @@ test("bootstrap injects the sidebar menu and its stylesheet into the main window
   assert.match(menuCss, /\.search-service-button\.active/);
 });
 
-test("release version is 2.10.254", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.254");
+test("release version is 2.10.255", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.255");
 });

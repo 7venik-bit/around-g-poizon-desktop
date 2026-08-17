@@ -58,6 +58,19 @@ export function classifySsgProductEvidence({ brand = "", url = "", text = "" } =
   return "marketplace";
 }
 
+export function resolveSsgProductClassification(detailClassification = "", searchClassification = "") {
+  const detail = String(detailClassification || "");
+  const search = String(searchClassification || "");
+  // A named parallel importer on the detail page is stronger evidence than a
+  // generic official badge captured on the search page.
+  if (detail === "parallel_import") return detail;
+  if (detail === "official_brand") return detail;
+  // SSG often renders "본사직영" only on the result card. Do not discard that
+  // verified card evidence merely because the detail page omits the same badge.
+  if (search === "official_brand" || search === "parallel_import") return search;
+  return detail || search || "marketplace";
+}
+
 const RETAILER_ALIASES = [
   ["OK몰", /okmall|오케이몰|ok몰/i], ["카시나", /kasina|카시나/i], ["S.I.VILLAGE", /s\.?i\.?\s*village|에스아이빌리지/i],
   ["ABC마트", /abc\s*mart|abc마트/i], ["그랜드스테이지", /grand\s*stage|그랜드스테이지/i], ["온더스팟", /on\s*the\s*spot|온더스팟/i],
