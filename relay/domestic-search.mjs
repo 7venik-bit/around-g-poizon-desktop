@@ -308,6 +308,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
       const seed = verifiedOfficialBrand(brand);
       const brandKeys = [brand, ...(seed?.aliases || [])].map(normalizeOfficialBrand).filter(Boolean);
       const requiresBrandMatch = /^(?:네이버|SSG|롯데온|병행수입·편집샵)/.test(String(store || "")) && brandKeys.length > 0;
+      const requiresExactParallelModel = String(store || "") === "병행수입·편집샵";
       const matchingProducts = new Map();
       for (const card of cards) {
         const productUrl = String(card?.productUrl || "");
@@ -345,6 +346,10 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           articleMatched = true;
         }
         if (conflictingArticle) articleMatched = false;
+        // Naver can fill an exact-code query page with visually similar
+        // recommendations. Parallel-import discovery must contain the requested
+        // model in the product card itself; the page query or nearby card is not evidence.
+        if (requiresExactParallelModel && !exactArticleIdentityMatch(rawCardText, articleCode)) articleMatched = false;
         if (!articleMatched) continue;
         if (requiresBrandMatch) {
           if (!brandMatched) continue;
@@ -725,10 +730,9 @@ export async function queryDomesticProducts({
     searchStrategy,
     queryCandidates,
     products: results.flatMap((result) => result.products),
-    parallelImportCompanies: DOMESTIC_RETAILER_GROUPS["병행수입 정품업체"].map((name) => ({
-      name,
-      searchUrl: naverSearch([brand, queryCandidates[0] || normalizedQuery, name].filter(Boolean).join(" ")),
-    })),
+    // Companies are shown only after an exact-model product is verified.
+    // A registry entry alone must never look like a matching sourcing result.
+    parallelImportCompanies: [],
     sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, count, products }, priority) => ({
       store,
       ok,

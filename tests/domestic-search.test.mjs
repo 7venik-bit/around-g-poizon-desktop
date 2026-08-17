@@ -193,6 +193,27 @@ test("a marketplace result must match both the article and the brand", () => {
   assert.equal(countRenderedChannelProducts(correctBrand, "SSG 백화점", "3ME10100264", "온"), 1);
 });
 
+test("병행수입 검색은 요청 모델번호가 상품 카드에 정확히 있을 때만 표시한다", () => {
+  const unrelatedRecommendations = JSON.stringify({
+    pageText: "나이키 DD1503-101 검색 결과",
+    productCards: [{
+      productUrl: "https://shopping.naver.com/products/123456789",
+      title: "나이키 런닝화 우먼스 줌 스트럭처 25",
+      text: "브릭맨션 94,100원",
+    }],
+  });
+  const exactModel = JSON.stringify({
+    pageText: "검색 결과",
+    productCards: [{
+      productUrl: "https://shopping.naver.com/products/987654321",
+      title: "나이키 우먼스 덩크 로우 DD1503-101",
+      text: "브릭맨션 병행수입 상품",
+    }],
+  });
+  assert.equal(analyzeRenderedChannelProducts(unrelatedRecommendations, "병행수입·편집샵", "DD1503-101", "나이키").count, 0);
+  assert.equal(analyzeRenderedChannelProducts(exactModel, "병행수입·편집샵", "DD1503-101", "나이키").count, 1);
+});
+
 test("an MLB result with a different explicit article is never relabeled as the requested article", () => {
   const rendered = JSON.stringify({
     pageText: "MLB 공식몰 검색 결과 104개",
