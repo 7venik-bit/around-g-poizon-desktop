@@ -8,7 +8,7 @@ const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), 
 const style = await readFile(new URL("../src/style.css", import.meta.url), "utf8");
 
 test("general LotteON and SSG searches are checked in addition to department and outlet scopes", () => {
-  assert.match(domesticChannelUrl("lotte-general", "나이키", "CW2288-001"), /lotteon\.com\/search/);
+  assert.match(domesticChannelUrl("lotte-general", "나이키", "CW2288-001"), /lotteon\.com\/csearch\/search\/search/);
   assert.match(domesticChannelUrl("ssg-general", "나이키", "CW2288-001"), /ssg\.com\/search/);
   assert.ok(relay.includes('store: "롯데온"'));
   assert.ok(relay.includes('store: "SSG"'));

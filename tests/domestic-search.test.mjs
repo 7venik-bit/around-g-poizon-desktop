@@ -224,6 +224,15 @@ test("SSG channel queries do not repeat a brand already present in the search te
   assert.equal(parsed.searchParams.get("query"), "MLB 3ASXCA12N-50WHS");
 });
 
+test("LotteON channels use the current csearch route with one brand term", () => {
+  const general = new URL(domesticChannelUrl("lotte-general", "MLB", "MLB 3ASXCA12N-50WHS"));
+  assert.equal(general.pathname, "/csearch/search/search");
+  assert.equal(general.searchParams.get("q"), "MLB 3ASXCA12N-50WHS");
+  assert.equal(general.searchParams.get("sort"), "ranking");
+  const department = new URL(domesticChannelUrl("lotte-department", "MLB", "3ASXCA12N-50WHS"));
+  assert.equal(department.searchParams.get("mallId"), "2");
+});
+
 test("all registered official-store product URL shapes match their exact article", () => {
   const fixtures = [
     ["아디다스", "JH5469", "https://www.adidas.co.kr/삼바-og/JH5469.html"],
@@ -247,7 +256,7 @@ test("department and outlet channels use their own search scopes", () => {
   const cases = [
     ["ssg-department", /department\.ssg\.com/],
     ["ssg-outlet", /siteNo=7008/],
-    ["lotte-department", /mallFilter=.*%EB%B0%B1%ED%99%94%EC%A0%90/],
+    ["lotte-department", /mallId=2/],
     ["lotte-outlet", /mallFilter=.*%EC%95%84%EC%9A%B8%EB%A0%9B/],
   ];
   for (const [channel, expected] of cases) {
