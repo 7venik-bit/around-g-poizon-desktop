@@ -308,3 +308,8 @@ test("raw Excel rows restore domestic platform search without grouping products"
   assert.match(rendererSource, /activeExcelPreview\?\.viewMode === "products"/);
   assert.match(rendererSource, /showExcelPreview\(file, activeExcelPreview\?\.offset/);
 });
+
+test("domestic portal query excludes long POIZON descriptions when article exists", () => {
+  assert.match(rendererSource, /articleNumber\s*\?\s*\[brandName, articleNumber\]/);
+  assert.doesNotMatch(rendererSource, /query:\s*\[product\.brandName[^\n]+product\.title/);
+});

@@ -887,7 +887,42 @@ async function officialDetailImage(searchWindow, productUrl, officialPageUrl = "
   }
 }
 
-async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "") {
+function isNaverSecurityVerificationText(value) {
+  return /captcha|보안\s*확인|자동\s*입력|로봇|스팸을\s*방지|실제\s*사용자|비정상적인\s*접근/i.test(String(value || ""));
+}
+
+async function waitForNaverSecurityVerification(searchWindow) {
+  if (!searchWindow || searchWindow.isDestroyed()) return false;
+  searchWindow.setTitle("네이버 사람 확인을 완료해 주세요 · Around G");
+  searchWindow.setAlwaysOnTop(true);
+  searchWindow.show();
+  searchWindow.focus();
+  mainWindow?.webContents.send("domestic-search:security-required", {
+    source: "네이버",
+    message: "네이버 사람 확인을 완료하면 상품 검색을 자동으로 계속합니다.",
+  });
+  const deadline = Date.now() + (10 * 60_000);
+  while (Date.now() < deadline) {
+    if (searchWindow.isDestroyed()) return false;
+    const state = await searchWindow.webContents.executeJavaScript(`JSON.stringify({
+      text: String(document.body?.innerText || "").slice(0, 20000),
+      url: String(location.href || "")
+    })`, true).then(JSON.parse).catch(() => null);
+    if (state && !isNaverSecurityVerificationText(state.text)) {
+      searchWindow.setAlwaysOnTop(false);
+      searchWindow.hide();
+      mainWindow?.webContents.send("domestic-search:security-complete", {
+        source: "네이버",
+        message: "네이버 사람 확인 완료 · 상품 검색을 다시 시작합니다.",
+      });
+      return true;
+    }
+    await wait(1_000);
+  }
+  return false;
+}
+
+async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "", securityRetry = 0) {
   const interactiveOfficialSearch = source.store === "브랜드 공식몰"
     && !String(source.officialProductUrl || "")
     && /^https:\/\//i.test(String(source.homepageUrl || ""));
@@ -926,9 +961,14 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           };
           let input = [...document.querySelectorAll('input[type="search"],input[placeholder*="검색어"],input[name*="search" i],input[name="q" i],input[name*="query" i],input[name*="keyword" i],input[name*="schWord" i]')].find(visible);
           if (!input) {
-            const opener = [...document.querySelectorAll('button,a,[role="button"]')].find((element) => {
+            const controls = [...document.querySelectorAll('header button,header a,button,a,[role="button"]')];
+            const opener = controls.find((element) => {
               const label = [element.getAttribute("aria-label"), element.getAttribute("title"), element.className, element.textContent].join(" ");
               return visible(element) && /search|검색/i.test(label);
+            }) || controls.find((element) => {
+              if (!visible(element) || !element.querySelector('svg')) return false;
+              const label = [element.outerHTML, element.parentElement?.className].join(" ");
+              return /search|검색|magnif|ico[_-]?sch/i.test(label);
             });
             opener?.click();
             return false;
@@ -1034,7 +1074,14 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     })()`, true);
     try {
       const parsedContent = JSON.parse(content);
-      if (parsedContent?.pageBlocked && !parsedContent?.productCards?.length) return null;
+      if (parsedContent?.pageBlocked && !parsedContent?.productCards?.length) {
+        if (securityRetry >= 1 || !/naver\.com/i.test(String(searchWindow.webContents.getURL() || url))) return null;
+        const verified = await waitForNaverSecurityVerification(searchWindow);
+        if (!verified) return null;
+        searchWindow.destroy();
+        searchWindow = null;
+        return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1);
+      }
     } catch {}
     const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
     const resolvedSearchUrl = String(searchWindow.webContents.getURL() || url);
@@ -1139,7 +1186,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
 
 async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "") {
   const discoveredProducts = [];
-  const sources = await Promise.all(data.sources.map(async (source) => {
+  const sources = [];
+  for (const source of data.sources) {
+    const resolvedSource = await (async () => {
     if (source.officialStatus && ![
       OFFICIAL_DOMAIN_STATUS.VERIFIED,
       OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED,
@@ -1188,7 +1237,9 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       officialProductUrl: verifiedOfficialProductUrl,
       officialProductMissing: isOfficialStore && absenceConfirmed,
     };
-  }));
+    })();
+    sources.push(resolvedSource);
+  }
   const products = [...(data.products || []), ...discoveredProducts].filter((product, index, all) =>
     index === all.findIndex((candidate) => `${candidate.store}:${candidate.id || candidate.url}` === `${product.store}:${product.id || product.url}`));
   return { ...data, products, sources };
