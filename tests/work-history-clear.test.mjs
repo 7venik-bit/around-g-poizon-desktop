@@ -28,14 +28,13 @@ test("clear broadcasts to inventory windows without closing them", () => {
   assert.doesNotMatch(handler, /unlink|rm\(|removeFile/);
 });
 
-test("application startup clears unfinished jobs but preserves completed files", () => {
+test("application startup preserves hidden interrupted-job recovery evidence", () => {
   const start = main.indexOf("app.whenReady().then(async () => {");
   const end = main.indexOf('ipcMain.handle("store:snapshot"', start);
   const startup = main.slice(start, end);
 
   assert.ok(start >= 0 && end > start);
   assert.match(startup, /restorePortableOneDriveBackupIfFresh/);
-  assert.match(startup, /setSettings\(\{ brandExportJobCache: \[\] \}\)/);
+  assert.doesNotMatch(startup, /setSettings\(\{ brandExportJobCache: \[\] \}\)/);
   assert.doesNotMatch(startup, /brandExportFileValidationCache: \[\]/);
 });
-
