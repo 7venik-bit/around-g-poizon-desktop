@@ -1199,6 +1199,7 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     recordBrandSelection(activeExportBrand, "데이터 가져오기 실패");
     const failedBrandName = activeExportBrand?.name || "선택 브랜드";
     const failureCode = String(automation?.code || "");
+    const orphanedExportRisk = failureCode === "EXPORT_JOB_NOT_CREATED";
     const recoverableRetryCodes = new Set([
       "SEARCH_INPUT_NOT_FOUND",
       "REAL_KEYBOARD_INPUT_FAILED",
@@ -1228,6 +1229,15 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
         : `실패 · ${failureCode || "자동화 오류"}${failureReason ? ` · ${failureReason}` : ""}`,
     );
     activeExportBrand = null;
+    if (orphanedExportRisk) {
+      brandExportQueue = [];
+      brandSelectionBusy = false;
+      renderBrandCards($("#brand-filter")?.value || "");
+      $("#brand-status").className = "status error";
+      $("#brand-status").textContent = `${failedBrandName} 작업번호 연결을 확인하지 못해 뒤 브랜드 실행을 중단했습니다. POIZON의 진행 중 작업을 다른 브랜드로 잘못 연결하지 않습니다.`;
+      stopBrandActivity();
+      return;
+    }
     if (failureCode === "SELLER_LOGIN_REQUIRED") {
       brandExportQueue = [];
       brandSelectionBusy = false;
