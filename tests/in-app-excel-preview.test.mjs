@@ -170,6 +170,12 @@ test("official-mall button remains clickable for direct manual verification", ()
   assert.match(rendererSource, /officialButton\("공식몰 상품 없음·직접 확인"\)/);
 });
 
+test("official-mall button runs homepage magnifier search instead of opening a raw URL", () => {
+  assert.match(rendererSource, /data-official-homepage=/);
+  assert.match(rendererSource, /data-official-query=/);
+  assert.match(rendererSource, /openOfficialInternalSearch/);
+});
+
 test("MLB 공식몰 검색창은 품번 입력을 지원한다", () => {
   assert.match(mainSource, /input\[placeholder\*="검색어"\]/);
 });
