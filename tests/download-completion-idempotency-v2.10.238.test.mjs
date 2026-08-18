@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const mainSource = readFileSync(new URL("../main.mjs", import.meta.url), "utf8");
+const mainSource = readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 test("completed download is persisted before workbook inspection", () => {
   const completed = mainSource.indexOf("const completedInfo = await stat(filePath)");
