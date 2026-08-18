@@ -2371,6 +2371,11 @@ async function scanBrandExportFolder() {
     candidates.sort((left, right) => right.mtimeMs - left.mtimeMs);
     const newest = candidates.find((candidate) => !brandDownloadPathsInProgress.has(candidate.path));
     if (!newest) return;
+    // A download may be created outside Electron's will-download handler.
+    // Wait for the file to stop changing before treating it as terminal.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    const stableInfo = await stat(newest.path);
+    if (stableInfo.size !== newest.size || stableInfo.mtimeMs !== newest.mtimeMs) return;
     const signature = `${newest.path}:${newest.mtimeMs}:${newest.size}`;
     if (lastBrandExportSignature === "__BASELINE_EXISTING_FILES__") {
       lastBrandExportSignature = signature;
@@ -2409,6 +2414,25 @@ async function scanBrandExportFolder() {
       jobId: matchedJobId,
       brandIntegrity,
     });
+    // The workbook already exists and is stable, so the active job is done even
+    // when POIZON's task-number cell could not be read. Leaving it in the map
+    // would restart the monitor forever and request a duplicate download.
+    await rememberBrandExportJob({
+      jobId: matchedJobId,
+      brandName: expectedBrand,
+      brandKo: brandExportJobs.get(matchedJobId)?.brandKo || "",
+      createdAt: Number(brandExportJobs.get(matchedJobId)?.createdAt || newest.mtimeMs),
+      lastDownloadedAt: Date.now(),
+      expectedProductCount: Number(brandExportJobs.get(matchedJobId)?.expectedProductCount || 0),
+      filePath: newest.path,
+      fileName: newest.name,
+      fileMtimeMs: newest.mtimeMs,
+      sessionGeneration: brandWorkSessionGeneration,
+    });
+    brandExportJobs.delete(matchedJobId);
+    if (activeBrandDownloadJobId === matchedJobId) activeBrandDownloadJobId = "";
+    if (brandExportJobs.size) scheduleBrandExportMonitor(500);
+    else emitBrandExportAllComplete();
   } catch (error) {
     mainWindow.webContents.send("brand-export:error", {
       message: error instanceof Error ? error.message : String(error),
@@ -3034,7 +3058,12 @@ async function readSellerMonitorStatuses(expectedIds = []) {
     for (const frame of frames) {
     const expectedJobs = expectedIds.map((jobId) => {
       const job = brandExportJobs.get(jobId);
-      return { jobId, restored: Boolean(job?.restored), createdAt: Number(job?.createdAt || 0) };
+      return {
+        jobId,
+        restored: Boolean(job?.restored),
+        createdAt: Number(job?.createdAt || 0),
+        allowTimeRecovery: Boolean(job?.restored) || Number(job?.rowMisses || 0) >= 2,
+      };
     });
     const statuses = await Promise.race([
       frame.executeJavaScript(`(() => {
@@ -3094,13 +3123,15 @@ async function readSellerMonitorStatuses(expectedIds = []) {
           const { jobId } = expected;
           let row = findJobContainer(jobId);
           let recovered = false;
-          if (!row && expected.restored && expected.createdAt > 0) {
+          if (!row && expected.allowTimeRecovery && expected.createdAt > 0) {
             const candidates = parsedRows.filter((item) => !usedRows.has(item.row)
               && item.control
               && /^(?:성공|success|completed)$/i.test(item.workStateText)
               && item.dates.length > 0
               && item.startAt >= expected.createdAt - 5 * 60_000
-              && item.startAt <= expected.createdAt + 60 * 60_000)
+              // POIZON creates the export row before Around G registers it.
+              // Reject later rows so adjacent brand jobs cannot be swapped.
+              && item.startAt <= expected.createdAt + 5_000)
               .sort((left, right) => Math.abs(left.startAt - expected.createdAt) - Math.abs(right.startAt - expected.createdAt));
             row = candidates[0]?.row || null;
             recovered = Boolean(row);
@@ -3296,6 +3327,8 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
       for (const status of statuses) {
         const job = brandExportJobs.get(status.jobId);
         if (!job) continue;
+        if (status.state === "WAITING_FOR_ROW") job.rowMisses = Number(job.rowMisses || 0) + 1;
+        else job.rowMisses = 0;
         const stateLabel = {
           WAITING_FOR_ROW: "4단계/5 · 작업번호 행 확인 중",
           PROCESSING: "4단계/5 · POIZON 파일 처리 중 · 10초마다 감시",
