@@ -58,8 +58,8 @@ test("current jobs recover completed rows after repeated job-number misses", () 
   assert.match(main, /status\.state === "WAITING_FOR_ROW"\) job\.rowMisses = Number\(job\.rowMisses \|\| 0\) \+ 1/);
 });
 
-test("release metadata is 2.10.271", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.271");
-  assert.equal(JSON.parse(lockSource).version, "2.10.271");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.271");
+test("release metadata is 2.10.272", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.272");
+  assert.equal(JSON.parse(lockSource).version, "2.10.272");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.272");
 });

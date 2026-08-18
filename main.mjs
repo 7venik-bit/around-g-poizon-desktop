@@ -4841,6 +4841,10 @@ async function automateSellerBrandExport(input = {}) {
     ["Tommy Hilfiger", "타미힐피거", "汤米希尔费格"],
     ["FILA", "휠라", "斐乐"],
     ["Reebok", "리복", "锐步"],
+    ["PUMA", "Puma", "푸마", "彪马"],
+    ["On", "On Running", "온", "온러닝", "昂跑"],
+    ["Polo Ralph Lauren", "POLO RALPH LAUREN", "폴로 랄프로렌", "랄프로렌", "拉夫劳伦"],
+    ["Adidas Originals", "adidas Originals", "아디다스 오리지널스", "阿迪达斯", "三叶草"],
   ];
   const brandKoInput = String(input.brandKo || "").trim();
   const sellerBrandMatchKeys = [brandName, brandKoInput];
@@ -4851,6 +4855,7 @@ async function automateSellerBrandExport(input = {}) {
   if (brandsMatch(brandName, "Jordan")) {
     sellerBrandMatchKeys.push("Jordan", "조던", "乔丹");
   }
+  const sellerBrandSearchName = brandsMatch(brandName, "On") ? "On Running" : brandName;
   mainWindow?.webContents.send("brand-export:progress", {
     status: "searching-brand-products",
     brandName,
@@ -4997,18 +5002,18 @@ async function automateSellerBrandExport(input = {}) {
           }));
           input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
         };
-        if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
+        if (String(input.value || "").trim() !== ${JSON.stringify(sellerBrandSearchName)}) {
           applyValue("");
           await wait(160);
-          applyValue(${JSON.stringify(brandName)});
+          applyValue(${JSON.stringify(sellerBrandSearchName)});
           await wait(700);
         }
-        if (String(input.value || "").trim() !== ${JSON.stringify(brandName)}) {
+        if (String(input.value || "").trim() !== ${JSON.stringify(sellerBrandSearchName)}) {
           return {
             ok: false,
             step: "BRAND_INPUT_NOT_APPLIED",
             actualInputValue: String(input.value || "").trim(),
-            expectedInputValue: ${JSON.stringify(brandName)},
+            expectedInputValue: ${JSON.stringify(sellerBrandSearchName)},
           };
         }
         const buttons = [...document.querySelectorAll("button, [role='button']")].filter(visible);
@@ -5051,8 +5056,11 @@ async function automateSellerBrandExport(input = {}) {
             // result, so matching rows are authoritative even when the DOM no
             // longer differs from that snapshot.
             const requestedInputConfirmed = normalize(input.value).toLocaleLowerCase()
-              === normalize(${JSON.stringify(brandName)}).toLocaleLowerCase();
-            if (hasRows && (brandMatched || (alreadySubmitted && requestedInputConfirmed))) {
+              === normalize(${JSON.stringify(sellerBrandSearchName)}).toLocaleLowerCase();
+            // A submitted input is not proof that POIZON changed the result.
+            // Export only after the rendered product rows actually match the
+            // requested brand; otherwise the previous brand can be exported.
+            if (hasRows && brandMatched && requestedInputConfirmed) {
               stableCount = signature === stableSignature ? stableCount + 1 : 1;
               stableSignature = signature;
               if (stableCount >= 3) return true;
@@ -5323,7 +5331,7 @@ async function automateSellerBrandExport(input = {}) {
       });
       // Keep the POIZON window hidden and send input directly through Electron's
       // background webContents path so monitor focus and the Windows cursor stay untouched.
-      const realKeyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, brandName)
+      const realKeyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, sellerBrandSearchName)
         .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
       if (sellerWindow && !sellerWindow.isDestroyed()) {
         // The Seller Center stays hidden for input, result transition, sorting,

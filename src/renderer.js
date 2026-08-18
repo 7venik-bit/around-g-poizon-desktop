@@ -68,6 +68,13 @@ const WORK_HISTORY_RESET_KEY = "around-g-work-history-reset-v2.10.4";
 const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
 const DOWNLOAD_STATUS_MIGRATION_KEY = "around-g-download-status-v2.10.29";
 const LIVE_JOB_UI_MIGRATION_KEY = "around-g-live-job-ui-v2.10.34";
+const PINNED_BRAND_RECOVERY_KEY = "around-g-pinned-brand-recovery-v2.10.272";
+const LAST_KNOWN_PINNED_BRAND_NAMES = [
+  "Adidas Originals", "Converse", "Jordan", "Adidas", "Nike", "COACH", "On",
+  "Under Armour", "Skechers", "THE NORTH FACE", "Columbia", "Patagonia",
+  "New Balance", "ASICS", "Tommy Hilfiger", "FILA", "Vans", "SALOMON",
+  "Polo Ralph Lauren", "PUMA", "Crocs", "MLB", "Lululemon",
+];
 
 function renderBrandExportFolder(folder = "") {
   const path = $("#brand-export-folder-path");
@@ -106,16 +113,30 @@ if (localStorage.getItem(LIVE_JOB_UI_MIGRATION_KEY) !== "done") {
   localStorage.setItem(LIVE_JOB_UI_MIGRATION_KEY, "done");
 }
 
+// A new app process always starts with an empty brand selection. Read each
+// persistent collection independently: a damaged download/history JSON value
+// must never erase a valid favorites list.
+localStorage.removeItem("around-g-selected-brand-ids");
+selectedBrandIds = new Set();
 try {
-  // A new app process always starts with an empty brand selection. Favorites
-  // and downloaded-file history remain persistent, but a brand selected in a
-  // previous run must never be submitted again without a fresh click.
-  localStorage.removeItem("around-g-selected-brand-ids");
-  selectedBrandIds = new Set();
-  pinnedBrandIds = JSON.parse(localStorage.getItem("around-g-pinned-brand-ids") || "[]").map(Number).filter(Number.isFinite);
-  brandSelectionHistory = JSON.parse(localStorage.getItem("around-g-brand-selection-history") || "[]");
-  downloadedBrandFiles = JSON.parse(localStorage.getItem("around-g-brand-download-files") || "[]");
-  if (!Array.isArray(downloadedBrandFiles)) downloadedBrandFiles = [];
+  const parsed = JSON.parse(localStorage.getItem("around-g-pinned-brand-ids") || "[]");
+  pinnedBrandIds = Array.isArray(parsed) ? parsed.map(Number).filter(Number.isFinite) : [];
+} catch {
+  pinnedBrandIds = [];
+}
+try {
+  const parsed = JSON.parse(localStorage.getItem("around-g-brand-selection-history") || "[]");
+  brandSelectionHistory = Array.isArray(parsed) ? parsed : [];
+} catch {
+  brandSelectionHistory = [];
+}
+try {
+  const parsed = JSON.parse(localStorage.getItem("around-g-brand-download-files") || "[]");
+  downloadedBrandFiles = Array.isArray(parsed) ? parsed : [];
+} catch {
+  downloadedBrandFiles = [];
+}
+try {
   if (localStorage.getItem(BRAND_INTEGRITY_MIGRATION_KEY) !== "done") {
     // Older builds could save Jordan rows under an Adidas filename. Preserve the
     // original Excel files, but discard their unverified UI history.
@@ -124,11 +145,19 @@ try {
     localStorage.removeItem("around-g-last-brand-export-job");
     localStorage.setItem(BRAND_INTEGRITY_MIGRATION_KEY, "done");
   }
-} catch {
-  selectedBrandIds = new Set();
-  pinnedBrandIds = [];
-  brandSelectionHistory = [];
-  downloadedBrandFiles = [];
+} catch {}
+
+function restoreKnownPinnedBrandsIfMissing() {
+  if (pinnedBrandIds.length || localStorage.getItem(PINNED_BRAND_RECOVERY_KEY) === "done") return;
+  const recoveryNames = new Set(LAST_KNOWN_PINNED_BRAND_NAMES.map(normalizeBrand));
+  pinnedBrandIds = explorerMeta.brands
+    .filter((brand) => recoveryNames.has(normalizeBrand(brand.name))
+      || recoveryNames.has(normalizeBrand(brand.ko)))
+    .map((brand) => Number(brand.id))
+    .filter(Number.isFinite);
+  if (!pinnedBrandIds.length) return;
+  localStorage.setItem("around-g-pinned-brand-ids", JSON.stringify(pinnedBrandIds));
+  localStorage.setItem(PINNED_BRAND_RECOVERY_KEY, "done");
 }
 
 function saveBrandSelections() {
@@ -1259,6 +1288,7 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     // which previously allowed the queued callback to be lost. Continue the
     // POIZON accepts one export lifecycle at a time. Do not submit the next
     // brand until this brand's workbook has actually finished downloading.
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
     await exportNextSelectedBrand(generation);
     return;
   }
@@ -3356,6 +3386,7 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
     renderBrandCards($("#brand-filter")?.value || "");
   });
   explorerMeta = await window.aroundG.explorerMeta();
+  restoreKnownPinnedBrandsIfMissing();
   renderOfficialDomainAudit(explorerMeta.officialDomainAudit || {});
   renderDownloadedBrandFiles();
   renderBrandCards();
