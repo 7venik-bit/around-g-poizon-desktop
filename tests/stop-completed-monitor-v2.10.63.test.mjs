@@ -41,6 +41,18 @@ test("download monitoring requires matching job number, success state, and compl
   assert.match(main, /status\.jobNumberMatched[\s\S]*status\.workSucceeded[\s\S]*status\.completionConfirmed/);
 });
 
+test("active POIZON download text is clicked even when rendered as span or div", () => {
+  const readerStart = main.indexOf("async function readSellerMonitorStatuses");
+  const requesterEnd = main.indexOf("function emitBrandExportAllComplete", readerStart);
+  const monitorCode = main.slice(readerStart, requesterEnd);
+
+  assert.match(monitorCode, /\[class\*='download'\]/);
+  assert.match(monitorCode, /span, div/);
+  assert.match(monitorCode, /const control = downloadControlIn\(row\)/);
+  assert.match(monitorCode, /control\.dispatchEvent\(new MouseEvent/);
+  assert.match(monitorCode, /control\.click\(\)/);
+});
+
 test("restored and repeatedly missed jobs recover completed rows by timestamps", () => {
   const reader = main.match(/async function readSellerMonitorStatuses[\s\S]*?\n}\n\nasync function requestSellerMonitorDownload/)?.[0] || "";
   const requester = main.match(/async function requestSellerMonitorDownload[\s\S]*?\n}\n\nfunction emitBrandExportAllComplete/)?.[0] || "";
@@ -83,8 +95,8 @@ test("manual stop cancels automation, retries, and download monitoring immediate
   assert.match(main, /sellerMonitorWindow\.destroy\(\)/);
 });
 
-test("release metadata is 2.10.267", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.267");
-  assert.equal(JSON.parse(lockSource).version, "2.10.267");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.267");
+test("release metadata is 2.10.268", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.268");
+  assert.equal(JSON.parse(lockSource).version, "2.10.268");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.268");
 });
