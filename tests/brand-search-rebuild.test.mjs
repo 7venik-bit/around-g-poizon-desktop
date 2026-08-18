@@ -41,11 +41,11 @@ test("brand workflow connects directly and searches English before Korean fallba
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = main.slice(start, end);
   assert.match(workflow, /loadURL\(SELLER_PRODUCT_SEARCH_URL\)/);
-  const english = workflow.indexOf("applyValue(${JSON.stringify(brandName)})");
+  const english = workflow.indexOf("applyValue(${JSON.stringify(sellerBrandSearchName)})");
   const korean = workflow.indexOf("applyValue(${JSON.stringify(brandKoInput)})");
   assert.ok(english >= 0 && korean > english);
   assert.match(workflow, /if \(!searchApplied[\s\S]*brandKoInput/);
-  assert.match(workflow, /typeSellerBrandWithRealKeyboard\(candidate\.frame, brandName\)/);
+  assert.match(workflow, /typeSellerBrandWithRealKeyboard\(candidate\.frame, sellerBrandSearchName\)/);
   assert.match(workflow, /seller-brand-input-confirmed/);
   assert.doesNotMatch(workflow, /\.\.\.officialAliases/);
   assert.doesNotMatch(workflow, /pageSizePattern|PAGE_SIZE_20|PAGE_SIZE_CONTROL/);
@@ -80,12 +80,17 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.match(workflow, /searchInputAttempt <= 1/);
   assert.doesNotMatch(workflow, /searchInputAttempt <= 4/);
   assert.doesNotMatch(workflow, /검색 입력창 재탐색/);
-  assert.match(workflow, /alreadySubmitted && requestedInputConfirmed/);
+  assert.doesNotMatch(workflow, /alreadySubmitted && requestedInputConfirmed/);
   assert.match(main, /physicalCursorMoved: false/);
   assert.match(main, /sendInputEvent\(\{ type: "mouseDown", button: "left"/);
   assert.doesNotMatch(workflow, /moveWindowsCursorAndClick/);
   assert.match(workflow, /normalizedKey\.length > 3/);
   assert.match(workflow, /tokens\.includes/);
+  assert.match(workflow, /sellerBrandSearchName = brandsMatch\(brandName, "On"\) \? "On Running"/);
+  assert.match(workflow, /hasRows && brandMatched && requestedInputConfirmed/);
+  assert.doesNotMatch(workflow, /brandMatched \|\| \(alreadySubmitted && requestedInputConfirmed\)/);
+  assert.match(workflow, /"PUMA", "Puma", "푸마", "彪马"/);
+  assert.match(workflow, /"Adidas Originals", "adidas Originals"/);
 });
 
 test("selected brands run sequentially with a twenty-minute limit", () => {
