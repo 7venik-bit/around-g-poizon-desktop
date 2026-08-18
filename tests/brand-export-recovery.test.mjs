@@ -44,11 +44,22 @@ test("the live export path confirms POIZON submission before waiting for a job",
   assert.ok(exportClick >= 0 && confirmation > exportClick && jobWait > confirmation);
   assert.match(workflow, /lateConfirmationChecked/);
   assert.match(workflow, /confirmSellerExportRequestPhysical\(currentSellerProductFrame\(\)\)/);
+  assert.match(workflow, /if \(!confirmation\?\.requestAcknowledged\)/);
+  assert.match(workflow, /code: "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED"/);
   assert.doesNotMatch(workflow, /전체 내보내기 완료 · 다음 브랜드 준비/);
 });
 
-test("release metadata is 2.10.275", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.275");
-  assert.equal(JSON.parse(lockSource).version, "2.10.275");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.275");
+test("exact brand selection cannot confuse PUMA with PUMA KIDS", () => {
+  const start = main.indexOf("async function applyExactSellerBrandFilter");
+  const end = main.indexOf("async function automateSellerBrandExport", start);
+  const exactFilter = main.slice(start, end);
+  assert.match(exactFilter, /return value === requested/);
+  assert.doesNotMatch(exactFilter, /value\.startsWith\(requested\)/);
+  assert.doesNotMatch(exactFilter, /requested\.startsWith\(value\)/);
+});
+
+test("release metadata is 2.10.276", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.276");
+  assert.equal(JSON.parse(lockSource).version, "2.10.276");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.276");
 });
