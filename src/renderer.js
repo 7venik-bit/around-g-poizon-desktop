@@ -107,7 +107,11 @@ if (localStorage.getItem(LIVE_JOB_UI_MIGRATION_KEY) !== "done") {
 }
 
 try {
-  selectedBrandIds = new Set(JSON.parse(localStorage.getItem("around-g-selected-brand-ids") || "[]").map(Number));
+  // A new app process always starts with an empty brand selection. Favorites
+  // and downloaded-file history remain persistent, but a brand selected in a
+  // previous run must never be submitted again without a fresh click.
+  localStorage.removeItem("around-g-selected-brand-ids");
+  selectedBrandIds = new Set();
   pinnedBrandIds = JSON.parse(localStorage.getItem("around-g-pinned-brand-ids") || "[]").map(Number).filter(Number.isFinite);
   brandSelectionHistory = JSON.parse(localStorage.getItem("around-g-brand-selection-history") || "[]");
   downloadedBrandFiles = JSON.parse(localStorage.getItem("around-g-brand-download-files") || "[]");
@@ -2682,7 +2686,8 @@ $("#brand-export-completed-more")?.addEventListener("click", () => {
 });
 renderBrandCompletedJobs();
 void restoreDownloadedBrandFiles();
-void restorePendingBrandExportJobs();
+// Previous-run jobs are history only. A new app process starts with no active
+// POIZON monitoring and waits for the user to select the exact brands to run.
 $("#brand-search").addEventListener("click", async () => {
   const button = $("#brand-search");
   const status = $("#brand-status");
