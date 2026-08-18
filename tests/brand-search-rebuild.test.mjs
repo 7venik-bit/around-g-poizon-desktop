@@ -91,6 +91,10 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.doesNotMatch(workflow, /brandMatched \|\| \(alreadySubmitted && requestedInputConfirmed\)/);
   assert.match(workflow, /"PUMA", "Puma", "푸마", "彪马"/);
   assert.match(workflow, /"Adidas Originals", "adidas Originals"/);
+  assert.match(main, /async function applyExactSellerBrandFilter/);
+  assert.match(workflow, /applyExactSellerBrandFilter\(candidate\.frame/);
+  assert.match(workflow, /exactFilter\?\.ok \? exactFilter/);
+  assert.match(main, /route: "EXACT_BRAND_FILTER"/);
 });
 
 test("selected brands run sequentially with a twenty-minute limit", () => {

@@ -4671,6 +4671,100 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   };
 }
 
+async function applyExactSellerBrandFilter(targetFrame, names = []) {
+  const candidates = [...new Set((names || []).map((value) => String(value || "").trim()).filter(Boolean))];
+  if (!candidates.length) return { ok: false, step: "BRAND_FILTER_NAMES_MISSING" };
+  return executeSellerFrameWithTimeout(targetFrame, `(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getClientRects().length > 0;
+    const textOf = (element) => String(element?.innerText || element?.textContent || "")
+      .replace(/\\s+/g, " ").trim();
+    const normalize = (value) => String(value || "").normalize("NFKC")
+      .replace(/[^a-z0-9가-힣一-龥]+/gi, "").toLocaleLowerCase();
+    const names = ${JSON.stringify(candidates)};
+    const normalizedNames = names.map(normalize).filter(Boolean);
+    const ownText = (element) => [...element.childNodes]
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent).join("").trim();
+    const brandLabel = [...document.querySelectorAll("button,[role=button],label,span,div")]
+      .filter(visible)
+      .filter((element) => ownText(element) === "브랜드" || textOf(element) === "브랜드")
+      .sort((left, right) => left.getBoundingClientRect().width - right.getBoundingClientRect().width)[0];
+    const brandButton = brandLabel?.closest(
+      "button,[role=button],.ant-select,.ant-dropdown-trigger,.semi-select,.semi-dropdown-trigger"
+    ) || brandLabel;
+    if (!brandButton) return { ok: false, step: "EXACT_BRAND_BUTTON_NOT_FOUND" };
+    brandButton.click();
+    await wait(600);
+    const popupSelector = '[role="tooltip"],[role="dialog"],.ant-popover,.ant-dropdown,.ant-select-dropdown,.semi-portal,.semi-popover,.semi-select-dropdown';
+    const popup = [...document.querySelectorAll(popupSelector)].filter(visible).at(-1);
+    if (!popup) return { ok: false, step: "EXACT_BRAND_POPUP_NOT_FOUND" };
+    const input = [...popup.querySelectorAll("input")].find((element) =>
+      visible(element) && !element.disabled && ["text", "search", ""].includes(element.type)
+    );
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    for (const name of names) {
+      if (input) {
+        input.focus();
+        setter ? setter.call(input, name) : (input.value = name);
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, data: name, inputType: "insertText" }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      let option = null;
+      for (let attempt = 0; attempt < 24 && !option; attempt += 1) {
+        await wait(250);
+        const options = [...document.querySelectorAll(
+          '.ant-popover:not(.ant-popover-hidden) li.ant-list-item,[role=option],.ant-select-item-option,.semi-select-option'
+        )].filter(visible);
+        option = options.find((element) => {
+          const value = normalize(textOf(element));
+          const requested = normalize(name);
+          return value === requested || value.startsWith(requested) || requested.startsWith(value);
+        });
+      }
+      if (!option) continue;
+      option.click();
+      await wait(350);
+      const confirm = [...document.querySelectorAll("button,[role=button],a")]
+        .filter(visible).find((element) => /^(확인|적용|검색)$/.test(textOf(element)));
+      if (confirm) confirm.click();
+      await wait(700);
+      const search = [...document.querySelectorAll("button,[role=button]")]
+        .filter(visible).find((element) => /^검색\\s*및\\s*입찰$/.test(textOf(element)));
+      if (!search) return { ok: false, step: "EXACT_BRAND_SEARCH_BUTTON_NOT_FOUND" };
+      search.click();
+      let stable = 0;
+      let signature = "";
+      for (let attempt = 0; attempt < 80; attempt += 1) {
+        await wait(250);
+        const rows = [...document.querySelectorAll("tbody tr")].filter(visible)
+          .map(textOf).filter(Boolean);
+        const matched = rows.filter((row) => normalizedNames.some((key) => normalize(row).includes(key)));
+        const nextSignature = rows.slice(0, 20).join("|");
+        if (rows.length && matched.length / rows.length >= 0.8) {
+          stable = nextSignature === signature ? stable + 1 : 1;
+          signature = nextSignature;
+          if (stable >= 3) {
+            return {
+              ok: true,
+              route: "EXACT_BRAND_FILTER",
+              selected: textOf(option),
+              inputValue: name,
+              resultRowCount: rows.length,
+              firstResult: rows[0] || "",
+            };
+          }
+        } else {
+          stable = 0;
+          signature = "";
+        }
+      }
+      return { ok: false, step: "EXACT_BRAND_RESULT_NOT_CONFIRMED", selected: textOf(option) };
+    }
+    return { ok: false, step: "EXACT_BRAND_OPTION_NOT_FOUND" };
+  })()`, 35_000, { ok: false, step: "EXACT_BRAND_FILTER_TIMEOUT" });
+}
+
 async function automateSellerBrandExport(input = {}) {
   const sessionGeneration = brandWorkSessionGeneration;
   const attemptGeneration = ++brandExportAttemptGeneration;
@@ -5329,10 +5423,17 @@ async function automateSellerBrandExport(input = {}) {
         jobState: `1단계/5 · 브랜드 입력·상품 검색 중 · ${brandName}`,
         message: `${brandName} · 기존 검색 서비스 방식으로 브랜드를 입력하고 검색을 실행합니다.`,
       });
+      const exactFilter = await applyExactSellerBrandFilter(candidate.frame, [
+        sellerBrandSearchName,
+        brandKoInput,
+        ...(localizedAliases || []),
+      ]).catch(() => ({ ok: false, step: "EXACT_BRAND_FILTER_FAILED" }));
       // Keep the POIZON window hidden and send input directly through Electron's
       // background webContents path so monitor focus and the Windows cursor stay untouched.
-      const realKeyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, sellerBrandSearchName)
-        .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
+      const realKeyboardInput = exactFilter?.ok
+        ? { ok: true, submitted: true, exactBrandFilter: true }
+        : await typeSellerBrandWithRealKeyboard(candidate.frame, sellerBrandSearchName)
+          .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
       if (sellerWindow && !sellerWindow.isDestroyed()) {
         // The Seller Center stays hidden for input, result transition, sorting,
         // export registration, and download monitoring.
@@ -5354,17 +5455,17 @@ async function automateSellerBrandExport(input = {}) {
         lastSearchDiagnostics = candidate.probe;
         break;
       }
-      const result = await Promise.race([
-        runSellerSearch(candidate.frame, Boolean(realKeyboardInput?.submitted)),
-        new Promise((resolve) => setTimeout(() => resolve({
+      const result = exactFilter?.ok ? exactFilter : await Promise.race([
+          runSellerSearch(candidate.frame, Boolean(realKeyboardInput?.submitted)),
+          new Promise((resolve) => setTimeout(() => resolve({
+            ok: false,
+            step: "SELLER_SEARCH_STAGE_TIMEOUT",
+          }), 70_000)),
+        ]).catch((error) => ({
           ok: false,
-          step: "SELLER_SEARCH_STAGE_TIMEOUT",
-        }), 70_000)),
-      ]).catch((error) => ({
-        ok: false,
-        step: "SELLER_SEARCH_SCRIPT_ERROR",
-        detail: String(error?.message || error || ""),
-      }));
+          step: "SELLER_SEARCH_SCRIPT_ERROR",
+          detail: String(error?.message || error || ""),
+        }));
       lastSearchDiagnostics = candidate.probe;
       if (result?.ok) {
         mainWindow?.webContents.send("brand-export:progress", {
