@@ -3071,6 +3071,13 @@ async function readSellerMonitorStatuses(expectedIds = []) {
         const usable = (element) => Boolean(element && element.isConnected);
         const textOf = (element) => String(element?.textContent || element?.innerText || "")
           .replace(/\\s+/g, " ").trim();
+        const downloadControlIn = (row) => [...row.querySelectorAll("a, button, [role='button'], [class*='download'], [class*='Download'], span, div")]
+          .filter(usable)
+          .filter((element) => !element.disabled && element.getAttribute("aria-disabled") !== "true")
+          .filter((element) => /다운로드|download/i.test([
+            textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
+          ].filter(Boolean).join(" ")))
+          .sort((left, right) => textOf(left).length - textOf(right).length)[0] || null;
         const compactNumber = (value) => String(value || "").replace(/\\D/g, "");
         const datePattern = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/g;
         const parseDate = (value) => {
@@ -3110,13 +3117,7 @@ async function readSellerMonitorStatuses(expectedIds = []) {
           const cellTexts = cells.map(textOf);
           const dates = cellTexts.flatMap((value) => value.match(datePattern) || []);
           const workStateText = cellTexts.find((value) => /^(?:성공|success|completed)$/i.test(value)) || "";
-          const controls = [...row.querySelectorAll("a, button, [role='button']")];
-          const control = controls.find((element) => usable(element)
-            && !element.disabled
-            && element.getAttribute("aria-disabled") !== "true"
-            && /다운로드|download/i.test([
-              textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
-            ].filter(Boolean).join(" ")));
+          const control = downloadControlIn(row);
           return { row, rowText, cells, dates, workStateText, control, startAt: parseDate(dates[0]) };
         });
         return expectedJobs.map((expected) => {
@@ -3154,12 +3155,7 @@ async function readSellerMonitorStatuses(expectedIds = []) {
           }
           if (!workSucceeded) return { jobId, state: "WAITING_FOR_SUCCESS", workStateText, completionText };
           if (!completionConfirmed) return { jobId, state: "WAITING_FOR_COMPLETION", workStateText, completionText };
-          const control = [...row.querySelectorAll("a, button, [role='button']")].find((element) => {
-            if (!usable(element) || element.disabled || element.getAttribute("aria-disabled") === "true") return false;
-            return /다운로드|download/i.test([
-              textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
-            ].filter(Boolean).join(" "));
-          });
+          const control = downloadControlIn(row);
           let href = String(control?.href || control?.getAttribute?.("href") || "");
           try {
             if (href && !/^javascript:/i.test(href)) href = new URL(href, location.href).href;
@@ -3209,6 +3205,13 @@ async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId 
       const rowLocator = ${JSON.stringify(rowLocator || {})};
       const usable = (element) => Boolean(element && element.isConnected);
       const textOf = (element) => String(element?.textContent || element?.innerText || "").replace(/\\s+/g, " ").trim();
+      const downloadControlIn = (row) => [...row.querySelectorAll("a, button, [role='button'], [class*='download'], [class*='Download'], span, div")]
+        .filter(usable)
+        .filter((element) => !element.disabled && element.getAttribute("aria-disabled") !== "true")
+        .filter((element) => /다운로드|download/i.test([
+          textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
+        ].filter(Boolean).join(" ")))
+        .sort((left, right) => textOf(left).length - textOf(right).length)[0] || null;
       const selector = "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']";
       const rowCandidates = [...document.querySelectorAll(selector)].filter(usable);
       const compactNumber = (value) => String(value || "").replace(/\\D/g, "");
@@ -3253,14 +3256,7 @@ async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId 
           completionConfirmed,
         };
       }
-      const control = [...row.querySelectorAll("a, button, [role='button']")].find((element) =>
-        usable(element)
-        && !element.disabled
-        && element.getAttribute("aria-disabled") !== "true"
-        && /다운로드|download/i.test([
-          textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
-        ].filter(Boolean).join(" "))
-      );
+      const control = downloadControlIn(row);
       if (!control) return { clicked: false, href: "" };
       let href = String(control.href || control.getAttribute("href") || "");
       try {
