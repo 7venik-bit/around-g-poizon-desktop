@@ -22,5 +22,5 @@ test("G branding is used by the interface and Windows package", async () => {
   assert.ok(packageJson.build.files.includes("build/icon.png"));
   assert.match(main, /const APP_ICON_PATH = join\(import\.meta\.dirname, "build", "icon\.png"\)/);
   assert.match(main, /app\.setAppUserModelId\("kr\.aroundg\.poizon"\)/);
-  assert.equal((main.match(/icon: APP_ICON_PATH/g) || []).length, 7);
+  assert.equal((main.match(/icon: APP_ICON_PATH/g) || []).length, 8);
 });
