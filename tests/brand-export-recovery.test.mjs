@@ -58,8 +58,17 @@ test("exact brand selection cannot confuse PUMA with PUMA KIDS", () => {
   assert.doesNotMatch(exactFilter, /requested\.startsWith\(value\)/);
 });
 
-test("release metadata is 2.10.276", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.276");
-  assert.equal(JSON.parse(lockSource).version, "2.10.276");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.276");
+test("post-search controls click in their owning POIZON frame", () => {
+  const start = main.indexOf("async function physicalClickSellerElement");
+  const end = main.indexOf("async function performPhysicalSellerSortAndExport", start);
+  const click = main.slice(start, end);
+  assert.match(click, /element\.dispatchEvent\(new EventType\(type, eventInit\)\)/);
+  assert.doesNotMatch(click, /sellerWindow\.webContents\.sendInputEvent/);
+  assert.match(main, /确认\|确定\|提交\|导出\|继续/);
+});
+
+test("release metadata is 2.10.277", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.277");
+  assert.equal(JSON.parse(lockSource).version, "2.10.277");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.277");
 });
