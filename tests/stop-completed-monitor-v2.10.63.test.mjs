@@ -41,12 +41,12 @@ test("download monitoring requires matching job number, success state, and compl
   assert.match(main, /status\.jobNumberMatched[\s\S]*status\.workSucceeded[\s\S]*status\.completionConfirmed/);
 });
 
-test("restored jobs recover already-completed rows by start and completion timestamps", () => {
+test("restored and repeatedly missed jobs recover completed rows by timestamps", () => {
   const reader = main.match(/async function readSellerMonitorStatuses[\s\S]*?\n}\n\nasync function requestSellerMonitorDownload/)?.[0] || "";
   const requester = main.match(/async function requestSellerMonitorDownload[\s\S]*?\n}\n\nfunction emitBrandExportAllComplete/)?.[0] || "";
-  assert.match(reader, /expected\.restored && expected\.createdAt > 0/);
+  assert.match(reader, /expected\.allowTimeRecovery && expected\.createdAt > 0/);
   assert.match(reader, /expected\.createdAt - 5 \* 60_000/);
-  assert.match(reader, /expected\.createdAt \+ 60 \* 60_000/);
+  assert.match(reader, /expected\.createdAt \+ 5_000/);
   assert.match(main, /recovered: Boolean\(ready\.recovered\)/);
   assert.match(requester, /rowLocator\.recovered/);
   assert.match(requester, /value\.includes\(rowLocator\.startText\)/);
@@ -83,8 +83,8 @@ test("manual stop cancels automation, retries, and download monitoring immediate
   assert.match(main, /sellerMonitorWindow\.destroy\(\)/);
 });
 
-test("release metadata is 2.10.264", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.264");
-  assert.equal(JSON.parse(lockSource).version, "2.10.264");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.264");
+test("release metadata is 2.10.265", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.265");
+  assert.equal(JSON.parse(lockSource).version, "2.10.265");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.265");
 });

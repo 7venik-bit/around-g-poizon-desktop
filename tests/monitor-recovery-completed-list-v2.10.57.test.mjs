@@ -51,8 +51,15 @@ test("all-complete stops activity only after the final renderer import drains", 
   assert.match(renderer, /brandMainAllComplete = true/);
 });
 
-test("release metadata is 2.10.264", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.264");
-  assert.equal(JSON.parse(lockSource).version, "2.10.264");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.264");
+test("current jobs recover completed rows after repeated job-number misses", () => {
+  assert.match(main, /allowTimeRecovery: Boolean\(job\?\.restored\) \|\| Number\(job\?\.rowMisses \|\| 0\) >= 2/);
+  assert.match(main, /if \(!row && expected\.allowTimeRecovery && expected\.createdAt > 0\)/);
+  assert.match(main, /item\.startAt <= expected\.createdAt \+ 5_000/);
+  assert.match(main, /status\.state === "WAITING_FOR_ROW"\) job\.rowMisses = Number\(job\.rowMisses \|\| 0\) \+ 1/);
+});
+
+test("release metadata is 2.10.265", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.265");
+  assert.equal(JSON.parse(lockSource).version, "2.10.265");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.265");
 });

@@ -33,3 +33,12 @@ test("completed file inspection errors end polling instead of re-downloading", (
   assert.match(mainSource, /Terminal cleanup is unconditional/);
   assert.match(mainSource, /if \(brandExportJobs\.size\) scheduleBrandExportMonitor\(500\);\s*else emitBrandExportAllComplete\(\);/);
 });
+
+test("a stable workbook detected in the export folder ends its active monitor job", () => {
+  assert.match(mainSource, /const stableInfo = await stat\(newest\.path\)/);
+  assert.match(mainSource, /if \(stableInfo\.size !== newest\.size \|\| stableInfo\.mtimeMs !== newest\.mtimeMs\) return/);
+  const scanner = mainSource.match(/async function scanBrandExportFolder\(\) \{[\s\S]*?\n}\n\nfunction startBrandExportFolderPolling/)?.[0] || "";
+  assert.match(scanner, /lastDownloadedAt: Date\.now\(\)/);
+  assert.match(scanner, /brandExportJobs\.delete\(matchedJobId\)/);
+  assert.match(scanner, /if \(brandExportJobs\.size\) scheduleBrandExportMonitor\(500\);\s*else emitBrandExportAllComplete\(\);/);
+});
