@@ -24,8 +24,17 @@ test("export center discovers job rows from stable job numbers across layouts an
   assert.doesNotMatch(main, /상품\\s\*검색\.\*내보내기/);
 });
 
-test("release metadata is 2.10.268", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.268");
-  assert.equal(JSON.parse(lockSource).version, "2.10.268");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.268");
+test("an interrupted update reconnects only the same selected brand job", () => {
+  assert.match(main, /function recoverableSavedBrandExportJob/);
+  assert.match(main, /job\.createdAt >= cutoff/);
+  assert.match(main, /visibleJobIds\.has\(job\.jobId\)/);
+  assert.match(main, /sameNonEmptyBrand\(job\.brandName, brandName\)/);
+  assert.match(main, /중단 전 작업번호 복구 완료 · 다운로드 감시 재개/);
+  assert.match(main, /recovered: true/);
+});
+
+test("release metadata is 2.10.269", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.269");
+  assert.equal(JSON.parse(lockSource).version, "2.10.269");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.269");
 });
