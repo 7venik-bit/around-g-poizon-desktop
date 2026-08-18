@@ -138,6 +138,7 @@ let mainWindow;
 let sellerWindow;
 let sellerMonitorWindow;
 const inventoryWindows = new Set();
+const officialInteractiveWindows = new Set();
 const domesticLoginWindows = new Map();
 const DOMESTIC_SEARCH_PARTITION = "persist:around-g-domestic-search";
 const DOMESTIC_LOGIN_SOURCES = [
@@ -922,6 +923,85 @@ async function waitForNaverSecurityVerification(searchWindow) {
   return false;
 }
 
+async function submitOfficialMallSearch(searchWindow, query) {
+  const exactQuery = String(query || "").trim();
+  if (!exactQuery || !searchWindow || searchWindow.isDestroyed()) return false;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const submitted = await searchWindow.webContents.executeJavaScript(`(() => {
+      const query = ${JSON.stringify(String(query || ""))};
+      const visible = (element) => {
+        if (!element) return false;
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      let input = [...document.querySelectorAll('input[type="search"],input[placeholder*="검색어"],input[placeholder*="검색"],input[name*="search" i],input[name="q" i],input[name*="query" i],input[name*="keyword" i],input[name*="schWord" i]')].find(visible);
+      if (!input) {
+        const controls = [...document.querySelectorAll('header button,header a,button,a,[role="button"]')];
+        const opener = controls.find((element) => {
+          const label = [element.getAttribute("aria-label"), element.getAttribute("title"), element.className, element.textContent].join(" ");
+          return visible(element) && /search|검색/i.test(label);
+        }) || controls.find((element) => {
+          if (!visible(element) || !element.querySelector('svg')) return false;
+          const label = [element.outerHTML, element.parentElement?.className].join(" ");
+          return /search|검색|magnif|ico[_-]?sch/i.test(label);
+        });
+        opener?.click();
+        return false;
+      }
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter ? setter.call(input, query) : (input.value = query);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      input.focus();
+      const form = input.form;
+      const submit = form?.querySelector('button[type="submit"],input[type="submit"]');
+      if (submit && visible(submit)) submit.click();
+      else if (form?.requestSubmit) form.requestSubmit();
+      else input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }));
+      return true;
+    })()`, true).catch(() => false);
+    if (submitted) return true;
+    await wait(700);
+  }
+  return false;
+}
+
+async function openOfficialMallInternalSearch(homepageUrl, query) {
+  const homepage = new URL(String(homepageUrl || ""));
+  if (!["https:", "http:"].includes(homepage.protocol)) throw new Error("INVALID_URL");
+  const exactQuery = String(query || "").trim();
+  if (!exactQuery) throw new Error("SEARCH_QUERY_REQUIRED");
+  const searchWindow = new BrowserWindow({
+    title: `공식몰 상품 검색 · ${exactQuery}`,
+    width: 1320,
+    height: 900,
+    show: true,
+    autoHideMenuBar: true,
+    icon: APP_ICON_PATH,
+    webPreferences: {
+      partition: DOMESTIC_SEARCH_PARTITION,
+      sandbox: true,
+      contextIsolation: true,
+      backgroundThrottling: false,
+    },
+  });
+  officialInteractiveWindows.add(searchWindow);
+  searchWindow.on("closed", () => officialInteractiveWindows.delete(searchWindow));
+  searchWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) searchWindow.loadURL(url).catch(() => {});
+    return { action: "deny" };
+  });
+  await searchWindow.loadURL(homepage.href);
+  searchWindow.show();
+  searchWindow.focus();
+  const submitted = await submitOfficialMallSearch(searchWindow, exactQuery);
+  if (!submitted) {
+    searchWindow.setTitle(`공식몰 돋보기를 눌러 ${exactQuery}을(를) 검색해 주세요`);
+  }
+  return { ok: true, submitted };
+}
+
 async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "", securityRetry = 0) {
   const interactiveOfficialSearch = source.store === "브랜드 공식몰"
     && !String(source.officialProductUrl || "")
@@ -949,44 +1029,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     ]);
     if (interactiveSiteSearch) {
       const searchQuery = String(source.searchQuery || articleNumber || title || "").trim();
-      let submitted = false;
-      for (let attempt = 0; attempt < 6 && !submitted; attempt += 1) {
-        submitted = await searchWindow.webContents.executeJavaScript(`(() => {
-          const query = ${JSON.stringify(String(source.searchQuery || articleNumber || title || ""))};
-          const visible = (element) => {
-            if (!element) return false;
-            const style = getComputedStyle(element);
-            const rect = element.getBoundingClientRect();
-            return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-          };
-          let input = [...document.querySelectorAll('input[type="search"],input[placeholder*="검색어"],input[name*="search" i],input[name="q" i],input[name*="query" i],input[name*="keyword" i],input[name*="schWord" i]')].find(visible);
-          if (!input) {
-            const controls = [...document.querySelectorAll('header button,header a,button,a,[role="button"]')];
-            const opener = controls.find((element) => {
-              const label = [element.getAttribute("aria-label"), element.getAttribute("title"), element.className, element.textContent].join(" ");
-              return visible(element) && /search|검색/i.test(label);
-            }) || controls.find((element) => {
-              if (!visible(element) || !element.querySelector('svg')) return false;
-              const label = [element.outerHTML, element.parentElement?.className].join(" ");
-              return /search|검색|magnif|ico[_-]?sch/i.test(label);
-            });
-            opener?.click();
-            return false;
-          }
-          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-          setter ? setter.call(input, query) : (input.value = query);
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-          input.focus();
-          const form = input.form;
-          const submit = form?.querySelector('button[type="submit"],input[type="submit"]');
-          if (submit && visible(submit)) submit.click();
-          else if (form?.requestSubmit) form.requestSubmit();
-          else input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }));
-          return true;
-        })()`, true).catch(() => false);
-        if (!submitted) await wait(600);
-      }
+      const submitted = await submitOfficialMallSearch(searchWindow, searchQuery);
       if (!submitted || !searchQuery) return null;
       await wait(2_000);
     }
@@ -7488,6 +7531,9 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   });
   ipcMain.handle("external:open", async (_event, url) => {
     return openExternalInChromeTab(url);
+  });
+  ipcMain.handle("official:open-internal-search", async (_event, input) => {
+    return openOfficialMallInternalSearch(input?.homepageUrl, input?.query);
   });
   ipcMain.handle("official:open-search", async (_event, input) => {
     const discovery = new URL(String(input?.discoveryUrl || ""));

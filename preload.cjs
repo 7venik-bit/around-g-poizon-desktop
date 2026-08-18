@@ -93,6 +93,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   exportExcel: () => ipcRenderer.invoke("excel:export"),
   exportExplorerExcel: (input) => ipcRenderer.invoke("excel:export-explorer", input),
   openExternal: (url) => ipcRenderer.invoke("external:open", url),
+  openOfficialInternalSearch: (input) => ipcRenderer.invoke("official:open-internal-search", input),
   openOfficialSearch: (input) => ipcRenderer.invoke("official:open-search", input),
   collectorCheck: (input) => ipcRenderer.invoke("collector:check", input),
   getAppInfo: () => ipcRenderer.invoke("app:info"),

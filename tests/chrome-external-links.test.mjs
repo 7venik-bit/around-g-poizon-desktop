@@ -17,8 +17,15 @@ test("official verification opens both pages through Chrome tabs", () => {
 });
 
 test("official mall automation clicks a magnifier before entering the article", () => {
+  assert.match(mainSource, /submitOfficialMallSearch/);
   assert.match(mainSource, /header button,header a,button,a,\[role="button"\]/);
   assert.match(mainSource, /search\|검색\|magnif\|ico\[_-\]\?sch/);
+});
+
+test("official mall UI button opens a controlled visible search window", () => {
+  assert.match(mainSource, /openOfficialMallInternalSearch/);
+  assert.match(mainSource, /official:open-internal-search/);
+  assert.match(mainSource, /show: true/);
 });
 
 test("Naver security verification shows the window and resumes in the same session", () => {

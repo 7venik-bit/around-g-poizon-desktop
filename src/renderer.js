@@ -1619,7 +1619,7 @@ function renderDomestic(result) {
         source.officialProductUrl || source.officialSearchUrl || source.homepageUrl || source.searchUrl || ""
       );
       const officialButton = (label, badgeClass = "") => officialOpenUrl
-        ? `<button class="source-link" type="button" data-url="${encodeURIComponent(officialOpenUrl)}"><span>${text(source.store)}</span><small${badgeClass ? ` class="${badgeClass}"` : ""}>${label}</small></button>`
+        ? `<button class="source-link" type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || officialOpenUrl)}" data-official-query="${encodeURIComponent(source.searchQuery || result.queryCandidates?.[0] || "")}"><span>${text(source.store)}</span><small${badgeClass ? ` class="${badgeClass}"` : ""}>${label}</small></button>`
         : `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small${badgeClass ? ` class="${badgeClass}"` : ""}>${label}</small></button>`;
       if (source.officialStatus === "pending") {
         return officialButton("공식몰 검색");
@@ -1922,6 +1922,13 @@ document.addEventListener("click", async (event) => {
       // Keep an already-decoded URL intact instead of aborting the click.
     }
     await window.aroundG.openExternal(resolvedUrl);
+  }
+  const officialInternalButton = event.target.closest("[data-official-homepage][data-official-query]");
+  if (officialInternalButton) {
+    await window.aroundG.openOfficialInternalSearch({
+      homepageUrl: decodeURIComponent(officialInternalButton.dataset.officialHomepage),
+      query: decodeURIComponent(officialInternalButton.dataset.officialQuery),
+    });
   }
   const officialButton = event.target.closest("[data-official-discovery][data-official-product]");
   const officialDiscovery = officialButton?.dataset.officialDiscovery;
