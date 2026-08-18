@@ -515,6 +515,42 @@ test("네이버 결과가 여러 개면 상품명만으로 품번 일치를 추�
   assert.equal(result.count, 0);
 });
 
+test("네이버 브랜드직영몰 1개와 같은 브랜드 상품 카드 1개는 품번이 생략돼도 인정한다", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    productCards: [{
+      productUrl: "https://shopping.naver.com/window-products/brandfashion/124925333777",
+      title: "[MLB] 청키 라이너 NY (Off White)",
+      text: "MLB 공식몰 청키 라이너 NY (Off White)",
+      imageUrl: "https://example.com/mlb-shoe.jpg",
+    }],
+    pageText: "전체 2개 브랜드직영몰 1개 백화점 1개 아울렛 0개",
+  }), "네이버 공식 브랜드스토어", "3ASXCA12N-50WHS", "MLB", "MLB 차키 내피 합성 가죽 로우탑 스니커즈");
+  assert.equal(result.count, 1);
+  assert.equal(result.products[0].articleNumber, "3ASXCA12N-50WHS");
+});
+
+test("네이버 백화점과 아울렛도 채널 1개와 같은 브랜드 카드 1개를 인정한다", () => {
+  for (const [store, label, path] of [
+    ["네이버 백화점", "백화점", "department"],
+    ["네이버 아울렛", "아울렛", "outlet"],
+  ]) {
+    const result = analyzeRenderedChannelProducts(JSON.stringify({
+      productCards: [{
+        productUrl: `https://shopping.naver.com/window-products/${path}/124925333777`,
+        title: "[MLB] 청키 라이너 NY (Off White)",
+        text: "MLB 청키 라이너 NY (Off White)",
+      }],
+      pageText: `전체 1개 ${label} 1개`,
+    }), store, "3ASXCA12N-50WHS", "MLB", "MLB 차키 내피 합성 가죽 로우탑 스니커즈");
+    assert.equal(result.count, 1, store);
+  }
+});
+
+test("네이버 window-products 상품 주소를 화면 수집 대상으로 인식한다", async () => {
+  const mainSource = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../main.mjs", import.meta.url), "utf8"));
+  assert.match(mainSource, /window-products/);
+});
+
 test("rendered SSG cards take priority over a stale block phrase elsewhere on the page", async () => {
   const mainSource = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../main.mjs", import.meta.url), "utf8"));
   assert.match(mainSource, /parsedContent\?\.pageBlocked && !parsedContent\?\.productCards\?\.length/);

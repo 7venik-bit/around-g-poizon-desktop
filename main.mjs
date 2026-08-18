@@ -1058,7 +1058,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       };
       const productLinks = [...document.querySelectorAll("a[href]")]
         .filter((link) => visible(link) || matchesExpected(link.href) || matchesExpected(link.outerHTML))
-        .filter((link) => /\\/(?:p|pd|products?|goods|product|(?:[a-z]{2}\\/)?t)\\//i.test(link.href)
+        .filter((link) => /\\/(?:p|pd|products?|window-products|goods|product|(?:[a-z]{2}\\/)?t)\\//i.test(link.href)
           || /productDetail\\.action/i.test(link.href)
           || /\\/item\\/itemView\\.ssg/i.test(link.href)
           || matchesExpected(link.href)
