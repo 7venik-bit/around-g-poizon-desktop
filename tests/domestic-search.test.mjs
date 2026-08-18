@@ -546,6 +546,33 @@ test("네이버 백화점과 아울렛도 채널 1개와 같은 브랜드 카드
   }
 });
 
+test("네이버 아울렛 탭이 6개면 카드에 품번이 없어도 화면에는 1로 표시한다", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    productCards: [{
+      productUrl: "https://shopping.naver.com/window-products/outlet/13001191642",
+      title: "아디다스 VL 코트 3.0 클라우드 화이트 코어 블랙",
+      text: "아디다스 롯데몰 수지점 89,000원",
+    }, {
+      productUrl: "https://shopping.naver.com/window-products/outlet/13001191643",
+      title: "에스마켓 아디다스 VL COURT 3.0",
+      text: "아디다스 NC 야탑점 79,000원",
+    }],
+    pageText: "전체 6개 아울렛 6개 백화점 0개 소호&스트릿 0개",
+  }), "네이버 아울렛", "ID8797", "아디다스", "아디다스 VL 코트 3.0");
+
+  assert.equal(result.count, 1);
+  assert.equal(result.channelCount, 6);
+  assert.equal(result.presenceConfirmed, true);
+  assert.equal(result.absenceConfirmed, false);
+});
+
+test("네이버 채널의 원시 결과 수와 관계없이 화면 값은 1 또는 0이다", () => {
+  const positive = analyzeRenderedChannelProducts("전체 6개 아울렛 6개", "네이버 아울렛", "ID8797", "아디다스");
+  const empty = analyzeRenderedChannelProducts("전체 0개 아울렛 0개", "네이버 아울렛", "ID8797", "아디다스");
+  assert.deepEqual({ count: positive.count, channelCount: positive.channelCount }, { count: 1, channelCount: 6 });
+  assert.deepEqual({ count: empty.count, channelCount: empty.channelCount }, { count: 0, channelCount: 0 });
+});
+
 test("네이버 window-products 상품 주소를 화면 수집 대상으로 인식한다", async () => {
   const mainSource = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../main.mjs", import.meta.url), "utf8"));
   assert.match(mainSource, /window-products/);
