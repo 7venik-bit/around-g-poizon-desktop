@@ -631,12 +631,17 @@ function productCrossCheckIdentity(product = {}) {
 async function cachedDomesticSearch(product, verifyLinkCounts = true) {
   const identity = productCrossCheckIdentity(product);
   if (domesticIdentitySearchCache.has(identity)) return domesticIdentitySearchCache.get(identity);
+  const articleNumber = product.articleNumber || product.productCode || "";
+  const brandName = product.brandName || product.brand || "";
+  const productName = product.apiTitle || product.title || product.name || "";
   const request = window.aroundG.searchDomestic({
-    query: [product.brandName || product.brand, product.articleNumber || product.productCode, product.title || product.name].filter(Boolean).join(" "),
-    articleNumber: product.articleNumber || product.productCode || "",
-    brand: product.brandName || product.brand || "",
+    query: articleNumber
+      ? [brandName, articleNumber].filter(Boolean).join(" ")
+      : [brandName, productName].filter(Boolean).join(" "),
+    articleNumber,
+    brand: brandName,
     brandId: product.brandCode || product.brandId || "",
-    title: product.apiTitle || product.title || product.name || "",
+    title: productName,
     imageUrl: product.logoUrl || product.imageUrl || "",
     verifyLinkCounts,
   });

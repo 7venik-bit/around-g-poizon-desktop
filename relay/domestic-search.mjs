@@ -128,8 +128,8 @@ export function officialBrandProductSearchUrl(brand, query, officialBrandRecord 
 export function officialBrandUsesInternalSearch(brand, officialBrandRecord = null) {
   if (officialBrandRecord?.interactiveSearch === true) return true;
   const homepage = String(officialBrandRecord?.homepageUrl || "");
-  if (/(?:^|\.)mlb-korea\.com/i.test((() => { try { return new URL(homepage).hostname; } catch { return ""; } })())) return true;
-  return officialBrandEntry(brand)?.interactiveSearch === true;
+  if (/^https?:\/\//i.test(homepage)) return true;
+  return Boolean(officialBrandEntry(brand)?.homepageUrl);
 }
 
 const NAVER_BRAND_STORES = [
@@ -683,13 +683,20 @@ export async function queryDomesticProducts({
   const normalizedQuery = sanitizeDomesticQuery(query);
   if (!normalizedQuery) throw new Error("DOMESTIC_QUERY_REQUIRED");
   if (normalizedQuery.length > MAX_QUERY_LENGTH) throw new Error("DOMESTIC_QUERY_TOO_LONG");
-  const queryCandidates = brandSearchQueries({
+  // A verified article number is the strongest product identity. Do not append
+  // POIZON's material/category description to portal searches (for example
+  // "합성 가죽, 인조가죽 로우탑...") because it dilutes the exact model query.
+  const exactArticleQueries = articleNumber
+    ? [[brand, articleNumber].filter(Boolean).join(" "), articleNumber]
+    : [];
+  const queryCandidates = (exactArticleQueries.length ? exactArticleQueries : brandSearchQueries({
     strategy: preferTitle && searchStrategy === "brand_code" ? "brand_title" : searchStrategy,
     brand,
     articleNumber,
     title,
     query: normalizedQuery,
-  }).map(sanitizeDomesticQuery).filter(Boolean);
+  })).map(sanitizeDomesticQuery).filter(Boolean)
+    .filter((candidate, index, all) => all.indexOf(candidate) === index);
 
   const knownOfficial = officialBrandEntry(brand || title || normalizedQuery);
   const officialStatus = officialBrandRecord?.status || (knownOfficial ? OFFICIAL_DOMAIN_STATUS.VERIFIED : OFFICIAL_DOMAIN_STATUS.PENDING);

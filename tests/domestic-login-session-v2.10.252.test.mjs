@@ -28,3 +28,9 @@ test("a redirected login page is never reported as inventory", () => {
     stockVerified: false,
   });
 });
+
+test("Naver security verification reuses the persistent domestic search session", () => {
+  assert.match(main, /waitForNaverSecurityVerification/);
+  assert.match(main, /partition: DOMESTIC_SEARCH_PARTITION/);
+  assert.match(main, /domestic-search:security-complete/);
+});

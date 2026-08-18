@@ -163,6 +163,21 @@ test("네이버는 검색어 URL로 바로 가지 않고 포털 내부 검색창
   assert.doesNotMatch(naver.searchUrl, /query=|q=/);
 });
 
+test("품번이 있으면 소재와 카테고리 설명을 검색어에 넣지 않는다", async () => {
+  const result = await queryDomesticProducts({
+    query: "MLB 3ASXCA12N-50WHS MLB 차키 내피 합성 가죽 인조가죽 로우탑 스니커즈",
+    articleNumber: "3ASXCA12N-50WHS",
+    brand: "MLB",
+    title: "MLB 차키 내피 합성 가죽 인조가죽 로우탑 스니커즈",
+    searchStrategy: "combined",
+    fetchImpl: async () => ({ ok: true, text: async () => "" }),
+  });
+  assert.deepEqual(result.queryCandidates, ["MLB 3ASXCA12N-50WHS", "3ASXCA12N-50WHS"]);
+  const department = result.sources.find((source) => source.store === "네이버 백화점");
+  assert.equal(department.searchQuery, "MLB 3ASXCA12N-50WHS");
+  assert.doesNotMatch(department.searchQuery, /가죽|로우탑|스니커즈/);
+});
+
 test("MLB 공식몰은 홈페이지에 들어간 뒤 정확한 품번을 검색창에 입력한다", async () => {
   assert.equal(officialBrandUsesInternalSearch("MLB"), true);
   const result = await queryDomesticProducts({
@@ -180,6 +195,22 @@ test("MLB 공식몰은 홈페이지에 들어간 뒤 정확한 품번을 검색�
   assert.equal(official.officialProductUrl, "");
   assert.equal(official.interactiveSearch, true);
   assert.equal(official.searchQuery, "3ASXCA12N-50WHS");
+});
+
+test("모든 브랜드 공식몰은 검색주소 대신 홈페이지 돋보기에서 품번을 검색한다", async () => {
+  assert.equal(officialBrandUsesInternalSearch("데상트"), true);
+  const result = await queryDomesticProducts({
+    query: "데상트 SR123UTS15",
+    articleNumber: "SR123UTS15",
+    brand: "데상트",
+    title: "스몰 워딩 코튼 반팔 티셔츠",
+    fetchImpl: async () => ({ ok: true, text: async () => "" }),
+  });
+  const official = result.sources.find((source) => source.store === "브랜드 공식몰");
+  assert.equal(official.homepageUrl, "https://dk-on.com/DESCENTE");
+  assert.equal(official.officialProductUrl, "");
+  assert.equal(official.interactiveSearch, true);
+  assert.equal(official.searchQuery, "SR123UTS15");
 });
 
 test("병행수입 검색은 네이버 통합검색이 아닌 쇼핑 포털 내부 검색을 사용한다", async () => {
@@ -619,7 +650,7 @@ test("a verified official homepage stays usable when product search is unsupport
   assert.equal(official.renderCount, true);
 });
 
-test("official-store search and verified product-detail URLs remain distinct", async () => {
+test("official-store direct search URL is replaced by homepage magnifier search", async () => {
   const result = await queryDomesticProducts({
     query: "아디다스 IH0274",
     articleNumber: "IH0274",
@@ -627,8 +658,11 @@ test("official-store search and verified product-detail URLs remain distinct", a
     fetchImpl: async () => ({ ok: true, text: async () => "" }),
   });
   const official = result.sources.find((source) => source.store === "브랜드 공식몰");
-  assert.match(official.officialSearchUrl, /adidas\.co\.kr\/search/);
-  assert.equal(official.officialProductUrl, official.officialSearchUrl);
+  assert.equal(official.homepageUrl, "https://www.adidas.co.kr/");
+  assert.equal(official.officialSearchUrl, "");
+  assert.equal(official.officialProductUrl, "");
+  assert.equal(official.interactiveSearch, true);
+  assert.equal(official.searchQuery, "IH0274");
 });
 
 test("official-store text matches without a product-detail URL are discarded", () => {
