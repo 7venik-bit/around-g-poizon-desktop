@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 97127)
-Total output lines: 8167
-
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, session, shell } from "electron";
 import { mkdirSync } from "node:fs";
 import { appendFile, copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
@@ -2116,7 +2113,4000 @@ function processedBrandExportName(name = "") {
 
 async function validateBrandExportFile(filePath, expectedBrands = []) {
   const info = await stat(filePath);
-  …47127 tokens truncated…인하지 못했습니다. ‘인기상품’ 제목과 SPU/SKU 기준이 함께 보이는 상태에서 다시 눌러 주세요.",
+  const signature = `${filePath}:${info.mtimeMs}:${info.size}`;
+  if (brandExportValidationCache.has(signature)) return brandExportValidationCache.get(signature);
+  const saved = store?.snapshot()?.settings?.brandExportFileValidationCache;
+  const savedEntry = Array.isArray(saved)
+    ? saved.find((entry) => String(entry?.signature || "") === signature)
+    : null;
+  if (savedEntry?.result) {
+    brandExportValidationCache.set(signature, savedEntry.result);
+    return savedEntry.result;
+  }
+  const fileBuffer = await readFile(filePath);
+  const brandColumn = readPoizonColumnValues(fileBuffer, "상품 브랜드", "브랜드");
+  const observedBrands = brandColumn.values;
+  const integrity = analyzeBrandValues(expectedBrands, observedBrands);
+  const result = {
+    ...integrity,
+    status: integrity.ok ? "matched" : "mismatch",
+    message: integrity.ok ? "선택 브랜드와 Excel 브랜드가 일치합니다." : brandMismatchMessage(integrity),
+  };
+  brandExportValidationCache.set(signature, result);
+  const nextCache = [
+    { signature, result },
+    ...(Array.isArray(saved) ? saved : []).filter((entry) => String(entry?.signature || "") !== signature),
+  ].slice(0, 500);
+  await store?.setSettings({ brandExportFileValidationCache: nextCache });
+  return result;
+}
+
+async function listBrandExportFiles() {
+  const folder = currentBrandExportFolder();
+  await mkdir(folder, { recursive: true });
+  const entries = await listBrandExportExcelEntries(folder);
+  const preparedEntries = await Promise.all(entries
+    .filter((entry) => !isProcessedBrandExportName(entry.name) && !isPartialBrandExportName(entry.name))
+    .map(async (entry) => ({ entry, info: await stat(entry.path) })));
+  preparedEntries.sort((left, right) => right.info.mtimeMs - left.info.mtimeMs);
+  const usedJobIds = new Set();
+  const files = [];
+  for (const { entry, info } of preparedEntries) {
+    const path = entry.path;
+    const folderMeta = entry.directory === folder
+      ? { brandName: "", jobId: "" }
+      : parseBrandExportFolderName(basename(entry.directory));
+    const expectedBrand = folderMeta.brandName || brandFromExportFileName(entry.name);
+    const savedJob = savedBrandExportJobForFile({
+      path,
+      name: entry.name,
+      brandName: expectedBrand,
+      mtimeMs: info.mtimeMs,
+    }, usedJobIds);
+    const recoveredJobId = String(folderMeta.jobId || savedJob?.jobId || "").trim();
+    if (recoveredJobId) usedJobIds.add(recoveredJobId);
+    const brandIntegrity = await validateBrandExportFile(path, [expectedBrand]).catch((error) => ({
+      ok: false,
+      status: "invalid",
+      expectedBrand,
+      dominantBrand: "",
+      ratio: 0,
+      message: `Excel 브랜드 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
+    }));
+    const detectedBrand = String(brandIntegrity?.dominantBrand || "").trim();
+    const resolvedBrandName = detectedBrand || expectedBrand;
+    if (recoveredJobId && resolvedBrandName
+      && !brandsMatch(resolvedBrandName, savedJob?.brandName)) {
+      await rememberBrandExportJob({
+        jobId: recoveredJobId,
+        brandName: resolvedBrandName,
+        createdAt: Number(savedJob?.createdAt || info.mtimeMs),
+        lastDownloadedAt: Number(savedJob?.lastDownloadedAt || info.mtimeMs),
+        expectedProductCount: Number(savedJob?.expectedProductCount || 0),
+        filePath: path,
+        fileName: entry.name,
+        fileMtimeMs: info.mtimeMs,
+      });
+    }
+    files.push({
+      path,
+      name: entry.name,
+      brandName: resolvedBrandName,
+      detectedBrandName: detectedBrand,
+      brandIntegrity,
+      jobId: recoveredJobId,
+      jobIdRecovered: Boolean(recoveredJobId),
+      time: info.mtimeMs,
+      mtimeMs: info.mtimeMs,
+      size: info.size,
+    });
+  }
+  const visibleFiles = files.filter((file) => !isProcessedBrandExportName(file.name));
+  visibleFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return { ok: true, folder, files: visibleFiles };
+}
+
+function excelPreviewCell(value) {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value.toISOString();
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+    ? value
+    : String(value);
+}
+
+function buildExcelPreviewProducts(headers = [], entries = []) {
+  const column = (...names) => findPoizonColumn(headers, ...names);
+  const columns = {
+    spuId: column("SPU ID", "SPU_ID"), image: column("SPU 이미지", "상품 이미지", "이미지"),
+    articleNumber: column("상품 번호", "상품번호", "품번"), title: column("상품명", "영문 상품명"),
+    brand: column("상품 브랜드", "브랜드"), category1: column("카테고리 대분류", "대분류"),
+    category2: column("카테고리 중분류", "중분류"), category3: column("카테고리 소분류", "소분류"),
+    averagePrice: column("최근 30일간 평균 거래가", "최근 30일 평균 거래가"),
+    sales30d: column("최근 30일 판매량", "최근30일판매량"),
+    localSales30d: column("현지 판매자 최근 30일 판매량", "현지판매자최근30일판매량"),
+    totalSales: column("중국 총 판매량", "총 판매량"),
+    localTotalSales: column("현지 판매자 총 판매량", "현지판매자총판매량"),
+    option: column("사이즈/옵션/색상", "옵션"), skuId: column("SKU ID", "SKU_ID"),
+  };
+  const cell = (row, index) => index >= 0 ? row[index] : "";
+  const raw = (row, index) => String(cell(row, index) ?? "").trim();
+  return entries.flatMap((entry) => {
+    const row = entry.values || [];
+    const spuId = raw(row, columns.spuId);
+    const articleNumber = raw(row, columns.articleNumber);
+    const title = raw(row, columns.title);
+    const skuId = raw(row, columns.skuId);
+    const option = raw(row, columns.option);
+    if (!spuId && !articleNumber && !title && !skuId) return [];
+    return [{
+      key: `ROW:${entry.sourceRowNumber}:${skuId || articleNumber || spuId}`,
+      sourceRowNumber: entry.sourceRowNumber,
+      spuId,
+      skuId,
+      option,
+      articleNumber,
+      title,
+      brandName: raw(row, columns.brand),
+      logoUrl: raw(row, columns.image),
+      categoryName: [columns.category1, columns.category2, columns.category3].map((index) => raw(row, index)).filter(Boolean).join(" / "),
+      averagePrice: parsePoizonSalesMetric(cell(row, columns.averagePrice)),
+      optionCount: 1,
+      totalSales: parsePoizonSalesMetric(cell(row, columns.totalSales)),
+      totalSalesRaw: raw(row, columns.totalSales),
+      localTotalSales: parsePoizonSalesMetric(cell(row, columns.localTotalSales)),
+      localTotalSalesRaw: raw(row, columns.localTotalSales),
+      sales30d: parsePoizonSalesMetric(cell(row, columns.sales30d)),
+      sales30dRaw: raw(row, columns.sales30d),
+      localSales30d: parsePoizonSalesMetric(cell(row, columns.localSales30d)),
+      localSales30dRaw: raw(row, columns.localSales30d),
+    }];
+  });
+}
+
+async function previewExcelFile(input = {}) {
+  const filePath = String(input.path || "").trim();
+  if (!filePath) return { ok: false, message: "파일 경로가 없습니다." };
+  if (!/\.xlsx$/i.test(filePath)) return { ok: false, message: "Excel(.xlsx) 파일만 볼 수 있습니다." };
+  const info = await stat(filePath);
+  const signature = `${filePath}:${info.mtimeMs}:${info.size}`;
+  let workbook = excelPreviewCache.get(signature);
+  if (!workbook) {
+    const rows = await readFirstDataSheet(await readFile(filePath));
+    const columnCount = rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
+    workbook = {
+      headers: Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(rows[0]?.[index])),
+      rows: rows.slice(1).map((row) => Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(row[index]))),
+      columnCount,
+    };
+    excelPreviewCache.set(signature, workbook);
+    while (excelPreviewCache.size > 3) excelPreviewCache.delete(excelPreviewCache.keys().next().value);
+  }
+  const productView = input.filters?.productView !== false;
+  const manualRawFilter = !productView && [
+    input.filters?.minimumTotal,
+    input.filters?.maximumTotal,
+    input.filters?.minimumLocalTotal,
+    input.filters?.maximumLocalTotal,
+  ].some((value) => value !== null && value !== undefined && String(value).trim() !== "");
+  const filtered = productView || manualRawFilter
+    ? filterPoizonPreviewRows(workbook.headers, workbook.rows, {
+        ...(input.filters || {}),
+        rowLevel: manualRawFilter,
+      })
+    : {
+        entries: workbook.rows.map((values, index) => ({ values, sourceRowNumber: index + 2 })),
+        sourceRows: workbook.rows.length,
+        sourceProducts: workbook.rows.length,
+        filteredProducts: workbook.rows.length,
+        chinaQualifiedProducts: workbook.rows.length,
+        localQualifiedProducts: workbook.rows.length,
+        missingChinaProducts: 0,
+        missingLocalProducts: 0,
+        totalSalesColumn: -1,
+        localTotalSalesColumn: -1,
+        filterApplied: false,
+        matchMode: "all",
+      };
+  const limit = Math.min(200, Math.max(25, Number(input.limit) || 100));
+  const products = productView ? buildExcelPreviewProducts(workbook.headers, filtered.entries) : [];
+  const sourceTotalProducts = productView ? buildExcelPreviewProducts(workbook.headers, workbook.rows.map((values, index) => ({ values, sourceRowNumber: index + 2 }))).length : 0;
+  const resultCount = productView ? products.length : filtered.entries.length;
+  const maximumOffset = Math.max(0, Math.floor(Math.max(0, resultCount - 1) / limit) * limit);
+  const offset = Math.min(maximumOffset, Math.max(0, Number(input.offset) || 0));
+  const pageEntries = filtered.entries.slice(offset, offset + limit);
+  const pageProducts = productView
+    ? products.slice(offset, offset + limit)
+    : buildExcelPreviewProducts(workbook.headers, pageEntries);
+  return {
+    ok: true,
+    path: filePath,
+    name: basename(filePath),
+    headers: workbook.headers,
+    rows: productView ? [] : pageEntries.map((entry) => entry.values),
+    rowNumbers: productView ? [] : pageEntries.map((entry) => entry.sourceRowNumber),
+    products: pageProducts,
+    productView,
+    offset,
+    limit,
+    totalRows: resultCount,
+    filteredSourceRows: filtered.entries.length,
+    sourceTotalRows: filtered.sourceRows,
+    sourceTotalProducts,
+    totalColumns: workbook.columnCount,
+    totalSalesColumn: filtered.totalSalesColumn,
+    localTotalSalesColumn: filtered.localTotalSalesColumn,
+    filterApplied: filtered.filterApplied,
+    matchMode: filtered.matchMode,
+    filterDiagnostics: {
+      sourceProducts: filtered.sourceProducts,
+      filteredProducts: filtered.filteredProducts,
+      chinaQualifiedProducts: filtered.chinaQualifiedProducts,
+      localQualifiedProducts: filtered.localQualifiedProducts,
+      missingChinaProducts: filtered.missingChinaProducts,
+      missingLocalProducts: filtered.missingLocalProducts,
+      totalSalesHeader: filtered.totalSalesColumn >= 0 ? workbook.headers[filtered.totalSalesColumn] : "",
+      localTotalSalesHeader: filtered.localTotalSalesColumn >= 0 ? workbook.headers[filtered.localTotalSalesColumn] : "",
+      totalSalesColumnNumber: filtered.totalSalesColumn >= 0 ? filtered.totalSalesColumn + 1 : 0,
+      localTotalSalesColumnNumber: filtered.localTotalSalesColumn >= 0 ? filtered.localTotalSalesColumn + 1 : 0,
+    },
+  };
+}
+
+async function scanBrandExportFolder() {
+  const folder = currentBrandExportFolder();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  // The will-download handler owns files created by the active POIZON job.
+  // Polling a partially written file can otherwise attach the previous job's
+  // brand before the completed download is validated.
+  if (brandDownloadStarted) return;
+  try {
+    const entries = await listBrandExportExcelEntries(folder);
+    const candidates = await Promise.all(entries
+      .filter((entry) => !isProcessedBrandExportName(entry.name))
+      .map(async (entry) => {
+        const path = entry.path;
+        const info = await stat(path);
+        return { path, name: entry.name, directory: entry.directory, mtimeMs: info.mtimeMs, size: info.size };
+      }));
+    candidates.sort((left, right) => right.mtimeMs - left.mtimeMs);
+    const newest = candidates.find((candidate) => !brandDownloadPathsInProgress.has(candidate.path));
+    if (!newest) return;
+    // A download may be created outside Electron's will-download handler.
+    // Wait for the file to stop changing before treating it as terminal.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    const stableInfo = await stat(newest.path);
+    if (stableInfo.size !== newest.size || stableInfo.mtimeMs !== newest.mtimeMs) return;
+    const signature = `${newest.path}:${newest.mtimeMs}:${newest.size}`;
+    if (lastBrandExportSignature === "__BASELINE_EXISTING_FILES__") {
+      lastBrandExportSignature = signature;
+      return;
+    }
+    if (signature === lastBrandExportSignature) return;
+    lastBrandExportSignature = signature;
+    const folderMeta = newest.directory === folder
+      ? { brandName: "", jobId: "" }
+      : parseBrandExportFolderName(basename(newest.directory));
+    const expectedBrand = folderMeta.brandName || brandFromExportFileName(newest.name);
+    if (!expectedBrand) return;
+    const matchingJobs = [...brandExportJobs.entries()].filter(([_jobId, job]) =>
+      brandsMatch(job?.brandName, expectedBrand)
+      || brandsMatch(job?.brandKo, expectedBrand)
+    );
+    const folderJobId = folderMeta.jobId && brandExportJobs.has(folderMeta.jobId)
+      ? folderMeta.jobId
+      : "";
+    const matchedJobId = folderJobId || (matchingJobs.length === 1 ? matchingJobs[0][0] : "");
+    // Existing files can receive a new OneDrive modification timestamp after
+    // startup. Only a file tied to one current POIZON job may emit a live
+    // completion event; historical files are restored through list-files.
+    if (!matchedJobId) return;
+    const brandIntegrity = await validateBrandExportFile(newest.path, [expectedBrand]).catch((error) => ({
+      ok: false,
+      status: "invalid",
+      expectedBrand,
+      dominantBrand: "",
+      ratio: 0,
+      message: `Excel 브랜드 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
+    }));
+    mainWindow.webContents.send("brand-export:detected", {
+      ...newest,
+      brandName: expectedBrand,
+      jobId: matchedJobId,
+      brandIntegrity,
+    });
+    // The workbook already exists and is stable, so the active job is done even
+    // when POIZON's task-number cell could not be read. Leaving it in the map
+    // would restart the monitor forever and request a duplicate download.
+    await rememberBrandExportJob({
+      jobId: matchedJobId,
+      brandName: expectedBrand,
+      brandKo: brandExportJobs.get(matchedJobId)?.brandKo || "",
+      createdAt: Number(brandExportJobs.get(matchedJobId)?.createdAt || newest.mtimeMs),
+      lastDownloadedAt: Date.now(),
+      expectedProductCount: Number(brandExportJobs.get(matchedJobId)?.expectedProductCount || 0),
+      filePath: newest.path,
+      fileName: newest.name,
+      fileMtimeMs: newest.mtimeMs,
+      sessionGeneration: brandWorkSessionGeneration,
+    });
+    brandExportJobs.delete(matchedJobId);
+    if (activeBrandDownloadJobId === matchedJobId) activeBrandDownloadJobId = "";
+    if (brandExportJobs.size) scheduleBrandExportMonitor(500);
+    else emitBrandExportAllComplete();
+  } catch (error) {
+    mainWindow.webContents.send("brand-export:error", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function startBrandExportFolderPolling() {
+  if (brandExportPollTimer) clearInterval(brandExportPollTimer);
+  brandExportPollTimer = setInterval(scanBrandExportFolder, 3000);
+  setTimeout(scanBrandExportFolder, 500);
+}
+
+function secretConfig() {
+  const settings = store.snapshot().settings;
+  return {
+    appKey: settings.appKey || "",
+    appSecret: decrypted(settings.appSecretEncrypted),
+    accessToken: decrypted(settings.accessTokenEncrypted),
+    apiBaseUrl: settings.apiBaseUrl || "https://open.poizon.com"
+  };
+}
+
+function createWindow() {
+  const win = new BrowserWindow({
+    icon: APP_ICON_PATH,
+    width: 1440,
+    height: 920,
+    minWidth: 1040,
+    minHeight: 700,
+    backgroundColor: "#f4f1ea",
+    title: "Around G POIZON",
+    webPreferences: {
+      preload: join(import.meta.dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  mainWindow = win;
+  win.webContents.on("render-process-gone", (_event, details) => {
+    const logLine = `${new Date().toISOString()} renderer-process-gone ${details.reason} exitCode=${details.exitCode}\n`;
+    appendFile(join(app.getPath("userData"), "around-g-crash.log"), logLine, "utf8").catch(() => {});
+    if (!win.isDestroyed() && details.reason !== "clean-exit") setTimeout(() => win.reload(), 800);
+  });
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
+  });
+  win.loadFile(join(import.meta.dirname, "src", "index.html"));
+}
+
+function openInventoryWindow(filePath, brandName = "") {
+  const inventoryWindow = new BrowserWindow({
+    icon: APP_ICON_PATH,
+    width: 1380,
+    height: 900,
+    minWidth: 980,
+    minHeight: 680,
+    backgroundColor: "#f3f9ff",
+    title: `${brandName || "POIZON"} 국내 재고·사이즈 확인`,
+    webPreferences: {
+      preload: join(import.meta.dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  inventoryWindows.add(inventoryWindow);
+  inventoryWindow.on("closed", () => inventoryWindows.delete(inventoryWindow));
+  inventoryWindow.loadFile(join(import.meta.dirname, "src", "inventory.html"), {
+    query: { path: filePath, brand: brandName },
+  });
+}
+
+function showCollectorWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function minimizeSellerAutomationWindow(message = "POIZON 판매자센터를 백그라운드에서 실행 중입니다.") {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return;
+  sellerWindow.showInactive();
+  if (!sellerWindow.isMinimized()) sellerWindow.minimize();
+  showCollectorWindow();
+  mainWindow?.webContents.send("seller:capture-progress", {
+    background: true,
+    message,
+  });
+}
+
+function localFileTimestamp(date = new Date()) {
+  const two = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}${two(date.getMonth() + 1)}${two(date.getDate())}_${two(date.getHours())}${two(date.getMinutes())}${two(date.getSeconds())}`;
+}
+
+function isPoizonExportDownloadUrl(value = "") {
+  try {
+    const url = new URL(String(value));
+    const hostname = url.hostname.toLowerCase();
+    const pathname = decodeURIComponent(url.pathname).toLowerCase();
+    return /\.xlsx(?:$|[?#])/i.test(url.href)
+      || pathname.includes("/intl-taskcenter/")
+      || (hostname.endsWith(".aliyuncs.com") && /poizon|dewu|oss-accelerate/.test(hostname));
+  } catch {
+    return false;
+  }
+}
+
+function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
+  const visible = options.visible !== false;
+  const activate = options.activate !== false;
+  const deferNavigation = options.deferNavigation === true;
+  if (sellerWindow && !sellerWindow.isDestroyed()) {
+    if (visible) {
+      if (activate) {
+        sellerWindow.show();
+        sellerWindow.focus();
+      } else {
+        sellerWindow.showInactive();
+      }
+    } else {
+      sellerWindow.hide();
+      showCollectorWindow();
+    }
+    if (!deferNavigation && targetUrl && sellerWindow.webContents.getURL() !== targetUrl) {
+      sellerWindow.loadURL(targetUrl);
+    }
+    return;
+  }
+  sellerWindow = new BrowserWindow({
+    icon: APP_ICON_PATH,
+    show: visible && activate,
+    width: 1500,
+    height: 940,
+    minWidth: 1000,
+    minHeight: 700,
+    title: "POIZON 판매자센터 · Around G 직접 연결",
+    backgroundColor: "#ffffff",
+    webPreferences: {
+      partition: "persist:around-g-poizon-seller",
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  const sellerSession = sellerWindow.webContents.session;
+  if (!sellerDownloadSessions.has(sellerSession)) {
+    sellerSession.on("will-download", (_event, item) => {
+    const sessionGeneration = brandWorkSessionGeneration;
+    const requestedJobs = [...brandExportJobs.entries()]
+      .filter(([_jobId, job]) => Number(job?.downloadRequestedAt || 0) > 0 && !job?.downloadStarted)
+      .sort((left, right) => Number(left[1].downloadRequestedAt) - Number(right[1].downloadRequestedAt));
+    const lockedJobId = activeBrandDownloadJobId && brandExportJobs.has(activeBrandDownloadJobId)
+      ? activeBrandDownloadJobId
+      : "";
+    const downloadJobId = lockedJobId
+      || requestedJobs[0]?.[0]
+      || (brandExportJobs.size === 1 ? [...brandExportJobs.keys()][0] : "");
+    const downloadJob = brandExportJobs.get(downloadJobId);
+    if (!downloadJobId || !downloadJob) {
+      mainWindow?.webContents.send("brand-export:error", {
+        message: "다운로드 파일과 브랜드 작업번호를 안전하게 연결하지 못해 자동 저장을 중단했습니다.",
+      });
+      item.cancel();
+      return;
+    }
+    activeBrandDownloadJobId = downloadJobId;
+    downloadJob.downloadStarted = true;
+    brandDownloadStarted = true;
+    const folder = currentBrandExportFolder();
+    // Electron must receive the destination before this event handler yields.
+    // Waiting for an async mkdir here lets Windows open its Save As dialog first.
+    const exportBrand = safeBrandExportLabel(downloadJob.brandName);
+    const brandFolder = join(folder, brandExportFolderName(exportBrand, downloadJobId));
+    mkdirSync(brandFolder, { recursive: true });
+    const safeBrand = exportBrand;
+    const fileName = safeBrand
+      ? `${downloadJobId}_${safeBrand}_${localFileTimestamp()}.xlsx`
+      : `${downloadJobId}_POIZON_${localFileTimestamp()}.xlsx`;
+    const filePath = join(brandFolder, fileName);
+    brandDownloadPathsInProgress.add(filePath);
+    item.setSavePath(filePath);
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "download-started",
+      brandName: downloadJob.brandName,
+      jobId: downloadJobId,
+      jobState: "4단계/5 · Excel 다운로드 중",
+      message: `${downloadJob.brandName || "선택 브랜드"} · 4단계/5 · Excel 다운로드를 시작했습니다.`,
+    });
+    item.once("done", (_doneEvent, state) => {
+      void (async () => {
+      if (sessionGeneration !== brandWorkSessionGeneration) return;
+      if (state === "completed") {
+        // Persist the terminal download state before workbook inspection. If a
+        // later Excel/brand validation step fails, this job must never be
+        // downloaded or monitored again.
+        const completedInfo = await stat(filePath);
+        await rememberBrandExportJob({
+          jobId: downloadJobId,
+          brandName: downloadJob.brandName,
+          brandKo: downloadJob.brandKo,
+          createdAt: downloadJob.createdAt,
+          lastDownloadedAt: Date.now(),
+          expectedProductCount: Number(downloadJob.expectedProductCount || 0),
+          filePath,
+          fileName,
+          fileMtimeMs: completedInfo.mtimeMs,
+          sessionGeneration,
+        });
+        let finalPath = filePath;
+        let finalName = fileName;
+        const expectedProductCount = Number(downloadJob.expectedProductCount || 0);
+        const fileBuffer = await readFile(filePath);
+        const workbook = await readSheet(repairPoizonWorksheetDimensions(fileBuffer));
+        const workbookSummary = summarizePoizonRows(getPoizonWorksheetRows(workbook));
+        const actualProductCount = workbookSummary.dataRowCount;
+        const summaryLabel = `전체 행 ${actualProductCount.toLocaleString("ko-KR")}개 · 고유 SPU ${workbookSummary.uniqueSpuCount.toLocaleString("ko-KR")}개 · 중복 ${workbookSummary.duplicateSpuCount.toLocaleString("ko-KR")}개 · 빈 SPU ${workbookSummary.blankSpuCount.toLocaleString("ko-KR")}개`;
+        if (expectedProductCount > 0 && actualProductCount < expectedProductCount) {
+          const partialName = `${safeBrand}_부분다운로드_${actualProductCount}_of_${expectedProductCount}_rows_${localFileTimestamp()}.xlsx`;
+          const partialPath = join(brandFolder, partialName);
+          try {
+            await rename(filePath, partialPath);
+            finalPath = partialPath;
+            finalName = partialName;
+          } catch {
+            // Preserve the original downloaded workbook even if Windows keeps it locked.
+          }
+          mainWindow?.webContents.send("brand-export:progress", {
+            status: "partial-download",
+            brandName: downloadJob.brandName,
+            jobId: downloadJobId,
+            jobState: `부분 다운로드 ${actualProductCount}/${expectedProductCount}행 · 실패`,
+            message: `${downloadJob.brandName || "선택 브랜드"} 부분 다운로드 ${actualProductCount.toLocaleString("ko-KR")}/${expectedProductCount.toLocaleString("ko-KR")}행 · ${summaryLabel} · 확인완료로 처리하지 않습니다.`,
+          });
+          mainWindow?.webContents.send("brand-export:error", {
+            brandName: downloadJob.brandName,
+            jobId: downloadJobId,
+            jobState: `부분 다운로드 ${actualProductCount}/${expectedProductCount}행 · 실패`,
+            message: `${downloadJob.brandName || "선택 브랜드"} Excel이 ${actualProductCount.toLocaleString("ko-KR")}/${expectedProductCount.toLocaleString("ko-KR")}행만 포함해 부분 파일로 보존했습니다. ${summaryLabel}`,
+            path: finalPath,
+            name: finalName,
+          });
+          return;
+        }
+        const brandIntegrity = await validateBrandExportFile(filePath, [
+          downloadJob.brandName,
+          downloadJob.brandKo,
+        ]).catch((error) => ({
+          ok: false,
+          status: "invalid",
+          expectedBrand: downloadJob.brandName,
+          dominantBrand: "",
+          ratio: 0,
+          message: `Excel 브랜드 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
+        }));
+        const detectedBrand = brandIntegrity.dominantBrand
+          ? safeBrandExportLabel(brandIntegrity.dominantBrand)
+          : exportBrand;
+        const detectedMatchesRequested = Boolean(detectedBrand) && [
+          downloadJob.brandName,
+          downloadJob.brandKo,
+        ].filter(Boolean).some((expected) => brandsMatch(detectedBrand, expected));
+        const resolvedBrandName = detectedMatchesRequested
+          ? downloadJob.brandName
+          : detectedBrand || downloadJob.brandName || exportBrand;
+        if (detectedBrand && !detectedMatchesRequested && detectedBrand !== exportBrand) {
+          const detectedFolder = join(folder, brandExportFolderName(detectedBrand, downloadJobId));
+          await mkdir(detectedFolder, { recursive: true });
+          finalName = `${detectedBrand}_${localFileTimestamp()}.xlsx`;
+          const detectedPath = join(detectedFolder, finalName);
+          try {
+            await rename(filePath, detectedPath);
+            finalPath = detectedPath;
+          } catch {
+            // Keep the completed workbook in its original requested-brand folder
+            // if Windows temporarily locks the file while the download closes.
+            finalName = fileName;
+          }
+        }
+        const info = await stat(finalPath);
+        lastBrandExportSignature = `${finalPath}:${info.mtimeMs}:${info.size}`;
+        await rememberBrandExportJob({
+          jobId: downloadJobId,
+          brandName: resolvedBrandName,
+          createdAt: downloadJob.createdAt,
+          lastDownloadedAt: Date.now(),
+          expectedProductCount,
+          filePath: finalPath,
+          fileName: finalName,
+          fileMtimeMs: info.mtimeMs,
+          sessionGeneration,
+        });
+        mainWindow?.webContents.send("brand-export:detected", {
+          path: finalPath,
+          name: finalName,
+          brandName: resolvedBrandName,
+          detectedBrandName: detectedMatchesRequested ? "" : detectedBrand || "",
+          jobId: downloadJobId,
+          size: info.size,
+          time: info.mtimeMs,
+          brandIntegrity,
+          workbookSummary,
+        });
+      } else {
+        mainWindow?.webContents.send("brand-export:error", {
+          message: `브랜드 데이터 저장 실패: ${state}`,
+        });
+      }
+      })().catch((error) => {
+        mainWindow?.webContents.send("brand-export:error", {
+          brandName: downloadJob.brandName,
+          jobId: downloadJobId,
+          jobState: state === "completed" ? "다운로드 완료 · Excel 확인 오류" : "다운로드 실패",
+          message: state === "completed"
+            ? `${downloadJob.brandName || "선택 브랜드"} 파일 다운로드는 완료됐으며 반복 감시를 종료합니다. Excel 확인 오류: ${error instanceof Error ? error.message : String(error)}`
+            : `브랜드 데이터 저장 실패: ${error instanceof Error ? error.message : String(error)}`,
+          path: filePath,
+          name: fileName,
+        });
+      }).finally(() => {
+        // Terminal cleanup is unconditional: a completed/failed Electron
+        // download must not leave its job in the polling queue forever.
+        brandExportJobs.delete(downloadJobId);
+        if (activeBrandDownloadJobId === downloadJobId) activeBrandDownloadJobId = "";
+        brandDownloadPathsInProgress.delete(filePath);
+        brandDownloadStarted = false;
+        if (brandExportJobs.size) scheduleBrandExportMonitor(500);
+        else emitBrandExportAllComplete();
+      });
+    });
+    });
+    sellerDownloadSessions.add(sellerSession);
+  }
+  sellerWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isPoizonExportDownloadUrl(url) || /^https:\/\/seller\.poizon\.com\//i.test(url)) {
+      sellerWindow?.webContents.downloadURL(url);
+    } else if (/^https:\/\//i.test(url)) {
+      openExternalInChromeTab(url).catch(() => shell.openExternal(url));
+    }
+    return { action: "deny" };
+  });
+  sellerWindow.webContents.on("will-navigate", (event, url) => {
+    if (!isPoizonExportDownloadUrl(url)) return;
+    event.preventDefault();
+    sellerWindow?.webContents.downloadURL(url);
+  });
+  sellerWindow.on("closed", () => {
+    sellerWindow = null;
+    brandExportJobPending = false;
+  });
+  if (visible && !activate) {
+    sellerWindow.once("ready-to-show", () => {
+      if (sellerWindow && !sellerWindow.isDestroyed()) sellerWindow.showInactive();
+    });
+  }
+  if (!deferNavigation && targetUrl) sellerWindow.loadURL(targetUrl);
+  if (!visible) showCollectorWindow();
+}
+
+async function waitForSellerExportAndDownload() {
+  await new Promise((resolve) => setTimeout(resolve, 1800));
+  if (!sellerWindow || sellerWindow.isDestroyed()) return;
+  if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
+    await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
+  }
+  while (true) {
+    if (!sellerWindow || sellerWindow.isDestroyed()) return;
+    const result = await sellerWindow.webContents.executeJavaScript(`(() => {
+      const visible = (element) => element && element.getBoundingClientRect().width > 0
+        && element.getBoundingClientRect().height > 0;
+      const rows = [...document.querySelectorAll("tr, [role='row']")].filter(visible);
+      const exportRows = rows.filter((row) =>
+        /상품검색\\s*내보내기/.test(String(row.innerText || row.textContent || ""))
+      );
+      const row = exportRows[0];
+      if (!row) return { state: "WAITING_FOR_ROW" };
+      const text = String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim();
+      const download = [...row.querySelectorAll("a, button, [role='button']")]
+        .find((element) => visible(element)
+          && /^다운로드$/.test(String(element.innerText || element.textContent || "").trim()));
+      if (download && /성공/.test(text)) {
+        download.click();
+        return { state: "DOWNLOAD_CLICKED" };
+      }
+      return { state: /처리\\s*중/.test(text) ? "PROCESSING" : "WAITING" };
+    })()`, true).catch(() => ({ state: "PAGE_NOT_READY" }));
+    if (result?.state === "DOWNLOAD_CLICKED") return;
+    await new Promise((resolve) => setTimeout(resolve, SELLER_EXPORT_POLL_INTERVAL_MS));
+    if (!sellerWindow || sellerWindow.isDestroyed()) return;
+    if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
+      await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
+    } else {
+      await sellerWindow.webContents.reloadIgnoringCache();
+    }
+  }
+}
+
+async function waitForSellerExportAndAutoDownload() {
+  let lastReloadAt = 0;
+  await new Promise((resolve) => setTimeout(resolve, 1800));
+  if (!sellerWindow || sellerWindow.isDestroyed()) return;
+  if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
+    await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
+    lastReloadAt = Date.now();
+  }
+  while (true) {
+    if (!sellerWindow || sellerWindow.isDestroyed()) return;
+    const result = await sellerWindow.webContents.executeJavaScript(`(() => {
+      const visible = (element) => element && element.getBoundingClientRect().width > 0
+        && element.getBoundingClientRect().height > 0;
+      const textOf = (element) => String(element?.innerText || element?.textContent || "")
+        .replace(/\\s+/g, " ").trim();
+      const isDownload = (element) => {
+        const description = [
+          textOf(element),
+          element?.getAttribute?.("aria-label"),
+          element?.getAttribute?.("title"),
+          element?.getAttribute?.("href"),
+        ].filter(Boolean).join(" ");
+        return /\\uB2E4\\uC6B4\\uB85C\\uB4DC/i.test(description)
+          || /download|export/i.test(description);
+      };
+      const enabled = (element) => !element.disabled
+        && element.getAttribute("aria-disabled") !== "true"
+        && !element.classList.contains("disabled");
+      const rows = [...document.querySelectorAll("tbody tr, tr, [role='row']")].filter(visible);
+      for (const row of rows) {
+        const controls = [...row.querySelectorAll("a, button, [role='button']")]
+          .filter((element) => visible(element) && enabled(element) && isDownload(element));
+        if (!controls.length) continue;
+        const rowText = textOf(row);
+        if (/\\uCC98\\uB9AC\\s*\\uC911|processing|pending/i.test(rowText)) continue;
+        const control = controls[controls.length - 1];
+        control.scrollIntoView({ block: "center" });
+        control.click();
+        return { state: "DOWNLOAD_CLICKED" };
+      }
+      return { state: rows.length ? "PROCESSING" : "WAITING_FOR_ROW" };
+    })()`, true).catch(() => ({ state: "PAGE_NOT_READY" }));
+    if (result?.state === "DOWNLOAD_CLICKED") return;
+    await new Promise((resolve) => setTimeout(resolve, SELLER_EXPORT_POLL_INTERVAL_MS));
+    if (!sellerWindow || sellerWindow.isDestroyed()) return;
+    if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
+      await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
+      lastReloadAt = Date.now();
+    } else if (Date.now() - lastReloadAt >= SELLER_EXPORT_POLL_INTERVAL_MS) {
+      await sellerWindow.webContents.reloadIgnoringCache();
+      lastReloadAt = Date.now();
+    }
+  }
+}
+
+async function watchLatestSellerExportEveryTenSeconds() {
+  const pollIntervalMs = SELLER_EXPORT_POLL_INTERVAL_MS;
+  await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  if (!sellerWindow || sellerWindow.isDestroyed()) return;
+  if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
+    await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
+  }
+
+  while (true) {
+    if (brandDownloadStarted) return;
+    if (!sellerWindow || sellerWindow.isDestroyed()) return;
+    const result = await sellerWindow.webContents.executeJavaScript(`(() => {
+      const expectedJobId = ${JSON.stringify(pendingBrandExportJobId)};
+      const visible = (element) => element && element.getBoundingClientRect().width > 0
+        && element.getBoundingClientRect().height > 0;
+      const textOf = (element) => String(element?.innerText || element?.textContent || "")
+        .replace(/\\s+/g, " ").trim();
+      const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")]
+        .filter(visible)
+        .filter((row) => /\\uC0C1\\uD488\\uAC80\\uC0C9\\s*\\uB0B4\\uBCF4\\uB0B4\\uAE30/i.test(textOf(row)));
+      const latestRow = expectedJobId
+        ? rows.find((row) => {
+          const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
+          const taskNumber = textOf(cells[0]).match(/\\b\\d{9,}\\b/)?.[0]
+            || textOf(row).match(/\\b\\d{9,}\\b/)?.[0]
+            || "";
+          return taskNumber === expectedJobId;
+        })
+        : rows[0];
+      if (!latestRow) return { state: "WAITING_FOR_LATEST_JOB" };
+
+      const rowText = textOf(latestRow);
+      if (/\\uCC98\\uB9AC\\s*\\uC911|processing|pending/i.test(rowText)) {
+        return { state: "PROCESSING" };
+      }
+      if (!/\\uC131\\uACF5|completed|success/i.test(rowText)) {
+        return { state: "WAITING_FOR_SUCCESS" };
+      }
+
+      const controls = [...latestRow.querySelectorAll("a, button, [role='button']")];
+      const download = controls.find((element) => {
+        if (!visible(element) || element.disabled || element.getAttribute("aria-disabled") === "true") return false;
+        const description = [
+          textOf(element),
+          element.getAttribute("aria-label"),
+          element.getAttribute("title"),
+          element.getAttribute("href"),
+        ].filter(Boolean).join(" ");
+        return /\\uB2E4\\uC6B4\\uB85C\\uB4DC/i.test(description)
+          || /download/i.test(description);
+      });
+      if (!download) return { state: "WAITING_FOR_DOWNLOAD" };
+
+      download.scrollIntoView({ block: "center" });
+      const href = String(download.href || download.getAttribute("href") || "");
+      if (!/^https:\\/\\//i.test(href)) {
+        download.focus();
+        download.click();
+      }
+      return {
+        state: /^https:\\/\\//i.test(href) ? "DOWNLOAD_URL_READY" : "DOWNLOAD_CLICKED",
+        href,
+      };
+    })()`, true).catch(() => ({ state: "PAGE_NOT_READY" }));
+
+    const stateLabel = {
+      WAITING_FOR_LATEST_JOB: "4단계/5 · 작업번호 행 확인 중",
+      PROCESSING: "4단계/5 · POIZON 파일 처리 중 · 10초마다 자동 감시",
+      WAITING_FOR_SUCCESS: "4단계/5 · POIZON 처리 완료 대기 중",
+      WAITING_FOR_DOWNLOAD: "4단계/5 · 다운로드 버튼 대기 중",
+      PAGE_NOT_READY: "4단계/5 · 다운로드센터 확인 중",
+    }[result?.state];
+    if (stateLabel) {
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: "monitoring",
+        jobId: pendingBrandExportJobId,
+        jobState: stateLabel,
+        message: `${pendingBrandExportName || "선택 브랜드"} · 작업번호 ${pendingBrandExportJobId} · ${stateLabel}`,
+      });
+    }
+
+    if (result?.state === "DOWNLOAD_URL_READY") {
+      sellerWindow.webContents.downloadURL(result.href);
+    }
+    if (result?.state === "DOWNLOAD_URL_READY" || result?.state === "DOWNLOAD_CLICKED") {
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: "download-requested",
+        jobId: pendingBrandExportJobId,
+        jobState: "4단계/5 · 처리 성공 · 다운로드 시작",
+        message: `${pendingBrandExportName || "선택 브랜드"} · 4단계/5 · POIZON 처리 성공 · 다운로드를 요청했습니다.`,
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    if (brandDownloadStarted) return;
+    if (!sellerWindow || sellerWindow.isDestroyed()) return;
+    if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
+      await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
+    } else {
+      await sellerWindow.webContents.reloadIgnoringCache();
+    }
+  }
+
+  brandExportJobPending = false;
+  pendingBrandExportName = "";
+  pendingBrandExportJobId = "";
+}
+
+
+function ensureSellerMonitorWindow() {
+  if (sellerMonitorWindow && !sellerMonitorWindow.isDestroyed()) return sellerMonitorWindow;
+  sellerMonitorWindow = new BrowserWindow({
+    icon: APP_ICON_PATH,
+    show: false,
+    skipTaskbar: true,
+    width: 1360,
+    height: 860,
+    title: "POIZON 다운로드 감시 · Around G",
+    backgroundColor: "#ffffff",
+    webPreferences: {
+      partition: "persist:around-g-poizon-seller",
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  sellerMonitorWindow.on("closed", () => {
+    sellerMonitorWindow = null;
+    if (brandExportJobs.size) scheduleBrandExportMonitor(3_000);
+  });
+  sellerMonitorWindow.loadURL(SELLER_EXPORT_CENTER_URL);
+  return sellerMonitorWindow;
+}
+
+function sellerMonitorFrames(targetWindow = sellerMonitorWindow) {
+  if (!targetWindow || targetWindow.isDestroyed()) return [];
+  const mainFrame = targetWindow.webContents.mainFrame;
+  return [mainFrame, ...(mainFrame.framesInSubtree || [])]
+    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
+}
+
+const SELLER_MONITOR_STATUS_PRIORITY = {
+  PAGE_NOT_READY: 0,
+  WAITING_FOR_ROW: 1,
+  WAITING_FOR_SUCCESS: 2,
+  PROCESSING: 3,
+  WAITING_FOR_COMPLETION: 4,
+  WAITING_FOR_DOWNLOAD: 5,
+  READY: 6,
+};
+
+async function readSellerMonitorStatuses(expectedIds = []) {
+  const monitor = ensureSellerMonitorWindow();
+  if (!monitor.webContents.getURL().includes("/main/exportCenter")) {
+    await monitor.loadURL(SELLER_EXPORT_CENTER_URL);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  const merged = new Map(expectedIds.map((jobId) => [jobId, { jobId, state: "WAITING_FOR_ROW" }]));
+  const sources = [
+    { name: "seller", window: sellerWindow },
+    { name: "monitor", window: monitor },
+  ].filter((source, index, all) => source.window
+    && !source.window.isDestroyed()
+    && source.window.webContents.getURL().includes("/main/exportCenter")
+    && all.findIndex((candidate) => candidate.window === source.window) === index);
+  for (const source of sources) {
+    const frames = sellerMonitorFrames(source.window);
+    for (const frame of frames) {
+    const expectedJobs = expectedIds.map((jobId) => {
+      const job = brandExportJobs.get(jobId);
+      return {
+        jobId,
+        restored: Boolean(job?.restored),
+        createdAt: Number(job?.createdAt || 0),
+        allowTimeRecovery: Boolean(job?.restored) || Number(job?.rowMisses || 0) >= 2,
+      };
+    });
+    const statuses = await Promise.race([
+      frame.executeJavaScript(`(() => {
+        const expectedJobs = ${JSON.stringify(expectedJobs)};
+        const usable = (element) => Boolean(element && element.isConnected);
+        const textOf = (element) => String(element?.textContent || element?.innerText || "")
+          .replace(/\\s+/g, " ").trim();
+        const downloadControlIn = (row) => [...row.querySelectorAll("a, button, [role='button'], [class*='download'], [class*='Download'], span, div")]
+          .filter(usable)
+          .filter((element) => !element.disabled && element.getAttribute("aria-disabled") !== "true")
+          .filter((element) => /다운로드|download/i.test([
+            textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
+          ].filter(Boolean).join(" ")))
+          .sort((left, right) => textOf(left).length - textOf(right).length)[0] || null;
+        const compactNumber = (value) => String(value || "").replace(/\\D/g, "");
+        const datePattern = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/g;
+        const parseDate = (value) => {
+          const normalized = String(value || "").replace(/[/.]/g, "-");
+          const time = Date.parse(normalized.replace(" ", "T"));
+          return Number.isFinite(time) ? time : 0;
+        };
+        const selector = "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']";
+        const rowCandidates = [...document.querySelectorAll(selector)].filter(usable);
+        const findJobContainer = (jobId) => {
+          const direct = rowCandidates
+            .filter((candidate) => textOf(candidate).includes(jobId)
+              || compactNumber(textOf(candidate)).includes(compactNumber(jobId)))
+            .sort((left, right) => textOf(left).length - textOf(right).length)[0];
+          if (direct) return direct;
+          const leaf = [...document.querySelectorAll("body *")]
+            .filter(usable)
+            .filter((element) => {
+              const value = textOf(element);
+              const matched = value.includes(jobId) || compactNumber(value).includes(compactNumber(jobId));
+              if (!matched || value.length > 1000) return false;
+              return ![...element.children].some((child) => {
+                const childText = textOf(child);
+                return childText.includes(jobId) || compactNumber(childText).includes(compactNumber(jobId));
+              });
+            })
+            .sort((left, right) => textOf(left).length - textOf(right).length)[0];
+          return leaf?.closest("tr, [role='row'], [data-row-key], [class*='row'], [class*='item']")
+            || leaf?.parentElement
+            || leaf
+            || null;
+        };
+        const usedRows = new Set();
+        const parsedRows = rowCandidates.map((row) => {
+          const rowText = textOf(row);
+          const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
+          const cellTexts = cells.map(textOf);
+          const dates = cellTexts.flatMap((value) => value.match(datePattern) || []);
+          const workStateText = cellTexts.find((value) => /^(?:성공|success|completed)$/i.test(value)) || "";
+          const control = downloadControlIn(row);
+          return { row, rowText, cells, dates, workStateText, control, startAt: parseDate(dates[0]) };
+        });
+        return expectedJobs.map((expected) => {
+          const { jobId } = expected;
+          let row = findJobContainer(jobId);
+          let recovered = false;
+          if (!row && expected.allowTimeRecovery && expected.createdAt > 0) {
+            const candidates = parsedRows.filter((item) => !usedRows.has(item.row)
+              && item.control
+              && /^(?:성공|success|completed)$/i.test(item.workStateText)
+              && item.dates.length > 0
+              && item.startAt >= expected.createdAt - 5 * 60_000
+              // POIZON creates the export row before Around G registers it.
+              // Reject later rows so adjacent brand jobs cannot be swapped.
+              && item.startAt <= expected.createdAt + 5_000)
+              .sort((left, right) => Math.abs(left.startAt - expected.createdAt) - Math.abs(right.startAt - expected.createdAt));
+            row = candidates[0]?.row || null;
+            recovered = Boolean(row);
+          }
+          if (!row) return { jobId, state: "WAITING_FOR_ROW" };
+          usedRows.add(row);
+          const rowText = textOf(row);
+          const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
+          const cellTexts = cells.map(textOf);
+          const dates = cellTexts.flatMap((value) => value.match(datePattern) || []);
+          const workStateText = cellTexts.find((value) => /^(?:성공|success|completed)$/i.test(value)) || cellTexts[3] || "";
+          const startText = dates[0] || "";
+          const completionText = dates.at(-1) || "";
+          const jobNumberMatched = recovered || compactNumber(rowText).includes(compactNumber(jobId));
+          const workSucceeded = /^(?:성공|success|completed)$/i.test(workStateText);
+          const completionConfirmed = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/.test(completionText);
+          if (!jobNumberMatched) return { jobId, state: "WAITING_FOR_ROW" };
+          if (/처리\\s*중|processing|pending|진행\\s*중/i.test(workStateText || rowText)) {
+            return { jobId, state: "PROCESSING", workStateText, completionText };
+          }
+          if (!workSucceeded) return { jobId, state: "WAITING_FOR_SUCCESS", workStateText, completionText };
+          if (!completionConfirmed) return { jobId, state: "WAITING_FOR_COMPLETION", workStateText, completionText };
+          const control = downloadControlIn(row);
+          let href = String(control?.href || control?.getAttribute?.("href") || "");
+          try {
+            if (href && !/^javascript:/i.test(href)) href = new URL(href, location.href).href;
+          } catch {}
+          return {
+            jobId,
+            state: control ? "READY" : "WAITING_FOR_DOWNLOAD",
+            href,
+            workStateText,
+            completionText,
+            startText,
+            recovered,
+            jobNumberMatched,
+            workSucceeded,
+            completionConfirmed,
+          };
+        });
+      })()`, true),
+      new Promise((resolve) => setTimeout(() => resolve([]), 5_000)),
+    ]).catch(() => []);
+    for (const status of Array.isArray(statuses) ? statuses : []) {
+      const previous = merged.get(status.jobId);
+      if (!previous || SELLER_MONITOR_STATUS_PRIORITY[status.state] > SELLER_MONITOR_STATUS_PRIORITY[previous.state]) {
+        merged.set(status.jobId, {
+          ...status,
+          frameRoutingId: frame.routingId,
+          windowSource: source.name,
+        });
+      }
+    }
+  }
+  }
+  return expectedIds.map((jobId) => merged.get(jobId) || { jobId, state: "PAGE_NOT_READY" });
+}
+
+async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId = null, windowSource = "monitor", rowLocator = {}) {
+  const targetWindow = windowSource === "seller" && sellerWindow && !sellerWindow.isDestroyed()
+    ? sellerWindow
+    : ensureSellerMonitorWindow();
+  const frames = sellerMonitorFrames(targetWindow);
+  const ordered = preferredFrameRoutingId === null
+    ? frames
+    : [...frames].sort((left, right) => Number(right.routingId === preferredFrameRoutingId) - Number(left.routingId === preferredFrameRoutingId));
+  for (const frame of ordered) {
+    const result = await frame.executeJavaScript(`(() => {
+      const jobId = ${JSON.stringify(String(jobId))};
+      const rowLocator = ${JSON.stringify(rowLocator || {})};
+      const usable = (element) => Boolean(element && element.isConnected);
+      const textOf = (element) => String(element?.textContent || element?.innerText || "").replace(/\\s+/g, " ").trim();
+      const downloadControlIn = (row) => [...row.querySelectorAll("a, button, [role='button'], [class*='download'], [class*='Download'], span, div")]
+        .filter(usable)
+        .filter((element) => !element.disabled && element.getAttribute("aria-disabled") !== "true")
+        .filter((element) => /다운로드|download/i.test([
+          textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
+        ].filter(Boolean).join(" ")))
+        .sort((left, right) => textOf(left).length - textOf(right).length)[0] || null;
+      const selector = "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']";
+      const rowCandidates = [...document.querySelectorAll(selector)].filter(usable);
+      const compactNumber = (value) => String(value || "").replace(/\\D/g, "");
+      const direct = rowCandidates
+        .filter((candidate) => textOf(candidate).includes(jobId)
+          || compactNumber(textOf(candidate)).includes(compactNumber(jobId)))
+        .sort((left, right) => textOf(left).length - textOf(right).length)[0];
+      const leaf = direct ? null : [...document.querySelectorAll("body *")]
+        .filter(usable)
+        .filter((element) => textOf(element).includes(jobId)
+          && ![...element.children].some((child) => textOf(child).includes(jobId)))
+        .sort((left, right) => textOf(left).length - textOf(right).length)[0];
+      const recoveredRow = rowLocator.recovered ? rowCandidates.find((candidate) => {
+        const value = textOf(candidate);
+        return (!rowLocator.startText || value.includes(rowLocator.startText))
+          && (!rowLocator.completionText || value.includes(rowLocator.completionText));
+      }) : null;
+      const row = direct
+        || recoveredRow
+        || leaf?.closest("tr, [role='row'], [data-row-key], [class*='row'], [class*='item']")
+        || leaf?.parentElement
+        || leaf
+        || null;
+      if (!row) return { clicked: false, href: "", reason: "JOB_ROW_NOT_FOUND" };
+      const rowText = textOf(row);
+      const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
+      const cellTexts = cells.map(textOf);
+      const datePattern = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/g;
+      const dates = cellTexts.flatMap((value) => value.match(datePattern) || []);
+      const workStateText = cellTexts.find((value) => /^(?:성공|success|completed)$/i.test(value)) || cellTexts[3] || "";
+      const completionText = dates.at(-1) || "";
+      const jobNumberMatched = Boolean(rowLocator.recovered) || compactNumber(rowText).includes(compactNumber(jobId));
+      const workSucceeded = /^(?:성공|success|completed)$/i.test(workStateText);
+      const completionConfirmed = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/.test(completionText);
+      if (!jobNumberMatched || !workSucceeded || !completionConfirmed) {
+        return {
+          clicked: false,
+          href: "",
+          reason: "DOWNLOAD_CONDITIONS_NOT_MET",
+          jobNumberMatched,
+          workSucceeded,
+          completionConfirmed,
+        };
+      }
+      const control = downloadControlIn(row);
+      if (!control) return { clicked: false, href: "" };
+      let href = String(control.href || control.getAttribute("href") || "");
+      try {
+        if (href && !/^javascript:/i.test(href)) href = new URL(href, location.href).href;
+      } catch {}
+      if (/^https:\\/\\//i.test(href)) return { clicked: true, href };
+      control.focus?.();
+      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+        control.dispatchEvent(new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          button: 0,
+        }));
+      }
+      if (typeof control.click === "function") control.click();
+      return { clicked: true, href: "" };
+    })()`, true).catch(() => ({ clicked: false, href: "" }));
+    if (result?.clicked) return { ...result, targetWindow };
+  }
+  return { clicked: false, href: "" };
+}
+
+function emitBrandExportAllComplete() {
+  if (brandExportJobs.size || brandDownloadStarted || activeBrandDownloadJobId || brandDownloadPathsInProgress.size) return false;
+  if (brandExportMonitorRestartTimer) {
+    clearTimeout(brandExportMonitorRestartTimer);
+    brandExportMonitorRestartTimer = null;
+  }
+  if (brandExportAllCompleteSent) return true;
+  brandExportAllCompleteSent = true;
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "all-complete",
+    monitorSource: "dedicated-window",
+    jobState: "모든 작업 확인완료",
+    message: "선택한 브랜드의 POIZON 원본 Excel 다운로드와 프로그램 등록이 모두 완료되었습니다.",
+  });
+  return true;
+}
+
+function scheduleBrandExportMonitor(delayMs = 0) {
+  if (!brandExportJobs.size || brandExportMonitorRunning) {
+    if (!brandExportJobs.size) emitBrandExportAllComplete();
+    return;
+  }
+  brandExportAllCompleteSent = false;
+  if (brandExportMonitorRestartTimer) clearTimeout(brandExportMonitorRestartTimer);
+  brandExportMonitorRestartTimer = setTimeout(() => {
+    brandExportMonitorRestartTimer = null;
+    if (!brandExportJobs.size || brandExportMonitorRunning) return;
+    void watchAllSellerExportJobsEveryTenSeconds();
+  }, Math.max(0, Number(delayMs) || 0));
+}
+
+async function watchAllSellerExportJobsEveryTenSeconds() {
+  if (brandExportMonitorRunning) return { ok: true, jobs: brandExportJobs.size };
+  brandExportMonitorRunning = true;
+  const pollIntervalMs = SELLER_MULTI_EXPORT_POLL_INTERVAL_MS;
+  try {
+    while (brandExportJobs.size) {
+      const expectedIds = [...brandExportJobs.keys()];
+      const statuses = await readSellerMonitorStatuses(expectedIds);
+      for (const status of statuses) {
+        const job = brandExportJobs.get(status.jobId);
+        if (!job) continue;
+        if (status.state === "WAITING_FOR_ROW") job.rowMisses = Number(job.rowMisses || 0) + 1;
+        else job.rowMisses = 0;
+        const stateLabel = {
+          WAITING_FOR_ROW: "4단계/5 · 작업번호 행 확인 중",
+          PROCESSING: "4단계/5 · POIZON 파일 처리 중 · 10초마다 감시",
+          WAITING_FOR_SUCCESS: "4단계/5 · POIZON 처리 완료 대기 중",
+          WAITING_FOR_COMPLETION: "4단계/5 · 작업 완료 시각 확인 중",
+          WAITING_FOR_DOWNLOAD: "4단계/5 · 다운로드 버튼 대기",
+          PAGE_NOT_READY: "4단계/5 · 다운로드센터 프레임 확인 중",
+          READY: "4단계/5 · 처리 성공 · 다운로드 시작",
+        }[status.state] || status.state;
+        mainWindow?.webContents.send("brand-export:progress", {
+          status: "monitoring",
+          monitorSource: "dedicated-window",
+          brandName: job.brandName,
+          jobId: status.jobId,
+          jobState: stateLabel,
+          message: `${job.brandName} · 작업번호 ${status.jobId} · ${stateLabel}`,
+        });
+      }
+
+      const statusCheckedAt = Date.now();
+      if (activeBrandDownloadJobId) {
+        const activeJob = brandExportJobs.get(activeBrandDownloadJobId);
+        const requestAge = statusCheckedAt - Number(activeJob?.downloadRequestedAt || statusCheckedAt);
+        if (!activeJob || (!activeJob.downloadStarted && requestAge >= 120_000)) {
+          if (activeJob) {
+            activeJob.downloadRequestedAt = 0;
+            activeJob.downloadStarted = false;
+          }
+          activeBrandDownloadJobId = "";
+        }
+      }
+      const ready = activeBrandDownloadJobId ? null : statuses.find((status) => {
+        const job = brandExportJobs.get(status.jobId);
+        return Boolean(job)
+          && status.state === "READY"
+          && status.jobNumberMatched
+          && status.workSucceeded
+          && status.completionConfirmed
+          && !job.downloadStarted
+          && !job.downloadRequestedAt;
+      });
+      if (ready) {
+        const job = brandExportJobs.get(ready.jobId);
+        if (!job) continue;
+        activeBrandDownloadJobId = ready.jobId;
+        job.downloadRequestedAt = Date.now();
+        const action = await requestSellerMonitorDownload(ready.jobId, ready.frameRoutingId, ready.windowSource, {
+          recovered: Boolean(ready.recovered),
+          startText: ready.startText || "",
+          completionText: ready.completionText || "",
+        });
+        if (action?.href && action?.targetWindow && !action.targetWindow.isDestroyed()) {
+          action.targetWindow.webContents.downloadURL(action.href);
+        }
+        if (!action?.clicked) {
+          const currentJob = brandExportJobs.get(ready.jobId);
+          if (!currentJob) continue;
+          currentJob.downloadRequestedAt = 0;
+          currentJob.downloadStarted = false;
+          if (activeBrandDownloadJobId === ready.jobId) activeBrandDownloadJobId = "";
+          mainWindow?.webContents.send("brand-export:progress", {
+            status: "monitoring",
+            monitorSource: "dedicated-window",
+            brandName: currentJob.brandName,
+            jobId: ready.jobId,
+            jobState: "4단계/5 · 다운로드 버튼 재탐색",
+            message: `${currentJob.brandName} · 작업번호 ${ready.jobId} · 모든 다운로드센터 프레임에서 버튼을 다시 찾습니다.`,
+          });
+        }
+      }
+      for (const [jobId, job] of [...brandExportJobs.entries()]) {
+        const age = statusCheckedAt - Number(job?.createdAt || statusCheckedAt);
+        if (age >= SELLER_EXPORT_MONITOR_DELAY_WARNING_MS && !job.delayWarningSent) {
+          job.delayWarningSent = true;
+          mainWindow?.webContents.send("brand-export:progress", {
+            status: "monitoring",
+            monitorSource: "dedicated-window",
+            brandName: job.brandName,
+            jobId,
+            jobState: "POIZON 처리 지연 · 감시 계속",
+            message: `${job.brandName} · 작업번호 ${jobId} · 20분이 지났지만 다운로드가 완료될 때까지 계속 감시합니다.`,
+          });
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      const monitor = ensureSellerMonitorWindow();
+      if (!monitor.webContents.getURL().includes("/main/exportCenter")) {
+        await monitor.loadURL(SELLER_EXPORT_CENTER_URL);
+      } else {
+        await monitor.webContents.reloadIgnoringCache();
+      }
+    }
+  } catch (error) {
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "monitor-recovering",
+      monitorSource: "dedicated-window",
+      jobState: "다운로드센터 감시 자동 복구 중",
+      message: `전용 감시 창 오류를 3초 후 자동 복구합니다: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  } finally {
+    brandExportMonitorRunning = false;
+    if (brandExportJobs.size) scheduleBrandExportMonitor(3_000);
+    else emitBrandExportAllComplete();
+  }
+  return { ok: true, jobs: brandExportJobs.size };
+}
+
+const SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT = `(() => {
+  const visible = (element) => element && element.getClientRects().length > 0;
+  const textOf = (element) => String(element?.innerText || element?.textContent || "")
+    .replace(/\s+/g, " ").trim();
+  const candidates = [...document.querySelectorAll(
+    "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']"
+  )].filter(visible);
+  const jobs = [];
+  const seen = new Set();
+  for (const element of candidates) {
+    const text = textOf(element);
+    if (!text || text.length > 2400) continue;
+    const cells = [...element.querySelectorAll("td, [role='cell'], [role='gridcell']")];
+    const firstCellText = textOf(cells[0]);
+    const id = firstCellText.match(/\\b\\d{7,}\\b/)?.[0]
+      || text.match(/\\b\\d{7,}\\b/)?.[0]
+      || "";
+    if (!id || seen.has(id)) continue;
+    const rowHint = cells.length >= 2
+      || /내보내기|다운로드|작업|export|download|task|导出|下载|任务|처리|成功/i.test(text);
+    if (!rowHint) continue;
+    seen.add(id);
+    jobs.push({ id, fingerprint: id, text: text.slice(0, 500) });
+  }
+  const bodyText = textOf(document.body);
+  const emptyState = /暂无数据|没有数据|暂无任务|데이터가\s*없|작업이\s*없|no\s*(?:data|task)/i.test(bodyText);
+  return { ready: jobs.length > 0 || emptyState, jobs };
+})()`;
+
+async function readSellerExportJobsFromWindow(targetWindow) {
+  if (!targetWindow || targetWindow.isDestroyed()) return null;
+  const mainFrame = targetWindow.webContents.mainFrame;
+  const frames = [mainFrame, ...(mainFrame.framesInSubtree || [])]
+    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
+  const jobsById = new Map();
+  let ready = false;
+  for (const frame of frames) {
+    try {
+      const snapshot = await frame.executeJavaScript(SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT, true);
+      if (snapshot?.ready) ready = true;
+      for (const job of snapshot?.jobs || []) {
+        const id = String(job?.id || "").trim();
+        if (id && !jobsById.has(id)) jobsById.set(id, job);
+      }
+    } catch {
+      // 접근할 수 없는 외부 프레임은 건너뛰고 나머지 프레임을 계속 확인합니다.
+    }
+  }
+  return ready || jobsById.size ? [...jobsById.values()] : null;
+}
+
+async function readSellerExportJobs() {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return null;
+  if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
+    await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  return readSellerExportJobsFromWindow(sellerWindow);
+}
+
+async function readSellerExportJobsFromMonitor() {
+  const monitor = ensureSellerMonitorWindow();
+  if (!monitor.webContents.getURL().includes("/main/exportCenter")) {
+    await monitor.loadURL(SELLER_EXPORT_CENTER_URL);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  return readSellerExportJobsFromWindow(monitor);
+}
+
+async function readSellerExportBaselineSeparately() {
+  let baselineWindow;
+  try {
+    baselineWindow = new BrowserWindow({
+      show: false,
+      width: 1100,
+      height: 760,
+      webPreferences: {
+        partition: "persist:around-g-poizon-seller",
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        backgroundThrottling: false,
+      },
+    });
+    await baselineWindow.loadURL(SELLER_EXPORT_CENTER_URL);
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    return await readSellerExportJobsFromWindow(baselineWindow);
+  } catch {
+    return null;
+  } finally {
+    if (baselineWindow && !baselineWindow.isDestroyed()) baselineWindow.destroy();
+  }
+}
+
+// The long-lived hidden monitor can keep a stale SPA table even after a hard
+// reload. Open a short-lived window in the same authenticated partition so a
+// newly-created POIZON export row cannot be missed and orphaned from its brand.
+async function readSellerExportJobsFreshly() {
+  return readSellerExportBaselineSeparately();
+}
+
+async function readStableSellerExportJobs() {
+  let previousSignature = null;
+  let stableReads = 0;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const jobs = await readSellerExportJobs();
+    if (Array.isArray(jobs)) {
+      const signature = jobs.map((job) => String(job?.id || "").trim())
+        .filter(Boolean).sort().join("|");
+      if (signature === previousSignature) stableReads += 1;
+      else stableReads = 1;
+      previousSignature = signature;
+      if (stableReads >= 2) return jobs;
+    } else {
+      previousSignature = null;
+      stableReads = 0;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (!sellerWindow || sellerWindow.isDestroyed()) return null;
+  }
+  return null;
+}
+
+function normalizeBrandExportKey(value = "") {
+  return String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9\uAC00-\uD7A3]+/g, "");
+}
+
+function savedBrandExportJobs() {
+  const saved = store?.snapshot()?.settings?.brandExportJobCache;
+  return Array.isArray(saved) ? saved : [];
+}
+
+function normalizeSavedBrandExportPath(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/[\\/]+/g, "\\")
+    .toLocaleLowerCase();
+}
+
+function savedBrandExportJobForFile(input = {}, usedJobIds = new Set()) {
+  const pathKey = normalizeSavedBrandExportPath(input.path);
+  const fileNameKey = String(input.name || "").trim().toLocaleLowerCase();
+  const brandKey = normalizeBrandExportKey(input.brandName);
+  const mtimeMs = Number(input.mtimeMs || 0);
+  const candidates = savedBrandExportJobs()
+    .map((item) => ({
+      ...item,
+      jobId: String(item?.jobId || "").trim(),
+      brandName: String(item?.brandName || "").trim(),
+      brandKo: String(item?.brandKo || "").trim(),
+      filePath: String(item?.filePath || "").trim(),
+      fileName: String(item?.fileName || "").trim(),
+      fileMtimeMs: Number(item?.fileMtimeMs || 0),
+      lastDownloadedAt: Number(item?.lastDownloadedAt || 0),
+      createdAt: Number(item?.createdAt || 0),
+    }))
+    .filter((item) => item.jobId && item.lastDownloadedAt > 0 && !usedJobIds.has(item.jobId));
+  const exactPath = pathKey
+    ? candidates.find((item) => normalizeSavedBrandExportPath(item.filePath) === pathKey)
+    : null;
+  if (exactPath) return exactPath;
+  const brandMatches = (item) => {
+    if (!brandKey) return false;
+    return brandsMatch(item.brandName, input.brandName)
+      || brandsMatch(item.brandKo, input.brandName);
+  };
+  const exactNameMatches = fileNameKey
+    ? candidates.filter((item) => item.fileName.toLocaleLowerCase() === fileNameKey && brandMatches(item))
+    : [];
+  if (exactNameMatches.length === 1) return exactNameMatches[0];
+  const brandCandidates = candidates.filter(brandMatches);
+  if (!brandCandidates.length) return null;
+  const scored = brandCandidates.map((item) => {
+    const referenceTime = item.fileMtimeMs || item.lastDownloadedAt || item.createdAt;
+    return {
+      item,
+      difference: mtimeMs > 0 && referenceTime > 0
+        ? Math.abs(mtimeMs - referenceTime)
+        : Number.POSITIVE_INFINITY,
+    };
+  }).sort((left, right) => left.difference - right.difference);
+  const nearest = scored[0];
+  const second = scored[1];
+  const maximumDifference = 24 * 60 * 60 * 1000;
+  if (nearest && nearest.difference <= maximumDifference
+    && (!second || second.difference - nearest.difference >= 30_000)) {
+    return nearest.item;
+  }
+  return brandCandidates.length === 1 ? brandCandidates[0] : null;
+}
+
+function restorePendingBrandExportJobs() {
+  const cutoff = Date.now() - RESTORED_PENDING_JOB_MAX_AGE_MS;
+  for (const saved of savedBrandExportJobs()) {
+    const jobId = String(saved?.jobId || "").trim();
+    const brandName = String(saved?.brandName || "").trim();
+    const createdAt = Number(saved?.createdAt || 0);
+    const lastDownloadedAt = Number(saved?.lastDownloadedAt || 0);
+    if (!jobId || !brandName || lastDownloadedAt > 0 || createdAt < cutoff) continue;
+    brandExportJobs.set(jobId, {
+      jobId,
+      brandName,
+      brandKo: String(saved?.brandKo || "").trim(),
+      createdAt,
+      expectedProductCount: Number(saved?.expectedProductCount || 0),
+      downloadStarted: false,
+      downloadRequestedAt: 0,
+      restored: true,
+    });
+  }
+  return [...brandExportJobs.entries()].map(([jobId, job]) => ({
+    jobId,
+    brandName: job.brandName,
+    brandKo: job.brandKo || "",
+    createdAt: Number(job.createdAt || 0),
+    expectedProductCount: Number(job.expectedProductCount || 0),
+    restored: Boolean(job.restored),
+  }));
+}
+
+async function rememberBrandExportJob(input = {}) {
+  if (input.sessionGeneration !== undefined
+    && input.sessionGeneration !== brandWorkSessionGeneration) return;
+  const jobId = String(input.jobId || "").trim();
+  const brandName = String(input.brandName || "").trim();
+  const brandKo = String(input.brandKo || "").trim();
+  const officialRegistry = safeOfficialDomainRegistry(
+    store.snapshot().settings.brandCatalog || explorerMetadata().brands
+  );
+  const officialRecord = officialDomainRecordForBrand(officialRegistry, brandName)
+    || officialDomainRecordForBrand(officialRegistry, brandKo);
+  const officialAliases = officialDomainSearchAliases(officialRecord);
+  if (!jobId || !brandName) return;
+  const next = {
+    jobId,
+    brandName,
+    brandKo,
+    brandKey: normalizeBrandExportKey(brandName),
+    createdAt: Number(input.createdAt) || Date.now(),
+    lastDownloadedAt: Number(input.lastDownloadedAt) || 0,
+    expectedProductCount: Number(input.expectedProductCount) || 0,
+    filePath: String(input.filePath || "").trim(),
+    fileName: String(input.fileName || "").trim(),
+    fileMtimeMs: Number(input.fileMtimeMs) || 0,
+  };
+  const cache = [
+    next,
+    ...savedBrandExportJobs().filter((item) => String(item?.jobId || "") !== jobId),
+  ].slice(0, 500);
+  await store.setSettings({ brandExportJobCache: cache });
+}
+
+function brandExportJobOwner(jobId = "") {
+  const normalizedId = String(jobId || "").trim();
+  if (!normalizedId) return null;
+  const active = brandExportJobs.get(normalizedId);
+  if (active) return active;
+  return savedBrandExportJobs().find((item) => String(item?.jobId || "").trim() === normalizedId) || null;
+}
+
+function recoverableSavedBrandExportJob(brandName = "", brandKo = "", currentJobs = []) {
+  const visibleJobIds = new Set((currentJobs || [])
+    .map((job) => String(job?.id || "").trim())
+    .filter(Boolean));
+  const cutoff = Date.now() - RESTORED_PENDING_JOB_MAX_AGE_MS;
+  const sameNonEmptyBrand = (left = "", right = "") => Boolean(String(left || "").trim())
+    && Boolean(String(right || "").trim())
+    && brandsMatch(left, right);
+  return savedBrandExportJobs()
+    .map((job) => ({
+      ...job,
+      jobId: String(job?.jobId || "").trim(),
+      brandName: String(job?.brandName || "").trim(),
+      brandKo: String(job?.brandKo || "").trim(),
+      createdAt: Number(job?.createdAt || 0),
+      lastDownloadedAt: Number(job?.lastDownloadedAt || 0),
+    }))
+    .filter((job) => job.jobId
+      && visibleJobIds.has(job.jobId)
+      && job.lastDownloadedAt === 0
+      && job.createdAt >= cutoff
+      && (sameNonEmptyBrand(job.brandName, brandName)
+        || sameNonEmptyBrand(job.brandKo, brandName)
+        || sameNonEmptyBrand(job.brandName, brandKo)
+        || sameNonEmptyBrand(job.brandKo, brandKo)))
+    .sort((left, right) => right.createdAt - left.createdAt)[0] || null;
+}
+
+function sellerWindowFrames() {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return [];
+  const mainFrame = sellerWindow.webContents.mainFrame;
+  return [mainFrame, ...(mainFrame.framesInSubtree || [])]
+    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
+}
+
+async function executeSellerFrameWithTimeout(frame, script, timeoutMs = 4_000, fallback = null) {
+  return Promise.race([
+    frame.executeJavaScript(script, true),
+    new Promise((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
+  ]).catch(() => fallback);
+}
+
+async function sellerPageRequiresLogin() {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return true;
+  const url = String(sellerWindow.webContents.getURL() || "");
+  if (/login|signin|passport|auth/i.test(url) || !url.startsWith("https://seller.poizon.com/")) return true;
+  const state = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => {
+    const text = String(document.body?.innerText || "").slice(0, 2500);
+    return {
+      password: Boolean(document.querySelector('input[type="password"]')),
+      loginText: /登录|登入|sign\\s*in|log\\s*in/i.test(text),
+      sellerText: /商品|品牌|销售|导出|POIZON|得物/i.test(text),
+    };
+  })()`, 4_000, { password: false, loginText: false, sellerText: false });
+  return Boolean(state?.password || (state?.loginText && !state?.sellerText));
+}
+
+async function setSellerLoginStatusOverlay(state = "checking", title = "", detail = "") {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return;
+  const colors = {
+    checking: ["#2563eb", "#eff6ff"],
+    filling: ["#d97706", "#fffbeb"],
+    success: ["#059669", "#ecfdf5"],
+    error: ["#dc2626", "#fef2f2"],
+  };
+  const [accent, background] = colors[state] || colors.checking;
+  const script = `(() => {
+    let panel = document.getElementById("around-g-login-status");
+    if (!panel) {
+      panel = document.createElement("section");
+      panel.id = "around-g-login-status";
+      panel.style.cssText = "position:fixed;z-index:2147483647;right:24px;top:24px;width:320px;box-sizing:border-box;padding:15px 17px;border-radius:12px;font-family:Arial,'Malgun Gothic',sans-serif;box-shadow:0 10px 35px rgba(0,0,0,.28);";
+      document.documentElement.appendChild(panel);
+    }
+    panel.style.border = "2px solid " + ${JSON.stringify(accent)};
+    panel.style.background = ${JSON.stringify(background)};
+    panel.style.color = "#172033";
+    panel.innerHTML = '<strong style="display:block;color:${String(accent)};font-size:15px;margin-bottom:6px"></strong><span style="display:block;font-size:12px;line-height:1.5"></span>';
+    panel.querySelector("strong").textContent = ${JSON.stringify(title)};
+    panel.querySelector("span").textContent = ${JSON.stringify(detail)};
+    return true;
+  })()`;
+  await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, script, 3_000, false).catch(() => false);
+}
+
+async function submitStoredSellerCredentialsWithAccessibility(loginId, password) {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: "SELLER_WINDOW_CLOSED" };
+  const client = sellerWindow.webContents.debugger;
+  let attachedHere = false;
+  try {
+    if (!client.isAttached()) {
+      client.attach("1.3");
+      attachedHere = true;
+    }
+    await client.sendCommand("Accessibility.enable");
+    const pageTree = await client.sendCommand("Page.getFrameTree");
+    const frameIds = [];
+    const collectFrames = (entry) => {
+      if (entry?.frame?.id) frameIds.push(entry.frame.id);
+      for (const child of entry?.childFrames || []) collectFrames(child);
+    };
+    collectFrames(pageTree?.frameTree);
+    const axTrees = await Promise.all((frameIds.length ? frameIds : [undefined]).map((frameId) =>
+      client.sendCommand("Accessibility.getFullAXTree", frameId ? { frameId } : {})
+        .catch(() => ({ nodes: [] }))
+    ));
+    const nodes = axTrees.flatMap((tree) => Array.isArray(tree?.nodes) ? tree.nodes : [])
+      .filter((node) => !node.ignored && node.backendDOMNodeId);
+    const role = (node) => String(node?.role?.value || "").toLowerCase();
+    const label = (node) => [
+      node?.name?.value,
+      node?.description?.value,
+      ...(node?.properties || []).map((property) => property?.value?.value),
+    ].filter(Boolean).join(" ");
+    const textboxes = nodes.filter((node) => /textbox|textfield|input/.test(role(node)));
+    const passwordNode = textboxes.find((node) => /비밀번호|password|密码|passcode/i.test(label(node)));
+    const idNode = textboxes.find((node) =>
+      node !== passwordNode && /휴대폰|전화|이메일|아이디|phone|email|account|username|手机号|邮箱|账号/i.test(label(node))
+    ) || textboxes.find((node) => node !== passwordNode);
+    const loginButton = nodes.find((node) =>
+      /button|link/.test(role(node)) && /로그인|登录|登入|sign\s*in|log\s*in/i.test(label(node))
+    );
+    if (!idNode || !passwordNode) {
+      return { ok: false, step: "ACCESSIBILITY_LOGIN_INPUTS_NOT_FOUND", axNodes: nodes.length, textboxes: textboxes.length };
+    }
+    const replaceFocusedText = async (node, value) => {
+      await client.sendCommand("DOM.focus", { backendNodeId: node.backendDOMNodeId });
+      await client.sendCommand("Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", modifiers: 2 });
+      await client.sendCommand("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: 2 });
+      await client.sendCommand("Input.insertText", { text: value });
+      await wait(150);
+    };
+    await replaceFocusedText(idNode, loginId);
+    await replaceFocusedText(passwordNode, password);
+    if (!loginButton) return { ok: false, filled: true, step: "ACCESSIBILITY_LOGIN_BUTTON_NOT_FOUND" };
+    await client.sendCommand("DOM.focus", { backendNodeId: loginButton.backendDOMNodeId });
+    await client.sendCommand("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter" });
+    await client.sendCommand("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter" });
+    return { ok: true, filled: true, step: "ACCESSIBILITY_CREDENTIALS_SUBMITTED" };
+  } catch (error) {
+    return { ok: false, step: "ACCESSIBILITY_LOGIN_FAILED", reason: String(error?.message || error || "") };
+  } finally {
+    if (attachedHere && client.isAttached()) {
+      try { client.detach(); } catch {}
+    }
+  }
+}
+
+
+async function submitStoredSellerCredentialsWithRealMouse(loginId, password) {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: "SELLER_WINDOW_CLOSED" };
+  let previousClipboard = "";
+  try {
+    const viewport = await executeSellerFrameWithTimeout(
+      sellerWindow.webContents.mainFrame,
+      "({ width: Math.round(innerWidth), height: Math.round(innerHeight) })",
+      3_000,
+      null
+    );
+    const width = Number(viewport?.width || 0);
+    const height = Number(viewport?.height || 0);
+    if (width < 800 || height < 500) {
+      return { ok: false, step: "REAL_MOUSE_VIEWPORT_TOO_SMALL", width, height };
+    }
+    if (sellerWindow.isMinimized()) sellerWindow.restore();
+    sellerWindow.show();
+    sellerWindow.focus();
+    const contents = sellerWindow.webContents;
+    previousClipboard = clipboard.readText();
+    const click = async (xRatio, yRatio) => {
+      const x = Math.round(width * xRatio);
+      const y = Math.round(height * yRatio);
+      contents.sendInputEvent({ type: "mouseMove", x, y });
+      contents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+      contents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+      await wait(180);
+    };
+    const paste = async (value) => {
+      contents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
+      contents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
+      clipboard.writeText(value);
+      contents.sendInputEvent({ type: "keyDown", keyCode: "V", modifiers: ["control"] });
+      contents.sendInputEvent({ type: "keyUp", keyCode: "V", modifiers: ["control"] });
+      await wait(250);
+    };
+    // POIZON seller login card stays at these responsive viewport ratios.
+    await click(0.72, 0.30);
+    await paste(loginId);
+    await click(0.72, 0.365);
+    await paste(password);
+    await click(0.72, 0.428);
+    return { ok: true, filled: true, step: "REAL_MOUSE_CREDENTIALS_SUBMITTED" };
+  } catch (error) {
+    return { ok: false, step: "REAL_MOUSE_LOGIN_FAILED", reason: String(error?.message || error || "") };
+  } finally {
+    try { clipboard.writeText(previousClipboard); } catch {}
+  }
+}
+
+async function submitStoredSellerCredentials() {
+  const settings = store.snapshot().settings || {};
+  const loginId = String(settings.poizonLoginId || "").trim();
+  let password = "";
+  try {
+    password = decrypted(settings.poizonPasswordEncrypted);
+  } catch {
+    await setSellerLoginStatusOverlay("error", "저장 비밀번호 확인 실패", "연동 관리에서 POIZON 비밀번호를 다시 저장해 주세요.");
+    return { ok: false, stored: false, step: "PASSWORD_DECRYPT_FAILED" };
+  }
+  if (!loginId || !password) {
+    await setSellerLoginStatusOverlay("error", "POIZON 계정 저장 필요", "Around G POIZON의 연동 관리에서 아이디와 비밀번호를 암호화 저장해 주세요.");
+    return { ok: false, stored: false, step: "STORED_CREDENTIALS_MISSING" };
+  }
+  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, stored: true, step: "SELLER_WINDOW_CLOSED" };
+  await setSellerLoginStatusOverlay("checking", "저장 계정 확인 완료", "로그인 입력칸을 찾고 있습니다.");
+  let lastResult = { ok: false, step: "LOGIN_INPUTS_NOT_FOUND" };
+  for (const frame of sellerWindowFrames()) {
+    const result = await executeSellerFrameWithTimeout(frame, `(async () => {
+      const roots = [document];
+      for (let index = 0; index < roots.length; index += 1) {
+        for (const element of roots[index].querySelectorAll('*')) {
+          if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
+        }
+      }
+      const queryAll = (selector) => roots.flatMap((root) => [...root.querySelectorAll(selector)]);
+      const visible = (element) => {
+        if (!element || element.disabled) return false;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+      };
+      const passwordInput = queryAll('input[type="password"], input[autocomplete="current-password"]').find(visible);
+      const idInputs = queryAll('input:not([type]), input[type="text"], input[type="email"], input[type="tel"], input[autocomplete="username"]').filter(visible);
+      const idInput = idInputs.find((element) => /user|account|email|phone|login|아이디|휴대폰|이메일|전화번호|账号|帐号|手机号/i.test([
+        element.name, element.id, element.placeholder, element.autocomplete,
+      ].join(' '))) || idInputs[0];
+      if (!idInput || !passwordInput) return { ok: false, step: 'LOGIN_INPUTS_NOT_FOUND', inputs: idInputs.length, passwords: passwordInput ? 1 : 0 };
+      const setValue = (element, value) => {
+        element.focus();
+        const prototype = Object.getPrototypeOf(element);
+        const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+          || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        setter ? setter.call(element, value) : (element.value = value);
+        element.setAttribute('value', value);
+        element.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+        element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true, key: 'Unidentified' }));
+        element.blur();
+      };
+      setValue(idInput, ${JSON.stringify(loginId)});
+      setValue(passwordInput, ${JSON.stringify(password)});
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      if (!String(idInput.value || '').trim() || !String(passwordInput.value || '')) {
+        return { ok: false, step: 'LOGIN_VALUES_REJECTED' };
+      }
+      const buttons = queryAll('button, input[type="submit"], [role="button"], a').filter(visible);
+      const submit = buttons.find((element) => /로그인|登录|登入|sign\\s*in|log\\s*in/i.test(String(element.innerText || element.textContent || element.value || element.getAttribute('aria-label') || '')))
+        || buttons.find((element) => element.type === 'submit')
+        || idInput.closest('form')?.querySelector('button, input[type="submit"]');
+      if (!submit) return { ok: false, step: 'LOGIN_BUTTON_NOT_FOUND', filled: true };
+      if (submit.disabled) return { ok: false, step: 'LOGIN_BUTTON_DISABLED', filled: true };
+      submit.focus();
+      submit.click();
+      return { ok: true, step: 'STORED_CREDENTIALS_SUBMITTED', filled: true };
+    })()`, 7_000, { ok: false, step: "LOGIN_FRAME_TIMEOUT" });
+    lastResult = result || lastResult;
+    if (result?.filled) {
+      await setSellerLoginStatusOverlay(
+        result.ok ? "filling" : "error",
+        result.ok ? "ID·비밀번호 자동 입력 완료" : "로그인 버튼 확인 필요",
+        result.ok ? "로그인 버튼을 눌렀습니다. 판매자센터 진입을 확인하고 있습니다." : `입력은 완료했지만 버튼 실행에 실패했습니다. (${result.step || "UNKNOWN"})`
+      );
+    }
+    if (result?.ok) return { ...result, stored: true };
+  }
+  const accessibilityResult = await submitStoredSellerCredentialsWithAccessibility(loginId, password);
+  if (accessibilityResult?.filled) {
+    await setSellerLoginStatusOverlay(
+      accessibilityResult.ok ? "filling" : "error",
+      accessibilityResult.ok ? "ID·비밀번호 실제 입력 완료" : "로그인 버튼 확인 필요",
+      accessibilityResult.ok
+        ? "POIZON 화면 요소를 직접 찾아 입력했습니다. 판매자센터 진입을 확인하고 있습니다."
+        : `입력은 완료했지만 버튼 실행에 실패했습니다. (${accessibilityResult.step || "UNKNOWN"})`
+    );
+  }
+  if (accessibilityResult?.ok) return { ...accessibilityResult, stored: true };
+  const realMouseResult = await submitStoredSellerCredentialsWithRealMouse(loginId, password);
+  if (realMouseResult?.ok) {
+    await setSellerLoginStatusOverlay(
+      "filling",
+      "ID·비밀번호 실제 마우스 입력 완료",
+      "로그인 버튼을 직접 눌렀습니다. 판매자센터 진입을 확인하고 있습니다."
+    );
+    return { ...realMouseResult, stored: true };
+  }
+  await setSellerLoginStatusOverlay(
+    "error",
+    "로그인 실제 입력 실패",
+    `저장 계정의 실제 마우스 입력을 다시 시도합니다. (${realMouseResult?.step || accessibilityResult?.step || lastResult.step || "UNKNOWN"})`
+  );
+  return { ...(realMouseResult || accessibilityResult || lastResult), ok: false, stored: true };
+}
+
+async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
+  if (!await sellerPageRequiresLogin()) return { ok: true, reused: true };
+  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, code: "SELLER_WINDOW_CLOSED" };
+  if (sellerWindow.isMinimized()) sellerWindow.restore();
+  sellerWindow.show();
+  sellerWindow.focus();
+  let automatic = await submitStoredSellerCredentials();
+  let lastAutoLoginAttemptAt = Date.now();
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "seller-login-waiting",
+    brandName,
+    jobState: automatic.ok ? "자동 로그인 중 · 완료 후 검색 재개" : "로그인 확인 대기 · 완료 후 검색 재개",
+    message: automatic.ok
+      ? `${brandName} · 암호화 저장된 계정으로 POIZON 자동 로그인을 진행합니다.`
+      : `${brandName} · POIZON 로그인이 필요합니다. 로그인 후 브랜드 검색이 자동으로 이어집니다.`,
+  });
+  const deadline = Date.now() + SELLER_LOGIN_WAIT_MS;
+  while (Date.now() < deadline) {
+    await wait(1_000);
+    if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, code: "SELLER_WINDOW_CLOSED" };
+    if (await sellerPageRequiresLogin()) {
+      // The Korean login form is rendered asynchronously. Keep retrying the
+      // encrypted credentials after its inputs appear instead of trying only
+      // once while the page is still empty.
+      if (Date.now() - lastAutoLoginAttemptAt >= 2_500) {
+        automatic = await submitStoredSellerCredentials();
+        lastAutoLoginAttemptAt = Date.now();
+      }
+      continue;
+    }
+    if (!String(sellerWindow.webContents.getURL() || "").includes("/main/goods/search")) {
+      await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => {});
+      await wait(2_000);
+      if (await sellerPageRequiresLogin()) continue;
+    }
+    await setSellerLoginStatusOverlay("success", "자동 로그인 테스트 성공 완료", "POIZON 판매자센터 진입을 확인했습니다. 브랜드 검색을 자동으로 계속합니다.");
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "seller-login-restored",
+      brandName,
+      jobState: "로그인 완료 · 브랜드 검색 자동 재개",
+      message: `${brandName} · POIZON 로그인 완료 후 브랜드 검색을 자동으로 계속합니다.`,
+    });
+    return { ok: true, reused: false };
+  }
+  return { ok: false, code: "SELLER_LOGIN_TIMEOUT" };
+}
+
+function currentSellerProductFrame() {
+  const frames = sellerWindowFrames();
+  return frames.find((frame) => frame.routingId === sellerProductFrameRoutingId)
+    || frames[0]
+    || null;
+}
+
+function sellerBrandExportFailureMessage(code = "", brandName = "") {
+  const label = String(brandName || "선택 브랜드").trim();
+  const messages = {
+    SEARCH_INPUT_NOT_FOUND: `${label} 상품검색 입력창이 표시되지 않았습니다. 시간 간격을 두고 다시 진행합니다.`,
+    SELLER_LOGIN_REQUIRED: `${label} 작업 중 판매자센터 로그인 화면이 확인됐습니다. 로그인 후 다시 실행해 주세요.`,
+    SELLER_SEARCH_SCRIPT_ERROR: `${label} 상품검색 화면 제어 중 오류가 발생했습니다. 상품검색 화면을 다시 열어 재시도해 주세요.`,
+    SELLER_SEARCH_STAGE_TIMEOUT: `${label} 상품검색 단계가 40초 안에 끝나지 않아 페이지를 초기화했습니다. 이전 검색 작업은 종료되었습니다.`,
+    SELLER_SECURITY_CHECK_REQUIRED: `${label} 검색 중 POIZON 보안 확인 화면이 표시됐습니다. 판매자센터에서 보안 확인을 완료한 뒤 다시 실행해 주세요.`,
+    PRODUCT_VERIFICATION_TIMEOUT: `${label} 전체 페이지 확인이 70초 안에 끝나지 않아 다음 브랜드로 이동합니다.`,
+    BRAND_INPUT_NOT_APPLIED: `${label} 검색어가 판매자센터에 입력되지 않아 중단했습니다.`,
+    BRAND_RESULT_MISMATCH: `${label} 검색 결과가 확인되지 않아 내보내기를 중단했습니다. 기존 검색 결과는 다운로드하지 않습니다.`,
+    SEARCH_RESULT_NOT_UPDATED: `${label} 검색 결과가 새로 바뀌지 않아 내보내기를 중단했습니다. 기존 검색 결과는 다운로드하지 않습니다.`,
+    PARTIAL_PRODUCT_COLLECTION: `${label} 전체 상품 수집이 완료되지 않아 내보내기를 중단했습니다. 부분 파일은 다운로드하지 않습니다.`,
+    PRODUCT_PAGE_NOT_READY: `${label} 상품 수와 전체 페이지를 확인하지 못해 내보내기를 중단했습니다.`,
+    PRODUCT_LAST_PAGE_FAILED: `${label} 마지막 상품 페이지를 확인하지 못해 내보내기를 중단했습니다.`,
+    DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND: `${label} 내보내기 후 다운로드센터 바로 가기 버튼을 찾지 못했습니다.`,
+  };
+  return messages[code] || `판매자센터 자동화 실패: ${code || "UNKNOWN"}`;
+}
+
+async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
+  const productFrame = currentSellerProductFrame();
+  if (!productFrame) return { ok: false, code: "PRODUCT_PAGE_NOT_READY" };
+  return productFrame.executeJavaScript(`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getClientRects().length > 0;
+    const normalizedText = (element) => String(element?.innerText || element?.textContent || "")
+      .replace(/\\s+/g, " ").trim();
+    const readTotal = () => {
+      const match = String(document.body?.innerText || "").match(/총\\s*([\\d,]+)\\s*건\\s*결과/);
+      return Number(String(match?.[1] || "0").replace(/,/g, "")) || 0;
+    };
+    const readPage = () => {
+      const tables = [...document.querySelectorAll("table")].filter(visible);
+      const table = tables
+        .map((element) => ({
+          element,
+          rows: [...element.querySelectorAll("tbody tr")].filter(visible)
+            .filter((row) => normalizedText(row).length > 0),
+        }))
+        .sort((left, right) => right.rows.length - left.rows.length)[0];
+      const rows = table?.rows || [];
+      const keys = rows.map((row) => {
+        const explicit = row.getAttribute("data-row-key")
+          || row.getAttribute("data-key")
+          || row.getAttribute("data-id")
+          || row.id;
+        return String(explicit || normalizedText(row)).trim();
+      }).filter(Boolean);
+      const active = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
+      const pageSizeText = [...document.querySelectorAll(".ant-select-selection-item")]
+        .find((element) => visible(element) && /건\\/페이지/.test(element.textContent))?.textContent || "";
+      const pageSize = Number(pageSizeText.match(/(\\d+)\\s*건\\/페이지/)?.[1]) || keys.length || 10;
+      const total = readTotal();
+      const currentPage = Number(active?.textContent.trim()) || 1;
+      const pageCount = total > 0 ? Math.ceil(total / pageSize) : 0;
+      return { keys, currentPage, pageSize, pageCount, total };
+    };
+    const clickPage = async (targetPage) => {
+      for (let clickAttempt = 0; clickAttempt < 4; clickAttempt += 1) {
+        const direct = [...document.querySelectorAll(".ant-pagination-item")]
+          .find((item) => visible(item) && Number(item.textContent.trim()) === targetPage);
+        const current = readPage().currentPage;
+        if (current === targetPage) return true;
+        const pagination = [...document.querySelectorAll(".ant-pagination")].find(visible);
+        const jumper = pagination?.querySelector(".ant-pagination-options-quick-jumper input");
+        if (direct) {
+          (direct.querySelector("button,a") || direct).click();
+        } else if (jumper) {
+          jumper.focus();
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+          if (setter) setter.call(jumper, String(targetPage));
+          else jumper.value = String(targetPage);
+          jumper.dispatchEvent(new Event("input", { bubbles: true }));
+          jumper.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true,
+          }));
+          jumper.dispatchEvent(new KeyboardEvent("keyup", {
+            key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true,
+          }));
+        } else {
+          const numbered = [...document.querySelectorAll(".ant-pagination-item")]
+            .filter(visible)
+            .map((item) => ({ item, page: Number(item.textContent.trim()) || 0 }))
+            .filter((entry) => entry.page > 0)
+            .sort((left, right) => right.page - left.page);
+          const boundary = targetPage > current ? numbered[0] : numbered[numbered.length - 1];
+          if (!boundary?.item || boundary.page === current) return false;
+          (boundary.item.querySelector("button,a") || boundary.item).click();
+        }
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          await wait(250);
+          if (readPage().currentPage === targetPage) {
+            await wait(500);
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    const sizeChanger = [...document.querySelectorAll(".ant-pagination-options-size-changer,.ant-pagination-options")]
+      .find(visible);
+    const selector = sizeChanger?.querySelector(".ant-select-selector");
+    if (selector) {
+      selector.click();
+      await wait(250);
+      const options = [...document.querySelectorAll('[role="option"],.ant-select-item-option')]
+        .filter(visible)
+        .map((element) => ({ element, size: Number(String(element.textContent || "").match(/\\d+/)?.[0] || 0) }))
+        .filter((entry) => entry.size > 0)
+        .sort((left, right) => right.size - left.size);
+      const currentSize = readPage().pageSize;
+      if (options[0] && options[0].size > currentSize) {
+        options[0].element.click();
+        await wait(1_200);
+      } else {
+        document.body.click();
+      }
+    }
+
+    let firstSnapshot = readPage();
+    for (let attempt = 0; attempt < 60 && (!firstSnapshot.total || !firstSnapshot.keys.length); attempt += 1) {
+      await wait(250);
+      firstSnapshot = readPage();
+    }
+    const expected = Math.max(${Number(expectedTotal) || 0}, firstSnapshot.total);
+    const finalPageCount = firstSnapshot.pageCount
+      || (expected > 0 && firstSnapshot.pageSize > 0 ? Math.ceil(expected / firstSnapshot.pageSize) : 0);
+    if (expected < 1 || finalPageCount < 1 || !firstSnapshot.keys.length) {
+      return { ok: false, code: "PRODUCT_PAGE_NOT_READY", expected, actual: 0, pageCount: finalPageCount };
+    }
+
+    if (finalPageCount > 1 && !(await clickPage(finalPageCount))) {
+      return { ok: false, code: "PRODUCT_LAST_PAGE_FAILED", expected, actual: 0, pageCount: finalPageCount };
+    }
+    let lastSnapshot = readPage();
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      if (lastSnapshot.currentPage === finalPageCount && lastSnapshot.keys.length > 0) break;
+      await wait(250);
+      lastSnapshot = readPage();
+    }
+    if (lastSnapshot.currentPage !== finalPageCount || !lastSnapshot.keys.length) {
+      return { ok: false, code: "PRODUCT_LAST_PAGE_FAILED", expected, actual: 0, pageCount: finalPageCount };
+    }
+    if (lastSnapshot.total > 0 && lastSnapshot.total !== expected) {
+      return { ok: false, code: "PARTIAL_PRODUCT_COLLECTION", expected, actual: lastSnapshot.total, pageCount: finalPageCount };
+    }
+
+    const exportPattern = /^전체\\s*내보내기$/;
+    let exportButton = null;
+    for (let attempt = 0; attempt < 20 && !exportButton; attempt += 1) {
+      const labelElement = [...document.querySelectorAll("button, [role='button'], a, span")]
+        .find((element) => visible(element) && exportPattern.test(normalizedText(element)));
+      exportButton = labelElement?.closest?.("button, [role='button'], a") || labelElement || null;
+      if (!exportButton) await wait(250);
+    }
+    if (!exportButton) return { ok: false, code: "EXPORT_BUTTON_NOT_FOUND_AFTER_VERIFICATION", expected, actual: expected };
+    if (exportButton.disabled || exportButton.getAttribute("aria-disabled") === "true") {
+      return { ok: false, code: "EXPORT_BUTTON_DISABLED_AFTER_VERIFICATION", expected, actual: expected };
+    }
+    const clickLikeUser = (element) => {
+      if (!element) return false;
+      element.scrollIntoView({ block: "center", inline: "center" });
+      element.focus?.();
+      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+        element.dispatchEvent(new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          button: 0,
+        }));
+      }
+      element.click?.();
+      return true;
+    };
+    clickLikeUser(exportButton);
+    await wait(700);
+
+    let confirmationObserved = false;
+    let confirmationClicked = false;
+    let confirmationClickCount = 0;
+    let requestAcknowledged = false;
+    const confirmationPattern = /^(?:확인|내보내기|생성|확정|제출|계속|确认|确定|提交|导出|继续)$/i;
+    const cancelPattern = /취소|닫기|取消|关闭/i;
+    const successPattern = /(?:내보내기|작업|파일).*(?:등록|생성|완료|성공|접수)|(?:导出|任务).*(?:成功|已创建|已提交)/i;
+    for (let attempt = 0; attempt < 64; attempt += 1) {
+      const dialogs = [...document.querySelectorAll(
+        ".ant-modal, .ant-modal-confirm, [role='dialog'], .ant-popover, .ant-drawer"
+      )].filter(visible);
+      if (dialogs.length) confirmationObserved = true;
+      const controls = dialogs.flatMap((dialog) =>
+        [...dialog.querySelectorAll("button, [role='button'], a")].filter(visible)
+      );
+      const confirmControl = controls.find((element) => {
+        const label = normalizedText(element);
+        return confirmationPattern.test(label) && !cancelPattern.test(label);
+      }) || controls.find((element) => {
+        const label = normalizedText(element);
+        const className = String(element.className || "");
+        return /primary|confirm|ok/i.test(className) && !cancelPattern.test(label);
+      });
+      if (confirmControl) {
+        clickLikeUser(confirmControl);
+        confirmationClicked = true;
+        confirmationClickCount += 1;
+        await wait(900);
+        continue;
+      }
+      if (successPattern.test(normalizedText(document.body))) {
+        requestAcknowledged = true;
+        break;
+      }
+      if (confirmationClickCount > 0 && dialogs.length === 0) {
+        await wait(1_200);
+        const remainingDialogs = [...document.querySelectorAll(
+          ".ant-modal, .ant-modal-confirm, [role='dialog'], .ant-popover, .ant-drawer"
+        )].filter(visible);
+        if (!remainingDialogs.length) {
+          requestAcknowledged = true;
+          break;
+        }
+      }
+      await wait(250);
+    }
+    return {
+      ok: true,
+      expected,
+      actual: expected,
+      pageCount: finalPageCount,
+      firstPageCount: firstSnapshot.keys.length,
+      lastPageCount: lastSnapshot.keys.length,
+      confirmationObserved,
+      confirmationClicked,
+      confirmationClickCount,
+      requestAcknowledged,
+      confirmationTimedOut: !requestAcknowledged,
+    };
+  })()`, true);
+}
+
+async function captureSellerDiagnostic(brandName = "", stage = "error") {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return "";
+  try {
+    const folder = join(app.getPath("userData"), "seller-diagnostics");
+    await mkdir(folder, { recursive: true });
+    const filePath = join(folder, `${safeBrandExportLabel(brandName) || "brand"}_${stage}_${localFileTimestamp()}.png`);
+    const image = await sellerWindow.webContents.capturePage();
+    await writeFile(filePath, image.toPNG());
+    return filePath;
+  } catch {
+    return "";
+  }
+}
+
+async function confirmSellerExportRequest(targetFrame) {
+  return targetFrame.executeJavaScript(`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getBoundingClientRect().width > 0
+      && element.getBoundingClientRect().height > 0;
+    const textOf = (element) => String(element?.innerText || element?.textContent || "")
+      .replace(/\\s+/g, " ").trim();
+    const clickLikeUser = (element) => {
+      element?.scrollIntoView?.({ block: "center", inline: "center" });
+      element?.focus?.();
+      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+        element?.dispatchEvent(new MouseEvent(type, {
+          bubbles: true, cancelable: true, composed: true, view: window, button: 0,
+        }));
+      }
+      element?.click?.();
+    };
+    const confirmPattern = /^(?:확인|내보내기|생성|확정|제출|계속|确认|确定|提交|导出|继续)$/i;
+    const cancelPattern = /취소|닫기|取消|关闭/i;
+    let confirmationObserved = false;
+    let confirmationClicked = false;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const dialogs = [...document.querySelectorAll(
+        ".ant-modal, .ant-modal-confirm, [role='dialog'], .ant-popover, .ant-drawer"
+      )].filter(visible);
+      if (dialogs.length) confirmationObserved = true;
+      const controls = dialogs.flatMap((dialog) =>
+        [...dialog.querySelectorAll("button, [role='button'], a")].filter(visible)
+      );
+      const confirmControl = controls.find((element) => {
+        const label = textOf(element);
+        return confirmPattern.test(label) && !cancelPattern.test(label);
+      }) || controls.find((element) => {
+        const label = textOf(element);
+        return /primary|confirm|ok/i.test(String(element.className || ""))
+          && !cancelPattern.test(label);
+      });
+      if (confirmControl) {
+        clickLikeUser(confirmControl);
+        confirmationClicked = true;
+        await wait(900);
+        continue;
+      }
+      if (confirmationClicked && !dialogs.length) {
+        return { ok: true, confirmationObserved, confirmationClicked, requestAcknowledged: true };
+      }
+      await wait(250);
+    }
+    return {
+      ok: !confirmationObserved,
+      confirmationObserved,
+      confirmationClicked,
+      requestAcknowledged: !confirmationObserved,
+    };
+  })()`, true);
+}
+
+async function clickSellerDownloadCenterShortcut(targetFrame) {
+  return targetFrame.executeJavaScript(`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getBoundingClientRect().width > 0
+      && element.getBoundingClientRect().height > 0;
+    const textOf = (element) => String(element?.innerText || element?.textContent || "")
+      .replace(/\\s+/g, " ").trim();
+    const pattern = /^(?:다운로드센터\\s*바로\\s*가기|다운로드\\s*센터\\s*바로\\s*가기)$/;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const control = [...document.querySelectorAll("a, button, [role='button'], span")]
+        .filter(visible)
+        .find((element) => pattern.test(textOf(element)));
+      if (control) {
+        const target = control.closest("a, button, [role='button']") || control;
+        target.scrollIntoView?.({ block: "center", inline: "center" });
+        target.focus?.();
+        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+          target.dispatchEvent(new MouseEvent(type, {
+            bubbles: true, cancelable: true, composed: true, view: window, button: 0,
+          }));
+        }
+        target.click?.();
+        return { ok: true, clicked: true, label: textOf(control) };
+      }
+      await wait(250);
+    }
+    return { ok: false, clicked: false, code: "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND" };
+  })()`, true);
+}
+
+function moveWindowsCursorAndClick(screenX, screenY) {
+  if (process.platform !== "win32") return Promise.resolve({ ok: false, reason: "WINDOWS_ONLY" });
+  const x = Math.round(Number(screenX));
+  const y = Math.round(Number(screenY));
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return Promise.resolve({ ok: false, reason: "INVALID_SCREEN_COORDINATES" });
+  }
+  const script = `
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class AroundGCursor {
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+}
+'@
+$point = New-Object AroundGCursor+POINT
+[AroundGCursor]::GetCursorPos([ref]$point) | Out-Null
+$startX = $point.X
+$startY = $point.Y
+$targetX = ${x}
+$targetY = ${y}
+for ($step = 1; $step -le 18; $step++) {
+  $nextX = [Math]::Round($startX + (($targetX - $startX) * $step / 18))
+  $nextY = [Math]::Round($startY + (($targetY - $startY) * $step / 18))
+  [AroundGCursor]::SetCursorPos($nextX, $nextY) | Out-Null
+  Start-Sleep -Milliseconds 15
+}
+[AroundGCursor]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+Start-Sleep -Milliseconds 70
+[AroundGCursor]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+`;
+  return new Promise((resolve) => {
+    execFile("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-WindowStyle", "Hidden",
+      "-Command", script,
+    ], { windowsHide: true, timeout: 5_000 }, (error) => {
+      resolve(error ? { ok: false, reason: String(error.message || error) } : { ok: true });
+    });
+  });
+}
+
+async function physicalClickSellerElement(targetFrame, locatorScript, step, timeoutMs = 20_000) {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: `${step}_WINDOW_MISSING` };
+  sellerWindow.hide();
+  showCollectorWindow();
+  const startedAt = Date.now();
+  let point = null;
+  while (!point && Date.now() - startedAt < timeoutMs) {
+    // A POIZON search can replace its WebFrameMain while the result screen is
+    // opening. Rebuild the candidates on every poll instead of holding the
+    // pre-navigation frame, otherwise sorting stops on a destroyed frame.
+    const frames = [targetFrame, sellerWindow.webContents.mainFrame, ...sellerWindowFrames()]
+      .filter(Boolean)
+      .filter((frame, index, all) =>
+        all.findIndex((candidate) => candidate.routingId === frame.routingId) === index
+      );
+    for (const frame of frames) {
+      const located = await frame.executeJavaScript(`(() => {
+        if (document.readyState === "loading") return null;
+        const visible = (element) => element && element.getBoundingClientRect().width > 0
+          && element.getBoundingClientRect().height > 0;
+        const textOf = (element) => String(element?.innerText || element?.textContent || "")
+          .replace(/\\s+/g, " ").trim();
+        const element = (() => { ${locatorScript} })();
+        if (!element || !visible(element)) return null;
+        element.scrollIntoView?.({ block: "center", inline: "center" });
+        const rect = element.getBoundingClientRect();
+        return {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+          label: textOf(element),
+          url: location.href,
+        };
+      })()`, true).catch(() => null);
+      if (located) {
+        point = { ...located, frameRoutingId: frame.routingId };
+        break;
+      }
+    }
+    if (!point) await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  if (!point) return { ok: false, step: `${step}_NOT_FOUND_AFTER_NAVIGATION` };
+  const x = Math.round(Number(point.x));
+  const y = Math.round(Number(point.y));
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return { ok: false, step: `${step}_CLICK_COORDINATES_MISSING` };
+  }
+  // Electron's virtual input reaches React/Ant Design handlers like a native
+  // click, while the BrowserWindow remains hidden and the Windows cursor stays
+  // completely untouched.
+  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  sellerWindow.hide();
+  showCollectorWindow();
+  return { ok: true, step, label: point.label, frameRoutingId: point.frameRoutingId, url: point.url, background: true };
+}
+
+async function performPhysicalSellerSortAndExport(targetFrame) {
+  const sort = await physicalClickSellerElement(targetFrame, `
+    const pattern = /현지\\s*판매자\\s*최근\\s*30일\\s*판매량/;
+    const label = [...document.querySelectorAll("th,[role='columnheader'],thead td,thead div")]
+      .filter(visible).find((element) => pattern.test(textOf(element)));
+    if (!label) return null;
+    const header = label.closest("th,[role='columnheader'],thead td") || label;
+    const candidates = [...header.querySelectorAll("button,[role='button'],[class*='sort'],svg,i")].filter(visible);
+    return candidates.sort((a, b) => b.getBoundingClientRect().left - a.getBoundingClientRect().left)[0]
+      || header;
+  `, "BACKGROUND_LOCAL_SALES_SORT");
+  if (!sort.ok) return sort;
+  const descending = await physicalClickSellerElement(targetFrame, `
+    return [...document.querySelectorAll("button,[role='button'],[role='menuitem'],li,span,div")]
+      .filter(visible).find((element) => /^내림차순$/.test(textOf(element)));
+  `, "BACKGROUND_DESCENDING");
+  if (!descending.ok) return descending;
+  const confirm = await physicalClickSellerElement(targetFrame, `
+    const dialogs = [...document.querySelectorAll("[role='dialog'],.ant-popover,.ant-dropdown,.ant-modal")].filter(visible);
+    const root = dialogs.at(-1) || document;
+    return [...root.querySelectorAll("button,[role='button'],a,span")]
+      .filter(visible).find((element) => /^확인$/.test(textOf(element)))?.closest("button,[role='button'],a") || null;
+  `, "BACKGROUND_SORT_CONFIRM");
+  if (!confirm.ok) return confirm;
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  const exportClick = await physicalClickSellerElement(targetFrame, `
+    return [...document.querySelectorAll("button,[role='button'],a,span")]
+      .filter(visible).find((element) => /^전체\\s*내보내기$/.test(textOf(element)))?.closest("button,[role='button'],a") || null;
+  `, "BACKGROUND_EXPORT");
+  return exportClick.ok ? { ok: true, sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC", exportClicked: true } : exportClick;
+}
+
+async function confirmSellerExportRequestPhysical(targetFrame) {
+  const clicked = await physicalClickSellerElement(targetFrame, `
+    const dialogs = [...document.querySelectorAll(".ant-modal,.ant-modal-confirm,[role='dialog']")].filter(visible);
+    const dialog = dialogs.at(-1);
+    if (!dialog) return null;
+    return [...dialog.querySelectorAll("button,[role='button'],a")].filter(visible)
+      .find((element) => /^(?:확인|내보내기|생성|확정|제출|계속)$/.test(textOf(element))) || null;
+  `, "PHYSICAL_EXPORT_CONFIRM", 15_000);
+  return clicked.ok
+    ? { ok: true, confirmationObserved: true, confirmationClicked: true, requestAcknowledged: true }
+    : { ok: false, confirmationObserved: false, confirmationClicked: false, requestAcknowledged: false };
+}
+
+async function clickSellerDownloadCenterShortcutPhysical(targetFrame) {
+  const mainFrame = sellerWindow?.webContents?.mainFrame;
+  const frames = [mainFrame, targetFrame, ...sellerWindowFrames()]
+    .filter(Boolean)
+    .filter((frame, index, all) =>
+      all.findIndex((candidate) => candidate.routingId === frame.routingId) === index
+    );
+  const locator = `
+    const controls = [...document.querySelectorAll("a,button,[role='button']")].filter(visible);
+    return controls.find((element) => {
+      const label = textOf(element);
+      const href = String(element.href || element.getAttribute?.("href") || "");
+      return /exportCenter/i.test(href)
+        || /^(?:다운로드\\s*센터.*(?:바로\\s*가기|이동)|바로\\s*가기)$/.test(label);
+    }) || null;
+  `;
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    for (const frame of frames) {
+      const clicked = await physicalClickSellerElement(
+        frame,
+        locator,
+        "PHYSICAL_DOWNLOAD_CENTER",
+        700,
+      );
+      if (clicked.ok) {
+        const navigationDeadline = Date.now() + 10_000;
+        while (Date.now() < navigationDeadline) {
+          const currentUrl = String(sellerWindow?.webContents?.getURL?.() || "");
+          if (/\/main\/exportCenter(?:[/?#]|$)/i.test(currentUrl)) {
+            return { ok: true, clicked: true, navigated: true, url: currentUrl };
+          }
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        return { ok: true, clicked: true, navigated: false };
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  return { ok: false, clicked: false, code: "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND" };
+}
+
+
+async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
+  if (!sellerWindow || sellerWindow.isDestroyed()) {
+    return { ok: false, step: "SELLER_WINDOW_NOT_AVAILABLE" };
+  }
+  sellerWindow.hide();
+  sellerWindow.webContents.focus();
+  showCollectorWindow();
+  const focused = await targetFrame.executeJavaScript(`(() => {
+    const visible = (element) => element && element.getBoundingClientRect().width > 0
+      && element.getBoundingClientRect().height > 0;
+    const textOf = (element) => String(element?.innerText || element?.textContent || "")
+      .replace(/\\s+/g, " ").trim();
+    const searchButton = [...document.querySelectorAll("button, [role='button']")]
+      .filter(visible)
+      .find((element) => /^검색\\s*및\\s*입찰$/.test(textOf(element)));
+    if (!searchButton) return { ok: false, step: "EXACT_SEARCH_BUTTON_NOT_FOUND" };
+    const buttonRect = searchButton.getBoundingClientRect();
+    const input = [...document.querySelectorAll("input, textarea")]
+      .filter(visible)
+      .filter((element) => !element.disabled && !element.readOnly)
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          element,
+          verticalDistance: Math.abs(
+            (rect.top + rect.height / 2) - (buttonRect.top + buttonRect.height / 2)
+          ),
+          horizontalGap: buttonRect.left - rect.right,
+        };
+      })
+      .filter((candidate) => candidate.verticalDistance < 24
+        && candidate.horizontalGap >= -4 && candidate.horizontalGap < 80)
+      .sort((left, right) => left.horizontalGap - right.horizontalGap)[0]?.element;
+    if (!input) return { ok: false, step: "EXACT_SEARCH_INPUT_NOT_FOUND" };
+    input.scrollIntoView({ block: "center", inline: "center" });
+    input.focus();
+    input.select?.();
+    return {
+      ok: true,
+      searchX: Math.round(buttonRect.left + buttonRect.width / 2),
+      searchY: Math.round(buttonRect.top + buttonRect.height / 2),
+    };
+  })()`, true).catch(() => ({ ok: false, step: "KEYBOARD_FOCUS_FAILED" }));
+  if (!focused?.ok || !sellerWindow || sellerWindow.isDestroyed()) return focused;
+  sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
+  sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
+  sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "Backspace" });
+  sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "Backspace" });
+  // Electron can leave insertText's returned promise pending while a web page
+  // is processing focus. Send it without awaiting and verify the visible value
+  // on a fixed deadline instead of blocking the entire brand queue forever.
+  void sellerWindow.webContents.insertText(String(brandName));
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  const verified = await Promise.race([
+    targetFrame.executeJavaScript(`(() => {
+    const active = document.activeElement;
+    const value = String(active?.value || "").trim();
+    return {
+      ok: value === ${JSON.stringify(String(brandName))},
+      step: value === ${JSON.stringify(String(brandName))} ? "REAL_KEYBOARD_INPUT_CONFIRMED" : "REAL_KEYBOARD_INPUT_FAILED",
+      inputValue: value,
+    };
+    })()`, true),
+    new Promise((resolve) => setTimeout(() => resolve({
+      ok: false,
+      step: "REAL_KEYBOARD_INPUT_VERIFY_TIMEOUT",
+    }), 3_000)),
+  ]).catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_VERIFY_FAILED" }));
+  if (!verified?.ok || !sellerWindow || sellerWindow.isDestroyed()) return verified;
+  const x = Number(focused.searchX);
+  const y = Number(focused.searchY);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return { ...verified, ok: false, step: "REAL_SEARCH_BUTTON_COORDINATES_MISSING" };
+  }
+  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
+  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
+  sellerWindow.hide();
+  showCollectorWindow();
+  return {
+    ...verified,
+    submitted: true,
+    physicalCursorMoved: false,
+    background: true,
+    step: "BACKGROUND_SEARCH_BUTTON_CLICKED",
+  };
+}
+
+async function applyExactSellerBrandFilter(targetFrame, names = []) {
+  const candidates = [...new Set((names || []).map((value) => String(value || "").trim()).filter(Boolean))];
+  if (!candidates.length) return { ok: false, step: "BRAND_FILTER_NAMES_MISSING" };
+  return executeSellerFrameWithTimeout(targetFrame, `(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getClientRects().length > 0;
+    const textOf = (element) => String(element?.innerText || element?.textContent || "")
+      .replace(/\\s+/g, " ").trim();
+    const normalize = (value) => String(value || "").normalize("NFKC")
+      .replace(/[^a-z0-9가-힣一-龥]+/gi, "").toLocaleLowerCase();
+    const names = ${JSON.stringify(candidates)};
+    const normalizedNames = names.map(normalize).filter(Boolean);
+    const ownText = (element) => [...element.childNodes]
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent).join("").trim();
+    const brandLabel = [...document.querySelectorAll("button,[role=button],label,span,div")]
+      .filter(visible)
+      .filter((element) => ownText(element) === "브랜드" || textOf(element) === "브랜드")
+      .sort((left, right) => left.getBoundingClientRect().width - right.getBoundingClientRect().width)[0];
+    const brandButton = brandLabel?.closest(
+      "button,[role=button],.ant-select,.ant-dropdown-trigger,.semi-select,.semi-dropdown-trigger"
+    ) || brandLabel;
+    if (!brandButton) return { ok: false, step: "EXACT_BRAND_BUTTON_NOT_FOUND" };
+    brandButton.click();
+    await wait(600);
+    const popupSelector = '[role="tooltip"],[role="dialog"],.ant-popover,.ant-dropdown,.ant-select-dropdown,.semi-portal,.semi-popover,.semi-select-dropdown';
+    const popup = [...document.querySelectorAll(popupSelector)].filter(visible).at(-1);
+    if (!popup) return { ok: false, step: "EXACT_BRAND_POPUP_NOT_FOUND" };
+    const input = [...popup.querySelectorAll("input")].find((element) =>
+      visible(element) && !element.disabled && ["text", "search", ""].includes(element.type)
+    );
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    for (const name of names) {
+      if (input) {
+        input.focus();
+        setter ? setter.call(input, name) : (input.value = name);
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, data: name, inputType: "insertText" }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      let option = null;
+      for (let attempt = 0; attempt < 24 && !option; attempt += 1) {
+        await wait(250);
+        const options = [...document.querySelectorAll(
+          '.ant-popover:not(.ant-popover-hidden) li.ant-list-item,[role=option],.ant-select-item-option,.semi-select-option'
+        )].filter(visible);
+        option = options.find((element) => {
+          const value = normalize(textOf(element));
+          const requested = normalize(name);
+          return value === requested || value.startsWith(requested) || requested.startsWith(value);
+        });
+      }
+      if (!option) continue;
+      option.click();
+      await wait(350);
+      const confirm = [...document.querySelectorAll("button,[role=button],a")]
+        .filter(visible).find((element) => /^(확인|적용|검색)$/.test(textOf(element)));
+      if (confirm) confirm.click();
+      await wait(700);
+      const search = [...document.querySelectorAll("button,[role=button]")]
+        .filter(visible).find((element) => /^검색\\s*및\\s*입찰$/.test(textOf(element)));
+      if (!search) return { ok: false, step: "EXACT_BRAND_SEARCH_BUTTON_NOT_FOUND" };
+      search.click();
+      let stable = 0;
+      let signature = "";
+      for (let attempt = 0; attempt < 80; attempt += 1) {
+        await wait(250);
+        const rows = [...document.querySelectorAll("tbody tr")].filter(visible)
+          .map(textOf).filter(Boolean);
+        const matched = rows.filter((row) => normalizedNames.some((key) => normalize(row).includes(key)));
+        const nextSignature = rows.slice(0, 20).join("|");
+        if (rows.length && matched.length / rows.length >= 0.8) {
+          stable = nextSignature === signature ? stable + 1 : 1;
+          signature = nextSignature;
+          if (stable >= 3) {
+            return {
+              ok: true,
+              route: "EXACT_BRAND_FILTER",
+              selected: textOf(option),
+              inputValue: name,
+              resultRowCount: rows.length,
+              firstResult: rows[0] || "",
+            };
+          }
+        } else {
+          stable = 0;
+          signature = "";
+        }
+      }
+      return { ok: false, step: "EXACT_BRAND_RESULT_NOT_CONFIRMED", selected: textOf(option) };
+    }
+    return { ok: false, step: "EXACT_BRAND_OPTION_NOT_FOUND" };
+  })()`, 35_000, { ok: false, step: "EXACT_BRAND_FILTER_TIMEOUT" });
+}
+
+async function automateSellerBrandExport(input = {}) {
+  const sessionGeneration = brandWorkSessionGeneration;
+  const attemptGeneration = ++brandExportAttemptGeneration;
+  const cleared = () => sessionGeneration !== brandWorkSessionGeneration
+    || attemptGeneration !== brandExportAttemptGeneration;
+  const brandName = String(input.brandName || "").trim();
+  const brandKo = String(input.brandKo || "").trim();
+  if (brandExportJobPending) {
+    return {
+      ok: false,
+      code: "EXPORT_ALREADY_PENDING",
+      message: "이미 POIZON 데이터를 가져오고 있습니다. 같은 작업을 다시 만들지 않습니다.",
+    };
+  }
+  if (!brandName) return { ok: false, message: "선택한 브랜드명이 없습니다." };
+  const officialAuditPaused = pauseOfficialDomainAuditForSellerAutomation();
+  if (officialAuditPaused) {
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "official-audit-paused-for-seller",
+      brandName,
+      jobState: "1단계/5 · 공식몰 검증 분리 · 판매자센터 연결 준비",
+      message: `${brandName} · 공식몰 전체 검증을 멈추고 POIZON 브랜드 검색을 우선 실행합니다. 검증 기록은 유지되며 검증 계속 버튼을 누를 때만 재개됩니다.`,
+    });
+  }
+  const folder = currentBrandExportFolder();
+  await mkdir(folder, { recursive: true });
+  pendingBrandExportName = brandName;
+  pendingBrandExportJobId = "";
+  brandExportJobPending = true;
+  brandDownloadStarted = false;
+  // Show the exact Electron Seller Center window that is being automated.
+  // A separately opened Chrome window is a different browser session and does
+  // not reflect this automation, which previously made real work look idle.
+  openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, {
+    visible: false,
+    activate: false,
+    deferNavigation: true,
+  });
+  if (!sellerWindow || sellerWindow.isDestroyed()) {
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    return { ok: false, message: "판매자센터 창을 열지 못했습니다." };
+  }
+  const baselinePromise = readSellerExportBaselineSeparately().catch(() => null);
+  if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "작업 기록 삭제로 이전 요청을 중단했습니다." };
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "opening-product-search",
+    brandName,
+    jobState: "1단계/5 · 판매자센터 연결 시도",
+    message: `${brandName} · 판매자센터 상품검색 화면 연결을 시도합니다.`,
+  });
+  try {
+    await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
+  } catch (error) {
+    const diagnosticPath = await captureSellerDiagnostic(brandName, "page-load-failed");
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    return {
+      ok: false,
+      code: "SELLER_PAGE_LOAD_FAILED",
+      message: `${brandName} 판매자센터 상품검색 페이지 연결에 실패했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
+      diagnostics: { reason: String(error?.message || error || ""), path: diagnosticPath },
+    };
+  }
+  await new Promise((resolve) => setTimeout(resolve, 3500));
+  const login = await ensureSellerLoginBeforeBrandSearch(brandName);
+  if (!login.ok) {
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    return {
+      ok: false,
+      code: login.code || "SELLER_LOGIN_REQUIRED",
+      message: login.code === "SELLER_LOGIN_TIMEOUT"
+        ? `${brandName} · 10분 동안 로그인이 확인되지 않아 작업을 중단했습니다.`
+        : `${brandName} · POIZON 로그인 창이 닫혀 작업을 중단했습니다.`,
+    };
+  }
+  // Keep the same persistent Seller Center session and automation path used by
+  // the popular-list collector, but leave the native window minimized while
+  // brand search, export registration, and download-center monitoring run.
+  // backgroundThrottling is disabled on this BrowserWindow, so minimizing it
+  // does not pause the seller automation.
+  if (sellerWindow && !sellerWindow.isDestroyed()) {
+    sellerWindow.hide();
+    showCollectorWindow();
+  }
+  const connectedPage = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => ({
+    url: location.href,
+    title: document.title,
+    readyState: document.readyState,
+    login: /login|signin|passport/i.test(location.href),
+    inputCount: document.querySelectorAll("input, textarea").length,
+  }))()`, 4_000, { url: sellerWindow.webContents.getURL(), readyState: "timeout", inputCount: 0 });
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: connectedPage.login ? "seller-login-required" : "seller-page-connected",
+    brandName,
+    jobState: connectedPage.login ? "1단계/5 · 판매자센터 로그인 필요" : "1단계/5 · 판매자센터 페이지 연결 확인",
+    message: `${brandName} · URL ${connectedPage.url || "확인 불가"} · 문서 ${connectedPage.readyState || "unknown"} · 입력 요소 ${Number(connectedPage.inputCount || 0)}개`,
+  });
+  if (connectedPage.login) {
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    return {
+      ok: false,
+      code: "SELLER_LOGIN_REQUIRED",
+      message: `${brandName} 작업을 진행하려면 POIZON 판매자센터 로그인이 필요합니다.`,
+    };
+  }
+  // Freeze the download-center job list before clicking "전체 내보내기".
+  // Waiting until after the export allowed the newly-created job to leak into
+  // the baseline, so the first job could never be recognized as new.
+  let baselineJobs = await baselinePromise;
+  if (!Array.isArray(baselineJobs)) {
+    baselineJobs = await Promise.race([
+      readSellerExportJobsFromMonitor(),
+      new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
+    ]).catch(() => null);
+  }
+  const baselineAvailable = Array.isArray(baselineJobs);
+  const recoverableJob = recoverableSavedBrandExportJob(brandName, brandKo, baselineJobs || []);
+  if (recoverableJob && !brandExportJobs.has(recoverableJob.jobId)) {
+    brandExportJobs.set(recoverableJob.jobId, {
+      jobId: recoverableJob.jobId,
+      brandName,
+      brandKo,
+      createdAt: recoverableJob.createdAt,
+      downloadStarted: false,
+      expectedProductCount: Number(recoverableJob.expectedProductCount || 0),
+      recovered: true,
+    });
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    sellerWindow.hide();
+    showCollectorWindow();
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "job-created",
+      brandName,
+      jobId: recoverableJob.jobId,
+      jobState: "중단 전 작업번호 복구 완료 · 다운로드 감시 재개",
+      message: `${brandName} · 중단 전 작업번호 ${recoverableJob.jobId}를 다시 연결했습니다. 새 내보내기를 중복 생성하지 않고 다운로드를 이어갑니다.`,
+    });
+    if (!input.deferMonitor) void watchAllSellerExportJobsEveryTenSeconds();
+    return {
+      ok: true,
+      folder,
+      jobId: recoverableJob.jobId,
+      expectedProductCount: Number(recoverableJob.expectedProductCount || 0),
+      recovered: true,
+    };
+  }
+  const baselineJobIds = new Set([
+    ...brandExportJobs.keys(),
+    ...savedBrandExportJobs().map((job) => String(job?.jobId || "").trim()),
+    ...(baselineJobs || []).map((job) => String(job?.id || "").trim()),
+  ].filter(Boolean));
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: baselineAvailable ? "job-baseline-ready" : "job-baseline-fallback",
+    brandName,
+    jobState: "기존 작업번호 확인 완료 · 상품검색 시작",
+    message: baselineAvailable
+      ? `${brandName} · 내보내기 전 기존 작업번호 ${baselineJobIds.size}개를 고정했습니다.`
+      : `${brandName} · 저장된 미사용 작업번호를 제외하고 새 작업번호를 확인합니다.`,
+  });
+  const sellerBrandAliasGroups = [
+    ["Columbia", "컬럼비아", "哥伦比亚"],
+    ["Patagonia", "파타고니아", "巴塔哥尼亚"],
+    ["Tommy Hilfiger", "타미힐피거", "汤米希尔费格"],
+    ["FILA", "휠라", "斐乐"],
+    ["Reebok", "리복", "锐步"],
+    ["PUMA", "Puma", "푸마", "彪马"],
+    ["On", "On Running", "온", "온러닝", "昂跑"],
+    ["Polo Ralph Lauren", "POLO RALPH LAUREN", "폴로 랄프로렌", "랄프로렌", "拉夫劳伦"],
+    ["Adidas Originals", "adidas Originals", "아디다스 오리지널스", "阿迪达斯", "三叶草"],
+  ];
+  const brandKoInput = String(input.brandKo || "").trim();
+  const sellerBrandMatchKeys = [brandName, brandKoInput];
+  const localizedAliases = sellerBrandAliasGroups.find((aliases) =>
+    aliases.some((alias) => brandsMatch(brandName, alias) || brandsMatch(brandKoInput, alias))
+  );
+  if (localizedAliases) sellerBrandMatchKeys.push(...localizedAliases);
+  if (brandsMatch(brandName, "Jordan")) {
+    sellerBrandMatchKeys.push("Jordan", "조던", "乔丹");
+  }
+  const sellerBrandSearchName = brandsMatch(brandName, "On") ? "On Running" : brandName;
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "searching-brand-products",
+    brandName,
+    jobState: "1단계/5 · 브랜드 입력·상품 검색 중",
+    message: `${brandName} · 브랜드를 입력하고 상품 검색을 실행합니다.`,
+  });
+  const runSellerSearch = (targetFrame, searchAlreadySubmitted = false) => targetFrame.executeJavaScript(`(async () => {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (element) => element && element.getBoundingClientRect().width > 0
+      && element.getBoundingClientRect().height > 0;
+    const textOf = (element) => String(element?.innerText || element?.textContent || "")
+      .replace(/\\s+/g, " ").trim();
+    const normalize = (value) => String(value || "").replace(/\\s+/g, "").trim();
+    const clickLikeUser = (element) => {
+      if (!element) return false;
+      element.scrollIntoView({ block: "center", inline: "center" });
+      element.focus?.();
+      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+        element.dispatchEvent(new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          button: 0,
+        }));
+      }
+      element.click?.();
+      return true;
+    };
+    const findVisibleByText = (selector, pattern) =>
+      [...document.querySelectorAll(selector)].filter(visible)
+        .find((element) => pattern.test(textOf(element)));
+        const roots = [document];
+        for (let rootIndex = 0; rootIndex < roots.length; rootIndex += 1) {
+          const root = roots[rootIndex];
+          for (const element of root.querySelectorAll("*")) {
+            if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
+          }
+        }
+        const inputs = roots.flatMap((root) => [...root.querySelectorAll("input, textarea")])
+          .filter((element, index, all) => all.indexOf(element) === index)
+          .filter(visible)
+          .filter((element) => {
+            const type = String(element.type || "text").toLowerCase();
+            return !element.disabled && !element.readOnly
+              && !["hidden", "password", "date", "datetime-local", "month", "time", "file", "checkbox", "radio"].includes(type);
+          });
+        // The proven Seller Center flow uses the global product query input at
+        // the very top of the page: [상품 정보] [query] [검색 및 입찰]. Do not
+        // confuse it with one of the many product-filter inputs below it.
+        const exactSearchButtons = roots.flatMap((root) =>
+          [...root.querySelectorAll("button, [role='button']")]
+        ).filter((element, index, all) => all.indexOf(element) === index)
+          .filter(visible)
+          .filter((element) => /^검색\\s*및\\s*입찰$/.test(textOf(element)));
+        const exactSearchButton = exactSearchButtons
+          .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top)[0] || null;
+        const exactButtonRect = exactSearchButton?.getBoundingClientRect();
+        const exactInput = exactButtonRect
+          ? inputs.map((element) => {
+              const rect = element.getBoundingClientRect();
+              const verticalDistance = Math.abs(
+                (rect.top + rect.height / 2) - (exactButtonRect.top + exactButtonRect.height / 2)
+              );
+              const horizontalGap = exactButtonRect.left - rect.right;
+              return { element, verticalDistance, horizontalGap, top: rect.top };
+            }).filter((candidate) => candidate.verticalDistance < 24
+              && candidate.horizontalGap >= -4 && candidate.horizontalGap < 80)
+            .sort((left, right) => left.horizontalGap - right.horizontalGap)[0]?.element || null
+          : null;
+        const inputScore = (element) => {
+          const rect = element.getBoundingClientRect();
+          const attributes = [
+            element.placeholder,
+            element.getAttribute("aria-label"),
+            element.getAttribute("name"),
+            element.getAttribute("id"),
+            element.getAttribute("data-placeholder"),
+          ].filter(Boolean).join(" ");
+          const context = textOf(element.closest("form, .ant-form-item, [class*='form'], [class*='search']") || element.parentElement);
+          const strongHint = /상품|상품명|브랜드|품번|검색|product|brand|article|spu|sku|商品|品牌|货号|搜索|查询/i.test(attributes);
+          const contextHint = /상품|브랜드|품번|검색|product|brand|spu|sku|商品|品牌|货号/i.test(context);
+          return (strongHint ? 1000 : 0)
+            + (contextHint ? 300 : 0)
+            + (rect.top >= 0 && rect.top < 360 ? 120 : 0)
+            + Math.min(180, Math.round(rect.width));
+        };
+        const searchInputs = inputs.map((element) => ({ element, score: inputScore(element) }))
+          .sort((left, right) => right.score - left.score);
+        const input = exactInput || searchInputs[0]?.element || null;
+        if (!input || (!exactInput && searchInputs[0].score < 200)) {
+          return { ok: false, step: "SEARCH_INPUT_NOT_FOUND", inputCount: inputs.length };
+        }
+        const readSearchState = () => {
+          const rows = [...document.querySelectorAll("tbody tr")].filter(visible);
+          const rowTexts = rows.slice(0, 30).map((row) =>
+            String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim()
+          );
+          const rowText = rowTexts.join("\\n");
+          const totalText = [...document.querySelectorAll("body *")]
+            .filter(visible)
+            .map((element) => String(element.innerText || element.textContent || "").trim())
+            .find((text) => /^총\\s*[\\d,]+\\s*건\\s*결과$/.test(text)) || "";
+          const totalCount = Number(String(totalText).replace(/[^0-9]/g, "")) || 0;
+          return { rowText, rowTexts, totalText, totalCount };
+        };
+        const beforeSearch = readSearchState();
+        const requestedBrandKeys = ${JSON.stringify(sellerBrandMatchKeys)}
+          .map(normalize).filter(Boolean);
+        const requestedBrandRatio = (state) => {
+          const rows = Array.isArray(state?.rowTexts) ? state.rowTexts.filter(Boolean) : [];
+          if (!rows.length || !requestedBrandKeys.length) return 0;
+          const matches = rows.filter((row) => requestedBrandKeys.some((key) => {
+            const normalizedKey = normalize(key).toLocaleLowerCase();
+            if (normalizedKey.length > 3) return normalize(row).toLocaleLowerCase().includes(normalizedKey);
+            const tokens = String(row || "").toLocaleLowerCase()
+              .split(/[^a-z0-9가-힣]+/).filter(Boolean);
+            return tokens.includes(String(key || "").trim().toLocaleLowerCase());
+          })).length;
+          return matches / rows.length;
+        };
+        const hasRequestedBrand = (state) => requestedBrandRatio(state) >= 0.8;
+        const valuePrototype = input instanceof HTMLTextAreaElement
+          ? HTMLTextAreaElement.prototype
+          : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(valuePrototype, "value")?.set;
+        const applyValue = (value) => {
+          const previousValue = String(input.value || "");
+          input.focus();
+          if (setter) setter.call(input, value);
+          else input.value = value;
+          // POIZON uses a React-controlled global search input. Reset React's
+          // value tracker to the previous DOM value so the synthetic input
+          // event is recognized as a real user change instead of being ignored
+          // and immediately rendered back to an empty string.
+          if (input._valueTracker && typeof input._valueTracker.setValue === "function") {
+            input._valueTracker.setValue(previousValue);
+          }
+          input.dispatchEvent(new InputEvent("input", {
+            bubbles: true,
+            composed: true,
+            inputType: value ? "insertText" : "deleteContentBackward",
+            data: value || null,
+          }));
+          input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+        };
+        if (String(input.value || "").trim() !== ${JSON.stringify(sellerBrandSearchName)}) {
+          applyValue("");
+          await wait(160);
+          applyValue(${JSON.stringify(sellerBrandSearchName)});
+          await wait(700);
+        }
+        if (String(input.value || "").trim() !== ${JSON.stringify(sellerBrandSearchName)}) {
+          return {
+            ok: false,
+            step: "BRAND_INPUT_NOT_APPLIED",
+            actualInputValue: String(input.value || "").trim(),
+            expectedInputValue: ${JSON.stringify(sellerBrandSearchName)},
+          };
+        }
+        const buttons = [...document.querySelectorAll("button, [role='button']")].filter(visible);
+        const inputRect = input.getBoundingClientRect();
+        const searchCandidates = buttons.filter((element) =>
+          /검색\\s*및\\s*입찰|^검색$|^검색하기$|搜索|查询|search/i.test(String(element.innerText || element.textContent || "").trim())
+        );
+        const search = exactSearchButton || searchCandidates.find((element) => {
+          const rect = element.getBoundingClientRect();
+          return Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2)) < 90;
+        }) || searchCandidates[0];
+        const pressEnter = () => {
+          input.focus();
+          for (const type of ["keydown", "keypress", "keyup"]) {
+            input.dispatchEvent(new KeyboardEvent(type, {
+              key: "Enter",
+              code: "Enter",
+              keyCode: 13,
+              which: 13,
+              bubbles: true,
+              cancelable: true
+            }));
+          }
+        };
+        const waitForSearchUpdate = async () => {
+          let stableSignature = "";
+          let stableCount = 0;
+          for (let attempt = 0; attempt < 60; attempt += 1) {
+            await wait(250);
+            const current = readSearchState();
+            const changed = current.rowText !== beforeSearch.rowText || current.totalText !== beforeSearch.totalText;
+            const hasRows = current.rowText.length > 0;
+            const brandMatched = hasRequestedBrand(current);
+            const signature = current.totalText + "\\n" + current.rowText;
+            // The working Seller Center keeps the visible "총 9,900건" label
+            // unchanged after a search. The rendered product rows are the
+            // authoritative signal that the brand search completed.
+            // The physical click happens before this verifier starts. On a
+            // fast response the first snapshot can already be the filtered
+            // result, so matching rows are authoritative even when the DOM no
+            // longer differs from that snapshot.
+            const requestedInputConfirmed = normalize(input.value).toLocaleLowerCase()
+              === normalize(${JSON.stringify(sellerBrandSearchName)}).toLocaleLowerCase();
+            // A submitted input is not proof that POIZON changed the result.
+            // Export only after the rendered product rows actually match the
+            // requested brand; otherwise the previous brand can be exported.
+            if (hasRows && brandMatched && requestedInputConfirmed) {
+              stableCount = signature === stableSignature ? stableCount + 1 : 1;
+              stableSignature = signature;
+              if (stableCount >= 3) return true;
+            } else {
+              stableCount = 0;
+              stableSignature = "";
+            }
+          }
+          return false;
+        };
+        const alreadySubmitted = ${JSON.stringify(Boolean(searchAlreadySubmitted))};
+        if (!alreadySubmitted) {
+          if (search) clickLikeUser(search);
+          else pressEnter();
+        }
+        let searchApplied = await waitForSearchUpdate();
+        if (!searchApplied && !alreadySubmitted) {
+          pressEnter();
+          searchApplied = await waitForSearchUpdate();
+        }
+        if (!searchApplied && !alreadySubmitted && search) {
+          clickLikeUser(search);
+          searchApplied = await waitForSearchUpdate();
+        }
+        if (!searchApplied
+          && ${JSON.stringify(brandKoInput)} !== ""
+          && ${JSON.stringify(brandKoInput)} !== ${JSON.stringify(brandName)}) {
+          applyValue("");
+          await wait(160);
+          applyValue(${JSON.stringify(brandKoInput)});
+          await wait(700);
+          if (search) clickLikeUser(search);
+          else pressEnter();
+          searchApplied = await waitForSearchUpdate();
+          if (!searchApplied) {
+            pressEnter();
+            searchApplied = await waitForSearchUpdate();
+          }
+        }
+        if (!searchApplied) {
+          const current = readSearchState();
+          return {
+            ok: false,
+            step: hasRequestedBrand(current) ? "SEARCH_RESULT_NOT_UPDATED" : "BRAND_RESULT_MISMATCH",
+            beforeTotal: beforeSearch.totalCount,
+            currentTotal: current.totalCount
+          };
+        }
+
+        // The remaining controls must be operated through the visible Windows
+        // cursor. Return after the product search has actually updated so the
+        // outer workflow can perform sorting and export physically.
+        const searchedState = readSearchState();
+        return {
+          ok: true,
+          inputValue: String(input.value || "").trim(),
+          resultRowCount: searchedState.rowTexts.length,
+          firstResult: searchedState.rowTexts[0] || "",
+        };
+
+    const localSalesPattern = /\\uD604\\uC9C0\\s*\\uD310\\uB9E4\\uC790\\s*\\uCD5C\\uADFC\\s*30\\uC77C\\s*\\uD310\\uB9E4\\uB7C9/;
+    const localSalesHeaderText = [...document.querySelectorAll(
+      "th, [role='columnheader'], thead td, thead div"
+    )].filter(visible)
+      .filter((element) => localSalesPattern.test(textOf(element)))
+      .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
+    if (!localSalesHeaderText) {
+      return { ok: false, step: "LOCAL_SELLER_30D_COLUMN_NOT_FOUND" };
+    }
+
+    let localSalesHeader = localSalesHeaderText.closest(
+      "th, [role='columnheader'], thead td"
+    );
+    if (!localSalesHeader) {
+      localSalesHeader = localSalesHeaderText;
+      for (let depth = 0; depth < 6 && localSalesHeader.parentElement; depth += 1) {
+        const parent = localSalesHeader.parentElement;
+        const rect = parent.getBoundingClientRect();
+        if (rect.width > 70 && rect.width < 360 && localSalesPattern.test(textOf(parent))) {
+          localSalesHeader = parent;
+        } else {
+          break;
+        }
+      }
+    }
+
+    const textRect = localSalesHeaderText.getBoundingClientRect();
+    const headerRect = localSalesHeader.getBoundingClientRect();
+    const headerSearchRoot = localSalesHeader.closest("thead, [role='row']")
+      || localSalesHeader.parentElement
+      || document;
+
+    const scoreCandidate = (element) => {
+      const target = element.closest?.("button, [role='button'], [class*='sort'], [class*='filter'], [aria-label], [title]")
+        || element;
+      const rect = target.getBoundingClientRect();
+      const hint = [
+        target.getAttribute?.("aria-label"),
+        target.getAttribute?.("title"),
+        target.className,
+        target.textContent
+      ].filter(Boolean).join(" ");
+      const centerY = (headerRect.top + headerRect.bottom) / 2;
+      const distance = Math.abs(rect.left - textRect.right) + Math.abs((rect.top + rect.bottom) / 2 - centerY);
+      const compact = rect.width > 0 && rect.width <= 56 && rect.height > 0 && rect.height <= 56;
+      const inHeader = rect.left >= headerRect.left - 8
+        && rect.right <= headerRect.right + 12
+        && rect.top >= headerRect.top - 8
+        && rect.bottom <= headerRect.bottom + 8;
+      const rightOfHeaderText = rect.left >= textRect.right - 6
+        && rect.left <= textRect.right + 72;
+      return {
+        target,
+        score: (/sort|filter|desc|order/i.test(hint) ? 100 : 0)
+          + (rightOfHeaderText ? 90 : 0)
+          + (compact ? 45 : 0)
+          + (inHeader ? 35 : 0)
+          - Math.min(distance, 160)
+      };
+    };
+
+    const candidateMap = new Map();
+    for (const element of headerSearchRoot.querySelectorAll(
+      "button, [role='button'], [class*='sort'], [class*='filter'], [aria-label], [title], svg, i, span"
+    )) {
+      if (!visible(element)) continue;
+      const candidate = scoreCandidate(element);
+      if (!candidateMap.has(candidate.target)) {
+        candidateMap.set(candidate.target, candidate);
+      }
+    }
+    const sortCandidates = [...candidateMap.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12)
+      .map((entry) => entry.target);
+
+    const centerY = (headerRect.top + headerRect.bottom) / 2;
+    const probePoints = [
+      [textRect.right + 6, centerY],
+      [textRect.right + 13, centerY],
+      [textRect.right + 21, centerY],
+      [headerRect.right - 8, centerY],
+      [headerRect.right - 15, centerY],
+      [headerRect.right - 10, headerRect.bottom - 10]
+    ];
+
+    const descendingPattern = /^\uB0B4\uB9BC\uCC28\uC21C$/;
+    const findDescending = () => [...document.querySelectorAll(
+      "button, [role='button'], [role='menuitem'], label, li, span, div"
+    )].find((el) => visible(el) && descendingPattern.test(normalize(el.textContent)));
+
+    const clickAt = (x, y) => {
+      const target = document.elementFromPoint(x, y);
+      if (!target) return false;
+      target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: x, clientY: y }));
+      target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: x, clientY: y }));
+      target.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: x, clientY: y }));
+      return true;
+    };
+
+    let descending = findDescending();
+    for (const candidate of sortCandidates) {
+      if (descending) break;
+      clickLikeUser(candidate);
+      await wait(450);
+      descending = findDescending();
+    }
+    for (const [x, y] of probePoints) {
+      if (descending) break;
+      clickAt(x, y);
+      await wait(450);
+      descending = findDescending();
+    }
+    if (!descending) {
+      return { ok: false, code: "LOCAL_SALES_SORT_ICON_NOT_FOUND" };
+    }
+
+    clickLikeUser(descending);
+    await wait(350);
+
+    const confirmPattern = /^\uD655\uC778$/;
+    const findConfirm = () => [...document.querySelectorAll(
+      "button, [role='button'], a, span, div"
+    )].find((el) => visible(el) && confirmPattern.test(normalize(el.textContent)));
+    let confirmControl = findConfirm();
+    if (!confirmControl) {
+      return { ok: false, code: "LOCAL_SALES_SORT_CONFIRM_NOT_FOUND" };
+    }
+    clickLikeUser(confirmControl);
+    await wait(700);
+    confirmControl = findConfirm();
+    if (confirmControl) {
+      clickLikeUser(confirmControl);
+      await wait(900);
+    }
+
+    let exportButton = null;
+    const exportPattern = /^\uC804\uCCB4\s*\uB0B4\uBCF4\uB0B4\uAE30$/;
+    for (let attempt = 0; attempt < 12 && !exportButton; attempt += 1) {
+      exportButton = [...document.querySelectorAll("button, [role='button'], a, span")]
+        .find((element) => visible(element) && exportPattern.test(normalize(element.textContent)));
+      if (!exportButton) await wait(400);
+    }
+    if (!exportButton) return { ok: false, code: "EXPORT_BUTTON_NOT_FOUND_AFTER_SORT" };
+    if (exportButton.disabled || exportButton.getAttribute("aria-disabled") === "true") {
+      return { ok: false, code: "EXPORT_BUTTON_DISABLED_AFTER_SORT" };
+    }
+    clickLikeUser(exportButton);
+    await wait(500);
+    const verifiedState = readSearchState();
+    return {
+      ok: true,
+      sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC",
+      exportClicked: true,
+      inputValue: String(input.value || "").trim(),
+      resultRowCount: verifiedState.rowTexts.length,
+      firstResult: verifiedState.rowTexts[0] || "",
+    };
+  })()`, true);
+  let searched = null;
+  let lastSearchDiagnostics = null;
+  for (let searchInputAttempt = 1; searchInputAttempt <= 1; searchInputAttempt += 1) {
+    const frames = sellerWindowFrames();
+    const frameCandidates = [];
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "probing-search-frame",
+      brandName,
+      jobState: "1단계/5 · 상품검색 입력창 연결 중",
+      message: `${brandName} · 응답하지 않는 POIZON 내부 프레임은 4초 후 건너뜁니다.`,
+    });
+    const probedFrames = await Promise.all(frames.map(async (frame) => {
+      const probe = await executeSellerFrameWithTimeout(frame, `(() => {
+          const visible = (element) => element && element.getClientRects().length > 0;
+          const inputs = [...document.querySelectorAll("input, textarea")].filter(visible)
+            .filter((element) => !element.disabled && !element.readOnly);
+          const body = String(document.body?.innerText || "").slice(0, 1200);
+          const hint = /상품|브랜드|품번|검색|SPU|SKU|product|brand|商品|品牌|货号|搜索/i.test(body);
+          return {
+            url: location.href,
+            title: document.title,
+            readyState: document.readyState,
+            inputCount: inputs.length,
+            hint,
+            login: /login|signin|passport/i.test(location.href),
+          };
+        })()`, 4_000, null);
+      return probe ? { frame, probe } : null;
+    }));
+    frameCandidates.push(...probedFrames.filter(Boolean));
+    frameCandidates.sort((left, right) =>
+      Number(right.probe?.inputCount > 0) - Number(left.probe?.inputCount > 0)
+      || Number(right.probe?.hint) - Number(left.probe?.hint)
+      || Number(right.frame.routingId === sellerWindow.webContents.mainFrame.routingId)
+        - Number(left.frame.routingId === sellerWindow.webContents.mainFrame.routingId)
+    );
+    const loginFrame = frameCandidates.find((candidate) => candidate.probe?.login);
+    if (loginFrame) {
+      searched = { ok: false, step: "SELLER_LOGIN_REQUIRED", diagnostics: loginFrame.probe };
+      break;
+    }
+    for (const candidate of frameCandidates) {
+      if (!candidate.probe?.inputCount && !candidate.probe?.hint) continue;
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: "searching-brand-products",
+        brandName,
+        jobState: `1단계/5 · 브랜드 입력·상품 검색 중 · ${brandName}`,
+        message: `${brandName} · 기존 검색 서비스 방식으로 브랜드를 입력하고 검색을 실행합니다.`,
+      });
+      const exactFilter = await applyExactSellerBrandFilter(candidate.frame, [
+        sellerBrandSearchName,
+        brandKoInput,
+        ...(localizedAliases || []),
+      ]).catch(() => ({ ok: false, step: "EXACT_BRAND_FILTER_FAILED" }));
+      // Keep the POIZON window hidden and send input directly through Electron's
+      // background webContents path so monitor focus and the Windows cursor stay untouched.
+      const realKeyboardInput = exactFilter?.ok
+        ? { ok: true, submitted: true, exactBrandFilter: true }
+        : await typeSellerBrandWithRealKeyboard(candidate.frame, sellerBrandSearchName)
+          .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
+      if (sellerWindow && !sellerWindow.isDestroyed()) {
+        // The Seller Center stays hidden for input, result transition, sorting,
+        // export registration, and download monitoring.
+        sellerWindow.hide();
+        showCollectorWindow();
+      }
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: realKeyboardInput?.ok ? "seller-brand-input-confirmed" : "seller-brand-input-fallback",
+        brandName,
+        jobState: realKeyboardInput?.ok
+          ? `1단계/5 · 상품검색 브랜드 입력 완료 · ${brandName}`
+          : `1단계/5 · 상품검색 입력 재시도 · ${brandName}`,
+        message: realKeyboardInput?.ok
+          ? `${brandName} · 판매자센터 상단 상품검색 입력을 확인하고 검색 및 입찰을 실행합니다.`
+          : `${brandName} · 실제 키보드 입력이 확인되지 않아 기존 입력 방식으로 즉시 재시도합니다.`,
+      });
+      if (!realKeyboardInput?.ok) {
+        searched = realKeyboardInput || { ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" };
+        lastSearchDiagnostics = candidate.probe;
+        break;
+      }
+      const result = exactFilter?.ok ? exactFilter : await Promise.race([
+          runSellerSearch(candidate.frame, Boolean(realKeyboardInput?.submitted)),
+          new Promise((resolve) => setTimeout(() => resolve({
+            ok: false,
+            step: "SELLER_SEARCH_STAGE_TIMEOUT",
+          }), 70_000)),
+        ]).catch((error) => ({
+          ok: false,
+          step: "SELLER_SEARCH_SCRIPT_ERROR",
+          detail: String(error?.message || error || ""),
+        }));
+      lastSearchDiagnostics = candidate.probe;
+      if (result?.ok) {
+        mainWindow?.webContents.send("brand-export:progress", {
+          status: "waiting-for-seller-result-navigation",
+          brandName,
+          jobState: `2단계/5 · 결과 화면 전환 확인 중 · ${brandName}`,
+          message: `${brandName} · POIZON 창을 표시하지 않고 결과 확인·정렬·내보내기를 백그라운드에서 진행합니다.`,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 1_200));
+        const postSearch = await performPhysicalSellerSortAndExport(candidate.frame)
+          .catch((error) => ({
+            ok: false,
+            step: "PHYSICAL_POST_SEARCH_FAILED",
+            detail: String(error?.message || error || ""),
+          }));
+        if (postSearch?.ok) {
+          sellerProductFrameRoutingId = candidate.frame.routingId;
+          // Clicking "전체 내보내기" only opens POIZON's confirmation
+          // dialog. The old rebuilt path skipped this existing confirmation
+          // helper and then waited three minutes for a job that had never
+          // actually been submitted.
+          const confirmation = await confirmSellerExportRequestPhysical(candidate.frame)
+            .catch(() => ({
+              ok: false,
+              confirmationObserved: false,
+              confirmationClicked: false,
+              requestAcknowledged: false,
+            }));
+          searched = { ...result, ...postSearch, ...confirmation, ok: true };
+          break;
+        }
+        searched = postSearch;
+        break;
+      }
+      if (result?.step !== "SEARCH_INPUT_NOT_FOUND") {
+        searched = result;
+        break;
+      }
+      searched = result;
+    }
+    if (searched?.ok || (searched?.step && searched.step !== "SEARCH_INPUT_NOT_FOUND")) break;
+  }
+  if (cleared()) {
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    return { ok: false, code: "BRAND_ATTEMPT_ABORTED", message: `${brandName} 작업 시간이 초과되어 다음 브랜드로 이동합니다.` };
+  }
+  if (!searched?.ok && searched?.step === "SEARCH_INPUT_NOT_FOUND") {
+    searched = { ...searched, diagnostics: lastSearchDiagnostics };
+  }
+  if (!searched?.ok) {
+    const diagnosticPath = await captureSellerDiagnostic(brandName, String(searched?.step || "search-failed").toLowerCase());
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    return {
+      ok: false,
+      code: searched?.code || searched?.step || "SELLER_AUTOMATION_FAILED",
+      message: `${sellerBrandExportFailureMessage(searched?.code || searched?.step, brandName)}${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
+      diagnostics: { ...(searched?.diagnostics || {}), path: diagnosticPath },
+    };
+  }
+
+  // Keep the registration window on product search. Navigating it to the
+  // download center removed the search input needed by the next queued brand.
+  // The separate monitor identifies only the new job here; full refresh,
+  // completion checks, and downloads start after the whole queue is drained.
+  if (sellerWindow && !sellerWindow.isDestroyed()) {
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    sellerWindow.hide();
+    showCollectorWindow();
+  }
+
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "seller-search-evidence",
+    brandName,
+    jobState: searched.confirmationClicked
+      ? "2단계/5 · 내보내기 확인 완료 · 작업번호 생성 확인 중"
+      : "2단계/5 · 전체 내보내기 클릭 · 작업번호 생성 확인 중",
+    message: searched.confirmationClicked
+      ? `${brandName} · 현지 30일 내림차순 · POIZON 내보내기 확인창 처리 완료 · 새 작업번호 확인 중`
+      : `${brandName} · 전체 내보내기 클릭 완료 · 확인창 없이 작업번호가 생성되는지 확인 중`,
+  });
+
+  const completeness = {
+    ok: true,
+    expected: 0,
+    pageCount: 0,
+    confirmationObserved: Boolean(searched.confirmationObserved),
+    confirmationClicked: Boolean(searched.confirmationClicked),
+    requestAcknowledged: Boolean(searched.requestAcknowledged),
+  };
+
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "waiting-for-job-creation",
+    brandName,
+    jobState: "2단계/5 · 전체 내보내기 클릭 완료 · 새 작업번호 확인 중",
+    message: `${brandName} · 전체 내보내기를 완료했습니다. 별도 확인 창에서 새 작업번호만 확인한 뒤 다음 브랜드로 이동합니다.`,
+  });
+
+  let createdJob = null;
+  const verificationStartedAt = Date.now();
+  const verificationTimeoutMs = 180000;
+  let lastReloadAt = 0;
+  let lastProgressAt = 0;
+  let fallbackCandidateJobId = "";
+  let fallbackCandidateStableReads = 0;
+  let lateConfirmationChecked = Boolean(searched.confirmationClicked);
+  let lastFreshReadAt = 0;
+  await new Promise((resolve) => setTimeout(resolve, 2500));
+  while (Date.now() - verificationStartedAt < verificationTimeoutMs) {
+    if (cleared()) break;
+    let currentJobs = await Promise.race([
+      readSellerExportJobsFromMonitor(),
+      new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
+    ]);
+    const elapsedMs = Date.now() - verificationStartedAt;
+    if (elapsedMs >= 10_000 && Date.now() - lastFreshReadAt >= 15_000) {
+      lastFreshReadAt = Date.now();
+      const freshJobs = await Promise.race([
+        readSellerExportJobsFreshly(),
+        new Promise((resolve) => setTimeout(() => resolve(null), 20_000)),
+      ]).catch(() => null);
+      if (Array.isArray(freshJobs)) {
+        const mergedJobs = new Map();
+        for (const job of [...(Array.isArray(currentJobs) ? currentJobs : []), ...freshJobs]) {
+          const id = String(job?.id || "").trim();
+          if (id) mergedJobs.set(id, job);
+        }
+        currentJobs = [...mergedJobs.values()];
+      }
+    }
+    if (Array.isArray(currentJobs)) {
+      const unusedJobs = currentJobs.filter((job) => !brandExportJobOwner(job?.id));
+      const candidate = findNewSellerExportJob([...baselineJobIds], unusedJobs);
+      if (candidate && baselineAvailable) {
+        createdJob = candidate;
+      } else if (candidate) {
+        const candidateId = String(candidate.id || "").trim();
+        fallbackCandidateStableReads = candidateId === fallbackCandidateJobId
+          ? fallbackCandidateStableReads + 1
+          : 1;
+        fallbackCandidateJobId = candidateId;
+        if (fallbackCandidateStableReads >= 2) createdJob = candidate;
+      } else {
+        fallbackCandidateJobId = "";
+        fallbackCandidateStableReads = 0;
+      }
+    }
+    if (createdJob) break;
+
+    // Some Seller Center responses render the confirmation modal several
+    // seconds after the export click. Check once more before declaring that
+    // no job was created; do not click the export button again and risk a
+    // duplicate job.
+    if (!lateConfirmationChecked && elapsedMs >= 5_000) {
+      lateConfirmationChecked = true;
+      const lateConfirmation = await confirmSellerExportRequestPhysical(currentSellerProductFrame())
+        .catch(() => null);
+      if (lateConfirmation?.confirmationClicked) {
+        completeness.confirmationObserved = true;
+        completeness.confirmationClicked = true;
+        completeness.requestAcknowledged = true;
+        mainWindow?.webContents.send("brand-export:progress", {
+          status: "waiting-for-job-creation",
+          brandName,
+          jobState: "2단계/5 · 지연 확인창 처리 완료 · 작업번호 생성 확인 중",
+          message: `${brandName} · 늦게 표시된 POIZON 내보내기 확인창을 처리했습니다.`,
+        });
+      }
+    }
+    if (elapsedMs - lastProgressAt >= 10000) {
+      lastProgressAt = elapsedMs;
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: "waiting-for-job-creation",
+        brandName,
+        jobState: `2단계/5 · 다운로드센터 작업 생성 대기 · ${Math.floor(elapsedMs / 1000)}초`,
+        message: `${brandName} · 전체 내보내기 요청 완료 · POIZON이 새 작업번호를 생성하는 중입니다. 화면을 반복 초기화하지 않고 기다립니다.`,
+      });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    const monitor = ensureSellerMonitorWindow();
+    if (elapsedMs >= 15000 && Date.now() - lastReloadAt >= 15000) {
+      await monitor.webContents.reloadIgnoringCache();
+      lastReloadAt = Date.now();
+    }
+  }
+  if (cleared()) {
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    return { ok: false, code: "BRAND_ATTEMPT_ABORTED", message: `${brandName} 작업 시간이 초과되어 다음 브랜드로 이동합니다.` };
+  }
+  if (!createdJob) {
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    sellerWindow.hide();
+    showCollectorWindow();
+    return {
+      ok: false,
+      code: "EXPORT_JOB_NOT_CREATED",
+      confirmationObserved: Boolean(completeness?.confirmationObserved),
+      confirmationClicked: Boolean(completeness?.confirmationClicked),
+      requestAcknowledged: Boolean(completeness?.requestAcknowledged),
+      message: completeness?.confirmationObserved && !completeness?.confirmationClicked
+        ? "POIZON 전체 내보내기 확인창을 완료하지 못했습니다. 확인창 처리 로직을 다시 점검해 주세요."
+        : "실제 상품검색과 전체 내보내기 요청은 실행됐지만 3분 동안 새 미사용 작업번호를 확인하지 못했습니다. 다운로드센터 화면 구조 또는 로그인 세션을 확인해 주세요.",
+    };
+  }
+  if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "작업 기록 삭제로 이전 요청을 중단했습니다." };
+  pendingBrandExportJobId = String(createdJob.id || "").trim();
+  const registeredJobId = pendingBrandExportJobId;
+  const existingOwner = brandExportJobOwner(registeredJobId);
+  if (existingOwner) {
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    brandExportJobPending = false;
+    sellerWindow.hide();
+    showCollectorWindow();
+    return {
+      ok: false,
+      code: "EXPORT_JOB_ID_REUSED",
+      message: `새 작업번호가 생성되지 않았습니다. 기존 작업번호 ${registeredJobId}는 ${existingOwner.brandName || "다른 브랜드"} 작업에 이미 연결되어 있습니다.`,
+    };
+  }
+  brandExportJobs.set(registeredJobId, {
+    jobId: registeredJobId,
+    brandName,
+    brandKo,
+    createdAt: Date.now(),
+    downloadStarted: false,
+    expectedProductCount: Number(completeness.expected || searched.expectedTotal || 0),
+  });
+  await rememberBrandExportJob({
+    jobId: registeredJobId,
+    brandName,
+    brandKo,
+    createdAt: Date.now(),
+    expectedProductCount: Number(completeness.expected || searched.expectedTotal || 0),
+    sessionGeneration,
+  });
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "job-created",
+    brandName,
+    jobId: registeredJobId,
+    jobState: "작업번호 생성 확인 완료 · 전체 등록 대기",
+    message: `${brandName} · 새 작업번호 ${registeredJobId} 생성 확인 완료 · 다음 브랜드로 이동`,
+  });
+  brandExportJobPending = false;
+  pendingBrandExportName = "";
+  pendingBrandExportJobId = "";
+  sellerWindow.hide();
+  mainWindow?.show();
+  mainWindow?.focus();
+  if (!input.deferMonitor) void watchAllSellerExportJobsEveryTenSeconds();
+  return {
+    ok: true,
+    folder,
+    jobId: registeredJobId,
+    expectedProductCount: Number(completeness.expected || searched.expectedTotal || 0),
+  };
+}
+
+async function syncBrandCatalogFromKrPoizon() {
+  const window = new BrowserWindow({
+    show: false,
+    icon: APP_ICON_PATH,
+    width: 1280,
+    height: 900,
+    webPreferences: {
+      partition: "persist:around-g-poizon-brands",
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  try {
+    await window.loadURL(KR_POIZON_BRAND_LIST_URL);
+    const source = await window.webContents.executeJavaScript(
+      `document.querySelector("#__NEXT_DATA__")?.textContent || ""`,
+      true
+    );
+    if (!source) throw new Error("KR_POIZON_BRAND_DATA_NOT_FOUND");
+    const koreanBrands = parseKrPoizonBrandData(source);
+    let englishBrands = [];
+    try {
+      await window.loadURL(EN_POIZON_BRAND_LIST_URL);
+      const englishSource = await window.webContents.executeJavaScript(
+        `document.querySelector("#__NEXT_DATA__")?.textContent || ""`,
+        true
+      );
+      if (englishSource) englishBrands = parseKrPoizonBrandData(englishSource);
+    } catch {
+      // 한국 공식 목록만 완전하면 전체 브랜드 검색을 막지 않는다.
+    }
+    const brands = mergeLocalizedBrandCatalog(koreanBrands, englishBrands);
+    if (!Array.isArray(brands) || brands.length < FULL_BRAND_CATALOG_MINIMUM) {
+      throw new Error(`KR_POIZON_BRAND_COUNT_INVALID_${brands?.length || 0}`);
+    }
+    await store.setSettings({ brandCatalog: brands, brandCatalogUpdatedAt: new Date().toISOString() });
+    const officialBrandRegistry = await ensureOfficialDomainRegistry(brands);
+    return {
+      ok: true,
+      brands: brandsWithOfficialDomainStatus(brands, officialBrandRegistry),
+      officialDomainSummary: officialDomainRegistrySummary(officialBrandRegistry),
+      source: KR_POIZON_BRAND_LIST_URL,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: {
+        code: "KR_POIZON_BRAND_SYNC_FAILED",
+        message: "기존 크롬 방식의 POIZON 한국 브랜드 목록을 읽지 못했습니다.",
+        detail: error instanceof Error ? error.message : String(error),
+      },
+    };
+  } finally {
+    if (!window.isDestroyed()) window.destroy();
+  }
+}
+
+async function queryPublicBrandProducts(input) {
+  const brandPath = publicBrandPath({
+    productUrl: input?.brandUrl,
+    name: input?.brandName,
+  });
+  if (!/^\/brand\/[a-z0-9][a-z0-9-]*$/i.test(brandPath)) {
+    return { ok: false, error: { code: "POIZON_BRAND_URL_INVALID", message: "POIZON 영문 브랜드 주소를 찾지 못했습니다." } };
+  }
+  const window = new BrowserWindow({
+    show: false,
+    icon: APP_ICON_PATH,
+    width: 1280,
+    height: 900,
+    webPreferences: {
+      partition: "persist:around-g-poizon-brands",
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  try {
+    const productsByKey = new Map();
+    let pageCount = 1;
+    let sourceTotal = 0;
+    for (let pageNum = 1; pageNum <= pageCount; pageNum += 1) {
+      const pageUrl = new URL(brandPath, "https://kr.poizon.com");
+      if (pageNum > 1) pageUrl.searchParams.set("page", String(pageNum));
+      await window.loadURL(pageUrl.href);
+      const source = await window.webContents.executeJavaScript(
+        `document.querySelector("#__NEXT_DATA__")?.textContent || ""`,
+        true
+      );
+      if (!source) throw new Error(`KR_POIZON_BRAND_PRODUCTS_NOT_FOUND_PAGE_${pageNum}`);
+      const pageData = JSON.parse(source);
+      const pageProducts = parsePublicBrandProducts(pageData, input.brandId);
+      if (pageNum === 1) {
+        sourceTotal = Math.max(0, Number(pageData?.props?.pageProps?.total || pageProducts.length));
+        pageCount = publicBrandPageCount(sourceTotal, pageProducts.length, 100);
+      }
+      for (const product of pageProducts) {
+        const key = `${product.articleNumber}:${product.globalSpuId || product.spuId || ""}`;
+        productsByKey.set(key, product);
+      }
+      mainWindow?.webContents.send("explorer:brand-progress", {
+        percent: Math.round((pageNum / pageCount) * 100),
+        count: productsByKey.size,
+        pageNum,
+        pageCount,
+      });
+      if (!pageProducts.length) break;
+    }
+    if (!productsByKey.size) throw new Error("KR_POIZON_BRAND_PRODUCTS_EMPTY");
+    const salesByArticle = input?.salesByArticle || {};
+    let products = [...productsByKey.values()].map((product) => {
+      const hasSalesData = Object.hasOwn(salesByArticle, product.articleNumber);
+      return {
+        ...product,
+        brandName: String(input.brandName || ""),
+        hasSalesData,
+        sales30d: hasSalesData ? Number(salesByArticle[product.articleNumber] || 0) : 0,
+      };
+    });
+    const salesDataCount = products.filter((product) => product.hasSalesData).length;
+    if (input?.minimumSales30) {
+      products = products.filter((product) => product.hasSalesData && product.sales30d >= 30);
+    }
+    return {
+      ok: true,
+      products,
+      total: products.length,
+      sourceTotal,
+      pages: pageCount,
+      pageNum: pageCount,
+      salesFilterAvailable: salesDataCount > 0,
+      salesDataCount,
+      sourceCount: pageCount,
+      failedSourceCount: 0,
+      publicSource: true,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: {
+        code: "KR_POIZON_BRAND_PRODUCTS_FAILED",
+        message: "POIZON 공개 브랜드 상품을 읽지 못했습니다.",
+        detail: error instanceof Error ? error.message : String(error),
+      },
+    };
+  } finally {
+    if (!window.isDestroyed()) window.destroy();
+  }
+}
+
+async function captureSellerCenterProducts() {
+  const revealSellerLogin = () => {
+    if (!sellerWindow || sellerWindow.isDestroyed()) return;
+    if (sellerWindow.isMinimized()) sellerWindow.restore();
+    sellerWindow.show();
+    sellerWindow.focus();
+    mainWindow?.webContents.send("seller:capture-progress", {
+      attentionRequired: true,
+      message: "POIZON 로그인 또는 보안 확인이 필요해 판매자센터 창을 표시했습니다.",
+    });
+  };
+  if (!sellerWindow || sellerWindow.isDestroyed()) {
+    mainWindow?.webContents.send("seller:capture-progress", { percent: 2, count: 0, message: "판매자센터를 여는 중" });
+    openSellerCenterWindow(SELLER_CENTER_URL, { visible: false });
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await wait(500);
+      if (sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.getURL()) break;
+    }
+    if (!sellerWindow || sellerWindow.isDestroyed()) {
+      return { ok: false, message: "판매자센터 창을 열지 못했습니다." };
+    }
+  }
+  if (sellerWindow && !sellerWindow.isDestroyed()) {
+    minimizeSellerAutomationWindow("POIZON 로그인 세션을 백그라운드에서 확인 중입니다.");
+  }
+  mainWindow?.webContents.send("seller:capture-progress", { percent: 5, count: 0, message: "로그인 세션 확인 중" });
+  let currentUrl = sellerWindow.webContents.getURL();
+  for (let attempt = 0; attempt < 20 && !currentUrl; attempt += 1) {
+    await wait(500);
+    currentUrl = sellerWindow.webContents.getURL();
+  }
+  if (!currentUrl.startsWith("https://seller.poizon.com/")) {
+    revealSellerLogin();
+    return { ok: false, message: "판매자센터 인기상품 화면으로 이동해 주세요." };
+  }
+  if (!currentUrl.includes("/main/dataCenter/merchantRankBoard")) {
+    await sellerWindow.loadURL(SELLER_CENTER_URL);
+    await wait(1_800);
+    currentUrl = sellerWindow.webContents.getURL();
+    if (!currentUrl.includes("/main/dataCenter/merchantRankBoard")) {
+      revealSellerLogin();
+      return { ok: false, message: "판매자센터 로그인을 완료해 주세요. 로그인 세션은 다음 실행부터 자동으로 유지됩니다." };
+    }
+  }
+  sellerWindow.maximize();
+  minimizeSellerAutomationWindow("POIZON 인기상품 조건을 백그라운드에서 적용 중입니다.");
+  await wait(700);
+  const networkProducts = [];
+  let debuggerListener;
+  let debuggerAttachedHere = false;
+  try {
+    if (!sellerWindow.webContents.debugger.isAttached()) {
+      sellerWindow.webContents.debugger.attach("1.3");
+      debuggerAttachedHere = true;
+    }
+    await sellerWindow.webContents.debugger.sendCommand("Network.enable");
+    debuggerListener = async (_event, method, params) => {
+      if (method !== "Network.responseReceived" || !["XHR", "Fetch"].includes(params?.type)) return;
+      if (!String(params?.response?.url || "").includes("seller.poizon.com")) return;
+      try {
+        const body = await sellerWindow.webContents.debugger.sendCommand("Network.getResponseBody", {
+          requestId: params.requestId,
+        });
+        const parsed = JSON.parse(body.base64Encoded
+          ? Buffer.from(body.body, "base64").toString("utf8")
+          : body.body);
+        networkProducts.push(...extractSellerApiProducts(parsed, 200));
+      } catch {
+        // JSON이 아닌 응답이나 보안 응답은 화면 안정화 수집으로 처리합니다.
+      }
+    };
+    sellerWindow.webContents.debugger.on("message", debuggerListener);
+  } catch {
+    debuggerAttachedHere = false;
+  }
+  const stopNetworkCapture = () => {
+    if (debuggerListener) sellerWindow?.webContents.debugger.removeListener("message", debuggerListener);
+    if (debuggerAttachedHere && sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.debugger.isAttached()) {
+      try { sellerWindow.webContents.debugger.detach(); } catch {}
+    }
+  };
+  let conditionResults = [];
+  let failedConditions = [];
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    mainWindow?.webContents.send("seller:capture-progress", {
+      percent: 5 + attempt,
+      count: 0,
+      message: `인기상품 조건 적용 중 (${attempt}/3)`,
+    });
+    conditionResults = await applySellerPopularConditions();
+    failedConditions = conditionResults.filter((condition) => (
+      !condition.found
+      || (condition.action === "select" && !condition.verifiedSelected)
+      || (condition.action === "fullscreen" && !condition.expanded)
+    ));
+    if (!failedConditions.length) break;
+    await wait(1_500 * attempt);
+  }
+  if (failedConditions.length) {
+    stopNetworkCapture();
+    return {
+      ok: false,
+      message: `인기상품 조건 확인 실패: ${failedConditions.map((condition) => condition.label).join(", ")}. 잘못된 데이터는 저장하지 않았습니다.`,
+      conditions: conditionResults,
+    };
+  }
+  mainWindow?.webContents.send("seller:capture-progress", {
+    percent: 12,
+    count: 0,
+    message: "일주일 전 · 주간 대비 · 판매 인기 높은 순 · SPU · 인기상품 전체화면 확인 완료",
+  });
+  const fullscreenCondition = conditionResults.find((condition) => condition.key === "fullscreen");
+  if (!fullscreenCondition?.found) {
+    stopNetworkCapture();
+    return {
+      ok: false,
+      message: `인기상품 전체화면 버튼을 누르지 못했습니다. 잘못된 9개 목록은 저장하지 않습니다.${fullscreenCondition?.x !== undefined ? ` 클릭 좌표 (${fullscreenCondition.x}, ${fullscreenCondition.y}), 대상 ${fullscreenCondition.targetTag || "없음"}` : ""}`,
+      conditions: conditionResults,
+    };
+  }
+  const frames = [sellerWindow.webContents.mainFrame, ...(sellerWindow.webContents.mainFrame.framesInSubtree || [])]
+    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
+  const captures = [];
+  const limit = 200;
+  const capturedNodes = new Map();
+  const rankSlots = new Map();
+  const stableObservations = new Map();
+  const addConfirmedProduct = (product) => {
+    const rank = Number(product.rank || 0);
+    const articleNumber = String(product.articleNumber || "").toUpperCase();
+    const name = String(product.name || "").trim();
+    if (rank < 1 || rank > limit || (!articleNumber && !name)) return;
+    const merged = mergeSellerProductsByRank([[rankSlots.get(rank)], [{ ...product, articleNumber, name }]], limit)[0];
+    if (merged) rankSlots.set(rank, merged);
+  };
+  const addNodesToSlots = (nodes) => {
+    for (const product of parseSellerDomNodes(nodes, limit)) {
+      const rank = Number(product.rank || 0);
+      const articleNumber = String(product.articleNumber || "").toUpperCase();
+      if (!product.rankDetected || rank < 1 || rank > limit || !articleNumber) continue;
+      const signature = JSON.stringify([
+        articleNumber,
+        product.name,
+        Number(product.averagePrice || 0),
+        Number(product.lowestPrice || 0),
+        Number(product.highestPrice || 0),
+      ]);
+      const previous = stableObservations.get(rank);
+      const observation = previous?.signature === signature
+        ? { signature, count: previous.count + 1, product }
+        : { signature, count: 1, product };
+      stableObservations.set(rank, observation);
+      // A detected rank is pasted directly into the matching 1-200 slot.
+      // Later observations may verify it, but a single valid row is never
+      // discarded merely because virtualization removed it from the screen.
+      addConfirmedProduct(product);
+    }
+  };
+  const validProductCount = () => rankSlots.size;
+  const captureFrameWithTimeout = async (frame, timeoutMs = 2_500) => Promise.race([
+    frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true),
+    new Promise((_, reject) => setTimeout(
+      () => reject(new Error("seller frame capture timeout")),
+      timeoutMs,
+    )),
+  ]);
+  const captureVisibleSlots = async () => {
+    for (const frame of frames) {
+      try {
+        const captured = await captureFrameWithTimeout(frame);
+        if (!captured?.scopeVerified) continue;
+        captures.push(captured);
+        for (const node of captured.nodes || []) {
+          capturedNodes.set(`${String(node.text || "")}\n${String(node.imageUrl || "")}`, node);
+        }
+        addNodesToSlots(captured.nodes || []);
+      } catch {
+        // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
+      }
+    }
+  };
+  minimizeSellerAutomationWindow("POIZON 인기상품 200건을 백그라운드에서 수집 중입니다.");
+  for (let pass = 0; pass < 3 && rankSlots.size < limit; pass += 1) {
+    await dragSellerScrollbarToRatio(0);
+    await wait(900);
+    let atEnd = false;
+    let iteration = 0;
+    while (!atEnd && iteration < 2_000 && rankSlots.size < limit) {
+      iteration += 1;
+      await captureVisibleSlots();
+      await wait(180);
+      const scrollResult = await executeAcrossSellerFrames(SELLER_ROW_SCROLL_SCRIPT);
+      if (!scrollResult?.found) break;
+      atEnd = Boolean(scrollResult.atEnd);
+      const tableRatio = scrollResult.maximum > 0
+        ? Math.min(1, scrollResult.after / scrollResult.maximum)
+        : 1;
+      const basePercent = pass === 0 ? 12 : 86 + ((pass - 1) * 6);
+      const passRange = pass === 0 ? 74 : 6;
+      mainWindow?.webContents.send("seller:capture-progress", {
+        percent: Math.min(99, Math.round(basePercent + tableRatio * passRange)),
+        count: rankSlots.size,
+        target: limit,
+        missing: limit - rankSlots.size,
+        message: pass === 0
+          ? `1~${limit}위 슬롯을 한 행씩 확인 중 · 표 위치 ${Math.round(tableRatio * 100)}%`
+          : `누락 슬롯 재확인 ${pass}/2 · 표 위치 ${Math.round(tableRatio * 100)}%`,
+      });
+      await wait(220);
+    }
+    await captureVisibleSlots();
+  }
+  if (!captures.length) {
+    stopNetworkCapture();
+    return {
+      ok: false,
+      message: "판매자센터의 ‘인기상품’ 표 영역을 확인하지 못했습니다. ‘인기상품’ 제목과 SPU/SKU 기준이 함께 보이는 상태에서 다시 눌러 주세요.",
     };
   }
   let products = [];
