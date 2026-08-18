@@ -338,12 +338,14 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         ? ["브랜드직영몰", "공식브랜드", "브랜드스토어"]
         : String(store || "").includes("백화점") ? ["백화점"]
           : String(store || "").includes("아울렛") ? ["아울렛"] : [];
+      let scopedPositiveCount = 0;
       for (const label of scopedLabels) {
         const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const scoped = pageText.match(new RegExp(`${escaped}\\s*([\\d,]+)\\s*개`, "i"));
         // Channel totals are useful only as an authoritative zero. Positive
         // tab totals can include recommendations or the unfiltered channel.
         if (scoped && Number(scoped[1].replace(/,/g, "")) === 0) return { count: 0, products: [], absenceConfirmed: true };
+        if (scoped) scopedPositiveCount = Math.max(scopedPositiveCount, Number(scoped[1].replace(/,/g, "")) || 0);
       }
       if (/검색된\s*상품이\s*없습니다|검색\s*결과가\s*없습니다|상품이\s*없습니다|검색결과\s*없음/i.test(pageText)) {
         return { count: 0, products: [], absenceConfirmed: true };
@@ -388,6 +390,13 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // excludes generic/multiple-result pages, preserving exact-code checks.
         if (!conflictingArticle && !articleMatched && /^네이버\s/.test(String(store || "")) && cards.length === 1
           && brandMatched && titleIdentityMatch(rawCardText, expectedTitle)) {
+          articleMatched = true;
+        }
+        // Naver Fashion Town may omit the model code from both the visible card
+        // and its URL. An exact brand+code search with one item in the selected
+        // channel and one same-brand product card is authoritative evidence.
+        if (!conflictingArticle && !articleMatched && /^네이버\s/.test(String(store || ""))
+          && scopedPositiveCount === 1 && cards.length === 1 && brandMatched) {
           articleMatched = true;
         }
         // Musinsa search cards commonly omit the manufacturer's article number

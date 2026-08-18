@@ -141,7 +141,7 @@ test("profit comparison store names open their matched purchase links", () => {
 });
 
 test("official-store verification supports every registered URL family and embedded article metadata", () => {
-  assert.match(mainSource, /p\|pd\|products\?\|goods\|product/);
+  assert.match(mainSource, /p\|pd\|products\?\|window-products\|goods\|product/);
   assert.match(mainSource, /productDetail\\\\\.action/);
   assert.match(mainSource, /matchesExpected\(link\.href\)/);
   assert.match(mainSource, /matchesExpected\(link\.outerHTML\)/);
