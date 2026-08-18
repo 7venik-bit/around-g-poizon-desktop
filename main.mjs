@@ -7409,6 +7409,27 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     scheduleBrandExportMonitor(0);
     return { ok: true, jobs: brandExportJobs.size };
   });
+  ipcMain.handle("seller:wait-brand-export-complete", async (_event, input = {}) => {
+    const jobId = String(input.jobId || "").trim();
+    const sessionGeneration = brandWorkSessionGeneration;
+    const timeoutMs = Math.min(
+      SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS,
+      Math.max(30_000, Number(input.timeoutMs) || SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS),
+    );
+    const startedAt = Date.now();
+    if (!jobId) return { ok: false, code: "JOB_ID_MISSING" };
+    scheduleBrandExportMonitor(0);
+    while (brandExportJobs.has(jobId)) {
+      if (sessionGeneration !== brandWorkSessionGeneration) {
+        return { ok: false, code: "BRAND_SESSION_CHANGED", stopped: true };
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        return { ok: false, code: "BRAND_DOWNLOAD_TIMEOUT", jobId };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    return { ok: true, completed: true, jobId };
+  });
   ipcMain.handle("brand-export:pending-jobs", () => restorePendingBrandExportJobs());
   ipcMain.handle("brand-export:open-file", async (_event, input = {}) => {
     const filePath = String(input.path || "").trim();
