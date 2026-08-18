@@ -3689,6 +3689,34 @@ function brandExportJobOwner(jobId = "") {
   return savedBrandExportJobs().find((item) => String(item?.jobId || "").trim() === normalizedId) || null;
 }
 
+function recoverableSavedBrandExportJob(brandName = "", brandKo = "", currentJobs = []) {
+  const visibleJobIds = new Set((currentJobs || [])
+    .map((job) => String(job?.id || "").trim())
+    .filter(Boolean));
+  const cutoff = Date.now() - RESTORED_PENDING_JOB_MAX_AGE_MS;
+  const sameNonEmptyBrand = (left = "", right = "") => Boolean(String(left || "").trim())
+    && Boolean(String(right || "").trim())
+    && brandsMatch(left, right);
+  return savedBrandExportJobs()
+    .map((job) => ({
+      ...job,
+      jobId: String(job?.jobId || "").trim(),
+      brandName: String(job?.brandName || "").trim(),
+      brandKo: String(job?.brandKo || "").trim(),
+      createdAt: Number(job?.createdAt || 0),
+      lastDownloadedAt: Number(job?.lastDownloadedAt || 0),
+    }))
+    .filter((job) => job.jobId
+      && visibleJobIds.has(job.jobId)
+      && job.lastDownloadedAt === 0
+      && job.createdAt >= cutoff
+      && (sameNonEmptyBrand(job.brandName, brandName)
+        || sameNonEmptyBrand(job.brandKo, brandName)
+        || sameNonEmptyBrand(job.brandName, brandKo)
+        || sameNonEmptyBrand(job.brandKo, brandKo)))
+    .sort((left, right) => right.createdAt - left.createdAt)[0] || null;
+}
+
 function sellerWindowFrames() {
   if (!sellerWindow || sellerWindow.isDestroyed()) return [];
   const mainFrame = sellerWindow.webContents.mainFrame;
@@ -4762,6 +4790,38 @@ async function automateSellerBrandExport(input = {}) {
     ]).catch(() => null);
   }
   const baselineAvailable = Array.isArray(baselineJobs);
+  const recoverableJob = recoverableSavedBrandExportJob(brandName, brandKo, baselineJobs || []);
+  if (recoverableJob && !brandExportJobs.has(recoverableJob.jobId)) {
+    brandExportJobs.set(recoverableJob.jobId, {
+      jobId: recoverableJob.jobId,
+      brandName,
+      brandKo,
+      createdAt: recoverableJob.createdAt,
+      downloadStarted: false,
+      expectedProductCount: Number(recoverableJob.expectedProductCount || 0),
+      recovered: true,
+    });
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    pendingBrandExportJobId = "";
+    sellerWindow.hide();
+    showCollectorWindow();
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "job-created",
+      brandName,
+      jobId: recoverableJob.jobId,
+      jobState: "중단 전 작업번호 복구 완료 · 다운로드 감시 재개",
+      message: `${brandName} · 중단 전 작업번호 ${recoverableJob.jobId}를 다시 연결했습니다. 새 내보내기를 중복 생성하지 않고 다운로드를 이어갑니다.`,
+    });
+    if (!input.deferMonitor) void watchAllSellerExportJobsEveryTenSeconds();
+    return {
+      ok: true,
+      folder,
+      jobId: recoverableJob.jobId,
+      expectedProductCount: Number(recoverableJob.expectedProductCount || 0),
+      recovered: true,
+    };
+  }
   const baselineJobIds = new Set([
     ...brandExportJobs.keys(),
     ...savedBrandExportJobs().map((job) => String(job?.jobId || "").trim()),
@@ -7092,10 +7152,10 @@ app.whenReady().then(async () => {
     return;
   }
   await restorePortableOneDriveBackupIfFresh(hadLocalData).catch(() => {});
-  // Starting the program creates a clean sourcing session. Keep completed
-  // Excel/download history, but never revive unfinished job ownership from a
-  // previous process or a restored portable backup.
-  await store.setSettings({ brandExportJobCache: [] });
+  // Starting the program creates a clean visible sourcing session. Preserve
+  // the job-to-brand cache only as hidden recovery evidence so an interrupted
+  // update can reconnect the same selected brand without auto-selecting or
+  // mixing any previous brand into the new screen.
   await initializeOneDrivePoizonBackup();
   ipcMain.handle("store:snapshot", () => store.snapshot());
   ipcMain.handle("store:upsert", (_event, collection, item) => store.upsert(collection, item));
