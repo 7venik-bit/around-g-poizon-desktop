@@ -5501,7 +5501,17 @@ async function automateSellerBrandExport(input = {}) {
               confirmationClicked: false,
               requestAcknowledged: false,
             }));
-          searched = { ...result, ...postSearch, ...confirmation, ok: true };
+          // Follow the same proven Seller Center flow the user performs:
+          // export -> confirm -> Download Center shortcut -> read the job row.
+          // A separate hidden monitor can lag behind the live SPA session.
+          const downloadCenter = confirmation?.confirmationClicked
+            ? await clickSellerDownloadCenterShortcutPhysical(candidate.frame).catch(() => ({
+              ok: false,
+              clicked: false,
+              code: "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND",
+            }))
+            : { ok: false, clicked: false, code: "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED" };
+          searched = { ...result, ...postSearch, ...confirmation, downloadCenter, ok: true };
           break;
         }
         searched = postSearch;
@@ -5537,10 +5547,9 @@ async function automateSellerBrandExport(input = {}) {
     };
   }
 
-  // Keep the registration window on product search. Navigating it to the
-  // download center removed the search input needed by the next queued brand.
-  // The separate monitor identifies only the new job here; full refresh,
-  // completion checks, and downloads start after the whole queue is drained.
+  // The current brand remains in the live Download Center until its job and
+  // workbook are complete. The next queued brand opens a fresh product-search
+  // page, so there is no reason to keep relying on a stale background table.
   if (sellerWindow && !sellerWindow.isDestroyed()) {
     await new Promise((resolve) => setTimeout(resolve, 800));
     sellerWindow.hide();
@@ -5586,10 +5595,20 @@ async function automateSellerBrandExport(input = {}) {
   await new Promise((resolve) => setTimeout(resolve, 2500));
   while (Date.now() - verificationStartedAt < verificationTimeoutMs) {
     if (cleared()) break;
-    let currentJobs = await Promise.race([
-      readSellerExportJobsFromMonitor(),
-      new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
-    ]);
+    const jobSources = await Promise.all([
+      Promise.race([
+        readSellerExportJobsFromMonitor(),
+        new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
+      ]),
+      Promise.race([
+        readSellerExportJobs(),
+        new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
+      ]),
+    ]).catch(() => []);
+    let currentJobs = [...new Map(jobSources
+      .flatMap((jobs) => Array.isArray(jobs) ? jobs : [])
+      .map((job) => [String(job?.id || "").trim(), job])
+      .filter(([id]) => id)).values()];
     const elapsedMs = Date.now() - verificationStartedAt;
     if (elapsedMs >= 10_000 && Date.now() - lastFreshReadAt >= 15_000) {
       lastFreshReadAt = Date.now();
