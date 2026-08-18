@@ -4,7 +4,7 @@ import test from "node:test";
 
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
 
-test("confirmed job numbers advance through the whole queue before monitoring starts", () => {
+test("each brand finishes downloading before the next queued brand starts", () => {
   const start = renderer.indexOf("async function exportNextSelectedBrand");
   const end = renderer.indexOf("function retainSelectedBrandName", start);
   const workflow = renderer.slice(start, end);
@@ -12,9 +12,10 @@ test("confirmed job numbers advance through the whole queue before monitoring st
   const queueFinished = workflow.slice(0, queueFinishedAt);
   const perBrand = workflow.slice(queueFinishedAt);
 
-  assert.match(queueFinished, /startSellerBrandExportMonitor/);
-  assert.doesNotMatch(perBrand, /startSellerBrandExportMonitor/);
-  assert.match(perBrand, /2단계 내보내기 완료/);
+  assert.doesNotMatch(queueFinished, /startSellerBrandExportMonitor/);
+  assert.match(perBrand, /startSellerBrandExportMonitor/);
+  assert.match(perBrand, /waitSellerBrandExportComplete/);
+  assert.match(perBrand, /다운로드 완료 · 다음 브랜드를 시작합니다/);
   assert.match(perBrand, /await exportNextSelectedBrand\(generation\)/);
   assert.doesNotMatch(perBrand, /setTimeout\(\(\) => exportNextSelectedBrand\(generation\), 400\)/);
 });
@@ -24,14 +25,14 @@ test("the renderer no longer presents download registration as step-five validat
   assert.doesNotMatch(renderer, /Excel 검증·프로그램 등록 중/);
 });
 
-test("step two advances to the next brand and monitoring begins after the queue", () => {
+test("monitoring begins per brand and only completion advances the queue", () => {
   const start = renderer.indexOf("async function exportNextSelectedBrand");
   const end = renderer.indexOf("function retainSelectedBrandName", start);
   const workflow = renderer.slice(start, end);
   const queueShift = workflow.indexOf("activeExportBrand = brandExportQueue.shift()");
 
-  assert.match(workflow.slice(0, queueShift), /startSellerBrandExportMonitor/);
-  assert.doesNotMatch(workflow.slice(queueShift), /startSellerBrandExportMonitor/);
-  assert.match(workflow.slice(queueShift), /2단계 내보내기 완료/);
+  assert.doesNotMatch(workflow.slice(0, queueShift), /startSellerBrandExportMonitor/);
+  assert.match(workflow.slice(queueShift), /startSellerBrandExportMonitor/);
+  assert.match(workflow.slice(queueShift), /waitSellerBrandExportComplete/);
   assert.match(workflow.slice(queueShift), /await exportNextSelectedBrand\(generation\)/);
 });
