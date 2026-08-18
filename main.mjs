@@ -7096,6 +7096,10 @@ app.whenReady().then(async () => {
     return;
   }
   await restorePortableOneDriveBackupIfFresh(hadLocalData).catch(() => {});
+  // Starting the program creates a clean sourcing session. Keep completed
+  // Excel/download history, but never revive unfinished job ownership from a
+  // previous process or a restored portable backup.
+  await store.setSettings({ brandExportJobCache: [] });
   await initializeOneDrivePoizonBackup();
   ipcMain.handle("store:snapshot", () => store.snapshot());
   ipcMain.handle("store:upsert", (_event, collection, item) => store.upsert(collection, item));
