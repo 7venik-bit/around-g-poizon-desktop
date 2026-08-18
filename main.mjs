@@ -99,6 +99,41 @@ import {
 let store;
 const { autoUpdater } = pkg;
 nativeTheme.themeSource = "light";
+
+async function openExternalInChromeTab(rawUrl) {
+  const parsed = new URL(String(rawUrl || ""));
+  if (!["https:", "http:"].includes(parsed.protocol)) throw new Error("INVALID_URL");
+  if (process.platform !== "win32") {
+    await shell.openExternal(parsed.href);
+    return { browser: "default" };
+  }
+  const script = String.raw`
+$candidates = @(
+  (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe'),
+  (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+  (Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Google\Chrome\Application\chrome.exe')
+)
+$chrome = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if (-not $chrome) { throw 'CHROME_NOT_FOUND' }
+Start-Process -FilePath $chrome -ArgumentList @('--new-tab', $env:AROUND_G_EXTERNAL_URL)
+`;
+  const opened = await new Promise((resolve) => {
+    execFile("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-WindowStyle", "Hidden",
+      "-Command", script,
+    ], {
+      windowsHide: true,
+      timeout: 10_000,
+      env: { ...process.env, AROUND_G_EXTERNAL_URL: parsed.href },
+    }, (error) => resolve(!error));
+  });
+  if (opened) return { browser: "chrome" };
+  await shell.openExternal(parsed.href);
+  return { browser: "default" };
+}
+
 let mainWindow;
 let sellerWindow;
 let sellerMonitorWindow;
@@ -2620,7 +2655,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
     if (isPoizonExportDownloadUrl(url) || /^https:\/\/seller\.poizon\.com\//i.test(url)) {
       sellerWindow?.webContents.downloadURL(url);
     } else if (/^https:\/\//i.test(url)) {
-      shell.openExternal(url);
+      openExternalInChromeTab(url).catch(() => shell.openExternal(url));
     }
     return { action: "deny" };
   });
@@ -7401,9 +7436,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     });
   });
   ipcMain.handle("external:open", async (_event, url) => {
-    const parsed = new URL(url);
-    if (!["https:", "http:"].includes(parsed.protocol)) throw new Error("INVALID_URL");
-    await shell.openExternal(parsed.href);
+    return openExternalInChromeTab(url);
   });
   ipcMain.handle("official:open-search", async (_event, input) => {
     const discovery = new URL(String(input?.discoveryUrl || ""));
@@ -7411,9 +7444,9 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     if (![discovery.protocol, product.protocol].every((protocol) => ["https:", "http:"].includes(protocol))) {
       throw new Error("INVALID_URL");
     }
-    await shell.openExternal(discovery.href);
+    await openExternalInChromeTab(discovery.href);
     await wait(1_500);
-    await shell.openExternal(product.href);
+    await openExternalInChromeTab(product.href);
     return { ok: true };
   });
   ipcMain.handle("excel:import", async () => {
