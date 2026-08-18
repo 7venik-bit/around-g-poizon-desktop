@@ -3526,6 +3526,13 @@ async function readSellerExportBaselineSeparately() {
   }
 }
 
+// The long-lived hidden monitor can keep a stale SPA table even after a hard
+// reload. Open a short-lived window in the same authenticated partition so a
+// newly-created POIZON export row cannot be missed and orphaned from its brand.
+async function readSellerExportJobsFreshly() {
+  return readSellerExportBaselineSeparately();
+}
+
 async function readStableSellerExportJobs() {
   let previousSignature = null;
   let stableReads = 0;
@@ -5575,13 +5582,30 @@ async function automateSellerBrandExport(input = {}) {
   let fallbackCandidateJobId = "";
   let fallbackCandidateStableReads = 0;
   let lateConfirmationChecked = Boolean(searched.confirmationClicked);
+  let lastFreshReadAt = 0;
   await new Promise((resolve) => setTimeout(resolve, 2500));
   while (Date.now() - verificationStartedAt < verificationTimeoutMs) {
     if (cleared()) break;
-    const currentJobs = await Promise.race([
+    let currentJobs = await Promise.race([
       readSellerExportJobsFromMonitor(),
       new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
     ]);
+    const elapsedMs = Date.now() - verificationStartedAt;
+    if (elapsedMs >= 10_000 && Date.now() - lastFreshReadAt >= 15_000) {
+      lastFreshReadAt = Date.now();
+      const freshJobs = await Promise.race([
+        readSellerExportJobsFreshly(),
+        new Promise((resolve) => setTimeout(() => resolve(null), 20_000)),
+      ]).catch(() => null);
+      if (Array.isArray(freshJobs)) {
+        const mergedJobs = new Map();
+        for (const job of [...(Array.isArray(currentJobs) ? currentJobs : []), ...freshJobs]) {
+          const id = String(job?.id || "").trim();
+          if (id) mergedJobs.set(id, job);
+        }
+        currentJobs = [...mergedJobs.values()];
+      }
+    }
     if (Array.isArray(currentJobs)) {
       const unusedJobs = currentJobs.filter((job) => !brandExportJobOwner(job?.id));
       const candidate = findNewSellerExportJob([...baselineJobIds], unusedJobs);
@@ -5601,7 +5625,6 @@ async function automateSellerBrandExport(input = {}) {
     }
     if (createdJob) break;
 
-    const elapsedMs = Date.now() - verificationStartedAt;
     // Some Seller Center responses render the confirmation modal several
     // seconds after the export click. Check once more before declaring that
     // no job was created; do not click the export button again and risk a
