@@ -95,6 +95,9 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.match(workflow, /applyExactSellerBrandFilter\(candidate\.frame/);
   assert.match(workflow, /exactFilter\?\.ok \? exactFilter/);
   assert.match(main, /route: "EXACT_BRAND_FILTER"/);
+  assert.match(main, /async function readSellerExportJobsFreshly/);
+  assert.match(workflow, /readSellerExportJobsFreshly\(\)/);
+  assert.match(renderer, /orphanedExportRisk = failureCode === "EXPORT_JOB_NOT_CREATED"/);
 });
 
 test("selected brands run sequentially with a twenty-minute limit", () => {
