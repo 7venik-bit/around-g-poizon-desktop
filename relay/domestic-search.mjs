@@ -339,13 +339,20 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         : String(store || "").includes("백화점") ? ["백화점"]
           : String(store || "").includes("아울렛") ? ["아울렛"] : [];
       let scopedPositiveCount = 0;
+      let scopedCountFound = false;
       for (const label of scopedLabels) {
         const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const scoped = pageText.match(new RegExp(`${escaped}\\s*([\\d,]+)\\s*개`, "i"));
-        // Channel totals are useful only as an authoritative zero. Positive
-        // tab totals can include recommendations or the unfiltered channel.
-        if (scoped && Number(scoped[1].replace(/,/g, "")) === 0) return { count: 0, products: [], absenceConfirmed: true };
-        if (scoped) scopedPositiveCount = Math.max(scopedPositiveCount, Number(scoped[1].replace(/,/g, "")) || 0);
+        if (!scoped) continue;
+        scopedCountFound = true;
+        const scopedCount = Number(scoped[1].replace(/,/g, "")) || 0;
+        // Naver Fashion Town's selected channel tab is the authoritative
+        // presence signal. Keep its raw total for diagnostics, while the app
+        // deliberately exposes only binary 1/0 channel availability.
+        if (scopedCount === 0) {
+          return { count: 0, channelCount: 0, products: [], presenceConfirmed: false, absenceConfirmed: true };
+        }
+        scopedPositiveCount = Math.max(scopedPositiveCount, scopedCount);
       }
       if (/검색된\s*상품이\s*없습니다|검색\s*결과가\s*없습니다|상품이\s*없습니다|검색결과\s*없음/i.test(pageText)) {
         return { count: 0, products: [], absenceConfirmed: true };
@@ -460,6 +467,16 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         }
       }
       const exactSsgSearchChecked = /^SSG(?:\s|$)/.test(String(store || "")) && cards.length > 0;
+      if (/^네이버\s/.test(String(store || "")) && scopedCountFound && scopedPositiveCount > 0) {
+        return {
+          count: 1,
+          channelCount: scopedPositiveCount,
+          products: [...matchingProducts.values()],
+          presenceConfirmed: true,
+          absenceConfirmed: false,
+          ssgSearchChecked: false,
+        };
+      }
       return {
         count: matchingProducts.size,
         products: [...matchingProducts.values()],
@@ -476,7 +493,16 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
   if (channelLabel) {
     const escaped = channelLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const labelled = source.match(new RegExp(`${escaped}\\s*([\\d,]+)\\s*개`, "i"));
-    if (labelled) return { count: Math.min(Number(labelled[1].replace(/,/g, "")) || 0, 9999), products: [] };
+    if (labelled) {
+      const channelCount = Math.min(Number(labelled[1].replace(/,/g, "")) || 0, 9999);
+      return {
+        count: channelCount > 0 ? 1 : 0,
+        channelCount,
+        products: [],
+        presenceConfirmed: channelCount > 0,
+        absenceConfirmed: channelCount === 0,
+      };
+    }
   }
   const total = source.match(/(?:총|전체|검색결과)\s*([0-9,]+)\s*(?:개|건)/i);
   if (total) return { count: Math.min(Number(total[1].replace(/,/g, "")) || 0, 9999), products: [] };
