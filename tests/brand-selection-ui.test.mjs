@@ -139,7 +139,7 @@ test("download UI does not expose brand mismatch wording", () => {
 
 test("upgrade clears the legacy persisted job state", () => {
   const migrationStart = renderer.indexOf('const DOWNLOAD_STATUS_MIGRATION_KEY');
-  const migrationEnd = renderer.indexOf("try {\n  // A new app process always starts");
+  const migrationEnd = renderer.search(/try \{\r?\n  \/\/ A new app process always starts/);
   const migration = renderer.slice(migrationStart, migrationEnd);
 
   assert.ok(migrationStart >= 0);
@@ -155,7 +155,7 @@ test("a previous process job number is never restored as current live work", () 
 });
 
 test("program startup resets selected brand buttons", () => {
-  const selectionLoadStart = renderer.indexOf("try {\n  // A new app process always starts");
+  const selectionLoadStart = renderer.search(/try \{\r?\n  \/\/ A new app process always starts/);
   const selectionLoadEnd = renderer.indexOf("function saveBrandSelections", selectionLoadStart);
   const selectionLoad = renderer.slice(selectionLoadStart, selectionLoadEnd);
 
