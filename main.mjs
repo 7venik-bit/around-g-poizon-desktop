@@ -4726,7 +4726,10 @@ async function applyExactSellerBrandFilter(targetFrame, names = []) {
         option = options.find((element) => {
           const value = normalize(textOf(element));
           const requested = normalize(name);
-          return value === requested || value.startsWith(requested) || requested.startsWith(value);
+          // Do not allow a parent brand to silently select a child brand.
+          // In particular, "PUMA" must not match "PUMA KIDS" merely because
+          // the option text starts with the requested value.
+          return value === requested;
         });
       }
       if (!option) continue;
@@ -5504,7 +5507,18 @@ async function automateSellerBrandExport(input = {}) {
           // Follow the same proven Seller Center flow the user performs:
           // export -> confirm -> Download Center shortcut -> read the job row.
           // A separate hidden monitor can lag behind the live SPA session.
-          const downloadCenter = confirmation?.confirmationClicked
+          if (!confirmation?.requestAcknowledged) {
+            searched = {
+              ...result,
+              ...postSearch,
+              ...confirmation,
+              ok: false,
+              step: "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED",
+              code: "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED",
+            };
+            break;
+          }
+          const downloadCenter = confirmation.confirmationClicked
             ? await clickSellerDownloadCenterShortcutPhysical(candidate.frame).catch(() => ({
               ok: false,
               clicked: false,
