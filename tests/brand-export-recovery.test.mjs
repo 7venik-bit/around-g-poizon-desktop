@@ -47,8 +47,8 @@ test("the live export path confirms POIZON submission before waiting for a job",
   assert.doesNotMatch(workflow, /전체 내보내기 완료 · 다음 브랜드 준비/);
 });
 
-test("release metadata is 2.10.273", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.273");
-  assert.equal(JSON.parse(lockSource).version, "2.10.273");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.273");
+test("release metadata is 2.10.274", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.274");
+  assert.equal(JSON.parse(lockSource).version, "2.10.274");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.274");
 });
