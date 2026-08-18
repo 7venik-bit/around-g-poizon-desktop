@@ -67,10 +67,10 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.match(main, /"BACKGROUND_DESCENDING"/);
   assert.match(main, /"BACKGROUND_SORT_CONFIRM"/);
   assert.match(main, /"BACKGROUND_EXPORT"/);
-  assert.doesNotMatch(workflow, /clickSellerDownloadCenterShortcutPhysical\(productFrame\)/);
-  assert.match(workflow, /Keep the registration window on product search/);
+  assert.match(workflow, /clickSellerDownloadCenterShortcutPhysical\(candidate\.frame\)/);
+  assert.match(workflow, /current brand remains in the live Download Center/);
   assert.doesNotMatch(workflow, /confirmSellerExportRequestPhysical\(productFrame\)/);
-  assert.doesNotMatch(workflow, /EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED/);
+  assert.match(workflow, /EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED/);
   assert.match(main, /\[mainFrame, targetFrame, \.\.\.sellerWindowFrames\(\)\]/);
   assert.match(main, /\/exportCenter\/i\.test\(href\)/);
   assert.match(main, /const deadline = Date\.now\(\) \+ 30_000/);
@@ -98,6 +98,8 @@ test("brand workflow connects directly and searches English before Korean fallba
   assert.match(main, /async function readSellerExportJobsFreshly/);
   assert.match(workflow, /readSellerExportJobsFreshly\(\)/);
   assert.match(renderer, /orphanedExportRisk = failureCode === "EXPORT_JOB_NOT_CREATED"/);
+  assert.match(workflow, /clickSellerDownloadCenterShortcutPhysical\(candidate\.frame\)/);
+  assert.match(workflow, /readSellerExportJobs\(\)/);
 });
 
 test("selected brands run sequentially with a twenty-minute limit", () => {
