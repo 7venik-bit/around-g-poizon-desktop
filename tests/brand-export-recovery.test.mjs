@@ -33,8 +33,22 @@ test("an interrupted update reconnects only the same selected brand job", () => 
   assert.match(main, /recovered: true/);
 });
 
-test("release metadata is 2.10.269", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.269");
-  assert.equal(JSON.parse(lockSource).version, "2.10.269");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.269");
+test("the live export path confirms POIZON submission before waiting for a job", () => {
+  const workflow = main.slice(
+    main.indexOf("async function automateSellerBrandExport"),
+    main.indexOf("async function syncBrandCatalogFromKrPoizon"),
+  );
+  const exportClick = workflow.indexOf("performPhysicalSellerSortAndExport(candidate.frame)");
+  const confirmation = workflow.indexOf("confirmSellerExportRequestPhysical(candidate.frame)", exportClick);
+  const jobWait = workflow.indexOf("const verificationStartedAt = Date.now()", confirmation);
+  assert.ok(exportClick >= 0 && confirmation > exportClick && jobWait > confirmation);
+  assert.match(workflow, /lateConfirmationChecked/);
+  assert.match(workflow, /confirmSellerExportRequestPhysical\(currentSellerProductFrame\(\)\)/);
+  assert.doesNotMatch(workflow, /전체 내보내기 완료 · 다음 브랜드 준비/);
+});
+
+test("release metadata is 2.10.270", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.270");
+  assert.equal(JSON.parse(lockSource).version, "2.10.270");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.270");
 });

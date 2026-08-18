@@ -5373,8 +5373,19 @@ async function automateSellerBrandExport(input = {}) {
             detail: String(error?.message || error || ""),
           }));
         if (postSearch?.ok) {
-          searched = { ...result, ...postSearch };
           sellerProductFrameRoutingId = candidate.frame.routingId;
+          // Clicking "전체 내보내기" only opens POIZON's confirmation
+          // dialog. The old rebuilt path skipped this existing confirmation
+          // helper and then waited three minutes for a job that had never
+          // actually been submitted.
+          const confirmation = await confirmSellerExportRequestPhysical(candidate.frame)
+            .catch(() => ({
+              ok: false,
+              confirmationObserved: false,
+              confirmationClicked: false,
+              requestAcknowledged: false,
+            }));
+          searched = { ...result, ...postSearch, ...confirmation, ok: true };
           break;
         }
         searched = postSearch;
@@ -5423,17 +5434,21 @@ async function automateSellerBrandExport(input = {}) {
   mainWindow?.webContents.send("brand-export:progress", {
     status: "seller-search-evidence",
     brandName,
-    jobState: "2단계/5 · 전체 내보내기 완료 · 다음 브랜드 준비",
-    message: `${brandName} · 입력값 ${searched.inputValue || "확인 불가"} · 현지 30일 내림차순 · 전체 내보내기 완료 · 상품검색 화면 유지`,
+    jobState: searched.confirmationClicked
+      ? "2단계/5 · 내보내기 확인 완료 · 작업번호 생성 확인 중"
+      : "2단계/5 · 전체 내보내기 클릭 · 작업번호 생성 확인 중",
+    message: searched.confirmationClicked
+      ? `${brandName} · 현지 30일 내림차순 · POIZON 내보내기 확인창 처리 완료 · 새 작업번호 확인 중`
+      : `${brandName} · 전체 내보내기 클릭 완료 · 확인창 없이 작업번호가 생성되는지 확인 중`,
   });
 
   const completeness = {
     ok: true,
     expected: 0,
     pageCount: 0,
-    confirmationObserved: false,
-    confirmationClicked: false,
-    requestAcknowledged: true,
+    confirmationObserved: Boolean(searched.confirmationObserved),
+    confirmationClicked: Boolean(searched.confirmationClicked),
+    requestAcknowledged: Boolean(searched.requestAcknowledged),
   };
 
   mainWindow?.webContents.send("brand-export:progress", {
@@ -5450,6 +5465,7 @@ async function automateSellerBrandExport(input = {}) {
   let lastProgressAt = 0;
   let fallbackCandidateJobId = "";
   let fallbackCandidateStableReads = 0;
+  let lateConfirmationChecked = Boolean(searched.confirmationClicked);
   await new Promise((resolve) => setTimeout(resolve, 2500));
   while (Date.now() - verificationStartedAt < verificationTimeoutMs) {
     if (cleared()) break;
@@ -5477,6 +5493,26 @@ async function automateSellerBrandExport(input = {}) {
     if (createdJob) break;
 
     const elapsedMs = Date.now() - verificationStartedAt;
+    // Some Seller Center responses render the confirmation modal several
+    // seconds after the export click. Check once more before declaring that
+    // no job was created; do not click the export button again and risk a
+    // duplicate job.
+    if (!lateConfirmationChecked && elapsedMs >= 5_000) {
+      lateConfirmationChecked = true;
+      const lateConfirmation = await confirmSellerExportRequestPhysical(currentSellerProductFrame())
+        .catch(() => null);
+      if (lateConfirmation?.confirmationClicked) {
+        completeness.confirmationObserved = true;
+        completeness.confirmationClicked = true;
+        completeness.requestAcknowledged = true;
+        mainWindow?.webContents.send("brand-export:progress", {
+          status: "waiting-for-job-creation",
+          brandName,
+          jobState: "2단계/5 · 지연 확인창 처리 완료 · 작업번호 생성 확인 중",
+          message: `${brandName} · 늦게 표시된 POIZON 내보내기 확인창을 처리했습니다.`,
+        });
+      }
+    }
     if (elapsedMs - lastProgressAt >= 10000) {
       lastProgressAt = elapsedMs;
       mainWindow?.webContents.send("brand-export:progress", {
