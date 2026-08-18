@@ -4447,8 +4447,8 @@ async function physicalClickSellerElement(targetFrame, locatorScript, step, time
   sellerWindow.hide();
   showCollectorWindow();
   const startedAt = Date.now();
-  let point = null;
-  while (!point && Date.now() - startedAt < timeoutMs) {
+  let clicked = null;
+  while (!clicked && Date.now() - startedAt < timeoutMs) {
     // A POIZON search can replace its WebFrameMain while the result screen is
     // opening. Rebuild the candidates on every poll instead of holding the
     // pre-navigation frame, otherwise sorting stops on a destroyed frame.
@@ -4458,7 +4458,7 @@ async function physicalClickSellerElement(targetFrame, locatorScript, step, time
         all.findIndex((candidate) => candidate.routingId === frame.routingId) === index
       );
     for (const frame of frames) {
-      const located = await frame.executeJavaScript(`(() => {
+      const result = await frame.executeJavaScript(`(() => {
         if (document.readyState === "loading") return null;
         const visible = (element) => element && element.getBoundingClientRect().width > 0
           && element.getBoundingClientRect().height > 0;
@@ -4467,38 +4467,46 @@ async function physicalClickSellerElement(targetFrame, locatorScript, step, time
         const element = (() => { ${locatorScript} })();
         if (!element || !visible(element)) return null;
         element.scrollIntoView?.({ block: "center", inline: "center" });
+        element.focus?.();
         const rect = element.getBoundingClientRect();
+        const eventInit = {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          button: 0,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + rect.height / 2,
+        };
+        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+          const EventType = type.startsWith("pointer") && typeof PointerEvent === "function"
+            ? PointerEvent
+            : MouseEvent;
+          element.dispatchEvent(new EventType(type, eventInit));
+        }
         return {
-          x: rect.left + rect.width / 2,
-          y: rect.top + rect.height / 2,
+          clicked: true,
           label: textOf(element),
           url: location.href,
         };
       })()`, true).catch(() => null);
-      if (located) {
-        point = { ...located, frameRoutingId: frame.routingId };
+      if (result?.clicked) {
+        clicked = { ...result, frameRoutingId: frame.routingId };
         break;
       }
     }
-    if (!point) await new Promise((resolve) => setTimeout(resolve, 300));
+    if (!clicked) await new Promise((resolve) => setTimeout(resolve, 300));
   }
-  if (!point) return { ok: false, step: `${step}_NOT_FOUND_AFTER_NAVIGATION` };
-  const x = Math.round(Number(point.x));
-  const y = Math.round(Number(point.y));
-  if (!Number.isFinite(x) || !Number.isFinite(y)) {
-    return { ok: false, step: `${step}_CLICK_COORDINATES_MISSING` };
-  }
-  // Electron's virtual input reaches React/Ant Design handlers like a native
-  // click, while the BrowserWindow remains hidden and the Windows cursor stays
-  // completely untouched.
-  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
-  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
-  await new Promise((resolve) => setTimeout(resolve, 90));
-  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
+  if (!clicked) return { ok: false, step: `${step}_NOT_FOUND_AFTER_NAVIGATION` };
+  // Coordinates reported by a child WebFrameMain are relative to that frame,
+  // not to the BrowserWindow. Sending them through webContents clicked the
+  // wrong place while still reporting success. Dispatch the complete click in
+  // the frame that owns the element, which restores the previously proven
+  // Seller Center behavior without moving the user's Windows cursor.
   await new Promise((resolve) => setTimeout(resolve, 900));
   sellerWindow.hide();
   showCollectorWindow();
-  return { ok: true, step, label: point.label, frameRoutingId: point.frameRoutingId, url: point.url, background: true };
+  return { ok: true, step, label: clicked.label, frameRoutingId: clicked.frameRoutingId, url: clicked.url, background: true };
 }
 
 async function performPhysicalSellerSortAndExport(targetFrame) {
@@ -4535,11 +4543,13 @@ async function performPhysicalSellerSortAndExport(targetFrame) {
 
 async function confirmSellerExportRequestPhysical(targetFrame) {
   const clicked = await physicalClickSellerElement(targetFrame, `
-    const dialogs = [...document.querySelectorAll(".ant-modal,.ant-modal-confirm,[role='dialog']")].filter(visible);
+    const dialogs = [...document.querySelectorAll(
+      ".ant-modal,.ant-modal-confirm,[role='dialog'],.ant-popover,.ant-drawer,.semi-modal,.semi-portal"
+    )].filter(visible);
     const dialog = dialogs.at(-1);
     if (!dialog) return null;
     return [...dialog.querySelectorAll("button,[role='button'],a")].filter(visible)
-      .find((element) => /^(?:확인|내보내기|생성|확정|제출|계속)$/.test(textOf(element))) || null;
+      .find((element) => /^(?:확인|내보내기|생성|확정|제출|계속|确认|确定|提交|导出|继续)$/.test(textOf(element))) || null;
   `, "PHYSICAL_EXPORT_CONFIRM", 15_000);
   return clicked.ok
     ? { ok: true, confirmationObserved: true, confirmationClicked: true, requestAcknowledged: true }

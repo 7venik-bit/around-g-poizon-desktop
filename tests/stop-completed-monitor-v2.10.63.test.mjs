@@ -95,8 +95,8 @@ test("manual stop cancels automation, retries, and download monitoring immediate
   assert.match(main, /sellerMonitorWindow\.destroy\(\)/);
 });
 
-test("release metadata is 2.10.276", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.276");
-  assert.equal(JSON.parse(lockSource).version, "2.10.276");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.276");
+test("release metadata is 2.10.277", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.277");
+  assert.equal(JSON.parse(lockSource).version, "2.10.277");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.277");
 });
