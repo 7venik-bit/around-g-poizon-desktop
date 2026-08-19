@@ -4444,21 +4444,12 @@ Start-Sleep -Milliseconds 70
 
 async function physicalClickSellerElement(targetFrame, locatorScript, step, timeoutMs = 20_000) {
   if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: `${step}_WINDOW_MISSING` };
-  sellerWindow.hide();
-  showCollectorWindow();
+  sellerWindow.showInactive();
+  sellerWindow.webContents.focus();
   const startedAt = Date.now();
-  let clicked = null;
-  while (!clicked && Date.now() - startedAt < timeoutMs) {
-    // A POIZON search can replace its WebFrameMain while the result screen is
-    // opening. Rebuild the candidates on every poll instead of holding the
-    // pre-navigation frame, otherwise sorting stops on a destroyed frame.
-    const frames = [targetFrame, sellerWindow.webContents.mainFrame, ...sellerWindowFrames()]
-      .filter(Boolean)
-      .filter((frame, index, all) =>
-        all.findIndex((candidate) => candidate.routingId === frame.routingId) === index
-      );
-    for (const frame of frames) {
-      const result = await frame.executeJavaScript(`(() => {
+  let point = null;
+  while (!point && Date.now() - startedAt < timeoutMs) {
+    point = await targetFrame.executeJavaScript(`(() => {
         if (document.readyState === "loading") return null;
         const visible = (element) => element && element.getBoundingClientRect().width > 0
           && element.getBoundingClientRect().height > 0;
@@ -4467,46 +4458,23 @@ async function physicalClickSellerElement(targetFrame, locatorScript, step, time
         const element = (() => { ${locatorScript} })();
         if (!element || !visible(element)) return null;
         element.scrollIntoView?.({ block: "center", inline: "center" });
-        element.focus?.();
         const rect = element.getBoundingClientRect();
-        const eventInit = {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          view: window,
-          button: 0,
-          clientX: rect.left + rect.width / 2,
-          clientY: rect.top + rect.height / 2,
-        };
-        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
-          const EventType = type.startsWith("pointer") && typeof PointerEvent === "function"
-            ? PointerEvent
-            : MouseEvent;
-          element.dispatchEvent(new EventType(type, eventInit));
-        }
         return {
-          clicked: true,
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
           label: textOf(element),
           url: location.href,
         };
       })()`, true).catch(() => null);
-      if (result?.clicked) {
-        clicked = { ...result, frameRoutingId: frame.routingId };
-        break;
-      }
-    }
-    if (!clicked) await new Promise((resolve) => setTimeout(resolve, 300));
+    if (!point) await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  if (!clicked) return { ok: false, step: `${step}_NOT_FOUND_AFTER_NAVIGATION` };
-  // Coordinates reported by a child WebFrameMain are relative to that frame,
-  // not to the BrowserWindow. Sending them through webContents clicked the
-  // wrong place while still reporting success. Dispatch the complete click in
-  // the frame that owns the element, which restores the previously proven
-  // Seller Center behavior without moving the user's Windows cursor.
-  await new Promise((resolve) => setTimeout(resolve, 900));
-  sellerWindow.hide();
-  showCollectorWindow();
-  return { ok: true, step, label: clicked.label, frameRoutingId: clicked.frameRoutingId, url: clicked.url, background: true };
+  if (!point) return { ok: false, step: `${step}_NOT_FOUND` };
+  const bounds = sellerWindow.getContentBounds();
+  const clicked = await moveWindowsCursorAndClick(bounds.x + point.x, bounds.y + point.y);
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  return clicked.ok
+    ? { ok: true, step, label: point.label, url: point.url, physicalCursorMoved: true }
+    : { ok: false, step: `${step}_CLICK_FAILED` };
 }
 
 async function performPhysicalSellerSortAndExport(targetFrame) {
@@ -4603,9 +4571,8 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     return { ok: false, step: "SELLER_WINDOW_NOT_AVAILABLE" };
   }
-  sellerWindow.hide();
+  sellerWindow.showInactive();
   sellerWindow.webContents.focus();
-  showCollectorWindow();
   const focused = await targetFrame.executeJavaScript(`(() => {
     const visible = (element) => element && element.getBoundingClientRect().width > 0
       && element.getBoundingClientRect().height > 0;
@@ -4673,18 +4640,21 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) {
     return { ...verified, ok: false, step: "REAL_SEARCH_BUTTON_COORDINATES_MISSING" };
   }
-  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
-  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
-  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
+  const contentBounds = sellerWindow.getContentBounds();
+  const physicalClick = await moveWindowsCursorAndClick(
+    Math.round(contentBounds.x + x),
+    Math.round(contentBounds.y + y),
+  );
+  if (!physicalClick.ok) {
+    return { ...verified, ok: false, step: "PHYSICAL_SEARCH_BUTTON_CLICK_FAILED" };
+  }
   await new Promise((resolve) => setTimeout(resolve, 1_500));
-  sellerWindow.hide();
-  showCollectorWindow();
   return {
     ...verified,
     submitted: true,
-    physicalCursorMoved: false,
-    background: true,
-    step: "BACKGROUND_SEARCH_BUTTON_CLICKED",
+    physicalCursorMoved: true,
+    background: false,
+    step: "PHYSICAL_SEARCH_BUTTON_CLICKED",
   };
 }
 
@@ -4819,8 +4789,8 @@ async function automateSellerBrandExport(input = {}) {
   // A separately opened Chrome window is a different browser session and does
   // not reflect this automation, which previously made real work look idle.
   openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, {
-    visible: false,
-    activate: false,
+    visible: true,
+    activate: true,
     deferNavigation: true,
   });
   if (!sellerWindow || sellerWindow.isDestroyed()) {
@@ -4862,14 +4832,10 @@ async function automateSellerBrandExport(input = {}) {
         : `${brandName} · POIZON 로그인 창이 닫혀 작업을 중단했습니다.`,
     };
   }
-  // Keep the same persistent Seller Center session and automation path used by
-  // the popular-list collector, but leave the native window minimized while
-  // brand search, export registration, and download-center monitoring run.
-  // backgroundThrottling is disabled on this BrowserWindow, so minimizing it
-  // does not pause the seller automation.
+  // Keep the same persistent Seller Center session visible while the restored
+  // Windows cursor workflow performs brand search, sorting, and export.
   if (sellerWindow && !sellerWindow.isDestroyed()) {
-    sellerWindow.hide();
-    showCollectorWindow();
+    sellerWindow.showInactive();
   }
   const connectedPage = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => ({
     url: location.href,
@@ -4918,8 +4884,7 @@ async function automateSellerBrandExport(input = {}) {
     brandExportJobPending = false;
     pendingBrandExportName = "";
     pendingBrandExportJobId = "";
-    sellerWindow.hide();
-    showCollectorWindow();
+    sellerWindow.showInactive();
     mainWindow?.webContents.send("brand-export:progress", {
       status: "job-created",
       brandName,
@@ -5443,22 +5408,14 @@ async function automateSellerBrandExport(input = {}) {
         jobState: `1단계/5 · 브랜드 입력·상품 검색 중 · ${brandName}`,
         message: `${brandName} · 기존 검색 서비스 방식으로 브랜드를 입력하고 검색을 실행합니다.`,
       });
-      const exactFilter = await applyExactSellerBrandFilter(candidate.frame, [
-        sellerBrandSearchName,
-        brandKoInput,
-        ...(localizedAliases || []),
-      ]).catch(() => ({ ok: false, step: "EXACT_BRAND_FILTER_FAILED" }));
-      // Keep the POIZON window hidden and send input directly through Electron's
-      // background webContents path so monitor focus and the Windows cursor stay untouched.
-      const realKeyboardInput = exactFilter?.ok
-        ? { ok: true, submitted: true, exactBrandFilter: true }
-        : await typeSellerBrandWithRealKeyboard(candidate.frame, sellerBrandSearchName)
-          .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
+      // Restore the first proven Seller Center route: type the brand in the
+      // visible product-search field and operate the page with the real Windows
+      // cursor. The later exact-popup/background route is intentionally not
+      // used because it broke the shared sort/export sequence.
+      const realKeyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, sellerBrandSearchName)
+        .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
       if (sellerWindow && !sellerWindow.isDestroyed()) {
-        // The Seller Center stays hidden for input, result transition, sorting,
-        // export registration, and download monitoring.
-        sellerWindow.hide();
-        showCollectorWindow();
+        sellerWindow.showInactive();
       }
       mainWindow?.webContents.send("brand-export:progress", {
         status: realKeyboardInput?.ok ? "seller-brand-input-confirmed" : "seller-brand-input-fallback",
@@ -5475,7 +5432,7 @@ async function automateSellerBrandExport(input = {}) {
         lastSearchDiagnostics = candidate.probe;
         break;
       }
-      const result = exactFilter?.ok ? exactFilter : await Promise.race([
+      const result = await Promise.race([
           runSellerSearch(candidate.frame, Boolean(realKeyboardInput?.submitted)),
           new Promise((resolve) => setTimeout(() => resolve({
             ok: false,
@@ -5492,7 +5449,7 @@ async function automateSellerBrandExport(input = {}) {
           status: "waiting-for-seller-result-navigation",
           brandName,
           jobState: `2단계/5 · 결과 화면 전환 확인 중 · ${brandName}`,
-          message: `${brandName} · POIZON 창을 표시하지 않고 결과 확인·정렬·내보내기를 백그라운드에서 진행합니다.`,
+          message: `${brandName} · POIZON 화면에서 실제 마우스로 결과 확인·정렬·내보내기를 진행합니다. 작업 중에는 마우스를 움직이지 마세요.`,
         });
         await new Promise((resolve) => setTimeout(resolve, 1_200));
         const postSearch = await performPhysicalSellerSortAndExport(candidate.frame)
