@@ -22,8 +22,7 @@ test("재고가 확인된 결과는 즉시 저장되어 재개 후 복원된다"
   assert.match(renderer, /restoreDomesticStockResults\(batchId\)/);
 });
 
-test("상품번호가 있는 국내 검색 결과는 정확한 모델 일치만 통과한다", () => {
-  assert.match(domestic, /products = products\.filter\(\(product\) => exactArticleIdentityMatch/);
-  assert.match(domestic, /product\.articleNumber/);
-  assert.match(domestic, /product\.url/);
+test("검색 카드에 품번이 없어도 상세페이지 검증 후보를 보존한다", () => {
+  assert.doesNotMatch(domestic, /products = products\.filter\(\(product\) => exactArticleIdentityMatch/);
+  assert.match(domestic, /detailArticleVerificationRequired = true/);
 });

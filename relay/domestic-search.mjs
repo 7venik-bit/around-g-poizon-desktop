@@ -818,16 +818,6 @@ export async function queryDomesticProducts({
         const candidateUrl = DOMESTIC_SEARCH_LINKS[source.store](candidate);
         const html = await fetchSearchPage(candidateUrl, fetchImpl);
         products = source.parser(html);
-        if (articleNumber) {
-          products = products.filter((product) => exactArticleIdentityMatch([
-            product.articleNumber,
-            product.productCode,
-            product.id,
-            product.name,
-            product.title,
-            product.url,
-          ].filter(Boolean).join(" "), articleNumber));
-        }
         if (products.length) break;
       }
       if (source.store === "무신사" && products.length) {

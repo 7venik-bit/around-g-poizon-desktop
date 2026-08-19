@@ -1245,9 +1245,9 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         verificationFailed: source.ok === false,
       };
     }
-    if (!source.linkOnly && source.ok && Number(source.count || 0) > 0) {
-      return { ...source, countVerified: true, verificationFailed: false };
-    }
+    // A search-card hit is only a candidate. Musinsa and other rendered
+    // channels must open the product detail page before an exact article and
+    // stock state can be reported as a purchasable domestic result.
     const renderAttempts = /^SSG(?:\s|$)/.test(String(source.store || "")) ? 3 : 1;
     let result = null;
     for (let attempt = 0; attempt < renderAttempts && !result; attempt += 1) {
