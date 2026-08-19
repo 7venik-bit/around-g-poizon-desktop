@@ -1,6 +1,6 @@
 {
   "name": "around-g-poizon-desktop",
-  "version": "2.10.284",
+  "version": "2.10.285",
   "description": "Around G POIZON local sourcing workspace",
   "type": "module",
   "main": "bootstrap.mjs",
@@ -31,6 +31,7 @@
       "main.mjs",
       "preload.cjs",
       "build/icon.png",
+      "assets/**/*",
       "src/**/*",
       "services/**/*",
       "relay/**/*",
