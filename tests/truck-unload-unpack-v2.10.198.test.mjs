@@ -19,11 +19,11 @@ test("warehouse scene unloads a compact parcel from a delivery truck", () => {
 
 test("parcel travels on the belt and the receiver opens and unpacks it", () => {
   assert.match(html, /id="category-receiver"/);
-  assert.match(html, /unpack-box/);
-  assert.match(html, /box-flap left/);
-  assert.match(html, /unpacked-product/);
-  assert.match(style, /@keyframes belt-parcel-travel/);
-  assert.match(style, /@keyframes open-left-flap/);
-  assert.match(style, /@keyframes lift-product-from-box/);
+  assert.match(html, /worker-sprite receiver-worker/);
+  assert.doesNotMatch(html, /unpack-box/);
+  assert.match(style, /warehouse-workers-v3\.png/);
+  assert.match(style, /@keyframes warehouse-sprite-belt-parcel/);
+  assert.match(style, /@keyframes receiver-sprite-frames/);
+  assert.match(style, /background-position:100% 100%/);
   assert.match(renderer, /receiver\.classList\.add\("is-working"\)/);
 });
