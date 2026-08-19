@@ -115,6 +115,12 @@ test("selected brands run sequentially with a twenty-minute limit", () => {
   assert.match(renderer, /완료 전에는 다음 브랜드로 이동하지 않습니다/);
 });
 
+test("daily POIZON search limit stops the remaining brand queue", () => {
+  assert.match(renderer, /failureCode === "DAILY_SEARCH_LIMIT_EXCEEDED"/);
+  assert.match(renderer, /포이즌 검색 데이터는 하루 20번만 가능합니다\. 오늘 사용 가능 횟수를 초과했습니다\./);
+  assert.match(renderer, /brandExportQueue = \[\]/);
+});
+
 test("download center tracks each brand by its generated job number", () => {
   assert.match(main, /pendingBrandExportJobId = String\(createdJob\.id/);
   assert.match(main, /const registeredJobId = pendingBrandExportJobId/);

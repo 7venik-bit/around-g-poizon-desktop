@@ -1247,6 +1247,15 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
       stopBrandActivity();
       return;
     }
+    if (failureCode === "DAILY_SEARCH_LIMIT_EXCEEDED") {
+      brandExportQueue = [];
+      brandSelectionBusy = false;
+      renderBrandCards($("#brand-filter")?.value || "");
+      $("#brand-status").className = "status error";
+      $("#brand-status").textContent = "포이즌 검색 데이터는 하루 20번만 가능합니다. 오늘 사용 가능 횟수를 초과했습니다.";
+      stopBrandActivity();
+      return;
+    }
     brandSelectionBusy = remainingCount > 0;
     renderBrandCards($("#brand-filter")?.value || "");
     $("#brand-status").className = shouldRetryInput ? "status" : "status error";

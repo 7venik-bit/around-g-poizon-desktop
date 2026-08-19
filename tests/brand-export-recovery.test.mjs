@@ -68,8 +68,15 @@ test("post-search controls use the restored visible Windows cursor", () => {
   assert.match(main, /确认\|确定\|提交\|导出\|继续/);
 });
 
-test("release metadata is 2.10.278", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.278");
-  assert.equal(JSON.parse(lockSource).version, "2.10.278");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.278");
+test("POIZON daily twenty-search limit replaces the generic confirmation error", () => {
+  assert.match(main, /async function detectSellerDailySearchLimit/);
+  assert.match(main, /DAILY_SEARCH_LIMIT_EXCEEDED/);
+  assert.match(main, /포이즌 검색 데이터는 하루 20번만 가능합니다\. 오늘 사용 가능 횟수를 초과했습니다\./);
+  assert.match(main, /dailyLimit\.exceeded \? "DAILY_SEARCH_LIMIT_EXCEEDED"/);
+});
+
+test("release metadata is 2.10.279", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.279");
+  assert.equal(JSON.parse(lockSource).version, "2.10.279");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.279");
 });

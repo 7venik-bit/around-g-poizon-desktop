@@ -4053,6 +4053,26 @@ function currentSellerProductFrame() {
     || null;
 }
 
+async function detectSellerDailySearchLimit() {
+  const patterns = [
+    /(?:하루|일일|당일|오늘)[^\n]{0,80}?20\s*(?:번|회)[^\n]{0,80}?(?:가능|초과|제한|도달)/i,
+    /20\s*(?:번|회)[^\n]{0,80}?(?:초과|제한|가능|도달)/i,
+    /(?:每日|每天|今日)[^\n]{0,80}?20\s*次[^\n]{0,80}?(?:上限|限制|超过|已用完)/i,
+    /20\s*次[^\n]{0,80}?(?:上限|限制|超过|已用完)/i,
+  ];
+  for (const frame of sellerWindowFrames()) {
+    const notice = await executeSellerFrameWithTimeout(frame, `(() => {
+      const text = String(document.body?.innerText || "").replace(/\\s+/g, " ").trim();
+      const patterns = ${JSON.stringify(patterns.map((pattern) => pattern.source))}
+        .map((source) => new RegExp(source, "i"));
+      const matched = patterns.find((pattern) => pattern.test(text));
+      return matched ? (text.match(matched)?.[0] || "DAILY_LIMIT") : "";
+    })()`, 2_000, "").catch(() => "");
+    if (notice) return { exceeded: true, notice: String(notice) };
+  }
+  return { exceeded: false, notice: "" };
+}
+
 function sellerBrandExportFailureMessage(code = "", brandName = "") {
   const label = String(brandName || "선택 브랜드").trim();
   const messages = {
@@ -4069,6 +4089,7 @@ function sellerBrandExportFailureMessage(code = "", brandName = "") {
     PRODUCT_PAGE_NOT_READY: `${label} 상품 수와 전체 페이지를 확인하지 못해 내보내기를 중단했습니다.`,
     PRODUCT_LAST_PAGE_FAILED: `${label} 마지막 상품 페이지를 확인하지 못해 내보내기를 중단했습니다.`,
     DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND: `${label} 내보내기 후 다운로드센터 바로 가기 버튼을 찾지 못했습니다.`,
+    DAILY_SEARCH_LIMIT_EXCEEDED: "포이즌 검색 데이터는 하루 20번만 가능합니다. 오늘 사용 가능 횟수를 초과했습니다.",
   };
   return messages[code] || `판매자센터 자동화 실패: ${code || "UNKNOWN"}`;
 }
@@ -5475,13 +5496,15 @@ async function automateSellerBrandExport(input = {}) {
           // export -> confirm -> Download Center shortcut -> read the job row.
           // A separate hidden monitor can lag behind the live SPA session.
           if (!confirmation?.requestAcknowledged) {
+            const dailyLimit = await detectSellerDailySearchLimit();
             searched = {
               ...result,
               ...postSearch,
               ...confirmation,
               ok: false,
-              step: "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED",
-              code: "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED",
+              step: dailyLimit.exceeded ? "DAILY_SEARCH_LIMIT_EXCEEDED" : "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED",
+              code: dailyLimit.exceeded ? "DAILY_SEARCH_LIMIT_EXCEEDED" : "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED",
+              diagnostics: dailyLimit.exceeded ? { reason: dailyLimit.notice } : undefined,
             };
             break;
           }
