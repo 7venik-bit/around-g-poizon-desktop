@@ -71,17 +71,18 @@ test("브랜드 열이 비어 있어도 인기상품 이름에서 가장 구체�
   assert.deepEqual(ranked.map((brand) => brand.id), [3, 4, 2, 5]);
 });
 
-test("카테고리 검색은 기존 인기리스트 200건 수집 후 연관 브랜드 조회를 시작한다", async () => {
+test("카테고리 검색은 현재 즐겨찾기 브랜드로 바로 조회를 시작한다", async () => {
   const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
   const categoryHandler = renderer.slice(
     renderer.indexOf('$("#category-search").addEventListener'),
     renderer.indexOf('$("#import-button").addEventListener'),
   );
-  assert.match(categoryHandler, /capturePopularProducts\(\{ runDomestic: false, renderResults: false \}\)/);
+  assert.doesNotMatch(categoryHandler, /capturePopularProducts\(\{ runDomestic: false, renderResults: false \}\)/);
   assert.match(categoryHandler, /await window\.aroundG\.queryExplorer/);
-  assert.ok(categoryHandler.indexOf("capturePopularProducts") < categoryHandler.indexOf("queryExplorer"));
+  assert.match(categoryHandler, /const favoriteBrandIds = \[\.\.\.pinnedBrandIds\]/);
+  assert.match(categoryHandler, /brandIds: favoriteBrandIds/);
   assert.match(renderer, /return \{ ok: true, products: storedProducts \}/);
-  assert.match(renderer, /인기리스트 상품은 제외하고 인기 브랜드를 확인하는 중/);
+  assert.match(renderer, /즐겨찾기 브랜드별 선택 카테고리 전체 상품 수집을 준비하는 중/);
   assert.match(renderer, /선택 카테고리 전체 페이지 조회 중/);
 });
 
@@ -121,7 +122,7 @@ test("카테고리 검색은 이모티콘 없이 진행 상태만 표시한다",
   assert.match(renderer, /cancelCategorySearch\(\)/);
   assert.match(preload, /cancelCategorySearch: \(\) => ipcRenderer\.invoke\("explorer:cancel-category"\)/);
   assert.match(main, /ipcMain\.handle\("explorer:cancel-category"/);
-  assert.match(main, /rankedBrands\.find\(\(brand\) => Number\(brand\.id\) === Number\(detail\.brandId\)\)/);
+  assert.match(main, /categoryBrands\.find\(\(brand\) => Number\(brand\.id\) === Number\(detail\.brandId\)\)/);
   assert.match(main, /brandLogoUrl:/);
   assert.doesNotMatch(renderer, /category-courier|category-receiver|category-brand-box|category-completed-boxes/);
   assert.match(storeSource, /categorySearches: \[\]/);

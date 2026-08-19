@@ -43,7 +43,6 @@ import {
   prioritizeBrandCatalogBySales,
   publicBrandPageCount,
   publicBrandPath,
-  salesRankedBrands,
 } from "./services/brand-catalog.mjs";
 import {
   OFFICIAL_DOMAIN_STATUS,
@@ -7807,14 +7806,16 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   ipcMain.handle("explorer:query", (_event, input) => {
     const settings = store.snapshot().settings;
     const catalog = settings.brandCatalog || explorerMetadata().brands;
-    const rankedBrands = input?.mode === "category"
-      ? salesRankedBrands(store.snapshot().products, catalog, 200)
+    const requestedBrandIds = (Array.isArray(input?.brandIds) ? input.brandIds : []).map(Number).filter(Number.isFinite);
+    const catalogById = new Map(catalog.map((brand) => [Number(brand.id), brand]));
+    const categoryBrands = input?.mode === "category"
+      ? requestedBrandIds.map((id) => catalogById.get(id)).filter(Boolean)
       : [];
     const requestGeneration = categorySearchGeneration;
     return queryExplorer(secretConfig(), {
       ...input,
-      brandIds: input?.mode === "category" ? rankedBrands.map((brand) => brand.id) : input?.brandIds,
-      rankedBrandCount: rankedBrands.length,
+      brandIds: input?.mode === "category" ? categoryBrands.map((brand) => brand.id) : input?.brandIds,
+      rankedBrandCount: categoryBrands.length,
       shouldStop: () => input?.mode === "category" && requestGeneration !== categorySearchGeneration,
       onProgress: (pageNum, pageCount, detail = {}) => {
         const percent = Math.min(70, Math.max(2, Math.round((pageNum / Math.max(1, pageCount)) * 70)));
@@ -7826,10 +7827,10 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
           count: Number(detail.count || 0),
           brandProductCount: Number(detail.brandProductCount || 0),
           phase: String(detail.phase || "progress"),
-          brandName: input?.mode === "category" ? String(rankedBrands.find((brand) => Number(brand.id) === Number(detail.brandId))?.name || "") : "",
-          brandLogoUrl: input?.mode === "category" ? String(rankedBrands.find((brand) => Number(brand.id) === Number(detail.brandId))?.logoUrl || "") : "",
+          brandName: input?.mode === "category" ? String(categoryBrands.find((brand) => Number(brand.id) === Number(detail.brandId))?.name || "") : "",
+          brandLogoUrl: input?.mode === "category" ? String(categoryBrands.find((brand) => Number(brand.id) === Number(detail.brandId))?.logoUrl || "") : "",
           message: input?.mode === "category"
-            ? `인기 브랜드 ${pageNum}/${pageCount} · 선택 카테고리 전체 상품 조회 중`
+            ? `즐겨찾기 브랜드 ${pageNum}/${pageCount} · 선택 카테고리 전체 상품 조회 중`
             : `POIZON API ${pageNum}/${pageCount}페이지 수집 중`,
         });
       },

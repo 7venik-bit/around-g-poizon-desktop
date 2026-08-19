@@ -2991,8 +2991,9 @@ function categorySearchDate() {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Seoul" }).format(new Date());
 }
 
-function categorySearchCacheId(category, minimumSales30) {
-  return `category:${categorySearchDate()}:${category}:${minimumSales30 ? "sales30" : "all"}`;
+function categorySearchCacheId(category, minimumSales30, brandIds = pinnedBrandIds) {
+  const brandKey = [...brandIds].map(Number).filter(Number.isFinite).sort((a, b) => a - b).join("-") || "none";
+  return `category:${categorySearchDate()}:${category}:${minimumSales30 ? "sales30" : "all"}:favorites:${brandKey}`;
 }
 
 async function pruneCategorySearchHistory() {
@@ -3055,6 +3056,12 @@ $("#category-search").addEventListener("click", async () => {
   const button = $("#category-search");
   const status = $("#category-status");
   const minimumSales30 = $("#category-min-sales").checked;
+  const favoriteBrandIds = [...pinnedBrandIds].map(Number).filter(Number.isFinite);
+  if (!favoriteBrandIds.length) {
+    status.className = "status error";
+    status.textContent = "즐겨찾기 브랜드를 먼저 등록해 주세요.";
+    return;
+  }
   button.disabled = true;
   $("#category-search-stop").disabled = false;
   startCategoryLoading();
@@ -3063,30 +3070,21 @@ $("#category-search").addEventListener("click", async () => {
   try {
     await refresh();
     await pruneCategorySearchHistory();
-    const cacheId = categorySearchCacheId(selectedCategory, minimumSales30);
+    const cacheId = categorySearchCacheId(selectedCategory, minimumSales30, favoriteBrandIds);
     const cached = (state.categorySearches || []).find((entry) => entry.id === cacheId && Array.isArray(entry.products));
     if (cached) {
-      updateCategoryLoading({ title: "오늘 정리한 상자를 바로 꺼냈습니다! ✅", completed: cached.sourceCount, total: cached.rankedBrandCount, count: cached.products.length, percent: 100 });
+      updateCategoryLoading({ title: "저장된 카테고리 검색 결과를 불러왔습니다.", completed: cached.sourceCount, total: cached.rankedBrandCount, count: cached.products.length, percent: 100 });
       status.className = "status success";
       status.textContent = `${selectedCategory} 저장 결과 ${cached.products.length.toLocaleString("ko-KR")}개 · ${new Date(cached.createdAt).toLocaleString("ko-KR")} 검색`;
       renderExplorerResults(`${selectedCategory} 카테고리 검색 · 저장 결과`, cached.products);
       window.setTimeout(() => finishCategoryLoading(), 1_800);
       return;
     }
-    status.textContent = "1단계/3 · 인기리스트에서 인기 브랜드만 확인하는 중…";
-    updateCategoryLoading({ title: "인기리스트 상품은 제외하고 인기 브랜드를 확인하는 중…", percent: 3 });
-    const popularResult = await capturePopularProducts({ runDomestic: false, renderResults: false });
-    if (runId !== categorySearchRunId) return;
-    if (!popularResult.ok) {
-      status.className = "status error";
-      status.textContent = `인기리스트 수집 실패 · ${popularResult.message}`;
-      finishCategoryLoading();
-      return;
-    }
-    status.textContent = "2단계/3 · 인기 브랜드를 추출하고 중복을 제거하는 중…";
-    updateCategoryLoading({ title: "인기 브랜드별 선택 카테고리 전체 상품 수집을 준비하는 중…", percent: 34 });
+    status.textContent = `즐겨찾기 브랜드 ${favoriteBrandIds.length}개로 카테고리 검색을 준비하는 중…`;
+    updateCategoryLoading({ title: "즐겨찾기 브랜드별 선택 카테고리 전체 상품 수집을 준비하는 중…", completed: 0, total: favoriteBrandIds.length, percent: 10 });
     const result = await window.aroundG.queryExplorer({
       mode: "category",
+      brandIds: favoriteBrandIds,
       category: selectedCategory,
       pageNum: 1,
       pageSize: 100,
@@ -3101,11 +3099,12 @@ $("#category-search").addEventListener("click", async () => {
       return;
     }
     status.className = "status success";
-    status.textContent = `${selectedCategory} 전체 상품 ${result.products.length.toLocaleString("ko-KR")}개 수집 완료 · 인기 브랜드 ${result.sourceCount}/${result.rankedBrandCount || result.sourceCount}개 응답${result.failedSourceCount ? ` · ${result.failedSourceCount}개 재시도 실패` : ""}`;
+    status.textContent = `${selectedCategory} 전체 상품 ${result.products.length.toLocaleString("ko-KR")}개 수집 완료 · 즐겨찾기 브랜드 ${result.sourceCount}/${result.rankedBrandCount || result.sourceCount}개 응답${result.failedSourceCount ? ` · ${result.failedSourceCount}개 재시도 실패` : ""}`;
     renderExplorerResults(`${selectedCategory} 카테고리 검색`, result.products);
     await window.aroundG.upsert("categorySearches", {
       id: cacheId,
       category: selectedCategory,
+      brandIds: favoriteBrandIds,
       minimumSales30,
       createdAt: new Date().toISOString(),
       products: result.products,
@@ -3115,7 +3114,7 @@ $("#category-search").addEventListener("click", async () => {
       sourceTotal: result.sourceTotal,
       complete: true,
     });
-    updateCategoryLoading({ title: "상자 개봉과 상품 분류를 완료했습니다! ✅", completed: result.sourceCount, total: result.rankedBrandCount, count: result.products.length, percent: 100 });
+    updateCategoryLoading({ title: "즐겨찾기 브랜드의 카테고리 상품 수집을 완료했습니다.", completed: result.sourceCount, total: result.rankedBrandCount, count: result.products.length, percent: 100 });
     window.setTimeout(() => finishCategoryLoading(), 1_800);
   } catch (error) {
     if (runId !== categorySearchRunId) return;
