@@ -2240,7 +2240,7 @@ window.aroundG.onSellerCaptureProgress((progress) => {
   if (progress.message) $("#popular-status").textContent = progress.message;
   if (categorySearchActive) {
     updateCategoryLoading({
-      title: progress.message || `인기리스트 상품을 상자에 담는 중 · ${Number(progress.completed || 0)}/200`,
+      title: progress.message || `인기리스트에서 인기 브랜드를 확인하는 중 · ${Number(progress.completed || 0)}/200`,
       percent: Math.min(32, percent * 0.32),
     });
     if (progress.attentionRequired) {
@@ -3061,8 +3061,8 @@ $("#category-search").addEventListener("click", async () => {
       window.setTimeout(() => finishCategoryLoading(), 1_800);
       return;
     }
-    status.textContent = "1단계/3 · 기존 인기리스트에서 판매순위 200건을 가져오는 중…";
-    updateCategoryLoading({ title: "인기리스트 상품을 브랜드 상자에 담는 중…", percent: 3 });
+    status.textContent = "1단계/3 · 인기리스트에서 인기 브랜드만 확인하는 중…";
+    updateCategoryLoading({ title: "인기리스트 상품은 제외하고 인기 브랜드를 확인하는 중…", percent: 3 });
     const popularResult = await capturePopularProducts({ runDomestic: false, renderResults: false });
     if (runId !== categorySearchRunId) return;
     if (!popularResult.ok) {
@@ -3071,8 +3071,8 @@ $("#category-search").addEventListener("click", async () => {
       finishCategoryLoading();
       return;
     }
-    status.textContent = "2단계/3 · 판매순위 브랜드를 추출하고 중복을 제거하는 중…";
-    updateCategoryLoading({ title: "브랜드 이름표를 붙이고 중복 상자를 정리하는 중…", percent: 34 });
+    status.textContent = "2단계/3 · 인기 브랜드를 추출하고 중복을 제거하는 중…";
+    updateCategoryLoading({ title: "인기 브랜드별 선택 카테고리 전체 상품 수집을 준비하는 중…", percent: 34 });
     const result = await window.aroundG.queryExplorer({
       mode: "category",
       category: selectedCategory,
@@ -3089,7 +3089,7 @@ $("#category-search").addEventListener("click", async () => {
       return;
     }
     status.className = "status success";
-    status.textContent = `${selectedCategory} ${result.products.length}개 분류 완료 · 판매순위 200건 연관 브랜드 ${result.sourceCount}/${result.rankedBrandCount || result.sourceCount}개 응답${result.failedSourceCount ? ` · ${result.failedSourceCount}개 재시도 실패` : ""}`;
+    status.textContent = `${selectedCategory} 전체 상품 ${result.products.length.toLocaleString("ko-KR")}개 수집 완료 · 인기 브랜드 ${result.sourceCount}/${result.rankedBrandCount || result.sourceCount}개 응답${result.failedSourceCount ? ` · ${result.failedSourceCount}개 재시도 실패` : ""}`;
     renderExplorerResults(`${selectedCategory} 카테고리 검색`, result.products);
     await window.aroundG.upsert("categorySearches", {
       id: cacheId,
@@ -3376,7 +3376,10 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
         count: Number(progress.count || 0),
         percent: 35 + (total ? (completed / total) * 63 : 0),
       });
-      $("#category-status").textContent = `3단계/3 · ${progress.brandName || "브랜드"} 상품 조회 ${completed}/${total}`;
+      const brandCount = Number(progress.brandProductCount || 0);
+      $("#category-status").textContent = progress.phase === "complete"
+        ? `3단계/3 · ${progress.brandName || "브랜드"} 전체 페이지 ${brandCount.toLocaleString("ko-KR")}개 수집 완료 · 브랜드 ${completed}/${total}`
+        : `3단계/3 · ${progress.brandName || "브랜드"} 선택 카테고리 전체 페이지 조회 중 · 브랜드 ${completed}/${total}`;
       return;
     }
     if (!brandProgressActive && selectedBrandId) return;

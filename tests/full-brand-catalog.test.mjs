@@ -81,6 +81,22 @@ test("카테고리 검색은 기존 인기리스트 200건 수집 후 연관 브
   assert.match(categoryHandler, /await window\.aroundG\.queryExplorer/);
   assert.ok(categoryHandler.indexOf("capturePopularProducts") < categoryHandler.indexOf("queryExplorer"));
   assert.match(renderer, /return \{ ok: true, products: storedProducts \}/);
+  assert.match(renderer, /인기리스트 상품은 제외하고 인기 브랜드를 확인하는 중/);
+  assert.match(renderer, /선택 카테고리 전체 페이지 조회 중/);
+});
+
+test("인기 브랜드는 브랜드별 마지막 페이지까지 수집하고 상품 수를 보고한다", async () => {
+  const [poizon, main, renderer] = await Promise.all([
+    readFile(new URL("../services/poizon.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../main.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
+  ]);
+  assert.match(poizon, /for \(let pageNum = 2; pageNum <= pages; pageNum \+= 1\)/);
+  assert.match(poizon, /product\.categoryGroup !== input\.category\) continue/);
+  assert.match(poizon, /brandProductCount = brandProductKeys\.size/);
+  assert.match(main, /brandProductCount: Number\(detail\.brandProductCount \|\| 0\)/);
+  assert.match(renderer, /전체 페이지 \$\{brandCount\.toLocaleString\("ko-KR"\)\}개 수집 완료/);
+  assert.match(renderer, /전체 상품 \$\{result\.products\.length\.toLocaleString\("ko-KR"\)\}개 수집 완료/);
 });
 
 test("카테고리 검색 결과와 현대적인 브랜드 물류 진행 화면을 보존한다", async () => {
