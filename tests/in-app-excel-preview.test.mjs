@@ -199,7 +199,8 @@ test("official store, Musinsa, and Naver sources all render numeric result badge
   assert.match(mainSource, /attempt > 0\) await wait\(1_500\)/);
   assert.match(rendererSource, /label: "추가 확인 필요", className: "pending"/);
   assert.match(rendererSource, /label: "없음 확인", className: "missing"/);
-  assert.match(mainSource, /!source\.linkOnly && source\.ok && Number\(source\.count \|\| 0\) > 0/);
+  assert.doesNotMatch(mainSource, /!source\.linkOnly && source\.ok && Number\(source\.count \|\| 0\) > 0/);
+  assert.match(mainSource, /renderedSearchSourceResult\(source, articleNumber, brand, title\)/);
   assert.match(rendererSource, /const directLinks = \(result\.sources \|\| \[\]\)\.map/);
   assert.doesNotMatch(rendererSource, /filter\(\(source\) => source\.linkOnly\)\.map/);
   assert.match(mainSource, /isBinaryPresenceChannel \? \(Number\(count\) > 0 \? 1 : 0\)/);
