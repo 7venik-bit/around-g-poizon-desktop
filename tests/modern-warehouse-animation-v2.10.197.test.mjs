@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 
 const [html, style, packageText] = await Promise.all([
   readFile(new URL("../src/index.html", import.meta.url), "utf8"),
@@ -30,4 +30,14 @@ test("courier, receiver and product cards have coordinated motion", () => {
 
 test("warehouse sprite assets are included in the Windows package", () => {
   assert.ok(packageJson.build.files.includes("assets/**/*"));
+});
+
+test("warehouse sprite is colocated with the renderer stylesheet", async () => {
+  assert.match(style, /url\("\.\/assets\/warehouse-workers-v5\.png"\)/);
+  await access(new URL("../src/assets/warehouse-workers-v5.png", import.meta.url));
+});
+
+test("delivery truck is larger than the courier and leaves a visible handoff gap", () => {
+  assert.match(style, /delivery-truck\{left:0;bottom:10px;transform:scale\(2\.3\)/);
+  assert.match(style, /courier-worker\{left:205px;bottom:8px\}/);
 });
