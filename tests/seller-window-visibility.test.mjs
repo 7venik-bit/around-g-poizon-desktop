@@ -19,7 +19,7 @@ test("manual Seller Center actions remain visible by default", () => {
 });
 
 
-test("brand search clicks inside the owning frame and never moves the Windows cursor", () => {
+test("brand search restores the visible Windows cursor workflow", () => {
   const workflowStart = mainSource.indexOf("async function automateSellerBrandExport");
   const workflowEnd = mainSource.indexOf("async function syncBrandCatalogFromKrPoizon", workflowStart);
   const workflow = mainSource.slice(workflowStart, workflowEnd);
@@ -30,14 +30,12 @@ test("brand search clicks inside the owning frame and never moves the Windows cu
   const inputEnd = mainSource.indexOf("async function automateSellerBrandExport", inputStart);
   const inputSource = mainSource.slice(inputStart, inputEnd);
 
-  assert.match(workflow, /POIZON 창을 표시하지 않고 결과 확인·정렬·내보내기를 백그라운드에서 진행합니다/);
-  assert.doesNotMatch(workflow, /sellerWindow\.(?:show|showInactive|minimize|focus)\(/);
-  assert.match(workflow, /sellerWindow\.hide\(\)/);
-  assert.match(clickSource, /element\.dispatchEvent\(new EventType\(type, eventInit\)\)/);
-  assert.doesNotMatch(clickSource, /sellerWindow\.webContents\.sendInputEvent/);
-  assert.match(clickSource, /sellerWindow\.hide\(\)/);
-  assert.doesNotMatch(clickSource, /moveWindowsCursorAndClick|showInactive|\.focus\(\)/);
-  assert.match(inputSource, /step: "BACKGROUND_SEARCH_BUTTON_CLICKED"/);
-  assert.match(inputSource, /physicalCursorMoved: false/);
-  assert.doesNotMatch(inputSource, /moveWindowsCursorAndClick|showInactive/);
+  assert.match(workflow, /visible: true/);
+  assert.match(workflow, /activate: true/);
+  assert.match(workflow, /sellerWindow\.showInactive\(\)/);
+  assert.match(clickSource, /moveWindowsCursorAndClick/);
+  assert.match(clickSource, /physicalCursorMoved: true/);
+  assert.match(inputSource, /step: "PHYSICAL_SEARCH_BUTTON_CLICKED"/);
+  assert.match(inputSource, /physicalCursorMoved: true/);
+  assert.match(inputSource, /moveWindowsCursorAndClick/);
 });
