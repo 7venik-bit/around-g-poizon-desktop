@@ -99,7 +99,7 @@ test("인기 브랜드는 브랜드별 마지막 페이지까지 수집하고 �
   assert.match(renderer, /전체 상품 \$\{result\.products\.length\.toLocaleString\("ko-KR"\)\}개 수집 완료/);
 });
 
-test("카테고리 검색 결과와 현대적인 브랜드 물류 진행 화면을 보존한다", async () => {
+test("카테고리 검색은 이모티콘 없이 진행 상태만 표시한다", async () => {
   const [renderer, html, style, preload, main, storeSource] = await Promise.all([
     readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
     readFile(new URL("../src/index.html", import.meta.url), "utf8"),
@@ -108,9 +108,13 @@ test("카테고리 검색 결과와 현대적인 브랜드 물류 진행 화면�
     readFile(new URL("../main.mjs", import.meta.url), "utf8"),
     readFile(new URL("../services/store.mjs", import.meta.url), "utf8"),
   ]);
-  assert.match(html, /id="category-brand-box"[\s\S]*id="category-box-brand"[\s\S]*parcel-mark/);
-  assert.match(html, /product-card shoe[\s\S]*product-card shirt[\s\S]*product-card bag[\s\S]*product-card cap/);
-  assert.match(style, /@keyframes box-delivery/);
+  assert.doesNotMatch(html, /sorting-scene|sorting-worker|sorting-conveyor|brand-scanner|brand-box|product-card|sorted-shelf/);
+  assert.doesNotMatch(html, /courier-worker|receiver-worker|delivery-truck|parcel-mark/);
+  assert.match(html, /id="category-loading-title"/);
+  assert.match(html, /id="category-loading-count"/);
+  assert.match(html, /id="category-loading-time"/);
+  assert.match(html, /id="category-loading-bar"/);
+  assert.match(style, /category-loading-progress/);
   assert.match(renderer, /categorySearchCacheId/);
   assert.match(renderer, /CATEGORY_SEARCH_RETENTION_MS = 30 \* 24 \* 60 \* 60 \* 1000/);
   assert.match(renderer, /upsert\("categorySearches"/);
@@ -119,37 +123,7 @@ test("카테고리 검색 결과와 현대적인 브랜드 물류 진행 화면�
   assert.match(main, /ipcMain\.handle\("explorer:cancel-category"/);
   assert.match(main, /rankedBrands\.find\(\(brand\) => Number\(brand\.id\) === Number\(detail\.brandId\)\)/);
   assert.match(main, /brandLogoUrl:/);
-  assert.match(renderer, /progress\.phase === "start"/);
-  assert.match(renderer, /categoryCompletedBrands/);
-  assert.match(html, /id="category-box-logo"/);
-  assert.match(html, /id="category-courier"/);
-  assert.match(html, /id="category-courier-logo"/);
-  assert.match(html, /id="category-courier-brand"/);
-  assert.match(html, /id="category-completed-boxes"/);
-  assert.match(style, /@keyframes scanner-line/);
-  assert.match(style, /@keyframes courier-carry-to-belt/);
-  assert.match(style, /@keyframes courier-hand-off/);
-  assert.match(style, /\.sorting-worker\.sender\.is-loading \.courier-person\{animation:courier-unload-walk 3\.1s ease-in-out infinite/);
-  assert.match(style, /parcel-unload-to-belt 3\.1s ease-in-out infinite/);
-  assert.match(style, /\.sorting-worker\.receiver\.is-working \.receiver-person\{animation:receiver-bend-unpack 4\.8s ease-in-out infinite/);
-  assert.match(style, /lift-product-from-box 4\.8s ease-in-out infinite/);
-  assert.match(style, /warehouse-courier-path 8s ease-in-out infinite!important/);
-  assert.match(style, /warehouse-belt-parcel 8s linear infinite!important/);
-  assert.match(style, /warehouse-receiver-path 8s ease-in-out infinite!important/);
-  assert.match(style, /warehouse-received-box 8s ease-in-out infinite!important/);
-  assert.match(style, /@keyframes warehouse-walk-leg-front/);
-  assert.match(style, /0%,66%,96%,100%/);
-  assert.match(html, /class="worker-sprite courier-worker"/);
-  assert.match(html, /class="worker-sprite receiver-worker"/);
-  assert.doesNotMatch(html, /class="courier-person warehouse-person"/);
-  assert.doesNotMatch(html, /class="receiver-person warehouse-person"/);
-  assert.match(html, /src="\.\/assets\/courier-worker\.png"/);
-  assert.match(html, /src="\.\/assets\/receiver-worker\.png"/);
-  assert.doesNotMatch(html, /delivery-truck/);
-  assert.match(style, /courier-sprite-frames 10s step-end infinite/);
-  assert.match(style, /receiver-sprite-frames 10s step-end infinite/);
-  assert.match(style, /warehouse-sprite-belt-parcel 10s linear infinite/);
-  assert.doesNotMatch(html, />BRAND</);
+  assert.doesNotMatch(renderer, /category-courier|category-receiver|category-brand-box|category-completed-boxes/);
   assert.match(storeSource, /categorySearches: \[\]/);
 });
 import { officialBrandSearchUrl } from "../relay/domestic-search.mjs";
