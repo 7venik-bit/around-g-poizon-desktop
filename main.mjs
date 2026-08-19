@@ -7824,11 +7824,12 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
           pageNum,
           pageCount,
           count: Number(detail.count || 0),
+          brandProductCount: Number(detail.brandProductCount || 0),
           phase: String(detail.phase || "progress"),
           brandName: input?.mode === "category" ? String(rankedBrands.find((brand) => Number(brand.id) === Number(detail.brandId))?.name || "") : "",
           brandLogoUrl: input?.mode === "category" ? String(rankedBrands.find((brand) => Number(brand.id) === Number(detail.brandId))?.logoUrl || "") : "",
           message: input?.mode === "category"
-            ? `판매순위 연관 브랜드 ${pageNum}/${pageCount} 조회 중`
+            ? `인기 브랜드 ${pageNum}/${pageCount} · 선택 카테고리 전체 상품 조회 중`
             : `POIZON API ${pageNum}/${pageCount}페이지 수집 중`,
         });
       },

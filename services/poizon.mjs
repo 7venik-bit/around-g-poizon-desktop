@@ -288,12 +288,23 @@ export async function queryExplorer(config, input) {
         responses.push(firstError
           ? { status: "rejected", reason: firstError }
           : { status: "fulfilled", value: brandPages });
+        let brandProductCount = 0;
         if (!firstError) {
+          const brandProductKeys = new Set();
           for (const product of brandPages.flatMap((page) => normalizeBrandResult(page))) {
-            productKeys.add(`${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || ""}`);
+            if (input.category && input.category !== "전체" && product.categoryGroup !== input.category) continue;
+            const productKey = `${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || ""}`;
+            productKeys.add(productKey);
+            brandProductKeys.add(productKey);
           }
+          brandProductCount = brandProductKeys.size;
         }
-        input.onProgress?.(brandIndex + 1, brandIds.length, { count: productKeys.size, brandId, phase: "complete" });
+        input.onProgress?.(brandIndex + 1, brandIds.length, {
+          count: productKeys.size,
+          brandProductCount,
+          brandId,
+          phase: "complete",
+        });
         if (brandIndex < brandIds.length - 1) await wait(500);
       }
     } else {
