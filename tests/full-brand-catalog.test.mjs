@@ -129,9 +129,9 @@ test("카테고리 검색 결과와 현대적인 브랜드 물류 진행 화면�
   assert.match(style, /@keyframes scanner-line/);
   assert.match(style, /@keyframes courier-carry-to-belt/);
   assert.match(style, /@keyframes courier-hand-off/);
-  assert.match(style, /courier-unload-walk 3\.1s ease-in-out infinite/);
+  assert.match(style, /\.sorting-worker\.sender\.is-loading \.courier-person\{animation:courier-unload-walk 3\.1s ease-in-out infinite/);
   assert.match(style, /parcel-unload-to-belt 3\.1s ease-in-out infinite/);
-  assert.match(style, /receiver-bend-unpack 4\.8s ease-in-out infinite/);
+  assert.match(style, /\.sorting-worker\.receiver\.is-working \.receiver-person\{animation:receiver-bend-unpack 4\.8s ease-in-out infinite/);
   assert.match(style, /lift-product-from-box 4\.8s ease-in-out infinite/);
   assert.doesNotMatch(html, />BRAND</);
   assert.match(storeSource, /categorySearches: \[\]/);
