@@ -12,6 +12,8 @@ const selectedExplorerKeys = new Set();
 let domesticStockOnly = false;
 let domesticBatchRunning = false;
 let domesticBatchVerifyCounts = false;
+let domesticBatchStopRequested = false;
+const DOMESTIC_BATCH_PROGRESS_KEY = "around-g-domestic-batch-progress-v2";
 let brandProgressActive = false;
 let categorySearchActive = false;
 let categorySearchRunId = 0;
@@ -1544,6 +1546,34 @@ function domesticKey(product, index) {
   return product.articleNumber || product.spuId || `row-${index}`;
 }
 
+function domesticBatchId(products = allExplorerProducts) {
+  const first = products.find((product) => !product?.missingRank);
+  const last = [...products].reverse().find((product) => !product?.missingRank);
+  return [selectedCategory, products.length, domesticKey(first || {}, 0), domesticKey(last || {}, products.length - 1)]
+    .map((value) => String(value || "").replace(/[^a-z0-9가-힣._-]/gi, "_"))
+    .join(":");
+}
+
+function readDomesticBatchProgress(batchId) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DOMESTIC_BATCH_PROGRESS_KEY) || "null");
+    return saved?.batchId === batchId && !saved?.complete ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDomesticBatchProgress(progress) {
+  localStorage.setItem(DOMESTIC_BATCH_PROGRESS_KEY, JSON.stringify({ ...progress, updatedAt: new Date().toISOString() }));
+}
+
+async function restoreDomesticStockResults(batchId) {
+  state = await window.aroundG.snapshot();
+  for (const saved of state.domesticSearches || []) {
+    if (saved.batchId === batchId && saved.key && saved.result) domesticResults.set(saved.key, saved.result);
+  }
+}
+
 function updateExplorerSelectionUi() {
   const selectableKeys = currentExplorerProducts
     .map((product, index) => ({ product, key: domesticKey(product, index) }))
@@ -1952,9 +1982,15 @@ async function searchDomesticAt(index, sourceProducts = currentExplorerProducts)
   const key = domesticKey(product, index);
   domesticResults.set(key, { loading: true, products: [], sources: [] });
   const response = await cachedDomesticSearch(product, !domesticBatchRunning || domesticBatchVerifyCounts);
-  domesticResults.set(key, response.ok ? response.data : { products: [], sources: [], error: response.message });
+  const result = response.ok ? response.data : { products: [], sources: [], error: response.message };
+  domesticResults.set(key, result);
+  if (hasDomesticStock(result) && domesticBatchRunning && !domesticBatchVerifyCounts) {
+    const batchId = domesticBatchId(sourceProducts);
+    await window.aroundG.upsert("domesticSearches", { id: `${batchId}:${key}`, batchId, key, result });
+  }
   const visibleProducts = domesticStockOnly ? domesticStockProducts() : allExplorerProducts;
   renderExplorerResults($("#explorer-result-title").textContent, visibleProducts, true);
+  return result;
 }
 
 async function refresh() {
@@ -2303,14 +2339,15 @@ async function runDomesticBatch(options = {}) {
   const selectedOnly = Boolean(options?.selectedOnly);
   const button = $("#domestic-search-all");
   if (domesticBatchRunning) {
-    domesticBatchRunning = false;
-    domesticBatchVerifyCounts = false;
-    button.textContent = "표시 목록 국내 재고 검색";
+    domesticBatchStopRequested = true;
+    button.disabled = true;
+    button.textContent = "안전하게 중지 중…";
     updateExplorerSelectionUi();
-    $("#domestic-batch-status").textContent = "국내 재고 검색을 중지했습니다.";
+    $("#domestic-batch-status").textContent = "현재 상품 확인을 마친 뒤 중지합니다…";
     return;
   }
   domesticBatchRunning = true;
+  domesticBatchStopRequested = false;
   domesticBatchVerifyCounts = selectedOnly;
   button.textContent = "검색 중지";
   updateExplorerSelectionUi();
@@ -2331,23 +2368,39 @@ async function runDomesticBatch(options = {}) {
     updateExplorerSelectionUi();
     return;
   }
+  const batchId = domesticBatchId(batchProducts);
+  if (!selectedOnly) await restoreDomesticStockResults(batchId);
+  const savedProgress = selectedOnly ? null : readDomesticBatchProgress(batchId);
+  const resumeAt = Math.max(0, Number(savedProgress?.nextIndex || 0));
+  const pendingIndexes = selectedOnly ? searchableIndexes : searchableIndexes.filter((index) => index >= resumeAt);
   let processed = 0;
-  for (const index of searchableIndexes) {
-    if (!domesticBatchRunning) break;
+  for (const index of pendingIndexes) {
+    if (domesticBatchStopRequested) break;
     $("#domestic-batch-status").className = "status";
     $("#domestic-batch-status").textContent = selectedOnly
-      ? `국내 재고 및 네이버 결과 확인 ${processed + 1}/${searchableIndexes.length}`
-      : `국내 재고 검색 ${processed + 1}/${searchableIndexes.length} · 누락 슬롯은 유지하고 확보된 상품부터 진행합니다.`;
+      ? `국내 재고 및 네이버 결과 확인 ${processed + 1}/${pendingIndexes.length}`
+      : `국내 재고 검색 ${index + 1}/${searchableIndexes.length} · 발견 결과를 즉시 표시하고 있습니다.`;
     await searchDomesticAt(index, batchProducts);
     processed += 1;
+    if (!selectedOnly) saveDomesticBatchProgress({ batchId, nextIndex: index + 1, total: searchableIndexes.length, complete: false });
   }
+  const stopped = domesticBatchStopRequested;
   domesticBatchRunning = false;
   domesticBatchVerifyCounts = false;
+  domesticBatchStopRequested = false;
+  button.disabled = false;
   button.textContent = "표시 목록 국내 재고 검색";
   updateExplorerSelectionUi();
-  $("#domestic-batch-status").className = "status success";
   const missingCount = batchProducts.length - searchableIndexes.length;
-  $("#domestic-batch-status").textContent = `국내 재고 검색 완료 ${processed}/${searchableIndexes.length} · 원본 누락 슬롯 ${missingCount}개 유지`;
+  if (stopped) {
+    const nextIndex = selectedOnly ? processed : Number(readDomesticBatchProgress(batchId)?.nextIndex || 0);
+    $("#domestic-batch-status").className = "status error";
+    $("#domestic-batch-status").textContent = `국내 재고 검색 중지 ${nextIndex}/${searchableIndexes.length} · 다시 누르면 이어서 검색합니다.`;
+    return;
+  }
+  if (!selectedOnly) localStorage.removeItem(DOMESTIC_BATCH_PROGRESS_KEY);
+  $("#domestic-batch-status").className = "status success";
+  $("#domestic-batch-status").textContent = `국내 재고 검색 완료 ${searchableIndexes.length}/${searchableIndexes.length} · 원본 누락 슬롯 ${missingCount}개 유지`;
 }
 $("#domestic-search-all").addEventListener("click", () => runDomesticBatch());
 $("#domestic-stock-filter").addEventListener("click", () => {

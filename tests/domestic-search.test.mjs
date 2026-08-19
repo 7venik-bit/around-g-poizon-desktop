@@ -751,7 +751,7 @@ test("official-store text matches without a product-detail URL are discarded", (
 test("a transient Musinsa server failure is retried once", async () => {
   const dataWithOneProduct = `<script id="__NEXT_DATA__">${JSON.stringify({
     props: { pageProps: { dehydratedState: { queries: [
-      { state: { data: { pages: [{ items: [{ goodsNo: 501, goodsName: "재시도 상품" }] }] } } },
+      { state: { data: { pages: [{ items: [{ goodsNo: 501, goodsName: "TEST-501 재시도 상품" }] }] } } },
     ] } } },
   })}</script>`;
   const emptyData = `<script id="__NEXT_DATA__">${JSON.stringify({ props: { pageProps: { dehydratedState: { queries: [] } } } })}</script>`;

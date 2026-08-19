@@ -5,6 +5,7 @@ const EMPTY = {
   version: 1,
   products: [],
   categorySearches: [],
+  domesticSearches: [],
   ledger: [],
   orders: [],
   favorites: [],
