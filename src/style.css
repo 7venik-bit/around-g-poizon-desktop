@@ -1255,7 +1255,7 @@ button,input,select,textarea{font-family:inherit}
 /* Frame-based replacement characters. Each row of the transparent 8x2 sheet
    tells one complete job: unload-to-conveyor, then receive-to-unbox. */
 .sorting-scene{grid-template-columns:155px minmax(260px,1fr) 115px 150px;min-height:138px}
-.worker-sprite{position:absolute;z-index:6;display:block;width:74px;height:124px;background-image:url("./assets/warehouse-workers-v5.png");background-repeat:no-repeat;background-size:800% 200%;filter:drop-shadow(0 4px 3px #17324d24);will-change:transform,background-position}
+.worker-sprite{position:absolute;z-index:6;display:block;width:auto;height:124px;object-fit:contain;filter:drop-shadow(0 4px 3px #17324d24);will-change:transform}
 .courier-worker{left:36px;bottom:7px;background-position:0 0;transform-origin:50% 100%}
 .receiver-worker{right:-3px;bottom:3px;background-position:0 100%;transform-origin:50% 100%}
 .worker-brand-label{position:absolute;z-index:8;left:83px;top:23px;display:grid;width:30px;min-height:15px;place-items:center;border-radius:3px;background:#fff;box-shadow:0 1px 4px #17324d33;opacity:.92}
@@ -1320,18 +1320,17 @@ button,input,select,textarea{font-family:inherit}
     linear-gradient(180deg,#edf4f8 0 62%,#dce7ec 62% 64%,#eef2f3 64% 100%);
   box-shadow:inset 0 1px 0 #fff,0 8px 24px #23415f0d
 }
-.sorting-scene{position:relative;grid-template-columns:290px minmax(240px,1fr) 125px 130px;min-height:158px;padding:8px 10px 0;border-radius:12px;background:linear-gradient(180deg,#ffffff70,#eaf1f43d)}
+.sorting-scene{position:relative;grid-template-columns:160px minmax(260px,1fr) 140px 130px;min-height:150px;padding:8px 10px 0;border-radius:12px;background:linear-gradient(180deg,#ffffff70,#eaf1f43d)}
 .sorting-scene::before{content:"";position:absolute;z-index:0;left:0;right:0;bottom:7px;height:1px;background:#aebdc8;box-shadow:0 5px 12px #4b607326}
 .sorting-scene>*{position:relative;z-index:1}
-.sorting-conveyor{transform:none;height:72px;background:linear-gradient(180deg,#f7fafc,#e6eef4)}
+.sorting-conveyor{transform:none;height:58px;background:linear-gradient(180deg,#f7fafc,#e6eef4)}
 .sorting-conveyor::after{bottom:0}
 .brand-scanner{bottom:10px}
-.sorting-worker.sender{width:290px;height:146px}
-.sorting-worker.sender .delivery-truck{left:0;bottom:10px;transform:scale(2.3);transform-origin:left bottom}
-.sorting-worker.sender .courier-worker{left:205px;bottom:8px}
-.sorting-worker.sender .worker-brand-label{left:252px;top:22px}
+.sorting-worker.sender{width:160px;height:138px}
+.sorting-worker.sender .courier-worker{left:14px;bottom:8px}
+.sorting-worker.sender .worker-brand-label{left:102px;top:22px}
 .sorting-worker.receiver{width:125px;height:138px;transform:none}
-.sorting-worker.receiver::before{content:"";position:absolute;z-index:2;left:5px;bottom:39px;width:104px;height:7px;border:1px solid #8093a5;border-radius:3px;background:#d8e0e6;box-shadow:9px 35px 0 -3px #708394,88px 35px 0 -3px #708394}
+.sorting-worker.receiver::before{content:"";position:absolute;z-index:2;left:5px;bottom:52px;width:118px;height:7px;border:1px solid #8093a5;border-radius:3px;background:#d8e0e6;box-shadow:9px 48px 0 -3px #708394,102px 48px 0 -3px #708394}
 .sorting-worker.receiver .receiver-worker{right:0;bottom:8px}
 .sorting-items{transform:none}
 

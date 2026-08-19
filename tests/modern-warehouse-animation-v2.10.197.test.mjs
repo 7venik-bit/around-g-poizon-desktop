@@ -28,16 +28,15 @@ test("courier, receiver and product cards have coordinated motion", () => {
   assert.match(style, /prefers-reduced-motion:reduce/);
 });
 
-test("warehouse sprite assets are included in the Windows package", () => {
-  assert.ok(packageJson.build.files.includes("assets/**/*"));
+test("worker images are direct renderer assets and the delivery truck is removed", async () => {
+  assert.match(html, /src="\.\/assets\/courier-worker\.png"/);
+  assert.match(html, /src="\.\/assets\/receiver-worker\.png"/);
+  assert.doesNotMatch(html, /delivery-truck|truck-door/);
+  await access(new URL("../src/assets/courier-worker.png", import.meta.url));
+  await access(new URL("../src/assets/receiver-worker.png", import.meta.url));
 });
 
-test("warehouse sprite is colocated with the renderer stylesheet", async () => {
-  assert.match(style, /url\("\.\/assets\/warehouse-workers-v5\.png"\)/);
-  await access(new URL("../src/assets/warehouse-workers-v5.png", import.meta.url));
-});
-
-test("delivery truck is larger than the courier and leaves a visible handoff gap", () => {
-  assert.match(style, /delivery-truck\{left:0;bottom:10px;transform:scale\(2\.3\)/);
-  assert.match(style, /courier-worker\{left:205px;bottom:8px\}/);
+test("conveyor and receiver table share the same working height", () => {
+  assert.match(style, /sorting-conveyor\{transform:none;height:58px/);
+  assert.match(style, /sorting-worker\.receiver::before\{[^}]*bottom:52px/);
 });
