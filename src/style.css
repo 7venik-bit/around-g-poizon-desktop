@@ -1154,10 +1154,10 @@ button,input,select,textarea{font-family:inherit}
 .courier-package img{left:4px;right:4px;top:4px;width:20px;height:9px}
 .courier-package b{left:2px;right:2px;bottom:1px;font-size:5px;line-height:7px}
 .sender.is-loading{animation:none}
-.sender.is-loading .truck-door{animation:truck-door-open 3.1s ease-in-out both}
-.sender.is-loading .courier-person{animation:courier-unload-walk 3.1s ease-in-out both}
-.sender.is-loading .courier-package{animation:parcel-unload-to-belt 3.1s ease-in-out both}
-.sender.is-loading .person-arm.front,.sender.is-loading .person-arm.back,.sender.is-loading .person-leg.front,.sender.is-loading .person-leg.back{animation-duration:.28s;animation-iteration-count:7}
+.sender.is-loading .truck-door{animation:truck-door-open 3.1s ease-in-out infinite}
+.sender.is-loading .courier-person{animation:courier-unload-walk 3.1s ease-in-out infinite}
+.sender.is-loading .courier-package{animation:parcel-unload-to-belt 3.1s ease-in-out infinite}
+.sender.is-loading .person-arm.front,.sender.is-loading .person-arm.back,.sender.is-loading .person-leg.front,.sender.is-loading .person-leg.back{animation-duration:.28s;animation-iteration-count:infinite}
 .sorting-conveyor{height:83px;border-bottom-width:14px;background:linear-gradient(180deg,transparent 55%,#eef3f8 55%)}
 .sorting-conveyor::after{height:5px;background:repeating-linear-gradient(90deg,#46617e 0 20px,#9db0c2 20px 29px);animation:belt-roll .42s linear infinite}
 .brand-box{bottom:15px;width:52px;height:34px;border-width:1px;border-radius:5px;animation:belt-parcel-travel 3.4s linear infinite;animation-delay:2.2s}
@@ -1172,10 +1172,10 @@ button,input,select,textarea{font-family:inherit}
 .unpack-box .box-flap{z-index:2;top:8px;width:25px;height:14px;border:2px solid #9c5a19;background:#e8a652;transform-origin:bottom center}
 .unpack-box .box-flap.left{left:0;transform:rotateX(0) skewY(8deg)}.unpack-box .box-flap.right{right:0;transform:rotateX(0) skewY(-8deg)}
 .unpacked-product{z-index:5;left:16px;top:15px;width:18px;height:16px;border-radius:4px 4px 7px 7px;background:#5b91df;opacity:0}
-.receiver.is-working .box-flap.left{animation:open-left-flap 4.8s ease-in-out both}.receiver.is-working .box-flap.right{animation:open-right-flap 4.8s ease-in-out both}
-.receiver.is-working .receiver-person{animation:receiver-bend-unpack 4.8s ease-in-out both}
-.receiver.is-working .person-arm.front{animation:unpack-arm-front 4.8s ease-in-out both}.receiver.is-working .person-arm.back{animation:unpack-arm-back 4.8s ease-in-out both}
-.receiver.is-working .unpacked-product{animation:lift-product-from-box 4.8s ease-in-out both}
+.receiver.is-working .box-flap.left{animation:open-left-flap 4.8s ease-in-out infinite}.receiver.is-working .box-flap.right{animation:open-right-flap 4.8s ease-in-out infinite}
+.receiver.is-working .receiver-person{animation:receiver-bend-unpack 4.8s ease-in-out infinite}
+.receiver.is-working .person-arm.front{animation:unpack-arm-front 4.8s ease-in-out infinite}.receiver.is-working .person-arm.back{animation:unpack-arm-back 4.8s ease-in-out infinite}
+.receiver.is-working .unpacked-product{animation:lift-product-from-box 4.8s ease-in-out infinite}
 @keyframes truck-door-open{0%,8%,92%,100%{transform:scaleX(1)}18%,80%{transform:scaleX(.14)}}
 @keyframes courier-unload-walk{0%,10%{transform:translateX(0) scaleX(-1) scale(.82)}22%{transform:translateX(-3px) translateY(3px) scaleX(-1) scale(.82) rotate(8deg)}38%,62%{transform:translateX(30px) scaleX(-1) scale(.82)}76%{transform:translateX(58px) translateY(3px) scaleX(-1) scale(.82) rotate(-8deg)}86%,100%{transform:translateX(0) scaleX(-1) scale(.82)}}
 @keyframes parcel-unload-to-belt{0%,18%{transform:translate(-13px,-1px);opacity:0}24%{transform:translate(-8px,0);opacity:1}62%{transform:translate(31px,0);opacity:1}76%{transform:translate(56px,17px);opacity:1}78%,100%{transform:translate(56px,17px);opacity:0}}
