@@ -11,8 +11,9 @@ test("warehouse progress uses one emoji-free illustration system", () => {
   const scene = html.match(/<div class="sorting-scene"[\s\S]*?<div class="sorted-shelf">/)?.[0] || "";
   assert.ok(scene);
   assert.doesNotMatch(scene, /🚶|🙋|📦|👟|👕|👜|🧢/u);
-  assert.match(scene, /warehouse-person/);
-  assert.match(scene, /receiver-person/);
+  assert.match(scene, /worker-sprite courier-worker/);
+  assert.match(scene, /worker-sprite receiver-worker/);
+  assert.doesNotMatch(scene, /warehouse-person/);
   assert.match(scene, /product-card shoe/);
   assert.match(scene, /parcel-mark/);
 });

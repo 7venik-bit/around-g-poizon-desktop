@@ -1251,6 +1251,65 @@ button,input,select,textarea{font-family:inherit}
 @keyframes warehouse-walk-leg-back{0%,13%,47%,100%{transform:rotate(12deg)}19%,31%{transform:rotate(29deg)}25%,37%{transform:rotate(-15deg)}}
 @keyframes warehouse-pack-arm-front{0%,73%,96%,100%{transform:rotate(-55deg)}80%,89%{transform:rotate(-98deg) translateY(4px)}93%{transform:rotate(-38deg)}}
 @keyframes warehouse-pack-arm-back{0%,73%,96%,100%{transform:rotate(48deg)}80%,89%{transform:rotate(91deg) translateY(4px)}93%{transform:rotate(35deg)}}
+
+/* Frame-based replacement characters. Each row of the transparent 8x2 sheet
+   tells one complete job: unload-to-conveyor, then receive-to-unbox. */
+.sorting-scene{grid-template-columns:155px minmax(260px,1fr) 115px 150px;min-height:138px}
+.worker-sprite{position:absolute;z-index:6;display:block;width:74px;height:124px;background-image:url("../assets/warehouse-workers-v3.png");background-repeat:no-repeat;background-size:800% 200%;filter:drop-shadow(0 4px 3px #17324d24);will-change:transform,background-position}
+.courier-worker{left:36px;bottom:7px;background-position:0 0;transform-origin:50% 100%}
+.receiver-worker{right:-3px;bottom:3px;background-position:0 100%;transform-origin:50% 100%}
+.worker-brand-label{position:absolute;z-index:8;left:83px;top:23px;display:grid;width:30px;min-height:15px;place-items:center;border-radius:3px;background:#fff;box-shadow:0 1px 4px #17324d33;opacity:.92}
+.worker-brand-label img{width:25px;height:10px;object-fit:contain}.worker-brand-label img[hidden]{display:none}.worker-brand-label b{max-width:27px;overflow:hidden;font-size:5px;color:#31445b;text-overflow:ellipsis;white-space:nowrap}
+#category-loading:not([hidden]) .courier-worker{animation:courier-sprite-frames 10s step-end infinite,courier-sprite-path 10s ease-in-out infinite!important}
+#category-loading:not([hidden]) .receiver-worker{animation:receiver-sprite-frames 10s step-end infinite,receiver-sprite-path 10s ease-in-out infinite!important}
+#category-loading:not([hidden]) .brand-box:not(.is-waiting){animation:warehouse-sprite-belt-parcel 10s linear infinite!important;animation-delay:0s!important}
+@keyframes courier-sprite-frames{
+  0%,7%,88%,100%{background-position:0 0}
+  8%,15%{background-position:14.2857% 0}
+  16%,23%{background-position:28.5714% 0}
+  24%,31%{background-position:42.8571% 0}
+  32%,39%{background-position:57.1429% 0}
+  40%,47%{background-position:71.4286% 0}
+  48%,55%{background-position:85.7143% 0}
+  56%,63%{background-position:100% 0}
+  64%,72%{background-position:71.4286% 0}
+  73%,80%{background-position:57.1429% 0}
+}
+@keyframes courier-sprite-path{
+  0%,31%,88%,100%{transform:translate(0,0)}
+  39%{transform:translate(10px,-1px)}
+  47%{transform:translate(27px,0)}
+  55%,63%{transform:translate(47px,2px)}
+  64%{transform:translate(47px,2px) scaleX(-1)}
+  72%{transform:translate(28px,0) scaleX(-1)}
+  80%{transform:translate(10px,-1px) scaleX(-1)}
+  87%{transform:translate(0,0) scaleX(-1)}
+}
+@keyframes receiver-sprite-frames{
+  0%,64%,100%{background-position:0 100%}
+  65%,70%{background-position:14.2857% 100%}
+  71%,75%{background-position:28.5714% 100%}
+  76%,80%{background-position:42.8571% 100%}
+  81%,85%{background-position:57.1429% 100%}
+  86%,90%{background-position:71.4286% 100%}
+  91%,95%{background-position:85.7143% 100%}
+  96%,99%{background-position:100% 100%}
+}
+@keyframes receiver-sprite-path{
+  0%,64%,100%{transform:translate(0,0)}
+  70%{transform:translate(-12px,0)}
+  75%{transform:translate(-18px,0)}
+  80%{transform:translate(-8px,0)}
+  85%,99%{transform:translate(0,0)}
+}
+@keyframes warehouse-sprite-belt-parcel{
+  0%,55%{left:-55px;opacity:0;transform:translateY(0)}
+  56%{left:-40px;opacity:1}
+  61%{left:24%;opacity:1;transform:translateY(-2px)}
+  66%{left:55%;opacity:1;transform:translateY(0)}
+  71%{left:calc(100% - 52px);opacity:1;transform:translateY(-2px)}
+  75%,100%{left:calc(100% + 6px);opacity:0}
+}
 .confidence.official{background:#dff7ee;color:#047857;border:1px solid #9fdfc8}
 
 

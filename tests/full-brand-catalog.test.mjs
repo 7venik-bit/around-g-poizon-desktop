@@ -139,6 +139,15 @@ test("카테고리 검색 결과와 현대적인 브랜드 물류 진행 화면�
   assert.match(style, /warehouse-received-box 8s ease-in-out infinite!important/);
   assert.match(style, /@keyframes warehouse-walk-leg-front/);
   assert.match(style, /0%,66%,96%,100%/);
+  assert.match(html, /class="worker-sprite courier-worker"/);
+  assert.match(html, /class="worker-sprite receiver-worker"/);
+  assert.doesNotMatch(html, /class="courier-person warehouse-person"/);
+  assert.doesNotMatch(html, /class="receiver-person warehouse-person"/);
+  assert.match(style, /warehouse-workers-v3\.png/);
+  assert.match(style, /background-size:800% 200%/);
+  assert.match(style, /courier-sprite-frames 10s step-end infinite/);
+  assert.match(style, /receiver-sprite-frames 10s step-end infinite/);
+  assert.match(style, /warehouse-sprite-belt-parcel 10s linear infinite/);
   assert.doesNotMatch(html, />BRAND</);
   assert.match(storeSource, /categorySearches: \[\]/);
 });
