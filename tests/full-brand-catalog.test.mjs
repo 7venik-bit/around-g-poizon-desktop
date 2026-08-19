@@ -133,6 +133,12 @@ test("카테고리 검색 결과와 현대적인 브랜드 물류 진행 화면�
   assert.match(style, /parcel-unload-to-belt 3\.1s ease-in-out infinite/);
   assert.match(style, /\.sorting-worker\.receiver\.is-working \.receiver-person\{animation:receiver-bend-unpack 4\.8s ease-in-out infinite/);
   assert.match(style, /lift-product-from-box 4\.8s ease-in-out infinite/);
+  assert.match(style, /warehouse-courier-path 8s ease-in-out infinite!important/);
+  assert.match(style, /warehouse-belt-parcel 8s linear infinite!important/);
+  assert.match(style, /warehouse-receiver-path 8s ease-in-out infinite!important/);
+  assert.match(style, /warehouse-received-box 8s ease-in-out infinite!important/);
+  assert.match(style, /@keyframes warehouse-walk-leg-front/);
+  assert.match(style, /0%,66%,96%,100%/);
   assert.doesNotMatch(html, />BRAND</);
   assert.match(storeSource, /categorySearches: \[\]/);
 });

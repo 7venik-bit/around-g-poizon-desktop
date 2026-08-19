@@ -1189,6 +1189,68 @@ button,input,select,textarea{font-family:inherit}
 @keyframes lift-product-from-box{0%,72%{transform:translateY(0) scale(.7);opacity:0}78%{opacity:1}88%,96%{transform:translateY(-31px) scale(1);opacity:1}100%{transform:translate(34px,-34px) scale(.72);opacity:0}}
 @media(max-width:850px){.sorting-scene{grid-template-columns:130px minmax(180px,1fr) 115px}.sorting-items{grid-column:1/-1}}
 @media(prefers-reduced-motion:reduce){.sender.is-loading .truck-door,.sender.is-loading .courier-person,.sender.is-loading .courier-package,.receiver.is-working *,.brand-box,.sorting-conveyor::after{animation-duration:.01ms}}
+
+/* One synchronized eight-second warehouse cycle. The parcel changes visual
+   ownership only at hand-off points, so workers, belt and box never drift. */
+#category-loading:not([hidden]) .sorting-worker.sender .truck-door{animation:warehouse-truck-door 8s ease-in-out infinite!important}
+#category-loading:not([hidden]) .sorting-worker.sender .courier-person{animation:warehouse-courier-path 8s ease-in-out infinite!important}
+#category-loading:not([hidden]) .sorting-worker.sender .courier-package{animation:warehouse-carried-parcel 8s ease-in-out infinite!important}
+#category-loading:not([hidden]) .sorting-worker.sender .person-arm.front{animation:warehouse-walk-arm-front 8s ease-in-out infinite!important}
+#category-loading:not([hidden]) .sorting-worker.sender .person-arm.back{animation:warehouse-walk-arm-back 8s ease-in-out infinite!important}
+#category-loading:not([hidden]) .sorting-worker.sender .person-leg.front{animation:warehouse-walk-leg-front 8s ease-in-out infinite!important}
+#category-loading:not([hidden]) .sorting-worker.sender .person-leg.back{animation:warehouse-walk-leg-back 8s ease-in-out infinite!important}
+#category-loading:not([hidden]) .brand-box:not(.is-waiting){animation:warehouse-belt-parcel 8s linear infinite!important;animation-delay:0s!important}
+#category-loading:not([hidden]) .sorting-worker.receiver .receiver-person{animation:warehouse-receiver-path 8s ease-in-out infinite!important}
+#category-loading:not([hidden]) .sorting-worker.receiver .unpack-box{animation:warehouse-received-box 8s ease-in-out infinite!important}
+#category-loading:not([hidden]) .sorting-worker.receiver .person-arm.front{animation:warehouse-pack-arm-front 8s ease-in-out infinite!important}
+#category-loading:not([hidden]) .sorting-worker.receiver .person-arm.back{animation:warehouse-pack-arm-back 8s ease-in-out infinite!important}
+#category-loading:not([hidden]) .sorting-worker.receiver .box-flap.left{animation:warehouse-open-left 8s ease-in-out infinite!important}
+#category-loading:not([hidden]) .sorting-worker.receiver .box-flap.right{animation:warehouse-open-right 8s ease-in-out infinite!important}
+#category-loading:not([hidden]) .sorting-worker.receiver .unpacked-product{animation:warehouse-lift-product 8s ease-in-out infinite!important}
+@keyframes warehouse-truck-door{0%,5%,42%,100%{transform:scaleX(1)}10%,36%{transform:scaleX(.14)}}
+@keyframes warehouse-courier-path{
+  0%,8%,88%,100%{transform:translate(0,0) scaleX(-1) scale(.82)}
+  14%{transform:translate(-4px,4px) scaleX(-1) scale(.82) rotate(6deg)}
+  20%{transform:translate(10px,-2px) scaleX(-1) scale(.82)}
+  27%{transform:translate(25px,0) scaleX(-1) scale(.82)}
+  34%{transform:translate(41px,-2px) scaleX(-1) scale(.82)}
+  40%,47%{transform:translate(54px,5px) scaleX(-1) scale(.82) rotate(-7deg)}
+  58%{transform:translate(32px,0) scaleX(-1) scale(.82)}
+  70%{transform:translate(12px,-2px) scaleX(-1) scale(.82)}
+}
+@keyframes warehouse-carried-parcel{
+  0%,10%,47%,100%{opacity:0}
+  14%{transform:translate(-14px,-4px);opacity:1}
+  20%{transform:translate(0,-7px);opacity:1}
+  34%{transform:translate(31px,-7px);opacity:1}
+  41%{transform:translate(51px,12px);opacity:1}
+  45%{transform:translate(56px,20px);opacity:1}
+  46%{transform:translate(56px,20px);opacity:0}
+}
+@keyframes warehouse-belt-parcel{
+  0%,45%{left:-55px;opacity:0;transform:translateY(0)}
+  46%{left:-40px;opacity:1}
+  55%{left:24%;opacity:1;transform:translateY(-2px)}
+  65%{left:55%;opacity:1;transform:translateY(0)}
+  73%{left:calc(100% - 52px);opacity:1;transform:translateY(-2px)}
+  76%,100%{left:calc(100% + 6px);opacity:0}
+}
+@keyframes warehouse-receiver-path{
+  0%,66%,96%,100%{transform:translate(0,0) scale(.82)}
+  72%{transform:translate(-14px,-2px) scale(.82)}
+  78%,84%{transform:translate(-25px,7px) scale(.82) rotate(-9deg)}
+  91%{transform:translate(-10px,-3px) scale(.82) rotate(3deg)}
+}
+@keyframes warehouse-received-box{0%,70%{opacity:0;transform:translateX(-10px)}73%,94%{opacity:1;transform:translateX(0)}96%,100%{opacity:0}}
+@keyframes warehouse-open-left{0%,76%,96%,100%{transform:rotateX(0) skewY(8deg)}82%,92%{transform:rotate(-52deg) skewY(8deg);transform-origin:left bottom}}
+@keyframes warehouse-open-right{0%,76%,96%,100%{transform:rotateX(0) skewY(-8deg)}82%,92%{transform:rotate(52deg) skewY(-8deg);transform-origin:right bottom}}
+@keyframes warehouse-lift-product{0%,82%{transform:translateY(0) scale(.7);opacity:0}86%{opacity:1}90%,93%{transform:translateY(-29px) scale(1);opacity:1}96%,100%{transform:translate(30px,-31px) scale(.75);opacity:0}}
+@keyframes warehouse-walk-arm-front{0%,13%,47%,100%{transform:rotate(-36deg)}19%,31%{transform:rotate(-58deg)}25%,37%{transform:rotate(-15deg)}}
+@keyframes warehouse-walk-arm-back{0%,13%,47%,100%{transform:rotate(30deg)}19%,31%{transform:rotate(8deg)}25%,37%{transform:rotate(54deg)}}
+@keyframes warehouse-walk-leg-front{0%,13%,47%,100%{transform:rotate(-10deg)}19%,31%{transform:rotate(-27deg)}25%,37%{transform:rotate(17deg)}}
+@keyframes warehouse-walk-leg-back{0%,13%,47%,100%{transform:rotate(12deg)}19%,31%{transform:rotate(29deg)}25%,37%{transform:rotate(-15deg)}}
+@keyframes warehouse-pack-arm-front{0%,73%,96%,100%{transform:rotate(-55deg)}80%,89%{transform:rotate(-98deg) translateY(4px)}93%{transform:rotate(-38deg)}}
+@keyframes warehouse-pack-arm-back{0%,73%,96%,100%{transform:rotate(48deg)}80%,89%{transform:rotate(91deg) translateY(4px)}93%{transform:rotate(35deg)}}
 .confidence.official{background:#dff7ee;color:#047857;border:1px solid #9fdfc8}
 
 
