@@ -79,7 +79,7 @@ test("카테고리 검색은 현재 즐겨찾기 브랜드로 바로 조회를 �
   );
   assert.doesNotMatch(categoryHandler, /capturePopularProducts\(\{ runDomestic: false, renderResults: false \}\)/);
   assert.match(categoryHandler, /await window\.aroundG\.queryExplorer/);
-  assert.match(categoryHandler, /const favoriteBrandIds = \[\.\.\.pinnedBrandIds\]/);
+  assert.match(categoryHandler, /const favoriteBrandIds = \[\.\.\.categoryBrandIds\]/);
   assert.match(categoryHandler, /brandIds: \[brandId\]/);
   assert.match(renderer, /return \{ ok: true, products: storedProducts \}/);
   assert.match(renderer, /완료된 결과만 안전하게 누적합니다/);
