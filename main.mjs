@@ -193,7 +193,6 @@ let brandWorkSessionGeneration = 0;
 let brandExportAttemptGeneration = 0;
 let sellerProductFrameRoutingId = null;
 const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
-const SELLER_MAIN_URL = "https://seller.poizon.com/main";
 const SELLER_PRODUCT_SEARCH_URL = "https://seller.poizon.com/main/goods/search";
 const SELLER_EXPORT_CENTER_URL = "https://seller.poizon.com/main/exportCenter";
 const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 20 * 60 * 1000;
@@ -4071,15 +4070,35 @@ async function submitStoredSellerCredentials() {
 
 async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
   if (!sellerWindow || sellerWindow.isDestroyed()) return false;
-  const currentUrl = String(sellerWindow.webContents.getURL() || "");
+  let currentUrl = String(sellerWindow.webContents.getURL() || "");
   if (!forceHome && currentUrl.includes("/main/goods/search")) return true;
-  if (forceHome || !currentUrl.includes("seller.poizon.com")) {
-    await sellerWindow.loadURL(SELLER_MAIN_URL).catch(() => {});
+  if (!currentUrl.includes("seller.poizon.com")) {
+    await sellerWindow.loadURL(SELLER_CENTER_URL).catch(() => {});
     await wait(2_000);
+    currentUrl = String(sellerWindow.webContents.getURL() || "");
   }
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const frames = sellerWindowFrames();
     for (const frame of frames) {
+      const recovered = await executeSellerFrameWithTimeout(frame, `(() => {
+        const text = String(document.body?.innerText || "");
+        if (!/Page\s*Not\s*Found|Component\s*Key\s*Error|Load\s*Component\s*Timeout|请求超时/i.test(text)) return false;
+        const visible = (element) => element && element.getClientRects().length > 0;
+        const label = (element) => String(element?.innerText || element?.textContent || "").replace(/\\s+/g, " ").trim();
+        const home = [...document.querySelectorAll("a,button,[role='button'],span")]
+          .filter(visible)
+          .find((element) => /^(?:홈페이지로\s*돌아가기|返回首页|回到首页)$/.test(label(element)));
+        const target = home?.closest?.("a,button,[role='button']") || home;
+        target?.click?.();
+        return Boolean(target);
+      })()`, 4_000, false);
+      if (recovered) {
+        await wait(3_000);
+        break;
+      }
+    }
+    const activeFrames = sellerWindowFrames();
+    for (const frame of activeFrames) {
       const clicked = await executeSellerFrameWithTimeout(frame, `(async () => {
         const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         const visible = (element) => {
@@ -4106,7 +4125,9 @@ async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
       }
     }
     if (attempt < 2) {
-      await sellerWindow.loadURL(SELLER_MAIN_URL).catch(() => {});
+      // Use the stable dashboard only as a recovery landing page. Never load
+      // the bare /main route because POIZON can respond with Component Key Error.
+      await sellerWindow.loadURL(SELLER_CENTER_URL).catch(() => {});
       await wait(2_000);
     }
   }
@@ -4940,7 +4961,7 @@ async function automateSellerBrandExport(input = {}) {
   // Show the exact Electron Seller Center window that is being automated.
   // A separately opened Chrome window is a different browser session and does
   // not reflect this automation, which previously made real work look idle.
-  openSellerCenterWindow(SELLER_MAIN_URL, {
+  openSellerCenterWindow(SELLER_CENTER_URL, {
     visible: true,
     activate: true,
     deferNavigation: true,
@@ -4958,20 +4979,7 @@ async function automateSellerBrandExport(input = {}) {
     jobState: "1단계/5 · 판매자센터 연결 시도",
     message: `${brandName} · 판매자센터 상품검색 화면 연결을 시도합니다.`,
   });
-  try {
-    await sellerWindow.loadURL(SELLER_MAIN_URL);
-  } catch (error) {
-    const diagnosticPath = await captureSellerDiagnostic(brandName, "page-load-failed");
-    brandExportJobPending = false;
-    pendingBrandExportName = "";
-    return {
-      ok: false,
-      code: "SELLER_PAGE_LOAD_FAILED",
-      message: `${brandName} 판매자센터 상품검색 페이지 연결에 실패했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
-      diagnostics: { reason: String(error?.message || error || ""), path: diagnosticPath },
-    };
-  }
-  await new Promise((resolve) => setTimeout(resolve, 3500));
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
   const login = await ensureSellerLoginBeforeBrandSearch(brandName);
   if (!login.ok) {
     brandExportJobPending = false;
@@ -4988,7 +4996,7 @@ async function automateSellerBrandExport(input = {}) {
     sellerWindow.webContents.mainFrame,
     `(() => {
       const text = String(document.body?.innerText || "");
-      const failed = /Page\s*Not\s*Found|Load\s*Component\s*Timeout|组件.{0,12}(?:超时|失败)/i.test(text);
+      const failed = /Page\s*Not\s*Found|Component\s*Key\s*Error|Load\s*Component\s*Timeout|请求超时|组件.{0,12}(?:超时|失败)/i.test(text);
       const hasSearch = /검색\s*및\s*입찰|商品.{0,8}(?:搜索|查询)/i.test(text)
         && document.querySelectorAll("input,textarea").length > 0;
       return { failed, hasSearch, text: text.slice(0, 1200), url: location.href };
@@ -6794,7 +6802,7 @@ async function captureSellerBrandSales(input = {}) {
 async function lookupSellerTransactionPrice(input = {}) {
   const articleNumber = String(input.articleNumber || "").trim();
   if (!articleNumber) return { ok: false, code: "ARTICLE_REQUIRED", message: "상품번호가 없습니다." };
-  if (!sellerWindow || sellerWindow.isDestroyed()) openSellerCenterWindow(SELLER_MAIN_URL);
+  if (!sellerWindow || sellerWindow.isDestroyed()) openSellerCenterWindow(SELLER_CENTER_URL);
   for (let attempt = 0; attempt < 30; attempt += 1) {
     if (sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.getURL()) break;
     await wait(300);
@@ -7642,7 +7650,7 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle("seller:open-product-search", async () => {
-    openSellerCenterWindow(SELLER_MAIN_URL);
+    openSellerCenterWindow(SELLER_CENTER_URL);
     return { ok: await enterSellerProductSearchViaMenu({ forceHome: true }) };
   });
   const abortSellerBrandExportAttempt = async () => {
@@ -7655,7 +7663,7 @@ app.whenReady().then(async () => {
     sellerWindow?.webContents.stop();
     if (sellerWindow && !sellerWindow.isDestroyed()) {
       await Promise.race([
-        sellerWindow.loadURL(SELLER_MAIN_URL),
+        sellerWindow.loadURL(SELLER_CENTER_URL),
         new Promise((resolve) => setTimeout(resolve, 8_000)),
       ]);
       sellerWindow.hide();

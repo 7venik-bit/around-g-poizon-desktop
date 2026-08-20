@@ -39,7 +39,10 @@ test("brand search click shows progress and never cancels a delayed main-process
 });
 
 test("POIZON product search always re-enters through the proven menu workflow", () => {
-  assert.match(main, /SELLER_MAIN_URL/);
+  assert.match(main, /SELLER_CENTER_URL/);
+  assert.match(main, /Component\\s\*Key\\s\*Error/);
+  assert.match(main, /请求超时/);
+  assert.match(main, /홈페이지로\\s\*돌아가기/);
   assert.match(main, /Load\\s\*Component\\s\*Timeout/);
   assert.match(main, /seller-product-page-recovering/);
   assert.match(main, /recoveryAttempt = 1; recoveryAttempt <= 3/);
@@ -68,7 +71,8 @@ test("brand workflow connects directly and searches English before Korean fallba
   const start = main.indexOf("async function automateSellerBrandExport");
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = main.slice(start, end);
-  assert.match(workflow, /loadURL\(SELLER_MAIN_URL\)/);
+  assert.match(workflow, /openSellerCenterWindow\(SELLER_CENTER_URL/);
+  assert.doesNotMatch(workflow, /loadURL\("https:\/\/seller\.poizon\.com\/main"\)/);
   const english = workflow.indexOf("applyValue(${JSON.stringify(sellerBrandSearchName)})");
   const korean = workflow.indexOf("applyValue(${JSON.stringify(brandKoInput)})");
   assert.ok(english >= 0 && korean > english);
