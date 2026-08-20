@@ -34,3 +34,12 @@ test("an interrupted version audit is not marked complete while brands remain pe
   assert.match(linkage, /if \(!completedSummary\.pending\)/);
   assert.match(linkage, /immediateOfficialMallLinkageCompletedAt/);
 });
+
+test("automatic full verification is scheduled overnight and stopped before daytime work", async () => {
+  const mainSource = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
+  assert.match(mainSource, /if \(app\.isPackaged\) scheduleImmediateOfficialMallLinkage\(\)/);
+  assert.doesNotMatch(mainSource, /setTimeout\(\(\) => void startImmediateOfficialMallLinkage\(\), 8_000\)/);
+  assert.match(mainSource, /nextOfficialMallAuditStartAt\(now\)/);
+  assert.match(mainSource, /currentOfficialMallAuditEndAt\(new Date\(\)\)/);
+  assert.match(mainSource, /stopAutomaticOfficialMallLinkage\(\)/);
+});
