@@ -5605,41 +5605,34 @@ async function automateSellerBrandExport(input = {}) {
         jobState: `1단계/5 · 브랜드 입력·상품 검색 중 · ${brandName}`,
         message: `${brandName} · 기존 검색 서비스 방식으로 브랜드를 입력하고 검색을 실행합니다.`,
       });
-      // Restore the first proven Seller Center route: type the brand in the
-      // visible product-search field and operate the page with the real Windows
-      // cursor. The later exact-popup/background route is intentionally not
-      // used because it broke the shared sort/export sequence.
-      const realKeyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, sellerBrandSearchName)
-        .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
+      // Follow the visible Seller Center controls exactly: 브랜드 dropdown →
+      // popup search → exact option → 적용/확인 → 검색 및 입찰. The global
+      // product-query field must not be used for a brand-only export because
+      // it can leave the unfiltered 9,900-result list on screen.
+      const exactBrandFilter = await applyExactSellerBrandFilter(candidate.frame, [
+        sellerBrandSearchName,
+        brandKoInput,
+        ...sellerBrandMatchKeys,
+      ]).catch(() => ({ ok: false, step: "EXACT_BRAND_FILTER_FAILED" }));
       if (sellerWindow && !sellerWindow.isDestroyed()) {
         sellerWindow.showInactive();
       }
       mainWindow?.webContents.send("brand-export:progress", {
-        status: realKeyboardInput?.ok ? "seller-brand-input-confirmed" : "seller-brand-input-fallback",
+        status: exactBrandFilter?.ok ? "seller-brand-filter-confirmed" : "seller-brand-filter-failed",
         brandName,
-        jobState: realKeyboardInput?.ok
-          ? `1단계/5 · 상품검색 브랜드 입력 완료 · ${brandName}`
-          : `1단계/5 · 상품검색 입력 재시도 · ${brandName}`,
-        message: realKeyboardInput?.ok
-          ? `${brandName} · 판매자센터 상단 상품검색 입력을 확인하고 검색 및 입찰을 실행합니다.`
-          : `${brandName} · 실제 키보드 입력이 확인되지 않아 기존 입력 방식으로 즉시 재시도합니다.`,
+        jobState: exactBrandFilter?.ok
+          ? `1단계/5 · 브랜드 필터·상품 검색 완료 · ${brandName}`
+          : `1단계/5 · 브랜드 필터 선택 실패 · ${brandName}`,
+        message: exactBrandFilter?.ok
+          ? `${brandName} · 브랜드 필터 선택과 검색 및 입찰을 완료했습니다.`
+          : `${brandName} · 브랜드 버튼 또는 정확한 브랜드 항목을 선택하지 못했습니다. (${exactBrandFilter?.step || "UNKNOWN"})`,
       });
-      if (!realKeyboardInput?.ok) {
-        searched = realKeyboardInput || { ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" };
+      if (!exactBrandFilter?.ok) {
+        searched = exactBrandFilter || { ok: false, step: "EXACT_BRAND_FILTER_FAILED" };
         lastSearchDiagnostics = candidate.probe;
-        break;
+        continue;
       }
-      const result = await Promise.race([
-          runSellerSearch(candidate.frame, Boolean(realKeyboardInput?.submitted)),
-          new Promise((resolve) => setTimeout(() => resolve({
-            ok: false,
-            step: "SELLER_SEARCH_STAGE_TIMEOUT",
-          }), 70_000)),
-        ]).catch((error) => ({
-          ok: false,
-          step: "SELLER_SEARCH_SCRIPT_ERROR",
-          detail: String(error?.message || error || ""),
-        }));
+      const result = exactBrandFilter;
       lastSearchDiagnostics = candidate.probe;
       if (result?.ok) {
         mainWindow?.webContents.send("brand-export:progress", {
