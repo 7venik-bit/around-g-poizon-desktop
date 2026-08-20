@@ -731,6 +731,20 @@ test("one domestic store failure does not stop the others", async () => {
   );
 });
 
+test("실패 램프 재검색은 선택한 모듈만 실행한다", async () => {
+  const emptyNextData = `<script id="__NEXT_DATA__">${JSON.stringify({ props: { pageProps: { dehydratedState: { queries: [] } } } })}</script>`;
+  const fetchImpl = async () => ({ ok: true, status: 200, text: async () => emptyNextData });
+  const result = await queryDomesticProducts({
+    query: "나이키 DD1391-100",
+    articleNumber: "DD1391-100",
+    brand: "나이키",
+    modules: ["musinsa"],
+    fetchImpl,
+  });
+  assert.deepEqual(result.sources.map((source) => source.module), ["musinsa"]);
+  assert.deepEqual(result.sources.map((source) => source.store), ["무신사"]);
+});
+
 test("an unverified brand is not reported as a verified official-store zero", async () => {
   const emptyNextData = `<script id="__NEXT_DATA__">${JSON.stringify({ props: { pageProps: { dehydratedState: { queries: [] } } } })}</script>`;
   const fetchImpl = async () => ({ ok: true, status: 200, text: async () => emptyNextData });

@@ -3,9 +3,11 @@ aside{overflow-y:auto}
 .search-service-menu>small{padding:0 8px 4px;color:#7f96b8;font-size:9px;font-weight:800;letter-spacing:.11em}
 .search-service-buttons{display:grid;gap:3px}
 .domestic-module-lamps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px 3px;margin:3px 5px 5px;padding:6px 5px;border:1px solid #314866;border-radius:7px;background:#102540}
-.module-lamp{display:flex;align-items:center;gap:3px;min-width:0;color:#8398b5;font-size:8px;line-height:1;white-space:nowrap}
-.module-lamp i{width:5px;height:5px;flex:0 0 auto;border-radius:50%;background:#58708f;box-shadow:0 0 0 1px #ffffff12}
+.module-lamp{display:flex;align-items:center;gap:2px;min-width:0;padding:1px;border:0;background:transparent;color:#8398b5;font-size:7px;line-height:1;white-space:nowrap;text-align:left}
+.module-lamp i{width:4px;height:4px;flex:0 0 auto;border-radius:50%;background:#58708f;box-shadow:0 0 0 1px #ffffff12}
 .module-lamp small{overflow:hidden;text-overflow:ellipsis;font:inherit}
+.module-lamp em{margin-left:auto;color:inherit;font:normal 6px/1 sans-serif}
+.module-lamp.failed{cursor:pointer}
 .module-lamp.running{color:#b9d8ff}.module-lamp.running i{background:#3f91ff;animation:domestic-module-pulse .75s ease-in-out infinite}
 .module-lamp.success{color:#9adfca}.module-lamp.success i{background:#21c58b;box-shadow:0 0 5px #21c58b}
 .module-lamp.failed{color:#ffaaa4}.module-lamp.failed i{background:#f05b55;box-shadow:0 0 5px #f05b55}

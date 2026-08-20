@@ -1274,8 +1274,12 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
 async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "") {
   const discoveredProducts = [];
   const sources = [];
-  for (const source of data.sources) {
+  const moduleFailures = new Map();
+  const moduleStartedAt = new Map();
+  for (let sourceIndex = 0; sourceIndex < data.sources.length; sourceIndex += 1) {
+    const source = data.sources[sourceIndex];
     const moduleId = String(source.module || source.id || "").split("-")[0];
+    if (!moduleStartedAt.has(moduleId)) moduleStartedAt.set(moduleId, Date.now());
     mainWindow?.webContents.send("domestic-search:module-status", {
       moduleId,
       store: source.store,
@@ -1331,12 +1335,22 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       officialProductMissing: isOfficialStore && absenceConfirmed,
     };
     })();
-    mainWindow?.webContents.send("domestic-search:module-status", {
-      moduleId,
-      store: source.store,
-      state: resolvedSource.verificationFailed || resolvedSource.ok === false ? "failed" : "success",
-    });
+    if (resolvedSource.verificationFailed || resolvedSource.ok === false) {
+      moduleFailures.set(moduleId, resolvedSource.verificationFailed ? "검색 결과 확인 실패" : "검색 요청 실패");
+    }
     sources.push(resolvedSource);
+    const nextSource = data.sources[sourceIndex + 1];
+    const nextModuleId = String(nextSource?.module || nextSource?.id || "").split("-")[0];
+    if (nextModuleId !== moduleId) {
+      const error = moduleFailures.get(moduleId) || "";
+      mainWindow?.webContents.send("domestic-search:module-status", {
+        moduleId,
+        store: source.store,
+        state: error ? "failed" : "success",
+        error,
+        durationMs: Date.now() - Number(moduleStartedAt.get(moduleId) || Date.now()),
+      });
+    }
   }
   const products = [...(data.products || []), ...discoveredProducts].filter((product, index, all) =>
     index === all.findIndex((candidate) => `${candidate.store}:${candidate.id || candidate.url}` === `${product.store}:${product.id || product.url}`));
@@ -7839,6 +7853,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         verifyLinkCounts: false,
         officialBrandRecord,
         searchStrategy,
+        modules: Array.isArray(input?.modules) ? input.modules : [],
       });
       let matched = await addMatchConfidence(data, input || {});
       if (input?.verifyLinkCounts === true) {
