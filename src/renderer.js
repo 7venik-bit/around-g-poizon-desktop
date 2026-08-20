@@ -2238,14 +2238,45 @@ $("#brand-export-selected")?.addEventListener("click", async () => {
   }
   const selectedBrands = selectedBrandsForExport();
   if (!selectedBrands.length) return;
+  const selectedLabel = selectedBrands.length === 1
+    ? String(selectedBrands[0].name || selectedBrands[0].ko || "선택 브랜드")
+    : `${selectedBrands.length}개 브랜드`;
+  // Give immediate, visible feedback before asking the main process to reset
+  // the POIZON session. Previously a delayed/rejected IPC call made the search
+  // button appear completely unresponsive.
+  brandSelectionBusy = true;
+  updateBrandSelectionControls();
+  $("#brand-status").className = "status";
+  $("#brand-status").textContent = `${selectedLabel} 검색 세션 준비 중…`;
+  touchBrandActivity(`${selectedLabel} 검색 시작 요청`);
   // Existing Excel files remain in the received-file history, but every
   // explicit search click must create a fresh POIZON job number and download.
   // Reset only the live run state before building the new queue.
   acceptBrandWorkEvents = false;
-  const freshSession = await window.aroundG.beginSellerBrandSearchSession?.();
-  if (freshSession && freshSession.ok === false) {
+  let freshSession;
+  try {
+    freshSession = await Promise.race([
+      window.aroundG.beginSellerBrandSearchSession?.(),
+      new Promise((resolve) => setTimeout(() => resolve({
+        ok: false,
+        code: "BRAND_SESSION_START_TIMEOUT",
+        message: "새 브랜드 검색 세션 응답이 8초 안에 오지 않았습니다.",
+      }), 8_000)),
+    ]);
+  } catch (error) {
+    freshSession = {
+      ok: false,
+      code: "BRAND_SESSION_START_FAILED",
+      message: error instanceof Error ? error.message : String(error || "검색 세션 시작 실패"),
+    };
+  }
+  if (!freshSession || freshSession.ok === false) {
+    brandSelectionBusy = false;
+    acceptBrandWorkEvents = true;
+    updateBrandSelectionControls();
+    stopBrandActivity();
     $("#brand-status").className = "status error";
-    $("#brand-status").textContent = freshSession.message || "새 브랜드 검색 세션을 시작하지 못했습니다.";
+    $("#brand-status").textContent = `${selectedLabel} 검색 시작 실패 · ${freshSession?.message || "새 브랜드 검색 세션을 시작하지 못했습니다."}`;
     return;
   }
   brandWorkHistoryGeneration += 1;

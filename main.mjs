@@ -193,6 +193,7 @@ let brandWorkSessionGeneration = 0;
 let brandExportAttemptGeneration = 0;
 let sellerProductFrameRoutingId = null;
 const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
+const SELLER_MAIN_URL = "https://seller.poizon.com/main";
 const SELLER_PRODUCT_SEARCH_URL = "https://seller.poizon.com/main/goods/search";
 const SELLER_EXPORT_CENTER_URL = "https://seller.poizon.com/main/exportCenter";
 const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 20 * 60 * 1000;
@@ -4942,6 +4943,58 @@ async function automateSellerBrandExport(input = {}) {
       message: login.code === "SELLER_LOGIN_TIMEOUT"
         ? `${brandName} · 10분 동안 로그인이 확인되지 않아 작업을 중단했습니다.`
         : `${brandName} · POIZON 로그인 창이 닫혀 작업을 중단했습니다.`,
+    };
+  }
+  const productSearchReady = async () => executeSellerFrameWithTimeout(
+    sellerWindow.webContents.mainFrame,
+    `(() => {
+      const text = String(document.body?.innerText || "");
+      const failed = /Page\s*Not\s*Found|Load\s*Component\s*Timeout|组件.{0,12}(?:超时|失败)/i.test(text);
+      const hasSearch = /검색\s*및\s*입찰|商品.{0,8}(?:搜索|查询)/i.test(text)
+        && document.querySelectorAll("input,textarea").length > 0;
+      return { failed, hasSearch, text: text.slice(0, 1200), url: location.href };
+    })()`,
+    4_000,
+    { failed: true, hasSearch: false, text: "페이지 상태 확인 시간 초과", url: sellerWindow.webContents.getURL() },
+  );
+  let productPageState = await productSearchReady();
+  if (productPageState.failed || !productPageState.hasSearch) {
+    mainWindow?.webContents.send("brand-export:progress", {
+      status: "seller-product-page-recovering",
+      brandName,
+      jobState: "1단계/5 · 상품검색 화면 로딩 복구 중",
+      message: `${brandName} · POIZON 상품검색 화면의 Load Component Timeout을 감지해 홈페이지부터 다시 진입합니다.`,
+    });
+    for (let recoveryAttempt = 1; recoveryAttempt <= 3 && (productPageState.failed || !productPageState.hasSearch); recoveryAttempt += 1) {
+      await sellerWindow.loadURL(SELLER_MAIN_URL).catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      const clicked = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => {
+        const visible = (element) => {
+          const rect = element?.getBoundingClientRect?.();
+          return Boolean(rect && rect.width > 0 && rect.height > 0);
+        };
+        const label = (element) => String(element?.innerText || element?.textContent || "").replace(/\\s+/g, " ").trim();
+        const candidates = [...document.querySelectorAll("a,button,[role='menuitem'],[role='button'],li")].filter(visible);
+        const target = candidates.find((element) => /^(?:상품\s*검색|商品搜索)$/.test(label(element)))
+          || candidates.find((element) => /상품\s*검색|商品搜索/.test(label(element)));
+        target?.scrollIntoView?.({ block: "center" });
+        target?.click?.();
+        return Boolean(target);
+      })()`, 4_000, false);
+      if (!clicked) await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 3_500));
+      productPageState = await productSearchReady();
+    }
+  }
+  if (productPageState.failed || !productPageState.hasSearch) {
+    const diagnosticPath = await captureSellerDiagnostic(brandName, "product-search-component-timeout");
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    return {
+      ok: false,
+      code: "SELLER_COMPONENT_LOAD_TIMEOUT",
+      message: `${brandName} · POIZON 상품검색 화면 로딩에 3회 실패했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
+      diagnostics: { reason: productPageState.text || "Load Component Timeout", path: diagnosticPath },
     };
   }
   // Keep the same persistent Seller Center session visible while the restored

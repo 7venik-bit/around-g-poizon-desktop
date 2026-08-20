@@ -20,11 +20,28 @@ test("completed download history does not block a new brand search", () => {
   assert.match(renderer, /some\(\(job\) => !brandJobIsFinished\(job\?\.state\)\)/);
   assert.match(renderer, /brandSelectionBusy \|\| activeExportBrand \|\| hasActiveBrandExportJobs\(\)/);
   assert.doesNotMatch(renderer, /brandSelectionBusy \|\| activeExportBrand \|\| brandExportJobs\.size\) \{/);
-  assert.match(renderer, /await window\.aroundG\.beginSellerBrandSearchSession/);
+  assert.match(renderer, /window\.aroundG\.beginSellerBrandSearchSession/);
   assert.match(renderer, /brandExportJobs\.clear\(\)/);
   assert.match(preload, /beginSellerBrandSearchSession: \(\) => ipcRenderer\.invoke\("seller:begin-brand-search-session"\)/);
   assert.match(main, /ipcMain\.handle\("seller:begin-brand-search-session"/);
   assert.match(main, /historicalJobCount: savedBrandExportJobs\(\)\.length/);
+});
+
+test("brand search click immediately shows progress and reports session timeout", () => {
+  assert.match(renderer, /검색 세션 준비 중/);
+  assert.match(renderer, /BRAND_SESSION_START_TIMEOUT/);
+  assert.match(renderer, /8_000/);
+  assert.match(renderer, /검색 시작 실패/);
+  assert.match(renderer, /brandSelectionBusy = false/);
+});
+
+test("POIZON component timeout returns home and re-enters product search", () => {
+  assert.match(main, /SELLER_MAIN_URL/);
+  assert.match(main, /Load\\s\*Component\\s\*Timeout/);
+  assert.match(main, /seller-product-page-recovering/);
+  assert.match(main, /recoveryAttempt = 1; recoveryAttempt <= 3/);
+  assert.match(main, /SELLER_COMPONENT_LOAD_TIMEOUT/);
+  assert.match(main, /product-search-component-timeout/);
 });
 
 test("a new search session preserves history only as a baseline and clears live job ownership", () => {
