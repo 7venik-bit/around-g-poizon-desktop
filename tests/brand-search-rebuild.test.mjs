@@ -38,13 +38,14 @@ test("brand search click shows progress and never cancels a delayed main-process
   assert.match(renderer, /brandSelectionBusy = false/);
 });
 
-test("POIZON product search opens from the seller home with physical menu clicks", () => {
+test("POIZON product search opens from a working seller page with physical menu clicks", () => {
   const start = main.indexOf("async function automateSellerBrandExport");
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = main.slice(start, end);
-  assert.match(workflow, /openSellerCenterWindow\(SELLER_MAIN_URL/);
+  assert.match(workflow, /openSellerCenterWindow\(SELLER_CENTER_URL/);
   assert.match(workflow, /deferNavigation: true/);
-  assert.match(workflow, /await sellerWindow\.loadURL\(SELLER_MAIN_URL\)/);
+  assert.match(workflow, /await sellerWindow\.loadURL\(SELLER_CENTER_URL\)/);
+  assert.doesNotMatch(main, /SELLER_MAIN_URL/);
   assert.match(workflow, /enterSellerProductSearchViaMenu\(\{ forceHome: true \}\)/);
   assert.doesNotMatch(main, /SELLER_PRODUCT_SEARCH_URL/);
   assert.doesNotMatch(main, /loadURL\([^\n]*\/main\/goods\/search/);
@@ -72,10 +73,9 @@ test("brand workflow clicks the product menus physically and searches English be
   const start = main.indexOf("async function automateSellerBrandExport");
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = main.slice(start, end);
-  assert.match(workflow, /openSellerCenterWindow\(SELLER_MAIN_URL/);
+  assert.match(workflow, /openSellerCenterWindow\(SELLER_CENTER_URL/);
   assert.match(workflow, /deferNavigation: true/);
-  assert.doesNotMatch(workflow, /sellerWindow\.loadURL\(SELLER_CENTER_URL\)/);
-  assert.match(workflow, /sellerWindow\.loadURL\(SELLER_MAIN_URL\)/);
+  assert.match(workflow, /sellerWindow\.loadURL\(SELLER_CENTER_URL\)/);
   assert.match(main, /"PHYSICAL_PRODUCT_MENU"/);
   assert.match(main, /"PHYSICAL_PRODUCT_SEARCH_MENU"/);
   assert.match(main, /sellerProductSearchPageState/);

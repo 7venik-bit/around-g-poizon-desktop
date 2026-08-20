@@ -193,7 +193,6 @@ let brandWorkSessionGeneration = 0;
 let brandExportAttemptGeneration = 0;
 let sellerProductFrameRoutingId = null;
 const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
-const SELLER_MAIN_URL = "https://seller.poizon.com/main";
 const SELLER_EXPORT_CENTER_URL = "https://seller.poizon.com/main/exportCenter";
 const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 20 * 60 * 1000;
 const KR_POIZON_BRAND_LIST_URL = "https://kr.poizon.com/brand/list";
@@ -4099,7 +4098,7 @@ async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
   }
   const currentUrl = String(sellerWindow.webContents.getURL() || "");
   if (forceHome || state.failed || !currentUrl.includes("seller.poizon.com")) {
-    await sellerWindow.loadURL(SELLER_MAIN_URL).catch(() => {});
+    await sellerWindow.loadURL(SELLER_CENTER_URL).catch(() => {});
     await wait(2_500);
   }
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -4146,7 +4145,7 @@ async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
       }
     }
     if (attempt < 2) {
-      await sellerWindow.loadURL(SELLER_MAIN_URL).catch(() => {});
+      await sellerWindow.loadURL(SELLER_CENTER_URL).catch(() => {});
       await wait(2_500);
     }
   }
@@ -4980,7 +4979,7 @@ async function automateSellerBrandExport(input = {}) {
   // Show the exact Electron Seller Center window that is being automated.
   // A separately opened Chrome window is a different browser session and does
   // not reflect this automation, which previously made real work look idle.
-  openSellerCenterWindow(SELLER_MAIN_URL, {
+  openSellerCenterWindow(SELLER_CENTER_URL, {
     visible: true,
     activate: true,
     deferNavigation: true,
@@ -4999,9 +4998,9 @@ async function automateSellerBrandExport(input = {}) {
     message: `${brandName} · 판매자센터 상품검색 화면 연결을 시도합니다.`,
   });
   try {
-    // Start from the Seller Center home shell. Product search is opened only
-    // through the same visible menu clicks a person performs.
-    await sellerWindow.loadURL(SELLER_MAIN_URL);
+    // Start from the known working Seller Center data page where the left menu
+    // is rendered. The bare /main route itself returns Component Key Error.
+    await sellerWindow.loadURL(SELLER_CENTER_URL);
   } catch (error) {
     const diagnosticPath = await captureSellerDiagnostic(brandName, "page-load-failed");
     brandExportJobPending = false;
@@ -5030,7 +5029,7 @@ async function automateSellerBrandExport(input = {}) {
     status: "seller-product-menu-clicking",
     brandName,
     jobState: "1단계/5 · 판매자센터 상품 메뉴 클릭 중",
-    message: `${brandName} · 판매자센터 메인에서 상품 → 상품 검색을 실제 마우스로 클릭합니다.`,
+    message: `${brandName} · 판매자센터 정상 데이터 화면에서 상품 → 상품 검색을 실제 마우스로 클릭합니다.`,
   });
   const productSearchOpened = await enterSellerProductSearchViaMenu({ forceHome: true });
   if (!productSearchOpened) {
