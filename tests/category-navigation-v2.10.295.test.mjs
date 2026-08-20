@@ -21,8 +21,15 @@ test("축구화 세부 메뉴는 신발 전체 캐시와 결과를 그대로 사
 });
 
 test("카테고리는 브랜드 한 개씩 검색하고 완료 결과만 누적한다", () => {
-  assert.match(renderer, /for \(let brandIndex = 0; brandIndex < favoriteBrandIds\.length; brandIndex \+= 1\)/);
+  assert.match(renderer, /await Promise\.all\(\[searchNextBrand\(\), searchNextBrand\(\)\]\)/);
   assert.match(renderer, /brandIds: \[brandId\]/);
   assert.match(renderer, /detailProductsByKey\.set\(key, product\)/);
   assert.match(renderer, /failedSourceCount \+= 1/);
+});
+
+test("완료된 브랜드는 즉시 저장하고 재검색에서 건너뛴다", () => {
+  assert.match(renderer, /completedBrandIds\.has\(brandId\)/);
+  assert.match(renderer, /complete: false/);
+  assert.match(renderer, /await savePartialResult\(\)/);
+  assert.match(renderer, /검색 · 진행 중/);
 });
