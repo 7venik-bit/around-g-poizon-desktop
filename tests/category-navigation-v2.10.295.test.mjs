@@ -9,6 +9,6 @@ test("브랜드 검색 옆 카테고리 버튼에서 세부 메뉴 화면으로 
   assert.match(html, /id="brand-open-category"/);
   assert.match(html, /id="category-detail-buttons"/);
   assert.match(html, /id="category-search" class="primary" disabled>검색/);
-  assert.match(renderer, /data-service-explorer="category"/);
+  assert.match(renderer, /activateSearchServiceMode\?\.\("category"\)/);
   assert.match(renderer, /data-category-detail/);
 });
