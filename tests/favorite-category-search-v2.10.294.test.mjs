@@ -8,7 +8,7 @@ const [renderer, main] = await Promise.all([
 ]);
 
 test("카테고리 검색은 인기리스트 대신 현재 즐겨찾기 브랜드를 전달한다", () => {
-  assert.match(renderer, /const favoriteBrandIds = \[\.\.\.pinnedBrandIds\]/);
+  assert.match(renderer, /const favoriteBrandIds = \[\.\.\.categoryBrandIds\]/);
   assert.match(renderer, /mode: "category",\s*brandIds: \[brandId\]/);
   assert.doesNotMatch(renderer, /const popularResult = await capturePopularProducts\(\{ runDomestic: false, renderResults: false \}\)/);
   assert.match(main, /requestedBrandIds/);
