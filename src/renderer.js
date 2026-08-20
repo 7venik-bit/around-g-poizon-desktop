@@ -5,6 +5,14 @@ let entryCollection = "ledger";
 let explorerMeta = { brands: [], categories: [] };
 let selectedBrandId = null;
 let selectedCategory = "전체";
+let selectedCategoryDetail = "";
+const CATEGORY_DETAILS = {
+  "전체": ["전체 상품"], "신발": ["운동화", "러닝화", "농구화", "축구화", "샌들·슬리퍼", "구두·부츠"],
+  "의류": ["티셔츠", "셔츠", "맨투맨·후드", "바지", "원피스·스커트", "스포츠웨어"],
+  "아우터": ["재킷", "바람막이", "패딩", "코트", "베스트"], "가방": ["백팩", "크로스백", "토트백", "숄더백", "파우치"],
+  "모자": ["캡", "비니", "버킷햇", "스포츠 모자"], "액세서리": ["양말", "벨트", "지갑", "주얼리", "시계", "기타 소품"],
+  "기타": ["라이프스타일", "스포츠용품", "전자기기", "수집품", "기타 상품"],
+};
 let currentExplorerProducts = [];
 let allExplorerProducts = [];
 const domesticResults = new Map();
@@ -1540,6 +1548,13 @@ function renderCategoryButtons() {
   $("#category-buttons").innerHTML = explorerMeta.categories.map((category) =>
     `<button class="category-button ${category === selectedCategory ? "selected" : ""}" data-category="${text(category)}"><strong>${text(category)}</strong><span>›</span></button>`
   ).join("");
+  const details = CATEGORY_DETAILS[selectedCategory] || ["전체 상품"];
+  $("#category-detail-section").hidden = false;
+  $("#category-detail-buttons").innerHTML = details.map((detail) =>
+    `<button type="button" class="category-detail-button ${detail === selectedCategoryDetail ? "selected" : ""}" data-category-detail="${text(detail)}">${text(detail)}</button>`
+  ).join("");
+  $("#category-selection-path").textContent = selectedCategoryDetail ? `${selectedCategory} 〉 ${selectedCategoryDetail}` : `${selectedCategory} 〉 세부 메뉴를 선택해 주세요.`;
+  $("#category-search").disabled = !selectedCategoryDetail;
 }
 
 function domesticKey(product, index) {
@@ -2080,9 +2095,23 @@ document.addEventListener("click", async (event) => {
   const category = event.target.closest("[data-category]")?.dataset.category;
   if (category) {
     selectedCategory = category;
+    selectedCategoryDetail = "";
+    renderCategoryButtons();
+    return;
+  }
+  const detail = event.target.closest("[data-category-detail]")?.dataset.categoryDetail;
+  if (detail) {
+    selectedCategoryDetail = detail;
+    localStorage.setItem("around-g-last-category", JSON.stringify({ category: selectedCategory, detail }));
     renderCategoryButtons();
   }
 });
+
+$("#brand-open-category")?.addEventListener("click", () => {
+  document.querySelector('[data-service-explorer="category"]')?.click();
+  renderCategoryButtons();
+});
+$("#category-back-brand")?.addEventListener("click", () => document.querySelector('[data-service-explorer="brand"]')?.click());
 
 document.querySelectorAll(".explorer-mode").forEach((button) => button.addEventListener("click", () => {
   const currentMode = document.querySelector(".explorer-mode.active")?.dataset.explorer;
@@ -3057,9 +3086,10 @@ $("#category-search").addEventListener("click", async () => {
   const status = $("#category-status");
   const minimumSales30 = $("#category-min-sales").checked;
   const favoriteBrandIds = [...pinnedBrandIds].map(Number).filter(Number.isFinite);
+  if (!selectedCategoryDetail) return;
   if (!favoriteBrandIds.length) {
     status.className = "status error";
-    status.textContent = "즐겨찾기 브랜드를 먼저 등록해 주세요.";
+    status.textContent = "카테고리 검색에 사용할 즐겨찾기 브랜드를 먼저 등록해 주세요.";
     return;
   }
   button.disabled = true;
