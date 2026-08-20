@@ -380,6 +380,26 @@ test("병행수입 검색은 요청 모델번호가 상품 카드에 정확히 �
   assert.equal(analyzeRenderedChannelProducts(exactModel, "병행수입·편집샵", "DD1503-101", "나이키").count, 1);
 });
 
+test("국내 병행수입업체는 포함하고 같은 품번의 해외직구 상품은 제외한다", () => {
+  const rendered = JSON.stringify({
+    pageText: "뉴에라 10531940 검색 결과",
+    productCards: [{
+      productUrl: "https://shopping.naver.com/window-products/brandfashion/1001",
+      title: "뉴에라 MLB 엠엘비 리그 베이직 볼캡 모자 그레이 10531940",
+      text: "신세계 부산 대림코퍼레이션 27,900원 오늘출발",
+    }, {
+      productUrl: "https://shopping.naver.com/products/1002",
+      title: "NEW ERA 10531940 볼캡",
+      text: "해외 구매대행 해외배송 71,500원",
+    }],
+  });
+  const result = analyzeRenderedChannelProducts(rendered, "병행수입·편집샵", "10531940", "뉴에라");
+  assert.equal(result.count, 1);
+  assert.equal(result.products.length, 1);
+  assert.match(result.products[0].retailerName, /병행수입 정품업체 · 대림코퍼레이션/);
+  assert.equal(result.products[0].title.includes("10531940"), true);
+});
+
 test("an MLB result with a different explicit article is never relabeled as the requested article", () => {
   const rendered = JSON.stringify({
     pageText: "MLB 공식몰 검색 결과 104개",
@@ -443,6 +463,14 @@ test("SSG and Lotte dynamic product links become visible product candidates", ()
     assert.equal(result.products.length, 1, store);
     assert.equal(result.products[0].articleNumber, articleNumber, store);
   }
+});
+
+test("SSG와 롯데는 품번이 링크 바깥 상품 카드에 있어도 수집하고 세 번 확인한다", async () => {
+  const mainSource = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../main.mjs", import.meta.url), "utf8"));
+  assert.match(mainSource, /const articleCardLinks =/);
+  assert.match(mainSource, /matchesExpected\(card\.innerText\) \|\| matchesExpected\(card\.outerHTML\)/);
+  assert.match(mainSource, /new Set\(\[\.\.\.directProductLinks, \.\.\.articleCardLinks\]\)/);
+  assert.match(mainSource, /\^\(\?:SSG\|롯데온\)/);
 });
 
 test("SSG department Korean brand result waits for detail-page stock evidence", () => {
