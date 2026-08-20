@@ -4984,18 +4984,40 @@ async function automateSellerBrandExport(input = {}) {
         : `${brandName} · POIZON 로그인 창이 닫혀 작업을 중단했습니다.`,
     };
   }
-  const productSearchReady = async () => executeSellerFrameWithTimeout(
-    sellerWindow.webContents.mainFrame,
-    `(() => {
-      const text = String(document.body?.innerText || "");
-      const failed = /Page\s*Not\s*Found|Component\s*Key\s*Error|Load\s*Component\s*Timeout|请求超时|组件.{0,12}(?:超时|失败)/i.test(text);
-      const hasSearch = /검색\s*및\s*입찰|商品.{0,8}(?:搜索|查询)/i.test(text)
-        && document.querySelectorAll("input,textarea").length > 0;
-      return { failed, hasSearch, text: text.slice(0, 1200), url: location.href };
-    })()`,
-    4_000,
-    { failed: true, hasSearch: false, text: "페이지 상태 확인 시간 초과", url: sellerWindow.webContents.getURL() },
-  );
+  const productSearchReady = async () => {
+    let lastState = {
+      failed: false,
+      hasSearch: false,
+      text: "상품검색 화면을 불러오는 중입니다.",
+      url: sellerWindow.webContents.getURL(),
+    };
+    for (const frame of sellerWindowFrames()) {
+      const state = await executeSellerFrameWithTimeout(
+        frame,
+        `(() => {
+          const text = String(document.body?.innerText || "");
+          const failed = /Page\s*Not\s*Found|Component\s*Key\s*Error|Load\s*Component\s*Timeout|请求超时|组件.{0,12}(?:超时|失败)/i.test(text);
+          const hasSearch = /검색\s*및\s*입찰|商品.{0,8}(?:搜索|查询)/i.test(text)
+            && document.querySelectorAll("input,textarea").length > 0;
+          return { failed, hasSearch, text: text.replace(/\s+/g, " ").trim().slice(0, 180), url: location.href };
+        })()`,
+        4_000,
+        { failed: false, hasSearch: false, text: "상품검색 화면 응답 대기 중", url: sellerWindow.webContents.getURL() },
+      );
+      lastState = state || lastState;
+      if (state?.failed || state?.hasSearch) return state;
+    }
+    return lastState;
+  };
+  const waitForProductSearchReady = async (timeoutMs = 60_000) => {
+    const deadline = Date.now() + timeoutMs;
+    let state = await productSearchReady();
+    while (!state.failed && !state.hasSearch && Date.now() < deadline) {
+      await wait(1_000);
+      state = await productSearchReady();
+    }
+    return state;
+  };
   let productPageState = await productSearchReady();
   if (productPageState.failed || !productPageState.hasSearch) {
     mainWindow?.webContents.send("brand-export:progress", {
@@ -5014,8 +5036,10 @@ async function automateSellerBrandExport(input = {}) {
           message: `${brandName} · 판매자 메인에서 상품 메뉴를 펼친 뒤 상품 검색을 다시 찾습니다.`,
         });
       }
-      await new Promise((resolve) => setTimeout(resolve, 3_500));
-      productPageState = await productSearchReady();
+      // The Seller Center can show an empty shell for 20-30 seconds before its
+      // product component appears. Keep the same navigation alive instead of
+      // exhausting all recovery attempts while that component is still loading.
+      productPageState = await waitForProductSearchReady(60_000);
     }
   }
   if (productPageState.failed || !productPageState.hasSearch) {
