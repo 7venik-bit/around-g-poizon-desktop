@@ -80,10 +80,10 @@ test("카테고리 검색은 현재 즐겨찾기 브랜드로 바로 조회를 �
   assert.doesNotMatch(categoryHandler, /capturePopularProducts\(\{ runDomestic: false, renderResults: false \}\)/);
   assert.match(categoryHandler, /await window\.aroundG\.queryExplorer/);
   assert.match(categoryHandler, /const favoriteBrandIds = \[\.\.\.pinnedBrandIds\]/);
-  assert.match(categoryHandler, /brandIds: favoriteBrandIds/);
+  assert.match(categoryHandler, /brandIds: \[brandId\]/);
   assert.match(renderer, /return \{ ok: true, products: storedProducts \}/);
-  assert.match(renderer, /즐겨찾기 브랜드별 선택 카테고리 전체 상품 수집을 준비하는 중/);
-  assert.match(renderer, /선택 카테고리 전체 페이지 조회 중/);
+  assert.match(renderer, /완료된 결과만 안전하게 누적합니다/);
+  assert.match(renderer, /다음 브랜드를 준비합니다/);
 });
 
 test("인기 브랜드는 브랜드별 마지막 페이지까지 수집하고 상품 수를 보고한다", async () => {
@@ -98,7 +98,7 @@ test("인기 브랜드는 브랜드별 마지막 페이지까지 수집하고 �
   assert.match(main, /brandProductCount: Number\(detail\.brandProductCount \|\| 0\)/);
   assert.match(renderer, /전체 페이지 \$\{brandCount\.toLocaleString\("ko-KR"\)\}개 수집 완료/);
   assert.match(renderer, /상품 \$\{detailProducts\.length\.toLocaleString\("ko-KR"\)\}개 확인/);
-  assert.match(renderer, /전체 \$\{result\.products\.length\.toLocaleString\("ko-KR"\)\}개 중 세부 분류 완료/);
+  assert.match(renderer, /즐겨찾기 브랜드 \$\{sourceCount\}\/\$\{favoriteBrandIds\.length\}개 완료/);
 });
 
 test("카테고리 검색은 이모티콘 없이 진행 상태만 표시한다", async () => {
