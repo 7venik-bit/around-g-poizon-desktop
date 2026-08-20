@@ -1372,10 +1372,15 @@ button,input,select,textarea{font-family:inherit}
 }
 .frequent-brand-group .brand-list-group-heading strong{color:#1e63c6}
 .frequent-brand-group .brand-list-group-heading span{color:#fff;background:#2d7ff0}
+.frequent-brand-heading-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px}
+.frequent-brand-search-action{flex:0 0 auto;min-width:116px;justify-content:center}
+.frequent-brand-category-action{flex:0 0 auto}
+.frequent-brand-search-action svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .frequent-brand-cards{padding-bottom:2px;border-bottom:0}
 .all-brand-group{margin-top:12px}
 @media(max-width:850px){
   .brand-list-group-heading{align-items:flex-start;flex-direction:column}
+  .frequent-brand-heading-actions{width:100%;justify-content:space-between}
 }
 
 

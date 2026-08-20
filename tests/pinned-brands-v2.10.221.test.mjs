@@ -41,6 +41,16 @@ test("favorite and full brand areas have separate visual containers", () => {
   assert.match(renderer, /\$\("#brand-cards"\)\.innerHTML = brandMarkup\(regularBrands\)/);
 });
 
+test("favorite brand header keeps a search button visible when the full picker is collapsed", () => {
+  assert.match(html, /id="frequent-brand-group"[\s\S]*id="frequent-brand-export"[\s\S]*<span>브랜드 검색<\/span>/);
+  assert.match(renderer, /\$\("#frequent-brand-export"\)\?\.addEventListener\("click"[\s\S]*\$\("#brand-export-selected"\)\?\.click\(\)/);
+  assert.match(renderer, /\[search, frequentSearch\]\.filter\(Boolean\)\.forEach/);
+  assert.match(html, /id="frequent-brand-category"[^>]*>카테고리<\/button>/);
+  assert.match(renderer, /\$\("#frequent-brand-category"\)\?\.addEventListener\("click"[\s\S]*\$\("#brand-open-category"\)\?\.click\(\)/);
+  assert.match(css, /\.frequent-brand-heading-actions/);
+  assert.match(css, /\.frequent-brand-search-action/);
+});
+
 test("favorites survive unrelated corrupt history and the known 23 are recoverable", () => {
   assert.match(renderer, /const parsed = JSON\.parse\(localStorage\.getItem\("around-g-pinned-brand-ids"/);
   assert.match(renderer, /const parsed = JSON\.parse\(localStorage\.getItem\("around-g-brand-selection-history"/);
