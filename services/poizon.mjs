@@ -6,6 +6,25 @@ import {
 } from "../relay/poizon-adapter.mjs";
 import { BRAND_CATALOG, CATEGORY_GROUPS, normalizeBrandResult, parsePopularTable } from "./explorer.mjs";
 
+const CATEGORY_DETAIL_PATTERNS = {
+  "축구화": [/(?:축구|풋살|football|soccer|cleat)/i, /(?:^|\s)(?:fg|ag|mg|sg|tf)(?:\s|$)/i, /(?:mercurial|phantom|predator|copa|tiempo|future ultimate)/i],
+  "농구화": [/(?:농구|basketball|hoops)/i, /(?:jordan|lebron|kyrie|curry|harden|don issue|ja \d)/i],
+  "러닝화": [/(?:러닝|런닝|달리기|running|runner|marathon|트레일 러닝)/i],
+  "운동화": [/(?:운동화|스니커|sneaker|trainer|트레이닝 슈즈)/i],
+  "샌들·슬리퍼": [/(?:샌들|슬리퍼|슬라이드|sandal|slipper|slide)/i],
+  "구두·부츠": [/(?:구두|로퍼|옥스퍼드|부츠|loafer|oxford|boots?)/i],
+};
+
+function filterCategoryDetailProducts(products = [], detail = "") {
+  const patterns = CATEGORY_DETAIL_PATTERNS[detail];
+  if (!detail || detail === "전체 상품" || !patterns?.length) return products;
+  return products.filter((product) => {
+    const text = [product.categoryName, product.category, product.categoryGroup, product.name, product.productName, product.title]
+      .filter(Boolean).join(" ").replace(/[_/|-]+/g, " ");
+    return patterns.some((pattern) => pattern.test(text));
+  });
+}
+
 function friendlyError(error) {
   const raw = error instanceof Error ? error.message : String(error);
   if (raw.includes("CATEGORY_SEARCH_CANCELLED")) {
@@ -348,6 +367,9 @@ export async function queryExplorer(config, input) {
     let products = [...uniqueProducts.values()];
     if (input.mode === "category" && input.category && input.category !== "전체") {
       products = products.filter((product) => product.categoryGroup === input.category);
+    }
+    if (input.mode === "category" && input.categoryDetail) {
+      products = filterCategoryDetailProducts(products, input.categoryDetail);
     }
     const salesDataCount = products.filter((product) => product.hasSalesData).length;
     const salesFilterApplied = Boolean(input.minimumSales30 && salesDataCount > 0);
