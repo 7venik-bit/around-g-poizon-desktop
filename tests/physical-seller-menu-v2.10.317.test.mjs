@@ -8,10 +8,10 @@ const [main, pkg, lock] = await Promise.all([
   readFile(new URL("../package-lock.json", import.meta.url), "utf8").then(JSON.parse),
 ]);
 
-test("v2.10.317은 분리 검색 모듈 없이 배포된다", async () => {
-  assert.equal(pkg.version, "2.10.317");
-  assert.equal(lock.version, "2.10.317");
-  assert.equal(lock.packages[""].version, "2.10.317");
+test("v2.10.318은 분리 검색 모듈 없이 배포된다", async () => {
+  assert.equal(pkg.version, "2.10.318");
+  assert.equal(lock.version, "2.10.318");
+  assert.equal(lock.packages[""].version, "2.10.318");
   await assert.rejects(access(new URL("../services/domestic-search-modules/index.mjs", import.meta.url)));
   assert.doesNotMatch(main, /domestic-search:module-status|onDomesticModuleStatus/);
 });
@@ -22,8 +22,9 @@ test("판매자센터 상품검색 주소를 직접 열지 않는다", () => {
   const start = main.indexOf("async function automateSellerBrandExport");
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = main.slice(start, end);
-  assert.match(workflow, /openSellerCenterWindow\(SELLER_MAIN_URL/);
-  assert.match(workflow, /await sellerWindow\.loadURL\(SELLER_MAIN_URL\)/);
+  assert.match(workflow, /openSellerCenterWindow\(SELLER_CENTER_URL/);
+  assert.match(workflow, /await sellerWindow\.loadURL\(SELLER_CENTER_URL\)/);
+  assert.doesNotMatch(main, /SELLER_MAIN_URL/);
   assert.match(workflow, /enterSellerProductSearchViaMenu\(\{ forceHome: true \}\)/);
 });
 
