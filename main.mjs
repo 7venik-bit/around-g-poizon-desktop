@@ -1056,13 +1056,21 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         const rect = element.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
       };
-      const productLinks = [...document.querySelectorAll("a[href]")]
+      const directProductLinks = [...document.querySelectorAll("a[href]")]
         .filter((link) => visible(link) || matchesExpected(link.href) || matchesExpected(link.outerHTML))
         .filter((link) => /\\/(?:p|pd|products?|window-products|goods|product|(?:[a-z]{2}\\/)?t)\\//i.test(link.href)
           || /productDetail\\.action/i.test(link.href)
           || /\\/item\\/itemView\\.ssg/i.test(link.href)
           || matchesExpected(link.href)
           || matchesExpected(link.outerHTML));
+      // SSG와 롯데는 품번을 상품 링크 안이 아니라 같은 카드의 형제 제목에
+      // 표시하기도 한다. 품번을 포함한 카드에서 실제 링크를 다시 찾는다.
+      const articleCardLinks = [...document.querySelectorAll(
+        "li,article,[data-product-id],[data-item-id],[class*='product-card'],[class*='goods-item'],[class*='item-card'],[class*='cunit'],[class*='mnemitem'],[class*='item_unit'],[class*='itemUnit'],[class*='item_grid'],[class*='product_unit'],[class*='product'],[class*='goods']"
+      )].filter((card) => matchesExpected(card.innerText) || matchesExpected(card.outerHTML))
+        .flatMap((card) => [...card.querySelectorAll("a[href]")])
+        .filter((link) => visible(link) || matchesExpected(link.closest("li,article,div")?.innerText));
+      const productLinks = [...new Set([...directProductLinks, ...articleCardLinks])];
       const seen = new Set();
       const productCards = [];
       for (const link of productLinks) {
@@ -1249,7 +1257,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     // A search-card hit is only a candidate. Musinsa and other rendered
     // channels must open the product detail page before an exact article and
     // stock state can be reported as a purchasable domestic result.
-    const renderAttempts = /^SSG(?:\s|$)/.test(String(source.store || "")) ? 3 : 1;
+    const renderAttempts = /^(?:SSG|롯데온)(?:\s|$)/.test(String(source.store || "")) ? 3 : 1;
     let result = null;
     for (let attempt = 0; attempt < renderAttempts && !result; attempt += 1) {
       if (attempt > 0) await wait(1_500);
