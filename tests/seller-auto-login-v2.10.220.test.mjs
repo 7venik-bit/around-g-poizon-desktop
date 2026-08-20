@@ -22,6 +22,16 @@ test("brand search automatically resumes after stored-login submission", () => {
   assert.match(main, /로그인 완료 · 브랜드 검색 자동 재개/);
 });
 
+test("automatic credentials run only on a real POIZON login page", () => {
+  const start = main.indexOf("async function sellerPageRequiresLogin");
+  const end = main.indexOf("async function setSellerLoginStatusOverlay", start);
+  const detection = main.slice(start, end);
+  assert.match(detection, /login\|signin\|passport\|auth/);
+  assert.match(detection, /input\[type="password"\]/);
+  assert.match(detection, /getBoundingClientRect/);
+  assert.doesNotMatch(detection, /!url\.startsWith/);
+});
+
 test("all three lamps chase in order while sourcing", () => {
   assert.match(renderer, /lamps\.classList\.toggle\("sourcing", sourcing\)/);
   assert.match(css, /\.window-dots\.sourcing i\{animation:poizon-work-lamp-chase/);

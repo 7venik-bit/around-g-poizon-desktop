@@ -3810,11 +3810,21 @@ async function executeSellerFrameWithTimeout(frame, script, timeoutMs = 4_000, f
 async function sellerPageRequiresLogin() {
   if (!sellerWindow || sellerWindow.isDestroyed()) return true;
   const url = String(sellerWindow.webContents.getURL() || "");
-  if (/login|signin|passport|auth/i.test(url) || !url.startsWith("https://seller.poizon.com/")) return true;
+  // Do not treat an empty/loading shell or an unrelated transient URL as a
+  // login form.  The old search flow reused the persistent Seller Center
+  // session and only authenticated when POIZON actually displayed its login
+  // route or a visible password form.  Misclassifying a blank component as a
+  // login page made the physical Ctrl+A/paste fallback run against the product
+  // screen and was the main source of repeated authentication and timeouts.
+  if (/login|signin|passport|auth/i.test(url)) return true;
   const state = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => {
     const text = String(document.body?.innerText || "").slice(0, 2500);
     return {
-      password: Boolean(document.querySelector('input[type="password"]')),
+      password: [...document.querySelectorAll('input[type="password"]')].some((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      }),
       loginText: /登录|登入|sign\\s*in|log\\s*in/i.test(text),
       sellerText: /商品|品牌|销售|导出|POIZON|得物/i.test(text),
     };
@@ -4154,6 +4164,11 @@ async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
         lastAutoLoginAttemptAt = Date.now();
       }
       continue;
+    }
+    if (!String(sellerWindow.webContents.getURL() || "").includes("/main/goods/search")) {
+      await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => {});
+      await wait(2_000);
+      if (await sellerPageRequiresLogin()) continue;
     }
     await setSellerLoginStatusOverlay("success", "자동 로그인 테스트 성공 완료", "POIZON 판매자센터 진입을 확인했습니다. 브랜드 검색을 자동으로 계속합니다.");
     mainWindow?.webContents.send("brand-export:progress", {
@@ -4952,12 +4967,11 @@ async function automateSellerBrandExport(input = {}) {
   // Show the exact Electron Seller Center window that is being automated.
   // A separately opened Chrome window is a different browser session and does
   // not reflect this automation, which previously made real work look idle.
-  if (!sellerWindow || sellerWindow.isDestroyed()) {
-    openSellerCenterWindow(SELLER_CENTER_URL, { visible: true, activate: true });
-  } else {
-    sellerWindow.show();
-    sellerWindow.focus();
-  }
+  openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, {
+    visible: true,
+    activate: true,
+    deferNavigation: true,
+  });
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     brandExportJobPending = false;
     pendingBrandExportName = "";
@@ -4971,7 +4985,24 @@ async function automateSellerBrandExport(input = {}) {
     jobState: "1단계/5 · 판매자센터 연결 시도",
     message: `${brandName} · 판매자센터 상품검색 화면 연결을 시도합니다.`,
   });
-  await new Promise((resolve) => setTimeout(resolve, 1_500));
+  try {
+    // Restore the pre-module POIZON route: reuse one persistent Seller Center
+    // window and load the known product-search page directly for every queued
+    // brand.  Official-mall and Musinsa modules remain independent and do not
+    // participate in this Seller Center navigation lifecycle.
+    await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
+  } catch (error) {
+    const diagnosticPath = await captureSellerDiagnostic(brandName, "page-load-failed");
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    return {
+      ok: false,
+      code: "SELLER_PAGE_LOAD_FAILED",
+      message: `${brandName} 판매자센터 상품검색 페이지 연결에 실패했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
+      diagnostics: { reason: String(error?.message || error || ""), path: diagnosticPath },
+    };
+  }
+  await new Promise((resolve) => setTimeout(resolve, 3_500));
   const login = await ensureSellerLoginBeforeBrandSearch(brandName);
   if (!login.ok) {
     brandExportJobPending = false;
@@ -4982,75 +5013,6 @@ async function automateSellerBrandExport(input = {}) {
       message: login.code === "SELLER_LOGIN_TIMEOUT"
         ? `${brandName} · 10분 동안 로그인이 확인되지 않아 작업을 중단했습니다.`
         : `${brandName} · POIZON 로그인 창이 닫혀 작업을 중단했습니다.`,
-    };
-  }
-  const productSearchReady = async () => {
-    let lastState = {
-      failed: false,
-      hasSearch: false,
-      text: "상품검색 화면을 불러오는 중입니다.",
-      url: sellerWindow.webContents.getURL(),
-    };
-    for (const frame of sellerWindowFrames()) {
-      const state = await executeSellerFrameWithTimeout(
-        frame,
-        `(() => {
-          const text = String(document.body?.innerText || "");
-          const failed = /Page\s*Not\s*Found|Component\s*Key\s*Error|Load\s*Component\s*Timeout|请求超时|组件.{0,12}(?:超时|失败)/i.test(text);
-          const hasSearch = /검색\s*및\s*입찰|商品.{0,8}(?:搜索|查询)/i.test(text)
-            && document.querySelectorAll("input,textarea").length > 0;
-          return { failed, hasSearch, text: text.replace(/\s+/g, " ").trim().slice(0, 180), url: location.href };
-        })()`,
-        4_000,
-        { failed: false, hasSearch: false, text: "상품검색 화면 응답 대기 중", url: sellerWindow.webContents.getURL() },
-      );
-      lastState = state || lastState;
-      if (state?.failed || state?.hasSearch) return state;
-    }
-    return lastState;
-  };
-  const waitForProductSearchReady = async (timeoutMs = 60_000) => {
-    const deadline = Date.now() + timeoutMs;
-    let state = await productSearchReady();
-    while (!state.failed && !state.hasSearch && Date.now() < deadline) {
-      await wait(1_000);
-      state = await productSearchReady();
-    }
-    return state;
-  };
-  let productPageState = await productSearchReady();
-  if (productPageState.failed || !productPageState.hasSearch) {
-    mainWindow?.webContents.send("brand-export:progress", {
-      status: "seller-product-page-recovering",
-      brandName,
-      jobState: "1단계/5 · 상품검색 화면 로딩 복구 중",
-      message: `${brandName} · POIZON 상품검색 화면의 Load Component Timeout을 감지해 홈페이지부터 다시 진입합니다.`,
-    });
-    for (let recoveryAttempt = 1; recoveryAttempt <= 3 && (productPageState.failed || !productPageState.hasSearch); recoveryAttempt += 1) {
-      const clicked = await enterSellerProductSearchViaMenu();
-      if (!clicked) {
-        mainWindow?.webContents.send("brand-export:progress", {
-          status: "seller-product-menu-not-found",
-          brandName,
-          jobState: `1단계/5 · 상품 검색 메뉴 재진입 ${recoveryAttempt}/3`,
-          message: `${brandName} · 판매자 메인에서 상품 메뉴를 펼친 뒤 상품 검색을 다시 찾습니다.`,
-        });
-      }
-      // The Seller Center can show an empty shell for 20-30 seconds before its
-      // product component appears. Keep the same navigation alive instead of
-      // exhausting all recovery attempts while that component is still loading.
-      productPageState = await waitForProductSearchReady(60_000);
-    }
-  }
-  if (productPageState.failed || !productPageState.hasSearch) {
-    const diagnosticPath = await captureSellerDiagnostic(brandName, "product-search-component-timeout");
-    brandExportJobPending = false;
-    pendingBrandExportName = "";
-    return {
-      ok: false,
-      code: "SELLER_COMPONENT_LOAD_TIMEOUT",
-      message: `${brandName} · POIZON 상품검색 화면 로딩에 3회 실패했습니다.${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
-      diagnostics: { reason: productPageState.text || "Load Component Timeout", path: diagnosticPath },
     };
   }
   // Keep the same persistent Seller Center session visible while the restored
