@@ -16,7 +16,8 @@ test("카테고리 검색은 인기리스트 대신 현재 즐겨찾기 브랜�
 });
 
 test("즐겨찾기 추가·삭제 결과가 바뀌면 별도의 카테고리 캐시를 사용한다", () => {
-  assert.match(renderer, /categorySearchCacheId\(category, minimumSales30, brandIds = pinnedBrandIds\)/);
+  assert.match(renderer, /categorySearchCacheId\(category, detail, minimumSales30, brandIds = pinnedBrandIds\)/);
+  assert.match(renderer, /:\$\{detail \|\| "all"\}:/);
   assert.match(renderer, /favorites:\$\{brandKey\}/);
   assert.match(renderer, /즐겨찾기 브랜드를 먼저 등록해 주세요/);
 });
