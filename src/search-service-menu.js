@@ -4,7 +4,7 @@
   const modes = [
     { id: "popular", label: "인기리스트", group: "search" },
     { id: "brand", label: "브랜드 검색", group: "search" },
-    { id: "category", label: "카테고리 검색", group: "search" },
+    { id: "category", label: "카테고리 검색", group: "search", hidden: true },
     { id: "files", label: "받은 Excel 파일", group: "files" },
   ];
   const validModes = new Set(modes.map((item) => item.id));
@@ -20,7 +20,7 @@
   menu.innerHTML = `
     <small>검색 서비스</small>
     <div class="search-service-buttons">
-      ${modes.filter((item) => item.group === "search").map((item) => `
+      ${modes.filter((item) => item.group === "search" && !item.hidden).map((item) => `
         <button type="button" class="search-service-button" data-service-explorer="${item.id}">
           <i aria-hidden="true"></i><span>${item.label}</span>
         </button>`).join("")}
@@ -100,6 +100,8 @@
 
     if (options.persist !== false) localStorage.setItem("around-g-search-service-mode", mode);
   }
+
+  window.activateSearchServiceMode = activateMode;
 
   menu.addEventListener("click", (event) => {
     const button = event.target.closest("[data-service-explorer]");

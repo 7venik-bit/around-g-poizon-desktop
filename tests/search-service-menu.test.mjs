@@ -2,20 +2,27 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [bootstrap, menuSource, menuCss, html, packageSource] = await Promise.all([
+const [bootstrap, menuSource, menuCss, html, packageSource, rendererSource] = await Promise.all([
   readFile(new URL("../bootstrap.mjs", import.meta.url), "utf8"),
   readFile(new URL("../src/search-service-menu.js", import.meta.url), "utf8"),
   readFile(new URL("../src/search-service-menu.css", import.meta.url), "utf8"),
   readFile(new URL("../src/index.html", import.meta.url), "utf8"),
   readFile(new URL("../package.json", import.meta.url), "utf8"),
+  readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
 ]);
 
 test("restores the three POIZON search services in the sidebar", () => {
   assert.match(menuSource, /\{ id: "popular", label: "인기리스트"/);
   assert.match(menuSource, /\{ id: "brand", label: "브랜드 검색"/);
-  assert.match(menuSource, /\{ id: "category", label: "카테고리 검색"/);
+  assert.match(menuSource, /\{ id: "category", label: "카테고리 검색", group: "search", hidden: true \}/);
+  assert.match(menuSource, /item\.group === "search" && !item\.hidden/);
   assert.match(menuSource, /검색 서비스/);
   assert.match(menuSource, /data-service-explorer="\$\{item\.id\}"/);
+});
+
+test("카테고리는 메뉴에서 숨기고 브랜드 화면 버튼으로만 연다", () => {
+  assert.match(menuSource, /window\.activateSearchServiceMode = activateMode/);
+  assert.match(rendererSource, /activateSearchServiceMode\?\.\("category"\)/);
 });
 
 test("removes the redundant POIZON parent menu row", () => {
@@ -55,6 +62,6 @@ test("bootstrap injects the sidebar menu and its stylesheet into the main window
   assert.match(menuCss, /\.search-service-button\.active/);
 });
 
-test("release version is 2.10.295", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.295");
+test("release version is 2.10.296", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.296");
 });
