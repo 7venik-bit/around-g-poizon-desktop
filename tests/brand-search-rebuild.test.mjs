@@ -49,7 +49,7 @@ test("POIZON product search always re-enters through the proven menu workflow", 
   assert.match(main, /SELLER_COMPONENT_LOAD_TIMEOUT/);
   assert.match(main, /product-search-component-timeout/);
   assert.match(main, /enterSellerProductSearchViaMenu/);
-  assert.match(main, /enterSellerProductSearchViaMenu\(\{ forceHome: true \}\)/);
+  assert.match(main, /sellerWindow\.show\(\)[\s\S]*sellerWindow\.focus\(\)/);
   assert.match(main, /\^\(\?:상품\|商品\)\$/);
   assert.match(main, /performPhysicalSellerSortAndExport/);
   assert.match(main, /BACKGROUND_LOCAL_SALES_SORT/);
@@ -72,6 +72,9 @@ test("brand workflow connects directly and searches English before Korean fallba
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = main.slice(start, end);
   assert.match(workflow, /openSellerCenterWindow\(SELLER_CENTER_URL/);
+  assert.match(workflow, /if \(!sellerWindow \|\| sellerWindow\.isDestroyed\(\)\)/);
+  assert.doesNotMatch(workflow, /sellerWindow\.loadURL\(SELLER_CENTER_URL\)/);
+  assert.doesNotMatch(workflow, /sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\)/);
   assert.doesNotMatch(workflow, /loadURL\("https:\/\/seller\.poizon\.com\/main"\)/);
   const english = workflow.indexOf("applyValue(${JSON.stringify(sellerBrandSearchName)})");
   const korean = workflow.indexOf("applyValue(${JSON.stringify(brandKoInput)})");
