@@ -194,7 +194,7 @@ test("unavailable verification is never misreported as confirmed product absence
 
 test("official store, Musinsa, and Naver sources all render numeric result badges", () => {
   assert.match(mainSource, /if \(!source\.renderCount\)/);
-  assert.match(mainSource, /\^SSG\(\?:\\s\|\$\)/);
+  assert.match(mainSource, /\^\(\?:SSG\|롯데온\)\(\?:\\s\|\$\)/);
   assert.match(mainSource, /renderAttempts && !result/);
   assert.match(mainSource, /attempt > 0\) await wait\(1_500\)/);
   assert.match(rendererSource, /label: "추가 확인 필요", className: "pending"/);
@@ -208,8 +208,8 @@ test("official store, Musinsa, and Naver sources all render numeric result badge
   assert.match(rendererSource, /sourceResult = \(source\) => \(\/\^네이버/);
 });
 
-test("SSG 일반·백화점·아울렛 검색은 화면 지연을 고려해 세 번 확인한다", () => {
-  assert.match(mainSource, /\^SSG\(\?:\\s\|\$\)\/\.test[\s\S]*\? 3 : 1/);
+test("SSG와 롯데온 일반·백화점·아울렛 검색은 화면 지연을 고려해 세 번 확인한다", () => {
+  assert.match(mainSource, /\^\(\?:SSG\|롯데온\)\(\?:\\s\|\$\)\/\.test[\s\S]*\? 3 : 1/);
 });
 
 test("화면 검색 상품도 상세페이지에서 재고와 옵션을 확인한다", () => {
