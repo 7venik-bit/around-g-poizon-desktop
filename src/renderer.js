@@ -3123,7 +3123,7 @@ $("#category-search").addEventListener("click", async () => {
     await pruneCategorySearchHistory();
     const cacheId = categorySearchCacheId(selectedCategory, selectedCategoryDetail, minimumSales30, favoriteBrandIds);
     const cached = (state.categorySearches || []).find((entry) => entry.id === cacheId && Array.isArray(entry.products));
-    if (cached) {
+    if (cached?.complete) {
       updateCategoryLoading({ title: "저장된 카테고리 검색 결과를 불러왔습니다.", completed: cached.sourceCount, total: cached.rankedBrandCount, count: cached.products.length, percent: 100 });
       status.className = "status success";
       status.textContent = `${selectedCategory} 〉 ${selectedCategoryDetail} 저장 결과 ${cached.products.length.toLocaleString("ko-KR")}개 · ${new Date(cached.createdAt).toLocaleString("ko-KR")} 검색`;
@@ -3131,22 +3131,52 @@ $("#category-search").addEventListener("click", async () => {
       window.setTimeout(() => finishCategoryLoading(), 1_800);
       return;
     }
-    const detailProductsByKey = new Map();
-    let sourceCount = 0;
-    let failedSourceCount = 0;
-    let sourceTotal = 0;
-    for (let brandIndex = 0; brandIndex < favoriteBrandIds.length; brandIndex += 1) {
-      if (runId !== categorySearchRunId) return;
+    const detailProductsByKey = new Map((cached?.products || []).map((product) => {
+      const key = `${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || product.name || ""}`;
+      return [key, product];
+    }));
+    const completedBrandIds = new Set((cached?.completedBrandIds || []).map(Number));
+    let sourceCount = Number(cached?.sourceCount || 0);
+    let failedSourceCount = Number(cached?.failedSourceCount || 0);
+    let sourceTotal = Number(cached?.sourceTotal || 0);
+    let completedCount = completedBrandIds.size;
+    let nextBrandIndex = 0;
+    let partialSave = Promise.resolve();
+    const savePartialResult = () => {
+      const snapshot = {
+        id: cacheId,
+        category: selectedCategory,
+        categoryDetail: selectedCategoryDetail,
+        brandIds: favoriteBrandIds,
+        completedBrandIds: [...completedBrandIds],
+        minimumSales30,
+        createdAt: cached?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        products: [...detailProductsByKey.values()],
+        sourceCount,
+        failedSourceCount,
+        rankedBrandCount: favoriteBrandIds.length,
+        sourceTotal,
+        complete: false,
+      };
+      partialSave = partialSave.then(() => window.aroundG.upsert("categorySearches", snapshot));
+      return partialSave;
+    };
+    const searchNextBrand = async () => {
+      const brandIndex = nextBrandIndex;
+      nextBrandIndex += 1;
+      if (brandIndex >= favoriteBrandIds.length || runId !== categorySearchRunId) return;
       const brandId = favoriteBrandIds[brandIndex];
+      if (completedBrandIds.has(brandId)) return searchNextBrand();
       const brand = explorerMeta.brands.find((item) => Number(item.id) === brandId);
       const brandName = brand?.ko || brand?.name || `브랜드 ${brandId}`;
-      status.textContent = `${brandIndex + 1}/${favoriteBrandIds.length} · ${brandName} ${selectedCategoryDetail} 검색 중…`;
+      status.textContent = `${completedCount}/${favoriteBrandIds.length} · ${brandName} ${selectedCategoryDetail} 검색 중… · 최대 2개 동시 처리`;
       updateCategoryLoading({
         title: `${brandName} 검색 중 · 완료된 결과만 안전하게 누적합니다.`,
-        completed: brandIndex,
+        completed: completedCount,
         total: favoriteBrandIds.length,
         count: detailProductsByKey.size,
-        percent: Math.round((brandIndex / favoriteBrandIds.length) * 100),
+        percent: Math.round((completedCount / favoriteBrandIds.length) * 100),
       });
       try {
         const brandResult = await window.aroundG.queryExplorer({
@@ -3173,14 +3203,24 @@ $("#category-search").addEventListener("click", async () => {
       } catch (_error) {
         failedSourceCount += 1;
       }
+      if (runId !== categorySearchRunId) return;
+      completedBrandIds.add(brandId);
+      completedCount = completedBrandIds.size;
+      await savePartialResult();
+      if (runId !== categorySearchRunId) return;
+      renderExplorerResults(`${selectedCategory} 〉 ${selectedCategoryDetail} 검색 · 진행 중`, [...detailProductsByKey.values()]);
       updateCategoryLoading({
         title: `${brandName} 검색 완료 · 다음 브랜드를 준비합니다.`,
-        completed: brandIndex + 1,
+        completed: completedCount,
         total: favoriteBrandIds.length,
         count: detailProductsByKey.size,
-        percent: Math.round(((brandIndex + 1) / favoriteBrandIds.length) * 100),
+        percent: Math.round((completedCount / favoriteBrandIds.length) * 100),
       });
-    }
+      return searchNextBrand();
+    };
+    await Promise.all([searchNextBrand(), searchNextBrand()]);
+    await partialSave;
+    if (runId !== categorySearchRunId) return;
     if (!sourceCount) {
       status.className = "status error";
       status.textContent = `즐겨찾기 브랜드 ${favoriteBrandIds.length}개의 검색에 모두 실패했습니다. 잠시 후 다시 시도해 주세요.`;
@@ -3196,6 +3236,7 @@ $("#category-search").addEventListener("click", async () => {
       category: selectedCategory,
       categoryDetail: selectedCategoryDetail,
       brandIds: favoriteBrandIds,
+      completedBrandIds: favoriteBrandIds,
       minimumSales30,
       createdAt: new Date().toISOString(),
       products: detailProducts,
