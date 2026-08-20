@@ -2108,10 +2108,10 @@ document.addEventListener("click", async (event) => {
 });
 
 $("#brand-open-category")?.addEventListener("click", () => {
-  document.querySelector('[data-service-explorer="category"]')?.click();
+  window.activateSearchServiceMode?.("category");
   renderCategoryButtons();
 });
-$("#category-back-brand")?.addEventListener("click", () => document.querySelector('[data-service-explorer="brand"]')?.click());
+$("#category-back-brand")?.addEventListener("click", () => window.activateSearchServiceMode?.("brand"));
 
 document.querySelectorAll(".explorer-mode").forEach((button) => button.addEventListener("click", () => {
   const currentMode = document.querySelector(".explorer-mode.active")?.dataset.explorer;
