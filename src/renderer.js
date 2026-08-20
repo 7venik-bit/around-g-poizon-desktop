@@ -1124,16 +1124,17 @@ function updateBrandSelectionControls() {
   const clear = $("#brand-selection-clear");
   const moveTop = $("#brand-move-top");
   const search = $("#brand-export-selected");
+  const frequentSearch = $("#frequent-brand-export");
   const stopCurrent = $("#brand-stop-current");
   if (count) count.textContent = `${selectedCount}개 선택`;
   if (clear) clear.disabled = selectedCount === 0 || brandSelectionBusy;
   if (moveTop) moveTop.disabled = selectedCount === 0 || brandSelectionBusy;
-  if (search) {
-    search.disabled = brandSelectionBusy ? false : selectedCount === 0;
-    search.classList.toggle("is-running", brandSelectionBusy);
-    const label = search.querySelector("span");
+  [search, frequentSearch].filter(Boolean).forEach((button) => {
+    button.disabled = brandSelectionBusy ? false : selectedCount === 0;
+    button.classList.toggle("is-running", brandSelectionBusy);
+    const label = button.querySelector("span");
     if (label) label.textContent = brandSelectionBusy ? "작업 중지" : "브랜드 검색";
-  }
+  });
   if (stopCurrent) stopCurrent.disabled = !brandSelectionBusy && !activeExportBrand && !hasActiveBrandExportJobs();
   const lamps = $("#onedrive-lamps");
   if (lamps) {
@@ -2211,6 +2212,12 @@ $("#brand-selection-clear")?.addEventListener("click", () => {
     $("#brand-status").className = "status success";
     $("#brand-status").textContent = `선택한 즐겨찾기 ${selectedPinned.length}개를 해제하고 원래 위치로 되돌렸습니다.`;
   }
+});
+$("#frequent-brand-export")?.addEventListener("click", () => {
+  $("#brand-export-selected")?.click();
+});
+$("#frequent-brand-category")?.addEventListener("click", () => {
+  $("#brand-open-category")?.click();
 });
 $("#brand-export-selected")?.addEventListener("click", async () => {
   if (brandSelectionBusy || activeExportBrand || hasActiveBrandExportJobs()) {
