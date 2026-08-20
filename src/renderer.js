@@ -1461,7 +1461,8 @@ function renderOfficialDomainAudit(audit = {}) {
   }[String(audit.phase || "")] || "";
   const stateLabel = audit.state === "cooldown" ? "보안 확인으로 일시 정지 · 검증 계속 버튼을 눌러주세요"
     : audit.state === "blocked" ? "보안 확인으로 일시 정지 · 검증 계속 버튼을 눌러주세요"
-    : audit.state === "paused" ? "일시 정지"
+      : audit.state === "scheduled" ? "자동 검증 대기 · 매일 새벽 1시~6시에만 실행"
+      : audit.state === "paused" ? "일시 정지"
       : audit.state === "completed_with_pending" ? "1차 전수검사 완료·공식몰 추가 확인 필요"
         : audit.state === "completed" ? "전체 검증 완료"
           : audit.running ? "검증 진행 중" : "대기";
