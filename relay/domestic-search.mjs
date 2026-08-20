@@ -6,6 +6,7 @@ import {
   verifiedOfficialBrand,
 } from "../services/official-domain-registry.mjs";
 import { brandSearchQueries } from "../services/brand-search-profile.mjs";
+import { buildDomesticSearchPlan } from "../services/domestic-search-modules/index.mjs";
 
 const MAX_QUERY_LENGTH = 120;
 const MAX_PRODUCTS_PER_STORE = 8;
@@ -765,29 +766,15 @@ export async function queryDomesticProducts({
     : officialStatus === OFFICIAL_DOMAIN_STATUS.NO_OFFICIAL_STORE ? "국내 공식몰 없음 확인"
       : officialStatus === OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED ? "브랜드 공식몰"
         : "공식몰 추가 확인 필요";
-  const sources = [
-    {
-      store: officialStoreLabel,
-      linkOnly: true,
-      officialBrand: true,
-      renderCount: [OFFICIAL_DOMAIN_STATUS.VERIFIED, OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED].includes(officialStatus)
-        && Boolean(String(officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl || "")),
-      officialStatus,
-      homepageUrl: String(officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl || ""),
-    },
-    { store: "네이버 공식 브랜드스토어", linkOnly: true, fashionTown: "brand-store", renderCount: true },
-    { store: "네이버 백화점", linkOnly: true, fashionTown: "department", renderCount: true },
-    { store: "네이버 아울렛", linkOnly: true, fashionTown: "outlet", renderCount: true },
-    { store: "무신사", parser: parseMusinsaSearch, renderCount: true },
-    { store: "SSG", linkOnly: true, domesticChannel: "ssg-general", renderCount: true },
-    { store: "SSG 백화점", linkOnly: true, domesticChannel: "ssg-department", renderCount: true },
-    { store: "SSG 아울렛", linkOnly: true, domesticChannel: "ssg-outlet", renderCount: true },
-    { store: "롯데온", linkOnly: true, domesticChannel: "lotte-general", renderCount: true },
-    { store: "롯데온 백화점", linkOnly: true, domesticChannel: "lotte-department", renderCount: true },
-    { store: "롯데온 아울렛", linkOnly: true, domesticChannel: "lotte-outlet", renderCount: true },
-    { store: "병행수입·편집샵", linkOnly: true, retailerDiscovery: true, renderCount: true },
-    { store: "코오롱몰", parser: (html) => parseKolonSearch(html, articleNumber) },
-  ];
+  const sourceParsers = {
+    musinsa: parseMusinsaSearch,
+    kolon: (html) => parseKolonSearch(html, articleNumber),
+  };
+  const sources = buildDomesticSearchPlan({
+    store: officialStoreLabel,
+    officialStatus,
+    homepageUrl: String(officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl || ""),
+  }).map((source) => ({ ...source, parser: sourceParsers[source.parserId] }));
   // Keep the source order observable and deterministic. Each brand/product is
   // checked from the official mall through the domestic channels one at a
   // time, so a blocked source cannot hide which step failed.

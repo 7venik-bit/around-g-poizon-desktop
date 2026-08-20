@@ -470,7 +470,7 @@ test("SSG와 롯데는 품번이 링크 바깥 상품 카드에 있어도 수집
   assert.match(mainSource, /const articleCardLinks =/);
   assert.match(mainSource, /matchesExpected\(card\.innerText\) \|\| matchesExpected\(card\.outerHTML\)/);
   assert.match(mainSource, /new Set\(\[\.\.\.directProductLinks, \.\.\.articleCardLinks\]\)/);
-  assert.match(mainSource, /\^\(\?:SSG\|롯데온\)/);
+  assert.match(mainSource, /\^\(\?:브랜드 공식몰\|SSG\|롯데온\)/);
 });
 
 test("SSG department Korean brand result waits for detail-page stock evidence", () => {
@@ -709,10 +709,10 @@ test("one domestic store failure does not stop the others", async () => {
   assert.equal(result.sources.length, 13);
   assert.deepEqual(result.sources.map((source) => source.store), [
     "브랜드 공식몰",
+    "무신사",
     "네이버 공식 브랜드스토어",
     "네이버 백화점",
     "네이버 아울렛",
-    "무신사",
     "SSG",
     "SSG 백화점",
     "SSG 아울렛",
@@ -727,7 +727,7 @@ test("one domestic store failure does not stop the others", async () => {
   assert.equal(result.sources.filter((source) => source.ok).length, 12);
   assert.deepEqual(
     result.sources.filter((source) => source.renderCount).map((source) => source.store),
-    ["브랜드 공식몰", "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛", "무신사", "SSG", "SSG 백화점", "SSG 아울렛", "롯데온", "롯데온 백화점", "롯데온 아울렛", "병행수입·편집샵"]
+    ["브랜드 공식몰", "무신사", "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛", "SSG", "SSG 백화점", "SSG 아울렛", "롯데온", "롯데온 백화점", "롯데온 아울렛", "병행수입·편집샵"]
   );
 });
 

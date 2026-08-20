@@ -4,14 +4,17 @@ import { readFile } from "node:fs/promises";
 import { DOMESTIC_RETAILER_GROUPS, domesticChannelUrl } from "../relay/domestic-search.mjs";
 
 const relay = await readFile(new URL("../relay/domestic-search.mjs", import.meta.url), "utf8");
+const ssgModule = await readFile(new URL("../services/domestic-search-modules/ssg.mjs", import.meta.url), "utf8");
+const lotteModule = await readFile(new URL("../services/domestic-search-modules/lotte.mjs", import.meta.url), "utf8");
+const parallelModule = await readFile(new URL("../services/domestic-search-modules/parallel.mjs", import.meta.url), "utf8");
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
 const style = await readFile(new URL("../src/style.css", import.meta.url), "utf8");
 
 test("general LotteON and SSG searches are checked in addition to department and outlet scopes", () => {
   assert.match(domesticChannelUrl("lotte-general", "나이키", "CW2288-001"), /lotteon\.com\/csearch\/search\/search/);
   assert.match(domesticChannelUrl("ssg-general", "나이키", "CW2288-001"), /ssg\.com\/search/);
-  assert.ok(relay.includes('store: "롯데온"'));
-  assert.ok(relay.includes('store: "SSG"'));
+  assert.ok(lotteModule.includes('store: "롯데온"'));
+  assert.ok(ssgModule.includes('store: "SSG"'));
 });
 
 test("editorial and parallel-import seller catalogs participate in discovery", () => {
@@ -19,7 +22,7 @@ test("editorial and parallel-import seller catalogs participate in discovery", (
   const parallel = DOMESTIC_RETAILER_GROUPS["병행수입 정품업체"];
   for (const name of ["OK몰", "카시나", "29CM", "무신사", "W컨셉", "EQL", "하이츠스토어"]) assert.ok(editorial.includes(name));
   for (const name of ["인퓨전프로젝트", "다움스포츠", "트렌드메카", "라벨루쏘", "구템즈", "FABSTYLE"]) assert.ok(parallel.includes(name));
-  assert.ok(relay.includes('store: "병행수입·편집샵"'));
+  assert.ok(parallelModule.includes('store: "병행수입·편집샵"'));
   assert.ok(relay.includes("retailerName"));
   assert.ok(relay.includes("parallelImportCompanies: []"));
   assert.ok(relay.includes("queryCandidates[0]"));

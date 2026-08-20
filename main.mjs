@@ -967,6 +967,41 @@ async function submitOfficialMallSearch(searchWindow, query) {
   return false;
 }
 
+async function officialMallSearchWasExecuted(searchWindow, query, previousUrl = "") {
+  if (!searchWindow || searchWindow.isDestroyed()) return false;
+  const state = await searchWindow.webContents.executeJavaScript(`(() => {
+    const query = ${JSON.stringify(String(query || ""))};
+    const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
+    const expected = compact(query);
+    const inputs = [...document.querySelectorAll('input[type="search"],input[name*="search" i],input[name="q" i],input[name*="query" i],input[name*="keyword" i],input[name*="schWord" i]')];
+    const inputMatched = inputs.some((input) => compact(input.value).includes(expected));
+    const pageMatched = expected.length >= 4 && compact(document.body?.innerText || "").includes(expected);
+    return { url: String(location.href || ""), inputMatched, pageMatched };
+  })()`, true).catch(() => null);
+  if (!state) return false;
+  const urlChanged = Boolean(previousUrl && state.url && state.url !== previousUrl);
+  const queryInUrl = (() => {
+    try { return decodeURIComponent(state.url).toUpperCase().includes(String(query || "").toUpperCase()); }
+    catch { return false; }
+  })();
+  return Boolean(urlChanged || queryInUrl || state.pageMatched || state.inputMatched);
+}
+
+async function executeOfficialMallSearch(searchWindow, homepageUrl, query) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    if (attempt > 1) {
+      await searchWindow.loadURL(homepageUrl).catch(() => {});
+      await wait(1_000);
+    }
+    const previousUrl = String(searchWindow.webContents.getURL() || homepageUrl);
+    const submitted = await submitOfficialMallSearch(searchWindow, query);
+    if (!submitted) continue;
+    await wait(2_000);
+    if (await officialMallSearchWasExecuted(searchWindow, query, previousUrl)) return true;
+  }
+  return false;
+}
+
 async function openOfficialMallInternalSearch(homepageUrl, query) {
   const homepage = new URL(String(homepageUrl || ""));
   if (!["https:", "http:"].includes(homepage.protocol)) throw new Error("INVALID_URL");
@@ -995,7 +1030,7 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
   await searchWindow.loadURL(homepage.href);
   searchWindow.show();
   searchWindow.focus();
-  const submitted = await submitOfficialMallSearch(searchWindow, exactQuery);
+  const submitted = await executeOfficialMallSearch(searchWindow, homepage.href, exactQuery);
   if (!submitted) {
     searchWindow.setTitle(`공식몰 돋보기를 눌러 ${exactQuery}을(를) 검색해 주세요`);
   }
@@ -1029,7 +1064,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     ]);
     if (interactiveSiteSearch) {
       const searchQuery = String(source.searchQuery || articleNumber || title || "").trim();
-      const submitted = await submitOfficialMallSearch(searchWindow, searchQuery);
+      const submitted = await executeOfficialMallSearch(searchWindow, String(source.homepageUrl || url), searchQuery);
       if (!submitted || !searchQuery) return null;
       await wait(2_000);
     }
@@ -1257,7 +1292,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     // A search-card hit is only a candidate. Musinsa and other rendered
     // channels must open the product detail page before an exact article and
     // stock state can be reported as a purchasable domestic result.
-    const renderAttempts = /^(?:SSG|롯데온)(?:\s|$)/.test(String(source.store || "")) ? 3 : 1;
+    const renderAttempts = /^(?:브랜드 공식몰|SSG|롯데온)(?:\s|$)/.test(String(source.store || "")) ? 3 : 1;
     let result = null;
     for (let attempt = 0; attempt < renderAttempts && !result; attempt += 1) {
       if (attempt > 0) await wait(1_500);
