@@ -27,10 +27,13 @@ test("completed download history does not block a new brand search", () => {
   assert.match(main, /historicalJobCount: savedBrandExportJobs\(\)\.length/);
 });
 
-test("brand search click immediately shows progress and reports session timeout", () => {
+test("brand search click shows progress and never cancels a delayed main-process response", () => {
   assert.match(renderer, /검색 세션 준비 중/);
-  assert.match(renderer, /BRAND_SESSION_START_TIMEOUT/);
-  assert.match(renderer, /8_000/);
+  assert.match(renderer, /검색 준비 응답 대기 중/);
+  assert.match(renderer, /작업은 취소되지 않습니다/);
+  assert.match(renderer, /30_000/);
+  assert.doesNotMatch(renderer, /BRAND_SESSION_START_TIMEOUT/);
+  assert.doesNotMatch(renderer, /Promise\.race\(\[\s*window\.aroundG\.beginSellerBrandSearchSession/);
   assert.match(renderer, /검색 시작 실패/);
   assert.match(renderer, /brandSelectionBusy = false/);
 });

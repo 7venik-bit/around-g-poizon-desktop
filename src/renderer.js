@@ -2254,21 +2254,22 @@ $("#brand-export-selected")?.addEventListener("click", async () => {
   // Reset only the live run state before building the new queue.
   acceptBrandWorkEvents = false;
   let freshSession;
+  let sessionWaitNoticeTimer;
   try {
-    freshSession = await Promise.race([
-      window.aroundG.beginSellerBrandSearchSession?.(),
-      new Promise((resolve) => setTimeout(() => resolve({
-        ok: false,
-        code: "BRAND_SESSION_START_TIMEOUT",
-        message: "새 브랜드 검색 세션 응답이 8초 안에 오지 않았습니다.",
-      }), 8_000)),
-    ]);
+    sessionWaitNoticeTimer = setTimeout(() => {
+      $("#brand-status").className = "status";
+      $("#brand-status").textContent = `${selectedLabel} 검색 준비 응답 대기 중… 작업은 취소되지 않습니다.`;
+      touchBrandActivity(`${selectedLabel} 검색 준비 응답 대기 중`);
+    }, 30_000);
+    freshSession = await window.aroundG.beginSellerBrandSearchSession?.();
   } catch (error) {
     freshSession = {
       ok: false,
       code: "BRAND_SESSION_START_FAILED",
       message: error instanceof Error ? error.message : String(error || "검색 세션 시작 실패"),
     };
+  } finally {
+    clearTimeout(sessionWaitNoticeTimer);
   }
   if (!freshSession || freshSession.ok === false) {
     brandSelectionBusy = false;
