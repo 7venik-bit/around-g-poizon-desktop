@@ -89,8 +89,12 @@ const RETAILER_ALIASES = [
   ["튠", /\btune\b|\b튠\b/i], ["플랫폼샵", /platformshop|플랫폼샵/i], ["훕시티", /hoopcity|훕시티/i],
   ["29CM", /29cm/i], ["무신사", /musinsa|무신사/i], ["아이엠샵", /iamshop|아이엠샵/i],
   ["W컨셉", /w\.?concept|w컨셉/i], ["EQL", /\beql\b/i], ["하이츠스토어", /heights[- ]?store|하이츠스토어/i],
-  ["베이직", /\bBAZIC\b|베이직/i],
-  ...DOMESTIC_RETAILER_GROUPS["병행수입 정품업체"].map((name) => [name, new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")]),
+  // '베이직'은 상품명(예: 리그 베이직 볼캡)에 매우 자주 등장하므로
+  // 영문 업체명 BAZIC의 정확한 단어일 때만 판매자로 인정한다.
+  ["베이직", /\bBAZIC\b/i],
+  ...DOMESTIC_RETAILER_GROUPS["병행수입 정품업체"]
+    .filter((name) => name !== "베이직")
+    .map((name) => [name, new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")]),
 ];
 
 export function detectedRetailer(value = "") {
