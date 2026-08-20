@@ -4068,15 +4068,11 @@ async function submitStoredSellerCredentials() {
   return { ...(realMouseResult || accessibilityResult || lastResult), ok: false, stored: true };
 }
 
-async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
+async function enterSellerProductSearchViaMenu() {
   if (!sellerWindow || sellerWindow.isDestroyed()) return false;
-  let currentUrl = String(sellerWindow.webContents.getURL() || "");
-  if (!forceHome && currentUrl.includes("/main/goods/search")) return true;
-  if (!currentUrl.includes("seller.poizon.com")) {
-    await sellerWindow.loadURL(SELLER_CENTER_URL).catch(() => {});
-    await wait(2_000);
-    currentUrl = String(sellerWindow.webContents.getURL() || "");
-  }
+  const currentUrl = String(sellerWindow.webContents.getURL() || "");
+  if (currentUrl.includes("/main/goods/search")) return true;
+  if (!currentUrl.includes("seller.poizon.com")) return false;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const frames = sellerWindowFrames();
     for (const frame of frames) {
@@ -4124,12 +4120,7 @@ async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
         if (String(sellerWindow.webContents.getURL() || "").includes("/main/goods/search")) return true;
       }
     }
-    if (attempt < 2) {
-      // Use the stable dashboard only as a recovery landing page. Never load
-      // the bare /main route because POIZON can respond with Component Key Error.
-      await sellerWindow.loadURL(SELLER_CENTER_URL).catch(() => {});
-      await wait(2_000);
-    }
+    if (attempt < 2) await wait(1_000);
   }
   return false;
 }
@@ -4961,11 +4952,12 @@ async function automateSellerBrandExport(input = {}) {
   // Show the exact Electron Seller Center window that is being automated.
   // A separately opened Chrome window is a different browser session and does
   // not reflect this automation, which previously made real work look idle.
-  openSellerCenterWindow(SELLER_CENTER_URL, {
-    visible: true,
-    activate: true,
-    deferNavigation: true,
-  });
+  if (!sellerWindow || sellerWindow.isDestroyed()) {
+    openSellerCenterWindow(SELLER_CENTER_URL, { visible: true, activate: true });
+  } else {
+    sellerWindow.show();
+    sellerWindow.focus();
+  }
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     brandExportJobPending = false;
     pendingBrandExportName = "";
@@ -5013,7 +5005,7 @@ async function automateSellerBrandExport(input = {}) {
       message: `${brandName} · POIZON 상품검색 화면의 Load Component Timeout을 감지해 홈페이지부터 다시 진입합니다.`,
     });
     for (let recoveryAttempt = 1; recoveryAttempt <= 3 && (productPageState.failed || !productPageState.hasSearch); recoveryAttempt += 1) {
-      const clicked = await enterSellerProductSearchViaMenu({ forceHome: true });
+      const clicked = await enterSellerProductSearchViaMenu();
       if (!clicked) {
         mainWindow?.webContents.send("brand-export:progress", {
           status: "seller-product-menu-not-found",
@@ -6417,7 +6409,7 @@ async function captureSellerBrandSales(input = {}) {
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     return { ok: false, message: "판매자센터 창을 열지 못했습니다." };
   }
-  if (!await enterSellerProductSearchViaMenu({ forceHome: true })) {
+  if (!await enterSellerProductSearchViaMenu()) {
     return { ok: false, message: "판매자센터 로그인을 확인해 주세요." };
   }
   const networkSellerProducts = [];
@@ -7650,8 +7642,13 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle("seller:open-product-search", async () => {
-    openSellerCenterWindow(SELLER_CENTER_URL);
-    return { ok: await enterSellerProductSearchViaMenu({ forceHome: true }) };
+    if (!sellerWindow || sellerWindow.isDestroyed()) {
+      openSellerCenterWindow(SELLER_CENTER_URL);
+    } else {
+      sellerWindow.show();
+      sellerWindow.focus();
+    }
+    return { ok: await enterSellerProductSearchViaMenu() };
   });
   const abortSellerBrandExportAttempt = async () => {
   brandExportAttemptGeneration += 1;
@@ -7662,10 +7659,6 @@ app.whenReady().then(async () => {
   try {
     sellerWindow?.webContents.stop();
     if (sellerWindow && !sellerWindow.isDestroyed()) {
-      await Promise.race([
-        sellerWindow.loadURL(SELLER_CENTER_URL),
-        new Promise((resolve) => setTimeout(resolve, 8_000)),
-      ]);
       sellerWindow.hide();
     }
   } catch {}
