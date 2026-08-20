@@ -90,6 +90,11 @@ contextBridge.exposeInMainWorld("aroundG", {
     ipcRenderer.on("domestic-login:changed", handler);
     return () => ipcRenderer.removeListener("domestic-login:changed", handler);
   },
+  onDomesticModuleStatus: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on("domestic-search:module-status", handler);
+    return () => ipcRenderer.removeListener("domestic-search:module-status", handler);
+  },
   importExcel: () => ipcRenderer.invoke("excel:import"),
   exportExcel: () => ipcRenderer.invoke("excel:export"),
   exportExplorerExcel: (input) => ipcRenderer.invoke("excel:export-explorer", input),

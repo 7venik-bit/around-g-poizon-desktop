@@ -1275,6 +1275,12 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
   const discoveredProducts = [];
   const sources = [];
   for (const source of data.sources) {
+    const moduleId = String(source.module || source.id || "").split("-")[0];
+    mainWindow?.webContents.send("domestic-search:module-status", {
+      moduleId,
+      store: source.store,
+      state: "running",
+    });
     const resolvedSource = await (async () => {
     if (source.officialStatus && ![
       OFFICIAL_DOMAIN_STATUS.VERIFIED,
@@ -1325,6 +1331,11 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       officialProductMissing: isOfficialStore && absenceConfirmed,
     };
     })();
+    mainWindow?.webContents.send("domestic-search:module-status", {
+      moduleId,
+      store: source.store,
+      state: resolvedSource.verificationFailed || resolvedSource.ok === false ? "failed" : "success",
+    });
     sources.push(resolvedSource);
   }
   const products = [...(data.products || []), ...discoveredProducts].filter((product, index, all) =>

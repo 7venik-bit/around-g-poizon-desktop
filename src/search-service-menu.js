@@ -25,6 +25,12 @@
           <i aria-hidden="true"></i><span>${item.label}</span>
         </button>`).join("")}
     </div>
+    <div id="domestic-module-lamps" class="domestic-module-lamps" role="status" aria-label="국내 검색 모듈 상태">
+      ${[
+        ["official", "공식몰"], ["musinsa", "무신사"], ["naver", "네이버"],
+        ["ssg", "SSG"], ["lotte", "롯데"], ["parallel", "병행"], ["kolon", "코오롱"],
+      ].map(([id, label]) => `<span class="module-lamp idle" data-module-lamp="${id}" title="${label} · 대기"><i></i><small>${label}</small></span>`).join("")}
+    </div>
     <small class="search-service-file-label">데이터 파일</small>
     <button type="button" class="search-service-button search-service-file" data-service-explorer="files">
       <i aria-hidden="true"></i><span>받은 Excel 파일</span>
@@ -102,6 +108,27 @@
   }
 
   window.activateSearchServiceMode = activateMode;
+  window.resetDomesticModuleLamps = () => {
+    menu.querySelectorAll("[data-module-lamp]").forEach((lamp) => {
+      lamp.classList.remove("running", "success", "failed");
+      lamp.classList.add("idle");
+      const label = lamp.querySelector("small")?.textContent || "검색";
+      lamp.title = `${label} · 대기`;
+    });
+  };
+
+  window.aroundG?.onDomesticModuleStatus?.((payload) => {
+    const moduleId = String(payload?.moduleId || "");
+    const lamp = menu.querySelector(`[data-module-lamp="${moduleId}"]`);
+    if (!lamp) return;
+    const state = ["running", "success", "failed"].includes(payload?.state) ? payload.state : "idle";
+    lamp.classList.remove("idle", "running", "success", "failed");
+    lamp.classList.add(state);
+    const label = lamp.querySelector("small")?.textContent || moduleId;
+    const stateLabel = state === "running" ? "검색 중" : state === "success" ? "완료" : state === "failed" ? "실패" : "대기";
+    lamp.title = `${label} · ${stateLabel}`;
+    menu.querySelector("#domestic-module-lamps")?.setAttribute("aria-label", `${label} 모듈 ${stateLabel}`);
+  });
 
   menu.addEventListener("click", (event) => {
     const button = event.target.closest("[data-service-explorer]");

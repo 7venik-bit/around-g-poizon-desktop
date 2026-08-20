@@ -2413,6 +2413,7 @@ async function runDomesticBatch(options = {}) {
   domesticBatchRunning = true;
   domesticBatchStopRequested = false;
   domesticBatchVerifyCounts = selectedOnly;
+  window.resetDomesticModuleLamps?.();
   button.textContent = "검색 중지";
   updateExplorerSelectionUi();
   const batchProducts = [...(allExplorerProducts.length ? allExplorerProducts : currentExplorerProducts)];

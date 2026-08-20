@@ -806,6 +806,8 @@ export async function queryDomesticProducts({
         }
       }
       results.push({
+        id: source.id,
+        module: source.module,
         store: source.store,
         ok: true,
         linkOnly: true,
@@ -836,9 +838,9 @@ export async function queryDomesticProducts({
       if (source.store === "무신사" && products.length) {
         products = await enrichMusinsaOptions(products, fetchImpl);
       }
-      results.push({ store: source.store, ok: true, linkOnly: false, renderCount: source.renderCount, searchUrl, products });
+      results.push({ id: source.id, module: source.module, store: source.store, ok: true, linkOnly: false, renderCount: source.renderCount, searchUrl, products });
     } catch {
-      results.push({ store: source.store, ok: false, linkOnly: false, renderCount: source.renderCount, searchUrl, officialProductUrl, products: [] });
+      results.push({ id: source.id, module: source.module, store: source.store, ok: false, linkOnly: false, renderCount: source.renderCount, searchUrl, officialProductUrl, products: [] });
     }
   }
 
@@ -850,7 +852,9 @@ export async function queryDomesticProducts({
     // Companies are shown only after an exact-model product is verified.
     // A registry entry alone must never look like a matching sourcing result.
     parallelImportCompanies: [],
-    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, interactiveSearch, searchQuery, count, products }, priority) => ({
+    sources: results.map(({ id, module, store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, interactiveSearch, searchQuery, count, products }, priority) => ({
+      id,
+      module,
       store,
       ok,
       linkOnly,
