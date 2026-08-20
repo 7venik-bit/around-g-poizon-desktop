@@ -1274,17 +1274,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
 async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "") {
   const discoveredProducts = [];
   const sources = [];
-  const moduleFailures = new Map();
-  const moduleStartedAt = new Map();
-  for (let sourceIndex = 0; sourceIndex < data.sources.length; sourceIndex += 1) {
-    const source = data.sources[sourceIndex];
-    const moduleId = String(source.module || source.id || "").split("-")[0];
-    if (!moduleStartedAt.has(moduleId)) moduleStartedAt.set(moduleId, Date.now());
-    mainWindow?.webContents.send("domestic-search:module-status", {
-      moduleId,
-      store: source.store,
-      state: "running",
-    });
+  // The complete domestic lookup is one sequential request again. A source
+  // failure is recorded on that source, then the same request continues to
+  // the next source without spawning module-specific state or retries.
+  for (const source of data.sources) {
     const resolvedSource = await (async () => {
     if (source.officialStatus && ![
       OFFICIAL_DOMAIN_STATUS.VERIFIED,
@@ -1335,22 +1328,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       officialProductMissing: isOfficialStore && absenceConfirmed,
     };
     })();
-    if (resolvedSource.verificationFailed || resolvedSource.ok === false) {
-      moduleFailures.set(moduleId, resolvedSource.verificationFailed ? "검색 결과 확인 실패" : "검색 요청 실패");
-    }
     sources.push(resolvedSource);
-    const nextSource = data.sources[sourceIndex + 1];
-    const nextModuleId = String(nextSource?.module || nextSource?.id || "").split("-")[0];
-    if (nextModuleId !== moduleId) {
-      const error = moduleFailures.get(moduleId) || "";
-      mainWindow?.webContents.send("domestic-search:module-status", {
-        moduleId,
-        store: source.store,
-        state: error ? "failed" : "success",
-        error,
-        durationMs: Date.now() - Number(moduleStartedAt.get(moduleId) || Date.now()),
-      });
-    }
   }
   const products = [...(data.products || []), ...discoveredProducts].filter((product, index, all) =>
     index === all.findIndex((candidate) => `${candidate.store}:${candidate.id || candidate.url}` === `${product.store}:${product.id || product.url}`));
@@ -5591,34 +5569,40 @@ async function automateSellerBrandExport(input = {}) {
         jobState: `1단계/5 · 브랜드 입력·상품 검색 중 · ${brandName}`,
         message: `${brandName} · 기존 검색 서비스 방식으로 브랜드를 입력하고 검색을 실행합니다.`,
       });
-      // Follow the visible Seller Center controls exactly: 브랜드 dropdown →
-      // popup search → exact option → 적용/확인 → 검색 및 입찰. The global
-      // product-query field must not be used for a brand-only export because
-      // it can leave the unfiltered 9,900-result list on screen.
-      const exactBrandFilter = await applyExactSellerBrandFilter(candidate.frame, [
-        sellerBrandSearchName,
-        brandKoInput,
-        ...sellerBrandMatchKeys,
-      ]).catch(() => ({ ok: false, step: "EXACT_BRAND_FILTER_FAILED" }));
+      // Restore the proven pre-module Seller Center route as one uninterrupted
+      // operation: enter the brand in the visible product-search field, click
+      // 검색 및 입찰, verify the result, sort, and export in the same window.
+      const realKeyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, sellerBrandSearchName)
+        .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
       if (sellerWindow && !sellerWindow.isDestroyed()) {
         sellerWindow.showInactive();
       }
       mainWindow?.webContents.send("brand-export:progress", {
-        status: exactBrandFilter?.ok ? "seller-brand-filter-confirmed" : "seller-brand-filter-failed",
+        status: realKeyboardInput?.ok ? "seller-brand-input-confirmed" : "seller-brand-input-fallback",
         brandName,
-        jobState: exactBrandFilter?.ok
-          ? `1단계/5 · 브랜드 필터·상품 검색 완료 · ${brandName}`
-          : `1단계/5 · 브랜드 필터 선택 실패 · ${brandName}`,
-        message: exactBrandFilter?.ok
-          ? `${brandName} · 브랜드 필터 선택과 검색 및 입찰을 완료했습니다.`
-          : `${brandName} · 브랜드 버튼 또는 정확한 브랜드 항목을 선택하지 못했습니다. (${exactBrandFilter?.step || "UNKNOWN"})`,
+        jobState: realKeyboardInput?.ok
+          ? `1단계/5 · 상품검색 브랜드 입력 완료 · ${brandName}`
+          : `1단계/5 · 상품검색 입력 재시도 · ${brandName}`,
+        message: realKeyboardInput?.ok
+          ? `${brandName} · 판매자센터 상단 상품검색 입력을 확인하고 검색 및 입찰을 실행합니다.`
+          : `${brandName} · 실제 키보드 입력이 확인되지 않아 작업을 중단합니다.`,
       });
-      if (!exactBrandFilter?.ok) {
-        searched = exactBrandFilter || { ok: false, step: "EXACT_BRAND_FILTER_FAILED" };
+      if (!realKeyboardInput?.ok) {
+        searched = realKeyboardInput || { ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" };
         lastSearchDiagnostics = candidate.probe;
-        continue;
+        break;
       }
-      const result = exactBrandFilter;
+      const result = await Promise.race([
+          runSellerSearch(candidate.frame, Boolean(realKeyboardInput?.submitted)),
+          new Promise((resolve) => setTimeout(() => resolve({
+            ok: false,
+            step: "SELLER_SEARCH_STAGE_TIMEOUT",
+          }), 70_000)),
+        ]).catch((error) => ({
+          ok: false,
+          step: "SELLER_SEARCH_SCRIPT_ERROR",
+          detail: String(error?.message || error || ""),
+        }));
       lastSearchDiagnostics = candidate.probe;
       if (result?.ok) {
         mainWindow?.webContents.send("brand-export:progress", {
@@ -7912,7 +7896,6 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         verifyLinkCounts: false,
         officialBrandRecord,
         searchStrategy,
-        modules: Array.isArray(input?.modules) ? input.modules : [],
       });
       let matched = await addMatchConfidence(data, input || {});
       if (input?.verifyLinkCounts === true) {

@@ -25,12 +25,6 @@
           <i aria-hidden="true"></i><span>${item.label}</span>
         </button>`).join("")}
     </div>
-    <div id="domestic-module-lamps" class="domestic-module-lamps" role="status" aria-label="국내 검색 모듈 상태">
-      ${[
-        ["official", "공식몰"], ["musinsa", "무신사"], ["naver", "네이버"],
-        ["ssg", "SSG"], ["lotte", "롯데"], ["parallel", "병행"], ["kolon", "코오롱"],
-      ].map(([id, label]) => `<button type="button" class="module-lamp idle" data-module-lamp="${id}" title="${label} · 대기"><i></i><small>${label}</small><em></em></button>`).join("")}
-    </div>
     <small class="search-service-file-label">데이터 파일</small>
     <button type="button" class="search-service-button search-service-file" data-service-explorer="files">
       <i aria-hidden="true"></i><span>받은 Excel 파일</span>
@@ -108,44 +102,8 @@
   }
 
   window.activateSearchServiceMode = activateMode;
-  window.resetDomesticModuleLamps = () => {
-    menu.querySelectorAll("[data-module-lamp]").forEach((lamp) => {
-      lamp.classList.remove("running", "success", "failed");
-      lamp.classList.add("idle");
-      const label = lamp.querySelector("small")?.textContent || "검색";
-      lamp.title = `${label} · 대기`;
-      lamp.dataset.error = "";
-      lamp.querySelector("em").textContent = "";
-    });
-  };
-
-  window.aroundG?.onDomesticModuleStatus?.((payload) => {
-    const moduleId = String(payload?.moduleId || "");
-    const lamp = menu.querySelector(`[data-module-lamp="${moduleId}"]`);
-    if (!lamp) return;
-    const state = ["running", "success", "failed"].includes(payload?.state) ? payload.state : "idle";
-    lamp.classList.remove("idle", "running", "success", "failed");
-    lamp.classList.add(state);
-    const label = lamp.querySelector("small")?.textContent || moduleId;
-    const stateLabel = state === "running" ? "검색 중" : state === "success" ? "완료" : state === "failed" ? "실패" : "대기";
-    const seconds = Number(payload?.durationMs || 0) > 0 ? `${(Number(payload.durationMs) / 1000).toFixed(1)}초` : "";
-    lamp.dataset.error = String(payload?.error || "");
-    lamp.querySelector("em").textContent = state === "running" ? "" : seconds;
-    lamp.title = `${label} · ${stateLabel}${seconds ? ` · ${seconds}` : ""}${payload?.error ? ` · ${payload.error}` : ""}`;
-    menu.querySelector("#domestic-module-lamps")?.setAttribute("aria-label", `${label} 모듈 ${stateLabel}`);
-  });
 
   menu.addEventListener("click", (event) => {
-    const lamp = event.target.closest("[data-module-lamp]");
-    if (lamp) {
-      if (!lamp.classList.contains("failed")) return;
-      const label = lamp.querySelector("small")?.textContent || "검색";
-      const reason = lamp.dataset.error || "검색 결과를 확인하지 못했습니다.";
-      if (window.confirm(`${label} 모듈 오류\n${reason}\n\n이 모듈만 다시 검색할까요?`)) {
-        window.dispatchEvent(new CustomEvent("domestic-module:retry", { detail: { moduleId: lamp.dataset.moduleLamp } }));
-      }
-      return;
-    }
     const button = event.target.closest("[data-service-explorer]");
     if (!button) return;
     activateMode(button.dataset.serviceExplorer);

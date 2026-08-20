@@ -28,7 +28,7 @@ test("duplicate searches use brand-code and product-code identity while image st
   assert.match(renderer, /product\.brandCode \|\| product\.brandId/);
   assert.match(renderer, /if \(article\) return `code:/);
   assert.match(renderer, /An image is supporting evidence only/);
-  assert.match(renderer, /domesticIdentitySearchCache\.has\(cacheKey\)/);
+  assert.match(renderer, /domesticIdentitySearchCache\.has\(identity\)/);
 });
 
 test("duplicate store results collapse by exact detected code rather than a similar image", () => {
