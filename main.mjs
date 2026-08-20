@@ -4069,6 +4069,50 @@ async function submitStoredSellerCredentials() {
   return { ...(realMouseResult || accessibilityResult || lastResult), ok: false, stored: true };
 }
 
+async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return false;
+  const currentUrl = String(sellerWindow.webContents.getURL() || "");
+  if (!forceHome && currentUrl.includes("/main/goods/search")) return true;
+  if (forceHome || !currentUrl.includes("seller.poizon.com")) {
+    await sellerWindow.loadURL(SELLER_MAIN_URL).catch(() => {});
+    await wait(2_000);
+  }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const frames = sellerWindowFrames();
+    for (const frame of frames) {
+      const clicked = await executeSellerFrameWithTimeout(frame, `(async () => {
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        const visible = (element) => {
+          const rect = element?.getBoundingClientRect?.();
+          return Boolean(rect && rect.width > 0 && rect.height > 0);
+        };
+        const label = (element) => String(element?.innerText || element?.textContent || "").replace(/\\s+/g, " ").trim();
+        const candidates = () => [...document.querySelectorAll("a,button,[role='menuitem'],[role='button'],li")].filter(visible);
+        let target = candidates().find((element) => /^(?:상품\\s*검색|商品搜索)$/.test(label(element)));
+        if (!target) {
+          const productMenu = candidates().find((element) => /^(?:상품|商品)$/.test(label(element)));
+          productMenu?.scrollIntoView?.({ block: "center" });
+          productMenu?.click?.();
+          await wait(700);
+          target = candidates().find((element) => /^(?:상품\\s*검색|商品搜索)$/.test(label(element)));
+        }
+        target?.scrollIntoView?.({ block: "center" });
+        target?.click?.();
+        return Boolean(target);
+      })()`, 5_000, false);
+      if (clicked) {
+        await wait(3_000);
+        if (String(sellerWindow.webContents.getURL() || "").includes("/main/goods/search")) return true;
+      }
+    }
+    if (attempt < 2) {
+      await sellerWindow.loadURL(SELLER_MAIN_URL).catch(() => {});
+      await wait(2_000);
+    }
+  }
+  return false;
+}
+
 async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
   if (!await sellerPageRequiresLogin()) return { ok: true, reused: true };
   if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, code: "SELLER_WINDOW_CLOSED" };
@@ -4098,11 +4142,6 @@ async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
         lastAutoLoginAttemptAt = Date.now();
       }
       continue;
-    }
-    if (!String(sellerWindow.webContents.getURL() || "").includes("/main/goods/search")) {
-      await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => {});
-      await wait(2_000);
-      if (await sellerPageRequiresLogin()) continue;
     }
     await setSellerLoginStatusOverlay("success", "자동 로그인 테스트 성공 완료", "POIZON 판매자센터 진입을 확인했습니다. 브랜드 검색을 자동으로 계속합니다.");
     mainWindow?.webContents.send("brand-export:progress", {
@@ -4901,7 +4940,7 @@ async function automateSellerBrandExport(input = {}) {
   // Show the exact Electron Seller Center window that is being automated.
   // A separately opened Chrome window is a different browser session and does
   // not reflect this automation, which previously made real work look idle.
-  openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, {
+  openSellerCenterWindow(SELLER_MAIN_URL, {
     visible: true,
     activate: true,
     deferNavigation: true,
@@ -4920,7 +4959,7 @@ async function automateSellerBrandExport(input = {}) {
     message: `${brandName} · 판매자센터 상품검색 화면 연결을 시도합니다.`,
   });
   try {
-    await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
+    await sellerWindow.loadURL(SELLER_MAIN_URL);
   } catch (error) {
     const diagnosticPath = await captureSellerDiagnostic(brandName, "page-load-failed");
     brandExportJobPending = false;
@@ -4966,22 +5005,15 @@ async function automateSellerBrandExport(input = {}) {
       message: `${brandName} · POIZON 상품검색 화면의 Load Component Timeout을 감지해 홈페이지부터 다시 진입합니다.`,
     });
     for (let recoveryAttempt = 1; recoveryAttempt <= 3 && (productPageState.failed || !productPageState.hasSearch); recoveryAttempt += 1) {
-      await sellerWindow.loadURL(SELLER_MAIN_URL).catch(() => {});
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
-      const clicked = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => {
-        const visible = (element) => {
-          const rect = element?.getBoundingClientRect?.();
-          return Boolean(rect && rect.width > 0 && rect.height > 0);
-        };
-        const label = (element) => String(element?.innerText || element?.textContent || "").replace(/\\s+/g, " ").trim();
-        const candidates = [...document.querySelectorAll("a,button,[role='menuitem'],[role='button'],li")].filter(visible);
-        const target = candidates.find((element) => /^(?:상품\s*검색|商品搜索)$/.test(label(element)))
-          || candidates.find((element) => /상품\s*검색|商品搜索/.test(label(element)));
-        target?.scrollIntoView?.({ block: "center" });
-        target?.click?.();
-        return Boolean(target);
-      })()`, 4_000, false);
-      if (!clicked) await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => {});
+      const clicked = await enterSellerProductSearchViaMenu({ forceHome: true });
+      if (!clicked) {
+        mainWindow?.webContents.send("brand-export:progress", {
+          status: "seller-product-menu-not-found",
+          brandName,
+          jobState: `1단계/5 · 상품 검색 메뉴 재진입 ${recoveryAttempt}/3`,
+          message: `${brandName} · 판매자 메인에서 상품 메뉴를 펼친 뒤 상품 검색을 다시 찾습니다.`,
+        });
+      }
       await new Promise((resolve) => setTimeout(resolve, 3_500));
       productPageState = await productSearchReady();
     }
@@ -6377,9 +6409,7 @@ async function captureSellerBrandSales(input = {}) {
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     return { ok: false, message: "판매자센터 창을 열지 못했습니다." };
   }
-  await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
-  await wait(1_800);
-  if (!sellerWindow.webContents.getURL().includes("/main/goods/search")) {
+  if (!await enterSellerProductSearchViaMenu({ forceHome: true })) {
     return { ok: false, message: "판매자센터 로그인을 확인해 주세요." };
   }
   const networkSellerProducts = [];
@@ -6764,7 +6794,7 @@ async function captureSellerBrandSales(input = {}) {
 async function lookupSellerTransactionPrice(input = {}) {
   const articleNumber = String(input.articleNumber || "").trim();
   if (!articleNumber) return { ok: false, code: "ARTICLE_REQUIRED", message: "상품번호가 없습니다." };
-  if (!sellerWindow || sellerWindow.isDestroyed()) openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL);
+  if (!sellerWindow || sellerWindow.isDestroyed()) openSellerCenterWindow(SELLER_MAIN_URL);
   for (let attempt = 0; attempt < 30; attempt += 1) {
     if (sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.getURL()) break;
     await wait(300);
@@ -6772,11 +6802,7 @@ async function lookupSellerTransactionPrice(input = {}) {
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     return { ok: false, code: "SELLER_WINDOW_UNAVAILABLE", message: "판매자센터 창을 열지 못했습니다." };
   }
-  if (!sellerWindow.webContents.getURL().includes("/main/goods/search")) {
-    await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
-    await wait(1_500);
-  }
-  if (!sellerWindow.webContents.getURL().includes("/main/goods/search")) {
+  if (!await enterSellerProductSearchViaMenu()) {
     return { ok: false, code: "SELLER_LOGIN_REQUIRED", message: "판매자센터 로그인을 확인해 주세요." };
   }
   sellerWindow.showInactive();
@@ -7615,9 +7641,9 @@ app.whenReady().then(async () => {
     openSellerCenterWindow();
     return { ok: true };
   });
-  ipcMain.handle("seller:open-product-search", () => {
-    openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL);
-    return { ok: true };
+  ipcMain.handle("seller:open-product-search", async () => {
+    openSellerCenterWindow(SELLER_MAIN_URL);
+    return { ok: await enterSellerProductSearchViaMenu({ forceHome: true }) };
   });
   const abortSellerBrandExportAttempt = async () => {
   brandExportAttemptGeneration += 1;
@@ -7629,7 +7655,7 @@ app.whenReady().then(async () => {
     sellerWindow?.webContents.stop();
     if (sellerWindow && !sellerWindow.isDestroyed()) {
       await Promise.race([
-        sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL),
+        sellerWindow.loadURL(SELLER_MAIN_URL),
         new Promise((resolve) => setTimeout(resolve, 8_000)),
       ]);
       sellerWindow.hide();

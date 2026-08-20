@@ -35,13 +35,21 @@ test("brand search click immediately shows progress and reports session timeout"
   assert.match(renderer, /brandSelectionBusy = false/);
 });
 
-test("POIZON component timeout returns home and re-enters product search", () => {
+test("POIZON product search always re-enters through the proven menu workflow", () => {
   assert.match(main, /SELLER_MAIN_URL/);
   assert.match(main, /Load\\s\*Component\\s\*Timeout/);
   assert.match(main, /seller-product-page-recovering/);
   assert.match(main, /recoveryAttempt = 1; recoveryAttempt <= 3/);
   assert.match(main, /SELLER_COMPONENT_LOAD_TIMEOUT/);
   assert.match(main, /product-search-component-timeout/);
+  assert.match(main, /enterSellerProductSearchViaMenu/);
+  assert.match(main, /enterSellerProductSearchViaMenu\(\{ forceHome: true \}\)/);
+  assert.match(main, /\^\(\?:상품\|商品\)\$/);
+  assert.match(main, /performPhysicalSellerSortAndExport/);
+  assert.match(main, /BACKGROUND_LOCAL_SALES_SORT/);
+  assert.match(main, /BACKGROUND_EXPORT/);
+  assert.match(main, /PHYSICAL_EXPORT_DOWNLOAD_CENTER_SHORTCUT/);
+  assert.doesNotMatch(main, /if \(!clicked\) await sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\)/);
 });
 
 test("a new search session preserves history only as a baseline and clears live job ownership", () => {
@@ -57,7 +65,7 @@ test("brand workflow connects directly and searches English before Korean fallba
   const start = main.indexOf("async function automateSellerBrandExport");
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = main.slice(start, end);
-  assert.match(workflow, /loadURL\(SELLER_PRODUCT_SEARCH_URL\)/);
+  assert.match(workflow, /loadURL\(SELLER_MAIN_URL\)/);
   const english = workflow.indexOf("applyValue(${JSON.stringify(sellerBrandSearchName)})");
   const korean = workflow.indexOf("applyValue(${JSON.stringify(brandKoInput)})");
   assert.ok(english >= 0 && korean > english);
