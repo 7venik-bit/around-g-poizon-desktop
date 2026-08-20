@@ -740,6 +740,7 @@ export async function queryDomesticProducts({
   verifyLinkCounts = false,
   officialBrandRecord = null,
   searchStrategy = "brand_code",
+  modules = [],
   fetchImpl = fetch,
 }) {
   const normalizedQuery = sanitizeDomesticQuery(query);
@@ -770,11 +771,13 @@ export async function queryDomesticProducts({
     musinsa: parseMusinsaSearch,
     kolon: (html) => parseKolonSearch(html, articleNumber),
   };
+  const requestedModules = new Set((Array.isArray(modules) ? modules : []).map(String).filter(Boolean));
   const sources = buildDomesticSearchPlan({
     store: officialStoreLabel,
     officialStatus,
     homepageUrl: String(officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl || ""),
-  }).map((source) => ({ ...source, parser: sourceParsers[source.parserId] }));
+  }).filter((source) => requestedModules.size === 0 || requestedModules.has(source.module))
+    .map((source) => ({ ...source, parser: sourceParsers[source.parserId] }));
   // Keep the source order observable and deterministic. Each brand/product is
   // checked from the official mall through the domestic channels one at a
   // time, so a blocked source cannot hide which step failed.

@@ -28,3 +28,14 @@ test("검색 모듈 실행 상태를 메인에서 메뉴 램프로 전달한다"
   assert.match(preload, /onDomesticModuleStatus/);
   assert.match(menu, /onDomesticModuleStatus/);
 });
+
+test("실패 램프는 원인과 시간을 보여주고 해당 모듈만 다시 검색한다", async () => {
+  const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
+  const relay = await readFile(new URL("../relay/domestic-search.mjs", import.meta.url), "utf8");
+  assert.match(menu, /payload\.durationMs/);
+  assert.match(menu, /domestic-module:retry/);
+  assert.match(menu, /이 모듈만 다시 검색할까요/);
+  assert.match(renderer, /modules: moduleIds/);
+  assert.match(renderer, /addEventListener\("domestic-module:retry"/);
+  assert.match(relay, /requestedModules\.has\(source\.module\)/);
+});

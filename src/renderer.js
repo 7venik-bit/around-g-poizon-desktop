@@ -673,9 +673,11 @@ function productCrossCheckIdentity(product = {}) {
   return `text:${brandCode || brand}:${title}:${image}`;
 }
 
-async function cachedDomesticSearch(product, verifyLinkCounts = true) {
+async function cachedDomesticSearch(product, verifyLinkCounts = true, modules = []) {
   const identity = productCrossCheckIdentity(product);
-  if (domesticIdentitySearchCache.has(identity)) return domesticIdentitySearchCache.get(identity);
+  const moduleIds = (Array.isArray(modules) ? modules : []).map(String).filter(Boolean);
+  const cacheKey = moduleIds.length ? `${identity}:modules:${moduleIds.join(",")}` : identity;
+  if (domesticIdentitySearchCache.has(cacheKey)) return domesticIdentitySearchCache.get(cacheKey);
   const articleNumber = product.articleNumber || product.productCode || "";
   const brandName = product.brandName || product.brand || "";
   const productName = product.apiTitle || product.title || product.name || "";
@@ -689,10 +691,11 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
     title: productName,
     imageUrl: product.logoUrl || product.imageUrl || "",
     verifyLinkCounts,
+    modules: moduleIds,
   });
-  domesticIdentitySearchCache.set(identity, request);
+  domesticIdentitySearchCache.set(cacheKey, request);
   const response = await request;
-  if (!response?.ok) domesticIdentitySearchCache.delete(identity);
+  if (!response?.ok || moduleIds.length) domesticIdentitySearchCache.delete(cacheKey);
   return response;
 }
 
@@ -2014,6 +2017,7 @@ async function searchDomesticAt(index, sourceProducts = currentExplorerProducts)
   const product = sourceProducts[index];
   if (!product) return;
   const key = domesticKey(product, index);
+  lastDomesticSearchContext = { product, key, index, sourceProducts };
   domesticResults.set(key, { loading: true, products: [], sources: [] });
   const response = await cachedDomesticSearch(product, !domesticBatchRunning || domesticBatchVerifyCounts);
   const result = response.ok ? response.data : { products: [], sources: [], error: response.message };
@@ -2026,6 +2030,26 @@ async function searchDomesticAt(index, sourceProducts = currentExplorerProducts)
   renderExplorerResults($("#explorer-result-title").textContent, visibleProducts, true);
   return result;
 }
+
+let lastDomesticSearchContext = null;
+window.addEventListener("domestic-module:retry", async (event) => {
+  const moduleId = String(event.detail?.moduleId || "");
+  const context = lastDomesticSearchContext;
+  if (!moduleId || !context?.product) return;
+  const response = await cachedDomesticSearch(context.product, true, [moduleId]);
+  if (!response?.ok) return;
+  const previous = domesticResults.get(context.key) || { products: [], sources: [] };
+  const next = response.data || { products: [], sources: [] };
+  const stores = new Set((next.sources || []).map((source) => source.store));
+  const merged = {
+    ...previous,
+    products: [...(previous.products || []).filter((product) => !stores.has(product.store)), ...(next.products || [])],
+    sources: [...(previous.sources || []).filter((source) => source.module !== moduleId), ...(next.sources || [])]
+      .sort((left, right) => Number(left.priority || 999) - Number(right.priority || 999)),
+  };
+  domesticResults.set(context.key, merged);
+  renderExplorerResults($("#explorer-result-title").textContent, domesticStockOnly ? domesticStockProducts() : allExplorerProducts, true);
+});
 
 async function refresh() {
   state = await window.aroundG.snapshot();

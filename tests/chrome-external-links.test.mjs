@@ -34,6 +34,6 @@ test("Naver security verification shows the window and resumes in the same sessi
   assert.match(mainSource, /searchWindow\.show\(\)/);
   assert.match(mainSource, /10 \* 60_000/);
   assert.match(mainSource, /securityRetry \+ 1/);
-  assert.match(mainSource, /for \(const source of data\.sources\)/);
+  assert.match(mainSource, /for \(let sourceIndex = 0; sourceIndex < data\.sources\.length/);
   assert.doesNotMatch(mainSource, /Promise\.all\(data\.sources\.map/);
 });
