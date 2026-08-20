@@ -7,6 +7,7 @@ import {
   classifySsgProductEvidence,
   detectedRetailer,
   isPlatformShoppingProductUrl,
+  isOverseasPurchaseProduct,
   countLinkedSearchProducts,
   countRenderedChannelProducts,
   domesticChannelUrl,
@@ -26,6 +27,25 @@ import {
   queryDomesticProducts,
   resolveSsgProductClassification,
 } from "../relay/domestic-search.mjs";
+
+test("해외직구·구매대행·해외배송 상품은 국내 결과에서 제외한다", () => {
+  for (const label of ["해외직구", "해외 구매대행", "구매 대행", "해외배송", "해외배송비 30,000원", "international shipping"]) {
+    assert.equal(isOverseasPurchaseProduct(`나이키 축구화 HG0019-104 ${label}`), true, label);
+  }
+  assert.equal(isOverseasPurchaseProduct("나이키코리아 공식스토어 국내배송"), false);
+  const rendered = JSON.stringify({
+    pageText: "브랜드직영몰 4개",
+    productCards: [{
+      productUrl: "https://shopping.naver.com/window-products/brandfashion/123",
+      title: "나이키 가토 HG0019-104",
+      text: "해외직구 구매대행 해외배송비 30,000원",
+    }],
+  });
+  const result = analyzeRenderedChannelProducts(rendered, "네이버 공식 브랜드스토어", "HG0019-104", "나이키");
+  assert.equal(result.count, 0);
+  assert.deepEqual(result.products, []);
+  assert.equal(result.presenceConfirmed, false);
+});
 
 test("모든 국내 판매처 상세페이지 재고를 세 단계로 판정한다", () => {
   assert.deepEqual(normalizeRenderedStockEvidence({
