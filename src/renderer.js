@@ -1236,7 +1236,12 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     }
     const remainingCount = brandExportQueue.length;
     if (!shouldRetryInput) brandExportFailureCount += 1;
-    const failureReason = String(automation?.diagnostics?.reason || "").trim();
+    // Detailed Seller Center DOM text belongs in the diagnostic file. Rendering
+    // it repeatedly in the status table made the whole application stutter.
+    const failureReason = String(automation?.diagnostics?.reason || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 160);
     updateBrandBatchState(
       failedBrandName,
       shouldRetryInput

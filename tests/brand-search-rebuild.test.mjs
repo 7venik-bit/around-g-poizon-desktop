@@ -46,6 +46,10 @@ test("POIZON product search always re-enters through the proven menu workflow", 
   assert.match(main, /Load\\s\*Component\\s\*Timeout/);
   assert.match(main, /seller-product-page-recovering/);
   assert.match(main, /recoveryAttempt = 1; recoveryAttempt <= 3/);
+  assert.match(main, /waitForProductSearchReady\(60_000\)/);
+  assert.match(main, /while \(!state\.failed && !state\.hasSearch && Date\.now\(\) < deadline\)/);
+  assert.doesNotMatch(main, /text: text\.slice\(0, 1200\)/);
+  assert.match(main, /\.trim\(\)\.slice\(0, 180\)/);
   assert.match(main, /SELLER_COMPONENT_LOAD_TIMEOUT/);
   assert.match(main, /product-search-component-timeout/);
   assert.match(main, /enterSellerProductSearchViaMenu/);
@@ -56,6 +60,11 @@ test("POIZON product search always re-enters through the proven menu workflow", 
   assert.match(main, /BACKGROUND_EXPORT/);
   assert.match(main, /PHYSICAL_EXPORT_DOWNLOAD_CENTER_SHORTCUT/);
   assert.doesNotMatch(main, /if \(!clicked\) await sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\)/);
+});
+
+test("seller failure details stay bounded so the brand screen remains responsive", () => {
+  assert.match(renderer, /automation\?\.diagnostics\?\.reason/);
+  assert.match(renderer, /\.replace\(\/\\s\+\/g, " "\)[\s\S]*?\.slice\(0, 160\)/);
 });
 
 test("a new search session preserves history only as a baseline and clears live job ownership", () => {

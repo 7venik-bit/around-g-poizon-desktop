@@ -20,8 +20,8 @@ test("restored jobs are rebuilt as safe non-downloading jobs", () => {
 
 
 
-test("release metadata is 2.10.312", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.312");
-  assert.equal(JSON.parse(lockSource).version, "2.10.312");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.312");
+test("release metadata is 2.10.313", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.313");
+  assert.equal(JSON.parse(lockSource).version, "2.10.313");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.313");
 });
