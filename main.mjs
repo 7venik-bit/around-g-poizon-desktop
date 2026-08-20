@@ -81,6 +81,7 @@ import {
   exactArticleIdentityMatch,
   resolveSsgProductClassification,
   detectedRetailer,
+  isOverseasPurchaseProduct,
   normalizeRenderedStockEvidence,
   queryDomesticProducts,
 } from "./relay/domestic-search.mjs";
@@ -1175,6 +1176,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         if (product.detailArticleVerificationRequired
           && !exactArticleIdentityMatch(detailText, articleNumber)) continue;
         const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
+        if (isOverseasPurchaseProduct(evidence)) continue;
         const isSsg = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(String(product.url || ""));
         const detailClassification = isSsg
           ? classifySsgProductEvidence({ brand, url: product.url, text: evidence })
