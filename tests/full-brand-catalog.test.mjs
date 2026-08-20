@@ -97,7 +97,8 @@ test("인기 브랜드는 브랜드별 마지막 페이지까지 수집하고 �
   assert.match(poizon, /brandProductCount = brandProductKeys\.size/);
   assert.match(main, /brandProductCount: Number\(detail\.brandProductCount \|\| 0\)/);
   assert.match(renderer, /전체 페이지 \$\{brandCount\.toLocaleString\("ko-KR"\)\}개 수집 완료/);
-  assert.match(renderer, /전체 상품 \$\{result\.products\.length\.toLocaleString\("ko-KR"\)\}개 수집 완료/);
+  assert.match(renderer, /상품 \$\{detailProducts\.length\.toLocaleString\("ko-KR"\)\}개 확인/);
+  assert.match(renderer, /전체 \$\{result\.products\.length\.toLocaleString\("ko-KR"\)\}개 중 세부 분류 완료/);
 });
 
 test("카테고리 검색은 이모티콘 없이 진행 상태만 표시한다", async () => {
