@@ -938,6 +938,8 @@ button,input,select,textarea{font-family:inherit}
 }
 
 /* Brand cards show up to two lines instead of ellipsis-only labels. */
+.brand-category-action{border-color:#2684ff;color:#1768c5;background:#eef6ff;font-weight:700}.category-screen-head{display:flex;align-items:center;gap:16px}.category-screen-head h2{margin:2px 0}.category-selection-path{margin:16px 0 4px;padding:13px 15px;border-radius:11px;background:#eef6ff;color:#1768c5;font-weight:700}.category-detail-section{padding:18px;border:1px solid #cfe0f5;border-radius:14px;background:#f7fbff;margin:0 0 18px}.category-detail-buttons{display:flex;flex-wrap:wrap;gap:9px;margin-top:12px}.category-detail-button.selected{border-color:#2684ff;background:#2684ff;color:#fff}
+
 .brand-card{
   min-width:0;
   height:auto;
