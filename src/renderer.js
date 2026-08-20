@@ -21,7 +21,8 @@ let domesticStockOnly = false;
 let domesticBatchRunning = false;
 let domesticBatchVerifyCounts = false;
 let domesticBatchStopRequested = false;
-const DOMESTIC_BATCH_PROGRESS_KEY = "around-g-domestic-batch-progress-v2";
+const DOMESTIC_BATCH_PROGRESS_KEY = "around-g-domestic-batch-progress-v3";
+const DOMESTIC_RESULT_POLICY_VERSION = 2;
 let brandProgressActive = false;
 let categorySearchActive = false;
 let categorySearchRunId = 0;
@@ -1603,7 +1604,7 @@ function saveDomesticBatchProgress(progress) {
 async function restoreDomesticStockResults(batchId) {
   state = await window.aroundG.snapshot();
   for (const saved of state.domesticSearches || []) {
-    if (saved.batchId === batchId && saved.key && saved.result) domesticResults.set(saved.key, saved.result);
+    if (saved.policyVersion === DOMESTIC_RESULT_POLICY_VERSION && saved.batchId === batchId && saved.key && saved.result) domesticResults.set(saved.key, saved.result);
   }
 }
 
@@ -2019,7 +2020,7 @@ async function searchDomesticAt(index, sourceProducts = currentExplorerProducts)
   domesticResults.set(key, result);
   if (hasDomesticStock(result) && domesticBatchRunning && !domesticBatchVerifyCounts) {
     const batchId = domesticBatchId(sourceProducts);
-    await window.aroundG.upsert("domesticSearches", { id: `${batchId}:${key}`, batchId, key, result });
+    await window.aroundG.upsert("domesticSearches", { id: `${batchId}:${key}`, batchId, key, result, policyVersion: DOMESTIC_RESULT_POLICY_VERSION });
   }
   const visibleProducts = domesticStockOnly ? domesticStockProducts() : allExplorerProducts;
   renderExplorerResults($("#explorer-result-title").textContent, visibleProducts, true);
