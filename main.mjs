@@ -4259,8 +4259,8 @@ async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
     let confirmationClicked = false;
     let confirmationClickCount = 0;
     let requestAcknowledged = false;
-    const confirmationPattern = /^(?:확인|내보내기|생성|확정|제출|계속|确认|确定|提交|导出|继续)$/i;
-    const cancelPattern = /취소|닫기|取消|关闭/i;
+    const confirmationPattern = /^(?:확인|내보내기|생성|확정|제출|계속|바로\s*가기|다운로드\s*센터.*바로\s*가기|确认|确定|提交|导出|继续)$/i;
+    const cancelPattern = /취소|닫기|나중에|取消|关闭/i;
     const successPattern = /(?:내보내기|작업|파일).*(?:등록|생성|완료|성공|접수)|(?:导出|任务).*(?:成功|已创建|已提交)/i;
     for (let attempt = 0; attempt < 64; attempt += 1) {
       const dialogs = [...document.querySelectorAll(
@@ -4348,8 +4348,8 @@ async function confirmSellerExportRequest(targetFrame) {
       }
       element?.click?.();
     };
-    const confirmPattern = /^(?:확인|내보내기|생성|확정|제출|계속|确认|确定|提交|导出|继续)$/i;
-    const cancelPattern = /취소|닫기|取消|关闭/i;
+    const confirmPattern = /^(?:확인|내보내기|생성|확정|제출|계속|바로\s*가기|다운로드\s*센터.*바로\s*가기|确认|确定|提交|导出|继续)$/i;
+    const cancelPattern = /취소|닫기|나중에|取消|关闭/i;
     let confirmationObserved = false;
     let confirmationClicked = false;
     for (let attempt = 0; attempt < 60; attempt += 1) {
@@ -4532,6 +4532,28 @@ async function performPhysicalSellerSortAndExport(targetFrame) {
 }
 
 async function confirmSellerExportRequestPhysical(targetFrame) {
+  // POIZON sometimes replaces the old one-button confirmation with a
+  // completion popup containing "나중에 / 바로가기". In that layout,
+  // "바로가기" both acknowledges the export and opens Download Center.
+  const shortcut = await physicalClickSellerElement(targetFrame, `
+    const dialogs = [...document.querySelectorAll(
+      ".ant-modal,.ant-modal-confirm,[role='dialog'],.ant-popover,.ant-drawer,.semi-modal,.semi-portal"
+    )].filter(visible);
+    const dialog = dialogs.at(-1);
+    if (!dialog) return null;
+    return [...dialog.querySelectorAll("button,[role='button'],a,span")].filter(visible)
+      .find((element) => /^(?:바로\s*가기|다운로드\s*센터.*바로\s*가기)$/.test(textOf(element)))
+      ?.closest("button,[role='button'],a") || null;
+  `, "PHYSICAL_EXPORT_DOWNLOAD_CENTER_SHORTCUT", 15_000);
+  if (shortcut.ok) {
+    return {
+      ok: true,
+      confirmationObserved: true,
+      confirmationClicked: true,
+      requestAcknowledged: true,
+      downloadCenterClicked: true,
+    };
+  }
   const clicked = await physicalClickSellerElement(targetFrame, `
     const dialogs = [...document.querySelectorAll(
       ".ant-modal,.ant-modal-confirm,[role='dialog'],.ant-popover,.ant-drawer,.semi-modal,.semi-portal"
@@ -5509,7 +5531,9 @@ async function automateSellerBrandExport(input = {}) {
             };
             break;
           }
-          const downloadCenter = confirmation.confirmationClicked
+          const downloadCenter = confirmation.downloadCenterClicked
+            ? { ok: true, clicked: true, alreadyNavigated: true }
+            : confirmation.confirmationClicked
             ? await clickSellerDownloadCenterShortcutPhysical(candidate.frame).catch(() => ({
               ok: false,
               clicked: false,

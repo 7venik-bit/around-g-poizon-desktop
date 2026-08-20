@@ -14,6 +14,14 @@ test("brand export completes the POIZON confirmation dialog", () => {
   assert.match(main, /clickLikeUser\(confirmControl\)/);
 });
 
+test("나중에·바로가기 팝업은 바로가기로 승인하고 다운로드센터로 이동한다", () => {
+  assert.match(main, /PHYSICAL_EXPORT_DOWNLOAD_CENTER_SHORTCUT/);
+  assert.match(main, /바로\\s\*가기\|다운로드\\s\*센터\.\*바로\\s\*가기/);
+  assert.match(main, /downloadCenterClicked: true/);
+  assert.match(main, /confirmation\.downloadCenterClicked/);
+  assert.match(main, /나중에/);
+});
+
 
 test("export center discovers job rows from stable job numbers across layouts and frames", () => {
   assert.match(main, /firstCellText\.match/);
@@ -75,8 +83,8 @@ test("POIZON daily twenty-search limit replaces the generic confirmation error",
   assert.match(main, /dailyLimit\.exceeded \? "DAILY_SEARCH_LIMIT_EXCEEDED"/);
 });
 
-test("release metadata is 2.10.301", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.301");
-  assert.equal(JSON.parse(lockSource).version, "2.10.301");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.301");
+test("release metadata is 2.10.302", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.302");
+  assert.equal(JSON.parse(lockSource).version, "2.10.302");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.302");
 });
