@@ -33,3 +33,12 @@ test("완료된 브랜드는 즉시 저장하고 재검색에서 건너뛴다", 
   assert.match(renderer, /await savePartialResult\(\)/);
   assert.match(renderer, /검색 · 진행 중/);
 });
+
+test("카테고리 화면에서 즐겨찾기 브랜드를 골라 검색한다", () => {
+  assert.match(html, /id="category-brand-section"/);
+  assert.match(html, /id="category-brand-select-all"/);
+  assert.match(html, /id="category-brand-clear"/);
+  assert.match(renderer, /data-category-brand-id/);
+  assert.match(renderer, /const favoriteBrandIds = \[\.\.\.categoryBrandIds\]/);
+  assert.match(renderer, /!selectedCategoryDetail \|\| !categoryBrandIds\.size/);
+});
