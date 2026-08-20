@@ -38,28 +38,20 @@ test("brand search click shows progress and never cancels a delayed main-process
   assert.match(renderer, /brandSelectionBusy = false/);
 });
 
-test("POIZON product search always re-enters through the proven menu workflow", () => {
-  assert.match(main, /SELLER_CENTER_URL/);
-  assert.match(main, /Component\\s\*Key\\s\*Error/);
-  assert.match(main, /请求超时/);
-  assert.match(main, /홈페이지로\\s\*돌아가기/);
-  assert.match(main, /Load\\s\*Component\\s\*Timeout/);
-  assert.match(main, /seller-product-page-recovering/);
-  assert.match(main, /recoveryAttempt = 1; recoveryAttempt <= 3/);
-  assert.match(main, /waitForProductSearchReady\(60_000\)/);
-  assert.match(main, /while \(!state\.failed && !state\.hasSearch && Date\.now\(\) < deadline\)/);
-  assert.doesNotMatch(main, /text: text\.slice\(0, 1200\)/);
-  assert.match(main, /\.trim\(\)\.slice\(0, 180\)/);
-  assert.match(main, /SELLER_COMPONENT_LOAD_TIMEOUT/);
-  assert.match(main, /product-search-component-timeout/);
-  assert.match(main, /enterSellerProductSearchViaMenu/);
-  assert.match(main, /sellerWindow\.show\(\)[\s\S]*sellerWindow\.focus\(\)/);
-  assert.match(main, /\^\(\?:상품\|商品\)\$/);
+test("POIZON product search restores the pre-module persistent direct workflow", () => {
+  const start = main.indexOf("async function automateSellerBrandExport");
+  const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
+  const workflow = main.slice(start, end);
+  assert.match(workflow, /openSellerCenterWindow\(SELLER_PRODUCT_SEARCH_URL/);
+  assert.match(workflow, /deferNavigation: true/);
+  assert.match(workflow, /await sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\)/);
+  assert.doesNotMatch(workflow, /enterSellerProductSearchViaMenu/);
+  assert.doesNotMatch(workflow, /seller-product-page-recovering/);
+  assert.doesNotMatch(workflow, /SELLER_COMPONENT_LOAD_TIMEOUT/);
   assert.match(main, /performPhysicalSellerSortAndExport/);
   assert.match(main, /BACKGROUND_LOCAL_SALES_SORT/);
   assert.match(main, /BACKGROUND_EXPORT/);
   assert.match(main, /PHYSICAL_EXPORT_DOWNLOAD_CENTER_SHORTCUT/);
-  assert.doesNotMatch(main, /if \(!clicked\) await sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\)/);
 });
 
 test("seller failure details stay bounded so the brand screen remains responsive", () => {
@@ -80,10 +72,10 @@ test("brand workflow connects directly and searches English before Korean fallba
   const start = main.indexOf("async function automateSellerBrandExport");
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = main.slice(start, end);
-  assert.match(workflow, /openSellerCenterWindow\(SELLER_CENTER_URL/);
-  assert.match(workflow, /if \(!sellerWindow \|\| sellerWindow\.isDestroyed\(\)\)/);
+  assert.match(workflow, /openSellerCenterWindow\(SELLER_PRODUCT_SEARCH_URL/);
+  assert.match(workflow, /deferNavigation: true/);
   assert.doesNotMatch(workflow, /sellerWindow\.loadURL\(SELLER_CENTER_URL\)/);
-  assert.doesNotMatch(workflow, /sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\)/);
+  assert.match(workflow, /sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\)/);
   assert.doesNotMatch(workflow, /loadURL\("https:\/\/seller\.poizon\.com\/main"\)/);
   assert.match(workflow, /applyExactSellerBrandFilter\(candidate\.frame, \[[\s\S]*sellerBrandSearchName,[\s\S]*brandKoInput/);
   assert.match(workflow, /seller-brand-filter-confirmed/);
