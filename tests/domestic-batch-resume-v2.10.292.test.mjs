@@ -20,6 +20,8 @@ test("재고가 확인된 결과는 즉시 저장되어 재개 후 복원된다"
   assert.match(store, /domesticSearches: \[\]/);
   assert.match(renderer, /upsert\("domesticSearches"/);
   assert.match(renderer, /restoreDomesticStockResults\(batchId\)/);
+  assert.match(renderer, /DOMESTIC_RESULT_POLICY_VERSION/);
+  assert.match(renderer, /saved\.policyVersion === DOMESTIC_RESULT_POLICY_VERSION/);
 });
 
 test("검색 카드에 품번이 없어도 상세페이지 검증 후보를 보존한다", () => {

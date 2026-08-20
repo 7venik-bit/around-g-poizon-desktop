@@ -10,6 +10,17 @@ import { brandSearchQueries } from "../services/brand-search-profile.mjs";
 const MAX_QUERY_LENGTH = 120;
 const MAX_PRODUCTS_PER_STORE = 8;
 
+const OVERSEAS_PURCHASE_PATTERN = /(?:해외\s*(?:직구|구매\s*대행|배송|상품)|구매\s*대행|직구\s*상품|해외배송비|국제\s*배송|해외에서\s*배송|overseas\s*(?:shipping|purchase)|international\s*shipping|cross[- ]?border)/i;
+
+export function isOverseasPurchaseProduct(value = "") {
+  const evidence = typeof value === "string" ? value : [
+    value?.title, value?.name, value?.text, value?.markup, value?.seller,
+    value?.sellerName, value?.mallName, value?.shippingType, value?.deliveryType,
+    value?.badge, value?.badges, value?.labels,
+  ].filter(Boolean).map((item) => typeof item === "string" ? item : JSON.stringify(item)).join(" ");
+  return OVERSEAS_PURCHASE_PATTERN.test(String(evidence || ""));
+}
+
 export const DOMESTIC_RETAILER_GROUPS = {
   "온라인 편집샵": [
     "OK몰", "카시나", "S.I.VILLAGE", "ABC마트", "그랜드스테이지", "온더스팟", "폴더",
@@ -363,6 +374,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
       const requiresBrandMatch = /^(?:네이버|무신사|SSG|롯데온|병행수입·편집샵)/.test(String(store || "")) && brandKeys.length > 0;
       const requiresExactParallelModel = String(store || "") === "병행수입·편집샵";
       const matchingProducts = new Map();
+      let domesticChannelCandidateCount = 0;
       for (const card of cards) {
         const productUrl = String(card?.productUrl || "");
         const titleText = String(card?.title || "").trim();
@@ -372,6 +384,10 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           ? `${titleText} ${cardBodyText} ${String(card?.markup || "")} ${productUrl}`.trim()
           : titleText || cardBodyText;
         const rawCardText = `${titleText} ${cardBodyText}`.trim();
+        // 국내 재고 검색에는 한국에서 바로 구매 가능한 상품만 남긴다.
+        // 검색 경로가 네이버 공식스토어/백화점이어도 상품 카드가 해외직구,
+        // 구매대행 또는 해외배송이면 국내 판매처로 계산하지 않는다.
+        if (isOverseasPurchaseProduct({ ...card, text: rawCardText })) continue;
         const expectedCompact = articleCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
         const detectedArticleNumbers = articleIdentityTokens(rawCardText);
         const exactDetectedArticle = detectedArticleNumbers.find((code) => code === expectedCompact) || "";
@@ -390,6 +406,9 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         const tokens = rawCardText.toLowerCase().split(/[^a-z0-9가-힣]+/).map(normalizeOfficialBrand).filter(Boolean);
         const brandMatched = !requiresBrandMatch
           || brandKeys.some((key) => key.length <= 3 ? tokens.includes(key) : evidence.includes(key));
+        if (!conflictingArticle && brandMatched && titleIdentityMatch(rawCardText, expectedTitle)) {
+          domesticChannelCandidateCount += 1;
+        }
         let detailArticleVerificationRequired = false;
         // Naver Fashion Town often omits the model number from the visible
         // product title.  A single result may still be accepted when its brand
@@ -468,12 +487,13 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
       }
       const exactSsgSearchChecked = /^SSG(?:\s|$)/.test(String(store || "")) && cards.length > 0;
       if (/^네이버\s/.test(String(store || "")) && scopedCountFound && scopedPositiveCount > 0) {
+        const domesticPresence = matchingProducts.size > 0 || domesticChannelCandidateCount > 0;
         return {
-          count: 1,
+          count: domesticPresence ? 1 : 0,
           channelCount: scopedPositiveCount,
           products: [...matchingProducts.values()],
-          presenceConfirmed: true,
-          absenceConfirmed: false,
+          presenceConfirmed: domesticPresence,
+          absenceConfirmed: !domesticPresence,
           ssgSearchChecked: false,
         };
       }
@@ -571,6 +591,7 @@ export function parseMusinsaSearch(html) {
       if (!Array.isArray(page?.items)) continue;
       for (const item of page.items) {
         if (!item?.goodsNo || !item?.goodsName) continue;
+        if (isOverseasPurchaseProduct(item)) continue;
         products.push({
           store: "무신사",
           id: String(item.goodsNo),
@@ -602,6 +623,7 @@ export function parseSsgSearch(html) {
       if (area?.unitType !== "ITEM_UNIT_LIST" || !Array.isArray(area?.dataList)) continue;
       for (const item of area.dataList) {
         if (!item?.itemId || !item?.itemName) continue;
+        if (isOverseasPurchaseProduct(item)) continue;
         products.push({
           store: "SSG",
           id: String(item.itemId),
