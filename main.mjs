@@ -193,7 +193,7 @@ let brandWorkSessionGeneration = 0;
 let brandExportAttemptGeneration = 0;
 let sellerProductFrameRoutingId = null;
 const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
-const SELLER_PRODUCT_SEARCH_URL = "https://seller.poizon.com/main/goods/search";
+const SELLER_MAIN_URL = "https://seller.poizon.com/main";
 const SELLER_EXPORT_CENTER_URL = "https://seller.poizon.com/main/exportCenter";
 const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 20 * 60 * 1000;
 const KR_POIZON_BRAND_LIST_URL = "https://kr.poizon.com/brand/list";
@@ -4056,59 +4056,99 @@ async function submitStoredSellerCredentials() {
   return { ...(realMouseResult || accessibilityResult || lastResult), ok: false, stored: true };
 }
 
-async function enterSellerProductSearchViaMenu() {
+async function sellerProductSearchPageState() {
+  if (!sellerWindow || sellerWindow.isDestroyed()) {
+    return { ready: false, failed: false, frame: null, url: "" };
+  }
+  for (const frame of sellerWindowFrames()) {
+    const state = await executeSellerFrameWithTimeout(frame, `(() => {
+      const visible = (element) => element && element.getClientRects().length > 0;
+      const textOf = (element) => String(element?.innerText || element?.textContent || "")
+        .replace(/\\s+/g, " ").trim();
+      const body = String(document.body?.innerText || "");
+      const failed = /Page\\s*Not\\s*Found|Component\\s*Key\\s*Error|Load\\s*Component\\s*Timeout|请求超时/i.test(body);
+      const input = [...document.querySelectorAll("input,textarea")]
+        .filter(visible).find((element) => !element.disabled && !element.readOnly);
+      const search = [...document.querySelectorAll("button,[role='button']")]
+        .filter(visible).find((element) => /검색\\s*및\\s*입찰|商品.{0,8}(?:搜索|查询)/i.test(textOf(element)));
+      return { ready: !failed && Boolean(input && search), failed, url: location.href };
+    })()`, 3_000, { ready: false, failed: false, url: "" });
+    if (state?.ready) return { ...state, frame };
+    if (state?.failed) return { ...state, frame: null };
+  }
+  return {
+    ready: false,
+    failed: false,
+    frame: null,
+    url: String(sellerWindow.webContents.getURL() || ""),
+  };
+}
+
+async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
   if (!sellerWindow || sellerWindow.isDestroyed()) return false;
+  let state = await sellerProductSearchPageState();
+  if (!forceHome && state.ready) return true;
+  if (state.failed) {
+    const homeClick = await physicalClickSellerElement(sellerWindow.webContents.mainFrame, `
+      return [...document.querySelectorAll("a,button,[role='button'],span")]
+        .filter(visible)
+        .find((element) => /^(?:홈페이지로\\s*돌아가기|返回首页|回到首页)$/.test(textOf(element)))
+        ?.closest("a,button,[role='button']") || null;
+    `, "PHYSICAL_SELLER_HOME_RECOVERY", 5_000);
+    if (homeClick.ok) await wait(2_500);
+  }
   const currentUrl = String(sellerWindow.webContents.getURL() || "");
-  if (currentUrl.includes("/main/goods/search")) return true;
-  if (!currentUrl.includes("seller.poizon.com")) return false;
+  if (forceHome || state.failed || !currentUrl.includes("seller.poizon.com")) {
+    await sellerWindow.loadURL(SELLER_MAIN_URL).catch(() => {});
+    await wait(2_500);
+  }
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const frames = sellerWindowFrames();
-    for (const frame of frames) {
-      const recovered = await executeSellerFrameWithTimeout(frame, `(() => {
-        const text = String(document.body?.innerText || "");
-        if (!/Page\s*Not\s*Found|Component\s*Key\s*Error|Load\s*Component\s*Timeout|请求超时/i.test(text)) return false;
-        const visible = (element) => element && element.getClientRects().length > 0;
-        const label = (element) => String(element?.innerText || element?.textContent || "").replace(/\\s+/g, " ").trim();
-        const home = [...document.querySelectorAll("a,button,[role='button'],span")]
+    state = await sellerProductSearchPageState();
+    if (state.ready) return true;
+    const menuFrame = sellerWindow.webContents.mainFrame;
+    const searchMenuVisible = await executeSellerFrameWithTimeout(menuFrame, `(() => {
+      const visible = (element) => element && element.getClientRects().length > 0;
+      const textOf = (element) => String(element?.innerText || element?.textContent || "")
+        .replace(/\\s+/g, " ").trim();
+      return [...document.querySelectorAll("a,button,[role='menuitem'],[role='button'],li,div,span")]
+        .filter(visible).some((element) => /^(?:상품\\s*검색|商品搜索)$/.test(textOf(element)));
+    })()`, 2_000, false);
+    if (!searchMenuVisible) {
+      const productMenu = await physicalClickSellerElement(menuFrame, `
+        return [...document.querySelectorAll("a,button,[role='menuitem'],[role='button'],li,div,span")]
           .filter(visible)
-          .find((element) => /^(?:홈페이지로\s*돌아가기|返回首页|回到首页)$/.test(label(element)));
-        const target = home?.closest?.("a,button,[role='button']") || home;
-        target?.click?.();
-        return Boolean(target);
-      })()`, 4_000, false);
-      if (recovered) {
-        await wait(3_000);
-        break;
+          .filter((element) => /^(?:상품|商品)$/.test(textOf(element)))
+          .sort((left, right) => {
+            const a = left.getBoundingClientRect();
+            const b = right.getBoundingClientRect();
+            return a.width * a.height - b.width * b.height;
+          })[0]?.closest("a,button,[role='menuitem'],[role='button'],li") || null;
+      `, "PHYSICAL_PRODUCT_MENU", 5_000);
+      if (productMenu.ok) await wait(800);
+    }
+    const searchMenu = await physicalClickSellerElement(menuFrame, `
+      return [...document.querySelectorAll("a,button,[role='menuitem'],[role='button'],li,div,span")]
+        .filter(visible)
+        .filter((element) => /^(?:상품\\s*검색|商品搜索)$/.test(textOf(element)))
+        .sort((left, right) => {
+          const a = left.getBoundingClientRect();
+          const b = right.getBoundingClientRect();
+          return a.width * a.height - b.width * b.height;
+        })[0]?.closest("a,button,[role='menuitem'],[role='button'],li") || null;
+    `, "PHYSICAL_PRODUCT_SEARCH_MENU", 6_000);
+    if (searchMenu.ok) {
+      const deadline = Date.now() + 12_000;
+      while (Date.now() < deadline) {
+        state = await sellerProductSearchPageState();
+        if (state.ready) return true;
+        if (state.failed) break;
+        await wait(500);
       }
     }
-    const activeFrames = sellerWindowFrames();
-    for (const frame of activeFrames) {
-      const clicked = await executeSellerFrameWithTimeout(frame, `(async () => {
-        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-        const visible = (element) => {
-          const rect = element?.getBoundingClientRect?.();
-          return Boolean(rect && rect.width > 0 && rect.height > 0);
-        };
-        const label = (element) => String(element?.innerText || element?.textContent || "").replace(/\\s+/g, " ").trim();
-        const candidates = () => [...document.querySelectorAll("a,button,[role='menuitem'],[role='button'],li")].filter(visible);
-        let target = candidates().find((element) => /^(?:상품\\s*검색|商品搜索)$/.test(label(element)));
-        if (!target) {
-          const productMenu = candidates().find((element) => /^(?:상품|商品)$/.test(label(element)));
-          productMenu?.scrollIntoView?.({ block: "center" });
-          productMenu?.click?.();
-          await wait(700);
-          target = candidates().find((element) => /^(?:상품\\s*검색|商品搜索)$/.test(label(element)));
-        }
-        target?.scrollIntoView?.({ block: "center" });
-        target?.click?.();
-        return Boolean(target);
-      })()`, 5_000, false);
-      if (clicked) {
-        await wait(3_000);
-        if (String(sellerWindow.webContents.getURL() || "").includes("/main/goods/search")) return true;
-      }
+    if (attempt < 2) {
+      await sellerWindow.loadURL(SELLER_MAIN_URL).catch(() => {});
+      await wait(2_500);
     }
-    if (attempt < 2) await wait(1_000);
   }
   return false;
 }
@@ -4142,11 +4182,6 @@ async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
         lastAutoLoginAttemptAt = Date.now();
       }
       continue;
-    }
-    if (!String(sellerWindow.webContents.getURL() || "").includes("/main/goods/search")) {
-      await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL).catch(() => {});
-      await wait(2_000);
-      if (await sellerPageRequiresLogin()) continue;
     }
     await setSellerLoginStatusOverlay("success", "자동 로그인 테스트 성공 완료", "POIZON 판매자센터 진입을 확인했습니다. 브랜드 검색을 자동으로 계속합니다.");
     mainWindow?.webContents.send("brand-export:progress", {
@@ -4945,7 +4980,7 @@ async function automateSellerBrandExport(input = {}) {
   // Show the exact Electron Seller Center window that is being automated.
   // A separately opened Chrome window is a different browser session and does
   // not reflect this automation, which previously made real work look idle.
-  openSellerCenterWindow(SELLER_PRODUCT_SEARCH_URL, {
+  openSellerCenterWindow(SELLER_MAIN_URL, {
     visible: true,
     activate: true,
     deferNavigation: true,
@@ -4964,11 +4999,9 @@ async function automateSellerBrandExport(input = {}) {
     message: `${brandName} · 판매자센터 상품검색 화면 연결을 시도합니다.`,
   });
   try {
-    // Restore the pre-module POIZON route: reuse one persistent Seller Center
-    // window and load the known product-search page directly for every queued
-    // brand.  Official-mall and Musinsa modules remain independent and do not
-    // participate in this Seller Center navigation lifecycle.
-    await sellerWindow.loadURL(SELLER_PRODUCT_SEARCH_URL);
+    // Start from the Seller Center home shell. Product search is opened only
+    // through the same visible menu clicks a person performs.
+    await sellerWindow.loadURL(SELLER_MAIN_URL);
   } catch (error) {
     const diagnosticPath = await captureSellerDiagnostic(brandName, "page-load-failed");
     brandExportJobPending = false;
@@ -4991,6 +5024,27 @@ async function automateSellerBrandExport(input = {}) {
       message: login.code === "SELLER_LOGIN_TIMEOUT"
         ? `${brandName} · 10분 동안 로그인이 확인되지 않아 작업을 중단했습니다.`
         : `${brandName} · POIZON 로그인 창이 닫혀 작업을 중단했습니다.`,
+    };
+  }
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "seller-product-menu-clicking",
+    brandName,
+    jobState: "1단계/5 · 판매자센터 상품 메뉴 클릭 중",
+    message: `${brandName} · 판매자센터 메인에서 상품 → 상품 검색을 실제 마우스로 클릭합니다.`,
+  });
+  const productSearchOpened = await enterSellerProductSearchViaMenu({ forceHome: true });
+  if (!productSearchOpened) {
+    const pageState = await sellerProductSearchPageState();
+    const diagnosticPath = await captureSellerDiagnostic(brandName, "physical-product-menu-failed");
+    brandExportJobPending = false;
+    pendingBrandExportName = "";
+    return {
+      ok: false,
+      code: pageState.failed ? "SELLER_COMPONENT_LOAD_TIMEOUT" : "SELLER_PRODUCT_MENU_CLICK_FAILED",
+      message: pageState.failed
+        ? `${brandName} · 메뉴 클릭 후 POIZON 상품검색 구성요소가 열리지 않았습니다.`
+        : `${brandName} · 판매자센터의 상품 → 상품 검색 메뉴를 실제 마우스로 클릭하지 못했습니다.`,
+      diagnostics: { url: pageState.url, path: diagnosticPath },
     };
   }
   // Keep the same persistent Seller Center session visible while the restored
