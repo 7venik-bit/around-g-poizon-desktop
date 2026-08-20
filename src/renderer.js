@@ -28,6 +28,7 @@ let categorySearchRunId = 0;
 let categoryLoadingStartedAt = 0;
 let categoryLoadingTimer = null;
 let categoryCompletedBrands = [];
+let categoryBrandIds = new Set();
 let brandWorkbenchProducts = [];
 let selectedBrandName = localStorage.getItem("around-g-selected-brand-name") || "";
 let selectedBrandIds = new Set();
@@ -1554,7 +1555,24 @@ function renderCategoryButtons() {
     `<button type="button" class="category-detail-button ${detail === selectedCategoryDetail ? "selected" : ""}" data-category-detail="${text(detail)}">${text(detail)}</button>`
   ).join("");
   $("#category-selection-path").textContent = selectedCategoryDetail ? `${selectedCategory} 〉 ${selectedCategoryDetail}` : `${selectedCategory} 〉 세부 메뉴를 선택해 주세요.`;
-  $("#category-search").disabled = !selectedCategoryDetail;
+  renderCategoryFavoriteBrands();
+  $("#category-search").disabled = !selectedCategoryDetail || !categoryBrandIds.size;
+}
+
+function renderCategoryFavoriteBrands({ reset = false } = {}) {
+  const favoriteIds = pinnedBrandIds.map(Number).filter(Number.isFinite);
+  const favoriteSet = new Set(favoriteIds);
+  if (reset) categoryBrandIds = new Set(favoriteIds);
+  else categoryBrandIds = new Set([...categoryBrandIds].filter((id) => favoriteSet.has(Number(id))));
+  const brands = favoriteIds.map((id) => explorerMeta.brands.find((brand) => Number(brand.id) === id)).filter(Boolean);
+  $("#category-brand-cards").innerHTML = brands.length ? brands.map((brand) => {
+    const selected = categoryBrandIds.has(Number(brand.id));
+    return `<button type="button" class="category-brand-card ${selected ? "selected" : ""}" data-category-brand-id="${brand.id}" aria-pressed="${selected}"><i>${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="">` : text(brand.name.slice(0, 1))}</i><span><strong>${text(brand.name)}</strong><small>${text(brand.ko || "")} · ID ${brand.id}</small></span><b>${selected ? "선택됨" : "선택"}</b></button>`;
+  }).join("") : '<p class="empty">브랜드 검색 화면에서 즐겨찾기 브랜드를 먼저 등록해 주세요.</p>';
+  $("#category-brand-count").textContent = `${categoryBrandIds.size}/${brands.length}개 선택`;
+  $("#category-brand-select-all").disabled = !brands.length || categoryBrandIds.size === brands.length;
+  $("#category-brand-clear").disabled = !categoryBrandIds.size;
+  $("#category-search").disabled = !selectedCategoryDetail || !categoryBrandIds.size;
 }
 
 function domesticKey(product, index) {
@@ -2105,13 +2123,29 @@ document.addEventListener("click", async (event) => {
     localStorage.setItem("around-g-last-category", JSON.stringify({ category: selectedCategory, detail }));
     renderCategoryButtons();
   }
+  const categoryBrandButton = event.target.closest("[data-category-brand-id]");
+  if (categoryBrandButton) {
+    const brandId = Number(categoryBrandButton.dataset.categoryBrandId);
+    if (categoryBrandIds.has(brandId)) categoryBrandIds.delete(brandId);
+    else categoryBrandIds.add(brandId);
+    renderCategoryFavoriteBrands();
+  }
 });
 
 $("#brand-open-category")?.addEventListener("click", () => {
   window.activateSearchServiceMode?.("category");
+  renderCategoryFavoriteBrands({ reset: true });
   renderCategoryButtons();
 });
 $("#category-back-brand")?.addEventListener("click", () => window.activateSearchServiceMode?.("brand"));
+$("#category-brand-select-all")?.addEventListener("click", () => {
+  categoryBrandIds = new Set(pinnedBrandIds.map(Number).filter(Number.isFinite));
+  renderCategoryFavoriteBrands();
+});
+$("#category-brand-clear")?.addEventListener("click", () => {
+  categoryBrandIds.clear();
+  renderCategoryFavoriteBrands();
+});
 
 document.querySelectorAll(".explorer-mode").forEach((button) => button.addEventListener("click", () => {
   const currentMode = document.querySelector(".explorer-mode.active")?.dataset.explorer;
@@ -3106,7 +3140,7 @@ $("#category-search").addEventListener("click", async () => {
   const button = $("#category-search");
   const status = $("#category-status");
   const minimumSales30 = $("#category-min-sales").checked;
-  const favoriteBrandIds = [...pinnedBrandIds].map(Number).filter(Number.isFinite);
+  const favoriteBrandIds = [...categoryBrandIds].map(Number).filter(Number.isFinite);
   if (!selectedCategoryDetail) return;
   if (!favoriteBrandIds.length) {
     status.className = "status error";
