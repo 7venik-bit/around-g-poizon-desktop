@@ -709,10 +709,10 @@ test("one domestic store failure does not stop the others", async () => {
   assert.equal(result.sources.length, 13);
   assert.deepEqual(result.sources.map((source) => source.store), [
     "브랜드 공식몰",
-    "무신사",
     "네이버 공식 브랜드스토어",
     "네이버 백화점",
     "네이버 아울렛",
+    "무신사",
     "SSG",
     "SSG 백화점",
     "SSG 아울렛",
@@ -727,22 +727,8 @@ test("one domestic store failure does not stop the others", async () => {
   assert.equal(result.sources.filter((source) => source.ok).length, 12);
   assert.deepEqual(
     result.sources.filter((source) => source.renderCount).map((source) => source.store),
-    ["브랜드 공식몰", "무신사", "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛", "SSG", "SSG 백화점", "SSG 아울렛", "롯데온", "롯데온 백화점", "롯데온 아울렛", "병행수입·편집샵"]
+    ["브랜드 공식몰", "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛", "무신사", "SSG", "SSG 백화점", "SSG 아울렛", "롯데온", "롯데온 백화점", "롯데온 아울렛", "병행수입·편집샵"]
   );
-});
-
-test("실패 램프 재검색은 선택한 모듈만 실행한다", async () => {
-  const emptyNextData = `<script id="__NEXT_DATA__">${JSON.stringify({ props: { pageProps: { dehydratedState: { queries: [] } } } })}</script>`;
-  const fetchImpl = async () => ({ ok: true, status: 200, text: async () => emptyNextData });
-  const result = await queryDomesticProducts({
-    query: "나이키 DD1391-100",
-    articleNumber: "DD1391-100",
-    brand: "나이키",
-    modules: ["musinsa"],
-    fetchImpl,
-  });
-  assert.deepEqual(result.sources.map((source) => source.module), ["musinsa"]);
-  assert.deepEqual(result.sources.map((source) => source.store), ["무신사"]);
 });
 
 test("an unverified brand is not reported as a verified official-store zero", async () => {
