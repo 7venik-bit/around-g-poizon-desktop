@@ -38,16 +38,16 @@ test("brand search click shows progress and never cancels a delayed main-process
   assert.match(renderer, /brandSelectionBusy = false/);
 });
 
-test("POIZON product search restores the pre-module persistent direct workflow", () => {
+test("POIZON product search opens from the seller home with physical menu clicks", () => {
   const start = main.indexOf("async function automateSellerBrandExport");
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = main.slice(start, end);
-  assert.match(workflow, /openSellerCenterWindow\(SELLER_PRODUCT_SEARCH_URL/);
+  assert.match(workflow, /openSellerCenterWindow\(SELLER_MAIN_URL/);
   assert.match(workflow, /deferNavigation: true/);
-  assert.match(workflow, /await sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\)/);
-  assert.doesNotMatch(workflow, /enterSellerProductSearchViaMenu/);
-  assert.doesNotMatch(workflow, /seller-product-page-recovering/);
-  assert.doesNotMatch(workflow, /SELLER_COMPONENT_LOAD_TIMEOUT/);
+  assert.match(workflow, /await sellerWindow\.loadURL\(SELLER_MAIN_URL\)/);
+  assert.match(workflow, /enterSellerProductSearchViaMenu\(\{ forceHome: true \}\)/);
+  assert.doesNotMatch(main, /SELLER_PRODUCT_SEARCH_URL/);
+  assert.doesNotMatch(main, /loadURL\([^\n]*\/main\/goods\/search/);
   assert.match(main, /performPhysicalSellerSortAndExport/);
   assert.match(main, /BACKGROUND_LOCAL_SALES_SORT/);
   assert.match(main, /BACKGROUND_EXPORT/);
@@ -68,15 +68,17 @@ test("a new search session preserves history only as a baseline and clears live 
   assert.doesNotMatch(session, /brandExportJobCache: \[\]/);
 });
 
-test("brand workflow connects directly and searches English before Korean fallback", () => {
+test("brand workflow clicks the product menus physically and searches English before Korean fallback", () => {
   const start = main.indexOf("async function automateSellerBrandExport");
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = main.slice(start, end);
-  assert.match(workflow, /openSellerCenterWindow\(SELLER_PRODUCT_SEARCH_URL/);
+  assert.match(workflow, /openSellerCenterWindow\(SELLER_MAIN_URL/);
   assert.match(workflow, /deferNavigation: true/);
   assert.doesNotMatch(workflow, /sellerWindow\.loadURL\(SELLER_CENTER_URL\)/);
-  assert.match(workflow, /sellerWindow\.loadURL\(SELLER_PRODUCT_SEARCH_URL\)/);
-  assert.doesNotMatch(workflow, /loadURL\("https:\/\/seller\.poizon\.com\/main"\)/);
+  assert.match(workflow, /sellerWindow\.loadURL\(SELLER_MAIN_URL\)/);
+  assert.match(main, /"PHYSICAL_PRODUCT_MENU"/);
+  assert.match(main, /"PHYSICAL_PRODUCT_SEARCH_MENU"/);
+  assert.match(main, /sellerProductSearchPageState/);
   assert.match(workflow, /typeSellerBrandWithRealKeyboard\(candidate\.frame, sellerBrandSearchName\)/);
   assert.match(workflow, /seller-brand-input-confirmed/);
   assert.doesNotMatch(workflow, /applyExactSellerBrandFilter\(candidate\.frame/);
