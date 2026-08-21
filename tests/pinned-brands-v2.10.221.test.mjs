@@ -58,7 +58,7 @@ test("favorites survive catalog ID changes and the known 22 are recoverable by n
   assert.match(renderer, /const parsed = JSON\.parse\(localStorage\.getItem\("around-g-brand-selection-history"/);
   assert.match(renderer, /function restoreKnownPinnedBrandsIfMissing/);
   assert.match(renderer, /around-g-pinned-brand-names/);
-  assert.match(renderer, /around-g-pinned-brand-force-restore-v2\.10\.326/);
+  assert.match(renderer, /around-g-pinned-brand-force-restore-v2\.10\.327/);
   assert.match(renderer, /const desiredNames = forceKnownList[\s\S]*LAST_KNOWN_PINNED_BRAND_NAMES/);
   assert.match(renderer, /desiredNames[\s\S]*\.map\(\(name\) =>/);
   assert.match(renderer, /including an intentionally empty list/);
@@ -78,6 +78,10 @@ test("full catalog sync reconnects favorites by name and favorite search selects
 test("brand catalog and favorites render before interrupted job recovery", () => {
   const startup = renderer.slice(renderer.lastIndexOf("(async () => {"));
   assert.ok(startup.indexOf("showFavoriteCatalogFallback()") >= 0);
+  assert.ok(startup.indexOf("showFavoriteCatalogFallback()") < startup.indexOf("await window.aroundG.getAppInfo()"));
+  assert.ok(startup.indexOf("showFavoriteCatalogFallback()") < startup.indexOf("window.aroundG.getBackupStatus()"));
+  assert.doesNotMatch(startup, /renderBackupStatus\(await window\.aroundG\.getBackupStatus/);
+  assert.doesNotMatch(startup, /renderWeeklySiteHealth\(await window\.aroundG\.getWeeklySiteHealth/);
   assert.ok(startup.indexOf("showFavoriteCatalogFallback()") < startup.indexOf("await recoverInterruptedBrandWorkAtStartup()"));
   assert.match(startup, /Promise\.race\([\s\S]*explorerMetaRequest/);
 });
@@ -87,7 +91,8 @@ test("fallback favorites stay in memory and never overwrite existing work data",
   assert.match(renderer, /favoriteCatalogFallbackActive = true/);
   assert.match(renderer, /if \(!favoriteCatalogFallbackActive\) \{[\s\S]*around-g-pinned-brand-ids/);
   assert.doesNotMatch(renderer, /showFavoriteCatalogFallback[\s\S]{0,800}localStorage\.setItem/);
-  assert.match(renderer, /cannot overwrite saved favorites or any download\/work history/);
+  assert.match(renderer, /Never replace the operator's real favorites with its temporary IDs/);
+  assert.match(renderer, /backup or health checks can never[\s\S]*showing 0 brands/);
 });
 
 test("official site address uses a separate full-width bottom row", () => {
