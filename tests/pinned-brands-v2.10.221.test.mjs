@@ -58,13 +58,21 @@ test("favorites survive catalog ID changes and the known 22 are recoverable by n
   assert.match(renderer, /const parsed = JSON\.parse\(localStorage\.getItem\("around-g-brand-selection-history"/);
   assert.match(renderer, /function restoreKnownPinnedBrandsIfMissing/);
   assert.match(renderer, /around-g-pinned-brand-names/);
-  assert.match(renderer, /around-g-pinned-brand-force-restore-v2\.10\.324/);
+  assert.match(renderer, /around-g-pinned-brand-force-restore-v2\.10\.325/);
   assert.match(renderer, /const desiredNames = forceKnownList[\s\S]*LAST_KNOWN_PINNED_BRAND_NAMES/);
   assert.match(renderer, /desiredNames[\s\S]*\.map\(\(name\) =>/);
   assert.match(renderer, /including an intentionally empty list/);
   assert.match(renderer, /if \(!brands\.length\) return false/);
   assert.match(renderer, /LAST_KNOWN_PINNED_BRAND_NAMES/);
   assert.match(renderer, /"Polo Ralph Lauren", "PUMA", "Crocs", "MLB", "Lululemon"/);
+});
+
+test("full catalog sync reconnects favorites by name and favorite search selects them", () => {
+  assert.match(renderer, /explorerMeta = await window\.aroundG\.explorerMeta\(\);[\s\S]*restoreKnownPinnedBrandsIfMissing\(\);[\s\S]*selectedBrandId = null/);
+  assert.match(renderer, /const favoriteCount = pinnedBrandIds\.filter/);
+  assert.match(renderer, /button === frequentSearch \? selectedCount === 0 && favoriteCount === 0/);
+  assert.match(renderer, /\$\("#frequent-brand-export"\)\?\.addEventListener\("click"[\s\S]*pinnedBrandIds\.forEach/);
+  assert.match(renderer, /selectedBrandIds\.add\(Number\(id\)\)/);
 });
 
 test("brand catalog and favorites render before interrupted job recovery", () => {
