@@ -81,6 +81,7 @@ const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
 const DOWNLOAD_STATUS_MIGRATION_KEY = "around-g-download-status-v2.10.29";
 const LIVE_JOB_UI_MIGRATION_KEY = "around-g-live-job-ui-v2.10.34";
 const PINNED_BRAND_RECOVERY_KEY = "around-g-pinned-brand-recovery-v2.10.322";
+const PINNED_BRAND_FORCE_RESTORE_KEY = "around-g-pinned-brand-force-restore-v2.10.323";
 const PINNED_BRAND_NAMES_KEY = "around-g-pinned-brand-names";
 const LAST_KNOWN_PINNED_BRAND_NAMES = [
   "Adidas Originals", "Converse", "Jordan", "Adidas", "Nike", "COACH",
@@ -162,6 +163,7 @@ try {
 
 function restoreKnownPinnedBrandsIfMissing() {
   const brands = Array.isArray(explorerMeta.brands) ? explorerMeta.brands : [];
+  const forceKnownList = localStorage.getItem(PINNED_BRAND_FORCE_RESTORE_KEY) !== "done";
   let storedNames = null;
   try {
     const parsed = JSON.parse(localStorage.getItem(PINNED_BRAND_NAMES_KEY) || "null");
@@ -170,21 +172,26 @@ function restoreKnownPinnedBrandsIfMissing() {
   const currentNames = pinnedBrandIds
     .map((id) => brands.find((brand) => Number(brand.id) === Number(id))?.name)
     .filter(Boolean);
-  // Older builds stored only numeric catalog IDs. A catalog refresh can change
-  // those IDs, leaving a non-empty saved array that renders zero favorites.
-  // Migrate once from resolved names, or recover the operator's last known list
-  // when none of the legacy IDs can be resolved. Once the names key exists, an
-  // intentionally empty array remains empty and is never repopulated.
-  const desiredNames = storedNames ?? (currentNames.length ? currentNames : LAST_KNOWN_PINNED_BRAND_NAMES);
-  const recoveryNames = new Set(desiredNames.map(normalizeBrand));
-  pinnedBrandIds = explorerMeta.brands
-    .filter((brand) => recoveryNames.has(normalizeBrand(brand.name))
-      || recoveryNames.has(normalizeBrand(brand.ko)))
-    .map((brand) => Number(brand.id))
-    .filter(Number.isFinite);
+  // v2.10.322 could mistake stale numeric IDs for valid current brands. Restore
+  // the operator's known list once, then preserve every later user edit,
+  // including an intentionally empty list. Resolve in desired-name order so the
+  // favorite cards do not get rearranged by catalog order.
+  const desiredNames = forceKnownList
+    ? LAST_KNOWN_PINNED_BRAND_NAMES
+    : storedNames ?? (currentNames.length ? currentNames : LAST_KNOWN_PINNED_BRAND_NAMES);
+  const resolvedBrands = desiredNames
+    .map((name) => {
+      const normalizedName = normalizeBrand(name);
+      return brands.find((brand) => normalizeBrand(brand.name) === normalizedName
+        || normalizeBrand(brand.ko) === normalizedName);
+    })
+    .filter((brand, index, matches) => brand
+      && matches.findIndex((match) => Number(match?.id) === Number(brand.id)) === index);
+  pinnedBrandIds = resolvedBrands.map((brand) => Number(brand.id)).filter(Number.isFinite);
   localStorage.setItem("around-g-pinned-brand-ids", JSON.stringify(pinnedBrandIds));
   localStorage.setItem(PINNED_BRAND_NAMES_KEY, JSON.stringify(desiredNames));
   localStorage.setItem(PINNED_BRAND_RECOVERY_KEY, "done");
+  localStorage.setItem(PINNED_BRAND_FORCE_RESTORE_KEY, "done");
 }
 
 function saveBrandSelections() {
@@ -1572,10 +1579,12 @@ function renderBrandCards(filter = "") {
     <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${brand.salesPriority ? `<small class="brand-sales-rank">판매 상위 ${Number(brand.salesRank).toLocaleString("ko-KR")}위</small>` : ""}${downloadComplete ? `<em class="brand-download-complete">다운완료</em><small class="brand-download-date">${text(latestDownloadTime)}</small>` : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>${officialDomain ? `<small class="brand-official-domain" title="${text(officialDomain)}">${text(officialDomain)}</small>` : ""}
   </button>`;
   }).join("");
-  $("#frequent-brand-cards").innerHTML = brandMarkup(pinnedBrands);
+  $("#frequent-brand-cards").innerHTML = pinnedBrands.length
+    ? brandMarkup(pinnedBrands)
+    : '<p class="empty">표시할 즐겨찾기 브랜드가 없습니다. 전체 브랜드에서 선택해 추가할 수 있습니다.</p>';
   $("#brand-cards").innerHTML = brandMarkup(regularBrands);
   const frequentGroup = $("#frequent-brand-group");
-  frequentGroup.hidden = pinnedBrands.length === 0;
+  frequentGroup.hidden = false;
   $("#frequent-brand-count").textContent = `${pinnedBrands.length.toLocaleString("ko-KR")}개`;
   $("#all-brand-count").textContent = `${regularBrands.length.toLocaleString("ko-KR")}개`;
   document.querySelectorAll(".brand-logo img").forEach((image) => {

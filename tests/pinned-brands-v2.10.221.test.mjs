@@ -15,7 +15,9 @@ test("selected brands can be moved to a persistent frequently-used group", () =>
   assert.match(html, /id="all-brand-title"/);
   assert.match(renderer, /const pinnedBrands = matchedBrands\.filter/);
   assert.match(renderer, /const regularBrands = matchedBrands\.filter/);
-  assert.match(renderer, /frequentGroup\.hidden = pinnedBrands\.length === 0/);
+  assert.doesNotMatch(html, /id="frequent-brand-group"[^>]*\shidden(?:\s|>)/);
+  assert.match(renderer, /frequentGroup\.hidden = false/);
+  assert.match(renderer, /표시할 즐겨찾기 브랜드가 없습니다/);
 });
 
 test("pinned brands are visually identified and the list scrolls to the top", () => {
@@ -37,7 +39,7 @@ test("favorite and full brand areas have separate visual containers", () => {
   assert.match(css, /\.brand-list-group\{/);
   assert.match(css, /\.frequent-brand-group\{/);
   assert.match(css, /\.all-brand-group\{/);
-  assert.match(renderer, /\$\("#frequent-brand-cards"\)\.innerHTML = brandMarkup\(pinnedBrands\)/);
+  assert.match(renderer, /\$\("#frequent-brand-cards"\)\.innerHTML = pinnedBrands\.length/);
   assert.match(renderer, /\$\("#brand-cards"\)\.innerHTML = brandMarkup\(regularBrands\)/);
 });
 
@@ -56,8 +58,10 @@ test("favorites survive catalog ID changes and the known 22 are recoverable by n
   assert.match(renderer, /const parsed = JSON\.parse\(localStorage\.getItem\("around-g-brand-selection-history"/);
   assert.match(renderer, /function restoreKnownPinnedBrandsIfMissing/);
   assert.match(renderer, /around-g-pinned-brand-names/);
-  assert.match(renderer, /const desiredNames = storedNames \?\?/);
-  assert.match(renderer, /intentionally empty array remains empty/);
+  assert.match(renderer, /around-g-pinned-brand-force-restore-v2\.10\.323/);
+  assert.match(renderer, /const desiredNames = forceKnownList[\s\S]*LAST_KNOWN_PINNED_BRAND_NAMES/);
+  assert.match(renderer, /desiredNames[\s\S]*\.map\(\(name\) =>/);
+  assert.match(renderer, /including an intentionally empty list/);
   assert.match(renderer, /LAST_KNOWN_PINNED_BRAND_NAMES/);
   assert.match(renderer, /"Polo Ralph Lauren", "PUMA", "Crocs", "MLB", "Lululemon"/);
 });
