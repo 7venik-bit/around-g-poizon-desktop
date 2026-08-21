@@ -37,13 +37,14 @@ test("downloaded brands are newest-first, deduplicated, and excluded from the fu
 });
 
 test("download-completed header keeps search and category actions", () => {
-  assert.match(html, /id="frequent-brand-group"[\s\S]*id="frequent-brand-export"[\s\S]*<span>브랜드 검색<\/span>/);
+  assert.match(html, /id="frequent-brand-group"[\s\S]*id="frequent-brand-export"[\s\S]*<span>포이즌 상품정보<\/span>/);
   assert.match(html, /id="completed-brand-domestic-search"[^>]*disabled>국내 상품검색<\/button>/);
   assert.match(html, /id="frequent-brand-category"[^>]*>카테고리<\/button>/);
   assert.match(renderer, /const completedCount = completedDownloadBrands\(\)\.length/);
   assert.match(renderer, /button === frequentSearch \? selectedCount === 0 && completedCount === 0/);
   assert.match(renderer, /\$\("#frequent-brand-export"\)\?\.addEventListener\("click"[\s\S]*pinnedBrandIds\.forEach/);
-  assert.match(renderer, /\$\("#completed-brand-domestic-search"\)\?\.addEventListener\("click"[\s\S]*latestCompletedBrandDownload\(brand\)[\s\S]*selectedDownloads\.length !== 1[\s\S]*openIntegratedBrandExcel\(selectedDownloads\[0\], true\)/);
+  assert.match(renderer, /domesticSearch\.disabled = brandSelectionBusy \|\| completedCount === 0/);
+  assert.match(renderer, /\$\("#completed-brand-domestic-search"\)\?\.addEventListener\("click"[\s\S]*latestCompletedBrandDownload\(brand\)[\s\S]*selectedDownloads\[0\] \|\| \[\.\.\.downloadedBrandFiles\][\s\S]*openIntegratedBrandExcel\(latestDownload, true\)/);
   assert.match(css, /\.frequent-brand-heading-actions/);
   assert.match(css, /\.frequent-brand-heading-actions>button\{[^}]*white-space:nowrap/);
   assert.match(css, /\.completed-brand-domestic-search\{min-width:116px\}/);
