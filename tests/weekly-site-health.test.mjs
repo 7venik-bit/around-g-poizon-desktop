@@ -39,10 +39,8 @@ test("실패 사이트를 안내용 요약으로 만든다", () => {
   assert.deepEqual(summary, { total: 2, passed: 1, failed: 1, failedNames: ["SSG 백화점"], ok: false });
 });
 
-test("업데이트 후 전체 브랜드 공식몰 연동을 새벽 시간으로 예약한다", () => {
-  assert.match(mainSource, /async function startImmediateOfficialMallLinkage/);
-  assert.match(mainSource, /syncBrandCatalogFromKrPoizon\(\)/);
-  assert.match(mainSource, /await runOfficialDomainAudit\(\)/);
-  assert.match(mainSource, /immediateOfficialMallLinkageVersion === version/);
-  assert.match(mainSource, /if \(app\.isPackaged\) scheduleImmediateOfficialMallLinkage\(\)/);
+test("주간 연동 서버 점검은 유지하고 전체 공식몰 검증은 자동 예약하지 않는다", () => {
+  assert.match(mainSource, /scheduleWeeklySiteHealthCheck\(\)/);
+  assert.doesNotMatch(mainSource, /scheduleImmediateOfficialMallLinkage/);
+  assert.doesNotMatch(mainSource, /startImmediateOfficialMallLinkage/);
 });

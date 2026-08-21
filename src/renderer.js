@@ -1481,8 +1481,8 @@ function renderOfficialDomainAudit(audit = {}) {
   }[String(audit.phase || "")] || "";
   const stateLabel = audit.state === "cooldown" ? "보안 확인으로 일시 정지 · 검증 계속 버튼을 눌러주세요"
     : audit.state === "blocked" ? "보안 확인으로 일시 정지 · 검증 계속 버튼을 눌러주세요"
-      : audit.state === "scheduled" ? "자동 검증 대기 · 매일 새벽 1시~6시에만 실행"
-      : audit.state === "paused" ? "일시 정지"
+      : audit.state === "scheduled" ? "수동 검증 대기"
+      : audit.state === "paused" ? "수동 검증 대기"
       : audit.state === "completed_with_pending" ? "1차 전수검사 완료·공식몰 추가 확인 필요"
         : audit.state === "completed" ? "전체 검증 완료"
           : audit.running ? "검증 진행 중" : "대기";
@@ -2318,7 +2318,7 @@ $("#brand-export-selected")?.addEventListener("click", async () => {
   touchBrandActivity(`${selectedBrands.length}개 브랜드 작업 시작`);
   void exportNextSelectedBrand(generation);
 });
-async function syncFullBrandCatalog({ automatic = false, startVerification = !automatic } = {}) {
+async function syncFullBrandCatalog({ automatic = false } = {}) {
   const button = $("#brand-sync");
   const status = $("#brand-status");
   button.disabled = true;
@@ -2347,14 +2347,9 @@ async function syncFullBrandCatalog({ automatic = false, startVerification = !au
   renderBrandCards($("#brand-filter").value);
   status.className = "status success";
   status.textContent = `POIZON 공식 브랜드 ${result.brands.length.toLocaleString("ko-KR")}개 검색 등록 완료`;
-  if (startVerification) {
-    const auditResult = await window.aroundG.startOfficialDomainAudit();
-    if (auditResult?.audit) renderOfficialDomainAudit(auditResult.audit);
-    status.textContent = `POIZON 공식 브랜드 ${result.brands.length.toLocaleString("ko-KR")}개 동기화 완료 · 브랜드 순서대로 공식몰 검증을 시작합니다.`;
-  }
   return true;
 }
-$("#brand-sync").addEventListener("click", () => syncFullBrandCatalog({ startVerification: true }));
+$("#brand-sync").addEventListener("click", () => syncFullBrandCatalog());
 $("#official-domain-audit-toggle")?.addEventListener("click", async () => {
   const button = $("#official-domain-audit-toggle");
   button.disabled = true;
