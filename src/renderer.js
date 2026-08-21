@@ -82,7 +82,7 @@ const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
 const DOWNLOAD_STATUS_MIGRATION_KEY = "around-g-download-status-v2.10.29";
 const LIVE_JOB_UI_MIGRATION_KEY = "around-g-live-job-ui-v2.10.34";
 const PINNED_BRAND_RECOVERY_KEY = "around-g-pinned-brand-recovery-v2.10.322";
-const PINNED_BRAND_FORCE_RESTORE_KEY = "around-g-pinned-brand-force-restore-v2.10.326";
+const PINNED_BRAND_FORCE_RESTORE_KEY = "around-g-pinned-brand-force-restore-v2.10.327";
 const PINNED_BRAND_NAMES_KEY = "around-g-pinned-brand-names";
 const LAST_KNOWN_PINNED_BRAND_NAMES = [
   "Adidas Originals", "Converse", "Jordan", "Adidas", "Nike", "COACH",
@@ -3677,18 +3677,26 @@ $("#weekly-site-health-run")?.addEventListener("click", async () => {
 window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
 
 (async () => {
+  // The brand picker is the operator's primary workspace. Render the known
+  // favorites before any IPC request so backup or health checks can never
+  // leave the screen showing 0 brands.
+  setupBrandLayout();
+  showFavoriteCatalogFallback();
+
   try {
     const appInfo = await window.aroundG.getAppInfo();
     renderInstalledVersion(appInfo?.version, appInfo?.automaticUpdates !== false);
   } catch {
     renderInstalledVersion("2.10.17", true);
   }
-  renderBackupStatus(await window.aroundG.getBackupStatus());
-  renderWeeklySiteHealth(await window.aroundG.getWeeklySiteHealth());
-  setupBrandLayout();
-  // Show the operator's known favorites immediately. This is memory-only and
-  // cannot overwrite saved favorites or any download/work history.
-  showFavoriteCatalogFallback();
+  // These status panels are secondary. A stalled status IPC must not block
+  // the brand picker, work recovery, or any other sourcing function.
+  void window.aroundG.getBackupStatus()
+    .then(renderBackupStatus)
+    .catch(() => renderBackupStatus({ state: "warning", message: "백업 상태를 나중에 다시 확인합니다." }));
+  void window.aroundG.getWeeklySiteHealth()
+    .then(renderWeeklySiteHealth)
+    .catch(() => renderWeeklySiteHealth({ running: false, message: "정기점검 상태를 나중에 다시 확인합니다." }));
   // Never trust the renderer's old job label. The main process verifies saved
   // files and live POIZON rows before it restores any interrupted work.
   localStorage.removeItem("around-g-last-brand-export-job");
