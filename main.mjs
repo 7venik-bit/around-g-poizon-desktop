@@ -3939,8 +3939,8 @@ async function executeSellerFrameWithTimeout(frame, script, timeoutMs = 4_000, f
   ]).catch(() => fallback);
 }
 
-async function sellerPageRequiresLogin() {
-  if (!sellerWindow || sellerWindow.isDestroyed()) return true;
+async function sellerAuthenticationState() {
+  if (!sellerWindow || sellerWindow.isDestroyed()) return { login: false, authenticated: false, loading: false };
   const url = String(sellerWindow.webContents.getURL() || "");
   // Do not treat an empty/loading shell or an unrelated transient URL as a
   // login form.  The old search flow reused the persistent Seller Center
@@ -3948,20 +3948,50 @@ async function sellerPageRequiresLogin() {
   // route or a visible password form.  Misclassifying a blank component as a
   // login page made the physical Ctrl+A/paste fallback run against the product
   // screen and was the main source of repeated authentication and timeouts.
-  if (/login|signin|passport|auth/i.test(url)) return true;
-  const state = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => {
-    const text = String(document.body?.innerText || "").slice(0, 2500);
-    return {
-      password: [...document.querySelectorAll('input[type="password"]')].some((element) => {
-        const rect = element.getBoundingClientRect();
-        const style = getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
-      }),
-      loginText: /登录|登入|sign\\s*in|log\\s*in/i.test(text),
-      sellerText: /商品|品牌|销售|导出|POIZON|得物/i.test(text),
-    };
-  })()`, 4_000, { password: false, loginText: false, sellerText: false });
-  return Boolean(state?.password || (state?.loginText && !state?.sellerText));
+  if (/login|signin|passport|auth/i.test(url)) return { login: true, authenticated: false, loading: false };
+  let sawContent = false;
+  for (const frame of sellerWindowFrames()) {
+    const state = await executeSellerFrameWithTimeout(frame, `(() => {
+      const roots = [document];
+      for (let index = 0; index < roots.length; index += 1) {
+        for (const element of roots[index].querySelectorAll('*')) {
+          if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
+        }
+      }
+      const queryAll = (selector) => roots.flatMap((root) => [...root.querySelectorAll(selector)]);
+      const visible = (element) => {
+        const rect = element?.getBoundingClientRect?.();
+        const style = element ? getComputedStyle(element) : null;
+        return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== 'none' && style?.visibility !== 'hidden');
+      };
+      const text = String(document.body?.innerText || "").replace(/\\s+/g, " ").slice(0, 5000);
+      const password = queryAll('input[type="password"],input[autocomplete="current-password"]').some(visible);
+      const loginText = /로그인|登录|登入|sign\\s*in|log\\s*in/i.test(text);
+      const authenticated = /상품\\s*및\\s*입찰\\s*분석|상품\\s*검색|전체\\s*시장\\s*데이터|商品(?:及竞价分析|搜索)|下载中心|주문\\s*관리/i.test(text);
+      return { password, loginText, authenticated, hasContent: text.trim().length > 20 };
+    })()`, 4_000, { password: false, loginText: false, authenticated: false, hasContent: false });
+    sawContent ||= Boolean(state?.hasContent);
+    if (state?.password || (state?.loginText && !state?.authenticated)) {
+      return { login: true, authenticated: false, loading: false };
+    }
+    if (state?.authenticated) return { login: false, authenticated: true, loading: false };
+  }
+  return { login: false, authenticated: false, loading: !sawContent };
+}
+
+async function sellerPageRequiresLogin() {
+  return Boolean((await sellerAuthenticationState()).login);
+}
+
+async function waitForSellerAuthenticationState(timeoutMs = 45_000) {
+  const deadline = Date.now() + timeoutMs;
+  let state = { login: false, authenticated: false, loading: true };
+  while (Date.now() < deadline) {
+    state = await sellerAuthenticationState();
+    if (state.login || state.authenticated) return state;
+    await wait(750);
+  }
+  return state;
 }
 
 async function setSellerLoginStatusOverlay(state = "checking", title = "", detail = "") {
@@ -4325,7 +4355,9 @@ async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
 }
 
 async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
-  if (!await sellerPageRequiresLogin()) return { ok: true, reused: true };
+  const initialState = await waitForSellerAuthenticationState();
+  if (initialState.authenticated) return { ok: true, reused: true };
+  if (!initialState.login) return { ok: false, code: "SELLER_LOGIN_PAGE_TIMEOUT" };
   if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, code: "SELLER_WINDOW_CLOSED" };
   if (sellerWindow.isMinimized()) sellerWindow.restore();
   sellerWindow.show();
@@ -4344,7 +4376,8 @@ async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
   while (Date.now() < deadline) {
     await wait(1_000);
     if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, code: "SELLER_WINDOW_CLOSED" };
-    if (await sellerPageRequiresLogin()) {
+    const pageState = await sellerAuthenticationState();
+    if (pageState.login) {
       // The Korean login form is rendered asynchronously. Keep retrying the
       // encrypted credentials after its inputs appear instead of trying only
       // once while the page is still empty.
@@ -4354,6 +4387,7 @@ async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
       }
       continue;
     }
+    if (!pageState.authenticated) continue;
     await setSellerLoginStatusOverlay("success", "자동 로그인 테스트 성공 완료", "POIZON 판매자센터 진입을 확인했습니다. 브랜드 검색을 자동으로 계속합니다.");
     mainWindow?.webContents.send("brand-export:progress", {
       status: "seller-login-restored",
