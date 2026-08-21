@@ -76,12 +76,13 @@ let brandActivityStartedAt = 0;
 let brandActivityUpdatedAt = 0;
 let brandActivityMessage = "";
 let brandMainAllComplete = false;
+let favoriteCatalogFallbackActive = false;
 const WORK_HISTORY_RESET_KEY = "around-g-work-history-reset-v2.10.4";
 const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
 const DOWNLOAD_STATUS_MIGRATION_KEY = "around-g-download-status-v2.10.29";
 const LIVE_JOB_UI_MIGRATION_KEY = "around-g-live-job-ui-v2.10.34";
 const PINNED_BRAND_RECOVERY_KEY = "around-g-pinned-brand-recovery-v2.10.322";
-const PINNED_BRAND_FORCE_RESTORE_KEY = "around-g-pinned-brand-force-restore-v2.10.325";
+const PINNED_BRAND_FORCE_RESTORE_KEY = "around-g-pinned-brand-force-restore-v2.10.326";
 const PINNED_BRAND_NAMES_KEY = "around-g-pinned-brand-names";
 const LAST_KNOWN_PINNED_BRAND_NAMES = [
   "Adidas Originals", "Converse", "Jordan", "Adidas", "Nike", "COACH",
@@ -89,6 +90,34 @@ const LAST_KNOWN_PINNED_BRAND_NAMES = [
   "New Balance", "ASICS", "Tommy Hilfiger", "FILA", "Vans", "SALOMON",
   "Polo Ralph Lauren", "PUMA", "Crocs", "MLB", "Lululemon",
 ];
+const FALLBACK_PINNED_BRANDS = LAST_KNOWN_PINNED_BRAND_NAMES.map((name, index) => ({
+  id: -10_000 - index,
+  name,
+  ko: name,
+  recoveryFallback: true,
+}));
+
+function validExplorerMetadata(value) {
+  return value && Array.isArray(value.brands) && value.brands.length > 0;
+}
+
+function showFavoriteCatalogFallback() {
+  favoriteCatalogFallbackActive = true;
+  explorerMeta = { ...explorerMeta, brands: FALLBACK_PINNED_BRANDS, needsBrandSync: false };
+  pinnedBrandIds = FALLBACK_PINNED_BRANDS.map((brand) => Number(brand.id));
+  renderBrandCards();
+  renderCategoryButtons();
+}
+
+function applyLoadedExplorerMetadata(metadata) {
+  if (!validExplorerMetadata(metadata)) return false;
+  explorerMeta = metadata;
+  favoriteCatalogFallbackActive = false;
+  restoreKnownPinnedBrandsIfMissing();
+  renderBrandCards($("#brand-filter")?.value || "");
+  renderCategoryButtons();
+  return true;
+}
 
 function renderBrandExportFolder(folder = "") {
   const path = $("#brand-export-folder-path");
@@ -203,8 +232,12 @@ function saveBrandSelections() {
     .map((id) => explorerMeta.brands.find((brand) => Number(brand.id) === Number(id))?.name)
     .filter(Boolean);
   localStorage.setItem("around-g-selected-brand-ids", JSON.stringify([...selectedBrandIds]));
-  localStorage.setItem("around-g-pinned-brand-ids", JSON.stringify(pinnedBrandIds));
-  localStorage.setItem(PINNED_BRAND_NAMES_KEY, JSON.stringify(pinnedBrandNames));
+  // The emergency in-memory catalog keeps the screen usable while IPC is
+  // delayed. Never replace the operator's real favorites with its temporary IDs.
+  if (!favoriteCatalogFallbackActive) {
+    localStorage.setItem("around-g-pinned-brand-ids", JSON.stringify(pinnedBrandIds));
+    localStorage.setItem(PINNED_BRAND_NAMES_KEY, JSON.stringify(pinnedBrandNames));
+  }
   localStorage.setItem("around-g-brand-selection-history", JSON.stringify(brandSelectionHistory.slice(0, 100)));
 }
 
@@ -2388,7 +2421,18 @@ async function syncFullBrandCatalog({ automatic = false } = {}) {
       : [result.error?.message, result.error?.code].filter(Boolean).join(" · ") || "브랜드 동기화에 실패했습니다.";
     return false;
   }
-  explorerMeta = await window.aroundG.explorerMeta();
+  let refreshedMeta = null;
+  try {
+    refreshedMeta = await Promise.race([
+      window.aroundG.explorerMeta(),
+      new Promise((resolve) => setTimeout(() => resolve(null), 2_000)),
+    ]);
+  } catch {}
+  if (!validExplorerMetadata(refreshedMeta)) {
+    refreshedMeta = { ...explorerMeta, brands: result.brands, needsBrandSync: false };
+  }
+  explorerMeta = refreshedMeta;
+  favoriteCatalogFallbackActive = false;
   // A successful full-catalog sync can replace every numeric brand ID. Resolve
   // favorites by their persisted names again before rendering the new catalog.
   restoreKnownPinnedBrandsIfMissing();
@@ -3642,18 +3686,30 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   renderBackupStatus(await window.aroundG.getBackupStatus());
   renderWeeklySiteHealth(await window.aroundG.getWeeklySiteHealth());
   setupBrandLayout();
+  // Show the operator's known favorites immediately. This is memory-only and
+  // cannot overwrite saved favorites or any download/work history.
+  showFavoriteCatalogFallback();
   // Never trust the renderer's old job label. The main process verifies saved
   // files and live POIZON rows before it restores any interrupted work.
   localStorage.removeItem("around-g-last-brand-export-job");
   const exportFolder = await window.aroundG.getBrandExportFolder();
   renderBrandExportFolder(exportFolder.folder);
-  // Brand selection is the primary screen. Load and render it before checking
-  // interrupted POIZON jobs so a delayed recovery can never leave both lists
-  // showing 0 brands.
-  explorerMeta = await window.aroundG.explorerMeta();
-  restoreKnownPinnedBrandsIfMissing();
-  renderBrandCards();
-  renderCategoryButtons();
+  // Do not block the primary screen on a slow metadata IPC response. Apply the
+  // real catalog when it arrives, then reconnect favorites by persisted names.
+  const explorerMetaRequest = window.aroundG.explorerMeta();
+  let initialExplorerMeta = null;
+  try {
+    initialExplorerMeta = await Promise.race([
+      explorerMetaRequest,
+      new Promise((resolve) => setTimeout(() => resolve(null), 2_000)),
+    ]);
+  } catch {}
+  if (!applyLoadedExplorerMetadata(initialExplorerMeta)) {
+    void explorerMetaRequest.then(async (metadata) => {
+      if (!applyLoadedExplorerMetadata(metadata)) return;
+      if (metadata.needsBrandSync) await syncFullBrandCatalog({ automatic: true });
+    }).catch(() => {});
+  }
   await recoverInterruptedBrandWorkAtStartup();
   window.aroundG.onBrandSyncProgress((progress) => {
     if (progress?.context === "category" && categorySearchActive) {

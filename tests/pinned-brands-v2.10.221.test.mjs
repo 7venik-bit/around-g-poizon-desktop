@@ -58,7 +58,7 @@ test("favorites survive catalog ID changes and the known 22 are recoverable by n
   assert.match(renderer, /const parsed = JSON\.parse\(localStorage\.getItem\("around-g-brand-selection-history"/);
   assert.match(renderer, /function restoreKnownPinnedBrandsIfMissing/);
   assert.match(renderer, /around-g-pinned-brand-names/);
-  assert.match(renderer, /around-g-pinned-brand-force-restore-v2\.10\.325/);
+  assert.match(renderer, /around-g-pinned-brand-force-restore-v2\.10\.326/);
   assert.match(renderer, /const desiredNames = forceKnownList[\s\S]*LAST_KNOWN_PINNED_BRAND_NAMES/);
   assert.match(renderer, /desiredNames[\s\S]*\.map\(\(name\) =>/);
   assert.match(renderer, /including an intentionally empty list/);
@@ -68,7 +68,7 @@ test("favorites survive catalog ID changes and the known 22 are recoverable by n
 });
 
 test("full catalog sync reconnects favorites by name and favorite search selects them", () => {
-  assert.match(renderer, /explorerMeta = await window\.aroundG\.explorerMeta\(\);[\s\S]*restoreKnownPinnedBrandsIfMissing\(\);[\s\S]*selectedBrandId = null/);
+  assert.match(renderer, /explorerMeta = refreshedMeta;[\s\S]*restoreKnownPinnedBrandsIfMissing\(\);[\s\S]*selectedBrandId = null/);
   assert.match(renderer, /const favoriteCount = pinnedBrandIds\.filter/);
   assert.match(renderer, /button === frequentSearch \? selectedCount === 0 && favoriteCount === 0/);
   assert.match(renderer, /\$\("#frequent-brand-export"\)\?\.addEventListener\("click"[\s\S]*pinnedBrandIds\.forEach/);
@@ -77,9 +77,17 @@ test("full catalog sync reconnects favorites by name and favorite search selects
 
 test("brand catalog and favorites render before interrupted job recovery", () => {
   const startup = renderer.slice(renderer.lastIndexOf("(async () => {"));
-  assert.ok(startup.indexOf("explorerMeta = await window.aroundG.explorerMeta()") >= 0);
-  assert.ok(startup.indexOf("renderBrandCards()") >= 0);
-  assert.ok(startup.indexOf("renderBrandCards()") < startup.indexOf("await recoverInterruptedBrandWorkAtStartup()"));
+  assert.ok(startup.indexOf("showFavoriteCatalogFallback()") >= 0);
+  assert.ok(startup.indexOf("showFavoriteCatalogFallback()") < startup.indexOf("await recoverInterruptedBrandWorkAtStartup()"));
+  assert.match(startup, /Promise\.race\([\s\S]*explorerMetaRequest/);
+});
+
+test("fallback favorites stay in memory and never overwrite existing work data", () => {
+  assert.match(renderer, /const FALLBACK_PINNED_BRANDS = LAST_KNOWN_PINNED_BRAND_NAMES\.map/);
+  assert.match(renderer, /favoriteCatalogFallbackActive = true/);
+  assert.match(renderer, /if \(!favoriteCatalogFallbackActive\) \{[\s\S]*around-g-pinned-brand-ids/);
+  assert.doesNotMatch(renderer, /showFavoriteCatalogFallback[\s\S]{0,800}localStorage\.setItem/);
+  assert.match(renderer, /cannot overwrite saved favorites or any download\/work history/);
 });
 
 test("official site address uses a separate full-width bottom row", () => {
