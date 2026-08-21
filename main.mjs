@@ -95,11 +95,6 @@ import {
   nextWeeklySiteHealthAt,
   weeklySiteHealthSummary,
 } from "./services/weekly-site-health.mjs";
-import {
-  currentOfficialMallAuditEndAt,
-  isOfficialMallAuditWindow,
-  nextOfficialMallAuditStartAt,
-} from "./services/official-mall-schedule.mjs";
 
 let store;
 const { autoUpdater } = pkg;
@@ -188,8 +183,6 @@ let officialDomainAuditRunning = false;
 let officialDomainAuditStopRequested = false;
 let officialDomainAuditWindow = null;
 let officialDomainAuditResumeTimer = null;
-let immediateOfficialMallLinkageTimer = null;
-let immediateOfficialMallLinkageStopTimer = null;
 let weeklySiteHealthTimer = null;
 let weeklySiteHealthRunning = false;
 let officialDomainAuditAbortCurrent = null;
@@ -1735,97 +1728,6 @@ async function runOfficialDomainAudit() {
     await persistOfficialDomainAudit(registry, finalAudit);
     sendOfficialDomainAuditProgress(registry, { running: false, ...finalAudit });
   }
-}
-
-async function startImmediateOfficialMallLinkage() {
-  const version = app.getVersion();
-  const settings = store.snapshot().settings;
-  const initialBrands = settings.brandCatalog || explorerMetadata().brands;
-  const initialRegistry = safeOfficialDomainRegistry(initialBrands);
-  const initialSummary = officialDomainRegistrySummary(initialRegistry);
-  if (settings.immediateOfficialMallLinkageVersion === version && !initialSummary.pending) return;
-  await store.setSettings({
-    immediateOfficialMallLinkageStartedAt: new Date().toISOString(),
-  });
-  mainWindow?.webContents.send("official-domain:audit-progress", {
-    ...officialDomainAuditSnapshot(safeOfficialDomainRegistry(settings.brandCatalog || explorerMetadata().brands)),
-    running: true,
-    state: "running",
-    phase: "starting",
-    currentBrand: "전체 브랜드 목록 동기화",
-  });
-  const syncResult = await syncBrandCatalogFromKrPoizon().catch((error) => ({ ok: false, error }));
-  const refreshedSettings = store.snapshot().settings;
-  const brands = syncResult?.ok && Array.isArray(syncResult.brands) && syncResult.brands.length
-    ? syncResult.brands
-    : refreshedSettings.brandCatalog || explorerMetadata().brands;
-  await ensureOfficialDomainRegistry(brands);
-  if (!isOfficialMallAuditWindow(new Date())) return;
-  await runOfficialDomainAudit();
-  const completedRegistry = safeOfficialDomainRegistry(brands);
-  const completedSummary = officialDomainRegistrySummary(completedRegistry);
-  if (!completedSummary.pending) {
-    await store.setSettings({
-      immediateOfficialMallLinkageVersion: version,
-      immediateOfficialMallLinkageCompletedAt: new Date().toISOString(),
-    });
-  }
-}
-
-function stopAutomaticOfficialMallLinkage() {
-  if (!officialDomainAuditRunning) return;
-  officialDomainAuditStopRequested = true;
-  officialDomainAuditAbortCurrent?.();
-  officialDomainAuditAbortCurrent = null;
-  if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) {
-    officialDomainAuditWindow.destroy();
-  }
-  officialDomainAuditWindow = null;
-}
-
-function scheduleImmediateOfficialMallLinkage() {
-  clearTimeout(immediateOfficialMallLinkageTimer);
-  clearTimeout(immediateOfficialMallLinkageStopTimer);
-  immediateOfficialMallLinkageTimer = null;
-  immediateOfficialMallLinkageStopTimer = null;
-  const version = app.getVersion();
-  const settings = store.snapshot().settings;
-  const brands = settings.brandCatalog || explorerMetadata().brands;
-  const summary = officialDomainRegistrySummary(safeOfficialDomainRegistry(brands));
-  if (settings.immediateOfficialMallLinkageVersion === version && !summary.pending) return;
-  const now = new Date();
-  const next = nextOfficialMallAuditStartAt(now);
-  void store.setSettings({
-    immediateOfficialMallLinkageNextRunAt: next.toISOString(),
-    officialDomainAudit: {
-      ...(settings.officialDomainAudit || {}),
-      state: "scheduled",
-      nextRunAt: next.toISOString(),
-      updatedAt: now.toISOString(),
-    },
-  });
-  sendOfficialDomainAuditProgress(safeOfficialDomainRegistry(brands), {
-    running: false,
-    state: "scheduled",
-    nextRunAt: next.toISOString(),
-  });
-  immediateOfficialMallLinkageTimer = setTimeout(async () => {
-    immediateOfficialMallLinkageTimer = null;
-    const end = currentOfficialMallAuditEndAt(new Date());
-    immediateOfficialMallLinkageStopTimer = setTimeout(() => {
-      immediateOfficialMallLinkageStopTimer = null;
-      stopAutomaticOfficialMallLinkage();
-    }, Math.max(1_000, end.getTime() - Date.now()));
-    immediateOfficialMallLinkageStopTimer.unref?.();
-    try {
-      await startImmediateOfficialMallLinkage();
-    } finally {
-      clearTimeout(immediateOfficialMallLinkageStopTimer);
-      immediateOfficialMallLinkageStopTimer = null;
-      scheduleImmediateOfficialMallLinkage();
-    }
-  }, Math.max(1_000, next.getTime() - now.getTime()));
-  immediateOfficialMallLinkageTimer.unref?.();
 }
 
 function pauseOfficialDomainAuditForSellerAutomation() {
@@ -8579,9 +8481,8 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   setInterval(() => void runOneDriveRecoveryBackup(), 30 * 60 * 1_000).unref?.();
   startBrandExportFolderPolling();
   scheduleWeeklySiteHealthCheck();
-  // The full official-mall audit is intentionally limited to the overnight
-  // maintenance window so it cannot slow the operator's daytime work.
-  if (app.isPackaged) scheduleImmediateOfficialMallLinkage();
+  // Full official-mall verification is manual-only. Startup and updates must
+  // never create its browser window, timer, catalog sync, or network traffic.
   if (app.isPackaged) scheduleUpdateCheck(5_000);
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -8597,7 +8498,5 @@ app.on("before-quit", () => {
   if (updateCheckTimer) clearTimeout(updateCheckTimer);
   if (updateInstallTimer) clearTimeout(updateInstallTimer);
   if (officialDomainAuditResumeTimer) clearTimeout(officialDomainAuditResumeTimer);
-  if (immediateOfficialMallLinkageTimer) clearTimeout(immediateOfficialMallLinkageTimer);
-  if (immediateOfficialMallLinkageStopTimer) clearTimeout(immediateOfficialMallLinkageStopTimer);
   if (weeklySiteHealthTimer) clearTimeout(weeklySiteHealthTimer);
 });

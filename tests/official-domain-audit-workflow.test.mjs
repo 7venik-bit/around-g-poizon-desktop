@@ -16,30 +16,19 @@ test("full verification remains stopped after startup until the user continues i
   assert.doesNotMatch(startup, /startOfficialDomainAudit/);
   assert.match(rendererSource, /official-domain-audit-toggle/);
   assert.match(rendererSource, /await window\.aroundG\.startOfficialDomainAudit/);
-  assert.match(rendererSource, /syncFullBrandCatalog\(\{ startVerification: true \}\)/);
-  assert.match(rendererSource, /if \(startVerification\) \{[\s\S]*startOfficialDomainAudit/);
-  assert.match(rendererSource, /automatic = false, startVerification = !automatic/);
+  assert.match(rendererSource, /\$\("#brand-sync"\)\.addEventListener\("click", \(\) => syncFullBrandCatalog\(\)\)/);
+  assert.doesNotMatch(rendererSource, /startVerification/);
+  assert.match(rendererSource, /async function syncFullBrandCatalog\(\{ automatic = false \} = \{\}\)/);
   assert.match(mainSource, /partition: "persist:around-g-official-domain-audit"[\s\S]*disableDialogs: true/);
   assert.doesNotMatch(mainSource, /setTimeout\(\(\) => \{\s*officialDomainAuditResumeTimer = null;\s*void runOfficialDomainAudit/);
 });
 
-test("an interrupted version audit is not marked complete while brands remain pending", async () => {
+test("full verification has no startup, update, or overnight automatic trigger", async () => {
   const mainSource = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
-  const start = mainSource.indexOf("async function startImmediateOfficialMallLinkage");
-  const end = mainSource.indexOf("function pauseOfficialDomainAuditForSellerAutomation", start);
-  const linkage = mainSource.slice(start, end);
-
-  assert.match(linkage, /immediateOfficialMallLinkageVersion === version && !initialSummary\.pending/);
-  assert.match(linkage, /await runOfficialDomainAudit\(\)/);
-  assert.match(linkage, /if \(!completedSummary\.pending\)/);
-  assert.match(linkage, /immediateOfficialMallLinkageCompletedAt/);
-});
-
-test("automatic full verification is scheduled overnight and stopped before daytime work", async () => {
-  const mainSource = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
-  assert.match(mainSource, /if \(app\.isPackaged\) scheduleImmediateOfficialMallLinkage\(\)/);
-  assert.doesNotMatch(mainSource, /setTimeout\(\(\) => void startImmediateOfficialMallLinkage\(\), 8_000\)/);
-  assert.match(mainSource, /nextOfficialMallAuditStartAt\(now\)/);
-  assert.match(mainSource, /currentOfficialMallAuditEndAt\(new Date\(\)\)/);
-  assert.match(mainSource, /stopAutomaticOfficialMallLinkage\(\)/);
+  assert.doesNotMatch(mainSource, /scheduleImmediateOfficialMallLinkage/);
+  assert.doesNotMatch(mainSource, /startImmediateOfficialMallLinkage/);
+  assert.doesNotMatch(mainSource, /immediateOfficialMallLinkageTimer/);
+  assert.doesNotMatch(mainSource, /nextOfficialMallAuditStartAt/);
+  assert.match(mainSource, /ipcMain\.handle\("official-domain:audit-start"/);
+  assert.match(mainSource, /Full official-mall verification is manual-only/);
 });
