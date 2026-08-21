@@ -54,12 +54,29 @@ test("all-complete stops activity only after the final renderer import drains", 
 test("current jobs recover completed rows after repeated job-number misses", () => {
   assert.match(main, /allowTimeRecovery: Boolean\(job\?\.restored\) \|\| Number\(job\?\.rowMisses \|\| 0\) >= 2/);
   assert.match(main, /if \(!row && expected\.allowTimeRecovery && expected\.createdAt > 0\)/);
-  assert.match(main, /item\.startAt <= expected\.createdAt \+ 5_000/);
+  assert.match(main, /item\.startAt <= upperBound/);
   assert.match(main, /status\.state === "WAITING_FOR_ROW"\) job\.rowMisses = Number\(job\.rowMisses \|\| 0\) \+ 1/);
 });
 
-test("release metadata is 2.10.319", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.319");
-  assert.equal(JSON.parse(lockSource).version, "2.10.319");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.319");
+test("restart recovery replaces a stale failed id with the nearby successful export", () => {
+  assert.match(main, /FAILED: 5\.5/);
+  assert.match(main, /restoredAt: Number\(job\?\.restoredAt \|\| 0\)/);
+  assert.match(main, /referenceAt - 15 \* 60_000/);
+  assert.match(main, /recoveredJobId/);
+  assert.match(main, /replaceRecoveredBrandExportJobId/);
+  assert.match(main, /최신 성공 작업번호 자동 연결/);
+});
+
+test("a failed POIZON row becomes terminal instead of being monitored forever", () => {
+  assert.match(main, /finishFailedBrandExportJob/);
+  assert.match(main, /const failedDirectRow = directParsed\?\.failed \? row : null/);
+  assert.match(main, /terminalState: "failed"/);
+  assert.match(main, /POIZON 작업 실패 확인 · 감시 종료/);
+  assert.match(main, /lastDownloadedAt > 0 \|\| terminalState \|\| createdAt < cutoff/);
+});
+
+test("release metadata is 2.10.320", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.320");
+  assert.equal(JSON.parse(lockSource).version, "2.10.320");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.320");
 });

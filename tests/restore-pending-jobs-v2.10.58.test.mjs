@@ -18,10 +18,23 @@ test("restored jobs are rebuilt as safe non-downloading jobs", () => {
   assert.match(main, /expectedProductCount: Number\(saved\?\.expectedProductCount \|\| 0\)/);
 });
 
+test("program startup checks completed files before resuming interrupted downloads", () => {
+  assert.match(main, /async function findDownloadedFileForPendingBrandExport/);
+  assert.match(main, /const completedFile = await findDownloadedFileForPendingBrandExport\(saved, entries\)/);
+  assert.match(main, /프로그램 시작 복구 · 기존 Excel 확인완료/);
+  assert.match(renderer, /async function recoverInterruptedBrandWorkAtStartup/);
+  const startupRecovery = renderer.match(/async function recoverInterruptedBrandWorkAtStartup\(\) \{[\s\S]*?\n\}/)?.[0] || "";
+  const fileCheck = startupRecovery.indexOf("await restoreDownloadedBrandFiles()");
+  const pendingCheck = startupRecovery.indexOf("await restorePendingBrandExportJobs()");
+  assert.ok(fileCheck >= 0);
+  assert.ok(pendingCheck > fileCheck);
+  assert.match(renderer, /await recoverInterruptedBrandWorkAtStartup\(\)/);
+});
 
 
-test("release metadata is 2.10.319", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.319");
-  assert.equal(JSON.parse(lockSource).version, "2.10.319");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.319");
+
+test("release metadata is 2.10.320", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.320");
+  assert.equal(JSON.parse(lockSource).version, "2.10.320");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.320");
 });
