@@ -8,7 +8,7 @@ const css = await readFile(new URL("../src/style.css", import.meta.url), "utf8")
 
 test("the former favorite group is labeled as downloaded-complete brands", () => {
   assert.match(html, /id="frequent-brand-title">다운로드 완료 브랜드/);
-  assert.match(html, /저장 폴더에 실제 원본 Excel 파일이 있는 브랜드를 최신순으로 표시합니다/);
+  assert.match(html, /원본 Excel 다운로드 완료 브랜드를 최신순으로 표시합니다/);
   assert.doesNotMatch(html, /id="brand-move-top"/);
   assert.doesNotMatch(html, /즐겨찾는 브랜드 선택/);
   assert.match(html, /id="category-brand-title">다운로드 완료 브랜드 선택/);
@@ -47,6 +47,9 @@ test("download-completed header keeps search and category actions", () => {
   assert.match(css, /\.frequent-brand-heading-actions/);
   assert.match(css, /\.frequent-brand-heading-actions>button\{[^}]*white-space:nowrap/);
   assert.match(css, /\.completed-brand-domestic-search\{min-width:116px\}/);
+  assert.match(css, /@media\(max-width:850px\)[\s\S]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(css, /\.frequent-brand-heading-actions>button\{width:100%;min-width:0/);
+  assert.match(css, /@media\(max-width:560px\)[\s\S]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(css, /\.frequent-brand-search-action/);
 });
 

@@ -1374,6 +1374,7 @@ button,input,select,textarea{font-family:inherit}
 .frequent-brand-group .brand-list-group-heading span{color:#fff;background:#2d7ff0}
 .frequent-brand-heading-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px}
 .frequent-brand-heading-actions>button{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;min-height:42px;padding:10px 14px;line-height:1.2;white-space:nowrap}
+.frequent-brand-heading-actions>button{font-size:11px;font-weight:800}
 .frequent-brand-search-action{min-width:116px}
 .completed-brand-domestic-search{min-width:116px}
 .frequent-brand-category-action{min-width:74px}
@@ -1384,8 +1385,12 @@ button,input,select,textarea{font-family:inherit}
 .all-brand-group{margin-top:12px}
 @media(max-width:850px){
   .brand-list-group-heading{align-items:flex-start;flex-direction:column}
-  .frequent-brand-heading-actions{width:100%;justify-content:flex-start;gap:8px;flex-wrap:wrap}
-  .frequent-brand-heading-actions>small{flex:1 0 100%;width:100%;min-width:0}
+  .frequent-brand-heading-actions{display:grid;width:100%;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  .frequent-brand-heading-actions>small{grid-column:1/-1;width:100%;min-width:0}
+  .frequent-brand-heading-actions>button{width:100%;min-width:0;padding:10px 8px}
+}
+@media(max-width:560px){
+  .frequent-brand-heading-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
 
