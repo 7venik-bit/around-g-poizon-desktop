@@ -1656,7 +1656,7 @@ function renderBrandCards(filter = "") {
   if (completedToggle) {
     completedToggle.hidden = Boolean(normalized) || visibleCompletedBrands.length <= 10;
     completedToggle.textContent = completedBrandShowAll
-      ? "최근 10개만 보기"
+      ? "최근 10개"
       : `전체보기 (${visibleCompletedBrands.length.toLocaleString("ko-KR")}개)`;
   }
   $("#all-brand-count").textContent = `${regularBrands.length.toLocaleString("ko-KR")}개`;
