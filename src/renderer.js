@@ -1223,6 +1223,7 @@ function updateBrandSelectionControls() {
   const clear = $("#brand-selection-clear");
   const search = $("#brand-export-selected");
   const frequentSearch = $("#frequent-brand-export");
+  const domesticSearch = $("#completed-brand-domestic-search");
   const stopCurrent = $("#brand-stop-current");
   if (count) count.textContent = `${selectedCount}개 선택`;
   if (clear) clear.disabled = selectedCount === 0 || brandSelectionBusy;
@@ -1234,6 +1235,11 @@ function updateBrandSelectionControls() {
     const label = button.querySelector("span");
     if (label) label.textContent = brandSelectionBusy ? "작업 중지" : "브랜드 검색";
   });
+  if (domesticSearch) {
+    const selectedCompletedCount = selectedBrandsForExport()
+      .filter((brand) => latestCompletedBrandDownload(brand)).length;
+    domesticSearch.disabled = brandSelectionBusy || selectedCompletedCount === 0;
+  }
   if (stopCurrent) stopCurrent.disabled = !brandSelectionBusy && !activeExportBrand && !hasActiveBrandExportJobs();
   const lamps = $("#onedrive-lamps");
   if (lamps) {
@@ -2296,6 +2302,23 @@ $("#frequent-brand-export")?.addEventListener("click", () => {
     renderBrandCards($("#brand-filter")?.value || "");
   }
   $("#brand-export-selected")?.click();
+});
+$("#completed-brand-domestic-search")?.addEventListener("click", async () => {
+  const selectedDownloads = selectedBrandsForExport()
+    .map((brand) => latestCompletedBrandDownload(brand))
+    .filter(Boolean)
+    .sort((left, right) => Number(right.time || right.mtimeMs || 0) - Number(left.time || left.mtimeMs || 0));
+  const status = $("#brand-status");
+  if (selectedDownloads.length !== 1) {
+    if (status) {
+      status.className = "status error";
+      status.textContent = selectedDownloads.length
+        ? "국내 플랫폼 상품 검색은 다운로드 완료 브랜드를 한 개만 선택해 주세요."
+        : "다운로드 완료 브랜드를 한 개 선택해 주세요.";
+    }
+    return;
+  }
+  await openIntegratedBrandExcel(selectedDownloads[0], true);
 });
 $("#frequent-brand-category")?.addEventListener("click", () => {
   $("#brand-open-category")?.click();

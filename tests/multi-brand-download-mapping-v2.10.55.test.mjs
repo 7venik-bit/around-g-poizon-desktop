@@ -36,8 +36,8 @@ test("a completed job removed during download cannot be selected again by a stal
 });
 
 
-test("release metadata is 2.10.328", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.328");
-  assert.equal(JSON.parse(lockSource).version, "2.10.328");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.328");
+test("release metadata is 2.10.329", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.329");
+  assert.equal(JSON.parse(lockSource).version, "2.10.329");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.329");
 });
