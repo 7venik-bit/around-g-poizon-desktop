@@ -38,10 +38,12 @@ test("downloaded brands are newest-first, deduplicated, and excluded from the fu
 
 test("download-completed header keeps search and category actions", () => {
   assert.match(html, /id="frequent-brand-group"[\s\S]*id="frequent-brand-export"[\s\S]*<span>브랜드 검색<\/span>/);
+  assert.match(html, /id="completed-brand-domestic-search"[^>]*disabled>국내 플랫폼 상품 검색<\/button>/);
   assert.match(html, /id="frequent-brand-category"[^>]*>카테고리<\/button>/);
   assert.match(renderer, /const completedCount = completedDownloadBrands\(\)\.length/);
   assert.match(renderer, /button === frequentSearch \? selectedCount === 0 && completedCount === 0/);
   assert.match(renderer, /\$\("#frequent-brand-export"\)\?\.addEventListener\("click"[\s\S]*pinnedBrandIds\.forEach/);
+  assert.match(renderer, /\$\("#completed-brand-domestic-search"\)\?\.addEventListener\("click"[\s\S]*latestCompletedBrandDownload\(brand\)[\s\S]*selectedDownloads\.length !== 1[\s\S]*openIntegratedBrandExcel\(selectedDownloads\[0\], true\)/);
   assert.match(css, /\.frequent-brand-heading-actions/);
   assert.match(css, /\.frequent-brand-search-action/);
 });
