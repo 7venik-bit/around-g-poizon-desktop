@@ -193,7 +193,10 @@ const brandDownloadPathsInProgress = new Set();
 let brandWorkSessionGeneration = 0;
 let brandExportAttemptGeneration = 0;
 let sellerProductFrameRoutingId = null;
-const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
+// POIZON occasionally retires individual data-center component routes. Enter
+// through the stable Seller Center home and use the visible left menu instead
+// of booting from a route that can show "Load Component Timeout".
+const SELLER_CENTER_URL = "https://seller.poizon.com/";
 const SELLER_EXPORT_CENTER_URL = "https://seller.poizon.com/main/exportCenter";
 const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 20 * 60 * 1000;
 const KR_POIZON_BRAND_LIST_URL = "https://kr.poizon.com/brand/list";
@@ -4237,25 +4240,37 @@ async function sellerProductSearchPageState() {
 
 async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
   if (!sellerWindow || sellerWindow.isDestroyed()) return false;
-  let state = await sellerProductSearchPageState();
-  if (!forceHome && state.ready) return true;
-  if (state.failed) {
+  const recoverSellerHome = async () => {
     const homeClick = await physicalClickSellerElement(sellerWindow.webContents.mainFrame, `
       return [...document.querySelectorAll("a,button,[role='button'],span")]
         .filter(visible)
         .find((element) => /^(?:홈페이지로\\s*돌아가기|返回首页|回到首页)$/.test(textOf(element)))
         ?.closest("a,button,[role='button']") || null;
     `, "PHYSICAL_SELLER_HOME_RECOVERY", 5_000);
-    if (homeClick.ok) await wait(2_500);
+    if (!homeClick.ok) return false;
+    await wait(2_500);
+    return true;
+  };
+  let state = await sellerProductSearchPageState();
+  if (!forceHome && state.ready) return true;
+  let recoveredFromFailedPage = false;
+  if (state.failed) {
+    recoveredFromFailedPage = await recoverSellerHome();
   }
   const currentUrl = String(sellerWindow.webContents.getURL() || "");
-  if (forceHome || state.failed || !currentUrl.includes("seller.poizon.com")) {
+  if ((forceHome && !recoveredFromFailedPage) || (state.failed && !recoveredFromFailedPage) || !currentUrl.includes("seller.poizon.com")) {
     await sellerWindow.loadURL(SELLER_CENTER_URL).catch(() => {});
     await wait(2_500);
   }
   for (let attempt = 0; attempt < 3; attempt += 1) {
     state = await sellerProductSearchPageState();
     if (state.ready) return true;
+    if (state.failed) {
+      const recovered = await recoverSellerHome();
+      if (!recovered) return false;
+      state = await sellerProductSearchPageState();
+      if (state.ready) return true;
+    }
     const menuFrame = sellerWindow.webContents.mainFrame;
     const searchMenuVisible = await executeSellerFrameWithTimeout(menuFrame, `(() => {
       const visible = (element) => element && element.getClientRects().length > 0;
@@ -4268,7 +4283,7 @@ async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
       const productMenu = await physicalClickSellerElement(menuFrame, `
         return [...document.querySelectorAll("a,button,[role='menuitem'],[role='button'],li,div,span")]
           .filter(visible)
-          .filter((element) => /^(?:상품|商品)$/.test(textOf(element)))
+          .filter((element) => /^(?:상품(?:\\s*및\\s*입찰\\s*분석)?|商品(?:及竞价分析)?)$/.test(textOf(element)))
           .sort((left, right) => {
             const a = left.getBoundingClientRect();
             const b = right.getBoundingClientRect();
@@ -4297,8 +4312,13 @@ async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
       }
     }
     if (attempt < 2) {
-      await sellerWindow.loadURL(SELLER_CENTER_URL).catch(() => {});
-      await wait(2_500);
+      state = await sellerProductSearchPageState();
+      if (state.failed) {
+        if (!await recoverSellerHome()) return false;
+      } else {
+        await sellerWindow.loadURL(SELLER_CENTER_URL).catch(() => {});
+        await wait(2_500);
+      }
     }
   }
   return false;

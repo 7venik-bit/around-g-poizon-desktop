@@ -8,10 +8,10 @@ const [main, pkg, lock] = await Promise.all([
   readFile(new URL("../package-lock.json", import.meta.url), "utf8").then(JSON.parse),
 ]);
 
-test("v2.10.336은 분리 검색 모듈 없이 배포된다", async () => {
-  assert.equal(pkg.version, "2.10.336");
-  assert.equal(lock.version, "2.10.336");
-  assert.equal(lock.packages[""].version, "2.10.336");
+test("v2.10.337은 분리 검색 모듈 없이 배포된다", async () => {
+  assert.equal(pkg.version, "2.10.337");
+  assert.equal(lock.version, "2.10.337");
+  assert.equal(lock.packages[""].version, "2.10.337");
   await assert.rejects(access(new URL("../services/domestic-search-modules/index.mjs", import.meta.url)));
   assert.doesNotMatch(main, /domestic-search:module-status|onDomesticModuleStatus/);
 });
@@ -36,5 +36,15 @@ test("판매자 메인에서 상품과 상품 검색 메뉴를 실제 Windows �
   assert.match(navigation, /"PHYSICAL_PRODUCT_MENU"/);
   assert.match(navigation, /"PHYSICAL_PRODUCT_SEARCH_MENU"/);
   assert.match(navigation, /sellerProductSearchPageState/);
+  assert.ok(navigation.includes("상품(?:\\\\s*및\\\\s*입찰\\\\s*분석)?"));
+  assert.ok(navigation.includes("홈페이지로\\\\s*돌아가기"));
+  assert.match(navigation, /if \(state\.failed\) \{\s+const recovered = await recoverSellerHome\(\)/);
+  assert.match(navigation, /if \(!await recoverSellerHome\(\)\) return false/);
   assert.doesNotMatch(navigation, /target\?\.click|productMenu\?\.click/);
+});
+
+test("판매자센터는 폐기될 수 있는 전체 시장 데이터 주소가 아닌 홈에서 시작한다", () => {
+  assert.match(main, /const SELLER_CENTER_URL = "https:\/\/seller\.poizon\.com\/"/);
+  const constants = main.slice(main.indexOf("const SELLER_CENTER_URL"), main.indexOf("const SELLER_EXPORT_CENTER_URL"));
+  assert.doesNotMatch(constants, /dataCenter\/merchantRankBoard/);
 });
