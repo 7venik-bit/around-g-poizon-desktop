@@ -81,7 +81,7 @@ const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
 const DOWNLOAD_STATUS_MIGRATION_KEY = "around-g-download-status-v2.10.29";
 const LIVE_JOB_UI_MIGRATION_KEY = "around-g-live-job-ui-v2.10.34";
 const PINNED_BRAND_RECOVERY_KEY = "around-g-pinned-brand-recovery-v2.10.322";
-const PINNED_BRAND_FORCE_RESTORE_KEY = "around-g-pinned-brand-force-restore-v2.10.323";
+const PINNED_BRAND_FORCE_RESTORE_KEY = "around-g-pinned-brand-force-restore-v2.10.324";
 const PINNED_BRAND_NAMES_KEY = "around-g-pinned-brand-names";
 const LAST_KNOWN_PINNED_BRAND_NAMES = [
   "Adidas Originals", "Converse", "Jordan", "Adidas", "Nike", "COACH",
@@ -163,6 +163,9 @@ try {
 
 function restoreKnownPinnedBrandsIfMissing() {
   const brands = Array.isArray(explorerMeta.brands) ? explorerMeta.brands : [];
+  // Never mark recovery complete before the catalog is available. Startup job
+  // inspection can be slow, but favorites must wait for real brand records.
+  if (!brands.length) return false;
   const forceKnownList = localStorage.getItem(PINNED_BRAND_FORCE_RESTORE_KEY) !== "done";
   let storedNames = null;
   try {
@@ -192,6 +195,7 @@ function restoreKnownPinnedBrandsIfMissing() {
   localStorage.setItem(PINNED_BRAND_NAMES_KEY, JSON.stringify(desiredNames));
   localStorage.setItem(PINNED_BRAND_RECOVERY_KEY, "done");
   localStorage.setItem(PINNED_BRAND_FORCE_RESTORE_KEY, "done");
+  return true;
 }
 
 function saveBrandSelections() {
@@ -3625,6 +3629,13 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   localStorage.removeItem("around-g-last-brand-export-job");
   const exportFolder = await window.aroundG.getBrandExportFolder();
   renderBrandExportFolder(exportFolder.folder);
+  // Brand selection is the primary screen. Load and render it before checking
+  // interrupted POIZON jobs so a delayed recovery can never leave both lists
+  // showing 0 brands.
+  explorerMeta = await window.aroundG.explorerMeta();
+  restoreKnownPinnedBrandsIfMissing();
+  renderBrandCards();
+  renderCategoryButtons();
   await recoverInterruptedBrandWorkAtStartup();
   window.aroundG.onBrandSyncProgress((progress) => {
     if (progress?.context === "category" && categorySearchActive) {
@@ -3673,12 +3684,8 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
     renderOfficialDomainAudit(audit);
     renderBrandCards($("#brand-filter")?.value || "");
   });
-  explorerMeta = await window.aroundG.explorerMeta();
-  restoreKnownPinnedBrandsIfMissing();
   renderOfficialDomainAudit(explorerMeta.officialDomainAudit || {});
   renderDownloadedBrandFiles();
-  renderBrandCards();
-  renderCategoryButtons();
   if (explorerMeta.needsBrandSync) await syncFullBrandCatalog({ automatic: true });
   const config = await window.aroundG.getConfig();
   $("#app-key").value = config.appKey;

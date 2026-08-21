@@ -58,12 +58,20 @@ test("favorites survive catalog ID changes and the known 22 are recoverable by n
   assert.match(renderer, /const parsed = JSON\.parse\(localStorage\.getItem\("around-g-brand-selection-history"/);
   assert.match(renderer, /function restoreKnownPinnedBrandsIfMissing/);
   assert.match(renderer, /around-g-pinned-brand-names/);
-  assert.match(renderer, /around-g-pinned-brand-force-restore-v2\.10\.323/);
+  assert.match(renderer, /around-g-pinned-brand-force-restore-v2\.10\.324/);
   assert.match(renderer, /const desiredNames = forceKnownList[\s\S]*LAST_KNOWN_PINNED_BRAND_NAMES/);
   assert.match(renderer, /desiredNames[\s\S]*\.map\(\(name\) =>/);
   assert.match(renderer, /including an intentionally empty list/);
+  assert.match(renderer, /if \(!brands\.length\) return false/);
   assert.match(renderer, /LAST_KNOWN_PINNED_BRAND_NAMES/);
   assert.match(renderer, /"Polo Ralph Lauren", "PUMA", "Crocs", "MLB", "Lululemon"/);
+});
+
+test("brand catalog and favorites render before interrupted job recovery", () => {
+  const startup = renderer.slice(renderer.lastIndexOf("(async () => {"));
+  assert.ok(startup.indexOf("explorerMeta = await window.aroundG.explorerMeta()") >= 0);
+  assert.ok(startup.indexOf("renderBrandCards()") >= 0);
+  assert.ok(startup.indexOf("renderBrandCards()") < startup.indexOf("await recoverInterruptedBrandWorkAtStartup()"));
 });
 
 test("official site address uses a separate full-width bottom row", () => {
