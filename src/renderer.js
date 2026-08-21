@@ -80,9 +80,10 @@ const WORK_HISTORY_RESET_KEY = "around-g-work-history-reset-v2.10.4";
 const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
 const DOWNLOAD_STATUS_MIGRATION_KEY = "around-g-download-status-v2.10.29";
 const LIVE_JOB_UI_MIGRATION_KEY = "around-g-live-job-ui-v2.10.34";
-const PINNED_BRAND_RECOVERY_KEY = "around-g-pinned-brand-recovery-v2.10.272";
+const PINNED_BRAND_RECOVERY_KEY = "around-g-pinned-brand-recovery-v2.10.322";
+const PINNED_BRAND_NAMES_KEY = "around-g-pinned-brand-names";
 const LAST_KNOWN_PINNED_BRAND_NAMES = [
-  "Adidas Originals", "Converse", "Jordan", "Adidas", "Nike", "COACH", "On",
+  "Adidas Originals", "Converse", "Jordan", "Adidas", "Nike", "COACH",
   "Under Armour", "Skechers", "THE NORTH FACE", "Columbia", "Patagonia",
   "New Balance", "ASICS", "Tommy Hilfiger", "FILA", "Vans", "SALOMON",
   "Polo Ralph Lauren", "PUMA", "Crocs", "MLB", "Lululemon",
@@ -160,21 +161,39 @@ try {
 } catch {}
 
 function restoreKnownPinnedBrandsIfMissing() {
-  if (pinnedBrandIds.length || localStorage.getItem(PINNED_BRAND_RECOVERY_KEY) === "done") return;
-  const recoveryNames = new Set(LAST_KNOWN_PINNED_BRAND_NAMES.map(normalizeBrand));
+  const brands = Array.isArray(explorerMeta.brands) ? explorerMeta.brands : [];
+  let storedNames = null;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PINNED_BRAND_NAMES_KEY) || "null");
+    if (Array.isArray(parsed)) storedNames = parsed.map(String).filter(Boolean);
+  } catch {}
+  const currentNames = pinnedBrandIds
+    .map((id) => brands.find((brand) => Number(brand.id) === Number(id))?.name)
+    .filter(Boolean);
+  // Older builds stored only numeric catalog IDs. A catalog refresh can change
+  // those IDs, leaving a non-empty saved array that renders zero favorites.
+  // Migrate once from resolved names, or recover the operator's last known list
+  // when none of the legacy IDs can be resolved. Once the names key exists, an
+  // intentionally empty array remains empty and is never repopulated.
+  const desiredNames = storedNames ?? (currentNames.length ? currentNames : LAST_KNOWN_PINNED_BRAND_NAMES);
+  const recoveryNames = new Set(desiredNames.map(normalizeBrand));
   pinnedBrandIds = explorerMeta.brands
     .filter((brand) => recoveryNames.has(normalizeBrand(brand.name))
       || recoveryNames.has(normalizeBrand(brand.ko)))
     .map((brand) => Number(brand.id))
     .filter(Number.isFinite);
-  if (!pinnedBrandIds.length) return;
   localStorage.setItem("around-g-pinned-brand-ids", JSON.stringify(pinnedBrandIds));
+  localStorage.setItem(PINNED_BRAND_NAMES_KEY, JSON.stringify(desiredNames));
   localStorage.setItem(PINNED_BRAND_RECOVERY_KEY, "done");
 }
 
 function saveBrandSelections() {
+  const pinnedBrandNames = pinnedBrandIds
+    .map((id) => explorerMeta.brands.find((brand) => Number(brand.id) === Number(id))?.name)
+    .filter(Boolean);
   localStorage.setItem("around-g-selected-brand-ids", JSON.stringify([...selectedBrandIds]));
   localStorage.setItem("around-g-pinned-brand-ids", JSON.stringify(pinnedBrandIds));
+  localStorage.setItem(PINNED_BRAND_NAMES_KEY, JSON.stringify(pinnedBrandNames));
   localStorage.setItem("around-g-brand-selection-history", JSON.stringify(brandSelectionHistory.slice(0, 100)));
 }
 
