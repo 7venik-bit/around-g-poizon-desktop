@@ -954,10 +954,24 @@ async function submitOfficialMallSearch(searchWindow, query) {
       input.dispatchEvent(new Event("change", { bubbles: true }));
       input.focus();
       const form = input.form;
-      const submit = form?.querySelector('button[type="submit"],input[type="submit"]');
+      const nearby = input.closest('form,[role="search"],header,section,div');
+      const submitCandidates = [
+        ...(form?.querySelectorAll('button[type="submit"],input[type="submit"],button,a,[role="button"]') || []),
+        ...(nearby?.querySelectorAll('button[type="submit"],input[type="submit"],button,a,[role="button"]') || []),
+        ...document.querySelectorAll('button[type="submit"],input[type="submit"],[aria-label*="검색"],[title*="검색"],[class*="search" i],[class*="sch" i]'),
+      ];
+      const submit = submitCandidates.find((element) => {
+        if (!visible(element) || element === input) return false;
+        const label = [element.getAttribute('aria-label'), element.getAttribute('title'), element.className, element.textContent, element.outerHTML].join(' ');
+        return /search|검색|magnif|ico[_-]?sch/i.test(label) || element.type === 'submit';
+      });
       if (submit && visible(submit)) submit.click();
       else if (form?.requestSubmit) form.requestSubmit();
-      else input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }));
+      else {
+        for (const type of ["keydown", "keypress", "keyup"]) {
+          input.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+        }
+      }
       return true;
     })()`, true).catch(() => false);
     if (submitted) return true;
@@ -8065,6 +8079,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       const data = await queryDomesticProducts({
         query: String(input?.query || "").trim(),
         articleNumber: String(input?.articleNumber || "").trim(),
+        productCode: String(input?.productCode || "").trim(),
         brand: String(input?.brand || "").trim(),
         title: String(input?.title || "").trim(),
         preferTitle: !String(input?.imageUrl || "").trim(),

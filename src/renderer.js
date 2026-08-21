@@ -757,7 +757,8 @@ function productCrossCheckIdentity(product = {}) {
 async function cachedDomesticSearch(product, verifyLinkCounts = true) {
   const identity = productCrossCheckIdentity(product);
   if (domesticIdentitySearchCache.has(identity)) return domesticIdentitySearchCache.get(identity);
-  const articleNumber = product.articleNumber || product.productCode || "";
+  const articleNumber = product.articleNumber || "";
+  const productCode = product.productCode || product.spuId || product.globalSpuId || "";
   const brandName = product.brandName || product.brand || "";
   const productName = product.apiTitle || product.title || product.name || "";
   const request = window.aroundG.searchDomestic({
@@ -765,6 +766,7 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
       ? [brandName, articleNumber].filter(Boolean).join(" ")
       : [brandName, productName].filter(Boolean).join(" "),
     articleNumber,
+    productCode,
     brand: brandName,
     brandId: product.brandCode || product.brandId || "",
     title: productName,

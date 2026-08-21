@@ -733,6 +733,7 @@ async function enrichMusinsaOptions(products, fetchImpl) {
 export async function queryDomesticProducts({
   query,
   articleNumber = "",
+  productCode = "",
   brand = "",
   title = "",
   preferTitle = false,
@@ -833,7 +834,9 @@ export async function queryDomesticProducts({
         officialProductUrl,
         interactiveSearch: Boolean(source.fashionTown || source.retailerDiscovery || interactiveOfficialSearch),
         searchQuery: interactiveOfficialSearch
-          ? sanitizeDomesticQuery(articleNumber || title || preferredQuery)
+          ? articleNumber
+            ? [...new Set([title, articleNumber].map(sanitizeDomesticQuery).filter(Boolean))].join(" ")
+            : sanitizeDomesticQuery(productCode || title || preferredQuery)
           : source.fashionTown || source.retailerDiscovery
             ? internalPortalSearchQuery(brand || title, preferredQuery) : "",
         count,
