@@ -33,8 +33,8 @@ test("program startup checks completed files before resuming interrupted downloa
 
 
 
-test("release metadata is 2.10.332", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.332");
-  assert.equal(JSON.parse(lockSource).version, "2.10.332");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.332");
+test("release metadata is 2.10.333", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.333");
+  assert.equal(JSON.parse(lockSource).version, "2.10.333");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.333");
 });
