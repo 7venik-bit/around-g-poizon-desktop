@@ -198,7 +198,7 @@ test("품번이 있으면 소재와 카테고리 설명을 검색어에 넣지 �
   assert.doesNotMatch(department.searchQuery, /가죽|로우탑|스니커즈/);
 });
 
-test("MLB 공식몰은 홈페이지에 들어간 뒤 정확한 품번을 검색창에 입력한다", async () => {
+test("MLB 공식몰은 홈페이지 돋보기 뒤 상품명과 품번을 검색창에 입력한다", async () => {
   assert.equal(officialBrandUsesInternalSearch("MLB"), true);
   const result = await queryDomesticProducts({
     query: "MLB 3ASXCA12N-50WHS",
@@ -214,14 +214,15 @@ test("MLB 공식몰은 홈페이지에 들어간 뒤 정확한 품번을 검색�
   assert.equal(official.homepageUrl, "https://www.mlb-korea.com/?gf=A");
   assert.equal(official.officialProductUrl, "");
   assert.equal(official.interactiveSearch, true);
-  assert.equal(official.searchQuery, "3ASXCA12N-50WHS");
+  assert.equal(official.searchQuery, "청키 라이너 뉴욕양키스 3ASXCA12N-50WHS");
 });
 
-test("모든 브랜드 공식몰은 검색주소 대신 홈페이지 돋보기에서 품번을 검색한다", async () => {
+test("모든 브랜드 공식몰은 품번이 있으면 상품명과 품번만 검색한다", async () => {
   assert.equal(officialBrandUsesInternalSearch("데상트"), true);
   const result = await queryDomesticProducts({
     query: "데상트 SR123UTS15",
     articleNumber: "SR123UTS15",
+    productCode: "DESCENTE-001",
     brand: "데상트",
     title: "스몰 워딩 코튼 반팔 티셔츠",
     fetchImpl: async () => ({ ok: true, text: async () => "" }),
@@ -230,7 +231,19 @@ test("모든 브랜드 공식몰은 검색주소 대신 홈페이지 돋보기�
   assert.equal(official.homepageUrl, "https://dk-on.com/DESCENTE");
   assert.equal(official.officialProductUrl, "");
   assert.equal(official.interactiveSearch, true);
-  assert.equal(official.searchQuery, "SR123UTS15");
+  assert.equal(official.searchQuery, "스몰 워딩 코튼 반팔 티셔츠 SR123UTS15");
+});
+
+test("브랜드 공식몰은 품번이 없을 때 상품코드로 검색한다", async () => {
+  const result = await queryDomesticProducts({
+    query: "데상트 DESCENTE-001",
+    productCode: "DESCENTE-001",
+    brand: "데상트",
+    title: "스몰 워딩 코튼 반팔 티셔츠",
+    fetchImpl: async () => ({ ok: true, text: async () => "" }),
+  });
+  const official = result.sources.find((source) => source.store === "브랜드 공식몰");
+  assert.equal(official.searchQuery, "DESCENTE-001");
 });
 
 test("병행수입 검색은 네이버 통합검색이 아닌 쇼핑 포털 내부 검색을 사용한다", async () => {
