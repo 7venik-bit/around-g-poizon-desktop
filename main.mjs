@@ -81,6 +81,7 @@ import {
   exactArticleIdentityMatch,
   resolveSsgProductClassification,
   detectedRetailer,
+  isConsignmentOperatedProduct,
   isOverseasPurchaseProduct,
   normalizeRenderedStockEvidence,
   queryDomesticProducts,
@@ -1248,6 +1249,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           && !exactArticleIdentityMatch(detailText, articleNumber)) continue;
         const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
         if (isOverseasPurchaseProduct(evidence)) continue;
+        if (isConsignmentOperatedProduct(evidence)) continue;
         const isSsg = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(String(product.url || ""));
         const detailClassification = isSsg
           ? classifySsgProductEvidence({ brand, url: product.url, text: evidence })

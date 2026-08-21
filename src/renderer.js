@@ -3524,8 +3524,8 @@ async function renderDomesticLoginStatuses() {
   list.innerHTML = '<div class="domestic-login-empty">로그인 상태 확인 중…</div>';
   const sources = await window.aroundG.listDomesticLogins().catch(() => []);
   list.innerHTML = sources.map((source) => `
-    <div class="domestic-login-row" data-source-id="${escapeHtml(source.id)}">
-      <div><strong>${escapeHtml(source.name)}</strong><span class="domestic-login-state ${source.hasSession ? "saved" : "required"}">${source.hasSession ? "세션 저장됨" : "로그인 필요"}</span></div>
+    <div class="domestic-login-row" data-source-id="${text(source.id)}">
+      <div><strong>${text(source.name)}</strong><span class="domestic-login-state ${source.hasSession ? "saved" : "required"}">${source.hasSession ? "세션 저장됨" : "로그인 필요"}</span></div>
       <div class="domestic-login-actions"><button type="button" data-domestic-login>${source.hasSession ? "다시 로그인" : "로그인"}</button>${source.hasSession ? '<button type="button" data-domestic-clear>연동 해제</button>' : ""}</div>
     </div>`).join("") || '<div class="domestic-login-empty">표시할 소싱몰이 없습니다.</div>';
 }
