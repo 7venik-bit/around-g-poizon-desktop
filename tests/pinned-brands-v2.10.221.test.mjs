@@ -51,10 +51,13 @@ test("favorite brand header keeps a search button visible when the full picker i
   assert.match(css, /\.frequent-brand-search-action/);
 });
 
-test("favorites survive unrelated corrupt history and the known 23 are recoverable", () => {
+test("favorites survive catalog ID changes and the known 22 are recoverable by name", () => {
   assert.match(renderer, /const parsed = JSON\.parse\(localStorage\.getItem\("around-g-pinned-brand-ids"/);
   assert.match(renderer, /const parsed = JSON\.parse\(localStorage\.getItem\("around-g-brand-selection-history"/);
   assert.match(renderer, /function restoreKnownPinnedBrandsIfMissing/);
+  assert.match(renderer, /around-g-pinned-brand-names/);
+  assert.match(renderer, /const desiredNames = storedNames \?\?/);
+  assert.match(renderer, /intentionally empty array remains empty/);
   assert.match(renderer, /LAST_KNOWN_PINNED_BRAND_NAMES/);
   assert.match(renderer, /"Polo Ralph Lauren", "PUMA", "Crocs", "MLB", "Lululemon"/);
 });
