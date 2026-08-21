@@ -7,6 +7,7 @@ import {
   classifySsgProductEvidence,
   detectedRetailer,
   isPlatformShoppingProductUrl,
+  isConsignmentOperatedProduct,
   isOverseasPurchaseProduct,
   countLinkedSearchProducts,
   countRenderedChannelProducts,
@@ -63,6 +64,13 @@ test("모든 국내 판매처 상세페이지 재고를 세 단계로 판정한�
   });
   assert.equal(normalizeRenderedStockEvidence({ pageText: "현재 상품은 품절되었습니다" }).inStock, false);
   assert.equal(normalizeRenderedStockEvidence({ pageText: "상품 상세정보" }).inStock, null);
+});
+
+test("국내 매장 유통 100% 정품 안내 상세페이지는 위탁운영 상품으로 제외한다", () => {
+  assert.equal(isConsignmentOperatedProduct(
+    "정품안내 판매하는 모든 상품은 국내 매장에 유통되는 100% 정품으로 믿고 구매하셔도 문제 없습니다."
+  ), true);
+  assert.equal(isConsignmentOperatedProduct("브랜드 본사직영 공식 온라인스토어 정품"), false);
 });
 
 test("SSG 브랜드 검색은 공식수입·공식브랜드관 증빙과 병행수입업체를 구분한다", () => {

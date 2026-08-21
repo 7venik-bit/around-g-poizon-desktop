@@ -21,6 +21,17 @@ export function isOverseasPurchaseProduct(value = "") {
   return OVERSEAS_PURCHASE_PATTERN.test(String(evidence || ""));
 }
 
+const CONSIGNMENT_OPERATED_PATTERN = /(?:위탁\s*(?:운영|판매)|판매\s*위탁|국내\s*매장(?:에)?\s*유통(?:되|되는|된)[\s\S]{0,100}?100\s*%\s*정품|판매하는\s*모든\s*상품[\s\S]{0,120}?100\s*%\s*정품[\s\S]{0,80}?믿고\s*구매)/i;
+
+export function isConsignmentOperatedProduct(value = "") {
+  const evidence = typeof value === "string" ? value : [
+    value?.title, value?.name, value?.text, value?.markup, value?.seller,
+    value?.sellerName, value?.mallName, value?.description, value?.detailText,
+    value?.badge, value?.badges, value?.labels,
+  ].filter(Boolean).map((item) => typeof item === "string" ? item : JSON.stringify(item)).join(" ");
+  return CONSIGNMENT_OPERATED_PATTERN.test(String(evidence || ""));
+}
+
 export const DOMESTIC_RETAILER_GROUPS = {
   "온라인 편집샵": [
     "OK몰", "카시나", "S.I.VILLAGE", "ABC마트", "그랜드스테이지", "온더스팟", "폴더",

@@ -6,6 +6,7 @@ import { normalizeRenderedStockEvidence } from "../relay/domestic-search.mjs";
 const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 const preload = await readFile(new URL("../preload.cjs", import.meta.url), "utf8");
 const html = await readFile(new URL("../src/index.html", import.meta.url), "utf8");
+const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
 
 test("domestic login windows and hidden inventory checks share one persistent session", () => {
   assert.match(main, /DOMESTIC_SEARCH_PARTITION = "persist:around-g-domestic-search"/);
@@ -14,6 +15,13 @@ test("domestic login windows and hidden inventory checks share one persistent se
   assert.match(main, /ipcMain\.handle\("domestic-login:open"/);
   assert.match(preload, /listDomesticLogins/);
   assert.match(html, /국내 소싱몰 로그인/);
+});
+
+test("domestic login status uses the renderer's existing safe text helper", () => {
+  const block = renderer.match(/async function renderDomesticLoginStatuses\(\)[\s\S]*?\n}/)?.[0] || "";
+  assert.match(block, /text\(source\.id\)/);
+  assert.match(block, /text\(source\.name\)/);
+  assert.doesNotMatch(block, /escapeHtml/);
 });
 
 test("a redirected login page is never reported as inventory", () => {
