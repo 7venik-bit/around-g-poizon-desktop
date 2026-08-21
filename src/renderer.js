@@ -1233,12 +1233,10 @@ function updateBrandSelectionControls() {
       : button === frequentSearch ? selectedCount === 0 && completedCount === 0 : selectedCount === 0;
     button.classList.toggle("is-running", brandSelectionBusy);
     const label = button.querySelector("span");
-    if (label) label.textContent = brandSelectionBusy ? "작업 중지" : "브랜드 검색";
+    if (label) label.textContent = brandSelectionBusy ? "작업 중지" : "포이즌 상품정보";
   });
   if (domesticSearch) {
-    const selectedCompletedCount = selectedBrandsForExport()
-      .filter((brand) => latestCompletedBrandDownload(brand)).length;
-    domesticSearch.disabled = brandSelectionBusy || selectedCompletedCount === 0;
+    domesticSearch.disabled = brandSelectionBusy || completedCount === 0;
   }
   if (stopCurrent) stopCurrent.disabled = !brandSelectionBusy && !activeExportBrand && !hasActiveBrandExportJobs();
   const lamps = $("#onedrive-lamps");
@@ -2308,17 +2306,18 @@ $("#completed-brand-domestic-search")?.addEventListener("click", async () => {
     .map((brand) => latestCompletedBrandDownload(brand))
     .filter(Boolean)
     .sort((left, right) => Number(right.time || right.mtimeMs || 0) - Number(left.time || left.mtimeMs || 0));
+  const latestDownload = selectedDownloads[0] || [...downloadedBrandFiles]
+    .filter((file) => file?.path)
+    .sort((left, right) => Number(right.time || right.mtimeMs || 0) - Number(left.time || left.mtimeMs || 0))[0];
   const status = $("#brand-status");
-  if (selectedDownloads.length !== 1) {
+  if (!latestDownload) {
     if (status) {
       status.className = "status error";
-      status.textContent = selectedDownloads.length
-        ? "국내 플랫폼 상품 검색은 다운로드 완료 브랜드를 한 개만 선택해 주세요."
-        : "다운로드 완료 브랜드를 한 개 선택해 주세요.";
+      status.textContent = "국내 상품검색에 사용할 다운로드 완료 Excel이 없습니다.";
     }
     return;
   }
-  await openIntegratedBrandExcel(selectedDownloads[0], true);
+  await openIntegratedBrandExcel(latestDownload, true);
 });
 $("#frequent-brand-category")?.addEventListener("click", () => {
   $("#brand-open-category")?.click();

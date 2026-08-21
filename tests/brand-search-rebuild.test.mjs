@@ -11,7 +11,7 @@ const [main, renderer, preload, html] = await Promise.all([
 
 test("brand-search UI remains available", () => {
   assert.match(html, /id="brand-export-selected"/);
-  assert.match(html, /<span>브랜드 검색<\/span>/);
+  assert.match(html, /<span>포이즌 상품정보<\/span>/);
   assert.match(html, /id="brand-cards"/);
 });
 
