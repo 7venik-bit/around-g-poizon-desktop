@@ -81,7 +81,7 @@ const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
 const DOWNLOAD_STATUS_MIGRATION_KEY = "around-g-download-status-v2.10.29";
 const LIVE_JOB_UI_MIGRATION_KEY = "around-g-live-job-ui-v2.10.34";
 const PINNED_BRAND_RECOVERY_KEY = "around-g-pinned-brand-recovery-v2.10.322";
-const PINNED_BRAND_FORCE_RESTORE_KEY = "around-g-pinned-brand-force-restore-v2.10.324";
+const PINNED_BRAND_FORCE_RESTORE_KEY = "around-g-pinned-brand-force-restore-v2.10.325";
 const PINNED_BRAND_NAMES_KEY = "around-g-pinned-brand-names";
 const LAST_KNOWN_PINNED_BRAND_NAMES = [
   "Adidas Originals", "Converse", "Jordan", "Adidas", "Nike", "COACH",
@@ -1167,6 +1167,9 @@ function toggleBrandSelection(brandId, brandButton = null) {
 
 function updateBrandSelectionControls() {
   const selectedCount = selectedBrandIds.size;
+  const favoriteCount = pinnedBrandIds.filter((id) =>
+    explorerMeta.brands.some((brand) => Number(brand.id) === Number(id))
+  ).length;
   const count = $("#brand-selected-count");
   const clear = $("#brand-selection-clear");
   const moveTop = $("#brand-move-top");
@@ -1177,7 +1180,9 @@ function updateBrandSelectionControls() {
   if (clear) clear.disabled = selectedCount === 0 || brandSelectionBusy;
   if (moveTop) moveTop.disabled = selectedCount === 0 || brandSelectionBusy;
   [search, frequentSearch].filter(Boolean).forEach((button) => {
-    button.disabled = brandSelectionBusy ? false : selectedCount === 0;
+    button.disabled = brandSelectionBusy
+      ? false
+      : button === frequentSearch ? selectedCount === 0 && favoriteCount === 0 : selectedCount === 0;
     button.classList.toggle("is-running", brandSelectionBusy);
     const label = button.querySelector("span");
     if (label) label.textContent = brandSelectionBusy ? "작업 중지" : "브랜드 검색";
@@ -2243,6 +2248,16 @@ $("#brand-selection-clear")?.addEventListener("click", () => {
   }
 });
 $("#frequent-brand-export")?.addEventListener("click", () => {
+  if (!brandSelectionBusy && selectedBrandIds.size === 0) {
+    pinnedBrandIds.forEach((id) => {
+      if (explorerMeta.brands.some((brand) => Number(brand.id) === Number(id))) {
+        selectedBrandIds.add(Number(id));
+      }
+    });
+    selectedBrandId = selectedBrandIds.size === 1 ? [...selectedBrandIds][0] : null;
+    saveBrandSelections();
+    renderBrandCards($("#brand-filter")?.value || "");
+  }
   $("#brand-export-selected")?.click();
 });
 $("#frequent-brand-category")?.addEventListener("click", () => {
@@ -2374,6 +2389,9 @@ async function syncFullBrandCatalog({ automatic = false } = {}) {
     return false;
   }
   explorerMeta = await window.aroundG.explorerMeta();
+  // A successful full-catalog sync can replace every numeric brand ID. Resolve
+  // favorites by their persisted names again before rendering the new catalog.
+  restoreKnownPinnedBrandsIfMissing();
   selectedBrandId = null;
   $("#brand-search").disabled = true;
   renderBrandCards($("#brand-filter").value);
