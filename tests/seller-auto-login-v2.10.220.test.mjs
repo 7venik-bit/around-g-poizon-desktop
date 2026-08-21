@@ -42,6 +42,22 @@ test("판매자센터의 지연된 로그인 화면을 기다린 뒤 저장 계�
   assert.match(main, /if \(!initialState\.login\) return \{ ok: false, code: "SELLER_LOGIN_PAGE_TIMEOUT" \}/);
 });
 
+test("로그인 성공 화면을 다시 열지 않고 기존 상품 검색 메뉴를 클릭한다", () => {
+  const navigationStart = main.indexOf("async function enterSellerProductSearchViaMenu");
+  const navigationEnd = main.indexOf("async function ensureSellerLoginBeforeBrandSearch", navigationStart);
+  const navigation = main.slice(navigationStart, navigationEnd);
+  const exportStart = main.indexOf("async function automateSellerBrandExport");
+  const exportEnd = main.indexOf("async function captureSellerPopularProducts", exportStart);
+  const brandExport = main.slice(exportStart, exportEnd);
+
+  assert.match(navigation, /const authentication = await sellerAuthenticationState\(\)/);
+  assert.match(navigation, /if \(!authentication\.authenticated/);
+  assert.match(navigation, /PHYSICAL_PRODUCT_MENU/);
+  assert.match(navigation, /PHYSICAL_PRODUCT_SEARCH_MENU/);
+  assert.match(brandExport, /const productSearchOpened = await enterSellerProductSearchViaMenu\(\)/);
+  assert.doesNotMatch(brandExport, /productSearchOpened = await enterSellerProductSearchViaMenu\(\{ forceHome: true \}\)/);
+});
+
 test("all three lamps chase in order while sourcing", () => {
   assert.match(renderer, /lamps\.classList\.toggle\("sourcing", sourcing\)/);
   assert.match(css, /\.window-dots\.sourcing i\{animation:poizon-work-lamp-chase/);

@@ -46,7 +46,7 @@ test("POIZON product search opens from a working seller page with physical menu 
   assert.match(workflow, /deferNavigation: true/);
   assert.match(workflow, /await sellerWindow\.loadURL\(SELLER_CENTER_URL\)/);
   assert.doesNotMatch(main, /SELLER_MAIN_URL/);
-  assert.match(workflow, /enterSellerProductSearchViaMenu\(\{ forceHome: true \}\)/);
+  assert.match(workflow, /enterSellerProductSearchViaMenu\(\)/);
   assert.doesNotMatch(main, /SELLER_PRODUCT_SEARCH_URL/);
   assert.doesNotMatch(main, /loadURL\([^\n]*\/main\/goods\/search/);
   assert.match(main, /performPhysicalSellerSortAndExport/);

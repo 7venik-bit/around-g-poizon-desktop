@@ -4288,7 +4288,15 @@ async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
     recoveredFromFailedPage = await recoverSellerHome();
   }
   const currentUrl = String(sellerWindow.webContents.getURL() || "");
-  if ((forceHome && !recoveredFromFailedPage) || (state.failed && !recoveredFromFailedPage) || !currentUrl.includes("seller.poizon.com")) {
+  const authentication = await sellerAuthenticationState();
+  // Keep the page that POIZON opened after a successful login. Reloading the
+  // Seller Center root here discards that freshly established navigation and
+  // sends the window back to the login card. The restored workflow expands
+  // 상품 and clicks 상품 검색 in the authenticated page instead.
+  if (!authentication.authenticated
+      && ((forceHome && !recoveredFromFailedPage)
+        || (state.failed && !recoveredFromFailedPage)
+        || !currentUrl.includes("seller.poizon.com"))) {
     await sellerWindow.loadURL(SELLER_CENTER_URL).catch(() => {});
     await wait(2_500);
   }
@@ -4345,7 +4353,7 @@ async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
       state = await sellerProductSearchPageState();
       if (state.failed) {
         if (!await recoverSellerHome()) return false;
-      } else {
+      } else if (!(await sellerAuthenticationState()).authenticated) {
         await sellerWindow.loadURL(SELLER_CENTER_URL).catch(() => {});
         await wait(2_500);
       }
@@ -5237,7 +5245,9 @@ async function automateSellerBrandExport(input = {}) {
     jobState: "1단계/5 · 판매자센터 상품 메뉴 클릭 중",
     message: `${brandName} · 판매자센터 정상 데이터 화면에서 상품 → 상품 검색을 실제 마우스로 클릭합니다.`,
   });
-  const productSearchOpened = await enterSellerProductSearchViaMenu({ forceHome: true });
+  // The login success page already owns the valid Seller Center session.
+  // Continue in that page and restore the old physical menu-click workflow.
+  const productSearchOpened = await enterSellerProductSearchViaMenu();
   if (!productSearchOpened) {
     const pageState = await sellerProductSearchPageState();
     const diagnosticPath = await captureSellerDiagnostic(brandName, "physical-product-menu-failed");
