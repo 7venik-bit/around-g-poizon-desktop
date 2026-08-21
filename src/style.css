@@ -1375,6 +1375,8 @@ button,input,select,textarea{font-family:inherit}
 .frequent-brand-heading-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px}
 .frequent-brand-search-action{flex:0 0 auto;min-width:116px;justify-content:center}
 .frequent-brand-category-action{flex:0 0 auto}
+.brand-download-open{display:inline-flex;width:max-content;margin-top:3px;padding:2px 7px;border:1px solid #9fc5f8;border-radius:6px;color:#1e63c6;background:#fff;font-weight:800;cursor:pointer}
+.brand-download-open:hover{background:#eaf3ff}
 .frequent-brand-search-action svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .frequent-brand-cards{padding-bottom:2px;border-bottom:0}
 .all-brand-group{margin-top:12px}

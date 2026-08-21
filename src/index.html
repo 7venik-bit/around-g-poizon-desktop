@@ -87,7 +87,6 @@
               복수 선택
             </span>
             <strong id="brand-selected-count" aria-live="polite">0개 선택</strong>
-            <button id="brand-move-top" type="button" disabled>즐겨찾는 브랜드 선택</button>
             <button id="brand-sync" type="button">전체 브랜드 동기화</button>
             <button id="brand-selection-clear" type="button" disabled>선택 해제</button>
             <button id="brand-export-selected" class="primary brand-search-action" type="button" disabled>
@@ -139,9 +138,10 @@
           <div id="brand-progress" class="capture-progress" hidden><i></i><span>0%</span></div>
           <section id="frequent-brand-group" class="brand-list-group frequent-brand-group" aria-labelledby="frequent-brand-title">
             <div class="brand-list-group-heading">
-              <div><strong id="frequent-brand-title">자주 사용하는 브랜드</strong><span id="frequent-brand-count">0개</span></div>
+              <div><strong id="frequent-brand-title">다운로드 완료 브랜드</strong><span id="frequent-brand-count">0개</span></div>
               <div class="frequent-brand-heading-actions">
-                <small>즐겨찾기로 지정한 브랜드만 모아서 표시합니다.</small>
+                <small>저장 폴더에 실제 원본 Excel 파일이 있는 브랜드를 최신순으로 표시합니다.</small>
+                <button id="completed-brand-toggle" type="button" hidden>전체보기</button>
                 <button id="frequent-brand-export" class="primary brand-search-action frequent-brand-search-action" type="button" disabled>
                   <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
                   <span>브랜드 검색</span>
@@ -154,7 +154,7 @@
           <section class="brand-list-group all-brand-group" aria-labelledby="all-brand-title">
             <div class="brand-list-group-heading">
               <div><strong id="all-brand-title">전체 브랜드</strong><span id="all-brand-count">0개</span></div>
-              <small>즐겨찾기 브랜드를 제외한 전체 목록입니다.</small>
+              <small>다운로드 완료 브랜드를 제외한 전체 목록입니다.</small>
             </div>
             <div id="brand-cards" class="brand-cards"></div>
           </section>
@@ -210,7 +210,7 @@
           <div id="category-buttons" class="category-buttons"></div>
           <section id="category-detail-section" class="category-detail-section" hidden><strong>세부 메뉴 선택</strong><div id="category-detail-buttons" class="category-detail-buttons"></div></section>
           <section id="category-brand-section" class="category-brand-section" aria-labelledby="category-brand-title">
-            <div class="category-brand-heading"><div><strong id="category-brand-title">즐겨찾기 브랜드 선택</strong><span id="category-brand-count">0/0개 선택</span></div><div><button id="category-brand-select-all" type="button">전체 선택</button><button id="category-brand-clear" type="button">선택 해제</button></div></div>
+            <div class="category-brand-heading"><div><strong id="category-brand-title">다운로드 완료 브랜드 선택</strong><span id="category-brand-count">0/0개 선택</span></div><div><button id="category-brand-select-all" type="button">전체 선택</button><button id="category-brand-clear" type="button">선택 해제</button></div></div>
             <p>카테고리를 검색할 브랜드만 선택하세요.</p>
             <div id="category-brand-cards" class="category-brand-cards"></div>
           </section>
