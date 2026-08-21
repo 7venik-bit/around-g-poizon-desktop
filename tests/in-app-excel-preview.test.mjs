@@ -174,6 +174,8 @@ test("official-mall button runs homepage magnifier search instead of opening a r
   assert.match(rendererSource, /data-official-homepage=/);
   assert.match(rendererSource, /data-official-query=/);
   assert.match(rendererSource, /openOfficialInternalSearch/);
+  assert.match(rendererSource, /sourceProduct\.articleNumber \|\| sourceProduct\.productCode \|\| sourceProduct\.spuId/);
+  assert.match(rendererSource, /renderDomestic\(result, product\)/);
 });
 
 test("MLB 공식몰 검색창은 품번 입력을 지원한다", () => {

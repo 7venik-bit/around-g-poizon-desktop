@@ -926,7 +926,7 @@ async function submitOfficialMallSearch(searchWindow, query) {
   const exactQuery = String(query || "").trim();
   if (!exactQuery || !searchWindow || searchWindow.isDestroyed()) return false;
   for (let attempt = 0; attempt < 12; attempt += 1) {
-    const submitted = await searchWindow.webContents.executeJavaScript(`(() => {
+    const script = `(() => {
       const query = ${JSON.stringify(String(query || ""))};
       const visible = (element) => {
         if (!element) return false;
@@ -934,9 +934,16 @@ async function submitOfficialMallSearch(searchWindow, query) {
         const rect = element.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
       };
-      let input = [...document.querySelectorAll('input[type="search"],input[placeholder*="검색어"],input[placeholder*="검색"],input[name*="search" i],input[name="q" i],input[name*="query" i],input[name*="keyword" i],input[name*="schWord" i]')].find(visible);
+      const roots = [document];
+      for (let index = 0; index < roots.length; index += 1) {
+        for (const element of roots[index].querySelectorAll?.('*') || []) {
+          if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
+        }
+      }
+      const selectAll = (selector) => roots.flatMap((root) => [...(root.querySelectorAll?.(selector) || [])]);
+      let input = selectAll('input[type="search"],input[type="text"][placeholder*="검색"],input[placeholder*="검색어"],input[placeholder*="검색"],input[name*="search" i],input[name="q" i],input[name*="query" i],input[name*="keyword" i],input[name*="schWord" i]').find(visible);
       if (!input) {
-        const controls = [...document.querySelectorAll('header button,header a,button,a,[role="button"]')];
+        const controls = selectAll('header button,header a,button,a,[role="button"]');
         const opener = controls.find((element) => {
           const label = [element.getAttribute("aria-label"), element.getAttribute("title"), element.className, element.textContent].join(" ");
           return visible(element) && /search|검색/i.test(label);
@@ -958,7 +965,7 @@ async function submitOfficialMallSearch(searchWindow, query) {
       const submitCandidates = [
         ...(form?.querySelectorAll('button[type="submit"],input[type="submit"],button,a,[role="button"]') || []),
         ...(nearby?.querySelectorAll('button[type="submit"],input[type="submit"],button,a,[role="button"]') || []),
-        ...document.querySelectorAll('button[type="submit"],input[type="submit"],[aria-label*="검색"],[title*="검색"],[class*="search" i],[class*="sch" i]'),
+        ...selectAll('button[type="submit"],input[type="submit"],[aria-label*="검색"],[title*="검색"],[class*="search" i],[class*="sch" i]'),
       ];
       const submit = submitCandidates.find((element) => {
         if (!visible(element) || element === input) return false;
@@ -973,7 +980,13 @@ async function submitOfficialMallSearch(searchWindow, query) {
         }
       }
       return true;
-    })()`, true).catch(() => false);
+    })()`;
+    const frames = [searchWindow.webContents.mainFrame, ...searchWindow.webContents.mainFrame.framesInSubtree];
+    let submitted = false;
+    for (const frame of frames) {
+      submitted = await frame.executeJavaScript(script, true).catch(() => false);
+      if (submitted) break;
+    }
     if (submitted) return true;
     await wait(700);
   }
