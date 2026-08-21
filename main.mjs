@@ -3149,6 +3149,7 @@ const SELLER_MONITOR_STATUS_PRIORITY = {
   WAITING_FOR_COMPLETION: 4,
   WAITING_FOR_DOWNLOAD: 5,
   READY: 6,
+  FAILED: 5.5,
 };
 
 async function readSellerMonitorStatuses(expectedIds = []) {
@@ -3174,6 +3175,7 @@ async function readSellerMonitorStatuses(expectedIds = []) {
         jobId,
         restored: Boolean(job?.restored),
         createdAt: Number(job?.createdAt || 0),
+        restoredAt: Number(job?.restoredAt || 0),
         allowTimeRecovery: Boolean(job?.restored) || Number(job?.rowMisses || 0) >= 2,
       };
     });
@@ -3228,26 +3230,40 @@ async function readSellerMonitorStatuses(expectedIds = []) {
           const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
           const cellTexts = cells.map(textOf);
           const dates = cellTexts.flatMap((value) => value.match(datePattern) || []);
-          const workStateText = cellTexts.find((value) => /^(?:성공|success|completed)$/i.test(value)) || "";
+          const workStateText = cellTexts.find((value) => /^(?:성공|success|completed|실패|failed|error)$/i.test(value)) || "";
           const control = downloadControlIn(row);
-          return { row, rowText, cells, dates, workStateText, control, startAt: parseDate(dates[0]) };
+          const rowJobId = String(cellTexts[0] || rowText).match(/\b\d{7,}\b/)?.[0] || "";
+          const failed = /^(?:실패|failed|error)$/i.test(workStateText)
+            || /(?:^|\s)(?:실패|failed|error)(?:\s|$)/i.test(rowText);
+          return { row, rowText, cells, dates, workStateText, control, rowJobId, failed, startAt: parseDate(dates[0]) };
         });
         return expectedJobs.map((expected) => {
           const { jobId } = expected;
           let row = findJobContainer(jobId);
+          const directParsed = parsedRows.find((item) => item.row === row);
+          const failedDirectRow = directParsed?.failed ? row : null;
+          if (failedDirectRow) row = null;
           let recovered = false;
           if (!row && expected.allowTimeRecovery && expected.createdAt > 0) {
+            const referenceAt = expected.restored && expected.restoredAt > 0
+              ? expected.restoredAt
+              : expected.createdAt;
+            const lowerBound = expected.restored ? referenceAt - 15 * 60_000 : expected.createdAt - 5 * 60_000;
+            const upperBound = expected.restored ? referenceAt + 5_000 : expected.createdAt + 5_000;
             const candidates = parsedRows.filter((item) => !usedRows.has(item.row)
               && item.control
               && /^(?:성공|success|completed)$/i.test(item.workStateText)
               && item.dates.length > 0
-              && item.startAt >= expected.createdAt - 5 * 60_000
+              && item.startAt >= lowerBound
               // POIZON creates the export row before Around G registers it.
               // Reject later rows so adjacent brand jobs cannot be swapped.
-              && item.startAt <= expected.createdAt + 5_000)
-              .sort((left, right) => Math.abs(left.startAt - expected.createdAt) - Math.abs(right.startAt - expected.createdAt));
+              && item.startAt <= upperBound)
+              .sort((left, right) => Math.abs(left.startAt - referenceAt) - Math.abs(right.startAt - referenceAt));
             row = candidates[0]?.row || null;
             recovered = Boolean(row);
+          }
+          if (!row && failedDirectRow) {
+            return { jobId, state: "FAILED", workStateText: directParsed?.workStateText || "실패" };
           }
           if (!row) return { jobId, state: "WAITING_FOR_ROW" };
           usedRows.add(row);
@@ -3258,6 +3274,9 @@ async function readSellerMonitorStatuses(expectedIds = []) {
           const workStateText = cellTexts.find((value) => /^(?:성공|success|completed)$/i.test(value)) || cellTexts[3] || "";
           const startText = dates[0] || "";
           const completionText = dates.at(-1) || "";
+          const recoveredJobId = recovered
+            ? (String(cellTexts[0] || rowText).match(/\b\d{7,}\b/)?.[0] || "")
+            : "";
           const jobNumberMatched = recovered || compactNumber(rowText).includes(compactNumber(jobId));
           const workSucceeded = /^(?:성공|success|completed)$/i.test(workStateText);
           const completionConfirmed = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/.test(completionText);
@@ -3279,7 +3298,9 @@ async function readSellerMonitorStatuses(expectedIds = []) {
             workStateText,
             completionText,
             startText,
+            startAtMs: parseDate(startText),
             recovered,
+            recoveredJobId,
             jobNumberMatched,
             workSucceeded,
             completionConfirmed,
@@ -3301,6 +3322,49 @@ async function readSellerMonitorStatuses(expectedIds = []) {
   }
   }
   return expectedIds.map((jobId) => merged.get(jobId) || { jobId, state: "PAGE_NOT_READY" });
+}
+
+async function replaceRecoveredBrandExportJobId(previousJobId, recoveredJobId, job, status = {}) {
+  const previousId = String(previousJobId || "").trim();
+  const nextId = String(recoveredJobId || "").trim();
+  if (!previousId || !nextId || previousId === nextId || brandExportJobs.has(nextId)) return previousId;
+  brandExportJobs.delete(previousId);
+  const recovered = {
+    ...job,
+    jobId: nextId,
+    createdAt: Number(status.startAtMs || job?.createdAt || Date.now()),
+    restored: true,
+    restoredAt: Number(job?.restoredAt || Date.now()),
+  };
+  brandExportJobs.set(nextId, recovered);
+  const saved = savedBrandExportJobs();
+  const previousSaved = saved.find((item) => String(item?.jobId || "").trim() === previousId) || {};
+  await store.setSettings({
+    brandExportJobCache: [
+      { ...previousSaved, ...recovered, lastDownloadedAt: 0, terminalState: "" },
+      ...saved.filter((item) => ![previousId, nextId].includes(String(item?.jobId || "").trim())),
+    ].slice(0, 500),
+  });
+  return nextId;
+}
+
+async function finishFailedBrandExportJob(jobId, job) {
+  const failedAt = Date.now();
+  brandExportJobs.delete(jobId);
+  const saved = savedBrandExportJobs();
+  const previous = saved.find((item) => String(item?.jobId || "").trim() === String(jobId)) || {};
+  await store.setSettings({
+    brandExportJobCache: [
+      { ...previous, ...job, jobId, terminalState: "failed", terminalAt: failedAt },
+      ...saved.filter((item) => String(item?.jobId || "").trim() !== String(jobId)),
+    ].slice(0, 500),
+  });
+  mainWindow?.webContents.send("brand-export:error", {
+    brandName: job?.brandName || "",
+    jobId,
+    jobState: "POIZON 작업 실패 확인 · 감시 종료",
+    message: `${job?.brandName || "선택 브랜드"} · 작업번호 ${jobId}는 POIZON에서 실패로 확인되어 무한 감시를 종료했습니다.`,
+  });
 }
 
 async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId = null, windowSource = "monitor", rowLocator = {}) {
@@ -3433,8 +3497,31 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
       const expectedIds = [...brandExportJobs.keys()];
       const statuses = await readSellerMonitorStatuses(expectedIds);
       for (const status of statuses) {
+        const previousJobId = String(status.jobId || "").trim();
+        const recoveredJobId = String(status.recoveredJobId || "").trim();
+        const job = brandExportJobs.get(previousJobId);
+        if (job && recoveredJobId && recoveredJobId !== previousJobId) {
+          const nextJobId = await replaceRecoveredBrandExportJobId(previousJobId, recoveredJobId, job, status);
+          status.previousJobId = previousJobId;
+          status.jobId = nextJobId;
+          mainWindow?.webContents.send("brand-export:progress", {
+            status: "monitoring",
+            monitorSource: "dedicated-window",
+            brandName: job.brandName,
+            jobId: nextJobId,
+            jobState: "재시작 복구 · 최신 성공 작업번호 자동 연결",
+            message: `${job.brandName} · 저장된 작업번호 ${previousJobId} 대신 최신 성공 작업번호 ${nextJobId}를 연결했습니다.`,
+          });
+        }
+      }
+      for (const status of statuses) {
         const job = brandExportJobs.get(status.jobId);
         if (!job) continue;
+        if (status.state === "FAILED") {
+          if (activeBrandDownloadJobId === status.jobId) activeBrandDownloadJobId = "";
+          await finishFailedBrandExportJob(status.jobId, job);
+          continue;
+        }
         if (status.state === "WAITING_FOR_ROW") job.rowMisses = Number(job.rowMisses || 0) + 1;
         else job.rowMisses = 0;
         const stateLabel = {
@@ -3557,6 +3644,7 @@ const SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT = `(() => {
     const text = textOf(element);
     if (!text || text.length > 2400) continue;
     const cells = [...element.querySelectorAll("td, [role='cell'], [role='gridcell']")];
+    const cellTexts = cells.map(textOf);
     const firstCellText = textOf(cells[0]);
     const id = firstCellText.match(/\\b\\d{7,}\\b/)?.[0]
       || text.match(/\\b\\d{7,}\\b/)?.[0]
@@ -3565,8 +3653,11 @@ const SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT = `(() => {
     const rowHint = cells.length >= 2
       || /내보내기|다운로드|작업|export|download|task|导出|下载|任务|처리|成功/i.test(text);
     if (!rowHint) continue;
+    const workStateText = cellTexts.find((value) => /^(?:성공|success|completed|실패|failed|error)$/i.test(value)) || "";
+    const failed = /^(?:실패|failed|error)$/i.test(workStateText);
+    const succeeded = /^(?:성공|success|completed)$/i.test(workStateText);
     seen.add(id);
-    jobs.push({ id, fingerprint: id, text: text.slice(0, 500) });
+    jobs.push({ id, fingerprint: id, text: text.slice(0, 500), workStateText, failed, succeeded });
   }
   const bodyText = textOf(document.body);
   const emptyState = /暂无数据|没有数据|暂无任务|데이터가\s*없|작업이\s*없|no\s*(?:data|task)/i.test(bodyText);
@@ -3739,14 +3830,69 @@ function savedBrandExportJobForFile(input = {}, usedJobIds = new Set()) {
   return brandCandidates.length === 1 ? brandCandidates[0] : null;
 }
 
-function restorePendingBrandExportJobs() {
+async function findDownloadedFileForPendingBrandExport(saved, entries = []) {
+  const jobId = String(saved?.jobId || "").trim();
+  const brandName = String(saved?.brandName || "").trim();
+  const brandKo = String(saved?.brandKo || "").trim();
+  const createdAt = Number(saved?.createdAt || 0);
+  const candidates = (await Promise.all((entries || [])
+    .filter((entry) => !isProcessedBrandExportName(entry.name) && !isPartialBrandExportName(entry.name))
+    .map(async (entry) => ({ entry, info: await stat(entry.path).catch(() => null) }))))
+    .filter(({ info }) => info && info.size > 0 && info.mtimeMs >= createdAt - 5 * 60_000)
+    .sort((left, right) => right.info.mtimeMs - left.info.mtimeMs);
+  const exact = candidates.find(({ entry }) => {
+    const folderMeta = parseBrandExportFolderName(basename(entry.directory));
+    return String(folderMeta.jobId || "") === jobId
+      || new RegExp(`(?:^|\\D)${jobId}(?:\\D|$)`).test(entry.name);
+  });
+  if (exact) return exact;
+  for (const candidate of candidates) {
+    const integrity = await validateBrandExportFile(candidate.entry.path, [brandName, brandKo].filter(Boolean))
+      .catch(() => null);
+    if (integrity?.ok) return candidate;
+  }
+  return null;
+}
+
+async function restorePendingBrandExportJobs() {
   const cutoff = Date.now() - RESTORED_PENDING_JOB_MAX_AGE_MS;
-  for (const saved of savedBrandExportJobs()) {
+  const savedJobs = savedBrandExportJobs();
+  const folder = currentBrandExportFolder();
+  await mkdir(folder, { recursive: true });
+  const entries = await listBrandExportExcelEntries(folder).catch(() => []);
+  const reconciledCache = [];
+  for (const saved of savedJobs) {
     const jobId = String(saved?.jobId || "").trim();
     const brandName = String(saved?.brandName || "").trim();
     const createdAt = Number(saved?.createdAt || 0);
     const lastDownloadedAt = Number(saved?.lastDownloadedAt || 0);
-    if (!jobId || !brandName || lastDownloadedAt > 0 || createdAt < cutoff) continue;
+    const terminalState = String(saved?.terminalState || "").trim();
+    if (!jobId || !brandName || lastDownloadedAt > 0 || terminalState || createdAt < cutoff) {
+      reconciledCache.push(saved);
+      continue;
+    }
+    const completedFile = await findDownloadedFileForPendingBrandExport(saved, entries);
+    if (completedFile) {
+      brandExportJobs.delete(jobId);
+      const completed = {
+        ...saved,
+        lastDownloadedAt: Number(completedFile.info.mtimeMs || Date.now()),
+        filePath: completedFile.entry.path,
+        fileName: completedFile.entry.name,
+        fileMtimeMs: Number(completedFile.info.mtimeMs || 0),
+        terminalState: "",
+      };
+      reconciledCache.push(completed);
+      mainWindow?.webContents.send("brand-export:progress", {
+        status: "startup-file-recovered",
+        brandName,
+        jobId,
+        jobState: "프로그램 시작 복구 · 기존 Excel 확인완료",
+        message: `${brandName} · 작업번호 ${jobId}의 기존 다운로드 파일을 확인해 반복 감시를 건너뜁니다.`,
+      });
+      continue;
+    }
+    reconciledCache.push(saved);
     brandExportJobs.set(jobId, {
       jobId,
       brandName,
@@ -3756,7 +3902,11 @@ function restorePendingBrandExportJobs() {
       downloadStarted: false,
       downloadRequestedAt: 0,
       restored: true,
+      restoredAt: Date.now(),
     });
+  }
+  if (JSON.stringify(reconciledCache) !== JSON.stringify(savedJobs)) {
+    await store.setSettings({ brandExportJobCache: reconciledCache.slice(0, 500) });
   }
   return [...brandExportJobs.entries()].map(([jobId, job]) => ({
     jobId,
@@ -3824,10 +3974,13 @@ function recoverableSavedBrandExportJob(brandName = "", brandKo = "", currentJob
       brandKo: String(job?.brandKo || "").trim(),
       createdAt: Number(job?.createdAt || 0),
       lastDownloadedAt: Number(job?.lastDownloadedAt || 0),
+      terminalState: String(job?.terminalState || "").trim(),
     }))
     .filter((job) => job.jobId
       && visibleJobIds.has(job.jobId)
       && job.lastDownloadedAt === 0
+      && !job.terminalState
+      && !currentJobs.find((current) => String(current?.id || "").trim() === job.jobId)?.failed
       && job.createdAt >= cutoff
       && (sameNonEmptyBrand(job.brandName, brandName)
         || sameNonEmptyBrand(job.brandKo, brandName)
@@ -5160,6 +5313,7 @@ async function automateSellerBrandExport(input = {}) {
       downloadStarted: false,
       expectedProductCount: Number(recoverableJob.expectedProductCount || 0),
       recovered: true,
+      restoredAt: Date.now(),
     });
     brandExportJobPending = false;
     pendingBrandExportName = "";

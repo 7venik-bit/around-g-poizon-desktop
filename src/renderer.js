@@ -1020,7 +1020,7 @@ async function restorePendingBrandExportJobs() {
   const jobs = await window.aroundG?.listPendingBrandExportJobs?.();
   if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration || !Array.isArray(jobs)) return;
   const pending = jobs.filter((job) => String(job?.jobId || "").trim() && String(job?.brandName || "").trim());
-  if (!pending.length) return;
+  if (!pending.length) return 0;
   brandBatchTotal = Math.max(brandBatchTotal, pending.length);
   for (const job of pending) {
     updateBrandBatchState(job.brandName, "재시작 복원 · 다운로드센터 확인 중", job.jobId);
@@ -1034,6 +1034,26 @@ async function restorePendingBrandExportJobs() {
   $("#brand-status").className = "status";
   $("#brand-status").textContent = `이전 실행의 미다운로드 작업 ${pending.length}개를 복원해 자동 감시를 재개합니다.`;
   await window.aroundG.startSellerBrandExportMonitor();
+  return pending.length;
+}
+
+async function recoverInterruptedBrandWorkAtStartup() {
+  const status = $("#brand-status");
+  if (status) {
+    status.className = "status";
+    status.textContent = "이전 다운로드 파일과 중단된 POIZON 작업을 확인하고 있습니다.";
+  }
+  await restoreDownloadedBrandFiles();
+  const pendingCount = await restorePendingBrandExportJobs();
+  // The main process may have matched a completed workbook to a saved job
+  // number during reconciliation. Reload once so the completed list receives
+  // that repaired job number before monitoring begins.
+  await restoreDownloadedBrandFiles();
+  if (!pendingCount && status) {
+    status.className = "status success";
+    status.textContent = "시작 점검 완료 · 기존 완료 파일을 반영했고 대기 중인 POIZON 작업이 없습니다.";
+  }
+  return pendingCount;
 }
 
 function recordBrandSelection(brand, action, details = {}) {
@@ -2918,9 +2938,6 @@ $("#brand-export-completed-more")?.addEventListener("click", () => {
   renderBrandCompletedJobs();
 });
 renderBrandCompletedJobs();
-void restoreDownloadedBrandFiles();
-// Previous-run jobs are history only. A new app process starts with no active
-// POIZON monitoring and waits for the user to select the exact brands to run.
 $("#brand-search").addEventListener("click", async () => {
   const button = $("#brand-search");
   const status = $("#brand-status");
@@ -3580,9 +3597,12 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   renderBackupStatus(await window.aroundG.getBackupStatus());
   renderWeeklySiteHealth(await window.aroundG.getWeeklySiteHealth());
   setupBrandLayout();
-  // Do not restore a job number as live work. The main process will emit
-  // progress only for jobs actually registered in this running session.
+  // Never trust the renderer's old job label. The main process verifies saved
+  // files and live POIZON rows before it restores any interrupted work.
   localStorage.removeItem("around-g-last-brand-export-job");
+  const exportFolder = await window.aroundG.getBrandExportFolder();
+  renderBrandExportFolder(exportFolder.folder);
+  await recoverInterruptedBrandWorkAtStartup();
   window.aroundG.onBrandSyncProgress((progress) => {
     if (progress?.context === "category" && categorySearchActive) {
       const completed = Number(progress.pageNum || 0);
@@ -3638,8 +3658,6 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   renderCategoryButtons();
   if (explorerMeta.needsBrandSync) await syncFullBrandCatalog({ automatic: true });
   const config = await window.aroundG.getConfig();
-  const exportFolder = await window.aroundG.getBrandExportFolder();
-  renderBrandExportFolder(exportFolder.folder);
   $("#app-key").value = config.appKey;
   $("#api-base-url").value = config.apiBaseUrl;
   $("#app-secret").placeholder = config.hasAppSecret ? "저장됨 · 변경할 때만 입력" : "필수";
