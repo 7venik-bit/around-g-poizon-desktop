@@ -22,6 +22,9 @@ test("official mall automation clicks a magnifier before entering the article", 
   assert.match(mainSource, /search\|검색\|magnif\|ico\[_-\]\?sch/);
   assert.match(mainSource, /const nearby = input\.closest\('form,\[role="search"\],header,section,div'\)/);
   assert.match(mainSource, /for \(const type of \["keydown", "keypress", "keyup"\]\)/);
+  assert.match(mainSource, /searchWindow\.webContents\.mainFrame\.framesInSubtree/);
+  assert.match(mainSource, /element\.shadowRoot/);
+  assert.match(mainSource, /input\[type="text"\]\[placeholder\*="검색"\]/);
 });
 
 test("official mall UI button opens a controlled visible search window", () => {

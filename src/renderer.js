@@ -805,7 +805,7 @@ function renderExcelProductRows(file, products = []) {
       <td>${poizonPrice ? money(poizonPrice) : "가격 없음"}</td>
       <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td><td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
       <td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${result?.loading ? "disabled" : ""}>${status}</button></td>
-    </tr>${result && !result.loading ? `<tr class="excel-product-search-detail"><td colspan="10">${renderDomestic(result)}</td></tr>` : ""}`;
+    </tr>${result && !result.loading ? `<tr class="excel-product-search-detail"><td colspan="10">${renderDomestic(result, product)}</td></tr>` : ""}`;
   }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
   return pageKeys;
 }
@@ -973,7 +973,7 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
           const key = pageProductKeys[index];
           const searchResult = product ? excelPreviewSearchResults.get(key) : null;
           const buttonText = searchResult?.loading ? "검색 중…" : searchResult?.error ? "검색 실패" : searchResult ? `${(searchResult.products || []).length}개 결과` : "국내 상품검색";
-          return `<tr><td class="excel-product-select-column">${product ? `<input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택">` : ""}</td>${row.map((cell, columnIndex) => renderRawExcelCell(cell, headers[columnIndex], columnIndex)).join("")}<td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${!product || searchResult?.loading ? "disabled" : ""}>${buttonText}</button></td></tr>${searchResult && !searchResult.loading ? `<tr class="excel-product-search-detail"><td colspan="${Math.max(1, totalColumns + 2)}">${renderDomestic(searchResult)}</td></tr>` : ""}`;
+          return `<tr><td class="excel-product-select-column">${product ? `<input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택">` : ""}</td>${row.map((cell, columnIndex) => renderRawExcelCell(cell, headers[columnIndex], columnIndex)).join("")}<td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${!product || searchResult?.loading ? "disabled" : ""}>${buttonText}</button></td></tr>${searchResult && !searchResult.loading ? `<tr class="excel-product-search-detail"><td colspan="${Math.max(1, totalColumns + 2)}">${renderDomestic(searchResult, product)}</td></tr>` : ""}`;
         }).join("")
       : `<tr><td class="empty" colspan="${Math.max(1, totalColumns + 2)}">표시할 데이터 행이 없습니다.</td></tr>`;
   }
@@ -1827,7 +1827,7 @@ function updateDomesticStockFilter() {
     : `국내 재고만 보기 · ${availableCount.toLocaleString("ko-KR")}개`;
 }
 
-function renderDomestic(result) {
+function renderDomestic(result, sourceProduct = {}) {
   if (!result) return `<span class="inventory-help">재고 검색을 누르면 공식몰 → 무신사 → 네이버·SSG·롯데온의 공식스토어·백화점·아울렛을 각각 확인합니다.</span>`;
   if (result.loading) return `<span class="inventory-help">국내 플랫폼을 순서대로 확인하고 있습니다…</span>`;
   if (result.error) return `<span class="inventory-help">상품없음</span>`;
@@ -1885,8 +1885,9 @@ function renderDomestic(result) {
       const officialOpenUrl = String(
         source.officialProductUrl || source.officialSearchUrl || source.homepageUrl || source.searchUrl || ""
       );
+      const officialQuery = source.searchQuery || sourceProduct.articleNumber || sourceProduct.productCode || sourceProduct.spuId || result.queryCandidates?.[0] || "";
       const officialButton = (label, badgeClass = "") => officialOpenUrl
-        ? `<button class="source-link" type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || officialOpenUrl)}" data-official-query="${encodeURIComponent(source.searchQuery || result.queryCandidates?.[0] || "")}"><span>${text(source.store)}</span><small${badgeClass ? ` class="${badgeClass}"` : ""}>${label}</small></button>`
+        ? `<button class="source-link" type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || officialOpenUrl)}" data-official-query="${encodeURIComponent(officialQuery)}"><span>${text(source.store)}</span><small${badgeClass ? ` class="${badgeClass}"` : ""}>${label}</small></button>`
         : `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small${badgeClass ? ` class="${badgeClass}"` : ""}>${label}</small></button>`;
       if (source.officialStatus === "pending") {
         return officialButton("공식몰 검색");
@@ -1967,7 +1968,7 @@ function renderExplorerResults(title, products, preserveDomestic = false) {
       <label class="product-select-option"><input type="checkbox" data-product-select="${encodeURIComponent(key)}" ${selectedExplorerKeys.has(key) ? "checked" : ""}> 선택</label>
       <div class="domestic-inventory">
         <div class="inventory-heading"><span class="inventory-status ${status.className}">${status.label}</span><button data-domestic="${encodeURIComponent(key)}" data-index="${index}" class="primary">국내 재고 검색</button></div>
-        ${renderDomestic(result)}
+        ${renderDomestic(result, product)}
       </div>
     </article>`;
   }).join("")}` : `<div class="empty">${domesticStockOnly ? "국내 재고가 확인된 상품이 없습니다." : "조건에 맞는 상품이 없습니다."}</div>`;
