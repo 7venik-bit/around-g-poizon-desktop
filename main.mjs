@@ -941,6 +941,8 @@ async function submitOfficialMallSearch(searchWindow, query) {
         }
       }
       const selectAll = (selector) => roots.flatMap((root) => [...(root.querySelectorAll?.(selector) || [])]);
+      window.__aroundGLastSearchAlert = "";
+      window.alert = (message) => { window.__aroundGLastSearchAlert = String(message || ""); };
       let input = selectAll('input[type="search"],input[type="text"][placeholder*="검색"],input[placeholder*="검색어"],input[placeholder*="검색"],input[name*="search" i],input[name="q" i],input[name*="query" i],input[name*="keyword" i],input[name*="schWord" i]').find(visible);
       if (!input) {
         const controls = selectAll('header button,header a,button,a,[role="button"]');
@@ -960,20 +962,20 @@ async function submitOfficialMallSearch(searchWindow, query) {
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
       input.focus();
+      if (!String(input.value || "").trim()) return false;
       const form = input.form;
       const nearby = input.closest('form,[role="search"],header,section,div');
       const submitCandidates = [
-        ...(form?.querySelectorAll('button[type="submit"],input[type="submit"],button,a,[role="button"]') || []),
-        ...(nearby?.querySelectorAll('button[type="submit"],input[type="submit"],button,a,[role="button"]') || []),
-        ...selectAll('button[type="submit"],input[type="submit"],[aria-label*="검색"],[title*="검색"],[class*="search" i],[class*="sch" i]'),
+        ...(form?.querySelectorAll('button[type="submit"],input[type="submit"]') || []),
+        ...(nearby?.querySelectorAll('button[type="submit"],input[type="submit"],[aria-label*="검색"],[title*="검색"]') || []),
       ];
       const submit = submitCandidates.find((element) => {
         if (!visible(element) || element === input) return false;
         const label = [element.getAttribute('aria-label'), element.getAttribute('title'), element.className, element.textContent, element.outerHTML].join(' ');
         return /search|검색|magnif|ico[_-]?sch/i.test(label) || element.type === 'submit';
       });
-      if (submit && visible(submit)) submit.click();
-      else if (form?.requestSubmit) form.requestSubmit();
+      if (form?.requestSubmit) form.requestSubmit(submit?.type === "submit" ? submit : undefined);
+      else if (submit && visible(submit)) submit.click();
       else {
         for (const type of ["keydown", "keypress", "keyup"]) {
           input.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));

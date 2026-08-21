@@ -25,6 +25,9 @@ test("official mall automation clicks a magnifier before entering the article", 
   assert.match(mainSource, /searchWindow\.webContents\.mainFrame\.framesInSubtree/);
   assert.match(mainSource, /element\.shadowRoot/);
   assert.match(mainSource, /input\[type="text"\]\[placeholder\*="검색"\]/);
+  assert.match(mainSource, /if \(!String\(input\.value \|\| ""\)\.trim\(\)\) return false/);
+  assert.match(mainSource, /window\.__aroundGLastSearchAlert/);
+  assert.doesNotMatch(mainSource, /\.\.\.selectAll\('button\[type="submit"\]/);
 });
 
 test("official mall UI button opens a controlled visible search window", () => {
