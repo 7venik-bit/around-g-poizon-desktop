@@ -23,13 +23,23 @@ test("brand search automatically resumes after stored-login submission", () => {
 });
 
 test("automatic credentials run only on a real POIZON login page", () => {
-  const start = main.indexOf("async function sellerPageRequiresLogin");
-  const end = main.indexOf("async function setSellerLoginStatusOverlay", start);
+  const start = main.indexOf("async function sellerAuthenticationState");
+  const end = main.indexOf("async function sellerPageRequiresLogin", start);
   const detection = main.slice(start, end);
   assert.match(detection, /login\|signin\|passport\|auth/);
   assert.match(detection, /input\[type="password"\]/);
   assert.match(detection, /getBoundingClientRect/);
   assert.doesNotMatch(detection, /!url\.startsWith/);
+});
+
+test("판매자센터의 지연된 로그인 화면을 기다린 뒤 저장 계정으로 로그인한다", () => {
+  assert.match(main, /async function sellerAuthenticationState\(\)/);
+  assert.match(main, /for \(const frame of sellerWindowFrames\(\)\)/);
+  assert.match(main, /로그인\|登录\|登入/);
+  assert.match(main, /async function waitForSellerAuthenticationState\(timeoutMs = 45_000\)/);
+  assert.match(main, /const initialState = await waitForSellerAuthenticationState\(\)/);
+  assert.match(main, /if \(initialState\.authenticated\) return \{ ok: true, reused: true \}/);
+  assert.match(main, /if \(!initialState\.login\) return \{ ok: false, code: "SELLER_LOGIN_PAGE_TIMEOUT" \}/);
 });
 
 test("all three lamps chase in order while sourcing", () => {
