@@ -49,6 +49,7 @@ const brandExportJobs = new Map();
 let downloadedBrandFiles = [];
 const selectedDownloadedFilePaths = new Set();
 let brandCompletedShowAll = false;
+let completedBrandShowAll = false;
 let activeExcelPreview = null;
 let excelPreviewRequestId = 0;
 const selectedExcelPreviewProducts = new Set();
@@ -82,7 +83,7 @@ const BRAND_INTEGRITY_MIGRATION_KEY = "around-g-brand-integrity-v2";
 const DOWNLOAD_STATUS_MIGRATION_KEY = "around-g-download-status-v2.10.29";
 const LIVE_JOB_UI_MIGRATION_KEY = "around-g-live-job-ui-v2.10.34";
 const PINNED_BRAND_RECOVERY_KEY = "around-g-pinned-brand-recovery-v2.10.322";
-const PINNED_BRAND_FORCE_RESTORE_KEY = "around-g-pinned-brand-force-restore-v2.10.327";
+const PINNED_BRAND_FORCE_RESTORE_KEY = "around-g-pinned-brand-force-restore-v2.10.328";
 const PINNED_BRAND_NAMES_KEY = "around-g-pinned-brand-names";
 const LAST_KNOWN_PINNED_BRAND_NAMES = [
   "Adidas Originals", "Converse", "Jordan", "Adidas", "Nike", "COACH",
@@ -113,7 +114,6 @@ function applyLoadedExplorerMetadata(metadata) {
   if (!validExplorerMetadata(metadata)) return false;
   explorerMeta = metadata;
   favoriteCatalogFallbackActive = false;
-  restoreKnownPinnedBrandsIfMissing();
   renderBrandCards($("#brand-filter")?.value || "");
   renderCategoryButtons();
   return true;
@@ -561,6 +561,24 @@ function latestCompletedBrandDownload(brand = {}) {
     .filter((file) => names.some((name) => rendererBrandsMatch(name, file.brandName || file.brand)))
     .sort((left, right) => Number(right.time || right.mtimeMs || right.lastDownloadedAt || 0)
       - Number(left.time || left.mtimeMs || left.lastDownloadedAt || 0))[0] || null;
+}
+
+function completedDownloadBrands() {
+  const completed = [];
+  const seen = new Set();
+  for (const file of [...downloadedBrandFiles].sort((left, right) =>
+    Number(right.time || right.mtimeMs || right.lastDownloadedAt || 0)
+      - Number(left.time || left.mtimeMs || left.lastDownloadedAt || 0))) {
+    const fileBrandName = String(file.brandName || file.brand || "").trim();
+    const brand = explorerMeta.brands.find((item) =>
+      rendererBrandsMatch(item.name, fileBrandName) || rendererBrandsMatch(item.ko, fileBrandName)
+    );
+    const brandId = Number(brand?.id);
+    if (!brand || !Number.isFinite(brandId) || seen.has(brandId)) continue;
+    seen.add(brandId);
+    completed.push(brand);
+  }
+  return completed;
 }
 
 function brandDownloadCardTime(value = 0) {
@@ -1200,22 +1218,18 @@ function toggleBrandSelection(brandId, brandButton = null) {
 
 function updateBrandSelectionControls() {
   const selectedCount = selectedBrandIds.size;
-  const favoriteCount = pinnedBrandIds.filter((id) =>
-    explorerMeta.brands.some((brand) => Number(brand.id) === Number(id))
-  ).length;
+  const completedCount = completedDownloadBrands().length;
   const count = $("#brand-selected-count");
   const clear = $("#brand-selection-clear");
-  const moveTop = $("#brand-move-top");
   const search = $("#brand-export-selected");
   const frequentSearch = $("#frequent-brand-export");
   const stopCurrent = $("#brand-stop-current");
   if (count) count.textContent = `${selectedCount}개 선택`;
   if (clear) clear.disabled = selectedCount === 0 || brandSelectionBusy;
-  if (moveTop) moveTop.disabled = selectedCount === 0 || brandSelectionBusy;
   [search, frequentSearch].filter(Boolean).forEach((button) => {
     button.disabled = brandSelectionBusy
       ? false
-      : button === frequentSearch ? selectedCount === 0 && favoriteCount === 0 : selectedCount === 0;
+      : button === frequentSearch ? selectedCount === 0 && completedCount === 0 : selectedCount === 0;
     button.classList.toggle("is-running", brandSelectionBusy);
     const label = button.querySelector("span");
     if (label) label.textContent = brandSelectionBusy ? "작업 중지" : "브랜드 검색";
@@ -1596,44 +1610,55 @@ function renderBrandCards(filter = "") {
   const matchedBrands = explorerMeta.brands.filter((brand) =>
     !normalized || `${brand.name} ${brand.ko}`.toLowerCase().includes(normalized)
   );
-  // Frequently used brands live in their own persistent group. The full list
-  // excludes them so the same brand is never shown twice.
-  const pinnedOrder = new Map(pinnedBrandIds.map((id, index) => [Number(id), index]));
-  const pinnedBrands = matchedBrands.filter((brand) => pinnedOrder.has(Number(brand.id)))
-    .sort((left, right) => pinnedOrder.get(Number(left.id)) - pinnedOrder.get(Number(right.id)));
-  const regularBrands = matchedBrands.filter((brand) => !pinnedOrder.has(Number(brand.id)));
+  // The top group is derived only from original Excel files that still exist
+  // in the configured download folder. It is deduplicated and ordered by the
+  // newest workbook, so stale favorite storage can never affect this list.
+  const completedBrands = completedDownloadBrands();
+  const completedOrder = new Map(completedBrands.map((brand, index) => [Number(brand.id), index]));
+  pinnedBrandIds = completedBrands.map((brand) => Number(brand.id));
+  const visibleCompletedBrands = matchedBrands.filter((brand) => completedOrder.has(Number(brand.id)))
+    .sort((left, right) => completedOrder.get(Number(left.id)) - completedOrder.get(Number(right.id)));
+  const displayedCompletedBrands = normalized || completedBrandShowAll
+    ? visibleCompletedBrands
+    : visibleCompletedBrands.slice(0, 10);
+  const regularBrands = matchedBrands.filter((brand) => !completedOrder.has(Number(brand.id)));
   const brandMarkup = (brands) => brands.map((brand) => {
     const latestDownload = latestCompletedBrandDownload(brand);
     const downloadComplete = Boolean(latestDownload);
     const latestDownloadTime = brandDownloadCardTime(latestDownload?.time || latestDownload?.mtimeMs || latestDownload?.lastDownloadedAt);
     const selected = selectedBrandIds.has(Number(brand.id));
-    const pinned = pinnedOrder.has(Number(brand.id));
+    const downloadGroup = completedOrder.has(Number(brand.id));
     const officialLinked = ["verified", "search_unsupported"].includes(String(brand.officialDomainStatus || ""));
     const officialMissing = String(brand.officialDomainStatus || "") === "no_official_store";
     const officialDomain = (() => {
       try { return new URL(String(brand.officialHomepageUrl || "")).hostname.replace(/^www\./, ""); } catch { return ""; }
     })();
-    return `<button type="button" class="brand-card ${selected ? "selected" : ""}${pinned ? " brand-pinned" : ""}${downloadComplete ? " download-complete" : ""}${officialLinked ? " official-linked" : ""}${officialMissing ? " official-missing" : ""}" data-brand-id="${brand.id}" aria-pressed="${selected}"${officialDomain ? ` title="공식몰: ${text(brand.officialHomepageUrl)}"` : ""}${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
-    ${pinned ? `<i class="brand-pinned-remove" role="button" tabindex="0" data-brand-unpin="${brand.id}" aria-label="${text(brand.name)} 즐겨찾기 삭제" title="즐겨찾기 삭제">×</i>` : ""}
-    ${pinned ? '<em class="brand-pinned-badge" aria-label="자주사용 브랜드">자주사용</em>' : ""}
+    return `<button type="button" class="brand-card ${selected ? "selected" : ""}${downloadGroup ? " brand-pinned" : ""}${downloadComplete ? " download-complete" : ""}${officialLinked ? " official-linked" : ""}${officialMissing ? " official-missing" : ""}" data-brand-id="${brand.id}" aria-pressed="${selected}"${officialDomain ? ` title="공식몰: ${text(brand.officialHomepageUrl)}"` : ""}${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
     ${officialLinked ? '<em class="brand-official-badge" aria-label="공식몰 연동 완료">공식</em>' : ""}
     ${officialMissing ? '<em class="brand-official-badge missing" aria-label="국내 공식몰 없음">공식몰 없음</em>' : ""}
-    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${brand.salesPriority ? `<small class="brand-sales-rank">판매 상위 ${Number(brand.salesRank).toLocaleString("ko-KR")}위</small>` : ""}${downloadComplete ? `<em class="brand-download-complete">다운완료</em><small class="brand-download-date">${text(latestDownloadTime)}</small>` : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>${officialDomain ? `<small class="brand-official-domain" title="${text(officialDomain)}">${text(officialDomain)}</small>` : ""}
+    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${brand.salesPriority ? `<small class="brand-sales-rank">판매 상위 ${Number(brand.salesRank).toLocaleString("ko-KR")}위</small>` : ""}${downloadComplete ? `<em class="brand-download-complete">다운완료</em><small class="brand-download-date">${text(latestDownloadTime)}${latestDownload?.jobId ? ` · 작업번호 ${text(latestDownload.jobId)}` : ""}</small><small class="brand-download-open" role="button" tabindex="0" data-open-brand-download="${encodeURIComponent(latestDownload.path || "")}">Excel 열기</small>` : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>${officialDomain ? `<small class="brand-official-domain" title="${text(officialDomain)}">${text(officialDomain)}</small>` : ""}
   </button>`;
   }).join("");
-  $("#frequent-brand-cards").innerHTML = pinnedBrands.length
-    ? brandMarkup(pinnedBrands)
-    : '<p class="empty">표시할 즐겨찾기 브랜드가 없습니다. 전체 브랜드에서 선택해 추가할 수 있습니다.</p>';
+  $("#frequent-brand-cards").innerHTML = displayedCompletedBrands.length
+    ? brandMarkup(displayedCompletedBrands)
+    : '<p class="empty">저장 폴더에 다운로드 완료된 원본 Excel 파일이 없습니다.</p>';
   $("#brand-cards").innerHTML = brandMarkup(regularBrands);
   const frequentGroup = $("#frequent-brand-group");
   frequentGroup.hidden = false;
-  $("#frequent-brand-count").textContent = `${pinnedBrands.length.toLocaleString("ko-KR")}개`;
+  $("#frequent-brand-count").textContent = `${visibleCompletedBrands.length.toLocaleString("ko-KR")}개`;
+  const completedToggle = $("#completed-brand-toggle");
+  if (completedToggle) {
+    completedToggle.hidden = Boolean(normalized) || visibleCompletedBrands.length <= 10;
+    completedToggle.textContent = completedBrandShowAll
+      ? "최근 10개만 보기"
+      : `전체보기 (${visibleCompletedBrands.length.toLocaleString("ko-KR")}개)`;
+  }
   $("#all-brand-count").textContent = `${regularBrands.length.toLocaleString("ko-KR")}개`;
   document.querySelectorAll(".brand-logo img").forEach((image) => {
     image.addEventListener("load", () => image.parentElement?.classList.add("loaded"), { once: true });
     image.addEventListener("error", () => image.remove(), { once: true });
   });
-  const visibleCount = pinnedBrands.length + regularBrands.length;
+  const visibleCount = displayedCompletedBrands.length + regularBrands.length;
   const limited = ` · ${visibleCount.toLocaleString("ko-KR")}개 표시`;
   const domainSummary = explorerMeta.officialDomainSummary || {};
   const domainStatus = domainSummary.total
@@ -1666,7 +1691,7 @@ function renderCategoryFavoriteBrands({ reset = false } = {}) {
   $("#category-brand-cards").innerHTML = brands.length ? brands.map((brand) => {
     const selected = categoryBrandIds.has(Number(brand.id));
     return `<button type="button" class="category-brand-card ${selected ? "selected" : ""}" data-category-brand-id="${brand.id}" aria-pressed="${selected}"><i>${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="">` : text(brand.name.slice(0, 1))}</i><span><strong>${text(brand.name)}</strong><small>${text(brand.ko || "")} · ID ${brand.id}</small></span><b>${selected ? "선택됨" : "선택"}</b></button>`;
-  }).join("") : '<p class="empty">브랜드 검색 화면에서 즐겨찾기 브랜드를 먼저 등록해 주세요.</p>';
+  }).join("") : '<p class="empty">다운로드가 완료된 브랜드가 없습니다.</p>';
   $("#category-brand-count").textContent = `${categoryBrandIds.size}/${brands.length}개 선택`;
   $("#category-brand-select-all").disabled = !brands.length || categoryBrandIds.size === brands.length;
   $("#category-brand-clear").disabled = !categoryBrandIds.size;
@@ -2165,6 +2190,14 @@ document.addEventListener("click", async (event) => {
     }
     await window.aroundG.openExternal(resolvedUrl);
   }
+  const downloadedBrandOpen = event.target.closest("[data-open-brand-download]");
+  if (downloadedBrandOpen) {
+    event.preventDefault();
+    event.stopPropagation();
+    const file = downloadedFileByEncodedPath(downloadedBrandOpen.dataset.openBrandDownload);
+    if (file) await openIntegratedBrandExcel(file, false);
+    return;
+  }
   const officialInternalButton = event.target.closest("[data-official-homepage][data-official-query]");
   if (officialInternalButton) {
     await window.aroundG.openOfficialInternalSearch({
@@ -2184,20 +2217,6 @@ document.addEventListener("click", async (event) => {
   const domesticButton = event.target.closest("[data-domestic][data-index]");
   const domesticIndex = domesticButton?.dataset.index;
   if (domesticButton && domesticIndex !== undefined) await searchDomesticAt(Number(domesticIndex));
-  const unpinButton = event.target.closest("[data-brand-unpin]");
-  if (unpinButton) {
-    if (brandSelectionBusy || activeExportBrand) return;
-    const brandId = Number(unpinButton.dataset.brandUnpin);
-    const brand = explorerMeta.brands.find((item) => Number(item.id) === brandId);
-    pinnedBrandIds = pinnedBrandIds.filter((id) => Number(id) !== brandId);
-    selectedBrandIds.delete(brandId);
-    selectedBrandId = selectedBrandIds.size === 1 ? [...selectedBrandIds][0] : null;
-    saveBrandSelections();
-    renderBrandCards($("#brand-filter")?.value || "");
-    $("#brand-status").className = "status success";
-    $("#brand-status").textContent = `${brand?.name || "브랜드"} 즐겨찾기를 삭제하고 원래 위치로 되돌렸습니다.`;
-    return;
-  }
   const brandButton = event.target.closest(".brand-card[data-brand-id]");
   if (brandButton) {
     if (brandSelectionBusy || activeExportBrand) {
@@ -2254,31 +2273,16 @@ document.querySelectorAll(".explorer-mode").forEach((button) => button.addEventL
 }));
 
 $("#brand-filter").addEventListener("input", (event) => renderBrandCards(event.target.value));
-$("#brand-move-top")?.addEventListener("click", () => {
-  if (brandSelectionBusy || !selectedBrandIds.size) return;
-  const selected = [...selectedBrandIds].map(Number);
-  pinnedBrandIds = [...selected, ...pinnedBrandIds.filter((id) => !selectedBrandIds.has(Number(id)))];
-  saveBrandSelections();
+$("#completed-brand-toggle")?.addEventListener("click", () => {
+  completedBrandShowAll = !completedBrandShowAll;
   renderBrandCards($("#brand-filter")?.value || "");
-  $("#brand-status").className = "status success";
-  $("#brand-status").textContent = `선택한 ${selected.length}개 브랜드를 즐겨찾기에 추가하고 상단으로 이동했습니다.`;
-  $("#brand-cards")?.scrollTo({ top: 0, behavior: "smooth" });
 });
 $("#brand-selection-clear")?.addEventListener("click", () => {
   if (brandSelectionBusy) return;
-  const selectedPinned = [...selectedBrandIds].filter((id) => pinnedBrandIds.includes(Number(id)));
-  if (selectedPinned.length) {
-    const selectedPinnedIds = new Set(selectedPinned.map(Number));
-    pinnedBrandIds = pinnedBrandIds.filter((id) => !selectedPinnedIds.has(Number(id)));
-  }
   selectedBrandIds.clear();
   selectedBrandId = null;
   saveBrandSelections();
   renderBrandCards($("#brand-filter")?.value || "");
-  if (selectedPinned.length) {
-    $("#brand-status").className = "status success";
-    $("#brand-status").textContent = `선택한 즐겨찾기 ${selectedPinned.length}개를 해제하고 원래 위치로 되돌렸습니다.`;
-  }
 });
 $("#frequent-brand-export")?.addEventListener("click", () => {
   if (!brandSelectionBusy && selectedBrandIds.size === 0) {
@@ -2435,7 +2439,6 @@ async function syncFullBrandCatalog({ automatic = false } = {}) {
   favoriteCatalogFallbackActive = false;
   // A successful full-catalog sync can replace every numeric brand ID. Resolve
   // favorites by their persisted names again before rendering the new catalog.
-  restoreKnownPinnedBrandsIfMissing();
   selectedBrandId = null;
   $("#brand-search").disabled = true;
   renderBrandCards($("#brand-filter").value);
@@ -3296,7 +3299,7 @@ $("#category-search").addEventListener("click", async () => {
   if (!selectedCategoryDetail) return;
   if (!favoriteBrandIds.length) {
     status.className = "status error";
-    status.textContent = "카테고리 검색에 사용할 즐겨찾기 브랜드를 먼저 등록해 주세요.";
+    status.textContent = "카테고리 검색에 사용할 다운로드 완료 브랜드가 없습니다.";
     return;
   }
   button.disabled = true;
@@ -3409,13 +3412,13 @@ $("#category-search").addEventListener("click", async () => {
     if (runId !== categorySearchRunId) return;
     if (!sourceCount) {
       status.className = "status error";
-      status.textContent = `즐겨찾기 브랜드 ${favoriteBrandIds.length}개의 검색에 모두 실패했습니다. 잠시 후 다시 시도해 주세요.`;
+      status.textContent = `다운로드 완료 브랜드 ${favoriteBrandIds.length}개의 검색에 모두 실패했습니다. 잠시 후 다시 시도해 주세요.`;
       finishCategoryLoading();
       return;
     }
     const detailProducts = [...detailProductsByKey.values()];
     status.className = "status success";
-    status.textContent = `${selectedCategory} 〉 ${selectedCategoryDetail} 상품 ${detailProducts.length.toLocaleString("ko-KR")}개 확인 · 즐겨찾기 브랜드 ${sourceCount}/${favoriteBrandIds.length}개 완료${failedSourceCount ? ` · ${failedSourceCount}개 검색 실패` : ""}`;
+    status.textContent = `${selectedCategory} 〉 ${selectedCategoryDetail} 상품 ${detailProducts.length.toLocaleString("ko-KR")}개 확인 · 다운로드 완료 브랜드 ${sourceCount}/${favoriteBrandIds.length}개 완료${failedSourceCount ? ` · ${failedSourceCount}개 검색 실패` : ""}`;
     renderExplorerResults(`${selectedCategory} 〉 ${selectedCategoryDetail} 검색`, detailProducts);
     await window.aroundG.upsert("categorySearches", {
       id: cacheId,
@@ -3677,11 +3680,9 @@ $("#weekly-site-health-run")?.addEventListener("click", async () => {
 window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
 
 (async () => {
-  // The brand picker is the operator's primary workspace. Render the known
-  // favorites before any IPC request so backup or health checks can never
-  // leave the screen showing 0 brands.
+  // Build the primary workspace immediately. Download-completed brands appear
+  // after the real catalog and the existing workbook folder have been read.
   setupBrandLayout();
-  showFavoriteCatalogFallback();
 
   try {
     const appInfo = await window.aroundG.getAppInfo();

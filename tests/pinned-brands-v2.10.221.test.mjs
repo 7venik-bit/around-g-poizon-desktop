@@ -6,93 +6,74 @@ const html = await readFile(new URL("../src/index.html", import.meta.url), "utf8
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
 const css = await readFile(new URL("../src/style.css", import.meta.url), "utf8");
 
-test("selected brands can be moved to a persistent frequently-used group", () => {
-  assert.match(html, /id="brand-move-top"[^>]*>즐겨찾는 브랜드 선택</);
-  assert.match(renderer, /around-g-pinned-brand-ids/);
-  assert.match(renderer, /pinnedBrandIds = \[\.\.\.selected,/);
-  assert.match(html, /id="frequent-brand-group"/);
-  assert.match(html, /id="frequent-brand-cards"/);
-  assert.match(html, /id="all-brand-title"/);
-  assert.match(renderer, /const pinnedBrands = matchedBrands\.filter/);
-  assert.match(renderer, /const regularBrands = matchedBrands\.filter/);
-  assert.doesNotMatch(html, /id="frequent-brand-group"[^>]*\shidden(?:\s|>)/);
-  assert.match(renderer, /frequentGroup\.hidden = false/);
-  assert.match(renderer, /표시할 즐겨찾기 브랜드가 없습니다/);
+test("the former favorite group is labeled as downloaded-complete brands", () => {
+  assert.match(html, /id="frequent-brand-title">다운로드 완료 브랜드/);
+  assert.match(html, /저장 폴더에 실제 원본 Excel 파일이 있는 브랜드를 최신순으로 표시합니다/);
+  assert.doesNotMatch(html, /id="brand-move-top"/);
+  assert.doesNotMatch(html, /즐겨찾는 브랜드 선택/);
+  assert.match(html, /id="category-brand-title">다운로드 완료 브랜드 선택/);
 });
 
-test("pinned brands are visually identified and the list scrolls to the top", () => {
-  assert.match(renderer, /brand-pinned-badge/);
-  assert.match(renderer, /즐겨찾기에 추가하고 상단으로 이동했습니다/);
-  assert.match(renderer, /scrollTo\(\{ top: 0, behavior: "smooth" \}\)/);
-  assert.match(css, /\.brand-card\.brand-pinned/);
+test("downloaded brand group is derived from existing workbook scan results", () => {
+  assert.match(renderer, /function completedDownloadBrands\(\)/);
+  assert.match(renderer, /for \(const file of \[\.\.\.downloadedBrandFiles\]\.sort/);
+  assert.match(renderer, /rendererBrandsMatch\(item\.name, fileBrandName\)/);
+  assert.match(renderer, /seen\.has\(brandId\)/);
+  assert.match(renderer, /completed\.push\(brand\)/);
+  assert.match(renderer, /downloadedBrandFiles = result\.files/);
+  assert.match(renderer, /\.sort\(\(a, b\) => Number\(b\.time/);
 });
 
-test("favorite brands can be removed from the right side or restored with selection clear", () => {
-  assert.match(renderer, /data-brand-unpin/);
-  assert.match(renderer, /즐겨찾기를 삭제하고 원래 위치로 되돌렸습니다/);
-  assert.match(renderer, /selectedPinnedIds/);
-  assert.match(renderer, /선택한 즐겨찾기 .*원래 위치로 되돌렸습니다/);
-  assert.match(css, /\.brand-pinned-remove/);
+test("downloaded brands are newest-first, deduplicated, and excluded from the full list", () => {
+  const cardsStart = renderer.indexOf("function renderBrandCards");
+  const cardsEnd = renderer.indexOf("function renderCategoryButtons", cardsStart);
+  const cards = renderer.slice(cardsStart, cardsEnd);
+  assert.match(cards, /const completedBrands = completedDownloadBrands\(\)/);
+  assert.match(cards, /const completedOrder = new Map/);
+  assert.match(cards, /pinnedBrandIds = completedBrands\.map/);
+  assert.match(cards, /const visibleCompletedBrands = matchedBrands\.filter/);
+  assert.match(cards, /const regularBrands = matchedBrands\.filter\(\(brand\) => !completedOrder\.has/);
+  assert.match(cards, /저장 폴더에 다운로드 완료된 원본 Excel 파일이 없습니다/);
 });
 
-test("favorite and full brand areas have separate visual containers", () => {
-  assert.match(css, /\.brand-list-group\{/);
-  assert.match(css, /\.frequent-brand-group\{/);
-  assert.match(css, /\.all-brand-group\{/);
-  assert.match(renderer, /\$\("#frequent-brand-cards"\)\.innerHTML = pinnedBrands\.length/);
-  assert.match(renderer, /\$\("#brand-cards"\)\.innerHTML = brandMarkup\(regularBrands\)/);
-});
-
-test("favorite brand header keeps a search button visible when the full picker is collapsed", () => {
+test("download-completed header keeps search and category actions", () => {
   assert.match(html, /id="frequent-brand-group"[\s\S]*id="frequent-brand-export"[\s\S]*<span>브랜드 검색<\/span>/);
-  assert.match(renderer, /\$\("#frequent-brand-export"\)\?\.addEventListener\("click"[\s\S]*\$\("#brand-export-selected"\)\?\.click\(\)/);
-  assert.match(renderer, /\[search, frequentSearch\]\.filter\(Boolean\)\.forEach/);
   assert.match(html, /id="frequent-brand-category"[^>]*>카테고리<\/button>/);
-  assert.match(renderer, /\$\("#frequent-brand-category"\)\?\.addEventListener\("click"[\s\S]*\$\("#brand-open-category"\)\?\.click\(\)/);
+  assert.match(renderer, /const completedCount = completedDownloadBrands\(\)\.length/);
+  assert.match(renderer, /button === frequentSearch \? selectedCount === 0 && completedCount === 0/);
+  assert.match(renderer, /\$\("#frequent-brand-export"\)\?\.addEventListener\("click"[\s\S]*pinnedBrandIds\.forEach/);
   assert.match(css, /\.frequent-brand-heading-actions/);
   assert.match(css, /\.frequent-brand-search-action/);
 });
 
-test("favorites survive catalog ID changes and the known 22 are recoverable by name", () => {
-  assert.match(renderer, /const parsed = JSON\.parse\(localStorage\.getItem\("around-g-pinned-brand-ids"/);
-  assert.match(renderer, /const parsed = JSON\.parse\(localStorage\.getItem\("around-g-brand-selection-history"/);
-  assert.match(renderer, /function restoreKnownPinnedBrandsIfMissing/);
+test("download-completed cards show date, job number, Excel open, and ten-item toggle", () => {
+  assert.match(html, /id="completed-brand-toggle"[^>]*hidden>전체보기/);
+  assert.match(renderer, /visibleCompletedBrands\.slice\(0, 10\)/);
+  assert.match(renderer, /completedBrandShowAll[\s\S]*?"최근 10개만 보기"/);
+  assert.match(renderer, /작업번호 \$\{text\(latestDownload\.jobId\)\}/);
+  assert.match(renderer, /data-open-brand-download=/);
+  assert.match(renderer, /downloadedFileByEncodedPath\(downloadedBrandOpen\.dataset\.openBrandDownload\)/);
+  assert.match(renderer, /await openIntegratedBrandExcel\(file, false\)/);
+  assert.match(css, /\.brand-download-open/);
+});
+
+test("saved favorite data is preserved but no longer controls the displayed group", () => {
+  assert.match(renderer, /around-g-pinned-brand-ids/);
   assert.match(renderer, /around-g-pinned-brand-names/);
-  assert.match(renderer, /around-g-pinned-brand-force-restore-v2\.10\.327/);
-  assert.match(renderer, /const desiredNames = forceKnownList[\s\S]*LAST_KNOWN_PINNED_BRAND_NAMES/);
-  assert.match(renderer, /desiredNames[\s\S]*\.map\(\(name\) =>/);
-  assert.match(renderer, /including an intentionally empty list/);
-  assert.match(renderer, /if \(!brands\.length\) return false/);
-  assert.match(renderer, /LAST_KNOWN_PINNED_BRAND_NAMES/);
-  assert.match(renderer, /"Polo Ralph Lauren", "PUMA", "Crocs", "MLB", "Lululemon"/);
+  assert.doesNotMatch(html, /즐겨찾기로 지정한 브랜드만/);
+  const cardsStart = renderer.indexOf("function renderBrandCards");
+  const cardsEnd = renderer.indexOf("function renderCategoryButtons", cardsStart);
+  const cards = renderer.slice(cardsStart, cardsEnd);
+  assert.doesNotMatch(cards, /data-brand-unpin/);
+  assert.doesNotMatch(cards, /brand-pinned-badge/);
 });
 
-test("full catalog sync reconnects favorites by name and favorite search selects them", () => {
-  assert.match(renderer, /explorerMeta = refreshedMeta;[\s\S]*restoreKnownPinnedBrandsIfMissing\(\);[\s\S]*selectedBrandId = null/);
-  assert.match(renderer, /const favoriteCount = pinnedBrandIds\.filter/);
-  assert.match(renderer, /button === frequentSearch \? selectedCount === 0 && favoriteCount === 0/);
-  assert.match(renderer, /\$\("#frequent-brand-export"\)\?\.addEventListener\("click"[\s\S]*pinnedBrandIds\.forEach/);
-  assert.match(renderer, /selectedBrandIds\.add\(Number\(id\)\)/);
-});
-
-test("brand catalog and favorites render before interrupted job recovery", () => {
+test("startup waits for actual catalog and workbook scan instead of showing fallback favorites", () => {
   const startup = renderer.slice(renderer.lastIndexOf("(async () => {"));
-  assert.ok(startup.indexOf("showFavoriteCatalogFallback()") >= 0);
-  assert.ok(startup.indexOf("showFavoriteCatalogFallback()") < startup.indexOf("await window.aroundG.getAppInfo()"));
-  assert.ok(startup.indexOf("showFavoriteCatalogFallback()") < startup.indexOf("window.aroundG.getBackupStatus()"));
-  assert.doesNotMatch(startup, /renderBackupStatus\(await window\.aroundG\.getBackupStatus/);
-  assert.doesNotMatch(startup, /renderWeeklySiteHealth\(await window\.aroundG\.getWeeklySiteHealth/);
-  assert.ok(startup.indexOf("showFavoriteCatalogFallback()") < startup.indexOf("await recoverInterruptedBrandWorkAtStartup()"));
-  assert.match(startup, /Promise\.race\([\s\S]*explorerMetaRequest/);
-});
-
-test("fallback favorites stay in memory and never overwrite existing work data", () => {
-  assert.match(renderer, /const FALLBACK_PINNED_BRANDS = LAST_KNOWN_PINNED_BRAND_NAMES\.map/);
-  assert.match(renderer, /favoriteCatalogFallbackActive = true/);
-  assert.match(renderer, /if \(!favoriteCatalogFallbackActive\) \{[\s\S]*around-g-pinned-brand-ids/);
-  assert.doesNotMatch(renderer, /showFavoriteCatalogFallback[\s\S]{0,800}localStorage\.setItem/);
-  assert.match(renderer, /Never replace the operator's real favorites with its temporary IDs/);
-  assert.match(renderer, /backup or health checks can never[\s\S]*showing 0 brands/);
+  assert.doesNotMatch(startup, /showFavoriteCatalogFallback\(\)/);
+  assert.match(startup, /setupBrandLayout\(\)/);
+  assert.match(startup, /await recoverInterruptedBrandWorkAtStartup\(\)/);
+  assert.match(renderer, /async function recoverInterruptedBrandWorkAtStartup\(\)[\s\S]*await restoreDownloadedBrandFiles\(\)/);
 });
 
 test("official site address uses a separate full-width bottom row", () => {

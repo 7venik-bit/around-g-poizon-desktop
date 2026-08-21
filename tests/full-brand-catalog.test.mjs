@@ -71,7 +71,7 @@ test("브랜드 열이 비어 있어도 인기상품 이름에서 가장 구체�
   assert.deepEqual(ranked.map((brand) => brand.id), [3, 4, 2, 5]);
 });
 
-test("카테고리 검색은 현재 즐겨찾기 브랜드로 바로 조회를 시작한다", async () => {
+test("카테고리 검색은 현재 다운로드 완료 브랜드로 바로 조회를 시작한다", async () => {
   const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
   const categoryHandler = renderer.slice(
     renderer.indexOf('$("#category-search").addEventListener'),
@@ -98,7 +98,7 @@ test("인기 브랜드는 브랜드별 마지막 페이지까지 수집하고 �
   assert.match(main, /brandProductCount: Number\(detail\.brandProductCount \|\| 0\)/);
   assert.match(renderer, /전체 페이지 \$\{brandCount\.toLocaleString\("ko-KR"\)\}개 수집 완료/);
   assert.match(renderer, /상품 \$\{detailProducts\.length\.toLocaleString\("ko-KR"\)\}개 확인/);
-  assert.match(renderer, /즐겨찾기 브랜드 \$\{sourceCount\}\/\$\{favoriteBrandIds\.length\}개 완료/);
+  assert.match(renderer, /다운로드 완료 브랜드 \$\{sourceCount\}\/\$\{favoriteBrandIds\.length\}개 완료/);
 });
 
 test("카테고리 검색은 이모티콘 없이 진행 상태만 표시한다", async () => {
@@ -189,7 +189,7 @@ test("the desktop automatically syncs and displays the full catalog", async () =
   assert.doesNotMatch(mainSource, /throw new Error\("EN_POIZON_BRAND_DATA_NOT_FOUND"\)/);
   assert.match(mainSource, /needsBrandSync: brandCatalogNeedsSync/);
   assert.match(rendererSource, /syncFullBrandCatalog\(\{ automatic: true \}\)/);
-  assert.match(rendererSource, /const pinnedBrands = matchedBrands\.filter/);
+  assert.match(rendererSource, /const visibleCompletedBrands = matchedBrands\.filter/);
   assert.match(rendererSource, /const regularBrands = matchedBrands\.filter/);
   assert.match(rendererSource, /brandMarkup\(regularBrands\)/);
   assert.doesNotMatch(rendererSource, /matchedBrands\.slice\(0, normalized \? 300 : 200\)/);

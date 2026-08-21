@@ -58,6 +58,7 @@ test("brand picker exposes accessible multi-select and search icons", () => {
   assert.match(indexHtml, /id="brand-export-selected"/);
   assert.match(indexHtml, /<span>브랜드 검색<\/span>/);
   assert.match(indexHtml, /id="brand-selected-count"[\s\S]*id="brand-sync"[\s\S]*id="brand-selection-clear"[\s\S]*id="brand-export-selected"/);
+  assert.doesNotMatch(indexHtml, /id="brand-move-top"/);
   assert.match(indexHtml, /<svg aria-hidden="true" viewBox="0 0 24 24">/);
 });
 
