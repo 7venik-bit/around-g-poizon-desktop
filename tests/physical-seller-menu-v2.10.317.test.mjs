@@ -8,10 +8,10 @@ const [main, pkg, lock] = await Promise.all([
   readFile(new URL("../package-lock.json", import.meta.url), "utf8").then(JSON.parse),
 ]);
 
-test("v2.10.338은 분리 검색 모듈 없이 배포된다", async () => {
-  assert.equal(pkg.version, "2.10.338");
-  assert.equal(lock.version, "2.10.338");
-  assert.equal(lock.packages[""].version, "2.10.338");
+test("v2.10.339은 분리 검색 모듈 없이 배포된다", async () => {
+  assert.equal(pkg.version, "2.10.339");
+  assert.equal(lock.version, "2.10.339");
+  assert.equal(lock.packages[""].version, "2.10.339");
   await assert.rejects(access(new URL("../services/domestic-search-modules/index.mjs", import.meta.url)));
   assert.doesNotMatch(main, /domestic-search:module-status|onDomesticModuleStatus/);
 });
@@ -25,7 +25,8 @@ test("판매자센터 상품검색 주소를 직접 열지 않는다", () => {
   assert.match(workflow, /openSellerCenterWindow\(SELLER_CENTER_URL/);
   assert.match(workflow, /await sellerWindow\.loadURL\(SELLER_CENTER_URL\)/);
   assert.doesNotMatch(main, /SELLER_MAIN_URL/);
-  assert.match(workflow, /enterSellerProductSearchViaMenu\(\{ forceHome: true \}\)/);
+  assert.match(workflow, /enterSellerProductSearchViaMenu\(\)/);
+  assert.doesNotMatch(workflow, /productSearchOpened = await enterSellerProductSearchViaMenu\(\{ forceHome: true \}\)/);
 });
 
 test("판매자 메인에서 상품과 상품 검색 메뉴를 실제 Windows 마우스로 클릭한다", () => {
