@@ -782,6 +782,7 @@ async function addMatchConfidence(data, input) {
     const titleScore = Number(product.signals?.titleScore || 0);
     const imageScore = product.signals?.imageScore;
     if (codeConflict) return false;
+    if (product.brandVerifiedFromCard === false) return false;
     if (codeMatched) return true;
     if (product.store === "브랜드 공식몰") return false;
     if (!hasSourceImage) return titleScore >= 80;
@@ -1085,9 +1086,10 @@ async function clickNaverShoppingChannel(searchWindow, store) {
   if (!targetLabel) return true;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const currentUrl = String(searchWindow.webContents.getURL() || "");
-    if (currentUrl.includes(`${expectedPath}/search`)) return true;
+    if (currentUrl.includes(expectedPath)) return true;
     const target = await searchWindow.webContents.executeJavaScript(`(() => {
       const label = ${JSON.stringify(targetLabel)};
+      const expectedPath = ${JSON.stringify(expectedPath)};
       const compact = (value) => String(value || "").replace(/\\s+/g, "");
       const visible = (element) => {
         const style = getComputedStyle(element);
@@ -1096,7 +1098,13 @@ async function clickNaverShoppingChannel(searchWindow, store) {
       };
       const candidates = [...document.querySelectorAll('a,button,[role="tab"],[role="button"]')]
         .filter(visible)
-        .filter((element) => compact(element.textContent) === compact(label));
+        .filter((element) => new RegExp('^' + compact(label) + '(?:[\\d,]+개)?$').test(compact(element.textContent)))
+        .sort((left, right) => {
+          const score = (element) => (String(element.getAttribute('href') || '').includes(expectedPath) ? 100 : 0)
+            + (element.getAttribute('role') === 'tab' ? 30 : 0)
+            + (/개$/.test(compact(element.textContent)) ? 20 : 0);
+          return score(right) - score(left);
+        });
       const element = candidates[0];
       if (!element) return null;
       const rect = element.getBoundingClientRect();
@@ -1111,11 +1119,17 @@ async function clickNaverShoppingChannel(searchWindow, store) {
     searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
     await wait(1_500);
   }
-  const state = await searchWindow.webContents.executeJavaScript(`JSON.stringify({
-    url: String(location.href || ""),
-    missing: /페이지를\\s*찾을\\s*수\\s*없습니다/.test(String(document.body?.innerText || ""))
-  })`, true).then(JSON.parse).catch(() => null);
-  return Boolean(state && !state.missing && state.url.includes(`${expectedPath}/search`));
+  const state = await searchWindow.webContents.executeJavaScript(`(() => {
+    const compact = (value) => String(value || "").replace(/\\s+/g, "");
+    const selected = [...document.querySelectorAll('a,button,[role="tab"],[aria-selected="true"]')].some((element) =>
+      compact(element.textContent).startsWith(${JSON.stringify(targetLabel)})
+      && (element.getAttribute('aria-selected') === 'true' || /selected|active|on/i.test(String(element.className || ''))));
+    return JSON.stringify({
+      url: String(location.href || ""), selected,
+      missing: /페이지를\\s*찾을\\s*수\\s*없습니다/.test(String(document.body?.innerText || ""))
+    });
+  })()`, true).then(JSON.parse).catch(() => null);
+  return Boolean(state && !state.missing && (state.url.includes(expectedPath) || state.selected));
 }
 
 async function submitNaverShoppingSearch(searchWindow, query) {
@@ -1466,8 +1480,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           })()`, true).catch(() => null);
           if (rawStock) stockEvidence = normalizeRenderedStockEvidence(rawStock);
         } catch {}
-        if (product.detailArticleVerificationRequired
-          && !exactArticleIdentityMatch(detailText, articleNumber)) continue;
+        const detailArticleVerified = product.detailArticleVerificationRequired
+          ? exactArticleIdentityMatch(detailText, articleNumber) : false;
+        if (product.detailArticleVerificationRequired && !detailArticleVerified) continue;
         const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
         if (isOverseasPurchaseProduct(evidence)) continue;
         if (isConsignmentOperatedProduct(evidence)) continue;
@@ -1481,6 +1496,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         const retailer = detectedRetailer(evidence);
         products.push({
           ...product,
+          // Search cards can omit the manufacturer's code. Preserve the code
+          // verified on the detail page so same-model colour cards are merged
+          // later and the best matching image/price remains.
+          detectedArticleNumber: detailArticleVerified ? articleNumber : product.detectedArticleNumber,
           store: isSsg && classification === "official_brand"
             ? "SSG 브랜드 공식관"
             : isSsg && classification === "parallel_import" ? "SSG 병행수입" : product.store,

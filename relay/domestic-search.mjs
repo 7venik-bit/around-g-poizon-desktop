@@ -504,6 +504,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
             articleNumber,
             detectedArticleNumber: exactDetectedArticle || detectedArticleNumbers[0] || "",
             articleConflict: conflictingArticle,
+            brandVerifiedFromCard: brandMatched,
             detailArticleVerificationRequired,
             imageUrl: String(card?.imageUrl || ""),
             imageVerifiedFromCard: card?.imageLinkedToProduct === true,
