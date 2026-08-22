@@ -797,7 +797,9 @@ function renderExcelProductRows(file, products = []) {
     const result = excelPreviewSearchResults.get(key);
     const poizonPrice = verifiedExcelProductPoizonPrice(product);
     const status = result?.loading ? "검색 중…" : result?.error ? "검색 실패" : result ? `${(result.products || []).length}개 결과` : "상품 검색";
-    return `<tr class="excel-product-row">
+    const groupClass = index % 2 === 0 ? "excel-product-group-blue" : "excel-product-group-amber";
+    const productLabel = [product.articleNumber, product.title].filter(Boolean).join(" · ") || "선택 상품";
+    return `<tr class="excel-product-row ${groupClass}">
       <td class="excel-product-select-column"><input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택"></td>
       <td class="excel-product-image">${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : "-"}</td>
       <td><b>${text(product.articleNumber || "-")}</b></td><td title="${text(product.title)}">${text(product.title || "-")}</td>
@@ -805,7 +807,7 @@ function renderExcelProductRows(file, products = []) {
       <td>${poizonPrice ? money(poizonPrice) : "가격 없음"}</td>
       <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td><td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
       <td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${result?.loading ? "disabled" : ""}>${status}</button></td>
-    </tr>${result && !result.loading ? `<tr class="excel-product-search-detail"><td colspan="10">${renderDomestic(result, product)}</td></tr>` : ""}`;
+    </tr>${result && !result.loading ? `<tr class="excel-product-search-detail ${groupClass}"><td colspan="10"><div class="excel-product-search-result-label"><span></span><strong>${text(productLabel)}</strong>의 국내 검색 결과</div>${renderDomestic(result, product)}</td></tr>` : ""}`;
   }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
   return pageKeys;
 }

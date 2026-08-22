@@ -80,7 +80,7 @@ test("Excel defaults to complete raw rows with optional product search view", as
   assert.doesNotMatch(productColumns, /중국 30일|현지 30일/);
   assert.match(productColumns, /평균가격/);
   assert.match(productColumns, /중국 총판매.*현지 총판매.*상품 검색/);
-  assert.match(rendererSource, /excel-product-search-detail"><td colspan="10"/);
+  assert.match(rendererSource, /excel-product-search-detail \$\{groupClass\}"><td colspan="10"/);
   assert.match(cssSource, /\.excel-preview\.product-view \.excel-preview-grid table/);
 });
 
@@ -251,6 +251,17 @@ test("downloaded file rows open the embedded preview without launching Windows E
   assert.match(rendererSource, /데이터 보기/);
   assert.match(clickWorkflow, /showExcelPreview\(file, 0\)/);
   assert.doesNotMatch(clickWorkflow, /openOriginalExcelFile|shell\.openPath/);
+});
+
+test("상품 행과 펼쳐진 국내 검색 결과를 같은 교대 색상으로 묶는다", () => {
+  assert.match(rendererSource, /index % 2 === 0 \? "excel-product-group-blue" : "excel-product-group-amber"/);
+  assert.match(rendererSource, /excel-product-row \$\{groupClass\}/);
+  assert.match(rendererSource, /excel-product-search-detail \$\{groupClass\}/);
+  assert.match(rendererSource, /excel-product-search-result-label/);
+  assert.match(cssSource, /\.excel-product-row\.excel-product-group-blue td/);
+  assert.match(cssSource, /\.excel-product-row\.excel-product-group-amber td/);
+  assert.match(cssSource, /\.excel-product-search-detail\.excel-product-group-blue td/);
+  assert.match(cssSource, /\.excel-product-search-detail\.excel-product-group-amber td/);
 });
 
 test("Excel preview replaces the file list and restores its scroll position", () => {
