@@ -373,8 +373,8 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         scopedCountFound = true;
         const scopedCount = Number(scoped[1].replace(/,/g, "")) || 0;
         // Naver Fashion Town's selected channel tab is the authoritative
-        // presence signal. Keep its raw total for diagnostics, while the app
-        // deliberately exposes only binary 1/0 channel availability.
+        // result total. Preserve that number for the source badge instead of
+        // collapsing a real five-item result to binary 1/0 availability.
         if (scopedCount === 0) {
           return { count: 0, channelCount: 0, products: [], presenceConfirmed: false, absenceConfirmed: true };
         }
@@ -389,6 +389,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
       const requiresBrandMatch = /^(?:네이버|무신사|SSG|롯데온|병행수입·편집샵)/.test(String(store || "")) && brandKeys.length > 0;
       const requiresExactParallelModel = String(store || "") === "병행수입·편집샵";
       const matchingProducts = new Map();
+      const domesticVisibleProducts = new Set();
       let domesticChannelCandidateCount = 0;
       for (const card of cards) {
         const productUrl = String(card?.productUrl || "");
@@ -421,6 +422,9 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         const tokens = rawCardText.toLowerCase().split(/[^a-z0-9가-힣]+/).map(normalizeOfficialBrand).filter(Boolean);
         const brandMatched = !requiresBrandMatch
           || brandKeys.some((key) => key.length <= 3 ? tokens.includes(key) : evidence.includes(key));
+        if (/^네이버\s/.test(String(store || "")) && brandMatched && isPlatformShoppingProductUrl(productUrl)) {
+          domesticVisibleProducts.add(productUrl);
+        }
         if (!conflictingArticle && brandMatched && titleIdentityMatch(rawCardText, expectedTitle)) {
           domesticChannelCandidateCount += 1;
         }
@@ -503,12 +507,14 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
       const exactSsgSearchChecked = /^SSG(?:\s|$)/.test(String(store || "")) && cards.length > 0;
       if (/^네이버\s/.test(String(store || "")) && scopedCountFound && scopedPositiveCount > 0) {
         const domesticPresence = matchingProducts.size > 0 || domesticChannelCandidateCount > 0;
+        const domesticDisplayCount = Math.min(scopedPositiveCount, domesticVisibleProducts.size);
         return {
-          count: domesticPresence ? 1 : 0,
+          count: domesticDisplayCount,
           channelCount: scopedPositiveCount,
           products: [...matchingProducts.values()],
-          presenceConfirmed: domesticPresence,
-          absenceConfirmed: !domesticPresence,
+          presenceConfirmed: domesticDisplayCount > 0,
+          absenceConfirmed: domesticDisplayCount === 0,
+          exactProductPresenceConfirmed: domesticPresence,
           ssgSearchChecked: false,
         };
       }
@@ -531,7 +537,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
     if (labelled) {
       const channelCount = Math.min(Number(labelled[1].replace(/,/g, "")) || 0, 9999);
       return {
-        count: channelCount > 0 ? 1 : 0,
+        count: channelCount,
         channelCount,
         products: [],
         presenceConfirmed: channelCount > 0,

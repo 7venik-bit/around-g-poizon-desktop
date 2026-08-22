@@ -205,9 +205,10 @@ test("official store, Musinsa, and Naver sources all render numeric result badge
   assert.match(mainSource, /renderedSearchSourceResult\(source, articleNumber, brand, title\)/);
   assert.match(rendererSource, /const directLinks = \(result\.sources \|\| \[\]\)\.map/);
   assert.doesNotMatch(rendererSource, /filter\(\(source\) => source\.linkOnly\)\.map/);
-  assert.match(mainSource, /isBinaryPresenceChannel \? \(Number\(count\) > 0 \? 1 : 0\)/);
-  assert.match(rendererSource, /Number\(source\.count \|\| 0\) > 0 \? 1 : 0/);
-  assert.match(rendererSource, /sourceResult = \(source\) => \(\/\^네이버/);
+  assert.doesNotMatch(mainSource, /isBinaryPresenceChannel/);
+  assert.match(mainSource, /const displayCount = Number\.isFinite\(count\)[\s\S]*?\? Number\(count\)/);
+  assert.doesNotMatch(rendererSource, /Number\(source\.count \|\| 0\) > 0 \? 1 : 0/);
+  assert.match(rendererSource, /const sourceResult = \(source\) => source\.verificationFailed/);
 });
 
 test("SSG와 롯데온 일반·백화점·아울렛 검색은 화면 지연을 고려해 세 번 확인한다", () => {
@@ -227,11 +228,10 @@ test("병행수입 버튼은 내부 검색을 마친 네이버 쇼핑 결과 주
   assert.match(mainSource, /searchUrl: String\(result\?\.resolvedSearchUrl \|\| source\.searchUrl/);
 });
 
-test("무신사 후보는 상세페이지의 정확한 품번 확인 후 1 또는 0으로 표시한다", () => {
+test("무신사 후보는 상세페이지의 정확한 품번 확인 후 검증 개수로 표시한다", () => {
   assert.match(mainSource, /product\.detailArticleVerificationRequired/);
   assert.match(mainSource, /exactArticleIdentityMatch\(detailText, articleNumber\)/);
-  assert.match(mainSource, /source\.store === "무신사"/);
-  assert.match(rendererSource, /source\.store === "무신사"/);
+  assert.match(rendererSource, /source\.countVerified[\s\S]*?Number\(source\.count\)/);
 });
 
 test("shared Excel reader repairs POIZON A1 dimensions before preview and ordinary import", async () => {
