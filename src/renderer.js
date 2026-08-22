@@ -1316,6 +1316,8 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     brandName: activeExportBrand.name || "",
     brandKo: activeExportBrand.ko || "",
     brandId: selectedBrandId,
+    brandUrl: activeExportBrand.productUrl || "",
+    officialHomepageUrl: activeExportBrand.officialHomepageUrl || "",
     deferMonitor: false,
   });
   const automation = await Promise.race([
@@ -2397,6 +2399,8 @@ $("#brand-export-selected")?.addEventListener("click", async () => {
     id: Number(brand.id),
     name: String(brand.name || "").trim(),
     ko: String(brand.ko || "").trim(),
+    productUrl: String(brand.productUrl || "").trim(),
+    officialHomepageUrl: String(brand.officialHomepageUrl || "").trim(),
   }));
   brandSelectionBusy = true;
   clearExplorerResults();
