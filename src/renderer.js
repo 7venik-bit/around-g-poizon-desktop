@@ -1130,16 +1130,28 @@ async function recoverInterruptedBrandWorkAtStartup() {
   }
   await restoreDownloadedBrandFiles();
   const pendingCount = await restorePendingBrandExportJobs();
-  // The main process may have matched a completed workbook to a saved job
-  // number during reconciliation. Reload once so the completed list receives
-  // that repaired job number before monitoring begins.
-  await restoreDownloadedBrandFiles();
   if (!pendingCount && status) {
     status.className = "status success";
     status.textContent = "시작 점검 완료 · 기존 완료 파일을 반영했고 대기 중인 POIZON 작업이 없습니다.";
   }
   return pendingCount;
 }
+
+function renderStartupRecoveryProgress(payload = {}) {
+  const panel = $("#startup-recovery");
+  const bar = $("#startup-recovery-bar");
+  const percentLabel = $("#startup-recovery-percent");
+  const message = $("#startup-recovery-message");
+  if (!panel || !bar || !percentLabel || !message) return;
+  const percent = Math.max(0, Math.min(100, Number(payload.percent) || 0));
+  panel.hidden = false;
+  panel.classList.toggle("complete", percent >= 100);
+  bar.style.width = `${percent}%`;
+  percentLabel.textContent = `${percent}%`;
+  message.textContent = payload.message || "기존 POIZON 작업과 변경 사항을 확인하고 있습니다.";
+}
+
+window.aroundG.onStartupRecoveryProgress(renderStartupRecoveryProgress);
 
 function recordBrandSelection(brand, action, details = {}) {
   brandSelectionHistory.unshift({
@@ -3744,7 +3756,23 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
       if (metadata.needsBrandSync) await syncFullBrandCatalog({ automatic: true });
     }).catch(() => {});
   }
-  await recoverInterruptedBrandWorkAtStartup();
+  // Let Electron paint the complete workspace before touching OneDrive-backed
+  // Excel files. Startup recovery remains visible and does not race the folder poller.
+  await new Promise((resolve) => setTimeout(resolve, 1_000));
+  try {
+    await recoverInterruptedBrandWorkAtStartup();
+    renderStartupRecoveryProgress({
+      percent: 100,
+      message: "기존 POIZON 작업 및 변경 사항 확인을 완료했습니다.",
+    });
+  } catch (error) {
+    renderStartupRecoveryProgress({
+      percent: 100,
+      message: `시작 점검을 마쳤지만 일부 파일을 확인하지 못했습니다: ${error?.message || "확인 필요"}`,
+    });
+  } finally {
+    await window.aroundG.startBrandExportFolderPolling();
+  }
   window.aroundG.onBrandSyncProgress((progress) => {
     if (progress?.context === "category" && categorySearchActive) {
       const completed = Number(progress.pageNum || 0);

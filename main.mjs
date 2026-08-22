@@ -166,7 +166,7 @@ let updateReady = false;
 let updateCheckTimer;
 let updateInstallTimer;
 let updateCheckInFlight = false;
-let oneDriveBackupStatus = { state: "checking", message: "OneDrive 연결을 확인하고 있습니다." };
+let oneDriveBackupStatus = { state: "checking", message: "프로그램 시작 5분 후 OneDrive 백업을 시작합니다." };
 let brandExportPollTimer;
 let lastBrandExportSignature = "__BASELINE_EXISTING_FILES__";
 let pendingBrandExportName = "";
@@ -2190,15 +2190,37 @@ async function validateBrandExportFile(filePath, expectedBrands = []) {
 
 async function listBrandExportFiles() {
   const folder = currentBrandExportFolder();
+  const emitStartupProgress = (percent, message, details = {}) => {
+    mainWindow?.webContents.send("startup-recovery:progress", {
+      percent: Math.max(0, Math.min(100, Number(percent) || 0)),
+      message,
+      ...details,
+    });
+  };
+  emitStartupProgress(5, "POIZON 다운로드 폴더를 확인하고 있습니다.");
   await mkdir(folder, { recursive: true });
   const entries = await listBrandExportExcelEntries(folder);
-  const preparedEntries = await Promise.all(entries
-    .filter((entry) => !isProcessedBrandExportName(entry.name) && !isPartialBrandExportName(entry.name))
-    .map(async (entry) => ({ entry, info: await stat(entry.path) })));
+  const sourceEntries = entries
+    .filter((entry) => !isProcessedBrandExportName(entry.name) && !isPartialBrandExportName(entry.name));
+  emitStartupProgress(12, `기존 POIZON Excel ${sourceEntries.length}개를 확인합니다.`, {
+    current: 0,
+    total: sourceEntries.length,
+  });
+  const preparedEntries = [];
+  for (let index = 0; index < sourceEntries.length; index += 1) {
+    const entry = sourceEntries[index];
+    preparedEntries.push({ entry, info: await stat(entry.path) });
+    emitStartupProgress(12 + Math.round(((index + 1) / Math.max(1, sourceEntries.length)) * 18),
+      `기존 POIZON Excel 목록 확인 ${index + 1}/${sourceEntries.length}`, {
+        current: index + 1,
+        total: sourceEntries.length,
+      });
+  }
   preparedEntries.sort((left, right) => right.info.mtimeMs - left.info.mtimeMs);
   const usedJobIds = new Set();
   const files = [];
-  for (const { entry, info } of preparedEntries) {
+  for (let index = 0; index < preparedEntries.length; index += 1) {
+    const { entry, info } = preparedEntries[index];
     const path = entry.path;
     const folderMeta = entry.directory === folder
       ? { brandName: "", jobId: "" }
@@ -2220,6 +2242,11 @@ async function listBrandExportFiles() {
       ratio: 0,
       message: `Excel 브랜드 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
     }));
+    emitStartupProgress(30 + Math.round(((index + 1) / Math.max(1, preparedEntries.length)) * 58),
+      `POIZON 변경 사항 확인 ${index + 1}/${preparedEntries.length}`, {
+        current: index + 1,
+        total: preparedEntries.length,
+      });
     const detectedBrand = String(brandIntegrity?.dominantBrand || "").trim();
     const resolvedBrandName = detectedBrand || expectedBrand;
     if (recoveredJobId && resolvedBrandName
@@ -2250,6 +2277,10 @@ async function listBrandExportFiles() {
   }
   const visibleFiles = files.filter((file) => !isProcessedBrandExportName(file.name));
   visibleFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  emitStartupProgress(90, `기존 POIZON Excel ${visibleFiles.length}개 확인을 완료했습니다.`, {
+    current: visibleFiles.length,
+    total: visibleFiles.length,
+  });
   return { ok: true, folder, files: visibleFiles };
 }
 
@@ -2505,6 +2536,7 @@ function secretConfig() {
 
 function createWindow() {
   const win = new BrowserWindow({
+    show: false,
     icon: APP_ICON_PATH,
     width: 1440,
     height: 920,
@@ -2520,6 +2552,9 @@ function createWindow() {
     }
   });
   mainWindow = win;
+  win.once("ready-to-show", () => {
+    if (!win.isDestroyed()) win.show();
+  });
   win.webContents.on("render-process-gone", (_event, details) => {
     const logLine = `${new Date().toISOString()} renderer-process-gone ${details.reason} exitCode=${details.exitCode}\n`;
     appendFile(join(app.getPath("userData"), "around-g-crash.log"), logLine, "utf8").catch(() => {});
@@ -3795,8 +3830,21 @@ async function restorePendingBrandExportJobs() {
   const folder = currentBrandExportFolder();
   await mkdir(folder, { recursive: true });
   const entries = await listBrandExportExcelEntries(folder).catch(() => []);
+  mainWindow?.webContents.send("startup-recovery:progress", {
+    percent: 92,
+    message: `중단된 POIZON 작업 ${savedJobs.length}개를 확인하고 있습니다.`,
+    current: 0,
+    total: savedJobs.length,
+  });
   const reconciledCache = [];
-  for (const saved of savedJobs) {
+  for (let index = 0; index < savedJobs.length; index += 1) {
+    const saved = savedJobs[index];
+    mainWindow?.webContents.send("startup-recovery:progress", {
+      percent: 92 + Math.round(((index + 1) / Math.max(1, savedJobs.length)) * 6),
+      message: `중단된 POIZON 작업 확인 ${index + 1}/${savedJobs.length}`,
+      current: index + 1,
+      total: savedJobs.length,
+    });
     const jobId = String(saved?.jobId || "").trim();
     const brandName = String(saved?.brandName || "").trim();
     const createdAt = Number(saved?.createdAt || 0);
@@ -8078,6 +8126,10 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   ipcMain.handle("brand-export:get-folder", () => ({
     folder: currentBrandExportFolder(),
   }));
+  ipcMain.handle("brand-export:start-folder-polling", () => {
+    startBrandExportFolderPolling();
+    return { ok: true };
+  });
   ipcMain.handle("seller:capture", () => captureSellerCenterProducts());
   ipcMain.handle("excel:stage-popular-products", async (_event, products) => {
     try {
@@ -8572,9 +8624,8 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
 
   configureUpdater();
   createWindow();
-  setTimeout(() => void runOneDriveRecoveryBackup(), 1_500);
+  setTimeout(() => void runOneDriveRecoveryBackup(), 5 * 60 * 1_000);
   setInterval(() => void runOneDriveRecoveryBackup(), 30 * 60 * 1_000).unref?.();
-  startBrandExportFolderPolling();
   scheduleWeeklySiteHealthCheck();
   // Full official-mall verification is manual-only. Startup and updates must
   // never create its browser window, timer, catalog sync, or network traffic.

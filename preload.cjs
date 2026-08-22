@@ -47,6 +47,12 @@ contextBridge.exposeInMainWorld("aroundG", {
   selectBrandExportFolder: () => ipcRenderer.invoke("brand-export:select-folder"),
   getBrandExportFolder: () => ipcRenderer.invoke("brand-export:get-folder"),
   listBrandExportFiles: () => ipcRenderer.invoke("brand-export:list-files"),
+  startBrandExportFolderPolling: () => ipcRenderer.invoke("brand-export:start-folder-polling"),
+  onStartupRecoveryProgress: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on("startup-recovery:progress", handler);
+    return () => ipcRenderer.removeListener("startup-recovery:progress", handler);
+  },
   trashBrandExportFiles: (paths) => ipcRenderer.invoke("brand-export:trash-files", paths),
   clearBrandWorkHistory: () => ipcRenderer.invoke("brand-export:clear-session"),
   onBrandWorkHistoryCleared: (callback) => {
