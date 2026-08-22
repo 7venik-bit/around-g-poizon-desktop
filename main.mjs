@@ -6109,6 +6109,7 @@ async function automateSellerBrandExport(input = {}) {
       const unusedJobs = currentJobs.filter((job) => !brandExportJobOwner(job?.id));
       const candidate = findNewSellerExportJob([...baselineJobIds], unusedJobs, {
         notBeforeMs: exportAcknowledgedAt,
+        baselineAuthoritative: baselineAvailable,
         // POIZON and the local PC can differ slightly, but a previous-day job
         // (such as the PUMA row reused for KOLON SPORT) must always be rejected.
         allowedClockSkewMs: 2 * 60_000,
