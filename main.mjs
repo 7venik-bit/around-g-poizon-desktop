@@ -3610,6 +3610,12 @@ const SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT = `(() => {
   )].filter(visible);
   const jobs = [];
   const seen = new Set();
+  const datePattern = /\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?/g;
+  const parseDate = (value) => {
+    const parts = String(value || "").match(/\d+/g)?.map(Number) || [];
+    if (parts.length < 5) return 0;
+    return new Date(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5] || 0).getTime();
+  };
   for (const element of candidates) {
     const text = textOf(element);
     if (!text || text.length > 2400) continue;
@@ -3626,8 +3632,11 @@ const SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT = `(() => {
     const workStateText = cellTexts.find((value) => /^(?:성공|success|completed|실패|failed|error)$/i.test(value)) || "";
     const failed = /^(?:실패|failed|error)$/i.test(workStateText);
     const succeeded = /^(?:성공|success|completed)$/i.test(workStateText);
+    const dates = cellTexts.flatMap((value) => value.match(datePattern) || []);
+    const startText = dates[0] || "";
+    const startAtMs = parseDate(startText);
     seen.add(id);
-    jobs.push({ id, fingerprint: id, text: text.slice(0, 500), workStateText, failed, succeeded });
+    jobs.push({ id, fingerprint: id, text: text.slice(0, 500), workStateText, failed, succeeded, startText, startAtMs });
   }
   const bodyText = textOf(document.body);
   const emptyState = /暂无数据|没有数据|暂无任务|데이터가\s*없|작업이\s*없|no\s*(?:data|task)/i.test(bodyText);
@@ -5346,7 +5355,7 @@ async function automateSellerBrandExport(input = {}) {
       new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
     ]).catch(() => null);
   }
-  const baselineAvailable = Array.isArray(baselineJobs);
+  let baselineAvailable = Array.isArray(baselineJobs);
   const recoverableJob = recoverableSavedBrandExportJob(brandName, brandKo, baselineJobs || []);
   if (recoverableJob && !brandExportJobs.has(recoverableJob.jobId)) {
     brandExportJobs.set(recoverableJob.jobId, {
@@ -5839,6 +5848,8 @@ async function automateSellerBrandExport(input = {}) {
   })()`, true);
   let searched = null;
   let lastSearchDiagnostics = null;
+  let finalExportBaselineJobs = null;
+  let exportAcknowledgedAt = 0;
   for (let searchInputAttempt = 1; searchInputAttempt <= 1; searchInputAttempt += 1) {
     const frames = sellerWindowFrames();
     const frameCandidates = [];
@@ -5937,10 +5948,16 @@ async function automateSellerBrandExport(input = {}) {
           }));
         if (postSearch?.ok) {
           sellerProductFrameRoutingId = candidate.frame.routingId;
+          // "전체 내보내기" has opened the final confirmation dialog but has
+          // not created the new export job yet. Freeze the Download Center at
+          // this exact point so an older successful row can never be mistaken
+          // for the current brand's newly-created job.
+          finalExportBaselineJobs = await readSellerExportBaselineSeparately().catch(() => null);
           // Clicking "전체 내보내기" only opens POIZON's confirmation
           // dialog. The old rebuilt path skipped this existing confirmation
           // helper and then waited three minutes for a job that had never
           // actually been submitted.
+          const confirmationStartedAt = Date.now();
           const confirmation = await confirmSellerExportRequestPhysical(candidate.frame)
             .catch(() => ({
               ok: false,
@@ -5964,6 +5981,7 @@ async function automateSellerBrandExport(input = {}) {
             };
             break;
           }
+          exportAcknowledgedAt = confirmationStartedAt;
           const downloadCenter = confirmation.downloadCenterClicked
             ? { ok: true, clicked: true, alreadyNavigated: true }
             : confirmation.confirmationClicked
@@ -6007,6 +6025,14 @@ async function automateSellerBrandExport(input = {}) {
       message: `${sellerBrandExportFailureMessage(searched?.code || searched?.step, brandName)}${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
       diagnostics: { ...(searched?.diagnostics || {}), path: diagnosticPath },
     };
+  }
+
+  if (Array.isArray(finalExportBaselineJobs)) {
+    baselineAvailable = true;
+    for (const job of finalExportBaselineJobs) {
+      const id = String(job?.id || "").trim();
+      if (id) baselineJobIds.add(id);
+    }
   }
 
   // The current brand remains in the live Download Center until its job and
@@ -6089,7 +6115,12 @@ async function automateSellerBrandExport(input = {}) {
     }
     if (Array.isArray(currentJobs)) {
       const unusedJobs = currentJobs.filter((job) => !brandExportJobOwner(job?.id));
-      const candidate = findNewSellerExportJob([...baselineJobIds], unusedJobs);
+      const candidate = findNewSellerExportJob([...baselineJobIds], unusedJobs, {
+        notBeforeMs: exportAcknowledgedAt,
+        // POIZON and the local PC can differ slightly, but a previous-day job
+        // (such as the PUMA row reused for KOLON SPORT) must always be rejected.
+        allowedClockSkewMs: 2 * 60_000,
+      });
       if (candidate && baselineAvailable) {
         createdJob = candidate;
       } else if (candidate) {
@@ -6182,11 +6213,12 @@ async function automateSellerBrandExport(input = {}) {
       message: `새 작업번호가 생성되지 않았습니다. 기존 작업번호 ${registeredJobId}는 ${existingOwner.brandName || "다른 브랜드"} 작업에 이미 연결되어 있습니다.`,
     };
   }
+  const registeredCreatedAt = Number(createdJob.startAtMs || exportAcknowledgedAt || Date.now());
   brandExportJobs.set(registeredJobId, {
     jobId: registeredJobId,
     brandName,
     brandKo,
-    createdAt: Date.now(),
+    createdAt: registeredCreatedAt,
     downloadStarted: false,
     expectedProductCount: Number(completeness.expected || searched.expectedTotal || 0),
   });
@@ -6194,7 +6226,7 @@ async function automateSellerBrandExport(input = {}) {
     jobId: registeredJobId,
     brandName,
     brandKo,
-    createdAt: Date.now(),
+    createdAt: registeredCreatedAt,
     expectedProductCount: Number(completeness.expected || searched.expectedTotal || 0),
     sessionGeneration,
   });
