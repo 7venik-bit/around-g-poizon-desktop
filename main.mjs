@@ -5848,7 +5848,6 @@ async function automateSellerBrandExport(input = {}) {
   })()`, true);
   let searched = null;
   let lastSearchDiagnostics = null;
-  let finalExportBaselineJobs = null;
   let exportAcknowledgedAt = 0;
   for (let searchInputAttempt = 1; searchInputAttempt <= 1; searchInputAttempt += 1) {
     const frames = sellerWindowFrames();
@@ -5948,11 +5947,12 @@ async function automateSellerBrandExport(input = {}) {
           }));
         if (postSearch?.ok) {
           sellerProductFrameRoutingId = candidate.frame.routingId;
-          // "전체 내보내기" has opened the final confirmation dialog but has
-          // not created the new export job yet. Freeze the Download Center at
-          // this exact point so an older successful row can never be mistaken
-          // for the current brand's newly-created job.
-          finalExportBaselineJobs = await readSellerExportBaselineSeparately().catch(() => null);
+          // POIZON can create the export job immediately when "전체 내보내기"
+          // is clicked, before (or while) the confirmation UI is observed.
+          // Never refresh the baseline here: a fast new job would be recorded
+          // as an old job and could then never be linked to this brand. The
+          // baseline frozen before product search remains authoritative, while
+          // the confirmation timestamp below rejects genuinely old rows.
           // Clicking "전체 내보내기" only opens POIZON's confirmation
           // dialog. The old rebuilt path skipped this existing confirmation
           // helper and then waited three minutes for a job that had never
@@ -6025,14 +6025,6 @@ async function automateSellerBrandExport(input = {}) {
       message: `${sellerBrandExportFailureMessage(searched?.code || searched?.step, brandName)}${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
       diagnostics: { ...(searched?.diagnostics || {}), path: diagnosticPath },
     };
-  }
-
-  if (Array.isArray(finalExportBaselineJobs)) {
-    baselineAvailable = true;
-    for (const job of finalExportBaselineJobs) {
-      const id = String(job?.id || "").trim();
-      if (id) baselineJobIds.add(id);
-    }
   }
 
   // The current brand remains in the live Download Center until its job and

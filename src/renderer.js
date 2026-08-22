@@ -1286,7 +1286,9 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     $("#brand-status").className = failureCount ? "status error" : "status success";
     $("#brand-status").textContent = failureCount
       ? `브랜드 순차 작업 종료 · ${failureCount}개 브랜드 실패`
-      : "선택한 모든 브랜드의 내보내기·다운로드가 완료되었습니다.";
+      : hasActiveBrandExportJobs()
+        ? "선택한 모든 브랜드의 작업번호 생성 완료 · 다운로드센터 자동 감시 중입니다."
+        : "선택한 모든 브랜드의 내보내기·다운로드가 완료되었습니다.";
     brandExportFailureCount = 0;
     stopBrandActivity();
     return;
@@ -1418,36 +1420,14 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     updateBrandBatchState(completedBrand.name, "작업번호 생성 완료 · 다운로드 완료 대기", automation.jobId);
     recordBrandSelection(activeExportBrand, "전체 내보내기 요청", { jobId: automation.jobId });
     $("#brand-status").className = "status";
-    $("#brand-status").textContent = `${completedBrand.name} · 작업번호 ${automation.jobId} · POIZON 성공 및 다운로드 완료를 기다립니다.`;
-    touchBrandActivity(`${completedBrand.name} · 다운로드 완료 후 다음 브랜드 진행`);
-    await window.aroundG.startSellerBrandExportMonitor();
-    const completion = await window.aroundG.waitSellerBrandExportComplete({
-      jobId: automation.jobId,
-      timeoutMs: BRAND_AUTOMATION_TIMEOUT_MS,
-    });
-    if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return;
-    if (!completion?.ok) {
-      brandExportFailureCount += 1;
-      updateBrandBatchState(completedBrand.name, `실패 · ${completion?.code || "BRAND_DOWNLOAD_TIMEOUT"}`, automation.jobId);
-      brandExportQueue = [];
-      activeExportBrand = null;
-      brandSelectionBusy = false;
-      $("#brand-status").className = "status error";
-      $("#brand-status").textContent = `${completedBrand.name} 다운로드가 완료되지 않아 다음 브랜드 작업을 시작하지 않았습니다.`;
-      renderBrandCards($("#brand-filter")?.value || "");
-      stopBrandActivity();
-      return;
-    }
-    updateBrandBatchState(completedBrand.name, "확인완료", automation.jobId);
-    $("#brand-status").className = "status success";
-    $("#brand-status").textContent = `${completedBrand.name} 다운로드 완료 · 다음 브랜드를 시작합니다.`;
+    $("#brand-status").textContent = `${completedBrand.name} · 작업번호 ${automation.jobId} 생성 확인 완료 · 다음 브랜드로 이동합니다.`;
+    touchBrandActivity(`${completedBrand.name} · 작업번호 등록 완료 · 다운로드 감시 중`);
+    void window.aroundG.startSellerBrandExportMonitor();
     activeExportBrand = null;
-    // Do not leave the next brand to an unobserved timer. The renderer can
-    // refresh several job/progress rows when the first job number arrives,
-    // which previously allowed the queued callback to be lost. Continue the
-    // POIZON accepts one export lifecycle at a time. Do not submit the next
-    // brand until this brand's workbook has actually finished downloading.
-    await new Promise((resolve) => setTimeout(resolve, 5_000));
+    // The generated job number is the ownership boundary. Once it is recorded,
+    // the shared monitor can track that download independently while the visible
+    // Seller Center starts the next brand.
+    await new Promise((resolve) => setTimeout(resolve, 900));
     await exportNextSelectedBrand(generation);
     return;
   }

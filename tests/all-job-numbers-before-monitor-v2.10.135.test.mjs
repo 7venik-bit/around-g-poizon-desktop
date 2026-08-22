@@ -4,7 +4,7 @@ import test from "node:test";
 
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
 
-test("each brand finishes downloading before the next queued brand starts", () => {
+test("each generated job number advances the queue without waiting for download", () => {
   const start = renderer.indexOf("async function exportNextSelectedBrand");
   const end = renderer.indexOf("function retainSelectedBrandName", start);
   const workflow = renderer.slice(start, end);
@@ -14,8 +14,8 @@ test("each brand finishes downloading before the next queued brand starts", () =
 
   assert.doesNotMatch(queueFinished, /startSellerBrandExportMonitor/);
   assert.match(perBrand, /startSellerBrandExportMonitor/);
-  assert.match(perBrand, /waitSellerBrandExportComplete/);
-  assert.match(perBrand, /다운로드 완료 · 다음 브랜드를 시작합니다/);
+  assert.doesNotMatch(perBrand, /waitSellerBrandExportComplete/);
+  assert.match(perBrand, /작업번호 \$\{automation\.jobId\} 생성 확인 완료 · 다음 브랜드로 이동합니다/);
   assert.match(perBrand, /await exportNextSelectedBrand\(generation\)/);
   assert.doesNotMatch(perBrand, /setTimeout\(\(\) => exportNextSelectedBrand\(generation\), 400\)/);
 });
@@ -25,7 +25,7 @@ test("the renderer no longer presents download registration as step-five validat
   assert.doesNotMatch(renderer, /Excel 검증·프로그램 등록 중/);
 });
 
-test("monitoring begins per brand and only completion advances the queue", () => {
+test("monitoring begins per brand and job registration advances the queue", () => {
   const start = renderer.indexOf("async function exportNextSelectedBrand");
   const end = renderer.indexOf("function retainSelectedBrandName", start);
   const workflow = renderer.slice(start, end);
@@ -33,6 +33,6 @@ test("monitoring begins per brand and only completion advances the queue", () =>
 
   assert.doesNotMatch(workflow.slice(0, queueShift), /startSellerBrandExportMonitor/);
   assert.match(workflow.slice(queueShift), /startSellerBrandExportMonitor/);
-  assert.match(workflow.slice(queueShift), /waitSellerBrandExportComplete/);
+  assert.doesNotMatch(workflow.slice(queueShift), /waitSellerBrandExportComplete/);
   assert.match(workflow.slice(queueShift), /await exportNextSelectedBrand\(generation\)/);
 });

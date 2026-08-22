@@ -52,8 +52,14 @@ test("the export job baseline is frozen before product search and export", () =>
   );
 });
 
-test("the final export confirmation freezes a fresh baseline and enforces its timestamp", () => {
-  assert.match(mainSource, /finalExportBaselineJobs = await readSellerExportBaselineSeparately\(\)/);
+test("the final export confirmation cannot leak a fast new job into the baseline", () => {
+  const exportClick = mainSource.indexOf("performPhysicalSellerSortAndExport");
+  const jobWait = mainSource.indexOf("const completeness", exportClick);
+  assert.ok(exportClick >= 0 && jobWait > exportClick);
+  assert.doesNotMatch(
+    mainSource.slice(exportClick, jobWait),
+    /finalExportBaselineJobs = await readSellerExportBaselineSeparately\(\)/,
+  );
   assert.match(mainSource, /exportAcknowledgedAt = confirmationStartedAt/);
   assert.match(mainSource, /notBeforeMs: exportAcknowledgedAt/);
   assert.match(mainSource, /allowedClockSkewMs: 2 \* 60_000/);
