@@ -83,8 +83,8 @@ test("POIZON daily twenty-search limit replaces the generic confirmation error",
   assert.match(main, /dailyLimit\.exceeded \? "DAILY_SEARCH_LIMIT_EXCEEDED"/);
 });
 
-test("release metadata is 2.10.354", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.354");
-  assert.equal(JSON.parse(lockSource).version, "2.10.354");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.354");
+test("release metadata is 2.10.355", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.355");
+  assert.equal(JSON.parse(lockSource).version, "2.10.355");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.355");
 });

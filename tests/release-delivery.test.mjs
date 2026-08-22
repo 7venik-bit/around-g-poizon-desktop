@@ -35,10 +35,10 @@ test("pull requests build the real Windows installer", () => {
   assert.match(packageWorkflow, /Expected exactly one Windows installer/);
 });
 
-test("release metadata is synchronized at 2.10.354", () => {
+test("release metadata is synchronized at 2.10.355", () => {
   const packageJson = JSON.parse(packageSource);
   const lockJson = JSON.parse(lockSource);
-  assert.equal(packageJson.version, "2.10.354");
-  assert.equal(lockJson.version, "2.10.354");
-  assert.equal(lockJson.packages[""].version, "2.10.354");
+  assert.equal(packageJson.version, "2.10.355");
+  assert.equal(lockJson.version, "2.10.355");
+  assert.equal(lockJson.packages[""].version, "2.10.355");
 });

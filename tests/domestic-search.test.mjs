@@ -206,7 +206,7 @@ test("품번이 있으면 소재와 카테고리 설명을 검색어에 넣지 �
   assert.doesNotMatch(department.searchQuery, /가죽|로우탑|스니커즈/);
 });
 
-test("MLB 공식몰은 홈페이지 돋보기 뒤 상품명과 품번을 검색창에 입력한다", async () => {
+test("MLB 공식몰은 홈페이지 돋보기 뒤 상품코드만 검색창에 입력한다", async () => {
   assert.equal(officialBrandUsesInternalSearch("MLB"), true);
   const result = await queryDomesticProducts({
     query: "MLB 3ASXCA12N-50WHS",
@@ -222,10 +222,10 @@ test("MLB 공식몰은 홈페이지 돋보기 뒤 상품명과 품번을 검색�
   assert.equal(official.homepageUrl, "https://www.mlb-korea.com/?gf=A");
   assert.equal(official.officialProductUrl, "");
   assert.equal(official.interactiveSearch, true);
-  assert.equal(official.searchQuery, "청키 라이너 뉴욕양키스 3ASXCA12N-50WHS");
+  assert.equal(official.searchQuery, "3ASXCA12N-50WHS");
 });
 
-test("모든 브랜드 공식몰은 품번이 있으면 상품명과 품번만 검색한다", async () => {
+test("모든 브랜드 공식몰은 품번이 있으면 상품코드만 검색한다", async () => {
   assert.equal(officialBrandUsesInternalSearch("데상트"), true);
   const result = await queryDomesticProducts({
     query: "데상트 SR123UTS15",
@@ -239,7 +239,7 @@ test("모든 브랜드 공식몰은 품번이 있으면 상품명과 품번만 �
   assert.equal(official.homepageUrl, "https://dk-on.com/DESCENTE");
   assert.equal(official.officialProductUrl, "");
   assert.equal(official.interactiveSearch, true);
-  assert.equal(official.searchQuery, "스몰 워딩 코튼 반팔 티셔츠 SR123UTS15");
+  assert.equal(official.searchQuery, "SR123UTS15");
 });
 
 test("브랜드 공식몰은 품번이 없을 때 상품코드로 검색한다", async () => {

@@ -961,8 +961,10 @@ async function submitOfficialMallSearch(searchWindow, query) {
           const label = [element.outerHTML, element.parentElement?.className].join(" ");
           return /search|검색|magnif|ico[_-]?sch/i.test(label);
         });
-        opener?.click();
-        return false;
+        if (!opener) return false;
+        opener.scrollIntoView({ block: "center", inline: "nearest" });
+        const rect = opener.getBoundingClientRect();
+        return { openTarget: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } };
       }
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
       setter ? setter.call(input, query) : (input.value = query);
@@ -981,23 +983,45 @@ async function submitOfficialMallSearch(searchWindow, query) {
         const label = [element.getAttribute('aria-label'), element.getAttribute('title'), element.className, element.textContent, element.outerHTML].join(' ');
         return /search|검색|magnif|ico[_-]?sch/i.test(label) || element.type === 'submit';
       });
-      if (form?.requestSubmit) form.requestSubmit(submit?.type === "submit" ? submit : undefined);
-      else if (submit && visible(submit)) submit.click();
-      else {
-        for (const type of ["keydown", "keypress", "keyup"]) {
-          input.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
-        }
+      if (submit && visible(submit)) {
+        submit.scrollIntoView({ block: "center", inline: "nearest" });
+        const rect = submit.getBoundingClientRect();
+        return { ready: true, target: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } };
       }
-      return true;
+      return { ready: true, enter: true };
     })()`;
     const frames = [searchWindow.webContents.mainFrame, ...searchWindow.webContents.mainFrame.framesInSubtree];
     let submitted = false;
+    let opened = false;
     for (const frame of frames) {
-      submitted = await frame.executeJavaScript(script, true).catch(() => false);
-      if (submitted) break;
+      const prepared = await frame.executeJavaScript(script, true).catch(() => false);
+      if (prepared?.openTarget) {
+        if (frame === searchWindow.webContents.mainFrame) {
+          searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: prepared.openTarget.x, y: prepared.openTarget.y });
+          searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: prepared.openTarget.x, y: prepared.openTarget.y, button: "left", clickCount: 1 });
+          searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: prepared.openTarget.x, y: prepared.openTarget.y, button: "left", clickCount: 1 });
+        } else {
+          await frame.executeJavaScript(`[...document.querySelectorAll('button,a,[role="button"]')].find((element) => /search|검색/i.test([element.getAttribute("aria-label"), element.getAttribute("title"), element.textContent].join(" ")))?.click()`, true).catch(() => {});
+        }
+        opened = true;
+        break;
+      }
+      if (!prepared?.ready) continue;
+      if (prepared.target && frame === searchWindow.webContents.mainFrame) {
+        searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: prepared.target.x, y: prepared.target.y });
+        searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: prepared.target.x, y: prepared.target.y, button: "left", clickCount: 1 });
+        searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: prepared.target.x, y: prepared.target.y, button: "left", clickCount: 1 });
+      } else if (prepared.enter && frame === searchWindow.webContents.mainFrame) {
+        searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "Enter" });
+        searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
+      } else {
+        await frame.executeJavaScript(`document.activeElement?.form?.requestSubmit?.() || document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }))`, true).catch(() => {});
+      }
+      submitted = true;
+      break;
     }
     if (submitted) return true;
-    await wait(700);
+    await wait(opened ? 900 : 700);
   }
   return false;
 }
@@ -1010,8 +1034,13 @@ async function officialMallSearchWasExecuted(searchWindow, query, previousUrl = 
     const expected = compact(query);
     const inputs = [...document.querySelectorAll('input[type="search"],input[name*="search" i],input[name="q" i],input[name*="query" i],input[name*="keyword" i],input[name*="schWord" i]')];
     const inputMatched = inputs.some((input) => compact(input.value).includes(expected));
-    const pageMatched = expected.length >= 4 && compact(document.body?.innerText || "").includes(expected);
-    return { url: String(location.href || ""), inputMatched, pageMatched };
+    const pageText = String(document.body?.innerText || "");
+    const pageMatched = expected.length >= 4 && compact(pageText).includes(expected);
+    const resultCount = /(?:상품|검색결과)\\s*\\(?\\s*[1-9][\\d,]*\\s*(?:개|건|\\))/i.test(pageText)
+      || /총\\s*[1-9][\\d,]*\\s*개/i.test(pageText);
+    const productLinks = [...document.querySelectorAll('a[href]')].filter((link) =>
+      /\/(?:goods|product|products|pd|item|t)\//i.test(String(link.href || ""))).length;
+    return { url: String(location.href || ""), inputMatched, pageMatched, resultCount, productLinks };
   })()`, true).catch(() => null);
   if (!state) return false;
   const urlChanged = Boolean(previousUrl && state.url && state.url !== previousUrl);
@@ -1019,7 +1048,9 @@ async function officialMallSearchWasExecuted(searchWindow, query, previousUrl = 
     try { return decodeURIComponent(state.url).toUpperCase().includes(String(query || "").toUpperCase()); }
     catch { return false; }
   })();
-  return Boolean(urlChanged || queryInUrl || state.pageMatched || state.inputMatched);
+  // Merely seeing the code in the search input/suggestion is not proof that
+  // the magnifier was pressed. Require navigation or rendered product results.
+  return Boolean(urlChanged || queryInUrl || (state.pageMatched && (state.resultCount || state.productLinks > 0)));
 }
 
 async function executeOfficialMallSearch(searchWindow, homepageUrl, query) {
