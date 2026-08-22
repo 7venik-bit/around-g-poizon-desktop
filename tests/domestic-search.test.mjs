@@ -615,7 +615,7 @@ test("네이버 백화점과 아울렛도 채널 1개와 같은 브랜드 카드
   }
 });
 
-test("네이버 아울렛 탭이 6개면 카드에 품번이 없어도 화면에는 1로 표시한다", () => {
+test("네이버 아울렛 탭에서 확인된 국내 상품 카드 수를 표시한다", () => {
   const result = analyzeRenderedChannelProducts(JSON.stringify({
     productCards: [{
       productUrl: "https://shopping.naver.com/window-products/outlet/13001191642",
@@ -629,17 +629,40 @@ test("네이버 아울렛 탭이 6개면 카드에 품번이 없어도 화면에
     pageText: "전체 6개 아울렛 6개 백화점 0개 소호&스트릿 0개",
   }), "네이버 아울렛", "ID8797", "아디다스", "아디다스 VL 코트 3.0");
 
-  assert.equal(result.count, 1);
+  assert.equal(result.count, 2);
   assert.equal(result.channelCount, 6);
   assert.equal(result.presenceConfirmed, true);
   assert.equal(result.absenceConfirmed, false);
 });
 
-test("네이버 채널의 원시 결과 수와 관계없이 화면 값은 1 또는 0이다", () => {
+test("네이버 채널의 원시 결과 수를 화면 값으로 유지한다", () => {
   const positive = analyzeRenderedChannelProducts("전체 6개 아울렛 6개", "네이버 아울렛", "ID8797", "아디다스");
   const empty = analyzeRenderedChannelProducts("전체 0개 아울렛 0개", "네이버 아울렛", "ID8797", "아디다스");
-  assert.deepEqual({ count: positive.count, channelCount: positive.channelCount }, { count: 1, channelCount: 6 });
+  assert.deepEqual({ count: positive.count, channelCount: positive.channelCount }, { count: 6, channelCount: 6 });
   assert.deepEqual({ count: empty.count, channelCount: empty.channelCount }, { count: 0, channelCount: 0 });
+});
+
+test("푸마 392290-03 아울렛 화면의 국내 카드 5개를 그대로 표시한다", () => {
+  const productCards = [
+    ["13001191641", "푸마 남녀공용 스니커즈 PUMA 케이븐 2.0 392290-03"],
+    ["13001191642", "푸마 케이븐 2.0 코트 PKI392290-03"],
+    ["13001191643", "푸마 PUMA 푸마 케이븐 2.0 392290-03"],
+    ["13001191644", "푸마 소프트라이드 코스믹 운동화"],
+    ["13001191645", "푸마 소프트라이드 코스믹 스니커즈"],
+  ].map(([id, title]) => ({
+    productUrl: `https://shopping.naver.com/window-products/outlet/${id}`,
+    title,
+    text: `${title} 국내 아울렛 매장`,
+  }));
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    productCards,
+    pageText: "전체 6개 아울렛 5개 해외직구 1개 백화점 0개",
+  }), "네이버 아울렛", "392290-03", "푸마", "푸마 케이븐 2.0 화이트 블랙");
+
+  assert.equal(result.count, 5);
+  assert.equal(result.channelCount, 5);
+  assert.equal(result.presenceConfirmed, true);
+  assert.equal(result.absenceConfirmed, false);
 });
 
 test("네이버 window-products 상품 주소를 화면 수집 대상으로 인식한다", async () => {

@@ -1337,9 +1337,8 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
     const count = result?.count;
     const absenceConfirmed = result?.absenceConfirmed === true;
-    const isBinaryPresenceChannel = /^네이버\s/.test(String(source.store || "")) || source.store === "무신사";
     const displayCount = Number.isFinite(count)
-      ? (isBinaryPresenceChannel ? (Number(count) > 0 ? 1 : 0) : Number(count))
+      ? Number(count)
       : 0;
     const isOfficialStore = source.store === "브랜드 공식몰";
     const verifiedOfficialProductUrl = isOfficialStore
