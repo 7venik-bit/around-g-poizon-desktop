@@ -18,12 +18,12 @@ test("seller export snapshot compiles a numeric job-number regex", () => {
   assert.equal(new RegExp(rowPatternSource).test("상품검색 내보내기 1004747578 처리 중"), true);
 });
 
-test("release metadata is 2.10.342", async () => {
+test("release metadata is 2.10.343", async () => {
   const [pkg, lock] = await Promise.all([
     readFile(new URL("../package.json", import.meta.url), "utf8").then(JSON.parse),
     readFile(new URL("../package-lock.json", import.meta.url), "utf8").then(JSON.parse),
   ]);
-  assert.equal(pkg.version, "2.10.342");
-  assert.equal(lock.version, "2.10.342");
-  assert.equal(lock.packages[""].version, "2.10.342");
+  assert.equal(pkg.version, "2.10.343");
+  assert.equal(lock.version, "2.10.343");
+  assert.equal(lock.packages[""].version, "2.10.343");
 });
