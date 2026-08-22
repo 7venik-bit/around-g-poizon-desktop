@@ -3535,12 +3535,18 @@ window.aroundG.onDomesticLoginChanged?.(() => renderDomesticLoginStatuses());
 
 $("#settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const saved = await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value });
+  const saved = await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value, nikeLoginId:$("#nike-login-id").value, nikePassword:$("#nike-password").value, adidasLoginId:$("#adidas-login-id").value, adidasPassword:$("#adidas-password").value });
   $("#app-secret").value = "";
   $("#access-token").value = "";
   $("#poizon-password").value = "";
+  $("#nike-password").value = "";
+  $("#adidas-password").value = "";
   $("#poizon-login-id").value = saved.poizonLoginId || "";
   $("#poizon-password").placeholder = saved.hasPoizonPassword ? "암호화 저장됨 · 브랜드 검색 시 자동 입력" : "자동 로그인에 필요";
+  $("#nike-login-id").value = saved.nikeLoginId || "";
+  $("#nike-password").placeholder = saved.hasNikePassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
+  $("#adidas-login-id").value = saved.adidasLoginId || "";
+  $("#adidas-password").placeholder = saved.hasAdidasPassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
   $("#settings-status").className = "status success";
   $("#settings-status").textContent = saved.poizonLoginId && saved.hasPoizonPassword
     ? "POIZON 아이디와 비밀번호를 기억했습니다. 브랜드 검색 시 자동 로그인합니다."
@@ -3811,6 +3817,10 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   $("#access-token").placeholder = config.hasAccessToken ? "저장됨 · 변경할 때만 입력" : "선택 사항";
   $("#poizon-login-id").value = config.poizonLoginId || "";
   $("#poizon-password").placeholder = config.hasPoizonPassword ? "암호화 저장됨 · 변경할 때만 입력" : "자동 로그인에 필요";
+  $("#nike-login-id").value = config.nikeLoginId || "";
+  $("#nike-password").placeholder = config.hasNikePassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
+  $("#adidas-login-id").value = config.adidasLoginId || "";
+  $("#adidas-password").placeholder = config.hasAdidasPassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
   await renderDomesticLoginStatuses();
   await refresh();
   await pruneCategorySearchHistory();

@@ -161,8 +161,8 @@ const DOMESTIC_LOGIN_SOURCES = [
   { id: "eql", name: "EQL", url: "https://www.eqlstore.com/", domains: ["eqlstore.com"] },
   { id: "hfashion", name: "H패션몰", url: "https://www.hfashionmall.com/", domains: ["hfashionmall.com"] },
   { id: "29cm", name: "29CM", url: "https://www.29cm.co.kr/", domains: ["29cm.co.kr"] },
-  { id: "nike", name: "나이키 공식몰", url: "https://www.nike.com/kr/", domains: ["nike.com"] },
-  { id: "adidas", name: "아디다스 공식몰", url: "https://www.adidas.co.kr/", domains: ["adidas.co.kr"] },
+  { id: "nike", name: "나이키 공식몰", url: "https://www.nike.com/kr/", loginUrl: "https://www.nike.com/kr/member/profile/login", domains: ["nike.com"], officialAccount: true },
+  { id: "adidas", name: "아디다스 공식몰", url: "https://www.adidas.co.kr/", loginUrl: "https://www.adidas.co.kr/account-login", domains: ["adidas.co.kr"], officialAccount: true },
 ];
 let updateReady = false;
 let updateCheckTimer;
@@ -1244,6 +1244,9 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
   await searchWindow.loadURL(homepage.href);
   searchWindow.show();
   searchWindow.focus();
+  const login = await ensureOfficialAccountLogin(searchWindow, homepage.href);
+  if (!login.ok) return { ok: false, submitted: false, loginRequired: true, reason: login.reason };
+  if (login.required) await searchWindow.loadURL(homepage.href).catch(() => {});
   const submitted = await executeOfficialMallSearch(searchWindow, homepage.href, exactQuery);
   if (!submitted) {
     searchWindow.setTitle(`공식몰 돋보기를 눌러 ${exactQuery}을(를) 검색해 주세요`);
@@ -1279,6 +1282,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       searchWindow.loadURL(initialUrl),
       new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 30_000)),
     ]);
+    if (interactiveOfficialSearch) {
+      const login = await ensureOfficialAccountLogin(searchWindow, String(source.homepageUrl || url));
+      if (!login.ok) return null;
+      if (login.required) await searchWindow.loadURL(String(source.homepageUrl || url)).catch(() => {});
+    }
     if (interactiveSiteSearch) {
       const searchQuery = String(source.searchQuery || articleNumber || title || "").trim();
       const submitted = naverPortalSource
@@ -2094,6 +2102,65 @@ function decrypted(value) {
   return safeStorage.decryptString(Buffer.from(value, "base64"));
 }
 
+function officialAccountCredentials(sourceId) {
+  const settings = store.snapshot().settings;
+  const prefix = sourceId === "nike" ? "nike" : sourceId === "adidas" ? "adidas" : "";
+  if (!prefix) return { id: "", password: "" };
+  return {
+    id: String(settings[`${prefix}LoginId`] || "").trim(),
+    password: decrypted(settings[`${prefix}PasswordEncrypted`] || ""),
+  };
+}
+
+function officialAccountSourceForUrl(value) {
+  let hostname = "";
+  try { hostname = new URL(String(value || "")).hostname.replace(/^www\./, ""); } catch { return null; }
+  return DOMESTIC_LOGIN_SOURCES.find((source) => source.officialAccount
+    && source.domains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`))) || null;
+}
+
+async function ensureOfficialAccountLogin(searchWindow, homepageUrl) {
+  const source = officialAccountSourceForUrl(homepageUrl);
+  if (!source) return { ok: true, required: false };
+  const credentials = officialAccountCredentials(source.id);
+  if (!credentials.id || !credentials.password) {
+    searchWindow.show();
+    searchWindow.focus();
+    searchWindow.setTitle(`${source.name} 계정정보를 설정한 뒤 검색해 주세요`);
+    return { ok: false, required: true, reason: "OFFICIAL_CREDENTIALS_REQUIRED" };
+  }
+  await searchWindow.loadURL(source.loginUrl).catch(() => {});
+  await wait(1_200);
+  const state = await searchWindow.webContents.executeJavaScript(`(() => {
+    const visible = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== "none" && s.visibility !== "hidden"; };
+    const fields = [...document.querySelectorAll('input')].filter(visible);
+    const user = fields.find((el) => /email|user|login|아이디|이메일/i.test([el.name, el.id, el.type, el.autocomplete, el.placeholder, el.getAttribute('aria-label')].join(' ')) && el.type !== 'password');
+    const password = fields.find((el) => el.type === 'password' || /password|비밀번호/i.test([el.name, el.id, el.placeholder, el.getAttribute('aria-label')].join(' ')));
+    if (!user || !password) return { formFound: false };
+    const setValue = (el, value) => { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set; setter?.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+    setValue(user, ${JSON.stringify(credentials.id)});
+    setValue(password, ${JSON.stringify(credentials.password)});
+    const submit = [...document.querySelectorAll('button,input[type="submit"],[role="button"]')].filter(visible).find((el) => /로그인|log\s*in|sign\s*in/i.test([el.textContent, el.value, el.getAttribute('aria-label')].join(' ')));
+    if (!submit) return { formFound: true };
+    submit.scrollIntoView({ block: 'center' }); const r = submit.getBoundingClientRect();
+    return { formFound: true, x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  })()`, true).catch(() => null);
+  if (state?.x && state?.y) {
+    searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: state.x, y: state.y });
+    searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: state.x, y: state.y, button: "left", clickCount: 1 });
+    searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: state.x, y: state.y, button: "left", clickCount: 1 });
+    await wait(3_000);
+  }
+  const stillOnLogin = /login|signin|sign-in/i.test(searchWindow.webContents.getURL());
+  if (!state || stillOnLogin || (state.formFound === true && !state.x)) {
+    searchWindow.show();
+    searchWindow.focus();
+    searchWindow.setTitle(`${source.name} 로그인 확인 필요 · 로그인 완료 후 다시 검색`);
+    return { ok: false, required: true, reason: "OFFICIAL_LOGIN_FAILED" };
+  }
+  return { ok: true, required: true };
+}
+
 function publicConfig() {
   const settings = store.snapshot().settings;
   return {
@@ -2104,6 +2171,10 @@ function publicConfig() {
     hasAccessToken: Boolean(settings.accessTokenEncrypted),
     poizonLoginId: settings.poizonLoginId || "",
     hasPoizonPassword: Boolean(settings.poizonPasswordEncrypted),
+    nikeLoginId: settings.nikeLoginId || "",
+    hasNikePassword: Boolean(settings.nikePasswordEncrypted),
+    adidasLoginId: settings.adidasLoginId || "",
+    hasAdidasPassword: Boolean(settings.adidasPasswordEncrypted),
   };
 }
 
@@ -2163,7 +2234,8 @@ function publicPortableSnapshot() {
   const snapshot = store.snapshot();
   const settings = { ...(snapshot.settings || {}) };
   for (const key of [
-    "appSecretEncrypted", "accessTokenEncrypted", "poizonLoginId", "poizonPasswordEncrypted", "brandExportFolder",
+    "appSecretEncrypted", "accessTokenEncrypted", "poizonLoginId", "poizonPasswordEncrypted",
+    "nikeLoginId", "nikePasswordEncrypted", "adidasLoginId", "adidasPasswordEncrypted", "brandExportFolder",
     "oneDrivePoizonBackupRoot", "brandExportJobCache", "brandExportFileValidationCache",
   ]) delete settings[key];
   return { ...snapshot, settings, collector: { status: "idle", lastPage: 0, lastFingerprint: "", repeatedPages: 0 } };
@@ -8098,10 +8170,14 @@ app.whenReady().then(async () => {
       appKey: String(config.appKey || "").trim(),
       apiBaseUrl: String(config.apiBaseUrl || "https://open.poizon.com").trim(),
       poizonLoginId: String(config.poizonLoginId || "").trim(),
+      nikeLoginId: String(config.nikeLoginId || "").trim(),
+      adidasLoginId: String(config.adidasLoginId || "").trim(),
     };
     if (config.appSecret) next.appSecretEncrypted = encrypted(config.appSecret);
     if (config.accessToken) next.accessTokenEncrypted = encrypted(config.accessToken);
     if (config.poizonPassword) next.poizonPasswordEncrypted = encrypted(config.poizonPassword);
+    if (config.nikePassword) next.nikePasswordEncrypted = encrypted(config.nikePassword);
+    if (config.adidasPassword) next.adidasPasswordEncrypted = encrypted(config.adidasPassword);
     await store.setSettings(next);
     return publicConfig();
   });
