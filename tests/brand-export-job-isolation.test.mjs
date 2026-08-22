@@ -40,6 +40,16 @@ test("only a job created after final export confirmation can own the brand", () 
   assert.equal(findNewSellerExportJob([], [{ id: "1004859999" }], options), null);
 });
 
+test("a failed job absent from the frozen baseline is still recognized", () => {
+  const baseline = [{ id: "1004860372", startAtMs: new Date(2026, 7, 22, 16, 18, 1).getTime() }];
+  const failedNewJob = { id: "1004860509", failed: true, workStateText: "실패", startAtMs: 0 };
+  const candidate = findNewSellerExportJob(baseline, [failedNewJob, ...baseline], {
+    notBeforeMs: new Date(2026, 7, 22, 16, 48, 20).getTime(),
+    baselineAuthoritative: true,
+  });
+  assert.equal(candidate?.id, "1004860509");
+});
+
 test("the export job baseline is frozen before product search and export", () => {
   const baselineAwait = mainSource.indexOf("let baselineJobs = await baselinePromise");
   const searchStart = mainSource.indexOf("const sellerBrandAliasGroups", baselineAwait);
@@ -62,6 +72,7 @@ test("the final export confirmation cannot leak a fast new job into the baseline
   );
   assert.match(mainSource, /exportAcknowledgedAt = confirmationStartedAt/);
   assert.match(mainSource, /notBeforeMs: exportAcknowledgedAt/);
+  assert.match(mainSource, /baselineAuthoritative: baselineAvailable/);
   assert.match(mainSource, /allowedClockSkewMs: 2 \* 60_000/);
   assert.match(mainSource, /startAtMs/);
 });

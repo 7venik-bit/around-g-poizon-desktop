@@ -130,7 +130,8 @@ test("brand workflow clicks the product menus physically and searches English be
   assert.match(main, /route: "EXACT_BRAND_FILTER"/);
   assert.match(main, /async function readSellerExportJobsFreshly/);
   assert.match(workflow, /readSellerExportJobsFreshly\(\)/);
-  assert.match(renderer, /orphanedExportRisk = failureCode === "EXPORT_JOB_NOT_CREATED"/);
+  assert.doesNotMatch(renderer, /orphanedExportRisk/);
+  assert.doesNotMatch(renderer, /작업번호 연결을 확인하지 못해 뒤 브랜드 실행을 중단/);
   assert.match(workflow, /clickSellerDownloadCenterShortcutPhysical\(candidate\.frame\)/);
   assert.match(workflow, /readSellerExportJobs\(\)/);
 });
