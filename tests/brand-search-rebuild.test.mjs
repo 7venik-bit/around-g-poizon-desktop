@@ -119,7 +119,8 @@ test("brand workflow clicks the product menus physically and searches English be
   assert.match(main, /moveWindowsCursorAndClick/);
   assert.match(workflow, /normalizedKey\.length > 3/);
   assert.match(workflow, /tokens\.includes/);
-  assert.match(workflow, /sellerBrandSearchName = brandsMatch\(brandName, "On"\) \? "On Running"/);
+  assert.match(workflow, /sellerBrandSearchName = brandsMatch\(brandName, "On"\)[\s\S]*?preferredSellerBrandSearchName\(sellerBrandMatchKeys\)/);
+  assert.match(workflow, /officialHomepageUrl: input\.officialHomepageUrl/);
   assert.match(workflow, /hasRows && brandMatched && requestedInputConfirmed/);
   assert.doesNotMatch(workflow, /brandMatched \|\| \(alreadySubmitted && requestedInputConfirmed\)/);
   assert.match(workflow, /"PUMA", "Puma", "푸마", "彪马"/);

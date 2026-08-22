@@ -25,6 +25,8 @@ import {
   brandExportLabel,
   brandMismatchMessage,
   brandsMatch,
+  preferredSellerBrandSearchName,
+  sellerBrandAliases,
 } from "./services/brand-integrity.mjs";
 import {
   createPopularSlots,
@@ -5413,7 +5415,18 @@ async function automateSellerBrandExport(input = {}) {
     ["Adidas Originals", "adidas Originals", "아디다스 오리지널스", "阿迪达斯", "三叶草"],
   ];
   const brandKoInput = String(input.brandKo || "").trim();
-  const sellerBrandMatchKeys = [brandName, brandKoInput];
+  const sellerOfficialRegistry = safeOfficialDomainRegistry(
+    store.snapshot().settings.brandCatalog || explorerMetadata().brands
+  );
+  const sellerOfficialRecord = officialDomainRecordForBrand(sellerOfficialRegistry, brandName)
+    || officialDomainRecordForBrand(sellerOfficialRegistry, brandKoInput);
+  const sellerBrandMatchKeys = sellerBrandAliases({
+    brandName,
+    brandKo: brandKoInput,
+    brandUrl: input.brandUrl,
+    officialHomepageUrl: input.officialHomepageUrl || sellerOfficialRecord?.homepageUrl,
+    officialAliases: officialDomainSearchAliases(sellerOfficialRecord),
+  });
   const localizedAliases = sellerBrandAliasGroups.find((aliases) =>
     aliases.some((alias) => brandsMatch(brandName, alias) || brandsMatch(brandKoInput, alias))
   );
@@ -5421,7 +5434,9 @@ async function automateSellerBrandExport(input = {}) {
   if (brandsMatch(brandName, "Jordan")) {
     sellerBrandMatchKeys.push("Jordan", "조던", "乔丹");
   }
-  const sellerBrandSearchName = brandsMatch(brandName, "On") ? "On Running" : brandName;
+  const sellerBrandSearchName = brandsMatch(brandName, "On")
+    ? "On Running"
+    : preferredSellerBrandSearchName(sellerBrandMatchKeys);
   mainWindow?.webContents.send("brand-export:progress", {
     status: "searching-brand-products",
     brandName,
