@@ -1482,4 +1482,15 @@ button,input,select,textarea{font-family:inherit}
 /* Immediate brand-selection feedback without rebuilding the 3,000+ card catalog. */
 .brand-card.selection-feedback{animation:brand-selection-feedback .2s ease-out}
 @keyframes brand-selection-feedback{0%{transform:scale(.97)}100%{transform:scale(1)}}
+/* Strong visual grouping for one Excel product and its domestic-search outcome. */
+.excel-product-row[class*="excel-search-outcome-"] td{border-top:3px solid var(--excel-outcome-border)!important;background:var(--excel-outcome-row)!important}
+.excel-product-row[class*="excel-search-outcome-"] td:first-child{box-shadow:inset 7px 0 0 var(--excel-outcome-border)!important}
+.excel-product-search-detail[class*="excel-search-outcome-"] td{border:3px solid var(--excel-outcome-border)!important;border-top:0!important;border-left-width:7px!important;background:var(--excel-outcome-detail)!important;box-shadow:0 5px 12px #17324d24}
+.excel-product-search-detail[class*="excel-search-outcome-"] .excel-product-search-result-label{border:1px solid var(--excel-outcome-border);background:#fff;font-size:11px;font-weight:800}
+.excel-product-search-detail[class*="excel-search-outcome-"] .excel-product-search-result-label span{background:var(--excel-outcome-border)!important}
+.excel-search-outcome-label{margin-left:auto;padding:4px 9px;border-radius:999px;background:var(--excel-outcome-border);color:#fff;font-size:10px;white-space:nowrap}
+.excel-search-outcome-available{--excel-outcome-border:#059669;--excel-outcome-row:#d8fae9;--excel-outcome-detail:#bff3da}
+.excel-search-outcome-soldout{--excel-outcome-border:#d97706;--excel-outcome-row:#fff0c7;--excel-outcome-detail:#ffe3a3}
+.excel-search-outcome-pending{--excel-outcome-border:#7c3aed;--excel-outcome-row:#eee5ff;--excel-outcome-detail:#dfd0ff}
+.excel-search-outcome-missing,.excel-search-outcome-error{--excel-outcome-border:#dc2626;--excel-outcome-row:#ffe1e1;--excel-outcome-detail:#ffcaca}
 \n.parallel-import-panel{margin-top:10px;padding:10px;border:1px solid #ffb24a;border-radius:12px;background:#fffaf2}.parallel-import-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;color:#8a4b00}.parallel-import-heading small{color:#90683b}.parallel-import-links{max-height:210px;overflow:auto;align-content:start}.parallel-source-link{border-color:#ffb24a!important;background:#fff!important}.parallel-source-link small{color:#b45c00!important;font-weight:800}\n
