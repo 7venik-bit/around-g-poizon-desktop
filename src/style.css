@@ -429,12 +429,48 @@ body .local-state{cursor:pointer}body .local-state.warning,body .local-state.dis
 body .shell>header{
   min-height:68px;
   padding:12px 24px;
+  display:grid;
+  grid-template-columns:auto minmax(440px,1fr) auto;
+  gap:14px;
   align-items:flex-start;
   border:0;
   color:#fff;
   background:var(--ui-navy);
   box-shadow:0 1px 0 #243a60
 }
+.header-status-stack{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:7px;
+  min-width:0;
+}
+.header-status-stack .official-domain-audit,
+.header-status-stack .weekly-site-health,
+.header-status-stack .startup-recovery,
+.header-status-stack .brand-export-folder-setting{
+  min-width:0;
+  margin:0;
+  padding:8px 10px;
+  border-color:#3a557c;
+  border-radius:9px;
+  background:#f8fbff;
+}
+.header-status-stack .official-domain-audit strong,
+.header-status-stack .weekly-site-health strong,
+.header-status-stack .startup-recovery-heading strong{font-size:11px}
+.header-status-stack .official-domain-audit span,
+.header-status-stack .weekly-site-health span,
+.header-status-stack .weekly-site-health small,
+.header-status-stack .startup-recovery p,
+.header-status-stack .brand-export-folder-path{
+  font-size:9px;
+  line-height:1.3;
+}
+.header-status-stack button{padding:6px 8px;border-radius:7px;font-size:9px;white-space:nowrap}
+.header-status-stack .startup-recovery p{margin:4px 0 6px}
+.header-status-stack .startup-recovery-progress{height:6px}
+.header-status-stack .brand-export-folder-setting{align-items:center}
+.header-status-stack .brand-export-folder-path{padding:5px 7px}
 .workspace-title{display:flex;align-items:center;gap:16px;min-height:42px}
 .workspace-title{gap:0}
 .workspace-title>div{display:flex;flex-direction:column;gap:1px}
@@ -733,6 +769,8 @@ body.excel-preview-active{overflow:hidden}
   body main{padding:18px}
   .workspace-title small{display:none}
   .header-actions{flex-wrap:wrap;justify-content:flex-end}
+  body .shell>header{grid-template-columns:auto minmax(320px,1fr) auto}
+  .header-status-stack{grid-template-columns:1fr}
   body .explorer-mode{min-width:132px;padding-inline:12px}
 }
 @media(max-width:760px){
@@ -742,9 +780,10 @@ body.excel-preview-active{overflow:hidden}
   body .brand,.local-state{display:none}
   body .nav{padding:9px;text-align:center;font-size:10px}
   body .nav::before{display:none}
-  body .shell>header{position:static;padding:10px 12px;flex-wrap:wrap}
+  body .shell>header{position:static;padding:10px 12px;display:flex;flex-wrap:wrap}
   .workspace-title{display:none}
   .header-actions{width:100%;justify-content:flex-end}
+  .header-status-stack{width:100%;grid-template-columns:1fr}
   body main{padding:12px}
   body .explorer-modes{width:100%}
   body .explorer-mode{min-width:0;flex:1;padding:8px 6px}
