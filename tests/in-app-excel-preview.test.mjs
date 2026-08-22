@@ -287,11 +287,14 @@ test("네이버 공식 브랜드스토어는 공식브랜드 필터 선택을 �
 });
 
 test("네이버 백화점과 아울렛은 홈 화면 탭을 실제 마우스 이벤트로 선택한다", () => {
+  assert.match(mainSource, /async function submitNaverShoppingSearch/);
+  assert.match(mainSource, /insertText\(exactQuery\)/);
   assert.match(mainSource, /async function clickNaverShoppingChannel/);
   assert.match(mainSource, /sendInputEvent\(\{ type: "mouseDown"/);
   assert.match(mainSource, /naverChannelClickRequired/);
   assert.match(mainSource, /clickNaverShoppingChannel\(searchWindow, source\.store\)/);
   assert.match(mainSource, /if \(!channelSelected\) return null/);
+  assert.match(mainSource, /submitNaverShoppingSearch\(searchWindow, searchQuery\)[\s\S]*clickNaverShoppingChannel\(searchWindow, source\.store\)/);
 });
 
 test("상품 상세페이지는 사이즈 옵션을 열고 출력값을 수집한다", () => {
