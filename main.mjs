@@ -1049,24 +1049,102 @@ async function ensureNaverOfficialBrandFilter(searchWindow) {
         const input = element.matches('input[type="checkbox"]') ? element : element.querySelector?.('input[type="checkbox"]');
         return !(input?.checked || element.getAttribute("aria-checked") === "true");
       });
-      if (target) {
-        const input = target.matches('input[type="checkbox"]') ? target : target.querySelector?.('input[type="checkbox"]');
-        (input || target).click();
-      }
       const checked = [...document.querySelectorAll('input[type="checkbox"],[role="checkbox"]')].some((element) => {
         const owner = element.closest("label,li,div") || element;
         return compact([owner.textContent, element.getAttribute("aria-label")].join(" ")).includes("공식브랜드")
           && (element.checked || element.getAttribute("aria-checked") === "true");
       });
-      return { selected: selectedInUrl || checked, found: candidates.length > 0 };
+      const clickTarget = target?.matches('input[type="checkbox"]') ? target : target?.querySelector?.('input[type="checkbox"]') || target;
+      const rect = clickTarget?.getBoundingClientRect?.();
+      return {
+        selected: selectedInUrl || checked,
+        found: candidates.length > 0,
+        target: rect && rect.width > 0 && rect.height > 0
+          ? { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } : null,
+      };
     })()`, true).catch(() => ({ selected: false, found: false }));
     if (state?.selected) {
       await wait(1_500);
       return true;
     }
+    if (state?.target) {
+      searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: state.target.x, y: state.target.y });
+      searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: state.target.x, y: state.target.y, button: "left", clickCount: 1 });
+      searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: state.target.x, y: state.target.y, button: "left", clickCount: 1 });
+    }
     await wait(800);
   }
   return false;
+}
+
+async function clickNaverShoppingChannel(searchWindow, store) {
+  const targetLabel = store === "네이버 백화점" ? "백화점"
+    : store === "네이버 아울렛" ? "아울렛" : "";
+  const expectedPath = store === "네이버 백화점" ? "/window/department"
+    : store === "네이버 아울렛" ? "/window/outlet" : "";
+  if (!targetLabel) return true;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const currentUrl = String(searchWindow.webContents.getURL() || "");
+    if (currentUrl.includes(expectedPath)) return true;
+    const target = await searchWindow.webContents.executeJavaScript(`(() => {
+      const label = ${JSON.stringify(targetLabel)};
+      const compact = (value) => String(value || "").replace(/\\s+/g, "");
+      const visible = (element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      const candidates = [...document.querySelectorAll('a,button,[role="tab"],[role="button"]')]
+        .filter(visible)
+        .filter((element) => compact(element.textContent) === compact(label));
+      const element = candidates[0];
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+    })()`, true).catch(() => null);
+    if (!target) {
+      await wait(700);
+      continue;
+    }
+    searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
+    searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
+    searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
+    await wait(1_500);
+  }
+  return String(searchWindow.webContents.getURL() || "").includes(expectedPath);
+}
+
+async function openRenderedSizeOptions(searchWindow) {
+  if (!searchWindow || searchWindow.isDestroyed()) return false;
+  let clicked = false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const target = await searchWindow.webContents.executeJavaScript(`(() => {
+      const visible = (element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      const controls = [...document.querySelectorAll('select,button,[role="button"],[role="combobox"],[aria-haspopup="listbox"]')]
+        .filter(visible)
+        .filter((element) => {
+          const label = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("placeholder"), element.className].join(" ");
+          return /사이즈|size|옵션|option|선택/i.test(label)
+            && !/구매|장바구니|결제|buy|cart/i.test(label);
+        });
+      const element = controls[${attempt}] || controls[0];
+      if (!element) return null;
+      element.scrollIntoView({ block: "center", inline: "nearest" });
+      const rect = element.getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+    })()`, true).catch(() => null);
+    if (!target) break;
+    searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
+    searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
+    searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
+    clicked = true;
+    await wait(600);
+  }
+  return clicked;
 }
 
 async function openOfficialMallInternalSearch(homepageUrl, query) {
@@ -1125,10 +1203,16 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       },
     });
     searchWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
+    const naverChannelClickRequired = ["네이버 백화점", "네이버 아울렛"].includes(String(source.store || ""));
+    const initialUrl = naverChannelClickRequired ? "https://shopping.naver.com/home" : url;
     await Promise.race([
-      searchWindow.loadURL(url),
+      searchWindow.loadURL(initialUrl),
       new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 30_000)),
     ]);
+    if (naverChannelClickRequired) {
+      const channelSelected = await clickNaverShoppingChannel(searchWindow, source.store);
+      if (!channelSelected) return null;
+    }
     if (interactiveSiteSearch) {
       const searchQuery = String(source.searchQuery || articleNumber || title || "").trim();
       const submitted = await executeOfficialMallSearch(searchWindow, String(source.homepageUrl || url), searchQuery);
@@ -1235,7 +1319,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           : requestedStore.includes("아울렛") ? ["아울렛"] : [];
       let selectedChannelCount = null;
       for (const label of channelLabels) {
-        const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const escaped = label.replace(/[.*+?^{}()|[\]\\$]/g, "\\$&");
         const match = fullPageText.match(new RegExp(escaped + "\\s*([\\d,]+)\\s*개", "i"));
         if (!match) continue;
         selectedChannelCount = Math.max(selectedChannelCount ?? 0, Number(match[1].replace(/,/g, "")) || 0);
@@ -1268,6 +1352,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             new Promise((_, reject) => setTimeout(() => reject(new Error("SSG_DETAIL_TIMEOUT")), 15_000)),
           ]);
           await wait(1_500);
+          await openRenderedSizeOptions(searchWindow);
           detailText = await searchWindow.webContents.executeJavaScript(
             `String(document.body?.innerText || "").slice(0, 60000)`,
             true,
@@ -1284,7 +1369,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
               || /disabled|sold.?out|품절|재고.?없음/i.test([element.className, element.textContent].join(" "));
             const optionNodes = [
               ...document.querySelectorAll("select option"),
-              ...document.querySelectorAll('[class*="size" i] button,[class*="option" i] button,[data-option],[data-size],[role="option"]'),
+              ...document.querySelectorAll('[class*="size" i] button,[class*="option" i] button,[data-option],[data-size],[role="option"],[role="listbox"] li,[class*="dropdown" i] li'),
             ];
             const options = optionNodes.slice(0, 160).map((element) => ({
               label: String(element.getAttribute("data-size") || element.getAttribute("data-option") || element.textContent || "").replace(/\\s+/g, " ").trim(),
