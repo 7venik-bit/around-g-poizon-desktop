@@ -665,6 +665,44 @@ test("푸마 392290-03 아울렛 화면의 국내 카드 5개를 그대로 표�
   assert.equal(result.absenceConfirmed, false);
 });
 
+test("푸마 공식브랜드 0개 화면의 아울렛 추천 카드는 공식 상품으로 세지 않는다", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    selectedChannelEmpty: true,
+    selectedChannelCount: 0,
+    pageText: "찾으시는 상품과 유사한 상품도 함께 노출합니다. 상품이 없습니다.",
+    productCards: [{
+      productUrl: "https://shopping.naver.com/window-products/outlet/13001191641",
+      title: "푸마 케이븐 2.0 392290-03",
+      text: "ABC마트 아울렛",
+    }],
+  }), "네이버 공식 브랜드스토어", "392290-03", "푸마", "푸마 케이븐 2.0 화이트 블랙");
+
+  assert.equal(result.count, 0);
+  assert.equal(result.absenceConfirmed, true);
+  assert.deepEqual(result.products, []);
+});
+
+test("네이버 백화점과 아울렛은 다른 채널 상품 링크를 섞지 않는다", () => {
+  const cards = [{
+    productUrl: "https://shopping.naver.com/window-products/outlet/13001191641",
+    title: "푸마 케이븐 2.0 392290-03",
+    text: "푸마 아울렛 상품",
+  }];
+  const department = analyzeRenderedChannelProducts(JSON.stringify({
+    selectedChannelCount: 1,
+    pageText: "전체 1개 백화점 1개",
+    productCards: cards,
+  }), "네이버 백화점", "392290-03", "푸마", "푸마 케이븐 2.0 화이트 블랙");
+  const outlet = analyzeRenderedChannelProducts(JSON.stringify({
+    selectedChannelCount: 1,
+    pageText: "전체 1개 아울렛 1개",
+    productCards: cards,
+  }), "네이버 아울렛", "392290-03", "푸마", "푸마 케이븐 2.0 화이트 블랙");
+
+  assert.equal(department.products.length, 0);
+  assert.equal(outlet.products.length, 1);
+});
+
 test("네이버 window-products 상품 주소를 화면 수집 대상으로 인식한다", async () => {
   const mainSource = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../main.mjs", import.meta.url), "utf8"));
   assert.match(mainSource, /window-products/);

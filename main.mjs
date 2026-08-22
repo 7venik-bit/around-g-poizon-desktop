@@ -1225,9 +1225,23 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         seen.add(productUrl);
         productCards.push({ productUrl, text, markup, imageUrl, imageLinkedToProduct, title, price, originalPrice });
       }
-      const pageText = String(document.body?.innerText || "").slice(0, 20000);
+      const fullPageText = String(document.body?.innerText || "");
+      const pageText = fullPageText.slice(0, 120000);
+      const selectedChannelEmpty = /검색된\s*상품이\s*없습니다|검색\s*결과가\s*없습니다|상품이\s*없습니다|검색결과\s*없음/i.test(fullPageText);
+      const requestedStore = ${JSON.stringify(String(source.store || ""))};
+      const channelLabels = requestedStore.includes("공식 브랜드스토어")
+        ? ["브랜드직영몰", "공식브랜드", "브랜드스토어"]
+        : requestedStore.includes("백화점") ? ["백화점"]
+          : requestedStore.includes("아울렛") ? ["아울렛"] : [];
+      let selectedChannelCount = null;
+      for (const label of channelLabels) {
+        const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const match = fullPageText.match(new RegExp(escaped + "\\s*([\\d,]+)\\s*개", "i"));
+        if (!match) continue;
+        selectedChannelCount = Math.max(selectedChannelCount ?? 0, Number(match[1].replace(/,/g, "")) || 0);
+      }
       const pageBlocked = /captcha|보안\s*확인|자동\s*입력|로봇|접속.{0,12}(?:제한|차단)|서비스.{0,12}(?:제한|지연)|비정상적인\s*접근/i.test(pageText);
-      return JSON.stringify({ productCards, pageBlocked, pageText });
+      return JSON.stringify({ productCards, pageBlocked, pageText, selectedChannelEmpty, selectedChannelCount });
     })()`, true);
     try {
       const parsedContent = JSON.parse(content);
@@ -1315,7 +1329,14 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           ...stockEvidence,
         });
       }
-      detailed = { ...analyzed, resolvedSearchUrl, count: products.length, products };
+      const preserveNaverChannelCount = /^네이버\s/.test(String(source.store || ""))
+        && Number.isFinite(analyzed?.channelCount);
+      detailed = {
+        ...analyzed,
+        resolvedSearchUrl,
+        count: preserveNaverChannelCount ? Number(analyzed.channelCount) : products.length,
+        products,
+      };
     }
     if (source.store !== "브랜드 공식몰" || !Array.isArray(detailed?.products)) return detailed;
     const officialPageUrl = String(source.homepageUrl || source.officialProductUrl || source.searchUrl || "");

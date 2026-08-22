@@ -360,12 +360,20 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
       if (!Array.isArray(rendered?.productCards)) throw new Error("RENDERED_PRODUCT_CARDS_MISSING");
       const cards = rendered.productCards || [];
       const pageText = String(rendered.pageText || "");
+      const selectedChannelEmpty = rendered.selectedChannelEmpty === true;
       const scopedLabels = String(store || "").includes("공식 브랜드스토어")
         ? ["브랜드직영몰", "공식브랜드", "브랜드스토어"]
         : String(store || "").includes("백화점") ? ["백화점"]
           : String(store || "").includes("아울렛") ? ["아울렛"] : [];
       let scopedPositiveCount = 0;
       let scopedCountFound = false;
+      if (Number.isFinite(rendered.selectedChannelCount)) {
+        scopedCountFound = true;
+        scopedPositiveCount = Math.max(0, Number(rendered.selectedChannelCount));
+        if (scopedPositiveCount === 0) {
+          return { count: 0, channelCount: 0, products: [], presenceConfirmed: false, absenceConfirmed: true };
+        }
+      }
       for (const label of scopedLabels) {
         const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const scoped = pageText.match(new RegExp(`${escaped}\\s*([\\d,]+)\\s*개`, "i"));
@@ -380,7 +388,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         }
         scopedPositiveCount = Math.max(scopedPositiveCount, scopedCount);
       }
-      if (/검색된\s*상품이\s*없습니다|검색\s*결과가\s*없습니다|상품이\s*없습니다|검색결과\s*없음/i.test(pageText)) {
+      if (selectedChannelEmpty || /검색된\s*상품이\s*없습니다|검색\s*결과가\s*없습니다|상품이\s*없습니다|검색결과\s*없음/i.test(pageText)) {
         return { count: 0, products: [], absenceConfirmed: true };
       }
       if (!articleCode) return { count: 0, products: [], absenceConfirmed: false };
@@ -400,6 +408,14 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           ? `${titleText} ${cardBodyText} ${String(card?.markup || "")} ${productUrl}`.trim()
           : titleText || cardBodyText;
         const rawCardText = `${titleText} ${cardBodyText}`.trim();
+        // Naver Fashion Town can append recommendations from another channel
+        // below an empty selected result. Never count those cards as the
+        // official-store, department-store, or outlet result being checked.
+        const naverStore = String(store || "");
+        if (naverStore === "네이버 아울렛" && /\/window-products\/department\//i.test(productUrl)) continue;
+        if (naverStore === "네이버 백화점" && /\/window-products\/outlet\//i.test(productUrl)) continue;
+        if (naverStore === "네이버 공식 브랜드스토어"
+          && /\/window-products\/(?:outlet|department)\//i.test(productUrl)) continue;
         // 국내 재고 검색에는 한국에서 바로 구매 가능한 상품만 남긴다.
         // 검색 경로가 네이버 공식스토어/백화점이어도 상품 카드가 해외직구,
         // 구매대행 또는 해외배송이면 국내 판매처로 계산하지 않는다.
