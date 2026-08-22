@@ -276,6 +276,15 @@ test("국내 검색 결과 상태를 강한 전용 색상으로 완전히 구분
   assert.match(cssSource, /border-left-width:7px!important/);
 });
 
+test("네이버 공식 브랜드스토어는 공식브랜드 필터 선택을 확인한 뒤 결과를 읽는다", () => {
+  assert.match(mainSource, /async function ensureNaverOfficialBrandFilter/);
+  assert.match(mainSource, /mallTypes/);
+  assert.match(mainSource, /OFFICIAL_BRAND/);
+  assert.match(mainSource, /includes\("공식브랜드"\)/);
+  assert.match(mainSource, /source\.store === "네이버 공식 브랜드스토어"/);
+  assert.match(mainSource, /if \(!officialBrandSelected\) return null/);
+});
+
 test("Excel preview replaces the file list and restores its scroll position", () => {
   assert.match(htmlSource, /id="excel-preview-close"[^>]*>← 파일 목록으로</);
   assert.match(rendererSource, /let excelFilesListScrollPosition = 0/);

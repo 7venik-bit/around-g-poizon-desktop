@@ -1036,6 +1036,39 @@ async function executeOfficialMallSearch(searchWindow, homepageUrl, query) {
   return false;
 }
 
+async function ensureNaverOfficialBrandFilter(searchWindow) {
+  if (!searchWindow || searchWindow.isDestroyed()) return false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const state = await searchWindow.webContents.executeJavaScript(`(() => {
+      const selectedInUrl = new URL(location.href).searchParams.getAll("mallTypes")
+        .some((value) => String(value).includes("OFFICIAL_BRAND"));
+      const compact = (value) => String(value || "").replace(/\\s+/g, "");
+      const candidates = [...document.querySelectorAll('label,input[type="checkbox"],[role="checkbox"],button,a')]
+        .filter((element) => compact([element.textContent, element.getAttribute("aria-label"), element.getAttribute("title")].join(" ")).includes("공식브랜드"));
+      const target = candidates.find((element) => {
+        const input = element.matches('input[type="checkbox"]') ? element : element.querySelector?.('input[type="checkbox"]');
+        return !(input?.checked || element.getAttribute("aria-checked") === "true");
+      });
+      if (target) {
+        const input = target.matches('input[type="checkbox"]') ? target : target.querySelector?.('input[type="checkbox"]');
+        (input || target).click();
+      }
+      const checked = [...document.querySelectorAll('input[type="checkbox"],[role="checkbox"]')].some((element) => {
+        const owner = element.closest("label,li,div") || element;
+        return compact([owner.textContent, element.getAttribute("aria-label")].join(" ")).includes("공식브랜드")
+          && (element.checked || element.getAttribute("aria-checked") === "true");
+      });
+      return { selected: selectedInUrl || checked, found: candidates.length > 0 };
+    })()`, true).catch(() => ({ selected: false, found: false }));
+    if (state?.selected) {
+      await wait(1_500);
+      return true;
+    }
+    await wait(800);
+  }
+  return false;
+}
+
 async function openOfficialMallInternalSearch(homepageUrl, query) {
   const homepage = new URL(String(homepageUrl || ""));
   if (!["https:", "http:"].includes(homepage.protocol)) throw new Error("INVALID_URL");
@@ -1101,6 +1134,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const submitted = await executeOfficialMallSearch(searchWindow, String(source.homepageUrl || url), searchQuery);
       if (!submitted || !searchQuery) return null;
       await wait(2_000);
+    }
+    if (source.store === "네이버 공식 브랜드스토어") {
+      const officialBrandSelected = await ensureNaverOfficialBrandFilter(searchWindow);
+      if (!officialBrandSelected) return null;
     }
     // Dynamic commerce pages render and lazy-load after navigation. Give them
     // time to settle and scroll enough to materialize the first result cards.
