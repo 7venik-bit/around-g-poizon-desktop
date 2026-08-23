@@ -24,6 +24,7 @@ import {
   officialBrandUsesInternalSearch,
   parseKolonSearch,
   parseMusinsaSearch,
+  parseNaverFashionTownChannelCounts,
   parseSsgSearch,
   queryDomesticProducts,
   resolveSsgProductClassification,
@@ -33,6 +34,21 @@ import {
 test("POIZON category suffix is removed before a product code is typed", () => {
   assert.equal(sanitizeDomesticProductCode("SR123UPS11-服"), "SR123UPS11");
   assert.equal(sanitizeDomesticProductCode(" 3ASXCA12N-50WHS "), "3ASXCA12N-50WHS");
+});
+
+test("네이버 패션타운은 상품 클릭 전에 세 채널 숫자를 모두 인식한다", () => {
+  assert.deepEqual(parseNaverFashionTownChannelCounts([
+    "전체\n1개",
+    "브랜드직영몰\n1개",
+    "백화점\n0개",
+    "아울렛\n0개",
+    "소호&스트릿\n0개",
+  ]), {
+    "네이버 공식 브랜드스토어": 1,
+    "네이버 백화점": 0,
+    "네이버 아울렛": 0,
+  });
+  assert.equal(parseNaverFashionTownChannelCounts(["브랜드직영몰 1개", "백화점 0개"]), null);
 });
 
 test("해외직구·구매대행·해외배송 상품은 국내 결과에서 제외한다", () => {
@@ -605,13 +621,37 @@ test("네이버 브랜드직영몰 1개와 같은 브랜드 상품 카드 1개�
     productCards: [{
       productUrl: "https://shopping.naver.com/window-products/brandfashion/124925333777",
       title: "[MLB] 청키 라이너 NY (Off White)",
-      text: "MLB 공식몰 청키 라이너 NY (Off White)",
+      text: "MLB 브랜드직영몰 청키 라이너 NY (Off White)",
       imageUrl: "https://example.com/mlb-shoe.jpg",
     }],
     pageText: "전체 2개 브랜드직영몰 1개 백화점 1개 아울렛 0개",
   }), "네이버 공식 브랜드스토어", "3ASXCA12N-50WHS", "MLB", "MLB 차키 내피 합성 가죽 로우탑 스니커즈");
   assert.equal(result.count, 1);
   assert.equal(result.products[0].articleNumber, "3ASXCA12N-50WHS");
+});
+
+test("네이버 공식 상품은 상단 1개, 하단 카드 1개, 브랜드직영몰 문구가 모두 필요하다", () => {
+  const base = {
+    pageText: "전체 1개 브랜드직영몰 1개 백화점 0개 아울렛 0개",
+    selectedChannelCount: 1,
+    productCards: [{
+      productUrl: "https://shopping.naver.com/window-products/brandfashion/124925333777",
+      title: "[데상트] 흄태준 착용 상품",
+      text: "데상트 브랜드직영몰 흄태준 착용 상품",
+      officialBrandStoreLabelMatched: true,
+    }],
+  };
+  const verified = analyzeRenderedChannelProducts(
+    JSON.stringify(base), "네이버 공식 브랜드스토어", "SR123UPS11", "데상트", "데상트 흄태준 착용 상품",
+  );
+  assert.equal(verified.count, 1);
+  assert.equal(verified.products.length, 1);
+
+  const missingLabel = analyzeRenderedChannelProducts(
+    JSON.stringify({ ...base, productCards: [{ ...base.productCards[0], text: "데상트 흄태준 착용 상품", officialBrandStoreLabelMatched: false }] }),
+    "네이버 공식 브랜드스토어", "SR123UPS11", "데상트", "데상트 흄태준 착용 상품",
+  );
+  assert.equal(missingLabel.products.length, 0);
 });
 
 test("네이버 백화점과 아울렛도 채널 1개와 같은 브랜드 카드 1개를 인정한다", () => {

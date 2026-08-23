@@ -145,7 +145,7 @@ test("official-store verification supports every registered URL family and embed
   assert.match(mainSource, /productDetail\\\\\.action/);
   assert.match(mainSource, /matchesExpected\(link\.href\)/);
   assert.match(mainSource, /matchesExpected\(link\.outerHTML\)/);
-  assert.match(mainSource, /productCards\.push\(\{ productUrl, text, markup, imageUrl, imageLinkedToProduct, title, price, originalPrice \}\)/);
+  assert.match(mainSource, /productCards\.push\(\{[\s\S]{0,240}productUrl, text, markup, imageUrl, imageLinkedToProduct, title, price, originalPrice,[\s\S]{0,120}officialBrandStoreLabelMatched/);
   assert.match(mainSource, /line-through/);
   assert.match(mainSource, /!candidate\.struck/);
   assert.match(mainSource, /right\.score - left\.score \|\| left\.amount - right\.amount/);
@@ -315,6 +315,19 @@ test("네이버 백화점과 아울렛은 홈 화면 탭을 실제 마우스 이
   assert.match(mainSource, /clickNaverShoppingChannel\(searchWindow, source\.store\)/);
   assert.match(mainSource, /if \(!channelSelected\) return renderedSearchFailure\("channel_selection_failed"/);
   assert.match(mainSource, /submitNaverShoppingSearch\(searchWindow, searchQuery\)[\s\S]*clickNaverShoppingChannel\(searchWindow, source\.store\)/);
+});
+
+test("네이버는 결과 클릭 전에 패션타운 채널 숫자 3개를 먼저 확정한다", () => {
+  assert.match(mainSource, /async function readNaverFashionTownChannelCounts/);
+  assert.match(mainSource, /parseNaverFashionTownChannelCounts\(labels\)/);
+  assert.match(
+    mainSource,
+    /naverChannelCounts = await readNaverFashionTownChannelCounts\(searchWindow\)[\s\S]*if \(currentChannelCount === 0\)[\s\S]*clickNaverShoppingChannel\(searchWindow, source\.store\)/,
+  );
+  assert.match(mainSource, /if \(naverPortalSource\) \{\s*await wait\(1_500\);\s*\} else \{/);
+  assert.match(mainSource, /recognizedChannelCounts = .*naverChannelCounts/);
+  assert.match(mainSource, /officialResultCards\.length !== 1 \|\| labeledOfficialCards\.length !== 1/);
+  assert.match(mainSource, /official_brand_card_evidence_mismatch/);
 });
 
 test("상품 상세페이지는 사이즈 옵션을 열고 출력값을 수집한다", () => {

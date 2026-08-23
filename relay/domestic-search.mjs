@@ -353,6 +353,29 @@ export function isPlatformShoppingProductUrl(value = "") {
   return false;
 }
 
+export function parseNaverFashionTownChannelCounts(labels = []) {
+  const channelLabels = {
+    "네이버 공식 브랜드스토어": ["브랜드직영몰", "공식브랜드", "브랜드스토어"],
+    "네이버 백화점": ["백화점"],
+    "네이버 아울렛": ["아울렛"],
+  };
+  const compactLabels = (Array.isArray(labels) ? labels : [labels])
+    .map((label) => String(label || "").replace(/\s+/g, ""));
+  const counts = {};
+  for (const [store, aliases] of Object.entries(channelLabels)) {
+    for (const alias of aliases) {
+      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const match = compactLabels
+        .map((label) => label.match(new RegExp(`^${escaped}([\\d,]+)개$`, "i")))
+        .find(Boolean);
+      if (!match) continue;
+      counts[store] = Number(match[1].replace(/,/g, ""));
+      break;
+    }
+  }
+  return Object.keys(channelLabels).every((store) => Number.isFinite(counts[store])) ? counts : null;
+}
+
 export function analyzeRenderedChannelProducts(content, store = "", articleNumber = "", brand = "", expectedTitle = "") {
   const source = String(content || "");
   const articleCode = sanitizeDomesticQuery(articleNumber).trim();
@@ -418,6 +441,9 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         if (naverStore === "네이버 백화점" && /\/window-products\/outlet\//i.test(productUrl)) continue;
         if (naverStore === "네이버 공식 브랜드스토어"
           && /\/window-products\/(?:outlet|department)\//i.test(productUrl)) continue;
+        if (naverStore === "네이버 공식 브랜드스토어"
+          && card?.officialBrandStoreLabelMatched !== true
+          && !/브랜드\s*직영몰|공식\s*브랜드|브랜드\s*스토어/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
         // 국내 재고 검색에는 한국에서 바로 구매 가능한 상품만 남긴다.
         // 검색 경로가 네이버 공식스토어/백화점이어도 상품 카드가 해외직구,
         // 구매대행 또는 해외배송이면 국내 판매처로 계산하지 않는다.
