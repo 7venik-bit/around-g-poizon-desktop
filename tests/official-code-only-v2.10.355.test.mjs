@@ -6,7 +6,7 @@ const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 const relay = await readFile(new URL("../relay/domestic-search.mjs", import.meta.url), "utf8");
 
 test("every official mall tries the exact product code first", () => {
-  assert.match(relay, /sanitizeDomesticQuery\(articleNumber \|\| productCode \|\| preferredQuery\)/);
+  assert.match(relay, /sanitizeDomesticProductCode\(articleNumber \|\| productCode \|\| preferredQuery\)/);
   assert.match(relay, /const orderedProductQueries = \[\s*exactProductCode,\s*exactProductTitle/s);
   assert.match(relay, /searchAttempts: queryCandidates\.map/);
 });

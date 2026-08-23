@@ -27,7 +27,13 @@ import {
   parseSsgSearch,
   queryDomesticProducts,
   resolveSsgProductClassification,
+  sanitizeDomesticProductCode,
 } from "../relay/domestic-search.mjs";
+
+test("POIZON category suffix is removed before a product code is typed", () => {
+  assert.equal(sanitizeDomesticProductCode("SR123UPS11-服"), "SR123UPS11");
+  assert.equal(sanitizeDomesticProductCode(" 3ASXCA12N-50WHS "), "3ASXCA12N-50WHS");
+});
 
 test("해외직구·구매대행·해외배송 상품은 국내 결과에서 제외한다", () => {
   for (const label of ["해외직구", "해외 구매대행", "구매 대행", "해외배송", "해외배송비 30,000원", "international shipping"]) {

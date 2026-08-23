@@ -125,6 +125,15 @@ export function sanitizeDomesticQuery(value) {
     .trim();
 }
 
+export function sanitizeDomesticProductCode(value) {
+  return sanitizeDomesticQuery(value)
+    // POIZON Excel rows can append a Chinese category marker to the model
+    // number (for example `SR123UPS11-服`).  It is presentation metadata, not
+    // part of the model code that a person enters in Naver Shopping.
+    .replace(/\s*[-_/]\s*(?:服饰|配饰|服|鞋|包|帽)\s*$/u, "")
+    .trim();
+}
+
 const naverSearch = (query) => {
   const cleaned = sanitizeDomesticQuery(query);
   return `https://search.naver.com/search.naver?where=shopping&query=${encodeURIComponent(cleaned)}`;
@@ -791,7 +800,7 @@ export async function queryDomesticProducts({
   // A verified article number is the strongest product identity. Do not append
   // POIZON's material/category description to portal searches (for example
   // "합성 가죽, 인조가죽 로우탑...") because it dilutes the exact model query.
-  const exactProductCode = sanitizeDomesticQuery(articleNumber || productCode || "");
+  const exactProductCode = sanitizeDomesticProductCode(articleNumber || productCode || "");
   const exactProductTitle = sanitizeDomesticQuery(title || "");
   // Every store uses the same operator-defined fallback order. A later query
   // is submitted only after the earlier query produced no exact product.
@@ -884,7 +893,7 @@ export async function queryDomesticProducts({
         officialProductUrl,
         interactiveSearch: Boolean(source.fashionTown || source.retailerDiscovery || interactiveOfficialSearch),
         searchQuery: interactiveOfficialSearch || source.fashionTown
-          ? sanitizeDomesticQuery(articleNumber || productCode || preferredQuery)
+          ? sanitizeDomesticProductCode(articleNumber || productCode || preferredQuery)
           : source.retailerDiscovery
             ? internalPortalSearchQuery(brand || title, preferredQuery) : "",
         searchAttempts: queryCandidates.map((candidate) => ({
