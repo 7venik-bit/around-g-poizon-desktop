@@ -30,7 +30,7 @@ test("unknown stock is not displayed as sold out", () => {
 });
 
 test("official mall submits a product query once without homepage reload retries", () => {
-  const execution = main.match(/async function executeOfficialMallSearch[\s\S]*?\n}\n\nfunction renderedSearchFailure/)?.[0] || "";
+  const execution = main.match(/async function executeOfficialMallSearch[\s\S]*?\r?\n}\r?\n\r?\nfunction renderedSearchFailure/)?.[0] || "";
   assert.match(execution, /const submitted = await submitOfficialMallSearch/);
   assert.doesNotMatch(execution, /for \(let attempt/);
   assert.doesNotMatch(execution, /loadURL\(homepageUrl\)/);
