@@ -25,6 +25,8 @@ import {
   brandExportLabel,
   brandMismatchMessage,
   brandsMatch,
+  preferredSellerBrandSearchName,
+  sellerBrandAliases,
 } from "./services/brand-integrity.mjs";
 import {
   createPopularSlots,
@@ -1034,6 +1036,181 @@ async function executeOfficialMallSearch(searchWindow, homepageUrl, query) {
   return false;
 }
 
+async function enterNaverFashionTown(searchWindow, targetUrl = "https://shopping.naver.com/window/fashion-group") {
+  if (!searchWindow || searchWindow.isDestroyed()) return false;
+  let clicked = false;
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    if (clicked) {
+      const currentUrl = String(searchWindow.webContents.getURL() || "");
+      if (/shopping\.naver\.com\/window\/fashion-group(?:[/?#]|$)/i.test(currentUrl)) return true;
+      await wait(700);
+      continue;
+    }
+    const state = await searchWindow.webContents.executeJavaScript(`(() => {
+      const visible = (element) => {
+        if (!element) return false;
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      const current = String(location.href || "");
+      if (/shopping\.naver\.com\/window\/fashion-group(?:[/?#]|$)/i.test(current)) {
+        return { arrived: true, clicked: false, url: current };
+      }
+      const compact = (value) => String(value || "").replace(/\s+/g, "").trim();
+      const candidates = [...document.querySelectorAll('a[href],button,[role="button"],[role="link"]')];
+      const target = candidates.find((element) => visible(element)
+        && /\/window\/fashion-group(?:[/?#]|$)/i.test(String(element.href || element.getAttribute("href") || "")))
+        || candidates.find((element) => visible(element)
+          && /^패션타운$/i.test(compact([
+            element.textContent,
+            element.getAttribute("aria-label"),
+            element.getAttribute("title"),
+          ].join(" "))));
+      if (!target) return { arrived: false, clicked: false, url: current };
+      target.scrollIntoView({ block: "center", inline: "center" });
+      target.focus?.();
+      for (const type of ["mousedown", "mouseup"]) {
+        target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, button: 0 }));
+      }
+      target.click();
+      return { arrived: false, clicked: true, url: current };
+    })()`, true).catch(() => ({ arrived: false, clicked: false, url: "" }));
+    clicked = clicked || state?.clicked === true;
+    if (clicked && state?.arrived === true) return true;
+    await wait(700);
+    const currentUrl = String(searchWindow.webContents.getURL() || "");
+    if (clicked && /shopping\.naver\.com\/window\/fashion-group(?:[/?#]|$)/i.test(currentUrl)) return true;
+  }
+  // This route is intentionally click-only. Directly loading targetUrl would
+  // hide a broken Fashion Town entry action behind a page transition.
+  return clicked && String(searchWindow.webContents.getURL() || "").startsWith(String(targetUrl || ""));
+}
+
+async function naverFashionTownSearchWasExecuted(searchWindow, query, previousUrl = "") {
+  if (!searchWindow || searchWindow.isDestroyed()) return false;
+  const state = await searchWindow.webContents.executeJavaScript(`(() => {
+    const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
+    const expected = compact(${JSON.stringify(String(query || ""))});
+    const url = String(location.href || "");
+    const bodyText = String(document.body?.innerText || "").slice(0, 40000);
+    const resultLinks = [...document.querySelectorAll('a[href*="window-products"],a[href*="/products/"]')];
+    const resultMatched = resultLinks.some((link) => compact([
+      link.href,
+      link.textContent,
+      link.closest('li,article,div')?.innerText,
+    ].join(" ")).includes(expected));
+    const noResult = /검색\s*결과가\s*없|상품을\s*찾을\s*수\s*없|일치하는\s*상품이\s*없|0\s*개/.test(bodyText);
+    return { url, resultMatched, noResult, bodyMatched: expected.length >= 4 && compact(bodyText).includes(expected) };
+  })()`, true).catch(() => null);
+  if (!state) return false;
+  let queryInUrl = false;
+  try {
+    queryInUrl = decodeURIComponent(state.url).replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase()
+      .includes(String(query || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase());
+  } catch {}
+  const movedToResults = Boolean(state.url && state.url !== previousUrl && /\/search(?:[/?#]|$)/i.test(state.url));
+  // Merely seeing the value in the input is not success. Naver must either
+  // navigate to a query-specific result route or render matching/no-result evidence.
+  return Boolean((movedToResults && queryInUrl) || state.resultMatched || (state.noResult && state.bodyMatched));
+}
+
+async function executeNaverFashionTownSearch(searchWindow, query) {
+  const exactCode = String(query || "").trim();
+  if (!exactCode || !searchWindow || searchWindow.isDestroyed()) return false;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const previousUrl = String(searchWindow.webContents.getURL() || "");
+    const submitted = await submitOfficialMallSearch(searchWindow, exactCode);
+    if (!submitted) {
+      await wait(800);
+      continue;
+    }
+    for (let verification = 0; verification < 15; verification += 1) {
+      await wait(700);
+      if (await naverFashionTownSearchWasExecuted(searchWindow, exactCode, previousUrl)) return true;
+    }
+    // A submitted search is never submitted again merely because result
+    // rendering is slow. Re-verification is reserved for an actual not-found
+    // outcome initiated by the user, not an automatic loop here.
+    return false;
+  }
+  return false;
+}
+
+async function clickRenderedProductLink(searchWindow, productUrl, resultsUrl = "") {
+  if (!searchWindow || searchWindow.isDestroyed() || !/^https?:\/\//i.test(String(productUrl || ""))) return false;
+  if (resultsUrl && String(searchWindow.webContents.getURL() || "") !== resultsUrl) {
+    await Promise.race([
+      searchWindow.loadURL(resultsUrl),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("NAVER_RESULTS_RELOAD_TIMEOUT")), 15_000)),
+    ]).catch(() => {});
+    await wait(1_200);
+  }
+  const beforeUrl = String(searchWindow.webContents.getURL() || "");
+  const clicked = await searchWindow.webContents.executeJavaScript(`(() => {
+    const wanted = new URL(${JSON.stringify(String(productUrl || ""))}, location.href);
+    wanted.hash = "";
+    const normalize = (value) => {
+      try { const parsed = new URL(value, location.href); parsed.hash = ""; return parsed.href; } catch { return ""; }
+    };
+    const links = [...document.querySelectorAll('a[href]')];
+    const target = links.find((link) => normalize(link.href) === wanted.href)
+      || links.find((link) => {
+        const candidate = normalize(link.href);
+        return candidate && wanted.pathname === new URL(candidate).pathname;
+      });
+    if (!target) return false;
+    target.scrollIntoView({ block: "center", inline: "center" });
+    target.focus?.();
+    for (const type of ["mousedown", "mouseup"]) {
+      target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, button: 0 }));
+    }
+    target.click();
+    return true;
+  })()`, true).catch(() => false);
+  if (!clicked) return false;
+  const wantedPath = (() => { try { return new URL(String(productUrl || "")).pathname; } catch { return ""; } })();
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await wait(500);
+    const current = String(searchWindow.webContents.getURL() || "");
+    if (current !== beforeUrl && (!wantedPath || current.includes(wantedPath))) return true;
+  }
+  return false;
+}
+
+async function ensureNaverOfficialBrandFilter(searchWindow) {
+  if (!searchWindow || searchWindow.isDestroyed()) return false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const state = await searchWindow.webContents.executeJavaScript(`(() => {
+      const selectedInUrl = new URL(location.href).searchParams.getAll("mallTypes")
+        .some((value) => String(value).includes("OFFICIAL_BRAND"));
+      const compact = (value) => String(value || "").replace(/\\s+/g, "");
+      const candidates = [...document.querySelectorAll('label,input[type="checkbox"],[role="checkbox"],button,a')]
+        .filter((element) => compact([element.textContent, element.getAttribute("aria-label"), element.getAttribute("title")].join(" ")).includes("공식브랜드"));
+      const target = candidates.find((element) => {
+        const input = element.matches('input[type="checkbox"]') ? element : element.querySelector?.('input[type="checkbox"]');
+        return !(input?.checked || element.getAttribute("aria-checked") === "true");
+      });
+      if (target) {
+        const input = target.matches('input[type="checkbox"]') ? target : target.querySelector?.('input[type="checkbox"]');
+        (input || target).click();
+      }
+      const checked = [...document.querySelectorAll('input[type="checkbox"],[role="checkbox"]')].some((element) => {
+        const owner = element.closest("label,li,div") || element;
+        return compact([owner.textContent, element.getAttribute("aria-label")].join(" ")).includes("공식브랜드")
+          && (element.checked || element.getAttribute("aria-checked") === "true");
+      });
+      return { selected: selectedInUrl || checked, found: candidates.length > 0 };
+    })()`, true).catch(() => ({ selected: false, found: false }));
+    if (state?.selected) {
+      await wait(1_500);
+      return true;
+    }
+    await wait(800);
+  }
+  return false;
+}
+
 async function openOfficialMallInternalSearch(homepageUrl, query) {
   const homepage = new URL(String(homepageUrl || ""));
   if (!["https:", "http:"].includes(homepage.protocol)) throw new Error("INVALID_URL");
@@ -1090,15 +1267,33 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       },
     });
     searchWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
+    searchWindow.webContents.setWindowOpenHandler(({ url: popupUrl }) => {
+      if (/^https?:\/\//i.test(String(popupUrl || ""))) searchWindow.loadURL(popupUrl).catch(() => {});
+      return { action: "deny" };
+    });
     await Promise.race([
       searchWindow.loadURL(url),
       new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 30_000)),
     ]);
+    if (source.naverFashionTownEntry === true) {
+      const enteredFashionTown = await enterNaverFashionTown(
+        searchWindow,
+        String(source.naverFashionTownTargetUrl || "https://shopping.naver.com/window/fashion-group"),
+      );
+      if (!enteredFashionTown) return null;
+      await wait(1_200);
+    }
     if (interactiveSiteSearch) {
       const searchQuery = String(source.searchQuery || articleNumber || title || "").trim();
-      const submitted = await executeOfficialMallSearch(searchWindow, String(source.homepageUrl || url), searchQuery);
+      const submitted = source.naverFashionTownEntry === true
+        ? await executeNaverFashionTownSearch(searchWindow, searchQuery)
+        : await executeOfficialMallSearch(searchWindow, String(source.homepageUrl || url), searchQuery);
       if (!submitted || !searchQuery) return null;
       await wait(2_000);
+    }
+    if (source.store === "네이버 공식 브랜드스토어") {
+      const officialBrandSelected = await ensureNaverOfficialBrandFilter(searchWindow);
+      if (!officialBrandSelected) return null;
     }
     // Dynamic commerce pages render and lazy-load after navigation. Give them
     // time to settle and scroll enough to materialize the first result cards.
@@ -1210,10 +1405,16 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         let detailText = "";
         let stockEvidence = normalizeRenderedStockEvidence();
         try {
-          await Promise.race([
-            searchWindow.loadURL(product.url),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("SSG_DETAIL_TIMEOUT")), 15_000)),
-          ]);
+          const naverProduct = /^네이버(?:\s|$)/.test(String(source.store || ""));
+          if (naverProduct) {
+            const productClicked = await clickRenderedProductLink(searchWindow, product.url, resolvedSearchUrl);
+            if (!productClicked) continue;
+          } else {
+            await Promise.race([
+              searchWindow.loadURL(product.url),
+              new Promise((_, reject) => setTimeout(() => reject(new Error("PRODUCT_DETAIL_TIMEOUT")), 15_000)),
+            ]);
+          }
           await wait(1_500);
           detailText = await searchWindow.webContents.executeJavaScript(
             `String(document.body?.innerText || "").slice(0, 60000)`,
@@ -1263,6 +1464,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         const retailer = detectedRetailer(evidence);
         products.push({
           ...product,
+          navigationMethod: /^네이버(?:\s|$)/.test(String(source.store || "")) ? "clicked" : "loaded",
           store: isSsg && classification === "official_brand"
             ? "SSG 브랜드 공식관"
             : isSsg && classification === "parallel_import" ? "SSG 병행수입" : product.store,
@@ -5413,7 +5615,18 @@ async function automateSellerBrandExport(input = {}) {
     ["Adidas Originals", "adidas Originals", "아디다스 오리지널스", "阿迪达斯", "三叶草"],
   ];
   const brandKoInput = String(input.brandKo || "").trim();
-  const sellerBrandMatchKeys = [brandName, brandKoInput];
+  const sellerOfficialRegistry = safeOfficialDomainRegistry(
+    store.snapshot().settings.brandCatalog || explorerMetadata().brands
+  );
+  const sellerOfficialRecord = officialDomainRecordForBrand(sellerOfficialRegistry, brandName)
+    || officialDomainRecordForBrand(sellerOfficialRegistry, brandKoInput);
+  const sellerBrandMatchKeys = sellerBrandAliases({
+    brandName,
+    brandKo: brandKoInput,
+    brandUrl: input.brandUrl,
+    officialHomepageUrl: input.officialHomepageUrl || sellerOfficialRecord?.homepageUrl,
+    officialAliases: officialDomainSearchAliases(sellerOfficialRecord),
+  });
   const localizedAliases = sellerBrandAliasGroups.find((aliases) =>
     aliases.some((alias) => brandsMatch(brandName, alias) || brandsMatch(brandKoInput, alias))
   );
@@ -5421,7 +5634,9 @@ async function automateSellerBrandExport(input = {}) {
   if (brandsMatch(brandName, "Jordan")) {
     sellerBrandMatchKeys.push("Jordan", "조던", "乔丹");
   }
-  const sellerBrandSearchName = brandsMatch(brandName, "On") ? "On Running" : brandName;
+  const sellerBrandSearchName = brandsMatch(brandName, "On")
+    ? "On Running"
+    : preferredSellerBrandSearchName(sellerBrandMatchKeys);
   mainWindow?.webContents.send("brand-export:progress", {
     status: "searching-brand-products",
     brandName,
@@ -5848,7 +6063,6 @@ async function automateSellerBrandExport(input = {}) {
   })()`, true);
   let searched = null;
   let lastSearchDiagnostics = null;
-  let finalExportBaselineJobs = null;
   let exportAcknowledgedAt = 0;
   for (let searchInputAttempt = 1; searchInputAttempt <= 1; searchInputAttempt += 1) {
     const frames = sellerWindowFrames();
@@ -5948,11 +6162,12 @@ async function automateSellerBrandExport(input = {}) {
           }));
         if (postSearch?.ok) {
           sellerProductFrameRoutingId = candidate.frame.routingId;
-          // "전체 내보내기" has opened the final confirmation dialog but has
-          // not created the new export job yet. Freeze the Download Center at
-          // this exact point so an older successful row can never be mistaken
-          // for the current brand's newly-created job.
-          finalExportBaselineJobs = await readSellerExportBaselineSeparately().catch(() => null);
+          // POIZON can create the export job immediately when "전체 내보내기"
+          // is clicked, before (or while) the confirmation UI is observed.
+          // Never refresh the baseline here: a fast new job would be recorded
+          // as an old job and could then never be linked to this brand. The
+          // baseline frozen before product search remains authoritative, while
+          // the confirmation timestamp below rejects genuinely old rows.
           // Clicking "전체 내보내기" only opens POIZON's confirmation
           // dialog. The old rebuilt path skipped this existing confirmation
           // helper and then waited three minutes for a job that had never
@@ -6025,14 +6240,6 @@ async function automateSellerBrandExport(input = {}) {
       message: `${sellerBrandExportFailureMessage(searched?.code || searched?.step, brandName)}${diagnosticPath ? ` 진단 화면: ${diagnosticPath}` : ""}`,
       diagnostics: { ...(searched?.diagnostics || {}), path: diagnosticPath },
     };
-  }
-
-  if (Array.isArray(finalExportBaselineJobs)) {
-    baselineAvailable = true;
-    for (const job of finalExportBaselineJobs) {
-      const id = String(job?.id || "").trim();
-      if (id) baselineJobIds.add(id);
-    }
   }
 
   // The current brand remains in the live Download Center until its job and
@@ -6117,6 +6324,7 @@ async function automateSellerBrandExport(input = {}) {
       const unusedJobs = currentJobs.filter((job) => !brandExportJobOwner(job?.id));
       const candidate = findNewSellerExportJob([...baselineJobIds], unusedJobs, {
         notBeforeMs: exportAcknowledgedAt,
+        baselineAuthoritative: baselineAvailable,
         // POIZON and the local PC can differ slightly, but a previous-day job
         // (such as the PUMA row reused for KOLON SPORT) must always be rejected.
         allowedClockSkewMs: 2 * 60_000,

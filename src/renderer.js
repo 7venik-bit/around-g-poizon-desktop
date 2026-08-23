@@ -796,10 +796,17 @@ function renderExcelProductRows(file, products = []) {
     const key = pageKeys[index];
     const result = excelPreviewSearchResults.get(key);
     const poizonPrice = verifiedExcelProductPoizonPrice(product);
-    const status = result?.loading ? "검색 중…" : result?.error ? "검색 실패" : result ? `${(result.products || []).length}개 결과` : "상품 검색";
+    const outcome = result && !result.loading ? domesticStatus(result) : null;
+    const status = result?.loading ? "검색 중…" : result?.error ? "검색 실패" : result
+      ? outcome?.className === "available" ? `${(result.products || []).length}개 상품 있음`
+        : outcome?.className === "soldout" ? "상품 있음·재고 없음"
+          : outcome?.className === "pending" ? "추가 확인 필요"
+            : "국내 상품 없음"
+      : "상품 검색";
     const groupClass = index % 2 === 0 ? "excel-product-group-blue" : "excel-product-group-amber";
+    const outcomeClass = outcome ? `excel-search-outcome-${outcome.className}` : "";
     const productLabel = [product.articleNumber, product.title].filter(Boolean).join(" · ") || "선택 상품";
-    return `<tr class="excel-product-row ${groupClass}">
+    return `<tr class="excel-product-row ${groupClass} ${outcomeClass}">
       <td class="excel-product-select-column"><input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택"></td>
       <td class="excel-product-image">${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : "-"}</td>
       <td><b>${text(product.articleNumber || "-")}</b></td><td title="${text(product.title)}">${text(product.title || "-")}</td>
@@ -807,7 +814,7 @@ function renderExcelProductRows(file, products = []) {
       <td>${poizonPrice ? money(poizonPrice) : "가격 없음"}</td>
       <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td><td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
       <td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${result?.loading ? "disabled" : ""}>${status}</button></td>
-    </tr>${result && !result.loading ? `<tr class="excel-product-search-detail ${groupClass}"><td colspan="10"><div class="excel-product-search-result-label"><span></span><strong>${text(productLabel)}</strong>의 국내 검색 결과</div>${renderDomestic(result, product)}</td></tr>` : ""}`;
+    </tr>${result && !result.loading ? `<tr class="excel-product-search-detail ${groupClass} ${outcomeClass}"><td colspan="10"><div class="excel-product-search-result-label"><span></span><strong>${text(productLabel)}</strong>의 국내 검색 결과 <b class="excel-search-outcome-label">${text(outcome?.label || "확인 완료")}</b></div>${renderDomestic(result, product)}</td></tr>` : ""}`;
   }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
   return pageKeys;
 }
@@ -1286,7 +1293,9 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     $("#brand-status").className = failureCount ? "status error" : "status success";
     $("#brand-status").textContent = failureCount
       ? `브랜드 순차 작업 종료 · ${failureCount}개 브랜드 실패`
-      : "선택한 모든 브랜드의 내보내기·다운로드가 완료되었습니다.";
+      : hasActiveBrandExportJobs()
+        ? "선택한 모든 브랜드의 작업번호 생성 완료 · 다운로드센터 자동 감시 중입니다."
+        : "선택한 모든 브랜드의 내보내기·다운로드가 완료되었습니다.";
     brandExportFailureCount = 0;
     stopBrandActivity();
     return;
@@ -1314,6 +1323,8 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     brandName: activeExportBrand.name || "",
     brandKo: activeExportBrand.ko || "",
     brandId: selectedBrandId,
+    brandUrl: activeExportBrand.productUrl || "",
+    officialHomepageUrl: activeExportBrand.officialHomepageUrl || "",
     deferMonitor: false,
   });
   const automation = await Promise.race([
@@ -1334,7 +1345,6 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     recordBrandSelection(activeExportBrand, "데이터 가져오기 실패");
     const failedBrandName = activeExportBrand?.name || "선택 브랜드";
     const failureCode = String(automation?.code || "");
-    const orphanedExportRisk = failureCode === "EXPORT_JOB_NOT_CREATED";
     const recoverableRetryCodes = new Set([
       "SEARCH_INPUT_NOT_FOUND",
       "REAL_KEYBOARD_INPUT_FAILED",
@@ -1369,15 +1379,6 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
         : `실패 · ${failureCode || "자동화 오류"}${failureReason ? ` · ${failureReason}` : ""}`,
     );
     activeExportBrand = null;
-    if (orphanedExportRisk) {
-      brandExportQueue = [];
-      brandSelectionBusy = false;
-      renderBrandCards($("#brand-filter")?.value || "");
-      $("#brand-status").className = "status error";
-      $("#brand-status").textContent = `${failedBrandName} 작업번호 연결을 확인하지 못해 뒤 브랜드 실행을 중단했습니다. POIZON의 진행 중 작업을 다른 브랜드로 잘못 연결하지 않습니다.`;
-      stopBrandActivity();
-      return;
-    }
     if (failureCode === "SELLER_LOGIN_REQUIRED") {
       brandExportQueue = [];
       brandSelectionBusy = false;
@@ -1418,36 +1419,14 @@ async function exportNextSelectedBrand(generation = brandWorkHistoryGeneration) 
     updateBrandBatchState(completedBrand.name, "작업번호 생성 완료 · 다운로드 완료 대기", automation.jobId);
     recordBrandSelection(activeExportBrand, "전체 내보내기 요청", { jobId: automation.jobId });
     $("#brand-status").className = "status";
-    $("#brand-status").textContent = `${completedBrand.name} · 작업번호 ${automation.jobId} · POIZON 성공 및 다운로드 완료를 기다립니다.`;
-    touchBrandActivity(`${completedBrand.name} · 다운로드 완료 후 다음 브랜드 진행`);
-    await window.aroundG.startSellerBrandExportMonitor();
-    const completion = await window.aroundG.waitSellerBrandExportComplete({
-      jobId: automation.jobId,
-      timeoutMs: BRAND_AUTOMATION_TIMEOUT_MS,
-    });
-    if (!acceptBrandWorkEvents || generation !== brandWorkHistoryGeneration) return;
-    if (!completion?.ok) {
-      brandExportFailureCount += 1;
-      updateBrandBatchState(completedBrand.name, `실패 · ${completion?.code || "BRAND_DOWNLOAD_TIMEOUT"}`, automation.jobId);
-      brandExportQueue = [];
-      activeExportBrand = null;
-      brandSelectionBusy = false;
-      $("#brand-status").className = "status error";
-      $("#brand-status").textContent = `${completedBrand.name} 다운로드가 완료되지 않아 다음 브랜드 작업을 시작하지 않았습니다.`;
-      renderBrandCards($("#brand-filter")?.value || "");
-      stopBrandActivity();
-      return;
-    }
-    updateBrandBatchState(completedBrand.name, "확인완료", automation.jobId);
-    $("#brand-status").className = "status success";
-    $("#brand-status").textContent = `${completedBrand.name} 다운로드 완료 · 다음 브랜드를 시작합니다.`;
+    $("#brand-status").textContent = `${completedBrand.name} · 작업번호 ${automation.jobId} 생성 확인 완료 · 다음 브랜드로 이동합니다.`;
+    touchBrandActivity(`${completedBrand.name} · 작업번호 등록 완료 · 다운로드 감시 중`);
+    void window.aroundG.startSellerBrandExportMonitor();
     activeExportBrand = null;
-    // Do not leave the next brand to an unobserved timer. The renderer can
-    // refresh several job/progress rows when the first job number arrives,
-    // which previously allowed the queued callback to be lost. Continue the
-    // POIZON accepts one export lifecycle at a time. Do not submit the next
-    // brand until this brand's workbook has actually finished downloading.
-    await new Promise((resolve) => setTimeout(resolve, 5_000));
+    // The generated job number is the ownership boundary. Once it is recorded,
+    // the shared monitor can track that download independently while the visible
+    // Seller Center starts the next brand.
+    await new Promise((resolve) => setTimeout(resolve, 900));
     await exportNextSelectedBrand(generation);
     return;
   }
@@ -2427,6 +2406,8 @@ $("#brand-export-selected")?.addEventListener("click", async () => {
     id: Number(brand.id),
     name: String(brand.name || "").trim(),
     ko: String(brand.ko || "").trim(),
+    productUrl: String(brand.productUrl || "").trim(),
+    officialHomepageUrl: String(brand.officialHomepageUrl || "").trim(),
   }));
   brandSelectionBusy = true;
   clearExplorerResults();

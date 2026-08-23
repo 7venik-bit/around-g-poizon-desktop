@@ -21,6 +21,40 @@ export function normalizeBrandName(value = "") {
     .replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
+const GENERIC_DOMAIN_LABELS = new Set([
+  "www", "shop", "store", "official", "korea", "kr", "mall", "brand",
+  "naver", "coupang", "lotte", "ssg", "musinsa",
+]);
+
+export function sellerBrandAliases(input = {}) {
+  const aliases = [];
+  const add = (value) => {
+    const text = String(value || "").normalize("NFKC").trim();
+    if (!text || aliases.some((item) => normalizeBrandName(item) === normalizeBrandName(text))) return;
+    aliases.push(text);
+  };
+  add(input.brandName);
+  add(input.brandKo);
+  for (const value of input.officialAliases || []) add(value);
+  for (const rawUrl of [input.brandUrl, input.officialHomepageUrl]) {
+    try {
+      const url = new URL(String(rawUrl || ""));
+      const pathBrand = url.pathname.match(/\/brand\/([a-z0-9][a-z0-9-]*)/i)?.[1] || "";
+      if (pathBrand) add(pathBrand.replace(/-/g, " "));
+      const label = url.hostname.toLocaleLowerCase().replace(/^www\./, "").split(".")[0];
+      if (label && label.length >= 3 && !GENERIC_DOMAIN_LABELS.has(label)) add(label);
+    } catch {}
+  }
+  return aliases;
+}
+
+export function preferredSellerBrandSearchName(aliases = []) {
+  const values = (aliases || []).map((value) => String(value || "").trim()).filter(Boolean);
+  return values.find((value) => /[a-z]/i.test(value) && normalizeBrandName(value).length >= 3)
+    || values[0]
+    || "";
+}
+
 function canonicalBrand(value = "") {
   const normalized = normalizeBrandName(value);
   if (!normalized) return "";

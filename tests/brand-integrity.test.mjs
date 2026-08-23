@@ -7,6 +7,8 @@ import {
   brandMismatchMessage,
   brandsMatch,
   normalizeBrandName,
+  preferredSellerBrandSearchName,
+  sellerBrandAliases,
 } from "../services/brand-integrity.mjs";
 
 test("normalizes punctuation and spacing", () => {
@@ -30,6 +32,28 @@ test("matches known localized aliases", () => {
   assert.equal(brandsMatch("Tommy Hilfiger", "타미힐피거"), true);
   assert.equal(brandsMatch("FILA", "휠라"), true);
   assert.equal(brandsMatch("Reebok", "리복"), true);
+});
+
+test("all brands can derive an English Seller Center search term from verified metadata", () => {
+  const aliases = sellerBrandAliases({
+    brandName: "아이더",
+    brandKo: "아이더",
+    brandUrl: "/brand/eider",
+    officialHomepageUrl: "https://www.eider.co.kr/",
+  });
+  assert.deepEqual(aliases, ["아이더", "eider"]);
+  assert.equal(preferredSellerBrandSearchName(aliases), "eider");
+
+  const globalAliases = sellerBrandAliases({
+    brandName: "디스커버리 익스페디션",
+    brandUrl: "https://kr.poizon.com/brand/discovery-expedition",
+  });
+  assert.equal(preferredSellerBrandSearchName(globalAliases), "discovery expedition");
+});
+
+test("generic marketplace domains never become brand search terms", () => {
+  const aliases = sellerBrandAliases({ brandName: "테스트", officialHomepageUrl: "https://brand.naver.com/test" });
+  assert.deepEqual(aliases, ["테스트"]);
 });
 
 test("blocks a Jordan workbook downloaded for Crocs", () => {

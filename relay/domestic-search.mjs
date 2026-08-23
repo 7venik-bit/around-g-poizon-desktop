@@ -796,7 +796,16 @@ export async function queryDomesticProducts({
       officialStatus,
       homepageUrl: String(officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl || ""),
     },
-    { store: "네이버 공식 브랜드스토어", linkOnly: true, fashionTown: "brand-store", renderCount: true },
+    {
+      store: "네이버 공식 브랜드스토어",
+      linkOnly: true,
+      fashionTown: "brand-store",
+      // Start at Naver Shopping and click Fashion Town in the rendered page.
+      // Loading the Fashion Town URL directly made the UI appear to move while
+      // bypassing the exact user flow and frequently left the search box idle.
+      naverFashionTownEntry: true,
+      renderCount: true,
+    },
     { store: "네이버 백화점", linkOnly: true, fashionTown: "department", renderCount: true },
     { store: "네이버 아울렛", linkOnly: true, fashionTown: "outlet", renderCount: true },
     { store: "무신사", parser: parseMusinsaSearch, renderCount: true },
@@ -818,7 +827,9 @@ export async function queryDomesticProducts({
     const searchUrl = source.officialBrand
       ? officialBrandSearchUrl(brand || title || normalizedQuery, preferredQuery)
       : source.fashionTown
-        ? naverFashionTownPortalUrl(source.fashionTown)
+        ? source.naverFashionTownEntry
+          ? naverShoppingPortalUrl()
+          : naverFashionTownPortalUrl(source.fashionTown)
         : source.retailerDiscovery
           ? naverShoppingPortalUrl()
         : source.domesticChannel
@@ -850,12 +861,18 @@ export async function queryDomesticProducts({
         officialSearchUrl: source.officialBrand ? officialProductUrl : "",
         officialProductUrl,
         interactiveSearch: Boolean(source.fashionTown || source.retailerDiscovery || interactiveOfficialSearch),
+        naverFashionTownEntry: source.naverFashionTownEntry === true,
+        naverFashionTownTargetUrl: source.fashionTown ? naverFashionTownPortalUrl(source.fashionTown) : "",
         searchQuery: interactiveOfficialSearch
           ? articleNumber
             ? [...new Set([title, articleNumber].map(sanitizeDomesticQuery).filter(Boolean))].join(" ")
             : sanitizeDomesticQuery(productCode || title || preferredQuery)
-          : source.fashionTown || source.retailerDiscovery
-            ? internalPortalSearchQuery(brand || title, preferredQuery) : "",
+          : source.fashionTown
+            // Naver must receive the exact model/product code in its real
+            // search box. Do not dilute it with the brand or product title.
+            ? sanitizeDomesticQuery(articleNumber || productCode || preferredQuery)
+            : source.retailerDiscovery
+              ? internalPortalSearchQuery(brand || title, preferredQuery) : "",
         count,
         products: [],
       });
@@ -886,7 +903,7 @@ export async function queryDomesticProducts({
     // Companies are shown only after an exact-model product is verified.
     // A registry entry alone must never look like a matching sourcing result.
     parallelImportCompanies: [],
-    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, interactiveSearch, searchQuery, count, products }, priority) => ({
+    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, interactiveSearch, naverFashionTownEntry, naverFashionTownTargetUrl, searchQuery, count, products }, priority) => ({
       store,
       ok,
       linkOnly,
@@ -899,6 +916,8 @@ export async function queryDomesticProducts({
       officialSearchUrl: officialSearchUrl || "",
       officialProductUrl,
       interactiveSearch: Boolean(interactiveSearch),
+      naverFashionTownEntry: naverFashionTownEntry === true,
+      naverFashionTownTargetUrl: naverFashionTownTargetUrl || "",
       searchQuery: searchQuery || "",
     })),
   };

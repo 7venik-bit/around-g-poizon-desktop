@@ -170,7 +170,7 @@ test("every catalog brand gets article-specific Naver channel searches", () => {
   }
 });
 
-test("네이버는 검색어 URL로 바로 가지 않고 포털 내부 검색창을 사용한다", async () => {
+test("네이버는 쇼핑 홈에서 패션타운을 실제 클릭하고 품번만 내부 검색창에 입력한다", async () => {
   assert.equal(naverFashionTownPortalUrl("brand-store"), "https://shopping.naver.com/window/fashion-group");
   assert.equal(naverFashionTownPortalUrl("department"), "https://shopping.naver.com/window/department");
   assert.equal(internalPortalSearchQuery("데상트", "데상트 SR123UTS15"), "데상트 SR123UTS15");
@@ -185,10 +185,35 @@ test("네이버는 검색어 URL로 바로 가지 않고 포털 내부 검색창
     }),
   });
   const naver = result.sources.find((source) => source.store === "네이버 공식 브랜드스토어");
-  assert.equal(naver.searchUrl, "https://shopping.naver.com/window/fashion-group");
+  assert.equal(naver.searchUrl, "https://shopping.naver.com/home");
+  assert.equal(naver.naverFashionTownEntry, true);
+  assert.equal(naver.naverFashionTownTargetUrl, "https://shopping.naver.com/window/fashion-group");
   assert.equal(naver.interactiveSearch, true);
-  assert.equal(naver.searchQuery, "데상트 SR123UTS15");
+  assert.equal(naver.searchQuery, "SR123UTS15");
   assert.doesNotMatch(naver.searchUrl, /query=|q=/);
+});
+
+test("네이버 성공 판정은 입력값 표시가 아니라 실제 결과 이동이며 상품 상세도 클릭으로 연다", async () => {
+  const mainSource = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../main.mjs", import.meta.url), "utf8"));
+  assert.match(mainSource, /async function enterNaverFashionTown/);
+  assert.match(mainSource, /\/window\\\/fashion-group[\s\S]*target\.click\(\)/);
+  assert.match(mainSource, /async function executeNaverFashionTownSearch/);
+  assert.match(mainSource, /Merely seeing the value in the input is not success/);
+  assert.match(mainSource, /A submitted search is never submitted again/);
+  assert.match(mainSource, /async function clickRenderedProductLink/);
+  assert.match(mainSource, /navigationMethod:[\s\S]*\? "clicked" : "loaded"/);
+});
+
+test("품번이 없으면 네이버 패션타운 검색창에 프로그램 상품코드만 입력한다", async () => {
+  const result = await queryDomesticProducts({
+    query: "데상트 DESCENTE-001",
+    productCode: "DESCENTE-001",
+    brand: "데상트",
+    title: "스몰 워딩 코튼 반팔 티셔츠",
+    fetchImpl: async () => ({ ok: true, text: async () => "" }),
+  });
+  const naver = result.sources.find((source) => source.store === "네이버 공식 브랜드스토어");
+  assert.equal(naver.searchQuery, "DESCENTE-001");
 });
 
 test("품번이 있으면 소재와 카테고리 설명을 검색어에 넣지 않는다", async () => {
@@ -202,7 +227,7 @@ test("품번이 있으면 소재와 카테고리 설명을 검색어에 넣지 �
   });
   assert.deepEqual(result.queryCandidates, ["MLB 3ASXCA12N-50WHS", "3ASXCA12N-50WHS"]);
   const department = result.sources.find((source) => source.store === "네이버 백화점");
-  assert.equal(department.searchQuery, "MLB 3ASXCA12N-50WHS");
+  assert.equal(department.searchQuery, "3ASXCA12N-50WHS");
   assert.doesNotMatch(department.searchQuery, /가죽|로우탑|스니커즈/);
 });
 

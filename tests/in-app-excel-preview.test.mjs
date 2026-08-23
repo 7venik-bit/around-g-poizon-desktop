@@ -80,7 +80,7 @@ test("Excel defaults to complete raw rows with optional product search view", as
   assert.doesNotMatch(productColumns, /중국 30일|현지 30일/);
   assert.match(productColumns, /평균가격/);
   assert.match(productColumns, /중국 총판매.*현지 총판매.*상품 검색/);
-  assert.match(rendererSource, /excel-product-search-detail \$\{groupClass\}"><td colspan="10"/);
+  assert.match(rendererSource, /excel-product-search-detail \$\{groupClass\} \$\{outcomeClass\}"><td colspan="10"/);
   assert.match(cssSource, /\.excel-preview\.product-view \.excel-preview-grid table/);
 });
 
@@ -262,6 +262,27 @@ test("상품 행과 펼쳐진 국내 검색 결과를 같은 교대 색상으로
   assert.match(cssSource, /\.excel-product-row\.excel-product-group-amber td/);
   assert.match(cssSource, /\.excel-product-search-detail\.excel-product-group-blue td/);
   assert.match(cssSource, /\.excel-product-search-detail\.excel-product-group-amber td/);
+});
+
+test("국내 검색 결과 상태를 강한 전용 색상으로 완전히 구분한다", () => {
+  assert.match(rendererSource, /excel-search-outcome-\$\{outcome\.className\}/);
+  assert.match(rendererSource, /excel-search-outcome-label/);
+  assert.match(rendererSource, /국내 상품 없음/);
+  assert.match(rendererSource, /상품 있음·재고 없음/);
+  assert.match(cssSource, /\.excel-search-outcome-available\{--excel-outcome-border:#059669/);
+  assert.match(cssSource, /\.excel-search-outcome-soldout\{--excel-outcome-border:#d97706/);
+  assert.match(cssSource, /\.excel-search-outcome-pending\{--excel-outcome-border:#7c3aed/);
+  assert.match(cssSource, /\.excel-search-outcome-missing,.excel-search-outcome-error\{--excel-outcome-border:#dc2626/);
+  assert.match(cssSource, /border-left-width:7px!important/);
+});
+
+test("네이버 공식 브랜드스토어는 공식브랜드 필터 선택을 확인한 뒤 결과를 읽는다", () => {
+  assert.match(mainSource, /async function ensureNaverOfficialBrandFilter/);
+  assert.match(mainSource, /mallTypes/);
+  assert.match(mainSource, /OFFICIAL_BRAND/);
+  assert.match(mainSource, /includes\("공식브랜드"\)/);
+  assert.match(mainSource, /source\.store === "네이버 공식 브랜드스토어"/);
+  assert.match(mainSource, /if \(!officialBrandSelected\) return null/);
 });
 
 test("Excel preview replaces the file list and restores its scroll position", () => {

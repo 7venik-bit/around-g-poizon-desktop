@@ -119,7 +119,8 @@ test("brand workflow clicks the product menus physically and searches English be
   assert.match(main, /moveWindowsCursorAndClick/);
   assert.match(workflow, /normalizedKey\.length > 3/);
   assert.match(workflow, /tokens\.includes/);
-  assert.match(workflow, /sellerBrandSearchName = brandsMatch\(brandName, "On"\) \? "On Running"/);
+  assert.match(workflow, /sellerBrandSearchName = brandsMatch\(brandName, "On"\)[\s\S]*?preferredSellerBrandSearchName\(sellerBrandMatchKeys\)/);
+  assert.match(workflow, /officialHomepageUrl: input\.officialHomepageUrl/);
   assert.match(workflow, /hasRows && brandMatched && requestedInputConfirmed/);
   assert.doesNotMatch(workflow, /brandMatched \|\| \(alreadySubmitted && requestedInputConfirmed\)/);
   assert.match(workflow, /"PUMA", "Puma", "푸마", "彪马"/);
@@ -130,7 +131,8 @@ test("brand workflow clicks the product menus physically and searches English be
   assert.match(main, /route: "EXACT_BRAND_FILTER"/);
   assert.match(main, /async function readSellerExportJobsFreshly/);
   assert.match(workflow, /readSellerExportJobsFreshly\(\)/);
-  assert.match(renderer, /orphanedExportRisk = failureCode === "EXPORT_JOB_NOT_CREATED"/);
+  assert.doesNotMatch(renderer, /orphanedExportRisk/);
+  assert.doesNotMatch(renderer, /작업번호 연결을 확인하지 못해 뒤 브랜드 실행을 중단/);
   assert.match(workflow, /clickSellerDownloadCenterShortcutPhysical\(candidate\.frame\)/);
   assert.match(workflow, /readSellerExportJobs\(\)/);
 });
