@@ -12,10 +12,10 @@ const [mainSource, relaySource, packageSource, lockSource] = await Promise.all([
 const pkg = JSON.parse(packageSource);
 const lock = JSON.parse(lockSource);
 
-test("v2.10.369 release metadata is synchronized", () => {
-  assert.equal(pkg.version, "2.10.369");
-  assert.equal(lock.version, "2.10.369");
-  assert.equal(lock.packages[""].version, "2.10.369");
+test("v2.10.370 release metadata is synchronized", () => {
+  assert.equal(pkg.version, "2.10.370");
+  assert.equal(lock.version, "2.10.370");
+  assert.equal(lock.packages[""].version, "2.10.370");
 });
 
 test("Naver physically enters Fashion Town, focuses the input, and clicks its search icon", () => {
@@ -31,7 +31,9 @@ test("Naver physically enters Fashion Town, focuses the input, and clicks its se
   assert.match(mainSource, /type: "keyDown", keyCode: character/);
   assert.match(mainSource, /type: "char", keyCode: character/);
   assert.match(mainSource, /type: "keyUp", keyCode: character/);
-  assert.match(mainSource, /currentValue !== exactQuery\.slice\(0, index \+ 1\)/);
+  assert.match(mainSource, /for \(const keyDelay of \[220, 360\]\)/);
+  assert.match(mainSource, /waitForInputValue\(exactQuery\.slice\(0, index \+ 1\)\)/);
+  assert.match(mainSource, /await wait\(1_000\)/);
   assert.doesNotMatch(mainSource, /insertText\(exactQuery\)/);
   assert.match(mainSource, /sendInputEvent\(\{ type: "mouseDown", x: submitTarget\.x/);
   assert.doesNotMatch(mainSource, /if \(submitTarget\)[\s\S]{0,900}keyCode: "Enter"/);
@@ -46,6 +48,9 @@ test("Naver executes the required click, type, and magnifier sequence", () => {
     mainSource,
     /openNaverFashionTownSearchInput\(searchWindow\)[\s\S]*typeNaverQueryLikeUser\(searchWindow, inputTarget, exactQuery\)[\s\S]*mouseDown", x: submitTarget\.x/,
   );
+  assert.match(mainSource, /for \(let attempt = 0; attempt < 20 && !submitTarget; attempt \+= 1\)/);
+  assert.match(mainSource, /if \(!submitTarget\) await wait\(300\)/);
+  assert.match(mainSource, /await wait\(attempt === 0 \? 1_500 : 500\)/);
 });
 
 test("all restored Naver channels receive only the exact product code", async () => {

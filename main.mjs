@@ -1433,17 +1433,27 @@ async function typeNaverQueryLikeUser(searchWindow, inputTarget, exactQuery) {
       .find((element) => visible(element) && valueOf(element));
     return valueOf(input);
   })()`, true).catch(() => "");
+  const waitForInputValue = async (expectedValue) => {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      if (await readValue() === expectedValue) return true;
+      await wait(100);
+    }
+    return false;
+  };
 
-  for (const keyDelay of [70, 120]) {
+  // Naver replaces and synchronizes its React search field while it is being
+  // edited. Type at a visible human pace and wait for each character to reach
+  // the controlled input before sending the next one.
+  for (const keyDelay of [220, 360]) {
     searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: inputTarget.x, y: inputTarget.y });
     searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: inputTarget.x, y: inputTarget.y, button: "left", clickCount: 1 });
     searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: inputTarget.x, y: inputTarget.y, button: "left", clickCount: 1 });
-    await wait(180);
+    await wait(450);
     searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
     searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
     searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "Backspace" });
     searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "Backspace" });
-    await wait(120);
+    await wait(300);
 
     let prefixOk = true;
     for (let index = 0; index < exactQuery.length; index += 1) {
@@ -1452,13 +1462,17 @@ async function typeNaverQueryLikeUser(searchWindow, inputTarget, exactQuery) {
       searchWindow.webContents.sendInputEvent({ type: "char", keyCode: character });
       searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: character });
       await wait(keyDelay);
-      const currentValue = await readValue();
-      if (currentValue !== exactQuery.slice(0, index + 1)) {
+      if (!await waitForInputValue(exactQuery.slice(0, index + 1))) {
         prefixOk = false;
         break;
       }
     }
-    if (prefixOk && await readValue() === exactQuery) return true;
+    if (prefixOk && await waitForInputValue(exactQuery)) {
+      // Keep the completed value visible and let Naver finish rendering its
+      // suggestion/search layer before locating the magnifier.
+      await wait(1_000);
+      if (await readValue() === exactQuery) return true;
+    }
   }
   return false;
 }
@@ -1475,7 +1489,12 @@ async function submitNaverShoppingSearch(searchWindow, query) {
   const inputVerified = await typeNaverQueryLikeUser(searchWindow, inputTarget, exactQuery);
   if (!inputVerified) return false;
 
-  const submitTarget = await searchWindow.webContents.executeJavaScript(`(() => {
+  // The suggestion layer can replace the search button after the final input
+  // event. Re-query its live coordinates instead of closing the window after
+  // one stale lookup.
+  let submitTarget = null;
+  for (let attempt = 0; attempt < 20 && !submitTarget; attempt += 1) {
+    submitTarget = await searchWindow.webContents.executeJavaScript(`(() => {
     const compact = (value) => String(value || "").replace(/\\s+/g, " ").trim();
     const visible = (element) => {
       const style = getComputedStyle(element);
@@ -1509,14 +1528,17 @@ async function submitNaverShoppingSearch(searchWindow, query) {
     if (!button) return null;
     const rect = button.getBoundingClientRect();
     return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
-  })()`, true).catch(() => null);
+    })()`, true).catch(() => null);
+    if (!submitTarget) await wait(300);
+  }
   if (!submitTarget) return false;
   searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: submitTarget.x, y: submitTarget.y });
+  await wait(350);
   searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: submitTarget.x, y: submitTarget.y, button: "left", clickCount: 1 });
   searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: submitTarget.x, y: submitTarget.y, button: "left", clickCount: 1 });
 
   for (let attempt = 0; attempt < 24; attempt += 1) {
-    await wait(attempt === 0 ? 1_000 : 500);
+    await wait(attempt === 0 ? 1_500 : 500);
     const state = await searchWindow.webContents.executeJavaScript(`JSON.stringify({
       url: String(location.href || ""),
       text: String(document.body?.innerText || "").slice(0, 30000),
