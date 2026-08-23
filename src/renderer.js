@@ -22,7 +22,7 @@ let domesticBatchRunning = false;
 let domesticBatchVerifyCounts = false;
 let domesticBatchStopRequested = false;
 const DOMESTIC_BATCH_PROGRESS_KEY = "around-g-domestic-batch-progress-v3";
-const DOMESTIC_RESULT_POLICY_VERSION = 3;
+const DOMESTIC_RESULT_POLICY_VERSION = 4;
 let brandProgressActive = false;
 let categorySearchActive = false;
 let categorySearchRunId = 0;
@@ -1894,8 +1894,28 @@ function renderDomestic(result, sourceProduct = {}) {
   const sourceStatus = (source, matchedProducts) => {
     const available = matchedProducts.filter((product) => product.inStock === true).length;
     if (available) return { label: `재고 ${available}개`, className: "available" };
-    if (matchedProducts.length) return { label: "재고 없음", className: "soldout" };
-    if (source.verificationFailed) return { label: "다시 검색 필요", className: "pending" };
+    if (matchedProducts.length && matchedProducts.every((product) => product.inStock === false)) {
+      return { label: "재고 없음", className: "soldout" };
+    }
+    if (matchedProducts.length) return { label: "재고·사이즈 확인 필요", className: "pending" };
+    if (source.securityVerificationRequired) return { label: "보안 확인 필요", className: "pending" };
+    if (source.loginRequired) return { label: "로그인 필요", className: "pending" };
+    const failureLabels = {
+      fashion_town_click_failed: "패션타운 진입 실패",
+      search_submission_failed: "검색 입력 실패",
+      channel_selection_failed: "채널 선택 실패",
+      official_filter_failed: "공식몰 필터 실패",
+      page_load_timeout: "응답 지연",
+      network_error: "접속 실패",
+      page_load_failed: "페이지 연결 실패",
+      result_parse_failed: "결과 확인 실패",
+      result_analysis_failed: "결과 확인 실패",
+      search_query_missing: "검색어 확인 필요",
+      unknown_search_failure: "검색 실패",
+    };
+    if (source.verificationFailed) {
+      return { label: failureLabels[source.verificationReason] || "검색 실패", className: "pending" };
+    }
     if (source.verificationPending) return { label: "상세 확인 필요", className: "pending" };
     if (source.countVerified && Number(source.count || 0) > 0) return { label: `상품 ${Number(source.count)}개`, className: "pending" };
     if (source.countVerified || source.absenceConfirmed) return { label: "상품 없음", className: "missing" };
@@ -1912,9 +1932,30 @@ function renderDomestic(result, sourceProduct = {}) {
       source,
       source.store === "병행수입·편집샵" ? "상품 소싱" : "",
     )).join("");
-    const detailPending = !matchedProducts.length && Number(source.count || 0) > 0
-      ? `검색 결과 ${Number(source.count)}개를 확인했습니다. 재고·사이즈 상세 수집이 필요합니다.`
-      : !matchedProducts.length ? "일치 상품의 재고와 사이즈가 아직 확인되지 않았습니다." : "";
+    const failureDescriptions = {
+      security_verification_required: "네이버 보안 확인 화면이 나타나 상품 검색을 완료하지 못했습니다.",
+      login_required: "로그인이 확인되지 않아 공식몰 상품 검색을 완료하지 못했습니다.",
+      fashion_town_click_failed: "패션타운 메뉴를 실제로 클릭하지 못해 검색을 중단했습니다.",
+      search_submission_failed: "상품코드를 검색창에 입력하고 검색 버튼을 누르는 단계에서 중단됐습니다.",
+      channel_selection_failed: "검색 후 요청한 백화점·아울렛 채널을 실제로 선택하지 못했습니다.",
+      official_filter_failed: "검색 후 공식 브랜드 필터를 실제로 선택하지 못했습니다.",
+      page_load_timeout: "판매처 검색 페이지의 응답 시간이 초과됐습니다.",
+      network_error: "판매처 검색 페이지에 연결하지 못했습니다.",
+      page_load_failed: "판매처 검색 페이지를 불러오지 못했습니다.",
+      result_parse_failed: "검색 화면은 열렸지만 상품 목록을 읽지 못했습니다.",
+      result_analysis_failed: "검색 화면은 열렸지만 일치 상품을 판정하지 못했습니다.",
+      search_query_missing: "검색에 사용할 상품코드나 상품명이 없습니다.",
+      unknown_search_failure: "판매처 검색이 완료되기 전에 중단됐습니다.",
+    };
+    const detailPending = source.verificationReason
+      ? failureDescriptions[source.verificationReason] || "판매처 검색이 완료되기 전에 중단됐습니다."
+      : !matchedProducts.length && Number(source.count || 0) > 0
+        ? `검색 결과 ${Number(source.count)}개를 확인했습니다. 재고·사이즈 상세 수집이 필요합니다.`
+        : source.absenceConfirmed
+          ? "상품코드→상품명→상품명+상품코드 순서로 검색을 완료했으며 일치 상품이 없습니다."
+          : Number(source.candidateCount || 0) > 0
+            ? "일치 후보 상품을 찾았지만 상세 페이지의 재고·사이즈 확인이 완료되지 않았습니다."
+            : !matchedProducts.length ? "검색은 완료했지만 재고·사이즈 판정 근거가 부족합니다." : "";
     return `<section class="domestic-source-section ${status.className}${source.store === "병행수입·편집샵" ? " parallel-import-panel" : ""}">
       <div class="domestic-source-heading"><strong>${text(source.store)}</strong><span class="stock-state ${status.className}">${text(status.label)}</span>${sourceAction(source, matchedProducts.length ? "판매처 열기" : "판매처 검색")}</div>
       ${rows ? `<div class="platform-list">${rows}</div>` : `<div class="domestic-source-empty"><span>${text(detailPending)}</span>${sourceAction(source, "검색·재고 확인")}</div>`}

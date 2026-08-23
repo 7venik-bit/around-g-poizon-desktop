@@ -316,20 +316,22 @@ test("all curated official stores build an HTTPS article search URL", () => {
   }
 });
 
-test("SSG channel queries do not repeat a brand already present in the search terms", () => {
+test("SSG channel submits the requested query without adding a brand", () => {
   const url = domesticChannelUrl("ssg-department", "MLB", "MLB 3ASXCA12N-50WHS");
   const parsed = new URL(url);
   assert.equal(parsed.hostname, "department.ssg.com");
   assert.equal(parsed.searchParams.get("query"), "MLB 3ASXCA12N-50WHS");
+  assert.equal(new URL(domesticChannelUrl("ssg-general", "MLB", "3ASXCA12N-50WHS")).searchParams.get("query"), "3ASXCA12N-50WHS");
 });
 
-test("LotteON channels use the current csearch route with one brand term", () => {
+test("LotteON channels use the current csearch route with the requested query", () => {
   const general = new URL(domesticChannelUrl("lotte-general", "MLB", "MLB 3ASXCA12N-50WHS"));
   assert.equal(general.pathname, "/csearch/search/search");
   assert.equal(general.searchParams.get("q"), "MLB 3ASXCA12N-50WHS");
   assert.equal(general.searchParams.get("sort"), "ranking");
   const department = new URL(domesticChannelUrl("lotte-department", "MLB", "3ASXCA12N-50WHS"));
   assert.equal(department.searchParams.get("mallId"), "2");
+  assert.equal(department.searchParams.get("q"), "3ASXCA12N-50WHS");
 });
 
 test("all registered official-store product URL shapes match their exact article", () => {
@@ -361,7 +363,8 @@ test("department and outlet channels use their own search scopes", () => {
   for (const [channel, expected] of cases) {
     const url = domesticChannelUrl(channel, "온", "3ME10100264");
     assert.match(url, expected);
-    assert.match(decodeURIComponent(url), /온 3ME10100264/);
+    assert.match(decodeURIComponent(url), /3ME10100264/);
+    assert.doesNotMatch(new URL(url).searchParams.get("query") || new URL(url).searchParams.get("q") || "", /^온\s/);
   }
 });
 

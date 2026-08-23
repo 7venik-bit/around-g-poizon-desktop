@@ -205,11 +205,12 @@ export function internalPortalSearchQuery(brand = "", query = "") {
   return alreadyContainsBrand ? cleanQuery : [cleanBrand, cleanQuery].filter(Boolean).join(" ");
 }
 
-export function domesticChannelUrl(channel, brand, query) {
-  // Search strategies already include the brand in most brand+article queries.
-  // Avoid sending duplicated terms such as "MLB MLB 3ASX...", which can make
-  // SSG return a generic/blocked result instead of the exact department item.
-  const terms = internalPortalSearchQuery(brand, query);
+export function domesticChannelUrl(channel, _brand, query) {
+  // Every sales channel receives the same operator-defined query verbatim:
+  // product code, then product title, then title+code. Adding the brand here
+  // changed the first SSG/Lotte attempt into a different query and prevented
+  // exact-code results from being reached consistently.
+  const terms = sanitizeDomesticQuery(query);
   if (channel === "ssg-department") {
     return `https://department.ssg.com/search.ssg?query=${encodeURIComponent(terms)}`;
   }

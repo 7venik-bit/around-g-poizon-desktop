@@ -17,7 +17,7 @@ test("official Nike and Adidas credentials use Windows encryption", () => {
 test("official search stops before product search when login is not verified", () => {
   assert.match(main, /ensureOfficialAccountLogin\(searchWindow, homepage\.href\)/);
   assert.match(main, /if \(!login\.ok\) return \{ ok: false, submitted: false, loginRequired: true/);
-  assert.match(main, /if \(!login\.ok\) return null/);
+  assert.match(main, /if \(!login\.ok\) return renderedSearchFailure\("login_required"/);
   assert.match(main, /sendInputEvent\(\{ type: "mouseDown"/);
 });
 

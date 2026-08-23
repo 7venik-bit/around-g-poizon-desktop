@@ -22,7 +22,7 @@ test("every domestic request clears HTTP cache without deleting login cookies", 
 });
 
 test("a completed domestic batch deletes persisted results before a fresh run", () => {
-  assert.match(renderer, /DOMESTIC_RESULT_POLICY_VERSION = 3/);
+  assert.match(renderer, /DOMESTIC_RESULT_POLICY_VERSION = 4/);
   assert.match(renderer, /clearSavedDomesticStockResults\(batchId\)/);
   assert.match(renderer, /window\.aroundG\.remove\("domesticSearches", saved\.id\)/);
   assert.match(renderer, /if \(!selectedOnly && savedProgress\)[\s\S]*restoreDomesticStockResults[\s\S]*else[\s\S]*domesticResults\.clear\(\)/);

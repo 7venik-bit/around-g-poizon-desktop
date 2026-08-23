@@ -15,8 +15,8 @@ test("all stores receive code, title, then title plus code in that order", () =>
 test("a source submits the next query only when the prior query has no result", () => {
   assert.match(main, /for \(const queryAttempt of queryAttempts\)/);
   assert.match(main, /renderedSearchSourceResult\(source, articleNumber, brand, title, 0, queryAttempt\)/);
-  assert.match(main, /Number\(queryResult\?\.count \|\| 0\) > 0[\s\S]*break/);
-  assert.match(main, /const queryResult = await renderedSearchSourceResult[\s\S]*if \(!queryResult\) break/);
+  assert.match(main, /queryResult\.verificationReason \|\| queryResult\.detailVerificationPending/);
+  assert.match(main, /queryResult\.absenceConfirmed !== true/);
   assert.doesNotMatch(main, /technicalAttempts/);
   assert.doesNotMatch(main, /attempt > 0\) await wait\(1_500\)/);
 });

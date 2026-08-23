@@ -183,11 +183,11 @@ test("MLB 공식몰 검색창은 품번 입력을 지원한다", () => {
 });
 
 test("unavailable verification is never misreported as confirmed product absence", () => {
-  assert.match(mainSource, /return null/);
+  assert.match(mainSource, /renderedSearchFailure/);
   assert.match(mainSource, /pageBlocked/);
   assert.match(mainSource, /verificationFailed: !Number\.isFinite\(count\)/);
   assert.match(rendererSource, /source\.verificationFailed/);
-  assert.match(rendererSource, /source\.verificationFailed[\s\S]*?다시 검색 필요/);
+  assert.match(rendererSource, /source\.verificationFailed[\s\S]*?검색 실패/);
   assert.match(rendererSource, /source\.verificationPending[\s\S]*?상세 확인 필요/);
   assert.match(mainSource, /verificationPending/);
   assert.match(mainSource, /absenceConfirmed/);
@@ -197,7 +197,7 @@ test("official store, Musinsa, and Naver sources all render numeric result badge
   assert.match(mainSource, /if \(!source\.renderCount\)/);
   assert.match(mainSource, /for \(const queryAttempt of queryAttempts\)/);
   assert.doesNotMatch(mainSource, /technicalAttempts/);
-  assert.match(mainSource, /if \(!queryResult\) break/);
+  assert.match(mainSource, /if \(!queryResult\)[\s\S]*?renderedSearchFailure\("unknown_search_failure"\)/);
   assert.match(rendererSource, /label: "추가 확인 필요", className: "pending"/);
   assert.match(rendererSource, /label: "없음 확인", className: "missing"/);
   assert.doesNotMatch(mainSource, /!source\.linkOnly && source\.ok && Number\(source\.count \|\| 0\) > 0/);
@@ -280,9 +280,9 @@ test("네이버 공식 브랜드스토어는 공식브랜드 필터 선택을 �
   assert.match(mainSource, /async function ensureNaverOfficialBrandFilter/);
   assert.match(mainSource, /mallTypes/);
   assert.match(mainSource, /OFFICIAL_BRAND/);
-  assert.match(mainSource, /includes\("공식브랜드"\)/);
+  assert.match(mainSource, /브랜드직영몰\|공식브랜드\|브랜드스토어/);
   assert.match(mainSource, /source\.store === "네이버 공식 브랜드스토어"/);
-  assert.match(mainSource, /if \(!officialBrandSelected\) return null/);
+  assert.match(mainSource, /if \(!officialBrandSelected\) return renderedSearchFailure\("official_filter_failed"/);
   assert.match(mainSource, /state\?\.target/);
 });
 
@@ -299,7 +299,7 @@ test("네이버 백화점과 아울렛은 홈 화면 탭을 실제 마우스 이
   assert.match(mainSource, /sendInputEvent\(\{ type: "mouseDown"/);
   assert.match(mainSource, /naverChannelClickRequired/);
   assert.match(mainSource, /clickNaverShoppingChannel\(searchWindow, source\.store\)/);
-  assert.match(mainSource, /if \(!channelSelected\) return null/);
+  assert.match(mainSource, /if \(!channelSelected\) return renderedSearchFailure\("channel_selection_failed"/);
   assert.match(mainSource, /submitNaverShoppingSearch\(searchWindow, searchQuery\)[\s\S]*clickNaverShoppingChannel\(searchWindow, source\.store\)/);
 });
 
