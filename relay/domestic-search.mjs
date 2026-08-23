@@ -427,12 +427,17 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         let articleMatched = exactArticleIdentityMatch(identityText, articleCode);
         const variantStyle = sanitizeDomesticQuery(articleNumber).toUpperCase().match(/^([A-Z0-9]{5,})[-_]([A-Z0-9]{1,6})$/);
         const numericOnlyVariant = variantStyle && /^\d+$/.test(variantStyle[1]) && /^\d+$/.test(variantStyle[2]);
+        let officialUrlVariantConflict = false;
         if (!articleMatched && variantStyle && (!numericOnlyVariant || trustedOfficialCard) && productUrl) {
           const [, baseCode, colorCode] = variantStyle;
           const decodedUrl = decodeURIComponent(productUrl).replace(/&amp;/gi, "&");
           const escapedBase = baseCode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           const escapedColor = colorCode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           articleMatched = new RegExp(`${escapedBase}[^#\\s]{0,160}(?:color|colour|variant)[^=]{0,24}=${escapedColor}(?:&|$)`, "i").test(decodedUrl);
+          const pathVariant = decodedUrl.match(new RegExp(`${escapedBase}[-_]([A-Z0-9]{1,6})(?:[/?#&]|$)`, "i"))?.[1];
+          const queryVariant = decodedUrl.match(new RegExp(`${escapedBase}[^#\\s]{0,160}(?:color|colour|variant)[^=]{0,24}=([A-Z0-9]{1,6})(?:&|$)`, "i"))?.[1];
+          const encodedVariant = String(queryVariant || pathVariant || "").toUpperCase();
+          officialUrlVariantConflict = Boolean(encodedVariant && encodedVariant !== colorCode);
         }
         const evidence = normalizeOfficialBrand(rawCardText);
         const tokens = rawCardText.toLowerCase().split(/[^a-z0-9가-힣]+/).map(normalizeOfficialBrand).filter(Boolean);
@@ -466,6 +471,17 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // article on its own detail page before it can be displayed.
         if (!conflictingArticle && !articleMatched && String(store || "") === "무신사" && brandMatched
           && /:\/\/(?:[^/]+\.)?musinsa\.com\/products?\//i.test(productUrl)) {
+          articleMatched = true;
+          detailArticleVerificationRequired = true;
+        }
+        // Many brand-owned malls (including DK/Descente) omit the model code
+        // from every visible result card even after an exact-code search. The
+        // previous implementation therefore stopped on the result grid and
+        // never opened a product, so size/stock verification could not run.
+        // Treat product-detail links on the official mall as provisional only;
+        // main.mjs must still find the exact article number on each detail page
+        // before the product is retained.
+        if (!conflictingArticle && !officialUrlVariantConflict && !articleMatched && trustedOfficialCard && productUrl) {
           articleMatched = true;
           detailArticleVerificationRequired = true;
         }

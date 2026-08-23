@@ -490,12 +490,13 @@ test("SSG and Lotte dynamic product links become visible product candidates", ()
   }
 });
 
-test("SSG와 롯데는 품번이 링크 바깥 상품 카드에 있어도 수집하고 세 번 확인한다", async () => {
+test("SSG와 롯데는 품번이 링크 바깥 상품 카드에 있어도 수집하고 같은 검색을 반복하지 않는다", async () => {
   const mainSource = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../main.mjs", import.meta.url), "utf8"));
   assert.match(mainSource, /const articleCardLinks =/);
   assert.match(mainSource, /matchesExpected\(card\.innerText\) \|\| matchesExpected\(card\.outerHTML\)/);
   assert.match(mainSource, /new Set\(\[\.\.\.directProductLinks, \.\.\.articleCardLinks\]\)/);
-  assert.match(mainSource, /\^\(\?:브랜드 공식몰\|SSG\|롯데온\)/);
+  assert.doesNotMatch(mainSource, /technicalAttempts/);
+  assert.match(mainSource, /const queryResult = await renderedSearchSourceResult/);
 });
 
 test("SSG department Korean brand result waits for detail-page stock evidence", () => {
@@ -880,6 +881,23 @@ test("official-store text matches without a product-detail URL are discarded", (
   assert.equal(result.count, 1);
   assert.equal(result.products[0].url, "https://dk-on.com/DESCENTE/goods/SR123UTS11");
   assert.equal(result.products[0].imageVerifiedFromCard, true);
+});
+
+test("official-store result cards without a visible model code are opened for exact detail verification", () => {
+  const content = JSON.stringify({
+    pageText: "SR123UTS15 검색 결과 상품 4",
+    productCards: [{
+      productUrl: "https://dk-on.com/DESCENTE/goods/detail/12345",
+      text: "[세리나 착용] 스몰 워딩 코튼 반팔 티셔츠 블랙",
+      title: "스몰 워딩 코튼 반팔 티셔츠",
+      imageUrl: "https://cdn.example/black.jpg",
+      imageLinkedToProduct: true,
+    }],
+  });
+  const result = analyzeRenderedChannelProducts(content, "브랜드 공식몰", "SR123UTS15", "데상트", "스몰 워딩 코튼 반팔 티셔츠");
+  assert.equal(result.products.length, 1);
+  assert.equal(result.products[0].detailArticleVerificationRequired, true);
+  assert.equal(result.products[0].detectedArticleNumber, "");
 });
 
 test("a transient Musinsa server failure is retried once", async () => {

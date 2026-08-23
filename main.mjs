@@ -1261,6 +1261,51 @@ async function openRenderedSizeOptions(searchWindow) {
   return clicked;
 }
 
+async function clickRenderedProductCard(searchWindow, productUrl, searchResultsUrl = "") {
+  if (!searchWindow || searchWindow.isDestroyed()) return false;
+  const expectedUrl = String(productUrl || "").split("#")[0];
+  if (!/^https?:\/\//i.test(expectedUrl)) return false;
+  const resultsUrl = String(searchResultsUrl || "");
+  const currentUrl = String(searchWindow.webContents.getURL() || "");
+  if (resultsUrl && currentUrl !== resultsUrl) {
+    await Promise.race([
+      searchWindow.loadURL(resultsUrl),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_RESULTS_RELOAD_TIMEOUT")), 15_000)),
+    ]).catch(() => {});
+    await wait(1_200);
+  }
+  const target = await searchWindow.webContents.executeJavaScript(`(() => {
+    const expected = ${JSON.stringify(expectedUrl)};
+    const clean = (value) => String(value || "").split("#")[0];
+    const links = [...document.querySelectorAll("a[href]")];
+    const link = links.find((candidate) => clean(candidate.href) === expected)
+      || links.find((candidate) => {
+        try {
+          const left = new URL(clean(candidate.href));
+          const right = new URL(expected);
+          return left.origin === right.origin && left.pathname === right.pathname;
+        } catch { return false; }
+      });
+    if (!link) return null;
+    link.scrollIntoView({ block: "center", inline: "center" });
+    const rect = link.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + Math.min(rect.height / 2, 180)) };
+  })()`, true).catch(() => null);
+  if (!target) return false;
+  searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
+  searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  await wait(2_000);
+  const openedUrl = String(searchWindow.webContents.getURL() || "").split("#")[0];
+  if (openedUrl === expectedUrl) return true;
+  try {
+    const opened = new URL(openedUrl);
+    const expected = new URL(expectedUrl);
+    return opened.origin === expected.origin && opened.pathname === expected.pathname;
+  } catch { return false; }
+}
+
 async function openOfficialMallInternalSearch(homepageUrl, query) {
   const homepage = new URL(String(homepageUrl || ""));
   if (!["https:", "http:"].includes(homepage.protocol)) throw new Error("INVALID_URL");
@@ -1318,6 +1363,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         sandbox: true,
         backgroundThrottling: false,
       },
+    });
+    searchWindow.webContents.setWindowOpenHandler(({ url: popupUrl }) => {
+      if (/^https?:\/\//i.test(String(popupUrl || ""))) searchWindow.loadURL(popupUrl).catch(() => {});
+      return { action: "deny" };
     });
     searchWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
     const naverPortalSource = /^네이버\s/.test(String(source.store || ""));
@@ -1472,11 +1521,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         let detailText = "";
         let stockEvidence = normalizeRenderedStockEvidence();
         try {
-          await Promise.race([
-            searchWindow.loadURL(product.url),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("SSG_DETAIL_TIMEOUT")), 15_000)),
-          ]);
-          await wait(1_500);
+          const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
+          if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");
+          await wait(1_000);
           await openRenderedSizeOptions(searchWindow);
           detailText = await searchWindow.webContents.executeJavaScript(
             `String(document.body?.innerText || "").slice(0, 60000)`,
@@ -1496,7 +1543,24 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
               ...document.querySelectorAll("select option"),
               ...document.querySelectorAll('[class*="size" i] button,[class*="option" i] button,[data-option],[data-size],[role="option"],[role="listbox"] li,[class*="dropdown" i] li'),
             ];
-            const options = optionNodes.slice(0, 160).map((element) => ({
+            // Some official malls render size choices as plain buttons/labels
+            // with no size-related class. Include those only when their own
+            // label looks like an apparel/shoe size and their nearby field is
+            // explicitly headed by "사이즈/size", avoiding quantity buttons.
+            const plainSizeNodes = [...document.querySelectorAll('button,label,[role="button"],input[type="radio"]')]
+              .filter(visible)
+              .filter((element) => {
+                const label = String(element.getAttribute("data-size") || element.value || element.textContent || "").replace(/\\s+/g, " ").trim();
+                if (!/^(?:FREE|ONE\s*SIZE|XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|[2-9]?\d{1,2}(?:\.5)?|[12]\d{2}|[2-3]\d{2}(?:\.5)?)$/i.test(label)) return false;
+                let scope = element.parentElement;
+                for (let depth = 0; scope && depth < 4; depth += 1, scope = scope.parentElement) {
+                  const scopeText = String(scope.innerText || "").slice(0, 1200);
+                  if (/사이즈|size/i.test(scopeText)) return true;
+                }
+                return false;
+              });
+            const uniqueOptionNodes = [...new Set([...optionNodes, ...plainSizeNodes])];
+            const options = uniqueOptionNodes.slice(0, 160).map((element) => ({
               label: String(element.getAttribute("data-size") || element.getAttribute("data-option") || element.textContent || "").replace(/\\s+/g, " ").trim(),
               inStock: !sold(element),
             }));
@@ -1603,16 +1667,16 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     // A search-card hit is only a candidate. Musinsa and other rendered
     // channels must open the product detail page before an exact article and
     // stock state can be reported as a purchasable domestic result.
-    const technicalAttempts = /^(?:브랜드 공식몰|SSG|롯데온)(?:\s|$)/.test(String(source.store || "")) ? 3 : 1;
     const queryAttempts = Array.isArray(source.searchAttempts) && source.searchAttempts.length
       ? source.searchAttempts : [{ query: source.searchQuery || articleNumber || title || "", url: source.searchUrl || "" }];
     let result = null;
     for (const queryAttempt of queryAttempts) {
-      let queryResult = null;
-      for (let attempt = 0; attempt < technicalAttempts && !queryResult; attempt += 1) {
-        if (attempt > 0) await wait(1_500);
-        queryResult = await renderedSearchSourceResult(source, articleNumber, brand, title, 0, queryAttempt);
-      }
+      // Submit each query exactly once. A later query is a fallback only when
+      // the completed prior search returned no product; browser/security or
+      // detail-verification failures must not repeat the same query or advance
+      // as though the product were absent.
+      const queryResult = await renderedSearchSourceResult(source, articleNumber, brand, title, 0, queryAttempt);
+      if (!queryResult) break;
       if (queryResult && (!result || Number(queryResult.count || 0) > Number(result.count || 0))) result = queryResult;
       if (Number(queryResult?.count || 0) > 0 || (queryResult?.products || []).length > 0) break;
     }

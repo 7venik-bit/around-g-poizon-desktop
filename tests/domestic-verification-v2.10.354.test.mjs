@@ -21,6 +21,8 @@ test("detail-verified Musinsa colour cards retain one exact model identity", () 
 
 test("verification still requires detail stock and size inspection", () => {
   assert.match(main, /openRenderedSizeOptions\(searchWindow\)/);
+  assert.match(main, /clickRenderedProductCard\(searchWindow, product\.url, resolvedSearchUrl\)/);
+  assert.doesNotMatch(main, /searchWindow\.loadURL\(product\.url\)/);
   assert.match(main, /detailArticleVerificationRequired && !detailArticleVerified/);
   assert.match(main, /\.\.\.stockEvidence/);
 });

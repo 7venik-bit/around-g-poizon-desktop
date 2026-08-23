@@ -195,10 +195,9 @@ test("unavailable verification is never misreported as confirmed product absence
 
 test("official store, Musinsa, and Naver sources all render numeric result badges", () => {
   assert.match(mainSource, /if \(!source\.renderCount\)/);
-  assert.match(mainSource, /\^\(\?:브랜드 공식몰\|SSG\|롯데온\)\(\?:\\s\|\$\)/);
   assert.match(mainSource, /for \(const queryAttempt of queryAttempts\)/);
-  assert.match(mainSource, /technicalAttempts && !queryResult/);
-  assert.match(mainSource, /attempt > 0\) await wait\(1_500\)/);
+  assert.doesNotMatch(mainSource, /technicalAttempts/);
+  assert.match(mainSource, /if \(!queryResult\) break/);
   assert.match(rendererSource, /label: "추가 확인 필요", className: "pending"/);
   assert.match(rendererSource, /label: "없음 확인", className: "missing"/);
   assert.doesNotMatch(mainSource, /!source\.linkOnly && source\.ok && Number\(source\.count \|\| 0\) > 0/);
@@ -211,8 +210,9 @@ test("official store, Musinsa, and Naver sources all render numeric result badge
   assert.match(rendererSource, /const sourceStatus = \(source, matchedProducts\)/);
 });
 
-test("SSG와 롯데온 일반·백화점·아울렛 검색은 화면 지연을 고려해 세 번 확인한다", () => {
-  assert.match(mainSource, /\^\(\?:브랜드 공식몰\|SSG\|롯데온\)\(\?:\\s\|\$\)\/\.test[\s\S]*\? 3 : 1/);
+test("SSG와 롯데온도 동일 검색어를 한 번만 제출한다", () => {
+  assert.doesNotMatch(mainSource, /technicalAttempts/);
+  assert.doesNotMatch(mainSource, /attempt > 0\) await wait\(1_500\)/);
 });
 
 test("화면 검색 상품도 상세페이지에서 재고와 옵션을 확인한다", () => {
