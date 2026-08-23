@@ -25,8 +25,8 @@ test("folder job number is restored before the legacy cache and old brand-only f
   assert.match(main, /folderJobId \|\| \(matchingJobs\.length === 1/);
 });
 
-test("release metadata is 2.10.364", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.364");
-  assert.equal(JSON.parse(lockSource).version, "2.10.364");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.364");
+test("release metadata is 2.10.367", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.367");
+  assert.equal(JSON.parse(lockSource).version, "2.10.367");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.367");
 });

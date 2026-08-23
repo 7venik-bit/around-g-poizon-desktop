@@ -1199,93 +1199,217 @@ async function clickNaverShoppingChannel(searchWindow, store) {
   return Boolean(state && !state.missing && (state.url.includes(expectedPath) || state.selected));
 }
 
-async function clickNaverFashionTownMenu(searchWindow) {
+async function clickNaverShoppingHomeMenu(searchWindow) {
   if (!searchWindow || searchWindow.isDestroyed()) return false;
-  const target = await searchWindow.webContents.executeJavaScript(`(() => {
-    const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
-    const visible = (element) => {
-      const style = getComputedStyle(element);
-      const rect = element.getBoundingClientRect();
-      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-    };
-    const candidates = [...document.querySelectorAll('header a,nav a,a,button,[role="button"]')]
-      .filter(visible)
-      .filter((element) => compact(element.textContent) === "패션타운")
-      .sort((left, right) => {
-        const score = (element) => (element.closest("header,nav") ? 100 : 0)
-          + (/fashion-group/i.test(String(element.getAttribute("href") || "")) ? 50 : 0);
-        return score(right) - score(left);
-      });
-    const element = candidates[0];
-    if (!element) return null;
-    element.scrollIntoView({ block: "center", inline: "center" });
-    const rect = element.getBoundingClientRect();
-    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
-  })()`, true).catch(() => null);
-  if (!target) return false;
-  searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
-  searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
-  searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
-  await wait(1_500);
-  return searchWindow.webContents.executeJavaScript(`(() => {
-    const text = String(document.body?.innerText || "");
-    const selected = [...document.querySelectorAll('input,button,[role="combobox"],a')].some((element) =>
-      /패션타운/.test([element.value, element.textContent, element.getAttribute("aria-label")].join(" ")));
-    // Naver can render a temporary not-found body for the Fashion Town
-    // landing route while keeping its real global search control active. The
-    // physical menu navigation itself is enough here; the following search
-    // submission must still prove a non-error result page.
-    return Boolean(selected || /\\/window\\/(?:search\\/)?fashion-group/i.test(location.pathname));
-  })()`, true).catch(() => false);
-}
-
-async function submitNaverShoppingSearch(searchWindow, query) {
-  const exactQuery = String(query || "").trim();
-  if (!exactQuery || !searchWindow || searchWindow.isDestroyed()) return false;
-  {
-    const previousUrl = String(searchWindow.webContents.getURL() || "");
-    const inputTarget = await searchWindow.webContents.executeJavaScript(`(() => {
+  let target = null;
+  for (let attempt = 0; attempt < 20 && !target; attempt += 1) {
+    target = await searchWindow.webContents.executeJavaScript(`(() => {
+      const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
       const visible = (element) => {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
       };
-      const input = [...document.querySelectorAll('input[type="search"],input[placeholder*="상품명"],input[placeholder*="브랜드"],input[placeholder*="검색"]')].find(visible);
-      if (!input) return null;
-      const rect = input.getBoundingClientRect();
+      const candidates = [...document.querySelectorAll('nav a,a,[role="link"],button,[role="button"]')]
+        .filter(visible)
+        .filter((element) => compact(element.textContent) === "쇼핑")
+        .sort((left, right) => {
+          const score = (element) => (/shopping\\.naver\\.com\\/ns\\/home/i.test(String(element.href || element.getAttribute("href") || "")) ? 300 : 0)
+            + (element.closest('nav,[aria-label*="서비스"]') ? 100 : 0)
+            + (element.tagName === "A" ? 50 : 0);
+          return score(right) - score(left);
+        });
+      const element = candidates[0];
+      if (!element) return null;
+      element.scrollIntoView({ block: "center", inline: "center" });
+      const rect = element.getBoundingClientRect();
       return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
     })()`, true).catch(() => null);
+    if (!target) await wait(500);
+  }
+  if (!target) return false;
+  searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
+  searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  // Naver opens Shopping in a new tab. setWindowOpenHandler redirects that
+  // request into this visible verification window, so wait for the real
+  // Shopping home document instead of guessing a direct commerce URL.
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await wait(attempt === 0 ? 1_000 : 500);
+    const state = await searchWindow.webContents.executeJavaScript(`(() => ({
+      url: String(location.href || ""),
+      ready: Boolean(document.documentElement && document.body),
+      securityRequired: /captcha|보안\\s*확인|스팸을\\s*방지|실제\\s*사용자|비정상적인\\s*접근/i.test(String(document.body?.innerText || ""))
+    }))()`, true).catch(() => null);
+    if (state?.securityRequired) return false;
+    if (state?.ready && /^https:\/\/shopping\.naver\.com\/ns\/home(?:[/?#]|$)/i.test(state.url)) return true;
+  }
+  return false;
+}
+
+async function clickNaverFashionTownMenu(searchWindow) {
+  if (!searchWindow || searchWindow.isDestroyed()) return false;
+  let target = null;
+  for (let attempt = 0; attempt < 30 && !target; attempt += 1) {
+    target = await searchWindow.webContents.executeJavaScript(`(() => {
+      const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
+      const visible = (element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      const candidates = [...document.querySelectorAll('header a,nav a,a,button,[role="button"]')]
+        .filter(visible)
+        .filter((element) => {
+          const label = compact(element.textContent);
+          const href = String(element.getAttribute("href") || "");
+          return label === "패션타운" || (label === "패션위크" && /fashion-group/i.test(href));
+        })
+        .sort((left, right) => {
+          const score = (element) => (/fashion-group/i.test(String(element.getAttribute("href") || "")) ? 200 : 0)
+            + (element.closest("nav") ? 100 : 0)
+            + (element.closest("header") ? 50 : 0);
+          return score(right) - score(left);
+        });
+      const element = candidates[0];
+      if (!element) return null;
+      element.scrollIntoView({ block: "center", inline: "center" });
+      const rect = element.getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+    })()`, true).catch(() => null);
+    if (!target) await wait(500);
+  }
+  if (!target) return false;
+  searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
+  searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  // The current Fashion Town route is /window/main/fashion-group. Wait for
+  // both that route and its real search input so the next step never races the
+  // SPA transition or mistakes the category selector for a ready search box.
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await wait(attempt === 0 ? 1_000 : 500);
+    const ready = await searchWindow.webContents.executeJavaScript(`(() => {
+      const visible = (element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      const searchInput = [...document.querySelectorAll('input[type="search"],input[role="searchbox"],input[placeholder*="상품명"],input[placeholder*="브랜드"],input[placeholder*="검색"]')]
+        .find((element) => visible(element) && element.type !== "password");
+      const fashionTownRoute = /\\/window\\/(?:main\\/|search\\/)?fashion-group/i.test(location.pathname);
+      return Boolean(fashionTownRoute && searchInput);
+    })()`, true).catch(() => false);
+    if (ready) return true;
+  }
+  return false;
+}
+
+async function submitNaverShoppingSearch(searchWindow, query) {
+  const exactQuery = String(query || "").trim();
+  if (!exactQuery || !searchWindow || searchWindow.isDestroyed()) return false;
+  searchWindow.show();
+  searchWindow.focus();
+  searchWindow.webContents.focus();
+  {
+    const previousUrl = String(searchWindow.webContents.getURL() || "");
+    let inputTarget = null;
+    for (let attempt = 0; attempt < 20 && !inputTarget; attempt += 1) {
+      inputTarget = await searchWindow.webContents.executeJavaScript(`(() => {
+      const visible = (element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      const candidates = [...document.querySelectorAll('input[type="search"],input[role="searchbox"],input[placeholder*="상품명"],input[placeholder*="브랜드"],input[placeholder*="검색"]')]
+        .filter((element) => visible(element) && element.type !== "password")
+        .sort((left, right) => {
+          const score = (element) => (/상품명\\s*또는\\s*브랜드/.test(String(element.placeholder || "")) ? 300 : 0)
+            + (element.type === "search" ? 150 : 0)
+            + (element.closest('form,[role="search"]') ? 100 : 0)
+            + (element.closest('header') ? 50 : 0);
+          return score(right) - score(left);
+        });
+      const input = candidates[0];
+      if (!input) return null;
+      input.scrollIntoView({ block: "center", inline: "center" });
+      const rect = input.getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+      })()`, true).catch(() => null);
+      if (!inputTarget) await wait(500);
+    }
     if (!inputTarget) {
       return false;
     }
     searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: inputTarget.x, y: inputTarget.y });
     searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: inputTarget.x, y: inputTarget.y, button: "left", clickCount: 1 });
     searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: inputTarget.x, y: inputTarget.y, button: "left", clickCount: 1 });
+    await wait(150);
+    const focused = await searchWindow.webContents.executeJavaScript(`(() => {
+      const active = document.activeElement;
+      return Boolean(active?.matches?.('input[type="search"],input[role="searchbox"],input[placeholder*="상품명"],input[placeholder*="브랜드"],input[placeholder*="검색"]'));
+    })()`, true).catch(() => false);
+    if (!focused) return false;
     searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
     searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
     searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "Backspace" });
     searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "Backspace" });
     await searchWindow.webContents.insertText(exactQuery);
     await wait(300);
-    const inputVerified = await searchWindow.webContents.executeJavaScript(`(() => {
+    let inputVerified = await searchWindow.webContents.executeJavaScript(`(() => {
       const compact = (value) => String(value || "").replace(/\\s+/g, " ").trim();
-      const input = [...document.querySelectorAll('input[type="search"],input[placeholder*="상품명"],input[placeholder*="브랜드"],input[placeholder*="검색"]')]
+      const input = [...document.querySelectorAll('input[type="search"],input[role="searchbox"],input[placeholder*="상품명"],input[placeholder*="브랜드"],input[placeholder*="검색"]')]
         .find((element) => compact(element.value) === compact(${JSON.stringify(exactQuery)}));
       return Boolean(input);
     })()`, true).catch(() => false);
+    if (!inputVerified) {
+      // Some Naver React input builds ignore insertText even after a physical
+      // click. Paste through the focused control as a second real keyboard
+      // input path, then restore the user's clipboard immediately.
+      const previousClipboard = clipboard.readText();
+      try {
+        clipboard.writeText(exactQuery);
+        searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
+        searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
+        searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "V", modifiers: ["control"] });
+        searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "V", modifiers: ["control"] });
+        await wait(350);
+      } finally {
+        clipboard.writeText(previousClipboard);
+      }
+      inputVerified = await searchWindow.webContents.executeJavaScript(`(() => {
+        const compact = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+        return [...document.querySelectorAll('input[type="search"],input[role="searchbox"],input[placeholder*="상품명"],input[placeholder*="브랜드"],input[placeholder*="검색"]')]
+          .some((element) => compact(element.value) === compact(${JSON.stringify(exactQuery)}));
+      })()`, true).catch(() => false);
+    }
     if (!inputVerified) return false;
     const submitTarget = await searchWindow.webContents.executeJavaScript(`(() => {
+      const compact = (value) => String(value || "").replace(/\\s+/g, " ").trim();
       const visible = (element) => {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
       };
-      const input = [...document.querySelectorAll('input[type="search"],input[placeholder*="상품명"],input[placeholder*="브랜드"],input[placeholder*="검색"]')].find(visible);
+      const input = [...document.querySelectorAll('input[type="search"],input[role="searchbox"],input[placeholder*="상품명"],input[placeholder*="브랜드"],input[placeholder*="검색"]')]
+        .find((element) => visible(element) && compact(element.value) === compact(${JSON.stringify(exactQuery)}));
+      if (!input) return null;
       const scope = input?.closest('form,[role="search"],header') || input?.parentElement?.parentElement?.parentElement || document;
-      const button = [...scope.querySelectorAll('button,[role="button"],input[type="submit"]')].find((element) => {
-        const label = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.className, element.outerHTML].join(" ");
-        return visible(element) && /검색|search|magnif|ico[_-]?sch/i.test(label);
-      });
+      const inputRect = input.getBoundingClientRect();
+      const button = [...scope.querySelectorAll('button,[role="button"],input[type="submit"]')]
+        .filter(visible)
+        .filter((element) => compact(element.textContent) !== "패션타운")
+        .map((element) => {
+          const label = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.className, element.outerHTML].join(" ");
+          const rect = element.getBoundingClientRect();
+          const explicitSearch = /검색|search|magnif|ico[_-]?sch/i.test(label);
+          const nearInput = rect.left >= inputRect.left && Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2)) < 80;
+          const score = (explicitSearch ? 300 : 0)
+            + (String(element.getAttribute("type") || "").toLowerCase() === "submit" ? 200 : 0)
+            + (nearInput ? Math.max(0, 100 - Math.abs(rect.left - inputRect.right)) : 0);
+          return { element, score };
+        })
+        .filter((candidate) => candidate.score >= 100)
+        .sort((left, right) => right.score - left.score)[0]?.element;
       if (!button) return null;
       const rect = button.getBoundingClientRect();
       return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
@@ -1295,34 +1419,36 @@ async function submitNaverShoppingSearch(searchWindow, query) {
       searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: submitTarget.x, y: submitTarget.y, button: "left", clickCount: 1 });
       searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: submitTarget.x, y: submitTarget.y, button: "left", clickCount: 1 });
     } else {
-      searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "Enter" });
-      searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
+      // The requested workflow requires the visible magnifier to be clicked.
+      // Do not silently substitute Enter because that can leave a suggestion
+      // open without proving that Naver actually submitted the model code.
+      return false;
     }
-    await wait(2_000);
-    const state = await searchWindow.webContents.executeJavaScript(`JSON.stringify({
-      url: String(location.href || ""),
-      text: String(document.body?.innerText || "").slice(0, 30000),
-      inputValue: String([...document.querySelectorAll('input[type="search"],input[placeholder*="상품명"],input[placeholder*="브랜드"],input[placeholder*="검색"]')].find((element) => element.value)?.value || ""),
-      resultMatched: [...document.querySelectorAll('a[href*="window-products"],a[href*="/products/"]')].some((link) => {
-        const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
-        const expected = compact(${JSON.stringify(exactQuery)});
-        const card = link.closest('li,article,[class*="product" i],[class*="item" i],div');
-        return expected.length >= 4 && compact([link.href, link.textContent, card?.innerText].join(" ")).includes(expected);
-      }),
-      noResult: /검색\s*결과가\s*없|상품을\s*찾을\s*수\s*없|일치하는\s*상품이\s*없/.test(String(document.body?.innerText || ""))
-    })`, true).then(JSON.parse).catch(() => null);
-    const urlChanged = Boolean(state?.url && state.url !== previousUrl);
-    const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
-    const queryInUrl = (() => {
-      try { return compact(decodeURIComponent(state?.url || "")).includes(compact(exactQuery)); }
-      catch { return false; }
-    })();
-    const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));
-    if (state && !/페이지를\s*찾을\s*수\s*없습니다/.test(state.text)
-      && state.inputValue.trim() === exactQuery
-      && ((urlChanged && queryInUrl)
-        || state.resultMatched === true
-        || (state.noResult === true && queryVisibleInPage))) return true;
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      await wait(attempt === 0 ? 1_000 : 500);
+      const state = await searchWindow.webContents.executeJavaScript(`JSON.stringify({
+        url: String(location.href || ""),
+        text: String(document.body?.innerText || "").slice(0, 30000),
+        resultMatched: [...document.querySelectorAll('a[href*="window-products"],a[href*="/products/"]')].some((link) => {
+          const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
+          const expected = compact(${JSON.stringify(exactQuery)});
+          const card = link.closest('li,article,[class*="product" i],[class*="item" i],div');
+          return expected.length >= 4 && compact([link.href, link.textContent, card?.innerText].join(" ")).includes(expected);
+        }),
+        noResult: /검색\\s*결과가\\s*없|상품을\\s*찾을\\s*수\\s*없|일치하는\\s*상품이\\s*없/.test(String(document.body?.innerText || ""))
+      })`, true).then(JSON.parse).catch(() => null);
+      const urlChanged = Boolean(state?.url && state.url !== previousUrl);
+      const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
+      const queryInUrl = (() => {
+        try { return compact(decodeURIComponent(state?.url || "")).includes(compact(exactQuery)); }
+        catch { return false; }
+      })();
+      const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));
+      if (state && !/페이지를\s*찾을\s*수\s*없습니다/.test(state.text)
+        && ((urlChanged && queryInUrl)
+          || state.resultMatched === true
+          || (state.noResult === true && queryVisibleInPage))) return true;
+    }
   }
   return false;
 }
@@ -1470,7 +1596,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     });
     searchWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
     const naverChannelClickRequired = ["네이버 백화점", "네이버 아울렛"].includes(String(source.store || ""));
-    const initialUrl = naverPortalSource ? "https://shopping.naver.com/" : url;
+    const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;
     try {
       await Promise.race([
         searchWindow.loadURL(initialUrl),
@@ -1499,6 +1625,27 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const searchQuery = String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();
       if (!searchQuery) return renderedSearchFailure("search_query_missing", searchWindow);
       if (naverPortalSource) {
+        const shoppingHomeOpened = await clickNaverShoppingHomeMenu(searchWindow);
+        if (!shoppingHomeOpened) {
+          const pageText = await searchWindow.webContents.executeJavaScript(
+            `String(document.body?.innerText || "").slice(0, 20000)`,
+            true,
+          ).catch(() => "");
+          const securityRequired = isNaverSecurityVerificationText(pageText);
+          if (securityRequired && securityRetry < 1) {
+            const verified = await waitForNaverSecurityVerification(searchWindow);
+            if (verified) {
+              searchWindow.destroy();
+              searchWindow = null;
+              return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt);
+            }
+          }
+          return renderedSearchFailure(
+            securityRequired ? "security_verification_required" : "naver_shopping_click_failed",
+            searchWindow,
+            { securityVerificationRequired: securityRequired },
+          );
+        }
         const fashionTownOpened = await clickNaverFashionTownMenu(searchWindow);
         if (!fashionTownOpened) {
           const pageText = await searchWindow.webContents.executeJavaScript(

@@ -883,9 +883,9 @@ export async function queryDomesticProducts({
         officialSearchUrl: source.officialBrand ? officialProductUrl : "",
         officialProductUrl,
         interactiveSearch: Boolean(source.fashionTown || source.retailerDiscovery || interactiveOfficialSearch),
-        searchQuery: interactiveOfficialSearch
+        searchQuery: interactiveOfficialSearch || source.fashionTown
           ? sanitizeDomesticQuery(articleNumber || productCode || preferredQuery)
-          : source.fashionTown || source.retailerDiscovery
+          : source.retailerDiscovery
             ? internalPortalSearchQuery(brand || title, preferredQuery) : "",
         searchAttempts: queryCandidates.map((candidate) => ({
           query: candidate,

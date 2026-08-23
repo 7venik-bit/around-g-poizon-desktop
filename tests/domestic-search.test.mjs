@@ -189,7 +189,7 @@ test("네이버 자동화는 포털 검색창을 사용하고 수동 확인 링�
   assert.match(naver.searchUrl, /shopping\.naver\.com\/window\/search\/fashion-group/);
   assert.match(naver.searchUrl, /q=SR123UTS15/);
   assert.equal(naver.interactiveSearch, true);
-  assert.equal(naver.searchQuery, "데상트 SR123UTS15");
+  assert.equal(naver.searchQuery, "SR123UTS15");
   assert.match(naver.searchUrl, /q=/);
 });
 
@@ -208,7 +208,7 @@ test("품번이 있으면 상품코드, 상품명, 상품명+상품코드 순으
     "MLB 차키 내피 합성 가죽 인조가죽 로우탑 스니커즈 3ASXCA12N-50WHS",
   ]);
   const department = result.sources.find((source) => source.store === "네이버 백화점");
-  assert.equal(department.searchQuery, "MLB 3ASXCA12N-50WHS");
+  assert.equal(department.searchQuery, "3ASXCA12N-50WHS");
   assert.doesNotMatch(department.searchQuery, /가죽|로우탑|스니커즈/);
 });
 
