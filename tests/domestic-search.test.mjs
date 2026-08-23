@@ -191,7 +191,7 @@ test("네이버는 검색어 URL로 바로 가지 않고 포털 내부 검색창
   assert.doesNotMatch(naver.searchUrl, /query=|q=/);
 });
 
-test("품번이 있으면 소재와 카테고리 설명을 검색어에 넣지 않는다", async () => {
+test("품번이 있으면 상품코드, 상품명, 상품명+상품코드 순으로 검색한다", async () => {
   const result = await queryDomesticProducts({
     query: "MLB 3ASXCA12N-50WHS MLB 차키 내피 합성 가죽 인조가죽 로우탑 스니커즈",
     articleNumber: "3ASXCA12N-50WHS",
@@ -200,7 +200,11 @@ test("품번이 있으면 소재와 카테고리 설명을 검색어에 넣지 �
     searchStrategy: "combined",
     fetchImpl: async () => ({ ok: true, text: async () => "" }),
   });
-  assert.deepEqual(result.queryCandidates, ["MLB 3ASXCA12N-50WHS", "3ASXCA12N-50WHS"]);
+  assert.deepEqual(result.queryCandidates, [
+    "3ASXCA12N-50WHS",
+    "MLB 차키 내피 합성 가죽 인조가죽 로우탑 스니커즈",
+    "MLB 차키 내피 합성 가죽 인조가죽 로우탑 스니커즈 3ASXCA12N-50WHS",
+  ]);
   const department = result.sources.find((source) => source.store === "네이버 백화점");
   assert.equal(department.searchQuery, "MLB 3ASXCA12N-50WHS");
   assert.doesNotMatch(department.searchQuery, /가죽|로우탑|스니커즈/);

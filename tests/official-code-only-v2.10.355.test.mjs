@@ -5,9 +5,10 @@ import test from "node:test";
 const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 const relay = await readFile(new URL("../relay/domestic-search.mjs", import.meta.url), "utf8");
 
-test("every official mall receives only the exact product code", () => {
+test("every official mall tries the exact product code first", () => {
   assert.match(relay, /sanitizeDomesticQuery\(articleNumber \|\| productCode \|\| preferredQuery\)/);
-  assert.doesNotMatch(relay, /\[title, articleNumber\].*join\(" "\)/);
+  assert.match(relay, /const orderedProductQueries = \[\s*exactProductCode,\s*exactProductTitle/s);
+  assert.match(relay, /searchAttempts: queryCandidates\.map/);
 });
 
 test("official search opens and submits with physical mouse events", () => {

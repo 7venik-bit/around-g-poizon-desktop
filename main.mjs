@@ -1299,12 +1299,12 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
   return { ok: true, submitted };
 }
 
-async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "", securityRetry = 0) {
+async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "", securityRetry = 0, searchAttempt = null) {
   const interactiveOfficialSearch = source.store === "브랜드 공식몰"
     && !String(source.officialProductUrl || "")
     && /^https:\/\//i.test(String(source.homepageUrl || ""));
   const interactiveSiteSearch = interactiveOfficialSearch || source.interactiveSearch === true;
-  const url = String(source.officialProductUrl || (interactiveOfficialSearch ? source.homepageUrl : source.searchUrl) || "");
+  const url = String(searchAttempt?.url || source.officialProductUrl || (interactiveOfficialSearch ? source.homepageUrl : source.searchUrl) || "");
   if (!/^https:\/\//i.test(url)) return { count: Number(source.count || 0), products: [] };
   let searchWindow;
   try {
@@ -1333,7 +1333,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       if (login.required) await searchWindow.loadURL(String(source.homepageUrl || url)).catch(() => {});
     }
     if (interactiveSiteSearch) {
-      const searchQuery = String(source.searchQuery || articleNumber || title || "").trim();
+      const searchQuery = String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();
       const submitted = naverPortalSource
         ? await submitNaverShoppingSearch(searchWindow, searchQuery)
         : await executeOfficialMallSearch(searchWindow, String(source.homepageUrl || url), searchQuery);
@@ -1460,7 +1460,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         if (!verified) return null;
         searchWindow.destroy();
         searchWindow = null;
-        return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1);
+        return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt);
       }
     } catch {}
     const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
@@ -1603,11 +1603,18 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     // A search-card hit is only a candidate. Musinsa and other rendered
     // channels must open the product detail page before an exact article and
     // stock state can be reported as a purchasable domestic result.
-    const renderAttempts = /^(?:브랜드 공식몰|SSG|롯데온)(?:\s|$)/.test(String(source.store || "")) ? 3 : 1;
+    const technicalAttempts = /^(?:브랜드 공식몰|SSG|롯데온)(?:\s|$)/.test(String(source.store || "")) ? 3 : 1;
+    const queryAttempts = Array.isArray(source.searchAttempts) && source.searchAttempts.length
+      ? source.searchAttempts : [{ query: source.searchQuery || articleNumber || title || "", url: source.searchUrl || "" }];
     let result = null;
-    for (let attempt = 0; attempt < renderAttempts && !result; attempt += 1) {
-      if (attempt > 0) await wait(1_500);
-      result = await renderedSearchSourceResult(source, articleNumber, brand, title);
+    for (const queryAttempt of queryAttempts) {
+      let queryResult = null;
+      for (let attempt = 0; attempt < technicalAttempts && !queryResult; attempt += 1) {
+        if (attempt > 0) await wait(1_500);
+        queryResult = await renderedSearchSourceResult(source, articleNumber, brand, title, 0, queryAttempt);
+      }
+      if (queryResult && (!result || Number(queryResult.count || 0) > Number(result.count || 0))) result = queryResult;
+      if (Number(queryResult?.count || 0) > 0 || (queryResult?.products || []).length > 0) break;
     }
     if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
     const count = result?.count;

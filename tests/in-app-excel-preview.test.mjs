@@ -196,12 +196,13 @@ test("unavailable verification is never misreported as confirmed product absence
 test("official store, Musinsa, and Naver sources all render numeric result badges", () => {
   assert.match(mainSource, /if \(!source\.renderCount\)/);
   assert.match(mainSource, /\^\(\?:브랜드 공식몰\|SSG\|롯데온\)\(\?:\\s\|\$\)/);
-  assert.match(mainSource, /renderAttempts && !result/);
+  assert.match(mainSource, /for \(const queryAttempt of queryAttempts\)/);
+  assert.match(mainSource, /technicalAttempts && !queryResult/);
   assert.match(mainSource, /attempt > 0\) await wait\(1_500\)/);
   assert.match(rendererSource, /label: "추가 확인 필요", className: "pending"/);
   assert.match(rendererSource, /label: "없음 확인", className: "missing"/);
   assert.doesNotMatch(mainSource, /!source\.linkOnly && source\.ok && Number\(source\.count \|\| 0\) > 0/);
-  assert.match(mainSource, /renderedSearchSourceResult\(source, articleNumber, brand, title\)/);
+  assert.match(mainSource, /renderedSearchSourceResult\(source, articleNumber, brand, title, 0, queryAttempt\)/);
   assert.match(rendererSource, /const sourceSections = sources\.map/);
   assert.doesNotMatch(rendererSource, /filter\(\(source\) => source\.linkOnly\)\.map/);
   assert.doesNotMatch(mainSource, /isBinaryPresenceChannel/);

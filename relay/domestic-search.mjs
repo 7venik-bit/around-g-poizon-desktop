@@ -782,10 +782,16 @@ export async function queryDomesticProducts({
   // A verified article number is the strongest product identity. Do not append
   // POIZON's material/category description to portal searches (for example
   // "합성 가죽, 인조가죽 로우탑...") because it dilutes the exact model query.
-  const exactArticleQueries = articleNumber
-    ? [[brand, articleNumber].filter(Boolean).join(" "), articleNumber]
-    : [];
-  const queryCandidates = (exactArticleQueries.length ? exactArticleQueries : brandSearchQueries({
+  const exactProductCode = sanitizeDomesticQuery(articleNumber || productCode || "");
+  const exactProductTitle = sanitizeDomesticQuery(title || "");
+  // Every store uses the same operator-defined fallback order. A later query
+  // is submitted only after the earlier query produced no exact product.
+  const orderedProductQueries = [
+    exactProductCode,
+    exactProductTitle,
+    [exactProductTitle, exactProductCode].filter(Boolean).join(" "),
+  ];
+  const queryCandidates = (orderedProductQueries.some(Boolean) ? orderedProductQueries : brandSearchQueries({
     strategy: preferTitle && searchStrategy === "brand_code" ? "brand_title" : searchStrategy,
     brand,
     articleNumber,
@@ -832,15 +838,16 @@ export async function queryDomesticProducts({
   const results = [];
   for (const source of sources) {
     const preferredQuery = queryCandidates[0] || normalizedQuery;
-    const searchUrl = source.officialBrand
-      ? officialBrandSearchUrl(brand || title || normalizedQuery, preferredQuery)
+    const searchUrlFor = (candidate) => source.officialBrand
+      ? officialBrandSearchUrl(brand || title || normalizedQuery, candidate)
       : source.fashionTown
         ? naverFashionTownPortalUrl(source.fashionTown)
         : source.retailerDiscovery
           ? naverShoppingPortalUrl()
         : source.domesticChannel
-          ? domesticChannelUrl(source.domesticChannel, brand || title, preferredQuery)
-        : DOMESTIC_SEARCH_LINKS[source.store](preferredQuery);
+          ? domesticChannelUrl(source.domesticChannel, brand || title, candidate)
+        : DOMESTIC_SEARCH_LINKS[source.store](candidate);
+    const searchUrl = searchUrlFor(preferredQuery);
     const interactiveOfficialSearch = source.officialBrand
       && officialBrandUsesInternalSearch(brand || title || normalizedQuery, officialBrandRecord);
     const officialProductUrl = source.officialBrand && !interactiveOfficialSearch
@@ -871,6 +878,10 @@ export async function queryDomesticProducts({
           ? sanitizeDomesticQuery(articleNumber || productCode || preferredQuery)
           : source.fashionTown || source.retailerDiscovery
             ? internalPortalSearchQuery(brand || title, preferredQuery) : "",
+        searchAttempts: queryCandidates.map((candidate) => ({
+          query: candidate,
+          url: searchUrlFor(candidate),
+        })),
         count,
         products: [],
       });
@@ -901,7 +912,7 @@ export async function queryDomesticProducts({
     // Companies are shown only after an exact-model product is verified.
     // A registry entry alone must never look like a matching sourcing result.
     parallelImportCompanies: [],
-    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, interactiveSearch, searchQuery, count, products }, priority) => ({
+    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, interactiveSearch, searchQuery, searchAttempts, count, products }, priority) => ({
       store,
       ok,
       linkOnly,
@@ -915,6 +926,7 @@ export async function queryDomesticProducts({
       officialProductUrl,
       interactiveSearch: Boolean(interactiveSearch),
       searchQuery: searchQuery || "",
+      searchAttempts: Array.isArray(searchAttempts) ? searchAttempts : [],
     })),
   };
 }
