@@ -155,19 +155,19 @@ test("official-store verification supports every registered URL family and embed
 });
 
 test("official-store result distinguishes verified product links from manual search links", () => {
-  assert.match(rendererSource, /공식몰 상품 없음/);
-  assert.match(rendererSource, /공식몰 검색/);
-  assert.match(rendererSource, /source\.countVerified && source\.officialProductUrl/);
+  assert.match(rendererSource, /source\.officialProductUrl \|\| source\.officialSearchUrl \|\| source\.homepageUrl \|\| source\.searchUrl/);
+  assert.match(rendererSource, /matchedProducts\.length \? "판매처 열기" : "판매처 검색"/);
+  assert.match(rendererSource, /source\.countVerified && Number\(source\.count \|\| 0\) > 0/);
   assert.doesNotMatch(rendererSource, /data-official-discovery=/);
   assert.match(mainSource, /officialProductMissing: isOfficialStore/);
   assert.match(mainSource, /officialSearchUrl: isOfficialStore/);
 });
 
 test("official-mall button remains clickable for direct manual verification", () => {
-  assert.match(rendererSource, /const officialOpenUrl = String/);
+  assert.match(rendererSource, /const openUrl = String/);
   assert.match(rendererSource, /source\.officialProductUrl \|\| source\.officialSearchUrl \|\| source\.homepageUrl \|\| source\.searchUrl/);
-  assert.match(rendererSource, /return officialButton\("공식몰 검색"\)/);
-  assert.match(rendererSource, /officialButton\("공식몰 상품 없음·직접 확인"\)/);
+  assert.match(rendererSource, /data-official-homepage/);
+  assert.match(rendererSource, /검색·재고 확인/);
 });
 
 test("official-mall button runs homepage magnifier search instead of opening a raw URL", () => {
@@ -187,9 +187,8 @@ test("unavailable verification is never misreported as confirmed product absence
   assert.match(mainSource, /pageBlocked/);
   assert.match(mainSource, /verificationFailed: !Number\.isFinite\(count\)/);
   assert.match(rendererSource, /source\.verificationFailed/);
-  assert.match(rendererSource, /Number\(source\.count \|\| 0\) > 0[\s\S]*?"없음"/);
-  assert.match(rendererSource, /확인 실패/);
-  assert.match(rendererSource, /추가 확인/);
+  assert.match(rendererSource, /source\.verificationFailed[\s\S]*?다시 검색 필요/);
+  assert.match(rendererSource, /source\.verificationPending[\s\S]*?상세 확인 필요/);
   assert.match(mainSource, /verificationPending/);
   assert.match(mainSource, /absenceConfirmed/);
 });
@@ -203,12 +202,12 @@ test("official store, Musinsa, and Naver sources all render numeric result badge
   assert.match(rendererSource, /label: "없음 확인", className: "missing"/);
   assert.doesNotMatch(mainSource, /!source\.linkOnly && source\.ok && Number\(source\.count \|\| 0\) > 0/);
   assert.match(mainSource, /renderedSearchSourceResult\(source, articleNumber, brand, title\)/);
-  assert.match(rendererSource, /const directLinks = \(result\.sources \|\| \[\]\)\.map/);
+  assert.match(rendererSource, /const sourceSections = sources\.map/);
   assert.doesNotMatch(rendererSource, /filter\(\(source\) => source\.linkOnly\)\.map/);
   assert.doesNotMatch(mainSource, /isBinaryPresenceChannel/);
   assert.match(mainSource, /const displayCount = Number\.isFinite\(count\)[\s\S]*?\? Number\(count\)/);
   assert.doesNotMatch(rendererSource, /Number\(source\.count \|\| 0\) > 0 \? 1 : 0/);
-  assert.match(rendererSource, /const sourceResult = \(source\) => source\.verificationFailed/);
+  assert.match(rendererSource, /const sourceStatus = \(source, matchedProducts\)/);
 });
 
 test("SSG와 롯데온 일반·백화점·아울렛 검색은 화면 지연을 고려해 세 번 확인한다", () => {

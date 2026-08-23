@@ -1842,9 +1842,17 @@ function renderDomestic(result, sourceProduct = {}) {
   const products = (result.products || []).filter((product) => product && (product.name || product.title));
   const verifiedCount = (result.sources || []).reduce((sum, source) =>
     sum + (source.countVerified ? Number(source.count || 0) : 0), 0);
-  const sourceByStore = new Map((result.sources || []).map((source) => [source.store, source]));
-  const renderProductRow = (product, sourcingLabel = "") => {
-    const source = sourceByStore.get(product.store) || {};
+  const sources = result.sources || [];
+  const sourceOwnsProduct = (source, product) => {
+    const sourceStore = String(source?.store || "");
+    const productStore = String(product?.store || "");
+    if (sourceStore === productStore) return true;
+    if (sourceStore === "SSG" && /^SSG(?:\s|$)/.test(productStore)) return true;
+    if (sourceStore === "병행수입·편집샵" && (/병행수입/.test(productStore)
+      || String(product?.retailerName || "").startsWith("병행수입"))) return true;
+    return false;
+  };
+  const renderProductRow = (product, source = {}, sourcingLabel = "") => {
     const sizes = product?.sizes || [];
     const sourceState = product.inStock === true ? "available" : product.inStock === false ? "soldout" : "pending";
     const sourceLabel = product.stockStatus === "login_required" ? "로그인 필요" : product.inStock === true ? "재고 있음" : product.inStock === false ? "품절" : "확인 필요";
@@ -1874,55 +1882,51 @@ function renderDomestic(result, sourceProduct = {}) {
       <button data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${sourcingLabel || (product?.inStock === true ? "구매" : "확인")}</button>
     </div>`;
   };
-  const parallelProducts = products.filter((product) => String(product?.retailerName || "").startsWith("병행수입 정품업체"));
-  const regularProducts = products.filter((product) => !parallelProducts.includes(product));
-  const productRows = regularProducts.map((product) => renderProductRow(product)).join("");
-  const parallelProductRows = parallelProducts.map((product) => renderProductRow(product, "상품 소싱")).join("");
-  const sourceResult = (source) => source.verificationFailed
-      ? `<small>확인 실패</small>`
-      : source.verificationPending
-        ? `<small>추가 확인</small>`
-      : source.countVerified
-        ? `<b class="source-count">${Number(source.count || 0) > 0 ? Number(source.count) : "없음"}</b>`
-        : `<small>결과 확인</small>`;
-  const directLinks = (result.sources || []).map((source) => {
-    if (source.store === "병행수입·편집샵" && (!source.countVerified || Number(source.count || 0) <= 0)) return "";
+  const sourceAction = (source, label = "판매처 검색") => {
+    const openUrl = String(source.officialProductUrl || source.officialSearchUrl || source.homepageUrl || source.searchUrl || "");
+    const query = source.searchQuery || sourceProduct.articleNumber || sourceProduct.productCode || sourceProduct.spuId || result.queryCandidates?.[0] || "";
+    if (!openUrl) return `<button class="source-platform-action" type="button" disabled>${label}</button>`;
     if (source.officialStatus) {
-      const officialOpenUrl = String(
-        source.officialProductUrl || source.officialSearchUrl || source.homepageUrl || source.searchUrl || ""
-      );
-      const officialQuery = source.searchQuery || sourceProduct.articleNumber || sourceProduct.productCode || sourceProduct.spuId || result.queryCandidates?.[0] || "";
-      const officialButton = (label, badgeClass = "") => officialOpenUrl
-        ? `<button class="source-link" type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || officialOpenUrl)}" data-official-query="${encodeURIComponent(officialQuery)}"><span>${text(source.store)}</span><small${badgeClass ? ` class="${badgeClass}"` : ""}>${label}</small></button>`
-        : `<button class="source-link" type="button" disabled><span>${text(source.store)}</span><small${badgeClass ? ` class="${badgeClass}"` : ""}>${label}</small></button>`;
-      if (source.officialStatus === "pending") {
-        return officialButton("공식몰 검색");
-      }
-      if (source.officialStatus === "no_official_store") {
-        return officialButton("국내 공식몰 없음 확인");
-      }
-      if (source.officialStatus === "search_unsupported") {
-        return officialButton("공식몰 열기·사이트 검색 미지원");
-      }
-      if (source.verificationFailed) {
-        return officialButton("상품없음·직접 확인");
-      }
-      if (source.countVerified && source.officialProductUrl) {
-        return `<button class="source-link" type="button" data-url="${encodeURIComponent(source.officialProductUrl)}"><span>${text(source.store)}</span><b class="source-count">상품 연결</b></button>`;
-      }
-      if (source.countVerified || source.officialProductMissing) {
-        return officialButton("공식몰 상품 없음·직접 확인");
-      }
-      return officialButton("공식몰 검색");
+      return `<button class="source-platform-action" type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}">${label}</button>`;
     }
-    return `<button class="source-link" type="button" data-url="${encodeURIComponent(source.searchUrl)}"><span>${text(source.store)}</span>${source.officialStatus === "pending" ? `<small>도메인 확인 필요</small>` : source.officialStatus === "no_official_store" ? `<small>등록된 공식몰 없음</small>` : source.officialStatus === "search_unsupported" ? `<small>사이트 검색 미지원</small>` : sourceResult(source)}</button>`;
+    return `<button class="source-platform-action" type="button" data-url="${encodeURIComponent(source.searchUrl || openUrl)}">${label}</button>`;
+  };
+  const sourceStatus = (source, matchedProducts) => {
+    const available = matchedProducts.filter((product) => product.inStock === true).length;
+    if (available) return { label: `재고 ${available}개`, className: "available" };
+    if (matchedProducts.length) return { label: "재고 없음", className: "soldout" };
+    if (source.verificationFailed) return { label: "다시 검색 필요", className: "pending" };
+    if (source.verificationPending) return { label: "상세 확인 필요", className: "pending" };
+    if (source.countVerified && Number(source.count || 0) > 0) return { label: `상품 ${Number(source.count)}개`, className: "pending" };
+    if (source.countVerified || source.absenceConfirmed) return { label: "상품 없음", className: "missing" };
+    return { label: "검색 필요", className: "pending" };
+  };
+  const renderedProductKeys = new Set();
+  const sourceSections = sources.map((source) => {
+    const matchedProducts = products.filter((product) => sourceOwnsProduct(source, product));
+    matchedProducts.forEach((product) => renderedProductKeys.add(`${product.store}:${product.id || product.url}`));
+    if (source.store === "병행수입·편집샵" && !matchedProducts.length && Number(source.count || 0) <= 0) return "";
+    const status = sourceStatus(source, matchedProducts);
+    const rows = matchedProducts.map((product) => renderProductRow(
+      product,
+      source,
+      source.store === "병행수입·편집샵" ? "상품 소싱" : "",
+    )).join("");
+    const detailPending = !matchedProducts.length && Number(source.count || 0) > 0
+      ? `검색 결과 ${Number(source.count)}개를 확인했습니다. 재고·사이즈 상세 수집이 필요합니다.`
+      : !matchedProducts.length ? "일치 상품의 재고와 사이즈가 아직 확인되지 않았습니다." : "";
+    return `<section class="domestic-source-section ${status.className}${source.store === "병행수입·편집샵" ? " parallel-import-panel" : ""}">
+      <div class="domestic-source-heading"><strong>${text(source.store)}</strong><span class="stock-state ${status.className}">${text(status.label)}</span>${sourceAction(source, matchedProducts.length ? "판매처 열기" : "판매처 검색")}</div>
+      ${rows ? `<div class="platform-list">${rows}</div>` : `<div class="domestic-source-empty"><span>${text(detailPending)}</span>${sourceAction(source, "검색·재고 확인")}</div>`}
+    </section>`;
   }).join("");
+  const unmatchedRows = products.filter((product) => !renderedProductKeys.has(`${product.store}:${product.id || product.url}`))
+    .map((product) => renderProductRow(product)).join("");
   const emptyMessage = verifiedCount > 0
     ? `판매처에서 ${verifiedCount}개 결과를 확인했습니다. 상세 상품은 아래 판매처에서 확인해 주세요.`
     : "일치하는 국내 판매 상품을 찾지 못했습니다.";
-  return `<div class="platform-list">${productRows || `<span class="inventory-help">${emptyMessage}</span>`}</div>
-    ${parallelProductRows ? `<section class="parallel-import-panel"><div class="parallel-import-heading"><strong>병행수입업체</strong><small>요청한 모델번호가 정확히 일치하는 상품만 표시</small></div><div class="platform-list">${parallelProductRows}</div></section>` : ""}
-    ${directLinks ? `<div class="source-links">${directLinks}</div>` : ""}`;
+  return `<div class="domestic-source-list">${sourceSections || `<span class="inventory-help">${emptyMessage}</span>`}</div>
+    ${unmatchedRows ? `<section class="domestic-source-section"><div class="domestic-source-heading"><strong>추가 판매처</strong></div><div class="platform-list">${unmatchedRows}</div></section>` : ""}`;
 }
 
 function renderExplorerResults(title, products, preserveDomestic = false) {
