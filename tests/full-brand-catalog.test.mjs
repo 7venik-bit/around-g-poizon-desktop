@@ -146,7 +146,8 @@ test("the requested 3,388-brand catalog is accepted as a complete searchable cat
     const searchUrl = decodeURIComponent(officialBrandSearchUrl(brand.ko, "STYLE-001"));
     assert.match(searchUrl, new RegExp(brand.ko));
     assert.match(searchUrl, /STYLE-001/);
-    assert.match(searchUrl, /shopping\.naver\.com\/window\/search\/fashion-group/);
+    assert.match(searchUrl, /search\.shopping\.naver\.com\/ns\/search/);
+    assert.match(searchUrl, /mallTypes=OFFICIAL_BRAND/);
     assert.doesNotMatch(searchUrl, /공식몰|공식스토어/);
   }
 });

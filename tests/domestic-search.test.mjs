@@ -149,7 +149,8 @@ import { OFFICIAL_DOMAIN_STATUS } from "../services/official-domain-registry.mjs
 
 test("every catalog brand uses the Fashion Town brand-store search without an official-mall keyword", () => {
   const url = decodeURIComponent(officialBrandSearchUrl("살로몬", "L47581100"));
-  assert.match(url, /shopping\.naver\.com\/window\/search\/fashion-group/);
+  assert.match(url, /search\.shopping\.naver\.com\/ns\/search/);
+  assert.match(url, /mallTypes=OFFICIAL_BRAND/);
   assert.match(url, /살로몬/);
   assert.match(url, /L47581100/);
   assert.doesNotMatch(url, /공식몰|공식스토어/);
@@ -158,7 +159,7 @@ test("every catalog brand uses the Fashion Town brand-store search without an of
 
 test("every catalog brand gets article-specific Naver channel searches", () => {
   const cases = [
-    ["brand-store", /\/window\/search\/fashion-group/],
+    ["brand-store", /search\.shopping\.naver\.com\/ns\/search/],
     ["department", /\/window\/department\/search/],
     ["outlet", /\/window\/outlet\/search/],
   ];
@@ -170,8 +171,8 @@ test("every catalog brand gets article-specific Naver channel searches", () => {
   }
 });
 
-test("네이버는 검색어 URL로 바로 가지 않고 포털 내부 검색창을 사용한다", async () => {
-  assert.equal(naverFashionTownPortalUrl("brand-store"), "https://shopping.naver.com/window/fashion-group");
+test("네이버 자동화는 포털 검색창을 사용하고 수동 확인 링크도 검색어를 보존한다", async () => {
+  assert.equal(naverFashionTownPortalUrl("brand-store"), "https://shopping.naver.com/");
   assert.equal(naverFashionTownPortalUrl("department"), "https://shopping.naver.com/window/department");
   assert.equal(internalPortalSearchQuery("데상트", "데상트 SR123UTS15"), "데상트 SR123UTS15");
   assert.equal(internalPortalSearchQuery("데상트", "SR123UTS15"), "데상트 SR123UTS15");
@@ -185,10 +186,11 @@ test("네이버는 검색어 URL로 바로 가지 않고 포털 내부 검색창
     }),
   });
   const naver = result.sources.find((source) => source.store === "네이버 공식 브랜드스토어");
-  assert.equal(naver.searchUrl, "https://shopping.naver.com/window/fashion-group");
+  assert.match(naver.searchUrl, /search\.shopping\.naver\.com\/ns\/search/);
+  assert.match(naver.searchUrl, /mallTypes=OFFICIAL_BRAND/);
   assert.equal(naver.interactiveSearch, true);
   assert.equal(naver.searchQuery, "데상트 SR123UTS15");
-  assert.doesNotMatch(naver.searchUrl, /query=|q=/);
+  assert.match(naver.searchUrl, /query=/);
 });
 
 test("품번이 있으면 상품코드, 상품명, 상품명+상품코드 순으로 검색한다", async () => {

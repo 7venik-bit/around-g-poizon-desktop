@@ -180,12 +180,8 @@ export function naverFashionTownUrl(channel, brand, query) {
   const matchedStore = naverBrandStore(cleanedBrand || cleanedQuery);
   const searchBrand = matchedStore?.aliases[0] || cleanedBrand;
   if (channel === "brand-store") {
-    if (matchedStore?.slug) {
-      return `https://brand.naver.com/${matchedStore.slug}/search?q=${encodeURIComponent(cleanedQuery)}`;
-    }
-    return `https://shopping.naver.com/window/search/fashion-group?q=${encodeURIComponent(
-      [searchBrand, cleanedQuery].filter(Boolean).join(" ")
-    )}`;
+    const exactQuery = [searchBrand, cleanedQuery].filter(Boolean).join(" ");
+    return `https://search.shopping.naver.com/ns/search?query=${encodeURIComponent(exactQuery)}&mallTypes=OFFICIAL_BRAND`;
   }
   const section = channel === "department" ? "department" : "outlet";
   return `https://shopping.naver.com/window/${section}/search?q=${encodeURIComponent(
@@ -196,7 +192,7 @@ export function naverFashionTownUrl(channel, brand, query) {
 export function naverFashionTownPortalUrl(channel) {
   if (channel === "department") return "https://shopping.naver.com/window/department";
   if (channel === "outlet") return "https://shopping.naver.com/window/outlet";
-  return "https://shopping.naver.com/window/fashion-group";
+  return "https://shopping.naver.com/";
 }
 
 export function naverShoppingPortalUrl() {
@@ -857,7 +853,7 @@ export async function queryDomesticProducts({
     const searchUrlFor = (candidate) => source.officialBrand
       ? officialBrandSearchUrl(brand || title || normalizedQuery, candidate)
       : source.fashionTown
-        ? naverFashionTownPortalUrl(source.fashionTown)
+        ? naverFashionTownUrl(source.fashionTown, brand || title, candidate)
         : source.retailerDiscovery
           ? naverShoppingPortalUrl()
         : source.domesticChannel
