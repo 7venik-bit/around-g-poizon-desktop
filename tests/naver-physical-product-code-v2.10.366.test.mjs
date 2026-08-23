@@ -12,17 +12,20 @@ const [mainSource, relaySource, packageSource, lockSource] = await Promise.all([
 const pkg = JSON.parse(packageSource);
 const lock = JSON.parse(lockSource);
 
-test("v2.10.368 release metadata is synchronized", () => {
-  assert.equal(pkg.version, "2.10.368");
-  assert.equal(lock.version, "2.10.368");
-  assert.equal(lock.packages[""].version, "2.10.368");
+test("v2.10.369 release metadata is synchronized", () => {
+  assert.equal(pkg.version, "2.10.369");
+  assert.equal(lock.version, "2.10.369");
+  assert.equal(lock.packages[""].version, "2.10.369");
 });
 
 test("Naver physically enters Fashion Town, focuses the input, and clicks its search icon", () => {
-  assert.match(mainSource, /label === "패션타운"/);
-  assert.ok(mainSource.includes('(?:main\\\\/|search\\\\/)?fashion-group'));
+  assert.match(mainSource, /const fashionLabels = \["패션타운", "패션위크"\]/);
+  assert.match(mainSource, /label\.includes\(fashionLabel\)/);
+  assert.match(mainSource, /return Boolean\(routeOrTitleMatched \|\| selectedMenuMatched \|\| searchScopeMatched\)/);
+  assert.doesNotMatch(mainSource, /fashionTownRoute && searchInput/);
   assert.match(mainSource, /async function openNaverFashionTownSearchInput/);
-  assert.ok(mainSource.includes('/패션타운\\\\s*상품을\\\\s*검색/i'));
+  assert.match(mainSource, /\(\?:패션타운\|패션위크\)/);
+  assert.match(mainSource, /상품명\\\\s\*또는\\\\s\*브랜드/);
   assert.match(mainSource, /document\.activeElement/);
   assert.match(mainSource, /async function typeNaverQueryLikeUser/);
   assert.match(mainSource, /type: "keyDown", keyCode: character/);
@@ -32,6 +35,17 @@ test("Naver physically enters Fashion Town, focuses the input, and clicks its se
   assert.doesNotMatch(mainSource, /insertText\(exactQuery\)/);
   assert.match(mainSource, /sendInputEvent\(\{ type: "mouseDown", x: submitTarget\.x/);
   assert.doesNotMatch(mainSource, /if \(submitTarget\)[\s\S]{0,900}keyCode: "Enter"/);
+});
+
+test("Naver executes the required click, type, and magnifier sequence", () => {
+  assert.match(
+    mainSource,
+    /clickNaverFashionTownMenu\(searchWindow\)[\s\S]*submitNaverShoppingSearch\(searchWindow, searchQuery\)/,
+  );
+  assert.match(
+    mainSource,
+    /openNaverFashionTownSearchInput\(searchWindow\)[\s\S]*typeNaverQueryLikeUser\(searchWindow, inputTarget, exactQuery\)[\s\S]*mouseDown", x: submitTarget\.x/,
+  );
 });
 
 test("all restored Naver channels receive only the exact product code", async () => {

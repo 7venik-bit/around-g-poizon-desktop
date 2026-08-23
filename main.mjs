@@ -1253,6 +1253,7 @@ async function clickNaverFashionTownMenu(searchWindow) {
   for (let attempt = 0; attempt < 30 && !target; attempt += 1) {
     target = await searchWindow.webContents.executeJavaScript(`(() => {
       const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
+      const fashionLabels = ["패션타운", "패션위크"];
       const visible = (element) => {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
@@ -1260,22 +1261,30 @@ async function clickNaverFashionTownMenu(searchWindow) {
       };
       const candidates = [...document.querySelectorAll('header a,nav a,a,button,[role="button"]')]
         .filter(visible)
-        .filter((element) => {
+        .map((element) => {
           const label = compact(element.textContent);
-          const href = String(element.getAttribute("href") || "");
-          return label === "패션타운" || (label === "패션위크" && /fashion-group/i.test(href));
+          const matchedLabel = fashionLabels.find((fashionLabel) => label.includes(fashionLabel));
+          return { element, label, matchedLabel };
         })
+        .filter((candidate) => candidate.matchedLabel)
         .sort((left, right) => {
-          const score = (element) => (/fashion-group/i.test(String(element.getAttribute("href") || "")) ? 200 : 0)
-            + (element.closest("nav") ? 100 : 0)
-            + (element.closest("header") ? 50 : 0);
+          const score = (candidate) => (candidate.label === candidate.matchedLabel ? 500 : 0)
+            + (/fashion|window/i.test(String(candidate.element.getAttribute("href") || "")) ? 200 : 0)
+            + (candidate.element.closest("nav") ? 100 : 0)
+            + (candidate.element.closest("header") ? 50 : 0)
+            - candidate.label.length;
           return score(right) - score(left);
         });
-      const element = candidates[0];
-      if (!element) return null;
+      const selected = candidates[0];
+      const element = selected?.element;
+      if (!element || !selected?.matchedLabel) return null;
       element.scrollIntoView({ block: "center", inline: "center" });
       const rect = element.getBoundingClientRect();
-      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+      return {
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2),
+        label: selected.matchedLabel
+      };
     })()`, true).catch(() => null);
     if (!target) await wait(500);
   }
@@ -1283,21 +1292,35 @@ async function clickNaverFashionTownMenu(searchWindow) {
   searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
   searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
   searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
-  // The current Fashion Town route is /window/main/fashion-group. Wait for
-  // both that route and its real search input so the next step never races the
-  // SPA transition or mistakes the category selector for a ready search box.
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  // Navigation and search activation are separate steps. Naver changes both
+  // the route and the search-control markup, so entering Fashion Town must not
+  // depend on a writable input already existing. Either visible service name
+  // is sufficient, and the next function opens/re-queries the real input.
+  for (let attempt = 0; attempt < 30; attempt += 1) {
     await wait(attempt === 0 ? 1_000 : 500);
     const ready = await searchWindow.webContents.executeJavaScript(`(() => {
+      const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
+      const fashionLabels = ["패션타운", "패션위크"];
       const visible = (element) => {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
       };
-      const searchInput = [...document.querySelectorAll('input[type="search"],input[role="searchbox"],input[placeholder*="상품명"],input[placeholder*="브랜드"],input[placeholder*="검색"]')]
-        .find((element) => visible(element) && element.type !== "password");
-      const fashionTownRoute = /\\/window\\/(?:main\\/|search\\/)?fashion-group/i.test(location.pathname);
-      return Boolean(fashionTownRoute && searchInput);
+      const routeOrTitleMatched = /fashion|style/i.test(String(location.pathname || ""))
+        || fashionLabels.some((label) => compact(document.title).includes(label));
+      const selectedMenuMatched = [...document.querySelectorAll('header a,nav a,a,button,[role="button"],[aria-current],[aria-selected="true"]')]
+        .filter(visible)
+        .some((element) => {
+          const labelMatched = fashionLabels.some((label) => compact(element.textContent).includes(label));
+          const selected = element.getAttribute("aria-current") === "page"
+            || element.getAttribute("aria-selected") === "true"
+            || /(?:^|[\\s_-])(?:selected|active|on)(?:$|[\\s_-])/i.test(String(element.className || ""));
+          return labelMatched && selected;
+        });
+      const searchScopeMatched = [...document.querySelectorAll('form button,form [role="button"],[role="search"] button,[role="search"] [role="button"]')]
+        .filter(visible)
+        .some((element) => fashionLabels.some((label) => compact(element.textContent).includes(label)));
+      return Boolean(routeOrTitleMatched || selectedMenuMatched || searchScopeMatched);
     })()`, true).catch(() => false);
     if (ready) return true;
   }
@@ -1315,26 +1338,26 @@ async function openNaverFashionTownSearchInput(searchWindow) {
         const rect = element.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
       };
-      const inputs = [...document.querySelectorAll('input:not([type="password"])')]
+      const inputs = [...document.querySelectorAll('input:not([type="password"]),textarea,[role="searchbox"],[contenteditable="true"]')]
         .filter(visible)
         .map((element) => {
           const rect = element.getBoundingClientRect();
-          const placeholder = compact(element.getAttribute("placeholder"));
+          const placeholder = compact(element.getAttribute("placeholder") || element.getAttribute("aria-label") || element.getAttribute("data-placeholder"));
           const score = (/상품명\\s*또는\\s*브랜드/.test(placeholder) ? 500 : 0)
             + (rect.top < 220 ? 200 : 0)
             + (element.closest('header,form,[role="search"]') ? 100 : 0)
             + (rect.width >= 250 ? 50 : 0);
           return { element, rect, score };
         });
-      const controls = [...document.querySelectorAll('button,a,[role="button"]')]
+      const controls = [...document.querySelectorAll('button,a,[role="button"],[role="searchbox"],label')]
         .filter(visible)
         .map((element) => {
           const rect = element.getBoundingClientRect();
-          const label = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.className, element.outerHTML].join(" ");
+          const label = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("data-placeholder"), element.className, element.outerHTML].join(" ");
           const explicitSearch = /검색|search|magnif|ico[_-]?(?:sch|search)/i.test(label);
-          const fashionLauncher = /패션타운\\s*상품을\\s*검색/i.test(label);
+          const fashionLauncher = /(?:패션타운|패션위크).*?(?:상품명\\s*또는\\s*브랜드|상품을\\s*검색)|상품명\\s*또는\\s*브랜드/i.test(label);
           const score = (explicitSearch ? 350 : 0)
-            + (fashionLauncher ? 300 : 0)
+            + (fashionLauncher ? 500 : 0)
             + (rect.top < 220 ? 150 : 0)
             + (rect.left > window.innerWidth * 0.55 ? 50 : 0);
           return { element, rect, score };
@@ -1367,11 +1390,14 @@ async function openNaverFashionTownSearchInput(searchWindow) {
         const rect = element.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
       };
-      const selected = [...document.querySelectorAll('input:not([type="password"])')]
-        .filter((element) => visible(element) && !element.disabled && !element.readOnly)
+      const selected = [...document.querySelectorAll('input:not([type="password"]),textarea,[role="searchbox"],[contenteditable="true"]')]
+        .filter((element) => visible(element)
+          && !element.disabled
+          && !element.readOnly
+          && (element.matches('input,textarea') || element.isContentEditable || element.getAttribute('role') === 'searchbox'))
         .map((element) => {
           const rect = element.getBoundingClientRect();
-          const placeholder = compact(element.getAttribute("placeholder"));
+          const placeholder = compact(element.getAttribute("placeholder") || element.getAttribute("aria-label") || element.getAttribute("data-placeholder"));
           const score = (/상품명\\s*또는\\s*브랜드/.test(placeholder) ? 500 : 0)
             + (document.activeElement === element ? 350 : 0)
             + (rect.top < 250 ? 200 : 0)
@@ -1393,18 +1419,19 @@ async function openNaverFashionTownSearchInput(searchWindow) {
 
 async function typeNaverQueryLikeUser(searchWindow, inputTarget, exactQuery) {
   if (!inputTarget) return false;
-  const inputSelector = 'input:not([type="password"])';
+  const inputSelector = 'input:not([type="password"]),textarea,[role="searchbox"],[contenteditable="true"]';
   const readValue = () => searchWindow.webContents.executeJavaScript(`(() => {
     const visible = (element) => {
       const style = getComputedStyle(element);
       const rect = element.getBoundingClientRect();
       return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
     };
+    const valueOf = (element) => String(element?.matches?.('input,textarea') ? element.value || "" : element?.textContent || "");
     const active = document.activeElement;
-    if (active?.matches?.(${JSON.stringify(inputSelector)}) && visible(active)) return String(active.value || "");
+    if (active?.matches?.(${JSON.stringify(inputSelector)}) && visible(active)) return valueOf(active);
     const input = [...document.querySelectorAll(${JSON.stringify(inputSelector)})]
-      .find((element) => visible(element) && String(element.value || ""));
-    return String(input?.value || "");
+      .find((element) => visible(element) && valueOf(element));
+    return valueOf(input);
   })()`, true).catch(() => "");
 
   for (const keyDelay of [70, 120]) {
@@ -1455,8 +1482,9 @@ async function submitNaverShoppingSearch(searchWindow, query) {
       const rect = element.getBoundingClientRect();
       return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
     };
-    const input = [...document.querySelectorAll('input:not([type="password"])')]
-      .find((element) => visible(element) && compact(element.value) === compact(${JSON.stringify(exactQuery)}));
+    const valueOf = (element) => String(element?.matches?.('input,textarea') ? element.value || "" : element?.textContent || "");
+    const input = [...document.querySelectorAll('input:not([type="password"]),textarea,[role="searchbox"],[contenteditable="true"]')]
+      .find((element) => visible(element) && compact(valueOf(element)) === compact(${JSON.stringify(exactQuery)}));
     if (!input) return null;
     const scope = input.closest('form,[role="search"],header,[role="dialog"],[class*="layer" i]')
       || input.parentElement?.parentElement?.parentElement || document;

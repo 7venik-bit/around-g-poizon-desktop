@@ -25,5 +25,7 @@ test("Shopping home must open before Fashion Town and product-code submission", 
     /clickNaverShoppingHomeMenu\(searchWindow\)[\s\S]*clickNaverFashionTownMenu\(searchWindow\)[\s\S]*submitNaverShoppingSearch\(searchWindow, searchQuery\)/,
   );
   assert.match(mainSource, /securityRequired \? "security_verification_required" : "naver_shopping_click_failed"/);
-  assert.match(mainSource, /label === "패션타운" \|\| \(label === "패션위크" && \/fashion-group\/i\.test\(href\)\)/);
+  assert.match(mainSource, /const fashionLabels = \["패션타운", "패션위크"\]/);
+  assert.match(mainSource, /label\.includes\(fashionLabel\)/);
+  assert.doesNotMatch(mainSource, /label === "패션위크" && \/fashion-group\/i\.test\(href\)/);
 });

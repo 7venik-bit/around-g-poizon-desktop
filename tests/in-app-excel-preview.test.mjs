@@ -292,7 +292,8 @@ test("네이버 백화점과 아울렛은 홈 화면 탭을 실제 마우스 이
   assert.match(mainSource, /const initialUrl = naverPortalSource \? "https:\/\/www\.naver\.com\/"/);
   assert.match(mainSource, /clickNaverShoppingHomeMenu\(searchWindow\)[\s\S]*clickNaverFashionTownMenu\(searchWindow\)/);
   assert.match(mainSource, /async function clickNaverFashionTownMenu/);
-  assert.match(mainSource, /label === "패션타운"/);
+  assert.match(mainSource, /const fashionLabels = \["패션타운", "패션위크"\]/);
+  assert.match(mainSource, /label\.includes\(fashionLabel\)/);
   assert.match(mainSource, /clickNaverFashionTownMenu\(searchWindow\)[\s\S]*submitNaverShoppingSearch\(searchWindow, searchQuery\)/);
   assert.match(mainSource, /async function openNaverFashionTownSearchInput/);
   assert.ok(mainSource.includes('/상품명\\\\s*또는\\\\s*브랜드/'));
@@ -302,8 +303,8 @@ test("네이버 백화점과 아울렛은 홈 화면 탭을 실제 마우스 이
   assert.match(mainSource, /type: "char", keyCode: character/);
   assert.match(mainSource, /document\.activeElement/);
   assert.doesNotMatch(mainSource, /insertText\(exactQuery\)/);
-  assert.ok(mainSource.includes('(?:main\\\\/|search\\\\/)?fashion-group'));
-  assert.match(mainSource, /for \(let attempt = 0; attempt < 20/);
+  assert.match(mainSource, /routeOrTitleMatched \|\| selectedMenuMatched \|\| searchScopeMatched/);
+  assert.doesNotMatch(mainSource, /fashionTownRoute && searchInput/);
   assert.match(mainSource, /for \(let attempt = 0; attempt < 24/);
   assert.match(mainSource, /show: naverPortalSource/);
   assert.match(mainSource, /if \(naverPortalSource\) searchWindow\.maximize\(\)/);
