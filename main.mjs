@@ -1666,6 +1666,28 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
     ]).catch(() => {});
     await wait(1_200);
   }
+  searchWindow.show();
+  searchWindow.focus();
+  const cardFound = await searchWindow.webContents.executeJavaScript(`(() => {
+    const expected = ${JSON.stringify(expectedUrl)};
+    const clean = (value) => String(value || "").split("#")[0];
+    const links = [...document.querySelectorAll("a[href]")];
+    const link = links.find((candidate) => clean(candidate.href) === expected)
+      || links.find((candidate) => {
+        try {
+          const left = new URL(clean(candidate.href));
+          const right = new URL(expected);
+          return left.origin === right.origin && left.pathname === right.pathname;
+        } catch { return false; }
+      });
+    if (!link) return false;
+    link.scrollIntoView({ block: "center", inline: "center" });
+    return true;
+  })()`, true).catch(() => false);
+  if (!cardFound) return false;
+  // scrollIntoView can move a responsive card after the first layout pass.
+  // Wait for that movement to settle, then measure the actual clickable link.
+  await wait(650);
   const target = await searchWindow.webContents.executeJavaScript(`(() => {
     const expected = ${JSON.stringify(expectedUrl)};
     const clean = (value) => String(value || "").split("#")[0];
@@ -1679,15 +1701,18 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
         } catch { return false; }
       });
     if (!link) return null;
-    link.scrollIntoView({ block: "center", inline: "center" });
     const rect = link.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
     return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + Math.min(rect.height / 2, 180)) };
   })()`, true).catch(() => null);
   if (!target) return false;
-  searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
-  searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
-  searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  const bounds = searchWindow.getContentBounds();
+  const clicked = await moveWindowsCursorAndClick(
+    bounds.x + target.x,
+    bounds.y + target.y,
+    650,
+  );
+  if (!clicked.ok) return false;
   await wait(2_000);
   const openedUrl = String(searchWindow.webContents.getURL() || "").split("#")[0];
   if (openedUrl === expectedUrl) return true;
@@ -5914,10 +5939,11 @@ async function clickSellerDownloadCenterShortcut(targetFrame) {
   })()`, true);
 }
 
-function moveWindowsCursorAndClick(screenX, screenY) {
+function moveWindowsCursorAndClick(screenX, screenY, hoverDelayMs = 0) {
   if (process.platform !== "win32") return Promise.resolve({ ok: false, reason: "WINDOWS_ONLY" });
   const x = Math.round(Number(screenX));
   const y = Math.round(Number(screenY));
+  const hoverDelay = Math.max(0, Math.min(3_000, Math.round(Number(hoverDelayMs) || 0)));
   if (!Number.isFinite(x) || !Number.isFinite(y)) {
     return Promise.resolve({ ok: false, reason: "INVALID_SCREEN_COORDINATES" });
   }
@@ -5944,6 +5970,7 @@ for ($step = 1; $step -le 18; $step++) {
   [AroundGCursor]::SetCursorPos($nextX, $nextY) | Out-Null
   Start-Sleep -Milliseconds 15
 }
+Start-Sleep -Milliseconds ${hoverDelay}
 [AroundGCursor]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
 Start-Sleep -Milliseconds 70
 [AroundGCursor]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)

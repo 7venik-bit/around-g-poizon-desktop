@@ -33,6 +33,20 @@ test("채널 선택 성공 뒤 하단 상품 카드를 클릭하고 옵션과 �
   );
 });
 
+test("상품카드는 실제 Windows 커서를 이동하고 hover 후 한 번 클릭한다", () => {
+  const start = mainSource.indexOf("async function clickRenderedProductCard");
+  const end = mainSource.indexOf("async function openOfficialMallInternalSearch", start);
+  const clickFlow = mainSource.slice(start, end);
+  assert.match(clickFlow, /searchWindow\.show\(\)/);
+  assert.match(clickFlow, /searchWindow\.focus\(\)/);
+  assert.match(clickFlow, /await wait\(650\)/);
+  assert.match(clickFlow, /const bounds = searchWindow\.getContentBounds\(\)/);
+  assert.match(clickFlow, /moveWindowsCursorAndClick\([\s\S]*bounds\.x \+ target\.x[\s\S]*bounds\.y \+ target\.y[\s\S]*650/);
+  assert.doesNotMatch(clickFlow, /sendInputEvent\(\{ type: "mouseDown"/);
+  assert.match(mainSource, /function moveWindowsCursorAndClick\(screenX, screenY, hoverDelayMs = 0\)/);
+  assert.match(mainSource, /Start-Sleep -Milliseconds \$\{hoverDelay\}[\s\S]*mouse_event\(2/);
+});
+
 test("선택 행 일괄 검색은 같은 브랜드와 품번 결과를 재사용한다", () => {
   assert.match(rendererSource, /async function searchExcelPreviewProduct\(key, \{ forceRefresh = true \} = \{\}\)/);
   assert.match(rendererSource, /if \(forceRefresh\) clearDomesticIdentityCache\(product\)/);
