@@ -1,5 +1,4 @@
 name: Build and publish Windows release
-# v2.10.363 release retry: the squash-merge event did not enqueue this workflow.
 
 on:
   push:
