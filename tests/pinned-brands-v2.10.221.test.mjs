@@ -76,12 +76,13 @@ test("saved favorite data is preserved but no longer controls the displayed grou
   assert.doesNotMatch(cards, /brand-pinned-badge/);
 });
 
-test("startup waits for actual catalog and workbook scan instead of showing fallback favorites", () => {
+test("startup loads the actual catalog but leaves workbook recovery behind the manual button", () => {
   const startup = renderer.slice(renderer.lastIndexOf("(async () => {"));
   assert.doesNotMatch(startup, /showFavoriteCatalogFallback\(\)/);
   assert.match(startup, /setupBrandLayout\(\)/);
-  assert.match(startup, /await recoverInterruptedBrandWorkAtStartup\(\)/);
-  assert.match(renderer, /async function recoverInterruptedBrandWorkAtStartup\(\)[\s\S]*await restoreDownloadedBrandFiles\(\)/);
+  assert.doesNotMatch(startup, /recoverInterruptedBrandWorkOnDemand\(\)/);
+  assert.match(startup, /수동 확인 대기/);
+  assert.match(renderer, /async function recoverInterruptedBrandWorkOnDemand\(\)[\s\S]*await restoreDownloadedBrandFiles\(\)/);
 });
 
 test("official site address uses a separate full-width bottom row", () => {

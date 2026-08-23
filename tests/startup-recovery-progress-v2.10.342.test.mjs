@@ -17,24 +17,37 @@ test("OneDrive startup backup waits five minutes", () => {
   assert.match(main, /setTimeout\(\(\) => void runOneDriveRecoveryBackup\(\), 5 \* 60 \* 1_000\)/);
 });
 
-test("startup recovery owns the poller order and reports real file progress", () => {
+test("POIZON recovery waits for the manual button before scanning old work", () => {
   const startup = main.match(/configureUpdater\(\);[\s\S]*?app\.on\("activate"/)?.[0] || "";
   assert.doesNotMatch(startup, /startBrandExportFolderPolling\(\)/);
   assert.match(main, /startup-recovery:progress/);
   assert.match(preload, /onStartupRecoveryProgress/);
   assert.match(preload, /startBrandExportFolderPolling/);
-  assert.match(renderer, /await recoverInterruptedBrandWorkAtStartup\(\)[\s\S]*finally \{[\s\S]*await window\.aroundG\.startBrandExportFolderPolling\(\)/);
+  assert.match(html, /id="startup-recovery-run"/);
+  assert.match(html, /수동 확인 대기/);
+  assert.match(renderer, /startup-recovery-run[\s\S]*runManualPoizonRecovery/);
+  assert.match(renderer, /const pendingCount = await recoverInterruptedBrandWorkOnDemand\(\)/);
+  assert.match(renderer, /if \(pendingCount\) await window\.aroundG\.startBrandExportFolderPolling\(\)/);
+  const initialization = renderer.match(/\(async \(\) => \{[\s\S]*?window\.aroundG\.onBrandSyncProgress/)?.[0] || "";
+  assert.doesNotMatch(initialization, /recoverInterruptedBrandWorkOnDemand\(\)/);
+  assert.doesNotMatch(initialization, /startBrandExportFolderPolling\(\)/);
 });
 
 test("startup recovery is visible with a determinate loading bar", () => {
   assert.match(html, /id="startup-recovery"/);
   assert.match(html, /id="startup-recovery-bar"/);
   assert.match(html, /id="startup-recovery-percent"/);
+  assert.match(html, /기존 POIZON 작업 및 변경 사항 확인 · 수동/);
   assert.match(renderer, /function renderStartupRecoveryProgress/);
   assert.match(renderer, /percent:\s*100/);
 });
 
-test("startup recovery does not scan the complete Excel list twice", () => {
-  const recovery = renderer.match(/async function recoverInterruptedBrandWorkAtStartup\(\) \{[\s\S]*?\n\}/)?.[0] || "";
+test("manual recovery scans the complete Excel list once", () => {
+  const recovery = renderer.match(/async function recoverInterruptedBrandWorkOnDemand\(\) \{[\s\S]*?\n\}/)?.[0] || "";
   assert.equal((recovery.match(/await restoreDownloadedBrandFiles\(\)/g) || []).length, 1);
+});
+
+test("a new explicit brand search starts download folder monitoring", () => {
+  const handler = renderer.match(/#brand-export-selected[\s\S]*?const selectedLabel/)?.[0] || "";
+  assert.match(handler, /startBrandExportFolderPolling/);
 });
