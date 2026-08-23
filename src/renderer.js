@@ -844,10 +844,13 @@ function persistExcelSearchResults(filePath = "") {
   } catch {}
 }
 
-async function searchExcelPreviewProduct(key) {
+async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
   const product = excelPreviewProductCache.get(key);
   if (!product) return;
-  clearDomesticIdentityCache(product);
+  // A direct row-button click is an explicit refresh. A selected-row batch,
+  // however, reuses the first verified result for duplicate POIZON rows with
+  // the same normalized brand and article number.
+  if (forceRefresh) clearDomesticIdentityCache(product);
   excelPreviewSearchResults.delete(key);
   excelPreviewSearchResults.set(key, { loading: true, products: [], sources: [] });
   const file = activeExcelPreview?.file;
@@ -2977,7 +2980,7 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
   button.textContent = "국내 가격 확인 중…";
   for (const key of keys) {
     if (!excelPreviewSearchResults.has(key) || excelPreviewSearchResults.get(key)?.error) {
-      await searchExcelPreviewProduct(key);
+      await searchExcelPreviewProduct(key, { forceRefresh: false });
     }
   }
   const shipping = Number($("#shipping").value || 0);
@@ -3072,7 +3075,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   $("#excel-filter-status").textContent = `선택 상품 ${keys.length.toLocaleString("ko-KR")}개를 검색하고 있습니다.`;
   for (const key of keys) {
     if (!excelPreviewBatchSearching) break;
-    await searchExcelPreviewProduct(key);
+    await searchExcelPreviewProduct(key, { forceRefresh: false });
   }
   excelPreviewBatchSearching = false;
   $("#excel-filter-status").textContent = `선택 상품 ${keys.length.toLocaleString("ko-KR")}개 검색을 완료했습니다.`;

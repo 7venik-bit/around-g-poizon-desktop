@@ -281,7 +281,7 @@ test("네이버 공식 브랜드스토어는 공식브랜드 필터 선택을 �
   assert.match(mainSource, /clickNaverShoppingChannel\(searchWindow, "네이버 공식 브랜드스토어"\)/);
   assert.match(mainSource, /store === "네이버 공식 브랜드스토어" \? "브랜드직영몰"/);
   assert.match(mainSource, /!element\.closest\('header,nav'\)/);
-  assert.ok(mainSource.includes("'[\\\\d,]+개$'"));
+  assert.ok(mainSource.includes("'[\\\\\\\\d,]+개$'"));
   assert.match(mainSource, /source\.store === "네이버 공식 브랜드스토어"/);
   assert.match(mainSource, /"official_filter_failed" : "channel_selection_failed"/);
   assert.match(mainSource, /queryPreserved/);

@@ -1125,30 +1125,53 @@ async function clickNaverShoppingChannel(searchWindow, store) {
         const rect = element.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
       };
+      const selectedEvidence = (element) => {
+        let node = element;
+        for (let depth = 0; node && depth < 6 && node !== document.body; depth += 1, node = node.parentElement) {
+          if (node.getAttribute('aria-selected') === 'true'
+            || node.getAttribute('aria-current') === 'page'
+            || /(?:^|[\\s_-])(?:selected|active|on)(?:$|[\\s_-])/i.test(String(node.className || ''))) return true;
+          const background = String(getComputedStyle(node).backgroundColor || '').match(/\\d+/g)?.map(Number) || [];
+          if (background.length >= 3 && background[3] !== 0
+            && background[0] + background[1] + background[2] < 300) return true;
+        }
+        return false;
+      };
+      const clickSurface = (element) => {
+        let node = element;
+        for (let depth = 0; node && depth < 6 && node !== document.body; depth += 1, node = node.parentElement) {
+          if (node.closest('header,nav')) return null;
+          const style = getComputedStyle(node);
+          if (/^(?:A|BUTTON|LABEL)$/.test(node.tagName)
+            || /^(?:tab|button|link)$/.test(String(node.getAttribute('role') || ''))
+            || node.tabIndex >= 0 || typeof node.onclick === 'function' || style.cursor === 'pointer') return node;
+        }
+        return element;
+      };
       // Only the rectangular result-count tabs are valid. The global Naver
       // navigation contains the same labels but has no count; clicking it
       // leaves the search results and clears the product query.
-      const candidates = [...document.querySelectorAll('a,button,[role="tab"],[role="button"]')]
+      const candidates = [...document.querySelectorAll('body *')]
         .filter(visible)
         .filter((element) => !element.closest('header,nav'))
-        .filter((element) => new RegExp('^' + compact(label) + '[\\d,]+개$').test(compact(element.textContent)))
+        .filter((element) => new RegExp('^' + compact(label) + '[\\\\d,]+개$').test(compact(element.textContent)))
         .sort((left, right) => {
-          const score = (element) => (element.getAttribute('role') === 'tab' ? 100 : 0)
-            + (element.closest('[role="tablist"]') ? 80 : 0)
-            + (element.getBoundingClientRect().top > 180 ? 30 : 0);
+          const score = (element) => (selectedEvidence(element) ? 300 : 0)
+            + (clickSurface(element) !== element ? 120 : 0)
+            + (element.getBoundingClientRect().top > 180 ? 60 : 0)
+            - Math.min(50, element.getBoundingClientRect().width * element.getBoundingClientRect().height / 10_000);
           return score(right) - score(left);
         });
       const element = candidates[0];
       if (!element) return null;
-      const background = String(getComputedStyle(element).backgroundColor || '').match(/\d+/g)?.map(Number) || [];
-      const visuallySelected = background.length >= 3 && background[3] !== 0
-        && background[0] + background[1] + background[2] < 240;
-      const selected = element.getAttribute('aria-selected') === 'true'
-        || element.getAttribute('aria-current') === 'page'
-        || /(?:^|[\\s_-])(?:selected|active|on)(?:$|[\\s_-])/i.test(String(element.className || ''))
-        || visuallySelected;
-      const rect = element.getBoundingClientRect();
-      return { selected, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+      const surface = clickSurface(element) || element;
+      surface.scrollIntoView({ block: 'center', inline: 'center' });
+      const rect = surface.getBoundingClientRect();
+      return {
+        selected: selectedEvidence(element) || selectedEvidence(surface),
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2),
+      };
     })()`, true).catch(() => null);
     if (!target) {
       await wait(700);
@@ -1162,18 +1185,22 @@ async function clickNaverShoppingChannel(searchWindow, store) {
   }
   const state = await searchWindow.webContents.executeJavaScript(`(() => {
     const compact = (value) => String(value || "").replace(/\\s+/g, "");
-    const resultTabs = [...document.querySelectorAll('a,button,[role="tab"],[aria-selected="true"]')]
+    const selectedEvidence = (element) => {
+      let node = element;
+      for (let depth = 0; node && depth < 6 && node !== document.body; depth += 1, node = node.parentElement) {
+        if (node.getAttribute('aria-selected') === 'true'
+          || node.getAttribute('aria-current') === 'page'
+          || /(?:^|[\\s_-])(?:selected|active|on)(?:$|[\\s_-])/i.test(String(node.className || ''))) return true;
+        const background = String(getComputedStyle(node).backgroundColor || '').match(/\\d+/g)?.map(Number) || [];
+        if (background.length >= 3 && background[3] !== 0
+          && background[0] + background[1] + background[2] < 300) return true;
+      }
+      return false;
+    };
+    const resultTabs = [...document.querySelectorAll('body *')]
       .filter((element) => !element.closest('header,nav'))
-      .filter((element) => new RegExp('^' + ${JSON.stringify(targetLabel)} + '[\\d,]+개$').test(compact(element.textContent)));
-    const selected = resultTabs.some((element) =>
-      element.getAttribute('aria-selected') === 'true'
-        || element.getAttribute('aria-current') === 'page'
-        || /(?:^|[\\s_-])(?:selected|active|on)(?:$|[\\s_-])/i.test(String(element.className || ''))
-        || (() => {
-          const background = String(getComputedStyle(element).backgroundColor || '').match(/\d+/g)?.map(Number) || [];
-          return background.length >= 3 && background[3] !== 0
-            && background[0] + background[1] + background[2] < 240;
-        })());
+      .filter((element) => new RegExp('^' + ${JSON.stringify(targetLabel)} + '[\\\\d,]+개$').test(compact(element.textContent)));
+    const selected = resultTabs.some(selectedEvidence);
     const queryPreserved = /\/window\/search\/fashion-group/i.test(String(location.pathname || ""))
       && /에\\s*대한\\s*패션타운\\s*검색결과/.test(String(document.body?.innerText || ""));
     return JSON.stringify({
