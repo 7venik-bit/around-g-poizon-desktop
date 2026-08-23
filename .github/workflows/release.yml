@@ -30,6 +30,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -43,6 +45,43 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Resolve automatic release version
+        id: release_version
+        shell: pwsh
+        run: |
+          git fetch --tags --force
+
+          $baseVersionText = node -p "require('./package.json').version"
+          $baseVersion = [version]$baseVersionText
+          $releaseVersion = $baseVersion
+
+          $latestTag = git tag --list "v*" --sort=-v:refname | Select-Object -First 1
+          if ($latestTag) {
+            try {
+              $latestVersionText = ($latestTag -replace '^v', '')
+              $latestVersion = [version]$latestVersionText
+              if ($latestVersion -ge $releaseVersion) {
+                $releaseVersion = [version]::new(
+                  $latestVersion.Major,
+                  $latestVersion.Minor,
+                  $latestVersion.Build + 1
+                )
+              }
+            } catch {
+              Write-Host "Ignoring non-semver latest tag: $latestTag"
+            }
+          }
+
+          $version = "$($releaseVersion.Major).$($releaseVersion.Minor).$($releaseVersion.Build)"
+          npm version $version --no-git-tag-version --allow-same-version
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to set automatic release version $version."
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Automatic release version: $version"
+
       - name: Build Windows installer
         run: npx electron-builder --win nsis --publish never
 
@@ -50,7 +89,7 @@ jobs:
         id: assets
         shell: pwsh
         run: |
-          $version = node -p "require('./package.json').version"
+          $version = "${{ steps.release_version.outputs.version }}"
           $installers = @(Get-ChildItem -Path dist -File -Filter "*.exe")
           $blockmaps = @(Get-ChildItem -Path dist -File -Filter "*.exe.blockmap")
           $latest = Get-Item -Path "dist/latest.yml" -ErrorAction SilentlyContinue
@@ -93,25 +132,19 @@ jobs:
           "installer_name=$installerName" >> $env:GITHUB_OUTPUT
           "blockmap_name=$blockmapName" >> $env:GITHUB_OUTPUT
 
-      - name: Ensure release tag exists after successful build
+      - name: Create release tag after successful build
         shell: pwsh
         run: |
           $tag = "${{ steps.assets.outputs.tag }}"
           git fetch --tags --force
           git show-ref --verify --quiet "refs/tags/$tag"
           if ($LASTEXITCODE -eq 0) {
-            $tagCommit = git rev-list -n 1 $tag
-            $headCommit = git rev-parse HEAD
-            if ($tagCommit -ne $headCommit) {
-              git diff --quiet $tagCommit $headCommit -- . ':(exclude).github/workflows/release.yml'
-              if ($LASTEXITCODE -ne 0) {
-                throw "Release tag $tag already points to different application source. Bump package.json before publishing."
-              }
-              Write-Host "Reusing $tag because only the release workflow changed after the tag was created."
-            }
-          } else {
-            git tag $tag
-            git push origin $tag
+            throw "Automatic release tag $tag already exists."
+          }
+          git tag $tag
+          git push origin $tag
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to push release tag $tag."
           }
 
       - name: Publish and verify release assets
