@@ -444,6 +444,18 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         if (naverStore === "네이버 공식 브랜드스토어"
           && card?.officialBrandStoreLabelMatched !== true
           && !/브랜드\s*직영몰|공식\s*브랜드|브랜드\s*스토어/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
+        if (naverStore === "네이버 백화점"
+          && card?.departmentStoreLabelMatched !== true
+          && !/백화점/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
+        if (naverStore === "네이버 아울렛"
+          && card?.outletLabelMatched !== true
+          && !/아울렛|outlet/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
+        if (naverStore === "SSG 백화점"
+          && card?.departmentStoreLabelMatched !== true
+          && !/신세계\s*백화점|백화점/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
+        if (naverStore === "SSG 아울렛"
+          && card?.outletLabelMatched !== true
+          && !/아울렛|outlet/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
         // 국내 재고 검색에는 한국에서 바로 구매 가능한 상품만 남긴다.
         // 검색 경로가 네이버 공식스토어/백화점이어도 상품 카드가 해외직구,
         // 구매대행 또는 해외배송이면 국내 판매처로 계산하지 않는다.
@@ -478,6 +490,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           domesticChannelCandidateCount += 1;
         }
         let detailArticleVerificationRequired = false;
+        let allowProvisionalArticleConflict = false;
         // Naver Fashion Town often omits the model number from the visible
         // product title.  A single result may still be accepted when its brand
         // and descriptive title both match the POIZON row.  This deliberately
@@ -502,6 +515,24 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           articleMatched = true;
           detailArticleVerificationRequired = true;
         }
+        // SSG can show a retailer-managed number on its search card instead of
+        // the manufacturer's model number. Only a card carrying the selected
+        // department/outlet channel label and matching the expected title may
+        // become a provisional candidate. Its real href is then opened and the
+        // exact POIZON article is still required on the detail page. Do not use
+        // this fallback for the general SSG source: a same-brand recommendation
+        // there is not enough evidence and previously caused false positives.
+        const ssgChannelCard = (naverStore === "SSG 백화점"
+          && (card?.departmentStoreLabelMatched === true || /신세계\s*백화점|백화점/i.test(`${rawCardText} ${String(card?.markup || "")}`)))
+          || (naverStore === "SSG 아울렛"
+            && (card?.outletLabelMatched === true || /아울렛|outlet/i.test(`${rawCardText} ${String(card?.markup || "")}`)));
+        if (!articleMatched && ssgChannelCard && cards.length === 1
+          && brandMatched && titleIdentityMatch(rawCardText, expectedTitle)
+          && isPlatformShoppingProductUrl(productUrl)) {
+          articleMatched = true;
+          detailArticleVerificationRequired = true;
+          allowProvisionalArticleConflict = true;
+        }
         // Many brand-owned malls (including DK/Descente) omit the model code
         // from every visible result card even after an exact-code search. The
         // previous implementation therefore stopped on the result grid and
@@ -513,7 +544,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           articleMatched = true;
           detailArticleVerificationRequired = true;
         }
-        if (conflictingArticle) articleMatched = false;
+        if (conflictingArticle && !allowProvisionalArticleConflict) articleMatched = false;
         // Naver can fill an exact-code query page with visually similar
         // recommendations. Parallel-import discovery must contain the requested
         // model in the product card itself; the page query or nearby card is not evidence.

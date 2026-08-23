@@ -1889,6 +1889,7 @@ function renderDomestic(result, sourceProduct = {}) {
   const sourceOwnsProduct = (source, product) => {
     const sourceStore = String(source?.store || "");
     const productStore = String(product?.store || "");
+    if (sourceStore === String(product?.sourceStore || "")) return true;
     if (sourceStore === productStore) return true;
     if (sourceStore === "SSG" && /^SSG(?:\s|$)/.test(productStore)) return true;
     if (sourceStore === "병행수입·편집샵" && (/병행수입/.test(productStore)
@@ -1926,13 +1927,13 @@ function renderDomestic(result, sourceProduct = {}) {
     </div>`;
   };
   const sourceAction = (source, label = "판매처 검색") => {
-    const openUrl = String(source.officialProductUrl || source.officialSearchUrl || source.homepageUrl || source.searchUrl || "");
+    const openUrl = String(source.verifiedProductUrl || source.officialProductUrl || source.officialSearchUrl || source.homepageUrl || source.searchUrl || "");
     const query = source.searchQuery || sourceProduct.articleNumber || sourceProduct.productCode || sourceProduct.spuId || result.queryCandidates?.[0] || "";
     if (!openUrl) return `<button class="source-platform-action" type="button" disabled>${label}</button>`;
     if (source.officialStatus) {
       return `<button class="source-platform-action" type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}">${label}</button>`;
     }
-    return `<button class="source-platform-action" type="button" data-url="${encodeURIComponent(source.searchUrl || openUrl)}">${label}</button>`;
+    return `<button class="source-platform-action" type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
   };
   const sourceStatus = (source, matchedProducts) => {
     const available = matchedProducts.filter((product) => product.inStock === true).length;
@@ -1947,6 +1948,9 @@ function renderDomestic(result, sourceProduct = {}) {
       fashion_town_click_failed: "패션타운 진입 실패",
       search_submission_failed: "검색 입력 실패",
       channel_selection_failed: "채널 선택 실패",
+      channel_count_detection_failed: "채널 숫자 인식 실패",
+      channel_card_evidence_mismatch: "채널 상품카드 확인 실패",
+      ssg_channel_evidence_mismatch: "SSG 채널·상품카드 확인 실패",
       official_filter_failed: "공식몰 필터 실패",
       page_load_timeout: "응답 지연",
       network_error: "접속 실패",
@@ -1981,6 +1985,9 @@ function renderDomestic(result, sourceProduct = {}) {
       fashion_town_click_failed: "패션타운 메뉴를 실제로 클릭하지 못해 검색을 중단했습니다.",
       search_submission_failed: "상품코드를 검색창에 입력하고 검색 버튼을 누르는 단계에서 중단됐습니다.",
       channel_selection_failed: "검색 후 요청한 백화점·아울렛 채널을 실제로 선택하지 못했습니다.",
+      channel_count_detection_failed: "브랜드직영몰·백화점·아울렛 숫자 3개를 모두 인식하지 못했습니다.",
+      channel_card_evidence_mismatch: "상단 채널 숫자와 하단 상품카드·채널 문구가 일치하지 않아 클릭하지 않았습니다.",
+      ssg_channel_evidence_mismatch: "SSG 상단 채널과 하단 상품카드의 백화점·아울렛 문구가 일치하지 않아 클릭하지 않았습니다.",
       official_filter_failed: "검색 후 공식 브랜드 필터를 실제로 선택하지 못했습니다.",
       page_load_timeout: "판매처 검색 페이지의 응답 시간이 초과됐습니다.",
       network_error: "판매처 검색 페이지에 연결하지 못했습니다.",

@@ -324,10 +324,24 @@ test("네이버는 결과 클릭 전에 패션타운 채널 숫자 3개를 먼�
     mainSource,
     /naverChannelCounts = await readNaverFashionTownChannelCounts\(searchWindow\)[\s\S]*if \(currentChannelCount === 0\)[\s\S]*clickNaverShoppingChannel\(searchWindow, source\.store\)/,
   );
-  assert.match(mainSource, /if \(naverPortalSource\) \{\s*await wait\(1_500\);\s*\} else \{/);
+  assert.match(mainSource, /if \(naverPortalSource \|\| ssgChannelSource\) \{\s*await wait\(1_500\);\s*\} else \{/);
   assert.match(mainSource, /recognizedChannelCounts = .*naverChannelCounts/);
-  assert.match(mainSource, /officialResultCards\.length !== 1 \|\| labeledOfficialCards\.length !== 1/);
-  assert.match(mainSource, /official_brand_card_evidence_mismatch/);
+  assert.match(mainSource, /source\.store === "네이버 백화점" \? "departmentStoreLabelMatched"/);
+  assert.match(mainSource, /source\.store === "네이버 아울렛" \? "outletLabelMatched"/);
+  assert.match(mainSource, /currentChannelCount === 1[\s\S]*labeledChannelCards\.length !== 1/);
+  assert.match(mainSource, /channel_card_evidence_mismatch/);
+  assert.match(mainSource, /clickRenderedProductCard\(searchWindow, product\.url, resolvedSearchUrl\)[\s\S]*openRenderedSizeOptions\(searchWindow\)/);
+});
+
+test("SSG 백화점·아울렛도 상단 채널과 하단 카드를 확인한 뒤 실제 상세 링크를 보존한다", () => {
+  assert.match(mainSource, /\["SSG 백화점", "SSG 아울렛"\]\.includes/);
+  assert.match(mainSource, /pageHeaderText/);
+  assert.match(mainSource, /ssg_channel_evidence_mismatch/);
+  assert.match(mainSource, /sourceStore: String\(product\.sourceStore \|\| product\.store \|\| source\.store/);
+  assert.match(mainSource, /const verifiedProductUrl = String\(\(result\?\.products \|\| \[\]\)/);
+  assert.match(rendererSource, /source\.verifiedProductUrl \|\| source\.officialProductUrl/);
+  assert.match(rendererSource, /sourceStore === String\(product\?\.sourceStore/);
+  assert.doesNotMatch(rendererSource, /data-url="\$\{encodeURIComponent\(source\.searchUrl \|\| openUrl\)\}"/);
 });
 
 test("상품 상세페이지는 사이즈 옵션을 열고 출력값을 수집한다", () => {

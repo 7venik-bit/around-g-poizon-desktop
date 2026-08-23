@@ -1756,6 +1756,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   const url = String(searchAttempt?.url || source.officialProductUrl || (interactiveOfficialSearch ? source.homepageUrl : source.searchUrl) || "");
   if (!/^https:\/\//i.test(url)) return { count: Number(source.count || 0), products: [] };
   const naverPortalSource = /^네이버\s/.test(String(source.store || ""));
+  const ssgChannelSource = /^SSG(?:\s|$)/.test(String(source.store || ""));
   let naverChannelCounts = null;
   let searchWindow;
   try {
@@ -1907,11 +1908,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const officialBrandSelected = await ensureNaverOfficialBrandFilter(searchWindow);
       if (!officialBrandSelected) return renderedSearchFailure("official_filter_failed", searchWindow, { searchSubmitted: true });
     }
-    // Naver's exact result is already rendered above the fold. Scrolling its
-    // result page first loads unrelated recommendations and can remove the
-    // single exact card from the candidate set. Other commerce pages still
-    // need the legacy lazy-load pass.
-    if (naverPortalSource) {
+    // Naver and SSG exact results are already rendered above the fold.
+    // Scrolling first loads unrelated recommendations and can remove the
+    // single exact card from the candidate set.
+    if (naverPortalSource || ssgChannelSource) {
       await wait(1_500);
     } else {
       for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -1922,7 +1922,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         })()`, true).catch(() => {});
       }
     }
-    const content = await searchWindow.webContents.executeJavaScript(`(() => {
+    let content = await searchWindow.webContents.executeJavaScript(`(() => {
       const expectedArticle = ${JSON.stringify(String(articleNumber || ""))};
       const expectedCompact = expectedArticle.replace(/[^A-Z0-9]/gi, "").toUpperCase();
       const expectedBase = expectedArticle.split(/[-_]/)[0].replace(/[^A-Z0-9]/gi, "").toUpperCase();
@@ -1997,14 +1997,20 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           .map((element) => String(element.textContent || "").trim())
           .find((value) => /^[\\d,]+\\s*원$/.test(value)) || "";
         seen.add(productUrl);
-        const officialBrandStoreLabelMatched = /브랜드\s*직영몰|공식\s*브랜드|브랜드\s*스토어/i.test([text, markup].join(" "));
+        const channelEvidenceText = [text, markup].join(" ");
+        const officialBrandStoreLabelMatched = /브랜드\s*직영몰|공식\s*브랜드|브랜드\s*스토어/i.test(channelEvidenceText);
+        const departmentStoreLabelMatched = /백화점/i.test(channelEvidenceText);
+        const outletLabelMatched = /아울렛|outlet/i.test(channelEvidenceText);
         productCards.push({
           productUrl, text, markup, imageUrl, imageLinkedToProduct, title, price, originalPrice,
-          officialBrandStoreLabelMatched,
+          officialBrandStoreLabelMatched, departmentStoreLabelMatched, outletLabelMatched,
         });
       }
       const fullPageText = String(document.body?.innerText || "");
       const pageText = fullPageText.slice(0, 120000);
+      const pageHeaderText = [...document.querySelectorAll('header,nav')]
+        .map((element) => String(element.innerText || ""))
+        .join(" ").slice(0, 20000);
       const selectedChannelEmpty = /검색된\s*상품이\s*없습니다|검색\s*결과가\s*없습니다|상품이\s*없습니다|검색결과\s*없음/i.test(fullPageText);
       const requestedStore = ${JSON.stringify(String(source.store || ""))};
       const recognizedChannelCounts = ${JSON.stringify(naverChannelCounts)};
@@ -2021,7 +2027,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         selectedChannelCount = Math.max(selectedChannelCount ?? 0, Number(match[1].replace(/,/g, "")) || 0);
       }
       const pageBlocked = /captcha|보안\s*확인|자동\s*입력|로봇|접속.{0,12}(?:제한|차단)|서비스.{0,12}(?:제한|지연)|비정상적인\s*접근/i.test(pageText);
-      return JSON.stringify({ productCards, pageBlocked, pageText, selectedChannelEmpty, selectedChannelCount });
+      return JSON.stringify({ productCards, pageBlocked, pageText, pageHeaderText, selectedChannelEmpty, selectedChannelCount });
     })()`, true);
     let parsedContent;
     try {
@@ -2047,21 +2053,48 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     } catch {
       return renderedSearchFailure("result_parse_failed", searchWindow, { searchSubmitted: interactiveSiteSearch });
     }
-    if (source.store === "네이버 공식 브랜드스토어"
-      && naverChannelCounts?.["네이버 공식 브랜드스토어"] === 1) {
-      const officialResultCards = (parsedContent.productCards || []).filter((card) =>
-        isPlatformShoppingProductUrl(card?.productUrl)
-        && !/\/window-products\/(?:department|outlet)\//i.test(String(card?.productUrl || "")));
-      const labeledOfficialCards = officialResultCards.filter((card) =>
-        card?.officialBrandStoreLabelMatched === true);
-      // A single top-tab result is clickable only when the page owns exactly
-      // one product card and that same card says it is a brand-direct result.
-      if (officialResultCards.length !== 1 || labeledOfficialCards.length !== 1) {
-        return renderedSearchFailure("official_brand_card_evidence_mismatch", searchWindow, {
+    if (naverPortalSource && Number(naverChannelCounts?.[String(source.store || "")]) > 0) {
+      const currentChannelCount = Number(naverChannelCounts[String(source.store || "")]);
+      const labelField = source.store === "네이버 백화점" ? "departmentStoreLabelMatched"
+        : source.store === "네이버 아울렛" ? "outletLabelMatched"
+          : "officialBrandStoreLabelMatched";
+      // Naver may change the product-detail path or append a tracking address.
+      // The selected tab and the card-owned channel label are authoritative;
+      // the actual href is preserved only as the link to click.
+      const labeledChannelCards = (parsedContent.productCards || []).filter((card) =>
+        isPlatformShoppingProductUrl(card?.productUrl) && card?.[labelField] === true);
+      // All three Naver channels use the same gate: read the top count, find
+      // the matching lower cards, and verify the channel wording on each card
+      // before any product click or stock-page navigation.
+      const cardCountInvalid = currentChannelCount === 1
+        ? labeledChannelCards.length !== 1
+        : labeledChannelCards.length === 0;
+      if (cardCountInvalid) {
+        return renderedSearchFailure("channel_card_evidence_mismatch", searchWindow, {
           searchSubmitted: true,
           resolvedSearchUrl: String(searchWindow.webContents.getURL() || url),
         });
       }
+      parsedContent.productCards = labeledChannelCards;
+      content = JSON.stringify(parsedContent);
+    }
+    if (["SSG 백화점", "SSG 아울렛"].includes(String(source.store || ""))) {
+      const department = source.store === "SSG 백화점";
+      const headerMatched = department
+        ? /신세계\s*백화점|백화점/i.test(String(parsedContent.pageHeaderText || ""))
+        : /아울렛|outlet/i.test(String(parsedContent.pageHeaderText || ""));
+      const labelField = department ? "departmentStoreLabelMatched" : "outletLabelMatched";
+      const labeledChannelCards = (parsedContent.productCards || []).filter((card) =>
+        isPlatformShoppingProductUrl(card?.productUrl) && card?.[labelField] === true);
+      if (!headerMatched || labeledChannelCards.length === 0) {
+        return renderedSearchFailure("ssg_channel_evidence_mismatch", searchWindow, {
+          searchSubmitted: interactiveSiteSearch,
+          resolvedSearchUrl: String(searchWindow.webContents.getURL() || url),
+        });
+      }
+      parsedContent.productCards = labeledChannelCards;
+      parsedContent.selectedChannelCount = labeledChannelCards.length;
+      content = JSON.stringify(parsedContent);
     }
     const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
     const resolvedSearchUrl = String(searchWindow.webContents.getURL() || url);
@@ -2151,6 +2184,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         const retailer = detectedRetailer(evidence);
         products.push({
           ...product,
+          sourceStore: String(product.sourceStore || product.store || source.store || ""),
           // Search cards can omit the manufacturer's code. Preserve the code
           // verified on the detail page so same-model colour cards are merged
           // later and the best matching image/price remains.
@@ -2267,6 +2301,8 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     const verifiedOfficialProductUrl = isOfficialStore
       ? String((result?.products || []).find((product) => /^https?:\/\//i.test(String(product?.url || "")))?.url || "")
       : String(source.officialProductUrl || "");
+    const verifiedProductUrl = String((result?.products || [])
+      .find((product) => /^https?:\/\//i.test(String(product?.url || "")))?.url || "");
     return {
       ...source,
       searchUrl: String(result?.resolvedSearchUrl || source.searchUrl || ""),
@@ -2287,6 +2323,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       // purchase link merely because the brand has a supported search form.
       officialSearchUrl: isOfficialStore ? String(source.officialProductUrl || "") : "",
       officialProductUrl: verifiedOfficialProductUrl,
+      verifiedProductUrl,
       officialProductMissing: isOfficialStore && absenceConfirmed,
     };
     })();

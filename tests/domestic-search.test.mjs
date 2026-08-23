@@ -405,7 +405,7 @@ test("a marketplace result must match both the article and the brand", () => {
   });
   const correctBrand = JSON.stringify({
     pageText: "검색 결과",
-    productCards: [{ productUrl: "https://example.test/product/3ME10100264", text: "On Cloudtilt 3ME10100264" }],
+    productCards: [{ productUrl: "https://example.test/product/3ME10100264", text: "신세계백화점 On Cloudtilt 3ME10100264" }],
   });
   assert.equal(countRenderedChannelProducts(wrongBrand, "SSG 백화점", "3ME10100264", "온"), 0);
   assert.equal(countRenderedChannelProducts(correctBrand, "SSG 백화점", "3ME10100264", "온"), 1);
@@ -502,7 +502,7 @@ test("PUMA official result recognizes /pd/ URL and separated color query", () =>
 
 test("SSG and Lotte dynamic product links become visible product candidates", () => {
   const fixtures = [
-    ["SSG 백화점", "https://department.ssg.com/item/itemView.ssg?itemId=1000612345", "나이키 에어맥스 IO9554-100 169,000원"],
+    ["SSG 백화점", "https://department.ssg.com/item/itemView.ssg?itemId=1000612345", "신세계백화점 나이키 에어맥스 IO9554-100 169,000원"],
     ["롯데온 백화점", "https://www.lotteon.com/p/product/LO1234567890", "나이키 페가수스 HQ7540-100 159,000원"],
   ];
   for (const [store, productUrl, text] of fixtures) {
@@ -532,7 +532,7 @@ test("SSG department Korean brand result waits for detail-page stock evidence", 
     pageBlocked: false,
     productCards: [{
       productUrl: "https://department.ssg.com/item/itemView.ssg?itemId=1000612345",
-      text: "아디다스 남녀공용 데일리 캐주얼 운동화 IH0274 스피리테인 2.0 98,100원",
+      text: "신세계백화점 아디다스 남녀공용 데일리 캐주얼 운동화 IH0274 스피리테인 2.0 98,100원",
       title: "아디다스 스피리테인 2.0 IH0274",
       imageUrl: "https://img.example/ih0274.jpg",
       price: "98,100원",
@@ -543,12 +543,41 @@ test("SSG department Korean brand result waits for detail-page stock evidence", 
   assert.equal(result?.products[0]?.price, 98100);
 });
 
+test("SSG 백화점 단일 카드는 채널 문구를 확인한 뒤 실제 상세 링크 검증 후보가 된다", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    pageText: "신세계백화점 13784822 검색 결과",
+    selectedChannelCount: 1,
+    productCards: [{
+      productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000612345",
+      title: "데상트 스프린트 볼캡 14561910",
+      text: "신세계백화점 데상트 스프린트 볼캡 14561910",
+      departmentStoreLabelMatched: true,
+    }],
+  }), "SSG 백화점", "13784822", "데상트", "데상트 스프린트 볼캡");
+  assert.equal(result.products.length, 1);
+  assert.equal(result.products[0].url, "https://www.ssg.com/item/itemView.ssg?itemId=1000612345");
+  assert.equal(result.products[0].detailArticleVerificationRequired, true);
+});
+
+test("SSG 백화점·아울렛 카드는 해당 채널 문구가 없으면 클릭 후보가 아니다", () => {
+  for (const [store, url] of [
+    ["SSG 백화점", "https://www.ssg.com/item/itemView.ssg?itemId=1001"],
+    ["SSG 아울렛", "https://www.ssg.com/item/itemView.ssg?itemId=1002"],
+  ]) {
+    const result = analyzeRenderedChannelProducts(JSON.stringify({
+      selectedChannelCount: 1,
+      productCards: [{ productUrl: url, title: "데상트 검색 상품", text: "데상트 검색 상품" }],
+    }), store, "13784822", "데상트", "데상트 검색 상품");
+    assert.equal(result.products.length, 0, store);
+  }
+});
+
 test("네이버 할인 상품은 취소선 정상가와 실제 판매가를 구분한다", () => {
   const result = analyzeRenderedChannelProducts(JSON.stringify({
     pageText: "아디다스 IH1321 검색 결과",
     productCards: [{
       productUrl: "https://shopping.naver.com/window-products/outlet/13001191642",
-      text: "아디다스 R71 IH1321 109,000원 20% 87,200원",
+      text: "아디다스 아울렛 R71 IH1321 109,000원 20% 87,200원",
       title: "아디다스 R71 IH1321",
       price: "87,200원",
       originalPrice: "109,000원",
@@ -585,7 +614,7 @@ test("정확한 레고 품번이 상품 제목에 있으면 검색 결과로 인
     pageText: "LEGO 42226-1 검색 결과",
     productCards: [{
       productUrl: "https://shopping.naver.com/window-products/123",
-      text: "레고 테크닉 42226-1 129,000원",
+      text: "레고 아울렛 테크닉 42226-1 129,000원",
       title: "LEGO 테크닉 42226-1",
       price: "129,000원",
     }],
@@ -663,11 +692,38 @@ test("네이버 백화점과 아울렛도 채널 1개와 같은 브랜드 카드
       productCards: [{
         productUrl: `https://shopping.naver.com/window-products/${path}/124925333777`,
         title: "[MLB] 청키 라이너 NY (Off White)",
-        text: "MLB 청키 라이너 NY (Off White)",
+        text: `MLB ${label} 청키 라이너 NY (Off White)`,
       }],
       pageText: `전체 1개 ${label} 1개`,
     }), store, "3ASXCA12N-50WHS", "MLB", "MLB 차키 내피 합성 가죽 로우탑 스니커즈");
     assert.equal(result.count, 1, store);
+  }
+});
+
+test("네이버 백화점과 아울렛도 숫자·상품카드·채널 문구를 모두 확인한다", () => {
+  for (const [store, label, path, evidenceField] of [
+    ["네이버 백화점", "백화점", "department", "departmentStoreLabelMatched"],
+    ["네이버 아울렛", "아울렛", "outlet", "outletLabelMatched"],
+  ]) {
+    const baseCard = {
+      productUrl: `https://shopping.naver.com/window-products/${path}/1001`,
+      title: "데상트 검색 상품",
+      text: `데상트 ${label} 검색 상품`,
+      [evidenceField]: true,
+    };
+    const verified = analyzeRenderedChannelProducts(JSON.stringify({
+      selectedChannelCount: 1,
+      pageText: `${label} 1개`,
+      productCards: [baseCard],
+    }), store, "SR123UPS11", "데상트", "데상트 검색 상품");
+    assert.equal(verified.products.length, 1, `${store} 문구 확인`);
+
+    const missingLabel = analyzeRenderedChannelProducts(JSON.stringify({
+      selectedChannelCount: 1,
+      pageText: `${label} 1개`,
+      productCards: [{ ...baseCard, text: "데상트 검색 상품", [evidenceField]: false }],
+    }), store, "SR123UPS11", "데상트", "데상트 검색 상품");
+    assert.equal(missingLabel.products.length, 0, `${store} 문구 누락 차단`);
   }
 });
 
@@ -676,11 +732,11 @@ test("네이버 아울렛 탭에서 확인된 국내 상품 카드 수를 표시
     productCards: [{
       productUrl: "https://shopping.naver.com/window-products/outlet/13001191642",
       title: "아디다스 VL 코트 3.0 클라우드 화이트 코어 블랙",
-      text: "아디다스 롯데몰 수지점 89,000원",
+      text: "아디다스 아울렛 롯데몰 수지점 89,000원",
     }, {
       productUrl: "https://shopping.naver.com/window-products/outlet/13001191643",
       title: "에스마켓 아디다스 VL COURT 3.0",
-      text: "아디다스 NC 야탑점 79,000원",
+      text: "아디다스 아울렛 NC 야탑점 79,000원",
     }],
     pageText: "전체 6개 아울렛 6개 백화점 0개 소호&스트릿 0개",
   }), "네이버 아울렛", "ID8797", "아디다스", "아디다스 VL 코트 3.0");
