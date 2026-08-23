@@ -175,17 +175,13 @@ function naverBrandStore(brandOrQuery) {
 }
 
 export function naverFashionTownUrl(channel, brand, query) {
-  const cleanedBrand = sanitizeDomesticQuery(brand);
   const cleanedQuery = sanitizeDomesticQuery(query);
-  const matchedStore = naverBrandStore(cleanedBrand || cleanedQuery);
-  const searchBrand = matchedStore?.aliases[0] || cleanedBrand;
   if (channel === "brand-store") {
-    const exactQuery = [searchBrand, cleanedQuery].filter(Boolean).join(" ");
-    return `https://search.shopping.naver.com/ns/search?query=${encodeURIComponent(exactQuery)}&mallTypes=OFFICIAL_BRAND`;
+    return `https://shopping.naver.com/window/search/fashion-group?q=${encodeURIComponent(cleanedQuery)}&queryType=ac`;
   }
   const section = channel === "department" ? "department" : "outlet";
   return `https://shopping.naver.com/window/${section}/search?q=${encodeURIComponent(
-    [searchBrand, cleanedQuery].filter(Boolean).join(" ")
+    cleanedQuery
   )}`;
 }
 

@@ -287,6 +287,9 @@ test("네이버 공식 브랜드스토어는 공식브랜드 필터 선택을 �
 });
 
 test("네이버 백화점과 아울렛은 홈 화면 탭을 실제 마우스 이벤트로 선택한다", () => {
+  assert.match(mainSource, /async function clickNaverFashionTownMenu/);
+  assert.match(mainSource, /compact\(element\.textContent\) === "패션타운"/);
+  assert.match(mainSource, /clickNaverFashionTownMenu\(searchWindow\)[\s\S]*submitNaverShoppingSearch\(searchWindow, searchQuery\)/);
   assert.match(mainSource, /async function submitNaverShoppingSearch/);
   assert.match(mainSource, /insertText\(exactQuery\)/);
   assert.match(mainSource, /const inputVerified =/);

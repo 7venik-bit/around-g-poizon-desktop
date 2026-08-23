@@ -144,10 +144,9 @@ test("the requested 3,388-brand catalog is accepted as a complete searchable cat
   assert.ok(brands.length >= FULL_BRAND_CATALOG_MINIMUM);
   for (const brand of [brands[0], brands[1700], brands.at(-1)]) {
     const searchUrl = decodeURIComponent(officialBrandSearchUrl(brand.ko, "STYLE-001"));
-    assert.match(searchUrl, new RegExp(brand.ko));
+    assert.doesNotMatch(searchUrl, new RegExp(brand.ko));
     assert.match(searchUrl, /STYLE-001/);
-    assert.match(searchUrl, /search\.shopping\.naver\.com\/ns\/search/);
-    assert.match(searchUrl, /mallTypes=OFFICIAL_BRAND/);
+    assert.match(searchUrl, /shopping\.naver\.com\/window\/search\/fashion-group/);
     assert.doesNotMatch(searchUrl, /공식몰|공식스토어/);
   }
 });

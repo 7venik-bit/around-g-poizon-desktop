@@ -1163,6 +1163,46 @@ async function clickNaverShoppingChannel(searchWindow, store) {
   return Boolean(state && !state.missing && (state.url.includes(expectedPath) || state.selected));
 }
 
+async function clickNaverFashionTownMenu(searchWindow) {
+  if (!searchWindow || searchWindow.isDestroyed()) return false;
+  const target = await searchWindow.webContents.executeJavaScript(`(() => {
+    const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
+    const visible = (element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+    const candidates = [...document.querySelectorAll('header a,nav a,a,button,[role="button"]')]
+      .filter(visible)
+      .filter((element) => compact(element.textContent) === "패션타운")
+      .sort((left, right) => {
+        const score = (element) => (element.closest("header,nav") ? 100 : 0)
+          + (/fashion-group/i.test(String(element.getAttribute("href") || "")) ? 50 : 0);
+        return score(right) - score(left);
+      });
+    const element = candidates[0];
+    if (!element) return null;
+    element.scrollIntoView({ block: "center", inline: "center" });
+    const rect = element.getBoundingClientRect();
+    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+  })()`, true).catch(() => null);
+  if (!target) return false;
+  searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
+  searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  await wait(1_500);
+  return searchWindow.webContents.executeJavaScript(`(() => {
+    const text = String(document.body?.innerText || "");
+    const selected = [...document.querySelectorAll('input,button,[role="combobox"],a')].some((element) =>
+      /패션타운/.test([element.value, element.textContent, element.getAttribute("aria-label")].join(" ")));
+    // Naver can render a temporary not-found body for the Fashion Town
+    // landing route while keeping its real global search control active. The
+    // physical menu navigation itself is enough here; the following search
+    // submission must still prove a non-error result page.
+    return Boolean(selected || /\\/window\\/(?:search\\/)?fashion-group/i.test(location.pathname));
+  })()`, true).catch(() => false);
+}
+
 async function submitNaverShoppingSearch(searchWindow, query) {
   const exactQuery = String(query || "").trim();
   if (!exactQuery || !searchWindow || searchWindow.isDestroyed()) return false;
@@ -1391,6 +1431,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     }
     if (interactiveSiteSearch) {
       const searchQuery = String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();
+      if (naverPortalSource) {
+        const fashionTownOpened = await clickNaverFashionTownMenu(searchWindow);
+        if (!fashionTownOpened) return null;
+      }
       const submitted = naverPortalSource
         ? await submitNaverShoppingSearch(searchWindow, searchQuery)
         : await executeOfficialMallSearch(searchWindow, String(source.homepageUrl || url), searchQuery);

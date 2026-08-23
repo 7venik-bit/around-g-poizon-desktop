@@ -147,11 +147,11 @@ test("편집샵·병행수입 검색은 쇼핑 플랫폼 상품 상세 주소만
 });
 import { OFFICIAL_DOMAIN_STATUS } from "../services/official-domain-registry.mjs";
 
-test("every catalog brand uses the Fashion Town brand-store search without an official-mall keyword", () => {
+test("every catalog brand uses the Fashion Town search with the product code only", () => {
   const url = decodeURIComponent(officialBrandSearchUrl("살로몬", "L47581100"));
-  assert.match(url, /search\.shopping\.naver\.com\/ns\/search/);
-  assert.match(url, /mallTypes=OFFICIAL_BRAND/);
-  assert.match(url, /살로몬/);
+  assert.match(url, /shopping\.naver\.com\/window\/search\/fashion-group/);
+  assert.match(url, /q=L47581100/);
+  assert.doesNotMatch(url, /살로몬/);
   assert.match(url, /L47581100/);
   assert.doesNotMatch(url, /공식몰|공식스토어/);
   assert.equal(officialBrandProductSearchUrl("살로몬", "L47581100"), "");
@@ -159,7 +159,7 @@ test("every catalog brand uses the Fashion Town brand-store search without an of
 
 test("every catalog brand gets article-specific Naver channel searches", () => {
   const cases = [
-    ["brand-store", /search\.shopping\.naver\.com\/ns\/search/],
+    ["brand-store", /\/window\/search\/fashion-group/],
     ["department", /\/window\/department\/search/],
     ["outlet", /\/window\/outlet\/search/],
   ];
@@ -186,11 +186,11 @@ test("네이버 자동화는 포털 검색창을 사용하고 수동 확인 링�
     }),
   });
   const naver = result.sources.find((source) => source.store === "네이버 공식 브랜드스토어");
-  assert.match(naver.searchUrl, /search\.shopping\.naver\.com\/ns\/search/);
-  assert.match(naver.searchUrl, /mallTypes=OFFICIAL_BRAND/);
+  assert.match(naver.searchUrl, /shopping\.naver\.com\/window\/search\/fashion-group/);
+  assert.match(naver.searchUrl, /q=SR123UTS15/);
   assert.equal(naver.interactiveSearch, true);
   assert.equal(naver.searchQuery, "데상트 SR123UTS15");
-  assert.match(naver.searchUrl, /query=/);
+  assert.match(naver.searchUrl, /q=/);
 });
 
 test("품번이 있으면 상품코드, 상품명, 상품명+상품코드 순으로 검색한다", async () => {
