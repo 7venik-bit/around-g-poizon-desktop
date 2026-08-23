@@ -89,6 +89,8 @@ import {
   normalizeRenderedStockEvidence,
   parseNaverFashionTownChannelCounts,
   queryDomesticProducts,
+  sanitizeDomesticProductCode,
+  sanitizeDomesticQuery,
 } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
 import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";
@@ -9284,12 +9286,19 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         settings.officialBrandRegistry,
         String(input?.brand || "").trim()
       );
+      // Normalize once at the IPC boundary so every downstream platform,
+      // physical keyboard input, URL builder, and detail-page comparison uses
+      // the same Han-free domestic search identity.
+      const searchArticleNumber = sanitizeDomesticProductCode(input?.articleNumber);
+      const searchProductCode = sanitizeDomesticProductCode(input?.productCode);
+      const searchBrand = sanitizeDomesticQuery(input?.brand);
+      const searchTitle = sanitizeDomesticQuery(input?.title);
       const data = await queryDomesticProducts({
-        query: String(input?.query || "").trim(),
-        articleNumber: String(input?.articleNumber || "").trim(),
-        productCode: String(input?.productCode || "").trim(),
-        brand: String(input?.brand || "").trim(),
-        title: String(input?.title || "").trim(),
+        query: sanitizeDomesticQuery(input?.query),
+        articleNumber: searchArticleNumber,
+        productCode: searchProductCode,
+        brand: searchBrand,
+        title: searchTitle,
         preferTitle: !String(input?.imageUrl || "").trim(),
         verifyLinkCounts: false,
         officialBrandRecord,
@@ -9299,9 +9308,9 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       if (input?.verifyLinkCounts === true) {
         matched = await addRenderedSearchCounts(
           matched,
-          String(input?.articleNumber || ""),
-          String(input?.brand || ""),
-          String(input?.title || "")
+          searchArticleNumber,
+          searchBrand,
+          searchTitle
         );
         matched = await addMatchConfidence(matched, input || {});
       }

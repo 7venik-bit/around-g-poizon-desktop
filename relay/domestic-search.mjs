@@ -118,6 +118,12 @@ export function detectedRetailer(value = "") {
 
 export function sanitizeDomesticQuery(value) {
   return String(value || "")
+    // POIZON can append Chinese colour/category text directly to an article
+    // number (for example `207521-001黑色`). Domestic search fields are typed
+    // with keyboard events, and those Han characters both corrupt the query
+    // and can stop the physical input sequence. They are source metadata, not
+    // part of the Korean-market search term.
+    .replace(/\p{Script=Han}+/gu, " ")
     .replace(/주간\s*대비(?:\s*[↑↓]?\s*\d+(?:\.\d+)?%)?/gi, " ")
     .replace(/검색\s*지수|즐겨찾기\s*지수|평균\s*거래가|최저\s*거래가|최고\s*거래가|최근\s*7일\s*검색\s*추세/gi, " ")
     .replace(/\b(?:KRW|SPU\s*기준|SKU\s*기준)\b/gi, " ")
@@ -131,6 +137,8 @@ export function sanitizeDomesticProductCode(value) {
     // number (for example `SR123UPS11-服`).  It is presentation metadata, not
     // part of the model code that a person enters in Naver Shopping.
     .replace(/\s*[-_/]\s*(?:服饰|配饰|服|鞋|包|帽)\s*$/u, "")
+    .replace(/\s+/g, "")
+    .replace(/[-_/]+$/g, "")
     .trim();
 }
 

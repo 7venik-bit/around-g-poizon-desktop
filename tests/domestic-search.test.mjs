@@ -29,11 +29,23 @@ import {
   queryDomesticProducts,
   resolveSsgProductClassification,
   sanitizeDomesticProductCode,
+  sanitizeDomesticQuery,
 } from "../relay/domestic-search.mjs";
 
 test("POIZON category suffix is removed before a product code is typed", () => {
   assert.equal(sanitizeDomesticProductCode("SR123UPS11-服"), "SR123UPS11");
   assert.equal(sanitizeDomesticProductCode(" 3ASXCA12N-50WHS "), "3ASXCA12N-50WHS");
+  assert.equal(sanitizeDomesticProductCode("207521-001黑色"), "207521-001");
+  assert.equal(sanitizeDomesticProductCode("207521-001 黑色"), "207521-001");
+  assert.equal(sanitizeDomesticQuery("크록스 207521-001黑色"), "크록스 207521-001");
+});
+
+test("국내 검색 IPC는 한자를 제거한 상품번호만 모든 판매처에 전달한다", async () => {
+  const mainSource = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../main.mjs", import.meta.url), "utf8"));
+  assert.match(mainSource, /const searchArticleNumber = sanitizeDomesticProductCode\(input\?\.articleNumber\)/);
+  assert.match(mainSource, /query: sanitizeDomesticQuery\(input\?\.query\)/);
+  assert.match(mainSource, /articleNumber: searchArticleNumber/);
+  assert.match(mainSource, /addRenderedSearchCounts\([\s\S]*searchArticleNumber,[\s\S]*searchBrand,[\s\S]*searchTitle/);
 });
 
 test("네이버 패션타운은 상품 클릭 전에 세 채널 숫자를 모두 인식한다", () => {
