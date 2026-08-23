@@ -1517,22 +1517,35 @@ async function submitNaverShoppingSearch(searchWindow, query) {
     const button = controls.filter(visible)
       .map((element) => {
         const label = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.className, element.outerHTML].join(" ");
+        const compactLabel = compact(label);
         const rect = element.getBoundingClientRect();
         const explicitSearch = /검색|search|magnif|ico[_-]?(?:sch|search)/i.test(label);
         const typeSubmit = String(element.getAttribute("type") || "").toLowerCase() === "submit";
+        const clearOrToggle = /입력(?:내용)?삭제|지우기|닫기|clear|delete|remove|close|dropdown|arrow|down|toggle|autocomplete|fold|unfold|expand|collapse/i.test(compactLabel)
+          || element.hasAttribute("aria-expanded")
+          || Boolean(element.getAttribute("aria-haspopup"));
         const sameRow = Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2)) < 60;
         const horizontalGap = rect.left - inputRect.right;
         const rightAdjacent = sameRow && horizontalGap >= -35 && horizontalGap <= 160
-          && rect.right > inputRect.right - 10;
+          && rect.right > inputRect.right - 10
+          && rect.width <= 120 && rect.height <= 120;
         const insideRightEdge = sameRow
           && rect.left >= inputRect.left + inputRect.width * 0.72
-          && rect.right <= inputRect.right + 120;
+          && rect.right <= inputRect.right + 120
+          && rect.width <= 120 && rect.height <= 120;
+        // Naver places clear, autocomplete-toggle and search controls in that
+        // order. The magnifier is the farthest-right eligible control.
+        const rightmostPriority = Math.max(0, Math.min(220, rect.right - inputRect.right)) * 12;
         const score = (explicitSearch ? 900 : 0)
           + (typeSubmit ? 700 : 0)
           + (rightAdjacent ? 600 : 0)
           + (insideRightEdge ? 450 : 0)
-          + Math.max(0, 180 - Math.abs(horizontalGap - 30));
-        return { element, score, eligible: explicitSearch || typeSubmit || rightAdjacent || insideRightEdge };
+          + rightmostPriority;
+        return {
+          element,
+          score,
+          eligible: !clearOrToggle && (explicitSearch || typeSubmit || rightAdjacent || insideRightEdge)
+        };
       })
       .filter((candidate) => candidate.eligible)
       .sort((left, right) => right.score - left.score)[0]?.element;

@@ -12,10 +12,10 @@ const [mainSource, relaySource, packageSource, lockSource] = await Promise.all([
 const pkg = JSON.parse(packageSource);
 const lock = JSON.parse(lockSource);
 
-test("v2.10.371 release metadata is synchronized", () => {
-  assert.equal(pkg.version, "2.10.371");
-  assert.equal(lock.version, "2.10.371");
-  assert.equal(lock.packages[""].version, "2.10.371");
+test("v2.10.372 release metadata is synchronized", () => {
+  assert.equal(pkg.version, "2.10.372");
+  assert.equal(lock.version, "2.10.372");
+  assert.equal(lock.packages[""].version, "2.10.372");
 });
 
 test("Naver physically enters Fashion Town, focuses the input, and clicks its search icon", () => {
@@ -51,6 +51,10 @@ test("Naver executes the required click, type, and magnifier sequence", () => {
   assert.match(mainSource, /for \(let attempt = 0; attempt < 20 && !submitTarget; attempt \+= 1\)/);
   assert.match(mainSource, /if \(!submitTarget\) await wait\(300\)/);
   assert.match(mainSource, /const rightAdjacent = sameRow && horizontalGap >= -35 && horizontalGap <= 160/);
+  assert.match(mainSource, /const clearOrToggle = \/입력\(\?:내용\)\?삭제\|지우기\|닫기\|clear/);
+  assert.match(mainSource, /element\.hasAttribute\("aria-expanded"\)/);
+  assert.match(mainSource, /const rightmostPriority = Math\.max\(0, Math\.min\(220, rect\.right - inputRect\.right\)\) \* 12/);
+  assert.match(mainSource, /eligible: !clearOrToggle && \(explicitSearch \|\| typeSubmit \|\| rightAdjacent \|\| insideRightEdge\)/);
   assert.match(mainSource, /containerRect\.right - 24/);
   assert.match(mainSource, /await wait\(800\)/);
   assert.match(mainSource, /await wait\(attempt === 0 \? 1_500 : 500\)/);
