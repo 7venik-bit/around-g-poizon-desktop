@@ -5,6 +5,7 @@ on:
     branches:
       - main
     paths:
+      - "bootstrap.mjs"
       - "main.mjs"
       - "preload.cjs"
       - "src/**"
