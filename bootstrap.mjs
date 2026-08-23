@@ -82,7 +82,88 @@ ipcMain.handle("excel:update-column-layout", async (_event, input = {}) => {
   }
 });
 
+function installRenderedProductCardFallback(window) {
+  const contents = window?.webContents;
+  if (!contents || contents.__aroundGProductCardFallbackInstalled) return;
+  contents.__aroundGProductCardFallbackInstalled = true;
+
+  const nativeExecuteJavaScript = contents.executeJavaScript.bind(contents);
+  contents.executeJavaScript = async (code, userGesture) => {
+    const source = String(code || "");
+    const isRenderedProductCardLookup =
+      source.includes('const links = [...document.querySelectorAll("a[href]")]')
+      && source.includes('left.origin === right.origin && left.pathname === right.pathname')
+      && source.includes('const expected = ');
+
+    const originalResult = await nativeExecuteJavaScript(code, userGesture);
+    if (!isRenderedProductCardLookup || originalResult) return originalResult;
+
+    const isScrollLookup = source.includes('link.scrollIntoView({ block: "center", inline: "center" });');
+    const isPointLookup = source.includes('Math.min(rect.height / 2, 180)');
+    if (!isScrollLookup && !isPointLookup) return originalResult;
+
+    const fallbackScript = `(() => {
+      const visible = (element) => {
+        if (!element) return false;
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none"
+          && style.visibility !== "hidden"
+          && Number(style.opacity || 1) > 0
+          && rect.width >= 60
+          && rect.height >= 40
+          && rect.bottom > 80
+          && rect.top < innerHeight
+          && rect.right > 0
+          && rect.left < innerWidth;
+      };
+      const productLinkPattern = /window-products|\\/products?\\/|productId=|nvMid=|itemId=|goodsNo=/i;
+      const candidates = [...document.querySelectorAll("a[href]")]
+        .map((anchor) => {
+          const image = anchor.querySelector("img, picture img")
+            || anchor.closest("li, article, [class*='product' i], [class*='item' i]")?.querySelector("img, picture img");
+          const card = anchor.closest("li, article, [class*='product' i], [class*='item' i]") || anchor;
+          const rect = anchor.getBoundingClientRect();
+          const cardRect = card.getBoundingClientRect();
+          const imageRect = image?.getBoundingClientRect?.() || { width: 0, height: 0 };
+          const text = String(card.innerText || anchor.innerText || "").trim();
+          let score = 0;
+          if (productLinkPattern.test(String(anchor.href || ""))) score += 1000;
+          if (image && imageRect.width >= 70 && imageRect.height >= 70) score += 500;
+          if (cardRect.width >= 120 && cardRect.height >= 100) score += 250;
+          if (text.length >= 2 && text.length <= 1200) score += 100;
+          if (cardRect.top >= 100) score += 80;
+          score += Math.min(200, Math.round((imageRect.width * imageRect.height) / 500));
+          return { anchor, card, rect, cardRect, image, score };
+        })
+        .filter((item) => visible(item.anchor) || visible(item.card))
+        .filter((item) => item.image && item.score >= 700)
+        .sort((left, right) => right.score - left.score || left.cardRect.top - right.cardRect.top);
+      const selected = candidates[0];
+      if (!selected) return ${isScrollLookup ? "false" : "null"};
+      selected.anchor.scrollIntoView({ block: "center", inline: "center" });
+      if (${isScrollLookup ? "true" : "false"}) return true;
+      const rect = selected.anchor.getBoundingClientRect();
+      const clickRect = rect.width > 0 && rect.height > 0 ? rect : selected.card.getBoundingClientRect();
+      if (clickRect.width <= 0 || clickRect.height <= 0) return null;
+      return {
+        x: Math.round(clickRect.left + clickRect.width / 2),
+        y: Math.round(clickRect.top + Math.min(clickRect.height / 2, 180)),
+        fallback: true,
+      };
+    })()`;
+
+    try {
+      return await nativeExecuteJavaScript(fallbackScript, true);
+    } catch (error) {
+      console.error("Rendered product card fallback failed", error);
+      return originalResult;
+    }
+  };
+}
+
 app.on("browser-window-created", (_event, window) => {
+  installRenderedProductCardFallback(window);
   window.webContents.on("did-finish-load", async () => {
     const url = window.webContents.getURL();
     if (!/\/src\/index\.html(?:[?#]|$)/i.test(url)) return;
