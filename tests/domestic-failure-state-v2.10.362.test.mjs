@@ -35,3 +35,10 @@ test("official mall submits a product query once without homepage reload retries
   assert.doesNotMatch(execution, /for \(let attempt/);
   assert.doesNotMatch(execution, /loadURL\(homepageUrl\)/);
 });
+
+test("Naver does not report success merely because the pre-search route contains search", () => {
+  const execution = main.match(/async function submitNaverShoppingSearch[\s\S]*?\r?\n}\r?\n\r?\nasync function openRenderedSizeOptions/)?.[0] || "";
+  assert.match(execution, /urlChanged && queryInUrl/);
+  assert.match(execution, /state\.resultMatched === true/);
+  assert.doesNotMatch(execution, /\|\| \/search\/i\.test\(state\.url\)/);
+});

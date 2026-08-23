@@ -1302,12 +1302,27 @@ async function submitNaverShoppingSearch(searchWindow, query) {
     const state = await searchWindow.webContents.executeJavaScript(`JSON.stringify({
       url: String(location.href || ""),
       text: String(document.body?.innerText || "").slice(0, 30000),
-      inputValue: String([...document.querySelectorAll('input[type="search"],input[placeholder*="상품명"],input[placeholder*="브랜드"],input[placeholder*="검색"]')].find((element) => element.value)?.value || "")
+      inputValue: String([...document.querySelectorAll('input[type="search"],input[placeholder*="상품명"],input[placeholder*="브랜드"],input[placeholder*="검색"]')].find((element) => element.value)?.value || ""),
+      resultMatched: [...document.querySelectorAll('a[href*="window-products"],a[href*="/products/"]')].some((link) => {
+        const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
+        const expected = compact(${JSON.stringify(exactQuery)});
+        const card = link.closest('li,article,[class*="product" i],[class*="item" i],div');
+        return expected.length >= 4 && compact([link.href, link.textContent, card?.innerText].join(" ")).includes(expected);
+      }),
+      noResult: /검색\s*결과가\s*없|상품을\s*찾을\s*수\s*없|일치하는\s*상품이\s*없/.test(String(document.body?.innerText || ""))
     })`, true).then(JSON.parse).catch(() => null);
     const urlChanged = Boolean(state?.url && state.url !== previousUrl);
+    const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
+    const queryInUrl = (() => {
+      try { return compact(decodeURIComponent(state?.url || "")).includes(compact(exactQuery)); }
+      catch { return false; }
+    })();
+    const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));
     if (state && !/페이지를\s*찾을\s*수\s*없습니다/.test(state.text)
       && state.inputValue.trim() === exactQuery
-      && (urlChanged || /search/i.test(state.url) || decodeURIComponent(state.url).includes(exactQuery))) return true;
+      && ((urlChanged && queryInUrl)
+        || state.resultMatched === true
+        || (state.noResult === true && queryVisibleInPage))) return true;
   }
   return false;
 }
