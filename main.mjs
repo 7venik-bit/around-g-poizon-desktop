@@ -1470,7 +1470,7 @@ async function typeNaverQueryLikeUser(searchWindow, inputTarget, exactQuery) {
     if (prefixOk && await waitForInputValue(exactQuery)) {
       // Keep the completed value visible and let Naver finish rendering its
       // suggestion/search layer before locating the magnifier.
-      await wait(1_000);
+      await wait(2_000);
       if (await readValue() === exactQuery) return true;
     }
   }
@@ -1505,35 +1505,65 @@ async function submitNaverShoppingSearch(searchWindow, query) {
     const input = [...document.querySelectorAll('input:not([type="password"]),textarea,[role="searchbox"],[contenteditable="true"]')]
       .find((element) => visible(element) && compact(valueOf(element)) === compact(${JSON.stringify(exactQuery)}));
     if (!input) return null;
-    const scope = input.closest('form,[role="search"],header,[role="dialog"],[class*="layer" i]')
+    const scope = input.closest('form,[role="search"],[role="dialog"],[class*="layer" i],[class*="search" i]')
       || input.parentElement?.parentElement?.parentElement || document;
     const inputRect = input.getBoundingClientRect();
-    const button = [...scope.querySelectorAll('button,[role="button"],input[type="submit"]')]
-      .filter(visible)
+    const rawControls = [
+      ...scope.querySelectorAll('button,[role="button"],input[type="submit"],a,svg'),
+      ...document.querySelectorAll('button,[role="button"],input[type="submit"],svg')
+    ];
+    const controls = [...new Set(rawControls.map((element) =>
+      element.matches('svg') ? element.closest('button,[role="button"],a') || element : element))];
+    const button = controls.filter(visible)
       .map((element) => {
         const label = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.className, element.outerHTML].join(" ");
         const rect = element.getBoundingClientRect();
         const explicitSearch = /검색|search|magnif|ico[_-]?(?:sch|search)/i.test(label);
-        const sameRow = Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2)) < 70;
-        const toTheRight = rect.left > inputRect.left + inputRect.width * 0.55;
-        const score = (explicitSearch ? 500 : 0)
-          + (String(element.getAttribute("type") || "").toLowerCase() === "submit" ? 300 : 0)
-          + (sameRow ? 150 : 0)
-          + (toTheRight ? 100 : 0)
-          + Math.max(0, 80 - Math.abs(rect.right - inputRect.right));
-        return { element, score };
+        const typeSubmit = String(element.getAttribute("type") || "").toLowerCase() === "submit";
+        const sameRow = Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2)) < 60;
+        const horizontalGap = rect.left - inputRect.right;
+        const rightAdjacent = sameRow && horizontalGap >= -35 && horizontalGap <= 160
+          && rect.right > inputRect.right - 10;
+        const insideRightEdge = sameRow
+          && rect.left >= inputRect.left + inputRect.width * 0.72
+          && rect.right <= inputRect.right + 120;
+        const score = (explicitSearch ? 900 : 0)
+          + (typeSubmit ? 700 : 0)
+          + (rightAdjacent ? 600 : 0)
+          + (insideRightEdge ? 450 : 0)
+          + Math.max(0, 180 - Math.abs(horizontalGap - 30));
+        return { element, score, eligible: explicitSearch || typeSubmit || rightAdjacent || insideRightEdge };
       })
-      .filter((candidate) => candidate.score >= 500)
+      .filter((candidate) => candidate.eligible)
       .sort((left, right) => right.score - left.score)[0]?.element;
-    if (!button) return null;
-    const rect = button.getBoundingClientRect();
-    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+    if (button) {
+      const rect = button.getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), fallback: false };
+    }
+    // Last physical fallback for Naver builds whose magnifier has no button,
+    // role, accessible name, or searchable class. Click the right edge of the
+    // smallest search container surrounding the verified input.
+    let container = input.parentElement;
+    let containerRect = null;
+    for (let depth = 0; container && depth < 6; depth += 1, container = container.parentElement) {
+      const rect = container.getBoundingClientRect();
+      if (!containerRect && rect.width >= inputRect.width && rect.width <= inputRect.width + 220 && rect.height <= 120) {
+        containerRect = rect;
+      }
+    }
+    if (!containerRect) return null;
+    return {
+      x: Math.round(Math.min(window.innerWidth - 8, containerRect.right - 24)),
+      y: Math.round(inputRect.top + inputRect.height / 2),
+      fallback: true
+    };
     })()`, true).catch(() => null);
     if (!submitTarget) await wait(300);
   }
   if (!submitTarget) return false;
   searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: submitTarget.x, y: submitTarget.y });
-  await wait(350);
+  // Make the hand-off visible: completed code, pointer movement, then click.
+  await wait(800);
   searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: submitTarget.x, y: submitTarget.y, button: "left", clickCount: 1 });
   searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: submitTarget.x, y: submitTarget.y, button: "left", clickCount: 1 });
 
