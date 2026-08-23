@@ -22,7 +22,7 @@ let domesticBatchRunning = false;
 let domesticBatchVerifyCounts = false;
 let domesticBatchStopRequested = false;
 const DOMESTIC_BATCH_PROGRESS_KEY = "around-g-domestic-batch-progress-v3";
-const DOMESTIC_RESULT_POLICY_VERSION = 2;
+const DOMESTIC_RESULT_POLICY_VERSION = 3;
 let brandProgressActive = false;
 let categorySearchActive = false;
 let categorySearchRunId = 0;
@@ -61,7 +61,7 @@ let excelPreviewPageKeys = [];
 let excelPreviewBatchSearching = false;
 let excelPreviewIntegrated = false;
 let excelPreviewFilesParent = null;
-const EXCEL_SEARCH_RESULTS_KEY = "around-g-excel-search-results-v1";
+const EXCEL_SEARCH_RESULTS_KEY = "around-g-excel-search-results-v2";
 const excelPreviewProductCache = new Map();
 const excelPreviewSearchResults = new Map();
 const domesticIdentitySearchCache = new Map();
@@ -779,6 +779,10 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
   return response;
 }
 
+function clearDomesticIdentityCache(product) {
+  domesticIdentitySearchCache.delete(productCrossCheckIdentity(product));
+}
+
 function poizonServiceFee(price, categoryName = "") {
   const amount = Number(price || 0);
   if (amount <= 0) return 0;
@@ -821,11 +825,12 @@ function renderExcelProductRows(file, products = []) {
 
 function restoreSavedExcelSearchResults(filePath = "") {
   excelPreviewSearchResults.clear();
+  // Search results are live inventory evidence, not workbook data. Never
+  // restore an earlier run when a workbook is opened again.
   try {
     const saved = JSON.parse(localStorage.getItem(EXCEL_SEARCH_RESULTS_KEY) || "{}");
-    for (const [key, value] of Object.entries(saved[brandImportPathKey(filePath)] || {})) {
-      excelPreviewSearchResults.set(key, value);
-    }
+    delete saved[brandImportPathKey(filePath)];
+    localStorage.setItem(EXCEL_SEARCH_RESULTS_KEY, JSON.stringify(saved));
   } catch {}
 }
 
@@ -841,6 +846,8 @@ function persistExcelSearchResults(filePath = "") {
 async function searchExcelPreviewProduct(key) {
   const product = excelPreviewProductCache.get(key);
   if (!product) return;
+  clearDomesticIdentityCache(product);
+  excelPreviewSearchResults.delete(key);
   excelPreviewSearchResults.set(key, { loading: true, products: [], sources: [] });
   const file = activeExcelPreview?.file;
   if (file && activeExcelPreview?.viewMode === "products") renderExcelProductRows(file, excelPreviewPageProducts);
@@ -1729,6 +1736,14 @@ async function restoreDomesticStockResults(batchId) {
   }
 }
 
+async function clearSavedDomesticStockResults(batchId) {
+  state = await window.aroundG.snapshot();
+  const stale = (state.domesticSearches || []).filter((saved) =>
+    saved.batchId === batchId || saved.policyVersion !== DOMESTIC_RESULT_POLICY_VERSION
+  );
+  for (const saved of stale) await window.aroundG.remove("domesticSearches", saved.id);
+}
+
 function updateExplorerSelectionUi() {
   const selectableKeys = currentExplorerProducts
     .map((product, index) => ({ product, key: domesticKey(product, index) }))
@@ -2608,8 +2623,16 @@ async function runDomesticBatch(options = {}) {
     return;
   }
   const batchId = domesticBatchId(batchProducts);
-  if (!selectedOnly) await restoreDomesticStockResults(batchId);
   const savedProgress = selectedOnly ? null : readDomesticBatchProgress(batchId);
+  if (!selectedOnly && savedProgress) {
+    await restoreDomesticStockResults(batchId);
+  } else {
+    // Completed/ordinary searches must never reuse yesterday's inventory.
+    // Keep restoration only for an explicitly interrupted batch resume.
+    domesticResults.clear();
+    domesticIdentitySearchCache.clear();
+    await clearSavedDomesticStockResults(batchId);
+  }
   const resumeAt = Math.max(0, Number(savedProgress?.nextIndex || 0));
   const pendingIndexes = selectedOnly ? searchableIndexes : searchableIndexes.filter((index) => index >= resumeAt);
   let processed = 0;
@@ -2941,6 +2964,11 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     $("#excel-filter-status").textContent = "선택한 행에서 검색 가능한 상품번호를 찾지 못했습니다.";
     return;
   }
+  // A new button press always starts a new search session. Do not leave any
+  // visible or in-memory result from the previous session on another row.
+  excelPreviewSearchResults.clear();
+  domesticIdentitySearchCache.clear();
+  if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
   excelPreviewBatchSearching = true;
   updateExcelPreviewSelectionUi([]);
   $("#excel-filter-status").textContent = `선택 상품 ${keys.length.toLocaleString("ko-KR")}개를 검색하고 있습니다.`;
