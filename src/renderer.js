@@ -72,6 +72,7 @@ const completedBrandImportJobIds = new Set();
 let detectedBrandImportRunning = false;
 let brandWorkHistoryGeneration = 0;
 let acceptBrandWorkEvents = true;
+let startupRecoveryRunning = false;
 let brandActivityTimer = null;
 let brandActivityStartedAt = 0;
 let brandActivityUpdatedAt = 0;
@@ -1136,7 +1137,7 @@ async function restorePendingBrandExportJobs() {
   return pending.length;
 }
 
-async function recoverInterruptedBrandWorkAtStartup() {
+async function recoverInterruptedBrandWorkOnDemand() {
   const status = $("#brand-status");
   if (status) {
     status.className = "status";
@@ -1146,7 +1147,7 @@ async function recoverInterruptedBrandWorkAtStartup() {
   const pendingCount = await restorePendingBrandExportJobs();
   if (!pendingCount && status) {
     status.className = "status success";
-    status.textContent = "시작 점검 완료 · 기존 완료 파일을 반영했고 대기 중인 POIZON 작업이 없습니다.";
+    status.textContent = "수동 확인 완료 · 기존 완료 파일을 반영했고 대기 중인 POIZON 작업이 없습니다.";
   }
   return pendingCount;
 }
@@ -1160,12 +1161,54 @@ function renderStartupRecoveryProgress(payload = {}) {
   const percent = Math.max(0, Math.min(100, Number(payload.percent) || 0));
   panel.hidden = false;
   panel.classList.toggle("complete", percent >= 100);
+  panel.classList.toggle("running", payload.running === undefined
+    ? startupRecoveryRunning
+    : Boolean(payload.running));
   bar.style.width = `${percent}%`;
   percentLabel.textContent = `${percent}%`;
   message.textContent = payload.message || "기존 POIZON 작업과 변경 사항을 확인하고 있습니다.";
 }
 
 window.aroundG.onStartupRecoveryProgress(renderStartupRecoveryProgress);
+
+async function runManualPoizonRecovery() {
+  if (startupRecoveryRunning) return;
+  const button = $("#startup-recovery-run");
+  startupRecoveryRunning = true;
+  if (button) {
+    button.disabled = true;
+    button.textContent = "확인 중…";
+  }
+  renderStartupRecoveryProgress({
+    percent: 0,
+    running: true,
+    message: "사용자 요청으로 기존 POIZON 작업 및 변경 사항을 확인합니다.",
+  });
+  try {
+    acceptBrandWorkEvents = true;
+    const pendingCount = await recoverInterruptedBrandWorkOnDemand();
+    renderStartupRecoveryProgress({
+      percent: 100,
+      message: pendingCount
+        ? `기존 작업 확인 완료 · 중단된 ${pendingCount}개 작업의 감시를 재개했습니다.`
+        : "기존 POIZON 작업 및 변경 사항 확인을 완료했습니다.",
+    });
+    if (pendingCount) await window.aroundG.startBrandExportFolderPolling();
+  } catch (error) {
+    renderStartupRecoveryProgress({
+      percent: 100,
+      message: `수동 확인을 마쳤지만 일부 파일을 확인하지 못했습니다: ${error?.message || "확인 필요"}`,
+    });
+  } finally {
+    startupRecoveryRunning = false;
+    if (button) {
+      button.disabled = false;
+      button.textContent = "다시 확인";
+    }
+  }
+}
+
+$("#startup-recovery-run")?.addEventListener("click", () => void runManualPoizonRecovery());
 
 function recordBrandSelection(brand, action, details = {}) {
   brandSelectionHistory.unshift({
@@ -2407,6 +2450,9 @@ $("#brand-export-selected")?.addEventListener("click", async () => {
   }
   const selectedBrands = selectedBrandsForExport();
   if (!selectedBrands.length) return;
+  // Folder monitoring is no longer started merely because the app opened.
+  // An explicit brand search is also an explicit request to watch its download.
+  void Promise.resolve(window.aroundG.startBrandExportFolderPolling?.()).catch(() => {});
   const selectedLabel = selectedBrands.length === 1
     ? String(selectedBrands[0].name || selectedBrands[0].ko || "선택 브랜드")
     : `${selectedBrands.length}개 브랜드`;
@@ -3816,23 +3862,12 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
       if (metadata.needsBrandSync) await syncFullBrandCatalog({ automatic: true });
     }).catch(() => {});
   }
-  // Let Electron paint the complete workspace before touching OneDrive-backed
-  // Excel files. Startup recovery remains visible and does not race the folder poller.
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
-  try {
-    await recoverInterruptedBrandWorkAtStartup();
-    renderStartupRecoveryProgress({
-      percent: 100,
-      message: "기존 POIZON 작업 및 변경 사항 확인을 완료했습니다.",
-    });
-  } catch (error) {
-    renderStartupRecoveryProgress({
-      percent: 100,
-      message: `시작 점검을 마쳤지만 일부 파일을 확인하지 못했습니다: ${error?.message || "확인 필요"}`,
-    });
-  } finally {
-    await window.aroundG.startBrandExportFolderPolling();
-  }
+  // Existing POIZON workbooks and interrupted jobs are intentionally not read
+  // at startup. The user starts that recovery from the header button.
+  renderStartupRecoveryProgress({
+    percent: 0,
+    message: "수동 확인 대기 · 버튼을 누를 때만 기존 작업과 변경 사항을 확인합니다.",
+  });
   window.aroundG.onBrandSyncProgress((progress) => {
     if (progress?.context === "category" && categorySearchActive) {
       const completed = Number(progress.pageNum || 0);

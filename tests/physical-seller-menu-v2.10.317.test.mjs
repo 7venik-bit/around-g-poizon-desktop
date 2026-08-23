@@ -8,10 +8,10 @@ const [main, pkg, lock] = await Promise.all([
   readFile(new URL("../package-lock.json", import.meta.url), "utf8").then(JSON.parse),
 ]);
 
-test("v2.10.363은 분리 검색 모듈 없이 배포된다", async () => {
-  assert.equal(pkg.version, "2.10.363");
-  assert.equal(lock.version, "2.10.363");
-  assert.equal(lock.packages[""].version, "2.10.363");
+test("v2.10.364은 분리 검색 모듈 없이 배포된다", async () => {
+  assert.equal(pkg.version, "2.10.364");
+  assert.equal(lock.version, "2.10.364");
+  assert.equal(lock.packages[""].version, "2.10.364");
   await assert.rejects(access(new URL("../services/domestic-search-modules/index.mjs", import.meta.url)));
   assert.doesNotMatch(main, /domestic-search:module-status|onDomesticModuleStatus/);
 });

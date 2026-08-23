@@ -40,10 +40,13 @@
         </div>
         <section id="startup-recovery" class="startup-recovery" role="status" aria-live="polite">
           <div class="startup-recovery-heading">
-            <strong>기존 POIZON 작업 및 변경 사항 확인</strong>
-            <span id="startup-recovery-percent">0%</span>
+            <strong>기존 POIZON 작업 및 변경 사항 확인 · 수동</strong>
+            <div class="startup-recovery-heading-actions">
+              <span id="startup-recovery-percent">0%</span>
+              <button id="startup-recovery-run" type="button">지금 확인</button>
+            </div>
           </div>
-          <p id="startup-recovery-message">프로그램 화면을 준비했습니다. 잠시 후 기존 작업을 확인합니다.</p>
+          <p id="startup-recovery-message">수동 확인 대기 · 버튼을 누를 때만 기존 작업과 변경 사항을 확인합니다.</p>
           <div class="startup-recovery-progress" aria-hidden="true"><i id="startup-recovery-bar"></i></div>
         </section>
         <div class="brand-export-folder-setting" hidden aria-hidden="true">
