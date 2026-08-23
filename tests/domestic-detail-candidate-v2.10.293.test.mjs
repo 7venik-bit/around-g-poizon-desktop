@@ -9,7 +9,7 @@ const [main, relay] = await Promise.all([
 
 test("검색 카드 결과는 재고로 확정하지 않고 상세페이지까지 확인한다", () => {
   assert.doesNotMatch(main, /if \(!source\.linkOnly && source\.ok && Number\(source\.count \|\| 0\) > 0\)/);
-  assert.match(main, /renderedSearchSourceResult\(source, articleNumber, brand, title, 0, queryAttempt\)/);
+  assert.match(main, /source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession/);
   assert.match(main, /detailArticleVerificationRequired[\s\S]*exactArticleIdentityMatch\(detailText, articleNumber\)/);
 });
 

@@ -1108,104 +1108,53 @@ async function readNaverFashionTownChannelCounts(searchWindow) {
 }
 
 async function ensureNaverOfficialBrandFilter(searchWindow) {
-  if (!searchWindow || searchWindow.isDestroyed()) return false;
-  let physicallyClicked = false;
-  let previousUrl = String(searchWindow.webContents.getURL() || "");
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const state = await searchWindow.webContents.executeJavaScript(`(() => {
-      const selectedInUrl = new URL(location.href).searchParams.getAll("mallTypes")
-        .some((value) => String(value).includes("OFFICIAL_BRAND"));
-      const compact = (value) => String(value || "").replace(/\\s+/g, "");
-      const labelMatches = (element) => /^(?:브랜드직영몰|공식브랜드|브랜드스토어)(?:[\\d,]+개)?$/.test(
-        compact([element.textContent, element.getAttribute("aria-label"), element.getAttribute("title")].join(" "))
-      );
-      const candidates = [...document.querySelectorAll('label,input[type="checkbox"],[role="checkbox"],[role="tab"],button,a')]
-        .filter(labelMatches);
-      const isSelected = (element) => {
-        const input = element.matches('input[type="checkbox"]') ? element : element.querySelector?.('input[type="checkbox"]');
-        return Boolean(input?.checked
-          || element.getAttribute("aria-checked") === "true"
-          || element.getAttribute("aria-selected") === "true"
-          || /(?:^|[\\s_-])(?:selected|active|on)(?:$|[\\s_-])/i.test(String(element.className || "")));
-      };
-      const selectedControl = candidates.find(isSelected);
-      const target = candidates.find((element) => !isSelected(element));
-      const clickTarget = target?.matches('input[type="checkbox"]') ? target : target?.querySelector?.('input[type="checkbox"]') || target;
-      const rect = clickTarget?.getBoundingClientRect?.();
-      return {
-        url: String(location.href || ""),
-        missing: /페이지를\\s*찾을\\s*수\\s*없습니다/.test(String(document.body?.innerText || "")),
-        selected: selectedInUrl || Boolean(selectedControl),
-        found: candidates.length > 0,
-        target: rect && rect.width > 0 && rect.height > 0
-          ? { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } : null,
-      };
-    })()`, true).catch(() => ({ selected: false, found: false }));
-    if (state?.selected) {
-      await wait(1_500);
-      return true;
-    }
-    if (state?.target) {
-      searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: state.target.x, y: state.target.y });
-      searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: state.target.x, y: state.target.y, button: "left", clickCount: 1 });
-      searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: state.target.x, y: state.target.y, button: "left", clickCount: 1 });
-      physicallyClicked = true;
-    }
-    await wait(800);
-  }
-  const finalState = await searchWindow.webContents.executeJavaScript(`(() => {
-    const compact = (value) => String(value || "").replace(/\\s+/g, "");
-    const controls = [...document.querySelectorAll('[role="tab"],a,button,label,[role="checkbox"]')]
-      .filter((element) => /^(?:브랜드직영몰|공식브랜드|브랜드스토어)(?:[\\d,]+개)?$/.test(compact(element.textContent)));
-    const selected = controls.some((element) => element.getAttribute("aria-selected") === "true"
-      || element.getAttribute("aria-checked") === "true"
-      || /(?:^|[\\s_-])(?:selected|active|on)(?:$|[\\s_-])/i.test(String(element.className || "")));
-    return {
-      selected,
-      url: String(location.href || ""),
-      missing: /페이지를\\s*찾을\\s*수\\s*없습니다/.test(String(document.body?.innerText || "")),
-    };
-  })()`, true).catch(() => null);
-  const urlChanged = Boolean(finalState?.url && finalState.url !== previousUrl);
-  return Boolean(physicallyClicked && finalState && !finalState.missing && (finalState.selected || urlChanged));
+  return clickNaverShoppingChannel(searchWindow, "네이버 공식 브랜드스토어");
 }
 
 async function clickNaverShoppingChannel(searchWindow, store) {
-  const targetLabel = store === "네이버 백화점" ? "백화점"
-    : store === "네이버 아울렛" ? "아울렛" : "";
-  const expectedPath = store === "네이버 백화점" ? "/window/department"
-    : store === "네이버 아울렛" ? "/window/outlet" : "";
+  const targetLabel = store === "네이버 공식 브랜드스토어" ? "브랜드직영몰"
+    : store === "네이버 백화점" ? "백화점"
+      : store === "네이버 아울렛" ? "아울렛" : "";
   if (!targetLabel) return true;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const currentUrl = String(searchWindow.webContents.getURL() || "");
-    if (currentUrl.includes(expectedPath)) return true;
     const target = await searchWindow.webContents.executeJavaScript(`(() => {
       const label = ${JSON.stringify(targetLabel)};
-      const expectedPath = ${JSON.stringify(expectedPath)};
       const compact = (value) => String(value || "").replace(/\\s+/g, "");
       const visible = (element) => {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
       };
+      // Only the rectangular result-count tabs are valid. The global Naver
+      // navigation contains the same labels but has no count; clicking it
+      // leaves the search results and clears the product query.
       const candidates = [...document.querySelectorAll('a,button,[role="tab"],[role="button"]')]
         .filter(visible)
-        .filter((element) => new RegExp('^' + compact(label) + '(?:[\\d,]+개)?$').test(compact(element.textContent)))
+        .filter((element) => !element.closest('header,nav'))
+        .filter((element) => new RegExp('^' + compact(label) + '[\\d,]+개$').test(compact(element.textContent)))
         .sort((left, right) => {
-          const score = (element) => (String(element.getAttribute('href') || '').includes(expectedPath) ? 100 : 0)
-            + (element.getAttribute('role') === 'tab' ? 30 : 0)
-            + (/개$/.test(compact(element.textContent)) ? 20 : 0);
+          const score = (element) => (element.getAttribute('role') === 'tab' ? 100 : 0)
+            + (element.closest('[role="tablist"]') ? 80 : 0)
+            + (element.getBoundingClientRect().top > 180 ? 30 : 0);
           return score(right) - score(left);
         });
       const element = candidates[0];
       if (!element) return null;
+      const background = String(getComputedStyle(element).backgroundColor || '').match(/\d+/g)?.map(Number) || [];
+      const visuallySelected = background.length >= 3 && background[3] !== 0
+        && background[0] + background[1] + background[2] < 240;
+      const selected = element.getAttribute('aria-selected') === 'true'
+        || element.getAttribute('aria-current') === 'page'
+        || /(?:^|[\\s_-])(?:selected|active|on)(?:$|[\\s_-])/i.test(String(element.className || ''))
+        || visuallySelected;
       const rect = element.getBoundingClientRect();
-      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+      return { selected, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
     })()`, true).catch(() => null);
     if (!target) {
       await wait(700);
       continue;
     }
+    if (target.selected) return true;
     searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
     searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
     searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
@@ -1213,16 +1162,26 @@ async function clickNaverShoppingChannel(searchWindow, store) {
   }
   const state = await searchWindow.webContents.executeJavaScript(`(() => {
     const compact = (value) => String(value || "").replace(/\\s+/g, "");
-    const selected = [...document.querySelectorAll('a,button,[role="tab"],[aria-selected="true"]')].some((element) =>
-      compact(element.textContent).startsWith(${JSON.stringify(targetLabel)})
-      && (element.getAttribute('aria-selected') === 'true'
-        || /(?:^|[\\s_-])(?:selected|active|on)(?:$|[\\s_-])/i.test(String(element.className || ''))));
+    const resultTabs = [...document.querySelectorAll('a,button,[role="tab"],[aria-selected="true"]')]
+      .filter((element) => !element.closest('header,nav'))
+      .filter((element) => new RegExp('^' + ${JSON.stringify(targetLabel)} + '[\\d,]+개$').test(compact(element.textContent)));
+    const selected = resultTabs.some((element) =>
+      element.getAttribute('aria-selected') === 'true'
+        || element.getAttribute('aria-current') === 'page'
+        || /(?:^|[\\s_-])(?:selected|active|on)(?:$|[\\s_-])/i.test(String(element.className || ''))
+        || (() => {
+          const background = String(getComputedStyle(element).backgroundColor || '').match(/\d+/g)?.map(Number) || [];
+          return background.length >= 3 && background[3] !== 0
+            && background[0] + background[1] + background[2] < 240;
+        })());
+    const queryPreserved = /\/window\/search\/fashion-group/i.test(String(location.pathname || ""))
+      && /에\\s*대한\\s*패션타운\\s*검색결과/.test(String(document.body?.innerText || ""));
     return JSON.stringify({
-      url: String(location.href || ""), selected,
+      url: String(location.href || ""), selected, queryPreserved,
       missing: /페이지를\\s*찾을\\s*수\\s*없습니다/.test(String(document.body?.innerText || ""))
     });
   })()`, true).then(JSON.parse).catch(() => null);
-  return Boolean(state && !state.missing && (state.url.includes(expectedPath) || state.selected));
+  return Boolean(state && !state.missing && state.queryPreserved && state.selected);
 }
 
 async function clickNaverShoppingHomeMenu(searchWindow) {
@@ -1750,7 +1709,7 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
   return { ok: true, submitted };
 }
 
-async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "", securityRetry = 0, searchAttempt = null) {
+async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "", securityRetry = 0, searchAttempt = null, sharedNaverSession = null) {
   const interactiveOfficialSearch = source.store === "브랜드 공식몰"
     && !String(source.officialProductUrl || "")
     && /^https:\/\//i.test(String(source.homepageUrl || ""));
@@ -1762,130 +1721,153 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   let naverChannelCounts = null;
   let searchWindow;
   try {
-    searchWindow = new BrowserWindow({
-      show: naverPortalSource,
-      icon: APP_ICON_PATH,
-      width: naverPortalSource ? 1480 : 1100,
-      height: naverPortalSource ? 900 : 800,
-      webPreferences: {
-        partition: DOMESTIC_SEARCH_PARTITION,
-        sandbox: true,
-        backgroundThrottling: false,
-      },
-    });
-    if (naverPortalSource) searchWindow.maximize();
-    searchWindow.webContents.setWindowOpenHandler(({ url: popupUrl }) => {
-      if (/^https?:\/\//i.test(String(popupUrl || ""))) searchWindow.loadURL(popupUrl).catch(() => {});
-      return { action: "deny" };
-    });
-    searchWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
-    const naverChannelClickRequired = ["네이버 백화점", "네이버 아울렛"].includes(String(source.store || ""));
-    const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;
-    try {
+    const reuseNaverSearch = Boolean(naverPortalSource
+      && sharedNaverSession?.window
+      && !sharedNaverSession.window.isDestroyed()
+      && sharedNaverSession.resultsUrl
+      && sharedNaverSession.channelCounts);
+    const naverChannelClickRequired = [
+      "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛",
+    ].includes(String(source.store || ""));
+    if (reuseNaverSearch) {
+      searchWindow = sharedNaverSession.window;
+      naverChannelCounts = sharedNaverSession.channelCounts;
       await Promise.race([
-        searchWindow.loadURL(initialUrl),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 30_000)),
-      ]);
-    } catch (error) {
-      // Commerce SPAs frequently abort the first navigation while replacing it
-      // with their own redirect. Continue only when that replacement produced a
-      // real HTTPS document; every other load error remains an explicit failure.
-      const aborted = /ERR_ABORTED/i.test(String(error?.message || ""));
-      const currentUrl = String(searchWindow.webContents.getURL() || "");
-      const documentReady = aborted && /^https:\/\//i.test(currentUrl)
-        ? await searchWindow.webContents.executeJavaScript(
-          `Boolean(document.documentElement && String(location.href || "").startsWith("https://"))`,
-          true,
-        ).catch(() => false)
-        : false;
-      if (!documentReady) throw error;
-    }
-    if (interactiveOfficialSearch) {
-      const login = await ensureOfficialAccountLogin(searchWindow, String(source.homepageUrl || url));
-      if (!login.ok) return renderedSearchFailure("login_required", searchWindow, { loginRequired: true });
-      if (login.required) await searchWindow.loadURL(String(source.homepageUrl || url)).catch(() => {});
-    }
-    if (interactiveSiteSearch) {
-      const searchQuery = String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();
-      if (!searchQuery) return renderedSearchFailure("search_query_missing", searchWindow);
-      if (naverPortalSource) {
-        const shoppingHomeOpened = await clickNaverShoppingHomeMenu(searchWindow);
-        if (!shoppingHomeOpened) {
-          const pageText = await searchWindow.webContents.executeJavaScript(
-            `String(document.body?.innerText || "").slice(0, 20000)`,
-            true,
-          ).catch(() => "");
-          const securityRequired = isNaverSecurityVerificationText(pageText);
-          if (securityRequired && securityRetry < 1) {
-            const verified = await waitForNaverSecurityVerification(searchWindow);
-            if (verified) {
-              searchWindow.destroy();
-              searchWindow = null;
-              return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt);
-            }
-          }
-          return renderedSearchFailure(
-            securityRequired ? "security_verification_required" : "naver_shopping_click_failed",
-            searchWindow,
-            { securityVerificationRequired: securityRequired },
-          );
-        }
-        const fashionTownOpened = await clickNaverFashionTownMenu(searchWindow);
-        if (!fashionTownOpened) {
-          const pageText = await searchWindow.webContents.executeJavaScript(
-            `String(document.body?.innerText || "").slice(0, 20000)`,
-            true,
-          ).catch(() => "");
-          const securityRequired = isNaverSecurityVerificationText(pageText);
-          if (securityRequired && securityRetry < 1) {
-            const verified = await waitForNaverSecurityVerification(searchWindow);
-            if (verified) {
-              searchWindow.destroy();
-              searchWindow = null;
-              return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt);
-            }
-          }
-          return renderedSearchFailure(
-            securityRequired ? "security_verification_required" : "fashion_town_click_failed",
-            searchWindow,
-            { securityVerificationRequired: securityRequired },
-          );
-        }
-      }
-      const submitted = naverPortalSource
-        ? await submitNaverShoppingSearch(searchWindow, searchQuery)
-        : await executeOfficialMallSearch(searchWindow, String(source.homepageUrl || url), searchQuery);
-      if (!submitted) {
-        const pageText = naverPortalSource
+        searchWindow.loadURL(sharedNaverSession.resultsUrl),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("NAVER_RESULTS_RELOAD_TIMEOUT")), 20_000)),
+      ]).catch(() => {});
+      await wait(1_200);
+    } else {
+      searchWindow = new BrowserWindow({
+        show: naverPortalSource,
+        icon: APP_ICON_PATH,
+        width: naverPortalSource ? 1480 : 1100,
+        height: naverPortalSource ? 900 : 800,
+        webPreferences: {
+          partition: DOMESTIC_SEARCH_PARTITION,
+          sandbox: true,
+          backgroundThrottling: false,
+        },
+      });
+      if (naverPortalSource) searchWindow.maximize();
+      searchWindow.webContents.setWindowOpenHandler(({ url: popupUrl }) => {
+        if (/^https?:\/\//i.test(String(popupUrl || ""))) searchWindow.loadURL(popupUrl).catch(() => {});
+        return { action: "deny" };
+      });
+      searchWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
+      const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;
+      try {
+        await Promise.race([
+          searchWindow.loadURL(initialUrl),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 30_000)),
+        ]);
+      } catch (error) {
+        // Commerce SPAs frequently abort the first navigation while replacing it
+        // with their own redirect. Continue only when that replacement produced a
+        // real HTTPS document; every other load error remains an explicit failure.
+        const aborted = /ERR_ABORTED/i.test(String(error?.message || ""));
+        const currentUrl = String(searchWindow.webContents.getURL() || "");
+        const documentReady = aborted && /^https:\/\//i.test(currentUrl)
           ? await searchWindow.webContents.executeJavaScript(
-            `String(document.body?.innerText || "").slice(0, 20000)`,
+            `Boolean(document.documentElement && String(location.href || "").startsWith("https://"))`,
             true,
-          ).catch(() => "")
-          : "";
-        const securityRequired = naverPortalSource && isNaverSecurityVerificationText(pageText);
-        if (securityRequired && securityRetry < 1) {
-          const verified = await waitForNaverSecurityVerification(searchWindow);
-          if (verified) {
-            searchWindow.destroy();
-            searchWindow = null;
-            return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt);
+          ).catch(() => false)
+          : false;
+        if (!documentReady) throw error;
+      }
+      if (interactiveOfficialSearch) {
+        const login = await ensureOfficialAccountLogin(searchWindow, String(source.homepageUrl || url));
+        if (!login.ok) return renderedSearchFailure("login_required", searchWindow, { loginRequired: true });
+        if (login.required) await searchWindow.loadURL(String(source.homepageUrl || url)).catch(() => {});
+      }
+      if (interactiveSiteSearch) {
+        const searchQuery = String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();
+        if (!searchQuery) return renderedSearchFailure("search_query_missing", searchWindow);
+        if (naverPortalSource) {
+          const shoppingHomeOpened = await clickNaverShoppingHomeMenu(searchWindow);
+          if (!shoppingHomeOpened) {
+            const pageText = await searchWindow.webContents.executeJavaScript(
+              `String(document.body?.innerText || "").slice(0, 20000)`,
+              true,
+            ).catch(() => "");
+            const securityRequired = isNaverSecurityVerificationText(pageText);
+            if (securityRequired && securityRetry < 1) {
+              const verified = await waitForNaverSecurityVerification(searchWindow);
+              if (verified) {
+                searchWindow.destroy();
+                searchWindow = null;
+                return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession);
+              }
+            }
+            return renderedSearchFailure(
+              securityRequired ? "security_verification_required" : "naver_shopping_click_failed",
+              searchWindow,
+              { securityVerificationRequired: securityRequired },
+            );
+          }
+          const fashionTownOpened = await clickNaverFashionTownMenu(searchWindow);
+          if (!fashionTownOpened) {
+            const pageText = await searchWindow.webContents.executeJavaScript(
+              `String(document.body?.innerText || "").slice(0, 20000)`,
+              true,
+            ).catch(() => "");
+            const securityRequired = isNaverSecurityVerificationText(pageText);
+            if (securityRequired && securityRetry < 1) {
+              const verified = await waitForNaverSecurityVerification(searchWindow);
+              if (verified) {
+                searchWindow.destroy();
+                searchWindow = null;
+                return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession);
+              }
+            }
+            return renderedSearchFailure(
+              securityRequired ? "security_verification_required" : "fashion_town_click_failed",
+              searchWindow,
+              { securityVerificationRequired: securityRequired },
+            );
           }
         }
-        return renderedSearchFailure(
-          securityRequired ? "security_verification_required" : "search_submission_failed",
-          searchWindow,
-          { securityVerificationRequired: securityRequired },
-        );
+        const submitted = naverPortalSource
+          ? await submitNaverShoppingSearch(searchWindow, searchQuery)
+          : await executeOfficialMallSearch(searchWindow, String(source.homepageUrl || url), searchQuery);
+        if (!submitted) {
+          const pageText = naverPortalSource
+            ? await searchWindow.webContents.executeJavaScript(
+              `String(document.body?.innerText || "").slice(0, 20000)`,
+              true,
+            ).catch(() => "")
+            : "";
+          const securityRequired = naverPortalSource && isNaverSecurityVerificationText(pageText);
+          if (securityRequired && securityRetry < 1) {
+            const verified = await waitForNaverSecurityVerification(searchWindow);
+            if (verified) {
+              searchWindow.destroy();
+              searchWindow = null;
+              return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession);
+            }
+          }
+          return renderedSearchFailure(
+            securityRequired ? "security_verification_required" : "search_submission_failed",
+            searchWindow,
+            { securityVerificationRequired: securityRequired },
+          );
+        }
+        await wait(2_000);
       }
-      await wait(2_000);
     }
     if (naverPortalSource) {
       // The three Fashion Town totals are the authoritative routing decision.
       // Read all of them before selecting a channel, scrolling, or touching a
       // result card so recommendation cards cannot change a real 1-item result.
-      naverChannelCounts = await readNaverFashionTownChannelCounts(searchWindow);
+      naverChannelCounts ||= await readNaverFashionTownChannelCounts(searchWindow);
       if (!naverChannelCounts) {
         return renderedSearchFailure("channel_count_detection_failed", searchWindow, { searchSubmitted: true });
+      }
+      if (sharedNaverSession && !reuseNaverSearch) {
+        sharedNaverSession.window = searchWindow;
+        sharedNaverSession.resultsUrl = String(searchWindow.webContents.getURL() || url);
+        sharedNaverSession.channelCounts = naverChannelCounts;
+        sharedNaverSession.searchSubmitted = true;
       }
       const currentChannelCount = naverChannelCounts[String(source.store || "")];
       if (currentChannelCount === 0) {
@@ -1903,12 +1885,16 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       }
     }
     if (naverChannelClickRequired) {
-      const channelSelected = await clickNaverShoppingChannel(searchWindow, source.store);
-      if (!channelSelected) return renderedSearchFailure("channel_selection_failed", searchWindow, { searchSubmitted: true });
-    }
-    if (source.store === "네이버 공식 브랜드스토어") {
-      const officialBrandSelected = await ensureNaverOfficialBrandFilter(searchWindow);
-      if (!officialBrandSelected) return renderedSearchFailure("official_filter_failed", searchWindow, { searchSubmitted: true });
+      const channelSelected = source.store === "네이버 공식 브랜드스토어"
+        ? await ensureNaverOfficialBrandFilter(searchWindow)
+        : await clickNaverShoppingChannel(searchWindow, source.store);
+      if (!channelSelected) {
+        return renderedSearchFailure(
+          source.store === "네이버 공식 브랜드스토어" ? "official_filter_failed" : "channel_selection_failed",
+          searchWindow,
+          { searchSubmitted: true },
+        );
+      }
     }
     // Naver and SSG exact results are already rendered above the fold.
     // Scrolling first loads unrelated recommendations and can remove the
@@ -1957,7 +1943,17 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const productCards = [];
       for (const link of productLinks) {
         const productUrl = String(link.href || "").split("#")[0];
-        if (!productUrl || seen.has(productUrl)) continue;
+        let productKey = productUrl;
+        try {
+          const parsedProductUrl = new URL(productUrl);
+          // Naver cards often expose image and title anchors with different
+          // tracking parameters for the same product. Count and click that
+          // product once by its stable origin/path identity.
+          if (/\.naver\.com$/i.test(parsedProductUrl.hostname)) {
+            productKey = parsedProductUrl.origin + parsedProductUrl.pathname;
+          }
+        } catch {}
+        if (!productUrl || seen.has(productKey)) continue;
         const card = link.closest("li, article, [data-product-id], [data-item-id], [class*='product-card'], [class*='goods-item'], [class*='item-card'], [class*='cunit'], [class*='mnemitem'], [class*='item_unit'], [class*='itemUnit'], [class*='item_grid'], [class*='product_unit']")
           || link.parentElement;
         const text = String(card?.innerText || link.innerText || "").trim();
@@ -1998,7 +1994,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         const originalPrice = [...(card?.querySelectorAll?.("del,s,strike") || [])]
           .map((element) => String(element.textContent || "").trim())
           .find((value) => /^[\\d,]+\\s*원$/.test(value)) || "";
-        seen.add(productUrl);
+        seen.add(productKey);
         const channelEvidenceText = [text, markup].join(" ");
         const officialBrandStoreLabelMatched = /브랜드\s*직영몰|공식\s*브랜드|브랜드\s*스토어/i.test(channelEvidenceText);
         const departmentStoreLabelMatched = /백화점/i.test(channelEvidenceText);
@@ -2050,7 +2046,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         }
         searchWindow.destroy();
         searchWindow = null;
-        return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt);
+        return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession);
       }
     } catch {
       return renderedSearchFailure("result_parse_failed", searchWindow, { searchSubmitted: interactiveSiteSearch });
@@ -2244,92 +2240,115 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         : "page_load_failed";
     return renderedSearchFailure(reason, searchWindow);
   } finally {
-    if (searchWindow && !searchWindow.isDestroyed()) searchWindow.destroy();
+    const keepSharedNaverWindow = naverPortalSource
+      && sharedNaverSession?.window === searchWindow;
+    if (searchWindow && !searchWindow.isDestroyed() && !keepSharedNaverWindow) searchWindow.destroy();
   }
 }
 
 async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "") {
   const discoveredProducts = [];
   const sources = [];
+  // Naver Fashion Town exposes official-brand, department, and outlet counts
+  // on one result page. Keep that browser/result URL alive across the three
+  // source rows so the product code is physically submitted exactly once.
+  const sharedNaverSession = {
+    window: null,
+    resultsUrl: "",
+    channelCounts: null,
+    searchSubmitted: false,
+  };
   // The complete domestic lookup is one sequential request again. A source
   // failure is recorded on that source, then the same request continues to
   // the next source without spawning module-specific state or retries.
   for (const source of data.sources) {
     const resolvedSource = await (async () => {
-    if (source.officialStatus && ![
-      OFFICIAL_DOMAIN_STATUS.VERIFIED,
-      OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED,
-    ].includes(source.officialStatus)) {
-      return { ...source, countVerified: false, verificationFailed: false };
-    }
-    if (!source.renderCount) {
-      return {
-        ...source,
-        countVerified: source.ok === true,
-        verificationFailed: source.ok === false,
-      };
-    }
+      if (source.officialStatus && ![
+        OFFICIAL_DOMAIN_STATUS.VERIFIED,
+        OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED,
+      ].includes(source.officialStatus)) {
+        return { ...source, countVerified: false, verificationFailed: false };
+      }
+      if (!source.renderCount) {
+        return {
+          ...source,
+          countVerified: source.ok === true,
+          verificationFailed: source.ok === false,
+        };
+      }
     // A search-card hit is only a candidate. Musinsa and other rendered
     // channels must open the product detail page before an exact article and
     // stock state can be reported as a purchasable domestic result.
-    const queryAttempts = Array.isArray(source.searchAttempts) && source.searchAttempts.length
-      ? source.searchAttempts : [{ query: source.searchQuery || articleNumber || title || "", url: source.searchUrl || "" }];
-    let result = null;
-    for (const queryAttempt of queryAttempts) {
+      const allQueryAttempts = Array.isArray(source.searchAttempts) && source.searchAttempts.length
+        ? source.searchAttempts : [{ query: source.searchQuery || articleNumber || title || "", url: source.searchUrl || "" }];
+    // One Naver search already contains all three requested channels. Never
+    // type title fallbacks or re-submit the product code for each source row.
+      const queryAttempts = /^네이버\s/.test(String(source.store || ""))
+        ? allQueryAttempts.slice(0, 1) : allQueryAttempts;
+      let result = null;
+      for (const queryAttempt of queryAttempts) {
       // Submit each query exactly once. A later query is a fallback only when
       // the completed prior search returned no product; browser/security or
       // detail-verification failures must not repeat the same query or advance
       // as though the product were absent.
-      const queryResult = await renderedSearchSourceResult(source, articleNumber, brand, title, 0, queryAttempt);
-      if (!queryResult) {
-        result = renderedSearchFailure("unknown_search_failure");
-        break;
-      }
-      result = queryResult;
-      if (queryResult.verificationReason || queryResult.detailVerificationPending) break;
-      if (Number(queryResult.count || 0) > 0 || (queryResult.products || []).length > 0) break;
+        const queryResult = await renderedSearchSourceResult(
+          source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession,
+        );
+        if (!queryResult) {
+          result = renderedSearchFailure("unknown_search_failure");
+          break;
+        }
+        result = queryResult;
+        if (queryResult.verificationReason || queryResult.detailVerificationPending) break;
+        if (Number(queryResult.count || 0) > 0 || (queryResult.products || []).length > 0) break;
       // Only a completed, authoritative zero-result search may advance to the
       // next query (product code -> title -> title+code). A page/parser/detail
       // failure ends this source once and is never submitted as another query.
-      if (queryResult.absenceConfirmed !== true) break;
-    }
-    if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
-    const count = result?.count;
-    const absenceConfirmed = result?.absenceConfirmed === true;
-    const displayCount = Number.isFinite(count)
-      ? Number(count)
-      : 0;
-    const isOfficialStore = source.store === "브랜드 공식몰";
-    const verifiedOfficialProductUrl = isOfficialStore
-      ? String((result?.products || []).find((product) => /^https?:\/\//i.test(String(product?.url || "")))?.url || "")
-      : String(source.officialProductUrl || "");
-    const verifiedProductUrl = String((result?.products || [])
-      .find((product) => /^https?:\/\//i.test(String(product?.url || "")))?.url || "");
-    return {
-      ...source,
-      searchUrl: String(result?.resolvedSearchUrl || source.searchUrl || ""),
-      count: displayCount,
-      countVerified: Number.isFinite(count) && (Number(count) > 0 || absenceConfirmed),
-      verificationFailed: !Number.isFinite(count),
-      verificationPending: result?.detailVerificationPending === true
-        || (Number.isFinite(count) && Number(count) === 0 && !absenceConfirmed),
-      absenceConfirmed,
-      searchCompleted: result?.searchCompleted === true,
-      searchSubmitted: result?.searchSubmitted === true,
-      verificationReason: String(result?.verificationReason || ""),
-      securityVerificationRequired: result?.securityVerificationRequired === true,
-      loginRequired: result?.loginRequired === true,
-      candidateCount: Number(result?.candidateCount || 0),
+        if (queryResult.absenceConfirmed !== true) break;
+      }
+      if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
+      const count = result?.count;
+      const absenceConfirmed = result?.absenceConfirmed === true;
+      const displayCount = Number.isFinite(count)
+        ? Number(count)
+        : 0;
+      const isOfficialStore = source.store === "브랜드 공식몰";
+      const verifiedOfficialProductUrl = isOfficialStore
+        ? String((result?.products || []).find((product) => /^https?:\/\//i.test(String(product?.url || "")))?.url || "")
+        : String(source.officialProductUrl || "");
+      const verifiedProductUrl = String((result?.products || [])
+        .find((product) => /^https?:\/\//i.test(String(product?.url || "")))?.url || "");
+      return {
+        ...source,
+        searchUrl: String(result?.resolvedSearchUrl || source.searchUrl || ""),
+        count: displayCount,
+        countVerified: Number.isFinite(count) && (Number(count) > 0 || absenceConfirmed),
+        verificationFailed: !Number.isFinite(count),
+        verificationPending: result?.detailVerificationPending === true
+          || (Number.isFinite(count) && Number(count) === 0 && !absenceConfirmed),
+        absenceConfirmed,
+        searchCompleted: result?.searchCompleted === true,
+        searchSubmitted: result?.searchSubmitted === true,
+        verificationReason: String(result?.verificationReason || ""),
+        securityVerificationRequired: result?.securityVerificationRequired === true,
+        loginRequired: result?.loginRequired === true,
+        candidateCount: Number(result?.candidateCount || 0),
       // The official search URL and a verified product-detail URL are
       // intentionally separate. A search page must never be presented as a
       // purchase link merely because the brand has a supported search form.
-      officialSearchUrl: isOfficialStore ? String(source.officialProductUrl || "") : "",
-      officialProductUrl: verifiedOfficialProductUrl,
-      verifiedProductUrl,
-      officialProductMissing: isOfficialStore && absenceConfirmed,
-    };
+        officialSearchUrl: isOfficialStore ? String(source.officialProductUrl || "") : "",
+        officialProductUrl: verifiedOfficialProductUrl,
+        verifiedProductUrl,
+        officialProductMissing: isOfficialStore && absenceConfirmed,
+      };
     })();
     sources.push(resolvedSource);
+    if (source.store === "네이버 아울렛"
+      && sharedNaverSession.window
+      && !sharedNaverSession.window.isDestroyed()) {
+      sharedNaverSession.window.destroy();
+      sharedNaverSession.window = null;
+    }
   }
   const products = [...(data.products || []), ...discoveredProducts].filter((product, index, all) =>
     index === all.findIndex((candidate) => `${candidate.store}:${candidate.id || candidate.url}` === `${product.store}:${product.id || product.url}`));

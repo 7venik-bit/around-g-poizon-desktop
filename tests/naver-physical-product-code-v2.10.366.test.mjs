@@ -12,10 +12,10 @@ const [mainSource, relaySource, packageSource, lockSource] = await Promise.all([
 const pkg = JSON.parse(packageSource);
 const lock = JSON.parse(lockSource);
 
-test("v2.10.375 release metadata is synchronized", () => {
-  assert.equal(pkg.version, "2.10.375");
-  assert.equal(lock.version, "2.10.375");
-  assert.equal(lock.packages[""].version, "2.10.375");
+test("v2.10.376 release metadata is synchronized", () => {
+  assert.equal(pkg.version, "2.10.376");
+  assert.equal(lock.version, "2.10.376");
+  assert.equal(lock.packages[""].version, "2.10.376");
 });
 
 test("Naver physically enters Fashion Town, focuses the input, and clicks its search icon", () => {

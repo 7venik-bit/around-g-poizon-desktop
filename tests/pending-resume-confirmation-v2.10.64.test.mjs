@@ -26,8 +26,8 @@ test("choosing later preserves jobs but prevents automatic monitor startup", () 
   assert.match(restore, /await window\.aroundG\.startSellerBrandExportMonitor\(\)/);
 });
 
-test("release metadata is 2.10.375", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.375");
-  assert.equal(JSON.parse(lockSource).version, "2.10.375");
-  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.375");
+test("release metadata is 2.10.376", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.376");
+  assert.equal(JSON.parse(lockSource).version, "2.10.376");
+  assert.equal(JSON.parse(lockSource).packages[""].version, "2.10.376");
 });

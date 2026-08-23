@@ -201,7 +201,7 @@ test("official store, Musinsa, and Naver sources all render numeric result badge
   assert.match(rendererSource, /label: "추가 확인 필요", className: "pending"/);
   assert.match(rendererSource, /label: "없음 확인", className: "missing"/);
   assert.doesNotMatch(mainSource, /!source\.linkOnly && source\.ok && Number\(source\.count \|\| 0\) > 0/);
-  assert.match(mainSource, /renderedSearchSourceResult\(source, articleNumber, brand, title, 0, queryAttempt\)/);
+  assert.match(mainSource, /source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession/);
   assert.match(rendererSource, /const sourceSections = sources\.map/);
   assert.doesNotMatch(rendererSource, /filter\(\(source\) => source\.linkOnly\)\.map/);
   assert.doesNotMatch(mainSource, /isBinaryPresenceChannel/);
@@ -278,12 +278,13 @@ test("국내 검색 결과 상태를 강한 전용 색상으로 완전히 구분
 
 test("네이버 공식 브랜드스토어는 공식브랜드 필터 선택을 확인한 뒤 결과를 읽는다", () => {
   assert.match(mainSource, /async function ensureNaverOfficialBrandFilter/);
-  assert.match(mainSource, /mallTypes/);
-  assert.match(mainSource, /OFFICIAL_BRAND/);
-  assert.match(mainSource, /브랜드직영몰\|공식브랜드\|브랜드스토어/);
+  assert.match(mainSource, /clickNaverShoppingChannel\(searchWindow, "네이버 공식 브랜드스토어"\)/);
+  assert.match(mainSource, /store === "네이버 공식 브랜드스토어" \? "브랜드직영몰"/);
+  assert.match(mainSource, /!element\.closest\('header,nav'\)/);
+  assert.ok(mainSource.includes("'[\\\\d,]+개$'"));
   assert.match(mainSource, /source\.store === "네이버 공식 브랜드스토어"/);
-  assert.match(mainSource, /if \(!officialBrandSelected\) return renderedSearchFailure\("official_filter_failed"/);
-  assert.match(mainSource, /state\?\.target/);
+  assert.match(mainSource, /"official_filter_failed" : "channel_selection_failed"/);
+  assert.match(mainSource, /queryPreserved/);
 });
 
 test("네이버 백화점과 아울렛은 홈 화면 탭을 실제 마우스 이벤트로 선택한다", () => {
@@ -313,7 +314,7 @@ test("네이버 백화점과 아울렛은 홈 화면 탭을 실제 마우스 이
   assert.match(mainSource, /sendInputEvent\(\{ type: "mouseDown"/);
   assert.match(mainSource, /naverChannelClickRequired/);
   assert.match(mainSource, /clickNaverShoppingChannel\(searchWindow, source\.store\)/);
-  assert.match(mainSource, /if \(!channelSelected\) return renderedSearchFailure\("channel_selection_failed"/);
+  assert.match(mainSource, /if \(!channelSelected\) \{[\s\S]*"channel_selection_failed"/);
   assert.match(mainSource, /submitNaverShoppingSearch\(searchWindow, searchQuery\)[\s\S]*clickNaverShoppingChannel\(searchWindow, source\.store\)/);
 });
 
@@ -322,7 +323,7 @@ test("네이버는 결과 클릭 전에 패션타운 채널 숫자 3개를 먼�
   assert.match(mainSource, /parseNaverFashionTownChannelCounts\(labels\)/);
   assert.match(
     mainSource,
-    /naverChannelCounts = await readNaverFashionTownChannelCounts\(searchWindow\)[\s\S]*if \(currentChannelCount === 0\)[\s\S]*clickNaverShoppingChannel\(searchWindow, source\.store\)/,
+    /naverChannelCounts \|\|= await readNaverFashionTownChannelCounts\(searchWindow\)[\s\S]*if \(currentChannelCount === 0\)[\s\S]*clickNaverShoppingChannel\(searchWindow, source\.store\)/,
   );
   assert.match(mainSource, /if \(naverPortalSource \|\| ssgChannelSource\) \{\s*await wait\(1_500\);\s*\} else \{/);
   assert.match(mainSource, /recognizedChannelCounts = .*naverChannelCounts/);
@@ -330,7 +331,17 @@ test("네이버는 결과 클릭 전에 패션타운 채널 숫자 3개를 먼�
   assert.match(mainSource, /source\.store === "네이버 아울렛" \? "outletLabelMatched"/);
   assert.match(mainSource, /currentChannelCount === 1[\s\S]*labeledChannelCards\.length !== 1/);
   assert.match(mainSource, /channel_card_evidence_mismatch/);
+  assert.match(mainSource, /productKey = parsedProductUrl\.origin \+ parsedProductUrl\.pathname/);
   assert.match(mainSource, /clickRenderedProductCard\(searchWindow, product\.url, resolvedSearchUrl\)[\s\S]*openRenderedSizeOptions\(searchWindow\)/);
+});
+
+test("네이버는 상품코드를 한 번만 검색하고 같은 결과에서 세 채널을 순서대로 처리한다", () => {
+  assert.match(mainSource, /const sharedNaverSession = \{/);
+  assert.match(mainSource, /allQueryAttempts\.slice\(0, 1\)/);
+  assert.match(mainSource, /sharedNaverSession\.resultsUrl = String\(searchWindow\.webContents\.getURL/);
+  assert.match(mainSource, /searchWindow\.loadURL\(sharedNaverSession\.resultsUrl\)/);
+  assert.match(mainSource, /sharedNaverSession\?\.window === searchWindow/);
+  assert.match(mainSource, /source\.store === "네이버 아울렛"[\s\S]*sharedNaverSession\.window\.destroy\(\)/);
 });
 
 test("SSG 백화점·아울렛도 상단 채널과 하단 카드를 확인한 뒤 실제 상세 링크를 보존한다", () => {
