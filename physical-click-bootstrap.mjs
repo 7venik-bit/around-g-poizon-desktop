@@ -67,11 +67,28 @@ async function locateCard(window, expectedUrl) {
   const expected = cleanUrl(expectedUrl);
   return window.webContents.executeJavaScript(`(() => {
     const expected=${JSON.stringify(expected)};
+    const compact=(value)=>String(value||'').replace(/[^A-Z0-9가-힣]/gi,'').toUpperCase();
     const visible=(el)=>{
       if(!el) return false;
       const s=getComputedStyle(el),r=el.getBoundingClientRect();
       return s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity||1)>0&&r.width>=60&&r.height>=60&&r.bottom>70&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;
     };
+
+    const searchInputs=[...document.querySelectorAll('input[type="search"],input[name*="query" i],input[placeholder*="검색"],input')]
+      .filter((el)=>visible(el) && String(el.value||'').trim().length>=4);
+    const searchQuery=searchInputs.map((el)=>String(el.value||'').trim())
+      .find((value)=>/[A-Z0-9]/i.test(value) && compact(value).length>=4) || '';
+    const queryCompact=compact(searchQuery);
+
+    const expectedFromUrl=(()=>{
+      try {
+        const u=new URL(expected);
+        return ['query','keyword','q','search','searchQuery'].map((k)=>u.searchParams.get(k)).find(Boolean)||'';
+      } catch { return ''; }
+    })();
+    const codeCompact=queryCompact || compact(expectedFromUrl);
+    if(codeCompact.length<4) return null;
+
     const productPattern=/window-products|\\/products?\\/|productId=|nvMid=|itemId=|goodsNo=/i;
     const candidates=[...document.querySelectorAll('a[href]')].map(a=>{
       const href=String(a.href||'').split('#')[0];
@@ -79,15 +96,19 @@ async function locateCard(window, expectedUrl) {
       const img=a.querySelector('img')||card.querySelector?.('img');
       const cr=card.getBoundingClientRect();
       const ir=img?.getBoundingClientRect?.()||{width:0,height:0};
-      let score=0;
+      const evidence=compact([href,a.textContent,card?.innerText,img?.alt,a.getAttribute('aria-label'),card?.getAttribute?.('aria-label')].join(' '));
+      const codeMatched=evidence.includes(codeCompact);
+      if(!codeMatched) return null;
+      let score=12000;
       if(expected&&href===expected) score+=10000;
       try{const l=new URL(href),e=expected?new URL(expected):null;if(e&&l.origin===e.origin&&l.pathname===e.pathname) score+=7000;}catch{}
       if(productPattern.test(href)) score+=1800;
       if(img&&ir.width>=80&&ir.height>=80) score+=1600;
       if(visible(card)) score+=800;
       if(visible(a)) score+=300;
-      return {a,card,img,cr,score,href};
-    }).filter(x=>x.score>=2600).sort((a,b)=>b.score-a.score||a.cr.top-b.cr.top||a.cr.left-b.cr.left);
+      return {a,card,img,cr,score,href,evidence,codeMatched};
+    }).filter(Boolean).sort((a,b)=>b.score-a.score||a.cr.top-b.cr.top||a.cr.left-b.cr.left);
+
     const s=candidates[0];
     if(!s) return null;
     s.card.scrollIntoView({block:'center',inline:'center'});
@@ -95,7 +116,13 @@ async function locateCard(window, expectedUrl) {
     const cr=s.card.getBoundingClientRect();
     const r=ir&&ir.width>=60&&ir.height>=60?ir:cr;
     if(r.width<=0||r.height<=0) return null;
-    return {href:s.href,x:Math.round(r.left+r.width/2),y:Math.round(r.top+Math.min(r.height/2,180))};
+    return {
+      href:s.href,
+      x:Math.round(r.left+r.width/2),
+      y:Math.round(r.top+Math.min(r.height/2,180)),
+      query:searchQuery,
+      codeMatched:true
+    };
   })()`, true).catch(() => null);
 }
 
@@ -117,7 +144,7 @@ function install(window) {
     const expected = expectedUrlFromScript(source);
     const result = await nativeExec(code, userGesture).catch(() => null);
     const card = await locateCard(window, expected);
-    if (!card || window.__aroundGDirectPhysicalBusy) return result;
+    if (!card?.codeMatched || window.__aroundGDirectPhysicalBusy) return result;
 
     window.__aroundGDirectPhysicalBusy = true;
     try {
@@ -126,6 +153,7 @@ function install(window) {
       window.focus();
       await new Promise((r) => setTimeout(r, 500));
       const settledCard = await locateCard(window, expected) || card;
+      if (!settledCard?.codeMatched) return result;
       const bounds = window.getContentBounds();
       const before = cleanUrl(wc.getURL());
       const clicked = await physicalMoveAndClick(bounds.x + settledCard.x, bounds.y + settledCard.y);
@@ -136,10 +164,10 @@ function install(window) {
         if (window.isDestroyed()) break;
         const after = cleanUrl(wc.getURL());
         if (after && after !== before) {
-          return { x: settledCard.x, y: settledCard.y, physicallyClicked: true, detailOpened: true };
+          return { x: settledCard.x, y: settledCard.y, physicallyClicked: true, detailOpened: true, matchedQuery: settledCard.query };
         }
       }
-      return { x: settledCard.x, y: settledCard.y, physicallyClicked: true };
+      return { x: settledCard.x, y: settledCard.y, physicallyClicked: true, matchedQuery: settledCard.query };
     } finally {
       window.__aroundGDirectPhysicalBusy = false;
     }
