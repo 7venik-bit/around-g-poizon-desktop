@@ -1,5 +1,6 @@
 name: Build and publish Windows release
 
+# Redeploy trigger: direct Naver product-code card matching + physical cursor verification.
 on:
   push:
     branches:
