@@ -51,15 +51,22 @@ function moveWindowsCursorAndClick(screenX, screenY) {
       "$p = New-Object MouseNative+POINT",
       "[MouseNative]::GetCursorPos([ref]$p) | Out-Null",
       `$sx=$p.X; $sy=$p.Y; $tx=${x}; $ty=${y}`,
-      "for($i=1; $i -le 20; $i++){",
-      "  $nx=[int]($sx + (($tx-$sx)*$i/20.0)); $ny=[int]($sy + (($ty-$sy)*$i/20.0));",
-      "  [MouseNative]::SetCursorPos($nx,$ny) | Out-Null; Start-Sleep -Milliseconds 20",
+      "$steps=36",
+      "for($i=1; $i -le $steps; $i++){",
+      "  $t=$i/[double]$steps",
+      "  $ease=(3*$t*$t)-(2*$t*$t*$t)",
+      "  $nx=[int]($sx + (($tx-$sx)*$ease))",
+      "  $ny=[int]($sy + (($ty-$sy)*$ease))",
+      "  [MouseNative]::SetCursorPos($nx,$ny) | Out-Null",
+      "  Start-Sleep -Milliseconds 28",
       "}",
-      "Start-Sleep -Milliseconds 250",
+      "[MouseNative]::SetCursorPos($tx,$ty) | Out-Null",
+      "Start-Sleep -Milliseconds 500",
       "[MouseNative]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero)",
-      "Start-Sleep -Milliseconds 80",
+      "Start-Sleep -Milliseconds 120",
       "[MouseNative]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero)",
-    ].join("; ");
+      "Start-Sleep -Milliseconds 250",
+    ].join("\r\n");
 
     const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
       windowsHide: true,
@@ -75,7 +82,7 @@ function moveWindowsCursorAndClick(screenX, screenY) {
     const timer = setTimeout(() => {
       try { child.kill(); } catch {}
       done(false);
-    }, 6000);
+    }, 8000);
     child.once("error", () => done(false));
     child.once("exit", (code) => done(code === 0));
   });
@@ -166,7 +173,9 @@ function installNaverProductClickGuard(window) {
     if (isPointLookup && result && Number.isFinite(result.x) && Number.isFinite(result.y)) {
       try {
         window.show();
+        window.restore();
         window.focus();
+        await new Promise((resolve) => setTimeout(resolve, 350));
         const bounds = window.getContentBounds();
         const clicked = await moveWindowsCursorAndClick(bounds.x + result.x, bounds.y + result.y);
         if (clicked && key) naverProductClickState.set(key, "done");
