@@ -56,6 +56,12 @@ jobs:
       - name: Verify SSG and Lotte authenticity guide
         run: node scripts/verify-domestic-authenticity-guide.mjs
 
+      - name: Apply deferred SSG search
+        run: node scripts/patch-defer-ssg-search.mjs
+
+      - name: Verify deferred SSG search
+        run: node scripts/verify-defer-ssg-search.mjs
+
       - name: Resolve release version
         id: release_version
         shell: pwsh
