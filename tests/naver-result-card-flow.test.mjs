@@ -41,7 +41,8 @@ test("상품카드는 실제 Windows 커서를 이동하고 hover 후 한 번 �
   assert.match(clickFlow, /searchWindow\.focus\(\)/);
   assert.match(clickFlow, /await wait\(650\)/);
   assert.match(clickFlow, /const bounds = searchWindow\.getContentBounds\(\)/);
-  assert.match(clickFlow, /moveWindowsCursorAndClick\([\s\S]*bounds\.x \+ target\.x[\s\S]*bounds\.y \+ target\.y[\s\S]*650/);
+  assert.match(clickFlow, /screen\.dipToScreenPoint\(\{[\s\S]*bounds\.x \+ target\.x[\s\S]*bounds\.y \+ target\.y/);
+  assert.match(clickFlow, /moveWindowsCursorAndClick\([\s\S]*physicalPoint\.x[\s\S]*physicalPoint\.y[\s\S]*650/);
   assert.doesNotMatch(clickFlow, /sendInputEvent\(\{ type: "mouseDown"/);
   assert.match(mainSource, /function moveWindowsCursorAndClick\(screenX, screenY, hoverDelayMs = 0\)/);
   assert.match(mainSource, /Start-Sleep -Milliseconds \$\{hoverDelay\}[\s\S]*mouse_event\(2/);

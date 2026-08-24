@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, session, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, screen, session, shell } from "electron";
 import { mkdirSync } from "node:fs";
 import { appendFile, copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -1707,9 +1707,13 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
   })()`, true).catch(() => null);
   if (!target) return false;
   const bounds = searchWindow.getContentBounds();
+  const physicalPoint = screen.dipToScreenPoint({
+    x: Math.round(bounds.x + target.x),
+    y: Math.round(bounds.y + target.y),
+  });
   const clicked = await moveWindowsCursorAndClick(
-    bounds.x + target.x,
-    bounds.y + target.y,
+    physicalPoint.x,
+    physicalPoint.y,
     650,
   );
   if (!clicked.ok) return false;
