@@ -1,0 +1,4 @@
+Around G POIZON v2.10.399
+Finalize product-count display only.
+Use Naver Fashion Town selected channel totals exactly for official brand store, department store, and outlet badges.
+No additional product-card click changes in this release trigger.
