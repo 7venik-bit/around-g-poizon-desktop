@@ -178,3 +178,25 @@ app.on("browser-window-created", (_event, window) => {
 });
 
 await import("./main.mjs");
+
+if (app.isPackaged) {
+  try {
+    const updaterModule = await import("electron-updater");
+    const updaterPackage = updaterModule.default || updaterModule;
+    const updater = updaterPackage.autoUpdater || updaterModule.autoUpdater;
+    if (updater?.checkForUpdates) {
+      await app.whenReady();
+      const checkForFreshRelease = () => {
+        Promise.resolve(updater.checkForUpdates()).catch((error) => {
+          console.error("Automatic update heartbeat failed", error);
+        });
+      };
+      const initialUpdateHeartbeat = setTimeout(checkForFreshRelease, 15_000);
+      initialUpdateHeartbeat.unref?.();
+      const recurringUpdateHeartbeat = setInterval(checkForFreshRelease, 5 * 60 * 1_000);
+      recurringUpdateHeartbeat.unref?.();
+    }
+  } catch (error) {
+    console.error("Automatic update heartbeat setup failed", error);
+  }
+}
