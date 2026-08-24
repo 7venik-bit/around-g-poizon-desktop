@@ -5,7 +5,7 @@
   "type": "module",
   "main": "bootstrap.mjs",
   "scripts": {
-    "postinstall": "node scripts/patch-domestic-result-order.mjs",
+    "postinstall": "node scripts/patch-domestic-result-order.mjs && node scripts/patch-lightweight-runtime.mjs",
     "start": "electron .",
     "test": "node --test tests/*.test.mjs",
     "dist": "npm run test && electron-builder --win nsis"
@@ -24,9 +24,7 @@
     "appId": "kr.aroundg.poizon",
     "productName": "Around G POIZON",
     "asar": true,
-    "directories": {
-      "output": "dist"
-    },
+    "directories": { "output": "dist" },
     "files": [
       "bootstrap.mjs",
       "main.mjs",
@@ -40,14 +38,7 @@
     ],
     "win": {
       "icon": "build/icon.ico",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
     },
     "publish": {
       "provider": "github",

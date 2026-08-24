@@ -1,0 +1,1 @@
+Phase-one lightweight runtime cleanup: release closed auxiliary window references without changing search or physical mouse behavior.
