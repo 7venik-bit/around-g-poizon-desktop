@@ -13,14 +13,16 @@ const [bootstrap, menuSource, menuCss, html, packageSource, rendererSource] = aw
 
 test("restores the three POIZON search services in the sidebar", () => {
   assert.match(menuSource, /\{ id: "popular", label: "인기리스트"/);
-  assert.match(menuSource, /\{ id: "brand", label: "브랜드 검색"/);
-  assert.match(menuSource, /\{ id: "category", label: "카테고리 검색", group: "search", hidden: true \}/);
+  assert.match(menuSource, /\{ id: "brand", label: "브랜드", group: "search" \}/);
+  assert.match(menuSource, /\{ id: "category", label: "카테고리", group: "search" \}/);
+  assert.doesNotMatch(menuSource, /id: "category"[^\n]*hidden: true/);
   assert.match(menuSource, /item\.group === "search" && !item\.hidden/);
   assert.match(menuSource, /검색 서비스/);
   assert.match(menuSource, /data-service-explorer="\$\{item\.id\}"/);
 });
 
-test("카테고리는 메뉴에서 숨기고 브랜드 화면 버튼으로만 연다", () => {
+test("카테고리는 검색 서비스 메뉴와 브랜드 화면 버튼에서 모두 열 수 있다", () => {
+  assert.match(menuSource, /\{ id: "category", label: "카테고리", group: "search" \}/);
   assert.match(menuSource, /window\.activateSearchServiceMode = activateMode/);
   assert.match(rendererSource, /activateSearchServiceMode\?\.\("category"\)/);
 });
@@ -62,6 +64,6 @@ test("bootstrap injects the sidebar menu and its stylesheet into the main window
   assert.match(menuCss, /\.search-service-button\.active/);
 });
 
-test("release version is 2.10.378", () => {
-  assert.equal(JSON.parse(packageSource).version, "2.10.378");
+test("release version is 2.10.396", () => {
+  assert.equal(JSON.parse(packageSource).version, "2.10.396");
 });
