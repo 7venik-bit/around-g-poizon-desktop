@@ -19,7 +19,7 @@ const entries = await readdir(testsDir, { withFileTypes: true });
 for (const entry of entries) {
   if (!entry.isFile() || !entry.name.endsWith(".test.mjs")) continue;
   const url = new URL(entry.name, testsDir);
-  let source = await readFile(url, "utf8");
+  let source = (await readFile(url, "utf8")).replace(/\r\n/g, "\n");
   const before = source;
   // Release builds derive the next public tag dynamically. Older regression
   // tests still pinned the previous source metadata version.
@@ -28,7 +28,7 @@ for (const entry of entries) {
 }
 
 const domesticUrl = new URL("domestic-search.test.mjs", testsDir);
-let domestic = await readFile(domesticUrl, "utf8");
+let domestic = (await readFile(domesticUrl, "utf8")).replace(/\r\n/g, "\n");
 const oldOrder = `    "브랜드 공식몰",\n    "네이버 공식 브랜드스토어",\n    "네이버 백화점",\n    "네이버 아울렛",\n    "무신사",\n    "SSG",\n    "SSG 백화점",\n    "SSG 아울렛",\n    "롯데온",\n    "롯데온 백화점",\n    "롯데온 아울렛",\n    "병행수입·편집샵",\n    "코오롱몰",`;
 const newOrder = `    "무신사",\n    "브랜드 공식몰",\n    "네이버 공식 브랜드스토어",\n    "네이버 백화점",\n    "네이버 아울렛",\n    "SSG",\n    "SSG 백화점",\n    "SSG 아울렛",\n    "롯데온",\n    "롯데온 백화점",\n    "롯데온 아울렛",\n    "코오롱몰",\n    "병행수입·편집샵",`;
 domestic = domestic.replace(oldOrder, newOrder);
@@ -47,7 +47,7 @@ domestic = domestic.replace(
 await writeFile(domesticUrl, domestic, "utf8");
 
 const deliveryUrl = new URL("release-delivery.test.mjs", testsDir);
-let delivery = await readFile(deliveryUrl, "utf8");
+let delivery = (await readFile(deliveryUrl, "utf8")).replace(/\r\n/g, "\n");
 delivery = delivery.replace("name: Validate and normalize local release assets", "name: Validate and normalize release assets");
 delivery = delivery.replace("name: Create release tag after successful build", "name: Create release, tag, and upload assets");
 delivery = delivery.replace("name: Publish and verify release assets", "name: Verify published release assets");
