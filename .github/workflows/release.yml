@@ -1,10 +1,8 @@
 name: Build and publish Windows release
 
-# Release trigger: push, manual dispatch, or merged pull request.
+# Release only from an explicitly merged PR or manual dispatch. This avoids
+# duplicate/cancelled releases from direct trigger-file pushes.
 on:
-  push:
-    branches:
-      - main
   pull_request:
     types:
       - closed
@@ -21,8 +19,9 @@ concurrency:
 
 jobs:
   release:
-    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,7 +35,30 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Verify release patch files
+        shell: pwsh
+        run: |
+          $required = @(
+            'scripts/patch-domestic-result-order.mjs',
+            'scripts/patch-naver-fashion-counts.mjs',
+            'scripts/patch-naver-search-only.mjs',
+            'scripts/patch-naver-aggregate-only.mjs',
+            'scripts/patch-ssg-lotte-exact-model-counts.mjs',
+            'scripts/patch-parallel-import-classification.mjs',
+            'scripts/patch-musinsa-pay-security.mjs',
+            'scripts/patch-musinsa-auto-purchase-foundation.mjs',
+            'scripts/patch-musinsa-stock-monitor.mjs',
+            'scripts/patch-musinsa-watchlist-assets.mjs',
+            'scripts/patch-musinsa-stock-monitor-assets.mjs'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path)) { throw "Missing release patch: $path" }
+          }
+
+      - name: Apply domestic result display order
+        run: node scripts/patch-domestic-result-order.mjs
 
       - name: Apply Naver Fashion Town authoritative counts
         run: node scripts/patch-naver-fashion-counts.mjs
@@ -67,6 +89,15 @@ jobs:
 
       - name: Enable Musinsa stock monitor asset
         run: node scripts/patch-musinsa-stock-monitor-assets.mjs
+
+      - name: Validate patched source syntax
+        run: |
+          node --check main.mjs
+          node --check preload.cjs
+          node --check relay/domestic-search.mjs
+
+      - name: Run tests
+        run: npm test
 
       - name: Resolve release version
         id: release_version
@@ -147,4 +178,6 @@ jobs:
           $release = gh release view $tag --repo "$env:GITHUB_REPOSITORY" --json tagName,targetCommitish,assets | ConvertFrom-Json
           if ($release.tagName -ne $tag) { throw "Release tag verification failed." }
           $remoteNames = @($release.assets | ForEach-Object { $_.name })
-          foreach ($requiredName in $requiredNames) { if ($requiredName -notin $remoteNames) { throw "Release asset verification failed: $requiredName is missing." } }
+          foreach ($requiredName in $requiredNames) {
+            if ($requiredName -notin $remoteNames) { throw "Release asset verification failed: $requiredName is missing." }
+          }
