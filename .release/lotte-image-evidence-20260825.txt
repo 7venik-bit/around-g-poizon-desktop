@@ -1,0 +1,1 @@
+Include POIZON source-image comparison in SSG/Lotte exact-product verdicts. Exact article remains primary; when both images are comparable, a low similarity (<58%) vetoes the card. Missing image evidence does not become product absence.
