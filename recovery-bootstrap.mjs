@@ -1,4 +1,5 @@
 import { app } from "electron";
+import { spawn } from "node:child_process";
 
 const naverProductClickState = new Map();
 
@@ -28,6 +29,58 @@ function expectedUrlFromScript(source) {
   try { return JSON.parse(match[1]); } catch { return ""; }
 }
 
+function moveWindowsCursorAndClick(screenX, screenY) {
+  return new Promise((resolve) => {
+    if (process.platform !== "win32") return resolve(false);
+    const x = Math.round(Number(screenX));
+    const y = Math.round(Number(screenY));
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return resolve(false);
+
+    const script = [
+      "$ErrorActionPreference='Stop'",
+      "Add-Type -TypeDefinition @'",
+      "using System;",
+      "using System.Runtime.InteropServices;",
+      "public static class MouseNative {",
+      "  [DllImport(\"user32.dll\")] public static extern bool GetCursorPos(out POINT lpPoint);",
+      "  [DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int X, int Y);",
+      "  [DllImport(\"user32.dll\")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);",
+      "  public struct POINT { public int X; public int Y; }",
+      "}",
+      "'@",
+      "$p = New-Object MouseNative+POINT",
+      "[MouseNative]::GetCursorPos([ref]$p) | Out-Null",
+      `$sx=$p.X; $sy=$p.Y; $tx=${x}; $ty=${y}`,
+      "for($i=1; $i -le 20; $i++){",
+      "  $nx=[int]($sx + (($tx-$sx)*$i/20.0)); $ny=[int]($sy + (($ty-$sy)*$i/20.0));",
+      "  [MouseNative]::SetCursorPos($nx,$ny) | Out-Null; Start-Sleep -Milliseconds 20",
+      "}",
+      "Start-Sleep -Milliseconds 250",
+      "[MouseNative]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero)",
+      "Start-Sleep -Milliseconds 80",
+      "[MouseNative]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero)",
+    ].join("; ");
+
+    const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    let settled = false;
+    const done = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(Boolean(value));
+    };
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch {}
+      done(false);
+    }, 6000);
+    child.once("error", () => done(false));
+    child.once("exit", (code) => done(code === 0));
+  });
+}
+
 function installNaverProductClickGuard(window) {
   const contents = window?.webContents;
   if (!contents || contents.__aroundGNaverClickGuardInstalled) return;
@@ -37,9 +90,9 @@ function installNaverProductClickGuard(window) {
   contents.executeJavaScript = async (code, userGesture) => {
     const source = String(code || "");
     const isRenderedProductCardLookup =
-      source.includes('const links = [...document.querySelectorAll("a[href]")]')
-      && source.includes('left.origin === right.origin && left.pathname === right.pathname')
-      && source.includes('const expected = ');
+      source.includes('document.querySelectorAll("a[href]")')
+      && source.includes('const expected = ')
+      && (source.includes('scrollIntoView') || source.includes('getBoundingClientRect'));
 
     if (!isRenderedProductCardLookup) {
       return nativeExecuteJavaScript(code, userGesture);
@@ -47,95 +100,83 @@ function installNaverProductClickGuard(window) {
 
     const expectedUrl = expectedUrlFromScript(source);
     const key = productKey(expectedUrl);
-    const isScrollLookup = source.includes('link.scrollIntoView({ block: "center", inline: "center" });');
-    const isPointLookup = source.includes('Math.min(rect.height / 2, 180)');
+    const isScrollLookup = source.includes("scrollIntoView");
+    const isPointLookup = source.includes("getBoundingClientRect") && !isScrollLookup;
     const state = naverProductClickState.get(key) || "new";
 
-    // Once a rendered Naver product card has already been handled, never
-    // revisit the same product from the three Fashion Town channel passes.
     if (key && state === "done") {
       return isScrollLookup ? false : isPointLookup ? null : nativeExecuteJavaScript(code, userGesture);
     }
 
-    const originalResult = await nativeExecuteJavaScript(code, userGesture).catch(() => null);
-    if (originalResult) {
-      if (key && isScrollLookup) naverProductClickState.set(key, "pending");
-      if (key && isPointLookup) naverProductClickState.set(key, "done");
-      return originalResult;
+    let result = await nativeExecuteJavaScript(code, userGesture).catch(() => null);
+
+    if (!result && (isScrollLookup || isPointLookup)) {
+      const fallbackScript = `(() => {
+        const expected = ${JSON.stringify(expectedUrl)};
+        const clean = (value) => String(value || "").split("#")[0];
+        const visible = (element) => {
+          if (!element) return false;
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== "none" && style.visibility !== "hidden"
+            && Number(style.opacity || 1) > 0 && rect.width >= 40 && rect.height >= 30
+            && rect.bottom > 60 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth;
+        };
+        const productPattern = /window-products|\\/products?\\/|productId=|nvMid=|itemId=|goodsNo=/i;
+        let expectedParsed = null;
+        try { expectedParsed = new URL(expected); } catch {}
+        const expectedIds = expectedParsed
+          ? ["productId", "nvMid", "itemId", "goodsNo"].map((name) => expectedParsed.searchParams.get(name)).filter(Boolean)
+          : [];
+        const candidates = [...document.querySelectorAll("a[href]")].map((anchor) => {
+          const card = anchor.closest("li,article,[data-product-id],[data-item-id],[class*='product-card' i],[class*='product' i],[class*='item-card' i],[class*='item' i]") || anchor.parentElement || anchor;
+          const image = anchor.querySelector("img,picture img") || card.querySelector?.("img,picture img");
+          const cardRect = card.getBoundingClientRect();
+          const imageRect = image?.getBoundingClientRect?.() || { width: 0, height: 0 };
+          const href = clean(anchor.href);
+          let score = 0;
+          if (href === clean(expected)) score += 10000;
+          try {
+            const left = new URL(href);
+            if (expectedParsed && left.origin === expectedParsed.origin && left.pathname === expectedParsed.pathname) score += 7000;
+            if (expectedIds.some((id) => href.includes(id))) score += 6000;
+          } catch {}
+          if (productPattern.test(href)) score += 1500;
+          if (image && imageRect.width >= 70 && imageRect.height >= 70) score += 1000;
+          if (cardRect.width >= 120 && cardRect.height >= 100) score += 500;
+          if (visible(anchor) || visible(card)) score += 300;
+          return { anchor, card, image, cardRect, imageRect, score };
+        }).filter((item) => item.score >= 1500)
+          .sort((a, b) => b.score - a.score || a.cardRect.top - b.cardRect.top || a.cardRect.left - b.cardRect.left);
+        const selected = candidates[0];
+        if (!selected) return ${isScrollLookup ? "false" : "null"};
+        selected.card.scrollIntoView({ block: "center", inline: "center" });
+        if (${isScrollLookup ? "true" : "false"}) return true;
+        const cardRect = selected.card.getBoundingClientRect();
+        const imageRect = selected.image?.getBoundingClientRect?.();
+        const clickRect = imageRect && imageRect.width >= 50 && imageRect.height >= 50 ? imageRect : cardRect;
+        if (clickRect.width <= 0 || clickRect.height <= 0) return null;
+        return { x: Math.round(clickRect.left + clickRect.width / 2), y: Math.round(clickRect.top + Math.min(clickRect.height / 2, 180)), forcedPhysical: true };
+      })()`;
+      result = await nativeExecuteJavaScript(fallbackScript, true).catch(() => null);
     }
 
-    if (!isScrollLookup && !isPointLookup) return originalResult;
+    if (key && isScrollLookup && result) naverProductClickState.set(key, "pending");
 
-    const fallbackScript = `(() => {
-      const expected = ${JSON.stringify(expectedUrl)};
-      const clean = (value) => String(value || "").split("#")[0];
-      const visible = (element) => {
-        if (!element) return false;
-        const style = getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return style.display !== "none"
-          && style.visibility !== "hidden"
-          && Number(style.opacity || 1) > 0
-          && rect.width >= 40
-          && rect.height >= 30
-          && rect.bottom > 60
-          && rect.top < innerHeight
-          && rect.right > 0
-          && rect.left < innerWidth;
-      };
-      const productPattern = /window-products|\\/products?\\/|productId=|nvMid=|itemId=|goodsNo=/i;
-      let expectedParsed = null;
-      try { expectedParsed = new URL(expected); } catch {}
-      const expectedIds = expectedParsed
-        ? ["productId", "nvMid", "itemId", "goodsNo"].map((name) => expectedParsed.searchParams.get(name)).filter(Boolean)
-        : [];
-
-      const candidates = [...document.querySelectorAll("a[href]")].map((anchor) => {
-        const card = anchor.closest("li,article,[data-product-id],[data-item-id],[class*='product-card' i],[class*='product' i],[class*='item-card' i],[class*='item' i]") || anchor.parentElement || anchor;
-        const image = anchor.querySelector("img,picture img") || card.querySelector?.("img,picture img");
-        const rect = anchor.getBoundingClientRect();
-        const cardRect = card.getBoundingClientRect();
-        const imageRect = image?.getBoundingClientRect?.() || { width: 0, height: 0 };
-        const href = clean(anchor.href);
-        let score = 0;
-        if (href === clean(expected)) score += 10000;
-        try {
-          const left = new URL(href);
-          if (expectedParsed && left.origin === expectedParsed.origin && left.pathname === expectedParsed.pathname) score += 7000;
-          if (expectedIds.some((id) => href.includes(id))) score += 6000;
-        } catch {}
-        if (productPattern.test(href)) score += 1500;
-        if (image && imageRect.width >= 70 && imageRect.height >= 70) score += 1000;
-        if (cardRect.width >= 120 && cardRect.height >= 100) score += 500;
-        if (visible(anchor) || visible(card)) score += 300;
-        return { anchor, card, image, rect, cardRect, imageRect, href, score };
-      }).filter((item) => item.score >= 1800)
-        .sort((a, b) => b.score - a.score || a.cardRect.top - b.cardRect.top || a.cardRect.left - b.cardRect.left);
-
-      const selected = candidates[0];
-      if (!selected) return ${isScrollLookup ? "false" : "null"};
-      selected.card.scrollIntoView({ block: "center", inline: "center" });
-      if (${isScrollLookup ? "true" : "false"}) return true;
-
-      const cardRect = selected.card.getBoundingClientRect();
-      const imageRect = selected.image?.getBoundingClientRect?.();
-      const clickRect = imageRect && imageRect.width >= 50 && imageRect.height >= 50 ? imageRect
-        : cardRect.width > 0 && cardRect.height > 0 ? cardRect
-        : selected.anchor.getBoundingClientRect();
-      if (clickRect.width <= 0 || clickRect.height <= 0) return null;
-      return {
-        x: Math.round(clickRect.left + clickRect.width / 2),
-        y: Math.round(clickRect.top + Math.min(clickRect.height / 2, 180)),
-        physicalFallback: true,
-      };
-    })()`;
-
-    const fallbackResult = await nativeExecuteJavaScript(fallbackScript, true).catch(() => null);
-    if (fallbackResult) {
-      if (key && isScrollLookup) naverProductClickState.set(key, "pending");
-      if (key && isPointLookup) naverProductClickState.set(key, "done");
+    if (isPointLookup && result && Number.isFinite(result.x) && Number.isFinite(result.y)) {
+      try {
+        window.show();
+        window.focus();
+        const bounds = window.getContentBounds();
+        const clicked = await moveWindowsCursorAndClick(bounds.x + result.x, bounds.y + result.y);
+        if (clicked && key) naverProductClickState.set(key, "done");
+        return clicked ? { ...result, physicallyClicked: true } : result;
+      } catch {
+        return result;
+      }
     }
-    return fallbackResult;
+
+    return result;
   };
 }
 
