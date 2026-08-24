@@ -1,6 +1,6 @@
 name: Build and publish Windows release
 
-# Redeploy trigger: authoritative Naver Fashion Town channel counts · 2026-08-24 11:31 KST.
+# Redeploy trigger: single-path Naver search/card/detail flow.
 on:
   push:
     branches:
@@ -34,6 +34,9 @@ jobs:
 
       - name: Apply Naver Fashion Town authoritative counts
         run: node scripts/patch-naver-fashion-counts.mjs
+
+      - name: Apply single Naver search and card-click flow
+        run: node scripts/patch-single-naver-flow.mjs
 
       - name: Resolve release version
         id: release_version
