@@ -1,9 +1,9 @@
 {
   "name": "around-g-poizon-desktop",
-  "version": "2.10.391",
+  "version": "2.10.394",
   "description": "Around G POIZON local sourcing workspace",
   "type": "module",
-  "main": "physical-click-bootstrap.mjs",
+  "main": "bootstrap.mjs",
   "scripts": {
     "start": "electron .",
     "test": "node --test tests/*.test.mjs",
@@ -27,8 +27,6 @@
       "output": "dist"
     },
     "files": [
-      "physical-click-bootstrap.mjs",
-      "recovery-bootstrap.mjs",
       "bootstrap.mjs",
       "main.mjs",
       "preload.cjs",
