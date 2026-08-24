@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 const path = new URL("../main.mjs", import.meta.url);
-let source = await readFile(path, "utf8");
+let source = (await readFile(path, "utf8")).replace(/\r\n/g, "\n");
 
 const oldSensitiveWork = `function hasActiveUpdateSensitiveWork() {\n  return brandExportJobPending || brandExportMonitorRunning || brandDownloadStarted;\n}`;
 const newSensitiveWork = `function hasActiveUpdateSensitiveWork() {\n  // An idle monitor is intentionally long-lived and must not block an already\n  // downloaded application update. Only concrete export/download work is\n  // update-sensitive.\n  return brandExportJobPending || brandDownloadStarted || Boolean(activeBrandDownloadJobId);\n}`;
