@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 
+const normalizeLf = (value) => String(value || "").replace(/\r\n/g, "\n");
 const replaceOnce = (source, before, after, label) => {
   const first = source.indexOf(before);
   if (first < 0) throw new Error(`LOTTE patch target missing: ${label}`);
@@ -8,7 +9,7 @@ const replaceOnce = (source, before, after, label) => {
 };
 
 const mainPath = new URL("../main.mjs", import.meta.url);
-let main = await readFile(mainPath, "utf8");
+let main = normalizeLf(await readFile(mainPath, "utf8"));
 main = replaceOnce(
   main,
   '  const ssgChannelSource = /^SSG(?:\\s|$)/.test(String(source.store || ""));',
@@ -36,15 +37,13 @@ main = replaceOnce(
 main = replaceOnce(
   main,
   "        if (ssgChannelSource && securityRetry < 1) {",
-  main.includes("        if ((ssgChannelSource || lotteChannelSource) && securityRetry < 1) {")
-    ? "        if ((ssgChannelSource || lotteChannelSource) && securityRetry < 1) {"
-    : "        if ((ssgChannelSource || lotteChannelSource) && securityRetry < 1) {",
+  "        if ((ssgChannelSource || lotteChannelSource) && securityRetry < 1) {",
   "retry blocked Lotte page without false absence",
 );
 await writeFile(mainPath, main, "utf8");
 
 const relayPath = new URL("../relay/domestic-search.mjs", import.meta.url);
-let relay = await readFile(relayPath, "utf8");
+let relay = normalizeLf(await readFile(relayPath, "utf8"));
 relay = replaceOnce(
   relay,
   `    { store: "롯데온", linkOnly: true, domesticChannel: "lotte-general", renderCount: true },\n    { store: "롯데온 백화점", linkOnly: true, domesticChannel: "lotte-department", renderCount: true },\n    { store: "롯데온 아울렛", linkOnly: true, domesticChannel: "lotte-outlet", renderCount: true },`,
