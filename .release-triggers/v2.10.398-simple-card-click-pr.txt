@@ -1,0 +1,1 @@
+Merged-PR trigger for simple physical product-card click release.
