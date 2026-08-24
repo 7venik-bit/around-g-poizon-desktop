@@ -41,8 +41,11 @@ jobs:
       - name: Apply Naver Fashion Town authoritative counts
         run: node scripts/patch-naver-fashion-counts.mjs
 
-      - name: Apply single Naver search and card-click flow
-        run: node scripts/patch-single-naver-flow.mjs
+      - name: Limit Naver to product discovery only
+        run: node scripts/patch-naver-search-only.mjs
+
+      - name: Aggregate Naver Fashion Town channels
+        run: node scripts/patch-naver-aggregate-only.mjs
 
       - name: Apply SSG and Lotte exact model counting
         run: node scripts/patch-ssg-lotte-exact-model-counts.mjs
