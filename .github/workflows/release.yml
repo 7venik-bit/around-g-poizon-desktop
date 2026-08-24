@@ -1,6 +1,6 @@
 name: Build and publish Windows release
 
-# Redeploy trigger: authoritative Naver Fashion Town channel counts.
+# Redeploy trigger: authoritative Naver Fashion Town channel counts · 2026-08-24 11:31 KST.
 on:
   push:
     branches:
