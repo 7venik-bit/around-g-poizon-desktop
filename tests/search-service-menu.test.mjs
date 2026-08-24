@@ -16,13 +16,14 @@ test("restores the three POIZON search services in the sidebar", () => {
   assert.match(menuSource, /\{ id: "brand", label: "브랜드", group: "search" \}/);
   assert.match(menuSource, /\{ id: "category", label: "카테고리", group: "search" \}/);
   assert.doesNotMatch(menuSource, /id: "category"[^\n]*hidden: true/);
-  assert.match(menuSource, /item\.group === "search" && !item\.hidden/);
+  assert.match(menuSource, /item\.group === "search"/);
   assert.match(menuSource, /검색 서비스/);
   assert.match(menuSource, /data-service-explorer="\$\{item\.id\}"/);
 });
 
-test("카테고리는 검색 서비스 메뉴와 브랜드 화면 버튼에서 모두 열 수 있다", () => {
-  assert.match(menuSource, /\{ id: "category", label: "카테고리", group: "search" \}/);
+test("sidebar routes through the renderer native explorer controls", () => {
+  assert.match(menuSource, /\.explorer-mode\[data-explorer=/);
+  assert.match(menuSource, /nativeControl\.click\(\)/);
   assert.match(menuSource, /window\.activateSearchServiceMode = activateMode/);
   assert.match(rendererSource, /activateSearchServiceMode\?\.\("category"\)/);
 });
@@ -33,27 +34,18 @@ test("removes the redundant POIZON parent menu row", () => {
   assert.match(menuSource, /productsNav\.tabIndex = -1/);
 });
 
-test("removes the brand screen title and three-step guide", () => {
-  assert.match(html, /<h2>POIZON 원본 데이터 가져오기<\/h2>/);
-  assert.match(html, /class="brand-fetch-action brand-excel-flow"/);
-  assert.match(menuSource, /brandHeading\.remove\(\)/);
-  assert.match(menuSource, /brandFlow\.remove\(\)/);
-  assert.match(menuSource, /brandPanel\.prepend\(legacyBrandSearch\)/);
-});
-
 test("keeps the downloaded Excel screen separate from the three search services", () => {
   assert.match(menuSource, /\{ id: "files", label: "받은 Excel 파일", group: "files" \}/);
   assert.match(menuSource, /데이터 파일/);
   assert.match(menuSource, /data-service-explorer="files"/);
 });
 
-test("sidebar buttons reactivate the existing explorer panels", () => {
+test("native fallback can reactivate existing explorer panels", () => {
   assert.match(html, /id="explorer-popular"/);
   assert.match(html, /id="explorer-brand"/);
   assert.match(html, /id="explorer-category"/);
   assert.match(menuSource, /target\.hidden = false/);
   assert.match(menuSource, /target\.classList\.add\("active"\)/);
-  assert.match(menuSource, /clearExplorerResults/);
 });
 
 test("bootstrap injects the sidebar menu and its stylesheet into the main window", () => {
@@ -64,6 +56,6 @@ test("bootstrap injects the sidebar menu and its stylesheet into the main window
   assert.match(menuCss, /\.search-service-button\.active/);
 });
 
-test("release version is 2.10.396", () => {
+test("release base version remains 2.10.396 before workflow versioning", () => {
   assert.equal(JSON.parse(packageSource).version, "2.10.396");
 });

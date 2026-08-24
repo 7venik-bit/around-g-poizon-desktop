@@ -3,8 +3,8 @@
 
   const modes = [
     { id: "popular", label: "인기리스트", group: "search" },
-    { id: "brand", label: "브랜드 검색", group: "search" },
-    { id: "category", label: "카테고리 검색", group: "search", hidden: true },
+    { id: "brand", label: "브랜드", group: "search" },
+    { id: "category", label: "카테고리", group: "search" },
     { id: "files", label: "받은 Excel 파일", group: "files" },
   ];
   const validModes = new Set(modes.map((item) => item.id));
@@ -20,7 +20,7 @@
   menu.innerHTML = `
     <small>검색 서비스</small>
     <div class="search-service-buttons">
-      ${modes.filter((item) => item.group === "search" && !item.hidden).map((item) => `
+      ${modes.filter((item) => item.group === "search").map((item) => `
         <button type="button" class="search-service-button" data-service-explorer="${item.id}">
           <i aria-hidden="true"></i><span>${item.label}</span>
         </button>`).join("")}
@@ -31,29 +31,9 @@
     </button>`;
   productsNav.insertAdjacentElement("afterend", menu);
 
-  // The four service buttons below replace the redundant parent menu row.
-  // Keep its DOM node only because the original renderer uses it internally
-  // when activating the products view.
   productsNav.hidden = true;
   productsNav.setAttribute("aria-hidden", "true");
   productsNav.tabIndex = -1;
-
-  // Remove the redundant brand-screen heading and the three-step guide shown
-  // above the brand selector. Preserve only the hidden legacy button because
-  // the original renderer still reads its disabled state internally.
-  const brandPanel = document.querySelector("#explorer-brand");
-  const brandHeading = brandPanel?.querySelector(":scope > h2");
-  if (brandHeading) brandHeading.remove();
-  const brandFlow = brandPanel?.querySelector(":scope > .brand-fetch-action");
-  if (brandFlow) {
-    const legacyBrandSearch = brandFlow.querySelector("#brand-search");
-    if (legacyBrandSearch) {
-      legacyBrandSearch.hidden = true;
-      legacyBrandSearch.setAttribute("aria-hidden", "true");
-      brandPanel.prepend(legacyBrandSearch);
-    }
-    brandFlow.remove();
-  }
 
   const oldModes = document.querySelector(".raw-data-modes");
   if (oldModes) {
@@ -66,38 +46,31 @@
     return String(activePanel?.id || "").replace(/^explorer-/, "");
   }
 
-  function clearResultsWhenChanging(previous, next) {
-    if (!previous || previous === next) return;
-    try {
-      if (typeof clearExplorerResults === "function") clearExplorerResults();
-    } catch {
-      // The search screens still switch safely if the result helper is unavailable.
-    }
-  }
-
-  function activateMode(mode, options = {}) {
-    if (!validModes.has(mode)) mode = "brand";
-    const target = document.querySelector(`#explorer-${mode}`);
-    if (!target) return;
-    const previous = currentMode();
-    clearResultsWhenChanging(previous, mode);
-
-    document.querySelectorAll(".explorer-panel").forEach((panel) => panel.classList.remove("active"));
-    target.hidden = false;
-    target.removeAttribute("aria-hidden");
-    target.classList.add("active");
-
+  function syncButtons(mode) {
     menu.querySelectorAll("[data-service-explorer]").forEach((button) => {
       const active = button.dataset.serviceExplorer === mode;
       button.classList.toggle("active", active);
       button.setAttribute("aria-current", active ? "page" : "false");
     });
+  }
 
-    document.querySelectorAll(".nav").forEach((button) => button.classList.remove("active"));
-    productsNav.classList.add("active");
-    document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
-    productsView.classList.add("active");
-
+  function activateMode(mode, options = {}) {
+    if (!validModes.has(mode)) mode = "brand";
+    // Route through the renderer's original explorer control. This preserves
+    // its existing cleanup, state transitions and event handlers instead of
+    // maintaining a second competing navigation implementation.
+    const nativeControl = document.querySelector(`.explorer-mode[data-explorer="${mode}"]`);
+    if (nativeControl && !options.fromNative) {
+      nativeControl.click();
+    } else {
+      const target = document.querySelector(`#explorer-${mode}`);
+      if (!target) return;
+      document.querySelectorAll(".explorer-panel").forEach((panel) => panel.classList.remove("active"));
+      target.hidden = false;
+      target.removeAttribute("aria-hidden");
+      target.classList.add("active");
+    }
+    syncButtons(mode);
     if (options.persist !== false) localStorage.setItem("around-g-search-service-mode", mode);
   }
 
@@ -107,6 +80,11 @@
     const button = event.target.closest("[data-service-explorer]");
     if (!button) return;
     activateMode(button.dataset.serviceExplorer);
+  });
+
+  // Keep the injected sidebar in sync when the original renderer changes tabs.
+  document.querySelectorAll(".explorer-mode[data-explorer]").forEach((button) => {
+    button.addEventListener("click", () => syncButtons(button.dataset.explorer));
   });
 
   productsNav.addEventListener("click", () => {
