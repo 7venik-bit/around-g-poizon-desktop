@@ -2,6 +2,7 @@ import { app } from "electron";
 import { spawn } from "node:child_process";
 
 const handledQueries = new Set();
+const attemptedQueries = new Set();
 
 function cleanUrl(value) {
   return String(value || "").split("#")[0];
@@ -44,7 +45,7 @@ function physicalMoveAndClick(x, y) {
       "[MouseNative]::GetCursorPos([ref]$verify)|Out-Null",
       "$dx=[Math]::Abs($verify.X-$tx)",
       "$dy=[Math]::Abs($verify.Y-$ty)",
-      "if($dx -gt 4 -or $dy -gt 4){ throw \"CURSOR_DID_NOT_REACH_TARGET\" }",
+      "if($dx -gt 6 -or $dy -gt 6){ throw \"CURSOR_DID_NOT_REACH_TARGET\" }",
       "Start-Sleep -Milliseconds 250",
       "[MouseNative]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero)",
       "Start-Sleep -Milliseconds 140",
@@ -79,7 +80,7 @@ async function detectMatchingCard(window) {
     const visible=(el)=>{
       if(!el) return false;
       const s=getComputedStyle(el),r=el.getBoundingClientRect();
-      return s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity||1)>0&&r.width>=40&&r.height>=30&&r.bottom>60&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;
+      return s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity||1)>0&&r.width>=30&&r.height>=24&&r.bottom>60&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;
     };
 
     const currentUrl=String(location.href||'');
@@ -94,64 +95,96 @@ async function detectMatchingCard(window) {
     const code=compact(searchQuery);
     if(code.length<4) return null;
 
-    const cards=[...document.querySelectorAll('li,article,[data-product-id],[data-item-id],[class*="product-card" i],[class*="product" i],[class*="item-card" i],[class*="item" i]')];
+    const productPattern=/window-products|\\/products?\\/|productId=|nvMid=|itemId=|goodsNo=/i;
+    const anchors=[...document.querySelectorAll('a[href]')].filter((a)=>visible(a) || visible(a.querySelector('img')));
     const matches=[];
-    for(const card of cards){
-      if(!visible(card)) continue;
-      const links=[...card.querySelectorAll('a[href]')];
-      const imgs=[...card.querySelectorAll('img')].filter((img)=>{
+
+    for(const a of anchors){
+      const href=String(a.href||'');
+      let scope=a;
+      let bestScope=a;
+      for(let depth=0;scope&&depth<6;depth+=1,scope=scope.parentElement){
+        const text=compact([scope.innerText,scope.textContent,scope.getAttribute?.('aria-label')].join(' '));
+        if(text.includes(code)) bestScope=scope;
+        if(scope.matches?.('li,article,[data-product-id],[data-item-id],[class*="product-card" i],[class*="product" i],[class*="item-card" i],[class*="item" i]')) {
+          bestScope=scope;
+          break;
+        }
+      }
+      const imgs=[...new Set([
+        ...a.querySelectorAll('img'),
+        ...(bestScope?.querySelectorAll?.('img')||[])
+      ])].filter((img)=>{
         const r=img.getBoundingClientRect();
-        return visible(img)&&r.width>=70&&r.height>=70;
+        return visible(img)&&r.width>=60&&r.height>=60;
       });
-      if(!links.length||!imgs.length) continue;
       const evidence=compact([
-        card.innerText,
-        card.textContent,
-        ...links.map((a)=>[a.href,a.textContent,a.getAttribute('aria-label')].join(' ')),
+        href,
+        a.textContent,
+        a.getAttribute('aria-label'),
+        bestScope?.innerText,
+        bestScope?.textContent,
+        bestScope?.getAttribute?.('aria-label'),
         ...imgs.map((img)=>[img.alt,img.src,img.currentSrc].join(' '))
       ].join(' '));
       if(!evidence.includes(code)) continue;
-      const link=links.find((a)=>/window-products|\\/products?\\/|productId=|nvMid=|itemId=|goodsNo=/i.test(String(a.href||'')))||links[0];
-      const img=imgs[0];
-      const ir=img.getBoundingClientRect();
-      const cr=card.getBoundingClientRect();
+      if(!productPattern.test(href) && !imgs.length) continue;
+
+      const targetImage=imgs[0]||null;
+      const rr=targetImage?.getBoundingClientRect?.() || a.getBoundingClientRect();
+      if(rr.width<=0||rr.height<=0) continue;
+      bestScope?.scrollIntoView?.({block:'center',inline:'center'});
+      const settledRect=targetImage?.getBoundingClientRect?.() || a.getBoundingClientRect();
       matches.push({
         query:searchQuery,
-        href:String(link?.href||''),
-        x:Math.round(ir.left+ir.width/2),
-        y:Math.round(ir.top+Math.min(ir.height/2,180)),
-        top:cr.top,
-        left:cr.left
+        href,
+        x:Math.round(settledRect.left+settledRect.width/2),
+        y:Math.round(settledRect.top+Math.min(settledRect.height/2,180)),
+        top:settledRect.top,
+        left:settledRect.left
       });
     }
-    matches.sort((a,b)=>a.top-b.top||a.left-b.left);
+
+    matches.sort((a,b)=>(productPattern.test(b.href)?1:0)-(productPattern.test(a.href)?1:0)||a.top-b.top||a.left-b.left);
     return matches[0]||null;
   })()`, true).catch(() => null);
 }
 
 async function openMatchingCardPhysically(window, target) {
-  if (!target || !window || window.isDestroyed()) return false;
+  if (!target || !window || window.isDestroyed()) return { opened: false, clicked: false, physical: false };
   window.show();
   if (window.isMinimized()) window.restore();
   window.focus();
   await new Promise((resolve) => setTimeout(resolve, 500));
 
   const settled = await detectMatchingCard(window) || target;
-  if (!settled?.query || !settled?.x || !settled?.y) return false;
-  if (String(settled.query).trim() !== String(target.query).trim()) return false;
+  if (!settled?.query || !Number.isFinite(settled?.x) || !Number.isFinite(settled?.y)) {
+    return { opened: false, clicked: false, physical: false };
+  }
+  if (String(settled.query).trim() !== String(target.query).trim()) {
+    return { opened: false, clicked: false, physical: false };
+  }
 
   const before = cleanUrl(window.webContents.getURL());
   const bounds = window.getContentBounds();
-  const clicked = await physicalMoveAndClick(bounds.x + settled.x, bounds.y + settled.y);
-  if (!clicked) return false;
+  const physical = await physicalMoveAndClick(bounds.x + settled.x, bounds.y + settled.y);
 
+  if (!physical && !window.isDestroyed()) {
+    window.webContents.sendInputEvent({ type: "mouseMove", x: settled.x, y: settled.y });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    window.webContents.sendInputEvent({ type: "mouseDown", x: settled.x, y: settled.y, button: "left", clickCount: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    window.webContents.sendInputEvent({ type: "mouseUp", x: settled.x, y: settled.y, button: "left", clickCount: 1 });
+  }
+
+  const clicked = physical || true;
   for (let i = 0; i < 28; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 250));
-    if (window.isDestroyed()) return false;
+    if (window.isDestroyed()) return { opened: false, clicked, physical };
     const after = cleanUrl(window.webContents.getURL());
-    if (after && after !== before) return true;
+    if (after && after !== before) return { opened: true, clicked, physical };
   }
-  return false;
+  return { opened: false, clicked, physical };
 }
 
 function install(window) {
@@ -170,10 +203,13 @@ function install(window) {
       const target = await detectMatchingCard(window);
       if (!target?.query) return;
       const key = String(target.query).trim().toUpperCase();
-      if (handledQueries.has(key)) return;
+      if (handledQueries.has(key) || attemptedQueries.has(key)) return;
 
-      const opened = await openMatchingCardPhysically(window, target);
-      if (opened) handledQueries.add(key);
+      // Lock before clicking. A failed navigation must never cause the same
+      // product code to be searched/clicked over and over again.
+      attemptedQueries.add(key);
+      const result = await openMatchingCardPhysically(window, target);
+      if (result.clicked) handledQueries.add(key);
     } finally {
       busy = false;
     }
