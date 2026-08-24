@@ -186,6 +186,24 @@ if (app.isPackaged) {
     const updater = updaterPackage.autoUpdater || updaterModule.autoUpdater;
     if (updater?.checkForUpdates) {
       await app.whenReady();
+      updater.autoDownload = true;
+      updater.autoInstallOnAppQuit = true;
+
+      let forcedInstallScheduled = false;
+      updater.on?.("update-downloaded", () => {
+        if (forcedInstallScheduled) return;
+        forcedInstallScheduled = true;
+        const forcedInstallTimer = setTimeout(() => {
+          try {
+            updater.quitAndInstall(true, true);
+          } catch (error) {
+            console.error("Forced automatic update install failed", error);
+            forcedInstallScheduled = false;
+          }
+        }, 10_000);
+        forcedInstallTimer.unref?.();
+      });
+
       const checkForFreshRelease = () => {
         Promise.resolve(updater.checkForUpdates()).catch((error) => {
           console.error("Automatic update heartbeat failed", error);
