@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 const targetPath = new URL("../relay/domestic-search.mjs", import.meta.url);
-let source = await readFile(targetPath, "utf8");
+let source = (await readFile(targetPath, "utf8")).replace(/\r\n/g, "\n");
 
 const replacements = [
   {
