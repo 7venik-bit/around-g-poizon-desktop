@@ -50,6 +50,9 @@ jobs:
       - name: Apply Musinsa Pay secure password storage
         run: node scripts/patch-musinsa-pay-security.mjs
 
+      - name: Apply guarded Musinsa auto-purchase foundation
+        run: node scripts/patch-musinsa-auto-purchase-foundation.mjs
+
       - name: Resolve release version
         id: release_version
         shell: pwsh
@@ -64,22 +67,15 @@ jobs:
             try {
               $latestVersion = [version]($latestTag -replace '^v', '')
               if ($latestVersion -ge $releaseVersion) {
-                $releaseVersion = [version]::new(
-                  $latestVersion.Major,
-                  $latestVersion.Minor,
-                  $latestVersion.Build + 1
-                )
+                $releaseVersion = [version]::new($latestVersion.Major,$latestVersion.Minor,$latestVersion.Build + 1)
               }
-            } catch {
-              Write-Host "Ignoring non-semver tag: $latestTag"
-            }
+            } catch { Write-Host "Ignoring non-semver tag: $latestTag" }
           }
           $version = "$($releaseVersion.Major).$($releaseVersion.Minor).$($releaseVersion.Build)"
           npm version $version --no-git-tag-version --allow-same-version
           if ($LASTEXITCODE -ne 0) { throw "Failed to set release version $version" }
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=v$version" >> $env:GITHUB_OUTPUT
-          Write-Host "Release version: $version"
 
       - name: Build Windows installer
         run: npx electron-builder --win nsis --publish never
@@ -95,23 +91,19 @@ jobs:
           if ($installers.Count -ne 1) { throw "Expected exactly one Windows installer, found $($installers.Count)." }
           if ($blockmaps.Count -ne 1) { throw "Expected exactly one blockmap, found $($blockmaps.Count)." }
           if ($null -eq $latest) { throw "dist/latest.yml was not generated." }
-
           $installerName = "Around-G-POIZON-Setup-$version.exe"
           $blockmapName = "$installerName.blockmap"
           $installerPath = Join-Path $installers[0].DirectoryName $installerName
           $blockmapPath = Join-Path $blockmaps[0].DirectoryName $blockmapName
           $oldInstallerName = $installers[0].Name
-
           Move-Item -LiteralPath $installers[0].FullName -Destination $installerPath -Force
           Move-Item -LiteralPath $blockmaps[0].FullName -Destination $blockmapPath -Force
           $latestContent = Get-Content -LiteralPath $latest.FullName -Raw
           $latestContent = $latestContent.Replace($oldInstallerName, $installerName)
           Set-Content -LiteralPath $latest.FullName -Value $latestContent -NoNewline -Encoding utf8
-
           $verifiedLatest = Get-Content -LiteralPath $latest.FullName -Raw
           if ($verifiedLatest -notmatch [regex]::Escape($installerName)) { throw "latest.yml does not reference $installerName." }
           if ($verifiedLatest -notmatch "version:\s*$([regex]::Escape($version))") { throw "latest.yml does not contain version $version." }
-
           "installer=$installerPath" >> $env:GITHUB_OUTPUT
           "blockmap=$blockmapPath" >> $env:GITHUB_OUTPUT
           "latest=$($latest.FullName)" >> $env:GITHUB_OUTPUT
@@ -136,15 +128,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ steps.release_version.outputs.tag }}"
-          $requiredNames = @(
-            "${{ steps.assets.outputs.installer_name }}",
-            "${{ steps.assets.outputs.blockmap_name }}",
-            "latest.yml"
-          )
+          $requiredNames = @("${{ steps.assets.outputs.installer_name }}","${{ steps.assets.outputs.blockmap_name }}","latest.yml")
           $release = gh release view $tag --repo "$env:GITHUB_REPOSITORY" --json tagName,targetCommitish,assets | ConvertFrom-Json
           if ($release.tagName -ne $tag) { throw "Release tag verification failed." }
           $remoteNames = @($release.assets | ForEach-Object { $_.name })
-          foreach ($requiredName in $requiredNames) {
-            if ($requiredName -notin $remoteNames) { throw "Release asset verification failed: $requiredName is missing." }
-          }
-          Write-Host "Verified $tag assets: $($remoteNames -join ', ')"
+          foreach ($requiredName in $requiredNames) { if ($requiredName -notin $remoteNames) { throw "Release asset verification failed: $requiredName is missing." } }
