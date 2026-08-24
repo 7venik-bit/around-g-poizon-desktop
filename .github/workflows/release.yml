@@ -44,6 +44,12 @@ jobs:
       - name: Verify SSG exact-result verdict
         run: node scripts/verify-ssg-verdict.mjs
 
+      - name: Apply Lotte exact-result verdict restore
+        run: node scripts/patch-lotte-verdict-restore.mjs
+
+      - name: Verify Lotte exact-result verdict
+        run: node scripts/verify-lotte-verdict.mjs
+
       - name: Resolve release version
         id: release_version
         shell: pwsh
