@@ -51,21 +51,21 @@ function moveWindowsCursorAndClick(screenX, screenY) {
       "$p = New-Object MouseNative+POINT",
       "[MouseNative]::GetCursorPos([ref]$p) | Out-Null",
       `$sx=$p.X; $sy=$p.Y; $tx=${x}; $ty=${y}`,
-      "$steps=36",
+      "$steps=42",
       "for($i=1; $i -le $steps; $i++){",
       "  $t=$i/[double]$steps",
       "  $ease=(3*$t*$t)-(2*$t*$t*$t)",
       "  $nx=[int]($sx + (($tx-$sx)*$ease))",
       "  $ny=[int]($sy + (($ty-$sy)*$ease))",
       "  [MouseNative]::SetCursorPos($nx,$ny) | Out-Null",
-      "  Start-Sleep -Milliseconds 28",
+      "  Start-Sleep -Milliseconds 30",
       "}",
       "[MouseNative]::SetCursorPos($tx,$ty) | Out-Null",
-      "Start-Sleep -Milliseconds 500",
+      "Start-Sleep -Milliseconds 700",
       "[MouseNative]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero)",
-      "Start-Sleep -Milliseconds 120",
+      "Start-Sleep -Milliseconds 140",
       "[MouseNative]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero)",
-      "Start-Sleep -Milliseconds 250",
+      "Start-Sleep -Milliseconds 300",
     ].join("\r\n");
 
     const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
@@ -82,10 +82,102 @@ function moveWindowsCursorAndClick(screenX, screenY) {
     const timer = setTimeout(() => {
       try { child.kill(); } catch {}
       done(false);
-    }, 8000);
+    }, 10000);
     child.once("error", () => done(false));
     child.once("exit", (code) => done(code === 0));
   });
+}
+
+async function findVisibleNaverProductCard(window, expectedUrl = "") {
+  if (!window || window.isDestroyed()) return null;
+  const contents = window.webContents;
+  const expected = cleanUrl(expectedUrl);
+  return contents.executeJavaScript(`(() => {
+    const expected = ${JSON.stringify(expected)};
+    const visible = (el) => {
+      if (!el) return false;
+      const style = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden'
+        && Number(style.opacity || 1) > 0
+        && r.width >= 60 && r.height >= 60
+        && r.bottom > 70 && r.top < innerHeight
+        && r.right > 0 && r.left < innerWidth;
+    };
+    const productPattern = /window-products|\\/products?\\/|productId=|nvMid=|itemId=|goodsNo=/i;
+    const bodyText = String(document.body?.innerText || '');
+    if (!/브랜드직영몰|공식브랜드|브랜드스토어|백화점|아울렛|패션타운/.test(bodyText)) return null;
+    const rows = [...document.querySelectorAll('a[href]')].map((a) => {
+      const href = String(a.href || '').split('#')[0];
+      const card = a.closest("li,article,[data-product-id],[data-item-id],[class*='product-card' i],[class*='product' i],[class*='item-card' i],[class*='item' i]") || a.parentElement || a;
+      const img = a.querySelector('img') || card.querySelector?.('img');
+      const ar = a.getBoundingClientRect();
+      const cr = card.getBoundingClientRect();
+      const ir = img?.getBoundingClientRect?.() || {width:0,height:0,left:0,top:0};
+      let score = 0;
+      if (expected && href === expected) score += 10000;
+      try {
+        const l = new URL(href);
+        const e = expected ? new URL(expected) : null;
+        if (e && l.origin === e.origin && l.pathname === e.pathname) score += 7000;
+      } catch {}
+      if (productPattern.test(href)) score += 1800;
+      if (img && ir.width >= 80 && ir.height >= 80) score += 1400;
+      if (visible(card)) score += 700;
+      if (visible(a)) score += 300;
+      if (cr.width >= 140 && cr.height >= 120) score += 300;
+      return { href, card, img, ar, cr, ir, score };
+    }).filter((x) => x.score >= 2500)
+      .sort((a,b) => b.score - a.score || a.cr.top - b.cr.top || a.cr.left - b.cr.left);
+    const selected = rows[0];
+    if (!selected) return null;
+    selected.card.scrollIntoView({block:'center', inline:'center'});
+    const ir = selected.img?.getBoundingClientRect?.();
+    const cr = selected.card.getBoundingClientRect();
+    const rr = ir && ir.width >= 60 && ir.height >= 60 ? ir : cr;
+    if (rr.width <= 0 || rr.height <= 0) return null;
+    return {
+      href: selected.href,
+      x: Math.round(rr.left + rr.width / 2),
+      y: Math.round(rr.top + Math.min(rr.height / 2, 180))
+    };
+  })()`, true).catch(() => null);
+}
+
+async function physicallyOpenNaverCard(window, expectedUrl = "") {
+  if (!window || window.isDestroyed()) return false;
+  if (window.__aroundGPhysicalClickInProgress) return false;
+  window.__aroundGPhysicalClickInProgress = true;
+  try {
+    window.show();
+    if (window.isMinimized()) window.restore();
+    window.focus();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    let target = await findVisibleNaverProductCard(window, expectedUrl);
+    if (!target) return false;
+    await new Promise((resolve) => setTimeout(resolve, 650));
+    target = await findVisibleNaverProductCard(window, expectedUrl) || target;
+
+    const beforeUrl = cleanUrl(window.webContents.getURL());
+    const bounds = window.getContentBounds();
+    const clicked = await moveWindowsCursorAndClick(bounds.x + target.x, bounds.y + target.y);
+    if (!clicked) return false;
+
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      if (window.isDestroyed()) return false;
+      const afterUrl = cleanUrl(window.webContents.getURL());
+      if (afterUrl && afterUrl !== beforeUrl) {
+        const key = productKey(target.href || expectedUrl);
+        if (key) naverProductClickState.set(key, "done");
+        return true;
+      }
+    }
+    return false;
+  } finally {
+    window.__aroundGPhysicalClickInProgress = false;
+  }
 }
 
 function installNaverProductClickGuard(window) {
@@ -117,76 +209,49 @@ function installNaverProductClickGuard(window) {
 
     let result = await nativeExecuteJavaScript(code, userGesture).catch(() => null);
 
-    if (!result && (isScrollLookup || isPointLookup)) {
-      const fallbackScript = `(() => {
-        const expected = ${JSON.stringify(expectedUrl)};
-        const clean = (value) => String(value || "").split("#")[0];
-        const visible = (element) => {
-          if (!element) return false;
-          const style = getComputedStyle(element);
-          const rect = element.getBoundingClientRect();
-          return style.display !== "none" && style.visibility !== "hidden"
-            && Number(style.opacity || 1) > 0 && rect.width >= 40 && rect.height >= 30
-            && rect.bottom > 60 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth;
-        };
-        const productPattern = /window-products|\\/products?\\/|productId=|nvMid=|itemId=|goodsNo=/i;
-        let expectedParsed = null;
-        try { expectedParsed = new URL(expected); } catch {}
-        const expectedIds = expectedParsed
-          ? ["productId", "nvMid", "itemId", "goodsNo"].map((name) => expectedParsed.searchParams.get(name)).filter(Boolean)
-          : [];
-        const candidates = [...document.querySelectorAll("a[href]")].map((anchor) => {
-          const card = anchor.closest("li,article,[data-product-id],[data-item-id],[class*='product-card' i],[class*='product' i],[class*='item-card' i],[class*='item' i]") || anchor.parentElement || anchor;
-          const image = anchor.querySelector("img,picture img") || card.querySelector?.("img,picture img");
-          const cardRect = card.getBoundingClientRect();
-          const imageRect = image?.getBoundingClientRect?.() || { width: 0, height: 0 };
-          const href = clean(anchor.href);
-          let score = 0;
-          if (href === clean(expected)) score += 10000;
-          try {
-            const left = new URL(href);
-            if (expectedParsed && left.origin === expectedParsed.origin && left.pathname === expectedParsed.pathname) score += 7000;
-            if (expectedIds.some((id) => href.includes(id))) score += 6000;
-          } catch {}
-          if (productPattern.test(href)) score += 1500;
-          if (image && imageRect.width >= 70 && imageRect.height >= 70) score += 1000;
-          if (cardRect.width >= 120 && cardRect.height >= 100) score += 500;
-          if (visible(anchor) || visible(card)) score += 300;
-          return { anchor, card, image, cardRect, imageRect, score };
-        }).filter((item) => item.score >= 1500)
-          .sort((a, b) => b.score - a.score || a.cardRect.top - b.cardRect.top || a.cardRect.left - b.cardRect.left);
-        const selected = candidates[0];
-        if (!selected) return ${isScrollLookup ? "false" : "null"};
-        selected.card.scrollIntoView({ block: "center", inline: "center" });
-        if (${isScrollLookup ? "true" : "false"}) return true;
-        const cardRect = selected.card.getBoundingClientRect();
-        const imageRect = selected.image?.getBoundingClientRect?.();
-        const clickRect = imageRect && imageRect.width >= 50 && imageRect.height >= 50 ? imageRect : cardRect;
-        if (clickRect.width <= 0 || clickRect.height <= 0) return null;
-        return { x: Math.round(clickRect.left + clickRect.width / 2), y: Math.round(clickRect.top + Math.min(clickRect.height / 2, 180)), forcedPhysical: true };
-      })()`;
-      result = await nativeExecuteJavaScript(fallbackScript, true).catch(() => null);
+    if (isScrollLookup) {
+      const card = await findVisibleNaverProductCard(window, expectedUrl);
+      if (card) {
+        if (key) naverProductClickState.set(key, "pending");
+        return true;
+      }
+      return result;
     }
 
-    if (key && isScrollLookup && result) naverProductClickState.set(key, "pending");
-
-    if (isPointLookup && result && Number.isFinite(result.x) && Number.isFinite(result.y)) {
-      try {
-        window.show();
-        window.restore();
-        window.focus();
-        await new Promise((resolve) => setTimeout(resolve, 350));
-        const bounds = window.getContentBounds();
-        const clicked = await moveWindowsCursorAndClick(bounds.x + result.x, bounds.y + result.y);
-        if (clicked && key) naverProductClickState.set(key, "done");
-        return clicked ? { ...result, physicallyClicked: true } : result;
-      } catch {
-        return result;
+    if (isPointLookup) {
+      const card = await findVisibleNaverProductCard(window, expectedUrl);
+      if (card) {
+        const opened = await physicallyOpenNaverCard(window, expectedUrl);
+        if (opened) return { x: card.x, y: card.y, physicallyClicked: true };
+        return { x: card.x, y: card.y };
       }
     }
 
     return result;
   };
+
+  let observerBusy = false;
+  const observer = setInterval(async () => {
+    if (observerBusy || window.isDestroyed()) return;
+    const currentUrl = String(contents.getURL() || "");
+    if (!/naver\.com/i.test(currentUrl)) return;
+    observerBusy = true;
+    try {
+      if (window.__aroundGPhysicalClickInProgress) return;
+      const target = await findVisibleNaverProductCard(window, "");
+      if (!target) return;
+      const key = productKey(target.href);
+      if (key && naverProductClickState.get(key) === "done") return;
+      const pageState = await nativeExecuteJavaScript(`(() => ({
+        detail: /window-products|productId=|nvMid=|itemId=|goodsNo=/i.test(location.href),
+        hasSearchResult: /브랜드직영몰|공식브랜드|브랜드스토어|백화점|아울렛|패션타운/.test(String(document.body?.innerText || ''))
+      }))()`, true).catch(() => null);
+      if (!pageState?.hasSearchResult || pageState.detail) return;
+    } finally {
+      observerBusy = false;
+    }
+  }, 700);
+  window.once("closed", () => clearInterval(observer));
 }
 
 app.on("browser-window-created", (_event, window) => {
