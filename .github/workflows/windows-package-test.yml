@@ -49,6 +49,12 @@ jobs:
       - name: Verify Lotte exact-result verdict
         run: node scripts/verify-lotte-verdict.mjs
 
+      - name: Apply SSG and Lotte authenticity guide
+        run: node scripts/patch-domestic-authenticity-guide.mjs
+
+      - name: Verify SSG and Lotte authenticity guide
+        run: node scripts/verify-domestic-authenticity-guide.mjs
+
       - name: Build Windows installer
         run: npx electron-builder --win nsis --publish never
 
