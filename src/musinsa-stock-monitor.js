@@ -1,41 +1,95 @@
 (() => {
   const INTERVAL_MS = 60_000;
   const timers = new Map();
+  const api = window.aroundG;
+  if (!api) return;
 
-  function findWatchlist() {
-    try { return JSON.parse(localStorage.getItem("around-g-musinsa-watchlist-v1") || "[]"); } catch { return []; }
+  async function findWatchlist() {
+    const snapshot = await api.snapshot().catch(() => null);
+    return (Array.isArray(snapshot?.orders) ? snapshot.orders : [])
+      .filter((item) => item?.source === "musinsa-watch");
   }
-  function saveWatchlist(items) {
-    localStorage.setItem("around-g-musinsa-watchlist-v1", JSON.stringify(items));
+
+  async function saveItem(item) {
+    await api.upsert("orders", item);
   }
+
   async function check(item) {
-    if (!window.aroundG?.checkMusinsaStock || !item?.url) return;
-    const result = await window.aroundG.checkMusinsaStock({ url: item.url }).catch(() => null);
-    const items = findWatchlist();
-    const current = items.find((entry) => entry.id === item.id);
-    if (!current || !result) return;
-    current.lastCheckedAt = result.checkedAt || new Date().toISOString();
-    current.stockCheckOk = result.ok === true;
-    current.inStock = result.ok ? result.inStock === true : null;
-    current.sizes = Array.isArray(result.sizes) ? result.sizes : [];
-    current.productId = result.productId || current.productId || "";
-    current.status = !result.ok ? "재고 확인 실패" : result.inStock ? "재고 있음" : "품절";
-    saveWatchlist(items);
-    window.dispatchEvent(new CustomEvent("aroundg:musinsa-stock-updated", { detail: { id: item.id, result } }));
+    if (!api.checkMusinsaStock || !item?.productUrl) return;
+    const result = await api.checkMusinsaStock({ url: item.productUrl }).catch(() => null);
+    if (!result) return;
+
+    const currentItems = await findWatchlist();
+    const current = currentItems.find((entry) => entry.id === item.id);
+    if (!current) return;
+
+    const sizes = Array.isArray(result.sizes) ? result.sizes : [];
+    const selectedSize = String(current.selectedSize || "").trim();
+    const selectedOption = selectedSize
+      ? sizes.find((size) => String(size?.label || "").trim() === selectedSize)
+      : null;
+    const selectedSizeInStock = selectedOption ? selectedOption.inStock === true : false;
+    const now = result.checkedAt || new Date().toISOString();
+
+    const next = {
+      ...current,
+      lastCheckedAt: now,
+      stockCheckOk: result.ok === true,
+      inStock: result.ok ? result.inStock === true : null,
+      sizes,
+      goodsNo: result.productId || current.goodsNo || "",
+      selectedSizeInStock: selectedSize ? selectedSizeInStock : null,
+      purchaseStatus: !result.ok
+        ? "stock_check_failed"
+        : !selectedSize
+          ? "size_required"
+          : selectedSizeInStock
+            ? "ready_to_purchase"
+            : "watching",
+      updatedAt: now,
+    };
+
+    if (selectedSize && selectedSizeInStock && api.validateMusinsaAutoPurchase) {
+      const validation = await api.validateMusinsaAutoPurchase({
+        articleNumber: next.goodsNo,
+        size: selectedSize,
+        quantity: next.quantity,
+        maxPrice: next.maxPrice,
+        currentPrice: next.currentPrice,
+      }).catch(() => null);
+      if (validation) {
+        next.autoPurchaseValidation = validation;
+        next.purchaseStatus = validation.ok ? "purchase_conditions_met" : "stock_available_conditions_pending";
+      }
+    }
+
+    await saveItem(next);
+    window.dispatchEvent(new CustomEvent("aroundg:musinsa-stock-updated", {
+      detail: { id: item.id, result, selectedSize, selectedSizeInStock, purchaseStatus: next.purchaseStatus },
+    }));
   }
-  function sync() {
-    const active = findWatchlist().filter((item) => item.watching === true);
+
+  async function sync() {
+    const items = await findWatchlist();
+    const active = items.filter((item) => item.watchEnabled !== false);
     const activeIds = new Set(active.map((item) => item.id));
-    for (const [id, timer] of timers) if (!activeIds.has(id)) { clearInterval(timer); timers.delete(id); }
+
+    for (const [id, timer] of timers) {
+      if (!activeIds.has(id)) {
+        clearInterval(timer);
+        timers.delete(id);
+      }
+    }
+
     for (const item of active) {
       if (timers.has(item.id)) continue;
-      check(item);
-      timers.set(item.id, setInterval(() => check(item), INTERVAL_MS));
+      void check(item);
+      timers.set(item.id, setInterval(() => void check(item), INTERVAL_MS));
     }
   }
-  window.addEventListener("storage", sync);
-  window.addEventListener("aroundg:musinsa-watchlist-changed", sync);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) sync(); });
-  setInterval(sync, 5_000);
-  sync();
+
+  window.addEventListener("aroundg:musinsa-watchlist-changed", () => void sync());
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) void sync(); });
+  setInterval(() => void sync(), 5_000);
+  void sync();
 })();
