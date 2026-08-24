@@ -12,7 +12,7 @@ const [releaseWorkflow, packageWorkflow, packageSource, lockSource] = await Prom
 test("release build and local asset validation happen before tag creation", () => {
   const buildIndex = releaseWorkflow.indexOf("name: Build Windows installer");
   const validateIndex = releaseWorkflow.indexOf("name: Validate and normalize local release assets");
-  const tagIndex = releaseWorkflow.indexOf("name: Ensure release tag exists after successful build");
+  const tagIndex = releaseWorkflow.indexOf("name: Create release tag after successful build");
   const publishIndex = releaseWorkflow.indexOf("name: Publish and verify release assets");
 
   assert.ok(buildIndex >= 0, "Windows build step must exist");
