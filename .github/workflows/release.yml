@@ -1,6 +1,6 @@
 name: Build and publish Windows release
 
-# Redeploy trigger: single-path Naver search/card/detail flow · 2026-08-24 11:58 KST.
+# Redeploy trigger: single-path Naver search/card/detail flow · 2026-08-24 12:00 KST.
 on:
   push:
     branches:
