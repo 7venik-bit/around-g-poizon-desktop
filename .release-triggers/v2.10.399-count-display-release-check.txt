@@ -1,0 +1,1 @@
+Check release generation after authoritative product-count patch.
