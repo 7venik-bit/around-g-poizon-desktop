@@ -51,7 +51,8 @@ jobs:
             'scripts/patch-musinsa-auto-purchase-foundation.mjs',
             'scripts/patch-musinsa-stock-monitor.mjs',
             'scripts/patch-musinsa-watchlist-assets.mjs',
-            'scripts/patch-musinsa-stock-monitor-assets.mjs'
+            'scripts/patch-musinsa-stock-monitor-assets.mjs',
+            'scripts/validate-release-state.mjs'
           )
           foreach ($path in $required) {
             if (-not (Test-Path -LiteralPath $path)) { throw "Missing release patch: $path" }
@@ -95,9 +96,11 @@ jobs:
           node --check main.mjs
           node --check preload.cjs
           node --check relay/domestic-search.mjs
+          node --check scripts/patch-domestic-result-order.mjs
+          node --check scripts/validate-release-state.mjs
 
-      - name: Run tests
-        run: npm test
+      - name: Validate release state
+        run: node scripts/validate-release-state.mjs
 
       - name: Resolve release version
         id: release_version
