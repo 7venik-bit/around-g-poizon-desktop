@@ -38,12 +38,6 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Apply Naver Fashion Town authoritative counts
-        run: node scripts/patch-naver-fashion-counts.mjs
-
-      - name: Apply single Naver search and card-click flow
-        run: node scripts/patch-single-naver-flow.mjs
-
       - name: Resolve release version
         id: release_version
         shell: pwsh
