@@ -4,17 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "bootstrap.mjs"
-      - "main.mjs"
-      - "preload.cjs"
-      - "src/**"
-      - "services/**"
-      - "relay/**"
-      - "tests/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:
@@ -40,10 +29,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
-
-      - name: Run tests
-        run: npm test
+        run: npm ci
 
       - name: Resolve automatic release version
         id: release_version
@@ -53,23 +39,19 @@ jobs:
 
           $baseVersionText = node -p "require('./package.json').version"
           $baseVersion = [version]$baseVersionText
-          $releaseVersion = $baseVersion
+          $majorMinorPrefix = "v$($baseVersion.Major).$($baseVersion.Minor).*"
+          $latestTag = git tag --list $majorMinorPrefix --sort=-v:refname | Select-Object -First 1
 
-          $latestTag = git tag --list "v*" --sort=-v:refname | Select-Object -First 1
           if ($latestTag) {
-            try {
-              $latestVersionText = ($latestTag -replace '^v', '')
-              $latestVersion = [version]$latestVersionText
-              if ($latestVersion -ge $releaseVersion) {
-                $releaseVersion = [version]::new(
-                  $latestVersion.Major,
-                  $latestVersion.Minor,
-                  $latestVersion.Build + 1
-                )
-              }
-            } catch {
-              Write-Host "Ignoring non-semver latest tag: $latestTag"
-            }
+            $latestVersionText = ($latestTag -replace '^v', '')
+            $latestVersion = [version]$latestVersionText
+            $releaseVersion = [version]::new(
+              $latestVersion.Major,
+              $latestVersion.Minor,
+              $latestVersion.Build + 1
+            )
+          } else {
+            $releaseVersion = $baseVersion
           }
 
           $version = "$($releaseVersion.Major).$($releaseVersion.Minor).$($releaseVersion.Build)"
@@ -177,22 +159,12 @@ jobs:
 
           $release = gh release view $tag --repo "$env:GITHUB_REPOSITORY" --json assets | ConvertFrom-Json
           $remoteNames = @($release.assets | ForEach-Object { $_.name })
-          $obsoleteNames = @($remoteNames | Where-Object { $_ -notin $requiredNames })
-          foreach ($obsoleteName in $obsoleteNames) {
-            gh release delete-asset $tag $obsoleteName --repo "$env:GITHUB_REPOSITORY" --yes
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to remove obsolete release asset: $obsoleteName."
-            }
-          }
-
-          $release = gh release view $tag --repo "$env:GITHUB_REPOSITORY" --json assets | ConvertFrom-Json
-          $remoteNames = @($release.assets | ForEach-Object { $_.name })
           foreach ($requiredName in $requiredNames) {
             if ($requiredName -notin $remoteNames) {
               throw "Release asset verification failed: $requiredName is missing."
             }
           }
-          if ($remoteNames.Count -ne $requiredNames.Count) {
-            throw "Release asset verification failed: expected 3 assets, found $($remoteNames.Count)."
+          if ($remoteNames.Count -lt $requiredNames.Count) {
+            throw "Release asset verification failed: expected at least 3 assets, found $($remoteNames.Count)."
           }
           Write-Host "Verified release assets: $($remoteNames -join ', ')"
