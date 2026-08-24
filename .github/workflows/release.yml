@@ -1,6 +1,7 @@
 name: Build and publish Windows release
 
 # Recovery release trigger: product-card click and duplicate-search fix.
+# Automatic redeploy trigger: 2026-08-24 09:51 KST
 on:
   push:
     branches:
