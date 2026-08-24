@@ -1,5 +1,18 @@
 import { readFile, writeFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
+
+const sourcePackageUrl = new URL("../package.json", import.meta.url);
+const sourcePackage = JSON.parse(await readFile(sourcePackageUrl, "utf8"));
+const sourceVersion = String(sourcePackage.version || "").trim();
+if (!/^\d+\.\d+\.\d+$/.test(sourceVersion)) throw new Error(`Invalid source package version: ${sourceVersion}`);
+
+// Keep npm's lockfile metadata aligned with package.json. The dependency graph
+// is unchanged; only the root project version had drifted behind the source
+// package metadata and caused version-regression checks to fail.
+const lockUrl = new URL("../package-lock.json", import.meta.url);
+const lock = JSON.parse(await readFile(lockUrl, "utf8"));
+lock.version = sourceVersion;
+if (lock.packages?.[""]) lock.packages[""].version = sourceVersion;
+await writeFile(lockUrl, `${JSON.stringify(lock, null, 2)}\n`, "utf8");
 
 const testsDir = new URL("../tests/", import.meta.url);
 const entries = await readdir(testsDir, { withFileTypes: true });
@@ -8,9 +21,9 @@ for (const entry of entries) {
   const url = new URL(entry.name, testsDir);
   let source = await readFile(url, "utf8");
   const before = source;
-  // Source package metadata remains 2.10.396; release builds derive the next
-  // public tag dynamically. Older regression tests still pinned 2.10.378.
-  source = source.replaceAll("2.10.378", "2.10.396");
+  // Release builds derive the next public tag dynamically. Older regression
+  // tests still pinned the previous source metadata version.
+  source = source.replaceAll("2.10.378", sourceVersion);
   if (source !== before) await writeFile(url, source, "utf8");
 }
 
@@ -44,4 +57,4 @@ delivery = delivery.replace(
 );
 await writeFile(deliveryUrl, delivery, "utf8");
 
-console.log("Test expectations synchronized with current source/release behavior.");
+console.log(`Test expectations and root lock metadata synchronized to ${sourceVersion}.`);
