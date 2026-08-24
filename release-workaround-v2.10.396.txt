@@ -1,0 +1,2 @@
+Release workaround trigger for v2.10.396
+Latest single-path Naver flow and authoritative Fashion Town counts.
