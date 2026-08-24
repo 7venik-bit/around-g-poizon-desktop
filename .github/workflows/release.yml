@@ -53,8 +53,14 @@ jobs:
       - name: Apply guarded Musinsa auto-purchase foundation
         run: node scripts/patch-musinsa-auto-purchase-foundation.mjs
 
+      - name: Connect Musinsa live stock checks
+        run: node scripts/patch-musinsa-stock-monitor.mjs
+
       - name: Enable Musinsa order watchlist UI
         run: node scripts/patch-musinsa-watchlist-assets.mjs
+
+      - name: Enable Musinsa stock monitor asset
+        run: node scripts/patch-musinsa-stock-monitor-assets.mjs
 
       - name: Resolve release version
         id: release_version
