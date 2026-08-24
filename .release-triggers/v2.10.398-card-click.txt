@@ -1,0 +1,1 @@
+Trigger release after simplifying Naver product-card interaction to one physical mouse move and one left click.
