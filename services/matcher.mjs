@@ -14,6 +14,25 @@ function tokenSimilarity(left, right) {
   return intersection / new Set([...a, ...b]).size;
 }
 
+export function imageEvidenceAllowsExactProduct({
+  store = "",
+  hasSourceImage = false,
+  candidateImageUrl = "",
+  imageCompared = false,
+  imageScore = null,
+  minimumScore = 58,
+} = {}) {
+  // Exact article number remains the primary identity. For SSG/Lotte, when
+  // both images were actually compared, use the image as a secondary veto
+  // against an obviously different colourway/model. Missing or unfetchable
+  // images never become a false product-absence verdict.
+  const portalNeedsImageGate = /^(?:SSG|롯데)/.test(String(store || ""));
+  if (!portalNeedsImageGate || !hasSourceImage || !candidateImageUrl || imageCompared !== true) return true;
+  const score = Number(imageScore);
+  if (!Number.isFinite(score)) return true;
+  return score >= Number(minimumScore || 58);
+}
+
 export function scoreProductCandidate(source, candidate, imageSimilarity = null) {
   const code = normalized(source.articleNumber);
   const identityText = [candidate.detectedArticleNumber, candidate.id, candidate.name, candidate.title]
