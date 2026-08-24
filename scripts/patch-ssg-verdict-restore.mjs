@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 
+const normalizeLf = (value) => String(value || "").replace(/\r\n/g, "\n");
 const replaceOnce = (source, before, after, label) => {
   const first = source.indexOf(before);
   if (first < 0) throw new Error(`SSG patch target missing: ${label}`);
@@ -8,7 +9,7 @@ const replaceOnce = (source, before, after, label) => {
 };
 
 const mainPath = new URL("../main.mjs", import.meta.url);
-let main = await readFile(mainPath, "utf8");
+let main = normalizeLf(await readFile(mainPath, "utf8"));
 main = replaceOnce(
   main,
   "        show: naverPortalSource,",
@@ -30,7 +31,7 @@ main = replaceOnce(
 await writeFile(mainPath, main, "utf8");
 
 const relayPath = new URL("../relay/domestic-search.mjs", import.meta.url);
-let relay = await readFile(relayPath, "utf8");
+let relay = normalizeLf(await readFile(relayPath, "utf8"));
 relay = replaceOnce(
   relay,
   `    { store: "SSG", linkOnly: true, domesticChannel: "ssg-general", renderCount: true },\n    { store: "SSG 백화점", linkOnly: true, domesticChannel: "ssg-department", renderCount: true },\n    { store: "SSG 아울렛", linkOnly: true, domesticChannel: "ssg-outlet", renderCount: true },`,
