@@ -1,6 +1,6 @@
 name: Build and publish Windows release
 
-# Redeploy trigger: direct Naver product-code card matching + physical cursor verification.
+# Redeploy trigger: authoritative Naver Fashion Town channel counts.
 on:
   push:
     branches:
@@ -31,6 +31,9 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Apply Naver Fashion Town authoritative counts
+        run: node scripts/patch-naver-fashion-counts.mjs
 
       - name: Resolve release version
         id: release_version
