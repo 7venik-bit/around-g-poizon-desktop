@@ -1,6 +1,6 @@
 name: Build and publish Windows release
 
-# Recovery release trigger: restore known-good startup path.
+# Recovery release trigger: product-card click and duplicate-search fix.
 on:
   push:
     branches:
