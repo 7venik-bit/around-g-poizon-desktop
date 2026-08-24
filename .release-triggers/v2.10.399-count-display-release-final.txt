@@ -1,0 +1,1 @@
+Final release trigger for authoritative product count display.
