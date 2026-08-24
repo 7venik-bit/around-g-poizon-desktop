@@ -47,6 +47,9 @@ jobs:
       - name: Apply SSG and Lotte exact model counting
         run: node scripts/patch-ssg-lotte-exact-model-counts.mjs
 
+      - name: Apply Musinsa Pay secure password storage
+        run: node scripts/patch-musinsa-pay-security.mjs
+
       - name: Resolve release version
         id: release_version
         shell: pwsh
