@@ -84,15 +84,19 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
     return false;
   }
 
-  naverProductClickAttempts.add(attemptKey);
-
   const bounds = searchWindow.getContentBounds();
-  await moveWindowsCursorAndClick(
-    bounds.x + Math.round(Number(target.x)),
-    bounds.y + Math.round(Number(target.y)),
+  const physicalPoint = screen.dipToScreenPoint({
+    x: Math.round(bounds.x + Number(target.x)),
+    y: Math.round(bounds.y + Number(target.y)),
+  });
+  const clicked = await moveWindowsCursorAndClick(
+    physicalPoint.x,
+    physicalPoint.y,
     700,
   ).catch(() => ({ ok: false }));
+  if (!clicked?.ok) return false;
 
+  naverProductClickAttempts.add(attemptKey);
   return true;
 }
 `;

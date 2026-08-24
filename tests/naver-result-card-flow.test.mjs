@@ -6,6 +6,7 @@ const [mainSource, rendererSource] = await Promise.all([
   readFile(new URL("../main.mjs", import.meta.url), "utf8"),
   readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
 ]);
+const releasePatchSource = await readFile(new URL("../scripts/patch-single-naver-flow.mjs", import.meta.url), "utf8");
 
 test("네이버 채널 숫자 글자의 실제 클릭 컨테이너를 찾아 물리적으로 누른다", () => {
   assert.match(mainSource, /async function clickNaverShoppingChannel/);
@@ -39,13 +40,21 @@ test("상품카드는 실제 Windows 커서를 이동하고 hover 후 한 번 �
   const clickFlow = mainSource.slice(start, end);
   assert.match(clickFlow, /searchWindow\.show\(\)/);
   assert.match(clickFlow, /searchWindow\.focus\(\)/);
-  assert.match(clickFlow, /await wait\(650\)/);
+  assert.match(clickFlow, /await wait\(300\)/);
   assert.match(clickFlow, /const bounds = searchWindow\.getContentBounds\(\)/);
-  assert.match(clickFlow, /screen\.dipToScreenPoint\(\{[\s\S]*bounds\.x \+ target\.x[\s\S]*bounds\.y \+ target\.y/);
-  assert.match(clickFlow, /moveWindowsCursorAndClick\([\s\S]*physicalPoint\.x[\s\S]*physicalPoint\.y[\s\S]*650/);
+  assert.match(clickFlow, /screen\.dipToScreenPoint\(\{[\s\S]*bounds\.x \+ Number\(target\.x\)[\s\S]*bounds\.y \+ Number\(target\.y\)/);
+  assert.match(clickFlow, /moveWindowsCursorAndClick\([\s\S]*physicalPoint\.x[\s\S]*physicalPoint\.y[\s\S]*700/);
   assert.doesNotMatch(clickFlow, /sendInputEvent\(\{ type: "mouseDown"/);
   assert.match(mainSource, /function moveWindowsCursorAndClick\(screenX, screenY, hoverDelayMs = 0\)/);
+  assert.match(mainSource, /CURSOR_MOVE_NOT_CONFIRMED/);
   assert.match(mainSource, /Start-Sleep -Milliseconds \$\{hoverDelay\}[\s\S]*mouse_event\(2/);
+});
+
+test("배포 빌드 패치도 화면 배율 좌표와 실제 클릭 성공을 확인한다", () => {
+  assert.match(releasePatchSource, /screen\.dipToScreenPoint\(\{/);
+  assert.match(releasePatchSource, /const clicked = await moveWindowsCursorAndClick\(/);
+  assert.match(releasePatchSource, /if \(!clicked\?\.ok\) return false/);
+  assert.match(releasePatchSource, /if \(!clicked\?\.ok\) return false;[\s\S]*naverProductClickAttempts\.add\(attemptKey\)/);
 });
 
 test("선택 행 일괄 검색은 같은 브랜드와 품번 결과를 재사용한다", () => {

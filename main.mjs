@@ -1653,78 +1653,87 @@ async function openRenderedSizeOptions(searchWindow) {
   return clicked;
 }
 
+const naverProductClickAttempts = new Set();
+
 async function clickRenderedProductCard(searchWindow, productUrl, searchResultsUrl = "") {
   if (!searchWindow || searchWindow.isDestroyed()) return false;
+
   const expectedUrl = String(productUrl || "").split("#")[0];
-  if (!/^https?:\/\//i.test(expectedUrl)) return false;
-  const resultsUrl = String(searchResultsUrl || "");
-  const currentUrl = String(searchWindow.webContents.getURL() || "");
-  if (resultsUrl && currentUrl !== resultsUrl) {
-    await Promise.race([
-      searchWindow.loadURL(resultsUrl),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_RESULTS_RELOAD_TIMEOUT")), 15_000)),
-    ]).catch(() => {});
-    await wait(1_200);
-  }
+  const attemptKey = expectedUrl || "__visible_card__";
+  if (naverProductClickAttempts.has(attemptKey)) return true;
+
   searchWindow.show();
+  if (searchWindow.isMinimized()) searchWindow.restore();
   searchWindow.focus();
-  const cardFound = await searchWindow.webContents.executeJavaScript(`(() => {
-    const expected = ${JSON.stringify(expectedUrl)};
-    const clean = (value) => String(value || "").split("#")[0];
-    const links = [...document.querySelectorAll("a[href]")];
-    const link = links.find((candidate) => clean(candidate.href) === expected)
-      || links.find((candidate) => {
-        try {
-          const left = new URL(clean(candidate.href));
-          const right = new URL(expected);
-          return left.origin === right.origin && left.pathname === right.pathname;
-        } catch { return false; }
-      });
-    if (!link) return false;
-    link.scrollIntoView({ block: "center", inline: "center" });
-    return true;
-  })()`, true).catch(() => false);
-  if (!cardFound) return false;
-  // scrollIntoView can move a responsive card after the first layout pass.
-  // Wait for that movement to settle, then measure the actual clickable link.
-  await wait(650);
+  await wait(300);
+
   const target = await searchWindow.webContents.executeJavaScript(`(() => {
     const expected = ${JSON.stringify(expectedUrl)};
-    const clean = (value) => String(value || "").split("#")[0];
-    const links = [...document.querySelectorAll("a[href]")];
-    const link = links.find((candidate) => clean(candidate.href) === expected)
-      || links.find((candidate) => {
-        try {
-          const left = new URL(clean(candidate.href));
-          const right = new URL(expected);
-          return left.origin === right.origin && left.pathname === right.pathname;
-        } catch { return false; }
-      });
+    const isVisible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width >= 80
+        && rect.height >= 60
+        && rect.bottom > 0
+        && rect.top < innerHeight
+        && rect.right > 0
+        && rect.left < innerWidth
+        && style.display !== "none"
+        && style.visibility !== "hidden"
+        && Number(style.opacity || 1) > 0;
+    };
+
+    const links = [...document.querySelectorAll("a[href]")]
+      .filter((link) => isVisible(link));
+
+    let link = null;
+    if (expected) {
+      link = links.find((candidate) => String(candidate.href || "").split("#")[0] === expected) || null;
+    }
+
+    if (!link) {
+      link = links.find((candidate) => {
+        const card = candidate.closest("li,article,[data-product-id],[data-item-id],[class*='product-card' i],[class*='product' i],[class*='item-card' i],[class*='item' i]") || candidate;
+        const image = card.querySelector?.("img,picture img") || candidate.querySelector?.("img,picture img");
+        if (!image || !isVisible(image)) return false;
+        const rect = card.getBoundingClientRect();
+        return rect.width >= 120 && rect.height >= 100;
+      }) || null;
+    }
+
     if (!link) return null;
-    const rect = link.getBoundingClientRect();
+
+    const card = link.closest("li,article,[data-product-id],[data-item-id],[class*='product-card' i],[class*='product' i],[class*='item-card' i],[class*='item' i]") || link;
+    const clickable = isVisible(link) ? link : card;
+    clickable.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+    const rect = clickable.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
-    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + Math.min(rect.height / 2, 180)) };
+
+    return {
+      x: Math.round(rect.left + rect.width / 2),
+      y: Math.round(rect.top + rect.height / 2),
+    };
   })()`, true).catch(() => null);
-  if (!target) return false;
+
+  if (!target || !Number.isFinite(Number(target.x)) || !Number.isFinite(Number(target.y))) {
+    return false;
+  }
+
   const bounds = searchWindow.getContentBounds();
   const physicalPoint = screen.dipToScreenPoint({
-    x: Math.round(bounds.x + target.x),
-    y: Math.round(bounds.y + target.y),
+    x: Math.round(bounds.x + Number(target.x)),
+    y: Math.round(bounds.y + Number(target.y)),
   });
   const clicked = await moveWindowsCursorAndClick(
     physicalPoint.x,
     physicalPoint.y,
-    650,
-  );
-  if (!clicked.ok) return false;
-  await wait(2_000);
-  const openedUrl = String(searchWindow.webContents.getURL() || "").split("#")[0];
-  if (openedUrl === expectedUrl) return true;
-  try {
-    const opened = new URL(openedUrl);
-    const expected = new URL(expectedUrl);
-    return opened.origin === expected.origin && opened.pathname === expected.pathname;
-  } catch { return false; }
+    700,
+  ).catch(() => ({ ok: false }));
+  if (!clicked?.ok) return false;
+
+  naverProductClickAttempts.add(attemptKey);
+  return true;
 }
 
 async function openOfficialMallInternalSearch(homepageUrl, query) {
@@ -5973,6 +5982,11 @@ for ($step = 1; $step -le 18; $step++) {
   $nextY = [Math]::Round($startY + (($targetY - $startY) * $step / 18))
   [AroundGCursor]::SetCursorPos($nextX, $nextY) | Out-Null
   Start-Sleep -Milliseconds 15
+}
+${"$finalPoint"} = New-Object AroundGCursor+POINT
+[AroundGCursor]::GetCursorPos([ref]${"$finalPoint"}) | Out-Null
+if ([Math]::Abs(${"$finalPoint"}.X - ${"$targetX"}) -gt 2 -or [Math]::Abs(${"$finalPoint"}.Y - ${"$targetY"}) -gt 2) {
+  throw "CURSOR_MOVE_NOT_CONFIRMED"
 }
 Start-Sleep -Milliseconds ${hoverDelay}
 [AroundGCursor]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
