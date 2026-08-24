@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { analyzeRenderedChannelProducts } from "../relay/domestic-search.mjs";
+import { imageEvidenceAllowsExactProduct } from "../services/matcher.mjs";
 
 const exactDepartment = JSON.stringify({
   productCards: [{
@@ -41,6 +42,28 @@ const mismatchResult = analyzeRenderedChannelProducts(mismatch, "롯데온", "DD
 assert.equal(mismatchResult?.count, 0, "nearby Lotte model must not be counted");
 assert.equal(mismatchResult?.absenceConfirmed, true, "parsed Lotte grid with only a different model may confirm absence");
 
+assert.equal(imageEvidenceAllowsExactProduct({
+  store: "롯데백화점",
+  hasSourceImage: true,
+  candidateImageUrl: "https://contents.lotteon.com/panda.jpg",
+  imageCompared: true,
+  imageScore: 84,
+}), true, "matching Lotte image must support an exact-code result");
+assert.equal(imageEvidenceAllowsExactProduct({
+  store: "롯데백화점",
+  hasSourceImage: true,
+  candidateImageUrl: "https://contents.lotteon.com/wrong-color.jpg",
+  imageCompared: true,
+  imageScore: 43,
+}), false, "visually different Lotte card must be rejected even when its text repeats the exact code");
+assert.equal(imageEvidenceAllowsExactProduct({
+  store: "롯데온",
+  hasSourceImage: true,
+  candidateImageUrl: "",
+  imageCompared: false,
+  imageScore: null,
+}), true, "missing image evidence must not become a false absence");
+
 const relay = await readFile(new URL("../relay/domestic-search.mjs", import.meta.url), "utf8");
 const lotteSourceRows = [...relay.matchAll(/\{ store: "롯데온(?: 백화점| 아울렛)?", linkOnly: true, domesticChannel: "lotte-[^"]+", renderCount: true \}/g)];
 assert.equal(lotteSourceRows.length, 1, "Lotte must use one integrated search, not three duplicate searches");
@@ -52,5 +75,7 @@ const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 assert.ok(main.includes("const lotteChannelSource ="), "Lotte rendered channel must be detected");
 assert.ok(main.includes("show: naverPortalSource || ssgChannelSource || lotteChannelSource"), "Lotte result window must be visible for real-page verification");
 assert.ok(main.includes("(ssgChannelSource || lotteChannelSource) && securityRetry < 1"), "blocked Lotte page must retry once before verification failure");
+assert.ok(main.includes("portalStore && exactCode && product.imageUrl"), "every exact SSG/Lotte card image must be queued for comparison");
+assert.ok(main.includes("imageEvidenceAllowsExactProduct"), "exact-code Lotte/SSG filtering must include image evidence");
 
-console.log("Lotte exact-verdict regression checks passed");
+console.log("Lotte exact-verdict and image-evidence regression checks passed");
