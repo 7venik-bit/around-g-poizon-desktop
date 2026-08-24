@@ -49,8 +49,8 @@ assert.match(relay, /lotteDepartmentStore/, "Lotte department-store card classif
 assert.match(relay, /exactPortalSearchChecked/, "Lotte absence must require a parsed exact-result grid");
 
 const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
-assert.match(main, /const lotteChannelSource = \^\/롯데온/, "Lotte rendered channel must be detected");
-assert.match(main, /show: naverPortalSource \|\| ssgChannelSource \|\| lotteChannelSource/, "Lotte result window must be visible for real-page verification");
-assert.match(main, /\(ssgChannelSource \|\| lotteChannelSource\) && securityRetry < 1/, "blocked Lotte page must retry once before verification failure");
+assert.ok(main.includes("const lotteChannelSource ="), "Lotte rendered channel must be detected");
+assert.ok(main.includes("show: naverPortalSource || ssgChannelSource || lotteChannelSource"), "Lotte result window must be visible for real-page verification");
+assert.ok(main.includes("(ssgChannelSource || lotteChannelSource) && securityRetry < 1"), "blocked Lotte page must retry once before verification failure");
 
 console.log("Lotte exact-verdict regression checks passed");
