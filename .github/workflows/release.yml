@@ -130,34 +130,28 @@ jobs:
             throw "Failed to push release tag $tag."
           }
 
-      - name: Publish and verify release assets
+      - name: Publish recovery release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.assets.outputs.tag }}
+          name: ${{ steps.assets.outputs.tag }} recovery
+          generate_release_notes: true
+          files: |
+            ${{ steps.assets.outputs.installer }}
+            ${{ steps.assets.outputs.blockmap }}
+            ${{ steps.assets.outputs.latest }}
+
+      - name: Verify published recovery assets
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ steps.assets.outputs.tag }}"
-          $installerPath = "${{ steps.assets.outputs.installer }}"
-          $blockmapPath = "${{ steps.assets.outputs.blockmap }}"
-          $latestPath = "${{ steps.assets.outputs.latest }}"
           $requiredNames = @(
             "${{ steps.assets.outputs.installer_name }}"
             "${{ steps.assets.outputs.blockmap_name }}"
             "latest.yml"
           )
-
-          gh release view $tag --repo "$env:GITHUB_REPOSITORY" *> $null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --repo "$env:GITHUB_REPOSITORY" --title $tag --generate-notes --verify-tag
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to create release $tag."
-            }
-          }
-
-          gh release upload $tag $installerPath $blockmapPath $latestPath --repo "$env:GITHUB_REPOSITORY" --clobber
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to upload release assets for $tag."
-          }
-
           $release = gh release view $tag --repo "$env:GITHUB_REPOSITORY" --json assets | ConvertFrom-Json
           $remoteNames = @($release.assets | ForEach-Object { $_.name })
           foreach ($requiredName in $requiredNames) {
@@ -165,7 +159,4 @@ jobs:
               throw "Release asset verification failed: $requiredName is missing."
             }
           }
-          if ($remoteNames.Count -lt $requiredNames.Count) {
-            throw "Release asset verification failed: expected at least 3 assets, found $($remoteNames.Count)."
-          }
-          Write-Host "Verified release assets: $($remoteNames -join ', ')"
+          Write-Host "Verified recovery release assets: $($remoteNames -join ', ')"
