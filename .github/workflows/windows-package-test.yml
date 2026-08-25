@@ -73,6 +73,12 @@ jobs:
       - name: Verify simplified official and Naver search
         run: node scripts/verify-simplify-official-naver-search.mjs
 
+      - name: Apply next-day access cooldown
+        run: node scripts/patch-domestic-access-next-day.mjs
+
+      - name: Verify next-day access cooldown
+        run: node scripts/verify-domestic-access-next-day.mjs
+
       - name: Build Windows installer
         run: npx electron-builder --win nsis --publish never
 
