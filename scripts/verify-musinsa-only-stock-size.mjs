@@ -1,0 +1,11 @@
+import { readFile } from "node:fs/promises";
+const main = String(await readFile(new URL("../main.mjs", import.meta.url), "utf8"));
+const renderer = String(await readFile(new URL("../src/renderer.js", import.meta.url), "utf8"));
+const fail = (message) => { throw new Error(`musinsa-only verification failed: ${message}`); };
+if (!main.includes('const verifyMusinsaInventory = String(source.store || "") === "무신사";')) fail("Musinsa inventory gate missing");
+if (!main.includes('if (verifyMusinsaInventory) await openRenderedSizeOptions(searchWindow);')) fail("size option check is not gated to Musinsa");
+if (!main.includes('if (verifyMusinsaInventory) {\n            const rawStock')) fail("stock extraction is not gated to Musinsa");
+if (!renderer.includes('if (!musinsaSource && matchedProducts.length) return { label: "상품 확인됨"')) fail("non-Musinsa source still depends on stock state");
+if (!renderer.includes('return { label: "상품 확인", className: "available" };')) fail("overall domestic status still requires stock");
+if (!renderer.includes('무신사 재고만 보기')) fail("stock-only UI is not labelled Musinsa-only");
+console.log("Musinsa-only stock and size policy verification passed");
