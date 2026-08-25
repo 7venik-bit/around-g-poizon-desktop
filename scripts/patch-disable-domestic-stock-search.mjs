@@ -20,11 +20,13 @@ main = replaceOnce(
   "gate rendered size-option interaction to Musinsa",
 );
 
-main = replaceOnce(
-  main,
-  "          if (rawStock) stockEvidence = normalizeRenderedStockEvidence(rawStock);",
-  "          if (verifyMusinsaInventory && rawStock) {\n            stockEvidence = normalizeRenderedStockEvidence(rawStock);\n          } else {\n            if (rawStock?.pageText) detailText = String(rawStock.pageText || detailText || \"\");\n            stockEvidence = { inStock: null, sizes: [], stockStatus: \"not_searched\", stockVerified: false };\n          }",
-  "ignore non-Musinsa stock evidence",
+const stockPattern = /          const rawStock = await searchWindow\.webContents\.executeJavaScript\(`\(\(\) => \{[\s\S]*?          if \(rawStock\) stockEvidence = normalizeRenderedStockEvidence\(rawStock\);\n/;
+const stockMatch = main.match(stockPattern);
+if (!stockMatch) throw new Error("stock-search patch target missing: stock extraction block");
+const indentedStock = stockMatch[0].split("\n").map((line) => line ? `  ${line}` : line).join("\n");
+main = main.replace(
+  stockPattern,
+  `          if (verifyMusinsaInventory) {\n${indentedStock}          } else {\n            stockEvidence = { inStock: null, sizes: [], stockStatus: "not_searched", stockVerified: false };\n          }\n`,
 );
 
 await writeFile(mainPath, main, "utf8");
