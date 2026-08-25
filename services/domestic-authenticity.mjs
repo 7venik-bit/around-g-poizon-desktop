@@ -1,3 +1,5 @@
+import { evaluateDomesticProductCard } from "./domestic-card-verdict.mjs";
+
 export const DOMESTIC_AUTHENTICITY_STATUS = Object.freeze({
   OFFICIAL_DISTRIBUTION: "official_distribution",
   DEPARTMENT_STORE: "department_store",
@@ -16,6 +18,7 @@ function joinedEvidence({ text = "", markup = "", retailerName = "", badges = ""
 
 export function classifyDomesticAuthenticity({
   store = "",
+  articleNumber = "",
   text = "",
   markup = "",
   retailerName = "",
@@ -26,8 +29,9 @@ export function classifyDomesticAuthenticity({
   const evidence = joinedEvidence({ text, markup, retailerName, badges });
   const isSsg = /^SSG(?:\s|$)/i.test(storeName) || /ssg/i.test(storeName);
   const isLotte = /^롯데(?:온|ON|백화점|홈쇼핑|\s)/i.test(storeName) || /lotte/i.test(storeName);
+  const cardVerdict = evaluateDomesticProductCard({ store: storeName, articleNumber, text: evidence, markup });
 
-  if ((isSsg || isLotte) && PARALLEL_PATTERN.test(evidence)) {
+  if ((isSsg || isLotte) && (cardVerdict.parallelImport || PARALLEL_PATTERN.test(evidence))) {
     return {
       status: DOMESTIC_AUTHENTICITY_STATUS.PARALLEL_IMPORT,
       label: "병행수입 · 공식유통 아님",
@@ -47,11 +51,11 @@ export function classifyDomesticAuthenticity({
         platformAuthenticityPolicy: "SSG 정품 판매 원칙",
       };
     }
-    if (/신세계\s*백화점|SSG\s*백화점|백화점/i.test(evidence)) {
+    if (cardVerdict.trusted) {
       return {
         status: DOMESTIC_AUTHENTICITY_STATUS.DEPARTMENT_STORE,
         label: "신세계백화점 판매",
-        evidence: "신세계백화점 판매처 라벨",
+        evidence: `상품 카드 판매처 라벨: ${cardVerdict.labels.join(", ")}`,
         officialDistributionVerified: true,
         platformAuthenticityPolicy: "SSG 정품 판매 원칙",
       };
@@ -66,11 +70,11 @@ export function classifyDomesticAuthenticity({
   }
 
   if (isLotte) {
-    if (/롯데\s*백화점|롯데백화점/i.test(evidence)) {
+    if (cardVerdict.trusted) {
       return {
         status: DOMESTIC_AUTHENTICITY_STATUS.DEPARTMENT_STORE,
         label: "롯데백화점 판매",
-        evidence: "롯데백화점 판매처 라벨",
+        evidence: `상품 카드 판매처 라벨: ${cardVerdict.labels.join(", ")}`,
         officialDistributionVerified: true,
         platformAuthenticityPolicy: "",
       };

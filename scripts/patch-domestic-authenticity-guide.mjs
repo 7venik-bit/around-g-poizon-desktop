@@ -19,7 +19,7 @@ relay = replaceOnce(
 relay = replaceOnce(
   relay,
   '        const isSsgParallelImport = ssgClassification === "parallel_import";',
-  `        const isSsgParallelImport = ssgClassification === "parallel_import";\n        const authenticity = classifyDomesticAuthenticity({\n          store: naverStore,\n          text: rawCardText,\n          markup: String(card?.markup || ""),\n          ssgClassification,\n        });`,
+  `        const isSsgParallelImport = ssgClassification === "parallel_import";\n        const authenticity = classifyDomesticAuthenticity({\n          store: naverStore,\n          articleNumber,\n          text: rawCardText,\n          markup: String(card?.markup || ""),\n          ssgClassification,\n        });`,
   "classify SSG/Lotte authenticity evidence",
 );
 relay = replaceOnce(
@@ -52,4 +52,4 @@ renderer = replaceOnce(
 );
 await writeFile(rendererPath, renderer, "utf8");
 
-console.log("Domestic authenticity guide patch applied; SSG/Lotte department-store labels finish as confirmed");
+console.log("Domestic authenticity guide patch applied; SSG/Lotte department-store labels use shared exact-card verdict and finish as confirmed");
