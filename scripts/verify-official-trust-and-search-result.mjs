@@ -8,12 +8,23 @@ const fail = (message) => { throw new Error(`official-result verification failed
 if (!main.includes("최종 화면을 다시 확인해 성공 여부를 판정한다")) fail("official mall rendered-result fallback is missing");
 if (!main.includes("return officialMallSearchWasExecuted(searchWindow, query, previousUrl);")) fail("official mall final result verification call is missing");
 if (main.includes("const submitted = await submitOfficialMallSearch(searchWindow, query);\n  if (!submitted) return false;")) fail("official mall still fails immediately on submit signal");
+
+if (!main.includes("고정 정책: 네이버 패션타운은 상품 카드의 판매처 유형 라벨만 본다")) fail("Naver label-only policy marker missing");
+if (!main.includes('const labels = ["브랜드직영몰", "백화점", "아울렛"]')) fail("trusted seller-type labels missing");
+if (!main.includes('/^(브랜드직영몰|백화점|아울렛)\\s*\\d+\\s*개$/')) fail("top channel-count tabs are not excluded");
+if (!main.includes("const confirmed = trustedChannelEvidence;")) fail("Naver verdict still uses product-card matching or other evidence");
+if (!main.includes("absenceConfirmed: !trustedChannelEvidence")) fail("missing trusted seller label does not become absence");
+if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : "absent"')) fail("Naver verdict is not strictly binary");
+if (!main.includes("naverTrustedChannelLabels: trustedChannelLabels")) fail("detected trusted seller labels are not returned");
 if (!main.includes("naverTrustedChannelEvidence: result?.naverTrustedChannelEvidence === true")) fail("Naver trusted-channel evidence is not preserved");
-if (!main.includes("naverAllSearchVerdict: result?.naverAllSearchVerdict || null")) fail("Naver final verdict is not preserved");
-if (!renderer.includes('const naverFashionTownConfirmed = String(source.store || "") === "네이버 패션타운"')) fail("Naver Fashion Town confirmation gate missing");
-if (!renderer.includes('source.naverTrustedChannelEvidence === true')) fail("Naver trusted-channel evidence is not used by renderer");
-if (!renderer.includes('if (naverFashionTownConfirmed) return { label: "확인완료", className: "available" };')) fail("Naver trusted evidence does not finish as 확인완료");
-if (!renderer.includes("네이버 패션타운에서 상품코드 검색 결과와 공식 유통 채널이 확인되어 정품 유통 근거가 충분합니다.")) fail("Naver authenticity evidence detail message missing");
+if (!main.includes("naverTrustedChannelLabels: Array.isArray(result?.naverTrustedChannelLabels)")) fail("Naver trusted seller labels are not preserved");
+
+if (!renderer.includes('if (String(source.store || "") === "네이버 패션타운")')) fail("Naver Fashion Town status gate missing");
+if (!renderer.includes('if (source.naverTrustedChannelEvidence === true || source.naverAllSearchVerdict === "confirmed") return { label: "확인완료", className: "available" };')) fail("trusted seller label does not finish as 확인완료");
+if (!renderer.includes('return { label: "상품없음", className: "missing" };')) fail("missing trusted seller label does not finish as 상품없음");
+if (!renderer.includes("네이버 패션타운 판매처 유형에서 브랜드직영몰·백화점·아울렛 중 하나를 확인하여 정품 유통 근거가 충분합니다.")) fail("Naver confirmed detail wording missing");
+if (!renderer.includes("네이버 패션타운 판매처 유형에 브랜드직영몰·백화점·아울렛이 없어 상품없음으로 판정했습니다.")) fail("Naver absent detail wording missing");
+if (renderer.includes('source.naverTrustedChannelEvidence === true || source.naverAllSearchVerdict === "confirmed" || matchedProducts.length')) fail("Naver still uses matched products as a verdict shortcut");
 if (renderer.includes("재고·사이즈 판정 근거가 부족합니다.")) fail("obsolete stock-size pending wording remains");
 
 if (!renderer.includes('const officialMallSource = String(source.store || "") === "브랜드 공식몰";')) fail("official mall binary status gate is missing");
@@ -32,4 +43,4 @@ if (!renderer.includes('if (!musinsaSource && matchedProducts.length) return { l
 if (!renderer.includes('return { label: "상품 확인", className: "available" };')) fail("overall domestic result still requires inventory state");
 if (!renderer.includes("무신사 재고만 보기")) fail("inventory-only UI is not labelled Musinsa-only");
 
-console.log("Naver Fashion Town authenticity wording and official mall binary verdict verified");
+console.log("Naver Fashion Town label-only binary verdict and official mall binary verdict verified");
