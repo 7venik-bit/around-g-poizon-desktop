@@ -67,6 +67,12 @@ jobs:
       - name: Verify SSG session reset on access limit
         run: node scripts/verify-ssg-session-reset.mjs
 
+      - name: Apply simplified official and Naver search
+        run: node scripts/patch-simplify-official-naver-search.mjs
+
+      - name: Verify simplified official and Naver search
+        run: node scripts/verify-simplify-official-naver-search.mjs
+
       - name: Build Windows installer
         run: npx electron-builder --win nsis --publish never
 
