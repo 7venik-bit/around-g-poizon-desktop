@@ -23,6 +23,24 @@ main = replaceOnce(
   '        const searchQuery = interactiveOfficialSearch\n          ? sanitizeDomesticQuery([title, articleNumber].filter(Boolean).join(" "))\n          : String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();',
   "official mall title plus product-code query",
 );
+main = replaceOnce(
+  main,
+  '  const naverPortalSource = /^네이버\\s/.test(String(source.store || ""));',
+  '  const naverPortalSource = /^네이버\\s/.test(String(source.store || ""));\n  // 네이버 패션타운은 네이버 메인/AI 검색을 경유하지 않는다.\n  // relay가 만든 shopping.naver.com/window/search/fashion-group URL을 바로 연다.\n  const directNaverFashionTownSource = String(source.store || "") === "네이버 패션타운";',
+  "mark direct Naver Fashion Town source",
+);
+main = replaceOnce(
+  main,
+  '      const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;',
+  '      const initialUrl = directNaverFashionTownSource ? url\n        : naverPortalSource ? "https://www.naver.com/" : url;',
+  "open Fashion Town result URL directly",
+);
+main = replaceOnce(
+  main,
+  '      if (interactiveSiteSearch) {\n        const searchQuery = interactiveOfficialSearch\n          ? sanitizeDomesticQuery([title, articleNumber].filter(Boolean).join(" "))\n          : String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();',
+  '      // 패션타운은 이미 상품코드가 포함된 전용 검색 URL을 직접 열었으므로\n      // 네이버 메인에서 쇼핑/패션타운 메뉴를 클릭하거나 AI 검색창에 다시 입력하지 않는다.\n      if (interactiveSiteSearch && !directNaverFashionTownSource) {\n        const searchQuery = interactiveOfficialSearch\n          ? sanitizeDomesticQuery([title, articleNumber].filter(Boolean).join(" "))\n          : String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();',
+  "skip Naver main and AI search for direct Fashion Town",
+);
 main = replaceAllRequired(
   main,
   '    if (naverPortalSource) {',
@@ -65,4 +83,4 @@ salesFilter = replaceOnce(salesFilter, '    if (totalSales < threshold && localT
 salesFilter = replaceOnce(salesFilter, '    matchMode: "any",', '    matchMode: "all",', "report processed workbook filter as AND");
 await writeFile(salesFilterPath, salesFilter, "utf8");
 
-console.log("official mall/Naver search simplified; Fashion Town trusted channels are sufficient authenticity evidence; all Excel paths use strict row-level 30+ AND filtering");
+console.log("official mall/Naver search simplified; Fashion Town opens direct shopping.naver.com search route; all Excel paths use strict row-level 30+ AND filtering");
