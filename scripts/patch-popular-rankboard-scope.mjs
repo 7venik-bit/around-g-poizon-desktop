@@ -16,10 +16,6 @@ const rankRoute = 'const SELLER_CENTER_URL = "https://seller.poizon.com/main/dat
 if (main.includes(homeRoute)) main = main.replace(homeRoute, rankRoute);
 if (!main.includes(rankRoute)) throw new Error("known-good popular list route restore failed");
 
-// Keep the known-good merchantRankBoard route and table detector, but make
-// completion rank-driven instead of scroll-driven. A virtualized row may be
-// absent from the DOM for a few hundred milliseconds even though the table
-// itself reached the bottom. Therefore 1-200 rank coverage is authoritative.
 if (!main.includes('String(element.innerText || element.textContent || "").trim() === "인기상품"')) {
   throw new Error("known-good popular heading detector missing");
 }
@@ -27,11 +23,13 @@ if (!main.includes('const hasTableHeaders = text.includes("SPU 기준")')) {
   throw new Error("known-good popular table detector missing");
 }
 
+const recoveryBlock = `  // AI 기준 누락 순위 표적 재수집:\n  // 전체 표를 여러 번 다시 훑는 대신 실제로 비어 있는 순위만 계산해서\n  // 해당 순위의 약간 앞쪽으로 점프한 뒤 한 행 이하 간격으로 짧게 재스캔한다.\n  // 200/200이 아니면 완료로 보지 않는다.\n  for (let recoveryRound = 0; recoveryRound < 4 && rankSlots.size < limit; recoveryRound += 1) {\n    const missingRanks = Array.from({ length: limit }, (_, index) => index + 1).filter((rank) => !rankSlots.has(rank));\n    if (!missingRanks.length) break;\n    mainWindow?.webContents.send("seller:capture-progress", {\n      percent: 96 + recoveryRound,\n      count: rankSlots.size,\n      target: limit,\n      missing: missingRanks.length,\n      message: \`누락 순위 표적 재수집 \${recoveryRound + 1}/4 · \${missingRanks.slice(0, 24).join(", ")}\${missingRanks.length > 24 ? "…" : ""}\`,\n    });\n    for (const rank of missingRanks) {\n      if (rankSlots.has(rank)) continue;\n      await executeAcrossSellerFrames(sellerJumpScript(Math.max(1, rank - 3), limit));\n      await wait(500);\n      for (let scan = 0; scan < 10 && !rankSlots.has(rank); scan += 1) {\n        await captureVisibleSlots();\n        if (rankSlots.has(rank)) break;\n        await executeAcrossSellerFrames(SELLER_ROW_SCROLL_SCRIPT);\n        await wait(180);\n      }\n    }\n  }\n\n`;
+
 main = replaceOnce(
   main,
-  `    await captureVisibleSlots();\n  }\n  let products = networkProducts.length ? [...networkProducts] : [];`,
-  `    await captureVisibleSlots();\n  }\n\n  // AI 기준 누락 순위 표적 재수집:\n  // 전체 표를 여러 번 다시 훑는 대신 실제로 비어 있는 순위만 계산해서\n  // 해당 순위의 약간 앞쪽으로 점프한 뒤 한 행 이하 간격으로 짧게 재스캔한다.\n  // 200/200이 아니면 완료로 보지 않는다.\n  for (let recoveryRound = 0; recoveryRound < 4 && rankSlots.size < limit; recoveryRound += 1) {\n    const missingRanks = Array.from({ length: limit }, (_, index) => index + 1).filter((rank) => !rankSlots.has(rank));\n    if (!missingRanks.length) break;\n    mainWindow?.webContents.send("seller:capture-progress", {\n      percent: 96 + recoveryRound,\n      count: rankSlots.size,\n      target: limit,\n      missing: missingRanks.length,\n      message: \`누락 순위 표적 재수집 \${recoveryRound + 1}/4 · \${missingRanks.slice(0, 24).join(", ")}\${missingRanks.length > 24 ? "…" : ""}\`,\n    });\n    for (const rank of missingRanks) {\n      if (rankSlots.has(rank)) continue;\n      await executeAcrossSellerFrames(sellerJumpScript(Math.max(1, rank - 3), limit));\n      await wait(500);\n      for (let scan = 0; scan < 10 && !rankSlots.has(rank); scan += 1) {\n        await captureVisibleSlots();\n        if (rankSlots.has(rank)) break;\n        await executeAcrossSellerFrames(SELLER_ROW_SCROLL_SCRIPT);\n        await wait(180);\n      }\n    }\n  }\n\n  let products = networkProducts.length ? [...networkProducts] : [];`,
-  "targeted missing-rank recovery after full-table passes",
+  `  for (const captured of captures) {`,
+  recoveryBlock + `  for (const captured of captures) {`,
+  "targeted missing-rank recovery before final parse",
 );
 
 main = replaceOnce(
