@@ -12,8 +12,8 @@ const replaceOnce = (source, before, after, label) => {
 const mainPath = new URL("../main.mjs", import.meta.url);
 let main = normalizeLf(await readFile(mainPath, "utf8"));
 main = replaceOnce(main,
-  'import { scoreProductCandidate } from "./services/matcher.mjs";',
-  'import { scoreProductCandidate } from "./services/matcher.mjs";\nimport { evaluateDomesticProductCards } from "./services/domestic-card-verdict.mjs";',
+  'import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";',
+  'import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";\nimport { evaluateDomesticProductCards } from "./services/domestic-card-verdict.mjs";',
   "import shared domestic product-card verdict engine");
 main = replaceOnce(main,
   `  const previousUrl = String(searchWindow.webContents.getURL() || homepageUrl);\n  const submitted = await submitOfficialMallSearch(searchWindow, query);\n  if (!submitted) return false;\n  await wait(2_000);\n  return officialMallSearchWasExecuted(searchWindow, query, previousUrl);`,
