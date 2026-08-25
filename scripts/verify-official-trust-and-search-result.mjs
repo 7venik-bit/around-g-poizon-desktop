@@ -21,6 +21,9 @@ if (!renderer.includes('source.searchCompleted === true && Number(source.count |
 if (!renderer.includes('source.searchCompleted === true') || !renderer.includes('Number(source.candidateCount || 0) === 0')) fail("official mall completed empty result is not accepted as absence");
 if (!renderer.includes("브랜드 공식몰 검색 결과에서 상품을 확인했습니다.")) fail("official mall success detail is missing");
 if (!renderer.includes("브랜드 공식몰 검색 결과에 상품이 없습니다.")) fail("official mall absence detail is missing");
+if (renderer.includes("검색 입력 실패")) fail("forbidden search-input-failure wording remains");
+if (renderer.includes("상품코드를 검색창에 입력하고 검색 버튼을 누르는 단계에서 중단됐습니다.")) fail("obsolete search-input failure detail remains");
+if (!renderer.includes("검색 결과 확인")) fail("replacement neutral search-result status is missing");
 
 if (!main.includes('const verifyMusinsaInventory = String(source.store || "") === "무신사";')) fail("Musinsa inventory gate missing");
 if (!main.includes('if (verifyMusinsaInventory) await openRenderedSizeOptions(searchWindow);')) fail("size option check is not Musinsa-only");
@@ -29,4 +32,4 @@ if (!renderer.includes('if (!musinsaSource && matchedProducts.length) return { l
 if (!renderer.includes('return { label: "상품 확인", className: "available" };')) fail("overall domestic result still requires inventory state");
 if (!renderer.includes("무신사 재고만 보기")) fail("inventory-only UI is not labelled Musinsa-only");
 
-console.log("official mall 확인완료/상품없음 verdict and Musinsa-only inventory policy verification passed");
+console.log("official mall binary verdict verified and forbidden search-input-failure wording removed");
