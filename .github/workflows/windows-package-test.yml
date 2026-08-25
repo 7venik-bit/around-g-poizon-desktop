@@ -61,6 +61,12 @@ jobs:
       - name: Verify deferred SSG search
         run: node scripts/verify-defer-ssg-search.mjs
 
+      - name: Apply SSG session reset on access limit
+        run: node scripts/patch-ssg-session-reset.mjs
+
+      - name: Verify SSG session reset on access limit
+        run: node scripts/verify-ssg-session-reset.mjs
+
       - name: Build Windows installer
         run: npx electron-builder --win nsis --publish never
 
