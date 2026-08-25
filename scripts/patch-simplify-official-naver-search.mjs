@@ -32,8 +32,8 @@ main = replaceAllRequired(
 main = replaceAllRequired(
   main,
   '    const candidateCount = Array.isArray(analyzed.products) ? analyzed.products.length : 0;\n    let detailed = {',
-  '    const candidateCount = Array.isArray(analyzed.products) ? analyzed.products.length : 0;\n    if (String(source.store || "") === "네이버 패션타운") {\n      const pageText = await searchWindow.webContents.executeJavaScript(\n        `String(document.body?.innerText || "").slice(0, 120000)`,\n        true,\n      ).catch(() => "");\n      const explicitEmpty = /검색된\\s*상품이\\s*없습니다|검색어에\\s*대한\\s*검색\\s*결과가\\s*없음|검색\\s*결과가\\s*없습니다|상품이\\s*없습니다|검색결과\\s*없음/i.test(pageText);\n      const allProducts = explicitEmpty ? [] : (Array.isArray(analyzed.products) ? analyzed.products : []);\n      const confirmed = allProducts.length > 0;\n      return {\n        ...analyzed,\n        count: allProducts.length,\n        products: allProducts,\n        presenceConfirmed: confirmed,\n        absenceConfirmed: !confirmed,\n        searchCompleted: true,\n        searchSubmitted: true,\n        resolvedSearchUrl,\n        candidateCount: allProducts.length,\n        naverChannelCounts: null,\n        naverAllSearchVerdict: confirmed ? "confirmed" : "absent",\n        detailVerificationPending: false,\n      };\n    }\n    let detailed = {',
-  "treat Naver Fashion Town total result as final verdict",
+  '    const candidateCount = Array.isArray(analyzed.products) ? analyzed.products.length : 0;\n    if (String(source.store || "") === "네이버 패션타운") {\n      const pageText = await searchWindow.webContents.executeJavaScript(\n        `String(document.body?.innerText || "").slice(0, 120000)`,\n        true,\n      ).catch(() => "");\n      const explicitEmpty = /검색된\\s*상품이\\s*없습니다|검색어에\\s*대한\\s*검색\\s*결과가\\s*없음|검색\\s*결과가\\s*없습니다|상품이\\s*없습니다|검색결과\\s*없음/i.test(pageText);\n      const trustedChannelEvidence = /브랜드직영몰\\s*[1-9]\\d*\\s*개|백화점\\s*[1-9]\\d*\\s*개|아울렛\\s*[1-9]\\d*\\s*개/i.test(pageText);\n      const allProducts = explicitEmpty ? [] : (Array.isArray(analyzed.products) ? analyzed.products : []);\n      const confirmed = allProducts.length > 0 || trustedChannelEvidence;\n      return {\n        ...analyzed,\n        count: allProducts.length,\n        products: allProducts,\n        presenceConfirmed: confirmed,\n        absenceConfirmed: explicitEmpty && !trustedChannelEvidence,\n        searchCompleted: true,\n        searchSubmitted: true,\n        resolvedSearchUrl,\n        candidateCount: allProducts.length,\n        naverChannelCounts: null,\n        naverTrustedChannelEvidence: trustedChannelEvidence,\n        naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEmpty ? "absent" : "pending"),\n        detailVerificationPending: false,\n      };\n    }\n    let detailed = {',
+  "treat Naver Fashion Town total result and trusted channel counts as final evidence",
 );
 await writeFile(mainPath, main, "utf8");
 
@@ -52,37 +52,17 @@ let renderer = normalizeLf(await readFile(rendererPath, "utf8"));
 renderer = replaceOnce(
   renderer,
   '    if (!musinsaSource && matchedProducts.length) return { label: "상품 확인됨", className: "available" };',
-  '    if (String(source.store || "") === "네이버 패션타운") {\n      if (source.presenceConfirmed || matchedProducts.length) return { label: "확인완료", className: "available" };\n      if (source.absenceConfirmed) return { label: "상품없음", className: "missing" };\n    }\n    if (!musinsaSource && matchedProducts.length) return { label: "상품 확인됨", className: "available" };',
+  '    if (String(source.store || "") === "네이버 패션타운") {\n      if (source.presenceConfirmed || source.naverTrustedChannelEvidence || source.naverAllSearchVerdict === "confirmed" || matchedProducts.length) return { label: "확인완료", className: "available" };\n      if (source.absenceConfirmed || source.naverAllSearchVerdict === "absent") return { label: "상품없음", className: "missing" };\n    }\n    if (!musinsaSource && matchedProducts.length) return { label: "상품 확인됨", className: "available" };',
   "binary Naver Fashion Town status label",
 );
 await writeFile(rendererPath, renderer, "utf8");
 
 const salesFilterPath = new URL("../services/poizon-sales-filter.mjs", import.meta.url);
 let salesFilter = normalizeLf(await readFile(salesFilterPath, "utf8"));
-salesFilter = replaceOnce(
-  salesFilter,
-  'export const POIZON_MINIMUM_TOTAL_SALES = 50;',
-  'export const POIZON_MINIMUM_TOTAL_SALES = 30;',
-  "use the operator's 30-sale baseline everywhere",
-);
-salesFilter = replaceOnce(
-  salesFilter,
-  '  if (filters.rowLevel === true) {',
-  '  // The Excel sourcing screen uses fixedTotalAnd=true. In that mode every\n  // visible row must itself satisfy both sales thresholds. A high-selling size\n  // in the same SPU must never pull <30, <5, --, or blank sibling rows back\n  // into the program list. The original workbook remains untouched.\n  if (filters.rowLevel === true || fixedTotalAnd) {',
-  "row-level AND filter for all brand Excel previews",
-);
-salesFilter = replaceOnce(
-  salesFilter,
-  '    if (totalSales < threshold && localTotalSales < threshold) continue;',
-  '    // Processed/imported workbook rows obey the same strict AND rule as the\n    // on-screen preview: both China total sales and local seller total sales\n    // must meet the threshold. The source workbook is never changed.\n    if (totalSales < threshold || localTotalSales < threshold) continue;',
-  "strict AND filter for processed workbook rows",
-);
-salesFilter = replaceOnce(
-  salesFilter,
-  '    matchMode: "any",',
-  '    matchMode: "all",',
-  "report processed workbook filter as AND",
-);
+salesFilter = replaceOnce(salesFilter, 'export const POIZON_MINIMUM_TOTAL_SALES = 50;', 'export const POIZON_MINIMUM_TOTAL_SALES = 30;', "use the operator's 30-sale baseline everywhere");
+salesFilter = replaceOnce(salesFilter, '  if (filters.rowLevel === true) {', '  // The Excel sourcing screen uses fixedTotalAnd=true. In that mode every\n  // visible row must itself satisfy both sales thresholds. A high-selling size\n  // in the same SPU must never pull <30, <5, --, or blank sibling rows back\n  // into the program list. The original workbook remains untouched.\n  if (filters.rowLevel === true || fixedTotalAnd) {', "row-level AND filter for all brand Excel previews");
+salesFilter = replaceOnce(salesFilter, '    if (totalSales < threshold && localTotalSales < threshold) continue;', '    // Processed/imported workbook rows obey the same strict AND rule as the\n    // on-screen preview: both China total sales and local seller total sales\n    // must meet the threshold. The source workbook is never changed.\n    if (totalSales < threshold || localTotalSales < threshold) continue;', "strict AND filter for processed workbook rows");
+salesFilter = replaceOnce(salesFilter, '    matchMode: "any",', '    matchMode: "all",', "report processed workbook filter as AND");
 await writeFile(salesFilterPath, salesFilter, "utf8");
 
-console.log("official mall/Naver search simplified; Fashion Town total result is final; all Excel paths use strict row-level 30+ AND filtering");
+console.log("official mall/Naver search simplified; Fashion Town trusted channels are sufficient authenticity evidence; all Excel paths use strict row-level 30+ AND filtering");
