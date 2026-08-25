@@ -1,21 +1,25 @@
 import { readFile, writeFile } from "node:fs/promises";
 
-const normalizeLf = (value) => String(value || "").replace(/\r\n/g, "\n");
-
 const mainPath = new URL("../main.mjs", import.meta.url);
-let main = normalizeLf(await readFile(mainPath, "utf8"));
+let main = String(await readFile(mainPath, "utf8")).replace(/\r\n/g, "\n");
 
-if (!main.includes("video-confirmed popular ranking table")) {
-  const captureStart = main.indexOf("const SELLER_CAPTURE_SCRIPT = `(async () => {");
-  if (captureStart < 0) throw new Error("popular scope patch target missing: SELLER_CAPTURE_SCRIPT");
-  const scopeStart = main.indexOf('  const selector = "tr, [role=\'row\'], li, [class*=\'row\'], [class*=\'item\'], [class*=\'product\'], [class*=\'table\']";', captureStart);
-  const collectedStart = main.indexOf("  const collected = new Map();", scopeStart);
-  if (scopeStart < 0 || collectedStart < 0) throw new Error("popular scope patch target missing: scope detector");
+const homeRoute = 'const SELLER_CENTER_URL = "https://seller.poizon.com/";';
+const rankRoute = 'const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";';
+if (main.includes(homeRoute)) main = main.replace(homeRoute, rankRoute);
+if (!main.includes(rankRoute)) throw new Error("known-good popular list route restore failed");
 
-  const replacement = `  const selector = "tbody tr, tr, [role='row'], [data-row-key], li, [class*='row'], [class*='item']";\n  const visible = (element) => {\n    if (!element) return false;\n    const rect = element.getBoundingClientRect();\n    const style = getComputedStyle(element);\n    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";\n  };\n  // The video-confirmed popular ranking table starts directly below the\n  // 인기상품 title. Its stable anchors are the rank header (No.) and 상품정보.\n  // SPU/SKU and price labels are hints only and must never be mandatory.\n  const rankBoardRoute = /merchantRankBoard/i.test(String(location.href || ""));\n  const titleNodes = [...document.querySelectorAll("h1,h2,h3,h4,strong,span,div")].filter((element) =>\n    visible(element) && /^인기상품$/.test(String(element.innerText || element.textContent || "").trim())\n  );\n  const tableNodes = [...document.querySelectorAll("table,[role='table'],[role='grid'],section,article,main,div")].filter(visible);\n  const candidates = tableNodes.map((element) => {\n    const text = String(element.innerText || element.textContent || "");\n    const rows = [...element.querySelectorAll(selector)].filter(visible);\n    const headerText = String(element.querySelector("thead,[role='rowgroup'],tr,[role='row']")?.innerText || "").replace(/\\s+/g, " ").trim();\n    const hasNoHeader = /(?:^|\\s)No\\.?\\s*(?:$|상품정보|Product)/i.test(headerText) || /(?:^|\\s)No\\.?\\s/.test(text);\n    const hasProductInfo = /상품정보|Product\\s*Info/i.test(headerText) || /상품정보|Product\\s*Info/i.test(text.slice(0, 2500));\n    const titleDistance = titleNodes.length ? Math.min(...titleNodes.map((title) => {\n      const titleRect = title.getBoundingClientRect();\n      const tableRect = element.getBoundingClientRect();\n      return tableRect.top >= titleRect.bottom - 12 ? tableRect.top - titleRect.bottom : 99999;\n    })) : 99999;\n    const rankedRows = rows.filter((row) => /^\\s*\\d{1,3}\\b/.test(String(row.innerText || row.textContent || "").trim())).length;\n    const productRows = rows.filter((row) => {\n      const rowText = String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim();\n      return /^\\s*\\d{1,3}\\b/.test(rowText) && (row.querySelector("img[src]") || rowText.length > 12);\n    }).length;\n    const scrollable = Math.max(0, element.scrollHeight - element.clientHeight) > 80;\n    const videoHeaderMatch = hasNoHeader && hasProductInfo;\n    const score = (videoHeaderMatch ? 1200 : 0)\n      + Math.min(productRows, 30) * 55\n      + Math.min(rankedRows, 30) * 25\n      + (scrollable ? 220 : 0)\n      + (titleDistance < 900 ? 400 - Math.min(titleDistance, 380) : 0)\n      + (element.matches("table,[role='table'],[role='grid']") ? 160 : 0)\n      - Math.min(text.length / 250, 160);\n    return { element, rows: rows.length, productRows, rankedRows, videoHeaderMatch, titleDistance, score };\n  }).filter((candidate) =>\n    candidate.videoHeaderMatch && candidate.rows >= 2 && candidate.productRows >= 1\n  ).sort((left, right) => right.score - left.score || left.titleDistance - right.titleDistance);\n\n  let scope = candidates[0]?.element || null;\n  if (!scope && rankBoardRoute) {\n    // Fallback: use the first visible ranked product row and climb to its real\n    // table/grid container. This keeps capture alive when POIZON virtualizes\n    // or temporarily omits the header DOM while scrolling.\n    const rankedProductRows = [...document.querySelectorAll(selector)].filter(visible).filter((row) => {\n      const rowText = String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim();\n      return /^\\s*\\d{1,3}\\b/.test(rowText) && (row.querySelector("img[src]") || rowText.length > 12);\n    });\n    const firstRow = rankedProductRows[0];\n    scope = firstRow?.closest("table,[role='table'],[role='grid'],section,article,main")\n      || firstRow?.parentElement?.parentElement\n      || firstRow?.parentElement\n      || null;\n  }\n  if (!scope) {\n    return { text: "", title: document.title, url: location.href, nodes: [], scopeVerified: false, rankBoardRoute, videoHeaderExpected: true };\n  }\n`;
-
-  main = main.slice(0, scopeStart) + replacement + main.slice(collectedStart);
+// Restore the previously stable capture path. The repository source already
+// contains the original SELLER_CAPTURE_SCRIPT / SELLER_SCROLL_SCRIPT /
+// SELLER_ROW_SCROLL_SCRIPT logic. Do not rewrite the table scope at build time.
+if (!main.includes('String(element.innerText || element.textContent || "").trim() === "인기상품"')) {
+  throw new Error("known-good popular heading detector missing");
+}
+if (!main.includes('const hasTableHeaders = text.includes("SPU 기준")')) {
+  throw new Error("known-good popular table detector missing");
+}
+if (main.includes("video-confirmed popular ranking table") || main.includes("POIZON 인기상품 표는 가상 스크롤")) {
+  throw new Error("new popular-list scope rewrite is still present");
 }
 
 await writeFile(mainPath, main, "utf8");
-console.log("popular rank-board scope now follows video-confirmed No.+상품정보 ranking table");
+console.log("popular list restored to known-good merchantRankBoard capture path");
