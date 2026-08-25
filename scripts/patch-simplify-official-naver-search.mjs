@@ -8,6 +8,12 @@ const replaceOnce = (source, before, after, label) => {
   if (source.indexOf(before, first + before.length) >= 0) throw new Error(`simplified search patch target duplicated: ${label}`);
   return source.slice(0, first) + after + source.slice(first + before.length);
 };
+const replaceAllRequired = (source, before, after, label) => {
+  if (source.includes(after) && !source.includes(before)) return source;
+  const count = source.split(before).length - 1;
+  if (count < 1) throw new Error(`simplified search patch target missing: ${label}`);
+  return source.split(before).join(after);
+};
 
 const mainPath = new URL("../main.mjs", import.meta.url);
 let main = normalizeLf(await readFile(mainPath, "utf8"));
@@ -17,13 +23,13 @@ main = replaceOnce(
   '        const searchQuery = interactiveOfficialSearch\n          ? sanitizeDomesticQuery([title, articleNumber].filter(Boolean).join(" "))\n          : String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();',
   "official mall title plus product-code query",
 );
-main = replaceOnce(
+main = replaceAllRequired(
   main,
   '    if (naverPortalSource) {',
   '    // 네이버 패션타운은 전체 검색 결과 자체가 최종 판정이다.\n    // 브랜드직영몰/백화점/아울렛 숫자 인식이나 채널 선택은 하지 않는다.\n    if (naverPortalSource && String(source.store || "") !== "네이버 패션타운") {',
   "skip Naver channel counts for Fashion Town total results",
 );
-main = replaceOnce(
+main = replaceAllRequired(
   main,
   '    const candidateCount = Array.isArray(analyzed.products) ? analyzed.products.length : 0;\n    let detailed = {',
   '    const candidateCount = Array.isArray(analyzed.products) ? analyzed.products.length : 0;\n    if (String(source.store || "") === "네이버 패션타운") {\n      const pageText = await searchWindow.webContents.executeJavaScript(\n        `String(document.body?.innerText || "").slice(0, 120000)`,\n        true,\n      ).catch(() => "");\n      const explicitEmpty = /검색된\\s*상품이\\s*없습니다|검색어에\\s*대한\\s*검색\\s*결과가\\s*없음|검색\\s*결과가\\s*없습니다|상품이\\s*없습니다|검색결과\\s*없음/i.test(pageText);\n      const allProducts = explicitEmpty ? [] : (Array.isArray(analyzed.products) ? analyzed.products : []);\n      const confirmed = allProducts.length > 0;\n      return {\n        ...analyzed,\n        count: allProducts.length,\n        products: allProducts,\n        presenceConfirmed: confirmed,\n        absenceConfirmed: !confirmed,\n        searchCompleted: true,\n        searchSubmitted: true,\n        resolvedSearchUrl,\n        candidateCount: allProducts.length,\n        naverChannelCounts: null,\n        naverAllSearchVerdict: confirmed ? "confirmed" : "absent",\n        detailVerificationPending: false,\n      };\n    }\n    let detailed = {',
