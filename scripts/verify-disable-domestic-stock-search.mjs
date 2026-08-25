@@ -21,11 +21,17 @@ if (!renderer.includes('const sourceLabel = "재고 검색 안 함";')) {
 if (!renderer.includes("const sizes = [];")) {
   fail("retailer stock-size chips are still rendered");
 }
-if (!sourcing.includes("function highestQualifiedSizeRows(products = [])")) {
-  fail("highest qualified size-price selector is missing");
+if (!sourcing.includes("function highestQualifiedSizeReference(products = [])")) {
+  fail("highest qualified size-price reference selector is missing");
 }
-if (!sourcing.includes("products = highestQualifiedSizeRows(products);")) {
-  fail("sourcing rows are not filtered to one highest qualified size price");
+if (sourcing.includes("products = highestQualifiedSizeRows(products);")) {
+  fail("product rows are still being filtered by size-price availability");
+}
+if (!sourcing.includes("const highestSizeByIdentity = highestQualifiedSizeReference(products);")) {
+  fail("highest size-price reference map is not prepared");
+}
+if (!sourcing.includes("const referenceProduct = highestSizeByIdentity.get(sourcingProductIdentity(product)) || product;")) {
+  fail("missing fallback that preserves products without size-price data");
 }
 if (!sourcing.includes("const minimumSales = 30;")) {
   fail("size sales minimum is not fixed at 30");
@@ -40,4 +46,4 @@ if (sourcing.includes("국내 상품 재고 검색")) {
   fail("stock-search wording remains in sourcing view");
 }
 
-console.log("domestic stock-search disable and highest-size-price sourcing verification passed");
+console.log("domestic stock-search disabled; all products remain visible and highest size-price is display-only");
