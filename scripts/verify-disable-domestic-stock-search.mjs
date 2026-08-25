@@ -8,7 +8,7 @@ const fail = (message) => { throw new Error(`domestic stock-search verification 
 
 if (!main.includes('const verifyMusinsaInventory = String(source.store || "") === "무신사";')) fail("Musinsa inventory gate is missing");
 if (!main.includes('if (verifyMusinsaInventory) await openRenderedSizeOptions(searchWindow);')) fail("size-option interaction is not limited to Musinsa");
-if (!main.includes('if (verifyMusinsaInventory && rawStock)')) fail("stock evidence is not limited to Musinsa");
+if (!main.includes('if (verifyMusinsaInventory) {\n            const rawStock')) fail("stock extraction is not limited to Musinsa");
 if (!main.includes('stockStatus: "not_searched"')) fail("non-Musinsa stock results are not neutralized");
 if (!renderer.includes('const musinsaInventory = String(product?.sourceStore || product?.store || "") === "무신사";')) fail("renderer Musinsa inventory gate is missing");
 if (!renderer.includes('const sizes = musinsaInventory ? (product?.sizes || []) : [];')) fail("non-Musinsa size chips are still rendered");
