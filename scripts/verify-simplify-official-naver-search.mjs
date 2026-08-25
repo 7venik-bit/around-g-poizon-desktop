@@ -38,10 +38,19 @@ if (!renderer.includes('return { label: "상품없음", className: "missing" };'
 if (main.includes('"네이버 패션타운" ? await ensureNaverOfficialBrandFilter')) {
   fail("Naver Fashion Town still triggers official-brand channel filtering");
 }
+if (!salesFilter.includes('export const POIZON_MINIMUM_TOTAL_SALES = 30;')) {
+  fail("global sales baseline is not 30");
+}
 if (!salesFilter.includes('if (filters.rowLevel === true || fixedTotalAnd) {')) {
   fail("fixed AND Excel preview is not filtered at row level");
 }
 if (!salesFilter.includes('const matchMode = fixedTotalAnd || filters.matchMode === "all" ? "all" : "any";')) {
-  fail("fixed Excel filter no longer guarantees AND matching");
+  fail("fixed Excel preview no longer guarantees AND matching");
 }
-console.log("Naver Fashion Town total-result binary verdict and row-level Excel AND filter verification passed");
+if (!salesFilter.includes('if (totalSales < threshold || localTotalSales < threshold) continue;')) {
+  fail("processed workbook still allows one sales metric below the threshold");
+}
+if (!salesFilter.includes('matchMode: "all",')) {
+  fail("processed workbook does not report AND matching");
+}
+console.log("Naver Fashion Town verdict and strict 30+ row-level AND filtering verification passed");
