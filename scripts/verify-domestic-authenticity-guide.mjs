@@ -15,14 +15,21 @@ const ssgOfficial = classifyDomesticAuthenticity({
 assert.equal(ssgOfficial.status, DOMESTIC_AUTHENTICITY_STATUS.OFFICIAL_DISTRIBUTION);
 assert.equal(ssgOfficial.officialDistributionVerified, true);
 
+const ssgDepartment = classifyDomesticAuthenticity({ store: "SSG", text: "신세계백화점 아디다스 삼바 OG B75806" });
+assert.equal(ssgDepartment.status, DOMESTIC_AUTHENTICITY_STATUS.DEPARTMENT_STORE);
+assert.equal(ssgDepartment.officialDistributionVerified, true);
+assert.match(ssgDepartment.label, /신세계백화점/);
+assert.match(ssgDepartment.evidence, /신세계백화점 판매처 라벨/);
+
 const ssgParallel = classifyDomesticAuthenticity({ store: "SSG", text: "정품 병행수입 나이키 DD1503-101" });
 assert.equal(ssgParallel.status, DOMESTIC_AUTHENTICITY_STATUS.PARALLEL_IMPORT);
 assert.equal(ssgParallel.officialDistributionVerified, false);
 
-const lotteDepartment = classifyDomesticAuthenticity({ store: "롯데온", text: "롯데백화점 나이키 DD1503-101" });
+const lotteDepartment = classifyDomesticAuthenticity({ store: "롯데온", text: "롯데백화점 아디다스 삼바 OG B75806" });
 assert.equal(lotteDepartment.status, DOMESTIC_AUTHENTICITY_STATUS.DEPARTMENT_STORE);
 assert.equal(lotteDepartment.officialDistributionVerified, true);
 assert.match(lotteDepartment.label, /롯데백화점/);
+assert.match(lotteDepartment.evidence, /롯데백화점 판매처 라벨/);
 
 const lotteOfficial = classifyDomesticAuthenticity({ store: "롯데온", text: "공식브랜드 나이키 DD1503-101 공식수입정품" });
 assert.equal(lotteOfficial.status, DOMESTIC_AUTHENTICITY_STATUS.OFFICIAL_DISTRIBUTION);
@@ -35,9 +42,13 @@ assert.equal(lotteSellerClaimOnly.officialDistributionVerified, false, "seller-a
 const relay = await readFile(new URL("../relay/domestic-search.mjs", import.meta.url), "utf8");
 assert.match(relay, /classifyDomesticAuthenticity/, "patched relay must classify SSG/Lotte distribution evidence");
 assert.match(relay, /authenticityLabel: authenticity\.label/, "patched relay must carry the guide verdict to UI results");
+assert.match(relay, /officialDistributionVerified: authenticity\.officialDistributionVerified/, "patched relay must carry official distribution evidence to UI results");
 
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
 assert.match(renderer, /authenticityLabel/, "renderer must show the guide label");
 assert.match(renderer, /유통근거/, "renderer must show the evidence source");
+assert.match(renderer, /const departmentStoreVerified = matchedProducts\.some/, "renderer must detect department-store evidence on matched product cards");
+assert.match(renderer, /신세계백화점\|롯데백화점/, "renderer must recognize the two department-store labels");
+assert.match(renderer, /if \(departmentStoreVerified\) return \{ label: "확인완료", className: "available" \};/, "department-store label evidence must finish as 확인완료");
 
-console.log("SSG/Lotte authenticity guide checks passed");
+console.log("SSG/Lotte department-store authenticity label checks passed");
