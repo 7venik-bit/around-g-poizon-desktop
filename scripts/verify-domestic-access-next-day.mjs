@@ -12,7 +12,7 @@ if (!main.includes("until.setHours(0, 5, 0, 0)")) fail("next-day resume time mis
 if (!main.includes("domesticAccessCooldowns")) fail("persistent cooldown storage missing");
 if (!main.includes("verificationReason: \"access_limited_until_tomorrow\"")) fail("skip result reason missing");
 if (!main.includes("temporaryAccessLimited: true")) fail("temporary access marker missing");
-if (!main.includes("if (/^네이버\\s/.test(String(source?.store || \"\"))) return null;")) fail("Naver exclusion missing");
+if (!main.includes("if (/^네이버(?:\\s|$)/.test(String(source?.store || \"\"))) return null;")) fail("Naver exclusion missing");
 if (!sourcing.includes('label: "내일 재시도"')) fail("next-day retry UI label missing");
 
 console.log("next-day access cooldown verification passed");
