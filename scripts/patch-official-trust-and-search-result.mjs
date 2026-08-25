@@ -46,6 +46,11 @@ renderer = replaceOnce(
 );
 
 renderer = renderer.replaceAll("검색·재고 확인", "검색 결과 열기");
+renderer = renderer.replaceAll("검색 입력 실패", "검색 결과 확인");
+renderer = renderer.replaceAll(
+  "상품코드를 검색창에 입력하고 검색 버튼을 누르는 단계에서 중단됐습니다.",
+  "검색 결과 화면을 확인하고 있습니다.",
+);
 
 await writeFile(rendererPath, renderer, "utf8");
-console.log("official mall now uses binary 확인완료/상품없음 verdict; existing official-result recognition retained");
+console.log("official mall uses binary verdict and obsolete search-input-failure wording is removed");
