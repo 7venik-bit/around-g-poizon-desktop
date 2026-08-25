@@ -80,6 +80,12 @@ jobs:
       - name: Verify next-day access cooldown
         run: node scripts/verify-domestic-access-next-day.mjs
 
+      - name: Close simplified search windows after result
+        run: node scripts/patch-close-domestic-search-windows.mjs
+
+      - name: Verify simplified search-window cleanup
+        run: node scripts/verify-close-domestic-search-windows.mjs
+
       - name: Resolve release version
         id: release_version
         shell: pwsh
