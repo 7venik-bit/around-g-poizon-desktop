@@ -85,6 +85,18 @@ jobs:
       - name: Verify popular list auto login and capture
         run: node scripts/verify-restore-popular-login-capture.mjs
 
+      - name: Enable popular list automatic fetch on open
+        run: node scripts/patch-popular-auto-fetch-on-open.mjs
+
+      - name: Verify popular list automatic fetch on open
+        run: node scripts/verify-popular-auto-fetch-on-open.mjs
+
+      - name: Restore full popular ranking scroll capture
+        run: node scripts/patch-popular-full-rank-scroll.mjs
+
+      - name: Verify full popular ranking scroll capture
+        run: node scripts/verify-popular-full-rank-scroll.mjs
+
       - name: Run legacy full test suite
         continue-on-error: true
         run: npm test
