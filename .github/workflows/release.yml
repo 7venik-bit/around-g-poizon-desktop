@@ -86,6 +86,12 @@ jobs:
       - name: Verify simplified search-window cleanup
         run: node scripts/verify-close-domestic-search-windows.mjs
 
+      - name: Apply official trust and result recognition
+        run: node scripts/patch-official-trust-and-search-result.mjs
+
+      - name: Verify official trust and result recognition
+        run: node scripts/verify-official-trust-and-search-result.mjs
+
       - name: Resolve release version
         id: release_version
         shell: pwsh
