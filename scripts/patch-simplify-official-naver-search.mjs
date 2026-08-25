@@ -29,4 +29,14 @@ relay = replaceOnce(
 );
 await writeFile(relayPath, relay, "utf8");
 
-console.log("official mall and Naver Fashion Town search simplified");
+const salesFilterPath = new URL("../services/poizon-sales-filter.mjs", import.meta.url);
+let salesFilter = normalizeLf(await readFile(salesFilterPath, "utf8"));
+salesFilter = replaceOnce(
+  salesFilter,
+  '  if (filters.rowLevel === true) {',
+  '  // The Excel sourcing screen uses fixedTotalAnd=true. In that mode every\n  // visible row must itself satisfy both sales thresholds. A high-selling size\n  // in the same SPU must never pull <30, <5, --, or blank sibling rows back\n  // into the program list. The original workbook remains untouched.\n  if (filters.rowLevel === true || fixedTotalAnd) {',
+  "row-level AND filter for all brand Excel previews",
+);
+await writeFile(salesFilterPath, salesFilter, "utf8");
+
+console.log("official mall/Naver search simplified and Excel AND filter made row-level");
