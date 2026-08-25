@@ -55,40 +55,14 @@ renderer = replaceOnce(
   '    if (String(source.store || "") === "네이버 패션타운") {\n      if (source.presenceConfirmed || source.naverTrustedChannelEvidence || source.naverAllSearchVerdict === "confirmed" || matchedProducts.length) return { label: "확인완료", className: "available" };\n      if (source.absenceConfirmed || source.naverAllSearchVerdict === "absent") return { label: "상품없음", className: "missing" };\n    }\n    if (!musinsaSource && matchedProducts.length) return { label: "상품 확인됨", className: "available" };',
   "binary Naver Fashion Town status label",
 );
-renderer = replaceAllRequired(
-  renderer,
-  '    const detailPending = source.verificationReason\n      ? failureDescriptions[source.verificationReason] || "판매처 검색이 완료되기 전에 중단됐습니다."',
-  '    const naverFashionTownConfirmed = String(source.store || "") === "네이버 패션타운"\n      && (source.presenceConfirmed || source.naverTrustedChannelEvidence || source.naverAllSearchVerdict === "confirmed" || matchedProducts.length);\n    const detailPending = naverFashionTownConfirmed\n      ? "네이버 패션타운에서 상품코드 검색 결과와 공식 유통 채널이 확인되어 정품 유통 근거가 충분합니다."\n      : source.verificationReason\n        ? failureDescriptions[source.verificationReason] || "판매처 검색이 완료되기 전에 중단됐습니다."',
-  "Naver Fashion Town authenticity evidence wording",
-);
 await writeFile(rendererPath, renderer, "utf8");
 
 const salesFilterPath = new URL("../services/poizon-sales-filter.mjs", import.meta.url);
 let salesFilter = normalizeLf(await readFile(salesFilterPath, "utf8"));
-salesFilter = replaceOnce(
-  salesFilter,
-  'export const POIZON_MINIMUM_TOTAL_SALES = 50;',
-  'export const POIZON_MINIMUM_TOTAL_SALES = 30;',
-  "use the operator's 30-sale baseline everywhere",
-);
-salesFilter = replaceOnce(
-  salesFilter,
-  '  if (filters.rowLevel === true) {',
-  '  // The Excel sourcing screen uses fixedTotalAnd=true. In that mode every\n  // visible row must itself satisfy both sales thresholds. A high-selling size\n  // in the same SPU must never pull <30, <5, --, or blank sibling rows back\n  // into the program list. The original workbook remains untouched.\n  if (filters.rowLevel === true || fixedTotalAnd) {',
-  "row-level AND filter for all brand Excel previews",
-);
-salesFilter = replaceOnce(
-  salesFilter,
-  '    if (totalSales < threshold && localTotalSales < threshold) continue;',
-  '    // Processed/imported workbook rows obey the same strict AND rule as the\n    // on-screen preview: both China total sales and local seller total sales\n    // must meet the threshold. The source workbook is never changed.\n    if (totalSales < threshold || localTotalSales < threshold) continue;',
-  "strict AND filter for processed workbook rows",
-);
-salesFilter = replaceOnce(
-  salesFilter,
-  '    matchMode: "any",',
-  '    matchMode: "all",',
-  "report processed workbook filter as AND",
-);
+salesFilter = replaceOnce(salesFilter, 'export const POIZON_MINIMUM_TOTAL_SALES = 50;', 'export const POIZON_MINIMUM_TOTAL_SALES = 30;', "use the operator's 30-sale baseline everywhere");
+salesFilter = replaceOnce(salesFilter, '  if (filters.rowLevel === true) {', '  // The Excel sourcing screen uses fixedTotalAnd=true. In that mode every\n  // visible row must itself satisfy both sales thresholds. A high-selling size\n  // in the same SPU must never pull <30, <5, --, or blank sibling rows back\n  // into the program list. The original workbook remains untouched.\n  if (filters.rowLevel === true || fixedTotalAnd) {', "row-level AND filter for all brand Excel previews");
+salesFilter = replaceOnce(salesFilter, '    if (totalSales < threshold && localTotalSales < threshold) continue;', '    // Processed/imported workbook rows obey the same strict AND rule as the\n    // on-screen preview: both China total sales and local seller total sales\n    // must meet the threshold. The source workbook is never changed.\n    if (totalSales < threshold || localTotalSales < threshold) continue;', "strict AND filter for processed workbook rows");
+salesFilter = replaceOnce(salesFilter, '    matchMode: "any",', '    matchMode: "all",', "report processed workbook filter as AND");
 await writeFile(salesFilterPath, salesFilter, "utf8");
 
 console.log("official mall/Naver search simplified; Fashion Town trusted channels are sufficient authenticity evidence; all Excel paths use strict row-level 30+ AND filtering");
