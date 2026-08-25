@@ -32,8 +32,8 @@ main = replaceAllRequired(
 main = replaceAllRequired(
   main,
   '    const candidateCount = Array.isArray(analyzed.products) ? analyzed.products.length : 0;\n    let detailed = {',
-  '    const candidateCount = Array.isArray(analyzed.products) ? analyzed.products.length : 0;\n    if (String(source.store || "") === "네이버 패션타운") {\n      const pageText = await searchWindow.webContents.executeJavaScript(\n        `String(document.body?.innerText || "").slice(0, 120000)`,\n        true,\n      ).catch(() => "");\n      const explicitEmpty = /검색된\\s*상품이\\s*없습니다|검색어에\\s*대한\\s*검색\\s*결과가\\s*없음|검색\\s*결과가\\s*없습니다|상품이\\s*없습니다|검색결과\\s*없음/i.test(pageText);\n      const allProducts = explicitEmpty ? [] : (Array.isArray(analyzed.products) ? analyzed.products : []);\n      const confirmed = allProducts.length > 0;\n      return {\n        ...analyzed,\n        count: allProducts.length,\n        products: allProducts,\n        presenceConfirmed: confirmed,\n        absenceConfirmed: !confirmed,\n        searchCompleted: true,\n        searchSubmitted: true,\n        resolvedSearchUrl,\n        candidateCount: allProducts.length,\n        naverChannelCounts: null,\n        naverAllSearchVerdict: confirmed ? "confirmed" : "absent",\n        detailVerificationPending: false,\n      };\n    }\n    let detailed = {',
-  "treat Naver Fashion Town total result as final verdict",
+  '    const candidateCount = Array.isArray(analyzed.products) ? analyzed.products.length : 0;\n    if (String(source.store || "") === "네이버 패션타운") {\n      const pageText = await searchWindow.webContents.executeJavaScript(\n        `String(document.body?.innerText || "").slice(0, 120000)`,\n        true,\n      ).catch(() => "");\n      const explicitEmpty = /검색된\\s*상품이\\s*없습니다|검색어에\\s*대한\\s*검색\\s*결과가\\s*없음|검색\\s*결과가\\s*없습니다|상품이\\s*없습니다|검색결과\\s*없음/i.test(pageText);\n      const trustedChannelEvidence = /브랜드직영몰\\s*[1-9]\\d*\\s*개|백화점\\s*[1-9]\\d*\\s*개|아울렛\\s*[1-9]\\d*\\s*개/i.test(pageText);\n      const allProducts = explicitEmpty ? [] : (Array.isArray(analyzed.products) ? analyzed.products : []);\n      const confirmed = allProducts.length > 0 || trustedChannelEvidence;\n      return {\n        ...analyzed,\n        count: allProducts.length,\n        products: allProducts,\n        presenceConfirmed: confirmed,\n        absenceConfirmed: explicitEmpty && !trustedChannelEvidence,\n        searchCompleted: true,\n        searchSubmitted: true,\n        resolvedSearchUrl,\n        candidateCount: allProducts.length,\n        naverChannelCounts: null,\n        naverTrustedChannelEvidence: trustedChannelEvidence,\n        naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEmpty ? "absent" : "pending"),\n        detailVerificationPending: false,\n      };\n    }\n    let detailed = {',
+  "treat Naver Fashion Town total result and trusted channel counts as final evidence",
 );
 await writeFile(mainPath, main, "utf8");
 
@@ -52,8 +52,14 @@ let renderer = normalizeLf(await readFile(rendererPath, "utf8"));
 renderer = replaceOnce(
   renderer,
   '    if (!musinsaSource && matchedProducts.length) return { label: "상품 확인됨", className: "available" };',
-  '    if (String(source.store || "") === "네이버 패션타운") {\n      if (source.presenceConfirmed || matchedProducts.length) return { label: "확인완료", className: "available" };\n      if (source.absenceConfirmed) return { label: "상품없음", className: "missing" };\n    }\n    if (!musinsaSource && matchedProducts.length) return { label: "상품 확인됨", className: "available" };',
+  '    if (String(source.store || "") === "네이버 패션타운") {\n      if (source.presenceConfirmed || source.naverTrustedChannelEvidence || source.naverAllSearchVerdict === "confirmed" || matchedProducts.length) return { label: "확인완료", className: "available" };\n      if (source.absenceConfirmed || source.naverAllSearchVerdict === "absent") return { label: "상품없음", className: "missing" };\n    }\n    if (!musinsaSource && matchedProducts.length) return { label: "상품 확인됨", className: "available" };',
   "binary Naver Fashion Town status label",
+);
+renderer = replaceAllRequired(
+  renderer,
+  '    const detailPending = source.verificationReason\n      ? failureDescriptions[source.verificationReason] || "판매처 검색이 완료되기 전에 중단됐습니다."',
+  '    const naverFashionTownConfirmed = String(source.store || "") === "네이버 패션타운"\n      && (source.presenceConfirmed || source.naverTrustedChannelEvidence || source.naverAllSearchVerdict === "confirmed" || matchedProducts.length);\n    const detailPending = naverFashionTownConfirmed\n      ? "네이버 패션타운에서 상품코드 검색 결과와 공식 유통 채널이 확인되어 정품 유통 근거가 충분합니다."\n      : source.verificationReason\n        ? failureDescriptions[source.verificationReason] || "판매처 검색이 완료되기 전에 중단됐습니다."',
+  "Naver Fashion Town authenticity evidence wording",
 );
 await writeFile(rendererPath, renderer, "utf8");
 
@@ -85,4 +91,4 @@ salesFilter = replaceOnce(
 );
 await writeFile(salesFilterPath, salesFilter, "utf8");
 
-console.log("official mall/Naver search simplified; Fashion Town total result is final; all Excel paths use strict row-level 30+ AND filtering");
+console.log("official mall/Naver search simplified; Fashion Town trusted channels are sufficient authenticity evidence; all Excel paths use strict row-level 30+ AND filtering");
