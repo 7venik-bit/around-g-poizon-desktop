@@ -1,5 +1,10 @@
 import { readFile, writeFile } from "node:fs/promises";
 
+// First restore the original rank-board scope rule: the merchantRankBoard route
+// plus rendered product rows identify the table. Exact Korean header wording is
+// only a hint and must never block collection.
+await import("./patch-popular-rankboard-scope.mjs");
+
 const normalizeLf = (value) => String(value || "").replace(/\r\n/g, "\n");
 
 const mainPath = new URL("../main.mjs", import.meta.url);
@@ -18,4 +23,4 @@ if (!main.includes("POIZON 인기상품 표는 가상 스크롤")) {
   main = main.slice(0, blockStart) + after + main.slice(blockEnd);
 }
 await writeFile(mainPath, main, "utf8");
-console.log("popular list virtual-scroll accumulation restored for full ranking capture");
+console.log("popular list rank-board scope and virtual-scroll accumulation restored for full ranking capture");
