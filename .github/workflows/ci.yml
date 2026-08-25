@@ -61,6 +61,12 @@ jobs:
       - name: Verify simplified official and Naver search
         run: node scripts/verify-simplify-official-naver-search.mjs
 
+      - name: Apply next-day access cooldown
+        run: node scripts/patch-domestic-access-next-day.mjs
+
+      - name: Verify next-day access cooldown
+        run: node scripts/verify-domestic-access-next-day.mjs
+
       - name: Run legacy full test suite
         continue-on-error: true
         run: npm test
