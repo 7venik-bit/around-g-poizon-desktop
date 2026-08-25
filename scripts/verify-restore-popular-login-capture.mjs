@@ -22,5 +22,8 @@ if (!main.includes('const automaticLogin = await submitStoredSellerCredentials()
 if (!main.includes('https://seller.poizon.com/main/dataCenter/merchantRankBoard')) fail("popular rank-board destination missing");
 if (!main.includes('parsePopularProducts')) fail("popular-product parser missing");
 if (!main.includes('SELLER_CAPTURE_SCRIPT')) fail("popular table capture script missing");
+if (!main.includes('if (!/ERR_ABORTED|\\(-3\\)/i.test(navigationError)) throw error;')) fail("ERR_ABORTED(-3) navigation is not tolerated");
+if ((main.match(/const navigationError = String\(error\?\.message \|\| error \|\| ""\);/g) || []).length < 2) fail("both popular-list navigation steps are not guarded");
+if (!main.includes('실제 최종 URL을 기준으로 다음 단계를 계속 확인한다')) fail("final-URL navigation fallback comment missing");
 
-console.log("popular list auto login, rank-board capture, parsing, Excel staging, and UI wiring verification passed");
+console.log("popular list auto login, ERR_ABORTED-safe navigation, rank-board capture, parsing, Excel staging, and UI wiring verification passed");
