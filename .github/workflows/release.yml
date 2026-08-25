@@ -92,6 +92,12 @@ jobs:
       - name: Verify official trust and result recognition
         run: node scripts/verify-official-trust-and-search-result.mjs
 
+      - name: Restore popular list auto login and capture
+        run: node scripts/patch-restore-popular-login-capture.mjs
+
+      - name: Verify popular list auto login and capture
+        run: node scripts/verify-restore-popular-login-capture.mjs
+
       - name: Resolve release version
         id: release_version
         shell: pwsh
