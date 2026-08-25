@@ -1,0 +1,21 @@
+import { readFile, writeFile } from "node:fs/promises";
+
+const normalizeLf = (value) => String(value || "").replace(/\r\n/g, "\n");
+
+const mainPath = new URL("../main.mjs", import.meta.url);
+let main = normalizeLf(await readFile(mainPath, "utf8"));
+
+if (!main.includes("rank-board route and rendered product rows are authoritative")) {
+  const captureStart = main.indexOf("const SELLER_CAPTURE_SCRIPT = `(async () => {");
+  if (captureStart < 0) throw new Error("popular scope patch target missing: SELLER_CAPTURE_SCRIPT");
+  const scopeStart = main.indexOf('  const selector = "tr, [role=\'row\'], li, [class*=\'row\'], [class*=\'item\'], [class*=\'product\'], [class*=\'table\']";', captureStart);
+  const collectedStart = main.indexOf("  const collected = new Map();", scopeStart);
+  if (scopeStart < 0 || collectedStart < 0) throw new Error("popular scope patch target missing: scope detector");
+
+  const replacement = `  const selector = "tbody tr, tr, [role='row'], [data-row-key], li, [class*='row'], [class*='item'], [class*='product']";\n  const visible = (element) => {\n    if (!element) return false;\n    const rect = element.getBoundingClientRect();\n    const style = getComputedStyle(element);\n    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";\n  };\n  // The rank-board route and rendered product rows are authoritative. Do not\n  // require four exact Korean header strings: POIZON can rename/re-render those\n  // labels while keeping the same merchantRankBoard table.\n  const rankBoardRoute = /merchantRankBoard/i.test(String(location.href || ""));\n  const candidateElements = [\n    ...document.querySelectorAll("table, [role='table'], [role='grid'], main, section, article, div"),\n  ];\n  const candidates = candidateElements\n    .filter((element, index, all) => all.indexOf(element) === index && visible(element))\n    .map((element) => {\n      const text = String(element.innerText || element.textContent || "");\n      const rows = [...element.querySelectorAll(selector)].filter(visible);\n      const rowTexts = rows.slice(0, 40).map((row) => String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim()).filter(Boolean);\n      const productLikeRows = rowTexts.filter((value) =>\n        /(?:\\d{1,3},)+\\d{3}|\\b[A-Z0-9][A-Z0-9._/-]{3,29}\\b|SPU|SKU|상품|product/i.test(value)\n      ).length;\n      const headerHints = [\n        /SPU/i.test(text), /SKU/i.test(text), /상품정보|product/i.test(text), /평균\\s*거래가|거래가|price/i.test(text),\n      ].filter(Boolean).length;\n      const popularHint = /인기상품|热门商品|popular/i.test(text);\n      const scrollable = Math.max(0, element.scrollHeight - element.clientHeight) > 80;\n      const score = (rows.length >= 3 ? 700 : 0)\n        + Math.min(productLikeRows, 20) * 45\n        + headerHints * 80\n        + (popularHint ? 240 : 0)\n        + (scrollable ? 180 : 0)\n        + (element.matches("table,[role='table'],[role='grid']") ? 120 : 0)\n        - Math.min(text.length / 200, 200);\n      return { element, rows: rows.length, productLikeRows, score, textLength: text.length };\n    })\n    .filter((candidate) => candidate.rows >= 3 && candidate.productLikeRows >= 1)\n    .sort((left, right) => right.score - left.score || left.textLength - right.textLength);\n  let scope = candidates[0]?.element || null;\n  if (!scope && rankBoardRoute) {\n    const renderedRows = [...document.querySelectorAll(selector)].filter(visible)\n      .filter((row) => /(?:\\d{1,3},)+\\d{3}|\\b[A-Z0-9][A-Z0-9._/-]{3,29}\\b|SPU|SKU|상품|product/i.test(String(row.innerText || row.textContent || "")));\n    const firstRow = renderedRows[0];\n    scope = firstRow?.closest("table, [role='table'], [role='grid'], main, section, article")\n      || firstRow?.parentElement?.parentElement\n      || firstRow?.parentElement\n      || null;\n  }\n  if (!scope) {\n    return { text: "", title: document.title, url: location.href, nodes: [], scopeVerified: false, rankBoardRoute };\n  }\n`;
+
+  main = main.slice(0, scopeStart) + replacement + main.slice(collectedStart);
+}
+
+await writeFile(mainPath, main, "utf8");
+console.log("popular rank-board scope detection restored to route+rendered-row evidence");
