@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 
 const main = String(await readFile(new URL("../main.mjs", import.meta.url), "utf8"));
 const relay = String(await readFile(new URL("../relay/domestic-search.mjs", import.meta.url), "utf8"));
+const salesFilter = String(await readFile(new URL("../services/poizon-sales-filter.mjs", import.meta.url), "utf8"));
 const fail = (message) => { throw new Error(`simplified official/Naver search verification failed: ${message}`); };
 
 if (!main.includes('sanitizeDomesticQuery([title, articleNumber].filter(Boolean).join(" "))')) {
@@ -18,4 +19,10 @@ for (const removed of ["네이버 공식 브랜드스토어", "네이버 백화�
 if (main.includes('"네이버 패션타운" ? await ensureNaverOfficialBrandFilter')) {
   fail("Naver Fashion Town still triggers official-brand channel filtering");
 }
-console.log("simplified official mall and Naver Fashion Town search verification passed");
+if (!salesFilter.includes('if (filters.rowLevel === true || fixedTotalAnd) {')) {
+  fail("fixed AND Excel preview is not filtered at row level");
+}
+if (!salesFilter.includes('const matchMode = fixedTotalAnd || filters.matchMode === "all" ? "all" : "any";')) {
+  fail("fixed Excel filter no longer guarantees AND matching");
+}
+console.log("simplified official mall/Naver search and row-level Excel AND filter verification passed");
