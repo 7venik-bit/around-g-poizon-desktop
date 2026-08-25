@@ -20,8 +20,17 @@ for (const removed of ["네이버 공식 브랜드스토어", "네이버 백화�
 if (!main.includes('naverPortalSource && String(source.store || "") !== "네이버 패션타운"')) {
   fail("Fashion Town still depends on Naver channel-count routing");
 }
-if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : "absent"')) {
-  fail("Fashion Town total-result verdict is missing");
+if (!main.includes('const trustedChannelEvidence = /브랜드직영몰')) {
+  fail("Fashion Town trusted-channel evidence is missing");
+}
+if (!main.includes('naverTrustedChannelEvidence: trustedChannelEvidence')) {
+  fail("Fashion Town trusted-channel evidence is not returned");
+}
+if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEmpty ? "absent" : "pending")')) {
+  fail("Fashion Town final verdict is missing");
+}
+if (!main.includes('absenceConfirmed: explicitEmpty && !trustedChannelEvidence')) {
+  fail("Fashion Town absence can override trusted channel evidence");
 }
 if (!main.includes('detailVerificationPending: false')) {
   fail("Fashion Town still requires detail verification after total search");
@@ -34,6 +43,9 @@ if (!renderer.includes('return { label: "확인완료", className: "available" }
 }
 if (!renderer.includes('return { label: "상품없음", className: "missing" };')) {
   fail("Fashion Town absence label is not 상품없음");
+}
+if (!renderer.includes('네이버 패션타운에서 상품코드 검색 결과와 공식 유통 채널이 확인되어 정품 유통 근거가 충분합니다.')) {
+  fail("Fashion Town authenticity evidence wording is missing");
 }
 if (main.includes('"네이버 패션타운" ? await ensureNaverOfficialBrandFilter')) {
   fail("Naver Fashion Town still triggers official-brand channel filtering");
@@ -53,4 +65,4 @@ if (!salesFilter.includes('if (totalSales < threshold || localTotalSales < thres
 if (!salesFilter.includes('matchMode: "all",')) {
   fail("processed workbook does not report AND matching");
 }
-console.log("Naver Fashion Town verdict and strict 30+ row-level AND filtering verification passed");
+console.log("Naver Fashion Town trusted-channel verdict, authenticity wording, and strict 30+ row-level AND filtering verification passed");
