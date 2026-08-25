@@ -44,6 +44,12 @@ renderer = replaceOnce(
   `      : \`<span>코드 \${text(product.signals?.code)}</span><span>상품명 \${text(product.signals?.title)}</span><span>이미지 \${text(product.signals?.image)}</span>\${product?.authenticityEvidence ? \`<span>유통근거 \${text(product.authenticityEvidence)}</span>\` : ""}\`;`,
   "surface authenticity evidence detail",
 );
+renderer = replaceOnce(
+  renderer,
+  `  const sourceStatus = (source, matchedProducts) => {\n    const available = matchedProducts.filter((product) => product.inStock === true).length;`,
+  `  const sourceStatus = (source, matchedProducts) => {\n    // SSG/롯데ON 상품 카드의 백화점 판매처 라벨은 정품 유통 근거로 충분하다.\n    // 신세계백화점/롯데백화점 라벨을 분류기가 확인한 상품은 재고 상태와 무관하게 확인완료로 종료한다.\n    const departmentStoreVerified = matchedProducts.some((product) => product?.officialDistributionVerified === true\n      && /신세계백화점|롯데백화점/.test(String(product?.authenticityLabel || "") + " " + String(product?.authenticityEvidence || "")));\n    if (departmentStoreVerified) return { label: "확인완료", className: "available" };\n    const available = matchedProducts.filter((product) => product.inStock === true).length;`,
+  "finish SSG/Lotte department-store label evidence as confirmed",
+);
 await writeFile(rendererPath, renderer, "utf8");
 
-console.log("Domestic authenticity guide patch applied");
+console.log("Domestic authenticity guide patch applied; SSG/Lotte department-store labels finish as confirmed");
