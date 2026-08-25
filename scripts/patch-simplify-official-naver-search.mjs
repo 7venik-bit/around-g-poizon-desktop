@@ -61,10 +61,28 @@ const salesFilterPath = new URL("../services/poizon-sales-filter.mjs", import.me
 let salesFilter = normalizeLf(await readFile(salesFilterPath, "utf8"));
 salesFilter = replaceOnce(
   salesFilter,
+  'export const POIZON_MINIMUM_TOTAL_SALES = 50;',
+  'export const POIZON_MINIMUM_TOTAL_SALES = 30;',
+  "use the operator's 30-sale baseline everywhere",
+);
+salesFilter = replaceOnce(
+  salesFilter,
   '  if (filters.rowLevel === true) {',
   '  // The Excel sourcing screen uses fixedTotalAnd=true. In that mode every\n  // visible row must itself satisfy both sales thresholds. A high-selling size\n  // in the same SPU must never pull <30, <5, --, or blank sibling rows back\n  // into the program list. The original workbook remains untouched.\n  if (filters.rowLevel === true || fixedTotalAnd) {',
   "row-level AND filter for all brand Excel previews",
 );
+salesFilter = replaceOnce(
+  salesFilter,
+  '    if (totalSales < threshold && localTotalSales < threshold) continue;',
+  '    // Processed/imported workbook rows obey the same strict AND rule as the\n    // on-screen preview: both China total sales and local seller total sales\n    // must meet the threshold. The source workbook is never changed.\n    if (totalSales < threshold || localTotalSales < threshold) continue;',
+  "strict AND filter for processed workbook rows",
+);
+salesFilter = replaceOnce(
+  salesFilter,
+  '    matchMode: "any",',
+  '    matchMode: "all",',
+  "report processed workbook filter as AND",
+);
 await writeFile(salesFilterPath, salesFilter, "utf8");
 
-console.log("official mall/Naver search simplified; Fashion Town total result is final; Excel AND filter is row-level");
+console.log("official mall/Naver search simplified; Fashion Town total result is final; all Excel paths use strict row-level 30+ AND filtering");
