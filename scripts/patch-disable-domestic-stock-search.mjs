@@ -11,20 +11,20 @@ const replaceOnce = (source, before, after, label) => {
 const mainPath = new URL("../main.mjs", import.meta.url);
 let main = normalizeLf(await readFile(mainPath, "utf8"));
 
-// Domestic sourcing only needs exact product identity and price. Keep detail-page
-// identity verification, but do not open size selectors or infer live inventory.
+// 재고/사이즈 자동 확인은 무신사에서만 유지한다. 다른 국내 판매처는
+// 정확 상품/가격 확인에만 집중하고 재고 상태 때문에 실패하지 않는다.
 main = replaceOnce(
   main,
   "          await openRenderedSizeOptions(searchWindow);",
-  "          // 재고/사이즈 옵션 자동 확인은 사용하지 않습니다.",
-  "disable rendered size-option interaction",
+  "          const verifyMusinsaInventory = String(source.store || \"\") === \"무신사\";\n          if (verifyMusinsaInventory) await openRenderedSizeOptions(searchWindow);",
+  "gate rendered size-option interaction to Musinsa",
 );
 
 main = replaceOnce(
   main,
   "          if (rawStock) stockEvidence = normalizeRenderedStockEvidence(rawStock);",
-  "          if (rawStock?.pageText) detailText = String(rawStock.pageText || detailText || \"\");\n          stockEvidence = { inStock: null, sizes: [], stockStatus: \"not_searched\", stockVerified: false };",
-  "ignore domestic stock evidence",
+  "          if (verifyMusinsaInventory && rawStock) {\n            stockEvidence = normalizeRenderedStockEvidence(rawStock);\n          } else {\n            if (rawStock?.pageText) detailText = String(rawStock.pageText || detailText || \"\");\n            stockEvidence = { inStock: null, sizes: [], stockStatus: \"not_searched\", stockVerified: false };\n          }",
+  "ignore non-Musinsa stock evidence",
 );
 
 await writeFile(mainPath, main, "utf8");
@@ -35,21 +35,35 @@ let renderer = normalizeLf(await readFile(rendererPath, "utf8"));
 renderer = replaceOnce(
   renderer,
   "    const sizes = product?.sizes || [];",
-  "    const sizes = [];",
-  "hide retailer stock-size chips",
+  "    const musinsaInventory = String(product?.sourceStore || product?.store || \"\") === \"무신사\";\n    const sizes = musinsaInventory ? (product?.sizes || []) : [];",
+  "show retailer size chips only for Musinsa",
 );
 renderer = replaceOnce(
   renderer,
   "    const sourceState = product.inStock === true ? \"available\" : product.inStock === false ? \"soldout\" : \"pending\";",
-  "    const sourceState = \"pending\";",
-  "neutralize retailer stock state",
+  "    const sourceState = musinsaInventory\n      ? (product.inStock === true ? \"available\" : product.inStock === false ? \"soldout\" : \"pending\")\n      : \"pending\";",
+  "neutralize non-Musinsa stock state",
 );
 renderer = replaceOnce(
   renderer,
   "    const sourceLabel = product.stockStatus === \"login_required\" ? \"로그인 필요\" : product.inStock === true ? \"재고 있음\" : product.inStock === false ? \"품절\" : \"확인 필요\";",
-  "    const sourceLabel = \"재고 검색 안 함\";",
-  "show stock search disabled label",
+  "    const sourceLabel = musinsaInventory\n      ? (product.stockStatus === \"login_required\" ? \"로그인 필요\" : product.inStock === true ? \"재고 있음\" : product.inStock === false ? \"품절\" : \"확인 필요\")\n      : \"재고 확인 안 함\";",
+  "show non-Musinsa inventory as not checked",
 );
+renderer = replaceOnce(
+  renderer,
+  "  if (!products.length) return { label: \"없음 확인\", className: \"missing\" };\n  if (!products.some((product) => product.inStock)) return { label: \"재고 없음\", className: \"soldout\" };\n  return { label: \"구매 가능\", className: \"available\" };",
+  "  if (!products.length) return { label: \"없음 확인\", className: \"missing\" };\n  const musinsaProducts = products.filter((product) => String(product?.sourceStore || product?.store || \"\") === \"무신사\");\n  if (musinsaProducts.length && musinsaProducts.every((product) => product.inStock === false)) {\n    return { label: \"상품 확인 · 무신사 품절\", className: \"soldout\" };\n  }\n  return { label: \"상품 확인\", className: \"available\" };",
+  "overall result should not require non-Musinsa stock",
+);
+renderer = replaceOnce(
+  renderer,
+  "  const sourceStatus = (source, matchedProducts) => {\n    const available = matchedProducts.filter((product) => product.inStock === true).length;\n    if (available) return { label: `재고 ${available}개`, className: \"available\" };\n    if (matchedProducts.length && matchedProducts.every((product) => product.inStock === false)) {\n      return { label: \"재고 없음\", className: \"soldout\" };\n    }\n    if (matchedProducts.length) return { label: \"재고·사이즈 확인 필요\", className: \"pending\" };",
+  "  const sourceStatus = (source, matchedProducts) => {\n    const musinsaSource = String(source.store || \"\") === \"무신사\";\n    if (!musinsaSource && matchedProducts.length) return { label: \"상품 확인됨\", className: \"available\" };\n    const available = matchedProducts.filter((product) => product.inStock === true).length;\n    if (available) return { label: `재고 ${available}개`, className: \"available\" };\n    if (musinsaSource && matchedProducts.length && matchedProducts.every((product) => product.inStock === false)) {\n      return { label: \"재고 없음\", className: \"soldout\" };\n    }\n    if (musinsaSource && matchedProducts.length) return { label: \"재고·사이즈 확인 필요\", className: \"pending\" };",
+  "source result should use stock only for Musinsa",
+);
+renderer = renderer.replaceAll("국내 재고만 보기", "무신사 재고만 보기");
+renderer = renderer.replaceAll("전체 상품 보기 · 국내 재고", "전체 상품 보기 · 무신사 재고");
 
 await writeFile(rendererPath, renderer, "utf8");
 
@@ -100,4 +114,4 @@ sourcing = replaceOnce(
 );
 
 await writeFile(sourcingPath, sourcing, "utf8");
-console.log("domestic stock-search disabled; products stay visible and highest qualified size price is reference-only");
+console.log("domestic stock-size verification kept only for Musinsa; other retailers use exact product search only");
