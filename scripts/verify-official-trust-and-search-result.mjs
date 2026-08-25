@@ -11,6 +11,11 @@ if (main.includes("const submitted = await submitOfficialMallSearch(searchWindow
 
 if (!main.includes("고정 정책: 네이버 패션타운은 상품 카드의 판매처 유형 라벨만 본다")) fail("Naver label-only policy marker missing");
 if (!main.includes('const labels = ["브랜드직영몰", "백화점", "아울렛"]')) fail("trusted seller-type labels missing");
+if (!main.includes('for (let attempt = 0; attempt < 8 && trustedChannelLabels.length === 0; attempt += 1)')) fail("Naver seller-label polling is missing");
+if (!main.includes('const queryCode = ${JSON.stringify(String(articleNumber || "").trim().toUpperCase())}')) fail("Naver product-card query-code anchor is missing");
+if (!main.includes('const hasImage = Boolean(node.querySelector?.("img"));')) fail("Naver product-card image anchor is missing");
+if (!main.includes('const hasPrice = /\\d{1,3}(?:,\\d{3})+\\s*원/.test(text);')) fail("Naver product-card price anchor is missing");
+if (!main.includes('if (hasImage && hasPrice && hasCode) return true;')) fail("Naver seller label is not tied to rendered product card evidence");
 if (!main.includes('/^(브랜드직영몰|백화점|아울렛)\\s*\\d+\\s*개$/')) fail("top channel-count tabs are not excluded");
 if (!main.includes("const confirmed = trustedChannelEvidence;")) fail("Naver verdict still uses product-card matching or other evidence");
 if (!main.includes("absenceConfirmed: !trustedChannelEvidence")) fail("missing trusted seller label does not become absence");
@@ -43,4 +48,4 @@ if (!renderer.includes('if (!musinsaSource && matchedProducts.length) return { l
 if (!renderer.includes('return { label: "상품 확인", className: "available" };')) fail("overall domestic result still requires inventory state");
 if (!renderer.includes("무신사 재고만 보기")) fail("inventory-only UI is not labelled Musinsa-only");
 
-console.log("Naver Fashion Town label-only binary verdict and official mall binary verdict verified");
+console.log("Naver Fashion Town rendered-card label verdict and official mall binary verdict verified");
