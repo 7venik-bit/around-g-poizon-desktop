@@ -129,9 +129,16 @@ window.addEventListener("DOMContentLoaded", () => {
     stylesheet.dataset.excelColumnLayout = "true";
     document.head.appendChild(stylesheet);
   }
-  if (document.querySelector('script[data-excel-column-layout="true"]')) return;
-  const script = document.createElement("script");
-  script.src = "./excel-column-layout.js";
-  script.dataset.excelColumnLayout = "true";
-  document.head.appendChild(script);
+  if (!document.querySelector('script[data-excel-column-layout="true"]')) {
+    const script = document.createElement("script");
+    script.src = "./excel-column-layout.js";
+    script.dataset.excelColumnLayout = "true";
+    document.head.appendChild(script);
+  }
+  if (!document.querySelector('script[data-sourcing-view="true"]')) {
+    const sourcingScript = document.createElement("script");
+    sourcingScript.src = "./sourcing-view.js";
+    sourcingScript.dataset.sourcingView = "true";
+    document.head.appendChild(sourcingScript);
+  }
 });
