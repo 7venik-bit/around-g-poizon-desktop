@@ -86,12 +86,6 @@ jobs:
       - name: Verify simplified search-window cleanup
         run: node scripts/verify-close-domestic-search-windows.mjs
 
-      - name: Apply official trust and result recognition
-        run: node scripts/patch-official-trust-and-search-result.mjs
-
-      - name: Verify official trust and result recognition
-        run: node scripts/verify-official-trust-and-search-result.mjs
-
       - name: Keep domestic results inside the controlled browser
         run: node scripts/patch-domestic-result-internal-window.mjs
 
