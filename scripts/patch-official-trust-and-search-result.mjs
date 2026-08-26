@@ -122,7 +122,8 @@ main = main.replace(
 );
 main = main.replace(
   '      const allProducts = explicitEmpty ? [] : (Array.isArray(analyzed.products) ? analyzed.products : []);',
-  `      const naverExplicitlyEmpty = explicitEmpty || (naverVisibleResultCountObserved && naverVisibleResultCount === 0);
+  `      // The rendered product list itself is the verdict, matching Musinsa.
+      // Intermediate wording is not used: cards are listed, otherwise absent.
       const analyzedProducts = Array.isArray(analyzed.products) ? analyzed.products : [];
       const cardProducts = renderedProductCards
         .filter((card) => /^https?:\\/\\//i.test(String(card?.productUrl || "")))
@@ -147,13 +148,12 @@ main = main.replace(
         }));
       // Naver's rendered list is authoritative. The analyzer is only a fallback
       // until Naver exposes its product anchors.
-      const allProducts = naverExplicitlyEmpty
-        ? []
-        : (cardProducts.length ? cardProducts : analyzedProducts);`,
+      const allProducts = cardProducts.length ? cardProducts : analyzedProducts;
+      const naverExplicitlyEmpty = allProducts.length === 0;`,
 );
 main = main.replace(
   '      const confirmed = allProducts.length > 0 || trustedChannelEvidence;',
-  '      const confirmed = naverVisibleResultCount > 0 || allProducts.length > 0;',
+  '      const confirmed = allProducts.length > 0;',
 );
 main = main.replace(
   '        absenceConfirmed: explicitEmpty && !confirmed,',
@@ -161,7 +161,7 @@ main = main.replace(
 );
 main = main.replace(
   '        naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEmpty ? "absent" : "pending"),',
-  '        naverAllSearchVerdict: confirmed ? "confirmed" : (naverExplicitlyEmpty ? "absent" : "pending"),',
+  '        naverAllSearchVerdict: confirmed ? "confirmed" : "absent",',
 );
 main = main.replace(
   '        count: allProducts.length,\n        products: allProducts,',
@@ -198,7 +198,7 @@ renderer = renderer.replaceAll(
 );
 renderer = renderer.replace(
   '      return { label: "상품없음", className: "missing" };',
-  '      if (source.absenceConfirmed === true || source.naverAllSearchVerdict === "absent") return { label: "상품없음", className: "missing" };\n      return { label: "결과 확인 중", className: "pending" };',
+  '      return { label: "상품없음", className: "missing" };',
 );
 renderer = renderer.replace(
   '    if (String(source.store || "") === "네이버 패션타운") return { label: "상품없음", className: "missing" };',
