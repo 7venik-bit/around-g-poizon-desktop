@@ -534,7 +534,7 @@ test("SSG와 롯데는 품번이 링크 바깥 상품 카드에 있어도 수집
   const mainSource = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../main.mjs", import.meta.url), "utf8"));
   assert.match(mainSource, /const articleCardLinks =/);
   assert.match(mainSource, /matchesExpected\(card\.innerText\) \|\| matchesExpected\(card\.outerHTML\)/);
-  assert.match(mainSource, /new Set\(\[\.\.\.directProductLinks, \.\.\.articleCardLinks\]\)/);
+  assert.match(mainSource, /new Set\(\[\.\.\.directProductLinks, \.\.\.articleCardLinks, \.\.\.articleTextCardLinks\]\)/);
   assert.doesNotMatch(mainSource, /technicalAttempts/);
   assert.match(mainSource, /const queryResult = await renderedSearchSourceResult/);
 });
@@ -765,6 +765,20 @@ test("네이버 채널의 원시 결과 수를 화면 값으로 유지한다", (
   const empty = analyzeRenderedChannelProducts("전체 0개 아울렛 0개", "네이버 아울렛", "ID8797", "아디다스");
   assert.deepEqual({ count: positive.count, channelCount: positive.channelCount }, { count: 6, channelCount: 6 });
   assert.deepEqual({ count: empty.count, channelCount: empty.channelCount }, { count: 0, channelCount: 0 });
+});
+
+test("네이버 채널 수가 양수면 카드 인식 실패를 상품 없음으로 확정하지 않는다", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    selectedChannelCount: 1,
+    pageText: "전체 1개 브랜드직영몰 1개 백화점 0개 아울렛 0개",
+    productCards: [],
+  }), "네이버 공식 브랜드스토어", "SR123UPS11", "데상트", "데상트 흄태준 착용 상품");
+
+  assert.equal(result.count, 1);
+  assert.equal(result.channelCount, 1);
+  assert.equal(result.presenceConfirmed, true);
+  assert.equal(result.absenceConfirmed, false);
+  assert.deepEqual(result.products, []);
 });
 
 test("푸마 392290-03 아울렛 화면의 국내 카드 5개를 그대로 표시한다", () => {
