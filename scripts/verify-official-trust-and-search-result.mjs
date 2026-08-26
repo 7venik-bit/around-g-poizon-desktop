@@ -11,7 +11,7 @@ if (main.includes("const submitted = await submitOfficialMallSearch(searchWindow
 
 if (!main.includes('import { evaluateDomesticProductCards } from "./services/domestic-card-verdict.mjs";')) fail("shared card verdict engine is not imported into main");
 if (!main.includes("공통 카드 판정 엔진")) fail("shared card verdict policy marker missing");
-if (!main.includes('for (let attempt = 0; attempt < 10 && !cardVerdict.trusted; attempt += 1)')) fail("rendered product-card polling is missing");
+if (!main.includes('attempt < 60 && renderedProductCards.length < Math.max(1, naverVisibleResultCount)')) fail("Naver lazy product-card wait is missing");
 if (!main.includes('const hasImage = Boolean(node.querySelector?.("img"));')) fail("product-card image anchor is missing");
 if (!main.includes('const hasPrice = /\\d{1,3}(?:,\\d{3})+\\s*원/.test(text);')) fail("product-card price anchor is missing");
 if (!main.includes('const hasCode = !queryCode || text.toUpperCase().includes(queryCode);')) fail("product-card exact-code anchor is missing");
@@ -31,9 +31,9 @@ if (!main.includes("cardProducts.length ? cardProducts : analyzedProducts")) fai
 if (!main.includes('for (const anchor of document.querySelectorAll("a[href]"))')) fail("Naver product anchors are not copied directly");
 if (!main.includes("compactCode(text).includes(compactCode(queryCode))")) fail("Naver visible exact-code cards behind tracking links are not copied");
 if (!main.includes("depth < 9") || !main.includes("candidateText")) fail("Naver sibling image, title and price blocks are not joined into one visible card");
-if (!main.includes("const naverExplicitlyEmpty = allProducts.length === 0")) fail("empty Naver product list is not treated as absence");
+if (!main.includes("naverVisibleResultCountObserved") || !main.includes("naverVisibleResultCount === 0")) fail("Naver absence is not tied to a visible zero");
 if (!main.includes("absenceConfirmed: naverExplicitlyEmpty && !confirmed")) fail("explicit Naver zero does not produce absence");
-if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : "absent"')) fail("empty Naver list does not produce an absent verdict");
+if (!main.includes('naverExplicitlyEmpty ? "absent" : "pending"')) fail("Naver unresolved lazy cards are still marked absent");
 if (!main.includes("const exactQueryPage = compactCode(new URLSearchParams(location.search).get(\"q\")) === compactCode(queryCode)")) fail("exact Fashion Town query-page recognition is missing");
 if (!main.includes("exactQueryPage && productLink")) fail("Naver cards still require all fields inside one DOM node");
 if (!main.includes(".slice(0, 8)")) fail("Naver visible product list is not bounded");
