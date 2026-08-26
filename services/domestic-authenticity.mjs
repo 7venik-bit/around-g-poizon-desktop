@@ -3,6 +3,7 @@ import { evaluateDomesticProductCard } from "./domestic-card-verdict.mjs";
 export const DOMESTIC_AUTHENTICITY_STATUS = Object.freeze({
   OFFICIAL_DISTRIBUTION: "official_distribution",
   DEPARTMENT_STORE: "department_store",
+  ACCOUNT_SHEET_TRUSTED: "account_sheet_trusted",
   PLATFORM_GENUINE_POLICY: "platform_genuine_policy",
   AFFILIATE_RETAILER: "affiliate_retailer",
   MARKETPLACE_UNVERIFIED: "marketplace_unverified",
@@ -31,13 +32,37 @@ export function classifyDomesticAuthenticity({
   const isLotte = /^롯데(?:온|ON|백화점|홈쇼핑|\s)/i.test(storeName) || /lotte/i.test(storeName);
   const cardVerdict = evaluateDomesticProductCard({ store: storeName, articleNumber, text: evidence, markup });
 
-  if ((isSsg || isLotte) && (cardVerdict.parallelImport || PARALLEL_PATTERN.test(evidence))) {
+  if (cardVerdict.parallelImport || PARALLEL_PATTERN.test(evidence)) {
     return {
       status: DOMESTIC_AUTHENTICITY_STATUS.PARALLEL_IMPORT,
       label: "병행수입 · 공식유통 아님",
       evidence: "병행수입/해외유통 표기",
       officialDistributionVerified: false,
       platformAuthenticityPolicy: isSsg ? "SSG 정품 판매 원칙" : "",
+    };
+  }
+
+  // 계정정보 시트에 등록된 독립 신뢰 판매처(무신사/29CM/ABC마트/S.I.VILLAGE)는
+  // 정확 상품코드가 실제 상품 카드에 확인되면 운영 기준상 정품 유통 확인으로 종료한다.
+  if (cardVerdict.trusted && cardVerdict.accountSheetRetailer) {
+    return {
+      status: DOMESTIC_AUTHENTICITY_STATUS.ACCOUNT_SHEET_TRUSTED,
+      label: `${cardVerdict.accountSheetRetailer} 정품 유통 확인`,
+      evidence: `계정정보 시트 등록 신뢰 판매처 · 정확 상품코드 ${String(articleNumber || "").trim()} 확인`,
+      officialDistributionVerified: true,
+      platformAuthenticityPolicy: "계정정보 시트 신뢰 판매처 기준",
+    };
+  }
+
+  // 네이버 패션타운은 플랫폼 전체가 아니라 정확 상품 카드의 브랜드직영몰/백화점/아울렛
+  // 라벨이 확인될 때만 신뢰 유통으로 인정한다.
+  if (/^네이버(?:\s|$)/i.test(storeName) && cardVerdict.trusted) {
+    return {
+      status: DOMESTIC_AUTHENTICITY_STATUS.OFFICIAL_DISTRIBUTION,
+      label: "네이버 패션타운 정품 유통 확인",
+      evidence: `정확 상품 카드 판매처 라벨: ${cardVerdict.labels.join(", ")}`,
+      officialDistributionVerified: true,
+      platformAuthenticityPolicy: "계정정보 시트 기반 공식 유통처 기준",
     };
   }
 
@@ -48,24 +73,24 @@ export function classifyDomesticAuthenticity({
         label: "SSG 공식유통 근거 확인",
         evidence: ssgClassification === "official_brand" ? "브랜드 공식관 · 본사직영" : "본사직영/공식수입 표기",
         officialDistributionVerified: true,
-        platformAuthenticityPolicy: "SSG 정품 판매 원칙",
+        platformAuthenticityPolicy: "계정정보 시트 신뢰 판매처 기준",
       };
     }
     if (cardVerdict.trusted) {
       return {
         status: DOMESTIC_AUTHENTICITY_STATUS.DEPARTMENT_STORE,
-        label: "신세계백화점 판매",
+        label: "신세계 계열 정품 유통 확인",
         evidence: `상품 카드 판매처 라벨: ${cardVerdict.labels.join(", ")}`,
         officialDistributionVerified: true,
-        platformAuthenticityPolicy: "SSG 정품 판매 원칙",
+        platformAuthenticityPolicy: "계정정보 시트 신뢰 판매처 기준",
       };
     }
     return {
       status: DOMESTIC_AUTHENTICITY_STATUS.PLATFORM_GENUINE_POLICY,
-      label: "SSG 정품 판매 원칙",
-      evidence: "SSG.COM 플랫폼 정품 판매 정책 · 공식유통 여부는 별도 확인",
+      label: "SSG 정품 유통 미확인",
+      evidence: "계정정보 시트의 신세계백화점/아울렛 또는 공식유통 라벨이 확인되지 않음",
       officialDistributionVerified: false,
-      platformAuthenticityPolicy: "SSG 정품 판매 원칙",
+      platformAuthenticityPolicy: "계정정보 시트 신뢰 판매처 기준",
     };
   }
 
@@ -73,10 +98,10 @@ export function classifyDomesticAuthenticity({
     if (cardVerdict.trusted) {
       return {
         status: DOMESTIC_AUTHENTICITY_STATUS.DEPARTMENT_STORE,
-        label: "롯데백화점 판매",
+        label: "롯데 계열 정품 유통 확인",
         evidence: `상품 카드 판매처 라벨: ${cardVerdict.labels.join(", ")}`,
         officialDistributionVerified: true,
-        platformAuthenticityPolicy: "",
+        platformAuthenticityPolicy: "계정정보 시트 신뢰 판매처 기준",
       };
     }
     if (OFFICIAL_DISTRIBUTION_PATTERN.test(evidence)) {
@@ -85,32 +110,23 @@ export function classifyDomesticAuthenticity({
         label: "롯데ON 공식브랜드/공식수입",
         evidence: "공식브랜드·본사직영·공식수입 표기",
         officialDistributionVerified: true,
-        platformAuthenticityPolicy: "",
-      };
-    }
-    if (/롯데\s*홈쇼핑|롯데홈쇼핑/i.test(evidence)) {
-      return {
-        status: DOMESTIC_AUTHENTICITY_STATUS.AFFILIATE_RETAILER,
-        label: "롯데홈쇼핑 판매처",
-        evidence: "롯데홈쇼핑 판매처 라벨 · 브랜드 공식유통 여부 별도",
-        officialDistributionVerified: false,
-        platformAuthenticityPolicy: "",
+        platformAuthenticityPolicy: "계정정보 시트 신뢰 판매처 기준",
       };
     }
     return {
       status: DOMESTIC_AUTHENTICITY_STATUS.MARKETPLACE_UNVERIFIED,
-      label: "롯데ON 입점판매자 · 공식유통 미확인",
-      evidence: "롯데백화점/공식브랜드/공식수입 근거 없음",
+      label: "롯데ON 정품 유통 미확인",
+      evidence: "계정정보 시트의 롯데백화점/아울렛 또는 공식유통 근거 없음",
       officialDistributionVerified: false,
-      platformAuthenticityPolicy: "",
+      platformAuthenticityPolicy: "계정정보 시트 신뢰 판매처 기준",
     };
   }
 
   return {
     status: DOMESTIC_AUTHENTICITY_STATUS.MARKETPLACE_UNVERIFIED,
-    label: "공식유통 미확인",
-    evidence: "판정 대상 판매처 근거 없음",
+    label: "정품 유통 미확인",
+    evidence: "계정정보 시트 신뢰 판매처 또는 공식유통 근거 없음",
     officialDistributionVerified: false,
-    platformAuthenticityPolicy: "",
+    platformAuthenticityPolicy: "계정정보 시트 신뢰 판매처 기준",
   };
 }

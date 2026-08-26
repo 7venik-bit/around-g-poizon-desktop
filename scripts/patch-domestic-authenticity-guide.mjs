@@ -20,7 +20,7 @@ relay = replaceOnce(
   relay,
   '        const isSsgParallelImport = ssgClassification === "parallel_import";',
   `        const isSsgParallelImport = ssgClassification === "parallel_import";\n        const authenticity = classifyDomesticAuthenticity({\n          store: naverStore,\n          articleNumber,\n          text: rawCardText,\n          markup: String(card?.markup || ""),\n          ssgClassification,\n        });`,
-  "classify SSG/Lotte authenticity evidence",
+  "classify domestic authenticity evidence",
 );
 relay = replaceOnce(
   relay,
@@ -36,7 +36,7 @@ renderer = replaceOnce(
   renderer,
   `    const confidenceLabel = officialVerified\n      ? text(product.sourceTrustLabel || "공식몰 확인완료")\n      : \`신뢰도 \${Number(product.confidence || 0)}%\`;`,
   `    const authenticityLabel = text(product?.authenticityLabel || "");\n    const confidenceLabel = officialVerified\n      ? text(product.sourceTrustLabel || "공식몰 확인완료")\n      : authenticityLabel\n        ? \`\${authenticityLabel} · 신뢰도 \${Number(product.confidence || 0)}%\`\n        : \`신뢰도 \${Number(product.confidence || 0)}%\`;`,
-  "surface SSG/Lotte authenticity guide label",
+  "surface authenticity guide label",
 );
 renderer = replaceOnce(
   renderer,
@@ -47,9 +47,9 @@ renderer = replaceOnce(
 renderer = replaceOnce(
   renderer,
   `  const sourceStatus = (source, matchedProducts) => {\n    const musinsaSource = String(source.store || "") === "무신사";`,
-  `  const sourceStatus = (source, matchedProducts) => {\n    // SSG/롯데ON 상품 카드의 백화점 판매처 라벨은 정품 유통 근거로 충분하다.\n    // 신세계백화점/롯데백화점 라벨을 분류기가 확인한 상품은 재고 상태와 무관하게 확인완료로 종료한다.\n    const departmentStoreVerified = matchedProducts.some((product) => product?.officialDistributionVerified === true\n      && /신세계백화점|롯데백화점/.test(String(product?.authenticityLabel || "") + " " + String(product?.authenticityEvidence || "")));\n    if (departmentStoreVerified) return { label: "확인완료", className: "available" };\n    const musinsaSource = String(source.store || "") === "무신사";`,
-  "finish SSG/Lotte department-store label evidence as confirmed",
+  `  const sourceStatus = (source, matchedProducts) => {\n    // Google Drive 포이즌 시트 계정정보 기준:\n    // 1) 네이버/SSG/롯데ON은 정확 상품 카드의 지정 공식 유통 라벨을 확인한다.\n    // 2) 시트에 직접 등록된 무신사/29CM/ABC마트/S.I.VILLAGE는 이미\n    //    matchedProducts 단계에서 정확 상품으로 검증된 경우 확인완료로 종료한다.\n    const sourceStore = String(source.store || "");\n    const trustedDistributionVerified = matchedProducts.some((product) => product?.officialDistributionVerified === true);\n    const accountSheetDirectStore = ["무신사", "29CM", "ABC마트", "S.I.VILLAGE"].includes(sourceStore);\n    if (trustedDistributionVerified || (accountSheetDirectStore && matchedProducts.length > 0)) {\n      return { label: "확인완료", className: "available" };\n    }\n    const musinsaSource = sourceStore === "무신사";`,
+  "finish account-sheet trusted distribution evidence as confirmed",
 );
 await writeFile(rendererPath, renderer, "utf8");
 
-console.log("Domestic authenticity guide patch applied; SSG/Lotte department-store labels use shared exact-card verdict and finish as confirmed");
+console.log("Domestic authenticity guide patch applied; account-sheet trusted retailers and exact-card labels finish as confirmed");
