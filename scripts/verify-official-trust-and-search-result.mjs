@@ -18,16 +18,17 @@ if (!main.includes('const hasCode = !queryCode || text.toUpperCase().includes(qu
 if (!main.includes('cardVerdict = evaluateDomesticProductCards({')) fail("Naver does not call the shared card verdict engine");
 if (!main.includes('store: "네이버 패션타운"')) fail("Naver platform identity is not passed to shared engine");
 if (!main.includes('articleNumber,')) fail("exact article number is not passed to shared engine");
-if (!main.includes("absenceConfirmed: !trustedChannelEvidence")) fail("missing trusted seller label does not become absence");
-if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : "absent"')) fail("Naver verdict is not strictly binary");
+if (!main.includes("const confirmed = allProducts.length > 0 || trustedChannelEvidence")) fail("visible matching product cards are not preserved");
+if (!main.includes("absenceConfirmed: explicitEmpty && !confirmed")) fail("Naver can report absence without an explicit empty state");
+if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEmpty ? "absent" : "pending")')) fail("Naver verdict does not preserve uncertain UI states");
 if (!main.includes("naverTrustedChannelLabels: trustedChannelLabels")) fail("detected trusted seller labels are not returned");
 
 if (!renderer.includes('if (String(source.store || "") === "네이버 패션타운")')) fail("Naver Fashion Town status gate missing");
-if (!renderer.includes('if (source.naverTrustedChannelEvidence === true || source.naverAllSearchVerdict === "confirmed") return { label: "확인완료", className: "available" };')) fail("trusted seller label does not finish as 확인완료");
+if (!renderer.includes('source.presenceConfirmed === true || source.naverTrustedChannelEvidence === true')) fail("visible product result does not finish as 확인완료");
 if (!renderer.includes('return { label: "상품없음", className: "missing" };')) fail("missing trusted seller label does not finish as 상품없음");
 if (!renderer.includes("정확 상품 카드에서 브랜드직영몰·백화점·아울렛 판매처 유형을 확인하여 정품 유통 근거가 충분합니다.")) fail("shared-card confirmed wording missing");
-if (!renderer.includes("정확 상품 카드에서 인정 판매처 유형이 확인되지 않아 상품없음으로 판정했습니다.")) fail("shared-card absent wording missing");
-if (renderer.includes('source.naverTrustedChannelEvidence === true || source.naverAllSearchVerdict === "confirmed" || matchedProducts.length')) fail("Naver still uses matched products as a verdict shortcut");
+if (!renderer.includes("패션타운 검색 결과에 일치 상품이 없습니다.")) fail("explicit empty-result wording missing");
+if (!renderer.includes('return { label: "결과 확인 중", className: "pending" };')) fail("uncertain Naver state is incorrectly reported as absent");
 if (renderer.includes("재고·사이즈 판정 근거가 부족합니다.")) fail("obsolete stock-size pending wording remains");
 
 if (!renderer.includes('const officialMallSource = String(source.store || "") === "브랜드 공식몰";')) fail("official mall binary status gate is missing");
