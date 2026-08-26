@@ -211,5 +211,30 @@ renderer = renderer.replace(
 renderer = renderer.replaceAll("검색·재고 확인", "검색 결과 열기");
 renderer = renderer.replaceAll("검색 입력 실패", "검색 결과 확인");
 renderer = renderer.replaceAll("상품코드를 검색창에 입력하고 검색 버튼을 누르는 단계에서 중단됐습니다.", "검색 결과 화면을 확인하고 있습니다.");
+// All domestic sites use the same simple result-list contract as Musinsa:
+// collected product cards are rendered; an empty card list is 상품 없음.
+renderer = renderer.replace(
+  /function domesticStatus\(result\) \{[\s\S]*?\n\}\n\nfunction hasDomesticStock/,
+  `function domesticStatus(result) {
+  if (!result) return { label: "확인 전", className: "pending" };
+  if (result.loading) return { label: "검색 중", className: "loading" };
+  const products = Array.isArray(result.products) ? result.products : [];
+  if (!products.length) return { label: "상품 없음", className: "missing" };
+  return { label: \`상품 \${products.length}개\`, className: "available" };
+}
+
+function hasDomesticStock`,
+);
+renderer = renderer.replace(
+  /  const sourceStatus = \(source, matchedProducts\) => \{[\s\S]*?\n  \};\n  const renderedProductKeys/,
+  `  const sourceStatus = (_source, matchedProducts) => matchedProducts.length
+    ? { label: \`상품 \${matchedProducts.length}개\`, className: "available" }
+    : { label: "상품 없음", className: "missing" };
+  const renderedProductKeys`,
+);
+renderer = renderer.replace(
+  /    const failureDescriptions = \{[\s\S]*?\n    return `<section/,
+  '    const detailPending = matchedProducts.length ? "" : "상품 없음";\n    return `<section',
+);
 await writeFile(rendererPath, renderer, "utf8");
 console.log("Naver, SSG, and Lotte use one exact product-card verdict engine with site-specific trusted labels");
