@@ -88,7 +88,19 @@ main = main.replace(
               for (const anchor of document.querySelectorAll("a[href]")) {
                 const productUrl = String(anchor.href || "").split("#")[0];
                 if (seen.has(productUrl)) continue;
-                const card = anchor.closest?.("li, article, [class*='product'], [class*='item'], [class*='card']") || anchor.parentElement || anchor;
+                // Naver renders the image link, title and prices as sibling
+                // blocks under hashed class names. Walk upward and select the
+                // smallest ancestor that owns the visible code and price.
+                let card = anchor;
+                for (let depth = 0, node = anchor; node && depth < 9; depth += 1, node = node.parentElement) {
+                  const candidateText = String(node.innerText || node.textContent || "").replace(/\\s+/g, " ").trim();
+                  if (compactCode(candidateText).includes(compactCode(queryCode))
+                    && /\\d{1,3}(?:,\\d{3})+\\s*원/.test(candidateText)
+                    && node.querySelector?.("img")) {
+                    card = node;
+                    break;
+                  }
+                }
                 const image = anchor.querySelector?.("img") || card.querySelector?.("img");
                 if (!image) continue;
                 const text = String(card.innerText || card.textContent || anchor.innerText || "").replace(/\\s+/g, " ").trim();

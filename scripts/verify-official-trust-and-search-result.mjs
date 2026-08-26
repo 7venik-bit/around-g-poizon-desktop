@@ -30,6 +30,7 @@ if (!main.includes("imageVerifiedFromCard: Boolean(card.imageUrl)")) fail("Naver
 if (!main.includes("cardProducts.length ? cardProducts : analyzedProducts")) fail("Naver rendered cards are not authoritative");
 if (!main.includes('for (const anchor of document.querySelectorAll("a[href]"))')) fail("Naver product anchors are not copied directly");
 if (!main.includes("compactCode(text).includes(compactCode(queryCode))")) fail("Naver visible exact-code cards behind tracking links are not copied");
+if (!main.includes("depth < 9") || !main.includes("candidateText")) fail("Naver sibling image, title and price blocks are not joined into one visible card");
 if (!main.includes("const naverExplicitlyEmpty = allProducts.length === 0")) fail("empty Naver product list is not treated as absence");
 if (!main.includes("absenceConfirmed: naverExplicitlyEmpty && !confirmed")) fail("explicit Naver zero does not produce absence");
 if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : "absent"')) fail("empty Naver list does not produce an absent verdict");
