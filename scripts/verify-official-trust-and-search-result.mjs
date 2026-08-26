@@ -40,17 +40,12 @@ if (!main.includes("exactQueryPage && productLink")) fail("split Naver cards are
 if (!main.includes("const confirmed = allProducts.length > 0")) fail("rendered Naver products do not control the verdict");
 if (!main.includes("count: Math.max(naverVisibleResultCount, allProducts.length)")) fail("visible Naver result count is not returned to renderer");
 
-if (!renderer.includes('if (String(source.store || "") === "네이버 패션타운")')) fail("Naver Fashion Town status gate missing");
-if (!renderer.includes('source.presenceConfirmed === true || source.naverTrustedChannelEvidence === true')) fail("visible product result does not finish as 확인완료");
-if (!renderer.includes('return { label: "상품없음", className: "missing" };')) fail("missing trusted seller label does not finish as 상품없음");
-if (!renderer.includes("정확 상품 카드에서 브랜드직영몰·백화점·아울렛 판매처 유형을 확인하여 정품 유통 근거가 충분합니다.")) fail("shared-card confirmed wording missing");
-if (!renderer.includes("패션타운 검색 결과에 일치 상품이 없습니다.")) fail("explicit empty-result wording missing");
 if (renderer.includes('return { label: "결과 확인 중", className: "pending" };')) fail("obsolete Naver intermediate state remains");
 if (renderer.includes("재고·사이즈 판정 근거가 부족합니다.")) fail("obsolete stock-size pending wording remains");
-
-if (!renderer.includes('const officialMallSource = String(source.store || "") === "브랜드 공식몰";')) fail("official mall binary status gate is missing");
-if (!renderer.includes('if (officialResultFound) return { label: "확인완료", className: "available" };')) fail("official mall success label is not 확인완료");
-if (!renderer.includes('if (officialResultMissing) return { label: "상품없음", className: "missing" };')) fail("official mall absence label is not 상품없음");
+if (!renderer.includes('return { label: `상품 ${products.length}개`, className: "available" };')) fail("overall domestic status is not product-list based");
+if (!renderer.includes('? { label: `상품 ${matchedProducts.length}개`, className: "available" }')) fail("site status is not product-list based");
+if (!renderer.includes(': { label: "상품 없음", className: "missing" };')) fail("empty site cards do not finish as 상품 없음");
+if (!renderer.includes('const detailPending = matchedProducts.length ? "" : "상품 없음";')) fail("site empty detail is not simplified");
 if (renderer.includes("검색 입력 실패")) fail("forbidden search-input-failure wording remains");
 
 if (!main.includes('const verifyMusinsaInventory = String(source.store || "") === "무신사";')) fail("Musinsa inventory gate missing");
