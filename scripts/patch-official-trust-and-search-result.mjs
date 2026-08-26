@@ -55,6 +55,10 @@ main = main.replace(
   '      let renderedProductCards = [];\n      let naverVisibleResultCount = 0;\n      let naverVisibleResultCountObserved = false;\n      let cardVerdict = { trusted: false, labels: [], verdict: "absent" };',
 );
 main = main.replace(
+  '      for (let attempt = 0; attempt < 10 && !cardVerdict.trusted; attempt += 1) {',
+  '      // Naver renders the visible total before its lazy product cards. Do not\n      // finish with zero while the page itself says products exist.\n      for (let attempt = 0; attempt < 60 && renderedProductCards.length < Math.max(1, naverVisibleResultCount); attempt += 1) {',
+);
+main = main.replace(
   '              candidates.push({ text, markup: String(node.outerHTML || "").slice(0, 12000) });',
   `              const anchor = node.matches?.("a[href]") ? node : node.querySelector?.("a[href]");
               const image = node.querySelector?.("img");
@@ -172,7 +176,9 @@ main = main.replace(
       // Naver's rendered list is authoritative. The analyzer is only a fallback
       // until Naver exposes its product anchors.
       const allProducts = cardProducts.length ? cardProducts : analyzedProducts;
-      const naverExplicitlyEmpty = allProducts.length === 0;`,
+      const naverExplicitlyEmpty = naverVisibleResultCountObserved
+        && naverVisibleResultCount === 0
+        && allProducts.length === 0;`,
 );
 main = main.replace(
   '      const confirmed = allProducts.length > 0 || trustedChannelEvidence;',
@@ -184,7 +190,7 @@ main = main.replace(
 );
 main = main.replace(
   '        naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEmpty ? "absent" : "pending"),',
-  '        naverAllSearchVerdict: confirmed ? "confirmed" : "absent",',
+  '        naverAllSearchVerdict: confirmed ? "confirmed" : (naverExplicitlyEmpty ? "absent" : "pending"),',
 );
 main = main.replace(
   '        count: allProducts.length,\n        products: allProducts,',
