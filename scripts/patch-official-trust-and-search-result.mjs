@@ -52,7 +52,7 @@ main = main.replace(
 // say "confirmed" while showing no image, title, price, or purchase link.
 main = main.replace(
   '      let cardVerdict = { trusted: false, labels: [], verdict: "absent" };',
-  '      let renderedProductCards = [];\n      let cardVerdict = { trusted: false, labels: [], verdict: "absent" };',
+  '      let renderedProductCards = [];\n      let naverVisibleResultCount = 0;\n      let cardVerdict = { trusted: false, labels: [], verdict: "absent" };',
 );
 main = main.replace(
   '              candidates.push({ text, markup: String(node.outerHTML || "").slice(0, 12000) });',
@@ -66,11 +66,31 @@ main = main.replace(
 );
 main = main.replace(
   '            const candidates = [];\n            const seen = new Set();',
-  '            const candidates = [];\n            const seen = new Set();\n            const compactCode = (value) => String(value || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();\n            const exactQueryPage = compactCode(new URLSearchParams(location.search).get("q")) === compactCode(queryCode);',
+  '            const candidates = [];\n            const seen = new Set();\n            const compactCode = (value) => String(value || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();\n            const exactQueryPage = compactCode(new URLSearchParams(location.search).get("q")) === compactCode(queryCode);\n            const bodyText = String(document.body?.innerText || "").replace(/\\s+/g, " ");\n            const totalMatch = bodyText.match(/(?:^|\\s)전체\\s*([0-9,]+)\\s*개/);\n            const visibleResultCount = Number(String(totalMatch?.[1] || "0").replace(/,/g, "")) || 0;',
+);
+main = main.replace(
+  '              const hasCode = !queryCode || text.toUpperCase().includes(queryCode);',
+  '              const hasCode = !queryCode || text.toUpperCase().includes(queryCode);\n              const candidateAnchor = node.matches?.("a[href]") ? node : Array.from(node.querySelectorAll?.("a[href]") || []).find((link) => /\\/(?:products?|window-products?|catalog)\\//i.test(String(link.href || "")));\n              const productLink = /\\/(?:products?|window-products?|catalog)\\//i.test(String(candidateAnchor?.href || ""));',
 );
 main = main.replace(
   '              if (!hasImage || !hasPrice || !hasCode) continue;',
-  '              // The exact product code is already visible in Fashion Town\'s q parameter.\n              // Naver often omits that code from the rendered card title, so keep\n              // real image+price cards on this exact-query page for immediate listing.\n              if (!hasImage || !hasPrice || (!hasCode && !exactQueryPage)) continue;',
+  '              // On an exact-query page Naver may split image, title and price across siblings.\n              // A real product link plus image is sufficient; price may arrive later.\n              if (!hasImage || ((!hasPrice || !hasCode) && !(exactQueryPage && productLink))) continue;',
+);
+main = main.replace(
+  '              const anchor = node.matches?.("a[href]") ? node : node.querySelector?.("a[href]");',
+  '              const anchor = candidateAnchor || (node.matches?.("a[href]") ? node : node.querySelector?.("a[href]"));',
+);
+main = main.replace(
+  '            return candidates.slice(0, 80);',
+  '            return { cards: candidates.slice(0, 80), visibleResultCount };',
+);
+main = main.replace(
+  '        const renderedCards = await searchWindow.webContents.executeJavaScript(',
+  '        const renderedResult = await searchWindow.webContents.executeJavaScript(',
+);
+main = main.replace(
+  '        cardVerdict = evaluateDomesticProductCards({\n          store: "네이버 패션타운",',
+  '        const renderedCards = Array.isArray(renderedResult) ? renderedResult : (Array.isArray(renderedResult?.cards) ? renderedResult.cards : []);\n        naverVisibleResultCount = Math.max(naverVisibleResultCount, Number(renderedResult?.visibleResultCount || 0));\n        cardVerdict = evaluateDomesticProductCards({\n          store: "네이버 패션타운",',
 );
 main = main.replace(
   '        cardVerdict = evaluateDomesticProductCards({\n          store: "네이버 패션타운",',
@@ -101,6 +121,18 @@ main = main.replace(
           signals: { code: "검색어 일치", title: "패션타운 결과", image: card.imageUrl ? "확인" : "없음" },
         }));
       const allProducts = explicitEmpty ? [] : (analyzedProducts.length ? analyzedProducts : cardProducts);`,
+);
+main = main.replace(
+  '      const confirmed = allProducts.length > 0 || trustedChannelEvidence;',
+  '      const confirmed = naverVisibleResultCount > 0 || allProducts.length > 0 || trustedChannelEvidence;',
+);
+main = main.replace(
+  '        count: allProducts.length,\n        products: allProducts,',
+  '        count: Math.max(naverVisibleResultCount, allProducts.length),\n        products: allProducts,',
+);
+main = main.replace(
+  '        candidateCount: allProducts.length,',
+  '        candidateCount: Math.max(naverVisibleResultCount, allProducts.length),',
 );
 
 main = replaceOnce(main,
