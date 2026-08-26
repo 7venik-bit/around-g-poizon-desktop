@@ -66,11 +66,35 @@ main = main.replace(
 );
 main = main.replace(
   '            const candidates = [];\n            const seen = new Set();',
-  '            const candidates = [];\n            const seen = new Set();\n            const compactCode = (value) => String(value || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();\n            const exactQueryPage = compactCode(new URLSearchParams(location.search).get("q")) === compactCode(queryCode);\n            const bodyText = String(document.body?.innerText || "").replace(/\\s+/g, " ");\n            const totalMatch = bodyText.match(/(?:^|\\s)전체\\s*([0-9,]+)\\s*개/);\n            const visibleResultCount = Number(String(totalMatch?.[1] || "0").replace(/,/g, "")) || 0;',
+  `            const candidates = [];
+            const seen = new Set();
+            const compactCode = (value) => String(value || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+            const exactQueryPage = compactCode(new URLSearchParams(location.search).get("q")) === compactCode(queryCode);
+            const bodyText = String(document.body?.innerText || "").replace(/\\s+/g, " ");
+            const totalMatch = bodyText.match(/(?:^|\\s)전체\\s*([0-9,]+)\\s*개/);
+            const visibleResultCount = Number(String(totalMatch?.[1] || "0").replace(/,/g, "")) || 0;
+            const isProductHref = (href) => /\\/(?:window-products?|products?|catalog|product)\\//i.test(String(href || ""));
+            // Copy Naver's rendered list directly. The product URL is identity;
+            // title, image and price come from the nearest rendered card.
+            if (exactQueryPage) {
+              for (const anchor of document.querySelectorAll("a[href]")) {
+                const productUrl = String(anchor.href || "").split("#")[0];
+                if (!isProductHref(productUrl) || seen.has(productUrl)) continue;
+                const card = anchor.closest?.("li, article, [class*='product'], [class*='item'], [class*='card']") || anchor.parentElement || anchor;
+                const image = anchor.querySelector?.("img") || card.querySelector?.("img");
+                if (!image) continue;
+                const text = String(card.innerText || card.textContent || anchor.innerText || "").replace(/\\s+/g, " ").trim();
+                const imageUrl = String(image.currentSrc || image.dataset?.original || image.dataset?.src || image.src || "");
+                const title = String(image.alt || anchor.getAttribute?.("aria-label") || card.querySelector?.("[class*='title'],[class*='name'],strong")?.textContent || text || "네이버 패션타운 검색 결과").trim();
+                const price = text.match(/\\d{1,3}(?:,\\d{3})+\\s*원/)?.[0] || "";
+                seen.add(productUrl);
+                candidates.push({ text, markup: String(card.outerHTML || "").slice(0, 12000), productUrl, imageUrl, title, price });
+              }
+            }`,
 );
 main = main.replace(
   '              const hasCode = !queryCode || text.toUpperCase().includes(queryCode);',
-  '              const hasCode = !queryCode || text.toUpperCase().includes(queryCode);\n              const candidateAnchor = node.matches?.("a[href]") ? node : Array.from(node.querySelectorAll?.("a[href]") || []).find((link) => /\\/(?:products?|window-products?|catalog)\\//i.test(String(link.href || "")));\n              const productLink = /\\/(?:products?|window-products?|catalog)\\//i.test(String(candidateAnchor?.href || ""));',
+  '              const hasCode = !queryCode || text.toUpperCase().includes(queryCode);\n              const candidateAnchor = node.matches?.("a[href]") ? node : Array.from(node.querySelectorAll?.("a[href]") || []).find((link) => isProductHref(link.href));\n              const productLink = isProductHref(candidateAnchor?.href);',
 );
 main = main.replace(
   '              if (!hasImage || !hasPrice || !hasCode) continue;',
@@ -120,11 +144,15 @@ main = main.replace(
           confidence: 90,
           signals: { code: "검색어 일치", title: "패션타운 결과", image: card.imageUrl ? "확인" : "없음" },
         }));
-      const allProducts = explicitEmpty ? [] : (analyzedProducts.length ? analyzedProducts : cardProducts);`,
+      // Naver's rendered list is authoritative. The analyzer is only a fallback
+      // until Naver exposes its product anchors.
+      const allProducts = explicitEmpty && naverVisibleResultCount === 0
+        ? []
+        : (cardProducts.length ? cardProducts : analyzedProducts);`,
 );
 main = main.replace(
   '      const confirmed = allProducts.length > 0 || trustedChannelEvidence;',
-  '      const confirmed = naverVisibleResultCount > 0 || allProducts.length > 0 || trustedChannelEvidence;',
+  '      const confirmed = naverVisibleResultCount > 0 || allProducts.length > 0;',
 );
 main = main.replace(
   '        count: allProducts.length,\n        products: allProducts,',
