@@ -1244,6 +1244,9 @@ async function clickNaverShoppingHomeMenu(searchWindow) {
     if (!target) await wait(500);
   }
   if (!target) return false;
+  searchWindow.show();
+  searchWindow.focus();
+  searchWindow.webContents.focus();
   searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
   searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
   searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
@@ -1254,7 +1257,7 @@ async function clickNaverShoppingHomeMenu(searchWindow) {
   // Shopping button only when the visible window did not move.
   await wait(1_200);
   const afterPhysicalClickUrl = String(searchWindow.webContents.getURL() || "");
-  if (/^https:\/\/(?:www\.)?naver\.com\/?(?:[?#].*)?$/i.test(afterPhysicalClickUrl)
+  if (!/^https:\/\/shopping\.naver\.com\/ns\/home(?:[/?#]|$)/i.test(afterPhysicalClickUrl)
     && /^https:\/\/shopping\.naver\.com\/ns\/home(?:[/?#]|$)/i.test(String(target.href || ""))) {
     await searchWindow.loadURL(target.href).catch(() => {});
   }
@@ -1317,6 +1320,9 @@ async function clickNaverFashionTownMenu(searchWindow) {
     if (!target) await wait(500);
   }
   if (!target) return false;
+  searchWindow.show();
+  searchWindow.focus();
+  searchWindow.webContents.focus();
   searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
   searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
   searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
