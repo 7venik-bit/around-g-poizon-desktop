@@ -43,11 +43,12 @@ ipcMain.handle = (channel, listener) => {
   });
 };
 
-const [excelColumnLayoutSource, excelColumnLayoutCss, searchServiceMenuSource, searchServiceMenuCss] = await Promise.all([
+const [excelColumnLayoutSource, excelColumnLayoutCss, searchServiceMenuSource, searchServiceMenuCss, sourcingViewSource] = await Promise.all([
   readFile(new URL("./src/excel-column-layout.js", import.meta.url), "utf8"),
   readFile(new URL("./src/excel-column-layout.css", import.meta.url), "utf8"),
   readFile(new URL("./src/search-service-menu.js", import.meta.url), "utf8"),
   readFile(new URL("./src/search-service-menu.css", import.meta.url), "utf8"),
+  readFile(new URL("./src/sourcing-view.js", import.meta.url), "utf8"),
 ]);
 
 function excelPath(input = {}) {
@@ -93,6 +94,7 @@ app.on("browser-window-created", (_event, window) => {
       await window.webContents.insertCSS(`${excelColumnLayoutCss}\n${searchServiceMenuCss}`);
       await window.webContents.executeJavaScript(excelColumnLayoutSource, true);
       await window.webContents.executeJavaScript(searchServiceMenuSource, true);
+      await window.webContents.executeJavaScript(sourcingViewSource, true);
     } catch (error) {
       console.error("Renderer enhancement load failed", error);
     }
