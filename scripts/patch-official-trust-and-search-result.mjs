@@ -65,6 +65,14 @@ main = main.replace(
               candidates.push({ text, markup: String(node.outerHTML || "").slice(0, 12000), productUrl, imageUrl, title, price });`,
 );
 main = main.replace(
+  '            const candidates = [];\n            const seen = new Set();',
+  '            const candidates = [];\n            const seen = new Set();\n            const compactCode = (value) => String(value || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();\n            const exactQueryPage = compactCode(new URLSearchParams(location.search).get("q")) === compactCode(queryCode);',
+);
+main = main.replace(
+  '              if (!hasImage || !hasPrice || !hasCode) continue;',
+  '              // The exact product code is already visible in Fashion Town\'s q parameter.\n              // Naver often omits that code from the rendered card title, so keep\n              // real image+price cards on this exact-query page for immediate listing.\n              if (!hasImage || !hasPrice || (!hasCode && !exactQueryPage)) continue;',
+);
+main = main.replace(
   '        cardVerdict = evaluateDomesticProductCards({\n          store: "네이버 패션타운",',
   '        renderedProductCards = renderedCards;\n        cardVerdict = evaluateDomesticProductCards({\n          store: "네이버 패션타운",',
 );
@@ -73,6 +81,8 @@ main = main.replace(
   `      const analyzedProducts = Array.isArray(analyzed.products) ? analyzed.products : [];
       const cardProducts = renderedProductCards
         .filter((card) => /^https?:\\/\\//i.test(String(card?.productUrl || "")))
+        .filter((card, index, all) => index === all.findIndex((candidate) => String(candidate?.productUrl || "") === String(card?.productUrl || "")))
+        .slice(0, 8)
         .map((card, index) => ({
           store: "네이버 패션타운",
           sourceStore: "네이버 패션타운",
@@ -88,7 +98,7 @@ main = main.replace(
           inStock: null,
           sizes: [],
           confidence: 90,
-          signals: { code: "일치", title: "패션타운 결과", image: card.imageUrl ? "확인" : "없음" },
+          signals: { code: "검색어 일치", title: "패션타운 결과", image: card.imageUrl ? "확인" : "없음" },
         }));
       const allProducts = explicitEmpty ? [] : (analyzedProducts.length ? analyzedProducts : cardProducts);`,
 );
