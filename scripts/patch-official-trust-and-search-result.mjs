@@ -47,6 +47,51 @@ main = main.replace(
   '        naverAllSearchVerdict: confirmed ? "confirmed" : "absent",',
   '        naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEmpty ? "absent" : "pending"),',
 );
+// Preserve the actual Naver result card as a renderer product. Previously the
+// shared verdict engine kept only its seller-label evidence, so the UI could
+// say "confirmed" while showing no image, title, price, or purchase link.
+main = main.replace(
+  '      let cardVerdict = { trusted: false, labels: [], verdict: "absent" };',
+  '      let renderedProductCards = [];\n      let cardVerdict = { trusted: false, labels: [], verdict: "absent" };',
+);
+main = main.replace(
+  '              candidates.push({ text, markup: String(node.outerHTML || "").slice(0, 12000) });',
+  `              const anchor = node.matches?.("a[href]") ? node : node.querySelector?.("a[href]");
+              const image = node.querySelector?.("img");
+              const productUrl = String(anchor?.href || "").split("#")[0];
+              const imageUrl = String(image?.currentSrc || image?.dataset?.original || image?.dataset?.src || image?.src || "");
+              const title = String(image?.alt || anchor?.getAttribute?.("aria-label") || node.querySelector?.("[class*='title'],[class*='name'],strong")?.textContent || text.split("\\n")[0] || "").trim();
+              const price = text.match(/\\d{1,3}(?:,\\d{3})+\\s*원/)?.[0] || "";
+              candidates.push({ text, markup: String(node.outerHTML || "").slice(0, 12000), productUrl, imageUrl, title, price });`,
+);
+main = main.replace(
+  '        cardVerdict = evaluateDomesticProductCards({\n          store: "네이버 패션타운",',
+  '        renderedProductCards = renderedCards;\n        cardVerdict = evaluateDomesticProductCards({\n          store: "네이버 패션타운",',
+);
+main = main.replace(
+  '      const allProducts = explicitEmpty ? [] : (Array.isArray(analyzed.products) ? analyzed.products : []);',
+  `      const analyzedProducts = Array.isArray(analyzed.products) ? analyzed.products : [];
+      const cardProducts = renderedProductCards
+        .filter((card) => /^https?:\\/\\//i.test(String(card?.productUrl || "")))
+        .map((card, index) => ({
+          store: "네이버 패션타운",
+          sourceStore: "네이버 패션타운",
+          retailerName: "네이버 패션타운",
+          id: String(card.productUrl || \`naver-fashion-\${index}\`),
+          url: String(card.productUrl || resolvedSearchUrl),
+          title: String(card.title || card.text || "네이버 패션타운 검색 결과").trim().slice(0, 240),
+          articleNumber,
+          imageUrl: String(card.imageUrl || ""),
+          imageVerifiedFromCard: Boolean(card.imageUrl),
+          price: Number(String(card.price || "").replace(/[^0-9]/g, "")) || 0,
+          originalPrice: 0,
+          inStock: null,
+          sizes: [],
+          confidence: 90,
+          signals: { code: "일치", title: "패션타운 결과", image: card.imageUrl ? "확인" : "없음" },
+        }));
+      const allProducts = explicitEmpty ? [] : (analyzedProducts.length ? analyzedProducts : cardProducts);`,
+);
 
 main = replaceOnce(main,
   `        candidateCount: Number(result?.candidateCount || 0),\n      // The official search URL and a verified product-detail URL are`,

@@ -22,6 +22,10 @@ if (!main.includes("const confirmed = allProducts.length > 0 || trustedChannelEv
 if (!main.includes("absenceConfirmed: explicitEmpty && !confirmed")) fail("Naver can report absence without an explicit empty state");
 if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEmpty ? "absent" : "pending")')) fail("Naver verdict does not preserve uncertain UI states");
 if (!main.includes("naverTrustedChannelLabels: trustedChannelLabels")) fail("detected trusted seller labels are not returned");
+if (!main.includes("let renderedProductCards = []")) fail("actual Naver result cards are not retained for display");
+if (!main.includes('store: "네이버 패션타운",\n          sourceStore: "네이버 패션타운"')) fail("Naver result cards are not mapped to renderer products");
+if (!main.includes("imageVerifiedFromCard: Boolean(card.imageUrl)")) fail("Naver product images are not preserved");
+if (!main.includes("analyzedProducts.length ? analyzedProducts : cardProducts")) fail("Naver display-card fallback is missing");
 
 if (!renderer.includes('if (String(source.store || "") === "네이버 패션타운")')) fail("Naver Fashion Town status gate missing");
 if (!renderer.includes('source.presenceConfirmed === true || source.naverTrustedChannelEvidence === true')) fail("visible product result does not finish as 확인완료");
