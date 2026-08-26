@@ -29,10 +29,10 @@ main = replaceOnce(
   '        const searchQuery = interactiveOfficialSearch\n          ? sanitizeDomesticQuery([title, articleNumber].filter(Boolean).join(" "))\n          : String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();',
   "official mall title plus product-code query",
 );
-main = replaceAllRequired(
+main = replaceOnce(
   main,
-  '    if (naverPortalSource) {',
-  '    // 네이버 패션타운은 전체 검색 결과 자체가 최종 판정이다.\n    // 브랜드직영몰/백화점/아울렛 숫자 인식이나 채널 선택은 하지 않는다.\n    if (naverPortalSource && String(source.store || "") !== "네이버 패션타운") {',
+  '    if (naverPortalSource) {\n      // The three Fashion Town totals are the authoritative routing decision.',
+  '    // 단일 네이버 패션타운 소스는 쇼핑/패션타운 클릭과 상품코드 입력을\n    // 반드시 실행하고, 기존 3개 채널 숫자 분기만 건너뛴다.\n    if (naverPortalSource && String(source.store || "") !== "네이버 패션타운") {\n      // The three Fashion Town totals are the authoritative routing decision.',
   "skip Naver channel counts for Fashion Town total results",
 );
 main = replaceAllRequired(
