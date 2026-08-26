@@ -1235,7 +1235,11 @@ async function clickNaverShoppingHomeMenu(searchWindow) {
       if (!element) return null;
       element.scrollIntoView({ block: "center", inline: "center" });
       const rect = element.getBoundingClientRect();
-      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+      return {
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2),
+        href: String(element.href || element.getAttribute("href") || ""),
+      };
     })()`, true).catch(() => null);
     if (!target) await wait(500);
   }
@@ -1243,6 +1247,17 @@ async function clickNaverShoppingHomeMenu(searchWindow) {
   searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
   searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
   searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  // Naver currently opens Shopping in a new tab. Electron's popup handler can
+  // receive that request before the original window commits its navigation,
+  // leaving the visible window on Naver's AI search page. Preserve the real
+  // mouse click first, then continue with the exact href owned by that clicked
+  // Shopping button only when the visible window did not move.
+  await wait(1_200);
+  const afterPhysicalClickUrl = String(searchWindow.webContents.getURL() || "");
+  if (/^https:\/\/(?:www\.)?naver\.com\/?(?:[?#].*)?$/i.test(afterPhysicalClickUrl)
+    && /^https:\/\/shopping\.naver\.com\/ns\/home(?:[/?#]|$)/i.test(String(target.href || ""))) {
+    await searchWindow.loadURL(target.href).catch(() => {});
+  }
   // Naver opens Shopping in a new tab. setWindowOpenHandler redirects that
   // request into this visible verification window, so wait for the real
   // Shopping home document instead of guessing a direct commerce URL.
@@ -1295,7 +1310,8 @@ async function clickNaverFashionTownMenu(searchWindow) {
       return {
         x: Math.round(rect.left + rect.width / 2),
         y: Math.round(rect.top + rect.height / 2),
-        label: selected.matchedLabel
+        label: selected.matchedLabel,
+        href: String(element.href || element.getAttribute("href") || ""),
       };
     })()`, true).catch(() => null);
     if (!target) await wait(500);
@@ -1304,6 +1320,13 @@ async function clickNaverFashionTownMenu(searchWindow) {
   searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
   searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
   searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  await wait(1_200);
+  const afterFashionClickUrl = String(searchWindow.webContents.getURL() || "");
+  if (!/fashion|style/i.test(afterFashionClickUrl)
+    && /^https:\/\/shopping\.naver\.com\//i.test(String(target.href || ""))
+    && /fashion|style/i.test(String(target.href || ""))) {
+    await searchWindow.loadURL(target.href).catch(() => {});
+  }
   // Navigation and search activation are separate steps. Naver changes both
   // the route and the search-control markup, so entering Fashion Town must not
   // depend on a writable input already existing. Either visible service name
