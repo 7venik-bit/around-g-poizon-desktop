@@ -18,7 +18,7 @@ if (!main.includes('const hasCode = !queryCode || text.toUpperCase().includes(qu
 if (!main.includes('cardVerdict = evaluateDomesticProductCards({')) fail("Naver does not call the shared card verdict engine");
 if (!main.includes('store: "네이버 패션타운"')) fail("Naver platform identity is not passed to shared engine");
 if (!main.includes('articleNumber,')) fail("exact article number is not passed to shared engine");
-if (!main.includes("const confirmed = naverVisibleResultCount > 0 || allProducts.length > 0 || trustedChannelEvidence")) fail("visible matching product count and cards are not preserved");
+if (!main.includes("const confirmed = naverVisibleResultCount > 0 || allProducts.length > 0")) fail("visible Naver result count and cards are not authoritative");
 if (!main.includes("absenceConfirmed: explicitEmpty && !confirmed")) fail("Naver can report absence without an explicit empty state");
 if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEmpty ? "absent" : "pending")')) fail("Naver verdict does not preserve uncertain UI states");
 if (!main.includes("naverTrustedChannelLabels: trustedChannelLabels")) fail("detected trusted seller labels are not returned");
@@ -26,7 +26,9 @@ if (!main.includes("let renderedProductCards = []")) fail("actual Naver result c
 if (!main.includes("let naverVisibleResultCount = 0")) fail("Naver visible total count is not retained");
 if (!main.includes('store: "네이버 패션타운",\n          sourceStore: "네이버 패션타운"')) fail("Naver result cards are not mapped to renderer products");
 if (!main.includes("imageVerifiedFromCard: Boolean(card.imageUrl)")) fail("Naver product images are not preserved");
-if (!main.includes("analyzedProducts.length ? analyzedProducts : cardProducts")) fail("Naver display-card fallback is missing");
+if (!main.includes("cardProducts.length ? cardProducts : analyzedProducts")) fail("Naver rendered cards are not authoritative");
+if (!main.includes('for (const anchor of document.querySelectorAll("a[href]"))')) fail("Naver product anchors are not copied directly");
+if (!main.includes("explicitEmpty && naverVisibleResultCount === 0")) fail("an empty label can override a positive Naver count");
 if (!main.includes("const exactQueryPage = compactCode(new URLSearchParams(location.search).get(\"q\")) === compactCode(queryCode)")) fail("exact Fashion Town query-page recognition is missing");
 if (!main.includes("exactQueryPage && productLink")) fail("Naver cards still require all fields inside one DOM node");
 if (!main.includes(".slice(0, 8)")) fail("Naver visible product list is not bounded");
