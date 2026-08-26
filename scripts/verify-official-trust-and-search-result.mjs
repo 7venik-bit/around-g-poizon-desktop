@@ -18,7 +18,7 @@ if (!main.includes('const hasCode = !queryCode || text.toUpperCase().includes(qu
 if (!main.includes('cardVerdict = evaluateDomesticProductCards({')) fail("Naver does not call the shared card verdict engine");
 if (!main.includes('store: "네이버 패션타운"')) fail("Naver platform identity is not passed to shared engine");
 if (!main.includes('articleNumber,')) fail("exact article number is not passed to shared engine");
-if (!main.includes("const confirmed = naverVisibleResultCount > 0 || allProducts.length > 0")) fail("visible Naver result count and cards are not authoritative");
+if (!main.includes("const confirmed = naverVisibleResultCountObserved && naverVisibleResultCount > 0")) fail("Naver presence is not gated by a readable positive total");
 if (!main.includes("absenceConfirmed: naverExplicitlyEmpty && !confirmed")) fail("Naver explicit zero does not finish as absence");
 if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : (naverExplicitlyEmpty ? "absent" : "pending")')) fail("Naver verdict does not distinguish explicit zero from unread state");
 if (!main.includes("naverTrustedChannelLabels: trustedChannelLabels")) fail("detected trusted seller labels are not returned");
@@ -29,7 +29,7 @@ if (!main.includes('store: "네이버 패션타운",\n          sourceStore: "�
 if (!main.includes("imageVerifiedFromCard: Boolean(card.imageUrl)")) fail("Naver product images are not preserved");
 if (!main.includes("cardProducts.length ? cardProducts : analyzedProducts")) fail("Naver rendered cards are not authoritative");
 if (!main.includes('for (const anchor of document.querySelectorAll("a[href]"))')) fail("Naver product anchors are not copied directly");
-if (!main.includes("const naverExplicitlyEmpty = explicitEmpty || (naverVisibleResultCountObserved && naverVisibleResultCount === 0)")) fail("Naver visible zero is not treated as explicit absence");
+if (!main.includes("const naverExplicitlyEmpty = explicitEmpty || !naverVisibleResultCountObserved || naverVisibleResultCount === 0")) fail("unread or zero Naver total is not treated as absence");
 if (!main.includes("absenceConfirmed: naverExplicitlyEmpty && !confirmed")) fail("explicit Naver zero does not produce absence");
 if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : (naverExplicitlyEmpty ? "absent" : "pending")')) fail("explicit Naver zero does not produce an absent verdict");
 if (!main.includes("const exactQueryPage = compactCode(new URLSearchParams(location.search).get(\"q\")) === compactCode(queryCode)")) fail("exact Fashion Town query-page recognition is missing");
@@ -37,7 +37,7 @@ if (!main.includes("exactQueryPage && productLink")) fail("Naver cards still req
 if (!main.includes(".slice(0, 8)")) fail("Naver visible product list is not bounded");
 if (!main.includes("const totalMatch = bodyText.match(/(?:^|\\s)전체\\s*([0-9,]+)\\s*개/)")) fail("Naver 전체 N개 result count is not parsed");
 if (!main.includes("exactQueryPage && productLink")) fail("split Naver cards are not accepted by exact-query product links");
-if (!main.includes("naverVisibleResultCount > 0 || allProducts.length > 0")) fail("visible Naver result count does not prevent a false absence verdict");
+if (!main.includes("naverVisibleResultCountObserved && naverVisibleResultCount > 0")) fail("positive readable Naver total does not control the verdict");
 if (!main.includes("count: Math.max(naverVisibleResultCount, allProducts.length)")) fail("visible Naver result count is not returned to renderer");
 
 if (!renderer.includes('if (String(source.store || "") === "네이버 패션타운")')) fail("Naver Fashion Town status gate missing");
