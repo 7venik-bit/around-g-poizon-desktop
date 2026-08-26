@@ -30,6 +30,22 @@ relay = replaceOnce(
 );
 await writeFile(relayPath, relay, "utf8");
 
+const mainPath = new URL("../main.mjs", import.meta.url);
+let main = normalizeLf(await readFile(mainPath, "utf8"));
+main = replaceOnce(
+  main,
+  'import { scoreProductCandidate } from "./services/matcher.mjs";',
+  'import { scoreProductCandidate } from "./services/matcher.mjs";\nimport { trustedAccountSheetRetailer } from "./services/domestic-card-verdict.mjs";',
+  "import account-sheet trusted retailers into main matching",
+);
+main = replaceOnce(
+  main,
+  `  let products = data.products.map((product) => ({\n    ...product,\n    ...scoreProductCandidate(source, product),\n  }));`,
+  `  let products = data.products.map((product) => {\n    const scored = {\n      ...product,\n      ...scoreProductCandidate(source, product),\n    };\n    const accountRetailer = trustedAccountSheetRetailer(scored.store);\n    const exactCodeMatched = Number(scored.signals?.codeScore || 0) === 1\n      && scored.articleConflict !== true\n      && scored.signals?.codeConflict !== true;\n    if (!accountRetailer || !exactCodeMatched) return scored;\n    return {\n      ...scored,\n      authenticityStatus: "account_sheet_trusted",\n      authenticityLabel: \`\${accountRetailer.label} 정품 유통 확인\`,\n      authenticityEvidence: \`계정정보 시트 등록 신뢰 판매처 · 정확 상품코드 \${source.articleNumber} 확인\`,\n      officialDistributionVerified: true,\n      platformAuthenticityPolicy: "계정정보 시트 신뢰 판매처 기준",\n    };\n  });`,
+  "mark exact-code direct trusted retailers as verified",
+);
+await writeFile(mainPath, main, "utf8");
+
 const rendererPath = new URL("../src/renderer.js", import.meta.url);
 let renderer = normalizeLf(await readFile(rendererPath, "utf8"));
 renderer = replaceOnce(
