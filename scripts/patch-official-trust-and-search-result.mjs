@@ -73,22 +73,33 @@ main = main.replace(
             const bodyText = String(document.body?.innerText || "").replace(/\\s+/g, " ");
             const totalMatch = bodyText.match(/(?:^|\\s)전체\\s*([0-9,]+)\\s*개/);
             const visibleResultCount = Number(String(totalMatch?.[1] || "0").replace(/,/g, "")) || 0;
-            const isProductHref = (href) => /\\/(?:window-products?|products?|catalog|product)\\//i.test(String(href || ""));
+            const isProductHref = (href) => {
+              try {
+                const parsed = new URL(String(href || ""), location.href);
+                if (!/\\.naver\\.com$/i.test(parsed.hostname)) return false;
+                if (/\\/window\\/search(?:\\/|$)/i.test(parsed.pathname)) return false;
+                return /\\/(?:window-products?|products?|catalog|product)\\//i.test(parsed.pathname)
+                  || /(?:product|nvMid|item|mallProductId|channelProductNo)=/i.test(parsed.search);
+              } catch { return false; }
+            };
             // Copy Naver's rendered list directly. The product URL is identity;
             // title, image and price come from the nearest rendered card.
             if (exactQueryPage) {
               for (const anchor of document.querySelectorAll("a[href]")) {
                 const productUrl = String(anchor.href || "").split("#")[0];
-                if (!isProductHref(productUrl) || seen.has(productUrl)) continue;
+                if (seen.has(productUrl)) continue;
                 const card = anchor.closest?.("li, article, [class*='product'], [class*='item'], [class*='card']") || anchor.parentElement || anchor;
                 const image = anchor.querySelector?.("img") || card.querySelector?.("img");
                 if (!image) continue;
                 const text = String(card.innerText || card.textContent || anchor.innerText || "").replace(/\\s+/g, " ").trim();
+                if (!isProductHref(productUrl) && !compactCode(text).includes(compactCode(queryCode))) continue;
                 const imageUrl = String(image.currentSrc || image.dataset?.original || image.dataset?.src || image.src || "");
                 const title = String(image.alt || anchor.getAttribute?.("aria-label") || card.querySelector?.("[class*='title'],[class*='name'],strong")?.textContent || text || "네이버 패션타운 검색 결과").trim();
-                const price = text.match(/\\d{1,3}(?:,\\d{3})+\\s*원/)?.[0] || "";
+                const prices = [...text.matchAll(/\\d{1,3}(?:,\\d{3})+\\s*원/g)].map((match) => match[0]);
+                const originalPrice = prices.length > 1 ? prices[0] : "";
+                const price = prices.at(-1) || "";
                 seen.add(productUrl);
-                candidates.push({ text, markup: String(card.outerHTML || "").slice(0, 12000), productUrl, imageUrl, title, price });
+                candidates.push({ text, markup: String(card.outerHTML || "").slice(0, 12000), productUrl, imageUrl, title, price, originalPrice });
               }
             }`,
 );
@@ -140,7 +151,7 @@ main = main.replace(
           imageUrl: String(card.imageUrl || ""),
           imageVerifiedFromCard: Boolean(card.imageUrl),
           price: Number(String(card.price || "").replace(/[^0-9]/g, "")) || 0,
-          originalPrice: 0,
+          originalPrice: Number(String(card.originalPrice || "").replace(/[^0-9]/g, "")) || 0,
           inStock: null,
           sizes: [],
           confidence: 90,
