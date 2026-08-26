@@ -122,8 +122,9 @@ test("SSG 브랜드 검색은 공식수입·공식브랜드관 증빙과 병행�
     brand: "나이키",
     url: "https://www.ssg.com/item/itemView.ssg?itemId=1000854826548",
     text: "NIKE 로고 정식 통관 정품 BAZIC 베이직 누적매출",
-  }), "parallel_import");
-  assert.equal(detectedRetailer("BAZIC 정식 통관 정품"), "병행수입 정품업체 · 베이직");
+  }), "marketplace");
+  assert.equal(detectedRetailer("베이지크 정식 통관 정품"), "병행수입 정품업체 · 베이지크");
+  assert.equal(detectedRetailer("BAZIC 정식 통관 정품"), "");
   assert.equal(classifySsgProductEvidence({
     brand: "나이키",
     url: "https://www.ssg.com/item/itemView.ssg?itemId=1000854826548",
