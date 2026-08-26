@@ -122,7 +122,9 @@ main = main.replace(
 );
 main = main.replace(
   '      const allProducts = explicitEmpty ? [] : (Array.isArray(analyzed.products) ? analyzed.products : []);',
-  `      const naverExplicitlyEmpty = explicitEmpty || (naverVisibleResultCountObserved && naverVisibleResultCount === 0);
+  `      // Strict user rule: an unread Naver total is treated as no product.
+      // Only a successfully observed positive "전체 N개" count confirms presence.
+      const naverExplicitlyEmpty = explicitEmpty || !naverVisibleResultCountObserved || naverVisibleResultCount === 0;
       const analyzedProducts = Array.isArray(analyzed.products) ? analyzed.products : [];
       const cardProducts = renderedProductCards
         .filter((card) => /^https?:\\/\\//i.test(String(card?.productUrl || "")))
@@ -153,7 +155,7 @@ main = main.replace(
 );
 main = main.replace(
   '      const confirmed = allProducts.length > 0 || trustedChannelEvidence;',
-  '      const confirmed = naverVisibleResultCount > 0 || allProducts.length > 0;',
+  '      const confirmed = naverVisibleResultCountObserved && naverVisibleResultCount > 0;',
 );
 main = main.replace(
   '        absenceConfirmed: explicitEmpty && !confirmed,',
