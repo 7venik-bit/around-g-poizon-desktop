@@ -13,11 +13,13 @@ test("Naver Fashion Town result cards reach the same product renderer as Musinsa
   assert.match(patch, /const confirmed = allProducts\.length > 0/);
   assert.match(patch, /count: Math\.max\(naverVisibleResultCount, allProducts\.length\)/);
   assert.match(patch, /for \(const anchor of document\.querySelectorAll\("a\[href\]"\)\)/);
+  assert.match(patch, /compactCode\(text\)\.includes\(compactCode\(queryCode\)\)/);
   assert.match(patch, /cardProducts\.length \? cardProducts : analyzedProducts/);
   assert.match(patch, /const naverExplicitlyEmpty = allProducts\.length === 0/);
   assert.match(patch, /absenceConfirmed: naverExplicitlyEmpty && !confirmed/);
   assert.ok(patch.includes('sourceStore: "네이버 패션타운"'));
   assert.match(patch, /imageVerifiedFromCard: Boolean\(card\.imageUrl\)/);
+  assert.match(patch, /originalPrice: Number\(String\(card\.originalPrice/);
   assert.match(patch, /inStock: null/);
   assert.match(patch, /sizes: \[\]/);
   assert.match(patch, /\.slice\(0, 8\)/);
