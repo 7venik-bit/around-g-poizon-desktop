@@ -1265,7 +1265,7 @@ async function clickNaverFashionTownMenu(searchWindow) {
   for (let attempt = 0; attempt < 30 && !target; attempt += 1) {
     target = await searchWindow.webContents.executeJavaScript(`(() => {
       const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
-      const fashionLabels = ["패션타운", "패션위크"];
+      const fashionLabels = ["패션타운"];
       const visible = (element) => {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
@@ -1312,7 +1312,7 @@ async function clickNaverFashionTownMenu(searchWindow) {
     await wait(attempt === 0 ? 1_000 : 500);
     const ready = await searchWindow.webContents.executeJavaScript(`(() => {
       const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
-      const fashionLabels = ["패션타운", "패션위크"];
+      const fashionLabels = ["패션타운"];
       const visible = (element) => {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
@@ -1355,10 +1355,12 @@ async function openNaverFashionTownSearchInput(searchWindow) {
         .map((element) => {
           const rect = element.getBoundingClientRect();
           const placeholder = compact(element.getAttribute("placeholder") || element.getAttribute("aria-label") || element.getAttribute("data-placeholder"));
-          const score = (/상품명\\s*또는\\s*브랜드/.test(placeholder) ? 500 : 0)
-            + (rect.top < 220 ? 200 : 0)
-            + (element.closest('header,form,[role="search"]') ? 100 : 0)
-            + (rect.width >= 250 ? 50 : 0);
+          // Naver main/Shopping can expose an AI search field in the same top
+          // area. Only Fashion Town's own "상품명 또는 브랜드" field is valid.
+          const fashionInput = /상품명\\s*또는\\s*브랜드/.test(placeholder);
+          const score = fashionInput
+            ? 500 + (rect.top < 220 ? 200 : 0) + (element.closest('header,form,[role="search"]') ? 100 : 0) + (rect.width >= 250 ? 50 : 0)
+            : -1;
           return { element, rect, score };
         });
       const controls = [...document.querySelectorAll('button,a,[role="button"],[role="searchbox"],label')]
@@ -1366,12 +1368,10 @@ async function openNaverFashionTownSearchInput(searchWindow) {
         .map((element) => {
           const rect = element.getBoundingClientRect();
           const label = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("data-placeholder"), element.className, element.outerHTML].join(" ");
-          const explicitSearch = /검색|search|magnif|ico[_-]?(?:sch|search)/i.test(label);
-          const fashionLauncher = /(?:패션타운|패션위크).*?(?:상품명\\s*또는\\s*브랜드|상품을\\s*검색)|상품명\\s*또는\\s*브랜드/i.test(label);
-          const score = (explicitSearch ? 350 : 0)
-            + (fashionLauncher ? 500 : 0)
-            + (rect.top < 220 ? 150 : 0)
-            + (rect.left > window.innerWidth * 0.55 ? 50 : 0);
+          const fashionLauncher = /패션타운.*?(?:상품명\\s*또는\\s*브랜드|상품을\\s*검색)|상품명\\s*또는\\s*브랜드/i.test(label);
+          const score = fashionLauncher
+            ? 500 + (rect.top < 220 ? 150 : 0) + (rect.left > window.innerWidth * 0.55 ? 50 : 0)
+            : -1;
           return { element, rect, score };
         });
       const selected = [...inputs, ...controls]
@@ -1410,11 +1410,12 @@ async function openNaverFashionTownSearchInput(searchWindow) {
         .map((element) => {
           const rect = element.getBoundingClientRect();
           const placeholder = compact(element.getAttribute("placeholder") || element.getAttribute("aria-label") || element.getAttribute("data-placeholder"));
-          const score = (/상품명\\s*또는\\s*브랜드/.test(placeholder) ? 500 : 0)
-            + (document.activeElement === element ? 350 : 0)
-            + (rect.top < 250 ? 200 : 0)
-            + (element.closest('header,form,[role="search"],[role="dialog"],[class*="layer" i],[class*="search" i]') ? 100 : 0)
-            + (rect.width >= 250 ? 50 : 0);
+          const fashionInput = /상품명\\s*또는\\s*브랜드/.test(placeholder);
+          const score = fashionInput
+            ? 500 + (document.activeElement === element ? 350 : 0) + (rect.top < 250 ? 200 : 0)
+              + (element.closest('header,form,[role="search"],[role="dialog"],[class*="layer" i],[class*="search" i]') ? 100 : 0)
+              + (rect.width >= 250 ? 50 : 0)
+            : -1;
           return { element, score };
         })
         .filter((candidate) => candidate.score >= 300)
