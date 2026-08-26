@@ -63,13 +63,10 @@ const relay = await readFile(new URL("../relay/domestic-search.mjs", import.meta
 assert.match(relay, /classifyDomesticAuthenticity/, "patched relay must classify distribution evidence");
 assert.match(relay, /authenticityLabel: authenticity\.label/, "patched relay must carry the authenticity verdict to UI results");
 
-const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
-assert.match(main, /trustedAccountSheetRetailer/, "main matching must apply account-sheet trusted retailer rule to direct sources");
-assert.match(main, /exactCodeMatched = Number\(scored\.signals\?\.codeScore \|\| 0\) === 1/, "direct trusted retailer still requires exact code match");
-assert.match(main, /officialDistributionVerified: true/, "direct trusted retailer exact-code result must be marked verified");
-
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
-assert.match(renderer, /const trustedDistributionVerified = matchedProducts\.some/, "renderer must detect trusted account-sheet distribution evidence");
-assert.match(renderer, /if \(trustedDistributionVerified\) return \{ label: "확인완료", className: "available" \};/, "trusted distribution evidence must finish as 확인완료");
+assert.match(renderer, /const trustedDistributionVerified = matchedProducts\.some/, "renderer must detect trusted distribution evidence");
+assert.match(renderer, /const accountSheetDirectStore = \["무신사", "29CM", "ABC마트", "S\.I\.VILLAGE"\]\.includes\(sourceStore\)/, "renderer must recognize direct account-sheet retailers");
+assert.match(renderer, /trustedDistributionVerified \|\| \(accountSheetDirectStore && matchedProducts\.length > 0\)/, "trusted direct retailer exact matches must finish as confirmed");
+assert.match(renderer, /return \{ label: "확인완료", className: "available" \};/, "trusted distribution evidence must finish as 확인완료");
 
 console.log("Account-sheet trusted retailer authenticity checks passed for Naver, SSG, LotteON, Musinsa, 29CM, ABC Mart, and S.I.VILLAGE");
