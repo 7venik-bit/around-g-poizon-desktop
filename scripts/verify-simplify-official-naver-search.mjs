@@ -17,8 +17,15 @@ if (!main.includes('const initialUrl = naverPortalSource ? "https://www.naver.co
 if (!main.includes('const shoppingHomeOpened = await clickNaverShoppingHomeMenu(searchWindow);')) fail("Shopping button click is missing");
 if (!main.includes('const fashionTownOpened = await clickNaverFashionTownMenu(searchWindow);')) fail("Fashion Town button click is missing");
 if (!main.includes('? await submitNaverShoppingSearch(searchWindow, searchQuery)')) fail("Fashion Town product-code submission is missing");
+const interactiveStart = main.indexOf('      if (interactiveSiteSearch) {');
+const interactiveEnd = main.indexOf('    if (naverPortalSource && String(source.store || "") !== "네이버 패션타운") {', interactiveStart);
+const interactiveBlock = interactiveStart >= 0 && interactiveEnd > interactiveStart
+  ? main.slice(interactiveStart, interactiveEnd) : "";
+if (!interactiveBlock.includes('if (naverPortalSource) {')) fail("Fashion Town click route is disabled by the channel-count gate");
+if (interactiveBlock.includes('naverPortalSource && String(source.store || "") !== "네이버 패션타운"')) fail("Fashion Town still skips Shopping/Fashion Town clicks");
 if (!relay.includes('https://shopping.naver.com/window/search/fashion-group?q=')) fail("Fashion Town search URL is not shopping.naver.com/window/search/fashion-group");
-if (!main.includes('naverPortalSource && String(source.store || "") !== "네이버 패션타운"')) fail("Fashion Town still depends on Naver channel-count routing");
+if (!main.includes('// The three Fashion Town totals are the authoritative routing decision.')) fail("Naver channel-count block is missing");
+if (!main.includes('if (naverPortalSource && String(source.store || "") !== "네이버 패션타운") {\n      // The three Fashion Town totals')) fail("only the Naver channel-count block should be gated");
 if (!main.includes('const trustedChannelEvidence = /브랜드직영몰')) fail("Fashion Town trusted-channel evidence is missing");
 if (!main.includes('naverTrustedChannelEvidence: trustedChannelEvidence')) fail("Fashion Town trusted-channel evidence is not returned");
 if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEmpty ? "absent" : "pending")')) fail("Fashion Town final verdict is missing");
