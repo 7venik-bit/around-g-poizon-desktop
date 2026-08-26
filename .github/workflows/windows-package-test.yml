@@ -91,6 +91,12 @@ jobs:
       - name: Verify official trust and result recognition
         run: node scripts/verify-official-trust-and-search-result.mjs
 
+      - name: Keep domestic results inside the controlled browser
+        run: node scripts/patch-domestic-result-internal-window.mjs
+
+      - name: Verify controlled domestic result window
+        run: node scripts/verify-domestic-result-internal-window.mjs
+
       - name: Restore popular list auto login and capture
         run: node scripts/patch-restore-popular-login-capture.mjs
 
