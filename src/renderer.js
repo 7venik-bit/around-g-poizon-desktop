@@ -62,6 +62,11 @@ let excelPreviewBatchSearching = false;
 let excelPreviewIntegrated = false;
 let excelPreviewFilesParent = null;
 const EXCEL_SEARCH_RESULTS_KEY = "around-g-excel-search-results-v2";
+// Domestic retailer results are live page evidence. A previous run\'s
+// "상품 없음" must never become the initial state of a newly started app.
+try {
+  localStorage.removeItem(EXCEL_SEARCH_RESULTS_KEY);
+} catch {}
 const excelPreviewProductCache = new Map();
 const excelPreviewSearchResults = new Map();
 const domesticIdentitySearchCache = new Map();
@@ -829,18 +834,15 @@ function restoreSavedExcelSearchResults(filePath = "") {
   // Search results are live inventory evidence, not workbook data. Never
   // restore an earlier run when a workbook is opened again.
   try {
-    const saved = JSON.parse(localStorage.getItem(EXCEL_SEARCH_RESULTS_KEY) || "{}");
-    delete saved[brandImportPathKey(filePath)];
-    localStorage.setItem(EXCEL_SEARCH_RESULTS_KEY, JSON.stringify(saved));
+    localStorage.removeItem(EXCEL_SEARCH_RESULTS_KEY);
   } catch {}
 }
 
 function persistExcelSearchResults(filePath = "") {
+  // Keep current-run results in memory only. A loading or parsing failure must
+  // not reappear as "상품 없음" after the next program launch.
   try {
-    const storage = JSON.parse(localStorage.getItem(EXCEL_SEARCH_RESULTS_KEY) || "{}");
-    storage[brandImportPathKey(filePath)] = Object.fromEntries([...excelPreviewSearchResults.entries()].slice(-100));
-    const recent = Object.entries(storage).slice(-20);
-    localStorage.setItem(EXCEL_SEARCH_RESULTS_KEY, JSON.stringify(Object.fromEntries(recent)));
+    localStorage.removeItem(EXCEL_SEARCH_RESULTS_KEY);
   } catch {}
 }
 
