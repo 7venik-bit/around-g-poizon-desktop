@@ -19,6 +19,12 @@ const mainPath = new URL("../main.mjs", import.meta.url);
 let main = normalizeLf(await readFile(mainPath, "utf8"));
 main = replaceOnce(
   main,
+  '  return entries.flatMap((entry) => {\n    const row = entry.values || [];\n    const spuId = raw(row, columns.spuId);',
+  '  return entries.flatMap((entry) => {\n    const row = entry.values || [];\n    // Domestic sourcing is performed per size/SKU row. A product can have\n    // high total sales while the selected size has "<5" or another low recent\n    // sales value. Never put that size into the domestic-search queue. When\n    // both recent-sales columns are present, the row itself must satisfy the\n    // same strict 30+ AND rule. The source workbook remains untouched.\n    if (columns.sales30d >= 0 && columns.localSales30d >= 0) {\n      const chinaRecentSales = parsePoizonSalesMetric(cell(row, columns.sales30d));\n      const localRecentSales = parsePoizonSalesMetric(cell(row, columns.localSales30d));\n      if (chinaRecentSales < 30 || localRecentSales < 30) return [];\n    }\n    const spuId = raw(row, columns.spuId);',
+  "exclude low-selling size rows from domestic search",
+);
+main = replaceOnce(
+  main,
   '        const searchQuery = String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();',
   '        const searchQuery = interactiveOfficialSearch\n          ? sanitizeDomesticQuery([title, articleNumber].filter(Boolean).join(" "))\n          : String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();',
   "official mall title plus product-code query",
