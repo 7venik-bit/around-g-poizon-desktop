@@ -20,7 +20,7 @@ if (!main.includes('store: "네이버 패션타운"')) fail("Naver platform iden
 if (!main.includes('articleNumber,')) fail("exact article number is not passed to shared engine");
 if (!main.includes("const confirmed = allProducts.length > 0")) fail("Naver product list does not directly control presence");
 if (!main.includes("absenceConfirmed: naverExplicitlyEmpty && !confirmed")) fail("Naver explicit zero does not finish as absence");
-if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : "absent"')) fail("Naver verdict still has an intermediate state");
+if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : (naverExplicitlyEmpty ? "absent" : "pending")')) fail("Naver unresolved lazy cards are not preserved as pending");
 if (!main.includes("naverTrustedChannelLabels: trustedChannelLabels")) fail("detected trusted seller labels are not returned");
 if (!main.includes("let renderedProductCards = []")) fail("actual Naver result cards are not retained for display");
 if (!main.includes("let naverVisibleResultCount = 0")) fail("Naver visible total count is not retained");
