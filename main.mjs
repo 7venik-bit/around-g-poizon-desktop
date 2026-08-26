@@ -2020,7 +2020,25 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       )].filter((card) => matchesExpected(card.innerText) || matchesExpected(card.outerHTML))
         .flatMap((card) => [...card.querySelectorAll("a[href]")])
         .filter((link) => visible(link) || matchesExpected(link.closest("li,article,div")?.innerText));
-      const productLinks = [...new Set([...directProductLinks, ...articleCardLinks])];
+      // Naver frequently ships generated class names and keeps the image,
+      // title and price in sibling nodes. Start at any visible node containing
+      // the exact article, then climb to the smallest owning block that has a
+      // link, image and price. This does not depend on Naver's class names.
+      const articleTextCardLinks = [...document.querySelectorAll("a,div,li,article,span,strong")]
+        .filter((element) => visible(element) && matchesExpected(element.innerText))
+        .flatMap((element) => {
+          let card = element;
+          for (let depth = 0; card && depth < 8 && card !== document.body; depth += 1, card = card.parentElement) {
+            const cardText = String(card.innerText || "");
+            if (matchesExpected(cardText)
+              && /[\\d,]+\\s*원/.test(cardText)
+              && card.querySelector("img")
+              && card.querySelector("a[href]")) return [...card.querySelectorAll("a[href]")];
+          }
+          return [];
+        })
+        .filter((link) => visible(link) || matchesExpected(link.closest("li,article,div")?.innerText));
+      const productLinks = [...new Set([...directProductLinks, ...articleCardLinks, ...articleTextCardLinks])];
       const seen = new Set();
       const productCards = [];
       for (const link of productLinks) {
@@ -2135,17 +2153,13 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     }
     if (naverPortalSource && Number(naverChannelCounts?.[String(source.store || "")]) > 0) {
       const currentChannelCount = Number(naverChannelCounts[String(source.store || "")]);
-      const labelField = source.store === "네이버 백화점" ? "departmentStoreLabelMatched"
-        : source.store === "네이버 아울렛" ? "outletLabelMatched"
-          : "officialBrandStoreLabelMatched";
-      // Naver may change the product-detail path or append a tracking address.
-      // The selected tab and the card-owned channel label are authoritative;
-      // the actual href is preserved only as the link to click.
+      // The selected tab count and the exact article shown by its card are the
+      // authoritative evidence. The channel badge can sit outside the card,
+      // so requiring the badge inside every card incorrectly discarded the
+      // visible result shown to the user.
       const labeledChannelCards = (parsedContent.productCards || []).filter((card) =>
-        isPlatformShoppingProductUrl(card?.productUrl) && card?.[labelField] === true);
-      // All three Naver channels use the same gate: read the top count, find
-      // the matching lower cards, and verify the channel wording on each card
-      // before any product click or stock-page navigation.
+        isPlatformShoppingProductUrl(card?.productUrl)
+          && matchesExpected([card?.title, card?.text, card?.markup, card?.productUrl].join(" ")));
       const cardCountInvalid = currentChannelCount === 1
         ? labeledChannelCards.length !== 1
         : labeledChannelCards.length === 0;
@@ -2188,6 +2202,17 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       candidateCount,
       naverChannelCounts,
     };
+    // Naver, SSG and Lotte are list-only sources. Their visible search cards
+    // are the requested output; do not navigate to details or inspect stock.
+    if (/^(?:네이버\s|SSG(?:\s|$)|롯데온(?:\s|$))/.test(String(source.store || ""))) {
+      return {
+        ...detailed,
+        count: /^네이버\s/.test(String(source.store || "")) && Number.isFinite(analyzed?.channelCount)
+          ? Number(analyzed.channelCount) : candidateCount,
+        products: (analyzed.products || []).map((product) => ({ ...product, inStock: null, sizes: [] })),
+        detailVerificationPending: false,
+      };
+    }
     if (Array.isArray(analyzed?.products)) {
       const products = [];
       for (const product of analyzed.products.slice(0, 8)) {

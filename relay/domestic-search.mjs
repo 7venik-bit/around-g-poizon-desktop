@@ -609,12 +609,16 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
       if (/^네이버\s/.test(String(store || "")) && scopedCountFound && scopedPositiveCount > 0) {
         const domesticPresence = matchingProducts.size > 0 || domesticChannelCandidateCount > 0;
         const domesticDisplayCount = Math.min(scopedPositiveCount, domesticVisibleProducts.size);
+        const cardCollectionMissed = cards.length === 0;
         return {
-          count: domesticDisplayCount,
+          // A positive Fashion Town tab count is authoritative. Failing to
+          // parse a late/changed card is a collection failure, never proof
+          // that the product does not exist.
+          count: domesticDisplayCount > 0 ? domesticDisplayCount : cardCollectionMissed ? scopedPositiveCount : 0,
           channelCount: scopedPositiveCount,
           products: [...matchingProducts.values()],
-          presenceConfirmed: domesticDisplayCount > 0,
-          absenceConfirmed: domesticDisplayCount === 0,
+          presenceConfirmed: domesticDisplayCount > 0 || cardCollectionMissed,
+          absenceConfirmed: !cardCollectionMissed && domesticDisplayCount === 0,
           exactProductPresenceConfirmed: domesticPresence,
           ssgSearchChecked: false,
         };

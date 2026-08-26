@@ -327,12 +327,13 @@ test("네이버는 결과 클릭 전에 패션타운 채널 숫자 3개를 먼�
   );
   assert.match(mainSource, /if \(naverPortalSource \|\| ssgChannelSource\) \{\s*await wait\(1_500\);\s*\} else \{/);
   assert.match(mainSource, /recognizedChannelCounts = .*naverChannelCounts/);
-  assert.match(mainSource, /source\.store === "네이버 백화점" \? "departmentStoreLabelMatched"/);
-  assert.match(mainSource, /source\.store === "네이버 아울렛" \? "outletLabelMatched"/);
+  assert.match(mainSource, /articleTextCardLinks/);
+  assert.match(mainSource, /matchesExpected\(\[card\?\.title, card\?\.text, card\?\.markup, card\?\.productUrl\]\.join/);
   assert.match(mainSource, /currentChannelCount === 1[\s\S]*labeledChannelCards\.length !== 1/);
   assert.match(mainSource, /channel_card_evidence_mismatch/);
   assert.match(mainSource, /productKey = parsedProductUrl\.origin \+ parsedProductUrl\.pathname/);
-  assert.match(mainSource, /clickRenderedProductCard\(searchWindow, product\.url, resolvedSearchUrl\)[\s\S]*openRenderedSizeOptions\(searchWindow\)/);
+  assert.match(mainSource, /Naver, SSG and Lotte are list-only sources/);
+  assert.match(mainSource, /products: \(analyzed\.products \|\| \[\]\)\.map/);
 });
 
 test("네이버는 상품코드를 한 번만 검색하고 같은 결과에서 세 채널을 순서대로 처리한다", () => {
