@@ -26,6 +26,9 @@ if (!main.includes("let renderedProductCards = []")) fail("actual Naver result c
 if (!main.includes('store: "네이버 패션타운",\n          sourceStore: "네이버 패션타운"')) fail("Naver result cards are not mapped to renderer products");
 if (!main.includes("imageVerifiedFromCard: Boolean(card.imageUrl)")) fail("Naver product images are not preserved");
 if (!main.includes("analyzedProducts.length ? analyzedProducts : cardProducts")) fail("Naver display-card fallback is missing");
+if (!main.includes("const exactQueryPage = compactCode(new URLSearchParams(location.search).get(\"q\")) === compactCode(queryCode)")) fail("exact Fashion Town query-page recognition is missing");
+if (!main.includes("(!hasCode && !exactQueryPage)")) fail("Naver cards still require the model code to be repeated in every title");
+if (!main.includes(".slice(0, 8)")) fail("Naver visible product list is not bounded");
 
 if (!renderer.includes('if (String(source.store || "") === "네이버 패션타운")')) fail("Naver Fashion Town status gate missing");
 if (!renderer.includes('source.presenceConfirmed === true || source.naverTrustedChannelEvidence === true')) fail("visible product result does not finish as 확인완료");
