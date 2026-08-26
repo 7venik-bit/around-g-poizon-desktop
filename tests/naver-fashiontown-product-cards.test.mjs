@@ -17,7 +17,9 @@ test("Naver Fashion Town result cards reach the same product renderer as Musinsa
   assert.match(patch, /depth < 9/);
   assert.match(patch, /candidateText/);
   assert.match(patch, /cardProducts\.length \? cardProducts : analyzedProducts/);
-  assert.match(patch, /const naverExplicitlyEmpty = allProducts\.length === 0/);
+  assert.match(patch, /attempt < 60 && renderedProductCards\.length < Math\.max\(1, naverVisibleResultCount\)/);
+  assert.match(patch, /naverVisibleResultCountObserved/);
+  assert.match(patch, /naverExplicitlyEmpty \? "absent" : "pending"/);
   assert.match(patch, /absenceConfirmed: naverExplicitlyEmpty && !confirmed/);
   assert.ok(patch.includes('sourceStore: "네이버 패션타운"'));
   assert.match(patch, /imageVerifiedFromCard: Boolean\(card\.imageUrl\)/);
