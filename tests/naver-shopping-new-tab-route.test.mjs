@@ -11,6 +11,8 @@ test("Naver Shopping preserves the physical click and recovers its new-tab href"
   assert.match(route, /sendInputEvent\(\{ type: "mouseMove"/);
   assert.match(route, /href: String\(element\.href/);
   assert.match(route, /const afterPhysicalClickUrl/);
+  assert.match(route, /if \(!\/\^https:\\\/\\\/shopping\\\.naver\\\.com/);
+  assert.doesNotMatch(route, /if \(\/\^https:\\\/\\\/(?:www\\\.)\?naver/);
   assert.match(route, /await searchWindow\.loadURL\(target\.href\)/);
   assert.match(route, /const afterFashionClickUrl/);
 });
