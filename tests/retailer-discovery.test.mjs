@@ -18,7 +18,8 @@ test("editorial and parallel-import seller catalogs participate in discovery", (
   const editorial = DOMESTIC_RETAILER_GROUPS["온라인 편집샵"];
   const parallel = DOMESTIC_RETAILER_GROUPS["병행수입 정품업체"];
   for (const name of ["OK몰", "카시나", "29CM", "무신사", "W컨셉", "EQL", "하이츠스토어"]) assert.ok(editorial.includes(name));
-  for (const name of ["인퓨전프로젝트", "다움스포츠", "트렌드메카", "라벨루쏘", "구템즈", "FABSTYLE"]) assert.ok(parallel.includes(name));
+  for (const name of ["인퓨전프로젝트", "브릭맨션", "다옴스포츠", "한아아이앤티", "대림코퍼레이션", "DLC", "베이지크", "소노몰", "라벨르쏘", "구템즈", "FABSTYLE"]) assert.ok(parallel.includes(name));
+  for (const rejectedTypo of ["다움스포츠", "한아이엔티", "베이지2", "소호몰", "라벨루쏘", "베이직"]) assert.equal(parallel.includes(rejectedTypo), false);
   assert.ok(relay.includes('store: "병행수입·편집샵"'));
   assert.ok(relay.includes("retailerName"));
   assert.ok(relay.includes("parallelImportCompanies: []"));
