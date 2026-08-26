@@ -24,11 +24,14 @@ if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEm
 if (!main.includes("naverTrustedChannelLabels: trustedChannelLabels")) fail("detected trusted seller labels are not returned");
 if (!main.includes("let renderedProductCards = []")) fail("actual Naver result cards are not retained for display");
 if (!main.includes("let naverVisibleResultCount = 0")) fail("Naver visible total count is not retained");
+if (!main.includes("let naverVisibleResultCountObserved = false")) fail("observed zero and unread result count are not distinguished");
 if (!main.includes('store: "네이버 패션타운",\n          sourceStore: "네이버 패션타운"')) fail("Naver result cards are not mapped to renderer products");
 if (!main.includes("imageVerifiedFromCard: Boolean(card.imageUrl)")) fail("Naver product images are not preserved");
 if (!main.includes("cardProducts.length ? cardProducts : analyzedProducts")) fail("Naver rendered cards are not authoritative");
 if (!main.includes('for (const anchor of document.querySelectorAll("a[href]"))')) fail("Naver product anchors are not copied directly");
-if (!main.includes("explicitEmpty && naverVisibleResultCount === 0")) fail("an empty label can override a positive Naver count");
+if (!main.includes("const naverExplicitlyEmpty = explicitEmpty || (naverVisibleResultCountObserved && naverVisibleResultCount === 0)")) fail("Naver visible zero is not treated as explicit absence");
+if (!main.includes("absenceConfirmed: naverExplicitlyEmpty && !confirmed")) fail("explicit Naver zero does not produce absence");
+if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : (naverExplicitlyEmpty ? "absent" : "pending")')) fail("explicit Naver zero does not produce an absent verdict");
 if (!main.includes("const exactQueryPage = compactCode(new URLSearchParams(location.search).get(\"q\")) === compactCode(queryCode)")) fail("exact Fashion Town query-page recognition is missing");
 if (!main.includes("exactQueryPage && productLink")) fail("Naver cards still require all fields inside one DOM node");
 if (!main.includes(".slice(0, 8)")) fail("Naver visible product list is not bounded");
