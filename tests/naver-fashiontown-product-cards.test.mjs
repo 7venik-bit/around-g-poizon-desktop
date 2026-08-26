@@ -14,6 +14,8 @@ test("Naver Fashion Town result cards reach the same product renderer as Musinsa
   assert.match(patch, /count: Math\.max\(naverVisibleResultCount, allProducts\.length\)/);
   assert.match(patch, /for \(const anchor of document\.querySelectorAll\("a\[href\]"\)\)/);
   assert.match(patch, /compactCode\(text\)\.includes\(compactCode\(queryCode\)\)/);
+  assert.match(patch, /depth < 9/);
+  assert.match(patch, /candidateText/);
   assert.match(patch, /cardProducts\.length \? cardProducts : analyzedProducts/);
   assert.match(patch, /const naverExplicitlyEmpty = allProducts\.length === 0/);
   assert.match(patch, /absenceConfirmed: naverExplicitlyEmpty && !confirmed/);
