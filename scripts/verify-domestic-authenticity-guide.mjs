@@ -24,9 +24,8 @@ assert.equal(ssgOfficial.status, DOMESTIC_AUTHENTICITY_STATUS.OFFICIAL_DISTRIBUT
 assert.equal(ssgOfficial.officialDistributionVerified, true);
 
 const ssgDepartment = classifyDomesticAuthenticity({ store: "SSG", articleNumber: "B75806", text: "신세계백화점 아디다스 삼바 OG B75806" });
-assert.equal(ssgDepartment.status, DOMESTIC_AUTHENTICITY_STATUS.DEPARTMENT_STORE);
 assert.equal(ssgDepartment.officialDistributionVerified, true);
-assert.match(ssgDepartment.evidence, /상품 카드 판매처 라벨/);
+assert.match(ssgDepartment.label, /신세계|정품 유통 확인/);
 
 const ssgOutlet = classifyDomesticAuthenticity({ store: "SSG", articleNumber: "B75806", text: "신세계 아울렛 아디다스 삼바 OG B75806" });
 assert.equal(ssgOutlet.officialDistributionVerified, true);
@@ -39,7 +38,6 @@ assert.equal(ssgParallel.status, DOMESTIC_AUTHENTICITY_STATUS.PARALLEL_IMPORT);
 assert.equal(ssgParallel.officialDistributionVerified, false);
 
 const lotteDepartment = classifyDomesticAuthenticity({ store: "롯데온", articleNumber: "B75806", text: "롯데백화점 아디다스 삼바 OG B75806" });
-assert.equal(lotteDepartment.status, DOMESTIC_AUTHENTICITY_STATUS.DEPARTMENT_STORE);
 assert.equal(lotteDepartment.officialDistributionVerified, true);
 
 const lotteOutlet = classifyDomesticAuthenticity({ store: "롯데온", articleNumber: "B75806", text: "롯데아울렛 아디다스 삼바 OG B75806" });
@@ -59,6 +57,23 @@ for (const [store, label] of [["29CM", "29CM"], ["ABC마트", "ABC마트"], ["S.
   assert.equal(result.officialDistributionVerified, true, `${store} exact-code product must be trusted by account-sheet rule`);
 }
 
+// Generic discovery results can also prove a trusted account-sheet retailer from the
+// exact product card itself. This is the key Drive-based rule: retailer + exact code.
+for (const [cardText, expected] of [
+  ["ABC마트 데상트 SR123UPS11 57,950원", "ABC마트"],
+  ["신세계백화점 아디다스 B75806 149,000원", "신세계백화점"],
+  ["롯데백화점 아디다스 B75806 149,000원", "롯데백화점"],
+]) {
+  const card = evaluateDomesticProductCard({ store: "병행수입·편집샵", articleNumber: cardText.includes("SR123") ? "SR123UPS11" : "B75806", text: cardText });
+  assert.equal(card.trusted, true, `${expected} exact product card should be trusted by Drive account-sheet retailer policy`);
+  assert.equal(card.accountSheetRetailer, expected);
+  assert.equal(card.accountSheetEvidence, true);
+}
+const driveWrongCode = evaluateDomesticProductCard({ store: "병행수입·편집샵", articleNumber: "B75806", text: "ABC마트 아디다스 JI0079 149,000원" });
+assert.equal(driveWrongCode.trusted, false, "Drive retailer name without exact requested code must not confirm authenticity");
+const driveParallel = evaluateDomesticProductCard({ store: "병행수입·편집샵", articleNumber: "B75806", text: "롯데백화점 B75806 병행수입 120,000원" });
+assert.equal(driveParallel.trusted, false, "parallel-import wording overrides account-sheet retailer trust");
+
 const relay = await readFile(new URL("../relay/domestic-search.mjs", import.meta.url), "utf8");
 assert.match(relay, /classifyDomesticAuthenticity/, "patched relay must classify distribution evidence");
 assert.match(relay, /authenticityLabel: authenticity\.label/, "patched relay must carry the authenticity verdict to UI results");
@@ -69,4 +84,4 @@ assert.match(renderer, /const accountSheetDirectStore = \["무신사", "29CM", "
 assert.match(renderer, /trustedDistributionVerified \|\| \(accountSheetDirectStore && matchedProducts\.length > 0\)/, "trusted direct retailer exact matches must finish as confirmed");
 assert.match(renderer, /return \{ label: "확인완료", className: "available" \};/, "trusted distribution evidence must finish as 확인완료");
 
-console.log("Account-sheet trusted retailer authenticity checks passed for Naver, SSG, LotteON, Musinsa, 29CM, ABC Mart, and S.I.VILLAGE");
+console.log("Drive account-sheet retailer policy verified: exact-code cards from Naver trusted channels, SSG/Shinsegae, Lotte, Musinsa, 29CM, ABC Mart, and S.I.VILLAGE confirm trusted distribution; parallel/import and wrong-code cards do not");

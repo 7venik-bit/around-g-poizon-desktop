@@ -8,6 +8,10 @@ const ACCOUNT_SHEET_TRUSTED_RETAILERS = Object.freeze({
   twentyNineCm: { label: "29CM", aliases: ["29CM", "29cm"] },
   abcMart: { label: "ABC마트", aliases: ["ABC마트", "ABC MART", "ABC-MART"] },
   siVillage: { label: "S.I.VILLAGE", aliases: ["S.I.VILLAGE", "SIVILLAGE", "에스아이빌리지", "신세계 빌리지"] },
+  shinsegaeDepartment: { label: "신세계백화점", aliases: ["신세계백화점", "신세계 백화점", "SHINSEGAE"] },
+  shinsegaeOutlet: { label: "신세계 아울렛", aliases: ["신세계 아울렛", "신세계아울렛", "신세계 프리미엄 아울렛", "신세계프리미엄아울렛"] },
+  lotteDepartment: { label: "롯데백화점", aliases: ["롯데백화점", "롯데 백화점", "LOTTE DEPARTMENT"] },
+  lotteOutlet: { label: "롯데아울렛", aliases: ["롯데아울렛", "롯데 아울렛", "LOTTE OUTLET"] },
 });
 
 const TRUSTED_LABELS = Object.freeze({
@@ -38,10 +42,15 @@ export function trustedDomesticCardLabels(store = "") {
   return TRUSTED_LABELS[domesticCardPlatform(store)] || [];
 }
 
-export function trustedAccountSheetRetailer(store = "") {
-  const platform = domesticCardPlatform(store);
-  const entry = ACCOUNT_SHEET_TRUSTED_RETAILERS[platform];
-  return entry ? { platform, ...entry } : null;
+export function trustedAccountSheetRetailer(store = "", evidence = "") {
+  const haystack = normalize([store, evidence].filter(Boolean).join(" ")).toLowerCase();
+  if (!haystack) return null;
+  for (const [platform, entry] of Object.entries(ACCOUNT_SHEET_TRUSTED_RETAILERS)) {
+    if (entry.aliases.some((alias) => haystack.includes(String(alias).toLowerCase()))) {
+      return { platform, ...entry };
+    }
+  }
+  return null;
 }
 
 export function evaluateDomesticProductCard({ store = "", articleNumber = "", text = "", markup = "" } = {}) {
@@ -52,18 +61,24 @@ export function evaluateDomesticProductCard({ store = "", articleNumber = "", te
   const codeMatched = !code || normalizedEvidence.includes(code);
   const labels = trustedDomesticCardLabels(store).filter((label) => evidence.toLowerCase().includes(String(label).toLowerCase()));
   const parallelImport = PARALLEL_PATTERN.test(evidence);
-  const accountRetailer = trustedAccountSheetRetailer(store);
-  // 계정정보 시트에 직접 등록된 독립 판매처는 정확 상품코드가 해당 상품 카드에
-  // 확인되는 것 자체를 신뢰 유통 근거로 인정한다. 네이버/SSG/롯데ON은 플랫폼
-  // 전체를 신뢰하지 않고 반드시 카드 안의 지정 판매처 라벨까지 확인한다.
-  const directAccountRetailerTrusted = Boolean(accountRetailer && codeMatched && !parallelImport);
-  const trusted = !parallelImport && (directAccountRetailerTrusted || (codeMatched && labels.length > 0));
+  const accountRetailer = trustedAccountSheetRetailer(store, evidence);
+
+  // 정품 판정 기준:
+  // 1) Google Drive 계정정보 시트에 등록된 신뢰 판매처의 실제 상품 카드이고
+  // 2) 그 카드 안에서 검색한 정확 상품코드가 확인되며
+  // 3) 병행수입/해외직구/구매대행 표기가 없어야 한다.
+  // 네이버/SSG/롯데ON에서는 기존의 카드 내부 공식 유통 라벨도 동일한 신뢰 근거로 인정한다.
+  const accountSheetEvidence = Boolean(accountRetailer && codeMatched && !parallelImport);
+  const platformLabelEvidence = Boolean(codeMatched && labels.length > 0 && !parallelImport);
+  const trusted = accountSheetEvidence || platformLabelEvidence;
   return {
     platform,
     codeMatched,
     parallelImport,
     labels,
     accountSheetRetailer: accountRetailer?.label || "",
+    accountSheetEvidence,
+    platformLabelEvidence,
     trusted,
     verdict: trusted ? "confirmed" : "absent",
   };
@@ -82,6 +97,8 @@ export function evaluateDomesticProductCards({ store = "", articleNumber = "", c
     verdict: trustedCard ? "confirmed" : "absent",
     labels: [...new Set(evaluated.flatMap((card) => card.labels))],
     accountSheetRetailer: trustedCard?.accountSheetRetailer || "",
+    accountSheetEvidence: trustedCard?.accountSheetEvidence === true,
+    platformLabelEvidence: trustedCard?.platformLabelEvidence === true,
     cards: evaluated,
   };
 }
