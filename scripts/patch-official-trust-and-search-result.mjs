@@ -33,6 +33,20 @@ main = replaceOnce(main,
   `        naverTrustedChannelEvidence: trustedChannelEvidence,\n        naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEmpty ? "absent" : "pending"),`,
   `        naverTrustedChannelEvidence: trustedChannelEvidence,\n        naverTrustedChannelLabels: trustedChannelLabels,\n        naverAllSearchVerdict: confirmed ? "confirmed" : "absent",`,
   "Naver verdict is strictly binary from seller labels");
+// A visible exact product-code card is positive evidence even if Naver changes
+// or delays the seller-label text. Only an explicit empty-result page is absent.
+main = main.replace(
+  "      const confirmed = trustedChannelEvidence;",
+  "      const confirmed = allProducts.length > 0 || trustedChannelEvidence;",
+);
+main = main.replace(
+  "        absenceConfirmed: !trustedChannelEvidence,",
+  "        absenceConfirmed: explicitEmpty && !confirmed,",
+);
+main = main.replace(
+  '        naverAllSearchVerdict: confirmed ? "confirmed" : "absent",',
+  '        naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEmpty ? "absent" : "pending"),',
+);
 
 main = replaceOnce(main,
   `        candidateCount: Number(result?.candidateCount || 0),\n      // The official search URL and a verified product-detail URL are`,
@@ -54,6 +68,22 @@ renderer = replaceOnce(renderer,
   `    const detailPending = source.verificationReason\n      ? failureDescriptions[source.verificationReason] || "판매처 검색이 완료되기 전에 중단됐습니다."\n      : !matchedProducts.length && Number(source.count || 0) > 0\n        ? \`검색 결과 \${Number(source.count)}개를 확인했습니다. 재고·사이즈 상세 수집이 필요합니다.\`\n        : source.absenceConfirmed\n          ? "상품코드→상품명→상품명+상품코드 순서로 검색을 완료했으며 일치 상품이 없습니다."\n          : Number(source.candidateCount || 0) > 0\n            ? "일치 후보 상품을 찾았지만 상세 페이지의 재고·사이즈 확인이 완료되지 않았습니다."\n            : !matchedProducts.length ? "검색은 완료했지만 재고·사이즈 판정 근거가 부족합니다." : "";`,
   `    const naverFashionTownSource = String(source.store || "") === "네이버 패션타운";\n    const naverFashionTownConfirmed = naverFashionTownSource\n      && (source.naverTrustedChannelEvidence === true || source.naverAllSearchVerdict === "confirmed");\n    const officialMallSource = String(source.store || "") === "브랜드 공식몰";\n    const officialResultFound = officialMallSource && (source.presenceConfirmed === true || matchedProducts.length > 0 || (source.searchCompleted === true && Number(source.count || 0) > 0));\n    const officialResultMissing = officialMallSource && (source.absenceConfirmed === true || (source.searchCompleted === true && Number(source.count || 0) === 0 && Number(source.candidateCount || 0) === 0));\n    const detailPending = naverFashionTownConfirmed\n      ? "정확 상품 카드에서 브랜드직영몰·백화점·아울렛 판매처 유형을 확인하여 정품 유통 근거가 충분합니다."\n      : naverFashionTownSource\n        ? "정확 상품 카드에서 인정 판매처 유형이 확인되지 않아 상품없음으로 판정했습니다."\n        : officialResultFound\n          ? "브랜드 공식몰 검색 결과에서 상품을 확인했습니다."\n          : officialResultMissing\n            ? "브랜드 공식몰 검색 결과에 상품이 없습니다."\n            : source.verificationReason\n              ? failureDescriptions[source.verificationReason] || "판매처 검색이 완료되기 전에 중단됐습니다."\n              : !matchedProducts.length && Number(source.count || 0) > 0\n                ? \`검색 결과 \${Number(source.count)}개를 확인했습니다. 정확 상품 일치 여부를 추가 확인합니다.\`\n                : source.absenceConfirmed\n                  ? "상품코드 중심 검색을 완료했으며 일치 상품이 없습니다."\n                  : Number(source.candidateCount || 0) > 0\n                    ? "일치 후보 상품을 찾았지만 정확 상품 확인이 완료되지 않았습니다."\n                    : !matchedProducts.length ? "검색은 완료했지만 정확 상품 판정 근거가 부족합니다." : "";`,
   "show shared exact-card Naver verdict wording");
+renderer = renderer.replaceAll(
+  'source.naverTrustedChannelEvidence === true || source.naverAllSearchVerdict === "confirmed"',
+  'source.presenceConfirmed === true || source.naverTrustedChannelEvidence === true || source.naverAllSearchVerdict === "confirmed" || matchedProducts.length > 0 || Number(source.count || 0) > 0',
+);
+renderer = renderer.replace(
+  '      return { label: "상품없음", className: "missing" };',
+  '      if (source.absenceConfirmed === true || source.naverAllSearchVerdict === "absent") return { label: "상품없음", className: "missing" };\n      return { label: "결과 확인 중", className: "pending" };',
+);
+renderer = renderer.replace(
+  '    if (String(source.store || "") === "네이버 패션타운") return { label: "상품없음", className: "missing" };',
+  '    if (String(source.store || "") === "네이버 패션타운" && (source.absenceConfirmed === true || source.naverAllSearchVerdict === "absent")) return { label: "상품없음", className: "missing" };',
+);
+renderer = renderer.replace(
+  '? "정확 상품 카드에서 인정 판매처 유형이 확인되지 않아 상품없음으로 판정했습니다."',
+  '? (source.absenceConfirmed === true || source.naverAllSearchVerdict === "absent" ? "패션타운 검색 결과에 일치 상품이 없습니다." : "패션타운 검색 결과를 확인하고 있습니다.")',
+);
 renderer = renderer.replaceAll("검색·재고 확인", "검색 결과 열기");
 renderer = renderer.replaceAll("검색 입력 실패", "검색 결과 확인");
 renderer = renderer.replaceAll("상품코드를 검색창에 입력하고 검색 버튼을 누르는 단계에서 중단됐습니다.", "검색 결과 화면을 확인하고 있습니다.");
