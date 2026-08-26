@@ -12,10 +12,11 @@ if (!relay.includes('{ store: "네이버 패션타운", linkOnly: true, fashionT
 const sourceBlock = relay.match(/const sources = \[[\s\S]*?\n  \];/)?.[0] || "";
 if (!sourceBlock) fail("domestic source list was not found");
 for (const removed of ["네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛"]) if (sourceBlock.includes(`store: "${removed}"`)) fail(`${removed} is still searched as a separate source`);
-if (!main.includes('const directNaverFashionTownSource = String(source.store || "") === "네이버 패션타운";')) fail("direct Fashion Town source gate missing");
-if (!main.includes('const initialUrl = directNaverFashionTownSource ? url')) fail("Fashion Town does not open its generated shopping URL directly");
-if (!main.includes('if (interactiveSiteSearch && !directNaverFashionTownSource) {')) fail("Fashion Town still enters Naver main/search interaction flow");
-if (main.includes('const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;')) fail("Naver main page is still forced for Fashion Town");
+if (main.includes('directNaverFashionTownSource')) fail("Fashion Town still bypasses the visible Naver click route");
+if (!main.includes('const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;')) fail("Fashion Town does not start from Naver main");
+if (!main.includes('const shoppingHomeOpened = await clickNaverShoppingHomeMenu(searchWindow);')) fail("Shopping button click is missing");
+if (!main.includes('const fashionTownOpened = await clickNaverFashionTownMenu(searchWindow);')) fail("Fashion Town button click is missing");
+if (!main.includes('? await submitNaverShoppingSearch(searchWindow, searchQuery)')) fail("Fashion Town product-code submission is missing");
 if (!relay.includes('https://shopping.naver.com/window/search/fashion-group?q=')) fail("Fashion Town search URL is not shopping.naver.com/window/search/fashion-group");
 if (!main.includes('naverPortalSource && String(source.store || "") !== "네이버 패션타운"')) fail("Fashion Town still depends on Naver channel-count routing");
 if (!main.includes('const trustedChannelEvidence = /브랜드직영몰')) fail("Fashion Town trusted-channel evidence is missing");
@@ -32,4 +33,4 @@ if (!salesFilter.includes('if (filters.rowLevel === true || fixedTotalAnd) {')) 
 if (!salesFilter.includes('const matchMode = fixedTotalAnd || filters.matchMode === "all" ? "all" : "any";')) fail("fixed Excel preview no longer guarantees AND matching");
 if (!salesFilter.includes('if (totalSales < threshold || localTotalSales < threshold) continue;')) fail("processed workbook still allows one sales metric below the threshold");
 if (!salesFilter.includes('matchMode: "all",')) fail("processed workbook does not report AND matching");
-console.log("Naver Fashion Town direct shopping route, trusted-channel verdict, and strict 30+ row-level AND filtering verified");
+console.log("Naver Fashion Town visible click route, result verdict, and strict 30+ row-level AND filtering verified");
