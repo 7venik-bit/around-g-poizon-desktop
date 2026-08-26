@@ -7,7 +7,7 @@ const start = main.indexOf("async function clickNaverFashionTownMenu");
 const end = main.indexOf("async function typeNaverQueryLikeUser", start);
 const route = main.slice(start, end);
 
-test("Naver search accepts only the Fashion Town menu and its product field", () => {
+// This also guards release builds from silently falling back to Naver AI search.\ntest("Naver search accepts only the Fashion Town menu and its product field", () => {
   assert.match(route, /const fashionLabels = \["패션타운"\]/);
   assert.doesNotMatch(route, /const fashionLabels = \["패션타운", "패션위크"\]/);
   assert.ok(route.includes("const fashionInput = /상품명\\\\s*또는\\\\s*브랜드/"));
