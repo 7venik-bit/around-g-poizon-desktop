@@ -52,7 +52,7 @@ main = main.replace(
 // say "confirmed" while showing no image, title, price, or purchase link.
 main = main.replace(
   '      let cardVerdict = { trusted: false, labels: [], verdict: "absent" };',
-  '      let renderedProductCards = [];\n      let naverVisibleResultCount = 0;\n      let cardVerdict = { trusted: false, labels: [], verdict: "absent" };',
+  '      let renderedProductCards = [];\n      let naverVisibleResultCount = 0;\n      let naverVisibleResultCountObserved = false;\n      let cardVerdict = { trusted: false, labels: [], verdict: "absent" };',
 );
 main = main.replace(
   '              candidates.push({ text, markup: String(node.outerHTML || "").slice(0, 12000) });',
@@ -106,7 +106,7 @@ main = main.replace(
 );
 main = main.replace(
   '            return candidates.slice(0, 80);',
-  '            return { cards: candidates.slice(0, 80), visibleResultCount };',
+  '            return { cards: candidates.slice(0, 80), visibleResultCount, visibleResultCountObserved: Boolean(totalMatch) };',
 );
 main = main.replace(
   '        const renderedCards = await searchWindow.webContents.executeJavaScript(',
@@ -114,7 +114,7 @@ main = main.replace(
 );
 main = main.replace(
   '        cardVerdict = evaluateDomesticProductCards({\n          store: "네이버 패션타운",',
-  '        const renderedCards = Array.isArray(renderedResult) ? renderedResult : (Array.isArray(renderedResult?.cards) ? renderedResult.cards : []);\n        naverVisibleResultCount = Math.max(naverVisibleResultCount, Number(renderedResult?.visibleResultCount || 0));\n        cardVerdict = evaluateDomesticProductCards({\n          store: "네이버 패션타운",',
+  '        const renderedCards = Array.isArray(renderedResult) ? renderedResult : (Array.isArray(renderedResult?.cards) ? renderedResult.cards : []);\n        naverVisibleResultCount = Math.max(naverVisibleResultCount, Number(renderedResult?.visibleResultCount || 0));\n        naverVisibleResultCountObserved = naverVisibleResultCountObserved || renderedResult?.visibleResultCountObserved === true;\n        cardVerdict = evaluateDomesticProductCards({\n          store: "네이버 패션타운",',
 );
 main = main.replace(
   '        cardVerdict = evaluateDomesticProductCards({\n          store: "네이버 패션타운",',
@@ -122,7 +122,8 @@ main = main.replace(
 );
 main = main.replace(
   '      const allProducts = explicitEmpty ? [] : (Array.isArray(analyzed.products) ? analyzed.products : []);',
-  `      const analyzedProducts = Array.isArray(analyzed.products) ? analyzed.products : [];
+  `      const naverExplicitlyEmpty = explicitEmpty || (naverVisibleResultCountObserved && naverVisibleResultCount === 0);
+      const analyzedProducts = Array.isArray(analyzed.products) ? analyzed.products : [];
       const cardProducts = renderedProductCards
         .filter((card) => /^https?:\\/\\//i.test(String(card?.productUrl || "")))
         .filter((card, index, all) => index === all.findIndex((candidate) => String(candidate?.productUrl || "") === String(card?.productUrl || "")))
@@ -146,13 +147,21 @@ main = main.replace(
         }));
       // Naver's rendered list is authoritative. The analyzer is only a fallback
       // until Naver exposes its product anchors.
-      const allProducts = explicitEmpty && naverVisibleResultCount === 0
+      const allProducts = naverExplicitlyEmpty
         ? []
         : (cardProducts.length ? cardProducts : analyzedProducts);`,
 );
 main = main.replace(
   '      const confirmed = allProducts.length > 0 || trustedChannelEvidence;',
   '      const confirmed = naverVisibleResultCount > 0 || allProducts.length > 0;',
+);
+main = main.replace(
+  '        absenceConfirmed: explicitEmpty && !confirmed,',
+  '        absenceConfirmed: naverExplicitlyEmpty && !confirmed,',
+);
+main = main.replace(
+  '        naverAllSearchVerdict: confirmed ? "confirmed" : (explicitEmpty ? "absent" : "pending"),',
+  '        naverAllSearchVerdict: confirmed ? "confirmed" : (naverExplicitlyEmpty ? "absent" : "pending"),',
 );
 main = main.replace(
   '        count: allProducts.length,\n        products: allProducts,',
