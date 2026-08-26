@@ -29,6 +29,7 @@ if (!main.includes('store: "네이버 패션타운",\n          sourceStore: "�
 if (!main.includes("imageVerifiedFromCard: Boolean(card.imageUrl)")) fail("Naver product images are not preserved");
 if (!main.includes("cardProducts.length ? cardProducts : analyzedProducts")) fail("Naver rendered cards are not authoritative");
 if (!main.includes('for (const anchor of document.querySelectorAll("a[href]"))')) fail("Naver product anchors are not copied directly");
+if (!main.includes("compactCode(text).includes(compactCode(queryCode))")) fail("Naver visible exact-code cards behind tracking links are not copied");
 if (!main.includes("const naverExplicitlyEmpty = allProducts.length === 0")) fail("empty Naver product list is not treated as absence");
 if (!main.includes("absenceConfirmed: naverExplicitlyEmpty && !confirmed")) fail("explicit Naver zero does not produce absence");
 if (!main.includes('naverAllSearchVerdict: confirmed ? "confirmed" : "absent"')) fail("empty Naver list does not produce an absent verdict");
