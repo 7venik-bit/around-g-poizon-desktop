@@ -30,22 +30,6 @@ relay = replaceOnce(
 );
 await writeFile(relayPath, relay, "utf8");
 
-const mainPath = new URL("../main.mjs", import.meta.url);
-let main = normalizeLf(await readFile(mainPath, "utf8"));
-main = replaceOnce(
-  main,
-  'import { scoreProductCandidate } from "./services/matcher.mjs";',
-  'import { scoreProductCandidate } from "./services/matcher.mjs";\nimport { trustedAccountSheetRetailer } from "./services/domestic-card-verdict.mjs";',
-  "import account-sheet trusted retailers into main matching",
-);
-main = replaceOnce(
-  main,
-  `  let products = data.products.map((product) => ({\n    ...product,\n    ...scoreProductCandidate(source, product),\n  }));`,
-  `  let products = data.products.map((product) => {\n    const scored = {\n      ...product,\n      ...scoreProductCandidate(source, product),\n    };\n    const accountRetailer = trustedAccountSheetRetailer(scored.store);\n    const exactCodeMatched = Number(scored.signals?.codeScore || 0) === 1\n      && scored.articleConflict !== true\n      && scored.signals?.codeConflict !== true;\n    if (!accountRetailer || !exactCodeMatched) return scored;\n    return {\n      ...scored,\n      authenticityStatus: "account_sheet_trusted",\n      authenticityLabel: \`\${accountRetailer.label} 정품 유통 확인\`,\n      authenticityEvidence: \`계정정보 시트 등록 신뢰 판매처 · 정확 상품코드 \${source.articleNumber} 확인\`,\n      officialDistributionVerified: true,\n      platformAuthenticityPolicy: "계정정보 시트 신뢰 판매처 기준",\n    };\n  });`,
-  "mark exact-code direct trusted retailers as verified",
-);
-await writeFile(mainPath, main, "utf8");
-
 const rendererPath = new URL("../src/renderer.js", import.meta.url);
 let renderer = normalizeLf(await readFile(rendererPath, "utf8"));
 renderer = replaceOnce(
@@ -63,7 +47,7 @@ renderer = replaceOnce(
 renderer = replaceOnce(
   renderer,
   `  const sourceStatus = (source, matchedProducts) => {\n    const musinsaSource = String(source.store || "") === "무신사";`,
-  `  const sourceStatus = (source, matchedProducts) => {\n    // Google Drive 포이즌 시트의 계정정보에 등록된 신뢰 판매처에서 정확 상품코드가\n    // 확인되거나, 네이버/SSG/롯데ON의 지정 유통 라벨이 정확 상품 카드에 확인되면\n    // 해당 소스는 정품 유통 근거가 충분한 것으로 보고 확인완료로 종료한다.\n    const trustedDistributionVerified = matchedProducts.some((product) => product?.officialDistributionVerified === true);\n    if (trustedDistributionVerified) return { label: "확인완료", className: "available" };\n    const musinsaSource = String(source.store || "") === "무신사";`,
+  `  const sourceStatus = (source, matchedProducts) => {\n    // Google Drive 포이즌 시트 `계정정보` 기준:\n    // 1) 네이버/SSG/롯데ON은 정확 상품 카드의 지정 공식 유통 라벨을 확인한다.\n    // 2) 시트에 직접 등록된 무신사/29CM/ABC마트/S.I.VILLAGE는 이미\n    //    matchedProducts 단계에서 정확 상품으로 검증된 경우 확인완료로 종료한다.\n    const sourceStore = String(source.store || "");\n    const trustedDistributionVerified = matchedProducts.some((product) => product?.officialDistributionVerified === true);\n    const accountSheetDirectStore = ["무신사", "29CM", "ABC마트", "S.I.VILLAGE"].includes(sourceStore);\n    if (trustedDistributionVerified || (accountSheetDirectStore && matchedProducts.length > 0)) {\n      return { label: "확인완료", className: "available" };\n    }\n    const musinsaSource = sourceStore === "무신사";`,
   "finish account-sheet trusted distribution evidence as confirmed",
 );
 await writeFile(rendererPath, renderer, "utf8");
