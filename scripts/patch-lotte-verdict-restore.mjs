@@ -2,7 +2,6 @@ import { readFile, writeFile } from "node:fs/promises";
 
 const normalizeLf = (value) => String(value || "").replace(/\r\n/g, "\n");
 const replaceOnce = (source, before, after, label) => {
-  if (source.includes(after)) return source;
   const first = source.indexOf(before);
   if (first < 0) throw new Error(`LOTTE patch target missing: ${label}`);
   if (source.indexOf(before, first + before.length) >= 0) throw new Error(`LOTTE patch target duplicated: ${label}`);
@@ -11,15 +10,12 @@ const replaceOnce = (source, before, after, label) => {
 
 const mainPath = new URL("../main.mjs", import.meta.url);
 let main = normalizeLf(await readFile(mainPath, "utf8"));
-const imageTitlePrimary = main.includes("domesticProductIdentityAccepted");
-if (!imageTitlePrimary) {
-  main = replaceOnce(
-    main,
-    'import { scoreProductCandidate } from "./services/matcher.mjs";',
-    'import { imageEvidenceAllowsExactProduct, scoreProductCandidate } from "./services/matcher.mjs";',
-    "import exact-product image gate",
-  );
-}
+main = replaceOnce(
+  main,
+  'import { scoreProductCandidate } from "./services/matcher.mjs";',
+  'import { imageEvidenceAllowsExactProduct, scoreProductCandidate } from "./services/matcher.mjs";',
+  "import exact-product image gate",
+);
 main = replaceOnce(
   main,
   '  const ssgChannelSource = /^SSG(?:\\s|$)/.test(String(source.store || ""));',
@@ -50,20 +46,18 @@ main = replaceOnce(
   "        if ((ssgChannelSource || lotteChannelSource) && securityRetry < 1) {",
   "retry blocked Lotte page without false absence",
 );
-if (!imageTitlePrimary) {
-  main = replaceOnce(
-    main,
-    `  if (sourceFingerprint) {\n    const bestByStore = new Map();\n    products.forEach((product, index) => {\n      const previous = bestByStore.get(product.store);\n      if (!previous || product.confidence > previous.confidence) bestByStore.set(product.store, { index, confidence: product.confidence });\n    });\n    await Promise.all([...bestByStore.values()].map(async ({ index }) => {\n      const candidateFingerprint = await imageFingerprint(products[index].imageUrl).catch(() => null);\n      const imageSimilarity = fingerprintSimilarity(sourceFingerprint, candidateFingerprint);\n      products[index] = { ...products[index], ...scoreProductCandidate(source, products[index], imageSimilarity) };\n    }));\n  }`,
-    `  if (sourceFingerprint) {\n    const imageCheckIndexes = new Set();\n    const bestByStore = new Map();\n    products.forEach((product, index) => {\n      const exactCode = Number(product.signals?.codeScore || 0) === 1;\n      const portalStore = /^(?:SSG|롯데)/.test(String(product.store || ""));\n      // The screenshot-backed SSG/Lotte rule compares every exact-code card\n      // that owns an image, not only the single top-ranked card for the store.\n      if (portalStore && exactCode && product.imageUrl) imageCheckIndexes.add(index);\n      const previous = bestByStore.get(product.store);\n      if (!previous || product.confidence > previous.confidence) bestByStore.set(product.store, { index, confidence: product.confidence });\n    });\n    for (const { index } of bestByStore.values()) imageCheckIndexes.add(index);\n    await Promise.all([...imageCheckIndexes].slice(0, 24).map(async (index) => {\n      const candidateFingerprint = await imageFingerprint(products[index].imageUrl).catch(() => null);\n      const imageSimilarity = fingerprintSimilarity(sourceFingerprint, candidateFingerprint);\n      products[index] = {\n        ...products[index],\n        imageCompared: Number.isFinite(imageSimilarity),\n        ...scoreProductCandidate(source, products[index], imageSimilarity),\n      };\n    }));\n  }`,
-    "compare every exact SSG/Lotte result image",
-  );
-  main = replaceOnce(
-    main,
-    "    if (codeMatched) return true;",
-    `    if (codeMatched) {\n      return imageEvidenceAllowsExactProduct({\n        store: product.store,\n        hasSourceImage,\n        candidateImageUrl: String(product.imageUrl || ""),\n        imageCompared: product.imageCompared === true,\n        imageScore,\n      });\n    }`,
-    "use image as exact-code SSG/Lotte search criterion",
-  );
-}
+main = replaceOnce(
+  main,
+  `  if (sourceFingerprint) {\n    const bestByStore = new Map();\n    products.forEach((product, index) => {\n      const previous = bestByStore.get(product.store);\n      if (!previous || product.confidence > previous.confidence) bestByStore.set(product.store, { index, confidence: product.confidence });\n    });\n    await Promise.all([...bestByStore.values()].map(async ({ index }) => {\n      const candidateFingerprint = await imageFingerprint(products[index].imageUrl).catch(() => null);\n      const imageSimilarity = fingerprintSimilarity(sourceFingerprint, candidateFingerprint);\n      products[index] = { ...products[index], ...scoreProductCandidate(source, products[index], imageSimilarity) };\n    }));\n  }`,
+  `  if (sourceFingerprint) {\n    const imageCheckIndexes = new Set();\n    const bestByStore = new Map();\n    products.forEach((product, index) => {\n      const exactCode = Number(product.signals?.codeScore || 0) === 1;\n      const portalStore = /^(?:SSG|롯데)/.test(String(product.store || ""));\n      // The screenshot-backed SSG/Lotte rule compares every exact-code card\n      // that owns an image, not only the single top-ranked card for the store.\n      if (portalStore && exactCode && product.imageUrl) imageCheckIndexes.add(index);\n      const previous = bestByStore.get(product.store);\n      if (!previous || product.confidence > previous.confidence) bestByStore.set(product.store, { index, confidence: product.confidence });\n    });\n    for (const { index } of bestByStore.values()) imageCheckIndexes.add(index);\n    await Promise.all([...imageCheckIndexes].slice(0, 24).map(async (index) => {\n      const candidateFingerprint = await imageFingerprint(products[index].imageUrl).catch(() => null);\n      const imageSimilarity = fingerprintSimilarity(sourceFingerprint, candidateFingerprint);\n      products[index] = {\n        ...products[index],\n        imageCompared: Number.isFinite(imageSimilarity),\n        ...scoreProductCandidate(source, products[index], imageSimilarity),\n      };\n    }));\n  }`,
+  "compare every exact SSG/Lotte result image",
+);
+main = replaceOnce(
+  main,
+  "    if (codeMatched) return true;",
+  `    if (codeMatched) {\n      return imageEvidenceAllowsExactProduct({\n        store: product.store,\n        hasSourceImage,\n        candidateImageUrl: String(product.imageUrl || ""),\n        imageCompared: product.imageCompared === true,\n        imageScore,\n      });\n    }`,
+  "use image as exact-code SSG/Lotte search criterion",
+);
 await writeFile(mainPath, main, "utf8");
 
 const relayPath = new URL("../relay/domestic-search.mjs", import.meta.url);
@@ -100,6 +94,4 @@ relay = replaceOnce(
 );
 await writeFile(relayPath, relay, "utf8");
 
-console.log(imageTitlePrimary
-  ? "Lotte verdict restore patch applied; accuracy-first image+title matcher preserved"
-  : "Lotte verdict restore patch applied");
+console.log("Lotte verdict restore patch applied");
