@@ -75,7 +75,12 @@ const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 assert.ok(main.includes("const lotteChannelSource ="), "Lotte rendered channel must be detected");
 assert.ok(main.includes("show: naverPortalSource || ssgChannelSource || lotteChannelSource"), "Lotte result window must be visible for real-page verification");
 assert.ok(main.includes("(ssgChannelSource || lotteChannelSource) && securityRetry < 1"), "blocked Lotte page must retry once before verification failure");
-assert.ok(main.includes("portalStore && exactCode && product.imageUrl"), "every exact SSG/Lotte card image must be queued for comparison");
-assert.ok(main.includes("imageEvidenceAllowsExactProduct"), "exact-code Lotte/SSG filtering must include image evidence");
+if (main.includes("domesticProductIdentityAccepted")) {
+  assert.ok(main.includes("await Promise.all(products.map(async (_product, index) =>"), "accuracy-first mode must compare every captured candidate image");
+  assert.ok(main.includes("products = products.filter((product) => domesticProductIdentityAccepted(product, { hasSourceImage }))"), "Lotte/SSG filtering must use the image+title identity gate");
+} else {
+  assert.ok(main.includes("portalStore && exactCode && product.imageUrl"), "every exact SSG/Lotte card image must be queued for comparison");
+  assert.ok(main.includes("imageEvidenceAllowsExactProduct"), "exact-code Lotte/SSG filtering must include image evidence");
+}
 
-console.log("Lotte exact-verdict and image-evidence regression checks passed");
+console.log("Lotte exact-verdict regression checks passed under accuracy-first image+title matching");
