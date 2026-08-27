@@ -4,10 +4,12 @@ const sourcing = String(await readFile(new URL("../src/sourcing-view.js", import
 const fail = (message) => { throw new Error(`product image/text alignment verification failed: ${message}`); };
 
 if (!sourcing.includes("data-product-image-text-alignment")) fail("alignment marker missing");
-if (!sourcing.includes(".candidate-summary,")) fail("candidate image/text alignment missing");
-if (!sourcing.includes(".sourcing-product-list-row{align-items:start!important}")) fail("domestic row top alignment missing");
-if (!sourcing.includes(".sourcing-product-thumb{align-self:start!important;margin-top:0!important}")) fail("domestic thumbnail alignment missing");
-if (!sourcing.includes(".sourcing-product-info{align-self:start!important")) fail("domestic text block alignment missing");
-if (!sourcing.includes(".sourcing-product-actions{align-self:center!important}")) fail("domestic actions alignment missing");
+if (!sourcing.includes(".candidate-summary{")) fail("candidate layout missing");
+if (!sourcing.includes("display:flex!important;\n      flex-direction:row!important;")) fail("horizontal flex layout missing");
+if (!sourcing.includes(".sourcing-product-list-row{")) fail("domestic product row layout missing");
+if (!sourcing.includes(".sourcing-product-thumb{\n      flex:0 0 44px!important")) fail("domestic thumbnail left column missing");
+if (!sourcing.includes(".sourcing-product-info{\n      display:flex!important;\n      flex:1 1 auto!important")) fail("domestic text block right column missing");
+if (!sourcing.includes(".sourcing-product-actions{\n      flex:0 0 100px!important")) fail("domestic action column missing");
+if (!sourcing.includes("#excel-preview-grid .excel-product-row .excel-product-image+td")) fail("Excel image/text top-line alignment missing");
 
-console.log("product image/text alignment verified");
+console.log("product image-left text-right layout verified");
