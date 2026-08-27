@@ -12,7 +12,10 @@ if (main.includes(`async function ${helperName}(`)) {
 const submitAnchor = "async function submitNaverShoppingSearch(searchWindow, query) {";
 if (!main.includes(submitAnchor)) throw new Error("submitNaverShoppingSearch anchor missing");
 
-const helper = `async function waitForNaverSearchResultsStable(searchWindow, query) {
+// Define the helper as real JavaScript and inject Function#toString output.
+// This preserves regex/backslash syntax exactly and avoids the nested string
+// escaping bug that produced an invalid regular expression in v2.10.487.
+async function waitForNaverSearchResultsStablePatch(searchWindow, query) {
   if (!searchWindow || searchWindow.isDestroyed()) return false;
   const exactQuery = String(query || "").trim();
   if (!exactQuery) return false;
@@ -21,8 +24,8 @@ const helper = `async function waitForNaverSearchResultsStable(searchWindow, que
   let stableSamples = 0;
   while (Date.now() < deadline) {
     if (searchWindow.isDestroyed()) return false;
-    const state = await searchWindow.webContents.executeJavaScript(\`(() => {
-      const query = ${JSON.stringify("__NAVER_STABILITY_QUERY__")};
+    const pageScript = `(() => {
+      const query = ${JSON.stringify(exactQuery)};
       const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
       const expected = compact(query);
       const bodyText = String(document.body?.innerText || "");
@@ -31,7 +34,7 @@ const helper = `async function waitForNaverSearchResultsStable(searchWindow, que
           .some((input) => compact(input.value || input.textContent).includes(expected)));
       const productLinks = [...document.querySelectorAll('a[href*="window-products"],a[href*="/products/"]')]
         .map((link) => ({ href: String(link.href || ""), text: String(link.innerText || link.textContent || "").trim() }))
-        .filter((item) => /^https?:\\/\\//i.test(item.href));
+        .filter((item) => /^https?:\/\//i.test(item.href));
       const unique = [];
       const seen = new Set();
       for (const item of productLinks) {
@@ -40,11 +43,12 @@ const helper = `async function waitForNaverSearchResultsStable(searchWindow, que
         unique.push(item);
         if (unique.length >= 24) break;
       }
-      const noResult = /검색된\\s*상품이\\s*없습니다|검색\\s*결과가\\s*없습니다|상품이\\s*없습니다|검색결과\\s*없음/i.test(bodyText);
-      const securityRequired = /captcha|보안\\s*확인|자동\\s*입력|로봇|스팸을\\s*방지|실제\\s*사용자|비정상적인\\s*접근/i.test(bodyText);
+      const noResult = /검색된\s*상품이\s*없습니다|검색\s*결과가\s*없습니다|상품이\s*없습니다|검색결과\s*없음/i.test(bodyText);
+      const securityRequired = /captcha|보안\s*확인|자동\s*입력|로봇|스팸을\s*방지|실제\s*사용자|비정상적인\s*접근/i.test(bodyText);
       const signature = unique.map((item) => item.href + "|" + compact(item.text).slice(0, 80)).join("||");
       return { queryVisible, noResult, securityRequired, cardCount: unique.length, signature };
-    })()\`.replace("__NAVER_STABILITY_QUERY__", exactQuery.replace(/\\/g, "\\\\").replace(/\"/g, '\\\"')), true).catch(() => null);
+    })()`;
+    const state = await searchWindow.webContents.executeJavaScript(pageScript, true).catch(() => null);
     if (!state || state.securityRequired) return false;
     const ready = state.queryVisible === true && (state.cardCount > 0 || state.noResult === true);
     const signature = state.noResult === true ? "__NO_RESULT__" : String(state.signature || "");
@@ -62,12 +66,9 @@ const helper = `async function waitForNaverSearchResultsStable(searchWindow, que
   return false;
 }
 
-`;
-
-// Avoid nested template interpolation in the helper source above by replacing
-// the sentinel escape byte with an ordinary expression marker.
-const normalizedHelper = helper.replace("\u001b", "");
-main = main.replace(submitAnchor, `${normalizedHelper}${submitAnchor}`);
+const helper = `${waitForNaverSearchResultsStablePatch.toString()
+  .replace("waitForNaverSearchResultsStablePatch", helperName)}\n\n`;
+main = main.replace(submitAnchor, `${helper}${submitAnchor}`);
 
 const functionStart = main.indexOf(submitAnchor);
 const functionEnd = main.indexOf("\nasync function openRenderedSizeOptions", functionStart);
