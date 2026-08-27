@@ -144,39 +144,6 @@ export function readPoizonColumnValues(buffer, ...headerNames) {
   return { column: columnNameToNumber(header.column) - 1, header: header.value, values };
 }
 
-export function readPoizonWorksheetRowsFast(buffer) {
-  const archive = unzipSync(new Uint8Array(buffer));
-  const sheetPaths = Object.keys(archive).filter((path) => WORKSHEET_PATH.test(path)).sort();
-  for (const sheetPath of sheetPaths) {
-    const xml = strFromU8(archive[sheetPath]);
-    if (!/<row\b/i.test(xml)) continue;
-    const sharedStrings = /\bt="s"/.test(xml) ? sharedStringValues(archive) : [];
-    const rows = [];
-    let fallbackRowNumber = 0;
-    for (const rowMatch of xml.matchAll(/<row\b([^>]*)>([\s\S]*?)<\/row>/g)) {
-      const rowAttributes = rowMatch[1] || "";
-      const rowNumber = Number(rowAttributes.match(/\br="(\d+)"/)?.[1]) || fallbackRowNumber + 1;
-      fallbackRowNumber = rowNumber;
-      const row = [];
-      for (const cellMatch of rowMatch[2].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
-        const cellAttributes = cellMatch[1] || "";
-        const reference = cellAttributes.match(/\br="([A-Z]+)(\d+)"/i);
-        if (!reference) continue;
-        const columnIndex = columnNameToNumber(reference[1].toUpperCase()) - 1;
-        if (columnIndex < 0) continue;
-        const fullCellXml = `<c${cellAttributes}>${cellMatch[2]}</c>`;
-        row[columnIndex] = cellText(fullCellXml, sharedStrings);
-      }
-      while (rows.length < rowNumber - 1) rows.push([]);
-      rows[rowNumber - 1] = row;
-    }
-    if (rows.some((row) => Array.isArray(row) && row.some((value) => String(value ?? "").trim()))) {
-      return rows;
-    }
-  }
-  return [];
-}
-
 export function repairPoizonWorksheetDimensions(buffer) {
   const archive = unzipSync(new Uint8Array(buffer));
   let repaired = false;
