@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test tests/*.test.mjs",
-    "postinstall": "node scripts/patch-disable-domestic-stock-search.mjs && node scripts/verify-disable-domestic-stock-search.mjs && node scripts/patch-naver-overlap-dedupe.mjs && node scripts/verify-naver-overlap-dedupe.mjs && node scripts/patch-popular-rankboard-scope.mjs && node scripts/verify-popular-rankboard-scope.mjs",
+    "postinstall": "node scripts/patch-disable-domestic-stock-search.mjs && node scripts/verify-disable-domestic-stock-search.mjs && node scripts/patch-naver-overlap-dedupe.mjs && node scripts/verify-naver-overlap-dedupe.mjs && node scripts/patch-official-naver-link-only.mjs && node scripts/verify-official-naver-link-only.mjs && node scripts/patch-popular-rankboard-scope.mjs && node scripts/verify-popular-rankboard-scope.mjs",
     "dist": "npm run test && electron-builder --win nsis"
   },
   "dependencies": {
