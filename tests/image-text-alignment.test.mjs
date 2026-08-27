@@ -4,10 +4,12 @@ import test from "node:test";
 
 const sourcing = String(await readFile(new URL("../src/sourcing-view.js", import.meta.url), "utf8"));
 
-test("product thumbnails and adjacent text are aligned consistently", () => {
+test("product images stay left with text directly to the right", () => {
   assert.match(sourcing, /data-product-image-text-alignment/);
-  assert.match(sourcing, /\.sourcing-product-list-row\{align-items:start!important\}/);
-  assert.match(sourcing, /\.sourcing-product-thumb\{align-self:start!important;margin-top:0!important\}/);
-  assert.match(sourcing, /\.sourcing-product-info\{align-self:start!important/);
-  assert.match(sourcing, /\.candidate-summary,/);
+  assert.match(sourcing, /\.candidate-summary\{/);
+  assert.match(sourcing, /display:flex!important;\s*flex-direction:row!important;/);
+  assert.match(sourcing, /\.sourcing-product-list-row\{/);
+  assert.match(sourcing, /\.sourcing-product-thumb\{\s*flex:0 0 44px!important/);
+  assert.match(sourcing, /\.sourcing-product-info\{\s*display:flex!important;\s*flex:1 1 auto!important/);
+  assert.match(sourcing, /#excel-preview-grid \.excel-product-row \.excel-product-image\+td/);
 });
