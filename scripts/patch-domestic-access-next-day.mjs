@@ -43,8 +43,8 @@ const sourcingPath = new URL("../src/sourcing-view.js", import.meta.url);
 let sourcing = normalizeLf(await readFile(sourcingPath, "utf8"));
 sourcing = replaceOnce(
   sourcing,
-  "  function stockPresentation(result, outcome) {\n    if (result?.loading)",
-  "  function stockPresentation(result, outcome) {\n    if (result?.accessLimitedUntil) return { label: \"내일 재시도\", className: \"pending\" };\n    if (result?.loading)",
+  "  function domesticSearchPresentation(result) {\n    if (result?.loading)",
+  "  function domesticSearchPresentation(result) {\n    if (result?.accessLimitedUntil) return { label: \"내일 재시도\", className: \"pending\" };\n    if (result?.loading)",
   "show next-day retry label",
 );
 await writeFile(sourcingPath, sourcing, "utf8");
