@@ -99,7 +99,7 @@ const newImport = `    const sheet = await readFirstDataSheet(await readFile(fil
       headerRow: headerRowIndex + 1,
       message: imported > 0 ? "" : identityColumnFound
         ? "Excel 파일은 열었지만 상품 데이터 행을 찾지 못했습니다."
-        : `Excel 파일은 열었지만 상품번호/상품명 열을 찾지 못했습니다. 인식한 헤더: ${headers.filter(Boolean).slice(0, 12).join(", ") || "없음"}`,
+        : "Excel 파일은 열었지만 상품번호/상품명 열을 찾지 못했습니다. 인식한 헤더: " + (headers.filter(Boolean).slice(0, 12).join(", ") || "없음"),
     };`;
 
 main = replaceOnce(main, oldImport, newImport, "tolerant POIZON Excel import");
