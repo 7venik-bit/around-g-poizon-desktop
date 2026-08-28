@@ -219,7 +219,11 @@ $("#select-all").addEventListener("change", (event) => {
   render();
 });
 $("#search-selected").addEventListener("click", searchSelected);
-$("#stop").addEventListener("click", () => { state.stopped = true; });
+$("#stop").addEventListener("click", async () => {
+  state.stopped = true;
+  $("#status").textContent = "검색을 중지하고 있습니다.";
+  await window.aroundG.cancelDomesticSearch?.();
+});
 $("#clear-work").addEventListener("click", async () => {
   const button = $("#clear-work");
   button.disabled = true;
