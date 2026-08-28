@@ -8,6 +8,7 @@
     loadSequence: 0,
     scheduled: false,
   };
+  const COLUMN_MODE_KEY = "around-g-excel-column-mode-v1";
 
   function previewState() {
     try {
@@ -39,7 +40,8 @@
   }
 
   function headerCells() {
-    return [...document.querySelectorAll("#excel-preview-columns th")].slice(2);
+    const rawHeaders = [...document.querySelectorAll("#excel-preview-columns .excel-raw-data-heading")];
+    return rawHeaders.length ? rawHeaders : [...document.querySelectorAll("#excel-preview-columns th")].slice(2);
   }
 
   function assignColumnIndexes() {
@@ -55,8 +57,12 @@
         header.appendChild(handle);
       }
     });
+    const rawView = headers.some((header) => header.classList.contains("excel-raw-data-heading"));
     document.querySelectorAll("#excel-preview-rows tr").forEach((row) => {
-      [...row.querySelectorAll("td")].slice(1).forEach((cell, index) => {
+      const cells = rawView
+        ? [...row.querySelectorAll(".excel-raw-data-cell")]
+        : [...row.querySelectorAll("td")].slice(1);
+      cells.forEach((cell, index) => {
         cell.dataset.excelColumnIndex = String(index);
       });
     });
@@ -97,7 +103,7 @@
 
   async function loadLayout() {
     const preview = previewState();
-    if (preview?.viewMode === "products" || preview?.viewMode === "raw") return;
+    if (preview?.viewMode === "products") return;
     const filePath = String(preview?.file?.path || "").trim();
     const headers = assignColumnIndexes();
     if (!filePath || !headers.length) return;
@@ -117,6 +123,17 @@
       return;
     }
     state.layout = Array.isArray(result.columnLayout) ? result.columnLayout : [];
+    const integratedRawView = preview?.viewMode === "raw"
+      && (() => { try { return Boolean(excelPreviewIntegrated); } catch { return false; } })();
+    const compactMode = localStorage.getItem(COLUMN_MODE_KEY) !== "all";
+    if (integratedRawView && compactMode) {
+      const count = applySourcingColumns(false);
+      if (count) {
+        applyLayout();
+        void persistLayout(`${count}개 불필요 열을 자동으로 숨겼습니다`);
+        return;
+      }
+    }
     applyLayout();
   }
 
@@ -157,25 +174,39 @@
     state.layout.forEach((entry) => {
       entry.hidden = false;
     });
+    localStorage.setItem(COLUMN_MODE_KEY, "all");
     applyLayout();
     void persistLayout("숨긴 열을 모두 다시 표시했습니다");
   }
 
-  function hideCommonColumns() {
-    const matcher = /^(?:sku|판매자sku|판매자skuid|sellersku|sellerskuid|상품출처|상품source|productsource)$/i;
+  function normalizedHeader(header) {
+    return String(header?.childNodes?.[0]?.textContent || header?.textContent || "")
+      .normalize("NFKC")
+      .replace(/[^a-z0-9가-힣]+/gi, "")
+      .toLowerCase();
+  }
+
+  function sourcingEssentialColumn(header) {
+    const value = normalizedHeader(header);
+    return /^(?:spu이미지|상품이미지|이미지(?:url)?|상품번호|상품코드|품번|상품명|영문상품명|사이즈(?:옵션|색상)?|옵션|sku옵션|최근30일간?평균거래가|평균거래가|현재중국최저입찰가|현재중국최저입찰가예상수익|중국총판매량|총판매량|현지판매자총판매량|현지총판매량)$/i.test(value);
+  }
+
+  function applySourcingColumns(resetEssential = true) {
     let count = 0;
     headerCells().forEach((header, index) => {
-      const normalized = String(header.childNodes[0]?.textContent || header.textContent || "")
-        .normalize("NFKC")
-        .replace(/[^a-z0-9가-힣]+/gi, "")
-        .toLowerCase();
-      if (!matcher.test(normalized)) return;
       const entry = layoutEntry(index, true);
-      if (!entry.hidden) count += 1;
-      entry.hidden = true;
+      const hidden = !sourcingEssentialColumn(header);
+      if (hidden && !entry.hidden) count += 1;
+      if (hidden || resetEssential) entry.hidden = hidden;
     });
+    return count;
+  }
+
+  function hideCommonColumns() {
+    localStorage.setItem(COLUMN_MODE_KEY, "compact");
+    const count = applySourcingColumns();
     if (!count) {
-      setStatus("자동 숨김 대상 열을 찾지 못했습니다. 숨길 열 제목에서 마우스 오른쪽 버튼을 사용하세요.");
+      setStatus("이미 상품 소싱에 필요한 열만 표시하고 있습니다.");
       return;
     }
     applyLayout();
