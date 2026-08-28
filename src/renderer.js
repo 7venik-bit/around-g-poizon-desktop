@@ -61,6 +61,8 @@ let excelPreviewPageKeys = [];
 let excelPreviewBatchSearching = false;
 let excelPreviewIntegrated = false;
 let excelPreviewFilesParent = null;
+let excelPreviewIntegratedHostId = "brand-integrated-preview-host";
+let excelPreviewIntegratedWorkspaceId = "brand-product-workspace";
 const EXCEL_SEARCH_RESULTS_KEY = "around-g-excel-search-results-v2";
 // Domestic retailer results are live page evidence. A previous run\'s
 // "상품 없음" must never become the initial state of a newly started app.
@@ -366,6 +368,26 @@ async function openIntegratedBrandExcel(file, productSearch = false) {
   }, { integrated: true, preserveFilters: false, productView: false });
 }
 
+async function openIntegratedPopularExcel(file) {
+  if (!file?.path) return;
+  $("#popular-product-workspace-title").textContent = "POIZON 인기리스트 · 원본 Excel 상품검색";
+  $("#popular-product-workspace-meta").textContent = `${file.name || file.path} · 우측 마지막 칸에서 국내 상품과 구매 링크를 확인합니다.`;
+  excelPreviewProductMode = false;
+  await showExcelPreview(file, 0, {
+    minimumTotal: "",
+    minimumLocalTotal: "",
+    fixedTotalAnd: true,
+    matchMode: "all",
+    productView: false,
+  }, {
+    integrated: true,
+    integratedHostId: "popular-integrated-preview-host",
+    integratedWorkspaceId: "popular-product-workspace",
+    preserveFilters: false,
+    productView: false,
+  });
+}
+
 $("#brand-export-completed-list")?.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-completed-action]");
   const row = button?.closest("[data-completed-file-path]");
@@ -379,6 +401,7 @@ $("#brand-export-completed-list")?.addEventListener("click", async (event) => {
   await openIntegratedBrandExcel(file, button.dataset.completedAction === "search");
 });
 $("#brand-product-workspace-close")?.addEventListener("click", () => $("#excel-preview-close")?.click());
+$("#popular-product-workspace-close")?.addEventListener("click", () => $("#excel-preview-close")?.click());
 
 $("#brand-batch-list")?.addEventListener("change", (event) => {
   const checkbox = event.target.closest('input[type="checkbox"]');
@@ -691,11 +714,11 @@ function currentExcelPreviewFilters() {
 }
 
 function excelProductColumnIndex(headers = []) {
-  return headers.findIndex((header) => /^(상품\s*번호|품번|article\s*(number|no)?|product\s*(number|no)?|货号|商品编号)$/i.test(String(header || "").trim()));
+  return headers.findIndex((header) => /^(상품\s*번호|상품\s*코드|품번|article\s*(number|no)?|product\s*(number|no)?|货号|商品编号)$/i.test(String(header || "").trim()));
 }
 
 function excelImageColumn(header = "") {
-  return /^(?:SPU\s*이미지|SKU\s*이미지|상품\s*이미지|이미지)$/i.test(String(header || "").trim());
+  return /^(?:SPU\s*이미지|SKU\s*이미지|상품\s*이미지|이미지(?:\s*URL)?)$/i.test(String(header || "").trim());
 }
 
 function renderRawExcelCell(cell, header = "", columnIndex = 0) {
@@ -940,8 +963,11 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   if (!excelPreviewFilesParent) excelPreviewFilesParent = preview?.parentElement || filesPanel;
   excelPreviewIntegrated = Boolean(integrated);
   if (excelPreviewIntegrated) {
-    $("#brand-integrated-preview-host")?.append(preview);
-    $("#brand-product-workspace").hidden = false;
+    if (options.integratedHostId) excelPreviewIntegratedHostId = options.integratedHostId;
+    if (options.integratedWorkspaceId) excelPreviewIntegratedWorkspaceId = options.integratedWorkspaceId;
+    $(`#${excelPreviewIntegratedHostId}`)?.append(preview);
+    const integratedWorkspace = $(`#${excelPreviewIntegratedWorkspaceId}`);
+    if (integratedWorkspace) integratedWorkspace.hidden = false;
     filesPanel?.classList.remove("excel-preview-mode");
     productsView?.classList.remove("excel-data-view-open");
     document.body.classList.remove("excel-preview-active");
@@ -949,6 +975,7 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   } else {
     if (excelPreviewFilesParent && preview?.parentElement !== excelPreviewFilesParent) excelPreviewFilesParent.append(preview);
     $("#brand-product-workspace").hidden = true;
+    $("#popular-product-workspace").hidden = true;
     $("#excel-preview-close").textContent = "← 파일 목록으로";
   }
   if (!excelPreviewIntegrated) {
@@ -980,7 +1007,7 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   grid.hidden = true;
   pager.hidden = true;
   $("#excel-preview-name").textContent = file.name || "Excel 미리보기";
-  (excelPreviewIntegrated ? $("#brand-product-workspace") : filesPanel)?.scrollIntoView({ behavior: "auto", block: "start" });
+  (excelPreviewIntegrated ? $(`#${excelPreviewIntegratedWorkspaceId}`) : filesPanel)?.scrollIntoView({ behavior: "auto", block: "start" });
   const result = await window.aroundG.previewExcelFile(file.path, offset, 100, filters);
   if (requestId !== excelPreviewRequestId) return;
   if (!result?.ok) {
@@ -2737,15 +2764,19 @@ async function capturePopularProducts(options = {}) {
       : " · 누락 0개";
     const sourceLabel = `바탕화면 Excel 재검증 완료 ${excelResult.imported}/200${missingLabel} · ${excelResult.path}`;
     const storedProducts = await acceptSellerCenterProducts(verifiedProducts, sourceLabel, {
-      renderResults: options.renderResults !== false,
+      renderResults: false,
     });
     const completedProducts = verifiedProducts.filter((product) => !product.missingRank);
-    if (options.runDomestic !== false && completedProducts.length > 0) {
-      await runDomesticBatch();
-    } else if (options.runDomestic !== false) {
-      $("#domestic-batch-status").className = "status error";
-      $("#domestic-batch-status").textContent = "재검증된 상품이 없어 국내 재고 검색을 시작하지 않았습니다.";
-    }
+    const popularFile = {
+      path: excelResult.path,
+      name: String(excelResult.path || "").split(/[\\/]/).pop() || "POIZON-인기상품-원본.xlsx",
+      brandName: "POIZON 인기리스트",
+      jobId: `인기상품 ${excelResult.imported}/200`,
+    };
+    await openIntegratedPopularExcel(popularFile);
+    $("#popular-status").textContent = completedProducts.length
+      ? `${sourceLabel} · 행별 상품검색 또는 선택 상품검색을 실행할 수 있습니다.`
+      : `${sourceLabel} · 검색 가능한 상품이 없습니다.`;
     return { ok: true, products: storedProducts };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error || "인기리스트 수집 실패");
@@ -3011,8 +3042,11 @@ $("#excel-preview-close")?.addEventListener("click", () => {
   excelPreviewProductMode = false;
   excelPreviewBatchSearching = false;
   excelPreviewIntegrated = false;
+  excelPreviewIntegratedHostId = "brand-integrated-preview-host";
+  excelPreviewIntegratedWorkspaceId = "brand-product-workspace";
   $("#excel-preview").hidden = true;
   $("#brand-product-workspace").hidden = true;
+  $("#popular-product-workspace").hidden = true;
   if (excelPreviewFilesParent && $("#excel-preview")?.parentElement !== excelPreviewFilesParent) excelPreviewFilesParent.append($("#excel-preview"));
   $("#explorer-files")?.classList.remove("excel-preview-mode");
   $("#products")?.classList.remove("excel-data-view-open");
