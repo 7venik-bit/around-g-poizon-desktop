@@ -623,10 +623,10 @@ body.excel-preview-active{overflow:hidden}
 .excel-preview-grid .excel-image-cell img{display:block;width:46px;height:46px;margin:auto;object-fit:contain;border-radius:5px;background:#fff}
 .excel-preview:not(.product-view) .excel-preview-grid .excel-raw-data-heading,.excel-preview:not(.product-view) .excel-preview-grid .excel-raw-data-cell{min-width:82px;width:82px;max-width:82px;padding-left:5px;padding-right:5px}
 .excel-preview:not(.product-view) .excel-preview-grid .excel-image-column,.excel-preview:not(.product-view) .excel-preview-grid .excel-image-cell{min-width:58px;width:58px;max-width:58px}
-.excel-preview-grid .excel-raw-search-heading,.excel-preview-grid .excel-raw-search-cell{min-width:205px;width:205px;max-width:205px}
+.excel-preview-grid .excel-raw-search-heading,.excel-preview-grid .excel-raw-search-cell{min-width:170px;width:170px;max-width:170px}
 .excel-preview-grid .excel-column-hidden{display:none!important}
 .excel-preview-grid .excel-raw-search-cell{height:68px;min-height:68px;padding:4px 6px;white-space:normal;overflow:hidden;vertical-align:middle}
-.excel-preview-grid .excel-raw-search-pending{text-align:center}
+.excel-preview-grid .excel-raw-search-pending{height:54px;min-height:54px;text-align:center}
 .excel-preview-grid .excel-raw-search-pending>.excel-product-search{display:inline-flex;width:88px;min-width:88px;max-width:88px;min-height:28px;margin:auto;padding:6px 12px;align-items:center;justify-content:center;border-radius:7px;font-size:10px;line-height:1.2}
 .excel-raw-search-summary{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:3px}
 .excel-raw-search-state{display:inline-flex;align-items:center;min-height:19px;padding:2px 5px;border-radius:999px;font-size:9px;font-weight:800;white-space:nowrap}
