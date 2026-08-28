@@ -627,7 +627,7 @@ body.excel-preview-active{overflow:hidden}
 .excel-preview-grid .excel-column-hidden{display:none!important}
 .excel-preview-grid .excel-raw-search-cell{height:68px;min-height:68px;padding:4px 6px;white-space:normal;overflow:hidden;vertical-align:middle}
 .excel-preview-grid .excel-raw-search-pending{text-align:center}
-.excel-preview-grid .excel-raw-search-pending>.excel-product-search{display:inline-flex;width:auto;min-width:46px;max-width:64px;min-height:0;margin:auto;padding:4px 9px;align-items:center;justify-content:center;border-radius:6px;font-size:9px;line-height:1.2}
+.excel-preview-grid .excel-raw-search-pending>.excel-product-search{display:inline-flex;width:88px;min-width:88px;max-width:88px;min-height:28px;margin:auto;padding:6px 12px;align-items:center;justify-content:center;border-radius:7px;font-size:10px;line-height:1.2}
 .excel-raw-search-summary{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:3px}
 .excel-raw-search-state{display:inline-flex;align-items:center;min-height:19px;padding:2px 5px;border-radius:999px;font-size:9px;font-weight:800;white-space:nowrap}
 .excel-raw-search-state.available{color:#287044;background:#e9f7ed}.excel-raw-search-state.missing{color:#667085;background:#eef1f4}.excel-raw-search-state.error{color:#a34b43;background:#fff0ee}.excel-raw-search-state.loading{color:#1768c5;background:#eaf3ff}.excel-raw-search-state.muted{color:#7b8794;background:#f3f4f6}
