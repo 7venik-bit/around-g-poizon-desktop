@@ -64,10 +64,16 @@ let excelPreviewFilesParent = null;
 let excelPreviewIntegratedHostId = "brand-integrated-preview-host";
 let excelPreviewIntegratedWorkspaceId = "brand-product-workspace";
 const EXCEL_SEARCH_RESULTS_KEY = "around-g-excel-search-results-v2";
+const EXCEL_COLUMN_MODE_KEY = "around-g-excel-column-mode-v1";
+const EXCEL_COMPACT_MIGRATION_KEY = "around-g-excel-compact-default-v2.10.499";
 // Domestic retailer results are live page evidence. A previous run\'s
 // "상품 없음" must never become the initial state of a newly started app.
 try {
   localStorage.removeItem(EXCEL_SEARCH_RESULTS_KEY);
+  if (localStorage.getItem(EXCEL_COMPACT_MIGRATION_KEY) !== "done") {
+    localStorage.setItem(EXCEL_COLUMN_MODE_KEY, "compact");
+    localStorage.setItem(EXCEL_COMPACT_MIGRATION_KEY, "done");
+  }
 } catch {}
 const excelPreviewProductCache = new Map();
 const excelPreviewSearchResults = new Map();
@@ -757,13 +763,24 @@ function excelImageColumn(header = "") {
   return /^(?:SPU\s*이미지|SKU\s*이미지|상품\s*이미지|이미지(?:\s*URL)?)$/i.test(String(header || "").trim());
 }
 
-function renderRawExcelCell(cell, header = "", columnIndex = 0) {
+function normalizedRawExcelHeader(header = "") {
+  return String(header || "").normalize("NFKC").replace(/[^a-z0-9가-힣]+/gi, "").toLowerCase();
+}
+
+function rawExcelSourcingColumnVisible(header = "", keepBrand = false) {
+  const value = normalizedRawExcelHeader(header);
+  if (keepBrand && /^(?:상품브랜드|브랜드)$/i.test(value)) return true;
+  return /^(?:spu이미지|상품이미지|이미지(?:url)?|상품번호|상품코드|품번|상품명|영문상품명|사이즈(?:옵션|색상)?|옵션|sku옵션|최근30일간?평균거래가|평균거래가|현재중국최저입찰가|현재중국최저입찰가예상수익|중국총판매량|총판매량|현지판매자총판매량|현지총판매량)$/i.test(value);
+}
+
+function renderRawExcelCell(cell, header = "", columnIndex = 0, compact = false, keepBrand = false) {
   const value = String(cell ?? "").trim();
+  const hiddenClass = compact && !rawExcelSourcingColumnVisible(header, keepBrand) ? " excel-column-hidden" : "";
   if (excelImageColumn(header) && /^https:\/\//i.test(value)) {
-    return `<td class="excel-raw-data-cell excel-image-cell" data-excel-column-index="${columnIndex}" title="${text(value)}"><a href="${text(value)}" target="_blank" rel="noreferrer" aria-label="제품 이미지 크게 보기"><img src="${text(value)}" alt="제품 이미지" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('a').hidden=true"></a></td>`;
+    return `<td class="excel-raw-data-cell excel-image-cell${hiddenClass}" data-excel-column-index="${columnIndex}" title="${text(value)}"><a href="${text(value)}" target="_blank" rel="noreferrer" aria-label="제품 이미지 크게 보기"><img src="${text(value)}" alt="제품 이미지" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('a').hidden=true"></a></td>`;
   }
   const displayValue = !value ? "숨김" : cell;
-  return `<td class="excel-raw-data-cell" data-excel-column-index="${columnIndex}" title="${text(displayValue)}">${text(displayValue)}</td>`;
+  return `<td class="excel-raw-data-cell${hiddenClass}" data-excel-column-index="${columnIndex}" title="${text(displayValue)}">${text(displayValue)}</td>`;
 }
 
 function rawExcelDomesticResultLinks(result = {}) {
@@ -1116,13 +1133,15 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   if (result.productView) {
     renderExcelProductRows(file, products);
   } else {
-    $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th>${headers.map((header, columnIndex) => `<th class="excel-raw-data-heading${excelImageColumn(header) ? " excel-image-column" : ""}" data-excel-column-index="${columnIndex}" title="${text(header)}">${text(header)}</th>`).join("")}<th class="excel-raw-search-heading">상품 검색 결과 · 링크</th></tr>`;
+    const compactColumns = localStorage.getItem(EXCEL_COLUMN_MODE_KEY) !== "all";
+    const keepBrandColumn = excelPreviewIntegratedWorkspaceId === "popular-product-workspace";
+    $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th>${headers.map((header, columnIndex) => `<th class="excel-raw-data-heading${excelImageColumn(header) ? " excel-image-column" : ""}${compactColumns && !rawExcelSourcingColumnVisible(header, keepBrandColumn) ? " excel-column-hidden" : ""}" data-excel-column-index="${columnIndex}" title="${text(header)}">${text(header)}</th>`).join("")}<th class="excel-raw-search-heading">상품 검색 결과 · 링크</th></tr>`;
     $("#excel-preview-rows").innerHTML = rows.length
       ? rows.map((row, index) => {
           const product = pageProductsByRow[index];
           const key = pageProductKeys[index];
           const searchResult = product ? excelPreviewSearchResults.get(key) : null;
-          return `<tr><td class="excel-product-select-column">${product ? `<input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택">` : ""}</td>${row.map((cell, columnIndex) => renderRawExcelCell(cell, headers[columnIndex], columnIndex)).join("")}${renderRawExcelDomesticCell(key, product, searchResult)}</tr>`;
+          return `<tr><td class="excel-product-select-column">${product ? `<input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택">` : ""}</td>${row.map((cell, columnIndex) => renderRawExcelCell(cell, headers[columnIndex], columnIndex, compactColumns, keepBrandColumn)).join("")}${renderRawExcelDomesticCell(key, product, searchResult)}</tr>`;
         }).join("")
       : `<tr><td class="empty" colspan="${Math.max(1, totalColumns + 2)}">표시할 데이터 행이 없습니다.</td></tr>`;
   }
