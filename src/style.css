@@ -418,6 +418,17 @@ body .nav.active,body .nav:hover{
   color:#fff;background:#213b65;box-shadow:inset 3px 0 0 #4c9aff
 }
 body .nav.active::before,body .nav:hover::before{color:#72b0ff}
+.sidebar-search-sites{margin:16px 4px 10px;padding:10px;border:1px solid #29466f;border-radius:9px;background:#122744}
+.sidebar-search-sites>header{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+.sidebar-search-sites>header>strong{color:#dce9f9;font-size:11px}
+.sidebar-search-sites>header>span{display:flex;gap:3px}
+.sidebar-search-sites>header button{min-height:0;padding:2px 4px;border-color:#345078;border-radius:4px;color:#9db2ce;background:#172c4b;font-size:8px;line-height:1.3}
+.sidebar-search-sites>div{display:grid;grid-template-columns:1fr 1fr;gap:5px 4px}
+.sidebar-search-sites label{display:block;margin:0;cursor:pointer}
+.sidebar-search-sites input{position:absolute;opacity:0;pointer-events:none}
+.sidebar-search-sites label>span{display:block;padding:4px 3px;border:1px solid #345078;border-radius:6px;color:#7188a9;background:#172c4b;font-size:8px;font-weight:700;text-align:center;white-space:nowrap}
+.sidebar-search-sites input:checked+span{border-color:#4c9aff;color:#fff;background:#285f9f;box-shadow:inset 0 0 0 1px #75b4ff33}
+.sidebar-search-sites small{display:block;margin-top:7px;color:#7290b8;font-size:9px;letter-spacing:0}
 body .local-state{
   padding:12px;border:1px solid #29466f;border-radius:10px;
   color:#d9e6f7;background:#152b4d
@@ -791,6 +802,7 @@ body.excel-preview-active{overflow:hidden}
   html body{display:block}
   body aside{position:static;width:100%;height:auto;padding:12px}
   body aside nav{grid-template-columns:repeat(5,1fr)}
+  body .sidebar-search-sites{display:none}
   body .brand,.local-state{display:none}
   body .nav{padding:9px;text-align:center;font-size:10px}
   body .nav::before{display:none}

@@ -9533,6 +9533,9 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       const searchProductCode = sanitizeDomesticProductCode(input?.productCode);
       const searchBrand = sanitizeDomesticQuery(input?.brand);
       const searchTitle = sanitizeDomesticQuery(input?.title);
+      const allowedSourceGroups = new Set(["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"]);
+      const enabledSourceGroups = Array.isArray(input?.sourceGroups)
+        ? input.sourceGroups.filter((group) => allowedSourceGroups.has(group)) : null;
       const data = await queryDomesticProducts({
         query: sanitizeDomesticQuery(input?.query),
         articleNumber: searchArticleNumber,
@@ -9543,6 +9546,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         verifyLinkCounts: false,
         officialBrandRecord,
         searchStrategy,
+        enabledSourceGroups,
       });
       if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
       let matched = await addMatchConfidence(data, input || {});

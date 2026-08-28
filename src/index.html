@@ -17,6 +17,19 @@
       <button class="nav" data-view="orders">주문 관리</button>
       <button class="nav" data-view="settings">연동 관리</button>
     </nav>
+    <section class="sidebar-search-sites" aria-label="국내 상품 검색 사이트 선택">
+      <header><strong>검색 사이트</strong><span><button id="search-sites-all-on" type="button">전체 ON</button><button id="search-sites-all-off" type="button">전체 OFF</button></span></header>
+      <div>
+        <label><input type="checkbox" value="official" checked><span>공식몰</span></label>
+        <label><input type="checkbox" value="musinsa" checked><span>무신사</span></label>
+        <label><input type="checkbox" value="naver" checked><span>네이버</span></label>
+        <label><input type="checkbox" value="ssg" checked><span>SSG 전체</span></label>
+        <label><input type="checkbox" value="lotte" checked><span>롯데온 전체</span></label>
+        <label><input type="checkbox" value="parallel" checked><span>병행·편집샵</span></label>
+        <label><input type="checkbox" value="retailers" checked><span>코오롱몰 등</span></label>
+      </div>
+      <small id="sidebar-search-sites-summary">전체 7개 ON</small>
+    </section>
     <div id="backup-state" class="local-state" title="클릭하면 OneDrive 백업을 다시 실행합니다."><i></i><div><strong id="backup-state-title">OneDrive 확인 중</strong><small id="backup-state-message">백업 상태를 확인합니다</small></div></div>
   </aside>
 

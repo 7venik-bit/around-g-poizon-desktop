@@ -72,6 +72,42 @@ try {
 const excelPreviewProductCache = new Map();
 const excelPreviewSearchResults = new Map();
 const domesticIdentitySearchCache = new Map();
+const DOMESTIC_SOURCE_GROUPS_KEY = "around-g-domestic-source-groups-v1";
+const DOMESTIC_SOURCE_GROUPS = ["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"];
+
+function selectedDomesticSourceGroups() {
+  return [...document.querySelectorAll('.sidebar-search-sites input[type="checkbox"]:checked')]
+    .map((input) => input.value).filter((value) => DOMESTIC_SOURCE_GROUPS.includes(value));
+}
+
+function initializeDomesticSourceGroups() {
+  let saved = DOMESTIC_SOURCE_GROUPS;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DOMESTIC_SOURCE_GROUPS_KEY) || "null");
+    if (Array.isArray(parsed)) saved = parsed.filter((value) => DOMESTIC_SOURCE_GROUPS.includes(value));
+  } catch {}
+  const update = () => {
+    const selected = selectedDomesticSourceGroups();
+    localStorage.setItem(DOMESTIC_SOURCE_GROUPS_KEY, JSON.stringify(selected));
+    domesticIdentitySearchCache.clear();
+    const summary = $("#sidebar-search-sites-summary");
+    if (summary) summary.textContent = selected.length === DOMESTIC_SOURCE_GROUPS.length
+      ? `전체 ${selected.length}개 ON` : `${selected.length}/${DOMESTIC_SOURCE_GROUPS.length}개 ON`;
+  };
+  document.querySelectorAll('.sidebar-search-sites input[type="checkbox"]').forEach((input) => {
+    input.checked = saved.includes(input.value);
+    input.addEventListener("change", update);
+  });
+  $("#search-sites-all-on")?.addEventListener("click", () => {
+    document.querySelectorAll('.sidebar-search-sites input[type="checkbox"]').forEach((input) => { input.checked = true; });
+    update();
+  });
+  $("#search-sites-all-off")?.addEventListener("click", () => {
+    document.querySelectorAll('.sidebar-search-sites input[type="checkbox"]').forEach((input) => { input.checked = false; });
+    update();
+  });
+  update();
+}
 const detectedBrandImportQueue = [];
 const queuedBrandImportPaths = new Set();
 const completedBrandImportPaths = new Set();
@@ -865,6 +901,7 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
     title: productName,
     imageUrl: product.logoUrl || product.imageUrl || "",
     verifyLinkCounts,
+    sourceGroups: selectedDomesticSourceGroups(),
   });
   domesticIdentitySearchCache.set(identity, request);
   const response = await request;
@@ -3939,6 +3976,7 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   // Build the primary workspace immediately. Download-completed brands appear
   // after the real catalog and the existing workbook folder have been read.
   setupBrandLayout();
+  initializeDomesticSourceGroups();
 
   try {
     const appInfo = await window.aroundG.getAppInfo();

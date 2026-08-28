@@ -875,6 +875,7 @@ export async function queryDomesticProducts({
   verifyLinkCounts = false,
   officialBrandRecord = null,
   searchStrategy = "brand_code",
+  enabledSourceGroups = null,
   fetchImpl = fetch,
 }) {
   const normalizedQuery = sanitizeDomesticQuery(query);
@@ -910,6 +911,13 @@ export async function queryDomesticProducts({
   // Keep the complete domestic search route in one ordered workflow. These
   // sources intentionally live together so a product search cannot leave one
   // adapter running independently or resume only part of a stale request.
+  const sourceGroup = (source) => source.officialBrand ? "official"
+    : source.store === "무신사" ? "musinsa"
+      : /^네이버/.test(source.store) ? "naver"
+        : /^SSG/.test(source.store) ? "ssg"
+          : /^롯데온/.test(source.store) ? "lotte"
+            : source.retailerDiscovery ? "parallel" : "retailers";
+  const enabledGroups = Array.isArray(enabledSourceGroups) ? new Set(enabledSourceGroups) : null;
   const sources = [
     {
       store: officialStoreLabel,
@@ -931,7 +939,7 @@ export async function queryDomesticProducts({
     { store: "롯데온 아울렛", linkOnly: true, domesticChannel: "lotte-outlet", renderCount: true },
     { store: "병행수입·편집샵", linkOnly: true, retailerDiscovery: true, renderCount: true },
     { store: "코오롱몰", parser: (html) => parseKolonSearch(html, articleNumber) },
-  ];
+  ].filter((source) => !enabledGroups || enabledGroups.has(sourceGroup(source)));
   // Keep the source order observable and deterministic. Each brand/product is
   // checked from the official mall through the domestic channels one at a
   // time, so a blocked source cannot hide which step failed.
