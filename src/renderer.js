@@ -701,10 +701,10 @@ function excelImageColumn(header = "") {
 function renderRawExcelCell(cell, header = "", columnIndex = 0) {
   const value = String(cell ?? "").trim();
   if (excelImageColumn(header) && /^https:\/\//i.test(value)) {
-    return `<td class="excel-image-cell" data-excel-column-index="${columnIndex}" title="${text(value)}"><a href="${text(value)}" target="_blank" rel="noreferrer" aria-label="제품 이미지 크게 보기"><img src="${text(value)}" alt="제품 이미지" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('a').hidden=true"></a></td>`;
+    return `<td class="excel-raw-data-cell excel-image-cell" data-excel-column-index="${columnIndex}" title="${text(value)}"><a href="${text(value)}" target="_blank" rel="noreferrer" aria-label="제품 이미지 크게 보기"><img src="${text(value)}" alt="제품 이미지" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('a').hidden=true"></a></td>`;
   }
   const displayValue = !value ? "숨김" : cell;
-  return `<td data-excel-column-index="${columnIndex}" title="${text(displayValue)}">${text(displayValue)}</td>`;
+  return `<td class="excel-raw-data-cell" data-excel-column-index="${columnIndex}" title="${text(displayValue)}">${text(displayValue)}</td>`;
 }
 
 function rawExcelDomesticResultLinks(result = {}) {
@@ -1052,7 +1052,7 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   if (result.productView) {
     renderExcelProductRows(file, products);
   } else {
-    $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th>${headers.map((header, columnIndex) => `<th data-excel-column-index="${columnIndex}" title="${text(header)}">${text(header)}</th>`).join("")}<th class="excel-raw-search-heading">상품 검색 결과 · 링크</th></tr>`;
+    $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th>${headers.map((header, columnIndex) => `<th class="excel-raw-data-heading${excelImageColumn(header) ? " excel-image-column" : ""}" data-excel-column-index="${columnIndex}" title="${text(header)}">${text(header)}</th>`).join("")}<th class="excel-raw-search-heading">상품 검색 결과 · 링크</th></tr>`;
     $("#excel-preview-rows").innerHTML = rows.length
       ? rows.map((row, index) => {
           const product = pageProductsByRow[index];

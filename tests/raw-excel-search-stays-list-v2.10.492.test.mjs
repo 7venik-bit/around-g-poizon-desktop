@@ -13,4 +13,6 @@ test("selected search stays in the original Excel row list", () => {
   assert.doesNotMatch(handler, /productView:\s*true/);
   assert.match(renderer, /renderRawExcelDomesticCell\(key, product, searchResult\)/);
   assert.match(renderer, /상품 검색 결과 · 링크/);
+  assert.match(renderer, /excel-raw-data-heading/);
+  assert.match(renderer, /excel-raw-data-cell/);
 });
