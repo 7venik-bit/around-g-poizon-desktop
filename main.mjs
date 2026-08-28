@@ -148,6 +148,21 @@ const inventoryWindows = new Set();
 const officialInteractiveWindows = new Set();
 const domesticLoginWindows = new Map();
 const DOMESTIC_SEARCH_PARTITION = "persist:around-g-domestic-search";
+let domesticSearchGeneration = 0;
+const activeDomesticSearchWindows = new Set();
+
+function cancelDomesticSearches() {
+  domesticSearchGeneration += 1;
+  for (const window of [...activeDomesticSearchWindows]) {
+    if (window && !window.isDestroyed()) window.destroy();
+  }
+  activeDomesticSearchWindows.clear();
+  return { ok: true, generation: domesticSearchGeneration };
+}
+
+function domesticSearchCanceled(generation) {
+  return generation !== domesticSearchGeneration;
+}
 const DOMESTIC_LOGIN_SOURCES = [
   { id: "musinsa", name: "무신사", url: "https://www.musinsa.com/", domains: ["musinsa.com"] },
   { id: "ssg", name: "SSG·신세계백화점", url: "https://www.ssg.com/", domains: ["ssg.com"] },
@@ -1791,7 +1806,8 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
   return { ok: true, submitted };
 }
 
-async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "", securityRetry = 0, searchAttempt = null, sharedNaverSession = null) {
+async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "", securityRetry = 0, searchAttempt = null, sharedNaverSession = null, generation = domesticSearchGeneration) {
+  if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
   const interactiveOfficialSearch = source.store === "브랜드 공식몰"
     && !String(source.officialProductUrl || "")
     && /^https:\/\//i.test(String(source.homepageUrl || ""));
@@ -1831,6 +1847,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           backgroundThrottling: false,
         },
       });
+      activeDomesticSearchWindows.add(searchWindow);
+      searchWindow.on("closed", () => activeDomesticSearchWindows.delete(searchWindow));
       if (naverPortalSource) searchWindow.maximize();
       searchWindow.webContents.setWindowOpenHandler(({ url: popupUrl }) => {
         if (/^https?:\/\//i.test(String(popupUrl || ""))) searchWindow.loadURL(popupUrl).catch(() => {});
@@ -1878,7 +1896,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
               if (verified) {
                 searchWindow.destroy();
                 searchWindow = null;
-                return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession);
+                return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession, generation);
               }
             }
             return renderedSearchFailure(
@@ -2342,6 +2360,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     return { ...detailed, count: products.length, products };
   } catch (error) {
     const message = String(error?.message || error || "");
+    if (domesticSearchCanceled(generation) || /DOMESTIC_SEARCH_CANCELED/i.test(message)) throw new Error("DOMESTIC_SEARCH_CANCELED");
     const reason = /SEARCH_PAGE_TIMEOUT/i.test(message) ? "page_load_timeout"
       : /ERR_(?:NAME_NOT_RESOLVED|CONNECTION|TIMED_OUT|INTERNET_DISCONNECTED)/i.test(message) ? "network_error"
         : "page_load_failed";
@@ -2350,10 +2369,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     const keepSharedNaverWindow = naverPortalSource
       && sharedNaverSession?.window === searchWindow;
     if (searchWindow && !searchWindow.isDestroyed() && !keepSharedNaverWindow) searchWindow.destroy();
+    if (searchWindow?.isDestroyed()) activeDomesticSearchWindows.delete(searchWindow);
   }
 }
 
-async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "") {
+async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "", generation = domesticSearchGeneration) {
   const discoveredProducts = [];
   const sources = [];
   // Naver Fashion Town exposes official-brand, department, and outlet counts
@@ -2369,6 +2389,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
   // failure is recorded on that source, then the same request continues to
   // the next source without spawning module-specific state or retries.
   for (const source of data.sources) {
+    if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
     const resolvedSource = await (async () => {
       if (source.officialStatus && ![
         OFFICIAL_DOMAIN_STATUS.VERIFIED,
@@ -2394,12 +2415,13 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         ? allQueryAttempts.slice(0, 1) : allQueryAttempts;
       let result = null;
       for (const queryAttempt of queryAttempts) {
+        if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
       // Submit each query exactly once. A later query is a fallback only when
       // the completed prior search returned no product; browser/security or
       // detail-verification failures must not repeat the same query or advance
       // as though the product were absent.
         const queryResult = await renderedSearchSourceResult(
-          source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession,
+          source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession, generation,
         );
         if (!queryResult) {
           result = renderedSearchFailure("unknown_search_failure");
@@ -9402,6 +9424,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     };
   });
   ipcMain.handle("domestic:search", async (_event, input) => {
+    const searchGeneration = domesticSearchGeneration;
     try {
       // Inventory/search pages must be fetched from the network for every new
       // request. Keep cookies so authenticated official-mall sessions survive.
@@ -9432,14 +9455,17 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         officialBrandRecord,
         searchStrategy,
       });
+      if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
       let matched = await addMatchConfidence(data, input || {});
       if (input?.verifyLinkCounts === true) {
         matched = await addRenderedSearchCounts(
           matched,
           searchArticleNumber,
           searchBrand,
-          searchTitle
+          searchTitle,
+          searchGeneration
         );
+        if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
         matched = await addMatchConfidence(matched, input || {});
       }
       const exactMatch = matched.products.some((product) =>
@@ -9467,9 +9493,13 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         },
       };
     } catch (error) {
+      if (domesticSearchCanceled(searchGeneration) || /DOMESTIC_SEARCH_CANCELED/i.test(String(error?.message || error || ""))) {
+        return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
+      }
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
   });
+  ipcMain.handle("domestic:cancel", () => cancelDomesticSearches());
   let categorySearchGeneration = 0;
   ipcMain.handle("explorer:cancel-category", () => {
     categorySearchGeneration += 1;

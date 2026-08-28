@@ -2251,6 +2251,10 @@ async function searchDomesticAt(index, sourceProducts = currentExplorerProducts)
   const key = domesticKey(product, index);
   domesticResults.set(key, { loading: true, products: [], sources: [] });
   const response = await cachedDomesticSearch(product, !domesticBatchRunning || domesticBatchVerifyCounts);
+  if (response?.canceled || domesticBatchStopRequested) {
+    domesticResults.delete(key);
+    return { canceled: true };
+  }
   const result = response.ok ? response.data : { products: [], sources: [], error: response.message };
   domesticResults.set(key, result);
   if (hasDomesticStock(result) && domesticBatchRunning && !domesticBatchVerifyCounts) {
@@ -2697,10 +2701,12 @@ async function runDomesticBatch(options = {}) {
   const button = $("#domestic-search-all");
   if (domesticBatchRunning) {
     domesticBatchStopRequested = true;
+    domesticIdentitySearchCache.clear();
+    void window.aroundG.cancelDomesticSearch?.();
     button.disabled = true;
-    button.textContent = "안전하게 중지 중…";
+    button.textContent = "검색 중지 중…";
     updateExplorerSelectionUi();
-    $("#domestic-batch-status").textContent = "현재 상품 확인을 마친 뒤 중지합니다…";
+    $("#domestic-batch-status").textContent = "진행 중인 판매처 검색을 즉시 중지하고 있습니다…";
     return;
   }
   domesticBatchRunning = true;
@@ -3045,6 +3051,9 @@ $("#profit-back-to-list")?.addEventListener("click", () => {
 $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   if (excelPreviewBatchSearching) {
     excelPreviewBatchSearching = false;
+    domesticIdentitySearchCache.clear();
+    await window.aroundG.cancelDomesticSearch?.();
+    $("#excel-filter-status").textContent = "상품 검색을 중지했습니다.";
     updateExcelPreviewSelectionUi([]);
     return;
   }
@@ -3079,8 +3088,11 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     if (!excelPreviewBatchSearching) break;
     await searchExcelPreviewProduct(key, { forceRefresh: false });
   }
+  const stopped = !excelPreviewBatchSearching;
   excelPreviewBatchSearching = false;
-  $("#excel-filter-status").textContent = `선택 상품 ${keys.length.toLocaleString("ko-KR")}개 검색을 완료했습니다.`;
+  $("#excel-filter-status").textContent = stopped
+    ? "상품 검색을 중지했습니다."
+    : `선택 상품 ${keys.length.toLocaleString("ko-KR")}개 검색을 완료했습니다.`;
   updateExcelPreviewSelectionUi(excelPreviewPageKeys);
 });
 $("#excel-preview-prev")?.addEventListener("click", () => {
