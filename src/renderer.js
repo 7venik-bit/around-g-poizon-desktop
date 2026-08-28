@@ -823,7 +823,7 @@ function renderRawExcelDomesticCell(key, product, result) {
     return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">검색 중…</span></td>`;
   }
   if (!result) {
-    return `<td class="excel-raw-search-cell"><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">상품검색</button></td>`;
+    return `<td class="excel-raw-search-cell excel-raw-search-pending"><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">검색</button></td>`;
   }
   const products = Array.isArray(result.products) ? result.products : [];
   const verifiedCount = (result.sources || []).reduce((sum, source) =>
