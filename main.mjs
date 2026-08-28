@@ -991,6 +991,8 @@ async function submitOfficialMallSearch(searchWindow, query) {
       input.dispatchEvent(new Event("change", { bubbles: true }));
       input.focus();
       if (!String(input.value || "").trim()) return false;
+      const inputRect = input.getBoundingClientRect();
+      const inputTarget = { x: Math.round(inputRect.left + inputRect.width / 2), y: Math.round(inputRect.top + inputRect.height / 2) };
       const form = input.form;
       const nearby = input.closest('form,[role="search"],header,section,div');
       const submitCandidates = [
@@ -1005,9 +1007,9 @@ async function submitOfficialMallSearch(searchWindow, query) {
       if (submit && visible(submit)) {
         submit.scrollIntoView({ block: "center", inline: "nearest" });
         const rect = submit.getBoundingClientRect();
-        return { ready: true, target: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } };
+        return { ready: true, inputTarget, target: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } };
       }
-      return { ready: true, enter: true };
+      return { ready: true, inputTarget, enter: true };
     })()`;
     const frames = [searchWindow.webContents.mainFrame, ...searchWindow.webContents.mainFrame.framesInSubtree];
     let submitted = false;
@@ -1026,6 +1028,18 @@ async function submitOfficialMallSearch(searchWindow, query) {
         break;
       }
       if (!prepared?.ready) continue;
+      // Framework-controlled official-mall inputs can ignore a JavaScript-only
+      // value assignment. Physically focus the visible field and type the exact
+      // query so the site's own key/input handlers receive the same events as a user.
+      if (prepared.inputTarget && frame === searchWindow.webContents.mainFrame) {
+        searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: prepared.inputTarget.x, y: prepared.inputTarget.y });
+        searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: prepared.inputTarget.x, y: prepared.inputTarget.y, button: "left", clickCount: 1 });
+        searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: prepared.inputTarget.x, y: prepared.inputTarget.y, button: "left", clickCount: 1 });
+        searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
+        searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
+        await searchWindow.webContents.insertText(exactQuery);
+        await wait(350);
+      }
       if (prepared.target && frame === searchWindow.webContents.mainFrame) {
         searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: prepared.target.x, y: prepared.target.y });
         searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: prepared.target.x, y: prepared.target.y, button: "left", clickCount: 1 });
