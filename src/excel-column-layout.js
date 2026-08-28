@@ -186,16 +186,23 @@
       .toLowerCase();
   }
 
-  function sourcingEssentialColumn(header) {
+  function popularListWorkspaceVisible() {
+    const workspace = document.querySelector("#popular-product-workspace");
+    return Boolean(workspace && !workspace.hidden && workspace.contains(document.querySelector("#excel-preview")));
+  }
+
+  function sourcingEssentialColumn(header, keepBrand = false) {
     const value = normalizedHeader(header);
+    if (keepBrand && /^(?:상품브랜드|브랜드)$/i.test(value)) return true;
     return /^(?:spu이미지|상품이미지|이미지(?:url)?|상품번호|상품코드|품번|상품명|영문상품명|사이즈(?:옵션|색상)?|옵션|sku옵션|최근30일간?평균거래가|평균거래가|현재중국최저입찰가|현재중국최저입찰가예상수익|중국총판매량|총판매량|현지판매자총판매량|현지총판매량)$/i.test(value);
   }
 
   function applySourcingColumns(resetEssential = true) {
     let count = 0;
+    const keepBrand = popularListWorkspaceVisible();
     headerCells().forEach((header, index) => {
       const entry = layoutEntry(index, true);
-      const hidden = !sourcingEssentialColumn(header);
+      const hidden = !sourcingEssentialColumn(header, keepBrand);
       if (hidden && !entry.hidden) count += 1;
       if (hidden || resetEssential) entry.hidden = hidden;
     });
