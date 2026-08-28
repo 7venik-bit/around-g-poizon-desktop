@@ -88,8 +88,24 @@ const closeBlock = `    if (source.store === "네이버 아울렛"
       sharedNaverSession.window.destroy();
       sharedNaverSession.window = null;
     }`;
-if (!main.includes(closeBlock)) throw new Error("shared Naver close block missing");
-main = main.replace(closeBlock, `    if (source.store === "네이버 아울렛"
+const stableSingleOverviewClose = `    if (source.store === "네이버 패션타운"
+      && sharedNaverSession.window
+      && !sharedNaverSession.window.isDestroyed()) {
+      // The shared Naver window is closed only after every source result has
+      // been resolved and pushed. This is a post-capture grace period, not a
+      // substitute for the DOM-stability gate above.
+      await wait(2_000);
+      sharedNaverSession.window.destroy();
+      sharedNaverSession.window = null;
+    }`;
+const rawSingleOverviewClose = `    if (source.store === "네이버 패션타운"
+      && sharedNaverSession.window
+      && !sharedNaverSession.window.isDestroyed()) {
+      sharedNaverSession.window.destroy();
+      sharedNaverSession.window = null;
+    }`;
+if (main.includes(closeBlock)) {
+  main = main.replace(closeBlock, `    if (source.store === "네이버 아울렛"
       && sharedNaverSession.window
       && !sharedNaverSession.window.isDestroyed()) {
       // The shared Naver window is closed only after every source result has
@@ -99,6 +115,11 @@ main = main.replace(closeBlock, `    if (source.store === "네이버 아울렛"
       sharedNaverSession.window.destroy();
       sharedNaverSession.window = null;
     }`);
+} else if (main.includes(rawSingleOverviewClose)) {
+  main = main.replace(rawSingleOverviewClose, stableSingleOverviewClose);
+} else if (!main.includes(stableSingleOverviewClose)) {
+  throw new Error("shared Naver close block missing");
+}
 
 await writeFile(mainPath, main, "utf8");
 console.log("Naver search waits for stable rendered results before capture and close");
