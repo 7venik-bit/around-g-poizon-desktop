@@ -1815,6 +1815,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   const url = String(searchAttempt?.url || source.officialProductUrl || (interactiveOfficialSearch ? source.homepageUrl : source.searchUrl) || "");
   if (!/^https:\/\//i.test(url)) return { count: Number(source.count || 0), products: [] };
   const naverPortalSource = /^네이버\s/.test(String(source.store || ""));
+  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.
   const ssgChannelSource = /^SSG(?:\s|$)/.test(String(source.store || ""));
   let naverChannelCounts = null;
   let searchWindow;
@@ -1824,17 +1825,16 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       && !sharedNaverSession.window.isDestroyed()
       && sharedNaverSession.resultsUrl
       && sharedNaverSession.channelCounts);
-    const naverChannelClickRequired = [
-      "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛",
-    ].includes(String(source.store || ""));
+    // The overview page already contains brand-store, department and outlet results.
+    // Never click those channel tabs after the product query has been submitted.
+    const naverChannelClickRequired = false;
     if (reuseNaverSearch) {
+      // Reuse the exact DOM produced by the first query. Reloading the result URL
+      // caused Naver to render/transition again and made one user search look like
+      // several searches even though the query text was not retyped.
       searchWindow = sharedNaverSession.window;
       naverChannelCounts = sharedNaverSession.channelCounts;
-      await Promise.race([
-        searchWindow.loadURL(sharedNaverSession.resultsUrl),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("NAVER_RESULTS_RELOAD_TIMEOUT")), 20_000)),
-      ]).catch(() => {});
-      await wait(1_200);
+      await wait(250);
     } else {
       searchWindow = new BrowserWindow({
         show: naverPortalSource,
@@ -1881,7 +1881,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         if (login.required) await searchWindow.loadURL(String(source.homepageUrl || url)).catch(() => {});
       }
       if (interactiveSiteSearch) {
-        const searchQuery = String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();
+        const searchQuery = interactiveOfficialSearch
+          ? sanitizeDomesticQuery([title, articleNumber].filter(Boolean).join(" "))
+          : String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();
         if (!searchQuery) return renderedSearchFailure("search_query_missing", searchWindow);
         if (naverPortalSource) {
           const shoppingHomeOpened = await clickNaverShoppingHomeMenu(searchWindow);
@@ -1956,20 +1958,18 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       }
     }
     if (naverPortalSource) {
-      // The three Fashion Town totals are the authoritative routing decision.
-      // Read all of them before selecting a channel, scrolling, or touching a
-      // result card so recommendation cards cannot change a real 1-item result.
-      naverChannelCounts ||= await readNaverFashionTownChannelCounts(searchWindow);
-      if (!naverChannelCounts) {
-        return renderedSearchFailure("channel_count_detection_failed", searchWindow, { searchSubmitted: true });
-      }
+      // Counts are useful metadata, but they are no longer a prerequisite for
+      // reading the overview result. Naver can change or delay tab-count markup
+      // while the actual product cards are already visible and usable.
+      naverChannelCounts ||= await readNaverFashionTownChannelCounts(searchWindow) || {};
       if (sharedNaverSession && !reuseNaverSearch) {
         sharedNaverSession.window = searchWindow;
         sharedNaverSession.resultsUrl = String(searchWindow.webContents.getURL() || url);
         sharedNaverSession.channelCounts = naverChannelCounts;
         sharedNaverSession.searchSubmitted = true;
       }
-      const currentChannelCount = naverChannelCounts[String(source.store || "")];
+      const currentChannelRaw = naverChannelCounts[String(source.store || "")];
+      const currentChannelCount = Number.isFinite(Number(currentChannelRaw)) ? Number(currentChannelRaw) : null;
       if (currentChannelCount === 0) {
         return {
           count: 0,
@@ -2117,9 +2117,21 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         const officialBrandStoreLabelMatched = /브랜드\s*직영몰|공식\s*브랜드|브랜드\s*스토어/i.test(channelEvidenceText);
         const departmentStoreLabelMatched = /백화점/i.test(channelEvidenceText);
         const outletLabelMatched = /아울렛|outlet/i.test(channelEvidenceText);
+        let naverWholeViewChannel = "";
+        try {
+          const productHost = new URL(productUrl).hostname.toLowerCase();
+          if (productHost === "naver.com" || productHost.endsWith(".naver.com")) {
+            naverWholeViewChannel = /\/window-products\/department\//i.test(productUrl) || departmentStoreLabelMatched
+              ? "department"
+              : /\/window-products\/outlet\//i.test(productUrl) || outletLabelMatched
+                ? "outlet"
+                : "brand-store";
+          }
+        } catch {}
         productCards.push({
           productUrl, text, markup, imageUrl, imageLinkedToProduct, title, price, originalPrice,
           officialBrandStoreLabelMatched, departmentStoreLabelMatched, outletLabelMatched,
+          naverWholeViewChannel,
         });
       }
       const fullPageText = String(document.body?.innerText || "");
@@ -2169,25 +2181,23 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     } catch {
       return renderedSearchFailure("result_parse_failed", searchWindow, { searchSubmitted: interactiveSiteSearch });
     }
-    if (naverPortalSource && Number(naverChannelCounts?.[String(source.store || "")]) > 0) {
-      const currentChannelCount = Number(naverChannelCounts[String(source.store || "")]);
-      // The selected tab count and the exact article shown by its card are the
-      // authoritative evidence. The channel badge can sit outside the card,
-      // so requiring the badge inside every card incorrectly discarded the
-      // visible result shown to the user.
-      const labeledChannelCards = (parsedContent.productCards || []).filter((card) =>
+    if (naverPortalSource) {
+      const expectedNaverChannel = source.store === "네이버 백화점" ? "department"
+        : source.store === "네이버 아울렛" ? "outlet"
+          : source.store === "네이버 공식 브랜드스토어" ? "brand-store" : "";
+      const currentChannelRaw = naverChannelCounts?.[String(source.store || "")];
+      const currentChannelCount = Number.isFinite(Number(currentChannelRaw)) ? Number(currentChannelRaw) : null;
+      const channelCards = (parsedContent.productCards || []).filter((card) =>
         isPlatformShoppingProductUrl(card?.productUrl)
-          && matchesExpected([card?.title, card?.text, card?.markup, card?.productUrl].join(" ")));
-      const cardCountInvalid = currentChannelCount === 1
-        ? labeledChannelCards.length !== 1
-        : labeledChannelCards.length === 0;
-      if (cardCountInvalid) {
-        return renderedSearchFailure("channel_card_evidence_mismatch", searchWindow, {
+          && (!expectedNaverChannel || String(card?.naverWholeViewChannel || "") === expectedNaverChannel));
+      if (!channelCards.length && Number(currentChannelCount || 0) > 0) {
+        return renderedSearchFailure("overview_channel_card_collection_failed", searchWindow, {
           searchSubmitted: true,
           resolvedSearchUrl: String(searchWindow.webContents.getURL() || url),
         });
       }
-      parsedContent.productCards = labeledChannelCards;
+      parsedContent.productCards = channelCards;
+      parsedContent.selectedChannelCount = currentChannelCount ?? channelCards.length;
       content = JSON.stringify(parsedContent);
     }
     if (["SSG 백화점", "SSG 아울렛"].includes(String(source.store || ""))) {
@@ -2472,7 +2482,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       };
     })();
     sources.push(resolvedSource);
-    if (source.store === "네이버 아울렛"
+    if (source.store === "네이버 패션타운"
       && sharedNaverSession.window
       && !sharedNaverSession.window.isDestroyed()) {
       sharedNaverSession.window.destroy();
@@ -3491,6 +3501,16 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
   const raw = (row, index) => String(cell(row, index) ?? "").trim();
   return entries.flatMap((entry) => {
     const row = entry.values || [];
+    // Domestic sourcing is performed per size/SKU row. A product can have
+    // high total sales while the selected size has "<5" or another low recent
+    // sales value. Never put that size into the domestic-search queue. When
+    // both recent-sales columns are present, the row itself must satisfy the
+    // same strict 30+ AND rule. The source workbook remains untouched.
+    if (columns.sales30d >= 0 && columns.localSales30d >= 0) {
+      const chinaRecentSales = parsePoizonSalesMetric(cell(row, columns.sales30d));
+      const localRecentSales = parsePoizonSalesMetric(cell(row, columns.localSales30d));
+      if (chinaRecentSales < 30 || localRecentSales < 30) return [];
+    }
     const spuId = raw(row, columns.spuId);
     const articleNumber = raw(row, columns.articleNumber);
     const title = raw(row, columns.title);

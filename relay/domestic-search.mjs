@@ -430,6 +430,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
       const brandKeys = [brand, ...(seed?.aliases || [])].map(normalizeOfficialBrand).filter(Boolean);
       const requiresBrandMatch = /^(?:네이버|무신사|SSG|롯데온|병행수입·편집샵)/.test(String(store || "")) && brandKeys.length > 0;
       const requiresExactParallelModel = String(store || "") === "병행수입·편집샵";
+      // NAVER_SINGLE_OVERVIEW_SEARCH_V1: cards were classified from one Naver overview page before matching.
       const matchingProducts = new Map();
       const domesticVisibleProducts = new Set();
       let domesticChannelCandidateCount = 0;
@@ -442,23 +443,30 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           ? `${titleText} ${cardBodyText} ${String(card?.markup || "")} ${productUrl}`.trim()
           : titleText || cardBodyText;
         const rawCardText = `${titleText} ${cardBodyText}`.trim();
-        // Naver Fashion Town can append recommendations from another channel
-        // below an empty selected result. Never count those cards as the
-        // official-store, department-store, or outlet result being checked.
+        // One Naver overview page is classified before matching. Trust that
+        // local classification when present; retain the legacy label/URL checks
+        // only for old/non-overview captures.
         const naverStore = String(store || "");
-        if (naverStore === "네이버 아울렛" && /\/window-products\/department\//i.test(productUrl)) continue;
-        if (naverStore === "네이버 백화점" && /\/window-products\/outlet\//i.test(productUrl)) continue;
-        if (naverStore === "네이버 공식 브랜드스토어"
-          && /\/window-products\/(?:outlet|department)\//i.test(productUrl)) continue;
-        if (naverStore === "네이버 공식 브랜드스토어"
-          && card?.officialBrandStoreLabelMatched !== true
-          && !/브랜드\s*직영몰|공식\s*브랜드|브랜드\s*스토어/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
-        if (naverStore === "네이버 백화점"
-          && card?.departmentStoreLabelMatched !== true
-          && !/백화점/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
-        if (naverStore === "네이버 아울렛"
-          && card?.outletLabelMatched !== true
-          && !/아울렛|outlet/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
+        const overviewChannel = String(card?.naverWholeViewChannel || "");
+        const expectedOverviewChannel = naverStore === "네이버 백화점" ? "department"
+          : naverStore === "네이버 아울렛" ? "outlet"
+            : naverStore === "네이버 공식 브랜드스토어" ? "brand-store" : "";
+        if (expectedOverviewChannel && overviewChannel && overviewChannel !== expectedOverviewChannel) continue;
+        if (expectedOverviewChannel && !overviewChannel) {
+          if (naverStore === "네이버 아울렛" && /\/window-products\/department\//i.test(productUrl)) continue;
+          if (naverStore === "네이버 백화점" && /\/window-products\/outlet\//i.test(productUrl)) continue;
+          if (naverStore === "네이버 공식 브랜드스토어"
+            && /\/window-products\/(?:outlet|department)\//i.test(productUrl)) continue;
+          if (naverStore === "네이버 공식 브랜드스토어"
+            && card?.officialBrandStoreLabelMatched !== true
+            && !/브랜드\s*직영몰|공식\s*브랜드|브랜드\s*스토어/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
+          if (naverStore === "네이버 백화점"
+            && card?.departmentStoreLabelMatched !== true
+            && !/백화점/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
+          if (naverStore === "네이버 아울렛"
+            && card?.outletLabelMatched !== true
+            && !/아울렛|outlet/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
+        }
         if (naverStore === "SSG 백화점"
           && card?.departmentStoreLabelMatched !== true
           && !/신세계\s*백화점|백화점/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
@@ -504,8 +512,13 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // product title.  A single result may still be accepted when its brand
         // and descriptive title both match the POIZON row.  This deliberately
         // excludes generic/multiple-result pages, preserving exact-code checks.
-        if (!conflictingArticle && !articleMatched && /^네이버\s/.test(String(store || "")) && cards.length === 1
-          && brandMatched && titleIdentityMatch(rawCardText, expectedTitle)) {
+        // Naver may omit the manufacturer code from a card. In the overview
+        // flow the channel has already been isolated, so a real platform card
+        // with matching brand + strong title and no conflicting manufacturer
+        // code is valid even when multiple products are shown in that channel.
+        if (!conflictingArticle && !articleMatched && /^네이버\s/.test(String(store || ""))
+          && brandMatched && titleIdentityMatch(rawCardText, expectedTitle)
+          && isPlatformShoppingProductUrl(productUrl)) {
           articleMatched = true;
         }
         // Naver Fashion Town may omit the model code from both the visible card
@@ -907,9 +920,8 @@ export async function queryDomesticProducts({
       officialStatus,
       homepageUrl: String(officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl || ""),
     },
-    { store: "네이버 공식 브랜드스토어", linkOnly: true, fashionTown: "brand-store", renderCount: true },
-    { store: "네이버 백화점", linkOnly: true, fashionTown: "department", renderCount: true },
-    { store: "네이버 아울렛", linkOnly: true, fashionTown: "outlet", renderCount: true },
+    // One overview request already includes official malls, department stores and outlets.
+    { store: "네이버 패션타운", linkOnly: true, fashionTown: "overview", renderCount: true },
     { store: "무신사", parser: parseMusinsaSearch, renderCount: true },
     { store: "SSG", linkOnly: true, domesticChannel: "ssg-general", renderCount: true },
     { store: "SSG 백화점", linkOnly: true, domesticChannel: "ssg-department", renderCount: true },
