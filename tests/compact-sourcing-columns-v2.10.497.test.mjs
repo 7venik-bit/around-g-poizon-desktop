@@ -22,7 +22,7 @@ test("sourcing view keeps identity, image, price, sales and link-adjacent data",
   assert.match(source, /현재중국최저입찰가예상수익/);
   assert.match(source, /중국총판매량/);
   assert.match(source, /현지판매자총판매량/);
-  assert.match(source, /const hidden = !sourcingEssentialColumn\(header\)/);
+  assert.match(source, /const hidden = !sourcingEssentialColumn\(header, keepBrand\)/);
   assert.match(source, /localStorage\.setItem\(COLUMN_MODE_KEY, "all"\)/);
   assert.match(source, /localStorage\.setItem\(COLUMN_MODE_KEY, "compact"\)/);
 });
@@ -30,4 +30,13 @@ test("sourcing view keeps identity, image, price, sales and link-adjacent data",
 test("raw data indexing excludes selection and the final domestic-search result cell", () => {
   assert.match(source, /querySelectorAll\("#excel-preview-columns \.excel-raw-data-heading"\)/);
   assert.match(source, /querySelectorAll\("\.excel-raw-data-cell"\)/);
+});
+
+test("brand is kept only when the popular-list workspace is active", () => {
+  assert.match(source, /function popularListWorkspaceVisible\(\)/);
+  assert.match(source, /#popular-product-workspace/);
+  assert.match(source, /workspace\.contains\(document\.querySelector\("#excel-preview"\)\)/);
+  assert.match(source, /if \(keepBrand && \/\^\(\?:상품브랜드\|브랜드\)\$\/i\.test\(value\)\) return true/);
+  assert.match(source, /const keepBrand = popularListWorkspaceVisible\(\)/);
+  assert.match(source, /sourcingEssentialColumn\(header, keepBrand\)/);
 });
