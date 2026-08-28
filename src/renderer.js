@@ -3121,17 +3121,9 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     return;
   }
   const button = $("#excel-preview-search-selected");
-  if (activeExcelPreview?.viewMode !== "products") {
-    button.disabled = true;
-    button.textContent = "상품 목록 준비 중…";
-    excelPreviewProductMode = true;
-    await showExcelPreview(
-      activeExcelPreview.file,
-      0,
-      { ...activeExcelPreview.filters, productView: true },
-      { integrated: excelPreviewIntegrated, preserveFilters: true, productView: true },
-    );
-  }
+  // Keep the original Excel row list visible while searching. Each result is
+  // written into that row's rightmost result/link cell; never switch to the
+  // separate grouped-product/detail-list renderer here.
   const keys = [...selectedExcelPreviewProducts].filter((key) => excelPreviewProductCache.has(key));
   if (!keys.length) {
     button.disabled = false;
