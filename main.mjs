@@ -3555,11 +3555,11 @@ function excelPreviewCell(value) {
 function buildExcelPreviewProducts(headers = [], entries = []) {
   const column = (...names) => findPoizonColumn(headers, ...names);
   const columns = {
-    spuId: column("SPU ID", "SPU_ID"), image: column("SPU 이미지", "상품 이미지", "이미지"),
-    articleNumber: column("상품 번호", "상품번호", "품번"), title: column("상품명", "영문 상품명"),
+    spuId: column("SPU ID", "SPU_ID"), image: column("SPU 이미지", "상품 이미지", "이미지", "이미지 URL"),
+    articleNumber: column("상품 번호", "상품번호", "상품코드", "품번"), title: column("상품명", "영문 상품명"),
     brand: column("상품 브랜드", "브랜드"), category1: column("카테고리 대분류", "대분류"),
     category2: column("카테고리 중분류", "중분류"), category3: column("카테고리 소분류", "소분류"),
-    averagePrice: column("최근 30일간 평균 거래가", "최근 30일 평균 거래가"),
+    averagePrice: column("최근 30일간 평균 거래가", "최근 30일 평균 거래가", "평균 거래가"),
     sales30d: column("최근 30일 판매량", "최근30일판매량"),
     localSales30d: column("현지 판매자 최근 30일 판매량", "현지판매자최근30일판매량"),
     totalSales: column("중국 총 판매량", "총 판매량"),
