@@ -610,13 +610,15 @@ body.excel-preview-active{overflow:hidden}
 .excel-preview-grid .excel-image-column,.excel-preview-grid .excel-image-cell{min-width:68px;width:68px;max-width:68px;text-align:center}
 .excel-preview-grid .excel-image-cell{height:54px;padding:3px}
 .excel-preview-grid .excel-image-cell img{display:block;width:46px;height:46px;margin:auto;object-fit:contain;border-radius:5px;background:#fff}
-.excel-preview-grid .excel-raw-search-heading,.excel-preview-grid .excel-raw-search-cell{min-width:250px;width:250px;max-width:250px}
-.excel-preview-grid .excel-raw-search-cell{height:auto;min-height:54px;padding:7px 9px;white-space:normal;overflow:visible}
-.excel-raw-search-summary{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px}
-.excel-raw-search-state{display:inline-flex;align-items:center;min-height:22px;padding:3px 7px;border-radius:999px;font-size:10px;font-weight:800;white-space:nowrap}
+.excel-preview:not(.product-view) .excel-preview-grid .excel-raw-data-heading,.excel-preview:not(.product-view) .excel-preview-grid .excel-raw-data-cell{min-width:82px;width:82px;max-width:82px;padding-left:5px;padding-right:5px}
+.excel-preview:not(.product-view) .excel-preview-grid .excel-image-column,.excel-preview:not(.product-view) .excel-preview-grid .excel-image-cell{min-width:58px;width:58px;max-width:58px}
+.excel-preview-grid .excel-raw-search-heading,.excel-preview-grid .excel-raw-search-cell{min-width:205px;width:205px;max-width:205px}
+.excel-preview-grid .excel-raw-search-cell{height:68px;min-height:68px;padding:4px 6px;white-space:normal;overflow:hidden;vertical-align:middle}
+.excel-raw-search-summary{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:3px}
+.excel-raw-search-state{display:inline-flex;align-items:center;min-height:19px;padding:2px 5px;border-radius:999px;font-size:9px;font-weight:800;white-space:nowrap}
 .excel-raw-search-state.available{color:#287044;background:#e9f7ed}.excel-raw-search-state.missing{color:#667085;background:#eef1f4}.excel-raw-search-state.error{color:#a34b43;background:#fff0ee}.excel-raw-search-state.loading{color:#1768c5;background:#eaf3ff}.excel-raw-search-state.muted{color:#7b8794;background:#f3f4f6}
-.excel-raw-search-again{flex:0 0 auto;padding:3px 6px;border-color:#cad6e5;color:#52677f;background:#fff;font-size:9px;font-weight:700}
-.excel-raw-search-links{display:flex;flex-wrap:wrap;gap:4px;align-items:center}.excel-raw-search-links button{max-width:112px;padding:4px 6px;border-color:#b9d3f4;color:#1768c5;background:#f7fbff;font-size:9px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.excel-raw-search-links span{color:#8a96a5;font-size:9px}
+.excel-raw-search-again{flex:0 0 auto;padding:2px 4px;border-color:#cad6e5;color:#52677f;background:#fff;font-size:8px;font-weight:700}
+.excel-raw-search-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;align-items:center}.excel-raw-search-links button{min-width:0;max-width:none;padding:3px 4px;border-color:#b9d3f4;color:#1768c5;background:#f7fbff;font-size:8px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.excel-raw-search-links span{grid-column:1/-1;color:#8a96a5;font-size:8px}
 .excel-preview.product-view #excel-hide-common-columns,.excel-preview.product-view #excel-show-hidden-columns{display:none}
 .excel-preview.product-view .excel-preview-grid table{width:1000px;min-width:100%;table-layout:fixed}
 .excel-preview.product-view .excel-preview-grid th,.excel-preview.product-view .excel-preview-grid td{min-width:0;max-width:none}
