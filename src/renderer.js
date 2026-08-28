@@ -707,6 +707,70 @@ function renderRawExcelCell(cell, header = "", columnIndex = 0) {
   return `<td data-excel-column-index="${columnIndex}" title="${text(displayValue)}">${text(displayValue)}</td>`;
 }
 
+function rawExcelDomesticResultLinks(result = {}) {
+  const links = [];
+  const seen = new Set();
+  let naverOverviewAdded = false;
+  const add = (label, url) => {
+    const value = String(url || "").trim();
+    if (!/^https?:\/\//i.test(value) || seen.has(value)) return;
+    seen.add(value);
+    links.push({ label: String(label || "판매처").trim() || "판매처", url: value });
+  };
+  for (const product of result.products || []) {
+    if (/^네이버(?:\s|$)/.test(String(product.retailerName || product.store || ""))) continue;
+    add(product.retailerName || product.store || "상품 링크", product.url);
+  }
+  for (const source of result.sources || []) {
+    if (/^네이버(?:\s|$)/.test(String(source.store || ""))) {
+      if (!naverOverviewAdded) {
+        const naverOverviewUrl = source.resultsUrl || source.searchResultsUrl || source.searchUrl;
+        if (/^https?:\/\//i.test(String(naverOverviewUrl || ""))) {
+          add("네이버 전체 결과", naverOverviewUrl);
+          naverOverviewAdded = true;
+        }
+      }
+      continue;
+    }
+    add(
+      source.store || "판매처 검색",
+      source.verifiedProductUrl || source.officialProductUrl || source.officialSearchUrl
+        || source.homepageUrl || source.searchUrl,
+    );
+  }
+  return links.slice(0, 4);
+}
+
+function renderRawExcelDomesticCell(key, product, result) {
+  if (!product) return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state muted">검색 정보 없음</span></td>`;
+  if (result?.loading) {
+    return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">검색 중…</span></td>`;
+  }
+  if (!result) {
+    return `<td class="excel-raw-search-cell"><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">상품검색</button></td>`;
+  }
+  const products = Array.isArray(result.products) ? result.products : [];
+  const verifiedCount = (result.sources || []).reduce((sum, source) =>
+    sum + (source?.countVerified ? Number(source?.count || 0) : 0), 0);
+  const needsReview = Boolean(result.error) || (result.sources || []).some((source) =>
+    source?.verificationPending || source?.verificationFailed || source?.securityVerificationRequired || source?.loginRequired
+  );
+  const state = products.length
+    ? { label: `상품 있음 · ${products.length.toLocaleString("ko-KR")}개`, className: "available" }
+    : verifiedCount > 0
+      ? { label: `상품 있음 · ${verifiedCount.toLocaleString("ko-KR")}개`, className: "available" }
+      : needsReview
+        ? { label: "검색 실패", className: "error" }
+        : { label: "상품 없음", className: "missing" };
+  const links = rawExcelDomesticResultLinks(result);
+  return `<td class="excel-raw-search-cell">
+    <div class="excel-raw-search-summary"><span class="excel-raw-search-state ${state.className}">${text(state.label)}</span><button type="button" class="excel-raw-search-again" data-excel-search-product="${encodeURIComponent(key)}">다시 검색</button></div>
+    <div class="excel-raw-search-links">${links.length
+      ? links.map((link) => `<button type="button" data-url="${encodeURIComponent(link.url)}" title="${text(link.label)} 열기">${text(link.label)} ↗</button>`).join("")
+      : `<span>확인된 링크 없음</span>`}</div>
+  </td>`;
+}
+
 function excelPreviewProductKey(filePath, row = [], rowNumber = 0, productColumn = -1) {
   const productNumber = productColumn >= 0 ? String(row[productColumn] || "").trim() : "";
   return `${brandImportPathKey(filePath)}::${productNumber || `row-${rowNumber}`}`;
@@ -988,14 +1052,13 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   if (result.productView) {
     renderExcelProductRows(file, products);
   } else {
-    $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th>${headers.map((header, columnIndex) => `<th data-excel-column-index="${columnIndex}" title="${text(header)}">${text(header)}</th>`).join("")}<th>국내 상품검색</th></tr>`;
+    $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th>${headers.map((header, columnIndex) => `<th data-excel-column-index="${columnIndex}" title="${text(header)}">${text(header)}</th>`).join("")}<th class="excel-raw-search-heading">상품 검색 결과 · 링크</th></tr>`;
     $("#excel-preview-rows").innerHTML = rows.length
       ? rows.map((row, index) => {
           const product = pageProductsByRow[index];
           const key = pageProductKeys[index];
           const searchResult = product ? excelPreviewSearchResults.get(key) : null;
-          const buttonText = searchResult?.loading ? "검색 중…" : searchResult?.error ? "검색 실패" : searchResult ? `${(searchResult.products || []).length}개 결과` : "국내 상품검색";
-          return `<tr><td class="excel-product-select-column">${product ? `<input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택">` : ""}</td>${row.map((cell, columnIndex) => renderRawExcelCell(cell, headers[columnIndex], columnIndex)).join("")}<td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${!product || searchResult?.loading ? "disabled" : ""}>${buttonText}</button></td></tr>${searchResult && !searchResult.loading ? `<tr class="excel-product-search-detail"><td colspan="${Math.max(1, totalColumns + 2)}">${renderDomestic(searchResult, product)}</td></tr>` : ""}`;
+          return `<tr><td class="excel-product-select-column">${product ? `<input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택">` : ""}</td>${row.map((cell, columnIndex) => renderRawExcelCell(cell, headers[columnIndex], columnIndex)).join("")}${renderRawExcelDomesticCell(key, product, searchResult)}</tr>`;
         }).join("")
       : `<tr><td class="empty" colspan="${Math.max(1, totalColumns + 2)}">표시할 데이터 행이 없습니다.</td></tr>`;
   }
