@@ -18,6 +18,16 @@ main = main.replace(
   `${naverSourceAnchor}\n  // ${marker}: one Fashion Town overview search is captured once, then each card is classified locally.`,
 );
 
+const threeNaverSources = `    { store: "네이버 공식 브랜드스토어", linkOnly: true, fashionTown: "brand-store", renderCount: true },
+    { store: "네이버 백화점", linkOnly: true, fashionTown: "department", renderCount: true },
+    { store: "네이버 아울렛", linkOnly: true, fashionTown: "outlet", renderCount: true },`;
+if (!relay.includes(threeNaverSources)) throw new Error("three-row Naver source block missing");
+relay = relay.replace(
+  threeNaverSources,
+  `    // One overview request already includes official malls, department stores and outlets.
+    { store: "네이버 패션타운", linkOnly: true, fashionTown: "overview", renderCount: true },`,
+);
+
 const legacyChannelClickFlag = `    const naverChannelClickRequired = [
       "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛",
     ].includes(String(source.store || ""));`;
@@ -123,12 +133,13 @@ const naverFilterEnd = main.indexOf('    if (["SSG 백화점", "SSG 아울렛"].
 if (naverFilterStart < 0 || naverFilterEnd < 0) throw new Error("legacy Naver per-channel result filter missing");
 const overviewFilterBlock = `    if (naverPortalSource) {
       const expectedNaverChannel = source.store === "네이버 백화점" ? "department"
-        : source.store === "네이버 아울렛" ? "outlet" : "brand-store";
+        : source.store === "네이버 아울렛" ? "outlet"
+          : source.store === "네이버 공식 브랜드스토어" ? "brand-store" : "";
       const currentChannelRaw = naverChannelCounts?.[String(source.store || "")];
       const currentChannelCount = Number.isFinite(Number(currentChannelRaw)) ? Number(currentChannelRaw) : null;
       const channelCards = (parsedContent.productCards || []).filter((card) =>
         isPlatformShoppingProductUrl(card?.productUrl)
-          && String(card?.naverWholeViewChannel || "") === expectedNaverChannel);
+          && (!expectedNaverChannel || String(card?.naverWholeViewChannel || "") === expectedNaverChannel));
       if (!channelCards.length && Number(currentChannelCount || 0) > 0) {
         return renderedSearchFailure("overview_channel_card_collection_failed", searchWindow, {
           searchSubmitted: true,
@@ -141,6 +152,17 @@ const overviewFilterBlock = `    if (naverPortalSource) {
     }
 `;
 main = `${main.slice(0, naverFilterStart)}${overviewFilterBlock}${main.slice(naverFilterEnd)}`;
+
+const legacySharedClose = `    if (source.store === "네이버 아울렛"
+      && sharedNaverSession.window
+      && !sharedNaverSession.window.isDestroyed()) {`;
+if (!main.includes(legacySharedClose)) throw new Error("legacy shared Naver close target missing");
+main = main.replace(
+  legacySharedClose,
+  `    if (source.store === "네이버 패션타운"
+      && sharedNaverSession.window
+      && !sharedNaverSession.window.isDestroyed()) {`,
+);
 
 const relayMarkerAnchor = '      const matchingProducts = new Map();';
 if (!relay.includes(relayMarkerAnchor)) throw new Error("relay matching-products anchor missing");

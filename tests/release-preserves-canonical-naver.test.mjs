@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-// Release regression guard.\nconst read = (path) => readFile(new URL("../" + path, import.meta.url), "utf8");
+// Release regression guard.
+const read = (path) => readFile(new URL("../" + path, import.meta.url), "utf8");
 
 test("every release workflow preserves the canonical Naver implementation", async () => {
   for (const path of [
@@ -16,7 +17,7 @@ test("every release workflow preserves the canonical Naver implementation", asyn
   }
 });
 
-test("the remaining build patch cannot collapse Naver into the legacy single source", async () => {
+test("the remaining build patch preserves the canonical Naver overview flow", async () => {
   const patchSource = await read("scripts/patch-simplify-official-naver-search.mjs");
   assert.match(patchSource, /canonical application now owns Naver's visible card-list flow/);
   assert.match(patchSource, /if \(false\) relay = replaceOnce/);
@@ -24,9 +25,9 @@ test("the remaining build patch cannot collapse Naver into the legacy single sou
   assert.match(patchSource, /canonical Naver card-list logic preserved/);
 });
 
-test("the packaged-source verifier rejects reintroduced legacy Naver logic", async () => {
+test("the packaged-source verifier rejects duplicate Naver source rows", async () => {
   const verifier = await read("scripts/verify-simplify-official-naver-search.mjs");
   assert.match(verifier, /articleTextCardLinks/);
   assert.match(verifier, /cardCollectionMissed/);
-  assert.match(verifier, /legacy single Naver source was reintroduced/);
+  assert.match(verifier, /still runs as a duplicate Naver search/);
 });

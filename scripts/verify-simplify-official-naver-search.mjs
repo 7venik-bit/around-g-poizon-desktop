@@ -4,15 +4,15 @@ const main = String(await readFile(new URL("../main.mjs", import.meta.url), "utf
 const relay = String(await readFile(new URL("../relay/domestic-search.mjs", import.meta.url), "utf8"));
 const renderer = String(await readFile(new URL("../src/renderer.js", import.meta.url), "utf8"));
 const salesFilter = String(await readFile(new URL("../services/poizon-sales-filter.mjs", import.meta.url), "utf8"));
-// The release must preserve the canonical Naver implementation instead of
-// validating the removed single-source build patch.
+// The release must preserve one canonical Naver overview request. The overview
+// itself contains official malls, department stores and outlets.
 if (!main.includes("articleTextCardLinks")) throw new Error("canonical visible Naver card collector is missing");
 if (!main.includes("Naver, SSG and Lotte are list-only sources")) throw new Error("Naver list-only result path is missing");
 if (!relay.includes("cardCollectionMissed")) throw new Error("positive channel count can still become an absence");
-for (const required of ["네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛"]) {
-  if (!relay.includes(required)) throw new Error(required + " canonical source is missing");
+if (!relay.includes('{ store: "네이버 패션타운", linkOnly: true, fashionTown: "overview", renderCount: true }')) throw new Error("single Naver overview source is missing");
+for (const duplicate of ["네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛"]) {
+  if (relay.includes(`{ store: "${duplicate}", linkOnly: true`)) throw new Error(duplicate + " still runs as a duplicate Naver search");
 }
-if (relay.includes('{ store: "네이버 패션타운", linkOnly: true')) throw new Error("legacy single Naver source was reintroduced");
 if (!salesFilter.includes('export const POIZON_MINIMUM_TOTAL_SALES = 30;')) throw new Error("global sales baseline is not 30");
 if (!salesFilter.includes('if (filters.rowLevel === true || fixedTotalAnd) {')) throw new Error("fixed AND Excel preview is not filtered at row level");
 console.log("canonical Naver card-list route and strict 30+ row-level AND filtering verified");
