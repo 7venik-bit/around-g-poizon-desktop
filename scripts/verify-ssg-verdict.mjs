@@ -46,7 +46,9 @@ assert.equal(ssgSourceRows.length, 1, "SSG must use one integrated search, not t
 assert.match(relay, /store: "SSG"[^\n]+domesticChannel: "ssg-general"/, "SSG integrated source must be general search");
 
 const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
-assert.match(main, /show: naverPortalSource \|\| ssgChannelSource/, "SSG result window must be visible for real-page verification");
+assert.match(main, /show: false/, "SSG result window must remain hidden during background verification");
+assert.match(main, /offscreen: true/, "hidden SSG verification must keep an active offscreen renderer");
+assert.match(main, /disable-backgrounding-occluded-windows/, "hidden commerce windows must not be renderer-throttled");
 assert.match(main, /ssgChannelSource && securityRetry < 1/, "SSG blocked page must retry once before reporting verification failure");
 assert.match(main, /pageBlocked && !parsedContent\?\.productCards\?\.length/, "a rendered product card must override generic page-block text");
 
