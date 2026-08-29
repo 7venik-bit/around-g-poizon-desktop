@@ -80,6 +80,7 @@ const excelPreviewProductCache = new Map();
 const excelPreviewSearchResults = new Map();
 const excelPreviewSearchResultsByPath = new Map();
 let selectedBrandDomesticQueueRunning = false;
+let combinedBrandPreview = null;
 const domesticIdentitySearchCache = new Map();
 const DOMESTIC_SOURCE_GROUPS_KEY = "around-g-domestic-source-groups-v1";
 const DOMESTIC_SOURCE_GROUPS = ["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"];
@@ -411,6 +412,76 @@ async function openIntegratedBrandExcel(file, productSearch = false) {
     matchMode: "all",
     productView: false,
   }, { integrated: true, preserveFilters: false, productView: false });
+}
+
+function renderCombinedBrandPreviewPage(offset = 0) {
+  if (!combinedBrandPreview) return;
+  const limit = 100;
+  const totalRows = combinedBrandPreview.products.length;
+  const safeOffset = Math.max(0, Math.min(Number(offset) || 0, Math.max(0, Math.floor(Math.max(0, totalRows - 1) / limit) * limit)));
+  const products = combinedBrandPreview.products.slice(safeOffset, safeOffset + limit);
+  const file = { path: "combined://selected-brands", name: "선택 브랜드 통합 검색" };
+  excelPreviewPageProducts = products;
+  excelPreviewPageKeys = renderExcelProductRows(file, products);
+  activeExcelPreview = {
+    file, offset: safeOffset, limit, totalRows, sourceTotalRows: totalRows,
+    filters: { minimumTotal: "100", minimumLocalTotal: "30", productView: true },
+    viewMode: "products", combinedProducts: combinedBrandPreview.products,
+  };
+  $("#excel-preview").hidden = false;
+  $("#excel-preview").classList.add("product-view");
+  $("#excel-preview-loading").hidden = true;
+  $("#excel-preview-grid").hidden = false;
+  $("#excel-preview-pager").hidden = false;
+  $("#excel-preview-selection").hidden = false;
+  $("#excel-preview-name").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 · 통합 상품검색`;
+  $("#excel-preview-summary").textContent = `중국 판매량 100 이상 AND 현지 판매량 30 이상 · 통합 ${totalRows.toLocaleString("ko-KR")}개 · 현재 ${totalRows ? safeOffset + 1 : 0}~${Math.min(totalRows, safeOffset + products.length)}번째`;
+  $("#excel-filter-status").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 중 Excel ${combinedBrandPreview.loadedCount}개 통합 · 조건 충족 ${totalRows.toLocaleString("ko-KR")}개`;
+  $("#excel-filter-min-total").value = "100";
+  $("#excel-filter-min-local-total").value = "30";
+  $("#brand-product-workspace-title").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 · 통합 국내 상품검색`;
+  $("#brand-product-workspace-meta").textContent = `중국 판매량 100 이상 AND 현지 판매량 30 이상 · 화면은 100개씩, 검색은 전체 선택 상품 기준`;
+  const totalPages = Math.max(1, Math.ceil(totalRows / limit));
+  $("#excel-preview-page").textContent = `${Math.floor(safeOffset / limit) + 1} / ${totalPages.toLocaleString("ko-KR")}페이지`;
+  $("#excel-preview-prev").disabled = safeOffset <= 0;
+  $("#excel-preview-next").disabled = safeOffset + limit >= totalRows;
+  updateExcelPreviewSelectionUi(excelPreviewPageKeys);
+}
+
+async function openCombinedSelectedBrandPreview(files = []) {
+  const products = [];
+  let loadedCount = 0;
+  $("#brand-status").className = "status";
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    $("#brand-status").textContent = `선택 브랜드 Excel 통합 중 ${index + 1} / ${files.length} · ${file.brandName || file.name || "브랜드"}`;
+    const result = await window.aroundG.previewExcelFile(file.path, 0, 100000, {
+      minimumTotal: "100",
+      minimumLocalTotal: "30",
+      fixedTotalAnd: true,
+      matchMode: "all",
+      productView: true,
+      selectionOnly: true,
+    });
+    if (!result?.ok) continue;
+    loadedCount += 1;
+    for (const product of Array.isArray(result.products) ? result.products : []) {
+      products.push({ ...product, _sourceFilePath: file.path, _sourceBrandName: file.brandName || "" });
+    }
+  }
+  combinedBrandPreview = { products, brandCount: files.length, loadedCount };
+  selectedExcelPreviewProducts.clear();
+  excelPreviewProductCache.clear();
+  excelPreviewSearchResults.clear();
+  for (const product of products) {
+    const key = `${brandImportPathKey(product._sourceFilePath)}::${product.key || product.articleNumber || product.spuId}`;
+    excelPreviewProductCache.set(key, product);
+  }
+  await openIntegratedBrandExcel(files[0], false);
+  excelPreviewIntegrated = true;
+  renderCombinedBrandPreviewPage(0);
+  $("#brand-status").className = loadedCount === files.length ? "status success" : "status";
+  $("#brand-status").textContent = `선택 브랜드 ${files.length}개 통합 완료 · Excel ${loadedCount}개 · 조건 충족 상품 ${products.length.toLocaleString("ko-KR")}개`;
 }
 
 async function openIntegratedPopularExcel(file) {
@@ -886,9 +957,12 @@ function updateExcelPreviewSelectionUi(pageKeys = []) {
   }
   if (selectAll) {
     selectAll.disabled = excelPreviewSelectingAll || !activeExcelPreview?.totalRows;
+    const combined = Array.isArray(activeExcelPreview?.combinedProducts);
     selectAll.textContent = excelPreviewSelectingAll
       ? "전체 목록 불러오는 중…"
-      : `원본 전체 선택 (${Number(activeExcelPreview?.sourceTotalRows || activeExcelPreview?.totalRows || 0).toLocaleString("ko-KR")}개)`;
+      : combined
+        ? `필터 결과 전체 선택 (${Number(activeExcelPreview.totalRows || 0).toLocaleString("ko-KR")}개)`
+        : `원본 전체 선택 (${Number(activeExcelPreview?.sourceTotalRows || activeExcelPreview?.totalRows || 0).toLocaleString("ko-KR")}개)`;
   }
   if (selectPage) {
     selectPage.checked = uniquePageKeys.length > 0 && selectedOnPage === uniquePageKeys.length;
@@ -962,8 +1036,12 @@ function poizonServiceFee(price, categoryName = "") {
   return Math.min(45_000, Math.max(minimum, Math.round(amount * rate)));
 }
 
+function excelPreviewProductSourcePath(product = {}, file = {}) {
+  return String(product._sourceFilePath || file.path || "");
+}
+
 function renderExcelProductRows(file, products = []) {
-  const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.key || product.articleNumber || product.spuId}`);
+  const pageKeys = products.map((product) => `${brandImportPathKey(excelPreviewProductSourcePath(product, file))}::${product.key || product.articleNumber || product.spuId}`);
   products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
   $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>평균가격</th><th>중국 총판매</th><th>현지 총판매</th><th>상품 검색</th></tr>`;
   $("#excel-preview-rows").innerHTML = products.length ? products.map((product, index) => {
@@ -1034,7 +1112,7 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
   if (file?.path) persistExcelSearchResults(file.path);
   if (file && activeExcelPreview?.viewMode === "products") renderExcelProductRows(file, excelPreviewPageProducts);
   else if (file) void showExcelPreview(file, activeExcelPreview?.offset || 0, activeExcelPreview?.filters || currentExcelPreviewFilters(), { preserveFilters: true });
-  updateExcelPreviewSelectionUi(excelPreviewPageProducts.map((item) => `${brandImportPathKey(file?.path)}::${item.key || item.articleNumber || item.spuId}`));
+  updateExcelPreviewSelectionUi(excelPreviewPageProducts.map((item) => `${brandImportPathKey(excelPreviewProductSourcePath(item, file))}::${item.key || item.articleNumber || item.spuId}`));
 }
 
 async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewFilters(), options = {}) {
@@ -2595,46 +2673,21 @@ $("#completed-brand-domestic-search")?.addEventListener("click", async () => {
   const selectedDownloads = selectedBrandsForExport()
     .map((brand) => latestCompletedBrandDownload(brand))
     .filter(Boolean)
-    .sort((left, right) => Number(right.time || right.mtimeMs || 0) - Number(left.time || left.mtimeMs || 0));
-  const fallbackDownload = [...downloadedBrandFiles]
-    .filter((file) => file?.path)
-    .sort((left, right) => Number(right.time || right.mtimeMs || 0) - Number(left.time || left.mtimeMs || 0))[0];
-  const queue = selectedDownloads.length ? selectedDownloads : fallbackDownload ? [fallbackDownload] : [];
+    .filter((file, index, files) => files.findIndex((item) => brandImportPathKey(item.path) === brandImportPathKey(file.path)) === index);
+  const fallbackDownloads = completedDownloadBrands()
+    .map((brand) => latestCompletedBrandDownload(brand))
+    .filter(Boolean);
+  const files = selectedDownloads.length ? selectedDownloads : fallbackDownloads;
   const status = $("#brand-status");
-  if (!queue.length) {
+  if (!files.length) {
     if (status) {
       status.className = "status error";
       status.textContent = "국내 상품검색에 사용할 다운로드 완료 Excel이 없습니다.";
     }
     return;
   }
-  selectedBrandDomesticQueueRunning = true;
-  for (let index = 0; index < queue.length && selectedBrandDomesticQueueRunning; index += 1) {
-    const file = queue[index];
-    if (status) {
-      status.className = "status";
-      status.textContent = `선택 브랜드 국내검색 ${index + 1} / ${queue.length} · ${file.brandName || file.name || "브랜드"}`;
-    }
-    await openIntegratedBrandExcel(file, true);
-    $("#excel-preview-select-all-results")?.click();
-    // The all-results button first hydrates the workbook and then starts the
-    // existing stoppable search queue. Wait for both phases before advancing.
-    for (let tries = 0; tries < 100 && selectedBrandDomesticQueueRunning
-      && !excelPreviewSelectingAll && !excelPreviewBatchSearching; tries += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    while (selectedBrandDomesticQueueRunning && (excelPreviewSelectingAll || excelPreviewBatchSearching)) {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-  }
-  const completed = selectedBrandDomesticQueueRunning;
   selectedBrandDomesticQueueRunning = false;
-  if (status) {
-    status.className = completed ? "status success" : "status";
-    status.textContent = completed
-      ? `선택한 ${queue.length}개 브랜드의 국내 상품검색을 완료했습니다.`
-      : "선택 브랜드 국내 상품검색을 중지했습니다.";
-  }
+  await openCombinedSelectedBrandPreview(files);
 });
 $("#frequent-brand-category")?.addEventListener("click", () => {
   $("#brand-open-category")?.click();
@@ -3200,6 +3253,16 @@ $("#excel-preview-select-all-results")?.addEventListener("click", async () => {
   const originalTotal = Number(preview.sourceTotalRows || preview.totalRows || 0);
   $("#excel-filter-status").textContent = `원본 전체 ${originalTotal.toLocaleString("ko-KR")}개를 검색 대상으로 불러오고 있습니다.`;
   try {
+    if (Array.isArray(preview.combinedProducts)) {
+      for (const product of preview.combinedProducts) {
+        const key = `${brandImportPathKey(product._sourceFilePath)}::${product.key || product.articleNumber || product.spuId}`;
+        excelPreviewProductCache.set(key, product);
+        selectedExcelPreviewProducts.add(key);
+      }
+      readyToSearch = preview.combinedProducts.length > 0;
+      $("#excel-filter-status").textContent = `통합 필터 결과 ${preview.combinedProducts.length.toLocaleString("ko-KR")}개를 전체 선택했습니다. 상품검색을 누르면 모든 페이지를 검색합니다.`;
+      return;
+    }
     const result = await window.aroundG.previewExcelFile(
       preview.file.path,
       0,
@@ -3371,10 +3434,14 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   updateExcelPreviewSelectionUi(excelPreviewPageKeys);
 });
 $("#excel-preview-prev")?.addEventListener("click", () => {
-  if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, Math.max(0, activeExcelPreview.offset - activeExcelPreview.limit), activeExcelPreview.filters);
+  if (!activeExcelPreview) return;
+  if (Array.isArray(activeExcelPreview.combinedProducts)) renderCombinedBrandPreviewPage(activeExcelPreview.offset - activeExcelPreview.limit);
+  else void showExcelPreview(activeExcelPreview.file, Math.max(0, activeExcelPreview.offset - activeExcelPreview.limit), activeExcelPreview.filters);
 });
 $("#excel-preview-next")?.addEventListener("click", () => {
-  if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, activeExcelPreview.offset + activeExcelPreview.limit, activeExcelPreview.filters);
+  if (!activeExcelPreview) return;
+  if (Array.isArray(activeExcelPreview.combinedProducts)) renderCombinedBrandPreviewPage(activeExcelPreview.offset + activeExcelPreview.limit);
+  else void showExcelPreview(activeExcelPreview.file, activeExcelPreview.offset + activeExcelPreview.limit, activeExcelPreview.filters);
 });
 $("#excel-filter-apply")?.addEventListener("click", () => {
   if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, 0, currentExcelPreviewFilters());
