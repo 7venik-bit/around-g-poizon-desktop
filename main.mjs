@@ -1881,7 +1881,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   if (!/^https:\/\//i.test(url)) return { count: Number(source.count || 0), products: [] };
   const naverPortalSource = /^네이버\s/.test(String(source.store || ""));
   // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.
-  const ssgChannelSource = /^SSG(?:\s|$)/.test(String(source.store || ""));\n  const musinsaSource = String(source.store || "") === "무신사";
+  const ssgChannelSource = /^SSG(?:\s|$)/.test(String(source.store || ""));
+  const musinsaSource = String(source.store || "") === "무신사";
   let naverChannelCounts = null;
   let searchWindow;
   try {
