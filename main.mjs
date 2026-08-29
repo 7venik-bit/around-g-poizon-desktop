@@ -838,6 +838,64 @@ async function addMatchConfidence(data, input) {
   return { ...data, products, sources };
 }
 
+async function verifyAllStoresWithMusinsaImage(data, input = {}) {
+  const products = Array.isArray(data?.products) ? data.products : [];
+  const exactMusinsa = products.find((product) =>
+    String(product?.sourceStore || product?.store || "") === "무신사"
+      && Number(product?.signals?.codeScore || 0) === 1
+      && product?.articleConflict !== true
+      && product?.signals?.codeConflict !== true
+      && /^https?:\/\//i.test(String(product?.url || ""))
+      && /^https?:\/\//i.test(String(product?.imageUrl || ""))
+  );
+  if (!exactMusinsa) return { ...data, musinsaImageVerification: { applied: false } };
+  const referenceFingerprint = await imageFingerprint(exactMusinsa.imageUrl).catch(() => null);
+  if (!referenceFingerprint) {
+    return { ...data, musinsaImageVerification: { applied: false, referenceUrl: exactMusinsa.url } };
+  }
+  const verified = await Promise.all(products.map(async (product) => {
+    const store = String(product?.sourceStore || product?.store || "");
+    if (product === exactMusinsa || store === "무신사") {
+      return { ...product, musinsaImageReference: true, imageVerificationLabel: "무신사 기준 이미지" };
+    }
+    const exactCode = Number(product?.signals?.codeScore || 0) === 1
+      && product?.articleConflict !== true
+      && product?.signals?.codeConflict !== true;
+    const imageUrl = String(product?.imageUrl || "");
+    if (!exactCode || !/^https?:\/\//i.test(imageUrl)) {
+      return { ...product, musinsaImageCompared: false, imageVerificationLabel: "이미지 확인 필요" };
+    }
+    const candidateFingerprint = await imageFingerprint(imageUrl).catch(() => null);
+    const similarity = fingerprintSimilarity(referenceFingerprint, candidateFingerprint);
+    if (!Number.isFinite(similarity)) {
+      return { ...product, musinsaImageCompared: false, imageVerificationLabel: "이미지 확인 필요" };
+    }
+    const imageScore = Math.round(similarity * 100);
+    return {
+      ...product,
+      musinsaImageCompared: true,
+      musinsaImageScore: imageScore,
+      musinsaImageRejected: imageScore < 58,
+      imageVerificationLabel: imageScore >= 82 ? "무신사 이미지 높은 일치"
+        : imageScore >= 58 ? "무신사 이미지 일치" : "무신사 이미지 불일치",
+    };
+  }));
+  const accepted = verified.filter((product) => product.musinsaImageRejected !== true);
+  return {
+    ...data,
+    products: accepted,
+    musinsaImageVerification: {
+      applied: true,
+      referenceStore: "무신사",
+      referenceUrl: exactMusinsa.url,
+      referenceImageUrl: exactMusinsa.imageUrl,
+      compared: verified.filter((product) => product.musinsaImageCompared === true).length,
+      rejected: verified.filter((product) => product.musinsaImageRejected === true).length,
+      articleNumber: String(input.articleNumber || ""),
+    },
+  };
+}
+
 async function officialDetailImage(searchWindow, productUrl, officialPageUrl = "", linkedSearchImageUrl = "") {
   try {
     const target = new URL(String(productUrl || ""));
@@ -9571,6 +9629,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         );
         if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
         matched = await addMatchConfidence(matched, input || {});
+        matched = await verifyAllStoresWithMusinsaImage(matched, input || {});
       }
       const exactMatch = matched.products.some((product) =>
         Number(product.signals?.codeScore || 0) === 1
