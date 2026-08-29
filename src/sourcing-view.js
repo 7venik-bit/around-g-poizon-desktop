@@ -40,6 +40,18 @@
       .sourcing-source-fallback span{font-size:12px!important;color:#6b7280!important}
       .sourcing-list-empty{padding:24px!important;text-align:center!important;color:#6b7280!important;font-size:13px!important}
       .excel-search-outcome-soldout .sourcing-domestic-search{background:#eef7f0!important;color:#4f7d57!important;border-color:#d4e8d7!important}
+      #excel-preview-grid .platform-row{display:grid!important;grid-template-columns:22px 90px minmax(260px,1fr) 74px 88px 110px 70px!important;grid-template-rows:56px!important;gap:0 7px!important;align-items:center!important;min-height:56px!important;padding:3px 0!important;text-align:center!important}
+      #excel-preview-grid .platform-row>*{min-width:0!important}
+      #excel-preview-grid .platform-row>strong{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+      #excel-preview-grid .candidate-summary{display:grid!important;grid-template-columns:48px minmax(0,1fr)!important;gap:7px!important;align-items:center!important;text-align:left!important}
+      #excel-preview-grid .candidate-image{width:46px!important;height:46px!important;object-fit:contain!important}
+      #excel-preview-grid .candidate-summary b,#excel-preview-grid .candidate-summary small{display:block!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+      #excel-preview-grid .platform-row .match-signals{display:none!important}
+      #excel-preview-grid .platform-row .size-list{justify-content:center!important;max-height:48px!important;overflow:hidden!important}
+      #excel-preview-grid .platform-row>button{grid-column:7!important;grid-row:1!important;width:100%!important;padding:6px!important}
+      #excel-preview-grid .domestic-source-section{margin:0!important;border-radius:7px!important}
+      #excel-preview-grid .domestic-source-heading{min-height:30px!important;padding:4px 7px!important}
+      #excel-preview-grid .domestic-source-section .platform-list{padding:0 7px!important}
       @media (max-width:980px){
         .sourcing-product-list-row{grid-template-columns:50px minmax(220px,1fr) 165px!important}
         .sourcing-product-thumb{width:48px!important;height:48px!important}
