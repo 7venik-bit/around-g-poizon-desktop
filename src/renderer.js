@@ -2199,7 +2199,7 @@ function updateDomesticStockFilter() {
 
 function renderDomestic(result, sourceProduct = {}) {
   if (!result) return `<span class="inventory-help">재고 검색을 누르면 공식몰 → 무신사 → 네이버·SSG·롯데온의 공식스토어·백화점·아울렛을 각각 확인합니다.</span>`;
-  if (result.loading) return `<span class="inventory-help">국내 플랫폼을 순서대로 확인하고 있습니다…</span>`;
+  if (result.loading) return renderDomesticLoading(result.startedAt);
   if (result.error) return `<span class="inventory-help">상품없음</span>`;
   const products = (result.products || []).filter((product) => product && (product.name || product.title));
   const verifiedCount = (result.sources || []).reduce((sum, source) =>

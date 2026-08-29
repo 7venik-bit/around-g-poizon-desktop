@@ -1336,8 +1336,6 @@ async function clickNaverShoppingHomeMenu(searchWindow) {
     if (!target) await wait(500);
   }
   if (!target) return false;
-  searchWindow.show();
-  searchWindow.focus();
   searchWindow.webContents.focus();
   searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
   searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
@@ -1412,8 +1410,6 @@ async function clickNaverFashionTownMenu(searchWindow) {
     if (!target) await wait(500);
   }
   if (!target) return false;
-  searchWindow.show();
-  searchWindow.focus();
   searchWindow.webContents.focus();
   searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
   searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
@@ -1665,8 +1661,6 @@ async function waitForNaverSearchResultsStable(searchWindow, query) {
 async function submitNaverShoppingSearch(searchWindow, query) {
   const exactQuery = String(query || "").trim();
   if (!exactQuery || !searchWindow || searchWindow.isDestroyed()) return false;
-  searchWindow.show();
-  searchWindow.focus();
   searchWindow.webContents.focus();
   const previousUrl = String(searchWindow.webContents.getURL() || "");
   const inputTarget = await openNaverFashionTownSearchInput(searchWindow);
@@ -1839,8 +1833,6 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
     ]).catch(() => {});
     await wait(1_200);
   }
-  searchWindow.show();
-  searchWindow.focus();
   const cardFound = await searchWindow.webContents.executeJavaScript(`(() => {
     const expected = ${JSON.stringify(expectedUrl)};
     const clean = (value) => String(value || "").split("#")[0];
