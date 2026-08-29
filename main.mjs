@@ -96,7 +96,7 @@ import { scoreProductCandidate } from "./services/matcher.mjs";
 import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";
 import { highestQualifiedOptionPrice, optionRowsFromSellerResponses, qualifiedOptionPrices } from "./services/seller-transaction-price.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
-import { findNewSellerExportJob } from "./services/brand-export-jobs.mjs";
+import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";
 import {
   SITE_HEALTH_TARGETS,
   nextWeeklySiteHealthAt,
@@ -7392,13 +7392,23 @@ async function automateSellerBrandExport(input = {}) {
     }
     if (Array.isArray(currentJobs)) {
       const unusedJobs = currentJobs.filter((job) => !brandExportJobOwner(job?.id));
-      const candidate = findNewSellerExportJob([...baselineJobIds], unusedJobs, {
+      let candidate = findNewSellerExportJob([...baselineJobIds], unusedJobs, {
         notBeforeMs: exportAcknowledgedAt,
         baselineAuthoritative: baselineAvailable,
         // POIZON and the local PC can differ slightly, but a previous-day job
         // (such as the PUMA row reused for KOLON SPORT) must always be rejected.
         allowedClockSkewMs: 2 * 60_000,
       });
+      // A slow baseline window can finish after POIZON has already inserted
+      // the new row and accidentally classify that row as old. The Download
+      // Center timestamp is independent evidence: an unowned job created for
+      // this request must be attached even if it leaked into the baseline.
+      if (!candidate && elapsedMs >= 10_000) {
+        candidate = findRecentSellerExportJob(unusedJobs, {
+          notBeforeMs: exportAcknowledgedAt,
+          allowedClockSkewMs: 2 * 60_000,
+        });
+      }
       if (candidate && baselineAvailable) {
         createdJob = candidate;
       } else if (candidate) {
