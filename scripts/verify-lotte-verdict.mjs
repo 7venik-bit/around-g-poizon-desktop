@@ -73,7 +73,8 @@ assert.match(relay, /exactPortalSearchChecked/, "Lotte absence must require a pa
 
 const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 assert.ok(main.includes("const lotteChannelSource ="), "Lotte rendered channel must be detected");
-assert.ok(main.includes("show: naverPortalSource || ssgChannelSource || lotteChannelSource"), "Lotte result window must be visible for real-page verification");
+assert.ok(main.includes("show: false"), "Lotte result window must remain hidden during background verification");
+assert.ok(main.includes("offscreen: true"), "hidden Lotte verification must keep an active offscreen renderer");
 assert.ok(main.includes("(ssgChannelSource || lotteChannelSource) && securityRetry < 1"), "blocked Lotte page must retry once before verification failure");
 assert.ok(main.includes("portalStore && exactCode && product.imageUrl"), "every exact SSG/Lotte card image must be queued for comparison");
 assert.ok(main.includes("imageEvidenceAllowsExactProduct"), "exact-code Lotte/SSG filtering must include image evidence");
