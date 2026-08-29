@@ -81,6 +81,7 @@ const excelPreviewSearchResults = new Map();
 const excelPreviewSearchResultsByPath = new Map();
 let selectedBrandDomesticQueueRunning = false;
 let combinedBrandPreview = null;
+let combinedBrandPreviewLoading = false;
 const domesticIdentitySearchCache = new Map();
 const DOMESTIC_SOURCE_GROUPS_KEY = "around-g-domestic-source-groups-v1";
 const DOMESTIC_SOURCE_GROUPS = ["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"];
@@ -1581,7 +1582,10 @@ function updateBrandSelectionControls() {
     if (label) label.textContent = brandSelectionBusy ? "작업 중지" : "포이즌 상품정보";
   });
   if (domesticSearch) {
-    domesticSearch.disabled = brandSelectionBusy || completedCount === 0;
+    // Domestic search reads already-downloaded Excel files and is independent
+    // from a POIZON export/monitoring session.
+    domesticSearch.disabled = completedCount === 0 || combinedBrandPreviewLoading;
+    domesticSearch.setAttribute("aria-busy", String(combinedBrandPreviewLoading));
   }
   if (stopCurrent) stopCurrent.disabled = !brandSelectionBusy && !activeExportBrand && !hasActiveBrandExportJobs();
   const lamps = $("#onedrive-lamps");
@@ -2682,6 +2686,9 @@ $("#frequent-brand-export")?.addEventListener("click", () => {
   $("#brand-export-selected")?.click();
 });
 $("#completed-brand-domestic-search")?.addEventListener("click", async () => {
+  if (combinedBrandPreviewLoading) return;
+  combinedBrandPreviewLoading = true;
+  updateBrandSelectionControls();
   const selectedDownloads = selectedBrandsForExport()
     .map((brand) => latestCompletedBrandDownload(brand))
     .filter(Boolean)
@@ -2696,10 +2703,17 @@ $("#completed-brand-domestic-search")?.addEventListener("click", async () => {
       status.className = "status error";
       status.textContent = "국내 상품검색에 사용할 다운로드 완료 Excel이 없습니다.";
     }
+    combinedBrandPreviewLoading = false;
+    updateBrandSelectionControls();
     return;
   }
   selectedBrandDomesticQueueRunning = false;
-  await openCombinedSelectedBrandPreview(files);
+  try {
+    await openCombinedSelectedBrandPreview(files);
+  } finally {
+    combinedBrandPreviewLoading = false;
+    updateBrandSelectionControls();
+  }
 });
 $("#frequent-brand-category")?.addEventListener("click", () => {
   $("#brand-open-category")?.click();
