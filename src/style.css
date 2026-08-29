@@ -1537,3 +1537,7 @@ button,input,select,textarea{font-family:inherit}
 .excel-search-outcome-pending{--excel-outcome-border:#7c3aed;--excel-outcome-row:#eee5ff;--excel-outcome-detail:#dfd0ff}
 .excel-search-outcome-missing,.excel-search-outcome-error{--excel-outcome-border:#dc2626;--excel-outcome-row:#ffe1e1;--excel-outcome-detail:#ffcaca}
 \n.parallel-import-panel{margin-top:10px;padding:10px;border:1px solid #ffb24a;border-radius:12px;background:#fffaf2}.parallel-import-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;color:#8a4b00}.parallel-import-heading small{color:#90683b}.parallel-import-links{max-height:210px;overflow:auto;align-content:start}.parallel-source-link{border-color:#ffb24a!important;background:#fff!important}.parallel-source-link small{color:#b45c00!important;font-weight:800}\n
+
+
+/* Keep multi-brand Excel integration progress legible in the dense brand workspace. */
+#brand-status.combined-progress{display:inline-flex;align-items:center;min-height:34px;margin:8px 0;padding:7px 12px;border:1px solid #78aef8;border-radius:8px;background:#eaf3ff;color:#073b82;font-weight:800;letter-spacing:.01em;box-shadow:0 1px 0 #ffffff inset}

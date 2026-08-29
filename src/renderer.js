@@ -417,6 +417,8 @@ async function openIntegratedBrandExcel(file, productSearch = false) {
 
 function renderCombinedBrandPreviewPage(offset = 0) {
   if (!combinedBrandPreview) return;
+  const minimumTotal = String(combinedBrandPreview.filters?.minimumTotal ?? "100");
+  const minimumLocalTotal = String(combinedBrandPreview.filters?.minimumLocalTotal ?? "30");
   const limit = 100;
   const totalRows = combinedBrandPreview.products.length;
   const safeOffset = Math.max(0, Math.min(Number(offset) || 0, Math.max(0, Math.floor(Math.max(0, totalRows - 1) / limit) * limit)));
@@ -426,7 +428,7 @@ function renderCombinedBrandPreviewPage(offset = 0) {
   excelPreviewPageKeys = renderExcelProductRows(file, products);
   activeExcelPreview = {
     file, offset: safeOffset, limit, totalRows, sourceTotalRows: totalRows,
-    filters: { minimumTotal: "100", minimumLocalTotal: "30", productView: true },
+    filters: { minimumTotal, minimumLocalTotal, fixedTotalAnd: true, matchMode: "all", productView: true },
     viewMode: "products", combinedProducts: combinedBrandPreview.products,
   };
   $("#excel-preview").hidden = false;
@@ -436,12 +438,12 @@ function renderCombinedBrandPreviewPage(offset = 0) {
   $("#excel-preview-pager").hidden = false;
   $("#excel-preview-selection").hidden = false;
   $("#excel-preview-name").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 · 통합 상품검색`;
-  $("#excel-preview-summary").textContent = `중국 판매량 100 이상 AND 현지 판매량 30 이상 · 통합 ${totalRows.toLocaleString("ko-KR")}개 · 현재 ${totalRows ? safeOffset + 1 : 0}~${Math.min(totalRows, safeOffset + products.length)}번째`;
+  $("#excel-preview-summary").textContent = `중국 판매량 ${minimumTotal || "전체"} 이상 AND 현지 판매량 ${minimumLocalTotal || "전체"} 이상 · 통합 ${totalRows.toLocaleString("ko-KR")}개 · 현재 ${totalRows ? safeOffset + 1 : 0}~${Math.min(totalRows, safeOffset + products.length)}번째`;
   $("#excel-filter-status").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 중 Excel ${combinedBrandPreview.loadedCount}개 통합 · 조건 충족 ${totalRows.toLocaleString("ko-KR")}개`;
-  $("#excel-filter-min-total").value = "100";
-  $("#excel-filter-min-local-total").value = "30";
+  $("#excel-filter-min-total").value = minimumTotal;
+  $("#excel-filter-min-local-total").value = minimumLocalTotal;
   $("#brand-product-workspace-title").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 · 통합 국내 상품검색`;
-  $("#brand-product-workspace-meta").textContent = `중국 판매량 100 이상 AND 현지 판매량 30 이상 · 화면은 100개씩, 검색은 전체 선택 상품 기준`;
+  $("#brand-product-workspace-meta").textContent = `중국 판매량 ${minimumTotal || "전체"} 이상 AND 현지 판매량 ${minimumLocalTotal || "전체"} 이상 · 화면은 100개씩, 검색은 전체 선택 상품 기준`;
   const totalPages = Math.max(1, Math.ceil(totalRows / limit));
   $("#excel-preview-page").textContent = `${Math.floor(safeOffset / limit) + 1} / ${totalPages.toLocaleString("ko-KR")}페이지`;
   $("#excel-preview-prev").disabled = safeOffset <= 0;
@@ -459,16 +461,18 @@ function renderCombinedBrandPreviewPage(offset = 0) {
   updateExcelPreviewSelectionUi(excelPreviewPageKeys);
 }
 
-async function openCombinedSelectedBrandPreview(files = []) {
+async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
   const products = [];
   let loadedCount = 0;
-  $("#brand-status").className = "status";
+  const minimumTotal = String(filters.minimumTotal ?? "100");
+  const minimumLocalTotal = String(filters.minimumLocalTotal ?? "30");
+  $("#brand-status").className = "status combined-progress";
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index];
     $("#brand-status").textContent = `선택 브랜드 Excel 통합 중 ${index + 1} / ${files.length} · ${file.brandName || file.name || "브랜드"}`;
     const result = await window.aroundG.previewExcelFile(file.path, 0, 100000, {
-      minimumTotal: "100",
-      minimumLocalTotal: "30",
+      minimumTotal,
+      minimumLocalTotal,
       fixedTotalAnd: true,
       matchMode: "all",
       productView: true,
@@ -482,7 +486,13 @@ async function openCombinedSelectedBrandPreview(files = []) {
       products.push(sourceProduct);
     }
   }
-  combinedBrandPreview = { products, brandCount: files.length, loadedCount };
+  combinedBrandPreview = {
+    products,
+    brandCount: files.length,
+    loadedCount,
+    files: [...files],
+    filters: { minimumTotal, minimumLocalTotal },
+  };
   // Opening the first workbook initializes the shared viewer and clears its
   // ordinary single-file cache. Populate the combined cache only afterward.
   await openIntegratedBrandExcel(files[0], false);
@@ -3478,18 +3488,36 @@ $("#excel-preview-next")?.addEventListener("click", () => {
   if (Array.isArray(activeExcelPreview.combinedProducts)) renderCombinedBrandPreviewPage(activeExcelPreview.offset + activeExcelPreview.limit);
   else void showExcelPreview(activeExcelPreview.file, activeExcelPreview.offset + activeExcelPreview.limit, activeExcelPreview.filters);
 });
+async function applyActiveExcelPreviewFilters() {
+  if (!activeExcelPreview) return;
+  const filters = currentExcelPreviewFilters();
+  if (Array.isArray(activeExcelPreview.combinedProducts) && Array.isArray(combinedBrandPreview?.files)) {
+    if (combinedBrandPreviewLoading) return;
+    combinedBrandPreviewLoading = true;
+    updateBrandSelectionControls();
+    try {
+      await openCombinedSelectedBrandPreview(combinedBrandPreview.files, filters);
+    } finally {
+      combinedBrandPreviewLoading = false;
+      updateBrandSelectionControls();
+    }
+    return;
+  }
+  await showExcelPreview(activeExcelPreview.file, 0, filters);
+}
+
 $("#excel-filter-apply")?.addEventListener("click", () => {
-  if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, 0, currentExcelPreviewFilters());
+  void applyActiveExcelPreviewFilters();
 });
 $("#excel-preview-filters")?.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" || !activeExcelPreview) return;
   event.preventDefault();
-  void showExcelPreview(activeExcelPreview.file, 0, currentExcelPreviewFilters());
+  void applyActiveExcelPreviewFilters();
 });
 $("#excel-filter-reset")?.addEventListener("click", () => {
   $("#excel-filter-min-total").value = "";
   $("#excel-filter-min-local-total").value = "";
-  if (activeExcelPreview) void showExcelPreview(activeExcelPreview.file, 0, currentExcelPreviewFilters());
+  void applyActiveExcelPreviewFilters();
 });
 $("#brand-download-clear")?.addEventListener("click", async () => {
   await restoreDownloadedBrandFiles();
