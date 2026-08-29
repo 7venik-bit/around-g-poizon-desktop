@@ -2229,20 +2229,16 @@ function renderDomestic(result, sourceProduct = {}) {
     const matchSignals = officialVerified
       ? `<span>품번 정확히 일치</span><span>상품 일치도 ${Number(product.productMatchConfidence || 95)}%</span><span>${text(product.imageVerificationLabel || "이미지 확인 필요")}</span>`
       : `<span>코드 ${text(product.signals?.code)}</span><span>상품명 ${text(product.signals?.title)}</span><span>이미지 ${text(product.signals?.image)}</span>`;
-    return `<div class="platform-row">
-      <span class="platform-priority">${source.priority || ""}</span>
-      <strong>${text(product.retailerName || product.store)}</strong>
-      <div class="candidate-summary ${product?.imageUrl ? "" : "no-image"}">
-        ${product?.imageUrl ? `<img class="candidate-image" src="${text(product.imageUrl)}" alt="${text(candidateName)}">` : ""}
-        <span><b>${text(candidateName || source.store + " 검색 결과")}</b>${product?.price ? `<small>${money(product.price)}</small>` : ""}</span>
+    return `<div class="domestic-result-line ${sourceState}">
+      <strong class="domestic-result-store">${text(product.retailerName || product.store || source.store || "판매처")}</strong>
+      <div class="domestic-result-product">
+        ${product?.imageUrl ? `<img class="candidate-image" src="${text(product.imageUrl)}" alt="">` : `<span class="candidate-image-placeholder">–</span>`}
+        <b title="${text(candidateName)}">${text(candidateName || source.store + " 검색 결과")}</b>
       </div>
+      <span class="confidence ${confidenceClass} ${officialVerified ? "official" : ""}" title="${text(matchSignals)}">${confidenceLabel}</span>
+      <strong class="domestic-result-price">${product?.price ? money(product.price) : "가격 확인"}</strong>
       <span class="stock-state ${sourceState}">${sourceLabel}</span>
-      <span class="confidence ${confidenceClass} ${officialVerified ? "official" : ""}">${confidenceLabel}</span>
-      <div class="size-list">${sizes.length
-        ? sizes.map((size) => `<span class="size-chip ${size.inStock ? "available" : "soldout"}">${text(size.label)}</span>`).join("")
-        : `<span class="size-chip unknown">옵션 확인 필요</span>`}</div>
-      <div class="match-signals">${matchSignals}</div>
-      <button data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${sourcingLabel || (product?.inStock === true ? "구매" : "확인")}</button>
+      <button class="domestic-result-open" data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${sourcingLabel || "판매처 열기"}</button>
     </div>`;
   };
   const sourceAction = (source, label = "판매처 검색") => {
@@ -2288,55 +2284,40 @@ function renderDomestic(result, sourceProduct = {}) {
     return { label: "검색 필요", className: "pending" };
   };
   const renderedProductKeys = new Set();
-  const sourceSections = sources.map((source) => {
+  const compactRows = sources.flatMap((source) => {
     const matchedProducts = products.filter((product) => sourceOwnsProduct(source, product));
     matchedProducts.forEach((product) => renderedProductKeys.add(`${product.store}:${product.id || product.url}`));
-    if (source.store === "병행수입·편집샵" && !matchedProducts.length && Number(source.count || 0) <= 0) return "";
+    if (matchedProducts.length) {
+      return matchedProducts.map((product) => renderProductRow(
+        product,
+        source,
+        source.store === "병행수입·편집샵" ? "상품 소싱" : "",
+      ));
+    }
+    if (source.store === "병행수입·편집샵" && Number(source.count || 0) <= 0) return [];
     const status = sourceStatus(source, matchedProducts);
-    const rows = matchedProducts.map((product) => renderProductRow(
-      product,
-      source,
-      source.store === "병행수입·편집샵" ? "상품 소싱" : "",
-    )).join("");
-    const failureDescriptions = {
-      security_verification_required: "네이버 보안 확인 화면이 나타나 상품 검색을 완료하지 못했습니다.",
-      login_required: "로그인이 확인되지 않아 공식몰 상품 검색을 완료하지 못했습니다.",
-      fashion_town_click_failed: "패션타운 메뉴를 실제로 클릭하지 못해 검색을 중단했습니다.",
-      search_submission_failed: "상품코드를 검색창에 입력하고 검색 버튼을 누르는 단계에서 중단됐습니다.",
-      channel_selection_failed: "검색 후 요청한 백화점·아울렛 채널을 실제로 선택하지 못했습니다.",
-      channel_count_detection_failed: "브랜드직영몰·백화점·아울렛 숫자 3개를 모두 인식하지 못했습니다.",
-      channel_card_evidence_mismatch: "상단 채널 숫자와 하단 상품카드·채널 문구가 일치하지 않아 클릭하지 않았습니다.",
-      ssg_channel_evidence_mismatch: "SSG 상단 채널과 하단 상품카드의 백화점·아울렛 문구가 일치하지 않아 클릭하지 않았습니다.",
-      official_filter_failed: "검색 후 공식 브랜드 필터를 실제로 선택하지 못했습니다.",
-      page_load_timeout: "판매처 검색 페이지의 응답 시간이 초과됐습니다.",
-      network_error: "판매처 검색 페이지에 연결하지 못했습니다.",
-      page_load_failed: "판매처 검색 페이지를 불러오지 못했습니다.",
-      result_parse_failed: "검색 화면은 열렸지만 상품 목록을 읽지 못했습니다.",
-      result_analysis_failed: "검색 화면은 열렸지만 일치 상품을 판정하지 못했습니다.",
-      search_query_missing: "검색에 사용할 상품코드나 상품명이 없습니다.",
-      unknown_search_failure: "판매처 검색이 완료되기 전에 중단됐습니다.",
-    };
-    const detailPending = source.verificationReason
-      ? failureDescriptions[source.verificationReason] || "판매처 검색이 완료되기 전에 중단됐습니다."
-      : !matchedProducts.length && Number(source.count || 0) > 0
-        ? `검색 결과 ${Number(source.count)}개를 확인했습니다. 재고·사이즈 상세 수집이 필요합니다.`
-        : source.absenceConfirmed
-          ? "상품코드→상품명→상품명+상품코드 순서로 검색을 완료했으며 일치 상품이 없습니다."
-          : Number(source.candidateCount || 0) > 0
-            ? "일치 후보 상품을 찾았지만 상세 페이지의 재고·사이즈 확인이 완료되지 않았습니다."
-            : !matchedProducts.length ? "검색은 완료했지만 재고·사이즈 판정 근거가 부족합니다." : "";
-    return `<section class="domestic-source-section ${status.className}${source.store === "병행수입·편집샵" ? " parallel-import-panel" : ""}">
-      <div class="domestic-source-heading"><strong>${text(source.store)}</strong><span class="stock-state ${status.className}">${text(status.label)}</span>${sourceAction(source, matchedProducts.length ? "판매처 열기" : "판매처 검색")}</div>
-      ${rows ? `<div class="platform-list">${rows}</div>` : `<div class="domestic-source-empty"><span>${text(detailPending)}</span>${sourceAction(source, "검색·재고 확인")}</div>`}
-    </section>`;
-  }).join("");
-  const unmatchedRows = products.filter((product) => !renderedProductKeys.has(`${product.store}:${product.id || product.url}`))
-    .map((product) => renderProductRow(product)).join("");
+    return [`<div class="domestic-result-line source-only ${status.className}">
+      <strong class="domestic-result-store">${text(source.store)}</strong>
+      <span class="domestic-result-product"><b>검색 결과</b></span>
+      <span class="confidence ${status.className}">${text(status.label)}</span>
+      <span class="domestic-result-price">–</span>
+      <span class="stock-state ${status.className}">${text(status.label)}</span>
+      ${sourceAction(source, "판매처 열기")}
+    </div>`];
+  });
+  const unmatchedRows = products
+    .filter((product) => !renderedProductKeys.has(`${product.store}:${product.id || product.url}`))
+    .map((product) => renderProductRow(product));
+  const rows = [...compactRows, ...unmatchedRows].join("");
   const emptyMessage = verifiedCount > 0
-    ? `판매처에서 ${verifiedCount}개 결과를 확인했습니다. 상세 상품은 아래 판매처에서 확인해 주세요.`
+    ? `판매처에서 ${verifiedCount}개 결과를 확인했습니다.`
     : "일치하는 국내 판매 상품을 찾지 못했습니다.";
-  return `<div class="domestic-source-list">${sourceSections || `<span class="inventory-help">${emptyMessage}</span>`}</div>
-    ${unmatchedRows ? `<section class="domestic-source-section"><div class="domestic-source-heading"><strong>추가 판매처</strong></div><div class="platform-list">${unmatchedRows}</div></section>` : ""}`;
+  return `<div class="domestic-compact-results">
+    <div class="domestic-result-line domestic-result-head">
+      <span>판매처</span><span>상품명</span><span>일치도</span><span>가격</span><span>상태</span><span>링크</span>
+    </div>
+    ${rows || `<div class="domestic-compact-empty">${emptyMessage}</div>`}
+  </div>`;
 }
 
 function renderExplorerResults(title, products, preserveDomestic = false) {

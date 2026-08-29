@@ -106,6 +106,11 @@ import {
 let store;
 const { autoUpdater } = pkg;
 nativeTheme.themeSource = "light";
+// Keep hidden commerce pages fully active. Without these switches Chromium can
+// throttle timers and painting for occluded windows, which omits lazy results.
+app.commandLine.appendSwitch("disable-renderer-backgrounding");
+app.commandLine.appendSwitch("disable-background-timer-throttling");
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 
 async function openExternalInChromeTab(rawUrl) {
   const parsed = new URL(String(rawUrl || ""));
@@ -1962,7 +1967,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       await wait(250);
     } else {
       searchWindow = new BrowserWindow({
-        show: naverPortalSource,
+        show: false,
         icon: APP_ICON_PATH,
         width: naverPortalSource ? 1480 : 1100,
         height: naverPortalSource ? 900 : 800,
@@ -1970,11 +1975,14 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           partition: DOMESTIC_SEARCH_PARTITION,
           sandbox: true,
           backgroundThrottling: false,
+          paintWhenInitiallyHidden: true,
+          offscreen: true,
         },
       });
       activeDomesticSearchWindows.add(searchWindow);
       searchWindow.on("closed", () => activeDomesticSearchWindows.delete(searchWindow));
-      if (naverPortalSource) searchWindow.maximize();
+      // The search viewport stays full-sized but is rendered offscreen. It is
+      // only shown by waitForNaverSecurityVerification when human action is required.
       searchWindow.webContents.setWindowOpenHandler(({ url: popupUrl }) => {
         if (/^https?:\/\//i.test(String(popupUrl || ""))) searchWindow.loadURL(popupUrl).catch(() => {});
         return { action: "deny" };
