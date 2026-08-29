@@ -466,10 +466,15 @@ async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
   let loadedCount = 0;
   const minimumTotal = String(filters.minimumTotal ?? "100");
   const minimumLocalTotal = String(filters.minimumLocalTotal ?? "30");
-  $("#brand-status").className = "status combined-progress";
+  const brandStatus = $("#brand-status");
+  brandStatus.className = "status combined-progress";
+  brandStatus.dataset.state = "combined-progress";
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index];
-    $("#brand-status").textContent = `선택 브랜드 Excel 통합 중 ${index + 1} / ${files.length} · ${file.brandName || file.name || "브랜드"}`;
+    // Export/download events may replace className while integration is still
+    // running. The data-state marker keeps the progress contrast persistent.
+    brandStatus.classList.add("combined-progress");
+    brandStatus.textContent = `선택 브랜드 Excel 통합 중 ${index + 1} / ${files.length} · ${file.brandName || file.name || "브랜드"}`;
     const result = await window.aroundG.previewExcelFile(file.path, 0, 100000, {
       minimumTotal,
       minimumLocalTotal,
@@ -504,8 +509,9 @@ async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
   }
   excelPreviewIntegrated = true;
   renderCombinedBrandPreviewPage(0);
-  $("#brand-status").className = loadedCount === files.length ? "status success" : "status";
-  $("#brand-status").textContent = `선택 브랜드 ${files.length}개 통합 완료 · Excel ${loadedCount}개 · 조건 충족 상품 ${products.length.toLocaleString("ko-KR")}개`;
+  delete brandStatus.dataset.state;
+  brandStatus.className = loadedCount === files.length ? "status success" : "status";
+  brandStatus.textContent = `선택 브랜드 ${files.length}개 통합 완료 · Excel ${loadedCount}개 · 조건 충족 상품 ${products.length.toLocaleString("ko-KR")}개`;
 }
 
 async function openIntegratedPopularExcel(file) {

@@ -1540,4 +1540,4 @@ button,input,select,textarea{font-family:inherit}
 
 
 /* Keep multi-brand Excel integration progress legible in the dense brand workspace. */
-#brand-status.combined-progress{display:inline-flex;align-items:center;min-height:34px;margin:8px 0;padding:7px 12px;border:1px solid #78aef8;border-radius:8px;background:#eaf3ff;color:#073b82;font-weight:800;letter-spacing:.01em;box-shadow:0 1px 0 #ffffff inset}
+#brand-status.combined-progress,#brand-status[data-state="combined-progress"]{display:inline-flex;align-items:center;min-height:34px;margin:8px 0;padding:7px 12px;border:1px solid #78aef8;border-radius:8px;background:#eaf3ff;color:#073b82;font-weight:800;letter-spacing:.01em;box-shadow:0 1px 0 #ffffff inset}
