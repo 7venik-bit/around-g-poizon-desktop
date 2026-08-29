@@ -624,6 +624,20 @@ body.excel-preview-active{overflow:hidden}
 .excel-preview:not(.product-view) .excel-preview-grid .excel-raw-data-heading,.excel-preview:not(.product-view) .excel-preview-grid .excel-raw-data-cell{min-width:82px;width:82px;max-width:82px;padding-left:5px;padding-right:5px}
 .excel-preview:not(.product-view) .excel-preview-grid .excel-image-column,.excel-preview:not(.product-view) .excel-preview-grid .excel-image-cell{min-width:58px;width:58px;max-width:58px}
 .excel-preview-grid .excel-raw-search-heading,.excel-preview-grid .excel-raw-search-cell{min-width:170px;width:170px;max-width:170px}
+.excel-preview.compact-raw-columns .excel-preview-grid table{width:100%;min-width:980px;table-layout:fixed}
+.excel-preview.compact-raw-columns .excel-preview-grid th,.excel-preview.compact-raw-columns .excel-preview-grid td{height:66px;padding:6px 7px;vertical-align:middle}
+.excel-preview.compact-raw-columns .excel-preview-grid thead th{height:34px;padding-top:6px;padding-bottom:6px}
+.excel-preview.compact-raw-columns .excel-product-select-column{min-width:48px!important;width:4.5%!important;max-width:48px!important}
+.excel-preview.compact-raw-columns .excel-column-image{min-width:62px!important;width:6%!important;max-width:72px!important}
+.excel-preview.compact-raw-columns .excel-column-code{min-width:88px!important;width:10%!important;max-width:120px!important}
+.excel-preview.compact-raw-columns .excel-column-name{min-width:125px!important;width:16%!important;max-width:210px!important}
+.excel-preview.compact-raw-columns .excel-column-brand{min-width:80px!important;width:9%!important;max-width:120px!important}
+.excel-preview.compact-raw-columns .excel-column-option{min-width:80px!important;width:9%!important;max-width:120px!important}
+.excel-preview.compact-raw-columns .excel-column-price{min-width:82px!important;width:9%!important;max-width:112px!important;text-align:right;font-variant-numeric:tabular-nums}
+.excel-preview.compact-raw-columns .excel-column-sales{min-width:66px!important;width:7%!important;max-width:86px!important;text-align:right;font-variant-numeric:tabular-nums}
+.excel-preview.compact-raw-columns .excel-column-standard{min-width:76px!important;width:8%!important;max-width:105px!important}
+.excel-preview.compact-raw-columns .excel-raw-search-heading,.excel-preview.compact-raw-columns .excel-raw-search-cell{min-width:190px!important;width:19%!important;max-width:230px!important}
+.excel-preview.compact-raw-columns .excel-raw-search-heading{text-align:center}
 .excel-preview-grid .excel-column-hidden{display:none!important}
 .excel-preview-grid .excel-raw-search-cell{height:68px;min-height:68px;padding:4px 6px;white-space:normal;overflow:hidden;vertical-align:middle}
 .excel-preview-grid .excel-raw-search-pending{height:54px;min-height:54px;text-align:center}

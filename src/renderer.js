@@ -773,14 +773,27 @@ function rawExcelSourcingColumnVisible(header = "", keepBrand = false) {
   return /^(?:spu이미지|상품이미지|이미지(?:url)?|상품번호|상품코드|품번|상품명|영문상품명|사이즈(?:옵션|색상)?|옵션|sku옵션|최근30일간?평균거래가|평균거래가|현재중국최저입찰가|현재중국최저입찰가예상수익|중국총판매량|총판매량|현지판매자총판매량|현지총판매량)$/i.test(value);
 }
 
+function rawExcelColumnRole(header = "") {
+  const value = normalizedRawExcelHeader(header);
+  if (excelImageColumn(header)) return "image";
+  if (/^(?:상품번호|상품코드|품번)$/.test(value)) return "code";
+  if (/^(?:상품명|영문상품명)$/.test(value)) return "name";
+  if (/^(?:상품브랜드|브랜드)$/.test(value)) return "brand";
+  if (/^(?:사이즈(?:옵션|색상)?|옵션|sku옵션)$/.test(value)) return "option";
+  if (/(?:평균거래가|입찰가|예상수익|가격)$/.test(value)) return "price";
+  if (/(?:판매량|총판매)$/.test(value)) return "sales";
+  return "standard";
+}
+
 function renderRawExcelCell(cell, header = "", columnIndex = 0, compact = false, keepBrand = false) {
   const value = String(cell ?? "").trim();
   const hiddenClass = compact && !rawExcelSourcingColumnVisible(header, keepBrand) ? " excel-column-hidden" : "";
+  const roleClass = ` excel-column-${rawExcelColumnRole(header)}`;
   if (excelImageColumn(header) && /^https:\/\//i.test(value)) {
-    return `<td class="excel-raw-data-cell excel-image-cell${hiddenClass}" data-excel-column-index="${columnIndex}" title="${text(value)}"><a href="${text(value)}" target="_blank" rel="noreferrer" aria-label="제품 이미지 크게 보기"><img src="${text(value)}" alt="제품 이미지" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('a').hidden=true"></a></td>`;
+    return `<td class="excel-raw-data-cell excel-image-cell${roleClass}${hiddenClass}" data-excel-column-index="${columnIndex}" title="${text(value)}"><a href="${text(value)}" target="_blank" rel="noreferrer" aria-label="제품 이미지 크게 보기"><img src="${text(value)}" alt="제품 이미지" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('a').hidden=true"></a></td>`;
   }
   const displayValue = !value ? "숨김" : cell;
-  return `<td class="excel-raw-data-cell${hiddenClass}" data-excel-column-index="${columnIndex}" title="${text(displayValue)}">${text(displayValue)}</td>`;
+  return `<td class="excel-raw-data-cell${roleClass}${hiddenClass}" data-excel-column-index="${columnIndex}" title="${text(displayValue)}">${text(displayValue)}</td>`;
 }
 
 function rawExcelDomesticResultLinks(result = {}) {
@@ -1131,11 +1144,13 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
       : result.productView ? `판매량 필터를 사용하지 않고 전체 ${sourceTotalRows.toLocaleString("ko-KR")}행을 표시합니다.` : "원본 Excel의 행·열·빈칸·값 순서를 변경하지 않고 표시합니다.";
   $("#excel-preview-selection").hidden = false;
   if (result.productView) {
+    preview.classList.remove("compact-raw-columns");
     renderExcelProductRows(file, products);
   } else {
     const compactColumns = localStorage.getItem(EXCEL_COLUMN_MODE_KEY) !== "all";
     const keepBrandColumn = excelPreviewIntegratedWorkspaceId === "popular-product-workspace";
-    $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th>${headers.map((header, columnIndex) => `<th class="excel-raw-data-heading${excelImageColumn(header) ? " excel-image-column" : ""}${compactColumns && !rawExcelSourcingColumnVisible(header, keepBrandColumn) ? " excel-column-hidden" : ""}" data-excel-column-index="${columnIndex}" title="${text(header)}">${text(header)}</th>`).join("")}<th class="excel-raw-search-heading">상품 검색 결과 · 링크</th></tr>`;
+    preview.classList.toggle("compact-raw-columns", compactColumns);
+    $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th>${headers.map((header, columnIndex) => `<th class="excel-raw-data-heading excel-column-${rawExcelColumnRole(header)}${excelImageColumn(header) ? " excel-image-column" : ""}${compactColumns && !rawExcelSourcingColumnVisible(header, keepBrandColumn) ? " excel-column-hidden" : ""}" data-excel-column-index="${columnIndex}" title="${text(header)}">${text(header)}</th>`).join("")}<th class="excel-raw-search-heading">상품 검색 결과 · 링크</th></tr>`;
     $("#excel-preview-rows").innerHTML = rows.length
       ? rows.map((row, index) => {
           const product = pageProductsByRow[index];
