@@ -21,3 +21,17 @@ export function findNewSellerExportJob(baselineJobs = [], currentJobs = [], opti
     return jobId && !baselineIds.has(jobId) && freshEnough;
   }) || null;
 }
+
+
+export function findRecentSellerExportJob(currentJobs = [], options = {}) {
+  const notBeforeMs = Number(options.notBeforeMs || 0);
+  const allowedClockSkewMs = Math.max(0, Number(options.allowedClockSkewMs || 0));
+  if (!notBeforeMs) return null;
+  return [...(currentJobs || [])]
+    .filter((job) => {
+      const jobId = normalizeSellerExportJobId(job?.id);
+      const startAtMs = Number(job?.startAtMs || 0);
+      return jobId && startAtMs > 0 && startAtMs >= notBeforeMs - allowedClockSkewMs;
+    })
+    .sort((left, right) => Number(right?.startAtMs || 0) - Number(left?.startAtMs || 0))[0] || null;
+}
