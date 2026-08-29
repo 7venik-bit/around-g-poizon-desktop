@@ -1724,3 +1724,90 @@ button,input,select,textarea{font-family:inherit}
 @media (prefers-reduced-motion: reduce) {
   .otter-paw, .domestic-loading-dots { animation: none; }
 }
+
+
+/* Domestic results: compact horizontal list aligned for one-screen sourcing. */
+.domestic-compact-results {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid #c7d8eb;
+  border-radius: 8px;
+  background: #fff;
+}
+.domestic-result-line {
+  display: grid;
+  grid-template-columns: 105px minmax(260px, 1fr) 108px 82px 92px 92px;
+  align-items: center;
+  min-height: 43px;
+  border-top: 1px solid #e2eaf3;
+  color: #17365d;
+  font-size: 10px;
+}
+.domestic-result-line:first-child { border-top: 0; }
+.domestic-result-line > * {
+  min-width: 0;
+  padding: 5px 8px;
+  text-align: center;
+  box-sizing: border-box;
+}
+.domestic-result-head {
+  min-height: 30px;
+  color: #fff;
+  background: #243f63;
+  font-weight: 800;
+}
+.domestic-result-store {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.domestic-result-product {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  text-align: left;
+}
+.domestic-result-product b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.domestic-result-product .candidate-image,
+.domestic-result-product .candidate-image-placeholder {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e1e8f0;
+  border-radius: 5px;
+  background: #fff;
+}
+.domestic-result-price { white-space: nowrap; }
+.domestic-result-line .source-platform-action,
+.domestic-result-open {
+  justify-self: center;
+  width: 78px;
+  min-height: 29px;
+  padding: 4px 6px;
+  white-space: nowrap;
+}
+.domestic-compact-empty {
+  padding: 14px;
+  color: #65758a;
+  text-align: center;
+  font-size: 11px;
+}
+.excel-product-search-detail td {
+  padding: 5px 8px !important;
+}
+.excel-product-search-detail .excel-product-search-result-label {
+  margin: 0 0 5px;
+  padding: 5px 8px;
+}
+@media (max-width: 1180px) {
+  .domestic-result-line {
+    grid-template-columns: 86px minmax(210px, 1fr) 94px 76px 82px 82px;
+  }
+}
