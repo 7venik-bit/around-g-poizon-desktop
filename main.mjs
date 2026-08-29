@@ -2172,6 +2172,60 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         })()`, true).catch(() => {});
       }
     }
+    // UNIVERSAL_RESULT_STABILITY_V1: every retailer must keep its result
+    // document alive until asynchronous product rendering has settled. This is
+    // intentionally slower than a fixed delay so late cards are not omitted.
+    // It only observes the page DOM and never moves the user's physical mouse.
+    let previousResultSignature = "";
+    let stableResultSamples = 0;
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      await wait(1_000);
+      const state = await searchWindow.webContents.executeJavaScript(`(() => {
+        const visible = (element) => {
+          if (!element) return false;
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== "none"
+            && style.visibility !== "hidden"
+            && rect.width > 0
+            && rect.height > 0;
+        };
+        const productAnchors = [...document.querySelectorAll(
+          'a[href*="/products/"],a[href*="/product/"],a[href*="/goods/"],a[href*="/item/"],a[href*="/pd/"],a[href*="/p/"],a[href*="/t/"],[class*="goods" i] a[href],[class*="product" i] a[href],[class*="item" i] a[href]'
+        )].filter((link) => {
+          if (!visible(link)) return false;
+          const owner = link.closest("li,article,[class*='card' i],[class*='goods' i],[class*='product' i],[class*='item' i]") || link;
+          const text = String(owner.innerText || link.innerText || "");
+          return Boolean(owner.querySelector?.("img"))
+            || /(?:₩|원|KRW)\\s*[\\d,]+|[\\d,]+\\s*원/i.test(text);
+        });
+        const pageText = String(document.body?.innerText || "").slice(0, 80000);
+        const root = document.scrollingElement || document.documentElement;
+        return {
+          cards: new Set(productAnchors.map((link) => String(link.href || ""))).size,
+          height: Number(root?.scrollHeight || 0),
+          textLength: pageText.trim().length,
+          explicitEmpty: /검색\\s*결과가?\\s*(?:없|0)|상품이?\\s*(?:없|0)|검색된\\s*상품이\\s*없|일치하는\\s*상품이\\s*없/i.test(pageText),
+          blocked: /captcha|보안\\s*확인|비정상적인\\s*접근|접속.{0,12}(?:제한|차단)/i.test(pageText),
+          loginRequired: /로그인\\s*(?:후|이\\s*필요|해주세요)|회원\\s*로그인/i.test(pageText.slice(0, 12000)),
+          ready: document.readyState === "complete" && pageText.trim().length > 0,
+        };
+      })()`, true).catch(() => null);
+      if (!state) continue;
+      if (state.blocked || state.loginRequired || state.explicitEmpty) break;
+      const signature = [state.cards, state.height, state.textLength].join(":");
+      if (state.ready && state.cards > 0 && signature === previousResultSignature) {
+        stableResultSamples += 1;
+      } else {
+        stableResultSamples = 0;
+      }
+      previousResultSignature = signature;
+      if (stableResultSamples >= 2) {
+        // Three identical one-second samples: product count and layout settled.
+        await wait(750);
+        break;
+      }
+    }
     let content = await searchWindow.webContents.executeJavaScript(`(() => {
       const expectedArticle = ${JSON.stringify(String(articleNumber || ""))};
       const expectedCompact = expectedArticle.replace(/[^A-Z0-9]/gi, "").toUpperCase();
