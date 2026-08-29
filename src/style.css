@@ -1541,3 +1541,54 @@ button,input,select,textarea{font-family:inherit}
 
 /* Keep multi-brand Excel integration progress legible in the dense brand workspace. */
 #brand-status.combined-progress,#brand-status[data-state="combined-progress"]{display:inline-flex;align-items:center;min-height:34px;margin:8px 0;padding:7px 12px;border:1px solid #78aef8;border-radius:8px;background:#eaf3ff;color:#073b82;font-weight:800;letter-spacing:.01em;box-shadow:0 1px 0 #ffffff inset}
+
+
+/* Compact sourcing table and horizontal domestic-result list. */
+#excel-preview.product-view .excel-preview-grid table{table-layout:fixed;width:100%;min-width:980px}
+#excel-preview.product-view .excel-preview-grid th,
+#excel-preview.product-view .excel-preview-grid td{text-align:center;vertical-align:middle}
+#excel-preview.product-view .excel-preview-grid th:nth-child(1),
+#excel-preview.product-view .excel-preview-grid td:nth-child(1){width:4%}
+#excel-preview.product-view .excel-preview-grid th:nth-child(2),
+#excel-preview.product-view .excel-preview-grid td:nth-child(2){width:5%}
+#excel-preview.product-view .excel-preview-grid th:nth-child(3),
+#excel-preview.product-view .excel-preview-grid td:nth-child(3){width:11%}
+#excel-preview.product-view .excel-preview-grid th:nth-child(4),
+#excel-preview.product-view .excel-preview-grid td:nth-child(4){width:22%}
+#excel-preview.product-view .excel-preview-grid th:nth-child(5),
+#excel-preview.product-view .excel-preview-grid td:nth-child(5){width:8%}
+#excel-preview.product-view .excel-preview-grid th:nth-child(6),
+#excel-preview.product-view .excel-preview-grid td:nth-child(6){width:10%}
+#excel-preview.product-view .excel-preview-grid th:nth-child(7),
+#excel-preview.product-view .excel-preview-grid td:nth-child(7){width:10%}
+#excel-preview.product-view .excel-preview-grid th:nth-child(8),
+#excel-preview.product-view .excel-preview-grid td:nth-child(8),
+#excel-preview.product-view .excel-preview-grid th:nth-child(9),
+#excel-preview.product-view .excel-preview-grid td:nth-child(9){width:9%}
+#excel-preview.product-view .excel-preview-grid th:nth-child(10),
+#excel-preview.product-view .excel-preview-grid td:nth-child(10){width:12%}
+#excel-preview.product-view .excel-product-row td{padding:7px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#excel-preview.product-view .excel-product-search{display:inline-flex;justify-content:center;align-items:center;width:auto;min-width:82px;max-width:100%;padding:6px 10px;white-space:nowrap}
+#excel-preview.product-view .excel-product-search-detail>td{width:auto!important;padding:7px 10px!important;text-align:left}
+#excel-preview.product-view .excel-product-search-result-label{margin-bottom:5px;padding:5px 8px}
+#excel-preview.product-view .domestic-source-list{gap:5px}
+#excel-preview.product-view .domestic-source-section{border-radius:7px}
+#excel-preview.product-view .domestic-source-heading{min-height:30px;padding:4px 7px}
+#excel-preview.product-view .domestic-source-heading strong{min-width:118px}
+#excel-preview.product-view .domestic-source-section .platform-list{padding:0 7px}
+#excel-preview.product-view .platform-row{display:grid!important;grid-template-columns:22px 92px minmax(260px,1fr) 74px 88px minmax(110px,.65fr) 62px!important;grid-template-rows:52px!important;gap:0 7px;min-height:52px;padding:3px 0;text-align:center}
+#excel-preview.product-view .platform-row>*{min-width:0}
+#excel-preview.product-view .platform-row>strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+#excel-preview.product-view .candidate-summary{display:grid!important;grid-template-columns:44px minmax(0,1fr)!important;gap:7px;text-align:left}
+#excel-preview.product-view .candidate-image{width:42px;height:42px}
+#excel-preview.product-view .candidate-summary b,
+#excel-preview.product-view .candidate-summary small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#excel-preview.product-view .stock-state,
+#excel-preview.product-view .confidence{justify-self:center}
+#excel-preview.product-view .size-list{justify-content:center;max-height:44px;overflow:hidden}
+#excel-preview.product-view .match-signals{display:none!important}
+#excel-preview.product-view .platform-row>button{grid-column:7!important;grid-row:1!important;justify-self:stretch;padding:5px 6px}
+#excel-preview.product-view .domestic-source-empty{min-height:34px;padding:5px 7px}
+@media(max-width:1200px){
+  #excel-preview.product-view .platform-row{grid-template-columns:20px 78px minmax(220px,1fr) 68px 78px 100px 58px!important}
+}
