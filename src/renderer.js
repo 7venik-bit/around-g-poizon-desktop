@@ -886,7 +886,7 @@ function updateExcelPreviewSelectionUi(pageKeys = []) {
     selectAll.disabled = excelPreviewSelectingAll || !activeExcelPreview?.totalRows;
     selectAll.textContent = excelPreviewSelectingAll
       ? "전체 목록 불러오는 중…"
-      : `전체 목록 검색 (${Number(activeExcelPreview?.totalRows || 0).toLocaleString("ko-KR")}개)`;
+      : `원본 전체 검색 (${Number(activeExcelPreview?.sourceTotalRows || activeExcelPreview?.totalRows || 0).toLocaleString("ko-KR")}개)`;
   }
   if (selectPage) {
     selectPage.checked = uniquePageKeys.length > 0 && selectedOnPage === uniquePageKeys.length;
@@ -1120,7 +1120,7 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   const filteredSourceRows = Number.isFinite(Number(result.filteredSourceRows))
     ? Math.max(0, Number(result.filteredSourceRows))
     : totalRows;
-  activeExcelPreview = { file, offset: result.offset, limit: result.limit, totalRows, filters, viewMode: result.productView ? "products" : "raw" };
+  activeExcelPreview = { file, offset: result.offset, limit: result.limit, totalRows, sourceTotalRows, filters, viewMode: result.productView ? "products" : "raw" };
   preview.classList.toggle("product-view", Boolean(result.productView));
   $("#excel-view-products")?.classList.toggle("active", Boolean(result.productView));
   $("#excel-view-raw")?.classList.toggle("active", !result.productView);
@@ -3162,13 +3162,21 @@ $("#excel-preview-select-all-results")?.addEventListener("click", async () => {
   let readyToSearch = false;
   excelPreviewSelectingAll = true;
   updateExcelPreviewSelectionUi(excelPreviewPageKeys);
-  $("#excel-filter-status").textContent = `전체 목록 ${preview.totalRows.toLocaleString("ko-KR")}개를 선택하고 있습니다.`;
+  const originalTotal = Number(preview.sourceTotalRows || preview.totalRows || 0);
+  $("#excel-filter-status").textContent = `원본 전체 ${originalTotal.toLocaleString("ko-KR")}개를 검색 대상으로 불러오고 있습니다.`;
   try {
     const result = await window.aroundG.previewExcelFile(
       preview.file.path,
       0,
-      Math.max(100, preview.totalRows),
-      { ...preview.filters, productView: preview.viewMode === "products", selectionOnly: true },
+      Math.max(100, originalTotal),
+      {
+        productView: false,
+        minimumTotal: "",
+        maximumTotal: "",
+        minimumLocalTotal: "",
+        maximumLocalTotal: "",
+        selectionOnly: true,
+      },
     );
     if (!result?.ok) throw new Error(result?.message || "전체 목록을 읽을 수 없습니다.");
     const products = Array.isArray(result.products) ? result.products : [];
@@ -3283,14 +3291,37 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   excelPreviewBatchSearching = true;
   updateExcelPreviewSelectionUi([]);
   $("#excel-filter-status").textContent = `선택 상품 ${keys.length.toLocaleString("ko-KR")}개를 검색하고 있습니다.`;
-  let completed = 0;
+  // Search each distinct product once, then write that result to every
+  // selected Excel row for the same article. This prevents the first row from
+  // being the only visible result while still avoiding duplicate site searches.
+  const groups = new Map();
   for (const key of keys) {
+    const product = excelPreviewProductCache.get(key);
+    const identity = productCrossCheckIdentity(product);
+    if (!groups.has(identity)) groups.set(identity, []);
+    groups.get(identity).push(key);
+  }
+  const refreshVisibleRows = async () => {
+    const file = activeExcelPreview?.file;
+    if (!file) return;
+    if (activeExcelPreview?.viewMode === "products") renderExcelProductRows(file, excelPreviewPageProducts);
+    else await showExcelPreview(file, activeExcelPreview?.offset || 0, activeExcelPreview?.filters || currentExcelPreviewFilters(), { preserveFilters: true });
+  };
+  let completed = 0;
+  for (const groupKeys of groups.values()) {
     if (!excelPreviewBatchSearching) break;
-    await searchExcelPreviewProduct(key, { forceRefresh: false });
-    completed += 1;
-    if (completed === keys.length || completed % 10 === 0) {
-      $("#excel-filter-status").textContent = `전체 상품 검색 중 ${completed.toLocaleString("ko-KR")} / ${keys.length.toLocaleString("ko-KR")}개 · 검색 중지 가능`;
+    const product = excelPreviewProductCache.get(groupKeys[0]);
+    for (const key of groupKeys) {
+      excelPreviewSearchResults.set(key, { loading: true, products: [], sources: [] });
     }
+    await refreshVisibleRows();
+    const response = await cachedDomesticSearch(product, true);
+    const result = response?.ok ? response.data : { products: [], sources: [], error: response?.message };
+    for (const key of groupKeys) excelPreviewSearchResults.set(key, result);
+    if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
+    await refreshVisibleRows();
+    completed += groupKeys.length;
+    $("#excel-filter-status").textContent = `전체 상품 검색 중 ${completed.toLocaleString("ko-KR")} / ${keys.length.toLocaleString("ko-KR")}개 · 고유 상품 ${groups.size.toLocaleString("ko-KR")}개 · 검색 중지 가능`;
   }
   const stopped = !excelPreviewBatchSearching;
   excelPreviewBatchSearching = false;
