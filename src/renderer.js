@@ -934,10 +934,32 @@ function rawExcelDomesticResultLinks(result = {}) {
   return links.slice(0, 4);
 }
 
+function renderDomesticLoading(startedAt = Date.now()) {
+  const safeStartedAt = Number(startedAt) || Date.now();
+  return `<div class="domestic-search-loading" role="status" aria-live="polite">
+    <span class="domestic-loading-otter" aria-hidden="true">
+      <span class="otter-ear otter-ear-left"></span><span class="otter-ear otter-ear-right"></span>
+      <span class="otter-head"><span class="otter-glasses"></span><span class="otter-nose"></span></span>
+      <span class="otter-laptop"></span><span class="otter-paw otter-paw-left"></span><span class="otter-paw otter-paw-right"></span>
+    </span>
+    <span class="domestic-loading-copy"><strong>상품을 찾고 있습니다<span class="domestic-loading-dots">…</span></strong>
+      <small>국내 판매처 검색 중 · <b class="domestic-search-elapsed" data-search-started-at="${safeStartedAt}">0초</b></small>
+    </span>
+  </div>`;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  document.querySelectorAll("[data-search-started-at]").forEach((element) => {
+    const startedAt = Number(element.dataset.searchStartedAt || now);
+    element.textContent = `${Math.max(0, Math.floor((now - startedAt) / 1000))}초`;
+  });
+}, 1_000);
+
 function renderRawExcelDomesticCell(key, product, result) {
   if (!product) return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state muted">검색 정보 없음</span></td>`;
   if (result?.loading) {
-    return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">검색 중…</span></td>`;
+    return `<td class="excel-raw-search-cell">${renderDomesticLoading(result.startedAt)}</td>`;
   }
   if (!result) {
     return `<td class="excel-raw-search-cell excel-raw-search-pending"><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">상품검색</button></td>`;
@@ -1099,7 +1121,7 @@ function renderExcelProductRows(file, products = []) {
       <td>${text(product.brandName || "-")}</td><td title="${text(product.categoryName)}">${text(product.categoryName || "-")}</td>
       <td>${poizonPrice ? money(poizonPrice) : "가격 없음"}</td>
       <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td><td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
-      <td><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}" ${result?.loading ? "disabled" : ""}>${status}</button></td>
+      <td>${result?.loading ? renderDomesticLoading(result.startedAt) : `<button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">${status}</button>`}</td>
     </tr>${result && !result.loading ? `<tr class="excel-product-search-detail ${groupClass} ${outcomeClass}"><td colspan="10"><div class="excel-product-search-result-label"><span></span><strong>${text(productLabel)}</strong>의 국내 검색 결과 <b class="excel-search-outcome-label">${text(outcome?.label || "확인 완료")}</b></div>${renderDomestic(result, product)}</td></tr>` : ""}`;
   }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
   return pageKeys;
@@ -1136,7 +1158,7 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
   // the same normalized brand and article number.
   if (forceRefresh) clearDomesticIdentityCache(product);
   excelPreviewSearchResults.delete(key);
-  excelPreviewSearchResults.set(key, { loading: true, products: [], sources: [] });
+  excelPreviewSearchResults.set(key, { loading: true, startedAt: Date.now(), products: [], sources: [] });
   const file = activeExcelPreview?.file;
   if (file && activeExcelPreview?.viewMode === "products") renderExcelProductRows(file, excelPreviewPageProducts);
   else if (file) void showExcelPreview(file, activeExcelPreview?.offset || 0, activeExcelPreview?.filters || currentExcelPreviewFilters(), { preserveFilters: true });
@@ -2541,7 +2563,7 @@ async function searchDomesticAt(index, sourceProducts = currentExplorerProducts)
   const product = sourceProducts[index];
   if (!product) return;
   const key = domesticKey(product, index);
-  domesticResults.set(key, { loading: true, products: [], sources: [] });
+  domesticResults.set(key, { loading: true, startedAt: Date.now(), products: [], sources: [] });
   const response = await cachedDomesticSearch(product, !domesticBatchRunning || domesticBatchVerifyCounts);
   if (response?.canceled || domesticBatchStopRequested) {
     domesticResults.delete(key);
@@ -3466,7 +3488,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     if (!excelPreviewBatchSearching) break;
     const product = excelPreviewProductCache.get(groupKeys[0]);
     for (const key of groupKeys) {
-      excelPreviewSearchResults.set(key, { loading: true, products: [], sources: [] });
+      excelPreviewSearchResults.set(key, { loading: true, startedAt: Date.now(), products: [], sources: [] });
     }
     await refreshVisibleRows();
     const response = await cachedDomesticSearch(product, true);
