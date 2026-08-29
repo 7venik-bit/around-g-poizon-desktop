@@ -957,11 +957,23 @@ function showDomesticSearchOverlay(startedAt, completedCount, totalCount, curren
     document.body.appendChild(overlay);
   }
   const article = String(currentProduct?.articleNumber || currentProduct?.productNumber || "").trim();
+  const target = $("#excel-preview-grid") || $("#excel-preview");
+  const rect = target?.getBoundingClientRect();
+  if (rect) {
+    overlay.style.left = `${Math.max(0, rect.left)}px`;
+    overlay.style.top = `${Math.max(0, rect.top)}px`;
+    overlay.style.width = `${Math.max(320, rect.width)}px`;
+    overlay.style.height = `${Math.max(320, Math.min(rect.height, window.innerHeight - Math.max(0, rect.top)))}px`;
+  }
+  const safeTotal = Math.max(1, Number(totalCount) || 1);
+  const percent = Math.min(100, Math.round((Number(completedCount) / safeTotal) * 100));
   overlay.hidden = false;
   overlay.innerHTML = `<div class="domestic-search-overlay-card">
     ${renderDomesticLoading(startedAt)}
-    <h2>수달 사원이 국내 상품을 찾고 있습니다</h2>
-    <p class="domestic-overlay-count"><strong>${Number(completedCount).toLocaleString("ko-KR")}</strong> / ${Number(totalCount).toLocaleString("ko-KR")}개 처리</p>
+    <p class="domestic-overlay-count"><strong>${Number(completedCount).toLocaleString("ko-KR")}</strong> / ${Number(totalCount).toLocaleString("ko-KR")}개 처리 · ${percent}%</p>
+    <div class="domestic-overlay-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}">
+      <span style="width:${percent}%"></span>
+    </div>
     <p class="domestic-overlay-current">${article ? `현재 상품번호 · <b>${text(article)}</b>` : "검색 준비 중입니다."}</p>
     <p class="domestic-overlay-guide">검색창은 백그라운드에서 작동합니다. 완료될 때까지 잠시 기다려 주세요.</p>
     <button type="button" class="domestic-overlay-stop">검색 중지</button>
