@@ -1017,7 +1017,7 @@ test("official-store text matches without a product-detail URL are discarded", (
   assert.equal(result.products[0].imageVerifiedFromCard, true);
 });
 
-test("official-store result cards without a visible model code are opened for exact detail verification", () => {
+test("official-store result cards without a visible model code are displayed from the completed exact-query grid", () => {
   const content = JSON.stringify({
     pageText: "SR123UTS15 검색 결과 상품 4",
     productCards: [{
@@ -1030,8 +1030,9 @@ test("official-store result cards without a visible model code are opened for ex
   });
   const result = analyzeRenderedChannelProducts(content, "브랜드 공식몰", "SR123UTS15", "데상트", "스몰 워딩 코튼 반팔 티셔츠");
   assert.equal(result.products.length, 1);
-  assert.equal(result.products[0].detailArticleVerificationRequired, true);
+  assert.equal(result.products[0].detailArticleVerificationRequired, false);
   assert.equal(result.products[0].detectedArticleNumber, "");
+  assert.equal(result.products[0].url, "https://dk-on.com/DESCENTE/goods/detail/12345");
 });
 
 test("a transient Musinsa server failure is retried once", async () => {
