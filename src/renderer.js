@@ -1112,7 +1112,7 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
   if (file?.path) persistExcelSearchResults(file.path);
   if (file && activeExcelPreview?.viewMode === "products") renderExcelProductRows(file, excelPreviewPageProducts);
   else if (file) void showExcelPreview(file, activeExcelPreview?.offset || 0, activeExcelPreview?.filters || currentExcelPreviewFilters(), { preserveFilters: true });
-  updateExcelPreviewSelectionUi(excelPreviewPageProducts.map((item) => `${brandImportPathKey(file?.path)}::${item.key || item.articleNumber || item.spuId}`));
+  updateExcelPreviewSelectionUi(excelPreviewPageProducts.map((item) => `${brandImportPathKey(excelPreviewProductSourcePath(item, file))}::${item.key || item.articleNumber || item.spuId}`));
 }
 
 async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewFilters(), options = {}) {
