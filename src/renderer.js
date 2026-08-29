@@ -78,6 +78,8 @@ try {
 } catch {}
 const excelPreviewProductCache = new Map();
 const excelPreviewSearchResults = new Map();
+const excelPreviewSearchResultsByPath = new Map();
+let selectedBrandDomesticQueueRunning = false;
 const domesticIdentitySearchCache = new Map();
 const DOMESTIC_SOURCE_GROUPS_KEY = "around-g-domestic-source-groups-v1";
 const DOMESTIC_SOURCE_GROUPS = ["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"];
@@ -993,16 +995,22 @@ function renderExcelProductRows(file, products = []) {
 
 function restoreSavedExcelSearchResults(filePath = "") {
   excelPreviewSearchResults.clear();
-  // Search results are live inventory evidence, not workbook data. Never
-  // restore an earlier run when a workbook is opened again.
+  // Keep live results only for the current app session, separated by workbook.
+  // This lets a selected-brand queue move to the next Excel file without
+  // discarding the rightmost-column results from earlier brands.
+  const saved = excelPreviewSearchResultsByPath.get(brandImportPathKey(filePath));
+  if (saved) {
+    for (const [key, value] of saved) excelPreviewSearchResults.set(key, value);
+  }
   try {
     localStorage.removeItem(EXCEL_SEARCH_RESULTS_KEY);
   } catch {}
 }
 
 function persistExcelSearchResults(filePath = "") {
-  // Keep current-run results in memory only. A loading or parsing failure must
-  // not reappear as "상품 없음" after the next program launch.
+  const pathKey = brandImportPathKey(filePath);
+  if (pathKey) excelPreviewSearchResultsByPath.set(pathKey, new Map(excelPreviewSearchResults));
+  // Never carry live retailer evidence across an app restart.
   try {
     localStorage.removeItem(EXCEL_SEARCH_RESULTS_KEY);
   } catch {}
@@ -2588,18 +2596,45 @@ $("#completed-brand-domestic-search")?.addEventListener("click", async () => {
     .map((brand) => latestCompletedBrandDownload(brand))
     .filter(Boolean)
     .sort((left, right) => Number(right.time || right.mtimeMs || 0) - Number(left.time || left.mtimeMs || 0));
-  const latestDownload = selectedDownloads[0] || [...downloadedBrandFiles]
+  const fallbackDownload = [...downloadedBrandFiles]
     .filter((file) => file?.path)
     .sort((left, right) => Number(right.time || right.mtimeMs || 0) - Number(left.time || left.mtimeMs || 0))[0];
+  const queue = selectedDownloads.length ? selectedDownloads : fallbackDownload ? [fallbackDownload] : [];
   const status = $("#brand-status");
-  if (!latestDownload) {
+  if (!queue.length) {
     if (status) {
       status.className = "status error";
       status.textContent = "국내 상품검색에 사용할 다운로드 완료 Excel이 없습니다.";
     }
     return;
   }
-  await openIntegratedBrandExcel(latestDownload, true);
+  selectedBrandDomesticQueueRunning = true;
+  for (let index = 0; index < queue.length && selectedBrandDomesticQueueRunning; index += 1) {
+    const file = queue[index];
+    if (status) {
+      status.className = "status";
+      status.textContent = `선택 브랜드 국내검색 ${index + 1} / ${queue.length} · ${file.brandName || file.name || "브랜드"}`;
+    }
+    await openIntegratedBrandExcel(file, true);
+    $("#excel-preview-select-all-results")?.click();
+    // The all-results button first hydrates the workbook and then starts the
+    // existing stoppable search queue. Wait for both phases before advancing.
+    for (let tries = 0; tries < 100 && selectedBrandDomesticQueueRunning
+      && !excelPreviewSelectingAll && !excelPreviewBatchSearching; tries += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    while (selectedBrandDomesticQueueRunning && (excelPreviewSelectingAll || excelPreviewBatchSearching)) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  const completed = selectedBrandDomesticQueueRunning;
+  selectedBrandDomesticQueueRunning = false;
+  if (status) {
+    status.className = completed ? "status success" : "status";
+    status.textContent = completed
+      ? `선택한 ${queue.length}개 브랜드의 국내 상품검색을 완료했습니다.`
+      : "선택 브랜드 국내 상품검색을 중지했습니다.";
+  }
 });
 $("#frequent-brand-category")?.addEventListener("click", () => {
   $("#brand-open-category")?.click();
@@ -3265,6 +3300,7 @@ $("#profit-back-to-list")?.addEventListener("click", () => {
 });
 $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   if (excelPreviewBatchSearching) {
+    selectedBrandDomesticQueueRunning = false;
     excelPreviewBatchSearching = false;
     domesticIdentitySearchCache.clear();
     await window.aroundG.cancelDomesticSearch?.();
