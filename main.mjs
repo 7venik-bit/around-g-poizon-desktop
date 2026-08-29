@@ -1881,7 +1881,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   if (!/^https:\/\//i.test(url)) return { count: Number(source.count || 0), products: [] };
   const naverPortalSource = /^네이버\s/.test(String(source.store || ""));
   // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.
-  const ssgChannelSource = /^SSG(?:\s|$)/.test(String(source.store || ""));
+  const ssgChannelSource = /^SSG(?:\s|$)/.test(String(source.store || ""));\n  const musinsaSource = String(source.store || "") === "무신사";
   let naverChannelCounts = null;
   let searchWindow;
   try {
@@ -2064,7 +2064,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     // Naver and SSG exact results are already rendered above the fold.
     // Scrolling first loads unrelated recommendations and can remove the
     // single exact card from the candidate set.
-    if (naverPortalSource || ssgChannelSource) {
+    if (naverPortalSource || ssgChannelSource || musinsaSource) {
       await wait(1_500);
     } else {
       for (let attempt = 0; attempt < 10; attempt += 1) {
