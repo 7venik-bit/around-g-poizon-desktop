@@ -1943,6 +1943,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   const musinsaSource = String(source.store || "") === "무신사";
   let naverChannelCounts = null;
   let searchWindow;
+  let musinsaSettledEmpty = false;
   try {
     const reuseNaverSearch = Boolean(naverPortalSource
       && sharedNaverSession?.window
@@ -2123,7 +2124,43 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     // Naver and SSG exact results are already rendered above the fold.
     // Scrolling first loads unrelated recommendations and can remove the
     // single exact card from the candidate set.
-    if (naverPortalSource || ssgChannelSource || musinsaSource) {
+    if (musinsaSource) {
+      // Musinsa renders its search cards asynchronously. Do not close or read
+      // the window after a fixed short delay: wait for cards, an authoritative
+      // empty-result message, or a fully settled 15-second result page.
+      for (let attempt = 0; attempt < 15; attempt += 1) {
+        await wait(1_000);
+        const state = await searchWindow.webContents.executeJavaScript(`(() => {
+          const visible = (element) => {
+            if (!element) return false;
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+          };
+          const cards = [...document.querySelectorAll(
+            'a[href*="/products/"],a[href*="/product/"],[class*="goods" i] a[href],[class*="product" i] a[href]'
+          )].filter(visible).length;
+          const pageText = String(document.body?.innerText || "").slice(0, 50000);
+          return {
+            cards,
+            explicitEmpty: /검색\\s*결과가?\\s*(?:없|0)|상품이?\\s*(?:없|0)|검색된\\s*상품이\\s*없/i.test(pageText),
+            blocked: /captcha|보안\\s*확인|비정상적인\\s*접근|접속.{0,12}(?:제한|차단)/i.test(pageText),
+            loginRequired: /로그인\\s*(?:후|이\\s*필요|해주세요)|회원\\s*로그인/i.test(pageText.slice(0, 10000)),
+            ready: document.readyState === "complete" && pageText.trim().length > 0,
+          };
+        })()`, true).catch(() => null);
+        if (state?.cards > 0) {
+          await wait(750);
+          break;
+        }
+        if (state?.explicitEmpty) {
+          musinsaSettledEmpty = true;
+          break;
+        }
+        if (state?.blocked || state?.loginRequired) break;
+        if (attempt === 14 && state?.ready) musinsaSettledEmpty = true;
+      }
+    } else if (naverPortalSource || ssgChannelSource) {
       await wait(1_500);
     } else {
       for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -2354,6 +2391,16 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       candidateCount,
       naverChannelCounts,
     };
+    if (musinsaSource && musinsaSettledEmpty && candidateCount === 0) {
+      detailed = {
+        ...detailed,
+        count: 0,
+        products: [],
+        presenceConfirmed: false,
+        absenceConfirmed: true,
+        detailVerificationPending: false,
+      };
+    }
     // Naver, SSG and Lotte are list-only sources. Their visible search cards
     // are the requested output; do not navigate to details or inspect stock.
     if (/^(?:네이버\s|SSG(?:\s|$)|롯데온(?:\s|$))/.test(String(source.store || ""))) {
