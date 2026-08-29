@@ -2194,35 +2194,25 @@ function renderDomestic(result, sourceProduct = {}) {
     return false;
   };
   const renderProductRow = (product, source = {}, sourcingLabel = "") => {
-    const sizes = product?.sizes || [];
-    const sourceState = product.inStock === true ? "available" : product.inStock === false ? "soldout" : "pending";
-    const sourceLabel = product.stockStatus === "login_required" ? "로그인 필요" : product.inStock === true ? "재고 있음" : product.inStock === false ? "품절" : "확인 필요";
-    const confidenceClass = Number(product?.confidence || 0) >= 75 ? "high"
-      : Number(product?.confidence || 0) >= 45 ? "medium" : "low";
     const candidateName = product?.title || product?.name || product?.articleNumber || "";
-    const officialVerified = product?.officialStoreVerified === true;
-    const confidenceLabel = officialVerified
-      ? text(product.sourceTrustLabel || "공식몰 확인완료")
-      : `신뢰도 ${Number(product.confidence || 0)}%`;
-    const matchSignals = officialVerified
-      ? `<span>품번 정확히 일치</span><span>상품 일치도 ${Number(product.productMatchConfidence || 95)}%</span><span>${text(product.imageVerificationLabel || "이미지 확인 필요")}</span>`
-      : `<span>코드 ${text(product.signals?.code)}</span><span>상품명 ${text(product.signals?.title)}</span><span>이미지 ${text(product.signals?.image)}</span>`;
-    return `<div class="platform-row">
-      <span class="platform-priority">${source.priority || ""}</span>
-      <strong>${text(product.retailerName || product.store)}</strong>
-      <div class="candidate-summary ${product?.imageUrl ? "" : "no-image"}">
-        ${product?.imageUrl ? `<img class="candidate-image" src="${text(product.imageUrl)}" alt="${text(candidateName)}">` : ""}
-        <span><b>${text(candidateName || source.store + " 검색 결과")}</b>${product?.price ? `<small>${money(product.price)}</small>` : ""}</span>
+    const retailer = product?.retailerName || product?.store || source?.store || "판매처";
+    const article = product?.articleNumber || sourceProduct?.articleNumber || sourceProduct?.productCode || "";
+    const confidence = Number(product?.confidence || 0);
+    const official = product?.officialStoreVerified === true || Boolean(source?.officialStatus);
+    return `<article class="sourcing-product-list-row">
+      <div class="sourcing-product-thumb">${product?.imageUrl ? `<img src="${text(product.imageUrl)}" alt="${text(candidateName)}">` : "이미지 없음"}</div>
+      <div class="sourcing-product-info">
+        <div class="sourcing-product-store"><span>${text(retailer)}</span>${official ? '<span class="official">공식</span>' : ""}</div>
+        <h4 class="sourcing-product-title">${text(candidateName || source.store + " 검색 결과")}</h4>
+        <div class="sourcing-product-meta">${article ? `<code>${text(article)}</code>` : ""}${confidence > 0 ? `<span>일치도 ${confidence}%</span>` : ""}</div>
       </div>
-      <span class="stock-state ${sourceState}">${sourceLabel}</span>
-      <span class="confidence ${confidenceClass} ${officialVerified ? "official" : ""}">${confidenceLabel}</span>
-      <div class="size-list">${sizes.length
-        ? sizes.map((size) => `<span class="size-chip ${size.inStock ? "available" : "soldout"}">${text(size.label)}</span>`).join("")
-        : `<span class="size-chip unknown">옵션 확인 필요</span>`}</div>
-      <div class="match-signals">${matchSignals}</div>
-      <button data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${sourcingLabel || (product?.inStock === true ? "구매" : "확인")}</button>
-    </div>`;
+      <div class="sourcing-product-actions">
+        <strong class="sourcing-product-price">${product?.price ? money(product.price) : "가격 확인"}</strong>
+        <button data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${sourcingLabel || "판매처 열기"}</button>
+      </div>
+    </article>`;
   };
+
   const sourceAction = (source, label = "판매처 검색") => {
     const openUrl = String(source.verifiedProductUrl || source.officialProductUrl || source.officialSearchUrl || source.homepageUrl || source.searchUrl || "");
     const query = source.searchQuery || sourceProduct.articleNumber || sourceProduct.productCode || sourceProduct.spuId || result.queryCandidates?.[0] || "";

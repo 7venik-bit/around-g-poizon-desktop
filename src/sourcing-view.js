@@ -20,30 +20,30 @@
       #excel-preview-grid .sourcing-domestic-search.missing{background:#f3f4f6;color:#7b8794;border-color:#e1e5ea}
       #excel-preview-grid .sourcing-domestic-search.error{background:#fff4f2;color:#a65f58;border-color:#eed8d4}
       .domestic-source-list.sourcing-product-list{display:flex!important;flex-direction:column!important;gap:0!important;border:1px solid #e5e7eb!important;border-radius:12px!important;overflow:hidden!important;background:#fff!important}
-      .sourcing-product-list-row{display:grid!important;grid-template-columns:96px minmax(0,1fr) auto!important;gap:16px!important;align-items:center!important;padding:14px 16px!important;background:#fff!important;border:0!important;border-bottom:1px solid #eef0f2!important;min-height:116px!important}
+      .sourcing-product-list-row{display:grid!important;grid-template-columns:58px minmax(0,1fr) 180px!important;gap:10px!important;align-items:center!important;padding:6px 10px!important;background:#fff!important;border:0!important;border-bottom:1px solid #eef0f2!important;min-height:68px!important}
       .sourcing-product-list-row:last-child{border-bottom:0!important}
       .sourcing-product-list-row:hover{background:#fafafa!important}
-      .sourcing-product-thumb{width:96px!important;height:96px!important;border-radius:8px!important;background:#f5f5f5!important;overflow:hidden!important;display:flex!important;align-items:center!important;justify-content:center!important;color:#9ca3af!important;font-size:12px!important}
+      .sourcing-product-thumb{width:56px!important;height:56px!important;border-radius:7px!important;background:#f5f5f5!important;overflow:hidden!important;display:flex!important;align-items:center!important;justify-content:center!important;color:#9ca3af!important;font-size:12px!important}
       .sourcing-product-thumb img{width:100%!important;height:100%!important;object-fit:cover!important;display:block!important}
       .sourcing-product-info{min-width:0!important;display:flex!important;flex-direction:column!important;gap:5px!important}
       .sourcing-product-store{display:flex!important;align-items:center!important;gap:8px!important;color:#4b5563!important;font-size:12px!important;font-weight:700!important}
       .sourcing-product-store .official{background:#fff3e8!important;color:#b86624!important;border-radius:999px!important;padding:3px 7px!important;font-size:11px!important}
-      .sourcing-product-title{margin:0!important;color:#111827!important;font-size:14px!important;font-weight:700!important;line-height:1.45!important;white-space:normal!important;overflow-wrap:anywhere!important}
+      .sourcing-product-title{margin:0!important;color:#111827!important;font-size:12px!important;font-weight:700!important;line-height:1.35!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
       .sourcing-product-meta{display:flex!important;flex-wrap:wrap!important;gap:6px 12px!important;color:#6b7280!important;font-size:12px!important}
       .sourcing-product-meta code{font-family:inherit!important;background:none!important;padding:0!important;color:#6b7280!important}
-      .sourcing-product-actions{display:flex!important;flex-direction:column!important;align-items:flex-end!important;gap:10px!important;min-width:126px!important}
-      .sourcing-product-price{font-size:15px!important;font-weight:800!important;color:#111827!important;white-space:nowrap!important}
-      .sourcing-product-actions button,.sourcing-source-fallback button{min-width:110px!important;border-radius:8px!important;font-weight:700!important}
-      .sourcing-source-fallback{display:grid!important;grid-template-columns:minmax(120px,180px) minmax(0,1fr) auto!important;gap:14px!important;align-items:center!important;padding:14px 16px!important;background:#fff!important;border-bottom:1px solid #eef0f2!important}
+      .sourcing-product-actions{display:grid!important;grid-template-columns:1fr 86px!important;align-items:center!important;gap:8px!important;min-width:0!important}
+      .sourcing-product-price{font-size:13px!important;text-align:right!important;font-weight:800!important;color:#111827!important;white-space:nowrap!important}
+      .sourcing-product-actions button,.sourcing-source-fallback button{min-width:82px!important;padding:6px 8px!important;font-size:11px!important;border-radius:8px!important;font-weight:700!important}
+      .sourcing-source-fallback{display:grid!important;grid-template-columns:minmax(100px,150px) minmax(0,1fr) 90px!important;gap:10px!important;align-items:center!important;padding:7px 10px!important;background:#fff!important;border-bottom:1px solid #eef0f2!important}
       .sourcing-source-fallback:last-child{border-bottom:0!important}
       .sourcing-source-fallback strong{font-size:13px!important;color:#111827!important}
       .sourcing-source-fallback span{font-size:12px!important;color:#6b7280!important}
       .sourcing-list-empty{padding:24px!important;text-align:center!important;color:#6b7280!important;font-size:13px!important}
       .excel-search-outcome-soldout .sourcing-domestic-search{background:#eef7f0!important;color:#4f7d57!important;border-color:#d4e8d7!important}
       @media (max-width:980px){
-        .sourcing-product-list-row{grid-template-columns:82px minmax(0,1fr)!important}
-        .sourcing-product-thumb{width:82px!important;height:82px!important}
-        .sourcing-product-actions{grid-column:2!important;flex-direction:row!important;align-items:center!important;justify-content:space-between!important;width:100%!important}
+        .sourcing-product-list-row{grid-template-columns:50px minmax(220px,1fr) 165px!important}
+        .sourcing-product-thumb{width:48px!important;height:48px!important}
+        .sourcing-product-actions{grid-column:3!important;width:100%!important}
         .sourcing-source-fallback{grid-template-columns:1fr auto!important}
         .sourcing-source-fallback span{grid-column:1!important}
       }
