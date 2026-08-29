@@ -24,18 +24,6 @@ main = replaceOnce(
 );
 main = replaceOnce(
   main,
-  "        show: naverPortalSource || ssgChannelSource,",
-  "        show: naverPortalSource || ssgChannelSource || lotteChannelSource,",
-  "show Lotte result window",
-);
-main = replaceOnce(
-  main,
-  "      if (naverPortalSource || ssgChannelSource) searchWindow.maximize();",
-  "      if (naverPortalSource || ssgChannelSource || lotteChannelSource) searchWindow.maximize();",
-  "maximize Lotte result window",
-);
-main = replaceOnce(
-  main,
   "    if (naverPortalSource || ssgChannelSource || musinsaSource) {",
   "    if (naverPortalSource || ssgChannelSource || lotteChannelSource || musinsaSource) {",
   "avoid scrolling exact Lotte results",
