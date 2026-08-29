@@ -2160,7 +2160,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         if (state?.blocked || state?.loginRequired) break;
         if (attempt === 14 && state?.ready) musinsaSettledEmpty = true;
       }
-    } else if (naverPortalSource || ssgChannelSource) {
+    }
+    if (naverPortalSource || ssgChannelSource || musinsaSource) {
       await wait(1_500);
     } else {
       for (let attempt = 0; attempt < 10; attempt += 1) {
