@@ -36,8 +36,8 @@ main = replaceOnce(
 );
 main = replaceOnce(
   main,
-  "    if (naverPortalSource || ssgChannelSource) {",
-  "    if (naverPortalSource || ssgChannelSource || lotteChannelSource) {",
+  "    if (naverPortalSource || ssgChannelSource || musinsaSource) {",
+  "    if (naverPortalSource || ssgChannelSource || lotteChannelSource || musinsaSource) {",
   "avoid scrolling exact Lotte results",
 );
 main = replaceOnce(
