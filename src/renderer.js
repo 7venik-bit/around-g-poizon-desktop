@@ -59,6 +59,7 @@ let excelPreviewProductMode = false;
 let excelPreviewPageProducts = [];
 let excelPreviewPageKeys = [];
 let excelPreviewBatchSearching = false;
+let excelPreviewSelectingAll = false;
 let excelPreviewIntegrated = false;
 let excelPreviewFilesParent = null;
 let excelPreviewIntegratedHostId = "brand-integrated-preview-host";
@@ -873,12 +874,19 @@ function updateExcelPreviewSelectionUi(pageKeys = []) {
   const clear = $("#excel-preview-selection-clear");
   const profit = $("#excel-preview-profit");
   const search = $("#excel-preview-search-selected");
+  const selectAll = $("#excel-preview-select-all-results");
   if (count) count.textContent = `${selectedExcelPreviewProducts.size.toLocaleString("ko-KR")}개 제품 선택`;
   if (clear) clear.disabled = selectedExcelPreviewProducts.size === 0;
   if (profit) profit.disabled = selectedExcelPreviewProducts.size === 0;
   if (search) {
     search.disabled = selectedExcelPreviewProducts.size === 0 && !excelPreviewBatchSearching;
     search.textContent = excelPreviewBatchSearching ? "검색 중지" : "상품검색";
+  }
+  if (selectAll) {
+    selectAll.disabled = excelPreviewSelectingAll || !activeExcelPreview?.totalRows;
+    selectAll.textContent = excelPreviewSelectingAll
+      ? "전체 목록 불러오는 중…"
+      : `전체 목록 검색 (${Number(activeExcelPreview?.totalRows || 0).toLocaleString("ko-KR")}개)`;
   }
   if (selectPage) {
     selectPage.checked = uniquePageKeys.length > 0 && selectedOnPage === uniquePageKeys.length;
@@ -3148,6 +3156,37 @@ $("#excel-preview-grid")?.addEventListener("click", (event) => {
   if (!button) return;
   void searchExcelPreviewProduct(decodeURIComponent(button.dataset.excelSearchProduct));
 });
+$("#excel-preview-select-all-results")?.addEventListener("click", async () => {
+  if (!activeExcelPreview || excelPreviewSelectingAll) return;
+  const preview = activeExcelPreview;
+  let readyToSearch = false;
+  excelPreviewSelectingAll = true;
+  updateExcelPreviewSelectionUi(excelPreviewPageKeys);
+  $("#excel-filter-status").textContent = `전체 목록 ${preview.totalRows.toLocaleString("ko-KR")}개를 선택하고 있습니다.`;
+  try {
+    const result = await window.aroundG.previewExcelFile(
+      preview.file.path,
+      0,
+      Math.max(100, preview.totalRows),
+      { ...preview.filters, productView: preview.viewMode === "products", selectionOnly: true },
+    );
+    if (!result?.ok) throw new Error(result?.message || "전체 목록을 읽을 수 없습니다.");
+    const products = Array.isArray(result.products) ? result.products : [];
+    for (const product of products) {
+      const key = `${brandImportPathKey(preview.file.path)}::${product.key || product.articleNumber || product.spuId}`;
+      excelPreviewProductCache.set(key, product);
+      selectedExcelPreviewProducts.add(key);
+    }
+    readyToSearch = products.length > 0;
+    $("#excel-filter-status").textContent = `전체 목록에서 검색 가능한 상품 ${products.length.toLocaleString("ko-KR")}개를 선택했습니다. 검색을 시작합니다.`;
+  } catch (error) {
+    $("#excel-filter-status").textContent = `전체 목록 선택 실패: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    excelPreviewSelectingAll = false;
+    updateExcelPreviewSelectionUi(excelPreviewPageKeys);
+    if (readyToSearch) $("#excel-preview-search-selected")?.click();
+  }
+});
 $("#excel-preview-profit")?.addEventListener("click", async () => {
   const button = $("#excel-preview-profit");
   const keys = [...selectedExcelPreviewProducts].filter((key) => excelPreviewProductCache.has(key));
@@ -3244,9 +3283,14 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   excelPreviewBatchSearching = true;
   updateExcelPreviewSelectionUi([]);
   $("#excel-filter-status").textContent = `선택 상품 ${keys.length.toLocaleString("ko-KR")}개를 검색하고 있습니다.`;
+  let completed = 0;
   for (const key of keys) {
     if (!excelPreviewBatchSearching) break;
     await searchExcelPreviewProduct(key, { forceRefresh: false });
+    completed += 1;
+    if (completed === keys.length || completed % 10 === 0) {
+      $("#excel-filter-status").textContent = `전체 상품 검색 중 ${completed.toLocaleString("ko-KR")} / ${keys.length.toLocaleString("ko-KR")}개 · 검색 중지 가능`;
+    }
   }
   const stopped = !excelPreviewBatchSearching;
   excelPreviewBatchSearching = false;
