@@ -251,7 +251,7 @@ export function domesticChannelUrl(channel, _brand, query) {
 
 export const DOMESTIC_SEARCH_LINKS = {
   "브랜드 공식몰": (query) => naverSearch(query),
-  "무신사": (query) => `https://www.musinsa.com/search/goods?keyword=${encodeURIComponent(query)}`,
+  "무신사": (query) => `https://www.musinsa.com/search/goods?keyword=${encodeURIComponent(query)}&gf=A`,
   "네이버 패션타운": (query) => naverSearch(query),
   "브랜드직영몰": (query) => naverSearch(query),
   "백화점": (query) => naverSearch(query),
