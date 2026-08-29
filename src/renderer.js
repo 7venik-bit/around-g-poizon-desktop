@@ -3445,9 +3445,15 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
   excelPreviewBatchSearching = true;
   updateExcelPreviewSelectionUi([]);
-  $("#excel-filter-status").textContent = unavailableCount
-    ? `선택 ${selectedExcelPreviewProducts.size.toLocaleString("ko-KR")}개 중 검색 데이터 ${keys.length.toLocaleString("ko-KR")}개 확인 · 검색 시작`
-    : `선택 상품 ${keys.length.toLocaleString("ko-KR")}개를 검색하고 있습니다.`;
+  const batchStartedAt = Date.now();
+  const renderBatchSearchProgress = (completedCount, currentProduct = null) => {
+    const status = $("#excel-filter-status");
+    if (!status) return;
+    const article = String(currentProduct?.articleNumber || currentProduct?.productNumber || "").trim();
+    status.innerHTML = `${renderDomesticLoading(batchStartedAt)}
+      <span class="domestic-batch-progress"><strong>${Number(completedCount).toLocaleString("ko-KR")} / ${keys.length.toLocaleString("ko-KR")}개 처리</strong>${article ? ` · 현재 ${text(article)}` : ""} · 검색 중지 가능</span>`;
+  };
+  renderBatchSearchProgress(0);
   // Search each distinct product once, then write that result to every
   // selected Excel row for the same article. This prevents the first row from
   // being the only visible result while still avoiding duplicate site searches.
@@ -3469,8 +3475,9 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     if (!excelPreviewBatchSearching) break;
     const product = excelPreviewProductCache.get(groupKeys[0]);
     for (const key of groupKeys) {
-      excelPreviewSearchResults.set(key, { loading: true, startedAt: Date.now(), products: [], sources: [] });
+      excelPreviewSearchResults.set(key, { loading: true, startedAt: batchStartedAt, products: [], sources: [] });
     }
+    renderBatchSearchProgress(completed, product);
     await refreshVisibleRows();
     const response = await cachedDomesticSearch(product, true);
     const result = response?.ok ? response.data : { products: [], sources: [], error: response?.message };
@@ -3478,7 +3485,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
     await refreshVisibleRows();
     completed += groupKeys.length;
-    $("#excel-filter-status").textContent = `전체 상품 검색 중 ${completed.toLocaleString("ko-KR")} / ${keys.length.toLocaleString("ko-KR")}개 · 고유 상품 ${groups.size.toLocaleString("ko-KR")}개 · 검색 중지 가능`;
+    renderBatchSearchProgress(completed);
   }
   const stopped = !excelPreviewBatchSearching;
   excelPreviewBatchSearching = false;
