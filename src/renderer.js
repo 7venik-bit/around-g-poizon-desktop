@@ -888,7 +888,7 @@ function updateExcelPreviewSelectionUi(pageKeys = []) {
     selectAll.disabled = excelPreviewSelectingAll || !activeExcelPreview?.totalRows;
     selectAll.textContent = excelPreviewSelectingAll
       ? "전체 목록 불러오는 중…"
-      : `원본 전체 검색 (${Number(activeExcelPreview?.sourceTotalRows || activeExcelPreview?.totalRows || 0).toLocaleString("ko-KR")}개)`;
+      : `원본 전체 선택 (${Number(activeExcelPreview?.sourceTotalRows || activeExcelPreview?.totalRows || 0).toLocaleString("ko-KR")}개)`;
   }
   if (selectPage) {
     selectPage.checked = uniquePageKeys.length > 0 && selectedOnPage === uniquePageKeys.length;
@@ -3221,13 +3221,17 @@ $("#excel-preview-select-all-results")?.addEventListener("click", async () => {
       selectedExcelPreviewProducts.add(key);
     }
     readyToSearch = products.length > 0;
-    $("#excel-filter-status").textContent = `전체 목록에서 검색 가능한 상품 ${products.length.toLocaleString("ko-KR")}개를 선택했습니다. 검색을 시작합니다.`;
+    $("#excel-filter-status").textContent = selectedBrandDomesticQueueRunning
+      ? `전체 목록에서 검색 가능한 상품 ${products.length.toLocaleString("ko-KR")}개를 선택했습니다. 자동 검색을 시작합니다.`
+      : `전체 목록에서 검색 가능한 상품 ${products.length.toLocaleString("ko-KR")}개를 선택했습니다. 오른쪽 상품검색을 누르면 전체 검색을 시작합니다.`;
   } catch (error) {
     $("#excel-filter-status").textContent = `전체 목록 선택 실패: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
     excelPreviewSelectingAll = false;
     updateExcelPreviewSelectionUi(excelPreviewPageKeys);
-    if (readyToSearch) $("#excel-preview-search-selected")?.click();
+    // Manual workbook use is intentionally two-step: select all, then press
+    // 상품검색. Only the selected-brand automation queue starts it itself.
+    if (readyToSearch && selectedBrandDomesticQueueRunning) $("#excel-preview-search-selected")?.click();
   }
 });
 $("#excel-preview-profit")?.addEventListener("click", async () => {
