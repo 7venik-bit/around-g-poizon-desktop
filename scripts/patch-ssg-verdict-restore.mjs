@@ -12,18 +12,6 @@ const mainPath = new URL("../main.mjs", import.meta.url);
 let main = normalizeLf(await readFile(mainPath, "utf8"));
 main = replaceOnce(
   main,
-  "        show: naverPortalSource,",
-  "        show: naverPortalSource || ssgChannelSource,",
-  "show SSG result window",
-);
-main = replaceOnce(
-  main,
-  "      if (naverPortalSource) searchWindow.maximize();",
-  "      if (naverPortalSource || ssgChannelSource) searchWindow.maximize();",
-  "maximize SSG result window",
-);
-main = replaceOnce(
-  main,
   `      parsedContent = JSON.parse(content);\n      if (parsedContent?.pageBlocked && !parsedContent?.productCards?.length) {\n        if (securityRetry >= 1 || !/naver\\.com/i.test(String(searchWindow.webContents.getURL() || url))) {\n          return renderedSearchFailure("security_verification_required", searchWindow, {\n            searchSubmitted: interactiveSiteSearch,\n            securityVerificationRequired: true,\n          });\n        }\n        const verified = await waitForNaverSecurityVerification(searchWindow);\n        if (!verified) {\n          return renderedSearchFailure("security_verification_required", searchWindow, {\n            searchSubmitted: interactiveSiteSearch,\n            securityVerificationRequired: true,\n          });\n        }\n        searchWindow.destroy();\n        searchWindow = null;\n        return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession);\n      }`,
   `      parsedContent = JSON.parse(content);\n      if (parsedContent?.pageBlocked && !parsedContent?.productCards?.length) {\n        // SSG occasionally serves a security/interstitial document to a hidden\n        // Chromium window even though the same exact-code URL works in normal\n        // Chrome. Keep SSG visible, give the site one normal-browser settling\n        // cycle, and retry the exact same query once. A blocked page is never\n        // converted to "상품 없음"; only a parsed result grid may prove absence.\n        if (ssgChannelSource && securityRetry < 1) {\n          searchWindow.show();\n          searchWindow.maximize();\n          searchWindow.focus();\n          await wait(8_000);\n          searchWindow.destroy();\n          searchWindow = null;\n          return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession);\n        }\n        if (securityRetry >= 1 || !/naver\\.com/i.test(String(searchWindow.webContents.getURL() || url))) {\n          return renderedSearchFailure("security_verification_required", searchWindow, {\n            searchSubmitted: interactiveSiteSearch,\n            securityVerificationRequired: true,\n          });\n        }\n        const verified = await waitForNaverSecurityVerification(searchWindow);\n        if (!verified) {\n          return renderedSearchFailure("security_verification_required", searchWindow, {\n            searchSubmitted: interactiveSiteSearch,\n            securityVerificationRequired: true,\n          });\n        }\n        searchWindow.destroy();\n        searchWindow = null;\n        return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession);\n      }`,
   "SSG security retry without false absence",
