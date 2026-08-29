@@ -43,7 +43,7 @@
       @media (max-width:980px){
         .sourcing-product-list-row{grid-template-columns:50px minmax(220px,1fr) 165px!important}
         .sourcing-product-thumb{width:48px!important;height:48px!important}
-        .sourcing-product-actions{grid-column:2!important;flex-direction:row!important;align-items:center!important;justify-content:space-between!important;width:100%!important}
+        .sourcing-product-actions{grid-column:3!important;width:100%!important}
         .sourcing-source-fallback{grid-template-columns:1fr auto!important}
         .sourcing-source-fallback span{grid-column:1!important}
       }
