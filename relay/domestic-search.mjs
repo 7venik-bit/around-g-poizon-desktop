@@ -556,15 +556,15 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           allowProvisionalArticleConflict = true;
         }
         // Many brand-owned malls (including DK/Descente) omit the model code
-        // from every visible result card even after an exact-code search. The
-        // previous implementation therefore stopped on the result grid and
-        // never opened a product, so size/stock verification could not run.
-        // Treat product-detail links on the official mall as provisional only;
-        // main.mjs must still find the exact article number on each detail page
-        // before the product is retained.
+        // from visible cards and detail pages even after the code was physically
+        // submitted in the mall's own search box. The completed official result
+        // grid is the requested user-facing evidence: retain each real product
+        // link immediately, while still rejecting cards that expose a conflicting
+        // model number or URL variant. Detail navigation remains best-effort for
+        // stock and size collection, not a second mandatory identity gate.
         if (!conflictingArticle && !officialUrlVariantConflict && !articleMatched && trustedOfficialCard && productUrl) {
           articleMatched = true;
-          detailArticleVerificationRequired = true;
+          detailArticleVerificationRequired = false;
         }
         if (conflictingArticle && !allowProvisionalArticleConflict) articleMatched = false;
         // Naver can fill an exact-code query page with visually similar
