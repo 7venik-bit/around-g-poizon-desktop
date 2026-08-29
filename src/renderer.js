@@ -445,6 +445,16 @@ function renderCombinedBrandPreviewPage(offset = 0) {
   $("#excel-preview-page").textContent = `${Math.floor(safeOffset / limit) + 1} / ${totalPages.toLocaleString("ko-KR")}페이지`;
   $("#excel-preview-prev").disabled = safeOffset <= 0;
   $("#excel-preview-next").disabled = safeOffset + limit >= totalRows;
+  const selectPage = $("#excel-preview-select-page");
+  if (selectPage) {
+    selectPage.onchange = (event) => {
+      for (const key of excelPreviewPageKeys) {
+        if (event.target.checked) selectedExcelPreviewProducts.add(key);
+        else selectedExcelPreviewProducts.delete(key);
+      }
+      updateExcelPreviewSelectionUi(excelPreviewPageKeys);
+    };
+  }
   updateExcelPreviewSelectionUi(excelPreviewPageKeys);
 }
 
@@ -470,6 +480,9 @@ async function openCombinedSelectedBrandPreview(files = []) {
     }
   }
   combinedBrandPreview = { products, brandCount: files.length, loadedCount };
+  // Opening the first workbook initializes the shared viewer and clears its
+  // ordinary single-file cache. Populate the combined cache only afterward.
+  await openIntegratedBrandExcel(files[0], false);
   selectedExcelPreviewProducts.clear();
   excelPreviewProductCache.clear();
   excelPreviewSearchResults.clear();
@@ -477,7 +490,6 @@ async function openCombinedSelectedBrandPreview(files = []) {
     const key = `${brandImportPathKey(product._sourceFilePath)}::${product.key || product.articleNumber || product.spuId}`;
     excelPreviewProductCache.set(key, product);
   }
-  await openIntegratedBrandExcel(files[0], false);
   excelPreviewIntegrated = true;
   renderCombinedBrandPreviewPage(0);
   $("#brand-status").className = loadedCount === files.length ? "status success" : "status";
@@ -3380,6 +3392,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   // written into that row's rightmost result/link cell; never switch to the
   // separate grouped-product/detail-list renderer here.
   const keys = [...selectedExcelPreviewProducts].filter((key) => excelPreviewProductCache.has(key));
+  const unavailableCount = Math.max(0, selectedExcelPreviewProducts.size - keys.length);
   if (!keys.length) {
     button.disabled = false;
     button.textContent = "상품검색";
@@ -3393,7 +3406,9 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
   excelPreviewBatchSearching = true;
   updateExcelPreviewSelectionUi([]);
-  $("#excel-filter-status").textContent = `선택 상품 ${keys.length.toLocaleString("ko-KR")}개를 검색하고 있습니다.`;
+  $("#excel-filter-status").textContent = unavailableCount
+    ? `선택 ${selectedExcelPreviewProducts.size.toLocaleString("ko-KR")}개 중 검색 데이터 ${keys.length.toLocaleString("ko-KR")}개 확인 · 검색 시작`
+    : `선택 상품 ${keys.length.toLocaleString("ko-KR")}개를 검색하고 있습니다.`;
   // Search each distinct product once, then write that result to every
   // selected Excel row for the same article. This prevents the first row from
   // being the only visible result while still avoiding duplicate site searches.
