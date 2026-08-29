@@ -3714,7 +3714,12 @@ async function previewExcelFile(input = {}) {
         filterApplied: false,
         matchMode: "all",
       };
-  const limit = Math.min(200, Math.max(25, Number(input.limit) || 100));
+  const selectionOnly = input.filters?.selectionOnly === true;
+  // Keep the viewer paged, but allow one explicit local read to select every
+  // searchable product across all result pages.
+  const limit = selectionOnly
+    ? Math.min(100000, Math.max(25, Number(input.limit) || 100))
+    : Math.min(200, Math.max(25, Number(input.limit) || 100));
   const products = productView ? buildExcelPreviewProducts(workbook.headers, filtered.entries) : [];
   const sourceTotalProducts = productView ? buildExcelPreviewProducts(workbook.headers, workbook.rows.map((values, index) => ({ values, sourceRowNumber: index + 2 }))).length : 0;
   const resultCount = productView ? products.length : filtered.entries.length;
@@ -3729,8 +3734,8 @@ async function previewExcelFile(input = {}) {
     path: filePath,
     name: basename(filePath),
     headers: workbook.headers,
-    rows: productView ? [] : pageEntries.map((entry) => entry.values),
-    rowNumbers: productView ? [] : pageEntries.map((entry) => entry.sourceRowNumber),
+    rows: productView || selectionOnly ? [] : pageEntries.map((entry) => entry.values),
+    rowNumbers: productView || selectionOnly ? [] : pageEntries.map((entry) => entry.sourceRowNumber),
     products: pageProducts,
     productView,
     offset,
