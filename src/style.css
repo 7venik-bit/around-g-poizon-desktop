@@ -1744,6 +1744,91 @@ button,input,select,textarea{font-family:inherit}
   .otter-paw, .domestic-loading-dots { animation: none; }
 }
 
+.domestic-search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: rgba(9, 29, 55, .82);
+  backdrop-filter: blur(7px);
+  box-sizing: border-box;
+}
+.domestic-search-overlay[hidden] { display: none; }
+.domestic-search-overlay-card {
+  width: min(680px, calc(100vw - 64px));
+  min-height: 520px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 44px;
+  color: #17365d;
+  text-align: center;
+  background: linear-gradient(145deg, #ffffff 0%, #eaf4ff 100%);
+  border: 2px solid #78b4ff;
+  border-radius: 28px;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .35);
+  box-sizing: border-box;
+}
+.domestic-search-overlay .domestic-search-loading {
+  min-width: 420px;
+  min-height: 190px;
+  flex-direction: column;
+  gap: 38px;
+  padding: 20px;
+  border: 0;
+  background: transparent;
+}
+.domestic-search-overlay .domestic-loading-otter {
+  transform: scale(3.15);
+  transform-origin: center;
+}
+.domestic-search-overlay .domestic-loading-copy {
+  align-items: center;
+}
+.domestic-search-overlay .domestic-loading-copy strong {
+  font-size: 22px;
+}
+.domestic-search-overlay .domestic-loading-copy small {
+  margin-top: 8px;
+  font-size: 15px;
+}
+.domestic-search-overlay-card h2 {
+  margin: 4px 0 14px;
+  font-size: 25px;
+}
+.domestic-overlay-count {
+  margin: 0;
+  font-size: 24px;
+  color: #31547b;
+}
+.domestic-overlay-count strong {
+  color: #0874e8;
+  font-size: 36px;
+}
+.domestic-overlay-current {
+  margin: 14px 0 5px;
+  font-size: 16px;
+}
+.domestic-overlay-guide {
+  margin: 0 0 22px;
+  color: #647c98;
+  font-size: 13px;
+}
+.domestic-overlay-stop {
+  min-width: 130px;
+  min-height: 42px;
+  color: #fff;
+  font-weight: 800;
+  border: 0;
+  border-radius: 10px;
+  background: #2f80ed;
+  cursor: pointer;
+}
+.domestic-overlay-stop:hover { background: #1768ce; }
+
 
 /* Domestic results: compact horizontal list aligned for one-screen sourcing. */
 .domestic-compact-results {

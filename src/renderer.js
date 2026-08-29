@@ -948,6 +948,34 @@ function renderDomesticLoading(startedAt = Date.now()) {
   </div>`;
 }
 
+function showDomesticSearchOverlay(startedAt, completedCount, totalCount, currentProduct = null) {
+  let overlay = $("#domestic-search-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "domestic-search-overlay";
+    overlay.className = "domestic-search-overlay";
+    document.body.appendChild(overlay);
+  }
+  const article = String(currentProduct?.articleNumber || currentProduct?.productNumber || "").trim();
+  overlay.hidden = false;
+  overlay.innerHTML = `<div class="domestic-search-overlay-card">
+    ${renderDomesticLoading(startedAt)}
+    <h2>수달 사원이 국내 상품을 찾고 있습니다</h2>
+    <p class="domestic-overlay-count"><strong>${Number(completedCount).toLocaleString("ko-KR")}</strong> / ${Number(totalCount).toLocaleString("ko-KR")}개 처리</p>
+    <p class="domestic-overlay-current">${article ? `현재 상품번호 · <b>${text(article)}</b>` : "검색 준비 중입니다."}</p>
+    <p class="domestic-overlay-guide">검색창은 백그라운드에서 작동합니다. 완료될 때까지 잠시 기다려 주세요.</p>
+    <button type="button" class="domestic-overlay-stop">검색 중지</button>
+  </div>`;
+  overlay.querySelector(".domestic-overlay-stop")?.addEventListener("click", () => {
+    $("#excel-preview-search-selected")?.click();
+  });
+}
+
+function hideDomesticSearchOverlay() {
+  const overlay = $("#domestic-search-overlay");
+  if (overlay) overlay.hidden = true;
+}
+
 setInterval(() => {
   const now = Date.now();
   document.querySelectorAll("[data-search-started-at]").forEach((element) => {
@@ -3422,6 +3450,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     excelPreviewBatchSearching = false;
     domesticIdentitySearchCache.clear();
     await window.aroundG.cancelDomesticSearch?.();
+    hideDomesticSearchOverlay();
     $("#excel-filter-status").textContent = "상품 검색을 중지했습니다.";
     updateExcelPreviewSelectionUi([]);
     return;
@@ -3450,8 +3479,8 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     const status = $("#excel-filter-status");
     if (!status) return;
     const article = String(currentProduct?.articleNumber || currentProduct?.productNumber || "").trim();
-    status.innerHTML = `${renderDomesticLoading(batchStartedAt)}
-      <span class="domestic-batch-progress"><strong>${Number(completedCount).toLocaleString("ko-KR")} / ${keys.length.toLocaleString("ko-KR")}개 처리</strong>${article ? ` · 현재 ${text(article)}` : ""} · 검색 중지 가능</span>`;
+    status.textContent = `상품 검색 진행 중 · ${Number(completedCount).toLocaleString("ko-KR")} / ${keys.length.toLocaleString("ko-KR")}개${article ? ` · 현재 ${article}` : ""}`;
+    showDomesticSearchOverlay(batchStartedAt, completedCount, keys.length, currentProduct);
   };
   renderBatchSearchProgress(0);
   // Search each distinct product once, then write that result to every
@@ -3489,6 +3518,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   }
   const stopped = !excelPreviewBatchSearching;
   excelPreviewBatchSearching = false;
+  hideDomesticSearchOverlay();
   $("#excel-filter-status").textContent = stopped
     ? "상품 검색을 중지했습니다."
     : `선택 상품 ${keys.length.toLocaleString("ko-KR")}개 검색을 완료했습니다.`;
