@@ -1262,7 +1262,28 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   pager.hidden = true;
   $("#excel-preview-name").textContent = file.name || "Excel 미리보기";
   (excelPreviewIntegrated ? $(`#${excelPreviewIntegratedWorkspaceId}`) : filesPanel)?.scrollIntoView({ behavior: "auto", block: "start" });
-  const result = await window.aroundG.previewExcelFile(file.path, offset, 100, filters);
+  let slowTimer;
+  let result;
+  try {
+    slowTimer = setTimeout(() => {
+      if (requestId !== excelPreviewRequestId || loading.hidden) return;
+      loading.textContent = "Excel 파일을 읽고 있습니다. 파일이 크거나 OneDrive 동기화 중이면 잠시 더 걸릴 수 있습니다.";
+    }, 5_000);
+    result = await Promise.race([
+      window.aroundG.previewExcelFile(file.path, offset, 100, filters),
+      new Promise((resolve) => setTimeout(() => resolve({
+        ok: false,
+        message: "Excel 응답 시간이 초과되었습니다. OneDrive 동기화 상태를 확인한 뒤 다시 열어 주세요.",
+      }), 90_000)),
+    ]);
+  } catch (error) {
+    result = {
+      ok: false,
+      message: error instanceof Error ? error.message : String(error || "Excel 불러오기 오류"),
+    };
+  } finally {
+    if (slowTimer) clearTimeout(slowTimer);
+  }
   if (requestId !== excelPreviewRequestId) return;
   if (!result?.ok) {
     activeExcelPreview = null;

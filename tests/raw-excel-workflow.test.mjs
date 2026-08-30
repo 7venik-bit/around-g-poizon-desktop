@@ -47,6 +47,22 @@ test("file list opens the original workbook inside the sourcing program and excl
   assert.match(main, /visibleFiles = files\.filter\(\(file\) => !isProcessedBrandExportName\(file\.name\)\)/);
 });
 
+test("Excel preview cannot remain on an endless loading screen", async () => {
+  const [renderer, main] = await Promise.all([
+    readFile(join(root, "src/renderer.js"), "utf8"),
+    readFile(join(root, "main.mjs"), "utf8"),
+  ]);
+
+  assert.match(renderer, /result = await Promise\.race\(\[/);
+  assert.match(renderer, /Excel 응답 시간이 초과되었습니다/);
+  assert.match(renderer, /catch \(error\) \{[\s\S]{0,220}ok: false/);
+  assert.match(renderer, /파일이 크거나 OneDrive 동기화 중이면/);
+  assert.match(main, /const excelPreviewPending = new Map\(\)/);
+  assert.match(main, /excelPreviewPending\.get\(signature\)/);
+  assert.match(main, /sourceTotalProducts = productView \? Number\(filtered\.sourceProducts \|\| products\.length\) : 0/);
+  assert.doesNotMatch(main, /sourceTotalProducts = productView \? buildExcelPreviewProducts/);
+});
+
 test("downloaded workbooks keep internal validation while the UI registers download completion", async () => {
   const [renderer, main] = await Promise.all([
     readFile(join(root, "src/renderer.js"), "utf8"),
