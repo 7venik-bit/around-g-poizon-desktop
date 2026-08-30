@@ -1,8 +1,8 @@
 /*
  * Domestic product search modal.
  * The approved otter artwork is a fixed raster asset. Do not redraw, filter,
- * crop in CSS, or transform the image. Motion is limited to tiny keyboard
- * activity indicators layered above the unchanged artwork.
+ * crop in CSS, or transform the image itself. Motion is applied to the stage
+ * around the unchanged artwork, with alternating keyboard activity indicators.
  */
 
 html:has(body > .domestic-search-overlay:not([hidden])),
@@ -18,6 +18,9 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   width: 92px;
   max-width: 100%;
   line-height: 0;
+  transform-origin: 58% 78%;
+  animation: approved-otter-typing-bob .64s ease-in-out infinite;
+  will-change: transform;
 }
 
 .domestic-loading-otter.otter-approved-image {
@@ -70,6 +73,13 @@ body:has(> .domestic-search-overlay:not([hidden])) {
 @keyframes approved-key-flash-right {
   0%, 47% { opacity: 0; }
   48%, 100% { opacity: .52; }
+}
+
+@keyframes approved-otter-typing-bob {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-.35deg); }
+  25% { transform: translate3d(-1px, -4px, 0) rotate(.45deg); }
+  50% { transform: translate3d(0, 1px, 0) rotate(-.2deg); }
+  75% { transform: translate3d(1px, -3px, 0) rotate(.55deg); }
 }
 
 .domestic-search-overlay {
@@ -296,6 +306,11 @@ body:has(> .domestic-search-overlay:not([hidden])) {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .otter-approved-stage {
+    animation: none !important;
+    transform: none !important;
+  }
+
   .otter-key-flash-left,
   .otter-key-flash-right {
     animation: none !important;
