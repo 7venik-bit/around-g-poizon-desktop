@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 const required = [
-  'import { finalizeNaverFashionTownResult } from "./services/naver-fashiontown-result.mjs";',
+  'import { finalizeNaverFashionTownResult, isNaverRenderedResultReady } from "./services/naver-fashiontown-result.mjs";',
+  "if (isNaverRenderedResultReady(state, exactQuery)) return true;",
   'String(source.store || "") === "네이버 패션타운"',
   "return finalizeNaverFashionTownResult(parsedContent, {",
   "visibleResultCountObserved",

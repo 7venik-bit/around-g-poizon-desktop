@@ -14,8 +14,19 @@ function replaceOnce(before, after, label) {
 
 replaceOnce(
   'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";',
-  'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";\nimport { finalizeNaverFashionTownResult } from "./services/naver-fashiontown-result.mjs";',
+  'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";\nimport { finalizeNaverFashionTownResult, isNaverRenderedResultReady } from "./services/naver-fashiontown-result.mjs";',
   "Naver result finalizer import",
+);
+
+replaceOnce(
+  String.raw`    const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));
+    if (state && !/페이지를\s*찾을\s*수\s*없습니다/.test(state.text)`,
+  String.raw`    const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));
+    // The exact result URL plus the visible query and a positive total prove
+    // the search succeeded even if Naver changed the product-link selector.
+    if (isNaverRenderedResultReady(state, exactQuery)) return true;
+    if (state && !/페이지를\s*찾을\s*수\s*없습니다/.test(state.text)`,
+  "positive Naver result before the legacy stability gate",
 );
 
 replaceOnce(

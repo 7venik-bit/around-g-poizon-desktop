@@ -10,6 +10,26 @@ function stableUrlIdentity(value = "") {
   }
 }
 
+export function isNaverRenderedResultReady(state = {}, query = "") {
+  const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
+  const expected = compact(query);
+  if (!expected) return false;
+
+  const url = String(state?.url || "");
+  const text = String(state?.text || "");
+  let decodedUrl = url;
+  try { decodedUrl = decodeURIComponent(url); } catch {}
+
+  const exactResultUrl = /shopping\.naver\.com\/window\/search\//i.test(url)
+    && compact(decodedUrl).includes(expected);
+  const queryVisible = compact(text).includes(expected);
+  const positiveVisibleCount = /(?:전체|검색\s*결과)\s*[1-9][\d,]*\s*개/i.test(text);
+
+  // Naver can change the card links while leaving the exact result URL and
+  // visible count intact. Those three signals already prove search success.
+  return exactResultUrl && queryVisible && positiveVisibleCount;
+}
+
 const priceNumber = (value) => {
   const amount = Number(String(value || "").replace(/[^0-9]/g, ""));
   return Number.isFinite(amount) ? amount : 0;

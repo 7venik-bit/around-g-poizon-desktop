@@ -1,6 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { finalizeNaverFashionTownResult } from "../services/naver-fashiontown-result.mjs";
+import {
+  finalizeNaverFashionTownResult,
+  isNaverRenderedResultReady,
+} from "../services/naver-fashiontown-result.mjs";
+
+test("visible positive total on the exact Naver result URL bypasses the legacy card gate", () => {
+  assert.equal(isNaverRenderedResultReady({
+    url: "https://shopping.naver.com/window/search/fashion-group?q=SR123UPS11",
+    text: "'SR123UPS11'에 대한 패션타운 검색결과입니다.\n전체\n1개\n브랜드직영몰 1개",
+    resultMatched: false,
+  }, "SR123UPS11"), true);
+});
+
+test("stored result URL alone is not visible product evidence", () => {
+  assert.equal(isNaverRenderedResultReady({
+    url: "https://shopping.naver.com/window/search/fashion-group?q=SR123UPS11",
+    text: "'SR123UPS11'에 대한 패션타운 검색결과입니다.",
+    resultMatched: false,
+  }, "SR123UPS11"), false);
+});
 
 test("Naver visible cards become link-only products without a second identity gate", () => {
   const result = finalizeNaverFashionTownResult({
@@ -62,4 +81,9 @@ test("main process uses the finalizer before the generic marketplace matcher", a
   assert.match(main, /visibleResultCountObserved/);
   assert.match(main, /presenceConfirmed: result\?\.presenceConfirmed === true/);
   assert.match(main, /naverAllSearchVerdict: result\?\.naverAllSearchVerdict \|\| null/);
+  assert.ok(
+    main.indexOf("if (isNaverRenderedResultReady(state, exactQuery)) return true;")
+      < main.indexOf("return await waitForNaverSearchResultsStable(searchWindow, exactQuery);"),
+    "visible positive evidence must be accepted before the legacy stability gate",
+  );
 });
