@@ -841,7 +841,16 @@ async function addMatchConfidence(data, input) {
       ? Number(sourceRow.count || 0)
       : verifiedCounts.get(sourceRow.store) || 0,
   }));
-  return { ...data, products, sources };
+  return {
+    ...data,
+    products,
+    sources,
+    // Profit calculation may use a price from an exact-query card even when
+    // the stricter inventory/image confidence pass later hides that card from
+    // the sourcing-result list. These candidates have already passed the
+    // channel, brand, model/title and domestic-purchase filters above.
+    domesticPriceCandidates: discoveredProducts.filter((product) => Number(product?.price || 0) > 0),
+  };
 }
 
 async function verifyAllStoresWithMusinsaImage(data, input = {}) {

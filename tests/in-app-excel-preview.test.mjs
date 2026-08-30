@@ -140,6 +140,18 @@ test("profit comparison store names open their matched purchase links", () => {
   assert.match(cssSource, /\.profit-store-link/);
 });
 
+test("profit rows can fetch a missing domestic price and recalculate in the app", () => {
+  assert.match(rendererSource, /function domesticPriceCandidate/);
+  assert.match(rendererSource, /result\?\.domesticPriceCandidates/);
+  assert.match(rendererSource, /data-profit-price-key="\$\{encodeURIComponent\(item\.key\)\}"/);
+  assert.match(rendererSource, /가격 가져오기/);
+  assert.match(rendererSource, /domesticSearchInput\(product, \["naver"\], true\)/);
+  assert.match(rendererSource, /domesticPriceCandidates: \[/);
+  assert.match(rendererSource, /renderProfitComparisons\(activeProfitComparisonKeys\)/);
+  assert.match(mainSource, /domesticPriceCandidates: discoveredProducts\.filter/);
+  assert.match(cssSource, /\.profit-price-fetch/);
+});
+
 test("official-store verification supports every registered URL family and embedded article metadata", () => {
   assert.match(mainSource, /p\|pd\|products\?\|window-products\|goods\|product/);
   assert.match(mainSource, /productDetail\\\\\.action/);

@@ -60,6 +60,7 @@ let excelPreviewPageProducts = [];
 let excelPreviewPageKeys = [];
 let excelPreviewBatchSearching = false;
 let excelPreviewSelectingAll = false;
+let activeProfitComparisonKeys = [];
 let excelPreviewIntegrated = false;
 let excelPreviewFilesParent = null;
 let excelPreviewIntegratedHostId = "brand-integrated-preview-host";
@@ -1089,11 +1090,19 @@ function productCrossCheckIdentity(product = {}) {
 async function cachedDomesticSearch(product, verifyLinkCounts = true) {
   const identity = productCrossCheckIdentity(product);
   if (domesticIdentitySearchCache.has(identity)) return domesticIdentitySearchCache.get(identity);
+  const request = window.aroundG.searchDomestic(domesticSearchInput(product, selectedDomesticSourceGroups(), verifyLinkCounts));
+  domesticIdentitySearchCache.set(identity, request);
+  const response = await request;
+  if (!response?.ok) domesticIdentitySearchCache.delete(identity);
+  return response;
+}
+
+function domesticSearchInput(product, sourceGroups = selectedDomesticSourceGroups(), verifyLinkCounts = true) {
   const articleNumber = product.articleNumber || "";
   const productCode = product.productCode || product.spuId || product.globalSpuId || "";
   const brandName = product.brandName || product.brand || "";
   const productName = product.apiTitle || product.title || product.name || "";
-  const request = window.aroundG.searchDomestic({
+  return {
     query: articleNumber
       ? [brandName, articleNumber].filter(Boolean).join(" ")
       : [brandName, productName].filter(Boolean).join(" "),
@@ -1104,12 +1113,8 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
     title: productName,
     imageUrl: product.logoUrl || product.imageUrl || "",
     verifyLinkCounts,
-    sourceGroups: selectedDomesticSourceGroups(),
-  });
-  domesticIdentitySearchCache.set(identity, request);
-  const response = await request;
-  if (!response?.ok) domesticIdentitySearchCache.delete(identity);
-  return response;
+    sourceGroups,
+  };
 }
 
 function clearDomesticIdentityCache(product) {
@@ -3398,25 +3403,25 @@ $("#excel-preview-select-all-results")?.addEventListener("click", async () => {
     if (readyToSearch && selectedBrandDomesticQueueRunning) $("#excel-preview-search-selected")?.click();
   }
 });
-$("#excel-preview-profit")?.addEventListener("click", async () => {
-  const button = $("#excel-preview-profit");
-  const keys = [...selectedExcelPreviewProducts].filter((key) => excelPreviewProductCache.has(key));
-  if (!keys.length) return;
-  button.disabled = true;
-  button.textContent = "국내 가격 확인 중…";
-  for (const key of keys) {
-    if (!excelPreviewSearchResults.has(key) || excelPreviewSearchResults.get(key)?.error) {
-      await searchExcelPreviewProduct(key, { forceRefresh: false });
-    }
-  }
+function domesticPriceCandidate(result = {}) {
+  const candidates = [...(result?.domesticPriceCandidates || []), ...(result?.products || [])]
+    .filter((candidate) => Number(candidate?.price || 0) > 0);
+  const unique = [...new Map(candidates.map((candidate) => [
+    String(candidate?.url || `${candidate?.store}:${candidate?.price}`), candidate,
+  ])).values()];
+  return unique.sort((left, right) =>
+    Number(right?.inStock === true) - Number(left?.inStock === true)
+      || Number(left.price) - Number(right.price))[0] || null;
+}
+
+function renderProfitComparisons(keys = activeProfitComparisonKeys) {
+  activeProfitComparisonKeys = keys.filter((key) => excelPreviewProductCache.has(key));
   const shipping = Number($("#shipping").value || 0);
   const extra = Number($("#extra").value || 0);
-  const comparisons = keys.map((key) => {
+  const comparisons = activeProfitComparisonKeys.map((key) => {
     const product = excelPreviewProductCache.get(key);
     const result = excelPreviewSearchResults.get(key);
-    const domestic = (result?.products || [])
-      .filter((candidate) => Number(candidate?.price || 0) > 0)
-      .sort((left, right) => Number(right?.inStock) - Number(left?.inStock) || Number(left.price) - Number(right.price))[0];
+    const domestic = domesticPriceCandidate(result);
     const domesticSource = (result?.sources || []).find((source) => source?.store === domestic?.store);
     const purchaseUrl = String(domestic?.url || domesticSource?.officialProductUrl || domesticSource?.searchUrl || "");
     const poizonPrice = verifiedExcelProductPoizonPrice(product);
@@ -3426,7 +3431,7 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
     const totalCost = domesticPrice + shipping + extra;
     const netProfit = poizonPrice > 0 && domesticPrice > 0 ? poizonSettlement - totalCost : 0;
     const marginRate = totalCost > 0 ? netProfit / totalCost * 100 : 0;
-    return { product, domestic, purchaseUrl, poizonPrice, domesticPrice, poizonFee, poizonSettlement, totalCost, netProfit, marginRate };
+    return { key, product, domestic, purchaseUrl, poizonPrice, domesticPrice, poizonFee, poizonSettlement, totalCost, netProfit, marginRate };
   });
   const comparable = comparisons.filter((item) => item.poizonPrice > 0 && item.domesticPrice > 0);
   const totals = comparable.reduce((sum, item) => ({
@@ -3442,13 +3447,13 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
   $("#net-profit").textContent = money(totals.netProfit);
   const summary = $("#profit-selection-summary");
   summary.hidden = false;
-  summary.textContent = `선택 ${keys.length.toLocaleString("ko-KR")}개 · 국내 매입가 확인 ${comparable.length.toLocaleString("ko-KR")}개 · POIZON 카테고리별 수수료 자동 적용`;
+  summary.textContent = `선택 ${activeProfitComparisonKeys.length.toLocaleString("ko-KR")}개 · 국내 매입가 확인 ${comparable.length.toLocaleString("ko-KR")}개 · POIZON 카테고리별 수수료 자동 적용`;
   $("#profit-comparison").hidden = false;
   $("#profit-comparison-count").textContent = `${comparable.length.toLocaleString("ko-KR")}개 비교`;
   $("#profit-comparison-rows").innerHTML = comparisons.map((item) => `<tr>
     <td><b>${text(item.product?.articleNumber || "-")}</b><small>${text(item.product?.title || "")}</small></td>
     <td>${item.poizonPrice ? money(item.poizonPrice) : "가격 없음"}</td>
-    <td>${item.domesticPrice ? money(item.domesticPrice) : "검색 결과 없음"}</td>
+    <td><div class="profit-price-cell">${item.domesticPrice ? `<strong>${money(item.domesticPrice)}</strong>` : ""}<button type="button" class="profit-price-fetch" data-profit-price-key="${encodeURIComponent(item.key)}">${item.domesticPrice ? "다시 가져오기" : "가격 가져오기"}</button></div></td>
     <td>${item.purchaseUrl
       ? `<button type="button" class="profit-store-link" data-url="${encodeURIComponent(item.purchaseUrl)}" title="구매 페이지 열기">${text(item.domestic?.store || "구매처 열기")} ↗</button>`
       : "-"}</td>
@@ -3456,9 +3461,52 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
     <td class="${item.netProfit >= 0 ? "profit-positive" : "profit-negative"}">${item.poizonPrice && item.domesticPrice ? money(item.netProfit) : "계산 불가"}</td>
     <td class="${item.marginRate >= 0 ? "profit-positive" : "profit-negative"}">${item.poizonPrice && item.domesticPrice ? `${item.marginRate.toFixed(1)}%` : "계산 불가"}</td>
   </tr>`).join("");
+}
+
+$("#excel-preview-profit")?.addEventListener("click", async () => {
+  const button = $("#excel-preview-profit");
+  const keys = [...selectedExcelPreviewProducts].filter((key) => excelPreviewProductCache.has(key));
+  if (!keys.length) return;
+  button.disabled = true;
+  button.textContent = "국내 가격 확인 중…";
+  for (const key of keys) {
+    if (!excelPreviewSearchResults.has(key) || excelPreviewSearchResults.get(key)?.error) {
+      await searchExcelPreviewProduct(key, { forceRefresh: false });
+    }
+  }
+  renderProfitComparisons(keys);
   document.querySelector('.nav[data-view="profit"]')?.click();
   button.textContent = "수익계산";
   updateExcelPreviewSelectionUi(excelPreviewPageKeys);
+});
+$("#profit-comparison-rows")?.addEventListener("click", async (event) => {
+  const priceButton = event.target.closest("[data-profit-price-key]");
+  if (!priceButton) return;
+  const key = decodeURIComponent(priceButton.dataset.profitPriceKey || "");
+  if (!excelPreviewProductCache.has(key)) return;
+  priceButton.disabled = true;
+  priceButton.textContent = "가격 확인 중…";
+  const product = excelPreviewProductCache.get(key);
+  const current = excelPreviewSearchResults.get(key) || { products: [], sources: [] };
+  const response = await window.aroundG.searchDomestic(domesticSearchInput(product, ["naver"], true));
+  if (response?.ok) {
+    const priceResult = response.data || {};
+    excelPreviewSearchResults.set(key, {
+      ...current,
+      error: "",
+      products: [...(current.products || []), ...(priceResult.products || [])],
+      sources: priceResult.sources?.length ? priceResult.sources : (current.sources || []),
+      domesticPriceCandidates: [
+        ...(priceResult.domesticPriceCandidates || []),
+        ...(current.domesticPriceCandidates || []),
+      ],
+    });
+    if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
+  } else {
+    priceButton.disabled = false;
+    priceButton.textContent = "가격 다시 시도";
+  }
+  renderProfitComparisons(activeProfitComparisonKeys);
 });
 $("#profit-back-to-list")?.addEventListener("click", () => {
   document.querySelector('.nav[data-view="products"]')?.click();
