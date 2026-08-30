@@ -1999,7 +1999,35 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             true,
           ).catch(() => false)
           : false;
-        if (!documentReady) throw error;
+        // Musinsa can finish painting a valid search result and then abort a
+        // secondary SPA navigation. Electron rejects loadURL in that case even
+        // though the user-visible result is already authoritative. Accept the
+        // document only when it is the exact Musinsa search URL and either
+        // product cards or the site's explicit empty-result message are visible.
+        const expectedMusinsaQuery = sanitizeDomesticProductCode(articleNumber)
+          || sanitizeDomesticQuery(searchAttempt?.query || source.searchQuery || title);
+        let recoveredMusinsaResult = false;
+        if (musinsaSource) {
+          // The rejected navigation event can arrive just before React commits
+          // the final DOM. Give that already-running render a short bounded
+          // window; this never submits or repeats the search.
+          for (let attempt = 0; attempt < 8 && !recoveredMusinsaResult; attempt += 1) {
+            if (attempt > 0) await wait(500);
+            recoveredMusinsaResult = await searchWindow.webContents.executeJavaScript(`(() => {
+              const current = new URL(String(location.href || ""));
+              const expected = ${JSON.stringify(expectedMusinsaQuery)};
+              const actual = String(current.searchParams.get("keyword") || "").trim();
+              const pageText = String(document.body?.innerText || "").slice(0, 50000);
+              const exactSearch = /(^|\\.)musinsa\\.com$/i.test(current.hostname)
+                && current.pathname.includes("/search/goods")
+                && actual.toUpperCase() === expected.toUpperCase();
+              const cards = document.querySelectorAll('a[href*="/products/"],a[href*="/product/"]').length;
+              const explicitEmpty = /검색\\s*결과가?\\s*(?:없|0)|상품이?\\s*(?:없|0)|검색된\\s*상품이\\s*없/i.test(pageText);
+              return Boolean(exactSearch && document.documentElement && (cards > 0 || explicitEmpty));
+            })()`, true).catch(() => false);
+          }
+        }
+        if (!documentReady && !recoveredMusinsaResult) throw error;
       }
       if (interactiveOfficialSearch) {
         const login = await ensureOfficialAccountLogin(searchWindow, String(source.homepageUrl || url));
