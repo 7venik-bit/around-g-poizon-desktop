@@ -204,7 +204,6 @@ const brandExportJobs = new Map();
 const sellerDownloadSessions = new WeakSet();
 const brandExportValidationCache = new Map();
 const excelPreviewCache = new Map();
-const excelPreviewPending = new Map();
 let brandExportMonitorRunning = false;
 let brandExportMonitorRestartTimer;
 let sellerTransactionLookupQueue = Promise.resolve();
@@ -3749,26 +3748,15 @@ async function previewExcelFile(input = {}) {
   const signature = `${filePath}:${info.mtimeMs}:${info.size}`;
   let workbook = excelPreviewCache.get(signature);
   if (!workbook) {
-    let pending = excelPreviewPending.get(signature);
-    if (!pending) {
-      pending = (async () => {
-        const rows = await readFirstDataSheet(await readFile(filePath));
-        const columnCount = rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
-        return {
-          headers: Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(rows[0]?.[index])),
-          rows: rows.slice(1).map((row) => Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(row[index]))),
-          columnCount,
-        };
-      })();
-      excelPreviewPending.set(signature, pending);
-    }
-    try {
-      workbook = await pending;
-      excelPreviewCache.set(signature, workbook);
-      while (excelPreviewCache.size > 3) excelPreviewCache.delete(excelPreviewCache.keys().next().value);
-    } finally {
-      if (excelPreviewPending.get(signature) === pending) excelPreviewPending.delete(signature);
-    }
+    const rows = await readFirstDataSheet(await readFile(filePath));
+    const columnCount = rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
+    workbook = {
+      headers: Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(rows[0]?.[index])),
+      rows: rows.slice(1).map((row) => Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(row[index]))),
+      columnCount,
+    };
+    excelPreviewCache.set(signature, workbook);
+    while (excelPreviewCache.size > 3) excelPreviewCache.delete(excelPreviewCache.keys().next().value);
   }
   const productView = input.filters?.productView !== false;
   const manualRawFilter = !productView && [
@@ -3803,7 +3791,7 @@ async function previewExcelFile(input = {}) {
     ? Math.min(100000, Math.max(25, Number(input.limit) || 100))
     : Math.min(200, Math.max(25, Number(input.limit) || 100));
   const products = productView ? buildExcelPreviewProducts(workbook.headers, filtered.entries) : [];
-  const sourceTotalProducts = productView ? Number(filtered.sourceProducts || products.length) : 0;
+  const sourceTotalProducts = productView ? buildExcelPreviewProducts(workbook.headers, workbook.rows.map((values, index) => ({ values, sourceRowNumber: index + 2 }))).length : 0;
   const resultCount = productView ? products.length : filtered.entries.length;
   const maximumOffset = Math.max(0, Math.floor(Math.max(0, resultCount - 1) / limit) * limit);
   const offset = Math.min(maximumOffset, Math.max(0, Number(input.offset) || 0));
