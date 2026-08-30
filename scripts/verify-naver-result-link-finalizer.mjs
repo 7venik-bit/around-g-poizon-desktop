@@ -7,6 +7,8 @@ const required = [
   "verificationStage,",
   "verificationDiagnostics: {",
   "productCardCount: Number(result?.candidateCount || result?.products?.length || 0)",
+  "not the rejected promise or its error code.",
+  "errorMessage: String(details.errorMessage || \"\")",
   'String(source.store || "") === "네이버 패션타운"',
   "return finalizeNaverFashionTownResult(parsedContent, {",
   "visibleResultCountObserved",

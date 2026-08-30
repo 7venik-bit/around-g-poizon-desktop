@@ -30,6 +30,18 @@ replaceOnce(
 );
 
 replaceOnce(
+  '        const aborted = /ERR_ABORTED/i.test(String(error?.message || ""));\n        const currentUrl = String(searchWindow.webContents.getURL() || "");',
+  '        // Electron can reject loadURL while a commerce SPA replaces the\\n        // navigation with a usable HTTPS document. Trust the live document,\\n        // not the rejected promise or its error code.\\n        const currentUrl = String(searchWindow.webContents.getURL() || "");'.replaceAll('\\n', '\n'),
+  "live document navigation comment",
+);
+
+replaceOnce(
+  '        const documentReady = aborted && /^https:\\/\\//i.test(currentUrl)',
+  '        const documentReady = /^https:\\/\\//i.test(currentUrl)',
+  "live HTTPS document after Electron navigation replacement",
+);
+
+replaceOnce(
   String.raw`function renderedSearchFailure(reason, searchWindow = null, details = {}) {
   return {
     count: null,
@@ -80,6 +92,7 @@ replaceOnce(
       stage: verificationStage,
       reason: verificationReason,
       resolvedUrl: resolvedSearchUrl,
+      errorMessage: String(details.errorMessage || ""),
       visibleResultCount: null,
       productCardCount: 0,
     },
@@ -89,6 +102,12 @@ replaceOnce(
   };
 }`,
   "failure stage diagnostics",
+);
+
+replaceOnce(
+  '    return renderedSearchFailure(reason, searchWindow);',
+  '    return renderedSearchFailure(reason, searchWindow, { errorMessage: message });',
+  "raw navigation error diagnostics",
 );
 
 replaceOnce(
