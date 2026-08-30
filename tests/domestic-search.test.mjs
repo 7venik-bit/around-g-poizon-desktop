@@ -174,7 +174,7 @@ test("편집샵·병행수입 검색은 쇼핑 플랫폼 상품 상세 주소만
   assert.equal(isPlatformShoppingProductUrl("https://www.ssg.com/item/itemView.ssg?itemId=1000833166393"), true);
   const rendered = JSON.stringify({ productCards: [
     { productUrl: "https://blog.naver.com/wjsepdyt/223774129711", text: "데상트 SR323UPS74 병행수입" },
-    { productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000833166393", text: "데상트 SR323UPS74 정품" },
+    { productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000833166393", text: "구템즈 데상트 SR323UPS74 정품" },
   ] });
   const result = analyzeRenderedChannelProducts(rendered, "병행수입·편집샵", "SR323UPS74", "데상트");
   assert.equal(result.count, 1);
@@ -220,7 +220,7 @@ test("네이버 자동화는 포털 검색창을 사용하고 수동 확인 링�
       text: async () => '<script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"dehydratedState":{"queries":[]}}}}</script>',
     }),
   });
-  const naver = result.sources.find((source) => source.store === "네이버 공식 브랜드스토어");
+  const naver = result.sources.find((source) => source.store === "네이버 패션타운");
   assert.match(naver.searchUrl, /shopping\.naver\.com\/window\/search\/fashion-group/);
   assert.match(naver.searchUrl, /q=SR123UTS15/);
   assert.equal(naver.interactiveSearch, true);
@@ -242,9 +242,9 @@ test("품번이 있으면 상품코드, 상품명, 상품명+상품코드 순으
     "MLB 차키 내피 합성 가죽 인조가죽 로우탑 스니커즈",
     "MLB 차키 내피 합성 가죽 인조가죽 로우탑 스니커즈 3ASXCA12N-50WHS",
   ]);
-  const department = result.sources.find((source) => source.store === "네이버 백화점");
-  assert.equal(department.searchQuery, "3ASXCA12N-50WHS");
-  assert.doesNotMatch(department.searchQuery, /가죽|로우탑|스니커즈/);
+  const naver = result.sources.find((source) => source.store === "네이버 패션타운");
+  assert.equal(naver.searchQuery, "3ASXCA12N-50WHS");
+  assert.doesNotMatch(naver.searchQuery, /가죽|로우탑|스니커즈/);
 });
 
 test("MLB 공식몰은 홈페이지 돋보기 뒤 상품코드만 검색창에 입력한다", async () => {
@@ -463,6 +463,41 @@ test("국내 병행수입업체는 포함하고 같은 품번의 해외직구 �
   assert.equal(result.products.length, 1);
   assert.match(result.products[0].retailerName, /병행수입 정품업체 · 대림코퍼레이션/);
   assert.equal(result.products[0].title.includes("10531940"), true);
+});
+
+test("병행수입 검색은 정확한 품번이어도 허용 명단에 없는 판매처를 상품없음으로 판정한다", () => {
+  const rendered = JSON.stringify({
+    pageText: "푸마 392290-03 검색 결과",
+    productCards: [{
+      productUrl: "https://shopping.naver.com/products/9001",
+      title: "푸마 케이븐 2.0 화이트 블랙 392290-03",
+      text: "명단외판매자 79,950원",
+    }, {
+      productUrl: "https://shopping.naver.com/products/9002",
+      title: "푸마 케이븐 2.0 화이트 블랙 392290-03",
+      text: "ABC마트 79,950원",
+    }],
+  });
+  const result = analyzeRenderedChannelProducts(rendered, "병행수입·편집샵", "392290-03", "푸마");
+  assert.equal(result.count, 0);
+  assert.deepEqual(result.products, []);
+  assert.equal(result.absenceConfirmed, true);
+  assert.equal(result.parallelRetailerListEnforced, true);
+});
+
+test("병행수입 검색은 허용 명단의 별칭 판매자만 상품으로 표시한다", () => {
+  const rendered = JSON.stringify({
+    pageText: "푸마 392290-03 검색 결과",
+    productCards: [{
+      productUrl: "https://shopping.naver.com/products/9003",
+      title: "푸마 케이븐 2.0 화이트 블랙 392290-03",
+      text: "브릭맨션 국내배송 79,950원",
+    }],
+  });
+  const result = analyzeRenderedChannelProducts(rendered, "병행수입·편집샵", "392290-03", "푸마");
+  assert.equal(result.count, 1);
+  assert.equal(result.products[0].parallelRetailerVerified, true);
+  assert.match(result.products[0].retailerName, /병행수입 정품업체 · 인퓨전프로젝트/);
 });
 
 test("an MLB result with a different explicit article is never relabeled as the requested article", () => {
@@ -927,12 +962,10 @@ test("one domestic store failure does not stop the others", async () => {
     return { ok: true, status: 200, text: async () => emptyNextData };
   };
   const result = await queryDomesticProducts({ query: "DD1391-100", brand: "나이키", fetchImpl });
-  assert.equal(result.sources.length, 13);
+  assert.equal(result.sources.length, 11);
   assert.deepEqual(result.sources.map((source) => source.store), [
     "브랜드 공식몰",
-    "네이버 공식 브랜드스토어",
-    "네이버 백화점",
-    "네이버 아울렛",
+    "네이버 패션타운",
     "무신사",
     "SSG",
     "SSG 백화점",
@@ -943,12 +976,12 @@ test("one domestic store failure does not stop the others", async () => {
     "병행수입·편집샵",
     "코오롱몰",
   ]);
-  assert.deepEqual(result.sources.map((source) => source.priority), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  assert.deepEqual(result.sources.map((source) => source.priority), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   assert.equal(result.sources.find((source) => source.store === "코오롱몰").ok, false);
-  assert.equal(result.sources.filter((source) => source.ok).length, 12);
+  assert.equal(result.sources.filter((source) => source.ok).length, 10);
   assert.deepEqual(
     result.sources.filter((source) => source.renderCount).map((source) => source.store),
-    ["브랜드 공식몰", "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛", "무신사", "SSG", "SSG 백화점", "SSG 아울렛", "롯데온", "롯데온 백화점", "롯데온 아울렛", "병행수입·편집샵"]
+    ["브랜드 공식몰", "네이버 패션타운", "무신사", "SSG", "SSG 백화점", "SSG 아울렛", "롯데온", "롯데온 백화점", "롯데온 아울렛", "병행수입·편집샵"]
   );
 });
 

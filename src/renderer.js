@@ -2239,7 +2239,14 @@ function renderDomestic(result, sourceProduct = {}) {
   if (!result) return `<span class="inventory-help">재고 검색을 누르면 공식몰 → 무신사 → 네이버·SSG·롯데온의 공식스토어·백화점·아울렛을 각각 확인합니다.</span>`;
   if (result.loading) return renderDomesticLoading(result.startedAt);
   if (result.error) return `<span class="inventory-help">상품없음</span>`;
-  const products = (result.products || []).filter((product) => product && (product.name || product.title));
+  const products = (result.products || []).filter((product) => {
+    if (!product || !(product.name || product.title)) return false;
+    const store = String(product.store || product.sourceStore || "");
+    const retailer = String(product.retailerName || "");
+    const parallel = store === "병행수입·편집샵" || store === "SSG 병행수입"
+      || product.ssgClassification === "parallel_import" || retailer.startsWith("병행수입");
+    return !parallel || product.parallelRetailerVerified === true;
+  });
   const verifiedCount = (result.sources || []).reduce((sum, source) =>
     sum + (source.countVerified ? Number(source.count || 0) : 0), 0);
   const sources = result.sources || [];
@@ -2249,8 +2256,9 @@ function renderDomestic(result, sourceProduct = {}) {
     if (sourceStore === String(product?.sourceStore || "")) return true;
     if (sourceStore === productStore) return true;
     if (sourceStore === "SSG" && /^SSG(?:\s|$)/.test(productStore)) return true;
-    if (sourceStore === "병행수입·편집샵" && (/병행수입/.test(productStore)
-      || String(product?.retailerName || "").startsWith("병행수입"))) return true;
+    if (sourceStore === "병행수입·편집샵" && product?.parallelRetailerVerified === true
+      && (/병행수입/.test(productStore)
+        || String(product?.retailerName || "").startsWith("병행수입"))) return true;
     return false;
   };
   const renderProductRow = (product, source = {}, sourcingLabel = "") => {
@@ -2332,7 +2340,8 @@ function renderDomestic(result, sourceProduct = {}) {
         source.store === "병행수입·편집샵" ? "상품 소싱" : "",
       ));
     }
-    if (source.store === "병행수입·편집샵" && Number(source.count || 0) <= 0) return [];
+    if (source.store === "병행수입·편집샵" && Number(source.count || 0) <= 0
+      && !(source.parallelRetailerListEnforced === true && source.absenceConfirmed === true)) return [];
     const status = sourceStatus(source, matchedProducts);
     return [`<div class="domestic-result-line source-only ${status.className}">
       <strong class="domestic-result-store">${text(source.store)}</strong>

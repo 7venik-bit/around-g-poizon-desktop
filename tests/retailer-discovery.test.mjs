@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { DOMESTIC_RETAILER_GROUPS, domesticChannelUrl } from "../relay/domestic-search.mjs";
+import { DOMESTIC_RETAILER_GROUPS, detectedParallelImportRetailer, domesticChannelUrl } from "../relay/domestic-search.mjs";
 
 const relay = await readFile(new URL("../relay/domestic-search.mjs", import.meta.url), "utf8");
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
@@ -26,12 +26,32 @@ test("editorial and parallel-import seller catalogs participate in discovery", (
   assert.ok(relay.includes("queryCandidates[0]"));
 });
 
-test("병행수입업체는 정확한 모델 상품이 확인된 경우에만 전용 칸으로 표시된다", () => {
-  assert.ok(renderer.includes("parallel-import-panel"));
+test("병행수입 허용 명단은 사용자 제공 28개 업체와 두 별칭만 인정한다", () => {
+  const parallel = DOMESTIC_RETAILER_GROUPS["병행수입 정품업체"];
+  const canonical = parallel.filter((name) => !["브릭맨션", "DLC"].includes(name));
+  assert.equal(canonical.length, 28);
+  for (const name of canonical) assert.match(detectedParallelImportRetailer(name), /병행수입 정품업체/);
+  assert.equal(detectedParallelImportRetailer("브릭맨션"), "병행수입 정품업체 · 인퓨전프로젝트");
+  assert.equal(detectedParallelImportRetailer("DLC"), "병행수입 정품업체 · 대림코퍼레이션");
+  for (const name of ["ABC마트", "명단외판매자", "알수없는 병행수입몰"]) {
+    assert.equal(detectedParallelImportRetailer(name), "");
+  }
+});
+
+test("병행수입 명단 불일치 결과는 화면에서 상품없음으로 표시한다", async () => {
+  const inline = await readFile(new URL("../src/domestic-inline-results.js", import.meta.url), "utf8");
+  assert.match(inline, /approvedParallelMissing/);
+  assert.match(inline, /\? "상품없음"/);
+  assert.match(inline, /parallelRetailerVerified === true/);
+});
+
+test("병행수입업체는 정확한 모델 상품만 리스트에 표시하고 명단 불일치는 상품없음 처리한다", async () => {
+  const inline = await readFile(new URL("../src/domestic-inline-results.js", import.meta.url), "utf8");
   assert.ok(renderer.includes('source.store === "병행수입·편집샵"'));
-  assert.ok(renderer.includes('!matchedProducts.length && Number(source.count || 0) <= 0'));
+  assert.ok(renderer.includes("parallelRetailerListEnforced"));
+  assert.ok(inline.includes("approvedParallelMissing"));
+  assert.ok(inline.includes('parallelRetailerVerified === true'));
   assert.ok(renderer.includes('source.store === "병행수입·편집샵" ? "상품 소싱"'));
-  assert.ok(style.includes(".parallel-import-panel"));
 });
 
 test("a zero is confirmed only when the store page explicitly says no results", () => {
