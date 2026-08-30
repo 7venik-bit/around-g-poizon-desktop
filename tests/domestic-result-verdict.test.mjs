@@ -71,3 +71,12 @@ test("result summary uses the same canonical verdict", () => {
   assert.equal(missing.label, "상품 없음");
   assert.equal(missing.className, "missing");
 });
+
+test("result summary preserves the next-day access cooldown label", () => {
+  const cooldown = resultPresentation({
+    accessLimitedUntil: "2026-08-31T00:05:00.000Z",
+    error: true,
+  });
+  assert.equal(cooldown.label, "내일 재시도");
+  assert.equal(cooldown.className, "pending");
+});
