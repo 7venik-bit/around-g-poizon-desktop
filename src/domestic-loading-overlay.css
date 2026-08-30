@@ -1,16 +1,90 @@
 /*
- * Domestic product search modal
- *
- * Keep the sourcing engine running in the background while the renderer is
- * locked to a fixed, non-scrolling progress screen. This file intentionally
- * overrides the legacy product-grid-sized overlay without changing search
- * execution or result handling.
+ * Domestic product search modal + otter employee animation.
+ * Search execution remains in the background; only the renderer is blocked.
  */
 
 html:has(body > .domestic-search-overlay:not([hidden])),
 body:has(> .domestic-search-overlay:not([hidden])) {
   overflow: hidden !important;
   overscroll-behavior: none !important;
+}
+
+/* New SVG mascot. This intentionally supersedes every legacy bear-like CSS part. */
+.domestic-loading-otter.otter-employee-svg {
+  position: static !important;
+  display: block !important;
+  flex: 0 0 auto !important;
+  width: 88px !important;
+  height: 60px !important;
+  overflow: visible !important;
+  transform: none !important;
+  transform-origin: center !important;
+  filter: drop-shadow(0 3px 5px rgba(23, 54, 93, .12));
+}
+
+.otter-tail-group,
+.otter-body-group,
+.otter-head-group,
+.otter-paw-left-group,
+.otter-paw-right-group,
+.otter-typing-tick {
+  transform-box: fill-box;
+}
+
+.otter-tail-group {
+  transform-origin: 85% 55%;
+  animation: otter-tail-sway 1.45s ease-in-out infinite alternate;
+}
+.otter-body-group {
+  transform-origin: center bottom;
+  animation: otter-work-breathe 1.8s ease-in-out infinite;
+}
+.otter-head-group {
+  transform-origin: 50% 90%;
+  animation: otter-head-focus 1.8s ease-in-out infinite;
+}
+.otter-paw-left-group {
+  transform-origin: center center;
+  animation: otter-type-left .34s steps(2, end) infinite;
+}
+.otter-paw-right-group {
+  transform-origin: center center;
+  animation: otter-type-right .34s steps(2, end) infinite;
+}
+.otter-typing-tick-left {
+  animation: otter-tick-left .34s steps(2, end) infinite;
+}
+.otter-typing-tick-right {
+  animation: otter-tick-right .34s steps(2, end) infinite;
+}
+
+@keyframes otter-type-left {
+  0%, 49% { transform: translateY(-4px) rotate(-3deg); }
+  50%, 100% { transform: translateY(4px) rotate(3deg); }
+}
+@keyframes otter-type-right {
+  0%, 49% { transform: translateY(4px) rotate(-2deg); }
+  50%, 100% { transform: translateY(-4px) rotate(3deg); }
+}
+@keyframes otter-tick-left {
+  0%, 49% { opacity: .9; transform: translate(-2px, -2px); }
+  50%, 100% { opacity: 0; transform: translate(2px, 2px); }
+}
+@keyframes otter-tick-right {
+  0%, 49% { opacity: 0; transform: translate(-2px, 2px); }
+  50%, 100% { opacity: .9; transform: translate(2px, -2px); }
+}
+@keyframes otter-tail-sway {
+  from { transform: rotate(-5deg) translateX(-2px); }
+  to { transform: rotate(7deg) translateX(2px); }
+}
+@keyframes otter-work-breathe {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(-1.5px) scaleY(1.018); }
+}
+@keyframes otter-head-focus {
+  0%, 100% { transform: rotate(-1deg) translateY(0); }
+  50% { transform: rotate(1deg) translateY(1px); }
 }
 
 .domestic-search-overlay {
@@ -49,7 +123,7 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   flex-direction: column !important;
   align-items: center !important;
   justify-content: center !important;
-  padding: 38px 44px 34px !important;
+  padding: 34px 44px 32px !important;
   overflow: hidden !important;
   color: #17365d !important;
   text-align: center !important;
@@ -60,124 +134,30 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   box-sizing: border-box !important;
 }
 
-/* Make the mascot the visual focus of the modal. */
 .domestic-search-overlay .domestic-search-loading {
   width: 100% !important;
   min-width: 0 !important;
-  min-height: 235px !important;
+  min-height: 285px !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 45px !important;
-  padding: 12px 0 0 !important;
+  gap: 10px !important;
+  padding: 0 !important;
   color: #17365d !important;
   background: transparent !important;
   border: 0 !important;
   border-radius: 0 !important;
 }
 
-.domestic-search-overlay .domestic-loading-otter {
-  flex: 0 0 58px !important;
-  width: 58px !important;
-  height: 42px !important;
-  transform: scale(3.45) !important;
-  transform-origin: center center !important;
-  filter: drop-shadow(0 4px 6px rgba(23, 54, 93, .12));
+.domestic-search-overlay .domestic-loading-otter.otter-employee-svg {
+  width: 246px !important;
+  height: 170px !important;
+  margin: -4px 0 2px !important;
+  transform: none !important;
+  filter: drop-shadow(0 7px 12px rgba(23, 54, 93, .13));
 }
 
-/* Add a torso and tail so the mascot reads clearly as an otter. */
-.domestic-search-overlay .domestic-loading-otter::before {
-  content: "";
-  position: absolute;
-  left: 14px;
-  top: 23px;
-  width: 27px;
-  height: 16px;
-  border: 1.5px solid #6f563f;
-  border-radius: 48% 48% 38% 38%;
-  background: #c99d67;
-  z-index: 0;
-}
-
-.domestic-search-overlay .domestic-loading-otter::after {
-  content: "";
-  position: absolute;
-  left: 5px;
-  bottom: 2px;
-  width: 24px;
-  height: 8px;
-  border: 1.5px solid #6f563f;
-  border-radius: 999px 35% 35% 999px;
-  background: #b78555;
-  transform: rotate(-14deg);
-  transform-origin: right center;
-  z-index: 0;
-}
-
-/* Turn the laptop base into a visible keyboard. */
-.domestic-search-overlay .otter-laptop {
-  right: 0 !important;
-  bottom: 7px !important;
-  width: 30px !important;
-  height: 20px !important;
-  transform: skew(-5deg) !important;
-}
-
-.domestic-search-overlay .otter-laptop::after {
-  content: "" !important;
-  position: absolute !important;
-  left: -9px !important;
-  bottom: -9px !important;
-  width: 43px !important;
-  height: 8px !important;
-  border: 1.4px solid #17365d !important;
-  border-radius: 2px 2px 5px 5px !important;
-  background: #dce9f8 !important;
-  transform: skewX(-18deg) !important;
-  box-sizing: border-box !important;
-}
-
-.domestic-search-overlay .otter-laptop::before {
-  content: "";
-  position: absolute;
-  left: -5px;
-  bottom: -6px;
-  width: 33px;
-  height: 4px;
-  z-index: 6;
-  opacity: .75;
-  background:
-    repeating-linear-gradient(90deg, #7b94ad 0 2px, transparent 2px 4px),
-    repeating-linear-gradient(0deg, #7b94ad 0 1px, transparent 1px 2px);
-  transform: skewX(-18deg);
-}
-
-/* Both paws visibly tap the keyboard instead of floating beside it. */
-.domestic-search-overlay .otter-paw {
-  bottom: 0 !important;
-  width: 10px !important;
-  height: 7px !important;
-  z-index: 8 !important;
-  animation: otter-key-tap .22s ease-in-out infinite alternate !important;
-}
-
-.domestic-search-overlay .otter-paw-left {
-  left: 23px !important;
-  animation-delay: 0s !important;
-}
-
-.domestic-search-overlay .otter-paw-right {
-  left: 35px !important;
-  animation-delay: .11s !important;
-}
-
-@keyframes otter-key-tap {
-  from { transform: translateY(-4px) rotate(-4deg); }
-  to { transform: translateY(1px) rotate(4deg); }
-}
-
-/* Match the approved loading-screen hierarchy without changing renderer data. */
 .domestic-search-overlay .domestic-loading-copy {
   width: 100% !important;
   min-width: 0 !important;
@@ -231,7 +211,7 @@ body:has(> .domestic-search-overlay:not([hidden])) {
 }
 
 .domestic-overlay-count {
-  margin: 10px 0 0 !important;
+  margin: 8px 0 0 !important;
   color: #536b86 !important;
   font-size: 19px !important;
   font-variant-numeric: tabular-nums;
@@ -246,12 +226,18 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   width: min(430px, 92%) !important;
   height: 10px !important;
   margin: 14px 0 10px !important;
+  overflow: hidden !important;
   border-radius: 999px !important;
   background: #e4ebf3 !important;
   box-shadow: inset 0 1px 2px rgba(23, 54, 93, .11) !important;
 }
 
 .domestic-overlay-progress > span {
+  display: block !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  border-radius: inherit !important;
   background: linear-gradient(90deg, #2f80ed, #4d9cff) !important;
   transition: width .3s ease !important;
 }
@@ -300,14 +286,14 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   .domestic-search-overlay-card {
     min-height: calc(100vh - 32px) !important;
     max-height: calc(100vh - 32px) !important;
-    padding: 24px 34px !important;
+    padding: 20px 34px !important;
   }
   .domestic-search-overlay .domestic-search-loading {
-    min-height: 190px !important;
-    gap: 34px !important;
+    min-height: 230px !important;
   }
-  .domestic-search-overlay .domestic-loading-otter {
-    transform: scale(2.8) !important;
+  .domestic-search-overlay .domestic-loading-otter.otter-employee-svg {
+    width: 200px !important;
+    height: 138px !important;
   }
 }
 
@@ -319,13 +305,23 @@ body:has(> .domestic-search-overlay:not([hidden])) {
     width: calc(100vw - 28px) !important;
     min-height: calc(100vh - 28px) !important;
     max-height: calc(100vh - 28px) !important;
-    padding: 26px 20px !important;
+    padding: 24px 20px !important;
     border-radius: 20px !important;
+  }
+  .domestic-search-overlay .domestic-loading-otter.otter-employee-svg {
+    width: 210px !important;
+    height: 145px !important;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .domestic-search-overlay .otter-paw {
+  .otter-tail-group,
+  .otter-body-group,
+  .otter-head-group,
+  .otter-paw-left-group,
+  .otter-paw-right-group,
+  .otter-typing-tick-left,
+  .otter-typing-tick-right {
     animation: none !important;
   }
 }
