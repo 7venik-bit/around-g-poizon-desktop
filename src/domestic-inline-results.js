@@ -1,4 +1,6 @@
 (() => {
+  if (globalThis.__aroundGDomesticInlineResultsInstalled) return;
+
   const STYLE_MARKER = "data-domestic-inline-list-style";
 
   function safeText(value) {
@@ -285,4 +287,5 @@
     });
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
+  globalThis.__aroundGDomesticInlineResultsInstalled = true;
 })();
