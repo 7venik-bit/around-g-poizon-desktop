@@ -28,13 +28,14 @@ if (!patch.includes("85_704") || !patch.includes(expectedDigest)) {
   throw new Error("patch script is not pinned to the exact approved otter raster");
 }
 
-const renderStart = renderer.indexOf("function renderDomesticLoading");
+const renderStart = renderer.indexOf("const APPROVED_OTTER_IMAGE_SRC");
 const renderEnd = renderer.indexOf("function showDomesticSearchOverlay", renderStart);
 const block = renderer.slice(renderStart, renderEnd);
 
 const requiredRenderer = [
   'class="otter-approved-stage"',
   'class="domestic-loading-otter otter-approved-image"',
+  'class="otter-typing-paw-layer"',
   'data:image/webp;base64,',
   'class="otter-key-flash otter-key-flash-left"',
   'class="otter-key-flash otter-key-flash-right"',
@@ -61,12 +62,13 @@ for (const token of forbiddenRenderer) {
 const requiredCss = [
   ".otter-approved-stage",
   ".domestic-loading-otter.otter-approved-image",
+  ".otter-typing-paw-layer",
   "transform: none !important",
   "filter: none !important",
   "opacity: 1 !important",
   ".otter-key-flash-left",
   ".otter-key-flash-right",
-  "@keyframes approved-otter-typing-bob",
+  "@keyframes approved-otter-paw-tap",
   "@keyframes approved-key-flash-left",
   "@keyframes approved-key-flash-right",
 ];
@@ -76,20 +78,24 @@ for (const token of requiredCss) {
 
 const imageRule = css.match(/\.domestic-loading-otter\.otter-approved-image\s*\{([\s\S]*?)\}/)?.[1] || "";
 const stageRule = css.match(/\.otter-approved-stage\s*\{([\s\S]*?)\}/)?.[1] || "";
+const pawRule = css.match(/\.otter-typing-paw-layer\s*\{([\s\S]*?)\}/)?.[1] || "";
 if (/animation\s*:/.test(imageRule)) throw new Error("approved otter image must not be animated directly");
 if (!/transform:\s*none\s*!important/.test(imageRule)) throw new Error("approved otter image transform must stay disabled");
 if (!/filter:\s*none\s*!important/.test(imageRule)) throw new Error("approved otter image filters must stay disabled");
-if (!/animation:\s*approved-otter-typing-bob/.test(stageRule)) {
-  throw new Error("approved otter stage movement is missing");
+if (/animation\s*:/.test(stageRule)) {
+  throw new Error("approved otter stage must stay still");
 }
-if (!/transform-origin:\s*50% 82%/.test(stageRule)) {
-  throw new Error("approved otter stage movement origin is missing");
+if (!/clip-path:\s*ellipse\(/.test(pawRule)) {
+  throw new Error("real-paw isolation mask is missing");
 }
-if (/rotate\(/.test(stageRule) || /rotate\(/.test(css.match(/@keyframes approved-otter-typing-bob\s*\{([\s\S]*?)\n\}/)?.[1] || "")) {
-  throw new Error("approved otter movement must not rock or rotate");
+if (!/animation:\s*approved-otter-paw-tap/.test(pawRule)) {
+  throw new Error("isolated paw typing movement is missing");
 }
-if (!/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.otter-approved-stage[\s\S]*animation:\s*none\s*!important/.test(css)) {
-  throw new Error("reduced-motion fallback for approved otter stage is missing");
+if ((renderer.match(/data:image\/webp;base64,/g) || []).length !== 1) {
+  throw new Error("approved otter raster must be embedded only once");
+}
+if (!/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.otter-typing-paw-layer,[\s\S]*animation:\s*none\s*!important/.test(css)) {
+  throw new Error("reduced-motion fallback for the typing paw is missing");
 }
 
-console.log(`exact approved otter raster verified unchanged with stage movement (${digest}, ${imageBase64.length} base64 chars)`);
+console.log(`exact approved otter raster verified unchanged with isolated paw typing (${digest}, ${imageBase64.length} base64 chars)`);
