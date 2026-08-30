@@ -1,13 +1,14 @@
 # Approved otter loading modal contract
 
 The domestic product-search loader must use the approved otter character raster.
-The character image is hash-pinned by the patch and verification scripts and must
-not be redrawn, filtered, transformed, or animated directly.
+The raster bytes are hash-pinned by the patch and verification scripts and must
+not be redrawn, filtered, or regenerated.
 
 Motion rules:
-- only the two keyboard activity highlights alternate;
-- the approved otter image itself stays completely still and unchanged;
-- reduced-motion mode disables the keyboard highlights.
+- the wrapper around the unchanged otter raster moves in a visible typing rhythm;
+- the movement stays compact: up to 4px vertically and 0.55 degrees of rotation;
+- the two keyboard activity highlights alternate with the typing rhythm;
+- reduced-motion mode disables both stage movement and keyboard highlights.
 
 Modal rules:
 - the overlay covers the entire application viewport and locks background scroll;

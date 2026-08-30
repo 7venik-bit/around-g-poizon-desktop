@@ -66,6 +66,7 @@ const requiredCss = [
   "opacity: 1 !important",
   ".otter-key-flash-left",
   ".otter-key-flash-right",
+  "@keyframes approved-otter-typing-bob",
   "@keyframes approved-key-flash-left",
   "@keyframes approved-key-flash-right",
 ];
@@ -74,8 +75,18 @@ for (const token of requiredCss) {
 }
 
 const imageRule = css.match(/\.domestic-loading-otter\.otter-approved-image\s*\{([\s\S]*?)\}/)?.[1] || "";
+const stageRule = css.match(/\.otter-approved-stage\s*\{([\s\S]*?)\}/)?.[1] || "";
 if (/animation\s*:/.test(imageRule)) throw new Error("approved otter image must not be animated directly");
 if (!/transform:\s*none\s*!important/.test(imageRule)) throw new Error("approved otter image transform must stay disabled");
 if (!/filter:\s*none\s*!important/.test(imageRule)) throw new Error("approved otter image filters must stay disabled");
+if (!/animation:\s*approved-otter-typing-bob/.test(stageRule)) {
+  throw new Error("approved otter stage movement is missing");
+}
+if (!/transform-origin:\s*58% 78%/.test(stageRule)) {
+  throw new Error("approved otter stage movement origin is missing");
+}
+if (!/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.otter-approved-stage[\s\S]*animation:\s*none\s*!important/.test(css)) {
+  throw new Error("reduced-motion fallback for approved otter stage is missing");
+}
 
-console.log(`exact approved otter raster verified unchanged (${digest}, ${imageBase64.length} base64 chars)`);
+console.log(`exact approved otter raster verified unchanged with stage movement (${digest}, ${imageBase64.length} base64 chars)`);
