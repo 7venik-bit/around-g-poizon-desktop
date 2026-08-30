@@ -20,7 +20,7 @@ process.exit(0);
 const fail = (message) => { throw new Error(`simplified official/Naver search verification failed: ${message}`); };
 
 if (!main.includes('if (chinaRecentSales < 30 || localRecentSales < 30) return [];')) fail("low-selling size rows can still enter domestic search");
-if (!main.includes('sanitizeDomesticQuery([title, articleNumber].filter(Boolean).join(" "))')) fail("official mall does not use product name plus product code only");
+if (!main.includes('sanitizeDomesticProductCode(articleNumber) || sanitizeDomesticQuery(title)')) fail("official mall does not use exact product code first");
 if (!relay.includes('{ store: "네이버 패션타운", linkOnly: true, fashionTown: "brand-store", renderCount: true }')) fail("single Naver Fashion Town source is missing");
 const sourceBlock = relay.match(/const sources = \[[\s\S]*?\n  \];/)?.[0] || "";
 if (!sourceBlock) fail("domestic source list was not found");

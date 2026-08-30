@@ -25,9 +25,9 @@ main = replaceOnce(
 );
 main = replaceOnce(
   main,
-  '        const searchQuery = String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();',
   '        const searchQuery = interactiveOfficialSearch\n          ? sanitizeDomesticQuery([title, articleNumber].filter(Boolean).join(" "))\n          : String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();',
-  "official mall title plus product-code query",
+  '        const searchQuery = interactiveOfficialSearch\n          ? sanitizeDomesticProductCode(articleNumber) || sanitizeDomesticQuery(title)\n          : String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();',
+  "official mall exact product-code query",
 );
 // The canonical application now owns Naver's visible card-list flow. Keep the
 // legacy single-source transformations disabled so release builds cannot

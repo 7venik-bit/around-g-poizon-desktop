@@ -7,6 +7,7 @@ import {
   classifySsgProductEvidence,
   detectedRetailer,
   isPlatformShoppingProductUrl,
+  isTrustedNaverFashionProductCard,
   isConsignmentOperatedProduct,
   isOverseasPurchaseProduct,
   countLinkedSearchProducts,
@@ -1066,6 +1067,47 @@ test("official-store result cards without a visible model code are displayed fro
   assert.equal(result.products[0].detailArticleVerificationRequired, false);
   assert.equal(result.products[0].detectedArticleNumber, "");
   assert.equal(result.products[0].url, "https://dk-on.com/DESCENTE/goods/detail/12345");
+});
+
+test("Naver Fashion Town keeps a brand-direct card that links to the external official mall", () => {
+  const card = {
+    productUrl: "https://dk-on.com/DESCENTE/goods/detail/SR123UPS11",
+    title: "[데상트] 홍태준 착용 터프 폴로 반팔 티셔츠",
+    text: "데상트 브랜드직영몰 [데상트] 홍태준 착용 터프 폴로 반팔 티셔츠 84,550원",
+    markup: "<article><span>브랜드직영몰</span><strong>데상트</strong></article>",
+    imageUrl: "https://cdn.example/SR123UPS11.jpg",
+    imageLinkedToProduct: true,
+    officialBrandStoreLabelMatched: true,
+  };
+  assert.equal(isPlatformShoppingProductUrl(card.productUrl), false);
+  assert.equal(isTrustedNaverFashionProductCard(card), true);
+
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    pageText: "SR123UPS11 검색결과 전체 1개 브랜드직영몰 1개",
+    selectedChannelCount: 1,
+    productCards: [card],
+  }), "네이버 패션타운", "SR123UPS11", "데상트", "데상트 남녀공용 카라 셔츠");
+  assert.equal(result.count, 1);
+  assert.equal(result.products.length, 1);
+  assert.equal(result.presenceConfirmed, true);
+  assert.equal(result.absenceConfirmed, false);
+});
+
+test("Lotte exact zero with unrelated fallback recommendations is product absence", () => {
+  const result = analyzeRenderedChannelProducts(JSON.stringify({
+    pageText: "SR123UPS11 검색 결과가 없어 'sr' 결과를 제공합니다.",
+    selectedChannelEmpty: true,
+    productCards: [{
+      productUrl: "https://www.lotteon.com/p/product/PD000001",
+      title: "스포츠리서치 오메가3",
+      text: "스포츠리서치 오메가3 58,500원",
+      imageUrl: "https://cdn.example/fish-oil.jpg",
+      imageLinkedToProduct: true,
+    }],
+  }), "롯데온", "SR123UPS11", "데상트", "데상트 남녀공용 카라 셔츠");
+  assert.equal(result.count, 0);
+  assert.deepEqual(result.products, []);
+  assert.equal(result.absenceConfirmed, true);
 });
 
 test("a transient Musinsa server failure is retried once", async () => {

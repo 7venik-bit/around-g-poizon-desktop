@@ -2303,6 +2303,10 @@ function renderDomestic(result, sourceProduct = {}) {
       return { label: "재고 없음", className: "soldout" };
     }
     if (matchedProducts.length) return { label: "재고·사이즈 확인 필요", className: "pending" };
+    if (globalThis.AroundGDomesticVerdict?.sourceVerdict) {
+      const verdict = globalThis.AroundGDomesticVerdict.sourceVerdict(source, matchedProducts);
+      return { label: verdict.label, className: verdict.className };
+    }
     if (source.securityVerificationRequired) return { label: "보안 확인 필요", className: "pending" };
     if (source.loginRequired) return { label: "로그인 필요", className: "pending" };
     const failureLabels = {

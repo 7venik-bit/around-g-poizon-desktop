@@ -49,6 +49,7 @@ const [
   searchServiceMenuSource,
   searchServiceMenuCss,
   sourcingViewSource,
+  domesticResultVerdictSource,
   domesticInlineResultsSource,
   domesticInlineResultsCss,
 ] = await Promise.all([
@@ -57,6 +58,7 @@ const [
   readFile(new URL("./src/search-service-menu.js", import.meta.url), "utf8"),
   readFile(new URL("./src/search-service-menu.css", import.meta.url), "utf8"),
   readFile(new URL("./src/sourcing-view.js", import.meta.url), "utf8"),
+  readFile(new URL("./src/domestic-result-verdict.js", import.meta.url), "utf8"),
   readFile(new URL("./src/domestic-inline-results.js", import.meta.url), "utf8"),
   readFile(new URL("./src/domestic-inline-results.css", import.meta.url), "utf8"),
 ]);
@@ -104,10 +106,10 @@ app.on("browser-window-created", (_event, window) => {
       await window.webContents.insertCSS(`${excelColumnLayoutCss}\n${searchServiceMenuCss}\n${domesticInlineResultsCss}`);
       await window.webContents.executeJavaScript(excelColumnLayoutSource, true);
       await window.webContents.executeJavaScript(searchServiceMenuSource, true);
+      await window.webContents.executeJavaScript(domesticResultVerdictSource, true);
       await window.webContents.executeJavaScript(sourcingViewSource, true);
-      // Load the rightmost-cell retailer list from its canonical source as well.
-      // The postinstall patch remains a packaging fallback, but the runtime UI no
-      // longer depends on that generated source mutation being present.
+      // Load the rightmost-cell retailer list from its canonical source. Build
+      // installation no longer injects a second copy into sourcing-view.js.
       await window.webContents.executeJavaScript(domesticInlineResultsSource, true);
     } catch (error) {
       console.error("Renderer enhancement load failed", error);

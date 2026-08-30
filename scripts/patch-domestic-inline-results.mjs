@@ -1,15 +1,13 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 
-const sourcingPath = new URL("../src/sourcing-view.js", import.meta.url);
-const overridePath = new URL("../src/domestic-inline-results.js", import.meta.url);
-let sourcing = String(await readFile(sourcingPath, "utf8")).replace(/\r\n/g, "\n");
-const override = String(await readFile(overridePath, "utf8")).replace(/\r\n/g, "\n").trim();
-
-const marker = "data-domestic-inline-list-style";
-if (sourcing.includes(marker)) {
-  console.log("domestic inline-list renderer already applied");
-  process.exit(0);
+// Legacy compatibility command. The retailer list and verdict engine are
+// loaded directly at runtime; never append generated code to sourcing-view.
+const bootstrap = String(await readFile(new URL("../bootstrap.mjs", import.meta.url), "utf8"));
+const index = String(await readFile(new URL("../src/index.html", import.meta.url), "utf8"));
+if (!bootstrap.includes("domesticInlineResultsSource") || !bootstrap.includes("domesticResultVerdictSource")) {
+  throw new Error("canonical domestic runtime loaders are missing");
 }
-
-await writeFile(sourcingPath, `${sourcing.trimEnd()}\n\n${override}\n`, "utf8");
-console.log("domestic search results patched to right-column inline list UI");
+if (!index.includes("domestic-result-verdict.js")) {
+  throw new Error("canonical domestic verdict script is missing from index.html");
+}
+console.log("domestic inline renderer already uses canonical runtime sources; no source mutation applied");
