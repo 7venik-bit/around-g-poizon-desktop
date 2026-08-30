@@ -137,6 +137,10 @@
     return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
   }
 
+  function sourcingPoizonPrice(product = {}) {
+    return numericDomesticPrice(product?.averagePrice);
+  }
+
   function domesticProductShipping(product = {}) {
     for (const key of ["shippingFee", "deliveryFee", "shippingPrice", "deliveryPrice"]) {
       if (!Object.prototype.hasOwnProperty.call(product, key)) continue;
@@ -219,7 +223,7 @@
 
   function installDomesticRenderer() {
     try {
-      if (typeof renderDomestic !== "function" || renderDomestic.__aroundGMusinsaList) return;
+      if (typeof renderDomestic !== "function" || renderDomestic.__aroundGPriceComparison) return;
       const listRenderer = function sourcingRenderDomestic(result, sourceProduct = {}) {
         if (!result) {
           return `<span class="inventory-help">국내 상품 검색을 누르면 판매처별 일치 상품을 한 줄씩 표시합니다. 재고는 판매처에서 직접 확인하세요.</span>`;
@@ -248,7 +252,7 @@
           return false;
         };
         const sourceForProduct = (product) => sources.find((source) => sourceOwnsProduct(source, product)) || {};
-        const poizonPrice = verifiedExcelProductPoizonPrice(sourceProduct);
+        const poizonPrice = sourcingPoizonPrice(sourceProduct);
         const sourceAction = (source, product = {}, label = "판매처 열기") => {
           const productUrl = String(product?.url || "").trim();
           const openUrl = String(productUrl || source?.verifiedProductUrl || source?.officialProductUrl
@@ -323,6 +327,7 @@
         </div>`;
       };
       listRenderer.__aroundGMusinsaList = true;
+      listRenderer.__aroundGPriceComparison = true;
       renderDomestic = listRenderer;
     } catch (error) {
       console.warn("[sourcing-view] domestic renderer install skipped", error);
@@ -379,7 +384,7 @@
 
   function installProductRenderer() {
     try {
-      if (typeof renderExcelProductRows !== "function" || renderExcelProductRows.__aroundGSourcingView) return;
+      if (typeof renderExcelProductRows !== "function" || renderExcelProductRows.__aroundGPriceComparison) return;
       const originalRenderExcelProductRows = renderExcelProductRows;
       const sourcingRenderer = function sourcingRenderExcelProductRows(file, products = []) {
         try {
@@ -394,7 +399,7 @@
             const key = pageKeys[index];
             const result = excelPreviewSearchResults.get(key);
             const referenceProduct = highestSizeByIdentity.get(sourcingProductIdentity(product)) || product;
-            const poizonPrice = verifiedExcelProductPoizonPrice(referenceProduct);
+            const poizonPrice = sourcingPoizonPrice(referenceProduct);
             const comparison = domesticPriceComparison(result, poizonPrice);
             const search = domesticSearchPresentation(result);
             const groupClass = index % 2 === 0 ? "excel-product-group-blue" : "excel-product-group-amber";
@@ -425,6 +430,7 @@
         }
       };
       sourcingRenderer.__aroundGSourcingView = true;
+      sourcingRenderer.__aroundGPriceComparison = true;
       renderExcelProductRows = sourcingRenderer;
 
       queueMicrotask(() => {
