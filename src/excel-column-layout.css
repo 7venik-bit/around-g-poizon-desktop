@@ -1,3 +1,5 @@
+@import url("./domestic-loading-overlay.css");
+
 #excel-preview-filters{grid-template-columns:minmax(150px,1fr) minmax(180px,1.2fr) minmax(180px,1fr) repeat(4,auto)}
 #excel-hide-common-columns,#excel-show-hidden-columns{height:32px;padding:6px 9px;white-space:nowrap}
 #excel-preview-grid table{table-layout:fixed}
