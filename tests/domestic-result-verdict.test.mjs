@@ -52,15 +52,18 @@ test("completed exact zero is product absence, not confirmation failure", () => 
   assert.equal(parallel.label, "상품 없음");
 });
 
-test("confirmation failure remains reserved for a technical failure without product evidence", () => {
+test("technical failure exposes its actual stage and internal code", () => {
   const failed = sourceVerdict({
     store: "브랜드 공식몰",
     count: 0,
     verificationFailed: true,
     verificationReason: "page_load_failed",
+    verificationStage: "page_navigation",
   });
   assert.equal(failed.state, "failed");
-  assert.equal(failed.label, "확인 실패");
+  assert.equal(failed.label, "검색 페이지 연결 실패 · page_load_failed");
+  assert.equal(failed.reason, "page_load_failed");
+  assert.equal(failed.stage, "page_navigation");
 });
 
 test("result summary uses the same canonical verdict", () => {

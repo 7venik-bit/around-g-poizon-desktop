@@ -13,11 +13,18 @@ test("visible positive total on the exact Naver result URL bypasses the legacy c
   }, "SR123UPS11"), true);
 });
 
-test("stored result URL alone is not visible product evidence", () => {
+test("exact result URL bypasses early failure and defers evidence to final capture", () => {
   assert.equal(isNaverRenderedResultReady({
     url: "https://shopping.naver.com/window/search/fashion-group?q=SR123UPS11",
     text: "'SR123UPS11'에 대한 패션타운 검색결과입니다.",
     resultMatched: false,
+  }, "SR123UPS11"), true);
+});
+
+test("unrelated Naver page cannot bypass the search gate", () => {
+  assert.equal(isNaverRenderedResultReady({
+    url: "https://shopping.naver.com/home",
+    text: "SR123UPS11",
   }, "SR123UPS11"), false);
 });
 
@@ -81,6 +88,7 @@ test("main process uses the finalizer before the generic marketplace matcher", a
   assert.match(main, /visibleResultCountObserved/);
   assert.match(main, /presenceConfirmed: result\?\.presenceConfirmed === true/);
   assert.match(main, /naverAllSearchVerdict: result\?\.naverAllSearchVerdict \|\| null/);
+  assert.match(main, /verificationDiagnostics: result\?\.verificationDiagnostics/);
   assert.ok(
     main.indexOf("if (isNaverRenderedResultReady(state, exactQuery)) return true;")
       < main.indexOf("return await waitForNaverSearchResultsStable(searchWindow, exactQuery);"),

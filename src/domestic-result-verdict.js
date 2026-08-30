@@ -6,6 +6,26 @@
     return Number.isFinite(count) && count >= 0 ? count : null;
   };
 
+  const failureLabels = Object.freeze({
+    naver_shopping_click_failed: "네이버 쇼핑 진입 실패",
+    fashion_town_click_failed: "패션타운 진입 실패",
+    search_submission_failed: "검색 실행 확인 실패",
+    result_parse_failed: "검색 결과 판독 실패",
+    result_analysis_failed: "검색 결과 분석 실패",
+    page_load_timeout: "검색 페이지 응답 지연",
+    page_load_failed: "검색 페이지 연결 실패",
+    network_error: "판매처 연결 실패",
+    security_verification_required: "보안 확인 필요",
+    login_required: "로그인 필요",
+    channel_selection_failed: "판매 채널 선택 실패",
+    channel_count_detection_failed: "결과 숫자 인식 실패",
+    overview_channel_card_collection_failed: "결과 카드 수집 실패",
+    ssg_channel_evidence_mismatch: "SSG 결과 판독 실패",
+    search_query_missing: "검색어 누락",
+    naver_result_not_settled: "네이버 결과 대기 중",
+    unknown_search_failure: "검색 처리 실패",
+  });
+
   const sourceVerdict = (source = {}, matchedProducts = []) => {
     const products = Array.isArray(matchedProducts) ? matchedProducts.filter(Boolean) : [];
     const count = finiteCount(source?.count);
@@ -47,7 +67,17 @@
     }
 
     if (source?.verificationFailed === true) {
-      return { state: "failed", className: "pending", count: 0, label: "확인 실패" };
+      const reason = String(source?.verificationReason || "unknown_search_failure");
+      const stage = String(source?.verificationStage || source?.verificationDiagnostics?.stage || "unknown");
+      return {
+        state: "failed",
+        className: "pending",
+        count: 0,
+        label: `${failureLabels[reason] || "기술 오류"} · ${reason}`,
+        reason,
+        stage,
+        diagnostics: source?.verificationDiagnostics || null,
+      };
     }
     if (source?.verificationPending === true) {
       return { state: "pending", className: "pending", count: 0, label: "확인 중" };

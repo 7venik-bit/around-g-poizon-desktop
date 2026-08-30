@@ -25,9 +25,10 @@ export function isNaverRenderedResultReady(state = {}, query = "") {
   const queryVisible = compact(text).includes(expected);
   const positiveVisibleCount = /(?:전체|검색\s*결과)\s*[1-9][\d,]*\s*개/i.test(text);
 
-  // Naver can change the card links while leaving the exact result URL and
-  // visible count intact. Those three signals already prove search success.
-  return exactResultUrl && queryVisible && positiveVisibleCount;
+  // Reaching the exact query result URL proves that the input and magnifier
+  // action succeeded. The final capture owns the product/empty decision; an
+  // older card selector must not terminate the search before that capture.
+  return exactResultUrl && (queryVisible || positiveVisibleCount || compact(decodedUrl).includes(expected));
 }
 
 const priceNumber = (value) => {
@@ -72,6 +73,14 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
     ? Math.max(0, Number(snapshot.visibleResultCount)) : null;
   const explicitEmpty = snapshot?.selectedChannelEmpty === true
     || snapshot?.visibleResultCountObserved === true && visibleCount === 0;
+  const verificationDiagnostics = {
+    stage: "naver_result_capture",
+    resolvedUrl: String(resolvedSearchUrl || ""),
+    visibleResultCount: visibleCount,
+    visibleResultCountObserved: snapshot?.visibleResultCountObserved === true,
+    productCardCount: cards.length,
+    extractedProductCount: products.length,
+  };
 
   if (products.length > 0) {
     return {
@@ -84,6 +93,8 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
       resolvedSearchUrl,
       naverAllSearchVerdict: "confirmed",
       verificationPending: false,
+      verificationStage: "naver_result_capture",
+      verificationDiagnostics,
     };
   }
 
@@ -98,6 +109,8 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
       resolvedSearchUrl,
       naverAllSearchVerdict: "absent",
       verificationPending: false,
+      verificationStage: "naver_result_capture",
+      verificationDiagnostics,
     };
   }
 
@@ -132,6 +145,8 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
       naverAllSearchVerdict: "confirmed",
       verificationPending: false,
       individualLinksPending: true,
+      verificationStage: "naver_result_capture",
+      verificationDiagnostics,
     };
   }
 
@@ -147,5 +162,7 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
     verificationPending: true,
     verificationReason: "naver_result_not_settled",
     visibleResultCount: visibleCount,
+    verificationStage: "naver_result_capture",
+    verificationDiagnostics,
   };
 }

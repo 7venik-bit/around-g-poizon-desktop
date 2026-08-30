@@ -22,11 +22,73 @@ replaceOnce(
   String.raw`    const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));
     if (state && !/페이지를\s*찾을\s*수\s*없습니다/.test(state.text)`,
   String.raw`    const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));
-    // The exact result URL plus the visible query and a positive total prove
-    // the search succeeded even if Naver changed the product-link selector.
+    // Reaching the exact query result URL proves the input and magnifier action
+    // succeeded. Final capture decides product presence or authoritative zero.
     if (isNaverRenderedResultReady(state, exactQuery)) return true;
     if (state && !/페이지를\s*찾을\s*수\s*없습니다/.test(state.text)`,
   "positive Naver result before the legacy stability gate",
+);
+
+replaceOnce(
+  String.raw`function renderedSearchFailure(reason, searchWindow = null, details = {}) {
+  return {
+    count: null,
+    products: [],
+    searchCompleted: false,
+    searchSubmitted: details.searchSubmitted === true,
+    verificationReason: String(reason || "search_failed"),
+    securityVerificationRequired: details.securityVerificationRequired === true,
+    loginRequired: details.loginRequired === true,
+    resolvedSearchUrl: String(
+      details.resolvedSearchUrl
+      || (!searchWindow?.isDestroyed?.() ? searchWindow?.webContents?.getURL?.() : "")
+      || "",
+    ),
+  };
+}`,
+  String.raw`function renderedSearchFailure(reason, searchWindow = null, details = {}) {
+  const verificationReason = String(reason || "unknown_search_failure");
+  const resolvedSearchUrl = String(
+    details.resolvedSearchUrl
+    || (!searchWindow?.isDestroyed?.() ? searchWindow?.webContents?.getURL?.() : "")
+    || "",
+  );
+  const stageByReason = {
+    naver_shopping_click_failed: "naver_navigation",
+    fashion_town_click_failed: "naver_navigation",
+    search_submission_failed: "search_submission",
+    search_query_missing: "search_submission",
+    result_parse_failed: "result_capture",
+    result_analysis_failed: "result_capture",
+    overview_channel_card_collection_failed: "result_capture",
+    channel_count_detection_failed: "result_capture",
+    page_load_timeout: "page_navigation",
+    page_load_failed: "page_navigation",
+    network_error: "page_navigation",
+    security_verification_required: "access_verification",
+    login_required: "access_verification",
+  };
+  const verificationStage = String(details.verificationStage || stageByReason[verificationReason] || "unknown");
+  return {
+    count: null,
+    products: [],
+    searchCompleted: false,
+    searchSubmitted: details.searchSubmitted === true,
+    verificationReason,
+    verificationStage,
+    verificationDiagnostics: {
+      stage: verificationStage,
+      reason: verificationReason,
+      resolvedUrl: resolvedSearchUrl,
+      visibleResultCount: null,
+      productCardCount: 0,
+    },
+    securityVerificationRequired: details.securityVerificationRequired === true,
+    loginRequired: details.loginRequired === true,
+    resolvedSearchUrl,
+  };
+}`,
+  "failure stage diagnostics",
 );
 
 replaceOnce(
@@ -103,7 +165,7 @@ replaceOnce(
 
 replaceOnce(
   '        verificationReason: String(result?.verificationReason || ""),',
-  '        verificationReason: String(result?.verificationReason || ""),\n        naverAllSearchVerdict: result?.naverAllSearchVerdict || null,',
+  '        verificationReason: String(result?.verificationReason || ""),\n        verificationStage: String(result?.verificationStage || result?.verificationDiagnostics?.stage || ""),\n        verificationDiagnostics: result?.verificationDiagnostics || {\n          stage: String(result?.verificationStage || "result_aggregation"),\n          reason: String(result?.verificationReason || ""),\n          resolvedUrl: String(result?.resolvedSearchUrl || source.searchUrl || ""),\n          visibleResultCount: Number.isFinite(count) ? Number(count) : null,\n          productCardCount: Number(result?.candidateCount || result?.products?.length || 0),\n        },\n        naverAllSearchVerdict: result?.naverAllSearchVerdict || null,',
   "Naver verdict propagation",
 );
 
