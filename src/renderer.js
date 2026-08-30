@@ -971,9 +971,7 @@ function showDomesticSearchOverlay(startedAt, completedCount, totalCount, curren
   overlay.innerHTML = `<div class="domestic-search-overlay-card">
     ${renderDomesticLoading(startedAt)}
     <p class="domestic-overlay-count"><strong>${Number(completedCount).toLocaleString("ko-KR")}</strong> / ${Number(totalCount).toLocaleString("ko-KR")}개 처리 · ${percent}%</p>
-    <div class="domestic-overlay-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}">
-      <span style="width:${percent}%"></span>
-    </div>
+    <progress class="domestic-overlay-progress" max="100" value="${percent}" aria-label="상품 검색 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}">${percent}%</progress>
     <p class="domestic-overlay-current">${article ? `현재 상품번호 · <b>${text(article)}</b>` : "검색 준비 중입니다."}</p>
     <p class="domestic-overlay-guide">검색창은 백그라운드에서 작동합니다. 완료될 때까지 잠시 기다려 주세요.</p>
     <button type="button" class="domestic-overlay-stop">검색 중지</button>
