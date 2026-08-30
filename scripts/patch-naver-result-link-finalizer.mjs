@@ -19,6 +19,24 @@ replaceOnce(
 );
 
 replaceOnce(
+  '  const naverPortalSource = /^네이버\\s/.test(String(source.store || ""));',
+  '  const naverPortalSource = /^네이버\\s/.test(String(source.store || ""));\n  const directNaverFashionResult = naverPortalSource\n    && String(source.store || "") === "네이버 패션타운"\n    && /shopping\\.naver\\.com\\/window\\/search\\//i.test(url);',
+  "direct Naver Fashion Town result route",
+);
+
+replaceOnce(
+  '      const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;',
+  '      // Fashion Town already provides an exact product-code result URL.\\n      // Load that URL directly instead of reopening Naver home and replaying\\n      // menu/input clicks that can fail before the usable result page.\\n      const initialUrl = directNaverFashionResult ? url\\n        : naverPortalSource ? "https://www.naver.com/" : url;'.replaceAll('\\n', '\n'),
+  "direct Naver result initial URL",
+);
+
+replaceOnce(
+  '      if (interactiveSiteSearch) {',
+  '      if (interactiveSiteSearch && !directNaverFashionResult) {',
+  "skip redundant Naver menu and search submission",
+);
+
+replaceOnce(
   String.raw`    const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));
     if (state && !/페이지를\s*찾을\s*수\s*없습니다/.test(state.text)`,
   String.raw`    const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));

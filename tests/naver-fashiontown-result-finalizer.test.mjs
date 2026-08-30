@@ -91,6 +91,9 @@ test("main process uses the finalizer before the generic marketplace matcher", a
   assert.match(main, /verificationDiagnostics: result\?\.verificationDiagnostics/);
   assert.match(main, /not the rejected promise or its error code/);
   assert.doesNotMatch(main, /const documentReady = aborted && \^\/https/);
+  assert.match(main, /const directNaverFashionResult = naverPortalSource/);
+  assert.match(main, /const initialUrl = directNaverFashionResult \? url/);
+  assert.match(main, /if \(interactiveSiteSearch && !directNaverFashionResult\)/);
   assert.ok(
     main.indexOf("if (isNaverRenderedResultReady(state, exactQuery)) return true;")
       < main.indexOf("return await waitForNaverSearchResultsStable(searchWindow, exactQuery);"),
