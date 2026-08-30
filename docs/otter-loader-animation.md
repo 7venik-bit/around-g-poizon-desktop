@@ -5,10 +5,15 @@ The raster bytes are hash-pinned by the patch and verification scripts and must
 not be redrawn, filtered, or regenerated.
 
 Motion rules:
-- the wrapper around the unchanged otter raster moves in a visible typing rhythm;
-- the movement stays compact: up to 4px vertically and 0.55 degrees of rotation;
-- the two keyboard activity highlights alternate with the typing rhythm;
+- the unchanged otter raster moves only with a slow, subtle vertical typing rhythm;
+- rotation and horizontal movement are forbidden because they make the body, laptop, and shadow rock unnaturally;
+- vertical movement stays within 2px and the two keyboard highlights alternate every 0.56 seconds;
 - reduced-motion mode disables both stage movement and keyboard highlights.
+
+Progress rules:
+- progress starts empty at 0%;
+- the native progress value equals the displayed completed/total percentage;
+- the blue fill grows from left to right and reaches the end only at 100%.
 
 Modal rules:
 - the overlay covers the entire application viewport and locks background scroll;

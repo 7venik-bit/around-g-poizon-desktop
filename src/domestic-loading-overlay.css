@@ -18,8 +18,8 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   width: 92px;
   max-width: 100%;
   line-height: 0;
-  transform-origin: 58% 78%;
-  animation: approved-otter-typing-bob .64s ease-in-out infinite;
+  transform-origin: 50% 82%;
+  animation: approved-otter-typing-bob 1.12s cubic-bezier(.37, 0, .63, 1) infinite;
   will-change: transform;
 }
 
@@ -56,13 +56,13 @@ body:has(> .domestic-search-overlay:not([hidden])) {
 .otter-key-flash-left {
   left: 47%;
   top: 78%;
-  animation: approved-key-flash-left .38s steps(2, end) infinite;
+  animation: approved-key-flash-left .56s ease-in-out infinite;
 }
 
 .otter-key-flash-right {
   left: 56%;
   top: 82%;
-  animation: approved-key-flash-right .38s steps(2, end) infinite;
+  animation: approved-key-flash-right .56s ease-in-out infinite;
 }
 
 @keyframes approved-key-flash-left {
@@ -76,10 +76,10 @@ body:has(> .domestic-search-overlay:not([hidden])) {
 }
 
 @keyframes approved-otter-typing-bob {
-  0%, 100% { transform: translate3d(0, 0, 0) rotate(-.35deg); }
-  25% { transform: translate3d(-1px, -4px, 0) rotate(.45deg); }
-  50% { transform: translate3d(0, 1px, 0) rotate(-.2deg); }
-  75% { transform: translate3d(1px, -3px, 0) rotate(.55deg); }
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  25% { transform: translate3d(0, -1.5px, 0) scale(1.002); }
+  50% { transform: translate3d(0, .5px, 0) scale(.999); }
+  75% { transform: translate3d(0, -2px, 0) scale(1.001); }
 }
 
 .domestic-search-overlay {
@@ -216,23 +216,33 @@ body:has(> .domestic-search-overlay:not([hidden])) {
 }
 
 .domestic-overlay-progress {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  display: block !important;
   width: min(430px, 92%) !important;
   height: 10px !important;
   margin: 14px 0 10px !important;
+  padding: 0 !important;
   overflow: hidden !important;
+  border: 0 !important;
   border-radius: 999px !important;
   background: #e4ebf3 !important;
   box-shadow: inset 0 1px 2px rgba(23, 54, 93, .11) !important;
 }
 
-.domestic-overlay-progress > span {
-  display: block !important;
-  min-width: 0 !important;
-  max-width: 100% !important;
-  height: 100% !important;
+.domestic-overlay-progress::-webkit-progress-bar {
+  border-radius: inherit !important;
+  background: #e4ebf3 !important;
+}
+
+.domestic-overlay-progress::-webkit-progress-value {
   border-radius: inherit !important;
   background: linear-gradient(90deg, #2f80ed, #4d9cff) !important;
-  transition: width .3s ease !important;
+}
+
+.domestic-overlay-progress::-moz-progress-bar {
+  border-radius: inherit !important;
+  background: linear-gradient(90deg, #2f80ed, #4d9cff) !important;
 }
 
 .domestic-overlay-current {
