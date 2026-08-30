@@ -26,6 +26,25 @@ sourcing = replaceOnce(
   `        const productRows = products.map((product) => {\n          const source = sourceForProduct(product);\n          const sourceStore = String(source?.store || product?.store || "");\n          const simpleLinkResult = product?.linkOnly === true\n            || sourceStore === "브랜드 공식몰"\n            || /^네이버\\s/.test(sourceStore);\n          if (simpleLinkResult && /^https?:\\/\\//i.test(String(product?.url || ""))) {\n            return \`<div class="sourcing-source-fallback"><strong>\${text(sourceStore || "공식 판매처")}</strong><span>상품 있음</span>\${sourceAction(source, product, "상품 링크")}</div>\`;\n          }\n          const candidateName = product?.title || product?.name || product?.articleNumber || "국내 상품";`,
   "render official and Naver matches as product present plus link",
 );
+sourcing = replaceOnce(
+  sourcing,
+  '            return `<div class="sourcing-source-fallback"><strong>${text(sourceStore || "공식 판매처")}</strong><span>상품 있음</span>${sourceAction(source, product, "상품 링크")}</div>`;',
+  [
+    "            const linkPrice = numericDomesticPrice(product?.price);",
+    "            const linkDifference = linkPrice && poizonPrice ? linkPrice - poizonPrice : null;",
+    '            return `<div class="sourcing-price-row">',
+    '              <strong class="sourcing-price-store">${text(sourceStore || "공식 판매처")}</strong>',
+    '              <span class="sourcing-price-title">검색 결과 링크</span>',
+    '              <strong>${linkPrice ? money(linkPrice) : "가격 확인"}</strong>',
+    '              <span class="sourcing-price-unknown">미확인</span>',
+    '              <span class="sourcing-price-unknown">확인 필요</span>',
+    '              <span class="sourcing-price-unknown">링크 확인</span>',
+    '              <strong class="${Number.isFinite(linkDifference) ? linkDifference < 0 ? "sourcing-price-negative" : "sourcing-price-caution" : "sourcing-price-unknown"}">${signedMoney(linkDifference)}</strong>',
+    '              ${sourceAction(source, product, "열기")}',
+    "            </div>`;",
+  ].join("\n"),
+  "render official and Naver links inside the price comparison",
+);
 await writeFile(sourcingPath, sourcing, "utf8");
 
-console.log("official mall and Naver exact search results now retain the real product URL and render only 상품 있음 + 상품 링크");
+console.log("official mall and Naver exact search results retain the real product URL in the price-comparison table");

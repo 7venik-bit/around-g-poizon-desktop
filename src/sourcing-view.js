@@ -39,6 +39,20 @@
       .sourcing-source-fallback strong{font-size:13px!important;color:#111827!important}
       .sourcing-source-fallback span{font-size:12px!important;color:#6b7280!important}
       .sourcing-list-empty{padding:24px!important;text-align:center!important;color:#6b7280!important;font-size:13px!important}
+      .sourcing-price-comparison{border:1px solid #d7e2ef!important;border-radius:8px!important;overflow-x:auto!important;background:#fff!important}
+      .sourcing-price-row{display:grid!important;grid-template-columns:minmax(90px,125px) minmax(220px,1fr) 90px 82px 92px 88px 92px 82px!important;align-items:center!important;min-height:38px!important;border-bottom:1px solid #e7edf4!important;color:#17365d!important;font-size:10px!important}
+      .sourcing-price-row:last-child{border-bottom:0!important}
+      .sourcing-price-row>*{min-width:0!important;padding:5px 7px!important;text-align:center!important;box-sizing:border-box!important}
+      .sourcing-price-head{min-height:29px!important;background:#243f63!important;color:#fff!important;font-weight:800!important}
+      .sourcing-price-store,.sourcing-price-title{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+      .sourcing-price-title{text-align:left!important}
+      .sourcing-price-positive{color:#047857!important;font-weight:800!important}
+      .sourcing-price-caution{color:#b45309!important;font-weight:800!important}
+      .sourcing-price-negative{color:#dc2626!important;font-weight:800!important}
+      .sourcing-price-unknown{color:#7b8794!important}
+      .sourcing-price-summary{display:flex!important;flex-direction:column!important;gap:2px!important;white-space:nowrap!important}
+      .sourcing-price-summary strong{font-size:10px!important}
+      .sourcing-price-summary small{font-size:8px!important;color:#64748b!important}
       .excel-search-outcome-soldout .sourcing-domestic-search{background:#eef7f0!important;color:#4f7d57!important;border-color:#d4e8d7!important}
       #excel-preview-grid .platform-row{display:grid!important;grid-template-columns:22px 90px minmax(260px,1fr) 74px 88px 110px 70px!important;grid-template-rows:56px!important;gap:0 7px!important;align-items:center!important;min-height:56px!important;padding:3px 0!important;text-align:center!important}
       #excel-preview-grid .platform-row>*{min-width:0!important}
@@ -118,6 +132,56 @@
     return best;
   }
 
+  function numericDomesticPrice(value) {
+    const amount = Number(value || 0);
+    return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+  }
+
+  function domesticProductShipping(product = {}) {
+    for (const key of ["shippingFee", "deliveryFee", "shippingPrice", "deliveryPrice"]) {
+      if (!Object.prototype.hasOwnProperty.call(product, key)) continue;
+      const amount = Number(product[key]);
+      if (Number.isFinite(amount) && amount >= 0) return { known: true, amount: Math.round(amount) };
+    }
+    return { known: false, amount: 0 };
+  }
+
+  function domesticPriceEligibleProduct(product = {}) {
+    const store = String(product.store || product.sourceStore || "");
+    const retailer = String(product.retailerName || "");
+    const parallel = store === "병행수입·편집샵" || store === "SSG 병행수입"
+      || product.ssgClassification === "parallel_import" || retailer.startsWith("병행수입");
+    return (!parallel || product.parallelRetailerVerified === true) && product.inStock !== false;
+  }
+
+  function domesticPriceComparison(result, poizonPrice = 0) {
+    const basePrice = numericDomesticPrice(poizonPrice);
+    const pricedProducts = (Array.isArray(result?.products) ? result.products : [])
+      .filter(domesticPriceEligibleProduct)
+      .map((product) => ({ product, price: numericDomesticPrice(product?.price) }))
+      .filter((entry) => entry.price > 0)
+      .sort((left, right) => left.price - right.price);
+    const lowest = pricedProducts[0] || null;
+    if (!lowest || !basePrice) return {
+      domesticLowest: lowest?.price || 0,
+      difference: null,
+      marginRate: null,
+      className: "sourcing-price-unknown",
+    };
+    const difference = lowest.price - basePrice;
+    const marginRate = lowest.price > 0 ? (difference / lowest.price) * 100 : null;
+    const className = difference < 0 || Number(marginRate) < 10
+      ? "sourcing-price-negative"
+      : marginRate < 20 ? "sourcing-price-caution" : "sourcing-price-positive";
+    return { domesticLowest: lowest.price, difference, marginRate, className };
+  }
+
+  function signedMoney(value) {
+    if (!Number.isFinite(Number(value))) return "–";
+    const amount = Math.round(Number(value));
+    return `${amount > 0 ? "+" : amount < 0 ? "−" : ""}${money(Math.abs(amount))}`;
+  }
+
   function domesticSearchPresentation(result) {
     if (globalThis.AroundGDomesticVerdict?.resultPresentation) {
       return globalThis.AroundGDomesticVerdict.resultPresentation(result);
@@ -184,6 +248,7 @@
           return false;
         };
         const sourceForProduct = (product) => sources.find((source) => sourceOwnsProduct(source, product)) || {};
+        const poizonPrice = verifiedExcelProductPoizonPrice(sourceProduct);
         const sourceAction = (source, product = {}, label = "판매처 열기") => {
           const productUrl = String(product?.url || "").trim();
           const openUrl = String(productUrl || source?.verifiedProductUrl || source?.officialProductUrl
@@ -200,45 +265,62 @@
           const source = sourceForProduct(product);
           const candidateName = product?.title || product?.name || product?.articleNumber || "국내 상품";
           const retailer = product?.retailerName || product?.store || source?.store || "판매처";
-          const article = product?.articleNumber || sourceProduct?.articleNumber || sourceProduct?.productCode || "";
-          const official = product?.officialStoreVerified === true || Boolean(source?.officialStatus);
-          const confidence = Number(product?.confidence || 0);
-          const confidenceText = confidence > 0 ? `일치도 ${confidence}%` : "";
-          return `<article class="sourcing-product-list-row">
-            <div class="sourcing-product-thumb">${product?.imageUrl ? `<img src="${text(product.imageUrl)}" alt="${text(candidateName)}">` : "이미지 없음"}</div>
-            <div class="sourcing-product-info">
-              <div class="sourcing-product-store"><span>${text(retailer)}</span>${official ? `<span class="official">공식</span>` : ""}</div>
-              <h4 class="sourcing-product-title">${text(candidateName)}</h4>
-              <div class="sourcing-product-meta">${article ? `<code>${text(article)}</code>` : ""}${confidenceText ? `<span>${text(confidenceText)}</span>` : ""}</div>
-            </div>
-            <div class="sourcing-product-actions">
-              <strong class="sourcing-product-price">${product?.price ? money(product.price) : "가격 확인"}</strong>
-              ${sourceAction(source, product)}
-            </div>
-          </article>`;
+          const price = numericDomesticPrice(product?.price);
+          const shipping = domesticProductShipping(product);
+          const actualPrice = price && shipping.known ? price + shipping.amount : 0;
+          const difference = price && poizonPrice ? price - poizonPrice : null;
+          const differenceClass = !Number.isFinite(difference) ? "sourcing-price-unknown"
+            : difference < 0 ? "sourcing-price-negative"
+              : difference / Math.max(price, 1) >= 0.2 ? "sourcing-price-positive" : "sourcing-price-caution";
+          const stockLabel = product?.inStock === true ? "재고 있음"
+            : product?.inStock === false ? "품절" : "확인 필요";
+          return `<div class="sourcing-price-row">
+            <strong class="sourcing-price-store">${text(retailer)}</strong>
+            <span class="sourcing-price-title" title="${text(candidateName)}">${text(candidateName)}</span>
+            <strong>${price ? money(price) : "가격 확인"}</strong>
+            <span class="${shipping.known ? "" : "sourcing-price-unknown"}">${shipping.known ? shipping.amount ? money(shipping.amount) : "무료" : "미확인"}</span>
+            <strong class="${actualPrice ? "" : "sourcing-price-unknown"}">${actualPrice ? money(actualPrice) : "확인 필요"}</strong>
+            <span>${text(stockLabel)}</span>
+            <strong class="${differenceClass}">${signedMoney(difference)}</strong>
+            ${sourceAction(source, product, "열기")}
+          </div>`;
         }).join("");
 
         const sourceFallbackRows = sources
           .filter((source) => !products.some((product) => sourceOwnsProduct(source, product)))
-          .filter((source) => Number(source?.count || 0) > 0
+          .filter((source) => source?.resultLinkOnly === true || Number(source?.count || 0) > 0
             || (source?.store === "병행수입·편집샵" && source?.parallelRetailerListEnforced === true && source?.absenceConfirmed === true)
             || source?.verificationPending || source?.verificationFailed)
           .map((source) => {
             const count = Number(source?.count || 0);
             const approvedParallelMissing = source?.store === "병행수입·편집샵"
               && source?.parallelRetailerListEnforced === true && source?.absenceConfirmed === true;
-            const message = approvedParallelMissing
+            const message = source?.resultLinkOnly === true
+              ? "검색 결과 링크"
+              : approvedParallelMissing
               ? "상품없음"
               : count > 0
               ? `검색 결과 ${count.toLocaleString("ko-KR")}개 확인 · 상품 상세는 판매처에서 직접 확인`
               : source?.verificationFailed ? "검색 결과 확인이 완료되지 않았습니다." : "판매처에서 직접 확인이 필요합니다.";
-            return `<div class="sourcing-source-fallback"><strong>${text(source?.store || "판매처")}</strong><span>${text(message)}</span>${sourceAction(source)}</div>`;
+            return `<div class="sourcing-price-row">
+              <strong class="sourcing-price-store">${text(source?.store || "판매처")}</strong>
+              <span class="sourcing-price-title">${text(message)}</span>
+              <span class="sourcing-price-unknown">가격 확인</span>
+              <span class="sourcing-price-unknown">미확인</span>
+              <span class="sourcing-price-unknown">확인 필요</span>
+              <span class="sourcing-price-unknown">링크 확인</span>
+              <span class="sourcing-price-unknown">–</span>
+              ${sourceAction(source, {}, "열기")}
+            </div>`;
           }).join("");
 
         if (!productRows && !sourceFallbackRows) {
-          return `<div class="domestic-source-list sourcing-product-list"><div class="sourcing-list-empty">일치하는 국내 판매 상품을 찾지 못했습니다.</div></div>`;
+          return `<div class="sourcing-price-comparison"><div class="sourcing-list-empty">일치하는 국내 판매 상품을 찾지 못했습니다.</div></div>`;
         }
-        return `<div class="domestic-source-list sourcing-product-list">${productRows}${sourceFallbackRows}</div>`;
+        return `<div class="sourcing-price-comparison">
+          <div class="sourcing-price-row sourcing-price-head"><span>판매처</span><span>상품명</span><span>판매가</span><span>배송비</span><span>실구매가</span><span>재고</span><span>POIZON 대비</span><span>링크</span></div>
+          ${productRows}${sourceFallbackRows}
+        </div>`;
       };
       listRenderer.__aroundGMusinsaList = true;
       renderDomestic = listRenderer;
@@ -307,12 +389,13 @@
           const columns = document.querySelector("#excel-preview-columns");
           const rows = document.querySelector("#excel-preview-rows");
           if (!columns || !rows) return originalRenderExcelProductRows(file, products);
-          columns.innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>사이즈</th><th>사이즈 판매량</th><th>사이즈 최고가</th><th>중국 총판매</th><th>현지 총판매</th><th>국내 상품</th></tr>`;
+          columns.innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>사이즈</th><th>사이즈 판매량</th><th>POIZON 기준가</th><th>국내 최저가</th><th>가격 차이</th><th>예상 마진율</th><th>중국 총판매</th><th>현지 총판매</th><th>국내 상품</th></tr>`;
           rows.innerHTML = products.length ? products.map((product, index) => {
             const key = pageKeys[index];
             const result = excelPreviewSearchResults.get(key);
             const referenceProduct = highestSizeByIdentity.get(sourcingProductIdentity(product)) || product;
             const poizonPrice = verifiedExcelProductPoizonPrice(referenceProduct);
+            const comparison = domesticPriceComparison(result, poizonPrice);
             const search = domesticSearchPresentation(result);
             const groupClass = index % 2 === 0 ? "excel-product-group-blue" : "excel-product-group-amber";
             const productLabel = [product.articleNumber, product.title].filter(Boolean).join(" · ") || "선택 상품";
@@ -325,11 +408,14 @@
               <td class="sourcing-size">${text(referenceProduct.option || product.option || "-")}</td>
               <td><span class="sourcing-size-sales">${text(displaySizeSales(referenceProduct))}</span></td>
               <td>${poizonPrice ? money(poizonPrice) : "가격 없음"}</td>
+              <td class="${comparison.className}">${comparison.domesticLowest ? money(comparison.domesticLowest) : result ? "가격 없음" : "검색 후 계산"}</td>
+              <td class="${comparison.className}">${signedMoney(comparison.difference)}</td>
+              <td class="${comparison.className}"><div class="sourcing-price-summary"><strong>${Number.isFinite(comparison.marginRate) ? `${comparison.marginRate.toFixed(1)}%` : "–"}</strong><small>수수료·배송비 미반영</small></div></td>
               <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td>
               <td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
               <td><button type="button" class="excel-product-search sourcing-domestic-search ${search.className}" data-excel-search-product="${encodeURIComponent(key)}" title="국내 정확 상품 검색" ${result?.loading ? "disabled" : ""}>${text(search.label)}</button></td>
-            </tr>${result && !result.loading ? `<tr class="excel-product-search-detail ${groupClass}"><td colspan="11"><div class="excel-product-search-result-label"><span></span><strong>${text(productLabel)}</strong>의 국내 검색 결과</div>${renderDomestic(result, product)}</td></tr>` : ""}`;
-          }).join("") : `<tr><td class="empty" colspan="11">조건에 맞는 상품이 없습니다.</td></tr>`;
+            </tr>${result && !result.loading ? `<tr class="excel-product-search-detail ${groupClass}"><td colspan="14"><div class="excel-product-search-result-label"><span></span><strong>${text(productLabel)}</strong>의 판매처별 가격 비교</div>${renderDomestic(result, referenceProduct)}</td></tr>` : ""}`;
+          }).join("") : `<tr><td class="empty" colspan="14">조건에 맞는 상품이 없습니다.</td></tr>`;
           hideCategoryColumns();
           relabelDomesticControls();
           return pageKeys;

@@ -12,21 +12,22 @@ test("sourcing view removes category columns from the visible Excel workspace", 
   assert.match(sourcingView, /sourcing-hidden-column/);
 });
 
-test("sourcing product table shows size, size sales and stock instead of category", () => {
+test("sourcing product table shows size, sales and price comparison instead of category", () => {
   assert.match(sourcingView, /<th>사이즈<\/th>/);
   assert.match(sourcingView, /<th>사이즈 판매량<\/th>/);
-  assert.match(sourcingView, /<th>재고<\/th>/);
+  assert.match(sourcingView, /<th>POIZON 기준가<\/th>/);
+  assert.match(sourcingView, /<th>국내 최저가<\/th>/);
+  assert.match(sourcingView, /<th>가격 차이<\/th>/);
+  assert.match(sourcingView, /<th>예상 마진율<\/th>/);
   assert.match(sourcingView, /product\.option/);
   assert.match(sourcingView, /판매량/);
-  assert.match(sourcingView, /재고 있음/);
-  assert.match(sourcingView, /품절/);
 });
 
-test("size stays neutral while stock uses soft state colors", () => {
+test("size stays neutral while price gaps use clear state colors", () => {
   assert.match(sourcingView, /sourcing-size\{color:#111827/);
-  assert.match(sourcingView, /sourcing-stock\.available\{background:#eef7f0;color:#4f7d57/);
-  assert.match(sourcingView, /sourcing-stock\.pending\{background:#fff7ed;color:#ad6b31/);
-  assert.match(sourcingView, /sourcing-stock\.soldout\{background:#f3f4f6;color:#7b8794/);
+  assert.match(sourcingView, /sourcing-price-positive\{color:#047857/);
+  assert.match(sourcingView, /sourcing-price-caution\{color:#b45309/);
+  assert.match(sourcingView, /sourcing-price-negative\{color:#dc2626/);
 });
 
 test("preload injects the sourcing view script", () => {
