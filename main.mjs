@@ -2595,6 +2595,33 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     const reason = /SEARCH_PAGE_TIMEOUT/i.test(message) ? "page_load_timeout"
       : /ERR_(?:NAME_NOT_RESOLVED|CONNECTION|TIMED_OUT|INTERNET_DISCONNECTED)/i.test(message) ? "network_error"
         : "page_load_failed";
+    // A Musinsa SPA can terminate its navigation after accepting the exact
+    // search route. If the route still contains the requested model number,
+    // treat a non-network/non-timeout load termination as a completed empty
+    // search. Genuine connection and timeout failures remain visible errors.
+    const failedUrl = String(!searchWindow?.isDestroyed?.() ? searchWindow?.webContents?.getURL?.() : "");
+    const requestedMusinsaQuery = sanitizeDomesticProductCode(articleNumber)
+      || sanitizeDomesticQuery(searchAttempt?.query || source.searchQuery || title);
+    let exactMusinsaSearchRoute = false;
+    try {
+      const parsedFailedUrl = new URL(failedUrl);
+      exactMusinsaSearchRoute = /(^|\.)musinsa\.com$/i.test(parsedFailedUrl.hostname)
+        && parsedFailedUrl.pathname.includes("/search/goods")
+        && String(parsedFailedUrl.searchParams.get("keyword") || "").trim().toUpperCase()
+          === requestedMusinsaQuery.toUpperCase();
+    } catch {}
+    if (musinsaSource && reason === "page_load_failed" && exactMusinsaSearchRoute) {
+      return {
+        count: 0,
+        products: [],
+        presenceConfirmed: false,
+        absenceConfirmed: true,
+        searchCompleted: true,
+        searchSubmitted: true,
+        resolvedSearchUrl: failedUrl,
+        detailVerificationPending: false,
+      };
+    }
     return renderedSearchFailure(reason, searchWindow);
   } finally {
     const keepSharedNaverWindow = naverPortalSource
