@@ -56,6 +56,7 @@
   };
 
   const resultPresentation = (result) => {
+    if (result?.accessLimitedUntil) return { label: "내일 재시도", className: "pending" };
     if (result?.loading) return { label: "검색 중…", className: "loading" };
     if (result?.error) return { label: "검색 실패", className: "error" };
     if (!result) return { label: "국내 검색", className: "pending" };

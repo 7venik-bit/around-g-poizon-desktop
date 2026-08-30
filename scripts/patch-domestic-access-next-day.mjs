@@ -42,13 +42,14 @@ main = main.slice(0, ssgFailureIndex) + ssgFailureReplacement + main.slice(ssgFa
 await writeFile(mainPath, main, "utf8");
 
 const sourcingPath = new URL("../src/sourcing-view.js", import.meta.url);
-let sourcing = normalizeLf(await readFile(sourcingPath, "utf8"));
-sourcing = replaceOnce(
-  sourcing,
-  "  function domesticSearchPresentation(result) {\n    if (result?.loading)",
-  "  function domesticSearchPresentation(result) {\n    if (result?.accessLimitedUntil) return { label: \"내일 재시도\", className: \"pending\" };\n    if (result?.loading)",
-  "show next-day retry label",
-);
-await writeFile(sourcingPath, sourcing, "utf8");
+const sourcing = normalizeLf(await readFile(sourcingPath, "utf8"));
+const verdict = normalizeLf(await readFile(new URL("../src/domestic-result-verdict.js", import.meta.url), "utf8"));
+const canonicalCooldownLabel = verdict.includes("result?.accessLimitedUntil")
+  && verdict.includes('label: "내일 재시도"');
+const legacyCooldownLabel = sourcing.includes("result?.accessLimitedUntil")
+  && sourcing.includes('label: "내일 재시도"');
+if (!canonicalCooldownLabel && !legacyCooldownLabel) {
+  throw new Error("next-day access patch target missing: canonical retry label");
+}
 
-console.log("temporary mall access blocks are postponed until the next day");
+console.log("temporary mall access blocks use the canonical next-day retry verdict");
