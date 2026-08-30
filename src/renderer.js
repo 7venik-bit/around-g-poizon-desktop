@@ -3488,25 +3488,36 @@ $("#profit-comparison-rows")?.addEventListener("click", async (event) => {
   priceButton.textContent = "가격 확인 중…";
   const product = excelPreviewProductCache.get(key);
   const current = excelPreviewSearchResults.get(key) || { products: [], sources: [] };
-  const response = await window.aroundG.searchDomestic(domesticSearchInput(product, ["naver"], true));
+  let response;
+  try {
+    response = await window.aroundG.lookupDomesticPrice(domesticSearchInput(product, ["naver"], true));
+  } catch (error) {
+    response = {
+      ok: false,
+      message: error instanceof Error ? error.message : "가격 확인 요청에 실패했습니다.",
+    };
+  }
+  let priceLookupError = "";
   if (response?.ok) {
-    const priceResult = response.data || {};
     excelPreviewSearchResults.set(key, {
       ...current,
       error: "",
-      products: [...(current.products || []), ...(priceResult.products || [])],
-      sources: priceResult.sources?.length ? priceResult.sources : (current.sources || []),
+      products: current.products || [],
+      sources: current.sources || [],
       domesticPriceCandidates: [
-        ...(priceResult.domesticPriceCandidates || []),
+        ...(response.candidates || []),
         ...(current.domesticPriceCandidates || []),
       ],
     });
     if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
   } else {
-    priceButton.disabled = false;
-    priceButton.textContent = "가격 다시 시도";
+    priceLookupError = response?.message || "다른 기능은 계속 사용할 수 있습니다.";
   }
   renderProfitComparisons(activeProfitComparisonKeys);
+  if (priceLookupError) {
+    const summary = $("#profit-selection-summary");
+    if (summary) summary.textContent = `가격 확인 실패 · ${priceLookupError}`;
+  }
 });
 $("#profit-back-to-list")?.addEventListener("click", () => {
   document.querySelector('.nav[data-view="products"]')?.click();

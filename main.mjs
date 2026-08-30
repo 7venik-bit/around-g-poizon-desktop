@@ -88,6 +88,7 @@ import {
   isPlatformShoppingProductUrl,
   isTrustedNaverFashionProductCard,
   normalizeRenderedStockEvidence,
+  naverFashionTownUrl,
   parseNaverFashionTownChannelCounts,
   queryDomesticProducts,
   sanitizeDomesticProductCode,
@@ -154,8 +155,11 @@ const inventoryWindows = new Set();
 const officialInteractiveWindows = new Set();
 const domesticLoginWindows = new Map();
 const DOMESTIC_SEARCH_PARTITION = "persist:around-g-domestic-search";
+const DOMESTIC_PRICE_PARTITION = "persist:around-g-domestic-price";
 let domesticSearchGeneration = 0;
 const activeDomesticSearchWindows = new Set();
+const activeDomesticPriceWindows = new Set();
+let domesticPriceLookupQueue = Promise.resolve();
 
 function cancelDomesticSearches() {
   domesticSearchGeneration += 1;
@@ -1185,6 +1189,116 @@ function renderedSearchFailure(reason, searchWindow = null, details = {}) {
       || "",
     ),
   };
+}
+
+async function lookupNaverDomesticPrice(input = {}) {
+  const articleNumber = sanitizeDomesticProductCode(input?.articleNumber || input?.productCode);
+  const brand = sanitizeDomesticQuery(input?.brand);
+  const title = sanitizeDomesticQuery(input?.title);
+  const query = articleNumber || title;
+  if (!query) return { ok: false, message: "가격 검색용 상품번호가 없습니다.", candidates: [] };
+  const searchUrl = naverFashionTownUrl("overview", brand, query);
+  let priceWindow;
+  try {
+    await session.fromPartition(DOMESTIC_PRICE_PARTITION).clearCache();
+    priceWindow = new BrowserWindow({
+      show: false,
+      width: 1360,
+      height: 900,
+      icon: APP_ICON_PATH,
+      webPreferences: {
+        partition: DOMESTIC_PRICE_PARTITION,
+        sandbox: true,
+        backgroundThrottling: false,
+        paintWhenInitiallyHidden: true,
+        offscreen: true,
+      },
+    });
+    activeDomesticPriceWindows.add(priceWindow);
+    priceWindow.on("closed", () => activeDomesticPriceWindows.delete(priceWindow));
+    priceWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
+    try {
+      await Promise.race([
+        priceWindow.loadURL(searchUrl),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("PRICE_LOOKUP_TIMEOUT")), 20_000)),
+      ]);
+    } catch (error) {
+      const currentUrl = String(priceWindow.webContents.getURL() || "");
+      if (!/ERR_ABORTED/i.test(String(error?.message || "")) || !/^https:\/\//i.test(currentUrl)) throw error;
+    }
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      await wait(attempt === 0 ? 1_500 : 500);
+      const snapshot = await priceWindow.webContents.executeJavaScript(`(() => {
+        const visible = (element) => {
+          if (!element) return false;
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+        };
+        const links = [...document.querySelectorAll('a[href*="/window-products/"]')].filter(visible);
+        const seen = new Set();
+        const productCards = [];
+        for (const link of links) {
+          const productUrl = String(link.href || "").split("#")[0];
+          if (!productUrl || seen.has(productUrl)) continue;
+          let card = link;
+          let best = link.parentElement;
+          for (let depth = 0; card?.parentElement && depth < 7; depth += 1) {
+            card = card.parentElement;
+            const body = String(card.innerText || "").replace(/\\s+/g, " ").trim();
+            const ownedLinks = card.querySelectorAll('a[href*="/window-products/"]').length;
+            if (/\\d[\\d,]{2,}\\s*원/.test(body) && body.length < 1800 && ownedLinks <= 3) best = card;
+            if (ownedLinks > 3 || body.length >= 1800) break;
+          }
+          const text = String(best?.innerText || link.innerText || "").replace(/\\s+/g, " ").trim();
+          const prices = [...text.matchAll(/([1-9][\\d,]{2,})\\s*원/g)]
+            .map((match) => Number(match[1].replace(/,/g, "")))
+            .filter((value) => value >= 1_000 && value <= 100_000_000);
+          if (!prices.length) continue;
+          const image = best?.querySelector('img[src],img[data-src]');
+          productCards.push({
+            productUrl,
+            title: String(link.getAttribute("title") || link.getAttribute("aria-label") || link.innerText || text).replace(/\\s+/g, " ").trim().slice(0, 300),
+            text,
+            markup: String(best?.outerHTML || "").slice(0, 12000),
+            price: Math.min(...prices),
+            originalPrice: Math.max(...prices),
+            imageUrl: String(image?.currentSrc || image?.src || image?.dataset?.src || ""),
+            imageLinkedToProduct: Boolean(image),
+          });
+          seen.add(productUrl);
+        }
+        const pageText = String(document.body?.innerText || "").slice(0, 50000);
+        return {
+          productCards,
+          pageText,
+          explicitEmpty: /검색\\s*결과가?\\s*없|검색된\\s*상품이\\s*없/i.test(pageText),
+        };
+      })()`, true).catch(() => null);
+      if (!snapshot) continue;
+      const analyzed = analyzeRenderedChannelProducts(
+        JSON.stringify(snapshot), "네이버 패션타운", articleNumber, brand, title,
+      );
+      const candidates = (analyzed?.products || [])
+        .filter((candidate) => Number(candidate?.price || 0) > 0)
+        .sort((left, right) => Number(left.price) - Number(right.price))
+        .slice(0, 5);
+      if (candidates.length) return { ok: true, searchUrl, candidates };
+      if (snapshot.explicitEmpty) return { ok: true, searchUrl, candidates: [], message: "검색 결과에 상품이 없습니다." };
+    }
+    return { ok: false, searchUrl, candidates: [], message: "일치 상품의 가격을 안전하게 확인하지 못했습니다." };
+  } catch (error) {
+    const timeout = /PRICE_LOOKUP_TIMEOUT/i.test(String(error?.message || ""));
+    return {
+      ok: false,
+      searchUrl,
+      candidates: [],
+      message: timeout ? "가격 확인 시간이 초과되었습니다." : "가격 확인 창을 불러오지 못했습니다.",
+    };
+  } finally {
+    if (priceWindow && !priceWindow.isDestroyed()) priceWindow.destroy();
+    activeDomesticPriceWindows.delete(priceWindow);
+  }
 }
 
 async function readNaverFashionTownChannelCounts(searchWindow) {
@@ -9802,6 +9916,14 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     }
   });
   ipcMain.handle("domestic:cancel", () => cancelDomesticSearches());
+  ipcMain.handle("domestic-price:lookup", (_event, input) => {
+    const task = domesticPriceLookupQueue.then(
+      () => lookupNaverDomesticPrice(input),
+      () => lookupNaverDomesticPrice(input),
+    );
+    domesticPriceLookupQueue = task.then(() => undefined, () => undefined);
+    return task;
+  });
   let categorySearchGeneration = 0;
   ipcMain.handle("explorer:cancel-category", () => {
     categorySearchGeneration += 1;
