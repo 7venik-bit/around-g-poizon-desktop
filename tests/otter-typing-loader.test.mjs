@@ -28,10 +28,13 @@ test("typing rhythm moves the stage while preserving the approved image", () => 
   assert.match(imageRule, /filter:\s*none\s*!important/);
   assert.match(imageRule, /opacity:\s*1\s*!important/);
   assert.match(stageRule, /animation:\s*approved-otter-typing-bob/);
-  assert.match(stageRule, /transform-origin:\s*58% 78%/);
+  assert.match(stageRule, /transform-origin:\s*50% 82%/);
   assert.match(loaderBlock, /otter-key-flash-left/);
   assert.match(loaderBlock, /otter-key-flash-right/);
   assert.match(css, /@keyframes approved-otter-typing-bob/);
+  const motionFrames = css.match(/@keyframes approved-otter-typing-bob\s*\{([\s\S]*?)\n\}/)?.[1] || "";
+  assert.doesNotMatch(motionFrames, /rotate\(/);
+  assert.doesNotMatch(motionFrames, /translate3d\([^,]*px,/);
   assert.match(css, /@keyframes approved-key-flash-left/);
   assert.match(css, /@keyframes approved-key-flash-right/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.otter-approved-stage[\s\S]*animation:\s*none\s*!important/);
@@ -41,8 +44,11 @@ test("loading modal covers the viewport and exposes live progress", () => {
   assert.match(css, /\.domestic-search-overlay\s*\{[\s\S]*position:\s*fixed\s*!important/);
   assert.match(css, /\.domestic-search-overlay\s*\{[\s\S]*inset:\s*0\s*!important/);
   assert.match(css, /body:has\(> \.domestic-search-overlay:not\(\[hidden\]\)\)[\s\S]*overflow:\s*hidden\s*!important/);
-  assert.match(renderer, /class="domestic-overlay-progress" role="progressbar"/);
+  assert.match(renderer, /<progress class="domestic-overlay-progress" max="100" value="\$\{percent\}"/);
   assert.match(renderer, /aria-valuenow="\$\{percent\}"/);
+  assert.doesNotMatch(renderer, /domestic-overlay-progress[\s\S]{0,180}style="width:/);
+  assert.match(css, /\.domestic-overlay-progress::\-webkit-progress-bar/);
+  assert.match(css, /\.domestic-overlay-progress::\-webkit-progress-value/);
   assert.match(renderer, /class="domestic-overlay-count"/);
   assert.match(renderer, /현재 상품번호/);
   assert.match(renderer, /검색창은 백그라운드에서 작동합니다/);
