@@ -28,6 +28,7 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   transform: none !important;
   filter: none !important;
   opacity: 1 !important;
+  background: transparent !important;
   user-select: none;
   -webkit-user-drag: none;
   pointer-events: none;

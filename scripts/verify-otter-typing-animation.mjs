@@ -9,10 +9,10 @@ const still = await readFile(new URL("../src/assets/otter-typing-tail-sway-stati
 
 const gifDigest = createHash("sha256").update(gif).digest("hex");
 const stillDigest = createHash("sha256").update(still).digest("hex");
-if (gif.length !== 167_486 || gifDigest !== "16d29c5f36e1373206508ac00a42cdfdeace826b88a03a6be6160dd5ac32edfc") {
+if (gif.length !== 182_845 || gifDigest !== "f992c8c4dad36fcbd4b123a5e8bde59d0ba139585660c8c1f5e22f83543895ff") {
   throw new Error(`approved multi-frame GIF mismatch: ${gif.length} bytes, ${gifDigest}`);
 }
-if (still.length !== 8_240 || stillDigest !== "c871b7612f389857a5791efe0651f0613941e7fb4babbd50ff24fe8cb501cb1b") {
+if (still.length !== 28_892 || stillDigest !== "96a7d4a664aab4c7e42c55410f5a955926430930540d43b6103224930660b4fc") {
   throw new Error(`approved reduced-motion still mismatch: ${still.length} bytes, ${stillDigest}`);
 }
 if (gif.subarray(0, 6).toString("ascii") !== "GIF89a") {
@@ -20,6 +20,14 @@ if (gif.subarray(0, 6).toString("ascii") !== "GIF89a") {
 }
 if (gif.readUInt16LE(6) !== 500 || gif.readUInt16LE(8) !== 344) {
   throw new Error("approved otter GIF dimensions must remain 500x344");
+}
+let transparentFrameCount = 0;
+for (let index = 0; index <= gif.length - 8; index += 1) {
+  if (gif[index] === 0x21 && gif[index + 1] === 0xf9 && gif[index + 2] === 0x04
+    && (gif[index + 3] & 0x01) === 0x01) transparentFrameCount += 1;
+}
+if (transparentFrameCount !== 5) {
+  throw new Error(`all five otter GIF frames must carry transparency; found ${transparentFrameCount}`);
 }
 
 const renderStart = renderer.indexOf("function renderDomesticLoading");
@@ -48,6 +56,9 @@ for (const forbidden of [
 if (!css.includes(".domestic-loading-otter.otter-multiframe-gif")) {
   throw new Error("multi-frame GIF layout rule is missing");
 }
+if (!/\.domestic-loading-otter\.otter-multiframe-gif,[\s\S]*?background:\s*transparent\s*!important/.test(css)) {
+  throw new Error("otter image stage must remain transparent");
+}
 if (/approved-otter-paw-tap|clip-path:\s*ellipse|otter-typing-paw-layer/.test(css)) {
   throw new Error("legacy cropped-paw animation CSS is still present");
 }
@@ -58,4 +69,4 @@ if (packageJson.includes("patch-otter-typing-animation.mjs")) {
   throw new Error("postinstall still mutates the otter renderer");
 }
 
-console.log(`real multi-frame otter GIF verified with typing and tail sway (${gifDigest})`);
+console.log(`transparent multi-frame otter GIF verified with typing and tail sway (${gifDigest})`);
