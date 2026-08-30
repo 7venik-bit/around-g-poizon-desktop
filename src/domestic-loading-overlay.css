@@ -1,6 +1,8 @@
 /*
- * Domestic product search modal + otter employee animation.
- * Search execution remains in the background; only the renderer is blocked.
+ * Domestic product search modal.
+ * The approved otter artwork is a fixed raster asset. Do not redraw, filter,
+ * crop in CSS, or transform the image. Motion is limited to tiny keyboard
+ * activity indicators layered above the unchanged artwork.
  */
 
 html:has(body > .domestic-search-overlay:not([hidden])),
@@ -9,82 +11,65 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   overscroll-behavior: none !important;
 }
 
-/* New SVG mascot. This intentionally supersedes every legacy bear-like CSS part. */
-.domestic-loading-otter.otter-employee-svg {
+.otter-approved-stage {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  width: 92px;
+  max-width: 100%;
+  line-height: 0;
+}
+
+.domestic-loading-otter.otter-approved-image {
   position: static !important;
   display: block !important;
-  flex: 0 0 auto !important;
-  width: 88px !important;
-  height: 60px !important;
-  overflow: visible !important;
+  width: 100% !important;
+  height: auto !important;
+  max-width: none !important;
+  margin: 0 !important;
+  object-fit: contain !important;
   transform: none !important;
-  transform-origin: center !important;
-  filter: drop-shadow(0 3px 5px rgba(23, 54, 93, .12));
+  filter: none !important;
+  opacity: 1 !important;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
 }
 
-.otter-tail-group,
-.otter-body-group,
-.otter-head-group,
-.otter-paw-left-group,
-.otter-paw-right-group,
-.otter-typing-tick {
-  transform-box: fill-box;
+/* The image itself never moves. These two tiny highlights alternate over
+ * the keyboard to communicate typing without changing the approved mascot. */
+.otter-key-flash {
+  position: absolute;
+  z-index: 3;
+  width: 17px;
+  height: 4px;
+  border-radius: 999px;
+  opacity: 0;
+  background: rgba(47, 128, 237, .34);
+  box-shadow: 0 0 7px rgba(47, 128, 237, .26);
+  pointer-events: none;
 }
 
-.otter-tail-group {
-  transform-origin: 85% 55%;
-  animation: otter-tail-sway 1.45s ease-in-out infinite alternate;
-}
-.otter-body-group {
-  transform-origin: center bottom;
-  animation: otter-work-breathe 1.8s ease-in-out infinite;
-}
-.otter-head-group {
-  transform-origin: 50% 90%;
-  animation: otter-head-focus 1.8s ease-in-out infinite;
-}
-.otter-paw-left-group {
-  transform-origin: center center;
-  animation: otter-type-left .34s steps(2, end) infinite;
-}
-.otter-paw-right-group {
-  transform-origin: center center;
-  animation: otter-type-right .34s steps(2, end) infinite;
-}
-.otter-typing-tick-left {
-  animation: otter-tick-left .34s steps(2, end) infinite;
-}
-.otter-typing-tick-right {
-  animation: otter-tick-right .34s steps(2, end) infinite;
+.otter-key-flash-left {
+  left: 47%;
+  top: 78%;
+  animation: approved-key-flash-left .38s steps(2, end) infinite;
 }
 
-@keyframes otter-type-left {
-  0%, 49% { transform: translateY(-4px) rotate(-3deg); }
-  50%, 100% { transform: translateY(4px) rotate(3deg); }
+.otter-key-flash-right {
+  left: 56%;
+  top: 82%;
+  animation: approved-key-flash-right .38s steps(2, end) infinite;
 }
-@keyframes otter-type-right {
-  0%, 49% { transform: translateY(4px) rotate(-2deg); }
-  50%, 100% { transform: translateY(-4px) rotate(3deg); }
+
+@keyframes approved-key-flash-left {
+  0%, 47% { opacity: .52; }
+  48%, 100% { opacity: 0; }
 }
-@keyframes otter-tick-left {
-  0%, 49% { opacity: .9; transform: translate(-2px, -2px); }
-  50%, 100% { opacity: 0; transform: translate(2px, 2px); }
-}
-@keyframes otter-tick-right {
-  0%, 49% { opacity: 0; transform: translate(-2px, 2px); }
-  50%, 100% { opacity: .9; transform: translate(2px, -2px); }
-}
-@keyframes otter-tail-sway {
-  from { transform: rotate(-5deg) translateX(-2px); }
-  to { transform: rotate(7deg) translateX(2px); }
-}
-@keyframes otter-work-breathe {
-  0%, 100% { transform: translateY(0) scaleY(1); }
-  50% { transform: translateY(-1.5px) scaleY(1.018); }
-}
-@keyframes otter-head-focus {
-  0%, 100% { transform: rotate(-1deg) translateY(0); }
-  50% { transform: rotate(1deg) translateY(1px); }
+
+@keyframes approved-key-flash-right {
+  0%, 47% { opacity: 0; }
+  48%, 100% { opacity: .52; }
 }
 
 .domestic-search-overlay {
@@ -137,12 +122,12 @@ body:has(> .domestic-search-overlay:not([hidden])) {
 .domestic-search-overlay .domestic-search-loading {
   width: 100% !important;
   min-width: 0 !important;
-  min-height: 285px !important;
+  min-height: 300px !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 10px !important;
+  gap: 9px !important;
   padding: 0 !important;
   color: #17365d !important;
   background: transparent !important;
@@ -150,12 +135,10 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   border-radius: 0 !important;
 }
 
-.domestic-search-overlay .domestic-loading-otter.otter-employee-svg {
-  width: 246px !important;
-  height: 170px !important;
-  margin: -4px 0 2px !important;
-  transform: none !important;
-  filter: drop-shadow(0 7px 12px rgba(23, 54, 93, .13));
+.domestic-search-overlay .otter-approved-stage {
+  width: 300px !important;
+  max-width: min(300px, 72vw) !important;
+  margin: 0 0 4px !important;
 }
 
 .domestic-search-overlay .domestic-loading-copy {
@@ -289,11 +272,10 @@ body:has(> .domestic-search-overlay:not([hidden])) {
     padding: 20px 34px !important;
   }
   .domestic-search-overlay .domestic-search-loading {
-    min-height: 230px !important;
+    min-height: 245px !important;
   }
-  .domestic-search-overlay .domestic-loading-otter.otter-employee-svg {
-    width: 200px !important;
-    height: 138px !important;
+  .domestic-search-overlay .otter-approved-stage {
+    width: 235px !important;
   }
 }
 
@@ -308,20 +290,15 @@ body:has(> .domestic-search-overlay:not([hidden])) {
     padding: 24px 20px !important;
     border-radius: 20px !important;
   }
-  .domestic-search-overlay .domestic-loading-otter.otter-employee-svg {
-    width: 210px !important;
-    height: 145px !important;
+  .domestic-search-overlay .otter-approved-stage {
+    width: 245px !important;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .otter-tail-group,
-  .otter-body-group,
-  .otter-head-group,
-  .otter-paw-left-group,
-  .otter-paw-right-group,
-  .otter-typing-tick-left,
-  .otter-typing-tick-right {
+  .otter-key-flash-left,
+  .otter-key-flash-right {
     animation: none !important;
+    opacity: 0 !important;
   }
 }
