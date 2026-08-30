@@ -1,10 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  createDomesticSearchLinkResult,
   createNaverFashionTownSearchLinkResult,
   finalizeNaverFashionTownResult,
   isNaverRenderedResultReady,
 } from "../services/naver-fashiontown-result.mjs";
+
+test("SSG and Lotte exact query URLs become direct result links", () => {
+  for (const [store, resolvedSearchUrl] of [
+    ["SSG", "https://www.ssg.com/search.ssg?target=all&query=SR123UPS11"],
+    ["롯데온", "https://www.lotteon.com/csearch/search/search?render=search&q=SR123UPS11"],
+  ]) {
+    const result = createDomesticSearchLinkResult({ store, articleNumber: "SR123UPS11", resolvedSearchUrl });
+    assert.equal(result.resultLinkOnly, true);
+    assert.equal(result.verificationStage, "direct_result_link");
+    assert.equal(result.verificationDiagnostics.store, store);
+  }
+});
 
 test("Naver exact search URL is returned as a link without a hidden browser", () => {
   const result = createNaverFashionTownSearchLinkResult({
@@ -107,6 +120,7 @@ test("main process uses the finalizer before the generic marketplace matcher", a
   assert.match(main, /const initialUrl = directNaverFashionResult \? url/);
   assert.match(main, /if \(interactiveSiteSearch && !directNaverFashionResult\)/);
   assert.match(main, /return createNaverFashionTownSearchLinkResult/);
+  assert.match(main, /return createDomesticSearchLinkResult/);
   assert.ok(
     main.indexOf("if (isNaverRenderedResultReady(state, exactQuery)) return true;")
       < main.indexOf("return await waitForNaverSearchResultsStable(searchWindow, exactQuery);"),

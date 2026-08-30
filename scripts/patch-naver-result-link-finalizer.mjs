@@ -14,7 +14,7 @@ function replaceOnce(before, after, label) {
 
 replaceOnce(
   'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";',
-  'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";\nimport { createNaverFashionTownSearchLinkResult, finalizeNaverFashionTownResult, isNaverRenderedResultReady } from "./services/naver-fashiontown-result.mjs";',
+  'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";\nimport { createDomesticSearchLinkResult, createNaverFashionTownSearchLinkResult, finalizeNaverFashionTownResult, isNaverRenderedResultReady } from "./services/naver-fashiontown-result.mjs";',
   "Naver result finalizer import",
 );
 
@@ -26,7 +26,7 @@ replaceOnce(
 
 replaceOnce(
   '  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
-  '  if (directNaverFashionResult) {\n    // Naver blocks the hidden Electron document even though the exact same URL\n    // works when opened by the user. The requested behavior is link-only, so\n    // do not turn an unusable hidden browser into a false verification failure.\n    return createNaverFashionTownSearchLinkResult({ articleNumber, resolvedSearchUrl: url });\n  }\n  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
+  '  if (directNaverFashionResult) {\n    // Naver blocks the hidden Electron document even though the exact same URL\n    // works when opened by the user. The requested behavior is link-only, so\n    // do not turn an unusable hidden browser into a false verification failure.\n    return createNaverFashionTownSearchLinkResult({ articleNumber, resolvedSearchUrl: url });\n  }\n  const directRetailResultLink = /^(?:SSG|롯데온)(?:\\s|$)/.test(String(source.store || ""))\n    && /^https:\\/\\//i.test(url)\n    && /[?&](?:q|query)=/i.test(url);\n  if (directRetailResultLink) {\n    // SSG and LotteON also expose exact query URLs. Preserve those links\n    // directly instead of failing inside a blocked hidden Electron document.\n    return createDomesticSearchLinkResult({ store: source.store, articleNumber, resolvedSearchUrl: url });\n  }\n  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
   "Naver direct result link without hidden browser verification",
 );
 

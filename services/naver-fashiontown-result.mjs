@@ -36,7 +36,8 @@ const priceNumber = (value) => {
   return Number.isFinite(amount) ? amount : 0;
 };
 
-export function createNaverFashionTownSearchLinkResult({
+export function createDomesticSearchLinkResult({
+  store = "",
   articleNumber = "",
   resolvedSearchUrl = "",
 } = {}) {
@@ -52,14 +53,27 @@ export function createNaverFashionTownSearchLinkResult({
     resolvedSearchUrl: url,
     naverAllSearchVerdict: "link",
     verificationPending: false,
-    verificationStage: "naver_direct_result_link",
+    verificationStage: "direct_result_link",
     verificationDiagnostics: {
-      stage: "naver_direct_result_link",
+      stage: "direct_result_link",
       reason: "",
       resolvedUrl: url,
+      store: String(store || ""),
       articleNumber: String(articleNumber || ""),
       visibleResultCount: null,
       productCardCount: null,
+    },
+  };
+}
+
+export function createNaverFashionTownSearchLinkResult(options = {}) {
+  const result = createDomesticSearchLinkResult({ ...options, store: "네이버 패션타운" });
+  return {
+    ...result,
+    verificationStage: "naver_direct_result_link",
+    verificationDiagnostics: {
+      ...result.verificationDiagnostics,
+      stage: "naver_direct_result_link",
     },
   };
 }
