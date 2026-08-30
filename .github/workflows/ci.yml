@@ -61,6 +61,15 @@ jobs:
       - name: Verify simplified official and Naver search
         run: node scripts/verify-simplify-official-naver-search.mjs
 
+      - name: Apply Naver result-link finalizer
+        run: node scripts/patch-naver-result-link-finalizer.mjs
+
+      - name: Verify Naver result-link finalizer
+        run: node scripts/verify-naver-result-link-finalizer.mjs
+
+      - name: Test Naver result-link integration
+        run: node --test tests/naver-fashiontown-result-finalizer.test.mjs
+
       - name: Apply next-day access cooldown
         run: node scripts/patch-domestic-access-next-day.mjs
 
