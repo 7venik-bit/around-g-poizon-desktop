@@ -1,58 +1,13 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
-const rendererPath = new URL("../src/renderer.js", import.meta.url);
-const chunkNames = [
-  "part-00-full.txt",
-  "part-02.txt",
-  "part-03.txt",
-  "part-04.txt",
-  "part-05.txt",
-];
-
-const imageBase64 = (await Promise.all(chunkNames.map((name) =>
-  readFile(new URL(`./otter-image-chunks/${name}`, import.meta.url), "utf8")
-))).join("").replace(/\s+/g, "");
-
-if (imageBase64.length !== 85_704) {
-  throw new Error(`approved otter image length mismatch: ${imageBase64.length}`);
+// Legacy compatibility command. The approved mascot is now a real multi-frame
+// GIF loaded directly by renderer.js; never rebuild it from layered fragments.
+const renderer = String(await readFile(new URL("../src/renderer.js", import.meta.url), "utf8"));
+if (!renderer.includes("./assets/otter-typing-tail-sway.gif")) {
+  throw new Error("canonical multi-frame otter GIF is missing from renderer.js");
 }
-const imageBytes = Buffer.from(imageBase64, "base64");
-const digest = createHash("sha256").update(imageBytes).digest("hex");
-if (digest !== "35647819f16063f8bfba099dfcdcc2008803e070a14e5b682414126815252c7f") {
-  throw new Error(`approved otter image digest mismatch: ${digest}`);
+if (renderer.includes("otter-typing-paw-layer") || renderer.includes("APPROVED_OTTER_IMAGE_SRC")) {
+  throw new Error("legacy layered otter animation is still present");
 }
 
-let renderer = String(await readFile(rendererPath, "utf8")).replace(/\r\n/g, "\n");
-
-if (renderer.includes('class="domestic-loading-otter otter-approved-image"')) {
-  console.log("exact approved otter raster already applied");
-  process.exit(0);
-}
-
-const imageSrc = `data:image/webp;base64,${imageBase64}`;
-const replacement = `const APPROVED_OTTER_IMAGE_SRC = "${imageSrc}";
-
-function renderDomesticLoading(startedAt = Date.now()) {
-  const safeStartedAt = Number(startedAt) || Date.now();
-  return \`<div class="domestic-search-loading" role="status" aria-live="polite">
-    <span class="otter-approved-stage" aria-hidden="true">
-      <img class="domestic-loading-otter otter-approved-image" src="\${APPROVED_OTTER_IMAGE_SRC}" alt="" draggable="false">
-      <img class="otter-typing-paw-layer" src="\${APPROVED_OTTER_IMAGE_SRC}" alt="" draggable="false">
-      <span class="otter-key-flash otter-key-flash-left"></span>
-      <span class="otter-key-flash otter-key-flash-right"></span>
-    </span>
-    <span class="domestic-loading-copy"><strong>상품을 찾고 있습니다<span class="domestic-loading-dots">…</span></strong>
-      <small>국내 판매처 검색 중 · <b class="domestic-search-elapsed" data-search-started-at="\${safeStartedAt}">0초</b></small>
-    </span>
-  </div>\`;
-}`;
-
-const pattern = /function renderDomesticLoading\(startedAt = Date\.now\(\)\) \{[\s\S]*?\n\}\n\nfunction showDomesticSearchOverlay/;
-if (!pattern.test(renderer)) {
-  throw new Error("renderDomesticLoading function not found");
-}
-
-renderer = renderer.replace(pattern, `${replacement}\n\nfunction showDomesticSearchOverlay`);
-await writeFile(rendererPath, renderer, "utf8");
-console.log("exact approved otter raster installed with isolated real-paw typing motion");
+console.log("canonical multi-frame otter GIF is already installed; no source mutation applied");

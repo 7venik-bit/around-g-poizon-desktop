@@ -7,39 +7,32 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const renderer = readFileSync(resolve(here, "../src/renderer.js"), "utf8");
 const css = readFileSync(resolve(here, "../src/domestic-loading-overlay.css"), "utf8");
+const gif = readFileSync(resolve(here, "../src/assets/otter-typing-tail-sway.gif"));
 
-const renderStart = renderer.indexOf("const APPROVED_OTTER_IMAGE_SRC");
+const renderStart = renderer.indexOf("function renderDomesticLoading");
 const renderEnd = renderer.indexOf("function showDomesticSearchOverlay", renderStart);
 const loaderBlock = renderer.slice(renderStart, renderEnd);
 
-test("domestic loader renders only the approved otter raster", () => {
+test("domestic loader renders the approved multi-frame otter GIF", () => {
   assert.match(loaderBlock, /class="otter-approved-stage"/);
-  assert.match(loaderBlock, /class="domestic-loading-otter otter-approved-image"/);
-  assert.match(loaderBlock, /APPROVED_OTTER_IMAGE_SRC = "data:image\/webp;base64,/);
-  assert.match(loaderBlock, /class="otter-typing-paw-layer"/);
-  assert.equal((renderer.match(/data:image\/webp;base64,/g) || []).length, 1);
-  assert.doesNotMatch(loaderBlock, /otter-employee-svg|otter-glasses|otter-ear-left|otter-ear-right/);
-  assert.doesNotMatch(loaderBlock, /otter-tail-group|otter-paw-left-group|otter-paw-right-group/);
+  assert.match(loaderBlock, /class="domestic-loading-otter otter-multiframe-gif"/);
+  assert.match(loaderBlock, /src="\.\/assets\/otter-typing-tail-sway\.gif"/);
+  assert.match(loaderBlock, /class="domestic-loading-otter otter-multiframe-static"/);
+  assert.match(loaderBlock, /src="\.\/assets\/otter-typing-tail-sway-static\.webp"/);
+  assert.equal(gif.subarray(0, 6).toString("ascii"), "GIF89a");
+  assert.equal(gif.readUInt16LE(6), 500);
+  assert.equal(gif.readUInt16LE(8), 344);
+  assert.doesNotMatch(loaderBlock, /APPROVED_OTTER_IMAGE_SRC|data:image\/webp;base64/);
+  assert.doesNotMatch(loaderBlock, /otter-typing-paw-layer|otter-key-flash/);
 });
 
-test("typing rhythm moves only the real paw while preserving the approved image", () => {
-  const imageRule = css.match(/\.domestic-loading-otter\.otter-approved-image\s*\{([\s\S]*?)\}/)?.[1] || "";
+test("typing and tail motion come from complete GIF frames without a cropped overlay", () => {
   const stageRule = css.match(/\.otter-approved-stage\s*\{([\s\S]*?)\}/)?.[1] || "";
-  const pawRule = css.match(/\.otter-typing-paw-layer\s*\{([\s\S]*?)\}/)?.[1] || "";
-  assert.doesNotMatch(imageRule, /animation\s*:/);
-  assert.match(imageRule, /transform:\s*none\s*!important/);
-  assert.match(imageRule, /filter:\s*none\s*!important/);
-  assert.match(imageRule, /opacity:\s*1\s*!important/);
   assert.doesNotMatch(stageRule, /animation\s*:/);
   assert.match(stageRule, /transform:\s*none/);
-  assert.match(pawRule, /clip-path:\s*ellipse\(/);
-  assert.match(pawRule, /animation:\s*approved-otter-paw-tap/);
-  assert.match(loaderBlock, /otter-key-flash-left/);
-  assert.match(loaderBlock, /otter-key-flash-right/);
-  assert.match(css, /@keyframes approved-otter-paw-tap/);
-  assert.match(css, /@keyframes approved-key-flash-left/);
-  assert.match(css, /@keyframes approved-key-flash-right/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.otter-typing-paw-layer,[\s\S]*animation:\s*none\s*!important/);
+  assert.doesNotMatch(css, /clip-path:\s*ellipse|approved-otter-paw-tap|otter-typing-paw-layer/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*otter-multiframe-gif[\s\S]*display:\s*none\s*!important/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*otter-multiframe-static[\s\S]*display:\s*block\s*!important/);
 });
 
 test("loading modal covers the viewport and exposes live progress", () => {
