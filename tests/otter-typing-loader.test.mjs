@@ -8,30 +8,39 @@ const here = dirname(fileURLToPath(import.meta.url));
 const renderer = readFileSync(resolve(here, "../src/renderer.js"), "utf8");
 const css = readFileSync(resolve(here, "../src/domestic-loading-overlay.css"), "utf8");
 
-test("domestic loader renders the new otter SVG instead of legacy bear-like parts", () => {
-  const start = renderer.indexOf("function renderDomesticLoading");
-  const end = renderer.indexOf("function showDomesticSearchOverlay", start);
-  const block = renderer.slice(start, end);
-  assert.match(block, /domestic-loading-otter otter-employee-svg/);
-  assert.match(block, /otter-tail-group/);
-  assert.match(block, /otter-whiskers/);
-  assert.doesNotMatch(block, /otter-glasses/);
-  assert.doesNotMatch(block, /otter-ear-left/);
-  assert.doesNotMatch(block, /otter-ear-right/);
+const renderStart = renderer.indexOf("function renderDomesticLoading");
+const renderEnd = renderer.indexOf("function showDomesticSearchOverlay", renderStart);
+const loaderBlock = renderer.slice(renderStart, renderEnd);
+
+test("domestic loader renders only the approved otter raster", () => {
+  assert.match(loaderBlock, /class="otter-approved-stage"/);
+  assert.match(loaderBlock, /class="domestic-loading-otter otter-approved-image"/);
+  assert.match(loaderBlock, /src="data:image\/webp;base64,/);
+  assert.doesNotMatch(loaderBlock, /otter-employee-svg|otter-glasses|otter-ear-left|otter-ear-right/);
+  assert.doesNotMatch(loaderBlock, /otter-tail-group|otter-paw-left-group|otter-paw-right-group/);
 });
 
-test("otter paws alternate over the keyboard and tail moves", () => {
-  assert.match(css, /@keyframes otter-type-left/);
-  assert.match(css, /@keyframes otter-type-right/);
-  assert.match(css, /@keyframes otter-tail-sway/);
-  assert.match(css, /\.otter-paw-left-group[\s\S]*animation:\s*otter-type-left/);
-  assert.match(css, /\.otter-paw-right-group[\s\S]*animation:\s*otter-type-right/);
-  assert.match(css, /\.otter-typing-tick-left/);
-  assert.match(css, /\.otter-typing-tick-right/);
+test("typing motion is external and never transforms the approved image", () => {
+  const imageRule = css.match(/\.domestic-loading-otter\.otter-approved-image\s*\{([\s\S]*?)\}/)?.[1] || "";
+  assert.doesNotMatch(imageRule, /animation\s*:/);
+  assert.match(imageRule, /transform:\s*none\s*!important/);
+  assert.match(imageRule, /filter:\s*none\s*!important/);
+  assert.match(imageRule, /opacity:\s*1\s*!important/);
+  assert.match(loaderBlock, /otter-key-flash-left/);
+  assert.match(loaderBlock, /otter-key-flash-right/);
+  assert.match(css, /@keyframes approved-key-flash-left/);
+  assert.match(css, /@keyframes approved-key-flash-right/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation:\s*none\s*!important/);
 });
 
-test("loading modal keeps enough space so title cannot overlap mascot", () => {
-  assert.match(css, /\.domestic-search-overlay \.domestic-search-loading[\s\S]*min-height:\s*285px/);
-  assert.match(css, /\.domestic-search-overlay \.domestic-loading-otter\.otter-employee-svg[\s\S]*height:\s*170px/);
-  assert.match(css, /content:\s*"국내 판매처 검색 중"/);
+test("loading modal covers the viewport and exposes live progress", () => {
+  assert.match(css, /\.domestic-search-overlay\s*\{[\s\S]*position:\s*fixed\s*!important/);
+  assert.match(css, /\.domestic-search-overlay\s*\{[\s\S]*inset:\s*0\s*!important/);
+  assert.match(css, /body:has\(> \.domestic-search-overlay:not\(\[hidden\]\)\)[\s\S]*overflow:\s*hidden\s*!important/);
+  assert.match(renderer, /class="domestic-overlay-progress" role="progressbar"/);
+  assert.match(renderer, /aria-valuenow="\$\{percent\}"/);
+  assert.match(renderer, /class="domestic-overlay-count"/);
+  assert.match(renderer, /현재 상품번호/);
+  assert.match(renderer, /검색창은 백그라운드에서 작동합니다/);
 });
+
