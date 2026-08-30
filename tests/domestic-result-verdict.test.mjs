@@ -83,3 +83,18 @@ test("result summary preserves the next-day access cooldown label", () => {
   assert.equal(cooldown.label, "내일 재시도");
   assert.equal(cooldown.className, "pending");
 });
+
+test("Naver link-only result is never rendered as confirmation failure", () => {
+  const link = sourceVerdict({
+    store: "네이버 패션타운",
+    count: 0,
+    resultLinkOnly: true,
+    verificationFailed: false,
+  });
+  assert.equal(link.state, "link");
+  assert.equal(link.label, "검색 결과 링크");
+
+  const summary = resultPresentation({ products: [], sources: [{ resultLinkOnly: true, count: 0 }] });
+  assert.equal(summary.label, "검색 결과 링크");
+  assert.equal(summary.className, "available");
+});

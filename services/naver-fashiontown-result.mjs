@@ -36,6 +36,34 @@ const priceNumber = (value) => {
   return Number.isFinite(amount) ? amount : 0;
 };
 
+export function createNaverFashionTownSearchLinkResult({
+  articleNumber = "",
+  resolvedSearchUrl = "",
+} = {}) {
+  const url = String(resolvedSearchUrl || "");
+  return {
+    count: 0,
+    products: [],
+    resultLinkOnly: true,
+    presenceConfirmed: false,
+    absenceConfirmed: false,
+    searchCompleted: true,
+    searchSubmitted: true,
+    resolvedSearchUrl: url,
+    naverAllSearchVerdict: "link",
+    verificationPending: false,
+    verificationStage: "naver_direct_result_link",
+    verificationDiagnostics: {
+      stage: "naver_direct_result_link",
+      reason: "",
+      resolvedUrl: url,
+      articleNumber: String(articleNumber || ""),
+      visibleResultCount: null,
+      productCardCount: null,
+    },
+  };
+}
+
 export function finalizeNaverFashionTownResult(snapshot = {}, {
   articleNumber = "",
   resolvedSearchUrl = "",

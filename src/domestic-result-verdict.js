@@ -49,6 +49,10 @@
       };
     }
 
+    if (source?.resultLinkOnly === true) {
+      return { state: "link", className: "available", count: 0, label: "검색 결과 링크" };
+    }
+
     if (source?.securityVerificationRequired === true) {
       return { state: "security", className: "pending", count: 0, label: "보안 확인 필요" };
     }
@@ -106,6 +110,9 @@
         label: availableCount > 0 ? `결과 ${availableCount.toLocaleString("ko-KR")}개` : "상품 있음",
         className: "available",
       };
+    }
+    if (verdicts.some((verdict) => verdict.state === "link")) {
+      return { label: "검색 결과 링크", className: "available" };
     }
     if (verdicts.some((verdict) => ["security", "login", "failed", "pending"].includes(verdict.state))) {
       return { label: "확인 필요", className: "pending" };

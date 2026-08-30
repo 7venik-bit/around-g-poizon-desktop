@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  createNaverFashionTownSearchLinkResult,
   finalizeNaverFashionTownResult,
   isNaverRenderedResultReady,
 } from "../services/naver-fashiontown-result.mjs";
+
+test("Naver exact search URL is returned as a link without a hidden browser", () => {
+  const result = createNaverFashionTownSearchLinkResult({
+    articleNumber: "SR123UPS11",
+    resolvedSearchUrl: "https://shopping.naver.com/window/search/fashion-group?q=SR123UPS11",
+  });
+  assert.equal(result.resultLinkOnly, true);
+  assert.equal(result.verificationPending, false);
+  assert.equal(result.verificationStage, "naver_direct_result_link");
+  assert.equal(result.resolvedSearchUrl.includes("SR123UPS11"), true);
+});
 
 test("visible positive total on the exact Naver result URL bypasses the legacy card gate", () => {
   assert.equal(isNaverRenderedResultReady({
@@ -94,6 +106,7 @@ test("main process uses the finalizer before the generic marketplace matcher", a
   assert.match(main, /const directNaverFashionResult = naverPortalSource/);
   assert.match(main, /const initialUrl = directNaverFashionResult \? url/);
   assert.match(main, /if \(interactiveSiteSearch && !directNaverFashionResult\)/);
+  assert.match(main, /return createNaverFashionTownSearchLinkResult/);
   assert.ok(
     main.indexOf("if (isNaverRenderedResultReady(state, exactQuery)) return true;")
       < main.indexOf("return await waitForNaverSearchResultsStable(searchWindow, exactQuery);"),

@@ -14,7 +14,7 @@ function replaceOnce(before, after, label) {
 
 replaceOnce(
   'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";',
-  'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";\nimport { finalizeNaverFashionTownResult, isNaverRenderedResultReady } from "./services/naver-fashiontown-result.mjs";',
+  'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";\nimport { createNaverFashionTownSearchLinkResult, finalizeNaverFashionTownResult, isNaverRenderedResultReady } from "./services/naver-fashiontown-result.mjs";',
   "Naver result finalizer import",
 );
 
@@ -22,6 +22,12 @@ replaceOnce(
   '  const naverPortalSource = /^네이버\\s/.test(String(source.store || ""));',
   '  const naverPortalSource = /^네이버\\s/.test(String(source.store || ""));\n  const directNaverFashionResult = naverPortalSource\n    && String(source.store || "") === "네이버 패션타운"\n    && /shopping\\.naver\\.com\\/window\\/search\\//i.test(url);',
   "direct Naver Fashion Town result route",
+);
+
+replaceOnce(
+  '  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
+  '  if (directNaverFashionResult) {\n    // Naver blocks the hidden Electron document even though the exact same URL\n    // works when opened by the user. The requested behavior is link-only, so\n    // do not turn an unusable hidden browser into a false verification failure.\n    return createNaverFashionTownSearchLinkResult({ articleNumber, resolvedSearchUrl: url });\n  }\n  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
+  "Naver direct result link without hidden browser verification",
 );
 
 replaceOnce(
@@ -192,11 +198,13 @@ replaceOnce(
   String.raw`        verificationPending: result?.detailVerificationPending === true
           || (Number.isFinite(count) && Number(count) === 0 && !absenceConfirmed),
         absenceConfirmed,`,
-  String.raw`        verificationPending: result?.detailVerificationPending === true
+  String.raw`        verificationPending: result?.resultLinkOnly === true ? false : (
+          result?.detailVerificationPending === true
           || result?.verificationPending === true
-          || (Number.isFinite(count) && Number(count) === 0 && !absenceConfirmed),
+          || (Number.isFinite(count) && Number(count) === 0 && !absenceConfirmed)),
         absenceConfirmed,
-        presenceConfirmed: result?.presenceConfirmed === true,`,
+        presenceConfirmed: result?.presenceConfirmed === true,
+        resultLinkOnly: result?.resultLinkOnly === true,`,
   "Naver presence and pending propagation",
 );
 
