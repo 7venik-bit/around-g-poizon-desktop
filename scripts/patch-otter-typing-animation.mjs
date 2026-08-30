@@ -31,11 +31,14 @@ if (renderer.includes('class="domestic-loading-otter otter-approved-image"')) {
 }
 
 const imageSrc = `data:image/webp;base64,${imageBase64}`;
-const replacement = `function renderDomesticLoading(startedAt = Date.now()) {
+const replacement = `const APPROVED_OTTER_IMAGE_SRC = "${imageSrc}";
+
+function renderDomesticLoading(startedAt = Date.now()) {
   const safeStartedAt = Number(startedAt) || Date.now();
   return \`<div class="domestic-search-loading" role="status" aria-live="polite">
     <span class="otter-approved-stage" aria-hidden="true">
-      <img class="domestic-loading-otter otter-approved-image" src="${imageSrc}" alt="" draggable="false">
+      <img class="domestic-loading-otter otter-approved-image" src="\${APPROVED_OTTER_IMAGE_SRC}" alt="" draggable="false">
+      <img class="otter-typing-paw-layer" src="\${APPROVED_OTTER_IMAGE_SRC}" alt="" draggable="false">
       <span class="otter-key-flash otter-key-flash-left"></span>
       <span class="otter-key-flash otter-key-flash-right"></span>
     </span>
@@ -52,4 +55,4 @@ if (!pattern.test(renderer)) {
 
 renderer = renderer.replace(pattern, `${replacement}\n\nfunction showDomesticSearchOverlay`);
 await writeFile(rendererPath, renderer, "utf8");
-console.log("exact approved otter raster installed unchanged; typing effect is external only");
+console.log("exact approved otter raster installed with isolated real-paw typing motion");

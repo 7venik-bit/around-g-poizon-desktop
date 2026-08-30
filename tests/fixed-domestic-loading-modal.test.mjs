@@ -18,12 +18,12 @@ test("domestic search progress is a fixed viewport modal that locks page scrolli
 });
 
 test("otter employee visibly types on a keyboard while search continues", () => {
-  assert.match(overlayCss, /\.domestic-search-overlay \.otter-laptop::before/);
-  assert.match(overlayCss, /repeating-linear-gradient/);
-  assert.match(overlayCss, /\.domestic-search-overlay \.otter-paw-left/);
-  assert.match(overlayCss, /\.domestic-search-overlay \.otter-paw-right/);
-  assert.match(overlayCss, /animation:\s*otter-key-tap/);
-  assert.match(overlayCss, /@keyframes otter-key-tap/);
+  assert.match(overlayCss, /\.otter-typing-paw-layer/);
+  assert.match(overlayCss, /clip-path:\s*ellipse\(/);
+  assert.match(overlayCss, /animation:\s*approved-otter-paw-tap/);
+  assert.match(overlayCss, /@keyframes approved-otter-paw-tap/);
+  assert.match(overlayCss, /\.otter-key-flash-left/);
+  assert.match(overlayCss, /\.otter-key-flash-right/);
 });
 
 test("modal keeps the approved progress information hierarchy", () => {
