@@ -14,19 +14,19 @@ const imageBase64 = (await Promise.all(chunkNames.map((name) =>
   readFile(new URL(`./otter-image-chunks/${name}`, import.meta.url), "utf8")
 ))).join("").replace(/\s+/g, "");
 
-if (imageBase64.length !== 78_872) {
+if (imageBase64.length !== 85_704) {
   throw new Error(`approved otter image length mismatch: ${imageBase64.length}`);
 }
 const imageBytes = Buffer.from(imageBase64, "base64");
 const digest = createHash("sha256").update(imageBytes).digest("hex");
-if (digest !== "b181b389bb85a83fa2c48bf5aec6dda45ff0be5ed4a6c9cfaaf55d3c4a830cba") {
+if (digest !== "35647819f16063f8bfba099dfcdcc2008803e070a14e5b682414126815252c7f") {
   throw new Error(`approved otter image digest mismatch: ${digest}`);
 }
 
 let renderer = String(await readFile(rendererPath, "utf8")).replace(/\r\n/g, "\n");
 
 if (renderer.includes('class="domestic-loading-otter otter-approved-image"')) {
-  console.log("approved otter image loader already applied");
+  console.log("exact approved otter raster already applied");
   process.exit(0);
 }
 
@@ -52,4 +52,4 @@ if (!pattern.test(renderer)) {
 
 renderer = renderer.replace(pattern, `${replacement}\n\nfunction showDomesticSearchOverlay`);
 await writeFile(rendererPath, renderer, "utf8");
-console.log("approved otter image installed unchanged; typing effect remains external");
+console.log("exact approved otter raster installed unchanged; typing effect is external only");
