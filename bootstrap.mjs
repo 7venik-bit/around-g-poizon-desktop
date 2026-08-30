@@ -50,6 +50,7 @@ const [
   searchServiceMenuCss,
   sourcingViewSource,
   domesticInlineResultsSource,
+  domesticInlineResultsCss,
 ] = await Promise.all([
   readFile(new URL("./src/excel-column-layout.js", import.meta.url), "utf8"),
   readFile(new URL("./src/excel-column-layout.css", import.meta.url), "utf8"),
@@ -57,6 +58,7 @@ const [
   readFile(new URL("./src/search-service-menu.css", import.meta.url), "utf8"),
   readFile(new URL("./src/sourcing-view.js", import.meta.url), "utf8"),
   readFile(new URL("./src/domestic-inline-results.js", import.meta.url), "utf8"),
+  readFile(new URL("./src/domestic-inline-results.css", import.meta.url), "utf8"),
 ]);
 
 function excelPath(input = {}) {
@@ -99,7 +101,7 @@ app.on("browser-window-created", (_event, window) => {
     const url = window.webContents.getURL();
     if (!/\/src\/index\.html(?:[?#]|$)/i.test(url)) return;
     try {
-      await window.webContents.insertCSS(`${excelColumnLayoutCss}\n${searchServiceMenuCss}`);
+      await window.webContents.insertCSS(`${excelColumnLayoutCss}\n${searchServiceMenuCss}\n${domesticInlineResultsCss}`);
       await window.webContents.executeJavaScript(excelColumnLayoutSource, true);
       await window.webContents.executeJavaScript(searchServiceMenuSource, true);
       await window.webContents.executeJavaScript(sourcingViewSource, true);
