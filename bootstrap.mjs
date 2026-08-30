@@ -43,12 +43,20 @@ ipcMain.handle = (channel, listener) => {
   });
 };
 
-const [excelColumnLayoutSource, excelColumnLayoutCss, searchServiceMenuSource, searchServiceMenuCss, sourcingViewSource] = await Promise.all([
+const [
+  excelColumnLayoutSource,
+  excelColumnLayoutCss,
+  searchServiceMenuSource,
+  searchServiceMenuCss,
+  sourcingViewSource,
+  domesticInlineResultsSource,
+] = await Promise.all([
   readFile(new URL("./src/excel-column-layout.js", import.meta.url), "utf8"),
   readFile(new URL("./src/excel-column-layout.css", import.meta.url), "utf8"),
   readFile(new URL("./src/search-service-menu.js", import.meta.url), "utf8"),
   readFile(new URL("./src/search-service-menu.css", import.meta.url), "utf8"),
   readFile(new URL("./src/sourcing-view.js", import.meta.url), "utf8"),
+  readFile(new URL("./src/domestic-inline-results.js", import.meta.url), "utf8"),
 ]);
 
 function excelPath(input = {}) {
@@ -95,6 +103,10 @@ app.on("browser-window-created", (_event, window) => {
       await window.webContents.executeJavaScript(excelColumnLayoutSource, true);
       await window.webContents.executeJavaScript(searchServiceMenuSource, true);
       await window.webContents.executeJavaScript(sourcingViewSource, true);
+      // Load the rightmost-cell retailer list from its canonical source as well.
+      // The postinstall patch remains a packaging fallback, but the runtime UI no
+      // longer depends on that generated source mutation being present.
+      await window.webContents.executeJavaScript(domesticInlineResultsSource, true);
     } catch (error) {
       console.error("Renderer enhancement load failed", error);
     }
