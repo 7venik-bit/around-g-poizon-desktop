@@ -69,6 +69,9 @@
   }
 
   function searchPresentation(result) {
+    if (globalThis.AroundGDomesticVerdict?.resultPresentation) {
+      return globalThis.AroundGDomesticVerdict.resultPresentation(result);
+    }
     if (result?.loading) return { label: "검색 중…", className: "loading" };
     if (result?.error) return { label: "검색 실패", className: "error" };
     if (!result) return { label: "국내 검색", className: "pending" };
@@ -159,14 +162,17 @@
       const count = Number(source?.count || 0);
       const hasUsefulLink = Boolean(source?.verifiedProductUrl || source?.officialProductUrl || source?.resultsUrl
         || source?.searchResultsUrl || source?.officialSearchUrl || source?.homepageUrl || source?.searchUrl);
-      const approvedParallelMissing = store === "병행수입·편집샵"
-        && source?.parallelRetailerListEnforced === true && source?.absenceConfirmed === true;
-      if (!(count > 0 || approvedParallelMissing || source?.verificationPending || source?.verificationFailed || hasUsefulLink)) continue;
-      const message = approvedParallelMissing
-        ? "상품없음"
+      const verdict = globalThis.AroundGDomesticVerdict?.sourceVerdict
+        ? globalThis.AroundGDomesticVerdict.sourceVerdict(source, [])
         : count > 0
-        ? `검색 결과 ${count.toLocaleString("ko-KR")}개`
-        : source?.verificationFailed ? "확인 실패" : source?.verificationPending ? "확인 중" : "판매처 결과";
+          ? { label: `상품 있음 · ${count.toLocaleString("ko-KR")}개`, state: "available" }
+          : source?.absenceConfirmed
+            ? { label: "상품 없음", state: "missing" }
+            : { label: "확인 중", state: "pending" };
+      const searched = source?.searchCompleted || source?.searchSubmitted || source?.countVerified
+        || source?.absenceConfirmed || source?.presenceConfirmed;
+      if (!(count > 0 || searched || source?.verificationPending || source?.verificationFailed || hasUsefulLink)) continue;
+      const message = verdict.label;
       rows.push(`<div class="domestic-inline-row domestic-inline-fallback">
         <div class="domestic-inline-store" title="${safeText(store)}">${safeText(store)}</div>
         <div class="domestic-inline-title">${safeText(message)}</div>

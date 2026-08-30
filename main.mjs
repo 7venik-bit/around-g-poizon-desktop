@@ -86,6 +86,7 @@ import {
   isConsignmentOperatedProduct,
   isOverseasPurchaseProduct,
   isPlatformShoppingProductUrl,
+  isTrustedNaverFashionProductCard,
   normalizeRenderedStockEvidence,
   parseNaverFashionTownChannelCounts,
   queryDomesticProducts,
@@ -2007,7 +2008,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       }
       if (interactiveSiteSearch) {
         const searchQuery = interactiveOfficialSearch
-          ? sanitizeDomesticQuery([title, articleNumber].filter(Boolean).join(" "))
+          ? sanitizeDomesticProductCode(articleNumber) || sanitizeDomesticQuery(title)
           : String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();
         if (!searchQuery) return renderedSearchFailure("search_query_missing", searchWindow);
         if (naverPortalSource) {
@@ -2321,7 +2322,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const pageHeaderText = [...document.querySelectorAll('header,nav')]
         .map((element) => String(element.innerText || ""))
         .join(" ").slice(0, 20000);
-      const selectedChannelEmpty = /검색된\s*상품이\s*없습니다|검색\s*결과가\s*없습니다|상품이\s*없습니다|검색결과\s*없음/i.test(fullPageText);
+      const selectedChannelEmpty = /검색된\s*상품이\s*없(?:습니다|어)|검색\s*결과가?\s*없(?:습니다|어)|상품이\s*없(?:습니다|어)|검색결과\s*없음/i.test(fullPageText);
       const requestedStore = ${JSON.stringify(String(source.store || ""))};
       const recognizedChannelCounts = ${JSON.stringify(naverChannelCounts)};
       const channelLabels = requestedStore.includes("공식 브랜드스토어")
@@ -2370,7 +2371,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const currentChannelRaw = naverChannelCounts?.[String(source.store || "")];
       const currentChannelCount = Number.isFinite(Number(currentChannelRaw)) ? Number(currentChannelRaw) : null;
       const channelCards = (parsedContent.productCards || []).filter((card) =>
-        isPlatformShoppingProductUrl(card?.productUrl)
+        isTrustedNaverFashionProductCard(card)
           && (!expectedNaverChannel || String(card?.naverWholeViewChannel || "") === expectedNaverChannel));
       if (!channelCards.length && Number(currentChannelCount || 0) > 0) {
         return renderedSearchFailure("overview_channel_card_collection_failed", searchWindow, {

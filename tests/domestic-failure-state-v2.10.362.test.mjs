@@ -4,6 +4,7 @@ import test from "node:test";
 
 const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
+const verdict = await readFile(new URL("../src/domestic-result-verdict.js", import.meta.url), "utf8");
 
 test("rendered searches preserve the exact failure stage instead of returning null", () => {
   assert.match(main, /function renderedSearchFailure/);
@@ -16,11 +17,12 @@ test("rendered searches preserve the exact failure stage instead of returning nu
 });
 
 test("the UI separates security, login, connection and completed absence states", () => {
-  assert.match(renderer, /보안 확인 필요/);
-  assert.match(renderer, /로그인 필요/);
+  assert.match(verdict, /보안 확인 필요/);
+  assert.match(verdict, /로그인 필요/);
   assert.match(renderer, /패션타운 진입 실패/);
   assert.match(renderer, /검색 입력 실패/);
-  assert.match(renderer, /상품코드→상품명→상품명\+상품코드 순서로 검색을 완료/);
+  assert.match(verdict, /상품 없음/);
+  assert.match(main, /sanitizeDomesticProductCode\(articleNumber\) \|\| sanitizeDomesticQuery\(title\)/);
   assert.doesNotMatch(renderer, /label: "다시 검색 필요"/);
 });
 

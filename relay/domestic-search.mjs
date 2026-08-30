@@ -204,7 +204,7 @@ function naverBrandStore(brandOrQuery) {
 
 export function naverFashionTownUrl(channel, brand, query) {
   const cleanedQuery = sanitizeDomesticQuery(query);
-  if (channel === "brand-store") {
+  if (channel === "brand-store" || channel === "overview") {
     return `https://shopping.naver.com/window/search/fashion-group?q=${encodeURIComponent(cleanedQuery)}&queryType=ac`;
   }
   const section = channel === "department" ? "department" : "outlet";
@@ -372,6 +372,26 @@ export function isPlatformShoppingProductUrl(value = "") {
   return false;
 }
 
+export function isTrustedNaverFashionProductCard(card = {}) {
+  const productUrl = String(card?.productUrl || "");
+  if (isPlatformShoppingProductUrl(productUrl)) return true;
+  const trustedChannelLabel = card?.officialBrandStoreLabelMatched === true
+    || card?.departmentStoreLabelMatched === true
+    || card?.outletLabelMatched === true;
+  if (!trustedChannelLabel) return false;
+  try {
+    const parsed = new URL(productUrl);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    if (!["https:", "http:"].includes(parsed.protocol) || CONTENT_ONLY_HOSTS.has(host)) return false;
+    // Fashion Town brand-direct cards can link straight to the Korean brand
+    // mall instead of a naver.com product path. The card's trusted seller
+    // label is the evidence; rejecting that external href loses a real result.
+    return !["search.naver.com", "shopping.naver.com", "search.shopping.naver.com"].includes(host);
+  } catch {
+    return false;
+  }
+}
+
 export function parseNaverFashionTownChannelCounts(labels = []) {
   const channelLabels = {
     "네이버 공식 브랜드스토어": ["브랜드직영몰", "공식브랜드", "브랜드스토어"],
@@ -432,7 +452,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         }
         scopedPositiveCount = Math.max(scopedPositiveCount, scopedCount);
       }
-      if (selectedChannelEmpty || /검색된\s*상품이\s*없습니다|검색\s*결과가\s*없습니다|상품이\s*없습니다|검색결과\s*없음/i.test(pageText)) {
+      if (selectedChannelEmpty || /검색된\s*상품이\s*없(?:습니다|어)|검색\s*결과가?\s*없(?:습니다|어)|상품이\s*없(?:습니다|어)|검색결과\s*없음/i.test(pageText)) {
         return { count: 0, products: [], absenceConfirmed: true };
       }
       if (!articleCode) return { count: 0, products: [], absenceConfirmed: false };
@@ -510,7 +530,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         const tokens = rawCardText.toLowerCase().split(/[^a-z0-9가-힣]+/).map(normalizeOfficialBrand).filter(Boolean);
         const brandMatched = !requiresBrandMatch
           || brandKeys.some((key) => key.length <= 3 ? tokens.includes(key) : evidence.includes(key));
-        if (/^네이버\s/.test(String(store || "")) && brandMatched && isPlatformShoppingProductUrl(productUrl)) {
+        if (/^네이버\s/.test(String(store || "")) && brandMatched && isTrustedNaverFashionProductCard(card)) {
           domesticVisibleProducts.add(productUrl);
         }
         if (!conflictingArticle && brandMatched && titleIdentityMatch(rawCardText, expectedTitle)) {
@@ -528,7 +548,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // code is valid even when multiple products are shown in that channel.
         if (!conflictingArticle && !articleMatched && /^네이버\s/.test(String(store || ""))
           && brandMatched && titleIdentityMatch(rawCardText, expectedTitle)
-          && isPlatformShoppingProductUrl(productUrl)) {
+          && isTrustedNaverFashionProductCard(card)) {
           articleMatched = true;
         }
         // Naver Fashion Town may omit the model code from both the visible card
