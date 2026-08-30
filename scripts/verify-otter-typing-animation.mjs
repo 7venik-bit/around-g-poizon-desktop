@@ -82,8 +82,11 @@ if (!/filter:\s*none\s*!important/.test(imageRule)) throw new Error("approved ot
 if (!/animation:\s*approved-otter-typing-bob/.test(stageRule)) {
   throw new Error("approved otter stage movement is missing");
 }
-if (!/transform-origin:\s*58% 78%/.test(stageRule)) {
+if (!/transform-origin:\s*50% 82%/.test(stageRule)) {
   throw new Error("approved otter stage movement origin is missing");
+}
+if (/rotate\(/.test(stageRule) || /rotate\(/.test(css.match(/@keyframes approved-otter-typing-bob\s*\{([\s\S]*?)\n\}/)?.[1] || "")) {
+  throw new Error("approved otter movement must not rock or rotate");
 }
 if (!/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.otter-approved-stage[\s\S]*animation:\s*none\s*!important/.test(css)) {
   throw new Error("reduced-motion fallback for approved otter stage is missing");
