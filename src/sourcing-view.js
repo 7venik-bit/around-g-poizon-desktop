@@ -160,7 +160,14 @@
         if (result.loading) return `<span class="inventory-help">국내 판매처에서 일치 상품을 찾고 있습니다…</span>`;
         if (result.error) return `<span class="inventory-help">국내 상품 검색에 실패했습니다.</span>`;
 
-        const products = (result.products || []).filter((product) => product && (product.name || product.title));
+        const products = (result.products || []).filter((product) => {
+          if (!product || !(product.name || product.title)) return false;
+          const store = String(product.store || product.sourceStore || "");
+          const retailer = String(product.retailerName || "");
+          const parallel = store === "병행수입·편집샵" || store === "SSG 병행수입"
+            || product.ssgClassification === "parallel_import" || retailer.startsWith("병행수입");
+          return !parallel || product.parallelRetailerVerified === true;
+        });
         const sources = Array.isArray(result.sources) ? result.sources : [];
         const sourceOwnsProduct = (source, product) => {
           const sourceStore = String(source?.store || "");
@@ -168,8 +175,9 @@
           if (sourceStore === String(product?.sourceStore || "")) return true;
           if (sourceStore === productStore) return true;
           if (sourceStore === "SSG" && /^SSG(?:\s|$)/.test(productStore)) return true;
-          if (sourceStore === "병행수입·편집샵" && (/병행수입/.test(productStore)
-            || String(product?.retailerName || "").startsWith("병행수입"))) return true;
+          if (sourceStore === "병행수입·편집샵" && product?.parallelRetailerVerified === true
+            && (/병행수입/.test(productStore)
+              || String(product?.retailerName || "").startsWith("병행수입"))) return true;
           return false;
         };
         const sourceForProduct = (product) => sources.find((source) => sourceOwnsProduct(source, product)) || {};
@@ -209,10 +217,16 @@
 
         const sourceFallbackRows = sources
           .filter((source) => !products.some((product) => sourceOwnsProduct(source, product)))
-          .filter((source) => Number(source?.count || 0) > 0 || source?.verificationPending || source?.verificationFailed)
+          .filter((source) => Number(source?.count || 0) > 0
+            || (source?.store === "병행수입·편집샵" && source?.parallelRetailerListEnforced === true && source?.absenceConfirmed === true)
+            || source?.verificationPending || source?.verificationFailed)
           .map((source) => {
             const count = Number(source?.count || 0);
-            const message = count > 0
+            const approvedParallelMissing = source?.store === "병행수입·편집샵"
+              && source?.parallelRetailerListEnforced === true && source?.absenceConfirmed === true;
+            const message = approvedParallelMissing
+              ? "상품없음"
+              : count > 0
               ? `검색 결과 ${count.toLocaleString("ko-KR")}개 확인 · 상품 상세는 판매처에서 직접 확인`
               : source?.verificationFailed ? "검색 결과 확인이 완료되지 않았습니다." : "판매처에서 직접 확인이 필요합니다.";
             return `<div class="sourcing-source-fallback"><strong>${text(source?.store || "판매처")}</strong><span>${text(message)}</span>${sourceAction(source)}</div>`;

@@ -2664,6 +2664,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         securityVerificationRequired: result?.securityVerificationRequired === true,
         loginRequired: result?.loginRequired === true,
         candidateCount: Number(result?.candidateCount || 0),
+        parallelRetailerListEnforced: result?.parallelRetailerListEnforced === true,
       // The official search URL and a verified product-detail URL are
       // intentionally separate. A search page must never be presented as a
       // purchase link merely because the brand has a supported search form.

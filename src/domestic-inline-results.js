@@ -1,4 +1,6 @@
 (() => {
+  if (globalThis.__aroundGDomesticInlineResultsInstalled) return;
+
   const STYLE_MARKER = "data-domestic-inline-list-style";
 
   function safeText(value) {
@@ -27,16 +29,21 @@
     const style = document.createElement("style");
     style.setAttribute(STYLE_MARKER, "true");
     style.textContent = `
-      /* Domestic results are a true table/list, not cards. */
-      #excel-preview-grid table{min-width:1420px!important}
-      #excel-preview-grid th:last-child{width:430px!important;min-width:430px!important}
-      #excel-preview-grid td.sourcing-domestic-cell{width:430px!important;min-width:430px!important;vertical-align:top!important;padding:5px 7px!important;white-space:normal!important;overflow:visible!important}
-      .sourcing-domestic-cell-wrap{display:flex!important;flex-direction:column!important;gap:4px!important;min-width:0!important}
-      .sourcing-domestic-cell-head{display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:6px!important;min-height:28px!important}
-      #excel-preview-grid .sourcing-domestic-cell-head .sourcing-domestic-search{min-width:82px!important;max-width:130px!important;padding:5px 8px!important;font-size:10px!important;border-radius:6px!important}
+      /* Keep the POIZON row compact and place retailer results in the next full-width row. */
+      #excel-preview.product-view #excel-preview-grid table{width:100%!important;min-width:980px!important;table-layout:fixed!important}
+      #excel-preview.product-view #excel-preview-grid .excel-product-row>td{height:54px!important;vertical-align:middle!important}
+      #excel-preview.product-view #excel-preview-grid .excel-product-search-detail{display:table-row!important}
+      #excel-preview.product-view #excel-preview-grid .excel-product-search-detail>td{width:auto!important;height:auto!important;padding:5px 9px!important;white-space:normal!important;overflow:visible!important;text-align:left!important;vertical-align:top!important}
+      .domestic-inline-detail-label{display:flex!important;align-items:center!important;gap:7px!important;margin:0 0 4px!important;color:#314a68!important;font-size:9px!important;font-weight:800!important}
+      .domestic-inline-detail-label>span{width:7px!important;height:7px!important;border-radius:50%!important;background:#4b8ff0!important}
+      .excel-product-group-amber .domestic-inline-detail-label>span{background:#e6a23c!important}
+      .domestic-inline-detail-label>em{margin-left:auto!important;color:#64748b!important;font-size:8px!important;font-style:normal!important}
 
       .domestic-inline-results{display:flex!important;flex-direction:column!important;gap:0!important;width:100%!important;min-width:0!important;border-top:1px solid #dfe5ec!important;background:transparent!important;border-radius:0!important;box-shadow:none!important}
-      .domestic-inline-row{display:grid!important;grid-template-columns:76px minmax(135px,1fr) 82px 72px 62px!important;gap:6px!important;align-items:center!important;min-height:31px!important;padding:3px 0!important;border:0!important;border-bottom:1px solid #eef1f4!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;font-size:9px!important;line-height:1.25!important}
+      .domestic-inline-head,.domestic-inline-row{display:grid!important;grid-template-columns:110px minmax(240px,1fr) 120px 90px 70px!important;gap:7px!important;align-items:center!important}
+      .domestic-inline-head{min-height:22px!important;padding:2px 0!important;border-bottom:1px solid #dfe5ec!important;color:#64748b!important;font-size:8px!important;font-weight:800!important;text-align:left!important}
+      .domestic-inline-head span:nth-child(4),.domestic-inline-head span:nth-child(5){text-align:right!important}
+      .domestic-inline-row{min-height:31px!important;padding:3px 0!important;border:0!important;border-bottom:1px solid #eef1f4!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;font-size:9px!important;line-height:1.25!important}
       .domestic-inline-row:last-child{border-bottom:0!important}
       .domestic-inline-row:hover{background:#fafbfd!important}
       .domestic-inline-store{display:flex!important;align-items:center!important;gap:3px!important;min-width:0!important;color:#334155!important;font-weight:800!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
@@ -48,9 +55,6 @@
       .domestic-inline-fallback .domestic-inline-title{color:#64748b!important;font-weight:600!important}
       .domestic-inline-empty{padding:7px 0!important;color:#7b8794!important;font-size:9px!important;text-align:left!important}
 
-      /* The old expanded detail/card row must never be used by the inline renderer. */
-      #excel-preview-grid .excel-product-search-detail{display:none!important}
-
       /* Explorer/popular views also use the same compact rows without thumbnails. */
       .domestic-source-list.sourcing-product-list{display:flex!important;flex-direction:column!important;gap:0!important;border:0!important;border-radius:0!important;overflow:visible!important;background:transparent!important;box-shadow:none!important}
       .domestic-source-list.sourcing-product-list .sourcing-product-list-row,
@@ -58,8 +62,7 @@
       .domestic-source-list.sourcing-product-list .sourcing-product-thumb{display:none!important}
 
       @media(max-width:1180px){
-        #excel-preview-grid th:last-child,#excel-preview-grid td.sourcing-domestic-cell{width:370px!important;min-width:370px!important}
-        .domestic-inline-row{grid-template-columns:68px minmax(115px,1fr) 74px 66px 56px!important;gap:4px!important}
+        .domestic-inline-head,.domestic-inline-row{grid-template-columns:90px minmax(190px,1fr) 105px 82px 62px!important;gap:5px!important}
       }
     `;
     document.head.appendChild(style);
@@ -86,9 +89,18 @@
     if (sourceStore === String(product?.sourceStore || "")) return true;
     if (sourceStore === productStore) return true;
     if (sourceStore === "SSG" && /^SSG(?:\s|$)/.test(productStore)) return true;
-    if (sourceStore === "병행수입·편집샵" && (/병행수입/.test(productStore)
-      || String(product?.retailerName || "").startsWith("병행수입"))) return true;
+    if (sourceStore === "병행수입·편집샵" && product?.parallelRetailerVerified === true
+      && (/병행수입/.test(productStore)
+        || String(product?.retailerName || "").startsWith("병행수입"))) return true;
     return false;
+  }
+
+  function approvedDomesticProduct(product) {
+    const store = String(product?.store || product?.sourceStore || "");
+    const retailer = String(product?.retailerName || "");
+    const parallel = store === "병행수입·편집샵" || store === "SSG 병행수입"
+      || product?.ssgClassification === "parallel_import" || retailer.startsWith("병행수입");
+    return !parallel || product?.parallelRetailerVerified === true;
   }
 
   function sourceAction(source = {}, product = {}, sourceProduct = {}, label = "열기") {
@@ -116,7 +128,7 @@
     if (result.loading) return `<div class="domestic-inline-empty">국내 판매처 검색 중…</div>`;
     if (result.error) return `<div class="domestic-inline-empty">국내 상품 검색 실패</div>`;
 
-    const products = Array.isArray(result.products) ? result.products.filter(Boolean) : [];
+    const products = Array.isArray(result.products) ? result.products.filter((product) => product && approvedDomesticProduct(product)) : [];
     const sources = Array.isArray(result.sources) ? result.sources : [];
     const sourceForProduct = (product) => sources.find((source) => sourceOwnsProduct(source, product)) || {};
 
@@ -147,8 +159,12 @@
       const count = Number(source?.count || 0);
       const hasUsefulLink = Boolean(source?.verifiedProductUrl || source?.officialProductUrl || source?.resultsUrl
         || source?.searchResultsUrl || source?.officialSearchUrl || source?.homepageUrl || source?.searchUrl);
-      if (!(count > 0 || source?.verificationPending || source?.verificationFailed || hasUsefulLink)) continue;
-      const message = count > 0
+      const approvedParallelMissing = store === "병행수입·편집샵"
+        && source?.parallelRetailerListEnforced === true && source?.absenceConfirmed === true;
+      if (!(count > 0 || approvedParallelMissing || source?.verificationPending || source?.verificationFailed || hasUsefulLink)) continue;
+      const message = approvedParallelMissing
+        ? "상품없음"
+        : count > 0
         ? `검색 결과 ${count.toLocaleString("ko-KR")}개`
         : source?.verificationFailed ? "확인 실패" : source?.verificationPending ? "확인 중" : "판매처 결과";
       rows.push(`<div class="domestic-inline-row domestic-inline-fallback">
@@ -161,7 +177,7 @@
     }
 
     return rows.length
-      ? `<div class="domestic-inline-results">${rows.join("")}</div>`
+      ? `<div class="domestic-inline-results"><div class="domestic-inline-head"><span>판매처</span><span>상품명</span><span>품번</span><span>가격</span><span>링크</span></div>${rows.join("")}</div>`
       : `<div class="domestic-inline-empty">일치하는 국내 판매 상품 없음</div>`;
   }
 
@@ -221,7 +237,7 @@
           const highestSizeByIdentity = highestQualifiedSizeReference(products);
           const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.key || product.articleNumber || product.spuId}`);
           products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
-          columns.innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>사이즈</th><th>사이즈 판매량</th><th>사이즈 최고가</th><th>중국 총판매</th><th>현지 총판매</th><th>국내 상품 검색 결과</th></tr>`;
+          columns.innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>사이즈</th><th>사이즈 판매량</th><th>사이즈 최고가</th><th>중국 총판매</th><th>현지 총판매</th></tr>`;
           rows.innerHTML = products.length ? products.map((product, index) => {
             const key = pageKeys[index];
             const result = excelPreviewSearchResults.get(key);
@@ -240,12 +256,8 @@
               <td>${poizonPrice ? safeMoney(poizonPrice) : "가격 없음"}</td>
               <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td>
               <td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
-              <td class="sourcing-domestic-cell"><div class="sourcing-domestic-cell-wrap">
-                <div class="sourcing-domestic-cell-head"><button type="button" class="excel-product-search sourcing-domestic-search ${search.className}" data-excel-search-product="${encodeURIComponent(key)}" title="국내 정확 상품 검색" ${result?.loading ? "disabled" : ""}>${safeText(search.label)}</button></div>
-                ${result && !result.loading ? inlineRenderDomestic(result, product) : ""}
-              </div></td>
-            </tr>`;
-          }).join("") : `<tr><td class="empty" colspan="11">조건에 맞는 상품이 없습니다.</td></tr>`;
+            </tr>${result ? `<tr class="excel-product-search-detail ${groupClass}"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>${safeText(product.title || product.articleNumber || "상품")}</strong> 국내 검색 결과<em>${safeText(search.label)}</em></div>${inlineRenderDomestic(result, product)}</td></tr>` : ""}`;
+          }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
           return pageKeys;
         } catch (error) {
           console.warn("[domestic-inline-results] excel renderer fallback", error);
@@ -285,4 +297,5 @@
     });
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
+  globalThis.__aroundGDomesticInlineResultsInstalled = true;
 })();

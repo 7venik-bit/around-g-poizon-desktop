@@ -58,8 +58,8 @@ relay = replaceOnce(
 );
 relay = replaceOnce(
   relay,
-  `        const ssgOfficialBrandHall = ssgClassification === "official_brand";\n        const parallelRetailer = detectedRetailer(rawCardText);`,
-  `        const ssgOfficialBrandHall = ssgClassification === "official_brand";\n        const lotteEvidence = \`${'${rawCardText}'} ${'${String(card?.markup || "")}'}\`;\n        const lotteDepartmentStore = naverStore === "롯데온" && /롯데\\s*백화점|롯데백화점/i.test(lotteEvidence);\n        const lotteOutlet = naverStore === "롯데온" && /롯데.{0,12}아울렛|아울렛|outlet/i.test(lotteEvidence);\n        const parallelRetailer = detectedRetailer(rawCardText);`,
+  `        const ssgOfficialBrandHall = ssgClassification === "official_brand";\n        const detectedSsgRetailer = detectedParallelImportRetailer(ssgEvidence);`,
+  `        const ssgOfficialBrandHall = ssgClassification === "official_brand";\n        const lotteEvidence = \`${'${rawCardText}'} ${'${String(card?.markup || "")}'}\`;\n        const lotteDepartmentStore = naverStore === "롯데온" && /롯데\\s*백화점|롯데백화점/i.test(lotteEvidence);\n        const lotteOutlet = naverStore === "롯데온" && /롯데.{0,12}아울렛|아울렛|outlet/i.test(lotteEvidence);\n        const detectedSsgRetailer = detectedParallelImportRetailer(ssgEvidence);`,
   "classify Lotte card seller label",
 );
 relay = replaceOnce(
@@ -76,8 +76,8 @@ relay = replaceOnce(
 );
 relay = replaceOnce(
   relay,
-  `        absenceConfirmed: matchingProducts.size === 0 && exactSsgSearchChecked,\n        ssgSearchChecked: /^SSG(?:\\s|$)/.test(String(store || "")),`,
-  `        absenceConfirmed: matchingProducts.size === 0 && exactPortalSearchChecked,\n        ssgSearchChecked: /^SSG(?:\\s|$)/.test(String(store || "")),\n        lotteSearchChecked: /^롯데온(?:\\s|$)/.test(String(store || "")),`,
+  `        absenceConfirmed: matchingProducts.size === 0 && (exactSsgSearchChecked || parallelRetailerListChecked),\n        ssgSearchChecked: /^SSG(?:\\s|$)/.test(String(store || "")),`,
+  `        absenceConfirmed: matchingProducts.size === 0 && (exactPortalSearchChecked || parallelRetailerListChecked),\n        ssgSearchChecked: /^SSG(?:\\s|$)/.test(String(store || "")),\n        lotteSearchChecked: /^롯데온(?:\\s|$)/.test(String(store || "")),`,
   "Lotte exact-grid absence verdict",
 );
 await writeFile(relayPath, relay, "utf8");

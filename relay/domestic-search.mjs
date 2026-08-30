@@ -94,13 +94,16 @@ export function resolveSsgProductClassification(detailClassification = "", searc
   return detail || search || "marketplace";
 }
 
-const RETAILER_ALIASES = [
+const EDITORIAL_RETAILER_ALIASES = [
   ["OK몰", /okmall|오케이몰|ok몰/i], ["카시나", /kasina|카시나/i], ["S.I.VILLAGE", /s\.?i\.?\s*village|에스아이빌리지/i],
   ["ABC마트", /abc\s*mart|abc마트/i], ["그랜드스테이지", /grand\s*stage|그랜드스테이지/i], ["온더스팟", /on\s*the\s*spot|온더스팟/i],
   ["폴더", /folderstyle|폴더스타일|\b폴더\b/i], ["슈마커", /shoemarker|슈마커/i], ["웍스아웃", /worksout|웍스아웃/i],
   ["튠", /\btune\b|\b튠\b/i], ["플랫폼샵", /platformshop|플랫폼샵/i], ["훕시티", /hoopcity|훕시티/i],
   ["29CM", /29cm/i], ["무신사", /musinsa|무신사/i], ["아이엠샵", /iamshop|아이엠샵/i],
   ["W컨셉", /w\.?concept|w컨셉/i], ["EQL", /\beql\b/i], ["하이츠스토어", /heights[- ]?store|하이츠스토어/i],
+];
+
+const PARALLEL_RETAILER_ALIASES = [
   // 사용자가 명시한 두 별칭만 canonical 업체명으로 고정한다.
   ["인퓨전프로젝트", /인퓨전프로젝트|브릭맨션/i],
   ["대림코퍼레이션", /대림코퍼레이션|\bDLC\b/i],
@@ -108,6 +111,13 @@ const RETAILER_ALIASES = [
     .filter((name) => !["인퓨전프로젝트", "브릭맨션", "대림코퍼레이션", "DLC"].includes(name))
     .map((name) => [name, new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")]),
 ];
+
+const RETAILER_ALIASES = [...EDITORIAL_RETAILER_ALIASES, ...PARALLEL_RETAILER_ALIASES];
+
+export function detectedParallelImportRetailer(value = "") {
+  const matched = PARALLEL_RETAILER_ALIASES.find(([, pattern]) => pattern.test(String(value || "")));
+  return matched ? `병행수입 정품업체 · ${matched[0]}` : "";
+}
 
 export function detectedRetailer(value = "") {
   const matched = RETAILER_ALIASES.find(([, pattern]) => pattern.test(String(value || "")));
@@ -570,7 +580,19 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // Naver can fill an exact-code query page with visually similar
         // recommendations. Parallel-import discovery must contain the requested
         // model in the product card itself; the page query or nearby card is not evidence.
+        // It must also name one of the operator-provided approved parallel importers.
+        // An exact model sold by an unlisted marketplace seller is deliberately
+        // classified as no product for this source.
         if (requiresExactParallelModel && !exactArticleIdentityMatch(rawCardText, articleCode)) articleMatched = false;
+        const parallelRetailer = requiresExactParallelModel
+          ? detectedParallelImportRetailer(`${rawCardText} ${String(card?.markup || "")}`)
+          : "";
+        const listedOfficialSsgCard = requiresExactParallelModel && isSsgOfficialBrandHall({
+          brand,
+          url: productUrl,
+          text: `${rawCardText} ${String(card?.markup || "")}`,
+        });
+        if (requiresExactParallelModel && !parallelRetailer && !listedOfficialSsgCard) articleMatched = false;
         if (!articleMatched) continue;
         if (requiresBrandMatch) {
           if (!brandMatched) continue;
@@ -586,14 +608,15 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           ? classifySsgProductEvidence({ brand, url: productUrl, text: ssgEvidence })
           : "";
         const ssgOfficialBrandHall = ssgClassification === "official_brand";
-        const parallelRetailer = detectedRetailer(rawCardText);
+        const detectedSsgRetailer = detectedParallelImportRetailer(ssgEvidence);
         const isSsgParallelImport = ssgClassification === "parallel_import";
+        if (isSsgParallelImport && !detectedSsgRetailer) continue;
         if (!matchingProducts.has(productKey)) {
           matchingProducts.set(productKey, {
             store: ssgOfficialBrandHall ? "SSG 브랜드 공식관" : isSsgParallelImport ? "SSG 병행수입" : store,
             retailerName: ssgOfficialBrandHall
               ? "브랜드 공식관 · 본사직영"
-              : isSsgParallelImport ? (parallelRetailer || "병행수입 상품")
+              : isSsgParallelImport ? (detectedSsgRetailer || "병행수입 상품")
                 : store === "병행수입·편집샵" ? parallelRetailer : "",
             id: productKey,
             url: productUrl,
@@ -614,11 +637,13 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
             confidence: ssgOfficialBrandHall ? 100 : exactDetectedArticle ? 95 : 75,
             officialStoreVerified: ssgOfficialBrandHall,
             ssgClassification,
+            parallelRetailerVerified: Boolean(parallelRetailer || detectedSsgRetailer),
             signals: { code: exactDetectedArticle ? "일치" : "정보 없음", title: "판매처 결과", image: card?.imageUrl ? "확인" : "없음" },
           });
         }
       }
       const exactSsgSearchChecked = /^SSG(?:\s|$)/.test(String(store || "")) && cards.length > 0;
+      const parallelRetailerListChecked = requiresExactParallelModel && cards.length > 0;
       if (/^네이버\s/.test(String(store || "")) && scopedCountFound && scopedPositiveCount > 0) {
         const domesticPresence = matchingProducts.size > 0 || domesticChannelCandidateCount > 0;
         const domesticDisplayCount = Math.min(scopedPositiveCount, domesticVisibleProducts.size);
@@ -639,8 +664,9 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
       return {
         count: matchingProducts.size,
         products: [...matchingProducts.values()],
-        absenceConfirmed: matchingProducts.size === 0 && exactSsgSearchChecked,
+        absenceConfirmed: matchingProducts.size === 0 && (exactSsgSearchChecked || parallelRetailerListChecked),
         ssgSearchChecked: /^SSG(?:\s|$)/.test(String(store || "")),
+        parallelRetailerListEnforced: requiresExactParallelModel,
       };
     } catch {
       return null;
