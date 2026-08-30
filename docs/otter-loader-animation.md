@@ -1,11 +1,16 @@
-# Otter loader animation contract
+# Approved otter loading modal contract
 
-The domestic search loader must render the SVG otter employee rather than the legacy CSS mascot.
+The domestic product-search loader must use the approved otter character raster.
+The character image is hash-pinned by the patch and verification scripts and must
+not be redrawn, filtered, transformed, or animated directly.
 
 Motion rules:
-- left and right paws alternate over the keyboard;
-- blue tap marks alternate with the paws;
-- the tail sways slowly;
-- body/head motion stays subtle so progress text remains easy to read;
-- reduced-motion mode disables mascot animation;
-- the search engine keeps running in the background while the loading modal blocks UI interaction.
+- only the two keyboard activity highlights alternate;
+- the approved otter image itself stays completely still and unchanged;
+- reduced-motion mode disables the keyboard highlights.
+
+Modal rules:
+- the overlay covers the entire application viewport and locks background scroll;
+- the search engine continues in the background while the overlay blocks UI interaction;
+- elapsed time, completed/total count, percentage, progress bar, and current product number remain visible;
+- the search-stop control remains available.
