@@ -19,6 +19,18 @@ test("SSG and Lotte exact query URLs become direct result links", () => {
   }
 });
 
+test("official mall and parallel-import exact query URLs become direct result links", () => {
+  for (const [store, resolvedSearchUrl] of [
+    ["브랜드 공식몰", "https://dk-on.com/DESCENTE/search?keyword=SR123UPS11"],
+    ["병행수입·편집샵", "https://search.naver.com/search.naver?where=shopping&query=DESCENTE%20SR123UPS11"],
+  ]) {
+    const result = createDomesticSearchLinkResult({ store, articleNumber: "SR123UPS11", resolvedSearchUrl });
+    assert.equal(result.resultLinkOnly, true);
+    assert.equal(result.searchSubmitted, true);
+    assert.equal(result.verificationDiagnostics.store, store);
+  }
+});
+
 test("Naver exact search URL is returned as a link without a hidden browser", () => {
   const result = createNaverFashionTownSearchLinkResult({
     articleNumber: "SR123UPS11",
@@ -121,6 +133,8 @@ test("main process uses the finalizer before the generic marketplace matcher", a
   assert.match(main, /if \(interactiveSiteSearch && !directNaverFashionResult\)/);
   assert.match(main, /return createNaverFashionTownSearchLinkResult/);
   assert.match(main, /return createDomesticSearchLinkResult/);
+  assert.match(main, /const directOfficialResultLink/);
+  assert.match(main, /const directParallelResultLink/);
   assert.ok(
     main.indexOf("if (isNaverRenderedResultReady(state, exactQuery)) return true;")
       < main.indexOf("return await waitForNaverSearchResultsStable(searchWindow, exactQuery);"),

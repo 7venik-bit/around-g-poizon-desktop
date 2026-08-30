@@ -267,8 +267,8 @@ test("MLB 공식몰은 홈페이지 돋보기 뒤 상품코드만 검색창에 �
   assert.equal(official.searchQuery, "3ASXCA12N-50WHS");
 });
 
-test("모든 브랜드 공식몰은 품번이 있으면 상품코드만 검색한다", async () => {
-  assert.equal(officialBrandUsesInternalSearch("데상트"), true);
+test("직접 검색 URL이 있는 브랜드 공식몰은 품번 링크를 사용한다", async () => {
+  assert.equal(officialBrandUsesInternalSearch("데상트"), false);
   const result = await queryDomesticProducts({
     query: "데상트 SR123UTS15",
     articleNumber: "SR123UTS15",
@@ -279,9 +279,9 @@ test("모든 브랜드 공식몰은 품번이 있으면 상품코드만 검색�
   });
   const official = result.sources.find((source) => source.store === "브랜드 공식몰");
   assert.equal(official.homepageUrl, "https://dk-on.com/DESCENTE");
-  assert.equal(official.officialProductUrl, "");
-  assert.equal(official.interactiveSearch, true);
-  assert.equal(official.searchQuery, "SR123UTS15");
+  assert.match(official.officialProductUrl, /dk-on\.com\/DESCENTE\/search\?keyword=SR123UTS15/);
+  assert.equal(official.interactiveSearch, false);
+  assert.equal(official.searchQuery, "");
 });
 
 test("브랜드 공식몰은 품번이 없을 때 상품코드로 검색한다", async () => {
@@ -293,10 +293,11 @@ test("브랜드 공식몰은 품번이 없을 때 상품코드로 검색한다",
     fetchImpl: async () => ({ ok: true, text: async () => "" }),
   });
   const official = result.sources.find((source) => source.store === "브랜드 공식몰");
-  assert.equal(official.searchQuery, "DESCENTE-001");
+  assert.match(official.officialProductUrl, /keyword=DESCENTE-001/);
+  assert.equal(official.searchQuery, "");
 });
 
-test("병행수입 검색은 네이버 통합검색이 아닌 쇼핑 포털 내부 검색을 사용한다", async () => {
+test("병행수입 검색은 상품코드가 포함된 네이버 쇼핑 결과 링크를 사용한다", async () => {
   assert.equal(naverShoppingPortalUrl(), "https://shopping.naver.com/home");
   const result = await queryDomesticProducts({
     query: "데상트 SR123UTS15",
@@ -308,10 +309,12 @@ test("병행수입 검색은 네이버 통합검색이 아닌 쇼핑 포털 내�
     }),
   });
   const parallel = result.sources.find((source) => source.store === "병행수입·편집샵");
-  assert.equal(parallel.searchUrl, "https://shopping.naver.com/home");
+  assert.match(parallel.searchUrl, /search\.naver\.com\/search\.naver/);
   assert.equal(parallel.interactiveSearch, true);
   assert.equal(parallel.searchQuery, "데상트 SR123UTS15");
-  assert.doesNotMatch(parallel.searchUrl, /search\.naver\.com|query=|q=/);
+  const parallelUrl = new URL(parallel.searchUrl);
+  assert.equal(parallelUrl.searchParams.get("where"), "shopping");
+  assert.equal(parallelUrl.searchParams.get("query"), "데상트 SR123UTS15");
 });
 
 test("무신사 검색 카드에 품번이 없어도 같은 브랜드 상세페이지 검증 후보로 유지한다", () => {
@@ -1016,7 +1019,7 @@ test("a verified official homepage stays usable when product search is unsupport
   assert.equal(official.renderCount, true);
 });
 
-test("official-store direct search URL is replaced by homepage magnifier search", async () => {
+test("official-store direct search URL is preserved instead of replaying the magnifier", async () => {
   const result = await queryDomesticProducts({
     query: "아디다스 IH0274",
     articleNumber: "IH0274",
@@ -1025,10 +1028,10 @@ test("official-store direct search URL is replaced by homepage magnifier search"
   });
   const official = result.sources.find((source) => source.store === "브랜드 공식몰");
   assert.equal(official.homepageUrl, "https://www.adidas.co.kr/");
-  assert.equal(official.officialSearchUrl, "");
-  assert.equal(official.officialProductUrl, "");
-  assert.equal(official.interactiveSearch, true);
-  assert.equal(official.searchQuery, "IH0274");
+  assert.match(official.officialSearchUrl, /adidas\.co\.kr\/search\?q=IH0274/);
+  assert.match(official.officialProductUrl, /adidas\.co\.kr\/search\?q=IH0274/);
+  assert.equal(official.interactiveSearch, false);
+  assert.equal(official.searchQuery, "");
 });
 
 test("official-store text matches without a product-detail URL are discarded", () => {

@@ -181,9 +181,13 @@ export function officialBrandProductSearchUrl(brand, query, officialBrandRecord 
 
 export function officialBrandUsesInternalSearch(brand, officialBrandRecord = null) {
   if (officialBrandRecord?.interactiveSearch === true) return true;
+  if (officialSearchUrlFromRecord(officialBrandRecord, "test")) return false;
+  const known = officialBrandEntry(brand);
+  if (known?.interactiveSearch === true) return true;
+  if (known?.searchTemplate) return false;
   const homepage = String(officialBrandRecord?.homepageUrl || "");
   if (/^https?:\/\//i.test(homepage)) return true;
-  return Boolean(officialBrandEntry(brand)?.homepageUrl);
+  return Boolean(known?.homepageUrl);
 }
 
 const NAVER_BRAND_STORES = [
@@ -997,7 +1001,7 @@ export async function queryDomesticProducts({
       : source.fashionTown
         ? naverFashionTownUrl(source.fashionTown, brand || title, candidate)
         : source.retailerDiscovery
-          ? naverShoppingPortalUrl()
+          ? naverSearch(internalPortalSearchQuery(brand || title, candidate))
         : source.domesticChannel
           ? domesticChannelUrl(source.domesticChannel, brand || title, candidate)
         : DOMESTIC_SEARCH_LINKS[source.store](candidate);

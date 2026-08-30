@@ -15,6 +15,8 @@ const required = [
   "return createNaverFashionTownSearchLinkResult({ articleNumber, resolvedSearchUrl: url });",
   "resultLinkOnly: result?.resultLinkOnly === true",
   "return createDomesticSearchLinkResult({ store: source.store, articleNumber, resolvedSearchUrl: url });",
+  "const directOfficialResultLink",
+  "const directParallelResultLink",
   'String(source.store || "") === "네이버 패션타운"',
   "return finalizeNaverFashionTownResult(parsedContent, {",
   "visibleResultCountObserved",
