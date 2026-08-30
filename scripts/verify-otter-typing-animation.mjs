@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 
 const renderer = String(await readFile(new URL("../src/renderer.js", import.meta.url), "utf8"));
 const css = String(await readFile(new URL("../src/domestic-loading-overlay.css", import.meta.url), "utf8"));
+const patch = String(await readFile(new URL("./patch-otter-typing-animation.mjs", import.meta.url), "utf8"));
 const chunkNames = [
   "part-00-full.txt",
   "part-02.txt",
@@ -14,12 +15,17 @@ const imageBase64 = (await Promise.all(chunkNames.map((name) =>
   readFile(new URL(`./otter-image-chunks/${name}`, import.meta.url), "utf8")
 ))).join("").replace(/\s+/g, "");
 
-if (imageBase64.length !== 78_872) {
+const expectedLength = 85_704;
+const expectedDigest = "35647819f16063f8bfba099dfcdcc2008803e070a14e5b682414126815252c7f";
+if (imageBase64.length !== expectedLength) {
   throw new Error(`approved otter base64 length mismatch: ${imageBase64.length}`);
 }
 const digest = createHash("sha256").update(Buffer.from(imageBase64, "base64")).digest("hex");
-if (digest !== "b181b389bb85a83fa2c48bf5aec6dda45ff0be5ed4a6c9cfaaf55d3c4a830cba") {
+if (digest !== expectedDigest) {
   throw new Error(`approved otter image digest mismatch: ${digest}`);
+}
+if (!patch.includes("85_704") || !patch.includes(expectedDigest)) {
+  throw new Error("patch script is not pinned to the exact approved otter raster");
 }
 
 const renderStart = renderer.indexOf("function renderDomesticLoading");
@@ -57,6 +63,7 @@ const requiredCss = [
   ".domestic-loading-otter.otter-approved-image",
   "transform: none !important",
   "filter: none !important",
+  "opacity: 1 !important",
   ".otter-key-flash-left",
   ".otter-key-flash-right",
   "@keyframes approved-key-flash-left",
@@ -66,4 +73,9 @@ for (const token of requiredCss) {
   if (!css.includes(token)) throw new Error(`missing approved otter CSS token: ${token}`);
 }
 
-console.log(`approved otter image verified unchanged (${digest.slice(0, 12)}..., ${imageBase64.length} base64 chars)`);
+const imageRule = css.match(/\.domestic-loading-otter\.otter-approved-image\s*\{([\s\S]*?)\}/)?.[1] || "";
+if (/animation\s*:/.test(imageRule)) throw new Error("approved otter image must not be animated directly");
+if (!/transform:\s*none\s*!important/.test(imageRule)) throw new Error("approved otter image transform must stay disabled");
+if (!/filter:\s*none\s*!important/.test(imageRule)) throw new Error("approved otter image filters must stay disabled");
+
+console.log(`exact approved otter raster verified unchanged (${digest}, ${imageBase64.length} base64 chars)`);
