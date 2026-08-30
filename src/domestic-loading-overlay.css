@@ -1,9 +1,4 @@
-/*
- * Domestic product search modal.
- * The approved otter artwork is a fixed raster asset. Do not redraw, filter,
- * crop in CSS, or transform the base image itself. The unchanged raster stays
- * still while a clipped copy of its real front paw performs the typing motion.
- */
+/* Domestic product search modal with a real multi-frame mascot GIF. */
 
 html:has(body > .domestic-search-overlay:not([hidden])),
 body:has(> .domestic-search-overlay:not([hidden])) {
@@ -21,7 +16,8 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   transform: none;
 }
 
-.domestic-loading-otter.otter-approved-image {
+.domestic-loading-otter.otter-multiframe-gif,
+.domestic-loading-otter.otter-multiframe-static {
   position: static !important;
   display: block !important;
   width: 100% !important;
@@ -37,69 +33,8 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   pointer-events: none;
 }
 
-/* The base mascot remains still. This clipped copy contains only the real paw
- * pixels, so the hand visibly taps while the face, laptop, and tail stay put. */
-.otter-typing-paw-layer {
-  position: absolute !important;
-  z-index: 4;
-  inset: 0 !important;
-  display: block !important;
-  width: 100% !important;
-  height: auto !important;
-  max-width: none !important;
-  margin: 0 !important;
-  object-fit: contain !important;
-  clip-path: ellipse(7.3% 10.5% at 60% 75%);
-  transform-origin: 60% 75%;
-  animation: approved-otter-paw-tap .72s cubic-bezier(.45, 0, .35, 1) infinite;
-  will-change: transform;
-  user-select: none;
-  -webkit-user-drag: none;
-  pointer-events: none;
-}
-
-/* Small key depressions alternate under the moving paw. They use a soft
- * shadow instead of a glow, which reads as keyboard contact at full size. */
-.otter-key-flash {
-  position: absolute;
-  z-index: 3;
-  width: 13px;
-  height: 3px;
-  border-radius: 999px;
-  opacity: 0;
-  background: rgba(47, 128, 237, .28);
-  box-shadow: 0 1px 3px rgba(23, 54, 93, .18);
-  pointer-events: none;
-}
-
-.otter-key-flash-left {
-  left: 53%;
-  top: 83%;
-  animation: approved-key-flash-left .72s ease-in-out infinite;
-}
-
-.otter-key-flash-right {
-  left: 61%;
-  top: 86%;
-  animation: approved-key-flash-right .72s ease-in-out infinite;
-}
-
-@keyframes approved-key-flash-left {
-  0%, 9%, 31%, 100% { opacity: 0; transform: scaleX(.76); }
-  15%, 25% { opacity: .58; transform: scaleX(1); }
-}
-
-@keyframes approved-key-flash-right {
-  0%, 53%, 77%, 100% { opacity: 0; transform: scaleX(.76); }
-  59%, 71% { opacity: .58; transform: scaleX(1); }
-}
-
-@keyframes approved-otter-paw-tap {
-  0%, 100% { transform: translate3d(0, -1px, 0) rotate(-.35deg); }
-  18%, 24% { transform: translate3d(-1px, 1.7px, 0) rotate(-.8deg); }
-  42% { transform: translate3d(0, -1px, 0) rotate(0); }
-  62%, 68% { transform: translate3d(1px, 1.7px, 0) rotate(.8deg); }
-  86% { transform: translate3d(0, -1px, 0) rotate(0); }
+.domestic-loading-otter.otter-multiframe-static {
+  display: none !important;
 }
 
 .domestic-search-overlay {
@@ -336,14 +271,11 @@ body:has(> .domestic-search-overlay:not([hidden])) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .otter-approved-stage {
-    transform: none !important;
+  .domestic-loading-otter.otter-multiframe-gif {
+    display: none !important;
   }
 
-  .otter-typing-paw-layer,
-  .otter-key-flash-left,
-  .otter-key-flash-right {
-    animation: none !important;
-    opacity: 0 !important;
+  .domestic-loading-otter.otter-multiframe-static {
+    display: block !important;
   }
 }

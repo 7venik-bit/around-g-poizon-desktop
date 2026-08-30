@@ -3,99 +3,59 @@ import { createHash } from "node:crypto";
 
 const renderer = String(await readFile(new URL("../src/renderer.js", import.meta.url), "utf8"));
 const css = String(await readFile(new URL("../src/domestic-loading-overlay.css", import.meta.url), "utf8"));
-const patch = String(await readFile(new URL("./patch-otter-typing-animation.mjs", import.meta.url), "utf8"));
-const chunkNames = [
-  "part-00-full.txt",
-  "part-02.txt",
-  "part-03.txt",
-  "part-04.txt",
-  "part-05.txt",
-];
-const imageBase64 = (await Promise.all(chunkNames.map((name) =>
-  readFile(new URL(`./otter-image-chunks/${name}`, import.meta.url), "utf8")
-))).join("").replace(/\s+/g, "");
+const packageJson = String(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+const gif = await readFile(new URL("../src/assets/otter-typing-tail-sway.gif", import.meta.url));
+const still = await readFile(new URL("../src/assets/otter-typing-tail-sway-static.webp", import.meta.url));
 
-const expectedLength = 85_704;
-const expectedDigest = "35647819f16063f8bfba099dfcdcc2008803e070a14e5b682414126815252c7f";
-if (imageBase64.length !== expectedLength) {
-  throw new Error(`approved otter base64 length mismatch: ${imageBase64.length}`);
+const gifDigest = createHash("sha256").update(gif).digest("hex");
+const stillDigest = createHash("sha256").update(still).digest("hex");
+if (gif.length !== 167_486 || gifDigest !== "16d29c5f36e1373206508ac00a42cdfdeace826b88a03a6be6160dd5ac32edfc") {
+  throw new Error(`approved multi-frame GIF mismatch: ${gif.length} bytes, ${gifDigest}`);
 }
-const digest = createHash("sha256").update(Buffer.from(imageBase64, "base64")).digest("hex");
-if (digest !== expectedDigest) {
-  throw new Error(`approved otter image digest mismatch: ${digest}`);
+if (still.length !== 8_240 || stillDigest !== "c871b7612f389857a5791efe0651f0613941e7fb4babbd50ff24fe8cb501cb1b") {
+  throw new Error(`approved reduced-motion still mismatch: ${still.length} bytes, ${stillDigest}`);
 }
-if (!patch.includes("85_704") || !patch.includes(expectedDigest)) {
-  throw new Error("patch script is not pinned to the exact approved otter raster");
+if (gif.subarray(0, 6).toString("ascii") !== "GIF89a") {
+  throw new Error("approved otter asset is not an animated GIF");
+}
+if (gif.readUInt16LE(6) !== 500 || gif.readUInt16LE(8) !== 344) {
+  throw new Error("approved otter GIF dimensions must remain 500x344");
 }
 
-const renderStart = renderer.indexOf("const APPROVED_OTTER_IMAGE_SRC");
+const renderStart = renderer.indexOf("function renderDomesticLoading");
 const renderEnd = renderer.indexOf("function showDomesticSearchOverlay", renderStart);
-const block = renderer.slice(renderStart, renderEnd);
-
-const requiredRenderer = [
+const loader = renderer.slice(renderStart, renderEnd);
+for (const token of [
   'class="otter-approved-stage"',
-  'class="domestic-loading-otter otter-approved-image"',
-  'class="otter-typing-paw-layer"',
-  'data:image/webp;base64,',
-  'class="otter-key-flash otter-key-flash-left"',
-  'class="otter-key-flash otter-key-flash-right"',
-  imageBase64.slice(0, 80),
-  imageBase64.slice(-80),
-];
-for (const token of requiredRenderer) {
-  if (!block.includes(token)) throw new Error(`missing approved otter renderer token: ${token.slice(0, 80)}`);
+  'class="domestic-loading-otter otter-multiframe-gif"',
+  'src="./assets/otter-typing-tail-sway.gif"',
+  'class="domestic-loading-otter otter-multiframe-static"',
+  'src="./assets/otter-typing-tail-sway-static.webp"',
+]) {
+  if (!loader.includes(token)) throw new Error(`missing multi-frame otter renderer token: ${token}`);
 }
-
-const forbiddenRenderer = [
-  "otter-employee-svg",
-  "otter-glasses",
+for (const forbidden of [
+  "APPROVED_OTTER_IMAGE_SRC",
+  "otter-typing-paw-layer",
+  "otter-key-flash",
+  "data:image/webp;base64,",
   "otter-ear-left",
-  "otter-ear-right",
-  "otter-tail-group",
-  "otter-paw-left-group",
-  "otter-paw-right-group",
-];
-for (const token of forbiddenRenderer) {
-  if (block.includes(token)) throw new Error(`redrawn/legacy mascot token still rendered: ${token}`);
+  "otter-paw-left",
+]) {
+  if (loader.includes(forbidden)) throw new Error(`legacy layered otter token still rendered: ${forbidden}`);
 }
 
-const requiredCss = [
-  ".otter-approved-stage",
-  ".domestic-loading-otter.otter-approved-image",
-  ".otter-typing-paw-layer",
-  "transform: none !important",
-  "filter: none !important",
-  "opacity: 1 !important",
-  ".otter-key-flash-left",
-  ".otter-key-flash-right",
-  "@keyframes approved-otter-paw-tap",
-  "@keyframes approved-key-flash-left",
-  "@keyframes approved-key-flash-right",
-];
-for (const token of requiredCss) {
-  if (!css.includes(token)) throw new Error(`missing approved otter CSS token: ${token}`);
+if (!css.includes(".domestic-loading-otter.otter-multiframe-gif")) {
+  throw new Error("multi-frame GIF layout rule is missing");
+}
+if (/approved-otter-paw-tap|clip-path:\s*ellipse|otter-typing-paw-layer/.test(css)) {
+  throw new Error("legacy cropped-paw animation CSS is still present");
+}
+if (!/@media \(prefers-reduced-motion: reduce\)[\s\S]*otter-multiframe-gif[\s\S]*display:\s*none\s*!important[\s\S]*otter-multiframe-static[\s\S]*display:\s*block\s*!important/.test(css)) {
+  throw new Error("reduced-motion static mascot fallback is missing");
+}
+if (packageJson.includes("patch-otter-typing-animation.mjs")) {
+  throw new Error("postinstall still mutates the otter renderer");
 }
 
-const imageRule = css.match(/\.domestic-loading-otter\.otter-approved-image\s*\{([\s\S]*?)\}/)?.[1] || "";
-const stageRule = css.match(/\.otter-approved-stage\s*\{([\s\S]*?)\}/)?.[1] || "";
-const pawRule = css.match(/\.otter-typing-paw-layer\s*\{([\s\S]*?)\}/)?.[1] || "";
-if (/animation\s*:/.test(imageRule)) throw new Error("approved otter image must not be animated directly");
-if (!/transform:\s*none\s*!important/.test(imageRule)) throw new Error("approved otter image transform must stay disabled");
-if (!/filter:\s*none\s*!important/.test(imageRule)) throw new Error("approved otter image filters must stay disabled");
-if (/animation\s*:/.test(stageRule)) {
-  throw new Error("approved otter stage must stay still");
-}
-if (!/clip-path:\s*ellipse\(/.test(pawRule)) {
-  throw new Error("real-paw isolation mask is missing");
-}
-if (!/animation:\s*approved-otter-paw-tap/.test(pawRule)) {
-  throw new Error("isolated paw typing movement is missing");
-}
-if ((renderer.match(/data:image\/webp;base64,/g) || []).length !== 1) {
-  throw new Error("approved otter raster must be embedded only once");
-}
-if (!/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.otter-typing-paw-layer,[\s\S]*animation:\s*none\s*!important/.test(css)) {
-  throw new Error("reduced-motion fallback for the typing paw is missing");
-}
-
-console.log(`exact approved otter raster verified unchanged with isolated paw typing (${digest}, ${imageBase64.length} base64 chars)`);
+console.log(`real multi-frame otter GIF verified with typing and tail sway (${gifDigest})`);

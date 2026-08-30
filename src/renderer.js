@@ -937,10 +937,9 @@ function rawExcelDomesticResultLinks(result = {}) {
 function renderDomesticLoading(startedAt = Date.now()) {
   const safeStartedAt = Number(startedAt) || Date.now();
   return `<div class="domestic-search-loading" role="status" aria-live="polite">
-    <span class="domestic-loading-otter" aria-hidden="true">
-      <span class="otter-ear otter-ear-left"></span><span class="otter-ear otter-ear-right"></span>
-      <span class="otter-head"><span class="otter-glasses"></span><span class="otter-nose"></span></span>
-      <span class="otter-laptop"></span><span class="otter-paw otter-paw-left"></span><span class="otter-paw otter-paw-right"></span>
+    <span class="otter-approved-stage" aria-hidden="true">
+      <img class="domestic-loading-otter otter-multiframe-gif" src="./assets/otter-typing-tail-sway.gif" alt="" draggable="false">
+      <img class="domestic-loading-otter otter-multiframe-static" src="./assets/otter-typing-tail-sway-static.webp" alt="" draggable="false">
     </span>
     <span class="domestic-loading-copy"><strong>상품을 찾고 있습니다<span class="domestic-loading-dots">…</span></strong>
       <small>국내 판매처 검색 중 · <b class="domestic-search-elapsed" data-search-started-at="${safeStartedAt}">0초</b></small>
