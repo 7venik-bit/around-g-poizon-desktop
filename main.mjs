@@ -95,6 +95,7 @@ import {
   sanitizeDomesticQuery,
 } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
+import { selectNaverSellingPrices } from "./services/naver-price.mjs";
 import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";
 import { highestQualifiedOptionPrice, optionRowsFromSellerResponses, qualifiedOptionPrices } from "./services/seller-transaction-price.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
@@ -1276,6 +1277,15 @@ async function lookupNaverDomesticPrice(input = {}) {
         };
       })()`, true).catch(() => null);
       if (!snapshot) continue;
+      snapshot.productCards = (snapshot.productCards || []).map((card) => {
+        const selectedPrices = selectNaverSellingPrices(card?.text || "");
+        return {
+          ...card,
+          price: selectedPrices.price,
+          originalPrice: selectedPrices.originalPrice,
+          shippingFeeExcluded: selectedPrices.excludedShippingAmounts.length > 0,
+        };
+      }).filter((card) => Number(card.price || 0) > 0);
       const analyzed = analyzeRenderedChannelProducts(
         JSON.stringify(snapshot), "네이버 패션타운", articleNumber, brand, title,
       );
