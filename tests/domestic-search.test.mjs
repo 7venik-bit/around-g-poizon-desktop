@@ -966,26 +966,21 @@ test("one domestic store failure does not stop the others", async () => {
     return { ok: true, status: 200, text: async () => emptyNextData };
   };
   const result = await queryDomesticProducts({ query: "DD1391-100", brand: "나이키", fetchImpl });
-  assert.equal(result.sources.length, 11);
-  assert.deepEqual(result.sources.map((source) => source.store), [
-    "브랜드 공식몰",
-    "네이버 패션타운",
-    "무신사",
-    "SSG",
-    "SSG 백화점",
-    "SSG 아울렛",
-    "롯데온",
-    "롯데온 백화점",
-    "롯데온 아울렛",
-    "병행수입·편집샵",
-    "코오롱몰",
-  ]);
-  assert.deepEqual(result.sources.map((source) => source.priority), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  const stores = result.sources.map((source) => source.store);
+  // Source checkout keeps the legacy per-channel SSG/Lotte rows; release
+  // post-processing consolidates each portal into one overview request. Both
+  // topologies must preserve every independent source after Kolon fails.
+  for (const requiredStore of [
+    "브랜드 공식몰", "네이버 패션타운", "무신사", "SSG",
+    "롯데온", "병행수입·편집샵", "코오롱몰",
+  ]) assert.equal(stores.includes(requiredStore), true, requiredStore);
+  assert.deepEqual(result.sources.map((source) => source.priority),
+    result.sources.map((_, index) => index + 1));
   assert.equal(result.sources.find((source) => source.store === "코오롱몰").ok, false);
-  assert.equal(result.sources.filter((source) => source.ok).length, 10);
+  assert.equal(result.sources.filter((source) => source.ok).length, result.sources.length - 1);
   assert.deepEqual(
     result.sources.filter((source) => source.renderCount).map((source) => source.store),
-    ["브랜드 공식몰", "네이버 패션타운", "무신사", "SSG", "SSG 백화점", "SSG 아울렛", "롯데온", "롯데온 백화점", "롯데온 아울렛", "병행수입·편집샵"]
+    stores.filter((store) => store !== "코오롱몰")
   );
 });
 

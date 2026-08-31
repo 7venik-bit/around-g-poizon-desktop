@@ -14,7 +14,7 @@ function replaceOnce(before, after, label) {
 
 replaceOnce(
   'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";',
-  'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";\nimport { createDomesticSearchLinkResult, createNaverFashionTownSearchLinkResult, finalizeNaverFashionTownResult, isNaverRenderedResultReady } from "./services/naver-fashiontown-result.mjs";',
+  'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";\nimport { createDomesticSearchLinkResult, finalizeNaverFashionTownResult, isNaverRenderedResultReady } from "./services/naver-fashiontown-result.mjs";',
   "Naver result finalizer import",
 );
 
@@ -26,8 +26,8 @@ replaceOnce(
 
 replaceOnce(
   '  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
-  '  if (directNaverFashionResult) {\n    // Naver blocks the hidden Electron document even though the exact same URL\n    // works when opened by the user. The requested behavior is link-only, so\n    // do not turn an unusable hidden browser into a false verification failure.\n    return createNaverFashionTownSearchLinkResult({ articleNumber, resolvedSearchUrl: url });\n  }\n  const directRetailResultLink = /^(?:SSG|롯데온)(?:\\s|$)/.test(String(source.store || ""))\n    && /^https:\\/\\//i.test(url)\n    && /[?&](?:q|query)=/i.test(url);\n  const directParallelResultLink = String(source.store || "") === "병행수입·편집샵"\n    && /search\\.naver\\.com\\/search\\.naver/i.test(url)\n    && /[?&]where=shopping(?:&|$)/i.test(url)\n    && /[?&]query=/i.test(url);\n  if (directRetailResultLink || directParallelResultLink) {\n    // Exact marketplace result URLs are the requested output. Official malls\n    // must continue into the rendered-card capture so their current prices can\n    // be shown inside the program.\n    return createDomesticSearchLinkResult({ store: source.store, articleNumber, resolvedSearchUrl: url });\n  }\n  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
-  "Naver direct result link without hidden browser verification",
+  '  // Naver Fashion Town must continue into the rendered-card capture. The\n  // exact result URL is loaded directly below, but it is not a completed result\n  // until the product card, current price and approved seller evidence are read.\n  const directRetailResultLink = /^(?:SSG|롯데온)(?:\\s|$)/.test(String(source.store || ""))\n    && /^https:\\/\\//i.test(url)\n    && /[?&](?:q|query)=/i.test(url);\n  const directParallelResultLink = String(source.store || "") === "병행수입·편집샵"\n    && /search\\.naver\\.com\\/search\\.naver/i.test(url)\n    && /[?&]where=shopping(?:&|$)/i.test(url)\n    && /[?&]query=/i.test(url);\n  if (directRetailResultLink || directParallelResultLink) {\n    // Exact marketplace result URLs are the requested output. Official malls\n    // must continue into the rendered-card capture so their current prices can\n    // be shown inside the program.\n    return createDomesticSearchLinkResult({ store: source.store, articleNumber, resolvedSearchUrl: url });\n  }\n  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
+  "Naver result capture instead of early link-only completion",
 );
 
 replaceOnce(
@@ -189,16 +189,44 @@ replaceOnce(
         articleNumber,
         resolvedSearchUrl: String(searchWindow.webContents.getURL() || url),
       });
-      const approvedProducts = await filterApprovedNaverDomesticProducts(finalized?.products || []);
+      const attemptedQuery = sanitizeDomesticQuery(searchAttempt?.query || source.searchQuery || articleNumber || title);
+      const exactCodeQuery = sanitizeDomesticProductCode(articleNumber);
+      const requireArticleIdentity = Boolean(exactCodeQuery && attemptedQuery === exactCodeQuery);
+      const approval = await verifyApprovedNaverDomesticProducts(finalized?.products || [], {
+        articleNumber,
+        brand,
+        title,
+        requireArticleIdentity,
+      });
+      const approvedProducts = approval.products;
+      const approved = approvedProducts.length > 0;
+      const technicalPending = !approved && approval.failedCount > 0;
+      const authoritativelyRejected = !approved
+        && approval.candidateCount > 0
+        && approval.checkedCount === approval.candidateCount
+        && approval.failedCount === 0;
+      const absenceConfirmed = finalized.absenceConfirmed === true || authoritativelyRejected;
       return {
         ...finalized,
-        count: approvedProducts.length,
+        count: technicalPending ? null : approvedProducts.length,
         products: approvedProducts,
-        presenceConfirmed: approvedProducts.length > 0,
-        absenceConfirmed: approvedProducts.length === 0,
-        detailVerificationPending: false,
-        verificationReason: approvedProducts.length > 0
-          ? "approved_domestic_seller" : "approved_domestic_seller_not_found",
+        presenceConfirmed: approved,
+        absenceConfirmed,
+        naverAllSearchVerdict: approved ? "confirmed" : absenceConfirmed ? "absent" : "pending",
+        detailVerificationPending: technicalPending || (!approved && !absenceConfirmed),
+        verificationPending: technicalPending || (!approved && !absenceConfirmed),
+        verificationReason: approved ? "approved_domestic_seller"
+          : technicalPending ? "naver_seller_evidence_failed"
+            : finalized.verificationReason || "",
+        candidateCount: approval.candidateCount,
+        verificationDiagnostics: {
+          ...(finalized.verificationDiagnostics || {}),
+          sellerCandidateCount: approval.candidateCount,
+          sellerCheckedCount: approval.checkedCount,
+          sellerRejectedCount: approval.rejectedCount,
+          sellerFailedCount: approval.failedCount,
+          identityMode: requireArticleIdentity ? "article" : "brand_title",
+        },
       };
     }
     if (naverPortalSource) {`,

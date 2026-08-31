@@ -820,6 +820,16 @@ async function addMatchConfidence(data, input) {
     const imageScore = product.signals?.imageScore;
     if (codeConflict) return false;
     if (product.brandVerifiedFromCard === false) return false;
+    const verifiedNaverIdentity = String(product?.sourceStore || product?.store || "") === "네이버 패션타운"
+      && product.domesticSellerVerified === true
+      && (product.articleNumberVerified === true
+        || (product.brandVerifiedFromCard === true && product.titleVerifiedFromDetail === true));
+    // Naver's exact result card often omits the model code and uses a campaign
+    // photo instead of POIZON's packshot. The detail page has already supplied
+    // stronger evidence: approved domestic seller plus article identity or
+    // brand-title identity. Keep that verified product regardless of a weak
+    // thumbnail fingerprint.
+    if (verifiedNaverIdentity) return true;
     if (codeMatched) return true;
     if (product.store === "브랜드 공식몰") return false;
     if (!hasSourceImage) return titleScore >= 80;
@@ -884,6 +894,15 @@ async function verifyAllStoresWithMusinsaImage(data, input = {}) {
     const store = String(product?.sourceStore || product?.store || "");
     if (product === exactMusinsa || store === "무신사") {
       return { ...product, musinsaImageReference: true, imageVerificationLabel: "무신사 기준 이미지" };
+    }
+    if (store === "네이버 패션타운"
+      && product?.domesticSellerVerified === true
+      && product?.articleNumberVerified === true) {
+      return {
+        ...product,
+        musinsaImageCompared: false,
+        imageVerificationLabel: "네이버 상세 품번 확인",
+      };
     }
     const exactCode = Number(product?.signals?.codeScore || 0) === 1
       && product?.articleConflict !== true
@@ -1201,7 +1220,12 @@ function renderedSearchFailure(reason, searchWindow = null, details = {}) {
   };
 }
 
-async function filterApprovedNaverDomesticProducts(products = []) {
+async function verifyApprovedNaverDomesticProducts(products = [], {
+  articleNumber = "",
+  brand = "",
+  title = "",
+  requireArticleIdentity = false,
+} = {}) {
   const candidates = (Array.isArray(products) ? products : [])
     .filter((product) => isDomesticNaverPriceCard({
       productUrl: product?.url || product?.productUrl,
@@ -1209,9 +1233,14 @@ async function filterApprovedNaverDomesticProducts(products = []) {
       text: product?.text,
     }))
     .slice(0, 8);
-  if (!candidates.length) return [];
+  if (!candidates.length) {
+    return { products: [], candidateCount: 0, checkedCount: 0, rejectedCount: 0, failedCount: 0 };
+  }
   let evidenceWindow;
   const approved = [];
+  let checkedCount = 0;
+  let rejectedCount = 0;
+  let failedCount = 0;
   try {
     evidenceWindow = new BrowserWindow({
       show: false,
@@ -1245,30 +1274,96 @@ async function filterApprovedNaverDomesticProducts(products = []) {
               .filter((line) => line.length >= 3 && line.length <= 240)
               .filter((line) => /판매(?:중)?인?\\s*상품|공식\\s*판매처|브랜드\\s*(?:공식|직영)|공식\\s*(?:브랜드|스토어|온라인몰)|직영\\s*(?:스토어|온라인몰)|관부가세|해외\\s*직구|구매\\s*대행/i.test(line))
               .slice(0, 20).join(" ");
-            return { fullText, sellerEvidenceText, ready: document.readyState === "complete" };
+            const titleText = [...document.querySelectorAll('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')]
+              .map((element) => String(element.innerText || element.textContent || "").replace(/\\s+/g, " ").trim())
+              .filter(Boolean).slice(0, 8).join(" ").slice(0, 2000);
+            const identityLabel = /품\\s*번|상품\\s*(?:번호|코드)|제품\\s*(?:번호|코드)|모델\\s*(?:명|번호|코드)?|스타일\\s*(?:번호|코드)?|style\\s*(?:no|number|code)?|model\\s*(?:no|number|code)?|sku|mpn/i;
+            const labeledText = fullText.split(/\\n+/).map((line) => line.replace(/\\s+/g, " ").trim())
+              .filter((line) => identityLabel.test(line)).slice(0, 40).join("\\n");
+            const structuredCodes = [];
+            const addCode = (value) => {
+              if (Array.isArray(value)) return value.forEach(addCode);
+              if (value !== undefined && value !== null && String(value).trim()) structuredCodes.push(String(value).trim());
+            };
+            for (const element of document.querySelectorAll('[itemprop="sku"],[itemprop="mpn"],[itemprop="model"]')) {
+              addCode(element.getAttribute("content") || element.textContent);
+            }
+            for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+              try {
+                const walk = (value) => {
+                  if (!value || typeof value !== "object") return;
+                  if (Array.isArray(value)) return value.forEach(walk);
+                  for (const [key, child] of Object.entries(value)) {
+                    if (/^(?:sku|mpn|model|styleNo|articleNumber)$/i.test(key)) addCode(child);
+                    else if (child && typeof child === "object") walk(child);
+                  }
+                };
+                walk(JSON.parse(script.textContent || "null"));
+              } catch {}
+            }
+            return {
+              fullText, sellerEvidenceText, titleText, labeledText,
+              structuredCodes: [...new Set(structuredCodes)].slice(0, 30),
+              ready: document.readyState === "complete",
+            };
           })()`, true).catch(() => null);
           if (snapshot?.sellerEvidenceText || snapshot?.ready) break;
         }
-        if (!snapshot) continue;
-        if (!isApprovedNaverDomesticSellerEvidence({
+        if (!snapshot) {
+          failedCount += 1;
+          continue;
+        }
+        checkedCount += 1;
+        const sellerVerified = isApprovedNaverDomesticSellerEvidence({
           productUrl,
           sellerEvidenceText: snapshot.sellerEvidenceText,
           detailText: snapshot.fullText,
-        })) continue;
+        });
+        const articleVerified = strictProductArticleIdentityMatch(snapshot, articleNumber);
+        const observedIdentityText = `${String(candidate?.title || "")} ${String(snapshot.titleText || "")}`;
+        const observedBrandTokens = observedIdentityText.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+        const brandVerified = !String(brand || "").trim()
+          || observedBrandTokens.some((token) => brandsMatch(brand, token));
+        const productTitleVerified = !String(title || "").trim()
+          || titleIdentityMatch(observedIdentityText, title);
+        const identityVerified = requireArticleIdentity
+          ? articleVerified
+          : brandVerified && productTitleVerified;
+        if (!sellerVerified || !identityVerified) {
+          rejectedCount += 1;
+          continue;
+        }
         approved.push({
           ...candidate,
           domesticSellerVerified: true,
           domesticSellerEvidence: String(snapshot.sellerEvidenceText || "").slice(0, 240),
+          brandVerifiedFromCard: brandVerified,
+          articleNumber: articleVerified ? sanitizeDomesticProductCode(articleNumber) : "",
+          detectedArticleNumber: articleVerified ? sanitizeDomesticProductCode(articleNumber) : "",
+          articleNumberVerified: articleVerified,
+          titleVerifiedFromDetail: productTitleVerified,
+          matchBasis: articleVerified ? "article" : "brand_title",
         });
       } catch {
         // A single inaccessible product is omitted without affecting the
         // remaining candidates or any other program feature.
+        failedCount += 1;
       }
     }
   } finally {
     if (evidenceWindow && !evidenceWindow.isDestroyed()) evidenceWindow.destroy();
   }
-  return approved;
+  return {
+    products: approved,
+    candidateCount: candidates.length,
+    checkedCount,
+    rejectedCount,
+    failedCount,
+  };
+}
+
+async function filterApprovedNaverDomesticProducts(products = []) {
+  return (await verifyApprovedNaverDomesticProducts(products)).products;
 }
 
 async function lookupNaverDomesticPrice(input = {}) {

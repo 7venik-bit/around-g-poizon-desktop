@@ -31,7 +31,7 @@ test("official mall and parallel-import exact query URLs become direct result li
   }
 });
 
-test("Naver exact search URL is returned as a link without a hidden browser", () => {
+test("Naver link helper remains available as a non-capture fallback", () => {
   const result = createNaverFashionTownSearchLinkResult({
     articleNumber: "SR123UPS11",
     resolvedSearchUrl: "https://shopping.naver.com/window/search/fashion-group?q=SR123UPS11",
@@ -119,7 +119,7 @@ test("main process uses the finalizer before the generic marketplace matcher", a
   const main = String(await import("node:fs/promises").then(({ readFile }) =>
     readFile(new URL("../main.mjs", import.meta.url), "utf8")));
   const finalizer = main.indexOf("const finalized = finalizeNaverFashionTownResult(parsedContent");
-  const sellerFilter = main.indexOf("const approvedProducts = await filterApprovedNaverDomesticProducts", finalizer);
+  const sellerFilter = main.indexOf("const approval = await verifyApprovedNaverDomesticProducts", finalizer);
   const genericMatcher = main.indexOf("const analyzed = analyzeRenderedChannelProducts", finalizer);
   assert.ok(finalizer > 0);
   assert.ok(sellerFilter > finalizer);
@@ -133,7 +133,9 @@ test("main process uses the finalizer before the generic marketplace matcher", a
   assert.match(main, /const directNaverFashionResult = naverPortalSource/);
   assert.match(main, /const initialUrl = directNaverFashionResult \? url/);
   assert.match(main, /if \(interactiveSiteSearch && !directNaverFashionResult\)/);
-  assert.match(main, /return createNaverFashionTownSearchLinkResult/);
+  assert.doesNotMatch(main, /return createNaverFashionTownSearchLinkResult/);
+  assert.match(main, /const approval = await verifyApprovedNaverDomesticProducts/);
+  assert.match(main, /identityMode: requireArticleIdentity \? "article" : "brand_title"/);
   assert.match(main, /return createDomesticSearchLinkResult/);
   assert.doesNotMatch(main, /const directOfficialResultLink/);
   assert.match(main, /const directParallelResultLink/);

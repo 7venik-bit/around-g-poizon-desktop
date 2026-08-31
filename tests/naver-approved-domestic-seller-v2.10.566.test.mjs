@@ -57,6 +57,7 @@ test("Naver result and price lookup both use isolated seller-evidence filtering"
   assert.match(main, /const approvedCandidates = await filterApprovedNaverDomesticProducts\(candidates\)/);
   assert.match(main, /DOMESTIC_SELLER_EVIDENCE_PARTITION/);
   assert.match(main, /A single inaccessible product is omitted without affecting/);
-  assert.match(patchScript, /const approvedProducts = await filterApprovedNaverDomesticProducts/);
-  assert.match(patchScript, /approved_domestic_seller_not_found/);
+  assert.match(patchScript, /const approval = await verifyApprovedNaverDomesticProducts/);
+  assert.match(patchScript, /requireArticleIdentity/);
+  assert.match(patchScript, /naver_seller_evidence_failed/);
 });

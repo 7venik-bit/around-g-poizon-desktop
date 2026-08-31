@@ -23,6 +23,7 @@
     ssg_channel_evidence_mismatch: "SSG 결과 판독 실패",
     search_query_missing: "검색어 누락",
     naver_result_not_settled: "네이버 결과 대기 중",
+    naver_seller_evidence_failed: "네이버 판매처 확인 실패",
     unknown_search_failure: "검색 처리 실패",
   });
 
