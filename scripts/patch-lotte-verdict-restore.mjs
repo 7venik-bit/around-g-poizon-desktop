@@ -76,8 +76,14 @@ relay = replaceOnce(
 );
 relay = replaceOnce(
   relay,
-  `        absenceConfirmed: matchingProducts.size === 0 && (exactSsgSearchChecked || parallelRetailerListChecked),\n        ssgSearchChecked: /^SSG(?:\\s|$)/.test(String(store || "")),`,
-  `        absenceConfirmed: matchingProducts.size === 0 && (exactPortalSearchChecked || parallelRetailerListChecked),\n        ssgSearchChecked: /^SSG(?:\\s|$)/.test(String(store || "")),\n        lotteSearchChecked: /^롯데온(?:\\s|$)/.test(String(store || "")),`,
+  `          && (exactMusinsaSearchChecked || exactSsgSearchChecked || parallelRetailerListChecked),`,
+  `          && (exactMusinsaSearchChecked || exactPortalSearchChecked || parallelRetailerListChecked),`,
+  "preserve Musinsa absence while extending the portal verdict to Lotte",
+);
+relay = replaceOnce(
+  relay,
+  `        ssgSearchChecked: /^SSG(?:\\s|$)/.test(String(store || "")),\n        parallelRetailerListEnforced: requiresExactParallelModel,`,
+  `        ssgSearchChecked: /^SSG(?:\\s|$)/.test(String(store || "")),\n        lotteSearchChecked: /^롯데온(?:\\s|$)/.test(String(store || "")),\n        parallelRetailerListEnforced: requiresExactParallelModel,`,
   "Lotte exact-grid absence verdict",
 );
 await writeFile(relayPath, relay, "utf8");
