@@ -95,7 +95,7 @@ import {
   sanitizeDomesticQuery,
 } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
-import { selectNaverSellingPrices } from "./services/naver-price.mjs";
+import { isDomesticNaverPriceCard, selectNaverSellingPrices } from "./services/naver-price.mjs";
 import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";
 import { highestQualifiedOptionPrice, optionRowsFromSellerResponses, qualifiedOptionPrices } from "./services/seller-transaction-price.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
@@ -1277,7 +1277,7 @@ async function lookupNaverDomesticPrice(input = {}) {
         };
       })()`, true).catch(() => null);
       if (!snapshot) continue;
-      snapshot.productCards = (snapshot.productCards || []).map((card) => {
+      snapshot.productCards = (snapshot.productCards || []).filter(isDomesticNaverPriceCard).map((card) => {
         const selectedPrices = selectNaverSellingPrices(card?.text || "");
         return {
           ...card,
