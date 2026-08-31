@@ -54,6 +54,8 @@
       .domestic-inline-row button{min-width:56px!important;height:24px!important;padding:3px 5px!important;border-radius:5px!important;font-size:8px!important;font-weight:800!important;white-space:nowrap!important}
       .domestic-inline-fallback .domestic-inline-title{color:#64748b!important;font-weight:600!important}
       .domestic-inline-empty{padding:7px 0!important;color:#7b8794!important;font-size:9px!important;text-align:left!important}
+      .domestic-inline-empty.error{color:#b42318!important;font-weight:700!important}
+      .domestic-inline-warning{padding:5px 0!important;color:#9a6700!important;font-size:8px!important;font-weight:700!important}
 
       /* Explorer/popular views also use the same compact rows without thumbnails. */
       .domestic-source-list.sourcing-product-list{display:flex!important;flex-direction:column!important;gap:0!important;border:0!important;border-radius:0!important;overflow:visible!important;background:transparent!important;box-shadow:none!important}
@@ -129,7 +131,7 @@
   function inlineRenderDomestic(result, sourceProduct = {}) {
     if (!result) return `<div class="domestic-inline-empty">국내 상품 검색 전</div>`;
     if (result.loading) return `<div class="domestic-inline-empty">국내 판매처 검색 중…</div>`;
-    if (result.error) return `<div class="domestic-inline-empty">국내 상품 검색 실패</div>`;
+    if (result.error) return `<div class="domestic-inline-empty error">국내 검색 실패: ${safeText(result.error)}</div>`;
 
     const products = Array.isArray(result.products) ? result.products.filter((product) => product && approvedDomesticProduct(product)) : [];
     const sources = Array.isArray(result.sources) ? result.sources : [];
@@ -182,8 +184,12 @@
       </div>`);
     }
 
+    const warningCount = Array.isArray(result.technicalWarnings) ? result.technicalWarnings.length : 0;
+    const warning = warningCount
+      ? `<div class="domestic-inline-warning">일부 판매처 추가 확인 실패 · 확보된 검색 결과를 표시합니다.</div>`
+      : "";
     return rows.length
-      ? `<div class="domestic-inline-results"><div class="domestic-inline-head"><span>판매처</span><span>상품명</span><span>품번</span><span>가격</span><span>링크</span></div>${rows.join("")}</div>`
+      ? `${warning}<div class="domestic-inline-results"><div class="domestic-inline-head"><span>판매처</span><span>상품명</span><span>품번</span><span>가격</span><span>링크</span></div>${rows.join("")}</div>`
       : `<div class="domestic-inline-empty">일치하는 국내 판매 상품 없음</div>`;
   }
 

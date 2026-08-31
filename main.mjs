@@ -9836,10 +9836,21 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   });
   ipcMain.handle("domestic:search", async (_event, input) => {
     const searchGeneration = domesticSearchGeneration;
+    const technicalWarnings = [];
+    const rememberWarning = (stage, error) => {
+      technicalWarnings.push({
+        stage,
+        message: error instanceof Error ? error.message : String(error || "알 수 없는 오류"),
+      });
+    };
     try {
       // Inventory/search pages must be fetched from the network for every new
       // request. Keep cookies so authenticated official-mall sessions survive.
-      await session.fromPartition(DOMESTIC_SEARCH_PARTITION).clearCache();
+      try {
+        await session.fromPartition(DOMESTIC_SEARCH_PARTITION).clearCache();
+      } catch (error) {
+        rememberWarning("search_cache_clear", error);
+      }
       const settings = store.snapshot().settings;
       const profileKey = brandSearchProfileKey(input?.brand, input?.brandId);
       const searchProfiles = settings.brandSearchProfiles || {};
@@ -9871,40 +9882,68 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         enabledSourceGroups,
       });
       if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
-      let matched = await addMatchConfidence(data, input || {});
-      if (input?.verifyLinkCounts === true) {
-        matched = await addRenderedSearchCounts(
-          matched,
-          searchArticleNumber,
-          searchBrand,
-          searchTitle,
-          searchGeneration
-        );
-        if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
+      // Core retailer results are authoritative. Optional enrichment must never
+      // turn a successful search into a full-row failure.
+      let matched = data;
+      try {
         matched = await addMatchConfidence(matched, input || {});
-        matched = await verifyAllStoresWithMusinsaImage(matched, input || {});
+      } catch (error) {
+        rememberWarning("match_confidence", error);
       }
-      const exactMatch = matched.products.some((product) =>
+      if (input?.verifyLinkCounts === true) {
+        try {
+          matched = await addRenderedSearchCounts(
+            matched,
+            searchArticleNumber,
+            searchBrand,
+            searchTitle,
+            searchGeneration
+          );
+        } catch (error) {
+          rememberWarning("rendered_search_counts", error);
+        }
+        if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
+        try {
+          matched = await addMatchConfidence(matched, input || {});
+        } catch (error) {
+          rememberWarning("verified_match_confidence", error);
+        }
+        try {
+          matched = await verifyAllStoresWithMusinsaImage(matched, input || {});
+        } catch (error) {
+          rememberWarning("store_image_verification", error);
+        }
+      }
+      const products = Array.isArray(matched?.products) ? matched.products : [];
+      const exactMatch = products.some((product) =>
         Number(product.signals?.codeScore || 0) === 1
         && product.articleConflict !== true
         && product.signals?.codeConflict !== true
       );
-      const brandSearchProfiles = recordBrandSearchOutcome(searchProfiles, {
-        brand: String(input?.brand || "").trim(),
-        brandId: String(input?.brandId || "").trim(),
-        strategy: searchStrategy,
-        exactMatch,
-        resultCount: matched.products.length,
-      });
-      await store.setSettings({ brandSearchProfiles });
+      let learningSaved = false;
+      try {
+        const brandSearchProfiles = recordBrandSearchOutcome(searchProfiles, {
+          brand: String(input?.brand || "").trim(),
+          brandId: String(input?.brandId || "").trim(),
+          strategy: searchStrategy,
+          exactMatch,
+          resultCount: products.length,
+        });
+        await store.setSettings({ brandSearchProfiles });
+        learningSaved = true;
+      } catch (error) {
+        rememberWarning("search_learning_save", error);
+      }
       return {
         ok: true,
         data: {
           ...matched,
+          products,
+          technicalWarnings,
           searchLearning: {
             strategy: searchStrategy,
             exactMatch,
-            saved: true,
+            saved: learningSaved,
           },
         },
       };
