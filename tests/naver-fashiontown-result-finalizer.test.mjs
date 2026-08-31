@@ -118,9 +118,11 @@ test("a positive total never becomes failure when individual card links are late
 test("main process uses the finalizer before the generic marketplace matcher", async () => {
   const main = String(await import("node:fs/promises").then(({ readFile }) =>
     readFile(new URL("../main.mjs", import.meta.url), "utf8")));
-  const finalizer = main.indexOf("return finalizeNaverFashionTownResult(parsedContent");
+  const finalizer = main.indexOf("const finalized = finalizeNaverFashionTownResult(parsedContent");
+  const sellerFilter = main.indexOf("const approvedProducts = await filterApprovedNaverDomesticProducts", finalizer);
   const genericMatcher = main.indexOf("const analyzed = analyzeRenderedChannelProducts", finalizer);
   assert.ok(finalizer > 0);
+  assert.ok(sellerFilter > finalizer);
   assert.ok(genericMatcher > finalizer);
   assert.match(main, /visibleResultCountObserved/);
   assert.match(main, /presenceConfirmed: result\?\.presenceConfirmed === true/);

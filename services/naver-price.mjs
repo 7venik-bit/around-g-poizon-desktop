@@ -26,6 +26,21 @@ export function isDomesticNaverPriceCard(card = {}) {
   return true;
 }
 
+export function isApprovedNaverDomesticSellerEvidence(input = {}) {
+  const productUrl = String(input?.productUrl || input?.url || "");
+  const sellerEvidence = String(input?.sellerEvidenceText || input?.sellerEvidence || "").replace(/\s+/g, " ").trim();
+  const detailText = String(input?.detailText || input?.text || "").replace(/\s+/g, " ").trim();
+  const combined = `${sellerEvidence} ${detailText}`.trim();
+  if (!isDomesticNaverPriceCard({ productUrl, text: combined })) return false;
+  if (/(?:바코드|QR\s*코드|큐알\s*코드).{0,24}(?:삭제|제거|훼손)|(?:삭제|제거|훼손).{0,24}(?:바코드|QR\s*코드|큐알\s*코드)/i.test(combined)) return false;
+  if (!sellerEvidence) return false;
+
+  const departmentDirect = /(?:롯데|신세계|현대|갤러리아|AK|NC|동아)\s*백화점.{0,40}(?:점에서|에서)\s*(?:직접\s*)?판매(?:중)?인?\s*상품/i.test(sellerEvidence);
+  const officialSellerBanner = /(?:공식\s*판매처|브랜드\s*(?:공식|직영)|공식\s*(?:브랜드|스토어|온라인몰)|직영\s*(?:스토어|온라인몰))/i.test(sellerEvidence);
+  const officialStoreSale = /(?:^|\s|\[)공식(?:\]|\s).{0,80}(?:점|매장|백화점|아울렛|스토어|온라인몰|공식몰)에서\s*(?:직접\s*)?판매(?:중)?인?\s*상품/i.test(sellerEvidence);
+  return departmentDirect || officialSellerBanner || officialStoreSale;
+}
+
 export function selectNaverSellingPrices(text = "") {
   const source = String(text || "").replace(/\s+/g, " ").trim();
   const sellingAmounts = [];

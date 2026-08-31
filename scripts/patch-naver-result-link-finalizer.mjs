@@ -185,10 +185,21 @@ replaceOnce(
       // The requested output is Naver's rendered result list itself. Do not run
       // those links through the generic brand/article matcher again: the exact
       // query was already submitted and that second gate discarded real cards.
-      return finalizeNaverFashionTownResult(parsedContent, {
+      const finalized = finalizeNaverFashionTownResult(parsedContent, {
         articleNumber,
         resolvedSearchUrl: String(searchWindow.webContents.getURL() || url),
       });
+      const approvedProducts = await filterApprovedNaverDomesticProducts(finalized?.products || []);
+      return {
+        ...finalized,
+        count: approvedProducts.length,
+        products: approvedProducts,
+        presenceConfirmed: approvedProducts.length > 0,
+        absenceConfirmed: approvedProducts.length === 0,
+        detailVerificationPending: false,
+        verificationReason: approvedProducts.length > 0
+          ? "approved_domestic_seller" : "approved_domestic_seller_not_found",
+      };
     }
     if (naverPortalSource) {`,
   "Naver Fashion Town finalizer",

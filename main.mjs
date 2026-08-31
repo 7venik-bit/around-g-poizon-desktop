@@ -95,7 +95,11 @@ import {
   sanitizeDomesticQuery,
 } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
-import { isDomesticNaverPriceCard, selectNaverSellingPrices } from "./services/naver-price.mjs";
+import {
+  isApprovedNaverDomesticSellerEvidence,
+  isDomesticNaverPriceCard,
+  selectNaverSellingPrices,
+} from "./services/naver-price.mjs";
 import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";
 import { highestQualifiedOptionPrice, optionRowsFromSellerResponses, qualifiedOptionPrices } from "./services/seller-transaction-price.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
@@ -157,6 +161,7 @@ const officialInteractiveWindows = new Set();
 const domesticLoginWindows = new Map();
 const DOMESTIC_SEARCH_PARTITION = "persist:around-g-domestic-search";
 const DOMESTIC_PRICE_PARTITION = "persist:around-g-domestic-price";
+const DOMESTIC_SELLER_EVIDENCE_PARTITION = "persist:around-g-domestic-seller-evidence";
 let domesticSearchGeneration = 0;
 const activeDomesticSearchWindows = new Set();
 const activeDomesticPriceWindows = new Set();
@@ -1192,6 +1197,76 @@ function renderedSearchFailure(reason, searchWindow = null, details = {}) {
   };
 }
 
+async function filterApprovedNaverDomesticProducts(products = []) {
+  const candidates = (Array.isArray(products) ? products : [])
+    .filter((product) => isDomesticNaverPriceCard({
+      productUrl: product?.url || product?.productUrl,
+      title: product?.title,
+      text: product?.text,
+    }))
+    .slice(0, 8);
+  if (!candidates.length) return [];
+  let evidenceWindow;
+  const approved = [];
+  try {
+    evidenceWindow = new BrowserWindow({
+      show: false,
+      width: 1360,
+      height: 900,
+      icon: APP_ICON_PATH,
+      webPreferences: {
+        partition: DOMESTIC_SELLER_EVIDENCE_PARTITION,
+        sandbox: true,
+        backgroundThrottling: false,
+        paintWhenInitiallyHidden: true,
+        offscreen: true,
+      },
+    });
+    evidenceWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
+    for (const candidate of candidates) {
+      const productUrl = String(candidate?.url || candidate?.productUrl || "");
+      if (!productUrl || evidenceWindow.isDestroyed()) continue;
+      try {
+        await Promise.race([
+          evidenceWindow.loadURL(productUrl),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("SELLER_EVIDENCE_TIMEOUT")), 12_000)),
+        ]);
+        let snapshot = null;
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+          await wait(attempt === 0 ? 900 : 350);
+          snapshot = await evidenceWindow.webContents.executeJavaScript(`(() => {
+            const fullText = String(document.body?.innerText || "").slice(0, 80000);
+            const sellerEvidenceText = fullText.split(/\\n+/)
+              .map((line) => line.replace(/\\s+/g, " ").trim())
+              .filter((line) => line.length >= 3 && line.length <= 240)
+              .filter((line) => /판매(?:중)?인?\\s*상품|공식\\s*판매처|브랜드\\s*(?:공식|직영)|공식\\s*(?:브랜드|스토어|온라인몰)|직영\\s*(?:스토어|온라인몰)|관부가세|해외\\s*직구|구매\\s*대행/i.test(line))
+              .slice(0, 20).join(" ");
+            return { fullText, sellerEvidenceText, ready: document.readyState === "complete" };
+          })()`, true).catch(() => null);
+          if (snapshot?.sellerEvidenceText || snapshot?.ready) break;
+        }
+        if (!snapshot) continue;
+        if (!isApprovedNaverDomesticSellerEvidence({
+          productUrl,
+          sellerEvidenceText: snapshot.sellerEvidenceText,
+          detailText: snapshot.fullText,
+        })) continue;
+        approved.push({
+          ...candidate,
+          domesticSellerVerified: true,
+          domesticSellerEvidence: String(snapshot.sellerEvidenceText || "").slice(0, 240),
+        });
+      } catch {
+        // A single inaccessible product is omitted without affecting the
+        // remaining candidates or any other program feature.
+      }
+    }
+  } finally {
+    if (evidenceWindow && !evidenceWindow.isDestroyed()) evidenceWindow.destroy();
+  }
+  return approved;
+}
+
 async function lookupNaverDomesticPrice(input = {}) {
   const articleNumber = sanitizeDomesticProductCode(input?.articleNumber || input?.productCode);
   const brand = sanitizeDomesticQuery(input?.brand);
@@ -1293,7 +1368,11 @@ async function lookupNaverDomesticPrice(input = {}) {
         .filter((candidate) => Number(candidate?.price || 0) > 0)
         .sort((left, right) => Number(left.price) - Number(right.price))
         .slice(0, 5);
-      if (candidates.length) return { ok: true, searchUrl, candidates };
+      if (candidates.length) {
+        const approvedCandidates = await filterApprovedNaverDomesticProducts(candidates);
+        if (approvedCandidates.length) return { ok: true, searchUrl, candidates: approvedCandidates };
+        return { ok: true, searchUrl, candidates: [], message: "승인된 국내 정품 판매처 상품이 없습니다." };
+      }
       if (snapshot.explicitEmpty) return { ok: true, searchUrl, candidates: [], message: "검색 결과에 상품이 없습니다." };
     }
     return { ok: false, searchUrl, candidates: [], message: "일치 상품의 가격을 안전하게 확인하지 못했습니다." };
@@ -2587,12 +2666,19 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     // Naver, SSG and Lotte are list-only sources. Their visible search cards
     // are the requested output; do not navigate to details or inspect stock.
     if (/^(?:네이버\s|SSG(?:\s|$)|롯데온(?:\s|$))/.test(String(source.store || ""))) {
+      const listProducts = /^네이버\s/.test(String(source.store || ""))
+        ? await filterApprovedNaverDomesticProducts(analyzed.products || [])
+        : (analyzed.products || []);
       return {
         ...detailed,
-        count: /^네이버\s/.test(String(source.store || "")) && Number.isFinite(analyzed?.channelCount)
-          ? Number(analyzed.channelCount) : candidateCount,
-        products: (analyzed.products || []).map((product) => ({ ...product, inStock: null, sizes: [] })),
+        count: listProducts.length,
+        products: listProducts.map((product) => ({ ...product, inStock: null, sizes: [] })),
+        presenceConfirmed: listProducts.length > 0,
+        absenceConfirmed: listProducts.length === 0,
         detailVerificationPending: false,
+        verificationReason: /^네이버\s/.test(String(source.store || ""))
+          ? (listProducts.length > 0 ? "approved_domestic_seller" : "approved_domestic_seller_not_found")
+          : String(detailed.verificationReason || ""),
       };
     }
     if (Array.isArray(analyzed?.products)) {
