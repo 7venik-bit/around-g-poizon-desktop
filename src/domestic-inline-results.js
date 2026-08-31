@@ -51,6 +51,8 @@
       .domestic-inline-title{min-width:0!important;color:#111827!important;font-weight:650!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
       .domestic-inline-code{min-width:0!important;color:#64748b!important;font-family:inherit!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
       .domestic-inline-price{text-align:right!important;color:#111827!important;font-weight:800!important;white-space:nowrap!important}
+      .domestic-inline-price-fetch{min-width:76px!important;border-color:#9cc5ff!important;background:#f3f8ff!important;color:#1769c2!important}
+      .domestic-inline-price-fetch:disabled{opacity:.65!important;cursor:wait!important}
       .domestic-inline-row button{min-width:56px!important;height:24px!important;padding:3px 5px!important;border-radius:5px!important;font-size:8px!important;font-weight:800!important;white-space:nowrap!important}
       .domestic-inline-fallback .domestic-inline-title{color:#64748b!important;font-weight:600!important}
       .domestic-inline-empty{padding:7px 0!important;color:#7b8794!important;font-size:9px!important;text-align:left!important}
@@ -128,7 +130,7 @@
     return `<button type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
   }
 
-  function inlineRenderDomestic(result, sourceProduct = {}) {
+  function inlineRenderDomestic(result, sourceProduct = {}, contextKey = "") {
     if (!result) return `<div class="domestic-inline-empty">국내 상품 검색 전</div>`;
     if (result.loading) return `<div class="domestic-inline-empty">국내 판매처 검색 중…</div>`;
     if (result.error) return `<div class="domestic-inline-empty error">국내 검색 실패: ${safeText(result.error)}</div>`;
@@ -175,11 +177,14 @@
         || source?.absenceConfirmed || source?.presenceConfirmed;
       if (!(count > 0 || searched || source?.verificationPending || source?.verificationFailed || hasUsefulLink)) continue;
       const message = verdict.label;
+      const naverPriceAction = store === "네이버 패션타운" && contextKey
+        ? `<button type="button" class="domestic-inline-price-fetch" data-inline-naver-price="${encodeURIComponent(contextKey)}">가격 가져오기</button>`
+        : "-";
       rows.push(`<div class="domestic-inline-row domestic-inline-fallback">
         <div class="domestic-inline-store" title="${safeText(store)}">${safeText(store)}</div>
         <div class="domestic-inline-title">${safeText(message)}</div>
         <div class="domestic-inline-code">${safeText(source?.searchQuery || sourceProduct?.articleNumber || "-")}</div>
-        <div class="domestic-inline-price">-</div>
+        <div class="domestic-inline-price">${naverPriceAction}</div>
         <div>${sourceAction(source, {}, sourceProduct)}</div>
       </div>`);
     }
@@ -268,7 +273,7 @@
               <td>${poizonPrice ? safeMoney(poizonPrice) : "가격 없음"}</td>
               <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td>
               <td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
-            </tr>${result ? `<tr class="excel-product-search-detail ${groupClass}"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>${safeText(product.title || product.articleNumber || "상품")}</strong> 국내 검색 결과<em>${safeText(search.label)}</em></div>${inlineRenderDomestic(result, product)}</td></tr>` : ""}`;
+            </tr>${result ? `<tr class="excel-product-search-detail ${groupClass}"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>${safeText(product.title || product.articleNumber || "상품")}</strong> 국내 검색 결과<em>${safeText(search.label)}</em></div>${inlineRenderDomestic(result, product, key)}</td></tr>` : ""}`;
           }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
           return pageKeys;
         } catch (error) {
@@ -296,6 +301,57 @@
   }
 
   installRenderers();
+
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest?.("[data-inline-naver-price]");
+    if (!button || button.disabled) return;
+    const key = decodeURIComponent(button.dataset.inlineNaverPrice || "");
+    const product = typeof excelPreviewProductCache !== "undefined" ? excelPreviewProductCache.get(key) : null;
+    if (!product || typeof window.aroundG?.lookupDomesticPrice !== "function") return;
+    event.preventDefault();
+    button.disabled = true;
+    button.textContent = "확인 중…";
+    try {
+      const response = await window.aroundG.lookupDomesticPrice({
+        articleNumber: product.articleNumber || "",
+        productCode: product.productCode || product.spuId || product.globalSpuId || "",
+        brand: product.brandName || product.brand || "",
+        title: product.apiTitle || product.title || product.name || "",
+      });
+      if (!response?.ok || !Array.isArray(response.candidates) || !response.candidates.length) {
+        button.disabled = false;
+        button.textContent = "다시 가져오기";
+        button.title = response?.message || "가격을 확인하지 못했습니다.";
+        return;
+      }
+      const current = excelPreviewSearchResults.get(key) || { products: [], sources: [] };
+      const candidates = response.candidates.filter((candidate) => Number(candidate?.price || 0) > 0);
+      const byUrl = new Map();
+      for (const candidate of [...candidates, ...(current.products || [])]) {
+        const identity = String(candidate?.url || `${candidate?.store || "판매처"}:${candidate?.title || ""}:${candidate?.price || 0}`);
+        if (!byUrl.has(identity)) byUrl.set(identity, candidate);
+      }
+      excelPreviewSearchResults.set(key, {
+        ...current,
+        error: "",
+        products: [...byUrl.values()],
+        domesticPriceCandidates: [
+          ...candidates,
+          ...(current.domesticPriceCandidates || []),
+        ],
+      });
+      if (activeExcelPreview?.file?.path && typeof persistExcelSearchResults === "function") {
+        persistExcelSearchResults(activeExcelPreview.file.path);
+      }
+      if (activeExcelPreview?.file && activeExcelPreview?.viewMode === "products") {
+        renderExcelProductRows(activeExcelPreview.file, excelPreviewPageProducts);
+      }
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "다시 가져오기";
+      button.title = error instanceof Error ? error.message : "가격 확인 요청에 실패했습니다.";
+    }
+  });
 
   let scheduled = false;
   const observer = new MutationObserver(() => {
