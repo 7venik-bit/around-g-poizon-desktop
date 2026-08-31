@@ -15,7 +15,6 @@ const required = [
   "return createNaverFashionTownSearchLinkResult({ articleNumber, resolvedSearchUrl: url });",
   "resultLinkOnly: result?.resultLinkOnly === true",
   "return createDomesticSearchLinkResult({ store: source.store, articleNumber, resolvedSearchUrl: url });",
-  "const directOfficialResultLink",
   "const directParallelResultLink",
   'String(source.store || "") === "네이버 패션타운"',
   "const finalized = finalizeNaverFashionTownResult(parsedContent, {",
@@ -28,6 +27,10 @@ const required = [
 
 for (const marker of required) {
   if (!source.includes(marker)) throw new Error(`Naver result-link verification failed: ${marker}`);
+}
+
+if (source.includes("const directOfficialResultLink")) {
+  throw new Error("Official malls must reach rendered-card price capture instead of returning link-only.");
 }
 
 console.log("Naver result-link finalizer verified.");

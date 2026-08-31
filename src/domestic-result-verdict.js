@@ -53,6 +53,13 @@
       return { state: "link", className: "available", count: 0, label: "검색 결과 링크" };
     }
 
+    // Official-mall search is intentionally list/price only. When no card was
+    // parsed, keep the usable result link instead of exposing parser/submission
+    // diagnostics to the user. Only the mall's explicit empty message is absence.
+    if (String(source?.store || "") === "브랜드 공식몰" && source?.absenceConfirmed !== true) {
+      return { state: "link", className: "available", count: 0, label: "검색 결과" };
+    }
+
     if (source?.securityVerificationRequired === true) {
       return { state: "security", className: "pending", count: 0, label: "보안 확인 필요" };
     }

@@ -135,7 +135,7 @@ test("main process uses the finalizer before the generic marketplace matcher", a
   assert.match(main, /if \(interactiveSiteSearch && !directNaverFashionResult\)/);
   assert.match(main, /return createNaverFashionTownSearchLinkResult/);
   assert.match(main, /return createDomesticSearchLinkResult/);
-  assert.match(main, /const directOfficialResultLink/);
+  assert.doesNotMatch(main, /const directOfficialResultLink/);
   assert.match(main, /const directParallelResultLink/);
   assert.ok(
     main.indexOf("if (isNaverRenderedResultReady(state, exactQuery)) return true;")

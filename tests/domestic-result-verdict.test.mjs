@@ -54,7 +54,7 @@ test("completed exact zero is product absence, not confirmation failure", () => 
 
 test("technical failure exposes its actual stage and internal code", () => {
   const failed = sourceVerdict({
-    store: "브랜드 공식몰",
+    store: "SSG",
     count: 0,
     verificationFailed: true,
     verificationReason: "page_load_failed",
@@ -97,4 +97,27 @@ test("Naver link-only result is never rendered as confirmation failure", () => {
   const summary = resultPresentation({ products: [], sources: [{ resultLinkOnly: true, count: 0 }] });
   assert.equal(summary.label, "검색 결과 링크");
   assert.equal(summary.className, "available");
+});
+
+test("official mall hides parser failure behind the usable result link", () => {
+  const result = sourceVerdict({
+    store: "브랜드 공식몰",
+    count: 0,
+    searchCompleted: true,
+    verificationFailed: true,
+    verificationReason: "result_parse_failed",
+  });
+  assert.equal(result.state, "link");
+  assert.equal(result.label, "검색 결과");
+});
+
+test("official mall is missing only after an explicit empty result", () => {
+  const result = sourceVerdict({
+    store: "브랜드 공식몰",
+    count: 0,
+    searchCompleted: true,
+    absenceConfirmed: true,
+  });
+  assert.equal(result.state, "missing");
+  assert.equal(result.label, "상품 없음");
 });

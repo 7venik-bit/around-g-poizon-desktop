@@ -293,9 +293,12 @@
             || source?.verificationPending || source?.verificationFailed)
           .map((source) => {
             const count = Number(source?.count || 0);
+            const officialMallSource = source?.store === "브랜드 공식몰";
             const approvedParallelMissing = source?.store === "병행수입·편집샵"
               && source?.parallelRetailerListEnforced === true && source?.absenceConfirmed === true;
-            const message = source?.resultLinkOnly === true
+            const message = officialMallSource
+              ? source?.absenceConfirmed === true ? "상품 없음" : "검색 결과"
+              : source?.resultLinkOnly === true
               ? "검색 결과 링크"
               : approvedParallelMissing
               ? "상품없음"
@@ -305,10 +308,10 @@
             return `<div class="sourcing-price-row">
               <strong class="sourcing-price-store">${text(source?.store || "판매처")}</strong>
               <span class="sourcing-price-title">${text(message)}</span>
-              <span class="sourcing-price-unknown">가격 확인</span>
-              <span class="sourcing-price-unknown">미확인</span>
-              <span class="sourcing-price-unknown">확인 필요</span>
-              <span class="sourcing-price-unknown">링크 확인</span>
+              <span class="sourcing-price-unknown">${officialMallSource ? "–" : "가격 확인"}</span>
+              <span class="sourcing-price-unknown">–</span>
+              <span class="sourcing-price-unknown">–</span>
+              <span class="sourcing-price-unknown">–</span>
               <span class="sourcing-price-unknown">–</span>
               ${sourceAction(source, {}, "열기")}
             </div>`;

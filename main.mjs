@@ -2298,7 +2298,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         const submitted = naverPortalSource
           ? await submitNaverShoppingSearch(searchWindow, searchQuery)
           : await executeOfficialMallSearch(searchWindow, String(source.homepageUrl || url), searchQuery);
-        if (!submitted) {
+        if (!submitted && !interactiveOfficialSearch) {
           const pageText = naverPortalSource
             ? await searchWindow.webContents.executeJavaScript(
               `String(document.body?.innerText || "").slice(0, 20000)`,
@@ -2320,7 +2320,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             { securityVerificationRequired: securityRequired },
           );
         }
-        await wait(2_000);
+        // Official-mall inputs are framework controlled. The code can be visibly
+        // entered and the result grid can render even when the generic submit
+        // detector does not observe a URL change. Continue to the bounded result
+        // capture; only an explicit empty message may become "상품 없음".
+        await wait(submitted ? 2_000 : 1_200);
       }
     }
     if (naverPortalSource) {
@@ -2521,6 +2525,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             const struck = /line-through/.test(style.textDecorationLine || style.textDecoration || "")
               || Boolean(element.closest("del,s,strike"));
             const className = String(element.className?.baseVal || element.className || "");
+            const context = [className, element.getAttribute?.("aria-label"), element.getAttribute?.("title"),
+              element.parentElement?.className, element.previousElementSibling?.textContent]
+              .join(" ").replace(/\\s+/g, " ").slice(0, 240);
+            if (/배송(?:비)?|적립|포인트|혜택|쿠폰|월\\s*납부/i.test(context)) return null;
             const rgb = String(style.color || "").match(/\\d+/g)?.map(Number) || [];
             const red = rgb.length >= 3 && rgb[0] > rgb[1] * 1.35 && rgb[0] > rgb[2] * 1.35;
             const amount = Number(value.replace(/[^0-9]/g, ""));
@@ -2531,7 +2539,12 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           }).filter(Boolean)
           .filter((candidate) => !candidate.struck && candidate.amount > 0)
           .sort((left, right) => right.score - left.score || left.amount - right.amount);
-        const price = priceCandidates[0]?.value || text.match(/[\\d,]+\\s*원/)?.[0] || "";
+        const fallbackPrice = text.split("\\n")
+          .map((line) => String(line || "").trim())
+          .filter((line) => !/배송(?:비)?|적립|포인트|혜택|쿠폰|월\\s*납부/i.test(line))
+          .map((line) => line.match(/[\\d,]+\\s*원/)?.[0] || "")
+          .find(Boolean) || "";
+        const price = priceCandidates[0]?.value || fallbackPrice;
         const originalPrice = [...(card?.querySelectorAll?.("del,s,strike") || [])]
           .map((element) => String(element.textContent || "").trim())
           .find((value) => /^[\\d,]+\\s*원$/.test(value)) || "";
@@ -2663,18 +2676,30 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         detailVerificationPending: false,
       };
     }
-    // Naver, SSG and Lotte are list-only sources. Their visible search cards
-    // are the requested output; do not navigate to details or inspect stock.
-    if (/^(?:네이버\s|SSG(?:\s|$)|롯데온(?:\s|$))/.test(String(source.store || ""))) {
+    // Official malls, Naver, SSG and Lotte are list-only sources. Their visible
+    // cards provide the title, current price and real product link. Never open
+    // every detail page or inspect stock: the user verifies a chosen item.
+    if (/^(?:브랜드 공식몰$|네이버\s|SSG(?:\s|$)|롯데온(?:\s|$))/.test(String(source.store || ""))) {
       const listProducts = /^네이버\s/.test(String(source.store || ""))
         ? await filterApprovedNaverDomesticProducts(analyzed.products || [])
         : (analyzed.products || []);
+      const officialMallSource = String(source.store || "") === "브랜드 공식몰";
+      const explicitAbsence = officialMallSource
+        ? analyzed.absenceConfirmed === true || parsedContent.selectedChannelEmpty === true
+        : listProducts.length === 0;
       return {
         ...detailed,
         count: listProducts.length,
-        products: listProducts.map((product) => ({ ...product, inStock: null, sizes: [] })),
+        products: listProducts.map((product) => ({
+          ...product,
+          linkOnly: officialMallSource || product.linkOnly === true,
+          linkVerified: /^https?:\/\//i.test(String(product.url || "")),
+          inStock: null,
+          sizes: [],
+        })),
         presenceConfirmed: listProducts.length > 0,
-        absenceConfirmed: listProducts.length === 0,
+        absenceConfirmed: explicitAbsence,
+        resultLinkOnly: officialMallSource && listProducts.length === 0 && !explicitAbsence,
         detailVerificationPending: false,
         verificationReason: /^네이버\s/.test(String(source.store || ""))
           ? (listProducts.length > 0 ? "approved_domestic_seller" : "approved_domestic_seller_not_found")
