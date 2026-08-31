@@ -1032,11 +1032,11 @@ async function waitForNaverSecurityVerification(searchWindow) {
 }
 
 async function submitOfficialMallSearch(searchWindow, query) {
-  const exactQuery = String(query || "").trim();
+  const exactQuery = sanitizeDomesticProductCode(query) || sanitizeDomesticQuery(query);
   if (!exactQuery || !searchWindow || searchWindow.isDestroyed()) return false;
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const script = `(() => {
-      const query = ${JSON.stringify(String(query || ""))};
+      const query = ${JSON.stringify(exactQuery)};
       const visible = (element) => {
         if (!element) return false;
         const style = getComputedStyle(element);
@@ -1173,11 +1173,13 @@ async function executeOfficialMallSearch(searchWindow, homepageUrl, query) {
   // One product query must be submitted only once. Re-loading the homepage and
   // entering the same query again made a technical failure look like a fresh
   // negative result and also left the previous search visible in the window.
+  const exactQuery = sanitizeDomesticProductCode(query) || sanitizeDomesticQuery(query);
+  if (!exactQuery) return false;
   const previousUrl = String(searchWindow.webContents.getURL() || homepageUrl);
-  const submitted = await submitOfficialMallSearch(searchWindow, query);
+  const submitted = await submitOfficialMallSearch(searchWindow, exactQuery);
   if (!submitted) return false;
   await wait(2_000);
-  return officialMallSearchWasExecuted(searchWindow, query, previousUrl);
+  return officialMallSearchWasExecuted(searchWindow, exactQuery, previousUrl);
 }
 
 function renderedSearchFailure(reason, searchWindow = null, details = {}) {
@@ -2104,7 +2106,11 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
 async function openOfficialMallInternalSearch(homepageUrl, query) {
   const homepage = new URL(String(homepageUrl || ""));
   if (!["https:", "http:"].includes(homepage.protocol)) throw new Error("INVALID_URL");
-  const exactQuery = String(query || "").trim();
+  // Buttons in previously rendered result rows can still carry the raw POIZON
+  // article value (for example `207521-001黑色`). Normalize again at this IPC
+  // boundary so neither the window title nor the physical official-mall input
+  // can receive trailing Chinese colour/category metadata.
+  const exactQuery = sanitizeDomesticProductCode(query) || sanitizeDomesticQuery(query);
   if (!exactQuery) throw new Error("SEARCH_QUERY_REQUIRED");
   const searchWindow = new BrowserWindow({
     title: `공식몰 상품 검색 · ${exactQuery}`,
