@@ -35,16 +35,18 @@ export function imageEvidenceAllowsExactProduct({
 
 export function scoreProductCandidate(source, candidate, imageSimilarity = null) {
   const code = normalized(source.articleNumber);
-  const identityText = [candidate.detectedArticleNumber, candidate.id, candidate.name, candidate.title]
+  const identityText = [candidate.detectedArticleNumber, candidate.name, candidate.title]
     .filter(Boolean).join(" ");
-  const candidateText = normalized([
-    candidate.detectedArticleNumber,
-    candidate.id,
-    candidate.name,
-    candidate.title,
-    candidate.url,
-  ].filter(Boolean).join(" "));
-  const codeScore = code && candidateText.includes(code) ? 1 : 0;
+  const exactCodePattern = source.articleNumber
+    ? new RegExp(`(?:^|[^A-Z0-9])${String(source.articleNumber).toUpperCase().split(/[^A-Z0-9]+/)
+      .filter(Boolean).map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[-_\\s./]+")}(?=$|[^A-Z0-9])`, "i")
+    : null;
+  const detectedCode = normalized(candidate.detectedArticleNumber);
+  const productOwnedText = [candidate.name, candidate.title].filter(Boolean).join(" ");
+  // Marketplace URL IDs and internal result IDs are not manufacturer article
+  // numbers. Only a verified detected code or the product-owned name/title can
+  // satisfy the primary code gate.
+  const codeScore = code && (detectedCode === code || exactCodePattern?.test(productOwnedText)) ? 1 : 0;
   const candidateCodes = [...new Set((identityText.toUpperCase().match(/[A-Z0-9]+(?:[-_][A-Z0-9]+)*/g) || [])
     .map((token) => token.replace(/[^A-Z0-9]/g, ""))
     .filter((token) => token.length >= 6 && token.length <= 28 && /[A-Z]/.test(token) && /\d/.test(token)))];

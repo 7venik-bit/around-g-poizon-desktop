@@ -81,6 +81,8 @@ import {
   analyzeRenderedChannelProducts,
   classifySsgProductEvidence,
   exactArticleIdentityMatch,
+  strictProductArticleIdentityMatch,
+  titleIdentityMatch,
   resolveSsgProductClassification,
   detectedRetailer,
   isConsignmentOperatedProduct,
@@ -2714,18 +2716,59 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     }
     if (Array.isArray(analyzed?.products)) {
       const products = [];
-      for (const product of analyzed.products.slice(0, 8)) {
+      const inspectedProducts = analyzed.products.slice(0, 8);
+      const attemptedQuery = sanitizeDomesticQuery(searchAttempt?.query || source.searchQuery || articleNumber || title);
+      const exactCodeQuery = sanitizeDomesticProductCode(articleNumber);
+      const isCodePriorityAttempt = Boolean(exactCodeQuery && attemptedQuery === exactCodeQuery);
+      let identityRequiredCount = 0;
+      let identityCheckedCount = 0;
+      let identityMismatchCount = 0;
+      for (const product of inspectedProducts) {
         let detailText = "";
+        let detailIdentity = { titleText: "", labeledText: "", structuredCodes: [] };
+        let detailLoaded = false;
         let stockEvidence = normalizeRenderedStockEvidence();
         try {
           const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
           if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");
           await wait(1_000);
           await openRenderedSizeOptions(searchWindow);
-          detailText = await searchWindow.webContents.executeJavaScript(
-            `String(document.body?.innerText || "").slice(0, 60000)`,
-            true,
-          ).catch(() => "");
+          const identitySnapshot = await searchWindow.webContents.executeJavaScript(`(() => {
+            const pageText = String(document.body?.innerText || "").slice(0, 60000);
+            const titleText = [...document.querySelectorAll('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')]
+              .map((element) => String(element.innerText || element.textContent || "").replace(/\\s+/g, " ").trim())
+              .filter(Boolean).slice(0, 8).join(" ").slice(0, 2000);
+            const identityLabel = /품\\s*번|상품\\s*(?:번호|코드)|제품\\s*(?:번호|코드)|모델\\s*(?:명|번호|코드)?|스타일\\s*(?:번호|코드)?|style\\s*(?:no|number|code)?|model\\s*(?:no|number|code)?|sku|mpn/i;
+            const labeledText = pageText.split(/\\n+/).map((line) => line.replace(/\\s+/g, " ").trim())
+              .filter((line) => identityLabel.test(line)).slice(0, 40).join("\\n");
+            const structuredCodes = [];
+            const add = (value) => {
+              if (Array.isArray(value)) return value.forEach(add);
+              if (value !== undefined && value !== null && String(value).trim()) structuredCodes.push(String(value).trim());
+            };
+            for (const element of document.querySelectorAll('[itemprop="sku"],[itemprop="mpn"],[itemprop="model"]')) {
+              add(element.getAttribute("content") || element.textContent);
+            }
+            for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+              try {
+                const walk = (value) => {
+                  if (!value || typeof value !== "object") return;
+                  if (Array.isArray(value)) return value.forEach(walk);
+                  for (const [key, child] of Object.entries(value)) {
+                    if (/^(?:sku|mpn|model|styleNo|articleNumber)$/i.test(key)) add(child);
+                    else if (child && typeof child === "object") walk(child);
+                  }
+                };
+                walk(JSON.parse(script.textContent || "null"));
+              } catch {}
+            }
+            return JSON.stringify({ pageText, titleText, labeledText, structuredCodes: [...new Set(structuredCodes)].slice(0, 30) });
+          })()`, true).then(JSON.parse).catch(() => null);
+          if (identitySnapshot) {
+            detailText = String(identitySnapshot.pageText || "");
+            detailIdentity = identitySnapshot;
+            detailLoaded = true;
+          }
           const rawStock = await searchWindow.webContents.executeJavaScript(`(() => {
             const visible = (element) => {
               if (!element) return false;
@@ -2772,9 +2815,32 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           })()`, true).catch(() => null);
           if (rawStock) stockEvidence = normalizeRenderedStockEvidence(rawStock);
         } catch {}
+        if (product.detailArticleVerificationRequired) identityRequiredCount += 1;
         const detailArticleVerified = product.detailArticleVerificationRequired
-          ? exactArticleIdentityMatch(detailText, articleNumber) : false;
-        if (product.detailArticleVerificationRequired && !detailArticleVerified) continue;
+          ? strictProductArticleIdentityMatch(detailIdentity, articleNumber) : false;
+        const titleFallbackVerified = product.detailArticleVerificationRequired
+          && !isCodePriorityAttempt
+          && product.brandVerifiedFromCard === true
+          && titleIdentityMatch(`${String(product.title || "")} ${String(detailIdentity.titleText || "")}`, title);
+        if (product.detailArticleVerificationRequired && detailLoaded) identityCheckedCount += 1;
+        const linkOnlySource = String(product?.store || "") === "브랜드 공식몰"
+          || /^네이버\s/.test(String(product?.store || ""));
+        if (product.detailArticleVerificationRequired && !detailArticleVerified && !titleFallbackVerified) {
+          if (detailLoaded) identityMismatchCount += 1;
+          if (linkOnlySource) {
+            products.push({
+              ...product,
+              linkOnly: true,
+              linkVerified: /^https?:\/\//i.test(String(product?.url || "")),
+              articleNumber: product.articleNumberVerified === true ? product.articleNumber : "",
+              inStock: null,
+              sizes: [],
+              stockStatus: "manual_check",
+              stockVerified: false,
+            });
+          }
+          continue;
+        }
         const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
         if (isOverseasPurchaseProduct(evidence)) continue;
         if (isConsignmentOperatedProduct(evidence)) continue;
@@ -2793,6 +2859,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           // verified on the detail page so same-model colour cards are merged
           // later and the best matching image/price remains.
           detectedArticleNumber: detailArticleVerified ? articleNumber : product.detectedArticleNumber,
+          articleNumber: detailArticleVerified || product.articleNumberVerified === true ? articleNumber : "",
+          articleNumberVerified: detailArticleVerified || product.articleNumberVerified === true,
+          matchBasis: detailArticleVerified ? "article" : titleFallbackVerified ? "brand_title" : "card_article",
           store: isSsg && classification === "official_brand"
             ? "SSG 브랜드 공식관"
             : isSsg && classification === "parallel_import" ? "SSG 병행수입" : product.store,
@@ -2808,6 +2877,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       }
       const preserveNaverChannelCount = /^네이버\s/.test(String(source.store || ""))
         && Number.isFinite(analyzed?.channelCount);
+      const authoritativeIdentityMismatch = identityRequiredCount > 0
+        && identityCheckedCount === identityRequiredCount
+        && identityMismatchCount === identityRequiredCount;
       detailed = {
         ...analyzed,
         resolvedSearchUrl,
@@ -2817,7 +2889,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         searchSubmitted: interactiveSiteSearch,
         candidateCount,
         naverChannelCounts,
-        detailVerificationPending: candidateCount > 0 && products.length === 0,
+        absenceConfirmed: analyzed.absenceConfirmed === true || authoritativeIdentityMismatch,
+        detailVerificationPending: candidateCount > 0 && products.length === 0 && !authoritativeIdentityMismatch,
       };
     }
     if (source.store !== "브랜드 공식몰" || !Array.isArray(detailed?.products)) return detailed;
@@ -2917,13 +2990,27 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     // stock state can be reported as a purchasable domestic result.
       const allQueryAttempts = Array.isArray(source.searchAttempts) && source.searchAttempts.length
         ? source.searchAttempts : [{ query: source.searchQuery || articleNumber || title || "", url: source.searchUrl || "" }];
-    // One Naver search already contains all three requested channels. Never
-    // type title fallbacks or re-submit the product code for each source row.
-      const queryAttempts = /^네이버\s/.test(String(source.store || ""))
+    // Official malls remain product-code-only. Other stores use the complete
+    // accuracy-first fallback order: code -> title -> title+code.
+      const queryAttempts = source.store === "브랜드 공식몰"
         ? allQueryAttempts.slice(0, 1) : allQueryAttempts;
       let result = null;
-      for (const queryAttempt of queryAttempts) {
+      for (let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts.length; queryAttemptIndex += 1) {
+        const queryAttempt = queryAttempts[queryAttemptIndex];
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
+        // A Naver overview DOM belongs to exactly one submitted query. When an
+        // exact-code result is authoritatively absent, discard that DOM before
+        // submitting the next ranked query; otherwise the old code result is
+        // accidentally reused and the title fallback never actually runs.
+        if (/^네이버\s/.test(String(source.store || "")) && queryAttemptIndex > 0) {
+          if (sharedNaverSession.window && !sharedNaverSession.window.isDestroyed()) {
+            sharedNaverSession.window.destroy();
+          }
+          sharedNaverSession.window = null;
+          sharedNaverSession.resultsUrl = "";
+          sharedNaverSession.channelCounts = null;
+          sharedNaverSession.searchSubmitted = false;
+        }
       // Submit each query exactly once. A later query is a fallback only when
       // the completed prior search returned no product; browser/security or
       // detail-verification failures must not repeat the same query or advance

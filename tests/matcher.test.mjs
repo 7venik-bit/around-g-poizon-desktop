@@ -31,3 +31,17 @@ test("상품명이 비슷해도 실제 상품코드가 다르면 충돌로 판�
   assert.equal(result.signals.codeConflict, true);
   assert.equal(result.signals.code, "불일치");
 });
+
+test("쇼핑몰 URL과 내부 ID에 요청 숫자가 있어도 품번 일치로 보지 않는다", () => {
+  const result = scoreProductCandidate(
+    { articleNumber: "45478", brand: "파타고니아", title: "맨즈 73 스카이라인 티셔츠" },
+    {
+      id: "https://www.musinsa.com/products/45478",
+      url: "https://www.musinsa.com/products/45478?keyword=45478",
+      title: "스포츠 슬링백 가방 VIBRANT BG5922",
+      detectedArticleNumber: "",
+    },
+  );
+  assert.equal(result.signals.codeScore, 0);
+  assert.equal(result.signals.code, "불일치");
+});

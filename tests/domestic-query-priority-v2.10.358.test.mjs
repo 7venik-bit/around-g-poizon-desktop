@@ -13,7 +13,8 @@ test("all stores receive code, title, then title plus code in that order", () =>
 });
 
 test("a source submits the next query only when the prior query has no result", () => {
-  assert.match(main, /for \(const queryAttempt of queryAttempts\)/);
+  assert.match(main, /for \(let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts\.length; queryAttemptIndex \+= 1\)/);
+  assert.match(main, /const queryAttempt = queryAttempts\[queryAttemptIndex\]/);
   assert.match(main, /source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession/);
   assert.match(main, /queryResult\.verificationReason \|\| queryResult\.detailVerificationPending/);
   assert.match(main, /queryResult\.absenceConfirmed !== true/);

@@ -341,7 +341,7 @@ export function countLinkedSearchProducts(html, articleNumber = "") {
   return 0;
 }
 
-function titleIdentityMatch(candidate = "", expected = "") {
+export function titleIdentityMatch(candidate = "", expected = "") {
   const ignored = new Set(["남성", "여성", "공용", "정품", "공식", "신상", "상품"]);
   const tokens = (value) => String(value || "").toLocaleLowerCase()
     .split(/[^a-z0-9가-힣]+/)
@@ -350,6 +350,26 @@ function titleIdentityMatch(candidate = "", expected = "") {
   const expectedTokens = [...new Set(tokens(expected))];
   const shared = expectedTokens.filter((token) => candidateTokens.has(token));
   return shared.length >= 2 && shared.length / Math.max(1, Math.min(expectedTokens.length, candidateTokens.size)) >= 0.4;
+}
+
+export function strictProductArticleIdentityMatch({
+  titleText = "",
+  labeledText = "",
+  structuredCodes = [],
+} = {}, articleNumber = "") {
+  const expected = sanitizeDomesticProductCode(articleNumber);
+  if (!expected) return false;
+  const expectedCompact = expected.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const structuredMatch = (Array.isArray(structuredCodes) ? structuredCodes : [])
+    .some((value) => sanitizeDomesticProductCode(value).toUpperCase().replace(/[^A-Z0-9]/g, "") === expectedCompact);
+  if (structuredMatch) return true;
+  // A product-owned title can prove identity. Whole-page text, URLs and search
+  // controls cannot: numeric POIZON IDs often reappear there and previously
+  // made unrelated Musinsa recommendations look like exact products.
+  if (exactArticleIdentityMatch(titleText, expected)) return true;
+  const identityLabel = /품\s*번|상품\s*(?:번호|코드)|제품\s*(?:번호|코드)|모델\s*(?:명|번호|코드)?|스타일\s*(?:번호|코드)?|style\s*(?:no|number|code)?|model\s*(?:no|number|code)?|sku|mpn/i;
+  return String(labeledText || "").split(/\n+/)
+    .some((line) => identityLabel.test(line) && exactArticleIdentityMatch(line, expected));
 }
 
 const CONTENT_ONLY_HOSTS = new Set([
@@ -513,7 +533,9 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         if (isOverseasPurchaseProduct({ ...card, text: rawCardText })) continue;
         const expectedCompact = articleCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
         const detectedArticleNumbers = articleIdentityTokens(rawCardText);
-        const exactDetectedArticle = detectedArticleNumbers.find((code) => code === expectedCompact) || "";
+        const titleOwnsExactArticle = exactArticleIdentityMatch(titleText, articleCode);
+        const exactDetectedArticle = detectedArticleNumbers.find((code) => code === expectedCompact)
+          || (titleOwnsExactArticle ? expectedCompact : "");
         const conflictingArticle = detectedArticleNumbers.some((code) => code !== expectedCompact);
         let articleMatched = exactArticleIdentityMatch(identityText, articleCode);
         const variantStyle = sanitizeDomesticQuery(articleNumber).toUpperCase().match(/^([A-Z0-9]{5,})[-_]([A-Z0-9]{1,6})$/);
@@ -647,6 +669,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
             title: String(card?.title || card?.text || `${store} 검색 결과`).trim().slice(0, 240),
             articleNumber,
             detectedArticleNumber: exactDetectedArticle || detectedArticleNumbers[0] || "",
+            articleNumberVerified: Boolean(exactDetectedArticle),
             articleConflict: conflictingArticle,
             brandVerifiedFromCard: brandMatched,
             detailArticleVerificationRequired,
@@ -667,6 +690,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         }
       }
       const exactSsgSearchChecked = /^SSG(?:\s|$)/.test(String(store || "")) && cards.length > 0;
+      const exactMusinsaSearchChecked = String(store || "") === "무신사" && cards.length > 0;
       const parallelRetailerListChecked = requiresExactParallelModel && cards.length > 0;
       if (/^네이버\s/.test(String(store || "")) && scopedCountFound && scopedPositiveCount > 0) {
         const domesticPresence = matchingProducts.size > 0 || domesticChannelCandidateCount > 0;
@@ -688,7 +712,8 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
       return {
         count: matchingProducts.size,
         products: [...matchingProducts.values()],
-        absenceConfirmed: matchingProducts.size === 0 && (exactSsgSearchChecked || parallelRetailerListChecked),
+        absenceConfirmed: matchingProducts.size === 0
+          && (exactMusinsaSearchChecked || exactSsgSearchChecked || parallelRetailerListChecked),
         ssgSearchChecked: /^SSG(?:\s|$)/.test(String(store || "")),
         parallelRetailerListEnforced: requiresExactParallelModel,
       };

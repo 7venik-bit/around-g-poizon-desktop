@@ -10,12 +10,14 @@ const replaceOnce = (source, before, after, label) => {
 
 const mainPath = new URL("../main.mjs", import.meta.url);
 let main = normalizeLf(await readFile(mainPath, "utf8"));
-main = replaceOnce(
-  main,
-  `        const detailArticleVerified = product.detailArticleVerificationRequired\n          ? exactArticleIdentityMatch(detailText, articleNumber) : false;\n        if (product.detailArticleVerificationRequired && !detailArticleVerified) continue;`,
-  `        const linkOnlySource = String(product?.store || "") === "브랜드 공식몰"\n          || /^네이버\\s/.test(String(product?.store || ""));\n        const detailArticleVerified = product.detailArticleVerificationRequired\n          ? exactArticleIdentityMatch(detailText, articleNumber) : false;\n        if (product.detailArticleVerificationRequired && !detailArticleVerified && !linkOnlySource) continue;\n        if (product.detailArticleVerificationRequired && !detailArticleVerified && linkOnlySource) {\n          return {\n            ...product,\n            linkOnly: true,\n            linkVerified: /^https?:\\/\\//i.test(String(product?.url || "")),\n            inStock: null,\n            sizes: [],\n            stockStatus: "manual_check",\n            stockVerified: false,\n          };\n        }`,
-  "retain official and Naver product URL when detail code is not repeated",
-);
+if (!main.includes('const linkOnlySource = String(product?.store || "") === "브랜드 공식몰"')) {
+  main = replaceOnce(
+    main,
+    `        const detailArticleVerified = product.detailArticleVerificationRequired\n          ? exactArticleIdentityMatch(detailText, articleNumber) : false;\n        if (product.detailArticleVerificationRequired && !detailArticleVerified) continue;`,
+    `        const linkOnlySource = String(product?.store || "") === "브랜드 공식몰"\n          || /^네이버\\s/.test(String(product?.store || ""));\n        const detailArticleVerified = product.detailArticleVerificationRequired\n          ? exactArticleIdentityMatch(detailText, articleNumber) : false;\n        if (product.detailArticleVerificationRequired && !detailArticleVerified && !linkOnlySource) continue;\n        if (product.detailArticleVerificationRequired && !detailArticleVerified && linkOnlySource) {\n          return {\n            ...product,\n            linkOnly: true,\n            linkVerified: /^https?:\\/\\//i.test(String(product?.url || "")),\n            inStock: null,\n            sizes: [],\n            stockStatus: "manual_check",\n            stockVerified: false,\n          };\n        }`,
+    "retain official and Naver product URL when detail code is not repeated",
+  );
+}
 await writeFile(mainPath, main, "utf8");
 
 const sourcingPath = new URL("../src/sourcing-view.js", import.meta.url);
