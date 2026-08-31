@@ -2683,10 +2683,14 @@ document.addEventListener("click", async (event) => {
   }
   const officialInternalButton = event.target.closest("[data-official-homepage][data-official-query]");
   if (officialInternalButton) {
-    await window.aroundG.openOfficialInternalSearch({
+    const result = await window.aroundG.openOfficialInternalSearch({
       homepageUrl: decodeURIComponent(officialInternalButton.dataset.officialHomepage),
       query: decodeURIComponent(officialInternalButton.dataset.officialQuery),
     });
+    // Closing an internal result window is a normal user action. The main
+    // process returns a canceled result so this click cannot become an
+    // unhandled rejection in the Popular List status area.
+    if (result?.canceled) return;
   }
   const officialButton = event.target.closest("[data-official-discovery][data-official-product]");
   const officialDiscovery = officialButton?.dataset.officialDiscovery;

@@ -2200,6 +2200,23 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
   } catch { return false; }
 }
 
+function browserWindowUsable(window) {
+  return Boolean(window
+    && !window.isDestroyed()
+    && window.webContents
+    && !window.webContents.isDestroyed());
+}
+
+function closedInternalSearchResult(stage = "unknown") {
+  return {
+    ok: false,
+    submitted: false,
+    canceled: true,
+    reason: "INTERNAL_SEARCH_WINDOW_CLOSED",
+    stage,
+  };
+}
+
 async function openOfficialMallInternalSearch(homepageUrl, query) {
   const homepage = new URL(String(homepageUrl || ""));
   if (!["https:", "http:"].includes(homepage.protocol)) throw new Error("INVALID_URL");
@@ -2226,20 +2243,41 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
   officialInteractiveWindows.add(searchWindow);
   searchWindow.on("closed", () => officialInteractiveWindows.delete(searchWindow));
   searchWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) searchWindow.loadURL(url).catch(() => {});
+    if (/^https?:\/\//i.test(url) && browserWindowUsable(searchWindow)) {
+      searchWindow.loadURL(url).catch(() => {});
+    }
     return { action: "deny" };
   });
-  await searchWindow.loadURL(homepage.href);
-  searchWindow.show();
-  searchWindow.focus();
-  const login = await ensureOfficialAccountLogin(searchWindow, homepage.href);
-  if (!login.ok) return { ok: false, submitted: false, loginRequired: true, reason: login.reason };
-  if (login.required) await searchWindow.loadURL(homepage.href).catch(() => {});
-  const submitted = await executeOfficialMallSearch(searchWindow, homepage.href, exactQuery);
-  if (!submitted) {
-    searchWindow.setTitle(`공식몰 돋보기를 눌러 ${exactQuery}을(를) 검색해 주세요`);
+  let stage = "homepage_load";
+  try {
+    await searchWindow.loadURL(homepage.href);
+    if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
+    searchWindow.show();
+    searchWindow.focus();
+    stage = "account_login";
+    const login = await ensureOfficialAccountLogin(searchWindow, homepage.href);
+    if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
+    if (!login.ok) return { ok: false, submitted: false, loginRequired: true, reason: login.reason };
+    if (login.required) {
+      stage = "homepage_restore";
+      await searchWindow.loadURL(homepage.href).catch(() => {});
+      if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
+    }
+    stage = "search_submission";
+    const submitted = await executeOfficialMallSearch(searchWindow, homepage.href, exactQuery);
+    if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
+    if (!submitted) {
+      searchWindow.setTitle(`공식몰 돋보기를 눌러 ${exactQuery}을(를) 검색해 주세요`);
+    }
+    return { ok: true, submitted };
+  } catch (error) {
+    const message = String(error?.message || error || "");
+    if (!browserWindowUsable(searchWindow)
+      || /Object has been destroyed|Render frame was disposed|WebContents was destroyed/i.test(message)) {
+      return closedInternalSearchResult(stage);
+    }
+    throw error;
   }
-  return { ok: true, submitted };
 }
 
 async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
@@ -10382,7 +10420,15 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     return openExternalInChromeTab(url);
   });
   ipcMain.handle("official:open-internal-search", async (_event, input) => {
-    return openOfficialMallInternalSearch(input?.homepageUrl, input?.query);
+    try {
+      return await openOfficialMallInternalSearch(input?.homepageUrl, input?.query);
+    } catch (error) {
+      const message = String(error?.message || error || "");
+      if (/Object has been destroyed|Render frame was disposed|WebContents was destroyed/i.test(message)) {
+        return closedInternalSearchResult("ipc_boundary");
+      }
+      throw error;
+    }
   });
   ipcMain.handle("official:open-search", async (_event, input) => {
     const discovery = new URL(String(input?.discoveryUrl || ""));
