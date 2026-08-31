@@ -1090,9 +1090,25 @@ function productCrossCheckIdentity(product = {}) {
 async function cachedDomesticSearch(product, verifyLinkCounts = true) {
   const identity = productCrossCheckIdentity(product);
   if (domesticIdentitySearchCache.has(identity)) return domesticIdentitySearchCache.get(identity);
-  const request = window.aroundG.searchDomestic(domesticSearchInput(product, selectedDomesticSourceGroups(), verifyLinkCounts));
-  domesticIdentitySearchCache.set(identity, request);
-  const response = await request;
+  const input = domesticSearchInput(product, selectedDomesticSourceGroups(), verifyLinkCounts);
+  const task = (async () => {
+    const run = async () => {
+      try {
+        return await window.aroundG.searchDomestic(input);
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : String(error || "국내 검색 호출 실패") };
+      }
+    };
+    const first = await run();
+    // A confirmed zero is returned as ok:true and must never be searched again.
+    // Retry only a technical IPC/browser failure, once, so one transient error
+    // is not copied to every size row sharing the same article number.
+    if (first?.ok || first?.canceled) return first;
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    return run();
+  })();
+  domesticIdentitySearchCache.set(identity, task);
+  const response = await task;
   if (!response?.ok) domesticIdentitySearchCache.delete(identity);
   return response;
 }
@@ -2242,7 +2258,7 @@ function updateDomesticStockFilter() {
 function renderDomestic(result, sourceProduct = {}) {
   if (!result) return `<span class="inventory-help">재고 검색을 누르면 공식몰 → 무신사 → 네이버·SSG·롯데온의 공식스토어·백화점·아울렛을 각각 확인합니다.</span>`;
   if (result.loading) return renderDomesticLoading(result.startedAt);
-  if (result.error) return `<span class="inventory-help">상품없음</span>`;
+  if (result.error) return `<span class="inventory-help error">검색 실패: ${text(result.error)}</span>`;
   const products = (result.products || []).filter((product) => {
     if (!product || !(product.name || product.title)) return false;
     const store = String(product.store || product.sourceStore || "");
