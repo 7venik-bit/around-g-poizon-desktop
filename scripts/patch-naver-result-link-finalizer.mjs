@@ -32,8 +32,14 @@ replaceOnce(
 
 replaceOnce(
   '      const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;',
-  '      // Fashion Town already provides an exact product-code result URL.\\n      // Load that URL directly instead of reopening Naver home and replaying\\n      // menu/input clicks that can fail before the usable result page.\\n      const initialUrl = directNaverFashionResult ? url\\n        : naverPortalSource ? "https://www.naver.com/" : url;'.replaceAll('\\n', '\n'),
-  "direct Naver result initial URL",
+  '      // Establish Naver cookies/session on the normal home page first. A\\n      // cold hidden window can reject a direct Fashion Town SPA navigation.\\n      const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;'.replaceAll('\\n', '\n'),
+  "Naver session bootstrap before Fashion Town result",
+);
+
+replaceOnce(
+  '      if (interactiveOfficialSearch) {',
+  '      if (directNaverFashionResult) {\\n        const resultPage = await loadNaverFashionTownResultPage(\\n          searchWindow, url, searchAttempt?.query || source.searchQuery || articleNumber || title,\\n        );\\n        if (!resultPage.ok) {\\n          return renderedSearchFailure(\\n            resultPage.timeout ? "page_load_timeout"\\n              : resultPage.networkError ? "network_error" : "page_load_failed",\\n            searchWindow, {\\n              searchSubmitted: true,\\n              resolvedSearchUrl: resultPage.resolvedUrl || url,\\n              errorMessage: resultPage.errorMessage,\\n            },\\n          );\\n        }\\n      }\\n      if (interactiveOfficialSearch) {'.replaceAll('\\n', '\n'),
+  "Naver Fashion Town result navigation recovery",
 );
 
 replaceOnce(

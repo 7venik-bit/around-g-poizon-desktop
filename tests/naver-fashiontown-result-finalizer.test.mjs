@@ -131,7 +131,8 @@ test("main process uses the finalizer before the generic marketplace matcher", a
   assert.match(main, /not the rejected promise or its error code/);
   assert.doesNotMatch(main, /const documentReady = aborted && \^\/https/);
   assert.match(main, /const directNaverFashionResult = naverPortalSource/);
-  assert.match(main, /const initialUrl = directNaverFashionResult \? url/);
+  assert.match(main, /const initialUrl = naverPortalSource \? "https:\/\/www\.naver\.com\/" : url/);
+  assert.match(main, /const resultPage = await loadNaverFashionTownResultPage/);
   assert.match(main, /if \(interactiveSiteSearch && !directNaverFashionResult\)/);
   assert.doesNotMatch(main, /return createNaverFashionTownSearchLinkResult/);
   assert.match(main, /const approval = await verifyApprovedNaverDomesticProducts/);

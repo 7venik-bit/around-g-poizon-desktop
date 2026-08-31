@@ -2242,6 +2242,74 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
   return { ok: true, submitted };
 }
 
+async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
+  const expectedQuery = sanitizeDomesticQuery(query);
+  const inspectSettledResult = async () => {
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      if (attempt > 0) await wait(500);
+      const state = await searchWindow.webContents.executeJavaScript(`(() => {
+        const href = String(location.href || "");
+        const text = String(document.body?.innerText || "").slice(0, 60000);
+        const cards = document.querySelectorAll([
+          'a[href*="/window-products/"]',
+          'a[href*="/products/"]',
+          'a[href*="/catalog/"]',
+        ].join(',')).length;
+        const explicitEmpty = /검색\\s*결과가?\\s*(?:없|0)|상품이?\\s*(?:없|0)|일치하는\\s*(?:상품|제안)이\\s*없/i.test(text);
+        const positiveCount = /(?:전체|검색\\s*결과)\\s*[1-9][\\d,]*\\s*개/i.test(text);
+        return { href, cards, explicitEmpty, positiveCount };
+      })()`, true).catch(() => null);
+      if (!state) continue;
+      let decodedUrl = String(state.href || "");
+      try { decodedUrl = decodeURIComponent(decodedUrl); } catch {}
+      const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
+      const exactResult = /shopping\.naver\.com\/window\/search\//i.test(state.href)
+        && compact(decodedUrl).includes(compact(expectedQuery));
+      if (exactResult && (state.cards > 0 || state.explicitEmpty || state.positiveCount)) {
+        return { ok: true, resolvedUrl: state.href };
+      }
+    }
+    return { ok: false, resolvedUrl: String(searchWindow.webContents.getURL() || "") };
+  };
+
+  let firstError = null;
+  try {
+    await Promise.race([
+      searchWindow.loadURL(targetUrl),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("NAVER_RESULT_PAGE_TIMEOUT")), 30_000)),
+    ]);
+  } catch (error) {
+    firstError = error;
+  }
+  const firstResult = await inspectSettledResult();
+  if (firstResult.ok) return firstResult;
+
+  // A cold hidden Chromium session can reject Fashion Town's first SPA
+  // navigation even after Naver home loaded normally. Clear only the HTTP
+  // cache (cookies/login remain intact), then retry the same ranked query once.
+  try { await searchWindow.webContents.session.clearCache(); } catch {}
+  let retryError = null;
+  try {
+    await wait(600);
+    await Promise.race([
+      searchWindow.loadURL(targetUrl),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("NAVER_RESULT_PAGE_TIMEOUT")), 30_000)),
+    ]);
+  } catch (error) {
+    retryError = error;
+  }
+  const retryResult = await inspectSettledResult();
+  if (retryResult.ok) return retryResult;
+  const errorMessage = String(retryError?.message || firstError?.message || "NAVER_RESULT_PAGE_NOT_SETTLED");
+  return {
+    ok: false,
+    resolvedUrl: retryResult.resolvedUrl || firstResult.resolvedUrl,
+    errorMessage,
+    timeout: /TIMEOUT|TIMED_OUT/i.test(errorMessage),
+    networkError: /ERR_(?:NAME_NOT_RESOLVED|CONNECTION|TIMED_OUT|INTERNET_DISCONNECTED)/i.test(errorMessage),
+  };
+}
+
 async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "", securityRetry = 0, searchAttempt = null, sharedNaverSession = null, generation = domesticSearchGeneration) {
   if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
   const interactiveOfficialSearch = source.store === "브랜드 공식몰"

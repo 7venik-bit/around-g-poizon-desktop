@@ -8,7 +8,8 @@ const patch = await readFile(new URL("../scripts/patch-naver-result-link-finaliz
 test("네이버 패션타운은 검색 링크에서 조기 종료하지 않고 상품 카드와 가격을 수집한다", () => {
   assert.doesNotMatch(patch, /return createNaverFashionTownSearchLinkResult/);
   assert.match(patch, /Naver Fashion Town must continue into the rendered-card capture/);
-  assert.match(patch, /const initialUrl = directNaverFashionResult \? url/);
+  assert.match(patch, /const initialUrl = naverPortalSource \? "https:\/\/www\.naver\.com\/" : url/);
+  assert.match(patch, /const resultPage = await loadNaverFashionTownResultPage/);
   assert.match(patch, /const finalized = finalizeNaverFashionTownResult/);
   assert.match(patch, /const approval = await verifyApprovedNaverDomesticProducts/);
 });
