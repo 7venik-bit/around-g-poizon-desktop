@@ -110,6 +110,22 @@
     return !parallel || product?.parallelRetailerVerified === true;
   }
 
+  function displayedProductTitle(product = {}, sourceProduct = {}) {
+    const raw = String(product?.title || product?.name || product?.articleNumber || "국내 상품")
+      .replace(/\s+/g, " ").trim();
+    const store = String(product?.sourceStore || product?.store || "");
+    if (store !== "네이버 패션타운") return raw;
+    const sourceTitle = String(sourceProduct?.apiTitle || sourceProduct?.title || sourceProduct?.name || "")
+      .replace(/\s+/g, " ").trim();
+    // Naver sometimes exposes the entire card accessibility text as the link
+    // title. Keep that raw text for matching, but never show delivery, option,
+    // sorting and promotion copy as the product name.
+    const wholeCardText = raw.length > 72
+      || /(배송\s*옵션|옵션\s*펼치기|가격대|가격순|인기순|리뷰|라이브|선택됨)/i.test(raw);
+    const selected = wholeCardText && sourceTitle ? sourceTitle : raw;
+    return selected.length > 46 ? `${selected.slice(0, 45).trim()}…` : selected;
+  }
+
   function sourceAction(source = {}, product = {}, sourceProduct = {}, label = "열기") {
     const productUrl = String(product?.url || "").trim();
     const openUrl = String(productUrl
@@ -142,12 +158,13 @@
     const rows = products.map((product) => {
       const source = sourceForProduct(product);
       const retailer = product?.retailerName || product?.store || source?.store || "판매처";
-      const title = product?.title || product?.name || product?.articleNumber || "국내 상품";
+      const rawTitle = product?.title || product?.name || product?.articleNumber || "국내 상품";
+      const title = displayedProductTitle(product, sourceProduct);
       const article = product?.articleNumber || sourceProduct?.articleNumber || sourceProduct?.productCode || "-";
       const official = product?.officialStoreVerified === true || Boolean(source?.officialStatus);
       return `<div class="domestic-inline-row">
         <div class="domestic-inline-store" title="${safeText(retailer)}"><span>${safeText(retailer)}</span>${official ? `<span class="domestic-inline-official">공식</span>` : ""}</div>
-        <div class="domestic-inline-title" title="${safeText(title)}">${safeText(title)}</div>
+        <div class="domestic-inline-title" title="${safeText(rawTitle)}">${safeText(title)}</div>
         <div class="domestic-inline-code" title="${safeText(article)}">${safeText(article)}</div>
         <div class="domestic-inline-price">${safeMoney(product?.price)}</div>
         <div>${sourceAction(source, product, sourceProduct)}</div>
