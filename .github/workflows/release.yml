@@ -119,6 +119,12 @@ jobs:
       - name: Verify full popular ranking scroll capture
         run: node scripts/verify-popular-full-rank-scroll.mjs
 
+      - name: Test strict popular-list completeness
+        run: node --test tests/seller-dom.test.mjs tests/popular-completeness-v2.10.573.test.mjs
+
+      - name: Check strict popular-list runtime syntax
+        run: node --check main.mjs && node --check services/seller-dom.mjs && node --check services/popular-excel.mjs
+
       - name: Resolve release version
         id: release_version
         shell: pwsh

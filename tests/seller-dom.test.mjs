@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dedupeSellerProducts, parseSellerDomNodes } from "../services/seller-dom.mjs";
+import { dedupeSellerProducts, parseSellerDomNodes, sellerRankFromLine } from "../services/seller-dom.mjs";
 
 test("판매자센터 가상 행에서 품번, 상품명, 가격과 이미지를 복원한다", () => {
   const products = parseSellerDomNodes([{
@@ -27,6 +27,24 @@ test("순위와 품번 및 품명이 있으면 가격 셀이 분리되어도 상
   assert.equal(products[0].rank, 20);
   assert.equal(products[0].articleNumber, "AQ1774-102");
   assert.equal(products[0].averagePrice, 0);
+});
+
+test("순위와 상품 정보가 한 줄로 합쳐진 가상 행도 정확한 슬롯으로 복원한다", () => {
+  const products = parseSellerDomNodes([{
+    text: "23위 JI0079 Adidas Superstar 2\n91,720\n56,674\n153,302",
+    imageUrl: "https://img.example/ji0079.jpg",
+  }]);
+  assert.equal(products.length, 1);
+  assert.equal(products[0].rank, 23);
+  assert.equal(products[0].rankDetected, true);
+  assert.equal(products[0].articleNumber, "JI0079");
+});
+
+test("명시적 순위 표기만 1~200위 범위에서 허용한다", () => {
+  assert.deepEqual(sellerRankFromLine("순위 7", 200), { rank: 7, remainder: "" });
+  assert.deepEqual(sellerRankFromLine("108위 AQ1774-102", 200), { rank: 108, remainder: "AQ1774-102" });
+  assert.equal(sellerRankFromLine("201위 AQ1774-102", 200), null);
+  assert.equal(sellerRankFromLine("91720", 200), null);
 });
 
 test("같은 품번은 가장 앞선 순위 한 건만 남긴다", () => {

@@ -23,6 +23,20 @@ if (!main.includes('const hasTableHeaders = text.includes("SPU 기준")')) {
   throw new Error("known-good popular table detector missing");
 }
 
+// v2.10.573 and later already contain the strict capture pipeline.  The
+// legacy recovery patch below targets the older collector and must not be
+// layered on top of it during postinstall/release builds.
+const strictCaptureMarkers = [
+  'code: "POPULAR_CAPTURE_INCOMPLETE"',
+  'const captureCompleteness = popularCompleteness([...rankSlots.values()], limit);',
+  'message: `1~${limit}위 완전 수집 확인 · 상품 ${preservedSlots.size}개 · 누락 0개`',
+];
+if (strictCaptureMarkers.every((marker) => main.includes(marker))) {
+  await writeFile(mainPath, main, "utf8");
+  console.log("strict popular-list capture already present; legacy recovery patch skipped");
+  process.exit(0);
+}
+
 const recoveryBlock = `  // AI 기준 누락 순위 표적 재수집:\n  // 전체 표를 여러 번 다시 훑는 대신 실제로 비어 있는 순위만 계산해서\n  // 해당 순위의 약간 앞쪽으로 점프한 뒤 한 행 이하 간격으로 짧게 재스캔한다.\n  // 200/200이 아니면 완료로 보지 않는다.\n  for (let recoveryRound = 0; recoveryRound < 4 && rankSlots.size < limit; recoveryRound += 1) {\n    const missingRanks = Array.from({ length: limit }, (_, index) => index + 1).filter((rank) => !rankSlots.has(rank));\n    if (!missingRanks.length) break;\n    mainWindow?.webContents.send("seller:capture-progress", {\n      percent: 96 + recoveryRound,\n      count: rankSlots.size,\n      target: limit,\n      missing: missingRanks.length,\n      message: \`누락 순위 표적 재수집 \${recoveryRound + 1}/4 · \${missingRanks.slice(0, 24).join(", ")}\${missingRanks.length > 24 ? "…" : ""}\`,\n    });\n    for (const rank of missingRanks) {\n      if (rankSlots.has(rank)) continue;\n      await executeAcrossSellerFrames(sellerJumpScript(Math.max(1, rank - 3), limit));\n      await wait(500);\n      for (let scan = 0; scan < 10 && !rankSlots.has(rank); scan += 1) {\n        await captureVisibleSlots();\n        if (rankSlots.has(rank)) break;\n        await executeAcrossSellerFrames(SELLER_ROW_SCROLL_SCRIPT);\n        await wait(180);\n      }\n    }\n  }\n\n`;
 
 main = replaceOnce(

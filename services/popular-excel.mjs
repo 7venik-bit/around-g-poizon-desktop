@@ -3,6 +3,36 @@ export const POPULAR_EXCEL_HEADERS = [
   "평균 거래가", "최저 거래가", "최고 거래가", "이미지 URL", "수집 상태",
 ];
 
+export function popularCompleteness(products, limit = 200) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 200, 1), 200);
+  const ranks = new Map();
+  const incompleteRanks = new Set();
+  const duplicateRanks = new Set();
+  for (const product of Array.isArray(products) ? products : []) {
+    const rank = Number(product?.rank || 0);
+    const articleNumber = String(product?.articleNumber || "").trim();
+    const name = String(product?.name || "").trim();
+    const averagePrice = Number(product?.averagePrice || 0);
+    if (rank < 1 || rank > safeLimit) continue;
+    if (product?.missingRank === true || !articleNumber || !name || averagePrice <= 0) {
+      incompleteRanks.add(rank);
+      continue;
+    }
+    if (ranks.has(rank)) duplicateRanks.add(rank);
+    else ranks.set(rank, product);
+  }
+  const missingRanks = Array.from({ length: safeLimit }, (_value, index) => index + 1)
+    .filter((rank) => !ranks.has(rank));
+  return {
+    complete: missingRanks.length === 0 && duplicateRanks.size === 0 && ranks.size === safeLimit,
+    expected: safeLimit,
+    captured: ranks.size,
+    missingRanks,
+    incompleteRanks: [...incompleteRanks].sort((left, right) => left - right),
+    duplicateRanks: [...duplicateRanks].sort((left, right) => left - right),
+  };
+}
+
 export function createPopularSlots(products, limit = 200) {
   const safeLimit = Math.min(Math.max(Number(limit) || 200, 1), 200);
   const byRank = new Map();

@@ -31,6 +31,7 @@ import {
 import {
   createPopularSlots,
   excelRowsToPopularProducts,
+  popularCompleteness,
   popularSlotsToExcelData,
 } from "./services/popular-excel.mjs";
 import pkg from "electron-updater";
@@ -235,7 +236,7 @@ let sellerProductFrameRoutingId = null;
 // POIZON occasionally retires individual data-center component routes. Enter
 // through the stable Seller Center home and use the visible left menu instead
 // of booting from a route that can show "Load Component Timeout".
-const SELLER_CENTER_URL = "https://seller.poizon.com/";
+const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
 const SELLER_EXPORT_CENTER_URL = "https://seller.poizon.com/main/exportCenter";
 const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 20 * 60 * 1000;
 const KR_POIZON_BRAND_LIST_URL = "https://kr.poizon.com/brand/list";
@@ -286,13 +287,24 @@ const SELLER_CAPTURE_SCRIPT = `(async () => {
   };
   collectVisibleRows();
   const nodes = [...collected.values()].slice(0, 5000);
+  const scrollCandidates = [scope, ...scope.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
+    .map((element) => ({
+      element,
+      maximum: Math.max(0, element.scrollHeight - element.clientHeight),
+    }))
+    .filter((candidate) => candidate.maximum > 80)
+    .sort((left, right) => right.maximum - left.maximum);
+  const scrollTarget = scrollCandidates[0];
   return {
     text: nodes.map((node) => node.text).join("\\n").slice(0, 1000000),
     title: document.title,
     url: location.href,
     nodes,
     scopeVerified: true,
-    scannedNodeCount: nodes.length
+    scannedNodeCount: nodes.length,
+    signature: nodes.map((node) => node.text + "|" + node.imageUrl).join("||").slice(0, 200000),
+    scrollTop: Number(scrollTarget?.element?.scrollTop || 0),
+    scrollMaximum: Number(scrollTarget?.maximum || 0)
   };
 })()`;
 const SELLER_SCROLL_SCRIPT = `(() => {
@@ -8545,6 +8557,17 @@ async function captureSellerCenterProducts() {
   const capturedNodes = new Map();
   const rankSlots = new Map();
   const stableObservations = new Map();
+  const rankPositions = new Map();
+  const rankIsComplete = (rank) => {
+    const product = rankSlots.get(rank);
+    return Boolean(
+      String(product?.articleNumber || "").trim()
+      && String(product?.name || "").trim()
+      && Number(product?.averagePrice || 0) > 0
+      && product?.missingRank !== true
+    );
+  };
+  const completeRankCount = () => popularCompleteness([...rankSlots.values()], limit).captured;
   const addConfirmedProduct = (product) => {
     const rank = Number(product.rank || 0);
     const articleNumber = String(product.articleNumber || "").toUpperCase();
@@ -8553,7 +8576,7 @@ async function captureSellerCenterProducts() {
     const merged = mergeSellerProductsByRank([[rankSlots.get(rank)], [{ ...product, articleNumber, name }]], limit)[0];
     if (merged) rankSlots.set(rank, merged);
   };
-  const addNodesToSlots = (nodes) => {
+  const addNodesToSlots = (nodes, scrollTop = 0, scrollMaximum = 0) => {
     for (const product of parseSellerDomNodes(nodes, limit)) {
       const rank = Number(product.rank || 0);
       const articleNumber = String(product.articleNumber || "").toUpperCase();
@@ -8570,13 +8593,18 @@ async function captureSellerCenterProducts() {
         ? { signature, count: previous.count + 1, product }
         : { signature, count: 1, product };
       stableObservations.set(rank, observation);
+      if (scrollMaximum > 0) {
+        const ratio = Math.max(0, Math.min(1, Number(scrollTop || 0) / Number(scrollMaximum)));
+        const positions = rankPositions.get(rank) || [];
+        positions.push(ratio);
+        rankPositions.set(rank, positions.slice(-8));
+      }
       // A detected rank is pasted directly into the matching 1-200 slot.
       // Later observations may verify it, but a single valid row is never
       // discarded merely because virtualization removed it from the screen.
       addConfirmedProduct(product);
     }
   };
-  const validProductCount = () => rankSlots.size;
   const captureFrameWithTimeout = async (frame, timeoutMs = 2_500) => Promise.race([
     frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true),
     new Promise((_, reject) => setTimeout(
@@ -8585,33 +8613,49 @@ async function captureSellerCenterProducts() {
     )),
   ]);
   const captureVisibleSlots = async () => {
+    const signatures = [];
     for (const frame of frames) {
       try {
         const captured = await captureFrameWithTimeout(frame);
         if (!captured?.scopeVerified) continue;
         captures.push(captured);
+        if (captured.signature) signatures.push(String(captured.signature));
         for (const node of captured.nodes || []) {
           capturedNodes.set(`${String(node.text || "")}\n${String(node.imageUrl || "")}`, node);
         }
-        addNodesToSlots(captured.nodes || []);
+        addNodesToSlots(captured.nodes || [], captured.scrollTop, captured.scrollMaximum);
       } catch {
         // 접근할 수 없는 광고/보안 프레임은 건너뜁니다.
       }
     }
+    return signatures.sort().join("\n--frame--\n");
   };
   minimizeSellerAutomationWindow("POIZON 인기상품 200건을 백그라운드에서 수집 중입니다.");
-  for (let pass = 0; pass < 3 && rankSlots.size < limit; pass += 1) {
+  const captureAfterRowChange = async (previousSignature, atEnd = false) => {
+    let latestSignature = "";
+    // The rank board is virtualized and sometimes paints later than scrollTop.
+    // Do not advance again until the rendered row set actually changes. Every
+    // observation is still collected, so a short-lived row cannot be skipped.
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await wait(attempt === 0 ? 140 : 110 + attempt * 15);
+      latestSignature = await captureVisibleSlots();
+      if (atEnd || !previousSignature || (latestSignature && latestSignature !== previousSignature)) break;
+    }
+    return latestSignature || previousSignature;
+  };
+  for (let pass = 0; pass < 3 && completeRankCount() < limit; pass += 1) {
     await dragSellerScrollbarToRatio(0);
     await wait(900);
     let atEnd = false;
     let iteration = 0;
-    while (!atEnd && iteration < 2_000 && rankSlots.size < limit) {
+    let visibleSignature = "";
+    while (!atEnd && iteration < 2_000 && completeRankCount() < limit) {
       iteration += 1;
-      await captureVisibleSlots();
-      await wait(180);
+      visibleSignature = await captureVisibleSlots() || visibleSignature;
       const scrollResult = await executeAcrossSellerFrames(SELLER_ROW_SCROLL_SCRIPT);
       if (!scrollResult?.found) break;
       atEnd = Boolean(scrollResult.atEnd);
+      visibleSignature = await captureAfterRowChange(visibleSignature, atEnd);
       const tableRatio = scrollResult.maximum > 0
         ? Math.min(1, scrollResult.after / scrollResult.maximum)
         : 1;
@@ -8619,14 +8663,13 @@ async function captureSellerCenterProducts() {
       const passRange = pass === 0 ? 74 : 6;
       mainWindow?.webContents.send("seller:capture-progress", {
         percent: Math.min(99, Math.round(basePercent + tableRatio * passRange)),
-        count: rankSlots.size,
+        count: completeRankCount(),
         target: limit,
-        missing: limit - rankSlots.size,
+        missing: limit - completeRankCount(),
         message: pass === 0
           ? `1~${limit}위 슬롯을 한 행씩 확인 중 · 표 위치 ${Math.round(tableRatio * 100)}%`
           : `누락 슬롯 재확인 ${pass}/2 · 표 위치 ${Math.round(tableRatio * 100)}%`,
       });
-      await wait(220);
     }
     await captureVisibleSlots();
   }
@@ -8635,6 +8678,90 @@ async function captureSellerCenterProducts() {
     return {
       ok: false,
       message: "판매자센터의 ‘인기상품’ 표 영역을 확인하지 못했습니다. ‘인기상품’ 제목과 SPU/SKU 기준이 함께 보이는 상태에서 다시 눌러 주세요.",
+    };
+  }
+  const missingRankGroups = () => {
+    const missing = popularCompleteness([...rankSlots.values()], limit).missingRanks;
+    const groups = [];
+    for (const rank of missing) {
+      const previous = groups.at(-1);
+      if (previous && previous.end + 1 === rank) previous.end = rank;
+      else groups.push({ start: rank, end: rank });
+    }
+    return groups;
+  };
+  const observedRatioForRank = (rank) => {
+    const observations = [...rankPositions.entries()]
+      .map(([observedRank, ratios]) => ({
+        rank: Number(observedRank),
+        ratio: ratios.reduce((sum, value) => sum + value, 0) / Math.max(1, ratios.length),
+      }))
+      .filter((entry) => Number.isFinite(entry.ratio))
+      .sort((left, right) => left.rank - right.rank);
+    const before = [...observations].reverse().find((entry) => entry.rank <= rank);
+    const after = observations.find((entry) => entry.rank >= rank);
+    if (before && after && before.rank !== after.rank) {
+      const progress = (rank - before.rank) / (after.rank - before.rank);
+      return before.ratio + (after.ratio - before.ratio) * progress;
+    }
+    if (before) return before.ratio;
+    if (after) return after.ratio;
+    return (rank - 1) / Math.max(1, limit - 1);
+  };
+
+  // Revisit only missing rank ranges. Positions observed during the full scan
+  // are authoritative; the simple rank/200 ratio is used only as a fallback.
+  for (let recoveryRound = 0; recoveryRound < 5 && completeRankCount() < limit; recoveryRound += 1) {
+    for (const product of networkProducts) addConfirmedProduct(product);
+    const groups = missingRankGroups();
+    if (!groups.length) break;
+    mainWindow?.webContents.send("seller:capture-progress", {
+      percent: 96 + Math.min(3, recoveryRound),
+      count: completeRankCount(),
+      target: limit,
+      missing: limit - completeRankCount(),
+      message: `누락 순위만 정밀 재수집 ${recoveryRound + 1}/5 · ${groups.map((group) => group.start === group.end ? group.start : `${group.start}-${group.end}`).slice(0, 18).join(", ")}`,
+    });
+    for (const group of groups) {
+      const groupRanks = Array.from({ length: group.end - group.start + 1 }, (_value, index) => group.start + index);
+      if (groupRanks.every(rankIsComplete)) continue;
+      const targetRatio = Math.max(0, observedRatioForRank(Math.max(1, group.start - 2)) - 0.015);
+      const targetRank = 1 + targetRatio * (limit - 1);
+      await executeAcrossSellerFrames(sellerJumpScript(targetRank, limit));
+      await wait(650);
+      let signature = await captureVisibleSlots();
+      const maximumScans = Math.max(18, Math.min(160, (group.end - group.start + 8) * 6));
+      for (let scan = 0; scan < maximumScans; scan += 1) {
+        if (groupRanks.every(rankIsComplete)) break;
+        const scrollResult = await executeAcrossSellerFrames(SELLER_ROW_SCROLL_SCRIPT);
+        if (!scrollResult?.found) break;
+        signature = await captureAfterRowChange(signature, Boolean(scrollResult.atEnd));
+        if (scrollResult.atEnd) break;
+      }
+    }
+  }
+  await wait(600);
+  for (const product of networkProducts) addConfirmedProduct(product);
+  const captureCompleteness = popularCompleteness([...rankSlots.values()], limit);
+  if (!captureCompleteness.complete) {
+    stopNetworkCapture();
+    const missingLabel = captureCompleteness.missingRanks.slice(0, 40).join(", ");
+    mainWindow?.webContents.send("seller:capture-progress", {
+      percent: 99,
+      count: captureCompleteness.captured,
+      target: limit,
+      missing: captureCompleteness.missingRanks.length,
+      attentionRequired: true,
+      message: `완전 수집 미달 · ${captureCompleteness.captured}/${limit} · 누락 순위 ${missingLabel}${captureCompleteness.missingRanks.length > 40 ? "…" : ""}`,
+    });
+    return {
+      ok: false,
+      code: "POPULAR_CAPTURE_INCOMPLETE",
+      retryable: true,
+      capturedCount: captureCompleteness.captured,
+      expectedCount: limit,
+      missingRanks: captureCompleteness.missingRanks,
+      message: `인기상품 ${captureCompleteness.captured}/${limit}개만 확인되어 저장하지 않았습니다. 누락 순위 ${missingLabel}${captureCompleteness.missingRanks.length > 40 ? "…" : ""}를 다시 수집해 주세요.`,
     };
   }
   let products = [];
@@ -8679,27 +8806,26 @@ async function captureSellerCenterProducts() {
     if (rank < 1 || rank > limit || preservedSlots.has(rank)) continue;
     preservedSlots.set(rank, { ...product, articleNumber });
   }
-  products = Array.from({ length: limit }, (_value, index) => {
-    const rank = index + 1;
-    return preservedSlots.get(rank) || {
-      rank,
-      articleNumber: "",
-      name: `${rank}번 상품 수집 누락`,
-      averagePrice: 0,
-      lowestPrice: 0,
-      highestPrice: 0,
-      sales30d: 0,
-      source: "seller-center-missing-slot",
-      missingRank: true,
-      sellerCenterDirect: true,
+  const finalCompleteness = popularCompleteness([...preservedSlots.values()], limit);
+  if (!finalCompleteness.complete) {
+    stopNetworkCapture();
+    return {
+      ok: false,
+      code: "POPULAR_CAPTURE_VALIDATION_FAILED",
+      retryable: true,
+      capturedCount: finalCompleteness.captured,
+      expectedCount: limit,
+      missingRanks: finalCompleteness.missingRanks,
+      message: `수집 후 품번 검증에서 ${finalCompleteness.missingRanks.length}개 순위가 제외되어 저장하지 않았습니다.`,
     };
-  });
+  }
+  products = Array.from({ length: limit }, (_value, index) => preservedSlots.get(index + 1));
   mainWindow?.webContents.send("seller:capture-progress", {
     percent: 100,
     count: preservedSlots.size,
     target: limit,
-    missing: limit - preservedSlots.size,
-    message: `1~${limit}번 순위 유지 · 상품 ${preservedSlots.size}개 · 누락 ${limit - preservedSlots.size}개`,
+    missing: 0,
+    message: `1~${limit}위 완전 수집 확인 · 상품 ${preservedSlots.size}개 · 누락 0개`,
   });
   stopNetworkCapture();
   const codes = products.map((product) => product.articleNumber).filter(Boolean);
@@ -10185,6 +10311,15 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   ipcMain.handle("excel:stage-popular-products", async (_event, products) => {
     try {
       const limit = 200;
+      const beforeExcel = popularCompleteness(products, limit);
+      if (!beforeExcel.complete) {
+        return {
+          ok: false,
+          code: "POPULAR_EXCEL_INCOMPLETE",
+          missing: beforeExcel.missingRanks,
+          message: `인기상품 ${beforeExcel.captured}/${limit}개만 확인되어 불완전한 Excel은 저장하지 않습니다.`,
+        };
+      }
       const slots = createPopularSlots(products, limit);
       const folder = oneDrivePopularExportFolder()
         || join(app.getPath("desktop"), "Around G POIZON");
@@ -10203,6 +10338,16 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
 
       const rows = await readSheet(await readFile(filePath), "POIZON_RAW");
       const imported = excelRowsToPopularProducts(rows);
+      const afterExcel = popularCompleteness(imported, limit);
+      if (!afterExcel.complete) {
+        return {
+          ok: false,
+          code: "POPULAR_EXCEL_ROUNDTRIP_INCOMPLETE",
+          path: filePath,
+          missing: afterExcel.missingRanks,
+          message: `Excel 재검증 결과 ${afterExcel.captured}/${limit}개만 확인되어 목록에 반영하지 않습니다.`,
+        };
+      }
       return {
         ok: true,
         path: filePath,

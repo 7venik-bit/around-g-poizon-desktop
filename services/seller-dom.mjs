@@ -12,6 +12,29 @@ function ignored(line) {
   return /주간 대비|검색 지수|즐겨찾기|거래가|검색 추세|상품정보|SPU 기준|SKU 기준/i.test(line);
 }
 
+export function sellerRankFromLine(line, limit = 200) {
+  const value = String(line || "").replace(/\s+/g, " ").trim();
+  const explicit = value.match(/^순위\s*(\d{1,3})(?:\s*위|\.)?\s*(.*)$/i)
+    || value.match(/^(\d{1,3})(?:\s*위|\.)\s*(.*)$/i);
+  const plain = value.match(/^(\d{1,3})$/);
+  const matched = explicit || plain;
+  const rank = Number(matched?.[1] || 0);
+  if (rank < 1 || rank > Math.max(1, Number(limit) || 200)) return null;
+  return { rank, remainder: explicit ? String(explicit[2] || "").trim() : "" };
+}
+
+function normalizedSellerLines(text, limit) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .flatMap((line) => {
+      const ranked = sellerRankFromLine(line, limit);
+      if (!ranked?.remainder) return [line];
+      return [`${ranked.rank}.`, ranked.remainder];
+    });
+}
+
 export function isSellerArticleNumber(line) {
   const value = String(line || "").replace(/\s+/g, " ").trim();
   if (!value || ignored(value) || MEASUREMENT_PATTERN.test(value)) return false;
@@ -50,12 +73,12 @@ export function parseSellerDomNodes(nodes, limit = 200) {
   const products = [];
   const seen = new Set();
   for (const node of Array.isArray(nodes) ? nodes : []) {
-    const lines = String(node?.text || "")
-      .split(/\r?\n/)
-      .map((line) => line.replace(/\s+/g, " ").trim())
-      .filter(Boolean);
-    if (lines.length < 2 || lines.length > 40) continue;
-    const rankIndex = lines.findIndex((line) => /^\d{1,3}\.?$/.test(line));
+    const lines = normalizedSellerLines(node?.text, limit);
+    // Some Seller Center rows include accessibility labels and option text.
+    // Keep accepting a complete product row without discarding it merely
+    // because the virtualized component exposes more than forty lines.
+    if (lines.length < 2 || lines.length > 120) continue;
+    const rankIndex = lines.findIndex((line) => Boolean(sellerRankFromLine(line, limit)));
     const structuredCodeIndex = rankIndex >= 0
       ? lines
         .map((line, index) => ({
@@ -83,15 +106,16 @@ export function parseSellerDomNodes(nodes, limit = 200) {
       : lines[codeIndex].replace(ARTICLE_PATTERN, "").trim();
     const name = (!ignored(sameLineName) && sameLineName)
       || descriptiveName(lines, codeIndex, rankIndex, articleNumber);
-    const rankLine = lines.slice(0, codeIndex).find((line) => /^\d{1,3}\.?$/.test(line));
+    const rankLine = lines.slice(0, codeIndex).find((line) => Boolean(sellerRankFromLine(line, limit)));
     if (!numericPrices.length && !rankLine) continue;
-    const rank = Math.min(Number(String(rankLine || products.length + 1).replace(/\D/g, "")) || products.length + 1, 999);
+    const detectedRank = sellerRankFromLine(rankLine, limit)?.rank || 0;
+    const rank = detectedRank || Math.min(products.length + 1, 999);
     const seenKey = `${rank}:${articleNumber}`;
     if (seen.has(seenKey)) continue;
     seen.add(seenKey);
     products.push({
       rank,
-      rankDetected: Boolean(rankLine),
+      rankDetected: detectedRank > 0,
       articleNumber,
       name,
       averagePrice: numericPrices[0] || 0,
