@@ -25,9 +25,6 @@ export function isNaverRenderedResultReady(state = {}, query = "") {
   const queryVisible = compact(text).includes(expected);
   const positiveVisibleCount = /(?:전체|검색\s*결과)\s*[1-9][\d,]*\s*개/i.test(text);
 
-  // Reaching the exact query result URL proves that the input and magnifier
-  // action succeeded. The final capture owns the product/empty decision; an
-  // older card selector must not terminate the search before that capture.
   return exactResultUrl && (queryVisible || positiveVisibleCount || compact(decodedUrl).includes(expected));
 }
 
@@ -35,6 +32,14 @@ const priceNumber = (value) => {
   const amount = Number(String(value || "").replace(/[^0-9]/g, ""));
   return Number.isFinite(amount) ? amount : 0;
 };
+
+function naverChannelCount(text = "", label = "") {
+  const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = String(text || "").match(new RegExp(`${escaped}\\s*([\\d,]+)\\s*개`, "i"));
+  if (!match) return null;
+  const value = Number(String(match[1] || "0").replace(/,/g, ""));
+  return Number.isFinite(value) ? Math.max(0, value) : null;
+}
 
 export function createDomesticSearchLinkResult({
   store = "",
@@ -113,16 +118,47 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
 
   const visibleCount = Number.isFinite(Number(snapshot?.visibleResultCount))
     ? Math.max(0, Number(snapshot.visibleResultCount)) : null;
+  const channelText = [snapshot?.pageHeaderText, snapshot?.pageText].filter(Boolean).join("\n");
+  const totalChannelCount = naverChannelCount(channelText, "전체");
+  const overseasDirectCount = naverChannelCount(channelText, "해외직구");
+  const effectiveTotalCount = totalChannelCount ?? visibleCount;
+  const overseasOnly = Number.isFinite(effectiveTotalCount)
+    && effectiveTotalCount > 0
+    && Number.isFinite(overseasDirectCount)
+    && overseasDirectCount >= effectiveTotalCount;
   const explicitEmpty = snapshot?.selectedChannelEmpty === true
-    || snapshot?.visibleResultCountObserved === true && visibleCount === 0;
+    || snapshot?.visibleResultCountObserved === true && visibleCount === 0
+    || overseasOnly;
   const verificationDiagnostics = {
     stage: "naver_result_capture",
     resolvedUrl: String(resolvedSearchUrl || ""),
     visibleResultCount: visibleCount,
     visibleResultCountObserved: snapshot?.visibleResultCountObserved === true,
+    totalChannelCount,
+    overseasDirectCount,
+    overseasOnly,
     productCardCount: cards.length,
     extractedProductCount: products.length,
   };
+
+  // 해외직구 결과는 국내 판매처 상품으로 인정하지 않는다. 예: 전체 1개 / 해외직구 1개.
+  // 카드가 화면에 보여도 국내 소싱 기준에서는 상품없음으로 확정한다.
+  if (overseasOnly) {
+    return {
+      count: 0,
+      products: [],
+      presenceConfirmed: false,
+      absenceConfirmed: true,
+      searchCompleted: true,
+      searchSubmitted: true,
+      resolvedSearchUrl,
+      naverAllSearchVerdict: "absent",
+      verificationPending: false,
+      verificationReason: "overseas_direct_only",
+      verificationStage: "naver_result_capture",
+      verificationDiagnostics,
+    };
+  }
 
   if (products.length > 0) {
     return {
