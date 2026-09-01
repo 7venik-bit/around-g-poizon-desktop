@@ -50,6 +50,20 @@
       };
     }
 
+    const productAbsent = source?.absenceConfirmed === true
+      || source?.naverAllSearchVerdict === "absent"
+      || (source?.countVerified === true && count === 0)
+      || (source?.searchCompleted === true && count === 0
+        && Number(source?.candidateCount || 0) === 0
+        && source?.verificationFailed !== true
+        && source?.verificationPending !== true);
+    if (productAbsent) {
+      return { state: "missing", className: "missing", count: 0, label: "상품 없음" };
+    }
+
+    // A confirmed zero is stronger than the link-only display mode. Previously
+    // Naver Fashion Town and official-mall rows kept saying "검색 결과 링크"
+    // even after the source had explicitly confirmed that no product exists.
     if (source?.resultLinkOnly === true) {
       return { state: "link", className: "available", count: 0, label: "검색 결과 링크" };
     }
@@ -57,7 +71,7 @@
     // Official-mall search is intentionally list/price only. When no card was
     // parsed, keep the usable result link instead of exposing parser/submission
     // diagnostics to the user. Only the mall's explicit empty message is absence.
-    if (String(source?.store || "") === "브랜드 공식몰" && source?.absenceConfirmed !== true) {
+    if (String(source?.store || "") === "브랜드 공식몰") {
       return { state: "link", className: "available", count: 0, label: "검색 결과" };
     }
 
@@ -66,16 +80,6 @@
     }
     if (source?.loginRequired === true) {
       return { state: "login", className: "pending", count: 0, label: "로그인 필요" };
-    }
-
-    const productAbsent = source?.absenceConfirmed === true
-      || source?.naverAllSearchVerdict === "absent"
-      || (source?.countVerified === true && count === 0)
-      || (source?.searchCompleted === true && count === 0
-        && Number(source?.candidateCount || 0) === 0
-        && source?.verificationPending !== true);
-    if (productAbsent) {
-      return { state: "missing", className: "missing", count: 0, label: "상품 없음" };
     }
 
     if (source?.verificationFailed === true) {

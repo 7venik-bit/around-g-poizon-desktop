@@ -83,6 +83,9 @@ jobs:
       - name: Test Naver result-link integration
         run: node --test tests/naver-fashiontown-result-finalizer.test.mjs
 
+      - name: Test confirmed domestic absence display
+        run: node --test tests/domestic-result-verdict.test.mjs tests/domestic-absence-display-v2.10.574.test.mjs
+
       - name: Apply next-day access cooldown
         run: node scripts/patch-domestic-access-next-day.mjs
 

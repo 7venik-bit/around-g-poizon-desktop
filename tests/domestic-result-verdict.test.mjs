@@ -121,3 +121,17 @@ test("official mall is missing only after an explicit empty result", () => {
   assert.equal(result.state, "missing");
   assert.equal(result.label, "상품 없음");
 });
+
+test("link-only mode never hides a confirmed empty Naver or official-mall result", () => {
+  for (const store of ["네이버 패션타운", "브랜드 공식몰"]) {
+    const result = sourceVerdict({
+      store,
+      count: 0,
+      resultLinkOnly: true,
+      searchCompleted: true,
+      absenceConfirmed: true,
+    });
+    assert.equal(result.state, "missing", store);
+    assert.equal(result.label, "상품 없음", store);
+  }
+});

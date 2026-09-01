@@ -289,6 +289,7 @@
         const sourceFallbackRows = sources
           .filter((source) => !products.some((product) => sourceOwnsProduct(source, product)))
           .filter((source) => source?.resultLinkOnly === true || Number(source?.count || 0) > 0
+            || source?.absenceConfirmed === true
             || (source?.store === "병행수입·편집샵" && source?.parallelRetailerListEnforced === true && source?.absenceConfirmed === true)
             || source?.verificationPending || source?.verificationFailed)
           .map((source) => {
@@ -296,8 +297,10 @@
             const officialMallSource = source?.store === "브랜드 공식몰";
             const approvedParallelMissing = source?.store === "병행수입·편집샵"
               && source?.parallelRetailerListEnforced === true && source?.absenceConfirmed === true;
-            const message = officialMallSource
-              ? source?.absenceConfirmed === true ? "상품 없음" : "검색 결과"
+            const message = source?.absenceConfirmed === true
+              ? "상품 없음"
+              : officialMallSource
+              ? "검색 결과"
               : source?.resultLinkOnly === true
               ? "검색 결과 링크"
               : approvedParallelMissing
