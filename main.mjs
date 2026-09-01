@@ -5611,44 +5611,83 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
 }
 
 const SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT = `(() => {
-  const visible = (element) => element && element.getClientRects().length > 0;
+  const roots = [document];
+  for (let index = 0; index < roots.length; index += 1) {
+    for (const element of roots[index].querySelectorAll('*')) {
+      if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
+    }
+  }
+  const queryAll = (selector) => roots.flatMap((root) => [...root.querySelectorAll(selector)]);
+  const visible = (element) => {
+    const rect = element?.getBoundingClientRect?.();
+    const style = element ? getComputedStyle(element) : null;
+    return Boolean(element?.isConnected && rect && rect.width > 0 && rect.height > 0
+      && style?.display !== 'none' && style?.visibility !== 'hidden');
+  };
   const textOf = (element) => String(element?.innerText || element?.textContent || "")
-    .replace(/\s+/g, " ").trim();
-  const candidates = [...document.querySelectorAll(
-    "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']"
-  )].filter(visible);
+    .replace(/\\s+/g, " ").trim();
+  const rowSelector = "tbody tr, [role='row'], tr, [data-row-key], [data-row-id], [data-id], [class*='table'] [class*='row'], [class*='list'] [class*='item']";
+  const candidates = queryAll(rowSelector).filter(visible);
+  // POIZON periodically changes the Download Center from a table to a
+  // virtualized list. In that layout none of the old row selectors match,
+  // although the job number remains visible. Promote the closest compact
+  // container around every visible job-number text node as a row candidate.
+  for (const root of roots) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const value = String(node.nodeValue || '').trim();
+      if (!/\\b\\d{7,}\\b/.test(value)) continue;
+      let element = node.parentElement;
+      let best = null;
+      for (let depth = 0; element && depth < 7; depth += 1, element = element.parentElement) {
+        const text = textOf(element);
+        if (visible(element) && text.length >= value.length && text.length <= 2400) best = element;
+        if (element.matches?.(rowSelector)) { best = element; break; }
+      }
+      if (best && !candidates.includes(best)) candidates.push(best);
+    }
+  }
   const jobs = [];
   const seen = new Set();
-  const datePattern = /\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?/g;
+  const datePattern = /\\d{4}\\s*(?:[-/.]|년)\\s*\\d{1,2}\\s*(?:[-/.]|월)\\s*\\d{1,2}(?:\\s*일)?(?:\\s*[-/.])?(?:\\s+|T)\\d{1,2}\\s*:\\s*\\d{2}(?:\\s*:\\s*\\d{2})?/g;
   const parseDate = (value) => {
-    const parts = String(value || "").match(/\d+/g)?.map(Number) || [];
+    const parts = String(value || "").match(/\\d+/g)?.map(Number) || [];
     if (parts.length < 5) return 0;
     return new Date(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5] || 0).getTime();
   };
   for (const element of candidates) {
     const text = textOf(element);
     if (!text || text.length > 2400) continue;
-    const cells = [...element.querySelectorAll("td, [role='cell'], [role='gridcell']")];
+    const cells = [...element.querySelectorAll("td, [role='cell'], [role='gridcell'], [class*='cell'], [class*='Cell']")];
     const cellTexts = cells.map(textOf);
     const firstCellText = textOf(cells[0]);
+    const attributeText = [
+      element.getAttribute?.('data-row-key'), element.getAttribute?.('data-row-id'),
+      element.getAttribute?.('data-id'), element.getAttribute?.('aria-label'),
+    ].filter(Boolean).join(' ');
     const id = firstCellText.match(/\\b\\d{7,}\\b/)?.[0]
+      || attributeText.match(/\\b\\d{7,}\\b/)?.[0]
       || text.match(/\\b\\d{7,}\\b/)?.[0]
       || "";
     if (!id || seen.has(id)) continue;
     const rowHint = cells.length >= 2
       || /내보내기|다운로드|작업|export|download|task|导出|下载|任务|처리|成功/i.test(text);
     if (!rowHint) continue;
-    const workStateText = cellTexts.find((value) => /^(?:성공|success|completed|실패|failed|error)$/i.test(value)) || "";
-    const failed = /^(?:실패|failed|error)$/i.test(workStateText);
-    const succeeded = /^(?:성공|success|completed)$/i.test(workStateText);
-    const dates = cellTexts.flatMap((value) => value.match(datePattern) || []);
+    const workStateText = cellTexts.find((value) => /^(?:성공|완료|처리\\s*중|진행\\s*중|생성\\s*중|대기|success|completed|processing|pending|실패|failed|error|成功|完成|处理中|进行中|等待|失败)$/i.test(value))
+      || text.match(/성공|완료|처리\\s*중|진행\\s*중|생성\\s*중|대기|success|completed|processing|pending|실패|failed|error|成功|完成|处理中|进行中|等待|失败/i)?.[0]
+      || "";
+    const failed = /^(?:실패|failed|error|失败)$/i.test(workStateText);
+    const succeeded = /^(?:성공|완료|success|completed|成功|完成)$/i.test(workStateText);
+    const processing = /^(?:처리\\s*중|진행\\s*중|생성\\s*중|대기|processing|pending|处理中|进行中|等待)$/i.test(workStateText);
+    const dates = [firstCellText, ...cellTexts, text].flatMap((value) => value.match(datePattern) || []);
     const startText = dates[0] || "";
     const startAtMs = parseDate(startText);
     seen.add(id);
-    jobs.push({ id, fingerprint: id, text: text.slice(0, 500), workStateText, failed, succeeded, startText, startAtMs });
+    jobs.push({ id, fingerprint: id, text: text.slice(0, 500), workStateText, failed, succeeded, processing, startText, startAtMs });
   }
-  const bodyText = textOf(document.body);
-  const emptyState = /暂无数据|没有数据|暂无任务|데이터가\s*없|작업이\s*없|no\s*(?:data|task)/i.test(bodyText);
+  const bodyText = roots.map((root) => textOf(root.body || root.host || root)).join(' ');
+  const emptyState = /暂无数据|没有数据|暂无任务|데이터가\\s*없|작업이\\s*없|no\\s*(?:data|task)/i.test(bodyText);
   return { ready: jobs.length > 0 || emptyState, jobs };
 })()`;
 
@@ -8134,6 +8173,10 @@ async function automateSellerBrandExport(input = {}) {
       let candidate = findNewSellerExportJob([...baselineJobIds], unusedJobs, {
         notBeforeMs: exportAcknowledgedAt,
         baselineAuthoritative: baselineAvailable,
+        // If every pre-export reader was still loading, accept only a stable
+        // post-request unowned row after 20 seconds. The two-read gate below
+        // prevents a transient/stale SPA row from being attached immediately.
+        allowMissingTimestamp: !baselineAvailable && elapsedMs >= 20_000,
         // POIZON and the local PC can differ slightly, but a previous-day job
         // (such as the PUMA row reused for KOLON SPORT) must always be rejected.
         allowedClockSkewMs: 2 * 60_000,

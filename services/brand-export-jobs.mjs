@@ -8,7 +8,12 @@ export function findNewSellerExportJob(baselineJobs = [], currentJobs = [], opti
     .filter(Boolean));
   const notBeforeMs = Number(options.notBeforeMs || 0);
   const allowedClockSkewMs = Math.max(0, Number(options.allowedClockSkewMs || 0));
-  const baselineAuthoritative = Boolean(options.baselineAuthoritative) && baselineIds.size > 0;
+  // An explicitly captured empty Download Center is still an authoritative
+  // baseline. Requiring at least one previous id made the very first export
+  // depend on POIZON's timestamp text, so a harmless date-format change could
+  // leave the brand in EXPORT_JOB_NOT_CREATED forever.
+  const baselineAuthoritative = Boolean(options.baselineAuthoritative);
+  const allowMissingTimestamp = Boolean(options.allowMissingTimestamp);
   return (currentJobs || []).find((job) => {
     const jobId = normalizeSellerExportJobId(job?.id);
     const startAtMs = Number(job?.startAtMs || 0);
@@ -17,7 +22,8 @@ export function findNewSellerExportJob(baselineJobs = [], currentJobs = [], opti
     // Timestamp stays mandatory only for the no-baseline recovery path.
     const freshEnough = baselineAuthoritative
       || !notBeforeMs
-      || (startAtMs > 0 && startAtMs >= notBeforeMs - allowedClockSkewMs);
+      || (startAtMs > 0 && startAtMs >= notBeforeMs - allowedClockSkewMs)
+      || (allowMissingTimestamp && startAtMs === 0);
     return jobId && !baselineIds.has(jobId) && freshEnough;
   }) || null;
 }

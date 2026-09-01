@@ -50,6 +50,24 @@ test("a failed job absent from the frozen baseline is still recognized", () => {
   assert.equal(candidate?.id, "1004860509");
 });
 
+test("an explicitly empty pre-export snapshot remains authoritative", () => {
+  const created = { id: "1004999001", startAtMs: 0, processing: true };
+  assert.equal(findNewSellerExportJob([], [created], {
+    notBeforeMs: Date.now(),
+    baselineAuthoritative: true,
+  })?.id, "1004999001");
+});
+
+test("a missing timestamp is accepted only in the guarded fallback", () => {
+  const created = { id: "1004999002", startAtMs: 0, processing: true };
+  const options = { notBeforeMs: Date.now(), baselineAuthoritative: false };
+  assert.equal(findNewSellerExportJob([], [created], options), null);
+  assert.equal(findNewSellerExportJob([], [created], {
+    ...options,
+    allowMissingTimestamp: true,
+  })?.id, "1004999002");
+});
+
 test("the export job baseline is frozen before product search and export", () => {
   const baselineAwait = mainSource.indexOf("let baselineJobs = await baselinePromise");
   const searchStart = mainSource.indexOf("const sellerBrandAliasGroups", baselineAwait);
