@@ -501,17 +501,14 @@ async function physicalSellerPointClick(point, settleMilliseconds = 900) {
   const x = Math.round(Number(point?.x));
   const y = Math.round(Number(point?.y));
   if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
-  sellerWindow.show();
-  sellerWindow.focus();
-  const bounds = sellerWindow.getContentBounds();
-  const moved = await moveWindowsCursorAndClick(bounds.x + x, bounds.y + y).catch(() => ({ ok: false }));
-  if (!moved?.ok) {
-    sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
-    await wait(80);
-    sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
-    await wait(100);
-    sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
-  }
+  // Route input directly to the hidden Seller Center renderer. Moving the
+  // Windows cursor steals the user's active application and prevents genuine
+  // background collection.
+  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
+  await wait(80);
+  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
+  await wait(100);
+  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
   await wait(settleMilliseconds);
   return true;
 }
@@ -710,8 +707,6 @@ async function applySellerPopularConditions() {
       };
     }
     if (condition.action === "fullscreen" && result.found && result.requiresNativeClick) {
-      sellerWindow.show();
-      sellerWindow.focus();
       sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: result.x, y: result.y });
       sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x: result.x, y: result.y });
       await wait(120);
@@ -4694,7 +4689,6 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
       }
     } else {
       sellerWindow.hide();
-      showCollectorWindow();
     }
     if (!deferNavigation && targetUrl && sellerWindow.webContents.getURL() !== targetUrl) {
       sellerWindow.loadURL(targetUrl);
@@ -4929,7 +4923,6 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
     });
   }
   if (!deferNavigation && targetUrl) sellerWindow.loadURL(targetUrl);
-  if (!visible) showCollectorWindow();
 }
 
 async function waitForSellerExportAndDownload() {
@@ -6979,7 +6972,6 @@ Start-Sleep -Milliseconds 70
 
 async function physicalClickSellerElement(targetFrame, locatorScript, step, timeoutMs = 20_000) {
   if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: `${step}_WINDOW_MISSING` };
-  sellerWindow.showInactive();
   sellerWindow.webContents.focus();
   const startedAt = Date.now();
   let point = null;
@@ -7004,12 +6996,17 @@ async function physicalClickSellerElement(targetFrame, locatorScript, step, time
     if (!point) await new Promise((resolve) => setTimeout(resolve, 250));
   }
   if (!point) return { ok: false, step: `${step}_NOT_FOUND` };
-  const bounds = sellerWindow.getContentBounds();
-  const clicked = await moveWindowsCursorAndClick(bounds.x + point.x, bounds.y + point.y);
+  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: point.x, y: point.y });
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  sellerWindow.webContents.sendInputEvent({
+    type: "mouseDown", button: "left", clickCount: 1, x: point.x, y: point.y,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  sellerWindow.webContents.sendInputEvent({
+    type: "mouseUp", button: "left", clickCount: 1, x: point.x, y: point.y,
+  });
   await new Promise((resolve) => setTimeout(resolve, 700));
-  return clicked.ok
-    ? { ok: true, step, label: point.label, url: point.url, physicalCursorMoved: true }
-    : { ok: false, step: `${step}_CLICK_FAILED` };
+  return { ok: true, step, label: point.label, url: point.url, backgroundInput: true };
 }
 
 async function performPhysicalSellerSortAndExport(targetFrame) {
@@ -7128,7 +7125,6 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     return { ok: false, step: "SELLER_WINDOW_NOT_AVAILABLE" };
   }
-  sellerWindow.showInactive();
   sellerWindow.webContents.focus();
   const focused = await targetFrame.executeJavaScript(`(() => {
     const visible = (element) => element && element.getBoundingClientRect().width > 0
@@ -7197,21 +7193,18 @@ async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) {
     return { ...verified, ok: false, step: "REAL_SEARCH_BUTTON_COORDINATES_MISSING" };
   }
-  const contentBounds = sellerWindow.getContentBounds();
-  const physicalClick = await moveWindowsCursorAndClick(
-    Math.round(contentBounds.x + x),
-    Math.round(contentBounds.y + y),
-  );
-  if (!physicalClick.ok) {
-    return { ...verified, ok: false, step: "PHYSICAL_SEARCH_BUTTON_CLICK_FAILED" };
-  }
+  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
   await new Promise((resolve) => setTimeout(resolve, 1_500));
   return {
     ...verified,
     submitted: true,
-    physicalCursorMoved: true,
-    background: false,
-    step: "PHYSICAL_SEARCH_BUTTON_CLICKED",
+    backgroundInput: true,
+    background: true,
+    step: "BACKGROUND_SEARCH_BUTTON_CLICKED",
   };
 }
 
@@ -7342,12 +7335,12 @@ async function automateSellerBrandExport(input = {}) {
   pendingBrandExportJobId = "";
   brandExportJobPending = true;
   brandDownloadStarted = false;
-  // Show the exact Electron Seller Center window that is being automated.
-  // A separately opened Chrome window is a different browser session and does
-  // not reflect this automation, which previously made real work look idle.
+  // Keep Seller Center off-screen while its renderer performs the work. The
+  // persistent session and viewport remain active because background throttling
+  // is disabled on this BrowserWindow.
   openSellerCenterWindow(SELLER_CENTER_URL, {
-    visible: true,
-    activate: true,
+    visible: false,
+    activate: false,
     deferNavigation: true,
   });
   if (!sellerWindow || sellerWindow.isDestroyed()) {
@@ -7414,10 +7407,10 @@ async function automateSellerBrandExport(input = {}) {
       diagnostics: { url: pageState.url, path: diagnosticPath },
     };
   }
-  // Keep the same persistent Seller Center session visible while the restored
-  // Windows cursor workflow performs brand search, sorting, and export.
+  // Keep the authenticated renderer hidden while brand search, sorting and
+  // export continue through renderer-targeted input events.
   if (sellerWindow && !sellerWindow.isDestroyed()) {
-    sellerWindow.showInactive();
+    sellerWindow.hide();
   }
   const connectedPage = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => ({
     url: location.href,
@@ -7467,7 +7460,7 @@ async function automateSellerBrandExport(input = {}) {
     brandExportJobPending = false;
     pendingBrandExportName = "";
     pendingBrandExportJobId = "";
-    sellerWindow.showInactive();
+    sellerWindow.hide();
     mainWindow?.webContents.send("brand-export:progress", {
       status: "job-created",
       brandName,
@@ -8013,13 +8006,11 @@ async function automateSellerBrandExport(input = {}) {
         message: `${brandName} · 기존 검색 서비스 방식으로 브랜드를 입력하고 검색을 실행합니다.`,
       });
       // Restore the proven pre-module Seller Center route as one uninterrupted
-      // operation: enter the brand in the visible product-search field, click
+      // operation: enter the brand in the hidden product-search renderer, click
       // 검색 및 입찰, verify the result, sort, and export in the same window.
       const realKeyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, sellerBrandSearchName)
         .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
-      if (sellerWindow && !sellerWindow.isDestroyed()) {
-        sellerWindow.showInactive();
-      }
+      if (sellerWindow && !sellerWindow.isDestroyed()) sellerWindow.hide();
       mainWindow?.webContents.send("brand-export:progress", {
         status: realKeyboardInput?.ok ? "seller-brand-input-confirmed" : "seller-brand-input-fallback",
         brandName,
@@ -8149,7 +8140,6 @@ async function automateSellerBrandExport(input = {}) {
   if (sellerWindow && !sellerWindow.isDestroyed()) {
     await new Promise((resolve) => setTimeout(resolve, 800));
     sellerWindow.hide();
-    showCollectorWindow();
   }
 
   mainWindow?.webContents.send("brand-export:progress", {
@@ -8308,7 +8298,6 @@ async function automateSellerBrandExport(input = {}) {
     pendingBrandExportJobId = "";
     brandExportJobPending = false;
     sellerWindow.hide();
-    showCollectorWindow();
     return {
       ok: false,
       code: "EXPORT_JOB_NOT_CREATED",
@@ -8329,7 +8318,6 @@ async function automateSellerBrandExport(input = {}) {
     pendingBrandExportJobId = "";
     brandExportJobPending = false;
     sellerWindow.hide();
-    showCollectorWindow();
     return {
       ok: false,
       code: "EXPORT_JOB_ID_REUSED",
@@ -8364,8 +8352,6 @@ async function automateSellerBrandExport(input = {}) {
   pendingBrandExportName = "";
   pendingBrandExportJobId = "";
   sellerWindow.hide();
-  mainWindow?.show();
-  mainWindow?.focus();
   if (!input.deferMonitor) void watchAllSellerExportJobsEveryTenSeconds();
   return {
     ok: true,
