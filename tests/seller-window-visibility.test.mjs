@@ -19,7 +19,7 @@ test("manual Seller Center actions remain visible by default", () => {
 });
 
 
-test("brand search restores the visible Windows cursor workflow", () => {
+test("brand search runs in a hidden Seller Center renderer", () => {
   const workflowStart = mainSource.indexOf("async function automateSellerBrandExport");
   const workflowEnd = mainSource.indexOf("async function syncBrandCatalogFromKrPoizon", workflowStart);
   const workflow = mainSource.slice(workflowStart, workflowEnd);
@@ -30,12 +30,12 @@ test("brand search restores the visible Windows cursor workflow", () => {
   const inputEnd = mainSource.indexOf("async function automateSellerBrandExport", inputStart);
   const inputSource = mainSource.slice(inputStart, inputEnd);
 
-  assert.match(workflow, /visible: true/);
-  assert.match(workflow, /activate: true/);
-  assert.match(workflow, /sellerWindow\.showInactive\(\)/);
-  assert.match(clickSource, /moveWindowsCursorAndClick/);
-  assert.match(clickSource, /physicalCursorMoved: true/);
-  assert.match(inputSource, /step: "PHYSICAL_SEARCH_BUTTON_CLICKED"/);
-  assert.match(inputSource, /physicalCursorMoved: true/);
-  assert.match(inputSource, /moveWindowsCursorAndClick/);
+  assert.match(workflow, /visible: false/);
+  assert.match(workflow, /activate: false/);
+  assert.match(workflow, /sellerWindow\.hide\(\)/);
+  assert.doesNotMatch(clickSource, /moveWindowsCursorAndClick/);
+  assert.match(clickSource, /backgroundInput: true/);
+  assert.match(inputSource, /step: "BACKGROUND_SEARCH_BUTTON_CLICKED"/);
+  assert.match(inputSource, /background: true/);
+  assert.doesNotMatch(inputSource, /moveWindowsCursorAndClick/);
 });
