@@ -29,6 +29,14 @@ const patchedBootstrap = `      // Direct Fashion Town result URLs must not depe
 
 replaceOnce(originalBootstrap, patchedBootstrap, "Naver direct-result bootstrap");
 
+const originalInitialLoadFailure = `        if (!documentReady && !recoveredMusinsaResult) throw error;`;
+const patchedInitialLoadFailure = `        // Direct Naver Fashion Town navigation has its own bounded recovery
+        // below. Do not let the first Electron loadURL rejection escape to the
+        // outer page_load_failed handler before that recovery can run.
+        if (!documentReady && !recoveredMusinsaResult && !directNaverFashionResult) throw error;`;
+
+replaceOnce(originalInitialLoadFailure, patchedInitialLoadFailure, "Naver initial load recovery handoff");
+
 const originalFailure = `        if (!resultPage.ok) {
           return renderedSearchFailure(
             resultPage.timeout ? "page_load_timeout"
@@ -54,16 +62,19 @@ const patchedFailure = `        if (!resultPage.ok) {
             absenceConfirmed: false,
             searchCompleted: true,
             searchSubmitted: true,
-            resolvedSearchUrl: resultPage.resolvedUrl || url,
+            // Always preserve the requested Fashion Town URL. The live window
+            // can be left on Naver home or an error document after a failed SPA
+            // navigation, and that intermediate URL is not useful to the user.
+            resolvedSearchUrl: url,
             resultLinkOnly: true,
             detailVerificationPending: false,
             verificationPending: false,
-            verificationReason: "naver_result_link_fallback",
+            verificationReason: "",
             verificationStage: "page_navigation",
             verificationDiagnostics: {
               stage: "page_navigation",
               reason: "naver_result_link_fallback",
-              resolvedUrl: resultPage.resolvedUrl || url,
+              resolvedUrl: url,
               errorMessage: String(resultPage.errorMessage || ""),
               productCardCount: 0,
               visibleResultCount: null,
