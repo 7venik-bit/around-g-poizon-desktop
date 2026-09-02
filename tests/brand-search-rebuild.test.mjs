@@ -69,7 +69,7 @@ test("a new search session preserves history only as a baseline and clears live 
   assert.doesNotMatch(session, /brandExportJobCache: \[\]/);
 });
 
-test("brand workflow clicks the product menus physically and searches English before Korean fallback", () => {
+test("brand workflow clicks product menus in the background and searches English before Korean fallback", () => {
   const start = main.indexOf("async function automateSellerBrandExport");
   const end = main.indexOf("async function syncBrandCatalogFromKrPoizon", start);
   const workflow = main.slice(start, end);
@@ -86,12 +86,12 @@ test("brand workflow clicks the product menus physically and searches English be
   assert.doesNotMatch(workflow, /pageSizePattern|PAGE_SIZE_20|PAGE_SIZE_CONTROL/);
   assert.doesNotMatch(workflow, /20건\/페이지/);
   const realInput = workflow.indexOf("typeSellerBrandWithRealKeyboard(candidate.frame");
-  const visibleAfterInput = workflow.indexOf("sellerWindow.showInactive();", realInput);
+  const hiddenAfterInput = workflow.indexOf("sellerWindow.hide();", realInput);
   const runSearch = workflow.indexOf("runSellerSearch(candidate.frame", realInput);
   const physicalSort = workflow.indexOf("performPhysicalSellerSortAndExport(candidate.frame", runSearch);
-  assert.ok(realInput >= 0 && visibleAfterInput > realInput && visibleAfterInput < runSearch);
+  assert.ok(realInput >= 0 && hiddenAfterInput > realInput && hiddenAfterInput < runSearch);
   assert.ok(physicalSort > runSearch);
-  assert.match(main, /"PHYSICAL_SEARCH_BUTTON_CLICKED"/);
+  assert.match(main, /"BACKGROUND_SEARCH_BUTTON_CLICKED"/);
   assert.match(workflow, /runSellerSearch\(candidate\.frame, Boolean\(realKeyboardInput\?\.submitted\)\)/);
   assert.match(main, /performPhysicalSellerSortAndExport\(candidate\.frame\)/);
   assert.match(main, /waiting-for-seller-result-navigation/);
@@ -115,13 +115,12 @@ test("brand workflow clicks the product menus physically and searches English be
   assert.doesNotMatch(workflow, /searchInputAttempt <= 4/);
   assert.doesNotMatch(workflow, /검색 입력창 재탐색/);
   assert.doesNotMatch(workflow, /alreadySubmitted && requestedInputConfirmed/);
-  assert.match(main, /physicalCursorMoved: true/);
-  assert.match(main, /moveWindowsCursorAndClick/);
+  assert.match(main, /backgroundInput: true/);
   assert.match(workflow, /normalizedKey\.length > 3/);
   assert.match(workflow, /tokens\.includes/);
   assert.match(workflow, /sellerBrandSearchName = brandsMatch\(brandName, "On"\)[\s\S]*?preferredSellerBrandSearchName\(sellerBrandMatchKeys\)/);
   assert.match(workflow, /officialHomepageUrl: input\.officialHomepageUrl/);
-  assert.match(workflow, /hasRows && brandMatched && requestedInputConfirmed/);
+  assert.match(workflow, /hasRows && searchResultConfirmed && requestedInputConfirmed/);
   assert.doesNotMatch(workflow, /brandMatched \|\| \(alreadySubmitted && requestedInputConfirmed\)/);
   assert.match(workflow, /"PUMA", "Puma", "푸마", "彪马"/);
   assert.match(workflow, /"Adidas Originals", "adidas Originals"/);
