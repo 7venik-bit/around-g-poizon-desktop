@@ -108,4 +108,7 @@ test("renderer never sends old brand job numbers for reuse", () => {
 test("brand search mismatch is explained and stops before export registration", () => {
   assert.match(mainSource, /BRAND_RESULT_MISMATCH: `\$\{label\} 검색 결과가 확인되지 않아 내보내기를 중단했습니다/);
   assert.match(mainSource, /SEARCH_RESULT_NOT_UPDATED: `\$\{label\} 검색 결과가 새로 바뀌지 않아 내보내기를 중단했습니다/);
+  assert.match(mainSource, /const resultUpdated = changed && current\.rowTexts\.length > 0/);
+  assert.match(mainSource, /const searchResultConfirmed = brandMatched \|\| resultUpdated/);
+  assert.match(mainSource, /hasRows && searchResultConfirmed && requestedInputConfirmed/);
 });
