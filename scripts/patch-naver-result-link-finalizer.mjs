@@ -20,7 +20,7 @@ replaceOnce(
 
 replaceOnce(
   '  const naverPortalSource = /^네이버\\s/.test(String(source.store || ""));',
-  '  const naverPortalSource = /^네이버\\s/.test(String(source.store || ""));\n  const directNaverFashionResult = naverPortalSource\n    && String(source.store || "") === "네이버 패션타운"\n    && /shopping\\.naver\\.com\\/window\\/search\\//i.test(url);',
+  '  const naverPortalSource = /^네이버\\s/.test(String(source.store || ""));\n  const directNaverFashionResult = naverPortalSource\n    && String(source.store || "") === "네이버 패션타운"\n    && /shopping\\.naver\\.com\\/window\\/search\\//i.test(url);\n  // Fashion Town is a usable user-facing result URL by itself. Electron\n  // repeatedly rejects this Naver SPA even when the same URL opens normally\n  // in Chrome. Never turn that renderer limitation into page_load_failed.\n  if (directNaverFashionResult) {\n    return createDomesticSearchLinkResult({\n      store: source.store, articleNumber, resolvedSearchUrl: url,\n    });\n  }',
   "direct Naver Fashion Town result route",
 );
 
