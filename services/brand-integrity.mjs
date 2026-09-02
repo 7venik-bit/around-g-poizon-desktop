@@ -18,7 +18,11 @@ export function normalizeBrandName(value = "") {
     .normalize("NFKC")
     .trim()
     .toLocaleLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "");
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    // POIZON can render numeral-letter wordmarks alphabetically. Normalize
+    // only unambiguous word substitutions; genuine numeric brands stay apart.
+    .replace(/6ixty/g, "sixty")
+    .replace(/8ight/g, "eight");
 }
 
 const GENERIC_DOMAIN_LABELS = new Set([
@@ -69,8 +73,10 @@ export function brandsMatch(expected = "", observed = "") {
   if ((expectedKey === "nike" || expectedKey === "nikejordan")
     && (observedKey === "nike" || observedKey === "jordan")) return true;
   if (expectedKey === observedKey) return true;
-  return expectedKey.length >= 5 && observedKey.length >= 5
-    && (expectedKey.includes(observedKey) || observedKey.includes(expectedKey));
+  const withoutProductLineSuffix = (key) => key.replace(/(?:kids?|junior|키즈|주니어)$/u, "");
+  const expectedBase = withoutProductLineSuffix(expectedKey);
+  const observedBase = withoutProductLineSuffix(observedKey);
+  return expectedBase.length >= 3 && expectedBase === observedBase;
 }
 
 export function brandExportLabel(value = "") {
