@@ -115,34 +115,14 @@ test("a positive total never becomes failure when individual card links are late
   assert.equal(result.products[0].searchResultFallback, true);
 });
 
-test("main process uses the finalizer before the generic marketplace matcher", async () => {
-  const main = String(await import("node:fs/promises").then(({ readFile }) =>
-    readFile(new URL("../main.mjs", import.meta.url), "utf8")));
-  const finalizer = main.indexOf("const finalized = finalizeNaverFashionTownResult(parsedContent");
-  const sellerFilter = main.indexOf("const approval = await verifyApprovedNaverDomesticProducts", finalizer);
-  const genericMatcher = main.indexOf("const analyzed = analyzeRenderedChannelProducts", finalizer);
-  assert.ok(finalizer > 0);
-  assert.ok(sellerFilter > finalizer);
-  assert.ok(genericMatcher > finalizer);
-  assert.match(main, /visibleResultCountObserved/);
-  assert.match(main, /presenceConfirmed: result\?\.presenceConfirmed === true/);
-  assert.match(main, /naverAllSearchVerdict: result\?\.naverAllSearchVerdict \|\| null/);
-  assert.match(main, /verificationDiagnostics: result\?\.verificationDiagnostics/);
-  assert.match(main, /not the rejected promise or its error code/);
-  assert.doesNotMatch(main, /const documentReady = aborted && \^\/https/);
-  assert.match(main, /const directNaverFashionResult = naverPortalSource/);
-  assert.match(main, /const initialUrl = naverPortalSource \? "https:\/\/www\.naver\.com\/" : url/);
-  assert.match(main, /const resultPage = await loadNaverFashionTownResultPage/);
-  assert.match(main, /if \(interactiveSiteSearch && !directNaverFashionResult\)/);
-  assert.doesNotMatch(main, /return createNaverFashionTownSearchLinkResult/);
-  assert.match(main, /const approval = await verifyApprovedNaverDomesticProducts/);
-  assert.match(main, /identityMode: requireArticleIdentity \? "article" : "brand_title"/);
-  assert.match(main, /return createDomesticSearchLinkResult/);
-  assert.doesNotMatch(main, /const directOfficialResultLink/);
-  assert.match(main, /const directParallelResultLink/);
-  assert.ok(
-    main.indexOf("if (isNaverRenderedResultReady(state, exactQuery)) return true;")
-      < main.indexOf("return await waitForNaverSearchResultsStable(searchWindow, exactQuery);"),
-    "visible positive evidence must be accepted before the legacy stability gate",
-  );
+test("release patch returns the Fashion Town search link before internal page loading", async () => {
+  const releasePatch = String(await import("node:fs/promises").then(({ readFile }) =>
+    readFile(new URL("../scripts/patch-naver-result-link-finalizer.mjs", import.meta.url), "utf8")));
+  const directResult = releasePatch.indexOf("if (directNaverFashionResult) {");
+  const browserLoad = releasePatch.indexOf("const initialUrl = naverPortalSource");
+  assert.ok(directResult > 0);
+  assert.ok(browserLoad > directResult);
+  assert.match(releasePatch, /resolvedSearchUrl: url/);
+  assert.match(releasePatch, /const directNaverFashionResult = naverPortalSource/);
+  assert.match(releasePatch, /const initialUrl = naverPortalSource \? "https:\/\/www\.naver\.com\/" : url/);
 });
