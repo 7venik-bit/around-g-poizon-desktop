@@ -12,6 +12,11 @@ test("네이버는 홈 세션을 만든 뒤 패션타운 결과 주소를 연다
   assert.match(patch, /if \(interactiveSiteSearch && !directNaverFashionResult\)/);
 });
 
+test("네이버 패션타운은 내부 SPA 로드 전에 정상 검색 링크를 즉시 반환한다", () => {
+  assert.match(patch, /if \(directNaverFashionResult\) \{\\n    return createDomesticSearchLinkResult/);
+  assert.match(patch, /store: source\.store, articleNumber, resolvedSearchUrl: url/);
+});
+
 test("첫 탐색 오류 뒤에도 실제 결과 DOM을 확인하고 같은 검색을 한 번만 복구한다", () => {
   assert.match(main, /async function loadNaverFashionTownResultPage/);
   assert.match(main, /const firstResult = await inspectSettledResult\(\)/);
