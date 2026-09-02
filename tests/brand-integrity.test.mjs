@@ -15,6 +15,13 @@ test("normalizes punctuation and spacing", () => {
   assert.equal(normalizeBrandName(" New Balance "), "newbalance");
 });
 
+test("normalizes safe numeral-letter brand spellings without merging numeric brands", () => {
+  assert.equal(brandsMatch("6IXTY 8IGHT", "SIXTY EIGHT"), true);
+  assert.equal(brandsMatch("6IXTY8IGHT", "Sixty Eight"), true);
+  assert.equal(brandsMatch("3M", "M"), false);
+  assert.equal(brandsMatch("7 For All Mankind", "For All Mankind"), false);
+});
+
 test("matches known localized aliases", () => {
   assert.equal(brandsMatch("Adidas", "아디다스"), true);
   assert.equal(brandsMatch("PUMA", "푸마"), true);
