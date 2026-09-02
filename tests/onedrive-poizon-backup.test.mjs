@@ -21,8 +21,19 @@ test("startup copies existing desktop Excel files and loads brand files from One
   assert.match(main, /async function initializeOneDrivePoizonBackup\(\)/);
   assert.match(main, /await copyExcelTree\(previousBrandFolder, brandFolder\)/);
   assert.ok(main.includes("POIZON-인기상품-원본-"));
-  assert.match(main, /brandExportFolder: brandFolder/);
+  assert.match(main, /brandExportFolder: configuredBrandFolder \|\| brandFolder/);
   assert.match(main, /await initializeOneDrivePoizonBackup\(\)/);
+});
+
+test("updates preserve the configured folder and recover Excel files from legacy roots", () => {
+  assert.match(main, /brandExportFolder: configuredBrandFolder \|\| brandFolder/);
+  assert.match(main, /function brandExportRecoveryFolders\(\)/);
+  assert.match(main, /join\(oneDriveRoot, "바탕 화면", "Around G POIZON", "POIZON 전체내보내기"\)/);
+  assert.match(main, /join\(oneDriveRoot, "Desktop", "Around G POIZON", "POIZON 전체내보내기"\)/);
+  assert.match(main, /seenPaths\.has\(pathKey\)/);
+  assert.match(main, /sameFolder\(entry\.directory, entry\.rootFolder\)/);
+  assert.match(main, /for \(const job of savedBrandExportJobs\(\)\)/);
+  assert.match(main, /candidates\.push\(dirname\(historicalFile\)\)/);
 });
 
 test("new popular-product workbooks are saved directly to OneDrive", () => {
