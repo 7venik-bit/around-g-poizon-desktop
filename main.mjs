@@ -3260,10 +3260,14 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         searchUrl: String(result?.resolvedSearchUrl || source.searchUrl || ""),
         count: displayCount,
         countVerified: Number.isFinite(count) && (Number(count) > 0 || absenceConfirmed),
-        verificationFailed: !Number.isFinite(count),
-        verificationPending: result?.detailVerificationPending === true
-          || (Number.isFinite(count) && Number(count) === 0 && !absenceConfirmed),
+        verificationFailed: result?.resultLinkOnly === true ? false : !Number.isFinite(count),
+        verificationPending: result?.resultLinkOnly === true ? false : (
+          result?.detailVerificationPending === true
+          || result?.verificationPending === true
+          || (Number.isFinite(count) && Number(count) === 0 && !absenceConfirmed)),
         absenceConfirmed,
+        presenceConfirmed: result?.presenceConfirmed === true,
+        resultLinkOnly: result?.resultLinkOnly === true,
         searchCompleted: result?.searchCompleted === true,
         searchSubmitted: result?.searchSubmitted === true,
         verificationReason: String(result?.verificationReason || ""),
@@ -7497,7 +7501,9 @@ async function automateSellerBrandExport(input = {}) {
       && element.getBoundingClientRect().height > 0;
     const textOf = (element) => String(element?.innerText || element?.textContent || "")
       .replace(/\\s+/g, " ").trim();
-    const normalize = (value) => String(value || "").replace(/\\s+/g, "").trim();
+    const normalize = (value) => String(value || "").normalize("NFKC").toLocaleLowerCase()
+      .replace(/[^a-z0-9가-힣一-龥]+/g, "")
+      .replace(/6ixty/g, "sixty").replace(/8ight/g, "eight");
     const clickLikeUser = (element) => {
       if (!element) return false;
       element.scrollIntoView({ block: "center", inline: "center" });
@@ -7676,6 +7682,11 @@ async function automateSellerBrandExport(input = {}) {
             const changed = current.rowText !== beforeSearch.rowText || current.totalText !== beforeSearch.totalText;
             const hasRows = current.rowText.length > 0;
             const brandMatched = hasRequestedBrand(current);
+            // Result rows do not consistently repeat the brand label. A real
+            // before/after grid change is valid evidence for every brand; an
+            // unchanged stale grid still requires the strict brand match.
+            const resultUpdated = changed && current.rowTexts.length > 0;
+            const searchResultConfirmed = brandMatched || resultUpdated;
             const signature = current.totalText + "\\n" + current.rowText;
             // The working Seller Center keeps the visible "총 9,900건" label
             // unchanged after a search. The rendered product rows are the
@@ -7689,7 +7700,7 @@ async function automateSellerBrandExport(input = {}) {
             // A submitted input is not proof that POIZON changed the result.
             // Export only after the rendered product rows actually match the
             // requested brand; otherwise the previous brand can be exported.
-            if (hasRows && brandMatched && requestedInputConfirmed) {
+            if (hasRows && searchResultConfirmed && requestedInputConfirmed) {
               stableCount = signature === stableSignature ? stableCount + 1 : 1;
               stableSignature = signature;
               if (stableCount >= 3) return true;
