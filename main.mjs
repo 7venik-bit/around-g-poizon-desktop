@@ -4106,7 +4106,8 @@ async function initializeOneDrivePoizonBackup() {
   if (!backupRoot || !brandFolder || !popularFolder) return { enabled: false, copied: 0 };
   await mkdir(brandFolder, { recursive: true });
   await mkdir(popularFolder, { recursive: true });
-  const previousBrandFolder = String(store.snapshot().settings.brandExportFolder || "").trim()
+  const configuredBrandFolder = String(store.snapshot().settings.brandExportFolder || "").trim();
+  const previousBrandFolder = configuredBrandFolder
     || join(app.getPath("desktop"), "Around G POIZON", "POIZON 전체내보내기");
   const copiedBrands = await copyExcelTree(previousBrandFolder, brandFolder);
   const legacyPopularFolder = join(app.getPath("desktop"), "Around G POIZON");
@@ -4127,11 +4128,42 @@ async function initializeOneDrivePoizonBackup() {
     // A fresh installation may not have any desktop POIZON files yet.
   }
   await store.setSettings({
-    brandExportFolder: brandFolder,
+    // A backup destination must never replace the user's existing source
+    // folder. Updating the app previously made historical files appear gone
+    // even though their bytes were still present in the old folder.
+    brandExportFolder: configuredBrandFolder || brandFolder,
     oneDrivePoizonBackupRoot: backupRoot,
     oneDrivePoizonBackupEnabled: true,
   });
   return { enabled: true, copied: copiedBrands + copiedPopular, folder: backupRoot };
+}
+
+function brandExportRecoveryFolders() {
+  const current = currentBrandExportFolder();
+  const desktopLegacy = join(app.getPath("desktop"), "Around G POIZON", "POIZON 전체내보내기");
+  const candidates = [current, desktopLegacy, oneDriveBrandExportFolder()];
+  for (const root of [process.env.OneDriveConsumer, process.env.OneDrive, process.env.OneDriveCommercial]) {
+    const oneDriveRoot = String(root || "").trim();
+    if (!oneDriveRoot) continue;
+    candidates.push(
+      join(oneDriveRoot, "바탕 화면", "Around G POIZON", "POIZON 전체내보내기"),
+      join(oneDriveRoot, "Desktop", "Around G POIZON", "POIZON 전체내보내기"),
+    );
+  }
+  // Retain every historical workbook location recorded with a completed
+  // POIZON job. These paths survive folder-layout changes and let the app
+  // recover files stored outside the standard Desktop/OneDrive roots.
+  for (const job of savedBrandExportJobs()) {
+    const historicalFile = String(job?.filePath || "").trim();
+    if (historicalFile) candidates.push(dirname(historicalFile));
+  }
+  const seen = new Set();
+  return candidates.filter((folder) => {
+    const key = resolve(String(folder || "")).toLocaleLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function brandFromExportFileName(name = "") {
@@ -4197,7 +4229,17 @@ async function listBrandExportFiles() {
   };
   emitStartupProgress(5, "POIZON 다운로드 폴더를 확인하고 있습니다.");
   await mkdir(folder, { recursive: true });
-  const entries = await listBrandExportExcelEntries(folder);
+  const entries = [];
+  const seenPaths = new Set();
+  for (const recoveryFolder of brandExportRecoveryFolders()) {
+    const recovered = await listBrandExportExcelEntries(recoveryFolder).catch(() => []);
+    for (const entry of recovered) {
+      const pathKey = resolve(entry.path).toLocaleLowerCase();
+      if (seenPaths.has(pathKey)) continue;
+      seenPaths.add(pathKey);
+      entries.push({ ...entry, rootFolder: recoveryFolder });
+    }
+  }
   const sourceEntries = entries
     .filter((entry) => !isProcessedBrandExportName(entry.name) && !isPartialBrandExportName(entry.name));
   emitStartupProgress(12, `기존 POIZON Excel ${sourceEntries.length}개를 확인합니다.`, {
@@ -4220,7 +4262,7 @@ async function listBrandExportFiles() {
   for (let index = 0; index < preparedEntries.length; index += 1) {
     const { entry, info } = preparedEntries[index];
     const path = entry.path;
-    const folderMeta = entry.directory === folder
+    const folderMeta = sameFolder(entry.directory, entry.rootFolder)
       ? { brandName: "", jobId: "" }
       : parseBrandExportFolderName(basename(entry.directory));
     const expectedBrand = folderMeta.brandName || brandFromExportFileName(entry.name);
