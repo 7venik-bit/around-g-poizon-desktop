@@ -31,10 +31,16 @@ test("stock-watch entries persist independently from product searches", async ()
 test("stock-watch menu exposes registration, edit and delete controls", async () => {
   const html = await readFile(new URL("../src/index.html", import.meta.url), "utf8");
   const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
+  const sourcing = await readFile(new URL("../src/sourcing-view.js", import.meta.url), "utf8");
+  const inline = await readFile(new URL("../src/domestic-inline-results.js", import.meta.url), "utf8");
   assert.match(html, /data-view="stock-watch">재고 감시 등록/);
   assert.match(html, /id="stock-watch-platform"/);
   assert.match(html, /id="stock-watch-url"/);
   assert.match(renderer, /upsert\("stockWatches"/);
   assert.match(renderer, /data-stock-edit/);
   assert.match(renderer, /data-remove="stockWatches:/);
+  assert.match(renderer, /function stockWatchRegistrationButton/);
+  assert.match(renderer, /data-stock-register/);
+  assert.match(sourcing, /stockWatchRegistrationButton\(product, sourceProduct\)/);
+  assert.match(inline, /stockWatchRegistrationButton\(product, sourceProduct\)/);
 });
