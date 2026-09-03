@@ -8,6 +8,7 @@ const EMPTY = {
   domesticSearches: [],
   ledger: [],
   orders: [],
+  stockWatches: [],
   favorites: [],
   settings: {},
   collector: { status: "idle", lastPage: 0, lastFingerprint: "", repeatedPages: 0 }
