@@ -282,7 +282,7 @@
             <strong class="${actualPrice ? "" : "sourcing-price-unknown"}">${actualPrice ? money(actualPrice) : "확인 필요"}</strong>
             <span>${text(stockLabel)}</span>
             <strong class="${differenceClass}">${signedMoney(difference)}</strong>
-            ${sourceAction(source, product, "열기")}
+            <div class="sourcing-price-actions">${sourceAction(source, product, "열기")}${typeof stockWatchRegistrationButton === "function" ? stockWatchRegistrationButton(product, sourceProduct) : ""}</div>
           </div>`;
         }).join("");
 
