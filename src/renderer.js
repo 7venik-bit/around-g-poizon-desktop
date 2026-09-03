@@ -377,7 +377,12 @@ function renderBrandBatchProgress() {
     const stateClass = /확인완료/.test(item.state) ? " is-complete"
       : /실패|오류|중단|취소/.test(item.state) ? " is-error"
         : item.jobId ? " is-processing" : " is-registering";
-    const createdTime = item.createdAt ? brandTime(item.createdAt) : "생성 대기";
+    const itemFinished = /확인완료|실패|오류|중단|취소/.test(item.state);
+    const createdTime = !item.createdAt
+      ? "생성 대기"
+      : itemFinished
+        ? `완료 ${brandTime(item.updatedAt || item.createdAt)}`
+        : `시작 ${brandTime(item.createdAt)} · 경과 ${brandActivityDuration(Date.now() - item.createdAt)}`;
     return `<div class="brand-batch-row${stateClass}" data-brand-batch-key="${text(key)}"><label class="brand-batch-check"><input type="checkbox" ${selectedBrandBatchKeys.has(key) ? "checked" : ""} aria-label="${text(item.brandName)} 선택"></label><b class="brand-batch-order">${index + 1}</b><strong>${text(item.brandName)}</strong><code>${item.jobId ? text(item.jobId) : "생성 전"}</code><time>${text(createdTime)}</time><span>${text(item.state)}</span></div>`;
   }).join("");
   const selectAll = $("#brand-batch-select-all");
@@ -628,7 +633,8 @@ function renderBrandExportJobs() {
         ? " is-error"
         : finished ? " is-success" : " is-running";
       const running = finished ? "" : '<span class="brand-export-job-spinner" aria-hidden="true"></span>';
-      const elapsed = finished ? "" : ` · ${brandActivityDuration(now - Number(job.startedAt || now))}`;
+      const startedAt = Number(job.startedAt || now);
+      const elapsed = finished ? "" : ` · 시작 ${brandTime(startedAt)} · 경과 ${brandActivityDuration(now - startedAt)}`;
       return `<div class="brand-export-job-row${stateClass}"><strong>${text(job.brandName)}</strong><code>작업번호 ${text(id)}</code><span class="brand-export-job-state">${running}${text(job.state)}${text(elapsed)}</span></div>`;
     })
     .join("");
@@ -3708,7 +3714,11 @@ window.aroundG.onBrandExportProgress((progress) => {
   if (progress?.brandName) updateBrandBatchState(progress.brandName, progress?.jobState || "자동 감시 중", progress?.jobId);
   touchBrandActivity(progress?.jobState || progress?.message || "POIZON 작업 진행 중");
   $("#brand-status").className = progress?.status === "monitor-recovering" ? "status error" : "status";
-  $("#brand-status").textContent = progress?.message || "다운로드를 시작했습니다.";
+  const activeJob = brandExportJobs.get(String(progress?.jobId || "").trim());
+  const timeLabel = activeJob?.startedAt
+    ? ` · 시작 ${brandTime(activeJob.startedAt)} · 경과 ${brandActivityDuration(Date.now() - activeJob.startedAt)}`
+    : "";
+  $("#brand-status").textContent = `${progress?.message || "다운로드를 시작했습니다."}${timeLabel}`;
 });
 window.aroundG.onBrandExportError((error) => {
   if (!acceptBrandWorkEvents) return;
