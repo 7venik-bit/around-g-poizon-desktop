@@ -86,6 +86,9 @@ jobs:
       - name: Test confirmed domestic absence display
         run: node --test tests/domestic-result-verdict.test.mjs tests/domestic-absence-display-v2.10.574.test.mjs
 
+      - name: Test official brand-domain isolation
+        run: node --test tests/official-domain-registry.test.mjs tests/domestic-search.test.mjs
+
       - name: Apply next-day access cooldown
         run: node scripts/patch-domestic-access-next-day.mjs
 
