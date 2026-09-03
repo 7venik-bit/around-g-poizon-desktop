@@ -17,6 +17,7 @@ import {
   naverOfficialStoreRecord,
   noOfficialStoreRecord,
   validateOfficialDomainCandidate,
+  verifiedOfficialBrand,
 } from "../services/official-domain-registry.mjs";
 
 test("audit resumes with unchecked brands before retrying unresolved brands", () => {
@@ -123,7 +124,7 @@ test("short ambiguous names require an exact POIZON-to-Naver registry match", ()
 });
 
 test("curated official stores are verified and build direct product searches", () => {
-  assert.equal(VERIFIED_OFFICIAL_BRANDS.length, 11);
+  assert.equal(VERIFIED_OFFICIAL_BRANDS.length, 12);
   const registry = createOfficialDomainRegistry(VERIFIED_OFFICIAL_BRANDS.map((entry, index) => ({
     id: index + 1,
     name: entry.aliases[0],
@@ -154,6 +155,29 @@ test("On is linked to its Korean official homepage and exact article search", ()
   assert.equal(record.domain, "on.com");
   assert.equal(record.brandLogoUrl, "https://poizon.example/on-logo.png");
   assert.match(officialSearchUrlFromRecord(record, "3ME10100264"), /on\.com\/ko-kr\/search/);
+});
+
+test("KOLON never partially matches On and uses Kolon Mall", () => {
+  assert.equal(verifiedOfficialBrand("KOLON")?.domain, "kolonmall.com");
+  assert.equal(verifiedOfficialBrand("KOLON SPORT")?.domain, "kolonmall.com");
+  assert.equal(verifiedOfficialBrand("코오롱스포츠")?.domain, "kolonmall.com");
+  assert.equal(verifiedOfficialBrand("ON")?.domain, "on.com");
+
+  const [record] = createOfficialDomainRegistry([
+    { id: 77, name: "KOLON SPORT", ko: "코오롱스포츠" },
+  ], [{
+    registryId: "id:77",
+    brandId: 77,
+    brandName: "KOLON SPORT",
+    brandKo: "코오롱스포츠",
+    status: OFFICIAL_DOMAIN_STATUS.VERIFIED,
+    domain: "on.com",
+    homepageUrl: "https://www.on.com/ko-kr/",
+    searchTemplate: "https://www.on.com/ko-kr/search?q={query}",
+    verificationSource: "curated",
+  }]);
+  assert.equal(record.domain, "kolonmall.com");
+  assert.match(record.homepageUrl, /kolonmall\.com/);
 });
 
 test("strong logo evidence can recover a candidate whose short brand name is ambiguous", () => {
