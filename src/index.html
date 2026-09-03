@@ -15,6 +15,7 @@
       <button class="nav" data-view="profit">수익 계산</button>
       <button class="nav" data-view="ledger">구매 장부</button>
       <button class="nav" data-view="orders">주문 관리</button>
+      <button class="nav" data-view="stock-watch">재고 감시 등록</button>
       <button class="nav" data-view="settings">연동 관리</button>
     </nav>
     <section class="sidebar-search-sites" aria-label="국내 상품 검색 사이트 선택">
@@ -283,6 +284,27 @@
 
       <section id="ledger" class="view"><div class="panel"><div class="panel-title"><div><small>LOCAL LEDGER</small><h2>구매 장부</h2></div><button class="add-record" data-collection="ledger">장부 추가</button></div><div id="ledger-list" class="cards"></div></div></section>
       <section id="orders" class="view"><div class="panel"><div class="panel-title"><div><small>ORDER TRACKER</small><h2>주문 관리</h2></div><button class="add-record" data-collection="orders">주문 추가</button></div><div id="orders-list" class="cards"></div></div></section>
+
+      <section id="stock-watch" class="view">
+        <form id="stock-watch-form" class="panel stock-watch-form">
+          <div class="panel-title"><div><small>DOMESTIC STOCK WATCH</small><h2>재고 감시 등록</h2><p>감시할 국내 판매 상품과 옵션을 목록에 등록합니다.</p></div><strong id="stock-watch-count">0개 등록</strong></div>
+          <input id="stock-watch-id" type="hidden">
+          <div class="stock-watch-fields">
+            <label>국내 플랫폼<select id="stock-watch-platform" required><option value="">선택</option><option>무신사</option><option>네이버</option><option>SSG</option><option>롯데온</option><option>브랜드 공식몰</option><option>기타</option></select></label>
+            <label>브랜드<input id="stock-watch-brand" placeholder="예: 코오롱스포츠"></label>
+            <label>상품명<input id="stock-watch-name" required placeholder="상품명"></label>
+            <label>상품번호<input id="stock-watch-article" placeholder="품번·모델번호"></label>
+            <label>감시 옵션<input id="stock-watch-option" placeholder="예: 블랙 / 270"></label>
+            <label>상품 링크<input id="stock-watch-url" type="url" required placeholder="https://..."></label>
+          </div>
+          <div class="stock-watch-actions"><button id="stock-watch-cancel" type="button" hidden>수정 취소</button><button class="primary" type="submit">목록에 등록</button></div>
+          <div id="stock-watch-status" class="status" aria-live="polite"></div>
+        </form>
+        <section class="panel">
+          <div class="panel-title"><div><small>WATCH LIST</small><h2>재고 감시 목록</h2></div></div>
+          <div class="table-wrap"><table class="stock-watch-table"><thead><tr><th>플랫폼</th><th>상품</th><th>상품번호</th><th>감시 옵션</th><th>등록 시간</th><th>상태</th><th>관리</th></tr></thead><tbody id="stock-watch-list"></tbody></table></div>
+        </section>
+      </section>
 
       <section id="settings" class="view">
         <div class="grid two">
