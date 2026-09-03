@@ -1,6 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString("ko-KR")}원`;
-let state = { products: [], ledger: [], orders: [], favorites: [] };
+let state = { products: [], ledger: [], orders: [], stockWatches: [], favorites: [] };
 let entryCollection = "ledger";
 let explorerMeta = { brands: [], categories: [] };
 let selectedBrandId = null;
@@ -1966,6 +1966,24 @@ function renderRecords(collection) {
     : `<div class="empty">저장된 항목이 없습니다.</div>`;
 }
 
+function stockWatchTime(value) {
+  const date = new Date(value || 0);
+  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString("ko-KR", {
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function renderStockWatches() {
+  const rows = Array.isArray(state.stockWatches) ? state.stockWatches : [];
+  const host = $("#stock-watch-list");
+  if (!host) return;
+  $("#stock-watch-count").textContent = `${rows.length.toLocaleString("ko-KR")}개 등록`;
+  host.innerHTML = rows.length ? rows.map((row) => {
+    const url = /^https:\/\//i.test(String(row.url || "")) ? String(row.url) : "";
+    return `<tr><td><strong>${text(row.platform || "기타")}</strong></td><td><strong>${text(row.name)}</strong><small>${text(row.brand || "")}</small></td><td>${text(row.articleNumber || "-")}</td><td>${text(row.option || "전체 옵션")}</td><td>${text(stockWatchTime(row.createdAt || row.updatedAt))}</td><td><span class="stock-watch-pending">감시 등록</span></td><td><div class="stock-watch-row-actions">${url ? `<button type="button" data-stock-open="${text(url)}">상품 열기</button>` : ""}<button type="button" data-stock-edit="${text(row.id)}">수정</button><button type="button" data-remove="stockWatches:${text(row.id)}">삭제</button></div></td></tr>`;
+  }).join("") : '<tr><td colspan="7" class="empty">등록된 재고 감시 상품이 없습니다.</td></tr>';
+}
+
 function salesByArticle() {
   return Object.fromEntries(state.products
     .filter((product) => product.articleNumber && Number(product.sales30d) >= 0)
@@ -2642,6 +2660,7 @@ async function refresh() {
   state = await window.aroundG.snapshot();
   renderRecords("ledger");
   renderRecords("orders");
+  renderStockWatches();
 }
 
 document.addEventListener("click", async (event) => {
@@ -2659,6 +2678,24 @@ document.addEventListener("click", async (event) => {
     const [collection, id] = remove.split(":");
     await window.aroundG.remove(collection, id);
     await refresh();
+  }
+  const stockOpen = event.target.dataset.stockOpen;
+  if (stockOpen) await window.aroundG.openExternal(stockOpen);
+  const stockEdit = event.target.dataset.stockEdit;
+  if (stockEdit) {
+    const row = (state.stockWatches || []).find((item) => item.id === stockEdit);
+    if (row) {
+      $("#stock-watch-id").value = row.id;
+      $("#stock-watch-platform").value = row.platform || "기타";
+      $("#stock-watch-brand").value = row.brand || "";
+      $("#stock-watch-name").value = row.name || "";
+      $("#stock-watch-article").value = row.articleNumber || "";
+      $("#stock-watch-option").value = row.option || "";
+      $("#stock-watch-url").value = row.url || "";
+      $("#stock-watch-cancel").hidden = false;
+      $("#stock-watch-form button[type='submit']").textContent = "수정 저장";
+      $("#stock-watch-name").focus();
+    }
   }
   const searchButton = event.target.closest("[data-search]");
   const query = searchButton?.dataset.search;
@@ -4197,6 +4234,40 @@ $("#entry-save").addEventListener("click", async (event) => {
   await window.aroundG.upsert(entryCollection, base);
   $("#entry-dialog").close();
   await refresh();
+});
+
+function resetStockWatchForm() {
+  $("#stock-watch-form")?.reset();
+  $("#stock-watch-id").value = "";
+  $("#stock-watch-cancel").hidden = true;
+  $("#stock-watch-form button[type='submit']").textContent = "목록에 등록";
+}
+
+$("#stock-watch-cancel")?.addEventListener("click", resetStockWatchForm);
+$("#stock-watch-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const status = $("#stock-watch-status");
+  const url = $("#stock-watch-url").value.trim();
+  if (!/^https:\/\//i.test(url)) {
+    status.className = "status error";
+    status.textContent = "https://로 시작하는 국내 상품 링크를 입력해 주세요.";
+    return;
+  }
+  const id = $("#stock-watch-id").value.trim();
+  await window.aroundG.upsert("stockWatches", {
+    ...(id ? { id } : { createdAt: new Date().toISOString() }),
+    platform: $("#stock-watch-platform").value,
+    brand: $("#stock-watch-brand").value.trim(),
+    name: $("#stock-watch-name").value.trim(),
+    articleNumber: $("#stock-watch-article").value.trim(),
+    option: $("#stock-watch-option").value.trim(),
+    url,
+    watchStatus: "registered",
+  });
+  resetStockWatchForm();
+  await refresh();
+  status.className = "status success";
+  status.textContent = id ? "재고 감시 항목을 수정했습니다." : "재고 감시 목록에 등록했습니다.";
 });
 
 function profitResult(costValue, shippingValue, extraValue, feePercent, marginPercent) {
