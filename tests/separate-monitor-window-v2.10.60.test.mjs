@@ -37,6 +37,15 @@ test("dedicated monitor searches every accessible frame and never reloads the re
   assert.doesNotMatch(watchBlock, /sellerWindow\.webContents\.reloadIgnoringCache\(\)/);
 });
 
+test("repeated stale processing state rebuilds the hidden monitor and refreshes a safe export page", () => {
+  assert.match(main, /async function rebuildStaleSellerExportMonitor/);
+  assert.match(main, /job\.processingPolls >= 6/);
+  assert.match(main, /sellerMonitorWindow\.destroy\(\)/);
+  assert.match(main, /monitorSource: "dedicated-window-rebuilt"/);
+  assert.match(main, /!brandExportJobPending[\s\S]*?sellerWindow\.webContents\.getURL\(\)\.includes\("\/main\/exportCenter"\)/);
+  assert.match(main, /sellerWindow\.webContents\.reloadIgnoringCache\(\)/);
+});
+
 test("completed jobs are detected and downloaded from the live seller window as well as the hidden monitor", () => {
   assert.match(main, /\{ name: "seller", window: sellerWindow \}/);
   assert.match(main, /\{ name: "monitor", window: monitor \}/);
@@ -57,6 +66,14 @@ test("multi-brand UI shows registration processing completion and failure counts
   assert.match(renderer, /작업번호 생성 \$\{registered\}\/\$\{total\} · 처리 중 \$\{processing\} · 완료 \$\{completed\} · 실패 \$\{failed\}/);
   assert.match(style, /\.brand-batch-row\.is-complete/);
   assert.match(style, /\.brand-batch-row\.is-error/);
+});
+
+test("active and completed download lists show start, elapsed, and completion times", () => {
+  assert.match(html, /시작·경과 시간/);
+  assert.match(renderer, /`시작 \$\{brandTime\(item\.createdAt\)\} · 경과 \$\{brandActivityDuration\(Date\.now\(\) - item\.createdAt\)\}`/);
+  assert.match(renderer, /`완료 \$\{brandTime\(item\.updatedAt \|\| item\.createdAt\)\}`/);
+  assert.match(renderer, /시작 \$\{brandTime\(activeJob\.startedAt\)\} · 경과/);
+  assert.match(renderer, /<span>받은 시각<\/span>/);
 });
 
 test("release metadata is 2.10.378", () => {
