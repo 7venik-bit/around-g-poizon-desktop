@@ -16,6 +16,7 @@ export const VERIFIED_OFFICIAL_BRANDS = Object.freeze([
   { name: "크록스", aliases: ["crocs", "크록스"], domain: "crocs.co.kr", homepageUrl: "https://www.crocs.co.kr/", searchTemplate: "https://www.crocs.co.kr/search?q={query}" },
   { name: "데상트", aliases: ["descente", "데상트"], domain: "dk-on.com", homepageUrl: "https://dk-on.com/DESCENTE", searchTemplate: "https://dk-on.com/DESCENTE/search?keyword={query}" },
   { name: "MLB", aliases: ["mlb", "엠엘비"], domain: "mlb-korea.com", homepageUrl: "https://www.mlb-korea.com/?gf=A", searchTemplate: "https://www.mlb-korea.com/search?searchText={query}&gf=A", interactiveSearch: true },
+  { name: "코오롱스포츠", aliases: ["kolon sport", "kolonsport", "코오롱스포츠", "코오롱"], domain: "kolonmall.com", homepageUrl: "https://www.kolonmall.com/KOLONSPORT", searchTemplate: "https://www.kolonmall.com/Search?keyword={query}" },
   { name: "온", aliases: ["on", "on running", "onrunning", "온", "온러닝"], domain: "on.com", homepageUrl: "https://www.on.com/ko-kr/", searchTemplate: "https://www.on.com/ko-kr/search?q={query}" },
 ]);
 
@@ -38,7 +39,11 @@ export function verifiedOfficialBrand(value) {
   if (!normalized) return null;
   return VERIFIED_OFFICIAL_BRANDS.find((entry) => entry.aliases.some((alias) => {
     const normalizedAlias = normalizeOfficialBrand(alias);
-    return normalized === normalizedAlias || normalized.includes(normalizedAlias) || normalizedAlias.includes(normalized);
+    if (normalized === normalizedAlias) return true;
+    // Short aliases such as `On` must never partially match another brand
+    // (for example KOLON). Partial matching is only safe for descriptive names.
+    if (normalized.length < 4 || normalizedAlias.length < 4) return false;
+    return normalized.includes(normalizedAlias) || normalizedAlias.includes(normalized);
   })) || null;
 }
 
@@ -84,7 +89,9 @@ export function createOfficialDomainRegistry(brands, existing = []) {
       brandKo: String(brand?.ko || brand?.name || saved.brandKo || "").trim(),
       brandLogoUrl: String(brand?.logoUrl || saved.brandLogoUrl || "").trim(),
     });
-    if (seed && base.status !== OFFICIAL_DOMAIN_STATUS.VERIFIED) {
+    // Curated mappings are authoritative and also repair previously persisted
+    // false matches, such as KOLON having been saved with On's on.com domain.
+    if (seed && (base.status !== OFFICIAL_DOMAIN_STATUS.VERIFIED || base.domain !== seed.domain)) {
       Object.assign(base, {
         status: OFFICIAL_DOMAIN_STATUS.VERIFIED,
         domain: seed.domain,
