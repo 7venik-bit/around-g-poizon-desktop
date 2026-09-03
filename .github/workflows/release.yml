@@ -87,6 +87,7 @@ jobs:
         run: node --test tests/domestic-result-verdict.test.mjs tests/domestic-absence-display-v2.10.574.test.mjs
 
       - name: Test official brand-domain isolation
+        # Runs after release-time registry patches so added brands are covered too.
         run: node --test tests/official-domain-registry.test.mjs tests/domestic-search.test.mjs
 
       - name: Apply next-day access cooldown
