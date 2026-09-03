@@ -5506,6 +5506,32 @@ function scheduleBrandExportMonitor(delayMs = 0) {
   }, Math.max(0, Number(delayMs) || 0));
 }
 
+async function rebuildStaleSellerExportMonitor(jobId = "", job = {}) {
+  if (sellerMonitorWindow && !sellerMonitorWindow.isDestroyed()) {
+    sellerMonitorWindow.removeAllListeners("closed");
+    sellerMonitorWindow.destroy();
+  }
+  sellerMonitorWindow = null;
+  ensureSellerMonitorWindow();
+
+  // Once registration has finished, the original Seller Center window can be
+  // refreshed as a second independent source. During another brand's export it
+  // must remain untouched.
+  if (!brandExportJobPending
+    && sellerWindow && !sellerWindow.isDestroyed()
+    && sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
+    await sellerWindow.webContents.reloadIgnoringCache().catch(() => {});
+  }
+  mainWindow?.webContents.send("brand-export:progress", {
+    status: "monitoring",
+    monitorSource: "dedicated-window-rebuilt",
+    brandName: job?.brandName || "",
+    jobId,
+    jobState: "4단계/5 · 완료 상태 새로고침",
+    message: `${job?.brandName || "선택 브랜드"} · 작업번호 ${jobId} · 오래된 처리 중 상태를 버리고 다운로드 센터를 다시 연결합니다.`,
+  });
+}
+
 async function watchAllSellerExportJobsEveryTenSeconds() {
   if (brandExportMonitorRunning) return { ok: true, jobs: brandExportJobs.size };
   brandExportMonitorRunning = true;
@@ -5542,6 +5568,15 @@ async function watchAllSellerExportJobsEveryTenSeconds() {
         }
         if (status.state === "WAITING_FOR_ROW") job.rowMisses = Number(job.rowMisses || 0) + 1;
         else job.rowMisses = 0;
+        if (status.state === "PROCESSING") {
+          job.processingPolls = Number(job.processingPolls || 0) + 1;
+          if (job.processingPolls >= 6) {
+            job.processingPolls = 0;
+            await rebuildStaleSellerExportMonitor(status.jobId, job);
+          }
+        } else {
+          job.processingPolls = 0;
+        }
         const stateLabel = {
           WAITING_FOR_ROW: "4단계/5 · 작업번호 행 확인 중",
           PROCESSING: "4단계/5 · POIZON 파일 처리 중 · 10초마다 감시",
