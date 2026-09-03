@@ -34,28 +34,29 @@
       #excel-preview.product-view #excel-preview-grid .excel-product-row>td{height:54px!important;vertical-align:middle!important}
       #excel-preview.product-view #excel-preview-grid .excel-product-search-detail{display:table-row!important}
       #excel-preview.product-view #excel-preview-grid .excel-product-search-detail>td{width:auto!important;height:auto!important;padding:5px 9px!important;white-space:normal!important;overflow:visible!important;text-align:left!important;vertical-align:top!important}
-      .domestic-inline-detail-label{display:flex!important;align-items:center!important;gap:7px!important;margin:0 0 4px!important;color:#314a68!important;font-size:9px!important;font-weight:800!important}
+      .domestic-inline-detail-label{display:flex!important;align-items:center!important;gap:7px!important;margin:0 0 6px!important;color:#314a68!important;font-size:12px!important;font-weight:800!important}
       .domestic-inline-detail-label>span{width:7px!important;height:7px!important;border-radius:50%!important;background:#4b8ff0!important}
       .excel-product-group-amber .domestic-inline-detail-label>span{background:#e6a23c!important}
-      .domestic-inline-detail-label>em{margin-left:auto!important;color:#64748b!important;font-size:8px!important;font-style:normal!important}
+      .domestic-inline-detail-label>em{margin-left:auto!important;color:#64748b!important;font-size:11px!important;font-style:normal!important}
 
       .domestic-inline-results{display:flex!important;flex-direction:column!important;gap:0!important;width:100%!important;min-width:0!important;border-top:1px solid #dfe5ec!important;background:transparent!important;border-radius:0!important;box-shadow:none!important}
-      .domestic-inline-head,.domestic-inline-row{display:grid!important;grid-template-columns:110px minmax(240px,1fr) 120px 90px 145px!important;gap:7px!important;align-items:center!important}
-      .domestic-inline-head{min-height:22px!important;padding:2px 0!important;border-bottom:1px solid #dfe5ec!important;color:#64748b!important;font-size:8px!important;font-weight:800!important;text-align:left!important}
+      .domestic-inline-head,.domestic-inline-row{display:grid!important;grid-template-columns:120px minmax(240px,1fr) 130px 100px 180px!important;gap:8px!important;align-items:center!important}
+      .domestic-inline-head{min-height:28px!important;padding:4px 0!important;border-bottom:1px solid #dfe5ec!important;color:#64748b!important;font-size:10px!important;font-weight:800!important;text-align:left!important}
       .domestic-inline-head span:nth-child(4),.domestic-inline-head span:nth-child(5){text-align:right!important}
-      .domestic-inline-row{min-height:31px!important;padding:3px 0!important;border:0!important;border-bottom:1px solid #eef1f4!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;font-size:9px!important;line-height:1.25!important}
+      .domestic-inline-row{min-height:40px!important;padding:5px 0!important;border:0!important;border-bottom:1px solid #eef1f4!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;font-size:11px!important;line-height:1.35!important}
       .domestic-inline-row:last-child{border-bottom:0!important}
       .domestic-inline-row:hover{background:#fafbfd!important}
       .domestic-inline-store{display:flex!important;align-items:center!important;gap:3px!important;min-width:0!important;color:#334155!important;font-weight:800!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
-      .domestic-inline-official{flex:0 0 auto!important;padding:1px 4px!important;border-radius:999px!important;background:#fff3e8!important;color:#b86624!important;font-size:8px!important;font-weight:800!important}
+      .domestic-inline-official{flex:0 0 auto!important;padding:2px 5px!important;border-radius:999px!important;background:#fff3e8!important;color:#b86624!important;font-size:10px!important;font-weight:800!important}
       .domestic-inline-title{min-width:0!important;color:#111827!important;font-weight:650!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
       .domestic-inline-code{min-width:0!important;color:#64748b!important;font-family:inherit!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
       .domestic-inline-price{text-align:right!important;color:#111827!important;font-weight:800!important;white-space:nowrap!important}
       .domestic-inline-price-fetch{min-width:76px!important;border-color:#9cc5ff!important;background:#f3f8ff!important;color:#1769c2!important}
       .domestic-inline-price-fetch:disabled{opacity:.65!important;cursor:wait!important}
-      .domestic-inline-row button{min-width:56px!important;height:24px!important;padding:3px 5px!important;border-radius:5px!important;font-size:8px!important;font-weight:800!important;white-space:nowrap!important}
+      .domestic-inline-row button{min-width:64px!important;height:30px!important;padding:5px 8px!important;border-radius:6px!important;font-size:10px!important;font-weight:800!important;white-space:nowrap!important;overflow:visible!important}
+      .domestic-inline-row .stock-watch-register-button{min-width:96px!important;flex:0 0 96px!important}
       .domestic-inline-fallback .domestic-inline-title{color:#64748b!important;font-weight:600!important}
-      .domestic-inline-empty{padding:7px 0!important;color:#7b8794!important;font-size:9px!important;text-align:left!important}
+      .domestic-inline-empty{padding:8px 0!important;color:#7b8794!important;font-size:11px!important;text-align:left!important}
       .domestic-inline-empty.error{color:#b42318!important;font-weight:700!important}
       .domestic-inline-warning{padding:5px 0!important;color:#9a6700!important;font-size:8px!important;font-weight:700!important}
 
@@ -66,7 +67,7 @@
       .domestic-source-list.sourcing-product-list .sourcing-product-thumb{display:none!important}
 
       @media(max-width:1180px){
-        .domestic-inline-head,.domestic-inline-row{grid-template-columns:90px minmax(190px,1fr) 105px 82px 132px!important;gap:5px!important}
+        .domestic-inline-head,.domestic-inline-row{grid-template-columns:100px minmax(190px,1fr) 110px 90px 168px!important;gap:6px!important}
       }
     `;
     document.head.appendChild(style);
