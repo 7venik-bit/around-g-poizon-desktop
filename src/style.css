@@ -1933,3 +1933,26 @@ button,input,select,textarea{font-family:inherit}
     grid-template-columns: 86px minmax(210px, 1fr) 94px 76px 82px 82px;
   }
 }
+
+.stock-watch-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 0 14px;
+}
+.stock-watch-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.stock-watch-table { min-width: 1050px; }
+.stock-watch-table td:nth-child(2) small { display: block; color: #718078; margin-top: 3px; }
+.stock-watch-pending {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #2f6fca;
+  font-size: 11px;
+  font-weight: 700;
+}
+.stock-watch-row-actions { display: flex; gap: 5px; white-space: nowrap; }
+.stock-watch-row-actions button { padding: 6px 8px; border-radius: 7px; font-size: 11px; }
+@media (max-width: 1100px) {
+  .stock-watch-fields { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+}
