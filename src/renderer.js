@@ -1973,6 +1973,20 @@ function stockWatchTime(value) {
   });
 }
 
+function stockWatchRegistrationButton(product = {}, sourceProduct = {}) {
+  const platform = String(product.store || product.sourceStore || product.retailerName || "");
+  const url = String(product.url || "").trim();
+  if (!/무신사|musinsa/i.test(platform) || !/^https:\/\//i.test(url)) return "";
+  const payload = encodeURIComponent(JSON.stringify({
+    platform: "무신사",
+    brand: product.brand || sourceProduct.brand || sourceProduct.brandName || "",
+    name: product.title || product.name || sourceProduct.title || sourceProduct.name || "",
+    articleNumber: product.articleNumber || sourceProduct.articleNumber || sourceProduct.productCode || "",
+    url,
+  }));
+  return `<button type="button" class="stock-watch-register-button" data-stock-register="${payload}">재고 감시 등록</button>`;
+}
+
 function renderStockWatches() {
   const rows = Array.isArray(state.stockWatches) ? state.stockWatches : [];
   const host = $("#stock-watch-list");
@@ -2328,7 +2342,7 @@ function renderDomestic(result, sourceProduct = {}) {
       <span class="confidence ${confidenceClass} ${officialVerified ? "official" : ""}" title="${text(matchSignals)}">${confidenceLabel}</span>
       <strong class="domestic-result-price">${product?.price ? money(product.price) : "가격 확인"}</strong>
       <span class="stock-state ${sourceState}">${sourceLabel}</span>
-      <button class="domestic-result-open" data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${sourcingLabel || "판매처 열기"}</button>
+      <div class="domestic-result-actions"><button class="domestic-result-open" data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${sourcingLabel || "판매처 열기"}</button>${stockWatchRegistrationButton(product, sourceProduct)}</div>
     </div>`;
   };
   const sourceAction = (source, label = "판매처 검색") => {
@@ -2695,6 +2709,25 @@ document.addEventListener("click", async (event) => {
       $("#stock-watch-cancel").hidden = false;
       $("#stock-watch-form button[type='submit']").textContent = "수정 저장";
       $("#stock-watch-name").focus();
+    }
+  }
+  const stockRegister = event.target.dataset.stockRegister;
+  if (stockRegister) {
+    try {
+      const item = JSON.parse(decodeURIComponent(stockRegister));
+      document.querySelector('.nav[data-view="stock-watch"]')?.click();
+      resetStockWatchForm();
+      $("#stock-watch-platform").value = "무신사";
+      $("#stock-watch-brand").value = item.brand || "";
+      $("#stock-watch-name").value = item.name || "";
+      $("#stock-watch-article").value = item.articleNumber || "";
+      $("#stock-watch-url").value = item.url || "";
+      $("#stock-watch-status").className = "status";
+      $("#stock-watch-status").textContent = "무신사 상품 정보를 가져왔습니다. 감시 옵션을 확인한 뒤 등록해 주세요.";
+      $("#stock-watch-option").focus();
+    } catch {
+      $("#stock-watch-status").className = "status error";
+      $("#stock-watch-status").textContent = "무신사 상품 정보를 가져오지 못했습니다.";
     }
   }
   const searchButton = event.target.closest("[data-search]");
