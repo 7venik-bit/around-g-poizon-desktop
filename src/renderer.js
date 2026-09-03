@@ -1966,6 +1966,12 @@ function renderRecords(collection) {
     : `<div class="empty">저장된 항목이 없습니다.</div>`;
 }
 
+function renderLedgerRecords() {
+  const host = $("#ledger-list");
+  const rows = Array.isArray(state.ledger) ? state.ledger : [];
+  host.innerHTML = rows.length ? rows.map((row) => `<div class="record"><div><strong>${text(row.modelName || row.name)}</strong><small>${text(row.brand)} · ${text(row.articleNumber)} · ${text(row.krSize || row.euSize || "-")}</small></div><div><span class="ledger-sync-state ${row.syncStatus === "failed" ? "failed" : ""}">${row.syncStatus === "synced" ? `시트 ${text(row.sheetRow)}행 기록완료` : row.syncStatus === "duplicate" ? `기존 ${text(row.sheetRow)}행 연결` : "기록실패"}</span>${row.syncStatus === "failed" ? ` <button data-ledger-retry="${text(row.id)}">다시 기록</button>` : ""}</div></div>`).join("") : `<div class="empty">구매장부 기록 내역이 없습니다.</div>`;
+}
+
 function stockWatchTime(value) {
   const date = new Date(value || 0);
   return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString("ko-KR", {
@@ -2672,7 +2678,7 @@ async function searchDomesticAt(index, sourceProducts = currentExplorerProducts)
 
 async function refresh() {
   state = await window.aroundG.snapshot();
-  renderRecords("ledger");
+  renderLedgerRecords();
   renderRecords("orders");
   renderStockWatches();
 }
@@ -2692,6 +2698,11 @@ document.addEventListener("click", async (event) => {
     const [collection, id] = remove.split(":");
     await window.aroundG.remove(collection, id);
     await refresh();
+  }
+  const retryId = event.target.dataset.ledgerRetry;
+  if (retryId) {
+    const row = state.ledger.find((item) => item.id === retryId);
+    if (row) { fillLedgerForm(row); document.querySelector('[data-view="ledger"]')?.click(); }
   }
   const stockOpen = event.target.dataset.stockOpen;
   if (stockOpen) await window.aroundG.openExternal(stockOpen);
@@ -4252,6 +4263,40 @@ $("#export-button").addEventListener("click", async () => {
   if (!result.canceled) alert("백업 Excel을 저장했습니다.");
 });
 
+let capturedLedgerRows = [];
+function fillLedgerForm(row = {}) {
+  $("#ledger-brand").value = row.brand || ""; $("#ledger-name").value = row.modelName || row.name || "";
+  $("#ledger-article").value = row.articleNumber || ""; $("#ledger-size").value = row.krSize || row.euSize || "";
+  $("#ledger-price").value = row.purchasePrice || ""; $("#ledger-date").value = row.purchaseDate || "";
+  $("#ledger-order").value = row.orderNumber || ""; $("#ledger-url").value = row.purchaseUrl || "";
+  $("#ledger-image").value = row.imageUrl || ""; $("#ledger-quantity").value = row.quantity || 1;
+}
+function ledgerFormRow() {
+  return { brand:$("#ledger-brand").value, modelName:$("#ledger-name").value, articleNumber:$("#ledger-article").value,
+    krSize:$("#ledger-size").value, purchasePrice:$("#ledger-price").value, purchaseDate:$("#ledger-date").value,
+    orderNumber:$("#ledger-order").value, purchaseUrl:$("#ledger-url").value, imageUrl:$("#ledger-image").value,
+    quantity:$("#ledger-quantity").value, status:"구매완료" };
+}
+$("#ledger-open-musinsa")?.addEventListener("click", () => window.aroundG.openMusinsaLedger());
+$("#ledger-capture")?.addEventListener("click", async () => {
+  const status = $("#ledger-status"); status.className = "status"; status.textContent = "현재 무신사 주문 상세 정보를 확인하고 있습니다.";
+  const result = await window.aroundG.captureMusinsaLedger();
+  if (!result.ok) { status.className = "status error"; status.textContent = result.message; return; }
+  capturedLedgerRows = result.rows || []; fillLedgerForm(capturedLedgerRows[0]);
+  $("#ledger-captured-list").innerHTML = capturedLedgerRows.map((row,index) => `<button type="button" data-ledger-captured="${index}">${text(row.modelName || row.articleNumber || `상품 ${index+1}`)}</button>`).join("");
+  status.className = "status success"; status.textContent = `${capturedLedgerRows.length}개 상품을 가져왔습니다. 값을 확인한 뒤 기록해 주세요.`;
+});
+$("#ledger-captured-list")?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-ledger-captured]"); if (button) fillLedgerForm(capturedLedgerRows[Number(button.dataset.ledgerCaptured)] || {});
+});
+$("#purchase-ledger-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault(); const status = $("#ledger-status"); status.className = "status"; status.textContent = "중복 확인 후 Google 시트에 기록하고 있습니다.";
+  const result = await window.aroundG.syncPurchaseLedger(ledgerFormRow());
+  if (!result.ok) { status.className = "status error"; status.textContent = result.message; await refresh(); return; }
+  status.className = "status success"; status.textContent = result.duplicate ? `이미 기록된 구매입니다. 기존 ${result.rowNumber}행에 연결했습니다.` : `Google 시트 ${result.rowNumber}행에 기록하고 재확인했습니다.`;
+  await refresh();
+});
+
 function openEntry(collection) {
   entryCollection = collection;
   $("#dialog-title").textContent = collection === "ledger" ? "장부 추가" : "주문 추가";
@@ -4344,18 +4389,21 @@ window.aroundG.onDomesticLoginChanged?.(() => renderDomesticLoginStatuses());
 
 $("#settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const saved = await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value, nikeLoginId:$("#nike-login-id").value, nikePassword:$("#nike-password").value, adidasLoginId:$("#adidas-login-id").value, adidasPassword:$("#adidas-password").value });
+  const saved = await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value, nikeLoginId:$("#nike-login-id").value, nikePassword:$("#nike-password").value, adidasLoginId:$("#adidas-login-id").value, adidasPassword:$("#adidas-password").value, ledgerWebhookUrl:$("#ledger-webhook-url").value, ledgerSecret:$("#ledger-secret").value });
   $("#app-secret").value = "";
   $("#access-token").value = "";
   $("#poizon-password").value = "";
   $("#nike-password").value = "";
   $("#adidas-password").value = "";
+  $("#ledger-secret").value = "";
   $("#poizon-login-id").value = saved.poizonLoginId || "";
   $("#poizon-password").placeholder = saved.hasPoizonPassword ? "암호화 저장됨 · 브랜드 검색 시 자동 입력" : "자동 로그인에 필요";
   $("#nike-login-id").value = saved.nikeLoginId || "";
   $("#nike-password").placeholder = saved.hasNikePassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
   $("#adidas-login-id").value = saved.adidasLoginId || "";
   $("#adidas-password").placeholder = saved.hasAdidasPassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
+  $("#ledger-webhook-url").value = saved.ledgerWebhookUrl || "";
+  $("#ledger-secret").placeholder = saved.hasLedgerSecret ? "Windows 암호화 저장됨" : "Apps Script 보안키 입력";
   $("#settings-status").className = "status success";
   $("#settings-status").textContent = saved.poizonLoginId && saved.hasPoizonPassword
     ? "POIZON 아이디와 비밀번호를 기억했습니다. 브랜드 검색 시 자동 로그인합니다."
@@ -4370,6 +4418,32 @@ $("#guard-check").addEventListener("click", async () => {
 let updateButtonState = "idle";
 let updateButtonResetTimer;
 let updatePanelCloseTimer;
+let programNotifications = [];
+const renderProgramNotifications = (items = programNotifications) => {
+  programNotifications = Array.isArray(items) ? items : [];
+  const unread = programNotifications.filter((item) => !item.read).length;
+  const count = $("#notification-count");
+  if (count) {
+    count.hidden = unread === 0;
+    count.textContent = unread > 99 ? "99+" : String(unread);
+  }
+  const host = $("#notification-list");
+  if (!host) return;
+  host.innerHTML = programNotifications.length ? programNotifications.map((item) => {
+    const createdAt = new Date(item.createdAt || 0);
+    const timestamp = Number.isNaN(createdAt.getTime()) ? "" : createdAt.toLocaleString("ko-KR");
+    return `<article class="notification-item ${item.type === "error" ? "error" : ""}"><strong>${text(item.title || "프로그램 알림")}</strong><p>${text(item.message || "")}</p><time>${text(timestamp)}</time></article>`;
+  }).join("") : '<div class="empty">알림이 없습니다.</div>';
+};
+$("#notification-open")?.addEventListener("click", async () => {
+  const dialog = $("#notification-dialog");
+  renderProgramNotifications(await window.aroundG.getNotifications());
+  dialog?.showModal();
+  renderProgramNotifications(await window.aroundG.markNotificationsRead());
+});
+$("#notification-close")?.addEventListener("click", () => $("#notification-dialog")?.close());
+$("#notification-clear")?.addEventListener("click", async () => renderProgramNotifications(await window.aroundG.clearNotifications()));
+window.aroundG.onNotificationAdded((item) => renderProgramNotifications([item, ...programNotifications]));
 const setUpdateButton = (label, { disabled = false, alert = false } = {}) => {
   clearTimeout(updateButtonResetTimer);
   const button = $("#update-check");
@@ -4524,6 +4598,7 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   } catch {
     renderInstalledVersion("2.10.17", true);
   }
+  void window.aroundG.getNotifications().then(renderProgramNotifications).catch(() => {});
   // These status panels are secondary. A stalled status IPC must not block
   // the brand picker, work recovery, or any other sourcing function.
   void window.aroundG.getBackupStatus()
@@ -4620,6 +4695,8 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   $("#nike-password").placeholder = config.hasNikePassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
   $("#adidas-login-id").value = config.adidasLoginId || "";
   $("#adidas-password").placeholder = config.hasAdidasPassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
+  $("#ledger-webhook-url").value = config.ledgerWebhookUrl || "";
+  $("#ledger-secret").placeholder = config.hasLedgerSecret ? "Windows 암호화 저장됨" : "Apps Script 보안키 입력";
   await renderDomesticLoginStatuses();
   await refresh();
   await pruneCategorySearchHistory();

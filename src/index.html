@@ -69,6 +69,7 @@
         </div>
       </section>
       <div class="header-actions">
+        <button id="notification-open" class="notification-open" type="button" aria-label="프로그램 알림 열기">알림 <b id="notification-count" hidden>0</b></button>
         <div class="update-anchor">
           <button id="update-check" class="update-button">자동 업데이트<b id="update-alert" class="update-button-alert" hidden>NEW</b></button>
           <div id="app-version-state" class="app-version-state" aria-live="polite">
@@ -282,7 +283,22 @@
         <section id="profit-comparison" class="panel profit-comparison" hidden><div class="panel-title"><div><small>POIZON VS KOREA</small><h2>POIZON·국내 쇼핑몰 가격 비교</h2></div><strong id="profit-comparison-count"></strong></div><div class="table-wrap"><table><thead><tr><th>상품</th><th>POIZON 판매가</th><th>국내 매입가</th><th>구매처</th><th>총 매입비용</th><th>예상 순이익</th><th>수익률</th></tr></thead><tbody id="profit-comparison-rows"></tbody></table></div></section>
       </section>
 
-      <section id="ledger" class="view"><div class="panel"><div class="panel-title"><div><small>LOCAL LEDGER</small><h2>구매 장부</h2></div><button class="add-record" data-collection="ledger">장부 추가</button></div><div id="ledger-list" class="cards"></div></div></section>
+      <section id="ledger" class="view">
+        <form id="purchase-ledger-form" class="panel stock-watch-form">
+          <div class="panel-title"><div><small>GOOGLE PURCHASE LEDGER</small><h2>구매 장부</h2><p>무신사 주문 상세 정보를 확인한 뒤 Google 시트의 1-구매완료 탭에 기록합니다.</p></div><div class="stock-watch-row-actions"><button id="ledger-open-musinsa" type="button">무신사 주문내역 열기</button><button id="ledger-capture" type="button">현재 주문 가져오기</button></div></div>
+          <div class="stock-watch-fields ledger-fields">
+            <label>브랜드<input id="ledger-brand" required></label><label>상품명<input id="ledger-name" required></label>
+            <label>품번<input id="ledger-article" required></label><label>사이즈<input id="ledger-size" required></label>
+            <label>구매가격<input id="ledger-price" type="number" min="0" required></label><label>구매일<input id="ledger-date" type="date" required></label>
+            <label>주문번호<input id="ledger-order"></label><label>구매 링크<input id="ledger-url" type="url"></label>
+            <label>이미지 URL<input id="ledger-image" type="url"></label><label>수량<input id="ledger-quantity" type="number" min="1" value="1"></label>
+          </div>
+          <div id="ledger-captured-list" class="ledger-captured-list"></div>
+          <div class="stock-watch-actions"><button class="primary" type="submit">Google 시트에 기록</button></div>
+          <div id="ledger-status" class="status" aria-live="polite"></div>
+        </form>
+        <section class="panel"><div class="panel-title"><div><small>SYNC HISTORY</small><h2>장부 기록 내역</h2></div></div><div id="ledger-list" class="cards"></div></section>
+      </section>
       <section id="orders" class="view"><div class="panel"><div class="panel-title"><div><small>ORDER TRACKER</small><h2>주문 관리</h2></div><button class="add-record" data-collection="orders">주문 추가</button></div><div id="orders-list" class="cards"></div></div></section>
 
       <section id="stock-watch" class="view">
@@ -326,6 +342,9 @@
             <label>나이키 공식몰 비밀번호<input id="nike-password" type="password" autocomplete="new-password" placeholder="변경할 때만 입력"></label>
             <label>아디다스 공식몰 아이디<input id="adidas-login-id" autocomplete="username" placeholder="아디다스 계정"></label>
             <label>아디다스 공식몰 비밀번호<input id="adidas-password" type="password" autocomplete="new-password" placeholder="변경할 때만 입력"></label>
+            <hr><h3>Google 구매장부 연결</h3><p>Apps Script 웹 앱 주소와 보안키를 저장합니다. 보안키는 Windows 암호화 저장소로 보호됩니다.</p>
+            <label>웹 앱 주소<input id="ledger-webhook-url" type="url" placeholder="https://script.google.com/macros/s/.../exec"></label>
+            <label>구매장부 보안키<input id="ledger-secret" type="password" autocomplete="new-password" placeholder="변경할 때만 입력"></label>
             <button class="primary" type="submit">암호화 저장</button><div id="settings-status" class="status"></div>
             <hr>
             <div class="domestic-login-heading"><div><h3>국내 소싱몰 로그인</h3><p>처음 한 번 로그인하면 이 PC에 세션을 기억합니다. 재고 확인은 같은 세션으로 백그라운드에서 진행합니다.</p></div><button id="domestic-login-refresh" type="button">상태 새로고침</button></div>
@@ -344,6 +363,11 @@
   </section>
 
   <dialog id="entry-dialog"><form method="dialog"><h2 id="dialog-title">항목 추가</h2><label>브랜드<input id="entry-brand"></label><label>상품명<input id="entry-name" required></label><label>상품번호<input id="entry-article"></label><label>가격<input id="entry-price" type="number" min="0"></label><div class="dialog-actions"><button value="cancel">취소</button><button id="entry-save" value="default" class="primary">저장</button></div></form></dialog>
+  <dialog id="notification-dialog" class="notification-dialog">
+    <div class="notification-dialog-head"><div><small>PROGRAM NOTIFICATIONS</small><h2>프로그램 알림</h2></div><button id="notification-close" type="button">닫기</button></div>
+    <div id="notification-list" class="notification-list"><div class="empty">알림이 없습니다.</div></div>
+    <div class="dialog-actions"><button id="notification-clear" type="button">전체 삭제</button></div>
+  </dialog>
   <script src="./domestic-result-verdict.js"></script>
   <script src="./renderer.js"></script>
 </body>

@@ -734,6 +734,17 @@ body.excel-preview-active{overflow:hidden}
 .weekly-site-health.error{border-color:#e6a3a3;background:#fff5f5}
 .weekly-site-health.success{border-color:#8bc7a3;background:#f3fbf6}
 .weekly-site-health button{flex:0 0 auto}
+.notification-open{position:relative;white-space:nowrap}
+.notification-open b{display:inline-flex;min-width:19px;height:19px;margin-left:5px;padding:0 5px;align-items:center;justify-content:center;border-radius:10px;background:#ef4444;color:#fff;font-size:10px}
+.notification-dialog{width:min(620px,calc(100vw - 40px));max-height:75vh;padding:0;border:1px solid #cfe0f2;border-radius:16px;color:#142c4c}
+.notification-dialog::backdrop{background:rgba(12,30,56,.32)}
+.notification-dialog-head{display:flex;align-items:center;justify-content:space-between;padding:20px 22px 14px;border-bottom:1px solid #e2eaf3}
+.notification-dialog-head small{color:#7b8da5}.notification-dialog-head h2{margin:3px 0 0}
+.notification-list{display:flex;max-height:50vh;overflow:auto;flex-direction:column;padding:10px 22px}
+.notification-item{padding:13px 2px;border-bottom:1px solid #e8eef5}
+.notification-item:last-child{border-bottom:0}.notification-item strong{display:block;margin-bottom:4px}.notification-item p{margin:0;color:#4d627d;line-height:1.45}.notification-item time{display:block;margin-top:5px;color:#8a9aaf;font-size:11px}
+.notification-item.error strong{color:#c13232}.notification-dialog>.dialog-actions{padding:12px 22px 18px}
+.ledger-fields{grid-template-columns:repeat(5,minmax(150px,1fr))}.ledger-captured-list{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.ledger-captured-list button{border-color:#9ec5f4;background:#f2f7ff}.ledger-sync-state{font-size:11px;color:#657a94}.ledger-sync-state.failed{color:#c13232}
 .brand-selection-actions{display:flex;align-items:center;gap:9px;margin:10px 0 4px;padding:10px 12px;border:1px solid #d6e5f1;border-radius:10px;background:#f8fbff}
 .brand-selection-actions svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .brand-multi-select-label{display:flex;align-items:center;gap:7px;color:#2d5f88;font-size:12px;font-weight:800}

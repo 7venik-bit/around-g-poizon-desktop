@@ -6,6 +6,9 @@ contextBridge.exposeInMainWorld("aroundG", {
   bulkUpsert: (collection, items) => ipcRenderer.invoke("store:bulk-upsert", collection, items),
   remove: (collection, id) => ipcRenderer.invoke("store:remove", collection, id),
   saveConfig: (config) => ipcRenderer.invoke("config:save", config),
+  openMusinsaLedger: () => ipcRenderer.invoke("ledger:open-musinsa"),
+  captureMusinsaLedger: () => ipcRenderer.invoke("ledger:capture-musinsa"),
+  syncPurchaseLedger: (input) => ipcRenderer.invoke("ledger:sync", input),
   getConfig: () => ipcRenderer.invoke("config:get"),
   explorerMeta: () => ipcRenderer.invoke("explorer:meta"),
   syncBrands: () => ipcRenderer.invoke("explorer:sync-brands"),
@@ -109,6 +112,14 @@ contextBridge.exposeInMainWorld("aroundG", {
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
   restartForUpdate: () => ipcRenderer.invoke("update:restart"),
+  getNotifications: () => ipcRenderer.invoke("notifications:list"),
+  markNotificationsRead: () => ipcRenderer.invoke("notifications:mark-read"),
+  clearNotifications: () => ipcRenderer.invoke("notifications:clear"),
+  onNotificationAdded: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on("notifications:added", handler);
+    return () => ipcRenderer.removeListener("notifications:added", handler);
+  },
   getBackupStatus: () => ipcRenderer.invoke("backup:status"),
   runBackup: () => ipcRenderer.invoke("backup:run"),
   onBackupStatus: (callback) => {

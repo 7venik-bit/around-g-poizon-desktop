@@ -93,6 +93,9 @@ jobs:
       - name: Test stock-watch registration and persistence
         run: node --test tests/stock-watch-registration.test.mjs tests/collector.test.mjs
 
+      - name: Test purchase ledger and program notifications
+        run: node --test tests/purchase-ledger-sync.test.mjs tests/program-notifications.test.mjs
+
       - name: Apply next-day access cooldown
         run: node scripts/patch-domestic-access-next-day.mjs
 

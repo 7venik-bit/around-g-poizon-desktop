@@ -112,6 +112,7 @@ import {
   nextWeeklySiteHealthAt,
   weeklySiteHealthSummary,
 } from "./services/weekly-site-health.mjs";
+import { normalizePurchaseLedgerRow, validatePurchaseLedgerRow } from "./services/purchase-ledger.mjs";
 
 let store;
 const { autoUpdater } = pkg;
@@ -159,6 +160,7 @@ Start-Process -FilePath $chrome -ArgumentList @('--new-tab', $env:AROUND_G_EXTER
 let mainWindow;
 let sellerWindow;
 let sellerMonitorWindow;
+let musinsaLedgerWindow;
 const inventoryWindows = new Set();
 const officialInteractiveWindows = new Set();
 const domesticLoginWindows = new Map();
@@ -3714,6 +3716,36 @@ app.disableHardwareAcceleration();
 
 function sendUpdateStatus(status, message, extra = {}) {
   mainWindow?.webContents.send("update:status", { status, message, currentVersion: app.getVersion(), ...extra });
+  if (["downloaded", "installing", "error"].includes(status) && !(status === "downloaded" && extra.waitingForWork)) {
+    void addProgramNotification({
+      type: status === "error" ? "error" : "update",
+      title: status === "error" ? "업데이트 오류" : status === "installing" ? "업데이트 설치 시작" : "업데이트 다운로드 완료",
+      message,
+      key: `update:${status}:${String(extra.version || app.getVersion())}:${message}`,
+      windows: status !== "installing",
+    });
+  }
+}
+
+async function addProgramNotification({ type = "info", title = "프로그램 알림", message = "", key = "", windows = false } = {}) {
+  if (!store) return null;
+  const current = Array.isArray(store.snapshot()?.settings?.programNotifications)
+    ? store.snapshot().settings.programNotifications : [];
+  if (key && current.some((item) => item.key === key)) return null;
+  const item = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    key: String(key || ""), type: String(type || "info"), title: String(title || "프로그램 알림"),
+    message: String(message || ""), createdAt: new Date().toISOString(), read: false,
+  };
+  const programNotifications = [item, ...current].slice(0, 100);
+  await store.setSettings({ programNotifications });
+  mainWindow?.webContents.send("notifications:added", item);
+  if (windows && Notification.isSupported()) {
+    const notice = new Notification({ title: `Around G · ${item.title}`, body: item.message });
+    notice.on("click", () => { mainWindow?.show(); mainWindow?.focus(); });
+    notice.show();
+  }
+  return item;
 }
 
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
@@ -3879,7 +3911,72 @@ function publicConfig() {
     hasNikePassword: Boolean(settings.nikePasswordEncrypted),
     adidasLoginId: settings.adidasLoginId || "",
     hasAdidasPassword: Boolean(settings.adidasPasswordEncrypted),
+    ledgerWebhookUrl: settings.ledgerWebhookUrl || "",
+    hasLedgerSecret: Boolean(settings.ledgerSecretEncrypted),
   };
+}
+
+function openMusinsaLedgerWindow() {
+  if (musinsaLedgerWindow && !musinsaLedgerWindow.isDestroyed()) {
+    musinsaLedgerWindow.show(); musinsaLedgerWindow.focus();
+    return { ok: true };
+  }
+  musinsaLedgerWindow = new BrowserWindow({
+    icon: APP_ICON_PATH, width: 1320, height: 900, title: "무신사 주문 상세 · 구매장부 가져오기",
+    webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, contextIsolation: true },
+  });
+  musinsaLedgerWindow.on("closed", () => { musinsaLedgerWindow = null; });
+  void musinsaLedgerWindow.loadURL("https://www.musinsa.com/mypage/orders");
+  return { ok: true };
+}
+
+async function captureMusinsaLedgerOrder() {
+  if (!musinsaLedgerWindow || musinsaLedgerWindow.isDestroyed()) return { ok: false, code: "ORDER_WINDOW_CLOSED", message: "무신사 주문 상세 화면을 먼저 열어주세요." };
+  const url = musinsaLedgerWindow.webContents.getURL();
+  if (!/musinsa\.com/i.test(url)) return { ok: false, code: "NOT_MUSINSA", message: "무신사 주문 상세 화면에서 다시 시도해 주세요." };
+  const rows = await musinsaLedgerWindow.webContents.executeJavaScript(`(() => {
+    const clean = value => String(value || '').replace(/\\s+/g, ' ').trim();
+    const body = clean(document.body?.innerText);
+    const orderNumber = body.match(/(?:주문\\s*번호|order\\s*(?:no|number))\\s*[:：]?\\s*([0-9A-Z-]{6,})/i)?.[1] || '';
+    const date = body.match(/(?:주문\\s*(?:일자|일시)|결제\\s*(?:일자|일시))\\s*[:：]?\\s*(20\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2})/)?.[1]?.replace(/[.\\/]/g, '-') || '';
+    const links = [...document.querySelectorAll('a[href*="/products/"]')];
+    const unique = [...new Map(links.map(link => [new URL(link.href, location.href).pathname.match(/\\/products\\/(\\d+)/)?.[1], link])).entries()].filter(([id]) => id);
+    return unique.map(([id, link]) => {
+      const card = link.closest('article,li,[class*="order" i],[class*="product" i],[class*="goods" i]') || link.parentElement;
+      const text = clean(card?.innerText || link.innerText);
+      const image = card?.querySelector('img');
+      const priceMatches = [...text.matchAll(/([0-9][0-9,]{2,})\\s*원/g)].map(m => Number(m[1].replace(/,/g,''))).filter(Boolean);
+      const size = text.match(/(?:사이즈|옵션)\\s*[:：]?\\s*([0-9A-Z./ -]{1,20})/i)?.[1]?.trim() || '';
+      const lines = String(card?.innerText || '').split('\\n').map(clean).filter(Boolean);
+      return { platform:'무신사', orderNumber, purchaseDate:date, purchaseUrl:link.href, articleNumber:id,
+        modelName:clean(image?.alt) || lines.find(v => v.length > 3 && !/원|주문|배송|옵션|사이즈/.test(v)) || '',
+        brand:lines[0] || '', krSize:size, purchasePrice:priceMatches.at(-1) || 0,
+        imageUrl:image?.currentSrc || image?.src || '', quantity:1, status:'구매완료' };
+    });
+  })()`, true).catch(() => []);
+  if (!rows.length) return { ok: false, code: "ORDER_PRODUCTS_NOT_FOUND", message: "주문 상세 화면에서 상품을 찾지 못했습니다. 주문 상세를 연 뒤 다시 가져오세요." };
+  return { ok: true, rows: rows.map(normalizePurchaseLedgerRow) };
+}
+
+async function syncPurchaseLedger(input = {}) {
+  const row = normalizePurchaseLedgerRow(input);
+  const validation = validatePurchaseLedgerRow(row);
+  if (!validation.ok) return { ok: false, code: "REQUIRED_FIELDS_MISSING", message: `${validation.missing.join(", ")}을(를) 확인해 주세요.` };
+  const settings = store.snapshot().settings;
+  const endpoint = String(settings.ledgerWebhookUrl || "").trim();
+  const secret = decrypted(settings.ledgerSecretEncrypted);
+  if (!/^https:\/\/script\.google\.com\//i.test(endpoint) || !secret) return { ok: false, code: "LEDGER_NOT_CONNECTED", message: "Google 구매장부 연결 주소와 보안키를 먼저 저장해 주세요." };
+  try {
+    const response = await fetch(endpoint, { method: "POST", redirect: "follow", headers: { "content-type": "text/plain;charset=utf-8" }, body: JSON.stringify({ secret, row }), signal: AbortSignal.timeout(20_000) });
+    const result = await response.json();
+    if (!result.ok) throw new Error(result.code || result.message || `HTTP_${response.status}`);
+    const saved = await store.upsert("ledger", { ...row, id: row.duplicateKey, sheetRow: result.rowNumber, syncStatus: result.duplicate ? "duplicate" : "synced", syncedAt: new Date().toISOString() });
+    return { ok: true, duplicate: Boolean(result.duplicate), rowNumber: result.rowNumber, saved };
+  } catch (error) {
+    await store.upsert("ledger", { ...row, id: row.duplicateKey, syncStatus: "failed", syncError: error instanceof Error ? error.message : String(error) });
+    void addProgramNotification({ type: "error", title: "구매장부 기록 실패", message: `${row.modelName} · 다시 기록해 주세요.`, key: `ledger:failed:${row.duplicateKey}:${Date.now()}`, windows: true });
+    return { ok: false, code: "LEDGER_SYNC_FAILED", message: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 const SELLER_EXPORT_POLL_INTERVAL_MS = 60 * 1000;
@@ -3940,6 +4037,7 @@ function publicPortableSnapshot() {
   for (const key of [
     "appSecretEncrypted", "accessTokenEncrypted", "poizonLoginId", "poizonPasswordEncrypted",
     "nikeLoginId", "nikePasswordEncrypted", "adidasLoginId", "adidasPasswordEncrypted", "brandExportFolder",
+    "ledgerWebhookUrl", "ledgerSecretEncrypted",
     "oneDrivePoizonBackupRoot", "brandExportJobCache", "brandExportFileValidationCache",
   ]) delete settings[key];
   return { ...snapshot, settings, collector: { status: "idle", lastPage: 0, lastFingerprint: "", repeatedPages: 0 } };
@@ -10074,6 +10172,16 @@ app.whenReady().then(async () => {
   const hadLocalData = Boolean(await stat(join(userDataFolder, "around-g-data.json")).catch(() => null));
   store = new JsonStore(userDataFolder);
   await store.load();
+  const previousVersion = String(store.snapshot()?.settings?.lastLaunchedVersion || "");
+  const currentVersion = app.getVersion();
+  if (app.isPackaged && previousVersion && previousVersion !== currentVersion) {
+    await addProgramNotification({
+      type: "success", title: "업데이트 설치 완료",
+      message: `Around G v${currentVersion} 업데이트가 완료되었습니다.`,
+      key: `update:installed:${currentVersion}`, windows: true,
+    });
+  }
+  await store.setSettings({ lastLaunchedVersion: currentVersion });
   if (process.argv.includes("--migrate-only")) {
     app.quit();
     return;
@@ -10118,6 +10226,21 @@ app.whenReady().then(async () => {
     setImmediate(() => autoUpdater.quitAndInstall(true, true));
     return { ok: true };
   });
+  ipcMain.handle("notifications:list", () => {
+    const items = store.snapshot()?.settings?.programNotifications;
+    return Array.isArray(items) ? items : [];
+  });
+  ipcMain.handle("notifications:mark-read", async () => {
+    const items = Array.isArray(store.snapshot()?.settings?.programNotifications)
+      ? store.snapshot().settings.programNotifications : [];
+    const programNotifications = items.map((item) => ({ ...item, read: true }));
+    await store.setSettings({ programNotifications });
+    return programNotifications;
+  });
+  ipcMain.handle("notifications:clear", async () => {
+    await store.setSettings({ programNotifications: [] });
+    return [];
+  });
   ipcMain.handle("config:get", () => publicConfig());
   ipcMain.handle("domestic-login:list", () => domesticLoginStatuses());
   ipcMain.handle("domestic-login:open", (_event, sourceId) => openDomesticLogin(sourceId));
@@ -10135,9 +10258,14 @@ app.whenReady().then(async () => {
     if (config.poizonPassword) next.poizonPasswordEncrypted = encrypted(config.poizonPassword);
     if (config.nikePassword) next.nikePasswordEncrypted = encrypted(config.nikePassword);
     if (config.adidasPassword) next.adidasPasswordEncrypted = encrypted(config.adidasPassword);
+    if (typeof config.ledgerWebhookUrl === "string") next.ledgerWebhookUrl = config.ledgerWebhookUrl.trim();
+    if (config.ledgerSecret) next.ledgerSecretEncrypted = encrypted(config.ledgerSecret);
     await store.setSettings(next);
     return publicConfig();
   });
+  ipcMain.handle("ledger:open-musinsa", () => openMusinsaLedgerWindow());
+  ipcMain.handle("ledger:capture-musinsa", () => captureMusinsaLedgerOrder());
+  ipcMain.handle("ledger:sync", (_event, input) => syncPurchaseLedger(input));
   ipcMain.handle("explorer:meta", async () => {
     const settings = store.snapshot().settings;
     const cached = settings.brandCatalog;
