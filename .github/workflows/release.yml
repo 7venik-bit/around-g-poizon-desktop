@@ -90,6 +90,9 @@ jobs:
         # Runs after release-time registry patches so added brands are covered too.
         run: node --test tests/official-domain-registry.test.mjs tests/domestic-search.test.mjs
 
+      - name: Test stock-watch registration and persistence
+        run: node --test tests/stock-watch-registration.test.mjs tests/collector.test.mjs
+
       - name: Apply next-day access cooldown
         run: node scripts/patch-domestic-access-next-day.mjs
 
