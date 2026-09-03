@@ -59,8 +59,8 @@ await writeFile(preloadPath, preload, "utf8");
 const rendererPath = new URL("../src/renderer.js", import.meta.url);
 let renderer = await readFile(rendererPath, "utf8");
 renderer = replaceOnce(renderer,
-  '      <button class="domestic-result-open" data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${sourcingLabel || "판매처 열기"}</button>',
-  '      <button class="domestic-result-open" ${/(?:naver\\.com|ssg\\.com|lotteon\\.com)/i.test(String(product?.url || source.searchUrl || "")) ? `data-domestic-result-url="${encodeURIComponent(product?.url || source.searchUrl)}"` : `data-url="${encodeURIComponent(product?.url || source.searchUrl)}"`}>${sourcingLabel || "판매처 열기"}</button>',
+  '      <div class="domestic-result-actions"><button class="domestic-result-open" data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${sourcingLabel || "판매처 열기"}</button>${stockWatchRegistrationButton(product, sourceProduct)}</div>',
+  '      <div class="domestic-result-actions"><button class="domestic-result-open" ${/(?:naver\\.com|ssg\\.com|lotteon\\.com)/i.test(String(product?.url || source.searchUrl || "")) ? `data-domestic-result-url="${encodeURIComponent(product?.url || source.searchUrl)}"` : `data-url="${encodeURIComponent(product?.url || source.searchUrl)}"`}>${sourcingLabel || "판매처 열기"}</button>${stockWatchRegistrationButton(product, sourceProduct)}</div>',
   "product result button");
 renderer = replaceOnce(renderer,
   '    return `<button class="source-platform-action" type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;',
