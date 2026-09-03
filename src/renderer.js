@@ -4322,6 +4322,11 @@ function resetStockWatchForm() {
 }
 
 $("#stock-watch-cancel")?.addEventListener("click", resetStockWatchForm);
+$("#stock-watch-back-to-brand")?.addEventListener("click", () => {
+  document.querySelector('.nav[data-view="products"]')?.click();
+  const results = $("#explorer-results");
+  if (results && !results.hidden) results.scrollIntoView({ block: "start" });
+});
 $("#stock-watch-form")?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const status = $("#stock-watch-status");

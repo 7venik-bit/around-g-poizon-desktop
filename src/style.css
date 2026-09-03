@@ -745,6 +745,7 @@ body.excel-preview-active{overflow:hidden}
 .notification-item:last-child{border-bottom:0}.notification-item strong{display:block;margin-bottom:4px}.notification-item p{margin:0;color:#4d627d;line-height:1.45}.notification-item time{display:block;margin-top:5px;color:#8a9aaf;font-size:11px}
 .notification-item.error strong{color:#c13232}.notification-dialog>.dialog-actions{padding:12px 22px 18px}
 .ledger-fields{grid-template-columns:repeat(5,minmax(150px,1fr))}.ledger-captured-list{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.ledger-captured-list button{border-color:#9ec5f4;background:#f2f7ff}.ledger-sync-state{font-size:11px;color:#657a94}.ledger-sync-state.failed{color:#c13232}
+.stock-watch-heading-actions{display:flex;align-items:center;gap:14px}.stock-watch-heading-actions strong{white-space:nowrap}.stock-watch-heading-actions button{white-space:nowrap}
 .brand-selection-actions{display:flex;align-items:center;gap:9px;margin:10px 0 4px;padding:10px 12px;border:1px solid #d6e5f1;border-radius:10px;background:#f8fbff}
 .brand-selection-actions svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .brand-multi-select-label{display:flex;align-items:center;gap:7px;color:#2d5f88;font-size:12px;font-weight:800}

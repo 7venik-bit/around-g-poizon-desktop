@@ -34,6 +34,7 @@ test("stock-watch menu exposes registration, edit and delete controls", async ()
   const sourcing = await readFile(new URL("../src/sourcing-view.js", import.meta.url), "utf8");
   const inline = await readFile(new URL("../src/domestic-inline-results.js", import.meta.url), "utf8");
   assert.match(html, /data-view="stock-watch">재고 감시 등록/);
+  assert.match(html, /id="stock-watch-back-to-brand"[^>]*>← 브랜드 검색 결과로/);
   assert.match(html, /id="stock-watch-platform"/);
   assert.match(html, /id="stock-watch-url"/);
   assert.match(renderer, /upsert\("stockWatches"/);
@@ -41,6 +42,8 @@ test("stock-watch menu exposes registration, edit and delete controls", async ()
   assert.match(renderer, /data-remove="stockWatches:/);
   assert.match(renderer, /function stockWatchRegistrationButton/);
   assert.match(renderer, /data-stock-register/);
+  assert.match(renderer, /stock-watch-back-to-brand/);
+  assert.match(renderer, /nav\[data-view="products"\]/);
   assert.match(sourcing, /stockWatchRegistrationButton\(product, sourceProduct\)/);
   assert.match(inline, /stockWatchRegistrationButton\(product, sourceProduct\)/);
 });
