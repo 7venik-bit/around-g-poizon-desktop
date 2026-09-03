@@ -19,9 +19,9 @@ const mainPath = new URL("../main.mjs", import.meta.url);
 let main = normalizeLf(await readFile(mainPath, "utf8"));
 main = replaceOnce(
   main,
-  '  return entries.flatMap((entry) => {\n    const row = entry.values || [];\n    const spuId = raw(row, columns.spuId);',
-  '  return entries.flatMap((entry) => {\n    const row = entry.values || [];\n    // Domestic sourcing is performed per size/SKU row. A product can have\n    // high total sales while the selected size has "<5" or another low recent\n    // sales value. Never put that size into the domestic-search queue. When\n    // both recent-sales columns are present, the row itself must satisfy the\n    // same strict 30+ AND rule. The source workbook remains untouched.\n    if (columns.sales30d >= 0 && columns.localSales30d >= 0) {\n      const chinaRecentSales = parsePoizonSalesMetric(cell(row, columns.sales30d));\n      const localRecentSales = parsePoizonSalesMetric(cell(row, columns.localSales30d));\n      if (chinaRecentSales < 30 || localRecentSales < 30) return [];\n    }\n    const spuId = raw(row, columns.spuId);',
-  "exclude low-selling size rows from domestic search",
+  '    // Domestic sourcing is performed per size/SKU row. A product can have\n    // high total sales while the selected size has "<5" or another low recent\n    // sales value. Never put that size into the domestic-search queue. When\n    // both recent-sales columns are present, the row itself must satisfy the\n    // same strict 30+ AND rule. The source workbook remains untouched.\n    if (columns.sales30d >= 0 && columns.localSales30d >= 0) {\n      const chinaRecentSales = parsePoizonSalesMetric(cell(row, columns.sales30d));\n      const localRecentSales = parsePoizonSalesMetric(cell(row, columns.localSales30d));\n      if (chinaRecentSales < 30 || localRecentSales < 30) return [];\n    }',
+  '    // Do not apply an invisible recent-sales threshold here. Filtering has\n    // already been completed against the user\'s explicit Excel conditions;\n    // dropping low recent-sales SKU rows at conversion time made qualified\n    // results disappear from the list.',
+  "remove hidden recent-sales threshold",
 );
 main = replaceOnce(
   main,
