@@ -40,7 +40,7 @@
       .domestic-inline-detail-label>em{margin-left:auto!important;color:#64748b!important;font-size:8px!important;font-style:normal!important}
 
       .domestic-inline-results{display:flex!important;flex-direction:column!important;gap:0!important;width:100%!important;min-width:0!important;border-top:1px solid #dfe5ec!important;background:transparent!important;border-radius:0!important;box-shadow:none!important}
-      .domestic-inline-head,.domestic-inline-row{display:grid!important;grid-template-columns:110px minmax(240px,1fr) 120px 90px 70px!important;gap:7px!important;align-items:center!important}
+      .domestic-inline-head,.domestic-inline-row{display:grid!important;grid-template-columns:110px minmax(240px,1fr) 120px 90px 145px!important;gap:7px!important;align-items:center!important}
       .domestic-inline-head{min-height:22px!important;padding:2px 0!important;border-bottom:1px solid #dfe5ec!important;color:#64748b!important;font-size:8px!important;font-weight:800!important;text-align:left!important}
       .domestic-inline-head span:nth-child(4),.domestic-inline-head span:nth-child(5){text-align:right!important}
       .domestic-inline-row{min-height:31px!important;padding:3px 0!important;border:0!important;border-bottom:1px solid #eef1f4!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;font-size:9px!important;line-height:1.25!important}
@@ -66,7 +66,7 @@
       .domestic-source-list.sourcing-product-list .sourcing-product-thumb{display:none!important}
 
       @media(max-width:1180px){
-        .domestic-inline-head,.domestic-inline-row{grid-template-columns:90px minmax(190px,1fr) 105px 82px 62px!important;gap:5px!important}
+        .domestic-inline-head,.domestic-inline-row{grid-template-columns:90px minmax(190px,1fr) 105px 82px 132px!important;gap:5px!important}
       }
     `;
     document.head.appendChild(style);
@@ -167,7 +167,7 @@
         <div class="domestic-inline-title" title="${safeText(rawTitle)}">${safeText(title)}</div>
         <div class="domestic-inline-code" title="${safeText(article)}">${safeText(article)}</div>
         <div class="domestic-inline-price">${safeMoney(product?.price)}</div>
-        <div>${sourceAction(source, product, sourceProduct)}</div>
+        <div class="domestic-inline-actions">${sourceAction(source, product, sourceProduct)}${typeof stockWatchRegistrationButton === "function" ? stockWatchRegistrationButton(product, sourceProduct) : ""}</div>
       </div>`;
     });
 
