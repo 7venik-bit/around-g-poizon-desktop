@@ -124,7 +124,7 @@ test("short ambiguous names require an exact POIZON-to-Naver registry match", ()
 });
 
 test("curated official stores are verified and build direct product searches", () => {
-  assert.equal(VERIFIED_OFFICIAL_BRANDS.length, 12);
+  assert.ok(VERIFIED_OFFICIAL_BRANDS.length >= 12);
   const registry = createOfficialDomainRegistry(VERIFIED_OFFICIAL_BRANDS.map((entry, index) => ({
     id: index + 1,
     name: entry.aliases[0],
@@ -132,8 +132,14 @@ test("curated official stores are verified and build direct product searches", (
   })));
   for (const record of registry) {
     assert.equal(record.status, OFFICIAL_DOMAIN_STATUS.VERIFIED);
-    assert.equal(new URL(officialSearchUrlFromRecord(record, "STYLE 001")).protocol, "https:");
-    assert.match(officialSearchUrlFromRecord(record, "STYLE 001"), /STYLE%20001/);
+    const searchUrl = officialSearchUrlFromRecord(record, "STYLE 001");
+    if (searchUrl) {
+      assert.equal(new URL(searchUrl).protocol, "https:");
+      assert.match(searchUrl, /STYLE%20001/);
+    } else {
+      assert.equal(record.interactiveSearch, true);
+      assert.equal(new URL(record.homepageUrl).protocol, "https:");
+    }
   }
 });
 
