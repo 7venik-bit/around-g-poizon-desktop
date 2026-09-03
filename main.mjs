@@ -4345,16 +4345,10 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
   const raw = (row, index) => String(cell(row, index) ?? "").trim();
   return entries.flatMap((entry) => {
     const row = entry.values || [];
-    // Domestic sourcing is performed per size/SKU row. A product can have
-    // high total sales while the selected size has "<5" or another low recent
-    // sales value. Never put that size into the domestic-search queue. When
-    // both recent-sales columns are present, the row itself must satisfy the
-    // same strict 30+ AND rule. The source workbook remains untouched.
-    if (columns.sales30d >= 0 && columns.localSales30d >= 0) {
-      const chinaRecentSales = parsePoizonSalesMetric(cell(row, columns.sales30d));
-      const localRecentSales = parsePoizonSalesMetric(cell(row, columns.localSales30d));
-      if (chinaRecentSales < 30 || localRecentSales < 30) return [];
-    }
+    // Do not apply an invisible recent-sales threshold here. Filtering has
+    // already been completed against the user's explicit Excel conditions;
+    // dropping low recent-sales SKU rows at conversion time made qualified
+    // results disappear from the list.
     const spuId = raw(row, columns.spuId);
     const articleNumber = raw(row, columns.articleNumber);
     const title = raw(row, columns.title);
