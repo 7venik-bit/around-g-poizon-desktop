@@ -15,11 +15,13 @@ for (const duplicate of ["네이버 공식 브랜드스토어", "네이버 백�
 }
 if (!salesFilter.includes('export const POIZON_MINIMUM_TOTAL_SALES = 30;')) throw new Error("global sales baseline is not 30");
 if (!salesFilter.includes('if (filters.rowLevel === true || fixedTotalAnd) {')) throw new Error("fixed AND Excel preview is not filtered at row level");
+if (main.includes('if (chinaRecentSales < 30 || localRecentSales < 30) return [];')) throw new Error("hidden recent-sales threshold still removes qualified Excel rows");
+if (!main.includes('Do not apply an invisible recent-sales threshold here')) throw new Error("explicit-only Excel filtering guard is missing");
 console.log("canonical Naver card-list route and strict 30+ row-level AND filtering verified");
 process.exit(0);
 const fail = (message) => { throw new Error(`simplified official/Naver search verification failed: ${message}`); };
 
-if (!main.includes('if (chinaRecentSales < 30 || localRecentSales < 30) return [];')) fail("low-selling size rows can still enter domestic search");
+if (main.includes('if (chinaRecentSales < 30 || localRecentSales < 30) return [];')) fail("hidden recent-sales threshold still removes qualified rows");
 if (!main.includes('sanitizeDomesticProductCode(articleNumber) || sanitizeDomesticQuery(title)')) fail("official mall does not use exact product code first");
 if (!relay.includes('{ store: "네이버 패션타운", linkOnly: true, fashionTown: "brand-store", renderCount: true }')) fail("single Naver Fashion Town source is missing");
 const sourceBlock = relay.match(/const sources = \[[\s\S]*?\n  \];/)?.[0] || "";
