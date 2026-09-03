@@ -342,6 +342,7 @@ const officialStoreCases = [
   ["크록스", "209651-001", "crocs.co.kr"],
   ["데상트", "SN123LSN11", "dk-on.com"],
   ["MLB", "3ASXCA12N-50WHS", "mlb-korea.com"],
+  ["코오롱스포츠", "TLPOM26699", "kolonmall.com"],
   ["온", "3ME10100264", "on.com"],
 ];
 
@@ -965,7 +966,12 @@ test("one domestic store failure does not stop the others", async () => {
     if (String(url).includes("kolonmall.com")) return { ok: false, status: 403, text: async () => "" };
     return { ok: true, status: 200, text: async () => emptyNextData };
   };
-  const result = await queryDomesticProducts({ query: "DD1391-100", brand: "나이키", fetchImpl });
+  const result = await queryDomesticProducts({
+    query: "DD1391-100",
+    productCode: "DD1391-100",
+    brand: "나이키",
+    fetchImpl,
+  });
   const stores = result.sources.map((source) => source.store);
   // Source checkout keeps the legacy per-channel SSG/Lotte rows; release
   // post-processing consolidates each portal into one overview request. Both
