@@ -6,9 +6,9 @@ const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 const patchScript = await readFile(new URL("../scripts/patch-simplify-official-naver-search.mjs", import.meta.url), "utf8");
 const verifyScript = await readFile(new URL("../scripts/verify-simplify-official-naver-search.mjs", import.meta.url), "utf8");
 
-test("domestic product search excludes size rows below both recent-sales thresholds", () => {
-  assert.match(main, /columns\.sales30d >= 0 && columns\.localSales30d >= 0/);
-  assert.match(main, /if \(chinaRecentSales < 30 \|\| localRecentSales < 30\) return \[\];/);
-  assert.match(patchScript, /exclude low-selling size rows from domestic search/);
-  assert.match(verifyScript, /low-selling size rows can still enter domestic search/);
+test("Excel product conversion preserves every row that passed the explicit filters", () => {
+  assert.doesNotMatch(main, /if \(chinaRecentSales < 30 \|\| localRecentSales < 30\) return \[\];/);
+  assert.match(main, /Do not apply an invisible recent-sales threshold here/);
+  assert.match(patchScript, /remove hidden recent-sales threshold/);
+  assert.match(verifyScript, /hidden recent-sales threshold still removes qualified Excel rows/);
 });
