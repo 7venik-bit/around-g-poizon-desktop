@@ -18,7 +18,7 @@ test("Descente adapter builds a direct official product candidate", () => {
   );
 });
 
-test("first official-mall linkage batch registers twelve Korean adapters", () => {
+test("official-mall linkage batches register seventeen Korean adapters", () => {
   const cases = [
     ["아디다스", "adidas.co.kr", "adidas-kr"],
     ["나이키", "nike.com", "nike-kr"],
@@ -32,11 +32,23 @@ test("first official-mall linkage batch registers twelve Korean adapters", () =>
     ["MLB", "mlb-korea.com", "mlb-korea"],
     ["코오롱스포츠", "kolonmall.com", "kolon-sport"],
     ["온러닝", "on.com", "on-running-kr"],
+    ["Keen", "keenfootwear.kr", "keen-kr"],
+    ["New Era", "neweracapkorea.com", "new-era-kr"],
+    ["Salomon", "salomon.co.kr", "salomon-kr"],
+    ["Dickies", "dickieskr.com", "dickies-kr"],
+    ["Discovery Expedition", "discovery-expedition.com", "discovery-expedition-kr"],
   ];
   for (const [brand, domain, adapterId] of cases) {
     assert.equal(officialMallAdapterId({ brand, domain }), adapterId, brand);
-    assert.match(officialMallSearchTemplate({ brand, domain }), /\{query\}/, brand);
+    if (brand !== "Dickies") assert.match(officialMallSearchTemplate({ brand, domain }), /\{query\}/, brand);
   }
+});
+
+test("Discovery adapter builds its exact official product-detail candidate", () => {
+  assert.deepEqual(
+    officialMallDirectProductUrls({ brand: "디스커버리", domain: "discovery-expedition.com" }, "DMRL39064-BKS"),
+    ["https://www.discovery-expedition.com/product-detail/DMRL39064-BKS"],
+  );
 });
 
 test("verified domain audit attaches a known search adapter even when the page hides its search form", () => {
@@ -48,6 +60,17 @@ test("verified domain audit attaches a known search adapter even when the page h
   assert.equal(linked.adapterStatus, "dedicated");
   assert.equal(linked.adapterId, "puma-kr");
   assert.equal(linked.searchTemplate, "https://kr.puma.com/kr/ko/search?q={query}");
+});
+
+test("interactive Dickies linkage is dedicated without inventing a fixed search URL", () => {
+  const linked = officialMallAdapterRecord({
+    brandKo: "Dickies", domain: "dickieskr.com", homepageUrl: "https://dickieskr.com/online-store.html",
+    status: "verified", searchTemplate: "", interactiveSearch: true,
+  });
+  assert.equal(linked.adapterStatus, "dedicated");
+  assert.equal(linked.adapterId, "dickies-kr");
+  assert.equal(linked.searchTemplate, "");
+  assert.equal(linked.interactiveSearch, true);
 });
 
 test("full verification classifies dedicated, common, and pending linkage", () => {

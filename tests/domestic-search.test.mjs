@@ -183,14 +183,16 @@ test("편집샵·병행수입 검색은 쇼핑 플랫폼 상품 상세 주소만
 });
 import { OFFICIAL_DOMAIN_STATUS } from "../services/official-domain-registry.mjs";
 
-test("every catalog brand uses the Fashion Town search with the product code only", () => {
+test("Naver Fashion Town and a linked official mall both use the product code only", () => {
   const url = decodeURIComponent(officialBrandSearchUrl("살로몬", "L47581100"));
   assert.match(url, /shopping\.naver\.com\/window\/search\/fashion-group/);
   assert.match(url, /q=L47581100/);
   assert.doesNotMatch(url, /살로몬/);
   assert.match(url, /L47581100/);
   assert.doesNotMatch(url, /공식몰|공식스토어/);
-  assert.equal(officialBrandProductSearchUrl("살로몬", "L47581100"), "");
+  const officialUrl = decodeURIComponent(officialBrandProductSearchUrl("살로몬", "L47581100"));
+  assert.equal(officialUrl, "https://salomon.co.kr/search?q=L47581100");
+  assert.doesNotMatch(officialUrl, /살로몬/);
 });
 
 test("every catalog brand gets article-specific Naver channel searches", () => {
@@ -995,7 +997,7 @@ test("one domestic store failure does not stop the others", async () => {
 test("an unverified brand is not reported as a verified official-store zero", async () => {
   const emptyNextData = `<script id="__NEXT_DATA__">${JSON.stringify({ props: { pageProps: { dehydratedState: { queries: [] } } } })}</script>`;
   const fetchImpl = async () => ({ ok: true, status: 200, text: async () => emptyNextData });
-  const result = await queryDomesticProducts({ query: "L47581100", brand: "살로몬", fetchImpl });
+  const result = await queryDomesticProducts({ query: "TEST001", brand: "미연동테스트브랜드", fetchImpl });
   const official = result.sources[0];
   assert.equal(official.store, "공식몰 추가 확인 필요");
   assert.equal(official.officialStatus, "pending");

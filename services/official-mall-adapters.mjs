@@ -75,6 +75,37 @@ const ADAPTERS = Object.freeze([
     domains: ["on.com"],
     searchTemplate: "https://www.on.com/ko-kr/search?q={query}",
   },
+  {
+    id: "keen-kr",
+    brands: ["Keen", "킨"],
+    domains: ["keenfootwear.kr"],
+    searchTemplate: "https://www.keenfootwear.kr/goods/goods_search.php?keyword={query}",
+  },
+  {
+    id: "new-era-kr",
+    brands: ["New Era", "newera", "뉴에라"],
+    domains: ["neweracapkorea.com"],
+    searchTemplate: "https://www.neweracapkorea.com/shop/shopbrand.html?search=&prize1={query}",
+  },
+  {
+    id: "salomon-kr",
+    brands: ["Salomon", "살로몬"],
+    domains: ["salomon.co.kr"],
+    searchTemplate: "https://salomon.co.kr/search?q={query}",
+  },
+  {
+    id: "dickies-kr",
+    brands: ["Dickies", "디키즈"],
+    domains: ["dickieskr.com"],
+    interactiveSearch: true,
+  },
+  {
+    id: "discovery-expedition-kr",
+    brands: ["Discovery Expedition", "discoveryexpedition", "디스커버리 익스페디션", "디스커버리"],
+    domains: ["discovery-expedition.com"],
+    searchTemplate: "https://www.discovery-expedition.com/display/search?searchText={query}",
+    directProductTemplates: ["https://www.discovery-expedition.com/product-detail/{code}"],
+  },
 ]);
 
 function normalizedHost(value) {
@@ -117,9 +148,10 @@ export function officialMallAdapterRecord(record = {}) {
   });
   const adapterId = adapter?.id || "";
   const linkedSearchTemplate = String(record.searchTemplate || adapter?.searchTemplate || "");
-  const status = adapterId && linkedSearchTemplate && record.status === "search_unsupported"
+  const linkedSearch = Boolean(linkedSearchTemplate || (adapter?.interactiveSearch && record.homepageUrl));
+  const status = adapterId && linkedSearch && record.status === "search_unsupported"
     ? "verified" : String(record.status || "pending");
-  const adapterStatus = adapterId && status === "verified" && linkedSearchTemplate ? "dedicated"
+  const adapterStatus = adapterId && status === "verified" && linkedSearch ? "dedicated"
     : status === "verified" && record.searchTemplate ? "common"
       : status === "no_official_store" ? "unavailable"
         : "pending";

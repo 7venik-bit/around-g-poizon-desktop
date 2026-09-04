@@ -18,6 +18,11 @@ export const VERIFIED_OFFICIAL_BRANDS = Object.freeze([
   { name: "MLB", aliases: ["mlb", "엠엘비"], domain: "mlb-korea.com", homepageUrl: "https://www.mlb-korea.com/?gf=A", searchTemplate: "https://www.mlb-korea.com/search?searchText={query}&gf=A", interactiveSearch: true },
   { name: "코오롱스포츠", aliases: ["kolon sport", "kolonsport", "코오롱스포츠", "코오롱"], domain: "kolonmall.com", homepageUrl: "https://www.kolonmall.com/KOLONSPORT", searchTemplate: "https://www.kolonmall.com/Search?keyword={query}" },
   { name: "온", aliases: ["on", "on running", "onrunning", "온", "온러닝"], domain: "on.com", homepageUrl: "https://www.on.com/ko-kr/", searchTemplate: "https://www.on.com/ko-kr/search?q={query}" },
+  { name: "Keen", aliases: ["keen", "킨"], domain: "keenfootwear.kr", homepageUrl: "https://www.keenfootwear.kr/", searchTemplate: "https://www.keenfootwear.kr/goods/goods_search.php?keyword={query}" },
+  { name: "New Era", aliases: ["new era", "newera", "뉴에라"], domain: "neweracapkorea.com", homepageUrl: "https://www.neweracapkorea.com/", searchTemplate: "https://www.neweracapkorea.com/shop/shopbrand.html?search=&prize1={query}" },
+  { name: "Salomon", aliases: ["salomon", "살로몬"], domain: "salomon.co.kr", homepageUrl: "https://salomon.co.kr/", searchTemplate: "https://salomon.co.kr/search?q={query}" },
+  { name: "Dickies", aliases: ["dickies", "디키즈"], domain: "dickieskr.com", homepageUrl: "https://dickieskr.com/online-store.html", searchTemplate: "", interactiveSearch: true },
+  { name: "Discovery Expedition", aliases: ["discovery expedition", "discoveryexpedition", "디스커버리 익스페디션", "디스커버리"], domain: "discovery-expedition.com", homepageUrl: "https://www.discovery-expedition.com/", searchTemplate: "https://www.discovery-expedition.com/display/search?searchText={query}" },
 ]);
 
 const BLOCKED_CANDIDATE_HOSTS = [
