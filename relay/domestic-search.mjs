@@ -1047,6 +1047,19 @@ export async function queryDomesticProducts({
     const searchUrl = searchUrlFor(preferredQuery);
     const interactiveOfficialSearch = source.officialBrand
       && officialBrandUsesInternalSearch(brand || title || normalizedQuery, officialBrandRecord);
+    // Actual official-mall collection must start on the brand's own domain.
+    // `searchUrl` remains the operator-facing Naver fallback, but feeding that
+    // URL into searchAttempts silently turned every dedicated adapter back into
+    // a Naver Fashion Town search.
+    const officialAttemptUrlFor = (candidate) => {
+      if (!source.officialBrand) return "";
+      if (interactiveOfficialSearch) return String(source.homepageUrl || "");
+      return officialBrandProductSearchUrl(
+        brand || title || normalizedQuery,
+        candidate,
+        officialBrandRecord,
+      ) || String(source.homepageUrl || "");
+    };
     const officialProductUrl = source.officialBrand && !interactiveOfficialSearch
       ? officialBrandProductSearchUrl(brand || title || normalizedQuery, preferredQuery, officialBrandRecord)
       : "";
@@ -1079,7 +1092,7 @@ export async function queryDomesticProducts({
             ? internalPortalSearchQuery(brand || title, preferredQuery) : "",
         searchAttempts: queryCandidates.map((candidate) => ({
           query: candidate,
-          url: searchUrlFor(candidate),
+          url: source.officialBrand ? officialAttemptUrlFor(candidate) : searchUrlFor(candidate),
         })),
         count,
         products: [],

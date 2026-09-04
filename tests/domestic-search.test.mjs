@@ -267,6 +267,7 @@ test("MLB 공식몰은 홈페이지 돋보기 뒤 상품코드만 검색창에 �
   assert.equal(official.officialProductUrl, "");
   assert.equal(official.interactiveSearch, true);
   assert.equal(official.searchQuery, "3ASXCA12N-50WHS");
+  assert.equal(official.searchAttempts[0]?.url, "https://www.mlb-korea.com/?gf=A");
 });
 
 test("직접 검색 URL이 있는 브랜드 공식몰은 품번 링크를 사용한다", async () => {
@@ -282,6 +283,8 @@ test("직접 검색 URL이 있는 브랜드 공식몰은 품번 링크를 사용
   const official = result.sources.find((source) => source.store === "브랜드 공식몰");
   assert.equal(official.homepageUrl, "https://dk-on.com/DESCENTE");
   assert.match(official.officialProductUrl, /dk-on\.com\/DESCENTE\/search\?keyword=SR123UTS15/);
+  assert.match(official.searchAttempts[0]?.url, /dk-on\.com\/DESCENTE\/search\?keyword=SR123UTS15/);
+  assert.doesNotMatch(official.searchAttempts[0]?.url, /naver\.com/);
   assert.equal(official.interactiveSearch, false);
   assert.equal(official.searchQuery, "");
 });
@@ -1035,6 +1038,7 @@ test("official-store direct search URL is preserved instead of replaying the mag
   assert.equal(official.homepageUrl, "https://www.adidas.co.kr/");
   assert.match(official.officialSearchUrl, /adidas\.co\.kr\/search\?q=IH0274/);
   assert.match(official.officialProductUrl, /adidas\.co\.kr\/search\?q=IH0274/);
+  assert.match(official.searchAttempts[0]?.url, /adidas\.co\.kr\/search\?q=IH0274/);
   assert.equal(official.interactiveSearch, false);
   assert.equal(official.searchQuery, "");
 });

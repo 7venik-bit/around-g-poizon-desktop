@@ -54,7 +54,6 @@ const ADAPTERS = Object.freeze([
     brands: ["데상트", "descente"],
     domains: ["dk-on.com"],
     searchTemplate: "https://dk-on.com/DESCENTE/search?keyword={query}",
-    directProductTemplates: ["https://dk-on.com/DESCENTE/product/{code}"],
   },
   {
     id: "mlb-korea",
