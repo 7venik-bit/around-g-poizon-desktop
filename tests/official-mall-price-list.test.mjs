@@ -38,5 +38,5 @@ test("official mall price row uses the product title without failure wording", a
   const sourcingSource = await readFile(new URL("../src/sourcing-view.js", import.meta.url), "utf8");
 
   assert.match(patchSource, /sourceStore === "브랜드 공식몰" \? candidateName : "검색 결과 링크"/);
-  assert.match(sourcingSource, /officialMallSource[\s\S]*\? source\?\.absenceConfirmed === true \? "상품 없음" : "검색 결과"/);
+  assert.match(sourcingSource, /source\?\.absenceConfirmed === true[\s\S]*\? "상품 없음"[\s\S]*: officialMallSource[\s\S]*\? "검색 결과"/);
 });

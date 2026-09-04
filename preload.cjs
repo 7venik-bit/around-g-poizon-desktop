@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   explorerMeta: () => ipcRenderer.invoke("explorer:meta"),
   syncBrands: () => ipcRenderer.invoke("explorer:sync-brands"),
   getOfficialDomainAudit: () => ipcRenderer.invoke("official-domain:audit-status"),
-  startOfficialDomainAudit: () => ipcRenderer.invoke("official-domain:audit-start"),
+  startOfficialDomainAudit: (options = {}) => ipcRenderer.invoke("official-domain:audit-start", options),
   stopOfficialDomainAudit: () => ipcRenderer.invoke("official-domain:audit-stop"),
   onOfficialDomainAuditProgress: (callback) => {
     const handler = (_event, payload) => callback(payload);

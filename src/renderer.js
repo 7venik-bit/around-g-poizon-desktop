@@ -2020,12 +2020,16 @@ function renderOfficialDomainAudit(audit = {}) {
   const adapterCommon = Number(audit.adapterCommon || 0);
   const adapterPending = Number(audit.adapterPending || 0);
   const percent = total ? Math.min(100, Math.round((inspected / total) * 100)) : 0;
+  const fullRunProcessed = Number(audit.processed || 0);
+  const fullRunTotal = Number(audit.runTotal || 0);
+  const fullRunProgress = audit.recheckAll && fullRunTotal
+    ? ` · 이번 전수검사 ${fullRunProcessed.toLocaleString("ko-KR")}/${fullRunTotal.toLocaleString("ko-KR")}` : "";
   const status = $("#official-domain-audit-status");
   const button = $("#official-domain-audit-toggle");
   if (!status || !button) return;
   const phaseLabel = {
     starting: "검색 준비 중",
-    naver_search: "네이버 검색 중",
+    naver_search: "공식 홈페이지 찾는 중",
     logo_compare: "브랜드 로고 확인 중",
     official_site: "공식 홈페이지 연결 확인 중",
     adapter_linkage: "공식몰 어댑터 연동 중",
@@ -2044,11 +2048,11 @@ function renderOfficialDomainAudit(audit = {}) {
   const attempt = Number(audit.attempt || 0);
   const current = audit.currentBrand ? ` · 현재 ${audit.currentBrand}${phaseLabel ? ` · ${phaseLabel}` : ""}${attempt === 2 ? " · 2차 확인" : ""}` : "";
   const notFoundExcel = audit.notFoundExcelPath
-    ? ` · 네이버 공식몰 미발견 Excel ${Number(audit.notFoundCount || 0).toLocaleString("ko-KR")}개 저장`
+    ? ` · 자체 공식몰 미발견 Excel ${Number(audit.notFoundCount || 0).toLocaleString("ko-KR")}개 저장`
     : audit.notFoundExportError ? " · 미발견 Excel 저장 실패" : "";
-  status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%) · 전용 연동 ${adapterDedicated.toLocaleString("ko-KR")} · 공통 연동 ${adapterCommon.toLocaleString("ko-KR")} · 연동 대기 ${adapterPending.toLocaleString("ko-KR")} · 공식몰·상품검색 확인 ${verified.toLocaleString("ko-KR")} · 공식몰 확인·상품검색 연결 불가 ${unsupported.toLocaleString("ko-KR")} · 공식몰 미발견·재확인 필요 ${pending.toLocaleString("ko-KR")}${current}${notFoundExcel}`;
+  status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%)${fullRunProgress} · 전용 연동 ${adapterDedicated.toLocaleString("ko-KR")} · 공통 연동 ${adapterCommon.toLocaleString("ko-KR")} · 연동 대기 ${adapterPending.toLocaleString("ko-KR")} · 공식몰·상품검색 확인 ${verified.toLocaleString("ko-KR")} · 공식몰 확인·상품검색 연결 불가 ${unsupported.toLocaleString("ko-KR")} · 공식몰 미발견·재확인 필요 ${pending.toLocaleString("ko-KR")}${current}${notFoundExcel}`;
   button.dataset.running = audit.running ? "true" : "false";
-  button.textContent = audit.running ? "검증 일시 정지" : (pending || adapterPending) ? "미연동 브랜드 연동·재검증" : inspected ? "검증 완료" : "전체 검증 시작";
+  button.textContent = audit.running ? "검증 일시 정지" : "전체 브랜드 공식몰 재검증·연동";
   button.classList.toggle("primary", !audit.running);
   explorerMeta.officialDomainAudit = audit;
   explorerMeta.officialDomainSummary = {
@@ -3069,7 +3073,7 @@ $("#official-domain-audit-toggle")?.addEventListener("click", async () => {
   if (button.dataset.running === "true") {
     await window.aroundG.stopOfficialDomainAudit();
   } else {
-    const result = await window.aroundG.startOfficialDomainAudit();
+    const result = await window.aroundG.startOfficialDomainAudit({ recheckAll: true });
     if (result?.audit) renderOfficialDomainAudit(result.audit);
   }
   button.disabled = false;

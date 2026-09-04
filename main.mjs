@@ -58,8 +58,6 @@ import {
   officialDomainRegistrySummary,
   officialDomainAuditQueue,
   rankOfficialDomainCandidates,
-  rankNaverOfficialStoreCandidates,
-  naverOfficialStoreRecord,
   noOfficialStoreRecord,
 } from "./services/official-domain-registry.mjs";
 import {
@@ -3584,6 +3582,50 @@ async function compareOfficialBrandLogosWithinLimit(sourceLogoUrl, candidateLogo
 
 async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
   const brand = record.brandKo || record.brandName;
+  const existingHomepage = String(record.homepageUrl || "");
+  const existingHost = (() => {
+    try { return new URL(existingHomepage).hostname.toLowerCase().replace(/^www\./, ""); }
+    catch { return ""; }
+  })();
+  if (existingHomepage && existingHost !== "brand.naver.com"
+    && [OFFICIAL_DOMAIN_STATUS.VERIFIED, OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED].includes(record.status)) {
+    try {
+      onPhase("official_site");
+      const page = await loadAuditPage(auditWindow, existingHomepage);
+      if (!page.blocked) {
+        const logoComparison = await compareOfficialBrandLogosWithinLimit(record.brandLogoUrl, page.logoUrls || []);
+        const rechecked = auditedOfficialDomainRecord(record, {
+            candidateUrl: existingHomepage,
+            finalUrl: page.finalUrl,
+            pageTitle: page.pageTitle,
+            pageText: page.text,
+            searchTemplate: record.searchTemplate || page.searchTemplate,
+            logoCompared: logoComparison.compared,
+            logoSimilarity: logoComparison.similarity,
+            verifiedAlias: brand,
+          });
+        return {
+          record: rechecked.status === OFFICIAL_DOMAIN_STATUS.PENDING ? {
+            ...record,
+            verificationAttempts: rechecked.verificationAttempts,
+            lastCheckedAt: rechecked.lastCheckedAt,
+            lastVerificationError: rechecked.lastVerificationError || "OFFICIAL_RECHECK_EVIDENCE_MISSING",
+          } : rechecked,
+          blocked: false,
+        };
+      }
+    } catch {
+      return {
+        record: {
+          ...record,
+          verificationAttempts: Number(record.verificationAttempts || 0) + 1,
+          lastCheckedAt: new Date().toISOString(),
+          lastVerificationError: "OFFICIAL_RECHECK_LOAD_FAILED",
+        },
+        blocked: false,
+      };
+    }
+  }
   let discovery;
   try {
     onPhase("naver_search");
@@ -3626,15 +3668,8 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
       // 다음 후보 도메인을 확인한다.
     }
   }
-  // A Korean brand homepage always wins. Only after every homepage candidate
-  // fails do we accept an exact brand.naver.com official brand store.
-  const naverStores = rankNaverOfficialStoreCandidates(discovery.candidates || [], brand);
-  if (naverStores.length) {
-    onPhase("official_site");
-    return { record: naverOfficialStoreRecord(record, naverStores[0]), blocked: false };
-  }
-  // Both approved domestic routes were checked. Do not leave the brand in an
-  // endless pending state or connect an overseas/marketplace result.
+  // Only an independent brand-owned domain belongs in the official-mall row.
+  // Naver Brand Store remains a separate domestic source.
   return { record: noOfficialStoreRecord(record), blocked: false };
 }
 
@@ -3646,7 +3681,7 @@ async function persistOfficialDomainAudit(registry, audit) {
   });
 }
 
-async function runOfficialDomainAudit() {
+async function runOfficialDomainAudit({ recheckAll = false } = {}) {
   if (officialDomainAuditRunning) return;
   clearTimeout(officialDomainAuditResumeTimer);
   officialDomainAuditResumeTimer = null;
@@ -3654,21 +3689,36 @@ async function runOfficialDomainAudit() {
   officialDomainAuditStopRequested = false;
   const brands = store.snapshot().settings.brandCatalog || explorerMetadata().brands;
   let registry = await ensureOfficialDomainRegistry(brands);
+  const previousAudit = store.snapshot().settings.officialDomainAudit || {};
+  const continuingFullRecheck = recheckAll && previousAudit.recheckAll === true
+    && ["running", "paused", "blocked"].includes(String(previousAudit.state || ""))
+    && Boolean(previousAudit.startedAt);
+  const startedAt = continuingFullRecheck ? String(previousAudit.startedAt) : new Date().toISOString();
+  const startedAtMs = Date.parse(startedAt) || Date.now();
   let processed = 0;
   let blocked = false;
   let lastError = "";
   officialDomainAuditWindow = createOfficialDomainAuditWindow();
   try {
-    await persistOfficialDomainAudit(registry, { state: "running", currentBrand: "", processed: 0, blocked: false, lastError: "" });
-    const auditQueue = officialDomainAuditQueue(registry);
+    const auditQueue = recheckAll
+      ? registry.map((record, index) => ({ record, index }))
+        .filter(({ record }) => Date.parse(record.lastCheckedAt || 0) < startedAtMs)
+        .map(({ index }) => index)
+      : officialDomainAuditQueue(registry);
+    const runTotal = auditQueue.length;
+    await persistOfficialDomainAudit(registry, {
+      state: "running", currentBrand: "", processed: 0, blocked: false, lastError: "",
+      recheckAll, startedAt, runTotal,
+    });
     const deferredIndices = [];
     const processAuditIndex = async (index, attempt) => {
       if (officialDomainAuditStopRequested) return null;
       const record = registry[index];
-      if (record.status !== OFFICIAL_DOMAIN_STATUS.PENDING) return;
+      if (!recheckAll && record.status !== OFFICIAL_DOMAIN_STATUS.PENDING) return;
       const currentBrand = record.brandKo || record.brandName;
       const progress = (phase) => sendOfficialDomainAuditProgress(registry, {
         state: "running", currentBrand, processed, blocked: false, lastError: "", phase, attempt,
+        recheckAll, startedAt, runTotal,
       });
       progress(attempt === 1 ? "starting" : "retrying");
       const activeWindow = officialDomainAuditWindow;
@@ -3713,11 +3763,15 @@ async function runOfficialDomainAudit() {
       blocked = result.blocked;
       lastError = result.record.lastVerificationError || "";
       if (processed % 5 === 0 || blocked) {
-        await persistOfficialDomainAudit(registry, { state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError, phase: blocked ? "security_wait" : "saved", attempt });
+        await persistOfficialDomainAudit(registry, {
+          state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError,
+          phase: blocked ? "security_wait" : "saved", attempt, recheckAll, startedAt, runTotal,
+        });
       }
       sendOfficialDomainAuditProgress(registry, {
         state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError,
         phase: blocked ? "security_wait" : "saved", attempt,
+        recheckAll, startedAt, runTotal,
         updatedBrand: {
           brandId: Number(result.record.brandId),
           status: result.record.status,
@@ -3763,6 +3817,7 @@ async function runOfficialDomainAudit() {
     }
     const finalAudit = {
       state, currentBrand: "", processed, blocked, lastError, resumeAt,
+      recheckAll, startedAt, runTotal,
       notFoundExcelPath: notFoundExcel.path,
       notFoundCount: notFoundExcel.count,
       notFoundExportError: notFoundExcel.error,
@@ -10389,10 +10444,10 @@ app.whenReady().then(async () => {
     const registry = await ensureOfficialDomainRegistry(brands);
     return officialDomainAuditSnapshot(registry);
   });
-  ipcMain.handle("official-domain:audit-start", async () => {
+  ipcMain.handle("official-domain:audit-start", async (_event, options = {}) => {
     clearTimeout(officialDomainAuditResumeTimer);
     officialDomainAuditResumeTimer = null;
-    if (!officialDomainAuditRunning) void runOfficialDomainAudit();
+    if (!officialDomainAuditRunning) void runOfficialDomainAudit({ recheckAll: options?.recheckAll === true });
     const settings = store.snapshot().settings;
     const registry = await ensureOfficialDomainRegistry(settings.brandCatalog || explorerMetadata().brands);
     return { ok: true, audit: officialDomainAuditSnapshot(registry, { running: true, state: "running" }) };

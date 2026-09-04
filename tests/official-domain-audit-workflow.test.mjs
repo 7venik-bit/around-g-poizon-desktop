@@ -9,13 +9,17 @@ test("full verification remains stopped after startup until the user continues i
     readFile(new URL("../main.mjs", import.meta.url), "utf8"),
   ]);
   assert.match(rendererSource, /if \(explorerMeta\.needsBrandSync\) await syncFullBrandCatalog/);
-  assert.match(rendererSource, /네이버 검색 중/);
+  assert.match(rendererSource, /공식 홈페이지 찾는 중/);
   assert.match(rendererSource, /공식 홈페이지 연결 확인 중/);
   assert.match(rendererSource, /2차 확인/);
   const startup = rendererSource.slice(rendererSource.lastIndexOf("(async () => {"));
   assert.doesNotMatch(startup, /startOfficialDomainAudit/);
   assert.match(rendererSource, /official-domain-audit-toggle/);
-  assert.match(rendererSource, /await window\.aroundG\.startOfficialDomainAudit/);
+  assert.match(rendererSource, /await window\.aroundG\.startOfficialDomainAudit\(\{ recheckAll: true \}\)/);
+  assert.match(mainSource, /const auditQueue = recheckAll[\s\S]*registry\.map\(\(record, index\)[\s\S]*: officialDomainAuditQueue\(registry\)/);
+  assert.match(mainSource, /continuingFullRecheck/);
+  assert.match(mainSource, /Date\.parse\(record\.lastCheckedAt \|\| 0\) < startedAtMs/);
+  assert.doesNotMatch(mainSource, /rankNaverOfficialStoreCandidates/);
   assert.match(rendererSource, /\$\("#brand-sync"\)\.addEventListener\("click", \(\) => syncFullBrandCatalog\(\)\)/);
   assert.doesNotMatch(rendererSource, /startVerification/);
   assert.match(rendererSource, /async function syncFullBrandCatalog\(\{ automatic = false \} = \{\}\)/);
