@@ -59,8 +59,11 @@ for (const forbidden of [
 if (!css.includes(".domestic-loading-otter.otter-single-tail-sprite")) {
   throw new Error("single-tail sprite layout rule is missing");
 }
-if (!/\.domestic-loading-otter\.otter-single-tail-sprite\s*\{[\s\S]*?background:\s*transparent\s*!important/.test(css)) {
+if (!/\.domestic-loading-otter\.otter-single-tail-sprite\s*\{[\s\S]*?background-color:\s*transparent\s*!important/.test(css)) {
   throw new Error("otter image stage must remain transparent");
+}
+if (/\.domestic-loading-otter\.otter-single-tail-sprite\s*\{[^}]*background:\s*transparent\s*!important/.test(css)) {
+  throw new Error("important background shorthand freezes the sprite background-position");
 }
 if (!/background-size:\s*500% 100%\s*!important/.test(css) || !/@keyframes otter-single-tail-frames/.test(css)) {
   throw new Error("five-frame single-tail sprite animation is missing");
