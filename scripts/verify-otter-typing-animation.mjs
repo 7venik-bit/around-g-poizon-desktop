@@ -42,8 +42,6 @@ const loader = renderer.slice(renderStart, renderEnd);
 for (const token of [
   'class="otter-approved-stage"',
   'class="domestic-loading-otter otter-single-tail-sprite"',
-  'class="domestic-loading-otter otter-multiframe-static"',
-  'src="./assets/otter-typing-tail-sway-static.webp"',
 ]) {
   if (!loader.includes(token)) throw new Error(`missing multi-frame otter renderer token: ${token}`);
 }
@@ -61,7 +59,7 @@ for (const forbidden of [
 if (!css.includes(".domestic-loading-otter.otter-single-tail-sprite")) {
   throw new Error("single-tail sprite layout rule is missing");
 }
-if (!/\.domestic-loading-otter\.otter-single-tail-sprite,[\s\S]*?background:\s*transparent\s*!important/.test(css)) {
+if (!/\.domestic-loading-otter\.otter-single-tail-sprite\s*\{[\s\S]*?background:\s*transparent\s*!important/.test(css)) {
   throw new Error("otter image stage must remain transparent");
 }
 if (!/background-size:\s*500% 100%\s*!important/.test(css) || !/@keyframes otter-single-tail-frames/.test(css)) {
@@ -70,8 +68,8 @@ if (!/background-size:\s*500% 100%\s*!important/.test(css) || !/@keyframes otter
 if (/approved-otter-paw-tap|clip-path:\s*ellipse|otter-typing-paw-layer/.test(css)) {
   throw new Error("legacy cropped-paw animation CSS is still present");
 }
-if (!/@media \(prefers-reduced-motion: reduce\)[\s\S]*otter-single-tail-sprite[\s\S]*display:\s*none\s*!important[\s\S]*otter-multiframe-static[\s\S]*display:\s*block\s*!important/.test(css)) {
-  throw new Error("reduced-motion static mascot fallback is missing");
+if (css.includes("prefers-reduced-motion") || loader.includes("otter-multiframe-static")) {
+  throw new Error("loading mascot must remain animated regardless of the Windows motion preference");
 }
 if (packageJson.includes("patch-otter-typing-animation.mjs")) {
   throw new Error("postinstall still mutates the otter renderer");

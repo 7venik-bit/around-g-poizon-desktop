@@ -946,7 +946,6 @@ function renderDomesticLoading(startedAt = Date.now()) {
   return `<div class="domestic-search-loading" role="status" aria-live="polite">
     <span class="otter-approved-stage" aria-hidden="true">
       <span class="domestic-loading-otter otter-single-tail-sprite"></span>
-      <img class="domestic-loading-otter otter-multiframe-static" src="./assets/otter-typing-tail-sway-static.webp" alt="" draggable="false">
     </span>
     <span class="domestic-loading-copy"><strong>상품을 찾고 있습니다<span class="domestic-loading-dots">…</span></strong>
       <small>국내 판매처 검색 중 · <b class="domestic-search-elapsed" data-search-started-at="${safeStartedAt}">0초</b></small>

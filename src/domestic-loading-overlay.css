@@ -16,8 +16,7 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   transform: none;
 }
 
-.domestic-loading-otter.otter-single-tail-sprite,
-.domestic-loading-otter.otter-multiframe-static {
+.domestic-loading-otter.otter-single-tail-sprite {
   position: static !important;
   display: block !important;
   width: 100% !important;
@@ -49,10 +48,6 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   40%, 59.99% { background-position: 50% 0; }
   60%, 76.66% { background-position: 75% 0; }
   76.67%, 100% { background-position: 100% 0; }
-}
-
-.domestic-loading-otter.otter-multiframe-static {
-  display: none !important;
 }
 
 .domestic-search-overlay {
@@ -285,15 +280,5 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   }
   .domestic-search-overlay .otter-approved-stage {
     width: 245px !important;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .domestic-loading-otter.otter-single-tail-sprite {
-    display: none !important;
-  }
-
-  .domestic-loading-otter.otter-multiframe-static {
-    display: block !important;
   }
 }
