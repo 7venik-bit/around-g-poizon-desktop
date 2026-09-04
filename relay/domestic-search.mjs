@@ -5,6 +5,10 @@ import {
   officialSearchUrlFromRecord,
   verifiedOfficialBrand,
 } from "../services/official-domain-registry.mjs";
+import {
+  officialMallAdapterId,
+  officialMallDirectProductUrls,
+} from "../services/official-mall-adapters.mjs";
 import { brandSearchQueries } from "../services/brand-search-profile.mjs";
 
 const MAX_QUERY_LENGTH = 120;
@@ -1002,6 +1006,16 @@ export async function queryDomesticProducts({
         && Boolean(String(officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl || "")),
       officialStatus,
       homepageUrl: String(officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl || ""),
+      adapterId: officialMallAdapterId({
+        brand: brand || title || normalizedQuery,
+        domain: officialBrandRecord?.domain || knownOfficial?.domain,
+        homepageUrl: officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl,
+      }),
+      directProductUrls: officialMallDirectProductUrls({
+        brand: brand || title || normalizedQuery,
+        domain: officialBrandRecord?.domain || knownOfficial?.domain,
+        homepageUrl: officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl,
+      }, exactProductCode),
     },
     // One overview request already includes official malls, department stores and outlets.
     { store: "네이버 패션타운", linkOnly: true, fashionTown: "overview", renderCount: true },
@@ -1053,6 +1067,8 @@ export async function queryDomesticProducts({
         renderCount: source.renderCount,
         officialStatus: source.officialStatus,
         homepageUrl: source.homepageUrl || "",
+        adapterId: source.adapterId || "",
+        directProductUrls: source.directProductUrls || [],
         searchUrl,
         officialSearchUrl: source.officialBrand ? officialProductUrl : "",
         officialProductUrl,
@@ -1095,13 +1111,15 @@ export async function queryDomesticProducts({
     // Companies are shown only after an exact-model product is verified.
     // A registry entry alone must never look like a matching sourcing result.
     parallelImportCompanies: [],
-    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, searchUrl, officialSearchUrl, officialProductUrl, interactiveSearch, searchQuery, searchAttempts, count, products }, priority) => ({
+    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, adapterId, directProductUrls, searchUrl, officialSearchUrl, officialProductUrl, interactiveSearch, searchQuery, searchAttempts, count, products }, priority) => ({
       store,
       ok,
       linkOnly,
       renderCount: Boolean(renderCount),
       officialStatus: officialStatus || "",
       homepageUrl: homepageUrl || "",
+      adapterId: adapterId || "",
+      directProductUrls: Array.isArray(directProductUrls) ? directProductUrls : [],
       priority: priority + 1,
       count: Number.isFinite(count) ? count : products.length,
       searchUrl,

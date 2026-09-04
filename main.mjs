@@ -66,6 +66,10 @@ import {
   naverOfficialStoreNotFoundRows,
   naverOfficialStoreNotFoundWorkbookData,
 } from "./services/official-domain-not-found.mjs";
+import {
+  officialMallAdapterRecord,
+  officialMallAdapterSummary,
+} from "./services/official-mall-adapters.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer } from "./services/poizon.mjs";
 import {
   brandSearchProfileKey,
@@ -2363,7 +2367,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     && !String(source.officialProductUrl || "")
     && /^https:\/\//i.test(String(source.homepageUrl || ""));
   const interactiveSiteSearch = interactiveOfficialSearch || source.interactiveSearch === true;
-  const url = String(searchAttempt?.url || source.officialProductUrl || (interactiveOfficialSearch ? source.homepageUrl : source.searchUrl) || "");
+  const officialDirectUrl = source.store === "브랜드 공식몰"
+    ? String(source.directProductUrls?.[0] || "") : "";
+  const url = String(officialDirectUrl || searchAttempt?.url || source.officialProductUrl || (interactiveOfficialSearch ? source.homepageUrl : source.searchUrl) || "");
   if (!/^https:\/\//i.test(url)) return { count: Number(source.count || 0), products: [] };
   const naverPortalSource = /^네이버\s/.test(String(source.store || ""));
   // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.
@@ -2372,6 +2378,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   let naverChannelCounts = null;
   let searchWindow;
   let musinsaSettledEmpty = false;
+  let officialDirectDetail = null;
   try {
     const reuseNaverSearch = Boolean(naverPortalSource
       && sharedNaverSession?.window
@@ -2458,6 +2465,61 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           }
         }
         if (!documentReady && !recoveredMusinsaResult) throw error;
+      }
+      // A brand adapter may know a stable product-detail route. Verify that
+      // route against the exact POIZON article before falling back to the
+      // mall's fragile, framework-controlled search-result grid.
+      if (officialDirectUrl) {
+        await wait(1_500);
+        officialDirectDetail = await searchWindow.webContents.executeJavaScript(`(() => {
+          const expected = ${JSON.stringify(sanitizeDomesticProductCode(articleNumber))};
+          const compact = (value) => String(value || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+          const pageText = String(document.body?.innerText || "");
+          const currentUrl = String(location.href || "");
+          if (!expected || (!compact(currentUrl).includes(compact(expected))
+            && !compact(pageText).includes(compact(expected)))) return null;
+          const titleElement = document.querySelector('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]');
+          const productTitle = String(titleElement?.textContent || document.title || "").replace(/\\s+/g, " ").trim();
+          const priceNodes = [...document.querySelectorAll('[itemprop="price"],[class*="price" i],strong,em,b,span')];
+          const prices = priceNodes.map((element) => {
+            const raw = String(element.getAttribute?.("content") || element.textContent || "").trim();
+            const priceSemantic = element.getAttribute?.("itemprop") === "price"
+              || /price/i.test(String(element.className?.baseVal || element.className || ""));
+            const match = priceSemantic
+              ? raw.match(/(?:[₩￦]\\s*)?([1-9][\\d,]{2,})\\s*원?/)
+              : raw.match(/(?:[₩￦]\\s*([1-9][\\d,]{2,})|([1-9][\\d,]{2,})\\s*원)/);
+            if (!match) return null;
+            const amount = Number(String(match[1] || match[2]).replace(/,/g, ""));
+            if (!Number.isFinite(amount) || amount < 1_000) return null;
+            const style = getComputedStyle(element);
+            const struck = /line-through/.test(style.textDecorationLine || style.textDecoration || "")
+              || Boolean(element.closest("del,s,strike"));
+            return { amount, value: amount.toLocaleString("ko-KR") + "원", struck };
+          }).filter(Boolean).filter((item) => !item.struck).sort((a, b) => a.amount - b.amount);
+          const image = [...document.querySelectorAll('img')].find((element) => {
+            const src = String(element.currentSrc || element.src || "");
+            const label = [src, element.alt, element.className].join(" ");
+            const rect = element.getBoundingClientRect();
+            return src && rect.width >= 120 && rect.height >= 120
+              && !/logo|icon|sprite|badge|banner|placeholder|loading/i.test(label);
+          });
+          return {
+            productUrl: currentUrl,
+            title: productTitle,
+            text: [productTitle, expected, prices[0]?.value || ""].filter(Boolean).join(" "),
+            markup: String(titleElement?.outerHTML || ""),
+            imageUrl: String(image?.currentSrc || image?.src || ""),
+            imageLinkedToProduct: Boolean(image),
+            price: prices[0]?.value || "",
+            originalPrice: "",
+          };
+        })()`, true).catch(() => null);
+        if (!officialDirectDetail) {
+          const fallbackUrl = String(searchAttempt?.url || source.officialProductUrl || source.searchUrl || "");
+          if (/^https:\/\//i.test(fallbackUrl) && fallbackUrl !== officialDirectUrl) {
+            await searchWindow.loadURL(fallbackUrl).catch(() => {});
+          }
+        }
       }
       if (interactiveOfficialSearch) {
         const login = await ensureOfficialAccountLogin(searchWindow, String(source.homepageUrl || url));
@@ -2624,7 +2686,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         if (attempt === 14 && state?.ready) musinsaSettledEmpty = true;
       }
     }
-    if (naverPortalSource || ssgChannelSource || musinsaSource) {
+    if (officialDirectDetail) {
+      await wait(750);
+    } else if (naverPortalSource || ssgChannelSource || musinsaSource) {
       await wait(1_500);
     } else {
       for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -2640,7 +2704,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     // short stable interval as completion. Keep every successful result page
     // alive for the full 25-second observation window before final capture.
     // This only observes DOM state and never moves the user's physical mouse.
-    for (let attempt = 0; attempt < 25; attempt += 1) {
+    for (let attempt = 0; attempt < (officialDirectDetail ? 1 : 25); attempt += 1) {
       await wait(1_000);
       if (!searchWindow || searchWindow.isDestroyed()) break;
       const interruption = await searchWindow.webContents.executeJavaScript(`(() => {
@@ -2814,6 +2878,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     let parsedContent;
     try {
       parsedContent = JSON.parse(content);
+      if (officialDirectDetail) {
+        parsedContent.productCards = [officialDirectDetail];
+        parsedContent.selectedChannelEmpty = false;
+        content = JSON.stringify(parsedContent);
+      }
       if (parsedContent?.pageBlocked && !parsedContent?.productCards?.length) {
         if (securityRetry >= 1 || !/naver\.com/i.test(String(searchWindow.webContents.getURL() || url))) {
           return renderedSearchFailure("security_verification_required", searchWindow, {
@@ -3321,7 +3390,7 @@ function brandsWithOfficialDomainStatus(brands, registry) {
 async function ensureOfficialDomainRegistry(brands) {
   const settings = store.snapshot().settings;
   const current = Array.isArray(settings.officialBrandRegistry) ? settings.officialBrandRegistry : [];
-  const registry = createOfficialDomainRegistry(brands, current);
+  const registry = createOfficialDomainRegistry(brands, current).map(officialMallAdapterRecord);
   const changed = registry.length !== current.length || registry.some((record, index) =>
     JSON.stringify(record) !== JSON.stringify(current[index]));
   if (changed) {
@@ -3335,7 +3404,7 @@ async function ensureOfficialDomainRegistry(brands) {
 
 function safeOfficialDomainRegistry(brands) {
   const saved = store.snapshot().settings.officialBrandRegistry;
-  const registry = createOfficialDomainRegistry(brands, Array.isArray(saved) ? saved : []);
+  const registry = createOfficialDomainRegistry(brands, Array.isArray(saved) ? saved : []).map(officialMallAdapterRecord);
   // Persisting thousands of domain records is maintenance work; it must never
   // block the brand picker from rendering.
   void ensureOfficialDomainRegistry(brands).catch(() => {});
@@ -3362,6 +3431,7 @@ function officialDomainAuditSnapshot(registry, extra = {}) {
     nextRunAt: String(saved.nextRunAt || ""),
     scheduleLabel: "매일 새벽 1시~6시",
     ...officialDomainRegistrySummary(registry),
+    ...officialMallAdapterSummary(registry),
     ...extra,
   };
 }
@@ -3632,6 +3702,8 @@ async function runOfficialDomainAudit() {
           officialDomainAuditWindow = createOfficialDomainAuditWindow();
         }
       }
+      progress("adapter_linkage");
+      result.record = officialMallAdapterRecord(result.record);
       registry[index] = result.record;
       processed += 1;
       blocked = result.blocked;
@@ -3646,6 +3718,8 @@ async function runOfficialDomainAudit() {
           brandId: Number(result.record.brandId),
           status: result.record.status,
           homepageUrl: String(result.record.homepageUrl || ""),
+          adapterId: String(result.record.adapterId || ""),
+          adapterStatus: String(result.record.adapterStatus || "pending"),
         },
       });
       return result;

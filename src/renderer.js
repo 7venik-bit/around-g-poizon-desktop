@@ -2017,6 +2017,9 @@ function renderOfficialDomainAudit(audit = {}) {
   const unsupported = Number(audit.searchUnsupported || 0);
   const pending = Number(audit.pending || 0);
   const noOfficialStore = Number(audit.noOfficialStore || 0);
+  const adapterDedicated = Number(audit.adapterDedicated || 0);
+  const adapterCommon = Number(audit.adapterCommon || 0);
+  const adapterPending = Number(audit.adapterPending || 0);
   const percent = total ? Math.min(100, Math.round((inspected / total) * 100)) : 0;
   const status = $("#official-domain-audit-status");
   const button = $("#official-domain-audit-toggle");
@@ -2026,6 +2029,7 @@ function renderOfficialDomainAudit(audit = {}) {
     naver_search: "네이버 검색 중",
     logo_compare: "브랜드 로고 확인 중",
     official_site: "공식 홈페이지 연결 확인 중",
+    adapter_linkage: "공식몰 어댑터 연동 중",
     retrying: "재시도 중",
     saved: "검사 결과 저장 중",
     security_wait: "보안 확인 대기 중",
@@ -2043,9 +2047,9 @@ function renderOfficialDomainAudit(audit = {}) {
   const notFoundExcel = audit.notFoundExcelPath
     ? ` · 네이버 공식몰 미발견 Excel ${Number(audit.notFoundCount || 0).toLocaleString("ko-KR")}개 저장`
     : audit.notFoundExportError ? " · 미발견 Excel 저장 실패" : "";
-  status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%) · 공식몰·상품검색 확인 ${verified.toLocaleString("ko-KR")} · 공식몰 확인·상품검색 연결 불가 ${unsupported.toLocaleString("ko-KR")} · 공식몰 미발견·재확인 필요 ${pending.toLocaleString("ko-KR")}${current}${notFoundExcel}`;
+  status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%) · 전용 연동 ${adapterDedicated.toLocaleString("ko-KR")} · 공통 연동 ${adapterCommon.toLocaleString("ko-KR")} · 연동 대기 ${adapterPending.toLocaleString("ko-KR")} · 공식몰·상품검색 확인 ${verified.toLocaleString("ko-KR")} · 공식몰 확인·상품검색 연결 불가 ${unsupported.toLocaleString("ko-KR")} · 공식몰 미발견·재확인 필요 ${pending.toLocaleString("ko-KR")}${current}${notFoundExcel}`;
   button.dataset.running = audit.running ? "true" : "false";
-  button.textContent = audit.running ? "검증 일시 정지" : pending ? "미연동 브랜드 재점검" : inspected ? "검증 완료" : "전체 검증 시작";
+  button.textContent = audit.running ? "검증 일시 정지" : (pending || adapterPending) ? "미연동 브랜드 연동·재검증" : inspected ? "검증 완료" : "전체 검증 시작";
   button.classList.toggle("primary", !audit.running);
   explorerMeta.officialDomainAudit = audit;
   explorerMeta.officialDomainSummary = {
