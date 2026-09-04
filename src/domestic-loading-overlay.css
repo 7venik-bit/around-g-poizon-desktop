@@ -16,7 +16,7 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   transform: none;
 }
 
-.domestic-loading-otter.otter-multiframe-gif,
+.domestic-loading-otter.otter-single-tail-sprite,
 .domestic-loading-otter.otter-multiframe-static {
   position: static !important;
   display: block !important;
@@ -32,6 +32,23 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   user-select: none;
   -webkit-user-drag: none;
   pointer-events: none;
+}
+
+.domestic-loading-otter.otter-single-tail-sprite {
+  aspect-ratio: 500 / 344;
+  background-image: url("./assets/otter-typing-tail-sway-sprite.png") !important;
+  background-repeat: no-repeat !important;
+  background-size: 500% 100% !important;
+  background-position: 0 0;
+  animation: otter-single-tail-frames .6s linear infinite;
+}
+
+@keyframes otter-single-tail-frames {
+  0%, 23.32% { background-position: 0 0; }
+  23.33%, 39.99% { background-position: 25% 0; }
+  40%, 59.99% { background-position: 50% 0; }
+  60%, 76.66% { background-position: 75% 0; }
+  76.67%, 100% { background-position: 100% 0; }
 }
 
 .domestic-loading-otter.otter-multiframe-static {
@@ -272,7 +289,7 @@ body:has(> .domestic-search-overlay:not([hidden])) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .domestic-loading-otter.otter-multiframe-gif {
+  .domestic-loading-otter.otter-single-tail-sprite {
     display: none !important;
   }
 
