@@ -83,13 +83,15 @@ test("brand button shows down-complete whenever its data-center workbook was dow
   assert.match(completed, /rendererBrandsMatch/);
 });
 
-test("brand button shows an orange official badge only for linked official stores", () => {
+test("brand button distinguishes dedicated, common, and domain-only official linkage", () => {
   const cardsStart = renderer.indexOf("function renderBrandCards");
   const cardsEnd = renderer.indexOf("function renderCategoryButtons", cardsStart);
   const cards = renderer.slice(cardsStart, cardsEnd);
 
   assert.match(cards, /\["verified", "search_unsupported"\]\.includes/);
-  assert.match(cards, /class="brand-official-badge" aria-label="공식몰 연동 완료">공식</);
+  assert.match(cards, /officialAdapterStatus === "dedicated" \? "전용연동"/);
+  assert.match(cards, /officialAdapterStatus === "common" \? "공통연동"/);
+  assert.match(cards, /officialLinked \? "공식확인"/);
   assert.match(cards, /officialLinked \? " official-linked"/);
   assert.match(style, /\.brand-official-badge\{[\s\S]*?background:#f28c28/);
 });
@@ -112,6 +114,8 @@ test("official-domain progress updates the matching brand card immediately", () 
   assert.match(renderer, /audit\?\.updatedBrand/);
   assert.match(renderer, /updated\.officialDomainStatus = String\(audit\.updatedBrand\.status/);
   assert.match(renderer, /updated\.officialHomepageUrl = String\(audit\.updatedBrand\.homepageUrl/);
+  assert.match(renderer, /updated\.officialAdapterId = String\(audit\.updatedBrand\.adapterId/);
+  assert.match(renderer, /updated\.officialAdapterStatus = String\(audit\.updatedBrand\.adapterStatus/);
 });
 
 test("batch progress keeps only one brand row for each POIZON job number", () => {

@@ -6,6 +6,7 @@ import {
   officialMallAdapterRecord,
   officialMallAdapterSummary,
   officialMallDirectProductUrls,
+  officialMallSearchTemplate,
 } from "../services/official-mall-adapters.mjs";
 import { queryDomesticProducts } from "../relay/domestic-search.mjs";
 
@@ -15,6 +16,38 @@ test("Descente adapter builds a direct official product candidate", () => {
     officialMallDirectProductUrls({ brand: "데상트", domain: "dk-on.com" }, "SR123UPS11"),
     ["https://dk-on.com/DESCENTE/product/SR123UPS11"],
   );
+});
+
+test("first official-mall linkage batch registers twelve Korean adapters", () => {
+  const cases = [
+    ["아디다스", "adidas.co.kr", "adidas-kr"],
+    ["나이키", "nike.com", "nike-kr"],
+    ["뉴발란스", "nbkorea.com", "new-balance-kr"],
+    ["푸마", "kr.puma.com", "puma-kr"],
+    ["언더아머", "underarmour.co.kr", "under-armour-kr"],
+    ["아식스", "asics.com", "asics-kr"],
+    ["반스", "vans.co.kr", "vans-kr"],
+    ["크록스", "crocs.co.kr", "crocs-kr"],
+    ["데상트", "dk-on.com", "descente-dk-on"],
+    ["MLB", "mlb-korea.com", "mlb-korea"],
+    ["코오롱스포츠", "kolonmall.com", "kolon-sport"],
+    ["온러닝", "on.com", "on-running-kr"],
+  ];
+  for (const [brand, domain, adapterId] of cases) {
+    assert.equal(officialMallAdapterId({ brand, domain }), adapterId, brand);
+    assert.match(officialMallSearchTemplate({ brand, domain }), /\{query\}/, brand);
+  }
+});
+
+test("verified domain audit attaches a known search adapter even when the page hides its search form", () => {
+  const linked = officialMallAdapterRecord({
+    brandKo: "푸마", domain: "kr.puma.com", homepageUrl: "https://kr.puma.com/kr/ko/",
+    status: "search_unsupported", searchTemplate: "",
+  });
+  assert.equal(linked.status, "verified");
+  assert.equal(linked.adapterStatus, "dedicated");
+  assert.equal(linked.adapterId, "puma-kr");
+  assert.equal(linked.searchTemplate, "https://kr.puma.com/kr/ko/search?q={query}");
 });
 
 test("full verification classifies dedicated, common, and pending linkage", () => {

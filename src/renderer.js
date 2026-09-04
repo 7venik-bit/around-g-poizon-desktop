@@ -2103,11 +2103,15 @@ function renderBrandCards(filter = "") {
     const downloadGroup = completedOrder.has(Number(brand.id));
     const officialLinked = ["verified", "search_unsupported"].includes(String(brand.officialDomainStatus || ""));
     const officialMissing = String(brand.officialDomainStatus || "") === "no_official_store";
+    const officialAdapterStatus = String(brand.officialAdapterStatus || "pending");
+    const officialAdapterLabel = officialAdapterStatus === "dedicated" ? "전용연동"
+      : officialAdapterStatus === "common" ? "공통연동"
+        : officialLinked ? "공식확인" : "";
     const officialDomain = (() => {
       try { return new URL(String(brand.officialHomepageUrl || "")).hostname.replace(/^www\./, ""); } catch { return ""; }
     })();
     return `<button type="button" class="brand-card ${selected ? "selected" : ""}${downloadGroup ? " brand-pinned" : ""}${downloadComplete ? " download-complete" : ""}${officialLinked ? " official-linked" : ""}${officialMissing ? " official-missing" : ""}" data-brand-id="${brand.id}" aria-pressed="${selected}"${officialDomain ? ` title="공식몰: ${text(brand.officialHomepageUrl)}"` : ""}${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
-    ${officialLinked ? '<em class="brand-official-badge" aria-label="공식몰 연동 완료">공식</em>' : ""}
+    ${officialAdapterLabel ? `<em class="brand-official-badge ${officialAdapterStatus === "dedicated" ? "dedicated" : officialAdapterStatus === "common" ? "common" : "verified"}" aria-label="공식몰 ${text(officialAdapterLabel)}">${text(officialAdapterLabel)}</em>` : ""}
     ${officialMissing ? '<em class="brand-official-badge missing" aria-label="국내 공식몰 없음">공식몰 없음</em>' : ""}
     <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${brand.salesPriority ? `<small class="brand-sales-rank">판매 상위 ${Number(brand.salesRank).toLocaleString("ko-KR")}위</small>` : ""}${downloadComplete ? `<em class="brand-download-complete">다운완료</em><small class="brand-download-date">${text(latestDownloadTime)}${latestDownload?.jobId ? ` · 작업번호 ${text(latestDownload.jobId)}` : ""}</small><small class="brand-download-open" role="button" tabindex="0" data-open-brand-download="${encodeURIComponent(latestDownload.path || "")}">Excel 열기</small>` : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>${officialDomain ? `<small class="brand-official-domain" title="${text(officialDomain)}">${text(officialDomain)}</small>` : ""}
   </button>`;
@@ -4684,6 +4688,8 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
       if (updated) {
         updated.officialDomainStatus = String(audit.updatedBrand.status || "pending");
         updated.officialHomepageUrl = String(audit.updatedBrand.homepageUrl || "");
+        updated.officialAdapterId = String(audit.updatedBrand.adapterId || "");
+        updated.officialAdapterStatus = String(audit.updatedBrand.adapterStatus || "pending");
       }
     }
     renderOfficialDomainAudit(audit);

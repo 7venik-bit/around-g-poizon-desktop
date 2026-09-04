@@ -3371,6 +3371,8 @@ function brandsWithOfficialDomainStatus(brands, registry) {
   const compactRecord = (record) => record ? ({
     status: record.status,
     homepageUrl: String(record.homepageUrl || ""),
+    adapterId: String(record.adapterId || ""),
+    adapterStatus: String(record.adapterStatus || "pending"),
   }) : null;
   const recordById = new Map((Array.isArray(registry) ? registry : []).map((record) =>
     [Number(record.brandId), compactRecord(record)]));
@@ -3383,6 +3385,8 @@ function brandsWithOfficialDomainStatus(brands, registry) {
       ...brand,
       officialDomainStatus: official?.status || OFFICIAL_DOMAIN_STATUS.PENDING,
       officialHomepageUrl: official?.homepageUrl || "",
+      officialAdapterId: official?.adapterId || "",
+      officialAdapterStatus: official?.adapterStatus || "pending",
     };
   });
 }
