@@ -14,7 +14,7 @@ const stillDigest = createHash("sha256").update(still).digest("hex");
 if (gif.length !== 182_845 || gifDigest !== "f992c8c4dad36fcbd4b123a5e8bde59d0ba139585660c8c1f5e22f83543895ff") {
   throw new Error(`approved multi-frame GIF mismatch: ${gif.length} bytes, ${gifDigest}`);
 }
-if (sprite.length !== 119_700 || spriteDigest !== "ceff65ea01b35b6cb948f5cc69197c5e45c17aa6178328210fae00287f5702ba") {
+if (sprite.length !== 100_892 || spriteDigest !== "f27c38b0b42aecfda55f96b4405e18b387a4578a98b832c4b882b6db02813039") {
   throw new Error(`single-tail sprite mismatch: ${sprite.length} bytes, ${spriteDigest}`);
 }
 if (still.length !== 28_892 || stillDigest !== "96a7d4a664aab4c7e42c55410f5a955926430930540d43b6103224930660b4fc") {
@@ -78,4 +78,4 @@ if (packageJson.includes("patch-otter-typing-animation.mjs")) {
   throw new Error("postinstall still mutates the otter renderer");
 }
 
-console.log(`single-tail otter sprite verified with typing and tail sway (${spriteDigest})`);
+console.log(`artifact-free single-tail otter typing sprite verified (${spriteDigest})`);

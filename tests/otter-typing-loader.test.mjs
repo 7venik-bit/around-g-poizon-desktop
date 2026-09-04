@@ -23,7 +23,7 @@ test("domestic loader renders the approved single-tail otter sprite", () => {
   assert.doesNotMatch(loaderBlock, /otter-typing-paw-layer|otter-key-flash/);
 });
 
-test("typing and tail motion advance all five sprite frames without a cropped overlay", () => {
+test("typing motion advances all five artifact-free sprite frames without a cropped overlay", () => {
   const stageRule = css.match(/\.otter-approved-stage\s*\{([\s\S]*?)\}/)?.[1] || "";
   assert.doesNotMatch(stageRule, /animation\s*:/);
   assert.match(stageRule, /transform:\s*none/);

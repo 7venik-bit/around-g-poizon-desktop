@@ -1,4 +1,4 @@
-/* Domestic product search modal with a real multi-frame mascot GIF. */
+/* Domestic product search modal with an artifact-free multi-frame mascot sprite. */
 
 html:has(body > .domestic-search-overlay:not([hidden])),
 body:has(> .domestic-search-overlay:not([hidden])) {
