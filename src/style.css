@@ -522,6 +522,9 @@ body .workspace-title small{color:#7f96b8;font-size:9px;letter-spacing:.12em}
 .header-sync-progress span{display:block;overflow:hidden;color:#dceaff;font-size:10px;font-weight:700;line-height:1.3;text-align:center;text-overflow:ellipsis;white-space:nowrap}
 .header-sync-progress em{display:block;height:5px;margin-top:5px;border-radius:99px;background:#294264;overflow:hidden}
 .header-sync-progress i{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#2d7ff0,#62d6ae);transition:width .25s ease}
+.header-sync-progress.error{border-color:#e47272;background:#4b2029}
+.header-sync-progress.error i{background:linear-gradient(90deg,#ef5350,#ff9475)}
+.header-sync-progress.complete{border-color:#40ae83;background:#153e37}
 .app-version-state{color:#8fa5c4}.app-version-state strong{color:#6de0b2}
 .update-anchor{width:186px}
 .update-inline{border-color:#385174;color:#d8e6f7;background:#172c4b}

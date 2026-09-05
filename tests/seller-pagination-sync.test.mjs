@@ -8,6 +8,12 @@ const end = main.indexOf("async function lookupSellerTransactionPrice", start);
 assert.ok(start >= 0 && end > start);
 const capture = main.slice(start, end);
 
+test("판매자센터 로그인 확인 후 화면 동기화를 시작한다", () => {
+  assert.match(capture, /await ensureSellerLoginBeforeBrandSearch/);
+  assert.match(capture, /code: login\.code \|\| "SELLER_LOGIN_REQUIRED"/);
+  assert.match(capture, /code: "SELLER_PRODUCT_SEARCH_UNAVAILABLE"/);
+});
+
 test("판매자센터 동기화는 20개씩 하단 페이지를 실제로 순회한다", () => {
   assert.ok(capture.includes('/20\\\\s*건\\\\/페이지/'));
   assert.match(capture, /directPage \|\| next/);

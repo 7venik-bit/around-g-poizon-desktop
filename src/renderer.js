@@ -4476,6 +4476,7 @@ $("#import-button").addEventListener("click", async () => {
   downloadFileSyncActive = true;
   downloadFileSyncState = { brandName: "", brandIndex: 0, brandCount: 0 };
   if (syncProgress) {
+    syncProgress.classList.remove("error", "complete");
     syncProgress.hidden = false;
     syncProgress.querySelector("i").style.width = "1%";
     syncProgress.querySelector("span").textContent = "동기화 준비 중";
@@ -4493,6 +4494,7 @@ $("#import-button").addEventListener("click", async () => {
     if (!brands.length) throw new Error("동기화할 브랜드 Excel 파일이 없습니다.");
     let completed = 0;
     let matched = 0;
+    let attempted = 0;
     const failures = [];
     // Seller Center uses one authenticated search window. Keep this queue
     // sequential so a later brand cannot replace the table being captured.
@@ -4501,7 +4503,12 @@ $("#import-button").addEventListener("click", async () => {
       const brandName = brand.ko || brand.name || "브랜드";
       downloadFileSyncState = { brandName, brandIndex: brandPosition, brandCount: brands.length };
       if (status) status.textContent = `POIZON 화면·Excel 비교 ${completed + 1}/${brands.length} · ${brandName}`;
+      if (syncProgress) {
+        syncProgress.querySelector("span").textContent = `${brandPosition + 1}/${brands.length} · ${brandName} 준비 중`;
+        syncProgress.title = `${brandName} Excel 읽기 및 판매자센터 연결 준비 중`;
+      }
       try {
+        attempted += 1;
         const excelSales = await downloadedBrandSalesByArticle(brand);
         if (!excelSales.ok) throw new Error(excelSales.error || "EXCEL_READ_FAILED");
         const sellerResult = await window.aroundG.captureSellerBrandSales({
@@ -4537,14 +4544,28 @@ $("#import-button").addEventListener("click", async () => {
         matched += crossValidated.matchedExcelCount;
         renderDownloadedBrandFiles();
       } catch (error) {
-        failures.push(`${brandName}: ${error instanceof Error ? error.message : String(error)}`);
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push(`${brandName}: ${message}`);
+        if (syncProgress) {
+          syncProgress.classList.add("error");
+          syncProgress.querySelector("span").textContent = `${brandName} 실패 · ${message}`;
+          syncProgress.title = `${brandName} 동기화 실패 · ${message}`;
+        }
+        if (["SELLER_LOGIN_REQUIRED", "SELLER_LOGIN_PAGE_TIMEOUT", "SELLER_WINDOW_CLOSED", "SELLER_PRODUCT_SEARCH_UNAVAILABLE"].includes(error?.code)) break;
       }
     }
     if (status) {
       status.className = failures.length ? "status error" : "status success";
       status.textContent = `POIZON 화면·Excel 동기화 ${completed}/${brands.length}개 브랜드 완료 · 일치 ${matched.toLocaleString("ko-KR")}행${failures.length ? ` · 실패 ${failures.join(" / ")}` : ""}`;
     }
-    if (syncProgress) {
+    if (syncProgress && failures.length) {
+      const percent = Math.max(2, Math.min(99, Math.round((attempted / brands.length) * 100)));
+      syncProgress.classList.add("error");
+      syncProgress.querySelector("i").style.width = `${percent}%`;
+      syncProgress.querySelector("span").textContent = `동기화 실패 · ${completed}/${brands.length}개 · 오류 ${failures.length}개`;
+      syncProgress.title = failures.join(" / ");
+    } else if (syncProgress) {
+      syncProgress.classList.add("complete");
       syncProgress.querySelector("i").style.width = "100%";
       syncProgress.querySelector("span").textContent = `동기화 완료 · ${completed}/${brands.length}개 브랜드`;
     }
@@ -4553,7 +4574,11 @@ $("#import-button").addEventListener("click", async () => {
       status.className = "status error";
       status.textContent = `다운로드 파일 동기화 실패 · ${error instanceof Error ? error.message : String(error)}`;
     }
-    if (syncProgress) syncProgress.querySelector("span").textContent = "동기화 중단 · 오류 내용을 확인해 주세요";
+    if (syncProgress) {
+      syncProgress.classList.add("error");
+      syncProgress.querySelector("span").textContent = `동기화 중단 · ${error instanceof Error ? error.message : String(error)}`;
+      syncProgress.title = error instanceof Error ? error.message : String(error);
+    }
   } finally {
     downloadFileSyncActive = false;
     button.disabled = false;

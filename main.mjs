@@ -9266,8 +9266,34 @@ async function captureSellerBrandSales(input = {}) {
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     return { ok: false, message: "판매자센터 창을 열지 못했습니다." };
   }
+  mainWindow?.webContents.send("explorer:brand-progress", {
+    percent: 1,
+    count: 0,
+    pageNum: 0,
+    pageCount: 0,
+    phase: "seller-login",
+    brandName: input.brandKo || input.brandName || "브랜드",
+    message: "POIZON 판매자센터 로그인 상태 확인 중",
+  });
+  const login = await ensureSellerLoginBeforeBrandSearch(input.brandKo || input.brandName || "");
+  if (!login.ok) {
+    return {
+      ok: false,
+      code: login.code || "SELLER_LOGIN_REQUIRED",
+      message: "POIZON 판매자센터 로그인이 필요합니다. 열린 창에서 로그인 후 다시 동기화해 주세요.",
+    };
+  }
   if (!await enterSellerProductSearchViaMenu()) {
-    return { ok: false, message: "판매자센터 로그인을 확인해 주세요." };
+    if (sellerWindow && !sellerWindow.isDestroyed()) {
+      if (sellerWindow.isMinimized()) sellerWindow.restore();
+      sellerWindow.show();
+      sellerWindow.focus();
+    }
+    return {
+      ok: false,
+      code: "SELLER_PRODUCT_SEARCH_UNAVAILABLE",
+      message: "판매자센터 상품 검색 화면을 열지 못했습니다. 열린 화면을 확인한 뒤 다시 동기화해 주세요.",
+    };
   }
   const networkSellerProducts = [];
   const pendingBrandResponses = new Set();
