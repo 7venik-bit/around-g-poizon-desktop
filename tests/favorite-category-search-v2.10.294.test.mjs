@@ -52,9 +52,13 @@ test("상단 다운로드 파일 동기화는 판매자센터 화면과 Excel을
   assert.match(handler, /await downloadedBrandSalesByArticle\(brand\)/);
   assert.match(handler, /await window\.aroundG\.captureSellerBrandSales/);
   assert.match(handler, /mergeExcelProductsWithSellerScreen/);
+  assert.match(handler, /syncExcelWithSellerScreen/);
+  assert.match(handler, /원본 Excel 수정 \$\{updatedExcelRows\.toLocaleString/);
   assert.match(handler, /upsert\("poizonSyncs"/);
   assert.match(handler, /POIZON 화면·Excel 동기화/);
   assert.doesNotMatch(handler, /importExcel\(/);
+  assert.match(main, /ipcMain\.handle\("excel:sync-seller-screen"/);
+  assert.match(main, /before-poizon-screen-sync-\$\{stamp\}\.bak/);
 });
 
 test("다운로드 동기화는 수동 POIZON 작업 복구 진행률과 분리한다", () => {

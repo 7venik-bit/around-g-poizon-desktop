@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { readSheet } from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
 import { readFirstDataSheet } from "./services/excel-reader.mjs";
+import { applyPoizonScreenSalesToWorkbook } from "./services/poizon-screen-excel-sync.mjs";
 import {
   findPoizonColumn,
   findPoizonRecentSalesColumns,
@@ -10781,6 +10782,23 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       return await previewExcelFile(input);
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle("excel:sync-seller-screen", async (_event, input = {}) => {
+    const filePath = String(input?.path || "").trim();
+    if (!filePath || !/\.xlsx$/i.test(filePath)) return { ok: false, message: "수정할 원본 Excel 경로가 올바르지 않습니다." };
+    try {
+      const original = await readFile(filePath);
+      const applied = applyPoizonScreenSalesToWorkbook(original, Array.isArray(input?.products) ? input.products : []);
+      if (!applied.ok || !applied.changed) return { ...applied, path: filePath };
+      const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*$/, "").replace("T", "_");
+      const backupPath = `${filePath}.before-poizon-screen-sync-${stamp}.bak`;
+      await copyFile(filePath, backupPath);
+      await writeFile(filePath, applied.buffer);
+      excelPreviewCache.clear();
+      return { ...applied, buffer: undefined, path: filePath, backupPath };
+    } catch (error) {
+      return { ok: false, code: "EXCEL_SCREEN_SYNC_WRITE_FAILED", message: error instanceof Error ? error.message : String(error) };
     }
   });
   ipcMain.handle("brand-export:list-files", (_event, options = {}) => listBrandExportFiles({

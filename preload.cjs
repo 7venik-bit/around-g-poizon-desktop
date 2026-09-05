@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   openOriginalExcelFile: (path) => ipcRenderer.invoke("brand-export:open-original", { path }),
   revealBrandExportFile: (path) => ipcRenderer.invoke("brand-export:reveal-file", { path }),
   previewExcelFile: (path, offset = 0, limit = 100, filters = {}) => ipcRenderer.invoke("excel:preview", { path, offset, limit, filters }),
+  syncExcelWithSellerScreen: (input = {}) => ipcRenderer.invoke("excel:sync-seller-screen", input),
   getExcelColumnLayout: (path, columnCount = 0) => ipcRenderer.invoke("excel:get-column-layout", { path, columnCount }),
   updateExcelColumnLayout: (path, columnLayout = [], columnCount = 0) => ipcRenderer.invoke("excel:update-column-layout", { path, columnLayout, columnCount }),
   selectBrandExportFolder: () => ipcRenderer.invoke("brand-export:select-folder"),

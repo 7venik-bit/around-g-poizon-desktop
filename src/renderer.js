@@ -4502,6 +4502,7 @@ $("#import-button").addEventListener("click", async () => {
     if (!brands.length) throw new Error("동기화할 브랜드 Excel 파일이 없습니다.");
     let completed = 0;
     let matched = 0;
+    let updatedExcelRows = 0;
     let attempted = 0;
     const failures = [];
     // Seller Center uses one authenticated search window. Keep this queue
@@ -4529,6 +4530,12 @@ $("#import-button").addEventListener("click", async () => {
           throw error;
         }
         const crossValidated = mergeExcelProductsWithSellerScreen(excelSales.products, sellerResult.products || []);
+        const excelSync = await window.aroundG.syncExcelWithSellerScreen({
+          path: file.path,
+          products: sellerResult.products || [],
+        });
+        if (!excelSync?.ok) throw new Error(excelSync?.message || "원본 Excel에 POIZON 화면 값을 반영하지 못했습니다.");
+        updatedExcelRows += Number(excelSync.changedRows || 0);
         const saved = await window.aroundG.upsert("poizonSyncs", {
           id: poizonSyncId(brand),
           brandId: Number(brand.id),
@@ -4546,6 +4553,9 @@ $("#import-button").addEventListener("click", async () => {
           matchedExcelCount: crossValidated.matchedExcelCount,
           unmatchedExcelCount: crossValidated.unmatchedExcelCount,
           unmatchedScreenCount: crossValidated.unmatchedScreenCount,
+          excelUpdatedRowCount: Number(excelSync.changedRows || 0),
+          excelUpdatedCellCount: Number(excelSync.changedCells || 0),
+          excelBackupPath: excelSync.backupPath || "",
         });
         replaceLocalPoizonSync(saved);
         completed += 1;
@@ -4564,7 +4574,7 @@ $("#import-button").addEventListener("click", async () => {
     }
     if (status) {
       status.className = failures.length ? "status error" : "status success";
-      status.textContent = `POIZON 화면·Excel 동기화 ${completed}/${brands.length}개 브랜드 완료 · 일치 ${matched.toLocaleString("ko-KR")}행${failures.length ? ` · 실패 ${failures.join(" / ")}` : ""}`;
+      status.textContent = `POIZON 화면·Excel 동기화 ${completed}/${brands.length}개 브랜드 완료 · 일치 ${matched.toLocaleString("ko-KR")}행 · 원본 Excel 수정 ${updatedExcelRows.toLocaleString("ko-KR")}행${failures.length ? ` · 실패 ${failures.join(" / ")}` : ""}`;
     }
     if (syncProgress && failures.length) {
       const percent = Math.max(2, Math.min(99, Math.round((attempted / brands.length) * 100)));
