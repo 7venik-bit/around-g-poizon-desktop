@@ -1460,8 +1460,8 @@ function clearBrandWorkHistoryUi() {
 async function restoreDownloadedBrandFiles() {
   const generation = brandWorkHistoryGeneration;
   const result = await window.aroundG?.listBrandExportFiles?.();
-  if (generation !== brandWorkHistoryGeneration) return;
-  if (!result?.ok || !Array.isArray(result.files)) return;
+  if (generation !== brandWorkHistoryGeneration) return { ok: false, message: "동기화 도중 작업 기록이 변경되었습니다." };
+  if (!result?.ok || !Array.isArray(result.files)) return result || { ok: false, message: "다운로드 파일 목록을 확인하지 못했습니다." };
   const savedByPath = new Map(downloadedBrandFiles.map((file) => [brandImportPathKey(file.path), file]));
   downloadedBrandFiles = result.files
     .map((file) => {
@@ -1492,6 +1492,7 @@ async function restoreDownloadedBrandFiles() {
   renderDownloadedBrandFiles();
   renderBrandCompletedJobs();
   renderBrandCards($("#brand-filter")?.value || "");
+  return { ...result, ok: true, files: downloadedBrandFiles };
 }
 
 async function restorePendingBrandExportJobs() {
@@ -4407,10 +4408,30 @@ $("#category-search").addEventListener("click", async () => {
 });
 
 $("#import-button").addEventListener("click", async () => {
-  const result = await window.aroundG.importExcel();
-  if (!result.canceled) {
-    await refresh();
-    alert(`${result.imported}개 상품을 로컬에 가져왔습니다.`);
+  const button = $("#import-button");
+  button.disabled = true;
+  button.textContent = "동기화 중…";
+  window.activateSearchServiceMode?.("files");
+  const status = $("#excel-files-status");
+  if (status) {
+    status.className = "status";
+    status.textContent = "OneDrive의 POIZON 다운로드 파일을 확인하고 있습니다.";
+  }
+  try {
+    const result = await restoreDownloadedBrandFiles();
+    if (!result?.ok) throw new Error(result?.message || "다운로드 파일을 동기화하지 못했습니다.");
+    if (status) {
+      status.className = "status success";
+      status.textContent = `다운로드 파일 ${downloadedBrandFiles.length.toLocaleString("ko-KR")}개를 동기화했습니다.`;
+    }
+  } catch (error) {
+    if (status) {
+      status.className = "status error";
+      status.textContent = `다운로드 파일 동기화 실패 · ${error instanceof Error ? error.message : String(error)}`;
+    }
+  } finally {
+    button.disabled = false;
+    button.textContent = "다운로드 파일 동기화";
   }
 });
 $("#export-button").addEventListener("click", async () => {
