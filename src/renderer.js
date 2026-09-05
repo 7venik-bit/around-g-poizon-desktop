@@ -2028,7 +2028,7 @@ function salesByArticle(products = state.products) {
 
 async function downloadedBrandSalesByArticle(brand) {
   const file = latestCompletedBrandDownload(brand);
-  if (!file?.path) return { records: {}, productCount: 0, fileFound: false };
+  if (!file?.path) return { records: {}, products: [], productCount: 0, fileFound: false };
   const result = await window.aroundG.previewExcelFile(file.path, 0, 100000, {
     minimumTotal: "",
     minimumLocalTotal: "",
@@ -2036,7 +2036,7 @@ async function downloadedBrandSalesByArticle(brand) {
     selectionOnly: true,
   });
   if (!result?.ok) {
-    return { records: {}, productCount: 0, fileFound: true, error: result?.message || "EXCEL_PREVIEW_FAILED" };
+    return { records: {}, products: [], productCount: 0, fileFound: true, error: result?.message || "EXCEL_PREVIEW_FAILED" };
   }
   const normalizedHeaders = (result.headers || []).map((value) => String(value || "").replace(/\s+/g, ""));
   const hasChinaSales = normalizedHeaders.some((value) => /^(?:중국)?최근30일판매량$/.test(value));
@@ -2044,10 +2044,10 @@ async function downloadedBrandSalesByArticle(brand) {
   if (!hasChinaSales || !hasLocalSales) {
     const missing = [!hasChinaSales ? "중국 최근 30일 판매량" : "", !hasLocalSales ? "현지 판매자 최근 30일 판매량" : ""]
       .filter(Boolean).join(", ");
-    return { records: {}, productCount: 0, fileFound: true, error: `${missing} 열 없음` };
+    return { records: {}, products: [], productCount: 0, fileFound: true, error: `${missing} 열 없음` };
   }
   const products = Array.isArray(result.products) ? result.products : [];
-  return { records: salesByArticle(products), productCount: products.length, fileFound: true };
+  return { records: salesByArticle(products), products, productCount: products.length, fileFound: true };
 }
 
 function renderOfficialDomainAudit(audit = {}) {
@@ -4089,7 +4089,34 @@ const CATEGORY_DETAIL_PATTERNS = {
   "운동화": [/(?:운동화|스니커|sneaker|trainer|트레이닝 슈즈)/i],
   "샌들·슬리퍼": [/(?:샌들|슬리퍼|슬라이드|sandal|slipper|slide)/i],
   "구두·부츠": [/(?:구두|로퍼|옥스퍼드|부츠|loafer|oxford|boots?)/i],
+  "티셔츠": [/(?:티셔츠|반팔|긴팔|t-?shirts?|tees?)/i],
+  "셔츠": [/(?:셔츠|블라우스|shirts?|blouses?)/i],
+  "맨투맨·후드": [/(?:맨투맨|스웨트|후드|sweatshirts?|hoodies?)/i],
+  "바지": [/(?:바지|팬츠|조거|레깅스|pants?|trousers?|joggers?|leggings?)/i],
+  "원피스·스커트": [/(?:원피스|스커트|dress|skirts?)/i],
+  "스포츠웨어": [/(?:스포츠웨어|트레이닝|저지|sportswear|training|jersey)/i],
+  "재킷": [/(?:재킷|자켓|jacket)/i],
+  "바람막이": [/(?:바람막이|윈드브레이커|windbreaker|wind jacket)/i],
+  "패딩": [/(?:패딩|다운|푸퍼|puffer|down jacket|down coat)/i],
+  "코트": [/(?:코트|coat|trench)/i],
+  "베스트": [/(?:베스트|조끼|vest|gilet)/i],
+  "백팩": [/(?:백팩|배낭|backpacks?)/i],
+  "크로스백": [/(?:크로스백|crossbody)/i],
+  "토트백": [/(?:토트백|totes?)/i],
+  "숄더백": [/(?:숄더백|shoulder bags?)/i],
+  "파우치": [/(?:파우치|pouches?)/i],
 };
+
+function categoryGroupFromProduct(product = {}) {
+  const value = categoryDetailText(product).toLowerCase();
+  if (/아우터|재킷|자켓|점퍼|코트|패딩|다운|베스트|조끼|outerwear|jacket|coat|parka|puffer|windbreaker|vest|gilet/.test(value)) return "아우터";
+  if (/신발|슈즈|운동화|구두|샌들|슬리퍼|부츠|스니커|footwear|shoes?|sneakers?|boots?|sandals?|slippers?|clogs?|loafers?/.test(value)) return "신발";
+  if (/가방|백팩|크로스백|토트백|숄더백|파우치|bags?|backpacks?|crossbody|totes?|pouches?/.test(value)) return "가방";
+  if (/모자|캡|비니|버킷햇|headwear|hats?|caps?|beanies?/.test(value)) return "모자";
+  if (/액세서리|주얼리|시계|벨트|양말|안경|스카프|accessories|jewelry|watches?|belts?|socks?|eyewear|scarves?|wallets?/.test(value)) return "액세서리";
+  if (/의류|상의|하의|티셔츠|셔츠|팬츠|바지|스커트|원피스|스포츠웨어|apparel|clothing|shirts?|tees?|pants?|shorts?|skirts?|dresses?|hoodies?|jerseys?/.test(value)) return "의류";
+  return "기타";
+}
 
 function categoryDetailText(product = {}) {
   return [product.categoryName, product.category, product.categoryGroup, product.name, product.productName, product.title]
@@ -4253,35 +4280,16 @@ $("#category-search").addEventListener("click", async () => {
           status.textContent = `${brandName} 원본 Excel에서 판매량 데이터를 읽지 못했습니다${excelSales.error ? ` · ${excelSales.error}` : ""}`;
           return;
         }
-        const brandResult = await window.aroundG.queryExplorer({
-          mode: "category",
-          brandIds: [brandId],
-          category: selectedCategory,
-          categoryDetail: selectedCategoryDetail,
-          pageNum: 1,
-          pageSize: 100,
-          minimumChinaSales30,
-          minimumLocalSales30,
-          salesByArticle: excelSales.records,
-        });
-        if (runId !== categorySearchRunId) return;
-        if (!brandResult.ok) {
-          failedSourceCount += 1;
-        } else {
-          const salesLinkFailed = (minimumChinaSales30 !== null && !Number(brandResult.salesDataCount || 0))
-            || (minimumLocalSales30 !== null && !Number(brandResult.localSalesDataCount || 0));
-          if (salesLinkFailed) {
-            failedSourceCount += 1;
-            status.className = "status error";
-            status.textContent = `${brandName} 상품은 조회했지만 원본 Excel 판매량을 품번과 연결하지 못했습니다.`;
-          } else {
-            sourceCount += 1;
-            sourceTotal += Number(brandResult.sourceTotal || 0);
-          }
-          for (const product of filterCategoryDetailProducts(brandResult.products, selectedCategoryDetail)) {
-            const key = `${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || product.name || ""}`;
-            if (!detailProductsByKey.has(key)) detailProductsByKey.set(key, product);
-          }
+        const categoryProducts = excelSales.products
+          .filter((product) => selectedCategory === "전체" || categoryGroupFromProduct(product) === selectedCategory);
+        const detailProducts = filterCategoryDetailProducts(categoryProducts, selectedCategoryDetail)
+          .filter((product) => minimumChinaSales30 === null || Number(product.sales30d || 0) >= minimumChinaSales30)
+          .filter((product) => minimumLocalSales30 === null || Number(product.localSales30d || 0) >= minimumLocalSales30);
+        sourceCount += 1;
+        sourceTotal += excelSales.productCount;
+        for (const product of detailProducts) {
+          const key = `${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || product.name || ""}`;
+          if (!detailProductsByKey.has(key)) detailProductsByKey.set(key, product);
         }
       } catch (_error) {
         failedSourceCount += 1;
