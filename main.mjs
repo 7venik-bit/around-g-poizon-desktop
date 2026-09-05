@@ -9257,6 +9257,10 @@ async function captureSellerCenterProducts() {
 }
 
 async function captureSellerBrandSales(input = {}) {
+  const sellerPageDelayMs = 2_500;
+  const sellerBatchPauseEvery = 10;
+  const sellerBatchPauseMs = 10_000;
+  const sellerPageResponseAttempts = 120; // 120 × 250ms = 30 seconds
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     openSellerCenterWindow();
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -9614,6 +9618,18 @@ async function captureSellerBrandSales(input = {}) {
       message: `판매자센터 현지 30일 판매량 수집 ${capture.currentPage}/${capture.pageCount}페이지`,
     });
     if (!capture.hasNext) break;
+    if (capture.currentPage % sellerBatchPauseEvery === 0) {
+      mainWindow?.webContents.send("explorer:brand-progress", {
+        percent: Math.min(99, 70 + Math.round((capture.currentPage / Math.max(capture.currentPage, capture.pageCount || capture.currentPage)) * 29)),
+        count: products.length,
+        pageNum: capture.currentPage,
+        pageCount: capture.pageCount,
+        message: `판매자센터 ${capture.currentPage}페이지 완료 · 서버 보호를 위해 10초 휴식 중`,
+      });
+      await wait(sellerBatchPauseMs);
+    } else {
+      await wait(sellerPageDelayMs);
+    }
     const expectedNextPage = capture.currentPage + 1;
     let advanced = false;
     // Ant pagination changes the visible number range after page 5. A DOM
@@ -9655,7 +9671,7 @@ async function captureSellerBrandSales(input = {}) {
           : `판매자센터 ${expectedNextPage}/${capture.pageCount}페이지로 이동 중`,
       });
       await physicalSellerPointClick(targetPoint, 300);
-      for (let attempt = 0; attempt < 48; attempt += 1) {
+      for (let attempt = 0; attempt < sellerPageResponseAttempts; attempt += 1) {
         await wait(250);
         const nextState = await sellerWindow.webContents.executeJavaScript(
           `(() => {
@@ -9694,7 +9710,7 @@ async function captureSellerBrandSales(input = {}) {
         const button = target?.querySelector("button,a") || target;
         if (!button) return false;
         button.click();
-        for (let attempt = 0; attempt < 48; attempt += 1) {
+        for (let attempt = 0; attempt < sellerPageResponseAttempts; attempt += 1) {
           await wait(250);
           const active = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
           const rows = [...document.querySelectorAll("table tbody tr")]
@@ -9721,7 +9737,7 @@ async function captureSellerBrandSales(input = {}) {
     return {
       ok: false,
       code: "SELLER_PAGINATION_INCOMPLETE",
-      message: `판매자센터 하단 페이지 검증이 ${lastCapturedPage}/${expectedPageCount}페이지에서 중단되었습니다. 부분 데이터는 저장하지 않습니다.`,
+      message: `판매자센터 하단 페이지 검증이 ${lastCapturedPage}/${expectedPageCount}페이지에서 중단되었습니다. 다음 페이지를 30초씩 재시도했지만 응답하지 않았습니다. 부분 데이터는 저장하지 않습니다.`,
       sourceTotal: sellerSourceTotal,
       capturedRowCount,
       pageTransitionFailure,

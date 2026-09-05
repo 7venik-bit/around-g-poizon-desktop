@@ -50,6 +50,17 @@ test("판매자센터 동기화는 20개씩 하단 페이지를 실제로 순회
   assert.doesNotMatch(capture, /sort\(\(left, right\) => right\.size - left\.size\)/);
 });
 
+test("판매자센터 대량 동기화는 저속 안정 모드로 서버 응답을 기다린다", () => {
+  assert.match(capture, /const sellerPageDelayMs = 2_500/);
+  assert.match(capture, /const sellerBatchPauseEvery = 10/);
+  assert.match(capture, /const sellerBatchPauseMs = 10_000/);
+  assert.match(capture, /const sellerPageResponseAttempts = 120/);
+  assert.match(capture, /capture\.currentPage % sellerBatchPauseEvery === 0/);
+  assert.match(capture, /await wait\(sellerBatchPauseMs\)/);
+  assert.match(capture, /await wait\(sellerPageDelayMs\)/);
+  assert.match(capture, /attempt < sellerPageResponseAttempts/);
+});
+
 test("마지막 페이지와 전체 행 수 검증 전에는 부분 데이터를 저장하지 않는다", () => {
   assert.match(capture, /lastCapturedPage >= expectedPageCount/);
   assert.match(capture, /capturedRowCount >= sellerSourceTotal/);
