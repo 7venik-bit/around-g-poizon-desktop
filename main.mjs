@@ -9616,22 +9616,46 @@ async function captureSellerBrandSales(input = {}) {
     if (!capture.hasNext) break;
     const expectedNextPage = capture.currentPage + 1;
     let advanced = false;
-    for (let clickAttempt = 0; clickAttempt < 3 && !advanced; clickAttempt += 1) {
-      const clicked = await sellerWindow.webContents.executeJavaScript(`(() => {
+    // Ant pagination changes the visible number range after page 5. A DOM
+    // element.click() at that boundary is occasionally ignored by React, so
+    // scroll the exact control into view and send a real Electron mouse click.
+    // Retry transient page loads without discarding the pages already checked.
+    for (let clickAttempt = 0; clickAttempt < 5 && !advanced; clickAttempt += 1) {
+      const targetPoint = await sellerWindow.webContents.executeJavaScript(`(async () => {
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         const visible = (element) => element && element.getClientRects().length > 0;
         const expected = ${expectedNextPage};
-        const directPage = [...document.querySelectorAll(".ant-pagination-item")]
+        const active = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
+        const pagination = active?.closest(".ant-pagination");
+        const directPage = [...(pagination || document).querySelectorAll(".ant-pagination-item")]
           .find((item) => visible(item) && Number(item.textContent.trim()) === expected);
-        const next = [...document.querySelectorAll(".ant-pagination-next:not(.ant-pagination-disabled)")]
+        const next = [...(pagination || document).querySelectorAll(".ant-pagination-next:not(.ant-pagination-disabled)")]
           .find(visible);
         const target = directPage || next;
         const button = target?.querySelector("button,a") || target;
-        if (!button) return false;
-        button.click();
-        return true;
+        if (!button) return null;
+        button.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+        await wait(150);
+        const rect = button.getBoundingClientRect();
+        if (rect.width < 2 || rect.height < 2) return null;
+        return {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+          route: directPage ? "DIRECT_PAGE" : "NEXT_ARROW"
+        };
       })()`, true);
-      if (!clicked) continue;
-      for (let attempt = 0; attempt < 32; attempt += 1) {
+      if (!targetPoint) continue;
+      mainWindow?.webContents.send("explorer:brand-progress", {
+        percent: Math.min(99, 70 + Math.round((capture.currentPage / Math.max(capture.currentPage, capture.pageCount || capture.currentPage)) * 29)),
+        count: products.length,
+        pageNum: capture.currentPage,
+        pageCount: capture.pageCount,
+        message: clickAttempt > 0
+          ? `판매자센터 ${expectedNextPage}페이지 이동 재시도 ${clickAttempt + 1}/5`
+          : `판매자센터 ${expectedNextPage}/${capture.pageCount}페이지로 이동 중`,
+      });
+      await physicalSellerPointClick(targetPoint, 300);
+      for (let attempt = 0; attempt < 48; attempt += 1) {
         await wait(250);
         const nextState = await sellerWindow.webContents.executeJavaScript(
           `(() => {
@@ -9655,18 +9679,22 @@ async function captureSellerBrandSales(input = {}) {
       }
     }
     if (!advanced) {
-      // One final direct-page attempt handles pagination controls that only
-      // expose the requested page after the next-arrow updates the range.
+      // Final compatibility fallback for layouts that reject physical events.
       advanced = await sellerWindow.webContents.executeJavaScript(`(async () => {
         const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         const visible = (element) => element && element.getClientRects().length > 0;
         const expected = ${expectedNextPage};
-        const item = [...document.querySelectorAll(".ant-pagination-item")]
+        const activeItem = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
+        const pagination = activeItem?.closest(".ant-pagination");
+        const item = [...(pagination || document).querySelectorAll(".ant-pagination-item")]
           .find((element) => visible(element) && Number(element.textContent.trim()) === expected);
-        const button = item?.querySelector("button,a") || item;
+        const next = [...(pagination || document).querySelectorAll(".ant-pagination-next:not(.ant-pagination-disabled)")]
+          .find(visible);
+        const target = item || next;
+        const button = target?.querySelector("button,a") || target;
         if (!button) return false;
         button.click();
-        for (let attempt = 0; attempt < 20; attempt += 1) {
+        for (let attempt = 0; attempt < 48; attempt += 1) {
           await wait(250);
           const active = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
           const rows = [...document.querySelectorAll("table tbody tr")]
