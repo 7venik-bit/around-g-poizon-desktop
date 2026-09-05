@@ -47,6 +47,8 @@ let activeExportBrand = null;
 let brandSelectionBusy = false;
 const brandExportJobs = new Map();
 let downloadedBrandFiles = [];
+let downloadFileSyncActive = false;
+let downloadFileSyncState = { brandName: "", brandIndex: 0, brandCount: 0 };
 const selectedDownloadedFilePaths = new Set();
 let brandCompletedShowAll = false;
 let completedBrandShowAll = false;
@@ -4468,8 +4470,16 @@ $("#category-search").addEventListener("click", async () => {
 
 $("#import-button").addEventListener("click", async () => {
   const button = $("#import-button");
+  const syncProgress = $("#excel-sync-progress");
   button.disabled = true;
   button.textContent = "동기화 중…";
+  downloadFileSyncActive = true;
+  downloadFileSyncState = { brandName: "", brandIndex: 0, brandCount: 0 };
+  if (syncProgress) {
+    syncProgress.hidden = false;
+    syncProgress.querySelector("i").style.width = "1%";
+    syncProgress.querySelector("span").textContent = "동기화 준비 중";
+  }
   window.activateSearchServiceMode?.("files");
   const status = $("#excel-files-status");
   if (status) {
@@ -4486,9 +4496,10 @@ $("#import-button").addEventListener("click", async () => {
     const failures = [];
     // Seller Center uses one authenticated search window. Keep this queue
     // sequential so a later brand cannot replace the table being captured.
-    for (const brand of brands) {
+    for (const [brandPosition, brand] of brands.entries()) {
       const file = latestCompletedBrandDownload(brand);
       const brandName = brand.ko || brand.name || "브랜드";
+      downloadFileSyncState = { brandName, brandIndex: brandPosition, brandCount: brands.length };
       if (status) status.textContent = `POIZON 화면·Excel 비교 ${completed + 1}/${brands.length} · ${brandName}`;
       try {
         const excelSales = await downloadedBrandSalesByArticle(brand);
@@ -4533,12 +4544,18 @@ $("#import-button").addEventListener("click", async () => {
       status.className = failures.length ? "status error" : "status success";
       status.textContent = `POIZON 화면·Excel 동기화 ${completed}/${brands.length}개 브랜드 완료 · 일치 ${matched.toLocaleString("ko-KR")}행${failures.length ? ` · 실패 ${failures.join(" / ")}` : ""}`;
     }
+    if (syncProgress) {
+      syncProgress.querySelector("i").style.width = "100%";
+      syncProgress.querySelector("span").textContent = `동기화 완료 · ${completed}/${brands.length}개 브랜드`;
+    }
   } catch (error) {
     if (status) {
       status.className = "status error";
       status.textContent = `다운로드 파일 동기화 실패 · ${error instanceof Error ? error.message : String(error)}`;
     }
+    if (syncProgress) syncProgress.querySelector("span").textContent = "동기화 중단 · 오류 내용을 확인해 주세요";
   } finally {
+    downloadFileSyncActive = false;
     button.disabled = false;
     button.textContent = "다운로드 파일 동기화";
   }
@@ -4925,6 +4942,27 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
     message: "수동 확인 대기 · 버튼을 누를 때만 기존 작업과 변경 사항을 확인합니다.",
   });
   window.aroundG.onBrandSyncProgress((progress) => {
+    if (downloadFileSyncActive) {
+      const status = $("#excel-files-status");
+      const loading = $("#excel-sync-progress");
+      const page = Math.max(0, Number(progress.pageNum || 0));
+      const pages = Math.max(page, Number(progress.pageCount || 0));
+      const brandIndex = Math.max(0, Number(downloadFileSyncState.brandIndex || 0));
+      const brandCount = Math.max(1, Number(downloadFileSyncState.brandCount || 1));
+      const pageRatio = pages ? Math.min(1, page / pages) : 0;
+      const percent = Math.max(1, Math.min(99, Math.round(((brandIndex + pageRatio) / brandCount) * 100)));
+      const brandName = downloadFileSyncState.brandName || progress.brandName || "브랜드";
+      if (loading) {
+        loading.hidden = false;
+        loading.querySelector("i").style.width = `${percent}%`;
+        loading.querySelector("span").textContent = `전체 ${percent}% · ${brandName} ${page}/${pages || "?"}페이지`;
+      }
+      if (status) {
+        status.className = "status";
+        status.textContent = `${brandName} 동기화 진행 중 · ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개 상품 확인`;
+      }
+      return;
+    }
     if (progress?.context === "category" && categorySearchActive) {
       const completed = Number(progress.pageNum || 0);
       const total = Number(progress.pageCount || 0);
