@@ -2005,8 +2005,11 @@ function renderStockWatches() {
 
 function salesByArticle() {
   return Object.fromEntries(state.products
-    .filter((product) => product.articleNumber && Number(product.sales30d) >= 0)
-    .map((product) => [product.articleNumber, Number(product.sales30d)]));
+    .filter((product) => product.articleNumber)
+    .map((product) => [product.articleNumber, {
+      sales30d: Number(product.sales30d || 0),
+      localSales30d: Number(product.localSales30d || 0),
+    }]));
 }
 
 function renderOfficialDomainAudit(audit = {}) {
@@ -4027,9 +4030,18 @@ function categorySearchDate() {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Seoul" }).format(new Date());
 }
 
-function categorySearchCacheId(category, detail, minimumSales30, brandIds = pinnedBrandIds) {
+function categorySalesMinimum(selector) {
+  const raw = String($(selector)?.value ?? "").trim();
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : null;
+}
+
+function categorySearchCacheId(category, detail, minimumChinaSales30, minimumLocalSales30, brandIds = pinnedBrandIds) {
   const brandKey = [...brandIds].map(Number).filter(Number.isFinite).sort((a, b) => a - b).join("-") || "none";
-  return `category:${categorySearchDate()}:${category}:${detail || "all"}:${minimumSales30 ? "sales30" : "all"}:favorites:${brandKey}`;
+  const chinaKey = minimumChinaSales30 === null ? "any" : minimumChinaSales30;
+  const localKey = minimumLocalSales30 === null ? "any" : minimumLocalSales30;
+  return `category:v3:${categorySearchDate()}:${category}:${detail || "all"}:china30-${chinaKey}:local30-${localKey}:favorites:${brandKey}`;
 }
 
 const CATEGORY_DETAIL_PATTERNS = {
@@ -4108,11 +4120,19 @@ $("#category-search-stop").addEventListener("click", async () => {
   $("#category-search-stop").disabled = false;
 });
 
+$("#category-sales-filter-reset").addEventListener("click", () => {
+  $("#category-min-china-sales30").value = "";
+  $("#category-min-local-sales30").value = "";
+  $("#category-status").className = "status";
+  $("#category-status").textContent = "판매량 조건을 초기화했습니다. 검색하면 전체 판매량을 대상으로 합니다.";
+});
+
 $("#category-search").addEventListener("click", async () => {
   const runId = ++categorySearchRunId;
   const button = $("#category-search");
   const status = $("#category-status");
-  const minimumSales30 = $("#category-min-sales").checked;
+  const minimumChinaSales30 = categorySalesMinimum("#category-min-china-sales30");
+  const minimumLocalSales30 = categorySalesMinimum("#category-min-local-sales30");
   const favoriteBrandIds = [...categoryBrandIds].map(Number).filter(Number.isFinite);
   if (!selectedCategoryDetail) return;
   if (!favoriteBrandIds.length) {
@@ -4128,7 +4148,7 @@ $("#category-search").addEventListener("click", async () => {
   try {
     await refresh();
     await pruneCategorySearchHistory();
-    const cacheId = categorySearchCacheId(selectedCategory, selectedCategoryDetail, minimumSales30, favoriteBrandIds);
+    const cacheId = categorySearchCacheId(selectedCategory, selectedCategoryDetail, minimumChinaSales30, minimumLocalSales30, favoriteBrandIds);
     const cached = (state.categorySearches || []).find((entry) => entry.id === cacheId && Array.isArray(entry.products));
     if (cached?.complete) {
       updateCategoryLoading({ title: "저장된 카테고리 검색 결과를 불러왔습니다.", completed: cached.sourceCount, total: cached.rankedBrandCount, count: cached.products.length, percent: 100 });
@@ -4156,7 +4176,8 @@ $("#category-search").addEventListener("click", async () => {
         categoryDetail: selectedCategoryDetail,
         brandIds: favoriteBrandIds,
         completedBrandIds: [...completedBrandIds],
-        minimumSales30,
+        minimumChinaSales30,
+        minimumLocalSales30,
         createdAt: cached?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         products: [...detailProductsByKey.values()],
@@ -4193,7 +4214,8 @@ $("#category-search").addEventListener("click", async () => {
           categoryDetail: selectedCategoryDetail,
           pageNum: 1,
           pageSize: 100,
-          minimumSales30,
+          minimumChinaSales30,
+          minimumLocalSales30,
           salesByArticle: salesByArticle(),
         });
         if (runId !== categorySearchRunId) return;
@@ -4244,7 +4266,8 @@ $("#category-search").addEventListener("click", async () => {
       categoryDetail: selectedCategoryDetail,
       brandIds: favoriteBrandIds,
       completedBrandIds: favoriteBrandIds,
-      minimumSales30,
+      minimumChinaSales30,
+      minimumLocalSales30,
       createdAt: new Date().toISOString(),
       products: detailProducts,
       sourceCount,

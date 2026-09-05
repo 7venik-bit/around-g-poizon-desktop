@@ -251,7 +251,15 @@
             <p>카테고리를 검색할 브랜드만 선택하세요.</p>
             <div id="category-brand-cards" class="category-brand-cards"></div>
           </section>
-          <label class="sales-filter"><input id="category-min-sales" type="checkbox"><span><strong>최근 30일 판매량 30건 이상만 표시</strong><small>붙여넣은 판매자센터 데이터가 있는 품번에 적용됩니다.</small></span></label>
+          <section class="category-sales-filter" aria-labelledby="category-sales-filter-title">
+            <div class="category-sales-filter-heading"><div><small>SALES FILTER</small><strong id="category-sales-filter-title">판매량 조건 설정</strong></div><span>입력한 조건을 모두 충족 (AND)</span></div>
+            <div class="category-sales-filter-controls">
+              <label><span>중국 최근 30일 판매량</span><input id="category-min-china-sales30" type="number" min="0" step="1" inputmode="numeric" value="30" placeholder="조건 없음"></label>
+              <label><span>현지 판매자 최근 30일 판매량</span><input id="category-min-local-sales30" type="number" min="0" step="1" inputmode="numeric" value="30" placeholder="조건 없음"></label>
+              <button id="category-sales-filter-reset" type="button">조건 초기화</button>
+            </div>
+            <small>빈칸은 해당 조건을 사용하지 않습니다. 판매량 정보가 없는 상품은 설정된 조건을 충족하지 않은 것으로 처리합니다.</small>
+          </section>
           <section id="category-loading" class="category-loading" hidden aria-live="polite">
             <div class="category-loading-copy"><strong id="category-loading-title">카테고리 검색을 준비하는 중…</strong><span id="category-loading-count">브랜드 0/0 · 상품 0개</span><small id="category-loading-time">경과 00:00</small></div>
             <div class="category-loading-progress"><i id="category-loading-bar"></i></div>

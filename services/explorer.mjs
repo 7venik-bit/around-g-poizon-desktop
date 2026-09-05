@@ -167,7 +167,13 @@ export function normalizeBrandResult(data, salesByArticle = {}) {
       ?? row.sellerSales30d
       ?? row.merchantSales30d
       ?? row.localSellerSaleQuantity30Days;
-    const sales30d = numberFrom(apiSales ?? salesByArticle[articleNumber]);
+    const fallbackSales = salesByArticle[articleNumber];
+    const fallbackSales30d = fallbackSales && typeof fallbackSales === "object"
+      ? fallbackSales.sales30d : fallbackSales;
+    const fallbackLocalSales30d = fallbackSales && typeof fallbackSales === "object"
+      ? fallbackSales.localSales30d : undefined;
+    const sales30d = numberFrom(apiSales ?? fallbackSales30d);
+    const localSales30d = numberFrom(apiLocalSales ?? fallbackLocalSales30d);
     return {
       ...row,
       articleNumber,
@@ -175,9 +181,9 @@ export function normalizeBrandResult(data, salesByArticle = {}) {
       name: englishTitle,
       apiTitle: englishTitle,
       sales30d,
-      localSales30d: numberFrom(apiLocalSales),
-      hasSalesData: apiSales !== undefined || salesByArticle[articleNumber] !== undefined,
-      hasLocalSalesData: apiLocalSales !== undefined,
+      localSales30d,
+      hasSalesData: apiSales !== undefined || fallbackSales30d !== undefined,
+      hasLocalSalesData: apiLocalSales !== undefined || fallbackLocalSales30d !== undefined,
       categoryGroup: categoryGroup(row),
     };
   });

@@ -12,6 +12,18 @@ test("검증된 주요 브랜드 카탈로그를 제공한다", () => {
   assert.ok(BRAND_CATALOG.some((brand) => brand.id === 3 && brand.ko === "아디다스"));
 });
 
+test("카테고리 판매량 보완값은 중국과 현지 최근 30일 판매량을 각각 유지한다", () => {
+  const [product] = normalizeBrandResult([
+    { articleNumber: "DWDJ68056", productName: "Discovery down jacket" },
+  ], {
+    DWDJ68056: { sales30d: 23, localSales30d: 17 },
+  });
+  assert.equal(product.sales30d, 23);
+  assert.equal(product.localSales30d, 17);
+  assert.equal(product.hasSalesData, true);
+  assert.equal(product.hasLocalSalesData, true);
+});
+
 test("판매자센터 탭 구분 표를 인기상품으로 변환한다", () => {
   const rows = parsePopularTable([
     "No.\t상품정보\t상품번호\t평균 거래가\t최근 30일 판매량",

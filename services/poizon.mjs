@@ -310,7 +310,7 @@ export async function queryExplorer(config, input) {
         let brandProductCount = 0;
         if (!firstError) {
           const brandProductKeys = new Set();
-          for (const product of brandPages.flatMap((page) => normalizeBrandResult(page))) {
+          for (const product of brandPages.flatMap((page) => normalizeBrandResult(page, input.salesByArticle))) {
             if (input.category && input.category !== "전체" && product.categoryGroup !== input.category) continue;
             const productKey = `${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || ""}`;
             productKeys.add(productKey);
@@ -360,7 +360,7 @@ export async function queryExplorer(config, input) {
       input.mode === "category" ? response.value : [response.value]);
     if (!successful.length) throw responses[0]?.reason || new Error("POIZON_FAILED");
     const uniqueProducts = new Map();
-    for (const product of successful.flatMap((data) => normalizeBrandResult(data))) {
+    for (const product of successful.flatMap((data) => normalizeBrandResult(data, input.salesByArticle))) {
       const key = `${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || ""}`;
       if (!uniqueProducts.has(key)) uniqueProducts.set(key, product);
     }
@@ -372,9 +372,20 @@ export async function queryExplorer(config, input) {
       products = filterCategoryDetailProducts(products, input.categoryDetail);
     }
     const salesDataCount = products.filter((product) => product.hasSalesData).length;
-    const salesFilterApplied = Boolean(input.minimumSales30 && salesDataCount > 0);
+    const localSalesDataCount = products.filter((product) => product.hasLocalSalesData).length;
+    const minimumChinaSales30 = input.minimumChinaSales30 === null || input.minimumChinaSales30 === undefined || input.minimumChinaSales30 === ""
+      ? (input.minimumSales30 ? 30 : null)
+      : Math.max(0, Number(input.minimumChinaSales30) || 0);
+    const minimumLocalSales30 = input.minimumLocalSales30 === null || input.minimumLocalSales30 === undefined || input.minimumLocalSales30 === ""
+      ? (input.minimumSales30 ? 30 : null)
+      : Math.max(0, Number(input.minimumLocalSales30) || 0);
+    const salesFilterApplied = minimumChinaSales30 !== null || minimumLocalSales30 !== null;
     if (salesFilterApplied) {
-      products = products.filter((product) => product.hasSalesData && product.sales30d >= 30);
+      products = products.filter((product) => (
+        minimumChinaSales30 === null || (product.hasSalesData && product.sales30d >= minimumChinaSales30)
+      ) && (
+        minimumLocalSales30 === null || (product.hasLocalSalesData && product.localSales30d >= minimumLocalSales30)
+      ));
     }
     return {
       ok: true,
@@ -390,7 +401,10 @@ export async function queryExplorer(config, input) {
       pageNum: input.pageNum ?? 1,
       salesFilterAvailable: salesDataCount > 0,
       salesFilterApplied,
+      minimumChinaSales30,
+      minimumLocalSales30,
       salesDataCount,
+      localSalesDataCount,
       sourceCount: input.mode === "category" ? successfulBrands.length : successful.length,
       failedSourceCount: responses.length - successfulBrands.length,
       rankedBrandCount: Number(input.rankedBrandCount || brandIds.length),

@@ -8733,17 +8733,35 @@ async function queryPublicBrandProducts(input) {
     if (!productsByKey.size) throw new Error("KR_POIZON_BRAND_PRODUCTS_EMPTY");
     const salesByArticle = input?.salesByArticle || {};
     let products = [...productsByKey.values()].map((product) => {
-      const hasSalesData = Object.hasOwn(salesByArticle, product.articleNumber);
+      const salesRecord = salesByArticle[product.articleNumber];
+      const hasSalesData = salesRecord !== undefined;
+      const hasLocalSalesData = salesRecord && typeof salesRecord === "object"
+        && salesRecord.localSales30d !== undefined;
       return {
         ...product,
         brandName: String(input.brandName || ""),
         hasSalesData,
-        sales30d: hasSalesData ? Number(salesByArticle[product.articleNumber] || 0) : 0,
+        hasLocalSalesData,
+        sales30d: hasSalesData ? Number(
+          salesRecord && typeof salesRecord === "object" ? salesRecord.sales30d : salesRecord,
+        ) || 0 : 0,
+        localSales30d: hasLocalSalesData ? Number(salesRecord.localSales30d || 0) : 0,
       };
     });
     const salesDataCount = products.filter((product) => product.hasSalesData).length;
-    if (input?.minimumSales30) {
-      products = products.filter((product) => product.hasSalesData && product.sales30d >= 30);
+    const localSalesDataCount = products.filter((product) => product.hasLocalSalesData).length;
+    const minimumChinaSales30 = input?.minimumChinaSales30 === null || input?.minimumChinaSales30 === undefined || input?.minimumChinaSales30 === ""
+      ? (input?.minimumSales30 ? 30 : null)
+      : Math.max(0, Number(input.minimumChinaSales30) || 0);
+    const minimumLocalSales30 = input?.minimumLocalSales30 === null || input?.minimumLocalSales30 === undefined || input?.minimumLocalSales30 === ""
+      ? (input?.minimumSales30 ? 30 : null)
+      : Math.max(0, Number(input.minimumLocalSales30) || 0);
+    if (minimumChinaSales30 !== null || minimumLocalSales30 !== null) {
+      products = products.filter((product) => (
+        minimumChinaSales30 === null || (product.hasSalesData && product.sales30d >= minimumChinaSales30)
+      ) && (
+        minimumLocalSales30 === null || (product.hasLocalSalesData && product.localSales30d >= minimumLocalSales30)
+      ));
     }
     return {
       ok: true,
@@ -8754,6 +8772,9 @@ async function queryPublicBrandProducts(input) {
       pageNum: pageCount,
       salesFilterAvailable: salesDataCount > 0,
       salesDataCount,
+      localSalesDataCount,
+      minimumChinaSales30,
+      minimumLocalSales30,
       sourceCount: pageCount,
       failedSourceCount: 0,
       publicSource: true,
