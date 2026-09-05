@@ -78,7 +78,8 @@ test("카테고리 검색은 현재 다운로드 완료 브랜드로 바로 조�
     renderer.indexOf('$("#import-button").addEventListener'),
   );
   assert.doesNotMatch(categoryHandler, /capturePopularProducts\(\{ runDomestic: false, renderResults: false \}\)/);
-  assert.match(categoryHandler, /await downloadedBrandSalesByArticle\(brand,/);
+  assert.match(categoryHandler, /await downloadedBrandSalesByArticle\(brand\)/);
+  assert.match(categoryHandler, /await window\.aroundG\.captureSellerBrandSales/);
   assert.doesNotMatch(categoryHandler, /await window\.aroundG\.queryExplorer/);
   assert.match(categoryHandler, /const favoriteBrandIds = \[\.\.\.categoryBrandIds\]/);
   assert.match(categoryHandler, /categoryGroupFromProduct\(product\) === category/);

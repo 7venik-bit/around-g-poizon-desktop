@@ -2026,7 +2026,7 @@ function salesByArticle(products = state.products) {
   return records;
 }
 
-async function downloadedBrandSalesByArticle(brand, { minimumChinaTotalSales = null, minimumLocalTotalSales = null } = {}) {
+async function downloadedBrandSalesByArticle(brand) {
   const file = latestCompletedBrandDownload(brand);
   if (!file?.path) return { ok: false, products: [], productCount: 0, error: "다운로드된 Excel 파일 경로가 없습니다." };
   const products = [];
@@ -2036,13 +2036,6 @@ async function downloadedBrandSalesByArticle(brand, { minimumChinaTotalSales = n
       minimumTotal: "", minimumLocalTotal: "", productView: true, selectionOnly: true,
     });
     if (!result?.ok) return { ok: false, fileName: file.name, products: [], productCount: 0, error: result?.message || "EXCEL_PREVIEW_FAILED" };
-    // Use the SAME column resolution as the main-process Excel converter.
-    const hasChinaSales = Number.isInteger(result.totalSalesColumn) && result.totalSalesColumn >= 0;
-    const hasLocalSales = Number.isInteger(result.localTotalSalesColumn) && result.localTotalSalesColumn >= 0;
-    const missing = [minimumChinaTotalSales !== null && !hasChinaSales ? "중국 총 판매량" : "",
-      minimumLocalTotalSales !== null && !hasLocalSales ? "현지 판매자 총 판매량" : ""].filter(Boolean);
-    if (missing.length) return { ok: false, fileName: file.name, products: [], productCount: 0,
-      error: `${missing.join(", ")} 열이 없거나 중복되었습니다.` };
     if (!Array.isArray(result.products)) throw new Error("EXCEL_PRODUCTS_INVALID");
     if (offset > 0 && (result.offset !== offset || !result.products.length)) throw new Error("EXCEL_PAGE_INCOMPLETE");
     products.push(...result.products);
@@ -2051,6 +2044,54 @@ async function downloadedBrandSalesByArticle(brand, { minimumChinaTotalSales = n
     if (!result.products.length) throw new Error("EXCEL_PAGE_INCOMPLETE");
   } while (true);
   return { ok: true, products, productCount: products.length, fileName: file.name || file.path.split(/[\\/]/).pop() };
+}
+
+function normalizedCategoryProductArticle(value) {
+  return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function mergeExcelProductsWithSellerScreen(excelProducts = [], sellerProducts = []) {
+  const sellerByArticle = new Map();
+  const sellerByNormalizedArticle = new Map();
+  const sellerBySpu = new Map();
+  for (const product of sellerProducts) {
+    const article = String(product?.articleNumber || "").trim().toUpperCase();
+    const normalized = normalizedCategoryProductArticle(article);
+    const spuId = String(product?.spuId || product?.globalSpuId || "").trim();
+    if (article) sellerByArticle.set(article, product);
+    if (normalized) sellerByNormalizedArticle.set(normalized, product);
+    if (spuId) sellerBySpu.set(spuId, product);
+  }
+  const matchedScreenProducts = new Set();
+  const products = [];
+  for (const excelProduct of excelProducts) {
+    const article = String(excelProduct?.articleNumber || "").trim().toUpperCase();
+    const spuId = String(excelProduct?.spuId || excelProduct?.globalSpuId || "").trim();
+    const screenProduct = sellerByArticle.get(article)
+      || sellerByNormalizedArticle.get(normalizedCategoryProductArticle(article))
+      || sellerBySpu.get(spuId);
+    if (!screenProduct) continue;
+    matchedScreenProducts.add(screenProduct);
+    products.push({
+      ...excelProduct,
+      averagePrice: Number(screenProduct.hasPriceData ? screenProduct.averagePrice : (excelProduct.averagePrice || 0)),
+      buyerExposure: Number(screenProduct.hasBuyerExposureData ? screenProduct.buyerExposure : (excelProduct.buyerExposure || 0)),
+      sales30d: Number(screenProduct.sales30d || 0),
+      localSales30d: Number(screenProduct.localSales30d || 0),
+      sales30dRaw: screenProduct.sales30dRaw ?? "",
+      localSales30dRaw: screenProduct.localSales30dRaw ?? "",
+      hasSalesData: screenProduct.hasSalesData === true,
+      hasLocalSalesData: screenProduct.hasLocalSalesData === true,
+      screenVerified: true,
+      salesSource: "seller-center-screen",
+    });
+  }
+  return {
+    products,
+    matchedExcelCount: products.length,
+    unmatchedExcelCount: Math.max(0, excelProducts.length - products.length),
+    unmatchedScreenCount: Math.max(0, sellerProducts.length - matchedScreenProducts.size),
+  };
 }
 
 function renderOfficialDomainAudit(audit = {}) {
@@ -4078,11 +4119,11 @@ function categorySalesMinimum(selector) {
   return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : null;
 }
 
-function categorySearchCacheId(category, detail, minimumChinaTotalSales, minimumLocalTotalSales, brandIds = pinnedBrandIds) {
+function categorySearchCacheId(category, detail, minimumChinaSales30, minimumLocalSales30, brandIds = pinnedBrandIds) {
   const brandKey = [...brandIds].map(Number).filter(Number.isFinite).sort((a, b) => a - b).join("-") || "none";
-  const chinaKey = minimumChinaTotalSales === null ? "any" : minimumChinaTotalSales;
-  const localKey = minimumLocalTotalSales === null ? "any" : minimumLocalTotalSales;
-  return `category:excel-total-v6:${categorySearchDate()}:${category}:${detail || "all"}:china-total-${chinaKey}:local-total-${localKey}:favorites:${brandKey}`;
+  const chinaKey = minimumChinaSales30 === null ? "any" : minimumChinaSales30;
+  const localKey = minimumLocalSales30 === null ? "any" : minimumLocalSales30;
+  return `category:seller-screen-v7:${categorySearchDate()}:${category}:${detail || "all"}:china-30d-${chinaKey}:local-30d-${localKey}:favorites:${brandKey}`;
 }
 
 const CATEGORY_DETAIL_PATTERNS = {
@@ -4189,10 +4230,10 @@ $("#category-search-stop").addEventListener("click", async () => {
 });
 
 $("#category-sales-filter-reset").addEventListener("click", () => {
-  $("#category-min-china-total-sales").value = "";
-  $("#category-min-local-total-sales").value = "";
+  $("#category-min-china-sales-30").value = "";
+  $("#category-min-local-sales-30").value = "";
   $("#category-status").className = "status";
-  $("#category-status").textContent = "판매량 조건을 초기화했습니다. 검색하면 전체 판매량을 대상으로 합니다.";
+  $("#category-status").textContent = "판매량 조건을 초기화했습니다. 포이즌 화면에서 확인된 전체 상품을 대상으로 합니다.";
 });
 
 $("#category-search").addEventListener("click", async () => {
@@ -4201,8 +4242,8 @@ $("#category-search").addEventListener("click", async () => {
   const detail = selectedCategoryDetail;
   const button = $("#category-search");
   const status = $("#category-status");
-  const minimumChinaTotalSales = categorySalesMinimum("#category-min-china-total-sales");
-  const minimumLocalTotalSales = categorySalesMinimum("#category-min-local-total-sales");
+  const minimumChinaSales30 = categorySalesMinimum("#category-min-china-sales-30");
+  const minimumLocalSales30 = categorySalesMinimum("#category-min-local-sales-30");
   const favoriteBrandIds = [...categoryBrandIds].map(Number).filter(Number.isFinite);
   if (!detail) return;
   if (!favoriteBrandIds.length) {
@@ -4214,13 +4255,13 @@ $("#category-search").addEventListener("click", async () => {
   $("#category-search-stop").disabled = false;
   startCategoryLoading();
   status.className = "status";
-  status.textContent = "로컬 Excel 검색 · 선택 브랜드 파일을 읽는 중…";
+  status.textContent = "POIZON 화면 우선 · Excel 상품정보를 교차 검증하는 중…";
   renderExplorerResults(`${category} 〉 ${detail} 검색`, []);
   try {
     await refresh();
     await pruneCategorySearchHistory();
     if (runId !== categorySearchRunId) return;
-    const cacheId = categorySearchCacheId(category, detail, minimumChinaTotalSales, minimumLocalTotalSales, favoriteBrandIds);
+    const cacheId = categorySearchCacheId(category, detail, minimumChinaSales30, minimumLocalSales30, favoriteBrandIds);
     // History is an audit trail, never an input to a new button press. Older
     // versions marked failed brands completed; restoring that state skipped
     // all workbook reads and reproduced the same error even after updates.
@@ -4241,8 +4282,8 @@ $("#category-search").addEventListener("click", async () => {
         categoryDetail: detail,
         brandIds: favoriteBrandIds,
         completedBrandIds: [...completedBrandIds],
-        minimumChinaTotalSales,
-        minimumLocalTotalSales,
+        minimumChinaSales30,
+        minimumLocalSales30,
         createdAt,
         updatedAt: new Date().toISOString(),
         products: [...detailProductsByKey.values()],
@@ -4264,7 +4305,7 @@ $("#category-search").addEventListener("click", async () => {
       if (completedBrandIds.has(brandId)) return searchNextBrand();
       const brand = explorerMeta.brands.find((item) => Number(item.id) === brandId);
       const brandName = brand?.ko || brand?.name || `브랜드 ${brandId}`;
-      status.textContent = `로컬 Excel ${completedCount}/${favoriteBrandIds.length} · ${brandName} ${detail} 검색 중…`;
+      status.textContent = `POIZON 화면 ${completedCount}/${favoriteBrandIds.length} · ${brandName} 최근 30일 판매량 확인 중…`;
       updateCategoryLoading({
         title: `${brandName} 검색 중 · 완료된 결과만 안전하게 누적합니다.`,
         completed: completedCount,
@@ -4273,17 +4314,25 @@ $("#category-search").addEventListener("click", async () => {
         percent: Math.round((completedCount / favoriteBrandIds.length) * 100),
       });
       try {
-        const excelSales = await downloadedBrandSalesByArticle(brand, {
-          minimumChinaTotalSales,
-          minimumLocalTotalSales,
-        });
+        const excelSales = await downloadedBrandSalesByArticle(brand);
         if (runId !== categorySearchRunId) return;
         if (!excelSales.ok) throw new Error(excelSales.error || "EXCEL_READ_FAILED");
-        const categoryProducts = excelSales.products
+        const sellerResult = await window.aroundG.captureSellerBrandSales({
+          brandName: brand?.name || "",
+          brandKo: brand?.ko || "",
+        });
+        if (runId !== categorySearchRunId) return;
+        if (!sellerResult?.ok) {
+          const error = new Error(sellerResult?.message || "POIZON 화면 데이터를 가져오지 못했습니다.");
+          error.code = sellerResult?.code || "SELLER_SCREEN_READ_FAILED";
+          throw error;
+        }
+        const crossValidated = mergeExcelProductsWithSellerScreen(excelSales.products, sellerResult.products || []);
+        const categoryProducts = crossValidated.products
           .filter((product) => category === "전체" || categoryGroupFromProduct(product) === category);
         const detailProducts = filterCategoryDetailProducts(categoryProducts, detail)
-          .filter((product) => minimumChinaTotalSales === null || (product.hasTotalSalesData === true && Number(product.totalSales || 0) >= minimumChinaTotalSales))
-          .filter((product) => minimumLocalTotalSales === null || (product.hasLocalTotalSalesData === true && Number(product.localTotalSales || 0) >= minimumLocalTotalSales));
+          .filter((product) => minimumChinaSales30 === null || (product.hasSalesData === true && Number(product.sales30d || 0) >= minimumChinaSales30))
+          .filter((product) => minimumLocalSales30 === null || (product.hasLocalSalesData === true && Number(product.localSales30d || 0) >= minimumLocalSales30));
         sourceCount += 1;
         sourceTotal += excelSales.productCount;
         completedBrandIds.add(brandId);
@@ -4296,7 +4345,7 @@ $("#category-search").addEventListener("click", async () => {
         failedSourceCount += 1;
         const file = latestCompletedBrandDownload(brand);
         failures.push({ brandId, brandName, fileName: file?.name || file?.path?.split(/[\\/]/).pop() || "파일 미확인",
-          code: String(error?.code || "EXCEL_READ_FAILED"), message: String(error?.message || error) });
+          code: String(error?.code || "CATEGORY_SOURCE_FAILED"), message: String(error?.message || error) });
       }
       if (runId !== categorySearchRunId) return;
       completedCount += 1;
@@ -4312,19 +4361,21 @@ $("#category-search").addEventListener("click", async () => {
       });
       return searchNextBrand();
     };
-    await Promise.all([searchNextBrand(), searchNextBrand()]);
+    // A single authenticated Seller Center window is shared by every brand.
+    // Process brands sequentially so two searches cannot replace each other's table.
+    await searchNextBrand();
     await partialSave;
     if (runId !== categorySearchRunId) return;
     const failureText = failures.map((failure) => `${failure.brandName} (${failure.fileName}) · ${failure.message}`).join(" / ");
     if (!sourceCount) {
       status.className = "status error";
-      status.textContent = `로컬 Excel 읽기 실패 · ${failureText || "선택한 다운로드 파일을 확인해 주세요."}`;
+      status.textContent = `POIZON 화면·Excel 교차 검증 실패 · ${failureText || "판매자센터 로그인과 다운로드 파일을 확인해 주세요."}`;
       finishCategoryLoading();
       return;
     }
     const detailProducts = [...detailProductsByKey.values()];
     status.className = failedSourceCount ? "status error" : "status success";
-    status.textContent = `로컬 Excel · ${category} 〉 ${detail} 상품 ${detailProducts.length.toLocaleString("ko-KR")}개 · 원본 ${sourceTotal.toLocaleString("ko-KR")}행 · 브랜드 ${sourceCount}/${favoriteBrandIds.length}개 완료${failureText ? ` · 실패: ${failureText}` : ""}`;
+    status.textContent = `POIZON 화면 우선 · ${category} 〉 ${detail} 상품 ${detailProducts.length.toLocaleString("ko-KR")}개 · Excel ${sourceTotal.toLocaleString("ko-KR")}행 교차 검증 · 브랜드 ${sourceCount}/${favoriteBrandIds.length}개 완료${failureText ? ` · 실패: ${failureText}` : ""}`;
     renderExplorerResults(`${category} 〉 ${detail} 검색`, detailProducts);
     await window.aroundG.upsert("categorySearches", {
       id: cacheId,
@@ -4332,8 +4383,8 @@ $("#category-search").addEventListener("click", async () => {
       categoryDetail: detail,
       brandIds: favoriteBrandIds,
       completedBrandIds: [...completedBrandIds],
-      minimumChinaTotalSales,
-      minimumLocalTotalSales,
+      minimumChinaSales30,
+      minimumLocalSales30,
       createdAt,
       products: detailProducts,
       sourceCount,
@@ -4343,7 +4394,7 @@ $("#category-search").addEventListener("click", async () => {
       sourceTotal,
       complete: failedSourceCount === 0,
     });
-    updateCategoryLoading({ title: `${detail} Excel 확인을 마쳤습니다.`, completed: completedCount, total: favoriteBrandIds.length, count: detailProducts.length, percent: 100 });
+    updateCategoryLoading({ title: `${detail} POIZON 화면·Excel 교차 검증을 마쳤습니다.`, completed: completedCount, total: favoriteBrandIds.length, count: detailProducts.length, percent: 100 });
     window.setTimeout(() => finishCategoryLoading(), 1_800);
   } catch (error) {
     if (runId !== categorySearchRunId) return;

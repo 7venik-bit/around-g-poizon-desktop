@@ -21,18 +21,20 @@ const loaderSource = section(renderer, "function salesByArticle(", "function ren
 const filterSource = section(renderer, "const CATEGORY_SEARCH_RETENTION_MS", "async function pruneCategorySearchHistory(");
 const handlerSource = section(renderer, '$("#category-search").addEventListener', '$("#import-button").addEventListener');
 const standardHeaders = ["SPU ID", "상품 번호", "상품명", "카테고리 소분류", "중국 총 판매량", "현지 판매자 총 판매량"];
-const vest = ["19438508", "JWVAX25017", "코오롱스포츠 남성 조끼", "조끼", "100+", 83];
+const vest = ["19438508", "JWVAX25017", "코오롱스포츠 남성 조끼", "조끼", 14, 10];
+const screenVest = { spuId: "19438508", articleNumber: "JWVAX25017", name: "코오롱스포츠 남성 조끼",
+  sales30d: 100, sales30dRaw: "100+", localSales30d: 83, localSales30dRaw: "83", hasSalesData: true, hasLocalSalesData: true };
 const initialBrand = { id: 1000444, name: "KOLON SPORT", ko: "코오롱스포츠" };
 
 function harness({ sheets = { "/kolon.xlsx": [standardHeaders, vest] }, brands = [initialBrand], files,
-  china = "100", local = "30", histories = [], previewOverride } = {}) {
-  const nodes = new Map(), reads = [], saved = [], rendered = [];
+  china = "100", local = "30", histories = [], previewOverride, screenProducts = [screenVest], screenOverride } = {}) {
+  const nodes = new Map(), reads = [], saved = [], rendered = [], captures = [];
   const $ = (id) => {
     if (!nodes.has(id)) nodes.set(id, { value: "", disabled: false, className: "", textContent: "", addEventListener(_event, callback) { this.callback = callback; } });
     return nodes.get(id);
   };
-  $("#category-min-china-total-sales").value = china;
-  $("#category-min-local-total-sales").value = local;
+  $("#category-min-china-sales-30").value = china;
+  $("#category-min-local-sales-30").value = local;
   const previewContext = createContext({ ...xlsx, filterPoizonPreviewRows, parsePoizonSalesMetric,
     excelPreviewCache: new Map(), basename,
     stat: async (path) => { if (!(path in sheets)) throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" }); return { size: 100, mtimeMs: 1 }; },
@@ -53,11 +55,15 @@ function harness({ sheets = { "/kolon.xlsx": [standardHeaders, vest] }, brands =
     renderExplorerResults: (_title, products) => rendered.push(JSON.parse(JSON.stringify(products))),
     window: { setTimeout: () => {}, aroundG: { previewExcelFile: preview,
       queryExplorer: () => { throw new Error("NETWORK_QUERY_FORBIDDEN"); },
+      captureSellerBrandSales: async (input) => {
+        captures.push(JSON.parse(JSON.stringify(input)));
+        return screenOverride ? screenOverride(input) : { ok: true, products: screenProducts };
+      },
       upsert: async (_collection, record) => { saved.push(JSON.parse(JSON.stringify(record))); return record; },
     } },
   });
   runInContext(brandSource + loaderSource + filterSource + handlerSource, context);
-  return { context, sheets, reads, saved, rendered, nodes, previewContext,
+  return { context, sheets, reads, saved, rendered, nodes, previewContext, captures,
     click: async () => $("#category-search").callback(), status: () => $("#category-status").textContent };
 }
 
@@ -70,15 +76,17 @@ test("retries Excel even when history marked a failed brand completed", async ()
   assert.equal(h.rendered.at(-1).length, 1);
 });
 
-test("OneDrive source total-sales headers agree with the Excel parser", async () => {
-  const headers = [...standardHeaders];
-  headers[4] = "중국 총 판매량 (건)";
-  headers[5] = "현지 판매자 총 판매량 (건)";
-  const h = harness({ sheets: { "/kolon.xlsx": [headers, vest] } });
+test("POIZON screen recent-30 values override different Excel totals", async () => {
+  const h = harness();
   await h.click();
   assert.equal(h.saved.at(-1)?.sourceCount, 1);
-  assert.equal(h.rendered.at(-1)?.[0].totalSales, 100);
-  assert.equal(h.rendered.at(-1)?.[0].localTotalSales, 83);
+  assert.equal(h.rendered.at(-1)?.[0].totalSales, 14, "Excel total stays available as reference");
+  assert.equal(h.rendered.at(-1)?.[0].localTotalSales, 10);
+  assert.equal(h.rendered.at(-1)?.[0].sales30d, 100, "screen value wins");
+  assert.equal(h.rendered.at(-1)?.[0].localSales30d, 83);
+  assert.equal(h.rendered.at(-1)?.[0].sales30dRaw, "100+");
+  assert.equal(h.rendered.at(-1)?.[0].salesSource, "seller-center-screen");
+  assert.equal(h.captures.length, 1);
 });
 
 test("file read error stays visible and is not saved as completed", async () => {
@@ -93,7 +101,7 @@ test("file read error stays visible and is not saved as completed", async () => 
 test("two failed Excel reads do not stop the remaining brand queue", async () => {
   const brands = [initialBrand, { id: 2, name: "TestTwo" }, { id: 3, name: "TestThree" }];
   const files = brands.map((brand, index) => ({ path: `/${index}.xlsx`, name: `${index}.xlsx`, brandName: brand.name, time: 1 }));
-  const h = harness({ brands, files, previewOverride: async (path) => path === "/2.xlsx"
+  const h = harness({ brands, files, screenProducts: [{ ...screenVest, articleNumber: "TEST", spuId: "", name: "남성 조끼" }], previewOverride: async (path) => path === "/2.xlsx"
     ? { ok: true, headers: standardHeaders, totalRows: 1, totalSalesColumn: 4, localTotalSalesColumn: 5, products: [{ articleNumber: "TEST", title: "조끼", totalSales: 100, localTotalSales: 50, hasTotalSalesData: true, hasLocalTotalSalesData: true }] }
     : { ok: false, message: "FILE_READ_FAILED" } });
   await h.click();
@@ -103,7 +111,7 @@ test("two failed Excel reads do not stop the remaining brand queue", async () =>
   assert.equal(h.saved.at(-1)?.complete, false);
 });
 
-test("a valid empty workbook is success with zero products", async () => {
+test("a valid empty workbook is success with zero cross-validated products", async () => {
   const h = harness({ sheets: { "/kolon.xlsx": [standardHeaders] } });
   await h.click();
   assert.equal(h.saved.at(-1)?.sourceCount, 1);
@@ -111,33 +119,37 @@ test("a valid empty workbook is success with zero products", async () => {
   assert.deepEqual(h.rendered.at(-1), []);
 });
 
-test("no sales constraints allows a workbook without sales columns", async () => {
+test("Excel sales columns are unnecessary because screen metrics are authoritative", async () => {
   const h = harness({ china: "", local: "", sheets: { "/kolon.xlsx": [standardHeaders.slice(0, 4), vest.slice(0, 4)] } });
   await h.click();
   assert.equal(h.rendered.at(-1)?.length, 1);
 });
 
-test("a local-only total-sales column must never masquerade as China sales", async () => {
-  const h = harness({ sheets: { "/kolon.xlsx": [[...standardHeaders.slice(0, 4), standardHeaders[5]], [...vest.slice(0, 4), 83]] } });
+test("an Excel-only product is excluded when it has no POIZON screen match", async () => {
+  const h = harness({ screenProducts: [] });
   await h.click();
-  assert.match(h.status(), /중국.*총.*판매량.*열/);
-  const products = h.previewContext.buildExcelPreviewProducts([...standardHeaders.slice(0, 4), standardHeaders[5]], [{ values: [...vest.slice(0, 4), 83], sourceRowNumber: 2 }]);
-  assert.equal(products[0].totalSales, 0);
-  assert.equal(products[0].hasTotalSalesData, false);
+  assert.deepEqual(h.rendered.at(-1), []);
+  assert.equal(h.saved.at(-1)?.complete, true);
 });
 
-test("AND filtering excludes low sales, other categories, and missing metrics at threshold zero", async () => {
+test("AND filtering uses only POIZON screen recent-30 metrics", async () => {
   const h = harness({ sheets: { "/kolon.xlsx": [standardHeaders, vest,
     ["21228734", "JWVAM25301", "남성 경량 방풍 조끼", "조끼", "200+", 37],
     ["2", "LOWCN", "남성 조끼", "조끼", 99, 83],
     ["3", "LOWLOCAL", "남성 조끼", "조끼", 200, 29],
     ["4", "JACKET", "남성 자켓", "자켓", 200, 83],
     ["5", "MISSING", "남성 조끼", "조끼", "--", "--"],
-  ] } });
+  ] }, screenProducts: [screenVest,
+    { articleNumber: "JWVAM25301", spuId: "21228734", sales30d: 200, localSales30d: 37, hasSalesData: true, hasLocalSalesData: true },
+    { articleNumber: "LOWCN", spuId: "2", sales30d: 99, localSales30d: 83, hasSalesData: true, hasLocalSalesData: true },
+    { articleNumber: "LOWLOCAL", spuId: "3", sales30d: 200, localSales30d: 29, hasSalesData: true, hasLocalSalesData: true },
+    { articleNumber: "JACKET", spuId: "4", sales30d: 200, localSales30d: 83, hasSalesData: true, hasLocalSalesData: true },
+    { articleNumber: "MISSING", spuId: "5", sales30d: 0, localSales30d: 0, hasSalesData: false, hasLocalSalesData: false },
+  ] });
   await h.click();
   assert.deepEqual(h.rendered.at(-1).map((p) => p.articleNumber), ["JWVAX25017", "JWVAM25301"]);
-  h.nodes.get("#category-min-china-total-sales").value = "0";
-  h.nodes.get("#category-min-local-total-sales").value = "0";
+  h.nodes.get("#category-min-china-sales-30").value = "0";
+  h.nodes.get("#category-min-local-sales-30").value = "0";
   await h.click();
   assert.ok(!h.rendered.at(-1).some((p) => p.articleNumber === "MISSING"));
 });
@@ -147,25 +159,33 @@ test("a fresh search ignores even completed cached results", async () => {
   await h.click();
   h.context.state.categorySearches = [h.saved.at(-1)];
   h.previewContext.excelPreviewCache.clear();
-  h.sheets["/kolon.xlsx"] = [standardHeaders, [...vest.slice(0, 4), 1, 1]];
+  h.context.window.aroundG.captureSellerBrandSales = async () => ({ ok: true, products: [{ ...screenVest, sales30d: 1, localSales30d: 1 }] });
   await h.click();
   assert.equal(h.reads.length, 2);
   assert.deepEqual(h.rendered.at(-1), []);
 });
 
-test("only the enabled sales constraint requires its column", async () => {
-  const h = harness({ china: "", sheets: { "/kolon.xlsx": [[...standardHeaders.slice(0, 4), standardHeaders[5]], [...vest.slice(0, 4), 83]] } });
+test("SPU match works when screen and Excel article formatting differs", async () => {
+  const h = harness({ screenProducts: [{ ...screenVest, articleNumber: "DIFFERENT" }] });
   await h.click();
   assert.equal(h.rendered.at(-1).length, 1);
   assert.equal(h.saved.at(-1).complete, true);
 });
 
-test("explicit zero sales is available data at threshold zero", async () => {
-  const h = harness({ china: "0", local: "0", sheets: { "/kolon.xlsx": [standardHeaders, [...vest.slice(0, 4), 0, "0"]] } });
+test("explicit screen zero is available data at threshold zero", async () => {
+  const h = harness({ china: "0", local: "0", screenProducts: [{ ...screenVest, sales30d: 0, localSales30d: 0, sales30dRaw: "0", localSales30dRaw: "0" }] });
   await h.click();
   assert.equal(h.rendered.at(-1).length, 1);
-  assert.equal(h.rendered.at(-1)[0].hasTotalSalesData, true);
-  assert.equal(h.rendered.at(-1)[0].hasLocalTotalSalesData, true);
+  assert.equal(h.rendered.at(-1)[0].hasSalesData, true);
+  assert.equal(h.rendered.at(-1)[0].hasLocalSalesData, true);
+});
+
+test("seller screen failure is visible and Excel totals never become a fallback", async () => {
+  const h = harness({ screenOverride: async () => ({ ok: false, code: "SELLER_LOGIN_REQUIRED", message: "판매자센터 로그인을 확인해 주세요." }) });
+  await h.click();
+  assert.match(h.status(), /판매자센터 로그인/);
+  assert.deepEqual(h.rendered.at(-1), []);
+  assert.equal(h.saved.at(-1)?.complete, false);
 });
 
 test("ambiguous headers and total-sales columns cannot substitute for recent sales", () => {
@@ -187,7 +207,7 @@ test("local selection reads beyond the first 100000 products", async () => {
     return { ok: true, offset, totalRows: 100001, totalSalesColumn: 4, localTotalSalesColumn: 5,
       products: offset === 0 ? Array(100000).fill({ articleNumber: "FIRST_PAGE" }) : [{ articleNumber: "LAST_PAGE" }] };
   } });
-  const result = await h.context.downloadedBrandSalesByArticle(initialBrand, { minimumChinaTotalSales: 100, minimumLocalTotalSales: 30 });
+  const result = await h.context.downloadedBrandSalesByArticle(initialBrand);
   assert.equal(result.ok, true);
   assert.equal(result.productCount, 100001);
   assert.equal(result.products.at(-1).articleNumber, "LAST_PAGE");
