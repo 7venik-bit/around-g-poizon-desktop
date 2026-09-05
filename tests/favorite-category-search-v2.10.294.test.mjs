@@ -49,3 +49,14 @@ test("상단 Excel 가져오기는 다운로드 파일 동기화 한 버튼으�
   assert.match(handler, /다운로드 파일.*개를 동기화했습니다/);
   assert.doesNotMatch(handler, /importExcel\(/);
 });
+
+test("다운로드 동기화는 수동 POIZON 작업 복구 진행률과 분리한다", () => {
+  assert.match(html, /POIZON 데이터 플랫폼 화면 값<\/b>을 우선 적용/);
+  assert.match(main, /async function listBrandExportFiles\(\{ emitRecoveryProgress = false \} = \{\}\)/);
+  assert.match(main, /if \(!emitRecoveryProgress\) return;/);
+  assert.match(main, /emitRecoveryProgress: options\?\.recoveryProgress === true/);
+  const syncStart = renderer.indexOf('$("#import-button").addEventListener');
+  const syncEnd = renderer.indexOf('$("#export-button").addEventListener', syncStart);
+  assert.doesNotMatch(renderer.slice(syncStart, syncEnd), /recoveryProgress:\s*true/);
+  assert.match(renderer, /recoverInterruptedBrandWorkOnDemand[\s\S]*restoreDownloadedBrandFiles\(\{ recoveryProgress: true \}\)/);
+});

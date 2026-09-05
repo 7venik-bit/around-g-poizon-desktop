@@ -1457,9 +1457,9 @@ function clearBrandWorkHistoryUi() {
   renderBrandCards($("#brand-filter")?.value || "");
 }
 
-async function restoreDownloadedBrandFiles() {
+async function restoreDownloadedBrandFiles({ recoveryProgress = false } = {}) {
   const generation = brandWorkHistoryGeneration;
-  const result = await window.aroundG?.listBrandExportFiles?.();
+  const result = await window.aroundG?.listBrandExportFiles?.({ recoveryProgress });
   if (generation !== brandWorkHistoryGeneration) return { ok: false, message: "동기화 도중 작업 기록이 변경되었습니다." };
   if (!result?.ok || !Array.isArray(result.files)) return result || { ok: false, message: "다운로드 파일 목록을 확인하지 못했습니다." };
   const savedByPath = new Map(downloadedBrandFiles.map((file) => [brandImportPathKey(file.path), file]));
@@ -1523,7 +1523,7 @@ async function recoverInterruptedBrandWorkOnDemand() {
     status.className = "status";
     status.textContent = "이전 다운로드 파일과 중단된 POIZON 작업을 확인하고 있습니다.";
   }
-  await restoreDownloadedBrandFiles();
+  await restoreDownloadedBrandFiles({ recoveryProgress: true });
   const pendingCount = await restorePendingBrandExportJobs();
   if (!pendingCount && status) {
     status.className = "status success";

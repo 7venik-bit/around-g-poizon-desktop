@@ -4472,9 +4472,10 @@ async function validateBrandExportFile(filePath, expectedBrands = []) {
   return result;
 }
 
-async function listBrandExportFiles() {
+async function listBrandExportFiles({ emitRecoveryProgress = false } = {}) {
   const folder = currentBrandExportFolder();
   const emitStartupProgress = (percent, message, details = {}) => {
+    if (!emitRecoveryProgress) return;
     mainWindow?.webContents.send("startup-recovery:progress", {
       percent: Math.max(0, Math.min(100, Number(percent) || 0)),
       message,
@@ -10692,7 +10693,9 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
   });
-  ipcMain.handle("brand-export:list-files", () => listBrandExportFiles());
+  ipcMain.handle("brand-export:list-files", (_event, options = {}) => listBrandExportFiles({
+    emitRecoveryProgress: options?.recoveryProgress === true,
+  }));
   ipcMain.handle("brand-export:trash-files", async (_event, paths = []) => {
     const requested = [...new Set((Array.isArray(paths) ? paths : []).map((value) => String(value || "").trim()).filter(Boolean))].slice(0, 500);
     const root = resolve(currentBrandExportFolder());

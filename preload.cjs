@@ -49,7 +49,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   updateExcelColumnLayout: (path, columnLayout = [], columnCount = 0) => ipcRenderer.invoke("excel:update-column-layout", { path, columnLayout, columnCount }),
   selectBrandExportFolder: () => ipcRenderer.invoke("brand-export:select-folder"),
   getBrandExportFolder: () => ipcRenderer.invoke("brand-export:get-folder"),
-  listBrandExportFiles: () => ipcRenderer.invoke("brand-export:list-files"),
+  listBrandExportFiles: (options = {}) => ipcRenderer.invoke("brand-export:list-files", options),
   startBrandExportFolderPolling: () => ipcRenderer.invoke("brand-export:start-folder-polling"),
   onStartupRecoveryProgress: (callback) => {
     const handler = (_event, payload) => callback(payload);
