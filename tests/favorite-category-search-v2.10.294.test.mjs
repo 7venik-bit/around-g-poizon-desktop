@@ -38,7 +38,7 @@ test("카테고리 필터는 POIZON 화면 최근 30일 값을 우선해 AND로 
   assert.doesNotMatch(html, /id="category-min-sales"/);
 });
 
-test("상단 Excel 가져오기는 다운로드 파일 동기화 한 버튼으로 대체한다", () => {
+test("상단 다운로드 파일 동기화는 판매자센터 화면과 Excel을 교차 검증한다", () => {
   assert.match(html, /id="import-button"[^>]*>다운로드 파일 동기화<\/button>/);
   assert.doesNotMatch(html, /id="brand-download-clear"/);
   const start = renderer.indexOf('$("#import-button").addEventListener');
@@ -46,7 +46,12 @@ test("상단 Excel 가져오기는 다운로드 파일 동기화 한 버튼으�
   const handler = renderer.slice(start, end);
   assert.match(handler, /await restoreDownloadedBrandFiles\(\)/);
   assert.match(handler, /activateSearchServiceMode\?\.\("files"\)/);
-  assert.match(handler, /다운로드 파일.*개를 동기화했습니다/);
+  assert.match(handler, /for \(const brand of brands\)/);
+  assert.match(handler, /await downloadedBrandSalesByArticle\(brand\)/);
+  assert.match(handler, /await window\.aroundG\.captureSellerBrandSales/);
+  assert.match(handler, /mergeExcelProductsWithSellerScreen/);
+  assert.match(handler, /upsert\("poizonSyncs"/);
+  assert.match(handler, /POIZON 화면·Excel 동기화/);
   assert.doesNotMatch(handler, /importExcel\(/);
 });
 

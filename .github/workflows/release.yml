@@ -139,7 +139,7 @@ jobs:
         run: node --check main.mjs && node --check services/seller-dom.mjs && node --check services/popular-excel.mjs
 
       - name: Test local Excel category search after release patches
-        run: node --test tests/category-excel-runtime.test.mjs tests/favorite-category-search-v2.10.294.test.mjs tests/full-brand-catalog.test.mjs tests/excel-reader.test.mjs
+        run: node --test tests/category-excel-runtime.test.mjs tests/favorite-category-search-v2.10.294.test.mjs tests/full-brand-catalog.test.mjs tests/excel-reader.test.mjs tests/poizon-download-sync.test.mjs
 
       - name: Resolve release version
         id: release_version

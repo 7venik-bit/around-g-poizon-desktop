@@ -1,6 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString("ko-KR")}원`;
-let state = { products: [], ledger: [], orders: [], stockWatches: [], favorites: [] };
+let state = { products: [], poizonSyncs: [], ledger: [], orders: [], stockWatches: [], favorites: [] };
 let entryCollection = "ledger";
 let explorerMeta = { brands: [], categories: [] };
 let selectedBrandId = null;
@@ -745,6 +745,34 @@ function latestCompletedBrandDownload(brand = {}) {
       - Number(left.time || left.mtimeMs || left.lastDownloadedAt || 0))[0] || null;
 }
 
+function poizonSyncId(brand = {}) {
+  const brandId = Number(brand?.id);
+  if (Number.isFinite(brandId)) return `seller-brand:${brandId}`;
+  return `seller-brand:${normalizeBrandKey(brand?.name || brand?.ko || "unknown")}`;
+}
+
+function poizonSyncForFile(file = {}, brand = {}) {
+  const pathKey = brandImportPathKey(file?.path);
+  if (!pathKey) return null;
+  const record = (state.poizonSyncs || []).find((item) => item.id === poizonSyncId(brand)
+    || brandImportPathKey(item.filePath) === pathKey);
+  if (!record || brandImportPathKey(record.filePath) !== pathKey) return null;
+  const currentSize = Number(file.size || 0);
+  const savedSize = Number(record.fileSize || 0);
+  const currentTime = Number(file.time || file.mtimeMs || 0);
+  const savedTime = Number(record.fileTime || 0);
+  if (currentSize && savedSize && currentSize !== savedSize) return null;
+  if (currentTime && savedTime && currentTime !== savedTime) return null;
+  return record.status === "complete" && Array.isArray(record.products) ? record : null;
+}
+
+function replaceLocalPoizonSync(record) {
+  state.poizonSyncs = Array.isArray(state.poizonSyncs) ? state.poizonSyncs : [];
+  const index = state.poizonSyncs.findIndex((item) => item.id === record.id);
+  if (index >= 0) state.poizonSyncs[index] = record;
+  else state.poizonSyncs.unshift(record);
+}
+
 function completedDownloadBrands() {
   const completed = [];
   const seen = new Set();
@@ -803,6 +831,7 @@ function renderDownloadedBrandFiles() {
         <span>선택</span><span>브랜드</span><span>원본 Excel 파일</span><span>작업번호</span><span>받은 시각</span><span>크기</span><span>열기</span>
       </div>${grouped.map(({ brandName, meta, files }) => {
       const [latest, ...history] = files;
+      const sync = poizonSyncForFile(latest.file, meta || { name: brandName });
       const logo = meta?.logoUrl
         ? `<img src="${text(meta.logoUrl)}" alt="${text(brandName)} 로고"><b>${text(brandName.slice(0, 1))}</b>`
         : `<b>${text(brandName.slice(0, 1))}</b>`;
@@ -824,7 +853,9 @@ function renderDownloadedBrandFiles() {
             <i class="brand-download-logo">${logo}</i>
             <span class="brand-download-name">
               <strong>${text(brandName)}</strong>
-              <small>POIZON 원본 · 확인완료</small>
+              <small>${sync
+                ? `플랫폼 동기화 완료 · Excel 일치 ${Number(sync.matchedExcelCount || 0).toLocaleString("ko-KR")}행`
+                : "POIZON 원본 · 플랫폼 동기화 필요"}</small>
             </span>
             </span>
             <strong class="brand-download-filename" title="${text(latest.file.path || "")}">${text(latest.file.name || latest.file.path || "Excel 파일")}</strong>
@@ -1162,7 +1193,7 @@ function excelPreviewStableSelectionKey(product = {}, file = {}) {
 function renderExcelProductRows(file, products = []) {
   const pageKeys = products.map((product) => excelPreviewStableSelectionKey(product, file));
   products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
-  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>평균가격</th><th>중국 총판매</th><th>현지 총판매</th><th>상품 검색</th></tr>`;
+  $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>평균가격</th><th>중국 최근 30일</th><th>현지 최근 30일</th><th>상품 검색</th></tr>`;
   $("#excel-preview-rows").innerHTML = products.length ? products.map((product, index) => {
     const key = pageKeys[index];
     const result = excelPreviewSearchResults.get(key);
@@ -1183,7 +1214,7 @@ function renderExcelProductRows(file, products = []) {
       <td><b>${text(product.articleNumber || "-")}</b></td><td title="${text(product.title)}">${text(product.title || "-")}</td>
       <td>${text(product.brandName || "-")}</td><td title="${text(product.categoryName)}">${text(product.categoryName || "-")}</td>
       <td>${poizonPrice ? money(poizonPrice) : "가격 없음"}</td>
-      <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td><td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
+      <td>${product.screenVerified ? excelProductMetric(product.sales30dRaw, product.sales30d) : "미동기화"}</td><td>${product.screenVerified ? excelProductMetric(product.localSales30dRaw, product.localSales30d) : "미동기화"}</td>
       <td>${result?.loading ? renderDomesticLoading(result.startedAt) : `<button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">${status}</button>`}</td>
     </tr>${result && !result.loading ? `<tr class="excel-product-search-detail ${groupClass} ${outcomeClass}"><td colspan="10"><div class="excel-product-search-result-label"><span></span><strong>${text(productLabel)}</strong>의 국내 검색 결과 <b class="excel-search-outcome-label">${text(outcome?.label || "확인 완료")}</b></div>${renderDomestic(result, product)}</td></tr>` : ""}`;
   }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
@@ -1300,7 +1331,12 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
   const totalColumns = Number.isFinite(Number(result.totalColumns)) ? Math.max(0, Number(result.totalColumns)) : 0;
   const headers = Array.isArray(result.headers) ? result.headers : [];
   const rows = Array.isArray(result.rows) ? result.rows : [];
-  const products = Array.isArray(result.products) ? result.products : [];
+  let products = Array.isArray(result.products) ? result.products : [];
+  const previewBrand = explorerMeta.brands.find((brand) =>
+    rendererBrandsMatch(brand.name, file.brandName || file.brand)
+      || rendererBrandsMatch(brand.ko, file.brandName || file.brand));
+  const previewSync = poizonSyncForFile(file, previewBrand || { name: file.brandName || file.brand });
+  if (previewSync) products = overlayExcelProductsWithSellerScreen(products, previewSync.products);
   const rowNumbers = Array.isArray(result.rowNumbers) ? result.rowNumbers : [];
   const productColumn = excelProductColumnIndex(headers);
   excelPreviewPageProducts = products;
@@ -2051,41 +2087,63 @@ function normalizedCategoryProductArticle(value) {
   return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
-function mergeExcelProductsWithSellerScreen(excelProducts = [], sellerProducts = []) {
-  const sellerByArticle = new Map();
-  const sellerByNormalizedArticle = new Map();
-  const sellerBySpu = new Map();
+function sellerScreenIndexes(sellerProducts = []) {
+  const byArticle = new Map();
+  const byNormalizedArticle = new Map();
+  const bySpu = new Map();
   for (const product of sellerProducts) {
     const article = String(product?.articleNumber || "").trim().toUpperCase();
     const normalized = normalizedCategoryProductArticle(article);
     const spuId = String(product?.spuId || product?.globalSpuId || "").trim();
-    if (article) sellerByArticle.set(article, product);
-    if (normalized) sellerByNormalizedArticle.set(normalized, product);
-    if (spuId) sellerBySpu.set(spuId, product);
+    if (article) byArticle.set(article, product);
+    if (normalized) byNormalizedArticle.set(normalized, product);
+    if (spuId) bySpu.set(spuId, product);
   }
+  return { byArticle, byNormalizedArticle, bySpu };
+}
+
+function matchingSellerScreenProduct(excelProduct = {}, indexes) {
+  const article = String(excelProduct?.articleNumber || "").trim().toUpperCase();
+  const spuId = String(excelProduct?.spuId || excelProduct?.globalSpuId || "").trim();
+  return indexes.byArticle.get(article)
+    || indexes.byNormalizedArticle.get(normalizedCategoryProductArticle(article))
+    || indexes.bySpu.get(spuId)
+    || null;
+}
+
+function mergeSellerScreenMetrics(excelProduct, screenProduct) {
+  return {
+    ...excelProduct,
+    averagePrice: Number(screenProduct.hasPriceData ? screenProduct.averagePrice : (excelProduct.averagePrice || 0)),
+    buyerExposure: Number(screenProduct.hasBuyerExposureData ? screenProduct.buyerExposure : (excelProduct.buyerExposure || 0)),
+    sales30d: Number(screenProduct.sales30d || 0),
+    localSales30d: Number(screenProduct.localSales30d || 0),
+    sales30dRaw: screenProduct.sales30dRaw ?? "",
+    localSales30dRaw: screenProduct.localSales30dRaw ?? "",
+    hasSalesData: screenProduct.hasSalesData === true,
+    hasLocalSalesData: screenProduct.hasLocalSalesData === true,
+    screenVerified: true,
+    salesSource: "seller-center-screen",
+  };
+}
+
+function overlayExcelProductsWithSellerScreen(excelProducts = [], sellerProducts = []) {
+  const indexes = sellerScreenIndexes(sellerProducts);
+  return excelProducts.map((excelProduct) => {
+    const screenProduct = matchingSellerScreenProduct(excelProduct, indexes);
+    return screenProduct ? mergeSellerScreenMetrics(excelProduct, screenProduct) : excelProduct;
+  });
+}
+
+function mergeExcelProductsWithSellerScreen(excelProducts = [], sellerProducts = []) {
+  const indexes = sellerScreenIndexes(sellerProducts);
   const matchedScreenProducts = new Set();
   const products = [];
   for (const excelProduct of excelProducts) {
-    const article = String(excelProduct?.articleNumber || "").trim().toUpperCase();
-    const spuId = String(excelProduct?.spuId || excelProduct?.globalSpuId || "").trim();
-    const screenProduct = sellerByArticle.get(article)
-      || sellerByNormalizedArticle.get(normalizedCategoryProductArticle(article))
-      || sellerBySpu.get(spuId);
+    const screenProduct = matchingSellerScreenProduct(excelProduct, indexes);
     if (!screenProduct) continue;
     matchedScreenProducts.add(screenProduct);
-    products.push({
-      ...excelProduct,
-      averagePrice: Number(screenProduct.hasPriceData ? screenProduct.averagePrice : (excelProduct.averagePrice || 0)),
-      buyerExposure: Number(screenProduct.hasBuyerExposureData ? screenProduct.buyerExposure : (excelProduct.buyerExposure || 0)),
-      sales30d: Number(screenProduct.sales30d || 0),
-      localSales30d: Number(screenProduct.localSales30d || 0),
-      sales30dRaw: screenProduct.sales30dRaw ?? "",
-      localSales30dRaw: screenProduct.localSales30dRaw ?? "",
-      hasSalesData: screenProduct.hasSalesData === true,
-      hasLocalSalesData: screenProduct.hasLocalSalesData === true,
-      screenVerified: true,
-      salesSource: "seller-center-screen",
-    });
+    products.push(mergeSellerScreenMetrics(excelProduct, screenProduct));
   }
   return {
     products,
@@ -2777,6 +2835,7 @@ async function searchDomesticAt(index, sourceProducts = currentExplorerProducts)
 
 async function refresh() {
   state = await window.aroundG.snapshot();
+  state.poizonSyncs = Array.isArray(state.poizonSyncs) ? state.poizonSyncs : [];
   renderLedgerRecords();
   renderRecords("orders");
   renderStockWatches();
@@ -4419,10 +4478,60 @@ $("#import-button").addEventListener("click", async () => {
   }
   try {
     const result = await restoreDownloadedBrandFiles();
-    if (!result?.ok) throw new Error(result?.message || "다운로드 파일을 동기화하지 못했습니다.");
+    if (!result?.ok) throw new Error(result?.message || "다운로드 파일을 확인하지 못했습니다.");
+    const brands = completedDownloadBrands();
+    if (!brands.length) throw new Error("동기화할 브랜드 Excel 파일이 없습니다.");
+    let completed = 0;
+    let matched = 0;
+    const failures = [];
+    // Seller Center uses one authenticated search window. Keep this queue
+    // sequential so a later brand cannot replace the table being captured.
+    for (const brand of brands) {
+      const file = latestCompletedBrandDownload(brand);
+      const brandName = brand.ko || brand.name || "브랜드";
+      if (status) status.textContent = `POIZON 화면·Excel 비교 ${completed + 1}/${brands.length} · ${brandName}`;
+      try {
+        const excelSales = await downloadedBrandSalesByArticle(brand);
+        if (!excelSales.ok) throw new Error(excelSales.error || "EXCEL_READ_FAILED");
+        const sellerResult = await window.aroundG.captureSellerBrandSales({
+          brandName: brand.name || "",
+          brandKo: brand.ko || "",
+        });
+        if (!sellerResult?.ok) {
+          const error = new Error(sellerResult?.message || "POIZON 화면 데이터를 가져오지 못했습니다.");
+          error.code = sellerResult?.code || "SELLER_SCREEN_READ_FAILED";
+          throw error;
+        }
+        const crossValidated = mergeExcelProductsWithSellerScreen(excelSales.products, sellerResult.products || []);
+        const saved = await window.aroundG.upsert("poizonSyncs", {
+          id: poizonSyncId(brand),
+          brandId: Number(brand.id),
+          brandName: brand.name || "",
+          brandKo: brand.ko || "",
+          filePath: file.path,
+          fileName: file.name || "",
+          fileSize: Number(file.size || 0),
+          fileTime: Number(file.time || file.mtimeMs || 0),
+          syncedAt: new Date().toISOString(),
+          status: "complete",
+          products: Array.isArray(sellerResult.products) ? sellerResult.products : [],
+          sellerProductCount: Number((sellerResult.products || []).length),
+          excelProductCount: Number(excelSales.productCount || 0),
+          matchedExcelCount: crossValidated.matchedExcelCount,
+          unmatchedExcelCount: crossValidated.unmatchedExcelCount,
+          unmatchedScreenCount: crossValidated.unmatchedScreenCount,
+        });
+        replaceLocalPoizonSync(saved);
+        completed += 1;
+        matched += crossValidated.matchedExcelCount;
+        renderDownloadedBrandFiles();
+      } catch (error) {
+        failures.push(`${brandName}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     if (status) {
-      status.className = "status success";
-      status.textContent = `다운로드 파일 ${downloadedBrandFiles.length.toLocaleString("ko-KR")}개를 동기화했습니다.`;
+      status.className = failures.length ? "status error" : "status success";
+      status.textContent = `POIZON 화면·Excel 동기화 ${completed}/${brands.length}개 브랜드 완료 · 일치 ${matched.toLocaleString("ko-KR")}행${failures.length ? ` · 실패 ${failures.join(" / ")}` : ""}`;
     }
   } catch (error) {
     if (status) {
