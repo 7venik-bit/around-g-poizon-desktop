@@ -2041,7 +2041,7 @@ function renderOfficialDomainAudit(audit = {}) {
   const stateLabel = audit.state === "cooldown" ? "보안 확인으로 일시 정지 · 검증 계속 버튼을 눌러주세요"
     : audit.state === "blocked" ? "보안 확인으로 일시 정지 · 검증 계속 버튼을 눌러주세요"
       : audit.state === "scheduled" ? "수동 검증 대기"
-      : audit.state === "paused" ? "수동 검증 대기"
+      : audit.state === "paused" ? "일시 정지 · 검증 계속 버튼을 눌러주세요"
       : audit.state === "completed_with_pending" ? "1차 전수검사 완료·공식몰 추가 확인 필요"
         : audit.state === "completed" ? "전체 검증 완료"
           : audit.running ? "검증 진행 중" : "대기";
@@ -2051,8 +2051,10 @@ function renderOfficialDomainAudit(audit = {}) {
     ? ` · 자체 공식몰 미발견 Excel ${Number(audit.notFoundCount || 0).toLocaleString("ko-KR")}개 저장`
     : audit.notFoundExportError ? " · 미발견 Excel 저장 실패" : "";
   status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%)${fullRunProgress} · 전용 연동 ${adapterDedicated.toLocaleString("ko-KR")} · 공통 연동 ${adapterCommon.toLocaleString("ko-KR")} · 연동 대기 ${adapterPending.toLocaleString("ko-KR")} · 공식몰·상품검색 확인 ${verified.toLocaleString("ko-KR")} · 공식몰 확인·상품검색 연결 불가 ${unsupported.toLocaleString("ko-KR")} · 공식몰 미발견·재확인 필요 ${pending.toLocaleString("ko-KR")}${current}${notFoundExcel}`;
+  const resumable = audit.recheckAll && fullRunTotal > 0 && fullRunProcessed < fullRunTotal;
   button.dataset.running = audit.running ? "true" : "false";
-  button.textContent = audit.running ? "검증 일시 정지" : "전체 브랜드 공식몰 재검증·연동";
+  button.textContent = audit.running ? "검증 일시 정지"
+    : resumable ? "검증 계속" : "전체 브랜드 공식몰 재검증·연동";
   button.classList.toggle("primary", !audit.running);
   explorerMeta.officialDomainAudit = audit;
   explorerMeta.officialDomainSummary = {
@@ -3071,7 +3073,8 @@ $("#official-domain-audit-toggle")?.addEventListener("click", async () => {
   const button = $("#official-domain-audit-toggle");
   button.disabled = true;
   if (button.dataset.running === "true") {
-    await window.aroundG.stopOfficialDomainAudit();
+    const result = await window.aroundG.stopOfficialDomainAudit();
+    if (result?.audit) renderOfficialDomainAudit(result.audit);
   } else {
     const result = await window.aroundG.startOfficialDomainAudit({ recheckAll: true });
     if (result?.audit) renderOfficialDomainAudit(result.audit);

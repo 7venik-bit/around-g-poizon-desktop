@@ -20,6 +20,9 @@ test("full verification remains stopped after startup until the user continues i
   assert.match(mainSource, /continuingFullRecheck/);
   assert.match(mainSource, /Date\.parse\(record\.lastCheckedAt \|\| 0\) < startedAtMs/);
   assert.doesNotMatch(mainSource, /rankNaverOfficialStoreCandidates/);
+  assert.match(mainSource, /while \(officialDomainAuditRunning && Date\.now\(\) < stopDeadline\) await wait\(25\)/);
+  assert.match(rendererSource, /result\?\.audit\) renderOfficialDomainAudit\(result\.audit\)/);
+  assert.match(rendererSource, /resumable \? "검증 계속"/);
   assert.match(rendererSource, /\$\("#brand-sync"\)\.addEventListener\("click", \(\) => syncFullBrandCatalog\(\)\)/);
   assert.doesNotMatch(rendererSource, /startVerification/);
   assert.match(rendererSource, /async function syncFullBrandCatalog\(\{ automatic = false \} = \{\}\)/);

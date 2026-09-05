@@ -10452,7 +10452,7 @@ app.whenReady().then(async () => {
     const registry = await ensureOfficialDomainRegistry(settings.brandCatalog || explorerMetadata().brands);
     return { ok: true, audit: officialDomainAuditSnapshot(registry, { running: true, state: "running" }) };
   });
-  ipcMain.handle("official-domain:audit-stop", () => {
+  ipcMain.handle("official-domain:audit-stop", async () => {
     officialDomainAuditStopRequested = true;
     officialDomainAuditAbortCurrent?.();
     officialDomainAuditAbortCurrent = null;
@@ -10462,7 +10462,25 @@ app.whenReady().then(async () => {
     officialDomainAuditWindow = null;
     clearTimeout(officialDomainAuditResumeTimer);
     officialDomainAuditResumeTimer = null;
-    return { ok: true };
+    // Wait for the audit loop's abort race and cleanup, allowing an immediate
+    // Continue click to start exactly one replacement worker.
+    const stopDeadline = Date.now() + 2_000;
+    while (officialDomainAuditRunning && Date.now() < stopDeadline) await wait(25);
+    const settings = store.snapshot().settings;
+    const brands = settings.brandCatalog || explorerMetadata().brands;
+    const registry = await ensureOfficialDomainRegistry(brands);
+    const savedAudit = store.snapshot().settings.officialDomainAudit || {};
+    const pausedAudit = {
+      ...savedAudit,
+      state: "paused",
+      currentBrand: "",
+      blocked: false,
+      phase: "paused",
+      updatedAt: new Date().toISOString(),
+    };
+    await persistOfficialDomainAudit(registry, pausedAudit);
+    const audit = sendOfficialDomainAuditProgress(registry, { ...pausedAudit, running: false });
+    return { ok: true, audit };
   });
   ipcMain.handle("weekly-site-health:status", () => sendWeeklySiteHealthStatus());
   ipcMain.handle("weekly-site-health:run", () => runWeeklySiteHealthCheck({ manual: true }));
