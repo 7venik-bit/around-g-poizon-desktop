@@ -4955,7 +4955,8 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
       if (loading) {
         loading.hidden = false;
         loading.querySelector("i").style.width = `${percent}%`;
-        loading.querySelector("span").textContent = `전체 ${percent}% · ${brandName} ${page}/${pages || "?"}페이지`;
+        loading.querySelector("span").textContent = `전체 ${percent}% · ${brandName} ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개`;
+        loading.title = `${brandName} 동기화 진행 중 · ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개 상품 확인`;
       }
       if (status) {
         status.className = "status";

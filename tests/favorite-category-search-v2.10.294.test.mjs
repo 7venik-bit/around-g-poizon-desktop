@@ -67,9 +67,9 @@ test("다운로드 동기화는 수동 POIZON 작업 복구 진행률과 분리�
 });
 
 test("다운로드 동기화 진행 상황을 브랜드·페이지·상품 수로 표시한다", () => {
-  assert.match(html, /id="excel-sync-progress"[^>]*aria-live="polite"/);
+  assert.match(html, /class="download-sync-anchor"[\s\S]*id="import-button"[\s\S]*id="excel-sync-progress"[^>]*aria-live="polite"/);
   assert.match(renderer, /if \(downloadFileSyncActive\)/);
-  assert.match(renderer, /전체 \$\{percent\}% · \$\{brandName\} \$\{page\}\/\$\{pages \|\| "\?"\}페이지/);
+  assert.match(renderer, /전체 \$\{percent\}% · \$\{brandName\} \$\{page\}\/\$\{pages \|\| "\?"\}페이지 ·/);
   assert.match(renderer, /동기화 진행 중 · \$\{page\}\/\$\{pages \|\| "\?"\}페이지/);
   assert.match(renderer, /개 상품 확인/);
 });

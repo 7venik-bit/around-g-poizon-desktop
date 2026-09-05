@@ -85,7 +85,11 @@
             <small id="update-help">프로그램 사용 중에도 자동으로 확인합니다.</small>
           </section>
         </div>
-        <button id="import-button" type="button">다운로드 파일 동기화</button><button id="export-button" class="primary">전체 백업</button>
+        <div class="download-sync-anchor">
+          <button id="import-button" type="button">다운로드 파일 동기화</button>
+          <div id="excel-sync-progress" class="header-sync-progress" hidden aria-live="polite"><span>동기화 대기</span><em><i></i></em></div>
+        </div>
+        <button id="export-button" class="primary">전체 백업</button>
       </div>
     </header>
     <main>
@@ -209,7 +213,6 @@
             </div>
           </section>
           <div id="excel-files-status" class="status">파일을 클릭하면 이 화면 안에서 원본 내용을 확인할 수 있습니다.</div>
-          <div id="excel-sync-progress" class="capture-progress" hidden aria-live="polite"><i></i><span>동기화 대기</span></div>
           <section id="excel-preview" class="excel-preview" hidden aria-live="polite">
             <div class="excel-preview-head">
               <div><small>IN-APP EXCEL VIEWER</small><h3 id="excel-preview-name">Excel 미리보기</h3><p id="excel-preview-summary"></p></div>
