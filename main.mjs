@@ -8,6 +8,7 @@ import writeXlsxFile from "write-excel-file/node";
 import { readFirstDataSheet } from "./services/excel-reader.mjs";
 import {
   findPoizonColumn,
+  findPoizonRecentSalesColumns,
   getPoizonWorksheetRows,
   summarizePoizonRows,
   readPoizonColumnValues,
@@ -4586,14 +4587,15 @@ function excelPreviewCell(value) {
 
 function buildExcelPreviewProducts(headers = [], entries = []) {
   const column = (...names) => findPoizonColumn(headers, ...names);
+  const recentSalesColumns = findPoizonRecentSalesColumns(headers);
   const columns = {
     spuId: column("SPU ID", "SPU_ID"), image: column("SPU 이미지", "상품 이미지", "이미지", "이미지 URL"),
     articleNumber: column("상품 번호", "상품번호", "상품코드", "품번"), title: column("상품명", "영문 상품명"),
     brand: column("상품 브랜드", "브랜드"), category1: column("카테고리 대분류", "대분류"),
     category2: column("카테고리 중분류", "중분류"), category3: column("카테고리 소분류", "소분류"),
     averagePrice: column("최근 30일간 평균 거래가", "최근 30일 평균 거래가", "평균 거래가"),
-    sales30d: column("최근 30일 판매량", "최근30일판매량"),
-    localSales30d: column("현지 판매자 최근 30일 판매량", "현지판매자최근30일판매량"),
+    sales30d: recentSalesColumns.china,
+    localSales30d: recentSalesColumns.local,
     totalSales: column("중국 총 판매량", "총 판매량"),
     localTotalSales: column("현지 판매자 총 판매량", "현지판매자총판매량"),
     option: column("사이즈/옵션/색상", "옵션"), skuId: column("SKU ID", "SKU_ID"),
@@ -4631,8 +4633,10 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
       localTotalSalesRaw: raw(row, columns.localTotalSales),
       sales30d: parsePoizonSalesMetric(cell(row, columns.sales30d)),
       sales30dRaw: raw(row, columns.sales30d),
+      hasSalesData: columns.sales30d >= 0 && /\d/.test(raw(row, columns.sales30d)),
       localSales30d: parsePoizonSalesMetric(cell(row, columns.localSales30d)),
       localSales30dRaw: raw(row, columns.localSales30d),
+      hasLocalSalesData: columns.localSales30d >= 0 && /\d/.test(raw(row, columns.localSales30d)),
     }];
   });
 }
@@ -4701,6 +4705,7 @@ async function previewExcelFile(input = {}) {
     path: filePath,
     name: basename(filePath),
     headers: workbook.headers,
+    salesColumns: findPoizonRecentSalesColumns(workbook.headers),
     rows: productView || selectionOnly ? [] : pageEntries.map((entry) => entry.values),
     rowNumbers: productView || selectionOnly ? [] : pageEntries.map((entry) => entry.sourceRowNumber),
     products: pageProducts,

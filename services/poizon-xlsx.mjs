@@ -78,6 +78,20 @@ export function findPoizonColumn(headers, ...names) {
   return -1;
 }
 
+// Keep China and local-seller columns disjoint. The generic substring matcher
+// must not use the local column as China when the China column is absent.
+export function findPoizonRecentSalesColumns(headers = []) {
+  const normalized = headers.map(normalizePoizonHeader);
+  const find = (pattern) => {
+    const matches = normalized.map((header, index) => pattern.test(header) ? index : -1).filter((index) => index >= 0);
+    return matches.length === 1 ? matches[0] : -1;
+  };
+  return {
+    china: find(/^(?:중국(?:시장)?)?최근30일(?:간)?판매량(?:중국(?:시장)?)?(?:건|개)?$/),
+    local: find(/^현지판매자최근30일(?:간)?판매량(?:건|개)?$/),
+  };
+}
+
 export function getPoizonWorksheetRows(workbookResult) {
   if (Array.isArray(workbookResult?.[0]?.data)) {
     return (

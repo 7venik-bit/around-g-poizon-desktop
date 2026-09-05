@@ -10,7 +10,7 @@ const [renderer, main, html] = await Promise.all([
 
 test("카테고리 검색은 인기리스트 대신 다운로드 완료 브랜드를 전달한다", () => {
   assert.match(renderer, /const favoriteBrandIds = \[\.\.\.categoryBrandIds\]/);
-  assert.match(renderer, /const excelSales = await downloadedBrandSalesByArticle\(brand\)/);
+  assert.match(renderer, /const excelSales = await downloadedBrandSalesByArticle\(brand, \{ minimumChinaSales30, minimumLocalSales30 \}\)/);
   assert.match(renderer, /const categoryProducts = excelSales\.products/);
   assert.doesNotMatch(renderer, /const popularResult = await capturePopularProducts\(\{ runDomestic: false, renderResults: false \}\)/);
 });
@@ -19,7 +19,7 @@ test("다운로드 완료 브랜드 구성이 바뀌면 별도의 카테고리 �
   assert.match(renderer, /categorySearchCacheId\(category, detail, minimumChinaSales30, minimumLocalSales30, brandIds = pinnedBrandIds\)/);
   assert.match(renderer, /:\$\{detail \|\| "all"\}:/);
   assert.match(renderer, /favorites:\$\{brandKey\}/);
-  assert.match(renderer, /category:v4:/);
+  assert.match(renderer, /category:excel-v5:/);
   assert.match(renderer, /다운로드 완료 브랜드가 없습니다/);
 });
 
@@ -27,7 +27,7 @@ test("카테고리 30일 필터는 중국과 현지 판매량의 개별 최솟�
   assert.match(main, /product\.sales30d >= minimumChinaSales30/);
   assert.match(main, /product\.localSales30d >= minimumLocalSales30/);
   assert.match(renderer, /localSales30d: Number\(product\.localSales30d \|\| 0\)/);
-  assert.match(renderer, /downloadedBrandSalesByArticle\(brand\)/);
+  assert.match(renderer, /downloadedBrandSalesByArticle\(brand,/);
   assert.match(renderer, /Number\(product\.sales30d \|\| 0\) >= minimumChinaSales30/);
   assert.match(renderer, /Number\(product\.localSales30d \|\| 0\) >= minimumLocalSales30/);
   assert.match(renderer, /hasChinaSales/);

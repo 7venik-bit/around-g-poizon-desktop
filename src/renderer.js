@@ -2026,28 +2026,31 @@ function salesByArticle(products = state.products) {
   return records;
 }
 
-async function downloadedBrandSalesByArticle(brand) {
+async function downloadedBrandSalesByArticle(brand, { minimumChinaSales30 = null, minimumLocalSales30 = null } = {}) {
   const file = latestCompletedBrandDownload(brand);
-  if (!file?.path) return { records: {}, products: [], productCount: 0, fileFound: false };
-  const result = await window.aroundG.previewExcelFile(file.path, 0, 100000, {
-    minimumTotal: "",
-    minimumLocalTotal: "",
-    productView: true,
-    selectionOnly: true,
-  });
-  if (!result?.ok) {
-    return { records: {}, products: [], productCount: 0, fileFound: true, error: result?.message || "EXCEL_PREVIEW_FAILED" };
-  }
-  const normalizedHeaders = (result.headers || []).map((value) => String(value || "").replace(/\s+/g, ""));
-  const hasChinaSales = normalizedHeaders.some((value) => /^(?:중국)?최근30일판매량$/.test(value));
-  const hasLocalSales = normalizedHeaders.some((value) => /^현지판매자최근30일판매량$/.test(value));
-  if (!hasChinaSales || !hasLocalSales) {
-    const missing = [!hasChinaSales ? "중국 최근 30일 판매량" : "", !hasLocalSales ? "현지 판매자 최근 30일 판매량" : ""]
-      .filter(Boolean).join(", ");
-    return { records: {}, products: [], productCount: 0, fileFound: true, error: `${missing} 열 없음` };
-  }
-  const products = Array.isArray(result.products) ? result.products : [];
-  return { records: salesByArticle(products), products, productCount: products.length, fileFound: true };
+  if (!file?.path) return { ok: false, products: [], productCount: 0, error: "다운로드된 Excel 파일 경로가 없습니다." };
+  const products = [];
+  let offset = 0;
+  do {
+    const result = await window.aroundG.previewExcelFile(file.path, offset, 100000, {
+      minimumTotal: "", minimumLocalTotal: "", productView: true, selectionOnly: true,
+    });
+    if (!result?.ok) return { ok: false, fileName: file.name, products: [], productCount: 0, error: result?.message || "EXCEL_PREVIEW_FAILED" };
+    // Use the SAME column resolution as the main-process Excel converter.
+    const hasChinaSales = Number.isInteger(result.salesColumns?.china) && result.salesColumns.china >= 0;
+    const hasLocalSales = Number.isInteger(result.salesColumns?.local) && result.salesColumns.local >= 0;
+    const missing = [minimumChinaSales30 !== null && !hasChinaSales ? "중국 최근 30일 판매량" : "",
+      minimumLocalSales30 !== null && !hasLocalSales ? "현지 판매자 최근 30일 판매량" : ""].filter(Boolean);
+    if (missing.length) return { ok: false, fileName: file.name, products: [], productCount: 0,
+      error: `${missing.join(", ")} 열 없음 또는 중복 · 총판매량으로 대체하지 않았습니다.` };
+    if (!Array.isArray(result.products)) throw new Error("EXCEL_PRODUCTS_INVALID");
+    if (offset > 0 && (result.offset !== offset || !result.products.length)) throw new Error("EXCEL_PAGE_INCOMPLETE");
+    products.push(...result.products);
+    offset += result.products.length;
+    if (offset >= Number(result.totalRows || 0)) break;
+    if (!result.products.length) throw new Error("EXCEL_PAGE_INCOMPLETE");
+  } while (true);
+  return { ok: true, products, productCount: products.length, fileName: file.name || file.path.split(/[\\/]/).pop() };
 }
 
 function renderOfficialDomainAudit(audit = {}) {
@@ -4079,7 +4082,7 @@ function categorySearchCacheId(category, detail, minimumChinaSales30, minimumLoc
   const brandKey = [...brandIds].map(Number).filter(Number.isFinite).sort((a, b) => a - b).join("-") || "none";
   const chinaKey = minimumChinaSales30 === null ? "any" : minimumChinaSales30;
   const localKey = minimumLocalSales30 === null ? "any" : minimumLocalSales30;
-  return `category:v4:${categorySearchDate()}:${category}:${detail || "all"}:china30-${chinaKey}:local30-${localKey}:favorites:${brandKey}`;
+  return `category:excel-v5:${categorySearchDate()}:${category}:${detail || "all"}:china30-${chinaKey}:local30-${localKey}:favorites:${brandKey}`;
 }
 
 const CATEGORY_DETAIL_PATTERNS = {
@@ -4194,12 +4197,14 @@ $("#category-sales-filter-reset").addEventListener("click", () => {
 
 $("#category-search").addEventListener("click", async () => {
   const runId = ++categorySearchRunId;
+  const category = selectedCategory;
+  const detail = selectedCategoryDetail;
   const button = $("#category-search");
   const status = $("#category-status");
   const minimumChinaSales30 = categorySalesMinimum("#category-min-china-sales30");
   const minimumLocalSales30 = categorySalesMinimum("#category-min-local-sales30");
   const favoriteBrandIds = [...categoryBrandIds].map(Number).filter(Number.isFinite);
-  if (!selectedCategoryDetail) return;
+  if (!detail) return;
   if (!favoriteBrandIds.length) {
     status.className = "status error";
     status.textContent = "카테고리 검색에 사용할 다운로드 완료 브랜드가 없습니다.";
@@ -4209,45 +4214,41 @@ $("#category-search").addEventListener("click", async () => {
   $("#category-search-stop").disabled = false;
   startCategoryLoading();
   status.className = "status";
-  status.textContent = "1단계/3 · 저장된 검색 결과를 확인하는 중…";
+  status.textContent = "로컬 Excel 검색 · 선택 브랜드 파일을 읽는 중…";
+  renderExplorerResults(`${category} 〉 ${detail} 검색`, []);
   try {
     await refresh();
     await pruneCategorySearchHistory();
-    const cacheId = categorySearchCacheId(selectedCategory, selectedCategoryDetail, minimumChinaSales30, minimumLocalSales30, favoriteBrandIds);
-    const cached = (state.categorySearches || []).find((entry) => entry.id === cacheId && Array.isArray(entry.products));
-    if (cached?.complete) {
-      updateCategoryLoading({ title: "저장된 카테고리 검색 결과를 불러왔습니다.", completed: cached.sourceCount, total: cached.rankedBrandCount, count: cached.products.length, percent: 100 });
-      status.className = "status success";
-      status.textContent = `${selectedCategory} 〉 ${selectedCategoryDetail} 저장 결과 ${cached.products.length.toLocaleString("ko-KR")}개 · ${new Date(cached.createdAt).toLocaleString("ko-KR")} 검색`;
-      renderExplorerResults(`${selectedCategory} 〉 ${selectedCategoryDetail} 검색 · 저장 결과`, cached.products);
-      window.setTimeout(() => finishCategoryLoading(), 1_800);
-      return;
-    }
-    const detailProductsByKey = new Map((cached?.products || []).map((product) => {
-      const key = `${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || product.name || ""}`;
-      return [key, product];
-    }));
-    const completedBrandIds = new Set((cached?.completedBrandIds || []).map(Number));
-    let sourceCount = Number(cached?.sourceCount || 0);
-    let failedSourceCount = Number(cached?.failedSourceCount || 0);
-    let sourceTotal = Number(cached?.sourceTotal || 0);
-    let completedCount = completedBrandIds.size;
+    if (runId !== categorySearchRunId) return;
+    const cacheId = categorySearchCacheId(category, detail, minimumChinaSales30, minimumLocalSales30, favoriteBrandIds);
+    // History is an audit trail, never an input to a new button press. Older
+    // versions marked failed brands completed; restoring that state skipped
+    // all workbook reads and reproduced the same error even after updates.
+    const detailProductsByKey = new Map();
+    const completedBrandIds = new Set();
+    const failures = [];
+    const createdAt = new Date().toISOString();
+    let sourceCount = 0;
+    let failedSourceCount = 0;
+    let sourceTotal = 0;
+    let completedCount = 0;
     let nextBrandIndex = 0;
     let partialSave = Promise.resolve();
     const savePartialResult = () => {
       const snapshot = {
         id: cacheId,
-        category: selectedCategory,
-        categoryDetail: selectedCategoryDetail,
+        category,
+        categoryDetail: detail,
         brandIds: favoriteBrandIds,
         completedBrandIds: [...completedBrandIds],
         minimumChinaSales30,
         minimumLocalSales30,
-        createdAt: cached?.createdAt || new Date().toISOString(),
+        createdAt,
         updatedAt: new Date().toISOString(),
         products: [...detailProductsByKey.values()],
         sourceCount,
         failedSourceCount,
+        failures: [...failures],
         rankedBrandCount: favoriteBrandIds.length,
         sourceTotal,
         complete: false,
@@ -4263,7 +4264,7 @@ $("#category-search").addEventListener("click", async () => {
       if (completedBrandIds.has(brandId)) return searchNextBrand();
       const brand = explorerMeta.brands.find((item) => Number(item.id) === brandId);
       const brandName = brand?.ko || brand?.name || `브랜드 ${brandId}`;
-      status.textContent = `${completedCount}/${favoriteBrandIds.length} · ${brandName} ${selectedCategoryDetail} 검색 중… · 최대 2개 동시 처리`;
+      status.textContent = `로컬 Excel ${completedCount}/${favoriteBrandIds.length} · ${brandName} ${detail} 검색 중…`;
       updateCategoryLoading({
         title: `${brandName} 검색 중 · 완료된 결과만 안전하게 누적합니다.`,
         completed: completedCount,
@@ -4272,36 +4273,35 @@ $("#category-search").addEventListener("click", async () => {
         percent: Math.round((completedCount / favoriteBrandIds.length) * 100),
       });
       try {
-        const excelSales = await downloadedBrandSalesByArticle(brand);
+        const excelSales = await downloadedBrandSalesByArticle(brand, { minimumChinaSales30, minimumLocalSales30 });
         if (runId !== categorySearchRunId) return;
-        if (!excelSales.productCount) {
-          failedSourceCount += 1;
-          status.className = "status error";
-          status.textContent = `${brandName} 원본 Excel에서 판매량 데이터를 읽지 못했습니다${excelSales.error ? ` · ${excelSales.error}` : ""}`;
-          return;
-        }
+        if (!excelSales.ok) throw new Error(excelSales.error || "EXCEL_READ_FAILED");
         const categoryProducts = excelSales.products
-          .filter((product) => selectedCategory === "전체" || categoryGroupFromProduct(product) === selectedCategory);
-        const detailProducts = filterCategoryDetailProducts(categoryProducts, selectedCategoryDetail)
-          .filter((product) => minimumChinaSales30 === null || Number(product.sales30d || 0) >= minimumChinaSales30)
-          .filter((product) => minimumLocalSales30 === null || Number(product.localSales30d || 0) >= minimumLocalSales30);
+          .filter((product) => category === "전체" || categoryGroupFromProduct(product) === category);
+        const detailProducts = filterCategoryDetailProducts(categoryProducts, detail)
+          .filter((product) => minimumChinaSales30 === null || (product.hasSalesData === true && Number(product.sales30d || 0) >= minimumChinaSales30))
+          .filter((product) => minimumLocalSales30 === null || (product.hasLocalSalesData === true && Number(product.localSales30d || 0) >= minimumLocalSales30));
         sourceCount += 1;
         sourceTotal += excelSales.productCount;
+        completedBrandIds.add(brandId);
         for (const product of detailProducts) {
           const key = `${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || product.name || ""}`;
-          if (!detailProductsByKey.has(key)) detailProductsByKey.set(key, product);
+          if (!detailProductsByKey.has(key)) detailProductsByKey.set(key, { ...product, name: product.name || product.title || "", brandName: product.brandName || brandName });
         }
-      } catch (_error) {
+      } catch (error) {
+        if (runId !== categorySearchRunId) return;
         failedSourceCount += 1;
+        const file = latestCompletedBrandDownload(brand);
+        failures.push({ brandId, brandName, fileName: file?.name || file?.path?.split(/[\\/]/).pop() || "파일 미확인",
+          code: String(error?.code || "EXCEL_READ_FAILED"), message: String(error?.message || error) });
       }
       if (runId !== categorySearchRunId) return;
-      completedBrandIds.add(brandId);
-      completedCount = completedBrandIds.size;
+      completedCount += 1;
       await savePartialResult();
       if (runId !== categorySearchRunId) return;
-      renderExplorerResults(`${selectedCategory} 〉 ${selectedCategoryDetail} 검색 · 진행 중`, [...detailProductsByKey.values()]);
+      renderExplorerResults(`${category} 〉 ${detail} 검색 · 진행 중`, [...detailProductsByKey.values()]);
       updateCategoryLoading({
-        title: `${brandName} 검색 완료 · 다음 브랜드를 준비합니다.`,
+        title: `${brandName} ${completedBrandIds.has(brandId) ? "검색 완료" : "파일 확인 필요"} · 다음 브랜드를 준비합니다.`,
         completed: completedCount,
         total: favoriteBrandIds.length,
         count: detailProductsByKey.size,
@@ -4312,33 +4312,35 @@ $("#category-search").addEventListener("click", async () => {
     await Promise.all([searchNextBrand(), searchNextBrand()]);
     await partialSave;
     if (runId !== categorySearchRunId) return;
+    const failureText = failures.map((failure) => `${failure.brandName} (${failure.fileName}) · ${failure.message}`).join(" / ");
     if (!sourceCount) {
       status.className = "status error";
-      status.textContent = `다운로드 완료 브랜드 ${favoriteBrandIds.length}개의 검색에 모두 실패했습니다. 잠시 후 다시 시도해 주세요.`;
+      status.textContent = `로컬 Excel 읽기 실패 · ${failureText || "선택한 다운로드 파일을 확인해 주세요."}`;
       finishCategoryLoading();
       return;
     }
     const detailProducts = [...detailProductsByKey.values()];
-    status.className = "status success";
-    status.textContent = `${selectedCategory} 〉 ${selectedCategoryDetail} 상품 ${detailProducts.length.toLocaleString("ko-KR")}개 확인 · 다운로드 완료 브랜드 ${sourceCount}/${favoriteBrandIds.length}개 완료${failedSourceCount ? ` · ${failedSourceCount}개 검색 실패` : ""}`;
-    renderExplorerResults(`${selectedCategory} 〉 ${selectedCategoryDetail} 검색`, detailProducts);
+    status.className = failedSourceCount ? "status error" : "status success";
+    status.textContent = `로컬 Excel · ${category} 〉 ${detail} 상품 ${detailProducts.length.toLocaleString("ko-KR")}개 · 원본 ${sourceTotal.toLocaleString("ko-KR")}행 · 브랜드 ${sourceCount}/${favoriteBrandIds.length}개 완료${failureText ? ` · 실패: ${failureText}` : ""}`;
+    renderExplorerResults(`${category} 〉 ${detail} 검색`, detailProducts);
     await window.aroundG.upsert("categorySearches", {
       id: cacheId,
-      category: selectedCategory,
-      categoryDetail: selectedCategoryDetail,
+      category,
+      categoryDetail: detail,
       brandIds: favoriteBrandIds,
-      completedBrandIds: favoriteBrandIds,
+      completedBrandIds: [...completedBrandIds],
       minimumChinaSales30,
       minimumLocalSales30,
-      createdAt: new Date().toISOString(),
+      createdAt,
       products: detailProducts,
       sourceCount,
       failedSourceCount,
+      failures,
       rankedBrandCount: favoriteBrandIds.length,
       sourceTotal,
-      complete: true,
+      complete: failedSourceCount === 0,
     });
-    updateCategoryLoading({ title: `${selectedCategoryDetail} 브랜드별 검색을 완료했습니다.`, completed: sourceCount, total: favoriteBrandIds.length, count: detailProducts.length, percent: 100 });
+    updateCategoryLoading({ title: `${detail} Excel 확인을 마쳤습니다.`, completed: completedCount, total: favoriteBrandIds.length, count: detailProducts.length, percent: 100 });
     window.setTimeout(() => finishCategoryLoading(), 1_800);
   } catch (error) {
     if (runId !== categorySearchRunId) return;
