@@ -12,7 +12,7 @@ test("menu leads with POIZON original data and downloaded Excel files", async ()
   assert.match(html, /data-view="products">POIZON 원본 데이터<\/button>/);
   assert.match(html, /data-explorer="brand"><strong>원본 데이터 가져오기<\/strong>/);
   assert.match(html, /data-explorer="files"><strong>받은 Excel 파일<\/strong>/);
-  assert.match(html, /최근 30일 판매량<\/b>과 <b>현지 30일 판매량<\/b>은 원본 Excel에서 직접 입력/);
+  assert.match(html, /중국 총 판매량<\/b>과 <b>현지 판매자 총 판매량<\/b>은 OneDrive 원본 Excel 값을 그대로 사용/);
   assert.doesNotMatch(html, /class="explorer-mode[^\"]*" data-explorer="popular"/);
   assert.doesNotMatch(html, /class="explorer-mode[^\"]*" data-explorer="category"/);
 });

@@ -9,6 +9,7 @@ import { readFirstDataSheet } from "./services/excel-reader.mjs";
 import {
   findPoizonColumn,
   findPoizonRecentSalesColumns,
+  findPoizonTotalSalesColumns,
   getPoizonWorksheetRows,
   summarizePoizonRows,
   readPoizonColumnValues,
@@ -4588,6 +4589,7 @@ function excelPreviewCell(value) {
 function buildExcelPreviewProducts(headers = [], entries = []) {
   const column = (...names) => findPoizonColumn(headers, ...names);
   const recentSalesColumns = findPoizonRecentSalesColumns(headers);
+  const totalSalesColumns = findPoizonTotalSalesColumns(headers);
   const columns = {
     spuId: column("SPU ID", "SPU_ID"), image: column("SPU 이미지", "상품 이미지", "이미지", "이미지 URL"),
     articleNumber: column("상품 번호", "상품번호", "상품코드", "품번"), title: column("상품명", "영문 상품명"),
@@ -4596,8 +4598,8 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
     averagePrice: column("최근 30일간 평균 거래가", "최근 30일 평균 거래가", "평균 거래가"),
     sales30d: recentSalesColumns.china,
     localSales30d: recentSalesColumns.local,
-    totalSales: column("중국 총 판매량", "총 판매량"),
-    localTotalSales: column("현지 판매자 총 판매량", "현지판매자총판매량"),
+    totalSales: totalSalesColumns.china,
+    localTotalSales: totalSalesColumns.local,
     option: column("사이즈/옵션/색상", "옵션"), skuId: column("SKU ID", "SKU_ID"),
   };
   const cell = (row, index) => index >= 0 ? row[index] : "";
@@ -4629,8 +4631,10 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
       optionCount: 1,
       totalSales: parsePoizonSalesMetric(cell(row, columns.totalSales)),
       totalSalesRaw: raw(row, columns.totalSales),
+      hasTotalSalesData: columns.totalSales >= 0 && /\d/.test(raw(row, columns.totalSales)),
       localTotalSales: parsePoizonSalesMetric(cell(row, columns.localTotalSales)),
       localTotalSalesRaw: raw(row, columns.localTotalSales),
+      hasLocalTotalSalesData: columns.localTotalSales >= 0 && /\d/.test(raw(row, columns.localTotalSales)),
       sales30d: parsePoizonSalesMetric(cell(row, columns.sales30d)),
       sales30dRaw: raw(row, columns.sales30d),
       hasSalesData: columns.sales30d >= 0 && /\d/.test(raw(row, columns.sales30d)),

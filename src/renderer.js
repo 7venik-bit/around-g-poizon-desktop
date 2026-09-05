@@ -2026,7 +2026,7 @@ function salesByArticle(products = state.products) {
   return records;
 }
 
-async function downloadedBrandSalesByArticle(brand, { minimumChinaSales30 = null, minimumLocalSales30 = null } = {}) {
+async function downloadedBrandSalesByArticle(brand, { minimumChinaTotalSales = null, minimumLocalTotalSales = null } = {}) {
   const file = latestCompletedBrandDownload(brand);
   if (!file?.path) return { ok: false, products: [], productCount: 0, error: "다운로드된 Excel 파일 경로가 없습니다." };
   const products = [];
@@ -2037,12 +2037,12 @@ async function downloadedBrandSalesByArticle(brand, { minimumChinaSales30 = null
     });
     if (!result?.ok) return { ok: false, fileName: file.name, products: [], productCount: 0, error: result?.message || "EXCEL_PREVIEW_FAILED" };
     // Use the SAME column resolution as the main-process Excel converter.
-    const hasChinaSales = Number.isInteger(result.salesColumns?.china) && result.salesColumns.china >= 0;
-    const hasLocalSales = Number.isInteger(result.salesColumns?.local) && result.salesColumns.local >= 0;
-    const missing = [minimumChinaSales30 !== null && !hasChinaSales ? "중국 최근 30일 판매량" : "",
-      minimumLocalSales30 !== null && !hasLocalSales ? "현지 판매자 최근 30일 판매량" : ""].filter(Boolean);
+    const hasChinaSales = Number.isInteger(result.totalSalesColumn) && result.totalSalesColumn >= 0;
+    const hasLocalSales = Number.isInteger(result.localTotalSalesColumn) && result.localTotalSalesColumn >= 0;
+    const missing = [minimumChinaTotalSales !== null && !hasChinaSales ? "중국 총 판매량" : "",
+      minimumLocalTotalSales !== null && !hasLocalSales ? "현지 판매자 총 판매량" : ""].filter(Boolean);
     if (missing.length) return { ok: false, fileName: file.name, products: [], productCount: 0,
-      error: `${missing.join(", ")} 열 없음 또는 중복 · 총판매량으로 대체하지 않았습니다.` };
+      error: `${missing.join(", ")} 열이 없거나 중복되었습니다.` };
     if (!Array.isArray(result.products)) throw new Error("EXCEL_PRODUCTS_INVALID");
     if (offset > 0 && (result.offset !== offset || !result.products.length)) throw new Error("EXCEL_PAGE_INCOMPLETE");
     products.push(...result.products);
@@ -4078,11 +4078,11 @@ function categorySalesMinimum(selector) {
   return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : null;
 }
 
-function categorySearchCacheId(category, detail, minimumChinaSales30, minimumLocalSales30, brandIds = pinnedBrandIds) {
+function categorySearchCacheId(category, detail, minimumChinaTotalSales, minimumLocalTotalSales, brandIds = pinnedBrandIds) {
   const brandKey = [...brandIds].map(Number).filter(Number.isFinite).sort((a, b) => a - b).join("-") || "none";
-  const chinaKey = minimumChinaSales30 === null ? "any" : minimumChinaSales30;
-  const localKey = minimumLocalSales30 === null ? "any" : minimumLocalSales30;
-  return `category:excel-v5:${categorySearchDate()}:${category}:${detail || "all"}:china30-${chinaKey}:local30-${localKey}:favorites:${brandKey}`;
+  const chinaKey = minimumChinaTotalSales === null ? "any" : minimumChinaTotalSales;
+  const localKey = minimumLocalTotalSales === null ? "any" : minimumLocalTotalSales;
+  return `category:excel-total-v6:${categorySearchDate()}:${category}:${detail || "all"}:china-total-${chinaKey}:local-total-${localKey}:favorites:${brandKey}`;
 }
 
 const CATEGORY_DETAIL_PATTERNS = {
@@ -4189,8 +4189,8 @@ $("#category-search-stop").addEventListener("click", async () => {
 });
 
 $("#category-sales-filter-reset").addEventListener("click", () => {
-  $("#category-min-china-sales30").value = "";
-  $("#category-min-local-sales30").value = "";
+  $("#category-min-china-total-sales").value = "";
+  $("#category-min-local-total-sales").value = "";
   $("#category-status").className = "status";
   $("#category-status").textContent = "판매량 조건을 초기화했습니다. 검색하면 전체 판매량을 대상으로 합니다.";
 });
@@ -4201,8 +4201,8 @@ $("#category-search").addEventListener("click", async () => {
   const detail = selectedCategoryDetail;
   const button = $("#category-search");
   const status = $("#category-status");
-  const minimumChinaSales30 = categorySalesMinimum("#category-min-china-sales30");
-  const minimumLocalSales30 = categorySalesMinimum("#category-min-local-sales30");
+  const minimumChinaTotalSales = categorySalesMinimum("#category-min-china-total-sales");
+  const minimumLocalTotalSales = categorySalesMinimum("#category-min-local-total-sales");
   const favoriteBrandIds = [...categoryBrandIds].map(Number).filter(Number.isFinite);
   if (!detail) return;
   if (!favoriteBrandIds.length) {
@@ -4220,7 +4220,7 @@ $("#category-search").addEventListener("click", async () => {
     await refresh();
     await pruneCategorySearchHistory();
     if (runId !== categorySearchRunId) return;
-    const cacheId = categorySearchCacheId(category, detail, minimumChinaSales30, minimumLocalSales30, favoriteBrandIds);
+    const cacheId = categorySearchCacheId(category, detail, minimumChinaTotalSales, minimumLocalTotalSales, favoriteBrandIds);
     // History is an audit trail, never an input to a new button press. Older
     // versions marked failed brands completed; restoring that state skipped
     // all workbook reads and reproduced the same error even after updates.
@@ -4241,8 +4241,8 @@ $("#category-search").addEventListener("click", async () => {
         categoryDetail: detail,
         brandIds: favoriteBrandIds,
         completedBrandIds: [...completedBrandIds],
-        minimumChinaSales30,
-        minimumLocalSales30,
+        minimumChinaTotalSales,
+        minimumLocalTotalSales,
         createdAt,
         updatedAt: new Date().toISOString(),
         products: [...detailProductsByKey.values()],
@@ -4273,14 +4273,17 @@ $("#category-search").addEventListener("click", async () => {
         percent: Math.round((completedCount / favoriteBrandIds.length) * 100),
       });
       try {
-        const excelSales = await downloadedBrandSalesByArticle(brand, { minimumChinaSales30, minimumLocalSales30 });
+        const excelSales = await downloadedBrandSalesByArticle(brand, {
+          minimumChinaTotalSales,
+          minimumLocalTotalSales,
+        });
         if (runId !== categorySearchRunId) return;
         if (!excelSales.ok) throw new Error(excelSales.error || "EXCEL_READ_FAILED");
         const categoryProducts = excelSales.products
           .filter((product) => category === "전체" || categoryGroupFromProduct(product) === category);
         const detailProducts = filterCategoryDetailProducts(categoryProducts, detail)
-          .filter((product) => minimumChinaSales30 === null || (product.hasSalesData === true && Number(product.sales30d || 0) >= minimumChinaSales30))
-          .filter((product) => minimumLocalSales30 === null || (product.hasLocalSalesData === true && Number(product.localSales30d || 0) >= minimumLocalSales30));
+          .filter((product) => minimumChinaTotalSales === null || (product.hasTotalSalesData === true && Number(product.totalSales || 0) >= minimumChinaTotalSales))
+          .filter((product) => minimumLocalTotalSales === null || (product.hasLocalTotalSalesData === true && Number(product.localTotalSales || 0) >= minimumLocalTotalSales));
         sourceCount += 1;
         sourceTotal += excelSales.productCount;
         completedBrandIds.add(brandId);
@@ -4329,8 +4332,8 @@ $("#category-search").addEventListener("click", async () => {
       categoryDetail: detail,
       brandIds: favoriteBrandIds,
       completedBrandIds: [...completedBrandIds],
-      minimumChinaSales30,
-      minimumLocalSales30,
+      minimumChinaTotalSales,
+      minimumLocalTotalSales,
       createdAt,
       products: detailProducts,
       sourceCount,

@@ -20,7 +20,7 @@ const brandSource = section(renderer, "function normalizeBrandKey(", "function c
 const loaderSource = section(renderer, "function salesByArticle(", "function renderOfficialDomainAudit(");
 const filterSource = section(renderer, "const CATEGORY_SEARCH_RETENTION_MS", "async function pruneCategorySearchHistory(");
 const handlerSource = section(renderer, '$("#category-search").addEventListener', '$("#import-button").addEventListener');
-const standardHeaders = ["SPU ID", "상품 번호", "상품명", "카테고리 소분류", "최근 30일 판매량", "현지 판매자 최근 30일 판매량"];
+const standardHeaders = ["SPU ID", "상품 번호", "상품명", "카테고리 소분류", "중국 총 판매량", "현지 판매자 총 판매량"];
 const vest = ["19438508", "JWVAX25017", "코오롱스포츠 남성 조끼", "조끼", "100+", 83];
 const initialBrand = { id: 1000444, name: "KOLON SPORT", ko: "코오롱스포츠" };
 
@@ -31,8 +31,8 @@ function harness({ sheets = { "/kolon.xlsx": [standardHeaders, vest] }, brands =
     if (!nodes.has(id)) nodes.set(id, { value: "", disabled: false, className: "", textContent: "", addEventListener(_event, callback) { this.callback = callback; } });
     return nodes.get(id);
   };
-  $("#category-min-china-sales30").value = china;
-  $("#category-min-local-sales30").value = local;
+  $("#category-min-china-total-sales").value = china;
+  $("#category-min-local-total-sales").value = local;
   const previewContext = createContext({ ...xlsx, filterPoizonPreviewRows, parsePoizonSalesMetric,
     excelPreviewCache: new Map(), basename,
     stat: async (path) => { if (!(path in sheets)) throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" }); return { size: 100, mtimeMs: 1 }; },
@@ -70,15 +70,15 @@ test("retries Excel even when history marked a failed brand completed", async ()
   assert.equal(h.rendered.at(-1).length, 1);
 });
 
-test("decorated recent-sales headers agree with the Excel parser", async () => {
+test("OneDrive source total-sales headers agree with the Excel parser", async () => {
   const headers = [...standardHeaders];
-  headers[4] = "최근 30일 판매량 (중국)";
-  headers[5] = "현지 판매자 최근 30일 판매량 (건)";
+  headers[4] = "중국 총 판매량 (건)";
+  headers[5] = "현지 판매자 총 판매량 (건)";
   const h = harness({ sheets: { "/kolon.xlsx": [headers, vest] } });
   await h.click();
   assert.equal(h.saved.at(-1)?.sourceCount, 1);
-  assert.equal(h.rendered.at(-1)?.[0].sales30d, 100);
-  assert.equal(h.rendered.at(-1)?.[0].localSales30d, 83);
+  assert.equal(h.rendered.at(-1)?.[0].totalSales, 100);
+  assert.equal(h.rendered.at(-1)?.[0].localTotalSales, 83);
 });
 
 test("file read error stays visible and is not saved as completed", async () => {
@@ -94,7 +94,7 @@ test("two failed Excel reads do not stop the remaining brand queue", async () =>
   const brands = [initialBrand, { id: 2, name: "TestTwo" }, { id: 3, name: "TestThree" }];
   const files = brands.map((brand, index) => ({ path: `/${index}.xlsx`, name: `${index}.xlsx`, brandName: brand.name, time: 1 }));
   const h = harness({ brands, files, previewOverride: async (path) => path === "/2.xlsx"
-    ? { ok: true, headers: standardHeaders, totalRows: 1, salesColumns: { china: 4, local: 5 }, products: [{ articleNumber: "TEST", title: "조끼", sales30d: 100, localSales30d: 50, hasSalesData: true, hasLocalSalesData: true }] }
+    ? { ok: true, headers: standardHeaders, totalRows: 1, totalSalesColumn: 4, localTotalSalesColumn: 5, products: [{ articleNumber: "TEST", title: "조끼", totalSales: 100, localTotalSales: 50, hasTotalSalesData: true, hasLocalTotalSalesData: true }] }
     : { ok: false, message: "FILE_READ_FAILED" } });
   await h.click();
   assert.equal(h.reads.length, 3);
@@ -117,13 +117,13 @@ test("no sales constraints allows a workbook without sales columns", async () =>
   assert.equal(h.rendered.at(-1)?.length, 1);
 });
 
-test("a local-only sales column must never masquerade as China sales", async () => {
+test("a local-only total-sales column must never masquerade as China sales", async () => {
   const h = harness({ sheets: { "/kolon.xlsx": [[...standardHeaders.slice(0, 4), standardHeaders[5]], [...vest.slice(0, 4), 83]] } });
   await h.click();
-  assert.match(h.status(), /중국.*30일.*열/);
+  assert.match(h.status(), /중국.*총.*판매량.*열/);
   const products = h.previewContext.buildExcelPreviewProducts([...standardHeaders.slice(0, 4), standardHeaders[5]], [{ values: [...vest.slice(0, 4), 83], sourceRowNumber: 2 }]);
-  assert.equal(products[0].sales30d, 0);
-  assert.equal(products[0].hasSalesData, false);
+  assert.equal(products[0].totalSales, 0);
+  assert.equal(products[0].hasTotalSalesData, false);
 });
 
 test("AND filtering excludes low sales, other categories, and missing metrics at threshold zero", async () => {
@@ -136,8 +136,8 @@ test("AND filtering excludes low sales, other categories, and missing metrics at
   ] } });
   await h.click();
   assert.deepEqual(h.rendered.at(-1).map((p) => p.articleNumber), ["JWVAX25017", "JWVAM25301"]);
-  h.nodes.get("#category-min-china-sales30").value = "0";
-  h.nodes.get("#category-min-local-sales30").value = "0";
+  h.nodes.get("#category-min-china-total-sales").value = "0";
+  h.nodes.get("#category-min-local-total-sales").value = "0";
   await h.click();
   assert.ok(!h.rendered.at(-1).some((p) => p.articleNumber === "MISSING"));
 });
@@ -164,8 +164,8 @@ test("explicit zero sales is available data at threshold zero", async () => {
   const h = harness({ china: "0", local: "0", sheets: { "/kolon.xlsx": [standardHeaders, [...vest.slice(0, 4), 0, "0"]] } });
   await h.click();
   assert.equal(h.rendered.at(-1).length, 1);
-  assert.equal(h.rendered.at(-1)[0].hasSalesData, true);
-  assert.equal(h.rendered.at(-1)[0].hasLocalSalesData, true);
+  assert.equal(h.rendered.at(-1)[0].hasTotalSalesData, true);
+  assert.equal(h.rendered.at(-1)[0].hasLocalTotalSalesData, true);
 });
 
 test("ambiguous headers and total-sales columns cannot substitute for recent sales", () => {
@@ -174,14 +174,20 @@ test("ambiguous headers and total-sales columns cannot substitute for recent sal
   assert.deepEqual(xlsx.findPoizonRecentSalesColumns(["\uFEFF중국 시장 최근 ３０일간 판매량 (건)", "현지 판매자 최근 30일간 판매량"]), { china: 0, local: 1 });
 });
 
+test("China and local total-sales columns are disjoint and duplicates are rejected", () => {
+  assert.deepEqual(xlsx.findPoizonTotalSalesColumns(["현지 판매자 총 판매량"]), { china: -1, local: 0 });
+  assert.deepEqual(xlsx.findPoizonTotalSalesColumns(["중국 총 판매량", "현지 판매자 총 판매량"]), { china: 0, local: 1 });
+  assert.deepEqual(xlsx.findPoizonTotalSalesColumns(["총 판매량", "중국 총 판매량", "현지 판매자 총 판매량"]), { china: -1, local: 2 });
+});
+
 test("local selection reads beyond the first 100000 products", async () => {
   const offsets = [];
   const h = harness({ previewOverride: async (_path, offset) => {
     offsets.push(offset);
-    return { ok: true, offset, totalRows: 100001, salesColumns: { china: 4, local: 5 },
+    return { ok: true, offset, totalRows: 100001, totalSalesColumn: 4, localTotalSalesColumn: 5,
       products: offset === 0 ? Array(100000).fill({ articleNumber: "FIRST_PAGE" }) : [{ articleNumber: "LAST_PAGE" }] };
   } });
-  const result = await h.context.downloadedBrandSalesByArticle(initialBrand, { minimumChinaSales30: 100, minimumLocalSales30: 30 });
+  const result = await h.context.downloadedBrandSalesByArticle(initialBrand, { minimumChinaTotalSales: 100, minimumLocalTotalSales: 30 });
   assert.equal(result.ok, true);
   assert.equal(result.productCount, 100001);
   assert.equal(result.products.at(-1).articleNumber, "LAST_PAGE");

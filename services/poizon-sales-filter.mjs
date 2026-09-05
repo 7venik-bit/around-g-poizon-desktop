@@ -1,4 +1,4 @@
-import { findPoizonColumn } from "./poizon-xlsx.mjs";
+import { findPoizonColumn, findPoizonTotalSalesColumns } from "./poizon-xlsx.mjs";
 
 export const POIZON_MINIMUM_TOTAL_SALES = 50;
 
@@ -32,12 +32,9 @@ function hasSalesMetric(value) {
 
 export function filterPoizonPreviewRows(headers = [], rows = [], filters = {}) {
   const fixedTotalAnd = filters.fixedTotalAnd === true;
-  const totalSalesColumn = findPoizonColumn(headers, "중국 총 판매량", "총 판매량");
-  const localTotalSalesColumn = findPoizonColumn(
-    headers,
-    "현지 판매자 총 판매량",
-    "현지판매자총판매량",
-  );
+  const totalSalesColumns = findPoizonTotalSalesColumns(headers);
+  const totalSalesColumn = totalSalesColumns.china;
+  const localTotalSalesColumn = totalSalesColumns.local;
   const minimumTotal = optionalSalesBoundary(filters.minimumTotal);
   const maximumTotal = optionalSalesBoundary(filters.maximumTotal);
   const minimumLocalTotal = optionalSalesBoundary(filters.minimumLocalTotal);
