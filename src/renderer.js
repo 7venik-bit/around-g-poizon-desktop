@@ -4485,10 +4485,18 @@ $("#import-button").addEventListener("click", async () => {
   const status = $("#excel-files-status");
   if (status) {
     status.className = "status";
-    status.textContent = "OneDrive의 POIZON 다운로드 파일을 확인하고 있습니다.";
+    status.textContent = downloadedBrandFiles.length
+      ? `화면에 불러온 OneDrive Excel ${downloadedBrandFiles.length}개로 동기화를 시작합니다.`
+      : "OneDrive의 POIZON 다운로드 파일을 확인하고 있습니다.";
   }
   try {
-    const result = await restoreDownloadedBrandFiles();
+    // The received-files screen already owns the current OneDrive workbook
+    // list. Re-running the full recovery scan here reopened and revalidated
+    // every workbook before the first brand, leaving the UI at "동기화 준비 중".
+    // Only scan the folder when this process has no loaded file list yet.
+    const result = downloadedBrandFiles.length
+      ? { ok: true, files: downloadedBrandFiles, reusedLoadedFiles: true }
+      : await restoreDownloadedBrandFiles();
     if (!result?.ok) throw new Error(result?.message || "다운로드 파일을 확인하지 못했습니다.");
     const brands = completedDownloadBrands();
     if (!brands.length) throw new Error("동기화할 브랜드 Excel 파일이 없습니다.");

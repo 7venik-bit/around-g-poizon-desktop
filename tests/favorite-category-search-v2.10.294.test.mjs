@@ -45,6 +45,8 @@ test("상단 다운로드 파일 동기화는 판매자센터 화면과 Excel을
   const end = renderer.indexOf('$("#export-button").addEventListener', start);
   const handler = renderer.slice(start, end);
   assert.match(handler, /await restoreDownloadedBrandFiles\(\)/);
+  assert.match(handler, /downloadedBrandFiles\.length[\s\S]*reusedLoadedFiles: true/);
+  assert.match(handler, /화면에 불러온 OneDrive Excel/);
   assert.match(handler, /activateSearchServiceMode\?\.\("files"\)/);
   assert.match(handler, /for \(const \[brandPosition, brand\] of brands\.entries\(\)\)/);
   assert.match(handler, /await downloadedBrandSalesByArticle\(brand\)/);

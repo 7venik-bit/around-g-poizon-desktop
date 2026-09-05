@@ -14,6 +14,12 @@ test("판매자센터 로그인 확인 후 화면 동기화를 시작한다", ()
   assert.match(capture, /code: "SELLER_PRODUCT_SEARCH_UNAVAILABLE"/);
 });
 
+test("화면 동기화는 기존 POIZON 브랜드 검색 동작을 먼저 사용한다", () => {
+  assert.match(capture, /await typeSellerBrandWithRealKeyboard/);
+  assert.match(capture, /route: "EXISTING_POIZON_BRAND_SEARCH"/);
+  assert.match(capture, /preferredSellerBrandSearchName\(brandNames\)/);
+});
+
 test("판매자센터 동기화는 20개씩 하단 페이지를 실제로 순회한다", () => {
   assert.ok(capture.includes('/20\\\\s*건\\\\/페이지/'));
   assert.match(capture, /directPage \|\| next/);

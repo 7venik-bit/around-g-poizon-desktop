@@ -9344,7 +9344,20 @@ async function captureSellerBrandSales(input = {}) {
   // Seller Center keeps brand names in their original English form. Searching
   // a translated Korean label first can leave the unfiltered 9,900-row table.
   const brandNames = [input.brandName, input.brandKo].map((value) => String(value || "").trim()).filter(Boolean);
-  const selected = await sellerWindow.webContents.executeJavaScript(`(async () => {
+  const sellerBrandSearchName = brandsMatch(input.brandName, "On")
+    ? "On Running"
+    : preferredSellerBrandSearchName(brandNames);
+  // Reuse the proven POIZON 상품정보 workflow first: focus the same top
+  // product-search input, type with Electron's real keyboard events and click
+  // 검색 및 입찰 with real pointer events. The exact brand dropdown remains a
+  // compatibility fallback for Seller Center layouts without that input.
+  const existingBrandSearch = await typeSellerBrandWithRealKeyboard(
+    sellerWindow.webContents.mainFrame,
+    sellerBrandSearchName,
+  ).catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
+  const selected = existingBrandSearch?.ok
+    ? { ok: true, selected: sellerBrandSearchName, route: "EXISTING_POIZON_BRAND_SEARCH" }
+    : await sellerWindow.webContents.executeJavaScript(`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
     const searchInput = [...document.querySelectorAll("input")].find((element) =>
