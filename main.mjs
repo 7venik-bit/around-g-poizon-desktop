@@ -9461,32 +9461,35 @@ async function captureSellerBrandSales(input = {}) {
     option?.click();
     await wait(900);
   })()`, true);
-  // The legacy selector above requested 20 rows. Immediately switch the
-  // pagination control to the largest option exposed by Seller Center so a
-  // 9,900-row brand does not require roughly 495 page transitions.
+  // Start at the first 20-row page. Synchronization physically visits every
+  // bottom pagination tab so every value visible in Seller Center is checked.
   await sellerWindow.webContents.executeJavaScript(`(async () => {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const visible = (element) => element && element.getClientRects().length > 0;
-    const sizeChanger = [...document.querySelectorAll(".ant-pagination-options-size-changer,.ant-pagination-options")]
-      .find(visible);
-    const selector = sizeChanger?.querySelector(".ant-select-selector");
-    if (!selector) return false;
-    selector.click();
-    await wait(250);
-    const options = [...document.querySelectorAll('[role="option"],.ant-select-item-option')]
-      .filter(visible)
-      .map((element) => ({ element, size: Number(String(element.textContent || "").match(/\\d+/)?.[0] || 0) }))
-      .filter((entry) => entry.size > 0)
-      .sort((left, right) => right.size - left.size);
-    if (!options[0]) return false;
-    options[0].element.click();
-    await wait(1_000);
-    return true;
+    const active = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
+    if (Number(active?.textContent.trim()) === 1) return true;
+    const first = [...document.querySelectorAll(".ant-pagination-item")]
+      .find((element) => visible(element) && Number(element.textContent.trim()) === 1);
+    const button = first?.querySelector("button,a") || first;
+    if (!button) return false;
+    button.click();
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+      await wait(250);
+      const current = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
+      if (Number(current?.textContent.trim()) === 1) {
+        await wait(450);
+        return true;
+      }
+    }
+    return false;
   })()`, true);
   const pages = [];
   let sellerSourceTotal = 0;
   let capturedRowCount = 0;
   let pageTransitionFailure = null;
+  let lastCapturedPage = 0;
+  let expectedPageCount = 1;
+  const capturedPageSignatures = new Set();
   for (let page = 1; page <= 1_000; page += 1) {
     const capture = await sellerWindow.webContents.executeJavaScript(`(() => {
       const visible = (element) => element && element.getClientRects().length > 0;
@@ -9522,12 +9525,24 @@ async function captureSellerBrandSales(input = {}) {
         first: rows[0]?.text || "",
         currentPage,
         pageCount,
-        totalCount
+        totalCount,
+        rowSignature: [rows.length, rows[0]?.text || "", rows.at(-1)?.text || ""].join("::")
       };
     })()`, true);
+    if (Number(capture.currentPage || 0) !== page) {
+      pageTransitionFailure = { page: capture.currentPage, expectedPage: page, reason: "ACTIVE_PAGE_MISMATCH" };
+      break;
+    }
+    if (capturedPageSignatures.has(capture.rowSignature)) {
+      pageTransitionFailure = { page: capture.currentPage, expectedPage: page, reason: "DUPLICATE_PAGE_ROWS" };
+      break;
+    }
+    capturedPageSignatures.add(capture.rowSignature);
     pages.push(capture.rows || []);
     capturedRowCount += Number(capture.rows?.length || 0);
     sellerSourceTotal = Math.max(sellerSourceTotal, Number(capture.totalCount || 0));
+    lastCapturedPage = Number(capture.currentPage || 0);
+    expectedPageCount = Math.max(expectedPageCount, Number(capture.pageCount || 1));
     if (
       page === 1
       && selected.route !== "EXACT_BRAND_FILTER"
@@ -9570,17 +9585,22 @@ async function captureSellerBrandSales(input = {}) {
       if (!clicked) continue;
       for (let attempt = 0; attempt < 32; attempt += 1) {
         await wait(250);
-        const activePage = await sellerWindow.webContents.executeJavaScript(
+        const nextState = await sellerWindow.webContents.executeJavaScript(
           `(() => {
             const visible = (element) => element && element.getClientRects().length > 0;
             const active = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
-            return Number(active?.textContent.trim()) || 0;
+            const rows = [...document.querySelectorAll("table tbody tr")]
+              .filter(visible)
+              .map((row) => String(row.innerText || ""))
+              .filter((text) => /상품\\s*번호\\s*[:：]/.test(text));
+            return {
+              page: Number(active?.textContent.trim()) || 0,
+              rowSignature: [rows.length, rows[0] || "", rows.at(-1) || ""].join("::")
+            };
           })()`,
           true,
         );
-        if (activePage === expectedNextPage) {
-          // Wait for the table body to finish replacing the previous page.
-          await wait(450);
+        if (nextState?.page === expectedNextPage && nextState.rowSignature !== capture.rowSignature) {
           advanced = true;
           break;
         }
@@ -9601,15 +9621,35 @@ async function captureSellerBrandSales(input = {}) {
         for (let attempt = 0; attempt < 20; attempt += 1) {
           await wait(250);
           const active = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
-          if (Number(active?.textContent.trim()) === expected) return true;
+          const rows = [...document.querySelectorAll("table tbody tr")]
+            .filter(visible)
+            .map((row) => String(row.innerText || ""))
+            .filter((text) => /상품\s*번호\s*[:：]/.test(text));
+          const rowSignature = [rows.length, rows[0] || "", rows.at(-1) || ""].join("::");
+          if (Number(active?.textContent.trim()) === expected
+            && rowSignature !== ${JSON.stringify(capture.rowSignature || "")}) return true;
         }
         return false;
       })()`, true);
     }
     if (!advanced) {
-      pageTransitionFailure = { page: capture.currentPage, expectedNextPage };
+      pageTransitionFailure = { page: capture.currentPage, expectedNextPage, reason: "NEXT_PAGE_NOT_VERIFIED" };
       break;
     }
+  }
+  const paginationComplete = !pageTransitionFailure
+    && lastCapturedPage >= expectedPageCount
+    && (!sellerSourceTotal || capturedRowCount >= sellerSourceTotal);
+  if (!paginationComplete) {
+    stopBrandNetworkCapture();
+    return {
+      ok: false,
+      code: "SELLER_PAGINATION_INCOMPLETE",
+      message: `판매자센터 하단 페이지 검증이 ${lastCapturedPage}/${expectedPageCount}페이지에서 중단되었습니다. 부분 데이터는 저장하지 않습니다.`,
+      sourceTotal: sellerSourceTotal,
+      capturedRowCount,
+      pageTransitionFailure,
+    };
   }
   const expectedBrands = new Set(
     [selected.selected, input.brandKo, input.brandName]
