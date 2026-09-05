@@ -10970,7 +10970,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     categorySearchGeneration += 1;
     return { ok: true };
   });
-  ipcMain.handle("explorer:query", (_event, input) => {
+  ipcMain.handle("explorer:query", async (_event, input) => {
     const settings = store.snapshot().settings;
     const catalog = settings.brandCatalog || explorerMetadata().brands;
     const requestedBrandIds = (Array.isArray(input?.brandIds) ? input.brandIds : []).map(Number).filter(Number.isFinite);
@@ -10979,7 +10979,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       ? requestedBrandIds.map((id) => catalogById.get(id)).filter(Boolean)
       : [];
     const requestGeneration = categorySearchGeneration;
-    return queryExplorer(secretConfig(), {
+    const queryInput = {
       ...input,
       brandIds: input?.mode === "category" ? categoryBrands.map((brand) => brand.id) : input?.brandIds,
       rankedBrandCount: categoryBrands.length,
@@ -11001,7 +11001,20 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
             : `POIZON API ${pageNum}/${pageCount}페이지 수집 중`,
         });
       },
+    };
+    const apiResult = await queryExplorer(secretConfig(), queryInput);
+    if (apiResult?.ok || input?.mode !== "category" || categoryBrands.length !== 1) return apiResult;
+    const [brand] = categoryBrands;
+    const publicResult = await queryPublicBrandProducts({
+      ...queryInput,
+      brandId: brand.id,
+      brandName: brand.name || brand.ko || "",
+      brandUrl: brand.productUrl || "",
     });
+    return publicResult?.ok ? publicResult : {
+      ...apiResult,
+      fallbackError: publicResult?.error || null,
+    };
   });
   ipcMain.handle("external:open", async (_event, url) => {
     return openExternalInChromeTab(url);

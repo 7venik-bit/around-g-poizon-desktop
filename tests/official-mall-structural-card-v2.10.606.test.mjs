@@ -16,3 +16,11 @@ test("공개 브랜드 카테고리 검색도 Excel 품번의 하이픈과 대�
   assert.match(main, /const normalizedArticle = upperArticle\.replace\(\/\[\^A-Z0-9\]\/g, ""\)/);
   assert.match(main, /salesByArticle\[articleNumber\][\s\S]*salesByArticle\[upperArticle\][\s\S]*salesByArticle\[normalizedArticle\]/);
 });
+
+test("카테고리 API가 실패하면 선택 브랜드의 공개 POIZON 상품 페이지로 전환한다", () => {
+  assert.match(main, /ipcMain\.handle\("explorer:query", async/);
+  assert.match(main, /const apiResult = await queryExplorer/);
+  assert.match(main, /input\?\.mode !== "category" \|\| categoryBrands\.length !== 1/);
+  assert.match(main, /const publicResult = await queryPublicBrandProducts/);
+  assert.match(main, /brandUrl: brand\.productUrl/);
+});
