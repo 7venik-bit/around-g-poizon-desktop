@@ -74,7 +74,7 @@ test("다운로드 동기화 진행 상황을 브랜드·페이지·상품 수�
   assert.match(renderer, /전체 \$\{percent\}% · \$\{brandName\} \$\{page\}\/\$\{pages \|\| "\?"\}페이지 ·/);
   assert.match(renderer, /동기화 진행 중 · \$\{page\}\/\$\{pages \|\| "\?"\}페이지/);
   assert.match(renderer, /개 상품 확인/);
-  assert.match(renderer, /동기화 실패 · \$\{completed\}\/\$\{brands\.length\}개 · 오류/);
-  assert.match(renderer, /SELLER_PRODUCT_SEARCH_UNAVAILABLE/);
+  assert.match(renderer, /동기화 실패 · \$\{failures\[0\]\}/);
+  assert.match(renderer, /startsWith\("SELLER_"\)/);
   assert.doesNotMatch(renderer, /syncProgress\.querySelector\("i"\)\.style\.width = "100%";[\s\S]{0,120}동기화 완료[^\n]+failures\.length/);
 });

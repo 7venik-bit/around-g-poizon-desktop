@@ -4559,7 +4559,7 @@ $("#import-button").addEventListener("click", async () => {
           syncProgress.querySelector("span").textContent = `${brandName} 실패 · ${message}`;
           syncProgress.title = `${brandName} 동기화 실패 · ${message}`;
         }
-        if (["SELLER_LOGIN_REQUIRED", "SELLER_LOGIN_PAGE_TIMEOUT", "SELLER_WINDOW_CLOSED", "SELLER_PRODUCT_SEARCH_UNAVAILABLE"].includes(error?.code)) break;
+        if (String(error?.code || "").startsWith("SELLER_")) break;
       }
     }
     if (status) {
@@ -4570,7 +4570,7 @@ $("#import-button").addEventListener("click", async () => {
       const percent = Math.max(2, Math.min(99, Math.round((attempted / brands.length) * 100)));
       syncProgress.classList.add("error");
       syncProgress.querySelector("i").style.width = `${percent}%`;
-      syncProgress.querySelector("span").textContent = `동기화 실패 · ${completed}/${brands.length}개 · 오류 ${failures.length}개`;
+      syncProgress.querySelector("span").textContent = `동기화 실패 · ${failures[0]}`;
       syncProgress.title = failures.join(" / ");
     } else if (syncProgress) {
       syncProgress.classList.add("complete");

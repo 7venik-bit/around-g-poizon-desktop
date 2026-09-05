@@ -20,6 +20,15 @@ test("화면 동기화는 기존 POIZON 브랜드 검색 동작을 먼저 사용
   assert.match(capture, /preferredSellerBrandSearchName\(brandNames\)/);
 });
 
+test("판매자센터 화면을 표시한 상태에서 실제 입력과 페이지 이동을 수행한다", () => {
+  const showIndex = capture.indexOf("sellerWindow.show();");
+  const searchIndex = capture.indexOf("await typeSellerBrandWithRealKeyboard");
+  const hideIndex = capture.lastIndexOf("sellerWindow.hide()");
+  assert.ok(showIndex >= 0 && showIndex < searchIndex);
+  assert.ok(hideIndex > searchIndex);
+  assert.match(capture, /code: "SELLER_BRAND_SEARCH_FAILED"/);
+});
+
 test("판매자센터 동기화는 20개씩 하단 페이지를 실제로 순회한다", () => {
   assert.ok(capture.includes('/20\\\\s*건\\\\/페이지/'));
   assert.match(capture, /directPage \|\| next/);

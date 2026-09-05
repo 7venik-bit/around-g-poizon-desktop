@@ -9283,6 +9283,13 @@ async function captureSellerBrandSales(input = {}) {
       message: "POIZON 판매자센터 로그인이 필요합니다. 열린 창에서 로그인 후 다시 동기화해 주세요.",
     };
   }
+  // Screen synchronization must operate against the actually rendered Seller
+  // Center window. Real keyboard/mouse events and Ant pagination can be ignored
+  // while the BrowserWindow is hidden on some Windows systems.
+  if (sellerWindow.isMinimized()) sellerWindow.restore();
+  sellerWindow.show();
+  sellerWindow.focus();
+  await wait(350);
   if (!await enterSellerProductSearchViaMenu()) {
     if (sellerWindow && !sellerWindow.isDestroyed()) {
       if (sellerWindow.isMinimized()) sellerWindow.restore();
@@ -9464,11 +9471,12 @@ async function captureSellerBrandSales(input = {}) {
   })()`, true);
   if (!selected?.ok) {
     stopBrandNetworkCapture();
-    return { ok: false, message: `판매자센터 브랜드 필터를 적용하지 못했습니다. (${selected?.reason || "UNKNOWN"})` };
+    return {
+      ok: false,
+      code: "SELLER_BRAND_SEARCH_FAILED",
+      message: `판매자센터 브랜드 검색을 실행하지 못했습니다. (${selected?.reason || selected?.step || "UNKNOWN"})`,
+    };
   }
-  mainWindow?.show();
-  mainWindow?.focus();
-  sellerWindow.hide();
   // 검색 버튼 클릭 직후에는 기존 표가 잠시 남아 있다. 상품 번호가 있는
   // 새 결과 표와 통계 열이 실제로 렌더링될 때까지 기다린 뒤 수집한다.
   await sellerWindow.webContents.executeJavaScript(`(async () => {
@@ -9709,6 +9717,9 @@ async function captureSellerBrandSales(input = {}) {
   const products = matchedProducts.length ? matchedProducts : allProducts;
   const diagnostics = sellerBrandDiagnostics(pages);
   stopBrandNetworkCapture();
+  if (sellerWindow && !sellerWindow.isDestroyed()) sellerWindow.hide();
+  mainWindow?.show();
+  mainWindow?.focus();
   return {
     ok: true,
     products,
