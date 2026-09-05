@@ -581,7 +581,7 @@ test("SSG와 롯데는 품번이 링크 바깥 상품 카드에 있어도 수집
   const mainSource = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../main.mjs", import.meta.url), "utf8"));
   assert.match(mainSource, /const articleCardLinks =/);
   assert.match(mainSource, /matchesExpected\(card\.innerText\) \|\| matchesExpected\(card\.outerHTML\)/);
-  assert.match(mainSource, /new Set\(\[\.\.\.directProductLinks, \.\.\.articleCardLinks, \.\.\.articleTextCardLinks\]\)/);
+  assert.match(mainSource, /\.\.\.directProductLinks, \.\.\.articleCardLinks, \.\.\.articleTextCardLinks, \.\.\.structuralCardLinks/);
   assert.doesNotMatch(mainSource, /technicalAttempts/);
   assert.match(mainSource, /const queryResult = await renderedSearchSourceResult/);
 });
