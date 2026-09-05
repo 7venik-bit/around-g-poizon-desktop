@@ -167,7 +167,10 @@ export function normalizeBrandResult(data, salesByArticle = {}) {
       ?? row.sellerSales30d
       ?? row.merchantSales30d
       ?? row.localSellerSaleQuantity30Days;
-    const fallbackSales = salesByArticle[articleNumber];
+    const normalizedArticle = articleNumber.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const fallbackSales = salesByArticle[articleNumber]
+      ?? salesByArticle[articleNumber.toUpperCase()]
+      ?? salesByArticle[normalizedArticle];
     const fallbackSales30d = fallbackSales && typeof fallbackSales === "object"
       ? fallbackSales.sales30d : fallbackSales;
     const fallbackLocalSales30d = fallbackSales && typeof fallbackSales === "object"

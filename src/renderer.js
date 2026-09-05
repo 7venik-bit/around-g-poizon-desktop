@@ -2003,13 +2003,51 @@ function renderStockWatches() {
   }).join("") : '<tr><td colspan="7" class="empty">등록된 재고 감시 상품이 없습니다.</td></tr>';
 }
 
-function salesByArticle() {
-  return Object.fromEntries(state.products
-    .filter((product) => product.articleNumber)
-    .map((product) => [product.articleNumber, {
+function salesByArticle(products = state.products) {
+  const records = {};
+  for (const product of products) {
+    const article = String(product?.articleNumber || "").trim();
+    if (!article) continue;
+    const record = {
       sales30d: Number(product.sales30d || 0),
       localSales30d: Number(product.localSales30d || 0),
-    }]));
+    };
+    const upper = article.toUpperCase();
+    const normalized = upper.replace(/[^A-Z0-9]/g, "");
+    const previous = records[normalized] || records[upper] || records[article];
+    const merged = previous ? {
+      sales30d: Math.max(Number(previous.sales30d || 0), record.sales30d),
+      localSales30d: Math.max(Number(previous.localSales30d || 0), record.localSales30d),
+    } : record;
+    records[article] = merged;
+    records[upper] = merged;
+    if (normalized) records[normalized] = merged;
+  }
+  return records;
+}
+
+async function downloadedBrandSalesByArticle(brand) {
+  const file = latestCompletedBrandDownload(brand);
+  if (!file?.path) return { records: {}, productCount: 0, fileFound: false };
+  const result = await window.aroundG.previewExcelFile(file.path, 0, 100000, {
+    minimumTotal: "",
+    minimumLocalTotal: "",
+    productView: true,
+    selectionOnly: true,
+  });
+  if (!result?.ok) {
+    return { records: {}, productCount: 0, fileFound: true, error: result?.message || "EXCEL_PREVIEW_FAILED" };
+  }
+  const normalizedHeaders = (result.headers || []).map((value) => String(value || "").replace(/\s+/g, ""));
+  const hasChinaSales = normalizedHeaders.some((value) => /^(?:중국)?최근30일판매량$/.test(value));
+  const hasLocalSales = normalizedHeaders.some((value) => /^현지판매자최근30일판매량$/.test(value));
+  if (!hasChinaSales || !hasLocalSales) {
+    const missing = [!hasChinaSales ? "중국 최근 30일 판매량" : "", !hasLocalSales ? "현지 판매자 최근 30일 판매량" : ""]
+      .filter(Boolean).join(", ");
+    return { records: {}, productCount: 0, fileFound: true, error: `${missing} 열 없음` };
+  }
+  const products = Array.isArray(result.products) ? result.products : [];
+  return { records: salesByArticle(products), productCount: products.length, fileFound: true };
 }
 
 function renderOfficialDomainAudit(audit = {}) {
@@ -4041,7 +4079,7 @@ function categorySearchCacheId(category, detail, minimumChinaSales30, minimumLoc
   const brandKey = [...brandIds].map(Number).filter(Number.isFinite).sort((a, b) => a - b).join("-") || "none";
   const chinaKey = minimumChinaSales30 === null ? "any" : minimumChinaSales30;
   const localKey = minimumLocalSales30 === null ? "any" : minimumLocalSales30;
-  return `category:v3:${categorySearchDate()}:${category}:${detail || "all"}:china30-${chinaKey}:local30-${localKey}:favorites:${brandKey}`;
+  return `category:v4:${categorySearchDate()}:${category}:${detail || "all"}:china30-${chinaKey}:local30-${localKey}:favorites:${brandKey}`;
 }
 
 const CATEGORY_DETAIL_PATTERNS = {
@@ -4207,6 +4245,14 @@ $("#category-search").addEventListener("click", async () => {
         percent: Math.round((completedCount / favoriteBrandIds.length) * 100),
       });
       try {
+        const excelSales = await downloadedBrandSalesByArticle(brand);
+        if (runId !== categorySearchRunId) return;
+        if (!excelSales.productCount) {
+          failedSourceCount += 1;
+          status.className = "status error";
+          status.textContent = `${brandName} 원본 Excel에서 판매량 데이터를 읽지 못했습니다${excelSales.error ? ` · ${excelSales.error}` : ""}`;
+          return;
+        }
         const brandResult = await window.aroundG.queryExplorer({
           mode: "category",
           brandIds: [brandId],
@@ -4216,14 +4262,22 @@ $("#category-search").addEventListener("click", async () => {
           pageSize: 100,
           minimumChinaSales30,
           minimumLocalSales30,
-          salesByArticle: salesByArticle(),
+          salesByArticle: excelSales.records,
         });
         if (runId !== categorySearchRunId) return;
         if (!brandResult.ok) {
           failedSourceCount += 1;
         } else {
-          sourceCount += 1;
-          sourceTotal += Number(brandResult.sourceTotal || 0);
+          const salesLinkFailed = (minimumChinaSales30 !== null && !Number(brandResult.salesDataCount || 0))
+            || (minimumLocalSales30 !== null && !Number(brandResult.localSalesDataCount || 0));
+          if (salesLinkFailed) {
+            failedSourceCount += 1;
+            status.className = "status error";
+            status.textContent = `${brandName} 상품은 조회했지만 원본 Excel 판매량을 품번과 연결하지 못했습니다.`;
+          } else {
+            sourceCount += 1;
+            sourceTotal += Number(brandResult.sourceTotal || 0);
+          }
           for (const product of filterCategoryDetailProducts(brandResult.products, selectedCategoryDetail)) {
             const key = `${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || product.name || ""}`;
             if (!detailProductsByKey.has(key)) detailProductsByKey.set(key, product);

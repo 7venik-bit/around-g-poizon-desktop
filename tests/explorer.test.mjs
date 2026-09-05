@@ -24,6 +24,18 @@ test("카테고리 판매량 보완값은 중국과 현지 최근 30일 판매�
   assert.equal(product.hasLocalSalesData, true);
 });
 
+test("카테고리 판매량은 품번의 대소문자와 구분기호 차이에도 결합한다", () => {
+  const [product] = normalizeBrandResult([
+    { articleNumber: "JWVAX-25017", productName: "Kolon vest" },
+  ], {
+    JWVAX25017: { sales30d: "100+", localSales30d: "83" },
+  });
+  assert.equal(product.sales30d, 100);
+  assert.equal(product.localSales30d, 83);
+  assert.equal(product.hasSalesData, true);
+  assert.equal(product.hasLocalSalesData, true);
+});
+
 test("판매자센터 탭 구분 표를 인기상품으로 변환한다", () => {
   const rows = parsePopularTable([
     "No.\t상품정보\t상품번호\t평균 거래가\t최근 30일 판매량",

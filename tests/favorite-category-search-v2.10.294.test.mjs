@@ -20,7 +20,7 @@ test("다운로드 완료 브랜드 구성이 바뀌면 별도의 카테고리 �
   assert.match(renderer, /categorySearchCacheId\(category, detail, minimumChinaSales30, minimumLocalSales30, brandIds = pinnedBrandIds\)/);
   assert.match(renderer, /:\$\{detail \|\| "all"\}:/);
   assert.match(renderer, /favorites:\$\{brandKey\}/);
-  assert.match(renderer, /category:v3:/);
+  assert.match(renderer, /category:v4:/);
   assert.match(renderer, /다운로드 완료 브랜드가 없습니다/);
 });
 
@@ -28,6 +28,10 @@ test("카테고리 30일 필터는 중국과 현지 판매량의 개별 최솟�
   assert.match(main, /product\.sales30d >= minimumChinaSales30/);
   assert.match(main, /product\.localSales30d >= minimumLocalSales30/);
   assert.match(renderer, /localSales30d: Number\(product\.localSales30d \|\| 0\)/);
+  assert.match(renderer, /downloadedBrandSalesByArticle\(brand\)/);
+  assert.match(renderer, /salesByArticle: excelSales\.records/);
+  assert.match(renderer, /hasChinaSales/);
+  assert.match(renderer, /현지 판매자 최근 30일 판매량/);
   assert.match(renderer, /const minimumChinaSales30 = categorySalesMinimum/);
   assert.match(html, /id="category-min-china-sales30"[^>]+value="30"/);
   assert.match(html, /id="category-min-local-sales30"[^>]+value="30"/);
