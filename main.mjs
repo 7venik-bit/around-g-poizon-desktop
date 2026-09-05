@@ -10650,6 +10650,7 @@ app.whenReady().then(async () => {
     }
     return { ok: await enterSellerProductSearchViaMenu() };
   });
+  ipcMain.handle("seller:capture-brand-sales", (_event, input = {}) => captureSellerBrandSales(input));
   const abortSellerBrandExportAttempt = async () => {
   brandExportAttemptGeneration += 1;
   brandExportJobPending = false;

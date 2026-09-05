@@ -2,11 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
+const [main, preload] = await Promise.all([
+  readFile(new URL("../main.mjs", import.meta.url), "utf8"),
+  readFile(new URL("../preload.cjs", import.meta.url), "utf8"),
+]);
 const start = main.indexOf("async function captureSellerBrandSales");
 const end = main.indexOf("async function lookupSellerTransactionPrice", start);
 assert.ok(start >= 0 && end > start);
 const capture = main.slice(start, end);
+
+test("판매자센터 화면 수집 함수는 renderer와 main 사이에 연결된다", () => {
+  assert.match(preload, /captureSellerBrandSales: \(input = \{\}\) => ipcRenderer\.invoke\("seller:capture-brand-sales", input\)/);
+  assert.match(main, /ipcMain\.handle\("seller:capture-brand-sales"[^\n]+captureSellerBrandSales\(input\)/);
+});
 
 test("판매자센터 로그인 확인 후 화면 동기화를 시작한다", () => {
   assert.match(capture, /await ensureSellerLoginBeforeBrandSearch/);
