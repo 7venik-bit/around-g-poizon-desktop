@@ -11,3 +11,8 @@ test("브랜드몰은 생성형 클래스나 일반 URL이어도 이미지와 �
   assert.match(main, /image && price && text\.length >= 5/);
   assert.match(main, /\.\.\.structuralCardLinks/);
 });
+
+test("공개 브랜드 카테고리 검색도 Excel 품번의 하이픈과 대소문자 차이를 정규화한다", () => {
+  assert.match(main, /const normalizedArticle = upperArticle\.replace\(\/\[\^A-Z0-9\]\/g, ""\)/);
+  assert.match(main, /salesByArticle\[articleNumber\][\s\S]*salesByArticle\[upperArticle\][\s\S]*salesByArticle\[normalizedArticle\]/);
+});

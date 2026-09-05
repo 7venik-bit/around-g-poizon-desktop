@@ -8759,7 +8759,12 @@ async function queryPublicBrandProducts(input) {
     if (!productsByKey.size) throw new Error("KR_POIZON_BRAND_PRODUCTS_EMPTY");
     const salesByArticle = input?.salesByArticle || {};
     let products = [...productsByKey.values()].map((product) => {
-      const salesRecord = salesByArticle[product.articleNumber];
+      const articleNumber = String(product.articleNumber || "").trim();
+      const upperArticle = articleNumber.toUpperCase();
+      const normalizedArticle = upperArticle.replace(/[^A-Z0-9]/g, "");
+      const salesRecord = salesByArticle[articleNumber]
+        ?? salesByArticle[upperArticle]
+        ?? salesByArticle[normalizedArticle];
       const hasSalesData = salesRecord !== undefined;
       const hasLocalSalesData = salesRecord && typeof salesRecord === "object"
         && salesRecord.localSales30d !== undefined;
