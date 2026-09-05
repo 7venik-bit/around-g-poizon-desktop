@@ -39,14 +39,16 @@ test("판매자센터 화면을 표시한 상태에서 실제 입력과 페이�
 
 test("판매자센터 동기화는 20개씩 하단 페이지를 실제로 순회한다", () => {
   assert.ok(capture.includes('/20\\\\s*건\\\\/페이지/'));
-  assert.match(capture, /active\?\.closest\("\.ant-pagination"\)/);
+  assert.match(capture, /querySelectorAll\("\.ant-pagination"\)/);
+  assert.match(capture, /sellerPaginationTransitionStatus/);
   assert.match(capture, /button\.scrollIntoView/);
   assert.match(capture, /await physicalSellerPointClick\(targetPoint, 300\)/);
   assert.match(capture, /clickAttempt < 5/);
   assert.match(capture, /페이지 이동 재시도/);
   assert.match(capture, /expectedNextPage/);
-  assert.match(capture, /nextState\?\.page === expectedNextPage/);
-  assert.match(capture, /nextState\.rowSignature !== capture\.rowSignature/);
+  assert.match(capture, /currentPage: nextState\?\.page/);
+  assert.match(capture, /currentSignature: nextState\?\.rowSignature/);
+  assert.match(capture, /if \(transition\.ready\)/);
   assert.doesNotMatch(capture, /sort\(\(left, right\) => right\.size - left\.size\)/);
 });
 

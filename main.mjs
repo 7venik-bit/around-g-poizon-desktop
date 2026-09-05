@@ -83,6 +83,7 @@ import {
   mergeSellerBrandProducts,
   sellerBrandDiagnostics,
 } from "./services/seller-brand-sales.mjs";
+import { sellerPaginationTransitionStatus } from "./services/seller-pagination-state.mjs";
 import {
   analyzeRenderedChannelProducts,
   classifySsgProductEvidence,
@@ -9555,9 +9556,11 @@ async function captureSellerBrandSales(input = {}) {
         headers,
         imageUrl: row.querySelector("img")?.src || ""
       })).filter((row) => /상품\\s*번호\\s*[:：]/.test(row.text));
-      const next = [...document.querySelectorAll(".ant-pagination-next")].find(visible);
-      const activePage = [...document.querySelectorAll(".ant-pagination-item-active")]
-        .find(visible);
+      const pagination = [...document.querySelectorAll(".ant-pagination")]
+        .filter((element) => visible(element) && element.querySelector(".ant-pagination-next"))
+        .at(-1);
+      const next = pagination?.querySelector(".ant-pagination-next");
+      const activePage = pagination?.querySelector(".ant-pagination-item-active");
       const totalMatch = String(document.body?.innerText || "").match(/총\\s*([\\d,]+)\\s*건\\s*결과/);
       const totalCount = Number(String(totalMatch?.[1] || "0").replace(/,/g, ""));
       const currentPage = Number(activePage?.textContent.trim()) || ${page};
@@ -9578,7 +9581,7 @@ async function captureSellerBrandSales(input = {}) {
         currentPage,
         pageCount,
         totalCount,
-        rowSignature: [rows.length, rows[0]?.text || "", rows.at(-1)?.text || ""].join("::")
+        rowSignature: rows.map((row) => String(row.text || "").replace(/\\s+/g, " ").trim()).join("␞")
       };
     })()`, true);
     if (Number(capture.currentPage || 0) !== page) {
@@ -9641,8 +9644,9 @@ async function captureSellerBrandSales(input = {}) {
         const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         const visible = (element) => element && element.getClientRects().length > 0;
         const expected = ${expectedNextPage};
-        const active = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
-        const pagination = active?.closest(".ant-pagination");
+        const pagination = [...document.querySelectorAll(".ant-pagination")]
+          .filter((element) => visible(element) && Number(element.querySelector(".ant-pagination-item-active")?.textContent.trim()) === ${capture.currentPage})
+          .at(-1);
         const directPage = [...(pagination || document).querySelectorAll(".ant-pagination-item")]
           .find((item) => visible(item) && Number(item.textContent.trim()) === expected);
         const next = [...(pagination || document).querySelectorAll(".ant-pagination-next:not(.ant-pagination-disabled)")]
@@ -9676,19 +9680,30 @@ async function captureSellerBrandSales(input = {}) {
         const nextState = await sellerWindow.webContents.executeJavaScript(
           `(() => {
             const visible = (element) => element && element.getClientRects().length > 0;
-            const active = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
+            const pagination = [...document.querySelectorAll(".ant-pagination")]
+              .filter((element) => visible(element) && element.querySelector(".ant-pagination-next"))
+              .at(-1);
+            const active = pagination?.querySelector(".ant-pagination-item-active");
             const rows = [...document.querySelectorAll("table tbody tr")]
               .filter(visible)
               .map((row) => String(row.innerText || ""))
               .filter((text) => /상품\\s*번호\\s*[:：]/.test(text));
             return {
               page: Number(active?.textContent.trim()) || 0,
-              rowSignature: [rows.length, rows[0] || "", rows.at(-1) || ""].join("::")
+              rowCount: rows.length,
+              rowSignature: rows.map((text) => text.replace(/\\s+/g, " ").trim()).join("␞")
             };
           })()`,
           true,
         );
-        if (nextState?.page === expectedNextPage && nextState.rowSignature !== capture.rowSignature) {
+        const transition = sellerPaginationTransitionStatus({
+          expectedPage: expectedNextPage,
+          currentPage: nextState?.page,
+          rowCount: nextState?.rowCount,
+          previousSignature: capture.rowSignature,
+          currentSignature: nextState?.rowSignature,
+        });
+        if (transition.ready) {
           advanced = true;
           break;
         }
@@ -9700,8 +9715,9 @@ async function captureSellerBrandSales(input = {}) {
         const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         const visible = (element) => element && element.getClientRects().length > 0;
         const expected = ${expectedNextPage};
-        const activeItem = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
-        const pagination = activeItem?.closest(".ant-pagination");
+        const pagination = [...document.querySelectorAll(".ant-pagination")]
+          .filter((element) => visible(element) && Number(element.querySelector(".ant-pagination-item-active")?.textContent.trim()) === ${capture.currentPage})
+          .at(-1);
         const item = [...(pagination || document).querySelectorAll(".ant-pagination-item")]
           .find((element) => visible(element) && Number(element.textContent.trim()) === expected);
         const next = [...(pagination || document).querySelectorAll(".ant-pagination-next:not(.ant-pagination-disabled)")]
@@ -9712,12 +9728,15 @@ async function captureSellerBrandSales(input = {}) {
         button.click();
         for (let attempt = 0; attempt < sellerPageResponseAttempts; attempt += 1) {
           await wait(250);
-          const active = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
+          const currentPagination = [...document.querySelectorAll(".ant-pagination")]
+            .filter((element) => visible(element) && element.querySelector(".ant-pagination-next"))
+            .at(-1);
+          const active = currentPagination?.querySelector(".ant-pagination-item-active");
           const rows = [...document.querySelectorAll("table tbody tr")]
             .filter(visible)
             .map((row) => String(row.innerText || ""))
             .filter((text) => /상품\s*번호\s*[:：]/.test(text));
-          const rowSignature = [rows.length, rows[0] || "", rows.at(-1) || ""].join("::");
+          const rowSignature = rows.map((text) => text.replace(/\s+/g, " ").trim()).join("␞");
           if (Number(active?.textContent.trim()) === expected
             && rowSignature !== ${JSON.stringify(capture.rowSignature || "")}) return true;
         }
