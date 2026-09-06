@@ -13,6 +13,7 @@ const mainRequired = [
   "Math.floor(usableWidth * 0.55)",
   "sellerSide: \"left\"",
   "excelSide: \"right\"",
+  "if (!sellerExcelVerificationLayout && sellerWindow && !sellerWindow.isDestroyed()) sellerWindow.hide();",
   "function endSellerExcelVerificationWindows",
   "seller:excel-verification-start",
   "seller:excel-verification-end",
@@ -59,4 +60,4 @@ if (!(syncIndex > captureIndex && refreshIndex > syncIndex)) {
   throw new Error("Excel preview must refresh after the POIZON-authoritative workbook sync.");
 }
 
-console.log("Visible cross-check verified: POIZON left, Excel right, refresh after screen-authoritative sync, and window restore on finish.");
+console.log("Visible cross-check verified: POIZON stays visible on the left, Excel stays visible on the right, workbook refresh follows screen-authoritative sync, and window layout restores on finish.");
