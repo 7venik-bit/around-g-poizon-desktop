@@ -29,15 +29,20 @@ await transform('services/verified-combined-search.mjs', (s) => {
   s = once(s, "verificationStatus: options.length ? '저장 후 대조 완료'", "verificationStatus: options.length ? product.hasSalesData || product.hasLocalSalesData ? '확인된 항목 저장 후 대조 완료' : '최근 30일 값 미확인'");
   return s;
 });
-await transform('src/renderer.js', (s) => once(s,
-  'function renderExcelProductRows(file, products = []) {',
-  'function renderExcelProductRows(file, products = []) {\n  if (products.some((p) => Array.isArray(p.verificationOptions))) return renderVerifiedSpuRows(file, products);'));
+await transform('src/renderer.js', (s) => {
+  s = once(s, 'function renderExcelProductRows(file, products = []) {',
+    'function renderExcelProductRows(file, products = []) {\n  if (products.some((p) => Array.isArray(p.verificationOptions))) return renderVerifiedSpuRows(file, products);');
+  s = once(s, '    if (files[0]) await openIntegratedBrandExcel(files[0], false);',
+    '    window.activateSearchServiceMode?.("brand");\n    if (files[0]) await openIntegratedBrandExcel(files[0], false);');
+  return s;
+});
 await transform('src/sourcing-view.js', (s) => once(s,
   '      const sourcingRenderer = function sourcingRenderExcelProductRows(file, products = []) {',
   '      const sourcingRenderer = function sourcingRenderExcelProductRows(file, products = []) {\n        if (typeof renderVerifiedSpuRows === "function" && products.some((p) => Array.isArray(p.verificationOptions))) return renderVerifiedSpuRows(file, products);'));
-// Run the new behavioral tests again AFTER all release-time patches, not only
-// during dependency installation. A failure still returns a failing exit code.
-await transform('scripts/run-release-regressions.mjs', (s) => once(s,
-  'const files = process.argv.slice(2);',
-  'const files = [...new Set([...process.argv.slice(2), "tests/poizon-value-integrity.test.mjs", "tests/poizon-screen-excel-sync.test.mjs", "tests/live-poizon-crosscheck.test.mjs"])];'));
-console.log('Verified large-workbook single-pass writes and grouped-view continuity; release regression gate includes value-integrity simulations.');
+// Repeat behavioral checks AFTER all release patches; any failure blocks release.
+await transform('scripts/run-release-regressions.mjs', (s) => {
+  const old = 'const files = [...new Set([...process.argv.slice(2), "tests/poizon-value-integrity.test.mjs", "tests/poizon-screen-excel-sync.test.mjs", "tests/live-poizon-crosscheck.test.mjs"])];';
+  const next = 'const files = [...new Set([...process.argv.slice(2), "tests/poizon-value-integrity.test.mjs", "tests/poizon-screen-excel-sync.test.mjs", "tests/live-poizon-crosscheck.test.mjs", "tests/poizon-value-safety.test.mjs"])];';
+  return once(s, s.includes(old) ? old : 'const files = process.argv.slice(2);', next);
+});
+console.log('Verified large-workbook single-pass writes, grouped-view continuity and visible brand results; release regression gate includes all value-integrity simulations.');
