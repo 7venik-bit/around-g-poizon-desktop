@@ -78,10 +78,24 @@ export function findPoizonColumn(headers, ...names) {
   return -1;
 }
 
-// Keep China and local-seller columns disjoint. POIZON exports have used
-// several labels over time (parentheses, suffixes, "중국 시장", "현지 판매자",
-// and verified/source annotations). Match the semantic header instead of one
-// exact spelling, but never substitute lifetime totals for recent-30-day data.
+export function findPoizonTotalSalesColumns(headers = []) {
+  const normalized = headers.map(normalizePoizonHeader);
+  const find = (pattern) => {
+    const matches = normalized.map((header, index) => pattern.test(header) ? index : -1).filter((index) => index >= 0);
+    return matches.length === 1 ? matches[0] : -1;
+  };
+  return {
+    china: find(/^(?:중국(?:시장)?)?총판매량(?:건|개)?$/),
+    local: find(/^현지판매자총판매량(?:건|개)?$/),
+  };
+}
+
+// POIZON export files have used two header families for the same comparison
+// values: explicit "최근 30일 판매량" labels and shorter export labels such as
+// "중국 총 판매량" / "현지 판매자 총 판매량". Every Excel import goes through
+// this resolver so all brands and old/new files are normalized consistently.
+// Explicit recent-30-day headers always win. The total-sales labels are used
+// only as a fallback when that side has no unambiguous recent header.
 export function findPoizonRecentSalesColumns(headers = []) {
   const normalized = headers.map(normalizePoizonHeader);
   const isRecentSales = (header) => header.includes("최근30일") && header.includes("판매량")
@@ -93,23 +107,17 @@ export function findPoizonRecentSalesColumns(headers = []) {
 
   const localMatches = recent.filter(({ header }) => isLocal(header));
   const chinaCandidates = recent.filter(({ header }) => !isLocal(header));
-
   const unique = (items) => items.length === 1 ? items[0].index : -1;
-  return {
+
+  const explicit = {
     china: unique(chinaCandidates),
     local: unique(localMatches),
   };
-}
+  const totals = findPoizonTotalSalesColumns(headers);
 
-export function findPoizonTotalSalesColumns(headers = []) {
-  const normalized = headers.map(normalizePoizonHeader);
-  const find = (pattern) => {
-    const matches = normalized.map((header, index) => pattern.test(header) ? index : -1).filter((index) => index >= 0);
-    return matches.length === 1 ? matches[0] : -1;
-  };
   return {
-    china: find(/^(?:중국(?:시장)?)?총판매량(?:건|개)?$/),
-    local: find(/^현지판매자총판매량(?:건|개)?$/),
+    china: explicit.china >= 0 ? explicit.china : totals.china,
+    local: explicit.local >= 0 ? explicit.local : totals.local,
   };
 }
 
