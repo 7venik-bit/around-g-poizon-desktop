@@ -72,13 +72,32 @@ test("다운로드 동기화는 수동 POIZON 작업 복구 진행률과 분리�
   assert.match(renderer, /recoverInterruptedBrandWorkOnDemand[\s\S]*restoreDownloadedBrandFiles\(\{ recoveryProgress: true \}\)/);
 });
 
-test("다운로드 동기화 진행 상황을 브랜드·페이지·상품 수로 표시한다", () => {
+test("다운로드 동기화 진행 상황을 브랜드·페이지·상품 수·Excel 파일명으로 표시한다", () => {
   assert.match(html, /class="download-sync-anchor"[\s\S]*id="import-button"[\s\S]*id="excel-sync-progress"[^>]*aria-live="polite"/);
   assert.match(renderer, /if \(downloadFileSyncActive\)/);
-  assert.match(renderer, /전체 \$\{percent\}% · \$\{brandName\} \$\{page\}\/\$\{pages \|\| "\?"\}페이지 ·/);
-  assert.match(renderer, /동기화 진행 중 · \$\{page\}\/\$\{pages \|\| "\?"\}페이지/);
-  assert.match(renderer, /개 상품 확인/);
+  // The split-window UI replaces the old single-window progress wording.
+  // Preserve checks for every field, including brand/count in the tooltip.
+  assert.match(renderer, /전체 \$\{percent\}% · 왼쪽 POIZON \$\{page\}\/\$\{pages \|\| "\?"\}페이지 · 오른쪽 Excel \$\{fileName\}/);
+  assert.match(renderer, /\$\{brandName\} 교차 검증 중 · POIZON \$\{page\}\/\$\{pages \|\| "\?"\}페이지/);
+  assert.match(renderer, /\$\{Number\(progress\.count \|\| 0\)\.toLocaleString\("ko-KR"\)\}개 상품 · Excel \$\{fileName\}/);
+  assert.match(renderer, /const fileName = downloadFileSyncState\.fileName \|\| "Excel"/);
   assert.match(renderer, /동기화 실패 · \$\{failures\[0\]\}/);
   assert.match(renderer, /startsWith\("SELLER_"\)/);
   assert.doesNotMatch(renderer, /syncProgress\.querySelector\("i"\)\.style\.width = "100%";[\s\S]{0,120}동기화 완료[^\n]+failures\.length/);
+});
+
+test("실제 교차 검증 문구는 두 창의 페이지·파일명과 브랜드·상품 수를 렌더링한다", () => {
+  const literals = [
+    renderer.match(/loading\.querySelector\("span"\)\.textContent = (`전체 \$\{percent\}% · 왼쪽 POIZON[^\n]+`);/)?.[1],
+    renderer.match(/loading\.title = (`\$\{brandName\} 교차 검증 중 · POIZON[^\n]+`);/)?.[1],
+    renderer.match(/status\.textContent = (`\$\{brandName\} 교차 검증 중 · 왼쪽 POIZON[^\n]+`);/)?.[1],
+  ];
+  assert.ok(literals.every(Boolean), "all three shipping cross-check messages must exist");
+  const render = (literal, pages = 150) => new Function(
+    "percent", "brandName", "page", "pages", "progress", "fileName", "return " + literal + ";",
+  )(47, "코오롱스포츠", 37, pages, { count: 2843 }, "kolon.xlsx");
+  assert.equal(render(literals[0]), "전체 47% · 왼쪽 POIZON 37/150페이지 · 오른쪽 Excel kolon.xlsx");
+  assert.equal(render(literals[1]), "코오롱스포츠 교차 검증 중 · POIZON 37/150페이지 · 2,843개 상품 · Excel kolon.xlsx");
+  assert.equal(render(literals[2]), "코오롱스포츠 교차 검증 중 · 왼쪽 POIZON 37/150페이지 · 오른쪽 Excel kolon.xlsx");
+  assert.match(render(literals[0], 0), /37\/\?페이지/);
 });
