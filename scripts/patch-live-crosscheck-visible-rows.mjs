@@ -24,7 +24,7 @@ replaceOnce(
 
 replaceOnce(
   "    get('.live-prev').disabled = page === 0; get('.live-next').disabled = (page + 1) * 20 >= rows.length;\n    get('.live-raw').disabled = !finished;\n    renderClock();",
-  "    get('.live-prev').disabled = page === 0; get('.live-next').disabled = (page + 1) * 20 >= rows.length;\n    get('.live-raw').disabled = !finished;\n    if (!finished && currentRows.length) {\n      const tableHost = get('.live-table');\n      requestAnimationFrame(() => {\n        tableHost.scrollTop = tableHost.scrollHeight;\n        get('tbody tr:last-child')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });\n      });\n    }\n    renderClock();",
+  "    get('.live-prev').disabled = page === 0; get('.live-next').disabled = (page + 1) * 20 >= rows.length;\n    get('.live-raw').disabled = !finished;\n    if (!finished && currentRows.length) {\n      const tableHost = get('.live-table');\n      const scrollLatest = () => {\n        tableHost.scrollTop = tableHost.scrollHeight;\n        get('tbody tr:last-child')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });\n      };\n      if (typeof globalThis.requestAnimationFrame === 'function') globalThis.requestAnimationFrame(scrollLatest);\n      else scrollLatest();\n    }\n    renderClock();",
   'auto-scroll latest live row',
 );
 
@@ -32,6 +32,6 @@ await writeFile(target, source, 'utf8');
 
 if (!source.includes('class="live-show-all" type="checkbox" checked')) throw new Error('Show-all default verification failed');
 if (!source.includes("!finished || get('.live-show-all').checked || r.qualified")) throw new Error('Running-row visibility verification failed');
-if (!source.includes("scrollIntoView({ behavior: 'smooth', block: 'nearest' })")) throw new Error('Live auto-scroll verification failed');
+if (!source.includes("typeof globalThis.requestAnimationFrame === 'function'")) throw new Error('Live auto-scroll fallback verification failed');
 
 console.log('Live POIZON cross-check now shows current compared rows and auto-scrolls to the latest row.');
