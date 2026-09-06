@@ -13,6 +13,27 @@ function replaceOnce(source, before, after, label) {
   return { source: source.replace(before, after), changed: true };
 }
 
+function importHandlerBounds(source) {
+  const start = source.indexOf('$("#import-button").addEventListener("click", async () => {');
+  const end = source.indexOf('$("#export-button").addEventListener("click", async () => {', start);
+  if (start < 0 || end <= start) throw new Error("Downloaded-file sync handler not found.");
+  return { start, end };
+}
+
+function insertInImportHandler(source, marker, insertedText, placement, label) {
+  if (source.includes(insertedText)) return { source, changed: false };
+  const { start, end } = importHandlerBounds(source);
+  const index = source.indexOf(marker, start);
+  if (index < 0 || index >= end) {
+    throw new Error(`Visible POIZON/Excel import-handler target not found (${label}): ${marker}`);
+  }
+  const insertionIndex = placement === "after" ? index + marker.length : index;
+  return {
+    source: source.slice(0, insertionIndex) + insertedText + source.slice(insertionIndex),
+    changed: true,
+  };
+}
+
 let main = await readFile(mainPath, "utf8");
 let preload = await readFile(preloadPath, "utf8");
 let renderer = await readFile(rendererPath, "utf8");
@@ -32,11 +53,7 @@ let rendererChanged = false;
 }
 
 {
-  const before = block(
-    "let mainWindow;",
-    "let sellerWindow;",
-    "let sellerMonitorWindow;",
-  );
+  const before = block("let mainWindow;", "let sellerWindow;", "let sellerMonitorWindow;");
   const after = block(
     "let mainWindow;",
     "let sellerWindow;",
@@ -174,7 +191,7 @@ for (const [before, after, label] of [
     '  const status = $("#excel-files-status");',
     "  if (status) {",
     '    status.className = "status";',
-    "    status.textContent = `검증 화면 열림 · 왼쪽 POIZON / 오른쪽 Excel · ${brandName}`;",
+    '    status.textContent = `검증 화면 열림 · 왼쪽 POIZON / 오른쪽 Excel · ${brandName}`;',
     "  }",
     "  return layout;",
     "}",
@@ -187,34 +204,23 @@ for (const [before, after, label] of [
 }
 
 {
-  const before = block(
-    "        const excelSales = await downloadedBrandSalesByArticle(brand);",
-    '        if (!excelSales.ok) throw new Error(excelSales.error || "EXCEL_READ_FAILED");',
-    "        const sellerResult = await window.aroundG.captureSellerBrandSales({",
-  );
-  const after = block(
-    "        const excelSales = await downloadedBrandSalesByArticle(brand);",
-    '        if (!excelSales.ok) throw new Error(excelSales.error || "EXCEL_READ_FAILED");',
+  const marker = "        const sellerResult = await window.aroundG.captureSellerBrandSales({";
+  const inserted = block(
     "        await showPoizonExcelVerificationPair(file, brandName);",
     "        if (syncProgress) {",
     '          syncProgress.querySelector("span").textContent = `검증 중 · 왼쪽 POIZON / 오른쪽 Excel · ${brandName}`;',
     '          syncProgress.title = `${brandName} · POIZON 화면과 ${file?.name || "Excel"}을 동시에 비교합니다.`;',
     "        }",
-    "        const sellerResult = await window.aroundG.captureSellerBrandSales({",
+    "",
   );
-  const result = replaceOnce(renderer, before, after, "open pair before Seller Center capture");
+  const result = insertInImportHandler(renderer, marker, inserted, "before", "open pair before Seller Center capture");
   renderer = result.source;
   rendererChanged ||= result.changed;
 }
 
 {
-  const before = block(
-    '        if (!excelSync?.ok) throw new Error(excelSync?.message || "원본 Excel에 POIZON 화면 값을 반영하지 못했습니다.");',
-    "        updatedExcelRows += Number(excelSync.changedRows || 0);",
-  );
-  const after = block(
-    '        if (!excelSync?.ok) throw new Error(excelSync?.message || "원본 Excel에 POIZON 화면 값을 반영하지 못했습니다.");',
-    "        updatedExcelRows += Number(excelSync.changedRows || 0);",
+  const marker = '        const saved = await window.aroundG.upsert("poizonSyncs", {';
+  const inserted = block(
     "        await showExcelPreview(file, 0, {",
     '          minimumTotal: "",',
     '          minimumLocalTotal: "",',
@@ -228,66 +234,49 @@ for (const [before, after, label] of [
     '          syncProgress.title = `왼쪽 POIZON과 오른쪽 Excel 비교 완료 · ${file?.name || "Excel"}`;',
     "        }",
     "        await new Promise((resolve) => setTimeout(resolve, 2_000));",
+    "",
   );
-  const result = replaceOnce(renderer, before, after, "refresh Excel after screen-authoritative sync");
+  const result = insertInImportHandler(renderer, marker, inserted, "before", "refresh Excel after screen-authoritative sync");
   renderer = result.source;
   rendererChanged ||= result.changed;
 }
 
 {
-  const before = block(
-    '      const brandName = downloadFileSyncState.brandName || progress.brandName || "브랜드";',
-    "      if (loading) {",
-    "        loading.hidden = false;",
-    '        loading.querySelector("i").style.width = `${percent}%`;',
-    '        loading.querySelector("span").textContent = `전체 ${percent}% · ${brandName} ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개`;',
-    '        loading.title = `${brandName} 동기화 진행 중 · ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개 상품 확인`;',
-    "      }",
-    "      if (status) {",
-    '        status.className = "status";',
-    '        status.textContent = `${brandName} 동기화 진행 중 · ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개 상품 확인`;',
-    "      }",
-  );
-  const after = block(
-    '      const brandName = downloadFileSyncState.brandName || progress.brandName || "브랜드";',
-    '      const fileName = downloadFileSyncState.fileName || "Excel";',
-    "      if (loading) {",
-    "        loading.hidden = false;",
-    '        loading.querySelector("i").style.width = `${percent}%`;',
-    '        loading.querySelector("span").textContent = `전체 ${percent}% · 왼쪽 POIZON ${page}/${pages || "?"}페이지 · 오른쪽 Excel ${fileName}`;',
-    '        loading.title = `${brandName} 교차 검증 중 · POIZON ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개 상품 · Excel ${fileName}`;',
-    "      }",
-    "      if (status) {",
-    '        status.className = "status";',
-    '        status.textContent = `${brandName} 교차 검증 중 · 왼쪽 POIZON ${page}/${pages || "?"}페이지 · 오른쪽 Excel ${fileName}`;',
-    "      }",
-  );
-  const result = replaceOnce(renderer, before, after, "visible left/right progress wording");
-  renderer = result.source;
-  rendererChanged ||= result.changed;
+  const brandLine = '      const brandName = downloadFileSyncState.brandName || progress.brandName || "브랜드";';
+  const fileLine = '\n      const fileName = downloadFileSyncState.fileName || "Excel";';
+  if (!renderer.includes('const fileName = downloadFileSyncState.fileName || "Excel";')) {
+    const result = replaceOnce(renderer, brandLine, brandLine + fileLine, "progress Excel file name");
+    renderer = result.source;
+    rendererChanged ||= result.changed;
+  }
+  const replacements = [
+    [
+      '        loading.querySelector("span").textContent = `전체 ${percent}% · ${brandName} ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개`;',
+      '        loading.querySelector("span").textContent = `전체 ${percent}% · 왼쪽 POIZON ${page}/${pages || "?"}페이지 · 오른쪽 Excel ${fileName}`;',
+      "loading cross-check progress",
+    ],
+    [
+      '        loading.title = `${brandName} 동기화 진행 중 · ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개 상품 확인`;',
+      '        loading.title = `${brandName} 교차 검증 중 · POIZON ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개 상품 · Excel ${fileName}`;',
+      "loading cross-check title",
+    ],
+    [
+      '        status.textContent = `${brandName} 동기화 진행 중 · ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개 상품 확인`;',
+      '        status.textContent = `${brandName} 교차 검증 중 · 왼쪽 POIZON ${page}/${pages || "?"}페이지 · 오른쪽 Excel ${fileName}`;',
+      "status cross-check progress",
+    ],
+  ];
+  for (const [before, after, label] of replacements) {
+    const result = replaceOnce(renderer, before, after, label);
+    renderer = result.source;
+    rendererChanged ||= result.changed;
+  }
 }
 
 {
-  const before = block(
-    "  } finally {",
-    "    downloadFileSyncActive = false;",
-    "    button.disabled = false;",
-    '    button.textContent = "다운로드 파일 동기화";',
-    "  }",
-    "});",
-    '$("#export-button").addEventListener("click", async () => {',
-  );
-  const after = block(
-    "  } finally {",
-    "    await window.aroundG.endSellerExcelVerification().catch(() => {});",
-    "    downloadFileSyncActive = false;",
-    "    button.disabled = false;",
-    '    button.textContent = "다운로드 파일 동기화";',
-    "  }",
-    "});",
-    '$("#export-button").addEventListener("click", async () => {',
-  );
-  const result = replaceOnce(renderer, before, after, "restore windows after verification");
+  const marker = "  } finally {\n";
+  const inserted = "    await window.aroundG.endSellerExcelVerification().catch(() => {});\n";
+  const result = insertInImportHandler(renderer, marker, inserted, "after", "restore windows after verification");
   renderer = result.source;
   rendererChanged ||= result.changed;
 }
