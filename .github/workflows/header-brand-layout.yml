@@ -1,0 +1,38 @@
+name: Verify rendered header and brand layout
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/patch-*.mjs'
+      - 'scripts/test-header-brand-layout.cjs'
+      - 'tests/header-brand-layout.test.mjs'
+      - 'package.json'
+      - '.github/workflows/header-brand-layout.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rendered-layout:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install all release presentation patches
+        run: npm ci
+      - name: Measure 42 window, scaling, and updating states in Electron
+        shell: bash
+        run: >-
+          node -e "const {spawnSync}=require('node:child_process');const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;const r=spawnSync(require('electron'),['scripts/test-header-brand-layout.cjs'],{stdio:'inherit',env});if(r.error)throw r.error;process.exit(r.status??1)"
+      - name: Save rendered screenshots and geometry report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: header-brand-layout-${{ github.sha }}
+          path: layout-artifacts/
+          retention-days: 14
+          if-no-files-found: warn
