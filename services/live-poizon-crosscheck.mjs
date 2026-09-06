@@ -22,12 +22,8 @@ export function verificationConditionLabel(input = {}) {
   return `최근 30일 · 중국 ${label(c.minimumChinaSales30)} · 현지 판매자 ${label(c.minimumLocalSales30)} · AND`;
 }
 
-export function recentMetric(product = {}, local = false) {
-  const key = local ? 'localSales30d' : 'sales30d';
-  const flag = local ? 'hasLocalSalesData' : 'hasSalesData';
-  if (product[flag] === false) return null;
-  const rawValue = product[key + 'Raw'];
-  const raw = String(rawValue == null || rawValue === '' ? product[key] ?? '' : rawValue).normalize('NFKC').trim();
+function metricFromRaw(rawValue) {
+  const raw = String(rawValue ?? '').normalize('NFKC').trim();
   const match = raw.replace(/,/g, '').match(/^(<|<=|≤|>|>=|≥)?\s*(\d+(?:\.\d+)?)\s*(\+)?$/);
   if (!match) return null;
   const value = Number(match[2]);
@@ -36,6 +32,24 @@ export function recentMetric(product = {}, local = false) {
   const max = op === '<' ? Math.max(-1, value - 1) : op === '<=' || op === '≤' ? value
     : op === '>' || op === '>=' || op === '≥' ? Infinity : value;
   return { raw, min, max, signature: `${min}:${max}` };
+}
+
+export function recentMetric(product = {}, local = false) {
+  const key = local ? 'localSales30d' : 'sales30d';
+  const flag = local ? 'hasLocalSalesData' : 'hasSalesData';
+  const explicitRaw = product[key + 'Raw'];
+  const fallback = explicitRaw == null || explicitRaw === '' ? product[key] : explicitRaw;
+  // Some older preview paths can carry the raw cell while the availability flag
+  // is stale. Trust a valid explicit raw recent-30-day value, but never revive a
+  // value from the numeric fallback when the flag explicitly says unavailable.
+  if (product[flag] === false && (explicitRaw == null || explicitRaw === '')) return null;
+  return metricFromRaw(fallback);
+}
+
+function totalMetric(product = {}, local = false) {
+  const key = local ? 'localTotalSales' : 'totalSales';
+  const rawValue = product[key + 'Raw'];
+  return metricFromRaw(rawValue == null || rawValue === '' ? product[key] : rawValue);
 }
 
 export function meetsVerificationConditions(product, conditions) {
@@ -49,22 +63,30 @@ export function meetsVerificationConditions(product, conditions) {
 // Blank/unknown option rows do not poison an otherwise unambiguous parent value.
 // We still refuse to guess when two distinct valid values exist.
 export function resolveExcelRecentMetric(products = [], local = false) {
-  const observed = products
-    .map((product) => recentMetric(product, local))
-    .filter(Boolean);
+  const observed = products.map((product) => recentMetric(product, local)).filter(Boolean);
   const bySignature = new Map();
   for (const metric of observed) {
     if (!bySignature.has(metric.signature)) bySignature.set(metric.signature, metric);
   }
+  const totalValues = [...new Map(products.map((product) => totalMetric(product, local)).filter(Boolean).map((metric) => [metric.signature, metric])).values()];
+  const key = local ? 'localSales30d' : 'sales30d';
+  const rawRecentValues = [...new Set(products.map((product) => String(product?.[key + 'Raw'] ?? '').trim()).filter(Boolean))];
+
   if (bySignature.size === 0) {
-    return { state: 'missing', metric: null, metrics: [], raw: '미확인' };
+    const diagnostic = rawRecentValues.length
+      ? `최근30일 원본값 ${rawRecentValues.join(' / ')} · 파싱/가용성 확인 필요`
+      : totalValues.length
+        ? `최근30일 값 없음 · 총판매 ${totalValues.map((metric) => metric.raw).join(' / ')}`
+        : '최근30일 값 없음';
+    return { state: 'missing', metric: null, metrics: [], raw: `미확인 · ${diagnostic}`, diagnostic };
   }
   if (bySignature.size > 1) {
     const metrics = [...bySignature.values()];
-    return { state: 'conflict', metric: null, metrics, raw: metrics.map((metric) => metric.raw).join(' / ') };
+    const diagnostic = `최근30일 복수값 ${metrics.map((metric) => metric.raw).join(' / ')}`;
+    return { state: 'conflict', metric: null, metrics, raw: metrics.map((metric) => metric.raw).join(' / '), diagnostic };
   }
   const metric = [...bySignature.values()][0];
-  return { state: 'resolved', metric, metrics: [metric], raw: metric.raw };
+  return { state: 'resolved', metric, metrics: [metric], raw: metric.raw, diagnostic: '' };
 }
 
 const article = (p) => String(p?.articleNumber || p?.productCode || '').normalize('NFKC').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -88,7 +110,6 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
     let matchBy = candidates.length ? 'SPU' : '상품번호';
     if (!candidates.length) {
       const articleCandidates = byArticle.get(article(product)) || [];
-      // Never attach a same-code, different-SPU item to the wrong workbook row.
       candidates = articleCandidates.filter((p) => !spu(product) || !spu(p) || spu(p) === spu(product));
       if (new Set(candidates.map(spu).filter(Boolean)).size > 1) candidates = [];
       if (articleCandidates.length && !candidates.length) matchBy = '식별자 충돌';
@@ -104,11 +125,13 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
     const allAvailable = sourceAvailable && excelAvailable;
     const equal = candidates.length > 0 && allAvailable
       && excelResolved.every((entry, index) => entry.metric.signature === source[index].signature);
+    const missingSides = [excelChina, excelLocal].filter((entry) => entry.state === 'missing').length;
     const status = !identity(product) ? '식별자 없음'
       : !candidates.length ? matchBy === '식별자 충돌' ? matchBy : 'Excel 상품 없음'
       : hasConflict ? 'Excel 최근 30일 값 충돌'
       : equal ? '일치'
-      : !allAvailable ? '최근 30일 값 미확인'
+      : missingSides ? `Excel 최근 30일 값 없음 (${missingSides}개 항목)`
+      : !sourceAvailable ? 'POIZON 최근 30일 값 미확인'
       : '값 다름';
 
     return {
@@ -121,6 +144,8 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
       excelLocal: candidates.length ? excelLocal.raw : '상품 없음',
       excelChinaState: excelChina.state,
       excelLocalState: excelLocal.state,
+      excelChinaDiagnostic: excelChina.diagnostic || '',
+      excelLocalDiagnostic: excelLocal.diagnostic || '',
       excelRows: candidates.flatMap((p) => p.sourceRowNumbers || [p.sourceRowNumber]).filter((n) => Number.isInteger(Number(n)) && Number(n) > 0).map(Number),
       matched: candidates.length > 0, equal,
     };
@@ -142,7 +167,6 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
       if (!Array.isArray(products)) throw new Error('검증할 페이지 상품 목록이 올바르지 않습니다.');
       pageNum = Number(metadata.pageNum || 0);
       pageCount = Number(metadata.pageCount || 0);
-      // Replacing a page prevents inflated counts after a retry or re-read.
       for (const [key, row] of compared) if (row.pageNum === pageNum) compared.delete(key);
       const rows = products.map(compare);
       for (const row of rows) compared.set(row.key, row);
@@ -154,8 +178,6 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
   };
 }
 
-// Runs inside the controlled Seller Center page. Source rows stay available to
-// the completeness collector even in the condition-filtered visual view.
 export function paintSellerVerification(document, payload) {
   const id = 'around-g-live-verification';
   let banner = document.getElementById(id);
@@ -171,7 +193,6 @@ export function paintSellerVerification(document, payload) {
     const code = String(row.innerText || '').match(/상품\s*번호\s*[:：]\s*([A-Za-z0-9._/-]+)/)?.[1];
     if (!code) continue;
     const match = (payload.rows || []).find((r) => normalize(r.articleNumber) === normalize(code));
-    // Do not display:none the original rows: they are completeness evidence.
     row.style.outline = match?.qualified ? '2px solid #78aaca' : '';
     row.style.outlineOffset = '-2px';
     row.dataset.aroundGVerification = match ? match.qualified ? 'qualified' : 'outside-condition' : 'pending';
