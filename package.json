@@ -24,6 +24,7 @@
     "appId": "kr.aroundg.poizon",
     "productName": "Around G POIZON",
     "asar": true,
+    "afterPack": "scripts/verify-packaged-runtime.cjs",
     "directories": {
       "output": "dist"
     },
