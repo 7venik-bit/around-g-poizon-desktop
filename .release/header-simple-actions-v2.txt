@@ -1,0 +1,1 @@
+Compact header V2: force four stable short action labels, hide duplicate status titles, keep traffic-light sequence unchanged, and move actions to a separate row on narrower windows.
