@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { readFirstDataSheet } from './excel-reader.mjs';
+import { findPoizonRecentSalesColumns } from './poizon-xlsx.mjs';
 
 const digest = (buffer) => createHash('sha256').update(buffer).digest('hex');
 const pathOf = (input) => {
@@ -9,11 +10,12 @@ const pathOf = (input) => {
   return path;
 };
 
-// The snapshot is an unfiltered, read-only representation. Unknown rows are
-// retained, not silently dropped by the ordinary product-view conversion.
+// Preserve unknown original rows too. No sales condition or product grouping
+// is permitted while creating the complete immutable comparison snapshot.
 export function createReviewWorkbookSnapshot(rows, buildProducts, revision = '') {
   if (!Array.isArray(rows) || !rows.length || !Array.isArray(rows[0])) throw new Error('Excel 헤더를 읽지 못했습니다.');
   const headers = rows[0].map((v) => String(v ?? ''));
+  const columns = findPoizonRecentSalesColumns(headers);
   const entries = rows.slice(1).map((values, i) => ({ values, sourceRowNumber: i + 2 }));
   const parsed = buildProducts(headers, entries);
   const byRow = new Map(parsed.map((p) => [Number(p.sourceRowNumber), p]));
@@ -22,6 +24,7 @@ export function createReviewWorkbookSnapshot(rows, buildProducts, revision = '')
     return { ...(p || { key: `UNREADABLE-ROW:${entry.sourceRowNumber}`, sourceRowNumber: entry.sourceRowNumber,
       articleNumber: '', spuId: '', skuId: '', title: '', hasSalesData: false, hasLocalSalesData: false }),
       sourceValues: entry.values.map((v) => v == null ? '' : v instanceof Date ? v.toISOString() : String(v)),
+      reviewColumnNames: p?.salesScope === 'sku' ? {} : { china: headers[columns.china] || '', local: headers[columns.local] || '' },
       identityReadable: Boolean(p && (p.spuId || p.articleNumber)),
     };
   });
