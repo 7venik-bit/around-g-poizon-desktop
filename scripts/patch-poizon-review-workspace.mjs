@@ -6,7 +6,7 @@ function once(s, a, b, label) { if (s.includes(b)) return s; if (!s.includes(a))
 function section(s, a, b, replacement) { const start = s.indexOf(a), end = s.indexOf(b, start + a.length); if (start < 0 || end < 0) throw new Error('Review section missing: ' + a); return s.slice(0, start) + replacement + s.slice(end); }
 
 let main = await read('main.mjs');
-if (!main.includes('readReviewWorkbook }')) {
+if (!main.includes('from "./services/poizon-review-workbook.mjs"')) {
   main = 'import { readReviewWorkbook, checkReviewWorkbookRevision } from "./services/poizon-review-workbook.mjs";\n' + main;
   main = once(main, 'import { createPageCrossCheck, verificationConditionLabel, paintSellerVerification } from "./services/live-poizon-crosscheck.mjs";',
     'import { createPageCrossCheck, verificationConditionLabel } from "./services/live-poizon-crosscheck.mjs";\nimport { paintReviewPage as paintSellerVerification } from "./services/poizon-review-paint.mjs";', 'shared row colors');
@@ -45,7 +45,6 @@ if (!renderer.includes('async function openReviewLocalBrandPreview')) {
   const products = snapshots.flatMap((snapshot) => snapshot.products.map((p) => ({ ...p,
     _sourceFilePath: snapshot.file.path, _sourceBrandName: snapshot.file.brandName || "",
     _excelSelectionKey: snapshot.file.path.toLowerCase() + "::ROW:" + p.sourceRowNumber })));
-  // Opening a brand list is local only. POIZON review is an explicit action.
   combinedBrandPreview = { products, files, brandCount: files.length, loadedCount: snapshots.length,
     filters: { minimumTotal: "", minimumLocalTotal: "" }, verified: false };
   await openIntegratedBrandExcel(files[0], false);
@@ -69,7 +68,6 @@ async function openVerifiedCombinedBrandPreview(files, filters = {}) {
 
 `);
   renderer = once(renderer, '  return openVerifiedCombinedBrandPreview(files, filters);', '  return openReviewLocalBrandPreview(files, filters);', 'local brand list separated');
-  // Replace the old cross-brand verification loop with a local file-list refresh.
   renderer = section(renderer, '$("#import-button").addEventListener("click", async () => {', '$("#export-button").addEventListener', `$("#import-button").addEventListener("click", async () => {
   if (downloadFileSyncActive) return;
   const live = await import("./poizon-review-workspace.js");
@@ -119,4 +117,13 @@ await save('src/index.html', html);
 let regressions = await read('scripts/run-release-regressions.mjs');
 regressions = once(regressions, 'const files = [...new Set([...process.argv.slice(2),', 'const files = [...new Set([...process.argv.slice(2), "tests/poizon-review-workspace.test.mjs",', 'mandatory review regression');
 await save('scripts/run-release-regressions.mjs', regressions);
+// The previous acceptance test required the download button to capture POIZON.
+// Replace that superseded requirement with strict separation; do not skip tests.
+let tests = await read('tests/live-poizon-crosscheck.test.mjs');
+tests = tests.replace("  assert.match(renderer, /verification: liveVerification.input/);", "  assert.match(renderer, /runPoizonReviewBatch/);");
+tests = tests.replace("  assert.match(renderer, /conditions: verificationConditions/);", "  const localSync = renderer.slice(renderer.indexOf('$(\"#import-button\").addEventListener'), renderer.indexOf('$(\"#export-button\").addEventListener'));\n  assert.match(localSync, /listBrandExportFiles/);\n  assert.doesNotMatch(localSync, /captureSellerBrandSales|syncExcelWithSellerScreen/);");
+await save('tests/live-poizon-crosscheck.test.mjs', tests);
+let values = await read('tests/poizon-value-integrity.test.mjs');
+values = values.replace('assert.match(renderer, /return openVerifiedCombinedBrandPreview\\(files, filters\\)/);', 'assert.match(renderer, /return openReviewLocalBrandPreview\\(files, filters\\)/);');
+await save('tests/poizon-value-integrity.test.mjs', values);
 console.log('Dedicated POIZON review: full read-only Excel snapshot, source-order colors, explicit review entry, independent file-list synchronization.');
