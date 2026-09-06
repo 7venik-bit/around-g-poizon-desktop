@@ -53,10 +53,10 @@ test("판매자센터 동기화는 20개씩 하단 페이지를 실제로 순회
 });
 
 test("판매자센터 대량 동기화는 저속 안정 모드로 서버 응답을 기다린다", () => {
-  assert.match(capture, /const sellerPageDelayMs = 2_500/);
+  assert.match(capture, /const sellerPageDelayMs = 7_000/);
   assert.match(capture, /const sellerBatchPauseEvery = 10/);
-  assert.match(capture, /const sellerBatchPauseMs = 10_000/);
-  assert.match(capture, /const sellerPageResponseAttempts = 120/);
+  assert.match(capture, /const sellerBatchPauseMs = 30_000/);
+  assert.match(capture, /const sellerPageResponseAttempts = 240/);
   assert.match(capture, /capture\.currentPage % sellerBatchPauseEvery === 0/);
   assert.match(capture, /await wait\(sellerBatchPauseMs\)/);
   assert.match(capture, /await wait\(sellerPageDelayMs\)/);
