@@ -20,6 +20,10 @@ test("POIZON 판매자센터와 Excel 미리보기를 좌우로 동시에 표시
   assert.match(renderer, /검증 화면 열림 · 왼쪽 POIZON \/ 오른쪽 Excel/);
 });
 
+test("검증 중에는 POIZON 창을 숨기지 않고 Excel과 동시에 유지한다", () => {
+  assert.match(main, /if \(!sellerExcelVerificationLayout && sellerWindow && !sellerWindow\.isDestroyed\(\)\) sellerWindow\.hide\(\)/);
+});
+
 test("Excel을 먼저 표시한 뒤 POIZON 화면을 읽고 원본 Excel을 갱신한다", () => {
   const start = renderer.indexOf('$("#import-button").addEventListener("click", async () => {');
   const end = renderer.indexOf('$("#export-button").addEventListener("click", async () => {', start);
