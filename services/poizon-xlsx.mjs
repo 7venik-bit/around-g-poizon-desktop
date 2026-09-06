@@ -90,12 +90,20 @@ export function findPoizonTotalSalesColumns(headers = []) {
   };
 }
 
-// POIZON export files have used two header families for the same comparison
-// values: explicit "최근 30일 판매량" labels and shorter export labels such as
-// "중국 총 판매량" / "현지 판매자 총 판매량". Every Excel import goes through
-// this resolver so all brands and old/new files are normalized consistently.
-// Explicit recent-30-day headers always win. The total-sales labels are used
-// only as a fallback when that side has no unambiguous recent header.
+export function isPoizonRawExportSchema(headers = []) {
+  const normalized = new Set(headers.map(normalizePoizonHeader).filter(Boolean));
+  const has = (...aliases) => aliases.some((alias) => normalized.has(normalizePoizonHeader(alias)));
+  // Gate the export-label fallback to POIZON's own raw SKU export. Generic
+  // spreadsheets may contain similarly named lifetime totals and must never be
+  // silently treated as recent-30-day values.
+  return has("SPU ID", "SPU_ID")
+    && has("상품 번호")
+    && has("SKU ID")
+    && has("최근 30일간 평균 거래가")
+    && has("중국 총 판매량")
+    && has("현지 판매자 총 판매량");
+}
+
 export function findPoizonRecentSalesColumns(headers = []) {
   const normalized = headers.map(normalizePoizonHeader);
   const isRecentSales = (header) => header.includes("최근30일") && header.includes("판매량")
@@ -108,13 +116,18 @@ export function findPoizonRecentSalesColumns(headers = []) {
   const localMatches = recent.filter(({ header }) => isLocal(header));
   const chinaCandidates = recent.filter(({ header }) => !isLocal(header));
   const unique = (items) => items.length === 1 ? items[0].index : -1;
-
   const explicit = {
     china: unique(chinaCandidates),
     local: unique(localMatches),
   };
-  const totals = findPoizonTotalSalesColumns(headers);
 
+  // POIZON's raw SKU export currently labels the two screen-comparison sales
+  // fields as "중국 총 판매량" and "현지 판매자 총 판매량" even though the
+  // seller-center screen describes the same comparison context differently.
+  // Apply that interpretation only after the whole POIZON export schema is
+  // positively identified. Explicit recent headers still take priority.
+  if (!isPoizonRawExportSchema(headers)) return explicit;
+  const totals = findPoizonTotalSalesColumns(headers);
   return {
     china: explicit.china >= 0 ? explicit.china : totals.china,
     local: explicit.local >= 0 ? explicit.local : totals.local,
