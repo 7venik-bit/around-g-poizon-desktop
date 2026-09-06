@@ -156,10 +156,20 @@ function productInfoIndex(cells) {
   return cells.findIndex((cell) => /(?:\uC0C1\uD488\s*\uBC88\uD638|SPU[\s_]*ID)/i.test(String(cell || "")));
 }
 
+function alignedHeaderLayout(headers, cells) {
+  // Ant Design grouped tables expose every <thead><th> from both header rows.
+  // In that case the header array is longer than the row's <td> array and a
+  // raw header index points at the wrong visible cell. Only trust header
+  // indexes when one header maps to one row cell; otherwise use the stable
+  // visible Seller Center column offsets below.
+  return headers.length > 0 && headers.length === cells.length;
+}
+
 export function parseSellerBrandRows(rows = []) {
   return rows.map((row) => {
     const cells = Array.isArray(row.cells) ? row.cells : [];
     const headers = Array.isArray(row.headers) ? row.headers : [];
+    const headersAligned = alignedHeaderLayout(headers, cells);
     const headerIndex = (...patterns) => headers.findIndex((header) =>
       patterns.some((pattern) => pattern.test(String(header || "").replace(/\s+/g, " ").trim()))
     );
@@ -186,14 +196,19 @@ export function parseSellerBrandRows(rows = []) {
     const localSales30dIndex = headerIndex(/현지\s*판매자\s*최근\s*30일\s*판매량/, /현지\s*판매자.*30일/);
     const totalSalesIndex = headerIndex(/^(?:중국\s*)?총\s*판매량$/, /누적\s*판매량/);
     const localTotalSalesIndex = headerIndex(/현지\s*판매자\s*총\s*판매량/, /현지\s*판매자.*누적/);
-    const metricCell = (headerResolvedIndex, legacyOffset) =>
-      cells[headerResolvedIndex >= 0 ? headerResolvedIndex : resolvedInfoIndex + legacyOffset];
+    const metricCell = (headerResolvedIndex, legacyOffset) => {
+      const offsetIndex = resolvedInfoIndex + legacyOffset;
+      if (headersAligned && headerResolvedIndex >= 0 && headerResolvedIndex < cells.length) {
+        return cells[headerResolvedIndex];
+      }
+      return cells[offsetIndex];
+    };
     const averagePriceValue = metricCell(averagePriceIndex, 3);
     const buyerExposureValue = metricCell(buyerExposureIndex, 4);
     const sales30dValue = metricCell(sales30dIndex, 5);
     const localSales30dValue = metricCell(localSales30dIndex, 6);
-    const totalSalesValue = totalSalesIndex >= 0 ? cells[totalSalesIndex] : undefined;
-    const localTotalSalesValue = localTotalSalesIndex >= 0 ? cells[localTotalSalesIndex] : undefined;
+    const totalSalesValue = headersAligned && totalSalesIndex >= 0 ? cells[totalSalesIndex] : undefined;
+    const localTotalSalesValue = headersAligned && localTotalSalesIndex >= 0 ? cells[localTotalSalesIndex] : undefined;
     return {
       articleNumber,
       spuId,
@@ -215,8 +230,9 @@ export function parseSellerBrandRows(rows = []) {
       hasBuyerExposureData: metricAvailable(buyerExposureValue),
       hasSalesData: metricAvailable(sales30dValue),
       hasLocalSalesData: metricAvailable(localSales30dValue),
-      hasTotalSalesData: totalSalesIndex >= 0 && metricAvailable(totalSalesValue),
-      hasLocalTotalSalesData: localTotalSalesIndex >= 0 && metricAvailable(localTotalSalesValue),
+      hasTotalSalesData: headersAligned && totalSalesIndex >= 0 && metricAvailable(totalSalesValue),
+      hasLocalTotalSalesData: headersAligned && localTotalSalesIndex >= 0 && metricAvailable(localTotalSalesValue),
+      source: headersAligned ? "seller-center-visible-aligned-headers" : "seller-center-visible-column-fallback",
     };
   }).filter((row) => row.articleNumber || row.spuId || row.name);
 }
