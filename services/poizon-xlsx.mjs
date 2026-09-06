@@ -78,18 +78,30 @@ export function findPoizonColumn(headers, ...names) {
   return -1;
 }
 
-// Keep China and local-seller columns disjoint. The generic substring matcher
-// must not use the local column as China when the China column is absent.
+// Keep China and local-seller columns disjoint. POIZON exports have used
+// several labels over time (parentheses, suffixes, "중국 시장", "현지 판매자",
+// and verified/source annotations). Match the semantic header instead of one
+// exact spelling, but never substitute lifetime totals for recent-30-day data.
 export function findPoizonRecentSalesColumns(headers = []) {
   const normalized = headers.map(normalizePoizonHeader);
-  const find = (pattern) => {
-    const matches = normalized.map((header, index) => pattern.test(header) ? index : -1).filter((index) => index >= 0);
-    return matches.length === 1 ? matches[0] : -1;
-  };
-  return {
-    china: find(/^(?:중국(?:시장)?)?최근30일(?:간)?판매량(?:중국(?:시장)?)?(?:건|개)?$/),
-    local: find(/^현지판매자최근30일(?:간)?판매량(?:건|개)?$/),
-  };
+  const isRecentSales = (header) => header.includes("최근30일") && header.includes("판매량")
+    && !header.includes("평균거래가") && !header.includes("총판매량");
+  const isLocal = (header) => header.includes("현지판매자") || header.startsWith("현지최근30일");
+  const recent = normalized
+    .map((header, index) => ({ header, index }))
+    .filter(({ header }) => isRecentSales(header));
+
+  const localMatches = recent.filter(({ header }) => isLocal(header));
+  const chinaExplicit = recent.filter(({ header }) => !isLocal(header) && (header.includes("중국") || header.includes("china")));
+  const chinaGeneric = recent.filter(({ header }) => !isLocal(header));
+
+  const unique = (items) => items.length === 1 ? items[0].index : -1;
+  const local = unique(localMatches);
+  const china = chinaExplicit.length === 1
+    ? chinaExplicit[0].index
+    : unique(chinaGeneric);
+
+  return { china, local };
 }
 
 export function findPoizonTotalSalesColumns(headers = []) {
