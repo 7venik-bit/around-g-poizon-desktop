@@ -1,0 +1,48 @@
+/* Dedicated comparison surface: never put it inside the filtered Excel grid. */
+body.poizon-review-open { overflow:hidden; }
+body.poizon-review-open > aside, body.poizon-review-open > .shell { display:none !important; }
+#poizon-review-workspace { position:fixed; inset:0; z-index:10000; display:flex; flex-direction:column; gap:8px; padding:14px; background:#f6f9fd; color:#19324d; font:13px/1.45 'Segoe UI',Arial,sans-serif; min-width:0; }
+#poizon-review-workspace * { box-sizing:border-box; }
+#poizon-review-workspace .review-top { display:flex; align-items:center; justify-content:space-between; gap:12px; flex:0 0 auto; }
+#poizon-review-workspace h2 { margin:0; font-size:18px; }
+#poizon-review-workspace p { margin:3px 0; }
+#poizon-review-workspace .review-file { max-width:65vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#627690; font-size:11px; }
+#poizon-review-workspace .review-brief, #poizon-review-workspace .review-status, #poizon-review-workspace .review-tools { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:4px 12px; flex:0 0 auto; }
+#poizon-review-workspace .review-brief { font-size:11px; color:#60718a; }
+#poizon-review-workspace .review-status { background:#e8f1ff; padding:8px 10px; border-radius:6px; }
+#poizon-review-workspace .review-clock { font-size:11px; color:#657892; }
+#poizon-review-workspace label { display:inline-flex; align-items:center; gap:6px; margin:0; min-width:0; font-size:12px; }
+#poizon-review-workspace input[type=checkbox] { width:14px; height:14px; padding:0; margin:0; }
+#poizon-review-workspace button { border:1px solid #ccd9e9; border-radius:6px; padding:6px 10px; font-size:12px; white-space:nowrap; color:#234c7b; background:#fff; }
+#poizon-review-workspace button:disabled { opacity:.45; cursor:default; }
+#poizon-review-workspace .review-legend { display:flex; flex-wrap:wrap; gap:8px; font-size:11px; }
+#poizon-review-workspace .review-legend span { border-radius:5px; padding:3px 8px; }
+#poizon-review-workspace [data-tone=equal] { background:#eaf7ef; color:#245e42; }
+#poizon-review-workspace [data-tone=different] { background:#fff3df; color:#875c1d; }
+#poizon-review-workspace [data-tone=missing] { background:#fff0ee; color:#9a423b; }
+#poizon-review-workspace [data-tone=unknown] { background:#f0f3f7; color:#566477; }
+#poizon-review-workspace .review-table-scroll { flex:1 1 0; min-height:140px; overflow:auto; overscroll-behavior:contain; border:1px solid #d9e3ef; border-radius:8px; background:#fff; }
+#poizon-review-workspace .review-table { width:100%; min-width:0; table-layout:fixed; border-collapse:collapse; }
+#poizon-review-workspace .review-table > thead > tr > th:first-child { width:42%; }
+#poizon-review-workspace .review-table > thead > tr > th:last-child { width:18%; }
+#poizon-review-workspace .review-table > thead > tr > th { position:sticky; top:0; z-index:2; background:#eaf0f8; text-align:left; color:#27466b; text-transform:none; font-size:11px; padding:8px; border-bottom:1px solid #cfdbea; }
+#poizon-review-workspace .review-table > tbody > tr > td { vertical-align:top; padding:9px 8px; font-size:12px; border-bottom:1px solid #dce5ef; overflow-wrap:anywhere; white-space:normal; }
+#poizon-review-workspace .review-table td small { display:block; font-size:10px; margin-top:3px; color:#687991; }
+#poizon-review-workspace .review-image { float:left; width:32px; height:32px; object-fit:contain; margin:0 7px 3px 0; background:#fff; border-radius:4px; }
+#poizon-review-workspace details { clear:both; margin-top:6px; color:#294d7b; }
+#poizon-review-workspace summary { cursor:pointer; font-size:11px; }
+#poizon-review-workspace .review-original-scroll { max-height:300px; overflow:auto; background:white; }
+#poizon-review-workspace .review-original table { min-width:640px; table-layout:auto; border-collapse:collapse; }
+#poizon-review-workspace .review-original th, #poizon-review-workspace .review-original td { padding:6px; font-size:11px; border:1px solid #e0e7f0; white-space:nowrap; }
+#poizon-review-workspace .review-bottom { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:11px; flex:0 0 auto; }
+#poizon-review-workspace .review-bottom small { margin-left:auto; font-size:10px; color:#6c7b91; }
+#poizon-review-report { width:min(820px,94vw); max-width:94vw; max-height:90vh; border:1px solid #cddbec; border-radius:10px; padding:18px; color:#19324d; background:white; }
+#poizon-review-report h3 { margin:0 0 6px; font-size:17px; }
+#poizon-review-report p { font-size:12px; color:#61738c; }
+#poizon-review-report textarea { display:block; width:100%; height:60vh; box-sizing:border-box; resize:vertical; padding:12px; border:1px solid #d1dce9; font:12px/1.6 Consolas,monospace; white-space:pre-wrap; }
+#poizon-review-report footer { display:flex; gap:8px; justify-content:flex-end; align-items:center; margin-top:10px; }
+#poizon-review-report footer span { margin-right:auto; font-size:12px; }
+#poizon-verification-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:10px; margin-bottom:12px; border:1px solid #d0ddec; border-radius:8px; background:#f5f9ff; }
+#poizon-verification-controls label { display:inline-flex; align-items:center; gap:6px; margin:0; font-size:12px; }
+#poizon-verification-controls input { width:90px; padding:6px; }
+@media(max-width:540px) { #poizon-review-workspace { padding:8px; gap:6px; } #poizon-review-workspace .review-table > tbody > tr > td { padding:7px 5px; font-size:11px; } #poizon-review-workspace .review-image { display:none; } }
