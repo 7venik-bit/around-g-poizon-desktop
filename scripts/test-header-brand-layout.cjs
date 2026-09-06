@@ -6,6 +6,8 @@ const { tmpdir } = require('node:os');
 const root = resolve(__dirname, '..');
 const out = join(root, 'layout-artifacts');
 app.disableHardwareAcceleration();
+// Do not let closing the test window turn a failing test into a zero exit code.
+app.on('window-all-closed', () => {});
 const deadline = setTimeout(() => { console.error('Layout test timed out'); app.exit(1); }, 180000);
 let fixture, win;
 
@@ -88,7 +90,15 @@ async function screenshot(name) {
     if (width===1426 && scale===1) {
       await win.webContents.executeJavaScript('document.getElementById("frequent-brand-count").textContent="36개";document.getElementById("update-check").textContent="자동 업데이트";document.getElementById("header-brand-layout-styles").disabled=true');
       baseline = await evaluate(measure); await screenshot('before-1426');
-      await win.webContents.executeJavaScript('document.getElementById("header-brand-layout-styles").disabled=false');
+      // Re-enabling an external sheet loads it asynchronously. Wait for load,
+      // not for a desired measurement, before running unchanged assertions.
+      await win.webContents.executeJavaScript(`new Promise((resolve,reject)=>{
+        const link=document.getElementById('header-brand-layout-styles');
+        const timer=setTimeout(()=>reject(new Error('Stylesheet reload timed out')),5000);
+        const ready=()=>{clearTimeout(timer);setTimeout(resolve,100)};
+        link.addEventListener('load',ready,{once:true}); link.disabled=false;
+        if(link.sheet&&!link.sheet.disabled) ready();
+      })`);
     }
     for (const state of ['normal','updating']) {
       const count = state==='normal' ? '36개' : '9,999개';
