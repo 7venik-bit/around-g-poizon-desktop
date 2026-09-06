@@ -21,7 +21,7 @@ function importHandlerBounds(source) {
 }
 
 function insertInImportHandler(source, marker, insertedText, placement, label) {
-  if (source.includes(insertedText)) return { source, changed: false };
+  if (source.includes(insertedText.trim())) return { source, changed: false };
   const { start, end } = importHandlerBounds(source);
   const index = source.indexOf(marker, start);
   if (index < 0 || index >= end) {
@@ -34,9 +34,9 @@ function insertInImportHandler(source, marker, insertedText, placement, label) {
   };
 }
 
-let main = await readFile(mainPath, "utf8");
-let preload = await readFile(preloadPath, "utf8");
-let renderer = await readFile(rendererPath, "utf8");
+let main = (await readFile(mainPath, "utf8")).replace(/\r\n/g, "\n");
+let preload = (await readFile(preloadPath, "utf8")).replace(/\r\n/g, "\n");
+let renderer = (await readFile(rendererPath, "utf8")).replace(/\r\n/g, "\n");
 let mainChanged = false;
 let preloadChanged = false;
 let rendererChanged = false;
@@ -135,6 +135,22 @@ let rendererChanged = false;
   const result = replaceOnce(main, before, after, "verification IPC handlers");
   main = result.source;
   mainChanged ||= result.changed;
+}
+
+{
+  const before = "  if (sellerWindow && !sellerWindow.isDestroyed()) sellerWindow.hide();\n  mainWindow?.show();\n  mainWindow?.focus();";
+  const after = "  if (!sellerExcelVerificationLayout && sellerWindow && !sellerWindow.isDestroyed()) sellerWindow.hide();\n  mainWindow?.show();\n  mainWindow?.focus();";
+  const captureStart = main.indexOf("async function captureSellerBrandSales");
+  const captureEnd = main.indexOf("async function lookupSellerTransactionPrice", captureStart);
+  const existing = main.indexOf(after, captureStart);
+  if (!(existing >= captureStart && existing < captureEnd)) {
+    const index = main.indexOf(before, captureStart);
+    if (captureStart < 0 || captureEnd <= captureStart || index < captureStart || index >= captureEnd) {
+      throw new Error("Seller capture visibility target not found.");
+    }
+    main = main.slice(0, index) + after + main.slice(index + before.length);
+    mainChanged = true;
+  }
 }
 
 {
@@ -274,8 +290,8 @@ for (const [before, after, label] of [
 }
 
 {
-  const marker = "  } finally {\n";
-  const inserted = "    await window.aroundG.endSellerExcelVerification().catch(() => {});\n";
+  const marker = "  } finally {";
+  const inserted = "\n    await window.aroundG.endSellerExcelVerification().catch(() => {});";
   const result = insertInImportHandler(renderer, marker, inserted, "after", "restore windows after verification");
   renderer = result.source;
   rendererChanged ||= result.changed;
