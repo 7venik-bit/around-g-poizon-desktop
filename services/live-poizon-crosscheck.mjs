@@ -45,6 +45,28 @@ export function meetsVerificationConditions(product, conditions) {
   return tests.every(([minimum, metric]) => minimum === null || (metric && metric.min >= minimum));
 }
 
+// Resolve one recent-30-day metric across all Excel rows belonging to one SPU.
+// Blank/unknown option rows do not poison an otherwise unambiguous parent value.
+// We still refuse to guess when two distinct valid values exist.
+export function resolveExcelRecentMetric(products = [], local = false) {
+  const observed = products
+    .map((product) => recentMetric(product, local))
+    .filter(Boolean);
+  const bySignature = new Map();
+  for (const metric of observed) {
+    if (!bySignature.has(metric.signature)) bySignature.set(metric.signature, metric);
+  }
+  if (bySignature.size === 0) {
+    return { state: 'missing', metric: null, metrics: [], raw: '미확인' };
+  }
+  if (bySignature.size > 1) {
+    const metrics = [...bySignature.values()];
+    return { state: 'conflict', metric: null, metrics, raw: metrics.map((metric) => metric.raw).join(' / ') };
+  }
+  const metric = [...bySignature.values()][0];
+  return { state: 'resolved', metric, metrics: [metric], raw: metric.raw };
+}
+
 const article = (p) => String(p?.articleNumber || p?.productCode || '').normalize('NFKC').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const spu = (p) => String(p?.spuId || p?.globalSpuId || '').trim();
 const identity = (p) => spu(p) ? `SPU:${spu(p)}` : article(p) ? `ARTICLE:${article(p)}` : '';
@@ -71,21 +93,34 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
       if (new Set(candidates.map(spu).filter(Boolean)).size > 1) candidates = [];
       if (articleCandidates.length && !candidates.length) matchBy = '식별자 충돌';
     }
+
     const source = [recentMetric(product), recentMetric(product, true)];
-    const excel = candidates.map((p) => [recentMetric(p), recentMetric(p, true)]);
-    const allAvailable = source.every(Boolean) && excel.every((pair) => pair.every(Boolean));
-    const equal = candidates.length > 0 && allAvailable && excel.every((pair) => pair.every((value, i) => value.signature === source[i].signature));
-    const status = !identity(product) ? '식별자 없음' : !candidates.length ? matchBy === '식별자 충돌' ? matchBy : 'Excel 상품 없음'
-      : equal ? '일치' : !allAvailable ? '최근 30일 값 미확인' : '값 다름';
-    const valueText = (metrics, column) => [...new Set(metrics.map((pair) => pair[column]?.raw ?? '미확인'))].join(' / ');
+    const excelChina = resolveExcelRecentMetric(candidates, false);
+    const excelLocal = resolveExcelRecentMetric(candidates, true);
+    const excelResolved = [excelChina, excelLocal];
+    const sourceAvailable = source.every(Boolean);
+    const excelAvailable = excelResolved.every((entry) => entry.state === 'resolved' && entry.metric);
+    const hasConflict = excelResolved.some((entry) => entry.state === 'conflict');
+    const allAvailable = sourceAvailable && excelAvailable;
+    const equal = candidates.length > 0 && allAvailable
+      && excelResolved.every((entry, index) => entry.metric.signature === source[index].signature);
+    const status = !identity(product) ? '식별자 없음'
+      : !candidates.length ? matchBy === '식별자 충돌' ? matchBy : 'Excel 상품 없음'
+      : hasConflict ? 'Excel 최근 30일 값 충돌'
+      : equal ? '일치'
+      : !allAvailable ? '최근 30일 값 미확인'
+      : '값 다름';
+
     return {
       key: identity(product) || `UNREADABLE:${pageNum}:${position}`,
       articleNumber: String(product.articleNumber || product.productCode || ''), spuId: spu(product),
       title: String(product.name || product.title || ''), pageNum, matchBy, status,
       qualified: meetsVerificationConditions(product, frozenConditions),
       sourceChina: source[0]?.raw ?? '미확인', sourceLocal: source[1]?.raw ?? '미확인',
-      excelChina: candidates.length ? valueText(excel, 0) : '상품 없음',
-      excelLocal: candidates.length ? valueText(excel, 1) : '상품 없음',
+      excelChina: candidates.length ? excelChina.raw : '상품 없음',
+      excelLocal: candidates.length ? excelLocal.raw : '상품 없음',
+      excelChinaState: excelChina.state,
+      excelLocalState: excelLocal.state,
       excelRows: candidates.flatMap((p) => p.sourceRowNumbers || [p.sourceRowNumber]).filter((n) => Number.isInteger(Number(n)) && Number(n) > 0).map(Number),
       matched: candidates.length > 0, equal,
     };
