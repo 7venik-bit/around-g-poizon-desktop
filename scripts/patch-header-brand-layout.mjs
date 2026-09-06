@@ -4,7 +4,7 @@ export const layoutLink = '<link id="header-brand-layout-styles" rel="stylesheet
 export function installLayoutLink(html) {
   if (!html.includes('</head>')) throw new Error('Missing document head for header/brand layout');
   const clean = html.replace(/\s*<link\b[^>]*\bid=["']header-brand-layout-styles["'][^>]*>/g, '');
-  return clean.replace('</head>', `\n  ${layoutLink}\n</head>`);
+  return clean.replace(/\s*<\/head>/, `\n  ${layoutLink}\n</head>`);
 }
 const root = new URL('../', import.meta.url);
 const path = new URL('src/index.html', root);
