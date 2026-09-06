@@ -92,16 +92,13 @@ export function findPoizonRecentSalesColumns(headers = []) {
     .filter(({ header }) => isRecentSales(header));
 
   const localMatches = recent.filter(({ header }) => isLocal(header));
-  const chinaExplicit = recent.filter(({ header }) => !isLocal(header) && (header.includes("중국") || header.includes("china")));
-  const chinaGeneric = recent.filter(({ header }) => !isLocal(header));
+  const chinaCandidates = recent.filter(({ header }) => !isLocal(header));
 
   const unique = (items) => items.length === 1 ? items[0].index : -1;
-  const local = unique(localMatches);
-  const china = chinaExplicit.length === 1
-    ? chinaExplicit[0].index
-    : unique(chinaGeneric);
-
-  return { china, local };
+  return {
+    china: unique(chinaCandidates),
+    local: unique(localMatches),
+  };
 }
 
 export function findPoizonTotalSalesColumns(headers = []) {
