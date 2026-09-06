@@ -29,6 +29,25 @@ test("페이지 번호만 바뀌고 행이 로딩 중이면 기다린다", () =>
   }).reason, "ROW_UPDATE_PENDING");
 });
 
+test("예상 20행 중 일부만 렌더링됐으면 다음 페이지 완료로 보지 않는다", () => {
+  assert.equal(sellerPaginationTransitionStatus({
+    expectedPage: 7,
+    currentPage: 7,
+    rowCount: 8,
+    expectedRowCount: 20,
+    previousSignature: "old",
+    currentSignature: "new-partial",
+  }).reason, "ROWS_INCOMPLETE");
+  assert.deepEqual(sellerPaginationTransitionStatus({
+    expectedPage: 7,
+    currentPage: 7,
+    rowCount: 20,
+    expectedRowCount: 20,
+    previousSignature: "old",
+    currentSignature: "new-complete",
+  }), { ready: true, reason: "PAGE_READY" });
+});
+
 test("행이 바뀌어도 활성 페이지가 이전 번호면 기다린다", () => {
   assert.equal(sellerPaginationTransitionStatus({
     expectedPage: 7,
