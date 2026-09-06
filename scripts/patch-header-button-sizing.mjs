@@ -22,3 +22,5 @@ for (const required of [
   if (!finalCss.includes(required)) throw new Error(`header sizing verification failed: ${required}`);
 }
 console.log('Header button sizing verified.');
+
+await import('./patch-header-final-responsive.mjs');
