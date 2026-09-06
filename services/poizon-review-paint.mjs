@@ -4,22 +4,26 @@ export function paintReviewPage(document, payload) {
   const color = { equal: '#27845b', different: '#ad7417', missing: '#b5453b', unknown: '#728096' };
   const rows = payload.rows || [];
   const normalize = (s) => String(s || '').normalize('NFKC').toUpperCase().replace(/[^\p{L}\p{N}]/gu, '');
-  const original = (element) => {
-    if (!element.dataset.aroundGReviewStyle) element.dataset.aroundGReviewStyle = JSON.stringify({
-      backgroundColor: element.style.backgroundColor, outline: element.style.outline, outlineOffset: element.style.outlineOffset,
-    });
-  };
   for (const element of document.querySelectorAll('table tbody tr')) {
+    // React may reuse the same tr for a different product on the next page.
+    // A missing/ambiguous identifier must not inherit the previous green state.
+    if (element.dataset.aroundGReviewStyle) {
+      try { Object.assign(element.style, JSON.parse(element.dataset.aroundGReviewStyle)); } catch {}
+      delete element.dataset.aroundGReviewStyle;
+      delete element.dataset.aroundGVerification;
+      delete element.dataset.aroundGReviewKey;
+    }
     const text = String(element.innerText || '');
     const spu = text.match(/SPU\s*[_\s]*ID\s*[:：]\s*([\d]+)/i)?.[1];
     const code = text.match(/(?:상품\s*번호|货号)\s*[:：]\s*([^\s]+)/)?.[1];
-    // A known SPU never falls back to a same-code different-SPU row.
     const candidates = spu ? rows.filter((r) => String(r.spuId) === spu)
       : code ? rows.filter((r) => normalize(r.articleNumber) === normalize(code)) : [];
     const match = candidates.length === 1 ? candidates[0] : null;
     if (!match) continue;
     const tone = !match.matched ? 'missing' : match.equal ? 'equal' : /미확인|기준|없음/.test(match.status || '') ? 'unknown' : 'different';
-    original(element);
+    element.dataset.aroundGReviewStyle = JSON.stringify({
+      backgroundColor: element.style.backgroundColor || '', outline: element.style.outline || '', outlineOffset: element.style.outlineOffset || '',
+    });
     element.style.backgroundColor = palette[tone];
     element.style.outline = '2px solid ' + color[tone]; element.style.outlineOffset = '-2px';
     element.dataset.aroundGVerification = tone;
