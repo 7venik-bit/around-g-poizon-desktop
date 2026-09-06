@@ -10,8 +10,12 @@ export function sellerPaginationTransitionStatus(input = {}) {
   const expectedPage = Number(input.expectedPage || 0);
   const currentPage = Number(input.currentPage || 0);
   const rowCount = Number(input.rowCount || 0);
+  const expectedRowCount = Number(input.expectedRowCount || 0);
   if (currentPage !== expectedPage) return { ready: false, reason: "ACTIVE_PAGE_PENDING" };
   if (rowCount < 1) return { ready: false, reason: "ROWS_PENDING" };
+  if (expectedRowCount > 0 && rowCount < expectedRowCount) {
+    return { ready: false, reason: "ROWS_INCOMPLETE" };
+  }
   if (!input.currentSignature || input.currentSignature === input.previousSignature) {
     return { ready: false, reason: "ROW_UPDATE_PENDING" };
   }
