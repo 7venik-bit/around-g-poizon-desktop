@@ -1,0 +1,115 @@
+/* HEADER_BRAND_LAYOUT_V1: content-sized controls; no data or search changes. */
+body .shell > header .header-actions {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  width: max-content !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin-left: auto !important;
+  padding: 0 !important;
+}
+/* A 186px legacy anchor, not the button, left the large blank spaces. */
+body .shell > header .header-actions > .update-anchor {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: max-content !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+body .shell > header .header-actions > #notification-open,
+body .shell > header .header-actions > #export-button,
+body .shell > header .header-actions > .update-anchor > #update-check {
+  flex: 0 0 auto !important;
+  width: max-content !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  margin: 0 !important;
+  padding: 0 12px !important;
+  white-space: nowrap !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+#frequent-brand-group > .brand-list-group-heading {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px 12px !important;
+  min-width: 0 !important;
+  height: auto !important;
+}
+#frequent-brand-group > .brand-list-group-heading > div:first-child {
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  gap: 8px !important;
+  width: max-content !important;
+  min-width: max-content !important;
+  white-space: nowrap !important;
+}
+#frequent-brand-title,
+#frequent-brand-count {
+  flex: 0 0 auto !important;
+  width: max-content !important;
+  min-width: max-content !important;
+  max-width: none !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+#frequent-brand-count {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: auto !important;
+  min-height: 22px !important;
+  padding: 3px 8px !important;
+  border-radius: 999px !important;
+  font-size: 11px !important;
+  line-height: 16px !important;
+}
+/* The explanation is unnecessary on the sourcing toolbar. */
+#frequent-brand-group .frequent-brand-heading-actions > small {
+  display: none !important;
+}
+#frequent-brand-group .frequent-brand-heading-actions {
+  display: flex !important;
+  flex: 0 1 auto !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin-left: auto !important;
+}
+#frequent-brand-group .frequent-brand-heading-actions > button {
+  flex: 0 0 auto !important;
+  width: max-content !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 12px !important;
+  white-space: nowrap !important;
+}
+/* Narrow windows wrap groups rather than splitting labels or counters. */
+@media (max-width: 980px) {
+  body:not(.poizon-review-active) .shell > header {
+    flex-wrap: wrap !important;
+    overflow: visible !important;
+  }
+}
