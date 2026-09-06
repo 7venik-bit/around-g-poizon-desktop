@@ -21,9 +21,14 @@ const marker = '/* SIMPLE_HEADER_TRAFFIC_V1 */';
 if (!css.includes(marker)) {
   css += `\n${marker}\n/* Keep the existing 1→2→3 chase timing; only the lamp palette changes. */\n.window-dots i:nth-child(1){background:#ef4444!important;color:#ef4444}\n.window-dots i:nth-child(2){background:#facc15!important;color:#facc15}\n.window-dots i:nth-child(3){background:#22c55e!important;color:#22c55e}\n.window-dots.connected i:nth-child(3){box-shadow:0 0 9px #22c55e!important}\n.window-dots.disconnected i:nth-child(1){box-shadow:0 0 10px #ef4444!important}\n\n/* Compact status strip: titles and actions only; verbose operational copy stays in the DOM for logic/accessibility. */\n.header-status-stack{display:flex!important;align-items:center!important;gap:6px!important;min-width:0!important;flex-wrap:nowrap!important}\n.header-status-stack .official-domain-audit,\n.header-status-stack .weekly-site-health,\n.header-status-stack .startup-recovery,\n.header-status-stack .brand-export-folder-setting{\n  display:flex!important;align-items:center!important;justify-content:space-between!important;gap:7px!important;\n  min-height:38px!important;padding:6px 8px!important;border-radius:9px!important;white-space:nowrap!important;overflow:hidden!important\n}\n.header-status-stack .official-domain-audit>div,\n.header-status-stack .weekly-site-health>div{display:block!important;min-width:0!important}\n.header-status-stack .official-domain-audit span,\n.header-status-stack .weekly-site-health span,\n.header-status-stack .weekly-site-health small,\n.header-status-stack .startup-recovery p,\n.header-status-stack .startup-recovery-progress,\n.header-status-stack .brand-export-folder-path{display:none!important}\n.header-status-stack .startup-recovery-heading{display:flex!important;align-items:center!important;gap:6px!important}\n.header-status-stack .startup-recovery-heading-actions{gap:5px!important}\n.header-status-stack .official-domain-audit strong,\n.header-status-stack .weekly-site-health strong,\n.header-status-stack .startup-recovery-heading strong{font-size:10px!important;line-height:1!important}\n.header-status-stack button{padding:5px 7px!important;font-size:9px!important;line-height:1.1!important}\n.header-status-stack .brand-export-folder-setting::before{content:'저장 폴더';font-size:10px;font-weight:700;color:#17365d}\nbody .shell>header{grid-template-columns:auto minmax(0,1fr) auto!important}\n@media(max-width:1180px){.header-status-stack{flex-wrap:wrap!important}}\n`;
 }
+
+const noClipMarker = '/* SIMPLE_HEADER_NO_CLIP_V2 */';
+if (!css.includes(noClipMarker)) {
+  css += `\n${noClipMarker}\n/* Responsive header: never crop status titles or action labels when the app window is narrow. */\nbody .shell>header{overflow:visible!important}\n.header-status-stack .official-domain-audit,\n.header-status-stack .weekly-site-health,\n.header-status-stack .startup-recovery,\n.header-status-stack .brand-export-folder-setting{overflow:visible!important}\n.header-status-stack button{flex:0 0 auto!important;min-width:max-content!important;white-space:nowrap!important}\n\n@media(max-width:1400px){\n  body .shell>header{grid-template-columns:auto minmax(0,1fr)!important;align-items:flex-start!important}\n  .header-status-stack{flex-wrap:wrap!important}\n  .header-actions{grid-column:1/-1!important;width:100%!important;justify-content:flex-end!important;flex-wrap:wrap!important}\n}\n\n@media(max-width:1050px){\n  body .shell>header{grid-template-columns:auto minmax(0,1fr)!important;gap:8px!important;padding:10px 12px!important}\n  .header-status-stack{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;width:100%!important;gap:6px!important}\n  .header-status-stack .official-domain-audit,\n  .header-status-stack .weekly-site-health,\n  .header-status-stack .startup-recovery,\n  .header-status-stack .brand-export-folder-setting{min-width:0!important;white-space:normal!important}\n  .header-status-stack .official-domain-audit strong,\n  .header-status-stack .weekly-site-health strong,\n  .header-status-stack .startup-recovery-heading strong{white-space:normal!important;line-height:1.25!important;overflow:visible!important}\n}\n\n@media(max-width:760px){\n  .header-status-stack{grid-template-columns:1fr!important}\n  .header-status-stack .official-domain-audit,\n  .header-status-stack .weekly-site-health,\n  .header-status-stack .startup-recovery,\n  .header-status-stack .brand-export-folder-setting{width:100%!important}\n}\n`;
+}
 await save('src/style.css', css);
 
-// Verification: the sequence timings remain exactly ordered and colors are traffic-light red/yellow/green.
+// Verification: sequence timing stays intact and the responsive header cannot reintroduce clipping.
 const finalCss = await read('src/style.css');
 for (const required of [
   '.window-dots.sourcing i:nth-child(1){animation-delay:0s!important}',
@@ -33,6 +38,11 @@ for (const required of [
   '.window-dots i:nth-child(2){background:#facc15!important;color:#facc15}',
   '.window-dots i:nth-child(3){background:#22c55e!important;color:#22c55e}',
   '.header-status-stack .startup-recovery-progress,',
+  '/* SIMPLE_HEADER_NO_CLIP_V2 */',
+  'overflow:visible!important',
+  'min-width:max-content!important',
+  '@media(max-width:1050px)',
+  'grid-template-columns:repeat(2,minmax(0,1fr))!important',
 ]) {
   if (!finalCss.includes(required)) throw new Error(`simple header verification failed: ${required}`);
 }
@@ -40,4 +50,4 @@ const finalHtml = await read('src/index.html');
 for (const label of ['공식몰 점검', '서버 점검', 'POIZON 확인']) {
   if (!finalHtml.includes(label)) throw new Error(`simple header label missing: ${label}`);
 }
-console.log('Simple header verified: traffic-light palette applied and existing sequence timing preserved.');
+console.log('Simple header verified: traffic-light sequence preserved and narrow-window text clipping prevented.');
