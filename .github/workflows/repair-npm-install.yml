@@ -14,30 +14,128 @@ permissions:
 jobs:
   clean-install:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Remove existing npm install state
+      - name: Prepare automatic postinstall diagnostics
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .postinstall-diagnostics | Out-Null
+          @'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const { spawnSync } = require('node:child_process');
+          const dir = path.resolve('.postinstall-diagnostics');
+          const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.original.json'), 'utf8'));
+          const command = pkg.scripts?.postinstall;
+          if (typeof command !== 'string' || !command.trim()) {
+            throw new Error('The original postinstall command is missing; refusing to skip it.');
+          }
+          // This repository's postinstall is a sequential chain of unquoted Node commands.
+          // Reject unsupported syntax rather than changing the meaning of the original chain.
+          const steps = command.split(/\s*&&\s*/).map((step) => {
+            const args = step.trim().split(/\s+/);
+            if (args.shift() !== 'node' || !args.length || args.some((arg) => !/^[A-Za-z0-9_./*=-]+$/.test(arg))) {
+              throw new Error(`Unsupported postinstall syntax; refusing to guess: ${step}`);
+            }
+            return { command: step, args };
+          });
+          const report = { commit: process.env.GITHUB_SHA || null, version: pkg.version, node: process.version, steps: [] };
+          const save = () => fs.writeFileSync(path.join(dir, 'postinstall-report.json'), JSON.stringify(report, null, 2) + '\n');
+          save();
+          for (const [index, step] of steps.entries()) {
+            console.log(`\n[postinstall ${index + 1}/${steps.length}] ${step.command}`);
+            const started = Date.now();
+            const result = spawnSync(process.execPath, step.args, { stdio: 'inherit', env: process.env });
+            const code = result.status === null ? 1 : result.status;
+            const entry = { command: step.command, exitCode: code, durationMs: Date.now() - started };
+            if (result.error) entry.error = result.error.message;
+            if (result.signal) entry.signal = result.signal;
+            report.steps.push(entry);
+            save();
+            if (code !== 0) {
+              report.failedCommand = step.command;
+              save();
+              console.error(`POSTINSTALL_FAILED_COMMAND=${step.command}`);
+              if (process.env.GITHUB_STEP_SUMMARY) {
+                fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n### Postinstall failure\n\nCommit: \`${report.commit}\`\n\nFirst failing command: \`${step.command}\`\n\nExit code: ${code}. Remaining steps were not run.\n`);
+              }
+              process.exit(code);
+            }
+          }
+          report.success = true;
+          save();
+          '@ | Set-Content -Encoding utf8 .postinstall-diagnostics/run-postinstall.cjs
+          @'
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const dir = '.postinstall-diagnostics';
+          const original = fs.readFileSync('package.json', 'utf8');
+          const pkg = JSON.parse(original);
+          if (!fs.existsSync('package-lock.json')) throw new Error('A committed package-lock.json is required for npm ci.');
+          if (!pkg.scripts?.postinstall) throw new Error('Original postinstall is missing.');
+          fs.writeFileSync(`${dir}/package.original.json`, original);
+          fs.copyFileSync('package-lock.json', `${dir}/package-lock.original.json`);
+          const provenance = { commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), version: pkg.version, node: process.version, originalPostinstall: pkg.scripts.postinstall };
+          fs.writeFileSync(`${dir}/provenance.json`, JSON.stringify(provenance, null, 2) + '\n');
+          console.log(JSON.stringify(provenance, null, 2));
+          pkg.scripts.postinstall = 'node .postinstall-diagnostics/run-postinstall.cjs';
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          '@ | node -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Remove prior dependency installation only
         shell: pwsh
         run: |
           if (Test-Path node_modules) { Remove-Item node_modules -Recurse -Force }
-          if (Test-Path package-lock.json) { Remove-Item package-lock.json -Force }
-          npm cache clean --force
+          if (-not (Test-Path package-lock.json)) { throw 'package-lock.json must be preserved.' }
 
-      - name: Reinstall dependencies without lifecycle scripts
-        run: npm install --ignore-scripts
+      - name: Clean reinstall with all lifecycle scripts and diagnostics
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          node --version
+          npm --version
+          npm ci --foreground-scripts --loglevel verbose 2>&1 | Tee-Object -FilePath .postinstall-diagnostics/npm-ci.log
+          $code = $LASTEXITCODE
+          if ($null -eq $code) { throw 'npm did not report an exit code.' }
+          exit $code
 
-      - name: Run postinstall explicitly
-        run: npm run postinstall
+      - name: Restore original manifest and verify lockfile preservation
+        if: always()
+        shell: pwsh
+        run: |
+          @'
+          const fs = require('node:fs');
+          const dir = '.postinstall-diagnostics';
+          if (fs.existsSync(`${dir}/package.original.json`)) fs.copyFileSync(`${dir}/package.original.json`, 'package.json');
+          if (fs.existsSync(`${dir}/package-lock.original.json`) && !fs.readFileSync('package-lock.json').equals(fs.readFileSync(`${dir}/package-lock.original.json`))) {
+            throw new Error('package-lock.json changed during installation; refusing to accept this result.');
+          }
+          '@ | node -
+          exit $LASTEXITCODE
 
       - name: Run test suite
         run: npm test
 
       - name: Verify core syntax
         run: node --check main.mjs && node --check preload.cjs && node --check src/renderer.js
+
+      - name: Upload installation diagnostics even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-install-diagnostics-${{ github.run_id }}
+          path: .postinstall-diagnostics/
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 14
