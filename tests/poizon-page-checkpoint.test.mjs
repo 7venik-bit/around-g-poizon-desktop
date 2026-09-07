@@ -51,3 +51,26 @@ test('a disk reread that still requires changes blocks the next page', async () 
   assert.equal(result.code, 'PAGE_CHECKPOINT_REREAD_MISMATCH');
   assert.match(result.message, /다음 페이지로 이동하지 않습니다/);
 });
+
+
+test('backup failure aborts before touching the original workbook', async () => {
+  let writes=0;
+  const original=Buffer.from('untouched original workbook');
+  const result=await syncPoizonPageCheckpoint({filePath:'A.xlsx',products:[{spuId:'1'}],fs:{
+    readFile:async()=>Buffer.from(original),
+    copyFile:async()=>{throw new Error('backup disk unavailable');},
+    writeFile:async()=>{writes++;},
+  },applyWorkbook:()=>({ok:true,reverified:true,changed:true,buffer:Buffer.from('corrected')})});
+  assert.equal(result.ok,false);
+  assert.match(result.message,/backup disk unavailable/);
+  assert.equal(writes,0);
+});
+
+test('unverified workbook transformation cannot create a backup or write the original', async () => {
+  let writes=0,copies=0;
+  const result=await syncPoizonPageCheckpoint({filePath:'A.xlsx',products:[{spuId:'1'}],fs:{
+    readFile:async()=>Buffer.from('original'),copyFile:async()=>{copies++;},writeFile:async()=>{writes++;},
+  },applyWorkbook:()=>({ok:true,reverified:false,changed:true,buffer:Buffer.from('unsafe')})});
+  assert.equal(result.ok,false);
+  assert.deepEqual([copies,writes],[0,0]);
+});

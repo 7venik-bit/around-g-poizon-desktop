@@ -14,7 +14,7 @@ if (!live.includes('EXCEL_SKU_SPU_SCOPE_MISMATCH') || !live.includes('skippedSku
 }
 
 let main = await read('main.mjs');
-if (!main.includes('POIZON_STRICT_PAGE_EVIDENCE_GUARD')) {
+if (!main.includes('POIZON_STRICT_PAGE_EVIDENCE_GUARD') && !main.includes('POIZON_SKU_SAFE_PAGE_SELECTION')) {
   const inputs = [
     '          products: currentPageProducts,',
     '          products: currentPageProducts.filter((_, index) => !livePage.rows?.[index]?.autoCorrectionBlocked),',
@@ -27,7 +27,7 @@ if (!main.includes('POIZON_STRICT_PAGE_EVIDENCE_GUARD')) {
 await save('main.mjs', main);
 
 let review = await read('services/poizon-review-session.mjs');
-if (!review.includes('POIZON_STRICT_FINAL_EVIDENCE_GUARD')) {
+if (!review.includes('POIZON_STRICT_FINAL_EVIDENCE_GUARD') && !review.includes('POIZON_SKU_SAFE_FINAL_SELECTION')) {
   const oldLines = [
     "      const finalSaved = await api.syncExcelWithSellerScreen({ path: snapshot.file.path, products: captured.products || [] });",
     "      const finalSaved = await api.syncExcelWithSellerScreen({ path: snapshot.file.path, products: (captured.products || []).filter((_, index) => !coverage.rows?.[index]?.autoCorrectionBlocked) });",
@@ -47,23 +47,8 @@ let view = await read('src/poizon-review-workspace.js');
 view = view.replace("result.corrected && reviewTone(row) === 'different'", "result.corrected && !row.autoCorrectionBlocked && reviewTone(row) === 'different'");
 await save('src/poizon-review-workspace.js', view);
 
-// Keep the regression aligned with the production rule: a verified SKU-vs-SPU
-// scope mismatch is a safe no-write page, not a capture failure.
-let evidenceTest = await read('tests/poizon-fake-missing.test.mjs');
-const oldCaptureExpectation = "  await assert.rejects(runInNewContext('(async()=>{' + capture.slice(from,to) + '})()',sandbox),/상품단위 비교 보류/);\n  assert.equal(writes,0); assert.deepEqual(await readFile(path),before);";
-const newCaptureExpectation = "  await assert.doesNotReject(runInNewContext('(async()=>{' + capture.slice(from,to) + '})()',sandbox));\n  assert.equal(writes,1); assert.deepEqual(await readFile(path),before);";
-if (evidenceTest.includes(oldCaptureExpectation)) evidenceTest = evidenceTest.replace(oldCaptureExpectation, newCaptureExpectation);
-else if (!evidenceTest.includes(newCaptureExpectation)) throw new Error('SKU-scope capture regression target missing.');
-
-if (!evidenceTest.includes("verified SKU scope mismatch is a safe no-write checkpoint")) {
-  const marker = "test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input retains scalar SKU evidence'";
-  const at = evidenceTest.indexOf(marker);
-  if (at < 0) throw new Error('SKU-scope checkpoint regression insertion target missing.');
-  const regression = `test('verified SKU scope mismatch is a safe no-write checkpoint', async () => {\n  const items = [excel('33','5',{skuId:'1',salesScope:'sku'}), excel('100+','14',{skuId:'2',salesScope:'sku',sourceRowNumber:110})];\n  const page = check(items);\n  const writable = assertPoizonPageReadyForCorrection([source()],page.rows,1);\n  assert.equal(writable.length,0);\n  assert.equal(writable.pageEvidence?.verified,true);\n  assert.equal(writable.pageEvidence?.skippedSkuScope,1);\n  const {syncPoizonPageCheckpoint} = await import('../services/poizon-page-checkpoint.mjs');\n  let reads=0,writes=0,copies=0;\n  const checkpoint = await syncPoizonPageCheckpoint({ filePath:'safe.xlsx', products:writable, pageNum:1, fs:{\n    readFile:async()=>{reads++; throw new Error('safe skip must not read');},\n    writeFile:async()=>{writes++;}, copyFile:async()=>{copies++;},\n  }});\n  assert.equal(checkpoint.ok,true);\n  assert.equal(checkpoint.code,'PAGE_CHECKPOINT_SKU_SCOPE_SKIPPED');\n  assert.equal(checkpoint.reverified,true);\n  assert.equal(checkpoint.skippedSkuScope,1);\n  assert.deepEqual([reads,writes,copies],[0,0,0]);\n});\n\n`;
-  evidenceTest = evidenceTest.slice(0,at) + regression + evidenceTest.slice(at);
-}
-await save('tests/poizon-fake-missing.test.mjs', evidenceTest);
-
+// Regression expectations are versioned tests, never rewritten during installation.
+// The final SKU-safe selector delegates to the same strict evidence guard above.
 let runner = await read('scripts/run-release-regressions.mjs');
 if (!runner.includes('"tests/poizon-fake-missing.test.mjs"')) {
   const marker = 'const files = [...new Set([...process.argv.slice(2),';

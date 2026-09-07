@@ -4,7 +4,7 @@ import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
-import { createPageCrossCheck, resolveExcelRecentMetric, assertPoizonPageReadyForCorrection } from '../services/live-poizon-crosscheck.mjs';
+import { createPageCrossCheck, resolveExcelRecentMetric, assertPoizonPageReadyForCorrection, selectPoizonPageCorrectionProducts } from '../services/live-poizon-crosscheck.mjs';
 
 // Reproduced input shape from the screenshot: distinct scalar SKU rows, NOT one slash-separated cell.
 const source = (china = '1,300+', local = '78', extra = {}) => ({ spuId:'3507808', articleNumber:'1026592', sales30dRaw:china, localSales30dRaw:local, hasSalesData:true, hasLocalSalesData:true, ...extra });
@@ -117,6 +117,26 @@ test('normal mismatches and actual new products can still reach correction', () 
   assert.deepEqual(assertPoizonPageReadyForCorrection([source()],missing.rows,1),[source()]);
 });
 
+test('verified SKU scope mismatch is a safe no-write checkpoint', async () => {
+  const items = [excel('33','5',{skuId:'1',salesScope:'sku'}), excel('100+','14',{skuId:'2',salesScope:'sku',sourceRowNumber:110})];
+  const page = check(items);
+  const writable = assertPoizonPageReadyForCorrection([source()],page.rows,1);
+  assert.equal(writable.length,0);
+  assert.equal(writable.pageEvidence?.verified,true);
+  assert.equal(writable.pageEvidence?.skippedSkuScope,1);
+  const {syncPoizonPageCheckpoint} = await import('../services/poizon-page-checkpoint.mjs');
+  let reads=0,writes=0,copies=0;
+  const checkpoint = await syncPoizonPageCheckpoint({ filePath:'safe.xlsx', products:writable, pageNum:1, fs:{
+    readFile:async()=>{reads++; throw new Error('safe skip must not read');},
+    writeFile:async()=>{writes++;}, copyFile:async()=>{copies++;},
+  }});
+  assert.equal(checkpoint.ok,true);
+  assert.equal(checkpoint.code,'PAGE_CHECKPOINT_SKU_SCOPE_SKIPPED');
+  assert.equal(checkpoint.reverified,true);
+  assert.equal(checkpoint.skippedSkuScope,1);
+  assert.deepEqual([reads,writes,copies],[0,0,0]);
+});
+
 test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input retains scalar SKU evidence', async (t) => {
   const main = await readFile(new URL('../main.mjs',import.meta.url),'utf8');
   const {findPoizonColumn, findPoizonRecentSalesColumns, findPoizonTotalSalesColumns} = await import('../services/poizon-xlsx.mjs');
@@ -154,22 +174,27 @@ test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input re
     capture:{rows:[source()],currentPage:1,pageCount:150}, mergeSellerBrandPages:(pages) => pages.flat(),
     mainWindow:{webContents:{send(){}}}, sellerWindow:{webContents:{executeJavaScript:async () => {}}},
     paintSellerVerification(){}, verificationConditionLabel:() => '',
-    checkpointSummary:{enabled:true,backupPath:''}, input:{verification:{runId:'shipping',filePath:path}},
-    assertPoizonPageReadyForCorrection, syncPoizonPageCheckpoint:async () => { writes++; return {ok:true,reverified:true}; },
+    checkpointSummary:{enabled:true,backupPath:'',changes:[],changedRows:0,changedCells:0,addedRows:0,addedProducts:0,verifiedCells:0,deferredProducts:0}, checkpointPages:new Set(), input:{verification:{runId:'shipping',filePath:path}},
+    assertPoizonPageReadyForCorrection, selectPoizonPageCorrectionProducts, syncPoizonPageCheckpoint:async () => { writes++; return {ok:true,reverified:true}; },
   };
-  await assert.rejects(runInNewContext('(async()=>{' + capture.slice(from,to) + '})()',sandbox),/상품단위 비교 보류/);
+  await assert.doesNotReject(runInNewContext('(async()=>{' + capture.slice(from,to) + '})()',sandbox));
   assert.equal(writes,0); assert.deepEqual(await readFile(path),before);
+  assert.equal(sandbox.checkpointSummary.deferredProducts,1);
+  assert.equal(sandbox.checkpointSummary.pagesCompleted,1);
 
   // With real parent columns, correction must still work and preserve every SKU value.
   const parentHeaders = [...headers,'POIZON 상품 최근 30일 판매량','POIZON 상품 현지 판매자 최근 30일 판매량'];
   const withParents = [parentHeaders,...originals.slice(1).map((row) => [...row,'100+','30'])];
   await writeFixture(withParents,path);
+  const beforeParentCorrection = await readFile(path);
   const parents = await readReviewWorkbook({path},build);
   const prior = check(parents.products);
   assert.equal(prior.rows[0].autoCorrectionBlocked,false); assert.equal(prior.rows[0].equal,false);
   const {syncPoizonPageCheckpoint} = await import('../services/poizon-page-checkpoint.mjs');
   const saved = await syncPoizonPageCheckpoint({filePath:path,products:assertPoizonPageReadyForCorrection([source()],prior.rows,1),pageNum:1});
   assert.equal(saved.ok,true,saved.message); assert.equal(saved.reverified,true);
+  assert.ok(saved.backupPath);
+  assert.deepEqual(await readFile(saved.backupPath),beforeParentCorrection);
   const after = await readReviewWorkbook({path},build);
   assert.equal(check(after.products).equalProducts,1);
   assert.deepEqual(after.products.map((p) => p.sourceValues.slice(0,headers.length)),originals.slice(1));
@@ -180,7 +205,7 @@ test('shipping build preserves strict source and both write entry points', async
   const review = await readFile(new URL('../services/poizon-review-session.mjs',import.meta.url),'utf8');
   const live = await readFile(new URL('../services/live-poizon-crosscheck.mjs',import.meta.url),'utf8');
   assert.match(live,/POIZON_METRIC_EVIDENCE_V2/); assert.doesNotMatch(live,/function compoundRecentMetric|function metricCompatible/);
-  assert.match(main,/assertPoizonPageReadyForCorrection\(currentPageProducts, livePage.rows, capture.currentPage\)/);
-  assert.match(review,/assertPoizonPageReadyForCorrection\(captured.products \|\| \[\], coverage.rows\)/);
+  assert.match(main,/selectPoizonPageCorrectionProducts\(currentPageProducts, livePage.rows, capture.currentPage\)/);
+  assert.match(review,/selectPoizonPageCorrectionProducts\(captured.products \|\| \[\], coverage.rows\)/);
   assert.match(review,/if \(row.autoCorrectionBlocked === true\) return 'unknown'/);
 });

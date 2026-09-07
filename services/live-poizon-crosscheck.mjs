@@ -105,6 +105,9 @@ const article = (p) => normalizedArticle(p?.articleNumber || p?.productCode || '
 const spu = (p) => productSpu(p || {});
 const identity = (p) => spu(p) ? `SPU:${spu(p)}` : article(p) ? `ARTICLE:${article(p)}` : '';
 const onlySkuScopeMismatch = (row = {}) => row.matched === true
+  && row.identityConflict !== true
+  && Boolean(metricFromRaw(row.sourceChina))
+  && Boolean(metricFromRaw(row.sourceLocal))
   && row.autoCorrectionBlocked === true
   && Array.isArray(row.reasonCodes)
   && row.reasonCodes.length > 0
@@ -115,6 +118,11 @@ const onlySkuScopeMismatch = (row = {}) => row.matched === true
 // is different: the Excel option rows are preserved, excluded from the writer,
 // and the page may continue because there is no safe parent-cell correction to make.
 export function assertPoizonPageReadyForCorrection(products = [], rows = [], pageNum = 0) {
+  if (!Array.isArray(products) || !Array.isArray(rows)) throw new Error('페이지 상품 목록과 대조 증거가 올바르지 않습니다.');
+  const productKeys = products.map(identity);
+  if (productKeys.some((key) => !key) || new Set(productKeys).size !== productKeys.length) {
+    throw new Error('페이지 상품 식별자가 없거나 중복되어 Excel 수정을 중단했습니다.');
+  }
   const byKey = new Map();
   for (const row of rows) {
     const key = identity(row);
@@ -140,6 +148,15 @@ export function assertPoizonPageReadyForCorrection(products = [], rows = [], pag
     enumerable: false,
   });
   return writable;
+}
+
+// POIZON_SKU_SAFE_DEFER_V1: one policy for direct checkpoints and both UI entry points.
+// Do not duplicate the evidence rules in an install-time patch. Validation happens
+// before any writer is called; a deferred SKU page performs no filesystem writes.
+export function selectPoizonPageCorrectionProducts(products = [], rows = [], pageNum = 0) {
+  const writable = assertPoizonPageReadyForCorrection(products, rows, pageNum);
+  const deferredRows = rows.filter(onlySkuScopeMismatch);
+  return { products: writable, deferredRows, deferredProducts: deferredRows.length };
 }
 
 export function createPageCrossCheck({ runId, excelProducts = [], conditions = {}, brandName = '', fileName = '' } = {}) {
@@ -196,6 +213,7 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
       differentProducts: rows.filter((r) => r.matched && !r.equal && !r.autoCorrectionBlocked).length,
       missingProducts: rows.filter((r) => !r.matched && !r.identityConflict).length,
       unconfirmedProducts: rows.filter((r) => r.autoCorrectionBlocked).length,
+      deferredProducts: rows.filter(onlySkuScopeMismatch).length,
       missingSalesCells: rows.reduce((n, r) => n + r.missingSalesCells, 0),
       qualifiedProducts: rows.filter((r) => r.qualified).length };
   };
@@ -216,6 +234,19 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
 }
 
 export function paintSellerVerification(document, payload) {
+  // Only annotate uniquely identified rows; never hide/remove source products.
+  // Self-contained because this function is serialized into Seller Center.
+  const normalize = (value) => String(value || '').normalize('NFKC').toUpperCase().replace(/[^\p{L}\p{N}]/gu, '');
+  const evidence = Array.isArray(payload.rows) ? payload.rows : [];
+  for (const element of document.querySelectorAll('table tbody tr')) {
+    if (element.dataset.aroundGVerification === 'qualified') delete element.dataset.aroundGVerification;
+    const text = String(element.innerText || '');
+    const spuId = text.match(/SPU\s*[_\s]*ID\s*[:：]\s*([\d]+)/i)?.[1];
+    const code = text.match(/(?:상품\s*번호|货号)\s*[:：]\s*([^\s]+)/)?.[1];
+    const matches = spuId ? evidence.filter((row) => String(row.spuId) === spuId)
+      : code ? evidence.filter((row) => normalize(row.articleNumber) === normalize(code)) : [];
+    if (matches.length === 1 && matches[0].qualified === true) element.dataset.aroundGVerification = 'qualified';
+  }
   const id = 'around-g-live-verification';
   let banner = document.getElementById(id);
   if (!banner) {

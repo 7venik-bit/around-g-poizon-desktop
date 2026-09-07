@@ -8,7 +8,7 @@ import writeXlsxFile from 'write-excel-file/node';
 import { readReviewWorkbook } from '../services/poizon-review-workbook.mjs';
 import { findPoizonColumn, findPoizonRecentSalesColumns, findPoizonTotalSalesColumns } from '../services/poizon-xlsx.mjs';
 import { parsePoizonSalesMetric } from '../services/poizon-sales-filter.mjs';
-import { createPageCrossCheck, selectPoizonPageCorrectionProducts } from '../services/live-poizon-crosscheck.mjs';
+import { createPageCrossCheck, selectPoizonPageCorrectionProducts, assertPoizonPageReadyForCorrection } from '../services/live-poizon-crosscheck.mjs';
 
 const source = (spuId, articleNumber, china, local) => ({
   spuId, articleNumber, sales30dRaw: china, localSales30dRaw: local,
@@ -99,4 +99,103 @@ test('shipping main and final review both use SKU-safe selection before writes',
   assert.match(main, /selectPoizonPageCorrectionProducts\(currentPageProducts, livePage\.rows, capture\.currentPage\)/);
   assert.match(review, /POIZON_SKU_SAFE_FINAL_SELECTION/);
   assert.match(review, /selectPoizonPageCorrectionProducts\(captured\.products \|\| \[\], coverage\.rows\)/);
+});
+
+// Both the legacy checkpoint API and the current selector must fail closed.
+test('canonical selector and checkpoint guard share reordered evidence and metadata', () => {
+  const products = [source('11','ITEM-11','100','30'), source('22','ITEM-22','200','40')];
+  const excel = [{...products[0], salesScope:'sku', sourceRowNumber:2}, {...products[1], localSales30dRaw:'20', sourceRowNumber:3}];
+  const page = createPageCrossCheck({runId:'mixed-policy',excelProducts:excel}).acceptPage(products,{pageNum:1,pageCount:1});
+  const rows = [...page.rows].reverse();
+  const guarded = assertPoizonPageReadyForCorrection(products,rows,1);
+  const selected = selectPoizonPageCorrectionProducts(products,rows,1);
+  assert.deepEqual(selected.products,guarded);
+  assert.deepEqual(selected.products,[products[1]]);
+  assert.deepEqual(selected.products.pageEvidence,{verified:true,sourceProducts:2,skippedSkuScope:1});
+  assert.equal(selected.deferredProducts,1);
+});
+
+test('SKU scope never masks an unreadable POIZON screen or an identity conflict', () => {
+  const product = source('11','ITEM-11','100','30');
+  const excel = [{...product,salesScope:'sku',sourceRowNumber:2}];
+  for (const side of ['sales30d','localSales30d']) {
+    const bad = {...product,[side+'Raw']:'--'};
+    const page = createPageCrossCheck({runId:'unreadable-'+side,excelProducts:excel}).acceptPage([bad],{pageNum:1,pageCount:1});
+    assert.equal(page.deferredProducts,0);
+    for (const choose of [assertPoizonPageReadyForCorrection,selectPoizonPageCorrectionProducts]) {
+      assert.throws(() => choose([bad],page.rows,1),/미확인/);
+    }
+  }
+  const page = createPageCrossCheck({runId:'identity-conflict',excelProducts:excel}).acceptPage([product],{pageNum:1,pageCount:1});
+  page.rows[0].identityConflict = true;
+  for (const choose of [assertPoizonPageReadyForCorrection,selectPoizonPageCorrectionProducts]) {
+    assert.throws(() => choose([product],page.rows,1));
+  }
+});
+
+test('duplicate product identities and mixed unresolved evidence never reach a writer', () => {
+  const a=source('11','ITEM-11','100','30'), b=source('22','ITEM-22','200','40');
+  const page=createPageCrossCheck({runId:'duplicate',excelProducts:[a,b]}).acceptPage([a,b],{pageNum:1,pageCount:1});
+  for (const choose of [assertPoizonPageReadyForCorrection,selectPoizonPageCorrectionProducts]) {
+    assert.throws(() => choose([a,a],page.rows,1),/중복/);
+    assert.throws(() => choose([a,b],[page.rows[0],page.rows[0]],1),/중복/);
+    assert.throws(() => choose([a,b],page.rows.slice(1),1),/증거 수/);
+  }
+  const blocked=createPageCrossCheck({runId:'mixed-block',excelProducts:[{...a,salesScope:'sku'},{...b,localSales30dRaw:'--'}]})
+    .acceptPage([a,b],{pageNum:1,pageCount:1});
+  for (const choose of [assertPoizonPageReadyForCorrection,selectPoizonPageCorrectionProducts]) {
+    assert.throws(() => choose([a,b],blocked.rows,1));
+  }
+});
+
+test('final review of SKU-only workbook makes no writer calls and preserves every byte', async (t) => {
+  const {runPoizonReviewBatch}=await import('../services/poizon-review-session.mjs');
+  const f=await fixture(t), before=await readFile(f.path);
+  const main=await readFile(new URL('../main.mjs',import.meta.url),'utf8');
+  const build=productionBuilder(main);
+  const snapshot=await readReviewWorkbook({path:f.path},build);
+  const products=[source('4962345','HQ1801','4,000+','200')];
+  const page=createPageCrossCheck({runId:'final-skip',excelProducts:snapshot.products})
+    .acceptPage(products,{pageNum:1,pageCount:1});
+  let writes=0;
+  const api={
+    readPoizonReviewWorkbook:async () => readReviewWorkbook({path:f.path},build),
+    beginSellerExcelVerification:async () => ({ok:true}),
+    endSellerExcelVerification:async () => ({ok:true}),
+    captureSellerBrandSales:async () => ({ok:true,products,sourceTotal:1,missingCount:0}),
+    checkPoizonReviewWorkbook:async () => ({ok:true,unchanged:true}),
+    syncExcelWithSellerScreen:async () => {writes++;throw new Error('SKU-only review must not call a writer');},
+  };
+  const view={input:{runId:'final-skip'},events:()=>[page],finish(){},showReport(){}};
+  const report=await runPoizonReviewBatch({files:[{path:f.path,name:'sku.xlsx'}],api,createView:async()=>view});
+  assert.equal(report.complete,true,JSON.stringify(report));
+  assert.equal(report.files[0].deferredProducts,1);
+  assert.equal(writes,0);
+  assert.deepEqual(await readFile(f.path),before);
+});
+
+test('evidence patches are repeatable in either order and never rewrite policy or tests', async (t) => {
+  const {mkdir,writeFile}=await import('node:fs/promises');
+  const {spawnSync}=await import('node:child_process');
+  const dir=await mkdtemp(join(tmpdir(),'poizon-patch-repeat-'));
+  t.after(()=>rm(dir,{recursive:true,force:true}));
+  const files=['main.mjs','services/poizon-review-session.mjs','services/live-poizon-crosscheck.mjs',
+    'src/poizon-review-workspace.js','scripts/run-release-regressions.mjs',
+    'scripts/patch-poizon-fake-missing.mjs','scripts/patch-poizon-sku-safe-pagination.mjs',
+    'tests/poizon-fake-missing.test.mjs','tests/poizon-sku-safe-pagination.test.mjs'];
+  const before=new Map();
+  for(const file of files){
+    const content=await readFile(new URL('../'+file,import.meta.url));before.set(file,content);
+    await mkdir(join(dir,file,'..'),{recursive:true});await writeFile(join(dir,file),content);
+  }
+  for(const script of ['fake-missing','sku-safe-pagination','fake-missing','sku-safe-pagination','sku-safe-pagination','fake-missing']){
+    const result=spawnSync(process.execPath,[join(dir,'scripts/patch-poizon-'+script+'.mjs')],{cwd:dir,encoding:'utf8'});
+    assert.equal(result.status,0,result.stdout+result.stderr);
+  }
+  for(const [file,content] of before)assert.deepEqual(await readFile(join(dir,file)),content,file+' changed on reapplication');
+  const service='services/live-poizon-crosscheck.mjs';
+  await writeFile(join(dir,service),before.get(service).toString().replace('POIZON_SKU_SAFE_DEFER_V1','MISSING_POLICY'));
+  const failed=spawnSync(process.execPath,[join(dir,'scripts/patch-poizon-sku-safe-pagination.mjs')],{cwd:dir,encoding:'utf8'});
+  assert.notEqual(failed.status,0);
+  assert.match(failed.stderr,/Canonical SKU-safe evidence policy is missing/);
 });
