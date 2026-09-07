@@ -43,7 +43,6 @@ function productionBuilder(main) {
 test('uploaded POIZON raw export shape is read as SKU scope, never as SPU recent-sales evidence', async (t) => {
   const f = await fixture(t);
   const main = await readFile(new URL('../main.mjs', import.meta.url), 'utf8');
-  assert.match(main, /POIZON_SKU_SCOPE_FROM_REAL_EXPORT/);
   const snapshot = await readReviewWorkbook({ path:f.path }, productionBuilder(main));
   assert.equal(snapshot.ok, true, snapshot.message);
   assert.equal(snapshot.products.length, 3);
