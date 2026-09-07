@@ -36,6 +36,8 @@ jobs:
           const { spawnSync } = require('node:child_process');
           const dir = path.resolve('.postinstall-diagnostics');
           const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.original.json'), 'utf8'));
+          // Restore the manifest before running any patch or test that inspects it.
+          fs.copyFileSync(path.join(dir, 'package.original.json'), 'package.json');
           const command = pkg.scripts?.postinstall;
           if (typeof command !== 'string' || !command.trim()) {
             throw new Error('The original postinstall command is missing; refusing to skip it.');
