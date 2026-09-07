@@ -13,9 +13,9 @@ test('wide 10000-row POIZON worksheet preserves every row while correcting origi
     return `<row r="${n}">` + columns.map((c, j) => {
       const value = j === 0 ? 11 : j === 1 ? 'ITEM-11' : j === 2 ? 1 : j === 3 ? 2 : j;
       return `<c r="${c}${n}"><v>${value}</v></c>`;
-    }).join('') + '</row>`;
+    }).join('') + '</row>';
   });
-  const sheet = '<worksheet><sheetData>' + head + rows.join('').replace(/<\/row>`/g, '</row>') + '</sheetData></worksheet>';
+  const sheet = '<worksheet><sheetData>' + head + rows.join('') + '</sheetData></worksheet>';
   const buffer = Buffer.from(zipSync({ 'xl/worksheets/sheet1.xml': strToU8(sheet) }));
   const p = { spuId: '11', articleNumber: 'ITEM-11', sales30dRaw: '100+', hasSalesData: true, localSales30dRaw: '83', hasLocalSalesData: true };
   const result = applyPoizonScreenSalesToWorkbook(buffer, [p]);
