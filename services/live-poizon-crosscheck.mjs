@@ -55,6 +55,30 @@ export function meetsVerificationConditions(product, conditions) {
   return tests.every(([minimum, metric]) => minimum === null || (metric && metric.min >= minimum));
 }
 
+// POIZON_COMPOUND_RECENT30_NOT_MISSING
+function compoundRecentMetric(rawValue) {
+  const raw = String(rawValue ?? '').normalize('NFKC').trim();
+  if (!raw) return null;
+  const parts = raw.split('/').map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const metrics = parts.map(metricFromRaw);
+  if (metrics.some((metric) => !metric)) return null;
+  const min = metrics.reduce((sum, metric) => sum + metric.min, 0);
+  const max = metrics.some((metric) => metric.max === Infinity)
+    ? Infinity
+    : metrics.reduce((sum, metric) => sum + metric.max, 0);
+  return { raw, min, max, signature: `AGG:${min}:${max}`, aggregate: true, componentCount: metrics.length };
+}
+
+function metricCompatible(excelEntry, sourceMetric) {
+  if (!excelEntry?.metric || !sourceMetric) return false;
+  if (excelEntry.state === 'resolved') return excelEntry.metric.signature === sourceMetric.signature;
+  if (excelEntry.state !== 'aggregate') return false;
+  const aggregate = excelEntry.metric;
+  if (sourceMetric.max === Infinity) return aggregate.min >= sourceMetric.min;
+  return aggregate.min <= sourceMetric.max && aggregate.max >= sourceMetric.min;
+}
+
 export function resolveExcelRecentMetric(products = [], local = false) {
   const observed = products.map((product) => recentMetric(product, local)).filter(Boolean);
   const bySignature = new Map();
@@ -63,15 +87,34 @@ export function resolveExcelRecentMetric(products = [], local = false) {
   }
   const totalValues = [...new Map(products.map((product) => totalMetric(product, local)).filter(Boolean).map((metric) => [metric.signature, metric])).values()];
   const key = local ? 'localSales30d' : 'sales30d';
-  const rawRecentValues = [...new Set(products.map((product) => String(product?.[key + 'Raw'] ?? '').trim()).filter(Boolean))];
+  const rawRecentValues = [...new Set(products.map((product) => String(product?.[key + 'Raw'] ?? '').normalize('NFKC').trim()).filter(Boolean))];
+
+  if (bySignature.size === 0 && rawRecentValues.length) {
+    const compounds = rawRecentValues.map(compoundRecentMetric);
+    if (compounds.every(Boolean)) {
+      const min = compounds.reduce((sum, metric) => sum + metric.min, 0);
+      const max = compounds.some((metric) => metric.max === Infinity)
+        ? Infinity
+        : compounds.reduce((sum, metric) => sum + metric.max, 0);
+      const componentCount = compounds.reduce((sum, metric) => sum + metric.componentCount, 0);
+      const metric = { raw: rawRecentValues.join(' / '), min, max, signature: `AGG:${min}:${max}`, aggregate: true, componentCount };
+      const range = max === Infinity ? `${min}+` : min === max ? String(min) : `${min}~${max}`;
+      return {
+        state: 'aggregate', metric, metrics: compounds,
+        raw: `옵션값 ${metric.raw} · 합계범위 ${range}`,
+        diagnostic: `최근30일 옵션값 ${componentCount}개 판독 · 실제 누락 아님`,
+      };
+    }
+  }
 
   if (bySignature.size === 0) {
     const diagnostic = rawRecentValues.length
-      ? `최근30일 원본값 ${rawRecentValues.join(' / ')} · 파싱/가용성 확인 필요`
+      ? `최근30일 원본값 ${rawRecentValues.join(' / ')} · 값은 존재하지만 단일 상품값으로 확정 불가`
       : totalValues.length
         ? `최근30일 값 없음 · 총판매 ${totalValues.map((metric) => metric.raw).join(' / ')}`
         : '최근30일 값 없음';
-    return { state: 'missing', metric: null, metrics: [], raw: `값 없음 · ${diagnostic}`, diagnostic };
+    const state = rawRecentValues.length ? 'present-unparsed' : 'missing';
+    return { state, metric: null, metrics: [], raw: rawRecentValues.length ? `원본값 존재 · ${rawRecentValues.join(' / ')}` : `값 없음 · ${diagnostic}`, diagnostic };
   }
   if (bySignature.size > 1) {
     const metrics = [...bySignature.values()];
@@ -113,19 +156,27 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
     const excelLocal = resolveExcelRecentMetric(candidates, true);
     const excelResolved = [excelChina, excelLocal];
     const sourceAvailable = source.every(Boolean);
-    const excelAvailable = excelResolved.every((entry) => entry.state === 'resolved' && entry.metric);
+    const excelAvailable = excelResolved.every((entry) => ['resolved', 'aggregate'].includes(entry.state) && entry.metric);
     const hasConflict = excelResolved.some((entry) => entry.state === 'conflict');
+    const hasPresentUnparsed = excelResolved.some((entry) => entry.state === 'present-unparsed');
+    const aggregateOnly = excelResolved.some((entry) => entry.state === 'aggregate');
     const allAvailable = sourceAvailable && excelAvailable;
     const equal = candidates.length > 0 && allAvailable
-      && excelResolved.every((entry, index) => entry.metric.signature === source[index].signature);
-    const missingSides = [excelChina, excelLocal].filter((entry) => entry.state === 'missing').length;
-    const status = !identity(product) ? '식별자 없음 · 자동수정 보류'
+      && excelResolved.every((entry, index) => metricCompatible(entry, source[index]));
+    const missingSides = excelResolved.filter((entry) => entry.state === 'missing').length;
+    let status = !identity(product) ? '식별자 없음 · 자동수정 보류'
       : !candidates.length ? matchBy === '식별자 충돌' ? '식별자 충돌 · 자동수정 보류' : 'Excel 상품 없음 · 자동수정 보류'
       : !sourceAvailable ? 'POIZON 화면값 미확인 · 자동수정 보류'
       : hasConflict ? 'Excel 값 충돌 · 자동수정 보류'
-      : equal ? '일치 · 수정 없음'
-      : missingSides ? `Excel 누락 ${missingSides}개 · POIZON 값으로 수정 대상`
-      : '값 다름 · POIZON 값으로 수정 대상';
+      : hasPresentUnparsed ? '상품 인식 완료 · Excel 원본값 존재 · 실제 누락 아님 · 파싱 확인 필요'
+      : equal ? '상품 인식 완료 · 판매량 일치 · 수정 없음'
+      : missingSides ? `상품 인식 완료 · 실제 판매량 누락 ${missingSides}개 · POIZON 값으로 수정 대상`
+      : '상품 인식 완료 · 판매량 값 다름 · POIZON 값으로 수정 대상';
+    if (candidates.length && sourceAvailable && aggregateOnly) {
+      status = equal
+        ? '상품 인식 완료 · 옵션 합계 기준 판매량 일치 · 실제 누락 아님'
+        : '상품 인식 완료 · 옵션 합계 판독 · 실제 누락 아님 · 상품단위 값 재확인';
+    }
 
     return {
       key: identity(product) || `UNREADABLE:${pageNum}:${position}`,
@@ -141,6 +192,8 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
       excelLocalDiagnostic: excelLocal.diagnostic || '',
       excelRows: candidates.flatMap((p) => p.sourceRowNumbers || [p.sourceRowNumber]).filter((n) => Number.isInteger(Number(n)) && Number(n) > 0).map(Number),
       matched: candidates.length > 0, equal,
+      autoCorrectionBlocked: aggregateOnly || hasPresentUnparsed,
+      compoundRecent30: aggregateOnly,
     };
   };
   const counts = () => {
