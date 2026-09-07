@@ -7,7 +7,7 @@ import { createContext, runInContext } from 'node:vm';
 import writeXlsxFile from 'write-excel-file/node';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { applyPoizonScreenSalesToWorkbook } from '../services/poizon-screen-excel-sync.mjs';
-import { indexProductIdentities, resolveProductIdentity, VERIFIED_PARENT_HEADERS } from '../services/poizon-product-identity.mjs';
+import { indexProductIdentities, resolveProductIdentity } from '../services/poizon-product-identity.mjs';
 import { findPoizonColumn, findPoizonRecentSalesColumns, findPoizonTotalSalesColumns } from '../services/poizon-xlsx.mjs';
 import { parsePoizonSalesMetric } from '../services/poizon-sales-filter.mjs';
 import { readFirstDataSheet } from '../services/excel-reader.mjs';
@@ -40,29 +40,55 @@ for (const [name, query, candidates, level, expected] of [
   ['Unicode suffix is not discarded for code-only matches', { articleNumber: 'AB123-服' }, [{ articleNumber: 'AB123-鞋' }], 'spu', 0],
 ]) test(name, () => assert.equal(resolveProductIdentity(query, indexProductIdentities(candidates), { level }).products.length, expected));
 
-test('real XLSX round trip preserves original totals, SKU rows, prices, notes and styles; parent fields use dedicated columns', async (t) => {
-  const f = await fixture(t); const before = await readFirstDataSheet(f.buffer);
+test('POIZON screen values overwrite original recent-sales cells while unrelated totals, SKU, price and notes remain intact', async (t) => {
+  const f = await fixture(t);
+  const before = await readFirstDataSheet(f.buffer);
   const result = applyPoizonScreenSalesToWorkbook(f.buffer, [screen('11', '1,400+')]);
-  assert.equal(result.ok, true); assert.equal(result.changedRows, 2); assert.equal(result.changedCells, 4);
-  await writeFile(f.path, result.buffer);
-  const after = await readFirstDataSheet(await readFile(f.path));
-  assert.deepEqual(after.map((r) => r.slice(0, headers.length)), before);
-  assert.equal(after[0].at(-2), VERIFIED_PARENT_HEADERS.china); assert.equal(after[0].at(-1), VERIFIED_PARENT_HEADERS.local);
-  assert.equal(after[1].at(-1), '1,400+'); assert.equal(after[2].at(-1), '1,400+');
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.changedRows, 2);
+  assert.equal(result.changedCells, 4);
+  assert.equal(result.comparisonMode, 'POIZON_SCREEN_IS_SOURCE_OF_TRUTH');
+  assert.equal(result.reverified, true);
+  const after = await readFirstDataSheet(result.buffer);
+  assert.deepEqual(after[0], before[0]);
+  for (let i = 1; i < after.length; i++) {
+    assert.equal(after[i][0], before[i][0]);
+    assert.equal(after[i][1], before[i][1]);
+    assert.equal(after[i][2], before[i][2]);
+    assert.equal(after[i][3], before[i][3]);
+    assert.equal(after[i][4], before[i][4]);
+    assert.equal(after[i][5], before[i][5]);
+    assert.equal(after[i][6], before[i][6]);
+    assert.equal(after[i][7], '100+');
+    assert.equal(after[i][8], '1,400+');
+    assert.equal(after[i][9], before[i][9]);
+    assert.equal(after[i][10], before[i][10]);
+  }
   const a = unzipSync(f.buffer), b = unzipSync(result.buffer);
   for (const path of Object.keys(a).filter((p) => !/^xl\/worksheets\/sheet/.test(p))) assert.deepEqual(b[path], a[path], path);
-  const reread = await products(result.buffer);
-  assert.equal(reread.length, 2); assert.equal(reread[0].salesScope, 'spu'); assert.equal(reread[0].localSales30dRaw, '1,400+');
-  assert.equal(reread[0].localTotalSalesRaw, '40');
-  assert.equal(applyPoizonScreenSalesToWorkbook(result.buffer, [screen('11', '1,400+')]).changed, false);
+  const second = applyPoizonScreenSalesToWorkbook(result.buffer, [screen('11', '1,400+')]);
+  assert.equal(second.changed, false);
+  assert.equal(second.alreadyMatchedCells, 4);
 });
 
-test('missing metric columns and sparse XML cells are added, never replaced by lifetime columns', async (t) => {
+test('missing or mismatched Excel cells are classified and repaired from POIZON', async (t) => {
+  const f = await fixture(t, [['11','ITEM-11','111','95','TEST','700','40','','10','86000','note']]);
+  const result = applyPoizonScreenSalesToWorkbook(f.buffer, [screen()]);
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.missingCells, 1);
+  assert.equal(result.mismatchedCells, 1);
+  assert.ok(result.changes.some((c) => c.reason === 'MISSING_VALUE' && c.after === '100+'));
+  assert.ok(result.changes.some((c) => c.reason === 'VALUE_MISMATCH' && c.after === '83'));
+  const data = await readFirstDataSheet(result.buffer);
+  assert.equal(data[1][7], '100+'); assert.equal(data[1][8], '83');
+});
+
+test('workbook without a recognized recent-sales target is rejected instead of inventing columns or overwriting lifetime totals', async (t) => {
   const f = await fixture(t, [['11', 'ITEM-11']], ['SPU ID', '상품 번호']);
   const result = applyPoizonScreenSalesToWorkbook(f.buffer, [screen()]);
-  assert.equal(result.ok, true); const data = await readFirstDataSheet(result.buffer);
-  assert.deepEqual(data[1], ['11', 'ITEM-11', '100+', '83']);
-  assert.ok(strFromU8(unzipSync(result.buffer)['xl/worksheets/sheet1.xml']).includes('D2'));
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'EXCEL_RECENT_SALES_COLUMNS_MISSING');
+  assert.deepEqual(f.buffer, await readFile(f.path));
 });
 
 test('same code with different SPU cannot change the wrong workbook row', async (t) => {
@@ -71,38 +97,40 @@ test('same code with different SPU cannot change the wrong workbook row', async 
   assert.equal(result.changed, false); assert.deepEqual(result.buffer, f.buffer);
 });
 
-test('SPU match survives code differences in both comparison and persistence', async (t) => {
+test('SPU match survives code differences in comparison, write and reread verification', async (t) => {
   const f = await fixture(t, [row('11', '111', '10', 'LOCALIZED-CODE')]);
   const source = [screen()]; const before = await products(f.buffer);
   assert.equal(createPageCrossCheck({ runId: 'r', excelProducts: before }).acceptPage(source).matchedProducts, 1);
   const saved = applyPoizonScreenSalesToWorkbook(f.buffer, source);
-  assert.equal(saved.changedRows, 1); assert.equal(checkPersistedParentMetrics(source, before, await products(saved.buffer)).ok, true);
+  assert.equal(saved.changedRows, 1);
+  const after = await products(saved.buffer);
+  assert.equal(checkPersistedParentMetrics(source, before, after).ok, true);
+  assert.equal(after[0].localSales30dRaw, '83');
 });
 
-test('unknown source values and conflicting source duplicates do not damage originals', async (t) => {
+test('unknown POIZON values and conflicting POIZON duplicates never damage Excel', async (t) => {
   const f = await fixture(t);
   assert.equal(applyPoizonScreenSalesToWorkbook(f.buffer, [screen('11', '--', { hasSalesData: false, hasLocalSalesData: false })]).changed, false);
   const conflict = applyPoizonScreenSalesToWorkbook(f.buffer, [screen('11', '83'), screen('11', '90')]);
   assert.equal(conflict.changed, false); assert.equal(conflict.conflictedRows, 2);
 });
 
-test('SKU observations cannot be written as parent metrics; raw SKU recent values are not parent comparisons', async (t) => {
+test('SKU-only screen observations cannot be promoted into a product-level correction', async (t) => {
   const f = await fixture(t);
   assert.equal(applyPoizonScreenSalesToWorkbook(f.buffer, [screen('11', '83', { skuId: '111' })]).changed, false);
   const p = (await products(f.buffer))[0]; assert.equal(p.salesScope, 'sku'); assert.equal(recentMetric(p, true), null);
 });
 
-test('formula and future-column content survives; a formula in a dedicated output cell blocks the write', async (t) => {
-  const f = await fixture(t); const source = [screen()];
-  const first = applyPoizonScreenSalesToWorkbook(f.buffer, source);
-  const archive = unzipSync(first.buffer); let xml = strFromU8(archive['xl/worksheets/sheet1.xml']);
-  xml = xml.replace(/<c\b[^>]*r="M2"[^>]*>[\s\S]*?<\/c>/, '<c r="M2"><f>40+43</f><v>83</v></c>');
+test('a formula in an original target sales cell blocks the automatic correction and unrelated future cells survive', async (t) => {
+  const f = await fixture(t);
+  const archive = unzipSync(f.buffer); let xml = strFromU8(archive['xl/worksheets/sheet1.xml']);
+  xml = xml.replace(/<c\b[^>]*r="I2"[^>]*>[\s\S]*?<\/c>/, '<c r="I2"><f>40+43</f><v>83</v></c>');
   archive['xl/worksheets/sheet1.xml'] = strToU8(xml);
   const result = applyPoizonScreenSalesToWorkbook(Buffer.from(zipSync(archive)), [screen('11', '84')]);
   assert.equal(result.ok, false); assert.match(result.message, /수식/);
 });
 
-test('actual main IPC creates backup and audit, validates bytes, then atomically replaces the workbook', async (t) => {
+test('actual main IPC backs up the original, writes corrected bytes atomically and leaves no temp file', async (t) => {
   const f = await fixture(t);
   const from = main.indexOf('  const screenSyncFilesInProgress =');
   const to = main.indexOf('  ipcMain.handle(', main.indexOf('  ipcMain.handle("excel:sync-seller-screen"', from) + 30);
@@ -110,14 +138,16 @@ test('actual main IPC creates backup and audit, validates bytes, then atomically
   const sandbox = { ipcMain: { handle: (_name, fn) => { handler = fn; } }, resolve, readFile, writeFile, rename, unlink, stat, applyPoizonScreenSalesToWorkbook, readFirstDataSheet, excelPreviewCache: new Map() };
   runInContext(main.slice(from, to), createContext(sandbox));
   const result = await handler(null, { path: f.path, products: [screen()] });
-  assert.equal(result.ok, true, result.message); assert.deepEqual(await readFile(result.backupPath), f.buffer);
+  assert.equal(result.ok, true, result.message);
+  assert.deepEqual(await readFile(result.backupPath), f.buffer);
   assert.equal((await products(await readFile(f.path)))[0].localSales30dRaw, '83');
   const audit = JSON.parse(await readFile(result.auditPath, 'utf8'));
-  assert.equal(audit.scope, 'SPU recent30'); assert.equal(audit.changes.length, 4);
+  assert.equal(audit.scope, 'POIZON screen source-of-truth recent30');
+  assert.equal(audit.changes.length, 4);
   assert.equal((await readdir(f.folder)).some((p) => p.endsWith('.tmp')), false);
 });
 
-test('production combined workflow reads all rows before filtering, saves/rereads and groups sizes into one SPU', async (t) => {
+test('production combined workflow reads all Excel rows, captures POIZON, saves, rereads and returns only verified qualified products', async (t) => {
   const f = await fixture(t, [row(), row('11', '112', '20'), row('12', '121', '999')]);
   let data = f.buffer; const order = []; let seen;
   const api = {
@@ -128,13 +158,17 @@ test('production combined workflow reads all rows before filtering, saves/reread
   let done;
   const result = await runVerifiedCombinedSearch({ files: [{ path: f.path, name: 'test.xlsx', brandName: 'TEST' }], conditions: { minimumLocalSales30: 30 }, api,
     openVerification: async (_f, before, c) => { assert.equal(before.length, 3); return { input: { runId: 'r', conditions: c, excelProducts: before }, saving: () => {}, finish: (x) => { done = x; }, running: false }; } });
-  assert.deepEqual(order, ['read', 'capture', 'save', 'read']); assert.equal(seen.verification.conditions.minimumLocalSales30, 30);
-  assert.equal(result.complete, true); assert.equal(done.ok, true); assert.equal(result.products.length, 1);
-  assert.equal(result.products[0].optionCount, 2); assert.equal(result.products[0].localSales30dRaw, '83');
-  assert.equal(result.products[0].verificationOptions[0].localTotalSalesRaw, '40');
+  assert.deepEqual(order, ['read', 'capture', 'save', 'read']);
+  assert.equal(seen.verification.conditions.minimumLocalSales30, 30);
+  assert.equal(result.complete, true); assert.equal(done.ok, true);
+  assert.equal(result.products.length, 1);
+  assert.equal(result.products[0].spuId, '11');
+  assert.equal(result.products[0].optionCount, 2);
+  assert.equal(result.products[0].localSales30dRaw, '83');
+  assert.equal(result.products[0].verificationStatus, 'POIZON 값으로 수정 후 대조 완료');
 });
 
-test('failed capture cannot write or report complete; incomplete local paging cannot silently omit products', async () => {
+test('failed POIZON capture cannot write or report complete; incomplete Excel paging cannot silently omit products', async () => {
   let writes = 0;
   const result = await runVerifiedCombinedSearch({ files: [{ path: 'f.xlsx' }], conditions: {}, api: {
     previewExcelFile: async () => ({ ok: true, products: [], totalRows: 0, offset: 0 }),
@@ -145,7 +179,7 @@ test('failed capture cannot write or report complete; incomplete local paging ca
   await assert.rejects(() => readAllVerificationProducts({ previewExcelFile: async () => ({ ok: true, products: [], totalRows: 10, offset: 0 }) }, { path: 'f.xlsx' }), /누락/);
 });
 
-test('150 pages and 3000 SPUs with 6000 size rows retain all identities and do not double-count page 126', async (t) => {
+test('150 pages and 3000 SPUs with 6000 Excel size rows keep identities and verify every corrected cell', async (t) => {
   const rows = [], sources = [];
   for (let i = 1; i <= 3000; i++) { rows.push(row(String(i), `${i}-A`), row(String(i), `${i}-B`)); sources.push(screen(String(i), String(i % 3 + 29))); }
   const f = await fixture(t, rows); const before = await products(f.buffer);
@@ -155,19 +189,22 @@ test('150 pages and 3000 SPUs with 6000 size rows retain all identities and do n
   result = verifier.acceptPage(sources.slice(2500, 2520), { pageNum: 126, pageCount: 150 });
   assert.equal(result.checkedProducts, 3000); assert.equal(result.matchedProducts, 3000); assert.equal(result.qualifiedProducts, 2000);
   const saved = applyPoizonScreenSalesToWorkbook(f.buffer, sources);
-  assert.equal(saved.changedRows, 6000); const after = await products(saved.buffer);
-  assert.equal(after.length, 6000); assert.equal(checkPersistedParentMetrics(sources, before, after).ok, true);
+  assert.equal(saved.changedRows, 6000); assert.equal(saved.verifiedCells, 12000);
+  const after = await products(saved.buffer);
+  assert.equal(after.length, 6000);
+  assert.equal(checkPersistedParentMetrics(sources, before, after).ok, true);
   assert.equal(applyPoizonScreenSalesToWorkbook(saved.buffer, sources).changedRows, 0);
 });
 
-test('shipping combined view displays recent parent metrics separately from collapsible original size totals', async () => {
+test('shipping combined view describes corrected POIZON recent values separately from collapsible original option totals', async () => {
   const renderer = await readFile(new URL('../src/renderer.js', import.meta.url), 'utf8');
   const from = renderer.indexOf('function renderVerifiedSpuRows('), to = renderer.indexOf('async function openVerifiedCombinedBrandPreview', from);
   assert.ok(from > 0 && to > from); const nodes = new Map(); const $ = (s) => { if (!nodes.has(s)) nodes.set(s, {}); return nodes.get(s); };
   const fn = new Function('$', 'excelPreviewStableSelectionKey', 'excelPreviewProductCache', 'text', 'money', 'renderRawExcelDomesticCell', 'excelPreviewSearchResults', renderer.slice(from, to) + '; return renderVerifiedSpuRows;')($, (p) => p.key, new Map(), (s) => String(s ?? ''), String, () => '<td></td>', new Map());
-  fn({}, [{ ...screen('11', '1,400+'), key: 'SPU:11', optionCount: 1, verificationOptions: [{ skuId: '111', option: '95', totalSalesRaw: '700', localTotalSalesRaw: '40' }] }]);
+  fn({}, [{ ...screen('11', '1,400+'), key: 'SPU:11', optionCount: 1, verificationStatus: 'POIZON 값으로 수정 후 대조 완료', verificationOptions: [{ skuId: '111', option: '95', totalSalesRaw: '700', localTotalSalesRaw: '40' }] }]);
   assert.match($('#excel-preview-columns').innerHTML, /현지 상품 최근 30일/);
   assert.match($('#excel-preview-rows').innerHTML, /<details>/); assert.match($('#excel-preview-rows').innerHTML, /1,400\+/);
   assert.match($('#excel-preview-rows').innerHTML, /원본 현지 총판매 40/);
+  assert.match($('#excel-preview-rows').innerHTML, /수정 후 대조 완료/);
   assert.match(renderer, /return openVerifiedCombinedBrandPreview\(files, filters\)/);
 });
