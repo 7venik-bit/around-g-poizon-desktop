@@ -15,11 +15,24 @@ test('30 is inclusive, AND is enforced, and 29 is excluded', () => {
   assert.equal(meetsVerificationConditions(product(31), conditions), true);
   assert.equal(meetsVerificationConditions(product(31, { sales30d: 99 }), conditions), false);
 });
-test('old Excel 10 is compared and flagged when POIZON 83 passes minimum 30', () => {
+test('old Excel 10 is compared and marked as a POIZON correction target when POIZON 83 passes minimum 30', () => {
   const s = session(); const result = s.acceptPage([product()], { pageNum: 11, pageCount: 150 });
-  assert.equal(result.rows[0].qualified, true); assert.equal(result.rows[0].status, '값 다름');
+  assert.equal(result.rows[0].qualified, true); assert.equal(result.rows[0].status, '값 다름 · POIZON 값으로 수정 대상');
   assert.equal(result.rows[0].excelLocal, '10'); assert.equal(result.rows[0].sourceLocal, '83');
   assert.equal(result.differentProducts, 1); assert.deepEqual(result.rows[0].excelRows, [2]);
+});
+test('missing Excel recent value is a correction target, not an unknown POIZON result', () => {
+  const excel = [product(10, { localSales30dRaw: '', localSales30d: 0, hasLocalSalesData: false })];
+  const result = session(excel).acceptPage([product()], { pageNum: 1, pageCount: 1 });
+  assert.match(result.rows[0].status, /Excel 누락 1개 · POIZON 값으로 수정 대상/);
+  assert.match(result.rows[0].excelLocal, /값 없음/);
+  assert.equal(result.rows[0].sourceLocal, '83');
+});
+test('POIZON screen missing value is the only recent-value unknown state and blocks automatic correction', () => {
+  const source = product(83, { localSales30dRaw: '', localSales30d: 0, hasLocalSalesData: false });
+  const result = session([product(83)]).acceptPage([source], { pageNum: 1, pageCount: 1 });
+  assert.equal(result.rows[0].status, 'POIZON 화면값 미확인 · 자동수정 보류');
+  assert.equal(result.rows[0].sourceLocal, 'POIZON 읽기 실패');
 });
 test('lifetime totals never stand in for recent sales, including threshold zero', () => {
   const p = { articleNumber: 'A1', localTotalSales: 300, totalSales: 999 };
@@ -44,7 +57,7 @@ test('shared condition snapshot cannot drift during a run', () => {
 test('SPU identity is preserved and same-code different-SPU matches are rejected', () => {
   assert.equal(session().acceptPage([product(83, { articleNumber: 'OTHER' })]).matchedProducts, 1);
   const result = session().acceptPage([product(83, { spuId: '99' })]);
-  assert.equal(result.matchedProducts, 0); assert.equal(result.rows[0].status, '식별자 충돌');
+  assert.equal(result.matchedProducts, 0); assert.equal(result.rows[0].status, '식별자 충돌 · 자동수정 보류');
 });
 test('each of 150 pages is compared independently and a repeated page does not inflate counters', () => {
   const excel = Array.from({ length: 3000 }, (_, i) => product(30, { spuId: String(i + 1), articleNumber: 'ITEM' + i }));
@@ -111,8 +124,6 @@ test('Seller Center annotation does not remove rows needed for completeness', ()
   assert.equal(row.style.display, undefined); assert.equal(row.hidden, false);
 });
 
-// These assertions are mandatory in the real repository, in addition to the
-// behavioral model/view tests above. A local isolated fixture can omit main.
 let main = '';
 try { main = await readFile(new URL('../main.mjs', import.meta.url), 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
 if (main) test('shipping capture compares before navigation and both entry points carry the same frozen conditions', async () => {
