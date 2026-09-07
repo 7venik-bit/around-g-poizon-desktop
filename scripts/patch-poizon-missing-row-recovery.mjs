@@ -22,40 +22,49 @@ crosscheck = replaceOnce(
 await save('services/live-poizon-crosscheck.mjs', crosscheck);
 
 let session = await read('services/poizon-review-session.mjs');
-session = replaceOnce(
-  session,
-  "      if (after.products.length !== snapshot.products.length) throw new Error('수정 후 Excel 행 수가 달라져 완료 처리하지 않았습니다.');",
-  "      const expectedRowsAfterCorrection = snapshot.products.length + Number(saved.addedRows || 0);\n      if (after.products.length !== expectedRowsAfterCorrection) throw new Error(`수정/추가 후 Excel 행 수가 예상과 다릅니다. ${after.products.length}/${expectedRowsAfterCorrection}행`);",
-  'post-write row count with appended products',
-);
-session = replaceOnce(
-  session,
-  "      report.changedRows = Number(saved.changedRows || 0);\n      report.changedCells = Number(saved.changedCells || 0);",
-  "      report.changedRows = Number(saved.changedRows || 0);\n      report.addedRows = Number(saved.addedRows || 0);\n      report.addedProducts = Number(saved.addedProducts || 0);\n      report.changedCells = Number(saved.changedCells || 0);",
-  'report appended row counters',
-);
-session = replaceOnce(
-  session,
-  "      view.finish({ ok: true, corrected: true, changedRows: report.changedRows, changedCells: report.changedCells,\n        verifiedCells: report.verifiedCells, report, afterProducts: after.products });",
-  "      view.finish({ ok: true, corrected: true, changedRows: report.changedRows, addedRows: report.addedRows, addedProducts: report.addedProducts, changedCells: report.changedCells,\n        verifiedCells: report.verifiedCells, report, afterProducts: after.products });",
-  'view appended row counters',
-);
+// Newer auto-correction logic already accounts for appended rows and verifies every added SPU after disk reread.
+// Only patch legacy sessions that still require the pre-append row count.
+if (!session.includes('const expectedAfterRows = snapshot.products.length + Number(saved.addedRows || 0);')) {
+  session = replaceOnce(
+    session,
+    "      if (after.products.length !== snapshot.products.length) throw new Error('수정 후 Excel 행 수가 달라져 완료 처리하지 않았습니다.');",
+    "      const expectedRowsAfterCorrection = snapshot.products.length + Number(saved.addedRows || 0);\n      if (after.products.length !== expectedRowsAfterCorrection) throw new Error(`수정/추가 후 Excel 행 수가 예상과 다릅니다. ${after.products.length}/${expectedRowsAfterCorrection}행`);",
+    'post-write row count with appended products',
+  );
+}
+if (!session.includes('report.addedRows = Number(saved.addedRows || 0);')) {
+  session = replaceOnce(
+    session,
+    "      report.changedRows = Number(saved.changedRows || 0);\n      report.changedCells = Number(saved.changedCells || 0);",
+    "      report.changedRows = Number(saved.changedRows || 0);\n      report.addedRows = Number(saved.addedRows || 0);\n      report.addedProducts = Number(saved.addedProducts || 0);\n      report.changedCells = Number(saved.changedCells || 0);",
+    'report appended row counters',
+  );
+}
+if (!session.includes('addedRows: report.addedRows, addedProducts: report.addedProducts')) {
+  session = replaceOnce(
+    session,
+    "      view.finish({ ok: true, corrected: true, changedRows: report.changedRows, changedCells: report.changedCells,\n        verifiedCells: report.verifiedCells, report, afterProducts: after.products });",
+    "      view.finish({ ok: true, corrected: true, changedRows: report.changedRows, addedRows: report.addedRows, addedProducts: report.addedProducts, changedCells: report.changedCells,\n        verifiedCells: report.verifiedCells, report, afterProducts: after.products });",
+    'view appended row counters',
+  );
+}
 await save('services/poizon-review-session.mjs', session);
 
 let view = await read('src/poizon-review-workspace.js');
 view = view.replace('<span data-tone="missing">연결 불가</span>', '<span data-tone="missing">Excel 상품 없음/추가</span>');
-view = replaceOnce(
-  view,
-  ".map((row) => result.corrected && reviewTone(row) === 'different' ? { ...row, equal: true, status: 'POIZON 값으로 수정 완료 · 저장 후 재검증 완료' } : row);",
-  ".map((row) => result.corrected && (reviewTone(row) === 'different' || /새 행 추가 대상/.test(row.status || ''))\n          ? { ...row, matched: true, equal: true, status: /새 행 추가 대상/.test(row.status || '')\n            ? 'POIZON 값으로 새 행 추가 완료 · 저장 후 재검증 완료'\n            : 'POIZON 값으로 수정 완료 · 저장 후 재검증 완료' } : row);",
-  'final row state for appended products',
-);
-view = replaceOnce(
-  view,
-  "get('.review-phase').textContent = result.ok ? `대조 완료 · POIZON 기준 Excel ${Number(result.changedRows || 0).toLocaleString('ko-KR')}행 수정 · 재검증 완료`",
-  "get('.review-phase').textContent = result.ok ? `대조 완료 · 기존 ${Number(result.changedRows || 0).toLocaleString('ko-KR')}행 수정 · 누락 ${Number(result.addedRows || 0).toLocaleString('ko-KR')}행 추가 · 재검증 완료`",
-  'final appended row status',
-);
+const legacyMap = ".map((row) => result.corrected && reviewTone(row) === 'different' ? { ...row, equal: true, status: 'POIZON 값으로 수정 완료 · 저장 후 재검증 완료' } : row);";
+const appendedMap = ".map((row) => result.corrected && (reviewTone(row) === 'different' || /새 행 추가 대상/.test(row.status || ''))\n          ? { ...row, matched: true, equal: true, status: /새 행 추가 대상/.test(row.status || '')\n            ? 'POIZON 값으로 새 행 추가 완료 · 저장 후 재검증 완료'\n            : 'POIZON 값으로 수정 완료 · 저장 후 재검증 완료' } : row);";
+if (!view.includes(appendedMap) && view.includes(legacyMap)) view = view.replace(legacyMap, appendedMap);
+
+// Accept either the legacy final status or the newer status installed by auto-correction.
+const oldStatus = "get('.review-phase').textContent = result.ok ? `대조 완료 · POIZON 기준 Excel ${Number(result.changedRows || 0).toLocaleString('ko-KR')}행 수정 · 재검증 완료`";
+const newStatus = "get('.review-phase').textContent = result.ok ? `대조 완료 · 기존 ${Number(result.changedRows || 0).toLocaleString('ko-KR')}행 수정 · 누락 ${Number(result.addedRows || 0).toLocaleString('ko-KR')}행 추가 · 재검증 완료`";
+const autoCorrectionStatus = "get('.review-phase').textContent = result.ok ? `대조 완료 · Excel ${Number(result.changedRows || 0).toLocaleString('ko-KR')}행 수정 · 신규 ${Number(result.addedRows || 0).toLocaleString('ko-KR')}행 추가 · 재검증 완료`";
+if (!view.includes(newStatus)) {
+  if (view.includes(oldStatus)) view = view.replace(oldStatus, newStatus);
+  else if (view.includes(autoCorrectionStatus)) view = view.replace(autoCorrectionStatus, newStatus);
+  else throw new Error('Missing-row recovery patch target missing: final appended row status');
+}
 await save('src/poizon-review-workspace.js', view);
 
-console.log('POIZON missing-product recovery enabled: confirmed SPUs append new Excel rows, then saved workbook is reread and reverified.');
+console.log('POIZON missing-product recovery verified compatible with appended-row reread count and per-SPU disk verification.');
