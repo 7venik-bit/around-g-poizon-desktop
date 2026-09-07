@@ -45,7 +45,7 @@ if (!session.includes('POIZON_AUTO_CORRECTION_APPLIED')) {
       if (!after?.ok || !Array.isArray(after.products)) throw new Error(after?.message || '수정 후 Excel 재읽기에 실패했습니다.');
       const expectedAfterRows = snapshot.products.length + Number(saved.addedRows || 0);
       if (after.products.length !== expectedAfterRows) {
-        throw new Error(`수정 후 Excel 행 수 검증 실패 · 예상 ${expectedAfterRows}행 / 실제 ${after.products.length}행`);
+        throw new Error('수정 후 Excel 행 수 검증 실패 · 예상 ' + expectedAfterRows + '행 / 실제 ' + after.products.length + '행');
       }
 
       // 신규 행은 단순히 행 수만 늘었다고 완료하지 않는다. 저장 후 실제 SPU가 다시 읽혀야 한다.
@@ -59,7 +59,7 @@ if (!session.includes('POIZON_AUTO_CORRECTION_APPLIED')) {
         if (!resolved.length) addedVerificationFailures.push({ spuId, articleNumber: change.articleNumber || '', reason: 'ADDED_ROW_NOT_READ_BACK' });
       }
       if (addedVerificationFailures.length) {
-        throw new Error(`신규 상품 행 저장 후 SPU 재검증 실패 ${addedVerificationFailures.length}건 · ${addedVerificationFailures.slice(0, 5).map((item) => item.spuId || item.reason).join(', ')}`);
+        throw new Error('신규 상품 행 저장 후 SPU 재검증 실패 ' + addedVerificationFailures.length + '건 · ' + addedVerificationFailures.slice(0, 5).map((item) => item.spuId || item.reason).join(', '));
       }
 
       const report = buildReviewReport(snapshot, coverage.rows);
@@ -149,8 +149,6 @@ test('newly appended POIZON product rows increase the expected reread count and 
 }
 await save('tests/poizon-review-workspace.test.mjs', tests);
 
-// The category/file-sync regression must keep local file synchronization read-only,
-// while allowing the explicitly launched POIZON review workflow to correct Excel.
 let categoryTests = await read('tests/favorite-category-search-v2.10.294.test.mjs');
 categoryTests = categoryTests.replace(
   "  // Full snapshot -> live capture -> coverage -> unchanged workbook -> one report.\n  const read = session.indexOf('const snapshots = await loadReviewSnapshots');\n  const capture = session.indexOf('await api.captureSellerBrandSales', read);\n  const coverage = session.indexOf('reviewCoverage(view.events(), captured)', capture);\n  const revision = session.indexOf('await api.checkPoizonReviewWorkbook', coverage);\n  const report = session.indexOf('buildReviewReport(snapshot, coverage.rows)', revision);\n  const notify = session.indexOf('await notify(report, lastView)', report);\n  assert.ok(read >= 0 && capture > read && coverage > capture && revision > coverage && report > revision && notify > report);\n  assert.doesNotMatch(session, /syncExcelWithSellerScreen|\\.upsert\\(|writeFile\\(/);",
