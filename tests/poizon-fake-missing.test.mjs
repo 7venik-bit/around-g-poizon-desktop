@@ -123,6 +123,9 @@ test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input re
   const {parsePoizonSalesMetric} = await import('../services/poizon-sales-filter.mjs');
   const {readReviewWorkbook} = await import('../services/poizon-review-workbook.mjs');
   const {default:writeXlsxFile} = await import('write-excel-file/node');
+  const writeFixture = (data, filePath) => writeXlsxFile([{ sheet:'상품',
+    columns:data[0].map(() => ({type:String,value:(value) => String(value ?? '')})), data,
+  }]).toFile(filePath);
   const functionText = main.match(/function buildExcelPreviewProducts\([^]*?\n\}/)?.[0];
   assert.ok(functionText,'The production preview builder must exist; do not substitute a test mapper.');
   const build = runInNewContext('(' + functionText + ')',{findPoizonColumn,findPoizonRecentSalesColumns,findPoizonTotalSalesColumns,parsePoizonSalesMetric});
@@ -131,7 +134,7 @@ test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input re
   const path = join(dir,'synthetic-sku-export.xlsx');
   const headers = ['SPU ID','SPU 이미지','상품 번호','상품명','상품 브랜드','SKU ID','사이즈/옵션/색상','최근 30일간 평균 거래가','중국 총 판매량','현지 판매자 총 판매량'];
   const originals = [headers, ['3507808','','1026592','KEEN','KEEN','SKU1','250','100','33','5'], ['3507808','','1026592','KEEN','KEEN','SKU2','260','100','100+','14'], ['3507808','','1026592','KEEN','KEEN','SKU3','270','100','--','--']];
-  await writeXlsxFile(originals.map((r) => r.map((value) => ({value,type:String}))),{filePath:path});
+  await writeFixture(originals,path);
   const before = await readFile(path);
   const snapshot = await readReviewWorkbook({path},build);
   assert.equal(snapshot.ok,true,snapshot.message); assert.equal(snapshot.products.length,3);
@@ -160,7 +163,7 @@ test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input re
   // With real parent columns, correction must still work and preserve every SKU value.
   const parentHeaders = [...headers,'POIZON 상품 최근 30일 판매량','POIZON 상품 현지 판매자 최근 30일 판매량'];
   const withParents = [parentHeaders,...originals.slice(1).map((row) => [...row,'100+','30'])];
-  await writeXlsxFile(withParents.map((r) => r.map((value) => ({value,type:String}))),{filePath:path});
+  await writeFixture(withParents,path);
   const parents = await readReviewWorkbook({path},build);
   const prior = check(parents.products);
   assert.equal(prior.rows[0].autoCorrectionBlocked,false); assert.equal(prior.rows[0].equal,false);
