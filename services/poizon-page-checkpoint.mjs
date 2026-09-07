@@ -15,8 +15,32 @@ export async function syncPoizonPageCheckpoint({
   if (!path || !/\.xlsx$/i.test(path)) {
     return { ok: false, code: 'PAGE_CHECKPOINT_PATH_INVALID', message: '페이지 검증에 사용할 Excel 경로가 올바르지 않습니다.' };
   }
-  if (!Array.isArray(products) || !products.length) {
-    return { ok: false, code: 'PAGE_CHECKPOINT_PRODUCTS_EMPTY', message: `POIZON ${pageNum || '?'}페이지 상품이 없어 Excel 체크포인트를 진행하지 않습니다.` };
+  if (!Array.isArray(products)) {
+    return { ok: false, code: 'PAGE_CHECKPOINT_PRODUCTS_INVALID', message: `POIZON ${pageNum || '?'}페이지 상품 목록이 올바르지 않습니다.` };
+  }
+  if (!products.length) {
+    const evidence = products.pageEvidence;
+    const safeSkip = evidence?.verified === true
+      && Number(evidence.sourceProducts || 0) > 0
+      && Number(evidence.skippedSkuScope || 0) === Number(evidence.sourceProducts || 0);
+    if (!safeSkip) {
+      return { ok: false, code: 'PAGE_CHECKPOINT_PRODUCTS_EMPTY', message: `POIZON ${pageNum || '?'}페이지 상품이 없어 Excel 체크포인트를 진행하지 않습니다.` };
+    }
+    return {
+      ok: true,
+      code: 'PAGE_CHECKPOINT_SKU_SCOPE_SKIPPED',
+      pageNum: Number(pageNum || 0),
+      changed: false,
+      changedRows: 0,
+      changedCells: 0,
+      addedRows: 0,
+      addedProducts: 0,
+      verifiedCells: 0,
+      skippedSkuScope: Number(evidence.skippedSkuScope || 0),
+      changes: [],
+      reverified: true,
+      backupPath: String(backupPath || ''),
+    };
   }
 
   try {
@@ -58,6 +82,7 @@ export async function syncPoizonPageCheckpoint({
       addedRows: Number(applied.addedRows || 0),
       addedProducts: Number(applied.addedProducts || 0),
       verifiedCells: Number(applied.verifiedCells || 0),
+      skippedSkuScope: Number(products.pageEvidence?.skippedSkuScope || 0),
       changes: Array.isArray(applied.changes) ? applied.changes : [],
       reverified: true,
       backupPath: finalBackupPath,
