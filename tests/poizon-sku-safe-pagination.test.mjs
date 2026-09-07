@@ -40,15 +40,24 @@ function productionBuilder(main) {
   return runInNewContext('(' + text + ')', { findPoizonColumn, findPoizonRecentSalesColumns, findPoizonTotalSalesColumns, parsePoizonSalesMetric });
 }
 
-test('uploaded POIZON raw export shape is read as SKU scope, never as SPU recent-sales evidence', async (t) => {
+test('uploaded POIZON raw export retains SKU rows and exposes them as SKU-scope comparison evidence', async (t) => {
   const f = await fixture(t);
   const main = await readFile(new URL('../main.mjs', import.meta.url), 'utf8');
   const snapshot = await readReviewWorkbook({ path:f.path }, productionBuilder(main));
   assert.equal(snapshot.ok, true, snapshot.message);
   assert.equal(snapshot.products.length, 3);
   assert.deepEqual(snapshot.products.map((p) => p.skuId), ['700031743','624556738','624556739']);
-  assert.ok(snapshot.products.every((p) => p.salesScope === 'sku' && p.metricScope === 'sku'));
   assert.deepEqual(snapshot.products.map((p) => p.sales30dRaw), ['100+','300+','200+']);
+
+  const page = createPageCrossCheck({ runId:'reader-evidence', excelProducts:snapshot.products })
+    .acceptPage([source('4962345','HQ1801','4,000+','200')], { pageNum:1, pageCount:150 });
+  const row = page.rows[0];
+  assert.equal(row.excelChinaState, 'scope-mismatch');
+  assert.equal(row.excelLocalState, 'scope-mismatch');
+  assert.deepEqual(row.excelChinaEvidence.map((e) => e.raw), ['100+','300+','200+']);
+  assert.ok(row.excelChinaEvidence.every((e) => e.scope === 'sku'));
+  assert.ok(row.excelLocalEvidence.every((e) => e.scope === 'sku'));
+  assert.equal(row.missingSalesCells, 0);
 });
 
 test('SKU rows are neither missing nor overwritten and a page may continue with an explicit deferred count', async (t) => {
