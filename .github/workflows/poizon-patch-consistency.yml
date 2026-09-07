@@ -1,0 +1,52 @@
+name: POIZON patch consistency
+
+on:
+  push:
+    branches:
+      - fix/poizon-patch-consistency
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Preserve committed source for reproduction
+        run: |
+          mkdir -p "$RUNNER_TEMP/poizon-diagnostics"
+          git archive --format=tar.gz HEAD > "$RUNNER_TEMP/poizon-diagnostics/committed-source.tar.gz"
+          git rev-parse HEAD > "$RUNNER_TEMP/poizon-diagnostics/commit.txt"
+      - name: Clean install with all lifecycle scripts
+        shell: bash
+        run: |
+          set -o pipefail
+          npm ci --foreground-scripts 2>&1 | tee "$RUNNER_TEMP/poizon-diagnostics/npm-ci.log"
+      - name: Full test suite
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee "$RUNNER_TEMP/poizon-diagnostics/npm-test.log"
+      - name: Preserve transformed source and dependencies
+        if: always()
+        shell: bash
+        run: |
+          tar --exclude='./.git' --exclude='./dist' -czf "$RUNNER_TEMP/poizon-diagnostics/runtime-source.tar.gz" .
+      - name: Upload reproducible diagnostic state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: poizon-patch-state-${{ github.run_id }}
+          path: ${{ runner.temp }}/poizon-diagnostics/
+          retention-days: 3
+          if-no-files-found: error
