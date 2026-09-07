@@ -9,7 +9,6 @@ function replaceOnce(source, before, after, label) {
   return source.replace(before, after);
 }
 
-// 1) Comparison service: SKU-only Excel evidence is a verified defer state, not a missing value.
 let live = await read('services/live-poizon-crosscheck.mjs');
 if (!live.includes('POIZON_SKU_SAFE_DEFER_V1')) {
   live = replaceOnce(
@@ -27,15 +26,19 @@ if (!live.includes('POIZON_SKU_SAFE_DEFER_V1')) {
 }
 await save('services/live-poizon-crosscheck.mjs', live);
 
-// 2) Production workbook reader: any row carrying a SKU ID is SKU-scoped evidence.
 let main = await read('main.mjs');
 if (!main.includes('POIZON_SKU_SCOPE_FROM_REAL_EXPORT')) {
-  main = replaceOnce(
-    main,
-    "      optionCount: 1,\n      totalSales:",
-    "      optionCount: 1,\n      // POIZON_SKU_SCOPE_FROM_REAL_EXPORT: verified against the original OneDrive export schema.\n      salesScope: skuId ? 'sku' : 'spu',\n      metricScope: skuId ? 'sku' : 'spu',\n      totalSales:",
-    'preview SKU scope',
-  );
+  if (/salesScope:\s*skuId\s*\?\s*['\"]sku['\"]\s*:\s*['\"]spu['\"]/.test(main)) {
+    main = main.replace(/(\s+)(salesScope:\s*skuId\s*\?\s*['\"]sku['\"]\s*:\s*['\"]spu['\"],)/,
+      '$1// POIZON_SKU_SCOPE_FROM_REAL_EXPORT: verified against the original OneDrive export schema.$1$2');
+  } else {
+    main = replaceOnce(
+      main,
+      "      optionCount: 1,\n      totalSales:",
+      "      optionCount: 1,\n      // POIZON_SKU_SCOPE_FROM_REAL_EXPORT: verified against the original OneDrive export schema.\n      salesScope: skuId ? 'sku' : 'spu',\n      metricScope: skuId ? 'sku' : 'spu',\n      totalSales:",
+      'preview SKU scope',
+    );
+  }
 }
 main = main.replace(
   'import { assertPoizonPageReadyForCorrection } from "./services/live-poizon-crosscheck.mjs";',
@@ -64,7 +67,6 @@ if (!main.includes('POIZON_SKU_SAFE_PAGE_SELECTION')) {
 }
 await save('main.mjs', main);
 
-// 3) Final review must not re-introduce the deferred SKU rows into the writer.
 let review = await read('services/poizon-review-session.mjs');
 review = review.replace(
   "import { assertPoizonPageReadyForCorrection } from './live-poizon-crosscheck.mjs';",
@@ -83,7 +85,6 @@ if (!review.includes('POIZON_SKU_SAFE_FINAL_SELECTION')) {
 }
 await save('services/poizon-review-session.mjs', review);
 
-// 4) Make the UI state explicit instead of reporting deferred SKU rows as corrections.
 let view = await read('src/poizon-review-workspace.js');
 view = view.replace(
   "let state = { checkedProducts: 0, equalProducts: 0, differentProducts: 0, missingProducts: 0, pageNum: 0, pageCount: 0 };",
