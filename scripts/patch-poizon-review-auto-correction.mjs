@@ -105,4 +105,20 @@ if (tests.includes(testStart)) {
   tests = tests.slice(0, start) + replacement + tests.slice(end);
 }
 await save('tests/poizon-review-workspace.test.mjs', tests);
-console.log('Dedicated POIZON review now corrects mismatched Excel values from POIZON, rereads the saved workbook, and reports verified completion.');
+
+// The category/file-sync regression must keep local file synchronization read-only,
+// while allowing the explicitly launched POIZON review workflow to correct Excel.
+let categoryTests = await read('tests/favorite-category-search-v2.10.294.test.mjs');
+categoryTests = categoryTests.replace(
+  "  // Full snapshot -> live capture -> coverage -> unchanged workbook -> one report.\n  const read = session.indexOf('const snapshots = await loadReviewSnapshots');\n  const capture = session.indexOf('await api.captureSellerBrandSales', read);\n  const coverage = session.indexOf('reviewCoverage(view.events(), captured)', capture);\n  const revision = session.indexOf('await api.checkPoizonReviewWorkbook', coverage);\n  const report = session.indexOf('buildReviewReport(snapshot, coverage.rows)', revision);\n  const notify = session.indexOf('await notify(report, lastView)', report);\n  assert.ok(read >= 0 && capture > read && coverage > capture && revision > coverage && report > revision && notify > report);\n  assert.doesNotMatch(session, /syncExcelWithSellerScreen|\\.upsert\\(|writeFile\\(/);",
+  "  // Explicit POIZON review only: full snapshot -> capture -> coverage -> unchanged check -> Excel correction -> reread -> report.\n  const read = session.indexOf('const snapshots = await loadReviewSnapshots');\n  const capture = session.indexOf('await api.captureSellerBrandSales', read);\n  const coverage = session.indexOf('reviewCoverage(view.events(), captured)', capture);\n  const revision = session.indexOf('await api.checkPoizonReviewWorkbook', coverage);\n  const correction = session.indexOf('await api.syncExcelWithSellerScreen', revision);\n  const reread = session.indexOf('await api.readPoizonReviewWorkbook', correction);\n  const report = session.indexOf('buildReviewReport(snapshot, coverage.rows)', reread);\n  const notify = session.indexOf('await notify(report, lastView)', report);\n  assert.ok(read >= 0 && capture > read && coverage > capture && revision > coverage && correction > revision && reread > correction && report > reread && notify > report);\n  assert.doesNotMatch(session, /\\.upsert\\(|writeFile\\(/);"
+);
+await save('tests/favorite-category-search-v2.10.294.test.mjs', categoryTests);
+
+// Browser smoke test must expect the new automatic-correction wording in the final report.
+let smoke = await read('tests/fixtures/poizon-review-smoke.cjs');
+smoke = smoke.replace("view.finish({ ok:true, manualReview:true });", "view.finish({ ok:true, corrected:true, changedRows:49, changedCells:98, verifiedCells:100 });");
+smoke = smoke.replace("value.includes('원본 Excel 자동 수정 없음')", "value.includes('POIZON 화면값 기준 Excel 자동 교정')");
+await save('tests/fixtures/poizon-review-smoke.cjs', smoke);
+
+console.log('Dedicated POIZON review now corrects mismatched Excel values from POIZON, rereads the saved workbook, and all related regressions enforce the automatic-correction policy.');
