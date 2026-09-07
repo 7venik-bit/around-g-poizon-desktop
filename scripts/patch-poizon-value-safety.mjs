@@ -30,7 +30,9 @@ await transform('services/poizon-screen-excel-sync.mjs', (s) => {
 await transform('services/verified-combined-search.mjs', (s) => {
   s = once(s, '      const sourceIndex = indexProductIdentities(captured.products);', '      const sourceIndex = indexProductIdentities(captured.products), workbookIndex = indexProductIdentities(before);');
   s = once(s, 'resolveProductIdentity(product, indexProductIdentities(before))', 'resolveProductIdentity(product, workbookIndex)');
-  s = once(s, "verificationStatus: options.length ? '저장 후 대조 완료'", "verificationStatus: options.length ? product.hasSalesData || product.hasLocalSalesData ? '확인된 항목 저장 후 대조 완료' : '최근 30일 값 미확인'");
+  if (!s.includes("verificationStatus: options.length ? 'POIZON 값으로 수정 후 대조 완료'")) {
+    s = once(s, "verificationStatus: options.length ? '저장 후 대조 완료'", "verificationStatus: options.length ? product.hasSalesData || product.hasLocalSalesData ? '확인된 항목 저장 후 대조 완료' : '최근 30일 값 미확인'");
+  }
   return s;
 });
 await transform('src/renderer.js', (s) => {
