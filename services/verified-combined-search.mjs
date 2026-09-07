@@ -33,6 +33,12 @@ function sourceGroups(screen) {
   });
 }
 
+const persistedRecentMetric = (product, local = false) => recentMetric({
+  ...product,
+  salesScope: 'spu',
+  metricScope: 'spu',
+}, local);
+
 export function checkPersistedParentMetrics(screen, before, after) {
   const beforeIndex = indexProductIdentities(before), afterIndex = indexProductIdentities(after);
   const failures = [];
@@ -44,7 +50,13 @@ export function checkPersistedParentMetrics(screen, before, after) {
     for (const local of [false, true]) {
       if (verifiedParentMetric(product, local) === null) continue;
       const metric = recentMetric(product, local);
-      if (saved.products.some((p) => recentMetric(p, local)?.signature !== metric?.signature)) { failures.push(key); break; }
+      // The persisted workbook can contain size/SKU rows. For the final write
+      // verification we compare the actual corrected cell value itself instead
+      // of suppressing it because the row is SKU-scoped.
+      if (saved.products.some((p) => persistedRecentMetric(p, local)?.signature !== metric?.signature)) {
+        failures.push(key);
+        break;
+      }
     }
   }
   return { ok: failures.length === 0, failures: [...new Set(failures)] };
@@ -65,7 +77,7 @@ export function groupedVerifiedProducts(screen, before, after, conditions, file)
       salesScope: 'spu', screenVerified: true, salesSource: 'seller-center-screen',
       verificationOptions: options, optionCount: options.length,
       sourceRowNumbers: options.map((p) => p.sourceRowNumber).filter(Boolean),
-      verificationStatus: options.length ? '저장 후 대조 완료' : match.reason === '상품 없음' ? 'Excel에서 찾지 못함' : match.reason,
+      verificationStatus: options.length ? 'POIZON 값으로 수정 후 대조 완료' : match.reason === '상품 없음' ? 'Excel에서 찾지 못함' : match.reason,
       _sourceFilePath: file.path, _sourceBrandName: file.brandName || '',
       _excelSelectionKey: `${file.path.toLowerCase()}::${key}`,
     };
