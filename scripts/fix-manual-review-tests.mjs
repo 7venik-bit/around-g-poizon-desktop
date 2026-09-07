@@ -1,4 +1,9 @@
 import { readFile, writeFile } from 'node:fs/promises';
+const syncSource = await readFile(new URL('../services/poizon-screen-excel-sync.mjs', import.meta.url), 'utf8');
+if (syncSource.includes("comparisonMode: 'POIZON_SCREEN_IS_SOURCE_OF_TRUTH'")) {
+  console.log('Manual-review no-write test rewrite skipped in screen-authoritative compare/correct mode.');
+  process.exit(0);
+}
 const url = new URL('../tests/poizon-value-integrity.test.mjs', import.meta.url);
 let source = (await readFile(url, 'utf8')).replace(/\r\n/g, '\n');
 const oldStart = "test('production combined workflow reads all rows before filtering, saves/rereads and groups sizes into one SPU'";
