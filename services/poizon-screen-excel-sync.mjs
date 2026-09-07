@@ -3,6 +3,7 @@ import { findPoizonColumn, findPoizonRecentSalesColumns } from './poizon-xlsx.mj
 import { indexProductIdentities, resolveProductIdentity, consistentParentProduct, verifiedParentMetric } from './poizon-product-identity.mjs';
 
 const SHEET = /^xl\/worksheets\/sheet\d+\.xml$/;
+const ROW = /<row\b[^>]*\br="(\d+)"[^>]*>[\s\S]*?<\/row>/g;
 const decode = (s = '') => String(s).replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16))).replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 const escape = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 const colNumber = (s) => [...s].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
@@ -36,7 +37,7 @@ function fixDimension(xml) {
 
 // POIZON 화면값을 최종 기준값으로 사용한다.
 // Excel 원본의 대응 최근 30일 판매량 셀을 직접 비교하고, 누락/불일치만 수정한 뒤
-// 같은 버퍼를 다시 읽어 값이 실제로 일치하는지 재검증한다.
+// 수정 결과를 다시 읽어 실제 일치까지 확인해야 성공으로 반환한다.
 export function applyPoizonScreenSalesToWorkbook(buffer, screenProducts = []) {
   const archive = unzipSync(new Uint8Array(buffer));
   const paths = Object.keys(archive).filter((p) => SHEET.test(p)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
@@ -50,7 +51,7 @@ export function applyPoizonScreenSalesToWorkbook(buffer, screenProducts = []) {
   try {
     for (const path of paths) {
       const xml = strFromU8(archive[path]);
-      const rows = [...xml.matchAll(/<row\b[^>]*\br="(\d+)"[^>]*>[\s\S]*?<\/row>/g)];
+      const rows = [...xml.matchAll(ROW)];
       const header = rows.find((r) => Number(r[1]) === 1);
       if (!header) continue;
       const headers = values(header[0], shared);
@@ -62,11 +63,7 @@ export function applyPoizonScreenSalesToWorkbook(buffer, screenProducts = []) {
 
       const salesColumns = findPoizonRecentSalesColumns(headers);
       if (salesColumns.china < 0 && salesColumns.local < 0) {
-        return {
-          ok: false,
-          code: 'EXCEL_RECENT_SALES_COLUMNS_MISSING',
-          message: 'Excel에서 최근 30일 판매량 또는 POIZON 원본 판매량 열을 찾지 못했습니다.',
-        };
+        return { ok: false, code: 'EXCEL_RECENT_SALES_COLUMNS_MISSING', message: 'Excel에서 최근 30일 판매량 또는 POIZON 원본 판매량 열을 찾지 못했습니다.' };
       }
       const columns = [salesColumns.china >= 0 ? salesColumns.china + 1 : -1, salesColumns.local >= 0 ? salesColumns.local + 1 : -1];
       const fields = ['중국 최근 30일 판매량', '현지 판매자 최근 30일 판매량'];
@@ -82,14 +79,16 @@ export function applyPoizonScreenSalesToWorkbook(buffer, screenProducts = []) {
         if (!source) { conflictedRows++; continue; }
         matchedRows++;
         const data = [verifiedParentMetric(source), verifiedParentMetric(source, true)];
-        if (data.some((value) => value !== null)) pending.set(n, data);
+        if (data.some((item) => item !== null)) pending.set(n, data);
       }
 
-      let updated = xml;
-      for (const row of rows) {
-        const n = Number(row[1]), data = pending.get(n); if (!data) continue;
-        let next = row[0];
-        const oldValues = values(next, shared);
+      // One XML pass keeps large raw POIZON workbooks fast and avoids repeated
+      // full-string copies for every corrected SKU row.
+      let updated = xml.replace(ROW, (rowXml, rowNumber) => {
+        const n = Number(rowNumber), data = pending.get(n);
+        if (!data || n <= 1) return rowXml;
+        let next = rowXml;
+        const oldValues = values(rowXml, shared);
         let rowChanged = false;
         columns.forEach((column, i) => {
           if (column < 1 || data[i] === null) return;
@@ -104,83 +103,46 @@ export function applyPoizonScreenSalesToWorkbook(buffer, screenProducts = []) {
           next = writeCell(next, column, n, after);
           changedCells++;
           rowChanged = true;
-          changes.push({
-            sheet: path,
-            row: n,
-            column: colName(column),
-            field: fields[i],
-            before,
-            after,
-            reason: before ? 'VALUE_MISMATCH' : 'MISSING_VALUE',
-            result: 'POIZON_VALUE_APPLIED',
-          });
+          changes.push({ sheet: path, row: n, column: colName(column), field: fields[i], before, after,
+            reason: before ? 'VALUE_MISMATCH' : 'MISSING_VALUE', result: 'POIZON_VALUE_APPLIED' });
           verificationTargets.push({ path, row: n, column, field: fields[i], expected: after });
         });
-        if (rowChanged) {
-          changedRows++;
-          updated = updated.replace(row[0], next);
-        }
-      }
-      if (updated !== xml) archive[path] = strToU8(fixDimension(updated));
-      columnMappings.push({
-        sheet: path,
-        china: columns[0] > 0 ? colName(columns[0]) : '',
-        local: columns[1] > 0 ? colName(columns[1]) : '',
-        scope: 'spu',
-        period: 'recent30',
-        mode: 'overwrite-original-with-poizon-screen',
+        if (rowChanged) changedRows++;
+        return next;
       });
+      if (updated !== xml) {
+        updated = fixDimension(updated);
+        archive[path] = strToU8(updated);
+      }
+      columnMappings.push({ sheet: path, china: columns[0] > 0 ? colName(columns[0]) : '', local: columns[1] > 0 ? colName(columns[1]) : '',
+        scope: 'spu', period: 'recent30', mode: 'overwrite-original-with-poizon-screen' });
     }
 
-    // 수정 후 같은 워크북 내용을 다시 읽어 POIZON 기준값과 일치하는지 최종 검증한다.
     const verificationFailures = [];
     const rowCache = new Map();
     for (const target of verificationTargets) {
       let cached = rowCache.get(target.path);
       if (!cached) {
         const xml = strFromU8(archive[target.path]);
-        const rows = new Map([...xml.matchAll(/<row\b[^>]*\br="(\d+)"[^>]*>[\s\S]*?<\/row>/g)].map((m) => [Number(m[1]), m[0]]));
-        cached = rows;
+        cached = new Map([...xml.matchAll(ROW)].map((m) => [Number(m[1]), m[0]]));
         rowCache.set(target.path, cached);
       }
-      const rowXml = cached.get(target.row) || '';
-      const actual = String(values(rowXml, shared)[target.column - 1] ?? '').trim();
-      if (normalizedValue(actual) !== normalizedValue(target.expected)) {
-        verificationFailures.push({ ...target, actual });
-      } else {
-        verifiedCells++;
-      }
+      const actual = String(values(cached.get(target.row) || '', shared)[target.column - 1] ?? '').trim();
+      if (normalizedValue(actual) !== normalizedValue(target.expected)) verificationFailures.push({ ...target, actual });
+      else verifiedCells++;
     }
     if (verificationFailures.length) {
-      return {
-        ok: false,
-        code: 'EXCEL_POIZON_REVERIFY_FAILED',
-        message: `POIZON 값으로 수정 후 ${verificationFailures.length}개 셀이 재검증에 실패했습니다. 원본 파일은 저장하지 않습니다.`,
-        verificationFailures,
-      };
+      return { ok: false, code: 'EXCEL_POIZON_REVERIFY_FAILED',
+        message: `POIZON 값으로 수정 후 ${verificationFailures.length}개 셀이 재검증에 실패했습니다. 원본 파일은 저장하지 않습니다.`, verificationFailures };
     }
   } catch (error) {
     return { ok: false, code: 'EXCEL_SAFE_SYNC_REJECTED', message: error.message };
   }
   if (!productSheets) return { ok: false, code: 'EXCEL_PRODUCT_KEY_MISSING', message: '상품번호 또는 SPU ID 열을 찾지 못했습니다.' };
   return {
-    ok: true,
-    changed: changedRows > 0,
-    matchedRows,
-    changedRows,
-    changedCells,
-    missingCells,
-    mismatchedCells,
-    alreadyMatchedCells,
-    verifiedCells,
-    unresolvedRows,
-    conflictedRows,
-    comparisonMode: 'POIZON_SCREEN_IS_SOURCE_OF_TRUTH',
-    reverified: true,
-    usedRecentColumns: true,
-    usedDedicatedColumns: false,
-    columnMappings,
-    changes,
+    ok: true, changed: changedRows > 0, matchedRows, changedRows, changedCells, missingCells, mismatchedCells, alreadyMatchedCells, verifiedCells,
+    unresolvedRows, conflictedRows, comparisonMode: 'POIZON_SCREEN_IS_SOURCE_OF_TRUTH', reverified: true,
+    usedRecentColumns: true, usedDedicatedColumns: false, columnMappings, changes,
     buffer: changedRows ? Buffer.from(zipSync(archive, { level: 6 })) : Buffer.from(buffer),
   };
 }
