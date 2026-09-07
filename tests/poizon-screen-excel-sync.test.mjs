@@ -76,5 +76,53 @@ test('상품 SPU가 충돌하면 POIZON 값으로 강제 수정하지 않는다'
   }]);
   assert.equal(result.ok, true);
   assert.equal(result.changed, false);
-  assert.ok(result.unresolvedRows > 0 || result.conflictedRows > 0);
+  assert.equal(result.addedRows, 0);
+  assert.ok(result.unresolvedRows > 0 || result.conflictedRows > 0 || result.skippedConflictedProducts > 0);
+});
+
+test('Excel에 상품 행 자체가 없으면 확정 SPU와 POIZON 판매량으로 새 행을 추가하고 재검증한다', () => {
+  const result = applyPoizonScreenSalesToWorkbook(workbook(), [{
+    spuId: '77777777', articleNumber: 'NEW777', title: 'POIZON 누락 상품',
+    sales30dRaw: '250+', hasSalesData: true, localSales30dRaw: '44', hasLocalSalesData: true,
+  }]);
+  assert.equal(result.ok, true);
+  assert.equal(result.addedRows, 1);
+  assert.equal(result.addedProducts, 1);
+  assert.equal(result.addedVerifiedRows, 1);
+  assert.equal(result.changed, true);
+  assert.ok(result.changes.some((change) => change.reason === 'MISSING_PRODUCT_ROW' && change.spuId === '77777777'));
+
+  const xml = strFromU8(unzipSync(new Uint8Array(result.buffer))['xl/worksheets/sheet1.xml']);
+  assert.match(xml, /<row r="4">/);
+  assert.match(xml, /<c r="A4"[^>]*t="inlineStr"><is><t>77777777<\/t>/);
+  assert.match(xml, /<c r="B4"[^>]*t="inlineStr"><is><t>NEW777<\/t>/);
+  assert.match(xml, /<c r="C4"[^>]*t="inlineStr"><is><t>250\+<\/t>/);
+  assert.match(xml, /<c r="D4"[^>]*t="inlineStr"><is><t>44<\/t>/);
+  assert.match(xml, /<dimension ref="A1:F4"\/>/);
+});
+
+test('이미 추가된 SPU는 재실행해도 중복 행을 만들지 않는다', () => {
+  const product = {
+    spuId: '77777777', articleNumber: 'NEW777', sales30dRaw: '250+', hasSalesData: true,
+    localSales30dRaw: '44', hasLocalSalesData: true,
+  };
+  const first = applyPoizonScreenSalesToWorkbook(workbook(), [product]);
+  const second = applyPoizonScreenSalesToWorkbook(first.buffer, [product]);
+  assert.equal(first.addedRows, 1);
+  assert.equal(second.ok, true);
+  assert.equal(second.addedRows, 0);
+  const xml = strFromU8(unzipSync(new Uint8Array(second.buffer))['xl/worksheets/sheet1.xml']);
+  assert.equal((xml.match(/77777777/g) || []).length, 1);
+});
+
+test('SPU가 없거나 동일 SPU의 상품번호가 충돌하면 새 Excel 행을 자동 추가하지 않는다', () => {
+  const result = applyPoizonScreenSalesToWorkbook(workbook(), [
+    { articleNumber: 'NO-SPU', sales30dRaw: '300+', hasSalesData: true, localSales30dRaw: '50', hasLocalSalesData: true },
+    { spuId: '88888888', articleNumber: 'CODE-A', sales30dRaw: '300+', hasSalesData: true, localSales30dRaw: '50', hasLocalSalesData: true },
+    { spuId: '88888888', articleNumber: 'CODE-B', sales30dRaw: '300+', hasSalesData: true, localSales30dRaw: '50', hasLocalSalesData: true },
+  ]);
+  assert.equal(result.ok, true);
+  assert.equal(result.addedRows, 0);
+  assert.ok(result.skippedMissingSpu >= 1);
+  assert.ok(result.skippedConflictedProducts >= 1);
 });
