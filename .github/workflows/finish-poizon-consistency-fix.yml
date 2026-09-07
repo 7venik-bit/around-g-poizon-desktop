@@ -1,0 +1,74 @@
+name: Verify and commit POIZON preservation fix
+on:
+  push:
+    branches: [fix/poizon-patch-consistency]
+    paths: [.github/workflows/finish-poizon-consistency-fix.yml]
+permissions:
+  contents: write
+jobs:
+  windows-preservation:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      FIX_FILES: '["services/live-poizon-crosscheck.mjs","scripts/patch-poizon-fake-missing.mjs","scripts/patch-poizon-sku-safe-pagination.mjs","tests/poizon-fake-missing.test.mjs","tests/poizon-sku-safe-pagination.test.mjs","tests/poizon-page-checkpoint.test.mjs"]'
+    steps:
+      - name: Preserve source line endings
+        shell: bash
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: fix/poizon-patch-consistency
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply checksum-verified source diff
+        shell: bash
+        run: |
+          node --input-type=commonjs <<'NODE'
+          const fs=require('node:fs'),path=require('node:path');
+          const {gunzipSync}=require('node:zlib'),{createHash}=require('node:crypto');
+          const workflow=fs.readFileSync('.github/workflows/apply-poizon-consistency-fix.yml','utf8');
+          let data=workflow.match(/const data = '([^']+)';/)[1];
+          const repairs=[
+            ['fxQbrutowmMlTfi7d7dxtBbYyimwmcVE','fxQbrutowmMlTfi7dxtBbYyimwmcVE'],
+            ['vtZxsJneEDXOsxcxcazTnm+zr5tqrY5b','vtZxsJneEDXOsxcazTnm+zr5tqrY5b'],
+            ['6os6sUVipUsNq3kFJWelZU5gW75Omgg','6os6sUVipUsNq3kJWelZU5gW75Omgg'],
+            ['n/7yiz9+zpYap08eZ0/fff/kNx+e/NO','n/7yiz9+zpYap08+Z0/fff/kNx+e/NO'],
+          ];
+          for(const [before,after] of repairs){if(!data.includes(before))throw new Error('Unexpected transfer payload');data=data.replace(before,after);}
+          const patch=gunzipSync(Buffer.from(data,'base64'));
+          const digest=createHash('sha256').update(patch).digest('hex');
+          if(digest!=='08b910c91a1371f3d608f0dd8ba7d5004ab0ca92e771f28c918a6381331d7480')throw new Error('Patch checksum mismatch');
+          console.log('Verified source patch SHA256='+digest);
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP,'poizon-fix.patch'),patch);
+          NODE
+          git apply --check "$RUNNER_TEMP/poizon-fix.patch"
+          git apply "$RUNNER_TEMP/poizon-fix.patch"
+          node -e "const fs=require('fs'),path=require('path'),crypto=require('crypto');fs.writeFileSync(path.join(process.env.RUNNER_TEMP,'source-hashes.json'),JSON.stringify(Object.fromEntries(JSON.parse(process.env.FIX_FILES).map(p=>[p,crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')]))));"
+      - name: Windows clean install and mandatory preservation tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm ci --foreground-scripts 2>&1 | tee "$RUNNER_TEMP/windows-postinstall.log"
+      - name: Commit only unchanged verified source and remove temporary transfer workflows
+        shell: bash
+        run: |
+          node -e "const fs=require('fs'),path=require('path'),crypto=require('crypto');for(const [p,hash] of Object.entries(JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP,'source-hashes.json'))))){if(crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')!==hash)throw new Error('Installation changed verified source '+p); }"
+          git diff --exit-code -- package.json package-lock.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add services/live-poizon-crosscheck.mjs scripts/patch-poizon-fake-missing.mjs scripts/patch-poizon-sku-safe-pagination.mjs tests/poizon-fake-missing.test.mjs tests/poizon-sku-safe-pagination.test.mjs tests/poizon-page-checkpoint.test.mjs
+          git rm .github/workflows/apply-poizon-consistency-fix.yml .github/workflows/finish-poizon-consistency-fix.yml
+          git commit -m 'fix: unify POIZON patch policy and preserve original Excel evidence'
+          git push origin HEAD:fix/poizon-patch-consistency
+      - name: Retain Windows preservation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-preservation-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/windows-postinstall.log
+            ${{ runner.temp }}/source-hashes.json
+          if-no-files-found: warn
+          retention-days: 7
