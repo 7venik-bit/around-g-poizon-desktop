@@ -60,9 +60,9 @@ export function beginLiveVerification({ file, brandName, excelProducts, conditio
   panel.innerHTML = `<div class="live-head"><h3>POIZON ↔ Excel 실시간 교차 검증</h3><p class="live-file"></p>
     <div class="live-condition-inputs"><label>중국 최근 30일 최소<input class="live-china" type="number" readonly></label><label>현지 판매자 최근 30일 최소<input class="live-local" type="number" readonly></label></div>
     <p class="live-condition"></p><p class="live-phase" role="status" aria-live="polite"></p><div class="live-metrics"></div><p class="live-clock"></p>
-    <small>POIZON 원본 전체 페이지를 확인한 후, 같은 조건을 충족하는 상품을 표시합니다. Excel의 기존 값이 낮아도 비교 대상에서 제외하지 않습니다.</small></div>
+    <small>POIZON 화면값을 최종 기준으로 사용합니다. Excel 누락 또는 값 불일치는 POIZON 값으로 원본 셀을 수정하고 저장 후 다시 읽어 일치 여부를 재검증합니다.</small></div>
     <p class="live-current"></p><label><input class="live-show-all" type="checkbox"> 조건 미충족 상품도 대조 내역 보기</label>
-    <div class="live-table"><table><thead><tr><th>상품번호 / Excel 행</th><th>중국 최근 30일<br>Excel → POIZON</th><th>현지 최근 30일<br>Excel → POIZON</th><th>대조 결과</th></tr></thead><tbody></tbody></table></div>
+    <div class="live-table"><table><thead><tr><th>상품번호 / Excel 행</th><th>중국 최근 30일<br>Excel → POIZON</th><th>현지 최근 30일<br>Excel → POIZON</th><th>대조·수정 결과</th></tr></thead><tbody></tbody></table></div>
     <div><button class="live-prev" type="button">이전</button><span class="live-page"></span><button class="live-next" type="button">다음</button><button class="live-raw" type="button">원본 Excel 보기</button></div>`;
   preview.prepend(panel); preview.hidden = false; preview.classList.add('poizon-live-mode');
   const get = (selector) => panel.querySelector(selector);
@@ -83,12 +83,12 @@ export function beginLiveVerification({ file, brandName, excelProducts, conditio
   const render = () => {
     get('.live-phase').textContent = phase;
     get('.live-phase').className = failed ? 'live-phase live-error' : 'live-phase';
-    get('.live-metrics').innerHTML = `대조 <b>${number(state.checkedProducts)}</b>상품 · 일치 <b>${number(state.equalProducts)}</b> · 값 다름/미확인 <b>${number(state.differentProducts)}</b> · 연결 불가 <b>${number(state.missingProducts)}</b> · 조건 충족 <b>${number(state.qualifiedProducts)}</b>`;
+    get('.live-metrics').innerHTML = `대조 <b>${number(state.checkedProducts)}</b>상품 · 일치 <b>${number(state.equalProducts)}</b> · 수정 대상/확인 보류 <b>${number(state.differentProducts)}</b> · 연결 불가 <b>${number(state.missingProducts)}</b> · 조건 충족 <b>${number(state.qualifiedProducts)}</b>`;
     get('.live-current').textContent = finished ? `누적 대조 결과 · POIZON ${state.pageNum}/${state.pageCount || '?'}페이지 확인`
       : `현재 POIZON ${state.pageNum || 0}/${state.pageCount || '?'}페이지와 동일 상품 대조 · 페이지당 결과 표시`;
     const rows = (finished ? [...allRows.values()] : currentRows).filter((r) => get('.live-show-all').checked || r.qualified);
     page = Math.min(page, Math.max(0, Math.ceil(rows.length / 20) - 1));
-    get('tbody').innerHTML = rows.slice(page * 20, page * 20 + 20).map((r) => `<tr class="${r.equal ? '' : 'live-different'}"><td><b>${escape(r.articleNumber || r.spuId || '식별자 없음')}</b><small>SPU ${escape(r.spuId || '-')} · 행 ${escape((r.excelRows || []).join(', ') || '미확인')}</small></td><td>${escape(r.excelChina)} → <b>${escape(r.sourceChina)}</b></td><td>${escape(r.excelLocal)} → <b>${escape(r.sourceLocal)}</b></td><td>${escape(r.status)}<small>${r.qualified ? '조건 충족' : '조건 미충족'}</small>${r.afterStatus ? `<small>${escape(r.afterStatus)}</small>` : ''}</td></tr>`).join('') || `<tr><td colspan="4">${finished && !failed ? '동일 조건으로 대조한 결과에 표시할 상품이 없습니다.' : state.pageNum ? '이번 대조 범위에서 조건에 맞는 상품이 없습니다. 아직 전체 검색 결과는 아닙니다.' : 'POIZON의 첫 페이지를 읽으면 실제 비교 결과가 표시됩니다.'}</td></tr>`;
+    get('tbody').innerHTML = rows.slice(page * 20, page * 20 + 20).map((r) => `<tr class="${r.equal ? '' : 'live-different'}"><td><b>${escape(r.articleNumber || r.spuId || '식별자 없음')}</b><small>SPU ${escape(r.spuId || '-')} · 행 ${escape((r.excelRows || []).join(', ') || '연결 안됨')}</small></td><td>${escape(r.excelChina)} → <b>${escape(r.sourceChina)}</b></td><td>${escape(r.excelLocal)} → <b>${escape(r.sourceLocal)}</b></td><td>${escape(r.status)}<small>${r.qualified ? '조건 충족' : '조건 미충족'}</small>${r.afterStatus ? `<small>${escape(r.afterStatus)}</small>` : ''}</td></tr>`).join('') || `<tr><td colspan="4">${finished && !failed ? '동일 조건으로 대조한 결과에 표시할 상품이 없습니다.' : state.pageNum ? '이번 대조 범위에서 조건에 맞는 상품이 없습니다. 아직 전체 검색 결과는 아닙니다.' : 'POIZON의 첫 페이지를 읽으면 실제 비교 결과가 표시됩니다.'}</td></tr>`;
     get('.live-page').textContent = ` ${page + 1} / ${Math.max(1, Math.ceil(rows.length / 20))} · ${number(rows.length)}상품 `;
     get('.live-prev').disabled = page === 0; get('.live-next').disabled = (page + 1) * 20 >= rows.length;
     get('.live-raw').disabled = !finished;
@@ -113,7 +113,7 @@ export function beginLiveVerification({ file, brandName, excelProducts, conditio
   const dispose = () => { if (stopped) return; stopped = true; clearInterval(timer); unsubscribe?.(); disabled.forEach(([node, was]) => { node.disabled = was; }); };
   const handle = {
     input, running: true, dispose,
-    saving() { phase = '전체 화면 수집 완료 · 원본 백업 후 Excel 반영·재읽기 검증 중'; lastUpdate = Date.now(); render(); },
+    saving() { phase = '전체 POIZON 화면 수집 완료 · 원본 백업 후 누락/불일치 Excel 셀을 POIZON 값으로 수정·재검증 중'; lastUpdate = Date.now(); render(); },
     finish(result = {}) {
       if (stopped) return;
       finished = true; handle.running = false; lastUpdate = Date.now(); failed = result.ok !== true;
@@ -121,10 +121,10 @@ export function beginLiveVerification({ file, brandName, excelProducts, conditio
         const reread = createPageCrossCheck({ runId: runId + ':reread', excelProducts: result.afterProducts, conditions: frozen });
         const after = reread.acceptPage(result.screenProducts, { pageNum: state.pageNum, pageCount: state.pageCount });
         const afterByKey = new Map(after.rows.map((row) => [row.key, row]));
-        for (const row of allRows.values()) row.afterStatus = afterByKey.get(row.key)?.equal ? '저장 후 일치 확인' : '저장 후 추가 확인 필요';
+        for (const row of allRows.values()) row.afterStatus = afterByKey.get(row.key)?.equal ? 'POIZON 값으로 수정 후 일치 확인' : '수정 후 추가 확인 필요';
         failed = after.differentProducts + after.missingProducts > 0;
-        phase = `${failed ? '대조 완료 · 추가 확인 필요' : '검증 완료'} · Excel 수정 ${number(result.changedRows)}행 · 재읽기 일치 ${number(after.equalProducts)}상품 · 추가 확인 ${number(after.differentProducts + after.missingProducts)}상품`;
-      } else phase = result.ok ? '상품 대조 완료 · 원본 Excel 수정 없음' : `검증 미완료 · ${result.message || '화면 수집에 실패했습니다.'} · 부분 결과를 완료로 저장하지 않았습니다.`;
+        phase = `${failed ? '대조·수정 완료 · 추가 확인 필요' : '대조·수정·재검증 완료'} · Excel 수정 ${number(result.changedRows)}행 · 재읽기 일치 ${number(after.equalProducts)}상품 · 추가 확인 ${number(after.differentProducts + after.missingProducts)}상품`;
+      } else phase = result.ok ? '대조 완료 · Excel과 POIZON 값이 이미 일치하여 수정 없음' : `검증 미완료 · ${result.message || 'POIZON 화면 수집에 실패했습니다.'} · 부분 결과를 완료로 저장하지 않았습니다.`;
       render(); dispose();
     },
   };
