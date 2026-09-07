@@ -11,8 +11,6 @@ if (!identity.includes('export const normalizedSpu')) {
     "export const cleanId = (value) => String(value ?? '').normalize('NFKC').replace(/[\\u200B-\\u200D\\uFEFF]/g, '').trim();\nexport const normalizedArticle = (value) => cleanId(value).toUpperCase().replace(/[^\\p{L}\\p{N}]/gu, '');\nexport const normalizedSpu = (value) => {\n  const raw = cleanId(value).replace(/\\s+/g, '');\n  if (/^\\d+\\.0+$/.test(raw)) return raw.replace(/\\.0+$/, '');\n  if (/^[+-]?\\d+(?:\\.\\d+)?e[+-]?\\d+$/i.test(raw)) {\n    const n = Number(raw);\n    if (Number.isSafeInteger(n) && n >= 0) return String(n);\n  }\n  return raw;\n};\nexport const productSpu = (p = {}) => normalizedSpu(p.spuId || p.globalSpuId);"
   );
 }
-// Shared writer identity remains strict. Live recognition may use a unique article fallback,
-// but a different SPU is never auto-written on that evidence alone.
 await save('services/poizon-product-identity.mjs', identity);
 
 let live = await read('services/live-poizon-crosscheck.mjs');
@@ -28,17 +26,12 @@ if (!live.includes('const identityIndex = indexProductIdentities(excelProducts);
     "  const identityIndex = indexProductIdentities(excelProducts);\n  const bySpu = new Map(), byArticle = new Map(), compared = new Map();"
   );
 }
-const newMatchBlock = `    // 1) Identify the product before comparing any sales value.\n    // Exact SPU wins. If strict identity fails, an exact normalized article may be\n    // recognized for display only when it resolves to one SPU and the brand is compatible.\n    let resolvedIdentity = resolveProductIdentity({\n      spuId: product?.spuId || product?.globalSpuId,\n      articleNumber: product?.articleNumber || product?.productCode,\n      brandId: product?.brandId || product?.brandCode,\n    }, identityIndex);\n    let candidates = resolvedIdentity.products || [];\n    let matchBy = resolvedIdentity.matchBy || resolvedIdentity.reason || '상품 없음';\n    if (!candidates.length && article(product)) {\n      const queryBrand = String(product?.brandId || product?.brandCode || '').trim();\n      const articleCandidates = (identityIndex.byArticle.get(article(product)) || []).filter((p) => {\n        const excelBrand = String(p?.brandId || p?.brandCode || '').trim();\n        return !queryBrand || !excelBrand || queryBrand === excelBrand;\n      });\n      const articleSpus = new Set(articleCandidates.map(spu).filter(Boolean));\n      if (articleCandidates.length && articleSpus.size <= 1) {\n        candidates = articleCandidates;\n        matchBy = spu(product) && articleSpus.size === 1 && !articleSpus.has(spu(product))\n          ? '상품번호(고유·SPU불일치)' : '상품번호(고유)';\n      }\n    }\n\n    // 2) Only recognized products proceed to recent-30-day value comparison.\n    const source = [recentMetric(product), recentMetric(product, true)];`;
-live = live.replace(/    (?:let|const) resolvedIdentity = resolveProductIdentity\([\s\S]*?    const source = \[recentMetric\(product\), recentMetric\(product, true\)\];/, newMatchBlock);
-live = live.replace(/    let candidates = bySpu\.get\(spu\(product\)\) \|\| \[\];[\s\S]*?    const source = \[recentMetric\(product\), recentMetric\(product, true\)\];/, newMatchBlock);
-
+const matchBlock = `    // 1) 상품을 먼저 식별한다. 판매량은 상품 식별에 사용하지 않는다.\n    // SPU 정확 일치가 1순위이며, POIZON SPU가 없을 때만 고유 상품번호를 보조 식별자로 사용한다.\n    const resolvedIdentity = resolveProductIdentity({\n      spuId: product?.spuId || product?.globalSpuId,\n      articleNumber: product?.articleNumber || product?.productCode,\n      brandId: product?.brandId || product?.brandCode,\n    }, identityIndex);\n    const candidates = resolvedIdentity.products || [];\n    const matchBy = resolvedIdentity.matchBy || resolvedIdentity.reason || '상품 없음';\n\n    // 2) 식별된 상품에 대해서만 최근 30일 판매량을 비교한다.\n    const source = [recentMetric(product), recentMetric(product, true)];`;
+live = live.replace(/    let candidates = bySpu\.get\(spu\(product\)\) \|\| \[\];[\s\S]*?    const source = \[recentMetric\(product\), recentMetric\(product, true\)\];/, matchBlock);
+live = live.replace(/    (?:let|const) resolvedIdentity = resolveProductIdentity\([\s\S]*?    const source = \[recentMetric\(product\), recentMetric\(product, true\)\];/, matchBlock);
 live = live.replace(
   ": equal ? '일치 · 수정 없음'\n      : missingSides ? `Excel 누락 ${missingSides}개 · POIZON 값으로 수정 대상`\n      : '값 다름 · POIZON 값으로 수정 대상';",
-  ": /SPU불일치/.test(matchBy) ? '상품 인식 완료 · SPU 불일치 · 자동수정 보류'\n      : equal ? '상품 인식 완료 · 판매량 일치 · 수정 없음'\n      : missingSides ? `상품 인식 완료 · 판매량 누락 ${missingSides}개 · POIZON 값으로 수정 대상`\n      : '상품 인식 완료 · 판매량 값 다름 · POIZON 값으로 수정 대상';"
-);
-live = live.replace(
-  ": equal ? '상품 인식 완료 · 판매량 일치 · 수정 없음'\n      : missingSides ? `상품 인식 완료 · 판매량 누락 ${missingSides}개 · POIZON 값으로 수정 대상`\n      : '상품 인식 완료 · 판매량 값 다름 · POIZON 값으로 수정 대상';",
-  ": /SPU불일치/.test(matchBy) ? '상품 인식 완료 · SPU 불일치 · 자동수정 보류'\n      : equal ? '상품 인식 완료 · 판매량 일치 · 수정 없음'\n      : missingSides ? `상품 인식 완료 · 판매량 누락 ${missingSides}개 · POIZON 값으로 수정 대상`\n      : '상품 인식 완료 · 판매량 값 다름 · POIZON 값으로 수정 대상';"
+  ": equal ? '상품 인식 완료 · 판매량 일치 · 수정 없음'\n      : missingSides ? `상품 인식 완료 · 판매량 누락 ${missingSides}개 · POIZON 값으로 수정 대상`\n      : '상품 인식 완료 · 판매량 값 다름 · POIZON 값으로 수정 대상';"
 );
 await save('services/live-poizon-crosscheck.mjs', live);
 
@@ -54,11 +47,10 @@ await save('src/poizon-review-workspace.js', view);
 let tests = await read('tests/live-poizon-crosscheck.test.mjs');
 tests = tests.replace("assert.equal(result.rows[0].qualified, true); assert.equal(result.rows[0].status, '값 다름 · POIZON 값으로 수정 대상');", "assert.equal(result.rows[0].qualified, true); assert.equal(result.rows[0].status, '상품 인식 완료 · 판매량 값 다름 · POIZON 값으로 수정 대상');");
 tests = tests.replace("assert.match(result.rows[0].status, /Excel 누락 1개 · POIZON 값으로 수정 대상/);", "assert.match(result.rows[0].status, /상품 인식 완료 · 판매량 누락 1개 · POIZON 값으로 수정 대상/);");
-const oldIdentityTest = /test\('SPU identity is preserved and same-code different-SPU matches are rejected',[\s\S]*?\n\}\);/;
-const patchedIdentityTest = /test\('SPU is first priority and a unique exact article can be recognized without treating it as Excel-missing',[\s\S]*?\n\}\);/;
-const replacementIdentityTest = `test('SPU is first priority and a unique exact article can be recognized without treating it as Excel-missing', () => {\n  assert.equal(session().acceptPage([product(83, { articleNumber: 'OTHER' })]).matchedProducts, 1);\n  const uniqueArticle = session().acceptPage([product(83, { spuId: '99' })]);\n  assert.equal(uniqueArticle.matchedProducts, 1);\n  assert.equal(uniqueArticle.rows[0].matchBy, '상품번호(고유·SPU불일치)');\n  assert.equal(uniqueArticle.rows[0].status, '상품 인식 완료 · SPU 불일치 · 자동수정 보류');\n\n  const conflictExcel = [product(83, { spuId:'11' }), product(83, { spuId:'12', sourceRowNumber:3 })];\n  const conflict = session(conflictExcel).acceptPage([product(83, { spuId:'99' })]);\n  assert.equal(conflict.matchedProducts, 0);\n  assert.equal(conflict.rows[0].status, '식별자 충돌 · 자동수정 보류');\n});`;
-tests = tests.replace(oldIdentityTest, replacementIdentityTest).replace(patchedIdentityTest, replacementIdentityTest);
-if (!tests.includes("numeric-form SPU normalization")) {
+const identityTest = `test('SPU exact match is first priority and article fallback is used only when POIZON SPU is absent', () => {\n  assert.equal(session().acceptPage([product(83, { articleNumber: 'OTHER' })]).matchedProducts, 1);\n  const differentSpu = session().acceptPage([product(83, { spuId: '99' })]);\n  assert.equal(differentSpu.matchedProducts, 0);\n  assert.equal(differentSpu.rows[0].status, '식별자 충돌 · 자동수정 보류');\n  const noSpu = session().acceptPage([product(83, { spuId: '' })]);\n  assert.equal(noSpu.matchedProducts, 1);\n  assert.equal(noSpu.rows[0].matchBy, '상품번호');\n});`;
+tests = tests.replace(/test\('SPU identity is preserved and same-code different-SPU matches are rejected',[\s\S]*?\n\}\);/, identityTest);
+tests = tests.replace(/test\('SPU is first priority and a unique exact article can be recognized without treating it as Excel-missing',[\s\S]*?\n\}\);/, identityTest);
+if (!tests.includes('numeric-form SPU normalization recognizes Excel and POIZON as the same product')) {
   tests = tests.replace("test('each of 150 pages is compared independently", `test('numeric-form SPU normalization recognizes Excel and POIZON as the same product', () => {\n  const excel = [product(83, { spuId:'25942988.0' })];\n  const result = session(excel).acceptPage([product(83, { spuId:'2.5942988E+7' })]);\n  assert.equal(result.matchedProducts, 1);\n  assert.equal(result.equalProducts, 1);\n});\n\ntest('each of 150 pages is compared independently`);
 }
 await save('tests/live-poizon-crosscheck.test.mjs', tests);
@@ -67,4 +59,4 @@ let categoryTests = await read('tests/favorite-category-search-v2.10.294.test.mj
 categoryTests = categoryTests.replace("'POIZON 37/150페이지 · 동일 상품 20개 대조 완료'", "'POIZON 37/150페이지 · 상품 식별 및 판매량 대조 20개 완료'");
 await save('tests/favorite-category-search-v2.10.294.test.mjs', categoryTests);
 
-console.log('POIZON identity-first crosscheck applied safely: recognize product first, compare sales second, classify only unresolved identities as Excel-missing.');
+console.log('POIZON identity-first crosscheck applied safely: exact SPU first, article fallback only without POIZON SPU, sales compared after recognition.');
