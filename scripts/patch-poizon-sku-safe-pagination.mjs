@@ -26,20 +26,11 @@ if (!live.includes('POIZON_SKU_SAFE_DEFER_V1')) {
 }
 await save('services/live-poizon-crosscheck.mjs', live);
 
+// The existing strict-evidence patch already derives SKU scope from the production
+// workbook reader. Do not rewrite that reader here. The regression below executes
+// the actual postinstall-patched builder against an XLSX shaped like the uploaded
+// Adidas source file and will fail if SKU scope is ever lost.
 let main = await read('main.mjs');
-if (!main.includes('POIZON_SKU_SCOPE_FROM_REAL_EXPORT')) {
-  if (/salesScope:\s*skuId\s*\?\s*['\"]sku['\"]\s*:\s*['\"]spu['\"]/.test(main)) {
-    main = main.replace(/(\s+)(salesScope:\s*skuId\s*\?\s*['\"]sku['\"]\s*:\s*['\"]spu['\"],)/,
-      '$1// POIZON_SKU_SCOPE_FROM_REAL_EXPORT: verified against the original OneDrive export schema.$1$2');
-  } else {
-    main = replaceOnce(
-      main,
-      "      optionCount: 1,\n      totalSales:",
-      "      optionCount: 1,\n      // POIZON_SKU_SCOPE_FROM_REAL_EXPORT: verified against the original OneDrive export schema.\n      salesScope: skuId ? 'sku' : 'spu',\n      metricScope: skuId ? 'sku' : 'spu',\n      totalSales:",
-      'preview SKU scope',
-    );
-  }
-}
 main = main.replace(
   'import { assertPoizonPageReadyForCorrection } from "./services/live-poizon-crosscheck.mjs";',
   'import { assertPoizonPageReadyForCorrection, selectPoizonPageCorrectionProducts } from "./services/live-poizon-crosscheck.mjs";'
