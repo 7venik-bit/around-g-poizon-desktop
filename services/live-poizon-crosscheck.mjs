@@ -39,9 +39,6 @@ export function recentMetric(product = {}, local = false) {
   const flag = local ? 'hasLocalSalesData' : 'hasSalesData';
   const explicitRaw = product[key + 'Raw'];
   const fallback = explicitRaw == null || explicitRaw === '' ? product[key] : explicitRaw;
-  // Some older preview paths can carry the raw cell while the availability flag
-  // is stale. Trust a valid explicit raw recent-30-day value, but never revive a
-  // value from the numeric fallback when the flag explicitly says unavailable.
   if (product[flag] === false && (explicitRaw == null || explicitRaw === '')) return null;
   return metricFromRaw(fallback);
 }
@@ -55,13 +52,9 @@ function totalMetric(product = {}, local = false) {
 export function meetsVerificationConditions(product, conditions) {
   const c = normalizeVerificationConditions(conditions);
   const tests = [[c.minimumChinaSales30, recentMetric(product)], [c.minimumLocalSales30, recentMetric(product, true)]];
-  // Missing values are not zero; an uncertain bound cannot prove qualification.
   return tests.every(([minimum, metric]) => minimum === null || (metric && metric.min >= minimum));
 }
 
-// Resolve one recent-30-day metric across all Excel rows belonging to one SPU.
-// Blank/unknown option rows do not poison an otherwise unambiguous parent value.
-// We still refuse to guess when two distinct valid values exist.
 export function resolveExcelRecentMetric(products = [], local = false) {
   const observed = products.map((product) => recentMetric(product, local)).filter(Boolean);
   const bySignature = new Map();
@@ -78,7 +71,7 @@ export function resolveExcelRecentMetric(products = [], local = false) {
       : totalValues.length
         ? `최근30일 값 없음 · 총판매 ${totalValues.map((metric) => metric.raw).join(' / ')}`
         : '최근30일 값 없음';
-    return { state: 'missing', metric: null, metrics: [], raw: `미확인 · ${diagnostic}`, diagnostic };
+    return { state: 'missing', metric: null, metrics: [], raw: `값 없음 · ${diagnostic}`, diagnostic };
   }
   if (bySignature.size > 1) {
     const metrics = [...bySignature.values()];
@@ -126,20 +119,20 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
     const equal = candidates.length > 0 && allAvailable
       && excelResolved.every((entry, index) => entry.metric.signature === source[index].signature);
     const missingSides = [excelChina, excelLocal].filter((entry) => entry.state === 'missing').length;
-    const status = !identity(product) ? '식별자 없음'
-      : !candidates.length ? matchBy === '식별자 충돌' ? matchBy : 'Excel 상품 없음'
-      : hasConflict ? 'Excel 최근 30일 값 충돌'
-      : equal ? '일치'
-      : missingSides ? `Excel 최근 30일 값 없음 (${missingSides}개 항목)`
-      : !sourceAvailable ? 'POIZON 최근 30일 값 미확인'
-      : '값 다름';
+    const status = !identity(product) ? '식별자 없음 · 자동수정 보류'
+      : !candidates.length ? matchBy === '식별자 충돌' ? '식별자 충돌 · 자동수정 보류' : 'Excel 상품 없음 · 자동수정 보류'
+      : !sourceAvailable ? 'POIZON 화면값 미확인 · 자동수정 보류'
+      : hasConflict ? 'Excel 값 충돌 · 자동수정 보류'
+      : equal ? '일치 · 수정 없음'
+      : missingSides ? `Excel 누락 ${missingSides}개 · POIZON 값으로 수정 대상`
+      : '값 다름 · POIZON 값으로 수정 대상';
 
     return {
       key: identity(product) || `UNREADABLE:${pageNum}:${position}`,
       articleNumber: String(product.articleNumber || product.productCode || ''), spuId: spu(product),
       title: String(product.name || product.title || ''), pageNum, matchBy, status,
       qualified: meetsVerificationConditions(product, frozenConditions),
-      sourceChina: source[0]?.raw ?? '미확인', sourceLocal: source[1]?.raw ?? '미확인',
+      sourceChina: source[0]?.raw ?? 'POIZON 읽기 실패', sourceLocal: source[1]?.raw ?? 'POIZON 읽기 실패',
       excelChina: candidates.length ? excelChina.raw : '상품 없음',
       excelLocal: candidates.length ? excelLocal.raw : '상품 없음',
       excelChinaState: excelChina.state,
