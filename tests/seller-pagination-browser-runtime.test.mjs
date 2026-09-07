@@ -28,7 +28,7 @@ async function simulate({ target = 2, current = target, rowCount = 20, expectedR
   };
   const rows = Array.from({ length: rowCount }, (_, index) => ({ ...visible, innerText: `상품 번호 : CODE${index} 최근 30일 판매량 100` }));
   const document = { querySelectorAll: (selector) => selector === "table tbody tr" ? rows : selector === ".ant-pagination" ? [pagination] : [item] };
-  const script = renderScript(target, expectedRows, { currentPage: target - 1, rowSignature: previous }, 240);
+  const script = renderScript(target, expectedRows, { currentPage: target - 1, rowSignature: previous }, 360);
   // Only browser globals are provided. Main-process variables must not leak in.
   const result = await runInNewContext(script, { document, setTimeout: (callback) => { polls += 1; callback(); } });
   return { result, polls, clicks };
@@ -37,8 +37,8 @@ async function simulate({ target = 2, current = target, rowCount = 20, expectedR
 test("isolated seller browser receives a concrete retry bound and parses spaced product labels", async () => {
   assert.deepEqual(await simulate(), { result: true, polls: 1, clicks: 1 });
 });
-test("partially rendered pages wait all 240 observations and cannot be accepted", async () => {
-  assert.deepEqual(await simulate({ rowCount: 19 }), { result: false, polls: 240, clicks: 1 });
+test("partially rendered pages wait all 360 observations and cannot be accepted", async () => {
+  assert.deepEqual(await simulate({ rowCount: 19 }), { result: false, polls: 360, clicks: 1 });
 });
 test("the last page accepts exactly its expected remainder rows", async () => {
   assert.equal((await simulate({ target: 150, rowCount: 3, expectedRows: 3 })).result, true);
