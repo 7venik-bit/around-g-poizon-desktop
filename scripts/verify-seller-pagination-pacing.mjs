@@ -8,11 +8,13 @@ const required = [
   "const sellerPageResponseAttempts = 360; // 360 × 250ms = 90 seconds",
   "const sellerPageSettleMs = 10_000;",
   "서버 보호를 위해 45초 휴식 중",
+  "pageSize,",
   "expectedRowCount: expectedNextRowCount",
+  "rows.length >= Math.max(1, ${expectedNextRowCount})",
   "await wait(sellerPageSettleMs);",
   "code: reachedLastPage ? \"SELLER_ROW_COUNT_INCOMPLETE\" : \"SELLER_PAGINATION_INCOMPLETE\"",
   "페이지까지 모두 확인했지만 화면 상품을",
-  "const deadline = Date.now() + 30_000;",
+  "다음 페이지를 90초씩 재시도했지만 응답하지 않았습니다.",
 ];
 
 for (const value of required) {
@@ -31,6 +33,8 @@ const forbidden = [
   "const sellerPageSettleMs = 5_000;",
   "서버 보호를 위해 10초 휴식 중",
   "서버 보호를 위해 30초 휴식 중",
+  "다음 페이지를 30초씩 재시도했지만 응답하지 않았습니다.",
+  "다음 페이지를 60초씩 재시도했지만 응답하지 않았습니다.",
 ];
 
 for (const value of forbidden) {
@@ -39,4 +43,4 @@ for (const value of forbidden) {
   }
 }
 
-console.log("Seller Center pagination verified: 12s/page, 45s/10 pages, 90s response wait, 10s settle, 30s search stabilization, full-row readiness.");
+console.log("Seller Center pagination verified: 12s/page, 45s/10 pages, 90s response wait, 10s settle, full-row readiness.");
