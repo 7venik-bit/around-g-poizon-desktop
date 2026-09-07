@@ -4,20 +4,31 @@ import { readFile } from 'node:fs/promises';
 import { strToU8, strFromU8, zipSync, unzipSync } from 'fflate';
 import { applyPoizonScreenSalesToWorkbook } from '../services/poizon-screen-excel-sync.mjs';
 
-test('wide 10000-row worksheet does not hit the JavaScript argument limit and preserves every row', () => {
+test('wide 10000-row POIZON worksheet preserves every row while correcting original sales cells', () => {
   const columns = 'ABCDEFGHIJKLMNOP'.split('');
-  const head = '<row r="1">' + columns.map((c, i) => `<c r="${c}1" t="inlineStr"><is><t>${i === 0 ? 'SPU ID' : '원본 ' + c}</t></is></c>`).join('') + '</row>';
+  const labels = ['SPU ID','상품 번호','중국 총 판매량','현지 판매자 총 판매량','SKU ID','최근 30일간 평균 거래가'];
+  const head = '<row r="1">' + columns.map((c, i) => `<c r="${c}1" t="inlineStr"><is><t>${labels[i] || '원본 ' + c}</t></is></c>`).join('') + '</row>';
   const rows = Array.from({ length: 10000 }, (_, i) => {
-    const n = i + 2; return `<row r="${n}">` + columns.map((c, j) => `<c r="${c}${n}"><v>${j === 0 ? 11 : j}</v></c>`).join('') + '</row>';
+    const n = i + 2;
+    return `<row r="${n}">` + columns.map((c, j) => {
+      const value = j === 0 ? 11 : j === 1 ? 'ITEM-11' : j === 2 ? 1 : j === 3 ? 2 : j;
+      return `<c r="${c}${n}"><v>${value}</v></c>`;
+    }).join('') + '</row>`;
   });
-  const buffer = Buffer.from(zipSync({ 'xl/worksheets/sheet1.xml': strToU8('<worksheet><sheetData>' + head + rows.join('') + '</sheetData></worksheet>') }));
-  const p = { spuId: '11', sales30dRaw: '100+', hasSalesData: true, localSales30dRaw: '83', hasLocalSalesData: true };
+  const sheet = '<worksheet><sheetData>' + head + rows.join('').replace(/<\/row>`/g, '</row>') + '</sheetData></worksheet>';
+  const buffer = Buffer.from(zipSync({ 'xl/worksheets/sheet1.xml': strToU8(sheet) }));
+  const p = { spuId: '11', articleNumber: 'ITEM-11', sales30dRaw: '100+', hasSalesData: true, localSales30dRaw: '83', hasLocalSalesData: true };
   const result = applyPoizonScreenSalesToWorkbook(buffer, [p]);
-  assert.equal(result.ok, true, result.message); assert.equal(result.changedRows, 10000); assert.equal(result.changedCells, 20000);
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.changedRows, 10000);
+  assert.equal(result.changedCells, 20000);
+  assert.equal(result.reverified, true);
   const xml = strFromU8(unzipSync(result.buffer)['xl/worksheets/sheet1.xml']);
   assert.equal([...xml.matchAll(/<row\b/g)].length, 10001);
   assert.ok(xml.includes('<c r="P10001"><v>15</v></c>'));
-  assert.equal(applyPoizonScreenSalesToWorkbook(result.buffer, [p]).changedRows, 0);
+  const second = applyPoizonScreenSalesToWorkbook(result.buffer, [p]);
+  assert.equal(second.changedRows, 0);
+  assert.equal(second.alreadyMatchedCells, 20000);
 });
 
 test('domestic search rerenders keep verified parent metrics separate from size sales in both renderers', async () => {
