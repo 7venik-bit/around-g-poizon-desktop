@@ -13,12 +13,18 @@ function replaceOnce(source, before, after, label) {
 }
 
 let crosscheck = await read('services/live-poizon-crosscheck.mjs');
-crosscheck = replaceOnce(
-  crosscheck,
-  ": !candidates.length ? matchBy === '식별자 충돌' ? '식별자 충돌 · 자동수정 보류' : 'Excel 상품 없음 · 자동수정 보류'\n      : !sourceAvailable ? 'POIZON 화면값 미확인 · 자동수정 보류'",
-  ": !candidates.length ? matchBy === '식별자 충돌' ? '식별자 충돌 · 자동수정 보류'\n        : !spu(product) ? 'Excel 상품 없음 · SPU 미확인으로 자동추가 보류'\n        : !sourceAvailable ? 'Excel 상품 없음 · POIZON 화면값 미확인으로 자동추가 보류'\n        : 'Excel 상품 없음 · POIZON 값으로 새 행 추가 대상'\n      : !sourceAvailable ? 'POIZON 화면값 미확인 · 자동수정 보류'",
-  'missing Excel product verdict',
-);
+// Strict evidence comparison now owns its verdicts in versioned source.
+// Only older implementations need this legacy string migration.
+if (!crosscheck.includes('POIZON_METRIC_EVIDENCE_V2')) {
+  crosscheck = replaceOnce(
+    crosscheck,
+    ": !candidates.length ? matchBy === '식별자 충돌' ? '식별자 충돌 · 자동수정 보류' : 'Excel 상품 없음 · 자동수정 보류'\n      : !sourceAvailable ? 'POIZON 화면값 미확인 · 자동수정 보류'",
+    ": !candidates.length ? matchBy === '식별자 충돌' ? '식별자 충돌 · 자동수정 보류'\n        : !spu(product) ? 'Excel 상품 없음 · SPU 미확인으로 자동추가 보류'\n        : !sourceAvailable ? 'Excel 상품 없음 · POIZON 화면값 미확인으로 자동추가 보류'\n        : 'Excel 상품 없음 · POIZON 값으로 새 행 추가 대상'\n      : !sourceAvailable ? 'POIZON 화면값 미확인 · 자동수정 보류'",
+    'missing Excel product verdict',
+  );
+} else if (!crosscheck.includes('export function assertPoizonPageReadyForCorrection')) {
+  throw new Error('Strict comparison is missing its pre-write evidence guard.');
+}
 await save('services/live-poizon-crosscheck.mjs', crosscheck);
 
 let session = await read('services/poizon-review-session.mjs');
@@ -32,7 +38,7 @@ if (!session.includes('const expectedAfterRows = snapshot.products.length + Numb
     'post-write row count with appended products',
   );
 }
-if (!session.includes('report.addedRows = Number(saved.addedRows || 0);')) {
+if (!session.includes('report.addedRows = Number(saved.addRows || 0);') && !session.includes('report.addedRows = Number(saved.addedRows || 0);')) {
   session = replaceOnce(
     session,
     "      report.changedRows = Number(saved.changedRows || 0);\n      report.changedCells = Number(saved.changedCells || 0);",
