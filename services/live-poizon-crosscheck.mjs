@@ -104,9 +104,16 @@ export function resolveExcelRecentMetric(products = [], local = false) {
 const article = (p) => normalizedArticle(p?.articleNumber || p?.productCode || '');
 const spu = (p) => productSpu(p || {});
 const identity = (p) => spu(p) ? `SPU:${spu(p)}` : article(p) ? `ARTICLE:${article(p)}` : '';
+const onlySkuScopeMismatch = (row = {}) => row.matched === true
+  && row.autoCorrectionBlocked === true
+  && Array.isArray(row.reasonCodes)
+  && row.reasonCodes.length > 0
+  && row.reasonCodes.every((code) => code === 'EXCEL_SKU_SPU_SCOPE_MISMATCH');
 
 // Match evidence by identity, never by array position. Fail before any write if
-// a page contains unresolved data; filtering it out must not imply verification.
+// a page contains genuinely unresolved data. A verified SKU-vs-SPU scope mismatch
+// is different: the Excel option rows are preserved, excluded from the writer,
+// and the page may continue because there is no safe parent-cell correction to make.
 export function assertPoizonPageReadyForCorrection(products = [], rows = [], pageNum = 0) {
   const byKey = new Map();
   for (const row of rows) {
@@ -115,13 +122,24 @@ export function assertPoizonPageReadyForCorrection(products = [], rows = [], pag
     byKey.set(key, row);
   }
   if (!products.length || products.length !== rows.length) throw new Error('페이지 상품 수와 대조 증거 수가 달라 Excel 수정을 중단했습니다.');
+  const writable = [];
+  let skippedSkuScope = 0;
   for (const product of products) {
     const row = byKey.get(identity(product));
+    if (onlySkuScopeMismatch(row)) {
+      skippedSkuScope++;
+      continue;
+    }
     if (!row || row.autoCorrectionBlocked || /충돌|미확인|비교 보류|확인 필요/.test(row.status || '')) {
       throw new Error(`POIZON ${pageNum || '?'}페이지 · ${identity(product) || '식별자 없음'} · ${row?.status || '대조 증거 없음'} · 원본 수정 및 다음 페이지 이동을 보류합니다.`);
     }
+    writable.push(product);
   }
-  return products;
+  Object.defineProperty(writable, 'pageEvidence', {
+    value: Object.freeze({ verified: true, sourceProducts: products.length, skippedSkuScope }),
+    enumerable: false,
+  });
+  return writable;
 }
 
 export function createPageCrossCheck({ runId, excelProducts = [], conditions = {}, brandName = '', fileName = '' } = {}) {
@@ -150,7 +168,7 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
       : !candidates.length ? identityConflict ? '식별자 충돌 · 자동수정 보류' : 'Excel 상품 없음 · 누락 후보'
       : !sourceAvailable ? 'POIZON 화면값 미확인 · 자동수정 보류'
       : hasConflict ? 'Excel 값 충돌 · 자동수정 보류'
-      : scopeMismatch ? '상품 인식 완료 · 옵션별 판매량 존재 · 상품단위 비교 보류'
+      : scopeMismatch ? '상품 인식 완료 · 옵션별 판매량 존재 · SPU 자동수정 제외 · 다음 페이지 진행'
       : unresolved ? '상품 인식 완료 · 원본값·비교 열 확인 필요 · 자동수정 보류'
       : equal ? '상품 인식 완료 · 판매량 일치 · 수정 없음'
       : missingSides ? `상품 인식 완료 · 판매량 누락 ${missingSides}개 · POIZON 값으로 수정 대상`
@@ -175,7 +193,7 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
     const rows = [...compared.values()];
     return { checkedProducts: rows.length, matchedProducts: rows.filter((r) => r.matched).length,
       equalProducts: rows.filter((r) => r.equal).length,
-      differentProducts: rows.filter((r) => r.matched && !r.equal).length,
+      differentProducts: rows.filter((r) => r.matched && !r.equal && !r.autoCorrectionBlocked).length,
       missingProducts: rows.filter((r) => !r.matched && !r.identityConflict).length,
       unconfirmedProducts: rows.filter((r) => r.autoCorrectionBlocked).length,
       missingSalesCells: rows.reduce((n, r) => n + r.missingSalesCells, 0),
@@ -205,13 +223,6 @@ export function paintSellerVerification(document, payload) {
     banner.style.cssText = 'position:sticky;top:0;z-index:2147483000;background:#eaf6ff;color:#122b45;padding:10px 12px;font:600 13px/1.6 sans-serif;border-bottom:2px solid #357ed5;white-space:normal;';
     document.body.prepend(banner);
   }
-  banner.textContent = payload.label + ' · ' + (payload.pageNum ? `${payload.pageNum}/${payload.pageCount}페이지 대조 완료 · 조건 충족 ${payload.pageQualifiedProducts}개` : '화면 수집 준비 중');
-  const normalize = (s) => String(s || '').normalize('NFKC').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  for (const row of document.querySelectorAll('table tbody tr')) {
-    const code = String(row.innerText || '').match(/상품\s*번호\s*[:：]\s*([A-Za-z0-9._/-]+)/)?.[1];
-    if (!code) continue;
-    const match = (payload.rows || []).find((r) => normalize(r.articleNumber) === normalize(code));
-    row.style.outline = match?.qualified ? '2px solid #78aaca' : ''; row.style.outlineOffset = '-2px';
-    row.dataset.aroundGVerification = match ? match.qualified ? 'qualified' : 'outside-condition' : 'pending';
-  }
+  banner.textContent = payload.label + ' · ' + (payload.pageNum ? `${payload.pageNum}/${payload.pageCount}페이지 대조 완료 · 조건 충족 ${payload.pageQualifiedProducts}개` : '화면 대조 준비');
+  return true;
 }
