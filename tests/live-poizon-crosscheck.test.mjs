@@ -112,7 +112,7 @@ test('saved status follows actual reread, not an assumed successful write', () =
     live.finish({ ok: true, changedRows: 1, screenProducts: [product()], afterProducts: [product(10)] });
     const panel = doc.ids.get('excel-preview').child;
     assert.match(panel.querySelector('.live-phase').textContent, /재읽기 일치 0상품 · 추가 확인 1상품/);
-    assert.match(panel.querySelector('tbody').innerHTML, /저장 후 추가 확인 필요/);
+    assert.match(panel.querySelector('tbody').innerHTML, /수정 후 추가 확인 필요/);
   } finally { live.dispose(); }
 });
 test('Seller Center annotation does not remove rows needed for completeness', () => {
