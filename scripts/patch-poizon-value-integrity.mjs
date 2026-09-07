@@ -5,8 +5,15 @@ const save = async (p, s) => { if (s !== await read(p)) await writeFile(new URL(
 function once(s, a, b, name) { if (s.includes(b)) return s; if (!s.includes(a)) throw new Error('Safe value patch target missing: ' + name); return s.replace(a, b); }
 function section(s, a, b, replacement) { const start = s.indexOf(a), end = s.indexOf(b, start + a.length); if (start < 0 || end < 0) throw new Error('Safe value section missing: ' + a); return s.slice(0, start) + replacement + s.slice(end); }
 
+const syncService = await read('services/poizon-screen-excel-sync.mjs');
+const screenAuthoritative = syncService.includes("comparisonMode: 'POIZON_SCREEN_IS_SOURCE_OF_TRUTH'");
+
 let xlsx = await read('services/poizon-xlsx.mjs');
-if (!xlsx.includes('const parentHeadersPresent =')) {
+// Retired builds wrote POIZON results into dedicated verification columns and
+// therefore prioritized those columns on reread. In screen-authoritative mode
+// the original POIZON export/recent-sales cells are the correction target, so
+// never inject that priority and never redirect the second verification pass.
+if (!screenAuthoritative && !xlsx.includes('const parentHeadersPresent =')) {
   xlsx = once(xlsx, 'export function findPoizonRecentSalesColumns(headers = []) {\n  const normalized = headers.map(normalizePoizonHeader);', `export function findPoizonRecentSalesColumns(headers = []) {
   const normalized = headers.map(normalizePoizonHeader);
   const parentHeaders = ['POIZON 상품 최근 30일 판매량', 'POIZON 상품 현지 판매자 최근 30일 판매량'].map(normalizePoizonHeader);
@@ -60,7 +67,7 @@ if (!main.includes('const screenSyncFilesInProgress =')) {
       if (!checked.ok || checked.changed || checked.matchedRows !== applied.matchedRows) throw new Error("저장 후 판매량 재검증에 실패했습니다.");
       if (!(await readFile(filePath)).equals(original)) throw new Error("검증 도중 원본 Excel이 변경되어 덮어쓰지 않았습니다.");
       await writeFile(backupPath, original, { flag: "wx" });
-      await writeFile(backupPath + ".json", JSON.stringify({ verifiedAt: new Date().toISOString(), scope: "SPU recent30", ...summary }, null, 2), { flag: "wx" });
+      await writeFile(backupPath + ".json", JSON.stringify({ verifiedAt: new Date().toISOString(), scope: "POIZON screen source-of-truth recent30", ...summary }, null, 2), { flag: "wx" });
       await rename(temporary, filePath);
       temporary = "";
       excelPreviewCache.clear();
@@ -132,7 +139,7 @@ async function openVerifiedCombinedBrandPreview(files, filters) {
     const message = '최근 30일 · SPU 상품 단위 · 중국 ' + (minimumTotal || '조건 없음') + ' / 현지 ' + (minimumLocalTotal || '조건 없음') + ' · ' + totalRows + '상품 · Excel에서 찾지 못함 ' + missing + '상품 · POIZON에서 찾지 못함 ' + absent + '원본행 · 실패 ' + failures.length + '브랜드';
     $("#excel-preview-summary").textContent = message;
     $("#brand-product-workspace-meta").textContent = message;
-    $("#excel-filter-status").textContent = failures.length ? failures.map((f) => f.file + ': ' + f.message).join(' / ') : '원본 총판매량·사이즈 값 보존 · 검증된 상품 최근 30일 값으로 필터 적용';
+    $("#excel-filter-status").textContent = failures.length ? failures.map((f) => f.file + ': ' + f.message).join(' / ') : 'POIZON 화면값 기준으로 Excel 원본 판매량 셀 교정·재검증 완료';
     const labels = [$("#excel-filter-min-total")?.closest('label')?.querySelector('span'), $("#excel-filter-min-local-total")?.closest('label')?.querySelector('span')];
     if (labels[0]) labels[0].textContent = '중국 상품 최근 30일 최소';
     if (labels[1]) labels[1].textContent = '현지 판매자 상품 최근 30일 최소';
@@ -140,11 +147,12 @@ async function openVerifiedCombinedBrandPreview(files, filters) {
   updateExcelPreviewSelectionUi(excelPreviewPageKeys);
 }`, 'visible accurate counts');
   renderer = renderer.slice(0, start) + part + renderer.slice(end);
-  // Restore raw-view labels: these remain original lifetime columns.
   renderer = once(renderer, 'async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewFilters(), options = {}) {', `async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewFilters(), options = {}) {
   const rawLabels = [$("#excel-filter-min-total")?.closest('label')?.querySelector('span'), $("#excel-filter-min-local-total")?.closest('label')?.querySelector('span')];
   if (rawLabels[0]) rawLabels[0].textContent = '중국 총 판매량 (원본)';
   if (rawLabels[1]) rawLabels[1].textContent = '현지 판매자 총 판매량 (원본)';`, 'raw label separation');
 }
 await save('src/renderer.js', renderer);
-console.log('Safe value integrity applied: common identity, dedicated SPU recent columns, atomic backup/reread and verified combined search.');
+console.log(screenAuthoritative
+  ? 'Safe value integrity applied: POIZON screen is source of truth, original Excel sales cells are corrected atomically and reread before commit.'
+  : 'Safe value integrity applied: common identity, dedicated SPU recent columns, atomic backup/reread and verified combined search.');
