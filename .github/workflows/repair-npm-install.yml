@@ -1,0 +1,43 @@
+name: Repair npm install
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/repair-npm-install.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  clean-install:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Remove existing npm install state
+        shell: pwsh
+        run: |
+          if (Test-Path node_modules) { Remove-Item node_modules -Recurse -Force }
+          if (Test-Path package-lock.json) { Remove-Item package-lock.json -Force }
+          npm cache clean --force
+
+      - name: Reinstall dependencies without lifecycle scripts
+        run: npm install --ignore-scripts
+
+      - name: Run postinstall explicitly
+        run: npm run postinstall
+
+      - name: Run test suite
+        run: npm test
+
+      - name: Verify core syntax
+        run: node --check main.mjs && node --check preload.cjs && node --check src/renderer.js
