@@ -8,6 +8,18 @@ function replaceOnce(source, before, after, label) {
   if (!source.includes(before)) throw new Error(`SKU-safe pagination patch target missing: ${label}`);
   return source.replace(before, after);
 }
+function replaceCheckpointCall(source) {
+  if (source.includes('POIZON_SKU_SAFE_PAGE_SELECTION')) return source;
+  const productNeedle = 'products: assertPoizonPageReadyForCorrection(currentPageProducts, livePage.rows, capture.currentPage),';
+  const productAt = source.indexOf(productNeedle);
+  if (productAt < 0) throw new Error('SKU-safe pagination patch target missing: checkpoint guarded products');
+  const start = source.lastIndexOf('        const checkpoint = await syncPoizonPageCheckpoint({', productAt);
+  const endNeedle = '        });';
+  const end = source.indexOf(endNeedle, productAt);
+  if (start < 0 || end < 0) throw new Error('SKU-safe pagination patch target missing: checkpoint call bounds');
+  const after = `        // POIZON_SKU_SAFE_PAGE_SELECTION: SKU-only Excel values are preserved and deferred.\n        // Only same-scope SPU evidence or true missing rows may be written on this page.\n        const pageCorrection = selectPoizonPageCorrectionProducts(currentPageProducts, livePage.rows, capture.currentPage);\n        const checkpoint = pageCorrection.products.length\n          ? await syncPoizonPageCheckpoint({\n              filePath: input.verification.filePath,\n              products: pageCorrection.products,\n              pageNum: capture.currentPage,\n              backupPath: checkpointSummary.backupPath,\n            })\n          : { ok: true, reverified: true, changedRows: 0, changedCells: 0, addedRows: 0, addedProducts: 0, verifiedCells: 0, changes: [], backupPath: checkpointSummary.backupPath };\n        checkpoint.deferredProducts = Number(pageCorrection.deferredProducts || 0);`;
+  return source.slice(0, start) + after + source.slice(end + endNeedle.length);
+}
 
 let live = await read('services/live-poizon-crosscheck.mjs');
 if (!live.includes('POIZON_SKU_SAFE_DEFER_V1')) {
@@ -24,36 +36,32 @@ if (!live.includes('POIZON_SKU_SAFE_DEFER_V1')) {
 }
 await save('services/live-poizon-crosscheck.mjs', live);
 
-// The existing strict-evidence patch already derives SKU scope from the production
-// workbook reader. Do not rewrite that reader here. The regression below executes
-// the actual postinstall-patched builder against an XLSX shaped like the uploaded
-// Adidas source file and will fail if SKU scope is ever lost.
 let main = await read('main.mjs');
 main = main.replace(
   'import { assertPoizonPageReadyForCorrection } from "./services/live-poizon-crosscheck.mjs";',
   'import { assertPoizonPageReadyForCorrection, selectPoizonPageCorrectionProducts } from "./services/live-poizon-crosscheck.mjs";'
 );
-if (!main.includes('POIZON_SKU_SAFE_PAGE_SELECTION')) {
-  const before = `        const checkpoint = await syncPoizonPageCheckpoint({\n          filePath: input.verification.filePath,\n          // POIZON_STRICT_PAGE_EVIDENCE_GUARD: unresolved products stop the page before any write.\n          products: assertPoizonPageReadyForCorrection(currentPageProducts, livePage.rows, capture.currentPage),\n          pageNum: capture.currentPage,\n          backupPath: checkpointSummary.backupPath,\n        });`;
-  const after = `        // POIZON_SKU_SAFE_PAGE_SELECTION: SKU-only Excel values are preserved and deferred.\n        // Only same-scope SPU evidence or true missing rows may be written on this page.\n        const pageCorrection = selectPoizonPageCorrectionProducts(currentPageProducts, livePage.rows, capture.currentPage);\n        const checkpoint = pageCorrection.products.length\n          ? await syncPoizonPageCheckpoint({\n              filePath: input.verification.filePath,\n              products: pageCorrection.products,\n              pageNum: capture.currentPage,\n              backupPath: checkpointSummary.backupPath,\n            })\n          : { ok: true, reverified: true, changedRows: 0, changedCells: 0, addedRows: 0, addedProducts: 0, verifiedCells: 0, changes: [], backupPath: checkpointSummary.backupPath };\n        checkpoint.deferredProducts = Number(pageCorrection.deferredProducts || 0);`;
-  main = replaceOnce(main, before, after, 'page checkpoint selector');
+main = replaceCheckpointCall(main);
+if (!main.includes('deferredProducts: 0,')) {
   main = replaceOnce(
     main,
     "    pagesCompleted: 0, changedRows: 0, changedCells: 0, addedRows: 0, addedProducts: 0, verifiedCells: 0,",
     "    pagesCompleted: 0, changedRows: 0, changedCells: 0, addedRows: 0, addedProducts: 0, verifiedCells: 0, deferredProducts: 0,",
     'checkpoint deferred summary',
   );
+}
+if (!main.includes('checkpointSummary.deferredProducts +=')) {
   main = replaceOnce(
     main,
     "        checkpointSummary.verifiedCells += Number(checkpoint.verifiedCells || 0);",
     "        checkpointSummary.verifiedCells += Number(checkpoint.verifiedCells || 0);\n        checkpointSummary.deferredProducts += Number(checkpoint.deferredProducts || 0);",
     'checkpoint deferred accumulation',
   );
-  main = main.replace(
-    "실제 누락 추가 ${Number(checkpoint.addedRows || 0)}행 · 저장 후 재검증 완료",
-    "실제 누락 추가 ${Number(checkpoint.addedRows || 0)}행 · 옵션 비교 보류 ${Number(checkpoint.deferredProducts || 0)}개 · 저장 후 재검증 완료"
-  );
 }
+main = main.replace(
+  "실제 누락 추가 ${Number(checkpoint.addedRows || 0)}행 · 저장 후 재검증 완료",
+  "실제 누락 추가 ${Number(checkpoint.addedRows || 0)}행 · 옵션 비교 보류 ${Number(checkpoint.deferredProducts || 0)}개 · 저장 후 재검증 완료"
+);
 await save('main.mjs', main);
 
 let review = await read('services/poizon-review-session.mjs');
@@ -62,9 +70,12 @@ review = review.replace(
   "import { assertPoizonPageReadyForCorrection, selectPoizonPageCorrectionProducts } from './live-poizon-crosscheck.mjs';"
 );
 if (!review.includes('POIZON_SKU_SAFE_FINAL_SELECTION')) {
-  const before = "      // POIZON_STRICT_FINAL_EVIDENCE_GUARD: identity-keyed evidence, independent of result ordering.\n      const finalSaved = await api.syncExcelWithSellerScreen({ path: snapshot.file.path, products: assertPoizonPageReadyForCorrection(captured.products || [], coverage.rows) });";
-  const after = "      // POIZON_SKU_SAFE_FINAL_SELECTION: preserve SKU rows; only verified same-scope rows reach the writer.\n      const finalSelection = selectPoizonPageCorrectionProducts(captured.products || [], coverage.rows);\n      const finalSaved = finalSelection.products.length\n        ? await api.syncExcelWithSellerScreen({ path: snapshot.file.path, products: finalSelection.products })\n        : { ok:true, changedRows:0, changedCells:0, addedRows:0, addedProducts:0, verifiedCells:0, reverified:true, changes:[], backupPath:'' };\n      finalSaved.deferredProducts = Number(finalSelection.deferredProducts || 0);";
-  review = replaceOnce(review, before, after, 'final selector');
+  const call = "const finalSaved = await api.syncExcelWithSellerScreen({ path: snapshot.file.path, products: assertPoizonPageReadyForCorrection(captured.products || [], coverage.rows) });";
+  if (!review.includes(call)) throw new Error('SKU-safe pagination patch target missing: final guarded write');
+  const after = "// POIZON_SKU_SAFE_FINAL_SELECTION: preserve SKU rows; only verified same-scope rows reach the writer.\n      const finalSelection = selectPoizonPageCorrectionProducts(captured.products || [], coverage.rows);\n      const finalSaved = finalSelection.products.length\n        ? await api.syncExcelWithSellerScreen({ path: snapshot.file.path, products: finalSelection.products })\n        : { ok:true, changedRows:0, changedCells:0, addedRows:0, addedProducts:0, verifiedCells:0, reverified:true, changes:[], backupPath:'' };\n      finalSaved.deferredProducts = Number(finalSelection.deferredProducts || 0);";
+  review = review.replace(call, after);
+}
+if (!review.includes('report.deferredProducts =')) {
   review = replaceOnce(
     review,
     "      report.backupPath = saved.backupPath || '';",
