@@ -70,8 +70,8 @@ test('SKU rows are neither missing nor overwritten and a page may continue with 
   assert.equal(page.missingProducts, 0);
   assert.equal(page.missingSalesCells, 0);
   assert.equal(page.deferredProducts, 1);
-  assert.match(page.rows[0].status, /옵션별 판매량 존재 · 상품단위 비교 보류/);
-  assert.doesNotMatch(page.rows[0].status, /판매량 누락/);
+  assert.match(page.rows[0].status, /옵션별 판매량 존재 · SPU 자동수정 제외 · 다음 페이지 진행/);
+  assert.doesNotMatch(page.rows[0].status, /판매량 누락|수정 대상|이동을 보류/);
   const selected = selectPoizonPageCorrectionProducts(screen, page.rows, 1);
   assert.equal(selected.products.length, 0);
   assert.equal(selected.deferredProducts, 1);
