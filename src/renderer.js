@@ -494,6 +494,46 @@ function renderVerifiedSpuRows(file, products) {
   return keys;
 }
 
+function mergeDomesticSearchProducts(products = [], file = {}) {
+  const grouped = new Map();
+  for (const product of products) {
+    const spuId = String(product?.spuId || "").trim();
+    const articleNumber = String(product?.articleNumber || "").trim().toUpperCase();
+    const identity = spuId ? `SPU:${spuId}` : articleNumber ? `ARTICLE:${articleNumber}` : String(product?.key || product?.sourceRowNumber || grouped.size);
+    const key = `${brandImportPathKey(file.path)}::${identity}`;
+    const option = {
+      option: product.option || "",
+      skuId: product.skuId || "",
+      totalSalesRaw: product.totalSalesRaw || "",
+      localTotalSalesRaw: product.localTotalSalesRaw || "",
+    };
+    const current = grouped.get(key);
+    if (!current) {
+      grouped.set(key, {
+        ...product,
+        key: identity,
+        optionCount: 1,
+        verificationOptions: [option],
+        _sourceFilePath: file.path,
+        _sourceBrandName: file.brandName || "",
+        _excelSelectionKey: key,
+      });
+      continue;
+    }
+    current.optionCount += 1;
+    current.verificationOptions.push(option);
+    for (const metric of ["totalSales", "localTotalSales", "sales30d", "localSales30d"]) {
+      if (Number(product[metric] || 0) > Number(current[metric] || 0)) {
+        current[metric] = product[metric];
+        current[`${metric}Raw`] = product[`${metric}Raw`];
+      }
+    }
+  }
+  return [...grouped.values()];
+}
+
+// Plain Excel inspection remains available for the explicit Excel-view action.
+// The domestic-search button must not call this unfiltered row view.
 async function openReviewLocalBrandPreview(files, filters = {}) {
   const service = await import("../services/poizon-review-session.mjs");
   const snapshots = await service.loadReviewSnapshots(files, window.aroundG, (message) => { $("#brand-status").textContent = message; });
@@ -523,11 +563,10 @@ async function openVerifiedCombinedBrandPreview(files, filters = {}) {
 }
 
 async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
-  return openReviewLocalBrandPreview(files, filters);
   const products = [];
   let loadedCount = 0;
   const minimumTotal = String(filters.minimumTotal ?? "100");
-  const minimumLocalTotal = String(filters.minimumLocalTotal ?? "30");
+  const minimumLocalTotal = String(filters.minimumLocalTotal ?? "25");
   const brandStatus = $("#brand-status");
   brandStatus.className = "status combined-progress";
   brandStatus.dataset.state = "combined-progress";
@@ -547,11 +586,7 @@ async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
     });
     if (!result?.ok) continue;
     loadedCount += 1;
-    for (const product of Array.isArray(result.products) ? result.products : []) {
-      const sourceProduct = { ...product, _sourceFilePath: file.path, _sourceBrandName: file.brandName || "" };
-      sourceProduct._excelSelectionKey = `${brandImportPathKey(file.path)}::${product.key || product.articleNumber || product.spuId}`;
-      products.push(sourceProduct);
-    }
+    products.push(...mergeDomesticSearchProducts(Array.isArray(result.products) ? result.products : [], file));
   }
   combinedBrandPreview = {
     products,
@@ -3131,7 +3166,7 @@ $("#completed-brand-domestic-search")?.addEventListener("click", async () => {
   }
   selectedBrandDomesticQueueRunning = false;
   try {
-    await openCombinedSelectedBrandPreview(files);
+    await openCombinedSelectedBrandPreview(files, { minimumTotal: "100", minimumLocalTotal: "25" });
   } finally {
     combinedBrandPreviewLoading = false;
     updateBrandSelectionControls();
