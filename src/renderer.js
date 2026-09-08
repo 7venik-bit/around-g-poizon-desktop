@@ -2569,7 +2569,7 @@ function updateDomesticStockFilter() {
     : `국내 재고만 보기 · ${availableCount.toLocaleString("ko-KR")}개`;
 }
 
-function renderDomestic(result, sourceProduct = {}) {
+function renderDomestic(result, sourceProduct = {}, contextKey = "") {
   if (!result) return `<span class="inventory-help">재고 검색을 누르면 공식몰 → 무신사 → 네이버·SSG·롯데온의 공식스토어·백화점·아울렛을 각각 확인합니다.</span>`;
   if (result.loading) return renderDomesticLoading(result.startedAt);
   if (result.error) return `<span class="inventory-help error">검색 실패: ${text(result.error)}</span>`;
@@ -2626,7 +2626,7 @@ function renderDomestic(result, sourceProduct = {}) {
     const query = source.searchQuery || sourceProduct.articleNumber || sourceProduct.productCode || sourceProduct.spuId || result.queryCandidates?.[0] || "";
     if (!openUrl) return `<button class="source-platform-action" type="button" disabled>${label}</button>`;
     if (source.officialStatus) {
-      return `<button class="source-platform-action" type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}">${label}</button>`;
+      return `<button class="source-platform-action" type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}" data-official-result-key="${encodeURIComponent(contextKey)}">${label}</button>`;
     }
     return `<button class="source-platform-action" type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
   };
@@ -2754,7 +2754,7 @@ function renderExplorerResults(title, products, preserveDomestic = false) {
       <label class="product-select-option"><input type="checkbox" data-product-select="${encodeURIComponent(key)}" ${selectedExplorerKeys.has(key) ? "checked" : ""}> 선택</label>
       <div class="domestic-inventory">
         <div class="inventory-heading"><span class="inventory-status ${status.className}">${status.label}</span><button data-domestic="${encodeURIComponent(key)}" data-index="${index}" class="primary">국내 재고 검색</button></div>
-        ${renderDomestic(result, product)}
+        ${renderDomestic(result, product, key)}
       </div>
     </article>`;
   }).join("")}` : `<div class="empty">${domesticStockOnly ? "국내 재고가 확인된 상품이 없습니다." : "조건에 맞는 상품이 없습니다."}</div>`;
@@ -3041,6 +3041,9 @@ document.addEventListener("click", async (event) => {
   }
   const officialInternalButton = event.target.closest("[data-official-homepage][data-official-query]");
   if (officialInternalButton) {
+    const resultKey = decodeURIComponent(officialInternalButton.dataset.officialResultKey || "");
+    officialInternalButton.disabled = true;
+    officialInternalButton.textContent = "공식몰 결과 가져오는 중…";
     const result = await window.aroundG.openOfficialInternalSearch({
       homepageUrl: decodeURIComponent(officialInternalButton.dataset.officialHomepage),
       query: decodeURIComponent(officialInternalButton.dataset.officialQuery),
@@ -3049,6 +3052,26 @@ document.addEventListener("click", async (event) => {
     // process returns a canceled result so this click cannot become an
     // unhandled rejection in the Popular List status area.
     if (result?.canceled) return;
+    if (result?.ok && Array.isArray(result.products) && result.products.length) {
+      const mergeResult = (current = {}) => ({
+        ...current,
+        products: [...(current.products || []).filter((product) => String(product?.store || "") !== "브랜드 공식몰"), ...result.products],
+        sources: (current.sources || []).map((source) => String(source?.store || "") === "브랜드 공식몰"
+          ? { ...source, count: result.products.length, countVerified: true, verificationPending: false, verificationFailed: false, resultsUrl: result.resultsUrl }
+          : source),
+      });
+      if (resultKey && domesticResults.has(resultKey)) domesticResults.set(resultKey, mergeResult(domesticResults.get(resultKey)));
+      if (resultKey && excelPreviewSearchResults.has(resultKey)) excelPreviewSearchResults.set(resultKey, mergeResult(excelPreviewSearchResults.get(resultKey)));
+      const panel = document.createElement("div");
+      panel.className = "official-imported-results";
+      panel.innerHTML = `<strong>브랜드몰 상품 ${result.products.length}개 가져오기 완료</strong>${result.products.map((product) => `<div><span>${text(product.title || product.name || "공식몰 상품")}</span><b>${product.price ? money(product.price) : "가격 확인"}</b><button type="button" data-url="${encodeURIComponent(product.url)}">상품 열기</button></div>`).join("")}`;
+      officialInternalButton.closest(".domestic-result-line,.domestic-inline-source,.sourcing-price-row")?.append(panel);
+      officialInternalButton.textContent = `상품 ${result.products.length}개 가져옴`;
+      officialInternalButton.disabled = false;
+      return;
+    }
+    officialInternalButton.textContent = result?.submitted ? "검색 결과 없음" : "검색 실패 · 다시 시도";
+    officialInternalButton.disabled = false;
   }
   const officialButton = event.target.closest("[data-official-discovery][data-official-product]");
   const officialDiscovery = officialButton?.dataset.officialDiscovery;

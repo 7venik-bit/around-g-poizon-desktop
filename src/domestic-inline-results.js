@@ -142,7 +142,7 @@
       || sourceProduct?.spuId || "";
     if (!openUrl) return `<button type="button" disabled>${label}</button>`;
     if (source?.officialStatus && !productUrl) {
-      return `<button type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}">${label}</button>`;
+      return `<button type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}" data-official-result-key="${encodeURIComponent(contextKey)}">${label}</button>`;
     }
     return `<button type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
   }
