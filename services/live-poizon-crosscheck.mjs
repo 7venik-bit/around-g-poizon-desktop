@@ -77,8 +77,23 @@ export function resolveExcelRecentMetric(products = [], local = false) {
   const parent = evidence.filter((item) => item.columnFound && item.scope === 'spu');
   const options = evidence.filter((item) => item.columnFound && item.scope === 'sku');
   if (!parent.length) {
-    if (options.length) return result('scope-mismatch', 'EXCEL_SKU_SPU_SCOPE_MISMATCH',
-      `옵션 원본값 ${values(options) || '(공백)'}`, 'SKU·사이즈별 값입니다. SPU 상품값과 직접 비교하거나 합산하지 않습니다.');
+    if (options.length) {
+      const nonemptyOptions = options.filter((item) => item.raw !== '');
+      const parsedOptions = nonemptyOptions.map((item) => metricFromRaw(item.raw));
+      const optionMetrics = parsedOptions.every(Boolean)
+        ? [...new Map(parsedOptions.map((metric) => [metric.signature, metric])).values()]
+        : [];
+      // Some POIZON exports repeat one SPU-level recent-30 value on every SKU
+      // row. Accept only a complete, identical repetition; never sum options.
+      const distinctSkuRows = new Set(products.map((product) => String(product.skuId || product.globalSkuId || '')).filter(Boolean));
+      if (options.length >= 2 && distinctSkuRows.size >= 2
+          && nonemptyOptions.length === options.length && optionMetrics.length === 1) {
+        return result('resolved', '', optionMetrics[0].raw,
+          '동일 SPU의 모든 옵션 행에 같은 상품 판매량이 반복되어 SPU 값으로 확인했습니다.', optionMetrics[0], optionMetrics);
+      }
+      return result('scope-mismatch', 'EXCEL_SKU_SPU_SCOPE_MISMATCH',
+        `옵션 원본값 ${values(options) || '(공백)'}`, '옵션 행 값이 서로 다르거나 비어 있어 SPU 상품값으로 확정하지 않습니다. 합산하지 않고 현재 페이지에서 중단합니다.');
+    }
     return result('unavailable', 'EXCEL_RECENT30_COLUMN_UNRESOLVED', '비교 열 미확정',
       '상품 최근 30일 판매량 열을 확인하지 못했습니다. 셀 공백으로 판정하지 않습니다.');
   }
@@ -114,9 +129,8 @@ const onlySkuScopeMismatch = (row = {}) => row.matched === true
   && row.reasonCodes.every((code) => code === 'EXCEL_SKU_SPU_SCOPE_MISMATCH');
 
 // Match evidence by identity, never by array position. Fail before any write if
-// a page contains genuinely unresolved data. A verified SKU-vs-SPU scope mismatch
-// is different: the Excel option rows are preserved, excluded from the writer,
-// and the page may continue because there is no safe parent-cell correction to make.
+// a page contains genuinely unresolved data. A SKU-vs-SPU scope mismatch must
+// stop pagination; preserving bytes alone is not a completed page verification.
 export function assertPoizonPageReadyForCorrection(products = [], rows = [], pageNum = 0) {
   if (!Array.isArray(products) || !Array.isArray(rows)) throw new Error('페이지 상품 목록과 대조 증거가 올바르지 않습니다.');
   const productKeys = products.map(identity);
@@ -134,10 +148,7 @@ export function assertPoizonPageReadyForCorrection(products = [], rows = [], pag
   let skippedSkuScope = 0;
   for (const product of products) {
     const row = byKey.get(identity(product));
-    if (onlySkuScopeMismatch(row)) {
-      skippedSkuScope++;
-      continue;
-    }
+    if (onlySkuScopeMismatch(row)) skippedSkuScope++;
     if (!row || row.autoCorrectionBlocked || /충돌|미확인|비교 보류|확인 필요/.test(row.status || '')) {
       throw new Error(`POIZON ${pageNum || '?'}페이지 · ${identity(product) || '식별자 없음'} · ${row?.status || '대조 증거 없음'} · 원본 수정 및 다음 페이지 이동을 보류합니다.`);
     }
