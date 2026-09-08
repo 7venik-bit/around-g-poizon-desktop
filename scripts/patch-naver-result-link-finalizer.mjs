@@ -24,11 +24,13 @@ replaceOnce(
   "direct Naver Fashion Town result route",
 );
 
-replaceOnce(
-  '  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
-  '  // A valid search URL is navigation evidence only. Naver, SSG and LotteON\n  // must continue into rendered-card capture so visible products are imported.\n  const directParallelResultLink = String(source.store || "") === "병행수입·편집샵"\n    && /search\\.naver\\.com\\/search\\.naver/i.test(url)\n    && /[?&]where=shopping(?:&|$)/i.test(url)\n    && /[?&]query=/i.test(url);\n  if (directParallelResultLink) {\n    // Parallel-import search remains link-only by policy; first-party channels are parsed.\n    return createDomesticSearchLinkResult({ store: source.store, articleNumber, resolvedSearchUrl: url });\n  }\n  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
-  "Naver result capture instead of early link-only completion",
-);
+if (!source.includes("const directParallelResultLink")) {
+  replaceOnce(
+    '  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
+    '  // A valid search URL is navigation evidence only. Naver, SSG and LotteON\n  // must continue into rendered-card capture so visible products are imported.\n  const directParallelResultLink = String(source.store || "") === "병행수입·편집샵"\n    && /search\\.naver\\.com\\/search\\.naver/i.test(url)\n    && /[?&]where=shopping(?:&|$)/i.test(url)\n    && /[?&]query=/i.test(url);\n  if (directParallelResultLink) {\n    // Parallel-import search remains link-only by policy; first-party channels are parsed.\n    return createDomesticSearchLinkResult({ store: source.store, articleNumber, resolvedSearchUrl: url });\n  }\n  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
+    "Naver result capture instead of early link-only completion",
+  );
+}
 
 replaceOnce(
   '      const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;',
