@@ -17,8 +17,31 @@ function replaceCheckpointCall(source) {
   const endNeedle = '        });';
   const end = source.indexOf(endNeedle, productAt);
   if (start < 0 || end < 0) throw new Error('SKU-safe pagination patch target missing: checkpoint call bounds');
-  const after = `        // POIZON_SKU_SAFE_PAGE_SELECTION: SKU-only Excel values are preserved and deferred.\n        // Only same-scope SPU evidence or true missing rows may be written on this page.\n        const pageCorrection = selectPoizonPageCorrectionProducts(currentPageProducts, livePage.rows, capture.currentPage);\n        const checkpoint = pageCorrection.products.length\n          ? await syncPoizonPageCheckpoint({\n              filePath: input.verification.filePath,\n              products: pageCorrection.products,\n              pageNum: capture.currentPage,\n              backupPath: checkpointSummary.backupPath,\n            })\n          : { ok: true, reverified: true, changedRows: 0, changedCells: 0, addedRows: 0, addedProducts: 0, verifiedCells: 0, changes: [], backupPath: checkpointSummary.backupPath };\n        checkpoint.deferredProducts = Number(pageCorrection.deferredProducts || 0);`;
+  const after = `        // POIZON_SKU_SAFE_PAGE_SELECTION: SKU-only Excel values are preserved and deferred.\n        // Only same-scope SPU evidence or true missing rows may be written on this page.\n        const pageCorrection = selectPoizonPageCorrectionProducts(currentPageProducts, livePage.rows, capture.currentPage);\n        const checkpoint = pageCorrection.products.length\n          ? await syncPoizonPageCheckpoint({\n              filePath: checkpointSummary.filePath,\n              products: pageCorrection.products,\n              pageNum: capture.currentPage,\n              backupPath: checkpointSummary.backupPath,\n            })\n          : { ok: true, reverified: true, changedRows: 0, changedCells: 0, addedRows: 0, addedProducts: 0, verifiedCells: 0, changes: [], backupPath: checkpointSummary.backupPath };\n        checkpoint.deferredProducts = Number(pageCorrection.deferredProducts || 0);`;
   return source.slice(0, start) + after + source.slice(end + endNeedle.length);
+}
+function ensurePageTransactionGate(source) {
+  let next = source;
+  if (next.includes('enabled: Boolean(liveVerifier && input.verification?.filePath),')) {
+    next = replaceOnce(
+      next,
+      '    enabled: Boolean(liveVerifier && input.verification?.filePath),',
+      '    enabled: Boolean(liveVerifier),\n    filePath: String(input.verification?.filePath || input.filePath || "").trim(),',
+      'transaction gate enabled state',
+    );
+  } else if (!next.includes('filePath: String(input.verification?.filePath || input.filePath || "").trim()')) {
+    throw new Error('SKU-safe pagination patch target missing: transaction gate file path');
+  }
+  if (!next.includes('POIZON_PAGE_TRANSACTION_GATE')) {
+    next = replaceOnce(
+      next,
+      '  const sellerPageDelayMs = 12_000;',
+      '  // POIZON_PAGE_TRANSACTION_GATE: a visible Excel review must complete\n  // compare → write → disk reread → recompare before the next page click.\n  if (checkpointSummary.enabled && !checkpointSummary.filePath) {\n    throw new Error("POIZON 페이지별 검증용 Excel 파일 경로가 없어 다음 페이지 이동을 중단했습니다.");\n  }\n  const sellerPageDelayMs = 12_000;',
+      'transaction gate before pagination pacing',
+    );
+  }
+  next = next.replaceAll('filePath: input.verification.filePath,', 'filePath: checkpointSummary.filePath,');
+  return next;
 }
 
 const live = await read('services/live-poizon-crosscheck.mjs');
@@ -34,6 +57,7 @@ main = main.replace(
   'import { assertPoizonPageReadyForCorrection, selectPoizonPageCorrectionProducts } from "./services/live-poizon-crosscheck.mjs";'
 );
 main = replaceCheckpointCall(main);
+main = ensurePageTransactionGate(main);
 if (!main.includes('deferredProducts: 0,')) {
   main = replaceOnce(
     main,
@@ -78,6 +102,14 @@ if (!review.includes('report.deferredProducts =')) {
 await save('services/poizon-review-session.mjs', review);
 
 let view = await read('src/poizon-review-workspace.js');
+if (!view.includes('const verificationFilePath = String(')) {
+  const robustInput = "  const verificationFilePath = String(file.path || file.filePath || file.fullPath || snapshot?.file?.path || snapshot?.path || '').trim();\n  const input = { runId, brandName, fileName: file.name || '', filePath: verificationFilePath, screenOnly: true, conditions: frozen,";
+  const checkpointInput = "  const input = { runId, brandName, fileName: file.name || '', filePath: file.path || '', screenOnly: true, conditions: frozen,";
+  const sourceInput = "  const input = { runId, brandName, fileName: file.name || '', screenOnly: true, conditions: frozen,";
+  if (view.includes(checkpointInput)) view = view.replace(checkpointInput, robustInput);
+  else if (view.includes(sourceInput)) view = view.replace(sourceInput, robustInput);
+  else throw new Error('SKU-safe pagination patch target missing: live review file path input');
+}
 view = view.replace(
   "let state = { checkedProducts: 0, equalProducts: 0, differentProducts: 0, missingProducts: 0, pageNum: 0, pageCount: 0 };",
   "let state = { checkedProducts: 0, equalProducts: 0, differentProducts: 0, missingProducts: 0, deferredProducts: 0, pageNum: 0, pageCount: 0 };"
@@ -96,4 +128,4 @@ if (!runner.includes('"tests/poizon-sku-safe-pagination.test.mjs"')) {
 }
 await save('scripts/run-release-regressions.mjs', runner);
 
-console.log('POIZON SKU-safe pagination applied: real export SKU rows are preserved, not mislabeled missing, and no longer stop later pages.');
+console.log('POIZON SKU-safe pagination applied: real export SKU rows are preserved, not mislabeled missing, and page navigation waits for a verified Excel checkpoint.');
