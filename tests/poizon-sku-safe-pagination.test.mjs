@@ -70,11 +70,31 @@ test('SKU rows are neither missing nor overwritten and a page may continue with 
   assert.equal(page.missingProducts, 0);
   assert.equal(page.missingSalesCells, 0);
   assert.equal(page.deferredProducts, 1);
-  assert.match(page.rows[0].status, /옵션별 판매량 존재 · SPU 자동수정 제외 · 다음 페이지 진행/);
-  assert.doesNotMatch(page.rows[0].status, /판매량 누락|수정 대상|이동을 보류/);
+  assert.match(page.rows[0].status, /옵션별 판매량 존재 · SPU 자동수정 제외/);
+  assert.doesNotMatch(page.rows[0].status, /판매량 누락|수정 대상|이동을 보류|상품 없음/);
   const selected = selectPoizonPageCorrectionProducts(screen, page.rows, 1);
   assert.equal(selected.products.length, 0);
   assert.equal(selected.deferredProducts, 1);
+});
+
+test('shipping main blocks page navigation until the current page checkpoint is reverified', async () => {
+  const main = await readFile(new URL('../main.mjs', import.meta.url), 'utf8');
+  const view = await readFile(new URL('../src/poizon-review-workspace.js', import.meta.url), 'utf8');
+  const start = main.indexOf('async function captureSellerBrandSales');
+  const end = main.indexOf('async function lookupSellerTransactionPrice', start);
+  assert.ok(start >= 0 && end > start, 'capture function must be present');
+  const capture = main.slice(start, end);
+  assert.match(capture, /POIZON_PAGE_TRANSACTION_GATE/);
+  assert.match(capture, /enabled: Boolean\(liveVerifier\)/);
+  assert.match(capture, /filePath: String\(input\.verification\?\.filePath \|\| input\.filePath \|\| ""\)\.trim\(\)/);
+  assert.match(capture, /if \(checkpointSummary\.enabled && !checkpointSummary\.filePath\)/);
+  assert.match(capture, /filePath: checkpointSummary\.filePath/);
+  const checkpointAt = capture.indexOf('const checkpoint = pageCorrection.products.length');
+  const nextPageAt = capture.indexOf('const expectedNextPage = capture.currentPage + 1');
+  assert.ok(checkpointAt >= 0 && nextPageAt > checkpointAt, 'checkpoint must complete before next-page calculation');
+  assert.match(capture.slice(checkpointAt, nextPageAt), /if \(!checkpoint\?\.ok \|\| checkpoint\.reverified !== true\)/);
+  assert.match(view, /const verificationFilePath = String\(file\.path \|\| file\.filePath \|\| file\.fullPath \|\| snapshot\?\.file\?\.path \|\| snapshot\?\.path \|\| ''\)\.trim\(\)/);
+  assert.match(view, /filePath: verificationFilePath/);
 });
 
 test('real SPU-level mismatch remains actionable while SKU-only rows remain deferred', () => {
