@@ -157,6 +157,7 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
       currentRows = currentRows.map((row) => row.key === event.productKey ? { ...row, requiredAction:event.requiredAction } : row);
       state = { ...state, activeKey:event.activeKey }; renderRows(true);
       get('.review-phase').textContent = event.message;
+      doc.defaultView?.focus();
     } else if (event.phase === 'product-action-complete') {
       completedActions.add(event.productKey);
       currentRows = currentRows.map((row) => row.key === event.productKey ? { ...row, requiredAction:'', actionComplete:true, equal:true, status:event.message } : row);
