@@ -6,7 +6,7 @@ const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), 
 
 test("combined products receive one stable key used by rows, cache, and selection", () => {
   assert.match(renderer, /function excelPreviewStableSelectionKey/);
-  assert.match(renderer, /sourceProduct\._excelSelectionKey =/);
+  assert.match(renderer, /_excelSelectionKey: key/);
   assert.match(renderer, /products\.map\(\(product\) => excelPreviewStableSelectionKey\(product, file\)\)/);
   assert.match(renderer, /excelPreviewProductCache\.set\(excelPreviewStableSelectionKey\(product\), product\)/);
 });
