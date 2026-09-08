@@ -91,12 +91,12 @@ test("파일 목록 진행 문구와 전용 대조 화면의 브랜드·페이�
   assert.match(handler, /finally[\s\S]*downloadFileSyncActive = false/);
   assert.match(handler, /button\.textContent = previous/);
   assert.match(workspace, /if \(stopped \|\| event\.runId !== runId\) return/);
-  assert.match(workspace, /currentRows = event\.rows \|\| \[\]/);
+  assert.match(workspace, /currentRows = \(event\.rows \|\| \[\]\)\.map/);
   assert.match(workspace, /get\('\.review-file'\)\.textContent/);
   const literal = workspace.match(/get\('\.review-phase'\)\.textContent = (`POIZON \$\{event\.pageNum\}[^\n]+`);/)?.[1];
   assert.ok(literal, "The dedicated view must render actual page comparison events");
   const rendered = new Function('event', 'currentRows', 'return ' + literal + ';')({ pageNum: 37, pageCount: 150 }, Array(20));
-  assert.equal(rendered, 'POIZON 37/150페이지 · 상품 식별 및 판매량 대조 20개 완료');
+  assert.equal(rendered, 'POIZON 37/150페이지 · 상품 20/20 실시간 검색·대조 중');
   assert.match(workspace, /state\.checkedProducts/);
   assert.match(workspace, /state\.equalProducts/);
   assert.match(workspace, /state\.differentProducts/);

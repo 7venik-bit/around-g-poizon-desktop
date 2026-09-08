@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld("aroundG", {
     ipcRenderer.on("seller:verification-progress", handler);
     return () => ipcRenderer.removeListener("seller:verification-progress", handler);
   },
+  confirmSellerVerificationAction: (input = {}) => ipcRenderer.invoke("seller:verification-action", input),
   captureSellerBrandSales: (input = {}) => ipcRenderer.invoke("seller:capture-brand-sales", input),
   automateSellerBrandExport: (input) => ipcRenderer.invoke("seller:brand-export", input),
   beginSellerBrandSearchSession: () => ipcRenderer.invoke("seller:begin-brand-search-session"),

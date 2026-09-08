@@ -159,11 +159,11 @@ test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input re
   const sandbox = { liveVerifier:createPageCrossCheck({runId:'shipping',excelProducts:input}),
     capture:{rows:[source()],currentPage:1,pageCount:150}, mergeSellerBrandPages:(pages) => pages.flat(),
     mainWindow:{webContents:{send(){}}}, sellerWindow:{webContents:{executeJavaScript:async () => {}}},
-    paintSellerVerification(){}, verificationConditionLabel:() => '',
+    paintSellerVerification(){}, verificationConditionLabel:() => '', wait:async () => {},
     checkpointSummary:{enabled:true,backupPath:'',changes:[],changedRows:0,changedCells:0,addedRows:0,addedProducts:0,verifiedCells:0,deferredProducts:0}, checkpointPages:new Set(), input:{verification:{runId:'shipping',filePath:path}},
     assertPoizonPageReadyForCorrection, selectPoizonPageCorrectionProducts, syncPoizonPageCheckpoint:async () => { writes++; return {ok:true,reverified:true}; },
   };
-  await assert.rejects(runInNewContext('(async()=>{' + capture.slice(from,to) + '})()',sandbox), /다음 페이지 이동을 보류/);
+  await assert.rejects(runInNewContext('(async()=>{' + capture.slice(from,to) + '})()',sandbox), /현재 상품에서 중단/);
   assert.equal(writes,0); assert.deepEqual(await readFile(path),before);
   assert.equal(sandbox.checkpointSummary.deferredProducts,0);
   assert.equal(sandbox.checkpointSummary.pagesCompleted,undefined);
