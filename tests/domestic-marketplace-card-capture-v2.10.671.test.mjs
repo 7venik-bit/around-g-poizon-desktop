@@ -15,3 +15,8 @@ test("롯데온과 SSG 검색 URL은 링크만 반환하지 않고 공통 카드
   assert.match(main, /const productCards = \[\]/);
   assert.match(main, /productCards\.push\(\{/);
 });
+
+test("배포 보정 스크립트는 병행수입 링크 변수를 중복 삽입하지 않는다", async () => {
+  const patch = await readFile(new URL("../scripts/patch-naver-result-link-finalizer.mjs", import.meta.url), "utf8");
+  assert.match(patch, /if \(!source\.includes\("const directParallelResultLink"\)\)/);
+});
