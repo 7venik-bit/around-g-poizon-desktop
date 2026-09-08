@@ -194,7 +194,7 @@ test('shipped navigation, local brand lists, and file synchronization cannot imp
   const sync = renderer.slice(renderer.indexOf('$("#import-button").addEventListener'), renderer.indexOf('$("#export-button").addEventListener'));
   assert.match(local, /loadReviewSnapshots/); assert.doesNotMatch(local, /captureSellerBrandSales|syncExcelWithSellerScreen/);
   assert.match(sync, /listBrandExportFiles/); assert.doesNotMatch(sync, /captureSellerBrandSales|syncExcelWithSellerScreen|beginLiveVerification/);
-  assert.match(renderer, /return openReviewLocalBrandPreview\(files, filters\)/);
+  assert.match(renderer, /openCombinedSelectedBrandPreview\(files, \{ minimumTotal: "100", minimumLocalTotal: "25" \}\)/);
   assert.match(renderer, /poizon-review-brand-start/); assert.match(main, /screenOnly \? domProducts/);
   assert.match(main, /backgroundSeller: true/);
 });
