@@ -1,8 +1,17 @@
 // One identity resolver for comparison, workbook writes and search results.
 // SPU metrics never identify an individual size. SKU-level callers must opt in.
-export const cleanId = (value) => String(value ?? '').normalize('NFKC').trim();
+export const cleanId = (value) => String(value ?? '').normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
 export const normalizedArticle = (value) => cleanId(value).toUpperCase().replace(/[^\p{L}\p{N}]/gu, '');
-export const productSpu = (p = {}) => cleanId(p.spuId || p.globalSpuId);
+export const normalizedSpu = (value) => {
+  const raw = cleanId(value).replace(/\s+/g, '');
+  if (/^\d+\.0+$/.test(raw)) return raw.replace(/\.0+$/, '');
+  if (/^[+-]?\d+(?:\.\d+)?e[+-]?\d+$/i.test(raw)) {
+    const n = Number(raw);
+    if (Number.isSafeInteger(n) && n >= 0) return String(n);
+  }
+  return raw;
+};
+export const productSpu = (p = {}) => normalizedSpu(p.spuId || p.globalSpuId);
 export const productSku = (p = {}) => cleanId(p.skuId || p.globalSkuId);
 const article = (p) => normalizedArticle(p.articleNumber || p.productCode);
 const brandId = (p) => cleanId(p.brandId || p.brandCode);

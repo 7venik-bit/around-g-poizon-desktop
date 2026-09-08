@@ -2022,3 +2022,278 @@ button,input,select,textarea{font-family:inherit}
   .category-sales-filter-heading { align-items: flex-start; flex-direction: column; }
   .category-sales-filter-controls { grid-template-columns: 1fr; }
 }
+
+/* SIMPLE_HEADER_TRAFFIC_V1 */
+/* Keep the existing 1→2→3 chase timing; only the lamp palette changes. */
+.window-dots i:nth-child(1){background:#ef4444!important;color:#ef4444}
+.window-dots i:nth-child(2){background:#facc15!important;color:#facc15}
+.window-dots i:nth-child(3){background:#22c55e!important;color:#22c55e}
+.window-dots.connected i:nth-child(3){box-shadow:0 0 9px #22c55e!important}
+.window-dots.disconnected i:nth-child(1){box-shadow:0 0 10px #ef4444!important}
+
+/* Compact status strip: titles and actions only; verbose operational copy stays in the DOM for logic/accessibility. */
+.header-status-stack{display:flex!important;align-items:center!important;gap:6px!important;min-width:0!important;flex-wrap:nowrap!important}
+.header-status-stack .official-domain-audit,
+.header-status-stack .weekly-site-health,
+.header-status-stack .startup-recovery,
+.header-status-stack .brand-export-folder-setting{
+  display:flex!important;align-items:center!important;justify-content:space-between!important;gap:7px!important;
+  min-height:38px!important;padding:6px 8px!important;border-radius:9px!important;white-space:nowrap!important;overflow:hidden!important
+}
+.header-status-stack .official-domain-audit>div,
+.header-status-stack .weekly-site-health>div{display:block!important;min-width:0!important}
+.header-status-stack .official-domain-audit span,
+.header-status-stack .weekly-site-health span,
+.header-status-stack .weekly-site-health small,
+.header-status-stack .startup-recovery p,
+.header-status-stack .startup-recovery-progress,
+.header-status-stack .brand-export-folder-path{display:none!important}
+.header-status-stack .startup-recovery-heading{display:flex!important;align-items:center!important;gap:6px!important}
+.header-status-stack .startup-recovery-heading-actions{gap:5px!important}
+.header-status-stack .official-domain-audit strong,
+.header-status-stack .weekly-site-health strong,
+.header-status-stack .startup-recovery-heading strong{font-size:10px!important;line-height:1!important}
+.header-status-stack button{padding:5px 7px!important;font-size:9px!important;line-height:1.1!important}
+.header-status-stack .brand-export-folder-setting::before{content:'저장 폴더';font-size:10px;font-weight:700;color:#17365d}
+body .shell>header{grid-template-columns:auto minmax(0,1fr) auto!important}
+@media(max-width:1180px){.header-status-stack{flex-wrap:wrap!important}}
+
+/* SIMPLE_HEADER_NO_CLIP_V2 */
+/* Responsive header: never crop status titles or action labels when the app window is narrow. */
+body .shell>header{overflow:visible!important}
+.header-status-stack .official-domain-audit,
+.header-status-stack .weekly-site-health,
+.header-status-stack .startup-recovery,
+.header-status-stack .brand-export-folder-setting{overflow:visible!important}
+.header-status-stack button{flex:0 0 auto!important;min-width:max-content!important;white-space:nowrap!important}
+
+@media(max-width:1400px){
+  body .shell>header{grid-template-columns:auto minmax(0,1fr)!important;align-items:flex-start!important}
+  .header-status-stack{flex-wrap:wrap!important}
+  .header-actions{grid-column:1/-1!important;width:100%!important;justify-content:flex-end!important;flex-wrap:wrap!important}
+}
+
+@media(max-width:1050px){
+  body .shell>header{grid-template-columns:auto minmax(0,1fr)!important;gap:8px!important;padding:10px 12px!important}
+  .header-status-stack{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;width:100%!important;gap:6px!important}
+  .header-status-stack .official-domain-audit,
+  .header-status-stack .weekly-site-health,
+  .header-status-stack .startup-recovery,
+  .header-status-stack .brand-export-folder-setting{min-width:0!important;white-space:normal!important}
+  .header-status-stack .official-domain-audit strong,
+  .header-status-stack .weekly-site-health strong,
+  .header-status-stack .startup-recovery-heading strong{white-space:normal!important;line-height:1.25!important;overflow:visible!important}
+}
+
+@media(max-width:760px){
+  .header-status-stack{grid-template-columns:1fr!important}
+  .header-status-stack .official-domain-audit,
+  .header-status-stack .weekly-site-health,
+  .header-status-stack .startup-recovery,
+  .header-status-stack .brand-export-folder-setting{width:100%!important}
+}
+
+/* SIMPLE_HEADER_ACTIONS_V2 */
+/* Status header is action-first: one compact control per function. */
+.header-status-stack{display:flex!important;align-items:center!important;gap:7px!important;min-width:0!important;flex-wrap:wrap!important}
+.header-status-stack .official-domain-audit,
+.header-status-stack .weekly-site-health,
+.header-status-stack .startup-recovery,
+.header-status-stack .brand-export-folder-setting{
+  flex:0 0 auto!important;display:flex!important;align-items:center!important;justify-content:center!important;
+  min-width:0!important;width:auto!important;min-height:38px!important;height:auto!important;padding:0!important;
+  border:0!important;background:transparent!important;overflow:visible!important;white-space:normal!important
+}
+.header-status-stack .official-domain-audit>div,
+.header-status-stack .weekly-site-health>div,
+.header-status-stack .startup-recovery-heading>strong,
+.header-status-stack .startup-recovery-heading-actions>span,
+.header-status-stack .startup-recovery p,
+.header-status-stack .startup-recovery-progress,
+.header-status-stack .brand-export-folder-path{display:none!important}
+.header-status-stack .startup-recovery-heading,
+.header-status-stack .startup-recovery-heading-actions{display:contents!important}
+.header-status-stack button{
+  display:inline-flex!important;align-items:center!important;justify-content:center!important;
+  min-width:86px!important;max-width:none!important;height:38px!important;padding:0 12px!important;
+  overflow:visible!important;white-space:nowrap!important;text-overflow:clip!important;line-height:1!important;
+  font-size:0!important;font-weight:700!important;flex:0 0 auto!important
+}
+#official-domain-audit-toggle::after{content:'공식몰 점검';font-size:10px}
+#weekly-site-health-run::after{content:'서버 점검';font-size:10px}
+#startup-recovery-run::after{content:'POIZON 확인';font-size:10px}
+#brand-export-folder-select::after{content:'저장 폴더';font-size:10px}
+.header-status-stack .brand-export-folder-setting::before{display:none!important;content:none!important}
+body .shell>header{grid-template-columns:auto minmax(0,1fr) auto!important;align-items:center!important}
+.header-actions{align-items:center!important;flex-wrap:wrap!important;min-width:0!important}
+@media(max-width:1500px){
+  body .shell>header{grid-template-columns:auto 1fr!important;grid-template-areas:'lamps status' 'actions actions'!important;row-gap:8px!important}
+  .workspace-title{grid-area:lamps!important}
+  .header-status-stack{grid-area:status!important}
+  .header-actions{grid-area:actions!important;width:100%!important;justify-content:flex-end!important}
+}
+@media(max-width:980px){
+  .header-status-stack{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;width:100%!important}
+  .header-status-stack>*,.header-status-stack button{width:100%!important}
+}
+@media(max-width:620px){.header-status-stack{grid-template-columns:1fr!important}}
+
+/* HEADER_BUTTON_SIZING_V1 */
+.header-status-stack{align-items:center!important;gap:8px!important}
+.header-status-stack .official-domain-audit,
+.header-status-stack .weekly-site-health,
+.header-status-stack .startup-recovery,
+.header-status-stack .brand-export-folder-setting{
+  flex:0 0 auto!important;
+  width:auto!important;
+  min-width:0!important;
+  height:34px!important;
+  min-height:34px!important;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+  overflow:visible!important
+}
+.header-status-stack button,
+.header-status-stack .brand-export-folder-setting::before{
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  height:34px!important;
+  min-height:34px!important;
+  padding:0 12px!important;
+  border-radius:8px!important;
+  font-size:10px!important;
+  font-weight:700!important;
+  line-height:1!important;
+  letter-spacing:0!important;
+  white-space:nowrap!important
+}
+#official-domain-audit-toggle{min-width:78px!important}
+#weekly-site-health-run{min-width:70px!important}
+#startup-recovery-run{min-width:76px!important}
+.header-status-stack .brand-export-folder-setting::before{min-width:72px!important}
+.header-status-stack .startup-recovery-heading,
+.header-status-stack .startup-recovery-heading-actions{height:34px!important;align-items:center!important}
+.header-status-stack .startup-recovery-heading-actions{gap:4px!important}
+#startup-recovery-percent{font-size:10px!important;line-height:1!important;min-width:24px!important;text-align:center!important}
+body .shell>header{align-items:center!important}
+.workspace-title,.header-actions{align-self:center!important}
+.header-actions>button,
+.header-actions>.update-anchor>.update-button,
+.header-actions>.download-sync-anchor>button{height:36px!important;min-height:36px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important}
+@media(max-width:1500px){.header-status-stack{justify-content:flex-start!important}}
+
+/* HEADER_FINAL_RESPONSIVE_V1 */
+/* Final header layout: one line, compact labels, no duplicated status copy. */
+body .shell>header{
+  display:flex!important;
+  align-items:center!important;
+  gap:clamp(6px,.8vw,12px)!important;
+  min-height:74px!important;
+  height:auto!important;
+  padding:10px clamp(12px,1.5vw,22px)!important;
+  grid-template-columns:none!important;
+  grid-template-areas:none!important;
+  flex-wrap:nowrap!important
+}
+.workspace-title{flex:0 0 auto!important;min-width:auto!important}
+.header-status-stack{
+  display:flex!important;
+  align-items:center!important;
+  gap:clamp(4px,.55vw,8px)!important;
+  flex:0 1 auto!important;
+  min-width:0!important;
+  width:auto!important;
+  flex-wrap:nowrap!important;
+  justify-content:flex-start!important
+}
+.header-status-stack .official-domain-audit,
+.header-status-stack .weekly-site-health,
+.header-status-stack .startup-recovery,
+.header-status-stack .brand-export-folder-setting{
+  flex:0 0 auto!important;
+  width:auto!important;
+  min-width:0!important;
+  height:32px!important;
+  min-height:32px!important;
+  padding:0!important;
+  margin:0!important
+}
+.header-status-stack .official-domain-audit>div,
+.header-status-stack .weekly-site-health>div,
+.header-status-stack .startup-recovery-heading>strong,
+.header-status-stack .startup-recovery-heading-actions>span,
+.header-status-stack .startup-recovery p,
+.header-status-stack .startup-recovery-progress,
+.header-status-stack .brand-export-folder-path{display:none!important}
+.header-status-stack .startup-recovery-heading,
+.header-status-stack .startup-recovery-heading-actions{display:contents!important}
+.header-status-stack button{
+  width:auto!important;
+  min-width:0!important;
+  max-width:none!important;
+  height:32px!important;
+  min-height:32px!important;
+  padding:0 clamp(8px,.7vw,12px)!important;
+  border-radius:8px!important;
+  font-size:0!important;
+  line-height:1!important;
+  white-space:nowrap!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important
+}
+#official-domain-audit-toggle::after{content:'공식몰';font-size:clamp(9px,.68vw,11px)!important}
+#weekly-site-health-run::after{content:'서버';font-size:clamp(9px,.68vw,11px)!important}
+#startup-recovery-run::after{content:'POIZON';font-size:clamp(9px,.68vw,11px)!important}
+#brand-export-folder-select::after{content:'저장';font-size:clamp(9px,.68vw,11px)!important}
+.header-actions{
+  margin-left:auto!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-end!important;
+  gap:clamp(4px,.55vw,8px)!important;
+  min-width:0!important;
+  width:auto!important;
+  flex:0 1 auto!important;
+  flex-wrap:nowrap!important
+}
+.header-actions>button,
+.header-actions>.update-anchor>.update-button,
+.header-actions>.download-sync-anchor>button{
+  width:auto!important;
+  min-width:0!important;
+  max-width:none!important;
+  height:32px!important;
+  min-height:32px!important;
+  padding:0 clamp(8px,.8vw,13px)!important;
+  border-radius:8px!important;
+  font-size:clamp(9px,.66vw,11px)!important;
+  line-height:1!important;
+  white-space:nowrap!important
+}
+.update-anchor,.download-sync-anchor{position:relative!important;display:flex!important;align-items:center!important;flex:0 0 auto!important}
+#app-version-state{display:none!important}
+.update-inline{
+  position:absolute!important;
+  top:calc(100% + 8px)!important;
+  right:0!important;
+  left:auto!important;
+  width:min(300px,80vw)!important;
+  z-index:30!important;
+  margin:0!important
+}
+.update-inline[hidden]{display:none!important}
+.header-sync-progress{position:absolute!important;top:calc(100% + 8px)!important;right:0!important;width:210px!important;z-index:30!important}
+@media(max-width:1100px){
+  body .shell>header{gap:5px!important;padding-inline:10px!important}
+  .header-status-stack{gap:3px!important}
+  .header-actions{gap:3px!important}
+  .header-status-stack button{padding-inline:7px!important}
+  .header-actions>button,.header-actions>.update-anchor>.update-button,.header-actions>.download-sync-anchor>button{padding-inline:8px!important}
+}
+@media(max-width:860px){
+  body .shell>header{overflow-x:auto!important;scrollbar-width:thin!important}
+  .header-status-stack,.header-actions{flex-shrink:0!important}
+}

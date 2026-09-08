@@ -37,9 +37,9 @@ test('patch is idempotent and touches no renderer or workbook data', async () =>
     assert.match(first, /<body>unchanged<\/body>/);
   } finally { await rm(temp,{recursive:true,force:true}); }
 });
-test('layout runs after retired download button patch and is mandatory', async () => {
+test('integrated layout is covered by install verification', async () => {
   const pkg=JSON.parse(await read('package.json'));
-  const pipeline=pkg.scripts.postinstall;
-  assert.ok(pipeline.indexOf('patch-header-brand-layout.mjs')>pipeline.indexOf('patch-retire-download-sync.mjs'));
-  assert.ok(pipeline.includes('node --test tests/header-brand-layout.test.mjs'));
+  const verifier=await read('scripts/verify-integrated-source.mjs');
+  assert.match(pkg.scripts.postinstall,/verify-integrated-source\.mjs/);
+  assert.match(verifier,/header-brand-layout-styles/);
 });

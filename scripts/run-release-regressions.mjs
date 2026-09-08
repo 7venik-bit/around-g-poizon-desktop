@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
-const files = process.argv.slice(2);
+const files = [...new Set([...process.argv.slice(2), "tests/poizon-review-workspace.test.mjs", "tests/poizon-sku-safe-pagination.test.mjs", "tests/poizon-fake-missing.test.mjs", "tests/poizon-value-integrity.test.mjs", "tests/poizon-screen-excel-sync.test.mjs", "tests/live-poizon-crosscheck.test.mjs", "tests/poizon-value-safety.test.mjs"])];
 if (!files.length) throw new Error("At least one regression test file is required");
 const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", ...files], {
   encoding: "utf8", maxBuffer: 64 * 1024 * 1024,

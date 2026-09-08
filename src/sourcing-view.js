@@ -264,6 +264,24 @@
         const productRows = products.map((product) => {
           const source = sourceForProduct(product);
           const candidateName = product?.title || product?.name || product?.articleNumber || "국내 상품";
+          const sourceStore = String(source?.store || product?.store || "");
+          const simpleLinkResult = product?.linkOnly === true
+            || sourceStore === "브랜드 공식몰"
+            || /^네이버\s/.test(sourceStore);
+          if (simpleLinkResult && /^https?:\/\//i.test(String(product?.url || ""))) {
+            const linkPrice = numericDomesticPrice(product?.price);
+            const linkDifference = linkPrice && poizonPrice ? linkPrice - poizonPrice : null;
+            return `<div class="sourcing-price-row">
+              <strong class="sourcing-price-store">${text(sourceStore || "공식 판매처")}</strong>
+              <span class="sourcing-price-title" title="${text(candidateName)}">${text(sourceStore === "브랜드 공식몰" ? candidateName : "검색 결과 링크")}</span>
+              <strong>${linkPrice ? money(linkPrice) : "가격 확인"}</strong>
+              <span class="sourcing-price-unknown">–</span>
+              <span class="sourcing-price-unknown">–</span>
+              <span class="sourcing-price-unknown">–</span>
+              <strong class="${Number.isFinite(linkDifference) ? linkDifference < 0 ? "sourcing-price-negative" : "sourcing-price-caution" : "sourcing-price-unknown"}">${signedMoney(linkDifference)}</strong>
+              ${sourceAction(source, product, "열기")}
+            </div>`;
+          }
           const retailer = product?.retailerName || product?.store || source?.store || "판매처";
           const price = numericDomesticPrice(product?.price);
           const shipping = domesticProductShipping(product);
@@ -388,6 +406,7 @@
       if (typeof renderExcelProductRows !== "function" || renderExcelProductRows.__aroundGSourcingView) return;
       const originalRenderExcelProductRows = renderExcelProductRows;
       const sourcingRenderer = function sourcingRenderExcelProductRows(file, products = []) {
+        if (typeof renderVerifiedSpuRows === "function" && products.some((p) => Array.isArray(p.verificationOptions))) return renderVerifiedSpuRows(file, products);
         try {
           const highestSizeByIdentity = highestQualifiedSizeReference(products);
           const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.key || product.articleNumber || product.spuId}`);
@@ -477,4 +496,259 @@
   if (rows) observer.observe(rows, { childList: true, subtree: true });
   const explorerResults = document.querySelector("#explorer-results");
   if (explorerResults) observer.observe(explorerResults, { childList: true, subtree: true });
+})();
+
+(() => {
+  if (document.querySelector("style[data-compact-sourcing-list-style]")) return;
+  const style = document.createElement("style");
+  style.setAttribute("data-compact-sourcing-list-style", "true");
+  style.textContent = `
+    /* One product per row. Compact sourcing-table layout for every product renderer. */
+    #explorer-product-grid{display:flex!important;flex-direction:column!important;gap:0!important;border:1px solid #e5e7eb!important;border-radius:8px!important;overflow:hidden!important;background:#fff!important}
+    #explorer-product-grid>.product-selection-toolbar{margin:0!important;padding:7px 9px!important;border-bottom:1px solid #e5e7eb!important;background:#f8fafc!important}
+    #explorer-product-grid .explorer-product-row{display:grid!important;grid-template-columns:32px minmax(0,1fr) 68px!important;gap:8px!important;align-items:center!important;min-height:56px!important;margin:0!important;padding:6px 9px!important;border:0!important;border-bottom:1px solid #edf0f3!important;border-radius:0!important;background:#fff!important;box-shadow:none!important}
+    #explorer-product-grid .explorer-product-row:nth-of-type(even){background:#fbfcfd!important}
+    #explorer-product-grid .explorer-product-row:hover{background:#f6f9fc!important}
+    #explorer-product-grid .rank-number{width:26px!important;height:26px!important;border-radius:6px!important;font-size:10px!important;line-height:1!important}
+    #explorer-product-grid .product-summary{display:grid!important;grid-template-columns:44px minmax(0,1fr)!important;gap:8px!important;align-items:center!important;min-width:0!important}
+    #explorer-product-grid .product-summary img,
+    #explorer-product-grid .product-summary .image-placeholder,
+    #explorer-product-grid .seller-product-info img,
+    #explorer-product-grid .seller-product-info .image-placeholder{width:44px!important;height:44px!important;max-width:44px!important;max-height:44px!important;min-width:44px!important;object-fit:contain!important;border-radius:5px!important;margin:0!important;background:#fff!important}
+    #explorer-product-grid .product-summary h3{margin:2px 0!important;font-size:11px!important;line-height:1.25!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;min-height:0!important}
+    #explorer-product-grid .product-summary p{margin:0!important;font-size:9px!important;line-height:1.2!important;color:#6b7280!important}
+    #explorer-product-grid .explorer-product-meta{margin:2px 0 0!important;font-size:9px!important;line-height:1.2!important;gap:8px!important}
+    #explorer-product-grid .product-badges{gap:3px!important}
+    #explorer-product-grid .badge{padding:2px 5px!important;font-size:8px!important;line-height:1.1!important}
+    #explorer-product-grid .product-select-option{justify-self:end!important;margin:0!important;font-size:9px!important;white-space:nowrap!important}
+
+    /* Domestic matches are subordinate rows, never large cards. */
+    #explorer-product-grid .domestic-inventory{grid-column:2/-1!important;margin:0!important;padding:5px 0 0!important;border-top:1px solid #f0f2f4!important;min-width:0!important}
+    #explorer-product-grid .inventory-heading{min-height:28px!important;margin:0 0 4px!important;gap:6px!important}
+    #explorer-product-grid .inventory-heading button{padding:4px 7px!important;border-radius:5px!important;font-size:9px!important}
+    .domestic-source-list.sourcing-product-list{display:flex!important;flex-direction:column!important;gap:0!important;border:1px solid #e5e7eb!important;border-radius:6px!important;overflow:hidden!important;background:#fff!important;box-shadow:none!important}
+    .sourcing-product-list-row{display:grid!important;grid-template-columns:44px minmax(0,1fr) 100px!important;gap:8px!important;align-items:center!important;min-height:56px!important;padding:5px 7px!important;border:0!important;border-bottom:1px solid #edf0f3!important;border-radius:0!important;background:#fff!important;box-shadow:none!important}
+    .sourcing-product-list-row:nth-child(even){background:#fbfcfd!important}
+    .sourcing-product-thumb{width:44px!important;height:44px!important;max-width:44px!important;max-height:44px!important;min-width:44px!important;border-radius:5px!important;border:1px solid #eceff2!important;overflow:hidden!important;background:#f8fafc!important;font-size:8px!important}
+    .sourcing-product-thumb img{width:44px!important;height:44px!important;max-width:44px!important;max-height:44px!important;object-fit:contain!important;margin:0!important;background:#fff!important}
+    .sourcing-product-info{gap:1px!important;min-width:0!important}
+    .sourcing-product-store{gap:4px!important;font-size:9px!important;line-height:1.2!important}
+    .sourcing-product-store .official{padding:2px 5px!important;font-size:8px!important}
+    .sourcing-product-title{margin:0!important;font-size:11px!important;line-height:1.25!important;display:-webkit-box!important;-webkit-line-clamp:1!important;-webkit-box-orient:vertical!important;overflow:hidden!important}
+    .sourcing-product-meta{gap:4px 7px!important;font-size:9px!important;line-height:1.15!important}
+    .sourcing-product-actions{min-width:100px!important;gap:3px!important;justify-content:center!important}
+    .sourcing-product-price{font-size:10px!important;line-height:1.1!important}
+    .sourcing-product-actions button{min-width:82px!important;padding:5px 6px!important;border-radius:5px!important;font-size:9px!important}
+    .sourcing-source-fallback{display:grid!important;grid-template-columns:minmax(110px,155px) minmax(80px,1fr) 84px!important;gap:7px!important;align-items:center!important;min-height:36px!important;padding:5px 7px!important;border:0!important;border-bottom:1px solid #edf0f3!important;border-radius:0!important;background:#fff!important}
+    .sourcing-source-fallback:nth-child(even){background:#fbfcfd!important}
+    .sourcing-source-fallback strong{font-size:10px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+    .sourcing-source-fallback span{display:inline-flex!important;width:max-content!important;max-width:100%!important;align-items:center!important;padding:2px 6px!important;border-radius:999px!important;background:#ecfdf3!important;color:#147a4a!important;font-size:9px!important;font-weight:800!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+    .sourcing-source-fallback button{min-width:78px!important;padding:4px 6px!important;border-radius:5px!important;font-size:9px!important;font-weight:800!important}
+
+    /* Seller-result path uses a separate renderer; keep it equally dense. */
+    #explorer-product-grid .seller-result-table{overflow:auto!important;background:#fff!important}
+    #explorer-product-grid .seller-result-row{min-height:58px!important;margin:0!important;padding:5px 7px!important;border-radius:0!important;border-bottom:1px solid #edf0f3!important;background:#fff!important;box-shadow:none!important}
+    #explorer-product-grid .seller-result-row:nth-child(even){background:#fbfcfd!important}
+    #explorer-product-grid .seller-product-info{display:grid!important;grid-template-columns:22px 44px minmax(0,1fr)!important;gap:7px!important;align-items:center!important;min-width:0!important}
+    #explorer-product-grid .seller-product-info code,#explorer-product-grid .seller-product-info small{font-size:9px!important;line-height:1.15!important}
+    #explorer-product-grid .seller-product-info strong{font-size:10px!important;line-height:1.2!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+
+    /* Excel/product view follows the same visual density. */
+    #excel-preview-grid{font-size:10px!important}
+    #excel-preview-grid th{font-size:9px!important;padding:6px 7px!important;white-space:nowrap!important}
+    #excel-preview-grid td{padding:5px 7px!important}
+    #excel-preview-grid .excel-product-row td{height:42px!important}
+    #excel-preview-grid img{width:44px!important;height:44px!important;max-width:44px!important;max-height:44px!important;object-fit:contain!important;margin:0 auto!important;border-radius:5px!important;background:#fff!important}
+    #excel-preview-grid .excel-product-image img{width:34px!important;height:34px!important;max-width:34px!important;max-height:34px!important}
+    #excel-preview-grid .excel-product-search-detail td{padding:4px 6px!important;background:#fff!important;border-left:2px solid #e5e7eb!important}
+    #excel-preview-grid .excel-product-search-result-label{margin:0 0 4px!important;padding:3px 6px!important;border-radius:5px!important;background:#f8fafc!important;font-size:9px!important}
+
+    @media (max-width:980px){
+      #explorer-product-grid .explorer-product-row{grid-template-columns:28px minmax(0,1fr) 58px!important;min-height:52px!important;padding:5px 7px!important}
+      #explorer-product-grid .product-summary{grid-template-columns:40px minmax(0,1fr)!important}
+      #explorer-product-grid .product-summary img,
+      #explorer-product-grid .product-summary .image-placeholder,
+      #explorer-product-grid .seller-product-info img,
+      #explorer-product-grid .seller-product-info .image-placeholder,
+      .sourcing-product-thumb,
+      .sourcing-product-thumb img{width:40px!important;height:40px!important;max-width:40px!important;max-height:40px!important;min-width:40px!important}
+      .sourcing-product-list-row{grid-template-columns:40px minmax(0,1fr) 86px!important;min-height:52px!important}
+      .sourcing-source-fallback{grid-template-columns:minmax(95px,135px) minmax(70px,1fr) 76px!important}
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
+(() => {
+  const marker = "data-around-g-domestic-image-clamp";
+  if (document.documentElement.hasAttribute(marker)) return;
+  document.documentElement.setAttribute(marker, "true");
+
+  const selector = [
+    "#excel-preview-rows .excel-product-search-detail img",
+    "#explorer-product-grid .domestic-inventory img",
+    ".domestic-source-list img",
+    ".sourcing-product-list-row img"
+  ].join(",");
+
+  const hardClampImage = (image) => {
+    if (!(image instanceof HTMLImageElement)) return;
+    image.width = 44;
+    image.height = 44;
+    image.style.setProperty("width", "44px", "important");
+    image.style.setProperty("height", "44px", "important");
+    image.style.setProperty("max-width", "44px", "important");
+    image.style.setProperty("max-height", "44px", "important");
+    image.style.setProperty("min-width", "44px", "important");
+    image.style.setProperty("min-height", "44px", "important");
+    image.style.setProperty("object-fit", "contain", "important");
+    image.style.setProperty("object-position", "center", "important");
+    image.style.setProperty("display", "block", "important");
+    image.style.setProperty("margin", "0", "important");
+    image.style.setProperty("flex", "0 0 44px", "important");
+
+    const thumb = image.closest(".sourcing-product-thumb");
+    if (thumb) {
+      thumb.style.setProperty("width", "44px", "important");
+      thumb.style.setProperty("height", "44px", "important");
+      thumb.style.setProperty("max-width", "44px", "important");
+      thumb.style.setProperty("max-height", "44px", "important");
+      thumb.style.setProperty("min-width", "44px", "important");
+      thumb.style.setProperty("overflow", "hidden", "important");
+      thumb.style.setProperty("flex", "0 0 44px", "important");
+    }
+
+    const imageLink = image.closest(".excel-image-cell a");
+    if (imageLink) {
+      imageLink.style.setProperty("display", "block", "important");
+      imageLink.style.setProperty("width", "44px", "important");
+      imageLink.style.setProperty("height", "44px", "important");
+      imageLink.style.setProperty("max-width", "44px", "important");
+      imageLink.style.setProperty("max-height", "44px", "important");
+      imageLink.style.setProperty("overflow", "hidden", "important");
+    }
+  };
+
+  const clampWithin = (root = document) => {
+    if (root instanceof HTMLImageElement && root.matches(selector)) hardClampImage(root);
+    if (!root?.querySelectorAll) return;
+    root.querySelectorAll(selector).forEach(hardClampImage);
+  };
+
+  clampWithin(document);
+
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (node instanceof Element) clampWithin(node);
+      }
+    }
+  });
+
+  [document.querySelector("#excel-preview-rows"), document.querySelector("#explorer-product-grid")]
+    .filter(Boolean)
+    .forEach((root) => observer.observe(root, { childList: true, subtree: true }));
+})();
+
+(() => {
+  if (document.querySelector("style[data-product-image-text-alignment]")) return;
+  const style = document.createElement("style");
+  style.setAttribute("data-product-image-text-alignment", "true");
+  style.textContent = `
+    /* Product layout rule: image stays on the left, copy stays on the right. */
+    #explorer-product-grid .product-summary,
+    .candidate-summary{
+      display:flex!important;
+      flex-direction:row!important;
+      align-items:flex-start!important;
+      gap:8px!important;
+      min-width:0!important;
+    }
+
+    #explorer-product-grid .product-summary>img,
+    #explorer-product-grid .product-summary>.image-placeholder{
+      flex:0 0 44px!important;
+      align-self:flex-start!important;
+      margin:0!important;
+    }
+
+    #explorer-product-grid .product-summary>div{
+      display:flex!important;
+      flex:1 1 auto!important;
+      flex-direction:column!important;
+      align-items:flex-start!important;
+      min-width:0!important;
+      margin:0!important;
+      padding:0!important;
+    }
+
+    .candidate-summary>.candidate-image{
+      flex:0 0 48px!important;
+      align-self:flex-start!important;
+      margin:0!important;
+    }
+
+    .candidate-summary>span{
+      display:flex!important;
+      flex:1 1 auto!important;
+      flex-direction:column!important;
+      align-items:flex-start!important;
+      min-width:0!important;
+      margin:0!important;
+      padding:0!important;
+    }
+
+    .sourcing-product-list-row{
+      display:flex!important;
+      flex-direction:row!important;
+      align-items:flex-start!important;
+      gap:8px!important;
+      min-width:0!important;
+    }
+
+    .sourcing-product-thumb{
+      flex:0 0 44px!important;
+      align-self:flex-start!important;
+      margin:0!important;
+    }
+
+    .sourcing-product-info{
+      display:flex!important;
+      flex:1 1 auto!important;
+      flex-direction:column!important;
+      align-items:flex-start!important;
+      min-width:0!important;
+      margin:0!important;
+      padding:0!important;
+    }
+
+    .sourcing-product-actions{
+      flex:0 0 100px!important;
+      align-self:center!important;
+      margin-left:auto!important;
+    }
+
+    #explorer-product-grid .seller-product-info{
+      align-items:flex-start!important;
+    }
+
+    #explorer-product-grid .product-summary h3,
+    #explorer-product-grid .product-summary p,
+    .candidate-summary b,
+    .candidate-summary small,
+    .sourcing-product-store,
+    .sourcing-product-title,
+    .sourcing-product-meta{
+      margin-top:0!important;
+    }
+
+    /* Excel product rows remain tables, but image and identity cells share the same top line. */
+    #excel-preview-grid .excel-product-row .excel-product-image,
+    #excel-preview-grid .excel-product-row .excel-product-image+td,
+    #excel-preview-grid .excel-product-row .excel-product-image+td+td,
+    #excel-preview-grid .excel-product-row .excel-product-image+td+td+td{
+      vertical-align:top!important;
+    }
+  `;
+  document.head.appendChild(style);
 })();

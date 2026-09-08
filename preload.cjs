@@ -34,6 +34,13 @@ contextBridge.exposeInMainWorld("aroundG", {
   },
   openSellerCenter: () => ipcRenderer.invoke("seller:open"),
   openSellerProductSearch: () => ipcRenderer.invoke("seller:open-product-search"),
+  beginSellerExcelVerification: (input = {}) => ipcRenderer.invoke("seller:excel-verification-start", input),
+  endSellerExcelVerification: () => ipcRenderer.invoke("seller:excel-verification-end"),
+  onSellerVerificationProgress: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on("seller:verification-progress", handler);
+    return () => ipcRenderer.removeListener("seller:verification-progress", handler);
+  },
   captureSellerBrandSales: (input = {}) => ipcRenderer.invoke("seller:capture-brand-sales", input),
   automateSellerBrandExport: (input) => ipcRenderer.invoke("seller:brand-export", input),
   beginSellerBrandSearchSession: () => ipcRenderer.invoke("seller:begin-brand-search-session"),
@@ -45,6 +52,8 @@ contextBridge.exposeInMainWorld("aroundG", {
   openDownloadedBrandFile: (path, brand) => ipcRenderer.invoke("brand-export:open-file", { path, brand }),
   openOriginalExcelFile: (path) => ipcRenderer.invoke("brand-export:open-original", { path }),
   revealBrandExportFile: (path) => ipcRenderer.invoke("brand-export:reveal-file", { path }),
+  readPoizonReviewWorkbook: (input) => ipcRenderer.invoke("excel:review-snapshot", input),
+  checkPoizonReviewWorkbook: (input) => ipcRenderer.invoke("excel:review-revision", input),
   previewExcelFile: (path, offset = 0, limit = 100, filters = {}) => ipcRenderer.invoke("excel:preview", { path, offset, limit, filters }),
   syncExcelWithSellerScreen: (input = {}) => ipcRenderer.invoke("excel:sync-seller-screen", input),
   getExcelColumnLayout: (path, columnCount = 0) => ipcRenderer.invoke("excel:get-column-layout", { path, columnCount }),

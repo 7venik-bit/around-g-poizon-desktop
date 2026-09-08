@@ -1,7 +1,9 @@
+import { assertPoizonPageReadyForCorrection, selectPoizonPageCorrectionProducts } from './live-poizon-crosscheck.mjs';
 import { normalizeVerificationConditions, recentMetric } from './live-poizon-crosscheck.mjs';
 import { indexProductIdentities, resolveProductIdentity } from './poizon-product-identity.mjs';
 
 export function reviewTone(row = {}) {
+  if (row.autoCorrectionBlocked === true) return 'unknown';
   if (row.matched === false) return 'missing';
   if (row.equal === true) return 'equal';
   return /미확인|기준|없음/.test(row.status || '') ? 'unknown' : 'different';
@@ -89,7 +91,7 @@ export function buildReviewReport(snapshot, rows, { complete = true, message = '
 }
 
 export function reviewReportText(report = {}) {
-  const lines = ['POIZON ↔ Excel 전체 대조 결과', '원본 Excel 자동 수정 없음',
+  const lines = ['POIZON ↔ Excel 전체 대조 결과', 'POIZON 화면값 기준 Excel 자동 교정 · 저장 후 재검증',
     report.complete ? '전체 대조 완료' : '검증 미완료 · 부분 결과를 전체 일치로 확정하지 않습니다.', ''];
   for (const file of report.files || []) {
     lines.push(`[${file.file}] ${file.complete ? '전체 완료' : '미완료'}${file.message ? ' · ' + file.message : ''}`);
@@ -108,7 +110,7 @@ export function reviewReportText(report = {}) {
 
 export async function runPoizonReviewBatch({ files, conditions = {}, api, createView, onProgress = () => {}, notify = () => {} }) {
   const frozen = normalizeVerificationConditions(conditions), reports = [];
-  // Read every selected workbook before opening the Seller Center collector.
+  // 모든 원본을 먼저 읽어 작업 중 파일 변경 여부를 감지할 수 있게 고정한다.
   const snapshots = await loadReviewSnapshots(files, api, onProgress);
   let lastView;
   for (const snapshot of snapshots) {
@@ -122,15 +124,76 @@ export async function runPoizonReviewBatch({ files, conditions = {}, api, create
       if (!coverage.ok) throw new Error(coverage.message);
       const unchanged = await api.checkPoizonReviewWorkbook({ path: snapshot.file.path, revision: snapshot.revision });
       if (!unchanged?.ok || !unchanged.unchanged) throw new Error('검증 중 Excel 원본이 변경되었습니다. 다시 불러온 후 대조해 주세요.');
-      const report = buildReviewReport(snapshot, coverage.rows); reports.push(report);
-      view.finish({ ok: true, manualReview: true, report });
+
+      // POIZON 화면이 최종 기준값이다. 전체 페이지 검증이 끝난 뒤 한 번만 원본 Excel을 교정한다.
+      view.saving?.();
+      // POIZON_STRICT_FINAL_EVIDENCE_GUARD: identity-keyed evidence, independent of result ordering.
+      // POIZON_SKU_SAFE_FINAL_SELECTION: preserve SKU rows; only verified same-scope rows reach the writer.
+      const finalSelection = selectPoizonPageCorrectionProducts(captured.products || [], coverage.rows);
+      const finalSaved = finalSelection.products.length
+        ? await api.syncExcelWithSellerScreen({ path: snapshot.file.path, products: finalSelection.products })
+        : { ok:true, changedRows:0, changedCells:0, addedRows:0, addedProducts:0, verifiedCells:0, reverified:true, changes:[], backupPath:'' };
+      finalSaved.deferredProducts = Number(finalSelection.deferredProducts || 0);
+      if (!finalSaved?.ok) throw new Error(finalSaved?.message || 'POIZON 값으로 Excel 수정에 실패했습니다.');
+      const pageSaved = captured.checkpointSync?.enabled ? captured.checkpointSync : null;
+      // POIZON_PAGE_CHECKPOINT_AGGREGATED: 페이지별 확정 결과와 마지막 전체 무변경 재검증을 하나의 저장 결과로 합친다.
+      const saved = pageSaved ? {
+        ...finalSaved,
+        changedRows: Number(pageSaved.changedRows || 0) + Number(finalSaved.changedRows || 0),
+        changedCells: Number(pageSaved.changedCells || 0) + Number(finalSaved.changedCells || 0),
+        addedRows: Number(pageSaved.addedRows || 0) + Number(finalSaved.addedRows || 0),
+        addedProducts: Number(pageSaved.addedProducts || 0) + Number(finalSaved.addedProducts || 0),
+        verifiedCells: Number(pageSaved.verifiedCells || 0) + Number(finalSaved.verifiedCells || 0),
+        changes: [...(pageSaved.changes || []), ...(finalSaved.changes || [])],
+        backupPath: pageSaved.backupPath || finalSaved.backupPath || '',
+        reverified: pageSaved.reverified === true && finalSaved.reverified === true,
+        checkpointPages: Number(pageSaved.pagesCompleted || 0),
+      } : finalSaved;
+      if (saved.reverified !== true) throw new Error('Excel 수정 후 POIZON 값 재검증 결과를 확인하지 못했습니다.');
+
+      // 실제 저장된 파일을 다시 읽는다. 신규 상품 행을 추가한 경우에는 그 수만큼 행 증가가 정상이다.
+      const after = await api.readPoizonReviewWorkbook({ path: snapshot.file.path });
+      if (!after?.ok || !Array.isArray(after.products)) throw new Error(after?.message || '수정 후 Excel 재읽기에 실패했습니다.');
+      const expectedAfterRows = snapshot.products.length + Number(saved.addedRows || 0);
+      if (after.products.length !== expectedAfterRows) {
+        throw new Error('수정 후 Excel 행 수 검증 실패 · 예상 ' + expectedAfterRows + '행 / 실제 ' + after.products.length + '행');
+      }
+
+      // 신규 행은 단순히 행 수만 늘었다고 완료하지 않는다. 저장 후 실제 SPU가 다시 읽혀야 한다.
+      const afterIndex = indexProductIdentities(after.products);
+      const addedChanges = (saved.changes || []).filter((change) => change.reason === 'MISSING_PRODUCT_ROW');
+      const addedVerificationFailures = [];
+      for (const change of addedChanges) {
+        const spuId = String(change.spuId || '').trim();
+        if (!spuId) { addedVerificationFailures.push({ spuId: '', reason: 'ADDED_SPU_MISSING' }); continue; }
+        const resolved = resolveProductIdentity({ spuId, articleNumber: change.articleNumber || '' }, afterIndex).products;
+        if (!resolved.length) addedVerificationFailures.push({ spuId, articleNumber: change.articleNumber || '', reason: 'ADDED_ROW_NOT_READ_BACK' });
+      }
+      if (addedVerificationFailures.length) {
+        throw new Error('신규 상품 행 저장 후 SPU 재검증 실패 ' + addedVerificationFailures.length + '건 · ' + addedVerificationFailures.slice(0, 5).map((item) => item.spuId || item.reason).join(', '));
+      }
+
+      const report = buildReviewReport(snapshot, coverage.rows);
+      report.autoCorrection = 'POIZON_AUTO_CORRECTION_APPLIED';
+      report.changedRows = Number(saved.changedRows || 0);
+      report.changedCells = Number(saved.changedCells || 0);
+      report.addedRows = Number(saved.addedRows || 0);
+      report.addedProducts = Number(saved.addedProducts || 0);
+      report.verifiedCells = Number(saved.verifiedCells || 0);
+      report.backupPath = saved.backupPath || '';
+      report.deferredProducts = Number(saved.deferredProducts || captured.checkpointSync?.deferredProducts || 0);
+      report.checkpointPages = Number(saved.checkpointPages || 0);
+      reports.push(report);
+      view.finish({ ok: true, corrected: true, changedRows: report.changedRows, changedCells: report.changedCells,
+        addedRows: report.addedRows, addedProducts: report.addedProducts, verifiedCells: report.verifiedCells, report, afterProducts: after.products });
     } catch (error) {
       const report = { file: snapshot.file.name || snapshot.file.path, complete: false, message: error.message, changes: [] };
       reports.push(report); view?.finish({ ok: false, message: error.message });
     }
   }
-  const report = { complete: reports.every((r) => r.complete), files: reports, verifiedAt: new Date().toISOString() };
-  // One notification after the entire selected batch, never per page or row.
+  const report = { complete: reports.every((r) => r.complete), files: reports, verifiedAt: new Date().toISOString(),
+    autoCorrection: reports.every((r) => r.autoCorrection === 'POIZON_AUTO_CORRECTION_APPLIED') };
   await notify(report, lastView);
   return report;
+
 }

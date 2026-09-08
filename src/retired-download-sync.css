@@ -1,0 +1,7 @@
+/* RETIRED_HEADER_DOWNLOAD_SYNC */
+/* Preserve legacy DOM lookups without exposing a redundant action. */
+body .shell > header .header-actions > .download-sync-anchor,
+body .shell > header #import-button,
+body .shell > header #excel-sync-progress {
+  display: none !important;
+}

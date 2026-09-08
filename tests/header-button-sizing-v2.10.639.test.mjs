@@ -18,9 +18,8 @@ test('header status buttons keep balanced fixed height and content-based widths'
   ]) assert.ok(css.includes(required), required);
 });
 
-test('postinstall reapplies header sizing after other header patches', () => {
-  const postinstall = packageJson.scripts.postinstall;
-  const simple = postinstall.indexOf('patch-header-simple-actions-v2.mjs');
-  const sizing = postinstall.indexOf('patch-header-button-sizing.mjs');
-  assert.ok(simple >= 0 && sizing > simple);
+test('postinstall verifies the integrated header sizing', async () => {
+  const verifier = await readFile(new URL('../scripts/verify-integrated-source.mjs', import.meta.url), 'utf8');
+  assert.match(packageJson.scripts.postinstall, /verify-integrated-source\.mjs/);
+  assert.match(verifier, /HEADER_BUTTON_SIZING_V1/);
 });

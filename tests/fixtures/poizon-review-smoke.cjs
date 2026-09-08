@@ -37,11 +37,11 @@ app.whenReady().then(async () => {
     const detail = rows[0].querySelector('details'); detail.open = true; await wait(50);
     check(detail.textContent.includes('40') && detail.textContent.includes('현지 총판매량(원본)'), 'original row values missing');
     check(!document.getElementById('poizon-review-report'), 'notification must not open on a page event');
-    view.finish({ ok:true, manualReview:true });
+    view.finish({ ok:true, corrected:true, changedRows:49, changedCells:98, addedRows:0, verifiedCells:100 });
     check(removed === 1 && !view.running, 'listener not disposed');
     view.showReport({ complete:true, files:[{ file:'test.xlsx', complete:true, changes:[], summary:{checked:50,equal:1,different:49,unknown:0,missing:0,absentRows:0} }] });
     const dialog = document.getElementById('poizon-review-report');
-    check(dialog.open && dialog.querySelector('textarea').value.includes('원본 Excel 자동 수정 없음'), 'final copyable report missing');
+    check(dialog.open && dialog.querySelector('textarea').value.includes('POIZON 화면값 기준 Excel 자동 교정'), 'final copyable report missing');
     dialog.close(); panel.querySelector('.review-close').click(); await wait(25);
     check(ended === 1 && !document.body.classList.contains('poizon-review-open'), 'review layout not restored');
     return { rows:50, sourceOrder:true, colors:true, originalValues:true, finalDialog:true, restored:true };

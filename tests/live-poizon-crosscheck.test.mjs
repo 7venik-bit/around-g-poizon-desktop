@@ -17,14 +17,14 @@ test('30 is inclusive, AND is enforced, and 29 is excluded', () => {
 });
 test('old Excel 10 is compared and marked as a POIZON correction target when POIZON 83 passes minimum 30', () => {
   const s = session(); const result = s.acceptPage([product()], { pageNum: 11, pageCount: 150 });
-  assert.equal(result.rows[0].qualified, true); assert.equal(result.rows[0].status, '값 다름 · POIZON 값으로 수정 대상');
+  assert.equal(result.rows[0].qualified, true); assert.equal(result.rows[0].status, '상품 인식 완료 · 판매량 값 다름 · POIZON 값으로 수정 대상');
   assert.equal(result.rows[0].excelLocal, '10'); assert.equal(result.rows[0].sourceLocal, '83');
   assert.equal(result.differentProducts, 1); assert.deepEqual(result.rows[0].excelRows, [2]);
 });
 test('missing Excel recent value is a correction target, not an unknown POIZON result', () => {
   const excel = [product(10, { localSales30dRaw: '', localSales30d: 0, hasLocalSalesData: false })];
   const result = session(excel).acceptPage([product()], { pageNum: 1, pageCount: 1 });
-  assert.match(result.rows[0].status, /Excel 누락 1개 · POIZON 값으로 수정 대상/);
+  assert.match(result.rows[0].status, /상품 인식 완료 · 판매량 누락 1개 · POIZON 값으로 수정 대상/);
   assert.match(result.rows[0].excelLocal, /값 없음/);
   assert.equal(result.rows[0].sourceLocal, '83');
 });
@@ -54,11 +54,22 @@ test('shared condition snapshot cannot drift during a run', () => {
   assert.equal(s.acceptPage([product(30)], { pageNum: 1 }).rows[0].qualified, true);
   assert.equal(Object.isFrozen(s.conditions), true);
 });
-test('SPU identity is preserved and same-code different-SPU matches are rejected', () => {
+test('SPU exact match is first priority and article fallback is used only when POIZON SPU is absent', () => {
   assert.equal(session().acceptPage([product(83, { articleNumber: 'OTHER' })]).matchedProducts, 1);
-  const result = session().acceptPage([product(83, { spuId: '99' })]);
-  assert.equal(result.matchedProducts, 0); assert.equal(result.rows[0].status, '식별자 충돌 · 자동수정 보류');
+  const differentSpu = session().acceptPage([product(83, { spuId: '99' })]);
+  assert.equal(differentSpu.matchedProducts, 0);
+  assert.equal(differentSpu.rows[0].status, '식별자 충돌 · 자동수정 보류');
+  const noSpu = session().acceptPage([product(83, { spuId: '' })]);
+  assert.equal(noSpu.matchedProducts, 1);
+  assert.equal(noSpu.rows[0].matchBy, '상품번호');
 });
+test('numeric-form SPU normalization recognizes Excel and POIZON as the same product', () => {
+  const excel = [product(83, { spuId:'25942988.0' })];
+  const result = session(excel).acceptPage([product(83, { spuId:'2.5942988E+7' })]);
+  assert.equal(result.matchedProducts, 1);
+  assert.equal(result.equalProducts, 1);
+});
+
 test('each of 150 pages is compared independently and a repeated page does not inflate counters', () => {
   const excel = Array.from({ length: 3000 }, (_, i) => product(30, { spuId: String(i + 1), articleNumber: 'ITEM' + i }));
   const s = session(excel); let r;
@@ -143,7 +154,9 @@ if (main) test('shipping capture compares before navigation and both entry point
   assert.ok(to < capture.indexOf('const expectedNextPage'));
   assert.match(preload, /onSellerVerificationProgress/);
   assert.match(renderer, /verification: liveVerification\?\.input/);
-  assert.match(renderer, /verification: liveVerification.input/);
-  assert.match(renderer, /conditions: verificationConditions/);
+  assert.match(renderer, /runPoizonReviewBatch/);
+  const localSync = renderer.slice(renderer.indexOf('$("#import-button").addEventListener'), renderer.indexOf('$("#export-button").addEventListener'));
+  assert.match(localSync, /listBrandExportFiles/);
+  assert.doesNotMatch(localSync, /captureSellerBrandSales|syncExcelWithSellerScreen/);
   assert.match(renderer, /await finishLivePoizonVerification\(liveVerification/);
 });

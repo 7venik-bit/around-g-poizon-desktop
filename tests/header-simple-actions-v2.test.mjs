@@ -7,9 +7,9 @@ const read = async (path) => (await readFile(new URL(path, root), 'utf8')).repla
 
 test('compact header actions prevent clipping and preserve lamp sequence', async () => {
   const patch = await read('scripts/patch-header-simple-actions-v2.mjs');
-  const pkg = JSON.parse(await read('package.json'));
+  const verifier = await read('scripts/verify-integrated-source.mjs');
 
-  assert.match(pkg.scripts.postinstall, /patch-header-simple-actions-v2\.mjs/);
+  assert.match(verifier, /official-domain-audit-toggle/);
   assert.match(patch, /official-domain-audit-toggle::after\{content:'공식몰 점검'/);
   assert.match(patch, /weekly-site-health-run::after\{content:'서버 점검'/);
   assert.match(patch, /startup-recovery-run::after\{content:'POIZON 확인'/);

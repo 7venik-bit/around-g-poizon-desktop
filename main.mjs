@@ -1,4 +1,9 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, session, shell } from "electron";
+import { readReviewWorkbook, checkReviewWorkbookRevision } from "./services/poizon-review-workbook.mjs";
+import { assertPoizonPageReadyForCorrection, selectPoizonPageCorrectionProducts } from "./services/live-poizon-crosscheck.mjs";
+import { syncPoizonPageCheckpoint } from "./services/poizon-page-checkpoint.mjs";
+import { createPageCrossCheck, verificationConditionLabel } from "./services/live-poizon-crosscheck.mjs";
+import { paintReviewPage as paintSellerVerification } from "./services/poizon-review-paint.mjs";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, screen, session, shell } from "electron";
 import { mkdirSync } from "node:fs";
 import { appendFile, copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -113,6 +118,7 @@ import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/selle
 import { highestQualifiedOptionPrice, optionRowsFromSellerResponses, qualifiedOptionPrices } from "./services/seller-transaction-price.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
 import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";
+import { createDomesticSearchLinkResult, finalizeNaverFashionTownResult, isNaverRenderedResultReady } from "./services/naver-fashiontown-result.mjs";
 import {
   SITE_HEALTH_TARGETS,
   nextWeeklySiteHealthAt,
@@ -165,6 +171,83 @@ Start-Process -FilePath $chrome -ArgumentList @('--new-tab', $env:AROUND_G_EXTER
 
 let mainWindow;
 let sellerWindow;
+let sellerExcelVerificationLayout = null;
+
+function beginSellerExcelVerificationWindows(input = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, message: "Around G 메인 창을 찾지 못했습니다." };
+  if (!sellerWindow || sellerWindow.isDestroyed()) {
+    openSellerCenterWindow(SELLER_CENTER_URL, { visible: true, activate: false });
+  }
+  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, message: "POIZON 판매자센터 창을 열지 못했습니다." };
+  if (!sellerExcelVerificationLayout) {
+    sellerExcelVerificationLayout = {
+      mainMinimum: mainWindow.getMinimumSize?.() || [1040, 700],
+      sellerMinimum: sellerWindow.getMinimumSize?.() || [1000, 700],
+      mainBounds: mainWindow.getBounds(),
+      mainMaximized: mainWindow.isMaximized(),
+      sellerBounds: sellerWindow.getBounds(),
+      sellerMaximized: sellerWindow.isMaximized(),
+      sellerVisible: sellerWindow.isVisible(),
+    };
+  }
+  const area = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
+  const gap = 8;
+  const usableWidth = Math.max(2, area.width - gap);
+  const sellerWidth = Math.max(1, Math.floor(usableWidth * 0.55));
+  const excelWidth = Math.max(1, usableWidth - sellerWidth);
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  if (sellerWindow.isMaximized()) sellerWindow.unmaximize();
+  mainWindow.setMinimumSize?.(360, 400);
+  sellerWindow.setMinimumSize?.(480, 400);
+  sellerWindow.setBounds({ x: area.x, y: area.y, width: sellerWidth, height: area.height });
+  mainWindow.setBounds({ x: area.x + sellerWidth + gap, y: area.y, width: excelWidth, height: area.height });
+  mainWindow.show();
+  sellerWindow.show();
+  return {
+    ok: true,
+    sellerSide: "left",
+    excelSide: "right",
+    brandName: String(input.brandName || ""),
+    fileName: String(input.fileName || ""),
+  };
+}
+
+function endSellerExcelVerificationWindows() {
+  if (sellerWindow && !sellerWindow.isDestroyed()) {
+    void sellerWindow.webContents.executeJavaScript(`(() => {
+      document.getElementById("around-g-live-verification")?.remove();
+      for (const row of document.querySelectorAll("[data-around-g-verification]")) {
+        if (row.dataset.aroundGReviewStyle) { Object.assign(row.style, JSON.parse(row.dataset.aroundGReviewStyle)); delete row.dataset.aroundGReviewStyle; }
+        else { row.style.outline = ""; row.style.outlineOffset = ""; }
+        delete row.dataset.aroundGVerification; delete row.dataset.aroundGReviewKey;
+      }
+    })()`, true).catch(() => {});
+  }
+  const saved = sellerExcelVerificationLayout;
+  sellerExcelVerificationLayout = null;
+  if (!saved) {
+    if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
+    return { ok: true, restored: false };
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    mainWindow.setMinimumSize?.(...saved.mainMinimum);
+    mainWindow.setBounds(saved.mainBounds);
+    if (saved.mainMaximized) mainWindow.maximize();
+    mainWindow.show();
+  }
+  if (sellerWindow && !sellerWindow.isDestroyed()) {
+    if (sellerWindow.isMaximized()) sellerWindow.unmaximize();
+    sellerWindow.setMinimumSize?.(...saved.sellerMinimum);
+    sellerWindow.setBounds(saved.sellerBounds);
+    if (saved.sellerMaximized) sellerWindow.maximize();
+    if (saved.sellerVisible) sellerWindow.show();
+    else sellerWindow.hide();
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus();
+  return { ok: true, restored: true };
+}
+
 let sellerMonitorWindow;
 let musinsaLedgerWindow;
 const inventoryWindows = new Set();
@@ -1219,19 +1302,46 @@ async function executeOfficialMallSearch(searchWindow, homepageUrl, query) {
 }
 
 function renderedSearchFailure(reason, searchWindow = null, details = {}) {
+  const verificationReason = String(reason || "unknown_search_failure");
+  const resolvedSearchUrl = String(
+    details.resolvedSearchUrl
+    || (!searchWindow?.isDestroyed?.() ? searchWindow?.webContents?.getURL?.() : "")
+    || "",
+  );
+  const stageByReason = {
+    naver_shopping_click_failed: "naver_navigation",
+    fashion_town_click_failed: "naver_navigation",
+    search_submission_failed: "search_submission",
+    search_query_missing: "search_submission",
+    result_parse_failed: "result_capture",
+    result_analysis_failed: "result_capture",
+    overview_channel_card_collection_failed: "result_capture",
+    channel_count_detection_failed: "result_capture",
+    page_load_timeout: "page_navigation",
+    page_load_failed: "page_navigation",
+    network_error: "page_navigation",
+    security_verification_required: "access_verification",
+    login_required: "access_verification",
+  };
+  const verificationStage = String(details.verificationStage || stageByReason[verificationReason] || "unknown");
   return {
     count: null,
     products: [],
     searchCompleted: false,
     searchSubmitted: details.searchSubmitted === true,
-    verificationReason: String(reason || "search_failed"),
+    verificationReason,
+    verificationStage,
+    verificationDiagnostics: {
+      stage: verificationStage,
+      reason: verificationReason,
+      resolvedUrl: resolvedSearchUrl,
+      errorMessage: String(details.errorMessage || ""),
+      visibleResultCount: null,
+      productCardCount: 0,
+    },
     securityVerificationRequired: details.securityVerificationRequired === true,
     loginRequired: details.loginRequired === true,
-    resolvedSearchUrl: String(
-      details.resolvedSearchUrl
-      || (!searchWindow?.isDestroyed?.() ? searchWindow?.webContents?.getURL?.() : "")
-      || "",
-    ),
+    resolvedSearchUrl,
   };
 }
 
@@ -2106,6 +2216,9 @@ async function submitNaverShoppingSearch(searchWindow, query) {
       catch { return false; }
     })();
     const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));
+    // Reaching the exact query result URL proves the input and magnifier action
+    // succeeded. Final capture decides product presence or authoritative zero.
+    if (isNaverRenderedResultReady(state, exactQuery)) return true;
     if (state && !/페이지를\s*찾을\s*수\s*없습니다/.test(state.text)
       && ((urlChanged && queryInUrl)
         || state.resultMatched === true
@@ -2374,6 +2487,33 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   const url = String(officialDirectUrl || searchAttempt?.url || source.officialProductUrl || (interactiveOfficialSearch ? source.homepageUrl : source.searchUrl) || "");
   if (!/^https:\/\//i.test(url)) return { count: Number(source.count || 0), products: [] };
   const naverPortalSource = /^네이버\s/.test(String(source.store || ""));
+  const directNaverFashionResult = naverPortalSource
+    && String(source.store || "") === "네이버 패션타운"
+    && /shopping\.naver\.com\/window\/search\//i.test(url);
+  // Fashion Town is a usable user-facing result URL by itself. Electron
+  // repeatedly rejects this Naver SPA even when the same URL opens normally
+  // in Chrome. Never turn that renderer limitation into page_load_failed.
+  if (directNaverFashionResult) {
+    return createDomesticSearchLinkResult({
+      store: source.store, articleNumber, resolvedSearchUrl: url,
+    });
+  }
+  // Naver Fashion Town must continue into the rendered-card capture. The
+  // exact result URL is loaded directly below, but it is not a completed result
+  // until the product card, current price and approved seller evidence are read.
+  const directRetailResultLink = /^(?:SSG|롯데온)(?:\s|$)/.test(String(source.store || ""))
+    && /^https:\/\//i.test(url)
+    && /[?&](?:q|query)=/i.test(url);
+  const directParallelResultLink = String(source.store || "") === "병행수입·편집샵"
+    && /search\.naver\.com\/search\.naver/i.test(url)
+    && /[?&]where=shopping(?:&|$)/i.test(url)
+    && /[?&]query=/i.test(url);
+  if (directRetailResultLink || directParallelResultLink) {
+    // Exact marketplace result URLs are the requested output. Official malls
+    // must continue into the rendered-card capture so their current prices can
+    // be shown inside the program.
+    return createDomesticSearchLinkResult({ store: source.store, articleNumber, resolvedSearchUrl: url });
+  }
   // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.
   const ssgChannelSource = /^SSG(?:\s|$)/.test(String(source.store || ""));
   const musinsaSource = String(source.store || "") === "무신사";
@@ -2420,7 +2560,16 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         return { action: "deny" };
       });
       searchWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
+      // Direct Fashion Town result URLs must not depend on a Naver-home bootstrap.
+      // The home navigation is the recurring source of Electron page-load failures.
+      const initialUrl = directNaverFashionResult
+        ? url
+        : (naverPortalSource ? "https://www.naver.com/" : url);
+      /*
+      // Establish Naver cookies/session on the normal home page first. A
+      // cold hidden window can reject a direct Fashion Town SPA navigation.
       const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;
+      */
       try {
         await Promise.race([
           searchWindow.loadURL(initialUrl),
@@ -2430,9 +2579,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         // Commerce SPAs frequently abort the first navigation while replacing it
         // with their own redirect. Continue only when that replacement produced a
         // real HTTPS document; every other load error remains an explicit failure.
-        const aborted = /ERR_ABORTED/i.test(String(error?.message || ""));
+        // Electron can reject loadURL while a commerce SPA replaces the
+        // navigation with a usable HTTPS document. Trust the live document,
+        // not the rejected promise or its error code.
         const currentUrl = String(searchWindow.webContents.getURL() || "");
-        const documentReady = aborted && /^https:\/\//i.test(currentUrl)
+        const documentReady = /^https:\/\//i.test(currentUrl)
           ? await searchWindow.webContents.executeJavaScript(
             `Boolean(document.documentElement && String(location.href || "").startsWith("https://"))`,
             true,
@@ -2466,7 +2617,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             })()`, true).catch(() => false);
           }
         }
-        if (!documentReady && !recoveredMusinsaResult) throw error;
+        // Direct Naver Fashion Town navigation has its own bounded recovery
+        // below. Do not let the first Electron loadURL rejection escape to the
+        // outer page_load_failed handler before that recovery can run.
+        if (!documentReady && !recoveredMusinsaResult && !directNaverFashionResult) throw error;
       }
       // A brand adapter may know a stable product-detail route. Verify that
       // route against the exact POIZON article before falling back to the
@@ -2523,12 +2677,49 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           }
         }
       }
+      if (directNaverFashionResult) {
+        const resultPage = await loadNaverFashionTownResultPage(
+          searchWindow, url, searchAttempt?.query || source.searchQuery || articleNumber || title,
+        );
+        if (!resultPage.ok) {
+          // Naver's Fashion Town SPA can reject or abort Electron navigation even
+          // when the exact user-search URL itself is valid in a normal browser.
+          // This is a technical renderer failure, not proof that the product is
+          // absent. Preserve the exact search URL as the usable result instead of
+          // showing page_load_failed or advancing to another query.
+          return {
+            count: 0,
+            products: [],
+            presenceConfirmed: false,
+            absenceConfirmed: false,
+            searchCompleted: true,
+            searchSubmitted: true,
+            // Always preserve the requested Fashion Town URL. The live window
+            // can be left on Naver home or an error document after a failed SPA
+            // navigation, and that intermediate URL is not useful to the user.
+            resolvedSearchUrl: url,
+            resultLinkOnly: true,
+            detailVerificationPending: false,
+            verificationPending: false,
+            verificationReason: "",
+            verificationStage: "page_navigation",
+            verificationDiagnostics: {
+              stage: "page_navigation",
+              reason: "naver_result_link_fallback",
+              resolvedUrl: url,
+              errorMessage: String(resultPage.errorMessage || ""),
+              productCardCount: 0,
+              visibleResultCount: null,
+            },
+          };
+        }
+      }
       if (interactiveOfficialSearch) {
         const login = await ensureOfficialAccountLogin(searchWindow, String(source.homepageUrl || url));
         if (!login.ok) return renderedSearchFailure("login_required", searchWindow, { loginRequired: true });
         if (login.required) await searchWindow.loadURL(String(source.homepageUrl || url)).catch(() => {});
       }
-      if (interactiveSiteSearch) {
+      if (interactiveSiteSearch && !directNaverFashionResult) {
         const searchQuery = interactiveOfficialSearch
           ? sanitizeDomesticProductCode(articleNumber) || sanitizeDomesticQuery(title)
           : String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();
@@ -2809,8 +3000,18 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           }
         } catch {}
         if (!productUrl || seen.has(productKey)) continue;
-        const card = link.closest("li, article, [data-product-id], [data-item-id], [class*='product-card'], [class*='goods-item'], [class*='item-card'], [class*='cunit'], [class*='mnemitem'], [class*='item_unit'], [class*='itemUnit'], [class*='item_grid'], [class*='product_unit']")
-          || link.parentElement;
+        let card = link.closest("li, article, [data-product-id], [data-item-id], [class*='product-card'], [class*='goods-item'], [class*='item-card'], [class*='cunit'], [class*='mnemitem'], [class*='item_unit'], [class*='itemUnit'], [class*='item_grid'], [class*='product_unit']");
+        // Fashion Town uses generated class names and often separates its image,
+        // title and price anchors. Select the smallest owning result block that
+        // contains an image and a price instead of trusting a class name.
+        for (let node = link, depth = 0; node && depth < 9 && node !== document.body; node = node.parentElement, depth += 1) {
+          const nodeText = String(node.innerText || node.textContent || "").trim();
+          if (node.querySelector?.("img") && /[\\d,]+\\s*원/.test(nodeText) && nodeText.length <= 5000) {
+            card = node;
+            break;
+          }
+        }
+        card ||= link.parentElement;
         const text = String(card?.innerText || link.innerText || "").trim();
         // SSG places its brand and "본사직영" badges near the product title,
         // sometimes outside the immediate anchor. Keep enough of the owning
@@ -2885,7 +3086,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const pageHeaderText = [...document.querySelectorAll('header,nav')]
         .map((element) => String(element.innerText || ""))
         .join(" ").slice(0, 20000);
-      const selectedChannelEmpty = /검색된\s*상품이\s*없(?:습니다|어)|검색\s*결과가?\s*없(?:습니다|어)|상품이\s*없(?:습니다|어)|검색결과\s*없음/i.test(fullPageText);
+      const selectedChannelEmpty = /검색된\\s*상품이\\s*없(?:습니다|어)|검색\\s*결과가?\\s*없(?:습니다|어)|상품이\\s*없(?:습니다|어)|검색결과\\s*없음/i.test(fullPageText);
+      const visibleCountMatches = [...fullPageText.matchAll(/(?:전체|검색\\s*결과)\\s*([\\d,]+)\\s*개/gi)];
+      const visibleResultCountObserved = visibleCountMatches.length > 0;
+      const visibleResultCount = visibleCountMatches.reduce((maximum, match) =>
+        Math.max(maximum, Number(String(match[1] || "0").replace(/,/g, "")) || 0), 0);
       const requestedStore = ${JSON.stringify(String(source.store || ""))};
       const recognizedChannelCounts = ${JSON.stringify(naverChannelCounts)};
       const channelLabels = requestedStore.includes("공식 브랜드스토어")
@@ -2900,8 +3105,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         if (!match) continue;
         selectedChannelCount = Math.max(selectedChannelCount ?? 0, Number(match[1].replace(/,/g, "")) || 0);
       }
-      const pageBlocked = /captcha|보안\s*확인|자동\s*입력|로봇|접속.{0,12}(?:제한|차단)|서비스.{0,12}(?:제한|지연)|비정상적인\s*접근/i.test(pageText);
-      return JSON.stringify({ productCards, pageBlocked, pageText, pageHeaderText, selectedChannelEmpty, selectedChannelCount });
+      const pageBlocked = /captcha|보안\\s*확인|자동\\s*입력|로봇|접속.{0,12}(?:제한|차단)|서비스.{0,12}(?:제한|지연)|비정상적인\\s*접근/i.test(pageText);
+      return JSON.stringify({
+        productCards, pageBlocked, pageText, pageHeaderText, selectedChannelEmpty, selectedChannelCount,
+        visibleResultCount, visibleResultCountObserved,
+      });
     })()`, true);
     let parsedContent;
     try {
@@ -2931,6 +3139,54 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       }
     } catch {
       return renderedSearchFailure("result_parse_failed", searchWindow, { searchSubmitted: interactiveSiteSearch });
+    }
+    if (naverPortalSource && String(source.store || "") === "네이버 패션타운") {
+      // The requested output is Naver's rendered result list itself. Do not run
+      // those links through the generic brand/article matcher again: the exact
+      // query was already submitted and that second gate discarded real cards.
+      const finalized = finalizeNaverFashionTownResult(parsedContent, {
+        articleNumber,
+        resolvedSearchUrl: String(searchWindow.webContents.getURL() || url),
+      });
+      const attemptedQuery = sanitizeDomesticQuery(searchAttempt?.query || source.searchQuery || articleNumber || title);
+      const exactCodeQuery = sanitizeDomesticProductCode(articleNumber);
+      const requireArticleIdentity = Boolean(exactCodeQuery && attemptedQuery === exactCodeQuery);
+      const approval = await verifyApprovedNaverDomesticProducts(finalized?.products || [], {
+        articleNumber,
+        brand,
+        title,
+        requireArticleIdentity,
+      });
+      const approvedProducts = approval.products;
+      const approved = approvedProducts.length > 0;
+      const technicalPending = !approved && approval.failedCount > 0;
+      const authoritativelyRejected = !approved
+        && approval.candidateCount > 0
+        && approval.checkedCount === approval.candidateCount
+        && approval.failedCount === 0;
+      const absenceConfirmed = finalized.absenceConfirmed === true || authoritativelyRejected;
+      return {
+        ...finalized,
+        count: technicalPending ? null : approvedProducts.length,
+        products: approvedProducts,
+        presenceConfirmed: approved,
+        absenceConfirmed,
+        naverAllSearchVerdict: approved ? "confirmed" : absenceConfirmed ? "absent" : "pending",
+        detailVerificationPending: technicalPending || (!approved && !absenceConfirmed),
+        verificationPending: technicalPending || (!approved && !absenceConfirmed),
+        verificationReason: approved ? "approved_domestic_seller"
+          : technicalPending ? "naver_seller_evidence_failed"
+            : finalized.verificationReason || "",
+        candidateCount: approval.candidateCount,
+        verificationDiagnostics: {
+          ...(finalized.verificationDiagnostics || {}),
+          sellerCandidateCount: approval.candidateCount,
+          sellerCheckedCount: approval.checkedCount,
+          sellerRejectedCount: approval.rejectedCount,
+          sellerFailedCount: approval.failedCount,
+          identityMode: requireArticleIdentity ? "article" : "brand_title",
+        },
+      };
     }
     if (naverPortalSource) {
       const expectedNaverChannel = source.store === "네이버 백화점" ? "department"
@@ -3039,7 +3295,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
           if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");
           await wait(1_000);
-          await openRenderedSizeOptions(searchWindow);
+          // 재고·사이즈 자동 확인 안 함: 판매처에서 사용자가 직접 확인
           const identitySnapshot = await searchWindow.webContents.executeJavaScript(`(() => {
             const pageText = String(document.body?.innerText || "").slice(0, 60000);
             const titleText = [...document.querySelectorAll('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')]
@@ -3076,51 +3332,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             detailIdentity = identitySnapshot;
             detailLoaded = true;
           }
-          const rawStock = await searchWindow.webContents.executeJavaScript(`(() => {
-            const visible = (element) => {
-              if (!element) return false;
-              const style = getComputedStyle(element);
-              const rect = element.getBoundingClientRect();
-              return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-            };
-            const sold = (element) => element.disabled
-              || element.getAttribute("aria-disabled") === "true"
-              || /disabled|sold.?out|품절|재고.?없음/i.test([element.className, element.textContent].join(" "));
-            const optionNodes = [
-              ...document.querySelectorAll("select option"),
-              ...document.querySelectorAll('[class*="size" i] button,[class*="option" i] button,[data-option],[data-size],[role="option"],[role="listbox"] li,[class*="dropdown" i] li'),
-            ];
-            // Some official malls render size choices as plain buttons/labels
-            // with no size-related class. Include those only when their own
-            // label looks like an apparel/shoe size and their nearby field is
-            // explicitly headed by "사이즈/size", avoiding quantity buttons.
-            const plainSizeNodes = [...document.querySelectorAll('button,label,[role="button"],input[type="radio"]')]
-              .filter(visible)
-              .filter((element) => {
-                const label = String(element.getAttribute("data-size") || element.value || element.textContent || "").replace(/\\s+/g, " ").trim();
-                if (!/^(?:FREE|ONE\s*SIZE|XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|[2-9]?\d{1,2}(?:\.5)?|[12]\d{2}|[2-3]\d{2}(?:\.5)?)$/i.test(label)) return false;
-                let scope = element.parentElement;
-                for (let depth = 0; scope && depth < 4; depth += 1, scope = scope.parentElement) {
-                  const scopeText = String(scope.innerText || "").slice(0, 1200);
-                  if (/사이즈|size/i.test(scopeText)) return true;
-                }
-                return false;
-              });
-            const uniqueOptionNodes = [...new Set([...optionNodes, ...plainSizeNodes])];
-            const options = uniqueOptionNodes.slice(0, 160).map((element) => ({
-              label: String(element.getAttribute("data-size") || element.getAttribute("data-option") || element.textContent || "").replace(/\\s+/g, " ").trim(),
-              inStock: !sold(element),
-            }));
-            const purchaseAvailable = [...document.querySelectorAll('button,a,[role="button"]')].some((element) =>
-              visible(element) && !sold(element) && /구매|바로구매|장바구니|BUY\s*NOW|ADD\s*TO\s*(?:BAG|CART)/i.test(element.textContent || element.getAttribute("aria-label") || "")
-            );
-            const pageText = String(document.body?.innerText || "").slice(0, 60000);
-            const loginRequired = /(?:login|signin|member\/login|auth\/login)/i.test(location.href)
-              || [...document.querySelectorAll('input[type="password"]')].some(visible)
-              || /로그인\s*(?:후|이\s*필요|해주세요)|회원\s*로그인/i.test(pageText.slice(0, 8000));
-            return { pageText, purchaseAvailable, options, loginRequired };
-          })()`, true).catch(() => null);
-          if (rawStock) stockEvidence = normalizeRenderedStockEvidence(rawStock);
+          stockEvidence = { inStock: null, sizes: [], stockStatus: "manual_check", stockVerified: false };
         } catch {}
         if (product.detailArticleVerificationRequired) identityRequiredCount += 1;
         const detailArticleVerified = product.detailArticleVerificationRequired
@@ -3252,7 +3464,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         detailVerificationPending: false,
       };
     }
-    return renderedSearchFailure(reason, searchWindow);
+    return renderedSearchFailure(reason, searchWindow, { errorMessage: message });
   } finally {
     const keepSharedNaverWindow = naverPortalSource
       && sharedNaverSession?.window === searchWindow;
@@ -3365,6 +3577,15 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         searchCompleted: result?.searchCompleted === true,
         searchSubmitted: result?.searchSubmitted === true,
         verificationReason: String(result?.verificationReason || ""),
+        verificationStage: String(result?.verificationStage || result?.verificationDiagnostics?.stage || ""),
+        verificationDiagnostics: result?.verificationDiagnostics || {
+          stage: String(result?.verificationStage || "result_aggregation"),
+          reason: String(result?.verificationReason || ""),
+          resolvedUrl: String(result?.resolvedSearchUrl || source.searchUrl || ""),
+          visibleResultCount: Number.isFinite(count) ? Number(count) : null,
+          productCardCount: Number(result?.candidateCount || result?.products?.length || 0),
+        },
+        naverAllSearchVerdict: result?.naverAllSearchVerdict || null,
         securityVerificationRequired: result?.securityVerificationRequired === true,
         loginRequired: result?.loginRequired === true,
         candidateCount: Number(result?.candidateCount || 0),
@@ -4632,6 +4853,7 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
       categoryName: [columns.category1, columns.category2, columns.category3].map((index) => raw(row, index)).filter(Boolean).join(" / "),
       averagePrice: parsePoizonSalesMetric(cell(row, columns.averagePrice)),
       optionCount: 1,
+      salesScope: headers.includes("POIZON 상품 최근 30일 판매량") || headers.includes("POIZON 상품 현지 판매자 최근 30일 판매량") ? "spu" : skuId ? "sku" : "spu",
       totalSales: parsePoizonSalesMetric(cell(row, columns.totalSales)),
       totalSalesRaw: raw(row, columns.totalSales),
       hasTotalSalesData: columns.totalSales >= 0 && /\d/.test(raw(row, columns.totalSales)),
@@ -9258,10 +9480,32 @@ async function captureSellerCenterProducts() {
 }
 
 async function captureSellerBrandSales(input = {}) {
-  const sellerPageDelayMs = 2_500;
+  const liveVerifier = input.verification?.runId ? createPageCrossCheck(input.verification) : null;
+  const reportCaptureProgress = (progress) => {
+    mainWindow?.webContents.send("explorer:brand-progress", progress);
+    if (liveVerifier) mainWindow?.webContents.send("seller:verification-progress", {
+      runId: input.verification.runId, phase: "capture-status", message: progress.message,
+      conditions: liveVerifier.conditions, updatedAt: new Date().toISOString(),
+    });
+  };
+  // POIZON_PAGE_CHECKPOINT_BEFORE_NAVIGATION
+  const checkpointSummary = {
+    enabled: Boolean(liveVerifier),
+    filePath: String(input.verification?.filePath || input.filePath || "").trim(),
+    pagesCompleted: 0, changedRows: 0, changedCells: 0, addedRows: 0, addedProducts: 0, verifiedCells: 0, deferredProducts: 0,
+    reverified: true, backupPath: '', changes: [],
+  };
+  const checkpointPages = new Set();
+  // POIZON_PAGE_TRANSACTION_GATE: a visible Excel review must complete
+  // compare → write → disk reread → recompare before the next page click.
+  if (checkpointSummary.enabled && !checkpointSummary.filePath) {
+    throw new Error("POIZON 페이지별 검증용 Excel 파일 경로가 없어 다음 페이지 이동을 중단했습니다.");
+  }
+  const sellerPageDelayMs = 12_000;
   const sellerBatchPauseEvery = 10;
-  const sellerBatchPauseMs = 10_000;
-  const sellerPageResponseAttempts = 120; // 120 × 250ms = 30 seconds
+  const sellerBatchPauseMs = 45_000;
+  const sellerPageResponseAttempts = 360; // 360 × 250ms = 90 seconds
+  const sellerPageSettleMs = 10_000;
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     openSellerCenterWindow();
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -9272,7 +9516,7 @@ async function captureSellerBrandSales(input = {}) {
   if (!sellerWindow || sellerWindow.isDestroyed()) {
     return { ok: false, message: "판매자센터 창을 열지 못했습니다." };
   }
-  mainWindow?.webContents.send("explorer:brand-progress", {
+  reportCaptureProgress({
     percent: 1,
     count: 0,
     pageNum: 0,
@@ -9536,6 +9780,7 @@ async function captureSellerBrandSales(input = {}) {
     }
     return false;
   })()`, true);
+  await wait(sellerPageSettleMs);
   const pages = [];
   let sellerSourceTotal = 0;
   let capturedRowCount = 0;
@@ -9580,6 +9825,7 @@ async function captureSellerBrandSales(input = {}) {
         first: rows[0]?.text || "",
         currentPage,
         pageCount,
+        pageSize,
         totalCount,
         rowSignature: rows.map((row) => String(row.text || "").replace(/\\s+/g, " ").trim()).join("␞")
       };
@@ -9611,7 +9857,56 @@ async function captureSellerBrandSales(input = {}) {
       };
     }
     const products = mergeSellerBrandPages(pages);
-    mainWindow?.webContents.send("explorer:brand-progress", {
+    // Compare the actual current page against the unfiltered workbook BEFORE
+    // the next pagination click. Only the view, never source capture, is filtered.
+    if (liveVerifier) {
+      const currentPageProducts = mergeSellerBrandPages([capture.rows || []]);
+      const livePage = liveVerifier.acceptPage(currentPageProducts, {
+        pageNum: capture.currentPage, pageCount: capture.pageCount,
+      });
+      mainWindow?.webContents.send("seller:verification-progress", livePage);
+      await sellerWindow.webContents.executeJavaScript(
+        "(" + paintSellerVerification.toString() + ")(document," + JSON.stringify({
+          ...livePage, label: "공통 검증 조건: " + verificationConditionLabel(liveVerifier.conditions),
+        }) + ")", true,
+      );
+      if (typeof checkpointSummary !== 'undefined' && checkpointSummary.enabled) {
+        mainWindow?.webContents.send("seller:verification-progress", {
+          runId: input.verification.runId, phase: "page-checkpoint",
+          message: `POIZON ${capture.currentPage}/${capture.pageCount}페이지 · Excel 반영 및 저장 후 재검증 중`,
+        });
+        // POIZON_SKU_SAFE_PAGE_SELECTION: SKU-only Excel values are preserved and deferred.
+        // Only same-scope SPU evidence or true missing rows may be written on this page.
+        const pageCorrection = selectPoizonPageCorrectionProducts(currentPageProducts, livePage.rows, capture.currentPage);
+        const checkpoint = pageCorrection.products.length
+          ? await syncPoizonPageCheckpoint({
+              filePath: checkpointSummary.filePath,
+              products: pageCorrection.products,
+              pageNum: capture.currentPage,
+              backupPath: checkpointSummary.backupPath,
+            })
+          : { ok: true, reverified: true, changedRows: 0, changedCells: 0, addedRows: 0, addedProducts: 0, verifiedCells: 0, changes: [], backupPath: checkpointSummary.backupPath };
+        checkpoint.deferredProducts = Number(pageCorrection.deferredProducts || 0);
+        if (!checkpoint?.ok || checkpoint.reverified !== true) {
+          throw new Error(checkpoint?.message || `POIZON ${capture.currentPage}페이지 Excel 체크포인트에 실패했습니다.`);
+        }
+        checkpointSummary.backupPath = checkpoint.backupPath || checkpointSummary.backupPath;
+        checkpointSummary.changedRows += Number(checkpoint.changedRows || 0);
+        checkpointSummary.changedCells += Number(checkpoint.changedCells || 0);
+        checkpointSummary.addedRows += Number(checkpoint.addedRows || 0);
+        checkpointSummary.addedProducts += Number(checkpoint.addedProducts || 0);
+        checkpointSummary.verifiedCells += Number(checkpoint.verifiedCells || 0);
+        checkpointSummary.deferredProducts += Number(checkpoint.deferredProducts || 0);
+        checkpointSummary.changes.push(...(checkpoint.changes || []));
+        checkpointPages.add(Number(capture.currentPage));
+        checkpointSummary.pagesCompleted = checkpointPages.size;
+        mainWindow?.webContents.send("seller:verification-progress", {
+          runId: input.verification.runId, phase: "page-checkpoint-complete",
+          message: `POIZON ${capture.currentPage}/${capture.pageCount}페이지 확정 · 상품 ${currentPageProducts.length}개 · 수정 ${Number(checkpoint.changedRows || 0)}행 · 실제 누락 추가 ${Number(checkpoint.addedRows || 0)}행 · 옵션 비교 보류 ${Number(checkpoint.deferredProducts || 0)}개 · 저장 후 재검증 완료`,
+        });
+      }
+    }
+    reportCaptureProgress({
       percent: capture.hasNext
         ? Math.min(99, 70 + Math.round((capture.currentPage / Math.max(capture.currentPage, capture.pageCount || capture.currentPage)) * 29))
         : 99,
@@ -9622,18 +9917,23 @@ async function captureSellerBrandSales(input = {}) {
     });
     if (!capture.hasNext) break;
     if (capture.currentPage % sellerBatchPauseEvery === 0) {
-      mainWindow?.webContents.send("explorer:brand-progress", {
+      reportCaptureProgress({
         percent: Math.min(99, 70 + Math.round((capture.currentPage / Math.max(capture.currentPage, capture.pageCount || capture.currentPage)) * 29)),
         count: products.length,
         pageNum: capture.currentPage,
         pageCount: capture.pageCount,
-        message: `판매자센터 ${capture.currentPage}페이지 완료 · 서버 보호를 위해 10초 휴식 중`,
+        message: `판매자센터 ${capture.currentPage}페이지 완료 · 서버 보호를 위해 45초 휴식 중`,
       });
       await wait(sellerBatchPauseMs);
     } else {
       await wait(sellerPageDelayMs);
     }
     const expectedNextPage = capture.currentPage + 1;
+    const expectedNextRowCount = Number(capture.totalCount || 0) > 0 && Number(capture.pageSize || 0) > 0
+      ? expectedNextPage < Number(capture.pageCount || expectedNextPage)
+        ? Number(capture.pageSize)
+        : Math.max(1, Number(capture.totalCount) - (Number(capture.pageSize) * (Number(capture.pageCount) - 1)))
+      : 0;
     let advanced = false;
     // Ant pagination changes the visible number range after page 5. A DOM
     // element.click() at that boundary is occasionally ignored by React, so
@@ -9665,7 +9965,7 @@ async function captureSellerBrandSales(input = {}) {
         };
       })()`, true);
       if (!targetPoint) continue;
-      mainWindow?.webContents.send("explorer:brand-progress", {
+      reportCaptureProgress({
         percent: Math.min(99, 70 + Math.round((capture.currentPage / Math.max(capture.currentPage, capture.pageCount || capture.currentPage)) * 29)),
         count: products.length,
         pageNum: capture.currentPage,
@@ -9700,6 +10000,7 @@ async function captureSellerBrandSales(input = {}) {
           expectedPage: expectedNextPage,
           currentPage: nextState?.page,
           rowCount: nextState?.rowCount,
+          expectedRowCount: expectedNextRowCount,
           previousSignature: capture.rowSignature,
           currentSignature: nextState?.rowSignature,
         });
@@ -9726,7 +10027,7 @@ async function captureSellerBrandSales(input = {}) {
         const button = target?.querySelector("button,a") || target;
         if (!button) return false;
         button.click();
-        for (let attempt = 0; attempt < sellerPageResponseAttempts; attempt += 1) {
+        for (let attempt = 0; attempt < ${sellerPageResponseAttempts}; attempt += 1) {
           await wait(250);
           const currentPagination = [...document.querySelectorAll(".ant-pagination")]
             .filter((element) => visible(element) && element.querySelector(".ant-pagination-next"))
@@ -9735,9 +10036,10 @@ async function captureSellerBrandSales(input = {}) {
           const rows = [...document.querySelectorAll("table tbody tr")]
             .filter(visible)
             .map((row) => String(row.innerText || ""))
-            .filter((text) => /상품\s*번호\s*[:：]/.test(text));
-          const rowSignature = rows.map((text) => text.replace(/\s+/g, " ").trim()).join("␞");
+            .filter((text) => /상품\\s*번호\\s*[:：]/.test(text));
+          const rowSignature = rows.map((text) => text.replace(/\\s+/g, " ").trim()).join("␞");
           if (Number(active?.textContent.trim()) === expected
+            && rows.length >= Math.max(1, ${expectedNextRowCount})
             && rowSignature !== ${JSON.stringify(capture.rowSignature || "")}) return true;
         }
         return false;
@@ -9747,16 +10049,20 @@ async function captureSellerBrandSales(input = {}) {
       pageTransitionFailure = { page: capture.currentPage, expectedNextPage, reason: "NEXT_PAGE_NOT_VERIFIED" };
       break;
     }
+    await wait(sellerPageSettleMs);
   }
   const paginationComplete = !pageTransitionFailure
-    && lastCapturedPage >= expectedPageCount
-    && (!sellerSourceTotal || capturedRowCount >= sellerSourceTotal);
-  if (!paginationComplete) {
+    && lastCapturedPage >= expectedPageCount;
+  const rowCountComplete = !sellerSourceTotal || capturedRowCount >= sellerSourceTotal;
+  if (!paginationComplete || !rowCountComplete) {
+    const reachedLastPage = !pageTransitionFailure && lastCapturedPage >= expectedPageCount;
     stopBrandNetworkCapture();
     return {
       ok: false,
-      code: "SELLER_PAGINATION_INCOMPLETE",
-      message: `판매자센터 하단 페이지 검증이 ${lastCapturedPage}/${expectedPageCount}페이지에서 중단되었습니다. 다음 페이지를 30초씩 재시도했지만 응답하지 않았습니다. 부분 데이터는 저장하지 않습니다.`,
+      code: reachedLastPage ? "SELLER_ROW_COUNT_INCOMPLETE" : "SELLER_PAGINATION_INCOMPLETE",
+      message: reachedLastPage
+        ? `판매자센터 ${lastCapturedPage}/${expectedPageCount}페이지까지 모두 확인했지만 화면 상품을 ${capturedRowCount}/${sellerSourceTotal}건만 읽었습니다. 누락 행을 재확인해야 하므로 부분 데이터는 저장하지 않습니다.`
+        : `판매자센터 하단 페이지 검증이 ${lastCapturedPage}/${expectedPageCount}페이지에서 중단되었습니다. 다음 페이지를 90초씩 재시도했지만 응답하지 않았습니다. 부분 데이터는 저장하지 않습니다.`,
       sourceTotal: sellerSourceTotal,
       capturedRowCount,
       pageTransitionFailure,
@@ -9768,7 +10074,7 @@ async function captureSellerBrandSales(input = {}) {
       .filter(Boolean),
   );
   const domProducts = mergeSellerBrandPages(pages);
-  const allProducts = mergeSellerBrandProducts(domProducts, networkSellerProducts);
+  const allProducts = input.verification?.screenOnly ? domProducts : mergeSellerBrandProducts(domProducts, networkSellerProducts);
   const matchedProducts = allProducts.filter((product) => {
     const rowBrand = String(product.brandName || "").trim().toLowerCase();
     if (!rowBrand) return true;
@@ -9781,7 +10087,7 @@ async function captureSellerBrandSales(input = {}) {
   const products = matchedProducts.length ? matchedProducts : allProducts;
   const diagnostics = sellerBrandDiagnostics(pages);
   stopBrandNetworkCapture();
-  if (sellerWindow && !sellerWindow.isDestroyed()) sellerWindow.hide();
+  if (!sellerExcelVerificationLayout && sellerWindow && !sellerWindow.isDestroyed()) sellerWindow.hide();
   mainWindow?.show();
   mainWindow?.focus();
   return {
@@ -9791,6 +10097,7 @@ async function captureSellerBrandSales(input = {}) {
     sourceTotal: sellerSourceTotal || products.length,
     capturedRowCount,
     missingCount: Math.max(0, (sellerSourceTotal || products.length) - products.length),
+    checkpointSync: { ...checkpointSummary, changes: [...checkpointSummary.changes] },
     selectedBrand: selected.selected,
     diagnostics: {
       ...diagnostics,
@@ -10713,6 +11020,8 @@ app.whenReady().then(async () => {
     }
     return { ok: await enterSellerProductSearchViaMenu() };
   });
+  ipcMain.handle("seller:excel-verification-start", (_event, input = {}) => beginSellerExcelVerificationWindows(input));
+  ipcMain.handle("seller:excel-verification-end", () => endSellerExcelVerificationWindows());
   ipcMain.handle("seller:capture-brand-sales", (_event, input = {}) => captureSellerBrandSales(input));
   const abortSellerBrandExportAttempt = async () => {
   brandExportAttemptGeneration += 1;
@@ -10841,6 +11150,8 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     const error = await shell.openPath(filePath);
     return error ? { ok: false, message: error } : { ok: true };
   });
+  ipcMain.handle("excel:review-snapshot", (_event, input = {}) => readReviewWorkbook(input, buildExcelPreviewProducts));
+  ipcMain.handle("excel:review-revision", (_event, input = {}) => checkReviewWorkbookRevision(input));
   ipcMain.handle("excel:preview", async (_event, input = {}) => {
     try {
       return await previewExcelFile(input);
@@ -10848,21 +11159,42 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
   });
+  const screenSyncFilesInProgress = new Set();
   ipcMain.handle("excel:sync-seller-screen", async (_event, input = {}) => {
     const filePath = String(input?.path || "").trim();
     if (!filePath || !/\.xlsx$/i.test(filePath)) return { ok: false, message: "수정할 원본 Excel 경로가 올바르지 않습니다." };
+    const lock = resolve(filePath).toLowerCase();
+    if (screenSyncFilesInProgress.has(lock)) return { ok: false, message: "동일 Excel 파일을 저장 중입니다." };
+    screenSyncFilesInProgress.add(lock);
+    let temporary = "";
     try {
       const original = await readFile(filePath);
-      const applied = applyPoizonScreenSalesToWorkbook(original, Array.isArray(input?.products) ? input.products : []);
-      if (!applied.ok || !applied.changed) return { ...applied, path: filePath };
-      const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*$/, "").replace("T", "_");
+      const products = Array.isArray(input.products) ? input.products : [];
+      const applied = applyPoizonScreenSalesToWorkbook(original, products);
+      const { buffer, ...summary } = applied;
+      if (!applied.ok || !applied.changed) return { ...summary, path: filePath };
+      const stamp = new Date().toISOString().replace(/[-:.]/g, "") + "-" + Math.random().toString(36).slice(2);
       const backupPath = `${filePath}.before-poizon-screen-sync-${stamp}.bak`;
-      await copyFile(filePath, backupPath);
-      await writeFile(filePath, applied.buffer);
+      temporary = `${filePath}.poizon-${stamp}.tmp`;
+      await writeFile(temporary, buffer, { flag: "wx" });
+      const persisted = await readFile(temporary);
+      if (!persisted.equals(buffer)) throw new Error("임시 Excel 저장 내용이 일치하지 않습니다.");
+      await readFirstDataSheet(persisted);
+      const checked = applyPoizonScreenSalesToWorkbook(persisted, products);
+      if (!checked.ok || checked.changed || checked.matchedRows !== applied.matchedRows) throw new Error("저장 후 판매량 재검증에 실패했습니다.");
+      if (!(await readFile(filePath)).equals(original)) throw new Error("검증 도중 원본 Excel이 변경되어 덮어쓰지 않았습니다.");
+      await writeFile(backupPath, original, { flag: "wx" });
+      await writeFile(backupPath + ".json", JSON.stringify({ verifiedAt: new Date().toISOString(), scope: "POIZON screen source-of-truth recent30", ...summary }, null, 2), { flag: "wx" });
+      await rename(temporary, filePath);
+      temporary = "";
       excelPreviewCache.clear();
-      return { ...applied, buffer: undefined, path: filePath, backupPath };
+      const info = await stat(filePath);
+      return { ...summary, path: filePath, backupPath, auditPath: backupPath + ".json", fileSize: info.size, fileTime: info.mtimeMs };
     } catch (error) {
-      return { ok: false, code: "EXCEL_SCREEN_SYNC_WRITE_FAILED", message: error instanceof Error ? error.message : String(error) };
+      return { ok: false, code: "EXCEL_SAFE_SYNC_FAILED", message: error.message };
+    } finally {
+      if (temporary) await unlink(temporary).catch(() => {});
+      screenSyncFilesInProgress.delete(lock);
     }
   });
   ipcMain.handle("brand-export:list-files", (_event, options = {}) => listBrandExportFiles({

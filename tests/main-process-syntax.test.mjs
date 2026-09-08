@@ -12,5 +12,8 @@ test("patched Electron main process remains syntactically valid", () => {
 
 test("postinstall blocks packaging when final main process syntax is invalid", async () => {
   const pkg = JSON.parse(await import("node:fs/promises").then(({ readFile }) => readFile(packagePath, "utf8")));
-  assert.match(String(pkg.scripts?.postinstall || ""), /node --check main\.mjs/);
+  const verifier = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("../scripts/verify-integrated-source.mjs", import.meta.url), "utf8"));
+  assert.match(String(pkg.scripts?.postinstall || ""), /verify-integrated-source\.mjs/);
+  assert.match(verifier, /"main\.mjs"/);
+  assert.match(verifier, /--check/);
 });
