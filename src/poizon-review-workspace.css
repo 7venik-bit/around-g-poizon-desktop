@@ -22,6 +22,8 @@ body.poizon-review-open > aside, body.poizon-review-open > .shell { display:none
 #poizon-review-workspace [data-tone=missing] { background:#fff0ee; color:#9a423b; }
 #poizon-review-workspace [data-tone=unknown] { background:#f0f3f7; color:#566477; }
 #poizon-review-workspace .review-table > tbody > tr[data-active="true"] { outline:3px solid #13a36f; outline-offset:-3px; }
+#poizon-review-workspace .review-product-action { display:block; margin-top:6px; border-color:#178b62; color:#126c4d; font-weight:700; }
+#poizon-review-workspace .review-ok { display:inline-block; margin-top:6px; padding:3px 9px; border-radius:999px; background:#178b62; color:#fff; }
 #poizon-review-workspace .review-table-scroll { flex:1 1 0; min-height:140px; overflow:auto; overscroll-behavior:contain; border:1px solid #d9e3ef; border-radius:8px; background:#fff; }
 #poizon-review-workspace .review-table { width:100%; min-width:0; table-layout:fixed; border-collapse:collapse; }
 #poizon-review-workspace .review-table > thead > tr > th:first-child { width:42%; }
