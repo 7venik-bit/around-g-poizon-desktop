@@ -21,20 +21,12 @@ function replaceCheckpointCall(source) {
   return source.slice(0, start) + after + source.slice(end + endNeedle.length);
 }
 
-let live = await read('services/live-poizon-crosscheck.mjs');
-if (!live.includes('POIZON_SKU_SAFE_DEFER_V1')) {
-  const createMarker = 'export function createPageCrossCheck';
-  if (!live.includes(createMarker)) throw new Error('SKU-safe pagination patch target missing: createPageCrossCheck export');
-  const selector = `// POIZON_SKU_SAFE_DEFER_V1\n// Raw POIZON export workbooks contain one row per SKU/size. The Seller Center list\n// exposes an SPU-level metric. Those two scopes must never be compared, summed or\n// overwritten. A page may continue after recording the SKU rows as deferred; any\n// other unresolved evidence still blocks the page.\nexport function selectPoizonPageCorrectionProducts(products = [], rows = [], pageNum = 0) {\n  const byKey = new Map();\n  for (const row of rows) {\n    const key = identity(row);\n    if (!key || byKey.has(key)) throw new Error('페이지 대조 식별자가 없거나 중복되어 Excel 수정을 중단했습니다.');\n    byKey.set(key, row);\n  }\n  if (!products.length || products.length !== rows.length) throw new Error('페이지 상품 수와 대조 증거 수가 달라 Excel 수정을 중단했습니다.');\n  const actionable = [], deferredRows = [];\n  for (const product of products) {\n    const row = byKey.get(identity(product));\n    if (!row) throw new Error(\`POIZON \${pageNum || '?'}페이지 · \${identity(product) || '식별자 없음'} · 대조 증거 없음\`);\n    const codes = Array.isArray(row.reasonCodes) ? row.reasonCodes.filter(Boolean) : [];\n    const skuScopeOnly = row.matched === true\n      && row.autoCorrectionBlocked === true\n      && codes.length > 0\n      && codes.every((code) => code === 'EXCEL_SKU_SPU_SCOPE_MISMATCH');\n    if (skuScopeOnly) { deferredRows.push(row); continue; }\n    if (row.autoCorrectionBlocked || /충돌|미확인|확인 필요/.test(row.status || '')) {\n      throw new Error(\`POIZON \${pageNum || '?'}페이지 · \${identity(product) || '식별자 없음'} · \${row.status || '대조 증거 없음'} · 원본 수정 및 다음 페이지 이동을 보류합니다.\`);\n    }\n    actionable.push(product);\n  }\n  return { products: actionable, deferredRows, deferredProducts: deferredRows.length };\n}\n\n`;
-  live = live.replace(createMarker, selector + createMarker);
-  live = replaceOnce(
-    live,
-    "      unconfirmedProducts: rows.filter((r) => r.autoCorrectionBlocked).length,\n      missingSalesCells:",
-    "      unconfirmedProducts: rows.filter((r) => r.autoCorrectionBlocked).length,\n      deferredProducts: rows.filter((r) => Array.isArray(r.reasonCodes) && r.reasonCodes.length > 0 && r.reasonCodes.every((code) => code === 'EXCEL_SKU_SPU_SCOPE_MISMATCH')).length,\n      missingSalesCells:",
-    'deferred counter',
-  );
+const live = await read('services/live-poizon-crosscheck.mjs');
+if (!live.includes('POIZON_SKU_SAFE_DEFER_V1')
+    || !live.includes('const writable = assertPoizonPageReadyForCorrection(products, rows, pageNum);')
+    || !live.includes('deferredProducts: rows.filter(onlySkuScopeMismatch).length')) {
+  throw new Error('Canonical SKU-safe evidence policy is missing; refusing to generate a competing policy.');
 }
-await save('services/live-poizon-crosscheck.mjs', live);
 
 let main = await read('main.mjs');
 main = main.replace(
