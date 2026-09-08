@@ -10,11 +10,11 @@ test('review UI keeps existing products uncolored and marks only true Excel-miss
   assert.doesNotMatch(source, /r\.equal \? '' : 'live-different'/);
 });
 
-test('page review wording does not imply automatic continuation while data is unresolved', async () => {
+test('page review wording requires verification before any continuation', async () => {
   const view = await readFile(new URL('../src/live-poizon-crosscheck.js', import.meta.url), 'utf8');
   const service = await readFile(new URL('../services/live-poizon-crosscheck.mjs', import.meta.url), 'utf8');
   assert.match(view, /수정\/저장\/재검증 완료 전에는 다음 페이지로 이동하지 않습니다/);
-  assert.doesNotMatch(service, /SPU 자동수정 제외 · 다음 페이지 진행/);
+  assert.match(service, /SPU 자동수정 제외 · 다음 페이지 진행 전 원본 보존 재검증/);
 });
 
 test('a page cannot be considered complete when disk reread still differs', async () => {
