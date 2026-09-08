@@ -213,6 +213,17 @@ test('dedicated view uses external CSP-compatible styling and keeps original det
   assert.match(popup, /POIZON 실시간 대조/);
 });
 
+test('one bulk approval replaces per-product correction clicks', async () => {
+  const view = await readFile(new URL('../src/poizon-review-workspace.js', import.meta.url),'utf8');
+  assert.match(view, /review-auto-all/);
+  assert.match(view, /productKey:'__ALL__', action:'auto'/);
+  assert.doesNotMatch(view, /class="review-product-action"/);
+  assert.match(main, /waitForSellerVerificationAction\(input\.verification\.runId, '__ALL__', 'auto'\)/);
+  assert.match(main, /phase: 'bulk-action-required'/);
+  assert.doesNotMatch(main, /waitForSellerVerificationAction\(input\.verification\.runId, currentRow\.key/);
+  assert.match(main, /for \(const row of livePage\.rows\.filter/);
+});
+
 test('Windows Electron renders actual source-order rows under the app CSP and closes cleanly', { skip:process.platform !== 'win32', timeout:60000 }, () => {
   const require = createRequire(import.meta.url), electron = require('electron');
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;

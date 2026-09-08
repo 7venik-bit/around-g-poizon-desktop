@@ -149,6 +149,7 @@ if (main) test('shipping capture compares before navigation and both entry point
     mergeSellerBrandPages: (pages) => pages.flat(), mainWindow: { webContents: { send: (channel, p) => emitted.push([channel, p]) } },
     sellerWindow: { webContents: { executeJavaScript: async (s) => paints.push(s) } }, paintSellerVerification,
     verificationConditionLabel: () => '현지 30 이상', wait: async () => {},
+    bulkCorrectionApproved: true, bulkCorrectionApproval: Promise.resolve('auto'),
     input:{ verification:{ runId:'run-1' } }, checkpointSummary:{ filePath:'A.xlsx', backupPath:'', changedRows:0, changedCells:0, addedRows:0, addedProducts:0, verifiedCells:0, changes:[] },
     waitForSellerVerificationAction:async () => 'correct', syncPoizonPageCheckpoint:async () => ({ ok:true, reverified:true, changes:[] }) };
   await runInContext('(async()=>{' + capture.slice(from, to) + '})()', createContext(sandbox));

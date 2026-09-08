@@ -94,7 +94,7 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
     <div class="review-tools"><span class="review-counters"></span><label><input class="review-follow" type="checkbox" checked>자동 따라가기</label></div>
     <div class="review-legend"><span data-tone="equal">일치</span><span data-tone="different">값 다름</span><span data-tone="missing">Excel 상품 없음/추가</span><span data-tone="unknown">기준·값 미확인</span></div>
     <div class="review-table-scroll" tabindex="0"><table class="review-table"><thead><tr><th>Excel 상품 · 원본 행</th><th>중국 최근 30일<br>Excel → POIZON</th><th>현지 최근 30일<br>Excel → POIZON</th><th>대조 결과</th></tr></thead><tbody></tbody></table></div>
-    <footer class="review-bottom"><button class="review-prev" type="button">이전</button><span class="review-page"></span><button class="review-next" type="button">다음</button><button class="review-report" type="button" disabled>대조 결과</button><small>POIZON 기준 자동 교정</small></footer>`;
+    <footer class="review-bottom"><button class="review-prev" type="button">이전</button><span class="review-page"></span><button class="review-next" type="button">다음</button><button class="review-auto-all" type="button">전체 자동 수정 시작</button><button class="review-report" type="button" disabled>대조 결과</button><small>POIZON 기준 자동 교정</small></footer>`;
   doc.body.append(panel); doc.body.classList.add('poizon-review-open');
   const get = (s) => panel.querySelector(s);
   get('.review-file').textContent = `${brandName || file.brandName || ''} · ${file.name || file.path}`;
@@ -113,8 +113,8 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
       const originals = matches(r), product = originals[0] || {}, image = safeImage(product.logoUrl);
       const options = originals.length ? `<details data-review-options="${position}"><summary>원본 Excel ${number(originals.length)}행 보기</summary><div class="review-original"></div></details>` : '';
       const activeRow = state.activeKey && r.key === state.activeKey ? ' data-active="true"' : '';
-      const action = r.requiredAction === 'correct' ? '<button class="review-product-action" data-action="correct" type="button">값 수정</button>'
-        : r.requiredAction === 'add' ? '<button class="review-product-action" data-action="add" type="button">상품 추가</button>'
+      const action = r.requiredAction === 'correct' ? '<b class="review-auto-pending">전체 자동 수정 대기</b>'
+        : r.requiredAction === 'add' ? '<b class="review-auto-pending">전체 자동 추가 대기</b>'
         : r.actionComplete || r.equal ? '<b class="review-ok">OK</b>' : '<button type="button" disabled>확인 필요</button>';
       return `<tr data-tone="${reviewTone(r)}" data-review-key="${escape(r.key)}"${activeRow}><td>${image ? `<img class="review-image" src="${escape(image)}" alt="">` : ''}<b>${escape(product.articleNumber || r.articleNumber || r.spuId || '식별자 없음')}</b><small>${escape(product.title || r.title || '')}</small><small>SPU ${escape(r.spuId || '-')} · 원본 행 ${escape((r.excelRows || []).join(', ') || '없음')}</small>${options}</td><td>${escape(r.excelChina)}<br>→ <b>${escape(r.sourceChina)}</b></td><td>${escape(r.excelLocal)}<br>→ <b>${escape(r.sourceLocal)}</b></td><td>${escape(r.status)}<small>${r.qualified ? '조건 충족' : '조건 미충족/미확인'}</small>${action}</td></tr>`;
     }).join('') || '<tr><td colspan="4">전체 Excel 목록을 읽었습니다. POIZON 첫 페이지를 읽으면 동일 상품을 화면 순서대로 표시합니다.</td></tr>';
@@ -129,12 +129,6 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
       };
       detail.ontoggle = () => { if (detail.open && !detail.querySelector('.review-original').innerHTML) draw(); };
     }
-    for (const button of panel.querySelectorAll('.review-product-action')) button.onclick = async () => {
-      const row = button.closest('tr'); const productKey = row?.dataset.reviewKey || '';
-      button.disabled = true; button.textContent = '처리 중';
-      const result = await api.confirmSellerVerificationAction({ runId, productKey, action:button.dataset.action });
-      if (!result?.ok) { button.disabled = false; button.textContent = button.dataset.action === 'add' ? '상품 추가' : '값 수정'; }
-    };
     get('.review-page').textContent = `${finished ? '누적 결과' : 'POIZON 화면 순서'} · ${state.pageNum}/${state.pageCount || '?'}페이지 · ${number(rows.length)}상품`;
     get('.review-prev').disabled = pageOffset === 0;
     get('.review-next').disabled = pageOffset + 50 >= rows.length;
@@ -173,6 +167,13 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
   const dispose = () => { if (stopped) return; stopped = true; clearInterval(timer); unsubscribe?.(); if (active?.input.runId === runId) active.running = false; };
   get('.review-prev').onclick = () => { pageOffset -= 50; get('.review-follow').checked = false; renderRows(); };
   get('.review-next').onclick = () => { pageOffset += 50; get('.review-follow').checked = false; renderRows(); };
+  get('.review-auto-all').onclick = async () => {
+    const button = get('.review-auto-all');
+    button.disabled = true; button.textContent = '전체 자동 수정 실행 중';
+    const result = await api.confirmSellerVerificationAction({ runId, productKey:'__ALL__', action:'auto' });
+    if (!result?.ok) { button.disabled = false; button.textContent = '전체 자동 수정 시작'; }
+    else get('.review-phase').textContent = '전체 자동 수정 승인 완료 · 페이지별 일괄 저장 및 재검증 중';
+  };
   get('.review-report').onclick = () => showReviewReport(latestReport, doc);
   const handle = {
     input, running: true, dispose,

@@ -9808,6 +9808,10 @@ async function captureSellerBrandSales(input = {}) {
   let lastCapturedPage = 0;
   let expectedPageCount = 1;
   const capturedPageSignatures = new Set();
+  const bulkCorrectionApproval = checkpointSummary.enabled
+    ? waitForSellerVerificationAction(input.verification.runId, '__ALL__', 'auto')
+    : Promise.resolve('auto');
+  let bulkCorrectionApproved = !checkpointSummary.enabled;
   for (let page = 1; page <= 1_000; page += 1) {
     const capture = await sellerWindow.webContents.executeJavaScript(`(() => {
       const visible = (element) => element && element.getClientRects().length > 0;
@@ -9916,34 +9920,22 @@ async function captureSellerBrandSales(input = {}) {
         }
         if (!currentRow.equal) {
           const requiredAction = currentRow.matched ? 'correct' : 'add';
+          if (!bulkCorrectionApproved) {
+            mainWindow?.webContents.send("seller:verification-progress", {
+              runId: input.verification.runId, phase: 'bulk-action-required',
+              activeKey: currentRow.key, productKey: currentRow.key, requiredAction,
+              pageNum: capture.currentPage, pageCount: capture.pageCount,
+              message: '수정·추가 대상이 있습니다. 전체 자동 수정 시작을 한 번만 눌러 주세요.',
+            });
+            await bulkCorrectionApproval;
+            bulkCorrectionApproved = true;
+          }
           mainWindow?.webContents.send("seller:verification-progress", {
             runId: input.verification.runId, phase: 'product-action-required',
-            activeKey: currentRow.key, productKey: currentRow.key, requiredAction,
-            pageNum: capture.currentPage, pageCount: capture.pageCount,
-            message: requiredAction === 'add' ? 'Excel에 없는 상품입니다. 상품 추가 버튼을 눌러 주세요.' : '판매량 값이 다릅니다. 값 수정 버튼을 눌러 주세요.',
-          });
-          await waitForSellerVerificationAction(input.verification.runId, currentRow.key, requiredAction);
-          const productCheckpoint = await syncPoizonPageCheckpoint({
-            filePath: checkpointSummary.filePath,
-            products: [currentPageProducts[productIndex]],
-            pageNum: capture.currentPage,
-            backupPath: checkpointSummary.backupPath,
-          });
-          if (!productCheckpoint?.ok || productCheckpoint.reverified !== true) {
-            throw new Error(productCheckpoint?.message || `POIZON ${capture.currentPage}페이지 상품 저장 후 재검증에 실패했습니다.`);
-          }
-          checkpointSummary.backupPath = productCheckpoint.backupPath || checkpointSummary.backupPath;
-          checkpointSummary.changedRows += Number(productCheckpoint.changedRows || 0);
-          checkpointSummary.changedCells += Number(productCheckpoint.changedCells || 0);
-          checkpointSummary.addedRows += Number(productCheckpoint.addedRows || 0);
-          checkpointSummary.addedProducts += Number(productCheckpoint.addedProducts || 0);
-          checkpointSummary.verifiedCells += Number(productCheckpoint.verifiedCells || 0);
-          checkpointSummary.changes.push(...(productCheckpoint.changes || []));
-          mainWindow?.webContents.send("seller:verification-progress", {
-            runId: input.verification.runId, phase: 'product-action-complete',
             activeKey: currentRow.key, productKey: currentRow.key,
+            requiredAction,
             pageNum: capture.currentPage, pageCount: capture.pageCount,
-            message: requiredAction === 'add' ? '상품 추가 및 재검증 완료 · OK' : '값 수정 및 재검증 완료 · OK',
+            message: requiredAction === 'add' ? '현재 페이지 일괄 상품 추가 대기' : '현재 페이지 일괄 값 수정 대기',
           });
         }
         await wait(180);
@@ -9981,6 +9973,14 @@ async function captureSellerBrandSales(input = {}) {
         checkpointSummary.changes.push(...(checkpoint.changes || []));
         checkpointPages.add(Number(capture.currentPage));
         checkpointSummary.pagesCompleted = checkpointPages.size;
+        for (const row of livePage.rows.filter((item) => !item.equal && !item.autoCorrectionBlocked)) {
+          mainWindow?.webContents.send("seller:verification-progress", {
+            runId: input.verification.runId, phase: 'product-action-complete',
+            activeKey: row.key, productKey: row.key,
+            pageNum: capture.currentPage, pageCount: capture.pageCount,
+            message: row.matched ? '페이지 일괄 값 수정 및 재검증 완료 · OK' : '페이지 일괄 상품 추가 및 재검증 완료 · OK',
+          });
+        }
         mainWindow?.webContents.send("seller:verification-progress", {
           runId: input.verification.runId, phase: "page-checkpoint-complete",
           activeKey: '', pageNum: capture.currentPage, pageCount: capture.pageCount,
@@ -10173,6 +10173,7 @@ async function captureSellerBrandSales(input = {}) {
   // 이미 브랜드 검색으로 얻은 원본 행은 삭제하지 않는다.
   const products = matchedProducts.length ? matchedProducts : allProducts;
   const diagnostics = sellerBrandDiagnostics(pages);
+  sellerVerificationActionWaiters.delete(sellerVerificationActionKey(input.verification?.runId, '__ALL__'));
   stopBrandNetworkCapture();
   if (!sellerExcelVerificationLayout && sellerWindow && !sellerWindow.isDestroyed()) sellerWindow.hide();
   mainWindow?.show();
