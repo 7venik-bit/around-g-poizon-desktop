@@ -196,7 +196,7 @@ test('shipped navigation, local brand lists, and file synchronization cannot imp
   assert.match(sync, /listBrandExportFiles/); assert.doesNotMatch(sync, /captureSellerBrandSales|syncExcelWithSellerScreen|beginLiveVerification/);
   assert.match(renderer, /return openReviewLocalBrandPreview\(files, filters\)/);
   assert.match(renderer, /poizon-review-brand-start/); assert.match(main, /screenOnly \? domProducts/);
-  assert.match(main, /setMinimumSize\?\.\(360, 400\)/);
+  assert.match(main, /backgroundSeller: true/);
 });
 
 test('dedicated view uses external CSP-compatible styling and keeps original details paged', async () => {
@@ -205,6 +205,9 @@ test('dedicated view uses external CSP-compatible styling and keeps original det
   assert.doesNotMatch(view, /createElement\(['"]style['"]\)|style\.cssText/);
   assert.match(html, /id="poizon-review-styles"/); assert.match(view, /doc\.body\.append\(panel\)/);
   assert.match(view, /originals\.slice\(offset, offset \+ 100\)/);
+  assert.match(view, /openReviewPopup/);
+  const popup = await readFile(new URL('../src/poizon-review-popup.html', import.meta.url),'utf8');
+  assert.match(popup, /POIZON 실시간 대조/);
 });
 
 test('Windows Electron renders actual source-order rows under the app CSP and closes cleanly', { skip:process.platform !== 'win32', timeout:60000 }, () => {

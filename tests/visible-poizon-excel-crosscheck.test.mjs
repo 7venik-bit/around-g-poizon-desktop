@@ -8,35 +8,30 @@ const [main, preload, renderer] = await Promise.all([
   readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
 ]);
 
-test("POIZON 판매자센터와 Excel 미리보기를 좌우로 동시에 표시한다", () => {
-  assert.match(main, /safeStorage, screen, session, shell/);
+test("POIZON 판매자센터는 백그라운드에 두고 독립 대조 알림창을 전면에 표시한다", () => {
   assert.match(main, /function beginSellerExcelVerificationWindows/);
-  assert.match(main, /screen\.getDisplayMatching\(mainWindow\.getBounds\(\)\)\.workArea/);
-  assert.match(main, /Math\.floor\(usableWidth \* 0\.55\)/);
-  assert.match(main, /sellerSide: "left"/);
-  assert.match(main, /excelSide: "right"/);
+  assert.match(main, /sellerWindow\.hide\(\)/);
+  assert.match(main, /backgroundSeller: true/);
+  assert.match(main, /foregroundReview: true/);
   assert.match(preload, /beginSellerExcelVerification: .*seller:excel-verification-start/);
   assert.match(preload, /endSellerExcelVerification: .*seller:excel-verification-end/);
-  assert.match(renderer, /검증 화면 열림 · 왼쪽 POIZON \/ 오른쪽 Excel/);
+  assert.match(renderer, /openReviewPopup\(\)/);
 });
 
-test("검증 중에는 POIZON 창을 숨기지 않고 Excel과 동시에 유지한다", () => {
-  assert.match(main, /if \(!sellerExcelVerificationLayout && sellerWindow && !sellerWindow\.isDestroyed\(\)\) sellerWindow\.hide\(\)/);
+test("검증 중 POIZON 자동화 창을 표시하거나 활성화하지 않는다", () => {
+  const begin = main.slice(main.indexOf('function beginSellerExcelVerificationWindows'), main.indexOf('function endSellerExcelVerificationWindows'));
+  assert.match(begin, /visible: false/);
+  assert.match(begin, /sellerWindow\.hide\(\)/);
+  assert.doesNotMatch(begin, /sellerWindow\.show/);
 });
 
-test("Excel을 먼저 표시한 뒤 POIZON 화면을 읽고 원본 Excel을 갱신한다", () => {
-  const start = renderer.indexOf('$("#import-button").addEventListener("click", async () => {');
-  const end = renderer.indexOf('$("#export-button").addEventListener("click", async () => {', start);
-  assert.ok(start >= 0 && end > start);
-  const syncFlow = renderer.slice(start, end);
-  const showPair = syncFlow.indexOf("await showPoizonExcelVerificationPair(file, brandName);");
-  const capture = syncFlow.indexOf("captureSellerBrandSales");
-  const workbookSync = syncFlow.indexOf("syncExcelWithSellerScreen");
-  const refreshedExcel = syncFlow.indexOf("await showExcelPreview(file, 0", workbookSync);
-  assert.ok(showPair >= 0 && capture > showPair, "POIZON 수집 전에 Excel/POIZON 두 화면을 먼저 열어야 한다");
-  assert.ok(workbookSync > capture, "POIZON 화면을 읽은 뒤에 Excel을 수정해야 한다");
-  assert.ok(refreshedExcel > workbookSync, "수정된 Excel을 다시 읽어 화면에 갱신해야 한다");
-  assert.match(syncFlow, /POIZON 화면 값 우선 적용/);
+test("대조 알림창을 먼저 준비한 뒤 백그라운드 POIZON 수집을 시작한다", () => {
+  const start = renderer.indexOf('async function prepareLivePoizonVerification');
+  const end = renderer.indexOf('async function finishLivePoizonVerification', start);
+  const flow = renderer.slice(start, end);
+  const popup = flow.indexOf('await live.openReviewPopup()');
+  const begin = flow.indexOf('beginSellerExcelVerification');
+  assert.ok(popup >= 0 && begin > popup, "POIZON 수집 전에 전면 대조 알림창을 준비해야 한다");
 });
 
 test("장시간 검증 중 현재 POIZON 페이지와 Excel 파일명을 함께 안내한다", () => {
@@ -44,9 +39,9 @@ test("장시간 검증 중 현재 POIZON 페이지와 Excel 파일명을 함께 
   assert.match(renderer, /교차 검증 중 · POIZON/);
 });
 
-test("검증 종료 시 사용자의 기존 창 배치를 복원한다", () => {
+test("검증 종료 시 메인 창을 유지하고 POIZON 창은 백그라운드에 둔다", () => {
   assert.match(main, /function endSellerExcelVerificationWindows/);
   assert.match(main, /mainWindow\.setBounds\(saved\.mainBounds\)/);
-  assert.match(main, /sellerWindow\.setBounds\(saved\.sellerBounds\)/);
-  assert.match(renderer, /await window\.aroundG\.endSellerExcelVerification\(\)\.catch\(\(\) => \{\}\)/);
+  assert.match(main, /sellerWindow\.hide\(\)/);
+  assert.match(renderer, /await window\.aroundG\.endSellerExcelVerification\?\.\(\)\.catch\(\(\) => \{\}\)/);
 });

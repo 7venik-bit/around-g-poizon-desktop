@@ -517,7 +517,8 @@ async function openVerifiedCombinedBrandPreview(files, filters = {}) {
     minimumLocalSales30: filters.minimumLocalTotal ?? defaults.minimumLocalSales30 };
   return service.runPoizonReviewBatch({ files, conditions, api: window.aroundG,
     onProgress: (message) => { $("#brand-status").textContent = message; },
-    createView: (snapshot, frozen) => live.beginLiveVerification({ file: snapshot.file, brandName: snapshot.file.brandName, snapshot, conditions: frozen }),
+    createView: async (snapshot, frozen) => live.beginLiveVerification({ file: snapshot.file, brandName: snapshot.file.brandName, snapshot, conditions: frozen,
+      doc: await live.openReviewPopup() }),
     notify: (report, view) => view ? view.showReport(report) : live.showReviewReport(report) });
 }
 
@@ -2103,7 +2104,7 @@ async function prepareLivePoizonVerification(file, brandName, excelProducts, con
   const live = await import("./poizon-review-workspace.js");
   const snapshot = await window.aroundG.readPoizonReviewWorkbook({ path: file.path });
   if (!snapshot?.ok) throw new Error(snapshot?.message || "Excel 전체 읽기 실패");
-  const result = live.beginLiveVerification({ file, brandName, snapshot, conditions });
+  const result = live.beginLiveVerification({ file, brandName, snapshot, conditions, doc: await live.openReviewPopup() });
   const layout = await window.aroundG.beginSellerExcelVerification({ brandName, fileName: file.name || "" });
   if (!layout?.ok) { result.finish({ ok: false, message: layout?.message }); throw new Error(layout?.message || "검증 창 열기 실패"); }
   return result;
