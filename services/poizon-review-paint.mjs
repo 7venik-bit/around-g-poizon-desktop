@@ -25,7 +25,9 @@ export function paintReviewPage(document, payload) {
       backgroundColor: element.style.backgroundColor || '', outline: element.style.outline || '', outlineOffset: element.style.outlineOffset || '',
     });
     element.style.backgroundColor = palette[tone];
-    element.style.outline = '2px solid ' + color[tone]; element.style.outlineOffset = '-2px';
+    const active = Boolean(payload.activeKey && match.key === payload.activeKey);
+    element.style.outline = active ? '3px solid #13a36f' : 'none';
+    element.style.outlineOffset = active ? '-3px' : '';
     element.dataset.aroundGVerification = tone;
     element.dataset.aroundGReviewKey = match.key;
   }
@@ -36,5 +38,5 @@ export function paintReviewPage(document, payload) {
     banner.style.backgroundColor = '#eef5ff'; banner.style.color = '#173456';
     banner.style.padding = '8px 12px'; banner.style.fontSize = '13px'; document.body.prepend(banner);
   }
-  banner.textContent = `Excel 대조 ${payload.pageNum}/${payload.pageCount}페이지 · 초록 일치 / 주황 값 다름 / 빨강 연결 불가 / 회색 기준·값 미확인`;
+  banner.textContent = `Excel 대조 ${payload.pageNum}/${payload.pageCount}페이지 · 녹색 테두리 현재 검색 상품 · 배경색은 대조 결과`;
 }

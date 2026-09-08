@@ -92,7 +92,8 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
     get('tbody').innerHTML = visible.map((r, position) => {
       const originals = matches(r), product = originals[0] || {}, image = safeImage(product.logoUrl);
       const options = originals.length ? `<details data-review-options="${position}"><summary>원본 Excel ${number(originals.length)}행 보기</summary><div class="review-original"></div></details>` : '';
-      return `<tr data-tone="${reviewTone(r)}" data-review-key="${escape(r.key)}"><td>${image ? `<img class="review-image" src="${escape(image)}" alt="">` : ''}<b>${escape(product.articleNumber || r.articleNumber || r.spuId || '식별자 없음')}</b><small>${escape(product.title || r.title || '')}</small><small>SPU ${escape(r.spuId || '-')} · 원본 행 ${escape((r.excelRows || []).join(', ') || '없음')}</small>${options}</td><td>${escape(r.excelChina)}<br>→ <b>${escape(r.sourceChina)}</b></td><td>${escape(r.excelLocal)}<br>→ <b>${escape(r.sourceLocal)}</b></td><td>${escape(r.status)}<small>${r.qualified ? '조건 충족' : '조건 미충족/미확인'}</small></td></tr>`;
+      const activeRow = state.activeKey && r.key === state.activeKey ? ' data-active="true"' : '';
+      return `<tr data-tone="${reviewTone(r)}" data-review-key="${escape(r.key)}"${activeRow}><td>${image ? `<img class="review-image" src="${escape(image)}" alt="">` : ''}<b>${escape(product.articleNumber || r.articleNumber || r.spuId || '식별자 없음')}</b><small>${escape(product.title || r.title || '')}</small><small>SPU ${escape(r.spuId || '-')} · 원본 행 ${escape((r.excelRows || []).join(', ') || '없음')}</small>${options}</td><td>${escape(r.excelChina)}<br>→ <b>${escape(r.sourceChina)}</b></td><td>${escape(r.excelLocal)}<br>→ <b>${escape(r.sourceLocal)}</b></td><td>${escape(r.status)}<small>${r.qualified ? '조건 충족' : '조건 미충족/미확인'}</small></td></tr>`;
     }).join('') || '<tr><td colspan="4">전체 Excel 목록을 읽었습니다. POIZON 첫 페이지를 읽으면 동일 상품을 화면 순서대로 표시합니다.</td></tr>';
     for (const detail of panel.querySelectorAll('[data-review-options]')) {
       const originals = matches(visible[Number(detail.dataset.reviewOptions)]);
@@ -119,10 +120,13 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
     if (event.phase === 'page-compared') {
       state = event; currentRows = event.rows || []; lastData = Date.now();
       pageEvents.set(Number(event.pageNum), event); pageOffset = 0;
-      get('.review-phase').textContent = `POIZON ${event.pageNum}/${event.pageCount}페이지 · 상품 식별 및 판매량 대조 ${currentRows.length}개 완료`;
+      get('.review-phase').textContent = `POIZON ${event.pageNum}/${event.pageCount}페이지 · 상품 ${event.pageReadCount || currentRows.length}/${event.pageProductCount || currentRows.length} 실시간 검색·대조 중`;
       get('.review-counters').textContent = `누적 ${number(state.checkedProducts)} · 상품 인식 ${number(state.matchedProducts)} · 판매량 일치 ${number(state.equalProducts)} · 판매량 수정/확인 ${number(state.differentProducts)} · Excel 누락 ${number(state.missingProducts)}`;
       renderRows(true);
-    } else if (event.message) get('.review-phase').textContent = event.message;
+    } else if (event.message) {
+      if (event.activeKey === '') { state = { ...state, activeKey:'' }; renderRows(); }
+      get('.review-phase').textContent = event.message;
+    }
     renderClock();
   });
   const timer = setInterval(renderClock, 1000);

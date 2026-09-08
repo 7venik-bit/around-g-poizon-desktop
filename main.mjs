@@ -9861,15 +9861,27 @@ async function captureSellerBrandSales(input = {}) {
     // the next pagination click. Only the view, never source capture, is filtered.
     if (liveVerifier) {
       const currentPageProducts = mergeSellerBrandPages([capture.rows || []]);
-      const livePage = liveVerifier.acceptPage(currentPageProducts, {
-        pageNum: capture.currentPage, pageCount: capture.pageCount,
-      });
-      mainWindow?.webContents.send("seller:verification-progress", livePage);
-      await sellerWindow.webContents.executeJavaScript(
-        "(" + paintSellerVerification.toString() + ")(document," + JSON.stringify({
-          ...livePage, label: "공통 검증 조건: " + verificationConditionLabel(liveVerifier.conditions),
-        }) + ")", true,
-      );
+      let livePage;
+      // Walk the visible page one product at a time. Excel row order is never
+      // used: acceptPage resolves every item against the full workbook by SPU.
+      for (let productIndex = 0; productIndex < currentPageProducts.length; productIndex += 1) {
+        livePage = liveVerifier.acceptPage(currentPageProducts.slice(0, productIndex + 1), {
+          pageNum: capture.currentPage, pageCount: capture.pageCount,
+        });
+        livePage.activeKey = livePage.rows.at(-1)?.key || '';
+        livePage.pageReadCount = productIndex + 1;
+        livePage.pageProductCount = currentPageProducts.length;
+        mainWindow?.webContents.send("seller:verification-progress", livePage);
+        await sellerWindow.webContents.executeJavaScript(
+          "(" + paintSellerVerification.toString() + ")(document," + JSON.stringify({
+            ...livePage, label: "공통 검증 조건: " + verificationConditionLabel(liveVerifier.conditions),
+          }) + ")", true,
+        );
+        await wait(180);
+      }
+      if (!livePage || livePage.rows.length !== currentPageProducts.length) {
+        throw new Error(`POIZON ${capture.currentPage}페이지 상품 ${currentPageProducts.length}개 전체 인식을 완료하지 못했습니다.`);
+      }
       if (typeof checkpointSummary !== 'undefined' && checkpointSummary.enabled) {
         mainWindow?.webContents.send("seller:verification-progress", {
           runId: input.verification.runId, phase: "page-checkpoint",
@@ -9902,8 +9914,14 @@ async function captureSellerBrandSales(input = {}) {
         checkpointSummary.pagesCompleted = checkpointPages.size;
         mainWindow?.webContents.send("seller:verification-progress", {
           runId: input.verification.runId, phase: "page-checkpoint-complete",
+          activeKey: '', pageNum: capture.currentPage, pageCount: capture.pageCount,
           message: `POIZON ${capture.currentPage}/${capture.pageCount}페이지 확정 · 상품 ${currentPageProducts.length}개 · 수정 ${Number(checkpoint.changedRows || 0)}행 · 실제 누락 추가 ${Number(checkpoint.addedRows || 0)}행 · 옵션 비교 보류 ${Number(checkpoint.deferredProducts || 0)}개 · 저장 후 재검증 완료`,
         });
+        await sellerWindow.webContents.executeJavaScript(
+          "(" + paintSellerVerification.toString() + ")(document," + JSON.stringify({
+            ...livePage, activeKey: '', label: "공통 검증 조건: " + verificationConditionLabel(liveVerifier.conditions),
+          }) + ")", true,
+        );
       }
     }
     reportCaptureProgress({

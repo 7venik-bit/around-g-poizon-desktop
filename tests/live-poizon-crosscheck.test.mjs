@@ -148,9 +148,12 @@ if (main) test('shipping capture compares before navigation and both entry point
   const sandbox = { liveVerifier: session(), capture: { rows: [product()], currentPage: 11, pageCount: 150 },
     mergeSellerBrandPages: (pages) => pages.flat(), mainWindow: { webContents: { send: (channel, p) => emitted.push([channel, p]) } },
     sellerWindow: { webContents: { executeJavaScript: async (s) => paints.push(s) } }, paintSellerVerification,
-    verificationConditionLabel: () => '현지 30 이상' };
+    verificationConditionLabel: () => '현지 30 이상', wait: async () => {} };
   await runInContext('(async()=>{' + capture.slice(from, to) + '})()', createContext(sandbox));
   assert.equal(emitted[0][1].differentProducts, 1); assert.equal(emitted[0][1].pageNum, 11); assert.equal(paints.length, 1);
+  assert.match(capture, /currentPageProducts\.slice\(0, productIndex \+ 1\)/);
+  assert.match(capture, /livePage\.pageReadCount = productIndex \+ 1/);
+  assert.match(capture, /livePage\.rows\.length !== currentPageProducts\.length/);
   assert.ok(to < capture.indexOf('const expectedNextPage'));
   assert.match(preload, /onSellerVerificationProgress/);
   assert.match(renderer, /verification: liveVerification\?\.input/);

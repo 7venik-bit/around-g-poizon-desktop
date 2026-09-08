@@ -107,8 +107,9 @@ test('real Seller Center painting uses the same verdict palette and refuses a di
     { innerText:'상품 번호: ITEM-11 SPU_ID: 99', style:{}, dataset:{} },
   ];
   const doc = { getElementById:()=>null, createElement:()=>({ style:{} }), body:{ prepend(){} }, querySelectorAll:()=>elements };
-  paintReviewPage(doc, { pageNum:1, pageCount:1, rows:[{ key:'SPU:11', spuId:'11', articleNumber:'ITEM-11', matched:true, equal:false, status:'값 다름' }] });
+  paintReviewPage(doc, { pageNum:1, pageCount:1, activeKey:'SPU:11', rows:[{ key:'SPU:11', spuId:'11', articleNumber:'ITEM-11', matched:true, equal:false, status:'값 다름' }] });
   assert.equal(elements[0].style.backgroundColor, '#fff3df'); assert.equal(elements[1].style.backgroundColor, undefined);
+  assert.equal(elements[0].style.outline, '3px solid #13a36f');
   assert.equal(JSON.parse(elements[0].dataset.aroundGReviewStyle).backgroundColor, 'white');
   assert.equal(reviewTone({ matched:true, equal:false, status:'최근 30일 값 미확인' }), 'unknown');
 });
