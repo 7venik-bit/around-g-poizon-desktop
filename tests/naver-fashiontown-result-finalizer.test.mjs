@@ -115,14 +115,14 @@ test("a positive total never becomes failure when individual card links are late
   assert.equal(result.products[0].searchResultFallback, true);
 });
 
-test("release patch returns the Fashion Town search link before internal page loading", async () => {
+test("release patch loads Fashion Town and captures cards instead of returning early", async () => {
   const releasePatch = String(await import("node:fs/promises").then(({ readFile }) =>
     readFile(new URL("../scripts/patch-naver-result-link-finalizer.mjs", import.meta.url), "utf8")));
-  const directResult = releasePatch.indexOf("if (directNaverFashionResult) {");
+  const directResult = releasePatch.indexOf("const directNaverFashionResult =");
   const browserLoad = releasePatch.indexOf("const initialUrl = naverPortalSource");
   assert.ok(directResult > 0);
   assert.ok(browserLoad > directResult);
-  assert.match(releasePatch, /resolvedSearchUrl: url/);
+  assert.doesNotMatch(releasePatch, /if \(directNaverFashionResult\) \{\\n    return createDomesticSearchLinkResult/);
   assert.match(releasePatch, /const directNaverFashionResult = naverPortalSource/);
   assert.match(releasePatch, /const initialUrl = naverPortalSource \? "https:\/\/www\.naver\.com\/" : url/);
 });

@@ -20,13 +20,13 @@ replaceOnce(
 
 replaceOnce(
   '  const naverPortalSource = /^네이버\\s/.test(String(source.store || ""));',
-  '  const naverPortalSource = /^네이버\\s/.test(String(source.store || ""));\n  const directNaverFashionResult = naverPortalSource\n    && String(source.store || "") === "네이버 패션타운"\n    && /shopping\\.naver\\.com\\/window\\/search\\//i.test(url);\n  // Fashion Town is a usable user-facing result URL by itself. Electron\n  // repeatedly rejects this Naver SPA even when the same URL opens normally\n  // in Chrome. Never turn that renderer limitation into page_load_failed.\n  if (directNaverFashionResult) {\n    return createDomesticSearchLinkResult({\n      store: source.store, articleNumber, resolvedSearchUrl: url,\n    });\n  }',
+  '  const naverPortalSource = /^네이버\\s/.test(String(source.store || ""));\n  const directNaverFashionResult = naverPortalSource\n    && String(source.store || "") === "네이버 패션타운"\n    && /shopping\\.naver\\.com\\/window\\/search\\//i.test(url);',
   "direct Naver Fashion Town result route",
 );
 
 replaceOnce(
   '  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
-  '  // Naver Fashion Town must continue into the rendered-card capture. The\n  // exact result URL is loaded directly below, but it is not a completed result\n  // until the product card, current price and approved seller evidence are read.\n  const directRetailResultLink = /^(?:SSG|롯데온)(?:\\s|$)/.test(String(source.store || ""))\n    && /^https:\\/\\//i.test(url)\n    && /[?&](?:q|query)=/i.test(url);\n  const directParallelResultLink = String(source.store || "") === "병행수입·편집샵"\n    && /search\\.naver\\.com\\/search\\.naver/i.test(url)\n    && /[?&]where=shopping(?:&|$)/i.test(url)\n    && /[?&]query=/i.test(url);\n  if (directRetailResultLink || directParallelResultLink) {\n    // Exact marketplace result URLs are the requested output. Official malls\n    // must continue into the rendered-card capture so their current prices can\n    // be shown inside the program.\n    return createDomesticSearchLinkResult({ store: source.store, articleNumber, resolvedSearchUrl: url });\n  }\n  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
+  '  // A valid search URL is navigation evidence only. Naver, SSG and LotteON\n  // must continue into rendered-card capture so visible products are imported.\n  const directParallelResultLink = String(source.store || "") === "병행수입·편집샵"\n    && /search\\.naver\\.com\\/search\\.naver/i.test(url)\n    && /[?&]where=shopping(?:&|$)/i.test(url)\n    && /[?&]query=/i.test(url);\n  if (directParallelResultLink) {\n    // Parallel-import search remains link-only by policy; first-party channels are parsed.\n    return createDomesticSearchLinkResult({ store: source.store, articleNumber, resolvedSearchUrl: url });\n  }\n  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.',
   "Naver result capture instead of early link-only completion",
 );
 
