@@ -220,7 +220,7 @@
   function installDomesticRenderer() {
     try {
       if (typeof renderDomestic !== "function" || renderDomestic.__aroundGMusinsaList) return;
-      const listRenderer = function sourcingRenderDomestic(result, sourceProduct = {}) {
+      const listRenderer = function sourcingRenderDomestic(result, sourceProduct = {}, contextKey = "") {
         if (!result) {
           return `<span class="inventory-help">국내 상품 검색을 누르면 판매처별 일치 상품을 한 줄씩 표시합니다. 재고는 판매처에서 직접 확인하세요.</span>`;
         }
@@ -257,7 +257,7 @@
             || sourceProduct.spuId || result.queryCandidates?.[0] || "";
           if (!openUrl) return `<button type="button" disabled>${label}</button>`;
           if (source?.officialStatus && !productUrl) {
-            return `<button type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}">${label}</button>`;
+            return `<button type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}" data-official-result-key="${encodeURIComponent(contextKey)}">${label}</button>`;
           }
           return `<button type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
         };
@@ -439,7 +439,7 @@
               <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td>
               <td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
               <td><button type="button" class="excel-product-search sourcing-domestic-search ${search.className}" data-excel-search-product="${encodeURIComponent(key)}" title="국내 정확 상품 검색" ${result?.loading ? "disabled" : ""}>${text(search.label)}</button></td>
-            </tr>${result && !result.loading ? `<tr class="excel-product-search-detail ${groupClass}"><td colspan="14"><div class="excel-product-search-result-label"><span></span><strong>${text(productLabel)}</strong>의 판매처별 가격 비교</div>${renderDomestic(result, referenceProduct)}</td></tr>` : ""}`;
+            </tr>${result && !result.loading ? `<tr class="excel-product-search-detail ${groupClass}"><td colspan="14"><div class="excel-product-search-result-label"><span></span><strong>${text(productLabel)}</strong>의 판매처별 가격 비교</div>${renderDomestic(result, referenceProduct, key)}</td></tr>` : ""}`;
           }).join("") : `<tr><td class="empty" colspan="14">조건에 맞는 상품이 없습니다.</td></tr>`;
           hideCategoryColumns();
           relabelDomesticControls();
