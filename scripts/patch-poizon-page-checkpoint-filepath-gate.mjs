@@ -6,25 +6,32 @@ const save = async (path, value) => {
   const current = await read(path);
   if (value !== current) await writeFile(new URL(path, root), value, 'utf8');
 };
-const replaceOnce = (source, before, after, label) => {
+const replaceAny = (source, befores, after, label) => {
   if (source.includes(after)) return source;
-  if (!source.includes(before)) throw new Error(`POIZON page checkpoint filePath target missing: ${label}`);
+  const before = befores.find((candidate) => source.includes(candidate));
+  if (!before) throw new Error(`POIZON page checkpoint filePath target missing: ${label}`);
   return source.replace(before, after);
 };
 
 let liveView = await read('src/live-poizon-crosscheck.js');
-liveView = replaceOnce(
+liveView = replaceAny(
   liveView,
-  "  const input = { runId, brandName, fileName: file.name || '', excelProducts, conditions: frozen };",
+  [
+    "  const input = { runId, brandName, fileName: file.name || '', excelProducts, conditions: frozen };",
+    "  const input = { runId, brandName, fileName: file.name || '', filePath: file.path || '', excelProducts, conditions: frozen };",
+  ],
   "  const input = { runId, brandName, fileName: file.name || '', filePath: file.path || file.filePath || '', excelProducts, conditions: frozen };",
   'classic live verification input',
 );
 await save('src/live-poizon-crosscheck.js', liveView);
 
 let reviewView = await read('src/poizon-review-workspace.js');
-reviewView = replaceOnce(
+reviewView = replaceAny(
   reviewView,
-  "  const input = { runId, brandName, fileName: file.name || '', screenOnly: true, conditions: frozen,\n    excelProducts: products.map(({ sourceValues, ...p }) => p) };",
+  [
+    "  const input = { runId, brandName, fileName: file.name || '', screenOnly: true, conditions: frozen,\n    excelProducts: products.map(({ sourceValues, ...p }) => p) };",
+    "  const input = { runId, brandName, fileName: file.name || '', filePath: file.path || '', screenOnly: true, conditions: frozen,\n    excelProducts: products.map(({ sourceValues, ...p }) => p) };",
+  ],
   "  const input = { runId, brandName, fileName: file.name || '', filePath: file.path || file.filePath || '', screenOnly: true, conditions: frozen,\n    excelProducts: products.map(({ sourceValues, ...p }) => p) };",
   'dedicated review verification input',
 );
