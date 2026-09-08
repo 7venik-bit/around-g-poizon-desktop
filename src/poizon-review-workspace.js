@@ -8,6 +8,18 @@ const number = (value) => Number(value || 0).toLocaleString('ko-KR');
 const safeImage = (url) => /^https?:\/\//i.test(String(url || '')) ? String(url) : '';
 export const reviewIsRunning = () => active?.running === true;
 
+export async function openReviewPopup(hostWindow = window) {
+  const popup = hostWindow.open('./poizon-review-popup.html', 'around-g-poizon-review', 'popup=yes,width=1080,height=860');
+  if (!popup) throw new Error('POIZON 대조 알림창을 열지 못했습니다. 팝업 허용 상태를 확인해 주세요.');
+  const started = Date.now();
+  while ((!popup.document?.body || popup.document.readyState === 'loading') && Date.now() - started < 10_000) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (!popup.document?.body) throw new Error('POIZON 대조 알림창 준비에 실패했습니다.');
+  popup.focus();
+  return popup.document;
+}
+
 export function installVerificationControls(doc = document) {
   // A self-hosted CSS file works under the application's style-src 'self' CSP.
   if (!doc.getElementById('poizon-review-styles')) {
@@ -174,6 +186,7 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
     if (handle.running) return;
     dispose(); panel.remove(); doc.body.classList.remove('poizon-review-open');
     await api.endSellerExcelVerification?.();
+    if (doc.defaultView && doc.defaultView !== window) doc.defaultView.close();
   };
   active = handle; renderRows(); renderClock(); return handle;
 }
