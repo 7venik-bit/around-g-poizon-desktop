@@ -4,7 +4,7 @@ import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
-import { createPageCrossCheck, resolveExcelRecentMetric, assertPoizonPageReadyForCorrection, selectPoizonPageCorrectionProducts } from '../services/live-poizon-crosscheck.mjs';
+import { createPageCrossCheck, resolveExcelRecentMetric, assertPoizonPageReadyForCorrection, isPoizonSkuScopeDeferredRow, selectPoizonPageCorrectionProducts } from '../services/live-poizon-crosscheck.mjs';
 
 // Reproduced input shape from the screenshot: distinct scalar SKU rows, NOT one slash-separated cell.
 const source = (china = '1,300+', local = '78', extra = {}) => ({ spuId:'3507808', articleNumber:'1026592', sales30dRaw:china, localSales30dRaw:local, hasSalesData:true, hasLocalSalesData:true, ...extra });
@@ -117,10 +117,12 @@ test('normal mismatches and actual new products can still reach correction', () 
   assert.deepEqual(assertPoizonPageReadyForCorrection([source()],missing.rows,1),[source()]);
 });
 
-test('unresolved SKU scope stops the page before any checkpoint write', () => {
+test('verified SKU scope preserves original rows and is deferred without a write', () => {
   const items = [excel('33','5',{skuId:'1',salesScope:'sku'}), excel('100+','14',{skuId:'2',salesScope:'sku',sourceRowNumber:110})];
   const page = check(items);
-  assert.throws(() => assertPoizonPageReadyForCorrection([source()],page.rows,1), /다음 페이지 이동을 보류/);
+  const writable = assertPoizonPageReadyForCorrection([source()],page.rows,1);
+  assert.equal(writable.length, 0);
+  assert.equal(writable.pageEvidence.skippedSkuScope, 1);
 });
 
 test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input retains scalar SKU evidence', async (t) => {
@@ -161,12 +163,12 @@ test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input re
     mainWindow:{webContents:{send(){}}}, sellerWindow:{webContents:{executeJavaScript:async () => {}}},
     paintSellerVerification(){}, verificationConditionLabel:() => '', wait:async () => {},
     checkpointSummary:{enabled:true,backupPath:'',changes:[],changedRows:0,changedCells:0,addedRows:0,addedProducts:0,verifiedCells:0,deferredProducts:0}, checkpointPages:new Set(), input:{verification:{runId:'shipping',filePath:path}},
-    assertPoizonPageReadyForCorrection, selectPoizonPageCorrectionProducts, syncPoizonPageCheckpoint:async () => { writes++; return {ok:true,reverified:true}; },
+    assertPoizonPageReadyForCorrection, isPoizonSkuScopeDeferredRow, selectPoizonPageCorrectionProducts, syncPoizonPageCheckpoint:async () => { writes++; return {ok:true,reverified:true}; },
   };
-  await assert.rejects(runInNewContext('(async()=>{' + capture.slice(from,to) + '})()',sandbox), /현재 상품에서 중단/);
+  await runInNewContext('(async()=>{' + capture.slice(from,to) + '})()',sandbox);
   assert.equal(writes,0); assert.deepEqual(await readFile(path),before);
-  assert.equal(sandbox.checkpointSummary.deferredProducts,0);
-  assert.equal(sandbox.checkpointSummary.pagesCompleted,undefined);
+  assert.equal(sandbox.checkpointSummary.deferredProducts,1);
+  assert.equal(sandbox.checkpointSummary.pagesCompleted,1);
 
   // With real parent columns, correction must still work and preserve every SKU value.
   const parentHeaders = [...headers,'POIZON 상품 최근 30일 판매량','POIZON 상품 현지 판매자 최근 30일 판매량'];
