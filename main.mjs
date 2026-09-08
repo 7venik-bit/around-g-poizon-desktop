@@ -2355,6 +2355,34 @@ function browserWindowUsable(window) {
     && !window.webContents.isDestroyed());
 }
 
+async function loadOfficialPageForAutomation(searchWindow, targetUrl, timeoutMs = 8_000) {
+  if (!browserWindowUsable(searchWindow)) return false;
+  // Official malls often keep hero images, analytics and campaign resources
+  // loading for tens of seconds. The search field is usable at dom-ready, so
+  // waiting for BrowserWindow.loadURL() to fully resolve only leaves a large
+  // foreground window sitting idle.
+  const ready = new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      searchWindow.webContents.removeListener("dom-ready", onReady);
+      searchWindow.webContents.removeListener("did-fail-load", onFailed);
+      resolve(value);
+    };
+    const onReady = () => finish(true);
+    const onFailed = (_event, errorCode, _description, _url, isMainFrame) => {
+      if (isMainFrame !== false && errorCode !== -3) finish(false);
+    };
+    const timer = setTimeout(() => finish(browserWindowUsable(searchWindow)), timeoutMs);
+    searchWindow.webContents.once("dom-ready", onReady);
+    searchWindow.webContents.once("did-fail-load", onFailed);
+  });
+  void searchWindow.loadURL(targetUrl).catch(() => {});
+  return ready;
+}
+
 function closedInternalSearchResult(stage = "unknown") {
   return {
     ok: false,
@@ -2378,7 +2406,7 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
     title: `공식몰 상품 검색 · ${exactQuery}`,
     width: 1320,
     height: 900,
-    show: true,
+    show: false,
     autoHideMenuBar: true,
     icon: APP_ICON_PATH,
     webPreferences: {
@@ -2398,17 +2426,16 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
   });
   let stage = "homepage_load";
   try {
-    await searchWindow.loadURL(homepage.href);
+    const homepageReady = await loadOfficialPageForAutomation(searchWindow, homepage.href);
     if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
-    searchWindow.show();
-    searchWindow.focus();
+    if (!homepageReady) return { ok: false, submitted: false, reason: "OFFICIAL_HOMEPAGE_LOAD_FAILED" };
     stage = "account_login";
     const login = await ensureOfficialAccountLogin(searchWindow, homepage.href);
     if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
     if (!login.ok) return { ok: false, submitted: false, loginRequired: true, reason: login.reason };
     if (login.required) {
       stage = "homepage_restore";
-      await searchWindow.loadURL(homepage.href).catch(() => {});
+      await loadOfficialPageForAutomation(searchWindow, homepage.href);
       if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
     }
     stage = "search_submission";
@@ -2416,6 +2443,10 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
     if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
     if (!submitted) {
       searchWindow.setTitle(`공식몰 돋보기를 눌러 ${exactQuery}을(를) 검색해 주세요`);
+      searchWindow.show();
+      searchWindow.focus();
+    } else {
+      searchWindow.hide();
     }
     return { ok: true, submitted };
   } catch (error) {
