@@ -59,7 +59,8 @@ test("파일 동기화와 브랜드 불러오기는 로컬 전용이고 POIZON �
   assert.doesNotMatch(localBrand, /captureSellerBrandSales|syncExcelWithSellerScreen|runPoizonReviewBatch|\.click\(/);
   const explicit = section(renderer, 'async function openVerifiedCombinedBrandPreview', 'async function openCombinedSelectedBrandPreview');
   assert.match(explicit, /runPoizonReviewBatch\(/);
-  assert.match(renderer, /return openReviewLocalBrandPreview\(files, filters\)/);
+  assert.match(renderer, /openCombinedSelectedBrandPreview\(files, \{ minimumTotal: "100", minimumLocalTotal: "25" \}\)/);
+  assert.doesNotMatch(explicit, /openReviewLocalBrandPreview/);
   assert.match(renderer, /poizon-review-brand-start/);
   assert.match(renderer, /poizon-review-files-start/);
   // Explicit POIZON review only: full snapshot -> capture -> coverage -> unchanged check -> Excel correction -> reread -> report.
