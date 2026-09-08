@@ -119,7 +119,7 @@ export function resolveExcelRecentMetric(products = [], local = false) {
 const article = (p) => normalizedArticle(p?.articleNumber || p?.productCode || '');
 const spu = (p) => productSpu(p || {});
 const identity = (p) => spu(p) ? `SPU:${spu(p)}` : article(p) ? `ARTICLE:${article(p)}` : '';
-const onlySkuScopeMismatch = (row = {}) => row.matched === true
+export const isPoizonSkuScopeDeferredRow = (row = {}) => row.matched === true
   && row.identityConflict !== true
   && Boolean(metricFromRaw(row.sourceChina))
   && Boolean(metricFromRaw(row.sourceLocal))
@@ -129,8 +129,8 @@ const onlySkuScopeMismatch = (row = {}) => row.matched === true
   && row.reasonCodes.every((code) => code === 'EXCEL_SKU_SPU_SCOPE_MISMATCH');
 
 // Match evidence by identity, never by array position. Fail before any write if
-// a page contains genuinely unresolved data. A SKU-vs-SPU scope mismatch must
-// stop pagination; preserving bytes alone is not a completed page verification.
+// a page contains genuinely unresolved data. A verified SKU-vs-SPU scope
+// mismatch preserves the source bytes and is a completed deferred comparison.
 export function assertPoizonPageReadyForCorrection(products = [], rows = [], pageNum = 0) {
   if (!Array.isArray(products) || !Array.isArray(rows)) throw new Error('페이지 상품 목록과 대조 증거가 올바르지 않습니다.');
   const productKeys = products.map(identity);
@@ -148,7 +148,7 @@ export function assertPoizonPageReadyForCorrection(products = [], rows = [], pag
   let skippedSkuScope = 0;
   for (const product of products) {
     const row = byKey.get(identity(product));
-    if (onlySkuScopeMismatch(row)) skippedSkuScope++;
+    if (isPoizonSkuScopeDeferredRow(row)) { skippedSkuScope++; continue; }
     if (!row || row.autoCorrectionBlocked || /충돌|미확인|비교 보류|확인 필요/.test(row.status || '')) {
       throw new Error(`POIZON ${pageNum || '?'}페이지 · ${identity(product) || '식별자 없음'} · ${row?.status || '대조 증거 없음'} · 원본 수정 및 다음 페이지 이동을 보류합니다.`);
     }
@@ -166,7 +166,7 @@ export function assertPoizonPageReadyForCorrection(products = [], rows = [], pag
 // before any writer is called; a deferred SKU page performs no filesystem writes.
 export function selectPoizonPageCorrectionProducts(products = [], rows = [], pageNum = 0) {
   const writable = assertPoizonPageReadyForCorrection(products, rows, pageNum);
-  const deferredRows = rows.filter(onlySkuScopeMismatch);
+  const deferredRows = rows.filter(isPoizonSkuScopeDeferredRow);
   return { products: writable, deferredRows, deferredProducts: deferredRows.length };
 }
 
@@ -224,7 +224,7 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
       differentProducts: rows.filter((r) => r.matched && !r.equal && !r.autoCorrectionBlocked).length,
       missingProducts: rows.filter((r) => !r.matched && !r.identityConflict).length,
       unconfirmedProducts: rows.filter((r) => r.autoCorrectionBlocked).length,
-      deferredProducts: rows.filter(onlySkuScopeMismatch).length,
+      deferredProducts: rows.filter(isPoizonSkuScopeDeferredRow).length,
       missingSalesCells: rows.reduce((n, r) => n + r.missingSalesCells, 0),
       qualifiedProducts: rows.filter((r) => r.qualified).length };
   };
