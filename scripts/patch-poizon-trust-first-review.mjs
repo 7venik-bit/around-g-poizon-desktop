@@ -34,7 +34,7 @@ await save('src/live-poizon-crosscheck.js', view);
 let service = await read('services/live-poizon-crosscheck.mjs');
 service = service.replace(
   "'상품 인식 완료 · 옵션별 판매량 존재 · SPU 자동수정 제외 · 다음 페이지 진행'",
-  "'상품 인식 완료 · 옵션별 판매량 존재 · SPU 자동수정 제외'"
+  "'상품 인식 완료 · 옵션별 판매량 존재 · SPU 자동수정 제외 · 다음 페이지 진행 전 원본 보존 재검증'"
 );
 await save('services/live-poizon-crosscheck.mjs', service);
 
