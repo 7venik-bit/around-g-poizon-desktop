@@ -1,5 +1,5 @@
 import { readReviewWorkbook, checkReviewWorkbookRevision } from "./services/poizon-review-workbook.mjs";
-import { assertPoizonPageReadyForCorrection, selectPoizonPageCorrectionProducts } from "./services/live-poizon-crosscheck.mjs";
+import { assertPoizonPageReadyForCorrection, isPoizonSkuScopeDeferredRow, selectPoizonPageCorrectionProducts } from "./services/live-poizon-crosscheck.mjs";
 import { syncPoizonPageCheckpoint } from "./services/poizon-page-checkpoint.mjs";
 import { createPageCrossCheck, verificationConditionLabel } from "./services/live-poizon-crosscheck.mjs";
 import { paintReviewPage as paintSellerVerification } from "./services/poizon-review-paint.mjs";
@@ -212,11 +212,14 @@ function beginSellerExcelVerificationWindows(input = {}) {
       sellerBounds: sellerWindow.getBounds(),
       sellerMaximized: sellerWindow.isMaximized(),
       sellerVisible: sellerWindow.isVisible(),
+      sellerOpacity: sellerWindow.getOpacity?.() ?? 1,
     };
   }
   // POIZON navigation and capture continue in its hidden BrowserWindow.
   // A separate review window is the only verification surface shown to users.
-  sellerWindow.hide();
+  sellerWindow.setSkipTaskbar?.(true);
+  sellerWindow.setOpacity?.(0);
+  sellerWindow.showInactive();
   mainWindow.show();
   mainWindow.focus();
   return {
@@ -229,7 +232,11 @@ function beginSellerExcelVerificationWindows(input = {}) {
 }
 
 function endSellerExcelVerificationWindows() {
+  const saved = sellerExcelVerificationLayout;
+  sellerExcelVerificationLayout = null;
   if (sellerWindow && !sellerWindow.isDestroyed()) {
+    sellerWindow.setOpacity?.(saved?.sellerOpacity ?? 1);
+    sellerWindow.setSkipTaskbar?.(false);
     void sellerWindow.webContents.executeJavaScript(`(() => {
       document.getElementById("around-g-live-verification")?.remove();
       for (const row of document.querySelectorAll("[data-around-g-verification]")) {
@@ -239,8 +246,6 @@ function endSellerExcelVerificationWindows() {
       }
     })()`, true).catch(() => {});
   }
-  const saved = sellerExcelVerificationLayout;
-  sellerExcelVerificationLayout = null;
   if (!saved) {
     if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
     return { ok: true, restored: false };
@@ -9893,8 +9898,21 @@ async function captureSellerBrandSales(input = {}) {
           }) + ")", true,
         );
         const currentRow = livePage.rows.at(-1);
-        if (!currentRow || currentRow.autoCorrectionBlocked) {
+        if (!currentRow) {
           throw new Error(`POIZON ${capture.currentPage}페이지 · ${currentRow?.status || '상품 확인 필요'} · 현재 상품에서 중단합니다.`);
+        }
+        if (currentRow.autoCorrectionBlocked) {
+          if (!isPoizonSkuScopeDeferredRow(currentRow)) {
+            throw new Error(`POIZON ${capture.currentPage}페이지 · ${currentRow.status || '상품 확인 필요'} · 현재 상품에서 중단합니다.`);
+          }
+          mainWindow?.webContents.send("seller:verification-progress", {
+            runId: input.verification.runId, phase: 'product-action-complete',
+            activeKey: currentRow.key, productKey: currentRow.key,
+            pageNum: capture.currentPage, pageCount: capture.pageCount,
+            message: '옵션별 판매량 확인 · SPU 자동수정 제외 · Excel 원본 유지 및 검증 완료 · OK',
+          });
+          await wait(180);
+          continue;
         }
         if (!currentRow.equal) {
           const requiredAction = currentRow.matched ? 'correct' : 'add';
