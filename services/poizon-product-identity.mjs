@@ -27,7 +27,7 @@ export function resolveProductIdentity(query = {}, index, { level = 'spu' } = {}
   const decide = (candidates, matchBy) => {
     if (!candidates.length) return fail('상품 없음');
     const compatible = candidates.filter((p) => compatibleBrand(query, p));
-    if (compatible.length !== candidates.length) return fail('브랜드 식별자 충돌');
+    if (!compatible.length) return fail('브랜드 식별자 충돌');
     return { products: compatible, matchBy, reason: '' };
   };
   if (level === 'sku') {
@@ -38,7 +38,13 @@ export function resolveProductIdentity(query = {}, index, { level = 'spu' } = {}
   }
   if (productSpu(query)) {
     const candidates = index.bySpu.get(productSpu(query)) || [];
-    if (candidates.length) return decide(candidates, 'SPU');
+    if (candidates.length) {
+      const compatible = candidates.filter((p) => compatibleBrand(query, p));
+      // SPU is the primary product identity. Excel can legitimately contain
+      // several SKU/option rows for one SPU and can be in any row order.
+      if (compatible.length) return { products: compatible, matchBy: 'SPU', reason: '' };
+      return fail('브랜드 식별자 충돌');
+    }
   }
   const code = article(query);
   if (!code) return fail('식별자 없음');
@@ -47,9 +53,14 @@ export function resolveProductIdentity(query = {}, index, { level = 'spu' } = {}
   // A known but different SPU is never repaired by falling back to a code.
   if (candidates.some((p) => productSpu(query) && productSpu(p) && productSpu(query) !== productSpu(p))) return fail('식별자 충돌');
   if (new Set(candidates.map(productSpu).filter(Boolean)).size > 1) return fail('식별자 충돌');
-  const brands = new Set(candidates.map(brandId).filter(Boolean));
-  if (brands.size > 1) return fail('브랜드 식별자 충돌');
-  return decide(candidates, '상품번호');
+  const compatible = candidates.filter((p) => compatibleBrand(query, p));
+  if (!compatible.length) return fail('브랜드 식별자 충돌');
+  // Do not reject a valid product merely because another Excel row with the
+  // same article belongs to a different brand. The compatible rows are the
+  // only rows eligible for comparison/writes.
+  const compatibleBrands = new Set(compatible.map(brandId).filter(Boolean));
+  if (compatibleBrands.size > 1) return fail('브랜드 식별자 충돌');
+  return { products: compatible, matchBy: '상품번호', reason: '' };
 }
 
 export const VERIFIED_PARENT_HEADERS = Object.freeze({
