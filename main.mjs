@@ -200,7 +200,7 @@ function resolveSellerVerificationAction(input = {}) {
 function beginSellerExcelVerificationWindows(input = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, message: "Around G 메인 창을 찾지 못했습니다." };
   if (!sellerWindow || sellerWindow.isDestroyed()) {
-    openSellerCenterWindow(SELLER_CENTER_URL, { visible: true, activate: false });
+    openSellerCenterWindow(SELLER_CENTER_URL, { visible: false, activate: false });
   }
   if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, message: "POIZON 판매자센터 창을 열지 못했습니다." };
   if (!sellerExcelVerificationLayout) {
@@ -214,23 +214,15 @@ function beginSellerExcelVerificationWindows(input = {}) {
       sellerVisible: sellerWindow.isVisible(),
     };
   }
-  const area = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
-  const gap = 8;
-  const usableWidth = Math.max(2, area.width - gap);
-  const sellerWidth = Math.max(1, Math.floor(usableWidth * 0.55));
-  const excelWidth = Math.max(1, usableWidth - sellerWidth);
-  if (mainWindow.isMaximized()) mainWindow.unmaximize();
-  if (sellerWindow.isMaximized()) sellerWindow.unmaximize();
-  mainWindow.setMinimumSize?.(360, 400);
-  sellerWindow.setMinimumSize?.(480, 400);
-  sellerWindow.setBounds({ x: area.x, y: area.y, width: sellerWidth, height: area.height });
-  mainWindow.setBounds({ x: area.x + sellerWidth + gap, y: area.y, width: excelWidth, height: area.height });
+  // POIZON navigation and capture continue in its hidden BrowserWindow.
+  // A separate review window is the only verification surface shown to users.
+  sellerWindow.hide();
   mainWindow.show();
-  sellerWindow.show();
+  mainWindow.focus();
   return {
     ok: true,
-    sellerSide: "left",
-    excelSide: "right",
+    backgroundSeller: true,
+    foregroundReview: true,
     brandName: String(input.brandName || ""),
     fileName: String(input.fileName || ""),
   };
@@ -265,8 +257,7 @@ function endSellerExcelVerificationWindows() {
     sellerWindow.setMinimumSize?.(...saved.sellerMinimum);
     sellerWindow.setBounds(saved.sellerBounds);
     if (saved.sellerMaximized) sellerWindow.maximize();
-    if (saved.sellerVisible) sellerWindow.show();
-    else sellerWindow.hide();
+    sellerWindow.hide();
   }
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus();
   return { ok: true, restored: true };
