@@ -62,15 +62,17 @@ test("파일 동기화와 브랜드 불러오기는 로컬 전용이고 POIZON �
   assert.match(renderer, /return openReviewLocalBrandPreview\(files, filters\)/);
   assert.match(renderer, /poizon-review-brand-start/);
   assert.match(renderer, /poizon-review-files-start/);
-  // Full snapshot -> live capture -> coverage -> unchanged workbook -> one report.
+  // Explicit POIZON review only: full snapshot -> capture -> coverage -> unchanged check -> Excel correction -> reread -> report.
   const read = session.indexOf('const snapshots = await loadReviewSnapshots');
   const capture = session.indexOf('await api.captureSellerBrandSales', read);
   const coverage = session.indexOf('reviewCoverage(view.events(), captured)', capture);
   const revision = session.indexOf('await api.checkPoizonReviewWorkbook', coverage);
-  const report = session.indexOf('buildReviewReport(snapshot, coverage.rows)', revision);
+  const correction = session.indexOf('await api.syncExcelWithSellerScreen', revision);
+  const reread = session.indexOf('await api.readPoizonReviewWorkbook', correction);
+  const report = session.indexOf('buildReviewReport(snapshot, coverage.rows)', reread);
   const notify = session.indexOf('await notify(report, lastView)', report);
-  assert.ok(read >= 0 && capture > read && coverage > capture && revision > coverage && report > revision && notify > report);
-  assert.doesNotMatch(session, /syncExcelWithSellerScreen|\.upsert\(|writeFile\(/);
+  assert.ok(read >= 0 && capture > read && coverage > capture && revision > coverage && correction > revision && reread > correction && report > reread && notify > report);
+  assert.doesNotMatch(session, /\.upsert\(|writeFile\(/);
 });
 
 test("다운로드 동기화는 수동 POIZON 작업 복구 진행률과 분리한다", () => {
@@ -94,7 +96,7 @@ test("파일 목록 진행 문구와 전용 대조 화면의 브랜드·페이�
   const literal = workspace.match(/get\('\.review-phase'\)\.textContent = (`POIZON \$\{event\.pageNum\}[^\n]+`);/)?.[1];
   assert.ok(literal, "The dedicated view must render actual page comparison events");
   const rendered = new Function('event', 'currentRows', 'return ' + literal + ';')({ pageNum: 37, pageCount: 150 }, Array(20));
-  assert.equal(rendered, 'POIZON 37/150페이지 · 동일 상품 20개 대조 완료');
+  assert.equal(rendered, 'POIZON 37/150페이지 · 상품 식별 및 판매량 대조 20개 완료');
   assert.match(workspace, /state\.checkedProducts/);
   assert.match(workspace, /state\.equalProducts/);
   assert.match(workspace, /state\.differentProducts/);

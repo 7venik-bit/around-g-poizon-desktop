@@ -4,10 +4,8 @@ import { readFile } from 'node:fs/promises';
 
 const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 
-test('header V2 patch runs after legacy simple header patch', () => {
-  const postinstall = pkg.scripts.postinstall;
-  const oldIndex = postinstall.indexOf('patch-simple-header-traffic.mjs');
-  const newIndex = postinstall.indexOf('patch-header-simple-actions-v2.mjs');
-  assert.ok(oldIndex >= 0);
-  assert.ok(newIndex > oldIndex);
+test('header V2 source is verified during installation', async () => {
+  const verifier = await readFile(new URL('../scripts/verify-integrated-source.mjs', import.meta.url), 'utf8');
+  assert.match(pkg.scripts.postinstall, /verify-integrated-source\.mjs/);
+  assert.match(verifier, /official-domain-audit-toggle/);
 });

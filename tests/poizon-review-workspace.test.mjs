@@ -91,7 +91,7 @@ test('manual report preserves plus notation, true column names and SKU scope sep
   assert.ok(report.changes.some((c) => c.type === 'value' && c.excelValue === '10' && c.poizonValue === '1,400+' && c.columnName === '현지 판매자 최근 30일 판매량'));
   assert.ok(report.changes.some((c) => c.spuId === '22' && c.type === 'unknown'));
   assert.ok(!report.changes.some((c) => c.spuId === '22' && c.type === 'value'));
-  assert.match(reviewReportText({ complete:true, files:[report] }), /원본 Excel 자동 수정 없음/);
+  assert.match(reviewReportText({ complete:true, files:[report] }), /POIZON 화면값 기준 Excel 자동 교정/);
 });
 
 test('Excel-only rows are reported only after complete POIZON coverage', () => {
@@ -113,7 +113,7 @@ test('real Seller Center painting uses the same verdict palette and refuses a di
   assert.equal(reviewTone({ matched:true, equal:false, status:'최근 30일 값 미확인' }), 'unknown');
 });
 
-test('batch reads every workbook first, never writes, and emits exactly one alert after all brands', async (t) => {
+test('batch reads every workbook first, then corrects Excel from POIZON and rereads before one final notification', async (t) => {
   const f = await fixture(t); let current, notifications = 0, writes = 0; const order = [];
   const files = [{ ...f, name:'A.xlsx' }, { ...f, name:'B.xlsx' }];
   const api = {
@@ -121,13 +121,62 @@ test('batch reads every workbook first, never writes, and emits exactly one aler
     checkPoizonReviewWorkbook: checkReviewWorkbookRevision,
     beginSellerExcelVerification: async () => ({ ok:true }),
     captureSellerBrandSales: async (input) => { order.push('capture'); assert.equal(input.verification.screenOnly, true); current.eventsList.push(compared(current.snapshot.products, [source()])); return { ok:true, products:[source()], sourceTotal:1 }; },
-    syncExcelWithSellerScreen: async () => { writes++; throw new Error('WRITE_FORBIDDEN'); },
+    syncExcelWithSellerScreen: async ({ products }) => { writes++; order.push('write'); return { ok:true, changedRows:1, changedCells:1, addedRows:0, verifiedCells:2, reverified:true, backupPath:'backup.xlsx', products }; },
   };
   const report = await runPoizonReviewBatch({ files, api,
-    createView: async (snapshot) => { current = { snapshot, input:{ screenOnly:true }, eventsList:[], events(){ return this.eventsList; }, finish(){} }; return current; },
+    createView: async (snapshot) => { current = { snapshot, input:{ screenOnly:true }, eventsList:[], events(){ return this.eventsList; }, saving(){ order.push('saving'); }, finish(){} }; return current; },
     notify: (r) => { notifications++; assert.equal(order.filter((s) => s === 'capture').length, 2); assert.equal(r.files.length, 2); } });
-  assert.deepEqual(order, ['read','read','capture','capture']); assert.equal(report.complete, true);
-  assert.equal(writes, 0); assert.equal(notifications, 1); assert.deepEqual(await readFile(f.path), f.bytes);
+  assert.equal(report.complete, true); assert.equal(report.autoCorrection, true);
+  assert.equal(writes, 2); assert.equal(notifications, 1);
+  assert.equal(report.files.every((r) => r.autoCorrection === 'POIZON_AUTO_CORRECTION_APPLIED'), true);
+  assert.ok(order.indexOf('write') > order.indexOf('capture'));
+});
+
+test('newly appended POIZON product rows increase the expected reread count and must resolve by SPU', async () => {
+  const base = { products:[{ spuId:'1', articleNumber:'OLD', sourceRowNumber:2 }], sourceTotalRows:1, revision:'r1', ok:true, file:{ path:'A.xlsx', name:'A.xlsx' } };
+  const added = { spuId:'2', articleNumber:'NEW', sales30dRaw:'100+', localSales30dRaw:'30', hasSalesData:true, hasLocalSalesData:true };
+  let current, readCount = 0, finishResult;
+  const api = {
+    readPoizonReviewWorkbook: async () => {
+      readCount++;
+      if (readCount === 1) return base;
+      return { ...base, products:[...base.products, { ...added, sourceRowNumber:3 }], sourceTotalRows:2 };
+    },
+    checkPoizonReviewWorkbook: async () => ({ ok:true, unchanged:true }),
+    beginSellerExcelVerification: async () => ({ ok:true }),
+    captureSellerBrandSales: async () => { current.eventsList.push({ phase:'page-compared', pageNum:1, pageCount:1, rows:[{ key:'SPU:2', spuId:'2', articleNumber:'NEW', matched:false, equal:false, status:'Excel 상품 없음' }] }); return { ok:true, products:[added], sourceTotal:1, missingCount:0 }; },
+    syncExcelWithSellerScreen: async () => ({ ok:true, changedRows:0, changedCells:0, addedRows:1, addedProducts:1, verifiedCells:2, reverified:true,
+      changes:[{ reason:'MISSING_PRODUCT_ROW', spuId:'2', articleNumber:'NEW' }] }),
+  };
+  const report = await runPoizonReviewBatch({ files:[base.file], api,
+    createView: async () => { current = { input:{screenOnly:true}, eventsList:[], events(){return this.eventsList;}, saving(){}, finish(result){ finishResult = result; } }; return current; },
+    notify: async () => {} });
+  assert.equal(report.complete, true);
+  assert.equal(report.files[0].addedRows, 1);
+  assert.equal(finishResult.ok, true);
+});
+
+test('page checkpoint counts are preserved and reread row count includes rows added before the next page', async () => {
+  const base = { products:[{ spuId:'1', articleNumber:'OLD', sourceRowNumber:2 }], sourceTotalRows:1, revision:'r1', ok:true, file:{ path:'A.xlsx', name:'A.xlsx' } };
+  const added = { spuId:'2', articleNumber:'NEW', sales30dRaw:'100+', localSales30dRaw:'30', hasSalesData:true, hasLocalSalesData:true };
+  let current, reads = 0;
+  const api = {
+    readPoizonReviewWorkbook: async () => { reads++; return reads === 1 ? base : { ...base, products:[...base.products, { ...added, sourceRowNumber:3 }] }; },
+    checkPoizonReviewWorkbook: async () => ({ ok:true, unchanged:true }),
+    beginSellerExcelVerification: async () => ({ ok:true }),
+    captureSellerBrandSales: async () => {
+      current.eventsList.push({ phase:'page-compared', pageNum:1, pageCount:1, rows:[{ key:'SPU:2', spuId:'2', articleNumber:'NEW', matched:false, equal:false, status:'Excel 상품 없음' }] });
+      return { ok:true, products:[added], sourceTotal:1, checkpointSync:{ enabled:true, pagesCompleted:1, changedRows:0, changedCells:0, addedRows:1, addedProducts:1, verifiedCells:2, reverified:true, backupPath:'page.bak', changes:[{ reason:'MISSING_PRODUCT_ROW', spuId:'2', articleNumber:'NEW' }] } };
+    },
+    syncExcelWithSellerScreen: async () => ({ ok:true, changedRows:0, changedCells:0, addedRows:0, addedProducts:0, verifiedCells:2, reverified:true, changes:[] }),
+  };
+  const report = await runPoizonReviewBatch({ files:[base.file], api,
+    createView: async () => { current = { input:{screenOnly:true}, eventsList:[], events(){return this.eventsList;}, saving(){}, finish(){} }; return current; },
+    notify: async () => {} });
+  assert.equal(report.complete, true);
+  assert.equal(report.files[0].addedRows, 1);
+  assert.equal(report.files[0].checkpointPages, 1);
+  assert.equal(report.files[0].backupPath, 'page.bak');
 });
 
 test('incomplete capture never becomes an all-match or absence report', async (t) => {

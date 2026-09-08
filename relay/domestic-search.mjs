@@ -10,6 +10,7 @@ import {
   officialMallDirectProductUrls,
 } from "../services/official-mall-adapters.mjs";
 import { brandSearchQueries } from "../services/brand-search-profile.mjs";
+import { dedupeNaverOverlappingProducts } from "../services/naver-result-dedupe.mjs";
 
 const MAX_QUERY_LENGTH = 120;
 const MAX_PRODUCTS_PER_STORE = 8;
@@ -1120,7 +1121,7 @@ export async function queryDomesticProducts({
     query: normalizedQuery,
     searchStrategy,
     queryCandidates,
-    products: results.flatMap((result) => result.products),
+    products: dedupeNaverOverlappingProducts(results.flatMap((result) => result.products)),
     // Companies are shown only after an exact-model product is verified.
     // A registry entry alone must never look like a matching sourcing result.
     parallelImportCompanies: [],

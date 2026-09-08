@@ -107,10 +107,10 @@ export async function runVerifiedCombinedSearch({ files, conditions, api, openVe
       live.finish({ ok: true, changedRows: saved.changedRows, screenProducts: captured.products, afterProducts: after });
       const grouped = groupedVerifiedProducts(captured.products, before, after, frozen, file);
       products.push(...grouped); loadedCount++;
-      const sourceIndex = indexProductIdentities(captured.products);
+      const sourceIndex = indexProductIdentities(captured.products), workbookIndex = indexProductIdentities(before);
       audits.push({ file: file.name || file.path, sourceProducts: sourceGroups(captured.products).length,
         excelRows: before.length, qualifiedProducts: grouped.length, changedRows: saved.changedRows || 0,
-        excelNotFoundProducts: sourceGroups(captured.products).filter(({ product }) => !resolveProductIdentity(product, indexProductIdentities(before)).products.length).length,
+        excelNotFoundProducts: sourceGroups(captured.products).filter(({ product }) => !resolveProductIdentity(product, workbookIndex).products.length).length,
         sourceNotFoundRows: before.filter((p) => !resolveProductIdentity(p, sourceIndex).products.length).length });
       onProgress({ phase: 'complete', index: i, total: files.length, file, audit: audits.at(-1) });
     } catch (error) {

@@ -48,7 +48,7 @@ let brandSelectionBusy = false;
 const brandExportJobs = new Map();
 let downloadedBrandFiles = [];
 let downloadFileSyncActive = false;
-let downloadFileSyncState = { brandName: "", brandIndex: 0, brandCount: 0 };
+let downloadFileSyncState = { brandName: "", fileName: "", brandIndex: 0, brandCount: 0 };
 const selectedDownloadedFilePaths = new Set();
 let brandCompletedShowAll = false;
 let completedBrandShowAll = false;
@@ -433,7 +433,7 @@ function renderCombinedBrandPreviewPage(offset = 0) {
   const products = combinedBrandPreview.products.slice(safeOffset, safeOffset + limit);
   const file = { path: "combined://selected-brands", name: "선택 브랜드 통합 검색" };
   excelPreviewPageProducts = products;
-  excelPreviewPageKeys = renderExcelProductRows(file, products);
+  excelPreviewPageKeys = combinedBrandPreview.verified ? renderVerifiedSpuRows(file, products) : renderExcelProductRows(file, products);
   activeExcelPreview = {
     file, offset: safeOffset, limit, totalRows, sourceTotalRows: totalRows,
     filters: { minimumTotal, minimumLocalTotal, fixedTotalAnd: true, matchMode: "all", productView: true },
@@ -466,10 +466,63 @@ function renderCombinedBrandPreviewPage(offset = 0) {
       updateExcelPreviewSelectionUi(excelPreviewPageKeys);
     };
   }
+  if (combinedBrandPreview.verified) {
+    const failures = combinedBrandPreview.failures || [], audits = combinedBrandPreview.audits || [];
+    const missing = audits.reduce((sum, a) => sum + a.excelNotFoundProducts, 0);
+    const absent = audits.reduce((sum, a) => sum + a.sourceNotFoundRows, 0);
+    const message = '최근 30일 · SPU 상품 단위 · 중국 ' + (minimumTotal || '조건 없음') + ' / 현지 ' + (minimumLocalTotal || '조건 없음') + ' · ' + totalRows + '상품 · Excel에서 찾지 못함 ' + missing + '상품 · POIZON에서 찾지 못함 ' + absent + '원본행 · 실패 ' + failures.length + '브랜드';
+    $("#excel-preview-summary").textContent = message;
+    $("#brand-product-workspace-meta").textContent = message;
+    $("#excel-filter-status").textContent = failures.length ? failures.map((f) => f.file + ': ' + f.message).join(' / ') : 'POIZON 화면값 기준으로 Excel 원본 판매량 셀 교정·재검증 완료';
+    const labels = [$("#excel-filter-min-total")?.closest('label')?.querySelector('span'), $("#excel-filter-min-local-total")?.closest('label')?.querySelector('span')];
+    if (labels[0]) labels[0].textContent = '중국 상품 최근 30일 최소';
+    if (labels[1]) labels[1].textContent = '현지 판매자 상품 최근 30일 최소';
+  }
   updateExcelPreviewSelectionUi(excelPreviewPageKeys);
 }
 
+
+function renderVerifiedSpuRows(file, products) {
+  const keys = products.map((p) => excelPreviewStableSelectionKey(p, file));
+  products.forEach((p, i) => excelPreviewProductCache.set(keys[i], p));
+  $("#excel-preview-columns").innerHTML = '<tr><th>선택</th><th>이미지</th><th>상품번호 · SPU</th><th>상품명 · 사이즈 펼치기</th><th>브랜드</th><th>상품 최근 30일 평균 거래가</th><th>중국 상품 최근 30일</th><th>현지 상품 최근 30일</th><th>검증</th><th>상품 검색 결과</th></tr>';
+  $("#excel-preview-rows").innerHTML = products.length ? products.map((p, i) => {
+    const options = (p.verificationOptions || []).map((o) => '<div><b>' + text(o.option || o.skuId || '옵션 미확인') + '</b> · SKU ' + text(o.skuId || '-') + ' · 원본 중국 총판매 ' + text(o.totalSalesRaw || '-') + ' · 원본 현지 총판매 ' + text(o.localTotalSalesRaw || '-') + '</div>').join('');
+    const image = /^https?:\/\//.test(p.logoUrl || '') ? '<img style="width:40px;height:40px;object-fit:contain" src="' + text(p.logoUrl) + '" alt="">' : '';
+    return '<tr><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(keys[i]) + '"></td><td>' + image + '</td><td><b>' + text(p.articleNumber) + '</b><small> SPU ' + text(p.spuId) + '</small></td><td>' + text(p.title) + '<details><summary>원본 사이즈 ' + p.optionCount + '행</summary>' + options + '</details></td><td>' + text(p.brandName) + '</td><td>' + (p.hasPriceData ? money(p.averagePrice) : '미확인') + '</td><td>' + text(p.hasSalesData ? p.sales30dRaw : '미확인') + '</td><td>' + text(p.hasLocalSalesData ? p.localSales30dRaw : '미확인') + '</td><td>' + text(p.verificationStatus) + '</td>' + renderRawExcelDomesticCell(keys[i], p, excelPreviewSearchResults.get(keys[i])) + '</tr>';
+  }).join('') : '<tr><td colspan="10">동일 조건에 맞는 검증 완료 상품이 없습니다. 실패·누락 집계도 확인해 주세요.</td></tr>';
+  return keys;
+}
+
+async function openReviewLocalBrandPreview(files, filters = {}) {
+  const service = await import("../services/poizon-review-session.mjs");
+  const snapshots = await service.loadReviewSnapshots(files, window.aroundG, (message) => { $("#brand-status").textContent = message; });
+  const products = snapshots.flatMap((snapshot) => snapshot.products.map((p) => ({ ...p,
+    _sourceFilePath: snapshot.file.path, _sourceBrandName: snapshot.file.brandName || "",
+    _excelSelectionKey: snapshot.file.path.toLowerCase() + "::ROW:" + p.sourceRowNumber })));
+  combinedBrandPreview = { products, files, brandCount: files.length, loadedCount: snapshots.length,
+    filters: { minimumTotal: "", minimumLocalTotal: "" }, verified: false };
+  await openIntegratedBrandExcel(files[0], false);
+  selectedExcelPreviewProducts.clear(); excelPreviewProductCache.clear(); excelPreviewSearchResults.clear();
+  excelPreviewIntegrated = true; renderCombinedBrandPreviewPage(0);
+  $("#brand-status").textContent = "Excel 전체 " + products.length.toLocaleString("ko-KR") + "행 불러오기 완료 · POIZON 대조는 별도 버튼으로 시작합니다.";
+}
+
+async function openVerifiedCombinedBrandPreview(files, filters = {}) {
+  const service = await import("../services/poizon-review-session.mjs");
+  const live = await import("./poizon-review-workspace.js");
+  if (live.reviewIsRunning() || downloadFileSyncActive || brandSelectionBusy) throw new Error("진행 중인 작업이 끝난 뒤 대조해 주세요.");
+  const defaults = live.readVerificationConditions();
+  const conditions = { minimumChinaSales30: filters.minimumTotal ?? defaults.minimumChinaSales30,
+    minimumLocalSales30: filters.minimumLocalTotal ?? defaults.minimumLocalSales30 };
+  return service.runPoizonReviewBatch({ files, conditions, api: window.aroundG,
+    onProgress: (message) => { $("#brand-status").textContent = message; },
+    createView: (snapshot, frozen) => live.beginLiveVerification({ file: snapshot.file, brandName: snapshot.file.brandName, snapshot, conditions: frozen }),
+    notify: (report, view) => view ? view.showReport(report) : live.showReviewReport(report) });
+}
+
 async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
+  return openReviewLocalBrandPreview(files, filters);
   const products = [];
   let loadedCount = 0;
   const minimumTotal = String(filters.minimumTotal ?? "100");
@@ -1193,6 +1246,7 @@ function excelPreviewStableSelectionKey(product = {}, file = {}) {
 }
 
 function renderExcelProductRows(file, products = []) {
+  if (products.some((p) => Array.isArray(p.verificationOptions))) return renderVerifiedSpuRows(file, products);
   const pageKeys = products.map((product) => excelPreviewStableSelectionKey(product, file));
   products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
   $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>평균가격</th><th>중국 최근 30일</th><th>현지 최근 30일</th><th>상품 검색</th></tr>`;
@@ -1268,6 +1322,9 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
 }
 
 async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewFilters(), options = {}) {
+  const rawLabels = [$("#excel-filter-min-total")?.closest('label')?.querySelector('span'), $("#excel-filter-min-local-total")?.closest('label')?.querySelector('span')];
+  if (rawLabels[0]) rawLabels[0].textContent = '중국 총 판매량 (원본)';
+  if (rawLabels[1]) rawLabels[1].textContent = '현지 판매자 총 판매량 (원본)';
   if (!file?.path) return;
   const filesPanel = $("#explorer-files");
   const productsView = $("#products");
@@ -2040,6 +2097,24 @@ function renderStockWatches() {
     const url = /^https:\/\//i.test(String(row.url || "")) ? String(row.url) : "";
     return `<tr><td><strong>${text(row.platform || "기타")}</strong></td><td><strong>${text(row.name)}</strong><small>${text(row.brand || "")}</small></td><td>${text(row.articleNumber || "-")}</td><td>${text(row.option || "전체 옵션")}</td><td>${text(stockWatchTime(row.createdAt || row.updatedAt))}</td><td><span class="stock-watch-pending">감시 등록</span></td><td><div class="stock-watch-row-actions">${url ? `<button type="button" data-stock-open="${text(url)}">상품 열기</button>` : ""}<button type="button" data-stock-edit="${text(row.id)}">수정</button><button type="button" data-remove="stockWatches:${text(row.id)}">삭제</button></div></td></tr>`;
   }).join("") : '<tr><td colspan="7" class="empty">등록된 재고 감시 상품이 없습니다.</td></tr>';
+}
+
+async function prepareLivePoizonVerification(file, brandName, excelProducts, conditions) {
+  const live = await import("./poizon-review-workspace.js");
+  const snapshot = await window.aroundG.readPoizonReviewWorkbook({ path: file.path });
+  if (!snapshot?.ok) throw new Error(snapshot?.message || "Excel 전체 읽기 실패");
+  const result = live.beginLiveVerification({ file, brandName, snapshot, conditions });
+  const layout = await window.aroundG.beginSellerExcelVerification({ brandName, fileName: file.name || "" });
+  if (!layout?.ok) { result.finish({ ok: false, message: layout?.message }); throw new Error(layout?.message || "검증 창 열기 실패"); }
+  return result;
+}
+
+async function finishLivePoizonVerification(live, brand, file, sellerResult, excelSync) {
+  if (!live) return;
+  const reread = await downloadedBrandSalesByArticle(brand);
+  if (!reread.ok) throw new Error(reread.error || "저장 후 Excel 재읽기 실패");
+  live.finish({ ok: true, changedRows: excelSync.changedRows, afterProducts: reread.products,
+    screenProducts: sellerResult.products || [] });
 }
 
 function salesByArticle(products = state.products) {
@@ -4375,11 +4450,17 @@ $("#category-search").addEventListener("click", async () => {
         count: detailProductsByKey.size,
         percent: Math.round((completedCount / favoriteBrandIds.length) * 100),
       });
+      let liveVerification = null;
       try {
         const excelSales = await downloadedBrandSalesByArticle(brand);
         if (runId !== categorySearchRunId) return;
         if (!excelSales.ok) throw new Error(excelSales.error || "EXCEL_READ_FAILED");
+        if (window.aroundG.onSellerVerificationProgress) {
+          liveVerification = await prepareLivePoizonVerification(latestCompletedBrandDownload(brand), brandName,
+            excelSales.products, { minimumChinaSales30, minimumLocalSales30 });
+        }
         const sellerResult = await window.aroundG.captureSellerBrandSales({
+          verification: liveVerification?.input,
           brandName: brand?.name || "",
           brandKo: brand?.ko || "",
         });
@@ -4388,6 +4469,13 @@ $("#category-search").addEventListener("click", async () => {
           const error = new Error(sellerResult?.message || "POIZON 화면 데이터를 가져오지 못했습니다.");
           error.code = sellerResult?.code || "SELLER_SCREEN_READ_FAILED";
           throw error;
+        }
+        if (liveVerification) {
+          liveVerification.saving();
+          const verificationFile = latestCompletedBrandDownload(brand);
+          const excelSync = await window.aroundG.syncExcelWithSellerScreen({ path: verificationFile.path, products: sellerResult.products || [] });
+          if (!excelSync?.ok) throw new Error(excelSync?.message || "Excel 반영 실패");
+          await finishLivePoizonVerification(liveVerification, brand, verificationFile, sellerResult, excelSync);
         }
         const crossValidated = mergeExcelProductsWithSellerScreen(excelSales.products, sellerResult.products || []);
         const categoryProducts = crossValidated.products
@@ -4403,11 +4491,14 @@ $("#category-search").addEventListener("click", async () => {
           if (!detailProductsByKey.has(key)) detailProductsByKey.set(key, { ...product, name: product.name || product.title || "", brandName: product.brandName || brandName });
         }
       } catch (error) {
+        liveVerification?.finish({ ok: false, message: error?.message || String(error) });
         if (runId !== categorySearchRunId) return;
         failedSourceCount += 1;
         const file = latestCompletedBrandDownload(brand);
         failures.push({ brandId, brandName, fileName: file?.name || file?.path?.split(/[\\/]/).pop() || "파일 미확인",
           code: String(error?.code || "CATEGORY_SOURCE_FAILED"), message: String(error?.message || error) });
+      } finally {
+        if (liveVerification?.running) liveVerification.finish({ ok: false, message: "사용자 중단" });
       }
       if (runId !== categorySearchRunId) return;
       completedCount += 1;
@@ -4464,145 +4555,50 @@ $("#category-search").addEventListener("click", async () => {
     status.textContent = `카테고리 검색 오류 · ${error instanceof Error ? error.message : String(error)}`;
     finishCategoryLoading();
   } finally {
+    await window.aroundG.endSellerExcelVerification?.().catch(() => {});
     if (runId === categorySearchRunId) button.disabled = false;
   }
 });
 
-$("#import-button").addEventListener("click", async () => {
-  const button = $("#import-button");
-  const syncProgress = $("#excel-sync-progress");
-  button.disabled = true;
-  button.textContent = "동기화 중…";
-  downloadFileSyncActive = true;
-  downloadFileSyncState = { brandName: "", brandIndex: 0, brandCount: 0 };
-  if (syncProgress) {
-    syncProgress.classList.remove("error", "complete");
-    syncProgress.hidden = false;
-    syncProgress.querySelector("i").style.width = "1%";
-    syncProgress.querySelector("span").textContent = "동기화 준비 중";
-  }
-  window.activateSearchServiceMode?.("files");
+async function showPoizonExcelVerificationPair(file, brandName = "브랜드") {
+  if (!file?.path) throw new Error("검증할 Excel 파일 경로가 없습니다.");
+  await showExcelPreview(file, 0, {
+    minimumTotal: "",
+    minimumLocalTotal: "",
+    fixedTotalAnd: true,
+    matchMode: "all",
+    productView: false,
+  }, { preserveFilters: false, productView: false });
+  const layout = await window.aroundG.beginSellerExcelVerification({
+    brandName,
+    fileName: file.name || file.path.split(/[\\/]/).pop() || "Excel",
+  });
+  if (!layout?.ok) throw new Error(layout?.message || "POIZON·Excel 검증 화면을 나란히 열지 못했습니다.");
   const status = $("#excel-files-status");
   if (status) {
     status.className = "status";
-    status.textContent = downloadedBrandFiles.length
-      ? `화면에 불러온 OneDrive Excel ${downloadedBrandFiles.length}개로 동기화를 시작합니다.`
-      : "OneDrive의 POIZON 다운로드 파일을 확인하고 있습니다.";
+    status.textContent = `검증 화면 열림 · 왼쪽 POIZON / 오른쪽 Excel · ${brandName}`;
   }
+  return layout;
+}
+
+$("#import-button").addEventListener("click", async () => {
+  if (downloadFileSyncActive) return;
+  const live = await import("./poizon-review-workspace.js");
+  if (live.reviewIsRunning()) return;
+  downloadFileSyncActive = true; const button = $("#import-button"), previous = button.textContent;
+  button.disabled = true; button.textContent = "파일 목록 확인 중";
   try {
-    // The received-files screen already owns the current OneDrive workbook
-    // list. Re-running the full recovery scan here reopened and revalidated
-    // every workbook before the first brand, leaving the UI at "동기화 준비 중".
-    // Only scan the folder when this process has no loaded file list yet.
-    const result = downloadedBrandFiles.length
-      ? { ok: true, files: downloadedBrandFiles, reusedLoadedFiles: true }
-      : await restoreDownloadedBrandFiles();
-    if (!result?.ok) throw new Error(result?.message || "다운로드 파일을 확인하지 못했습니다.");
-    const brands = completedDownloadBrands();
-    if (!brands.length) throw new Error("동기화할 브랜드 Excel 파일이 없습니다.");
-    let completed = 0;
-    let matched = 0;
-    let updatedExcelRows = 0;
-    let attempted = 0;
-    const failures = [];
-    // Seller Center uses one authenticated search window. Keep this queue
-    // sequential so a later brand cannot replace the table being captured.
-    for (const [brandPosition, brand] of brands.entries()) {
-      const file = latestCompletedBrandDownload(brand);
-      const brandName = brand.ko || brand.name || "브랜드";
-      downloadFileSyncState = { brandName, brandIndex: brandPosition, brandCount: brands.length };
-      if (status) status.textContent = `POIZON 화면·Excel 비교 ${completed + 1}/${brands.length} · ${brandName}`;
-      if (syncProgress) {
-        syncProgress.querySelector("span").textContent = `${brandPosition + 1}/${brands.length} · ${brandName} 준비 중`;
-        syncProgress.title = `${brandName} Excel 읽기 및 판매자센터 연결 준비 중`;
-      }
-      try {
-        attempted += 1;
-        const excelSales = await downloadedBrandSalesByArticle(brand);
-        if (!excelSales.ok) throw new Error(excelSales.error || "EXCEL_READ_FAILED");
-        const sellerResult = await window.aroundG.captureSellerBrandSales({
-          brandName: brand.name || "",
-          brandKo: brand.ko || "",
-        });
-        if (!sellerResult?.ok) {
-          const error = new Error(sellerResult?.message || "POIZON 화면 데이터를 가져오지 못했습니다.");
-          error.code = sellerResult?.code || "SELLER_SCREEN_READ_FAILED";
-          throw error;
-        }
-        const crossValidated = mergeExcelProductsWithSellerScreen(excelSales.products, sellerResult.products || []);
-        const excelSync = await window.aroundG.syncExcelWithSellerScreen({
-          path: file.path,
-          products: sellerResult.products || [],
-        });
-        if (!excelSync?.ok) throw new Error(excelSync?.message || "원본 Excel에 POIZON 화면 값을 반영하지 못했습니다.");
-        updatedExcelRows += Number(excelSync.changedRows || 0);
-        const saved = await window.aroundG.upsert("poizonSyncs", {
-          id: poizonSyncId(brand),
-          brandId: Number(brand.id),
-          brandName: brand.name || "",
-          brandKo: brand.ko || "",
-          filePath: file.path,
-          fileName: file.name || "",
-          fileSize: Number(file.size || 0),
-          fileTime: Number(file.time || file.mtimeMs || 0),
-          syncedAt: new Date().toISOString(),
-          status: "complete",
-          products: Array.isArray(sellerResult.products) ? sellerResult.products : [],
-          sellerProductCount: Number((sellerResult.products || []).length),
-          excelProductCount: Number(excelSales.productCount || 0),
-          matchedExcelCount: crossValidated.matchedExcelCount,
-          unmatchedExcelCount: crossValidated.unmatchedExcelCount,
-          unmatchedScreenCount: crossValidated.unmatchedScreenCount,
-          excelUpdatedRowCount: Number(excelSync.changedRows || 0),
-          excelUpdatedCellCount: Number(excelSync.changedCells || 0),
-          excelBackupPath: excelSync.backupPath || "",
-        });
-        replaceLocalPoizonSync(saved);
-        completed += 1;
-        matched += crossValidated.matchedExcelCount;
-        renderDownloadedBrandFiles();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        failures.push(`${brandName}: ${message}`);
-        if (syncProgress) {
-          syncProgress.classList.add("error");
-          syncProgress.querySelector("span").textContent = `${brandName} 실패 · ${message}`;
-          syncProgress.title = `${brandName} 동기화 실패 · ${message}`;
-        }
-        if (String(error?.code || "").startsWith("SELLER_")) break;
-      }
-    }
-    if (status) {
-      status.className = failures.length ? "status error" : "status success";
-      status.textContent = `POIZON 화면·Excel 동기화 ${completed}/${brands.length}개 브랜드 완료 · 일치 ${matched.toLocaleString("ko-KR")}행 · 원본 Excel 수정 ${updatedExcelRows.toLocaleString("ko-KR")}행${failures.length ? ` · 실패 ${failures.join(" / ")}` : ""}`;
-    }
-    if (syncProgress && failures.length) {
-      const percent = Math.max(2, Math.min(99, Math.round((attempted / brands.length) * 100)));
-      syncProgress.classList.add("error");
-      syncProgress.querySelector("i").style.width = `${percent}%`;
-      syncProgress.querySelector("span").textContent = `동기화 실패 · ${failures[0]}`;
-      syncProgress.title = failures.join(" / ");
-    } else if (syncProgress) {
-      syncProgress.classList.add("complete");
-      syncProgress.querySelector("i").style.width = "100%";
-      syncProgress.querySelector("span").textContent = `동기화 완료 · ${completed}/${brands.length}개 브랜드`;
-    }
-  } catch (error) {
-    if (status) {
-      status.className = "status error";
-      status.textContent = `다운로드 파일 동기화 실패 · ${error instanceof Error ? error.message : String(error)}`;
-    }
-    if (syncProgress) {
-      syncProgress.classList.add("error");
-      syncProgress.querySelector("span").textContent = `동기화 중단 · ${error instanceof Error ? error.message : String(error)}`;
-      syncProgress.title = error instanceof Error ? error.message : String(error);
-    }
-  } finally {
-    downloadFileSyncActive = false;
-    button.disabled = false;
-    button.textContent = "다운로드 파일 동기화";
-  }
+    const result = await window.aroundG.listBrandExportFiles();
+    if (!result?.ok) throw new Error(result?.message || "다운로드 파일 목록을 읽지 못했습니다.");
+    downloadedBrandFiles = result.files || [];
+    localStorage.setItem("around-g-brand-download-files", JSON.stringify(downloadedBrandFiles));
+    renderDownloadedBrandFiles(); renderBrandCards($("#brand-filter")?.value || "");
+    $("#excel-files-status").textContent = "파일 목록 동기화 완료 · " + downloadedBrandFiles.length + "개 · POIZON 대조는 실행하지 않았습니다.";
+  } catch (error) { showRuntimeError(error); }
+  finally { downloadFileSyncActive = false; button.disabled = false; button.textContent = previous; }
 });
+
 $("#export-button").addEventListener("click", async () => {
   const result = await window.aroundG.exportExcel();
   if (!result.canceled) alert("백업 Excel을 저장했습니다.");
@@ -4995,15 +4991,16 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
       const pageRatio = pages ? Math.min(1, page / pages) : 0;
       const percent = Math.max(1, Math.min(99, Math.round(((brandIndex + pageRatio) / brandCount) * 100)));
       const brandName = downloadFileSyncState.brandName || progress.brandName || "브랜드";
+      const fileName = downloadFileSyncState.fileName || "Excel";
       if (loading) {
         loading.hidden = false;
         loading.querySelector("i").style.width = `${percent}%`;
-        loading.querySelector("span").textContent = `전체 ${percent}% · ${brandName} ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개`;
-        loading.title = `${brandName} 동기화 진행 중 · ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개 상품 확인`;
+        loading.querySelector("span").textContent = `전체 ${percent}% · 왼쪽 POIZON ${page}/${pages || "?"}페이지 · 오른쪽 Excel ${fileName}`;
+        loading.title = `${brandName} 교차 검증 중 · POIZON ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개 상품 · Excel ${fileName}`;
       }
       if (status) {
         status.className = "status";
-        status.textContent = `${brandName} 동기화 진행 중 · ${page}/${pages || "?"}페이지 · ${Number(progress.count || 0).toLocaleString("ko-KR")}개 상품 확인`;
+        status.textContent = `${brandName} 교차 검증 중 · 왼쪽 POIZON ${page}/${pages || "?"}페이지 · 오른쪽 Excel ${fileName}`;
       }
       return;
     }
@@ -5075,3 +5072,27 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   await refresh();
   await pruneCategorySearchHistory();
 })();
+
+void import("./poizon-review-workspace.js").then((live) => live.installVerificationControls()).catch(showRuntimeError);
+
+function installReviewEntryButtons() {
+  const add = (id, label, host) => {
+    if (!host || document.getElementById(id)) return;
+    const button = document.createElement("button"); button.id = id; button.type = "button"; button.textContent = label; host.append(button);
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        const candidates = id === "poizon-review-brand-start"
+          ? selectedBrandsForExport().map((brand) => latestCompletedBrandDownload(brand)).filter(Boolean)
+          : downloadedBrandFiles.filter((file) => selectedDownloadedFilePaths.has(brandImportPathKey(file.path)));
+        const files = [...new Map(candidates.map((file) => [brandImportPathKey(file.path), file])).values()];
+        if (!files.length) throw new Error("대조할 다운로드 완료 브랜드 또는 Excel 파일을 선택해 주세요.");
+        await openVerifiedCombinedBrandPreview(files);
+      } catch (error) { showRuntimeError(error); }
+      finally { button.disabled = false; }
+    });
+  };
+  add("poizon-review-brand-start", "POIZON 대조", document.querySelector(".frequent-brand-heading-actions"));
+  add("poizon-review-files-start", "선택 파일 POIZON 대조", document.getElementById("poizon-verification-controls"));
+}
+void import("./poizon-review-workspace.js").then((live) => { live.installVerificationControls(); installReviewEntryButtons(); }).catch(showRuntimeError);

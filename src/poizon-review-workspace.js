@@ -36,7 +36,7 @@ export function showReviewReport(report = latestReport, doc = document) {
   let dialog = doc.getElementById('poizon-review-report');
   if (!dialog) {
     dialog = doc.createElement('dialog'); dialog.id = 'poizon-review-report';
-    dialog.innerHTML = '<h3>전체 대조 결과 · 수동 수정</h3><p>Excel 원본은 변경하지 않았습니다.</p><textarea readonly aria-label="복사할 대조 결과"></textarea><footer><span role="status"></span><button type="button" class="review-copy">전체 복사</button><button type="button" class="review-dismiss">닫기</button></footer>';
+    dialog.innerHTML = '<h3>전체 대조 결과 · 자동 교정</h3><p>POIZON 화면값을 기준으로 Excel을 수정하고 저장 후 재검증합니다.</p><textarea readonly aria-label="복사할 대조 결과"></textarea><footer><span role="status"></span><button type="button" class="review-copy">전체 복사</button><button type="button" class="review-dismiss">닫기</button></footer>';
     doc.body.append(dialog);
     dialog.querySelector('.review-dismiss').onclick = () => dialog.close();
     dialog.querySelector('.review-copy').onclick = async () => {
@@ -58,12 +58,13 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
   const headers = snapshot?.headers || [];
   const frozen = normalizeVerificationConditions(conditions);
   const runId = globalThis.crypto?.randomUUID?.() || `review-${Date.now()}-${Math.random()}`;
-  const input = { runId, brandName, fileName: file.name || '', screenOnly: true, conditions: frozen,
+  const verificationFilePath = String(file.path || file.filePath || file.fullPath || snapshot?.file?.path || snapshot?.path || '').trim();
+  const input = { runId, brandName, fileName: file.name || '', filePath: verificationFilePath, screenOnly: true, conditions: frozen,
     excelProducts: products.map(({ sourceValues, ...p }) => p) };
   const index = indexProductIdentities(products);
   const pageEvents = new Map();
   let currentRows = [], cumulative = [], pageOffset = 0, finished = false, stopped = false, lastData = 0, lastStatus = Date.now();
-  let state = { checkedProducts: 0, equalProducts: 0, differentProducts: 0, missingProducts: 0, pageNum: 0, pageCount: 0 };
+  let state = { checkedProducts: 0, equalProducts: 0, differentProducts: 0, missingProducts: 0, deferredProducts: 0, pageNum: 0, pageCount: 0 };
   const started = Date.now();
   doc.getElementById('poizon-review-workspace')?.remove();
   const panel = doc.createElement('section'); panel.id = 'poizon-review-workspace'; panel.setAttribute('aria-label', 'Excel 실시간 대조 목록');
@@ -71,9 +72,9 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
     <div class="review-brief"><span class="review-condition"></span><span class="review-loaded"></span></div>
     <div class="review-status"><strong class="review-phase" role="status" aria-live="polite">전체 Excel 읽기 완료 · POIZON 첫 페이지 대기</strong><span class="review-clock"></span></div>
     <div class="review-tools"><span class="review-counters"></span><label><input class="review-follow" type="checkbox" checked>자동 따라가기</label></div>
-    <div class="review-legend"><span data-tone="equal">일치</span><span data-tone="different">값 다름</span><span data-tone="missing">연결 불가</span><span data-tone="unknown">기준·값 미확인</span></div>
+    <div class="review-legend"><span data-tone="equal">일치</span><span data-tone="different">값 다름</span><span data-tone="missing">Excel 상품 없음/추가</span><span data-tone="unknown">기준·값 미확인</span></div>
     <div class="review-table-scroll" tabindex="0"><table class="review-table"><thead><tr><th>Excel 상품 · 원본 행</th><th>중국 최근 30일<br>Excel → POIZON</th><th>현지 최근 30일<br>Excel → POIZON</th><th>대조 결과</th></tr></thead><tbody></tbody></table></div>
-    <footer class="review-bottom"><button class="review-prev" type="button">이전</button><span class="review-page"></span><button class="review-next" type="button">다음</button><button class="review-report" type="button" disabled>대조 결과</button><small>원본 Excel 자동 수정 없음</small></footer>`;
+    <footer class="review-bottom"><button class="review-prev" type="button">이전</button><span class="review-page"></span><button class="review-next" type="button">다음</button><button class="review-report" type="button" disabled>대조 결과</button><small>POIZON 기준 자동 교정</small></footer>`;
   doc.body.append(panel); doc.body.classList.add('poizon-review-open');
   const get = (s) => panel.querySelector(s);
   get('.review-file').textContent = `${brandName || file.brandName || ''} · ${file.name || file.path}`;
@@ -118,8 +119,8 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
     if (event.phase === 'page-compared') {
       state = event; currentRows = event.rows || []; lastData = Date.now();
       pageEvents.set(Number(event.pageNum), event); pageOffset = 0;
-      get('.review-phase').textContent = `POIZON ${event.pageNum}/${event.pageCount}페이지 · 동일 상품 ${currentRows.length}개 대조 완료`;
-      get('.review-counters').textContent = `누적 대조 ${number(state.checkedProducts)} · 일치 ${number(state.equalProducts)} · 차이/미확인 ${number(state.differentProducts)} · 연결 불가 ${number(state.missingProducts)}`;
+      get('.review-phase').textContent = `POIZON ${event.pageNum}/${event.pageCount}페이지 · 상품 식별 및 판매량 대조 ${currentRows.length}개 완료`;
+      get('.review-counters').textContent = `누적 ${number(state.checkedProducts)} · 상품 인식 ${number(state.matchedProducts)} · 판매량 일치 ${number(state.equalProducts)} · 판매량 수정/확인 ${number(state.differentProducts)} · Excel 누락 ${number(state.missingProducts)}`;
       renderRows(true);
     } else if (event.message) get('.review-phase').textContent = event.message;
     renderClock();
@@ -132,11 +133,15 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
   const handle = {
     input, running: true, dispose,
     events: () => [...pageEvents.values()],
-    saving() { get('.review-phase').textContent = '전체 대조 결과 정리 중 · 원본 Excel 자동 수정 없음'; },
+    saving() { get('.review-phase').textContent = '전체 대조 완료 · POIZON 값으로 Excel 수정 및 저장 후 재검증 중'; },
     finish(result = {}) {
-      finished = true; cumulative = [...pageEvents].sort((a, b) => a[0] - b[0]).flatMap(([, e]) => e.rows);
+      finished = true; cumulative = [...pageEvents].sort((a, b) => a[0] - b[0]).flatMap(([, e]) => e.rows)
+        .map((row) => result.corrected && (reviewTone(row) === 'different' || /새 행 추가 대상/.test(row.status || ''))
+          ? { ...row, matched: true, equal: true, status: /새 행 추가 대상/.test(row.status || '')
+            ? 'POIZON 값으로 새 행 추가 완료 · 저장 후 재검증 완료'
+            : 'POIZON 값으로 수정 완료 · 저장 후 재검증 완료' } : row);
       pageOffset = 0;
-      get('.review-phase').textContent = result.ok ? '대조 완료 · 원본 Excel 자동 수정 없음' : `검증 미완료 · ${result.message || '전체 페이지 확인 실패'}`;
+      get('.review-phase').textContent = result.ok ? `대조 완료 · 기존 ${Number(result.changedRows || 0).toLocaleString('ko-KR')}행 수정 · 누락 ${Number(result.addedRows || 0).toLocaleString('ko-KR')}행 추가 · 재검증 완료` : `검증 미완료 · ${result.message || '전체 페이지 확인 실패'}`;
       get('.review-close').disabled = false; renderRows(); dispose();
     },
     showReport(report) { latestReport = report; get('.review-report').disabled = false; showReviewReport(report, doc); },

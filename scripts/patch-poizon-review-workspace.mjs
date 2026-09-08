@@ -86,7 +86,8 @@ async function openVerifiedCombinedBrandPreview(files, filters = {}) {
 });
 
 `);
-  renderer += `
+}
+if (!renderer.includes('function installReviewEntryButtons()')) renderer += `
 function installReviewEntryButtons() {
   const add = (id, label, host) => {
     if (!host || document.getElementById(id)) return;
@@ -109,6 +110,8 @@ function installReviewEntryButtons() {
 }
 void import("./poizon-review-workspace.js").then((live) => { live.installVerificationControls(); installReviewEntryButtons(); }).catch(showRuntimeError);
 `;
+for (const marker of ['async function openReviewLocalBrandPreview', 'function installReviewEntryButtons()', 'poizon-review-brand-start', 'poizon-review-files-start']) {
+  if (!renderer.includes(marker)) throw new Error('Review renderer integration incomplete: ' + marker);
 }
 await save('src/renderer.js', renderer);
 let html = await read('src/index.html');

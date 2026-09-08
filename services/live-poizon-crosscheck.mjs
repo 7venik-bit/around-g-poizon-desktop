@@ -185,7 +185,7 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
       : !candidates.length ? identityConflict ? '식별자 충돌 · 자동수정 보류' : 'Excel 상품 없음 · 누락 후보'
       : !sourceAvailable ? 'POIZON 화면값 미확인 · 자동수정 보류'
       : hasConflict ? 'Excel 값 충돌 · 자동수정 보류'
-      : scopeMismatch ? '상품 인식 완료 · 옵션별 판매량 존재 · SPU 자동수정 제외 · 다음 페이지 진행'
+      : scopeMismatch ? '상품 인식 완료 · 옵션별 판매량 존재 · SPU 자동수정 제외 · 다음 페이지 진행 전 원본 보존 재검증'
       : unresolved ? '상품 인식 완료 · 원본값·비교 열 확인 필요 · 자동수정 보류'
       : equal ? '상품 인식 완료 · 판매량 일치 · 수정 없음'
       : missingSides ? `상품 인식 완료 · 판매량 누락 ${missingSides}개 · POIZON 값으로 수정 대상`
