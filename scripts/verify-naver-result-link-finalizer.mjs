@@ -12,10 +12,8 @@ const required = [
   "const directNaverFashionResult = naverPortalSource",
   'const initialUrl = naverPortalSource ? "https://www.naver.com/" : url',
   "const resultPage = await loadNaverFashionTownResultPage",
-  "resultPage.timeout ? \"page_load_timeout\"",
   "if (interactiveSiteSearch && !directNaverFashionResult)",
   "resultLinkOnly: result?.resultLinkOnly === true",
-  "return createDomesticSearchLinkResult({ store: source.store, articleNumber, resolvedSearchUrl: url });",
   "const directParallelResultLink",
   'String(source.store || "") === "네이버 패션타운"',
   "const finalized = finalizeNaverFashionTownResult(parsedContent, {",
@@ -36,6 +34,12 @@ if (source.includes("const directOfficialResultLink")) {
 }
 if (source.includes("return createNaverFashionTownSearchLinkResult")) {
   throw new Error("Naver Fashion Town must capture cards and prices instead of returning early as a link.");
+}
+if (source.includes("const directRetailResultLink")) {
+  throw new Error("SSG and LotteON must capture visible product cards instead of returning a link only.");
+}
+if (/if \(directNaverFashionResult\) \{\s*return createDomesticSearchLinkResult/.test(source)) {
+  throw new Error("Naver Fashion Town must load and capture visible result cards.");
 }
 
 console.log("Naver result-link finalizer verified.");
