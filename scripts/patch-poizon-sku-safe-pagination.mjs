@@ -47,7 +47,7 @@ function ensurePageTransactionGate(source) {
 const live = await read('services/live-poizon-crosscheck.mjs');
 if (!live.includes('POIZON_SKU_SAFE_DEFER_V1')
     || !live.includes('const writable = assertPoizonPageReadyForCorrection(products, rows, pageNum);')
-    || !live.includes('deferredProducts: rows.filter(onlySkuScopeMismatch).length')) {
+    || !live.includes('deferredProducts: rows.filter(isPoizonSkuScopeDeferredRow).length')) {
   throw new Error('Canonical SKU-safe evidence policy is missing; refusing to generate a competing policy.');
 }
 

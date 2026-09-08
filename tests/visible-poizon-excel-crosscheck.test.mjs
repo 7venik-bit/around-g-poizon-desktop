@@ -21,8 +21,8 @@ test("POIZON 판매자센터는 백그라운드에 두고 독립 대조 알림�
 test("검증 중 POIZON 자동화 창을 표시하거나 활성화하지 않는다", () => {
   const begin = main.slice(main.indexOf('function beginSellerExcelVerificationWindows'), main.indexOf('function endSellerExcelVerificationWindows'));
   assert.match(begin, /visible: false/);
-  assert.match(begin, /sellerWindow\.hide\(\)/);
-  assert.doesNotMatch(begin, /sellerWindow\.show/);
+  assert.match(begin, /sellerWindow\.setOpacity\?\.\(0\)/);
+  assert.match(begin, /sellerWindow\.showInactive\(\)/);
 });
 
 test("대조 알림창을 먼저 준비한 뒤 백그라운드 POIZON 수집을 시작한다", () => {
