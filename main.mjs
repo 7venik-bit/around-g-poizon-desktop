@@ -2601,28 +2601,15 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   const directNaverFashionResult = naverPortalSource
     && String(source.store || "") === "네이버 패션타운"
     && /shopping\.naver\.com\/window\/search\//i.test(url);
-  // Fashion Town is a usable user-facing result URL by itself. Electron
-  // repeatedly rejects this Naver SPA even when the same URL opens normally
-  // in Chrome. Never turn that renderer limitation into page_load_failed.
-  if (directNaverFashionResult) {
-    return createDomesticSearchLinkResult({
-      store: source.store, articleNumber, resolvedSearchUrl: url,
-    });
-  }
-  // Naver Fashion Town must continue into the rendered-card capture. The
-  // exact result URL is loaded directly below, but it is not a completed result
-  // until the product card, current price and approved seller evidence are read.
-  const directRetailResultLink = /^(?:SSG|롯데온)(?:\s|$)/.test(String(source.store || ""))
-    && /^https:\/\//i.test(url)
-    && /[?&](?:q|query)=/i.test(url);
+  // A valid search URL is navigation evidence only. Naver, SSG and LotteON
+  // must continue into rendered-card capture so visible products are imported.
   const directParallelResultLink = String(source.store || "") === "병행수입·편집샵"
     && /search\.naver\.com\/search\.naver/i.test(url)
     && /[?&]where=shopping(?:&|$)/i.test(url)
     && /[?&]query=/i.test(url);
-  if (directRetailResultLink || directParallelResultLink) {
-    // Exact marketplace result URLs are the requested output. Official malls
-    // must continue into the rendered-card capture so their current prices can
-    // be shown inside the program.
+  if (directParallelResultLink) {
+    // Parallel-import search remains link-only by policy; the three domestic
+    // first-party channels above are always parsed.
     return createDomesticSearchLinkResult({ store: source.store, articleNumber, resolvedSearchUrl: url });
   }
   // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.
