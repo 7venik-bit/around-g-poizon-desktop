@@ -1321,6 +1321,65 @@ async function executeOfficialMallSearch(searchWindow, homepageUrl, query) {
   return officialMallSearchWasExecuted(searchWindow, exactQuery, previousUrl);
 }
 
+async function collectOfficialMallSearchProducts(searchWindow, query) {
+  if (!browserWindowUsable(searchWindow)) return [];
+  let captureAttempt = 0;
+  while (captureAttempt < 16) {
+    if (captureAttempt > 0) await wait(500);
+    captureAttempt += 1;
+    const products = await searchWindow.webContents.executeJavaScript(`(() => {
+      const query = ${JSON.stringify(String(query || ""))};
+      const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
+      const expected = compact(query);
+      const productPath = /\\/(?:goods|product|products|pd|item|shop|p)\\//i;
+      const visible = (element) => {
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      };
+      const money = (value) => {
+        const match = String(value || "").match(/(?:₩|￦|원)\\s*([\\d,]{3,})|([\\d,]{3,})\\s*원/);
+        return Number(String(match?.[1] || match?.[2] || "").replace(/,/g, "")) || 0;
+      };
+      const found = new Map();
+      for (const link of [...document.querySelectorAll('a[href]')]) {
+        if (!visible(link) || !productPath.test(String(link.href || ""))) continue;
+        let card = link.closest('li,article,[class*="product" i],[class*="goods" i],[class*="item" i]') || link;
+        const rawText = String(card.innerText || link.innerText || "").replace(/\\s+/g, " ").trim();
+        if (!rawText || rawText.length > 1200) continue;
+        const image = card.querySelector('img[src]') || link.querySelector('img[src]');
+        const heading = card.querySelector('h1,h2,h3,h4,h5,[class*="name" i],[class*="title" i]');
+        const title = String(heading?.textContent || image?.alt || link.getAttribute('title') || rawText)
+          .replace(/\\s+/g, " ").trim().slice(0, 240);
+        const articleMatch = rawText.match(/(?=[A-Z0-9._/-]{4,32}\\b)(?=[A-Z0-9._/-]*[A-Z])(?=[A-Z0-9._/-]*\\d)[A-Z0-9][A-Z0-9._/-]{3,31}/i);
+        const articleNumber = articleMatch?.[0] || (expected && compact(rawText).includes(expected) ? query : "");
+        const url = String(link.href || "").split('#')[0];
+        if (!url || found.has(url)) continue;
+        found.set(url, {
+          id: url,
+          store: "브랜드 공식몰",
+          sourceStore: "브랜드 공식몰",
+          retailerName: document.title || location.hostname,
+          title,
+          name: title,
+          articleNumber,
+          price: money(rawText),
+          imageUrl: String(image?.currentSrc || image?.src || ""),
+          url,
+          inStock: null,
+          linkOnly: true,
+          officialStoreVerified: Boolean(expected && compact(rawText).includes(expected)),
+          sourceTrustLabel: "공식몰 검색 결과",
+        });
+      }
+      return [...found.values()].slice(0, 50);
+    })()`, true).catch(() => []);
+    if (Array.isArray(products) && products.length) return products;
+  }
+  return [];
+}
+
 function renderedSearchFailure(reason, searchWindow = null, details = {}) {
   const verificationReason = String(reason || "unknown_search_failure");
   const resolvedSearchUrl = String(
@@ -2441,6 +2500,7 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
     stage = "search_submission";
     const submitted = await executeOfficialMallSearch(searchWindow, homepage.href, exactQuery);
     if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
+    const products = submitted ? await collectOfficialMallSearchProducts(searchWindow, exactQuery) : [];
     if (!submitted) {
       searchWindow.setTitle(`공식몰 돋보기를 눌러 ${exactQuery}을(를) 검색해 주세요`);
       searchWindow.show();
@@ -2448,7 +2508,7 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
     } else {
       searchWindow.hide();
     }
-    return { ok: true, submitted };
+    return { ok: true, submitted, products, count: products.length, resultsUrl: searchWindow.webContents.getURL() };
   } catch (error) {
     const message = String(error?.message || error || "");
     if (!browserWindowUsable(searchWindow)
