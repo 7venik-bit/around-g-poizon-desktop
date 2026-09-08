@@ -206,6 +206,9 @@ test('dedicated view uses external CSP-compatible styling and keeps original det
   assert.match(html, /id="poizon-review-styles"/); assert.match(view, /doc\.body\.append\(panel\)/);
   assert.match(view, /originals\.slice\(offset, offset \+ 100\)/);
   assert.match(view, /openReviewPopup/);
+  assert.match(view, /poizon-review-popup\\\.html/);
+  assert.match(view, /popup\.document\.readyState === 'complete'/);
+  assert.match(view, /navigation to the real review page would immediately erase UI/);
   const popup = await readFile(new URL('../src/poizon-review-popup.html', import.meta.url),'utf8');
   assert.match(popup, /POIZON 실시간 대조/);
 });

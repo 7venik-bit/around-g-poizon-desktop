@@ -12,10 +12,17 @@ export async function openReviewPopup(hostWindow = window) {
   const popup = hostWindow.open('./poizon-review-popup.html', 'around-g-poizon-review', 'popup=yes,width=1080,height=860');
   if (!popup) throw new Error('POIZON 대조 알림창을 열지 못했습니다. 팝업 허용 상태를 확인해 주세요.');
   const started = Date.now();
-  while ((!popup.document?.body || popup.document.readyState === 'loading') && Date.now() - started < 10_000) {
+  // window.open initially exposes a ready about:blank document. Do not draw
+  // into it: navigation to the real review page would immediately erase UI.
+  while (Date.now() - started < 10_000) {
+    const loadedReviewPage = /poizon-review-popup\.html(?:[?#]|$)/.test(String(popup.location?.href || ''));
+    if (loadedReviewPage && popup.document?.body && popup.document.readyState === 'complete') break;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  if (!popup.document?.body) throw new Error('POIZON 대조 알림창 준비에 실패했습니다.');
+  if (!/poizon-review-popup\.html(?:[?#]|$)/.test(String(popup.location?.href || '')) || !popup.document?.body) {
+    popup.close();
+    throw new Error('POIZON 대조 알림창 준비에 실패했습니다.');
+  }
   popup.focus();
   return popup.document;
 }
