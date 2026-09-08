@@ -78,7 +78,8 @@ test('installed application includes the retired control styling and explicit PO
   const html = await readFile(new URL('src/index.html', root), 'utf8');
   assert.match(html, /id="retired-download-sync-styles"/);
   assert.match(tagFor(html, 'import-button'), /disabled=""/);
-  assert.equal(await readFile(new URL('src/retired-download-sync.css', root), 'utf8'), RETIRED_SYNC_CSS);
+  const installedCss = (await readFile(new URL('src/retired-download-sync.css', root), 'utf8')).replace(/\r\n/g, '\n');
+  assert.equal(installedCss, RETIRED_SYNC_CSS.replace(/\r\n/g, '\n'));
   const renderer = await readFile(new URL('src/renderer.js', root), 'utf8');
   assert.match(renderer, /poizon-review-brand-start/);
   assert.match(renderer, /runPoizonReviewBatch/);
