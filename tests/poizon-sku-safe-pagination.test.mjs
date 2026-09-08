@@ -60,7 +60,7 @@ test('uploaded POIZON raw export retains SKU rows and exposes them as SKU-scope 
   assert.equal(row.missingSalesCells, 0);
 });
 
-test('SKU rows are neither missing nor overwritten and a page may continue with an explicit deferred count', async (t) => {
+test('conflicting SKU rows are neither missing nor overwritten and stop pagination', async (t) => {
   const f = await fixture(t);
   const main = await readFile(new URL('../main.mjs', import.meta.url), 'utf8');
   const snapshot = await readReviewWorkbook({ path:f.path }, productionBuilder(main));
@@ -71,10 +71,8 @@ test('SKU rows are neither missing nor overwritten and a page may continue with 
   assert.equal(page.missingSalesCells, 0);
   assert.equal(page.deferredProducts, 1);
   assert.match(page.rows[0].status, /옵션별 판매량 존재 · SPU 자동수정 제외/);
-  assert.doesNotMatch(page.rows[0].status, /판매량 누락|수정 대상|이동을 보류|상품 없음/);
-  const selected = selectPoizonPageCorrectionProducts(screen, page.rows, 1);
-  assert.equal(selected.products.length, 0);
-  assert.equal(selected.deferredProducts, 1);
+  assert.doesNotMatch(page.rows[0].status, /판매량 누락|수정 대상|상품 없음/);
+  assert.throws(() => selectPoizonPageCorrectionProducts(screen, page.rows, 1), /다음 페이지 이동을 보류/);
 });
 
 test('shipping main blocks page navigation until the current page checkpoint is reverified', async () => {
@@ -127,12 +125,8 @@ test('canonical selector and checkpoint guard share reordered evidence and metad
   const excel = [{...products[0], salesScope:'sku', sourceRowNumber:2}, {...products[1], localSales30dRaw:'20', sourceRowNumber:3}];
   const page = createPageCrossCheck({runId:'mixed-policy',excelProducts:excel}).acceptPage(products,{pageNum:1,pageCount:1});
   const rows = [...page.rows].reverse();
-  const guarded = assertPoizonPageReadyForCorrection(products,rows,1);
-  const selected = selectPoizonPageCorrectionProducts(products,rows,1);
-  assert.deepEqual(selected.products,guarded);
-  assert.deepEqual(selected.products,[products[1]]);
-  assert.deepEqual(selected.products.pageEvidence,{verified:true,sourceProducts:2,skippedSkuScope:1});
-  assert.equal(selected.deferredProducts,1);
+  assert.throws(() => assertPoizonPageReadyForCorrection(products,rows,1), /다음 페이지 이동을 보류/);
+  assert.throws(() => selectPoizonPageCorrectionProducts(products,rows,1), /다음 페이지 이동을 보류/);
 });
 
 test('SKU scope never masks an unreadable POIZON screen or an identity conflict', () => {
@@ -188,8 +182,8 @@ test('final review of SKU-only workbook makes no writer calls and preserves ever
   };
   const view={input:{runId:'final-skip'},events:()=>[page],finish(){},showReport(){}};
   const report=await runPoizonReviewBatch({files:[{path:f.path,name:'sku.xlsx'}],api,createView:async()=>view});
-  assert.equal(report.complete,true,JSON.stringify(report));
-  assert.equal(report.files[0].deferredProducts,1);
+  assert.equal(report.complete,false,JSON.stringify(report));
+  assert.match(report.files[0].message,/다음 페이지 이동을 보류/);
   assert.equal(writes,0);
   assert.deepEqual(await readFile(f.path),before);
 });

@@ -117,24 +117,10 @@ test('normal mismatches and actual new products can still reach correction', () 
   assert.deepEqual(assertPoizonPageReadyForCorrection([source()],missing.rows,1),[source()]);
 });
 
-test('verified SKU scope mismatch is a safe no-write checkpoint', async () => {
+test('unresolved SKU scope stops the page before any checkpoint write', () => {
   const items = [excel('33','5',{skuId:'1',salesScope:'sku'}), excel('100+','14',{skuId:'2',salesScope:'sku',sourceRowNumber:110})];
   const page = check(items);
-  const writable = assertPoizonPageReadyForCorrection([source()],page.rows,1);
-  assert.equal(writable.length,0);
-  assert.equal(writable.pageEvidence?.verified,true);
-  assert.equal(writable.pageEvidence?.skippedSkuScope,1);
-  const {syncPoizonPageCheckpoint} = await import('../services/poizon-page-checkpoint.mjs');
-  let reads=0,writes=0,copies=0;
-  const checkpoint = await syncPoizonPageCheckpoint({ filePath:'safe.xlsx', products:writable, pageNum:1, fs:{
-    readFile:async()=>{reads++; throw new Error('safe skip must not read');},
-    writeFile:async()=>{writes++;}, copyFile:async()=>{copies++;},
-  }});
-  assert.equal(checkpoint.ok,true);
-  assert.equal(checkpoint.code,'PAGE_CHECKPOINT_SKU_SCOPE_SKIPPED');
-  assert.equal(checkpoint.reverified,true);
-  assert.equal(checkpoint.skippedSkuScope,1);
-  assert.deepEqual([reads,writes,copies],[0,0,0]);
+  assert.throws(() => assertPoizonPageReadyForCorrection([source()],page.rows,1), /다음 페이지 이동을 보류/);
 });
 
 test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input retains scalar SKU evidence', async (t) => {
@@ -177,10 +163,10 @@ test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input re
     checkpointSummary:{enabled:true,backupPath:'',changes:[],changedRows:0,changedCells:0,addedRows:0,addedProducts:0,verifiedCells:0,deferredProducts:0}, checkpointPages:new Set(), input:{verification:{runId:'shipping',filePath:path}},
     assertPoizonPageReadyForCorrection, selectPoizonPageCorrectionProducts, syncPoizonPageCheckpoint:async () => { writes++; return {ok:true,reverified:true}; },
   };
-  await assert.doesNotReject(runInNewContext('(async()=>{' + capture.slice(from,to) + '})()',sandbox));
+  await assert.rejects(runInNewContext('(async()=>{' + capture.slice(from,to) + '})()',sandbox), /다음 페이지 이동을 보류/);
   assert.equal(writes,0); assert.deepEqual(await readFile(path),before);
-  assert.equal(sandbox.checkpointSummary.deferredProducts,1);
-  assert.equal(sandbox.checkpointSummary.pagesCompleted,1);
+  assert.equal(sandbox.checkpointSummary.deferredProducts,0);
+  assert.equal(sandbox.checkpointSummary.pagesCompleted,undefined);
 
   // With real parent columns, correction must still work and preserve every SKU value.
   const parentHeaders = [...headers,'POIZON 상품 최근 30일 판매량','POIZON 상품 현지 판매자 최근 30일 판매량'];
@@ -208,4 +194,19 @@ test('shipping build preserves strict source and both write entry points', async
   assert.match(main,/selectPoizonPageCorrectionProducts\(currentPageProducts, livePage.rows, capture.currentPage\)/);
   assert.match(review,/selectPoizonPageCorrectionProducts\(captured.products \|\| \[\], coverage.rows\)/);
   assert.match(review,/if \(row.autoCorrectionBlocked === true\) return 'unknown'/);
+});
+
+test('identical SPU values repeated on every SKU row are compared without summing', () => {
+  const repeated = [
+    excel('300+', '100+', { skuId:'SKU-1', salesScope:'sku', metricScope:'sku', sourceRowNumber:2 }),
+    excel('300+', '100+', { skuId:'SKU-2', salesScope:'sku', metricScope:'sku', sourceRowNumber:3 }),
+    excel('300+', '100+', { skuId:'SKU-3', salesScope:'sku', metricScope:'sku', sourceRowNumber:4 }),
+  ];
+  const page = createPageCrossCheck({ runId:'repeated-spu', excelProducts:repeated })
+    .acceptPage([source('300+', '100+')], { pageNum:1, pageCount:1 });
+  assert.equal(page.rows[0].equal, true);
+  assert.equal(page.rows[0].autoCorrectionBlocked, false);
+  assert.equal(page.rows[0].excelChinaState, 'resolved');
+  assert.equal(page.rows[0].excelLocalState, 'resolved');
+  assert.equal(assertPoizonPageReadyForCorrection([source('300+', '100+')], page.rows, 1).length, 1);
 });
