@@ -2339,6 +2339,23 @@ async function openRenderedSizeOptions(searchWindow) {
   return clicked;
 }
 
+function renderedStockSelectors(store = "") {
+  const source = String(store || "");
+  if (/^무신사/.test(source)) {
+    return ['option', '[role="option"]', '[class*="option" i] button', '[class*="option" i] li', '[class*="size" i] button'];
+  }
+  if (/^네이버/.test(source)) {
+    return ['option', '[role="option"]', '[role="listbox"] li', '[class*="option" i] li', '[class*="select" i] li'];
+  }
+  if (/^SSG/.test(source)) {
+    return ['option', '[role="option"]', '[class*="cdtl_opt" i] li', '[class*="select" i] li', '[class*="option" i] li'];
+  }
+  if (/^롯데온/.test(source)) {
+    return ['option', '[role="option"]', '[class*="option" i] li', '[class*="select" i] li', '[class*="size" i] button'];
+  }
+  return ['option', '[role="option"]', '[role="listbox"] li', '[class*="size" i]', '[class*="option" i] button', '[class*="option" i] li'];
+}
+
 async function clickRenderedProductCard(searchWindow, productUrl, searchResultsUrl = "") {
   if (!searchWindow || searchWindow.isDestroyed()) return false;
   const expectedUrl = String(productUrl || "").split("#")[0];
@@ -2390,13 +2407,12 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
     return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + Math.min(rect.height / 2, 180)) };
   })()`, true).catch(() => null);
   if (!target) return false;
-  const bounds = searchWindow.getContentBounds();
-  const clicked = await moveWindowsCursorAndClick(
-    bounds.x + target.x,
-    bounds.y + target.y,
-    650,
-  );
-  if (!clicked.ok) return false;
+  // Keep automated product inspection in the background. Electron input events
+  // work against the hidden renderer and do not steal the user's real cursor.
+  searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
+  await wait(650);
+  searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
+  searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
   await wait(2_000);
   const openedUrl = String(searchWindow.webContents.getURL() || "").split("#")[0];
   if (openedUrl === expectedUrl) return true;
@@ -3345,36 +3361,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         detailVerificationPending: false,
       };
     }
-    // Official malls, Naver, SSG and Lotte are list-only sources. Their visible
-    // cards provide the title, current price and real product link. Never open
-    // every detail page or inspect stock: the user verifies a chosen item.
-    if (/^(?:브랜드 공식몰$|네이버\s|SSG(?:\s|$)|롯데온(?:\s|$))/.test(String(source.store || ""))) {
-      const listProducts = /^네이버\s/.test(String(source.store || ""))
-        ? await filterApprovedNaverDomesticProducts(analyzed.products || [])
-        : (analyzed.products || []);
-      const officialMallSource = String(source.store || "") === "브랜드 공식몰";
-      const explicitAbsence = officialMallSource
-        ? analyzed.absenceConfirmed === true || parsedContent.selectedChannelEmpty === true
-        : listProducts.length === 0;
-      return {
-        ...detailed,
-        count: listProducts.length,
-        products: listProducts.map((product) => ({
-          ...product,
-          linkOnly: officialMallSource || product.linkOnly === true,
-          linkVerified: /^https?:\/\//i.test(String(product.url || "")),
-          inStock: null,
-          sizes: [],
-        })),
-        presenceConfirmed: listProducts.length > 0,
-        absenceConfirmed: explicitAbsence,
-        resultLinkOnly: officialMallSource && listProducts.length === 0 && !explicitAbsence,
-        detailVerificationPending: false,
-        verificationReason: /^네이버\s/.test(String(source.store || ""))
-          ? (listProducts.length > 0 ? "approved_domestic_seller" : "approved_domestic_seller_not_found")
-          : String(detailed.verificationReason || ""),
-      };
-    }
+    // Every platform now opens its exact matched detail page. Stock wording is
+    // collected independently per source instead of treating these channels as
+    // list-only results.
     if (Array.isArray(analyzed?.products)) {
       const products = [];
       const inspectedProducts = analyzed.products.slice(0, 8);
@@ -3393,7 +3382,6 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
           if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");
           await wait(1_000);
-          // 재고·사이즈 자동 확인 안 함: 판매처에서 사용자가 직접 확인
           const identitySnapshot = await searchWindow.webContents.executeJavaScript(`(() => {
             const pageText = String(document.body?.innerText || "").slice(0, 60000);
             const titleText = [...document.querySelectorAll('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')]
@@ -3430,7 +3418,20 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             detailIdentity = identitySnapshot;
             detailLoaded = true;
           }
-          stockEvidence = { inStock: null, sizes: [], stockStatus: "manual_check", stockVerified: false };
+          await openRenderedSizeOptions(searchWindow);
+          const stockSelectors = renderedStockSelectors(source.store);
+          const stockSnapshot = await searchWindow.webContents.executeJavaScript(`(() => {
+            const visible = (el) => { const s=getComputedStyle(el),r=el.getBoundingClientRect(); return s.display!=="none"&&s.visibility!=="hidden"&&r.width>0&&r.height>0; };
+            const sold = /품절|재고\\s*없|일시\\s*품절|SOLD\\s*OUT|OUT\\s*OF\\s*STOCK|판매\\s*(?:종료|중지)|재입고/i;
+            const selectors=${JSON.stringify(stockSelectors)};
+            const nodes=[...new Set(selectors.flatMap((selector)=>[...document.querySelectorAll(selector)]))].filter(visible);
+            const options=nodes.map((el)=>{ const label=String(el.innerText||el.textContent||el.value||"").replace(/\\s+/g," ").trim(); const disabled=el.disabled||el.getAttribute("aria-disabled")==="true"||/disabled|sold.?out|품절/i.test(String(el.className||"")); return {label,inStock:!disabled&&!sold.test(label),stockText:label}; })
+              .filter((item)=>item.label&&item.label.length<=80).slice(0,120);
+            const buttons=[...document.querySelectorAll('button,a,[role="button"]')].filter(visible);
+            const purchaseAvailable=buttons.some((el)=>/구매|장바구니|바로\\s*구매|buy|add\\s*to\\s*cart/i.test(String(el.innerText||el.textContent||""))&&!el.disabled&&el.getAttribute("aria-disabled")!=="true");
+            return JSON.stringify({pageText:String(document.body?.innerText||"").slice(0,80000),purchaseAvailable,options});
+          })()`, true).then(JSON.parse).catch(() => null);
+          stockEvidence = normalizeRenderedStockEvidence(stockSnapshot || { pageText: detailText });
         } catch {}
         if (product.detailArticleVerificationRequired) identityRequiredCount += 1;
         const detailArticleVerified = product.detailArticleVerificationRequired
