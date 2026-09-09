@@ -139,11 +139,12 @@ function showResults(article, data) {
     const sizes = (item.sizes || []).map((size) => {
       const value = typeof size === "object" ? size.label || size.size : size;
       const unavailable = typeof size === "object" && size.inStock === false;
-      return `<span class="size ${unavailable ? "none" : ""}">${esc(value)}</span>`;
+      const rawStock = typeof size === "object" ? String(size.stockText || "").trim() : "";
+      return `<span class="size ${unavailable ? "none" : ""}">${esc(rawStock && rawStock !== value ? `${value} · ${rawStock}` : value)}</span>`;
     }).join("");
     const url = item.url || item.link || "";
     const stockClass = item.inStock === true ? "" : item.inStock === false ? "none" : "unknown";
-    const stockLabel = item.inStock === true ? "재고 있음" : item.inStock === false ? "품절" : "확인 필요";
+    const stockLabel = String(item.stockText || "").trim() || (item.inStock === true ? "재고 있음" : item.inStock === false ? "품절" : "재고 문구 없음");
     return `<div class="candidate">
       <span class="store">${esc(item.store || item.mallName || item.source || "국내 판매처")}</span>
       <strong>${esc(item.title || item.name || item.articleNumber || "검색 결과")}</strong>
