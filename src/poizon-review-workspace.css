@@ -15,6 +15,8 @@ body.poizon-review-open > aside, body.poizon-review-open > .shell { display:none
 #poizon-review-workspace input[type=checkbox] { width:14px; height:14px; padding:0; margin:0; }
 #poizon-review-workspace button { border:1px solid #ccd9e9; border-radius:6px; padding:6px 10px; font-size:12px; white-space:nowrap; color:#234c7b; background:#fff; }
 #poizon-review-workspace button:disabled { opacity:.45; cursor:default; }
+#poizon-review-workspace .review-top-actions { display:flex; align-items:center; gap:8px; }
+#poizon-review-workspace .review-stop { border-color:#e15b64; color:#b4232f; font-weight:700; }
 #poizon-review-workspace .review-legend { display:flex; flex-wrap:wrap; gap:8px; font-size:11px; }
 #poizon-review-workspace .review-legend span { border-radius:5px; padding:3px 8px; }
 #poizon-review-workspace [data-tone=equal] { background:#eaf7ef; color:#245e42; }
