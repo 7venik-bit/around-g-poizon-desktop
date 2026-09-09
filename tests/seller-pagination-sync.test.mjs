@@ -59,8 +59,8 @@ test("판매자센터 대량 동기화는 저속 안정 모드로 서버 응답�
   assert.match(capture, /const sellerPageResponseAttempts = 360/);
   assert.match(capture, /const sellerPageSettleMs = 10_000/);
   assert.match(capture, /capture\.currentPage % sellerBatchPauseEvery === 0/);
-  assert.match(capture, /await wait\(sellerBatchPauseMs\)/);
-  assert.match(capture, /await wait\(sellerPageDelayMs\)/);
+  assert.match(capture, /await waitVerification\(sellerBatchPauseMs\)/);
+  assert.match(capture, /await waitVerification\(sellerPageDelayMs\)/);
   assert.match(capture, /await wait\(sellerPageSettleMs\)/);
   assert.match(capture, /attempt < sellerPageResponseAttempts/);
   assert.match(capture, /expectedRowCount: expectedNextRowCount/);
