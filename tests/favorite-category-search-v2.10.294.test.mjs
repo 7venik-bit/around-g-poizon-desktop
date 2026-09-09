@@ -22,7 +22,8 @@ test("카테고리 검색은 인기리스트 대신 다운로드 완료 브랜�
   assert.match(renderer, /const excelSales = await downloadedBrandSalesByArticle\(brand\)/);
   assert.match(renderer, /captureSellerBrandSales\(\{/);
   assert.match(renderer, /mergeExcelProductsWithSellerScreen\(excelSales\.products, sellerResult\.products/);
-  assert.match(renderer, /const categoryProducts = crossValidated\.products/);
+  assert.match(renderer, /const detailProducts = crossValidated\.products/);
+  assert.match(renderer, /categorySelections\.some\(\(selection\) =>/);
   assert.doesNotMatch(renderer, /const popularResult = await capturePopularProducts\(\{ runDomestic: false, renderResults: false \}\)/);
 });
 

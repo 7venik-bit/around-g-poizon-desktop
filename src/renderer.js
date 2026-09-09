@@ -6,6 +6,7 @@ let explorerMeta = { brands: [], categories: [] };
 let selectedBrandId = null;
 let selectedCategory = "전체";
 let selectedCategoryDetail = "";
+let selectedCategorySelections = new Map();
 const CATEGORY_DETAILS = {
   "전체": ["전체 상품"], "신발": ["운동화", "러닝화", "농구화", "축구화", "샌들·슬리퍼", "구두·부츠"],
   "의류": ["티셔츠", "셔츠", "맨투맨·후드", "바지", "원피스·스커트", "스포츠웨어"],
@@ -2422,16 +2423,20 @@ function renderBrandCards(filter = "") {
 
 function renderCategoryButtons() {
   $("#category-buttons").innerHTML = explorerMeta.categories.map((category) =>
-    `<button class="category-button ${category === selectedCategory ? "selected" : ""}" data-category="${text(category)}"><strong>${text(category)}</strong><span>›</span></button>`
+    `<button class="category-button ${selectedCategorySelections.has(category) ? "selected" : ""}" data-category="${text(category)}" aria-pressed="${selectedCategorySelections.has(category)}"><strong>${text(category)}</strong><span>›</span></button>`
   ).join("");
   const details = CATEGORY_DETAILS[selectedCategory] || ["전체 상품"];
+  const selectedDetails = selectedCategorySelections.get(selectedCategory) || new Set();
   $("#category-detail-section").hidden = false;
   $("#category-detail-buttons").innerHTML = details.map((detail) =>
-    `<button type="button" class="category-detail-button ${detail === selectedCategoryDetail ? "selected" : ""}" data-category-detail="${text(detail)}">${text(detail)}</button>`
+    `<button type="button" class="category-detail-button ${selectedDetails.has(detail) ? "selected" : ""}" data-category-detail="${text(detail)}" aria-pressed="${selectedDetails.has(detail)}">${text(detail)}</button>`
   ).join("");
-  $("#category-selection-path").textContent = selectedCategoryDetail ? `${selectedCategory} 〉 ${selectedCategoryDetail}` : `${selectedCategory} 〉 세부 메뉴를 선택해 주세요.`;
+  const pairs = selectedCategoryPairs();
+  $("#category-selection-path").textContent = pairs.length
+    ? `복수 선택 ${pairs.length}개 · ${pairs.map(({ category, detail }) => `${category} 〉 ${detail}`).join(" · ")}`
+    : `${selectedCategory} 〉 세부 메뉴를 선택해 주세요.`;
   renderCategoryFavoriteBrands();
-  $("#category-search").disabled = !selectedCategoryDetail || !categoryBrandIds.size;
+  $("#category-search").disabled = !pairs.length || !categoryBrandIds.size;
 }
 
 function renderCategoryFavoriteBrands({ reset = false } = {}) {
@@ -2447,7 +2452,7 @@ function renderCategoryFavoriteBrands({ reset = false } = {}) {
   $("#category-brand-count").textContent = `${categoryBrandIds.size}/${brands.length}개 선택`;
   $("#category-brand-select-all").disabled = !brands.length || categoryBrandIds.size === brands.length;
   $("#category-brand-clear").disabled = !categoryBrandIds.size;
-  $("#category-search").disabled = !selectedCategoryDetail || !categoryBrandIds.size;
+  $("#category-search").disabled = !selectedCategoryPairs().length || !categoryBrandIds.size;
 }
 
 function domesticKey(product, index) {
@@ -3110,14 +3115,13 @@ document.addEventListener("click", async (event) => {
   const category = event.target.closest("[data-category]")?.dataset.category;
   if (category) {
     selectedCategory = category;
-    selectedCategoryDetail = "";
     renderCategoryButtons();
     return;
   }
   const detail = event.target.closest("[data-category-detail]")?.dataset.categoryDetail;
   if (detail) {
-    selectedCategoryDetail = detail;
-    localStorage.setItem("around-g-last-category", JSON.stringify({ category: selectedCategory, detail }));
+    toggleCategoryDetail(selectedCategory, detail);
+    localStorage.setItem("around-g-last-category", JSON.stringify({ selections: selectedCategoryPairs() }));
     renderCategoryButtons();
   }
   const categoryBrandButton = event.target.closest("[data-category-brand-id]");
@@ -4316,6 +4320,32 @@ $("#brand-search").addEventListener("click", async () => {
 
 const CATEGORY_SEARCH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
+function selectedCategoryPairs() {
+  const pairs = [];
+  for (const [category, details] of selectedCategorySelections || []) {
+    for (const detail of details || []) pairs.push({ category, detail });
+  }
+  if (!pairs.length && selectedCategoryDetail) pairs.push({ category: selectedCategory, detail: selectedCategoryDetail });
+  return pairs;
+}
+
+function toggleCategoryDetail(category, detail) {
+  const details = new Set(selectedCategorySelections.get(category) || []);
+  if (details.has(detail)) details.delete(detail);
+  else if (detail === "전체 상품") {
+    details.clear();
+    details.add(detail);
+  } else {
+    details.delete("전체 상품");
+    details.add(detail);
+  }
+  if (details.size) selectedCategorySelections.set(category, details);
+  else selectedCategorySelections.delete(category);
+  selectedCategoryDetail = "";
+  const remaining = selectedCategoryPairs();
+  if (remaining.length) selectedCategoryDetail = remaining.at(-1).detail;
+}
+
 function categorySearchDate() {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Seoul" }).format(new Date());
 }
@@ -4446,14 +4476,16 @@ $("#category-sales-filter-reset").addEventListener("click", () => {
 
 $("#category-search").addEventListener("click", async () => {
   const runId = ++categorySearchRunId;
-  const category = selectedCategory;
-  const detail = selectedCategoryDetail;
+  const categorySelections = selectedCategoryPairs();
+  const category = categorySelections.map((item) => item.category).join("+");
+  const detail = categorySelections.map((item) => item.detail).join("+");
+  const selectionLabel = categorySelections.map((item) => `${item.category} 〉 ${item.detail}`).join(" · ");
   const button = $("#category-search");
   const status = $("#category-status");
   const minimumChinaSales30 = categorySalesMinimum("#category-min-china-sales-30");
   const minimumLocalSales30 = categorySalesMinimum("#category-min-local-sales-30");
   const favoriteBrandIds = [...categoryBrandIds].map(Number).filter(Number.isFinite);
-  if (!detail) return;
+  if (!categorySelections.length) return;
   if (!favoriteBrandIds.length) {
     status.className = "status error";
     status.textContent = "카테고리 검색에 사용할 다운로드 완료 브랜드가 없습니다.";
@@ -4464,7 +4496,7 @@ $("#category-search").addEventListener("click", async () => {
   startCategoryLoading();
   status.className = "status";
   status.textContent = "POIZON 화면 우선 · Excel 상품정보를 교차 검증하는 중…";
-  renderExplorerResults(`${category} 〉 ${detail} 검색`, []);
+  renderExplorerResults(`${selectionLabel} 검색`, []);
   try {
     await refresh();
     await pruneCategorySearchHistory();
@@ -4488,6 +4520,7 @@ $("#category-search").addEventListener("click", async () => {
         id: cacheId,
         category,
         categoryDetail: detail,
+        categorySelections,
         brandIds: favoriteBrandIds,
         completedBrandIds: [...completedBrandIds],
         minimumChinaSales30,
@@ -4549,9 +4582,11 @@ $("#category-search").addEventListener("click", async () => {
           await finishLivePoizonVerification(liveVerification, brand, verificationFile, sellerResult, excelSync);
         }
         const crossValidated = mergeExcelProductsWithSellerScreen(excelSales.products, sellerResult.products || []);
-        const categoryProducts = crossValidated.products
-          .filter((product) => category === "전체" || categoryGroupFromProduct(product) === category);
-        const detailProducts = filterCategoryDetailProducts(categoryProducts, detail)
+        const detailProducts = crossValidated.products
+          .filter((product) => categorySelections.some((selection) => {
+            if (selection.category !== "전체" && categoryGroupFromProduct(product) !== selection.category) return false;
+            return filterCategoryDetailProducts([product], selection.detail).length > 0;
+          }))
           .filter((product) => minimumChinaSales30 === null || (product.hasSalesData === true && Number(product.sales30d || 0) >= minimumChinaSales30))
           .filter((product) => minimumLocalSales30 === null || (product.hasLocalSalesData === true && Number(product.localSales30d || 0) >= minimumLocalSales30));
         sourceCount += 1;
@@ -4575,7 +4610,7 @@ $("#category-search").addEventListener("click", async () => {
       completedCount += 1;
       await savePartialResult();
       if (runId !== categorySearchRunId) return;
-      renderExplorerResults(`${category} 〉 ${detail} 검색 · 진행 중`, [...detailProductsByKey.values()]);
+      renderExplorerResults(`${selectionLabel} 검색 · 진행 중`, [...detailProductsByKey.values()]);
       updateCategoryLoading({
         title: `${brandName} ${completedBrandIds.has(brandId) ? "검색 완료" : "파일 확인 필요"} · 다음 브랜드를 준비합니다.`,
         completed: completedCount,
@@ -4599,12 +4634,13 @@ $("#category-search").addEventListener("click", async () => {
     }
     const detailProducts = [...detailProductsByKey.values()];
     status.className = failedSourceCount ? "status error" : "status success";
-    status.textContent = `POIZON 화면 우선 · ${category} 〉 ${detail} 상품 ${detailProducts.length.toLocaleString("ko-KR")}개 · Excel ${sourceTotal.toLocaleString("ko-KR")}행 교차 검증 · 브랜드 ${sourceCount}/${favoriteBrandIds.length}개 완료${failureText ? ` · 실패: ${failureText}` : ""}`;
-    renderExplorerResults(`${category} 〉 ${detail} 검색`, detailProducts);
+    status.textContent = `POIZON 화면 우선 · ${selectionLabel} · 상품 ${detailProducts.length.toLocaleString("ko-KR")}개 · Excel ${sourceTotal.toLocaleString("ko-KR")}행 교차 검증 · 브랜드 ${sourceCount}/${favoriteBrandIds.length}개 완료${failureText ? ` · 실패: ${failureText}` : ""}`;
+    renderExplorerResults(`${selectionLabel} 검색`, detailProducts);
     await window.aroundG.upsert("categorySearches", {
       id: cacheId,
       category,
       categoryDetail: detail,
+      categorySelections,
       brandIds: favoriteBrandIds,
       completedBrandIds: [...completedBrandIds],
       minimumChinaSales30,
@@ -4618,7 +4654,7 @@ $("#category-search").addEventListener("click", async () => {
       sourceTotal,
       complete: failedSourceCount === 0,
     });
-    updateCategoryLoading({ title: `${detail} POIZON 화면·Excel 교차 검증을 마쳤습니다.`, completed: completedCount, total: favoriteBrandIds.length, count: detailProducts.length, percent: 100 });
+    updateCategoryLoading({ title: `${selectionLabel} POIZON 화면·Excel 교차 검증을 마쳤습니다.`, completed: completedCount, total: favoriteBrandIds.length, count: detailProducts.length, percent: 100 });
     window.setTimeout(() => finishCategoryLoading(), 1_800);
   } catch (error) {
     if (runId !== categorySearchRunId) return;
