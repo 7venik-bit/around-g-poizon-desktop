@@ -5199,7 +5199,7 @@ function installReviewEntryButtons() {
       finally { button.disabled = false; }
     });
   };
-  add("poizon-review-brand-start", "POIZON 대조", document.querySelector(".frequent-brand-heading-actions"));
+  add("poizon-review-brand-start", "상품 대조", document.querySelector(".header-actions"));
   add("poizon-review-files-start", "선택 파일 POIZON 대조", document.getElementById("poizon-verification-controls"));
 }
 void import("./poizon-review-workspace.js").then((live) => { live.installVerificationControls(); installReviewEntryButtons(); }).catch(showRuntimeError);
