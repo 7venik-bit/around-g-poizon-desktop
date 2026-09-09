@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   openSellerCenter: () => ipcRenderer.invoke("seller:open"),
   openSellerProductSearch: () => ipcRenderer.invoke("seller:open-product-search"),
   beginSellerExcelVerification: (input = {}) => ipcRenderer.invoke("seller:excel-verification-start", input),
+  cancelSellerExcelVerification: (runId) => ipcRenderer.invoke("seller:excel-verification-cancel", runId),
   endSellerExcelVerification: () => ipcRenderer.invoke("seller:excel-verification-end"),
   onSellerVerificationProgress: (callback) => {
     const handler = (_event, payload) => callback(payload);

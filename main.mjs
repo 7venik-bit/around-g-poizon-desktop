@@ -173,6 +173,7 @@ let mainWindow;
 let sellerWindow;
 let sellerExcelVerificationLayout = null;
 const sellerVerificationActionWaiters = new Map();
+const cancelledSellerVerificationRuns = new Set();
 
 function sellerVerificationActionKey(runId, productKey) {
   return `${String(runId || '')}\u0000${String(productKey || '')}`;
@@ -195,6 +196,18 @@ function resolveSellerVerificationAction(input = {}) {
   sellerVerificationActionWaiters.delete(key);
   waiter.resolve(input.action);
   return { ok:true };
+}
+
+function cancelSellerExcelVerification(runId) {
+  const id = String(runId || '').trim();
+  if (!id) return { ok:false, message:'중지할 대조 작업을 찾지 못했습니다.' };
+  cancelledSellerVerificationRuns.add(id);
+  for (const [key, waiter] of sellerVerificationActionWaiters) {
+    if (!key.startsWith(`${id}\u0000`)) continue;
+    sellerVerificationActionWaiters.delete(key);
+    waiter.resolve('cancel');
+  }
+  return { ok:true, stopped:true };
 }
 
 function beginSellerExcelVerificationWindows(input = {}) {
@@ -9580,6 +9593,20 @@ async function captureSellerCenterProducts() {
 
 async function captureSellerBrandSales(input = {}) {
   const liveVerifier = input.verification?.runId ? createPageCrossCheck(input.verification) : null;
+  const verificationRunId = String(input.verification?.runId || '').trim();
+  const assertVerificationRunning = () => {
+    if (verificationRunId && cancelledSellerVerificationRuns.has(verificationRunId)) {
+      throw new Error('사용자가 상품 대조를 중지했습니다. 완료된 페이지까지 저장되었습니다.');
+    }
+  };
+  const waitVerification = async (milliseconds) => {
+    const deadline = Date.now() + milliseconds;
+    while (Date.now() < deadline) {
+      assertVerificationRunning();
+      await wait(Math.min(250, deadline - Date.now()));
+    }
+    assertVerificationRunning();
+  };
   const reportCaptureProgress = (progress) => {
     mainWindow?.webContents.send("explorer:brand-progress", progress);
     if (liveVerifier) mainWindow?.webContents.send("seller:verification-progress", {
@@ -9892,6 +9919,7 @@ async function captureSellerBrandSales(input = {}) {
     : Promise.resolve('auto');
   let bulkCorrectionApproved = !checkpointSummary.enabled;
   for (let page = 1; page <= 1_000; page += 1) {
+    assertVerificationRunning();
     const capture = await sellerWindow.webContents.executeJavaScript(`(() => {
       const visible = (element) => element && element.getClientRects().length > 0;
       const headers = [...document.querySelectorAll("table thead th")]
@@ -10006,7 +10034,8 @@ async function captureSellerBrandSales(input = {}) {
               pageNum: capture.currentPage, pageCount: capture.pageCount,
               message: '수정·추가 대상이 있습니다. 전체 자동 수정 시작을 한 번만 눌러 주세요.',
             });
-            await bulkCorrectionApproval;
+            const approvalResult = await bulkCorrectionApproval;
+            if (approvalResult === 'cancel') throw new Error('사용자가 상품 대조를 중지했습니다. 완료된 페이지까지 저장되었습니다.');
             bulkCorrectionApproved = true;
           }
           mainWindow?.webContents.send("seller:verification-progress", {
@@ -10090,9 +10119,9 @@ async function captureSellerBrandSales(input = {}) {
         pageCount: capture.pageCount,
         message: `판매자센터 ${capture.currentPage}페이지 완료 · 서버 보호를 위해 45초 휴식 중`,
       });
-      await wait(sellerBatchPauseMs);
+      await waitVerification(sellerBatchPauseMs);
     } else {
-      await wait(sellerPageDelayMs);
+      await waitVerification(sellerPageDelayMs);
     }
     const expectedNextPage = capture.currentPage + 1;
     const expectedNextRowCount = Number(capture.totalCount || 0) > 0 && Number(capture.pageSize || 0) > 0
@@ -11188,6 +11217,7 @@ app.whenReady().then(async () => {
     return { ok: await enterSellerProductSearchViaMenu() };
   });
   ipcMain.handle("seller:excel-verification-start", (_event, input = {}) => beginSellerExcelVerificationWindows(input));
+  ipcMain.handle("seller:excel-verification-cancel", (_event, runId) => cancelSellerExcelVerification(runId));
   ipcMain.handle("seller:verification-action", (_event, input = {}) => resolveSellerVerificationAction(input));
   ipcMain.handle("seller:excel-verification-end", () => endSellerExcelVerificationWindows());
   ipcMain.handle("seller:capture-brand-sales", (_event, input = {}) => captureSellerBrandSales(input));

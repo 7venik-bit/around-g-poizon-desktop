@@ -89,7 +89,7 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
   const started = Date.now();
   doc.getElementById('poizon-review-workspace')?.remove();
   const panel = doc.createElement('section'); panel.id = 'poizon-review-workspace'; panel.setAttribute('aria-label', 'Excel 실시간 대조 목록');
-  panel.innerHTML = `<header class="review-top"><div><h2>Excel 대조 목록</h2><p class="review-file"></p></div><button type="button" class="review-close" disabled>닫기</button></header>
+  panel.innerHTML = `<header class="review-top"><div><h2>Excel 대조 목록</h2><p class="review-file"></p></div><div class="review-top-actions"><button type="button" class="review-stop">대조 중지</button><button type="button" class="review-close" disabled>닫기</button></div></header>
     <div class="review-brief"><span class="review-condition"></span><span class="review-loaded"></span></div>
     <div class="review-status"><strong class="review-phase" role="status" aria-live="polite">전체 Excel 읽기 완료 · POIZON 첫 페이지 대기</strong><span class="review-clock"></span></div>
     <div class="review-tools"><span class="review-counters"></span><label><input class="review-follow" type="checkbox" checked>자동 따라가기</label></div>
@@ -189,6 +189,7 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
     events: () => [...pageEvents.values()],
     saving() { get('.review-phase').textContent = '전체 대조 완료 · POIZON 값으로 Excel 수정 및 저장 후 재검증 중'; },
     finish(result = {}) {
+      if (stopped) return;
       finished = true; cumulative = [...pageEvents].sort((a, b) => a[0] - b[0]).flatMap(([, e]) => e.rows)
         .map((row) => result.corrected && (reviewTone(row) === 'different' || /새 행 추가 대상/.test(row.status || ''))
           ? { ...row, matched: true, equal: true, status: /새 행 추가 대상/.test(row.status || '')
@@ -200,6 +201,18 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
       get('.review-close').disabled = false; renderRows(); dispose();
     },
     showReport(report) { latestReport = report; get('.review-report').disabled = false; showReviewReport(report, doc); },
+  };
+  get('.review-stop').onclick = async () => {
+    const button = get('.review-stop');
+    if (!handle.running || button.disabled) return;
+    button.disabled = true; button.textContent = '중지 중…';
+    get('.review-phase').textContent = '현재 작업을 안전하게 중지하고 있습니다…';
+    await api.cancelSellerExcelVerification?.(runId);
+    dispose();
+    await api.endSellerExcelVerification?.();
+    button.textContent = '중지 완료';
+    get('.review-phase').textContent = '상품 대조를 중지했습니다 · 완료된 페이지까지 Excel에 저장되었습니다.';
+    get('.review-close').disabled = false;
   };
   get('.review-close').onclick = async () => {
     if (handle.running) return;
