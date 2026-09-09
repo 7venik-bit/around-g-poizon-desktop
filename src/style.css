@@ -2303,3 +2303,11 @@ body .shell>header{
 #weekly-site-health-run::after{content:'서버 점검'!important}
 #startup-recovery-run::after{content:'POIZON 확인'!important}
 #brand-export-folder-select::after{content:'저장 폴더'!important}
+
+/* BRAND_MONTHLY_VERIFICATION_V1 */
+.brand-verification-badge{display:inline-flex;width:max-content;margin-top:3px;padding:2px 7px;border-radius:999px;font-size:9px;font-style:normal;font-weight:800;line-height:1.25;white-space:nowrap}
+.brand-verification-badge.complete{border:1px solid #65c996;background:#e8f8ef;color:#087555}
+.brand-verification-badge.expired{border:1px solid #e3aa55;background:#fff4df;color:#9a5b08}
+.brand-verification-date{display:block!important;margin-top:2px;color:#687b91!important;font-size:9px!important;font-weight:700}
+.brand-card.verification-complete{box-shadow:inset 0 0 0 2px #36ad78}
+.brand-card.verification-expired{box-shadow:inset 0 0 0 2px #dfaa52}
