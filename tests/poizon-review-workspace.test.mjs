@@ -243,6 +243,17 @@ test('one bulk approval replaces per-product correction clicks', async () => {
   assert.match(main, /for \(const row of livePage\.rows\.filter/);
 });
 
+test('live review has a dedicated safe stop control', async () => {
+  const view = await readFile(new URL('../src/poizon-review-workspace.js', import.meta.url),'utf8');
+  const preload = await readFile(new URL('../preload.cjs', import.meta.url),'utf8');
+  assert.match(view, /class="review-stop">대조 중지/);
+  assert.match(view, /cancelSellerExcelVerification\?\.\(runId\)/);
+  assert.match(view, /완료된 페이지까지 Excel에 저장되었습니다/);
+  assert.match(preload, /seller:excel-verification-cancel/);
+  assert.match(main, /cancelledSellerVerificationRuns/);
+  assert.match(main, /waitVerification\(sellerPageDelayMs\)/);
+});
+
 test('review counters expose every recognized product classification', async () => {
   const view = await readFile(new URL('../src/poizon-review-workspace.js', import.meta.url),'utf8');
   assert.match(view, /옵션 비교 보류.*state\.deferredProducts/);
