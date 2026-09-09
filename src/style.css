@@ -2244,10 +2244,10 @@ body .shell>header{
   align-items:center!important;
   justify-content:center!important
 }
-#official-domain-audit-toggle::after{content:'공식몰';font-size:clamp(9px,.68vw,11px)!important}
-#weekly-site-health-run::after{content:'서버';font-size:clamp(9px,.68vw,11px)!important}
-#startup-recovery-run::after{content:'POIZON';font-size:clamp(9px,.68vw,11px)!important}
-#brand-export-folder-select::after{content:'저장';font-size:clamp(9px,.68vw,11px)!important}
+#official-domain-audit-toggle::after{content:'공식몰 점검';font-size:clamp(9px,.68vw,11px)!important}
+#weekly-site-health-run::after{content:'서버 점검';font-size:clamp(9px,.68vw,11px)!important}
+#startup-recovery-run::after{content:'POIZON 확인';font-size:clamp(9px,.68vw,11px)!important}
+#brand-export-folder-select::after{content:'저장 폴더';font-size:clamp(9px,.68vw,11px)!important}
 .header-actions{
   margin-left:auto!important;
   display:flex!important;
@@ -2297,3 +2297,9 @@ body .shell>header{
   body .shell>header{overflow-x:auto!important;scrollbar-width:thin!important}
   .header-status-stack,.header-actions{flex-shrink:0!important}
 }
+
+/* HEADER_CLEAR_ACTION_LABELS_V1: keep header actions explicit and recognizable. */
+#official-domain-audit-toggle::after{content:'공식몰 점검'!important}
+#weekly-site-health-run::after{content:'서버 점검'!important}
+#startup-recovery-run::after{content:'POIZON 확인'!important}
+#brand-export-folder-select::after{content:'저장 폴더'!important}
