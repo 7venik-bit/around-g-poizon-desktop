@@ -8,6 +8,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const overlayCss = readFileSync(resolve(here, "../src/domestic-loading-overlay.css"), "utf8");
 const layoutCss = readFileSync(resolve(here, "../src/excel-column-layout.css"), "utf8");
 const renderer = readFileSync(resolve(here, "../src/renderer.js"), "utf8");
+const inlineResultsCss = readFileSync(resolve(here, "../src/domestic-inline-results.css"), "utf8");
 
 test("domestic search progress is a fixed viewport modal that locks page scrolling", () => {
   assert.match(layoutCss, /@import url\("\.\/domestic-loading-overlay\.css"\);/);
@@ -39,4 +40,10 @@ test("domestic search elapsed time is displayed as Korean hours, minutes and sec
   assert.match(renderer, /hours > 0 \? `\$\{hours\}시간`/);
   assert.match(renderer, /hours > 0 \|\| minutes > 0 \? `\$\{minutes\}분`/);
   assert.match(renderer, /elapsedKoreanDuration\(now - startedAt\)/);
+});
+
+test("verified product rows keep a compact fixed height while scrolling", () => {
+  assert.match(renderer, /class="excel-product-row excel-verified-spu-row"/);
+  assert.match(inlineResultsCss, /\.excel-verified-spu-row\{height:66px!important\}/);
+  assert.match(inlineResultsCss, /table,#excel-preview\.product-view #excel-preview-grid tbody\{height:auto!important\}/);
 });
