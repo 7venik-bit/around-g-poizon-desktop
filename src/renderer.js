@@ -323,6 +323,18 @@ function brandActivityDuration(milliseconds = 0) {
     : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function elapsedKoreanDuration(milliseconds = 0) {
+  const totalSeconds = Math.max(0, Math.floor(Number(milliseconds || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [
+    hours > 0 ? `${hours}시간` : "",
+    hours > 0 || minutes > 0 ? `${minutes}분` : "",
+    `${seconds}초`,
+  ].filter(Boolean).join(" ");
+}
+
 function brandJobIsFinished(state = "") {
   return /확인완료|완료됨|실패|오류|중단|취소/.test(String(state || ""));
 }
@@ -1117,7 +1129,7 @@ setInterval(() => {
   const now = Date.now();
   document.querySelectorAll("[data-search-started-at]").forEach((element) => {
     const startedAt = Number(element.dataset.searchStartedAt || now);
-    element.textContent = `${Math.max(0, Math.floor((now - startedAt) / 1000))}초`;
+    element.textContent = elapsedKoreanDuration(now - startedAt);
   });
 }, 1_000);
 
