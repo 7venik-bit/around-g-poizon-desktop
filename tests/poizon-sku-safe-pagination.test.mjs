@@ -9,6 +9,7 @@ import { readReviewWorkbook } from '../services/poizon-review-workbook.mjs';
 import { findPoizonColumn, findPoizonRecentSalesColumns, findPoizonTotalSalesColumns } from '../services/poizon-xlsx.mjs';
 import { parsePoizonSalesMetric } from '../services/poizon-sales-filter.mjs';
 import { createPageCrossCheck, selectPoizonPageCorrectionProducts, assertPoizonPageReadyForCorrection } from '../services/live-poizon-crosscheck.mjs';
+import { syncPoizonPageCheckpoint } from '../services/poizon-page-checkpoint.mjs';
 
 const source = (spuId, articleNumber, china, local) => ({
   spuId, articleNumber, sales30dRaw: china, localSales30dRaw: local,
@@ -60,7 +61,7 @@ test('uploaded POIZON raw export retains SKU rows and exposes them as SKU-scope 
   assert.equal(row.missingSalesCells, 0);
 });
 
-test('SKU rows are neither overwritten nor promoted and safely continue after original preservation', async (t) => {
+test('SKU rows are selected for POIZON platform-value correction', async (t) => {
   const f = await fixture(t);
   const main = await readFile(new URL('../main.mjs', import.meta.url), 'utf8');
   const snapshot = await readReviewWorkbook({ path:f.path }, productionBuilder(main));
@@ -69,12 +70,11 @@ test('SKU rows are neither overwritten nor promoted and safely continue after or
   assert.equal(page.matchedProducts, 1);
   assert.equal(page.missingProducts, 0);
   assert.equal(page.missingSalesCells, 0);
-  assert.equal(page.deferredProducts, 1);
-  assert.match(page.rows[0].status, /옵션별 판매량 존재 · SPU 자동수정 제외/);
-  assert.doesNotMatch(page.rows[0].status, /판매량 누락|수정 대상|상품 없음/);
+  assert.equal(page.deferredProducts, 0);
+  assert.match(page.rows[0].status, /POIZON 상품 판매량으로 수정 대상/);
   const selected = selectPoizonPageCorrectionProducts(screen, page.rows, 1);
-  assert.equal(selected.products.length, 0);
-  assert.equal(selected.deferredProducts, 1);
+  assert.equal(selected.products.length, 1);
+  assert.equal(selected.deferredProducts, 0);
 });
 
 test('shipping main blocks page navigation until the current page checkpoint is reverified', async () => {
@@ -127,10 +127,10 @@ test('canonical selector and checkpoint guard share reordered evidence and metad
   const excel = [{...products[0], salesScope:'sku', sourceRowNumber:2}, {...products[1], localSales30dRaw:'20', sourceRowNumber:3}];
   const page = createPageCrossCheck({runId:'mixed-policy',excelProducts:excel}).acceptPage(products,{pageNum:1,pageCount:1});
   const rows = [...page.rows].reverse();
-  assert.equal(assertPoizonPageReadyForCorrection(products,rows,1).length, 1);
+  assert.equal(assertPoizonPageReadyForCorrection(products,rows,1).length, 2);
   const selected = selectPoizonPageCorrectionProducts(products,rows,1);
-  assert.equal(selected.products.length, 1);
-  assert.equal(selected.deferredProducts, 1);
+  assert.equal(selected.products.length, 2);
+  assert.equal(selected.deferredProducts, 0);
 });
 
 test('SKU scope never masks an unreadable POIZON screen or an identity conflict', () => {
@@ -166,9 +166,9 @@ test('duplicate product identities and mixed unresolved evidence never reach a w
   }
 });
 
-test('final review of SKU-only workbook makes no writer calls and preserves every byte', async (t) => {
+test('final review writes POIZON platform values into SKU workbook rows', async (t) => {
   const {runPoizonReviewBatch}=await import('../services/poizon-review-session.mjs');
-  const f=await fixture(t), before=await readFile(f.path);
+  const f=await fixture(t);
   const main=await readFile(new URL('../main.mjs',import.meta.url),'utf8');
   const build=productionBuilder(main);
   const snapshot=await readReviewWorkbook({path:f.path},build);
@@ -182,14 +182,15 @@ test('final review of SKU-only workbook makes no writer calls and preserves ever
     endSellerExcelVerification:async () => ({ok:true}),
     captureSellerBrandSales:async () => ({ok:true,products,sourceTotal:1,missingCount:0}),
     checkPoizonReviewWorkbook:async () => ({ok:true,unchanged:true}),
-    syncExcelWithSellerScreen:async () => {writes++;throw new Error('SKU-only review must not call a writer');},
+    syncExcelWithSellerScreen:async ({path,products}) => {writes++;return syncPoizonPageCheckpoint({filePath:path,products,pageNum:1});},
   };
   const view={input:{runId:'final-skip'},events:()=>[page],finish(){},showReport(){}};
   const report=await runPoizonReviewBatch({files:[{path:f.path,name:'sku.xlsx'}],api,createView:async()=>view});
   assert.equal(report.complete,true,JSON.stringify(report));
-  assert.equal(report.files[0].deferredProducts,1);
-  assert.equal(writes,0);
-  assert.deepEqual(await readFile(f.path),before);
+  assert.equal(report.files[0].deferredProducts,0);
+  assert.equal(writes,1);
+  const after=await readReviewWorkbook({path:f.path},build);
+  assert.equal(createPageCrossCheck({runId:'after-write',excelProducts:after.products}).acceptPage(products,{pageNum:1,pageCount:1}).equalProducts,1);
 });
 
 test('evidence patches are repeatable in either order and never rewrite policy or tests', async (t) => {
