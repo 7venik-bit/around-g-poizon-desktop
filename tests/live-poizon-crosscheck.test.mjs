@@ -159,10 +159,10 @@ if (main) test('shipping capture compares before navigation and both entry point
   assert.match(capture, /livePage\.rows\.length !== currentPageProducts\.length/);
   assert.ok(to < capture.indexOf('const expectedNextPage'));
   assert.match(preload, /onSellerVerificationProgress/);
-  assert.match(renderer, /verification: liveVerification\?\.input/);
   assert.match(renderer, /runPoizonReviewBatch/);
   const localSync = renderer.slice(renderer.indexOf('$("#import-button").addEventListener'), renderer.indexOf('$("#export-button").addEventListener'));
   assert.match(localSync, /listBrandExportFiles/);
   assert.doesNotMatch(localSync, /captureSellerBrandSales|syncExcelWithSellerScreen/);
-  assert.match(renderer, /await finishLivePoizonVerification\(liveVerification/);
+  const categorySearch = renderer.slice(renderer.indexOf('$("#category-search").addEventListener'), renderer.indexOf('async function showPoizonExcelVerificationPair'));
+  assert.doesNotMatch(categorySearch, /verification:|syncExcelWithSellerScreen|beginLiveVerification/);
 });

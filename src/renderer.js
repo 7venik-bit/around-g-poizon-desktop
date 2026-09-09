@@ -2148,24 +2148,6 @@ function renderStockWatches() {
   }).join("") : '<tr><td colspan="7" class="empty">등록된 재고 감시 상품이 없습니다.</td></tr>';
 }
 
-async function prepareLivePoizonVerification(file, brandName, excelProducts, conditions) {
-  const live = await import("./poizon-review-workspace.js");
-  const snapshot = await window.aroundG.readPoizonReviewWorkbook({ path: file.path });
-  if (!snapshot?.ok) throw new Error(snapshot?.message || "Excel 전체 읽기 실패");
-  const result = live.beginLiveVerification({ file, brandName, snapshot, conditions, doc: await live.openReviewPopup() });
-  const layout = await window.aroundG.beginSellerExcelVerification({ brandName, fileName: file.name || "" });
-  if (!layout?.ok) { result.finish({ ok: false, message: layout?.message }); throw new Error(layout?.message || "검증 창 열기 실패"); }
-  return result;
-}
-
-async function finishLivePoizonVerification(live, brand, file, sellerResult, excelSync) {
-  if (!live) return;
-  const reread = await downloadedBrandSalesByArticle(brand);
-  if (!reread.ok) throw new Error(reread.error || "저장 후 Excel 재읽기 실패");
-  live.finish({ ok: true, changedRows: excelSync.changedRows, afterProducts: reread.products,
-    screenProducts: sellerResult.products || [] });
-}
-
 function salesByArticle(products = state.products) {
   const records = {};
   for (const product of products) {
@@ -4554,17 +4536,11 @@ $("#category-search").addEventListener("click", async () => {
         count: detailProductsByKey.size,
         percent: Math.round((completedCount / favoriteBrandIds.length) * 100),
       });
-      let liveVerification = null;
       try {
         const excelSales = await downloadedBrandSalesByArticle(brand);
         if (runId !== categorySearchRunId) return;
         if (!excelSales.ok) throw new Error(excelSales.error || "EXCEL_READ_FAILED");
-        if (window.aroundG.onSellerVerificationProgress) {
-          liveVerification = await prepareLivePoizonVerification(latestCompletedBrandDownload(brand), brandName,
-            excelSales.products, { minimumChinaSales30, minimumLocalSales30 });
-        }
         const sellerResult = await window.aroundG.captureSellerBrandSales({
-          verification: liveVerification?.input,
           brandName: brand?.name || "",
           brandKo: brand?.ko || "",
         });
@@ -4573,13 +4549,6 @@ $("#category-search").addEventListener("click", async () => {
           const error = new Error(sellerResult?.message || "POIZON 화면 데이터를 가져오지 못했습니다.");
           error.code = sellerResult?.code || "SELLER_SCREEN_READ_FAILED";
           throw error;
-        }
-        if (liveVerification) {
-          liveVerification.saving();
-          const verificationFile = latestCompletedBrandDownload(brand);
-          const excelSync = await window.aroundG.syncExcelWithSellerScreen({ path: verificationFile.path, products: sellerResult.products || [] });
-          if (!excelSync?.ok) throw new Error(excelSync?.message || "Excel 반영 실패");
-          await finishLivePoizonVerification(liveVerification, brand, verificationFile, sellerResult, excelSync);
         }
         const crossValidated = mergeExcelProductsWithSellerScreen(excelSales.products, sellerResult.products || []);
         const detailProducts = crossValidated.products
@@ -4597,14 +4566,11 @@ $("#category-search").addEventListener("click", async () => {
           if (!detailProductsByKey.has(key)) detailProductsByKey.set(key, { ...product, name: product.name || product.title || "", brandName: product.brandName || brandName });
         }
       } catch (error) {
-        liveVerification?.finish({ ok: false, message: error?.message || String(error) });
         if (runId !== categorySearchRunId) return;
         failedSourceCount += 1;
         const file = latestCompletedBrandDownload(brand);
         failures.push({ brandId, brandName, fileName: file?.name || file?.path?.split(/[\\/]/).pop() || "파일 미확인",
           code: String(error?.code || "CATEGORY_SOURCE_FAILED"), message: String(error?.message || error) });
-      } finally {
-        if (liveVerification?.running) liveVerification.finish({ ok: false, message: "사용자 중단" });
       }
       if (runId !== categorySearchRunId) return;
       completedCount += 1;
@@ -4662,7 +4628,6 @@ $("#category-search").addEventListener("click", async () => {
     status.textContent = `카테고리 검색 오류 · ${error instanceof Error ? error.message : String(error)}`;
     finishCategoryLoading();
   } finally {
-    await window.aroundG.endSellerExcelVerification?.().catch(() => {});
     if (runId === categorySearchRunId) button.disabled = false;
   }
 });

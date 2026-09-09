@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [main, preload, renderer] = await Promise.all([
+const [main, preload, renderer, workspace] = await Promise.all([
   readFile(new URL("../main.mjs", import.meta.url), "utf8"),
   readFile(new URL("../preload.cjs", import.meta.url), "utf8"),
   readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
+  readFile(new URL("../src/poizon-review-workspace.js", import.meta.url), "utf8"),
 ]);
 
 test("POIZON 판매자센터는 백그라운드에 두고 독립 대조 알림창을 전면에 표시한다", () => {
@@ -25,13 +26,11 @@ test("검증 중 POIZON 자동화 창을 표시하거나 활성화하지 않는�
   assert.match(begin, /sellerWindow\.showInactive\(\)/);
 });
 
-test("대조 알림창을 먼저 준비한 뒤 백그라운드 POIZON 수집을 시작한다", () => {
-  const start = renderer.indexOf('async function prepareLivePoizonVerification');
-  const end = renderer.indexOf('async function finishLivePoizonVerification', start);
-  const flow = renderer.slice(start, end);
-  const popup = flow.indexOf('await live.openReviewPopup()');
-  const begin = flow.indexOf('beginSellerExcelVerification');
-  assert.ok(popup >= 0 && begin > popup, "POIZON 수집 전에 전면 대조 알림창을 준비해야 한다");
+test("대조 알림창은 상단 데이터 대조 버튼에서만 시작한다", () => {
+  const category = renderer.slice(renderer.indexOf('$("#category-search").addEventListener'), renderer.indexOf('async function showPoizonExcelVerificationPair'));
+  assert.doesNotMatch(category, /openReviewPopup|beginLiveVerification|beginSellerExcelVerification|syncExcelWithSellerScreen/);
+  assert.match(renderer, /add\("poizon-review-brand-start", "상품 대조", document\.querySelector\("\.header-actions"\)\)/);
+  assert.match(renderer, /await openVerifiedCombinedBrandPreview\(files\)/);
 });
 
 test("장시간 검증 중 현재 POIZON 페이지와 Excel 파일명을 함께 안내한다", () => {
@@ -43,5 +42,5 @@ test("검증 종료 시 메인 창을 유지하고 POIZON 창은 백그라운드
   assert.match(main, /function endSellerExcelVerificationWindows/);
   assert.match(main, /mainWindow\.setBounds\(saved\.mainBounds\)/);
   assert.match(main, /sellerWindow\.hide\(\)/);
-  assert.match(renderer, /await window\.aroundG\.endSellerExcelVerification\?\.\(\)\.catch\(\(\) => \{\}\)/);
+  assert.match(workspace, /await api\.endSellerExcelVerification\?\.\(\)/);
 });
