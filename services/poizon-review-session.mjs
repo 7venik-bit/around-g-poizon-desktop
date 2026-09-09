@@ -122,8 +122,18 @@ export async function runPoizonReviewBatch({ files, conditions = {}, api, create
       const captured = await api.captureSellerBrandSales({ brandName: snapshot.file.brandName || '', verification: view.input });
       const coverage = reviewCoverage(view.events(), captured);
       if (!coverage.ok) throw new Error(coverage.message);
-      const unchanged = await api.checkPoizonReviewWorkbook({ path: snapshot.file.path, revision: snapshot.revision });
-      if (!unchanged?.ok || !unchanged.unchanged) throw new Error('검증 중 Excel 원본이 변경되었습니다. 다시 불러온 후 대조해 주세요.');
+      // 페이지 체크포인트가 원본 파일을 직접 저장하므로 그 변경을 외부 변경으로
+      // 오인하면 안 된다. 체크포인트를 사용하지 않은 구형 흐름에서만 최초
+      // revision을 검사하고, 체크포인트 흐름은 저장 페이지 수와 재검증 결과로 판정한다.
+      const pageSaved = captured.checkpointSync?.enabled ? captured.checkpointSync : null;
+      if (pageSaved) {
+        if (pageSaved.reverified !== true || Number(pageSaved.pagesCompleted || 0) !== Number(coverage.pageCount || 0)) {
+          throw new Error(`Excel 페이지 저장 미완료 · 저장 ${Number(pageSaved.pagesCompleted || 0)}/${Number(coverage.pageCount || 0)}페이지`);
+        }
+      } else {
+        const unchanged = await api.checkPoizonReviewWorkbook({ path: snapshot.file.path, revision: snapshot.revision });
+        if (!unchanged?.ok || !unchanged.unchanged) throw new Error('검증 중 Excel 원본이 변경되었습니다. 다시 불러온 후 대조해 주세요.');
+      }
 
       // POIZON 화면이 최종 기준값이다. 전체 페이지 검증이 끝난 뒤 한 번만 원본 Excel을 교정한다.
       view.saving?.();
@@ -135,7 +145,6 @@ export async function runPoizonReviewBatch({ files, conditions = {}, api, create
         : { ok:true, changedRows:0, changedCells:0, addedRows:0, addedProducts:0, verifiedCells:0, reverified:true, changes:[], backupPath:'' };
       finalSaved.deferredProducts = Number(finalSelection.deferredProducts || 0);
       if (!finalSaved?.ok) throw new Error(finalSaved?.message || 'POIZON 값으로 Excel 수정에 실패했습니다.');
-      const pageSaved = captured.checkpointSync?.enabled ? captured.checkpointSync : null;
       // POIZON_PAGE_CHECKPOINT_AGGREGATED: 페이지별 확정 결과와 마지막 전체 무변경 재검증을 하나의 저장 결과로 합친다.
       const saved = pageSaved ? {
         ...finalSaved,
