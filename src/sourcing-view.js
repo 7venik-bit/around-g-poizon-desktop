@@ -222,7 +222,7 @@
       if (typeof renderDomestic !== "function" || renderDomestic.__aroundGMusinsaList) return;
       const listRenderer = function sourcingRenderDomestic(result, sourceProduct = {}, contextKey = "") {
         if (!result) {
-          return `<span class="inventory-help">국내 상품 검색을 누르면 판매처별 일치 상품을 한 줄씩 표시합니다. 재고는 판매처에서 직접 확인하세요.</span>`;
+          return `<span class="inventory-help">국내 상품 검색을 누르면 판매처별 상세페이지의 재고 문구와 옵션을 그대로 표시합니다.</span>`;
         }
         if (result.loading) return `<span class="inventory-help">국내 판매처에서 일치 상품을 찾고 있습니다…</span>`;
         if (result.error) return `<span class="inventory-help">국내 상품 검색에 실패했습니다.</span>`;
@@ -290,8 +290,8 @@
           const differenceClass = !Number.isFinite(difference) ? "sourcing-price-unknown"
             : difference < 0 ? "sourcing-price-negative"
               : difference / Math.max(price, 1) >= 0.2 ? "sourcing-price-positive" : "sourcing-price-caution";
-          const stockLabel = product?.inStock === true ? "재고 있음"
-            : product?.inStock === false ? "품절" : "확인 필요";
+          const stockLabel = String(product?.stockText || "").trim() || (product?.inStock === true ? "재고 있음"
+            : product?.inStock === false ? "품절" : "재고 문구 없음");
           return `<div class="sourcing-price-row">
             <strong class="sourcing-price-store">${text(retailer)}</strong>
             <span class="sourcing-price-title" title="${text(candidateName)}">${text(candidateName)}</span>

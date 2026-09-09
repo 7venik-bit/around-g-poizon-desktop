@@ -33,6 +33,7 @@ test("a redirected login page is never reported as inventory", () => {
     inStock: null,
     sizes: [],
     stockStatus: "login_required",
+    stockText: "로그인 필요",
     stockVerified: false,
   });
 });

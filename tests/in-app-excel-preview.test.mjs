@@ -344,8 +344,8 @@ test("네이버는 결과 클릭 전에 패션타운 채널 숫자 3개를 먼�
   assert.match(mainSource, /currentChannelCount === 1[\s\S]*labeledChannelCards\.length !== 1/);
   assert.match(mainSource, /channel_card_evidence_mismatch/);
   assert.match(mainSource, /productKey = parsedProductUrl\.origin \+ parsedProductUrl\.pathname/);
-  assert.match(mainSource, /Naver, SSG and Lotte are list-only sources/);
-  assert.match(mainSource, /products: \(analyzed\.products \|\| \[\]\)\.map/);
+  assert.doesNotMatch(mainSource, /Naver, SSG and Lotte are list-only sources/);
+  assert.match(mainSource, /function renderedStockSelectors/);
 });
 
 test("네이버는 상품코드를 한 번만 검색하고 같은 결과에서 세 채널을 순서대로 처리한다", () => {
@@ -371,8 +371,8 @@ test("SSG 백화점·아울렛도 상단 채널과 하단 카드를 확인한 �
 test("상품 상세페이지는 사이즈 옵션을 열고 출력값을 수집한다", () => {
   assert.match(mainSource, /async function openRenderedSizeOptions/);
   assert.match(mainSource, /await openRenderedSizeOptions\(searchWindow\)/);
-  assert.match(mainSource, /role=.*listbox.*li/);
-  assert.match(mainSource, /class.*dropdown.*li/);
+  assert.match(mainSource, /\[role=\\"listbox\\"\] li/);
+  assert.match(mainSource, /stockText:label/);
 });
 
 test("Excel preview replaces the file list and restores its scroll position", () => {

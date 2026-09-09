@@ -13,9 +13,9 @@ test("domestic products render as one continuous price comparison", () => {
   assert.match(sourcing, /sourceAction/);
 });
 
-test("domestic sourcing UI leaves inventory to manual retailer check", () => {
-  assert.match(sourcing, /재고는 판매처에서 직접 확인하세요/);
-  assert.doesNotMatch(sourcing, /sourcing-stock/);
+test("domestic sourcing UI announces platform detail stock collection", () => {
+  assert.match(sourcing, /상세페이지의 재고 문구와 옵션을 그대로 표시합니다/);
+  assert.match(sourcing, /product\?\.stockText/);
   assert.match(sourcing, /선택 상품 국내 검색/);
   assert.match(sourcing, /표시 목록 국내 검색/);
 });

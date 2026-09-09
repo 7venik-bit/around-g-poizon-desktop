@@ -771,19 +771,22 @@ function normalizeSizes(...candidates) {
 
 export function normalizeRenderedStockEvidence({ pageText = "", purchaseAvailable = false, options = [], loginRequired = false } = {}) {
   if (loginRequired) {
-    return { inStock: null, sizes: [], stockStatus: "login_required", stockVerified: false };
+    return { inStock: null, sizes: [], stockStatus: "login_required", stockText: "로그인 필요", stockVerified: false };
   }
   const unique = new Map();
   for (const option of Array.isArray(options) ? options : []) {
     const label = String(option?.label ?? option?.name ?? option ?? "").replace(/\s+/g, " ").trim();
     if (!label || label.length > 32 || /선택(?:해\s*주세요)?|옵션|수량|컬러|색상/i.test(label)) continue;
     const key = label.toUpperCase();
+    const rawStockText = typeof option === "object" ? String(option.stockText || option.statusText || "").replace(/\s+/g, " ").trim() : "";
     const inStock = typeof option === "object" ? option.inStock !== false : true;
-    if (!unique.has(key) || inStock) unique.set(key, { label, inStock });
+    if (!unique.has(key) || inStock) unique.set(key, { label, inStock, stockText: rawStockText });
   }
   const sizes = [...unique.values()];
   const text = String(pageText || "");
   const soldOut = /(?:일시\s*)?품절|판매\s*(?:종료|중지)|재입고\s*알림|SOLD\s*OUT|OUT\s*OF\s*STOCK/i.test(text);
+  const stockText = text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim())
+    .find((line) => line.length <= 80 && /품절|재고\s*없|일시\s*품절|판매\s*(?:종료|중지)|재입고|SOLD\s*OUT|OUT\s*OF\s*STOCK|재고\s*\d+|구매\s*가능/i.test(line)) || "";
   const availableOption = sizes.some((size) => size.inStock);
   const unavailableOptionsOnly = sizes.length > 0 && !availableOption;
   const inStock = availableOption ? true
@@ -793,6 +796,7 @@ export function normalizeRenderedStockEvidence({ pageText = "", purchaseAvailabl
     inStock,
     sizes,
     stockStatus: inStock === true ? "available" : inStock === false ? "soldout" : "unknown",
+    stockText,
     stockVerified: inStock !== null,
   };
 }

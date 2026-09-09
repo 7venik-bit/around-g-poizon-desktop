@@ -93,11 +93,14 @@ test("모든 국내 판매처 상세페이지 재고를 세 단계로 판정한�
     ],
   }), {
     inStock: true,
-    sizes: [{ label: "250", inStock: false }, { label: "255", inStock: true }],
+    sizes: [{ label: "250", inStock: false, stockText: "" }, { label: "255", inStock: true, stockText: "" }],
     stockStatus: "available",
+    stockText: "",
     stockVerified: true,
   });
   assert.equal(normalizeRenderedStockEvidence({ pageText: "현재 상품은 품절되었습니다" }).inStock, false);
+  assert.equal(normalizeRenderedStockEvidence({ pageText: "현재 상품은 품절되었습니다" }).stockText, "현재 상품은 품절되었습니다");
+  assert.equal(normalizeRenderedStockEvidence({ options:[{label:"270",inStock:false,stockText:"270 재고 없음"}] }).sizes[0].stockText, "270 재고 없음");
   assert.equal(normalizeRenderedStockEvidence({ pageText: "상품 상세정보" }).inStock, null);
 });
 
