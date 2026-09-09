@@ -1,6 +1,10 @@
 /* CSP-safe styling for the full-width retailer result row. */
 #excel-preview.product-view #excel-preview-grid table{width:100%!important;min-width:980px!important;table-layout:fixed!important}
+#excel-preview.product-view #excel-preview-grid table,#excel-preview.product-view #excel-preview-grid tbody{height:auto!important}
 #excel-preview.product-view #excel-preview-grid .excel-product-row>td{height:54px!important;vertical-align:middle!important}
+#excel-preview.product-view #excel-preview-grid .excel-verified-spu-row{height:66px!important}
+#excel-preview.product-view #excel-preview-grid .excel-verified-spu-row>td{height:66px!important;max-height:66px!important;padding:6px!important;overflow:hidden!important;white-space:nowrap!important}
+#excel-preview.product-view #excel-preview-grid .excel-verified-spu-row details{max-width:100%!important;margin-top:3px!important;overflow:hidden!important;text-overflow:ellipsis!important}
 #excel-preview.product-view #excel-preview-grid .excel-product-search-detail{display:table-row!important}
 #excel-preview.product-view #excel-preview-grid .excel-product-search-detail>td{width:auto!important;height:auto!important;padding:5px 9px!important;white-space:normal!important;overflow:visible!important;text-align:left!important;vertical-align:top!important}
 .domestic-inline-detail-label{display:flex!important;align-items:center!important;gap:7px!important;margin:0 0 6px!important;color:#314a68!important;font-size:12px!important;font-weight:800!important}
