@@ -1,6 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString("ko-KR")}원`;
-let state = { products: [], poizonSyncs: [], ledger: [], orders: [], stockWatches: [], favorites: [] };
+let state = { products: [], poizonSyncs: [], brandVerifications: [], ledger: [], orders: [], stockWatches: [], favorites: [] };
 let entryCollection = "ledger";
 let explorerMeta = { brands: [], categories: [] };
 let selectedBrandId = null;
@@ -568,11 +568,13 @@ async function openVerifiedCombinedBrandPreview(files, filters = {}) {
   const defaults = live.readVerificationConditions();
   const conditions = { minimumChinaSales30: filters.minimumTotal ?? defaults.minimumChinaSales30,
     minimumLocalSales30: filters.minimumLocalTotal ?? defaults.minimumLocalSales30 };
-  return service.runPoizonReviewBatch({ files, conditions, api: window.aroundG,
+  const report = await service.runPoizonReviewBatch({ files, conditions, api: window.aroundG,
     onProgress: (message) => { $("#brand-status").textContent = message; },
     createView: async (snapshot, frozen) => live.beginLiveVerification({ file: snapshot.file, brandName: snapshot.file.brandName, snapshot, conditions: frozen,
       doc: await live.openReviewPopup() }),
     notify: (report, view) => view ? view.showReport(report) : live.showReviewReport(report) });
+  await saveBrandVerificationResults(files, report);
+  return report;
 }
 
 async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
@@ -853,6 +855,46 @@ function poizonSyncId(brand = {}) {
   const brandId = Number(brand?.id);
   if (Number.isFinite(brandId)) return `seller-brand:${brandId}`;
   return `seller-brand:${normalizeBrandKey(brand?.name || brand?.ko || "unknown")}`;
+}
+
+const BRAND_VERIFICATION_REFRESH_MS = 30 * 24 * 60 * 60 * 1000;
+
+function brandVerificationFor(brand = {}, file = latestCompletedBrandDownload(brand)) {
+  const brandId = Number(brand?.id);
+  if (!Number.isFinite(brandId) || !file?.path) return null;
+  const record = (state.brandVerifications || []).find((item) => Number(item.brandId) === brandId);
+  if (!record || brandImportPathKey(record.filePath) !== brandImportPathKey(file.path)) return null;
+  if (Number(record.fileTime || 0) && Number(file.time || file.mtimeMs || 0)
+    && Number(record.fileTime) !== Number(file.time || file.mtimeMs)) return null;
+  const verifiedTime = Date.parse(String(record.verifiedAt || ""));
+  if (!Number.isFinite(verifiedTime)) return null;
+  return { ...record, expired: Date.now() - verifiedTime >= BRAND_VERIFICATION_REFRESH_MS };
+}
+
+async function saveBrandVerificationResults(files = [], report = {}) {
+  state.brandVerifications = Array.isArray(state.brandVerifications) ? state.brandVerifications : [];
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    const fileReport = report.files?.[index];
+    if (fileReport?.complete !== true || fileReport?.autoCorrection !== "POIZON_AUTO_CORRECTION_APPLIED") continue;
+    const brand = explorerMeta.brands.find((item) => rendererBrandsMatch(item.name, file.brandName || file.brand)
+      || rendererBrandsMatch(item.ko, file.brandName || file.brand));
+    if (!brand) continue;
+    const record = await window.aroundG.upsert("brandVerifications", {
+      id: `brand-verification:${Number(brand.id)}`,
+      brandId: Number(brand.id),
+      brandName: brand.name,
+      filePath: file.path,
+      fileTime: Number(file.time || file.mtimeMs || 0),
+      verifiedAt: report.verifiedAt || new Date().toISOString(),
+      refreshAfterDays: 30,
+      status: "complete",
+    });
+    const savedIndex = state.brandVerifications.findIndex((item) => item.id === record.id);
+    if (savedIndex >= 0) state.brandVerifications[savedIndex] = record;
+    else state.brandVerifications.unshift(record);
+  }
+  renderBrandCards($("#brand-filter")?.value || "");
 }
 
 function poizonSyncForFile(file = {}, brand = {}) {
@@ -2358,6 +2400,8 @@ function renderBrandCards(filter = "") {
     const downloadComplete = Boolean(latestDownload);
     const latestDownloadTime = brandDownloadCardTime(latestDownload?.time || latestDownload?.mtimeMs || latestDownload?.lastDownloadedAt);
     const selected = selectedBrandIds.has(Number(brand.id));
+    const verification = brandVerificationFor(brand, latestDownload);
+    const verificationDate = verification ? new Date(verification.verifiedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" }) : "";
     const downloadGroup = completedOrder.has(Number(brand.id));
     const officialLinked = ["verified", "search_unsupported"].includes(String(brand.officialDomainStatus || ""));
     const officialMissing = String(brand.officialDomainStatus || "") === "no_official_store";
@@ -2368,10 +2412,10 @@ function renderBrandCards(filter = "") {
     const officialDomain = (() => {
       try { return new URL(String(brand.officialHomepageUrl || "")).hostname.replace(/^www\./, ""); } catch { return ""; }
     })();
-    return `<button type="button" class="brand-card ${selected ? "selected" : ""}${downloadGroup ? " brand-pinned" : ""}${downloadComplete ? " download-complete" : ""}${officialLinked ? " official-linked" : ""}${officialMissing ? " official-missing" : ""}" data-brand-id="${brand.id}" aria-pressed="${selected}"${officialDomain ? ` title="공식몰: ${text(brand.officialHomepageUrl)}"` : ""}${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
+    return `<button type="button" class="brand-card ${selected ? "selected" : ""}${downloadGroup ? " brand-pinned" : ""}${downloadComplete ? " download-complete" : ""}${verification ? ` verification-${verification.expired ? "expired" : "complete"}` : ""}${officialLinked ? " official-linked" : ""}${officialMissing ? " official-missing" : ""}" data-brand-id="${brand.id}" aria-pressed="${selected}"${officialDomain ? ` title="공식몰: ${text(brand.officialHomepageUrl)}"` : ""}${brandSelectionBusy ? " disabled aria-busy=\"true\"" : ""}>
     ${officialAdapterLabel ? `<em class="brand-official-badge ${officialAdapterStatus === "dedicated" ? "dedicated" : officialAdapterStatus === "common" ? "common" : "verified"}" aria-label="공식몰 ${text(officialAdapterLabel)}">${text(officialAdapterLabel)}</em>` : ""}
     ${officialMissing ? '<em class="brand-official-badge missing" aria-label="국내 공식몰 없음">공식몰 없음</em>' : ""}
-    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${brand.salesPriority ? `<small class="brand-sales-rank">판매 상위 ${Number(brand.salesRank).toLocaleString("ko-KR")}위</small>` : ""}${downloadComplete ? `<em class="brand-download-complete">다운완료</em><small class="brand-download-date">${text(latestDownloadTime)}${latestDownload?.jobId ? ` · 작업번호 ${text(latestDownload.jobId)}` : ""}</small><small class="brand-download-open" role="button" tabindex="0" data-open-brand-download="${encodeURIComponent(latestDownload.path || "")}">Excel 열기</small>` : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>${officialDomain ? `<small class="brand-official-domain" title="${text(officialDomain)}">${text(officialDomain)}</small>` : ""}
+    <i class="brand-logo">${brand.logoUrl ? `<img src="${text(brand.logoUrl)}" alt="${text(brand.name)} 로고"><b>${text(brand.name.slice(0, 1))}</b>` : `<b>${text(brand.name.slice(0, 1))}</b>`}</i><span><strong>${text(brand.name)}</strong>${verification ? `<em class="brand-verification-badge ${verification.expired ? "expired" : "complete"}">${verification.expired ? "갱신 필요" : "검증 완료"}</em><small class="brand-verification-date">${text(verificationDate)}</small>` : ""}${brand.salesPriority ? `<small class="brand-sales-rank">판매 상위 ${Number(brand.salesRank).toLocaleString("ko-KR")}위</small>` : ""}${downloadComplete ? `<em class="brand-download-complete">다운완료</em><small class="brand-download-date">${text(latestDownloadTime)}${latestDownload?.jobId ? ` · 작업번호 ${text(latestDownload.jobId)}` : ""}</small><small class="brand-download-open" role="button" tabindex="0" data-open-brand-download="${encodeURIComponent(latestDownload.path || "")}">Excel 열기</small>` : ""}<small>${text(brand.ko)} · Brand ID ${brand.id}</small></span>${officialDomain ? `<small class="brand-official-domain" title="${text(officialDomain)}">${text(officialDomain)}</small>` : ""}
   </button>`;
   }).join("");
   $("#frequent-brand-cards").innerHTML = displayedCompletedBrands.length

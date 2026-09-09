@@ -1,0 +1,39 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { createContext, runInContext } from "node:vm";
+
+const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
+const store = await readFile(new URL("../services/store.mjs", import.meta.url), "utf8");
+
+test("100 percent review persists a per-brand completion record", () => {
+  assert.match(store, /brandVerifications: \[\]/);
+  assert.match(renderer, /fileReport\?\.complete !== true/);
+  assert.match(renderer, /fileReport\?\.autoCorrection !== "POIZON_AUTO_CORRECTION_APPLIED"/);
+  assert.match(renderer, /upsert\("brandVerifications"/);
+  assert.match(renderer, /await saveBrandVerificationResults\(files, report\)/);
+});
+
+test("brand verification is valid for 30 days and invalidated by a new workbook", () => {
+  const start = renderer.indexOf("const BRAND_VERIFICATION_REFRESH_MS");
+  const end = renderer.indexOf("function poizonSyncForFile", start);
+  const source = renderer.slice(start, end);
+  const now = Date.now();
+  const context = createContext({
+    Date,
+    state: { brandVerifications: [{ brandId: 7, filePath: "C:/brand.xlsx", fileTime: 10, verifiedAt: new Date(now - 29 * 86400000).toISOString() }] },
+    brandImportPathKey: (value) => String(value).toLowerCase().replaceAll("/", "\\"),
+    latestCompletedBrandDownload: () => null,
+  });
+  runInContext(source, context);
+  assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: 10 }).expired, false);
+  context.state.brandVerifications[0].verifiedAt = new Date(now - 31 * 86400000).toISOString();
+  assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: 10 }).expired, true);
+  assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: 11 }), null);
+});
+
+test("brand card shows completion, date, and monthly refresh state", () => {
+  assert.match(renderer, /verification\.expired \? "갱신 필요" : "검증 완료"/);
+  assert.match(renderer, /brand-verification-date/);
+  assert.match(renderer, /verification-\$\{verification\.expired \? "expired" : "complete"\}/);
+});
