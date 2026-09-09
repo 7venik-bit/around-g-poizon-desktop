@@ -7,7 +7,9 @@ const salesFilter = String(await readFile(new URL("../services/poizon-sales-filt
 // The release must preserve one canonical Naver overview request. The overview
 // itself contains official malls, department stores and outlets.
 if (!main.includes("articleTextCardLinks")) throw new Error("canonical visible Naver card collector is missing");
-if (!main.includes("Naver, SSG and Lotte are list-only sources")) throw new Error("Naver list-only result path is missing");
+if (main.includes("Naver, SSG and Lotte are list-only sources")) throw new Error("obsolete Naver list-only result path remains");
+if (!main.includes("function renderedStockSelectors")) throw new Error("platform-specific stock collector is missing");
+if (!main.includes("stockEvidence = normalizeRenderedStockEvidence")) throw new Error("detail stock evidence collection is missing");
 if (!relay.includes("cardCollectionMissed")) throw new Error("positive channel count can still become an absence");
 if (!relay.includes('{ store: "네이버 패션타운", linkOnly: true, fashionTown: "overview", renderCount: true }')) throw new Error("single Naver overview source is missing");
 for (const duplicate of ["네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛"]) {
@@ -17,7 +19,7 @@ if (!salesFilter.includes('export const POIZON_MINIMUM_TOTAL_SALES = 30;')) thro
 if (!salesFilter.includes('if (filters.rowLevel === true || fixedTotalAnd) {')) throw new Error("fixed AND Excel preview is not filtered at row level");
 if (main.includes('if (chinaRecentSales < 30 || localRecentSales < 30) return [];')) throw new Error("hidden recent-sales threshold still removes qualified Excel rows");
 if (!main.includes('Do not apply an invisible recent-sales threshold here')) throw new Error("explicit-only Excel filtering guard is missing");
-console.log("canonical Naver card-list route and strict 30+ row-level AND filtering verified");
+console.log("canonical Naver card route, platform detail stock, and strict 30+ row-level AND filtering verified");
 process.exit(0);
 const fail = (message) => { throw new Error(`simplified official/Naver search verification failed: ${message}`); };
 
