@@ -145,7 +145,7 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
         ? { ...row, requiredAction:'', actionComplete:true, equal:true, status:'수정·추가 및 재검증 완료 · OK' } : row); lastData = Date.now();
       pageEvents.set(Number(event.pageNum), event); pageOffset = 0;
       get('.review-phase').textContent = `POIZON ${event.pageNum}/${event.pageCount}페이지 · 상품 ${event.pageReadCount || currentRows.length}/${event.pageProductCount || currentRows.length} 실시간 검색·대조 중`;
-      get('.review-counters').textContent = `누적 ${number(state.checkedProducts)} · 상품 인식 ${number(state.matchedProducts)} · 판매량 일치 ${number(state.equalProducts)} · 판매량 수정/확인 ${number(state.differentProducts)} · Excel 누락 ${number(state.missingProducts)}`;
+      get('.review-counters').textContent = `누적 ${number(state.checkedProducts)} · 상품 인식 ${number(state.matchedProducts)} · 판매량 일치 ${number(state.equalProducts)} · 판매량 수정/확인 ${number(state.differentProducts)} · 옵션 비교 보류 ${number(state.deferredProducts)} · 기타 미확인 ${number(Math.max(0, Number(state.unconfirmedProducts || 0) - Number(state.deferredProducts || 0)))} · Excel 누락 ${number(state.missingProducts)}`;
       renderRows(true);
     } else if (event.phase === 'product-action-required') {
       currentRows = currentRows.map((row) => row.key === event.productKey ? { ...row, requiredAction:event.requiredAction } : row);
