@@ -196,7 +196,7 @@ test('all checkpoint pages must be saved and reread before the workbook is compl
   const report = await runPoizonReviewBatch({ files:[base.file], api,
     createView: async () => { current={ input:{}, eventsList:[], events(){return this.eventsList;}, finish(){} }; return current; }, notify:async()=>{} });
   assert.equal(report.complete, false);
-  assert.match(report.files[0].message, /저장 1\\/2페이지/);
+  assert.ok(report.files[0].message.includes('저장 1/2페이지'));
 });
 
 test('incomplete capture never becomes an all-match or absence report', async (t) => {
