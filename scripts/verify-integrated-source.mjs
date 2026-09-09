@@ -5,7 +5,7 @@ const required = {
   "main.mjs": ["POIZON_PAGE_TRANSACTION_GATE", "POIZON_SKU_SAFE_PAGE_SELECTION", "selectPoizonPageCorrectionProducts", "syncPoizonPageCheckpoint"],
   "src/renderer.js": ["openReviewLocalBrandPreview", "poizon-review-brand-start"],
   "src/index.html": ["header-brand-layout-styles"],
-  "src/style.css": ["#official-domain-audit-toggle::after{content:'공식몰'", "HEADER_BUTTON_SIZING_V1"],
+  "src/style.css": ["#official-domain-audit-toggle::after{content:'공식몰 점검'", "HEADER_BUTTON_SIZING_V1", "HEADER_CLEAR_ACTION_LABELS_V1"],
   "services/live-poizon-crosscheck.mjs": ["assertPoizonPageReadyForCorrection", "selectPoizonPageCorrectionProducts"],
   "services/poizon-review-session.mjs": ["runPoizonReviewBatch", "syncExcelWithSellerScreen"],
 };
