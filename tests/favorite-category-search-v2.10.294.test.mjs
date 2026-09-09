@@ -102,6 +102,8 @@ test("파일 목록 진행 문구와 전용 대조 화면의 브랜드·페이�
   assert.match(workspace, /state\.checkedProducts/);
   assert.match(workspace, /state\.equalProducts/);
   assert.match(workspace, /state\.differentProducts/);
+  assert.match(workspace, /판매량 수정 완료/);
+  assert.match(workspace, /수정 대기/);
   assert.match(workspace, /state\.missingProducts/);
 });
 
