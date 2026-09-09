@@ -5,6 +5,7 @@ const EMPTY = {
   version: 1,
   products: [],
   poizonSyncs: [],
+  brandVerifications: [],
   categorySearches: [],
   domesticSearches: [],
   ledger: [],
