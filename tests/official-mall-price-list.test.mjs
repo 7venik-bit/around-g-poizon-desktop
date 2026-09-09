@@ -23,13 +23,14 @@ test("official mall rendered card keeps title, current price and product link", 
   assert.equal(result.products[0].url, "https://official.example/products/SR123UTS15");
 });
 
-test("packaged path captures official price cards without opening stock details", async () => {
+test("packaged path opens exact official product details and captures stock wording", async () => {
   const patchSource = await readFile(new URL("../scripts/patch-naver-result-link-finalizer.mjs", import.meta.url), "utf8");
   const mainSource = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 
   assert.doesNotMatch(patchSource, /const directOfficialResultLink/);
-  assert.match(mainSource, /브랜드 공식몰\$\|네이버/);
-  assert.match(mainSource, /resultLinkOnly: officialMallSource && listProducts\.length === 0 && !explicitAbsence/);
+  assert.doesNotMatch(mainSource, /브랜드 공식몰\$\|네이버/);
+  assert.match(mainSource, /renderedStockSelectors\(source\.store\)/);
+  assert.match(mainSource, /stockEvidence = normalizeRenderedStockEvidence/);
   assert.match(mainSource, /if \(!submitted && !interactiveOfficialSearch\)/);
 });
 
