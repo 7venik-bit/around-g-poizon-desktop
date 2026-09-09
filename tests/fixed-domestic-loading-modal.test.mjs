@@ -7,6 +7,7 @@ import { dirname, resolve } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const overlayCss = readFileSync(resolve(here, "../src/domestic-loading-overlay.css"), "utf8");
 const layoutCss = readFileSync(resolve(here, "../src/excel-column-layout.css"), "utf8");
+const renderer = readFileSync(resolve(here, "../src/renderer.js"), "utf8");
 
 test("domestic search progress is a fixed viewport modal that locks page scrolling", () => {
   assert.match(layoutCss, /@import url\("\.\/domestic-loading-overlay\.css"\);/);
@@ -31,4 +32,11 @@ test("modal keeps the approved progress information hierarchy", () => {
   assert.match(overlayCss, /\.domestic-overlay-progress/);
   assert.match(overlayCss, /\.domestic-overlay-current/);
   assert.match(overlayCss, /\.domestic-overlay-stop/);
+});
+
+test("domestic search elapsed time is displayed as Korean hours, minutes and seconds", () => {
+  assert.match(renderer, /function elapsedKoreanDuration\(milliseconds = 0\)/);
+  assert.match(renderer, /hours > 0 \? `\$\{hours\}시간`/);
+  assert.match(renderer, /hours > 0 \|\| minutes > 0 \? `\$\{minutes\}분`/);
+  assert.match(renderer, /elapsedKoreanDuration\(now - startedAt\)/);
 });
