@@ -27,7 +27,8 @@ const screenVest = { spuId: "19438508", articleNumber: "JWVAX25017", name: "코�
 const initialBrand = { id: 1000444, name: "KOLON SPORT", ko: "코오롱스포츠" };
 
 function harness({ sheets = { "/kolon.xlsx": [standardHeaders, vest] }, brands = [initialBrand], files,
-  china = "100", local = "30", histories = [], previewOverride, screenProducts = [screenVest], screenOverride } = {}) {
+  china = "100", local = "30", histories = [], previewOverride, screenProducts = [screenVest], screenOverride,
+  categorySelections = new Map([["아우터", new Set(["베스트"])]]) } = {}) {
   const nodes = new Map(), reads = [], saved = [], rendered = [], captures = [];
   const $ = (id) => {
     if (!nodes.has(id)) nodes.set(id, { value: "", disabled: false, className: "", textContent: "", addEventListener(_event, callback) { this.callback = callback; } });
@@ -49,7 +50,8 @@ function harness({ sheets = { "/kolon.xlsx": [standardHeaders, vest] }, brands =
   const context = createContext({ $, console, Date, Intl, state: { categorySearches: histories, products: [] },
     downloadedBrandFiles: files || [{ path: "/kolon.xlsx", name: "kolon.xlsx", brandName: "코오롱스포츠", time: 1 }],
     explorerMeta: { brands }, categoryBrandIds: new Set(brands.map((brand) => brand.id)), pinnedBrandIds: [],
-    selectedCategory: "아우터", selectedCategoryDetail: "베스트", categorySearchRunId: 0,
+    selectedCategory: "아우터", selectedCategoryDetail: "베스트",
+    selectedCategorySelections: categorySelections, categorySearchRunId: 0,
     refresh: async () => {}, pruneCategorySearchHistory: async () => {},
     startCategoryLoading: () => {}, updateCategoryLoading: () => {}, finishCategoryLoading: () => {},
     renderExplorerResults: (_title, products) => rendered.push(JSON.parse(JSON.stringify(products))),
@@ -87,6 +89,28 @@ test("POIZON screen recent-30 values override different Excel totals", async () 
   assert.equal(h.rendered.at(-1)?.[0].sales30dRaw, "100+");
   assert.equal(h.rendered.at(-1)?.[0].salesSource, "seller-center-screen");
   assert.equal(h.captures.length, 1);
+});
+
+test("multiple parent and detail categories are combined with OR semantics", async () => {
+  const shirt = ["555", "SHIRT01", "코오롱스포츠 남성 셔츠", "셔츠", 20, 12];
+  const h = harness({
+    sheets: { "/kolon.xlsx": [standardHeaders, vest, shirt] },
+    screenProducts: [screenVest, {
+      spuId: "555", articleNumber: "SHIRT01", name: "코오롱스포츠 남성 셔츠",
+      sales30d: 120, sales30dRaw: "120+", localSales30d: 40, localSales30dRaw: "40",
+      hasSalesData: true, hasLocalSalesData: true,
+    }],
+    categorySelections: new Map([
+      ["아우터", new Set(["베스트"])],
+      ["의류", new Set(["셔츠"])],
+    ]),
+  });
+  await h.click();
+  assert.deepEqual(h.rendered.at(-1).map((product) => product.articleNumber).sort(), ["JWVAX25017", "SHIRT01"]);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.saved.at(-1).categorySelections)), [
+    { category: "아우터", detail: "베스트" },
+    { category: "의류", detail: "셔츠" },
+  ]);
 });
 
 test("file read error stays visible and is not saved as completed", async () => {
