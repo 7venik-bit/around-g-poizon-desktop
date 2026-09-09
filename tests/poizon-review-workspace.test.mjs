@@ -160,10 +160,10 @@ test('newly appended POIZON product rows increase the expected reread count and 
 test('page checkpoint counts are preserved and reread row count includes rows added before the next page', async () => {
   const base = { products:[{ spuId:'1', articleNumber:'OLD', sourceRowNumber:2 }], sourceTotalRows:1, revision:'r1', ok:true, file:{ path:'A.xlsx', name:'A.xlsx' } };
   const added = { spuId:'2', articleNumber:'NEW', sales30dRaw:'100+', localSales30dRaw:'30', hasSalesData:true, hasLocalSalesData:true };
-  let current, reads = 0;
+  let current, reads = 0, revisionChecks = 0;
   const api = {
     readPoizonReviewWorkbook: async () => { reads++; return reads === 1 ? base : { ...base, products:[...base.products, { ...added, sourceRowNumber:3 }] }; },
-    checkPoizonReviewWorkbook: async () => ({ ok:true, unchanged:true }),
+    checkPoizonReviewWorkbook: async () => { revisionChecks++; return { ok:true, unchanged:false }; },
     beginSellerExcelVerification: async () => ({ ok:true }),
     captureSellerBrandSales: async () => {
       current.eventsList.push({ phase:'page-compared', pageNum:1, pageCount:1, rows:[{ key:'SPU:2', spuId:'2', articleNumber:'NEW', matched:false, equal:false, status:'Excel 상품 없음' }] });
@@ -178,6 +178,25 @@ test('page checkpoint counts are preserved and reread row count includes rows ad
   assert.equal(report.files[0].addedRows, 1);
   assert.equal(report.files[0].checkpointPages, 1);
   assert.equal(report.files[0].backupPath, 'page.bak');
+  assert.equal(revisionChecks, 0, '프로그램이 저장한 체크포인트를 외부 원본 변경으로 오인하면 안 된다');
+});
+
+test('all checkpoint pages must be saved and reread before the workbook is completed', async () => {
+  const base = { products:[{ spuId:'1', articleNumber:'OLD', sourceRowNumber:2 }], sourceTotalRows:1, revision:'r1', ok:true, file:{ path:'A.xlsx', name:'A.xlsx' } };
+  let current;
+  const api = {
+    readPoizonReviewWorkbook: async () => base,
+    beginSellerExcelVerification: async () => ({ ok:true }),
+    captureSellerBrandSales: async () => {
+      current.eventsList.push({ phase:'page-compared', pageNum:1, pageCount:2, rows:[] });
+      current.eventsList.push({ phase:'page-compared', pageNum:2, pageCount:2, rows:[] });
+      return { ok:true, products:[], sourceTotal:0, checkpointSync:{ enabled:true, pagesCompleted:1, reverified:true } };
+    },
+  };
+  const report = await runPoizonReviewBatch({ files:[base.file], api,
+    createView: async () => { current={ input:{}, eventsList:[], events(){return this.eventsList;}, finish(){} }; return current; }, notify:async()=>{} });
+  assert.equal(report.complete, false);
+  assert.match(report.files[0].message, /저장 1\\/2페이지/);
 });
 
 test('incomplete capture never becomes an all-match or absence report', async (t) => {
