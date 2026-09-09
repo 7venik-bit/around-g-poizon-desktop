@@ -84,4 +84,5 @@ test('installed application includes the retired control styling and explicit PO
   assert.match(renderer, /poizon-review-brand-start/);
   assert.match(renderer, /runPoizonReviewBatch/);
   assert.match(renderer, /listBrandExportFiles/);
+  assert.match(renderer, /add\("poizon-review-brand-start", "상품 대조", document\.querySelector\("\.header-actions"\)\)/);
 });
