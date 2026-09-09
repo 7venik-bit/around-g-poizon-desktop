@@ -83,6 +83,7 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
   const index = indexProductIdentities(products);
   const pageEvents = new Map();
   const completedActions = new Set();
+  const completedCorrections = new Set();
   let currentRows = [], cumulative = [], pageOffset = 0, finished = false, stopped = false, lastData = 0, lastStatus = Date.now();
   let state = { checkedProducts: 0, equalProducts: 0, differentProducts: 0, missingProducts: 0, deferredProducts: 0, pageNum: 0, pageCount: 0 };
   const started = Date.now();
@@ -137,6 +138,11 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
       const box = get('.review-table-scroll'); box.scrollTop = box.scrollHeight;
     });
   };
+  const renderCounters = () => {
+    const completed = completedCorrections.size;
+    const pending = Math.max(0, Number(state.differentProducts || 0) - completed);
+    get('.review-counters').textContent = `누적 ${number(state.checkedProducts)} · 상품 인식 ${number(state.matchedProducts)} · 판매량 일치 ${number(state.equalProducts)} · 판매량 수정 완료 ${number(completed)} · 수정 대기 ${number(pending)} · 옵션 비교 보류 ${number(state.deferredProducts)} · 기타 미확인 ${number(Math.max(0, Number(state.unconfirmedProducts || 0) - Number(state.deferredProducts || 0)))} · Excel 누락 ${number(state.missingProducts)}`;
+  };
   const unsubscribe = api.onSellerVerificationProgress((event) => {
     if (stopped || event.runId !== runId) return;
     lastStatus = Date.now();
@@ -145,7 +151,7 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
         ? { ...row, requiredAction:'', actionComplete:true, equal:true, status:'수정·추가 및 재검증 완료 · OK' } : row); lastData = Date.now();
       pageEvents.set(Number(event.pageNum), event); pageOffset = 0;
       get('.review-phase').textContent = `POIZON ${event.pageNum}/${event.pageCount}페이지 · 상품 ${event.pageReadCount || currentRows.length}/${event.pageProductCount || currentRows.length} 실시간 검색·대조 중`;
-      get('.review-counters').textContent = `누적 ${number(state.checkedProducts)} · 상품 인식 ${number(state.matchedProducts)} · 판매량 일치 ${number(state.equalProducts)} · 판매량 수정/확인 ${number(state.differentProducts)} · 옵션 비교 보류 ${number(state.deferredProducts)} · 기타 미확인 ${number(Math.max(0, Number(state.unconfirmedProducts || 0) - Number(state.deferredProducts || 0)))} · Excel 누락 ${number(state.missingProducts)}`;
+      renderCounters();
       renderRows(true);
     } else if (event.phase === 'product-action-required') {
       currentRows = currentRows.map((row) => row.key === event.productKey ? { ...row, requiredAction:event.requiredAction } : row);
@@ -154,8 +160,11 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
       doc.defaultView?.focus();
     } else if (event.phase === 'product-action-complete') {
       completedActions.add(event.productKey);
+      const comparedRow = [...pageEvents.values()].flatMap((page) => page.rows || []).find((row) => row.key === event.productKey);
+      if (comparedRow?.matched && !comparedRow.equal && !comparedRow.autoCorrectionBlocked) completedCorrections.add(event.productKey);
       currentRows = currentRows.map((row) => row.key === event.productKey ? { ...row, requiredAction:'', actionComplete:true, equal:true, status:event.message } : row);
       state = { ...state, activeKey:event.activeKey }; renderRows(true);
+      renderCounters();
       get('.review-phase').textContent = event.message;
     } else if (event.message) {
       if (event.activeKey === '') { state = { ...state, activeKey:'' }; renderRows(); }
@@ -187,6 +196,7 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
             : 'POIZON 값으로 수정 완료 · 저장 후 재검증 완료' } : row);
       pageOffset = 0;
       get('.review-phase').textContent = result.ok ? `대조 완료 · 기존 ${Number(result.changedRows || 0).toLocaleString('ko-KR')}행 수정 · 누락 ${Number(result.addedRows || 0).toLocaleString('ko-KR')}행 추가 · 재검증 완료` : `검증 미완료 · ${result.message || '전체 페이지 확인 실패'}`;
+      if (result.ok) get('.review-counters').textContent = `전체 ${number(state.checkedProducts)}상품 대조 완료 · 수정 ${number(result.changedRows || 0)}행 · 추가 ${number(result.addedRows || 0)}행 · 수정 대기 0`;
       get('.review-close').disabled = false; renderRows(); dispose();
     },
     showReport(report) { latestReport = report; get('.review-report').disabled = false; showReviewReport(report, doc); },
