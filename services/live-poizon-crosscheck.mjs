@@ -119,14 +119,9 @@ export function resolveExcelRecentMetric(products = [], local = false) {
 const article = (p) => normalizedArticle(p?.articleNumber || p?.productCode || '');
 const spu = (p) => productSpu(p || {});
 const identity = (p) => spu(p) ? `SPU:${spu(p)}` : article(p) ? `ARTICLE:${article(p)}` : '';
-export const isPoizonSkuScopeDeferredRow = (row = {}) => row.matched === true
-  && row.identityConflict !== true
-  && Boolean(metricFromRaw(row.sourceChina))
-  && Boolean(metricFromRaw(row.sourceLocal))
-  && row.autoCorrectionBlocked === true
-  && Array.isArray(row.reasonCodes)
-  && row.reasonCodes.length > 0
-  && row.reasonCodes.every((code) => code === 'EXCEL_SKU_SPU_SCOPE_MISMATCH');
+// POIZON 화면의 상품 판매량이 이 작업의 최종 기준이다. Excel 행에 SKU ID가
+// 있더라도 동일 SPU로 식별되면 보류하지 않고 해당 행을 POIZON 값으로 교정한다.
+export const isPoizonSkuScopeDeferredRow = () => false;
 
 // Match evidence by identity, never by array position. Fail before any write if
 // a page contains genuinely unresolved data. A verified SKU-vs-SPU scope
@@ -149,7 +144,7 @@ export function assertPoizonPageReadyForCorrection(products = [], rows = [], pag
   for (const product of products) {
     const row = byKey.get(identity(product));
     if (isPoizonSkuScopeDeferredRow(row)) { skippedSkuScope++; continue; }
-    if (!row || row.autoCorrectionBlocked || /충돌|미확인|비교 보류|확인 필요/.test(row.status || '')) {
+    if (!row || row.identityConflict || row.autoCorrectionBlocked || /충돌|미확인|비교 보류|확인 필요/.test(row.status || '')) {
       throw new Error(`POIZON ${pageNum || '?'}페이지 · ${identity(product) || '식별자 없음'} · ${row?.status || '대조 증거 없음'} · 원본 수정 및 다음 페이지 이동을 보류합니다.`);
     }
     writable.push(product);
@@ -161,9 +156,9 @@ export function assertPoizonPageReadyForCorrection(products = [], rows = [], pag
   return writable;
 }
 
-// POIZON_SKU_SAFE_DEFER_V1: one policy for direct checkpoints and both UI entry points.
-// Do not duplicate the evidence rules in an install-time patch. Validation happens
-// before any writer is called; a deferred SKU page performs no filesystem writes.
+// POIZON_SKU_SAFE_DEFER_V1: retained release marker. The current policy writes
+// verified POIZON product values to matching Excel SKU rows; only unresolved
+// identities or unreadable screen values are blocked before the writer is called.
 export function selectPoizonPageCorrectionProducts(products = [], rows = [], pageNum = 0) {
   const writable = assertPoizonPageReadyForCorrection(products, rows, pageNum);
   const deferredRows = rows.filter(isPoizonSkuScopeDeferredRow);
@@ -186,7 +181,7 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
     const sourceAvailable = source.every(Boolean);
     const hasConflict = excelResolved.some((entry) => entry.state === 'conflict');
     const scopeMismatch = excelResolved.some((entry) => entry.state === 'scope-mismatch');
-    const unresolved = excelResolved.some((entry) => !['resolved', 'missing'].includes(entry.state));
+    const unresolved = excelResolved.some((entry) => !['resolved', 'missing', 'scope-mismatch'].includes(entry.state));
     const identityConflict = /충돌|식별자 없음/.test(matchBy || '');
     const equal = candidates.length > 0 && sourceAvailable
       && excelResolved.every((entry, i) => entry.state === 'resolved' && entry.metric.signature === source[i].signature);
@@ -196,7 +191,7 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
       : !candidates.length ? identityConflict ? '식별자 충돌 · 자동수정 보류' : 'Excel 상품 없음 · 누락 후보'
       : !sourceAvailable ? 'POIZON 화면값 미확인 · 자동수정 보류'
       : hasConflict ? 'Excel 값 충돌 · 자동수정 보류'
-      : scopeMismatch ? '상품 인식 완료 · 옵션별 판매량 존재 · SPU 자동수정 제외 · 다음 페이지 진행 전 원본 보존 재검증'
+      : scopeMismatch ? '상품 인식 완료 · 옵션별 판매량 존재 · Excel 옵션 행을 POIZON 상품 판매량으로 수정 대상'
       : unresolved ? '상품 인식 완료 · 원본값·비교 열 확인 필요 · 자동수정 보류'
       : equal ? '상품 인식 완료 · 판매량 일치 · 수정 없음'
       : missingSides ? `상품 인식 완료 · 판매량 누락 ${missingSides}개 · POIZON 값으로 수정 대상`

@@ -61,7 +61,8 @@ test('same SPU may map to multiple Excel option rows without depending on order'
   assert.equal(result.matchedProducts, 1);
   assert.deepEqual(result.rows[0].excelRows, [41, 80]);
   assert.match(result.rows[0].status, /옵션별 판매량 존재/);
-  assert.equal(result.rows[0].autoCorrectionBlocked, true);
+  assert.equal(result.rows[0].autoCorrectionBlocked, false);
+  assert.match(result.rows[0].status, /POIZON 상품 판매량으로 수정 대상/);
 });
 
 test('known different SPU is never falsely matched by the same article', () => {

@@ -19,7 +19,7 @@ test('separate SKU scalar rows with values never become two missing sales cells'
   const r = check(items), row = r.rows[0];
   assert.equal(r.matchedProducts, 1); assert.equal(r.missingProducts, 0); assert.equal(r.missingSalesCells, 0);
   assert.equal(row.excelChinaState, 'scope-mismatch'); assert.equal(row.excelLocalState, 'scope-mismatch');
-  assert.equal(row.equal, false); assert.equal(row.autoCorrectionBlocked, true);
+  assert.equal(row.equal, false); assert.equal(row.autoCorrectionBlocked, false);
   assert.doesNotMatch(row.status, /누락|일치/);
   assert.match(row.excelChina, /33 \/ 100\+/);
   assert.deepEqual(row.excelChinaEvidence.map((e) => e.row), [109,110,111,112,113,114,115]);
@@ -27,7 +27,7 @@ test('separate SKU scalar rows with values never become two missing sales cells'
 
 test('a single SKU row must not be mislabeled missing or parent-equal either', () => {
   const row = check([excel('1,300+', '78', { metricScope:'sku' })]).rows[0];
-  assert.equal(row.equal, false); assert.equal(row.missingSalesCells, 0); assert.equal(row.autoCorrectionBlocked, true);
+  assert.equal(row.equal, false); assert.equal(row.missingSalesCells, 0); assert.equal(row.autoCorrectionBlocked, false);
 });
 
 test('slash strings are present but unconfirmed, never summed into a parent match', () => {
@@ -81,7 +81,7 @@ test('parent header evidence takes precedence over stale grouped fields and SKU 
   assert.equal(row.equal, true); assert.equal(row.excelChina,'1,300+'); assert.equal(row.excelLocal,'78');
   assert.equal(row.excelChinaEvidence[0].columnIndex,22);
   p.reviewMetricEvidence.local.scope = 'sku';
-  assert.equal(check([p]).rows[0].autoCorrectionBlocked, true);
+  assert.equal(check([p]).rows[0].autoCorrectionBlocked, false);
 });
 
 test('mixed blank and valid parent rows cannot be called fully equal or fully missing', () => {
@@ -117,12 +117,12 @@ test('normal mismatches and actual new products can still reach correction', () 
   assert.deepEqual(assertPoizonPageReadyForCorrection([source()],missing.rows,1),[source()]);
 });
 
-test('verified SKU scope preserves original rows and is deferred without a write', () => {
+test('verified SKU rows are selected for POIZON platform-value correction', () => {
   const items = [excel('33','5',{skuId:'1',salesScope:'sku'}), excel('100+','14',{skuId:'2',salesScope:'sku',sourceRowNumber:110})];
   const page = check(items);
   const writable = assertPoizonPageReadyForCorrection([source()],page.rows,1);
-  assert.equal(writable.length, 0);
-  assert.equal(writable.pageEvidence.skippedSkuScope, 1);
+  assert.equal(writable.length, 1);
+  assert.equal(writable.pageEvidence.skippedSkuScope, 0);
 });
 
 test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input retains scalar SKU evidence', async (t) => {
@@ -162,12 +162,12 @@ test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input re
     capture:{rows:[source()],currentPage:1,pageCount:150}, mergeSellerBrandPages:(pages) => pages.flat(),
     mainWindow:{webContents:{send(){}}}, sellerWindow:{webContents:{executeJavaScript:async () => {}}},
     paintSellerVerification(){}, verificationConditionLabel:() => '', wait:async () => {},
-    checkpointSummary:{enabled:true,backupPath:'',changes:[],changedRows:0,changedCells:0,addedRows:0,addedProducts:0,verifiedCells:0,deferredProducts:0}, checkpointPages:new Set(), input:{verification:{runId:'shipping',filePath:path}},
+    bulkCorrectionApproved:true, checkpointSummary:{enabled:true,backupPath:'',changes:[],changedRows:0,changedCells:0,addedRows:0,addedProducts:0,verifiedCells:0,deferredProducts:0}, checkpointPages:new Set(), input:{verification:{runId:'shipping',filePath:path}},
     assertPoizonPageReadyForCorrection, isPoizonSkuScopeDeferredRow, selectPoizonPageCorrectionProducts, syncPoizonPageCheckpoint:async () => { writes++; return {ok:true,reverified:true}; },
   };
   await runInNewContext('(async()=>{' + capture.slice(from,to) + '})()',sandbox);
-  assert.equal(writes,0); assert.deepEqual(await readFile(path),before);
-  assert.equal(sandbox.checkpointSummary.deferredProducts,1);
+  assert.equal(writes,1); assert.deepEqual(await readFile(path),before);
+  assert.equal(sandbox.checkpointSummary.deferredProducts,0);
   assert.equal(sandbox.checkpointSummary.pagesCompleted,1);
 
   // With real parent columns, correction must still work and preserve every SKU value.
