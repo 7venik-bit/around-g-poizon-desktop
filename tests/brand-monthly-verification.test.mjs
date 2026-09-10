@@ -26,7 +26,7 @@ test("completion record uses workbook metadata after POIZON corrections", () => 
   assert.match(source, /downloadedBrandFiles = downloadedBrandFiles\.map/);
 });
 
-test("brand verification is valid for 7 days and invalidated by a new workbook", () => {
+test("brand verification remains valid for 7 days across new workbook downloads", () => {
   const start = renderer.indexOf("const BRAND_VERIFICATION_REFRESH_MS");
   const end = renderer.indexOf("function poizonSyncForFile", start);
   const source = renderer.slice(start, end);
@@ -40,9 +40,10 @@ test("brand verification is valid for 7 days and invalidated by a new workbook",
   runInContext(source, context);
   assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: 10 }).expired, false);
   assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: now - 30 * 86400000 }).expired, false);
+  assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/new-download.xlsx", time: now + 1_000 }).expired, false);
   context.state.brandVerifications[0].verifiedAt = new Date(now - 8 * 86400000).toISOString();
   assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: 10 }).expired, true);
-  assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: now + 1_000 }), null);
+  assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/new-download.xlsx", time: now + 1_000 }).expired, true);
 });
 
 test("brand card shows completion, date, and monthly refresh state", () => {

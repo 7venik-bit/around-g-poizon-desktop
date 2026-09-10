@@ -864,16 +864,13 @@ const BRAND_VERIFICATION_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 
 function brandVerificationFor(brand = {}, file = latestCompletedBrandDownload(brand)) {
   const brandId = Number(brand?.id);
-  if (!Number.isFinite(brandId) || !file?.path) return null;
+  if (!Number.isFinite(brandId)) return null;
   const record = (state.brandVerifications || []).find((item) => Number(item.brandId) === brandId);
-  if (!record || brandImportPathKey(record.filePath) !== brandImportPathKey(file.path)) return null;
+  if (!record) return null;
   const verifiedTime = Date.parse(String(record.verifiedAt || ""));
   if (!Number.isFinite(verifiedTime)) return null;
-  if (Number(record.fileTime || 0) && Number(file.time || file.mtimeMs || 0)
-    && Number(record.fileTime) !== Number(file.time || file.mtimeMs)
-    // 대조 과정에서 저장된 파일의 mtime은 완료 기록 시각보다 앞선다.
-    // 완료 뒤 새로 내려받은 Excel만 기존 검증 표시를 무효화한다.
-    && Number(file.time || file.mtimeMs) > verifiedTime) return null;
+  // Verification is a weekly brand certification. A fresh workbook download
+  // must not erase the badge before the seven-day refresh window expires.
   return { ...record, expired: Date.now() - verifiedTime >= BRAND_VERIFICATION_REFRESH_MS };
 }
 
