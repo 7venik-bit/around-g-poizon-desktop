@@ -1,9 +1,12 @@
 /* CSP-safe styling for the full-width retailer result row. */
 #excel-preview.product-view #excel-preview-grid table{width:100%!important;min-width:980px!important;table-layout:fixed!important}
-#excel-preview.product-view #excel-preview-grid table,#excel-preview.product-view #excel-preview-grid tbody{height:auto!important}
+#excel-preview.product-view #excel-preview-grid table{height:fit-content!important;min-height:0!important;align-self:flex-start!important}
+#excel-preview.product-view #excel-preview-grid tbody{height:fit-content!important;min-height:0!important}
 #excel-preview.product-view #excel-preview-grid .excel-product-row>td{height:54px!important;vertical-align:middle!important}
 #excel-preview.product-view #excel-preview-grid .excel-verified-spu-row{height:66px!important}
 #excel-preview.product-view #excel-preview-grid .excel-verified-spu-row>td{height:66px!important;max-height:66px!important;padding:6px!important;overflow:hidden!important;white-space:nowrap!important}
+#excel-preview.product-view #excel-preview-grid .excel-verified-image-cell{padding:5px!important}
+#excel-preview.product-view #excel-preview-grid .excel-verified-image-cell>.excel-verified-image{display:block!important;width:40px!important;height:40px!important;max-width:40px!important;max-height:40px!important;margin:0 auto!important;object-fit:contain!important}
 #excel-preview.product-view #excel-preview-grid .excel-verified-spu-row details{max-width:100%!important;margin-top:3px!important;overflow:hidden!important;text-overflow:ellipsis!important}
 #excel-preview.product-view #excel-preview-grid .excel-product-search-detail{display:table-row!important}
 #excel-preview.product-view #excel-preview-grid .excel-product-search-detail>td{width:auto!important;height:auto!important;padding:5px 9px!important;white-space:normal!important;overflow:visible!important;text-align:left!important;vertical-align:top!important}
