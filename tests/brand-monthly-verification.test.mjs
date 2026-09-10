@@ -12,6 +12,18 @@ test("100 percent review persists a per-brand completion record", () => {
   assert.match(renderer, /fileReport\?\.autoCorrection !== "POIZON_AUTO_CORRECTION_APPLIED"/);
   assert.match(renderer, /upsert\("brandVerifications"/);
   assert.match(renderer, /await saveBrandVerificationResults\(files, report\)/);
+  assert.match(renderer, /listBrandExportFiles/);
+  assert.match(renderer, /currentByPath/);
+  assert.match(renderer, /currentByPath\.get\(brandImportPathKey\(suppliedFile\.path\)\)/);
+});
+
+test("completion record uses workbook metadata after POIZON corrections", () => {
+  const start = renderer.indexOf("async function saveBrandVerificationResults");
+  const end = renderer.indexOf("function poizonSyncForFile", start);
+  const source = renderer.slice(start, end);
+  assert.ok(source.indexOf("listBrandExportFiles") < source.indexOf('upsert("brandVerifications"'));
+  assert.match(source, /fileTime: Number\(file\.time \|\| file\.mtimeMs \|\| 0\)/);
+  assert.match(source, /downloadedBrandFiles = downloadedBrandFiles\.map/);
 });
 
 test("brand verification is valid for 30 days and invalidated by a new workbook", () => {
@@ -27,9 +39,10 @@ test("brand verification is valid for 30 days and invalidated by a new workbook"
   });
   runInContext(source, context);
   assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: 10 }).expired, false);
+  assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: now - 30 * 86400000 }).expired, false);
   context.state.brandVerifications[0].verifiedAt = new Date(now - 31 * 86400000).toISOString();
   assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: 10 }).expired, true);
-  assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: 11 }), null);
+  assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: now + 1_000 }), null);
 });
 
 test("brand card shows completion, date, and monthly refresh state", () => {
