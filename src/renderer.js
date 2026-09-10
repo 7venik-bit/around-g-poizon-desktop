@@ -857,7 +857,7 @@ function poizonSyncId(brand = {}) {
   return `seller-brand:${normalizeBrandKey(brand?.name || brand?.ko || "unknown")}`;
 }
 
-const BRAND_VERIFICATION_REFRESH_MS = 30 * 24 * 60 * 60 * 1000;
+const BRAND_VERIFICATION_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 
 function brandVerificationFor(brand = {}, file = latestCompletedBrandDownload(brand)) {
   const brandId = Number(brand?.id);
@@ -897,7 +897,7 @@ async function saveBrandVerificationResults(files = [], report = {}) {
       filePath: file.path,
       fileTime: Number(file.time || file.mtimeMs || 0),
       verifiedAt: report.verifiedAt || new Date().toISOString(),
-      refreshAfterDays: 30,
+      refreshAfterDays: 7,
       status: "complete",
     });
     const savedIndex = state.brandVerifications.findIndex((item) => item.id === record.id);
