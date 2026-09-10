@@ -5,15 +5,21 @@ import test from "node:test";
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
 const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 
-test("opening an Excel workbook never restores old inventory results", () => {
+test("opening an Excel workbook restores only current-session results", () => {
   assert.match(renderer, /around-g-excel-search-results-v2/);
-  assert.match(renderer, /Never[\s\S]*restore an earlier run when a workbook is opened again/);
-  assert.doesNotMatch(renderer, /excelPreviewSearchResults\.set\(key, value\)/);
+  assert.match(renderer, /const excelPreviewSearchResultsByPath = new Map\(\)/);
+  assert.match(renderer, /if \(saved\)[\s\S]*excelPreviewSearchResults\.set\(key, value\)/);
+  assert.match(renderer, /localStorage\.removeItem\(EXCEL_SEARCH_RESULTS_KEY\)/);
 });
 
-test("manual and selected Excel searches clear visible and identity caches first", () => {
+test("manual search refreshes one result and selected search preserves unselected results", () => {
   assert.match(renderer, /clearDomesticIdentityCache\(product\);\s*excelPreviewSearchResults\.delete\(key\);/s);
-  assert.match(renderer, /A new button press always starts a new search session[\s\S]*excelPreviewSearchResults\.clear\(\);\s*domesticIdentitySearchCache\.clear\(\);/);
+  assert.match(renderer, /for \(const key of keys\) excelPreviewSearchResults\.delete\(key\);\s*domesticIdentitySearchCache\.clear\(\);/);
+  assert.doesNotMatch(renderer, /Completed results for[\s\S]*excelPreviewSearchResults\.clear\(\)/);
+});
+
+test("combined brand workspace restores completed results from the current app session", () => {
+  assert.match(renderer, /restoreSavedExcelSearchResults\("combined:\/\/selected-brands"\)/);
 });
 
 test("every domestic request clears HTTP cache without deleting login cookies", () => {
