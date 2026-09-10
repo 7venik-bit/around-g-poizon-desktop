@@ -26,21 +26,21 @@ test("completion record uses workbook metadata after POIZON corrections", () => 
   assert.match(source, /downloadedBrandFiles = downloadedBrandFiles\.map/);
 });
 
-test("brand verification is valid for 30 days and invalidated by a new workbook", () => {
+test("brand verification is valid for 7 days and invalidated by a new workbook", () => {
   const start = renderer.indexOf("const BRAND_VERIFICATION_REFRESH_MS");
   const end = renderer.indexOf("function poizonSyncForFile", start);
   const source = renderer.slice(start, end);
   const now = Date.now();
   const context = createContext({
     Date,
-    state: { brandVerifications: [{ brandId: 7, filePath: "C:/brand.xlsx", fileTime: 10, verifiedAt: new Date(now - 29 * 86400000).toISOString() }] },
+    state: { brandVerifications: [{ brandId: 7, filePath: "C:/brand.xlsx", fileTime: 10, verifiedAt: new Date(now - 6 * 86400000).toISOString() }] },
     brandImportPathKey: (value) => String(value).toLowerCase().replaceAll("/", "\\"),
     latestCompletedBrandDownload: () => null,
   });
   runInContext(source, context);
   assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: 10 }).expired, false);
   assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: now - 30 * 86400000 }).expired, false);
-  context.state.brandVerifications[0].verifiedAt = new Date(now - 31 * 86400000).toISOString();
+  context.state.brandVerifications[0].verifiedAt = new Date(now - 8 * 86400000).toISOString();
   assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: 10 }).expired, true);
   assert.equal(context.brandVerificationFor({ id: 7 }, { path: "C:/brand.xlsx", time: now + 1_000 }), null);
 });
@@ -49,4 +49,12 @@ test("brand card shows completion, date, and monthly refresh state", () => {
   assert.match(renderer, /verification\.expired \? "갱신 필요" : "검증 완료"/);
   assert.match(renderer, /brand-verification-date/);
   assert.match(renderer, /verification-\$\{verification\.expired \? "expired" : "complete"\}/);
+});
+
+test("brand verification refresh interval is weekly and does not auto-run a review", () => {
+  assert.match(renderer, /BRAND_VERIFICATION_REFRESH_MS = 7 \* 24 \* 60 \* 60 \* 1000/);
+  assert.match(renderer, /refreshAfterDays: 7/);
+  const start = renderer.indexOf("function brandVerificationFor");
+  const end = renderer.indexOf("async function saveBrandVerificationResults", start);
+  assert.doesNotMatch(renderer.slice(start, end), /captureSellerBrandSales|openVerifiedCombinedBrandPreview/);
 });
