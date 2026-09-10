@@ -2,13 +2,23 @@ import { normalizeVerificationConditions, verificationConditionLabel } from '../
 import { indexProductIdentities, resolveProductIdentity } from '../services/poizon-product-identity.mjs';
 import { reviewTone, reviewReportText } from '../services/poizon-review-session.mjs';
 
-let active = null, latestReport = null;
+let active = null, latestReport = null, reviewPopup = null;
 const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const number = (value) => Number(value || 0).toLocaleString('ko-KR');
 const safeImage = (url) => /^https?:\/\//i.test(String(url || '')) ? String(url) : '';
 export const reviewIsRunning = () => active?.running === true;
 
 export async function openReviewPopup(hostWindow = window) {
+  // A named window.open call can navigate an already-loaded popup again. On a
+  // multi-brand run that reload races with beginLiveVerification: the newly
+  // drawn second-brand panel is erased and the user is left with a blank page.
+  // Reuse the loaded popup document directly between brands.
+  if (reviewPopup && !reviewPopup.closed
+    && /poizon-review-popup\.html(?:[?#]|$)/.test(String(reviewPopup.location?.href || ''))
+    && reviewPopup.document?.body) {
+    reviewPopup.focus();
+    return reviewPopup.document;
+  }
   const popup = hostWindow.open('./poizon-review-popup.html', 'around-g-poizon-review', 'popup=yes,width=1080,height=860');
   if (!popup) throw new Error('POIZON 대조 알림창을 열지 못했습니다. 팝업 허용 상태를 확인해 주세요.');
   const started = Date.now();
@@ -23,6 +33,7 @@ export async function openReviewPopup(hostWindow = window) {
     popup.close();
     throw new Error('POIZON 대조 알림창 준비에 실패했습니다.');
   }
+  reviewPopup = popup;
   popup.focus();
   return popup.document;
 }
