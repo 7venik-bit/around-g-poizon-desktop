@@ -864,17 +864,27 @@ function brandVerificationFor(brand = {}, file = latestCompletedBrandDownload(br
   if (!Number.isFinite(brandId) || !file?.path) return null;
   const record = (state.brandVerifications || []).find((item) => Number(item.brandId) === brandId);
   if (!record || brandImportPathKey(record.filePath) !== brandImportPathKey(file.path)) return null;
-  if (Number(record.fileTime || 0) && Number(file.time || file.mtimeMs || 0)
-    && Number(record.fileTime) !== Number(file.time || file.mtimeMs)) return null;
   const verifiedTime = Date.parse(String(record.verifiedAt || ""));
   if (!Number.isFinite(verifiedTime)) return null;
+  if (Number(record.fileTime || 0) && Number(file.time || file.mtimeMs || 0)
+    && Number(record.fileTime) !== Number(file.time || file.mtimeMs)
+    // 대조 과정에서 저장된 파일의 mtime은 완료 기록 시각보다 앞선다.
+    // 완료 뒤 새로 내려받은 Excel만 기존 검증 표시를 무효화한다.
+    && Number(file.time || file.mtimeMs) > verifiedTime) return null;
   return { ...record, expired: Date.now() - verifiedTime >= BRAND_VERIFICATION_REFRESH_MS };
 }
 
 async function saveBrandVerificationResults(files = [], report = {}) {
   state.brandVerifications = Array.isArray(state.brandVerifications) ? state.brandVerifications : [];
+  // 페이지 교정 저장으로 XLSX의 mtime/size가 바뀐다. 대조 시작 전의 file
+  // 메타데이터를 완료 기록에 넣으면 방금 완료한 파일을 새 파일로 오인해
+  // 배지를 즉시 무효화하므로, 저장이 끝난 실제 파일 정보를 다시 읽는다.
+  const refreshed = await window.aroundG?.listBrandExportFiles?.().catch(() => null);
+  const currentByPath = new Map((refreshed?.ok && Array.isArray(refreshed.files) ? refreshed.files : [])
+    .map((file) => [brandImportPathKey(file.path), file]));
   for (let index = 0; index < files.length; index += 1) {
-    const file = files[index];
+    const suppliedFile = files[index];
+    const file = { ...suppliedFile, ...(currentByPath.get(brandImportPathKey(suppliedFile.path)) || {}) };
     const fileReport = report.files?.[index];
     if (fileReport?.complete !== true || fileReport?.autoCorrection !== "POIZON_AUTO_CORRECTION_APPLIED") continue;
     const brand = explorerMeta.brands.find((item) => rendererBrandsMatch(item.name, file.brandName || file.brand)
@@ -893,6 +903,13 @@ async function saveBrandVerificationResults(files = [], report = {}) {
     const savedIndex = state.brandVerifications.findIndex((item) => item.id === record.id);
     if (savedIndex >= 0) state.brandVerifications[savedIndex] = record;
     else state.brandVerifications.unshift(record);
+  }
+  if (currentByPath.size) {
+    downloadedBrandFiles = downloadedBrandFiles.map((file) => ({
+      ...file,
+      ...(currentByPath.get(brandImportPathKey(file.path)) || {}),
+    }));
+    localStorage.setItem("around-g-brand-download-files", JSON.stringify(downloadedBrandFiles));
   }
   renderBrandCards($("#brand-filter")?.value || "");
 }
