@@ -10092,7 +10092,9 @@ async function captureSellerBrandSales(input = {}) {
         mainWindow?.webContents.send("seller:verification-progress", {
           runId: input.verification.runId, phase: "page-checkpoint-complete",
           activeKey: '', pageNum: capture.currentPage, pageCount: capture.pageCount,
-          message: `POIZON ${capture.currentPage}/${capture.pageCount}페이지 확정 · 상품 ${currentPageProducts.length}개 · 수정 ${Number(checkpoint.changedRows || 0)}행 · 실제 누락 추가 ${Number(checkpoint.addedRows || 0)}행 · 옵션 비교 보류 ${Number(checkpoint.deferredProducts || 0)}개 · 저장 후 재검증 완료`,
+          message: checkpoint.changed
+            ? `POIZON ${capture.currentPage}/${capture.pageCount}페이지 확정 · 상품 ${currentPageProducts.length}개 · 수정 ${Number(checkpoint.changedRows || 0)}행 · 실제 누락 추가 ${Number(checkpoint.addedRows || 0)}행 · 옵션 비교 보류 ${Number(checkpoint.deferredProducts || 0)}개 · 즉시 저장 확인 완료`
+            : `POIZON ${capture.currentPage}/${capture.pageCount}페이지 확정 · 상품 ${currentPageProducts.length}개 · 수정 없음 · 저장 생략 · 다음 페이지 이동`,
         });
         await sellerWindow.webContents.executeJavaScript(
           "(" + paintSellerVerification.toString() + ")(document," + JSON.stringify({
