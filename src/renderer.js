@@ -1155,15 +1155,10 @@ function showDomesticSearchOverlay(startedAt, completedCount, totalCount, curren
     overlay.className = "domestic-search-overlay";
     document.body.appendChild(overlay);
   }
+  // The progress UI is a viewport modal. Remove geometry left by older builds
+  // so a previous grid-sized overlay can never reappear inside a result cell.
+  overlay.removeAttribute("style");
   const article = String(currentProduct?.articleNumber || currentProduct?.productNumber || "").trim();
-  const target = $("#excel-preview-grid") || $("#excel-preview");
-  const rect = target?.getBoundingClientRect();
-  if (rect) {
-    overlay.style.left = `${Math.max(0, rect.left)}px`;
-    overlay.style.top = `${Math.max(0, rect.top)}px`;
-    overlay.style.width = `${Math.max(320, rect.width)}px`;
-    overlay.style.height = `${Math.max(320, Math.min(rect.height, window.innerHeight - Math.max(0, rect.top)))}px`;
-  }
   const safeTotal = Math.max(1, Number(totalCount) || 1);
   const percent = Math.min(100, Math.round((Number(completedCount) / safeTotal) * 100));
   overlay.hidden = false;
@@ -1196,7 +1191,7 @@ setInterval(() => {
 function renderRawExcelDomesticCell(key, product, result) {
   if (!product) return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state muted">검색 정보 없음</span></td>`;
   if (result?.loading) {
-    return `<td class="excel-raw-search-cell">${renderDomesticLoading(result.startedAt)}</td>`;
+    return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">백그라운드 검색 중…</span></td>`;
   }
   if (!result) {
     return `<td class="excel-raw-search-cell excel-raw-search-pending"><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">상품검색</button></td>`;
@@ -1379,7 +1374,7 @@ function renderExcelProductRows(file, products = []) {
       <td>${text(product.brandName || "-")}</td><td title="${text(product.categoryName)}">${text(product.categoryName || "-")}</td>
       <td>${poizonPrice ? money(poizonPrice) : "가격 없음"}</td>
       <td>${product.screenVerified ? excelProductMetric(product.sales30dRaw, product.sales30d) : "미동기화"}</td><td>${product.screenVerified ? excelProductMetric(product.localSales30dRaw, product.localSales30d) : "미동기화"}</td>
-      <td>${result?.loading ? renderDomesticLoading(result.startedAt) : `<button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">${status}</button>`}</td>
+      <td>${result?.loading ? `<span class="excel-raw-search-state loading">백그라운드 검색 중…</span>` : `<button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">${status}</button>`}</td>
     </tr>${result && !result.loading ? `<tr class="excel-product-search-detail ${groupClass} ${outcomeClass}"><td colspan="10"><div class="excel-product-search-result-label"><span></span><strong>${text(productLabel)}</strong>의 국내 검색 결과 <b class="excel-search-outcome-label">${text(outcome?.label || "확인 완료")}</b></div>${renderDomestic(result, product)}</td></tr>` : ""}`;
   }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
   return pageKeys;
@@ -4050,6 +4045,9 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     }
     renderBatchSearchProgress(completed, product);
     await refreshVisibleRows();
+    // Some preview renderers rebuild the workspace. Reassert the body-level
+    // modal afterwards so the mascot always remains above the whole screen.
+    showDomesticSearchOverlay(batchStartedAt, completed, keys.length, product);
     const response = await cachedDomesticSearch(product, true);
     const result = response?.ok ? response.data : { products: [], sources: [], error: response?.message };
     for (const key of groupKeys) excelPreviewSearchResults.set(key, result);
