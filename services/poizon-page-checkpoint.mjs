@@ -50,14 +50,33 @@ export async function syncPoizonPageCheckpoint({
       return { ok: false, code: applied?.code || 'PAGE_CHECKPOINT_APPLY_FAILED', message: applied?.message || 'POIZON 페이지 값을 Excel에 적용할 수 없습니다.' };
     }
 
-    let finalBackupPath = String(backupPath || '');
-    if (applied.changed) {
-      if (!finalBackupPath) {
-        finalBackupPath = `${path}.before-poizon-page-sync-${safeStamp()}.bak`;
-        await fs.copyFile(path, finalBackupPath);
-      }
-      await fs.writeFile(path, applied.buffer);
+    // 이미 일치하는 페이지는 디스크 쓰기와 재읽기를 모두 건너뛴다.
+    // 이 분기는 수집·대조가 완료됐다는 applyWorkbook의 reverified 증거를
+    // 그대로 체크포인트로 사용하므로 다음 페이지로 즉시 진행할 수 있다.
+    if (!applied.changed) {
+      return {
+        ok: true,
+        code: 'PAGE_CHECKPOINT_NO_CHANGES',
+        pageNum: Number(pageNum || 0),
+        changed: false,
+        changedRows: 0,
+        changedCells: 0,
+        addedRows: 0,
+        addedProducts: 0,
+        verifiedCells: Number(applied.verifiedCells || 0),
+        skippedSkuScope: Number(products.pageEvidence?.skippedSkuScope || 0),
+        changes: [],
+        reverified: true,
+        backupPath: String(backupPath || ''),
+      };
     }
+
+    let finalBackupPath = String(backupPath || '');
+    if (!finalBackupPath) {
+      finalBackupPath = `${path}.before-poizon-page-sync-${safeStamp()}.bak`;
+      await fs.copyFile(path, finalBackupPath);
+    }
+    await fs.writeFile(path, applied.buffer);
 
     // 저장된 디스크 파일을 즉시 다시 읽고 같은 POIZON 페이지를 재적용한다.
     // 재적용에서 변경이 한 건이라도 발생하면 저장 결과가 확정되지 않은 것이므로 다음 페이지를 막는다.
