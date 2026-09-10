@@ -13,6 +13,7 @@ import { parsePoizonSalesMetric } from '../services/poizon-sales-filter.mjs';
 import { createReviewWorkbookSnapshot, readReviewWorkbook, checkReviewWorkbookRevision } from '../services/poizon-review-workbook.mjs';
 import { loadReviewSnapshots, reviewCoverage, buildReviewReport, reviewReportText, runPoizonReviewBatch, reviewTone } from '../services/poizon-review-session.mjs';
 import { paintReviewPage } from '../services/poizon-review-paint.mjs';
+import { openReviewPopup } from '../src/poizon-review-workspace.js';
 
 const main = await readFile(new URL('../main.mjs', import.meta.url), 'utf8');
 const renderer = await readFile(new URL('../src/renderer.js', import.meta.url), 'utf8');
@@ -230,6 +231,32 @@ test('dedicated view uses external CSP-compatible styling and keeps original det
   assert.match(view, /navigation to the real review page would immediately erase UI/);
   const popup = await readFile(new URL('../src/poizon-review-popup.html', import.meta.url),'utf8');
   assert.match(popup, /POIZON 실시간 대조/);
+});
+
+test('multi-brand review reuses the loaded popup without navigating it again', async () => {
+  let opens = 0;
+  let focuses = 0;
+  const popup = {
+    closed: false,
+    location: { href: 'https://app.local/poizon-review-popup.html' },
+    document: { body: {}, readyState: 'complete' },
+    focus() { focuses += 1; },
+    close() {},
+  };
+  const hostWindow = {
+    open() {
+      opens += 1;
+      return popup;
+    },
+  };
+
+  const first = await openReviewPopup(hostWindow);
+  const second = await openReviewPopup(hostWindow);
+
+  assert.equal(first, popup.document);
+  assert.equal(second, popup.document);
+  assert.equal(opens, 1);
+  assert.equal(focuses, 2);
 });
 
 test('one bulk approval replaces per-product correction clicks', async () => {
