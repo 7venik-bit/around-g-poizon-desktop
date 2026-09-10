@@ -259,6 +259,19 @@ test('multi-brand review reuses the loaded popup without navigating it again', a
   assert.equal(focuses, 2);
 });
 
+test('selected-brand review opens its popup before loading the workbook batch', async () => {
+  const renderer = await readFile(new URL('../src/renderer.js', import.meta.url), 'utf8');
+  const start = renderer.indexOf('async function openVerifiedCombinedBrandPreview');
+  const end = renderer.indexOf('async function openCombinedSelectedBrandPreview', start);
+  const review = renderer.slice(start, end);
+  const popup = review.indexOf('const reviewDoc = await live.openReviewPopup()');
+  const batch = review.indexOf('runPoizonReviewBatch(');
+  assert.ok(popup >= 0, 'the click path must reserve the review popup immediately');
+  assert.ok(batch > popup, 'the popup must open before multi-workbook loading starts');
+  assert.match(review, /createView:[\s\S]*doc: reviewDoc/);
+  assert.equal((review.match(/openReviewPopup\(/g) || []).length, 1);
+});
+
 test('one bulk approval replaces per-product correction clicks', async () => {
   const view = await readFile(new URL('../src/poizon-review-workspace.js', import.meta.url),'utf8');
   assert.match(view, /review-auto-all/);

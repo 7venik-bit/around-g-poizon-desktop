@@ -568,10 +568,13 @@ async function openVerifiedCombinedBrandPreview(files, filters = {}) {
   const defaults = live.readVerificationConditions();
   const conditions = { minimumChinaSales30: filters.minimumTotal ?? defaults.minimumChinaSales30,
     minimumLocalSales30: filters.minimumLocalTotal ?? defaults.minimumLocalSales30 };
+  // Open while the click gesture is still active. Loading several workbooks
+  // first can take long enough for Chromium to reject the later popup call.
+  const reviewDoc = await live.openReviewPopup();
   const report = await service.runPoizonReviewBatch({ files, conditions, api: window.aroundG,
     onProgress: (message) => { $("#brand-status").textContent = message; },
     createView: async (snapshot, frozen) => live.beginLiveVerification({ file: snapshot.file, brandName: snapshot.file.brandName, snapshot, conditions: frozen,
-      doc: await live.openReviewPopup() }),
+      doc: reviewDoc }),
     notify: (report, view) => view ? view.showReport(report) : live.showReviewReport(report) });
   await saveBrandVerificationResults(files, report);
   return report;
