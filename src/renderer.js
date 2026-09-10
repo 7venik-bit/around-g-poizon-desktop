@@ -618,7 +618,9 @@ async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
   await openIntegratedBrandExcel(files[0], false);
   selectedExcelPreviewProducts.clear();
   excelPreviewProductCache.clear();
-  excelPreviewSearchResults.clear();
+  // Restore results collected earlier in this app session when the operator
+  // returns to the same combined-brand workspace.
+  restoreSavedExcelSearchResults("combined://selected-brands");
   for (const product of products) {
     excelPreviewProductCache.set(excelPreviewStableSelectionKey(product), product);
   }
@@ -4004,9 +4006,10 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     $("#excel-filter-status").textContent = "선택한 행에서 검색 가능한 상품번호를 찾지 못했습니다.";
     return;
   }
-  // A new button press always starts a new search session. Do not leave any
-  // visible or in-memory result from the previous session on another row.
-  excelPreviewSearchResults.clear();
+  // Refresh only the products selected for this run. Completed results for
+  // other rows and brands remain visible instead of disappearing whenever the
+  // operator starts the next selection.
+  for (const key of keys) excelPreviewSearchResults.delete(key);
   domesticIdentitySearchCache.clear();
   if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
   excelPreviewBatchSearching = true;
