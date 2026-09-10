@@ -18,6 +18,14 @@ test("domestic search progress is a fixed viewport modal that locks page scrolli
   assert.match(overlayCss, /html:has\(body > \.domestic-search-overlay:not\(\[hidden\]\)\)[\s\S]*?overflow:\s*hidden\s*!important;/);
   assert.match(overlayCss, /width:\s*auto\s*!important;/);
   assert.match(overlayCss, /height:\s*auto\s*!important;/);
+  assert.match(renderer, /overlay\.removeAttribute\("style"\)/);
+  assert.doesNotMatch(renderer, /overlay\.style\.left/);
+});
+
+test("batch search keeps the otter in the full-screen overlay instead of a product cell", () => {
+  assert.match(renderer, /excel-raw-search-state loading\">백그라운드 검색 중/);
+  assert.match(renderer, /await refreshVisibleRows\(\);[\s\S]*showDomesticSearchOverlay\(batchStartedAt, completed, keys\.length, product\)/);
+  assert.doesNotMatch(renderer, /<td class="excel-raw-search-cell">\$\{renderDomesticLoading/);
 });
 
 test("otter employee visibly types on a keyboard while search continues", () => {
