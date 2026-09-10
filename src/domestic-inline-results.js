@@ -30,8 +30,13 @@
     style.setAttribute(STYLE_MARKER, "true");
     style.textContent = `
       /* Keep the POIZON row compact and place retailer results in the next full-width row. */
-      #excel-preview.product-view #excel-preview-grid table{width:100%!important;min-width:980px!important;table-layout:fixed!important}
+      #excel-preview.product-view #excel-preview-grid table{width:100%!important;min-width:980px!important;table-layout:fixed!important;height:fit-content!important;min-height:0!important;align-self:flex-start!important}
+      #excel-preview.product-view #excel-preview-grid tbody{height:fit-content!important;min-height:0!important}
       #excel-preview.product-view #excel-preview-grid .excel-product-row>td{height:54px!important;vertical-align:middle!important}
+      #excel-preview.product-view #excel-preview-grid .excel-verified-spu-row{height:66px!important}
+      #excel-preview.product-view #excel-preview-grid .excel-verified-spu-row>td{height:66px!important;max-height:66px!important;padding:6px!important;overflow:hidden!important;white-space:nowrap!important}
+      #excel-preview.product-view #excel-preview-grid .excel-verified-image-cell{padding:5px!important}
+      #excel-preview.product-view #excel-preview-grid .excel-verified-image-cell>.excel-verified-image{display:block!important;width:40px!important;height:40px!important;max-width:40px!important;max-height:40px!important;margin:0 auto!important;object-fit:contain!important}
       #excel-preview.product-view #excel-preview-grid .excel-product-search-detail{display:table-row!important}
       #excel-preview.product-view #excel-preview-grid .excel-product-search-detail>td{width:auto!important;height:auto!important;padding:5px 9px!important;white-space:normal!important;overflow:visible!important;text-align:left!important;vertical-align:top!important}
       .domestic-inline-detail-label{display:flex!important;align-items:center!important;gap:7px!important;margin:0 0 6px!important;color:#314a68!important;font-size:12px!important;font-weight:800!important}
