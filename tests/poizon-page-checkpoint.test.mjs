@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import { syncPoizonPageCheckpoint } from '../services/poizon-page-checkpoint.mjs';
 
 function memoryFs(initial = Buffer.from('A')) {
-  let current = Buffer.from(initial), backup = null, writes = 0, copies = 0;
+  let current = Buffer.from(initial), backup = null, reads = 0, writes = 0, copies = 0;
   return {
     api: {
-      readFile: async () => Buffer.from(current),
+      readFile: async () => { reads++; return Buffer.from(current); },
       writeFile: async (_path, value) => { current = Buffer.from(value); writes++; },
       copyFile: async () => { backup = Buffer.from(current); copies++; },
     },
-    state: () => ({ current: current.toString(), backup: backup?.toString() || '', writes, copies }),
+    state: () => ({ current: current.toString(), backup: backup?.toString() || '', reads, writes, copies }),
   };
 }
 
@@ -38,9 +38,24 @@ test('existing backup is reused so every page does not create another backup fil
   const applyWorkbook = () => ({ ok:true, changed:false, reverified:true, changedRows:0, changedCells:0, addedRows:0, addedProducts:0, verifiedCells:2, changes:[], buffer:Buffer.from('B') });
   const result = await syncPoizonPageCheckpoint({ filePath:'A.xlsx', products:[{spuId:'2'}], pageNum:2, backupPath:'first-page.bak', fs:fs.api, applyWorkbook });
   assert.equal(result.ok, true);
+  assert.equal(result.code, 'PAGE_CHECKPOINT_NO_CHANGES');
   assert.equal(result.backupPath, 'first-page.bak');
+  assert.equal(fs.state().reads, 1);
   assert.equal(fs.state().copies, 0);
   assert.equal(fs.state().writes, 0);
+});
+
+test('an unchanged page proceeds without disk write or reread', async () => {
+  const fs = memoryFs(Buffer.from('already-current')); let calls = 0;
+  const result = await syncPoizonPageCheckpoint({
+    filePath:'A.xlsx', products:[{spuId:'2'}], pageNum:4, fs:fs.api,
+    applyWorkbook:() => { calls++; return {ok:true,changed:false,reverified:true,verifiedCells:2,changes:[],buffer:Buffer.from('already-current')}; },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.code, 'PAGE_CHECKPOINT_NO_CHANGES');
+  assert.equal(result.reverified, true);
+  assert.equal(calls, 1);
+  assert.deepEqual([fs.state().reads, fs.state().copies, fs.state().writes], [1, 0, 0]);
 });
 
 test('a disk reread that still requires changes blocks the next page', async () => {
