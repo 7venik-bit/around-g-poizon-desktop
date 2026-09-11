@@ -79,7 +79,8 @@ test("카테고리 검색은 현재 다운로드 완료 브랜드로 바로 조�
   );
   assert.doesNotMatch(categoryHandler, /capturePopularProducts\(\{ runDomestic: false, renderResults: false \}\)/);
   assert.match(categoryHandler, /await downloadedBrandSalesByArticle\(brand\)/);
-  assert.match(categoryHandler, /await window\.aroundG\.captureSellerBrandSales/);
+  assert.doesNotMatch(categoryHandler, /await window\.aroundG\.captureSellerBrandSales/);
+  assert.match(categoryHandler, /await window\.aroundG\.listBrandExportFiles/);
   assert.doesNotMatch(categoryHandler, /await window\.aroundG\.queryExplorer/);
   assert.match(categoryHandler, /const favoriteBrandIds = \[\.\.\.categoryBrandIds\]/);
   assert.match(categoryHandler, /categoryGroupFromProduct\(product\) !== selection\.category/);
@@ -99,7 +100,7 @@ test("인기 브랜드는 브랜드별 마지막 페이지까지 수집하고 �
   assert.match(poizon, /product\.categoryGroup !== input\.category\) continue/);
   assert.match(poizon, /brandProductCount = brandProductKeys\.size/);
   assert.match(main, /brandProductCount: Number\(detail\.brandProductCount \|\| 0\)/);
-  assert.match(renderer, /전체 페이지 \$\{brandCount\.toLocaleString\("ko-KR"\)\}개 수집 완료/);
+  assert.match(renderer, /if \(progress\?\.context === "category"\) return/);
   assert.match(renderer, /상품 \$\{detailProducts\.length\.toLocaleString\("ko-KR"\)\}개/);
   assert.match(renderer, /브랜드 \$\{sourceCount\}\/\$\{favoriteBrandIds\.length\}개 완료/);
 });
@@ -123,7 +124,10 @@ test("카테고리 검색은 이모티콘 없이 진행 상태만 표시한다",
   assert.match(renderer, /categorySearchCacheId/);
   assert.match(renderer, /CATEGORY_SEARCH_RETENTION_MS = 30 \* 24 \* 60 \* 60 \* 1000/);
   assert.match(renderer, /upsert\("categorySearches"/);
-  assert.match(renderer, /cancelCategorySearch\(\)/);
+  const stop = renderer.slice(renderer.indexOf('$("#category-search-stop").addEventListener'), renderer.indexOf('$("#category-sales-filter-reset").addEventListener'));
+  assert.match(stop, /categorySearchRunId \+= 1/);
+  assert.match(stop, /finishCategoryLoading\(\)/);
+  assert.doesNotMatch(stop, /window\.aroundG\./);
   assert.match(preload, /cancelCategorySearch: \(\) => ipcRenderer\.invoke\("explorer:cancel-category"\)/);
   assert.match(main, /ipcMain\.handle\("explorer:cancel-category"/);
   assert.match(main, /categoryBrands\.find\(\(brand\) => Number\(brand\.id\) === Number\(detail\.brandId\)\)/);
