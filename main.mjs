@@ -11623,7 +11623,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     const searchGeneration = domesticSearchGeneration;
     const sendDomesticProgress = (payload) => {
       if (!_event.sender.isDestroyed()) {
-        _event.sender.send("domestic-search:progress", { ...payload, generation: searchGeneration });
+        _event.sender.send("domestic-search:progress", { ...payload, generation: searchGeneration, requestId: String(input?.requestId || "") });
       }
     };
     const operation = (async () => {

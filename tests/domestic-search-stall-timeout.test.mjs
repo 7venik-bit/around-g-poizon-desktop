@@ -13,7 +13,8 @@ test("a stalled domestic search stops after the main-process deadline", () => {
   assert.match(renderer, /const DOMESTIC_SEARCH_MAX_WAIT_MS = 2 \* 60 \* 1000 \+ 5_000/);
   assert.match(cachedSearch, /Promise\.race\(/);
   assert.match(cachedSearch, /timedOut: true/);
-  assert.match(cachedSearch, /await window\.aroundG\.cancelDomesticSearch\?\.\(\)/);
+  assert.match(cachedSearch, /requestDomesticSearchCancel\(\)/);
+  assert.doesNotMatch(cachedSearch, /await window\.aroundG\.cancelDomesticSearch/);
   assert.match(cachedSearch, /first\?\.timedOut/);
   assert.match(cachedSearch, /clearTimeout\(timeoutId\)/);
   assert.match(cachedSearch, /국내 판매처 검색 응답이 없어 강제 종료했습니다/);
