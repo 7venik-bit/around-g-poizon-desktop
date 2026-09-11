@@ -942,8 +942,8 @@ test("Musinsa parser extracts product data", () => {
   assert.equal(result[0].store, "무신사");
   assert.equal(result[0].price, 129000);
   assert.deepEqual(result[0].sizes, [
-    { label: "270", inStock: true },
-    { label: "275", inStock: false },
+    { label: "270", inStock: true, quantity: 2 },
+    { label: "275", inStock: false, quantity: 0 },
   ]);
 });
 

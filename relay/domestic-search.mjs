@@ -1,3 +1,5 @@
+import { normalizeStockOptions } from "../services/retailer-stock-strategies.mjs";
+export { mergeRetailerStockProducts, retailerStockStrategy, collectNativeStockVariants, captureNativeStockControls } from "../services/retailer-stock-strategies.mjs";
 import { normalizeRenderedStockEvidence } from "../services/domestic-stock.mjs";
 export { normalizeRenderedStockEvidence, captureRenderedStockEvidence } from "../services/domestic-stock.mjs";
 import {
@@ -15,7 +17,6 @@ import { brandSearchQueries } from "../services/brand-search-profile.mjs";
 import { dedupeNaverOverlappingProducts } from "../services/naver-result-dedupe.mjs";
 
 const MAX_QUERY_LENGTH = 120;
-const MAX_PRODUCTS_PER_STORE = 8;
 
 const OVERSEAS_PURCHASE_PATTERN = /(?:해외\s*(?:직구|구매\s*대행|배송|상품)|구매\s*대행|직구\s*상품|해외배송비|국제\s*배송|해외에서\s*배송|overseas\s*(?:shipping|purchase)|international\s*shipping|cross[- ]?border)/i;
 
@@ -756,20 +757,7 @@ export function countRenderedChannelProducts(content, store = "", articleNumber 
 }
 
 function normalizeSizes(...candidates) {
-  const source = candidates.find((candidate) => Array.isArray(candidate)) || [];
-  return source.flatMap((option) => {
-    if (typeof option === "string" || typeof option === "number") {
-      return [{ label: String(option), inStock: true }];
-    }
-    if (!option || typeof option !== "object") return [];
-    const label = option.sizeName || option.optionName || option.name || option.label || option.value;
-    if (!label) return [];
-    const quantity = safeNumber(option.stockQuantity ?? option.stock ?? option.quantity);
-    return [{
-      label: String(label),
-      inStock: option.isSoldOut !== true && option.soldOutYn !== "Y" && quantity !== 0,
-    }];
-  });
+  return normalizeStockOptions(candidates.find(Array.isArray) || []);
 }
 
 
@@ -803,7 +791,7 @@ export function parseMusinsaSearch(html) {
       }
     }
   }
-  return uniqueProducts(products).slice(0, MAX_PRODUCTS_PER_STORE);
+  return uniqueProducts(products);
 }
 
 export function parseSsgSearch(html) {
@@ -836,7 +824,7 @@ export function parseSsgSearch(html) {
       }
     }
   }
-  return uniqueProducts(products).slice(0, MAX_PRODUCTS_PER_STORE);
+  return uniqueProducts(products);
 }
 
 export function parseKolonSearch(html, requestedQuery = "") {
@@ -864,7 +852,7 @@ export function parseKolonSearch(html, requestedQuery = "") {
       sizes: [],
     });
   }
-  return uniqueProducts(products).slice(0, MAX_PRODUCTS_PER_STORE);
+  return uniqueProducts(products);
 }
 
 async function fetchSearchPage(url, fetchImpl) {
@@ -906,18 +894,11 @@ async function enrichMusinsaOptions(products, fetchImpl) {
       });
       if (!response.ok) return product;
       const document = await response.json();
-      const flatten = (options) => (options || []).flatMap((option) => {
-        const children = flatten(option.goodsOptions);
-        if (children.length) return children;
-        if (!option.name && !option.code) return [];
-        return [{ label: String(option.name || option.code), inStock: option.outOfStock !== true }];
-      });
-      const sizes = flatten(document?.data?.goodsOptions);
-      return {
+      const sizes = normalizeStockOptions(document?.data?.goodsOptions);
+      return sizes.length ? {
         ...product,
-        sizes,
-        inStock: sizes.length ? sizes.some((size) => size.inStock) : product.inStock,
-      };
+        ...normalizeRenderedStockEvidence({stockTexts:[product.stockText].filter(Boolean),options:sizes}),
+      } : product;
     } catch {
       return product;
     }

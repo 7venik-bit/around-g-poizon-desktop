@@ -103,6 +103,10 @@ import {
   isTrustedNaverFashionProductCard,
   normalizeRenderedStockEvidence,
   captureRenderedStockEvidence,
+  retailerStockStrategy,
+  mergeRetailerStockProducts,
+  collectNativeStockVariants,
+  captureNativeStockControls,
   naverFashionTownUrl,
   parseNaverFashionTownChannelCounts,
   queryDomesticProducts,
@@ -1494,14 +1498,15 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
   brand = "",
   title = "",
   requireArticleIdentity = false,
+  generation = domesticSearchGeneration,
+  onActivity = null,
 } = {}) {
   const candidates = (Array.isArray(products) ? products : [])
     .filter((product) => isDomesticNaverPriceCard({
       productUrl: product?.url || product?.productUrl,
       title: product?.title,
       text: product?.text,
-    }))
-    .slice(0, 8);
+    }));
   if (!candidates.length) {
     return { products: [], candidateCount: 0, checkedCount: 0, rejectedCount: 0, failedCount: 0 };
   }
@@ -1605,17 +1610,15 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         }
         // Open choices only after verifying this seller/product, and preserve
         // the initial evidence if the optional size inspection fails.
+        let optionStock = null;
         try {
-          await openRenderedSizeOptions(evidenceWindow);
-          const optionSnapshot = await evidenceWindow.webContents.executeJavaScript(
-            `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(renderedStockSelectors("네이버 패션타운"))})`, true,
-          );
-          if (optionSnapshot?.options?.length) snapshot.stockEvidence = optionSnapshot;
+          optionStock = await collectRenderedProductStock(evidenceWindow, "네이버 패션타운", generation, onActivity);
         } catch {}
         approved.push({
           ...candidate,
           ...(snapshot.stockEvidence && (snapshot.stockEvidence.stockTexts?.length || snapshot.stockEvidence.purchaseAvailable || snapshot.stockEvidence.options?.length)
             ? normalizeRenderedStockEvidence(snapshot.stockEvidence) : {}),
+          ...(optionStock || {}),
           domesticSellerVerified: true,
           domesticSellerEvidence: String(snapshot.sellerEvidenceText || "").slice(0, 240),
           brandVerifiedFromCard: brandVerified,
@@ -1629,6 +1632,8 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         // A single inaccessible product is omitted without affecting the
         // remaining candidates or any other program feature.
         failedCount += 1;
+      } finally {
+        await onActivity?.({products: [...approved], completedProducts: checkedCount + failedCount, totalProducts: candidates.length});
       }
     }
   } finally {
@@ -2388,7 +2393,7 @@ async function openRenderedSizeOptions(searchWindow) {
   let clicked = false;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const existing = await searchWindow.webContents.executeJavaScript(
-      `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(renderedStockSelectors())})`, true,
+      `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(renderedStockSelectors("", searchWindow.webContents.getURL()))})`, true,
     ).catch(() => null);
     // Do not toggle an open menu closed or click a size that is already visible.
     if (normalizeRenderedStockEvidence(existing || {}).sizes.length) return clicked;
@@ -2400,6 +2405,7 @@ async function openRenderedSizeOptions(searchWindow) {
       };
       const controls = [...document.querySelectorAll('button,[role="button"],[role="combobox"],[aria-haspopup="listbox"]')]
         .filter(visible)
+        .filter(element => !element.closest('header,footer,nav,[class*="review" i],[class*="sizeguide" i],[class*="sizetable" i],[class*="size-guide" i]'))
         .filter(element => !element.disabled && element.getAttribute("aria-disabled") !== "true" && element.getAttribute("aria-expanded") !== "true")
         .filter((element) => {
           const label = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("placeholder"), element.className].join(" ");
@@ -2422,21 +2428,8 @@ async function openRenderedSizeOptions(searchWindow) {
   return clicked;
 }
 
-function renderedStockSelectors(store = "") {
-  const source = String(store || "");
-  if (/^무신사/.test(source)) {
-    return ['option', '[role="option"]', '[class*="option" i] button', '[class*="option" i] li', '[class*="size" i] button'];
-  }
-  if (/^네이버/.test(source)) {
-    return ['option', '[role="option"]', '[role="listbox"] li', '[class*="option" i] li', '[class*="select" i] li'];
-  }
-  if (/^SSG/.test(source)) {
-    return ['option', '[role="option"]', '[class*="cdtl_opt" i] li', '[class*="select" i] li', '[class*="option" i] li'];
-  }
-  if (/^롯데온/.test(source)) {
-    return ['option', '[role="option"]', '[class*="option" i] li', '[class*="select" i] li', '[class*="size" i] button'];
-  }
-  return ['option', '[role="option"]', '[role="listbox"] li', '[class*="size" i]', '[class*="option" i] button', '[class*="option" i] li'];
+function renderedStockSelectors(store = "", url = "") {
+  return retailerStockStrategy({store, url}).optionSelectors;
 }
 
 async function clickRenderedProductCard(searchWindow, productUrl, searchResultsUrl = "") {
@@ -2656,7 +2649,81 @@ async function waitForDomesticCaptureReady(searchWindow, timeoutMs = 25_000) {
   if (lastSignature && Date.now() - stableSince < 1_500 && !searchWindow.isDestroyed()) await wait(1_500);
 }
 
-async function refreshDomesticProductStock(product, generation = domesticSearchGeneration) {
+async function collectRenderedProductStock(searchWindow, storeName = "", generation = domesticSearchGeneration, onActivity = null) {
+  const canceled = () => domesticSearchCanceled(generation) || !searchWindow || searchWindow.isDestroyed();
+  if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
+  const strategy = retailerStockStrategy({store: storeName, url: searchWindow.webContents.getURL()});
+  const capture = () => searchWindow.webContents.executeJavaScript(
+    `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(strategy.optionSelectors)})`, true);
+  await openRenderedSizeOptions(searchWindow);
+  const initial = await capture();
+  let variants = {options: [], complete: true};
+  const readControls = () => searchWindow.webContents.executeJavaScript(`(${captureNativeStockControls.toString()})()`, true);
+  try {
+    variants = await collectNativeStockVariants({
+      canceled,
+      read: async depth => {
+        let state = await readControls();
+        const group = state.groups?.[depth];
+        if (group?.kind === "custom" && !group.options.length) {
+          await searchWindow.webContents.executeJavaScript(`(() => {
+            const el = document.querySelector(${JSON.stringify(group.selector)});
+            if (el && el.getAttribute('aria-expanded') !== 'true' && !el.disabled) el.click();
+          })()`, true);
+          for (let attempt = 0; attempt < 8; attempt++) {
+            if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
+            await wait(300);
+            state = await readControls();
+            if (state.groups?.[depth]?.options?.length) break;
+          }
+        }
+        return state;
+      },
+      select: async (group, option) => {
+        if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
+        const selected = await searchWindow.webContents.executeJavaScript(`(() => {
+          const el = document.querySelector(${JSON.stringify(option.selector || group.selector)});
+          if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+          if (el.tagName === 'SELECT') {
+            const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+            setter.call(el, ${JSON.stringify(option.value)});
+            el.dispatchEvent(new Event('input', {bubbles:true}));
+            el.dispatchEvent(new Event('change', {bubbles:true}));
+          } else el.click();
+          return true;
+        })()`, true);
+        if (!selected) throw new Error("STOCK_OPTION_CHANGED");
+      },
+      settle: async () => {
+        // Reread until dependent controls are populated and stable. Retain a
+        // finite bound for a broken widget; the caller marks partial coverage.
+        let previous = "", stable = 0;
+        for (let attempt = 0; attempt < 12; attempt++) {
+          if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
+          await wait(300);
+          const state = await readControls();
+          const signature = JSON.stringify(state);
+          const ready = (state.groups || []).every(g => g.kind === 'custom' || g.options.some(o => !o.placeholder));
+          stable = ready && signature === previous ? stable + 1 : 0;
+          previous = signature;
+          if (stable >= 2) break;
+        }
+      },
+      onProgress: update => onActivity?.({option: update.label, optionCount: update.completed}),
+    });
+  } catch (error) {
+    if (canceled()) throw error;
+    variants = {options: [], complete: false};
+  }
+  const observed = normalizeRenderedStockEvidence({...initial,
+    options: variants.options.length ? variants.options : variants.complete ? initial?.options || [] : [],
+    purchaseAvailable: !variants.complete && !variants.options.length ? false : initial?.purchaseAvailable,
+  });
+  return {...observed, stockStrategy: strategy.id, stockCheckedAt: new Date().toISOString(),
+    stockCoverage: !variants.complete ? 'partial' : observed.stockVerified ? 'observed' : 'unknown'};
+}
+
+async function refreshDomesticProductStock(product, generation = domesticSearchGeneration, onActivity = null) {
   if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
   const fallback = { inStock: product.inStock === false ? false : null, sizes: product.sizes || [],
     stockText: String(product.stockText || ""), stockStatus: product.inStock === false ? "soldout" : "unknown", stockVerified: product.inStock === false };
@@ -2665,26 +2732,28 @@ async function refreshDomesticProductStock(product, generation = domesticSearchG
     webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, backgroundThrottling: false, paintWhenInitiallyHidden: true, offscreen: true } });
   activeDomesticSearchWindows.add(stockWindow);
   stockWindow.on("closed", () => activeDomesticSearchWindows.delete(stockWindow));
-  let timer;
+  let timer, expire, stopped = false;
+  const deadline = new Promise(resolve => { expire = () => resolve(fallback); timer = setTimeout(expire, 45_000); });
+  const activity = async update => {
+    if (stopped || stockWindow.isDestroyed()) return;
+    clearTimeout(timer); timer = setTimeout(expire, 45_000);
+    await onActivity?.(update);
+  };
   try {
     return await Promise.race([
       (async () => {
         await stockWindow.loadURL(product.url);
         await waitForDomesticCaptureReady(stockWindow, 25_000);
-        await openRenderedSizeOptions(stockWindow);
-        if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
-        const snapshot = await stockWindow.webContents.executeJavaScript(
-          `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(renderedStockSelectors(product.store))})`, true,
-        );
-        const observed = normalizeRenderedStockEvidence(snapshot || {});
+        const observed = await collectRenderedProductStock(stockWindow, product.store, generation, activity);
         return observed.stockText || observed.purchaseLimitText || observed.sizes.length || observed.inStock !== null ? observed : fallback;
       })(),
-      new Promise(resolve => { timer = setTimeout(() => resolve(fallback), 45_000); }),
+      deadline,
     ]);
   } catch (error) {
     if (domesticSearchCanceled(generation)) throw error;
     return fallback;
   } finally {
+    stopped = true;
     clearTimeout(timer);
     if (!stockWindow.isDestroyed()) stockWindow.destroy();
     activeDomesticSearchWindows.delete(stockWindow);
@@ -2759,7 +2828,7 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
   };
 }
 
-async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "", securityRetry = 0, searchAttempt = null, sharedNaverSession = null, generation = domesticSearchGeneration) {
+async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "", securityRetry = 0, searchAttempt = null, sharedNaverSession = null, generation = domesticSearchGeneration, onActivity = null) {
   if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
   const interactiveOfficialSearch = source.store === "브랜드 공식몰"
     && !String(source.officialProductUrl || "")
@@ -3008,7 +3077,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
               if (verified) {
                 searchWindow.destroy();
                 searchWindow = null;
-                return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession, generation);
+                return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession, generation, onActivity);
               }
             }
             return renderedSearchFailure(
@@ -3029,7 +3098,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
               if (verified) {
                 searchWindow.destroy();
                 searchWindow = null;
-                return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession);
+                return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession, generation, onActivity);
               }
             }
             return renderedSearchFailure(
@@ -3056,7 +3125,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             if (verified) {
               searchWindow.destroy();
               searchWindow = null;
-              return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession);
+              return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession, generation, onActivity);
             }
           }
           return renderedSearchFailure(
@@ -3389,7 +3458,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         }
         searchWindow.destroy();
         searchWindow = null;
-        return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession);
+        return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession, generation, onActivity);
       }
     } catch {
       return renderedSearchFailure("result_parse_failed", searchWindow, { searchSubmitted: interactiveSiteSearch });
@@ -3410,6 +3479,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         brand,
         title,
         requireArticleIdentity,
+        generation,
+        onActivity,
       });
       const approvedProducts = approval.products;
       const approved = approvedProducts.length > 0;
@@ -3532,127 +3603,127 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     // list-only results.
     if (Array.isArray(analyzed?.products)) {
       const products = [];
-      const inspectedProducts = analyzed.products.slice(0, 8);
+      const inspectedProducts = analyzed.products;
       const attemptedQuery = sanitizeDomesticQuery(searchAttempt?.query || source.searchQuery || articleNumber || title);
       const exactCodeQuery = sanitizeDomesticProductCode(articleNumber);
       const isCodePriorityAttempt = Boolean(exactCodeQuery && attemptedQuery === exactCodeQuery);
       let identityRequiredCount = 0;
       let identityCheckedCount = 0;
       let identityMismatchCount = 0;
-      for (const product of inspectedProducts) {
-        let detailText = "";
-        let detailIdentity = { titleText: "", labeledText: "", structuredCodes: [] };
-        let detailLoaded = false;
-        let stockEvidence = normalizeRenderedStockEvidence({ stockTexts: [product.stockText, product.purchaseLimitText].filter(Boolean), options: product.sizes || [] });
+      for (const [productIndex, product] of inspectedProducts.entries()) {
+        if (domesticSearchCanceled(generation) || searchWindow.isDestroyed()) throw new Error("DOMESTIC_SEARCH_CANCELED");
         try {
-          const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
-          if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");
-          await wait(1_000);
-          const identitySnapshot = await searchWindow.webContents.executeJavaScript(`(() => {
-            const pageText = String(document.body?.innerText || "").slice(0, 60000);
-            const titleText = [...document.querySelectorAll('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')]
-              .map((element) => String(element.innerText || element.textContent || "").replace(/\\s+/g, " ").trim())
-              .filter(Boolean).slice(0, 8).join(" ").slice(0, 2000);
-            const identityLabel = /품\\s*번|상품\\s*(?:번호|코드)|제품\\s*(?:번호|코드)|모델\\s*(?:명|번호|코드)?|스타일\\s*(?:번호|코드)?|style\\s*(?:no|number|code)?|model\\s*(?:no|number|code)?|sku|mpn/i;
-            const labeledText = pageText.split(/\\n+/).map((line) => line.replace(/\\s+/g, " ").trim())
-              .filter((line) => identityLabel.test(line)).slice(0, 40).join("\\n");
-            const structuredCodes = [];
-            const add = (value) => {
-              if (Array.isArray(value)) return value.forEach(add);
-              if (value !== undefined && value !== null && String(value).trim()) structuredCodes.push(String(value).trim());
-            };
-            for (const element of document.querySelectorAll('[itemprop="sku"],[itemprop="mpn"],[itemprop="model"]')) {
-              add(element.getAttribute("content") || element.textContent);
+          let detailText = "";
+          let detailIdentity = { titleText: "", labeledText: "", structuredCodes: [] };
+          let detailLoaded = false;
+          let stockEvidence = normalizeRenderedStockEvidence({ stockTexts: [product.stockText, product.purchaseLimitText].filter(Boolean), options: product.sizes || [] });
+          try {
+            const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
+            if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");
+            await wait(1_000);
+            const identitySnapshot = await searchWindow.webContents.executeJavaScript(`(() => {
+              const pageText = String(document.body?.innerText || "").slice(0, 60000);
+              const titleText = [...document.querySelectorAll('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')]
+                .map((element) => String(element.innerText || element.textContent || "").replace(/\\s+/g, " ").trim())
+                .filter(Boolean).slice(0, 8).join(" ").slice(0, 2000);
+              const identityLabel = /품\\s*번|상품\\s*(?:번호|코드)|제품\\s*(?:번호|코드)|모델\\s*(?:명|번호|코드)?|스타일\\s*(?:번호|코드)?|style\\s*(?:no|number|code)?|model\\s*(?:no|number|code)?|sku|mpn/i;
+              const labeledText = pageText.split(/\\n+/).map((line) => line.replace(/\\s+/g, " ").trim())
+                .filter((line) => identityLabel.test(line)).slice(0, 40).join("\\n");
+              const structuredCodes = [];
+              const add = (value) => {
+                if (Array.isArray(value)) return value.forEach(add);
+                if (value !== undefined && value !== null && String(value).trim()) structuredCodes.push(String(value).trim());
+              };
+              for (const element of document.querySelectorAll('[itemprop="sku"],[itemprop="mpn"],[itemprop="model"]')) {
+                add(element.getAttribute("content") || element.textContent);
+              }
+              for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+                try {
+                  const walk = (value) => {
+                    if (!value || typeof value !== "object") return;
+                    if (Array.isArray(value)) return value.forEach(walk);
+                    for (const [key, child] of Object.entries(value)) {
+                      if (/^(?:sku|mpn|model|styleNo|articleNumber)$/i.test(key)) add(child);
+                      else if (child && typeof child === "object") walk(child);
+                    }
+                  };
+                  walk(JSON.parse(script.textContent || "null"));
+                } catch {}
+              }
+              return JSON.stringify({ pageText, titleText, labeledText, structuredCodes: [...new Set(structuredCodes)].slice(0, 30) });
+            })()`, true).then(JSON.parse).catch(() => null);
+            if (identitySnapshot) {
+              detailText = String(identitySnapshot.pageText || "");
+              detailIdentity = identitySnapshot;
+              detailLoaded = true;
             }
-            for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
-              try {
-                const walk = (value) => {
-                  if (!value || typeof value !== "object") return;
-                  if (Array.isArray(value)) return value.forEach(walk);
-                  for (const [key, child] of Object.entries(value)) {
-                    if (/^(?:sku|mpn|model|styleNo|articleNumber)$/i.test(key)) add(child);
-                    else if (child && typeof child === "object") walk(child);
-                  }
-                };
-                walk(JSON.parse(script.textContent || "null"));
-              } catch {}
+            const observed = await collectRenderedProductStock(searchWindow, source.store, generation, onActivity);
+            if (observed.stockText || observed.purchaseLimitText || observed.sizes.length || observed.inStock !== null) stockEvidence = observed;
+          } catch {}
+          if (product.detailArticleVerificationRequired) identityRequiredCount += 1;
+          const detailArticleVerified = product.detailArticleVerificationRequired
+            ? strictProductArticleIdentityMatch(detailIdentity, articleNumber) : false;
+          const titleFallbackVerified = product.detailArticleVerificationRequired
+            && !isCodePriorityAttempt
+            && product.brandVerifiedFromCard === true
+            && titleIdentityMatch(`${String(product.title || "")} ${String(detailIdentity.titleText || "")}`, title);
+          if (product.detailArticleVerificationRequired && detailLoaded) identityCheckedCount += 1;
+          const linkOnlySource = String(product?.store || "") === "브랜드 공식몰"
+            || /^네이버\s/.test(String(product?.store || ""));
+          if (product.detailArticleVerificationRequired && !detailArticleVerified && !titleFallbackVerified) {
+            if (detailLoaded) identityMismatchCount += 1;
+            if (linkOnlySource) {
+              products.push({
+                ...product,
+                linkOnly: true,
+                linkVerified: /^https?:\/\//i.test(String(product?.url || "")),
+                articleNumber: product.articleNumberVerified === true ? product.articleNumber : "",
+                inStock: null,
+                sizes: [],
+                stockStatus: "manual_check",
+                stockVerified: false,
+                stockText: "상품 일치 확인 필요",
+                stockCoverage: "unknown",
+              });
             }
-            return JSON.stringify({ pageText, titleText, labeledText, structuredCodes: [...new Set(structuredCodes)].slice(0, 30) });
-          })()`, true).then(JSON.parse).catch(() => null);
-          if (identitySnapshot) {
-            detailText = String(identitySnapshot.pageText || "");
-            detailIdentity = identitySnapshot;
-            detailLoaded = true;
+            continue;
           }
-          await openRenderedSizeOptions(searchWindow);
-          const stockSelectors = renderedStockSelectors(source.store);
-          const stockSnapshot = await searchWindow.webContents.executeJavaScript(
-            `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(stockSelectors)})`, true,
-          ).catch(() => null);
-          if (stockSnapshot && (stockSnapshot.stockTexts?.length || stockSnapshot.purchaseAvailable || stockSnapshot.options?.length)) {
-            stockEvidence = normalizeRenderedStockEvidence(stockSnapshot);
-          }
-        } catch {}
-        if (product.detailArticleVerificationRequired) identityRequiredCount += 1;
-        const detailArticleVerified = product.detailArticleVerificationRequired
-          ? strictProductArticleIdentityMatch(detailIdentity, articleNumber) : false;
-        const titleFallbackVerified = product.detailArticleVerificationRequired
-          && !isCodePriorityAttempt
-          && product.brandVerifiedFromCard === true
-          && titleIdentityMatch(`${String(product.title || "")} ${String(detailIdentity.titleText || "")}`, title);
-        if (product.detailArticleVerificationRequired && detailLoaded) identityCheckedCount += 1;
-        const linkOnlySource = String(product?.store || "") === "브랜드 공식몰"
-          || /^네이버\s/.test(String(product?.store || ""));
-        if (product.detailArticleVerificationRequired && !detailArticleVerified && !titleFallbackVerified) {
-          if (detailLoaded) identityMismatchCount += 1;
-          if (linkOnlySource) {
-            products.push({
-              ...product,
-              linkOnly: true,
-              linkVerified: /^https?:\/\//i.test(String(product?.url || "")),
-              articleNumber: product.articleNumberVerified === true ? product.articleNumber : "",
-              inStock: null,
-              sizes: [],
-              stockStatus: "manual_check",
-              stockVerified: false,
-              ...stockEvidence,
-            });
-          }
-          continue;
+          const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
+          if (isOverseasPurchaseProduct(evidence)) continue;
+          if (isConsignmentOperatedProduct(evidence)) continue;
+          const isSsg = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(String(product.url || ""));
+          const detailClassification = isSsg
+            ? classifySsgProductEvidence({ brand, url: product.url, text: evidence })
+            : String(product.ssgClassification || "");
+          const classification = isSsg
+            ? resolveSsgProductClassification(detailClassification, product.ssgClassification)
+            : detailClassification;
+          const retailer = detectedRetailer(evidence);
+          products.push({
+            ...product,
+            sourceStore: String(product.sourceStore || product.store || source.store || ""),
+            // Search cards can omit the manufacturer's code. Preserve the code
+            // verified on the detail page so same-model colour cards are merged
+            // later and the best matching image/price remains.
+            detectedArticleNumber: detailArticleVerified ? articleNumber : product.detectedArticleNumber,
+            articleNumber: detailArticleVerified || product.articleNumberVerified === true ? articleNumber : "",
+            articleNumberVerified: detailArticleVerified || product.articleNumberVerified === true,
+            matchBasis: detailArticleVerified ? "article" : titleFallbackVerified ? "brand_title" : "card_article",
+            store: isSsg && classification === "official_brand"
+              ? "SSG 브랜드 공식관"
+              : isSsg && classification === "parallel_import" ? "SSG 병행수입" : product.store,
+            retailerName: isSsg && classification === "official_brand"
+              ? (/본사\s*직영/i.test(evidence) || /본사\s*직영/i.test(String(product.retailerName || ""))
+                ? "브랜드 공식관 · 본사직영" : "브랜드 공식관 · 공식수입")
+              : isSsg && classification === "parallel_import" ? (retailer || "병행수입 상품") : product.retailerName,
+            officialStoreVerified: isSsg ? classification === "official_brand" : product.officialStoreVerified,
+            ssgClassification: classification,
+            ssgDetailVerified: Boolean(detailText),
+            ...stockEvidence,
+          });
+        } finally {
+          await onActivity?.({products: [...products], completedProducts: productIndex + 1, totalProducts: inspectedProducts.length});
         }
-        const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
-        if (isOverseasPurchaseProduct(evidence)) continue;
-        if (isConsignmentOperatedProduct(evidence)) continue;
-        const isSsg = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(String(product.url || ""));
-        const detailClassification = isSsg
-          ? classifySsgProductEvidence({ brand, url: product.url, text: evidence })
-          : String(product.ssgClassification || "");
-        const classification = isSsg
-          ? resolveSsgProductClassification(detailClassification, product.ssgClassification)
-          : detailClassification;
-        const retailer = detectedRetailer(evidence);
-        products.push({
-          ...product,
-          sourceStore: String(product.sourceStore || product.store || source.store || ""),
-          // Search cards can omit the manufacturer's code. Preserve the code
-          // verified on the detail page so same-model colour cards are merged
-          // later and the best matching image/price remains.
-          detectedArticleNumber: detailArticleVerified ? articleNumber : product.detectedArticleNumber,
-          articleNumber: detailArticleVerified || product.articleNumberVerified === true ? articleNumber : "",
-          articleNumberVerified: detailArticleVerified || product.articleNumberVerified === true,
-          matchBasis: detailArticleVerified ? "article" : titleFallbackVerified ? "brand_title" : "card_article",
-          store: isSsg && classification === "official_brand"
-            ? "SSG 브랜드 공식관"
-            : isSsg && classification === "parallel_import" ? "SSG 병행수입" : product.store,
-          retailerName: isSsg && classification === "official_brand"
-            ? (/본사\s*직영/i.test(evidence) || /본사\s*직영/i.test(String(product.retailerName || ""))
-              ? "브랜드 공식관 · 본사직영" : "브랜드 공식관 · 공식수입")
-            : isSsg && classification === "parallel_import" ? (retailer || "병행수입 상품") : product.retailerName,
-          officialStoreVerified: isSsg ? classification === "official_brand" : product.officialStoreVerified,
-          ssgClassification: classification,
-          ssgDetailVerified: Boolean(detailText),
-          ...stockEvidence,
-        });
       }
       const preserveNaverChannelCount = /^네이버\s/.test(String(source.store || ""))
         && Number.isFinite(analyzed?.channelCount);
@@ -3675,7 +3746,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     if (source.store !== "브랜드 공식몰" || !Array.isArray(detailed?.products)) return detailed;
     const officialPageUrl = String(source.homepageUrl || source.officialProductUrl || source.searchUrl || "");
     const products = [];
-    for (const product of detailed.products.slice(0, 12)) {
+    for (const product of detailed.products) {
       const detailImageUrl = await officialDetailImage(
         searchWindow,
         product.url,
@@ -3735,11 +3806,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
 
 async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "", generation = domesticSearchGeneration, onProgress = null, onCheckpoint = null) {
   const discoveredProducts = [];
+  let pendingProducts = [];
   const sources = [];
   const snapshot = () => ({
     ...data,
-    products: [...(data.products || []), ...discoveredProducts].filter((product, index, all) =>
-      index === all.findIndex(candidate => `${candidate.store}:${candidate.id || candidate.url}` === `${product.store}:${product.id || product.url}`)),
+    products: mergeRetailerStockProducts([...(data.products || []), ...discoveredProducts, ...pendingProducts]),
     sources: [...sources, ...data.sources.slice(sources.length).map(source => ({
       ...source, count: 0, countVerified: false, absenceConfirmed: false,
       searchCompleted: false, verificationPending: true,
@@ -3777,10 +3848,13 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           for (let index = 0; index < products.length; index += 1) {
             if (products[index].store !== source.store) continue;
             onProgress?.({ completed: sources.length, total: progressTotal, source: "코오롱몰 재고 문구", phase: "searching" });
-            const stock = await refreshDomesticProductStock(products[index], generation);
+            const stock = await refreshDomesticProductStock(products[index], generation, update => onProgress?.({
+              completed:sources.length,total:progressTotal,source:`코오롱몰 · 옵션 ${update.option || "확인"}`,phase:"searching",
+            }));
             if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
             products[index] = { ...products[index], ...stock };
             data = { ...data, products };
+            await onCheckpoint?.(snapshot());
           }
         }
         return {
@@ -3805,7 +3879,6 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       for (let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts.length; queryAttemptIndex += 1) {
         const queryAttempt = queryAttempts[queryAttemptIndex];
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
-        const sourceDeadline = Date.now() + 90_000;
         onProgress?.({ completed: sources.length, total: progressTotal, source: String(source.store || "판매처"), phase: "searching", query: queryAttempt.query });
         // A Naver overview DOM belongs to exactly one submitted query. When an
         // exact-code result is authoritatively absent, discard that DOM before
@@ -3824,36 +3897,40 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       // the completed prior search returned no product; browser/security or
       // detail-verification failures must not repeat the same query or advance
       // as though the product were absent.
-        const remainingSourceMs = sourceDeadline - Date.now();
-        if (remainingSourceMs <= 0) {
-          result = renderedSearchFailure("page_load_timeout", null, {
-            verificationStage: "source_timeout",
-            source: String(source.store || "판매처"),
-          });
-          break;
-        }
-        let sourceTimeoutId;
+        // The deadline measures inactivity, not total useful work. Each
+        // completed option/product retains a checkpoint and refreshes it.
+        let sourceTimeoutId, stopped = false, expire;
+        pendingProducts = [];
+        const timeoutResult = new Promise(resolve => {
+          expire = () => {
+            stopped = true;
+            if (domesticSearchCanceled(generation)) return resolve(renderedSearchFailure("search_canceled"));
+            for (const searchWindow of [...activeDomesticSearchWindows]) {
+              if (searchWindow && !searchWindow.isDestroyed()) searchWindow.destroy();
+            }
+            activeDomesticSearchWindows.clear();
+            resolve({...renderedSearchFailure("page_load_timeout", null, {
+              verificationStage: "source_timeout", source: String(source.store || "판매처"),
+            }), products: [...pendingProducts], count: pendingProducts.length || null,
+              detailVerificationPending: true});
+          };
+          sourceTimeoutId = setTimeout(expire, 90_000);
+        });
+        const activity = async update => {
+          if (stopped || domesticSearchCanceled(generation)) return;
+          clearTimeout(sourceTimeoutId);
+          sourceTimeoutId = setTimeout(expire, 90_000);
+          if (Array.isArray(update.products)) pendingProducts = update.products;
+          const stage = update.option ? `옵션 ${update.option}`
+            : `상품 ${update.completedProducts}/${update.totalProducts}`;
+          onProgress?.({completed:sources.length, total:progressTotal,
+            source:`${source.store || "판매처"} · ${stage}`, phase:"searching", query:queryAttempt.query});
+          if (Array.isArray(update.products)) await onCheckpoint?.(snapshot());
+        };
         const queryResult = await Promise.race([
-          renderedSearchSourceResult(
-            source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession, generation,
-          ),
-          new Promise((resolve) => {
-            sourceTimeoutId = setTimeout(() => {
-              if (domesticSearchCanceled(generation)) {
-                resolve(renderedSearchFailure("search_canceled"));
-                return;
-              }
-              for (const searchWindow of [...activeDomesticSearchWindows]) {
-                if (searchWindow && !searchWindow.isDestroyed()) searchWindow.destroy();
-              }
-              activeDomesticSearchWindows.clear();
-              resolve(renderedSearchFailure("page_load_timeout", null, {
-                verificationStage: "source_timeout",
-                source: String(source.store || "판매처"),
-              }));
-            }, remainingSourceMs);
-          }),
-        ]).finally(() => clearTimeout(sourceTimeoutId));
+          renderedSearchSourceResult(source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession, generation, activity),
+          timeoutResult,
+        ]).finally(() => { stopped = true; clearTimeout(sourceTimeoutId); });
         if (!queryResult) {
           result = renderedSearchFailure("unknown_search_failure");
           break;
@@ -3867,6 +3944,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         if (queryResult.absenceConfirmed !== true) break;
       }
       if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
+      pendingProducts = [];
       const count = result?.count;
       const absenceConfirmed = result?.absenceConfirmed === true;
       const displayCount = Number.isFinite(count)
@@ -3934,8 +4012,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       sharedNaverSession.window = null;
     }
   }
-  const products = [...(data.products || []), ...discoveredProducts].filter((product, index, all) =>
-    index === all.findIndex((candidate) => `${candidate.store}:${candidate.id || candidate.url}` === `${product.store}:${product.id || product.url}`));
+  const products = mergeRetailerStockProducts([...(data.products || []), ...discoveredProducts]);
   return { ...data, products, sources };
 }
 

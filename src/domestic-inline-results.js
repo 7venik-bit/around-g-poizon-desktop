@@ -170,8 +170,9 @@
       if (!label && !raw) continue;
       // Retain bare available sizes as well as the platform's stock wording.
       const sourceText = raw && raw !== label && !raw.includes(label) ? `${label} · ${raw}` : raw || label;
-      const explicitStatus = /품절|솔드\s*아웃|SOLD[\s_-]*OUT|OUT[\s_-]*OF[\s_-]*STOCK|재고|남은\s*수량|구매\s*(?:가능|불가)|선택\s*(?:가능|불가)/i.test(sourceText);
-      const optionText = explicitStatus ? sourceText : `${sourceText} · ${option?.inStock === true ? "선택 가능" : option?.inStock === false ? "선택 불가" : "재고 확인 필요"}`;
+      const explicitStatus = /품절|매진|솔드\s*아웃|SOLD[\s_-]*OUT|OUT[\s_-]*OF[\s_-]*STOCK|재고|남은\s*수량|구매\s*(?:가능|불가)|선택\s*(?:가능|불가)/i.test(sourceText);
+      const quantity = Number.isSafeInteger(option?.quantity) && option.quantity >= 0 ? option.quantity : null;
+      const optionText = quantity !== null && !/(?:재고|남은\s*(?:재고|수량))\s*(?:수량)?\s*[:：]?\s*[\d,]+|[\d,]+\s*개\s*남(?:음|았)/.test(sourceText) ? `${sourceText} · 재고 ${quantity.toLocaleString("ko-KR")}개` : explicitStatus ? sourceText : `${sourceText} · ${option?.inStock === true ? "선택 가능" : option?.inStock === false ? "선택 불가" : "재고 확인 필요"}`;
       if (seen.has(optionText)) continue;
       seen.add(optionText);
       lines.push(`<div class="domestic-inline-stock-option${option?.inStock === false ? " soldout" : ""}">${safeText(optionText)}</div>`);
@@ -181,6 +182,7 @@
         : product.inStock === true && product.stockVerified === true ? "구매 가능 · 수량 미공개" : "재고 확인 필요";
       lines.push(`<div class="domestic-inline-stock${product.inStock === false ? " soldout" : ""}">${status}</div>`);
     }
+    if (product.stockCoverage === "partial") lines.push(`<div class="domestic-inline-purchase-limit">일부 옵션 재고 확인 필요</div>`);
     if (product.purchaseLimitText) lines.push(`<div class="domestic-inline-purchase-limit">구매 제한: ${safeText(product.purchaseLimitText)}</div>`);
     return `<div class="domestic-inline-stock-cell">${lines.join("")}</div>`;
   }

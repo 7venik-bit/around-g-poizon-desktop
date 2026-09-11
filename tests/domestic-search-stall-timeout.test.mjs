@@ -20,15 +20,16 @@ test("a stalled domestic search stops after the main-process deadline", () => {
   assert.match(cachedSearch, /국내 판매처 검색 응답이 없어 강제 종료했습니다/);
 });
 
-test("each accuracy fallback receives its own bounded verification window", () => {
+test("each accuracy fallback has a bounded inactivity window refreshed by real detail progress", () => {
   const start = main.indexOf("async function addRenderedSearchCounts(");
   const end = main.indexOf("async function verifyAllStoresWithMusinsaImage(", start);
   const renderedCounts = main.slice(start, end);
 
   assert.match(renderedCounts, /Promise\.race\(\[/);
-  assert.match(renderedCounts, /const sourceDeadline = Date\.now\(\) \+ 90_000/);
-  assert.ok(renderedCounts.indexOf('const sourceDeadline') > renderedCounts.indexOf('for (let queryAttemptIndex'));
-  assert.match(renderedCounts, /remainingSourceMs = sourceDeadline - Date\.now\(\)/);
+  assert.match(renderedCounts, /sourceTimeoutId = setTimeout\(expire, 90_000\)/);
+  assert.ok(renderedCounts.indexOf('const timeoutResult') > renderedCounts.indexOf('for (let queryAttemptIndex'));
+  assert.match(renderedCounts, /const activity = async update =>/);
+  assert.match(renderedCounts, /products: \[\.\.\.pendingProducts\]/);
   assert.match(renderedCounts, /renderedSearchFailure\("page_load_timeout"/);
   assert.match(renderedCounts, /verificationStage: "source_timeout"/);
   assert.match(renderedCounts, /activeDomesticSearchWindows\.clear\(\)/);
