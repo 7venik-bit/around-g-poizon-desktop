@@ -316,3 +316,30 @@ for (const label of ['현재 구매할 수 없는 상품입니다.\n품절','SOL
     assert.equal(f.overlay().hidden,true);
   });
 }
+
+test('stock and every captured size occupy a separate aligned column below the product', async t => {
+  const f=createFixture(t);
+  f.window.aroundG.searchDomestic=async()=>({ok:true,data:{products:[{store:'브랜드 공식몰',title:'여성 방수재킷',articleNumber:'JKJGX25272',price:187200,url:'https://www.kolonmall.com/Product/JKJGX25272SBU',inStock:true,stockVerified:true,purchaseLimitText:'*ID당 구매 가능 수량 10개',sizes:[{label:'90',inStock:true,stockText:'90'},{label:'95',inStock:true,stockText:'재고 3개'},{label:'100 SOLD OUT',inStock:false,stockText:'100 SOLD OUT'}]}],sources:[{store:'브랜드 공식몰',count:1},{store:'SSG',verificationPending:true,searchUrl:'https://www.ssg.com/search.ssg'}]}});
+  await f.run();
+  const detail=f.window.document.querySelector('.excel-verified-spu-row').nextElementSibling;
+  assert.deepEqual([...detail.querySelector('.domestic-inline-head').children].map(e=>e.textContent),['판매처','상품명','사이즈·재고','품번','가격','링크']);
+  const rows=[...detail.querySelectorAll('.domestic-inline-row')];
+  assert.ok(rows.every(row=>row.children.length===6));
+  const stock=rows[0].children[2];
+  assert.ok(stock.matches('.domestic-inline-stock-cell'));
+  assert.match(stock.textContent,/90.*선택 가능/);
+  assert.match(stock.textContent,/95.*재고 3개/);
+  assert.match(stock.textContent,/100 SOLD OUT/);
+  assert.doesNotMatch(stock.textContent,/재고 10개/);
+  assert.match(stock.querySelector('.domestic-inline-purchase-limit').textContent,/구매 제한.*ID당 구매 가능 수량 10개/);
+  assert.equal(rows[1].children[2].textContent.trim(),'-');
+  assert.match(rows[0].children[3].textContent,/JKJGX25272/);
+  assert.equal(f.overlay().hidden,true);
+});
+
+test('unknown inventory is not presented as zero or sold out', async t => {
+  const f=createFixture(t);
+  f.window.aroundG.searchDomestic=async()=>({ok:true,data:{products:[{store:'무신사',title:'재킷',price:99000,url:'https://www.musinsa.com/products/1',inStock:null}],sources:[]}});
+  await f.run();
+  assert.equal(f.window.document.querySelector('.domestic-inline-stock-cell')?.textContent.trim(),'재고 확인 필요');
+});

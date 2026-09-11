@@ -1603,6 +1603,15 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           rejectedCount += 1;
           continue;
         }
+        // Open choices only after verifying this seller/product, and preserve
+        // the initial evidence if the optional size inspection fails.
+        try {
+          await openRenderedSizeOptions(evidenceWindow);
+          const optionSnapshot = await evidenceWindow.webContents.executeJavaScript(
+            `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(renderedStockSelectors("네이버 패션타운"))})`, true,
+          );
+          if (optionSnapshot?.options?.length) snapshot.stockEvidence = optionSnapshot;
+        } catch {}
         approved.push({
           ...candidate,
           ...(snapshot.stockEvidence && (snapshot.stockEvidence.stockTexts?.length || snapshot.stockEvidence.purchaseAvailable || snapshot.stockEvidence.options?.length)
@@ -2378,18 +2387,24 @@ async function openRenderedSizeOptions(searchWindow) {
   if (!searchWindow || searchWindow.isDestroyed()) return false;
   let clicked = false;
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    const existing = await searchWindow.webContents.executeJavaScript(
+      `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(renderedStockSelectors())})`, true,
+    ).catch(() => null);
+    // Do not toggle an open menu closed or click a size that is already visible.
+    if (normalizeRenderedStockEvidence(existing || {}).sizes.length) return clicked;
     const target = await searchWindow.webContents.executeJavaScript(`(() => {
       const visible = (element) => {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
       };
-      const controls = [...document.querySelectorAll('select,button,[role="button"],[role="combobox"],[aria-haspopup="listbox"]')]
+      const controls = [...document.querySelectorAll('button,[role="button"],[role="combobox"],[aria-haspopup="listbox"]')]
         .filter(visible)
+        .filter(element => !element.disabled && element.getAttribute("aria-disabled") !== "true" && element.getAttribute("aria-expanded") !== "true")
         .filter((element) => {
           const label = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("placeholder"), element.className].join(" ");
           return /사이즈|size|옵션|option|선택/i.test(label)
-            && !/구매|장바구니|결제|buy|cart/i.test(label);
+            && !/구매|장바구니|결제|buy|cart|가이드|안내|guide|chart|수량|quantity|qty/i.test(label);
         });
       const element = controls[${attempt}] || controls[0];
       if (!element) return null;
@@ -2656,12 +2671,13 @@ async function refreshDomesticProductStock(product, generation = domesticSearchG
       (async () => {
         await stockWindow.loadURL(product.url);
         await waitForDomesticCaptureReady(stockWindow, 25_000);
+        await openRenderedSizeOptions(stockWindow);
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
         const snapshot = await stockWindow.webContents.executeJavaScript(
           `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(renderedStockSelectors(product.store))})`, true,
         );
         const observed = normalizeRenderedStockEvidence(snapshot || {});
-        return observed.stockText || observed.inStock !== null ? observed : fallback;
+        return observed.stockText || observed.purchaseLimitText || observed.sizes.length || observed.inStock !== null ? observed : fallback;
       })(),
       new Promise(resolve => { timer = setTimeout(() => resolve(fallback), 45_000); }),
     ]);
@@ -3527,7 +3543,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         let detailText = "";
         let detailIdentity = { titleText: "", labeledText: "", structuredCodes: [] };
         let detailLoaded = false;
-        let stockEvidence = normalizeRenderedStockEvidence({ stockTexts: product.stockText ? [product.stockText] : [], options: product.sizes || [] });
+        let stockEvidence = normalizeRenderedStockEvidence({ stockTexts: [product.stockText, product.purchaseLimitText].filter(Boolean), options: product.sizes || [] });
         try {
           const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
           if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");

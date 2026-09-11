@@ -45,9 +45,9 @@
       .domestic-inline-detail-label>em{margin-left:auto!important;color:#64748b!important;font-size:11px!important;font-style:normal!important}
 
       .domestic-inline-results{display:flex!important;flex-direction:column!important;gap:0!important;width:100%!important;min-width:0!important;border-top:1px solid #dfe5ec!important;background:transparent!important;border-radius:0!important;box-shadow:none!important}
-      .domestic-inline-head,.domestic-inline-row{display:grid!important;grid-template-columns:120px minmax(240px,1fr) 130px 100px 180px!important;gap:8px!important;align-items:center!important}
+      .domestic-inline-head,.domestic-inline-row{display:grid!important;grid-template-columns:120px minmax(160px,1fr) minmax(200px,1.4fr) 110px 100px 180px!important;gap:8px!important;align-items:center!important}
       .domestic-inline-head{min-height:28px!important;padding:4px 0!important;border-bottom:1px solid #dfe5ec!important;color:#64748b!important;font-size:10px!important;font-weight:800!important;text-align:left!important}
-      .domestic-inline-head span:nth-child(4),.domestic-inline-head span:nth-child(5){text-align:right!important}
+      .domestic-inline-head span:nth-child(5),.domestic-inline-head span:nth-child(6){text-align:right!important}
       .domestic-inline-row{min-height:40px!important;padding:5px 0!important;border:0!important;border-bottom:1px solid #eef1f4!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;font-size:11px!important;line-height:1.35!important}
       .domestic-inline-row:last-child{border-bottom:0!important}
       .domestic-inline-row:hover{background:#fafbfd!important}
@@ -56,7 +56,10 @@
       .domestic-inline-title{min-width:0!important;color:#111827!important;font-weight:650!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
       .domestic-inline-product{min-width:0!important}
       .domestic-inline-stock{margin-top:3px!important;white-space:pre-line!important;overflow-wrap:anywhere!important;color:#537563!important;font-weight:650!important}
-      .domestic-inline-stock.soldout{color:#9a5c32!important}
+      .domestic-inline-stock.soldout,.domestic-inline-stock-option.soldout{color:#9a5c32!important}
+      .domestic-inline-stock-cell{min-width:0!important;white-space:pre-line!important;overflow-wrap:anywhere!important;color:#537563!important;line-height:1.5!important}
+      .domestic-inline-stock-option{padding:2px 0!important}
+      .domestic-inline-purchase-limit{margin-top:4px!important;color:#64748b!important;font-size:10px!important;font-weight:400!important}
       .domestic-inline-code{min-width:0!important;color:#64748b!important;font-family:inherit!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
       .domestic-inline-price{text-align:right!important;color:#111827!important;font-weight:800!important;white-space:nowrap!important}
       .domestic-inline-price-fetch{min-width:76px!important;border-color:#9cc5ff!important;background:#f3f8ff!important;color:#1769c2!important}
@@ -75,7 +78,7 @@
       .domestic-source-list.sourcing-product-list .sourcing-product-thumb{display:none!important}
 
       @media(max-width:1180px){
-        .domestic-inline-head,.domestic-inline-row{grid-template-columns:100px minmax(190px,1fr) 110px 90px 168px!important;gap:6px!important}
+        .domestic-inline-head,.domestic-inline-row{grid-template-columns:100px minmax(140px,1fr) minmax(160px,1.4fr) 100px 90px 168px!important;gap:6px!important}
       }
     `;
     document.head.appendChild(style);
@@ -155,6 +158,33 @@
     return `<button type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
   }
 
+  function renderStockCell(product = {}) {
+    const sizes = Array.isArray(product.sizes) ? product.sizes : [];
+    const stockText = String(product.stockText || "").trim();
+    const lines = [];
+    if (stockText) lines.push(`<div class="domestic-inline-stock${product.inStock === false ? " soldout" : ""}">${safeText(stockText)}</div>`);
+    const seen = new Set();
+    for (const option of sizes) {
+      const label = String(option?.label || option?.name || (typeof option === "string" ? option : "")).trim();
+      const raw = String(option?.stockText || option?.statusText || "").trim();
+      if (!label && !raw) continue;
+      // Retain bare available sizes as well as the platform's stock wording.
+      const sourceText = raw && raw !== label && !raw.includes(label) ? `${label} · ${raw}` : raw || label;
+      const explicitStatus = /품절|솔드\s*아웃|SOLD[\s_-]*OUT|OUT[\s_-]*OF[\s_-]*STOCK|재고|남은\s*수량|구매\s*(?:가능|불가)|선택\s*(?:가능|불가)/i.test(sourceText);
+      const optionText = explicitStatus ? sourceText : `${sourceText} · ${option?.inStock === true ? "선택 가능" : option?.inStock === false ? "선택 불가" : "재고 확인 필요"}`;
+      if (seen.has(optionText)) continue;
+      seen.add(optionText);
+      lines.push(`<div class="domestic-inline-stock-option${option?.inStock === false ? " soldout" : ""}">${safeText(optionText)}</div>`);
+    }
+    if (!lines.length) {
+      const status = product.inStock === false ? "품절"
+        : product.inStock === true && product.stockVerified === true ? "구매 가능 · 수량 미공개" : "재고 확인 필요";
+      lines.push(`<div class="domestic-inline-stock${product.inStock === false ? " soldout" : ""}">${status}</div>`);
+    }
+    if (product.purchaseLimitText) lines.push(`<div class="domestic-inline-purchase-limit">구매 제한: ${safeText(product.purchaseLimitText)}</div>`);
+    return `<div class="domestic-inline-stock-cell">${lines.join("")}</div>`;
+  }
+
   function inlineRenderDomestic(result, sourceProduct = {}, contextKey = "") {
     if (!result) return `<div class="domestic-inline-empty">국내 상품 검색 전</div>`;
     if (result.loading) return `<div class="domestic-inline-empty">국내 판매처 검색 중…</div>`;
@@ -171,12 +201,10 @@
       const title = displayedProductTitle(product, sourceProduct);
       const article = product?.articleNumber || sourceProduct?.articleNumber || sourceProduct?.productCode || "-";
       const official = product?.officialStoreVerified === true || Boolean(source?.officialStatus);
-      const stockText = String(product?.stockText || "").trim() || (product?.inStock === false ? "품절" : "");
-      const optionText = (product?.sizes || []).map(option => String(option?.stockText || "").trim())
-        .filter(value => /품절|솔드\s*아웃|SOLD[\s_-]*OUT|OUT[\s_-]*OF[\s_-]*STOCK|재고|구매\s*(?:가능|불가)/i.test(value)).join(" · ");
       return `<div class="domestic-inline-row">
         <div class="domestic-inline-store" title="${safeText(retailer)}"><span>${safeText(retailer)}</span>${official ? `<span class="domestic-inline-official">공식</span>` : ""}</div>
-        <div class="domestic-inline-product"><div class="domestic-inline-title" title="${safeText(rawTitle)}">${safeText(title)}</div>${stockText ? `<div class="domestic-inline-stock${product?.inStock === false ? " soldout" : ""}">${safeText(stockText)}</div>` : ""}${optionText ? `<div class="domestic-inline-stock">${safeText(optionText)}</div>` : ""}</div>
+        <div class="domestic-inline-product"><div class="domestic-inline-title" title="${safeText(rawTitle)}">${safeText(title)}</div></div>
+        ${renderStockCell(product)}
         <div class="domestic-inline-code" title="${safeText(article)}">${safeText(article)}</div>
         <div class="domestic-inline-price">${safeMoney(product?.price)}</div>
         <div class="domestic-inline-actions">${sourceAction(source, product, sourceProduct, contextKey)}${typeof stockWatchRegistrationButton === "function" ? stockWatchRegistrationButton(product, sourceProduct) : ""}</div>
@@ -212,6 +240,7 @@
       rows.push(`<div class="domestic-inline-row domestic-inline-fallback">
         <div class="domestic-inline-store" title="${safeText(store)}">${safeText(store)}</div>
         <div class="domestic-inline-title">${safeText(message)}</div>
+        <div class="domestic-inline-stock-cell">-</div>
         <div class="domestic-inline-code">${safeText(source?.searchQuery || sourceProduct?.articleNumber || "-")}</div>
         <div class="domestic-inline-price">${naverPriceAction}</div>
         <div>${sourceAction(source, {}, sourceProduct, contextKey)}</div>
@@ -225,7 +254,7 @@
       ? `<div class="domestic-inline-warning">일부 판매처 추가 확인 실패 · 확보된 검색 결과를 표시합니다.</div>`
       : "";
     return rows.length
-      ? `${warning}<div class="domestic-inline-results"><div class="domestic-inline-head"><span>판매처</span><span>상품명</span><span>품번</span><span>가격</span><span>링크</span></div>${rows.join("")}</div>`
+      ? `${warning}<div class="domestic-inline-results"><div class="domestic-inline-head"><span>판매처</span><span>상품명</span><span>사이즈·재고</span><span>품번</span><span>가격</span><span>링크</span></div>${rows.join("")}</div>`
       : `<div class="domestic-inline-empty">일치하는 국내 판매 상품 없음</div>`;
   }
 

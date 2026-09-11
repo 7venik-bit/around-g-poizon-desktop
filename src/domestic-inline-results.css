@@ -15,9 +15,9 @@
 .excel-product-group-amber .domestic-inline-detail-label>span{background:#e6a23c!important}
 .domestic-inline-detail-label>em{margin-left:auto!important;color:#64748b!important;font-size:11px!important;font-style:normal!important}
 .domestic-inline-results{display:flex!important;flex-direction:column!important;gap:0!important;width:100%!important;min-width:0!important;border-top:1px solid #dfe5ec!important;background:transparent!important;border-radius:0!important;box-shadow:none!important}
-.domestic-inline-head,.domestic-inline-row{display:grid!important;grid-template-columns:120px minmax(240px,1fr) 130px 100px 180px!important;gap:8px!important;align-items:center!important}
+.domestic-inline-head,.domestic-inline-row{display:grid!important;grid-template-columns:120px minmax(160px,1fr) minmax(200px,1.4fr) 110px 100px 180px!important;gap:8px!important;align-items:center!important}
 .domestic-inline-head{min-height:28px!important;padding:4px 0!important;border-bottom:1px solid #dfe5ec!important;color:#64748b!important;font-size:10px!important;font-weight:800!important;text-align:left!important}
-.domestic-inline-head span:nth-child(4),.domestic-inline-head span:nth-child(5){text-align:right!important}
+.domestic-inline-head span:nth-child(5),.domestic-inline-head span:nth-child(6){text-align:right!important}
 .domestic-inline-row{min-height:40px!important;padding:5px 0!important;border:0!important;border-bottom:1px solid #eef1f4!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;font-size:11px!important;line-height:1.35!important}
 .domestic-inline-row:last-child{border-bottom:0!important}
 .domestic-inline-row:hover{background:#fafbfd!important}
@@ -26,7 +26,10 @@
 .domestic-inline-title{min-width:0!important;color:#111827!important;font-weight:650!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
 .domestic-inline-product{min-width:0!important}
 .domestic-inline-stock{margin-top:3px!important;white-space:pre-line!important;overflow-wrap:anywhere!important;color:#537563!important;font-weight:650!important}
-.domestic-inline-stock.soldout{color:#9a5c32!important}
+.domestic-inline-stock.soldout,.domestic-inline-stock-option.soldout{color:#9a5c32!important}
+      .domestic-inline-stock-cell{min-width:0!important;white-space:pre-line!important;overflow-wrap:anywhere!important;color:#537563!important;line-height:1.5!important}
+      .domestic-inline-stock-option{padding:2px 0!important}
+      .domestic-inline-purchase-limit{margin-top:4px!important;color:#64748b!important;font-size:10px!important;font-weight:400!important}
 .domestic-inline-code{min-width:0!important;color:#64748b!important;font-family:inherit!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
 .domestic-inline-price{text-align:right!important;color:#111827!important;font-weight:800!important;white-space:nowrap!important}
 .domestic-inline-row button{min-width:64px!important;height:30px!important;padding:5px 8px!important;border-radius:6px!important;font-size:10px!important;font-weight:800!important;white-space:nowrap!important;overflow:visible!important}
@@ -35,5 +38,5 @@
 .domestic-inline-empty{padding:8px 0!important;color:#7b8794!important;font-size:11px!important;text-align:left!important}
 
 @media(max-width:1180px){
-  .domestic-inline-head,.domestic-inline-row{grid-template-columns:100px minmax(190px,1fr) 110px 90px 168px!important;gap:6px!important}
+  .domestic-inline-head,.domestic-inline-row{grid-template-columns:100px minmax(140px,1fr) minmax(160px,1.4fr) 100px 90px 168px!important;gap:6px!important}
 }
