@@ -3646,9 +3646,24 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       // the completed prior search returned no product; browser/security or
       // detail-verification failures must not repeat the same query or advance
       // as though the product were absent.
-        const queryResult = await renderedSearchSourceResult(
-          source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession, generation,
-        );
+        let sourceTimeoutId;
+        const queryResult = await Promise.race([
+          renderedSearchSourceResult(
+            source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession, generation,
+          ),
+          new Promise((resolve) => {
+            sourceTimeoutId = setTimeout(() => {
+              for (const searchWindow of [...activeDomesticSearchWindows]) {
+                if (searchWindow && !searchWindow.isDestroyed()) searchWindow.destroy();
+              }
+              activeDomesticSearchWindows.clear();
+              resolve(renderedSearchFailure("page_load_timeout", null, {
+                verificationStage: "source_timeout",
+                source: String(source.store || "판매처"),
+              }));
+            }, 60_000);
+          }),
+        ]).finally(() => clearTimeout(sourceTimeoutId));
         if (!queryResult) {
           result = renderedSearchFailure("unknown_search_failure");
           break;
