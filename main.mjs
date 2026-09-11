@@ -308,19 +308,30 @@ function domesticSearchCanceled(generation) {
   return generation !== domesticSearchGeneration;
 }
 
-async function withDomesticSearchHardTimeout(operation, generation) {
+async function withDomesticSearchHardTimeout(operation, generation, progressState = { lastProgressAt: Date.now(), checkpoint: null }) {
   let timeoutId;
   const timeoutResult = new Promise((resolve) => {
-    timeoutId = setTimeout(() => {
-      // Cover stalls before rendered retailer verification starts, where the
-      // per-source timeout cannot run.
+    const checkProgress = () => {
+      const remaining = DOMESTIC_SEARCH_HARD_TIMEOUT_MS - (Date.now() - progressState.lastProgressAt);
+      if (remaining > 0) {
+        timeoutId = setTimeout(checkProgress, remaining);
+        return;
+      }
+      // Only a lack of real stage progress is a stall. Sequential, thorough
+      // retailer searches are allowed to exceed two minutes in total.
       if (!domesticSearchCanceled(generation)) cancelDomesticSearches();
-      resolve({
+      const message = "검색 진행 응답이 2분 동안 없어 중단했습니다. 완료된 판매처 결과를 표시합니다.";
+      resolve(progressState.checkpoint ? {
+        ok: true,
+        timedOut: true,
+        data: { ...progressState.checkpoint, partial: true, message },
+      } : {
         ok: false,
         timedOut: true,
-        message: "국내 판매처 검색이 2분을 초과해 자동 종료되었습니다. 다시 검색해 주세요.",
+        message: "검색 진행 응답이 2분 동안 없어 중단했습니다. 아직 확인된 결과가 없습니다.",
       });
-    }, DOMESTIC_SEARCH_HARD_TIMEOUT_MS);
+    };
+    timeoutId = setTimeout(checkProgress, DOMESTIC_SEARCH_HARD_TIMEOUT_MS);
   });
   try {
     return await Promise.race([operation, timeoutResult]);
@@ -2603,16 +2614,18 @@ async function waitForDomesticCaptureReady(searchWindow, timeoutMs = 25_000) {
       };
     })()`, true).catch(() => null);
     if (state?.blocked || state?.loginRequired) return;
-    // Observe real card/price changes instead of sleeping for 25 seconds even
-    // when the list is complete. A known higher total keeps late cards pending.
+    // Observe the full window even if an early card looks stable. The operator
+    // prioritizes late cards/prices over an early return from a quiet DOM.
     const enoughCards = state?.cards > 0 && (!Number.isFinite(state.count) || state.cards >= Math.min(state.count, 24));
     const ready = state && !state.busy && (enoughCards || (state.empty && !state.cards));
     const signature = ready ? (state.empty ? "empty" : state.signature) : "";
     if (!signature || signature !== lastSignature) stableSince = Date.now();
     lastSignature = signature;
-    if (signature && Date.now() - stableSince >= 1_500) return;
+    // Keep the signature for the final settling check after the observation.
     await wait(500);
   }
+  // Give a final late DOM update a bounded opportunity to settle as well.
+  if (lastSignature && Date.now() - stableSince < 1_500 && !searchWindow.isDestroyed()) await wait(1_500);
 }
 
 async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
@@ -3633,9 +3646,18 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   }
 }
 
-async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "", generation = domesticSearchGeneration, onProgress = null) {
+async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "", generation = domesticSearchGeneration, onProgress = null, onCheckpoint = null) {
   const discoveredProducts = [];
   const sources = [];
+  const snapshot = () => ({
+    ...data,
+    products: [...(data.products || []), ...discoveredProducts].filter((product, index, all) =>
+      index === all.findIndex(candidate => `${candidate.store}:${candidate.id || candidate.url}` === `${product.store}:${product.id || product.url}`)),
+    sources: [...sources, ...data.sources.slice(sources.length).map(source => ({
+      ...source, count: 0, countVerified: false, absenceConfirmed: false,
+      searchCompleted: false, verificationPending: true,
+    }))],
+  });
   // Naver Fashion Town exposes official-brand, department, and outlet counts
   // on one result page. Keep that browser/result URL alive across the three
   // source rows so the product code is physically submitted exactly once.
@@ -3652,6 +3674,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
   // the next source without spawning module-specific state or retries.
   for (const source of data.sources) {
     if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
+    onProgress?.({ completed: sources.length, total: progressTotal, source: String(source.store || "판매처"), phase: "searching" });
     const resolvedSource = await (async () => {
       if (source.officialStatus && ![
         OFFICIAL_DOMAIN_STATUS.VERIFIED,
@@ -3676,13 +3699,14 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       const queryAttempts = source.store === "브랜드 공식몰"
         ? allQueryAttempts.slice(0, 1) : allQueryAttempts;
       let result = null;
-      // Accuracy fallbacks share one retailer budget. Previously every query
-      // restarted its timer. Allow document/card settling plus verification;
-      // the old 15-second limit always expired inside the 25-second DOM wait.
-      const sourceDeadline = Date.now() + 30_000;
+      // Each ranked query gets time for navigation, the full observation
+      // window, and detail verification. Do not exhaust the title fallback's
+      // budget while completing the preceding exact-code search.
       for (let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts.length; queryAttemptIndex += 1) {
         const queryAttempt = queryAttempts[queryAttemptIndex];
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
+        const sourceDeadline = Date.now() + 90_000;
+        onProgress?.({ completed: sources.length, total: progressTotal, source: String(source.store || "판매처"), phase: "searching", query: queryAttempt.query });
         // A Naver overview DOM belongs to exactly one submitted query. When an
         // exact-code result is authoritatively absent, discard that DOM before
         // submitting the next ranked query; otherwise the old code result is
@@ -3715,6 +3739,10 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           ),
           new Promise((resolve) => {
             sourceTimeoutId = setTimeout(() => {
+              if (domesticSearchCanceled(generation)) {
+                resolve(renderedSearchFailure("search_canceled"));
+                return;
+              }
               for (const searchWindow of [...activeDomesticSearchWindows]) {
                 if (searchWindow && !searchWindow.isDestroyed()) searchWindow.destroy();
               }
@@ -3789,6 +3817,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       };
     })();
     sources.push(resolvedSource);
+    await onCheckpoint?.(snapshot());
     onProgress?.({
       completed: sources.length,
       total: progressTotal,
@@ -11636,7 +11665,10 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   });
   ipcMain.handle("domestic:search", (_event, input) => {
     const searchGeneration = domesticSearchGeneration;
+    const progressState = { lastProgressAt: Date.now(), checkpoint: null };
     const sendDomesticProgress = (payload) => {
+      if (domesticSearchCanceled(searchGeneration)) return;
+      progressState.lastProgressAt = Date.now();
       if (!_event.sender.isDestroyed()) {
         _event.sender.send("domestic-search:progress", { ...payload, generation: searchGeneration, requestId: String(input?.requestId || "") });
       }
@@ -11648,6 +11680,18 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         stage,
         message: error instanceof Error ? error.message : String(error || "알 수 없는 오류"),
       });
+    };
+    const preserveVerifiedResults = async (candidate) => {
+      if (domesticSearchCanceled(searchGeneration)) return;
+      try {
+        const matchedCandidate = await addMatchConfidence(candidate, input || {});
+        const verifiedCandidate = await verifyAllStoresWithMusinsaImage(matchedCandidate, input || {});
+        if (!domesticSearchCanceled(searchGeneration)) {
+          progressState.checkpoint = { ...verifiedCandidate, technicalWarnings: [...technicalWarnings] };
+        }
+      } catch (error) {
+        rememberWarning("checkpoint_verification", error);
+      }
     };
     try {
       // Inventory/search pages must be fetched from the network for every new
@@ -11691,8 +11735,10 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       // Core retailer results are authoritative. Optional enrichment must never
       // turn a successful search into a full-row failure.
       let matched = data;
+      sendDomesticProgress({ completed: 0, total: data.sources.length + 2, source: "수집 결과 일치도", phase: "searching" });
       try {
         matched = await addMatchConfidence(matched, input || {});
+        await preserveVerifiedResults(matched);
       } catch (error) {
         rememberWarning("match_confidence", error);
       }
@@ -11704,7 +11750,8 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
           searchBrand,
           searchTitle,
           searchGeneration,
-          sendDomesticProgress
+          sendDomesticProgress,
+          preserveVerifiedResults
         );
         } catch (error) {
           rememberWarning("rendered_search_counts", error);
@@ -11732,6 +11779,8 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         }
       }
       const products = Array.isArray(matched?.products) ? matched.products : [];
+      await preserveVerifiedResults(matched);
+      if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
       const exactMatch = products.some((product) =>
         Number(product.signals?.codeScore || 0) === 1
         && product.articleConflict !== true
@@ -11746,7 +11795,15 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
           exactMatch,
           resultCount: products.length,
         });
-        await store.setSettings({ brandSearchProfiles });
+        let saveTimer;
+        try {
+          await Promise.race([
+            store.setSettings({ brandSearchProfiles }),
+            new Promise((_, reject) => { saveTimer = setTimeout(() => reject(new Error("SEARCH_LEARNING_SAVE_TIMEOUT")), 3_000); }),
+          ]);
+        } finally {
+          clearTimeout(saveTimer);
+        }
         learningSaved = true;
       } catch (error) {
         rememberWarning("search_learning_save", error);
@@ -11771,7 +11828,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
     })();
-    return withDomesticSearchHardTimeout(operation, searchGeneration);
+    return withDomesticSearchHardTimeout(operation, searchGeneration, progressState);
   });
   ipcMain.handle("domestic:cancel", () => cancelDomesticSearches());
   ipcMain.handle("domestic-price:lookup", (_event, input) => {

@@ -508,7 +508,7 @@ function renderVerifiedSpuRows(file, products) {
     const resultCell = result?.loading
       ? '<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">수달 사원이 검색 중…</span></td>'
       : result
-        ? '<td class="excel-raw-search-cell"><div class="excel-raw-search-summary"><span class="excel-raw-search-state available">검색 완료</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">다시 검색</button></div></td>'
+        ? '<td class="excel-raw-search-cell"><div class="excel-raw-search-summary"><span class="excel-raw-search-state ' + (result.error || result.partial ? 'pending' : 'available') + '">' + (result.error ? '검색 실패' : result.partial ? '일부 결과' : '검색 완료') + '</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">다시 검색</button></div></td>'
         : '<td class="excel-raw-search-cell excel-raw-search-pending"><button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">상품검색</button></td>';
     const detailRow = result && !result.loading
       ? '<tr class="excel-product-search-detail excel-verified-search-detail"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>' + text(p.title || p.articleNumber || '상품') + '</strong> 국내 검색 결과</div>' + renderDomestic(result, p, keys[i]) + '</td></tr>'
@@ -1162,6 +1162,7 @@ function renderDomesticLoading(startedAt = Date.now()) {
 
 let excelPreviewSearchRunId = 0;
 let activeDomesticProgressRequestId = "";
+let activeDomesticProgressAt = 0;
 
 function requestDomesticSearchCancel() {
   // Cancellation is best-effort cleanup, not a prerequisite for releasing UI.
@@ -1250,9 +1251,10 @@ setInterval(() => {
 }, 1_000);
 
 window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
+  if (payload.requestId && payload.requestId !== activeDomesticProgressRequestId) return;
+  activeDomesticProgressAt = Date.now();
   const overlay = $("#domestic-search-overlay");
   if (!overlay || overlay.hidden) return;
-  if (payload.requestId && payload.requestId !== activeDomesticProgressRequestId) return;
   const total = Math.max(1, Number(payload.total) || 1);
   const completed = Math.min(total, Math.max(0, Number(payload.completed) || 0));
   // Retailer/enrichment progress is not the completion of the renderer task.
@@ -1266,7 +1268,9 @@ window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
     progress.setAttribute("aria-valuenow", String(percent));
   }
   if (count) count.innerHTML = `<strong>${completed.toLocaleString("ko-KR")}</strong> / ${total.toLocaleString("ko-KR")}단계 · ${percent}%`;
-  if (guide) guide.textContent = completed === total
+  if (guide) guide.textContent = payload.phase === "searching"
+    ? `${String(payload.source || "판매처")} 상품과 가격을 확인하고 있습니다.`
+    : completed === total
     ? "판매처 확인 완료 · 검색 결과 응답을 기다리고 있습니다."
     : `${String(payload.source || "판매처")} 확인 완료 · 다음 검색 단계를 진행하고 있습니다.`;
 });
@@ -1285,7 +1289,9 @@ function renderRawExcelDomesticCell(key, product, result) {
   const needsReview = Boolean(result.error) || (result.sources || []).some((source) =>
     source?.verificationPending || source?.verificationFailed || source?.securityVerificationRequired || source?.loginRequired
   );
-  const state = products.length
+  const state = result.partial
+    ? { label: "일부 결과", className: "pending" }
+    : products.length
     ? { label: `상품 있음 · ${products.length.toLocaleString("ko-KR")}개`, className: "available" }
     : verifiedCount > 0
       ? { label: `상품 있음 · ${verifiedCount.toLocaleString("ko-KR")}개`, className: "available" }
@@ -1371,6 +1377,7 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
   const runId = excelPreviewSearchRunId;
   input.requestId = `${runId}:${Date.now()}:${identity}`;
   activeDomesticProgressRequestId = input.requestId;
+  activeDomesticProgressAt = Date.now();
   const task = (async () => {
     const run = async () => {
       let timeoutId;
@@ -1378,11 +1385,23 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
         const response = await Promise.race([
           window.aroundG.searchDomestic(input),
           new Promise((resolve) => {
-            timeoutId = setTimeout(() => resolve({
-              ok: false,
-              timedOut: true,
-              message: "국내 판매처 검색 응답이 없어 강제 종료했습니다. 다시 검색해 주세요.",
-            }), DOMESTIC_SEARCH_MAX_WAIT_MS);
+            const checkProgress = () => {
+              if (runId !== excelPreviewSearchRunId) {
+                resolve({ ok: false, canceled: true, message: "검색이 중지되었습니다." });
+                return;
+              }
+              const remaining = DOMESTIC_SEARCH_MAX_WAIT_MS - (Date.now() - activeDomesticProgressAt);
+              if (remaining > 0) {
+                timeoutId = setTimeout(checkProgress, remaining);
+                return;
+              }
+              resolve({
+                ok: false,
+                timedOut: true,
+                message: "국내 판매처 검색 응답이 없어 강제 종료했습니다. 다시 검색해 주세요.",
+              });
+            };
+            timeoutId = setTimeout(checkProgress, DOMESTIC_SEARCH_MAX_WAIT_MS);
           }),
         ]);
         if (response?.timedOut && runId === excelPreviewSearchRunId) requestDomesticSearchCancel();
@@ -1527,7 +1546,7 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
     excelPreviewSearchResults.set(key, result);
     if (file?.path) persistExcelSearchResults(file.path);
     refreshDomesticSearchRows();
-    $("#excel-filter-status").textContent = result.error || "상품 검색 결과를 표시했습니다.";
+    $("#excel-filter-status").textContent = result.error || result.message || "상품 검색 결과를 표시했습니다.";
   } catch (error) {
     if (runId === excelPreviewSearchRunId) {
       console.error("[domestic-search] result display failed", error);
@@ -2709,7 +2728,8 @@ function bindExplorerSelectionControls() {
 function domesticStatus(result) {
   if (!result) return { label: "확인 전", className: "pending" };
   if (result.loading) return { label: "검색 중", className: "loading" };
-  if (result.error) return { label: "상품없음", className: "missing" };
+  if (result.error) return { label: "검색 실패", className: "pending" };
+  if (result.partial) return { label: "일부 결과", className: "pending" };
   const products = result.products || [];
   const verifiedCount = (result.sources || []).reduce((sum, source) =>
     sum + (source.countVerified ? Number(source.count || 0) : 0), 0);
@@ -4125,6 +4145,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   excelPreviewBatchSearching = true;
   const runId = ++excelPreviewSearchRunId;
   let failed = 0;
+  let partial = 0;
   try {
     updateExcelPreviewSelectionUi([]);
     const batchStartedAt = Date.now();
@@ -4162,13 +4183,16 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       if (runId !== excelPreviewSearchRunId) return;
       const result = response?.ok ? response.data : { products: [], sources: [], error: response?.message || "검색 응답이 없습니다." };
       if (!response?.ok) failed += groupKeys.length;
+      if (result.partial) partial += groupKeys.length;
       for (const key of groupKeys) excelPreviewSearchResults.set(key, result);
       if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
       refreshDomesticSearchRows();
       completed += groupKeys.length;
       if (completed < keys.length) renderBatchSearchProgress(completed);
     }
-    $("#excel-filter-status").textContent = failed
+    $("#excel-filter-status").textContent = partial
+      ? `선택 상품 ${keys.length.toLocaleString("ko-KR")}개 처리 · ${partial.toLocaleString("ko-KR")}개 일부 결과. 완료된 판매처 결과를 표시했습니다.`
+      : failed
       ? `선택 상품 ${keys.length.toLocaleString("ko-KR")}개 처리 · ${failed.toLocaleString("ko-KR")}개 검색 실패. 각 상품의 안내를 확인해 주세요.`
       : `선택 상품 ${keys.length.toLocaleString("ko-KR")}개 검색을 완료했습니다.`;
   } catch (error) {
