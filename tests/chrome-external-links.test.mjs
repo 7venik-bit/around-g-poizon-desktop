@@ -36,13 +36,12 @@ test("official mall UI button opens a controlled visible search window", () => {
   assert.match(mainSource, /show: true/);
 });
 
-test("Naver security verification shows the window and bounded workers preserve its session", () => {
+test("Naver security verification shows the window and resumes in the same session", () => {
   assert.match(mainSource, /waitForNaverSecurityVerification\(searchWindow\)/);
   assert.match(mainSource, /searchWindow\.setAlwaysOnTop\(true\)/);
   assert.match(mainSource, /searchWindow\.show\(\)/);
   assert.match(mainSource, /10 \* 60_000/);
   assert.match(mainSource, /securityRetry \+ 1/);
-  assert.match(mainSource, /const pendingSources = \[\.\.\.data\.sources\]/);
-  assert.match(mainSource, /resolvedSources\[sourceIndex\] = resolvedSource/);
+  assert.match(mainSource, /for \(const source of data\.sources\)/);
   assert.doesNotMatch(mainSource, /Promise\.all\(data\.sources\.map/);
 });
