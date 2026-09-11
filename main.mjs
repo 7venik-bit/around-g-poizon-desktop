@@ -3608,7 +3608,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
 }
 
 async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "", generation = domesticSearchGeneration) {
-  const discoveredProductsBySource = [];
+  const discoveredProducts = [];
   const sources = [];
   // Naver Fashion Town exposes official-brand, department, and outlet counts
   // on one result page. Keep that browser/result URL alive across the three
@@ -3619,16 +3619,10 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     channelCounts: null,
     searchSubmitted: false,
   };
-  // Retailers are independent. Run a small bounded group concurrently so one
-  // slow mall does not make every following mall wait, while avoiding a burst
-  // of ten BrowserWindows at once.
-  const pendingSources = [...data.sources];
-  const resolvedSources = new Array(pendingSources.length);
-  let nextSourceIndex = 0;
-  const runSourceWorker = async () => {
-    while (nextSourceIndex < pendingSources.length) {
-      const sourceIndex = nextSourceIndex++;
-      const source = pendingSources[sourceIndex];
+  // The complete domestic lookup is one sequential request again. A source
+  // failure is recorded on that source, then the same request continues to
+  // the next source without spawning module-specific state or retries.
+  for (const source of data.sources) {
     if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
     const resolvedSource = await (async () => {
       if (source.officialStatus && ![
@@ -3654,7 +3648,10 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       const queryAttempts = source.store === "브랜드 공식몰"
         ? allQueryAttempts.slice(0, 1) : allQueryAttempts;
       let result = null;
-      const sourceDeadline = Date.now() + 30_000;
+      // Accuracy fallbacks share one retailer budget. Previously every query
+      // restarted a 60-second timer, so an empty product could spend minutes
+      // on a single store before the next store even began.
+      const sourceDeadline = Date.now() + 15_000;
       for (let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts.length; queryAttemptIndex += 1) {
         const queryAttempt = queryAttempts[queryAttemptIndex];
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
@@ -3690,6 +3687,10 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           ),
           new Promise((resolve) => {
             sourceTimeoutId = setTimeout(() => {
+              for (const searchWindow of [...activeDomesticSearchWindows]) {
+                if (searchWindow && !searchWindow.isDestroyed()) searchWindow.destroy();
+              }
+              activeDomesticSearchWindows.clear();
               resolve(renderedSearchFailure("page_load_timeout", null, {
                 verificationStage: "source_timeout",
                 source: String(source.store || "판매처"),
@@ -3709,7 +3710,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       // failure ends this source once and is never submitted as another query.
         if (queryResult.absenceConfirmed !== true) break;
       }
-      discoveredProductsBySource[sourceIndex] = Array.isArray(result?.products) ? result.products : [];
+      if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
       const count = result?.count;
       const absenceConfirmed = result?.absenceConfirmed === true;
       const displayCount = Number.isFinite(count)
@@ -3759,7 +3760,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         officialProductMissing: isOfficialStore && absenceConfirmed,
       };
     })();
-    resolvedSources[sourceIndex] = resolvedSource;
+    sources.push(resolvedSource);
     if (source.store === "네이버 패션타운"
       && sharedNaverSession.window
       && !sharedNaverSession.window.isDestroyed()) {
@@ -3770,14 +3771,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       sharedNaverSession.window.destroy();
       sharedNaverSession.window = null;
     }
-    }
-  };
-  await Promise.all(Array.from(
-    { length: Math.min(3, pendingSources.length) },
-    () => runSourceWorker(),
-  ));
-  sources.push(...resolvedSources);
-  const discoveredProducts = discoveredProductsBySource.flat();
+  }
   const products = [...(data.products || []), ...discoveredProducts].filter((product, index, all) =>
     index === all.findIndex((candidate) => `${candidate.store}:${candidate.id || candidate.url}` === `${product.store}:${product.id || product.url}`));
   return { ...data, products, sources };
