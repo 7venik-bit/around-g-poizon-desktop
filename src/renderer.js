@@ -87,6 +87,7 @@ let selectedBrandDomesticQueueRunning = false;
 let combinedBrandPreview = null;
 let combinedBrandPreviewLoading = false;
 const domesticIdentitySearchCache = new Map();
+const DOMESTIC_SEARCH_MAX_WAIT_MS = 10 * 60 * 1000;
 const DOMESTIC_SOURCE_GROUPS_KEY = "around-g-domestic-source-groups-v1";
 const DOMESTIC_SOURCE_GROUPS = ["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"];
 
@@ -1298,17 +1299,31 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
   const input = domesticSearchInput(product, selectedDomesticSourceGroups(), verifyLinkCounts);
   const task = (async () => {
     const run = async () => {
+      let timeoutId;
       try {
-        return await window.aroundG.searchDomestic(input);
+        const response = await Promise.race([
+          window.aroundG.searchDomestic(input),
+          new Promise((resolve) => {
+            timeoutId = setTimeout(() => resolve({
+              ok: false,
+              timedOut: true,
+              message: "국내 판매처 검색이 10분을 초과해 중단되었습니다. 다시 검색해 주세요.",
+            }), DOMESTIC_SEARCH_MAX_WAIT_MS);
+          }),
+        ]);
+        if (response?.timedOut) await window.aroundG.cancelDomesticSearch?.();
+        return response;
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : String(error || "국내 검색 호출 실패") };
+      } finally {
+        clearTimeout(timeoutId);
       }
     };
     const first = await run();
     // A confirmed zero is returned as ok:true and must never be searched again.
     // Retry only a technical IPC/browser failure, once, so one transient error
     // is not copied to every size row sharing the same article number.
-    if (first?.ok || first?.canceled) return first;
+    if (first?.ok || first?.canceled || first?.timedOut) return first;
     await new Promise((resolve) => setTimeout(resolve, 700));
     return run();
   })();
