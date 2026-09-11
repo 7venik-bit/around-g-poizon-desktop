@@ -293,7 +293,7 @@ let domesticSearchGeneration = 0;
 const activeDomesticSearchWindows = new Set();
 const activeDomesticPriceWindows = new Set();
 let domesticPriceLookupQueue = Promise.resolve();
-const DOMESTIC_SEARCH_HARD_TIMEOUT_MS = 4 * 60 * 1000;
+const DOMESTIC_SEARCH_HARD_TIMEOUT_MS = 2 * 60 * 1000;
 
 function cancelDomesticSearches() {
   domesticSearchGeneration += 1;
@@ -318,7 +318,7 @@ async function withDomesticSearchHardTimeout(operation, generation) {
       resolve({
         ok: false,
         timedOut: true,
-        message: "국내 판매처 검색이 4분을 초과해 자동 종료되었습니다. 다시 검색해 주세요.",
+        message: "국내 판매처 검색이 2분을 초과해 자동 종료되었습니다. 다시 검색해 주세요.",
       });
     }, DOMESTIC_SEARCH_HARD_TIMEOUT_MS);
   });
@@ -3608,7 +3608,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
 }
 
 async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "", generation = domesticSearchGeneration) {
-  const discoveredProducts = [];
+  const discoveredProductsBySource = [];
   const sources = [];
   // Naver Fashion Town exposes official-brand, department, and outlet counts
   // on one result page. Keep that browser/result URL alive across the three
@@ -3619,10 +3619,16 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     channelCounts: null,
     searchSubmitted: false,
   };
-  // The complete domestic lookup is one sequential request again. A source
-  // failure is recorded on that source, then the same request continues to
-  // the next source without spawning module-specific state or retries.
-  for (const source of data.sources) {
+  // Retailers are independent. Run a small bounded group concurrently so one
+  // slow mall does not make every following mall wait, while avoiding a burst
+  // of ten BrowserWindows at once.
+  const pendingSources = [...data.sources];
+  const resolvedSources = new Array(pendingSources.length);
+  let nextSourceIndex = 0;
+  const runSourceWorker = async () => {
+    while (nextSourceIndex < pendingSources.length) {
+      const sourceIndex = nextSourceIndex++;
+      const source = pendingSources[sourceIndex];
     if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
     const resolvedSource = await (async () => {
       if (source.officialStatus && ![
@@ -3648,6 +3654,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       const queryAttempts = source.store === "브랜드 공식몰"
         ? allQueryAttempts.slice(0, 1) : allQueryAttempts;
       let result = null;
+      const sourceDeadline = Date.now() + 30_000;
       for (let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts.length; queryAttemptIndex += 1) {
         const queryAttempt = queryAttempts[queryAttemptIndex];
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
@@ -3668,6 +3675,14 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       // the completed prior search returned no product; browser/security or
       // detail-verification failures must not repeat the same query or advance
       // as though the product were absent.
+        const remainingSourceMs = sourceDeadline - Date.now();
+        if (remainingSourceMs <= 0) {
+          result = renderedSearchFailure("page_load_timeout", null, {
+            verificationStage: "source_timeout",
+            source: String(source.store || "판매처"),
+          });
+          break;
+        }
         let sourceTimeoutId;
         const queryResult = await Promise.race([
           renderedSearchSourceResult(
@@ -3675,15 +3690,11 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           ),
           new Promise((resolve) => {
             sourceTimeoutId = setTimeout(() => {
-              for (const searchWindow of [...activeDomesticSearchWindows]) {
-                if (searchWindow && !searchWindow.isDestroyed()) searchWindow.destroy();
-              }
-              activeDomesticSearchWindows.clear();
               resolve(renderedSearchFailure("page_load_timeout", null, {
                 verificationStage: "source_timeout",
                 source: String(source.store || "판매처"),
               }));
-            }, 60_000);
+            }, remainingSourceMs);
           }),
         ]).finally(() => clearTimeout(sourceTimeoutId));
         if (!queryResult) {
@@ -3698,7 +3709,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       // failure ends this source once and is never submitted as another query.
         if (queryResult.absenceConfirmed !== true) break;
       }
-      if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
+      discoveredProductsBySource[sourceIndex] = Array.isArray(result?.products) ? result.products : [];
       const count = result?.count;
       const absenceConfirmed = result?.absenceConfirmed === true;
       const displayCount = Number.isFinite(count)
@@ -3748,7 +3759,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         officialProductMissing: isOfficialStore && absenceConfirmed,
       };
     })();
-    sources.push(resolvedSource);
+    resolvedSources[sourceIndex] = resolvedSource;
     if (source.store === "네이버 패션타운"
       && sharedNaverSession.window
       && !sharedNaverSession.window.isDestroyed()) {
@@ -3759,7 +3770,14 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       sharedNaverSession.window.destroy();
       sharedNaverSession.window = null;
     }
-  }
+    }
+  };
+  await Promise.all(Array.from(
+    { length: Math.min(3, pendingSources.length) },
+    () => runSourceWorker(),
+  ));
+  sources.push(...resolvedSources);
+  const discoveredProducts = discoveredProductsBySource.flat();
   const products = [...(data.products || []), ...discoveredProducts].filter((product, index, all) =>
     index === all.findIndex((candidate) => `${candidate.store}:${candidate.id || candidate.url}` === `${product.store}:${product.id || product.url}`));
   return { ...data, products, sources };
