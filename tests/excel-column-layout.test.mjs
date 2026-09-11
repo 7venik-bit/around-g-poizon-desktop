@@ -51,5 +51,10 @@ test("desktop column controls never rewrite the original Excel file", async () =
   assert.match(ui, /필요한 열만 보기/);
   assert.match(ui, /모든 열 보기/);
   assert.match(ui, /preview\?\.viewMode === "products"/);
+  assert.match(ui, /function resetProductViewColumns\(\)/);
+  assert.match(ui, /state\.loadSequence \+= 1/);
+  assert.match(ui, /cell\.classList\.remove\("excel-column-hidden"\)/);
+  assert.match(ui, /cell\.removeAttribute\("data-excel-column-index"\)/);
+  assert.match(ui, /cell\.querySelector\("\.excel-column-resizer"\)\?\.remove\(\)/);
   assert.match(ui, /원본 Excel 파일은 변경하지 않았습니다/);
 });

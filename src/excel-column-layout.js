@@ -101,9 +101,36 @@
     if (menuShowAll) menuShowAll.hidden = hiddenCount() === 0;
   }
 
+  function resetProductViewColumns() {
+    // Raw Excel column preferences belong only to the raw workbook. The
+    // verified brand product table has a fixed schema, so carrying a previous
+    // hidden-column layout into it can leave only 선택/이미지 visible and move
+    // the 상품검색 control under the wrong heading.
+    state.loadSequence += 1;
+    state.filePath = "";
+    state.columnCount = 0;
+    state.layout = [];
+    document.querySelectorAll("#excel-preview-columns th, #excel-preview-rows td").forEach((cell) => {
+      cell.classList.remove("excel-column-hidden");
+      cell.classList.remove("excel-layout-header");
+      cell.removeAttribute("data-excel-column-index");
+      cell.style.removeProperty("width");
+      cell.style.removeProperty("min-width");
+      cell.style.removeProperty("max-width");
+      cell.querySelector(".excel-column-resizer")?.remove();
+    });
+    const showAll = document.querySelector("#excel-show-hidden-columns");
+    if (showAll) showAll.hidden = true;
+    const menuShowAll = document.querySelector("#excel-column-show-all");
+    if (menuShowAll) menuShowAll.hidden = true;
+  }
+
   async function loadLayout() {
     const preview = previewState();
-    if (preview?.viewMode === "products") return;
+    if (preview?.viewMode === "products") {
+      resetProductViewColumns();
+      return;
+    }
     const filePath = String(preview?.file?.path || "").trim();
     const headers = assignColumnIndexes();
     if (!filePath || !headers.length) return;
