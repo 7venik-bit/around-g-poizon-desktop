@@ -46,5 +46,6 @@ test("loading modal covers the viewport and exposes live progress", () => {
   assert.match(css, /\.domestic-overlay-progress::\-webkit-progress-value/);
   assert.match(renderer, /class="domestic-overlay-count"/);
   assert.match(renderer, /현재 상품번호/);
-  assert.match(renderer, /검색창은 백그라운드에서 작동합니다/);
+  assert.match(renderer, /수달 사원이 상품을 확인하고 있습니다/);
+  assert.doesNotMatch(renderer, /검색창은 백그라운드에서 작동합니다/);
 });
