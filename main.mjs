@@ -293,7 +293,7 @@ let domesticSearchGeneration = 0;
 const activeDomesticSearchWindows = new Set();
 const activeDomesticPriceWindows = new Set();
 let domesticPriceLookupQueue = Promise.resolve();
-const DOMESTIC_SEARCH_HARD_TIMEOUT_MS = 4 * 60 * 1000;
+const DOMESTIC_SEARCH_HARD_TIMEOUT_MS = 2 * 60 * 1000;
 
 function cancelDomesticSearches() {
   domesticSearchGeneration += 1;
@@ -318,7 +318,7 @@ async function withDomesticSearchHardTimeout(operation, generation) {
       resolve({
         ok: false,
         timedOut: true,
-        message: "국내 판매처 검색이 4분을 초과해 자동 종료되었습니다. 다시 검색해 주세요.",
+        message: "국내 판매처 검색이 2분을 초과해 자동 종료되었습니다. 다시 검색해 주세요.",
       });
     }, DOMESTIC_SEARCH_HARD_TIMEOUT_MS);
   });
@@ -3648,6 +3648,10 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       const queryAttempts = source.store === "브랜드 공식몰"
         ? allQueryAttempts.slice(0, 1) : allQueryAttempts;
       let result = null;
+      // Accuracy fallbacks share one retailer budget. Previously every query
+      // restarted a 60-second timer, so an empty product could spend minutes
+      // on a single store before the next store even began.
+      const sourceDeadline = Date.now() + 15_000;
       for (let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts.length; queryAttemptIndex += 1) {
         const queryAttempt = queryAttempts[queryAttemptIndex];
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
@@ -3668,6 +3672,14 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       // the completed prior search returned no product; browser/security or
       // detail-verification failures must not repeat the same query or advance
       // as though the product were absent.
+        const remainingSourceMs = sourceDeadline - Date.now();
+        if (remainingSourceMs <= 0) {
+          result = renderedSearchFailure("page_load_timeout", null, {
+            verificationStage: "source_timeout",
+            source: String(source.store || "판매처"),
+          });
+          break;
+        }
         let sourceTimeoutId;
         const queryResult = await Promise.race([
           renderedSearchSourceResult(
@@ -3683,7 +3695,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
                 verificationStage: "source_timeout",
                 source: String(source.store || "판매처"),
               }));
-            }, 60_000);
+            }, remainingSourceMs);
           }),
         ]).finally(() => clearTimeout(sourceTimeoutId));
         if (!queryResult) {

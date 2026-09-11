@@ -87,7 +87,7 @@ let selectedBrandDomesticQueueRunning = false;
 let combinedBrandPreview = null;
 let combinedBrandPreviewLoading = false;
 const domesticIdentitySearchCache = new Map();
-const DOMESTIC_SEARCH_MAX_WAIT_MS = 4 * 60 * 1000 + 5_000;
+const DOMESTIC_SEARCH_MAX_WAIT_MS = 2 * 60 * 1000 + 5_000;
 const DOMESTIC_SOURCE_GROUPS_KEY = "around-g-domestic-source-groups-v1";
 const DOMESTIC_SOURCE_GROUPS = ["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"];
 
