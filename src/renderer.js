@@ -2899,7 +2899,7 @@ function renderDomestic(result, sourceProduct = {}, contextKey = "") {
   </div>`;
 }
 
-function renderExplorerResults(title, products, preserveDomestic = false) {
+function renderExplorerResults(title, products, preserveDomestic = false, emptyMessage = "") {
   if (!preserveDomestic) {
     allExplorerProducts = [...products];
     domesticStockOnly = false;
@@ -2951,7 +2951,7 @@ function renderExplorerResults(title, products, preserveDomestic = false) {
         ${renderDomestic(result, product, key)}
       </div>
     </article>`;
-  }).join("")}` : `<div class="empty">${domesticStockOnly ? "국내 재고가 확인된 상품이 없습니다." : "조건에 맞는 상품이 없습니다."}</div>`;
+  }).join("")}` : `<div class="empty">${text(emptyMessage || (domesticStockOnly ? "국내 재고가 확인된 상품이 없습니다." : "조건에 맞는 상품이 없습니다."))}</div>`;
   bindExplorerSelectionControls();
   updateDomesticStockFilter();
 }
@@ -3592,16 +3592,6 @@ window.aroundG.onSellerCaptureProgress((progress) => {
   host.querySelector("i").style.width = `${percent}%`;
   host.querySelector("span").textContent = `${percent}%`;
   if (progress.message) $("#popular-status").textContent = progress.message;
-  if (categorySearchActive) {
-    updateCategoryLoading({
-      title: progress.message || `인기리스트에서 인기 브랜드를 확인하는 중 · ${Number(progress.completed || 0)}/200`,
-      percent: Math.min(32, percent * 0.32),
-    });
-    if (progress.attentionRequired) {
-      $("#category-status").className = "status error";
-      $("#category-status").textContent = progress.message;
-    }
-  }
 });
 async function capturePopularProducts(options = {}) {
   const button = $("#popular-capture");
@@ -4549,7 +4539,7 @@ function categorySearchCacheId(category, detail, minimumChinaSales30, minimumLoc
   const brandKey = [...brandIds].map(Number).filter(Number.isFinite).sort((a, b) => a - b).join("-") || "none";
   const chinaKey = minimumChinaSales30 === null ? "any" : minimumChinaSales30;
   const localKey = minimumLocalSales30 === null ? "any" : minimumLocalSales30;
-  return `category:seller-screen-v7:${categorySearchDate()}:${category}:${detail || "all"}:china-30d-${chinaKey}:local-30d-${localKey}:favorites:${brandKey}`;
+  return `category:local-excel-v8:${categorySearchDate()}:${category}:${detail || "all"}:china-30d-${chinaKey}:local-30d-${localKey}:favorites:${brandKey}`;
 }
 
 const CATEGORY_DETAIL_PATTERNS = {
@@ -4627,7 +4617,8 @@ function startCategoryLoading() {
   clearInterval(categoryLoadingTimer);
   $("#category-loading").hidden = false;
   categoryCompletedBrands = [];
-  $("#category-loading-bar").style.width = "1%";
+  $("#category-loading-bar").style.width = "0%";
+  $("#category-loading-time").textContent = "경과 00:00";
   $("#category-loading-count").textContent = "브랜드 0/0 · 상품 0개 분류";
   categoryLoadingTimer = setInterval(() => {
     const seconds = Math.floor((Date.now() - categoryLoadingStartedAt) / 1000);
@@ -4642,27 +4633,26 @@ function finishCategoryLoading({ keepVisible = false } = {}) {
   if (!keepVisible) $("#category-loading").hidden = true;
 }
 
-$("#category-search-stop").addEventListener("click", async () => {
+$("#category-search-stop").addEventListener("click", () => {
+  if (!categorySearchActive) return;
   categorySearchRunId += 1;
-  categorySearchActive = false;
   $("#category-search-stop").disabled = true;
-  $("#category-loading-title").textContent = "현재 요청을 안전하게 중단하는 중…";
-  await window.aroundG.cancelCategorySearch();
-  finishCategoryLoading({ keepVisible: true });
+  finishCategoryLoading();
   $("#category-status").className = "status error";
   $("#category-status").textContent = "카테고리 검색을 중단했습니다. 저장된 완료 결과는 그대로 유지됩니다.";
+  renderExplorerResults("카테고리 검색 · 중단", allExplorerProducts, false, "검색을 중단했습니다.");
   $("#category-search").disabled = false;
-  $("#category-search-stop").disabled = false;
 });
 
 $("#category-sales-filter-reset").addEventListener("click", () => {
   $("#category-min-china-sales-30").value = "";
   $("#category-min-local-sales-30").value = "";
   $("#category-status").className = "status";
-  $("#category-status").textContent = "판매량 조건을 초기화했습니다. 포이즌 화면에서 확인된 전체 상품을 대상으로 합니다.";
+  $("#category-status").textContent = "판매량 조건을 초기화했습니다. 저장된 Excel 상품을 대상으로 합니다.";
 });
 
 $("#category-search").addEventListener("click", async () => {
+  if (categorySearchActive) return;
   const runId = ++categorySearchRunId;
   const categorySelections = selectedCategoryPairs();
   const category = categorySelections.map((item) => item.category).join("+");
@@ -4683,9 +4673,14 @@ $("#category-search").addEventListener("click", async () => {
   $("#category-search-stop").disabled = false;
   startCategoryLoading();
   status.className = "status";
-  status.textContent = "POIZON 화면 우선 · Excel 상품정보를 교차 검증하는 중…";
-  renderExplorerResults(`${selectionLabel} 검색`, []);
+  status.textContent = "저장된 Excel 파일 목록을 확인하는 중…";
+  renderExplorerResults(`${selectionLabel} 검색 · 진행 중`, [], false, "Excel 상품을 불러오는 중입니다.");
   try {
+    const fileList = await window.aroundG.listBrandExportFiles();
+    if (runId !== categorySearchRunId) return;
+    if (!fileList?.ok || !Array.isArray(fileList.files)) throw new Error(fileList?.message || "다운로드 파일 목록을 읽지 못했습니다.");
+    downloadedBrandFiles = fileList.files;
+    localStorage.setItem("around-g-brand-download-files", JSON.stringify(downloadedBrandFiles));
     await refresh();
     await pruneCategorySearchHistory();
     if (runId !== categorySearchRunId) return;
@@ -4701,6 +4696,7 @@ $("#category-search").addEventListener("click", async () => {
     let failedSourceCount = 0;
     let sourceTotal = 0;
     let completedCount = 0;
+    let missingSalesCount = 0;
     let nextBrandIndex = 0;
     let partialSave = Promise.resolve();
     const savePartialResult = () => {
@@ -4722,6 +4718,7 @@ $("#category-search").addEventListener("click", async () => {
         rankedBrandCount: favoriteBrandIds.length,
         sourceTotal,
         complete: false,
+        source: "local-excel",
       };
       partialSave = partialSave.then(() => window.aroundG.upsert("categorySearches", snapshot));
       return partialSave;
@@ -4734,7 +4731,7 @@ $("#category-search").addEventListener("click", async () => {
       if (completedBrandIds.has(brandId)) return searchNextBrand();
       const brand = explorerMeta.brands.find((item) => Number(item.id) === brandId);
       const brandName = brand?.ko || brand?.name || `브랜드 ${brandId}`;
-      status.textContent = `POIZON 화면 ${completedCount}/${favoriteBrandIds.length} · ${brandName} 최근 30일 판매량 확인 중…`;
+      status.textContent = `Excel ${completedCount}/${favoriteBrandIds.length} · ${brandName} 상품 분류 중…`;
       updateCategoryLoading({
         title: `${brandName} 검색 중 · 완료된 결과만 안전하게 누적합니다.`,
         completed: completedCount,
@@ -4746,22 +4743,17 @@ $("#category-search").addEventListener("click", async () => {
         const excelSales = await downloadedBrandSalesByArticle(brand);
         if (runId !== categorySearchRunId) return;
         if (!excelSales.ok) throw new Error(excelSales.error || "EXCEL_READ_FAILED");
-        const sellerResult = await window.aroundG.captureSellerBrandSales({
-          brandName: brand?.name || "",
-          brandKo: brand?.ko || "",
-        });
-        if (runId !== categorySearchRunId) return;
-        if (!sellerResult?.ok) {
-          const error = new Error(sellerResult?.message || "POIZON 화면 데이터를 가져오지 못했습니다.");
-          error.code = sellerResult?.code || "SELLER_SCREEN_READ_FAILED";
-          throw error;
-        }
-        const crossValidated = mergeExcelProductsWithSellerScreen(excelSales.products, sellerResult.products || []);
-        const detailProducts = crossValidated.products
+        // Category search is a local read. Only the separate POIZON review
+        // action may capture the seller screen or correct workbook values.
+        const categoryProducts = excelSales.products
           .filter((product) => categorySelections.some((selection) => {
             if (selection.category !== "전체" && categoryGroupFromProduct(product) !== selection.category) return false;
             return filterCategoryDetailProducts([product], selection.detail).length > 0;
-          }))
+          }));
+        missingSalesCount += categoryProducts.filter(product =>
+          (minimumChinaSales30 !== null && product.hasSalesData !== true)
+          || (minimumLocalSales30 !== null && product.hasLocalSalesData !== true)).length;
+        const detailProducts = categoryProducts
           .filter((product) => minimumChinaSales30 === null || (product.hasSalesData === true && Number(product.sales30d || 0) >= minimumChinaSales30))
           .filter((product) => minimumLocalSales30 === null || (product.hasLocalSalesData === true && Number(product.localSales30d || 0) >= minimumLocalSales30));
         sourceCount += 1;
@@ -4769,7 +4761,7 @@ $("#category-search").addEventListener("click", async () => {
         completedBrandIds.add(brandId);
         for (const product of detailProducts) {
           const key = `${product.articleNumber || ""}:${product.globalSpuId || product.spuId || product.id || product.name || ""}`;
-          if (!detailProductsByKey.has(key)) detailProductsByKey.set(key, { ...product, name: product.name || product.title || "", brandName: product.brandName || brandName });
+          if (!detailProductsByKey.has(key)) detailProductsByKey.set(key, { ...product, name: product.name || product.title || "", brandName: product.brandName || brandName, salesSource: "local-excel" });
         }
       } catch (error) {
         if (runId !== categorySearchRunId) return;
@@ -4782,7 +4774,7 @@ $("#category-search").addEventListener("click", async () => {
       completedCount += 1;
       await savePartialResult();
       if (runId !== categorySearchRunId) return;
-      renderExplorerResults(`${selectionLabel} 검색 · 진행 중`, [...detailProductsByKey.values()]);
+      renderExplorerResults(`${selectionLabel} 검색 · 진행 중`, [...detailProductsByKey.values()], false, "Excel 상품을 분류하는 중입니다.");
       updateCategoryLoading({
         title: `${brandName} ${completedBrandIds.has(brandId) ? "검색 완료" : "파일 확인 필요"} · 다음 브랜드를 준비합니다.`,
         completed: completedCount,
@@ -4792,22 +4784,24 @@ $("#category-search").addEventListener("click", async () => {
       });
       return searchNextBrand();
     };
-    // A single authenticated Seller Center window is shared by every brand.
-    // Process brands sequentially so two searches cannot replace each other's table.
+    // Keep file reads sequential and save each completed brand independently.
     await searchNextBrand();
     await partialSave;
     if (runId !== categorySearchRunId) return;
     const failureText = failures.map((failure) => `${failure.brandName} (${failure.fileName}) · ${failure.message}`).join(" / ");
     if (!sourceCount) {
       status.className = "status error";
-      status.textContent = `POIZON 화면·Excel 교차 검증 실패 · ${failureText || "판매자센터 로그인과 다운로드 파일을 확인해 주세요."}`;
+      status.textContent = `Excel 카테고리 검색 실패 · ${failureText || "다운로드 파일을 확인해 주세요."}`;
+      renderExplorerResults(`${selectionLabel} 검색 · 실패`, [], false, "Excel 파일을 읽지 못했습니다. 위의 파일별 안내를 확인해 주세요.");
       finishCategoryLoading();
       return;
     }
     const detailProducts = [...detailProductsByKey.values()];
     status.className = failedSourceCount ? "status error" : "status success";
-    status.textContent = `POIZON 화면 우선 · ${selectionLabel} · 상품 ${detailProducts.length.toLocaleString("ko-KR")}개 · Excel ${sourceTotal.toLocaleString("ko-KR")}행 교차 검증 · 브랜드 ${sourceCount}/${favoriteBrandIds.length}개 완료${failureText ? ` · 실패: ${failureText}` : ""}`;
-    renderExplorerResults(`${selectionLabel} 검색`, detailProducts);
+    status.textContent = `저장된 Excel · ${selectionLabel} · 상품 ${detailProducts.length.toLocaleString("ko-KR")}개 · Excel ${sourceTotal.toLocaleString("ko-KR")}개 상품 분류 · 브랜드 ${sourceCount}/${favoriteBrandIds.length}개 완료${missingSalesCount ? ` · 판매량 값이 없는 상품 ${missingSalesCount}개는 조건 비교에서 제외했습니다.` : ""}${failureText ? ` · 실패: ${failureText}` : ""}`;
+    renderExplorerResults(`${selectionLabel} 검색 · ${failedSourceCount ? "일부 완료" : "완료"}`, detailProducts, false,
+      missingSalesCount ? "판매량 값이 없는 상품이 있습니다. 조건을 초기화하거나 별도 POIZON 검증 메뉴에서 데이터를 갱신해 주세요."
+        : failedSourceCount ? "읽은 파일에서는 조건에 맞는 상품이 없습니다. 실패한 파일의 안내를 확인해 주세요." : "");
     await window.aroundG.upsert("categorySearches", {
       id: cacheId,
       category,
@@ -4825,16 +4819,22 @@ $("#category-search").addEventListener("click", async () => {
       rankedBrandCount: favoriteBrandIds.length,
       sourceTotal,
       complete: failedSourceCount === 0,
+      source: "local-excel",
     });
-    updateCategoryLoading({ title: `${selectionLabel} POIZON 화면·Excel 교차 검증을 마쳤습니다.`, completed: completedCount, total: favoriteBrandIds.length, count: detailProducts.length, percent: 100 });
-    window.setTimeout(() => finishCategoryLoading(), 1_800);
+    if (runId !== categorySearchRunId) return;
+    updateCategoryLoading({ title: `${selectionLabel} Excel 분류를 마쳤습니다.`, completed: completedCount, total: favoriteBrandIds.length, count: detailProducts.length, percent: 100 });
   } catch (error) {
     if (runId !== categorySearchRunId) return;
     status.className = "status error";
     status.textContent = `카테고리 검색 오류 · ${error instanceof Error ? error.message : String(error)}`;
+    renderExplorerResults(`${selectionLabel} 검색 · 실패`, allExplorerProducts, false, "검색을 완료하지 못했습니다. 위의 오류 안내를 확인해 주세요.");
     finishCategoryLoading();
   } finally {
-    if (runId === categorySearchRunId) button.disabled = false;
+    if (runId === categorySearchRunId) {
+      finishCategoryLoading();
+      button.disabled = false;
+      $("#category-search-stop").disabled = true;
+    }
   }
 });
 
@@ -5283,27 +5283,8 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
       }
       return;
     }
-    if (progress?.context === "category" && categorySearchActive) {
-      const completed = Number(progress.pageNum || 0);
-      const total = Number(progress.pageCount || 0);
-      updateCategoryLoading({
-        title: progress.phase === "start"
-          ? `${progress.brandName || "브랜드"} 상자를 전달하는 중…`
-          : `${progress.brandName || "브랜드"} 상자를 열어 상품을 분류했습니다.`,
-        brandName: progress.brandName || "BRAND",
-        brandLogoUrl: progress.brandLogoUrl || "",
-        phase: progress.phase,
-        completed,
-        total,
-        count: Number(progress.count || 0),
-        percent: 35 + (total ? (completed / total) * 63 : 0),
-      });
-      const brandCount = Number(progress.brandProductCount || 0);
-      $("#category-status").textContent = progress.phase === "complete"
-        ? `3단계/3 · ${progress.brandName || "브랜드"} 전체 페이지 ${brandCount.toLocaleString("ko-KR")}개 수집 완료 · 브랜드 ${completed}/${total}`
-        : `3단계/3 · ${progress.brandName || "브랜드"} 선택 카테고리 전체 페이지 조회 중 · 브랜드 ${completed}/${total}`;
-      return;
-    }
+    // Legacy live category events must not overwrite the local Excel search.
+    if (progress?.context === "category") return;
     if (!brandProgressActive && selectedBrandId) return;
     const status = $("#brand-status");
     const loading = $("#brand-progress");
