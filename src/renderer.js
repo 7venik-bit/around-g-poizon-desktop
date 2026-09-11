@@ -1200,6 +1200,24 @@ setInterval(() => {
   });
 }, 1_000);
 
+window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
+  const overlay = $("#domestic-search-overlay");
+  if (!overlay || overlay.hidden) return;
+  const total = Math.max(1, Number(payload.total) || 1);
+  const completed = Math.min(total, Math.max(0, Number(payload.completed) || 0));
+  const percent = Math.round((completed / total) * 100);
+  const progress = overlay.querySelector(".domestic-overlay-progress");
+  const count = overlay.querySelector(".domestic-overlay-count");
+  const guide = overlay.querySelector(".domestic-overlay-guide");
+  if (progress) {
+    progress.value = percent;
+    progress.textContent = `${percent}%`;
+    progress.setAttribute("aria-valuenow", String(percent));
+  }
+  if (count) count.innerHTML = `<strong>${completed.toLocaleString("ko-KR")}</strong> / ${total.toLocaleString("ko-KR")}개 판매처 · ${percent}%`;
+  if (guide) guide.textContent = `${String(payload.source || "판매처")} 확인 완료 · 다음 판매처를 검색하고 있습니다.`;
+});
+
 function renderRawExcelDomesticCell(key, product, result) {
   if (!product) return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state muted">검색 정보 없음</span></td>`;
   if (result?.loading) {
