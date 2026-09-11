@@ -504,7 +504,7 @@ function renderVerifiedSpuRows(file, products) {
     const options = (p.verificationOptions || []).map((o) => '<div><b>' + text(o.option || o.skuId || '옵션 미확인') + '</b> · SKU ' + text(o.skuId || '-') + ' · 원본 중국 총판매 ' + text(o.totalSalesRaw || '-') + ' · 원본 현지 총판매 ' + text(o.localTotalSalesRaw || '-') + '</div>').join('');
     const image = /^https?:\/\//.test(p.logoUrl || '') ? '<img class="excel-verified-image" src="' + text(p.logoUrl) + '" alt="">' : '';
     const resultCell = result?.loading
-      ? '<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">백그라운드 검색 중…</span></td>'
+      ? '<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">수달 사원이 검색 중…</span></td>'
       : result
         ? '<td class="excel-raw-search-cell"><div class="excel-raw-search-summary"><span class="excel-raw-search-state available">검색 완료</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">다시 검색</button></div></td>'
         : '<td class="excel-raw-search-cell excel-raw-search-pending"><button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">상품검색</button></td>';
@@ -1178,7 +1178,7 @@ function showDomesticSearchOverlay(startedAt, completedCount, totalCount, curren
     <p class="domestic-overlay-count"><strong>${Number(completedCount).toLocaleString("ko-KR")}</strong> / ${Number(totalCount).toLocaleString("ko-KR")}개 처리 · ${percent}%</p>
     <progress class="domestic-overlay-progress" max="100" value="${percent}" aria-label="상품 검색 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}">${percent}%</progress>
     <p class="domestic-overlay-current">${article ? `현재 상품번호 · <b>${text(article)}</b>` : "검색 준비 중입니다."}</p>
-    <p class="domestic-overlay-guide">검색창은 백그라운드에서 작동합니다. 완료될 때까지 잠시 기다려 주세요.</p>
+    <p class="domestic-overlay-guide">수달 사원이 상품을 확인하고 있습니다. 완료될 때까지 잠시 기다려 주세요.</p>
     <button type="button" class="domestic-overlay-stop">검색 중지</button>
   </div>`;
   overlay.querySelector(".domestic-overlay-stop")?.addEventListener("click", () => {
@@ -1202,7 +1202,7 @@ setInterval(() => {
 function renderRawExcelDomesticCell(key, product, result) {
   if (!product) return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state muted">검색 정보 없음</span></td>`;
   if (result?.loading) {
-    return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">백그라운드 검색 중…</span></td>`;
+    return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">수달 사원이 검색 중…</span></td>`;
   }
   if (!result) {
     return `<td class="excel-raw-search-cell excel-raw-search-pending"><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">상품검색</button></td>`;
@@ -1385,7 +1385,7 @@ function renderExcelProductRows(file, products = []) {
       <td>${text(product.brandName || "-")}</td><td title="${text(product.categoryName)}">${text(product.categoryName || "-")}</td>
       <td>${poizonPrice ? money(poizonPrice) : "가격 없음"}</td>
       <td>${product.screenVerified ? excelProductMetric(product.sales30dRaw, product.sales30d) : "미동기화"}</td><td>${product.screenVerified ? excelProductMetric(product.localSales30dRaw, product.localSales30d) : "미동기화"}</td>
-      <td>${result?.loading ? `<span class="excel-raw-search-state loading">백그라운드 검색 중…</span>` : `<button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">${status}</button>`}</td>
+      <td>${result?.loading ? `<span class="excel-raw-search-state loading">수달 사원이 검색 중…</span>` : `<button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">${status}</button>`}</td>
     </tr>${result && !result.loading ? `<tr class="excel-product-search-detail ${groupClass} ${outcomeClass}"><td colspan="10"><div class="excel-product-search-result-label"><span></span><strong>${text(productLabel)}</strong>의 국내 검색 결과 <b class="excel-search-outcome-label">${text(outcome?.label || "확인 완료")}</b></div>${renderDomestic(result, product)}</td></tr>` : ""}`;
   }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
   return pageKeys;
@@ -1421,18 +1421,24 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
   // however, reuses the first verified result for duplicate POIZON rows with
   // the same normalized brand and article number.
   if (forceRefresh) clearDomesticIdentityCache(product);
+  const startedAt = Date.now();
   excelPreviewSearchResults.delete(key);
-  excelPreviewSearchResults.set(key, { loading: true, startedAt: Date.now(), products: [], sources: [] });
+  excelPreviewSearchResults.set(key, { loading: true, startedAt, products: [], sources: [] });
   const file = activeExcelPreview?.file;
   if (file && activeExcelPreview?.viewMode === "products") renderExcelProductRows(file, excelPreviewPageProducts);
   else if (file) void showExcelPreview(file, activeExcelPreview?.offset || 0, activeExcelPreview?.filters || currentExcelPreviewFilters(), { preserveFilters: true });
-  const response = await cachedDomesticSearch(product, true);
-  const result = response.ok ? response.data : { products: [], sources: [], error: response.message };
-  excelPreviewSearchResults.set(key, result);
-  if (file?.path) persistExcelSearchResults(file.path);
-  if (file && activeExcelPreview?.viewMode === "products") renderExcelProductRows(file, excelPreviewPageProducts);
-  else if (file) void showExcelPreview(file, activeExcelPreview?.offset || 0, activeExcelPreview?.filters || currentExcelPreviewFilters(), { preserveFilters: true });
-  updateExcelPreviewSelectionUi(excelPreviewPageProducts.map((item) => excelPreviewStableSelectionKey(item, file)));
+  showDomesticSearchOverlay(startedAt, 0, 1, product);
+  try {
+    const response = await cachedDomesticSearch(product, true);
+    const result = response.ok ? response.data : { products: [], sources: [], error: response.message };
+    excelPreviewSearchResults.set(key, result);
+    if (file?.path) persistExcelSearchResults(file.path);
+    if (file && activeExcelPreview?.viewMode === "products") renderExcelProductRows(file, excelPreviewPageProducts);
+    else if (file) await showExcelPreview(file, activeExcelPreview?.offset || 0, activeExcelPreview?.filters || currentExcelPreviewFilters(), { preserveFilters: true });
+    updateExcelPreviewSelectionUi(excelPreviewPageProducts.map((item) => excelPreviewStableSelectionKey(item, file)));
+  } finally {
+    hideDomesticSearchOverlay();
+  }
 }
 
 async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewFilters(), options = {}) {

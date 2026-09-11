@@ -23,5 +23,5 @@ test("verified brand product row keeps only search state and retry control at th
 
   assert.match(verifiedRenderer, /검색 완료/);
   assert.match(verifiedRenderer, /다시 검색/);
-  assert.match(verifiedRenderer, /백그라운드 검색 중/);
+  assert.match(verifiedRenderer, /수달 사원이 검색 중/);
 });
