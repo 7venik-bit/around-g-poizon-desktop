@@ -14,6 +14,7 @@ function section(start, end) {
 }
 const extracted = [
   section("function renderVerifiedSpuRows(", "function mergeDomesticSearchProducts("),
+  section("function stockWatchRegistrationButton(", "function renderStockWatches("),
   section("function rawExcelDomesticResultLinks(", "function updateExcelPreviewSelectionUi("),
   section("function updateExcelPreviewSelectionUi(", "function excelProductMetric("),
   section("function normalizedProductIdentity(", "function domesticSearchInput("),
