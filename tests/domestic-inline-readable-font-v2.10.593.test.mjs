@@ -11,6 +11,6 @@ test("domestic result rows use readable text and an unclipped stock-watch button
     assert.match(source, /\.domestic-inline-row\{[^}]*font-size:11px!important/);
     assert.match(source, /\.domestic-inline-row button\{[^}]*font-size:10px!important/);
     assert.match(source, /\.domestic-inline-row \.stock-watch-register-button\{min-width:96px!important;flex:0 0 96px!important\}/);
-    assert.match(source, /grid-template-columns:120px minmax\(240px,1fr\) 130px 100px 180px!important/);
+    assert.match(source, /grid-template-columns:120px minmax\(160px,1fr\) minmax\(200px,1.4fr\) 110px 100px 180px!important/);
   }
 });

@@ -6,6 +6,7 @@ on:
       - 'src/**'
       - 'scripts/patch-*.mjs'
       - 'scripts/test-header-brand-layout.cjs'
+      - 'scripts/test-domestic-stock-layout.cjs'
       - 'tests/header-brand-layout.test.mjs'
       - 'package.json'
       - '.github/workflows/header-brand-layout.yml'
@@ -31,6 +32,10 @@ jobs:
       - name: Require all 42 geometry results to pass
         run: >-
           node -e "const a=require('node:assert/strict');const r=JSON.parse(require('node:fs').readFileSync('layout-artifacts/results.json','utf8'));a.equal(r.total,42);a.equal(r.failed,0);a.ok(r.results.every(x=>x.errors.length===0));a.ok(r.baseline.errors.length>0);console.log('42 rendered cases passed; original defects reproduced.');"
+      - name: Verify rendered retailer stock columns and actions
+        shell: pwsh
+        run: >-
+          node -e "const {spawnSync}=require('node:child_process');const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;const r=spawnSync(require('electron'),['scripts/test-domestic-stock-layout.cjs'],{stdio:'inherit',env,shell:false});if(r.error)throw r.error;process.exit(r.status??1)"
       - name: Save rendered screenshots and geometry report
         if: always()
         uses: actions/upload-artifact@v4

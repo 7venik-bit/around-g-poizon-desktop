@@ -421,3 +421,62 @@ test('Kolon exact model search keeps sold-out products with a human-readable nam
   assert.equal(products[0].url,'https://www.kolonmall.com/Product/JWJJM26321DGY');
   assert.equal(relay.parseKolonSearch(html,'OTHER12345').length,0);
 });
+
+test('purchase limits and imminent-sellout promotion are not inventory evidence', () => {
+  const result=relay.normalizeRenderedStockEvidence({stockTexts:['*ID당 구매 가능 수량 10개','실시간 인기 품절 임박 아이템'],purchaseAvailable:true});
+  assert.equal(result.inStock,true);
+  assert.equal(result.stockText,'');
+  assert.equal(result.purchaseLimitText,'*ID당 구매 가능 수량 10개');
+  const unknown=relay.normalizeRenderedStockEvidence({pageText:'*ID당 구매 가능 수량 10개'});
+  assert.equal(unknown.inStock,null);
+});
+
+test('explicit stock counts preserve source wording, including zero stock', () => {
+  assert.equal(relay.normalizeRenderedStockEvidence({pageText:'재고: 0개',purchaseAvailable:true}).inStock,false);
+  const result=relay.normalizeRenderedStockEvidence({pageText:'남은 수량 3개'});
+  assert.equal(result.stockText,'남은 수량 3개');
+  assert.equal(result.inStock,true);
+});
+
+test('size capture reads leaf controls and excludes purchase quantities and size guides', async t => {
+  const url='https://official.example/products/sizes';
+  const f=fixture(t,{pages:{[url]:'<main><h1>재킷</h1><div class="size-list"><button data-size="90">90</button><button data-size="95">95 (재고 3개)</button><button data-size="100" disabled><span>100</span><span> SOLD OUT</span></button></div><button class="size-guide">사이즈 가이드</button><label>구매 수량<select name="quantity"><option>1</option><option>2</option></select></label><p>*ID당 구매 가능 수량 10개</p><p>실시간 인기 품절 임박 아이템</p><button>구매하기</button></main>'}});
+  runInContext(section('function renderedStockSelectors(', '\nasync function clickRenderedProductCard('),f.context);
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const snapshot=await w.webContents.executeJavaScript(`(${relay.captureRenderedStockEvidence.toString()})(${JSON.stringify(f.context.renderedStockSelectors('브랜드 공식몰'))})`);
+  const result=relay.normalizeRenderedStockEvidence(snapshot);
+  assert.deepEqual(result.sizes.map(s=>[s.label,s.inStock]),[['90',true],['95 (재고 3개)',true],['100 SOLD OUT',false]]);
+  assert.equal(result.inStock,true);
+  assert.equal(result.stockText,'');
+  assert.equal(result.purchaseLimitText,'*ID당 구매 가능 수량 10개');
+});
+
+test('Kolon stock refresh opens size choices before capturing the result', async t => {
+  const url='https://www.kolonmall.com/Product/JKJGX25272SBU';
+  const f=fixture(t,{pages:{[url]:'<main><h1>여성 방수재킷</h1><button>구매하기</button></main>'}});
+  let opened=0;
+  f.context.openRenderedSizeOptions=async w=>{opened++;w.dom.window.document.querySelector('main').insertAdjacentHTML('beforeend','<button data-size="90">90</button><button data-size="95" disabled>95 품절</button>');};
+  const result=await f.drive(f.context.refreshDomesticProductStock({url,store:'코오롱몰'}));
+  assert.equal(opened,1);
+  assert.deepEqual(result.sizes.map(s=>s.label),['90','95 품절']);
+});
+
+test('opening size options keeps already-visible choices open', async t => {
+  const url='https://official.example/products/open-options';
+  const f=fixture(t,{pages:{[url]:'<main><h1>재킷</h1><button aria-expanded="true">사이즈 선택</button><div role="listbox"><div role="option">90</div><div role="option">95 품절</div></div><button>구매하기</button></main>'}});
+  runInContext(section('async function openRenderedSizeOptions(', '\nasync function clickRenderedProductCard('),f.context);
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  w.webContents.sendInputEvent=()=>assert.fail('visible size choices must not be toggled');
+  assert.equal(await f.drive(f.context.openRenderedSizeOptions(w)),false);
+});
+
+test('Naver verified seller detail opens options and returns their availability', async t => {
+  const url=channels[0][2];
+  const f=fixture(t,{pages:{[url]:'<main><h1>데상트 SR123UPS11 카라 셔츠</h1><p>공식 롯데백화점에서 판매중인 상품</p><p>품번 SR123UPS11</p><button>구매하기</button></main>'}});
+  Object.assign(f.context,{DOMESTIC_SELLER_EVIDENCE_PARTITION:'test',isDomesticNaverPriceCard:()=>true,isApprovedNaverDomesticSellerEvidence:()=>true,brandsMatch:()=>true,
+    openRenderedSizeOptions:async w=>w.dom.window.document.querySelector('main').insertAdjacentHTML('beforeend','<div role="option">95</div><div role="option" aria-disabled="true">100 품절</div>')});
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  const result=await f.drive(f.context.verifyApprovedNaverDomesticProducts([{title:'데상트 SR123UPS11 카라 셔츠',url}],{articleNumber:'SR123UPS11',requireArticleIdentity:true}));
+  assert.equal(result.products.length,1);
+  assert.deepEqual(result.products[0].sizes.map(s=>[s.label,s.inStock]),[['95',true],['100 품절',false]]);
+});

@@ -12,6 +12,8 @@ These instructions apply to ChatGPT Work, Codex, and Cursor when working in this
 - Keep brand verification valid for seven days, including after a newer workbook download.
 - Category selection and category search read saved local Excel data. They must not open Seller Center, capture POIZON pages, or start Excel correction.
 - Keep POIZON screen-to-Excel verification behind its separate, explicit verification menu. Its screen-authoritative comparison and save/reread rules still apply there.
+- Show domestic retailer sizes and inventory in the lower product list, between the product title and article number. Preserve platform stock wording.
+- Purchase limits are not inventory counts, and "품절 임박" is not sold out. Never invent a count when the retailer does not expose one.
 
 ## Safe development workflow
 
