@@ -19,7 +19,7 @@ test("an exact official-domain product code is shown as verified with a separate
 });
 
 test("official products without an exact code never pass on a merely similar image", () => {
-  assert.match(main, /if \(product\.store === "브랜드 공식몰"\) return false/);
+  assert.match(main, /if \(product\.store === "브랜드 공식몰"\) return product\.officialSearchResultVerified === true/);
   assert.match(main, /titleScore >= 70 && Number\(imageScore \|\| 0\) >= 95/);
 });
 
