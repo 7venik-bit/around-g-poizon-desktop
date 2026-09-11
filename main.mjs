@@ -102,6 +102,7 @@ import {
   isPlatformShoppingProductUrl,
   isTrustedNaverFashionProductCard,
   normalizeRenderedStockEvidence,
+  captureRenderedStockEvidence,
   naverFashionTownUrl,
   parseNaverFashionTownChannelCounts,
   queryDomesticProducts,
@@ -1049,7 +1050,7 @@ async function addMatchConfidence(data, input) {
     sources,
     // Keep prices from the products that passed the identity and image gates.
     // discoveredProducts belongs to addRenderedSearchCounts, not this scope.
-    domesticPriceCandidates: products.filter((product) => Number(product?.price || 0) > 0),
+    domesticPriceCandidates: products.filter((product) => Number(product?.price || 0) > 0 && product.inStock !== false),
   };
 }
 
@@ -1428,6 +1429,7 @@ async function collectOfficialMallSearchProducts(searchWindow, query) {
           imageUrl: String(image?.currentSrc || image?.src || ""),
           url,
           inStock: null,
+          stockEvidence: (${captureRenderedStockEvidence.toString()})([], card),
           linkOnly: true,
           officialStoreVerified: Boolean(expected && compact(rawText).includes(expected)),
           sourceTrustLabel: "공식몰 검색 결과",
@@ -1435,7 +1437,10 @@ async function collectOfficialMallSearchProducts(searchWindow, query) {
       }
       return [...found.values()].slice(0, 50);
     })()`, true).catch(() => []);
-    if (Array.isArray(products) && products.length) return products;
+    if (Array.isArray(products) && products.length) return products.map(({stockEvidence, ...product}) => ({
+      ...product,
+      ...normalizeRenderedStockEvidence(stockEvidence || {}),
+    }));
   }
   return [];
 }
@@ -1567,6 +1572,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
             }
             return {
               fullText, sellerEvidenceText, titleText, labeledText,
+              stockEvidence: (${captureRenderedStockEvidence.toString()})(${JSON.stringify(renderedStockSelectors("네이버 패션타운"))}),
               structuredCodes: [...new Set(structuredCodes)].slice(0, 30),
               ready: document.readyState === "complete",
             };
@@ -1599,6 +1605,8 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         }
         approved.push({
           ...candidate,
+          ...(snapshot.stockEvidence && (snapshot.stockEvidence.stockTexts?.length || snapshot.stockEvidence.purchaseAvailable || snapshot.stockEvidence.options?.length)
+            ? normalizeRenderedStockEvidence(snapshot.stockEvidence) : {}),
           domesticSellerVerified: true,
           domesticSellerEvidence: String(snapshot.sellerEvidenceText || "").slice(0, 240),
           brandVerifiedFromCard: brandVerified,
@@ -2633,6 +2641,40 @@ async function waitForDomesticCaptureReady(searchWindow, timeoutMs = 25_000) {
   if (lastSignature && Date.now() - stableSince < 1_500 && !searchWindow.isDestroyed()) await wait(1_500);
 }
 
+async function refreshDomesticProductStock(product, generation = domesticSearchGeneration) {
+  if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
+  const fallback = { inStock: product.inStock === false ? false : null, sizes: product.sizes || [],
+    stockText: String(product.stockText || ""), stockStatus: product.inStock === false ? "soldout" : "unknown", stockVerified: product.inStock === false };
+  if (!/^https:\/\//i.test(String(product.url || ""))) return fallback;
+  const stockWindow = new BrowserWindow({ show: false, width: 1200, height: 900, icon: APP_ICON_PATH,
+    webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, backgroundThrottling: false, paintWhenInitiallyHidden: true, offscreen: true } });
+  activeDomesticSearchWindows.add(stockWindow);
+  stockWindow.on("closed", () => activeDomesticSearchWindows.delete(stockWindow));
+  let timer;
+  try {
+    return await Promise.race([
+      (async () => {
+        await stockWindow.loadURL(product.url);
+        await waitForDomesticCaptureReady(stockWindow, 25_000);
+        if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
+        const snapshot = await stockWindow.webContents.executeJavaScript(
+          `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(renderedStockSelectors(product.store))})`, true,
+        );
+        const observed = normalizeRenderedStockEvidence(snapshot || {});
+        return observed.stockText || observed.inStock !== null ? observed : fallback;
+      })(),
+      new Promise(resolve => { timer = setTimeout(() => resolve(fallback), 45_000); }),
+    ]);
+  } catch (error) {
+    if (domesticSearchCanceled(generation)) throw error;
+    return fallback;
+  } finally {
+    clearTimeout(timer);
+    if (!stockWindow.isDestroyed()) stockWindow.destroy();
+    activeDomesticSearchWindows.delete(stockWindow);
+  }
+}
+
 async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
   const expectedQuery = sanitizeDomesticQuery(query);
   const inspectSettledResult = async () => {
@@ -3272,6 +3314,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         } catch {}
         productCards.push({
           productUrl, text, markup, imageUrl, imageLinkedToProduct, title, price, originalPrice,
+          stockEvidence: (${captureRenderedStockEvidence.toString()})([], card || link),
           officialBrandStoreLabelMatched, departmentStoreLabelMatched, outletLabelMatched,
           naverWholeViewChannel,
         });
@@ -3484,7 +3527,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         let detailText = "";
         let detailIdentity = { titleText: "", labeledText: "", structuredCodes: [] };
         let detailLoaded = false;
-        let stockEvidence = normalizeRenderedStockEvidence();
+        let stockEvidence = normalizeRenderedStockEvidence({ stockTexts: product.stockText ? [product.stockText] : [], options: product.sizes || [] });
         try {
           const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
           if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");
@@ -3527,18 +3570,12 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           }
           await openRenderedSizeOptions(searchWindow);
           const stockSelectors = renderedStockSelectors(source.store);
-          const stockSnapshot = await searchWindow.webContents.executeJavaScript(`(() => {
-            const visible = (el) => { const s=getComputedStyle(el),r=el.getBoundingClientRect(); return s.display!=="none"&&s.visibility!=="hidden"&&r.width>0&&r.height>0; };
-            const sold = /품절|재고\\s*없|일시\\s*품절|SOLD\\s*OUT|OUT\\s*OF\\s*STOCK|판매\\s*(?:종료|중지)|재입고/i;
-            const selectors=${JSON.stringify(stockSelectors)};
-            const nodes=[...new Set(selectors.flatMap((selector)=>[...document.querySelectorAll(selector)]))].filter(visible);
-            const options=nodes.map((el)=>{ const label=String(el.innerText||el.textContent||el.value||"").replace(/\\s+/g," ").trim(); const disabled=el.disabled||el.getAttribute("aria-disabled")==="true"||/disabled|sold.?out|품절/i.test(String(el.className||"")); return {label,inStock:!disabled&&!sold.test(label),stockText:label}; })
-              .filter((item)=>item.label&&item.label.length<=80).slice(0,120);
-            const buttons=[...document.querySelectorAll('button,a,[role="button"]')].filter(visible);
-            const purchaseAvailable=buttons.some((el)=>/구매|장바구니|바로\\s*구매|buy|add\\s*to\\s*cart/i.test(String(el.innerText||el.textContent||""))&&!el.disabled&&el.getAttribute("aria-disabled")!=="true");
-            return JSON.stringify({pageText:String(document.body?.innerText||"").slice(0,80000),purchaseAvailable,options});
-          })()`, true).then(JSON.parse).catch(() => null);
-          stockEvidence = normalizeRenderedStockEvidence(stockSnapshot || { pageText: detailText });
+          const stockSnapshot = await searchWindow.webContents.executeJavaScript(
+            `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(stockSelectors)})`, true,
+          ).catch(() => null);
+          if (stockSnapshot && (stockSnapshot.stockTexts?.length || stockSnapshot.purchaseAvailable || stockSnapshot.options?.length)) {
+            stockEvidence = normalizeRenderedStockEvidence(stockSnapshot);
+          }
         } catch {}
         if (product.detailArticleVerificationRequired) identityRequiredCount += 1;
         const detailArticleVerified = product.detailArticleVerificationRequired
@@ -3562,6 +3599,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
               sizes: [],
               stockStatus: "manual_check",
               stockVerified: false,
+              ...stockEvidence,
             });
           }
           continue;
@@ -3716,6 +3754,19 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         return { ...source, countVerified: false, verificationFailed: false };
       }
       if (!source.renderCount) {
+        // The Kolon search API has no rendered verification pass. Read each
+        // returned product's own detail status before treating it as buyable.
+        if (source.store === "코오롱몰") {
+          const products = [...(data.products || [])];
+          for (let index = 0; index < products.length; index += 1) {
+            if (products[index].store !== source.store) continue;
+            onProgress?.({ completed: sources.length, total: progressTotal, source: "코오롱몰 재고 문구", phase: "searching" });
+            const stock = await refreshDomesticProductStock(products[index], generation);
+            if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
+            products[index] = { ...products[index], ...stock };
+            data = { ...data, products };
+          }
+        }
         return {
           ...source,
           countVerified: source.ok === true,

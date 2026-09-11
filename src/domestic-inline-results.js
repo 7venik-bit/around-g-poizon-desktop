@@ -54,6 +54,9 @@
       .domestic-inline-store{display:flex!important;align-items:center!important;gap:3px!important;min-width:0!important;color:#334155!important;font-weight:800!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
       .domestic-inline-official{flex:0 0 auto!important;padding:2px 5px!important;border-radius:999px!important;background:#fff3e8!important;color:#b86624!important;font-size:10px!important;font-weight:800!important}
       .domestic-inline-title{min-width:0!important;color:#111827!important;font-weight:650!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+      .domestic-inline-product{min-width:0!important}
+      .domestic-inline-stock{margin-top:3px!important;white-space:pre-line!important;overflow-wrap:anywhere!important;color:#537563!important;font-weight:650!important}
+      .domestic-inline-stock.soldout{color:#9a5c32!important}
       .domestic-inline-code{min-width:0!important;color:#64748b!important;font-family:inherit!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
       .domestic-inline-price{text-align:right!important;color:#111827!important;font-weight:800!important;white-space:nowrap!important}
       .domestic-inline-price-fetch{min-width:76px!important;border-color:#9cc5ff!important;background:#f3f8ff!important;color:#1769c2!important}
@@ -168,9 +171,12 @@
       const title = displayedProductTitle(product, sourceProduct);
       const article = product?.articleNumber || sourceProduct?.articleNumber || sourceProduct?.productCode || "-";
       const official = product?.officialStoreVerified === true || Boolean(source?.officialStatus);
+      const stockText = String(product?.stockText || "").trim() || (product?.inStock === false ? "품절" : "");
+      const optionText = (product?.sizes || []).map(option => String(option?.stockText || "").trim())
+        .filter(value => /품절|솔드\s*아웃|SOLD[\s_-]*OUT|OUT[\s_-]*OF[\s_-]*STOCK|재고|구매\s*(?:가능|불가)/i.test(value)).join(" · ");
       return `<div class="domestic-inline-row">
         <div class="domestic-inline-store" title="${safeText(retailer)}"><span>${safeText(retailer)}</span>${official ? `<span class="domestic-inline-official">공식</span>` : ""}</div>
-        <div class="domestic-inline-title" title="${safeText(rawTitle)}">${safeText(title)}</div>
+        <div class="domestic-inline-product"><div class="domestic-inline-title" title="${safeText(rawTitle)}">${safeText(title)}</div>${stockText ? `<div class="domestic-inline-stock${product?.inStock === false ? " soldout" : ""}">${safeText(stockText)}</div>` : ""}${optionText ? `<div class="domestic-inline-stock">${safeText(optionText)}</div>` : ""}</div>
         <div class="domestic-inline-code" title="${safeText(article)}">${safeText(article)}</div>
         <div class="domestic-inline-price">${safeMoney(product?.price)}</div>
         <div class="domestic-inline-actions">${sourceAction(source, product, sourceProduct, contextKey)}${typeof stockWatchRegistrationButton === "function" ? stockWatchRegistrationButton(product, sourceProduct) : ""}</div>

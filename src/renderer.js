@@ -4001,7 +4001,7 @@ $("#excel-preview-select-all-results")?.addEventListener("click", async () => {
 });
 function domesticPriceCandidate(result = {}) {
   const candidates = [...(result?.domesticPriceCandidates || []), ...(result?.products || [])]
-    .filter((candidate) => Number(candidate?.price || 0) > 0);
+    .filter((candidate) => Number(candidate?.price || 0) > 0 && candidate?.inStock !== false);
   const unique = [...new Map(candidates.map((candidate) => [
     String(candidate?.url || `${candidate?.store}:${candidate?.price}`), candidate,
   ])).values()];
