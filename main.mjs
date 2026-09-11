@@ -293,6 +293,7 @@ let domesticSearchGeneration = 0;
 const activeDomesticSearchWindows = new Set();
 const activeDomesticPriceWindows = new Set();
 let domesticPriceLookupQueue = Promise.resolve();
+const DOMESTIC_SEARCH_HARD_TIMEOUT_MS = 4 * 60 * 1000;
 
 function cancelDomesticSearches() {
   domesticSearchGeneration += 1;
@@ -305,6 +306,27 @@ function cancelDomesticSearches() {
 
 function domesticSearchCanceled(generation) {
   return generation !== domesticSearchGeneration;
+}
+
+async function withDomesticSearchHardTimeout(operation, generation) {
+  let timeoutId;
+  const timeoutResult = new Promise((resolve) => {
+    timeoutId = setTimeout(() => {
+      // Cover stalls before rendered retailer verification starts, where the
+      // per-source timeout cannot run.
+      if (!domesticSearchCanceled(generation)) cancelDomesticSearches();
+      resolve({
+        ok: false,
+        timedOut: true,
+        message: "국내 판매처 검색이 4분을 초과해 자동 종료되었습니다. 다시 검색해 주세요.",
+      });
+    }, DOMESTIC_SEARCH_HARD_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([operation, timeoutResult]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 const DOMESTIC_LOGIN_SOURCES = [
   { id: "musinsa", name: "무신사", url: "https://www.musinsa.com/", domains: ["musinsa.com"] },
@@ -11567,8 +11589,9 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       lastSyncAt: next.popularLastSyncAt || store.snapshot().settings.popularLastSyncAt || "",
     };
   });
-  ipcMain.handle("domestic:search", async (_event, input) => {
+  ipcMain.handle("domestic:search", (_event, input) => {
     const searchGeneration = domesticSearchGeneration;
+    const operation = (async () => {
     const technicalWarnings = [];
     const rememberWarning = (stage, error) => {
       technicalWarnings.push({
@@ -11686,6 +11709,8 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       }
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
+    })();
+    return withDomesticSearchHardTimeout(operation, searchGeneration);
   });
   ipcMain.handle("domestic:cancel", () => cancelDomesticSearches());
   ipcMain.handle("domestic-price:lookup", (_event, input) => {
