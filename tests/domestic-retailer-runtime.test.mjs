@@ -16,7 +16,7 @@ const channels = [
   ['롯데온', 'https://www.lotteon.com/search/search/search.ecn?render=search&q=SR123UPS11', 'https://www.lotteon.com/p/product/LO100'],
 ];
 
-function fixture(t, { delay = 0, navigation = 'resolved', empty = false, lateSecond = 0, pendingPrice = 0 } = {}) {
+function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, executeFrozen = false, empty = false, lateSecond = 0, pendingPrice = 0 } = {}) {
   let now = 0, nextId = 0;
   const timers = new Map(), windows = [], captures = [], navigations = [];
   const setTimer = (fn, ms = 0) => { const id = ++nextId; timers.set(id, { fn, at: now + ms }); return id; };
@@ -36,6 +36,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', empty = false, lateSec
         session: { clearCache: async () => {}, clearStorageData: async () => {} },
         executeJavaScript: async code => {
           if (this.destroyed) throw new Error('Object has been destroyed');
+          if (executeFrozen) return new Promise(() => {});
           if (code.includes('const productCards = []')) captures.push({ at: now, url: this.webContents.getURL() });
           try { new Script(code); } catch (error) { console.error(error.stack); throw error; }
           return this.dom.window.eval(code);
@@ -70,6 +71,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', empty = false, lateSec
         if (delay) setTimer(paint, delay); else paint();
         if (navigation === 'pending') return new Promise(() => {});
         if (navigation === 'rejected') throw new Error('ERR_ABORTED');
+        if (navigationDelay) await new Promise(r => setTimer(r, navigationDelay));
       }
     }
   }
@@ -78,7 +80,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', empty = false, lateSec
     Date: class extends Date { static now() { return now; } },
     setTimeout: setTimer, clearTimeout: clearTimer, wait: ms => new Promise(r => setTimer(r, ms)),
     domesticSearchGeneration: 0, domesticSearchCanceled: () => false,
-    store: { data: { settings: {} }, setSettings: async () => {} },
+    store: { data: { settings: {} }, snapshot: () => ({ settings: {} }), setSettings: async () => {} },
     activeDomesticSearchWindows: new Set(), APP_ICON_PATH: '', DOMESTIC_SEARCH_PARTITION: 'test',
     OFFICIAL_DOMAIN_STATUS: { VERIFIED: 'verified', SEARCH_UNSUPPORTED: 'unsupported' },
     // Network detail adapters are controlled; the actual browser scripts,
@@ -97,7 +99,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', empty = false, lateSec
   async function drive(promise) {
     let result, error, done = false;
     promise.then(v => { result = v; done = true; }, e => { error = e; done = true; });
-    for (let i = 0; i < 1000 && !done; i++) {
+    for (let i = 0; i < 10000 && !done; i++) {
       await immediate();
       if (done) break;
       const entry = [...timers].sort((a,b) => a[1].at - b[1].at)[0];
@@ -111,7 +113,21 @@ function fixture(t, { delay = 0, navigation = 'resolved', empty = false, lateSec
     return result;
   }
   const search = list => drive(context.addRenderedSearchCounts({products: [], sources: list.map(([store, searchUrl]) => ({store, searchUrl, searchQuery:'SR123UPS11',renderCount:true,linkOnly:true}))}, 'SR123UPS11', '데상트', '카라 셔츠'));
-  return { search, context, drive, captures, navigations, now: () => now };
+  function installHandler(list = channels) {
+    const handlers = new Map(), events = [];
+    Object.assign(context, {
+      ipcMain: { handle: (name, fn) => handlers.set(name, fn) },
+      session: { fromPartition: () => ({ clearCache: async () => {} }) },
+      brandSearchProfileKey: () => 'descente', selectBrandSearchStrategy: () => 'brand_code',
+      officialDomainRecordForBrand: () => null, recordBrandSearchOutcome: () => ({}),
+      queryDomesticProducts: async () => ({ products: [], sources: list.map(([store,searchUrl]) => ({store,searchUrl,searchQuery:'SR123UPS11',renderCount:true,linkOnly:true})) }),
+    });
+    runInContext(section('let domesticSearchGeneration = 0;', '\nconst DOMESTIC_LOGIN_SOURCES'), context);
+    runInContext(section('async function verifyAllStoresWithMusinsaImage(', '\nasync function officialDetailImage('), context);
+    runInContext(section('  ipcMain.handle("domestic:search"', '  ipcMain.handle("domestic:cancel"'), context);
+    return { events, run: () => drive(handlers.get('domestic:search')({sender:{isDestroyed:()=>false,send:(_name,event)=>events.push(event)}}, {articleNumber:'SR123UPS11',brand:'데상트',title:'카라 셔츠',verifyLinkCounts:true,requestId:'fixture-request'})) };
+  }
+  return { search, context, drive, captures, navigations, installHandler, now: () => now };
 }
 
 for (const channel of channels) test(`${channel[0]}: actual source deadline allows visible cards and prices to reach aggregation`, async t => {
@@ -135,7 +151,8 @@ test('three retailer card parsers retain their own prices in one complete search
   assert.equal(result.products.length, 3);
   assert.deepEqual(Array.from(result.products, p => p.price), [84550, 84550, 84550]);
   assert.ok(result.sources.every(s => !s.verificationFailed));
-  assert.ok(f.now() < 30_000, 'ready results must not incur three unconditional 25-second sleeps');
+  assert.ok(f.now() >= 75_000, 'preserve a full observation window for every retailer');
+  assert.ok(f.now() < 3 * 90_000);
 });
 
 for (const channel of channels) test(`${channel[0]}: declared second card arriving at 18 seconds is captured`, async t => {
@@ -143,7 +160,7 @@ for (const channel of channels) test(`${channel[0]}: declared second card arrivi
   const result = await f.search([channel]);
   assert.equal(result.products.length, 2, JSON.stringify(result.sources[0]));
   assert.ok(f.captures[0].at >= 18_000);
-  assert.ok(f.now() < 30_000);
+  assert.ok(f.now() < 90_000);
 });
 
 test('wait for pending price hydration before storing the current price', async t => {
@@ -160,9 +177,77 @@ for (const channel of channels) test(`${channel[0]}: a parsed empty page remains
 });
 
 test('a stalled retailer remains bounded and is not reported as product absence', async t => {
-  const f = fixture(t, { navigation: 'pending' });
+  const f = fixture(t, { executeFrozen: true });
   const result = await f.search([channels[1]]);
   assert.equal(result.sources[0].verificationReason, 'page_load_timeout');
   assert.equal(result.sources[0].absenceConfirmed, false);
-  assert.ok(f.now() <= 30_000);
+  assert.ok(f.now() <= 90_000);
+});
+
+test('the complete IPC path keeps progressing past two minutes and returns every retailer', async t => {
+  const f = fixture(t, {navigationDelay:18_000});
+  const h = f.installHandler([...channels,...channels]);
+  const response = await h.run();
+  assert.equal(response.ok, true, JSON.stringify(response));
+  assert.equal(response.data.sources.length, 6);
+  assert.equal(response.data.products.length, 3);
+  assert.ok(f.now() > 120_000, 'exercise the former overall cutoff');
+  assert.ok(response.data.sources.every(s => !s.verificationFailed));
+});
+
+test('a real stall returns the last verified checkpoint instead of discarding its products', async t => {
+  const f = fixture(t);
+  f.installHandler();
+  const checkpoint = {products:[{store:'무신사',price:84550}],sources:[{store:'무신사',searchCompleted:true}]};
+  const response = await f.drive(f.context.withDomesticSearchHardTimeout(new Promise(()=>{}), 0, {lastProgressAt:0,checkpoint}));
+  assert.equal(response.ok, true);
+  assert.equal(response.data.partial, true);
+  assert.equal(response.data.products[0].price, 84550);
+  assert.equal(response.timedOut, true);
+});
+
+test('IPC returns verified retailer prices promptly if final preference saving never returns', async t => {
+  const f = fixture(t);
+  const h = f.installHandler();
+  f.context.store.setSettings = () => new Promise(()=>{});
+  const response = await h.run();
+  assert.equal(response.ok, true);
+  assert.equal(response.data.searchLearning.saved, false);
+  assert.ok(response.data.technicalWarnings.some(w => w.stage === 'search_learning_save'));
+  assert.equal(response.data.products.length, 3);
+  assert.ok(response.data.products.every(p => p.price === 84550));
+  assert.ok(response.data.sources.every(s => s.searchCompleted));
+  assert.ok(f.now() < 120_000, 'completed results must not wait for stalled preference saving');
+});
+
+test('all ranked queries run when earlier authoritative empty searches each take one minute', async t => {
+  const f = fixture(t);
+  const h = f.installHandler([channels[1]]);
+  f.context.queryDomesticProducts = async () => ({products:[],sources:[{store:'SSG',renderCount:true,linkOnly:true,searchUrl:channels[1][1],searchAttempts:[{query:'SR123UPS11'},{query:'카라 셔츠'},{query:'카라 셔츠 SR123UPS11'}]}]});
+  const attempts = [];
+  f.context.renderedSearchSourceResult = async (_source,_article,_brand,_title,_retry,attempt) => {
+    attempts.push(attempt.query);
+    await f.context.wait(60_000);
+    const products = attempts.length === 3 ? [{store:'SSG',title:'데상트 SR123UPS11 카라 셔츠',articleNumber:'SR123UPS11',articleNumberVerified:true,price:84550,url:channels[1][2]}] : [];
+    return {count:products.length,products,absenceConfirmed:!products.length,searchCompleted:true};
+  };
+  const response = await h.run();
+  assert.equal(attempts.length, 3);
+  assert.equal(response.ok, true);
+  assert.equal(response.data.products[0].price, 84550);
+  assert.ok(f.now() >= 180_000);
+});
+
+test('an expired old source timer cannot close a window opened after cancellation', async t => {
+  const f = fixture(t, {executeFrozen:true});
+  const h = f.installHandler([channels[1]]);
+  const protectedWindow = {destroyed:false,isDestroyed(){return this.destroyed;},destroy(){this.destroyed=true;}};
+  f.context.protectedWindow = protectedWindow;
+  f.context.setTimeout(() => {
+    f.context.cancelDomesticSearches();
+    runInContext('activeDomesticSearchWindows.add(protectedWindow)',f.context);
+  },10_000);
+  const response = await h.run();
+  assert.equal(response.canceled,true);
+  assert.equal(protectedWindow.destroyed,false);
 });

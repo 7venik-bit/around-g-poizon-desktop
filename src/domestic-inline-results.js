@@ -213,7 +213,9 @@
     }
 
     const warningCount = Array.isArray(result.technicalWarnings) ? result.technicalWarnings.length : 0;
-    const warning = warningCount
+    const warning = result.partial
+      ? `<div class="domestic-inline-warning">${safeText(result.message || "일부 판매처 검색이 중단되어 완료된 결과를 표시합니다.")}</div>`
+      : warningCount
       ? `<div class="domestic-inline-warning">일부 판매처 추가 확인 실패 · 확보된 검색 결과를 표시합니다.</div>`
       : "";
     return rows.length

@@ -207,6 +207,7 @@
         if (!result) return { label: "확인 전", className: "pending" };
         if (result.loading) return { label: "검색 중", className: "loading" };
         if (result.error) return { label: "검색 실패", className: "pending" };
+        if (result.partial) return { label: "일부 결과", className: "pending" };
         const presentation = domesticSearchPresentation(result);
         return { label: presentation.label, className: presentation.className };
       };

@@ -1,5 +1,8 @@
 # Retailer capture regression after v2.10.705
 
+This records the v2.10.706 investigation. Its early-return and shared-budget
+policy is superseded by [the thorough-search correction](search-progress-checkpoints.md).
+
 The screenshot shows the restored per-product list, with Naver/LotteON
 `page_load_timeout`, SSG `page_load_failed`, and a partial-result warning.
 The retailer adapters and release transformations were still present. The
