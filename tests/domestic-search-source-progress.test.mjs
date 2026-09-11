@@ -18,7 +18,7 @@ test("single-product loading progress advances for every completed retailer", ()
   assert.match(preload, /onDomesticSearchProgress/);
   assert.match(preload, /ipcRenderer\.on\("domestic-search:progress"/);
   assert.match(renderer, /onDomesticSearchProgress\?\.\(\(payload = \{\}\)/);
-  assert.match(renderer, /개 판매처/);
+  assert.match(renderer, /단계 · \$\{percent\}%/);
   assert.match(renderer, /progress\.value = percent/);
 });
 

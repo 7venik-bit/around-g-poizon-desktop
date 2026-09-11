@@ -24,7 +24,7 @@ test("domestic search progress is a fixed viewport modal that locks page scrolli
 
 test("batch search keeps the otter in the full-screen overlay instead of a product cell", () => {
   assert.match(renderer, /excel-raw-search-state loading\">수달 사원이 검색 중/);
-  assert.match(renderer, /await refreshVisibleRows\(\);[\s\S]*showDomesticSearchOverlay\(batchStartedAt, completed, keys\.length, product\)/);
+  assert.match(renderer, /refreshDomesticSearchRows\(\);[\s\S]*showDomesticSearchOverlay\(batchStartedAt, completed, keys\.length, product\)/);
   assert.doesNotMatch(renderer, /<td class="excel-raw-search-cell">\$\{renderDomesticLoading/);
 });
 
@@ -34,7 +34,7 @@ test("a direct product search also blocks the full screen with the otter employe
   const directSearch = renderer.slice(start, end);
 
   assert.match(directSearch, /showDomesticSearchOverlay\(startedAt, 0, 1, product\)/);
-  assert.match(directSearch, /finally\s*\{\s*hideDomesticSearchOverlay\(\)/);
+  assert.match(directSearch, /finally\s*\{[\s\S]*runId === excelPreviewSearchRunId[\s\S]*hideDomesticSearchOverlay\(\)/);
   assert.match(directSearch, /excelPreviewSearchResults\.set\(key, result\)/);
 });
 

@@ -19,6 +19,7 @@ test("filter-result select-all selects every combined product and refreshes visi
 });
 
 test("search UI uses the same stable keys after page changes", () => {
-  assert.match(renderer, /excelPreviewPageProducts\.map\(\(item\) => excelPreviewStableSelectionKey\(item, file\)\)/);
+  assert.match(renderer, /updateExcelPreviewSelectionUi\(excelPreviewPageKeys\)/);
+  assert.match(renderer, /products\.map\(\(p\) => excelPreviewStableSelectionKey\(p, file\)\)/);
   assert.match(renderer, /for \(const key of excelPreviewPageKeys\)/);
 });

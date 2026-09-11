@@ -132,6 +132,9 @@ jobs:
       - name: Verify full popular ranking scroll capture
         run: node scripts/verify-popular-full-rank-scroll.mjs
 
+      - name: Test search completion with final patched renderer
+        run: node --test tests/domestic-completion-lifecycle.test.mjs
+
       - name: Test strict popular-list completeness
         run: node --test tests/seller-dom.test.mjs tests/popular-completeness-v2.10.573.test.mjs
 
