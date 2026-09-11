@@ -8,9 +8,12 @@ import { fixtureHtml, fixtureScript, fixtureRoot } from "./fixtures/domestic-com
 const tick = (ms = 0) => new Promise(r => setTimeout(r, ms));
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return {promise,resolve}; };
 function createFixture(t) {
+  const errors = [];
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on('error', (...args) => errors.push(args.map(String).join(' ')));
   const dom = new JSDOM(fixtureHtml.replace(/<script[\s\S]*?<\/script>/g, ""), {
     url: "http://offline.test", runScripts: "dangerously", pretendToBeVisual: true,
-    virtualConsole: new VirtualConsole(),
+    virtualConsole,
   });
   t.after(() => dom.window.close());
   const { window } = dom;
@@ -47,9 +50,17 @@ function createFixture(t) {
       },
       progress: (payload = {}) => progressCallback({completed:8,total:8,source:'이미지 교차검증',...payload}),
       raw: () => { activeExcelPreview.viewMode = 'raw'; },
+      selectTwo: () => {
+        const second = {...product,articleNumber:'SR323UTS71',_excelSelectionKey:'second.xlsx::second'};
+        excelPreviewPageProducts.push(second);
+        excelPreviewPageKeys.push(second._excelSelectionKey);
+        selectedExcelPreviewProducts.add(second._excelSelectionKey);
+        excelPreviewProductCache.set(second._excelSelectionKey, second);
+        activeExcelPreview.totalRows = 2;
+      },
     };
   `);
-  return {window, api:window.fixture, run:() => click(),
+  return {window, errors, api:window.fixture, run:() => click(),
     overlay:() => window.document.querySelector('#domestic-search-overlay'),
     status:() => window.document.querySelector('#excel-filter-status').textContent};
 }
@@ -170,4 +181,88 @@ test('a progress event from a different request cannot mutate the active modal',
   assert.equal(f.overlay().querySelector('progress').value, 0);
   response.resolve({ok:true,data:{products:[],sources:[]}});
   await run;
+});
+
+const officialSource = {
+  store: '브랜드 공식몰', officialStatus: 'official',
+  homepageUrl: 'https://official.example.com/',
+  officialSearchUrl: 'https://official.example.com/search?q=SR123UPS11',
+  searchQuery: 'SR123UPS11', resultLinkOnly: true,
+};
+for (const [name, officialProducts, source] of [
+  ['official search link and Musinsa result', [], officialSource],
+  ['official card without a detail URL', [{store:'브랜드 공식몰',name:'공식몰 데상트 상품',price:49000}], officialSource],
+  ['confirmed absence with an official link', [], {...officialSource,count:0,countVerified:true,absenceConfirmed:true}],
+]) {
+  test(`${name} renders below the checked product with the correct result key`, async (t) => {
+    const f = createFixture(t);
+    f.window.aroundG.searchDomestic = async () => ({ok:true,data:{
+      products:[...officialProducts,{store:'무신사',name:'데상트 상품',price:59000,url:'https://www.musinsa.com/products/123'}],
+      sources:[source,{store:'무신사',count:1,countVerified:true}],
+    }});
+    await f.run();
+    assert.deepEqual(f.errors, [], 'complete retailer payload must not throw during rendering');
+    const row = f.window.document.querySelector('.excel-verified-spu-row');
+    const detail = row.nextElementSibling;
+    assert.ok(detail?.matches('.excel-verified-search-detail'), 'full-width result list must follow its product');
+    assert.match(detail.textContent, /59,000원/);
+    const official = detail.querySelector('[data-official-homepage]');
+    assert.ok(official, 'official search link remains available');
+    const key = decodeURIComponent(row.querySelector('[data-excel-product-select]').dataset.excelProductSelect);
+    assert.equal(decodeURIComponent(official.dataset.officialResultKey), key);
+    assert.equal(decodeURIComponent(official.dataset.officialQuery), 'SR123UPS11');
+    assert.ok(detail.querySelector('[data-stock-register]'), 'Musinsa stock-watch action is preserved');
+    assert.equal(f.overlay().hidden, true);
+    assert.doesNotMatch(row.textContent, /검색 중/);
+    if (source.absenceConfirmed) assert.match(detail.textContent, /상품 없음/);
+  });
+}
+
+test('single-row mixed-source search preserves the direct official product URL', async (t) => {
+  const f = createFixture(t);
+  const url = 'https://official.example.com/products/SR123UPS11';
+  f.window.aroundG.searchDomestic = async () => ({ok:true,data:{
+    products:[{store:'브랜드 공식몰',name:'공식몰 데상트 상품',price:49000,url}],
+    sources:[officialSource,{store:'네이버 패션타운',resultLinkOnly:true,searchUrl:'https://example.com/naver'}],
+  }});
+  await f.api.direct();
+  assert.deepEqual(f.errors, []);
+  const detail = f.window.document.querySelector('.excel-verified-search-detail');
+  assert.match(detail.textContent, /49,000원/);
+  const link = detail.querySelector('[data-url]');
+  assert.equal(decodeURIComponent(link.dataset.url), url);
+  assert.ok(detail.querySelector('[data-inline-naver-price]'));
+  assert.equal(f.overlay().hidden, true);
+});
+
+test('multi-product six-retailer results retain each product key and list position', async (t) => {
+  const f = createFixture(t);
+  f.api.selectTwo();
+  f.window.aroundG.searchDomestic = async (input) => ({ok:true,data:{
+    products:[{store:'무신사',name:input.articleNumber,price:59000,url:'https://www.musinsa.com/products/123'}],
+    sources:[
+      {...officialSource,searchQuery:input.articleNumber},
+      {store:'무신사',count:1,countVerified:true},
+      {store:'네이버 패션타운',resultLinkOnly:true,searchUrl:'https://example.com/naver'},
+      {store:'SSG',count:0,countVerified:true,searchUrl:'https://example.com/ssg'},
+      {store:'롯데온',count:0,countVerified:true,searchUrl:'https://example.com/lotte'},
+      {store:'코오롱몰',count:0,countVerified:true,searchUrl:'https://example.com/kolon'},
+    ],
+  }});
+  await f.run();
+  assert.deepEqual(f.errors, []);
+  const rows = [...f.window.document.querySelectorAll('.excel-verified-spu-row')];
+  assert.equal(rows.length, 2);
+  for (const row of rows) {
+    const key = decodeURIComponent(row.querySelector('[data-excel-product-select]').dataset.excelProductSelect);
+    const detail = row.nextElementSibling;
+    assert.ok(detail.matches('.excel-verified-search-detail'));
+    assert.equal(detail.querySelector('td').colSpan, 10);
+    assert.equal(detail.querySelectorAll('.domestic-inline-row').length, 6);
+    assert.equal(decodeURIComponent(detail.querySelector('[data-official-result-key]').dataset.officialResultKey), key);
+    assert.equal(decodeURIComponent(detail.querySelector('[data-inline-naver-price]').dataset.inlineNaverPrice), key);
+    assert.doesNotMatch(row.textContent, /검색 중/);
+  }
+  assert.equal(f.overlay().hidden, true);
+  assert.match(f.status(), /2개 검색을 완료/);
 });

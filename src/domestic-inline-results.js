@@ -132,7 +132,7 @@
     return selected.length > 46 ? `${selected.slice(0, 45).trim()}…` : selected;
   }
 
-  function sourceAction(source = {}, product = {}, sourceProduct = {}, label = "열기") {
+  function sourceAction(source = {}, product = {}, sourceProduct = {}, contextKey = "", label = "열기") {
     const productUrl = String(product?.url || "").trim();
     const openUrl = String(productUrl
       || source?.verifiedProductUrl
@@ -173,7 +173,7 @@
         <div class="domestic-inline-title" title="${safeText(rawTitle)}">${safeText(title)}</div>
         <div class="domestic-inline-code" title="${safeText(article)}">${safeText(article)}</div>
         <div class="domestic-inline-price">${safeMoney(product?.price)}</div>
-        <div class="domestic-inline-actions">${sourceAction(source, product, sourceProduct)}${typeof stockWatchRegistrationButton === "function" ? stockWatchRegistrationButton(product, sourceProduct) : ""}</div>
+        <div class="domestic-inline-actions">${sourceAction(source, product, sourceProduct, contextKey)}${typeof stockWatchRegistrationButton === "function" ? stockWatchRegistrationButton(product, sourceProduct) : ""}</div>
       </div>`;
     });
 
@@ -208,7 +208,7 @@
         <div class="domestic-inline-title">${safeText(message)}</div>
         <div class="domestic-inline-code">${safeText(source?.searchQuery || sourceProduct?.articleNumber || "-")}</div>
         <div class="domestic-inline-price">${naverPriceAction}</div>
-        <div>${sourceAction(source, {}, sourceProduct)}</div>
+        <div>${sourceAction(source, {}, sourceProduct, contextKey)}</div>
       </div>`);
     }
 
