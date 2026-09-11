@@ -88,6 +88,7 @@ let combinedBrandPreview = null;
 let combinedBrandPreviewLoading = false;
 const domesticIdentitySearchCache = new Map();
 const DOMESTIC_SEARCH_MAX_WAIT_MS = 2 * 60 * 1000 + 5_000;
+let installedAppVersion = "";
 const DOMESTIC_SOURCE_GROUPS_KEY = "around-g-domestic-source-groups-v1";
 const DOMESTIC_SOURCE_GROUPS = ["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"];
 
@@ -1176,6 +1177,7 @@ function showDomesticSearchOverlay(startedAt, completedCount, totalCount, curren
   overlay.hidden = false;
   overlay.innerHTML = `<div class="domestic-search-overlay-card">
     ${renderDomesticLoading(startedAt)}
+    <p class="domestic-overlay-version">실행 버전 ${installedAppVersion ? `v${text(installedAppVersion)}` : "확인 중"}</p>
     <p class="domestic-overlay-count"><strong>${Number(completedCount).toLocaleString("ko-KR")}</strong> / ${Number(totalCount).toLocaleString("ko-KR")}개 처리 · ${percent}%</p>
     <progress class="domestic-overlay-progress" max="100" value="${percent}" aria-label="상품 검색 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}">${percent}%</progress>
     <p class="domestic-overlay-current">${article ? `현재 상품번호 · <b>${text(article)}</b>` : "검색 준비 중입니다."}</p>
@@ -5122,6 +5124,7 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
 
   try {
     const appInfo = await window.aroundG.getAppInfo();
+    installedAppVersion = String(appInfo?.version || "").trim();
     renderInstalledVersion(appInfo?.version, appInfo?.automaticUpdates !== false);
   } catch {
     renderInstalledVersion("2.10.17", true);

@@ -28,6 +28,6 @@
     "files": ["bootstrap.mjs", "main.mjs", "preload.cjs", "build/icon.png", "assets/**/*", "src/**/*", "services/**/*", "relay/**/*", "package.json"],
     "win": { "icon": "build/icon.ico", "target": [{ "target": "nsis", "arch": ["x64"] }] },
     "publish": { "provider": "github", "owner": "7venik-bit", "repo": "around-g-poizon-desktop", "releaseType": "release" },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "createStartMenuShortcut": true, "shortcutName": "Around G POIZON" }
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": false, "createDesktopShortcut": true, "createStartMenuShortcut": true, "shortcutName": "Around G POIZON" }
   }
 }

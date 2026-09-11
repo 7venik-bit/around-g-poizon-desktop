@@ -885,14 +885,20 @@ async function applySellerPopularConditions() {
   return results;
 }
 
+const domesticImageFingerprintCache = new Map();
+
 async function imageFingerprint(url) {
   if (!url) return null;
+  const cacheKey = String(url).trim();
+  if (domesticImageFingerprintCache.has(cacheKey)) return domesticImageFingerprintCache.get(cacheKey);
+  if (domesticImageFingerprintCache.size >= 500) domesticImageFingerprintCache.clear();
+  const fingerprintTask = (async () => {
   let bytes;
-  if (/^data:image\//i.test(String(url))) {
-    const encoded = String(url).split(",", 2)[1] || "";
-    bytes = Buffer.from(encoded, /;base64,/i.test(String(url)) ? "base64" : "utf8");
+  if (/^data:image\//i.test(cacheKey)) {
+    const encoded = cacheKey.split(",", 2)[1] || "";
+    bytes = Buffer.from(encoded, /;base64,/i.test(cacheKey) ? "base64" : "utf8");
   } else {
-    const parsed = new URL(url);
+    const parsed = new URL(cacheKey);
     if (!["https:", "http:"].includes(parsed.protocol)) return null;
     const response = await fetch(parsed.href, { signal: AbortSignal.timeout(12_000) });
     if (!response.ok) return null;
@@ -911,6 +917,11 @@ async function imageFingerprint(url) {
   if (!values.length) return null;
   const average = values.reduce((sum, value) => sum + value, 0) / values.length;
   return values.map((value) => value >= average);
+  })();
+  domesticImageFingerprintCache.set(cacheKey, fingerprintTask);
+  const result = await fingerprintTask;
+  if (!result) domesticImageFingerprintCache.delete(cacheKey);
+  return result;
 }
 
 function fingerprintSimilarity(left, right) {
@@ -3619,7 +3630,8 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     channelCounts: null,
     searchSubmitted: false,
   };
-  onProgress?.({ completed: 0, total: data.sources.length, source: "판매처 검색 준비" });
+  const progressTotal = data.sources.length + 2;
+  onProgress?.({ completed: 0, total: progressTotal, source: "판매처 검색 준비" });
   // The complete domestic lookup is one sequential request again. A source
   // failure is recorded on that source, then the same request continues to
   // the next source without spawning module-specific state or retries.
@@ -3764,7 +3776,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     sources.push(resolvedSource);
     onProgress?.({
       completed: sources.length,
-      total: data.sources.length,
+      total: progressTotal,
       source: String(source.store || "판매처"),
     });
     if (source.store === "네이버 패션타운"
@@ -11685,11 +11697,21 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
         try {
           matched = await addMatchConfidence(matched, input || {});
+          sendDomesticProgress({
+            completed: matched.sources.length + 1,
+            total: matched.sources.length + 2,
+            source: "결과 일치도 확인",
+          });
         } catch (error) {
           rememberWarning("verified_match_confidence", error);
         }
         try {
           matched = await verifyAllStoresWithMusinsaImage(matched, input || {});
+          sendDomesticProgress({
+            completed: matched.sources.length + 2,
+            total: matched.sources.length + 2,
+            source: "이미지 교차검증",
+          });
         } catch (error) {
           rememberWarning("store_image_verification", error);
         }
