@@ -19,17 +19,17 @@ test("a stalled domestic search stops after the main-process deadline", () => {
   assert.match(cachedSearch, /국내 판매처 검색 응답이 없어 강제 종료했습니다/);
 });
 
-test("retailers run in bounded parallel workers with one shared time budget each", () => {
+test("each retailer shares one timeout budget across all accuracy fallbacks", () => {
   const start = main.indexOf("async function addRenderedSearchCounts(");
   const end = main.indexOf("async function verifyAllStoresWithMusinsaImage(", start);
   const renderedCounts = main.slice(start, end);
 
   assert.match(renderedCounts, /Promise\.race\(\[/);
-  assert.match(renderedCounts, /const sourceDeadline = Date\.now\(\) \+ 30_000/);
+  assert.match(renderedCounts, /const sourceDeadline = Date\.now\(\) \+ 15_000/);
   assert.match(renderedCounts, /remainingSourceMs = sourceDeadline - Date\.now\(\)/);
-  assert.match(renderedCounts, /Math\.min\(3, pendingSources\.length\)/);
   assert.match(renderedCounts, /renderedSearchFailure\("page_load_timeout"/);
   assert.match(renderedCounts, /verificationStage: "source_timeout"/);
+  assert.match(renderedCounts, /activeDomesticSearchWindows\.clear\(\)/);
 });
 
 test("domestic search IPC has a hard timeout before rendered verification", () => {
