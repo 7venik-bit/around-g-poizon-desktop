@@ -109,6 +109,9 @@ jobs:
       - name: Verify full popular ranking scroll capture
         run: node scripts/verify-popular-full-rank-scroll.mjs
 
+      - name: Test retailer capture and completion with final patched source
+        run: node --test tests/domestic-retailer-runtime.test.mjs tests/domestic-completion-lifecycle.test.mjs
+
       - name: Build Windows installer
         run: npx electron-builder --win nsis --publish never
 

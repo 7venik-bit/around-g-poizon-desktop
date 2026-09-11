@@ -1031,11 +1031,9 @@ async function addMatchConfidence(data, input) {
     ...data,
     products,
     sources,
-    // Profit calculation may use a price from an exact-query card even when
-    // the stricter inventory/image confidence pass later hides that card from
-    // the sourcing-result list. These candidates have already passed the
-    // channel, brand, model/title and domestic-purchase filters above.
-    domesticPriceCandidates: discoveredProducts.filter((product) => Number(product?.price || 0) > 0),
+    // Keep prices from the products that passed the identity and image gates.
+    // discoveredProducts belongs to addRenderedSearchCounts, not this scope.
+    domesticPriceCandidates: products.filter((product) => Number(product?.price || 0) > 0),
   };
 }
 
@@ -2581,6 +2579,42 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
   }
 }
 
+async function waitForDomesticCaptureReady(searchWindow, timeoutMs = 25_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastSignature = "", stableSince = Date.now();
+  while (Date.now() < deadline && !searchWindow.isDestroyed()) {
+    const state = await searchWindow.webContents.executeJavaScript(`(() => {
+      const visible = element => {
+        const style = getComputedStyle(element), rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      const text = String(document.body?.innerText || "").slice(0, 120000);
+      const cards = [...document.querySelectorAll('a[href]')].filter(visible).filter(link =>
+        /\\/(?:products?|window-products|goods|p|pd)\\/|\\/item\\/itemView\\.ssg|productDetail\\.action/i.test(link.href));
+      const unique = [...new Map(cards.map(link => [link.href, link])).values()];
+      const count = Number(text.match(/(?:전체|검색\\s*결과)\\s*([\\d,]+)\\s*개/)?.[1]?.replace(/,/g, ""));
+      return {
+        blocked: /captcha|보안\\s*확인|비정상적인\\s*접근|접속.{0,12}(?:제한|차단)/i.test(text),
+        loginRequired: /로그인\\s*(?:후|이\\s*필요|해주세요)|회원\\s*로그인/i.test(text.slice(0, 12000)),
+        empty: /검색된\\s*상품이\\s*없|검색\\s*결과가?\\s*없|상품이\\s*없|검색결과\\s*없음/i.test(text),
+        count, cards: unique.length,
+        busy: [...document.querySelectorAll('[aria-busy="true"],[role="progressbar"]')].some(visible),
+        signature: unique.map(link => link.href + '|' + String(link.closest('li,article')?.innerText || link.parentElement?.innerText || '').slice(0, 1500)).join('||'),
+      };
+    })()`, true).catch(() => null);
+    if (state?.blocked || state?.loginRequired) return;
+    // Observe real card/price changes instead of sleeping for 25 seconds even
+    // when the list is complete. A known higher total keeps late cards pending.
+    const enoughCards = state?.cards > 0 && (!Number.isFinite(state.count) || state.cards >= Math.min(state.count, 24));
+    const ready = state && !state.busy && (enoughCards || (state.empty && !state.cards));
+    const signature = ready ? (state.empty ? "empty" : state.signature) : "";
+    if (!signature || signature !== lastSignature) stableSince = Date.now();
+    lastSignature = signature;
+    if (signature && Date.now() - stableSince >= 1_500) return;
+    await wait(500);
+  }
+}
+
 async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
   const expectedQuery = sanitizeDomesticQuery(query);
   const inspectSettledResult = async () => {
@@ -3052,26 +3086,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         })()`, true).catch(() => {});
       }
     }
-    // UNIVERSAL_RESULT_STABILITY_V2: simulation showed that a page can look
-    // stable for several seconds and append more cards later. Never treat a
-    // short stable interval as completion. Keep every successful result page
-    // alive for the full 25-second observation window before final capture.
-    // This only observes DOM state and never moves the user's physical mouse.
-    for (let attempt = 0; attempt < (officialDirectDetail ? 1 : 25); attempt += 1) {
-      await wait(1_000);
-      if (!searchWindow || searchWindow.isDestroyed()) break;
-      const interruption = await searchWindow.webContents.executeJavaScript(`(() => {
-        const pageText = String(document.body?.innerText || "").slice(0, 80000);
-        return {
-          blocked: /captcha|보안\\s*확인|비정상적인\\s*접근|접속.{0,12}(?:제한|차단)/i.test(pageText),
-          loginRequired: /로그인\\s*(?:후|이\\s*필요|해주세요)|회원\\s*로그인/i.test(pageText.slice(0, 12000)),
-        };
-      })()`, true).catch(() => null);
-      // Authentication and security screens cannot produce product results.
-      // Preserve them as explicit non-empty failure states instead of waiting
-      // and incorrectly reporting "상품 없음".
-      if (interruption?.blocked || interruption?.loginRequired) break;
-    }
+    await waitForDomesticCaptureReady(searchWindow, officialDirectDetail ? 1_000 : 25_000);
     let content = await searchWindow.webContents.executeJavaScript(`(() => {
       const expectedArticle = ${JSON.stringify(String(articleNumber || ""))};
       const expectedCompact = expectedArticle.replace(/[^A-Z0-9]/gi, "").toUpperCase();
@@ -3155,7 +3170,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           // Naver cards often expose image and title anchors with different
           // tracking parameters for the same product. Count and click that
           // product once by its stable origin/path identity.
-          if (/\.naver\.com$/i.test(parsedProductUrl.hostname)) {
+          if (/\\.naver\\.com$/i.test(parsedProductUrl.hostname)) {
             productKey = parsedProductUrl.origin + parsedProductUrl.pathname;
           }
         } catch {}
@@ -3221,16 +3236,16 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           .find((value) => /^[\\d,]+\\s*원$/.test(value)) || "";
         seen.add(productKey);
         const channelEvidenceText = [text, markup].join(" ");
-        const officialBrandStoreLabelMatched = /브랜드\s*직영몰|공식\s*브랜드|브랜드\s*스토어/i.test(channelEvidenceText);
+        const officialBrandStoreLabelMatched = /브랜드\\s*직영몰|공식\\s*브랜드|브랜드\\s*스토어/i.test(channelEvidenceText);
         const departmentStoreLabelMatched = /백화점/i.test(channelEvidenceText);
         const outletLabelMatched = /아울렛|outlet/i.test(channelEvidenceText);
         let naverWholeViewChannel = "";
         try {
           const productHost = new URL(productUrl).hostname.toLowerCase();
           if (productHost === "naver.com" || productHost.endsWith(".naver.com")) {
-            naverWholeViewChannel = /\/window-products\/department\//i.test(productUrl) || departmentStoreLabelMatched
+            naverWholeViewChannel = /\\/window-products\\/department\\//i.test(productUrl) || departmentStoreLabelMatched
               ? "department"
-              : /\/window-products\/outlet\//i.test(productUrl) || outletLabelMatched
+              : /\\/window-products\\/outlet\\//i.test(productUrl) || outletLabelMatched
                 ? "outlet"
                 : "brand-store";
           }
@@ -3662,9 +3677,9 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         ? allQueryAttempts.slice(0, 1) : allQueryAttempts;
       let result = null;
       // Accuracy fallbacks share one retailer budget. Previously every query
-      // restarted a 60-second timer, so an empty product could spend minutes
-      // on a single store before the next store even began.
-      const sourceDeadline = Date.now() + 15_000;
+      // restarted its timer. Allow document/card settling plus verification;
+      // the old 15-second limit always expired inside the 25-second DOM wait.
+      const sourceDeadline = Date.now() + 30_000;
       for (let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts.length; queryAttemptIndex += 1) {
         const queryAttempt = queryAttempts[queryAttemptIndex];
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");

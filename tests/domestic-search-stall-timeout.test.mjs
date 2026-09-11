@@ -26,7 +26,7 @@ test("each retailer shares one timeout budget across all accuracy fallbacks", ()
   const renderedCounts = main.slice(start, end);
 
   assert.match(renderedCounts, /Promise\.race\(\[/);
-  assert.match(renderedCounts, /const sourceDeadline = Date\.now\(\) \+ 15_000/);
+  assert.match(renderedCounts, /const sourceDeadline = Date\.now\(\) \+ 30_000/);
   assert.match(renderedCounts, /remainingSourceMs = sourceDeadline - Date\.now\(\)/);
   assert.match(renderedCounts, /renderedSearchFailure\("page_load_timeout"/);
   assert.match(renderedCounts, /verificationStage: "source_timeout"/);
