@@ -1,3 +1,5 @@
+import { normalizeRenderedStockEvidence } from "./domestic-stock.mjs";
+
 function stableUrlIdentity(value = "") {
   try {
     const url = new URL(String(value || ""));
@@ -113,6 +115,7 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
       linkVerified: true,
       confidence: 100,
       signals: { code: "검색 결과", title: "패션타운 결과", image: card?.imageUrl ? "확인" : "없음" },
+      ...normalizeRenderedStockEvidence(card?.stockEvidence || {}),
     });
   }
 

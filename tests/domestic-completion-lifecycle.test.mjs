@@ -30,6 +30,8 @@ function createFixture(t) {
     window.document.body.append(element);
   };
   script(fixtureScript);
+  const rendererSource = readFileSync(resolve(fixtureRoot, 'src/renderer.js'), 'utf8');
+  script(rendererSource.slice(rendererSource.indexOf('function domesticPriceCandidate('), rendererSource.indexOf('\nfunction renderProfitComparisons(')));
   for (const file of ['excel-column-layout.js', 'domestic-result-verdict.js', 'sourcing-view.js', 'domestic-inline-results.js']) {
     script(readFileSync(resolve(fixtureRoot, 'src', file), 'utf8'));
   }
@@ -41,6 +43,7 @@ function createFixture(t) {
       busy: () => excelPreviewBatchSearching,
       direct: () => searchExcelPreviewProduct(product._excelSelectionKey),
       search: () => cachedDomesticSearch(product),
+      priceCandidate: (result) => domesticPriceCandidate(result),
       failRendering: () => {
         const original = renderVerifiedSpuRows;
         renderVerifiedSpuRows = (...args) => {
@@ -299,3 +302,17 @@ test('multi-product six-retailer results retain each product key and list positi
   assert.equal(f.overlay().hidden, true);
   assert.match(f.status(), /2개 검색을 완료/);
 });
+
+for (const label of ['현재 구매할 수 없는 상품입니다.\n품절','SOLD OUT','재고 없음','솔드아웃']) {
+  test(`the product lower list displays the platform stock wording: ${label}`, async t => {
+    const f=createFixture(t);
+    f.window.aroundG.searchDomestic=async()=>({ok:true,data:{products:[{store:'코오롱몰',title:'남성 트레이닝 재킷',price:99000,url:'https://www.kolonmall.com/Product/JWJJM26321DGY',inStock:false,stockText:label}],sources:[{store:'코오롱몰',count:1,countVerified:true}]}});
+    await f.run();
+    const row=f.window.document.querySelector('.excel-verified-spu-row');
+    const detail=row.nextElementSibling;
+    assert.equal(detail.querySelector('.domestic-inline-stock')?.textContent,label);
+    assert.match(detail.textContent,/남성 트레이닝 재킷/);
+    assert.doesNotMatch(detail.textContent,/상품 없음|재고 있음/);
+    assert.equal(f.overlay().hidden,true);
+  });
+}

@@ -1,3 +1,5 @@
+import { normalizeRenderedStockEvidence } from "../services/domestic-stock.mjs";
+export { normalizeRenderedStockEvidence, captureRenderedStockEvidence } from "../services/domestic-stock.mjs";
 import {
   OFFICIAL_DOMAIN_STATUS,
   VERIFIED_OFFICIAL_BRANDS,
@@ -691,6 +693,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
             ssgClassification,
             parallelRetailerVerified: Boolean(parallelRetailer || detectedSsgRetailer),
             signals: { code: exactDetectedArticle ? "일치" : "정보 없음", title: "판매처 결과", image: card?.imageUrl ? "확인" : "없음" },
+            ...normalizeRenderedStockEvidence(card?.stockEvidence || {}),
           });
         }
       }
@@ -769,37 +772,6 @@ function normalizeSizes(...candidates) {
   });
 }
 
-export function normalizeRenderedStockEvidence({ pageText = "", purchaseAvailable = false, options = [], loginRequired = false } = {}) {
-  if (loginRequired) {
-    return { inStock: null, sizes: [], stockStatus: "login_required", stockText: "로그인 필요", stockVerified: false };
-  }
-  const unique = new Map();
-  for (const option of Array.isArray(options) ? options : []) {
-    const label = String(option?.label ?? option?.name ?? option ?? "").replace(/\s+/g, " ").trim();
-    if (!label || label.length > 32 || /선택(?:해\s*주세요)?|옵션|수량|컬러|색상/i.test(label)) continue;
-    const key = label.toUpperCase();
-    const rawStockText = typeof option === "object" ? String(option.stockText || option.statusText || "").replace(/\s+/g, " ").trim() : "";
-    const inStock = typeof option === "object" ? option.inStock !== false : true;
-    if (!unique.has(key) || inStock) unique.set(key, { label, inStock, stockText: rawStockText });
-  }
-  const sizes = [...unique.values()];
-  const text = String(pageText || "");
-  const soldOut = /(?:일시\s*)?품절|판매\s*(?:종료|중지)|재입고\s*알림|SOLD\s*OUT|OUT\s*OF\s*STOCK/i.test(text);
-  const stockText = text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim())
-    .find((line) => line.length <= 80 && /품절|재고\s*없|일시\s*품절|판매\s*(?:종료|중지)|재입고|SOLD\s*OUT|OUT\s*OF\s*STOCK|재고\s*\d+|구매\s*가능/i.test(line)) || "";
-  const availableOption = sizes.some((size) => size.inStock);
-  const unavailableOptionsOnly = sizes.length > 0 && !availableOption;
-  const inStock = availableOption ? true
-    : unavailableOptionsOnly || (soldOut && !purchaseAvailable) ? false
-      : purchaseAvailable ? true : null;
-  return {
-    inStock,
-    sizes,
-    stockStatus: inStock === true ? "available" : inStock === false ? "soldout" : "unknown",
-    stockText,
-    stockVerified: inStock !== null,
-  };
-}
 
 export function parseMusinsaSearch(html) {
   const document = nextData(html);
@@ -825,6 +797,7 @@ export function parseMusinsaSearch(html) {
           imageUrl: String(item.thumbnail || ""),
           url: absoluteUrl(item.goodsLinkUrl, "https://www.musinsa.com", `https://www.musinsa.com/products/${item.goodsNo}`),
           inStock: item.isSoldOut !== true,
+          stockText: String(item.soldOutMessage || item.stockText || ""),
           sizes: normalizeSizes(item.optionList, item.options, item.sizes, item.stockList),
         });
       }
@@ -857,6 +830,7 @@ export function parseSsgSearch(html) {
           imageUrl: String(item.itemImgUrl || ""),
           url: absoluteUrl(item.itemUrl || item.itemDetailLink, "https://www.ssg.com", DOMESTIC_SEARCH_LINKS.SSG("")),
           inStock: !item.soldOutMessage,
+          stockText: String(item.soldOutMessage || ""),
           sizes: normalizeSizes(item.optionList, item.options, item.sizes, item.stockList),
         });
       }
@@ -875,7 +849,8 @@ export function parseKolonSearch(html, requestedQuery = "") {
   let match;
   while ((match = pattern.exec(decoded)) !== null) {
     const [, code, name, brand, imageUrl, soldOutYn, price, originalPrice] = match;
-    if (requestedQuery && !name.toLowerCase().includes(requestedQuery.toLowerCase())) continue;
+    if (requestedQuery && !name.toLowerCase().includes(requestedQuery.toLowerCase())
+      && sanitizeDomesticProductCode(code) !== sanitizeDomesticProductCode(requestedQuery)) continue;
     products.push({
       store: "코오롱몰",
       id: code,

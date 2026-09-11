@@ -87,7 +87,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     // Network detail adapters are controlled; the actual browser scripts,
     // card parsers, source deadline and aggregation execute unchanged.
     verifyApprovedNaverDomesticProducts: async products => ({ products: products.map(p => ({ ...p, domesticSellerVerified: true, articleNumberVerified: true })), candidateCount: products.length, checkedCount: products.length, failedCount: 0 }),
-    clickRenderedProductCard: async (w, url) => { w.dom.reconfigure({url}); return true; },
+    clickRenderedProductCard: async (w, url) => { if (Object.hasOwn(pages,url)) await w.loadURL(url); else w.dom.reconfigure({url}); return true; },
     openRenderedSizeOptions: async () => {}, renderedStockSelectors: () => [],
     imageFingerprint: async () => null,
     browserWindowUsable: w => Boolean(w && !w.isDestroyed()),
@@ -323,4 +323,101 @@ test('a similar official product image alone cannot bypass query-result evidence
   f.context.fingerprintSimilarity = () => 1;
   const result = await f.drive(f.context.addMatchConfidence({sources:[],products:[{store:'브랜드 공식몰',title:'데상트 남녀공용 카라 셔츠',price:84550,url:officialProduct,imageUrl:'https://images.test/similar.jpg'}]}, {articleNumber:'SR123UPS11',brand:'데상트',title:'남녀공용 카라 셔츠',imageUrl:'https://images.test/source.jpg'}));
   assert.equal(result.products.length,0);
+});
+
+for (const label of ['품절','SOLD OUT','솔드아웃','재고 없음','현재 구매할 수 없는 상품입니다.']) {
+  test(`platform stock wording is preserved and unavailable: ${label}`, () => {
+    const result = relay.normalizeRenderedStockEvidence({pageText:label,purchaseAvailable:true});
+    assert.equal(result.stockText,label);
+    assert.equal(result.inStock,false);
+  });
+}
+
+test('all platform stock notices survive normalization without translation', () => {
+  const result = relay.normalizeRenderedStockEvidence({pageText:'현재 구매할 수 없는 상품입니다.\n품절'});
+  assert.equal(result.stockText,'현재 구매할 수 없는 상품입니다.\n품절');
+});
+
+test('rendered official detail keeps sold-out notices and excludes its price from purchase candidates', async t => {
+  const f = fixture(t,{pages:{[officialSearch]:officialCard(),[officialProduct]:'<header><a href="/cart">장바구니</a></header><main><h1>남녀공용 카라 셔츠</h1><p>현재 구매할 수 없는 상품입니다.</p><button disabled>품절</button></main>'}});
+  const h=f.installHandler([]);
+  f.context.queryDomesticProducts=async()=>({products:[],sources:[officialSource]});
+  const response=await h.run();
+  assert.equal(response.data.products.length,1);
+  assert.equal(response.data.products[0].inStock,false);
+  assert.equal(response.data.products[0].stockText,'현재 구매할 수 없는 상품입니다.\n품절');
+  assert.equal(response.data.domesticPriceCandidates.length,0);
+});
+
+test('Kolon API product is refreshed from its own sold-out detail page', async t => {
+  const url='https://www.kolonmall.com/Product/SR123UPS11';
+  const f=fixture(t,{pages:{[url]:'<main><h1>데상트 SR123UPS11 카라 셔츠</h1><p>현재 구매할 수 없는 상품입니다.</p><button disabled>품절</button></main>'}});
+  const h=f.installHandler([]);
+  f.context.queryDomesticProducts=async()=>({products:[{store:'코오롱몰',id:'SR123UPS11',title:'데상트 SR123UPS11 카라 셔츠',articleNumber:'SR123UPS11',price:84550,inStock:true,url}],sources:[{store:'코오롱몰',ok:true,renderCount:false,count:1}]});
+  const response=await h.run();
+  assert.equal(response.data.products.length,1);
+  assert.equal(response.data.products[0].inStock,false);
+  assert.equal(response.data.products[0].stockText,'현재 구매할 수 없는 상품입니다.\n품절');
+});
+
+test('stock capture ignores another product and delivery-policy notices', async t => {
+  const url='https://official.example/products/own';
+  const f=fixture(t,{pages:{[url]:'<header><a>장바구니</a></header><main><section><h1>현재 상품</h1><button>구매하기</button></section><aside><h2>추천 상품</h2><button disabled>SOLD OUT</button></aside><div class="delivery">품절 시 환불됩니다.</div></main>'}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const snapshot=await w.webContents.executeJavaScript(`(${relay.captureRenderedStockEvidence.toString()})()`);
+  const result=relay.normalizeRenderedStockEvidence(snapshot);
+  assert.equal(result.inStock,true);
+  assert.equal(result.stockText,'');
+});
+
+test('one sold-out option does not mark the entire product sold out', async t => {
+  const url='https://official.example/products/options';
+  const f=fixture(t,{pages:{[url]:'<main><h1>사이즈 선택</h1><button data-size="95">95 재고 있음</button><button data-size="100" disabled>100 SOLD OUT</button><button>구매하기</button></main>'}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const snapshot=await w.webContents.executeJavaScript(`(${relay.captureRenderedStockEvidence.toString()})()`);
+  const result=relay.normalizeRenderedStockEvidence(snapshot);
+  assert.equal(result.inStock,true);
+  assert.equal(result.stockText,'');
+  assert.equal(result.sizes[1].stockText,'100 SOLD OUT');
+  assert.equal(result.sizes[1].inStock,false);
+});
+
+test('Naver seller verification retains the product detail stock text', async t => {
+  const url=channels[0][2];
+  const f=fixture(t,{pages:{[url]:'<main><h1>데상트 SR123UPS11 카라 셔츠</h1><p>공식 롯데백화점에서 판매중인 상품</p><p>품번 SR123UPS11</p><button disabled>SOLD OUT</button></main>'}});
+  Object.assign(f.context,{DOMESTIC_SELLER_EVIDENCE_PARTITION:'test',isDomesticNaverPriceCard:()=>true,isApprovedNaverDomesticSellerEvidence:()=>true,brandsMatch:()=>true});
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  const result=await f.drive(f.context.verifyApprovedNaverDomesticProducts([{title:'데상트 SR123UPS11 카라 셔츠',url}],{articleNumber:'SR123UPS11',brand:'데상트',title:'카라 셔츠',requireArticleIdentity:true}));
+  assert.equal(result.products.length,1);
+  assert.equal(result.products[0].stockText,'SOLD OUT');
+  assert.equal(result.products[0].inStock,false);
+});
+
+test('a product purchase area in an aside retains the Kolon sold-out message', async t => {
+  const url='https://www.kolonmall.com/Product/JWJJM26321DGY';
+  const f=fixture(t,{pages:{[url]:'<main><img alt="남성 트레이닝 재킷"><aside><h1>남성 트레이닝 재킷 (SET UP)</h1><p>현재 구매할 수 없는 상품입니다.</p><button disabled>품절</button></aside></main>'}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const snapshot=await w.webContents.executeJavaScript(`(${relay.captureRenderedStockEvidence.toString()})()`);
+  const result=relay.normalizeRenderedStockEvidence(snapshot);
+  assert.equal(result.stockText,'현재 구매할 수 없는 상품입니다.\n품절');
+  assert.equal(result.inStock,false);
+});
+
+test('manual official search results retain the card stock wording', async t => {
+  const f=fixture(t,{pages:{[officialSearch]:officialCard().replace('</li>','<span>재고 없음</span></li>')}});
+  runInContext(section('async function collectOfficialMallSearchProducts(', '\nfunction renderedSearchFailure('),f.context);
+  const w=new f.context.BrowserWindow();await w.loadURL(officialSearch);
+  const products=await f.drive(f.context.collectOfficialMallSearchProducts(w,'SR123UPS11'));
+  assert.equal(products.length,1);
+  assert.equal(products[0].stockText,'재고 없음');
+  assert.equal(products[0].inStock,false);
+});
+
+test('Kolon exact model search keeps sold-out products with a human-readable name', () => {
+  const html='{"__typename":"productResult","code":"JWJJM26321DGY","name":"남성 트레이닝 재킷 (SET UP)","supplierBrandName":"코오롱스포츠","representationImage":"https://images.test/jacket.jpg","soldOutYn":"Y","price":{"price":100000,"wishPrice":200000}}';
+  const products=relay.parseKolonSearch(html,'JWJJM26321DGY');
+  assert.equal(products.length,1);
+  assert.equal(products[0].inStock,false);
+  assert.equal(products[0].url,'https://www.kolonmall.com/Product/JWJJM26321DGY');
+  assert.equal(relay.parseKolonSearch(html,'OTHER12345').length,0);
 });

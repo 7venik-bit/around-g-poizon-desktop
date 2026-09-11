@@ -266,6 +266,7 @@
           const source = sourceForProduct(product);
           const candidateName = product?.title || product?.name || product?.articleNumber || "국내 상품";
           const sourceStore = String(source?.store || product?.store || "");
+          const stockLabel = String(product?.stockText || "").trim() || (product?.inStock === false ? "품절" : "—");
           const simpleLinkResult = product?.linkOnly === true
             || sourceStore === "브랜드 공식몰"
             || /^네이버\s/.test(sourceStore);
@@ -278,7 +279,7 @@
               <strong>${linkPrice ? money(linkPrice) : "가격 확인"}</strong>
               <span class="sourcing-price-unknown">–</span>
               <span class="sourcing-price-unknown">–</span>
-              <span class="sourcing-price-unknown">–</span>
+              <span style="white-space:pre-line">${text(stockLabel)}</span>
               <strong class="${Number.isFinite(linkDifference) ? linkDifference < 0 ? "sourcing-price-negative" : "sourcing-price-caution" : "sourcing-price-unknown"}">${signedMoney(linkDifference)}</strong>
               ${sourceAction(source, product, "열기")}
             </div>`;
@@ -291,15 +292,13 @@
           const differenceClass = !Number.isFinite(difference) ? "sourcing-price-unknown"
             : difference < 0 ? "sourcing-price-negative"
               : difference / Math.max(price, 1) >= 0.2 ? "sourcing-price-positive" : "sourcing-price-caution";
-          const stockLabel = String(product?.stockText || "").trim() || (product?.inStock === true ? "재고 있음"
-            : product?.inStock === false ? "품절" : "재고 문구 없음");
           return `<div class="sourcing-price-row">
             <strong class="sourcing-price-store">${text(retailer)}</strong>
             <span class="sourcing-price-title" title="${text(candidateName)}">${text(candidateName)}</span>
             <strong>${price ? money(price) : "가격 확인"}</strong>
             <span class="${shipping.known ? "" : "sourcing-price-unknown"}">${shipping.known ? shipping.amount ? money(shipping.amount) : "무료" : "미확인"}</span>
             <strong class="${actualPrice ? "" : "sourcing-price-unknown"}">${actualPrice ? money(actualPrice) : "확인 필요"}</strong>
-            <span>${text(stockLabel)}</span>
+            <span style="white-space:pre-line">${text(stockLabel)}</span>
             <strong class="${differenceClass}">${signedMoney(difference)}</strong>
             <div class="sourcing-price-actions">${sourceAction(source, product, "열기")}${typeof stockWatchRegistrationButton === "function" ? stockWatchRegistrationButton(product, sourceProduct) : ""}</div>
           </div>`;
