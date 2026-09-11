@@ -271,6 +271,13 @@
       const previousRenderer = renderExcelProductRows;
       const inlineExcelRenderer = function inlineExcelProductRows(file, products = []) {
         try {
+          // Verified SPU products use stable cross-workbook selection keys and
+          // their own full-width result rows. Reusing the raw Excel override
+          // here changes those keys after search completion, so the saved
+          // response can no longer be found and the result appears empty.
+          if (products.some((product) => Array.isArray(product?.verificationOptions))) {
+            return previousRenderer(file, products);
+          }
           const columns = document.querySelector("#excel-preview-columns");
           const rows = document.querySelector("#excel-preview-rows");
           if (!columns || !rows) return previousRenderer(file, products);
