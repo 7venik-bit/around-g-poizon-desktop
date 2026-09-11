@@ -16,7 +16,7 @@ const channels = [
   ['롯데온', 'https://www.lotteon.com/search/search/search.ecn?render=search&q=SR123UPS11', 'https://www.lotteon.com/p/product/LO100'],
 ];
 
-function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, executeFrozen = false, empty = false, lateSecond = 0, pendingPrice = 0 } = {}) {
+function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, executeFrozen = false, empty = false, lateSecond = 0, pendingPrice = 0, pages = {} } = {}) {
   let now = 0, nextId = 0;
   const timers = new Map(), windows = [], captures = [], navigations = [];
   const setTimer = (fn, ms = 0) => { const id = ++nextId; timers.set(id, { fn, at: now + ms }); return id; };
@@ -33,7 +33,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
         getURL: () => this.dom.window.location.href,
         isDestroyed: () => this.destroyed,
         setWindowOpenHandler() {}, setUserAgent() {},
-        session: { clearCache: async () => {}, clearStorageData: async () => {} },
+        session: { clearCache: async () => {}, clearStorageData: async () => {}, fetch: async () => ({ok:false}) },
         executeJavaScript: async code => {
           if (this.destroyed) throw new Error('Object has been destroyed');
           if (executeFrozen) return new Promise(() => {});
@@ -51,6 +51,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     async loadURL(url) {
       navigations.push(url);
       this.dom.reconfigure({ url });
+      if (Object.hasOwn(pages, url)) this.dom.window.document.body.innerHTML = pages[url];
       const channel = channels.find(c => c[1] === url);
       if (channel) {
         this.dom.window.document.body.innerHTML = '';
@@ -89,12 +90,15 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     clickRenderedProductCard: async (w, url) => { w.dom.reconfigure({url}); return true; },
     openRenderedSizeOptions: async () => {}, renderedStockSelectors: () => [],
     imageFingerprint: async () => null,
+    browserWindowUsable: w => Boolean(w && !w.isDestroyed()),
   };
   const context = createContext(sandbox);
   runInContext(section('async function readNaverFashionTownChannelCounts(', '\nasync function ensureNaverOfficialBrandFilter('), context);
   runInContext(section('function renderedSearchFailure(', '\nasync function '), context);
   runInContext(section('async function waitForDomesticCaptureReady(', '\nfunction brandsWithOfficialDomainStatus('), context);
   runInContext(section('async function addMatchConfidence(', '\nasync function verifyAllStoresWithMusinsaImage('), context);
+  runInContext(section('async function officialDetailImage(', '\nfunction isNaverSecurityVerificationText('), context);
+  runInContext(section('async function submitOfficialMallSearch(', '\nfunction renderedSearchFailure('), context);
   t.after(() => windows.forEach(w => w.dom.window.close()));
   async function drive(promise) {
     let result, error, done = false;
@@ -250,4 +254,73 @@ test('an expired old source timer cannot close a window opened after cancellatio
   const response = await h.run();
   assert.equal(response.canceled,true);
   assert.equal(protectedWindow.destroyed,false);
+});
+
+const officialHome = 'https://official.example/';
+const officialSearch = 'https://official.example/search?keyword=SR123UPS11';
+const officialProduct = 'https://official.example/products/4021';
+const officialCard = (title = '남녀공용 카라 셔츠', url = officialProduct) => `<main><h1>SR123UPS11 검색 결과</h1><ul><li><a href="${url}"><img src="https://images.test/product.jpg" alt="${title}"></a><strong>${title}</strong><span class="price">84,550원</span></li></ul></main>`;
+const officialSource = {store:'브랜드 공식몰',renderCount:true,linkOnly:true,officialStatus:'verified',homepageUrl:officialHome,officialProductUrl:officialSearch,searchUrl:officialSearch,searchQuery:'SR123UPS11'};
+
+test('official search execution check runs its generated script and recognizes the submitted result', async t => {
+  const f = fixture(t, {pages:{[officialSearch]:officialCard()}});
+  const w = new f.context.BrowserWindow();
+  await w.loadURL(officialSearch);
+  assert.equal(await f.context.officialMallSearchWasExecuted(w,'SR123UPS11',officialHome),true);
+});
+
+test('official cards without a printed model number survive the complete IPC and matching path', async t => {
+  const f = fixture(t, {pages:{[officialSearch]:officialCard(),[officialProduct]:'<main><h1>남녀공용 카라 셔츠</h1><span class="price">84,550원</span></main>'}});
+  const h = f.installHandler([]);
+  f.context.queryDomesticProducts = async () => ({products:[],sources:[officialSource]});
+  const response = await h.run();
+  assert.equal(response.ok,true,JSON.stringify(response));
+  assert.equal(response.data.products.length,1,'captured official card was lost during final matching');
+  assert.equal(response.data.products[0].url,officialProduct);
+  assert.equal(response.data.products[0].price,84550);
+  assert.notEqual(response.data.products[0].articleNumberVerified,true,'a search-result card must not fabricate exact article evidence');
+  assert.equal(response.data.domesticPriceCandidates[0].price,84550);
+});
+
+test('an official result exposing a conflicting model stays excluded', async t => {
+  const f = fixture(t, {pages:{[officialSearch]:officialCard('다른 제품 SR323UTS71')}});
+  const h = f.installHandler([]);
+  f.context.queryDomesticProducts = async () => ({products:[],sources:[officialSource]});
+  const response = await h.run();
+  assert.equal(response.data.products.length,0);
+});
+
+test('an off-domain link is not accepted as an official result', async t => {
+  const f = fixture(t, {pages:{[officialSearch]:officialCard('남녀공용 카라 셔츠','https://unrelated.example/products/1')}});
+  const h = f.installHandler([]);
+  f.context.queryDomesticProducts = async () => ({products:[],sources:[officialSource]});
+  const response = await h.run();
+  assert.equal(response.data.products.length,0);
+});
+
+test('unsubmitted official homepage cards do not become verified search results', async t => {
+  const f = fixture(t, {pages:{[officialHome]:officialCard()}});
+  const h = f.installHandler([]);
+  f.context.queryDomesticProducts = async () => ({products:[],sources:[{...officialSource,officialProductUrl:officialHome,searchUrl:officialHome}]});
+  const response = await h.run();
+  assert.equal(response.data.products.length,0);
+});
+
+test('official product IDs carried in query parameters remain separate in the final list', async t => {
+  const one = 'https://official.example/product/detail?goodsNo=4021';
+  const two = 'https://official.example/product/detail?goodsNo=4022';
+  const f = fixture(t, {pages:{[officialSearch]:officialCard('남녀공용 카라 셔츠 화이트',one)+officialCard('남녀공용 카라 셔츠 블랙',two)}});
+  const h = f.installHandler([]);
+  f.context.queryDomesticProducts = async () => ({products:[],sources:[officialSource]});
+  const response = await h.run();
+  assert.equal(response.data.products.length,2,'different goodsNo products were collapsed by dropping the query string');
+  assert.deepEqual(Array.from(response.data.products,p=>p.url).sort(),[one,two]);
+});
+
+test('a similar official product image alone cannot bypass query-result evidence', async t => {
+  const f = fixture(t);
+  f.context.imageFingerprint = async () => [true];
+  f.context.fingerprintSimilarity = () => 1;
+  const result = await f.drive(f.context.addMatchConfidence({sources:[],products:[{store:'브랜드 공식몰',title:'데상트 남녀공용 카라 셔츠',price:84550,url:officialProduct,imageUrl:'https://images.test/similar.jpg'}]}, {articleNumber:'SR123UPS11',brand:'데상트',title:'남녀공용 카라 셔츠',imageUrl:'https://images.test/source.jpg'}));
+  assert.equal(result.products.length,0);
 });

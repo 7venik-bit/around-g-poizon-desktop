@@ -1006,7 +1006,10 @@ async function addMatchConfidence(data, input) {
     // thumbnail fingerprint.
     if (verifiedNaverIdentity) return true;
     if (codeMatched) return true;
-    if (product.store === "브랜드 공식몰") return false;
+    // Official result cards can omit the manufacturer code. Preserve the
+    // actual brand-domain query results for the operator's manual comparison;
+    // do not invent an exact-code match or admit an unexecuted homepage card.
+    if (product.store === "브랜드 공식몰") return product.officialSearchResultVerified === true;
     if (!hasSourceImage) return titleScore >= 80;
     return titleScore >= 70 && Number(imageScore || 0) >= 95;
   });
@@ -1015,7 +1018,9 @@ async function addMatchConfidence(data, input) {
     let urlIdentity = "";
     try {
       const parsed = new URL(String(product.url || ""));
-      parsed.search = "";
+      // Official malls also use /product/detail?goodsNo=... identities.
+      // Dropping their query string merged different captured products.
+      if (product.store !== "브랜드 공식몰") parsed.search = "";
       parsed.hash = "";
       urlIdentity = parsed.href.toLocaleLowerCase();
     } catch {}
@@ -1349,7 +1354,7 @@ async function officialMallSearchWasExecuted(searchWindow, query, previousUrl = 
     const resultCount = /(?:상품|검색결과)\\s*\\(?\\s*[1-9][\\d,]*\\s*(?:개|건|\\))/i.test(pageText)
       || /총\\s*[1-9][\\d,]*\\s*개/i.test(pageText);
     const productLinks = [...document.querySelectorAll('a[href]')].filter((link) =>
-      /\/(?:goods|product|products|pd|item|t)\//i.test(String(link.href || ""))).length;
+      /\\/(?:goods|product|products|pd|item|t)\\//i.test(String(link.href || ""))).length;
     return { url: String(location.href || ""), inputMatched, pageMatched, resultCount, productLinks };
   })()`, true).catch(() => null);
   if (!state) return false;
@@ -2728,6 +2733,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   let searchWindow;
   let musinsaSettledEmpty = false;
   let officialDirectDetail = null;
+  let officialSearchSubmitted = false;
   try {
     const reuseNaverSearch = Boolean(naverPortalSource
       && sharedNaverSession?.window
@@ -2978,6 +2984,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         const submitted = naverPortalSource
           ? await submitNaverShoppingSearch(searchWindow, searchQuery)
           : await executeOfficialMallSearch(searchWindow, String(source.homepageUrl || url), searchQuery);
+        if (source.store === "브랜드 공식몰") officialSearchSubmitted = submitted;
         if (!submitted && !interactiveOfficialSearch) {
           const pageText = naverPortalSource
             ? await searchWindow.webContents.executeJavaScript(
@@ -3413,7 +3420,33 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       parsedContent.selectedChannelCount = labeledChannelCards.length;
       content = JSON.stringify(parsedContent);
     }
+    let officialSearchResultVerified = false;
+    if (source.store === "브랜드 공식몰") {
+      const officialHost = new URL(String(source.homepageUrl || url)).hostname.replace(/^www\./, "");
+      const belongsToOfficialMall = (value) => {
+        try {
+          const parsed = new URL(String(value || ""));
+          const host = parsed.hostname.replace(/^www\./, "");
+          return parsed.protocol === "https:" && (host === officialHost || host.endsWith(`.${officialHost}`));
+        } catch { return false; }
+      };
+      const currentUrl = String(searchWindow.webContents.getURL() || "");
+      const expectedQuery = sanitizeDomesticProductCode(articleNumber) || sanitizeDomesticQuery(title);
+      const requestedUrl = new URL(url);
+      const current = new URL(currentUrl);
+      const exactQueryRoute = !interactiveOfficialSearch
+        && current.origin === requestedUrl.origin && current.pathname === requestedUrl.pathname
+        && [...current.searchParams.values()].some(value => sanitizeDomesticQuery(value) === expectedQuery);
+      officialSearchResultVerified = belongsToOfficialMall(currentUrl)
+        && Boolean(officialDirectDetail || officialSearchSubmitted || exactQueryRoute);
+      // A source's official label does not make external links official.
+      parsedContent.productCards = (parsedContent.productCards || []).filter(card => belongsToOfficialMall(card.productUrl));
+      content = JSON.stringify(parsedContent);
+    }
     const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
+    if (officialSearchResultVerified && Array.isArray(analyzed?.products)) {
+      analyzed.products = analyzed.products.map(product => ({ ...product, officialSearchResultVerified: true }));
+    }
     const resolvedSearchUrl = String(searchWindow.webContents.getURL() || url);
     if (!analyzed) return renderedSearchFailure("result_analysis_failed", searchWindow, { searchSubmitted: interactiveSiteSearch });
     const candidateCount = Array.isArray(analyzed.products) ? analyzed.products.length : 0;
