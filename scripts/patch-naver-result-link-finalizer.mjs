@@ -205,6 +205,8 @@ replaceOnce(
         brand,
         title,
         requireArticleIdentity,
+        generation,
+        onActivity,
       });
       const approvedProducts = approval.products;
       const approved = approvedProducts.length > 0;

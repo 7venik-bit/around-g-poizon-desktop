@@ -14,6 +14,9 @@ These instructions apply to ChatGPT Work, Codex, and Cursor when working in this
 - Keep POIZON screen-to-Excel verification behind its separate, explicit verification menu. Its screen-authoritative comparison and save/reread rules still apply there.
 - Show domestic retailer sizes and inventory in the lower product list, between the product title and article number. Preserve platform stock wording.
 - Purchase limits are not inventory counts, and "품절 임박" is not sold out. Never invent a count when the retailer does not expose one.
+- Select stock strategies by the actual merchant domain for every brand. Preserve colour/size combinations, raw stock wording, and explicit quantities; missing quantity is unknown.
+- Do not silently truncate matched domestic products to eight. Checkpoint completed products and use inactivity deadlines while real option/detail progress continues.
+- A profile or passing fixture is not proof that every brand was tested live. Record actual retailer/product checks and keep login-required or partial coverage explicit.
 
 ## Safe development workflow
 

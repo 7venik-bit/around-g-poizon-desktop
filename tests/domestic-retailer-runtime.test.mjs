@@ -480,3 +480,116 @@ test('Naver verified seller detail opens options and returns their availability'
   assert.equal(result.products.length,1);
   assert.deepEqual(result.products[0].sizes.map(s=>[s.label,s.inStock]),[['95',true],['100 품절',false]]);
 });
+
+test('live Nike radio markup retains all six sizes and disabled XS/XXL labels', async t => {
+  const url='https://www.nike.com/kr/t/fixture/IM8402-411';
+  const html=readFileSync(new URL('./fixtures/retailer-stock/nike-options.html',import.meta.url),'utf8');
+  const f=fixture(t,{pages:{[url]:`<main><h1>나이키 스포츠웨어</h1>${html}<button>장바구니</button></main>`}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const result=await f.drive(f.context.collectRenderedProductStock(w,'네이버 패션타운'));
+  assert.equal(result.stockStrategy,'nike');
+  assert.deepEqual(result.sizes.map(s=>[s.label,s.inStock]),[['XS',false],['S',true],['M',true],['L',true],['XL',true],['XXL',false]]);
+});
+
+test('live SSG dropdown markup preserves available 100/105 and all four raw 매진 options', async t => {
+  const url='https://www.ssg.com/item/itemView.ssg?itemId=1000759016358';
+  const html=readFileSync(new URL('./fixtures/retailer-stock/ssg-options.html',import.meta.url),'utf8');
+  const f=fixture(t,{pages:{[url]:`<main><div class="cdtl_col_rgt"><h2 class="cdtl_info_tit">FN3869-010</h2><dl>${html}</dl><button>바로구매</button></div><aside class="sticky-purchase"><dl>${html.replaceAll('ordOpt1','_bar_ordOpt1')}</dl></aside></main>`}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const result=await f.drive(f.context.collectRenderedProductStock(w,'SSG'));
+  assert.deepEqual(result.sizes.map(s=>[s.label,s.inStock]),[['100',true],['105',true],['085(매진)',false],['090(매진)',false],['095(매진)',false],['110(매진)',false]]);
+  assert.equal(result.inStock,true);assert.equal(result.stockCoverage,'observed');
+});
+
+test('production collector visits all native colour/size combinations and excludes quantity controls', async t => {
+  const url='https://new-brand.example/products/jacket';
+  const f=fixture(t,{pages:{[url]:'<main><h1>재킷</h1><select name="color"><option value="">선택하세요.</option><option value="black">블랙</option><option value="white">화이트</option></select><select name="size"><option value="">선택하세요.</option></select><select name="quantity"><option>1</option><option>2</option></select><button>구매하기</button></main>'}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  w.dom.window.document.querySelector('[name=color]').addEventListener('change',event=>{
+    w.dom.window.document.querySelector('[name=size]').innerHTML=event.target.value==='black'?'<option value="95">95 (재고 3개)</option><option value="100" disabled>100 품절</option>':'<option value="95" disabled>95 SOLD OUT</option>';
+  });
+  const result=await f.drive(f.context.collectRenderedProductStock(w,'브랜드 공식몰'));
+  assert.deepEqual(result.sizes.map(s=>s.label),['블랙 / 95 (재고 3개)','블랙 / 100 품절','화이트 / 95 SOLD OUT']);
+  assert.equal(result.sizes[0].quantity,3);assert.equal(result.stockCoverage,'observed');
+});
+
+test('production custom dropdown collector follows dependent colour and size menus', async t => {
+  const url='https://brand.naver.com/example/products/123';
+  const f=fixture(t,{pages:{[url]:'<main><h1>재킷</h1><button role="combobox" aria-label="색상" aria-controls="colors">색상 선택</button><div id="colors" role="listbox" hidden></div><button role="combobox" aria-label="사이즈" aria-controls="sizes">사이즈 선택</button><div id="sizes" role="listbox" hidden></div><button>구매하기</button></main>'}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);const d=w.dom.window.document;
+  let color='';
+  d.querySelector('[aria-controls=colors]').addEventListener('click',()=>{d.querySelector('#colors').hidden=false;d.querySelector('#colors').innerHTML='<div role="option">블랙</div><div role="option">화이트</div>';});
+  d.querySelector('#colors').addEventListener('click',event=>{color=event.target.textContent;d.querySelector('#colors').hidden=true;d.querySelector('#sizes').hidden=true;});
+  d.querySelector('[aria-controls=sizes]').addEventListener('click',()=>{d.querySelector('#sizes').hidden=false;d.querySelector('#sizes').innerHTML=color==='블랙'?'<div role="option">95</div><div role="option" aria-disabled="true">100 품절</div>':'<div role="option">100</div>';});
+  const result=await f.drive(f.context.collectRenderedProductStock(w,'네이버 패션타운'));
+  assert.deepEqual(result.sizes.map(s=>s.label),['블랙 / 95','블랙 / 100 품절','화이트 / 100']);
+});
+
+test('size-guide tabs are never stock and member-only text stays explicit', async t => {
+  const url='https://www.musinsa.com/products/member';
+  const f=fixture(t,{pages:{[url]:'<main><h1>카라 셔츠</h1><div class="StandardSizeTable__Tab"><button>남성 의류</button><button>여성 의류</button></div><button>장바구니</button><button>회원 전용</button></main>'}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const result=await f.drive(f.context.collectRenderedProductStock(w,'무신사'));
+  assert.deepEqual(result.sizes,[]);assert.equal(result.stockStatus,'login_required');assert.equal(result.stockText,'회원 전용');assert.equal(result.inStock,null);
+});
+
+test('more than eight product details finish beyond 90 seconds while emitting retained checkpoints', async t => {
+  const searchUrl='https://www.lotteon.com/search/search/search.ecn?q=SR123UPS11&fixture=12';
+  const cards=Array.from({length:12},(_,i)=>`<li><a href="https://www.lotteon.com/p/product/LO${i}"><img alt="데상트 SR123UPS11 카라 셔츠"></a><strong>데상트 SR123UPS11 카라 셔츠</strong><span>롯데백화점</span><span>84,550원</span></li>`).join('');
+  const pages={[searchUrl]:`<main><p>전체 12개</p><ul>${cards}</ul></main>`};
+  for(let i=0;i<12;i++) pages[`https://www.lotteon.com/p/product/LO${i}`]='<main><h1>데상트 SR123UPS11 카라 셔츠</h1><button data-size="95">95</button><button>구매하기</button></main>';
+  const f=fixture(t,{pages});const snapshots=[];
+  const original=f.context.clickRenderedProductCard;
+  f.context.clickRenderedProductCard=async(...args)=>{await f.context.wait(10_000);return original(...args);};
+  const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{store:'롯데온',searchUrl,renderCount:true}]},'SR123UPS11','데상트','카라 셔츠',0,null,value=>snapshots.push(value)));
+  assert.equal(result.products.length,12);assert.ok(f.now()>90_000);
+  assert.ok(snapshots.some(s=>s.products.length===1));assert.ok(snapshots.some(s=>s.products.length===12));
+});
+
+test('a stalled later detail retains the completed product checkpoint', async t => {
+  const f=fixture(t,{lateSecond:1000});let visited=0;const original=f.context.clickRenderedProductCard;
+  f.context.clickRenderedProductCard=async(...args)=>{visited++;if(visited===2)return new Promise(()=>{});return original(...args);};
+  const result=await f.search([channels[2]]);
+  assert.equal(result.products.length,1);assert.equal(result.sources[0].verificationStage,'source_timeout');assert.equal(result.sources[0].verificationPending,true);
+});
+
+test('live Naver colour radios pair with all thirteen sizes without repeating sticky controls', async t => {
+  const url='https://shopping.naver.com/window-products/outlet/12460382307';
+  const html=readFileSync(new URL('./fixtures/retailer-stock/naver-options.html',import.meta.url),'utf8');
+  const f=fixture(t,{pages:{[url]:`<main><h3>푸마 스피드캣 OG 39884601</h3>${html}${html}<button>구매하기</button></main>`}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const result=await f.drive(f.context.collectRenderedProductStock(w,'네이버 패션타운'));
+  assert.equal(result.sizes.length,13);
+  assert.equal(result.sizes[0].label,'블랙(39884601) / 220');
+  assert.equal(result.sizes[12].label,'블랙(39884601) / 280');
+  assert.ok(result.sizes.every(s=>s.inStock===true));
+});
+
+test('live Lotte option markup preserves 5개 남음 and six sold-out sizes without prices as stock', async t => {
+  const url='https://www.lotteon.com/p/product/LE1219586328';
+  const html=readFileSync(new URL('./fixtures/retailer-stock/lotte-options.html',import.meta.url),'utf8');
+  const f=fixture(t,{pages:{[url]:`<main><h2 class="pd-widget1__product-name">P-6000 CD6404-002</h2>${html}${html.replaceAll('pageOpt','bundleOpt')}<button>구매하기</button></main>`}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const result=await f.drive(f.context.collectRenderedProductStock(w,'롯데온'));
+  assert.equal(result.sizes.length,14);
+  assert.equal(result.sizes.filter(s=>s.inStock===false).length,6);
+  const size=result.sizes.find(s=>s.label==='230');
+  assert.equal(size.stockText,'5개 남음 (품절임박)');assert.equal(size.quantity,5);assert.equal(size.inStock,true);
+  assert.ok(result.sizes.every(s=>!s.label.includes('75,900')));
+});
+
+test('a missing dependent size list cannot turn a colour choice into available stock', async t => {
+  const url='https://new-brand.example/products/partial';
+  const f=fixture(t,{pages:{[url]:'<main><h1>재킷</h1><select name="color"><option value="black">블랙</option></select><select name="size"><option value="">선택하세요.</option></select><button>구매하기</button></main>'}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const result=await f.drive(f.context.collectRenderedProductStock(w,'브랜드 공식몰'));
+  assert.equal(result.stockCoverage,'partial');assert.equal(result.inStock,null);assert.deepEqual(result.sizes,[]);
+});
+
+test('stock from a mismatched detail never overrides the unresolved product identity', async t => {
+  const f=fixture(t,{pages:{[officialSearch]:officialCard(),[officialProduct]:'<main><h1>다른 제품 SR323UTS71</h1><p>품번 SR323UTS71</p><button data-size="95">95</button><button>구매하기</button></main>'}});
+  f.context.analyzeRenderedChannelProducts=()=>({count:1,products:[{store:'브랜드 공식몰',title:'카라 셔츠',url:officialProduct,detailArticleVerificationRequired:true}],absenceConfirmed:false});
+  const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[officialSource]},'SR123UPS11','데상트','카라 셔츠'));
+  assert.equal(result.products.length,1);
+  assert.equal(result.products[0].inStock,null);assert.equal(result.products[0].stockVerified,false);assert.equal(result.products[0].sizes.length,0);
+});
