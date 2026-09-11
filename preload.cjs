@@ -104,6 +104,11 @@ contextBridge.exposeInMainWorld("aroundG", {
   queryExplorer: (input) => ipcRenderer.invoke("explorer:query", input),
   cancelCategorySearch: () => ipcRenderer.invoke("explorer:cancel-category"),
   searchDomestic: (input) => ipcRenderer.invoke("domestic:search", input),
+  onDomesticSearchProgress: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on("domestic-search:progress", handler);
+    return () => ipcRenderer.removeListener("domestic-search:progress", handler);
+  },
   lookupDomesticPrice: (input) => ipcRenderer.invoke("domestic-price:lookup", input),
   cancelDomesticSearch: () => ipcRenderer.invoke("domestic:cancel"),
   listDomesticLogins: () => ipcRenderer.invoke("domestic-login:list"),
