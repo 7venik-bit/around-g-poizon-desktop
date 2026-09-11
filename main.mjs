@@ -3607,7 +3607,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   }
 }
 
-async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "", generation = domesticSearchGeneration) {
+async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "", generation = domesticSearchGeneration, onProgress = null) {
   const discoveredProducts = [];
   const sources = [];
   // Naver Fashion Town exposes official-brand, department, and outlet counts
@@ -3619,6 +3619,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     channelCounts: null,
     searchSubmitted: false,
   };
+  onProgress?.({ completed: 0, total: data.sources.length, source: "판매처 검색 준비" });
   // The complete domestic lookup is one sequential request again. A source
   // failure is recorded on that source, then the same request continues to
   // the next source without spawning module-specific state or retries.
@@ -3761,6 +3762,11 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       };
     })();
     sources.push(resolvedSource);
+    onProgress?.({
+      completed: sources.length,
+      total: data.sources.length,
+      source: String(source.store || "판매처"),
+    });
     if (source.store === "네이버 패션타운"
       && sharedNaverSession.window
       && !sharedNaverSession.window.isDestroyed()) {
@@ -11603,6 +11609,11 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   });
   ipcMain.handle("domestic:search", (_event, input) => {
     const searchGeneration = domesticSearchGeneration;
+    const sendDomesticProgress = (payload) => {
+      if (!_event.sender.isDestroyed()) {
+        _event.sender.send("domestic-search:progress", { ...payload, generation: searchGeneration });
+      }
+    };
     const operation = (async () => {
     const technicalWarnings = [];
     const rememberWarning = (stage, error) => {
@@ -11661,12 +11672,13 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       if (input?.verifyLinkCounts === true) {
         try {
           matched = await addRenderedSearchCounts(
-            matched,
-            searchArticleNumber,
-            searchBrand,
-            searchTitle,
-            searchGeneration
-          );
+          matched,
+          searchArticleNumber,
+          searchBrand,
+          searchTitle,
+          searchGeneration,
+          sendDomesticProgress
+        );
         } catch (error) {
           rememberWarning("rendered_search_counts", error);
         }
