@@ -79,6 +79,25 @@ test('150-page and 3000-product coverage detects a missing page and deduplicates
   assert.equal(reviewCoverage(events, { ...captured, sourceTotal:3001 }).ok, false);
 });
 
+test('products repeated across page boundaries are merged using the later visible POIZON value', () => {
+  const first = { phase:'page-compared', pageNum:1, pageCount:2, rows:[
+    { key:'SPU:11', spuId:'11', pageNum:1, sourceChina:'100', sourceLocal:'30' },
+    { key:'SPU:22', spuId:'22', pageNum:1, sourceChina:'200', sourceLocal:'40' },
+  ] };
+  const second = { phase:'page-compared', pageNum:2, pageCount:2, rows:[
+    { key:'SPU:22', spuId:'22', pageNum:2, sourceChina:'201', sourceLocal:'41' },
+    { key:'SPU:33', spuId:'33', pageNum:2, sourceChina:'300', sourceLocal:'50' },
+  ] };
+  const coverage = reviewCoverage([first, second], {
+    ok:true, sourceTotal:4, uniqueSourceTotal:3, missingCount:0,
+  });
+  assert.equal(coverage.ok, true);
+  assert.equal(coverage.rows.length, 3);
+  assert.equal(coverage.duplicateRows, 1);
+  assert.equal(coverage.rows.find((row) => row.key === 'SPU:22').sourceChina, '201');
+  assert.deepEqual(coverage.rows.find((row) => row.key === 'SPU:22').duplicatePages, [1, 2]);
+});
+
 test('wide 10000-row original snapshot loses no row', () => {
   const data = [headers, ...Array.from({ length:10000 }, (_, i) => row(String(i+1)))];
   const snapshot = createReviewWorkbookSnapshot(data, build);

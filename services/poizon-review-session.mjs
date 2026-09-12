@@ -37,14 +37,26 @@ export function reviewCoverage(events = [], captured = {}) {
   if (!pageCount || pages.size !== pageCount || Array.from({ length: pageCount }, (_, i) => i + 1).some((n) => !pages.has(n))) {
     return { ok: false, message: `전체 대조 미완료 · 확인 ${pages.size}/${pageCount || '?'}페이지` };
   }
-  const rows = [...pages].sort((a, b) => a[0] - b[0]).flatMap(([, list]) => list);
-  const keys = new Set(rows.map((r) => r.key));
-  if (keys.size !== rows.length) return { ok: false, message: '서로 다른 페이지에서 동일 상품이 반복되어 전체 결과를 확정하지 않았습니다.' };
-  const expected = Number(captured.sourceTotal || 0);
-  if ((expected > 0 && rows.length !== expected) || Number(captured.missingCount || 0) > 0) {
-    return { ok: false, message: `POIZON 원본 상품 수 불일치 · 대조 ${rows.length}/${expected || '?'}` };
+  const rawRows = [...pages].sort((a, b) => a[0] - b[0]).flatMap(([, list]) => list);
+  if (rawRows.some((row) => !row?.key)) return { ok: false, message: '상품 식별자가 없는 대조 결과가 있어 전체 결과를 확정하지 않았습니다.' };
+  // Seller Center pagination can repeat a product at a page boundary. Keep one
+  // identity and let the later visible page provide the final POIZON value.
+  const byKey = new Map();
+  let duplicateRows = 0;
+  for (const row of rawRows) {
+    const previous = byKey.get(row.key);
+    if (!previous) { byKey.set(row.key, row); continue; }
+    duplicateRows += 1;
+    const duplicatePages = [...new Set([...(previous.duplicatePages || [previous.pageNum]), row.pageNum].filter(Boolean))];
+    byKey.set(row.key, { ...previous, ...row, duplicateRows: Number(previous.duplicateRows || 0) + 1, duplicatePages });
   }
-  return { ok: true, rows, pageCount };
+  const rows = [...byKey.values()];
+  const expected = Number(captured.sourceTotal || 0);
+  const expectedUnique = Number(captured.uniqueSourceTotal || Math.max(0, expected - duplicateRows) || 0);
+  if ((expectedUnique > 0 && rows.length !== expectedUnique) || Number(captured.missingCount || 0) > 0) {
+    return { ok: false, message: `POIZON 고유 상품 수 불일치 · 대조 ${rows.length}/${expectedUnique || '?'}` };
+  }
+  return { ok: true, rows, pageCount, duplicateRows };
 }
 
 // Reports compare like-for-like metrics only. Raw SKU totals remain visible,
@@ -193,7 +205,8 @@ export async function runPoizonReviewBatch({ files, conditions = {}, api, create
       report.deferredProducts = Number(saved.deferredProducts || captured.checkpointSync?.deferredProducts || 0);
       report.checkpointPages = Number(saved.checkpointPages || 0);
       reports.push(report);
-      view.finish({ ok: true, corrected: true, changedRows: report.changedRows, changedCells: report.changedCells,
+      view.finish({ ok: true, corrected: true, rows: coverage.rows, duplicateRows: coverage.duplicateRows,
+        changedRows: report.changedRows, changedCells: report.changedCells,
         addedRows: report.addedRows, addedProducts: report.addedProducts, verifiedCells: report.verifiedCells, report, afterProducts: after.products });
     } catch (error) {
       const report = { file: snapshot.file.name || snapshot.file.path, complete: false, message: error.message, changes: [] };

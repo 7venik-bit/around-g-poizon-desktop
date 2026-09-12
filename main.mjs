@@ -10683,8 +10683,9 @@ async function captureSellerBrandSales(input = {}) {
     products,
     total: products.length,
     sourceTotal: sellerSourceTotal || products.length,
+    uniqueSourceTotal: diagnostics.uniqueRowCount || products.length,
     capturedRowCount,
-    missingCount: Math.max(0, (sellerSourceTotal || products.length) - products.length),
+    missingCount: Math.max(0, (sellerSourceTotal || capturedRowCount) - capturedRowCount),
     checkpointSync: { ...checkpointSummary, changes: [...checkpointSummary.changes] },
     selectedBrand: selected.selected,
     diagnostics: {
