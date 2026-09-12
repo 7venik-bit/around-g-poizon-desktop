@@ -49,6 +49,7 @@ export class DomesticRecoveryCoordinator {
     delay = ms => new Promise(resolve => setTimeout(resolve, ms))} = {}) {
     this.store = store; this.now = now; this.freshnessMs = freshnessMs;
     this.retryDelayMs = retryDelayMs; this.delay = delay; this.active = new Set();
+    this.activeRuns = new Map();
   }
   jobs() { return this.store.snapshot()[COLLECTION] || []; }
   get(id) { return this.jobs().find(job => job.id === id); }
@@ -120,11 +121,18 @@ export class DomesticRecoveryCoordinator {
     })]); } finally { clearTimeout(timer); }
   }
   async run({jobId, productKey, execute, canceled = () => false, onProgress = () => {}}) {
-    if (this.active.has(jobId)) throw new Error('RECOVERY_ALREADY_RUNNING');
+    // The renderer can reach its absolute deadline just before the previous
+    // IPC call finishes saving and releasing this job. Queue the next product
+    // behind that cleanup instead of failing every remaining row with
+    // RECOVERY_ALREADY_RUNNING.
+    while (this.activeRuns.has(jobId)) await this.activeRuns.get(jobId);
     let job = copy(this.get(jobId));
     if (!job) throw new Error('RECOVERY_JOB_MISSING');
     const product = job.products.find(p => p.key === productKey);
     if (!product) throw new Error('RECOVERY_PRODUCT_MISSING');
+    let releaseRun;
+    const runFinished = new Promise(resolve => { releaseRun = resolve; });
+    this.activeRuns.set(jobId, runFinished);
     this.active.add(jobId);
     let interrupted = false;
     try {
@@ -173,6 +181,10 @@ export class DomesticRecoveryCoordinator {
         if (interrupted) break;
       }
       return {ok: true, ...(interrupted ? {canceled: true} : {}), data: this.result(job, product)};
-    } finally { this.active.delete(jobId); }
+    } finally {
+      this.active.delete(jobId);
+      if (this.activeRuns.get(jobId) === runFinished) this.activeRuns.delete(jobId);
+      releaseRun();
+    }
   }
 }
