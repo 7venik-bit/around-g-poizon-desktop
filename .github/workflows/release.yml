@@ -133,7 +133,7 @@ jobs:
         run: node scripts/verify-popular-full-rank-scroll.mjs
 
       - name: Test search completion with final patched renderer
-        run: node --test tests/domestic-retailer-runtime.test.mjs tests/domestic-completion-lifecycle.test.mjs tests/retailer-stock-strategies.test.mjs tests/brand-official-search.test.mjs
+        run: node --test tests/domestic-retailer-runtime.test.mjs tests/domestic-completion-lifecycle.test.mjs tests/retailer-stock-strategies.test.mjs tests/brand-official-search.test.mjs tests/domestic-recovery.test.mjs tests/store-save-recovery.test.mjs
 
       - name: Test strict popular-list completeness
         run: node --test tests/seller-dom.test.mjs tests/popular-completeness-v2.10.573.test.mjs

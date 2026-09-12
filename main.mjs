@@ -44,6 +44,7 @@ import {
 } from "./services/popular-excel.mjs";
 import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
+import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
 import {
   FULL_BRAND_CATALOG_MINIMUM,
   brandCatalogNeedsSync,
@@ -133,6 +134,10 @@ import {
 import { normalizePurchaseLedgerRow, validatePurchaseLedgerRow } from "./services/purchase-ledger.mjs";
 
 let store;
+let domesticRecoveryCoordinator;
+function recoveryCoordinator() {
+  return domesticRecoveryCoordinator ||= new DomesticRecoveryCoordinator(store);
+}
 const { autoUpdater } = pkg;
 nativeTheme.themeSource = "light";
 // Keep hidden commerce pages fully active. Without these switches Chromium can
@@ -1501,6 +1506,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
   requireArticleIdentity = false,
   generation = domesticSearchGeneration,
   onActivity = null,
+  recoveryProducts = [], recoveryOptions = {},
 } = {}) {
   const candidates = (Array.isArray(products) ? products : [])
     .filter((product) => isDomesticNaverPriceCard({
@@ -1535,6 +1541,11 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
       const productUrl = String(candidate?.url || candidate?.productUrl || "");
       if (!productUrl || evidenceWindow.isDestroyed()) continue;
       try {
+        const retained = recoveryProducts.find(p => p.url === candidate.url && p.domesticSellerVerified === true);
+        if (retained && stockObservationComplete(retained)
+          && Date.now() - Date.parse(retained.stockCheckedAt || '') < 30 * 60_000) {
+          approved.push(retained); checkedCount += 1; continue;
+        }
         await Promise.race([
           evidenceWindow.loadURL(productUrl),
           new Promise((_, reject) => setTimeout(() => reject(new Error("SELLER_EVIDENCE_TIMEOUT")), 12_000)),
@@ -1613,7 +1624,9 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         // the initial evidence if the optional size inspection fails.
         let optionStock = null;
         try {
-          optionStock = await collectRenderedProductStock(evidenceWindow, "네이버 패션타운", generation, onActivity);
+          const savedOptions = recoveryOptions[candidate.url];
+          optionStock = await collectRenderedProductStock(evidenceWindow, "네이버 패션타운", generation, onActivity,
+            savedOptions && Date.now() - Date.parse(savedOptions.checkedAt || '') < 30 * 60_000 ? savedOptions.options : [], savedOptions?.branches || [], candidate.url);
         } catch {}
         approved.push({
           ...candidate,
@@ -2650,7 +2663,7 @@ async function waitForDomesticCaptureReady(searchWindow, timeoutMs = 25_000) {
   if (lastSignature && Date.now() - stableSince < 1_500 && !searchWindow.isDestroyed()) await wait(1_500);
 }
 
-async function collectRenderedProductStock(searchWindow, storeName = "", generation = domesticSearchGeneration, onActivity = null) {
+async function collectRenderedProductStock(searchWindow, storeName = "", generation = domesticSearchGeneration, onActivity = null, resumeOptions = [], resumeBranches = [], checkpointUrl = "") {
   const canceled = () => domesticSearchCanceled(generation) || !searchWindow || searchWindow.isDestroyed();
   if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
   const strategy = retailerStockStrategy({store: storeName, url: searchWindow.webContents.getURL()});
@@ -2662,7 +2675,7 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
   const readControls = () => searchWindow.webContents.executeJavaScript(`(${captureNativeStockControls.toString()})()`, true);
   try {
     variants = await collectNativeStockVariants({
-      canceled,
+      canceled, resumeOptions, resumeBranches,
       read: async depth => {
         let state = await readControls();
         const group = state.groups?.[depth];
@@ -2710,7 +2723,8 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
           if (stable >= 2) break;
         }
       },
-      onProgress: update => onActivity?.({option: update.label, optionCount: update.completed}),
+      onProgress: update => onActivity?.({option: update.label, optionCount: update.completed,
+        optionCheckpoint: {url: checkpointUrl || searchWindow.webContents.getURL(), options: update.options, branches: update.branches, checkedAt: new Date().toISOString()}}),
     });
   } catch (error) {
     if (canceled()) throw error;
@@ -2720,11 +2734,11 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
     options: variants.options.length ? variants.options : variants.complete ? initial?.options || [] : [],
     purchaseAvailable: !variants.complete && !variants.options.length ? false : initial?.purchaseAvailable,
   });
-  return {...observed, stockStrategy: strategy.id, stockCheckedAt: new Date().toISOString(),
+  return {...observed, stockStrategy: strategy.id, stockCheckedAt: variants.options.map(option => option.observedAt).filter(Boolean).sort()[0] || new Date().toISOString(),
     stockCoverage: !variants.complete ? 'partial' : observed.stockVerified ? 'observed' : 'unknown'};
 }
 
-async function refreshDomesticProductStock(product, generation = domesticSearchGeneration, onActivity = null) {
+async function refreshDomesticProductStock(product, generation = domesticSearchGeneration, onActivity = null, resumeOptions = [], resumeBranches = []) {
   if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
   const fallback = { inStock: product.inStock === false ? false : null, sizes: product.sizes || [],
     stockText: String(product.stockText || ""), stockStatus: product.inStock === false ? "soldout" : "unknown", stockVerified: product.inStock === false };
@@ -2745,7 +2759,7 @@ async function refreshDomesticProductStock(product, generation = domesticSearchG
       (async () => {
         await stockWindow.loadURL(product.url);
         await waitForDomesticCaptureReady(stockWindow, 25_000);
-        const observed = await collectRenderedProductStock(stockWindow, product.store, generation, activity);
+        const observed = await collectRenderedProductStock(stockWindow, product.store, generation, activity, resumeOptions, resumeBranches, product.url);
         return observed.stockText || observed.purchaseLimitText || observed.sizes.length || observed.inStock !== null ? observed : fallback;
       })(),
       deadline,
@@ -3492,10 +3506,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         requireArticleIdentity,
         generation,
         onActivity,
+        recoveryProducts: source.recoveryProducts, recoveryOptions: source.recoveryOptions,
       });
       const approvedProducts = approval.products;
       const approved = approvedProducts.length > 0;
-      const technicalPending = !approved && approval.failedCount > 0;
+      const technicalPending = approval.failedCount > 0 || approvedProducts.some(product => !stockObservationComplete(product));
       const authoritativelyRejected = !approved
         && approval.candidateCount > 0
         && approval.checkedCount === approval.candidateCount
@@ -3503,7 +3518,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const absenceConfirmed = finalized.absenceConfirmed === true || authoritativelyRejected;
       return {
         ...finalized,
-        count: technicalPending ? null : approvedProducts.length,
+        count: technicalPending && !approved ? null : approvedProducts.length,
         products: approvedProducts,
         presenceConfirmed: approved,
         absenceConfirmed,
@@ -3615,6 +3630,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     if (Array.isArray(analyzed?.products)) {
       const products = [];
       const inspectedProducts = analyzed.products;
+      let incompleteDetails = 0;
       const attemptedQuery = sanitizeDomesticQuery(searchAttempt?.query || source.searchQuery || articleNumber || title);
       const exactCodeQuery = sanitizeDomesticProductCode(articleNumber);
       const isCodePriorityAttempt = Boolean(exactCodeQuery && attemptedQuery === exactCodeQuery);
@@ -3624,9 +3640,15 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       for (const [productIndex, product] of inspectedProducts.entries()) {
         if (domesticSearchCanceled(generation) || searchWindow.isDestroyed()) throw new Error("DOMESTIC_SEARCH_CANCELED");
         try {
+          const retained = (source.recoveryProducts || []).find(p => p.url === product.url);
+          if (retained && stockObservationComplete(retained)
+            && Date.now() - Date.parse(retained.stockCheckedAt || '') < 30 * 60_000) {
+            products.push(retained); continue;
+          }
           let detailText = "";
           let detailIdentity = { titleText: "", labeledText: "", structuredCodes: [] };
           let detailLoaded = false;
+          let detailFailed = false;
           let stockEvidence = normalizeRenderedStockEvidence({ stockTexts: [product.stockText, product.purchaseLimitText].filter(Boolean), options: product.sizes || [] });
           try {
             const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
@@ -3668,9 +3690,12 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
               detailIdentity = identitySnapshot;
               detailLoaded = true;
             }
-            const observed = await collectRenderedProductStock(searchWindow, source.store, generation, onActivity);
+            const optionsCheckpoint = source.recoveryOptions?.[product.url];
+            const resumeOptions = optionsCheckpoint && Date.now() - Date.parse(optionsCheckpoint.checkedAt || '') < 30 * 60_000
+              ? optionsCheckpoint.options : [];
+            const observed = await collectRenderedProductStock(searchWindow, source.store, generation, onActivity, resumeOptions, optionsCheckpoint?.branches || [], product.url);
             if (observed.stockText || observed.purchaseLimitText || observed.sizes.length || observed.inStock !== null) stockEvidence = observed;
-          } catch {}
+          } catch { detailFailed = true; }
           if (product.detailArticleVerificationRequired) identityRequiredCount += 1;
           const detailArticleVerified = product.detailArticleVerificationRequired
             ? strictProductArticleIdentityMatch(detailIdentity, articleNumber) : false;
@@ -3683,6 +3708,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             || /^네이버\s/.test(String(product?.store || ""));
           if (product.detailArticleVerificationRequired && !detailArticleVerified && !titleFallbackVerified) {
             if (detailLoaded) identityMismatchCount += 1;
+            else incompleteDetails += 1;
             if (linkOnlySource) {
               products.push({
                 ...product,
@@ -3702,6 +3728,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
           if (isOverseasPurchaseProduct(evidence)) continue;
           if (isConsignmentOperatedProduct(evidence)) continue;
+          if (detailFailed || !stockObservationComplete(stockEvidence)) incompleteDetails += 1;
           const isSsg = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(String(product.url || ""));
           const detailClassification = isSsg
             ? classifySsgProductEvidence({ brand, url: product.url, text: evidence })
@@ -3751,7 +3778,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         candidateCount,
         naverChannelCounts,
         absenceConfirmed: analyzed.absenceConfirmed === true || authoritativeIdentityMismatch,
-        detailVerificationPending: candidateCount > 0 && products.length === 0 && !authoritativeIdentityMismatch,
+        detailVerificationPending: !authoritativeIdentityMismatch && (incompleteDetails > 0 || (candidateCount > 0 && products.length === 0)),
       };
     }
     if (source.store !== "브랜드 공식몰" || !Array.isArray(detailed?.products)) return detailed;
@@ -3819,8 +3846,10 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
   const discoveredProducts = [];
   let pendingProducts = [];
   const sources = [];
+  const optionCheckpoints = {...data.recoveryCheckpoint?.optionCheckpoints};
   const snapshot = () => ({
     ...data,
+    optionCheckpoints,
     products: mergeRetailerStockProducts([...(data.products || []), ...discoveredProducts, ...pendingProducts]),
     sources: [...sources, ...data.sources.slice(sources.length).map(source => ({
       ...source, count: 0, countVerified: false, absenceConfirmed: false,
@@ -3841,10 +3870,16 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
   // The complete domestic lookup is one sequential request again. A source
   // failure is recorded on that source, then the same request continues to
   // the next source without spawning module-specific state or retries.
-  for (const source of data.sources) {
+  for (const originalSource of data.sources) {
+    const source = {...originalSource,
+      recoveryProducts: data.recoveryCheckpoint?.products || [], recoveryOptions: optionCheckpoints};
     if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
     onProgress?.({ completed: sources.length, total: progressTotal, source: String(source.store || "판매처"), phase: "searching" });
     const resolvedSource = await (async () => {
+      if (source.officialStatus === OFFICIAL_DOMAIN_STATUS.NO_OFFICIAL_STORE) {
+        return {...source, count:0, countVerified:true, absenceConfirmed:true, searchCompleted:true,
+          verificationFailed:false, verificationPending:false};
+      }
       if (source.officialStatus && ![
         OFFICIAL_DOMAIN_STATUS.VERIFIED,
         OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED,
@@ -3859,9 +3894,15 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           for (let index = 0; index < products.length; index += 1) {
             if (products[index].store !== source.store) continue;
             onProgress?.({ completed: sources.length, total: progressTotal, source: "코오롱몰 재고 문구", phase: "searching" });
-            const stock = await refreshDomesticProductStock(products[index], generation, update => onProgress?.({
-              completed:sources.length,total:progressTotal,source:`코오롱몰 · 옵션 ${update.option || "확인"}`,phase:"searching",
-            }));
+            const retained = source.recoveryProducts.find(p => p.url === products[index].url);
+            if (retained && stockObservationComplete(retained) && Date.now() - Date.parse(retained.stockCheckedAt || '') < 30 * 60_000) {
+              products[index] = retained; data = {...data, products}; continue;
+            }
+            const savedOptions = optionCheckpoints[products[index].url];
+            const stock = await refreshDomesticProductStock(products[index], generation, async update => {
+              onProgress?.({completed:sources.length,total:progressTotal,source:`코오롱몰 · 옵션 ${update.option || "확인"}`,phase:"searching"});
+              if (update.optionCheckpoint?.url) { optionCheckpoints[update.optionCheckpoint.url] = update.optionCheckpoint; await onCheckpoint?.(snapshot()); }
+            }, savedOptions && Date.now() - Date.parse(savedOptions.checkedAt || '') < 30 * 60_000 ? savedOptions.options : [], savedOptions?.branches || []);
             if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
             products[index] = { ...products[index], ...stock };
             data = { ...data, products };
@@ -3936,7 +3977,8 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
             : `상품 ${update.completedProducts}/${update.totalProducts}`;
           onProgress?.({completed:sources.length, total:progressTotal,
             source:`${source.store || "판매처"} · ${stage}`, phase:"searching", query:queryAttempt.query});
-          if (Array.isArray(update.products)) await onCheckpoint?.(snapshot());
+          if (update.optionCheckpoint?.url) optionCheckpoints[update.optionCheckpoint.url] = update.optionCheckpoint;
+          if (Array.isArray(update.products) || update.optionCheckpoint) await onCheckpoint?.(snapshot());
         };
         const queryResult = await Promise.race([
           renderedSearchSourceResult(source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession, generation, activity),
@@ -4005,6 +4047,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         officialProductMissing: isOfficialStore && absenceConfirmed,
       };
     })();
+    delete resolvedSource.recoveryProducts; delete resolvedSource.recoveryOptions;
     sources.push(resolvedSource);
     await onCheckpoint?.(snapshot());
     onProgress?.({
@@ -4024,7 +4067,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     }
   }
   const products = mergeRetailerStockProducts([...(data.products || []), ...discoveredProducts]);
-  return { ...data, products, sources };
+  return { ...data, products, sources, optionCheckpoints };
 }
 
 function brandsWithOfficialDomainStatus(brands, registry) {
@@ -11896,6 +11939,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     };
   });
   ipcMain.handle("domestic:search", (_event, input) => {
+    const execute = (input, persistCheckpoint = async () => {}) => {
     const searchGeneration = domesticSearchGeneration;
     const progressState = { lastProgressAt: Date.now(), checkpoint: null };
     const sendDomesticProgress = (payload) => {
@@ -11920,6 +11964,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         const verifiedCandidate = await verifyAllStoresWithMusinsaImage(matchedCandidate, input || {});
         if (!domesticSearchCanceled(searchGeneration)) {
           progressState.checkpoint = { ...verifiedCandidate, technicalWarnings: [...technicalWarnings] };
+          await persistCheckpoint(progressState.checkpoint);
         }
       } catch (error) {
         rememberWarning("checkpoint_verification", error);
@@ -11969,7 +12014,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
       // Core retailer results are authoritative. Optional enrichment must never
       // turn a successful search into a full-row failure.
-      let matched = data;
+      let matched = {...data, recoveryCheckpoint: input?.recoveryCheckpoint};
       sendDomesticProgress({ completed: 0, total: data.sources.length + 2, source: "수집 결과 일치도", phase: "searching" });
       try {
         matched = await addMatchConfidence(matched, input || {});
@@ -12047,6 +12092,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         ok: true,
         data: {
           ...matched,
+          partial: input?.verifyLinkCounts === true && !domesticObservationComplete(matched),
           products,
           technicalWarnings,
           searchLearning: {
@@ -12064,7 +12110,22 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     }
     })();
     return withDomesticSearchHardTimeout(operation, searchGeneration, progressState);
+    };
+    if (!input?.recoveryJobId) return execute(input);
+    const generation = domesticSearchGeneration;
+    return recoveryCoordinator().run({jobId: input.recoveryJobId, productKey: input.recoveryProductKey,
+      canceled: () => domesticSearchCanceled(generation),
+      execute: (task, checkpoint) => execute({...task, requestId: input.requestId}, checkpoint),
+      onProgress: payload => {
+        if (!_event.sender.isDestroyed()) _event.sender.send("domestic-search:progress", {...payload, requestId: input.requestId});
+      },
+    }).catch(error => ({ok:false, message: error.message}));
   });
+  ipcMain.handle("domestic:recovery-start", async (_event, input) => {
+    try { return {ok:true, ...await recoveryCoordinator().start(input)}; }
+    catch (error) { return {ok:false, message:error.message}; }
+  });
+  ipcMain.handle("domestic:recovery-pending", () => recoveryCoordinator().pending());
   ipcMain.handle("domestic:cancel", () => cancelDomesticSearches());
   ipcMain.handle("domestic-price:lookup", (_event, input) => {
     const task = domesticPriceLookupQueue.then(

@@ -1,4 +1,10 @@
 import test from "node:test";
+import { mkdtemp, rm } from 'node:fs/promises';
+import { runInNewContext } from 'node:vm';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { JsonStore } from '../services/store.mjs';
+import { DomesticRecoveryCoordinator } from '../services/domestic-recovery.mjs';
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -355,3 +361,57 @@ test('numeric inventory is displayed per colour/size and partial coverage stays 
   assert.match(stock.textContent,/일부 옵션 재고 확인 필요/);
   assert.equal(f.overlay().hidden,true);
 });
+
+
+test('restarted real renderer restores successful rows and searches only the failed product', async t => {
+  const folder=await mkdtemp(join(tmpdir(),'around-g-ui-recovery-'));
+  t.after(()=>rm(folder,{recursive:true,force:true}));
+  const store=new JsonStore(folder);await store.load();
+  let coordinator=new DomesticRecoveryCoordinator(store,{delay:async()=>{}});
+  let interrupted=true;const calls=[];
+  const connect=f=>{
+    f.window.aroundG.startDomesticRecovery=async input=>({ok:true,...await coordinator.start(input)});
+    f.window.aroundG.searchDomestic=async input=>coordinator.run({jobId:input.recoveryJobId,productKey:input.recoveryProductKey,execute:async task=>{
+      calls.push(task.articleNumber);
+      if(interrupted&&task.articleNumber==='SR323UTS71')return {ok:false,message:'network interruption'};
+      return {ok:true,data:{products:[{store:'무신사',articleNumber:task.articleNumber,name:task.title,price:59000,url:'https://www.musinsa.com/products/'+task.articleNumber,stockVerified:true,stockStatus:'in_stock',stockText:'구매 가능',sizes:[{label:'95',inStock:true}]}],sources:[{store:'무신사',count:1,countVerified:true}]}};
+    }});
+  };
+  const first=createFixture(t);first.api.selectTwo();connect(first);await first.run();
+  assert.deepEqual(calls,['SR123UPS11-服','SR323UTS71','SR323UTS71']);
+  assert.match(first.status(),/일부 결과/);assert.equal(first.overlay().hidden,true);
+  const restartedStore=new JsonStore(folder);await restartedStore.load();
+  coordinator=new DomesticRecoveryCoordinator(restartedStore,{delay:async()=>{}});
+  interrupted=false;calls.length=0;
+  const second=createFixture(t);second.api.selectTwo();connect(second);await second.run();
+  assert.deepEqual(calls,['SR323UTS71']);assert.equal(second.overlay().hidden,true);assert.equal(second.api.busy(),false);
+  const details=[...second.window.document.querySelectorAll('.excel-verified-search-detail')];
+  assert.equal(details.length,2);assert.ok(details.every(row=>row.textContent.includes('59,000원')));
+  assert.match(second.status(),/검색을 완료/);assert.equal(coordinator.pending().length,0);
+  assert.equal(second.window.document.querySelector('#fixture-errors').textContent,'');
+});
+
+test('durable recovery errors are not retried by the renderer as a second whole search', async t=>{
+  const f=createFixture(t);let calls=0;
+  f.window.aroundG.startDomesticRecovery=async input=>({ok:true,id:'recovery',results:[],pendingKeys:input.products.map(p=>p.key)});
+  f.window.aroundG.searchDomestic=async()=>{calls++;return {ok:false,message:'disk failed'};};
+  await f.run();assert.equal(calls,1);assert.equal(f.overlay().hidden,true);assert.equal(f.api.busy(),false);
+  assert.match(f.status(),/검색 실패/);
+});
+
+
+for (const interruption of [{canceled:true},{error:'network'},{partial:true}]) {
+  test(`explorer resume cursor remains on interrupted item ${JSON.stringify(interruption)}`,async()=>{
+    const renderer=readFileSync(resolve(fixtureRoot,'src/renderer.js'),'utf8');
+    const body=renderer.slice(renderer.indexOf('async function runDomesticBatch('),renderer.indexOf('$("#domestic-search-all").addEventListener'));
+    const elements=new Map(),saved=[];
+    const context={options:{},DOMESTIC_BATCH_PROGRESS_KEY:'batch-progress',domesticBatchRunning:false,domesticBatchStopRequested:false,domesticBatchVerifyCounts:false,
+      domesticIdentitySearchCache:new Map(),domesticResults:new Map(),allExplorerProducts:[{articleNumber:'a'},{articleNumber:'b'}],currentExplorerProducts:[],selectedExplorerKeys:new Set(),
+      $:key=>{if(!elements.has(key))elements.set(key,{});return elements.get(key);},updateExplorerSelectionUi:()=>{},domesticKey:p=>p.articleNumber,
+      domesticBatchId:()=> 'batch',readDomesticBatchProgress:()=>saved.at(-1),restoreDomesticStockResults:async()=>{},clearSavedDomesticStockResults:async()=>{},
+      searchDomesticAt:async index=>index===0?{}:interruption,saveDomesticBatchProgress:value=>saved.push(value),
+      localStorage:{removeItem:()=>assert.fail('interrupted progress must remain')},window:{aroundG:{}}};
+    await runInNewContext(body+';runDomesticBatch()',context);
+    assert.equal(saved.at(-1).nextIndex,1);assert.equal(context.domesticBatchRunning,false);
+  });
+}

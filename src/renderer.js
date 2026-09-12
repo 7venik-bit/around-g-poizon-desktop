@@ -1193,6 +1193,7 @@ function refreshDomesticSearchRows() {
 
 function stopExcelPreviewSearch() {
   ++excelPreviewSearchRunId;
+  globalThis.aroundGActiveDomesticRecovery = null;
   activeDomesticProgressRequestId = "";
   selectedBrandDomesticQueueRunning = false;
   excelPreviewBatchSearching = false;
@@ -1374,6 +1375,11 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
   const identity = productCrossCheckIdentity(product);
   if (domesticIdentitySearchCache.has(identity)) return domesticIdentitySearchCache.get(identity);
   const input = domesticSearchInput(product, selectedDomesticSourceGroups(), verifyLinkCounts);
+  const recovery = globalThis.aroundGActiveDomesticRecovery;
+  if (recovery?.keys?.includes(identity)) {
+    input.recoveryJobId = recovery.id;
+    input.recoveryProductKey = identity;
+  }
   const runId = excelPreviewSearchRunId;
   input.requestId = `${runId}:${Date.now()}:${identity}`;
   activeDomesticProgressRequestId = input.requestId;
@@ -1416,7 +1422,7 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
     // A confirmed zero is returned as ok:true and must never be searched again.
     // Retry only a technical IPC/browser failure, once, so one transient error
     // is not copied to every size row sharing the same article number.
-    if (first?.ok || first?.canceled || first?.timedOut) return first;
+    if (input.recoveryJobId || first?.ok || first?.canceled || first?.timedOut) return first;
     await new Promise((resolve) => setTimeout(resolve, 700));
     if (runId !== excelPreviewSearchRunId) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
     return run();
@@ -1425,6 +1431,45 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
   const response = await task;
   if (!response?.ok && domesticIdentitySearchCache.get(identity) === task) domesticIdentitySearchCache.delete(identity);
   return response;
+}
+
+async function prepareDomesticRecovery(products, scope) {
+  const preparationRunId = excelPreviewSearchRunId;
+  globalThis.aroundGActiveDomesticRecovery = null;
+  if (!window.aroundG.startDomesticRecovery) return null;
+  const sourceGroups = selectedDomesticSourceGroups();
+  const result = await window.aroundG.startDomesticRecovery({scope, sourceGroups,
+    products: products.map(product => ({key:productCrossCheckIdentity(product), product,
+      input:domesticSearchInput(product, sourceGroups, true)}))});
+  if (preparationRunId !== excelPreviewSearchRunId) return null;
+  if (!result?.ok) throw new Error(result?.message || "검색 복구 기록을 저장하지 못했습니다.");
+  globalThis.aroundGActiveDomesticRecovery = {id:result.id, keys:products.map(productCrossCheckIdentity)};
+  return result;
+}
+
+async function showDomesticRecoveryNotice(filePath) {
+  if (!window.aroundG.pendingDomesticRecovery) return;
+  const jobs = await window.aroundG.pendingDomesticRecovery().catch(() => []);
+  if (brandImportPathKey(activeExcelPreview?.file?.path || '') !== brandImportPathKey(filePath)) return;
+  document.querySelector('#domestic-recovery-notice')?.remove();
+  const pending = jobs.filter(job => brandImportPathKey(job.scope) === brandImportPathKey(filePath));
+  if (!pending.length) return;
+  const notice = document.createElement('div');
+  notice.id = 'domestic-recovery-notice'; notice.className = 'status';
+  notice.append(document.createTextNode('미완료 국내 검색이 보관되어 있습니다. '));
+  const button = document.createElement('button'); button.type = 'button'; button.textContent = '미완료 검색 이어하기';
+  button.addEventListener('click', () => {
+    if (excelPreviewBatchSearching) return;
+    selectedExcelPreviewProducts.clear();
+    for (const job of pending) for (const item of job.products) {
+      const product = item.product;
+      const key = excelPreviewStableSelectionKey(product, activeExcelPreview.file);
+      excelPreviewProductCache.set(key, product); selectedExcelPreviewProducts.add(key);
+    }
+    updateExcelPreviewSelectionUi(excelPreviewPageKeys);
+    notice.remove(); $('#excel-preview-search-selected')?.click();
+  });
+  notice.append(button); $('#excel-filter-status')?.after(notice);
 }
 
 function domesticSearchInput(product, sourceGroups = selectedDomesticSourceGroups(), verifyLinkCounts = true) {
@@ -1505,6 +1550,7 @@ function restoreSavedExcelSearchResults(filePath = "") {
   // Keep live results only for the current app session, separated by workbook.
   // This lets a selected-brand queue move to the next Excel file without
   // discarding the rightmost-column results from earlier brands.
+  void showDomesticRecoveryNotice(filePath);
   const saved = excelPreviewSearchResultsByPath.get(brandImportPathKey(filePath));
   if (saved) {
     for (const [key, value] of saved) excelPreviewSearchResults.set(key, value);
@@ -1540,6 +1586,8 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
     showDomesticSearchOverlay(startedAt, 0, 1, product);
     updateExcelPreviewSelectionUi(excelPreviewPageKeys);
     refreshDomesticSearchRows();
+    await prepareDomesticRecovery([product], file?.path || 'single-product');
+    if (runId !== excelPreviewSearchRunId) return;
     const response = await cachedDomesticSearch(product, true);
     if (runId !== excelPreviewSearchRunId) return;
     const result = response?.ok ? response.data : { products: [], sources: [], error: response?.message || "검색 응답이 없습니다." };
@@ -1556,6 +1604,7 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
     if (runId === excelPreviewSearchRunId) {
       excelPreviewBatchSearching = false;
       activeDomesticProgressRequestId = "";
+      globalThis.aroundGActiveDomesticRecovery = null;
       hideDomesticSearchOverlay();
       updateExcelPreviewSelectionUi(excelPreviewPageKeys);
     }
@@ -3702,7 +3751,9 @@ async function runDomesticBatch(options = {}) {
     $("#domestic-batch-status").textContent = selectedOnly
       ? `국내 재고 및 네이버 결과 확인 ${processed + 1}/${pendingIndexes.length}`
       : `국내 재고 검색 ${index + 1}/${searchableIndexes.length} · 발견 결과를 즉시 표시하고 있습니다.`;
-    await searchDomesticAt(index, batchProducts);
+    const searched = await searchDomesticAt(index, batchProducts);
+    if (searched?.canceled || domesticBatchStopRequested) { domesticBatchStopRequested = true; break; }
+    if (searched?.error || searched?.partial) { domesticBatchStopRequested = true; break; }
     processed += 1;
     if (!selectedOnly) saveDomesticBatchProgress({ batchId, nextIndex: index + 1, total: searchableIndexes.length, complete: false });
   }
@@ -4129,7 +4180,6 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   // Refresh only the products selected for this run. Completed results for
   // other rows and brands remain visible instead of disappearing whenever the
   // operator starts the next selection.
-  for (const key of keys) excelPreviewSearchResults.delete(key);
   domesticIdentitySearchCache.clear();
   if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
   excelPreviewBatchSearching = true;
@@ -4147,6 +4197,14 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       showDomesticSearchOverlay(batchStartedAt, completedCount, keys.length, currentProduct);
     };
     renderBatchSearchProgress(0);
+    const recovery = await prepareDomesticRecovery(keys.map(key => excelPreviewProductCache.get(key)), activeExcelPreview?.file?.path || 'product-list');
+    if (runId !== excelPreviewSearchRunId) return;
+    const recovered = new Map((recovery?.results || []).map(item => [item.key, item.result]));
+    for (const key of keys) {
+      const saved = recovered.get(productCrossCheckIdentity(excelPreviewProductCache.get(key)));
+      if (saved?.products?.length || saved?.sources?.length) excelPreviewSearchResults.set(key, saved);
+      else excelPreviewSearchResults.delete(key);
+    }
     // Search each distinct product once, then write that result to every
     // selected Excel row for the same article. This prevents the first row from
     // being the only visible result while still avoiding duplicate site searches.
@@ -4161,6 +4219,8 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     for (const groupKeys of groups.values()) {
       if (runId !== excelPreviewSearchRunId) return;
       const product = excelPreviewProductCache.get(groupKeys[0]);
+      const saved = recovered.get(productCrossCheckIdentity(product));
+      if (saved?.recovery?.status === 'complete') { completed += groupKeys.length; continue; }
       for (const key of groupKeys) {
         excelPreviewSearchResults.set(key, { loading: true, startedAt: batchStartedAt, products: [], sources: [] });
       }
@@ -4180,6 +4240,8 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       completed += groupKeys.length;
       if (completed < keys.length) renderBatchSearchProgress(completed);
     }
+    refreshDomesticSearchRows();
+    document.querySelector('#domestic-recovery-notice')?.remove();
     $("#excel-filter-status").textContent = partial
       ? `선택 상품 ${keys.length.toLocaleString("ko-KR")}개 처리 · ${partial.toLocaleString("ko-KR")}개 일부 결과. 완료된 판매처 결과를 표시했습니다.`
       : failed
@@ -4196,6 +4258,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     if (runId === excelPreviewSearchRunId) {
       excelPreviewBatchSearching = false;
       activeDomesticProgressRequestId = "";
+      globalThis.aroundGActiveDomesticRecovery = null;
       hideDomesticSearchOverlay();
       updateExcelPreviewSelectionUi(excelPreviewPageKeys);
     }

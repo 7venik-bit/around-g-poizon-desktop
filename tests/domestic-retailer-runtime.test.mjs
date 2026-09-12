@@ -7,6 +7,7 @@ import { JSDOM } from 'jsdom';
 import * as relay from '../relay/domestic-search.mjs';
 import * as naver from '../services/naver-fashiontown-result.mjs';
 import * as matcher from '../services/matcher.mjs';
+import * as recovery from '../services/domestic-recovery.mjs';
 import * as brandOfficial from '../services/brand-official-search.mjs';
 import * as officialAdapters from '../services/official-mall-adapters.mjs';
 
@@ -79,13 +80,13 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     }
   }
   const sandbox = {
-    ...relay, ...naver, ...matcher, ...brandOfficial, ...officialAdapters, BrowserWindow, URL, console,
+    ...relay, ...naver, ...matcher, ...recovery, ...brandOfficial, ...officialAdapters, BrowserWindow, URL, console,
     Date: class extends Date { static now() { return now; } },
     setTimeout: setTimer, clearTimeout: clearTimer, wait: ms => new Promise(r => setTimer(r, ms)),
     domesticSearchGeneration: 0, domesticSearchCanceled: () => false,
     store: { data: { settings: {} }, snapshot: () => ({ settings: {} }), setSettings: async () => {} },
     activeDomesticSearchWindows: new Set(), APP_ICON_PATH: '', DOMESTIC_SEARCH_PARTITION: 'test',
-    OFFICIAL_DOMAIN_STATUS: { VERIFIED: 'verified', SEARCH_UNSUPPORTED: 'unsupported' },
+    OFFICIAL_DOMAIN_STATUS: { VERIFIED: 'verified', SEARCH_UNSUPPORTED: 'unsupported', NO_OFFICIAL_STORE: 'no_official_store' },
     // Network detail adapters are controlled; the actual browser scripts,
     // card parsers, source deadline and aggregation execute unchanged.
     verifyApprovedNaverDomesticProducts: async products => ({ products: products.map(p => ({ ...p, domesticSellerVerified: true, articleNumberVerified: true })), candidateCount: products.length, checkedCount: products.length, failedCount: 0 }),
@@ -652,4 +653,25 @@ test('stock from a mismatched detail never overrides the unresolved product iden
   const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[officialSource]},'SR123UPS11','데상트','카라 셔츠'));
   assert.equal(result.products.length,1);
   assert.equal(result.products[0].inStock,null);assert.equal(result.products[0].stockVerified,false);assert.equal(result.products[0].sizes.length,0);
+});
+
+
+test('verified lack of a Korean official store completes while unresolved discovery stays pending',async t=>{
+  const f=fixture(t);
+  for(const [status,complete] of [['no_official_store',true],['pending',false]]) {
+    const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{store:'브랜드 공식몰',officialStatus:status,renderCount:false}]},'SR123UPS11','데상트','카라 셔츠'));
+    assert.equal(recovery.domesticObservationComplete(result),complete);
+  }
+  assert.equal(f.navigations.length,0);
+});
+
+test('stock option checkpoints use the stable product URL across option navigation',async t=>{
+  const f=fixture(t);const w=new f.context.BrowserWindow();
+  const original='https://www.ssg.com/item/itemView.ssg?itemId=100';
+  await w.loadURL(original+'&color=black');
+  w.dom.window.document.body.innerHTML='<main><select name="size"><option value="95">95</option><option value="100" disabled>100 품절</option></select></main>';
+  const checkpoints=[];
+  await f.drive(f.context.collectRenderedProductStock(w,'SSG',0,u=>checkpoints.push(u.optionCheckpoint),[],[],original));
+  assert.equal(checkpoints.length,2);assert.ok(checkpoints.every(c=>c.url===original));
+  assert.equal(checkpoints.at(-1).options[1].inStock,false);
 });

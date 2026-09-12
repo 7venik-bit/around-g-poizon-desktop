@@ -103,6 +103,8 @@ contextBridge.exposeInMainWorld("aroundG", {
   savePopularWorkflow: (input) => ipcRenderer.invoke("popular:workflow-save", input),
   queryExplorer: (input) => ipcRenderer.invoke("explorer:query", input),
   cancelCategorySearch: () => ipcRenderer.invoke("explorer:cancel-category"),
+  startDomesticRecovery: (input) => ipcRenderer.invoke("domestic:recovery-start", input),
+  pendingDomesticRecovery: () => ipcRenderer.invoke("domestic:recovery-pending"),
   searchDomestic: (input) => ipcRenderer.invoke("domestic:search", input),
   onDomesticSearchProgress: (callback) => {
     const handler = (_event, payload) => callback(payload);

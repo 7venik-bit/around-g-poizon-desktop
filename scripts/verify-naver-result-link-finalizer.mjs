@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 const required = [
+  "recoveryProducts: source.recoveryProducts, recoveryOptions: source.recoveryOptions",
+  "const technicalPending = approval.failedCount > 0 || approvedProducts.some(product => !stockObservationComplete(product));",
   'import { createDomesticSearchLinkResult, finalizeNaverFashionTownResult, isNaverRenderedResultReady } from "./services/naver-fashiontown-result.mjs";',
   "if (isNaverRenderedResultReady(state, exactQuery)) return true;",
   "verificationStage,",

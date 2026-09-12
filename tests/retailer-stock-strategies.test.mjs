@@ -34,7 +34,7 @@ test('dependent options are reread for every colour, retaining same-sized distin
   });
   assert.deepEqual(selected,['black','white']);
   assert.deepEqual(result.options.map(o=>[o.label,o.inStock]),[['블랙 / 95',true],['블랙 / 100 품절',false],['화이트 / 95',false]]);
-  assert.equal(result.complete,true);assert.equal(progress.length,3);
+  assert.equal(result.complete,true);assert.equal(progress.at(-1).completed,3);assert.deepEqual(progress.at(-1).branches,['블랙','화이트']);
 });
 
 test('option failures preserve already collected branches and never claim complete coverage', async () => {
@@ -54,4 +54,29 @@ test('fresh detail stock replaces the search API result, while unknown detail pr
   assert.equal(mergeRetailerStockProducts([api,{...api,inStock:false,stockText:'품절',sizes:[]}])[0].inStock,false);
   const preserved=mergeRetailerStockProducts([api,{store:'무신사',id:'1',inStock:null,sizes:[],stockText:''}])[0];
   assert.equal(preserved.sizes[0].quantity,3);
+});
+
+
+test('interrupted dependent options resume the failed colour only, preserving platform quantities', async () => {
+  let color='',fail=true; const selected=[]; let checkpoint;
+  const controls={
+    read:async()=>({groups:[{options:[{label:'블랙',value:'black'},{label:'화이트',value:'white'}]},
+      {options:color==='black'?[{label:'95',inStock:true,quantity:3},{label:'100 품절',inStock:false,quantity:0}]:[{label:'95 SOLD OUT',inStock:false}]}]}),
+    select:async(_g,o)=>{color=o.value;selected.push(color);},
+    settle:async()=>{if(fail&&color==='white')throw new Error('network');},
+    onProgress:update=>{checkpoint=structuredClone(update);},
+  };
+  const first=await collectNativeStockVariants(controls);
+  assert.equal(first.complete,false);assert.deepEqual(checkpoint.branches,['블랙']);
+  const saved=structuredClone(checkpoint);selected.length=0;fail=false;
+  const resumed=await collectNativeStockVariants({...controls,resumeOptions:saved.options,resumeBranches:saved.branches});
+  assert.deepEqual(selected,['white']);assert.equal(resumed.complete,true);
+  assert.deepEqual(resumed.options.map(o=>[o.label,o.inStock,o.quantity]),[['블랙 / 95',true,3],['블랙 / 100 품절',false,0],['화이트 / 95 SOLD OUT',false,undefined]]);
+  assert.equal(resumed.options[0].observedAt,saved.options[0].observedAt);
+});
+
+test('a checkpoint without its saved options never skips a colour',async()=>{
+  let selected=0;
+  const result=await collectNativeStockVariants({read:async()=>({groups:[{options:[{label:'블랙'}]},{options:[{label:'95',inStock:true}]}]}),select:async()=>selected++,settle:async()=>{},resumeBranches:['블랙']});
+  assert.equal(selected,1);assert.equal(result.options.length,1);
 });

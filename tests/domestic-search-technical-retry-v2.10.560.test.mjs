@@ -10,7 +10,7 @@ test("one technical domestic-search failure retries once without repeating a con
     renderer.indexOf("function domesticSearchInput"),
   );
   assert.match(source, /const first = await run\(\)/);
-  assert.match(source, /if \(first\?\.ok \|\| first\?\.canceled \|\| first\?\.timedOut\) return first/);
+  assert.match(source, /if \(input\.recoveryJobId \|\| first\?\.ok \|\| first\?\.canceled \|\| first\?\.timedOut\) return first/);
   assert.match(source, /setTimeout\(resolve, 700\)/);
   assert.match(source, /return run\(\)/);
 });

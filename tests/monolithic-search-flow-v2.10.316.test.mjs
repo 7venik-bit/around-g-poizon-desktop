@@ -15,7 +15,7 @@ test("국내 검색은 분리 모듈 없이 한 순차 흐름으로 실행한다
   await assert.rejects(access(new URL("../services/domestic-search-modules/index.mjs", import.meta.url)));
   assert.doesNotMatch(relay, /buildDomesticSearchPlan|requestedModules|source\.module/);
   assert.match(relay, /const sources = \[/);
-  assert.match(main, /for \(const source of data\.sources\)/);
+  assert.match(main, /for \(const originalSource of data\.sources\)/);
   assert.doesNotMatch(main, /domestic-search:module-status/);
   assert.doesNotMatch(preload, /onDomesticModuleStatus/);
   assert.doesNotMatch(renderer, /domestic-module:retry|resetDomesticModuleLamps|moduleIds/);

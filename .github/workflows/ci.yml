@@ -25,6 +25,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Source-contract tests run before presentation/release transformations.
+      # Patched runtime, renderer and category tests remain mandatory below.
+      - name: Run full source regression suite
+        run: npm test
+
       - name: Apply SSG exact-result verdict restore
         run: node scripts/patch-ssg-verdict-restore.mjs
 
@@ -107,11 +112,7 @@ jobs:
         run: node scripts/verify-popular-full-rank-scroll.mjs
 
       - name: Test retailer capture and completion with final patched source
-        run: node --test tests/domestic-retailer-runtime.test.mjs tests/domestic-completion-lifecycle.test.mjs tests/retailer-stock-strategies.test.mjs tests/brand-official-search.test.mjs
+        run: node --test tests/domestic-retailer-runtime.test.mjs tests/domestic-completion-lifecycle.test.mjs tests/retailer-stock-strategies.test.mjs tests/brand-official-search.test.mjs tests/domestic-recovery.test.mjs tests/store-save-recovery.test.mjs
 
       - name: Test local category search and explicit POIZON review separation
         run: node --test tests/category-excel-runtime.test.mjs tests/favorite-category-search-v2.10.294.test.mjs tests/live-poizon-crosscheck.test.mjs
-
-      - name: Run legacy full test suite
-        continue-on-error: true
-        run: npm test

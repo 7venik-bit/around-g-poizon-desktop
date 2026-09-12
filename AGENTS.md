@@ -20,6 +20,10 @@ These instructions apply to ChatGPT Work, Codex, and Cursor when working in this
 - Resolve an unlinked brand's official search on demand using its catalog identity and verified page evidence. Keep transient discovery failures pending; preserve other retailers and never invoke POIZON verification from this path.
 - Match official aliases exactly and prefer the actual merchant domain over a brand label. Keep hidden restock widgets and related colour SKUs out of the current product's inventory.
 
+- Persist unfinished domestic work per product and retailer, including completed option branches. Resume failed work; recheck inventory older than 30 minutes and start completed new searches fresh.
+- Commit recovery completion only after its file save succeeds. A storage or retailer failure must remain pending and must not discard successful observations.
+- Do not retry authentication or access restrictions automatically. A complete result requires verified stock coverage or authoritative absence, not merely a successful product search.
+
 ## Safe development workflow
 
 - Start each change from the latest `main` on a short-lived branch.
