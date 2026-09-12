@@ -20,7 +20,7 @@ test("a stalled domestic search stops after the main-process deadline", () => {
   assert.match(cachedSearch, /국내 판매처 검색 응답이 없어 강제 종료했습니다/);
 });
 
-test("each accuracy fallback has a bounded inactivity window refreshed by real detail progress", () => {
+test("each accuracy fallback has an absolute window that option progress cannot extend", () => {
   const start = main.indexOf("async function addRenderedSearchCounts(");
   const end = main.indexOf("async function verifyAllStoresWithMusinsaImage(", start);
   const renderedCounts = main.slice(start, end);
@@ -29,6 +29,7 @@ test("each accuracy fallback has a bounded inactivity window refreshed by real d
   assert.match(renderedCounts, /sourceTimeoutId = setTimeout\(expire, 90_000\)/);
   assert.ok(renderedCounts.indexOf('const timeoutResult') > renderedCounts.indexOf('for (let queryAttemptIndex'));
   assert.match(renderedCounts, /const activity = async update =>/);
+  assert.doesNotMatch(renderedCounts, /clearTimeout\(sourceTimeoutId\)[\s\S]{0,80}setTimeout\(expire, 90_000\)/);
   assert.match(renderedCounts, /products: \[\.\.\.pendingProducts\]/);
   assert.match(renderedCounts, /renderedSearchFailure\("page_load_timeout"/);
   assert.match(renderedCounts, /verificationStage: "source_timeout"/);
@@ -39,6 +40,7 @@ test("domestic search IPC has a hard timeout before rendered verification", () =
   assert.match(main, /const DOMESTIC_SEARCH_HARD_TIMEOUT_MS = 2 \* 60 \* 1000/);
   assert.match(main, /async function withDomesticSearchHardTimeout\(operation, generation, progressState/);
   assert.match(main, /Promise\.race\(\[operation, timeoutResult\]\)/);
+  assert.doesNotMatch(main.slice(main.indexOf('async function withDomesticSearchHardTimeout'), main.indexOf('const DOMESTIC_LOGIN_SOURCES')), /progressState\.lastProgressAt/);
   assert.match(main, /return withDomesticSearchHardTimeout\(operation, searchGeneration, progressState\)/);
   assert.match(main, /if \(!domesticSearchCanceled\(generation\)\) cancelDomesticSearches\(\)/);
 });

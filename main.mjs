@@ -322,16 +322,12 @@ function domesticSearchCanceled(generation) {
 async function withDomesticSearchHardTimeout(operation, generation, progressState = { lastProgressAt: Date.now(), checkpoint: null }) {
   let timeoutId;
   const timeoutResult = new Promise((resolve) => {
-    const checkProgress = () => {
-      const remaining = DOMESTIC_SEARCH_HARD_TIMEOUT_MS - (Date.now() - progressState.lastProgressAt);
-      if (remaining > 0) {
-        timeoutId = setTimeout(checkProgress, remaining);
-        return;
-      }
-      // Only a lack of real stage progress is a stall. Sequential, thorough
-      // retailer searches are allowed to exceed two minutes in total.
+    timeoutId = setTimeout(() => {
+      // This is an absolute per-product deadline. Option progress must not
+      // restart it: a retailer exposing many slow variants previously allowed
+      // one product to keep the whole batch alive for more than an hour.
       if (!domesticSearchCanceled(generation)) cancelDomesticSearches();
-      const message = "검색 진행 응답이 2분 동안 없어 중단했습니다. 완료된 판매처 결과를 표시합니다.";
+      const message = "상품 검색 제한시간 2분이 지나 중단했습니다. 완료된 판매처와 옵션 결과를 저장하고 다음 상품으로 이동합니다.";
       resolve(progressState.checkpoint ? {
         ok: true,
         timedOut: true,
@@ -341,8 +337,7 @@ async function withDomesticSearchHardTimeout(operation, generation, progressStat
         timedOut: true,
         message: "검색 진행 응답이 2분 동안 없어 중단했습니다. 아직 확인된 결과가 없습니다.",
       });
-    };
-    timeoutId = setTimeout(checkProgress, DOMESTIC_SEARCH_HARD_TIMEOUT_MS);
+    }, DOMESTIC_SEARCH_HARD_TIMEOUT_MS);
   });
   try {
     return await Promise.race([operation, timeoutResult]);
@@ -3949,8 +3944,8 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       // the completed prior search returned no product; browser/security or
       // detail-verification failures must not repeat the same query or advance
       // as though the product were absent.
-        // The deadline measures inactivity, not total useful work. Each
-        // completed option/product retains a checkpoint and refreshes it.
+        // Bound the whole retailer attempt. Progress is checkpointed, but a
+        // long list of slowly responding variants cannot extend this limit.
         let sourceTimeoutId, stopped = false, expire;
         pendingProducts = [];
         const timeoutResult = new Promise(resolve => {
@@ -3970,8 +3965,6 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         });
         const activity = async update => {
           if (stopped || domesticSearchCanceled(generation)) return;
-          clearTimeout(sourceTimeoutId);
-          sourceTimeoutId = setTimeout(expire, 90_000);
           if (Array.isArray(update.products)) pendingProducts = update.products;
           const stage = update.option ? `옵션 ${update.option}`
             : `상품 ${update.completedProducts}/${update.totalProducts}`;
