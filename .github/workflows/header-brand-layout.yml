@@ -7,6 +7,7 @@ on:
       - 'main.mjs'
       - 'services/domestic-stock.mjs'
       - 'services/retailer-stock-strategies.mjs'
+      - 'services/domestic-recovery.mjs'
       - 'services/brand-official-search.mjs'
       - 'scripts/patch-*.mjs'
       - 'scripts/test-header-brand-layout.cjs'

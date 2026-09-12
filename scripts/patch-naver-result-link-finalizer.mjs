@@ -207,10 +207,11 @@ replaceOnce(
         requireArticleIdentity,
         generation,
         onActivity,
+        recoveryProducts: source.recoveryProducts, recoveryOptions: source.recoveryOptions,
       });
       const approvedProducts = approval.products;
       const approved = approvedProducts.length > 0;
-      const technicalPending = !approved && approval.failedCount > 0;
+      const technicalPending = approval.failedCount > 0 || approvedProducts.some(product => !stockObservationComplete(product));
       const authoritativelyRejected = !approved
         && approval.candidateCount > 0
         && approval.checkedCount === approval.candidateCount
@@ -218,7 +219,7 @@ replaceOnce(
       const absenceConfirmed = finalized.absenceConfirmed === true || authoritativelyRejected;
       return {
         ...finalized,
-        count: technicalPending ? null : approvedProducts.length,
+        count: technicalPending && !approved ? null : approvedProducts.length,
         products: approvedProducts,
         presenceConfirmed: approved,
         absenceConfirmed,

@@ -78,32 +78,46 @@ export function mergeRetailerStockProducts(products = []) {
 
 // Traverse dependent native selects through their normal change events. Every
 // branch is reread after selection; a colour must never be reported as a size.
-export async function collectNativeStockVariants({read,select,settle,onProgress=()=>{},canceled=()=>false,maxCombinations=1000}) {
-  const rows=[],seen=new Set();let complete=true,reason='';
+export async function collectNativeStockVariants({read,select,settle,onProgress=()=>{},canceled=()=>false,maxCombinations=1000,resumeOptions=[],resumeBranches=[]}) {
+  const rows=[],seen=new Set(),branches=new Set();let complete=true,reason='';
+  const retained=new Map(resumeOptions.filter(o=>typeof o.inStock==='boolean').map(o=>[(o.optionPath||o.label.split(' / ')).join('\u0000'),o]));
+  const finished=new Set(resumeBranches);
+  const emit=async(label,path)=>onProgress({completed:rows.length,label,options:structuredClone(rows),branches:[...branches],path});
+  const add=option=>{const key=option.optionPath.join('\u0000');if(!seen.has(key)){seen.add(key);rows.push(option);}};
   const visit=async(prefix,depth)=>{
     if(canceled())throw new Error('DOMESTIC_SEARCH_CANCELED');
-    const state=await read(depth);
-    const groups=state.groups||[];
-    const group=groups[depth];
-    if(!group){if(depth){complete=false;reason='options_not_loaded';}return;}
-    if(depth>5){complete=false;reason='option_depth_limit';return;}
+    const state=await read(depth),groups=state.groups||[],group=groups[depth];
+    if(!group){if(depth){complete=false;reason='options_not_loaded';return false;}return true;}
+    if(depth>5){complete=false;reason='option_depth_limit';return false;}
     const choices=(group.options||[]).filter(o=>!o.placeholder);
-    if(!choices.length){complete=false;reason='options_not_loaded';return;}
+    if(!choices.length){complete=false;reason='options_not_loaded';return false;}
+    let branchComplete=true;
     for(const option of choices){
       if(canceled())throw new Error('DOMESTIC_SEARCH_CANCELED');
-      if(rows.length>=maxCombinations){complete=false;reason='option_count_limit';return;}
-      const path=[...prefix,option.label];
+      if(rows.length>=maxCombinations){complete=false;reason='option_count_limit';return false;}
+      const path=[...prefix,option.label],key=path.join('\u0000'),label=path.join(' / ');
       const leaf=depth===groups.length-1;
       if(leaf||option.inStock===false){
-        const label=path.join(' / '),key=path.join('\u0000');
-        if(!seen.has(key)){seen.add(key);rows.push({...option,label});await onProgress({completed:rows.length,label});}
+        const previous=retained.get(key);
+        add({...previous,...option,label,optionPath:path,observedAt:previous?.observedAt||new Date().toISOString()});
+        await emit(label,path);
+      }else if(finished.has(key)&&[...retained.keys()].some(savedKey=>savedKey.startsWith(key+'\u0000'))){
+        // These options were durably captured before interruption. Reuse the
+        // entire successful colour branch without selecting/loading it again.
+        for(const [savedKey,saved] of retained) if(savedKey.startsWith(key+'\u0000'))add(saved);
+        branches.add(key);await emit(label,path);
       }else{
-        try { if(group.kind!=='static'){await select(group,option);await settle();}await visit(path,depth+1); }
-        catch(error) { if(canceled())throw error;complete=false;reason='options_not_loaded'; }
+        try {
+          if(group.kind!=='static'){await select(group,option);await settle();}
+          const done=await visit(path,depth+1);
+          if(done){branches.add(key);await emit(label,path);}else branchComplete=false;
+        } catch(error) {if(canceled())throw error;complete=false;branchComplete=false;reason='options_not_loaded';}
       }
     }
+    return branchComplete;
   };
-  await visit([],0);return {options:rows,complete,reason};
+  try {await visit([],0);}catch(error){error.stockCheckpoint={options:rows,branches:[...branches],complete:false,reason:'canceled'};throw error;}
+  return {options:rows,branches:[...branches],complete,reason};
 }
 
 // Serialized into the retailer document. No application globals or requests.

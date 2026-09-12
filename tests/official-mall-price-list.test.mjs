@@ -29,7 +29,7 @@ test("packaged path opens exact official product details and captures stock word
 
   assert.doesNotMatch(patchSource, /const directOfficialResultLink/);
   assert.doesNotMatch(mainSource, /브랜드 공식몰\$\|네이버/);
-  assert.match(mainSource, /collectRenderedProductStock\(searchWindow, source\.store, generation, onActivity\)/);
+  assert.match(mainSource, /collectRenderedProductStock\(searchWindow, source\.store, generation, onActivity, resumeOptions, optionsCheckpoint\?\.branches \|\| \[\], product\.url\)/);
   assert.match(mainSource, /retailerStockStrategy\(\{store: storeName, url: searchWindow\.webContents\.getURL\(\)\}\)/);
   assert.match(mainSource, /stockEvidence = normalizeRenderedStockEvidence/);
   assert.match(mainSource, /if \(!submitted && !interactiveOfficialSearch\)/);

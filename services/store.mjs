@@ -8,6 +8,7 @@ const EMPTY = {
   brandVerifications: [],
   categorySearches: [],
   domesticSearches: [],
+  domesticRecoveryJobs: [],
   ledger: [],
   orders: [],
   stockWatches: [],
@@ -73,12 +74,15 @@ export class JsonStore {
   }
 
   save() {
-    this.queue = this.queue.then(async () => {
+    const pendingSave = this.queue.then(async () => {
       const temporary = `${this.path}.tmp`;
       await writeFile(temporary, JSON.stringify(this.data, null, 2), "utf8");
       await replaceWithRetry(temporary, this.path);
     });
-    return this.queue;
+    // Report this write's failure to its caller, while allowing later writes
+    // to run once a temporary filesystem problem has cleared.
+    this.queue = pendingSave.catch(() => {});
+    return pendingSave;
   }
 
   list(collection) {
@@ -96,6 +100,33 @@ export class JsonStore {
     else rows.unshift(next);
     await this.save();
     return structuredClone(next);
+  }
+
+  upsertCommitted(collection, item) {
+    const submitted = structuredClone(item);
+    const pendingSave = this.queue.then(async () => {
+      const snapshot = structuredClone(this.data);
+      const rows = snapshot[collection];
+      if (!Array.isArray(rows)) throw new Error("UNKNOWN_COLLECTION");
+      const id = submitted.id || crypto.randomUUID();
+      const index = rows.findIndex(row => row.id === id);
+      const next = { ...(index >= 0 ? rows[index] : {}), ...submitted, id,
+        updatedAt: new Date().toISOString() };
+      if (index >= 0) rows[index] = next;
+      else rows.unshift(next);
+      const temporary = `${this.path}.tmp`;
+      await writeFile(temporary, JSON.stringify(snapshot, null, 2), "utf8");
+      await replaceWithRetry(temporary, this.path);
+      // Ordinary writes may have changed settings or other rows while the
+      // filesystem was busy. Publish only the row that was just committed.
+      const currentRows = this.data[collection];
+      const currentIndex = currentRows.findIndex(row => row.id === id);
+      if (currentIndex >= 0) currentRows[currentIndex] = { ...currentRows[currentIndex], ...next };
+      else currentRows.unshift(next);
+      return structuredClone(next);
+    });
+    this.queue = pendingSave.catch(() => {});
+    return pendingSave;
   }
 
   async bulkUpsert(collection, items) {

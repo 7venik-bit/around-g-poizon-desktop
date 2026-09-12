@@ -249,6 +249,8 @@
       </div>`);
     }
 
+    const checkedAt = result.recovery?.checkedAt;
+    const timestamp = checkedAt ? `<div class="domestic-inline-purchase-limit">재고 확인 시각: ${safeText(new Date(checkedAt).toLocaleString('ko-KR'))}</div>` : '';
     const warningCount = Array.isArray(result.technicalWarnings) ? result.technicalWarnings.length : 0;
     const warning = result.partial
       ? `<div class="domestic-inline-warning">${safeText(result.message || "일부 판매처 검색이 중단되어 완료된 결과를 표시합니다.")}</div>`
@@ -256,8 +258,8 @@
       ? `<div class="domestic-inline-warning">일부 판매처 추가 확인 실패 · 확보된 검색 결과를 표시합니다.</div>`
       : "";
     return rows.length
-      ? `${warning}<div class="domestic-inline-results"><div class="domestic-inline-head"><span>판매처</span><span>상품명</span><span>사이즈·재고</span><span>품번</span><span>가격</span><span>링크</span></div>${rows.join("")}</div>`
-      : `<div class="domestic-inline-empty">일치하는 국내 판매 상품 없음</div>`;
+      ? `${warning}${timestamp}<div class="domestic-inline-results"><div class="domestic-inline-head"><span>판매처</span><span>상품명</span><span>사이즈·재고</span><span>품번</span><span>가격</span><span>링크</span></div>${rows.join("")}</div>`
+      : `${warning}${timestamp}<div class="domestic-inline-empty">${result.partial ? "재고 확인이 끝나지 않았습니다. 미완료 검색을 이어갈 수 있습니다." : "일치하는 국내 판매 상품 없음"}</div>`;
   }
 
   function sizeSalesValue(product) {
