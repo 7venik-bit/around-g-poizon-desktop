@@ -4,6 +4,10 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'main.mjs'
+      - 'services/domestic-stock.mjs'
+      - 'services/retailer-stock-strategies.mjs'
+      - 'services/brand-official-search.mjs'
       - 'scripts/patch-*.mjs'
       - 'scripts/test-header-brand-layout.cjs'
       - 'scripts/test-domestic-stock-layout.cjs'

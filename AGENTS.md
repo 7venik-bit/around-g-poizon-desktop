@@ -17,6 +17,8 @@ These instructions apply to ChatGPT Work, Codex, and Cursor when working in this
 - Select stock strategies by the actual merchant domain for every brand. Preserve colour/size combinations, raw stock wording, and explicit quantities; missing quantity is unknown.
 - Do not silently truncate matched domestic products to eight. Checkpoint completed products and use inactivity deadlines while real option/detail progress continues.
 - A profile or passing fixture is not proof that every brand was tested live. Record actual retailer/product checks and keep login-required or partial coverage explicit.
+- Resolve an unlinked brand's official search on demand using its catalog identity and verified page evidence. Keep transient discovery failures pending; preserve other retailers and never invoke POIZON verification from this path.
+- Match official aliases exactly and prefer the actual merchant domain over a brand label. Keep hidden restock widgets and related colour SKUs out of the current product's inventory.
 
 ## Safe development workflow
 

@@ -7,6 +7,8 @@ import { JSDOM } from 'jsdom';
 import * as relay from '../relay/domestic-search.mjs';
 import * as naver from '../services/naver-fashiontown-result.mjs';
 import * as matcher from '../services/matcher.mjs';
+import * as brandOfficial from '../services/brand-official-search.mjs';
+import * as officialAdapters from '../services/official-mall-adapters.mjs';
 
 const main = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
 const section = (start, end) => main.slice(main.indexOf(start), main.indexOf(end, main.indexOf(start)));
@@ -77,7 +79,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     }
   }
   const sandbox = {
-    ...relay, ...naver, ...matcher, BrowserWindow, URL, console,
+    ...relay, ...naver, ...matcher, ...brandOfficial, ...officialAdapters, BrowserWindow, URL, console,
     Date: class extends Date { static now() { return now; } },
     setTimeout: setTimer, clearTimeout: clearTimer, wait: ms => new Promise(r => setTimer(r, ms)),
     domesticSearchGeneration: 0, domesticSearchCanceled: () => false,
@@ -99,6 +101,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
   runInContext(section('async function addMatchConfidence(', '\nasync function verifyAllStoresWithMusinsaImage('), context);
   runInContext(section('async function officialDetailImage(', '\nfunction isNaverSecurityVerificationText('), context);
   runInContext(section('async function submitOfficialMallSearch(', '\nfunction renderedSearchFailure('), context);
+  runInContext(section('async function resolveDomesticOfficialBrand(', '\nasync function persistOfficialDomainAudit('), context);
   t.after(() => windows.forEach(w => w.dom.window.close()));
   async function drive(promise) {
     let result, error, done = false;
@@ -489,6 +492,63 @@ test('live Nike radio markup retains all six sizes and disabled XS/XXL labels', 
   const result=await f.drive(f.context.collectRenderedProductStock(w,'네이버 패션타운'));
   assert.equal(result.stockStrategy,'nike');
   assert.deepEqual(result.sizes.map(s=>[s.label,s.inStock]),[['XS',false],['S',true],['M',true],['L',true],['XL',true],['XXL',false]]);
+});
+
+for(const [name,host,code,color,labels,soldout] of [
+  ['northface','www.thenorthfacekorea.co.kr','NJ1DR65B','REAL_BLACK',['085(XS)','090(S)','095(M)','100(L)','105(XL)','110(XXL)','115(XXXL)'],[]],
+  ['skechers','www.skecherskorea.co.kr','SP0MRCGY051','BBK',['250','255','260','265','270','275','280','290','300','310','320'],['275','280','290','300','310']],
+])test(`${name}: actual brand markup keeps the selected SKU and excludes restock-modal choices`,async t=>{
+  const url=`https://${host}/product/${code}`;
+  const html=readFileSync(new URL(`./fixtures/retailer-stock/${name}-options.html`,import.meta.url),'utf8');
+  const f=fixture(t,{pages:{[url]:`<main><h1>${code}</h1>${html}<button>바로구매</button></main>`}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const result=await f.drive(f.context.collectRenderedProductStock(w,'브랜드 공식몰'));
+  assert.equal(result.stockStrategy,name);
+  assert.deepEqual(result.sizes.map(s=>[s.label,s.inStock]),labels.map(label=>[`${color} / ${label}`,!soldout.includes(label)]));
+  assert.equal(w.webContents.getURL(),url,'related colour product links must not change this SKU');
+  assert.equal(result.stockCoverage,'observed');
+});
+
+test('unlisted brand mixes radio colours with dependent native sizes without dropping either dimension',async t=>{
+  const url='https://new-brand.example/product/1';
+  const f=fixture(t,{pages:{[url]:'<main><h1>재킷</h1><label><input type="radio" name="color" value="black">블랙</label><label><input type="radio" name="color" value="white">화이트</label><select name="size"><option value="">선택하세요</option></select><button>구매하기</button></main>'}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  for(const radio of w.dom.window.document.querySelectorAll('[name=color]'))radio.addEventListener('change',()=>{
+    w.dom.window.document.querySelector('[name=size]').innerHTML=radio.value==='black'?'<option value="95">95 (재고 2개)</option><option value="100" disabled>100 품절</option>':'<option value="95" disabled>95 SOLD OUT</option>';
+  });
+  const result=await f.drive(f.context.collectRenderedProductStock(w,'브랜드 공식몰'));
+  assert.deepEqual(result.sizes.map(s=>s.label),['블랙 / 95 (재고 2개)','블랙 / 100 품절','화이트 / 95 SOLD OUT']);
+  assert.equal(result.sizes[0].quantity,2);
+});
+
+test('brand button swatches read each colour and do not select a related product link',async t=>{
+  const url='https://new-store.example/product/1';
+  const f=fixture(t,{pages:{[url]:'<main><h1>신발</h1><div data-option-name="color"><button data-value="black">블랙</button><button data-value="white">화이트</button><a href="/product/other">다른 제품</a></div><div data-option-name="size"><button>250</button></div><button>구매하기</button></main>'}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  for(const button of w.dom.window.document.querySelectorAll('[data-value]'))button.addEventListener('click',()=>{w.dom.window.document.querySelector('[data-option-name=size]').innerHTML=button.dataset.value==='black'?'<button>250</button><button disabled>260 SOLD OUT</button>':'<button>250 재고 3개</button>';});
+  const result=await f.drive(f.context.collectRenderedProductStock(w,'브랜드 공식몰'));
+  assert.deepEqual(result.sizes.map(s=>[s.label,s.inStock]),[['블랙 / 250',true],['블랙 / 260 SOLD OUT',false],['화이트 / 250 재고 3개',true]]);
+});
+
+test('official results remove the active sold-out exclusion before reading product cards',async t=>{
+  const url='https://official.example/search?q=SR123UPS11';
+  const f=fixture(t,{pages:{[url]:'<main><span name="sold_out" class="selected"></span><span>품절 상품 제외</span></main>'}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const capture=()=>w.webContents.executeJavaScript(`(${officialAdapters.captureOfficialSoldOutFilter.toString()})()`);
+  assert.ok(await capture());
+  w.dom.window.document.querySelector('[name=sold_out]').classList.remove('selected');
+  assert.equal(await capture(),null);
+});
+
+test('on-demand official discovery closes timed-out windows and does not alter other brands',async t=>{
+  const f=fixture(t);let settings={officialBrandRegistry:[{registryId:'id:9',brandId:9,brandName:'Other',domain:'other.example',status:'verified'}]},discoveryWindow;
+  Object.assign(f.context,{createOfficialDomainAuditWindow:()=>discoveryWindow=new f.context.BrowserWindow(),auditOneOfficialDomain:()=>new Promise(()=>{}),
+    failedOfficialDomainAuditRecord:(r,reason)=>({...r,status:'pending',lastVerificationError:reason}),
+    store:{snapshot:()=>({settings}),setSettings:async next=>{settings={...settings,...next};}}});
+  const result=await f.drive(f.context.resolveDomesticOfficialBrand({brand:'New Label',verifyLinkCounts:true},0,()=>{}));
+  assert.equal(result.status,'pending');assert.equal(result.lastVerificationError,'BRAND_SEARCH_DISCOVERY_TIMEOUT');
+  assert.equal(discoveryWindow.isDestroyed(),true);assert.equal(settings.officialBrandRegistry[0].domain,'other.example');
+  assert.equal(settings.officialBrandRegistry.length,2);
 });
 
 test('live SSG dropdown markup preserves available 100/105 and all four raw 매진 options', async t => {

@@ -41,3 +41,45 @@ authenticated Windows operation on every merchant or every brand.
 - Render every captured option in the existing lower results list.
 - Run stock strategy, retailer runtime, completion lifecycle, full regression,
   release-patched runtime, and Windows rendered-layout checks before release.
+
+## Brand-specific resolution follow-up (2026-09-12)
+
+The initial implementation had 17 dedicated official-search adapters and used
+common controls for the rest of the catalog. Adding a stock profile did not
+discover a missing official homepage. Domestic search now resolves the requested
+catalog brand on demand, independently of the separate full-domain audit and
+POIZON verification. A verified search form or interactive homepage is reused;
+unconfirmed candidates stay pending. The discovery deadline is 75 seconds and
+failed attempts are briefly reused for 15 minutes. Registry saving has a separate
+two-second deadline and cannot discard a discovered route.
+
+The curated route list now additionally includes The North Face, Skechers and
+Lululemon. Exact aliases and host-first adapters prevent unrelated brands from
+borrowing a route. English and Korean catalog identities participate in domain
+discovery. A body mention of a brand alone cannot verify a reseller as its
+official store.
+
+Live checks in this follow-up:
+
+| Brand | Search / detail | Observed result |
+| --- | --- | --- |
+| The North Face | `/search?q=NJ1DR65B` → `/product/NJ1DR65B` | One matching product; REAL_BLACK, seven selectable sizes 085(XS)–115(XXXL). The page says membership is required to purchase. |
+| Skechers | `/search?q=SP0MRCGY051` → `/product/SP0MRCGY051` | One matching product; BBK, eleven sizes. 275/280/290/300/310 disabled; 250/255/260/265/270/320 selectable. |
+| Lululemon | `/ko-kr/home` | Official domain confirmed through public official-site search results; this cloud browser received a Cloudflare access-denied page. Live product/stock capture is unverified. |
+
+Reference pages: https://www.thenorthfacekorea.co.kr/product/NJ1DR65B,
+https://www.skecherskorea.co.kr/product/SP0MRCGY051,
+https://www.lululemon.co.kr/ko-kr/home.
+
+The North Face search initially applies `sold_out=false` via an active
+"품절 상품 제외" control. Clicking that actual control removed the filter.
+The collector now disables an explicitly active exclusion before capturing
+official results. Hidden restock-modal radios and related colour links identify
+other states/SKUs and are excluded from this product. Native radio, select and
+button-swatch combinations are traversed together, preserving colour and size.
+
+Live DOM was read by the production capture functions. Product markup is saved
+in `northface-options.html` and `skechers-options.html` for runtime regression
+tests. This verifies these specific pages, not every product in the 3,300+
+brand catalog; proprietary controls, authentication and site access restrictions
+can still leave explicit pending/partial inventory.

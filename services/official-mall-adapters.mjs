@@ -2,6 +2,24 @@ import { normalizeOfficialBrand } from "./official-domain-registry.mjs";
 
 const ADAPTERS = Object.freeze([
   {
+    id: "north-face-kr",
+    brands: ["노스페이스", "The North Face", "노스페이스 화이트라벨", "The North Face White Label"],
+    domains: ["thenorthfacekorea.co.kr"],
+    searchTemplate: "https://www.thenorthfacekorea.co.kr/search?q={query}",
+  },
+  {
+    id: "skechers-kr",
+    brands: ["스케쳐스", "Skechers"],
+    domains: ["skecherskorea.co.kr"],
+    searchTemplate: "https://www.skecherskorea.co.kr/search?q={query}",
+  },
+  {
+    id: "lululemon-kr",
+    brands: ["룰루레몬", "Lululemon"],
+    domains: ["lululemon.co.kr"],
+    interactiveSearch: true,
+  },
+  {
     id: "adidas-kr",
     brands: ["아디다스", "adidas", "adidas originals"],
     domains: ["adidas.co.kr"],
@@ -118,9 +136,12 @@ function normalizedHost(value) {
 export function officialMallAdapter({ brand = "", domain = "", homepageUrl = "" } = {}) {
   const brandKey = normalizeOfficialBrand(brand);
   const host = normalizedHost(domain || homepageUrl);
+  // A supplied merchant host is authoritative; a brand name must not redirect
+  // an unrelated storefront onto that brand's dedicated search route.
+  if (host) return ADAPTERS.find((adapter) =>
+    adapter.domains.some((candidate) => host === candidate || host.endsWith(`.${candidate}`))) || null;
   return ADAPTERS.find((adapter) =>
-    adapter.domains.some((candidate) => host === candidate || host.endsWith(`.${candidate}`))
-    || adapter.brands.some((candidate) => normalizeOfficialBrand(candidate) === brandKey)) || null;
+    adapter.brands.some((candidate) => normalizeOfficialBrand(candidate) === brandKey)) || null;
 }
 
 export function officialMallDirectProductUrls(input = {}, articleNumber = "") {
@@ -174,4 +195,22 @@ export function officialMallAdapterSummary(registry = []) {
     else summary.adapterPending += 1;
   }
   return summary;
+}
+
+// Serialized into the current search-results DOM. Only an explicitly active
+// "exclude sold out" control is returned; unrelated shopping filters stay put.
+export function captureOfficialSoldOutFilter() {
+  const scope=document.querySelector('main')||document;
+  const controls=[...scope.querySelectorAll('input[type="checkbox"],[role="checkbox"],[name="sold_out"]')];
+  for(const el of controls){
+    const label=[el.labels?.[0]?.textContent,el.getAttribute('aria-label'),el.parentElement?.textContent].filter(Boolean).join(' ');
+    if(!/품절\s*(?:상품\s*)?제외|hide\s*(?:sold.?out|out.?of.?stock)|exclude\s*sold.?out/i.test(label))continue;
+    const active=el.checked===true||el.getAttribute('aria-checked')==='true'||el.classList.contains('selected');
+    if(!active||el.disabled||el.getAttribute('aria-disabled')==='true')continue;
+    const target=el.getBoundingClientRect().width?el:el.labels?.[0];
+    if(!target||target.closest('[hidden],[aria-hidden="true"]'))continue;
+    const rect=target.getBoundingClientRect();if(rect.width<=0||rect.height<=0)continue;
+    return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)};
+  }
+  return null;
 }

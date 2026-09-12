@@ -6,6 +6,9 @@ export const OFFICIAL_DOMAIN_STATUS = Object.freeze({
 });
 
 export const VERIFIED_OFFICIAL_BRANDS = Object.freeze([
+  { name: "노스페이스", aliases: ["the north face", "north face", "노스페이스", "the north face white label", "노스페이스 화이트라벨"], domain: "thenorthfacekorea.co.kr", homepageUrl: "https://www.thenorthfacekorea.co.kr/", searchTemplate: "https://www.thenorthfacekorea.co.kr/search?q={query}" },
+  { name: "스케쳐스", aliases: ["skechers", "스케쳐스"], domain: "skecherskorea.co.kr", homepageUrl: "https://www.skecherskorea.co.kr/", searchTemplate: "https://www.skecherskorea.co.kr/search?q={query}" },
+  { name: "룰루레몬", aliases: ["lululemon", "룰루레몬"], domain: "lululemon.co.kr", homepageUrl: "https://www.lululemon.co.kr/ko-kr/home", searchTemplate: "", interactiveSearch: true },
   { name: "아디다스", aliases: ["adidas", "adidas originals", "아디다스"], domain: "adidas.co.kr", homepageUrl: "https://www.adidas.co.kr/", searchTemplate: "https://www.adidas.co.kr/search?q={query}" },
   { name: "나이키", aliases: ["nike", "jordan", "나이키", "조던"], domain: "nike.com", homepageUrl: "https://www.nike.com/kr/", searchTemplate: "https://www.nike.com/kr/w?q={query}&vst={query}" },
   { name: "뉴발란스", aliases: ["new balance", "newbalance", "뉴발란스"], domain: "nbkorea.com", homepageUrl: "https://www.nbkorea.com/", searchTemplate: "https://www.nbkorea.com/product/searchResult.action?schWord={query}" },
@@ -16,7 +19,7 @@ export const VERIFIED_OFFICIAL_BRANDS = Object.freeze([
   { name: "크록스", aliases: ["crocs", "크록스"], domain: "crocs.co.kr", homepageUrl: "https://www.crocs.co.kr/", searchTemplate: "https://www.crocs.co.kr/search?q={query}" },
   { name: "데상트", aliases: ["descente", "데상트"], domain: "dk-on.com", homepageUrl: "https://dk-on.com/DESCENTE", searchTemplate: "https://dk-on.com/DESCENTE/search?keyword={query}" },
   { name: "MLB", aliases: ["mlb", "엠엘비"], domain: "mlb-korea.com", homepageUrl: "https://www.mlb-korea.com/?gf=A", searchTemplate: "https://www.mlb-korea.com/search?searchText={query}&gf=A", interactiveSearch: true },
-  { name: "코오롱스포츠", aliases: ["kolon sport", "kolonsport", "코오롱스포츠", "코오롱"], domain: "kolonmall.com", homepageUrl: "https://www.kolonmall.com/KOLONSPORT", searchTemplate: "https://www.kolonmall.com/Search?keyword={query}" },
+  { name: "코오롱스포츠", aliases: ["kolon", "kolon sport", "kolonsport", "코오롱스포츠", "코오롱"], domain: "kolonmall.com", homepageUrl: "https://www.kolonmall.com/KOLONSPORT", searchTemplate: "https://www.kolonmall.com/Search?keyword={query}" },
   { name: "온", aliases: ["on", "on running", "onrunning", "온", "온러닝"], domain: "on.com", homepageUrl: "https://www.on.com/ko-kr/", searchTemplate: "https://www.on.com/ko-kr/search?q={query}" },
   { name: "킨", aliases: ["keen", "keen footwear", "keenfootwear", "킨"], domain: "keenfootwear.kr", homepageUrl: "https://keenfootwear.kr/", searchTemplate: "", interactiveSearch: true },
   { name: "Keen", aliases: ["keen", "킨"], domain: "keenfootwear.kr", homepageUrl: "https://www.keenfootwear.kr/", searchTemplate: "https://www.keenfootwear.kr/goods/goods_search.php?keyword={query}" },
@@ -45,11 +48,9 @@ export function verifiedOfficialBrand(value) {
   if (!normalized) return null;
   return VERIFIED_OFFICIAL_BRANDS.find((entry) => entry.aliases.some((alias) => {
     const normalizedAlias = normalizeOfficialBrand(alias);
-    if (normalized === normalizedAlias) return true;
-    // Short aliases such as `On` must never partially match another brand
-    // (for example KOLON). Partial matching is only safe for descriptive names.
-    if (normalized.length < 4 || normalizedAlias.length < 4) return false;
-    return normalized.includes(normalizedAlias) || normalizedAlias.includes(normalized);
+    // Similar names and collaboration labels are not the same brand. Add
+    // verified aliases explicitly instead of routing a different brand here.
+    return normalized === normalizedAlias;
   })) || null;
 }
 
@@ -118,12 +119,10 @@ export function officialDomainRecordForBrand(registry, brand) {
   if (!normalized) return null;
   const rows = Array.isArray(registry) ? registry : [];
   const exact = rows.find((record) =>
-    [record.brandName, record.brandKo].map(normalizeOfficialBrand).some((name) => name === normalized));
+    [record.brandName, record.brandKo, ...(record.verifiedAliases || [])]
+      .map(normalizeOfficialBrand).some((name) => name === normalized));
   if (exact) return exact;
-  if (normalized.length < 4) return null;
-  return rows.find((record) =>
-    [record.brandName, record.brandKo].map(normalizeOfficialBrand).some((name) =>
-      name.length >= 4 && (name.includes(normalized) || normalized.includes(name)))) || null;
+  return null;
 }
 
 export function officialDomainSearchAliases(record) {
@@ -184,13 +183,14 @@ function candidateHost(url) {
   }
 }
 
-export function rankOfficialDomainCandidates(candidates, brand) {
+export function rankOfficialDomainCandidates(candidates, brand, alternateBrand = "") {
   const unique = new Map();
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const url = String(candidate?.url || "").trim();
     const title = String(candidate?.title || "").trim();
     const validation = validateOfficialDomainCandidate({
       brand,
+      alternateBrand,
       candidateUrl: url,
       pageTitle: title,
       logoSimilarity: candidate?.logoSimilarity,
@@ -198,11 +198,11 @@ export function rankOfficialDomainCandidates(candidates, brand) {
     if (!validation.valid) continue;
     const host = candidateHost(url);
     if (!host || unique.has(host)) continue;
-    const brandKey = normalizeOfficialBrand(brand);
+    const brandKeys = [brand, alternateBrand].map(normalizeOfficialBrand).filter(Boolean);
     const hostKey = normalizeOfficialBrand(host);
     const titleKey = normalizeOfficialBrand(title);
-    const score = (hostKey.includes(brandKey) ? 60 : 0)
-      + (titleKey.includes(brandKey) ? 30 : 0)
+    const score = (brandKeys.some(key => key.length >= 4 && hostKey.includes(key)) ? 60 : 0)
+      + (brandKeys.some(key => titleKey.includes(key)) ? 30 : 0)
       + (/공식|official|official site|공식 홈페이지/i.test(title) ? 25 : 0)
       + (Number(candidate?.logoSimilarity || 0) >= 0.88 ? 45 : 0)
       + (String(candidate?.rel || "").includes("noopener") ? 1 : 0);
@@ -273,6 +273,7 @@ export function noOfficialStoreRecord(record, now = new Date().toISOString()) {
 export function auditedOfficialDomainRecord(record, evidence, now = new Date().toISOString()) {
   const validation = validateOfficialDomainCandidate({
     brand: record?.brandKo || record?.brandName,
+    alternateBrand: record?.brandName,
     candidateUrl: evidence?.finalUrl || evidence?.candidateUrl,
     pageTitle: evidence?.pageTitle,
     pageText: evidence?.pageText,
@@ -339,7 +340,7 @@ export function failedOfficialDomainAuditRecord(record, errorCode, now = new Dat
   };
 }
 
-export function validateOfficialDomainCandidate({ brand, candidateUrl, pageTitle = "", pageText = "", logoSimilarity = 0 } = {}) {
+export function validateOfficialDomainCandidate({ brand, alternateBrand = "", candidateUrl, pageTitle = "", pageText = "", logoSimilarity = 0 } = {}) {
   let parsed;
   try {
     parsed = new URL(String(candidateUrl || ""));
@@ -352,7 +353,7 @@ export function validateOfficialDomainCandidate({ brand, candidateUrl, pageTitle
     return { valid: false, reason: "MARKETPLACE_OR_SOCIAL_DOMAIN" };
   }
   const seed = verifiedOfficialBrand(brand);
-  const brandKeys = [brand, ...(seed?.aliases || [])].map(normalizeOfficialBrand).filter(Boolean);
+  const brandKeys = [brand, alternateBrand, ...(seed?.aliases || [])].map(normalizeOfficialBrand).filter(Boolean);
   const rawEvidence = `${host} ${pageTitle} ${String(pageText).slice(0, 5000)}`;
   const evidence = normalizeOfficialBrand(rawEvidence);
   const evidenceTokens = rawEvidence.toLowerCase().split(/[^a-z0-9가-힣]+/).map(normalizeOfficialBrand).filter(Boolean);
@@ -361,6 +362,15 @@ export function validateOfficialDomainCandidate({ brand, candidateUrl, pageTitle
     : evidence.includes(brandKey));
   if (!brandKeys.length || !matchesBrand) {
     return { valid: false, reason: "BRAND_EVIDENCE_MISSING" };
+  }
+  const domainIdentity = normalizeOfficialBrand(host);
+  const titleIdentity = normalizeOfficialBrand(pageTitle);
+  const ownsBrandDomain = (seed && (host === seed.domain || host.endsWith(`.${seed.domain}`)))
+    || brandKeys.some(key => key.length >= 4 && domainIdentity.includes(key));
+  const officialTitle = /공식|official/i.test(pageTitle)
+    && brandKeys.some(key => titleIdentity.includes(key));
+  if (!ownsBrandDomain && !officialTitle && Number(logoSimilarity || 0) < 0.88) {
+    return { valid: false, reason: "OFFICIAL_IDENTITY_UNCONFIRMED" };
   }
   return { valid: true, domain: host, homepageUrl: `${parsed.protocol}//${parsed.host}/` };
 }
