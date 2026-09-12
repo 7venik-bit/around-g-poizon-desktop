@@ -57,8 +57,12 @@
       .domestic-inline-product{min-width:0!important}
       .domestic-inline-stock{margin-top:3px!important;white-space:pre-line!important;overflow-wrap:anywhere!important;color:#537563!important;font-weight:650!important}
       .domestic-inline-stock.soldout,.domestic-inline-stock-option.soldout{color:#9a5c32!important}
-      .domestic-inline-stock-cell{min-width:0!important;white-space:pre-line!important;overflow-wrap:anywhere!important;color:#537563!important;line-height:1.5!important}
-      .domestic-inline-stock-option{padding:2px 0!important}
+      .domestic-inline-stock-cell{display:flex!important;align-items:center!important;align-content:center!important;gap:5px!important;min-width:0!important;flex-wrap:wrap!important;white-space:normal!important;color:#537563!important;line-height:1.35!important}
+      .domestic-inline-stock-cell>.domestic-inline-stock{flex:0 0 100%!important}
+      .domestic-inline-stock-option{display:inline-flex!important;align-items:center!important;min-height:25px!important;padding:3px 7px!important;border:1px solid #b9dfd1!important;border-radius:7px!important;background:#f1faf6!important;color:#16735a!important;font:inherit!important;font-weight:700!important;line-height:1.25!important;text-decoration:none!important;white-space:nowrap!important}
+      button.domestic-inline-stock-option{min-width:0!important;height:auto!important;cursor:pointer!important}
+      button.domestic-inline-stock-option:hover{border-color:#2d91df!important;background:#eef6ff!important;color:#1768c5!important}
+      .domestic-inline-stock-option.soldout{border-color:#ead6c8!important;background:#fff8f3!important;color:#9a5c32!important;cursor:not-allowed!important;opacity:.78!important}
       .domestic-inline-purchase-limit{margin-top:4px!important;color:#64748b!important;font-size:10px!important;font-weight:400!important}
       .domestic-inline-code{min-width:0!important;color:#64748b!important;font-family:inherit!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
       .domestic-inline-price{text-align:right!important;color:#111827!important;font-weight:800!important;white-space:nowrap!important}
@@ -175,7 +179,11 @@
       const optionText = quantity !== null && !/(?:재고|남은\s*(?:재고|수량))\s*(?:수량)?\s*[:：]?\s*[\d,]+|[\d,]+\s*개\s*남(?:음|았)/.test(sourceText) ? `${sourceText} · 재고 ${quantity.toLocaleString("ko-KR")}개` : explicitStatus ? sourceText : `${sourceText} · ${option?.inStock === true ? "선택 가능" : option?.inStock === false ? "선택 불가" : "재고 확인 필요"}`;
       if (seen.has(optionText)) continue;
       seen.add(optionText);
-      lines.push(`<div class="domestic-inline-stock-option${option?.inStock === false ? " soldout" : ""}">${safeText(optionText)}</div>`);
+      const optionUrl = String(option?.url || option?.productUrl || option?.href || product?.url || "").trim();
+      const clickable = option?.inStock === true && Boolean(optionUrl);
+      lines.push(clickable
+        ? `<button type="button" class="domestic-inline-stock-option" data-url="${encodeURIComponent(optionUrl)}" title="${safeText(label || optionText)} 상품 열기">${safeText(optionText)} ↗</button>`
+        : `<span class="domestic-inline-stock-option${option?.inStock === false ? " soldout" : ""}"${option?.inStock === false ? ' aria-disabled="true"' : ""}>${safeText(optionText)}</span>`);
     }
     if (!lines.length) {
       const status = product.inStock === false ? "품절"

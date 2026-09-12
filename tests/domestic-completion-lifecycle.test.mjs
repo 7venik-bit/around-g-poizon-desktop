@@ -338,9 +338,23 @@ test('stock and every captured size occupy a separate aligned column below the p
   assert.match(stock.textContent,/100 SOLD OUT/);
   assert.doesNotMatch(stock.textContent,/재고 10개/);
   assert.match(stock.querySelector('.domestic-inline-purchase-limit').textContent,/구매 제한.*ID당 구매 가능 수량 10개/);
+  const sizeLinks=[...stock.querySelectorAll('button.domestic-inline-stock-option')];
+  assert.equal(sizeLinks.length,2);
+  assert.equal(decodeURIComponent(sizeLinks[0].dataset.url),'https://www.kolonmall.com/Product/JKJGX25272SBU');
+  assert.match(sizeLinks[0].textContent,/90.*↗/);
+  assert.equal(stock.querySelectorAll('.domestic-inline-stock-option.soldout').length,1);
+  assert.equal(stock.querySelector('.domestic-inline-stock-option.soldout').hasAttribute('data-url'),false);
   assert.equal(rows[1].children[2].textContent.trim(),'-');
   assert.match(rows[0].children[3].textContent,/JKJGX25272/);
   assert.equal(f.overlay().hidden,true);
+});
+
+test('a size-specific product URL takes priority over the general product URL', async t => {
+  const f=createFixture(t);
+  f.window.aroundG.searchDomestic=async()=>({ok:true,data:{products:[{store:'무신사',title:'재킷',url:'https://www.musinsa.com/products/1',inStock:true,sizes:[{label:'95',inStock:true,url:'https://www.musinsa.com/products/1?size=95'}]}],sources:[]}});
+  await f.run();
+  const link=f.window.document.querySelector('button.domestic-inline-stock-option');
+  assert.equal(decodeURIComponent(link.dataset.url),'https://www.musinsa.com/products/1?size=95');
 });
 
 test('unknown inventory is not presented as zero or sold out', async t => {
