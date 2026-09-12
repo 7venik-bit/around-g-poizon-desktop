@@ -66,7 +66,6 @@ import {
   officialDomainRegistrySummary,
   officialDomainAuditQueue,
   rankOfficialDomainCandidates,
-  noOfficialStoreRecord,
 } from "./services/official-domain-registry.mjs";
 import {
   naverOfficialStoreNotFoundRows,
@@ -75,7 +74,9 @@ import {
 import {
   officialMallAdapterRecord,
   officialMallAdapterSummary,
+  captureOfficialSoldOutFilter,
 } from "./services/official-mall-adapters.mjs";
+import { requestedOfficialBrand, resolveBrandOfficialSearch } from "./services/brand-official-search.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer } from "./services/poizon.mjs";
 import {
   brandSearchProfileKey,
@@ -3234,6 +3235,16 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       }
     }
     await waitForDomesticCaptureReady(searchWindow, officialDirectDetail ? 1_000 : 25_000);
+    if (source.store === "브랜드 공식몰" && !officialDirectDetail) {
+      const filter = await searchWindow.webContents.executeJavaScript(`(${captureOfficialSoldOutFilter.toString()})()`, true).catch(() => null);
+      if (filter) {
+        searchWindow.webContents.sendInputEvent({type: "mouseDown", ...filter, button: "left", clickCount: 1});
+        searchWindow.webContents.sendInputEvent({type: "mouseUp", ...filter, button: "left", clickCount: 1});
+        await onActivity?.({phase: "searching", detail: "품절 상품 포함"});
+        await wait(900);
+        await waitForDomesticCaptureReady(searchWindow, 25_000);
+      }
+    }
     let content = await searchWindow.webContents.executeJavaScript(`(() => {
       const expectedArticle = ${JSON.stringify(String(articleNumber || ""))};
       const expectedCompact = expectedArticle.replace(/[^A-Z0-9]/gi, "").toUpperCase();
@@ -4297,7 +4308,7 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
   const candidates = rankOfficialDomainCandidates((discovery.candidates || []).map((candidate) => ({
     ...candidate,
     logoSimilarity: logoScoreByUrl.get(candidate.url) || 0,
-  })), brand).slice(0, OFFICIAL_DOMAIN_AUDIT_MAX_CANDIDATES);
+  })), brand, record.brandName).slice(0, OFFICIAL_DOMAIN_AUDIT_MAX_CANDIDATES);
   for (const candidate of candidates) {
     try {
       onPhase("official_site");
@@ -4321,7 +4332,51 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
   }
   // Only an independent brand-owned domain belongs in the official-mall row.
   // Naver Brand Store remains a separate domestic source.
-  return { record: noOfficialStoreRecord(record), blocked: false };
+  return { record: failedOfficialDomainAuditRecord(record, "OFFICIAL_CANDIDATES_UNCONFIRMED"), blocked: false };
+}
+
+async function resolveDomesticOfficialBrand(input, generation, onProgress) {
+  return resolveBrandOfficialSearch({
+    input, settings: store.snapshot().settings,
+    canceled: () => domesticSearchCanceled(generation),
+    discover: async record => {
+      const window = createOfficialDomainAuditWindow();
+      activeDomesticSearchWindows.add(window);
+      let timeout;
+      try {
+        return await Promise.race([
+          auditOneOfficialDomain(window, record, phase => {
+            if (domesticSearchCanceled(generation)) return;
+            onProgress?.({ completed: 0, total: 1, phase: "searching",
+              source: `${record.brandKo || record.brandName} 공식몰 확인 · ${phase === "naver_search" ? "검색" : phase === "logo_compare" ? "브랜드 대조" : "사이트 확인"}` });
+          }),
+          new Promise(resolve => {
+            timeout = setTimeout(() => {
+              if (!window.isDestroyed()) window.destroy();
+              resolve({record: failedOfficialDomainAuditRecord(record, "BRAND_SEARCH_DISCOVERY_TIMEOUT")});
+            }, 75_000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timeout);
+        activeDomesticSearchWindows.delete(window);
+        if (!window.isDestroyed()) window.destroy();
+      }
+    },
+    persist: async record => {
+      if (domesticSearchCanceled(generation)) return;
+      const rows = [...(store.snapshot().settings.officialBrandRegistry || [])];
+      const index = rows.findIndex(row => row.registryId === record.registryId);
+      if (index >= 0) rows[index] = record; else rows.push(record);
+      let saveTimeout;
+      try {
+        await Promise.race([
+          store.setSettings({officialBrandRegistry: rows, officialBrandRegistryUpdatedAt: new Date().toISOString()}),
+          new Promise((_, reject) => { saveTimeout = setTimeout(() => reject(new Error("OFFICIAL_SEARCH_REGISTRY_SAVE_TIMEOUT")), 2_000); }),
+        ]);
+      } finally { clearTimeout(saveTimeout); }
+    },
+  });
 }
 
 async function persistOfficialDomainAudit(registry, audit) {
@@ -11882,10 +11937,6 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       const profileKey = brandSearchProfileKey(input?.brand, input?.brandId);
       const searchProfiles = settings.brandSearchProfiles || {};
       const searchStrategy = selectBrandSearchStrategy(searchProfiles[profileKey]);
-      const officialBrandRecord = officialDomainRecordForBrand(
-        settings.officialBrandRegistry,
-        String(input?.brand || "").trim()
-      );
       // Normalize once at the IPC boundary so every downstream platform,
       // physical keyboard input, URL builder, and detail-page comparison uses
       // the same Han-free domestic search identity.
@@ -11896,6 +11947,13 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       const allowedSourceGroups = new Set(["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"]);
       const enabledSourceGroups = Array.isArray(input?.sourceGroups)
         ? input.sourceGroups.filter((group) => allowedSourceGroups.has(group)) : null;
+      let officialBrandRecord = requestedOfficialBrand(input, settings);
+      try {
+        officialBrandRecord = await resolveDomesticOfficialBrand(
+          {...input, sourceGroups: enabledSourceGroups}, searchGeneration, sendDomesticProgress,
+        );
+        if (officialBrandRecord?.searchPersistenceError) rememberWarning("official_brand_registry_save", officialBrandRecord.searchPersistenceError);
+      } catch (error) { rememberWarning("official_brand_discovery", error); }
       const data = await queryDomesticProducts({
         query: sanitizeDomesticQuery(input?.query),
         articleNumber: searchArticleNumber,

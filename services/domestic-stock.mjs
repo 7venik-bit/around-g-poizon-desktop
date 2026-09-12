@@ -5,7 +5,7 @@ import { normalizeStockQuantity } from './retailer-stock-strategies.mjs';
 export function captureRenderedStockEvidence(selectors = [], root = document) {
   const statusPattern = /품절|매진|솔드\s*아웃|재고(?:\s*수량)?\s*[:：]?\s*(?:없|소진|있|[\d,]+)|남은\s*(?:재고|수량)\s*[:：]?\s*[\d,]+|SOLD[\s_-]*OUT|OUT[\s_-]*OF[\s_-]*STOCK|구매\s*(?:불가|할\s*수\s*없|가능)|판매\s*(?:종료|중지)|재입고/i;
   const unavailablePattern = /품절(?!\s*임박)|매진|솔드\s*아웃|재고(?:\s*수량)?\s*[:：]?\s*(?:없|소진|0(?:개|\s|$|\)))|남은\s*(?:재고|수량)\s*[:：]?\s*0(?:개|\s|$|\))|SOLD[\s_-]*OUT|OUT[\s_-]*OF[\s_-]*STOCK|구매\s*(?:불가|할\s*수\s*없)|판매\s*(?:종료|중지)/i;
-  const excluded = 'header,footer,nav,[role="navigation"],[class*="recommend" i],[class*="related" i],[class*="review" i],[class*="shipping" i],[class*="delivery" i],[class*="policy" i],[class*="sizeguide" i],[class*="size-guide" i],[class*="sizetable" i],[class*="size-chart" i],.header_gnb';
+  const excluded = 'header,footer,nav,[role="navigation"],[class*="recommend" i],[class*="related" i],[class*="review" i],[class*="shipping" i],[class*="delivery" i],[class*="policy" i],[class*="sizeguide" i],[class*="size-guide" i],[class*="sizetable" i],[class*="size-chart" i],[class*="restock" i],[id*="restock" i],[class*="additional" i],.header_gnb';
   const visible = el => {
     if (!el || el.closest('[hidden],[aria-hidden="true"]')) return false;
     const style = getComputedStyle(el), rect = el.getBoundingClientRect();

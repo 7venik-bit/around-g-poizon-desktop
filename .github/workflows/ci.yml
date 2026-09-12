@@ -107,7 +107,7 @@ jobs:
         run: node scripts/verify-popular-full-rank-scroll.mjs
 
       - name: Test retailer capture and completion with final patched source
-        run: node --test tests/domestic-retailer-runtime.test.mjs tests/domestic-completion-lifecycle.test.mjs tests/retailer-stock-strategies.test.mjs
+        run: node --test tests/domestic-retailer-runtime.test.mjs tests/domestic-completion-lifecycle.test.mjs tests/retailer-stock-strategies.test.mjs tests/brand-official-search.test.mjs
 
       - name: Test local category search and explicit POIZON review separation
         run: node --test tests/category-excel-runtime.test.mjs tests/favorite-category-search-v2.10.294.test.mjs tests/live-poizon-crosscheck.test.mjs
