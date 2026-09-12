@@ -233,6 +233,14 @@ test('dedicated view uses external CSP-compatible styling and keeps original det
   assert.match(popup, /POIZON 실시간 대조/);
 });
 
+test('the live comparison popup stays in front of the collector window', () => {
+  assert.match(main, /did-create-window/);
+  assert.match(main, /poizon-review-popup\\\.html/);
+  assert.match(main, /childWindow\.setAlwaysOnTop\(true, "floating"\)/);
+  assert.match(main, /childWindow\.moveTop\(\)/);
+  assert.match(main, /childWindow\.focus\(\)/);
+});
+
 test('multi-brand review reuses the loaded popup without navigating it again', async () => {
   let opens = 0;
   let focuses = 0;

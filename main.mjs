@@ -5586,6 +5586,17 @@ function createWindow() {
     appendFile(join(app.getPath("userData"), "around-g-crash.log"), logLine, "utf8").catch(() => {});
     if (!win.isDestroyed() && details.reason !== "clean-exit") setTimeout(() => win.reload(), 800);
   });
+  win.webContents.on("did-create-window", (childWindow, details) => {
+    const openedUrl = String(details?.url || "");
+    if (!/poizon-review-popup\.html(?:[?#]|$)/i.test(openedUrl)) return;
+    // Keep the live comparison surface above the collector while its hidden
+    // Seller Center window continues navigation in the background.
+    childWindow.setAlwaysOnTop(true, "floating");
+    if (childWindow.isMinimized()) childWindow.restore();
+    childWindow.show();
+    childWindow.moveTop();
+    childWindow.focus();
+  });
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
   });

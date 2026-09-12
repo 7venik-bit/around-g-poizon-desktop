@@ -181,3 +181,24 @@ test('a partial selection shares the existing pending job instead of duplicating
   assert.equal(f.coordinator.jobs().length, 1);
   assert.deepEqual(f.coordinator.get(original.id).products.map(product => product.key).sort(), ['A', 'B']);
 });
+
+test('the next product waits for timed-out cleanup instead of failing with an active recovery job', async t => {
+  const f = await fixture(t);
+  const job = await start(f.coordinator, ['official'], ['A', 'B']);
+  const firstResponse = deferred();
+  let secondCalls = 0;
+  const first = f.coordinator.run({jobId:job.id,productKey:'A',execute:async()=>firstResponse.promise});
+  await new Promise(resolve=>setImmediate(resolve));
+  const second = f.coordinator.run({jobId:job.id,productKey:'B',execute:async()=>{
+    secondCalls++;
+    return {ok:true,data:good('official')};
+  }});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(secondCalls,0,'the next product must remain queued while cleanup is active');
+  firstResponse.resolve({ok:false,timedOut:true,data:{...failure('official'),partial:true}});
+  const [firstResult,secondResult]=await Promise.all([first,second]);
+  assert.equal(firstResult.data.partial,true);
+  assert.equal(secondCalls,1);
+  assert.equal(secondResult.data.partial,false);
+  assert.notEqual(secondResult.message,'RECOVERY_ALREADY_RUNNING');
+});
