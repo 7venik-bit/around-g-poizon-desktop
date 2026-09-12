@@ -10,4 +10,6 @@ The existing lower product list, full-screen progress overlay, platform stock wo
 
 Tests inject actual file write failures; restart JsonStore between attempts; verify successful tasks are skipped, stale observations are rechecked, late canceled callbacks cannot overwrite resumed results, and incomplete stock never claims completion. Renderer tests exercise the actual enhanced product-row renderer across a restart. Option tests resume a failed colour without reselecting completed colours and preserve explicit zero quantities.
 
+The full source-contract suite now runs before release transformations and is mandatory. The transformed renderer, retailer capture and Excel/category suites run afterwards. Previously the source suite ran against transformed inputs with continue-on-error, hiding unrelated legacy expectation failures.
+
 These are regression and package tests, not proof of live inventory support for every brand. Merchant login, access controls and changes to product pages can still require site-specific maintenance. This release does not claim new live retailer validation or an always-running external monitoring service.
