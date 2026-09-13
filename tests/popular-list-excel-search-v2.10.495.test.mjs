@@ -6,12 +6,16 @@ const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8");
 const renderer = fs.readFileSync(new URL("../src/renderer.js", import.meta.url), "utf8");
 const html = fs.readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
 
-test("popular capture opens the same raw Excel list and domestic-search controls", () => {
+test("popular capture saves Excel without replacing the current screen", () => {
   assert.match(html, /id="popular-product-workspace"/);
   assert.match(html, /id="popular-integrated-preview-host"/);
+  assert.match(html, /id="popular-product-search"[^>]*hidden[^>]*>상품검색/);
   assert.match(renderer, /async function openIntegratedPopularExcel/);
   assert.match(renderer, /integratedHostId: "popular-integrated-preview-host"/);
-  assert.match(renderer, /await openIntegratedPopularExcel\(popularFile\)/);
+  assert.doesNotMatch(renderer, /await openIntegratedPopularExcel\(popularFile\)/);
+  assert.match(renderer, /await openIntegratedPopularExcel\(latestPopularExcelFile\)/);
+  assert.match(renderer, /searchButton\.hidden = !completedProducts\.length/);
+  assert.match(renderer, /인기리스트 Excel 저장이 완료되었습니다/);
   assert.match(renderer, /renderRawExcelDomesticCell\(key, product, searchResult\)/);
   assert.match(renderer, /상품 검색 결과 · 링크/);
   assert.doesNotMatch(renderer, /acceptSellerCenterProducts\(verifiedProducts[\s\S]{0,500}runDomesticBatch\(\)/);

@@ -86,6 +86,7 @@ const excelPreviewSearchResultsByPath = new Map();
 let selectedBrandDomesticQueueRunning = false;
 let combinedBrandPreview = null;
 let combinedBrandPreviewLoading = false;
+let latestPopularExcelFile = null;
 const domesticIdentitySearchCache = new Map();
 const DOMESTIC_SEARCH_MAX_WAIT_MS = 2 * 60 * 1000 + 5_000;
 let installedAppVersion = "";
@@ -3645,7 +3646,10 @@ window.aroundG.onSellerCaptureProgress((progress) => {
 });
 async function capturePopularProducts(options = {}) {
   const button = $("#popular-capture");
+  const searchButton = $("#popular-product-search");
   button.disabled = true;
+  latestPopularExcelFile = null;
+  searchButton.hidden = true;
   $("#popular-progress").hidden = false;
   $("#popular-progress").querySelector("i").style.width = "0%";
   $("#popular-progress").querySelector("span").textContent = "0%";
@@ -3674,15 +3678,15 @@ async function capturePopularProducts(options = {}) {
       renderResults: false,
     });
     const completedProducts = verifiedProducts.filter((product) => !product.missingRank);
-    const popularFile = {
+    latestPopularExcelFile = {
       path: excelResult.path,
       name: String(excelResult.path || "").split(/[\\/]/).pop() || "POIZON-인기상품-원본.xlsx",
       brandName: "POIZON 인기리스트",
       jobId: `인기상품 ${excelResult.imported}/200`,
     };
-    await openIntegratedPopularExcel(popularFile);
+    searchButton.hidden = !completedProducts.length;
     $("#popular-status").textContent = completedProducts.length
-      ? `${sourceLabel} · 행별 상품검색 또는 선택 상품검색을 실행할 수 있습니다.`
+      ? `${sourceLabel} · 인기리스트 Excel 저장이 완료되었습니다. 상품검색 버튼을 눌러 결과를 열 수 있습니다.`
       : `${sourceLabel} · 검색 가능한 상품이 없습니다.`;
     return { ok: true, products: storedProducts };
   } catch (error) {
@@ -3696,6 +3700,10 @@ async function capturePopularProducts(options = {}) {
 }
 $("#popular-capture").addEventListener("click", async () => {
   await capturePopularProducts();
+});
+$("#popular-product-search")?.addEventListener("click", async () => {
+  if (!latestPopularExcelFile?.path) return;
+  await openIntegratedPopularExcel(latestPopularExcelFile);
 });
 async function runDomesticBatch(options = {}) {
   const selectedOnly = Boolean(options?.selectedOnly);
