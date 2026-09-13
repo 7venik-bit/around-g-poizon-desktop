@@ -120,12 +120,13 @@ export class DomesticRecoveryCoordinator {
       check();
     })]); } finally { clearTimeout(timer); }
   }
-  async run({jobId, productKey, execute, canceled = () => false, onProgress = () => {}}) {
+  async run({jobId, productKey, execute, canceled = () => false, onProgress = () => {}, onCheckpoint = () => {}}) {
     // The renderer can reach its absolute deadline just before the previous
     // IPC call finishes saving and releasing this job. Queue the next product
     // behind that cleanup instead of failing every remaining row with
     // RECOVERY_ALREADY_RUNNING.
-    while (this.activeRuns.has(jobId)) await this.activeRuns.get(jobId);
+    while (this.activeRuns.has(jobId)) await this.cancelable(this.activeRuns.get(jobId), canceled);
+    if (canceled()) throw new Error('DOMESTIC_SEARCH_CANCELED');
     let job = copy(this.get(jobId));
     if (!job) throw new Error('RECOVERY_JOB_MISSING');
     const product = job.products.find(p => p.key === productKey);
@@ -136,6 +137,7 @@ export class DomesticRecoveryCoordinator {
     this.active.add(jobId);
     let interrupted = false;
     try {
+      onCheckpoint(this.result(job, product));
       for (const task of product.tasks) {
         if (!Number.isFinite(Date.parse(task.observedAt)) || this.now() - Date.parse(task.observedAt) > this.freshnessMs) {
           task.status = 'pending'; task.data = null; task.observedAt = null;
@@ -153,6 +155,7 @@ export class DomesticRecoveryCoordinator {
             task.checkedAt = stamp(this.now);
             task.observedAt ||= task.checkedAt;
             await this.save(job);
+            if (accepting && !canceled()) onCheckpoint(this.result(job, product));
           };
           try {
             response = await this.cancelable(execute({...product.input, sourceGroups: [task.group], verifyLinkCounts: true,
@@ -170,6 +173,7 @@ export class DomesticRecoveryCoordinator {
           // verified response forever. Completion is based on this attempt.
           if (complete) task.data.partial = false;
           await this.save(job);
+          if (!canceled()) onCheckpoint(this.result(job, product));
           onProgress({completed: product.tasks.filter(t => t.status === 'complete').length,
             total: product.tasks.length, source: task.group, phase: complete ? 'completed' : 'pending'});
           if (response?.canceled || canceled()) { interrupted = true; break; }

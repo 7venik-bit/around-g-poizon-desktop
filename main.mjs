@@ -12127,13 +12127,21 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     };
     if (!input?.recoveryJobId) return execute(input);
     const generation = domesticSearchGeneration;
-    return recoveryCoordinator().run({jobId: input.recoveryJobId, productKey: input.recoveryProductKey,
+    // One deadline covers the entire product, including all retailer retries.
+    // Previously only execute() had a deadline, resetting it for every retailer
+    // until the renderer expired and discarded all accumulated results.
+    const recoveryProgress = { checkpoint: null };
+    const recoveryOperation = recoveryCoordinator().run({jobId: input.recoveryJobId, productKey: input.recoveryProductKey,
       canceled: () => domesticSearchCanceled(generation),
       execute: (task, checkpoint) => execute({...task, requestId: input.requestId}, checkpoint),
+      onCheckpoint: data => {
+        if (!domesticSearchCanceled(generation)) recoveryProgress.checkpoint = data;
+      },
       onProgress: payload => {
         if (!_event.sender.isDestroyed()) _event.sender.send("domestic-search:progress", {...payload, requestId: input.requestId});
       },
     }).catch(error => ({ok:false, message: error.message}));
+    return withDomesticSearchHardTimeout(recoveryOperation, generation, recoveryProgress);
   });
   ipcMain.handle("domestic:recovery-start", async (_event, input) => {
     try { return {ok:true, ...await recoveryCoordinator().start(input)}; }

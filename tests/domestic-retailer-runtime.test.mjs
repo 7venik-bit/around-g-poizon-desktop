@@ -133,7 +133,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     runInContext(section('let domesticSearchGeneration = 0;', '\nconst DOMESTIC_LOGIN_SOURCES'), context);
     runInContext(section('async function verifyAllStoresWithMusinsaImage(', '\nasync function officialDetailImage('), context);
     runInContext(section('  ipcMain.handle("domestic:search"', '  ipcMain.handle("domestic:cancel"'), context);
-    return { events, run: () => drive(handlers.get('domestic:search')({sender:{isDestroyed:()=>false,send:(_name,event)=>events.push(event)}}, {articleNumber:'SR123UPS11',brand:'데상트',title:'카라 셔츠',verifyLinkCounts:true,requestId:'fixture-request'})) };
+    return { events, run: (extra = {}) => drive(handlers.get('domestic:search')({sender:{isDestroyed:()=>false,send:(_name,event)=>events.push(event)}}, {articleNumber:'SR123UPS11',brand:'데상트',title:'카라 셔츠',verifyLinkCounts:true,requestId:'fixture-request', ...extra})) };
   }
   return { search, context, drive, captures, navigations, installHandler, now: () => now };
 }
@@ -203,6 +203,21 @@ test('the complete IPC path stops at two minutes and keeps completed retailers',
   assert.ok(response.data.products.length > 0 && response.data.products.length < 3);
   assert.ok(f.now() <= 120_000, 'the per-product deadline must be absolute');
   assert.ok(response.data.sources.some(s => !s.verificationFailed));
+});
+
+test('recovery IPC has one product deadline and returns saved results before the renderer expires', async t => {
+  const f = fixture(t);
+  const h = f.installHandler();
+  f.context.recoveryCoordinator = () => ({ run: ({onCheckpoint, canceled}) => {
+    onCheckpoint({products:[{store:'무신사',price:84550}],sources:[{store:'무신사'}],partial:true});
+    return new Promise(() => {});
+  }});
+  const response = await h.run({recoveryJobId:'job',recoveryProductKey:'product'});
+  assert.equal(response.ok, true);
+  assert.equal(response.timedOut, true);
+  assert.equal(response.data.partial, true);
+  assert.equal(response.data.products[0].price, 84550);
+  assert.ok(f.now() <= 120_000);
 });
 
 test('a real stall returns the last verified checkpoint instead of discarding its products', async t => {
