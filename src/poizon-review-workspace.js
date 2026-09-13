@@ -212,6 +212,9 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
       pageOffset = 0;
       get('.review-phase').textContent = result.ok ? `대조 완료 · 기존 ${Number(result.changedRows || 0).toLocaleString('ko-KR')}행 수정 · 누락 ${Number(result.addedRows || 0).toLocaleString('ko-KR')}행 추가 · 중복 ${Number(result.duplicateRows || 0).toLocaleString('ko-KR')}건 정리 · 재검증 완료` : `검증 미완료 · ${result.message || '전체 페이지 확인 실패'}`;
       if (result.ok) get('.review-counters').textContent = `전체 ${number(state.checkedProducts)}상품 대조 완료 · 수정 ${number(result.changedRows || 0)}행 · 추가 ${number(result.addedRows || 0)}행 · 수정 대기 0`;
+      const stopButton = get('.review-stop');
+      stopButton.disabled = true;
+      stopButton.textContent = result.ok ? '대조 완료' : '대조 종료';
       get('.review-close').disabled = false; renderRows(); dispose();
     },
     showReport(report) { latestReport = report; get('.review-report').disabled = false; showReviewReport(report, doc); },
