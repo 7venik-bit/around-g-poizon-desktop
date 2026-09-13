@@ -32,6 +32,27 @@ async function start(coordinator, groups = ['official'], keys = ['A']) {
   return coordinator.start({ scope: 'workbook:sheet', products: keys.map(item), sourceGroups: groups });
 }
 
+test('product checkpoints contain persisted results across retailers before final response', async t => {
+  const f = await fixture(t);
+  const job = await start(f.coordinator, ['official', 'musinsa']);
+  const snapshots = [];
+  await f.coordinator.run({jobId:job.id, productKey:'A',
+    onCheckpoint: data => {
+      const saved = f.coordinator.get(job.id);
+      assert.deepEqual(data, f.coordinator.result(saved, saved.products[0]));
+      snapshots.push(structuredClone(data));
+    },
+    execute: async (input, checkpoint) => {
+      const data = good(input.sourceGroups[0]);
+      await checkpoint(data);
+      return {ok:true, data};
+    },
+  });
+  assert.ok(snapshots.some(data => data.products.length === 1 && data.partial));
+  assert.equal(snapshots.at(-1).products.length, 2);
+  assert.equal(snapshots.at(-1).partial, false);
+});
+
 test('restart retains successful retailer stock and runs only the failed group', async t => {
   const f = await fixture(t);
   const job = await start(f.coordinator, ['official', 'musinsa']);
