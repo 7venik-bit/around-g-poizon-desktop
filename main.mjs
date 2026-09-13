@@ -583,6 +583,29 @@ const sellerJumpScript = (rank, limit) => `(() => {
   target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
   return { found: true, rank: requestedRank, position: target.element.scrollTop, maximum: target.maximum };
 })()`;
+const sellerNudgeScript = (pixels) => `(() => {
+  const requestedPixels = ${Number(pixels)};
+  const root = document.scrollingElement || document.documentElement;
+  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
+    .filter((element, index, all) => all.indexOf(element) === index)
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
+      const text = String(element.innerText || "");
+      const productTable = text.includes("SPU") && text.includes("SKU")
+        && /상품정보|평균\\s*거래가/.test(text);
+      return { element, maximum, visible: rect.width >= 280 && rect.height >= 160 && rect.bottom > 0 && rect.top < innerHeight,
+        score: (productTable ? 1000000 : 0) + maximum };
+    })
+    .filter((candidate) => candidate.visible && candidate.maximum > 80)
+    .sort((left, right) => right.score - left.score);
+  const target = candidates[0];
+  if (!target) return { found: false };
+  const before = target.element.scrollTop;
+  target.element.scrollTop = Math.max(0, Math.min(target.maximum, before + requestedPixels));
+  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  return { found: true, before, after: target.element.scrollTop, maximum: target.maximum };
+})()`;
 const sellerScrollbarInfoScript = (ratio) => `(() => {
   const requestedRatio = Math.max(0, Math.min(1, ${Number(ratio)}));
   const root = document.scrollingElement || document.documentElement;
@@ -9841,7 +9864,7 @@ async function captureSellerCenterProducts() {
 
   // Revisit only missing rank ranges. Positions observed during the full scan
   // are authoritative; the simple rank/200 ratio is used only as a fallback.
-  for (let recoveryRound = 0; recoveryRound < 5 && completeRankCount() < limit; recoveryRound += 1) {
+  for (let recoveryRound = 0; recoveryRound < 6 && completeRankCount() < limit; recoveryRound += 1) {
     for (const product of networkProducts) addConfirmedProduct(product);
     const groups = missingRankGroups();
     if (!groups.length) break;
@@ -9850,23 +9873,32 @@ async function captureSellerCenterProducts() {
       count: completeRankCount(),
       target: limit,
       missing: limit - completeRankCount(),
-      message: `누락 순위만 정밀 재수집 ${recoveryRound + 1}/5 · ${groups.map((group) => group.start === group.end ? group.start : `${group.start}-${group.end}`).slice(0, 18).join(", ")}`,
+      message: `누락 순위만 정밀 재수집 ${recoveryRound + 1}/6 · ${groups.map((group) => group.start === group.end ? group.start : `${group.start}-${group.end}`).slice(0, 18).join(", ")}`,
     });
     for (const group of groups) {
       const groupRanks = Array.from({ length: group.end - group.start + 1 }, (_value, index) => group.start + index);
       if (groupRanks.every(rankIsComplete)) continue;
-      const targetRatio = Math.max(0, observedRatioForRank(Math.max(1, group.start - 2)) - 0.015);
-      const targetRank = 1 + targetRatio * (limit - 1);
-      await executeAcrossSellerFrames(sellerJumpScript(targetRank, limit));
-      await wait(650);
-      let signature = await captureVisibleSlots();
-      const maximumScans = Math.max(18, Math.min(160, (group.end - group.start + 8) * 6));
-      for (let scan = 0; scan < maximumScans; scan += 1) {
+      const centerRatio = observedRatioForRank(group.start);
+      // Virtualized rows can leave a one-row paint gap at an otherwise correct
+      // scrollTop. Probe both sides of the observed position, wait for repaint,
+      // and nudge in both directions instead of replaying the same forward scan.
+      const probeOffsets = [-0.024, -0.012, 0, 0.012, 0.024];
+      for (const offset of probeOffsets) {
         if (groupRanks.every(rankIsComplete)) break;
-        const scrollResult = await executeAcrossSellerFrames(SELLER_ROW_SCROLL_SCRIPT);
-        if (!scrollResult?.found) break;
-        signature = await captureAfterRowChange(signature, Boolean(scrollResult.atEnd));
-        if (scrollResult.atEnd) break;
+        const probeRatio = Math.max(0, Math.min(1, centerRatio + offset));
+        const probeRank = 1 + probeRatio * (limit - 1);
+        const dragged = await dragSellerScrollbarToRatio(probeRatio);
+        if (!dragged) await executeAcrossSellerFrames(sellerJumpScript(probeRank, limit));
+        await wait(800 + recoveryRound * 120);
+        for (let repaint = 0; repaint < 8 && !groupRanks.every(rankIsComplete); repaint += 1) {
+          await captureVisibleSlots();
+          for (const product of networkProducts) addConfirmedProduct(product);
+          if (groupRanks.every(rankIsComplete)) break;
+          const direction = repaint % 2 === 0 ? 1 : -1;
+          const distance = 18 + Math.floor(repaint / 2) * 12;
+          await executeAcrossSellerFrames(sellerNudgeScript(direction * distance));
+          await wait(180 + repaint * 35);
+        }
       }
     }
   }

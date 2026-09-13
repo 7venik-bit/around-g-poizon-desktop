@@ -50,3 +50,11 @@ test("배포 경로는 불완전 목록 저장을 차단하고 완료율 100%만
   assert.match(main, /1~\$\{limit\}위 완전 수집 확인/);
   assert.doesNotMatch(main, /source: "seller-center-missing-slot"/);
 });
+
+test("누락 순위는 관찰 위치의 앞뒤를 양방향으로 재수집한다", async () => {
+  const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
+  assert.match(main, /const probeOffsets = \[-0\.024, -0\.012, 0, 0\.012, 0\.024\]/);
+  assert.match(main, /sellerNudgeScript\(direction \* distance\)/);
+  assert.match(main, /for \(let repaint = 0; repaint < 8/);
+  assert.match(main, /for \(const product of networkProducts\) addConfirmedProduct\(product\)/);
+});
