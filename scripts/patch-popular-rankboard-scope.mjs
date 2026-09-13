@@ -23,13 +23,13 @@ if (!main.includes('const hasTableHeaders = text.includes("SPU 기준")')) {
   throw new Error("known-good popular table detector missing");
 }
 
-// v2.10.573 and later already contain the strict capture pipeline.  The
-// legacy recovery patch below targets the older collector and must not be
-// layered on top of it during postinstall/release builds.
+// Current builds recover missing ranks and then persist confirmed products
+// with explicit placeholder rows. The legacy recovery patch below targets
+// the older collector and must not be layered on top during release builds.
 const strictCaptureMarkers = [
-  'code: "POPULAR_CAPTURE_INCOMPLETE"',
   'const captureCompleteness = popularCompleteness([...rankSlots.values()], limit);',
-  'message: `1~${limit}위 완전 수집 확인 · 상품 ${preservedSlots.size}개 · 누락 0개`',
+  'products = createPopularSlots([...preservedSlots.values()], limit);',
+  'partial: !finalCompleteness.complete',
 ];
 if (strictCaptureMarkers.every((marker) => main.includes(marker))) {
   await writeFile(mainPath, main, "utf8");

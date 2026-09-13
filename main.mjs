@@ -9906,7 +9906,6 @@ async function captureSellerCenterProducts() {
   for (const product of networkProducts) addConfirmedProduct(product);
   const captureCompleteness = popularCompleteness([...rankSlots.values()], limit);
   if (!captureCompleteness.complete) {
-    stopNetworkCapture();
     const missingLabel = captureCompleteness.missingRanks.slice(0, 40).join(", ");
     mainWindow?.webContents.send("seller:capture-progress", {
       percent: 99,
@@ -9914,17 +9913,8 @@ async function captureSellerCenterProducts() {
       target: limit,
       missing: captureCompleteness.missingRanks.length,
       attentionRequired: true,
-      message: `완전 수집 미달 · ${captureCompleteness.captured}/${limit} · 누락 순위 ${missingLabel}${captureCompleteness.missingRanks.length > 40 ? "…" : ""}`,
+      message: `재수집 종료 · ${captureCompleteness.captured}/${limit} 확인 · 누락 순위 ${missingLabel}${captureCompleteness.missingRanks.length > 40 ? "…" : ""} · 확인된 상품을 저장합니다.`,
     });
-    return {
-      ok: false,
-      code: "POPULAR_CAPTURE_INCOMPLETE",
-      retryable: true,
-      capturedCount: captureCompleteness.captured,
-      expectedCount: limit,
-      missingRanks: captureCompleteness.missingRanks,
-      message: `인기상품 ${captureCompleteness.captured}/${limit}개만 확인되어 저장하지 않았습니다. 누락 순위 ${missingLabel}${captureCompleteness.missingRanks.length > 40 ? "…" : ""}를 다시 수집해 주세요.`,
-    };
   }
   let products = [];
   for (const captured of captures) {
@@ -9969,25 +9959,15 @@ async function captureSellerCenterProducts() {
     preservedSlots.set(rank, { ...product, articleNumber });
   }
   const finalCompleteness = popularCompleteness([...preservedSlots.values()], limit);
-  if (!finalCompleteness.complete) {
-    stopNetworkCapture();
-    return {
-      ok: false,
-      code: "POPULAR_CAPTURE_VALIDATION_FAILED",
-      retryable: true,
-      capturedCount: finalCompleteness.captured,
-      expectedCount: limit,
-      missingRanks: finalCompleteness.missingRanks,
-      message: `수집 후 품번 검증에서 ${finalCompleteness.missingRanks.length}개 순위가 제외되어 저장하지 않았습니다.`,
-    };
-  }
-  products = Array.from({ length: limit }, (_value, index) => preservedSlots.get(index + 1));
+  products = createPopularSlots([...preservedSlots.values()], limit);
   mainWindow?.webContents.send("seller:capture-progress", {
     percent: 100,
     count: preservedSlots.size,
     target: limit,
-    missing: 0,
-    message: `1~${limit}위 완전 수집 확인 · 상품 ${preservedSlots.size}개 · 누락 0개`,
+    missing: finalCompleteness.missingRanks.length,
+    message: finalCompleteness.complete
+      ? `1~${limit}위 완전 수집 확인 · 상품 ${preservedSlots.size}개 · 누락 0개`
+      : `수집 종료 · 상품 ${finalCompleteness.captured}/${limit} · 누락 ${finalCompleteness.missingRanks.length}개 · Excel 저장`,
   });
   stopNetworkCapture();
   const codes = products.map((product) => product.articleNumber).filter(Boolean);
@@ -10002,6 +9982,8 @@ async function captureSellerCenterProducts() {
     ok: true,
     source: "seller-center-direct",
     capturedAt: new Date().toISOString(),
+    partial: !finalCompleteness.complete,
+    missingRanks: finalCompleteness.missingRanks,
     pageUrl: currentUrl,
     conditions: conditionResults,
     products: products.map((product) => ({
@@ -11893,14 +11875,6 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     try {
       const limit = 200;
       const beforeExcel = popularCompleteness(products, limit);
-      if (!beforeExcel.complete) {
-        return {
-          ok: false,
-          code: "POPULAR_EXCEL_INCOMPLETE",
-          missing: beforeExcel.missingRanks,
-          message: `인기상품 ${beforeExcel.captured}/${limit}개만 확인되어 불완전한 Excel은 저장하지 않습니다.`,
-        };
-      }
       const slots = createPopularSlots(products, limit);
       const folder = oneDrivePopularExportFolder()
         || join(app.getPath("desktop"), "Around G POIZON");
@@ -11920,19 +11894,22 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       const rows = await readSheet(await readFile(filePath), "POIZON_RAW");
       const imported = excelRowsToPopularProducts(rows);
       const afterExcel = popularCompleteness(imported, limit);
-      if (!afterExcel.complete) {
+      const roundtripPreserved = afterExcel.captured === beforeExcel.captured
+        && JSON.stringify(afterExcel.missingRanks) === JSON.stringify(beforeExcel.missingRanks);
+      if (!roundtripPreserved) {
         return {
           ok: false,
-          code: "POPULAR_EXCEL_ROUNDTRIP_INCOMPLETE",
+          code: "POPULAR_EXCEL_ROUNDTRIP_MISMATCH",
           path: filePath,
           missing: afterExcel.missingRanks,
-          message: `Excel 재검증 결과 ${afterExcel.captured}/${limit}개만 확인되어 목록에 반영하지 않습니다.`,
+          message: `Excel 재검증 결과가 수집 목록과 일치하지 않습니다. 저장 파일을 확인해 주세요.`,
         };
       }
       return {
         ok: true,
         path: filePath,
         products: imported,
+        partial: !afterExcel.complete,
         imported: imported.filter((product) => !product.missingRank).length,
         missing: imported.filter((product) => product.missingRank).map((product) => product.rank),
       };
