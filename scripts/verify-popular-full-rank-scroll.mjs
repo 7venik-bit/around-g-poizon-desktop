@@ -10,15 +10,16 @@ if (!main.includes("const SELLER_ROW_SCROLL_SCRIPT")) fail("seller row-scroll sc
 if (!main.includes('const hasTableHeaders = text.includes("SPU 기준")')) fail("historical table scope missing");
 if (main.includes("video-confirmed popular ranking table")) fail("video table rewrite remains");
 
-const strictCaptureMarkers = [
-  'code: "POPULAR_CAPTURE_INCOMPLETE"',
+const captureMarkers = [
   'const captureCompleteness = popularCompleteness([...rankSlots.values()], limit);',
   'const finalCompleteness = popularCompleteness([...preservedSlots.values()], limit);',
-  'message: `1~${limit}위 완전 수집 확인 · 상품 ${preservedSlots.size}개 · 누락 0개`',
+  'products = createPopularSlots([...preservedSlots.values()], limit);',
+  'partial: !finalCompleteness.complete',
 ];
-for (const marker of strictCaptureMarkers) {
-  if (!main.includes(marker)) fail(`strict completeness marker missing: ${marker}`);
+for (const marker of captureMarkers) {
+  if (!main.includes(marker)) fail(`partial persistence marker missing: ${marker}`);
 }
+if (main.includes('code: "POPULAR_CAPTURE_INCOMPLETE"')) fail("incomplete capture still discards confirmed products");
 if (main.includes('source: "seller-center-missing-slot"')) fail("missing rank placeholder remains");
 
-console.log("popular list capture requires verified 1~200 ranks with no placeholders");
+console.log("popular list capture retries missing ranks and preserves confirmed products with placeholders");

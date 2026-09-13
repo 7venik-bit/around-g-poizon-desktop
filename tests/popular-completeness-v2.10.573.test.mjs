@@ -43,10 +43,15 @@ test("품번·상품명·평균 거래가 중 하나라도 비면 해당 순위�
   assert.deepEqual(result.incompleteRanks, [42]);
 });
 
-test("배포 경로는 불완전 목록 저장을 차단하고 완료율 100%만 반환한다", async () => {
+test("배포 경로는 누락 순위를 표시하고 확인된 상품을 Excel에 저장한다", async () => {
   const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
-  assert.match(main, /code: "POPULAR_CAPTURE_INCOMPLETE"/);
-  assert.match(main, /code: "POPULAR_EXCEL_INCOMPLETE"/);
+  assert.doesNotMatch(main, /code: "POPULAR_CAPTURE_INCOMPLETE"/);
+  assert.doesNotMatch(main, /code: "POPULAR_EXCEL_INCOMPLETE"/);
+  assert.match(main, /products = createPopularSlots\(\[\.\.\.preservedSlots\.values\(\)\], limit\)/);
+  assert.match(main, /partial: !finalCompleteness\.complete/);
+  assert.match(main, /code: "POPULAR_EXCEL_ROUNDTRIP_MISMATCH"/);
+  assert.match(main, /partial: !afterExcel\.complete/);
+  assert.match(main, /누락 \$\{finalCompleteness\.missingRanks\.length\}개 · Excel 저장/);
   assert.match(main, /1~\$\{limit\}위 완전 수집 확인/);
   assert.doesNotMatch(main, /source: "seller-center-missing-slot"/);
 });
