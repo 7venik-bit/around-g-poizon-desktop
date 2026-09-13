@@ -321,6 +321,14 @@ test('live review has a dedicated safe stop control', async () => {
   assert.match(main, /waitVerification\(sellerPageDelayMs\)/);
 });
 
+test('completed review disables the stale stop control and enables close', async () => {
+  const view = await readFile(new URL('../src/poizon-review-workspace.js', import.meta.url),'utf8');
+  const finish = view.slice(view.indexOf('finish(result = {})'), view.indexOf('showReport(report)', view.indexOf('finish(result = {})')));
+  assert.match(finish, /stopButton\.disabled = true/);
+  assert.match(finish, /result\.ok \? '대조 완료' : '대조 종료'/);
+  assert.match(finish, /get\('\.review-close'\)\.disabled = false/);
+});
+
 test('review counters expose every recognized product classification', async () => {
   const view = await readFile(new URL('../src/poizon-review-workspace.js', import.meta.url),'utf8');
   assert.match(view, /옵션 비교 보류.*state\.deferredProducts/);
