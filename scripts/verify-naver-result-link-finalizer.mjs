@@ -31,6 +31,11 @@ for (const marker of required) {
   if (!source.includes(marker)) throw new Error(`Naver result-link verification failed: ${marker}`);
 }
 
+const naverResultLoaderCalls = source.match(/const resultPage = await loadNaverFashionTownResultPage\(/g) || [];
+if (naverResultLoaderCalls.length !== 1) {
+  throw new Error(`Naver result-link verification failed: expected one result-page load, found ${naverResultLoaderCalls.length}`);
+}
+
 if (source.includes("const directOfficialResultLink")) {
   throw new Error("Official malls must reach rendered-card price capture instead of returning link-only.");
 }
