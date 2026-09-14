@@ -2900,6 +2900,37 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
   };
 }
 
+async function loadMusinsaResultPage(searchWindow, targetUrl, query) {
+  const expectedQuery = sanitizeDomesticProductCode(query) || sanitizeDomesticQuery(query);
+  let navigationError = null;
+  const navigation = searchWindow.loadURL(targetUrl).catch((error) => { navigationError = error; });
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    if (attempt > 0) await wait(500);
+    const state = await searchWindow.webContents.executeJavaScript(`(() => {
+      const current = new URL(String(location.href || ""));
+      const expected = ${JSON.stringify(expectedQuery)};
+      const actual = String(current.searchParams.get("keyword") || "").trim();
+      const pageText = String(document.body?.innerText || "").slice(0, 50000);
+      const exactSearch = /(^|\\.)musinsa\\.com$/i.test(current.hostname)
+        && current.pathname.includes("/search/goods")
+        && actual.toUpperCase() === expected.toUpperCase();
+      const cards = document.querySelectorAll('a[href*="/products/"],a[href*="/product/"]').length;
+      const explicitEmpty = /검색\\s*결과가?\\s*(?:없|0)|상품이?\\s*(?:없|0)|검색된\\s*상품이\\s*없/i.test(pageText);
+      return { href: current.href, ready: Boolean(exactSearch && document.documentElement && (cards > 0 || explicitEmpty)) };
+    })()`, true).catch(() => null);
+    if (state?.ready) return { ok: true, resolvedUrl: state.href };
+  }
+  await Promise.race([navigation, wait(500)]);
+  const errorMessage = String(navigationError?.message || "MUSINSA_RESULT_DOM_NOT_READY");
+  return {
+    ok: false,
+    resolvedUrl: String(searchWindow.webContents.getURL() || targetUrl),
+    errorMessage,
+    timeout: true,
+    networkError: /ERR_(?:NAME_NOT_RESOLVED|CONNECTION|TIMED_OUT|INTERNET_DISCONNECTED)/i.test(errorMessage),
+  };
+}
+
 async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "", securityRetry = 0, searchAttempt = null, sharedNaverSession = null, generation = domesticSearchGeneration, onActivity = null) {
   if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
   const interactiveOfficialSearch = source.store === "브랜드 공식몰"
@@ -2982,7 +3013,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       // cold hidden window can reject a direct Fashion Town SPA navigation.
       const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;
       */
-      if (!directNaverFashionResult) try {
+      if (!directNaverFashionResult && !musinsaSource) try {
         await Promise.race([
           searchWindow.loadURL(initialUrl),
           new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 30_000)),
@@ -3033,6 +3064,21 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         // below. Do not let the first Electron loadURL rejection escape to the
         // outer page_load_failed handler before that recovery can run.
         if (!documentReady && !recoveredMusinsaResult && !directNaverFashionResult) throw error;
+      }
+      if (musinsaSource) {
+        const resultPage = await loadMusinsaResultPage(
+          searchWindow, url, searchAttempt?.query || source.searchQuery || articleNumber || title,
+        );
+        if (!resultPage.ok) {
+          return renderedSearchFailure(
+            resultPage.networkError ? "network_error" : "page_load_timeout",
+            searchWindow, {
+              searchSubmitted: true,
+              resolvedSearchUrl: resultPage.resolvedUrl || url,
+              errorMessage: resultPage.errorMessage,
+            },
+          );
+        }
       }
       // A brand adapter may know a stable product-detail route. Verify that
       // route against the exact POIZON article before falling back to the
