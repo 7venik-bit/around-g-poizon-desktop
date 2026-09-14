@@ -133,7 +133,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     runInContext(section('let domesticSearchGeneration = 0;', '\nconst DOMESTIC_LOGIN_SOURCES'), context);
     runInContext(section('async function verifyAllStoresWithMusinsaImage(', '\nasync function officialDetailImage('), context);
     runInContext(section('  ipcMain.handle("domestic:search"', '  ipcMain.handle("domestic:cancel"'), context);
-    return { events, run: (extra = {}) => drive(handlers.get('domestic:search')({sender:{isDestroyed:()=>false,send:(_name,event)=>events.push(event)}}, {articleNumber:'SR123UPS11',brand:'데상트',title:'카라 셔츠',verifyLinkCounts:true,requestId:'fixture-request', ...extra})) };
+    return { events, run: () => drive(handlers.get('domestic:search')({sender:{isDestroyed:()=>false,send:(_name,event)=>events.push(event)}}, {articleNumber:'SR123UPS11',brand:'데상트',title:'카라 셔츠',verifyLinkCounts:true,requestId:'fixture-request'})) };
   }
   return { search, context, drive, captures, navigations, installHandler, now: () => now };
 }
@@ -192,32 +192,15 @@ test('a stalled retailer remains bounded and is not reported as product absence'
   assert.ok(f.now() <= 90_000);
 });
 
-test('the complete IPC path stops at two minutes and keeps completed retailers', async t => {
+test('the complete IPC path keeps progressing past two minutes and returns every retailer', async t => {
   const f = fixture(t, {navigationDelay:18_000});
   const h = f.installHandler([...channels,...channels]);
   const response = await h.run();
   assert.equal(response.ok, true, JSON.stringify(response));
-  assert.equal(response.timedOut, true);
-  assert.equal(response.data.partial, true);
   assert.equal(response.data.sources.length, 6);
-  assert.ok(response.data.products.length > 0 && response.data.products.length < 3);
-  assert.ok(f.now() <= 120_000, 'the per-product deadline must be absolute');
-  assert.ok(response.data.sources.some(s => !s.verificationFailed));
-});
-
-test('recovery IPC has one product deadline and returns saved results before the renderer expires', async t => {
-  const f = fixture(t);
-  const h = f.installHandler();
-  f.context.recoveryCoordinator = () => ({ run: ({onCheckpoint, canceled}) => {
-    onCheckpoint({products:[{store:'무신사',price:84550}],sources:[{store:'무신사'}],partial:true});
-    return new Promise(() => {});
-  }});
-  const response = await h.run({recoveryJobId:'job',recoveryProductKey:'product'});
-  assert.equal(response.ok, true);
-  assert.equal(response.timedOut, true);
-  assert.equal(response.data.partial, true);
-  assert.equal(response.data.products[0].price, 84550);
-  assert.ok(f.now() <= 120_000);
+  assert.equal(response.data.products.length, 3);
+  assert.ok(f.now() > 120_000, 'exercise the former overall cutoff');
+  assert.ok(response.data.sources.every(s => !s.verificationFailed));
 });
 
 test('a real stall returns the last verified checkpoint instead of discarding its products', async t => {
@@ -245,7 +228,7 @@ test('IPC returns verified retailer prices promptly if final preference saving n
   assert.ok(f.now() < 120_000, 'completed results must not wait for stalled preference saving');
 });
 
-test('slow ranked fallbacks stop at the product deadline instead of running indefinitely', async t => {
+test('all ranked queries run when earlier authoritative empty searches each take one minute', async t => {
   const f = fixture(t);
   const h = f.installHandler([channels[1]]);
   f.context.queryDomesticProducts = async () => ({products:[],sources:[{store:'SSG',renderCount:true,linkOnly:true,searchUrl:channels[1][1],searchAttempts:[{query:'SR123UPS11'},{query:'카라 셔츠'},{query:'카라 셔츠 SR123UPS11'}]}]});
@@ -257,12 +240,10 @@ test('slow ranked fallbacks stop at the product deadline instead of running inde
     return {count:products.length,products,absenceConfirmed:!products.length,searchCompleted:true};
   };
   const response = await h.run();
-  assert.equal(attempts.length, 2);
+  assert.equal(attempts.length, 3);
   assert.equal(response.ok, true);
-  assert.equal(response.timedOut, true);
-  assert.equal(response.data.partial, true);
-  assert.equal(response.data.products.length, 0);
-  assert.ok(f.now() <= 120_000);
+  assert.equal(response.data.products[0].price, 84550);
+  assert.ok(f.now() >= 180_000);
 });
 
 test('an expired old source timer cannot close a window opened after cancellation', async t => {
@@ -613,7 +594,7 @@ test('size-guide tabs are never stock and member-only text stays explicit', asyn
   assert.deepEqual(result.sizes,[]);assert.equal(result.stockStatus,'login_required');assert.equal(result.stockText,'회원 전용');assert.equal(result.inStock,null);
 });
 
-test('a large detail list stops at 90 seconds and retains completed checkpoints', async t => {
+test('more than eight product details finish beyond 90 seconds while emitting retained checkpoints', async t => {
   const searchUrl='https://www.lotteon.com/search/search/search.ecn?q=SR123UPS11&fixture=12';
   const cards=Array.from({length:12},(_,i)=>`<li><a href="https://www.lotteon.com/p/product/LO${i}"><img alt="데상트 SR123UPS11 카라 셔츠"></a><strong>데상트 SR123UPS11 카라 셔츠</strong><span>롯데백화점</span><span>84,550원</span></li>`).join('');
   const pages={[searchUrl]:`<main><p>전체 12개</p><ul>${cards}</ul></main>`};
@@ -622,10 +603,8 @@ test('a large detail list stops at 90 seconds and retains completed checkpoints'
   const original=f.context.clickRenderedProductCard;
   f.context.clickRenderedProductCard=async(...args)=>{await f.context.wait(10_000);return original(...args);};
   const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{store:'롯데온',searchUrl,renderCount:true}]},'SR123UPS11','데상트','카라 셔츠',0,null,value=>snapshots.push(value)));
-  assert.ok(result.products.length>0&&result.products.length<12);assert.ok(f.now()<=90_000);
-  assert.equal(result.sources[0].verificationStage,'source_timeout');
-  assert.ok(snapshots.some(s=>s.products.length===1));
-  assert.ok(snapshots.some(s=>s.products.length===result.products.length));
+  assert.equal(result.products.length,12);assert.ok(f.now()>90_000);
+  assert.ok(snapshots.some(s=>s.products.length===1));assert.ok(snapshots.some(s=>s.products.length===12));
 });
 
 test('a stalled later detail retains the completed product checkpoint', async t => {

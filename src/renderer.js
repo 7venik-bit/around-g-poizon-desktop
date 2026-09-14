@@ -1385,7 +1385,6 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
   input.requestId = `${runId}:${Date.now()}:${identity}`;
   activeDomesticProgressRequestId = input.requestId;
   activeDomesticProgressAt = Date.now();
-  const searchStartedAt = activeDomesticProgressAt;
   const task = (async () => {
     const run = async () => {
       let timeoutId;
@@ -1398,7 +1397,7 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
                 resolve({ ok: false, canceled: true, message: "검색이 중지되었습니다." });
                 return;
               }
-              const remaining = DOMESTIC_SEARCH_MAX_WAIT_MS - (Date.now() - searchStartedAt);
+              const remaining = DOMESTIC_SEARCH_MAX_WAIT_MS - (Date.now() - activeDomesticProgressAt);
               if (remaining > 0) {
                 timeoutId = setTimeout(checkProgress, remaining);
                 return;
