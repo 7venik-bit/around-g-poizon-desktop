@@ -38,7 +38,8 @@ replaceOnce(
   "Naver session bootstrap before Fashion Town result",
 );
 
-replaceOnce(
+const naverResultNavigationMarker = '      if (directNaverFashionResult) {\n        const resultPage = await loadNaverFashionTownResultPage(';
+if (!source.includes(naverResultNavigationMarker)) replaceOnce(
   '      if (interactiveOfficialSearch) {',
   '      if (directNaverFashionResult) {\\n        const resultPage = await loadNaverFashionTownResultPage(\\n          searchWindow, url, searchAttempt?.query || source.searchQuery || articleNumber || title,\\n        );\\n        if (!resultPage.ok) {\\n          return renderedSearchFailure(\\n            resultPage.timeout ? "page_load_timeout"\\n              : resultPage.networkError ? "network_error" : "page_load_failed",\\n            searchWindow, {\\n              searchSubmitted: true,\\n              resolvedSearchUrl: resultPage.resolvedUrl || url,\\n              errorMessage: resultPage.errorMessage,\\n            },\\n          );\\n        }\\n      }\\n      if (interactiveOfficialSearch) {'.replaceAll('\\n', '\n'),
   "Naver Fashion Town result navigation recovery",
