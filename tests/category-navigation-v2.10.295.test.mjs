@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 
 const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
 const renderer = readFileSync(new URL("../src/renderer.js", import.meta.url), "utf8");
@@ -49,4 +50,22 @@ test("상위 카테고리와 세부 메뉴를 복수 선택하고 다시 눌러 
   assert.match(renderer, /if \(details\.has\(detail\)\) details\.delete\(detail\)/);
   assert.match(renderer, /categorySelections\.some\(\(selection\) =>/);
   assert.match(renderer, /복수 선택 \$\{pairs\.length\}개/);
+});
+
+test("결과 제목은 같은 상위 카테고리를 한 번만 표시하고 세부 카테고리만 이어 쓴다", () => {
+  const start = renderer.indexOf("function formatCategorySelectionLabel");
+  const end = renderer.indexOf("function toggleCategoryDetail", start);
+  const context = {};
+  runInNewContext(`${renderer.slice(start, end)};this.formatCategorySelectionLabel = formatCategorySelectionLabel;`, context);
+
+  assert.equal(context.formatCategorySelectionLabel([
+    { category: "아우터", detail: "재킷" },
+    { category: "아우터", detail: "바람막이" },
+    { category: "아우터", detail: "패딩" },
+  ]), "아우터 〉 재킷 · 바람막이 · 패딩");
+  assert.equal(context.formatCategorySelectionLabel([
+    { category: "아우터", detail: "재킷" },
+    { category: "상의", detail: "티셔츠" },
+  ]), "아우터 〉 재킷 / 상의 〉 티셔츠");
+  assert.match(renderer, /const selectionLabel = formatCategorySelectionLabel\(categorySelections\)/);
 });
