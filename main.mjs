@@ -11986,6 +11986,11 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         if (!domesticSearchCanceled(searchGeneration)) {
           progressState.checkpoint = { ...verifiedCandidate, technicalWarnings: [...technicalWarnings] };
           await persistCheckpoint(progressState.checkpoint);
+          sendDomesticProgress({
+            phase: "checkpoint",
+            source: "확인 결과 저장",
+            checkpoint: progressState.checkpoint,
+          });
         }
       } catch (error) {
         rememberWarning("checkpoint_verification", error);
