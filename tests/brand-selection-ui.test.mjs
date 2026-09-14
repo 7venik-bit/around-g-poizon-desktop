@@ -37,7 +37,7 @@ test("brand selection supports toggle-on and toggle-off", () => {
   assert.match(selection, /selectedBrandIds\.delete\(id\)/);
 });
 
-test("selected brand button uses card highlighting without a right-side check", () => {
+test("selected brand button stays visually distinct across download and verification states", () => {
   const cardsStart = renderer.indexOf("function renderBrandCards");
   const cardsEnd = renderer.indexOf("function renderCategoryButtons", cardsStart);
   const cards = renderer.slice(cardsStart, cardsEnd);
@@ -47,6 +47,10 @@ test("selected brand button uses card highlighting without a right-side check", 
   assert.match(cards, /aria-pressed="\$\{selected\}"/);
   assert.match(style, /\.brand-card\.selected\{[^}]*border-color/);
   assert.doesNotMatch(style, /brand-selection-check/);
+  assert.match(style, /\\.brand-card\\.selected\\.brand-pinned/);
+  assert.match(style, /\\.brand-card\\.selected\\.verification-complete/);
+  assert.match(style, /\\.brand-card\\.selected::after\\{[^}]*content:\\'\\\\2713\\\'/);
+  assert.match(style, /\\.brand-card\\.selected::after\\{[^}]*background:#075fd8/);
 });
 
 
