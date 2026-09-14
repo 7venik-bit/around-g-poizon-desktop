@@ -1449,6 +1449,12 @@ async function collectOfficialMallSearchProducts(searchWindow, query) {
         const articleMatch = rawText.match(/(?=[A-Z0-9._/-]{4,32}\\b)(?=[A-Z0-9._/-]*[A-Z])(?=[A-Z0-9._/-]*\\d)[A-Z0-9][A-Z0-9._/-]{3,31}/i);
         const articleNumber = articleMatch?.[0] || (expected && compact(rawText).includes(expected) ? query : "");
         const url = String(link.href || "").split('#')[0];
+        const cardPrice = money(rawText);
+        const navigationLabel = /^(?:홈|home|메뉴|menu|전체|all|shop|쇼핑)$/i.test(title);
+        const ownsExpectedCode = Boolean(expected && compact(rawText + " " + url).includes(expected));
+        // Product-looking paths also occur in global navigation (for example
+        // /shop/... links titled "홈"). Require card-owned product evidence.
+        if (navigationLabel || (!image && !cardPrice && !ownsExpectedCode)) continue;
         if (!url || found.has(url)) continue;
         found.set(url, {
           id: url,
@@ -1458,7 +1464,7 @@ async function collectOfficialMallSearchProducts(searchWindow, query) {
           title,
           name: title,
           articleNumber,
-          price: money(rawText),
+          price: cardPrice,
           imageUrl: String(image?.currentSrc || image?.src || ""),
           url,
           inStock: null,
@@ -1569,10 +1575,33 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           && Date.now() - Date.parse(retained.stockCheckedAt || '') < 30 * 60_000) {
           approved.push(retained); checkedCount += 1; continue;
         }
-        await Promise.race([
-          evidenceWindow.loadURL(productUrl),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("SELLER_EVIDENCE_TIMEOUT")), 12_000)),
-        ]);
+        let navigationError = null;
+        let navigationTimer;
+        try {
+          await Promise.race([
+            evidenceWindow.loadURL(productUrl),
+            new Promise((_, reject) => {
+              navigationTimer = setTimeout(() => reject(new Error("SELLER_EVIDENCE_TIMEOUT")), 12_000);
+            }),
+          ]);
+        } catch (error) {
+          navigationError = error;
+        } finally {
+          clearTimeout(navigationTimer);
+        }
+        // A commerce SPA can render the requested page while loadURL rejects
+        // or waits on nonessential resources. Keep that real document and let
+        // the identity/seller checks below decide whether it is usable.
+        if (navigationError) {
+          const renderedAfterNavigationError = await evidenceWindow.webContents.executeJavaScript(`(() => {
+            const expected = new URL(${JSON.stringify(productUrl)});
+            const current = new URL(String(location.href || ""));
+            return current.origin === expected.origin && current.pathname === expected.pathname
+              && Boolean(document.documentElement)
+              && String(document.body?.innerText || "").trim().length > 0;
+          })()`, true).catch(() => false);
+          if (!renderedAfterNavigationError) throw navigationError;
+        }
         let snapshot = null;
         for (let attempt = 0; attempt < 8; attempt += 1) {
           await wait(attempt === 0 ? 900 : 350);
@@ -1637,7 +1666,13 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         const naverFashionTownDomesticRoute = /^https:\/\/(?:m\.)?shopping\.naver\.com\/window-products\/(?!foreign(?:\/|$)|overseas(?:\/|$)|global(?:\/|$))/i.test(productUrl)
           && !naverFashionTownBarcodeRemoved
           && isDomesticNaverPriceCard({ productUrl, text: naverFashionTownEvidenceText });
-        const sellerVerified = sellerVerifiedByWording || naverFashionTownDomesticRoute;
+        const naverTrustedExternalOfficialRoute = candidate?.naverTrustedChannelEvidence === true
+          && /^https:\/\//i.test(productUrl)
+          && !naverFashionTownBarcodeRemoved
+          && isDomesticNaverPriceCard({ productUrl, text: naverFashionTownEvidenceText });
+        const sellerVerified = sellerVerifiedByWording
+          || naverFashionTownDomesticRoute
+          || naverTrustedExternalOfficialRoute;
         const articleVerified = strictProductArticleIdentityMatch({
           ...snapshot,
           titleText: `${String(candidate?.title || "")} ${String(snapshot.titleText || "")}`,
