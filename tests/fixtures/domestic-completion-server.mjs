@@ -37,7 +37,7 @@ const currentExcelPreviewFilters = () => ({});
 function renderDomestic() { return 'fixture fallback'; }
 let installedAppVersion = '2.10.703-fixture';
 const DOMESTIC_SEARCH_MAX_WAIT_MS = 1500;
-let excelPreviewBatchSearching = false, selectedBrandDomesticQueueRunning = false;
+let excelPreviewBatchSearching = false, selectedBrandDomesticQueueRunning = false, domesticBatchRunning = false;
 let excelPreviewSelectingAll = false, excelPreviewIntegrated = true;
 let activeExcelPreview = {file:{path:'fixture.xlsx'}, viewMode:'products', totalRows:1};
 const product = {articleNumber:'SR123UPS11-服',title:'데상트 테스트 상품',brandName:'데상트',spuId:'fixture',verificationOptions:[],optionCount:1,_excelSelectionKey:'fixture.xlsx::fixture'};
