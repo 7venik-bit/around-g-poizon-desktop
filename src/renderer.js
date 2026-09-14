@@ -1162,8 +1162,10 @@ function renderDomesticLoading(startedAt = Date.now()) {
 }
 
 let excelPreviewSearchRunId = 0;
+let domesticRecoveryResumeRequested = false;
 let activeDomesticProgressRequestId = "";
 let activeDomesticProgressAt = 0;
+let activeDomesticCheckpoint = null;
 
 function requestDomesticSearchCancel() {
   // Cancellation is best-effort cleanup, not a prerequisite for releasing UI.
@@ -1195,6 +1197,7 @@ function refreshDomesticSearchRows() {
 function stopExcelPreviewSearch() {
   ++excelPreviewSearchRunId;
   globalThis.aroundGActiveDomesticRecovery = null;
+  domesticRecoveryResumeRequested = false;
   activeDomesticProgressRequestId = "";
   selectedBrandDomesticQueueRunning = false;
   excelPreviewBatchSearching = false;
@@ -1202,8 +1205,13 @@ function stopExcelPreviewSearch() {
   hideDomesticSearchOverlay();
   requestDomesticSearchCancel();
   for (const [key, result] of excelPreviewSearchResults) {
-    if (result?.loading) excelPreviewSearchResults.set(key, { products: [], sources: [], error: "검색을 중지했습니다." });
+    if (!result?.loading) continue;
+    excelPreviewSearchResults.set(key, activeDomesticCheckpoint
+      ? { ...activeDomesticCheckpoint, partial: true, message: "검색을 중지했습니다. 중지 전까지 확인된 결과를 저장했습니다." }
+      : { products: [], sources: [], error: "검색을 중지했습니다. 아직 확인된 결과가 없습니다." });
   }
+  if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
+  activeDomesticCheckpoint = null;
   try { refreshDomesticSearchRows(); }
   catch (error) { console.error("[domestic-search] stop render failed", error); }
   $("#excel-filter-status").textContent = "상품 검색을 중지했습니다.";
@@ -1255,6 +1263,11 @@ setInterval(() => {
 window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
   if (payload.requestId && payload.requestId !== activeDomesticProgressRequestId) return;
   activeDomesticProgressAt = Date.now();
+  if (payload.checkpoint?.products || payload.checkpoint?.sources) {
+    // IPC already delivers a detached structured value. Keep that verified
+    // snapshot so Stop can persist exactly what was completed so far.
+    activeDomesticCheckpoint = payload.checkpoint;
+  }
   const overlay = $("#domestic-search-overlay");
   if (!overlay || overlay.hidden) return;
   const total = Math.max(1, Number(payload.total) || 1);
@@ -1375,6 +1388,7 @@ function productCrossCheckIdentity(product = {}) {
 async function cachedDomesticSearch(product, verifyLinkCounts = true) {
   const identity = productCrossCheckIdentity(product);
   if (domesticIdentitySearchCache.has(identity)) return domesticIdentitySearchCache.get(identity);
+  activeDomesticCheckpoint = null;
   const input = domesticSearchInput(product, selectedDomesticSourceGroups(), verifyLinkCounts);
   const recovery = globalThis.aroundGActiveDomesticRecovery;
   if (recovery?.keys?.includes(identity)) {
@@ -1461,6 +1475,7 @@ async function showDomesticRecoveryNotice(filePath) {
   const button = document.createElement('button'); button.type = 'button'; button.textContent = '미완료 검색 이어하기';
   button.addEventListener('click', () => {
     if (excelPreviewBatchSearching) return;
+    domesticRecoveryResumeRequested = true;
     selectedExcelPreviewProducts.clear();
     for (const job of pending) for (const item of job.products) {
       const product = item.product;
@@ -1587,8 +1602,6 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
     showDomesticSearchOverlay(startedAt, 0, 1, product);
     updateExcelPreviewSelectionUi(excelPreviewPageKeys);
     refreshDomesticSearchRows();
-    await prepareDomesticRecovery([product], file?.path || 'single-product');
-    if (runId !== excelPreviewSearchRunId) return;
     const response = await cachedDomesticSearch(product, true);
     if (runId !== excelPreviewSearchRunId) return;
     const result = response?.ok ? response.data : { products: [], sources: [], error: response?.message || "검색 응답이 없습니다." };
@@ -4205,7 +4218,16 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       showDomesticSearchOverlay(batchStartedAt, completedCount, keys.length, currentProduct);
     };
     renderBatchSearchProgress(0);
-    const recovery = await prepareDomesticRecovery(keys.map(key => excelPreviewProductCache.get(key)), activeExcelPreview?.file?.path || 'product-list');
+    // A normal search must use the original, ordered, all-retailer request.
+    // Recovery is activated only by the explicit "미완료 검색 이어하기"
+    // action; otherwise splitting the request by retailer can delay or hide
+    // every source behind the first incomplete retailer.
+    globalThis.aroundGActiveDomesticRecovery = null;
+    const resumeRecovery = domesticRecoveryResumeRequested;
+    domesticRecoveryResumeRequested = false;
+    const recovery = resumeRecovery
+      ? await prepareDomesticRecovery(keys.map(key => excelPreviewProductCache.get(key)), activeExcelPreview?.file?.path || 'product-list')
+      : null;
     if (runId !== excelPreviewSearchRunId) return;
     const recovered = new Map((recovery?.results || []).map(item => [item.key, item.result]));
     for (const key of keys) {
