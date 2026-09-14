@@ -47,10 +47,10 @@ test("selected brand button stays visually distinct across download and verifica
   assert.match(cards, /aria-pressed="\$\{selected\}"/);
   assert.match(style, /\.brand-card\.selected\{[^}]*border-color/);
   assert.doesNotMatch(style, /brand-selection-check/);
-  assert.match(style, /\\.brand-card\\.selected\\.brand-pinned/);
-  assert.match(style, /\\.brand-card\\.selected\\.verification-complete/);
-  assert.match(style, /\\.brand-card\\.selected::after\\{[^}]*content:\\'\\\\2713\\\'/);
-  assert.match(style, /\\.brand-card\\.selected::after\\{[^}]*background:#075fd8/);
+  assert.match(style, /\.brand-card\.selected\.brand-pinned/);
+  assert.match(style, /\.brand-card\.selected\.verification-complete/);
+  assert.match(style, /\.brand-card\.selected::after\{[^}]*content:'\\2713'/);
+  assert.match(style, /\.brand-card\.selected::after\{[^}]*background:#075fd8/);
 });
 
 
