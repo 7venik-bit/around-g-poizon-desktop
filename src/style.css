@@ -2311,3 +2311,36 @@ body .shell>header{
 .brand-verification-date{display:block!important;margin-top:2px;color:#687b91!important;font-size:9px!important;font-weight:700}
 .brand-card.verification-complete{box-shadow:inset 0 0 0 2px #36ad78}
 .brand-card.verification-expired{box-shadow:inset 0 0 0 2px #dfaa52}
+
+
+/* Selection must remain unmistakable even when download/verification states
+   add their own orange or green card decoration. */
+.brand-card.selected,
+.brand-card.selected.brand-pinned,
+.brand-card.selected.verification-complete,
+.brand-card.selected.verification-expired{
+  border-color:#075fd8;
+  background:#d9eaff;
+  box-shadow:0 0 0 3px #075fd8,0 4px 10px rgba(7,95,216,.22)
+}
+.brand-card.selected strong{color:#063d91}
+.brand-card.selected::after{
+  content:'\2713';
+  position:absolute;
+  right:5px;
+  bottom:5px;
+  z-index:3;
+  display:flex;
+  width:19px;
+  height:19px;
+  align-items:center;
+  justify-content:center;
+  border:2px solid #fff;
+  border-radius:50%;
+  background:#075fd8;
+  box-shadow:0 1px 4px rgba(0,48,112,.3);
+  color:#fff;
+  font-size:12px;
+  font-weight:900;
+  line-height:1
+}
