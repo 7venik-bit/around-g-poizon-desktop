@@ -86,6 +86,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     domesticSearchGeneration: 0, domesticSearchCanceled: () => false,
     store: { data: { settings: {} }, snapshot: () => ({ settings: {} }), setSettings: async () => {} },
     activeDomesticSearchWindows: new Set(), APP_ICON_PATH: '', DOMESTIC_SEARCH_PARTITION: 'test',
+    DOMESTIC_RETAILER_HARD_TIMEOUT_MS: 90_000,
     OFFICIAL_DOMAIN_STATUS: { VERIFIED: 'verified', SEARCH_UNSUPPORTED: 'unsupported', NO_OFFICIAL_STORE: 'no_official_store' },
     // Network detail adapters are controlled; the actual browser scripts,
     // card parsers, source deadline and aggregation execute unchanged.
@@ -228,7 +229,7 @@ test('IPC returns verified retailer prices promptly if final preference saving n
   assert.ok(f.now() < 120_000, 'completed results must not wait for stalled preference saving');
 });
 
-test('all ranked queries run when earlier authoritative empty searches each take one minute', async t => {
+test('slow fallback queries share one retailer budget and return a partial source instead of blocking', async t => {
   const f = fixture(t);
   const h = f.installHandler([channels[1]]);
   f.context.queryDomesticProducts = async () => ({products:[],sources:[{store:'SSG',renderCount:true,linkOnly:true,searchUrl:channels[1][1],searchAttempts:[{query:'SR123UPS11'},{query:'카라 셔츠'},{query:'카라 셔츠 SR123UPS11'}]}]});
@@ -240,10 +241,12 @@ test('all ranked queries run when earlier authoritative empty searches each take
     return {count:products.length,products,absenceConfirmed:!products.length,searchCompleted:true};
   };
   const response = await h.run();
-  assert.equal(attempts.length, 3);
+  assert.equal(attempts.length, 2);
   assert.equal(response.ok, true);
-  assert.equal(response.data.products[0].price, 84550);
-  assert.ok(f.now() >= 180_000);
+  assert.equal(response.data.products.length, 0);
+  assert.equal(response.data.sources[0].verificationReason, 'page_load_timeout');
+  assert.equal(response.data.sources[0].absenceConfirmed, false);
+  assert.ok(f.now() <= 90_000);
 });
 
 test('an expired old source timer cannot close a window opened after cancellation', async t => {
@@ -639,7 +642,7 @@ test('size-guide tabs are never stock and member-only text stays explicit', asyn
   assert.deepEqual(result.sizes,[]);assert.equal(result.stockStatus,'login_required');assert.equal(result.stockText,'회원 전용');assert.equal(result.inStock,null);
 });
 
-test('more than eight product details finish beyond 90 seconds while emitting retained checkpoints', async t => {
+test('many slow product details stop at 90 seconds and retain completed checkpoints', async t => {
   const searchUrl='https://www.lotteon.com/search/search/search.ecn?q=SR123UPS11&fixture=12';
   const cards=Array.from({length:12},(_,i)=>`<li><a href="https://www.lotteon.com/p/product/LO${i}"><img alt="데상트 SR123UPS11 카라 셔츠"></a><strong>데상트 SR123UPS11 카라 셔츠</strong><span>롯데백화점</span><span>84,550원</span></li>`).join('');
   const pages={[searchUrl]:`<main><p>전체 12개</p><ul>${cards}</ul></main>`};
@@ -648,8 +651,11 @@ test('more than eight product details finish beyond 90 seconds while emitting re
   const original=f.context.clickRenderedProductCard;
   f.context.clickRenderedProductCard=async(...args)=>{await f.context.wait(10_000);return original(...args);};
   const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{store:'롯데온',searchUrl,renderCount:true}]},'SR123UPS11','데상트','카라 셔츠',0,null,value=>snapshots.push(value)));
-  assert.equal(result.products.length,12);assert.ok(f.now()>90_000);
-  assert.ok(snapshots.some(s=>s.products.length===1));assert.ok(snapshots.some(s=>s.products.length===12));
+  assert.ok(result.products.length > 0 && result.products.length < 12);
+  assert.ok(f.now() <= 90_000);
+  assert.equal(result.sources[0].verificationStage,'source_timeout');
+  assert.ok(snapshots.some(s=>s.products.length===1));
+  assert.ok(snapshots.some(s=>s.products.length===result.products.length));
 });
 
 test('a stalled later detail retains the completed product checkpoint', async t => {

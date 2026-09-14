@@ -107,17 +107,20 @@ test('partial results retain prices below the product with an incomplete status'
   assert.equal(f.overlay().hidden, true);
 });
 
-test('ongoing real progress keeps the frontend alive beyond its inactivity interval', async t => {
+test('ongoing progress cannot extend the absolute frontend safety deadline', async t => {
   const f = createFixture(t);
   f.window.aroundG.searchDomestic = async input => {
     for (let completed = 1; completed <= 3; completed++) {
       await tick(600);
-      f.api.progress({completed,total:4,requestId:input.requestId});
+      f.api.progress({completed,total:4,requestId:input.requestId,phase:'checkpoint',checkpoint:{products:[{store:'무신사',price:59000}],sources:[{store:'무신사',count:1,countVerified:true}]}});
     }
     return {ok:true,data:{products:[],sources:[]}};
   };
   const result = await f.api.search();
   assert.equal(result.ok, true);
+  assert.equal(result.timedOut, true);
+  assert.equal(result.data.partial, true);
+  assert.equal(result.data.products[0].price, 59000);
 });
 
 test('100% source progress followed by a render exception releases the modal and retains the response', async (t) => {
@@ -165,6 +168,35 @@ test('source progress cannot claim overall 100% or another retailer after the la
   assert.doesNotMatch(f.overlay().querySelector('.domestic-overlay-guide').textContent, /다음 판매처/);
   response.resolve({ok:true,data:{products:[],sources:[]}});
   await run;
+  assert.equal(f.overlay().hidden, true);
+});
+
+test('retailer checkpoints do not replace the selected-product batch count with 0/1', async (t) => {
+  const f = createFixture(t);
+  f.api.selectTwo();
+  const response = deferred();
+  f.window.aroundG.searchDomestic = () => response.promise;
+  const run = f.run();
+  await tick();
+  assert.match(f.overlay().querySelector('.domestic-overlay-count').textContent, /0\s*\/\s*2개/);
+  f.api.progress({phase:'checkpoint',source:'확인 결과 저장',checkpoint:{products:[],sources:[{store:'무신사',countVerified:true}]}});
+  assert.match(f.overlay().querySelector('.domestic-overlay-count').textContent, /0\s*\/\s*2개/);
+  assert.match(f.overlay().querySelector('.domestic-overlay-guide').textContent, /저장/);
+  f.api.stop();
+  response.resolve({ok:false,canceled:true});
+  await run;
+});
+
+test('a partial product does not stop the following selected product', async (t) => {
+  const f = createFixture(t);
+  f.api.selectTwo();
+  let calls = 0;
+  f.window.aroundG.searchDomestic = async () => ++calls === 1
+    ? {ok:true,timedOut:true,data:{partial:true,message:'일부 판매처 보류',products:[{store:'무신사',price:59000}],sources:[{store:'무신사',count:1,countVerified:true}]}}
+    : {ok:true,data:{products:[],sources:[{store:'무신사',count:0,countVerified:true,absenceConfirmed:true}]}};
+  await f.run();
+  assert.equal(calls, 2);
+  assert.match(f.status(), /2개 처리.*1개 일부 결과/);
   assert.equal(f.overlay().hidden, true);
 });
 
@@ -444,7 +476,7 @@ test('stop keeps only the latest verified checkpoint for the current product', a
 });
 
 
-for (const interruption of [{canceled:true},{error:'network'},{partial:true}]) {
+for (const interruption of [{canceled:true}]) {
   test(`explorer resume cursor remains on interrupted item ${JSON.stringify(interruption)}`,async()=>{
     const renderer=readFileSync(resolve(fixtureRoot,'src/renderer.js'),'utf8');
     const body=renderer.slice(renderer.indexOf('async function runDomesticBatch('),renderer.indexOf('$("#domestic-search-all").addEventListener'));
@@ -457,5 +489,24 @@ for (const interruption of [{canceled:true},{error:'network'},{partial:true}]) {
       localStorage:{removeItem:()=>assert.fail('interrupted progress must remain')},window:{aroundG:{}}};
     await runInNewContext(body+';runDomesticBatch()',context);
     assert.equal(saved.at(-1).nextIndex,1);assert.equal(context.domesticBatchRunning,false);
+  });
+}
+
+for (const incomplete of [{error:'network'},{partial:true}]) {
+  test(`explorer continues after one incomplete item ${JSON.stringify(incomplete)}`,async()=>{
+    const renderer=readFileSync(resolve(fixtureRoot,'src/renderer.js'),'utf8');
+    const body=renderer.slice(renderer.indexOf('async function runDomesticBatch('),renderer.indexOf('$("#domestic-search-all").addEventListener'));
+    const elements=new Map(),saved=[];let removed=false;
+    const context={options:{},DOMESTIC_BATCH_PROGRESS_KEY:'batch-progress',domesticBatchRunning:false,domesticBatchStopRequested:false,domesticBatchVerifyCounts:false,
+      domesticIdentitySearchCache:new Map(),domesticResults:new Map(),allExplorerProducts:[{articleNumber:'a'},{articleNumber:'b'}],currentExplorerProducts:[],selectedExplorerKeys:new Set(),
+      $:key=>{if(!elements.has(key))elements.set(key,{});return elements.get(key);},updateExplorerSelectionUi:()=>{},domesticKey:p=>p.articleNumber,
+      domesticBatchId:()=> 'batch',readDomesticBatchProgress:()=>saved.at(-1),restoreDomesticStockResults:async()=>{},clearSavedDomesticStockResults:async()=>{},
+      searchDomesticAt:async index=>index===0?incomplete:{},saveDomesticBatchProgress:value=>saved.push(value),
+      localStorage:{removeItem:()=>{removed=true;}},window:{aroundG:{}}};
+    await runInNewContext(body+';runDomesticBatch()',context);
+    assert.equal(saved.at(-1).nextIndex,2);
+    assert.equal(context.domesticBatchRunning,false);
+    assert.equal(removed,true);
+    assert.match(elements.get('#domestic-batch-status').textContent,/검색 완료|일부 결과|미응답/);
   });
 }
