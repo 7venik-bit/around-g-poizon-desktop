@@ -41,7 +41,7 @@ test('restart retains successful retailer stock and runs only the failed group',
     return group === 'official' ? { ok: true, data: good(group) } : { ok: false, data: failure(group) };
   } });
   assert.equal(initial.data.partial, true);
-  assert.deepEqual(initialCalls, ['musinsa', 'musinsa', 'official']);
+  assert.deepEqual(initialCalls, ['official', 'musinsa', 'musinsa']);
 
   const reopened = await f.open();
   const resumed = await start(reopened.coordinator, ['official', 'musinsa']);
@@ -126,7 +126,7 @@ test('expired completed stock is rechecked even when run follows start without a
     assert.equal(input.recoveryCheckpoint.products?.length || 0, 0);
     return { ok: true, data: good(group) };
   } });
-  assert.deepEqual(calls, ['musinsa', 'official']);
+  assert.deepEqual(calls, ['official', 'musinsa']);
 });
 
 for (const sourceState of [{ loginRequired: true }, { securityVerificationRequired: true }, { verificationReason: 'access_denied' }]) {

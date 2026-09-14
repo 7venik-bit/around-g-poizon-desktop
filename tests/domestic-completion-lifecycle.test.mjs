@@ -67,6 +67,8 @@ function createFixture(t) {
         excelPreviewProductCache.set(second._excelSelectionKey, second);
         activeExcelPreview.totalRows = 2;
       },
+      requestRecoveryResume: () => { domesticRecoveryResumeRequested = true; },
+      stop: () => stopExcelPreviewSearch(),
     };
   `);
   return {window, errors, api:window.fixture, run:() => click(),
@@ -377,7 +379,7 @@ test('numeric inventory is displayed per colour/size and partial coverage stays 
 });
 
 
-test('restarted real renderer restores successful rows and searches only the failed product', async t => {
+test('explicit recovery resume restores successful rows and searches only the failed product', async t => {
   const folder=await mkdtemp(join(tmpdir(),'around-g-ui-recovery-'));
   t.after(()=>rm(folder,{recursive:true,force:true}));
   const store=new JsonStore(folder);await store.load();
@@ -391,13 +393,13 @@ test('restarted real renderer restores successful rows and searches only the fai
       return {ok:true,data:{products:[{store:'무신사',articleNumber:task.articleNumber,name:task.title,price:59000,url:'https://www.musinsa.com/products/'+task.articleNumber,stockVerified:true,stockStatus:'in_stock',stockText:'구매 가능',sizes:[{label:'95',inStock:true}]}],sources:[{store:'무신사',count:1,countVerified:true}]}};
     }});
   };
-  const first=createFixture(t);first.api.selectTwo();connect(first);await first.run();
+  const first=createFixture(t);first.api.selectTwo();connect(first);first.api.requestRecoveryResume();await first.run();
   assert.deepEqual(calls,['SR123UPS11-服','SR323UTS71','SR323UTS71']);
   assert.match(first.status(),/일부 결과/);assert.equal(first.overlay().hidden,true);
   const restartedStore=new JsonStore(folder);await restartedStore.load();
   coordinator=new DomesticRecoveryCoordinator(restartedStore,{delay:async()=>{}});
   interrupted=false;calls.length=0;
-  const second=createFixture(t);second.api.selectTwo();connect(second);await second.run();
+  const second=createFixture(t);second.api.selectTwo();connect(second);second.api.requestRecoveryResume();await second.run();
   assert.deepEqual(calls,['SR323UTS71']);assert.equal(second.overlay().hidden,true);assert.equal(second.api.busy(),false);
   const details=[...second.window.document.querySelectorAll('.excel-verified-search-detail')];
   assert.equal(details.length,2);assert.ok(details.every(row=>row.textContent.includes('59,000원')));
@@ -409,8 +411,36 @@ test('durable recovery errors are not retried by the renderer as a second whole 
   const f=createFixture(t);let calls=0;
   f.window.aroundG.startDomesticRecovery=async input=>({ok:true,id:'recovery',results:[],pendingKeys:input.products.map(p=>p.key)});
   f.window.aroundG.searchDomestic=async()=>{calls++;return {ok:false,message:'disk failed'};};
-  await f.run();assert.equal(calls,1);assert.equal(f.overlay().hidden,true);assert.equal(f.api.busy(),false);
+  f.api.requestRecoveryResume();await f.run();assert.equal(calls,1);assert.equal(f.overlay().hidden,true);assert.equal(f.api.busy(),false);
   assert.match(f.status(),/검색 실패/);
+});
+
+test('normal selected-product search bypasses recovery and searches all selected retailers together', async t=>{
+  const f=createFixture(t);let recoveryStarts=0;const inputs=[];
+  f.window.aroundG.startDomesticRecovery=async()=>{recoveryStarts++;return {ok:false,message:'normal search must not start recovery'};};
+  f.window.aroundG.searchDomestic=async input=>{inputs.push(input);return {ok:true,data:{products:[],sources:[]}};};
+  await f.run();
+  assert.equal(recoveryStarts,0);
+  assert.equal(inputs.length,1);
+  assert.equal(inputs[0].recoveryJobId,undefined);
+  assert.deepEqual([...inputs[0].sourceGroups],['musinsa']);
+});
+
+test('stop keeps only the latest verified checkpoint for the current product', async t=>{
+  const f=createFixture(t);const pending=deferred();
+  f.window.aroundG.searchDomestic=async()=>{
+    f.api.progress({phase:'checkpoint',checkpoint:{
+      products:[{store:'무신사',title:'저장된 상품',price:59000,url:'https://www.musinsa.com/products/1'}],
+      sources:[{store:'무신사',count:1,countVerified:true}],
+    }});
+    return pending.promise;
+  };
+  const running=f.run();await tick(10);f.api.stop();
+  const result=f.api.result();
+  assert.equal(result.partial,true);
+  assert.equal(result.products[0].title,'저장된 상품');
+  assert.match(result.message,/중지 전까지 확인된 결과를 저장/);
+  pending.resolve({ok:false,canceled:true});await running;
 });
 
 
