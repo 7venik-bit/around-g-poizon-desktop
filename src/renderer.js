@@ -2659,7 +2659,7 @@ function renderCategoryButtons() {
   ).join("");
   const pairs = selectedCategoryPairs();
   $("#category-selection-path").textContent = pairs.length
-    ? `복수 선택 ${pairs.length}개 · ${pairs.map(({ category, detail }) => `${category} 〉 ${detail}`).join(" · ")}`
+    ? `복수 선택 ${pairs.length}개 · ${formatCategorySelectionLabel(pairs)}`
     : `${selectedCategory} 〉 세부 메뉴를 선택해 주세요.`;
   renderCategoryFavoriteBrands();
   $("#category-search").disabled = !pairs.length || !categoryBrandIds.size;
@@ -4594,6 +4594,17 @@ function selectedCategoryPairs() {
   return pairs;
 }
 
+function formatCategorySelectionLabel(pairs = []) {
+  const grouped = new Map();
+  for (const { category, detail } of pairs) {
+    if (!grouped.has(category)) grouped.set(category, []);
+    if (!grouped.get(category).includes(detail)) grouped.get(category).push(detail);
+  }
+  return [...grouped.entries()]
+    .map(([category, details]) => `${category} 〉 ${details.join(" · ")}`)
+    .join(" / ");
+}
+
 function toggleCategoryDetail(category, detail) {
   const details = new Set(selectedCategorySelections.get(category) || []);
   if (details.has(detail)) details.delete(detail);
@@ -4744,7 +4755,7 @@ $("#category-search").addEventListener("click", async () => {
   const categorySelections = selectedCategoryPairs();
   const category = categorySelections.map((item) => item.category).join("+");
   const detail = categorySelections.map((item) => item.detail).join("+");
-  const selectionLabel = categorySelections.map((item) => `${item.category} 〉 ${item.detail}`).join(" · ");
+  const selectionLabel = formatCategorySelectionLabel(categorySelections);
   const button = $("#category-search");
   const status = $("#category-status");
   const minimumChinaSales30 = categorySalesMinimum("#category-min-china-sales-30");
