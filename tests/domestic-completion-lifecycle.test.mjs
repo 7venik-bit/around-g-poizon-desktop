@@ -105,25 +105,17 @@ test('partial results retain prices below the product with an incomplete status'
   assert.equal(f.overlay().hidden, true);
 });
 
-test('real progress still completes when the product finishes inside its absolute deadline', async t => {
+test('ongoing real progress keeps the frontend alive beyond its inactivity interval', async t => {
   const f = createFixture(t);
   f.window.aroundG.searchDomestic = async input => {
-    for (let completed = 1; completed <= 2; completed++) {
-      await tick(300);
+    for (let completed = 1; completed <= 3; completed++) {
+      await tick(600);
       f.api.progress({completed,total:4,requestId:input.requestId});
     }
     return {ok:true,data:{products:[],sources:[]}};
   };
   const result = await f.api.search();
   assert.equal(result.ok, true);
-});
-
-test('continuous option progress cannot extend the absolute frontend product deadline', () => {
-  const source=readFileSync(resolve(fixtureRoot,'src/renderer.js'),'utf8');
-  const body=source.slice(source.indexOf('async function cachedDomesticSearch('),source.indexOf('function domesticSearchInput('));
-  assert.match(body,/const searchStartedAt = activeDomesticProgressAt/);
-  assert.match(body,/Date\.now\(\) - searchStartedAt/);
-  assert.doesNotMatch(body,/Date\.now\(\) - activeDomesticProgressAt/);
 });
 
 test('100% source progress followed by a render exception releases the modal and retains the response', async (t) => {
