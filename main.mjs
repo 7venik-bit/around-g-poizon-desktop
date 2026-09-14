@@ -2858,7 +2858,7 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
         ].join(',')).length;
         const explicitEmpty = /검색\\s*결과가?\\s*(?:없|0)|상품이?\\s*(?:없|0)|일치하는\\s*(?:상품|제안)이\\s*없/i.test(text);
         const positiveCount = /(?:전체|검색\\s*결과)\\s*[1-9][\\d,]*\\s*개/i.test(text);
-        return { href, cards, explicitEmpty, positiveCount };
+        return { href, text, cards, explicitEmpty, positiveCount };
       })()`, true).catch(() => null);
       if (!state) continue;
       let decodedUrl = String(state.href || "");
@@ -2866,45 +2866,34 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
       const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
       const exactResult = /shopping\.naver\.com\/window\/search\//i.test(state.href)
         && compact(decodedUrl).includes(compact(expectedQuery));
-      if (exactResult && (state.cards > 0 || state.explicitEmpty || state.positiveCount)) {
+      // Fashion Town often keeps its loadURL promise pending while the exact
+      // result document is already interactive. Once that DOM and query URL
+      // exist, the later bounded card collector—not the browser load event—
+      // decides whether products or an explicit empty result are present.
+      if (exactResult && isNaverRenderedResultReady({ url: state.href, text: state.text }, expectedQuery)) {
         return { ok: true, resolvedUrl: state.href };
       }
     }
     return { ok: false, resolvedUrl: String(searchWindow.webContents.getURL() || "") };
   };
 
+  // Start navigation without waiting for the full page load. Advertising and
+  // recommendation frames can keep Electron's load promise open long after
+  // the Fashion Town result DOM is usable.
   let firstError = null;
-  try {
-    await Promise.race([
-      searchWindow.loadURL(targetUrl),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("NAVER_RESULT_PAGE_TIMEOUT")), 30_000)),
-    ]);
-  } catch (error) {
-    firstError = error;
-  }
+  let navigationSettled = false;
+  const navigation = searchWindow.loadURL(targetUrl)
+    .catch((error) => { firstError = error; })
+    .finally(() => { navigationSettled = true; });
   const firstResult = await inspectSettledResult();
   if (firstResult.ok) return firstResult;
-
-  // A cold hidden Chromium session can reject Fashion Town's first SPA
-  // navigation even after Naver home loaded normally. Clear only the HTTP
-  // cache (cookies/login remain intact), then retry the same ranked query once.
-  try { await searchWindow.webContents.session.clearCache(); } catch {}
-  let retryError = null;
-  try {
-    await wait(600);
-    await Promise.race([
-      searchWindow.loadURL(targetUrl),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("NAVER_RESULT_PAGE_TIMEOUT")), 30_000)),
-    ]);
-  } catch (error) {
-    retryError = error;
-  }
-  const retryResult = await inspectSettledResult();
-  if (retryResult.ok) return retryResult;
-  const errorMessage = String(retryError?.message || firstError?.message || "NAVER_RESULT_PAGE_NOT_SETTLED");
+  if (!navigationSettled) await Promise.race([navigation, wait(3_000)]);
+  const finalResult = await inspectSettledResult();
+  if (finalResult.ok) return finalResult;
+  const errorMessage = String(firstError?.message || "NAVER_RESULT_PAGE_NOT_SETTLED");
   return {
     ok: false,
-    resolvedUrl: retryResult.resolvedUrl || firstResult.resolvedUrl,
+    resolvedUrl: finalResult.resolvedUrl || firstResult.resolvedUrl,
     errorMessage,
     timeout: /TIMEOUT|TIMED_OUT/i.test(errorMessage),
     networkError: /ERR_(?:NAME_NOT_RESOLVED|CONNECTION|TIMED_OUT|INTERNET_DISCONNECTED)/i.test(errorMessage),
@@ -2993,7 +2982,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       // cold hidden window can reject a direct Fashion Town SPA navigation.
       const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;
       */
-      try {
+      if (!directNaverFashionResult) try {
         await Promise.race([
           searchWindow.loadURL(initialUrl),
           new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 30_000)),
@@ -6185,6 +6174,12 @@ async function watchLatestSellerExportEveryTenSeconds() {
 }
 
 
+function sellerExportMonitorUrl() {
+  const url = new URL(SELLER_EXPORT_CENTER_URL);
+  url.searchParams.set("aroundGMonitor", String(Date.now()));
+  return url.toString();
+}
+
 function ensureSellerMonitorWindow() {
   if (sellerMonitorWindow && !sellerMonitorWindow.isDestroyed()) return sellerMonitorWindow;
   sellerMonitorWindow = new BrowserWindow({
@@ -6207,7 +6202,9 @@ function ensureSellerMonitorWindow() {
     sellerMonitorWindow = null;
     if (brandExportJobs.size) scheduleBrandExportMonitor(3_000);
   });
-  sellerMonitorWindow.loadURL(SELLER_EXPORT_CENTER_URL);
+  // A unique navigation prevents POIZON's SPA from restoring an old
+  // "processing" job list after the export has already completed.
+  sellerMonitorWindow.loadURL(sellerExportMonitorUrl());
   return sellerMonitorWindow;
 }
 
@@ -6566,11 +6563,19 @@ function scheduleBrandExportMonitor(delayMs = 0) {
 }
 
 async function rebuildStaleSellerExportMonitor(jobId = "", job = {}) {
+  const monitorSession = sellerMonitorWindow && !sellerMonitorWindow.isDestroyed()
+    ? sellerMonitorWindow.webContents.session
+    : sellerWindow && !sellerWindow.isDestroyed()
+      ? sellerWindow.webContents.session
+      : null;
   if (sellerMonitorWindow && !sellerMonitorWindow.isDestroyed()) {
     sellerMonitorWindow.removeAllListeners("closed");
     sellerMonitorWindow.destroy();
   }
   sellerMonitorWindow = null;
+  // Cookies/login are preserved. Only cached download-center responses are
+  // discarded before opening a cache-busted monitor URL.
+  await monitorSession?.clearCache().catch(() => {});
   ensureSellerMonitorWindow();
 
   // Once registration has finished, the original Seller Center window can be
