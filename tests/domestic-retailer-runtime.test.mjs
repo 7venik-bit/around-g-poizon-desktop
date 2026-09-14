@@ -418,6 +418,30 @@ test('Naver Fashion Town route fallback still rejects barcode-removed sellers', 
   assert.equal(result.rejectedCount,1);
 });
 
+test('Naver brand-direct card keeps inventory from its external official detail', async t => {
+  const url='https://official.example/products/JWJJM26321';
+  const f=fixture(t,{pages:{[url]:'<main><h1>코오롱스포츠 JWJJM26321 남성 재킷</h1><p>품번 JWJJM26321</p><button data-size="100">100</button><button>구매하기</button></main>'}});
+  Object.assign(f.context,{DOMESTIC_SELLER_EVIDENCE_PARTITION:'test',isDomesticNaverPriceCard:()=>true,isApprovedNaverDomesticSellerEvidence:()=>false,brandsMatch:()=>true});
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  const finalized=naver.finalizeNaverFashionTownResult({productCards:[{productUrl:url,title:'코오롱스포츠 JWJJM26321 남성 재킷',officialBrandStoreLabelMatched:true}]},{articleNumber:'JWJJM26321'});
+  assert.equal(finalized.products[0].naverTrustedChannelEvidence,true);
+  const result=await f.drive(f.context.verifyApprovedNaverDomesticProducts(finalized.products,{articleNumber:'JWJJM26321',brand:'코오롱스포츠',title:'남성 재킷',requireArticleIdentity:true}));
+  assert.equal(result.products.length,1);
+  assert.equal(result.products[0].articleNumberVerified,true);
+  assert.equal(result.products[0].sizes[0].label,'100');
+});
+
+test('official product collector excludes repeated home navigation links', async t => {
+  const page=`<main><nav><a href="https://official.example/shop/home">홈</a><a href="https://official.example/shop/women">홈</a></nav>${officialCard()}</main>`;
+  const f=fixture(t,{pages:{[officialSearch]:page}});
+  runInContext(section('async function collectOfficialMallSearchProducts(', '\nfunction renderedSearchFailure('),f.context);
+  const w=new f.context.BrowserWindow();await w.loadURL(officialSearch);
+  const products=await f.drive(f.context.collectOfficialMallSearchProducts(w,'SR123UPS11'));
+  assert.equal(products.length,1);
+  assert.equal(products[0].url,officialProduct);
+  assert.notEqual(products[0].title,'홈');
+});
+
 test('a product purchase area in an aside retains the Kolon sold-out message', async t => {
   const url='https://www.kolonmall.com/Product/JWJJM26321DGY';
   const f=fixture(t,{pages:{[url]:'<main><img alt="남성 트레이닝 재킷"><aside><h1>남성 트레이닝 재킷 (SET UP)</h1><p>현재 구매할 수 없는 상품입니다.</p><button disabled>품절</button></aside></main>'}});

@@ -113,6 +113,12 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
       sizes: [],
       linkOnly: true,
       linkVerified: true,
+      // Preserve trusted Fashion Town channel evidence when a brand-store card
+      // links directly to an external Korean official mall.
+      naverTrustedChannelEvidence: card?.officialBrandStoreLabelMatched === true
+        || card?.departmentStoreLabelMatched === true
+        || card?.outletLabelMatched === true,
+      naverWholeViewChannel: String(card?.naverWholeViewChannel || ""),
       confidence: 100,
       signals: { code: "검색 결과", title: "패션타운 결과", image: card?.imageUrl ? "확인" : "없음" },
       ...normalizeRenderedStockEvidence(card?.stockEvidence || {}),
