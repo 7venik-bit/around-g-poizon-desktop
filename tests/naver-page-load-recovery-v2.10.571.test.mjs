@@ -17,12 +17,15 @@ test("네이버 패션타운은 검색 링크에서 실제 상품 카드를 수�
   assert.match(patch, /const resultPage = await loadNaverFashionTownResultPage/);
 });
 
-test("첫 탐색 오류 뒤에도 실제 결과 DOM을 확인하고 같은 검색을 한 번만 복구한다", () => {
+test("네이버는 전체 load 이벤트를 기다리지 않고 정확한 결과 DOM에서 계속한다", () => {
   assert.match(main, /async function loadNaverFashionTownResultPage/);
+  assert.match(main, /const navigation = searchWindow\.loadURL\(targetUrl\)/);
   assert.match(main, /const firstResult = await inspectSettledResult\(\)/);
-  assert.match(main, /session\.clearCache\(\)/);
-  assert.match(main, /const retryResult = await inspectSettledResult\(\)/);
-  assert.match(main, /state\.cards > 0 \|\| state\.explicitEmpty \|\| state\.positiveCount/);
+  assert.match(main, /isNaverRenderedResultReady\(\{ url: state\.href, text: state\.text \}, expectedQuery\)/);
+  assert.match(main, /if \(!directNaverFashionResult\) try \{/);
+  const loader = main.slice(main.indexOf("async function loadNaverFashionTownResultPage"), main.indexOf("async function renderedSearchSourceResult"));
+  assert.doesNotMatch(loader, /session\.clearCache\(\)/);
+  assert.doesNotMatch(loader, /30_000/);
 });
 
 test("복구 실패는 페이지 로드 실패 대신 정확한 검색 링크로 표시한다", () => {
