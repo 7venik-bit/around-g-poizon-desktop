@@ -397,6 +397,27 @@ test('Naver seller verification retains the product detail stock text', async t 
   assert.equal(result.products[0].inStock,false);
 });
 
+test('Naver Fashion Town keeps exact domestic inventory for every brand without a seller banner', async t => {
+  const url=channels[0][2];
+  const f=fixture(t,{pages:{[url]:'<main><h1>코오롱스포츠 JWJJM26321 남성 재킷</h1><p>품번 JWJJM26321</p><button>구매하기</button><div role="option">100</div><div role="option" aria-disabled="true">105 품절</div></main>'}});
+  Object.assign(f.context,{DOMESTIC_SELLER_EVIDENCE_PARTITION:'test',isDomesticNaverPriceCard:()=>true,isApprovedNaverDomesticSellerEvidence:()=>false,brandsMatch:()=>true});
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  const result=await f.drive(f.context.verifyApprovedNaverDomesticProducts([{title:'코오롱스포츠 JWJJM26321 남성 재킷',url}],{articleNumber:'JWJJM26321',brand:'코오롱스포츠',title:'남성 재킷',requireArticleIdentity:true}));
+  assert.equal(result.products.length,1);
+  assert.equal(result.products[0].articleNumberVerified,true);
+  assert.equal(result.products[0].domesticSellerVerified,true);
+});
+
+test('Naver Fashion Town route fallback still rejects barcode-removed sellers', async t => {
+  const url=channels[0][2];
+  const f=fixture(t,{pages:{[url]:'<main><h1>코오롱스포츠 JWJJM26321 남성 재킷</h1><p>품번 JWJJM26321</p><p>QR코드 제거 후 발송</p><div role="option">100</div></main>'}});
+  Object.assign(f.context,{DOMESTIC_SELLER_EVIDENCE_PARTITION:'test',isDomesticNaverPriceCard:()=>true,isApprovedNaverDomesticSellerEvidence:()=>false,brandsMatch:()=>true});
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  const result=await f.drive(f.context.verifyApprovedNaverDomesticProducts([{title:'코오롱스포츠 JWJJM26321 남성 재킷',url}],{articleNumber:'JWJJM26321',brand:'코오롱스포츠',title:'남성 재킷',requireArticleIdentity:true}));
+  assert.equal(result.products.length,0);
+  assert.equal(result.rejectedCount,1);
+});
+
 test('a product purchase area in an aside retains the Kolon sold-out message', async t => {
   const url='https://www.kolonmall.com/Product/JWJJM26321DGY';
   const f=fixture(t,{pages:{[url]:'<main><img alt="남성 트레이닝 재킷"><aside><h1>남성 트레이닝 재킷 (SET UP)</h1><p>현재 구매할 수 없는 상품입니다.</p><button disabled>품절</button></aside></main>'}});

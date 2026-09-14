@@ -1624,12 +1624,24 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           continue;
         }
         checkedCount += 1;
-        const sellerVerified = isApprovedNaverDomesticSellerEvidence({
+        const sellerVerifiedByWording = isApprovedNaverDomesticSellerEvidence({
           productUrl,
           sellerEvidenceText: snapshot.sellerEvidenceText,
           detailText: snapshot.fullText,
         });
-        const articleVerified = strictProductArticleIdentityMatch(snapshot, articleNumber);
+        // Fashion Town already limits these cards to its domestic department,
+        // outlet and brand-store routes. Do not discard an exact product just
+        // because one brand omits the optional "공식 판매처" banner.
+        const naverFashionTownEvidenceText = `${snapshot.sellerEvidenceText} ${snapshot.fullText}`;
+        const naverFashionTownBarcodeRemoved = /(?:(?:바코드|qr\s*(?:코드)?)\s*(?:가|은|는|이)?\s*.{0,24}(?:삭제|제거|훼손)|(?:삭제|제거|훼손)\s*.{0,24}(?:바코드|qr\s*(?:코드)?))/i.test(naverFashionTownEvidenceText);
+        const naverFashionTownDomesticRoute = /^https:\/\/(?:m\.)?shopping\.naver\.com\/window-products\/(?!foreign(?:\/|$)|overseas(?:\/|$)|global(?:\/|$))/i.test(productUrl)
+          && !naverFashionTownBarcodeRemoved
+          && isDomesticNaverPriceCard({ productUrl, text: naverFashionTownEvidenceText });
+        const sellerVerified = sellerVerifiedByWording || naverFashionTownDomesticRoute;
+        const articleVerified = strictProductArticleIdentityMatch({
+          ...snapshot,
+          titleText: `${String(candidate?.title || "")} ${String(snapshot.titleText || "")}`,
+        }, articleNumber);
         const observedIdentityText = `${String(candidate?.title || "")} ${String(snapshot.titleText || "")}`;
         const observedBrandTokens = observedIdentityText.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
         const brandVerified = !String(brand || "").trim()

@@ -339,6 +339,42 @@ test("무신사 검색 카드에 품번이 없어도 같은 브랜드 상세페�
   assert.equal(result.products[0].url, "https://www.musinsa.com/products/2311096");
 });
 
+test("SSG와 롯데온 카드에 품번이 없어도 상세 품번·재고 검증 후보로 유지한다", () => {
+  const cases = [
+    ["SSG", "https://www.ssg.com/item/itemView.ssg?itemId=1000612345"],
+    ["롯데온", "https://www.lotteon.com/p/product/LE1219586328"],
+  ];
+  for (const [store, productUrl] of cases) {
+    const result = analyzeRenderedChannelProducts(JSON.stringify({
+      productCards: [{
+        productUrl,
+        title: "나이키 P-6000 여성 신발",
+        text: "나이키 P-6000 여성 신발 129,000원",
+      }],
+      pageText: `${store} 검색 결과`,
+    }), store, "CD6404-002", "나이키", "나이키 P-6000 여성 신발");
+    assert.equal(result.products.length, 1, store);
+    assert.equal(result.products[0].detailArticleVerificationRequired, true, store);
+    assert.equal(result.products[0].url, productUrl, store);
+  }
+});
+
+test("모든 렌더링 플랫폼은 품번·상품명 검색 순서를 상세 재고 수집 단계에 전달한다", async () => {
+  const result = await queryDomesticProducts({
+    query: "나이키 CD6404-002",
+    articleNumber: "CD6404-002",
+    brand: "나이키",
+    title: "나이키 P-6000 여성 신발",
+    fetchImpl: async () => ({ ok: true, text: async () => "" }),
+  });
+  const musinsa = result.sources.find((source) => source.store === "무신사");
+  assert.deepEqual(musinsa.searchAttempts.map((attempt) => attempt.query), [
+    "CD6404-002",
+    "나이키 P-6000 여성 신발",
+    "나이키 P-6000 여성 신발 CD6404-002",
+  ]);
+});
+
 const officialStoreCases = [
   ["아디다스", "JH5469", "adidas.co.kr"],
   ["나이키", "IB5824-001", "nike.com"],
