@@ -8,7 +8,7 @@ const [main, preload, renderer] = await Promise.all([
   readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
 ]);
 
-test("single-product loading progress advances for every completed retailer", () => {
+test("retailer progress updates the guide without replacing product-batch progress", () => {
   assert.match(main, /const progressTotal = data\.sources\.length \+ 2/);
   assert.match(main, /onProgress\?\.\(\{ completed: 0, total: progressTotal/);
   assert.match(main, /completed: sources\.length/);
@@ -18,8 +18,11 @@ test("single-product loading progress advances for every completed retailer", ()
   assert.match(preload, /onDomesticSearchProgress/);
   assert.match(preload, /ipcRenderer\.on\("domestic-search:progress"/);
   assert.match(renderer, /onDomesticSearchProgress\?\.\(\(payload = \{\}\)/);
-  assert.match(renderer, /단계 · \$\{percent\}%/);
-  assert.match(renderer, /progress\.value = percent/);
+  const progressHandler = renderer.slice(renderer.indexOf('window.aroundG.onDomesticSearchProgress'), renderer.indexOf('function renderRawExcelDomesticCell'));
+  assert.match(progressHandler, /payload\.phase === "checkpoint"/);
+  assert.doesNotMatch(progressHandler, /count\.innerHTML/);
+  assert.doesNotMatch(progressHandler, /progress\.value/);
+  assert.match(renderer, /showDomesticSearchOverlay\(batchStartedAt, completed, keys\.length/);
 });
 
 test("image fingerprints are reused across matching and final verification", () => {

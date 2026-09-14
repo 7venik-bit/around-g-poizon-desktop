@@ -88,7 +88,7 @@ let combinedBrandPreview = null;
 let combinedBrandPreviewLoading = false;
 let latestPopularExcelFile = null;
 const domesticIdentitySearchCache = new Map();
-const DOMESTIC_SEARCH_MAX_WAIT_MS = 2 * 60 * 1000 + 5_000;
+const DOMESTIC_SEARCH_MAX_WAIT_MS = 4 * 60 * 1000 + 5_000;
 let installedAppVersion = "";
 const DOMESTIC_SOURCE_GROUPS_KEY = "around-g-domestic-source-groups-v1";
 const DOMESTIC_SOURCE_GROUPS = ["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"];
@@ -1164,7 +1164,6 @@ function renderDomesticLoading(startedAt = Date.now()) {
 let excelPreviewSearchRunId = 0;
 let domesticRecoveryResumeRequested = false;
 let activeDomesticProgressRequestId = "";
-let activeDomesticProgressAt = 0;
 let activeDomesticCheckpoint = null;
 
 function requestDomesticSearchCancel() {
@@ -1262,7 +1261,6 @@ setInterval(() => {
 
 window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
   if (payload.requestId && payload.requestId !== activeDomesticProgressRequestId) return;
-  activeDomesticProgressAt = Date.now();
   if (payload.checkpoint?.products || payload.checkpoint?.sources) {
     // IPC already delivers a detached structured value. Keep that verified
     // snapshot so Stop can persist exactly what was completed so far.
@@ -1270,23 +1268,14 @@ window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
   }
   const overlay = $("#domestic-search-overlay");
   if (!overlay || overlay.hidden) return;
-  const total = Math.max(1, Number(payload.total) || 1);
-  const completed = Math.min(total, Math.max(0, Number(payload.completed) || 0));
-  // Retailer/enrichment progress is not the completion of the renderer task.
-  const percent = Math.min(99, Math.round((completed / total) * 100));
-  const progress = overlay.querySelector(".domestic-overlay-progress");
-  const count = overlay.querySelector(".domestic-overlay-count");
+  // The bar and count belong to the selected product batch (for example 1/3).
+  // Retailer checkpoint events may omit totals; they update only the guide so
+  // they cannot replace the real batch count with a misleading 0/1 stage.
   const guide = overlay.querySelector(".domestic-overlay-guide");
-  if (progress) {
-    progress.value = percent;
-    progress.textContent = `${percent}%`;
-    progress.setAttribute("aria-valuenow", String(percent));
-  }
-  if (count) count.innerHTML = `<strong>${completed.toLocaleString("ko-KR")}</strong> / ${total.toLocaleString("ko-KR")}단계 · ${percent}%`;
-  if (guide) guide.textContent = payload.phase === "searching"
+  if (guide) guide.textContent = payload.phase === "checkpoint"
+    ? "확인된 판매처 결과를 저장했습니다. 다음 확인을 계속합니다."
+    : payload.phase === "searching"
     ? `${String(payload.source || "판매처")} 상품과 가격을 확인하고 있습니다.`
-    : completed === total
-    ? "판매처 확인 완료 · 검색 결과 응답을 기다리고 있습니다."
     : `${String(payload.source || "판매처")} 확인 완료 · 다음 검색 단계를 진행하고 있습니다.`;
 });
 
@@ -1398,7 +1387,6 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
   const runId = excelPreviewSearchRunId;
   input.requestId = `${runId}:${Date.now()}:${identity}`;
   activeDomesticProgressRequestId = input.requestId;
-  activeDomesticProgressAt = Date.now();
   const task = (async () => {
     const run = async () => {
       let timeoutId;
@@ -1406,23 +1394,22 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
         const response = await Promise.race([
           window.aroundG.searchDomestic(input),
           new Promise((resolve) => {
-            const checkProgress = () => {
+            timeoutId = setTimeout(() => {
               if (runId !== excelPreviewSearchRunId) {
                 resolve({ ok: false, canceled: true, message: "검색이 중지되었습니다." });
                 return;
               }
-              const remaining = DOMESTIC_SEARCH_MAX_WAIT_MS - (Date.now() - activeDomesticProgressAt);
-              if (remaining > 0) {
-                timeoutId = setTimeout(checkProgress, remaining);
-                return;
-              }
-              resolve({
+              const message = "상품 검색 안전시간이 지나 확인된 결과를 저장하고 다음 상품으로 이동합니다.";
+              resolve(activeDomesticCheckpoint ? {
+                ok: true,
+                timedOut: true,
+                data: { ...activeDomesticCheckpoint, partial: true, message },
+              } : {
                 ok: false,
                 timedOut: true,
-                message: "국내 판매처 검색 응답이 없어 강제 종료했습니다. 다시 검색해 주세요.",
+                message: "판매처 응답이 없어 확인된 결과가 없습니다.",
               });
-            };
-            timeoutId = setTimeout(checkProgress, DOMESTIC_SEARCH_MAX_WAIT_MS);
+            }, DOMESTIC_SEARCH_MAX_WAIT_MS);
           }),
         ]);
         if (response?.timedOut && runId === excelPreviewSearchRunId) requestDomesticSearchCancel();
@@ -3766,6 +3753,8 @@ async function runDomesticBatch(options = {}) {
   const resumeAt = Math.max(0, Number(savedProgress?.nextIndex || 0));
   const pendingIndexes = selectedOnly ? searchableIndexes : searchableIndexes.filter((index) => index >= resumeAt);
   let processed = 0;
+  let failed = 0;
+  let partial = 0;
   for (const index of pendingIndexes) {
     if (domesticBatchStopRequested) break;
     $("#domestic-batch-status").className = "status";
@@ -3774,7 +3763,10 @@ async function runDomesticBatch(options = {}) {
       : `국내 재고 검색 ${index + 1}/${searchableIndexes.length} · 발견 결과를 즉시 표시하고 있습니다.`;
     const searched = await searchDomesticAt(index, batchProducts);
     if (searched?.canceled || domesticBatchStopRequested) { domesticBatchStopRequested = true; break; }
-    if (searched?.error || searched?.partial) { domesticBatchStopRequested = true; break; }
+    // One slow retailer/product is isolated. Keep its partial result and move
+    // on instead of turning it into a batch-wide stop.
+    if (searched?.error) failed += 1;
+    if (searched?.partial) partial += 1;
     processed += 1;
     if (!selectedOnly) saveDomesticBatchProgress({ batchId, nextIndex: index + 1, total: searchableIndexes.length, complete: false });
   }
@@ -3793,8 +3785,10 @@ async function runDomesticBatch(options = {}) {
     return;
   }
   if (!selectedOnly) localStorage.removeItem(DOMESTIC_BATCH_PROGRESS_KEY);
-  $("#domestic-batch-status").className = "status success";
-  $("#domestic-batch-status").textContent = `국내 재고 검색 완료 ${searchableIndexes.length}/${searchableIndexes.length} · 원본 누락 슬롯 ${missingCount}개 유지`;
+  $("#domestic-batch-status").className = failed || partial ? "status" : "status success";
+  $("#domestic-batch-status").textContent = failed || partial
+    ? `국내 재고 검색 완료 ${searchableIndexes.length}/${searchableIndexes.length} · 일부 결과 ${partial}개 · 미응답 ${failed}개 · 확인된 결과 저장`
+    : `국내 재고 검색 완료 ${searchableIndexes.length}/${searchableIndexes.length} · 원본 누락 슬롯 ${missingCount}개 유지`;
 }
 $("#domestic-search-all").addEventListener("click", () => runDomesticBatch());
 $("#domestic-stock-filter").addEventListener("click", () => {

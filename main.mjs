@@ -304,7 +304,11 @@ let domesticSearchGeneration = 0;
 const activeDomesticSearchWindows = new Set();
 const activeDomesticPriceWindows = new Set();
 let domesticPriceLookupQueue = Promise.resolve();
-const DOMESTIC_SEARCH_HARD_TIMEOUT_MS = 2 * 60 * 1000;
+// A retailer that keeps emitting option/card events must not hold one product
+// forever. Bound each retailer independently, then keep verified rows and
+// continue. The wider product deadline is only a final IPC/browser safety net.
+const DOMESTIC_RETAILER_HARD_TIMEOUT_MS = 90 * 1000;
+const DOMESTIC_SEARCH_HARD_TIMEOUT_MS = 4 * 60 * 1000;
 
 function cancelDomesticSearches() {
   domesticSearchGeneration += 1;
@@ -319,19 +323,14 @@ function domesticSearchCanceled(generation) {
   return generation !== domesticSearchGeneration;
 }
 
-async function withDomesticSearchHardTimeout(operation, generation, progressState = { lastProgressAt: Date.now(), checkpoint: null }) {
+async function withDomesticSearchHardTimeout(operation, generation, progressState = { checkpoint: null }) {
   let timeoutId;
   const timeoutResult = new Promise((resolve) => {
-    const checkProgress = () => {
-      const remaining = DOMESTIC_SEARCH_HARD_TIMEOUT_MS - (Date.now() - progressState.lastProgressAt);
-      if (remaining > 0) {
-        timeoutId = setTimeout(checkProgress, remaining);
-        return;
-      }
-      // Only a lack of real stage progress is a stall. Sequential, thorough
-      // retailer searches are allowed to exceed two minutes in total.
+    timeoutId = setTimeout(() => {
+      // Progress and checkpoint writes do not restart this absolute deadline,
+      // so a looping page cannot extend one product forever.
       if (!domesticSearchCanceled(generation)) cancelDomesticSearches();
-      const message = "검색 진행 응답이 2분 동안 없어 중단했습니다. 완료된 판매처 결과를 표시합니다.";
+      const message = "상품 검색 안전시간 4분이 지나 확인된 판매처 결과를 저장하고 다음 상품으로 이동합니다.";
       resolve(progressState.checkpoint ? {
         ok: true,
         timedOut: true,
@@ -339,10 +338,9 @@ async function withDomesticSearchHardTimeout(operation, generation, progressStat
       } : {
         ok: false,
         timedOut: true,
-        message: "검색 진행 응답이 2분 동안 없어 중단했습니다. 아직 확인된 결과가 없습니다.",
+        message: "상품 검색 안전시간 4분 동안 확인된 판매처 결과가 없습니다.",
       });
-    };
-    timeoutId = setTimeout(checkProgress, DOMESTIC_SEARCH_HARD_TIMEOUT_MS);
+    }, DOMESTIC_SEARCH_HARD_TIMEOUT_MS);
   });
   try {
     return await Promise.race([operation, timeoutResult]);
@@ -3995,9 +3993,9 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       const queryAttempts = source.store === "브랜드 공식몰"
         ? allQueryAttempts.slice(0, 1) : allQueryAttempts;
       let result = null;
-      // Each ranked query gets time for navigation, the full observation
-      // window, and detail verification. Do not exhaust the title fallback's
-      // budget while completing the preceding exact-code search.
+      const sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
+      // Every ranked query shares this retailer's single deadline. A slow
+      // exact-code attempt cannot grant fresh time to each title fallback.
       for (let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts.length; queryAttemptIndex += 1) {
         const queryAttempt = queryAttempts[queryAttemptIndex];
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
@@ -4019,8 +4017,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       // the completed prior search returned no product; browser/security or
       // detail-verification failures must not repeat the same query or advance
       // as though the product were absent.
-        // The deadline measures inactivity, not total useful work. Each
-        // completed option/product retains a checkpoint and refreshes it.
+        // Checkpoint useful work, but never use it to extend the deadline.
         let sourceTimeoutId, stopped = false, expire;
         pendingProducts = [];
         const timeoutResult = new Promise(resolve => {
@@ -4036,12 +4033,10 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
             }), products: [...pendingProducts], count: pendingProducts.length || null,
               detailVerificationPending: true});
           };
-          sourceTimeoutId = setTimeout(expire, 90_000);
+          sourceTimeoutId = setTimeout(expire, Math.max(0, sourceDeadlineAt - Date.now()));
         });
         const activity = async update => {
           if (stopped || domesticSearchCanceled(generation)) return;
-          clearTimeout(sourceTimeoutId);
-          sourceTimeoutId = setTimeout(expire, 90_000);
           if (Array.isArray(update.products)) pendingProducts = update.products;
           const stage = update.option ? `옵션 ${update.option}`
             : `상품 ${update.completedProducts}/${update.totalProducts}`;
@@ -12009,10 +12004,9 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   ipcMain.handle("domestic:search", (_event, input) => {
     const execute = (input, persistCheckpoint = async () => {}) => {
     const searchGeneration = domesticSearchGeneration;
-    const progressState = { lastProgressAt: Date.now(), checkpoint: null };
+    const progressState = { checkpoint: null };
     const sendDomesticProgress = (payload) => {
       if (domesticSearchCanceled(searchGeneration)) return;
-      progressState.lastProgressAt = Date.now();
       if (!_event.sender.isDestroyed()) {
         _event.sender.send("domestic-search:progress", { ...payload, generation: searchGeneration, requestId: String(input?.requestId || "") });
       }
