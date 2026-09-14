@@ -24,6 +24,7 @@ app.whenReady().then(async () => {
     ['네이버 패션타운','https://shopping.naver.com/window/search/fashion-group?q=JH9976','https://shopping.naver.com/window-products/department/123',context.loadNaverFashionTownResultPage],
     ['무신사','https://www.musinsa.com/search/goods?keyword=JH9976&gf=A','https://www.musinsa.com/products/123',context.loadMusinsaResultPage],
   ];
+  const collected = [];
   for (const [store,url,detail,loader] of cases) {
     const isolated = session.fromPartition('offline-stock-'+store);
     const releases = [];
@@ -50,6 +51,7 @@ app.whenReady().then(async () => {
       assert.ok(stock.sizes.some(size => size.quantity===3 && /270/.test(size.label)),JSON.stringify(stock));
       assert.ok(stock.sizes.some(size => size.inStock===false && /280/.test(size.label)),JSON.stringify(stock));
       assert.ok(!stock.sizes.some(size => size.quantity===2),'purchase limit is not inventory');
+      collected.push({store,title:'아디다스 JH9976',articleNumber:'JH9976',url:detail,price:99000,...stock});
       console.log(JSON.stringify({store,electron:process.versions.electron,offline:true,pendingImage:true,sizes:stock.sizes}));
     } finally {
       for (const release of releases) release();
@@ -57,5 +59,56 @@ app.whenReady().then(async () => {
       isolated.protocol.unhandle('https');
     }
   }
+  // Pass the observations read by the real collector into the existing
+  // product-search renderer. One normal search must place all retailer rows
+  // below the selected product without a second inventory action.
+  const fixture = await import(pathToFileURL(resolve(root,'tests/fixtures/domestic-completion-server.mjs')));
+  const uiSession = session.fromPartition('offline-automatic-stock-list');
+  uiSession.protocol.handle('https',request=>{
+    const path=new URL(request.url).pathname;
+    const allowed=['/src/style.css','/src/domestic-loading-overlay.css','/src/excel-column-layout.js',
+      '/src/domestic-result-verdict.js','/src/sourcing-view.js','/src/domestic-inline-results.js'];
+    const content=path==='/'?fixture.fixtureHtml:path==='/fixture.js'?fixture.fixtureScript:
+      allowed.includes(path)?readFileSync(resolve(root,path.slice(1))):'';
+    return new Response(content,{headers:{'content-type':path.endsWith('.js')?'text/javascript':
+      path.endsWith('.css')?'text/css':'text/html;charset=utf-8'}});
+  });
+  const ui=new BrowserWindow({show:false,width:1400,height:900,webPreferences:{session:uiSession,sandbox:true,offscreen:true,backgroundThrottling:false,paintWhenInitiallyHidden:true}});
+  try {
+    await ui.loadURL('https://offline.invalid/');
+    const data={products:collected,sources:collected.map(p=>({store:p.store,count:1,countVerified:true}))};
+    await ui.webContents.executeJavaScript(`
+      product.articleNumber='JH9976';product.brandName='Adidas';product.title='아디다스 JH9976';
+      window.automaticSearchCalls=0;
+      window.aroundG.searchDomestic=async input=>{
+        if(input.articleNumber!=='JH9976')throw Error('wrong search product');
+        window.automaticSearchCalls++;
+        return {ok:true,data:${JSON.stringify(data)}};
+      };
+      document.querySelector('#excel-preview-search-selected').click();
+    `);
+    let rendered;
+    for(let i=0;i<30;i++) {
+      await wait(100);
+      rendered=await ui.webContents.executeJavaScript(`(()=>{
+        const productRow=document.querySelector('.excel-verified-spu-row');
+        const detail=productRow?.nextElementSibling;
+        return {busy:excelPreviewBatchSearching,calls:window.automaticSearchCalls,
+          below:Boolean(detail?.matches('.excel-verified-search-detail') && detail.getBoundingClientRect().top>=productRow.getBoundingClientRect().bottom),
+          rows:[...document.querySelectorAll('.domestic-inline-row')].map(row=>({
+            text:row.innerText,columns:row.children.length,stock:row.querySelector('.domestic-inline-stock-cell')?.innerText})),
+          extraAction:Boolean(document.querySelector('[data-domestic-stock-refresh]')),
+          errors:document.querySelector('#fixture-errors').textContent};
+      })()`);
+      if(!rendered.busy&&rendered.rows.length)break;
+    }
+    assert.equal(rendered.calls,1);
+    assert.equal(rendered.below,true,'retailer list belongs directly below the product');
+    assert.equal(rendered.extraAction,false,'no separate stock-fetch action');
+    assert.equal(rendered.rows.length,2);
+    for(const row of rendered.rows){assert.equal(row.columns,6);assert.match(row.stock,/270.*3개 남음/);assert.match(row.stock,/280.*품절/);assert.match(row.text,/99,000원/);}
+    assert.equal(rendered.errors,'');
+    console.log(JSON.stringify({automaticProductSearch:true,retailerRows:rendered.rows.length,belowProduct:true,extraStockClick:false,offline:true}));
+  } finally {ui.destroy();uiSession.protocol.unhandle('https');}
   clearTimeout(watchdog);app.exit(0);
 }).catch(error => {console.error(error.stack);clearTimeout(watchdog);app.exit(1);});

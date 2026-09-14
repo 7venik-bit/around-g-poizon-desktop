@@ -1612,25 +1612,6 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
   }
 }
 
-let domesticStockRefreshRunning = false;
-async function refreshDomesticStock(contextKey) {
-  if (domesticStockRefreshRunning || excelPreviewBatchSearching || domesticBatchRunning) return false;
-  domesticStockRefreshRunning = true;
-  try {
-    if (excelPreviewProductCache.has(contextKey)) {
-      await searchExcelPreviewProduct(contextKey, { forceRefresh: true });
-      return true;
-    }
-    const index = currentExplorerProducts.findIndex((product, index) => domesticKey(product, index) === contextKey);
-    if (index < 0) return false;
-    clearDomesticIdentityCache(currentExplorerProducts[index]);
-    await searchDomesticAt(index);
-    return true;
-  } finally {
-    domesticStockRefreshRunning = false;
-  }
-}
-
 async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewFilters(), options = {}) {
   const rawLabels = [$("#excel-filter-min-total")?.closest('label')?.querySelector('span'), $("#excel-filter-min-local-total")?.closest('label')?.querySelector('span')];
   if (rawLabels[0]) rawLabels[0].textContent = '중국 총 판매량 (원본)';
