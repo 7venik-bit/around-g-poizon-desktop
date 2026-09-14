@@ -592,12 +592,21 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           && scopedPositiveCount === 1 && cards.length === 1 && brandMatched) {
           articleMatched = true;
         }
-        // Musinsa search cards commonly omit the manufacturer's article number
-        // even though the product detail page exposes it under "품번". Keep a
-        // same-brand product as a provisional candidate and verify the exact
-        // article on its own detail page before it can be displayed.
-        if (!conflictingArticle && !articleMatched && String(store || "") === "무신사" && brandMatched
-          && /:\/\/(?:[^/]+\.)?musinsa\.com\/products?\//i.test(productUrl)) {
+        // First-party platform cards commonly omit the manufacturer's article
+        // number even though the product detail exposes it under 품번/SKU. Keep
+        // a same-brand, strong-title product as a provisional candidate on every
+        // supported platform, then require the exact code on its own detail page
+        // before stock can be displayed. This is brand-independent and does not
+        // weaken the overseas/parallel-import rules below.
+        const detailVerifiedPlatformCard = String(store || "") === "무신사"
+          ? /:\/\/(?:[^/]+\.)?musinsa\.com\/products?\//i.test(productUrl)
+          : /^SSG(?:\s|$)/.test(String(store || ""))
+            ? /:\/\/(?:[^/]+\.)?ssg\.com\/item\/itemView\.ssg/i.test(productUrl)
+            : /^롯데온(?:\s|$)/.test(String(store || ""))
+              ? /:\/\/(?:[^/]+\.)?lotteon\.com\/(?:p\/product|productDetail\.action)/i.test(productUrl)
+              : false;
+        if (!conflictingArticle && !articleMatched && detailVerifiedPlatformCard && brandMatched
+          && (!String(expectedTitle || "").trim() || titleIdentityMatch(rawCardText, expectedTitle))) {
           articleMatched = true;
           detailArticleVerificationRequired = true;
         }
@@ -1062,18 +1071,44 @@ export async function queryDomesticProducts({
     }
     try {
       let products = [];
+      let successfulQuery = "";
       for (const candidate of queryCandidates) {
         const candidateUrl = DOMESTIC_SEARCH_LINKS[source.store](candidate);
         const html = await fetchSearchPage(candidateUrl, fetchImpl);
         products = source.parser(html);
-        if (products.length) break;
+        if (products.length) {
+          successfulQuery = candidate;
+          break;
+        }
       }
       if (source.store === "무신사" && products.length) {
         products = await enrichMusinsaOptions(products, fetchImpl);
       }
-      results.push({ store: source.store, ok: true, linkOnly: false, renderCount: source.renderCount, searchUrl, products });
+      results.push({
+        store: source.store,
+        ok: true,
+        linkOnly: false,
+        renderCount: source.renderCount,
+        searchUrl: successfulQuery ? searchUrlFor(successfulQuery) : searchUrl,
+        searchQuery: successfulQuery || preferredQuery,
+        searchAttempts: queryCandidates.map((candidate) => ({ query: candidate, url: searchUrlFor(candidate) })),
+        products,
+      });
     } catch {
-      results.push({ store: source.store, ok: false, linkOnly: false, renderCount: source.renderCount, searchUrl, officialProductUrl, products: [] });
+      // A lightweight HTTP preflight can fail while Electron can still render
+      // the platform. Preserve every ranked URL so the actual browser/detail
+      // collector can perform the authoritative search and stock inspection.
+      results.push({
+        store: source.store,
+        ok: false,
+        linkOnly: false,
+        renderCount: source.renderCount,
+        searchUrl,
+        officialProductUrl,
+        searchQuery: preferredQuery,
+        searchAttempts: queryCandidates.map((candidate) => ({ query: candidate, url: searchUrlFor(candidate) })),
+        products: [],
+      });
     }
   }
 
