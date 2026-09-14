@@ -45,6 +45,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
           return this.dom.window.eval(code);
         },
       };
+      this.webContents.mainFrame = { executeJavaScript: this.webContents.executeJavaScript };
       windows.push(this);
     }
     on(name, callback) { if (name === 'closed') this.onClosed = callback; }

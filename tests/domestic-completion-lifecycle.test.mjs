@@ -87,6 +87,36 @@ test('real enhanced renderer completes and places results beneath the selected p
   assert.equal(f.window.document.querySelector('#fixture-errors').textContent, '');
 });
 
+test('재고 가져오기 bypasses the cached search and renders retailer quantities through the common search IPC', async t => {
+  const f = createFixture(t);
+  await f.run();
+  let requests = 0;
+  f.window.aroundG.searchDomestic = async () => {
+    requests++;
+    return {ok:true,data:{products:[{store:'무신사',name:'데상트 테스트 상품',price:59000,
+      url:'https://www.musinsa.com/products/1',stockText:'3개 남음',inStock:true,
+      sizes:[{label:'270',stockText:'3개 남음',quantity:3,inStock:true},{label:'280',stockText:'품절',inStock:false}],
+      stockVerified:true}],sources:[{store:'무신사',count:1,countVerified:true}]}};
+  };
+  const button = f.window.document.querySelector('[data-domestic-stock-refresh]');
+  assert.ok(button);
+  assert.equal(button.textContent, '재고 가져오기');
+  button.click();
+  for (let i=0;i<100 && (requests===0 || f.api.busy());i++) await tick(10);
+  assert.equal(requests, 1, 'explicit refresh must not reuse the previous price-only result');
+  assert.match(f.window.document.querySelector('.domestic-inline-stock-cell').textContent, /3개 남음/);
+  assert.match(f.window.document.querySelector('.domestic-inline-results').textContent, /280.*품절/);
+  assert.equal(f.api.busy(), false);
+  assert.equal(f.window.document.querySelector('#fixture-errors').textContent, '');
+});
+
+test('a failed search still offers 재고 가져오기', async t => {
+  const f = createFixture(t);
+  f.window.aroundG.searchDomestic = async () => ({ok:false,timedOut:true,message:'검색 응답 지연'});
+  await f.run();
+  assert.ok(f.window.document.querySelector('[data-domestic-stock-refresh]:not(:disabled)'));
+});
+
 test('a timed-out search is never labeled complete', async t => {
   const f = createFixture(t);
   f.window.aroundG.searchDomestic = async () => ({ok:false,timedOut:true,message:'검색 응답 지연'});

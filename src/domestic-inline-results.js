@@ -74,6 +74,8 @@
       .domestic-inline-empty{padding:8px 0!important;color:#7b8794!important;font-size:11px!important;text-align:left!important}
       .domestic-inline-empty.error{color:#b42318!important;font-weight:700!important}
       .domestic-inline-warning{padding:5px 0!important;color:#9a6700!important;font-size:8px!important;font-weight:700!important}
+      .domestic-inline-stock-toolbar{display:flex!important;align-items:center!important;gap:10px!important;flex-wrap:wrap!important;margin:6px 0!important}
+      .domestic-inline-stock-toolbar button{min-height:34px!important;padding:6px 12px!important;white-space:nowrap!important}
 
       /* Explorer/popular views also use the same compact rows without thumbnails. */
       .domestic-source-list.sourcing-product-list{display:flex!important;flex-direction:column!important;gap:0!important;border:0!important;border-radius:0!important;overflow:visible!important;background:transparent!important;box-shadow:none!important}
@@ -196,9 +198,11 @@
   }
 
   function inlineRenderDomestic(result, sourceProduct = {}, contextKey = "") {
+    const stockAction = contextKey
+      ? `<div class="domestic-inline-stock-toolbar"><button type="button" data-domestic-stock-refresh="${encodeURIComponent(contextKey)}"${result?.loading ? ' disabled' : ''}>${result?.loading ? '재고 확인 중…' : '재고 가져오기'}</button><span role="status" aria-live="polite"></span></div>` : "";
     if (!result) return `<div class="domestic-inline-empty">국내 상품 검색 전</div>`;
-    if (result.loading) return `<div class="domestic-inline-empty">국내 판매처 검색 중…</div>`;
-    if (result.error) return `<div class="domestic-inline-empty error">국내 검색 실패: ${safeText(result.error)}</div>`;
+    if (result.loading) return `${stockAction}<div class="domestic-inline-empty">국내 판매처 검색 중…</div>`;
+    if (result.error) return `${stockAction}<div class="domestic-inline-empty error">국내 검색 실패: ${safeText(result.error)}</div>`;
 
     const products = Array.isArray(result.products) ? result.products.filter((product) => product && approvedDomesticProduct(product)) : [];
     const sources = Array.isArray(result.sources) ? result.sources : [];
@@ -266,8 +270,8 @@
       ? `<div class="domestic-inline-warning">일부 판매처 추가 확인 실패 · 확보된 검색 결과를 표시합니다.</div>`
       : "";
     return rows.length
-      ? `${warning}${timestamp}<div class="domestic-inline-results"><div class="domestic-inline-head"><span>판매처</span><span>상품명</span><span>사이즈·재고</span><span>품번</span><span>가격</span><span>링크</span></div>${rows.join("")}</div>`
-      : `${warning}${timestamp}<div class="domestic-inline-empty">${result.partial ? "재고 확인이 끝나지 않았습니다. 미완료 검색을 이어갈 수 있습니다." : "일치하는 국내 판매 상품 없음"}</div>`;
+      ? `${stockAction}${warning}${timestamp}<div class="domestic-inline-results"><div class="domestic-inline-head"><span>판매처</span><span>상품명</span><span>사이즈·재고</span><span>품번</span><span>가격</span><span>링크</span></div>${rows.join("")}</div>`
+      : `${stockAction}${warning}${timestamp}<div class="domestic-inline-empty">${result.partial ? "재고 확인이 끝나지 않았습니다. 미완료 검색을 이어갈 수 있습니다." : "일치하는 국내 판매 상품 없음"}</div>`;
   }
 
   function sizeSalesValue(product) {
@@ -380,6 +384,24 @@
   }
 
   installRenderers();
+
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest?.("[data-domestic-stock-refresh]");
+    if (!button || button.disabled) return;
+    event.preventDefault();
+    const status = button.parentElement.querySelector('[role="status"]');
+    button.disabled = true;
+    button.textContent = "재고 확인 중…";
+    try {
+      const started = await refreshDomesticStock(decodeURIComponent(button.dataset.domesticStockRefresh));
+      if (!started && status) status.textContent = "진행 중인 검색이 끝난 뒤 다시 눌러주세요.";
+    } catch (error) {
+      if (status) status.textContent = error instanceof Error ? error.message : "재고 확인에 실패했습니다. 다시 시도해주세요.";
+    } finally {
+      button.disabled = false;
+      button.textContent = "재고 가져오기";
+    }
+  });
 
   document.addEventListener("click", async (event) => {
     const button = event.target.closest?.("[data-inline-naver-price]");

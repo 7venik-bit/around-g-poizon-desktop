@@ -1167,7 +1167,7 @@ async function officialDetailImage(searchWindow, productUrl, officialPageUrl = "
       new Promise((_, reject) => setTimeout(() => reject(new Error("OFFICIAL_DETAIL_TIMEOUT")), 20_000)),
     ]);
     await wait(1_200);
-    const detailImageUrl = String(await searchWindow.webContents.executeJavaScript(`(() => {
+    const detailImageUrl = String(await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const absolute = (value) => {
         try { return new URL(String(value || "").trim(), location.href).href; } catch { return ""; }
       };
@@ -1244,7 +1244,7 @@ async function waitForNaverSecurityVerification(searchWindow) {
   const deadline = Date.now() + (10 * 60_000);
   while (Date.now() < deadline) {
     if (searchWindow.isDestroyed()) return false;
-    const state = await searchWindow.webContents.executeJavaScript(`JSON.stringify({
+    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`JSON.stringify({
       text: String(document.body?.innerText || "").slice(0, 20000),
       url: String(location.href || "")
     })`, true).then(JSON.parse).catch(() => null);
@@ -1375,7 +1375,7 @@ async function submitOfficialMallSearch(searchWindow, query) {
 
 async function officialMallSearchWasExecuted(searchWindow, query, previousUrl = "") {
   if (!searchWindow || searchWindow.isDestroyed()) return false;
-  const state = await searchWindow.webContents.executeJavaScript(`(() => {
+  const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
     const query = ${JSON.stringify(String(query || ""))};
     const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
     const expected = compact(query);
@@ -1419,7 +1419,7 @@ async function collectOfficialMallSearchProducts(searchWindow, query) {
   while (captureAttempt < 16) {
     if (captureAttempt > 0) await wait(500);
     captureAttempt += 1;
-    const products = await searchWindow.webContents.executeJavaScript(`(() => {
+    const products = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const query = ${JSON.stringify(String(query || ""))};
       const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
       const expected = compact(query);
@@ -1591,7 +1591,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         // or waits on nonessential resources. Keep that real document and let
         // the identity/seller checks below decide whether it is usable.
         if (navigationError) {
-          const renderedAfterNavigationError = await evidenceWindow.webContents.executeJavaScript(`(() => {
+          const renderedAfterNavigationError = await evidenceWindow.webContents.mainFrame.executeJavaScript(`(() => {
             const expected = new URL(${JSON.stringify(productUrl)});
             const current = new URL(String(location.href || ""));
             return current.origin === expected.origin && current.pathname === expected.pathname
@@ -1603,7 +1603,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         let snapshot = null;
         for (let attempt = 0; attempt < 8; attempt += 1) {
           await wait(attempt === 0 ? 900 : 350);
-          snapshot = await evidenceWindow.webContents.executeJavaScript(`(() => {
+          snapshot = await evidenceWindow.webContents.mainFrame.executeJavaScript(`(() => {
             const fullText = String(document.body?.innerText || "").slice(0, 80000);
             const sellerEvidenceText = fullText.split(/\\n+/)
               .map((line) => line.replace(/\\s+/g, " ").trim())
@@ -1861,7 +1861,7 @@ async function readNaverFashionTownChannelCounts(searchWindow) {
   if (!searchWindow || searchWindow.isDestroyed()) return null;
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if (attempt > 0) await wait(300);
-    const labels = await searchWindow.webContents.executeJavaScript(`(() => {
+    const labels = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const visible = (element) => {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
@@ -1889,7 +1889,7 @@ async function clickNaverShoppingChannel(searchWindow, store) {
       : store === "네이버 아울렛" ? "아울렛" : "";
   if (!targetLabel) return true;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const target = await searchWindow.webContents.executeJavaScript(`(() => {
+    const target = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const label = ${JSON.stringify(targetLabel)};
       const compact = (value) => String(value || "").replace(/\\s+/g, "");
       const visible = (element) => {
@@ -1955,7 +1955,7 @@ async function clickNaverShoppingChannel(searchWindow, store) {
     searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
     await wait(1_500);
   }
-  const state = await searchWindow.webContents.executeJavaScript(`(() => {
+  const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
     const compact = (value) => String(value || "").replace(/\\s+/g, "");
     const selectedEvidence = (element) => {
       let node = element;
@@ -1987,7 +1987,7 @@ async function clickNaverShoppingHomeMenu(searchWindow) {
   if (!searchWindow || searchWindow.isDestroyed()) return false;
   let target = null;
   for (let attempt = 0; attempt < 20 && !target; attempt += 1) {
-    target = await searchWindow.webContents.executeJavaScript(`(() => {
+    target = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
       const visible = (element) => {
         const style = getComputedStyle(element);
@@ -2036,7 +2036,7 @@ async function clickNaverShoppingHomeMenu(searchWindow) {
   // Shopping home document instead of guessing a direct commerce URL.
   for (let attempt = 0; attempt < 30; attempt += 1) {
     await wait(attempt === 0 ? 1_000 : 500);
-    const state = await searchWindow.webContents.executeJavaScript(`(() => ({
+    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => ({
       url: String(location.href || ""),
       ready: Boolean(document.documentElement && document.body),
       securityRequired: /captcha|보안\\s*확인|스팸을\\s*방지|실제\\s*사용자|비정상적인\\s*접근/i.test(String(document.body?.innerText || ""))
@@ -2051,7 +2051,7 @@ async function clickNaverFashionTownMenu(searchWindow) {
   if (!searchWindow || searchWindow.isDestroyed()) return false;
   let target = null;
   for (let attempt = 0; attempt < 30 && !target; attempt += 1) {
-    target = await searchWindow.webContents.executeJavaScript(`(() => {
+    target = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
       const fashionLabels = ["패션타운"];
       const visible = (element) => {
@@ -2107,7 +2107,7 @@ async function clickNaverFashionTownMenu(searchWindow) {
   // is sufficient, and the next function opens/re-queries the real input.
   for (let attempt = 0; attempt < 30; attempt += 1) {
     await wait(attempt === 0 ? 1_000 : 500);
-    const ready = await searchWindow.webContents.executeJavaScript(`(() => {
+    const ready = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
       const fashionLabels = ["패션타운"];
       const visible = (element) => {
@@ -2140,7 +2140,7 @@ async function openNaverFashionTownSearchInput(searchWindow) {
   if (!searchWindow || searchWindow.isDestroyed()) return null;
   let launcher = null;
   for (let attempt = 0; attempt < 20 && !launcher; attempt += 1) {
-    launcher = await searchWindow.webContents.executeJavaScript(`(() => {
+    launcher = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const compact = (value) => String(value || "").replace(/\\s+/g, " ").trim();
       const visible = (element) => {
         const style = getComputedStyle(element);
@@ -2192,7 +2192,7 @@ async function openNaverFashionTownSearchInput(searchWindow) {
   // launcher element, which Naver replaces during this transition.
   for (let attempt = 0; attempt < 24; attempt += 1) {
     await wait(attempt === 0 ? 350 : 250);
-    const inputTarget = await searchWindow.webContents.executeJavaScript(`(() => {
+    const inputTarget = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const compact = (value) => String(value || "").replace(/\\s+/g, " ").trim();
       const visible = (element) => {
         const style = getComputedStyle(element);
@@ -2230,7 +2230,7 @@ async function openNaverFashionTownSearchInput(searchWindow) {
 async function typeNaverQueryLikeUser(searchWindow, inputTarget, exactQuery) {
   if (!inputTarget) return false;
   const inputSelector = 'input:not([type="password"]),textarea,[role="searchbox"],[contenteditable="true"]';
-  const readValue = () => searchWindow.webContents.executeJavaScript(`(() => {
+  const readValue = () => searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
     const visible = (element) => {
       const style = getComputedStyle(element);
       const rect = element.getBoundingClientRect();
@@ -2320,7 +2320,7 @@ async function waitForNaverSearchResultsStable(searchWindow, query) {
       const signature = unique.map((item) => item.href + "|" + compact(item.text).slice(0, 80)).join("||");
       return { queryVisible, noResult, securityRequired, cardCount: unique.length, signature };
     })()`;
-    const state = await searchWindow.webContents.executeJavaScript(pageScript, true).catch(() => null);
+    const state = await searchWindow.webContents.mainFrame.executeJavaScript(pageScript, true).catch(() => null);
     if (!state || state.securityRequired) return false;
     const ready = state.queryVisible === true && (state.cardCount > 0 || state.noResult === true);
     const signature = state.noResult === true ? "__NO_RESULT__" : String(state.signature || "");
@@ -2353,7 +2353,7 @@ async function submitNaverShoppingSearch(searchWindow, query) {
   // one stale lookup.
   let submitTarget = null;
   for (let attempt = 0; attempt < 20 && !submitTarget; attempt += 1) {
-    submitTarget = await searchWindow.webContents.executeJavaScript(`(() => {
+    submitTarget = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
     const compact = (value) => String(value || "").replace(/\\s+/g, " ").trim();
     const visible = (element) => {
       const style = getComputedStyle(element);
@@ -2441,7 +2441,7 @@ async function submitNaverShoppingSearch(searchWindow, query) {
 
   for (let attempt = 0; attempt < 24; attempt += 1) {
     await wait(attempt === 0 ? 1_500 : 500);
-    const state = await searchWindow.webContents.executeJavaScript(`JSON.stringify({
+    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`JSON.stringify({
       url: String(location.href || ""),
       text: String(document.body?.innerText || "").slice(0, 30000),
       resultMatched: [...document.querySelectorAll('a[href*="window-products"],a[href*="/products/"]')].some((link) => {
@@ -2474,12 +2474,12 @@ async function openRenderedSizeOptions(searchWindow) {
   if (!searchWindow || searchWindow.isDestroyed()) return false;
   let clicked = false;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const existing = await searchWindow.webContents.executeJavaScript(
+    const existing = await searchWindow.webContents.mainFrame.executeJavaScript(
       `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(renderedStockSelectors("", searchWindow.webContents.getURL()))})`, true,
     ).catch(() => null);
     // Do not toggle an open menu closed or click a size that is already visible.
     if (normalizeRenderedStockEvidence(existing || {}).sizes.length) return clicked;
-    const target = await searchWindow.webContents.executeJavaScript(`(() => {
+    const target = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const visible = (element) => {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
@@ -2527,7 +2527,7 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
     ]).catch(() => {});
     await wait(1_200);
   }
-  const cardFound = await searchWindow.webContents.executeJavaScript(`(() => {
+  const cardFound = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
     const expected = ${JSON.stringify(expectedUrl)};
     const clean = (value) => String(value || "").split("#")[0];
     const links = [...document.querySelectorAll("a[href]")];
@@ -2547,7 +2547,7 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
   // scrollIntoView can move a responsive card after the first layout pass.
   // Wait for that movement to settle, then measure the actual clickable link.
   await wait(650);
-  const target = await searchWindow.webContents.executeJavaScript(`(() => {
+  const target = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
     const expected = ${JSON.stringify(expectedUrl)};
     const clean = (value) => String(value || "").split("#")[0];
     const links = [...document.querySelectorAll("a[href]")];
@@ -2694,10 +2694,12 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
 }
 
 async function waitForDomesticCaptureReady(searchWindow, timeoutMs = 25_000) {
+  // webContents.executeJavaScript waits for did-stop-loading in Electron.
+  // Read the live main frame so pending images/analytics cannot block stock.
   const deadline = Date.now() + timeoutMs;
   let lastSignature = "", stableSince = Date.now();
   while (Date.now() < deadline && !searchWindow.isDestroyed()) {
-    const state = await searchWindow.webContents.executeJavaScript(`(() => {
+    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const visible = element => {
         const style = getComputedStyle(element), rect = element.getBoundingClientRect();
         return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
@@ -2735,12 +2737,12 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
   const canceled = () => domesticSearchCanceled(generation) || !searchWindow || searchWindow.isDestroyed();
   if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
   const strategy = retailerStockStrategy({store: storeName, url: searchWindow.webContents.getURL()});
-  const capture = () => searchWindow.webContents.executeJavaScript(
+  const capture = () => searchWindow.webContents.mainFrame.executeJavaScript(
     `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(strategy.optionSelectors)})`, true);
   await openRenderedSizeOptions(searchWindow);
   const initial = await capture();
   let variants = {options: [], complete: true};
-  const readControls = () => searchWindow.webContents.executeJavaScript(`(${captureNativeStockControls.toString()})()`, true);
+  const readControls = () => searchWindow.webContents.mainFrame.executeJavaScript(`(${captureNativeStockControls.toString()})()`, true);
   try {
     variants = await collectNativeStockVariants({
       canceled, resumeOptions, resumeBranches,
@@ -2748,7 +2750,7 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
         let state = await readControls();
         const group = state.groups?.[depth];
         if (group?.kind === "custom" && !group.options.length) {
-          await searchWindow.webContents.executeJavaScript(`(() => {
+          await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
             const el = document.querySelector(${JSON.stringify(group.selector)});
             if (el && el.getAttribute('aria-expanded') !== 'true' && !el.disabled) el.click();
           })()`, true);
@@ -2763,7 +2765,7 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
       },
       select: async (group, option) => {
         if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
-        const selected = await searchWindow.webContents.executeJavaScript(`(() => {
+        const selected = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
           const el = document.querySelector(${JSON.stringify(option.selector || group.selector)});
           if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
           if (el.tagName === 'SELECT') {
@@ -2825,7 +2827,7 @@ async function refreshDomesticProductStock(product, generation = domesticSearchG
   try {
     return await Promise.race([
       (async () => {
-        await stockWindow.loadURL(product.url);
+        void stockWindow.loadURL(product.url).catch(() => {});
         await waitForDomesticCaptureReady(stockWindow, 25_000);
         const observed = await collectRenderedProductStock(stockWindow, product.store, generation, activity, resumeOptions, resumeBranches, product.url);
         return observed.stockText || observed.purchaseLimitText || observed.sizes.length || observed.inStock !== null ? observed : fallback;
@@ -2848,7 +2850,7 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
   const inspectSettledResult = async () => {
     for (let attempt = 0; attempt < 12; attempt += 1) {
       if (attempt > 0) await wait(500);
-      const state = await searchWindow.webContents.executeJavaScript(`(() => {
+      const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
         const href = String(location.href || "");
         const text = String(document.body?.innerText || "").slice(0, 60000);
         const cards = document.querySelectorAll([
@@ -2906,7 +2908,7 @@ async function loadMusinsaResultPage(searchWindow, targetUrl, query) {
   const navigation = searchWindow.loadURL(targetUrl).catch((error) => { navigationError = error; });
   for (let attempt = 0; attempt < 60; attempt += 1) {
     if (attempt > 0) await wait(500);
-    const state = await searchWindow.webContents.executeJavaScript(`(() => {
+    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const current = new URL(String(location.href || ""));
       const expected = ${JSON.stringify(expectedQuery)};
       const actual = String(current.searchParams.get("keyword") || "").trim();
@@ -3027,7 +3029,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         // not the rejected promise or its error code.
         const currentUrl = String(searchWindow.webContents.getURL() || "");
         const documentReady = /^https:\/\//i.test(currentUrl)
-          ? await searchWindow.webContents.executeJavaScript(
+          ? await searchWindow.webContents.mainFrame.executeJavaScript(
             `Boolean(document.documentElement && String(location.href || "").startsWith("https://"))`,
             true,
           ).catch(() => false)
@@ -3046,7 +3048,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           // window; this never submits or repeats the search.
           for (let attempt = 0; attempt < 8 && !recoveredMusinsaResult; attempt += 1) {
             if (attempt > 0) await wait(500);
-            recoveredMusinsaResult = await searchWindow.webContents.executeJavaScript(`(() => {
+            recoveredMusinsaResult = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
               const current = new URL(String(location.href || ""));
               const expected = ${JSON.stringify(expectedMusinsaQuery)};
               const actual = String(current.searchParams.get("keyword") || "").trim();
@@ -3085,7 +3087,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       // mall's fragile, framework-controlled search-result grid.
       if (officialDirectUrl) {
         await wait(1_500);
-        officialDirectDetail = await searchWindow.webContents.executeJavaScript(`(() => {
+        officialDirectDetail = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
           const expected = ${JSON.stringify(sanitizeDomesticProductCode(articleNumber))};
           const compact = (value) => String(value || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
           const pageText = String(document.body?.innerText || "");
@@ -3185,7 +3187,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         if (naverPortalSource) {
           const shoppingHomeOpened = await clickNaverShoppingHomeMenu(searchWindow);
           if (!shoppingHomeOpened) {
-            const pageText = await searchWindow.webContents.executeJavaScript(
+            const pageText = await searchWindow.webContents.mainFrame.executeJavaScript(
               `String(document.body?.innerText || "").slice(0, 20000)`,
               true,
             ).catch(() => "");
@@ -3206,7 +3208,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           }
           const fashionTownOpened = await clickNaverFashionTownMenu(searchWindow);
           if (!fashionTownOpened) {
-            const pageText = await searchWindow.webContents.executeJavaScript(
+            const pageText = await searchWindow.webContents.mainFrame.executeJavaScript(
               `String(document.body?.innerText || "").slice(0, 20000)`,
               true,
             ).catch(() => "");
@@ -3232,7 +3234,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         if (source.store === "브랜드 공식몰") officialSearchSubmitted = submitted;
         if (!submitted && !interactiveOfficialSearch) {
           const pageText = naverPortalSource
-            ? await searchWindow.webContents.executeJavaScript(
+            ? await searchWindow.webContents.mainFrame.executeJavaScript(
               `String(document.body?.innerText || "").slice(0, 20000)`,
               true,
             ).catch(() => "")
@@ -3307,7 +3309,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       // empty-result message, or a fully settled 15-second result page.
       for (let attempt = 0; attempt < 15; attempt += 1) {
         await wait(1_000);
-        const state = await searchWindow.webContents.executeJavaScript(`(() => {
+        const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
           const visible = (element) => {
             if (!element) return false;
             const style = getComputedStyle(element);
@@ -3345,7 +3347,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     } else {
       for (let attempt = 0; attempt < 10; attempt += 1) {
         await wait(attempt === 0 ? 2_000 : 800);
-        await searchWindow.webContents.executeJavaScript(`(() => {
+        await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
           const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
           window.scrollTo(0, Math.min(maxY, window.scrollY + Math.max(500, window.innerHeight * 0.8)));
         })()`, true).catch(() => {});
@@ -3353,7 +3355,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     }
     await waitForDomesticCaptureReady(searchWindow, officialDirectDetail ? 1_000 : 25_000);
     if (source.store === "브랜드 공식몰" && !officialDirectDetail) {
-      const filter = await searchWindow.webContents.executeJavaScript(`(${captureOfficialSoldOutFilter.toString()})()`, true).catch(() => null);
+      const filter = await searchWindow.webContents.mainFrame.executeJavaScript(`(${captureOfficialSoldOutFilter.toString()})()`, true).catch(() => null);
       if (filter) {
         searchWindow.webContents.sendInputEvent({type: "mouseDown", ...filter, button: "left", clickCount: 1});
         searchWindow.webContents.sendInputEvent({type: "mouseUp", ...filter, button: "left", clickCount: 1});
@@ -3362,7 +3364,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         await waitForDomesticCaptureReady(searchWindow, 25_000);
       }
     }
-    let content = await searchWindow.webContents.executeJavaScript(`(() => {
+    let content = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const expectedArticle = ${JSON.stringify(String(articleNumber || ""))};
       const expectedCompact = expectedArticle.replace(/[^A-Z0-9]/gi, "").toUpperCase();
       const expectedBase = expectedArticle.split(/[-_]/)[0].replace(/[^A-Z0-9]/gi, "").toUpperCase();
@@ -3757,7 +3759,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
             if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");
             await wait(1_000);
-            const identitySnapshot = await searchWindow.webContents.executeJavaScript(`(() => {
+            const identitySnapshot = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
               const pageText = String(document.body?.innerText || "").slice(0, 60000);
               const titleText = [...document.querySelectorAll('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')]
                 .map((element) => String(element.innerText || element.textContent || "").replace(/\\s+/g, " ").trim())
