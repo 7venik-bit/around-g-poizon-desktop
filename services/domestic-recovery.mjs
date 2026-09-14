@@ -84,7 +84,9 @@ export class DomesticRecoveryCoordinator {
   }
   async start({scope = '', products = [], sourceGroups = GROUPS} = {}) {
     if (!products.length || products.length > 10000) throw new Error('RECOVERY_PRODUCTS_INVALID');
-    const groups = [...new Set(sourceGroups.filter(g => GROUPS.includes(g)))].sort();
+    // Keep the user's source order. Sorting made a slow retailer run before
+    // the official mall and delayed every later source during a resume.
+    const groups = [...new Set(sourceGroups.filter(g => GROUPS.includes(g)))];
     if (!groups.length) throw new Error('RECOVERY_SOURCES_EMPTY');
     const items = [...new Map(products.map(p => [String(p.key), {key: String(p.key), input: copy(p.input), product: copy(p.product || {})}])).values()];
     if (items.some(p => !p.key || !p.input)) throw new Error('RECOVERY_IDENTITY_MISSING');
@@ -92,7 +94,7 @@ export class DomesticRecoveryCoordinator {
     // A subset selection resumes the same unfinished batch. Adding products
     // extends it, avoiding orphaned duplicate jobs and stale retry notices.
     let job = this.jobs().find(j => j.version === 1 && j.scope === String(scope) && j.status !== 'complete'
-      && JSON.stringify(j.products[0]?.tasks.map(t => t.group).sort()) === JSON.stringify(groups));
+      && JSON.stringify(j.products[0]?.tasks.map(t => t.group).sort()) === JSON.stringify([...groups].sort()));
     const resumed = Boolean(job);
     if (job && this.active.has(job.id)) throw new Error('RECOVERY_ALREADY_RUNNING');
     job = job ? copy(job) : {id:randomUUID(), version:1, scope:String(scope), createdAt:stamp(this.now), products:[]};
