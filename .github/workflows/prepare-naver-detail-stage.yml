@@ -1,0 +1,141 @@
+name: Prepare Naver detail stage fix
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/prepare-naver-detail-stage.yml', 'tests/naver-detail-stage-separation.test.mjs']
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/naver-detail-stage-separation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install test dependencies without changing source
+        run: npm ci --ignore-scripts
+      - name: Reproduce original regressions
+        shell: bash
+        run: |
+          mkdir -p naver-stage-artifacts
+          set +e
+          node --test tests/naver-detail-stage-separation.test.mjs > naver-stage-artifacts/before.tap 2>&1
+          status=$?
+          set -e
+          cat naver-stage-artifacts/before.tap
+          test "$status" -ne 0
+          test "$(grep -c '^not ok .*REGRESSION' naver-stage-artifacts/before.tap)" -ge 2
+      - name: Apply exact guarded changes to the feature branch source
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          function once(source, oldText, newText) {
+            assert.equal(source.split(oldText).length,2,'Source marker missing or ambiguous: '+oldText.slice(0,120));
+            return source.replace(oldText,newText);
+          }
+          let detail=readFileSync('services/domestic-detail-page.mjs','utf8');
+          detail=once(detail,'  const titleText = [...document.querySelectorAll(', '  const visibleTitleText = [...document.querySelectorAll(');
+          detail=once(detail,'.slice(0, 2000)\n    || String(document.querySelector(', '.slice(0, 2000);\n  const titleText = visibleTitleText\n    || String(document.querySelector(');
+          detail=once(detail,'    titleText, labeledText, structuredCodes:', '    titleText, visibleTitleText, labeledText, structuredCodes:');
+          writeFileSync('services/domestic-detail-page.mjs',detail);
+          let main=readFileSync('main.mjs','utf8');
+          main=once(main,'async function waitForDomesticDetailReady(searchWindow, storeName, productUrl, generation = domesticSearchGeneration, articleNumber = "") {',
+            'async function waitForDomesticDetailReady(searchWindow, storeName, productUrl, generation = domesticSearchGeneration, articleNumber = "", readiness = "stock") {');
+          main=once(main,'        snapshot = observed;\n        if (observed.ready) return observed;',`        snapshot = observed;
+                  // NAVER_PRODUCT_IDENTITY_BEFORE_STOCK: only this explicit mode may
+                  // return a visible exact product document before options are ready.
+                  // Metadata-only skeletons cannot satisfy the visible-evidence gate.
+                  const identityReady = readiness === "product" && storeName === "네이버 패션타운"
+                    && Boolean(observed.visibleTitleText || observed.labeledText)
+                    && strictProductArticleIdentityMatch({
+                      titleText: observed.visibleTitleText || "",
+                      labeledText: observed.labeledText || "",
+                      structuredCodes: observed.structuredCodes || [],
+                    }, articleNumber);
+                  if (observed.ready || identityReady) return observed;`.replace(/^          /gm,''));
+          main=once(main,'const snapshot = await waitForDomesticDetailReady(evidenceWindow, "네이버 패션타운", productUrl, generation, articleNumber);',
+            'const snapshot = await waitForDomesticDetailReady(evidenceWindow, "네이버 패션타운", productUrl, generation, articleNumber, "product");');
+          const start=main.indexOf('        // Open choices only after verifying this seller/product');
+          assert.ok(start>main.indexOf('async function verifyApprovedNaverDomesticProducts('));
+          const end=main.indexOf('\n      } catch (error) {',start);
+          assert.ok(end>start);
+          const oldBlock=main.slice(start,end);
+          assert.ok(oldBlock.includes('approved.push({')&&oldBlock.includes('collectRenderedProductStock('));
+          const newBlock=`        // Publish verified identity/price before optional stock inspection.
+                  // A collapsed or stalled option widget must not erase an observed
+                  // product, but identity alone must never become verified inventory.
+                  const initialStock = snapshot.stockEvidence ? normalizeRenderedStockEvidence(snapshot.stockEvidence) : {};
+                  const verifiedProduct = {
+                    ...candidate, ...initialStock,
+                    inStock: null, stockVerified: false,
+                    stockCoverage: initialStock.sizes?.length ? "partial" : "unknown",
+                    stockStatus: "unknown", detailVerificationPending: true,
+                    domesticSellerVerified: true,
+                    domesticSellerEvidence: String(snapshot.sellerEvidenceText || "").slice(0, 240),
+                    brandVerifiedFromCard: brandVerified,
+                    articleNumber: articleVerified ? sanitizeDomesticProductCode(articleNumber) : "",
+                    detectedArticleNumber: articleVerified ? sanitizeDomesticProductCode(articleNumber) : "",
+                    articleNumberVerified: articleVerified,
+                    titleVerifiedFromDetail: productTitleVerified,
+                    matchBasis: articleVerified ? "article" : "brand_title",
+                  };
+                  const approvedIndex = approved.length;
+                  approved.push(verifiedProduct);
+                  await onActivity?.({products: [...approved], completedProducts: checkedCount + failedCount,
+                    totalProducts: candidates.length, detailVerified: true, detailUrl: productUrl,
+                    failedDetails: failedCount, detailFailure: ""});
+                  let optionStock = null;
+                  let optionError = null;
+                  try {
+                    const savedOptions = recoveryOptions[candidate.url];
+                    optionStock = await collectRenderedProductStock(evidenceWindow, "네이버 패션타운", generation, onActivity,
+                      savedOptions && Date.now() - Date.parse(savedOptions.checkedAt || '') < 30 * 60_000 ? savedOptions.options : [], savedOptions?.branches || [], candidate.url);
+                  } catch (error) {
+                    if (error?.securityVerificationRequired || error?.loginRequired || domesticSearchCanceled(generation)) throw error;
+                    optionError = error;
+                  }
+                  approved[approvedIndex] = {
+                    ...verifiedProduct, ...(optionStock || {}),
+                    detailVerificationPending: !optionStock || !stockObservationComplete(optionStock),
+                    ...(optionError ? {detailVerificationReason: String(optionError.message || "stock_collection_failed")} : {}),
+                  };`.replace(/^          /gm,'');
+          main=main.slice(0,start)+newBlock+main.slice(end);
+          writeFileSync('main.mjs',main);
+          NODE
+          node --check main.mjs
+          node --check services/domestic-detail-page.mjs
+          git diff --check
+          git diff -- main.mjs services/domestic-detail-page.mjs > naver-stage-artifacts/source.patch
+      - name: Execute focused tests against the changed functions
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test tests/naver-detail-stage-separation.test.mjs | tee naver-stage-artifacts/after.tap
+      - name: Commit only the reviewed source paths to the feature branch
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          test "$(git ls-remote origin refs/heads/codex/naver-detail-stage-separation | cut -f1)" = "$EXPECTED_HEAD"
+          git add -- main.mjs services/domestic-detail-page.mjs
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: preserve verified Naver products before optional stock collection'
+          git push origin HEAD:refs/heads/codex/naver-detail-stage-separation
+          git rev-parse HEAD > naver-stage-artifacts/head.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: naver-detail-stage-regressions
+          path: naver-stage-artifacts/
+          retention-days: 7
