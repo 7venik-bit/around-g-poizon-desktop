@@ -44,6 +44,8 @@ for (const newline of ["\n", "\r\n"]) test(`release finalizer preserves current 
   await mkdir(join(folder,'scripts'));
   await writeFile(join(folder,'main.mjs'),main.replace(/\n/g,newline));
   await writeFile(join(folder,'scripts','patch-naver-result-link-finalizer.mjs'),patch);
+  await writeFile(join(folder,'scripts','verify-naver-result-link-finalizer.mjs'),await read('scripts/verify-naver-result-link-finalizer.mjs'));
   execFileSync(process.execPath,[join(folder,'scripts','patch-naver-result-link-finalizer.mjs')]);
+  execFileSync(process.execPath,[join(folder,'scripts','verify-naver-result-link-finalizer.mjs')]);
   assert.equal(await readFile(join(folder,'main.mjs'),'utf8'),main,'release patch must preserve the current source, including session, stock and error handling');
 });

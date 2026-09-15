@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, mkdirSync, copyFileSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -54,11 +54,13 @@ test('diagnostics stay available alongside partial products without exposing who
   assert.match(body.textContent, /재고 3개/);
 });
 
-test('Windows-patched lower-list button invokes the controlled window with the search session and user agent', async t => {
+for (const newline of ['\n', '\r\n']) test(`Windows-patched lower-list button uses the search session and user agent (${newline.length === 1 ? 'LF' : 'CRLF'})`, async t => {
   const dir = mkdtempSync(join(tmpdir(), 'aroundg-result-route-'));
   t.after(() => rmSync(dir, {recursive:true,force:true}));
   for (const folder of ['src','scripts']) mkdirSync(join(dir,folder));
-  for (const file of ['main.mjs','preload.cjs','src/renderer.js','scripts/patch-domestic-result-internal-window.mjs']) copyFileSync(join(root,file),join(dir,file));
+  for (const file of ['main.mjs','preload.cjs','src/renderer.js','scripts/patch-domestic-result-internal-window.mjs']) {
+    writeFileSync(join(dir,file),readFileSync(join(root,file),'utf8').replace(/\r\n/g,'\n').replace(/\n/g,newline));
+  }
   execFileSync(process.execPath,[join(dir,'scripts/patch-domestic-result-internal-window.mjs')]);
   const main = readFileSync(join(dir,'main.mjs'),'utf8');
   const patchedRenderer = readFileSync(join(dir,'src/renderer.js'),'utf8');

@@ -8,7 +8,7 @@ const replaceOnce = (source, before, after, label) => {
 };
 
 const mainPath = new URL("../main.mjs", import.meta.url);
-let main = await readFile(mainPath, "utf8");
+let main = (await readFile(mainPath, "utf8")).replace(/\r\n/g, "\n");
 const searchUserAgent = main.match(/searchWindow\.webContents\.setUserAgent\(("[^"]+")\)/)?.[1];
 if (!searchUserAgent) throw new Error("domestic search user agent missing");
 const externalHandler = `  ipcMain.handle("external:open", async (_event, url) => {
@@ -52,7 +52,7 @@ main = replaceOnce(main, externalHandler, internalHandler, "internal domestic re
 await writeFile(mainPath, main, "utf8");
 
 const preloadPath = new URL("../preload.cjs", import.meta.url);
-let preload = await readFile(preloadPath, "utf8");
+let preload = (await readFile(preloadPath, "utf8")).replace(/\r\n/g, "\n");
 preload = replaceOnce(preload,
   '  openExternal: (url) => ipcRenderer.invoke("external:open", url),',
   '  openExternal: (url) => ipcRenderer.invoke("external:open", url),\n  openDomesticResult: (url) => ipcRenderer.invoke("domestic:open-result", url),',
@@ -60,7 +60,7 @@ preload = replaceOnce(preload,
 await writeFile(preloadPath, preload, "utf8");
 
 const rendererPath = new URL("../src/renderer.js", import.meta.url);
-let renderer = await readFile(rendererPath, "utf8");
+let renderer = (await readFile(rendererPath, "utf8")).replace(/\r\n/g, "\n");
 renderer = replaceOnce(renderer,
   '      <div class="domestic-result-actions"><button class="domestic-result-open" data-url="${encodeURIComponent(product?.url || source.searchUrl)}">${sourcingLabel || "판매처 열기"}</button>${stockWatchRegistrationButton(product, sourceProduct)}</div>',
   '      <div class="domestic-result-actions"><button class="domestic-result-open" ${/(?:naver\\.com|ssg\\.com|lotteon\\.com)/i.test(String(product?.url || source.searchUrl || "")) ? `data-domestic-result-url="${encodeURIComponent(product?.url || source.searchUrl)}"` : `data-url="${encodeURIComponent(product?.url || source.searchUrl)}"`}>${sourcingLabel || "판매처 열기"}</button>${stockWatchRegistrationButton(product, sourceProduct)}</div>',
