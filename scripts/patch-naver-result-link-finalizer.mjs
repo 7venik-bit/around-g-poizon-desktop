@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 const mainPath = new URL("../main.mjs", import.meta.url);
-let source = await readFile(mainPath, "utf8");
+let source = (await readFile(mainPath, "utf8")).replace(/\r\n/g, "\n");
 
 function replaceOnce(before, after, label) {
   if (source.includes(after)) return;
@@ -182,7 +182,10 @@ replaceOnce(
   "Naver snapshot evidence",
 );
 
-replaceOnce(
+const canonicalFinalizerMarker = 'const approval = await verifyApprovedNaverDomesticProducts(finalized?.products || [], {';
+// The application owns newer stock/session handling. Install this historical
+// finalizer only when it is absent; never replace a newer verified collector.
+if (!source.includes(canonicalFinalizerMarker)) replaceOnce(
   String.raw`    } catch {
       return renderedSearchFailure("result_parse_failed", searchWindow, { searchSubmitted: interactiveSiteSearch });
     }

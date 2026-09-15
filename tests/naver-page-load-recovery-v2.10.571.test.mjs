@@ -21,7 +21,7 @@ test("네이버는 전체 load 이벤트를 기다리지 않고 정확한 결과
   assert.match(main, /const navigation = searchWindow\.loadURL\(targetUrl\)/);
   assert.match(main, /const firstResult = await inspectSettledResult\(\)/);
   assert.match(main, /isNaverRenderedResultReady\(\{ url: state\.href, text: state\.text, cards: state\.cards \}, expectedQuery\)/);
-  assert.match(main, /if \(!directNaverFashionResult && !musinsaSource\) try \{/);
+  assert.match(main, /if \(!directNaverFashionResult && !musinsaSource && !domesticRetailerSource\) try \{/);
   const loader = main.slice(main.indexOf("async function loadNaverFashionTownResultPage"), main.indexOf("async function renderedSearchSourceResult"));
   assert.doesNotMatch(loader, /session\.clearCache\(\)/);
   assert.doesNotMatch(loader, /30_000/);

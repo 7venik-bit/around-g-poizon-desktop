@@ -14,15 +14,22 @@ const watchdog = setTimeout(() => {console.error('STOCK_RUNTIME_TIMEOUT');app.ex
 app.whenReady().then(async () => {
   const relay = await import(pathToFileURL(resolve(root, 'relay/domestic-search.mjs')));
   const naver = await import(pathToFileURL(resolve(root, 'services/naver-fashiontown-result.mjs')));
+  const detailPage = await import(pathToFileURL(resolve(root, 'services/domestic-detail-page.mjs')));
+  const naverPrice = await import(pathToFileURL(resolve(root, 'services/naver-price.mjs')));
+  const recovery = await import(pathToFileURL(resolve(root, 'services/domestic-recovery.mjs')));
   const source = readFileSync(resolve(root, 'main.mjs'), 'utf8');
-  const context = createContext({...relay, ...naver, URL, setTimeout, clearTimeout, wait,
+  const context = createContext({...relay, ...naver, ...detailPage, ...naverPrice, ...recovery, URL, setTimeout, clearTimeout, wait, BrowserWindow,
+    APP_ICON_PATH:undefined, DOMESTIC_SEARCH_PARTITION:'offline-unused', activeDomesticSearchWindows:new Set(),
     domesticSearchGeneration:0, domesticSearchCanceled:()=>false});
   const section = (start,end) => source.slice(source.indexOf(start), source.indexOf(end,source.indexOf(start)));
   runInContext(section('async function openRenderedSizeOptions(', '\nfunction browserWindowUsable('), context);
   runInContext(section('async function waitForDomesticCaptureReady(', '\nasync function renderedSearchSourceResult('), context);
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('), context);
   const cases = [
     ['네이버 패션타운',relay.naverFashionTownUrl('overview','아디다스','JH9976'),'https://shopping.naver.com/window-products/department/123',context.loadNaverFashionTownResultPage],
     ['무신사','https://www.musinsa.com/search/goods?keyword=JH9976&gf=A','https://www.musinsa.com/products/123',context.loadMusinsaResultPage],
+    ['SSG','https://www.ssg.com/search.ssg?query=JH9976','https://www.ssg.com/item/itemView.ssg?itemId=100',context.loadDomesticRetailerResultPage],
+    ['롯데온','https://www.lotteon.com/search/search/search.ecn?render=search&q=JH9976','https://www.lotteon.com/p/product/LO100',context.loadDomesticRetailerResultPage],
   ];
   const collected = [];
   for (const [store,url,detail,loader] of cases) {
@@ -34,9 +41,12 @@ app.whenReady().then(async () => {
       if (request.url.includes('/hold.svg')) return new Promise(resolve => {
         releases.push(() => resolve(new Response('<svg xmlns="http://www.w3.org/2000/svg"/>',{headers:{'content-type':'image/svg+xml'}})));
       });
-      const body = request.url === detail
-        ? '<h1>아디다스 JH9976</h1><p>99,000원</p><label>사이즈<select aria-label="사이즈"><option value="">사이즈 선택</option><option value="270">270 (3개 남음)</option><option value="280" disabled>280 (품절)</option></select></label><p>1인 최대 2개 구매</p><button>구매하기</button>'
-        : '<p>전체 1개</p><a href="'+detail+'">아디다스 JH9976 99,000원</a>';
+      const isDetail=detailPage.domesticProductUrlIdentity(request.url)===detailPage.domesticProductUrlIdentity(detail);
+      const delayed=store==='SSG'||store==='롯데온';
+      const options='<option value="270">270 (3개 남음)</option><option value="280" disabled>280 (품절)</option>';
+      const body = isDetail
+        ? '<h1>아디다스 JH9976</h1><p>99,000원</p><label>사이즈<select aria-label="사이즈"><option value="">사이즈 선택</option>'+(delayed?'':options)+'</select></label><p>1인 최대 2개 구매</p><button>구매하기</button>'+(delayed?'<script>setTimeout(()=>document.querySelector("select").insertAdjacentHTML("beforeend",'+JSON.stringify(options)+'),6000)</script>':'')
+        : '<p>전체 1개</p>'+(store==='SSG'?'<a href="https://www.ssg.com/item/itemView.ssg?itemId=999&siteNo=6001">다른 상품</a>':'')+'<a href="'+detail+(store==='SSG'?'&siteNo=6001':'')+'">아디다스 JH9976 99,000원</a>';
       return new Response('<!doctype html><meta charset="utf-8"><main>'+body+'</main><img src="https://offline.invalid/hold.svg">', {headers:{'content-type':'text/html;charset=utf-8'}});
     });
     const win = new BrowserWindow({show:false,width:1480,height:900,webPreferences:{session:isolated,sandbox:true,offscreen:true,backgroundThrottling:false,paintWhenInitiallyHidden:true}});
@@ -45,13 +55,22 @@ app.whenReady().then(async () => {
       assert.equal(result.ok,true,store+' result DOM must be readable while image is pending');
       assert.equal(win.webContents.isLoadingMainFrame(),true);
       assert.equal(await context.clickRenderedProductCard(win,detail,url),true);
-      assert.equal(win.webContents.getURL(),detail);
+      assert.equal(detailPage.domesticProductUrlIdentity(win.webContents.getURL()),detailPage.domesticProductUrlIdentity(detail));
+      await context.waitForDomesticDetailReady(win,store,detail,0,'JH9976');
       const stock = await context.collectRenderedProductStock(win,store);
       assert.equal(win.webContents.isLoadingMainFrame(),true,'stock must arrive before full page load');
       assert.ok(stock.sizes.some(size => size.quantity===3 && /270/.test(size.label)),JSON.stringify(stock));
       assert.ok(stock.sizes.some(size => size.inStock===false && /280/.test(size.label)),JSON.stringify(stock));
       assert.ok(!stock.sizes.some(size => size.quantity===2),'purchase limit is not inventory');
       collected.push({store,title:'아디다스 JH9976',articleNumber:'JH9976',url:detail,price:99000,...stock});
+      if(store==='네이버 패션타운') {
+        const approval=await context.verifyApprovedNaverDomesticProducts([{store,title:'아디다스 JH9976',url:detail,price:99000}],
+          {articleNumber:'JH9976',brand:'Adidas Originals',requireArticleIdentity:true,browserSession:isolated});
+        assert.equal(approval.products.length,1,JSON.stringify(approval));
+        assert.equal(approval.products[0].brandVerifiedFromCard,true);
+        assert.ok(approval.products[0].sizes.some(size=>size.quantity===3));
+        collected[collected.length-1]=approval.products[0];
+      }
       console.log(JSON.stringify({store,electron:process.versions.electron,offline:true,pendingImage:true,sizes:stock.sizes}));
     } finally {
       for (const release of releases) release();
@@ -105,7 +124,7 @@ app.whenReady().then(async () => {
     assert.equal(rendered.calls,1);
     assert.equal(rendered.below,true,'retailer list belongs directly below the product');
     assert.equal(rendered.extraAction,false,'no separate stock-fetch action');
-    assert.equal(rendered.rows.length,2);
+    assert.equal(rendered.rows.length,4);
     for(const row of rendered.rows){assert.equal(row.columns,6);assert.match(row.stock,/270.*3개 남음/);assert.match(row.stock,/280.*품절/);assert.match(row.text,/99,000원/);}
     assert.equal(rendered.errors,'');
     console.log(JSON.stringify({automaticProductSearch:true,retailerRows:rendered.rows.length,belowProduct:true,extraStockClick:false,offline:true}));

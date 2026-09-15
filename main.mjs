@@ -116,6 +116,8 @@ import {
   sanitizeDomesticQuery,
 } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
+import { domesticBrandEvidenceMatch } from "./relay/domestic-search.mjs";
+import { domesticProductUrlIdentity, captureDomesticDetailPage } from "./services/domestic-detail-page.mjs";
 import {
   isApprovedNaverDomesticSellerEvidence,
   isDomesticNaverPriceCard,
@@ -1535,6 +1537,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
   generation = domesticSearchGeneration,
   onActivity = null,
   recoveryProducts = [], recoveryOptions = {},
+  browserSession = null,
 } = {}) {
   const candidates = (Array.isArray(products) ? products : [])
     .filter((product) => isDomesticNaverPriceCard({
@@ -1550,6 +1553,9 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
   let checkedCount = 0;
   let rejectedCount = 0;
   let failedCount = 0;
+  const detailFailures = [];
+  let securityVerificationRequired = false;
+  let loginRequired = false;
   try {
     evidenceWindow = new BrowserWindow({
       show: false,
@@ -1557,7 +1563,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
       height: 900,
       icon: APP_ICON_PATH,
       webPreferences: {
-        partition: DOMESTIC_SELLER_EVIDENCE_PARTITION,
+        ...(browserSession ? { session: browserSession } : { partition: DOMESTIC_SEARCH_PARTITION }),
         sandbox: true,
         backgroundThrottling: false,
         paintWhenInitiallyHidden: true,
@@ -1576,83 +1582,9 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           && Date.now() - Date.parse(retained.stockCheckedAt || '') < 30 * 60_000) {
           approved.push(retained); checkedCount += 1; continue;
         }
-        let navigationError = null;
-        let navigationTimer;
-        try {
-          await Promise.race([
-            evidenceWindow.loadURL(productUrl),
-            new Promise((_, reject) => {
-              navigationTimer = setTimeout(() => reject(new Error("SELLER_EVIDENCE_TIMEOUT")), 12_000);
-            }),
-          ]);
-        } catch (error) {
-          navigationError = error;
-        } finally {
-          clearTimeout(navigationTimer);
-        }
-        // A commerce SPA can render the requested page while loadURL rejects
-        // or waits on nonessential resources. Keep that real document and let
-        // the identity/seller checks below decide whether it is usable.
-        if (navigationError) {
-          const renderedAfterNavigationError = await evidenceWindow.webContents.mainFrame.executeJavaScript(`(() => {
-            const expected = new URL(${JSON.stringify(productUrl)});
-            const current = new URL(String(location.href || ""));
-            return current.origin === expected.origin && current.pathname === expected.pathname
-              && Boolean(document.documentElement)
-              && String(document.body?.innerText || "").trim().length > 0;
-          })()`, true).catch(() => false);
-          if (!renderedAfterNavigationError) throw navigationError;
-        }
-        let snapshot = null;
-        for (let attempt = 0; attempt < 8; attempt += 1) {
-          await wait(attempt === 0 ? 900 : 350);
-          snapshot = await evidenceWindow.webContents.mainFrame.executeJavaScript(`(() => {
-            const fullText = String(document.body?.innerText || "").slice(0, 80000);
-            const sellerEvidenceText = fullText.split(/\\n+/)
-              .map((line) => line.replace(/\\s+/g, " ").trim())
-              .filter((line) => line.length >= 3 && line.length <= 240)
-              .filter((line) => /판매(?:중)?인?\\s*상품|공식\\s*판매처|브랜드\\s*(?:공식|직영)|공식\\s*(?:브랜드|스토어|온라인몰)|직영\\s*(?:스토어|온라인몰)|관부가세|해외\\s*직구|구매\\s*대행/i.test(line))
-              .slice(0, 20).join(" ");
-            const titleText = [...document.querySelectorAll('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')]
-              .map((element) => String(element.innerText || element.textContent || "").replace(/\\s+/g, " ").trim())
-              .filter(Boolean).slice(0, 8).join(" ").slice(0, 2000);
-            const identityLabel = /품\\s*번|상품\\s*(?:번호|코드)|제품\\s*(?:번호|코드)|모델\\s*(?:명|번호|코드)?|스타일\\s*(?:번호|코드)?|style\\s*(?:no|number|code)?|model\\s*(?:no|number|code)?|sku|mpn/i;
-            const labeledText = fullText.split(/\\n+/).map((line) => line.replace(/\\s+/g, " ").trim())
-              .filter((line) => identityLabel.test(line)).slice(0, 40).join("\\n");
-            const structuredCodes = [];
-            const addCode = (value) => {
-              if (Array.isArray(value)) return value.forEach(addCode);
-              if (value !== undefined && value !== null && String(value).trim()) structuredCodes.push(String(value).trim());
-            };
-            for (const element of document.querySelectorAll('[itemprop="sku"],[itemprop="mpn"],[itemprop="model"]')) {
-              addCode(element.getAttribute("content") || element.textContent);
-            }
-            for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
-              try {
-                const walk = (value) => {
-                  if (!value || typeof value !== "object") return;
-                  if (Array.isArray(value)) return value.forEach(walk);
-                  for (const [key, child] of Object.entries(value)) {
-                    if (/^(?:sku|mpn|model|styleNo|articleNumber)$/i.test(key)) addCode(child);
-                    else if (child && typeof child === "object") walk(child);
-                  }
-                };
-                walk(JSON.parse(script.textContent || "null"));
-              } catch {}
-            }
-            return {
-              fullText, sellerEvidenceText, titleText, labeledText,
-              stockEvidence: (${captureRenderedStockEvidence.toString()})(${JSON.stringify(renderedStockSelectors("네이버 패션타운"))}),
-              structuredCodes: [...new Set(structuredCodes)].slice(0, 30),
-              ready: document.readyState === "complete",
-            };
-          })()`, true).catch(() => null);
-          if (snapshot?.sellerEvidenceText || snapshot?.ready) break;
-        }
-        if (!snapshot) {
-          failedCount += 1;
-          continue;
-        }
+        // Read the product document while optional images/analytics keep loading.
+        void evidenceWindow.loadURL(productUrl).catch(() => {});
+        const snapshot = await waitForDomesticDetailReady(evidenceWindow, "네이버 패션타운", productUrl, generation, articleNumber);
         checkedCount += 1;
         const sellerVerifiedByWording = isApprovedNaverDomesticSellerEvidence({
           productUrl,
@@ -1679,9 +1611,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           titleText: `${String(candidate?.title || "")} ${String(snapshot.titleText || "")}`,
         }, articleNumber);
         const observedIdentityText = `${String(candidate?.title || "")} ${String(snapshot.titleText || "")}`;
-        const observedBrandTokens = observedIdentityText.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-        const brandVerified = !String(brand || "").trim()
-          || observedBrandTokens.some((token) => brandsMatch(brand, token));
+        const brandVerified = domesticBrandEvidenceMatch(brand, observedIdentityText);
         const productTitleVerified = !String(title || "").trim()
           || titleIdentityMatch(observedIdentityText, title);
         const identityVerified = requireArticleIdentity
@@ -1713,10 +1643,28 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           titleVerifiedFromDetail: productTitleVerified,
           matchBasis: articleVerified ? "article" : "brand_title",
         });
-      } catch {
-        // A single inaccessible product is omitted without affecting the
-        // remaining candidates or any other program feature.
+      } catch (error) {
         failedCount += 1;
+        securityVerificationRequired ||= error?.securityVerificationRequired === true;
+        loginRequired ||= error?.loginRequired === true;
+        detailFailures.push({url: productUrl, reason: String(error?.message || "product_detail_failed")});
+        // The observed search-card price remains useful when its own exact
+        // model and domestic seller are verified but the stock page is delayed.
+        const cardArticleVerified = strictProductArticleIdentityMatch({titleText: candidate.title}, articleNumber);
+        const cardBrandVerified = domesticBrandEvidenceMatch(brand, candidate.title);
+        const domesticRoute = /^https:\/\/(?:m\.)?shopping\.naver\.com\/window-products\/(?:department|outlet|brand-store)\//i.test(productUrl)
+          || candidate.naverTrustedChannelEvidence === true;
+        const barcodeRemoved = /(?:바코드|QR\s*코드|큐알\s*코드).{0,24}(?:삭제|제거|훼손)|(?:삭제|제거|훼손).{0,24}(?:바코드|QR\s*코드|큐알\s*코드)/i.test(`${candidate.title || ''} ${candidate.text || ''}`);
+        if (cardArticleVerified && cardBrandVerified && domesticRoute && Number(candidate.price) > 0
+          && !barcodeRemoved && isDomesticNaverPriceCard({productUrl, text: candidate.text, title: candidate.title})) {
+          approved.push({...candidate, domesticSellerVerified: true, brandVerifiedFromCard: true,
+            articleNumberVerified: true, detectedArticleNumber: sanitizeDomesticProductCode(articleNumber),
+            articleNumber: sanitizeDomesticProductCode(articleNumber), matchBasis: "card_article",
+            inStock: null, sizes: [], stockVerified: false, stockCoverage: "unknown",
+            stockText: "", stockStatus: "unknown", detailVerificationPending: true,
+            detailVerificationReason: String(error?.message || "product_detail_failed")});
+        }
+        if (error?.securityVerificationRequired || error?.loginRequired || domesticSearchCanceled(generation)) break;
       } finally {
         await onActivity?.({products: [...approved], completedProducts: checkedCount + failedCount, totalProducts: candidates.length});
       }
@@ -1731,6 +1679,9 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
     checkedCount,
     rejectedCount,
     failedCount,
+    detailFailures,
+    securityVerificationRequired,
+    loginRequired,
   };
 }
 
@@ -2525,44 +2476,31 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
   const resultsUrl = String(searchResultsUrl || "");
   const currentUrl = String(searchWindow.webContents.getURL() || "");
   if (resultsUrl && currentUrl !== resultsUrl) {
-    await Promise.race([
-      searchWindow.loadURL(resultsUrl),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_RESULTS_RELOAD_TIMEOUT")), 15_000)),
-    ]).catch(() => {});
-    await wait(1_200);
+    void searchWindow.loadURL(resultsUrl).catch(() => {});
   }
-  const cardFound = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
+  let cardFound = false;
+  for (let attempt = 0; attempt < 30 && !cardFound; attempt++) {
+    if (searchWindow.isDestroyed()) return false;
+    cardFound = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
     const expected = ${JSON.stringify(expectedUrl)};
-    const clean = (value) => String(value || "").split("#")[0];
+    const identity = (${domesticProductUrlIdentity.toString()});
     const links = [...document.querySelectorAll("a[href]")];
-    const link = links.find((candidate) => clean(candidate.href) === expected)
-      || links.find((candidate) => {
-        try {
-          const left = new URL(clean(candidate.href));
-          const right = new URL(expected);
-          return left.origin === right.origin && left.pathname === right.pathname;
-        } catch { return false; }
-      });
+    const link = links.find(candidate => identity(candidate.href) === identity(expected));
     if (!link) return false;
     link.scrollIntoView({ block: "center", inline: "center" });
     return true;
   })()`, true).catch(() => false);
+    if (!cardFound) await wait(500);
+  }
   if (!cardFound) return false;
   // scrollIntoView can move a responsive card after the first layout pass.
   // Wait for that movement to settle, then measure the actual clickable link.
   await wait(650);
   const target = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
     const expected = ${JSON.stringify(expectedUrl)};
-    const clean = (value) => String(value || "").split("#")[0];
+    const identity = (${domesticProductUrlIdentity.toString()});
     const links = [...document.querySelectorAll("a[href]")];
-    const link = links.find((candidate) => clean(candidate.href) === expected)
-      || links.find((candidate) => {
-        try {
-          const left = new URL(clean(candidate.href));
-          const right = new URL(expected);
-          return left.origin === right.origin && left.pathname === right.pathname;
-        } catch { return false; }
-      });
+    const link = links.find(candidate => identity(candidate.href) === identity(expected));
     if (!link) return null;
     const rect = link.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
@@ -2577,12 +2515,7 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
   searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
   await wait(2_000);
   const openedUrl = String(searchWindow.webContents.getURL() || "").split("#")[0];
-  if (openedUrl === expectedUrl) return true;
-  try {
-    const opened = new URL(openedUrl);
-    const expected = new URL(expectedUrl);
-    return opened.origin === expected.origin && opened.pathname === expected.pathname;
-  } catch { return false; }
+  return domesticProductUrlIdentity(openedUrl) === domesticProductUrlIdentity(expectedUrl);
 }
 
 function browserWindowUsable(window) {
@@ -2748,6 +2681,30 @@ function domesticPageAccessState(text = "", cards = 0) {
   };
 }
 
+async function waitForDomesticDetailReady(searchWindow, storeName, productUrl, generation = domesticSearchGeneration, articleNumber = "") {
+  const deadline = Date.now() + 25_000;
+  let snapshot = null;
+  while (Date.now() < deadline) {
+    if (domesticSearchCanceled(generation) || searchWindow.isDestroyed()) throw new Error("DOMESTIC_SEARCH_CANCELED");
+    const observed = await searchWindow.webContents.mainFrame.executeJavaScript(
+      `(${captureDomesticDetailPage.toString()})(${captureRenderedStockEvidence.toString()}, ${JSON.stringify(renderedStockSelectors(storeName))})`, true).catch(() => null);
+    if (observed) {
+      const access = domesticPageAccessState(observed.fullText);
+      if (access.verificationReason) throw Object.assign(new Error(access.verificationReason), access);
+      const expectedPage = domesticProductUrlIdentity(observed.href) === domesticProductUrlIdentity(productUrl);
+      const naverCanonicalPage = storeName === "네이버 패션타운"
+        && /^https:\/\/(?:shopping|m\.shopping|brand|smartstore)\.naver\.com\//i.test(observed.href)
+        && strictProductArticleIdentityMatch(observed, articleNumber);
+      if (expectedPage || naverCanonicalPage) {
+        snapshot = observed;
+        if (observed.ready) return observed;
+      }
+    }
+    await wait(400);
+  }
+  throw Object.assign(new Error("product_detail_not_ready"), { snapshot });
+}
+
 async function collectRenderedProductStock(searchWindow, storeName = "", generation = domesticSearchGeneration, onActivity = null, resumeOptions = [], resumeBranches = [], checkpointUrl = "") {
   const canceled = () => domesticSearchCanceled(generation) || !searchWindow || searchWindow.isDestroyed();
   if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
@@ -2755,10 +2712,21 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
   const capture = () => searchWindow.webContents.mainFrame.executeJavaScript(
     `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(strategy.optionSelectors)})`, true);
   await openRenderedSizeOptions(searchWindow);
-  const initial = await capture();
+  let initial = await capture();
   let variants = {options: [], complete: true};
   const readControls = () => searchWindow.webContents.mainFrame.executeJavaScript(`(${captureNativeStockControls.toString()})()`, true);
   try {
+    // Opening a seller's option menu can start an asynchronous request. An
+    // empty/placeholder control is pending data, not an exhausted size list.
+    const optionsDeadline = Date.now() + 25_000;
+    while (!canceled()) {
+      const controls = await readControls();
+      const unpopulated = controls.groups?.some(group => !(group.options || []).some(option => !option.placeholder));
+      if (!unpopulated || Date.now() >= optionsDeadline) break;
+      await openRenderedSizeOptions(searchWindow);
+      await wait(400);
+    }
+    initial = await capture();
     variants = await collectNativeStockVariants({
       canceled, resumeOptions, resumeBranches,
       read: async depth => {
@@ -2769,7 +2737,8 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
             const el = document.querySelector(${JSON.stringify(group.selector)});
             if (el && el.getAttribute('aria-expanded') !== 'true' && !el.disabled) el.click();
           })()`, true);
-          for (let attempt = 0; attempt < 8; attempt++) {
+          const optionDeadline = Date.now() + 25_000;
+          while (Date.now() < optionDeadline) {
             if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
             await wait(300);
             state = await readControls();
@@ -2863,7 +2832,8 @@ async function refreshDomesticProductStock(product, generation = domesticSearchG
 async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
   const expectedQuery = sanitizeDomesticQuery(query);
   const inspectSettledResult = async () => {
-    for (let attempt = 0; attempt < 12; attempt += 1) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      if (searchWindow.isDestroyed()) return {ok: false, verificationReason: "search_canceled"};
       if (attempt > 0) await wait(500);
       const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
         const href = String(location.href || "");
@@ -2900,23 +2870,40 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
   // recommendation frames can keep Electron's load promise open long after
   // the Fashion Town result DOM is usable.
   let firstError = null;
-  let navigationSettled = false;
   const navigation = searchWindow.loadURL(targetUrl)
-    .catch((error) => { firstError = error; })
-    .finally(() => { navigationSettled = true; });
+    .catch((error) => { firstError = error; });
   const firstResult = await inspectSettledResult();
   if (firstResult.ok || firstResult.verificationReason) return firstResult;
-  if (!navigationSettled) await Promise.race([navigation, wait(3_000)]);
-  const finalResult = await inspectSettledResult();
-  if (finalResult.ok || finalResult.verificationReason) return finalResult;
   const errorMessage = String(firstError?.message || "NAVER_RESULT_PAGE_NOT_SETTLED");
   return {
     ok: false,
-    resolvedUrl: finalResult.resolvedUrl || firstResult.resolvedUrl,
+    resolvedUrl: firstResult.resolvedUrl,
     errorMessage,
     timeout: /TIMEOUT|TIMED_OUT/i.test(errorMessage),
     networkError: /ERR_(?:NAME_NOT_RESOLVED|CONNECTION|TIMED_OUT|INTERNET_DISCONNECTED)/i.test(errorMessage),
   };
+}
+
+async function loadDomesticRetailerResultPage(searchWindow, targetUrl) {
+  void searchWindow.loadURL(targetUrl).catch(() => {});
+  for (let attempt = 0; attempt < 60; attempt++) {
+    if (searchWindow.isDestroyed()) return {ok: false, verificationReason: "search_canceled"};
+    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
+      const expected = new URL(${JSON.stringify(targetUrl)}), current = new URL(location.href);
+      const sameQuery = ["q", "query", "keyword"].filter(key => expected.searchParams.has(key))
+        .every(key => expected.searchParams.get(key) === current.searchParams.get(key));
+      const expectedPage = current.origin === expected.origin && current.pathname === expected.pathname && sameQuery;
+      const text = String(document.body?.innerText || "").slice(0, 50000);
+      const cards = document.querySelectorAll('a[href*="itemView.ssg"],a[href*="/p/product/"],a[href*="productDetail.action"]').length;
+      const empty = /검색\\s*결과가?\\s*없|검색된\\s*상품이\\s*없|일치하는\\s*상품이\\s*없/i.test(text);
+      return {text, cards, href: current.href, ready: expectedPage && (cards > 0 || empty)};
+    })()`, true).catch(() => null);
+    const access = domesticPageAccessState(state?.text, state?.cards);
+    if (access.verificationReason) return {ok: false, ...access, resolvedUrl: state?.href};
+    if (state?.ready) return {ok: true, resolvedUrl: state.href};
+    await wait(500);
+  }
+  return {ok: false, verificationReason: "page_load_timeout", resolvedUrl: searchWindow.webContents.getURL()};
 }
 
 async function loadMusinsaResultPage(searchWindow, targetUrl, query) {
@@ -2980,6 +2967,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   }
   // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.
   const ssgChannelSource = /^SSG(?:\s|$)/.test(String(source.store || ""));
+  const domesticRetailerSource = ssgChannelSource || /^롯데온(?:\s|$)/.test(String(source.store || ""));
   const musinsaSource = String(source.store || "") === "무신사";
   let naverChannelCounts = null;
   let searchWindow;
@@ -3035,7 +3023,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       // cold hidden window can reject a direct Fashion Town SPA navigation.
       const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;
       */
-      if (!directNaverFashionResult && !musinsaSource) try {
+      if (!directNaverFashionResult && !musinsaSource && !domesticRetailerSource) try {
         await Promise.race([
           searchWindow.loadURL(initialUrl),
           new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 30_000)),
@@ -3086,6 +3074,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         // below. Do not let the first Electron loadURL rejection escape to the
         // outer page_load_failed handler before that recovery can run.
         if (!documentReady && !recoveredMusinsaResult && !directNaverFashionResult) throw error;
+      }
+      if (domesticRetailerSource) {
+        const loaded = await loadDomesticRetailerResultPage(searchWindow, initialUrl);
+        if (!loaded.ok) return renderedSearchFailure(loaded.verificationReason, searchWindow, {...loaded, searchSubmitted: true});
       }
       if (musinsaSource) {
         const resultPage = await loadMusinsaResultPage(
@@ -3611,6 +3603,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         requireArticleIdentity,
         generation,
         onActivity,
+        browserSession: searchWindow.webContents.session,
         recoveryProducts: source.recoveryProducts, recoveryOptions: source.recoveryOptions,
       });
       const approvedProducts = approval.products;
@@ -3630,7 +3623,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         naverAllSearchVerdict: approved ? "confirmed" : absenceConfirmed ? "absent" : "pending",
         detailVerificationPending: technicalPending || (!approved && !absenceConfirmed),
         verificationPending: technicalPending || (!approved && !absenceConfirmed),
-        verificationReason: approved ? "approved_domestic_seller"
+        securityVerificationRequired: approval.securityVerificationRequired === true,
+        loginRequired: approval.loginRequired === true,
+        verificationReason: approval.securityVerificationRequired ? "security_verification_required"
+          : approval.loginRequired ? "login_required" : approved ? "approved_domestic_seller"
           : technicalPending ? "naver_seller_evidence_failed"
             : finalized.verificationReason || "",
         candidateCount: approval.candidateCount,
@@ -3640,6 +3636,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           sellerCheckedCount: approval.checkedCount,
           sellerRejectedCount: approval.rejectedCount,
           sellerFailedCount: approval.failedCount,
+          detailFailures: approval.detailFailures || [],
           identityMode: requireArticleIdentity ? "article" : "brand_title",
         },
       };
@@ -3758,43 +3755,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           try {
             const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
             if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");
-            await wait(1_000);
-            const identitySnapshot = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-              const pageText = String(document.body?.innerText || "").slice(0, 60000);
-              const titleText = [...document.querySelectorAll('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')]
-                .map((element) => String(element.innerText || element.textContent || "").replace(/\\s+/g, " ").trim())
-                .filter(Boolean).slice(0, 8).join(" ").slice(0, 2000);
-              const identityLabel = /품\\s*번|상품\\s*(?:번호|코드)|제품\\s*(?:번호|코드)|모델\\s*(?:명|번호|코드)?|스타일\\s*(?:번호|코드)?|style\\s*(?:no|number|code)?|model\\s*(?:no|number|code)?|sku|mpn/i;
-              const labeledText = pageText.split(/\\n+/).map((line) => line.replace(/\\s+/g, " ").trim())
-                .filter((line) => identityLabel.test(line)).slice(0, 40).join("\\n");
-              const structuredCodes = [];
-              const add = (value) => {
-                if (Array.isArray(value)) return value.forEach(add);
-                if (value !== undefined && value !== null && String(value).trim()) structuredCodes.push(String(value).trim());
-              };
-              for (const element of document.querySelectorAll('[itemprop="sku"],[itemprop="mpn"],[itemprop="model"]')) {
-                add(element.getAttribute("content") || element.textContent);
-              }
-              for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
-                try {
-                  const walk = (value) => {
-                    if (!value || typeof value !== "object") return;
-                    if (Array.isArray(value)) return value.forEach(walk);
-                    for (const [key, child] of Object.entries(value)) {
-                      if (/^(?:sku|mpn|model|styleNo|articleNumber)$/i.test(key)) add(child);
-                      else if (child && typeof child === "object") walk(child);
-                    }
-                  };
-                  walk(JSON.parse(script.textContent || "null"));
-                } catch {}
-              }
-              return JSON.stringify({ pageText, titleText, labeledText, structuredCodes: [...new Set(structuredCodes)].slice(0, 30) });
-            })()`, true).then(JSON.parse).catch(() => null);
-            if (identitySnapshot) {
-              detailText = String(identitySnapshot.pageText || "");
-              detailIdentity = identitySnapshot;
-              detailLoaded = true;
-            }
+            const identitySnapshot = await waitForDomesticDetailReady(searchWindow, source.store, product.url, generation, articleNumber);
+            detailText = String(identitySnapshot.pageText || "");
+            detailIdentity = identitySnapshot;
+            detailLoaded = true;
             const optionsCheckpoint = source.recoveryOptions?.[product.url];
             const resumeOptions = optionsCheckpoint && Date.now() - Date.parse(optionsCheckpoint.checkedAt || '') < 30 * 60_000
               ? optionsCheckpoint.options : [];

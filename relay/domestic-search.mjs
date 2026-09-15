@@ -321,6 +321,15 @@ export function exactArticleIdentityMatch(value, articleNumber = "") {
   return new RegExp(`(?:^|[^A-Z0-9])${pattern}(?=$|[^A-Z0-9])`, "i").test(String(value || ""));
 }
 
+export function domesticBrandEvidenceMatch(brand = "", text = "") {
+  const seed = verifiedOfficialBrand(brand);
+  const keys = [brand, ...(seed?.aliases || [])].map(normalizeOfficialBrand).filter(Boolean);
+  if (!keys.length) return true;
+  const evidence = normalizeOfficialBrand(text);
+  const tokens = String(text).toLowerCase().split(/[^a-z0-9가-힣]+/).map(normalizeOfficialBrand).filter(Boolean);
+  return keys.some(key => key.length <= 3 ? tokens.includes(key) : evidence.includes(key));
+}
+
 function articleIdentityTokens(value = "") {
   return [...new Set((String(value || "").toUpperCase().match(/[A-Z0-9]+(?:[-_][A-Z0-9]+)*/g) || [])
     .map((token) => token.replace(/[^A-Z0-9]/g, ""))
@@ -560,10 +569,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           const encodedVariant = String(queryVariant || pathVariant || "").toUpperCase();
           officialUrlVariantConflict = Boolean(encodedVariant && encodedVariant !== colorCode);
         }
-        const evidence = normalizeOfficialBrand(rawCardText);
-        const tokens = rawCardText.toLowerCase().split(/[^a-z0-9가-힣]+/).map(normalizeOfficialBrand).filter(Boolean);
-        const brandMatched = !requiresBrandMatch
-          || brandKeys.some((key) => key.length <= 3 ? tokens.includes(key) : evidence.includes(key));
+        const brandMatched = !requiresBrandMatch || domesticBrandEvidenceMatch(brand, rawCardText);
         if (/^네이버\s/.test(String(store || "")) && brandMatched && isTrustedNaverFashionProductCard(card)) {
           domesticVisibleProducts.add(productUrl);
         }
