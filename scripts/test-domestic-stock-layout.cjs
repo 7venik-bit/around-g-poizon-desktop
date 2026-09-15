@@ -70,8 +70,12 @@ function measure() {
     const expected=`${label} · ${usable?'선택 가능':'선택 불가'}${usable?' ↗':''}`;
     if(badge.textContent!==expected) errors.push('retailer size/status wording changed: '+label);
     const s=getComputedStyle(badge), r=badge.getBoundingClientRect(), cell=shoeCell.getBoundingClientRect();
-    if(s.display!=='inline-flex' || s.borderTopStyle!=='solid' || parseFloat(s.borderTopWidth)<1
-      || parseFloat(s.paddingLeft)<6 || parseFloat(s.borderTopLeftRadius)<4) errors.push('size not individually boxed: '+label);
+    // An inline-flex child of a flex container is blockified: computed display
+    // is flex. Check its inner flex layout, and keep all physical box checks.
+    const boxStyle={display:s.display,borderStyle:s.borderTopStyle,borderWidth:s.borderTopWidth,
+      paddingLeft:s.paddingLeft,radius:s.borderTopLeftRadius};
+    if(!/^(?:inline-)?flex$/.test(s.display) || s.borderTopStyle!=='solid' || parseFloat(s.borderTopWidth)<1
+      || parseFloat(s.paddingLeft)<6 || parseFloat(s.borderTopLeftRadius)<4) errors.push('size not individually boxed: '+label+' '+JSON.stringify(boxStyle));
     if(r.height<29 || Math.abs(r.height-availableHeight)>1) errors.push('unequal available/unavailable box height: '+label);
     if(s.whiteSpace!=='nowrap' || badge.scrollWidth>badge.clientWidth+1) errors.push('size/status split or clipped: '+label);
     if(r.left<cell.left-1 || r.right>cell.right+1) errors.push('size box outside stock column: '+label);
@@ -82,7 +86,7 @@ function measure() {
         || badge.matches('a,button,[data-url],[onclick]') || badge.querySelector('a,button,[data-url],[onclick]')) errors.push('unavailable size became interactive: '+label);
       if(s.cursor!=='not-allowed') errors.push('unavailable cursor missing: '+label);
     }
-    geometry.push({label,x:r.x,y:r.y,width:r.width,height:r.height});
+    geometry.push({label,x:r.x,y:r.y,width:r.width,height:r.height,boxStyle});
   }
   for(let i=0;i<geometry.length;i++) for(let j=i+1;j<geometry.length;j++) {
     const a=geometry[i],b=geometry[j];
