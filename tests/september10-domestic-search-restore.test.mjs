@@ -33,8 +33,8 @@ test("marketplaces use their own navigation adapters before product extraction",
 });
 
 test("an exact SSG or LotteON empty page completes without timing out in card capture", () => {
-  assert.match(main, /return \\{ok: true, resolvedUrl: state\\.href, explicitEmpty: state\\.explicitEmpty\\}/);
-  assert.match(main, /if \\(loaded\\.explicitEmpty\\) return \\{[\\s\\S]*?absenceConfirmed: true[\\s\\S]*?searchCompleted: true/);
+  assert.match(main, /return \{ok: true, resolvedUrl: state\.href, explicitEmpty: state\.explicitEmpty\}/);
+  assert.match(main, /if \(loaded\.explicitEmpty\) return \{[\s\S]*?absenceConfirmed: true[\s\S]*?searchCompleted: true/);
 });
 
 test("popular, brand and category product rows share the same cached search function", () => {
