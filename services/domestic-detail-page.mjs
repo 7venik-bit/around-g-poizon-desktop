@@ -27,9 +27,10 @@ export function captureDomesticDetailPage(captureStock, selectors = []) {
   const lines = fullText.split(/\n+/).map(line => line.replace(/\s+/g, " ").trim());
   const sellerEvidenceText = lines.filter(line => line.length >= 3 && line.length <= 240)
     .filter(line => /판매(?:중)?인?\s*상품|공식\s*판매처|브랜드\s*(?:공식|직영)|공식\s*(?:브랜드|스토어|온라인몰)|직영\s*(?:스토어|온라인몰)|관부가세|해외\s*직구|구매\s*대행/i.test(line)).slice(0, 20).join(" ");
-  const titleText = [...document.querySelectorAll('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')]
+  const titleText = [...document.querySelectorAll('h1,main h2,main h3,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')]
     .filter(visible).map(element => String(element.innerText || element.textContent || "").replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 8).join(" ").slice(0, 2000)
-    || String(document.querySelector('meta[property="og:title"]')?.content || "");
+    || String(document.querySelector('meta[property="og:title"]')?.content || "")
+    || String(document.title || "");
   const identityLabel = /품\s*번|상품\s*(?:번호|코드)|제품\s*(?:번호|코드)|모델\s*(?:명|번호|코드)?|스타일\s*(?:번호|코드)?|style\s*(?:no|number|code)?|model\s*(?:no|number|code)?|sku|mpn/i;
   const labeledText = lines.filter(line => identityLabel.test(line)).slice(0, 40).join("\n");
   const structuredCodes = [];
