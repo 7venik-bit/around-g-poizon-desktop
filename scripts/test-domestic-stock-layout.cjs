@@ -72,9 +72,13 @@ function measure() {
     const s=getComputedStyle(badge), r=badge.getBoundingClientRect(), cell=shoeCell.getBoundingClientRect();
     // An inline-flex child of a flex container is blockified: computed display
     // is flex. Check its inner flex layout, and keep all physical box checks.
+    // At 125% zoom Chromium reports a one-device-pixel border as 0.8 CSS px.
+    // Require a solid visible border of at least one device pixel, not 1 CSS px.
+    const borderDevicePixels=parseFloat(s.borderTopWidth)*devicePixelRatio;
     const boxStyle={display:s.display,borderStyle:s.borderTopStyle,borderWidth:s.borderTopWidth,
-      paddingLeft:s.paddingLeft,radius:s.borderTopLeftRadius};
-    if(!/^(?:inline-)?flex$/.test(s.display) || s.borderTopStyle!=='solid' || parseFloat(s.borderTopWidth)<1
+      borderDevicePixels,paddingLeft:s.paddingLeft,radius:s.borderTopLeftRadius};
+    if(!/^(?:inline-)?flex$/.test(s.display) || s.borderTopStyle!=='solid'
+      || !Number.isFinite(borderDevicePixels) || borderDevicePixels<0.99
       || parseFloat(s.paddingLeft)<6 || parseFloat(s.borderTopLeftRadius)<4) errors.push('size not individually boxed: '+label+' '+JSON.stringify(boxStyle));
     if(r.height<29 || Math.abs(r.height-availableHeight)>1) errors.push('unequal available/unavailable box height: '+label);
     if(s.whiteSpace!=='nowrap' || badge.scrollWidth>badge.clientWidth+1) errors.push('size/status split or clipped: '+label);
@@ -99,7 +103,7 @@ function measure() {
   if(window.__stockFixtureLinks.length!==0) errors.push('unavailable size exposes a link action');
   available.forEach(badge=>badge.click());
   if(window.__stockFixtureLinks.length!==8) errors.push('available size action lost');
-  return {viewport:innerWidth,columns:getComputedStyle(rows[0]).gridTemplateColumns,cspBlockedInline,
+  return {viewport:innerWidth,devicePixelRatio,columns:getComputedStyle(rows[0]).gridTemplateColumns,cspBlockedInline,
     badgeCount:badges.length,unavailableCount:unavailable.length,availableCount:available.length,geometry,errors};
 }
 async function cleanup(){
