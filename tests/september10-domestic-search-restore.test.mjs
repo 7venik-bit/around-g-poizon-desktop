@@ -5,29 +5,31 @@ import test from "node:test";
 const main = (await readFile(new URL("../main.mjs", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 const renderer = (await readFile(new URL("../src/renderer.js", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 
-test("domestic product search uses the September 10 direct sequential collector", () => {
-  assert.match(main, /async function september10RenderedSearchSourceResult\(source, articleNumber, brand = "", title = "", securityRetry = 0, searchAttempt = null, sharedNaverSession = null, generation = domesticSearchGeneration\)/);
-  assert.match(main, /async function september10AddRenderedSearchCounts\(data, articleNumber, brand = "", title = "", generation = domesticSearchGeneration\)/);
-  assert.match(main, /return runSeptember10DomesticSearch\(_event, input\);/);
-  assert.match(main, /const queryResult = await september10RenderedSearchSourceResult\([\s\S]*?sharedNaverSession, generation,\n\s*\);/);
+test("restoration uses one production collector, without the broken shadow IPC path", () => {
+  const handler = main.slice(main.indexOf('ipcMain.handle("domestic:search"'), main.indexOf('ipcMain.handle("domestic:cancel"'));
+  assert.doesNotMatch(main, /(?:runSeptember10DomesticSearch|async function september10)/);
+  assert.equal((main.match(/async function renderedSearchSourceResult\(/g) || []).length, 1);
+  assert.match(handler, /matched = await addRenderedSearchCounts\(/);
+  assert.match(handler, /preserveVerifiedResults/);
 });
 
-test("one detail visit immediately captures visible seller sizes and stock wording", () => {
-  const source = main.slice(main.indexOf("async function september10RenderedSearchSourceResult"), main.indexOf("async function september10AddRenderedSearchCounts"));
-  assert.match(source, /const productOpened = await september10ClickRenderedProductCard/);
-  assert.match(source, /await september10OpenRenderedSizeOptions\(searchWindow\);/);
-  assert.match(source, /const stockSnapshot = await searchWindow\.webContents\.executeJavaScript/);
-  assert.match(source, /stockEvidence = normalizeRenderedStockEvidence\(stockSnapshot/);
+test("the production detail collector waits for public stock and preserves every product", () => {
+  const source = main.slice(main.indexOf("async function renderedSearchSourceResult"), main.indexOf("async function addRenderedSearchCounts"));
+  assert.match(source, /const productOpened = await clickRenderedProductCard/);
+  assert.match(source, /await waitForDomesticDetailReady\(/);
+  assert.match(source, /const observed = await collectRenderedProductStock\(/);
+  assert.match(source, /stockEvidence = observed/);
   assert.match(source, /products\.push\(\{[\s\S]*?\.\.\.stockEvidence,/);
+  assert.doesNotMatch(source, /analyzed\.products\.slice\(0, 8\)/);
 });
 
 test("marketplaces use their own navigation adapters before product extraction", () => {
-  const source = main.slice(main.indexOf("async function september10RenderedSearchSourceResult"), main.indexOf("async function september10AddRenderedSearchCounts"));
+  const source = main.slice(main.indexOf("async function renderedSearchSourceResult"), main.indexOf("async function addRenderedSearchCounts"));
   assert.match(source, /const domesticRetailerSource = ssgChannelSource \|\| \/\^롯데온/);
   assert.match(source, /if \(!directNaverFashionResult && !musinsaSource && !domesticRetailerSource\) try/);
   assert.match(source, /if \(domesticRetailerSource\) \{[\s\S]*?loadDomesticRetailerResultPage/);
   assert.match(source, /if \(musinsaSource\) \{[\s\S]*?loadMusinsaResultPage/);
-  assert.match(source, /if \(directNaverFashionResult\) \{[\s\S]*?september10LoadNaverFashionTownResultPage/);
+  assert.match(source, /if \(directNaverFashionResult\) \{[\s\S]*?loadNaverFashionTownResultPage/);
 });
 
 test("popular, brand and category product rows share the same cached search function", () => {

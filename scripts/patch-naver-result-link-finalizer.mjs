@@ -104,6 +104,7 @@ replaceOnce(
     search_submission_failed: "search_submission",
     search_query_missing: "search_submission",
     result_parse_failed: "result_capture",
+    result_script_failed: "result_capture",
     result_analysis_failed: "result_capture",
     overview_channel_card_collection_failed: "result_capture",
     channel_count_detection_failed: "result_capture",

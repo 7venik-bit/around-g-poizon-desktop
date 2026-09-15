@@ -22,7 +22,7 @@ const channels = [
   ['롯데온', 'https://www.lotteon.com/search/search/search.ecn?render=search&q=SR123UPS11', 'https://www.lotteon.com/p/product/LO100'],
 ];
 
-function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, executeFrozen = false, empty = false, lateSecond = 0, pendingPrice = 0, pages = {} } = {}) {
+function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, executeFrozen = false, captureError = false, empty = false, lateSecond = 0, pendingPrice = 0, pages = {} } = {}) {
   let now = 0, nextId = 0;
   const timers = new Map(), windows = [], captures = [], navigations = [];
   const setTimer = (fn, ms = 0) => { const id = ++nextId; timers.set(id, { fn, at: now + ms }); return id; };
@@ -44,6 +44,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
         executeJavaScript: async code => {
           if (this.destroyed) throw new Error('Object has been destroyed');
           if (executeFrozen) return new Promise(() => {});
+          if (captureError && code.includes('const productCards = []')) throw new Error('Script failed to execute');
           if (code.includes('const productCards = []')) captures.push({ at: now, url: this.webContents.getURL() });
           try { new Script(code); } catch (error) { console.error(error.stack); throw error; }
           return this.dom.window.eval(code);
@@ -133,6 +134,10 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
   const search = list => drive(context.addRenderedSearchCounts({products: [], sources: list.map(([store, searchUrl]) => ({store, searchUrl, searchQuery:'SR123UPS11',renderCount:true,linkOnly:true}))}, 'SR123UPS11', '데상트', '카라 셔츠'));
   function installHandler(list = channels) {
     const handlers = new Map(), events = [];
+    // Load the shipping entry-point dependencies too. The restored collector
+    // used to be absent here, silently selecting the IPC's otherwise-dead path.
+    const restoredStart = main.indexOf('async function september10AddMatchConfidence(');
+    if (restoredStart >= 0) runInContext(main.slice(restoredStart, main.indexOf('\nlet store;', restoredStart)), context);
     Object.assign(context, {
       ipcMain: { handle: (name, fn) => handlers.set(name, fn) },
       session: { fromPartition: () => ({ clearCache: async () => {} }) },
@@ -331,6 +336,35 @@ test('the complete IPC path keeps progressing past two minutes and returns every
   assert.equal(response.data.products.length, 3,JSON.stringify(response.data.sources));
   assert.ok(f.now() > 120_000, 'exercise the former overall cutoff');
   assert.ok(response.data.sources.every(s => !s.verificationFailed));
+  assert.equal(response.data.technicalWarnings.length, 0, JSON.stringify(response.data.technicalWarnings));
+  assert.ok(h.events.some(event => event.phase === 'checkpoint'), 'shipping IPC must retain stock checkpoints');
+});
+
+for (const ErrorType of [SyntaxError, ReferenceError, TypeError]) test(`IPC exposes ${ErrorType.name} as a collector error and continues the next retailer`, async t => {
+  const f = fixture(t);
+  const original = f.context.analyzeRenderedChannelProducts;
+  f.context.analyzeRenderedChannelProducts = (content, store, ...rest) => {
+    if (store === 'SSG') throw new ErrorType('collector fixture error');
+    return original(content, store, ...rest);
+  };
+  const response = await f.installHandler(channels.slice(1)).run();
+  assert.equal(response.ok, true);
+  const source = response.data.sources.find(s => s.store === 'SSG');
+  assert.equal(source.verificationReason, 'result_script_failed');
+  assert.equal(source.verificationStage, 'result_capture');
+  assert.equal(source.verificationDiagnostics.errorMessage, 'collector fixture error');
+  assert.equal(source.absenceConfirmed, false);
+  assert.equal(source.searchCompleted, false);
+  assert.ok(response.data.products.some(p => p.store === '롯데온'));
+});
+
+test('Electron-wrapped capture exceptions remain script failures in the production IPC', async t => {
+  const f = fixture(t, {captureError:true});
+  const response = await f.installHandler([channels[0]]).run();
+  assert.equal(response.data.sources[0].verificationReason, 'result_script_failed');
+  assert.equal(response.data.sources[0].verificationDiagnostics.errorMessage, 'Script failed to execute');
+  assert.equal(response.data.sources[0].absenceConfirmed, false);
+  assert.equal(response.data.partial, true);
 });
 
 test('the shared IPC finishes every retailer while new stock options continue past four minutes', async t => {
