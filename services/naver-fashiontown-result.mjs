@@ -27,7 +27,9 @@ export function isNaverRenderedResultReady(state = {}, query = "") {
   const queryVisible = compact(text).includes(expected);
   const positiveVisibleCount = /(?:전체|검색\s*결과)\s*[1-9][\d,]*\s*개/i.test(text);
 
-  return exactResultUrl && (queryVisible || positiveVisibleCount || compact(decodedUrl).includes(expected));
+  const explicitEmpty = /검색\s*결과가?\s*없|검색된\s*상품이\s*없|일치하는\s*상품이\s*없/i.test(text);
+  const blocked = /captcha|보안\s*확인|비정상적인\s*접근/i.test(text);
+  return exactResultUrl && !blocked && (queryVisible || positiveVisibleCount || explicitEmpty || Number(state.cards) > 0);
 }
 
 const priceNumber = (value) => {

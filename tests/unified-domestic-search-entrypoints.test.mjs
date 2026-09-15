@@ -30,5 +30,5 @@ test("모든 화면의 네이버 요청은 DOM 준비형 공통 main 검색기�
   assert.match(renderer, /window\.aroundG\.searchDomestic\(input\)/);
   assert.match(main, /ipcMain\.handle\("domestic:search"/);
   assert.match(main, /renderedSearchSourceResult\(source, articleNumber, brand, title/);
-  assert.match(main, /isNaverRenderedResultReady\(\{ url: state\.href, text: state\.text \}, expectedQuery\)/);
+  assert.match(main, /isNaverRenderedResultReady\(\{ url: state\.href, text: state\.text, cards: state\.cards \}, expectedQuery\)/);
 });

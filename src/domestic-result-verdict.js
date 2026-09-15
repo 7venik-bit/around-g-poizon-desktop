@@ -13,6 +13,8 @@
     result_parse_failed: "검색 결과 판독 실패",
     result_analysis_failed: "검색 결과 분석 실패",
     page_load_timeout: "검색 페이지 응답 지연",
+    collection_stalled: "상품·재고 수집 응답 지연",
+    service_unavailable: "판매처 서비스 응답 오류",
     page_load_failed: "검색 페이지 연결 실패",
     network_error: "판매처 연결 실패",
     security_verification_required: "보안 확인 필요",

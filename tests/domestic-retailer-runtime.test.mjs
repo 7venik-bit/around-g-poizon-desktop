@@ -189,7 +189,7 @@ for (const channel of channels) test(`${channel[0]}: a parsed empty page remains
 test('a stalled retailer remains bounded and is not reported as product absence', async t => {
   const f = fixture(t, { executeFrozen: true });
   const result = await f.search([channels[1]]);
-  assert.equal(result.sources[0].verificationReason, 'page_load_timeout');
+  assert.equal(result.sources[0].verificationReason, 'collection_stalled');
   assert.equal(result.sources[0].absenceConfirmed, false);
   assert.ok(f.now() <= 90_000);
 });
@@ -203,6 +203,97 @@ test('the complete IPC path keeps progressing past two minutes and returns every
   assert.equal(response.data.products.length, 3);
   assert.ok(f.now() > 120_000, 'exercise the former overall cutoff');
   assert.ok(response.data.sources.every(s => !s.verificationFailed));
+});
+
+test('the shared IPC finishes every retailer while new stock options continue past four minutes', async t => {
+  const f = fixture(t);
+  const h = f.installHandler();
+  f.context.renderedSearchSourceResult = async (source, _article, _brand, _title, _retry, _attempt, _shared, _generation, activity) => {
+    const options = [];
+    const url = channels.find(c => c[0] === source.store)[2];
+    for (let size = 250; size <= 290; size += 10) {
+      await f.context.wait(30_000);
+      options.push({size:String(size),stockText:'3개 남음',quantity:3,inStock:true});
+      await activity({option:String(size), optionCheckpoint:{url, options:[...options], branches:[], checkedAt:new Date().toISOString()}});
+    }
+    const products = [{store:source.store,title:'데상트 SR123UPS11 카라 셔츠',articleNumber:'SR123UPS11',articleNumberVerified:true,price:84550,url,stockOptions:options}];
+    await activity({products,completedProducts:1,totalProducts:1});
+    return {count:1,products,searchCompleted:true};
+  };
+  const result = await h.run();
+  assert.equal(result.timedOut, undefined);
+  assert.equal(result.data.products.length, 3);
+  assert.ok(result.data.sources.every(source => !source.verificationFailed));
+  assert.ok(f.now() > 4 * 60_000);
+});
+
+test('an empty product checkpoint never waits for a POIZON image download', async t => {
+  const f = fixture(t);
+  let imageReads = 0;
+  f.context.imageFingerprint = async () => { imageReads++; return null; };
+  await f.context.addMatchConfidence({products:[],sources:[]}, {articleNumber:'JH9976',imageUrl:'https://images.test/source.jpg'});
+  assert.equal(imageReads, 0);
+});
+
+test('option checkpoints persist without repeating product image verification', async t => {
+  const f = fixture(t);
+  const h = f.installHandler([channels[1]]);
+  let verifications = 0;
+  const original = f.context.addMatchConfidence;
+  f.context.addMatchConfidence = async (...args) => { verifications++; return original(...args); };
+  f.context.renderedSearchSourceResult = async (_source,_a,_b,_t,_r,_q,_s,_g,activity) => {
+    const before = verifications;
+    for (let size=1; size<=20; size++) await activity({option:String(size),optionCheckpoint:{url:channels[1][2],options:Array(size).fill({quantity:3}),branches:[]}});
+    assert.equal(verifications, before);
+    return {count:0,products:[],absenceConfirmed:true,searchCompleted:true};
+  };
+  const response = await h.run();
+  assert.equal(response.ok, true);
+  assert.ok(h.events.some(event => event.checkpoint?.optionCheckpoints?.[channels[1][2]]?.options?.length === 20));
+});
+
+test('repeating the same stock option remains bounded and the next retailer runs', async t => {
+  const f = fixture(t);
+  const h = f.installHandler([channels[1],channels[2]]);
+  f.context.renderedSearchSourceResult = async (source,_a,_b,_t,_r,_q,_s,_g,activity) => {
+    if (source.store === '롯데온') return {count:0,products:[],absenceConfirmed:true,searchCompleted:true};
+    for (let i=0;i<20;i++) { await f.context.wait(20_000); await activity({option:'250',optionCheckpoint:{url:channels[1][2],options:[{size:'250'}],branches:[]}}); }
+    return {count:0,products:[]};
+  };
+  const response = await h.run();
+  assert.equal(response.data.sources[0].verificationReason, 'collection_stalled');
+  assert.equal(response.data.sources[0].verificationStage, 'stock_options');
+  assert.equal(response.data.sources[1].absenceConfirmed, true);
+  assert.ok(f.now() <= 110_000);
+});
+
+for (const [store,url,html,reason] of [
+  ['네이버 패션타운','https://shopping.naver.com/window/search/fashion-group?q=JH9976','<main>보안 확인을 완료해 주세요. <input placeholder="정답"></main>','security_verification_required'],
+  ['무신사','https://www.musinsa.com/search/goods?keyword=JH9976&gf=A','<main>서비스 접속이 원활하지 않습니다. 잠시 후 다시 이용해 주세요.</main>','service_unavailable'],
+]) test(`${store}: an observed access/error page ends the source promptly without declaring absence`, async t => {
+  const f=fixture(t,{pages:{[url]:html}});
+  const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{store,searchUrl:url,searchQuery:'JH9976',renderCount:true,searchAttempts:[{query:'JH9976',url},{query:'다른 검색어',url}]}]},'JH9976','아디다스','슈퍼스타'));
+  assert.equal(result.sources[0].verificationReason, reason);
+  assert.equal(result.sources[0].absenceConfirmed, false);
+  assert.equal(result.sources[0].searchCompleted, false);
+  assert.equal(f.navigations.filter(value => value === url).length, 1);
+  assert.ok(f.now() < 10_000);
+});
+
+test('Musinsa explicit zero takes precedence over promotional product cards below the results', async t => {
+  const url='https://www.musinsa.com/search/goods?keyword=JH9976&gf=A';
+  const f=fixture(t,{pages:{[url]:'<main>JH9976 새 상품0 USED0 검색 결과가 없습니다. 다른 검색어를 입력해 보세요.<section>회원가입 이벤트 상품<a href="https://www.musinsa.com/products/123">오드타입 3,990원</a></section></main>'}});
+  const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{store:'무신사',searchUrl:url,searchQuery:'JH9976',renderCount:true}]},'JH9976','아디다스','슈퍼스타'));
+  assert.equal(result.sources[0].absenceConfirmed, true);
+  assert.equal(result.products.length, 0);
+  assert.ok(!f.navigations.includes('https://www.musinsa.com/products/123'));
+});
+
+test('ordinary login navigation and member benefits do not block visible retailer products', t => {
+  const f=fixture(t);
+  assert.equal(f.context.domesticPageAccessState('회원 로그인 · 로그인 후 할인 혜택을 받으세요', 1).verificationReason, '');
+  assert.equal(f.context.domesticPageAccessState('로그인이 필요합니다', 0).verificationReason, 'login_required');
+  assert.equal(f.context.domesticPageAccessState('보안 확인을 완료해 주세요', 1).verificationReason, 'security_verification_required');
 });
 
 test('a real stall returns the last verified checkpoint instead of discarding its products', async t => {
@@ -245,7 +336,7 @@ test('slow fallback queries share one retailer budget and return a partial sourc
   assert.equal(attempts.length, 2);
   assert.equal(response.ok, true);
   assert.equal(response.data.products.length, 0);
-  assert.equal(response.data.sources[0].verificationReason, 'page_load_timeout');
+  assert.equal(response.data.sources[0].verificationReason, 'collection_stalled');
   assert.equal(response.data.sources[0].absenceConfirmed, false);
   assert.ok(f.now() <= 90_000);
 });
@@ -399,6 +490,38 @@ test('Naver seller verification retains the product detail stock text', async t 
   assert.equal(result.products.length,1);
   assert.equal(result.products[0].stockText,'SOLD OUT');
   assert.equal(result.products[0].inStock,false);
+  assert.equal(f.context.activeDomesticSearchWindows.size, 0);
+});
+
+test('the JH9976 queryType=ac source collects its detail price and public stock into the result', async t => {
+  const url=relay.naverFashionTownUrl('overview','아디다스','JH9976');
+  assert.equal(url,'https://shopping.naver.com/window/search/fashion-group?q=JH9976&queryType=ac');
+  const detail='https://shopping.naver.com/window-products/department/123';
+  const f=fixture(t,{pages:{
+    [url]:`<main>JH9976 전체 1개<ul><li><a href="${detail}">아디다스 JH9976</a><strong>아디다스 JH9976 슈퍼스타</strong><span>롯데백화점</span><span>99,000원</span></li></ul></main>`,
+    [detail]:'<main><h1>아디다스 JH9976 슈퍼스타</h1><p>공식 롯데백화점 품번 JH9976</p><p>99,000원</p><button data-size="270">270 (3개 남음)</button><button data-size="280" disabled>280 (품절)</button><p>1인 최대 2개 구매</p><button>구매하기</button></main>',
+  }});
+  Object.assign(f.context,{DOMESTIC_SELLER_EVIDENCE_PARTITION:'test',isDomesticNaverPriceCard:()=>true,isApprovedNaverDomesticSellerEvidence:()=>true,brandsMatch:()=>true});
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{store:'네이버 패션타운',searchUrl:url,searchQuery:'JH9976',renderCount:true}]},'JH9976','아디다스','슈퍼스타'));
+  assert.equal(result.products.length,1,JSON.stringify(result.sources));
+  assert.equal(result.products[0].price,99000);
+  assert.equal(result.products[0].sizes[0].quantity,3);
+  assert.match(result.products[0].sizes[0].stockText,/3개 남음/);
+  assert.equal(result.products[0].sizes[1].inStock,false);
+  assert.equal(result.sources[0].absenceConfirmed,false);
+});
+
+test('the Naver detail browser belongs to cancellation cleanup during stock collection', async t => {
+  const url=channels[0][2];
+  const f=fixture(t,{pages:{[url]:'<main><h1>데상트 SR123UPS11 카라 셔츠</h1><p>공식 롯데백화점 품번 SR123UPS11</p></main>'}});
+  Object.assign(f.context,{DOMESTIC_SELLER_EVIDENCE_PARTITION:'test',isDomesticNaverPriceCard:()=>true,isApprovedNaverDomesticSellerEvidence:()=>true,brandsMatch:()=>true});
+  let tracked=false;
+  f.context.collectRenderedProductStock=async w=>{tracked=f.context.activeDomesticSearchWindows.has(w);w.destroy();return {};};
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  await f.drive(f.context.verifyApprovedNaverDomesticProducts([{title:'데상트 SR123UPS11 카라 셔츠',url}],{articleNumber:'SR123UPS11',brand:'데상트',title:'카라 셔츠',requireArticleIdentity:true}));
+  assert.equal(tracked,true);
+  assert.equal(f.context.activeDomesticSearchWindows.size,0);
 });
 
 test('Naver Fashion Town keeps exact domestic inventory for every brand without a seller banner', async t => {
@@ -643,7 +766,7 @@ test('size-guide tabs are never stock and member-only text stays explicit', asyn
   assert.deepEqual(result.sizes,[]);assert.equal(result.stockStatus,'login_required');assert.equal(result.stockText,'회원 전용');assert.equal(result.inStock,null);
 });
 
-test('many slow product details stop at 90 seconds and retain completed checkpoints', async t => {
+test('all twelve slow product details finish while completed stock checkpoints advance', async t => {
   const searchUrl='https://www.lotteon.com/search/search/search.ecn?q=SR123UPS11&fixture=12';
   const cards=Array.from({length:12},(_,i)=>`<li><a href="https://www.lotteon.com/p/product/LO${i}"><img alt="데상트 SR123UPS11 카라 셔츠"></a><strong>데상트 SR123UPS11 카라 셔츠</strong><span>롯데백화점</span><span>84,550원</span></li>`).join('');
   const pages={[searchUrl]:`<main><p>전체 12개</p><ul>${cards}</ul></main>`};
@@ -652,9 +775,9 @@ test('many slow product details stop at 90 seconds and retain completed checkpoi
   const original=f.context.clickRenderedProductCard;
   f.context.clickRenderedProductCard=async(...args)=>{await f.context.wait(10_000);return original(...args);};
   const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{store:'롯데온',searchUrl,renderCount:true}]},'SR123UPS11','데상트','카라 셔츠',0,null,value=>snapshots.push(value)));
-  assert.ok(result.products.length > 0 && result.products.length < 12);
-  assert.ok(f.now() <= 90_000);
-  assert.equal(result.sources[0].verificationStage,'source_timeout');
+  assert.equal(result.products.length, 12);
+  assert.ok(f.now() > 90_000);
+  assert.equal(result.sources[0].verificationFailed, false);
   assert.ok(snapshots.some(s=>s.products.length===1));
   assert.ok(snapshots.some(s=>s.products.length===result.products.length));
 });
@@ -663,7 +786,7 @@ test('a stalled later detail retains the completed product checkpoint', async t 
   const f=fixture(t,{lateSecond:1000});let visited=0;const original=f.context.clickRenderedProductCard;
   f.context.clickRenderedProductCard=async(...args)=>{visited++;if(visited===2)return new Promise(()=>{});return original(...args);};
   const result=await f.search([channels[2]]);
-  assert.equal(result.products.length,1);assert.equal(result.sources[0].verificationStage,'source_timeout');assert.equal(result.sources[0].verificationPending,true);
+  assert.equal(result.products.length,1);assert.equal(result.sources[0].verificationStage,'product_detail');assert.equal(result.sources[0].verificationPending,true);
 });
 
 test('live Naver colour radios pair with all thirteen sizes without repeating sticky controls', async t => {

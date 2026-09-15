@@ -19,9 +19,8 @@ test("Musinsa explicit empty text remains an authoritative zero-result signal", 
   assert.match(main, /absenceConfirmed: true/);
 });
 
-test("Musinsa exact search route reports product absence after a non-network load termination", () => {
-  assert.match(main, /const failedUrl = String/);
-  assert.match(main, /reason === "page_load_failed" && exactMusinsaSearchRoute/);
-  assert.match(main, /presenceConfirmed: false,[\s\S]*absenceConfirmed: true,[\s\S]*searchCompleted: true/);
-  assert.match(main, /Genuine connection and timeout failures remain visible errors/);
+test("Musinsa navigation failures cannot declare absence from the URL alone", () => {
+  assert.doesNotMatch(main, /reason === "page_load_failed" && exactMusinsaSearchRoute/);
+  assert.match(main, /return renderedSearchFailure\(reason, searchWindow, \{ errorMessage: message \}\)/);
+  assert.match(main, /if \(resultPage\.explicitEmpty\) return/);
 });

@@ -21,21 +21,22 @@ test("a stalled domestic search stops after the main-process deadline", () => {
   assert.match(cachedSearch, /activeDomesticCheckpoint/);
 });
 
-test("all accuracy fallbacks share one absolute retailer deadline", () => {
+test("fallbacks share an inactivity deadline renewed only for previously unseen stock work", () => {
   const start = main.indexOf("async function addRenderedSearchCounts(");
   const end = main.indexOf("async function verifyAllStoresWithMusinsaImage(", start);
   const renderedCounts = main.slice(start, end);
 
   assert.match(renderedCounts, /Promise\.race\(\[/);
   assert.match(main, /const DOMESTIC_RETAILER_HARD_TIMEOUT_MS = 90 \* 1000/);
-  assert.match(renderedCounts, /const sourceDeadlineAt = Date\.now\(\) \+ DOMESTIC_RETAILER_HARD_TIMEOUT_MS/);
+  assert.match(renderedCounts, /let sourceDeadlineAt = Date\.now\(\) \+ DOMESTIC_RETAILER_HARD_TIMEOUT_MS/);
   assert.match(renderedCounts, /sourceTimeoutId = setTimeout\(expire, Math\.max\(0, sourceDeadlineAt - Date\.now\(\)\)\)/);
   assert.ok(renderedCounts.indexOf('const timeoutResult') > renderedCounts.indexOf('for (let queryAttemptIndex'));
   assert.match(renderedCounts, /const activity = async update =>/);
   assert.doesNotMatch(renderedCounts, /clearTimeout\(sourceTimeoutId\);\s*sourceTimeoutId = setTimeout/);
   assert.match(renderedCounts, /products: \[\.\.\.pendingProducts\]/);
-  assert.match(renderedCounts, /renderedSearchFailure\("page_load_timeout"/);
-  assert.match(renderedCounts, /verificationStage: "source_timeout"/);
+  assert.match(renderedCounts, /!observedWork\.has\(work\)/);
+  assert.match(renderedCounts, /renderedSearchFailure\("collection_stalled"/);
+  assert.match(renderedCounts, /verificationStage: lastWork/);
   assert.match(renderedCounts, /activeDomesticSearchWindows\.clear\(\)/);
 });
 

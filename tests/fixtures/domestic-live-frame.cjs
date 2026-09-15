@@ -21,7 +21,7 @@ app.whenReady().then(async () => {
   runInContext(section('async function openRenderedSizeOptions(', '\nfunction browserWindowUsable('), context);
   runInContext(section('async function waitForDomesticCaptureReady(', '\nasync function renderedSearchSourceResult('), context);
   const cases = [
-    ['네이버 패션타운','https://shopping.naver.com/window/search/fashion-group?q=JH9976','https://shopping.naver.com/window-products/department/123',context.loadNaverFashionTownResultPage],
+    ['네이버 패션타운',relay.naverFashionTownUrl('overview','아디다스','JH9976'),'https://shopping.naver.com/window-products/department/123',context.loadNaverFashionTownResultPage],
     ['무신사','https://www.musinsa.com/search/goods?keyword=JH9976&gf=A','https://www.musinsa.com/products/123',context.loadMusinsaResultPage],
   ];
   const collected = [];

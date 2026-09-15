@@ -304,9 +304,8 @@ let domesticSearchGeneration = 0;
 const activeDomesticSearchWindows = new Set();
 const activeDomesticPriceWindows = new Set();
 let domesticPriceLookupQueue = Promise.resolve();
-// A retailer that keeps emitting option/card events must not hold one product
-// forever. Bound each retailer independently, then keep verified rows and
-// continue. The wider product deadline is only a final IPC/browser safety net.
+// Bound inactivity, not the total time needed to visit real stock options.
+// Repeated events for the same option never renew either watchdog.
 const DOMESTIC_RETAILER_HARD_TIMEOUT_MS = 90 * 1000;
 const DOMESTIC_SEARCH_HARD_TIMEOUT_MS = 4 * 60 * 1000;
 
@@ -325,12 +324,13 @@ function domesticSearchCanceled(generation) {
 
 async function withDomesticSearchHardTimeout(operation, generation, progressState = { checkpoint: null }) {
   let timeoutId;
+  progressState.lastProgressAt ??= Date.now();
   const timeoutResult = new Promise((resolve) => {
-    timeoutId = setTimeout(() => {
-      // Progress and checkpoint writes do not restart this absolute deadline,
-      // so a looping page cannot extend one product forever.
+    const expire = () => {
+      const remaining = DOMESTIC_SEARCH_HARD_TIMEOUT_MS - (Date.now() - progressState.lastProgressAt);
+      if (remaining > 0) { timeoutId = setTimeout(expire, remaining); return; }
       if (!domesticSearchCanceled(generation)) cancelDomesticSearches();
-      const message = "상품 검색 안전시간 4분이 지나 확인된 판매처 결과를 저장하고 다음 상품으로 이동합니다.";
+      const message = "4분 동안 새 검색 결과가 없어 확인된 판매처 결과를 저장하고 다음 상품으로 이동합니다.";
       resolve(progressState.checkpoint ? {
         ok: true,
         timedOut: true,
@@ -338,9 +338,10 @@ async function withDomesticSearchHardTimeout(operation, generation, progressStat
       } : {
         ok: false,
         timedOut: true,
-        message: "상품 검색 안전시간 4분 동안 확인된 판매처 결과가 없습니다.",
+        message: "4분 동안 판매처 검색이 진행되지 않아 중단했습니다.",
       });
-    }, DOMESTIC_SEARCH_HARD_TIMEOUT_MS);
+    };
+    timeoutId = setTimeout(expire, DOMESTIC_SEARCH_HARD_TIMEOUT_MS);
   });
   try {
     return await Promise.race([operation, timeoutResult]);
@@ -983,7 +984,7 @@ async function addMatchConfidence(data, input) {
     ...product,
     ...scoreProductCandidate(source, product),
   }));
-  const sourceFingerprint = await imageFingerprint(input.imageUrl).catch(() => null);
+  const sourceFingerprint = products.length ? await imageFingerprint(input.imageUrl).catch(() => null) : null;
   if (sourceFingerprint) {
     const bestByStore = new Map();
     products.forEach((product, index) => {
@@ -1563,10 +1564,12 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         offscreen: true,
       },
     });
+    activeDomesticSearchWindows.add(evidenceWindow);
     evidenceWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
     for (const candidate of candidates) {
       const productUrl = String(candidate?.url || candidate?.productUrl || "");
-      if (!productUrl || evidenceWindow.isDestroyed()) continue;
+      if (domesticSearchCanceled(generation) || evidenceWindow.isDestroyed()) break;
+      if (!productUrl) continue;
       try {
         const retained = recoveryProducts.find(p => p.url === candidate.url && p.domesticSellerVerified === true);
         if (retained && stockObservationComplete(retained)
@@ -1720,6 +1723,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
     }
   } finally {
     if (evidenceWindow && !evidenceWindow.isDestroyed()) evidenceWindow.destroy();
+    activeDomesticSearchWindows.delete(evidenceWindow);
   }
   return {
     products: approved,
@@ -2733,6 +2737,17 @@ async function waitForDomesticCaptureReady(searchWindow, timeoutMs = 25_000) {
   if (lastSignature && Date.now() - stableSince < 1_500 && !searchWindow.isDestroyed()) await wait(1_500);
 }
 
+function domesticPageAccessState(text = "", cards = 0) {
+  const securityVerificationRequired = /captcha|보안\s*확인|비정상적인\s*접근|접속.{0,12}(?:제한|차단)/i.test(text);
+  const loginRequired = !cards && /로그인(?:이)?\s*필요(?:합니다|해요)|로그인(?:을)?\s*해주세요/i.test(text);
+  const unavailable = /서비스\s*접속이\s*원활하지\s*않|서비스를\s*이용할\s*수\s*없|일시적인\s*오류가\s*발생/i.test(text);
+  return {
+    verificationReason: securityVerificationRequired ? "security_verification_required"
+      : loginRequired ? "login_required" : unavailable ? "service_unavailable" : "",
+    securityVerificationRequired, loginRequired,
+  };
+}
+
 async function collectRenderedProductStock(searchWindow, storeName = "", generation = domesticSearchGeneration, onActivity = null, resumeOptions = [], resumeBranches = [], checkpointUrl = "") {
   const canceled = () => domesticSearchCanceled(generation) || !searchWindow || searchWindow.isDestroyed();
   if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
@@ -2863,6 +2878,8 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
         return { href, text, cards, explicitEmpty, positiveCount };
       })()`, true).catch(() => null);
       if (!state) continue;
+      const access = domesticPageAccessState(state.text, state.cards);
+      if (access.verificationReason) return { ok: false, resolvedUrl: state.href, ...access };
       let decodedUrl = String(state.href || "");
       try { decodedUrl = decodeURIComponent(decodedUrl); } catch {}
       const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
@@ -2872,7 +2889,7 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
       // result document is already interactive. Once that DOM and query URL
       // exist, the later bounded card collector—not the browser load event—
       // decides whether products or an explicit empty result are present.
-      if (exactResult && isNaverRenderedResultReady({ url: state.href, text: state.text }, expectedQuery)) {
+      if (exactResult && isNaverRenderedResultReady({ url: state.href, text: state.text, cards: state.cards }, expectedQuery)) {
         return { ok: true, resolvedUrl: state.href };
       }
     }
@@ -2888,10 +2905,10 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
     .catch((error) => { firstError = error; })
     .finally(() => { navigationSettled = true; });
   const firstResult = await inspectSettledResult();
-  if (firstResult.ok) return firstResult;
+  if (firstResult.ok || firstResult.verificationReason) return firstResult;
   if (!navigationSettled) await Promise.race([navigation, wait(3_000)]);
   const finalResult = await inspectSettledResult();
-  if (finalResult.ok) return finalResult;
+  if (finalResult.ok || finalResult.verificationReason) return finalResult;
   const errorMessage = String(firstError?.message || "NAVER_RESULT_PAGE_NOT_SETTLED");
   return {
     ok: false,
@@ -2918,9 +2935,12 @@ async function loadMusinsaResultPage(searchWindow, targetUrl, query) {
         && actual.toUpperCase() === expected.toUpperCase();
       const cards = document.querySelectorAll('a[href*="/products/"],a[href*="/product/"]').length;
       const explicitEmpty = /검색\\s*결과가?\\s*(?:없|0)|상품이?\\s*(?:없|0)|검색된\\s*상품이\\s*없/i.test(pageText);
-      return { href: current.href, ready: Boolean(exactSearch && document.documentElement && (cards > 0 || explicitEmpty)) };
+      return { href: current.href, text: pageText, cards, explicitEmpty: exactSearch && explicitEmpty,
+        ready: Boolean(exactSearch && document.documentElement && (cards > 0 || explicitEmpty)) };
     })()`, true).catch(() => null);
-    if (state?.ready) return { ok: true, resolvedUrl: state.href };
+    const access = domesticPageAccessState(state?.text, state?.cards);
+    if (access.verificationReason) return { ok: false, resolvedUrl: state.href, ...access };
+    if (state?.ready) return { ok: true, resolvedUrl: state.href, explicitEmpty: state.explicitEmpty };
   }
   await Promise.race([navigation, wait(500)]);
   const errorMessage = String(navigationError?.message || "MUSINSA_RESULT_DOM_NOT_READY");
@@ -3073,14 +3093,21 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         );
         if (!resultPage.ok) {
           return renderedSearchFailure(
-            resultPage.networkError ? "network_error" : "page_load_timeout",
+            resultPage.verificationReason || (resultPage.networkError ? "network_error" : "page_load_timeout"),
             searchWindow, {
+              ...resultPage,
               searchSubmitted: true,
               resolvedSearchUrl: resultPage.resolvedUrl || url,
               errorMessage: resultPage.errorMessage,
             },
           );
         }
+        // The empty-result message refers to this exact search. Promotional
+        // product links below it must never become its search candidates.
+        if (resultPage.explicitEmpty) return {
+          count: 0, products: [], absenceConfirmed: true, searchCompleted: true,
+          searchSubmitted: true, resolvedSearchUrl: resultPage.resolvedUrl,
+        };
       }
       // A brand adapter may know a stable product-detail route. Verify that
       // route against the exact POIZON article before falling back to the
@@ -3142,36 +3169,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           searchWindow, url, searchAttempt?.query || source.searchQuery || articleNumber || title,
         );
         if (!resultPage.ok) {
-          // Naver's Fashion Town SPA can reject or abort Electron navigation even
-          // when the exact user-search URL itself is valid in a normal browser.
-          // This is a technical renderer failure, not proof that the product is
-          // absent. Preserve the exact search URL as the usable result instead of
-          // showing page_load_failed or advancing to another query.
-          return {
-            count: 0,
-            products: [],
-            presenceConfirmed: false,
-            absenceConfirmed: false,
-            searchCompleted: true,
-            searchSubmitted: true,
-            // Always preserve the requested Fashion Town URL. The live window
-            // can be left on Naver home or an error document after a failed SPA
-            // navigation, and that intermediate URL is not useful to the user.
-            resolvedSearchUrl: url,
-            resultLinkOnly: true,
-            detailVerificationPending: false,
-            verificationPending: false,
-            verificationReason: "",
-            verificationStage: "page_navigation",
-            verificationDiagnostics: {
-              stage: "page_navigation",
-              reason: "naver_result_link_fallback",
-              resolvedUrl: url,
-              errorMessage: String(resultPage.errorMessage || ""),
-              productCardCount: 0,
-              visibleResultCount: null,
-            },
-          };
+          return renderedSearchFailure(resultPage.verificationReason
+            || (resultPage.networkError ? "network_error" : "naver_result_not_settled"), searchWindow, {
+            ...resultPage, searchSubmitted: true, resolvedSearchUrl: resultPage.resolvedUrl || url,
+          });
         }
       }
       if (interactiveOfficialSearch) {
@@ -3273,7 +3274,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         sharedNaverSession.searchSubmitted = true;
       }
       const currentChannelRaw = naverChannelCounts[String(source.store || "")];
-      const currentChannelCount = Number.isFinite(Number(currentChannelRaw)) ? Number(currentChannelRaw) : null;
+      const currentChannelCount = currentChannelRaw != null && Number.isFinite(Number(currentChannelRaw)) ? Number(currentChannelRaw) : null;
       if (currentChannelCount === 0) {
         return {
           count: 0,
@@ -3337,7 +3338,6 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           break;
         }
         if (state?.blocked || state?.loginRequired) break;
-        if (attempt === 14 && state?.ready) musinsaSettledEmpty = true;
       }
     }
     if (officialDirectDetail) {
@@ -3911,33 +3911,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     const reason = /SEARCH_PAGE_TIMEOUT/i.test(message) ? "page_load_timeout"
       : /ERR_(?:NAME_NOT_RESOLVED|CONNECTION|TIMED_OUT|INTERNET_DISCONNECTED)/i.test(message) ? "network_error"
         : "page_load_failed";
-    // A Musinsa SPA can terminate its navigation after accepting the exact
-    // search route. If the route still contains the requested model number,
-    // treat a non-network/non-timeout load termination as a completed empty
-    // search. Genuine connection and timeout failures remain visible errors.
-    const failedUrl = String(!searchWindow?.isDestroyed?.() ? searchWindow?.webContents?.getURL?.() : "");
-    const requestedMusinsaQuery = sanitizeDomesticProductCode(articleNumber)
-      || sanitizeDomesticQuery(searchAttempt?.query || source.searchQuery || title);
-    let exactMusinsaSearchRoute = false;
-    try {
-      const parsedFailedUrl = new URL(failedUrl);
-      exactMusinsaSearchRoute = /(^|\.)musinsa\.com$/i.test(parsedFailedUrl.hostname)
-        && parsedFailedUrl.pathname.includes("/search/goods")
-        && String(parsedFailedUrl.searchParams.get("keyword") || "").trim().toUpperCase()
-          === requestedMusinsaQuery.toUpperCase();
-    } catch {}
-    if (musinsaSource && reason === "page_load_failed" && exactMusinsaSearchRoute) {
-      return {
-        count: 0,
-        products: [],
-        presenceConfirmed: false,
-        absenceConfirmed: true,
-        searchCompleted: true,
-        searchSubmitted: true,
-        resolvedSearchUrl: failedUrl,
-        detailVerificationPending: false,
-      };
-    }
+    // Reaching the requested URL is not evidence of an empty result.
     return renderedSearchFailure(reason, searchWindow, { errorMessage: message });
   } finally {
     const keepSharedNaverWindow = naverPortalSource
@@ -4006,7 +3980,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
             const savedOptions = optionCheckpoints[products[index].url];
             const stock = await refreshDomesticProductStock(products[index], generation, async update => {
               onProgress?.({completed:sources.length,total:progressTotal,source:`코오롱몰 · 옵션 ${update.option || "확인"}`,phase:"searching"});
-              if (update.optionCheckpoint?.url) { optionCheckpoints[update.optionCheckpoint.url] = update.optionCheckpoint; await onCheckpoint?.(snapshot()); }
+              if (update.optionCheckpoint?.url) { optionCheckpoints[update.optionCheckpoint.url] = update.optionCheckpoint; await onCheckpoint?.(snapshot(), { optionsOnly: true }); }
             }, savedOptions && Date.now() - Date.parse(savedOptions.checkedAt || '') < 30 * 60_000 ? savedOptions.options : [], savedOptions?.branches || []);
             if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
             products[index] = { ...products[index], ...stock };
@@ -4030,9 +4004,11 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       const queryAttempts = source.store === "브랜드 공식몰"
         ? allQueryAttempts.slice(0, 1) : allQueryAttempts;
       let result = null;
-      const sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
-      // Every ranked query shares this retailer's single deadline. A slow
-      // exact-code attempt cannot grant fresh time to each title fallback.
+      let sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
+      const observedWork = new Set();
+      let lastWork = "search_result";
+      // Query fallbacks share the watchdog. Only a newly observed product or
+      // option renews it; an unchanged page/heartbeat cannot keep it alive.
       for (let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts.length; queryAttemptIndex += 1) {
         const queryAttempt = queryAttempts[queryAttemptIndex];
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
@@ -4054,19 +4030,20 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       // the completed prior search returned no product; browser/security or
       // detail-verification failures must not repeat the same query or advance
       // as though the product were absent.
-        // Checkpoint useful work, but never use it to extend the deadline.
         let sourceTimeoutId, stopped = false, expire;
         pendingProducts = [];
         const timeoutResult = new Promise(resolve => {
           expire = () => {
+            const remaining = sourceDeadlineAt - Date.now();
+            if (remaining > 0) { sourceTimeoutId = setTimeout(expire, remaining); return; }
             stopped = true;
             if (domesticSearchCanceled(generation)) return resolve(renderedSearchFailure("search_canceled"));
             for (const searchWindow of [...activeDomesticSearchWindows]) {
               if (searchWindow && !searchWindow.isDestroyed()) searchWindow.destroy();
             }
             activeDomesticSearchWindows.clear();
-            resolve({...renderedSearchFailure("page_load_timeout", null, {
-              verificationStage: "source_timeout", source: String(source.store || "판매처"),
+            resolve({...renderedSearchFailure("collection_stalled", null, {
+              verificationStage: lastWork, source: String(source.store || "판매처"),
             }), products: [...pendingProducts], count: pendingProducts.length || null,
               detailVerificationPending: true});
           };
@@ -4075,12 +4052,23 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         const activity = async update => {
           if (stopped || domesticSearchCanceled(generation)) return;
           if (Array.isArray(update.products)) pendingProducts = update.products;
+          const work = JSON.stringify([queryAttemptIndex, update.completedProducts,
+            update.optionCheckpoint?.url, update.option,
+            update.optionCheckpoint?.options?.length, update.optionCheckpoint?.branches?.length]);
+          if ((update.option || update.completedProducts > 0) && !observedWork.has(work)) {
+            observedWork.add(work);
+            sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
+            lastWork = update.option ? "stock_options" : "product_detail";
+          }
           const stage = update.option ? `옵션 ${update.option}`
             : `상품 ${update.completedProducts}/${update.totalProducts}`;
           onProgress?.({completed:sources.length, total:progressTotal,
-            source:`${source.store || "판매처"} · ${stage}`, phase:"searching", query:queryAttempt.query});
+            source:`${source.store || "판매처"} · ${stage}`, phase:"searching", query:queryAttempt.query,
+            progressKey: `${sources.length}:${work}`});
           if (update.optionCheckpoint?.url) optionCheckpoints[update.optionCheckpoint.url] = update.optionCheckpoint;
-          if (Array.isArray(update.products) || update.optionCheckpoint) await onCheckpoint?.(snapshot());
+          if (Array.isArray(update.products) || update.optionCheckpoint) await onCheckpoint?.(snapshot(), {
+            optionsOnly: !Array.isArray(update.products),
+          });
         };
         const queryResult = await Promise.race([
           renderedSearchSourceResult(source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession, generation, activity),
@@ -12057,11 +12045,18 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   ipcMain.handle("domestic:search", (_event, input) => {
     const execute = (input, persistCheckpoint = async () => {}) => {
     const searchGeneration = domesticSearchGeneration;
-    const progressState = { checkpoint: null };
+    const progressState = { checkpoint: null, lastProgressAt: Date.now(), revision: 0 };
+    const observedProgress = new Set();
     const sendDomesticProgress = (payload) => {
       if (domesticSearchCanceled(searchGeneration)) return;
+      const key = JSON.stringify([payload.phase, payload.source, payload.completed, payload.query, payload.progressKey]);
+      if (payload.phase !== "checkpoint" && !observedProgress.has(key)) {
+        observedProgress.add(key);
+        progressState.lastProgressAt = Date.now();
+        progressState.revision += 1;
+      }
       if (!_event.sender.isDestroyed()) {
-        _event.sender.send("domestic-search:progress", { ...payload, generation: searchGeneration, requestId: String(input?.requestId || "") });
+        _event.sender.send("domestic-search:progress", { ...payload, progressRevision: progressState.revision, generation: searchGeneration, requestId: String(input?.requestId || "") });
       }
     };
     const operation = (async () => {
@@ -12072,11 +12067,18 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         message: error instanceof Error ? error.message : String(error || "알 수 없는 오류"),
       });
     };
-    const preserveVerifiedResults = async (candidate) => {
+    const preserveVerifiedResults = async (candidate, { optionsOnly = false } = {}) => {
       if (domesticSearchCanceled(searchGeneration)) return;
       try {
-        const matchedCandidate = await addMatchConfidence(candidate, input || {});
-        const verifiedCandidate = await verifyAllStoresWithMusinsaImage(matchedCandidate, input || {});
+        // Native option checkpoints add no product candidates. Keep previously
+        // verified rows and save the raw options without another image request.
+        let verifiedCandidate;
+        if (optionsOnly && progressState.checkpoint) {
+          verifiedCandidate = { ...progressState.checkpoint, optionCheckpoints: { ...candidate.optionCheckpoints } };
+        } else {
+          const matchedCandidate = await addMatchConfidence(candidate, input || {});
+          verifiedCandidate = await verifyAllStoresWithMusinsaImage(matchedCandidate, input || {});
+        }
         if (!domesticSearchCanceled(searchGeneration)) {
           progressState.checkpoint = { ...verifiedCandidate, technicalWarnings: [...technicalWarnings] };
           await persistCheckpoint(progressState.checkpoint);
