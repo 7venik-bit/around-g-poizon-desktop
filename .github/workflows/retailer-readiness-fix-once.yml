@@ -41,46 +41,41 @@ jobs:
               '  const expectedQuery = sanitizeDomesticProductCode(query) || sanitizeDomesticQuery(query);',
               '  // A fallback title is a phrase, not an article code. Keep its word boundaries.\n  const expectedQuery = sanitizeDomesticQuery(query);')
           block = once(block,
-              '''      const expected = ${JSON.stringify(expectedQuery)};
-                const actual = String(current.searchParams.get("keyword") || "").trim();'''.replace('\n      ', '\n'),
-              r'''      const normalizeQuery = value => String(value || "").replace(/\\s+/g, " ").trim().toUpperCase();
-                const expected = normalizeQuery(${JSON.stringify(expectedQuery)});
-                const actual = normalizeQuery(current.searchParams.get("keyword"));'''.replace('\n      ', '\n'))
+              '      const expected = ${JSON.stringify(expectedQuery)};',
+              r'      const normalizeQuery = value => String(value || "").replace(/\\s+/g, " ").trim().toUpperCase();' + '\n      const expected = normalizeQuery(${JSON.stringify(expectedQuery)});')
+          block = once(block,
+              'const actual = String(current.searchParams.get("keyword") || "").trim();',
+              'const actual = normalizeQuery(current.searchParams.get("keyword"));')
           block = once(block,
               '&& actual.toUpperCase() === expected.toUpperCase();',
               '&& expected.length > 0 && actual === expected;')
           Path('main.mjs').write_text(main[:start] + block + main[end:], encoding='utf-8')
           detail = original('services/domestic-detail-page.mjs', '8129e05f16e60d87f8f4111d16f36c25bc582e64')
-          old = '''  const busy = [...document.querySelectorAll('[aria-busy="true"],[role="progressbar"]')].some(visible);'''
-          new = r'''  // Ignore only explicitly identified recommendation/advertisement regions.
-            // A purchase panel can live in an aside; do not discard all sidebars
-            // or restrict readiness to main. Unclassified/global loaders still block.
-            const unrelatedLoadingRegion = element => {
-              for (let node = element; node && node !== document.body && node !== document.documentElement; node = node.parentElement) {
-                if (node.matches('main,[role="main"]')) break;
-                const labels = ['id', 'class', 'aria-label', 'data-testid'].map(key => node.getAttribute(key) || '').join(' ');
-                if (/recommend|related[-_ ]?(?:product|goods)|advert(?:isement|ising)?|(?:^|[\s_-])ads?(?:$|[\s_-])|추천|광고/i.test(labels)) return true;
-              }
-              return false;
-            };
-            const visibleLoading = element => {
-              if (!visible(element)) return false;
-              // A child can have dimensions in a synthetic/cached layout even
-              // though a containing widget is hidden. Check its ancestors too.
-              for (let node = element; node; node = node.parentElement) {
-                const style = getComputedStyle(node);
-                if (node.hidden || node.getAttribute('aria-hidden') === 'true'
-                  || style.display === 'none' || style.visibility === 'hidden') return false;
-              }
-              return true;
-            };
-            const busy = [...document.querySelectorAll('[aria-busy="true"],[role="progressbar"]')]
-              .some(element => visibleLoading(element) && !unrelatedLoadingRegion(element));'''.replace('\n          ', '\n')
-          # Remove this YAML/Python block's six extra visual indentation spaces.
-          new = new.splitlines()[0] + '\n' + '\n'.join(line[10:] if line.startswith('          ') else line for line in new.splitlines()[1:]) if False else new
-          # The Python block above has ten formatting spaces beyond the source indent.
-          lines = new.splitlines()
-          new = lines[0] + '\n' + '\n'.join(line[10:] if line.startswith('          ') else line for line in lines[1:])
+          old = '  const busy = [...document.querySelectorAll(\'[aria-busy="true"],[role="progressbar"]\')].some(visible);'
+          new = '\n'.join([
+              '  // Ignore only explicitly identified recommendation/advertisement regions.',
+              '  // Purchase panels may live in an aside. Unknown/global loaders still block.',
+              '  const unrelatedLoadingRegion = element => {',
+              '    for (let node = element; node && node !== document.body && node !== document.documentElement; node = node.parentElement) {',
+              '      if (node.matches(\'main,[role="main"]\')) break;',
+              "      const labels = ['id', 'class', 'aria-label', 'data-testid'].map(key => node.getAttribute(key) || '').join(' ');",
+              r'      if (/recommend|related[-_ ]?(?:product|goods)|advert(?:isement|ising)?|(?:^|[\s_-])ads?(?:$|[\s_-])|추천|광고/i.test(labels)) return true;',
+              '    }',
+              '    return false;',
+              '  };',
+              '  const visibleLoading = element => {',
+              '    if (!visible(element)) return false;',
+              '    // A hidden ancestor must not turn a child spinner into a loading gate.',
+              '    for (let node = element; node; node = node.parentElement) {',
+              '      const style = getComputedStyle(node);',
+              "      if (node.hidden || node.getAttribute('aria-hidden') === 'true'",
+              "        || style.display === 'none' || style.visibility === 'hidden') return false;",
+              '    }',
+              '    return true;',
+              '  };',
+              '  const busy = [...document.querySelectorAll(\'[aria-busy="true"],[role="progressbar"]\')]',
+              '    .some(element => visibleLoading(element) && !unrelatedLoadingRegion(element));',
+          ])
           Path('services/domestic-detail-page.mjs').write_text(once(detail, old, new), encoding='utf-8')
       - name: Syntax and diff checks
         run: |
