@@ -4111,7 +4111,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           }
           const stage = update.option ? `옵션 ${update.option}`
             : Number.isFinite(update.completedProducts)
-              ? `상세 ${update.completedProducts}/${update.totalProducts}${update.failedDetails ? ` · 상세 응답 실패 ${update.failedDetails}건` : ""}`
+              ? `검색 결과 ${update.totalProducts}개 중 ${update.completedProducts}개 상세 확인${update.failedDetails ? ` · 실제 응답 실패 ${update.failedDetails}건` : ""}`
               : "상품·가격 확인";
           onProgress?.({completed:sources.length, total:progressTotal,
             source:`${source.store || "판매처"} · ${stage}`, phase:"searching", query:queryAttempt.query,
