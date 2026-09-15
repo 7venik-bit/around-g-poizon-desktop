@@ -17,14 +17,27 @@ const TITLE = '아디다스 슈퍼스타 2 클라우드 화이트';
 const documentHtml = (extra = '') => `<main><h1>${TITLE} JH9976</h1>\n<p>상품 코드: JH9976</p>\n<p>국내 정품 공식 판매처</p>\n<strong class="price">149,000원</strong>\n${extra}</main>`;
 const unknownStock = () => ({inStock:null,sizes:[],stockVerified:false,stockCoverage:'unknown',stockStatus:'unknown',stockText:''});
 const completeStock = () => ({inStock:true,sizes:[{label:'260',inStock:true,stockText:'선택 가능'}],stockVerified:true,stockCoverage:'complete',stockStatus:'available',stockText:'',stockCheckedAt:new Date().toISOString()});
-function productionFunction(name) {
-  const start = main.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
+function productionFunction(name, input = main) {
+  // Git's Windows checkout uses CRLF. Normalize only the in-memory test input,
+  // without rewriting production files or changing any behavioral assertions.
+  const normalized = input.replace(/\r\n?/g, '\n');
+  const start = normalized.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
   assert.ok(start >= 0, `Production function missing: ${name}`);
-  const end = main.indexOf('\n}\n', start);
+  const end = normalized.indexOf('\n}\n', start);
   assert.ok(end > start, `Production function end missing: ${name}`);
-  const source = main.slice(start, end + 2);
+  const source = normalized.slice(start, end + 2);
   new Script(source);
   return source;
+}
+for (const [label, eol] of [['LF', '\n'], ['CRLF', '\r\n']]) {
+  test(`production function extraction preserves all Naver predicates with ${label} checkout`, () => {
+    const lf = main.replace(/\r\n?/g, '\n');
+    const checkout = lf.replace(/\n/g, eol);
+    for (const name of ['domesticPageAccessState', 'waitForDomesticDetailReady', 'collectRenderedProductStock', 'verifyApprovedNaverDomesticProducts']) {
+      assert.equal(productionFunction(name, checkout), productionFunction(name, lf), name);
+    }
+    assert.throws(() => productionFunction('missingProductionFunction', checkout), /Production function missing/);
+  });
 }
 function fixture(t, {html = documentHtml(), resolvedUrl = URL_PRODUCT, collectStock, paintAfter = 0, laterHtml = ""} = {}) {
   let now = 0, optionCalls = 0;
