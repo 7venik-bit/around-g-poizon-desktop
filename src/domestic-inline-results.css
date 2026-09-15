@@ -27,9 +27,15 @@
 .domestic-inline-product{min-width:0!important}
 .domestic-inline-stock{margin-top:3px!important;white-space:pre-line!important;overflow-wrap:anywhere!important;color:#537563!important;font-weight:650!important}
 .domestic-inline-stock.soldout,.domestic-inline-stock-option.soldout{color:#9a5c32!important}
-      .domestic-inline-stock-cell{min-width:0!important;white-space:pre-line!important;overflow-wrap:anywhere!important;color:#537563!important;line-height:1.5!important}
-      .domestic-inline-stock-option{padding:2px 0!important}
-      .domestic-inline-purchase-limit{margin-top:4px!important;color:#64748b!important;font-size:10px!important;font-weight:400!important}
+/* The application blocks injected inline styles. Keep badge geometry here for
+   both clickable buttons and non-interactive unavailable-size spans. */
+.domestic-inline-stock-cell{display:flex!important;align-items:center!important;align-content:center!important;gap:5px!important;min-width:0!important;flex-wrap:wrap!important;white-space:normal!important;color:#537563!important;line-height:1.35!important}
+.domestic-inline-stock-cell>.domestic-inline-stock{flex:0 0 100%!important}
+.domestic-inline-stock-cell>.domestic-inline-stock-option{box-sizing:border-box!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;min-width:0!important;min-height:30px!important;height:auto!important;padding:5px 8px!important;border:1px solid #cbd7e9!important;border-radius:6px!important;font-family:inherit!important;font-size:10px!important;font-weight:800!important;line-height:1.25!important;text-decoration:none!important;white-space:nowrap!important}
+.domestic-inline-stock-cell>button.domestic-inline-stock-option{cursor:pointer!important}
+.domestic-inline-stock-cell>.domestic-inline-stock-option.soldout{border-color:#ead6c8!important;background:#fff8f3!important;color:#9a5c32!important;cursor:not-allowed!important;opacity:1!important}
+.domestic-inline-purchase-limit{margin-top:4px!important;color:#64748b!important;font-size:10px!important;font-weight:400!important}
+.domestic-inline-stock-cell>.domestic-inline-purchase-limit{flex:0 0 100%!important}
 .domestic-inline-code{min-width:0!important;color:#64748b!important;font-family:inherit!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
 .domestic-inline-price{text-align:right!important;color:#111827!important;font-weight:800!important;white-space:nowrap!important}
 .domestic-inline-row button{min-width:64px!important;height:30px!important;padding:5px 8px!important;border-radius:6px!important;font-size:10px!important;font-weight:800!important;white-space:nowrap!important;overflow:visible!important}
