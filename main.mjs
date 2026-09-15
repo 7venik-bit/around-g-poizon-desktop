@@ -1577,15 +1577,18 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
       const productUrl = String(candidate?.url || candidate?.productUrl || "");
       if (domesticSearchCanceled(generation) || evidenceWindow.isDestroyed()) break;
       if (!productUrl) continue;
+      let detailVerified = false;
+      let detailFailure = "";
       try {
         const retained = recoveryProducts.find(p => p.url === candidate.url && p.domesticSellerVerified === true);
         if (retained && stockObservationComplete(retained)
           && Date.now() - Date.parse(retained.stockCheckedAt || '') < 30 * 60_000) {
-          approved.push(retained); checkedCount += 1; continue;
+          approved.push(retained); checkedCount += 1; detailVerified = true; continue;
         }
         // Read the product document while optional images/analytics keep loading.
         void evidenceWindow.loadURL(productUrl).catch(() => {});
         const snapshot = await waitForDomesticDetailReady(evidenceWindow, "네이버 패션타운", productUrl, generation, articleNumber);
+        detailVerified = true;
         checkedCount += 1;
         const sellerVerifiedByWording = isApprovedNaverDomesticSellerEvidence({
           productUrl,
@@ -1646,6 +1649,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         });
       } catch (error) {
         failedCount += 1;
+        detailFailure = String(error?.message || "product_detail_failed");
         securityVerificationRequired ||= error?.securityVerificationRequired === true;
         loginRequired ||= error?.loginRequired === true;
         detailFailures.push({url: productUrl, reason: String(error?.message || "product_detail_failed")});
@@ -1667,7 +1671,8 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         }
         if (error?.securityVerificationRequired || error?.loginRequired || domesticSearchCanceled(generation)) break;
       } finally {
-        await onActivity?.({products: [...approved], completedProducts: checkedCount + failedCount, totalProducts: candidates.length});
+        await onActivity?.({products: [...approved], completedProducts: checkedCount + failedCount, totalProducts: candidates.length,
+          detailVerified, detailUrl: productUrl, failedDetails: failedCount, detailFailure});
       }
     }
   } finally {
@@ -3744,13 +3749,16 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       let identityRequiredCount = 0;
       let identityCheckedCount = 0;
       let identityMismatchCount = 0;
+      let failedDetails = 0;
       for (const [productIndex, product] of inspectedProducts.entries()) {
         if (domesticSearchCanceled(generation) || searchWindow.isDestroyed()) throw new Error("DOMESTIC_SEARCH_CANCELED");
+        let detailVerified = false;
+        let detailFailure = "";
         try {
           const retained = (source.recoveryProducts || []).find(p => p.url === product.url);
           if (retained && stockObservationComplete(retained)
             && Date.now() - Date.parse(retained.stockCheckedAt || '') < 30 * 60_000) {
-            products.push(retained); continue;
+            products.push(retained); detailVerified = true; continue;
           }
           let detailText = "";
           let detailIdentity = { titleText: "", labeledText: "", structuredCodes: [] };
@@ -3761,6 +3769,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
             if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");
             const identitySnapshot = await waitForDomesticDetailReady(searchWindow, source.store, product.url, generation, articleNumber);
+            detailVerified = true;
             detailText = String(identitySnapshot.pageText || "");
             detailIdentity = identitySnapshot;
             detailLoaded = true;
@@ -3769,7 +3778,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
               ? optionsCheckpoint.options : [];
             const observed = await collectRenderedProductStock(searchWindow, source.store, generation, onActivity, resumeOptions, optionsCheckpoint?.branches || [], product.url);
             if (observed.stockText || observed.purchaseLimitText || observed.sizes.length || observed.inStock !== null) stockEvidence = observed;
-          } catch { detailFailed = true; }
+          } catch (error) {
+            detailFailed = true;
+            failedDetails += 1;
+            detailFailure = String(error?.message || "product_detail_failed");
+          }
           if (product.detailArticleVerificationRequired) identityRequiredCount += 1;
           const detailArticleVerified = product.detailArticleVerificationRequired
             ? strictProductArticleIdentityMatch(detailIdentity, articleNumber) : false;
@@ -3836,7 +3849,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             ...stockEvidence,
           });
         } finally {
-          await onActivity?.({products: [...products], completedProducts: productIndex + 1, totalProducts: inspectedProducts.length});
+          await onActivity?.({products: [...products], completedProducts: productIndex + 1, totalProducts: inspectedProducts.length,
+            detailVerified, detailUrl: product.url, failedDetails, detailFailure});
         }
       }
       const preserveNaverChannelCount = /^네이버\s/.test(String(source.store || ""))
@@ -3980,6 +3994,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       let sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
       const observedWork = new Set();
       let lastWork = "search_result";
+      let detailProgress = {};
       // Query fallbacks share the watchdog. Only a newly observed product or
       // option renews it; an unchanged page/heartbeat cannot keep it alive.
       for (let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts.length; queryAttemptIndex += 1) {
@@ -4015,9 +4030,11 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
               if (searchWindow && !searchWindow.isDestroyed()) searchWindow.destroy();
             }
             activeDomesticSearchWindows.clear();
-            resolve({...renderedSearchFailure("collection_stalled", null, {
+            const failure = renderedSearchFailure("collection_stalled", null, {
               verificationStage: lastWork, source: String(source.store || "판매처"),
-            }), products: [...pendingProducts], count: pendingProducts.length || null,
+            });
+            resolve({...failure, verificationDiagnostics: {...failure.verificationDiagnostics, ...detailProgress},
+              products: [...pendingProducts], count: pendingProducts.length || null,
               detailVerificationPending: true});
           };
           sourceTimeoutId = setTimeout(expire, Math.max(0, sourceDeadlineAt - Date.now()));
@@ -4028,16 +4045,28 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           const work = JSON.stringify([queryAttemptIndex, update.completedProducts,
             update.optionCheckpoint?.url, update.option,
             update.optionCheckpoint?.options?.length, update.optionCheckpoint?.branches?.length]);
-          if ((update.option || update.completedProducts > 0) && !observedWork.has(work)) {
+          // Attempt counts also increase after failed page loads. Only an
+          // observed detail document or new stock option is actual progress.
+          const progressObserved = Boolean(update.option && update.optionCheckpoint)
+            || update.detailVerified === true;
+          if (Number.isFinite(update.completedProducts)) {
+            lastWork = "product_detail";
+            detailProgress = { processedProducts: update.completedProducts, totalProducts: update.totalProducts,
+              failedDetails: Number(update.failedDetails || 0), lastDetailUrl: update.detailUrl || "",
+              lastDetailFailure: update.detailFailure || "" };
+          }
+          if (progressObserved && !observedWork.has(work)) {
             observedWork.add(work);
             sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
             lastWork = update.option ? "stock_options" : "product_detail";
           }
           const stage = update.option ? `옵션 ${update.option}`
-            : `상품 ${update.completedProducts}/${update.totalProducts}`;
+            : Number.isFinite(update.completedProducts)
+              ? `상세 ${update.completedProducts}/${update.totalProducts}${update.failedDetails ? ` · 상세 응답 실패 ${update.failedDetails}건` : ""}`
+              : "상품·가격 확인";
           onProgress?.({completed:sources.length, total:progressTotal,
             source:`${source.store || "판매처"} · ${stage}`, phase:"searching", query:queryAttempt.query,
-            progressKey: `${sources.length}:${work}`});
+            progressKey: `${sources.length}:${work}`, progressObserved});
           if (update.optionCheckpoint?.url) optionCheckpoints[update.optionCheckpoint.url] = update.optionCheckpoint;
           if (Array.isArray(update.products) || update.optionCheckpoint) await onCheckpoint?.(snapshot(), {
             optionsOnly: !Array.isArray(update.products),
@@ -12026,7 +12055,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     const sendDomesticProgress = (payload) => {
       if (domesticSearchCanceled(searchGeneration)) return;
       const key = JSON.stringify([payload.phase, payload.source, payload.completed, payload.query, payload.progressKey]);
-      if (payload.phase !== "checkpoint" && !observedProgress.has(key)) {
+      if (payload.phase !== "checkpoint" && payload.progressObserved !== false && !observedProgress.has(key)) {
         observedProgress.add(key);
         progressState.lastProgressAt = Date.now();
         progressState.revision += 1;

@@ -12,11 +12,15 @@ delete env.ELECTRON_RUN_AS_NODE;
 // Every request is fulfilled by the offline session protocol handler. Linux
 // CI runs as root; the production application keeps its sandbox enabled.
 try {
-  const fixtures = process.argv.includes('--shipping') ? ['domestic-shipping-ipc.cjs']
-    : ['domestic-live-frame.cjs', 'domestic-shipping-ipc.cjs'];
-  for (const fixture of fixtures) {
+  const shipping = ['domestic-shipping-ipc.cjs'];
+  const stalled = ['domestic-shipping-ipc.cjs', '--stalled-details'];
+  const fixtures = process.argv.includes('--stalled') ? [stalled]
+    : process.argv.includes('--shipping') ? [shipping]
+    : [['domestic-live-frame.cjs'], shipping, stalled];
+  for (const [fixture, ...fixtureArgs] of fixtures) {
     const args = process.platform === 'linux' ? ['--no-sandbox', '--headless', '--ozone-platform=headless'] : [];
     args.push(fileURLToPath(new URL('../tests/fixtures/' + fixture, import.meta.url)));
+    args.push(...fixtureArgs);
     const code = await new Promise((done, reject) => {
       const child = spawn(require('electron'), args, {env, stdio:'inherit'});
       const watchdog = setTimeout(() => child.kill(), fixture === 'domestic-shipping-ipc.cjs' ? 215_000 : 55_000);

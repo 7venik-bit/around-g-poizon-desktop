@@ -962,6 +962,30 @@ test('a stalled later detail retains the completed product checkpoint', async t 
   assert.equal(result.products.length,1);assert.equal(result.sources[0].verificationStage,'product_detail');assert.equal(result.sources[0].verificationPending,true);
 });
 
+for (const [store, baseSearch, baseProduct] of channels) test(`${store}: failed detail visits cannot keep renewing both search watchdogs`, async t => {
+  const searchUrl = `${baseSearch}&fixture=failed-details`;
+  const productUrls = Array.from({length:12}, (_, index) => baseProduct.replace(/123$|100$/, String(1000 + index)));
+  const pages = {[searchUrl]: `<main><p>전체 12개</p><ul>${productUrls.map(url =>
+    `<li><a href="${url}"><img alt="데상트 SR123UPS11 카라 셔츠"></a><strong>데상트 SR123UPS11 카라 셔츠</strong><span>본사직영 롯데백화점</span><span>84,550원</span></li>`).join('')}</ul></main>`};
+  for (const url of productUrls) pages[url] = '<main>상품 정보를 불러오는 중</main>';
+  const nextUrl = 'https://www.lotteon.com/search/search/search.ecn?q=next&fixture=empty';
+  pages[nextUrl] = '<main>검색 결과가 없습니다</main>';
+  const f = fixture(t, {pages});
+  const h = f.installHandler([[store,searchUrl],['롯데온',nextUrl]]);
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('), f.context);
+  const response = await h.run();
+  t.diagnostic(`12 failing detail pages: ${f.now()} ms virtual elapsed`);
+  assert.equal(response.data.sources[0].verificationReason, 'collection_stalled');
+  assert.ok(response.data.sources[0].verificationDiagnostics.failedDetails > 0);
+  assert.equal(response.data.sources[0].verificationDiagnostics.totalProducts, 12);
+  assert.equal(response.data.sources[0].verificationDiagnostics.lastDetailFailure, 'product_detail_not_ready');
+  assert.equal(response.data.sources[0].absenceConfirmed, false);
+  assert.equal(response.data.partial, true);
+  assert.equal(response.data.sources[1].absenceConfirmed, true, 'the next retailer still runs');
+  assert.ok(f.now() < 150_000, 'failed visits are not new observed detail/stock progress');
+  assert.ok(f.navigations.filter(url => productUrls.includes(url)).length < 12, 'do not keep opening a stalled retailer');
+});
+
 test('live Naver colour radios pair with all thirteen sizes without repeating sticky controls', async t => {
   const url='https://shopping.naver.com/window-products/outlet/12460382307';
   const html=readFileSync(new URL('./fixtures/retailer-stock/naver-options.html',import.meta.url),'utf8');

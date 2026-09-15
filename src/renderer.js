@@ -1229,6 +1229,7 @@ function showDomesticSearchOverlay(startedAt, completedCount, totalCount, curren
   // The progress UI is a viewport modal. Remove geometry left by older builds
   // so a previous grid-sized overlay can never reappear inside a result cell.
   overlay.removeAttribute("style");
+  delete overlay.dataset.currentActivity;
   const article = String(currentProduct?.articleNumber || currentProduct?.productNumber || "").trim();
   const safeTotal = Math.max(1, Number(totalCount) || 1);
   const percent = Math.min(100, Math.round((Number(completedCount) / safeTotal) * 100));
@@ -1274,8 +1275,9 @@ window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
   // Retailer checkpoint events may omit totals; they update only the guide so
   // they cannot replace the real batch count with a misleading 0/1 stage.
   const guide = overlay.querySelector(".domestic-overlay-guide");
+  if (payload.phase === "searching") overlay.dataset.currentActivity = String(payload.source || "판매처");
   if (guide) guide.textContent = payload.phase === "checkpoint"
-    ? "확인된 판매처 결과를 저장했습니다. 다음 확인을 계속합니다."
+    ? `${overlay.dataset.currentActivity ? `${overlay.dataset.currentActivity} · ` : ""}확인된 결과를 보관했습니다.`
     : payload.phase === "searching"
     ? `${String(payload.source || "판매처")} 상품과 가격을 확인하고 있습니다.`
     : `${String(payload.source || "판매처")} 확인 완료 · 다음 검색 단계를 진행하고 있습니다.`;
