@@ -33,26 +33,26 @@ jobs:
           once("assert.equal(f.optionCalls(),1,'the actual option collector must still be attempted');", "assert.equal(f.optionCalls(),0,'unready inventory must not bypass the stock gate');\n  assert.ok(f.now()>=25000,'the separate stock gate must actually be observed');");
           once('const f=fixture(t,{collectStock:async({updates})=>{', "const f=fixture(t,{html:documentHtml('<button>구매하기</button>'),collectStock:async({updates})=>{");
           tests+=`\n
-test('REGRESSION: an option loader cannot become complete inventory after identity succeeds',async t=>{
-  const f=fixture(t,{html:documentHtml('<section aria-busy="true"><button>구매하기</button></section>'),collectStock:async()=>completeStock()});
-  const r=await f.verify();
-  assert.equal(r.products.length,1);
-  assert.equal(r.products[0].price,149000);
-  assert.equal(f.optionCalls(),0);
-  assert.equal(recovery.stockObservationComplete(r.products[0]),false);
-  assert.equal(r.products[0].inStock,null);
-  assert.ok(f.updates.some(u=>u.products?.length),'identity checkpoint is retained while options stay pending');
-});
-test('REGRESSION: late inventory is collected only after the stock document becomes ready',async t=>{
-  const f=fixture(t,{paintAfter:800,laterHtml:documentHtml('<button>구매하기</button>'),collectStock:async()=>completeStock()});
-  const r=await f.verify();
-  assert.ok(f.now()>=800&&f.now()<25000);
-  assert.equal(f.optionCalls(),1);
-  assert.equal(r.products.length,1);
-  assert.equal(recovery.stockObservationComplete(r.products[0]),true);
-  assert.equal(f.updates[0].products[0].stockVerified,false);
-});
-`;
+          test('REGRESSION: an option loader cannot become complete inventory after identity succeeds',async t=>{
+            const f=fixture(t,{html:documentHtml('<section aria-busy="true"><button>구매하기</button></section>'),collectStock:async()=>completeStock()});
+            const r=await f.verify();
+            assert.equal(r.products.length,1);
+            assert.equal(r.products[0].price,149000);
+            assert.equal(f.optionCalls(),0);
+            assert.equal(recovery.stockObservationComplete(r.products[0]),false);
+            assert.equal(r.products[0].inStock,null);
+            assert.ok(f.updates.some(u=>u.products?.length),'identity checkpoint is retained while options stay pending');
+          });
+          test('REGRESSION: late inventory is collected only after the stock document becomes ready',async t=>{
+            const f=fixture(t,{paintAfter:800,laterHtml:documentHtml('<button>구매하기</button>'),collectStock:async()=>completeStock()});
+            const r=await f.verify();
+            assert.ok(f.now()>=800&&f.now()<25000);
+            assert.equal(f.optionCalls(),1);
+            assert.equal(r.products.length,1);
+            assert.equal(recovery.stockObservationComplete(r.products[0]),true);
+            assert.equal(f.updates[0].products[0].stockVerified,false);
+          });
+          `;
           writeFileSync('tests/naver-detail-stage-separation.test.mjs',tests);
           NODE
           set +e
