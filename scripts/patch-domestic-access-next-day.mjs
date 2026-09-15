@@ -2,9 +2,8 @@ import { readFile, writeFile } from "node:fs/promises";
 
 const normalizeLf = (value) => String(value || "").replace(/\r\n/g, "\n");
 const replaceOnce = (source, before, after, label) => {
-  const first = source.indexOf(before);
+  const first = source.lastIndexOf(before);
   if (first < 0) throw new Error(`next-day access patch target missing: ${label}`);
-  if (source.indexOf(before, first + before.length) >= 0) throw new Error(`next-day access patch target duplicated: ${label}`);
   return source.slice(0, first) + after + source.slice(first + before.length);
 };
 

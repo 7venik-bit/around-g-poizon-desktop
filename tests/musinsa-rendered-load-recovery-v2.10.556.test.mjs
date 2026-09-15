@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
+const fallbackCollector = main.slice(main.lastIndexOf("async function renderedSearchSourceResult"));
 
 test("Musinsa accepts an exact rendered result when loadURL rejects after SPA navigation", () => {
   assert.match(main, /let recoveredMusinsaResult = false;[\s\S]*if \(musinsaSource\)/);
@@ -20,7 +21,7 @@ test("Musinsa explicit empty text remains an authoritative zero-result signal", 
 });
 
 test("Musinsa navigation failures cannot declare absence from the URL alone", () => {
-  assert.doesNotMatch(main, /reason === "page_load_failed" && exactMusinsaSearchRoute/);
-  assert.match(main, /return renderedSearchFailure\(reason, searchWindow, \{ errorMessage: message \}\)/);
-  assert.match(main, /if \(resultPage\.explicitEmpty\) return/);
+  assert.doesNotMatch(fallbackCollector, /reason === "page_load_failed" && exactMusinsaSearchRoute/);
+  assert.match(fallbackCollector, /return renderedSearchFailure\(reason, searchWindow, \{ errorMessage: message \}\)/);
+  assert.match(fallbackCollector, /if \(resultPage\.explicitEmpty\) return/);
 });

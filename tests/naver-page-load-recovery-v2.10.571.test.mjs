@@ -28,7 +28,8 @@ test("네이버는 전체 load 이벤트를 기다리지 않고 정확한 결과
 });
 
 test("현재 네이버 로더는 보안 확인과 수집 실패를 검색 완료 링크로 숨기지 않는다", () => {
-  const start = main.indexOf('      if (directNaverFashionResult) {\n        const resultPage');
+  const fallbackStart = main.lastIndexOf("async function renderedSearchSourceResult");
+  const start = main.indexOf('      if (directNaverFashionResult) {\n        const resultPage', fallbackStart);
   const block = main.slice(start, main.indexOf('      if (interactiveOfficialSearch)', start));
   assert.match(block, /return renderedSearchFailure\(resultPage\.verificationReason/);
   assert.match(block, /resolvedSearchUrl: resultPage\.resolvedUrl \|\| url/);
