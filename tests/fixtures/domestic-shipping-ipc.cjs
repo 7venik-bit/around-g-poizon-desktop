@@ -26,7 +26,9 @@ app.whenReady().then(async () => {
     Object.assign(modules, await import(pathToFileURL(resolve(root, file))));
   }
   const allCases = [
-    ['네이버 패션타운', 'shopping.naver.com', 'https://shopping.naver.com/window-products/department/123'],
+    ['네이버 패션타운', 'shopping.naver.com', stalledDetails
+      ? 'https://shopping.naver.com/window-products/department/123'
+      : 'https://www.adidas.co.kr/ko/originals/JH9976.html'],
     ['무신사', 'www.musinsa.com', 'https://www.musinsa.com/products/123'],
     ['SSG', 'www.ssg.com', 'https://www.ssg.com/item/itemView.ssg?itemId=100'],
     ['롯데온', 'www.lotteon.com', 'https://www.lotteon.com/p/product/LO100'],
@@ -36,7 +38,7 @@ app.whenReady().then(async () => {
   const releases = [], requests = [], windows = [];
   function htmlFor(rawUrl) {
     const url = new URL(rawUrl);
-    const item = cases.find(c => c[1] === url.hostname);
+    const item = cases.find(c => c[1] === url.hostname || new URL(c[2]).hostname === url.hostname);
     assert.ok(item, `unexpected external destination: ${url.origin}`);
     if (stalledDetails && item[0] === '네이버 패션타운') {
       // Search cards exist, but every detail document stays unhydrated. Real
@@ -56,14 +58,28 @@ app.whenReady().then(async () => {
         + '<p>1인 최대 2개 구매</p><button>구매하기</button>'
         + '<script>setTimeout(()=>document.querySelector("select").insertAdjacentHTML("beforeend",'
         + JSON.stringify(optionMarkup) + '),1800)</script>'
-      : '<p>전체 1개</p><ul><li><a href="' + item[2] + '"><img width="160" height="160" src="https://offline.invalid/product.svg" alt="아디다스 JH9976">'
-        + '아디다스 오리지널스 JH9976 슈퍼스타</a><p>브랜드직영몰 본사직영 현대백화점</p><strong class="price">99,000원</strong></li></ul>';
+      : item[0] === '네이버 패션타운'
+        // Supported external official-store cards need not repeat the query
+        // outside the input or expose a total count. Detail identity is still
+        // verified by the production collector, never inferred from readiness.
+        ? '<input aria-label="검색" value="JH9976"><ul><li><a href="' + item[2] + '">'
+          + '<img width="160" height="160" src="https://offline.invalid/product.svg" alt="아디다스 슈퍼스타">'
+          + '아디다스 오리지널스 슈퍼스타</a><p>브랜드직영몰 본사직영</p><strong class="price">99,000원</strong></li></ul>'
+        : '<p>전체 1개</p><ul><li><a href="' + item[2] + '"><img width="160" height="160" src="https://offline.invalid/product.svg" alt="아디다스 JH9976">'
+          + '아디다스 오리지널스 JH9976 슈퍼스타</a><p>브랜드직영몰 본사직영 현대백화점</p><strong class="price">99,000원</strong></li></ul>';
     return '<!doctype html><meta charset="utf-8"><main>' + body + '</main><img src="https://offline.invalid/hold.svg">';
   }
   retailers.protocol.handle('https', request => {
     requests.push(request.url);
     if (request.url.endsWith('/hold.svg')) return new Promise(done => releases.push(() => done(new Response(''))));
     if (request.url.endsWith('/product.svg')) return new Response('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" fill="white"/></svg>', {headers:{'content-type':'image/svg+xml'}});
+    if (!stalledDetails && request.url === allCases[3][2]) {
+      // Exercise real delayed navigation after the production physical click.
+      // The previous fixed two-second URL snapshot failed before this document
+      // could commit. Do not shorten production timings or stub navigation.
+      return new Promise(done => setTimeout(() => done(new Response(htmlFor(request.url),
+        {headers:{'content-type':'text/html;charset=utf-8'}})),5000));
+    }
     return new Response(htmlFor(request.url), {headers:{'content-type':'text/html;charset=utf-8'}});
   });
   class RetailerWindow extends BrowserWindow {

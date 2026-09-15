@@ -2522,9 +2522,16 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
   await wait(650);
   searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
   searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
-  await wait(2_000);
-  const openedUrl = String(searchWindow.webContents.getURL() || "").split("#")[0];
-  return domesticProductUrlIdentity(openedUrl) === domesticProductUrlIdentity(expectedUrl);
+  // A physical click may start a delayed SPA/server navigation. A fixed
+  // two-second snapshot rejected the exact product before it had opened.
+  // Observe this one click until its destination arrives; never resubmit it.
+  const navigationDeadline = Date.now() + 25_000;
+  while (!searchWindow.isDestroyed() && Date.now() < navigationDeadline) {
+    const openedUrl = String(searchWindow.webContents.getURL() || "").split("#")[0];
+    if (domesticProductUrlIdentity(openedUrl) === domesticProductUrlIdentity(expectedUrl)) return true;
+    await wait(250);
+  }
+  return false;
 }
 
 function browserWindowUsable(window) {
@@ -2850,11 +2857,31 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
       const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
         const href = String(location.href || "");
         const text = String(document.body?.innerText || "").slice(0, 60000);
-        const cards = document.querySelectorAll([
+        let cards = document.querySelectorAll([
           'a[href*="/window-products/"]',
           'a[href*="/products/"]',
           'a[href*="/catalog/"]',
         ].join(',')).length;
+        // The downstream collector also accepts external official-store
+        // cards. Their URLs need not contain a Naver product path, and the
+        // query may exist only in the input rather than body.innerText.
+        if (!cards) {
+          const visible = element => {
+            const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
+            return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+          };
+          const found = new Set();
+          for (const link of document.querySelectorAll('a[href]')) {
+            if (!/^https?:$/.test(link.protocol) || !visible(link) || link.closest('header,nav,footer')) continue;
+            for (let card = link, depth = 0; card && card !== document.body && depth < 8; card = card.parentElement, depth++) {
+              const cardText = String(card.innerText || card.textContent || "").trim();
+              if (card.querySelector('img') && /[\\d,]+\\s*원/.test(cardText) && cardText.length <= 5000) {
+                found.add(link.href); break;
+              }
+            }
+          }
+          cards = found.size;
+        }
         const explicitEmpty = /검색\\s*결과가?\\s*(?:없|0)|상품이?\\s*(?:없|0)|일치하는\\s*(?:상품|제안)이\\s*없/i.test(text);
         const positiveCount = /(?:전체|검색\\s*결과)\\s*[1-9][\\d,]*\\s*개/i.test(text);
         return { href, text, cards, explicitEmpty, positiveCount, documentReadyState: document.readyState };

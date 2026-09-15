@@ -172,6 +172,55 @@ test('Naver navigation diagnostics retain a rendered page that never exposes res
   assert.equal('text' in d, false, 'do not copy the page body into diagnostics');
 });
 
+test('Naver accepts a visible external official-store card when the query appears only in its input', async t => {
+  const f = fixture(t);
+  f.context.BrowserWindow.prototype.loadURL = async function(url) {
+    this.dom.reconfigure({url});
+    this.dom.window.document.body.innerHTML = '<main><input aria-label="검색" value="SR123UPS11">'
+      + '<ul><li><a href="https://dk-on.com/DESCENTE/detail.html?goodsNo=123"><img alt="데상트 카라 셔츠"></a>'
+      + '<strong>데상트 카라 셔츠</strong><span>브랜드직영몰</span><span>84,550원</span></li></ul></main>';
+  };
+  const window = new f.context.BrowserWindow();
+  const result = await f.drive(f.context.loadNaverFashionTownResultPage(window,channels[0][1],'SR123UPS11'));
+  assert.equal(result.ok,true,JSON.stringify(result));
+});
+
+test('Lotte product clicks wait for the actual navigation instead of rejecting after two seconds', async t => {
+  const f = fixture(t);
+  runInContext(section('async function clickRenderedProductCard(', '\nfunction browserWindowUsable('),f.context);
+  const window = new f.context.BrowserWindow();
+  const target = channels[2][2];
+  window.dom.window.HTMLElement.prototype.scrollIntoView = () => {};
+  window.dom.window.HTMLElement.prototype.getBoundingClientRect = () => ({left:20,top:20,width:160,height:80});
+  await window.loadURL(channels[2][1]);
+  window.webContents.sendInputEvent = event => {
+    if (event.type === 'mouseUp') f.context.setTimeout(() => window.dom.reconfigure({url:target}),5000);
+  };
+  const result = await f.drive(f.context.clickRenderedProductCard(window,target,channels[2][1]));
+  assert.equal(result,true,'the exact observed product opens after 5 seconds');
+  assert.equal(window.webContents.getURL(),target);
+});
+
+test('a product click that opens the wrong product stops without repeating the click', async t => {
+  const f = fixture(t);
+  runInContext(section('async function clickRenderedProductCard(', '\nfunction browserWindowUsable('),f.context);
+  const window = new f.context.BrowserWindow();
+  window.dom.window.HTMLElement.prototype.scrollIntoView = () => {};
+  window.dom.window.HTMLElement.prototype.getBoundingClientRect = () => ({left:20,top:20,width:160,height:80});
+  await window.loadURL(channels[2][1]);
+  let clicks = 0;
+  window.webContents.sendInputEvent = event => {
+    if (event.type === 'mouseUp') {
+      clicks++;
+      window.dom.reconfigure({url:'https://www.lotteon.com/p/product/WRONG'});
+    }
+  };
+  const result = await f.drive(f.context.clickRenderedProductCard(window,channels[2][2],channels[2][1]));
+  assert.equal(result,false,'a different product must never be accepted');
+  assert.equal(clicks,1,'observe the existing navigation without resubmitting it');
+  assert.ok(f.now() >= 25000 && f.now() < 30000,'navigation observation must remain bounded');
+});
+
 for (const channel of channels.slice(1)) test(`${channel[0]} preserves navigation and frame errors instead of discarding them`, async t => {
   const f = fixture(t);
   f.context.BrowserWindow.prototype.loadURL = async function(url) {
