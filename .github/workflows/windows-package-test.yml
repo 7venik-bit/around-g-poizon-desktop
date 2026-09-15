@@ -116,7 +116,7 @@ jobs:
         run: node scripts/verify-popular-full-rank-scroll.mjs
 
       - name: Test retailer capture and completion with final patched source
-        run: node --test tests/domestic-retailer-runtime.test.mjs tests/domestic-completion-lifecycle.test.mjs tests/retailer-stock-strategies.test.mjs tests/brand-official-search.test.mjs tests/domestic-recovery.test.mjs tests/store-save-recovery.test.mjs
+        run: node --test tests/domestic-retailer-runtime.test.mjs tests/domestic-completion-lifecycle.test.mjs tests/retailer-stock-strategies.test.mjs tests/brand-official-search.test.mjs tests/domestic-recovery.test.mjs tests/store-save-recovery.test.mjs tests/retailer-screenshot-regressions.test.mjs tests/retailer-readiness-boundaries.test.mjs
 
       - name: Test stock collection in real Electron with pending page resources
         run: node scripts/test-electron-stock.mjs
