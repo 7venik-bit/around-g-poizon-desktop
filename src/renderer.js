@@ -1164,6 +1164,7 @@ function renderDomesticLoading(startedAt = Date.now()) {
 let excelPreviewSearchRunId = 0;
 let domesticRecoveryResumeRequested = false;
 let activeDomesticProgressRequestId = "";
+let activeDomesticProgressTouch = null;
 let activeDomesticCheckpoint = null;
 
 function requestDomesticSearchCancel() {
@@ -1261,6 +1262,7 @@ setInterval(() => {
 
 window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
   if (payload.requestId && payload.requestId !== activeDomesticProgressRequestId) return;
+  if (payload.requestId === activeDomesticProgressRequestId) activeDomesticProgressTouch?.(payload.progressRevision);
   if (payload.checkpoint?.products || payload.checkpoint?.sources) {
     // IPC already delivers a detached structured value. Keep that verified
     // snapshot so Stop can persist exactly what was completed so far.
@@ -1390,16 +1392,26 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
   const task = (async () => {
     const run = async () => {
       let timeoutId;
+      let lastProgressAt = Date.now(), lastRevision = 0;
+      const touch = (revision) => {
+        if (Number.isFinite(revision) && revision > lastRevision) {
+          lastRevision = revision;
+          lastProgressAt = Date.now();
+        }
+      };
+      activeDomesticProgressTouch = touch;
       try {
         const response = await Promise.race([
           window.aroundG.searchDomestic(input),
           new Promise((resolve) => {
-            timeoutId = setTimeout(() => {
+            const expire = () => {
+              const remaining = DOMESTIC_SEARCH_MAX_WAIT_MS - (Date.now() - lastProgressAt);
+              if (remaining > 0) { timeoutId = setTimeout(expire, remaining); return; }
               if (runId !== excelPreviewSearchRunId) {
                 resolve({ ok: false, canceled: true, message: "검색이 중지되었습니다." });
                 return;
               }
-              const message = "상품 검색 안전시간이 지나 확인된 결과를 저장하고 다음 상품으로 이동합니다.";
+              const message = "새 검색 결과가 없어 확인된 결과를 저장하고 다음 상품으로 이동합니다.";
               resolve(activeDomesticCheckpoint ? {
                 ok: true,
                 timedOut: true,
@@ -1409,7 +1421,8 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
                 timedOut: true,
                 message: "판매처 응답이 없어 확인된 결과가 없습니다.",
               });
-            }, DOMESTIC_SEARCH_MAX_WAIT_MS);
+            };
+            timeoutId = setTimeout(expire, DOMESTIC_SEARCH_MAX_WAIT_MS);
           }),
         ]);
         if (response?.timedOut && runId === excelPreviewSearchRunId) requestDomesticSearchCancel();
@@ -1418,6 +1431,7 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
         return { ok: false, message: error instanceof Error ? error.message : String(error || "국내 검색 호출 실패") };
       } finally {
         clearTimeout(timeoutId);
+        if (activeDomesticProgressTouch === touch) activeDomesticProgressTouch = null;
       }
     };
     const first = await run();

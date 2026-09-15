@@ -65,6 +65,13 @@ test("unrelated Naver page cannot bypass the search gate", () => {
   }, "SR123UPS11"), false);
 });
 
+test("the user's exact JH9976 URL requires a rendered result rather than a blank or security page", () => {
+  const url = 'https://shopping.naver.com/window/search/fashion-group?q=JH9976&queryType=ac';
+  assert.equal(isNaverRenderedResultReady({url,text:''},'JH9976'),false);
+  assert.equal(isNaverRenderedResultReady({url,text:'보안 확인을 완료해 주세요.'},'JH9976'),false);
+  assert.equal(isNaverRenderedResultReady({url,text:'JH9976 전체 1개',cards:1},'JH9976'),true);
+});
+
 test("Naver visible cards become link-only products without a second identity gate", () => {
   const result = finalizeNaverFashionTownResult({
     visibleResultCount: 2,

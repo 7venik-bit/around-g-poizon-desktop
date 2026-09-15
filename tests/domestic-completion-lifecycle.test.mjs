@@ -143,20 +143,33 @@ test('partial results retain prices below the product with an incomplete status'
   assert.equal(f.overlay().hidden, true);
 });
 
-test('ongoing progress cannot extend the absolute frontend safety deadline', async t => {
+test('new verified work keeps the frontend waiting for the complete search', async t => {
   const f = createFixture(t);
   f.window.aroundG.searchDomestic = async input => {
     for (let completed = 1; completed <= 3; completed++) {
       await tick(600);
-      f.api.progress({completed,total:4,requestId:input.requestId,phase:'checkpoint',checkpoint:{products:[{store:'무신사',price:59000}],sources:[{store:'무신사',count:1,countVerified:true}]}});
+      f.api.progress({completed,total:4,progressRevision:completed,requestId:input.requestId,phase:'checkpoint',checkpoint:{products:[{store:'무신사',price:59000}],sources:[{store:'무신사',count:1,countVerified:true}]}});
     }
     return {ok:true,data:{products:[],sources:[]}};
   };
   const result = await f.api.search();
   assert.equal(result.ok, true);
-  assert.equal(result.timedOut, true);
-  assert.equal(result.data.partial, true);
-  assert.equal(result.data.products[0].price, 59000);
+  assert.equal(result.timedOut, undefined);
+  assert.equal(result.data.partial, undefined);
+});
+
+test('repeated progress revisions and unrelated requests cannot extend the frontend watchdog', async t => {
+  const f = createFixture(t);
+  f.window.aroundG.searchDomestic = input => {
+    f.api.progress({requestId:input.requestId,progressRevision:1});
+    const timer = f.window.setInterval(() => {
+      f.api.progress({requestId:input.requestId,progressRevision:1});
+      f.api.progress({requestId:'old-request',progressRevision:Date.now()});
+    }, 200);
+    t.after(() => f.window.clearInterval(timer));
+    return new Promise(() => {});
+  };
+  assert.equal((await f.api.search()).timedOut, true);
 });
 
 test('100% source progress followed by a render exception releases the modal and retains the response', async (t) => {
