@@ -1,0 +1,48 @@
+name: Verify Naver product and stock stages
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'main.mjs'
+      - 'services/**'
+      - 'relay/**'
+      - 'scripts/patch-*.mjs'
+      - 'tests/naver-detail-stage-separation.test.mjs'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/naver-detail-stage.yml'
+permissions:
+  contents: read
+jobs:
+  regression:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Apply the actual release workflow transformations in order
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          import {spawnSync} from 'node:child_process';
+          import assert from 'node:assert/strict';
+          const workflow=readFileSync('.github/workflows/release.yml','utf8');
+          const scripts=[...workflow.matchAll(/^\s+run: node (scripts\/(?:patch|verify)-[a-z0-9-]+\.mjs)\s*$/gm)].map(m=>m[1]);
+          assert.ok(scripts.length>20,'Release transformation list was not recognized');
+          for(const script of scripts){
+            console.log('RELEASE TRANSFORMATION:',script);
+            const r=spawnSync(process.execPath,[script],{stdio:'inherit'});
+            if(r.error)throw r.error;
+            assert.equal(r.status,0,script);
+          }
+          NODE
+      - name: Verify staged product preservation and retailer readiness
+        run: node --test tests/naver-detail-stage-separation.test.mjs tests/retailer-screenshot-regressions.test.mjs tests/retailer-readiness-boundaries.test.mjs

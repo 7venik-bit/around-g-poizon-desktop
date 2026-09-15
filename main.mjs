@@ -1590,7 +1590,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         }
         // Read the product document while optional images/analytics keep loading.
         void evidenceWindow.loadURL(productUrl).catch(() => {});
-        const snapshot = await waitForDomesticDetailReady(evidenceWindow, "네이버 패션타운", productUrl, generation, articleNumber);
+        const snapshot = await waitForDomesticDetailReady(evidenceWindow, "네이버 패션타운", productUrl, generation, articleNumber, "product");
         detailVerified = true;
         checkedCount += 1;
         const sellerVerifiedByWording = isApprovedNaverDomesticSellerEvidence({
@@ -1628,19 +1628,15 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           rejectedCount += 1;
           continue;
         }
-        // Open choices only after verifying this seller/product, and preserve
-        // the initial evidence if the optional size inspection fails.
-        let optionStock = null;
-        try {
-          const savedOptions = recoveryOptions[candidate.url];
-          optionStock = await collectRenderedProductStock(evidenceWindow, "네이버 패션타운", generation, onActivity,
-            savedOptions && Date.now() - Date.parse(savedOptions.checkedAt || '') < 30 * 60_000 ? savedOptions.options : [], savedOptions?.branches || [], candidate.url);
-        } catch {}
-        approved.push({
-          ...candidate,
-          ...(snapshot.stockEvidence && (snapshot.stockEvidence.stockTexts?.length || snapshot.stockEvidence.purchaseAvailable || snapshot.stockEvidence.options?.length)
-            ? normalizeRenderedStockEvidence(snapshot.stockEvidence) : {}),
-          ...(optionStock || {}),
+        // Publish verified identity/price before optional stock inspection.
+        // A collapsed or stalled option widget must not erase an observed
+        // product, but identity alone must never become verified inventory.
+        const initialStock = snapshot.stockEvidence ? normalizeRenderedStockEvidence(snapshot.stockEvidence) : {};
+        const verifiedProduct = {
+          ...candidate, ...initialStock,
+          inStock: null, stockVerified: false,
+          stockCoverage: initialStock.sizes?.length ? "partial" : "unknown",
+          stockStatus: "unknown", detailVerificationPending: true,
           domesticSellerVerified: true,
           domesticSellerEvidence: String(snapshot.sellerEvidenceText || "").slice(0, 240),
           brandVerifiedFromCard: brandVerified,
@@ -1649,7 +1645,34 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           articleNumberVerified: articleVerified,
           titleVerifiedFromDetail: productTitleVerified,
           matchBasis: articleVerified ? "article" : "brand_title",
-        });
+        };
+        const approvedIndex = approved.length;
+        approved.push(verifiedProduct);
+        await onActivity?.({products: [...approved], completedProducts: checkedCount + failedCount,
+          totalProducts: candidates.length, detailVerified: true, detailUrl: productUrl,
+          failedDetails: failedCount, detailFailure: ""});
+        let optionStock = null;
+        let optionError = null;
+        try {
+          // Product identity does not bypass the original inventory gate.
+          // Open a collapsed menu, then wait for stock-bearing content.
+          // A stuck option loader leaves the checkpoint above intact.
+          if (!snapshot.ready) {
+            await openRenderedSizeOptions(evidenceWindow);
+            await waitForDomesticDetailReady(evidenceWindow, "네이버 패션타운", productUrl, generation, articleNumber);
+          }
+          const savedOptions = recoveryOptions[candidate.url];
+          optionStock = await collectRenderedProductStock(evidenceWindow, "네이버 패션타운", generation, onActivity,
+            savedOptions && Date.now() - Date.parse(savedOptions.checkedAt || '') < 30 * 60_000 ? savedOptions.options : [], savedOptions?.branches || [], candidate.url);
+        } catch (error) {
+          if (error?.securityVerificationRequired || error?.loginRequired || domesticSearchCanceled(generation)) throw error;
+          optionError = error;
+        }
+        approved[approvedIndex] = {
+          ...verifiedProduct, ...(optionStock || {}),
+          detailVerificationPending: !optionStock || !stockObservationComplete(optionStock),
+          ...(optionError ? {detailVerificationReason: String(optionError.message || "stock_collection_failed")} : {}),
+        };
       } catch (error) {
         failedCount += 1;
         detailFailure = String(error?.message || "product_detail_failed");
@@ -2697,7 +2720,7 @@ function domesticPageAccessState(text = "", cards = 0) {
   };
 }
 
-async function waitForDomesticDetailReady(searchWindow, storeName, productUrl, generation = domesticSearchGeneration, articleNumber = "") {
+async function waitForDomesticDetailReady(searchWindow, storeName, productUrl, generation = domesticSearchGeneration, articleNumber = "", readiness = "stock") {
   const deadline = Date.now() + 25_000;
   let snapshot = null;
   while (Date.now() < deadline) {
@@ -2713,7 +2736,17 @@ async function waitForDomesticDetailReady(searchWindow, storeName, productUrl, g
         && strictProductArticleIdentityMatch(observed, articleNumber);
       if (expectedPage || naverCanonicalPage) {
         snapshot = observed;
-        if (observed.ready) return observed;
+        // NAVER_PRODUCT_IDENTITY_BEFORE_STOCK: only this explicit mode may
+        // return a visible exact product document before options are ready.
+        // Metadata-only skeletons cannot satisfy the visible-evidence gate.
+        const identityReady = readiness === "product" && storeName === "네이버 패션타운"
+          && Boolean(observed.visibleTitleText || observed.labeledText)
+          && strictProductArticleIdentityMatch({
+            titleText: observed.visibleTitleText || "",
+            labeledText: observed.labeledText || "",
+            structuredCodes: observed.structuredCodes || [],
+          }, articleNumber);
+        if (observed.ready || identityReady) return observed;
       }
     }
     await wait(400);
