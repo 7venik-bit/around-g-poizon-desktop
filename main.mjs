@@ -707,6 +707,7 @@ async function september10RenderedSearchSourceResult(source, articleNumber, bran
   }
   // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.
   const ssgChannelSource = /^SSG(?:\s|$)/.test(String(source.store || ""));
+  const domesticRetailerSource = ssgChannelSource || /^롯데온(?:\s|$)/.test(String(source.store || ""));
   const musinsaSource = String(source.store || "") === "무신사";
   let naverChannelCounts = null;
   let searchWindow;
@@ -761,7 +762,9 @@ async function september10RenderedSearchSourceResult(source, articleNumber, bran
       // cold hidden window can reject a direct Fashion Town SPA navigation.
       const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;
       */
-      try {
+      // Each marketplace owns its navigation contract. Naver, Musinsa, SSG and
+      // LotteON must not share the generic full-page load completion gate.
+      if (!directNaverFashionResult && !musinsaSource && !domesticRetailerSource) try {
         await Promise.race([
           searchWindow.loadURL(initialUrl),
           new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 30_000)),
@@ -812,6 +815,32 @@ async function september10RenderedSearchSourceResult(source, articleNumber, bran
         // below. Do not let the first Electron loadURL rejection escape to the
         // outer page_load_failed handler before that recovery can run.
         if (!documentReady && !recoveredMusinsaResult && !directNaverFashionResult) throw error;
+      }
+      if (domesticRetailerSource) {
+        const loaded = await loadDomesticRetailerResultPage(searchWindow, initialUrl);
+        if (!loaded.ok) return renderedSearchFailure(
+          loaded.verificationReason || (loaded.networkError ? "network_error" : "page_load_timeout"),
+          searchWindow,
+          { ...loaded, searchSubmitted: true, resolvedSearchUrl: loaded.resolvedUrl || initialUrl },
+        );
+      }
+      if (musinsaSource) {
+        const resultPage = await loadMusinsaResultPage(
+          searchWindow, url, searchAttempt?.query || source.searchQuery || articleNumber || title,
+        );
+        if (!resultPage.ok) return renderedSearchFailure(
+          resultPage.verificationReason || (resultPage.networkError ? "network_error" : "page_load_timeout"),
+          searchWindow,
+          { ...resultPage, searchSubmitted: true, resolvedSearchUrl: resultPage.resolvedUrl || url },
+        );
+        if (resultPage.explicitEmpty) return {
+          count: 0,
+          products: [],
+          absenceConfirmed: true,
+          searchCompleted: true,
+          searchSubmitted: true,
+          resolvedSearchUrl: resultPage.resolvedUrl,
+        };
       }
       // A brand adapter may know a stable product-detail route. Verify that
       // route against the exact POIZON article before falling back to the

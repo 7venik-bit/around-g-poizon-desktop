@@ -21,6 +21,15 @@ test("one detail visit immediately captures visible seller sizes and stock wordi
   assert.match(source, /products\.push\(\{[\s\S]*?\.\.\.stockEvidence,/);
 });
 
+test("marketplaces use their own navigation adapters before product extraction", () => {
+  const source = main.slice(main.indexOf("async function september10RenderedSearchSourceResult"), main.indexOf("async function september10AddRenderedSearchCounts"));
+  assert.match(source, /const domesticRetailerSource = ssgChannelSource \|\| \/\^롯데온/);
+  assert.match(source, /if \(!directNaverFashionResult && !musinsaSource && !domesticRetailerSource\) try/);
+  assert.match(source, /if \(domesticRetailerSource\) \{[\s\S]*?loadDomesticRetailerResultPage/);
+  assert.match(source, /if \(musinsaSource\) \{[\s\S]*?loadMusinsaResultPage/);
+  assert.match(source, /if \(directNaverFashionResult\) \{[\s\S]*?september10LoadNaverFashionTownResultPage/);
+});
+
 test("popular, brand and category product rows share the same cached search function", () => {
   assert.match(renderer, /async function cachedDomesticSearch\(product, verifyLinkCounts = true\)/);
   assert.match(renderer, /async function searchDomesticAt\([\s\S]*?cachedDomesticSearch\(product/);
