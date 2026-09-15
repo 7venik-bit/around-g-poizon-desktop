@@ -1,11169 +1,1332 @@
-import { readReviewWorkbook, checkReviewWorkbookRevision } from "./services/poizon-review-workbook.mjs";
-import { assertPoizonPageReadyForCorrection, isPoizonSkuScopeDeferredRow, selectPoizonPageCorrectionProducts } from "./services/live-poizon-crosscheck.mjs";
-import { syncPoizonPageCheckpoint } from "./services/poizon-page-checkpoint.mjs";
-import { createPageCrossCheck, verificationConditionLabel } from "./services/live-poizon-crosscheck.mjs";
-import { paintReviewPage as paintSellerVerification } from "./services/poizon-review-paint.mjs";
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, screen, session, shell } from "electron";
-import { mkdirSync } from "node:fs";
-import { appendFile, copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve } from "node:path";
-import { execFile } from "node:child_process";
-import { readSheet } from "read-excel-file/node";
-import writeXlsxFile from "write-excel-file/node";
-import { readFirstDataSheet } from "./services/excel-reader.mjs";
-import { applyPoizonScreenSalesToWorkbook } from "./services/poizon-screen-excel-sync.mjs";
-import {
-  findPoizonColumn,
-  findPoizonRecentSalesColumns,
-  findPoizonTotalSalesColumns,
-  getPoizonWorksheetRows,
-  summarizePoizonRows,
-  readPoizonColumnValues,
-  repairPoizonWorksheetDimensions,
-} from "./services/poizon-xlsx.mjs";
-import {
-  filterPoizonPreviewRows,
-  filterPoizonRowsByTotalSales,
-  parsePoizonSalesMetric,
-  POIZON_MINIMUM_TOTAL_SALES,
-} from "./services/poizon-sales-filter.mjs";
-import {
-  analyzeBrandMatch,
-  analyzeBrandValues,
-  brandExportLabel,
-  brandMismatchMessage,
-  brandsMatch,
-  preferredSellerBrandSearchName,
-  sellerBrandAliases,
-} from "./services/brand-integrity.mjs";
-import {
-  createPopularSlots,
-  excelRowsToPopularProducts,
-  popularCompleteness,
-  popularSlotsToExcelData,
-} from "./services/popular-excel.mjs";
-import pkg from "electron-updater";
-import { JsonStore } from "./services/store.mjs";
-import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
-import {
-  FULL_BRAND_CATALOG_MINIMUM,
-  brandCatalogNeedsSync,
-  mergeLocalizedBrandCatalog,
-  parseKrPoizonBrandData,
-  parsePublicBrandProducts,
-  prioritizeBrandCatalog,
-  prioritizeBrandCatalogBySales,
-  publicBrandPageCount,
-  publicBrandPath,
-} from "./services/brand-catalog.mjs";
-import {
-  OFFICIAL_DOMAIN_STATUS,
-  auditedOfficialDomainRecord,
-  createOfficialDomainRegistry,
-  failedOfficialDomainAuditRecord,
-  officialDomainDiscoveryUrl,
-  officialDomainRecordForBrand,
-  officialDomainSearchAliases,
-  officialDomainRegistrySummary,
-  officialDomainAuditQueue,
-  rankOfficialDomainCandidates,
-} from "./services/official-domain-registry.mjs";
-import {
-  naverOfficialStoreNotFoundRows,
-  naverOfficialStoreNotFoundWorkbookData,
-} from "./services/official-domain-not-found.mjs";
-import {
-  officialMallAdapterRecord,
-  officialMallAdapterSummary,
-  captureOfficialSoldOutFilter,
-} from "./services/official-mall-adapters.mjs";
-import { requestedOfficialBrand, resolveBrandOfficialSearch } from "./services/brand-official-search.mjs";
-import { explorerMetadata, parsePopularProducts, queryExplorer } from "./services/poizon.mjs";
-import {
-  brandSearchProfileKey,
-  recordBrandSearchOutcome,
-  selectBrandSearchStrategy,
-} from "./services/brand-search-profile.mjs";
-import {
-  extractSellerBrandApiProducts,
-  mergeSellerBrandPages,
-  mergeSellerBrandProducts,
-  sellerBrandDiagnostics,
-} from "./services/seller-brand-sales.mjs";
-import { sellerPaginationTransitionStatus } from "./services/seller-pagination-state.mjs";
-import {
-  analyzeRenderedChannelProducts,
-  classifySsgProductEvidence,
-  exactArticleIdentityMatch,
-  strictProductArticleIdentityMatch,
-  titleIdentityMatch,
-  resolveSsgProductClassification,
-  detectedRetailer,
-  isConsignmentOperatedProduct,
-  isOverseasPurchaseProduct,
-  isPlatformShoppingProductUrl,
-  isTrustedNaverFashionProductCard,
-  normalizeRenderedStockEvidence,
-  captureRenderedStockEvidence,
-  retailerStockStrategy,
-  mergeRetailerStockProducts,
-  collectNativeStockVariants,
-  captureNativeStockControls,
-  naverFashionTownUrl,
-  parseNaverFashionTownChannelCounts,
-  queryDomesticProducts,
-  sanitizeDomesticProductCode,
-  sanitizeDomesticQuery,
-} from "./relay/domestic-search.mjs";
-import { scoreProductCandidate } from "./services/matcher.mjs";
-import { domesticBrandEvidenceMatch } from "./relay/domestic-search.mjs";
-import { domesticProductUrlIdentity, captureDomesticDetailPage } from "./services/domestic-detail-page.mjs";
-import {
-  isApprovedNaverDomesticSellerEvidence,
-  isDomesticNaverPriceCard,
-  selectNaverSellingPrices,
-} from "./services/naver-price.mjs";
-import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/seller-dom.mjs";
-import { highestQualifiedOptionPrice, optionRowsFromSellerResponses, qualifiedOptionPrices } from "./services/seller-transaction-price.mjs";
-import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
-import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";
-import { createDomesticSearchLinkResult, finalizeNaverFashionTownResult, isNaverRenderedResultReady } from "./services/naver-fashiontown-result.mjs";
-import {
-  SITE_HEALTH_TARGETS,
-  nextWeeklySiteHealthAt,
-  weeklySiteHealthSummary,
-} from "./services/weekly-site-health.mjs";
-import { normalizePurchaseLedgerRow, validatePurchaseLedgerRow } from "./services/purchase-ledger.mjs";
-// SEPTEMBER10_DOMESTIC_SEARCH_RESTORE: exact direct search and stock flow used before the later timeout/recovery rewrites.
-let store;
-let domesticRecoveryCoordinator;
-function recoveryCoordinator() {
-  return domesticRecoveryCoordinator ||= new DomesticRecoveryCoordinator(store);
-}
-const { autoUpdater } = pkg;
-nativeTheme.themeSource = "light";
-// Keep hidden commerce pages fully active. Without these switches Chromium can
-// throttle timers and painting for occluded windows, which omits lazy results.
-app.commandLine.appendSwitch("disable-renderer-backgrounding");
-app.commandLine.appendSwitch("disable-background-timer-throttling");
-app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
-
-async function openExternalInChromeTab(rawUrl) {
-  const parsed = new URL(String(rawUrl || ""));
-  if (!["https:", "http:"].includes(parsed.protocol)) throw new Error("INVALID_URL");
-  if (process.platform !== "win32") {
-    await shell.openExternal(parsed.href);
-    return { browser: "default" };
-  }
-  const script = String.raw`
-$candidates = @(
-  (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe'),
-  (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
-  (Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Google\Chrome\Application\chrome.exe')
-)
-$chrome = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-if (-not $chrome) { throw 'CHROME_NOT_FOUND' }
-Start-Process -FilePath $chrome -ArgumentList @('--new-tab', $env:AROUND_G_EXTERNAL_URL)
-`;
-  const opened = await new Promise((resolve) => {
-    execFile("powershell.exe", [
-      "-NoProfile",
-      "-NonInteractive",
-      "-WindowStyle", "Hidden",
-      "-Command", script,
-    ], {
-      windowsHide: true,
-      timeout: 10_000,
-      env: { ...process.env, AROUND_G_EXTERNAL_URL: parsed.href },
-    }, (error) => resolve(!error));
-  });
-  if (opened) return { browser: "chrome" };
-  await shell.openExternal(parsed.href);
-  return { browser: "default" };
-}
-
-let mainWindow;
-let sellerWindow;
-let sellerExcelVerificationLayout = null;
-const sellerVerificationActionWaiters = new Map();
-const cancelledSellerVerificationRuns = new Set();
-
-function sellerVerificationActionKey(runId, productKey) {
-  return `${String(runId || '')}\u0000${String(productKey || '')}`;
-}
-
-function waitForSellerVerificationAction(runId, productKey, requiredAction) {
-  const key = sellerVerificationActionKey(runId, productKey);
-  if (!runId || !productKey || sellerVerificationActionWaiters.has(key)) {
-    return Promise.reject(new Error('ìƒí’ˆ ìˆ˜ì • ìŠ¹ì¸ ëŒ€ê¸° ìƒíƒœë¥¼ ë§Œë“¤ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.'));
-  }
-  return new Promise((resolve) => sellerVerificationActionWaiters.set(key, { requiredAction, resolve }));
-}
-
-function resolveSellerVerificationAction(input = {}) {
-  const key = sellerVerificationActionKey(input.runId, input.productKey);
-  const waiter = sellerVerificationActionWaiters.get(key);
-  if (!waiter || input.action !== waiter.requiredAction) {
-    return { ok:false, message:'í˜„ìž¬ ìƒí’ˆì— í•„ìš”í•œ ìž‘ì—…ê³¼ ì¼ì¹˜í•˜ì§€ ì•ŠìŠµë‹ˆë‹¤.' };
-  }
-  sellerVerificationActionWaiters.delete(key);
-  waiter.resolve(input.action);
-  return { ok:true };
-}
-
-function cancelSellerExcelVerification(runId) {
-  const id = String(runId || '').trim();
-  if (!id) return { ok:false, message:'ì¤‘ì§€í•  ëŒ€ì¡° ìž‘ì—…ì„ ì°¾ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.' };
-  cancelledSellerVerificationRuns.add(id);
-  for (const [key, waiter] of sellerVerificationActionWaiters) {
-    if (!key.startsWith(`${id}\u0000`)) continue;
-    sellerVerificationActionWaiters.delete(key);
-    waiter.resolve('cancel');
-  }
-  return { ok:true, stopped:true };
-}
-
-function beginSellerExcelVerificationWindows(input = {}) {
-  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, message: "Around G ë©”ì¸ ì°½ì„ ì°¾ì§€ ëª»í–ˆìŠµë‹ˆë‹¤." };
-  if (!sellerWindow || sellerWindow.isDestroyed()) {
-    openSellerCenterWindow(SELLER_CENTER_URL, { visible: false, activate: false });
-  }
-  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, message: "POIZON íŒë§¤ìžì„¼í„° ì°½ì„ ì—´ì§€ ëª»í–ˆìŠµë‹ˆë‹¤." };
-  if (!sellerExcelVerificationLayout) {
-    sellerExcelVerificationLayout = {
-      mainMinimum: mainWindow.getMinimumSize?.() || [1040, 700],
-      sellerMinimum: sellerWindow.getMinimumSize?.() || [1000, 700],
-      mainBounds: mainWindow.getBounds(),
-      mainMaximized: mainWindow.isMaximized(),
-      sellerBounds: sellerWindow.getBounds(),
-      sellerMaximized: sellerWindow.isMaximized(),
-      sellerVisible: sellerWindow.isVisible(),
-      sellerOpacity: sellerWindow.getOpacity?.() ?? 1,
-    };
-  }
-  // POIZON navigation and capture continue in its hidden BrowserWindow.
-  // A separate review window is the only verification surface shown to users.
-  sellerWindow.setSkipTaskbar?.(true);
-  sellerWindow.setOpacity?.(0);
-  sellerWindow.showInactive();
-  mainWindow.show();
-  mainWindow.focus();
-  return {
-    ok: true,
-    backgroundSeller: true,
-    foregroundReview: true,
-    brandName: String(input.brandName || ""),
-    fileName: String(input.fileName || ""),
-  };
-}
-
-function endSellerExcelVerificationWindows() {
-  const saved = sellerExcelVerificationLayout;
-  sellerExcelVerificationLayout = null;
-  if (sellerWindow && !sellerWindow.isDestroyed()) {
-    sellerWindow.setOpacity?.(saved?.sellerOpacity ?? 1);
-    sellerWindow.setSkipTaskbar?.(false);
-    void sellerWindow.webContents.executeJavaScript(`(() => {
-      document.getElementById("around-g-live-verification")?.remove();
-      for (const row of document.querySelectorAll("[data-around-g-verification]")) {
-        if (row.dataset.aroundGReviewStyle) { Object.assign(row.style, JSON.parse(row.dataset.aroundGReviewStyle)); delete row.dataset.aroundGReviewStyle; }
-        else { row.style.outline = ""; row.style.outlineOffset = ""; }
-        delete row.dataset.aroundGVerification; delete row.dataset.aroundGReviewKey;
-      }
-    })()`, true).catch(() => {});
-  }
-  if (!saved) {
-    if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
-    return { ok: true, restored: false };
-  }
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.isMaximized()) mainWindow.unmaximize();
-    mainWindow.setMinimumSize?.(...saved.mainMinimum);
-    mainWindow.setBounds(saved.mainBounds);
-    if (saved.mainMaximized) mainWindow.maximize();
-    mainWindow.show();
-  }
-  if (sellerWindow && !sellerWindow.isDestroyed()) {
-    if (sellerWindow.isMaximized()) sellerWindow.unmaximize();
-    sellerWindow.setMinimumSize?.(...saved.sellerMinimum);
-    sellerWindow.setBounds(saved.sellerBounds);
-    if (saved.sellerMaximized) sellerWindow.maximize();
-    sellerWindow.hide();
-  }
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus();
-  return { ok: true, restored: true };
-}
-
-let sellerMonitorWindow;
-let musinsaLedgerWindow;
-const inventoryWindows = new Set();
-const officialInteractiveWindows = new Set();
-const domesticLoginWindows = new Map();
-const DOMESTIC_SEARCH_PARTITION = "persist:around-g-domestic-search";
-const DOMESTIC_PRICE_PARTITION = "persist:around-g-domestic-price";
-const DOMESTIC_SELLER_EVIDENCE_PARTITION = "persist:around-g-domestic-seller-evidence";
-let domesticSearchGeneration = 0;
-const activeDomesticSearchWindows = new Set();
-const activeDomesticPriceWindows = new Set();
-let domesticPriceLookupQueue = Promise.resolve();
-// Bound inactivity, not the total time needed to visit real stock options.
-// Repeated events for the same option never renew either watchdog.
-const DOMESTIC_RETAILER_HARD_TIMEOUT_MS = 90 * 1000;
-const DOMESTIC_SEARCH_HARD_TIMEOUT_MS = 4 * 60 * 1000;
-
-function cancelDomesticSearches() {
-  domesticSearchGeneration += 1;
-  for (const window of [...activeDomesticSearchWindows]) {
-    if (window && !window.isDestroyed()) window.destroy();
-  }
-  activeDomesticSearchWindows.clear();
-  return { ok: true, generation: domesticSearchGeneration };
-}
-
-function domesticSearchCanceled(generation) {
-  return generation !== domesticSearchGeneration;
-}
-
-async function withDomesticSearchHardTimeout(operation, generation, progressState = { checkpoint: null }) {
-  let timeoutId;
-  progressState.lastProgressAt ??= Date.now();
-  const timeoutResult = new Promise((resolve) => {
-    const expire = () => {
-      const remaining = DOMESTIC_SEARCH_HARD_TIMEOUT_MS - (Date.now() - progressState.lastProgressAt);
-      if (remaining > 0) { timeoutId = setTimeout(expire, remaining); return; }
-      if (!domesticSearchCanceled(generation)) cancelDomesticSearches();
-      const message = "4ë¶„ ë™ì•ˆ ìƒˆ ê²€ìƒ‰ ê²°ê³¼ê°€ ì—†ì–´ í™•ì¸ëœ íŒë§¤ì²˜ ê²°ê³¼ë¥¼ ì €ìž¥í•˜ê³  ë‹¤ìŒ ìƒí’ˆìœ¼ë¡œ ì´ë™í•©ë‹ˆë‹¤.";
-      resolve(progressState.checkpoint ? {
-        ok: true,
-        timedOut: true,
-        data: { ...progressState.checkpoint, partial: true, message },
-      } : {
-        ok: false,
-        timedOut: true,
-        message: "4ë¶„ ë™ì•ˆ íŒë§¤ì²˜ ê²€ìƒ‰ì´ ì§„í–‰ë˜ì§€ ì•Šì•„ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤.",
-      });
-    };
-    timeoutId = setTimeout(expire, DOMESTIC_SEARCH_HARD_TIMEOUT_MS);
-  });
-  try {
-    return await Promise.race([operation, timeoutResult]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-const DOMESTIC_LOGIN_SOURCES = [
-  { id: "musinsa", name: "ë¬´ì‹ ì‚¬", url: "https://www.musinsa.com/", domains: ["musinsa.com"] },
-  { id: "ssg", name: "SSGÂ·ì‹ ì„¸ê³„ë°±í™”ì ", url: "https://www.ssg.com/", domains: ["ssg.com"] },
-  { id: "lotte", name: "ë¡¯ë°ì˜¨Â·ë¡¯ë°ë°±í™”ì ", url: "https://www.lotteon.com/", domains: ["lotteon.com"] },
-  { id: "wconcept", name: "Wì»¨ì…‰", url: "https://www.wconcept.co.kr/", domains: ["wconcept.co.kr"] },
-  { id: "okmall", name: "OKëª°", url: "https://www.okmall.com/", domains: ["okmall.com"] },
-  { id: "sivillage", name: "ì‹ ì„¸ê³„VÂ·S.I.VILLAGE", url: "https://www.sivillage.com/", domains: ["sivillage.com"] },
-  { id: "abcmart", name: "ABCë§ˆíŠ¸", url: "https://abcmart.a-rt.com/", domains: ["a-rt.com"] },
-  { id: "kasina", name: "ì¹´ì‹œë‚˜", url: "https://www.kasina.co.kr/", domains: ["kasina.co.kr"] },
-  { id: "onthespot", name: "ì˜¨ë”ìŠ¤íŒŸ", url: "https://www.onthespot.co.kr/", domains: ["onthespot.co.kr"] },
-  { id: "folder", name: "í´ë”", url: "https://www.folderstyle.com/", domains: ["folderstyle.com"] },
-  { id: "shoemarker", name: "ìŠˆë§ˆì»¤", url: "https://www.shoemarker.co.kr/", domains: ["shoemarker.co.kr"] },
-  { id: "worksout", name: "ì›ìŠ¤ì•„ì›ƒÂ·ì¹¼í•˜íŠ¸WIP", url: "https://worksout.co.kr/", domains: ["worksout.co.kr"] },
-  { id: "heights", name: "í•˜ì´ì¸ ", url: "https://heights-store.com/", domains: ["heights-store.com"] },
-  { id: "eql", name: "EQL", url: "https://www.eqlstore.com/", domains: ["eqlstore.com"] },
-  { id: "hfashion", name: "HíŒ¨ì…˜ëª°", url: "https://www.hfashionmall.com/", domains: ["hfashionmall.com"] },
-  { id: "29cm", name: "29CM", url: "https://www.29cm.co.kr/", domains: ["29cm.co.kr"] },
-  { id: "nike", name: "ë‚˜ì´í‚¤ ê³µì‹ëª°", url: "https://www.nike.com/kr/", loginUrl: "https://www.nike.com/kr/member/profile/login", domains: ["nike.com"], officialAccount: true },
-  { id: "adidas", name: "ì•„ë””ë‹¤ìŠ¤ ê³µì‹ëª°", url: "https://www.adidas.co.kr/", loginUrl: "https://www.adidas.co.kr/account-login", domains: ["adidas.co.kr"], officialAccount: true },
-];
-let updateReady = false;
-let updateCheckTimer;
-let updateInstallTimer;
-let updateCheckInFlight = false;
-let oneDriveBackupStatus = { state: "checking", message: "í”„ë¡œê·¸ëž¨ ì‹œìž‘ 5ë¶„ í›„ OneDrive ë°±ì—…ì„ ì‹œìž‘í•©ë‹ˆë‹¤." };
-let brandExportPollTimer;
-let lastBrandExportSignature = "__BASELINE_EXISTING_FILES__";
-let pendingBrandExportName = "";
-let pendingBrandExportJobId = "";
-let brandExportJobPending = false;
-let brandDownloadStarted = false;
-const brandExportJobs = new Map();
-const sellerDownloadSessions = new WeakSet();
-const brandExportValidationCache = new Map();
-const excelPreviewCache = new Map();
-let brandExportMonitorRunning = false;
-let brandExportMonitorRestartTimer;
-let sellerTransactionLookupQueue = Promise.resolve();
-let officialDomainAuditRunning = false;
-let officialDomainAuditStopRequested = false;
-let officialDomainAuditWindow = null;
-let officialDomainAuditResumeTimer = null;
-let weeklySiteHealthTimer = null;
-let weeklySiteHealthRunning = false;
-let officialDomainAuditAbortCurrent = null;
-let brandExportAllCompleteSent = false;
-let activeBrandDownloadJobId = "";
-const brandDownloadPathsInProgress = new Set();
-let brandWorkSessionGeneration = 0;
-let brandExportAttemptGeneration = 0;
-let sellerProductFrameRoutingId = null;
-// POIZON occasionally retires individual data-center component routes. Enter
-// through the stable Seller Center home and use the visible left menu instead
-// of booting from a route that can show "Load Component Timeout".
-const SELLER_CENTER_URL = "https://seller.poizon.com/main/dataCenter/merchantRankBoard";
-const SELLER_EXPORT_CENTER_URL = "https://seller.poizon.com/main/exportCenter";
-const SELLER_BRAND_EXPORT_HARD_TIMEOUT_MS = 20 * 60 * 1000;
-const KR_POIZON_BRAND_LIST_URL = "https://kr.poizon.com/brand/list";
-const EN_POIZON_BRAND_LIST_URL = "https://www.poizon.com/brand/list";
-const APP_ICON_PATH = join(import.meta.dirname, "build", "icon.png");
-const SITE_HEALTH_TIMEOUT_MS = 25_000;
-const SELLER_CAPTURE_SCRIPT = `(async () => {
-  const selector = "tr, [role='row'], li, [class*='row'], [class*='item'], [class*='product'], [class*='table']";
-  const headings = [...document.querySelectorAll("h1, h2, h3, h4, strong, span, div")]
-    .filter((element) => String(element.innerText || element.textContent || "").trim() === "ì¸ê¸°ìƒí’ˆ");
-  const scopes = [];
-  for (const heading of headings) {
-    let candidate = heading.parentElement;
-    for (let depth = 0; candidate && depth < 12; depth += 1, candidate = candidate.parentElement) {
-      const text = String(candidate.innerText || "");
-      const hasTableHeaders = text.includes("SPU ê¸°ì¤€")
-        && text.includes("SKU ê¸°ì¤€")
-        && text.includes("ìƒí’ˆì •ë³´")
-        && /í‰ê· \\s*ê±°ëž˜ê°€/.test(text);
-      if (hasTableHeaders) {
-        const rowCount = candidate.querySelectorAll(selector).length;
-        const articleCount = (text.match(/(?=[A-Z0-9._/-]{4,30}\\b)(?=[A-Z0-9._/-]*[A-Z])(?=[A-Z0-9._/-]*\\d)[A-Z0-9][A-Z0-9._/-]{3,29}/gi) || []).length;
-        const priceCount = (text.match(/(?:\\d{1,3},)+\\d{3}/g) || []).length;
-        if (rowCount >= 3 && articleCount >= 1 && priceCount >= 1) {
-          scopes.push({ element: candidate, textLength: text.length, rowCount, articleCount, priceCount });
-        }
-      }
-    }
-  }
-  scopes.sort((left, right) =>
-    left.textLength - right.textLength
-    || right.articleCount - left.articleCount
-    || right.priceCount - left.priceCount
-  );
-  const scope = scopes[0]?.element;
-  if (!scope) {
-    return { text: "", title: document.title, url: location.href, nodes: [], scopeVerified: false };
-  }
-  const collected = new Map();
-  const collectVisibleRows = () => {
-    for (const element of scope.querySelectorAll(selector)) {
-      const text = String(element.innerText || "").trim();
-      if (!text || text.length > 3000) continue;
-      const image = element.querySelector?.("img[src]");
-      const imageUrl = image?.src || "";
-      collected.set(text + "\\n" + imageUrl, { text, imageUrl });
-    }
-  };
-  collectVisibleRows();
-  const nodes = [...collected.values()].slice(0, 5000);
-  const scrollCandidates = [scope, ...scope.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .map((element) => ({
-      element,
-      maximum: Math.max(0, element.scrollHeight - element.clientHeight),
-    }))
-    .filter((candidate) => candidate.maximum > 80)
-    .sort((left, right) => right.maximum - left.maximum);
-  const scrollTarget = scrollCandidates[0];
-  return {
-    text: nodes.map((node) => node.text).join("\\n").slice(0, 1000000),
-    title: document.title,
-    url: location.href,
-    nodes,
-    scopeVerified: true,
-    scannedNodeCount: nodes.length,
-    signature: nodes.map((node) => node.text + "|" + node.imageUrl).join("||").slice(0, 200000),
-    scrollTop: Number(scrollTarget?.element?.scrollTop || 0),
-    scrollMaximum: Number(scrollTarget?.maximum || 0)
-  };
-})()`;
-const SELLER_SCROLL_SCRIPT = `(() => {
-  const root = document.scrollingElement || document.documentElement;
-  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .filter((element, index, all) => all.indexOf(element) === index)
-    .map((element) => {
-      const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
-      const visible = rect.width >= 280 && rect.height >= 160
-        && rect.bottom > 0 && rect.top < innerHeight;
-      const scrollStyle = /auto|scroll|overlay/i.test(style.overflowY);
-      const text = String(element.innerText || "");
-      const productTable = text.includes("SPU") && text.includes("SKU")
-        && /ìƒí’ˆì •ë³´|í‰ê· \\s*ê±°ëž˜ê°€/.test(text);
-      const score = (productTable ? 1000000 : 0)
-        + (scrollStyle ? 100000 : 0)
-        + maximum
-        + Math.min(rect.width * rect.height, 500000);
-      return { element, maximum, visible, score };
-    })
-    .filter((candidate) => candidate.visible && candidate.maximum > 80)
-    .sort((left, right) => right.score - left.score);
-  const target = candidates[0];
-  if (!target) return { found: false, moved: false, atEnd: true };
-  const before = target.element.scrollTop;
-  const step = Math.max(420, Math.floor(target.element.clientHeight * 0.82));
-  target.element.scrollTop = Math.min(target.maximum, before + step);
-  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
-  const after = target.element.scrollTop;
-  return {
-    found: true,
-    moved: after > before,
-    atEnd: after >= target.maximum - 3,
-    before,
-    after,
-    maximum: target.maximum
-  };
-})()`;
-const SELLER_ROW_SCROLL_SCRIPT = `(() => {
-  const root = document.scrollingElement || document.documentElement;
-  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .filter((element, index, all) => all.indexOf(element) === index)
-    .map((element) => {
-      const rect = element.getBoundingClientRect();
-      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
-      const text = String(element.innerText || "");
-      const productTable = text.includes("SPU") && text.includes("SKU")
-        && /ìƒí’ˆì •ë³´|í‰ê· \\s*ê±°ëž˜ê°€/.test(text);
-      return {
-        element,
-        maximum,
-        visible: rect.width >= 280 && rect.height >= 160 && rect.bottom > 0 && rect.top < innerHeight,
-        score: (productTable ? 1000000 : 0) + maximum,
-      };
-    })
-    .filter((candidate) => candidate.visible && candidate.maximum > 80)
-    .sort((left, right) => right.score - left.score);
-  const target = candidates[0];
-  if (!target) return { found: false, atEnd: true };
-  const rowHeights = [...target.element.querySelectorAll("tr, [role='row']")]
-    .map((row) => row.getBoundingClientRect().height)
-    .filter((height) => height >= 20 && height <= 180)
-    .sort((left, right) => left - right);
-  const medianHeight = rowHeights.length
-    ? rowHeights[Math.floor(rowHeights.length / 2)]
-    : 48;
-  // Move by less than one row so no virtualized row can pass between captures.
-  const step = Math.max(12, Math.min(48, Math.floor(medianHeight * 0.55)));
-  const before = target.element.scrollTop;
-  target.element.scrollTop = Math.min(target.maximum, before + step);
-  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
-  const after = target.element.scrollTop;
-  return {
-    found: true,
-    moved: after > before,
-    atEnd: after >= target.maximum - 2,
-    before,
-    after,
-    maximum: target.maximum,
-    step,
-  };
-})()`;
-const sellerJumpScript = (rank, limit) => `(() => {
-  const requestedRank = ${Number(rank)};
-  const requestedLimit = ${Number(limit)};
-  const root = document.scrollingElement || document.documentElement;
-  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .filter((element, index, all) => all.indexOf(element) === index)
-    .map((element) => {
-      const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
-      const text = String(element.innerText || "");
-      const productTable = text.includes("SPU") && text.includes("SKU")
-        && /ìƒí’ˆì •ë³´|í‰ê· \\s*ê±°ëž˜ê°€/.test(text);
-      const scrollStyle = /auto|scroll|overlay/i.test(style.overflowY);
-      const visible = rect.width >= 280 && rect.height >= 160 && rect.bottom > 0 && rect.top < innerHeight;
-      return {
-        element,
-        maximum,
-        visible,
-        score: (productTable ? 1000000 : 0) + (scrollStyle ? 100000 : 0) + maximum
-      };
-    })
-    .filter((candidate) => candidate.visible && candidate.maximum > 80)
-    .sort((left, right) => right.score - left.score);
-  const target = candidates[0];
-  if (!target) return { found: false };
-  const ratio = Math.max(0, Math.min(1, (requestedRank - 1) / Math.max(1, requestedLimit - 1)));
-  target.element.scrollTop = Math.round(target.maximum * ratio);
-  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
-  return { found: true, rank: requestedRank, position: target.element.scrollTop, maximum: target.maximum };
-})()`;
-const sellerNudgeScript = (pixels) => `(() => {
-  const requestedPixels = ${Number(pixels)};
-  const root = document.scrollingElement || document.documentElement;
-  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .filter((element, index, all) => all.indexOf(element) === index)
-    .map((element) => {
-      const rect = element.getBoundingClientRect();
-      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
-      const text = String(element.innerText || "");
-      const productTable = text.includes("SPU") && text.includes("SKU")
-        && /ìƒí’ˆì •ë³´|í‰ê· \\s*ê±°ëž˜ê°€/.test(text);
-      return { element, maximum, visible: rect.width >= 280 && rect.height >= 160 && rect.bottom > 0 && rect.top < innerHeight,
-        score: (productTable ? 1000000 : 0) + maximum };
-    })
-    .filter((candidate) => candidate.visible && candidate.maximum > 80)
-    .sort((left, right) => right.score - left.score);
-  const target = candidates[0];
-  if (!target) return { found: false };
-  const before = target.element.scrollTop;
-  target.element.scrollTop = Math.max(0, Math.min(target.maximum, before + requestedPixels));
-  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
-  return { found: true, before, after: target.element.scrollTop, maximum: target.maximum };
-})()`;
-const sellerScrollbarInfoScript = (ratio) => `(() => {
-  const requestedRatio = Math.max(0, Math.min(1, ${Number(ratio)}));
-  const root = document.scrollingElement || document.documentElement;
-  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .filter((element, index, all) => all.indexOf(element) === index)
-    .map((element) => {
-      const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
-      const text = String(element.innerText || "");
-      const productTable = text.includes("SPU") && text.includes("SKU")
-        && /ìƒí’ˆì •ë³´|í‰ê· \\s*ê±°ëž˜ê°€/.test(text);
-      const scrollStyle = /auto|scroll|overlay/i.test(style.overflowY);
-      const visible = rect.width >= 280 && rect.height >= 160 && rect.bottom > 0 && rect.top < innerHeight;
-      return {
-        element,
-        rect,
-        maximum,
-        visible,
-        score: (productTable ? 1000000 : 0) + (scrollStyle ? 100000 : 0) + maximum
-      };
-    })
-    .filter((candidate) => candidate.visible && candidate.maximum > 80)
-    .sort((left, right) => right.score - left.score);
-  const target = candidates[0];
-  if (!target) return { found: false };
-  const thumbHeight = Math.max(28, target.rect.height * (target.element.clientHeight / target.element.scrollHeight));
-  const travel = Math.max(1, target.rect.height - thumbHeight);
-  const currentRatio = target.element.scrollTop / target.maximum;
-  return {
-    found: true,
-    x: Math.max(1, Math.floor(target.rect.right - 7)),
-    startY: Math.floor(target.rect.top + thumbHeight / 2 + travel * currentRatio),
-    endY: Math.floor(target.rect.top + thumbHeight / 2 + travel * requestedRatio),
-    ratio: requestedRatio
-  };
-})()`;
-const SELLER_SELECTION_INFO_SCRIPT = `(() => {
-  const root = document.scrollingElement || document.documentElement;
-  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .filter((element, index, all) => all.indexOf(element) === index)
-    .map((element) => {
-      const rect = element.getBoundingClientRect();
-      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
-      const text = String(element.innerText || "");
-      const productTable = text.includes("SPU") && text.includes("SKU")
-        && /ìƒí’ˆì •ë³´|í‰ê· \\s*ê±°ëž˜ê°€/.test(text);
-      return {
-        element,
-        rect,
-        maximum,
-        score: (productTable ? 1000000 : 0) + maximum,
-      };
-    })
-    .filter(({ rect, maximum }) =>
-      maximum > 80 && rect.width >= 280 && rect.height >= 160
-      && rect.bottom > 0 && rect.top < innerHeight
-    )
-    .sort((left, right) => right.score - left.score);
-  const target = candidates[0];
-  if (!target) return { found: false };
-  target.element.scrollTop = 0;
-  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
-  const rect = target.rect;
-  return {
-    found: true,
-    startX: Math.floor(rect.left + Math.min(120, rect.width * 0.12)),
-    startY: Math.floor(rect.top + Math.min(100, rect.height * 0.16)),
-    endX: Math.floor(rect.right - Math.min(100, rect.width * 0.08)),
-    endY: Math.floor(rect.bottom - 8),
-    maximum: target.maximum,
-  };
-})()`;
-
-const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-
-async function physicalSellerPointClick(point, settleMilliseconds = 900) {
-  if (!sellerWindow || sellerWindow.isDestroyed()) return false;
-  const x = Math.round(Number(point?.x));
-  const y = Math.round(Number(point?.y));
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
-  // Route input directly to the hidden Seller Center renderer. Moving the
-  // Windows cursor steals the user's active application and prevents genuine
-  // background collection.
-  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
-  await wait(80);
-  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
-  await wait(100);
-  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
-  await wait(settleMilliseconds);
-  return true;
-}
-
-function extractSellerApiProducts(document, limit = 200) {
-  const products = [];
-  const visited = new Set();
-  const first = (value, keys) => keys.map((key) => value?.[key]).find((item) => item !== undefined && item !== null && item !== "");
-  const walk = (value, depth = 0) => {
-    if (!value || depth > 12 || typeof value !== "object" || visited.has(value)) return;
-    visited.add(value);
-    if (!Array.isArray(value)) {
-      const rank = Number(first(value, ["rank", "ranking", "rankNo", "sortNo", "orderNo", "no"]));
-      const articleNumber = String(first(value, [
-        "articleNumber", "articleNo", "articleCode", "styleNo", "spuCode", "spuNo",
-        "productCode", "productNo", "goodsCode", "goodsNo", "skuCode", "skuNo"
-      ]) || "").replace(/\s+/g, " ").trim();
-      const name = String(first(value, [
-        "productName", "goodsName", "spuName", "spuTitle", "title", "name"
-      ]) || "").trim();
-      const averagePrice = Number(String(first(value, [
-        "averagePrice", "avgPrice", "transactionPrice", "dealPrice", "price"
-      ]) || "").replace(/[^0-9.]/g, ""));
-      if (rank >= 1 && rank <= limit && (articleNumber || name)) {
-        products.push({
-          rank,
-          rankDetected: true,
-          articleNumber,
-          name,
-          averagePrice,
-          lowestPrice: Number(first(value, ["lowestPrice", "minPrice", "lowPrice"])) || 0,
-          highestPrice: Number(first(value, ["highestPrice", "maxPrice", "highPrice"])) || 0,
-          logoUrl: String(first(value, ["imageUrl", "logoUrl", "cover", "picUrl", "imgUrl"]) || ""),
-          sales30d: 0,
-          source: "seller-center-network",
-          sellerCenterDirect: true,
-        });
-      }
-    }
-    for (const child of Array.isArray(value) ? value : Object.values(value)) walk(child, depth + 1);
-  };
-  walk(document);
-  return products;
-}
-
-async function executeAcrossSellerFrames(script) {
-  const mainFrame = sellerWindow.webContents.mainFrame;
-  const frames = [mainFrame, ...(mainFrame.framesInSubtree || [])]
-    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
-  for (const frame of frames) {
-    try {
-      const result = await frame.executeJavaScript(script, true);
-      if (result?.found) return result;
-    } catch {
-      // ì ‘ê·¼í•  ìˆ˜ ì—†ëŠ” ì™¸ë¶€ í”„ë ˆìž„ì€ ê±´ë„ˆëœë‹ˆë‹¤.
-    }
-  }
-  return { found: false };
-}
-
-async function dragSellerScrollbarToRatio(ratio) {
-  const info = await executeAcrossSellerFrames(sellerScrollbarInfoScript(ratio));
-  if (!info?.found || !sellerWindow || sellerWindow.isDestroyed()) return false;
-  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: info.x, y: info.startY });
-  sellerWindow.webContents.sendInputEvent({
-    type: "mouseDown", button: "left", clickCount: 1, x: info.x, y: info.startY
-  });
-  const steps = Math.max(4, Math.min(18, Math.ceil(Math.abs(info.endY - info.startY) / 24)));
-  for (let step = 1; step <= steps; step += 1) {
-    const y = Math.round(info.startY + ((info.endY - info.startY) * step) / steps);
-    sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: info.x, y, movementX: 0, movementY: y - info.startY });
-    await wait(18);
-  }
-  sellerWindow.webContents.sendInputEvent({
-    type: "mouseUp", button: "left", clickCount: 1, x: info.x, y: info.endY
-  });
-  showCollectorWindow();
-  return true;
-}
-
-async function applySellerPopularConditions() {
-  const results = [];
-  for (const condition of SELLER_POPULAR_CONDITIONS) {
-    const script = `(() => {
-      const label = ${JSON.stringify(condition.label)};
-      const action = ${JSON.stringify(condition.action)};
-      if (action === "fullscreen") {
-        const headings = [...document.querySelectorAll("h1, h2, h3, h4, strong, span, div")]
-          .filter((element) => String(element.innerText || element.textContent || "").trim() === "ì¸ê¸°ìƒí’ˆ");
-        const panels = [];
-        for (const heading of headings) {
-          let panel = heading.parentElement;
-          for (let depth = 0; panel && depth < 10; depth += 1, panel = panel.parentElement) {
-            const text = String(panel.innerText || "");
-            const controls = [...panel.querySelectorAll("button, [role='button'], svg, i, [class*='icon']")]
-              .filter((control) => {
-                const rect = control.getBoundingClientRect();
-                return rect.width >= 8 && rect.height >= 8 && rect.width <= 64 && rect.height <= 64;
-              });
-            if (text.includes("SPU ê¸°ì¤€") && text.includes("SKU ê¸°ì¤€") && text.includes("ìƒí’ˆì •ë³´") && controls.length >= 1) {
-              panels.push({ panel, controls, heading, textLength: text.length });
-            }
-          }
-        }
-        panels.sort((left, right) => left.textLength - right.textLength);
-        const match = panels[0];
-        if (!match) return { found: false, label };
-        const rect = match.panel.getBoundingClientRect();
-        const alreadyFullscreen = rect.width >= window.innerWidth * 0.82 && rect.height >= window.innerHeight * 0.72;
-        if (alreadyFullscreen) return { found: true, selected: true, alreadySelected: true, label };
-        const headingRect = match.heading.getBoundingClientRect();
-        const point = {
-          x: Math.max(0, Math.floor(rect.right - 18)),
-          y: Math.max(0, Math.floor((headingRect.top + headingRect.bottom) / 2)),
-        };
-        const target = document.elementFromPoint(point.x, point.y);
-        return {
-          found: Boolean(target),
-          selected: false,
-          requiresNativeClick: true,
-          x: point.x,
-          y: point.y,
-          targetTag: target?.tagName || "",
-          targetClass: String(target?.className?.baseVal || target?.className || "").slice(0, 120),
-          label
-        };
-      }
-      const elements = [...document.querySelectorAll("label, button, [role='radio'], [role='checkbox'], [role='tab'], span, div, h1, h2, h3, h4")]
-        .filter((element) => String(element.innerText || element.textContent || "").trim() === label)
-        .sort((left, right) => String(left.innerText || "").length - String(right.innerText || "").length);
-      const ranked = elements.map((element) => {
-        const control = element.matches("label,button,[role='radio'],[role='checkbox'],[role='tab']")
-          ? element
-          : element.closest("label,button,[role='radio'],[role='checkbox'],[role='tab']");
-        const input = control?.querySelector?.("input") || (control?.matches?.("input") ? control : null);
-        return { element, control, input, interactive: Boolean(control || input) };
-      }).sort((left, right) => Number(right.interactive) - Number(left.interactive));
-      const target = ranked[0];
-      if (!target) return { found: false, label };
-      if (action === "scroll") {
-        target.element.scrollIntoView({ block: "center", behavior: "auto" });
-        return { found: true, selected: true, label };
-      }
-      const selected = Boolean(
-        target.input?.checked
-        || target.control?.getAttribute?.("aria-checked") === "true"
-        || target.control?.getAttribute?.("aria-selected") === "true"
-        || /active|selected|checked/i.test(String(target.control?.className || ""))
-      );
-      if (!selected) (target.control || target.element).click();
-      return { found: true, selected: true, alreadySelected: selected, label };
-    })()`;
-    let result = await executeAcrossSellerFrames(script);
-    if (condition.action === "select" && result.found) {
-      await wait(500);
-      const verification = await executeAcrossSellerFrames(`(() => {
-        const label = ${JSON.stringify(condition.label)};
-        const normalizedLabel = label.replace(/\\s+/g, "");
-        const elements = [...document.querySelectorAll(
-          "label, button, [role='radio'], [role='checkbox'], [role='tab'], span, div"
-        )].filter((element) =>
-          String(element.innerText || element.textContent || "").trim().replace(/\\s+/g, "") === normalizedLabel
-        );
-        for (const element of elements) {
-          const candidates = [];
-          let candidate = element;
-          for (let depth = 0; candidate && depth < 8; depth += 1, candidate = candidate.parentElement) {
-            candidates.push(candidate);
-          }
-          for (const control of candidates) {
-            const input = control.querySelector?.("input[type='radio'], input[type='checkbox'], input");
-            const stateText = [
-              control.className?.baseVal || control.className || "",
-              control.getAttribute?.("data-state") || "",
-              control.getAttribute?.("data-checked") || "",
-            ].join(" ");
-            const selected = Boolean(
-              input?.checked
-              || control.getAttribute?.("aria-checked") === "true"
-              || control.getAttribute?.("aria-selected") === "true"
-              || /active|selected|checked|on|true/i.test(stateText)
-            );
-            if (selected) return { found: true, verifiedSelected: true, label };
-          }
-        }
-        return { found: false, verifiedSelected: false, label };
-      })()`);
-      result = {
-        ...result,
-        ...verification,
-        found: verification.found || result.found,
-        // POIZON ì‚¬ìš©ìž ì •ì˜ ë¼ë””ì˜¤ëŠ” ì„ íƒ ìƒíƒœë¥¼ í‘œì¤€ DOM ì†ì„±ìœ¼ë¡œ ë…¸ì¶œí•˜ì§€
-        // ì•ŠëŠ” ê²½ìš°ê°€ ìžˆì–´, ì •í™•í•œ ë ˆì´ë¸”ì˜ í´ë¦­ ì„±ê³µì„ ë³´ì¡° ê²€ì¦ìœ¼ë¡œ ì¸ì •í•©ë‹ˆë‹¤.
-        verifiedSelected: verification.verifiedSelected || Boolean(result.found && result.selected),
-        verificationMode: verification.verifiedSelected ? "dom-state" : "label-click",
-      };
-    }
-    if (condition.action === "fullscreen" && result.found && result.requiresNativeClick) {
-      sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: result.x, y: result.y });
-      sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x: result.x, y: result.y });
-      await wait(120);
-      sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x: result.x, y: result.y });
-    }
-    if (condition.action === "fullscreen" && result.found) {
-      await wait(1_200);
-      const verified = await executeAcrossSellerFrames(`(() => {
-        const headings = [...document.querySelectorAll("h1, h2, h3, h4, strong, span, div")]
-          .filter((element) => String(element.innerText || element.textContent || "").trim() === "ì¸ê¸°ìƒí’ˆ");
-        for (const heading of headings) {
-          let panel = heading.parentElement;
-          for (let depth = 0; panel && depth < 10; depth += 1, panel = panel.parentElement) {
-            const text = String(panel.innerText || "");
-            const rect = panel.getBoundingClientRect();
-            if (text.includes("SPU ê¸°ì¤€") && text.includes("SKU ê¸°ì¤€")
-              && rect.width >= window.innerWidth * 0.82 && rect.height >= window.innerHeight * 0.72) {
-              return { found: true, expanded: true };
-            }
-          }
-        }
-        return { found: false, expanded: false };
-      })()`);
-      result = { ...result, found: verified.found, expanded: verified.expanded };
-    }
-    results.push({ ...condition, ...result });
-    await wait(condition.action === "fullscreen" ? 1_800 : condition.action === "scroll" ? 250 : 650);
-  }
-  await wait(1_800);
-  return results;
-}
-
-const domesticImageFingerprintCache = new Map();
-
-async function imageFingerprint(url) {
-  if (!url) return null;
-  const cacheKey = String(url).trim();
-  if (domesticImageFingerprintCache.has(cacheKey)) return domesticImageFingerprintCache.get(cacheKey);
-  if (domesticImageFingerprintCache.size >= 500) domesticImageFingerprintCache.clear();
-  const fingerprintTask = (async () => {
-  let bytes;
-  if (/^data:image\//i.test(cacheKey)) {
-    const encoded = cacheKey.split(",", 2)[1] || "";
-    bytes = Buffer.from(encoded, /;base64,/i.test(cacheKey) ? "base64" : "utf8");
-  } else {
-    const parsed = new URL(cacheKey);
-    if (!["https:", "http:"].includes(parsed.protocol)) return null;
-    const response = await fetch(parsed.href, { signal: AbortSignal.timeout(12_000) });
-    if (!response.ok) return null;
-    const length = Number(response.headers.get("content-length") || 0);
-    if (length > 5_000_000) return null;
-    bytes = Buffer.from(await response.arrayBuffer());
-  }
-  if (bytes.length > 5_000_000) return null;
-  const image = nativeImage.createFromBuffer(bytes);
-  if (image.isEmpty()) return null;
-  const bitmap = image.resize({ width: 8, height: 8, quality: "good" }).toBitmap();
-  const values = [];
-  for (let index = 0; index + 3 < bitmap.length; index += 4) {
-    values.push((bitmap[index] + bitmap[index + 1] + bitmap[index + 2]) / 3);
-  }
-  if (!values.length) return null;
-  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
-  return values.map((value) => value >= average);
-  })();
-  domesticImageFingerprintCache.set(cacheKey, fingerprintTask);
-  const result = await fingerprintTask;
-  if (!result) domesticImageFingerprintCache.delete(cacheKey);
-  return result;
-}
-
-function fingerprintSimilarity(left, right) {
-  if (!left || !right || left.length !== right.length) return null;
-  const same = left.filter((value, index) => value === right[index]).length;
-  return same / left.length;
-}
-
-async function addMatchConfidence(data, input) {
-  const source = {
-    articleNumber: String(input.articleNumber || ""),
-    brand: String(input.brand || ""),
-    title: String(input.title || ""),
-  };
-  let products = data.products.map((product) => ({
-    ...product,
-    ...scoreProductCandidate(source, product),
-  }));
-  const sourceFingerprint = products.length ? await imageFingerprint(input.imageUrl).catch(() => null) : null;
-  if (sourceFingerprint) {
-    const bestByStore = new Map();
-    products.forEach((product, index) => {
-      const previous = bestByStore.get(product.store);
-      if (!previous || product.confidence > previous.confidence) bestByStore.set(product.store, { index, confidence: product.confidence });
-    });
-    await Promise.all([...bestByStore.values()].map(async ({ index }) => {
-      const candidateFingerprint = await imageFingerprint(products[index].imageUrl).catch(() => null);
-      const imageSimilarity = fingerprintSimilarity(sourceFingerprint, candidateFingerprint);
-      products[index] = { ...products[index], ...scoreProductCandidate(source, products[index], imageSimilarity) };
-    }));
-  }
-  products = products.map((product) => {
-    const exactOfficialProduct = product.store === "ë¸Œëžœë“œ ê³µì‹ëª°"
-      && /^https?:\/\//i.test(String(product.url || ""))
-      && Number(product.signals?.codeScore || 0) === 1
-      && product.articleConflict !== true
-      && product.signals?.codeConflict !== true;
-    if (!exactOfficialProduct) return product;
-    return {
-      ...product,
-      confidence: 95,
-      productMatchConfidence: 95,
-      officialStoreVerified: true,
-      sourceTrustLabel: "ê³µì‹ëª° í™•ì¸ì™„ë£Œ",
-      imageVerificationLabel: product.imageVerifiedFromDetail
-        ? "ìƒì„¸ ì´ë¯¸ì§€ í™•ì¸ì™„ë£Œ"
-        : product.imageVerifiedFromCard ? "ê³µì‹ëª° ì´ë¯¸ì§€ í™•ì¸" : "ì´ë¯¸ì§€ í™•ì¸ í•„ìš”",
-    };
-  });
-  const priorities = new Map(data.sources.map((sourceRow) => [sourceRow.store, sourceRow.priority]));
-  products = products.sort((left, right) =>
-    (priorities.get(left.store) || 99) - (priorities.get(right.store) || 99)
-    || right.confidence - left.confidence
-  );
-  const hasSourceImage = Boolean(String(input.imageUrl || "").trim());
-  products = products.filter((product) => {
-    const codeMatched = Number(product.signals?.codeScore || 0) === 1;
-    const codeConflict = product.articleConflict === true || product.signals?.codeConflict === true;
-    const titleScore = Number(product.signals?.titleScore || 0);
-    const imageScore = product.signals?.imageScore;
-    if (codeConflict) return false;
-    if (product.brandVerifiedFromCard === false) return false;
-    const verifiedNaverIdentity = String(product?.sourceStore || product?.store || "") === "ë„¤ì´ë²„ íŒ¨ì…˜íƒ€ìš´"
-      && product.domesticSellerVerified === true
-      && (product.articleNumberVerified === true
-        || (product.brandVerifiedFromCard === true && product.titleVerifiedFromDetail === true));
-    // Naver's exact result card often omits the model code and uses a campaign
-    // photo instead of POIZON's packshot. The detail page has already supplied
-    // stronger evidence: approved domestic seller plus article identity or
-    // brand-title identity. Keep that verified product regardless of a weak
-    // thumbnail fingerprint.
-    if (verifiedNaverIdentity) return true;
-    if (codeMatched) return true;
-    // Official result cards can omit the manufacturer code. Preserve the
-    // actual brand-domain query results for the operator's manual comparison;
-    // do not invent an exact-code match or admit an unexecuted homepage card.
-    if (product.store === "ë¸Œëžœë“œ ê³µì‹ëª°") return product.officialSearchResultVerified === true;
-    if (!hasSourceImage) return titleScore >= 80;
-    return titleScore >= 70 && Number(imageScore || 0) >= 95;
-  });
-  const uniqueProducts = new Map();
-  for (const product of products) {
-    let urlIdentity = "";
-    try {
-      const parsed = new URL(String(product.url || ""));
-      // Official malls also use /product/detail?goodsNo=... identities.
-      // Dropping their query string merged different captured products.
-      if (product.store !== "ë¸Œëžœë“œ ê³µì‹ëª°") parsed.search = "";
-      parsed.hash = "";
-      urlIdentity = parsed.href.toLocaleLowerCase();
-    } catch {}
-    const exactCode = String(product.detectedArticleNumber || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-    const identity = exactCode
-      ? `${product.store}:code:${exactCode}`
-      : `${product.store}:url:${urlIdentity}`;
-    const previous = uniqueProducts.get(identity);
-    if (!previous || Number(product.confidence || 0) > Number(previous.confidence || 0)) uniqueProducts.set(identity, product);
-  }
-  products = [...uniqueProducts.values()];
-  const verifiedCounts = products.reduce((counts, product) => {
-    const store = String(product.store || "");
-    if (store) counts.set(store, (counts.get(store) || 0) + 1);
-    return counts;
-  }, new Map());
-  const sources = data.sources.map((sourceRow) => ({
-    ...sourceRow,
-    count: sourceRow.linkOnly
-      ? Number(sourceRow.count || 0)
-      : verifiedCounts.get(sourceRow.store) || 0,
-  }));
-  return {
-    ...data,
-    products,
-    sources,
-    // Keep prices from the products that passed the identity and image gates.
-    // discoveredProducts belongs to addRenderedSearchCounts, not this scope.
-    domesticPriceCandidates: products.filter((product) => Number(product?.price || 0) > 0 && product.inStock !== false),
-  };
-}
-
-async function verifyAllStoresWithMusinsaImage(data, input = {}) {
-  const products = Array.isArray(data?.products) ? data.products : [];
-  const exactMusinsa = products.find((product) =>
-    String(product?.sourceStore || product?.store || "") === "ë¬´ì‹ ì‚¬"
-      && Number(product?.signals?.codeScore || 0) === 1
-      && product?.articleConflict !== true
-      && product?.signals?.codeConflict !== true
-      && /^https?:\/\//i.test(String(product?.url || ""))
-      && /^https?:\/\//i.test(String(product?.imageUrl || ""))
-  );
-  if (!exactMusinsa) return { ...data, musinsaImageVerification: { applied: false } };
-  const referenceFingerprint = await imageFingerprint(exactMusinsa.imageUrl).catch(() => null);
-  if (!referenceFingerprint) {
-    return { ...data, musinsaImageVerification: { applied: false, referenceUrl: exactMusinsa.url } };
-  }
-  const verified = await Promise.all(products.map(async (product) => {
-    const store = String(product?.sourceStore || product?.store || "");
-    if (product === exactMusinsa || store === "ë¬´ì‹ ì‚¬") {
-      return { ...product, musinsaImageReference: true, imageVerificationLabel: "ë¬´ì‹ ì‚¬ ê¸°ì¤€ ì´ë¯¸ì§€" };
-    }
-    if (store === "ë„¤ì´ë²„ íŒ¨ì…˜íƒ€ìš´"
-      && product?.domesticSellerVerified === true
-      && product?.articleNumberVerified === true) {
-      return {
-        ...product,
-        musinsaImageCompared: false,
-        imageVerificationLabel: "ë„¤ì´ë²„ ìƒì„¸ í’ˆë²ˆ í™•ì¸",
-      };
-    }
-    const exactCode = Number(product?.signals?.codeScore || 0) === 1
-      && product?.articleConflict !== true
-      && product?.signals?.codeConflict !== true;
-    const imageUrl = String(product?.imageUrl || "");
-    if (!exactCode || !/^https?:\/\//i.test(imageUrl)) {
-      return { ...product, musinsaImageCompared: false, imageVerificationLabel: "ì´ë¯¸ì§€ í™•ì¸ í•„ìš”" };
-    }
-    const candidateFingerprint = await imageFingerprint(imageUrl).catch(() => null);
-    const similarity = fingerprintSimilarity(referenceFingerprint, candidateFingerprint);
-    if (!Number.isFinite(similarity)) {
-      return { ...product, musinsaImageCompared: false, imageVerificationLabel: "ì´ë¯¸ì§€ í™•ì¸ í•„ìš”" };
-    }
-    const imageScore = Math.round(similarity * 100);
-    return {
-      ...product,
-      musinsaImageCompared: true,
-      musinsaImageScore: imageScore,
-      musinsaImageRejected: imageScore < 58,
-      imageVerificationLabel: imageScore >= 82 ? "ë¬´ì‹ ì‚¬ ì´ë¯¸ì§€ ë†’ì€ ì¼ì¹˜"
-        : imageScore >= 58 ? "ë¬´ì‹ ì‚¬ ì´ë¯¸ì§€ ì¼ì¹˜" : "ë¬´ì‹ ì‚¬ ì´ë¯¸ì§€ ë¶ˆì¼ì¹˜",
-    };
-  }));
-  const accepted = verified.filter((product) => product.musinsaImageRejected !== true);
-  return {
-    ...data,
-    products: accepted,
-    musinsaImageVerification: {
-      applied: true,
-      referenceStore: "ë¬´ì‹ ì‚¬",
-      referenceUrl: exactMusinsa.url,
-      referenceImageUrl: exactMusinsa.imageUrl,
-      compared: verified.filter((product) => product.musinsaImageCompared === true).length,
-      rejected: verified.filter((product) => product.musinsaImageRejected === true).length,
-      articleNumber: String(input.articleNumber || ""),
-    },
-  };
-}
-
-async function officialDetailImage(searchWindow, productUrl, officialPageUrl = "", linkedSearchImageUrl = "") {
-  try {
-    const target = new URL(String(productUrl || ""));
-    const official = new URL(String(officialPageUrl || productUrl || ""));
-    const sameOfficialHost = target.hostname === official.hostname
-      || target.hostname.endsWith(`.${official.hostname}`)
-      || official.hostname.endsWith(`.${target.hostname}`);
-    if (target.protocol !== "https:" || !sameOfficialHost) return "";
-    await Promise.race([
-      searchWindow.loadURL(target.href).catch((error) => {
-        if (!/ERR_ABORTED/i.test(String(error?.message || ""))) throw error;
-      }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("OFFICIAL_DETAIL_TIMEOUT")), 20_000)),
-    ]);
-    await wait(1_200);
-    const detailImageUrl = String(await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const absolute = (value) => {
-        try { return new URL(String(value || "").trim(), location.href).href; } catch { return ""; }
-      };
-      const usable = (value) => {
-        const url = absolute(value);
-        return /^https:\\/\\//i.test(url) && !/logo|icon|sprite|badge|banner|placeholder|loading|no[-_]?image|\\.svg(?:$|\\?)/i.test(url) ? url : "";
-      };
-      const productJsonImages = [...document.querySelectorAll('script[type="application/ld+json"]')].flatMap((node) => {
-        try {
-          const parsed = JSON.parse(node.textContent || "null");
-          const values = Array.isArray(parsed) ? parsed : [parsed];
-          return values.flatMap((value) => {
-            const entries = Array.isArray(value?.['@graph']) ? value['@graph'] : [value];
-            return entries.filter((entry) => String(entry?.['@type'] || "").toLowerCase().includes("product"))
-              .flatMap((entry) => Array.isArray(entry?.image) ? entry.image : [entry?.image]);
-          });
-        } catch { return []; }
-      }).map((value) => typeof value === "string" ? value : value?.url || value?.contentUrl).map(usable).filter(Boolean);
-      if (productJsonImages[0]) return productJsonImages[0];
-      const metaImage = usable(document.querySelector('meta[property="og:image"]')?.content)
-        || usable(document.querySelector('meta[name="twitter:image"]')?.content);
-      if (metaImage) return metaImage;
-      const candidates = [...document.querySelectorAll('main img, [itemprop="image"], [class*="product" i] img, [class*="goods" i] img')]
-        .map((image) => {
-          const srcset = String(image.srcset || image.getAttribute("data-srcset") || "").split(",").pop()?.trim().split(/\\s+/)[0];
-          const url = usable(image.currentSrc || image.getAttribute("data-original") || image.getAttribute("data-src") || srcset || image.src);
-          const rect = image.getBoundingClientRect();
-          const label = [image.alt, image.className, image.id, image.closest('a')?.href].join(" ");
-          const score = (rect.width >= 180 && rect.height >= 180 ? 80 : 0)
-            + (image.naturalWidth >= 500 || image.naturalHeight >= 500 ? 60 : 0)
-            + (/main|ëŒ€í‘œ|detail|product|goods/i.test(label) ? 30 : 0)
-            - (/logo|icon|swatch|color|thumb|banner/i.test(label) ? 100 : 0);
-          return { url, score };
-        }).filter((candidate) => candidate.url).sort((left, right) => right.score - left.score);
-      return candidates[0]?.url || "";
-    })()`, true));
-    const selectedImageUrl = detailImageUrl || String(linkedSearchImageUrl || "");
-    if (!/^https?:\/\//i.test(selectedImageUrl)) return "";
-    const response = await searchWindow.webContents.session.fetch(selectedImageUrl, {
-      headers: { Referer: target.href },
-    });
-    if (!response.ok) return "";
-    const declaredLength = Number(response.headers.get("content-length") || 0);
-    if (declaredLength > 8_000_000) return "";
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (!bytes.length || bytes.length > 8_000_000) return "";
-    const image = nativeImage.createFromBuffer(bytes);
-    if (image.isEmpty()) return "";
-    const size = image.getSize();
-    const scale = Math.min(1, 480 / Math.max(size.width, size.height, 1));
-    const preview = scale < 1
-      ? image.resize({ width: Math.max(1, Math.round(size.width * scale)), height: Math.max(1, Math.round(size.height * scale)), quality: "good" })
-      : image;
-    return preview.toDataURL();
-  } catch {
-    return "";
-  }
-}
-
-function isNaverSecurityVerificationText(value) {
-  return /captcha|ë³´ì•ˆ\s*í™•ì¸|ìžë™\s*ìž…ë ¥|ë¡œë´‡|ìŠ¤íŒ¸ì„\s*ë°©ì§€|ì‹¤ì œ\s*ì‚¬ìš©ìž|ë¹„ì •ìƒì ì¸\s*ì ‘ê·¼/i.test(String(value || ""));
-}
-
-async function waitForNaverSecurityVerification(searchWindow) {
-  if (!searchWindow || searchWindow.isDestroyed()) return false;
-  searchWindow.setTitle("ë„¤ì´ë²„ ì‚¬ëžŒ í™•ì¸ì„ ì™„ë£Œí•´ ì£¼ì„¸ìš” Â· Around G");
-  searchWindow.setAlwaysOnTop(true);
-  searchWindow.show();
-  searchWindow.focus();
-  mainWindow?.webContents.send("domestic-search:security-required", {
-    source: "ë„¤ì´ë²„",
-    message: "ë„¤ì´ë²„ ì‚¬ëžŒ í™•ì¸ì„ ì™„ë£Œí•˜ë©´ ìƒí’ˆ ê²€ìƒ‰ì„ ìžë™ìœ¼ë¡œ ê³„ì†í•©ë‹ˆë‹¤.",
-  });
-  const deadline = Date.now() + (10 * 60_000);
-  while (Date.now() < deadline) {
-    if (searchWindow.isDestroyed()) return false;
-    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`JSON.stringify({
-      text: String(document.body?.innerText || "").slice(0, 20000),
-      url: String(location.href || "")
-    })`, true).then(JSON.parse).catch(() => null);
-    if (state && !isNaverSecurityVerificationText(state.text)) {
-      searchWindow.setAlwaysOnTop(false);
-      searchWindow.hide();
-      mainWindow?.webContents.send("domestic-search:security-complete", {
-        source: "ë„¤ì´ë²„",
-        message: "ë„¤ì´ë²„ ì‚¬ëžŒ í™•ì¸ ì™„ë£Œ Â· ìƒí’ˆ ê²€ìƒ‰ì„ ë‹¤ì‹œ ì‹œìž‘í•©ë‹ˆë‹¤.",
-      });
-      return true;
-    }
-    await wait(1_000);
-  }
-  return false;
-}
-
-async function submitOfficialMallSearch(searchWindow, query) {
-  const exactQuery = sanitizeDomesticProductCode(query) || sanitizeDomesticQuery(query);
-  if (!exactQuery || !searchWindow || searchWindow.isDestroyed()) return false;
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    const script = `(() => {
-      const query = ${JSON.stringify(exactQuery)};
-      const visible = (element) => {
-        if (!element) return false;
-        const style = getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-      };
-      const roots = [document];
-      for (let index = 0; index < roots.length; index += 1) {
-        for (const element of roots[index].querySelectorAll?.('*') || []) {
-          if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
-        }
-      }
-      const selectAll = (selector) => roots.flatMap((root) => [...(root.querySelectorAll?.(selector) || [])]);
-      window.__aroundGLastSearchAlert = "";
-      window.alert = (message) => { window.__aroundGLastSearchAlert = String(message || ""); };
-      let input = selectAll('input[type="search"],input[type="text"][placeholder*="ê²€ìƒ‰"],input[placeholder*="ê²€ìƒ‰ì–´"],input[placeholder*="ê²€ìƒ‰"],input[name*="search" i],input[name="q" i],input[name*="query" i],input[name*="keyword" i],input[name*="schWord" i]').find(visible);
-      if (!input) {
-        const controls = selectAll('header button,header a,button,a,[role="button"]');
-        const opener = controls.find((element) => {
-          const label = [element.getAttribute("aria-label"), element.getAttribute("title"), element.className, element.textContent].join(" ");
-          return visible(element) && /search|ê²€ìƒ‰/i.test(label);
-        }) || controls.find((element) => {
-          if (!visible(element) || !element.querySelector('svg')) return false;
-          const label = [element.outerHTML, element.parentElement?.className].join(" ");
-          return /search|ê²€ìƒ‰|magnif|ico[_-]?sch/i.test(label);
-        });
-        if (!opener) return false;
-        opener.scrollIntoView({ block: "center", inline: "nearest" });
-        const rect = opener.getBoundingClientRect();
-        return { openTarget: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } };
-      }
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-      setter ? setter.call(input, query) : (input.value = query);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-      input.focus();
-      if (!String(input.value || "").trim()) return false;
-      const inputRect = input.getBoundingClientRect();
-      const inputTarget = { x: Math.round(inputRect.left + inputRect.width / 2), y: Math.round(inputRect.top + inputRect.height / 2) };
-      const form = input.form;
-      const nearby = input.closest('form,[role="search"],header,section,div');
-      const submitCandidates = [
-        ...(form?.querySelectorAll('button[type="submit"],input[type="submit"]') || []),
-        ...(nearby?.querySelectorAll('button[type="submit"],input[type="submit"],[aria-label*="ê²€ìƒ‰"],[title*="ê²€ìƒ‰"]') || []),
-      ];
-      const submit = submitCandidates.find((element) => {
-        if (!visible(element) || element === input) return false;
-        const label = [element.getAttribute('aria-label'), element.getAttribute('title'), element.className, element.textContent, element.outerHTML].join(' ');
-        return /search|ê²€ìƒ‰|magnif|ico[_-]?sch/i.test(label) || element.type === 'submit';
-      });
-      if (submit && visible(submit)) {
-        submit.scrollIntoView({ block: "center", inline: "nearest" });
-        const rect = submit.getBoundingClientRect();
-        return { ready: true, inputTarget, target: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) } };
-      }
-      return { ready: true, inputTarget, enter: true };
-    })()`;
-    const frames = [searchWindow.webContents.mainFrame, ...searchWindow.webContents.mainFrame.framesInSubtree];
-    let submitted = false;
-    let opened = false;
-    for (const frame of frames) {
-      const prepared = await frame.executeJavaScript(script, true).catch(() => false);
-      if (prepared?.openTarget) {
-        if (frame === searchWindow.webContents.mainFrame) {
-          searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: prepared.openTarget.x, y: prepared.openTarget.y });
-          searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: prepared.openTarget.x, y: prepared.openTarget.y, button: "left", clickCount: 1 });
-          searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: prepared.openTarget.x, y: prepared.openTarget.y, button: "left", clickCount: 1 });
-        } else {
-          await frame.executeJavaScript(`[...document.querySelectorAll('button,a,[role="button"]')].find((element) => /search|ê²€ìƒ‰/i.test([element.getAttribute("aria-label"), element.getAttribute("title"), element.textContent].join(" ")))?.click()`, true).catch(() => {});
-        }
-        opened = true;
-        break;
-      }
-      if (!prepared?.ready) continue;
-      // Framework-controlled official-mall inputs can ignore a JavaScript-only
-      // value assignment. Physically focus the visible field and type the exact
-      // query so the site's own key/input handlers receive the same events as a user.
-      if (prepared.inputTarget && frame === searchWindow.webContents.mainFrame) {
-        searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: prepared.inputTarget.x, y: prepared.inputTarget.y });
-        searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: prepared.inputTarget.x, y: prepared.inputTarget.y, button: "left", clickCount: 1 });
-        searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: prepared.inputTarget.x, y: prepared.inputTarget.y, button: "left", clickCount: 1 });
-        searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
-        searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
-        await searchWindow.webContents.insertText(exactQuery);
-        await wait(350);
-      }
-      if (prepared.target && frame === searchWindow.webContents.mainFrame) {
-        searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: prepared.target.x, y: prepared.target.y });
-        searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: prepared.target.x, y: prepared.target.y, button: "left", clickCount: 1 });
-        searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: prepared.target.x, y: prepared.target.y, button: "left", clickCount: 1 });
-      } else if (prepared.enter && frame === searchWindow.webContents.mainFrame) {
-        searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "Enter" });
-        searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
-      } else {
-        await frame.executeJavaScript(`document.activeElement?.form?.requestSubmit?.() || document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }))`, true).catch(() => {});
-      }
-      submitted = true;
-      break;
-    }
-    if (submitted) return true;
-    await wait(opened ? 900 : 700);
-  }
-  return false;
-}
-
-async function officialMallSearchWasExecuted(searchWindow, query, previousUrl = "") {
-  if (!searchWindow || searchWindow.isDestroyed()) return false;
-  const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-    const query = ${JSON.stringify(String(query || ""))};
-    const compact = (value) => String(value || "").replace(/[^A-Z0-9ê°€-íž£]/gi, "").toUpperCase();
-    const expected = compact(query);
-    const inputs = [...document.querySelectorAll('input[type="search"],input[name*="search" i],input[name="q" i],input[name*="query" i],input[name*="keyword" i],input[name*="schWord" i]')];
-    const inputMatched = inputs.some((input) => compact(input.value).includes(expected));
-    const pageText = String(document.body?.innerText || "");
-    const pageMatched = expected.length >= 4 && compact(pageText).includes(expected);
-    const resultCount = /(?:ìƒí’ˆ|ê²€ìƒ‰ê²°ê³¼)\\s*\\(?\\s*[1-9][\\d,]*\\s*(?:ê°œ|ê±´|\\))/i.test(pageText)
-      || /ì´\\s*[1-9][\\d,]*\\s*ê°œ/i.test(pageText);
-    const productLinks = [...document.querySelectorAll('a[href]')].filter((link) =>
-      /\\/(?:goods|product|products|pd|item|t)\\//i.test(String(link.href || ""))).length;
-    return { url: String(location.href || ""), inputMatched, pageMatched, resultCount, productLinks };
-  })()`, true).catch(() => null);
-  if (!state) return false;
-  const urlChanged = Boolean(previousUrl && state.url && state.url !== previousUrl);
-  const queryInUrl = (() => {
-    try { return decodeURIComponent(state.url).toUpperCase().includes(String(query || "").toUpperCase()); }
-    catch { return false; }
-  })();
-  // Merely seeing the code in the search input/suggestion is not proof that
-  // the magnifier was pressed. Require navigation or rendered product results.
-  return Boolean(urlChanged || queryInUrl || (state.pageMatched && (state.resultCount || state.productLinks > 0)));
-}
-
-async function executeOfficialMallSearch(searchWindow, homepageUrl, query) {
-  // One product query must be submitted only once. Re-loading the homepage and
-  // entering the same query again made a technical failure look like a fresh
-  // negative result and also left the previous search visible in the window.
-  const exactQuery = sanitizeDomesticProductCode(query) || sanitizeDomesticQuery(query);
-  if (!exactQuery) return false;
-  const previousUrl = String(searchWindow.webContents.getURL() || homepageUrl);
-  const submitted = await submitOfficialMallSearch(searchWindow, exactQuery);
-  if (!submitted) return false;
-  await wait(2_000);
-  return officialMallSearchWasExecuted(searchWindow, exactQuery, previousUrl);
-}
-
-async function collectOfficialMallSearchProducts(searchWindow, query) {
-  if (!browserWindowUsable(searchWindow)) return [];
-  let captureAttempt = 0;
-  while (captureAttempt < 16) {
-    if (captureAttempt > 0) await wait(500);
-    captureAttempt += 1;
-    const products = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const query = ${JSON.stringify(String(query || ""))};
-      const compact = (value) => String(value || "").replace(/[^A-Z0-9ê°€-íž£]/gi, "").toUpperCase();
-      const expected = compact(query);
-      const productPath = /\\/(?:goods|product|products|pd|item|shop|p)\\//i;
-      const visible = (element) => {
-        if (!element) return false;
-        const rect = element.getBoundingClientRect();
-        const style = getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
-      };
-      const money = (value) => {
-        const match = String(value || "").match(/(?:â‚©|ï¿¦|ì›)\\s*([\\d,]{3,})|([\\d,]{3,})\\s*ì›/);
-        return Number(String(match?.[1] || match?.[2] || "").replace(/,/g, "")) || 0;
-      };
-      const found = new Map();
-      for (const link of [...document.querySelectorAll('a[href]')]) {
-        if (!visible(link) || !productPath.test(String(link.href || ""))) continue;
-        let card = link.closest('li,article,[class*="product" i],[class*="goods" i],[class*="item" i]') || link;
-        const rawText = String(card.innerText || link.innerText || "").replace(/\\s+/g, " ").trim();
-        if (!rawText || rawText.length > 1200) continue;
-        const image = card.querySelector('img[src]') || link.querySelector('img[src]');
-        const heading = card.querySelector('h1,h2,h3,h4,h5,[class*="name" i],[class*="title" i]');
-        const title = String(heading?.textContent || image?.alt || link.getAttribute('title') || rawText)
-          .replace(/\\s+/g, " ").trim().slice(0, 240);
-        const articleMatch = rawText.match(/(?=[A-Z0-9._/-]{4,32}\\b)(?=[A-Z0-9._/-]*[A-Z])(?=[A-Z0-9._/-]*\\d)[A-Z0-9][A-Z0-9._/-]{3,31}/i);
-        const articleNumber = articleMatch?.[0] || (expected && compact(rawText).includes(expected) ? query : "");
-        const url = String(link.href || "").split('#')[0];
-        const cardPrice = money(rawText);
-        const navigationLabel = /^(?:í™ˆ|home|ë©”ë‰´|menu|ì „ì²´|all|shop|ì‡¼í•‘)$/i.test(title);
-        const ownsExpectedCode = Boolean(expected && compact(rawText + " " + url).includes(expected));
-        // Product-looking paths also occur in global navigation (for example
-        // /shop/... links titled "í™ˆ"). Require card-owned product evidence.
-        if (navigationLabel || (!image && !cardPrice && !ownsExpectedCode)) continue;
-        if (!url || found.has(url)) continue;
-        found.set(url, {
-          id: url,
-          store: "ë¸Œëžœë“œ ê³µì‹ëª°",
-          sourceStore: "ë¸Œëžœë“œ ê³µì‹ëª°",
-          retailerName: document.title || location.hostname,
-          title,
-          name: title,
-          articleNumber,
-          price: cardPrice,
-          imageUrl: String(image?.currentSrc || image?.src || ""),
-          url,
-          inStock: null,
-          stockEvidence: (${captureRenderedStockEvidence.toString()})([], card),
-          linkOnly: true,
-          officialStoreVerified: Boolean(expected && compact(rawText).includes(expected)),
-          sourceTrustLabel: "ê³µì‹ëª° ê²€ìƒ‰ ê²°ê³¼",
-        });
-      }
-      return [...found.values()].slice(0, 50);
-    })()`, true).catch(() => []);
-    if (Array.isArray(products) && products.length) return products.map(({stockEvidence, ...product}) => ({
-      ...product,
-      ...normalizeRenderedStockEvidence(stockEvidence || {}),
-    }));
-  }
-  return [];
-}
-
-function renderedSearchFailure(reason, searchWindow = null, details = {}) {
-  const verificationReason = String(reason || "unknown_search_failure");
-  const resolvedSearchUrl = String(
-    details.resolvedSearchUrl
-    || (!searchWindow?.isDestroyed?.() ? searchWindow?.webContents?.getURL?.() : "")
-    || "",
-  );
-  const stageByReason = {
-    naver_shopping_click_failed: "naver_navigation",
-    fashion_town_click_failed: "naver_navigation",
-    search_submission_failed: "search_submission",
-    search_query_missing: "search_submission",
-    result_parse_failed: "result_capture",
-    result_script_failed: "result_capture",
-    result_analysis_failed: "result_capture",
-    overview_channel_card_collection_failed: "result_capture",
-    channel_count_detection_failed: "result_capture",
-    page_load_timeout: "page_navigation",
-    page_load_failed: "page_navigation",
-    network_error: "page_navigation",
-    naver_result_not_settled: "naver_result_navigation",
-    security_verification_required: "access_verification",
-    login_required: "access_verification",
-  };
-  const observed = { ...searchWindow?.domesticDiagnostics, ...details.verificationDiagnostics };
-  const verificationStage = String(details.verificationStage || observed.stage || stageByReason[verificationReason] || "unknown");
-  return {
-    count: null,
-    products: [],
-    searchCompleted: false,
-    searchSubmitted: details.searchSubmitted === true,
-    verificationReason,
-    verificationStage,
-    verificationDiagnostics: {
-      visibleResultCount: null,
-      productCardCount: 0,
-      ...observed,
-      stage: verificationStage,
-      reason: verificationReason,
-      resolvedUrl: resolvedSearchUrl,
-      errorMessage: String(details.errorMessage || observed.errorMessage || ""),
-    },
-    securityVerificationRequired: details.securityVerificationRequired === true,
-    loginRequired: details.loginRequired === true,
-    resolvedSearchUrl,
-  };
-}
-
-async function verifyApprovedNaverDomesticProducts(products = [], {
-  articleNumber = "",
-  brand = "",
-  title = "",
-  requireArticleIdentity = false,
-  generation = domesticSearchGeneration,
-  onActivity = null,
-  recoveryProducts = [], recoveryOptions = {},
-  browserSession = null,
-} = {}) {
-  const candidates = (Array.isArray(products) ? products : [])
-    .filter((product) => isDomesticNaverPriceCard({
-      productUrl: product?.url || product?.productUrl,
-      title: product?.title,
-      text: product?.text,
-    }));
-  if (!candidates.length) {
-    return { products: [], candidateCount: 0, checkedCount: 0, rejectedCount: 0, failedCount: 0 };
-  }
-  let evidenceWindow;
-  const approved = [];
-  let checkedCount = 0;
-  let rejectedCount = 0;
-  let failedCount = 0;
-  const detailFailures = [];
-  let securityVerificationRequired = false;
-  let loginRequired = false;
-  try {
-    evidenceWindow = new BrowserWindow({
-      show: false,
-      width: 1360,
-      height: 900,
-      icon: APP_ICON_PATH,
-      webPreferences: {
-        ...(browserSession ? { session: browserSession } : { partition: DOMESTIC_SEARCH_PARTITION }),
-        sandbox: true,
-        backgroundThrottling: false,
-        paintWhenInitiallyHidden: true,
-        offscreen: true,
-      },
-    });
-    activeDomesticSearchWindows.add(evidenceWindow);
-    evidenceWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
-    for (const candidate of candidates) {
-      const productUrl = String(candidate?.url || candidate?.productUrl || "");
-      if (domesticSearchCanceled(generation) || evidenceWindow.isDestroyed()) break;
-      if (!productUrl) continue;
-      let detailVerified = false;
-      let detailFailure = "";
-      try {
-        const retained = recoveryProducts.find(p => p.url === candidate.url && p.domesticSellerVerified === true);
-        if (retained && stockObservationComplete(retained)
-          && Date.now() - Date.parse(retained.stockCheckedAt || '') < 30 * 60_000) {
-          approved.push(retained); checkedCount += 1; detailVerified = true; continue;
-        }
-        // Read the product document while optional images/analytics keep loading.
-        void evidenceWindow.loadURL(productUrl).catch(() => {});
-        const snapshot = await waitForDomesticDetailReady(evidenceWindow, "ë„¤ì´ë²„ íŒ¨ì…˜íƒ€ìš´", productUrl, generation, articleNumber);
-        detailVerified = true;
-        checkedCount += 1;
-        const sellerVerifiedByWording = isApprovedNaverDomesticSellerEvidence({
-          productUrl,
-          sellerEvidenceText: snapshot.sellerEvidenceText,
-          detailText: snapshot.fullText,
-        });
-        // Fashion Town already limits these cards to its domestic department,
-        // outlet and brand-store routes. Do not discard an exact product just
-        // because one brand omits the optional "ê³µì‹ íŒë§¤ì²˜" banner.
-        const naverFashionTownEvidenceText = `${snapshot.sellerEvidenceText} ${snapshot.fullText}`;
-        const naverFashionTownBarcodeRemoved = /(?:(?:ë°”ì½”ë“œ|qr\s*(?:ì½”ë“œ)?)\s*(?:ê°€|ì€|ëŠ”|ì´)?\s*.{0,24}(?:ì‚­ì œ|ì œê±°|í›¼ì†)|(?:ì‚­ì œ|ì œê±°|í›¼ì†)\s*.{0,24}(?:ë°”ì½”ë“œ|qr\s*(?:ì½”ë“œ)?))/i.test(naverFashionTownEvidenceText);
-        const naverFashionTownDomesticRoute = /^https:\/\/(?:m\.)?shopping\.naver\.com\/window-products\/(?!foreign(?:\/|$)|overseas(?:\/|$)|global(?:\/|$))/i.test(productUrl)
-          && !naverFashionTownBarcodeRemoved
-          && isDomesticNaverPriceCard({ productUrl, text: naverFashionTownEvidenceText });
-        const naverTrustedExternalOfficialRoute = candidate?.naverTrustedChannelEvidence === true
-          && /^https:\/\//i.test(productUrl)
-          && !naverFashionTownBarcodeRemoved
-          && isDomesticNaverPriceCard({ productUrl, text: naverFashionTownEvidenceText });
-        const sellerVerified = sellerVerifiedByWording
-          || naverFashionTownDomesticRoute
-          || naverTrustedExternalOfficialRoute;
-        const articleVerified = strictProductArticleIdentityMatch({
-          ...snapshot,
-          titleText: `${String(candidate?.title || "")} ${String(snapshot.titleText || "")}`,
-        }, articleNumber);
-        const observedIdentityText = `${String(candidate?.title || "")} ${String(snapshot.titleText || "")}`;
-        const brandVerified = domesticBrandEvidenceMatch(brand, observedIdentityText);
-        const productTitleVerified = !String(title || "").trim()
-          || titleIdentityMatch(observedIdentityText, title);
-        const identityVerified = requireArticleIdentity
-          ? articleVerified
-          : brandVerified && productTitleVerified;
-        if (!sellerVerified || !identityVerified) {
-          rejectedCount += 1;
-          continue;
-        }
-        // Open choices only after verifying this seller/product, and preserve
-        // the initial evidence if the optional size inspection fails.
-        let optionStock = null;
-        try {
-          const savedOptions = recoveryOptions[candidate.url];
-          optionStock = await collectRenderedProductStock(evidenceWindow, "ë„¤ì´ë²„ íŒ¨ì…˜íƒ€ìš´", generation, onActivity,
-            savedOptions && Date.now() - Date.parse(savedOptions.checkedAt || '') < 30 * 60_000 ? savedOptions.options : [], savedOptions?.branches || [], candidate.url);
-        } catch {}
-        approved.push({
-          ...candidate,
-          ...(snapshot.stockEvidence && (snapshot.stockEvidence.stockTexts?.length || snapshot.stockEvidence.purchaseAvailable || snapshot.stockEvidence.options?.length)
-            ? normalizeRenderedStockEvidence(snapshot.stockEvidence) : {}),
-          ...(optionStock || {}),
-          domesticSellerVerified: true,
-          domesticSellerEvidence: String(snapshot.sellerEvidenceText || "").slice(0, 240),
-          brandVerifiedFromCard: brandVerified,
-          articleNumber: articleVerified ? sanitizeDomesticProductCode(articleNumber) : "",
-          detectedArticleNumber: articleVerified ? sanitizeDomesticProductCode(articleNumber) : "",
-          articleNumberVerified: articleVerified,
-          titleVerifiedFromDetail: productTitleVerified,
-          matchBasis: articleVerified ? "article" : "brand_title",
-        });
-      } catch (error) {
-        failedCount += 1;
-        detailFailure = String(error?.message || "product_detail_failed");
-        securityVerificationRequired ||= error?.securityVerificationRequired === true;
-        loginRequired ||= error?.loginRequired === true;
-        detailFailures.push({url: productUrl, reason: String(error?.message || "product_detail_failed")});
-        // The observed search-card price remains useful when its own exact
-        // model and domestic seller are verified but the stock page is delayed.
-        const cardArticleVerified = strictProductArticleIdentityMatch({titleText: candidate.title}, articleNumber);
-        const cardBrandVerified = domesticBrandEvidenceMatch(brand, candidate.title);
-        const domesticRoute = /^https:\/\/(?:m\.)?shopping\.naver\.com\/window-products\/(?:department|outlet|brand-store)\//i.test(productUrl)
-          || candidate.naverTrustedChannelEvidence === true;
-        const barcodeRemoved = /(?:ë°”ì½”ë“œ|QR\s*ì½”ë“œ|íì•Œ\s*ì½”ë“œ).{0,24}(?:ì‚­ì œ|ì œê±°|í›¼ì†)|(?:ì‚­ì œ|ì œê±°|í›¼ì†).{0,24}(?:ë°”ì½”ë“œ|QR\s*ì½”ë“œ|íì•Œ\s*ì½”ë“œ)/i.test(`${candidate.title || ''} ${candidate.text || ''}`);
-        if (cardArticleVerified && cardBrandVerified && domesticRoute && Number(candidate.price) > 0
-          && !barcodeRemoved && isDomesticNaverPriceCard({productUrl, text: candidate.text, title: candidate.title})) {
-          approved.push({...candidate, domesticSellerVerified: true, brandVerifiedFromCard: true,
-            articleNumberVerified: true, detectedArticleNumber: sanitizeDomesticProductCode(articleNumber),
-            articleNumber: sanitizeDomesticProductCode(articleNumber), matchBasis: "card_article",
-            inStock: null, sizes: [], stockVerified: false, stockCoverage: "unknown",
-            stockText: "", stockStatus: "unknown", detailVerificationPending: true,
-            detailVerificationReason: String(error?.message || "product_detail_failed")});
-        }
-        if (error?.securityVerificationRequired || error?.loginRequired || domesticSearchCanceled(generation)) break;
-      } finally {
-        await onActivity?.({products: [...approved], completedProducts: checkedCount + failedCount, totalProducts: candidates.length,
-          detailVerified, detailUrl: productUrl, failedDetails: failedCount, detailFailure});
-      }
-    }
-  } finally {
-    if (evidenceWindow && !evidenceWindow.isDestroyed()) evidenceWindow.destroy();
-    activeDomesticSearchWindows.delete(evidenceWindow);
-  }
-  return {
-    products: approved,
-    candidateCount: candidates.length,
-    checkedCount,
-    rejectedCount,
-    failedCount,
-    detailFailures,
-    securityVerificationRequired,
-    loginRequired,
-  };
-}
-
-async function filterApprovedNaverDomesticProducts(products = []) {
-  return (await verifyApprovedNaverDomesticProducts(products)).products;
-}
-
-async function lookupNaverDomesticPrice(input = {}) {
-  const articleNumber = sanitizeDomesticProductCode(input?.articleNumber || input?.productCode);
-  const brand = sanitizeDomesticQuery(input?.brand);
-  const title = sanitizeDomesticQuery(input?.title);
-  const query = articleNumber || title;
-  if (!query) return { ok: false, message: "ê°€ê²© ê²€ìƒ‰ìš© ìƒí’ˆë²ˆí˜¸ê°€ ì—†ìŠµë‹ˆë‹¤.", candidates: [] };
-  const searchUrl = naverFashionTownUrl("overview", brand, query);
-  let priceWindow;
-  try {
-    await session.fromPartition(DOMESTIC_PRICE_PARTITION).clearCache();
-    priceWindow = new BrowserWindow({
-      show: false,
-      width: 1360,
-      height: 900,
-      icon: APP_ICON_PATH,
-      webPreferences: {
-        partition: DOMESTIC_PRICE_PARTITION,
-        sandbox: true,
-        backgroundThrottling: false,
-        paintWhenInitiallyHidden: true,
-        offscreen: true,
-      },
-    });
-    activeDomesticPriceWindows.add(priceWindow);
-    priceWindow.on("closed", () => activeDomesticPriceWindows.delete(priceWindow));
-    priceWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
-    try {
-      await Promise.race([
-        priceWindow.loadURL(searchUrl),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("PRICE_LOOKUP_TIMEOUT")), 20_000)),
-      ]);
-    } catch (error) {
-      const currentUrl = String(priceWindow.webContents.getURL() || "");
-      if (!/ERR_ABORTED/i.test(String(error?.message || "")) || !/^https:\/\//i.test(currentUrl)) throw error;
-    }
-    for (let attempt = 0; attempt < 24; attempt += 1) {
-      await wait(attempt === 0 ? 1_500 : 500);
-      const snapshot = await priceWindow.webContents.executeJavaScript(`(() => {
-        const visible = (element) => {
-          if (!element) return false;
-          const style = getComputedStyle(element);
-          const rect = element.getBoundingClientRect();
-          return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-        };
-        const links = [...document.querySelectorAll('a[href*="/window-products/"]')].filter(visible);
-        const seen = new Set();
-        const productCards = [];
-        for (const link of links) {
-          const productUrl = String(link.href || "").split("#")[0];
-          if (!productUrl || seen.has(productUrl)) continue;
-          let card = link;
-          let best = link.parentElement;
-          for (let depth = 0; card?.parentElement && depth < 7; depth += 1) {
-            card = card.parentElement;
-            const body = String(card.innerText || "").replace(/\\s+/g, " ").trim();
-            const ownedLinks = card.querySelectorAll('a[href*="/window-products/"]').length;
-            if (/\\d[\\d,]{2,}\\s*ì›/.test(body) && body.length < 1800 && ownedLinks <= 3) best = card;
-            if (ownedLinks > 3 || body.length >= 1800) break;
-          }
-          const text = String(best?.innerText || link.innerText || "").replace(/\\s+/g, " ").trim();
-          const prices = [...text.matchAll(/([1-9][\\d,]{2,})\\s*ì›/g)]
-            .map((match) => Number(match[1].replace(/,/g, "")))
-            .filter((value) => value >= 1_000 && value <= 100_000_000);
-          if (!prices.length) continue;
-          const image = best?.querySelector('img[src],img[data-src]');
-          productCards.push({
-            productUrl,
-            title: String(link.getAttribute("title") || link.getAttribute("aria-label") || link.innerText || text).replace(/\\s+/g, " ").trim().slice(0, 300),
-            text,
-            markup: String(best?.outerHTML || "").slice(0, 12000),
-            price: Math.min(...prices),
-            originalPrice: Math.max(...prices),
-            imageUrl: String(image?.currentSrc || image?.src || image?.dataset?.src || ""),
-            imageLinkedToProduct: Boolean(image),
-          });
-          seen.add(productUrl);
-        }
-        const pageText = String(document.body?.innerText || "").slice(0, 50000);
-        return {
-          productCards,
-          pageText,
-          explicitEmpty: /ê²€ìƒ‰\\s*ê²°ê³¼ê°€?\\s*ì—†|ê²€ìƒ‰ëœ\\s*ìƒí’ˆì´\\s*ì—†/i.test(pageText),
-        };
-      })()`, true).catch(() => null);
-      if (!snapshot) continue;
-      snapshot.productCards = (snapshot.productCards || []).filter(isDomesticNaverPriceCard).map((card) => {
-        const selectedPrices = selectNaverSellingPrices(card?.text || "");
-        return {
-          ...card,
-          price: selectedPrices.price,
-          originalPrice: selectedPrices.originalPrice,
-          shippingFeeExcluded: selectedPrices.excludedShippingAmounts.length > 0,
-        };
-      }).filter((card) => Number(card.price || 0) > 0);
-      const analyzed = analyzeRenderedChannelProducts(
-        JSON.stringify(snapshot), "ë„¤ì´ë²„ íŒ¨ì…˜íƒ€ìš´", articleNumber, brand, title,
-      );
-      const candidates = (analyzed?.products || [])
-        .filter((candidate) => Number(candidate?.price || 0) > 0)
-        .sort((left, right) => Number(left.price) - Number(right.price))
-        .slice(0, 5);
-      if (candidates.length) {
-        const approvedCandidates = await filterApprovedNaverDomesticProducts(candidates);
-        if (approvedCandidates.length) return { ok: true, searchUrl, candidates: approvedCandidates };
-        return { ok: true, searchUrl, candidates: [], message: "ìŠ¹ì¸ëœ êµ­ë‚´ ì •í’ˆ íŒë§¤ì²˜ ìƒí’ˆì´ ì—†ìŠµë‹ˆë‹¤." };
-      }
-      if (snapshot.explicitEmpty) return { ok: true, searchUrl, candidates: [], message: "ê²€ìƒ‰ ê²°ê³¼ì— ìƒí’ˆì´ ì—†ìŠµë‹ˆë‹¤." };
-    }
-    return { ok: false, searchUrl, candidates: [], message: "ì¼ì¹˜ ìƒí’ˆì˜ ê°€ê²©ì„ ì•ˆì „í•˜ê²Œ í™•ì¸í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤." };
-  } catch (error) {
-    const timeout = /PRICE_LOOKUP_TIMEOUT/i.test(String(error?.message || ""));
-    return {
-      ok: false,
-      searchUrl,
-      candidates: [],
-      message: timeout ? "ê°€ê²© í™•ì¸ ì‹œê°„ì´ ì´ˆê³¼ë˜ì—ˆìŠµë‹ˆë‹¤." : "ê°€ê²© í™•ì¸ ì°½ì„ ë¶ˆëŸ¬ì˜¤ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.",
-    };
-  } finally {
-    if (priceWindow && !priceWindow.isDestroyed()) priceWindow.destroy();
-    activeDomesticPriceWindows.delete(priceWindow);
-  }
-}
-
-async function readNaverFashionTownChannelCounts(searchWindow) {
-  if (!searchWindow || searchWindow.isDestroyed()) return null;
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (attempt > 0) await wait(300);
-    const labels = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const visible = (element) => {
-        const style = getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-      };
-      return [...document.querySelectorAll('a,button,[role="tab"],[role="button"],label')]
-        .filter(visible)
-        .map((element) => String(element.textContent || element.getAttribute("aria-label") || "").replace(/\\s+/g, " ").trim())
-        .filter((text) => /ë¸Œëžœë“œì§ì˜ëª°|ê³µì‹ë¸Œëžœë“œ|ë¸Œëžœë“œìŠ¤í† ì–´|ë°±í™”ì |ì•„ìš¸ë ›/.test(text))
-        .slice(0, 120);
-    })()`, true).catch(() => []);
-    const counts = parseNaverFashionTownChannelCounts(labels);
-    if (counts) return counts;
-  }
-  return null;
-}
-
-async function ensureNaverOfficialBrandFilter(searchWindow) {
-  return clickNaverShoppingChannel(searchWindow, "ë„¤ì´ë²„ ê³µì‹ ë¸Œëžœë“œìŠ¤í† ì–´");
-}
-
-async function clickNaverShoppingChannel(searchWindow, store) {
-  const targetLabel = store === "ë„¤ì´ë²„ ê³µì‹ ë¸Œëžœë“œìŠ¤í† ì–´" ? "ë¸Œëžœë“œì§ì˜ëª°"
-    : store === "ë„¤ì´ë²„ ë°±í™”ì " ? "ë°±í™”ì "
-      : store === "ë„¤ì´ë²„ ì•„ìš¸ë ›" ? "ì•„ìš¸ë ›" : "";
-  if (!targetLabel) return true;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const target = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const label = ${JSON.stringify(targetLabel)};
-      const compact = (value) => String(value || "").replace(/\\s+/g, "");
-      const visible = (element) => {
-        const style = getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-      };
-      const selectedEvidence = (element) => {
-        let node = element;
-        for (let depth = 0; node && depth < 6 && node !== document.body; depth += 1, node = node.parentElement) {
-          if (node.getAttribute('aria-selected') === 'true'
-            || node.getAttribute('aria-current') === 'page'
-            || /(?:^|[\\s_-])(?:selected|active|on)(?:$|[\\s_-])/i.test(String(node.className || ''))) return true;
-          const background = String(getComputedStyle(node).backgroundColor || '').match(/\\d+/g)?.map(Number) || [];
-          if (background.length >= 3 && background[3] !== 0
-            && background[0] + background[1] + background[2] < 300) return true;
-        }
-        return false;
-      };
-      const clickSurface = (element) => {
-        let node = element;
-        for (let depth = 0; node && depth < 6 && node !== document.body; depth += 1, node = node.parentElement) {
-          if (node.closest('header,nav')) return null;
-          const style = getComputedStyle(node);
-          if (/^(?:A|BUTTON|LABEL)$/.test(node.tagName)
-            || /^(?:tab|button|link)$/.test(String(node.getAttribute('role') || ''))
-            || node.tabIndex >= 0 || typeof node.onclick === 'function' || style.cursor === 'pointer') return node;
-        }
-        return element;
-      };
-      // Only the rectangular result-count tabs are valid. The global Naver
-      // navigation contains the same labels but has no count; clicking it
-      // leaves the search results and clears the product query.
-      const candidates = [...document.querySelectorAll('body *')]
-        .filter(visible)
-        .filter((element) => !element.closest('header,nav'))
-        .filter((element) => new RegExp('^' + compact(label) + '[\\\\d,]+ê°œ$').test(compact(element.textContent)))
-        .sort((left, right) => {
-          const score = (element) => (selectedEvidence(element) ? 300 : 0)
-            + (clickSurface(element) !== element ? 120 : 0)
-            + (element.getBoundingClientRect().top > 180 ? 60 : 0)
-            - Math.min(50, element.getBoundingClientRect().width * element.getBoundingClientRect().height / 10_000);
-          return score(right) - score(left);
-        });
-      const element = candidates[0];
-      if (!element) return null;
-      const surface = clickSurface(element) || element;
-      surface.scrollIntoView({ block: 'center', inline: 'center' });
-      const rect = surface.getBoundingClientRect();
-      return {
-        selected: selectedEvidence(element) || selectedEvidence(surface),
-        x: Math.round(rect.left + rect.width / 2),
-        y: Math.round(rect.top + rect.height / 2),
-      };
-    })()`, true).catch(() => null);
-    if (!target) {
-      await wait(700);
-      continue;
-    }
-    if (target.selected) return true;
-    searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
-    searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
-    searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
-    await wait(1_500);
-  }
-  const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-    const compact = (value) => String(value || "").replace(/\\s+/g, "");
-    const selectedEvidence = (element) => {
-      let node = element;
-      for (let depth = 0; node && depth < 6 && node !== document.body; depth += 1, node = node.parentElement) {
-        if (node.getAttribute('aria-selected') === 'true'
-          || node.getAttribute('aria-current') === 'page'
-          || /(?:^|[\\s_-])(?:selected|active|on)(?:$|[\\s_-])/i.test(String(node.className || ''))) return true;
-        const background = String(getComputedStyle(node).backgroundColor || '').match(/\\d+/g)?.map(Number) || [];
-        if (background.length >= 3 && background[3] !== 0
-          && background[0] + background[1] + background[2] < 300) return true;
-      }
-      return false;
-    };
-    const resultTabs = [...document.querySelectorAll('body *')]
-      .filter((element) => !element.closest('header,nav'))
-      .filter((element) => new RegExp('^' + ${JSON.stringify(targetLabel)} + '[\\\\d,]+ê°œ$').test(compact(element.textContent)));
-    const selected = resultTabs.some(selectedEvidence);
-    const queryPreserved = /\/window\/search\/fashion-group/i.test(String(location.pathname || ""))
-      && /ì—\\s*ëŒ€í•œ\\s*íŒ¨ì…˜íƒ€ìš´\\s*ê²€ìƒ‰ê²°ê³¼/.test(String(document.body?.innerText || ""));
-    return JSON.stringify({
-      url: String(location.href || ""), selected, queryPreserved,
-      missing: /íŽ˜ì´ì§€ë¥¼\\s*ì°¾ì„\\s*ìˆ˜\\s*ì—†ìŠµë‹ˆë‹¤/.test(String(document.body?.innerText || ""))
-    });
-  })()`, true).then(JSON.parse).catch(() => null);
-  return Boolean(state && !state.missing && state.queryPreserved && state.selected);
-}
-
-async function clickNaverShoppingHomeMenu(searchWindow) {
-  if (!searchWindow || searchWindow.isDestroyed()) return false;
-  let target = null;
-  for (let attempt = 0; attempt < 20 && !target; attempt += 1) {
-    target = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
-      const visible = (element) => {
-        const style = getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-      };
-      const candidates = [...document.querySelectorAll('nav a,a,[role="link"],button,[role="button"]')]
-        .filter(visible)
-        .filter((element) => compact(element.textContent) === "ì‡¼í•‘")
-        .sort((left, right) => {
-          const score = (element) => (/shopping\\.naver\\.com\\/ns\\/home/i.test(String(element.href || element.getAttribute("href") || "")) ? 300 : 0)
-            + (element.closest('nav,[aria-label*="ì„œë¹„ìŠ¤"]') ? 100 : 0)
-            + (element.tagName === "A" ? 50 : 0);
-          return score(right) - score(left);
-        });
-      const element = candidates[0];
-      if (!element) return null;
-      element.scrollIntoView({ block: "center", inline: "center" });
-      const rect = element.getBoundingClientRect();
-      return {
-        x: Math.round(rect.left + rect.width / 2),
-        y: Math.round(rect.top + rect.height / 2),
-        href: String(element.href || element.getAttribute("href") || ""),
-      };
-    })()`, true).catch(() => null);
-    if (!target) await wait(500);
-  }
-  if (!target) return false;
-  searchWindow.webContents.focus();
-  searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
-  searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
-  searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
-  // Naver currently opens Shopping in a new tab. Electron's popup handler can
-  // receive that request before the original window commits its navigation,
-  // leaving the visible window on Naver's AI search page. Preserve the real
-  // mouse click first, then continue with the exact href owned by that clicked
-  // Shopping button only when the visible window did not move.
-  await wait(1_200);
-  const afterPhysicalClickUrl = String(searchWindow.webContents.getURL() || "");
-  if (!/^https:\/\/shopping\.naver\.com\/ns\/home(?:[/?#]|$)/i.test(afterPhysicalClickUrl)
-    && /^https:\/\/shopping\.naver\.com\/ns\/home(?:[/?#]|$)/i.test(String(target.href || ""))) {
-    await searchWindow.loadURL(target.href).catch(() => {});
-  }
-  // Naver opens Shopping in a new tab. setWindowOpenHandler redirects that
-  // request into this visible verification window, so wait for the real
-  // Shopping home document instead of guessing a direct commerce URL.
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    await wait(attempt === 0 ? 1_000 : 500);
-    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => ({
-      url: String(location.href || ""),
-      ready: Boolean(document.documentElement && document.body),
-      securityRequired: /captcha|ë³´ì•ˆ\\s*í™•ì¸|ìŠ¤íŒ¸ì„\\s*ë°©ì§€|ì‹¤ì œ\\s*ì‚¬ìš©ìž|ë¹„ì •ìƒì ì¸\\s*ì ‘ê·¼/i.test(String(document.body?.innerText || ""))
-    }))()`, true).catch(() => null);
-    if (state?.securityRequired) return false;
-    if (state?.ready && /^https:\/\/shopping\.naver\.com\/ns\/home(?:[/?#]|$)/i.test(state.url)) return true;
-  }
-  return false;
-}
-
-async function clickNaverFashionTownMenu(searchWindow) {
-  if (!searchWindow || searchWindow.isDestroyed()) return false;
-  let target = null;
-  for (let attempt = 0; attempt < 30 && !target; attempt += 1) {
-    target = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
-      const fashionLabels = ["íŒ¨ì…˜íƒ€ìš´"];
-      const visible = (element) => {
-        const style = getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-      };
-      const candidates = [...document.querySelectorAll('header a,nav a,a,button,[role="button"]')]
-        .filter(visible)
-        .map((element) => {
-          const label = compact(element.textContent);
-          const matchedLabel = fashionLabels.find((fashionLabel) => label.includes(fashionLabel));
-          return { element, label, matchedLabel };
-        })
-        .filter((candidate) => candidate.matchedLabel)
-        .sort((left, right) => {
-          const score = (candidate) => (candidate.label === candidate.matchedLabel ? 500 : 0)
-            + (/fashion|window/i.test(String(candidate.element.getAttribute("href") || "")) ? 200 : 0)
-            + (candidate.element.closest("nav") ? 100 : 0)
-            + (candidate.element.closest("header") ? 50 : 0)
-            - candidate.label.length;
-          return score(right) - score(left);
-        });
-      const selected = candidates[0];
-      const element = selected?.element;
-      if (!element || !selected?.matchedLabel) return null;
-      element.scrollIntoView({ block: "center", inline: "center" });
-      const rect = element.getBoundingClientRect();
-      return {
-        x: Math.round(rect.left + rect.width / 2),
-        y: Math.round(rect.top + rect.height / 2),
-        label: selected.matchedLabel,
-        href: String(element.href || element.getAttribute("href") || ""),
-      };
-    })()`, true).catch(() => null);
-    if (!target) await wait(500);
-  }
-  if (!target) return false;
-  searchWindow.webContents.focus();
-  searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
-  searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
-  searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
-  await wait(1_200);
-  const afterFashionClickUrl = String(searchWindow.webContents.getURL() || "");
-  if (!/fashion|style/i.test(afterFashionClickUrl)
-    && /^https:\/\/shopping\.naver\.com\//i.test(String(target.href || ""))
-    && /fashion|style/i.test(String(target.href || ""))) {
-    await searchWindow.loadURL(target.href).catch(() => {});
-  }
-  // Navigation and search activation are separate steps. Naver changes both
-  // the route and the search-control markup, so entering Fashion Town must not
-  // depend on a writable input already existing. Either visible service name
-  // is sufficient, and the next function opens/re-queries the real input.
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    await wait(attempt === 0 ? 1_000 : 500);
-    const ready = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const compact = (value) => String(value || "").replace(/\\s+/g, "").trim();
-      const fashionLabels = ["íŒ¨ì…˜íƒ€ìš´"];
-      const visible = (element) => {
-        const style = getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-      };
-      const routeOrTitleMatched = /fashion|style/i.test(String(location.pathname || ""))
-        || fashionLabels.some((label) => compact(document.title).includes(label));
-      const selectedMenuMatched = [...document.querySelectorAll('header a,nav a,a,button,[role="button"],[aria-current],[aria-selected="true"]')]
-        .filter(visible)
-        .some((element) => {
-          const labelMatched = fashionLabels.some((label) => compact(element.textContent).includes(label));
-          const selected = element.getAttribute("aria-current") === "page"
-            || element.getAttribute("aria-selected") === "true"
-            || /(?:^|[\\s_-])(?:selected|active|on)(?:$|[\\s_-])/i.test(String(element.className || ""));
-          return labelMatched && selected;
-        });
-      const searchScopeMatched = [...document.querySelectorAll('form button,form [role="button"],[role="search"] button,[role="search"] [role="button"]')]
-        .filter(visible)
-        .some((element) => fashionLabels.some((label) => compact(element.textContent).includes(label)));
-      return Boolean(routeOrTitleMatched || selectedMenuMatched || searchScopeMatched);
-    })()`, true).catch(() => false);
-    if (ready) return true;
-  }
-  return false;
-}
-
-async function openNaverFashionTownSearchInput(searchWindow) {
-  if (!searchWindow || searchWindow.isDestroyed()) return null;
-  let launcher = null;
-  for (let attempt = 0; attempt < 20 && !launcher; attempt += 1) {
-    launcher = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const compact = (value) => String(value || "").replace(/\\s+/g, " ").trim();
-      const visible = (element) => {
-        const style = getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-      };
-      const inputs = [...document.querySelectorAll('input:not([type="password"]),textarea,[role="searchbox"],[contenteditable="true"]')]
-        .filter(visible)
-        .map((element) => {
-          const rect = element.getBoundingClientRect();
-          const placeholder = compact(element.getAttribute("placeholder") || element.getAttribute("aria-label") || element.getAttribute("data-placeholder"));
-          // Naver main/Shopping can expose an AI search field in the same top
-          // area. Only Fashion Town's own "ìƒí’ˆëª… ë˜ëŠ” ë¸Œëžœë“œ" field is valid.
-          const fashionInput = /ìƒí’ˆëª…\\s*ë˜ëŠ”\\s*ë¸Œëžœë“œ/.test(placeholder);
-          const score = fashionInput
-            ? 500 + (rect.top < 220 ? 200 : 0) + (element.closest('header,form,[role="search"]') ? 100 : 0) + (rect.width >= 250 ? 50 : 0)
-            : -1;
-          return { element, rect, score };
-        });
-      const controls = [...document.querySelectorAll('button,a,[role="button"],[role="searchbox"],label')]
-        .filter(visible)
-        .map((element) => {
-          const rect = element.getBoundingClientRect();
-          const label = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("data-placeholder"), element.className, element.outerHTML].join(" ");
-          const fashionLauncher = /íŒ¨ì…˜íƒ€ìš´.*?(?:ìƒí’ˆëª…\\s*ë˜ëŠ”\\s*ë¸Œëžœë“œ|ìƒí’ˆì„\\s*ê²€ìƒ‰)|ìƒí’ˆëª…\\s*ë˜ëŠ”\\s*ë¸Œëžœë“œ/i.test(label);
-          const score = fashionLauncher
-            ? 500 + (rect.top < 220 ? 150 : 0) + (rect.left > window.innerWidth * 0.55 ? 50 : 0)
-            : -1;
-          return { element, rect, score };
-        });
-      const selected = [...inputs, ...controls]
-        .filter((candidate) => candidate.score >= 300)
-        .sort((left, right) => right.score - left.score)[0];
-      if (!selected) return null;
-      selected.element.scrollIntoView({ block: "center", inline: "center" });
-      const rect = selected.element.getBoundingClientRect();
-      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
-    })()`, true).catch(() => null);
-    if (!launcher) await wait(400);
-  }
-  if (!launcher) return null;
-  searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: launcher.x, y: launcher.y });
-  searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: launcher.x, y: launcher.y, button: "left", clickCount: 1 });
-  searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: launcher.x, y: launcher.y, button: "left", clickCount: 1 });
-
-  // Clicking the desktop header field opens Naver's search layer.  On the
-  // compact layout the first click is the top-right magnifier and creates the
-  // same real input.  Re-query after the SPA render instead of retaining the
-  // launcher element, which Naver replaces during this transition.
-  for (let attempt = 0; attempt < 24; attempt += 1) {
-    await wait(attempt === 0 ? 350 : 250);
-    const inputTarget = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const compact = (value) => String(value || "").replace(/\\s+/g, " ").trim();
-      const visible = (element) => {
-        const style = getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-      };
-      const selected = [...document.querySelectorAll('input:not([type="password"]),textarea,[role="searchbox"],[contenteditable="true"]')]
-        .filter((element) => visible(element)
-          && !element.disabled
-          && !element.readOnly
-          && (element.matches('input,textarea') || element.isContentEditable || element.getAttribute('role') === 'searchbox'))
-        .map((element) => {
-          const rect = element.getBoundingClientRect();
-          const placeholder = compact(element.getAttribute("placeholder") || element.getAttribute("aria-label") || element.getAttribute("data-placeholder"));
-          const fashionInput = /ìƒí’ˆëª…\\s*ë˜ëŠ”\\s*ë¸Œëžœë“œ/.test(placeholder);
-          const score = fashionInput
-            ? 500 + (document.activeElement === element ? 350 : 0) + (rect.top < 250 ? 200 : 0)
-              + (element.closest('header,form,[role="search"],[role="dialog"],[class*="layer" i],[class*="search" i]') ? 100 : 0)
-              + (rect.width >= 250 ? 50 : 0)
-            : -1;
-          return { element, score };
-        })
-        .filter((candidate) => candidate.score >= 300)
-        .sort((left, right) => right.score - left.score)[0]?.element;
-      if (!selected) return null;
-      selected.scrollIntoView({ block: "center", inline: "center" });
-      const rect = selected.getBoundingClientRect();
-      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
-    })()`, true).catch(() => null);
-    if (inputTarget) return inputTarget;
-  }
-  return null;
-}
-
-async function typeNaverQueryLikeUser(searchWindow, inputTarget, exactQuery) {
-  if (!inputTarget) return false;
-  const inputSelector = 'input:not([type="password"]),textarea,[role="searchbox"],[contenteditable="true"]';
-  const readValue = () => searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-    const visible = (element) => {
-      const style = getComputedStyle(element);
-      const rect = element.getBoundingClientRect();
-      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-    };
-    const valueOf = (element) => String(element?.matches?.('input,textarea') ? element.value || "" : element?.textContent || "");
-    const active = document.activeElement;
-    if (active?.matches?.(${JSON.stringify(inputSelector)}) && visible(active)) return valueOf(active);
-    const input = [...document.querySelectorAll(${JSON.stringify(inputSelector)})]
-      .find((element) => visible(element) && valueOf(element));
-    return valueOf(input);
-  })()`, true).catch(() => "");
-  const waitForInputValue = async (expectedValue) => {
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      if (await readValue() === expectedValue) return true;
-      await wait(100);
-    }
-    return false;
-  };
-
-  // Naver replaces and synchronizes its React search field while it is being
-  // edited. Type at a visible human pace and wait for each character to reach
-  // the controlled input before sending the next one.
-  for (const keyDelay of [220, 360]) {
-    searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: inputTarget.x, y: inputTarget.y });
-    searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: inputTarget.x, y: inputTarget.y, button: "left", clickCount: 1 });
-    searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: inputTarget.x, y: inputTarget.y, button: "left", clickCount: 1 });
-    await wait(450);
-    searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
-    searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
-    searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "Backspace" });
-    searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "Backspace" });
-    await wait(300);
-
-    let prefixOk = true;
-    for (let index = 0; index < exactQuery.length; index += 1) {
-      const character = exactQuery[index];
-      searchWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: character });
-      searchWindow.webContents.sendInputEvent({ type: "char", keyCode: character });
-      searchWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: character });
-      await wait(keyDelay);
-      if (!await waitForInputValue(exactQuery.slice(0, index + 1))) {
-        prefixOk = false;
-        break;
-      }
-    }
-    if (prefixOk && await waitForInputValue(exactQuery)) {
-      // Keep the completed value visible and let Naver finish rendering its
-      // suggestion/search layer before locating the magnifier.
-      await wait(2_000);
-      if (await readValue() === exactQuery) return true;
-    }
-  }
-  return false;
-}
-
-async function waitForNaverSearchResultsStable(searchWindow, query) {
-  if (!searchWindow || searchWindow.isDestroyed()) return false;
-  const exactQuery = String(query || "").trim();
-  if (!exactQuery) return false;
-  const deadline = Date.now() + 15_000;
-  let previousSignature = "";
-  let stableSamples = 0;
-  while (Date.now() < deadline) {
-    if (searchWindow.isDestroyed()) return false;
-    const pageScript = `(() => {
-      const query = ${JSON.stringify(exactQuery)};
-      const compact = (value) => String(value || "").replace(/[^A-Z0-9ê°€-íž£]/gi, "").toUpperCase();
-      const expected = compact(query);
-      const bodyText = String(document.body?.innerText || "");
-      const queryVisible = expected && (compact(bodyText).includes(expected)
-        || [...document.querySelectorAll('input:not([type="password"]),textarea,[role="searchbox"]')]
-          .some((input) => compact(input.value || input.textContent).includes(expected)));
-      const productLinks = [...document.querySelectorAll('a[href*="window-products"],a[href*="/products/"]')]
-        .map((link) => ({ href: String(link.href || ""), text: String(link.innerText || link.textContent || "").trim() }))
-        .filter((item) => /^https?:\/\//i.test(item.href));
-      const unique = [];
-      const seen = new Set();
-      for (const item of productLinks) {
-        if (seen.has(item.href)) continue;
-        seen.add(item.href);
-        unique.push(item);
-        if (unique.length >= 24) break;
-      }
-      const noResult = /ê²€ìƒ‰ëœ\s*ìƒí’ˆì´\s*ì—†ìŠµë‹ˆë‹¤|ê²€ìƒ‰\s*ê²°ê³¼ê°€\s*ì—†ìŠµë‹ˆë‹¤|ìƒí’ˆì´\s*ì—†ìŠµë‹ˆë‹¤|ê²€ìƒ‰ê²°ê³¼\s*ì—†ìŒ/i.test(bodyText);
-      const securityRequired = /captcha|ë³´ì•ˆ\s*í™•ì¸|ìžë™\s*ìž…ë ¥|ë¡œë´‡|ìŠ¤íŒ¸ì„\s*ë°©ì§€|ì‹¤ì œ\s*ì‚¬ìš©ìž|ë¹„ì •ìƒì ì¸\s*ì ‘ê·¼/i.test(bodyText);
-      const signature = unique.map((item) => item.href + "|" + compact(item.text).slice(0, 80)).join("||");
-      return { queryVisible, noResult, securityRequired, cardCount: unique.length, signature };
-    })()`;
-    const state = await searchWindow.webContents.mainFrame.executeJavaScript(pageScript, true).catch(() => null);
-    if (!state || state.securityRequired) return false;
-    const ready = state.queryVisible === true && (state.cardCount > 0 || state.noResult === true);
-    const signature = state.noResult === true ? "__NO_RESULT__" : String(state.signature || "");
-    if (ready && signature && signature === previousSignature) stableSamples += 1;
-    else stableSamples = ready && signature ? 1 : 0;
-    previousSignature = ready ? signature : "";
-    if (stableSamples >= 4) {
-      // Keep the rendered result visible briefly after DOM stability so lazy
-      // card metadata and images can finish committing before extraction.
-      await wait(1_500);
-      return true;
-    }
-    await wait(500);
-  }
-  return false;
-}
-
-async function submitNaverShoppingSearch(searchWindow, query) {
-  const exactQuery = String(query || "").trim();
-  if (!exactQuery || !searchWindow || searchWindow.isDestroyed()) return false;
-  searchWindow.webContents.focus();
-  const previousUrl = String(searchWindow.webContents.getURL() || "");
-  const inputTarget = await openNaverFashionTownSearchInput(searchWindow);
-  if (!inputTarget) return false;
-  const inputVerified = await typeNaverQueryLikeUser(searchWindow, inputTarget, exactQuery);
-  if (!inputVerified) return false;
-
-  // The suggestion layer can replace the search button after the final input
-  // event. Re-query its live coordinates instead of closing the window after
-  // one stale lookup.
-  let submitTarget = null;
-  for (let attempt = 0; attempt < 20 && !submitTarget; attempt += 1) {
-    submitTarget = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-    const compact = (value) => String(value || "").replace(/\\s+/g, " ").trim();
-    const visible = (element) => {
-      const style = getComputedStyle(element);
-      const rect = element.getBoundingClientRect();
-      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-    };
-    const valueOf = (element) => String(element?.matches?.('input,textarea') ? element.value || "" : element?.textContent || "");
-    const input = [...document.querySelectorAll('input:not([type="password"]),textarea,[role="searchbox"],[contenteditable="true"]')]
-      .find((element) => visible(element) && compact(valueOf(element)) === compact(${JSON.stringify(exactQuery)}));
-    if (!input) return null;
-    const scope = input.closest('form,[role="search"],[role="dialog"],[class*="layer" i],[class*="search" i]')
-      || input.parentElement?.parentElement?.parentElement || document;
-    const inputRect = input.getBoundingClientRect();
-    const rawControls = [
-      ...scope.querySelectorAll('button,[role="button"],input[type="submit"],a,svg'),
-      ...document.querySelectorAll('button,[role="button"],input[type="submit"],svg')
-    ];
-    const controls = [...new Set(rawControls.map((element) =>
-      element.matches('svg') ? element.closest('button,[role="button"],a') || element : element))];
-    const button = controls.filter(visible)
-      .map((element) => {
-        const label = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.className, element.outerHTML].join(" ");
-        const compactLabel = compact(label);
-        const rect = element.getBoundingClientRect();
-        const explicitSearch = /ê²€ìƒ‰|search|magnif|ico[_-]?(?:sch|search)/i.test(label);
-        const typeSubmit = String(element.getAttribute("type") || "").toLowerCase() === "submit";
-        const clearOrToggle = /ìž…ë ¥(?:ë‚´ìš©)?ì‚­ì œ|ì§€ìš°ê¸°|ë‹«ê¸°|clear|delete|remove|close|dropdown|arrow|down|toggle|autocomplete|fold|unfold|expand|collapse/i.test(compactLabel)
-          || element.hasAttribute("aria-expanded")
-          || Boolean(element.getAttribute("aria-haspopup"));
-        const sameRow = Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2)) < 60;
-        const horizontalGap = rect.left - inputRect.right;
-        const rightAdjacent = sameRow && horizontalGap >= -35 && horizontalGap <= 160
-          && rect.right > inputRect.right - 10
-          && rect.width <= 120 && rect.height <= 120;
-        const insideRightEdge = sameRow
-          && rect.left >= inputRect.left + inputRect.width * 0.72
-          && rect.right <= inputRect.right + 120
-          && rect.width <= 120 && rect.height <= 120;
-        // Naver places clear, autocomplete-toggle and search controls in that
-        // order. The magnifier is the farthest-right eligible control.
-        const rightmostPriority = Math.max(0, Math.min(220, rect.right - inputRect.right)) * 12;
-        const score = (explicitSearch ? 900 : 0)
-          + (typeSubmit ? 700 : 0)
-          + (rightAdjacent ? 600 : 0)
-          + (insideRightEdge ? 450 : 0)
-          + rightmostPriority;
-        return {
-          element,
-          score,
-          eligible: !clearOrToggle && (explicitSearch || typeSubmit || rightAdjacent || insideRightEdge)
-        };
-      })
-      .filter((candidate) => candidate.eligible)
-      .sort((left, right) => right.score - left.score)[0]?.element;
-    if (button) {
-      const rect = button.getBoundingClientRect();
-      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), fallback: false };
-    }
-    // Last physical fallback for Naver builds whose magnifier has no button,
-    // role, accessible name, or searchable class. Click the right edge of the
-    // smallest search container surrounding the verified input.
-    let container = input.parentElement;
-    let containerRect = null;
-    for (let depth = 0; container && depth < 6; depth += 1, container = container.parentElement) {
-      const rect = container.getBoundingClientRect();
-      if (!containerRect && rect.width >= inputRect.width && rect.width <= inputRect.width + 220 && rect.height <= 120) {
-        containerRect = rect;
-      }
-    }
-    if (!containerRect) return null;
-    return {
-      x: Math.round(Math.min(window.innerWidth - 8, containerRect.right - 24)),
-      y: Math.round(inputRect.top + inputRect.height / 2),
-      fallback: true
-    };
-    })()`, true).catch(() => null);
-    if (!submitTarget) await wait(300);
-  }
-  if (!submitTarget) return false;
-  searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: submitTarget.x, y: submitTarget.y });
-  // Make the hand-off visible: completed code, pointer movement, then click.
-  await wait(800);
-  searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: submitTarget.x, y: submitTarget.y, button: "left", clickCount: 1 });
-  searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: submitTarget.x, y: submitTarget.y, button: "left", clickCount: 1 });
-
-  for (let attempt = 0; attempt < 24; attempt += 1) {
-    await wait(attempt === 0 ? 1_500 : 500);
-    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`JSON.stringify({
-      url: String(location.href || ""),
-      text: String(document.body?.innerText || "").slice(0, 30000),
-      resultMatched: [...document.querySelectorAll('a[href*="window-products"],a[href*="/products/"]')].some((link) => {
-        const compact = (value) => String(value || "").replace(/[^A-Z0-9ê°€-íž£]/gi, "").toUpperCase();
-        const expected = compact(${JSON.stringify(exactQuery)});
-        const card = link.closest('li,article,[class*="product" i],[class*="item" i],div');
-        return expected.length >= 4 && compact([link.href, link.textContent, card?.innerText].join(" ")).includes(expected);
-      }),
-      noResult: /ê²€ìƒ‰\\s*ê²°ê³¼ê°€\\s*ì—†|ìƒí’ˆì„\\s*ì°¾ì„\\s*ìˆ˜\\s*ì—†|ì¼ì¹˜í•˜ëŠ”\\s*ìƒí’ˆì´\\s*ì—†/.test(String(document.body?.innerText || ""))
-    })`, true).then(JSON.parse).catch(() => null);
-    const urlChanged = Boolean(state?.url && state.url !== previousUrl);
-    const compact = (value) => String(value || "").replace(/[^A-Z0-9ê°€-íž£]/gi, "").toUpperCase();
-    const queryInUrl = (() => {
-      try { return compact(decodeURIComponent(state?.url || "")).includes(compact(exactQuery)); }
-      catch { return false; }
-    })();
-    const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));
-    // Reaching the exact query result URL proves the input and magnifier action
-    // succeeded. Final capture decides product presence or authoritative zero.
-    if (isNaverRenderedResultReady(state, exactQuery)) return true;
-    if (state && !/íŽ˜ì´ì§€ë¥¼\s*ì°¾ì„\s*ìˆ˜\s*ì—†ìŠµë‹ˆë‹¤/.test(state.text)
-      && ((urlChanged && queryInUrl)
-        || state.resultMatched === true
-        || (state.noResult === true && queryVisibleInPage))) return await waitForNaverSearchResultsStable(searchWindow, exactQuery);
-  }
-  return false;
-}
-
-async function openRenderedSizeOptions(searchWindow) {
-  if (!searchWindow || searchWindow.isDestroyed()) return false;
-  let clicked = false;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const existing = await searchWindow.webContents.mainFrame.executeJavaScript(
-      `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(renderedStockSelectors("", searchWindow.webContents.getURL()))})`, true,
-    ).catch(() => null);
-    // Do not toggle an open menu closed or click a size that is already visible.
-    if (normalizeRenderedStockEvidence(existing || {}).sizes.length) return clicked;
-    const target = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const visible = (element) => {
-        const style = getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-      };
-      const controls = [...document.querySelectorAll('button,[role="button"],[role="combobox"],[aria-haspopup="listbox"]')]
-        .filter(visible)
-        .filter(element => !element.closest('header,footer,nav,[class*="review" i],[class*="sizeguide" i],[class*="sizetable" i],[class*="size-guide" i]'))
-        .filter(element => !element.disabled && element.getAttribute("aria-disabled") !== "true" && element.getAttribute("aria-expanded") !== "true")
-        .filter((element) => {
-          const label = [element.textContent, element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("placeholder"), element.className].join(" ");
-          return /ì‚¬ì´ì¦ˆ|size|ì˜µì…˜|option|ì„ íƒ/i.test(label)
-            && !/êµ¬ë§¤|ìž¥ë°”êµ¬ë‹ˆ|ê²°ì œ|buy|cart|ê°€ì´ë“œ|ì•ˆë‚´|guide|chart|ìˆ˜ëŸ‰|quantity|qty/i.test(label);
-        });
-      const element = controls[${attempt}] || controls[0];
-      if (!element) return null;
-      element.scrollIntoView({ block: "center", inline: "nearest" });
-      const rect = element.getBoundingClientRect();
-      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
-    })()`, true).catch(() => null);
-    if (!target) break;
-    searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
-    searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
-    searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
-    clicked = true;
-    await wait(600);
-  }
-  return clicked;
-}
-
-function renderedStockSelectors(store = "", url = "") {
-  return retailerStockStrategy({store, url}).optionSelectors;
-}
-
-async function clickRenderedProductCard(searchWindow, productUrl, searchResultsUrl = "") {
-  if (!searchWindow || searchWindow.isDestroyed()) return false;
-  const expectedUrl = String(productUrl || "").split("#")[0];
-  if (!/^https?:\/\//i.test(expectedUrl)) return false;
-  const resultsUrl = String(searchResultsUrl || "");
-  const currentUrl = String(searchWindow.webContents.getURL() || "");
-  if (resultsUrl && currentUrl !== resultsUrl) {
-    void searchWindow.loadURL(resultsUrl).catch(() => {});
-  }
-  let cardFound = false;
-  for (let attempt = 0; attempt < 30 && !cardFound; attempt++) {
-    if (searchWindow.isDestroyed()) return false;
-    cardFound = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-    const expected = ${JSON.stringify(expectedUrl)};
-    const identity = (${domesticProductUrlIdentity.toString()});
-    const links = [...document.querySelectorAll("a[href]")];
-    const link = links.find(candidate => identity(candidate.href) === identity(expected));
-    if (!link) return false;
-    link.scrollIntoView({ block: "center", inline: "center" });
-    return true;
-  })()`, true).catch(() => false);
-    if (!cardFound) await wait(500);
-  }
-  if (!cardFound) return false;
-  // scrollIntoView can move a responsive card after the first layout pass.
-  // Wait for that movement to settle, then measure the actual clickable link.
-  await wait(650);
-  const target = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-    const expected = ${JSON.stringify(expectedUrl)};
-    const identity = (${domesticProductUrlIdentity.toString()});
-    const links = [...document.querySelectorAll("a[href]")];
-    const link = links.find(candidate => identity(candidate.href) === identity(expected));
-    if (!link) return null;
-    const rect = link.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return null;
-    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + Math.min(rect.height / 2, 180)) };
-  })()`, true).catch(() => null);
-  if (!target) return false;
-  // Keep automated product inspection in the background. Electron input events
-  // work against the hidden renderer and do not steal the user's real cursor.
-  searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
-  await wait(650);
-  searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
-  searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
-  // A physical click may start a delayed SPA/server navigation. A fixed
-  // two-second snapshot rejected the exact product before it had opened.
-  // Observe this one click until its destination arrives; never resubmit it.
-  const navigationDeadline = Date.now() + 25_000;
-  while (!searchWindow.isDestroyed() && Date.now() < navigationDeadline) {
-    const openedUrl = String(searchWindow.webContents.getURL() || "").split("#")[0];
-    if (domesticProductUrlIdentity(openedUrl) === domesticProductUrlIdentity(expectedUrl)) return true;
-    await wait(250);
-  }
-  return false;
-}
-
-function browserWindowUsable(window) {
-  return Boolean(window
-    && !window.isDestroyed()
-    && window.webContents
-    && !window.webContents.isDestroyed());
-}
-
-async function loadOfficialPageForAutomation(searchWindow, targetUrl, timeoutMs = 8_000) {
-  if (!browserWindowUsable(searchWindow)) return false;
-  // Official malls often keep hero images, analytics and campaign resources
-  // loading for tens of seconds. The search field is usable at dom-ready, so
-  // waiting for BrowserWindow.loadURL() to fully resolve only leaves a large
-  // foreground window sitting idle.
-  const ready = new Promise((resolve) => {
-    let settled = false;
-    const finish = (value) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      searchWindow.webContents.removeListener("dom-ready", onReady);
-      searchWindow.webContents.removeListener("did-fail-load", onFailed);
-      resolve(value);
-    };
-    const onReady = () => finish(true);
-    const onFailed = (_event, errorCode, _description, _url, isMainFrame) => {
-      if (isMainFrame !== false && errorCode !== -3) finish(false);
-    };
-    const timer = setTimeout(() => finish(browserWindowUsable(searchWindow)), timeoutMs);
-    searchWindow.webContents.once("dom-ready", onReady);
-    searchWindow.webContents.once("did-fail-load", onFailed);
-  });
-  void searchWindow.loadURL(targetUrl).catch(() => {});
-  return ready;
-}
-
-function closedInternalSearchResult(stage = "unknown") {
-  return {
-    ok: false,
-    submitted: false,
-    canceled: true,
-    reason: "INTERNAL_SEARCH_WINDOW_CLOSED",
-    stage,
-  };
-}
-
-async function openOfficialMallInternalSearch(homepageUrl, query) {
-  const homepage = new URL(String(homepageUrl || ""));
-  if (!["https:", "http:"].includes(homepage.protocol)) throw new Error("INVALID_URL");
-  // Buttons in previously rendered result rows can still carry the raw POIZON
-  // article value (for example `207521-001é»‘è‰²`). Normalize again at this IPC
-  // boundary so neither the window title nor the physical official-mall input
-  // can receive trailing Chinese colour/category metadata.
-  const exactQuery = sanitizeDomesticProductCode(query) || sanitizeDomesticQuery(query);
-  if (!exactQuery) throw new Error("SEARCH_QUERY_REQUIRED");
-  const searchWindow = new BrowserWindow({
-    title: `ê³µì‹ëª° ìƒí’ˆ ê²€ìƒ‰ Â· ${exactQuery}`,
-    width: 1320,
-    height: 900,
-    show: false,
-    autoHideMenuBar: true,
-    icon: APP_ICON_PATH,
-    webPreferences: {
-      partition: DOMESTIC_SEARCH_PARTITION,
-      sandbox: true,
-      contextIsolation: true,
-      backgroundThrottling: false,
-    },
-  });
-  officialInteractiveWindows.add(searchWindow);
-  searchWindow.on("closed", () => officialInteractiveWindows.delete(searchWindow));
-  searchWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url) && browserWindowUsable(searchWindow)) {
-      searchWindow.loadURL(url).catch(() => {});
-    }
-    return { action: "deny" };
-  });
-  let stage = "homepage_load";
-  try {
-    const homepageReady = await loadOfficialPageForAutomation(searchWindow, homepage.href);
-    if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
-    if (!homepageReady) return { ok: false, submitted: false, reason: "OFFICIAL_HOMEPAGE_LOAD_FAILED" };
-    stage = "account_login";
-    const login = await ensureOfficialAccountLogin(searchWindow, homepage.href);
-    if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
-    if (!login.ok) return { ok: false, submitted: false, loginRequired: true, reason: login.reason };
-    if (login.required) {
-      stage = "homepage_restore";
-      await loadOfficialPageForAutomation(searchWindow, homepage.href);
-      if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
-    }
-    stage = "search_submission";
-    const submitted = await executeOfficialMallSearch(searchWindow, homepage.href, exactQuery);
-    if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
-    const products = submitted ? await collectOfficialMallSearchProducts(searchWindow, exactQuery) : [];
-    if (!submitted) {
-      searchWindow.setTitle(`ê³µì‹ëª° ë‹ë³´ê¸°ë¥¼ ëˆŒëŸ¬ ${exactQuery}ì„(ë¥¼) ê²€ìƒ‰í•´ ì£¼ì„¸ìš”`);
-      searchWindow.show();
-      searchWindow.focus();
-    } else {
-      searchWindow.hide();
-    }
-    return { ok: true, submitted, products, count: products.length, resultsUrl: searchWindow.webContents.getURL() };
-  } catch (error) {
-    const message = String(error?.message || error || "");
-    if (!browserWindowUsable(searchWindow)
-      || /Object has been destroyed|Render frame was disposed|WebContents was destroyed/i.test(message)) {
-      return closedInternalSearchResult(stage);
-    }
-    throw error;
-  }
-}
-
-async function waitForDomesticCaptureReady(searchWindow, timeoutMs = 25_000) {
-  // webContents.executeJavaScript waits for did-stop-loading in Electron.
-  // Read the live main frame so pending images/analytics cannot block stock.
-  const deadline = Date.now() + timeoutMs;
-  let lastSignature = "", stableSince = Date.now();
-  while (Date.now() < deadline && !searchWindow.isDestroyed()) {
-    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const visible = element => {
-        const style = getComputedStyle(element), rect = element.getBoundingClientRect();
-        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-      };
-      const text = String(document.body?.innerText || "").slice(0, 120000);
-      const cards = [...document.querySelectorAll('a[href]')].filter(visible).filter(link =>
-        /\\/(?:products?|window-products|goods|p|pd)\\/|\\/item\\/itemView\\.ssg|productDetail\\.action/i.test(link.href));
-      const unique = [...new Map(cards.map(link => [link.href, link])).values()];
-      const count = Number(text.match(/(?:ì „ì²´|ê²€ìƒ‰\\s*ê²°ê³¼)\\s*([\\d,]+)\\s*ê°œ/)?.[1]?.replace(/,/g, ""));
-      return {
-        blocked: /captcha|ë³´ì•ˆ\\s*í™•ì¸|ë¹„ì •ìƒì ì¸\\s*ì ‘ê·¼|ì ‘ì†.{0,12}(?:ì œí•œ|ì°¨ë‹¨)/i.test(text),
-        loginRequired: /ë¡œê·¸ì¸\\s*(?:í›„|ì´\\s*í•„ìš”|í•´ì£¼ì„¸ìš”)|íšŒì›\\s*ë¡œê·¸ì¸/i.test(text.slice(0, 12000)),
-        empty: /ê²€ìƒ‰ëœ\\s*ìƒí’ˆì´\\s*ì—†|ê²€ìƒ‰\\s*ê²°ê³¼ê°€?\\s*ì—†|ìƒí’ˆì´\\s*ì—†|ê²€ìƒ‰ê²°ê³¼\\s*ì—†ìŒ/i.test(text),
-        count, cards: unique.length,
-        busy: [...document.querySelectorAll('[aria-busy="true"],[role="progressbar"]')].some(visible),
-        signature: unique.map(link => link.href + '|' + String(link.closest('li,article')?.innerText || link.parentElement?.innerText || '').slice(0, 1500)).join('||'),
-      };
-    })()`, true).catch(() => null);
-    if (state?.blocked || state?.loginRequired) return;
-    // Observe the full window even if an early card looks stable. The operator
-    // prioritizes late cards/prices over an early return from a quiet DOM.
-    const enoughCards = state?.cards > 0 && (!Number.isFinite(state.count) || state.cards >= Math.min(state.count, 24));
-    const ready = state && !state.busy && (enoughCards || (state.empty && !state.cards));
-    const signature = ready ? (state.empty ? "empty" : state.signature) : "";
-    if (!signature || signature !== lastSignature) stableSince = Date.now();
-    lastSignature = signature;
-    // Keep the signature for the final settling check after the observation.
-    await wait(500);
-  }
-  // Give a final late DOM update a bounded opportunity to settle as well.
-  if (lastSignature && Date.now() - stableSince < 1_500 && !searchWindow.isDestroyed()) await wait(1_500);
-}
-
-function domesticPageAccessState(text = "", cards = 0) {
-  const securityVerificationRequired = /captcha|ë³´ì•ˆ\s*í™•ì¸|ë¹„ì •ìƒì ì¸\s*ì ‘ê·¼|ì ‘ì†.{0,12}(?:ì œí•œ|ì°¨ë‹¨)/i.test(text);
-  const loginRequired = !cards && /ë¡œê·¸ì¸(?:ì´)?\s*í•„ìš”(?:í•©ë‹ˆë‹¤|í•´ìš”)|ë¡œê·¸ì¸(?:ì„)?\s*í•´ì£¼ì„¸ìš”/i.test(text);
-  const unavailable = /ì„œë¹„ìŠ¤\s*ì ‘ì†ì´\s*ì›í™œí•˜ì§€\s*ì•Š|ì„œë¹„ìŠ¤ë¥¼\s*ì´ìš©í• \s*ìˆ˜\s*ì—†|ì¼ì‹œì ì¸\s*ì˜¤ë¥˜ê°€\s*ë°œìƒ/i.test(text);
-  return {
-    verificationReason: securityVerificationRequired ? "security_verification_required"
-      : loginRequired ? "login_required" : unavailable ? "service_unavailable" : "",
-    securityVerificationRequired, loginRequired,
-  };
-}
-
-async function waitForDomesticDetailReady(searchWindow, storeName, productUrl, generation = domesticSearchGeneration, articleNumber = "") {
-  const deadline = Date.now() + 25_000;
-  let snapshot = null;
-  while (Date.now() < deadline) {
-    if (domesticSearchCanceled(generation) || searchWindow.isDestroyed()) throw new Error("DOMESTIC_SEARCH_CANCELED");
-    const observed = await searchWindow.webContents.mainFrame.executeJavaScript(
-      `(${captureDomesticDetailPage.toString()})(${captureRenderedStockEvidence.toString()}, ${JSON.stringify(renderedStockSelectors(storeName))})`, true).catch(() => null);
-    if (observed) {
-      const access = domesticPageAccessState(observed.fullText);
-      if (access.verificationReason) throw Object.assign(new Error(access.verificationReason), access);
-      const expectedPage = domesticProductUrlIdentity(observed.href) === domesticProductUrlIdentity(productUrl);
-      const naverCanonicalPage = storeName === "ë„¤ì´ë²„ íŒ¨ì…˜íƒ€ìš´"
-        && /^https:\/\/(?:shopping|m\.shopping|brand|smartstore)\.naver\.com\//i.test(observed.href)
-        && strictProductArticleIdentityMatch(observed, articleNumber);
-      if (expectedPage || naverCanonicalPage) {
-        snapshot = observed;
-        if (observed.ready) return observed;
-      }
-    }
-    await wait(400);
-  }
-  throw Object.assign(new Error("product_detail_not_ready"), { snapshot });
-}
-
-async function collectRenderedProductStock(searchWindow, storeName = "", generation = domesticSearchGeneration, onActivity = null, resumeOptions = [], resumeBranches = [], checkpointUrl = "") {
-  const canceled = () => domesticSearchCanceled(generation) || !searchWindow || searchWindow.isDestroyed();
-  if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
-  const strategy = retailerStockStrategy({store: storeName, url: searchWindow.webContents.getURL()});
-  const capture = () => searchWindow.webContents.mainFrame.executeJavaScript(
-    `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(strategy.optionSelectors)})`, true);
-  await openRenderedSizeOptions(searchWindow);
-  let initial = await capture();
-  let variants = {options: [], complete: true};
-  const readControls = () => searchWindow.webContents.mainFrame.executeJavaScript(`(${captureNativeStockControls.toString()})()`, true);
-  try {
-    // Opening a seller's option menu can start an asynchronous request. An
-    // empty/placeholder control is pending data, not an exhausted size list.
-    const optionsDeadline = Date.now() + 25_000;
-    while (!canceled()) {
-      const controls = await readControls();
-      const unpopulated = controls.groups?.some(group => !(group.options || []).some(option => !option.placeholder));
-      if (!unpopulated || Date.now() >= optionsDeadline) break;
-      await openRenderedSizeOptions(searchWindow);
-      await wait(400);
-    }
-    initial = await capture();
-    variants = await collectNativeStockVariants({
-      canceled, resumeOptions, resumeBranches,
-      read: async depth => {
-        let state = await readControls();
-        const group = state.groups?.[depth];
-        if (group?.kind === "custom" && !group.options.length) {
-          await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-            const el = document.querySelector(${JSON.stringify(group.selector)});
-            if (el && el.getAttribute('aria-expanded') !== 'true' && !el.disabled) el.click();
-          })()`, true);
-          const optionDeadline = Date.now() + 25_000;
-          while (Date.now() < optionDeadline) {
-            if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
-            await wait(300);
-            state = await readControls();
-            if (state.groups?.[depth]?.options?.length) break;
-          }
-        }
-        return state;
-      },
-      select: async (group, option) => {
-        if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
-        const selected = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-          const el = document.querySelector(${JSON.stringify(option.selector || group.selector)});
-          if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
-          if (el.tagName === 'SELECT') {
-            const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
-            setter.call(el, ${JSON.stringify(option.value)});
-            el.dispatchEvent(new Event('input', {bubbles:true}));
-            el.dispatchEvent(new Event('change', {bubbles:true}));
-          } else el.click();
-          return true;
-        })()`, true);
-        if (!selected) throw new Error("STOCK_OPTION_CHANGED");
-      },
-      settle: async () => {
-        // Reread until dependent controls are populated and stable. Retain a
-        // finite bound for a broken widget; the caller marks partial coverage.
-        let previous = "", stable = 0;
-        for (let attempt = 0; attempt < 12; attempt++) {
-          if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
-          await wait(300);
-          const state = await readControls();
-          const signature = JSON.stringify(state);
-          const ready = (state.groups || []).every(g => g.kind === 'custom' || g.options.some(o => !o.placeholder));
-          stable = ready && signature === previous ? stable + 1 : 0;
-          previous = signature;
-          if (stable >= 2) break;
-        }
-      },
-      onProgress: update => onActivity?.({option: update.label, optionCount: update.completed,
-        optionCheckpoint: {url: checkpointUrl || searchWindow.webContents.getURL(), options: update.options, branches: update.branches, checkedAt: new Date().toISOString()}}),
-    });
-  } catch (error) {
-    if (canceled()) throw error;
-    variants = {options: [], complete: false};
-  }
-  const observed = normalizeRenderedStockEvidence({...initial,
-    options: variants.options.length ? variants.options : variants.complete ? initial?.options || [] : [],
-    purchaseAvailable: !variants.complete && !variants.options.length ? false : initial?.purchaseAvailable,
-  });
-  return {...observed, stockStrategy: strategy.id, stockCheckedAt: variants.options.map(option => option.observedAt).filter(Boolean).sort()[0] || new Date().toISOString(),
-    stockCoverage: !variants.complete ? 'partial' : observed.stockVerified ? 'observed' : 'unknown'};
-}
-
-async function refreshDomesticProductStock(product, generation = domesticSearchGeneration, onActivity = null, resumeOptions = [], resumeBranches = []) {
-  if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
-  const fallback = { inStock: product.inStock === false ? false : null, sizes: product.sizes || [],
-    stockText: String(product.stockText || ""), stockStatus: product.inStock === false ? "soldout" : "unknown", stockVerified: product.inStock === false };
-  if (!/^https:\/\//i.test(String(product.url || ""))) return fallback;
-  const stockWindow = new BrowserWindow({ show: false, width: 1200, height: 900, icon: APP_ICON_PATH,
-    webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, backgroundThrottling: false, paintWhenInitiallyHidden: true, offscreen: true } });
-  activeDomesticSearchWindows.add(stockWindow);
-  stockWindow.on("closed", () => activeDomesticSearchWindows.delete(stockWindow));
-  let timer, expire, stopped = false;
-  const deadline = new Promise(resolve => { expire = () => resolve(fallback); timer = setTimeout(expire, 45_000); });
-  const activity = async update => {
-    if (stopped || stockWindow.isDestroyed()) return;
-    clearTimeout(timer); timer = setTimeout(expire, 45_000);
-    await onActivity?.(update);
-  };
-  try {
-    return await Promise.race([
-      (async () => {
-        void stockWindow.loadURL(product.url).catch(() => {});
-        await waitForDomesticCaptureReady(stockWindow, 25_000);
-        const observed = await collectRenderedProductStock(stockWindow, product.store, generation, activity, resumeOptions, resumeBranches, product.url);
-        return observed.stockText || observed.purchaseLimitText || observed.sizes.length || observed.inStock !== null ? observed : fallback;
-      })(),
-      deadline,
-    ]);
-  } catch (error) {
-    if (domesticSearchCanceled(generation)) throw error;
-    return fallback;
-  } finally {
-    stopped = true;
-    clearTimeout(timer);
-    if (!stockWindow.isDestroyed()) stockWindow.destroy();
-    activeDomesticSearchWindows.delete(stockWindow);
-  }
-}
-
-async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
-  const expectedQuery = sanitizeDomesticQuery(query);
-  const diagnostic = searchWindow.domesticDiagnostics = {
-    stage: "naver_result_navigation", targetUrl, inspectedFrames: 0, inspectionError: "", navigationError: "",
-  };
-  const inspectSettledResult = async () => {
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      if (searchWindow.isDestroyed()) return {ok: false, verificationReason: "search_canceled"};
-      if (attempt > 0) await wait(500);
-      const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-        const href = String(location.href || "");
-        const text = String(document.body?.innerText || "").slice(0, 60000);
-        let cards = document.querySelectorAll([
-          'a[href*="/window-products/"]',
-          'a[href*="/products/"]',
-          'a[href*="/catalog/"]',
-        ].join(',')).length;
-        // The downstream collector also accepts external official-store
-        // cards. Their URLs need not contain a Naver product path, and the
-        // query may exist only in the input rather than body.innerText.
-        if (!cards) {
-          const visible = element => {
-            const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
-            return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
-          };
-          const found = new Set();
-          for (const link of document.querySelectorAll('a[href]')) {
-            if (!/^https?:$/.test(link.protocol) || !visible(link) || link.closest('header,nav,footer')) continue;
-            for (let card = link, depth = 0; card && card !== document.body && depth < 8; card = card.parentElement, depth++) {
-              const cardText = String(card.innerText || card.textContent || "").trim();
-              if (card.querySelector('img') && /[\\d,]+\\s*ì›/.test(cardText) && cardText.length <= 5000) {
-                found.add(link.href); break;
-              }
-            }
-          }
-          cards = found.size;
-        }
-        const explicitEmpty = /ê²€ìƒ‰\\s*ê²°ê³¼ê°€?\\s*(?:ì—†|0)|ìƒí’ˆì´?\\s*(?:ì—†|0)|ì¼ì¹˜í•˜ëŠ”\\s*(?:ìƒí’ˆ|ì œì•ˆ)ì´\\s*ì—†/i.test(text);
-        const positiveCount = /(?:ì „ì²´|ê²€ìƒ‰\\s*ê²°ê³¼)\\s*[1-9][\\d,]*\\s*ê°œ/i.test(text);
-        return { href, text, cards, explicitEmpty, positiveCount, documentReadyState: document.readyState };
-      })()`, true).catch((error) => { diagnostic.inspectionError = String(error?.message || error); return null; });
-      if (!state) continue;
-      Object.assign(diagnostic, { inspectedFrames: diagnostic.inspectedFrames + 1, resolvedUrl: state.href,
-        documentReadyState: state.documentReadyState, bodyLength: state.text.length, productCardCount: state.cards,
-        explicitEmpty: state.explicitEmpty, positiveCount: state.positiveCount });
-      const access = domesticPageAccessState(state.text, state.cards);
-      if (access.verificationReason) return { ok: false, resolvedUrl: state.href, ...access };
-      let decodedUrl = String(state.href || "");
-      try { decodedUrl = decodeURIComponent(decodedUrl); } catch {}
-      const compact = (value) => String(value || "").replace(/[^A-Z0-9ê°€-íž£]/gi, "").toUpperCase();
-      const exactResult = /shopping\.naver\.com\/window\/search\//i.test(state.href)
-        && compact(decodedUrl).includes(compact(expectedQuery));
-      diagnostic.expectedPage = exactResult;
-      // Fashion Town often keeps its loadURL promise pending while the exact
-      // result document is already interactive. Once that DOM and query URL
-      // exist, the later bounded card collectorâ€”not the browser load eventâ€”
-      // decides whether products or an explicit empty result are present.
-      if (exactResult && isNaverRenderedResultReady({ url: state.href, text: state.text, cards: state.cards }, expectedQuery)) {
-        return { ok: true, resolvedUrl: state.href };
-      }
-    }
-    return { ok: false, resolvedUrl: String(searchWindow.webContents.getURL() || "") };
-  };
-
-  // Start navigation without waiting for the full page load. Advertising and
-  // recommendation frames can keep Electron's load promise open long after
-  // the Fashion Town result DOM is usable.
-  let firstError = null;
-  const navigation = searchWindow.loadURL(targetUrl)
-    .catch((error) => { firstError = error; diagnostic.navigationError = String(error?.message || error); });
-  const firstResult = await inspectSettledResult();
-  if (firstResult.ok || firstResult.verificationReason) return firstResult;
-  const errorMessage = String(firstError?.message || "NAVER_RESULT_PAGE_NOT_SETTLED");
-  return {
-    ok: false,
-    resolvedUrl: firstResult.resolvedUrl,
-    errorMessage,
-    timeout: /TIMEOUT|TIMED_OUT/i.test(errorMessage),
-    networkError: /ERR_(?:NAME_NOT_RESOLVED|CONNECTION|TIMED_OUT|INTERNET_DISCONNECTED)/i.test(errorMessage),
-  };
-}
-
-async function loadDomesticRetailerResultPage(searchWindow, targetUrl) {
-  const diagnostic = searchWindow.domesticDiagnostics = {
-    stage: "retailer_result_navigation", targetUrl, inspectedFrames: 0, inspectionError: "", navigationError: "",
-  };
-  void searchWindow.loadURL(targetUrl).catch((error) => { diagnostic.navigationError = String(error?.message || error); });
-  for (let attempt = 0; attempt < 60; attempt++) {
-    if (searchWindow.isDestroyed()) return {ok: false, verificationReason: "search_canceled"};
-    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const expected = new URL(${JSON.stringify(targetUrl)}), current = new URL(location.href);
-      const sameQuery = ["q", "query", "keyword"].filter(key => expected.searchParams.has(key))
-        .every(key => expected.searchParams.get(key) === current.searchParams.get(key));
-      const expectedPage = current.origin === expected.origin && current.pathname === expected.pathname && sameQuery;
-      const text = String(document.body?.innerText || "").slice(0, 50000);
-      const cards = document.querySelectorAll('a[href*="itemView.ssg"],a[href*="/p/product/"],a[href*="productDetail.action"]').length;
-      const empty = /ê²€ìƒ‰\\s*ê²°ê³¼ê°€?\\s*ì—†|ê²€ìƒ‰ëœ\\s*ìƒí’ˆì´\\s*ì—†|ì¼ì¹˜í•˜ëŠ”\\s*ìƒí’ˆì´\\s*ì—†/i.test(text);
-      return {text, cards, href: current.href, expectedPage, explicitEmpty: empty, documentReadyState: document.readyState,
-        ready: expectedPage && (cards > 0 || empty)};
-    })()`, true).catch((error) => { diagnostic.inspectionError = String(error?.message || error); return null; });
-    if (state) Object.assign(diagnostic, { inspectedFrames: diagnostic.inspectedFrames + 1, resolvedUrl: state.href,
-      documentReadyState: state.documentReadyState, bodyLength: state.text.length, productCardCount: state.cards,
-      expectedPage: state.expectedPage, explicitEmpty: state.explicitEmpty });
-    const access = domesticPageAccessState(state?.text, state?.cards);
-    if (access.verificationReason) return {ok: false, ...access, resolvedUrl: state?.href};
-    if (state?.ready) return {ok: true, resolvedUrl: state.href};
-    await wait(500);
-  }
-  return {ok: false, verificationReason: "page_load_timeout", resolvedUrl: searchWindow.webContents.getURL()};
-}
-
-async function loadMusinsaResultPage(searchWindow, targetUrl, query) {
-  const expectedQuery = sanitizeDomesticProductCode(query) || sanitizeDomesticQuery(query);
-  let navigationError = null;
-  const navigation = searchWindow.loadURL(targetUrl).catch((error) => { navigationError = error; });
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    if (attempt > 0) await wait(500);
-    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const current = new URL(String(location.href || ""));
-      const expected = ${JSON.stringify(expectedQuery)};
-      const actual = String(current.searchParams.get("keyword") || "").trim();
-      const pageText = String(document.body?.innerText || "").slice(0, 50000);
-      const exactSearch = /(^|\\.)musinsa\\.com$/i.test(current.hostname)
-        && current.pathname.includes("/search/goods")
-        && actual.toUpperCase() === expected.toUpperCase();
-      const cards = document.querySelectorAll('a[href*="/products/"],a[href*="/product/"]').length;
-      const explicitEmpty = /ê²€ìƒ‰\\s*ê²°ê³¼ê°€?\\s*(?:ì—†|0)|ìƒí’ˆì´?\\s*(?:ì—†|0)|ê²€ìƒ‰ëœ\\s*ìƒí’ˆì´\\s*ì—†/i.test(pageText);
-      return { href: current.href, text: pageText, cards, explicitEmpty: exactSearch && explicitEmpty,
-        ready: Boolean(exactSearch && document.documentElement && (cards > 0 || explicitEmpty)) };
-    })()`, true).catch(() => null);
-    const access = domesticPageAccessState(state?.text, state?.cards);
-    if (access.verificationReason) return { ok: false, resolvedUrl: state.href, ...access };
-    if (state?.ready) return { ok: true, resolvedUrl: state.href, explicitEmpty: state.explicitEmpty };
-  }
-  await Promise.race([navigation, wait(500)]);
-  const errorMessage = String(navigationError?.message || "MUSINSA_RESULT_DOM_NOT_READY");
-  return {
-    ok: false,
-    resolvedUrl: String(searchWindow.webContents.getURL() || targetUrl),
-    errorMessage,
-    timeout: true,
-    networkError: /ERR_(?:NAME_NOT_RESOLVED|CONNECTION|TIMED_OUT|INTERNET_DISCONNECTED)/i.test(errorMessage),
-  };
-}
-
-async function renderedSearchSourceResult(source, articleNumber, brand = "", title = "", securityRetry = 0, searchAttempt = null, sharedNaverSession = null, generation = domesticSearchGeneration, onActivity = null) {
-  if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
-  const interactiveOfficialSearch = source.store === "ë¸Œëžœë“œ ê³µì‹ëª°"
-    && !String(source.officialProductUrl || "")
-    && /^https:\/\//i.test(String(source.homepageUrl || ""));
-  const interactiveSiteSearch = interactiveOfficialSearch || source.interactiveSearch === true;
-  const officialDirectUrl = source.store === "ë¸Œëžœë“œ ê³µì‹ëª°"
-    ? String(source.directProductUrls?.[0] || "") : "";
-  const url = String(officialDirectUrl || searchAttempt?.url || source.officialProductUrl || (interactiveOfficialSearch ? source.homepageUrl : source.searchUrl) || "");
-  if (!/^https:\/\//i.test(url)) return { count: Number(source.count || 0), products: [] };
-  const naverPortalSource = /^ë„¤ì´ë²„\s/.test(String(source.store || ""));
-  const directNaverFashionResult = naverPortalSource
-    && String(source.store || "") === "ë„¤ì´ë²„ íŒ¨ì…˜íƒ€ìš´"
-    && /shopping\.naver\.com\/window\/search\//i.test(url);
-  // A valid search URL is navigation evidence only. Naver, SSG and LotteON
-  // must continue into rendered-card capture so visible products are imported.
-  const directParallelResultLink = String(source.store || "") === "ë³‘í–‰ìˆ˜ìž…Â·íŽ¸ì§‘ìƒµ"
-    && /search\.naver\.com\/search\.naver/i.test(url)
-    && /[?&]where=shopping(?:&|$)/i.test(url)
-    && /[?&]query=/i.test(url);
-  if (directParallelResultLink) {
-    // Parallel-import search remains link-only by policy; the three domestic
-    // first-party channels above are always parsed.
-    return createDomesticSearchLinkResult({ store: source.store, articleNumber, resolvedSearchUrl: url });
-  }
-  // NAVER_SINGLE_OVERVIEW_SEARCH_V1: one Fashion Town overview search is captured once, then each card is classified locally.
-  const ssgChannelSource = /^SSG(?:\s|$)/.test(String(source.store || ""));
-  const domesticRetailerSource = ssgChannelSource || /^ë¡¯ë°ì˜¨(?:\s|$)/.test(String(source.store || ""));
-  const musinsaSource = String(source.store || "") === "ë¬´ì‹ ì‚¬";
-  let naverChannelCounts = null;
-  let searchWindow;
-  let musinsaSettledEmpty = false;
-  let officialDirectDetail = null;
-  let officialSearchSubmitted = false;
-  try {
-    const reuseNaverSearch = Boolean(naverPortalSource
-      && sharedNaverSession?.window
-      && !sharedNaverSession.window.isDestroyed()
-      && sharedNaverSession.resultsUrl
-      && sharedNaverSession.channelCounts);
-    // The overview page already contains brand-store, department and outlet results.
-    // Never click those channel tabs after the product query has been submitted.
-    const naverChannelClickRequired = false;
-    if (reuseNaverSearch) {
-      // Reuse the exact DOM produced by the first query. Reloading the result URL
-      // caused Naver to render/transition again and made one user search look like
-      // several searches even though the query text was not retyped.
-      searchWindow = sharedNaverSession.window;
-      naverChannelCounts = sharedNaverSession.channelCounts;
-      await wait(250);
-    } else {
-      searchWindow = new BrowserWindow({
-        show: false,
-        icon: APP_ICON_PATH,
-        width: naverPortalSource ? 1480 : 1100,
-        height: naverPortalSource ? 900 : 800,
-        webPreferences: {
-          partition: DOMESTIC_SEARCH_PARTITION,
-          sandbox: true,
-          backgroundThrottling: false,
-          paintWhenInitiallyHidden: true,
-          offscreen: true,
-        },
-      });
-      activeDomesticSearchWindows.add(searchWindow);
-      searchWindow.on("closed", () => activeDomesticSearchWindows.delete(searchWindow));
-      // The search viewport stays full-sized but is rendered offscreen. It is
-      // only shown by waitForNaverSecurityVerification when human action is required.
-      searchWindow.webContents.setWindowOpenHandler(({ url: popupUrl }) => {
-        if (/^https?:\/\//i.test(String(popupUrl || ""))) searchWindow.loadURL(popupUrl).catch(() => {});
-        return { action: "deny" };
-      });
-      searchWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
-      // Direct Fashion Town result URLs must not depend on a Naver-home bootstrap.
-      // The home navigation is the recurring source of Electron page-load failures.
-      const initialUrl = directNaverFashionResult
-        ? url
-        : (naverPortalSource ? "https://www.naver.com/" : url);
-      /*
-      // Establish Naver cookies/session on the normal home page first. A
-      // cold hidden window can reject a direct Fashion Town SPA navigation.
-      const initialUrl = naverPortalSource ? "https://www.naver.com/" : url;
-      */
-      if (!directNaverFashionResult && !musinsaSource && !domesticRetailerSource) try {
-        await Promise.race([
-          searchWindow.loadURL(initialUrl),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("SEARCH_PAGE_TIMEOUT")), 30_000)),
-        ]);
-      } catch (error) {
-        // Commerce SPAs frequently abort the first navigation while replacing it
-        // with their own redirect. Continue only when that replacement produced a
-        // real HTTPS document; every other load error remains an explicit failure.
-        // Electron can reject loadURL while a commerce SPA replaces the
-        // navigation with a usable HTTPS document. Trust the live document,
-        // not the rejected promise or its error code.
-        const currentUrl = String(searchWindow.webContents.getURL() || "");
-        const documentReady = /^https:\/\//i.test(currentUrl)
-          ? await searchWindow.webContents.mainFrame.executeJavaScript(
-            `Boolean(document.documentElement && String(location.href || "").startsWith("https://"))`,
-            true,
-          ).catch(() => false)
-          : false;
-        // Musinsa can finish painting a valid search result and then abort a
-        // secondary SPA navigation. Electron rejects loadURL in that case even
-        // though the user-visible result is already authoritative. Accept the
-        // document only when it is the exact Musinsa search URL and either
-        // product cards or the site's explicit empty-result message are visible.
-        const expectedMusinsaQuery = sanitizeDomesticProductCode(articleNumber)
-          || sanitizeDomesticQuery(searchAttempt?.query || source.searchQuery || title);
-        let recoveredMusinsaResult = false;
-        if (musinsaSource) {
-          // The rejected navigation event can arrive just before React commits
-          // the final DOM. Give that already-running render a short bounded
-          // window; this never submits or repeats the search.
-          for (let attempt = 0; attempt < 8 && !recoveredMusinsaResult; attempt += 1) {
-            if (attempt > 0) await wait(500);
-            recoveredMusinsaResult = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-              const current = new URL(String(location.href || ""));
-              const expected = ${JSON.stringify(expectedMusinsaQuery)};
-              const actual = String(current.searchParams.get("keyword") || "").trim();
-              const pageText = String(document.body?.innerText || "").slice(0, 50000);
-              const exactSearch = /(^|\\.)musinsa\\.com$/i.test(current.hostname)
-                && current.pathname.includes("/search/goods")
-                && actual.toUpperCase() === expected.toUpperCase();
-              const cards = document.querySelectorAll('a[href*="/products/"],a[href*="/product/"]').length;
-              const explicitEmpty = /ê²€ìƒ‰\\s*ê²°ê³¼ê°€?\\s*(?:ì—†|0)|ìƒí’ˆì´?\\s*(?:ì—†|0)|ê²€ìƒ‰ëœ\\s*ìƒí’ˆì´\\s*ì—†/i.test(pageText);
-              return Boolean(exactSearch && document.documentElement && (cards > 0 || explicitEmpty));
-            })()`, true).catch(() => false);
-          }
-        }
-        // Direct Naver Fashion Town navigation has its own bounded recovery
-        // below. Do not let the first Electron loadURL rejection escape to the
-        // outer page_load_failed handler before that recovery can run.
-        if (!documentReady && !recoveredMusinsaResult && !directNaverFashionResult) throw error;
-      }
-      if (domesticRetailerSource) {
-        const loaded = await loadDomesticRetailerResultPage(searchWindow, initialUrl);
-        if (!loaded.ok) return renderedSearchFailure(loaded.verificationReason, searchWindow, {...loaded, searchSubmitted: true});
-      }
-      if (musinsaSource) {
-        const resultPage = await loadMusinsaResultPage(
-          searchWindow, url, searchAttempt?.query || source.searchQuery || articleNumber || title,
-        );
-        if (!resultPage.ok) {
-          return renderedSearchFailure(
-            resultPage.verificationReason || (resultPage.networkError ? "network_error" : "page_load_timeout"),
-            searchWindow, {
-              ...resultPage,
-              searchSubmitted: true,
-              resolvedSearchUrl: resultPage.resolvedUrl || url,
-              errorMessage: resultPage.errorMessage,
-            },
-          );
-        }
-        // The empty-result message refers to this exact search. Promotional
-        // product links below it must never become its search candidates.
-        if (resultPage.explicitEmpty) return {
-          count: 0, products: [], absenceConfirmed: true, searchCompleted: true,
-          searchSubmitted: true, resolvedSearchUrl: resultPage.resolvedUrl,
-        };
-      }
-      // A brand adapter may know a stable product-detail route. Verify that
-      // route against the exact POIZON article before falling back to the
-      // mall's fragile, framework-controlled search-result grid.
-      if (officialDirectUrl) {
-        await wait(1_500);
-        officialDirectDetail = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-          const expected = ${JSON.stringify(sanitizeDomesticProductCode(articleNumber))};
-          const compact = (value) => String(value || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
-          const pageText = String(document.body?.innerText || "");
-          const currentUrl = String(location.href || "");
-          if (!expected || (!compact(currentUrl).includes(compact(expected))
-            && !compact(pageText).includes(compact(expected)))) return null;
-          const titleElement = document.querySelector('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]');
-          const productTitle = String(titleElement?.textContent || document.title || "").replace(/\\s+/g, " ").trim();
-          const priceNodes = [...document.querySelectorAll('[itemprop="price"],[class*="price" i],strong,em,b,span')];
-          const prices = priceNodes.map((element) => {
-            const raw = String(element.getAttribute?.("content") || element.textContent || "").trim();
-            const priceSemantic = element.getAttribute?.("itemprop") === "price"
-              || /price/i.test(String(element.className?.baseVal || element.className || ""));
-            const match = priceSemantic
-              ? raw.match(/(?:[â‚©ï¿¦]\\s*)?([1-9][\\d,]{2,})\\s*ì›?/)
-              : raw.match(/(?:[â‚©ï¿¦]\\s*([1-9][\\d,]{2,})|([1-9][\\d,]{2,})\\s*ì›)/);
-            if (!match) return null;
-            const amount = Number(String(match[1] || match[2]).replace(/,/g, ""));
-            if (!Number.isFinite(amount) || amount < 1_000) return null;
-            const style = getComputedStyle(element);
-            const struck = /line-through/.test(style.textDecorationLine || style.textDecoration || "")
-              || Boolean(element.closest("del,s,strike"));
-            return { amount, value: amount.toLocaleString("ko-KR") + "ì›", struck };
-          }).filter(Boolean).filter((item) => !item.struck).sort((a, b) => a.amount - b.amount);
-          const image = [...document.querySelectorAll('img')].find((element) => {
-            const src = String(element.currentSrc || element.src || "");
-            const label = [src, element.alt, element.className].join(" ");
-            const rect = element.getBoundingClientRect();
-            return src && rect.width >= 120 && rect.height >= 120
-              && !/logo|icon|sprite|badge|banner|placeholder|loading/i.test(label);
-          });
-          return {
-            productUrl: currentUrl,
-            title: productTitle,
-            text: [productTitle, expected, prices[0]?.value || ""].filter(Boolean).join(" "),
-            markup: String(titleElement?.outerHTML || ""),
-            imageUrl: String(image?.currentSrc || image?.src || ""),
-            imageLinkedToProduct: Boolean(image),
-            price: prices[0]?.value || "",
-            originalPrice: "",
-          };
-        })()`, true).catch(() => null);
-        if (!officialDirectDetail) {
-          const fallbackUrl = String(searchAttempt?.url || source.officialProductUrl || source.searchUrl || "");
-          if (/^https:\/\//i.test(fallbackUrl) && fallbackUrl !== officialDirectUrl) {
-            await searchWindow.loadURL(fallbackUrl).catch(() => {});
-          }
-        }
-      }
-      if (directNaverFashionResult) {
-        const resultPage = await loadNaverFashionTownResultPage(
-          searchWindow, url, searchAttempt?.query || source.searchQuery || articleNumber || title,
-        );
-        if (!resultPage.ok) {
-          return renderedSearchFailure(resultPage.verificationReason
-            || (resultPage.networkError ? "network_error" : "naver_result_not_settled"), searchWindow, {
-            ...resultPage, searchSubmitted: true, resolvedSearchUrl: resultPage.resolvedUrl || url,
-          });
-        }
-      }
-      if (interactiveOfficialSearch) {
-        const login = await ensureOfficialAccountLogin(searchWindow, String(source.homepageUrl || url));
-        if (!login.ok) return renderedSearchFailure("login_required", searchWindow, { loginRequired: true });
-        if (login.required) await searchWindow.loadURL(String(source.homepageUrl || url)).catch(() => {});
-      }
-      if (interactiveSiteSearch && !directNaverFashionResult) {
-        const searchQuery = interactiveOfficialSearch
-          ? sanitizeDomesticProductCode(articleNumber) || sanitizeDomesticQuery(title)
-          : String(searchAttempt?.query || source.searchQuery || articleNumber || title || "").trim();
-        if (!searchQuery) return renderedSearchFailure("search_query_missing", searchWindow);
-        if (naverPortalSource) {
-          const shoppingHomeOpened = await clickNaverShoppingHomeMenu(searchWindow);
-          if (!shoppingHomeOpened) {
-            const pageText = await searchWindow.webContents.mainFrame.executeJavaScript(
-              `String(document.body?.innerText || "").slice(0, 20000)`,
-              true,
-            ).catch(() => "");
-            const securityRequired = isNaverSecurityVerificationText(pageText);
-            if (securityRequired && securityRetry < 1) {
-              const verified = await waitForNaverSecurityVerification(searchWindow);
-              if (verified) {
-                searchWindow.destroy();
-                searchWindow = null;
-                return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession, generation, onActivity);
-              }
-            }
-            return renderedSearchFailure(
-              securityRequired ? "security_verification_required" : "naver_shopping_click_failed",
-              searchWindow,
-              { securityVerificationRequired: securityRequired },
-            );
-          }
-          const fashionTownOpened = await clickNaverFashionTownMenu(searchWindow);
-          if (!fashionTownOpened) {
-            const pageText = await searchWindow.webContents.mainFrame.executeJavaScript(
-              `String(document.body?.innerText || "").slice(0, 20000)`,
-              true,
-            ).catch(() => "");
-            const securityRequired = isNaverSecurityVerificationText(pageText);
-            if (securityRequired && securityRetry < 1) {
-              const verified = await waitForNaverSecurityVerification(searchWindow);
-              if (verified) {
-                searchWindow.destroy();
-                searchWindow = null;
-                return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession, generation, onActivity);
-              }
-            }
-            return renderedSearchFailure(
-              securityRequired ? "security_verification_required" : "fashion_town_click_failed",
-              searchWindow,
-              { securityVerificationRequired: securityRequired },
-            );
-          }
-        }
-        const submitted = naverPortalSource
-          ? await submitNaverShoppingSearch(searchWindow, searchQuery)
-          : await executeOfficialMallSearch(searchWindow, String(source.homepageUrl || url), searchQuery);
-        if (source.store === "ë¸Œëžœë“œ ê³µì‹ëª°") officialSearchSubmitted = submitted;
-        if (!submitted && !interactiveOfficialSearch) {
-          const pageText = naverPortalSource
-            ? await searchWindow.webContents.mainFrame.executeJavaScript(
-              `String(document.body?.innerText || "").slice(0, 20000)`,
-              true,
-            ).catch(() => "")
-            : "";
-          const securityRequired = naverPortalSource && isNaverSecurityVerificationText(pageText);
-          if (securityRequired && securityRetry < 1) {
-            const verified = await waitForNaverSecurityVerification(searchWindow);
-            if (verified) {
-              searchWindow.destroy();
-              searchWindow = null;
-              return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession, generation, onActivity);
-            }
-          }
-          return renderedSearchFailure(
-            securityRequired ? "security_verification_required" : "search_submission_failed",
-            searchWindow,
-            { securityVerificationRequired: securityRequired },
-          );
-        }
-        // Official-mall inputs are framework controlled. The code can be visibly
-        // entered and the result grid can render even when the generic submit
-        // detector does not observe a URL change. Continue to the bounded result
-        // capture; only an explicit empty message may become "ìƒí’ˆ ì—†ìŒ".
-        await wait(submitted ? 2_000 : 1_200);
-      }
-    }
-    if (searchWindow.domesticDiagnostics) searchWindow.domesticDiagnostics.stage = "result_capture";
-    if (naverPortalSource) {
-      // Counts are useful metadata, but they are no longer a prerequisite for
-      // reading the overview result. Naver can change or delay tab-count markup
-      // while the actual product cards are already visible and usable.
-      naverChannelCounts ||= await readNaverFashionTownChannelCounts(searchWindow) || {};
-      if (sharedNaverSession && !reuseNaverSearch) {
-        sharedNaverSession.window = searchWindow;
-        sharedNaverSession.resultsUrl = String(searchWindow.webContents.getURL() || url);
-        sharedNaverSession.channelCounts = naverChannelCounts;
-        sharedNaverSession.searchSubmitted = true;
-      }
-      const currentChannelRaw = naverChannelCounts[String(source.store || "")];
-      const currentChannelCount = currentChannelRaw != null && Number.isFinite(Number(currentChannelRaw)) ? Number(currentChannelRaw) : null;
-      if (currentChannelCount === 0) {
-        return {
-          count: 0,
-          channelCount: 0,
-          products: [],
-          presenceConfirmed: false,
-          absenceConfirmed: true,
-          searchCompleted: true,
-          searchSubmitted: true,
-          resolvedSearchUrl: String(searchWindow.webContents.getURL() || url),
-          naverChannelCounts,
-        };
-      }
-    }
-    if (naverChannelClickRequired) {
-      const channelSelected = source.store === "ë„¤ì´ë²„ ê³µì‹ ë¸Œëžœë“œìŠ¤í† ì–´"
-        ? await ensureNaverOfficialBrandFilter(searchWindow)
-        : await clickNaverShoppingChannel(searchWindow, source.store);
-      if (!channelSelected) {
-        return renderedSearchFailure(
-          source.store === "ë„¤ì´ë²„ ê³µì‹ ë¸Œëžœë“œìŠ¤í† ì–´" ? "official_filter_failed" : "channel_selection_failed",
-          searchWindow,
-          { searchSubmitted: true },
-        );
-      }
-    }
-    // Naver and SSG exact results are already rendered above the fold.
-    // Scrolling first loads unrelated recommendations and can remove the
-    // single exact card from the candidate set.
-    if (musinsaSource) {
-      // Musinsa renders its search cards asynchronously. Do not close or read
-      // the window after a fixed short delay: wait for cards, an authoritative
-      // empty-result message, or a fully settled 15-second result page.
-      for (let attempt = 0; attempt < 15; attempt += 1) {
-        await wait(1_000);
-        const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-          const visible = (element) => {
-            if (!element) return false;
-            const style = getComputedStyle(element);
-            const rect = element.getBoundingClientRect();
-            return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-          };
-          const cards = [...document.querySelectorAll(
-            'a[href*="/products/"],a[href*="/product/"],[class*="goods" i] a[href],[class*="product" i] a[href]'
-          )].filter(visible).length;
-          const pageText = String(document.body?.innerText || "").slice(0, 50000);
-          return {
-            cards,
-            explicitEmpty: /ê²€ìƒ‰\\s*ê²°ê³¼ê°€?\\s*(?:ì—†|0)|ìƒí’ˆì´?\\s*(?:ì—†|0)|ê²€ìƒ‰ëœ\\s*ìƒí’ˆì´\\s*ì—†/i.test(pageText),
-            blocked: /captcha|ë³´ì•ˆ\\s*í™•ì¸|ë¹„ì •ìƒì ì¸\\s*ì ‘ê·¼|ì ‘ì†.{0,12}(?:ì œí•œ|ì°¨ë‹¨)/i.test(pageText),
-            loginRequired: /ë¡œê·¸ì¸\\s*(?:í›„|ì´\\s*í•„ìš”|í•´ì£¼ì„¸ìš”)|íšŒì›\\s*ë¡œê·¸ì¸/i.test(pageText.slice(0, 10000)),
-            ready: document.readyState === "complete" && pageText.trim().length > 0,
-          };
-        })()`, true).catch(() => null);
-        if (state?.cards > 0) {
-          await wait(750);
-          break;
-        }
-        if (state?.explicitEmpty) {
-          musinsaSettledEmpty = true;
-          break;
-        }
-        if (state?.blocked || state?.loginRequired) break;
-      }
-    }
-    if (officialDirectDetail) {
-      await wait(750);
-    } else if (naverPortalSource || ssgChannelSource || musinsaSource) {
-      await wait(1_500);
-    } else {
-      for (let attempt = 0; attempt < 10; attempt += 1) {
-        await wait(attempt === 0 ? 2_000 : 800);
-        await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-          const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-          window.scrollTo(0, Math.min(maxY, window.scrollY + Math.max(500, window.innerHeight * 0.8)));
-        })()`, true).catch(() => {});
-      }
-    }
-    await waitForDomesticCaptureReady(searchWindow, officialDirectDetail ? 1_000 : 25_000);
-    if (source.store === "ë¸Œëžœë“œ ê³µì‹ëª°" && !officialDirectDetail) {
-      const filter = await searchWindow.webContents.mainFrame.executeJavaScript(`(${captureOfficialSoldOutFilter.toString()})()`, true).catch(() => null);
-      if (filter) {
-        searchWindow.webContents.sendInputEvent({type: "mouseDown", ...filter, button: "left", clickCount: 1});
-        searchWindow.webContents.sendInputEvent({type: "mouseUp", ...filter, button: "left", clickCount: 1});
-        await onActivity?.({phase: "searching", detail: "í’ˆì ˆ ìƒí’ˆ í¬í•¨"});
-        await wait(900);
-        await waitForDomesticCaptureReady(searchWindow, 25_000);
-      }
-    }
-    let content = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-      const expectedArticle = ${JSON.stringify(String(articleNumber || ""))};
-      const expectedCompact = expectedArticle.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-      const expectedBase = expectedArticle.split(/[-_]/)[0].replace(/[^A-Z0-9]/gi, "").toUpperCase();
-      const matchesExpected = (value) => {
-        const compact = String(value || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
-        return Boolean(expectedCompact && compact.includes(expectedCompact))
-          || Boolean(expectedBase.length >= 5 && compact.includes(expectedBase));
-      };
-      const visible = (element) => {
-        const style = window.getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-      };
-      // Official malls increasingly render result cards inside open shadow DOMs
-      // and use generated class names. Collect every reachable root first, then
-      // fall back to the card's structure (link + image + price) instead of
-      // depending only on product-looking URL/class names.
-      const roots = [document];
-      for (let index = 0; index < roots.length; index += 1) {
-        for (const element of roots[index].querySelectorAll("*")) {
-          if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
-        }
-      }
-      const queryAll = (selector) => roots.flatMap((root) => [...root.querySelectorAll(selector)]);
-      const allLinks = queryAll("a[href]");
-      const directProductLinks = allLinks
-        .filter((link) => visible(link) || matchesExpected(link.href) || matchesExpected(link.outerHTML))
-        .filter((link) => /\\/(?:p|pd|products?|window-products|goods|product|(?:[a-z]{2}\\/)?t)\\//i.test(link.href)
-          || /productDetail\\.action/i.test(link.href)
-          || /\\/item\\/itemView\\.ssg/i.test(link.href)
-          || matchesExpected(link.href)
-          || matchesExpected(link.outerHTML));
-      // SSGì™€ ë¡¯ë°ëŠ” í’ˆë²ˆì„ ìƒí’ˆ ë§í¬ ì•ˆì´ ì•„ë‹ˆë¼ ê°™ì€ ì¹´ë“œì˜ í˜•ì œ ì œëª©ì—
-      // í‘œì‹œí•˜ê¸°ë„ í•œë‹¤. í’ˆë²ˆì„ í¬í•¨í•œ ì¹´ë“œì—ì„œ ì‹¤ì œ ë§í¬ë¥¼ ë‹¤ì‹œ ì°¾ëŠ”ë‹¤.
-      const articleCardLinks = [...document.querySelectorAll(
-        "li,article,[data-product-id],[data-item-id],[class*='product-card'],[class*='goods-item'],[class*='item-card'],[class*='cunit'],[class*='mnemitem'],[class*='item_unit'],[class*='itemUnit'],[class*='item_grid'],[class*='product_unit'],[class*='product'],[class*='goods']"
-      )].filter((card) => matchesExpected(card.innerText) || matchesExpected(card.outerHTML))
-        .flatMap((card) => [...card.querySelectorAll("a[href]")])
-        .filter((link) => visible(link) || matchesExpected(link.closest("li,article,div")?.innerText));
-      // Naver frequently ships generated class names and keeps the image,
-      // title and price in sibling nodes. Start at any visible node containing
-      // the exact article, then climb to the smallest owning block that has a
-      // link, image and price. This does not depend on Naver's class names.
-      const articleTextCardLinks = [...document.querySelectorAll("a,div,li,article,span,strong")]
-        .filter((element) => visible(element) && matchesExpected(element.innerText))
-        .flatMap((element) => {
-          let card = element;
-          for (let depth = 0; card && depth < 8 && card !== document.body; depth += 1, card = card.parentElement) {
-            const cardText = String(card.innerText || "");
-            if (matchesExpected(cardText)
-              && /[\\d,]+\\s*ì›/.test(cardText)
-              && card.querySelector("img")
-              && card.querySelector("a[href]")) return [...card.querySelectorAll("a[href]")];
-          }
-          return [];
-        })
-        .filter((link) => visible(link) || matchesExpected(link.closest("li,article,div")?.innerText));
-      const structuralCardLinks = allLinks.filter((link) => {
-        if (!visible(link) || /^(?:javascript:|mailto:|tel:)/i.test(String(link.getAttribute("href") || ""))) return false;
-        if (link.closest("header,nav,footer,[role='navigation']")) return false;
-        let card = link;
-        for (let depth = 0; card && depth < 7 && card !== document.body; depth += 1, card = card.parentElement) {
-          const text = String(card.innerText || "").replace(/\\s+/g, " ").trim();
-          const image = card.querySelector("img[src],img[data-src],img[data-original],picture img");
-          const price = /(?:â‚©|ï¿¦)\\s*[\\d,]+|[\\d,]+\\s*ì›/.test(text);
-          if (image && price && text.length >= 5 && text.length <= 1200) return true;
-        }
-        return false;
-      });
-      const productLinks = [...new Set([
-        ...directProductLinks, ...articleCardLinks, ...articleTextCardLinks, ...structuralCardLinks,
-      ])];
-      const seen = new Set();
-      const productCards = [];
-      for (const link of productLinks) {
-        const productUrl = String(link.href || "").split("#")[0];
-        let productKey = productUrl;
-        try {
-          const parsedProductUrl = new URL(productUrl);
-          // Naver cards often expose image and title anchors with different
-          // tracking parameters for the same product. Count and click that
-          // product once by its stable origin/path identity.
-          if (/\\.naver\\.com$/i.test(parsedProductUrl.hostname)) {
-            productKey = parsedProductUrl.origin + parsedProductUrl.pathname;
-          }
-        } catch {}
-        if (!productUrl || seen.has(productKey)) continue;
-        let card = link.closest("li, article, [data-product-id], [data-item-id], [class*='product-card'], [class*='goods-item'], [class*='item-card'], [class*='cunit'], [class*='mnemitem'], [class*='item_unit'], [class*='itemUnit'], [class*='item_grid'], [class*='product_unit']");
-        // Fashion Town uses generated class names and often separates its image,
-        // title and price anchors. Select the smallest owning result block that
-        // contains an image and a price instead of trusting a class name.
-        for (let node = link, depth = 0; node && depth < 9 && node !== document.body; node = node.parentElement, depth += 1) {
-          const nodeText = String(node.innerText || node.textContent || "").trim();
-          if (node.querySelector?.("img") && /[\\d,]+\\s*ì›/.test(nodeText) && nodeText.length <= 5000) {
-            card = node;
-            break;
-          }
-        }
-        card ||= link.parentElement;
-        const text = String(card?.innerText || link.innerText || "").trim();
-        // SSG places its brand and "ë³¸ì‚¬ì§ì˜" badges near the product title,
-        // sometimes outside the immediate anchor. Keep enough of the owning
-        // card to classify the seller without borrowing evidence from another card.
-        const markup = String(card?.outerHTML || link.outerHTML || "").slice(0, 8000);
-        const sameProductLinks = [link, ...(card?.querySelectorAll?.("a[href]") || [])]
-          .filter((candidate) => String(candidate.href || "").split("#")[0] === productUrl);
-        const linkedImages = sameProductLinks.flatMap((candidate) => [...candidate.querySelectorAll("img")]);
-        const image = linkedImages.find((candidate) => {
-          const value = String(candidate.currentSrc || candidate.dataset?.original || candidate.dataset?.src || candidate.src || "");
-          return value && !/logo|icon|sprite|badge|banner|placeholder|loading|swatch|color/i.test([value, candidate.alt, candidate.className].join(" "));
-        });
-        const imageUrl = String(image?.currentSrc || image?.dataset?.original || image?.dataset?.src || image?.src || "");
-        const imageLinkedToProduct = Boolean(imageUrl);
-        const titleElement = card?.querySelector?.("[class*='title'], [class*='name'], strong");
-        const title = String(image?.alt || link.getAttribute("aria-label") || titleElement?.textContent || text.split("\\n")[0] || "").trim();
-        const priceCandidates = [...(card?.querySelectorAll?.("del,s,strike,strong,b,em,span,p,div") || [])]
-          .map((element) => {
-            const value = String(element.textContent || "").trim();
-            if (!/^[\\d,]+\\s*ì›$/.test(value)) return null;
-            const style = getComputedStyle(element);
-            const struck = /line-through/.test(style.textDecorationLine || style.textDecoration || "")
-              || Boolean(element.closest("del,s,strike"));
-            const className = String(element.className?.baseVal || element.className || "");
-            const context = [className, element.getAttribute?.("aria-label"), element.getAttribute?.("title"),
-              element.parentElement?.className, element.previousElementSibling?.textContent]
-              .join(" ").replace(/\\s+/g, " ").slice(0, 240);
-            if (/ë°°ì†¡(?:ë¹„)?|ì ë¦½|í¬ì¸íŠ¸|í˜œíƒ|ì¿ í°|ì›”\\s*ë‚©ë¶€/i.test(context)) return null;
-            const rgb = String(style.color || "").match(/\\d+/g)?.map(Number) || [];
-            const red = rgb.length >= 3 && rgb[0] > rgb[1] * 1.35 && rgb[0] > rgb[2] * 1.35;
-            const amount = Number(value.replace(/[^0-9]/g, ""));
-            const score = (struck ? -1000 : 0) + (red ? 80 : 0)
-              + (/sale|discount|final|current|price/i.test(className) ? 35 : 0)
-              + (Number(style.fontWeight) >= 600 || /bold/i.test(style.fontWeight) ? 15 : 0);
-            return { value, amount, struck, score };
-          }).filter(Boolean)
-          .filter((candidate) => !candidate.struck && candidate.amount > 0)
-          .sort((left, right) => right.score - left.score || left.amount - right.amount);
-        const fallbackPrice = text.split("\\n")
-          .map((line) => String(line || "").trim())
-          .filter((line) => !/ë°°ì†¡(?:ë¹„)?|ì ë¦½|í¬ì¸íŠ¸|í˜œíƒ|ì¿ í°|ì›”\\s*ë‚©ë¶€/i.test(line))
-          .map((line) => line.match(/[\\d,]+\\s*ì›/)?.[0] || "")
-          .find(Boolean) || "";
-        const price = priceCandidates[0]?.value || fallbackPrice;
-        const originalPrice = [...(card?.querySelectorAll?.("del,s,strike") || [])]
-          .map((element) => String(element.textContent || "").trim())
-          .find((value) => /^[\\d,]+\\s*ì›$/.test(value)) || "";
-        seen.add(productKey);
-        const channelEvidenceText = [text, markup].join(" ");
-        const officialBrandStoreLabelMatched = /ë¸Œëžœë“œ\\s*ì§ì˜ëª°|ê³µì‹\\s*ë¸Œëžœë“œ|ë¸Œëžœë“œ\\s*ìŠ¤í† ì–´/i.test(channelEvidenceText);
-        const departmentStoreLabelMatched = /ë°±í™”ì /i.test(channelEvidenceText);
-        const outletLabelMatched = /ì•„ìš¸ë ›|outlet/i.test(channelEvidenceText);
-        let naverWholeViewChannel = "";
-        try {
-          const productHost = new URL(productUrl).hostname.toLowerCase();
-          if (productHost === "naver.com" || productHost.endsWith(".naver.com")) {
-            naverWholeViewChannel = /\\/window-products\\/department\\//i.test(productUrl) || departmentStoreLabelMatched
-              ? "department"
-              : /\\/window-products\\/outlet\\//i.test(productUrl) || outletLabelMatched
-                ? "outlet"
-                : "brand-store";
-          }
-        } catch {}
-        productCards.push({
-          productUrl, text, markup, imageUrl, imageLinkedToProduct, title, price, originalPrice,
-          stockEvidence: (${captureRenderedStockEvidence.toString()})([], card || link),
-          officialBrandStoreLabelMatched, departmentStoreLabelMatched, outletLabelMatched,
-          naverWholeViewChannel,
-        });
-      }
-      const fullPageText = String(document.body?.innerText || "");
-      const pageText = fullPageText.slice(0, 120000);
-      const pageHeaderText = [...document.querySelectorAll('header,nav')]
-        .map((element) => String(element.innerText || ""))
-        .join(" ").slice(0, 20000);
-      const selectedChannelEmpty = /ê²€ìƒ‰ëœ\\s*ìƒí’ˆì´\\s*ì—†(?:ìŠµë‹ˆë‹¤|ì–´)|ê²€ìƒ‰\\s*ê²°ê³¼ê°€?\\s*ì—†(?:ìŠµë‹ˆë‹¤|ì–´)|ìƒí’ˆì´\\s*ì—†(?:ìŠµë‹ˆë‹¤|ì–´)|ê²€ìƒ‰ê²°ê³¼\\s*ì—†ìŒ/i.test(fullPageText);
-      const visibleCountMatches = [...fullPageText.matchAll(/(?:ì „ì²´|ê²€ìƒ‰\\s*ê²°ê³¼)\\s*([\\d,]+)\\s*ê°œ/gi)];
-      const visibleResultCountObserved = visibleCountMatches.length > 0;
-      const visibleResultCount = visibleCountMatches.reduce((maximum, match) =>
-        Math.max(maximum, Number(String(match[1] || "0").replace(/,/g, "")) || 0), 0);
-      const requestedStore = ${JSON.stringify(String(source.store || ""))};
-      const recognizedChannelCounts = ${JSON.stringify(naverChannelCounts)};
-      const channelLabels = requestedStore.includes("ê³µì‹ ë¸Œëžœë“œìŠ¤í† ì–´")
-        ? ["ë¸Œëžœë“œì§ì˜ëª°", "ê³µì‹ë¸Œëžœë“œ", "ë¸Œëžœë“œìŠ¤í† ì–´"]
-        : requestedStore.includes("ë°±í™”ì ") ? ["ë°±í™”ì "]
-          : requestedStore.includes("ì•„ìš¸ë ›") ? ["ì•„ìš¸ë ›"] : [];
-      let selectedChannelCount = Number.isFinite(recognizedChannelCounts?.[requestedStore])
-        ? Number(recognizedChannelCounts[requestedStore]) : null;
-      for (const label of channelLabels) {
-        const escaped = label.replace(/[.*+?^{}()|[\]\\$]/g, "\\$&");
-        const match = fullPageText.match(new RegExp(escaped + "\\s*([\\d,]+)\\s*ê°œ", "i"));
-        if (!match) continue;
-        selectedChannelCount = Math.max(selectedChannelCount ?? 0, Number(match[1].replace(/,/g, "")) || 0);
-      }
-      const pageBlocked = /captcha|ë³´ì•ˆ\\s*í™•ì¸|ìžë™\\s*ìž…ë ¥|ë¡œë´‡|ì ‘ì†.{0,12}(?:ì œí•œ|ì°¨ë‹¨)|ì„œë¹„ìŠ¤.{0,12}(?:ì œí•œ|ì§€ì—°)|ë¹„ì •ìƒì ì¸\\s*ì ‘ê·¼/i.test(pageText);
-      return JSON.stringify({
-        productCards, pageBlocked, pageText, pageHeaderText, selectedChannelEmpty, selectedChannelCount,
-        visibleResultCount, visibleResultCountObserved,
-      });
-    })()`, true).catch(error => {
-      // Electron may wrap a renderer SyntaxError in a generic Error. The
-      // failed operation is result capture, not navigation to the retailer.
-      throw Object.assign(new Error(String(error?.message || error)), {domesticFailureReason:"result_script_failed"});
-    });
-    let parsedContent;
-    try {
-      parsedContent = JSON.parse(content);
-      if (officialDirectDetail) {
-        parsedContent.productCards = [officialDirectDetail];
-        parsedContent.selectedChannelEmpty = false;
-        content = JSON.stringify(parsedContent);
-      }
-      if (parsedContent?.pageBlocked && !parsedContent?.productCards?.length) {
-        if (securityRetry >= 1 || !/naver\.com/i.test(String(searchWindow.webContents.getURL() || url))) {
-          return renderedSearchFailure("security_verification_required", searchWindow, {
-            searchSubmitted: interactiveSiteSearch,
-            securityVerificationRequired: true,
-          });
-        }
-        const verified = await waitForNaverSecurityVerification(searchWindow);
-        if (!verified) {
-          return renderedSearchFailure("security_verification_required", searchWindow, {
-            searchSubmitted: interactiveSiteSearch,
-            securityVerificationRequired: true,
-          });
-        }
-        searchWindow.destroy();
-        searchWindow = null;
-        return renderedSearchSourceResult(source, articleNumber, brand, title, securityRetry + 1, searchAttempt, sharedNaverSession, generation, onActivity);
-      }
-    } catch {
-      return renderedSearchFailure("result_parse_failed", searchWindow, { searchSubmitted: interactiveSiteSearch });
-    }
-    if (naverPortalSource && String(source.store || "") === "ë„¤ì´ë²„ íŒ¨ì…˜íƒ€ìš´") {
-      // The requested output is Naver's rendered result list itself. Do not run
-      // those links through the generic brand/article matcher again: the exact
-      // query was already submitted and that second gate discarded real cards.
-      const finalized = finalizeNaverFashionTownResult(parsedContent, {
-        articleNumber,
-        resolvedSearchUrl: String(searchWindow.webContents.getURL() || url),
-      });
-      const attemptedQuery = sanitizeDomesticQuery(searchAttempt?.query || source.searchQuery || articleNumber || title);
-      const exactCodeQuery = sanitizeDomesticProductCode(articleNumber);
-      const requireArticleIdentity = Boolean(exactCodeQuery && attemptedQuery === exactCodeQuery);
-      const approval = await verifyApprovedNaverDomesticProducts(finalized?.products || [], {
-        articleNumber,
-        brand,
-        title,
-        requireArticleIdentity,
-        generation,
-        onActivity,
-        browserSession: searchWindow.webContents.session,
-        recoveryProducts: source.recoveryProducts, recoveryOptions: source.recoveryOptions,
-      });
-      const approvedProducts = approval.products;
-      const approved = approvedProducts.length > 0;
-      const technicalPending = approval.failedCount > 0 || approvedProducts.some(product => !stockObservationComplete(product));
-      const authoritativelyRejected = !approved
-        && approval.candidateCount > 0
-        && approval.checkedCount === approval.candidateCount
-        && approval.failedCount === 0;
-      const absenceConfirmed = finalized.absenceConfirmed === true || authoritativelyRejected;
-      return {
-        ...finalized,
-        count: technicalPending && !approved ? null : approvedProducts.length,
-        products: approvedProducts,
-        presenceConfirmed: approved,
-        absenceConfirmed,
-        naverAllSearchVerdict: approved ? "confirmed" : absenceConfirmed ? "absent" : "pending",
-        detailVerificationPending: technicalPending || (!approved && !absenceConfirmed),
-        verificationPending: technicalPending || (!approved && !absenceConfirmed),
-        securityVerificationRequired: approval.securityVerificationRequired === true,
-        loginRequired: approval.loginRequired === true,
-        verificationReason: approval.securityVerificationRequired ? "security_verification_required"
-          : approval.loginRequired ? "login_required" : approved ? "approved_domestic_seller"
-          : technicalPending ? "naver_seller_evidence_failed"
-            : finalized.verificationReason || "",
-        candidateCount: approval.candidateCount,
-        verificationDiagnostics: {
-          ...(finalized.verificationDiagnostics || {}),
-          sellerCandidateCount: approval.candidateCount,
-          sellerCheckedCount: approval.checkedCount,
-          sellerRejectedCount: approval.rejectedCount,
-          sellerFailedCount: approval.failedCount,
-          detailFailures: approval.detailFailures || [],
-          identityMode: requireArticleIdentity ? "article" : "brand_title",
-        },
-      };
-    }
-    if (naverPortalSource) {
-      const expectedNaverChannel = source.store === "ë„¤ì´ë²„ ë°±í™”ì " ? "department"
-        : source.store === "ë„¤ì´ë²„ ì•„ìš¸ë ›" ? "outlet"
-          : source.store === "ë„¤ì´ë²„ ê³µì‹ ë¸Œëžœë“œìŠ¤í† ì–´" ? "brand-store" : "";
-      const currentChannelRaw = naverChannelCounts?.[String(source.store || "")];
-      const currentChannelCount = Number.isFinite(Number(currentChannelRaw)) ? Number(currentChannelRaw) : null;
-      const channelCards = (parsedContent.productCards || []).filter((card) =>
-        isTrustedNaverFashionProductCard(card)
-          && (!expectedNaverChannel || String(card?.naverWholeViewChannel || "") === expectedNaverChannel));
-      if (!channelCards.length && Number(currentChannelCount || 0) > 0) {
-        return renderedSearchFailure("overview_channel_card_collection_failed", searchWindow, {
-          searchSubmitted: true,
-          resolvedSearchUrl: String(searchWindow.webContents.getURL() || url),
-        });
-      }
-      parsedContent.productCards = channelCards;
-      parsedContent.selectedChannelCount = currentChannelCount ?? channelCards.length;
-      content = JSON.stringify(parsedContent);
-    }
-    if (["SSG ë°±í™”ì ", "SSG ì•„ìš¸ë ›"].includes(String(source.store || ""))) {
-      const department = source.store === "SSG ë°±í™”ì ";
-      const headerMatched = department
-        ? /ì‹ ì„¸ê³„\s*ë°±í™”ì |ë°±í™”ì /i.test(String(parsedContent.pageHeaderText || ""))
-        : /ì•„ìš¸ë ›|outlet/i.test(String(parsedContent.pageHeaderText || ""));
-      const labelField = department ? "departmentStoreLabelMatched" : "outletLabelMatched";
-      const labeledChannelCards = (parsedContent.productCards || []).filter((card) =>
-        isPlatformShoppingProductUrl(card?.productUrl) && card?.[labelField] === true);
-      if (!headerMatched || labeledChannelCards.length === 0) {
-        return renderedSearchFailure("ssg_channel_evidence_mismatch", searchWindow, {
-          searchSubmitted: interactiveSiteSearch,
-          resolvedSearchUrl: String(searchWindow.webContents.getURL() || url),
-        });
-      }
-      parsedContent.productCards = labeledChannelCards;
-      parsedContent.selectedChannelCount = labeledChannelCards.length;
-      content = JSON.stringify(parsedContent);
-    }
-    let officialSearchResultVerified = false;
-    if (source.store === "ë¸Œëžœë“œ ê³µì‹ëª°") {
-      const officialHost = new URL(String(source.homepageUrl || url)).hostname.replace(/^www\./, "");
-      const belongsToOfficialMall = (value) => {
-        try {
-          const parsed = new URL(String(value || ""));
-          const host = parsed.hostname.replace(/^www\./, "");
-          return parsed.protocol === "https:" && (host === officialHost || host.endsWith(`.${officialHost}`));
-        } catch { return false; }
-      };
-      const currentUrl = String(searchWindow.webContents.getURL() || "");
-      const expectedQuery = sanitizeDomesticProductCode(articleNumber) || sanitizeDomesticQuery(title);
-      const requestedUrl = new URL(url);
-      const current = new URL(currentUrl);
-      const exactQueryRoute = !interactiveOfficialSearch
-        && current.origin === requestedUrl.origin && current.pathname === requestedUrl.pathname
-        && [...current.searchParams.values()].some(value => sanitizeDomesticQuery(value) === expectedQuery);
-      officialSearchResultVerified = belongsToOfficialMall(currentUrl)
-        && Boolean(officialDirectDetail || officialSearchSubmitted || exactQueryRoute);
-      // A source's official label does not make external links official.
-      parsedContent.productCards = (parsedContent.productCards || []).filter(card => belongsToOfficialMall(card.productUrl));
-      content = JSON.stringify(parsedContent);
-    }
-    const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
-    if (officialSearchResultVerified && Array.isArray(analyzed?.products)) {
-      analyzed.products = analyzed.products.map(product => ({ ...product, officialSearchResultVerified: true }));
-    }
-    const resolvedSearchUrl = String(searchWindow.webContents.getURL() || url);
-    if (!analyzed) return renderedSearchFailure("result_analysis_failed", searchWindow, { searchSubmitted: interactiveSiteSearch });
-    const candidateCount = Array.isArray(analyzed.products) ? analyzed.products.length : 0;
-    let detailed = {
-      ...analyzed,
-      resolvedSearchUrl,
-      searchCompleted: true,
-      searchSubmitted: interactiveSiteSearch,
-      candidateCount,
-      naverChannelCounts,
-    };
-    if (musinsaSource && musinsaSettledEmpty && candidateCount === 0) {
-      detailed = {
-        ...detailed,
-        count: 0,
-        products: [],
-        presenceConfirmed: false,
-        absenceConfirmed: true,
-        detailVerificationPending: false,
-      };
-    }
-    // Every platform now opens its exact matched detail page. Stock wording is
-    // collected independently per source instead of treating these channels as
-    // list-only results.
-    if (Array.isArray(analyzed?.products)) {
-      const products = [];
-      const inspectedProducts = analyzed.products;
-      let incompleteDetails = 0;
-      const attemptedQuery = sanitizeDomesticQuery(searchAttempt?.query || source.searchQuery || articleNumber || title);
-      const exactCodeQuery = sanitizeDomesticProductCode(articleNumber);
-      const isCodePriorityAttempt = Boolean(exactCodeQuery && attemptedQuery === exactCodeQuery);
-      let identityRequiredCount = 0;
-      let identityCheckedCount = 0;
-      let identityMismatchCount = 0;
-      let failedDetails = 0;
-      for (const [productIndex, product] of inspectedProducts.entries()) {
-        if (domesticSearchCanceled(generation) || searchWindow.isDestroyed()) throw new Error("DOMESTIC_SEARCH_CANCELED");
-        if (searchWindow.domesticDiagnostics) Object.assign(searchWindow.domesticDiagnostics,
-          { stage: "product_detail", lastDetailUrl: product.url, totalProducts: inspectedProducts.length });
-        let detailVerified = false;
-        let detailFailure = "";
-        try {
-          const retained = (source.recoveryProducts || []).find(p => p.url === product.url);
-          if (retained && stockObservationComplete(retained)
-            && Date.now() - Date.parse(retained.stockCheckedAt || '') < 30 * 60_000) {
-            products.push(retained); detailVerified = true; continue;
-          }
-          let detailText = "";
-          let detailIdentity = { titleText: "", labeledText: "", structuredCodes: [] };
-          let detailLoaded = false;
-          let detailFailed = false;
-          let stockEvidence = normalizeRenderedStockEvidence({ stockTexts: [product.stockText, product.purchaseLimitText].filter(Boolean), options: product.sizes || [] });
-          try {
-            const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
-            if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");
-            const identitySnapshot = await waitForDomesticDetailReady(searchWindow, source.store, product.url, generation, articleNumber);
-            detailVerified = true;
-            detailText = String(identitySnapshot.pageText || "");
-            detailIdentity = identitySnapshot;
-            detailLoaded = true;
-            const optionsCheckpoint = source.recoveryOptions?.[product.url];
-            const resumeOptions = optionsCheckpoint && Date.now() - Date.parse(optionsCheckpoint.checkedAt || '') < 30 * 60_000
-              ? optionsCheckpoint.options : [];
-            const observed = await collectRenderedProductStock(searchWindow, source.store, generation, onActivity, resumeOptions, optionsCheckpoint?.branches || [], product.url);
-            if (observed.stockText || observed.purchaseLimitText || observed.sizes.length || observed.inStock !== null) stockEvidence = observed;
-          } catch (error) {
-            detailFailed = true;
-            failedDetails += 1;
-            detailFailure = String(error?.message || "product_detail_failed");
-          }
-          if (product.detailArticleVerificationRequired) identityRequiredCount += 1;
-          const detailArticleVerified = product.detailArticleVerificationRequired
-            ? strictProductArticleIdentityMatch(detailIdentity, articleNumber) : false;
-          const titleFallbackVerified = product.detailArticleVerificationRequired
-            && !isCodePriorityAttempt
-            && product.brandVerifiedFromCard === true
-            && titleIdentityMatch(`${String(product.title || "")} ${String(detailIdentity.titleText || "")}`, title);
-          if (product.detailArticleVerificationRequired && detailLoaded) identityCheckedCount += 1;
-          const linkOnlySource = String(product?.store || "") === "ë¸Œëžœë“œ ê³µì‹ëª°"
-            || /^ë„¤ì´ë²„\s/.test(String(product?.store || ""));
-          if (product.detailArticleVerificationRequired && !detailArticleVerified && !titleFallbackVerified) {
-            if (detailLoaded) identityMismatchCount += 1;
-            else incompleteDetails += 1;
-            if (linkOnlySource) {
-              products.push({
-                ...product,
-                linkOnly: true,
-                linkVerified: /^https?:\/\//i.test(String(product?.url || "")),
-                articleNumber: product.articleNumberVerified === true ? product.articleNumber : "",
-                inStock: null,
-                sizes: [],
-                stockStatus: "manual_check",
-                stockVerified: false,
-                stockText: "ìƒí’ˆ ì¼ì¹˜ í™•ì¸ í•„ìš”",
-                stockCoverage: "unknown",
-              });
-            }
-            continue;
-          }
-          const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
-          if (isOverseasPurchaseProduct(evidence)) continue;
-          if (isConsignmentOperatedProduct(evidence)) continue;
-          if (detailFailed || !stockObservationComplete(stockEvidence)) incompleteDetails += 1;
-          const isSsg = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(String(product.url || ""));
-          const detailClassification = isSsg
-            ? classifySsgProductEvidence({ brand, url: product.url, text: evidence })
-            : String(product.ssgClassification || "");
-          const classification = isSsg
-            ? resolveSsgProductClassification(detailClassification, product.ssgClassification)
-            : detailClassification;
-          const retailer = detectedRetailer(evidence);
-          products.push({
-            ...product,
-            // The classified display label (e.g. SSG ë¸Œëžœë“œ ê³µì‹ê´€) is not
-            // the query's source identity. Completion/recovery joins by source.
-            sourceStore: String(source.store || product.sourceStore || product.store || ""),
-            // Search cards can omit the manufacturer's code. Preserve the code
-            // verified on the detail page so same-model colour cards are merged
-            // later and the best matching image/price remains.
-            detectedArticleNumber: detailArticleVerified ? articleNumber : product.detectedArticleNumber,
-            articleNumber: detailArticleVerified || product.articleNumberVerified === true ? articleNumber : "",
-            articleNumberVerified: detailArticleVerified || product.articleNumberVerified === true,
-            matchBasis: detailArticleVerified ? "article" : titleFallbackVerified ? "brand_title" : "card_article",
-            store: isSsg && classification === "official_brand"
-              ? "SSG ë¸Œëžœë“œ ê³µì‹ê´€"
-              : isSsg && classification === "parallel_import" ? "SSG ë³‘í–‰ìˆ˜ìž…" : product.store,
-            retailerName: isSsg && classification === "official_brand"
-              ? (/ë³¸ì‚¬\s*ì§ì˜/i.test(evidence) || /ë³¸ì‚¬\s*ì§ì˜/i.test(String(product.retailerName || ""))
-                ? "ë¸Œëžœë“œ ê³µì‹ê´€ Â· ë³¸ì‚¬ì§ì˜" : "ë¸Œëžœë“œ ê³µì‹ê´€ Â· ê³µì‹ìˆ˜ìž…")
-              : isSsg && classification === "parallel_import" ? (retailer || "ë³‘í–‰ìˆ˜ìž… ìƒí’ˆ") : product.retailerName,
-            officialStoreVerified: isSsg ? classification === "official_brand" : product.officialStoreVerified,
-            ssgClassification: classification,
-            ssgDetailVerified: Boolean(detailText),
-            ...stockEvidence,
-          });
-        } finally {
-          await onActivity?.({products: [...products], completedProducts: productIndex + 1, totalProducts: inspectedProducts.length,
-            detailVerified, detailUrl: product.url, failedDetails, detailFailure});
-        }
-      }
-      const preserveNaverChannelCount = /^ë„¤ì´ë²„\s/.test(String(source.store || ""))
-        && Number.isFinite(analyzed?.channelCount);
-      const authoritativeIdentityMismatch = identityRequiredCount > 0
-        && identityCheckedCount === identityRequiredCount
-        && identityMismatchCount === identityRequiredCount;
-      detailed = {
-        ...analyzed,
-        resolvedSearchUrl,
-        count: preserveNaverChannelCount ? Number(analyzed.channelCount) : products.length,
-        products,
-        searchCompleted: true,
-        searchSubmitted: interactiveSiteSearch,
-        candidateCount,
-        naverChannelCounts,
-        absenceConfirmed: analyzed.absenceConfirmed === true || authoritativeIdentityMismatch,
-        detailVerificationPending: !authoritativeIdentityMismatch && (incompleteDetails > 0 || (candidateCount > 0 && products.length === 0)),
-      };
-    }
-    if (source.store !== "ë¸Œëžœë“œ ê³µì‹ëª°" || !Array.isArray(detailed?.products)) return detailed;
-    const officialPageUrl = String(source.homepageUrl || source.officialProductUrl || source.searchUrl || "");
-    const products = [];
-    for (const product of detailed.products) {
-      const detailImageUrl = await officialDetailImage(
-        searchWindow,
-        product.url,
-        officialPageUrl,
-        product.imageVerifiedFromCard ? product.imageUrl : "",
-      );
-      products.push({
-        ...product,
-        // Never replace a failed detail-page lookup with an image borrowed
-        // from a neighbouring search card.
-        imageUrl: detailImageUrl,
-        imageVerifiedFromDetail: Boolean(detailImageUrl),
-      });
-    }
-    return { ...detailed, count: products.length, products };
-  } catch (error) {
-    const message = String(error?.message || error || "");
-    if (domesticSearchCanceled(generation) || /DOMESTIC_SEARCH_CANCELED/i.test(message)) throw new Error("DOMESTIC_SEARCH_CANCELED");
-    const reason = error?.domesticFailureReason === "result_script_failed"
-      || /^(?:SyntaxError|ReferenceError|TypeError)$/.test(String(error?.name || "")) ? "result_script_failed"
-      : /SEARCH_PAGE_TIMEOUT/i.test(message) ? "page_load_timeout"
-      : /ERR_(?:NAME_NOT_RESOLVED|CONNECTION|TIMED_OUT|INTERNET_DISCONNECTED)/i.test(message) ? "network_error"
-        : "page_load_failed";
-    // Reaching the requested URL is not evidence of an empty result.
-    return renderedSearchFailure(reason, searchWindow, { errorMessage: message });
-  } finally {
-    const keepSharedNaverWindow = naverPortalSource
-      && sharedNaverSession?.window === searchWindow;
-    if (searchWindow && !searchWindow.isDestroyed() && !keepSharedNaverWindow) searchWindow.destroy();
-    if (searchWindow?.isDestroyed()) activeDomesticSearchWindows.delete(searchWindow);
-  }
-}
-
-async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "", generation = domesticSearchGeneration, onProgress = null, onCheckpoint = null) {
-  const discoveredProducts = [];
-  let pendingProducts = [];
-  const sources = [];
-  const optionCheckpoints = {...data.recoveryCheckpoint?.optionCheckpoints};
-  const snapshot = () => ({
-    ...data,
-    optionCheckpoints,
-    products: mergeRetailerStockProducts([...(data.products || []), ...discoveredProducts, ...pendingProducts]),
-    sources: [...sources, ...data.sources.slice(sources.length).map(source => ({
-      ...source, count: 0, countVerified: false, absenceConfirmed: false,
-      searchCompleted: false, verificationPending: true,
-    }))],
-  });
-  // Naver Fashion Town exposes official-brand, department, and outlet counts
-  // on one result page. Keep that browser/result URL alive across the three
-  // source rows so the product code is physically submitted exactly once.
-  const sharedNaverSession = {
-    window: null,
-    resultsUrl: "",
-    channelCounts: null,
-    searchSubmitted: false,
-  };
-  const progressTotal = data.sources.length + 2;
-  onProgress?.({ completed: 0, total: progressTotal, source: "íŒë§¤ì²˜ ê²€ìƒ‰ ì¤€ë¹„" });
-  // The complete domestic lookup is one sequential request again. A source
-  // failure is recorded on that source, then the same request continues to
-  // the next source without spawning module-specific state or retries.
-  for (const originalSource of data.sources) {
-    const source = {...originalSource,
-      recoveryProducts: data.recoveryCheckpoint?.products || [], recoveryOptions: optionCheckpoints};
-    if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
-    onProgress?.({ completed: sources.length, total: progressTotal, source: String(source.store || "íŒë§¤ì²˜"), phase: "searching" });
-    const resolvedSource = await (async () => {
-      if (source.officialStatus === OFFICIAL_DOMAIN_STATUS.NO_OFFICIAL_STORE) {
-        return {...source, count:0, countVerified:true, absenceConfirmed:true, searchCompleted:true,
-          verificationFailed:false, verificationPending:false};
-      }
-      if (source.officialStatus && ![
-        OFFICIAL_DOMAIN_STATUS.VERIFIED,
-        OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED,
-      ].includes(source.officialStatus)) {
-        return { ...source, countVerified: false, verificationFailed: false };
-      }
-      if (!source.renderCount) {
-        // The Kolon search API has no rendered verification pass. Read each
-        // returned product's own detail status before treating it as buyable.
-        if (source.store === "ì½”ì˜¤ë¡±ëª°") {
-          const products = [...(data.products || [])];
-          for (let index = 0; index < products.length; index += 1) {
-            if (products[index].store !== source.store) continue;
-            onProgress?.({ completed: sources.length, total: progressTotal, source: "ì½”ì˜¤ë¡±ëª° ìž¬ê³  ë¬¸êµ¬", phase: "searching" });
-            const retained = source.recoveryProducts.find(p => p.url === products[index].url);
-            if (retained && stockObservationComplete(retained) && Date.now() - Date.parse(retained.stockCheckedAt || '') < 30 * 60_000) {
-              products[index] = retained; data = {...data, products}; continue;
-            }
-            const savedOptions = optionCheckpoints[products[index].url];
-            const stock = await refreshDomesticProductStock(products[index], generation, async update => {
-              onProgress?.({completed:sources.length,total:progressTotal,source:`ì½”ì˜¤ë¡±ëª° Â· ì˜µì…˜ ${update.option || "í™•ì¸"}`,phase:"searching"});
-              if (update.optionCheckpoint?.url) { optionCheckpoints[update.optionCheckpoint.url] = update.optionCheckpoint; await onCheckpoint?.(snapshot(), { optionsOnly: true }); }
-            }, savedOptions && Date.now() - Date.parse(savedOptions.checkedAt || '') < 30 * 60_000 ? savedOptions.options : [], savedOptions?.branches || []);
-            if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
-            products[index] = { ...products[index], ...stock };
-            data = { ...data, products };
-            await onCheckpoint?.(snapshot());
-          }
-        }
-        return {
-          ...source,
-          countVerified: source.ok === true,
-          verificationFailed: source.ok === false,
-        };
-      }
-    // A search-card hit is only a candidate. Musinsa and other rendered
-    // channels must open the product detail page before an exact article and
-    // stock state can be reported as a purchasable domestic result.
-      const allQueryAttempts = Array.isArray(source.searchAttempts) && source.searchAttempts.length
-        ? source.searchAttempts : [{ query: source.searchQuery || articleNumber || title || "", url: source.searchUrl || "" }];
-    // Official malls remain product-code-only. Other stores use the complete
-    // accuracy-first fallback order: code -> title -> title+code.
-      const queryAttempts = source.store === "ë¸Œëžœë“œ ê³µì‹ëª°"
-        ? allQueryAttempts.slice(0, 1) : allQueryAttempts;
-      let result = null;
-      let sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
-      const observedWork = new Set();
-      let lastWork = "search_result";
-      let detailProgress = {};
-      // Query fallbacks share the watchdog. Only a newly observed product or
-      // option renews it; an unchanged page/heartbeat cannot keep it alive.
-      for (let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts.length; queryAttemptIndex += 1) {
-        const queryAttempt = queryAttempts[queryAttemptIndex];
-        if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
-        onProgress?.({ completed: sources.length, total: progressTotal, source: String(source.store || "íŒë§¤ì²˜"), phase: "searching", query: queryAttempt.query });
-        // A Naver overview DOM belongs to exactly one submitted query. When an
-        // exact-code result is authoritatively absent, discard that DOM before
-        // submitting the next ranked query; otherwise the old code result is
-        // accidentally reused and the title fallback never actually runs.
-        if (/^ë„¤ì´ë²„\s/.test(String(source.store || "")) && queryAttemptIndex > 0) {
-          if (sharedNaverSession.window && !sharedNaverSession.window.isDestroyed()) {
-            sharedNaverSession.window.destroy();
-          }
-          sharedNaverSession.window = null;
-          sharedNaverSession.resultsUrl = "";
-          sharedNaverSession.channelCounts = null;
-          sharedNaverSession.searchSubmitted = false;
-        }
-      // Submit each query exactly once. A later query is a fallback only when
-      // the completed prior search returned no product; browser/security or
-      // detail-verification failures must not repeat the same query or advance
-      // as though the product were absent.
-        let sourceTimeoutId, stopped = false, expire;
-        pendingProducts = [];
-        const timeoutResult = new Promise(resolve => {
-          expire = () => {
-            const remaining = sourceDeadlineAt - Date.now();
-            if (remaining > 0) { sourceTimeoutId = setTimeout(expire, remaining); return; }
-            stopped = true;
-            if (domesticSearchCanceled(generation)) return resolve(renderedSearchFailure("search_canceled"));
-            const diagnosticWindow = [...activeDomesticSearchWindows].find((window) => window.domesticDiagnostics);
-            const failure = renderedSearchFailure("collection_stalled", diagnosticWindow, {
-              verificationStage: lastWork === "search_result" ? diagnosticWindow?.domesticDiagnostics?.stage || lastWork : lastWork,
-              source: String(source.store || "íŒë§¤ì²˜"),
-            });
-            for (const searchWindow of [...activeDomesticSearchWindows]) {
-              if (searchWindow && !searchWindow.isDestroyed()) searchWindow.destroy();
-            }
-            activeDomesticSearchWindows.clear();
-            resolve({...failure, verificationDiagnostics: {...failure.verificationDiagnostics, ...detailProgress},
-              products: [...pendingProducts], count: pendingProducts.length || null,
-              detailVerificationPending: true});
-          };
-          sourceTimeoutId = setTimeout(expire, Math.max(0, sourceDeadlineAt - Date.now()));
-        });
-        const activity = async update => {
-          if (stopped || domesticSearchCanceled(generation)) return;
-          if (Array.isArray(update.products)) pendingProducts = update.products;
-          const work = JSON.stringify([queryAttemptIndex, update.completedProducts,
-            update.optionCheckpoint?.url, update.option,
-            update.optionCheckpoint?.options?.length, update.optionCheckpoint?.branches?.length]);
-          // Attempt counts also increase after failed page loads. Only an
-          // observed detail document or new stock option is actual progress.
-          const progressObserved = Boolean(update.option && update.optionCheckpoint)
-            || update.detailVerified === true;
-          if (Number.isFinite(update.completedProducts)) {
-            lastWork = "product_detail";
-            detailProgress = { processedProducts: update.completedProducts, totalProducts: update.totalProducts,
-              failedDetails: Number(update.failedDetails || 0), lastDetailUrl: update.detailUrl || "",
-              lastDetailFailure: update.detailFailure || "" };
-          }
-          if (progressObserved && !observedWork.has(work)) {
-            observedWork.add(work);
-            sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
-            lastWork = update.option ? "stock_options" : "product_detail";
-          }
-          const stage = update.option ? `ì˜µì…˜ ${update.option}`
-            : Number.isFinite(update.completedProducts)
-              ? `ê²€ìƒ‰ ê²°ê³¼ ${update.totalProducts}ê°œ ì¤‘ ${update.completedProducts}ê°œ ìƒì„¸ í™•ì¸${update.failedDetails ? ` Â· ì‹¤ì œ ì‘ë‹µ ì‹¤íŒ¨ ${update.failedDetails}ê±´` : ""}`
-              : "ìƒí’ˆÂ·ê°€ê²© í™•ì¸";
-          onProgress?.({completed:sources.length, total:progressTotal,
-            source:`${source.store || "íŒë§¤ì²˜"} Â· ${stage}`, phase:"searching", query:queryAttempt.query,
-            progressKey: `${sources.length}:${work}`, progressObserved});
-          if (update.optionCheckpoint?.url) optionCheckpoints[update.optionCheckpoint.url] = update.optionCheckpoint;
-          if (Array.isArray(update.products) || update.optionCheckpoint) await onCheckpoint?.(snapshot(), {
-            optionsOnly: !Array.isArray(update.products),
-          });
-        };
-        const queryResult = await Promise.race([
-          renderedSearchSourceResult(source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession, generation, activity),
-          timeoutResult,
-        ]).finally(() => { stopped = true; clearTimeout(sourceTimeoutId); });
-        if (!queryResult) {
-          result = renderedSearchFailure("unknown_search_failure");
-          break;
-        }
-        result = queryResult;
-        if (queryResult.verificationReason || queryResult.detailVerificationPending) break;
-        if (Number(queryResult.count || 0) > 0 || (queryResult.products || []).length > 0) break;
-      // Only a completed, authoritative zero-result search may advance to the
-      // next query (product code -> title -> title+code). A page/parser/detail
-      // failure ends this source once and is never submitted as another query.
-        if (queryResult.absenceConfirmed !== true) break;
-      }
-      if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
-      pendingProducts = [];
-      const count = result?.count;
-      const absenceConfirmed = result?.absenceConfirmed === true;
-      const displayCount = Number.isFinite(count)
-        ? Number(count)
-        : 0;
-      const isOfficialStore = source.store === "ë¸Œëžœë“œ ê³µì‹ëª°";
-      const verifiedOfficialProductUrl = isOfficialStore
-        ? String((result?.products || []).find((product) => /^https?:\/\//i.test(String(product?.url || "")))?.url || "")
-        : String(source.officialProductUrl || "");
-      const verifiedProductUrl = String((result?.products || [])
-        .find((product) => /^https?:\/\//i.test(String(product?.url || "")))?.url || "");
-      return {
-        ...source,
-        searchUrl: String(result?.resolvedSearchUrl || source.searchUrl || ""),
-        count: displayCount,
-        countVerified: Number.isFinite(count) && (Number(count) > 0 || absenceConfirmed),
-        verificationFailed: result?.resultLinkOnly === true ? false : !Number.isFinite(count),
-        verificationPending: result?.resultLinkOnly === true ? false : (
-          result?.detailVerificationPending === true
-          || result?.verificationPending === true
-          || (Number.isFinite(count) && Number(count) === 0 && !absenceConfirmed)),
-        absenceConfirmed,
-        presenceConfirmed: result?.presenceConfirmed === true,
-        resultLinkOnly: result?.resultLinkOnly === true,
-        searchCompleted: result?.searchCompleted === true,
-        searchSubmitted: result?.searchSubmitted === true,
-        verificationReason: String(result?.verificationReason || ""),
-        verificationStage: String(result?.verificationStage || result?.verificationDiagnostics?.stage || ""),
-        verificationDiagnostics: result?.verificationDiagnostics || {
-          stage: String(result?.verificationStage || "result_aggregation"),
-          reason: String(result?.verificationReason || ""),
-          resolvedUrl: String(result?.resolvedSearchUrl || source.searchUrl || ""),
-          visibleResultCount: Number.isFinite(count) ? Number(count) : null,
-          productCardCount: Number(result?.candidateCount || result?.products?.length || 0),
-        },
-        naverAllSearchVerdict: result?.naverAllSearchVerdict || null,
-        securityVerificationRequired: result?.securityVerificationRequired === true,
-        loginRequired: result?.loginRequired === true,
-        candidateCount: Number(result?.candidateCount || 0),
-        parallelRetailerListEnforced: result?.parallelRetailerListEnforced === true,
-      // The official search URL and a verified product-detail URL are
-      // intentionally separate. A search page must never be presented as a
-      // purchase link merely because the brand has a supported search form.
-        officialSearchUrl: isOfficialStore ? String(source.officialProductUrl || "") : "",
-        officialProductUrl: verifiedOfficialProductUrl,
-        verifiedProductUrl,
-        officialProductMissing: isOfficialStore && absenceConfirmed,
-      };
-    })();
-    delete resolvedSource.recoveryProducts; delete resolvedSource.recoveryOptions;
-    sources.push(resolvedSource);
-    await onCheckpoint?.(snapshot());
-    onProgress?.({
-      completed: sources.length,
-      total: progressTotal,
-      source: String(source.store || "íŒë§¤ì²˜"),
-    });
-    if (source.store === "ë„¤ì´ë²„ íŒ¨ì…˜íƒ€ìš´"
-      && sharedNaverSession.window
-      && !sharedNaverSession.window.isDestroyed()) {
-      // The shared Naver window is closed only after every source result has
-      // been resolved and pushed. This is a post-capture grace period, not a
-      // substitute for the DOM-stability gate above.
-      await wait(2_000);
-      sharedNaverSession.window.destroy();
-      sharedNaverSession.window = null;
-    }
-  }
-  const products = mergeRetailerStockProducts([...(data.products || []), ...discoveredProducts]);
-  return { ...data, products, sources, optionCheckpoints };
-}
-
-function brandsWithOfficialDomainStatus(brands, registry) {
-  const compactRecord = (record) => record ? ({
-    status: record.status,
-    homepageUrl: String(record.homepageUrl || ""),
-    adapterId: String(record.adapterId || ""),
-    adapterStatus: String(record.adapterStatus || "pending"),
-  }) : null;
-  const recordById = new Map((Array.isArray(registry) ? registry : []).map((record) =>
-    [Number(record.brandId), compactRecord(record)]));
-  const recordByName = new Map((Array.isArray(registry) ? registry : []).flatMap((record) =>
-    [record.brandName, record.brandKo].filter(Boolean).map((name) => [String(name).trim().toLowerCase(), compactRecord(record)])));
-  return (Array.isArray(brands) ? brands : []).map((brand) => {
-    const official = recordById.get(Number(brand.id ?? brand.brandId))
-      || recordByName.get(String(brand.ko || brand.name || "").trim().toLowerCase());
-    return {
-      ...brand,
-      officialDomainStatus: official?.status || OFFICIAL_DOMAIN_STATUS.PENDING,
-      officialHomepageUrl: official?.homepageUrl || "",
-      officialAdapterId: official?.adapterId || "",
-      officialAdapterStatus: official?.adapterStatus || "pending",
-    };
-  });
-}
-
-async function ensureOfficialDomainRegistry(brands) {
-  const settings = store.snapshot().settings;
-  const current = Array.isArray(settings.officialBrandRegistry) ? settings.officialBrandRegistry : [];
-  const registry = createOfficialDomainRegistry(brands, current).map(officialMallAdapterRecord);
-  const changed = registry.length !== current.length || registry.some((record, index) =>
-    JSON.stringify(record) !== JSON.stringify(current[index]));
-  if (changed) {
-    await store.setSettings({
-      officialBrandRegistry: registry,
-      officialBrandRegistryUpdatedAt: new Date().toISOString(),
-    });
-  }
-  return registry;
-}
-
-function safeOfficialDomainRegistry(brands) {
-  const saved = store.snapshot().settings.officialBrandRegistry;
-  const registry = createOfficialDomainRegistry(brands, Array.isArray(saved) ? saved : []).map(officialMallAdapterRecord);
-  // Persisting thousands of domain records is maintenance work; it must never
-  // block the brand picker from rendering.
-  void ensureOfficialDomainRegistry(brands).catch(() => {});
-  return registry;
-}
-
-function officialDomainAuditSnapshot(registry, extra = {}) {
-  const saved = store.snapshot().settings.officialDomainAudit || {};
-  const savedState = String(saved.state || "idle");
-  return {
-    running: officialDomainAuditRunning,
-    state: officialDomainAuditRunning ? "running"
-      : ["running", "cooldown", "blocked"].includes(savedState) ? "paused" : savedState,
-    currentBrand: String(saved.currentBrand || ""),
-    processed: Number(saved.processed || 0),
-    blocked: Boolean(saved.blocked),
-    lastError: String(saved.lastError || ""),
-    phase: String(saved.phase || ""),
-    attempt: Number(saved.attempt || 0),
-    notFoundExcelPath: String(saved.notFoundExcelPath || store.snapshot().settings.officialDomainNotFoundExcelPath || ""),
-    notFoundCount: Number(saved.notFoundCount || store.snapshot().settings.officialDomainNotFoundCount || 0),
-    notFoundExportError: String(saved.notFoundExportError || ""),
-    updatedAt: String(saved.updatedAt || ""),
-    nextRunAt: String(saved.nextRunAt || ""),
-    scheduleLabel: "ë§¤ì¼ ìƒˆë²½ 1ì‹œ~6ì‹œ",
-    ...officialDomainRegistrySummary(registry),
-    ...officialMallAdapterSummary(registry),
-    ...extra,
-  };
-}
-
-function sendOfficialDomainAuditProgress(registry, extra = {}) {
-  const payload = officialDomainAuditSnapshot(registry, extra);
-  mainWindow?.webContents.send("official-domain:audit-progress", payload);
-  return payload;
-}
-
-async function exportNaverOfficialStoreNotFoundExcel(registry) {
-  const rows = naverOfficialStoreNotFoundRows(registry);
-  const folder = currentBrandExportFolder();
-  await mkdir(folder, { recursive: true });
-  const filePath = join(folder, "ë„¤ì´ë²„_ê³µì‹ëª°_ë¯¸ë°œê²¬_ë¸Œëžœë“œ.xlsx");
-  await writeXlsxFile(naverOfficialStoreNotFoundWorkbookData(rows), {
-    sheet: "ê³µì‹ëª° ë¯¸ë°œê²¬",
-    stickyRowsCount: 1,
-    columns: [
-      { width: 8 }, { width: 14 }, { width: 26 }, { width: 24 }, { width: 24 },
-      { width: 48 }, { width: 12 }, { width: 24 }, { width: 64 },
-    ],
-  }).toFile(filePath);
-  await store.setSettings({
-    officialDomainNotFoundExcelPath: filePath,
-    officialDomainNotFoundCount: rows.length,
-    officialDomainNotFoundExcelUpdatedAt: new Date().toISOString(),
-  });
-  return { path: filePath, count: rows.length };
-}
-
-function createOfficialDomainAuditWindow() {
-  const auditWindow = new BrowserWindow({
-    show: false,
-    width: 1100,
-    height: 800,
-    webPreferences: {
-      partition: "persist:around-g-official-domain-audit",
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      backgroundThrottling: false,
-      // Third-party official malls occasionally execute legacy page scripts
-      // (for example msDropDown) that open a native JavaScript error dialog.
-      // The audit runs hidden, so those dialogs must never block the 3,400
-      // brand verification queue or appear over the Around G window.
-      disableDialogs: true,
-    },
-  });
-  auditWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  auditWindow.webContents.session.on("will-download", (_event, item) => item.cancel());
-  return auditWindow;
-}
-
-async function loadAuditPage(auditWindow, url) {
-  let timeout;
-  try {
-    await Promise.race([
-      auditWindow.loadURL(url),
-      new Promise((_, reject) => {
-        timeout = setTimeout(() => reject(new Error("OFFICIAL_DOMAIN_PAGE_TIMEOUT")), OFFICIAL_DOMAIN_AUDIT_PAGE_TIMEOUT_MS);
-      }),
-    ]);
-  } catch (error) {
-    if (String(error?.message || error) === "OFFICIAL_DOMAIN_PAGE_TIMEOUT") {
-      auditWindow.webContents.stop();
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-  await wait(900);
-  let analysisTimeout;
-  try {
-    return await Promise.race([
-      auditWindow.webContents.executeJavaScript(`(() => {
-    const text = String(document.body?.innerText || "").slice(0, 20000);
-    const blocked = /captcha|ë³´ì•ˆ\\s*í™•ì¸|ìžë™\\s*ìž…ë ¥|ë¹„ì •ìƒì ì¸\\s*ì ‘ê·¼|ë¡œë´‡ì´ ì•„ë‹™ë‹ˆë‹¤|ì ‘ì†.{0,12}(?:ì œí•œ|ì°¨ë‹¨)/i.test(text);
-    const imageSource = (image) => String(image?.currentSrc || image?.src || image?.getAttribute?.("data-src") || "").trim();
-    const candidates = [...document.querySelectorAll("a[href]")].map((link) => {
-      const block = link.closest("li, article, section, [class*='item'], [class*='result'], [class*='card']") || link.parentElement;
-      return {
-        url: String(link.href || ""),
-        title: String(link.innerText || link.getAttribute("aria-label") || link.title || "").trim().slice(0, 300),
-        rel: String(link.rel || ""),
-        imageUrl: imageSource(block?.querySelector("img") || link.querySelector("img")),
-      };
-    }).filter((item) => /^https?:/i.test(item.url));
-    const logoUrls = [...new Set([
-      ...[...document.querySelectorAll("img[alt*='logo' i], img[class*='logo' i], img[id*='logo' i], header img")].map(imageSource),
-      ...[...document.querySelectorAll("link[rel*='icon']")].map((link) => String(link.href || "")),
-    ].filter((item) => /^https?:/i.test(item)))].slice(0, 8);
-    let searchTemplate = "";
-    for (const form of [...document.forms]) {
-      if (String(form.method || "get").toLowerCase() === "post") continue;
-      const input = form.querySelector('input[type="search"], input[name="q"], input[name="query"], input[name="keyword"], input[name*="search" i]');
-      if (!input) continue;
-      try {
-        const target = new URL(form.action || location.href, location.href);
-        target.searchParams.set(input.name || "q", "{query}");
-        searchTemplate = target.href.replace(/%7Bquery%7D/gi, "{query}");
-        break;
-      } catch {}
-    }
-        return { candidates, logoUrls, blocked, text, pageTitle: String(document.title || ""), finalUrl: String(location.href), searchTemplate };
-      })()`, true),
-      new Promise((_, reject) => {
-        analysisTimeout = setTimeout(() => reject(new Error("OFFICIAL_DOMAIN_ANALYSIS_TIMEOUT")), OFFICIAL_DOMAIN_AUDIT_ANALYSIS_TIMEOUT_MS);
-      }),
-    ]);
-  } finally {
-    clearTimeout(analysisTimeout);
-  }
-}
-
-async function compareOfficialBrandLogos(sourceLogoUrl, candidateLogoUrls) {
-  const sourceFingerprint = await imageFingerprint(sourceLogoUrl).catch(() => null);
-  if (!sourceFingerprint) return { compared: false, similarity: 0 };
-  const urls = [...new Set((Array.isArray(candidateLogoUrls) ? candidateLogoUrls : [])
-    .map((value) => String(value || "").trim()).filter((value) => /^https?:/i.test(value)))].slice(0, 8);
-  if (!urls.length) return { compared: false, similarity: 0 };
-  const similarities = await Promise.all(urls.map(async (url) => {
-    const fingerprint = await imageFingerprint(url).catch(() => null);
-    return fingerprint ? fingerprintSimilarity(sourceFingerprint, fingerprint) : null;
-  }));
-  const compared = similarities.some(Number.isFinite);
-  return {
-    compared,
-    similarity: compared ? Math.max(...similarities.filter(Number.isFinite)) : 0,
-  };
-}
-
-async function compareOfficialBrandLogosWithinLimit(sourceLogoUrl, candidateLogoUrls) {
-  let timeout;
-  try {
-    return await Promise.race([
-      compareOfficialBrandLogos(sourceLogoUrl, candidateLogoUrls),
-      new Promise((resolve) => {
-        timeout = setTimeout(() => resolve({ compared: false, similarity: 0, timedOut: true }), OFFICIAL_DOMAIN_AUDIT_LOGO_TIMEOUT_MS);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
-  const brand = record.brandKo || record.brandName;
-  const existingHomepage = String(record.homepageUrl || "");
-  const existingHost = (() => {
-    try { return new URL(existingHomepage).hostname.toLowerCase().replace(/^www\./, ""); }
-    catch { return ""; }
-  })();
-  if (existingHomepage && existingHost !== "brand.naver.com"
-    && [OFFICIAL_DOMAIN_STATUS.VERIFIED, OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED].includes(record.status)) {
-    try {
-      onPhase("official_site");
-      const page = await loadAuditPage(auditWindow, existingHomepage);
-      if (!page.blocked) {
-        const logoComparison = await compareOfficialBrandLogosWithinLimit(record.brandLogoUrl, page.logoUrls || []);
-        const rechecked = auditedOfficialDomainRecord(record, {
-            candidateUrl: existingHomepage,
-            finalUrl: page.finalUrl,
-            pageTitle: page.pageTitle,
-            pageText: page.text,
-            searchTemplate: record.searchTemplate || page.searchTemplate,
-            logoCompared: logoComparison.compared,
-            logoSimilarity: logoComparison.similarity,
-            verifiedAlias: brand,
-          });
-        return {
-          record: rechecked.status === OFFICIAL_DOMAIN_STATUS.PENDING ? {
-            ...record,
-            verificationAttempts: rechecked.verificationAttempts,
-            lastCheckedAt: rechecked.lastCheckedAt,
-            lastVerificationError: rechecked.lastVerificationError || "OFFICIAL_RECHECK_EVIDENCE_MISSING",
-          } : rechecked,
-          blocked: false,
-        };
-      }
-    } catch {
-      return {
-        record: {
-          ...record,
-          verificationAttempts: Number(record.verificationAttempts || 0) + 1,
-          lastCheckedAt: new Date().toISOString(),
-          lastVerificationError: "OFFICIAL_RECHECK_LOAD_FAILED",
-        },
-        blocked: false,
-      };
-    }
-  }
-  let discovery;
-  try {
-    onPhase("naver_search");
-    discovery = await loadAuditPage(auditWindow, officialDomainDiscoveryUrl(brand, record.brandName));
-  } catch {
-    return { record: failedOfficialDomainAuditRecord(record, "DISCOVERY_LOAD_FAILED"), blocked: false };
-  }
-  if (discovery.blocked) {
-    return { record: failedOfficialDomainAuditRecord(record, "DISCOVERY_BLOCKED"), blocked: true };
-  }
-  const discoveryLogoCandidates = (discovery.candidates || []).filter((candidate) => candidate.imageUrl).slice(0, 8);
-  onPhase("logo_compare");
-  const discoveryLogoScores = await Promise.all(discoveryLogoCandidates.map(async (candidate) => ({
-    candidate,
-    comparison: await compareOfficialBrandLogosWithinLimit(record.brandLogoUrl, [candidate.imageUrl]),
-  })));
-  const logoScoreByUrl = new Map(discoveryLogoScores.map(({ candidate, comparison }) => [candidate.url, comparison.similarity]));
-  const candidates = rankOfficialDomainCandidates((discovery.candidates || []).map((candidate) => ({
-    ...candidate,
-    logoSimilarity: logoScoreByUrl.get(candidate.url) || 0,
-  })), brand, record.brandName).slice(0, OFFICIAL_DOMAIN_AUDIT_MAX_CANDIDATES);
-  for (const candidate of candidates) {
-    try {
-      onPhase("official_site");
-      const page = await loadAuditPage(auditWindow, candidate.url);
-      if (page.blocked) continue;
-      const logoComparison = await compareOfficialBrandLogosWithinLimit(record.brandLogoUrl, [candidate.imageUrl, ...(page.logoUrls || [])]);
-      const next = auditedOfficialDomainRecord(record, {
-        candidateUrl: candidate.url,
-        finalUrl: page.finalUrl,
-        pageTitle: page.pageTitle,
-        pageText: page.text,
-        searchTemplate: page.searchTemplate,
-        logoCompared: logoComparison.compared,
-        logoSimilarity: logoComparison.similarity,
-        verifiedAlias: candidate.title,
-      });
-      if (next.status !== OFFICIAL_DOMAIN_STATUS.PENDING) return { record: next, blocked: false };
-    } catch {
-      // ë‹¤ìŒ í›„ë³´ ë„ë©”ì¸ì„ í™•ì¸í•œë‹¤.
-    }
-  }
-  // Only an independent brand-owned domain belongs in the official-mall row.
-  // Naver Brand Store remains a separate domestic source.
-  return { record: failedOfficialDomainAuditRecord(record, "OFFICIAL_CANDIDATES_UNCONFIRMED"), blocked: false };
-}
-
-async function resolveDomesticOfficialBrand(input, generation, onProgress) {
-  return resolveBrandOfficialSearch({
-    input, settings: store.snapshot().settings,
-    canceled: () => domesticSearchCanceled(generation),
-    discover: async record => {
-      const window = createOfficialDomainAuditWindow();
-      activeDomesticSearchWindows.add(window);
-      let timeout;
-      try {
-        return await Promise.race([
-          auditOneOfficialDomain(window, record, phase => {
-            if (domesticSearchCanceled(generation)) return;
-            onProgress?.({ completed: 0, total: 1, phase: "searching",
-              source: `${record.brandKo || record.brandName} ê³µì‹ëª° í™•ì¸ Â· ${phase === "naver_search" ? "ê²€ìƒ‰" : phase === "logo_compare" ? "ë¸Œëžœë“œ ëŒ€ì¡°" : "ì‚¬ì´íŠ¸ í™•ì¸"}` });
-          }),
-          new Promise(resolve => {
-            timeout = setTimeout(() => {
-              if (!window.isDestroyed()) window.destroy();
-              resolve({record: failedOfficialDomainAuditRecord(record, "BRAND_SEARCH_DISCOVERY_TIMEOUT")});
-            }, 75_000);
-          }),
-        ]);
-      } finally {
-        clearTimeout(timeout);
-        activeDomesticSearchWindows.delete(window);
-        if (!window.isDestroyed()) window.destroy();
-      }
-    },
-    persist: async record => {
-      if (domesticSearchCanceled(generation)) return;
-      const rows = [...(store.snapshot().settings.officialBrandRegistry || [])];
-      const index = rows.findIndex(row => row.registryId === record.registryId);
-      if (index >= 0) rows[index] = record; else rows.push(record);
-      let saveTimeout;
-      try {
-        await Promise.race([
-          store.setSettings({officialBrandRegistry: rows, officialBrandRegistryUpdatedAt: new Date().toISOString()}),
-          new Promise((_, reject) => { saveTimeout = setTimeout(() => reject(new Error("OFFICIAL_SEARCH_REGISTRY_SAVE_TIMEOUT")), 2_000); }),
-        ]);
-      } finally { clearTimeout(saveTimeout); }
-    },
-  });
-}
-
-async function persistOfficialDomainAudit(registry, audit) {
-  await store.setSettings({
-    officialBrandRegistry: registry,
-    officialBrandRegistryUpdatedAt: new Date().toISOString(),
-    officialDomainAudit: { ...audit, updatedAt: new Date().toISOString() },
-  });
-}
-
-async function runOfficialDomainAudit({ recheckAll = false } = {}) {
-  if (officialDomainAuditRunning) return;
-  clearTimeout(officialDomainAuditResumeTimer);
-  officialDomainAuditResumeTimer = null;
-  officialDomainAuditRunning = true;
-  officialDomainAuditStopRequested = false;
-  const brands = store.snapshot().settings.brandCatalog || explorerMetadata().brands;
-  let registry = await ensureOfficialDomainRegistry(brands);
-  const previousAudit = store.snapshot().settings.officialDomainAudit || {};
-  const continuingFullRecheck = recheckAll && previousAudit.recheckAll === true
-    && ["running", "paused", "blocked"].includes(String(previousAudit.state || ""))
-    && Boolean(previousAudit.startedAt);
-  const startedAt = continuingFullRecheck ? String(previousAudit.startedAt) : new Date().toISOString();
-  const startedAtMs = Date.parse(startedAt) || Date.now();
-  let processed = 0;
-  let blocked = false;
-  let lastError = "";
-  officialDomainAuditWindow = createOfficialDomainAuditWindow();
-  try {
-    const auditQueue = recheckAll
-      ? registry.map((record, index) => ({ record, index }))
-        .filter(({ record }) => Date.parse(record.lastCheckedAt || 0) < startedAtMs)
-        .map(({ index }) => index)
-      : officialDomainAuditQueue(registry);
-    const runTotal = auditQueue.length;
-    await persistOfficialDomainAudit(registry, {
-      state: "running", currentBrand: "", processed: 0, blocked: false, lastError: "",
-      recheckAll, startedAt, runTotal,
-    });
-    const deferredIndices = [];
-    const processAuditIndex = async (index, attempt) => {
-      if (officialDomainAuditStopRequested) return null;
-      const record = registry[index];
-      if (!recheckAll && record.status !== OFFICIAL_DOMAIN_STATUS.PENDING) return;
-      const currentBrand = record.brandKo || record.brandName;
-      const progress = (phase) => sendOfficialDomainAuditProgress(registry, {
-        state: "running", currentBrand, processed, blocked: false, lastError: "", phase, attempt,
-        recheckAll, startedAt, runTotal,
-      });
-      progress(attempt === 1 ? "starting" : "retrying");
-      const activeWindow = officialDomainAuditWindow;
-      let brandTimeout;
-      let abortCurrent;
-      const abortPromise = new Promise((resolve) => {
-        abortCurrent = () => resolve({ aborted: true });
-        officialDomainAuditAbortCurrent = abortCurrent;
-      });
-      const timeoutPromise = new Promise((resolve) => {
-        brandTimeout = setTimeout(() => {
-          if (activeWindow && !activeWindow.isDestroyed()) activeWindow.destroy();
-          resolve({
-            record: failedOfficialDomainAuditRecord(record, "BRAND_AUDIT_TIMEOUT"),
-            blocked: false,
-            timedOut: true,
-          });
-        }, OFFICIAL_DOMAIN_AUDIT_BRAND_TIMEOUT_MS);
-      });
-      let result;
-      try {
-        result = await Promise.race([
-          auditOneOfficialDomain(activeWindow, record, progress),
-          timeoutPromise,
-          abortPromise,
-        ]);
-      } finally {
-        clearTimeout(brandTimeout);
-        if (officialDomainAuditAbortCurrent === abortCurrent) officialDomainAuditAbortCurrent = null;
-      }
-      if (result?.aborted || officialDomainAuditStopRequested) return null;
-      if (result?.timedOut) {
-        progress("timed_out");
-        if (officialDomainAuditWindow === activeWindow) {
-          officialDomainAuditWindow = createOfficialDomainAuditWindow();
-        }
-      }
-      progress("adapter_linkage");
-      result.record = officialMallAdapterRecord(result.record);
-      registry[index] = result.record;
-      processed += 1;
-      blocked = result.blocked;
-      lastError = result.record.lastVerificationError || "";
-      if (processed % 5 === 0 || blocked) {
-        await persistOfficialDomainAudit(registry, {
-          state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError,
-          phase: blocked ? "security_wait" : "saved", attempt, recheckAll, startedAt, runTotal,
-        });
-      }
-      sendOfficialDomainAuditProgress(registry, {
-        state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError,
-        phase: blocked ? "security_wait" : "saved", attempt,
-        recheckAll, startedAt, runTotal,
-        updatedBrand: {
-          brandId: Number(result.record.brandId),
-          status: result.record.status,
-          homepageUrl: String(result.record.homepageUrl || ""),
-          adapterId: String(result.record.adapterId || ""),
-          adapterStatus: String(result.record.adapterStatus || "pending"),
-        },
-      });
-      return result;
-    };
-    for (const index of auditQueue) {
-      if (officialDomainAuditStopRequested) break;
-      const result = await processAuditIndex(index, 1);
-      if (result?.blocked) break;
-      if (result?.record?.status === OFFICIAL_DOMAIN_STATUS.PENDING) deferredIndices.push(index);
-      await wait(OFFICIAL_DOMAIN_AUDIT_BETWEEN_BRANDS_MS);
-    }
-    if (!blocked && !officialDomainAuditStopRequested && deferredIndices.length) {
-      if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) officialDomainAuditWindow.destroy();
-      officialDomainAuditWindow = createOfficialDomainAuditWindow();
-      for (const index of deferredIndices) {
-        if (officialDomainAuditStopRequested) break;
-        const result = await processAuditIndex(index, 2);
-        if (result?.blocked) break;
-        await wait(OFFICIAL_DOMAIN_AUDIT_BETWEEN_BRANDS_MS);
-      }
-    }
-  } finally {
-    officialDomainAuditAbortCurrent = null;
-    if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) officialDomainAuditWindow.destroy();
-    officialDomainAuditWindow = null;
-    officialDomainAuditRunning = false;
-    const summary = officialDomainRegistrySummary(registry);
-    const resumeAt = "";
-    const state = blocked ? "paused"
-      : officialDomainAuditStopRequested ? "paused"
-        : summary.unchecked ? "paused" : summary.pending ? "completed_with_pending" : "completed";
-    let notFoundExcel = { path: "", count: 0, error: "" };
-    try {
-      notFoundExcel = { ...await exportNaverOfficialStoreNotFoundExcel(registry), error: "" };
-    } catch (error) {
-      notFoundExcel.error = error instanceof Error ? error.message : String(error || "EXCEL_EXPORT_FAILED");
-    }
-    const finalAudit = {
-      state, currentBrand: "", processed, blocked, lastError, resumeAt,
-      recheckAll, startedAt, runTotal,
-      notFoundExcelPath: notFoundExcel.path,
-      notFoundCount: notFoundExcel.count,
-      notFoundExportError: notFoundExcel.error,
-    };
-    await persistOfficialDomainAudit(registry, finalAudit);
-    sendOfficialDomainAuditProgress(registry, { running: false, ...finalAudit });
-  }
-}
-
-function pauseOfficialDomainAuditForSellerAutomation() {
-  const shouldResume = officialDomainAuditRunning || Boolean(officialDomainAuditResumeTimer);
-  clearTimeout(officialDomainAuditResumeTimer);
-  officialDomainAuditResumeTimer = null;
-  if (shouldResume) {
-    officialDomainAuditStopRequested = true;
-    officialDomainAuditAbortCurrent?.();
-    officialDomainAuditAbortCurrent = null;
-    if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) {
-      officialDomainAuditWindow.destroy();
-    }
-    officialDomainAuditWindow = null;
-  }
-  return shouldResume;
-}
-
-// ì´ ì•±ì€ GPU ê°€ì†ì´ í•„ìš”í•˜ì§€ ì•Šìœ¼ë©° ì¼ë¶€ Windows ê·¸ëž˜í”½ ë“œë¼ì´ë²„ì˜
-// GPU í”„ë¡œì„¸ìŠ¤ ë°˜ë³µ ì¢…ë£Œë¥¼ í”¼í•˜ê¸° ìœ„í•´ ì†Œí”„íŠ¸ì›¨ì–´ ë Œë”ë§ì„ ì‚¬ìš©í•©ë‹ˆë‹¤.
-app.disableHardwareAcceleration();
-
-function sendUpdateStatus(status, message, extra = {}) {
-  mainWindow?.webContents.send("update:status", { status, message, currentVersion: app.getVersion(), ...extra });
-  if (["downloaded", "installing", "error"].includes(status) && !(status === "downloaded" && extra.waitingForWork)) {
-    void addProgramNotification({
-      type: status === "error" ? "error" : "update",
-      title: status === "error" ? "ì—…ë°ì´íŠ¸ ì˜¤ë¥˜" : status === "installing" ? "ì—…ë°ì´íŠ¸ ì„¤ì¹˜ ì‹œìž‘" : "ì—…ë°ì´íŠ¸ ë‹¤ìš´ë¡œë“œ ì™„ë£Œ",
-      message,
-      key: `update:${status}:${String(extra.version || app.getVersion())}:${message}`,
-      windows: status !== "installing",
-    });
-  }
-}
-
-async function addProgramNotification({ type = "info", title = "í”„ë¡œê·¸ëž¨ ì•Œë¦¼", message = "", key = "", windows = false } = {}) {
-  if (!store) return null;
-  const current = Array.isArray(store.snapshot()?.settings?.programNotifications)
-    ? store.snapshot().settings.programNotifications : [];
-  if (key && current.some((item) => item.key === key)) return null;
-  const item = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    key: String(key || ""), type: String(type || "info"), title: String(title || "í”„ë¡œê·¸ëž¨ ì•Œë¦¼"),
-    message: String(message || ""), createdAt: new Date().toISOString(), read: false,
-  };
-  const programNotifications = [item, ...current].slice(0, 100);
-  await store.setSettings({ programNotifications });
-  mainWindow?.webContents.send("notifications:added", item);
-  if (windows && Notification.isSupported()) {
-    const notice = new Notification({ title: `Around G Â· ${item.title}`, body: item.message });
-    notice.on("click", () => { mainWindow?.show(); mainWindow?.focus(); });
-    notice.show();
-  }
-  return item;
-}
-
-const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
-const UPDATE_RETRY_INTERVAL_MS = 15 * 60 * 1_000;
-const UPDATE_INSTALL_RETRY_MS = 30 * 1_000;
-const SELLER_LOGIN_WAIT_MS = 10 * 60 * 1_000;
-const OFFICIAL_DOMAIN_AUDIT_PAGE_TIMEOUT_MS = 20_000;
-const OFFICIAL_DOMAIN_AUDIT_ANALYSIS_TIMEOUT_MS = 8_000;
-const OFFICIAL_DOMAIN_AUDIT_LOGO_TIMEOUT_MS = 10_000;
-const OFFICIAL_DOMAIN_AUDIT_BRAND_TIMEOUT_MS = 45_000;
-const OFFICIAL_DOMAIN_AUDIT_BETWEEN_BRANDS_MS = 750;
-const OFFICIAL_DOMAIN_AUDIT_MAX_CANDIDATES = 2;
-
-function scheduleUpdateCheck(delayMs = UPDATE_CHECK_INTERVAL_MS) {
-  if (!app.isPackaged || updateReady) return;
-  clearTimeout(updateCheckTimer);
-  updateCheckTimer = setTimeout(() => {
-    checkForUpdatesAutomatically().catch(() => {});
-  }, delayMs);
-}
-
-async function checkForUpdatesAutomatically() {
-  if (!app.isPackaged || updateCheckInFlight || updateReady) return { ok: true, skipped: true };
-  updateCheckInFlight = true;
-  try {
-    const result = await autoUpdater.checkForUpdates();
-    scheduleUpdateCheck();
-    return { ok: true, version: result?.updateInfo?.version || "" };
-  } catch (error) {
-    scheduleUpdateCheck(UPDATE_RETRY_INTERVAL_MS);
-    return { ok: false, message: error instanceof Error ? error.message : String(error) };
-  } finally {
-    updateCheckInFlight = false;
-  }
-}
-
-function hasActiveUpdateSensitiveWork() {
-  return brandExportJobPending || brandExportMonitorRunning || brandDownloadStarted;
-}
-
-function installDownloadedUpdateWhenSafe() {
-  clearTimeout(updateInstallTimer);
-  if (!updateReady) return;
-  if (hasActiveUpdateSensitiveWork()) {
-    sendUpdateStatus("downloaded", "ì—…ë°ì´íŠ¸ ì¤€ë¹„ ì™„ë£Œ Â· í˜„ìž¬ ìž‘ì—…ì´ ëë‚˜ë©´ ìžë™ ì„¤ì¹˜í•©ë‹ˆë‹¤.", {
-      waitingForWork: true,
-    });
-    updateInstallTimer = setTimeout(installDownloadedUpdateWhenSafe, UPDATE_INSTALL_RETRY_MS);
-    return;
-  }
-  sendUpdateStatus("installing", "ì—…ë°ì´íŠ¸ë¥¼ ìžë™ ì„¤ì¹˜í•˜ê³  ë‹¤ì‹œ ì‹œìž‘í•©ë‹ˆë‹¤.");
-  updateInstallTimer = setTimeout(() => {
-    if (updateReady) autoUpdater.quitAndInstall(true, true);
-  }, 3_000);
-}
-
-function configureUpdater() {
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on("checking-for-update", () => sendUpdateStatus("checking", "ìƒˆ ë²„ì „ì„ í™•ì¸í•˜ê³  ìžˆìŠµë‹ˆë‹¤."));
-  autoUpdater.on("update-available", (info) => sendUpdateStatus("downloading", `ìƒˆ ë²„ì „ ${info.version}ì„ ìžë™ìœ¼ë¡œ ë‹¤ìš´ë¡œë“œí•©ë‹ˆë‹¤.`, {
-    version: info.version,
-    releaseDate: info.releaseDate || ""
-  }));
-  autoUpdater.on("update-not-available", () => sendUpdateStatus("current", "í˜„ìž¬ ìµœì‹  ë²„ì „ìž…ë‹ˆë‹¤."));
-  autoUpdater.on("download-progress", (info) => sendUpdateStatus("downloading", `ì—…ë°ì´íŠ¸ ë‹¤ìš´ë¡œë“œ ${Math.round(info.percent)}%`, { percent: info.percent }));
-  autoUpdater.on("update-downloaded", (info) => {
-    updateReady = true;
-    clearTimeout(updateCheckTimer);
-    sendUpdateStatus("downloaded", `ë²„ì „ ${info.version} ë‹¤ìš´ë¡œë“œê°€ ì™„ë£Œë˜ì—ˆìŠµë‹ˆë‹¤.`, {
-      version: info.version,
-      releaseDate: info.releaseDate || ""
-    });
-    installDownloadedUpdateWhenSafe();
-  });
-  autoUpdater.on("error", (error) => {
-    sendUpdateStatus("error", `ì—…ë°ì´íŠ¸ í™•ì¸ ì‹¤íŒ¨: ${error.message}`);
-    scheduleUpdateCheck(UPDATE_RETRY_INTERVAL_MS);
-  });
-}
-
-function encrypted(value) {
-  if (!value) return "";
-  if (!safeStorage.isEncryptionAvailable()) throw new Error("WINDOWS_ENCRYPTION_UNAVAILABLE");
-  return safeStorage.encryptString(value).toString("base64");
-}
-
-function decrypted(value) {
-  if (!value) return "";
-  return safeStorage.decryptString(Buffer.from(value, "base64"));
-}
-
-function officialAccountCredentials(sourceId) {
-  const settings = store.snapshot().settings;
-  const prefix = sourceId === "nike" ? "nike" : sourceId === "adidas" ? "adidas" : "";
-  if (!prefix) return { id: "", password: "" };
-  return {
-    id: String(settings[`${prefix}LoginId`] || "").trim(),
-    password: decrypted(settings[`${prefix}PasswordEncrypted`] || ""),
-  };
-}
-
-function officialAccountSourceForUrl(value) {
-  let hostname = "";
-  try { hostname = new URL(String(value || "")).hostname.replace(/^www\./, ""); } catch { return null; }
-  return DOMESTIC_LOGIN_SOURCES.find((source) => source.officialAccount
-    && source.domains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`))) || null;
-}
-
-async function ensureOfficialAccountLogin(searchWindow, homepageUrl) {
-  const source = officialAccountSourceForUrl(homepageUrl);
-  if (!source) return { ok: true, required: false };
-  const credentials = officialAccountCredentials(source.id);
-  if (!credentials.id || !credentials.password) {
-    searchWindow.show();
-    searchWindow.focus();
-    searchWindow.setTitle(`${source.name} ê³„ì •ì •ë³´ë¥¼ ì„¤ì •í•œ ë’¤ ê²€ìƒ‰í•´ ì£¼ì„¸ìš”`);
-    return { ok: false, required: true, reason: "OFFICIAL_CREDENTIALS_REQUIRED" };
-  }
-  await searchWindow.loadURL(source.loginUrl).catch(() => {});
-  await wait(1_200);
-  const state = await searchWindow.webContents.executeJavaScript(`(() => {
-    const visible = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== "none" && s.visibility !== "hidden"; };
-    const fields = [...document.querySelectorAll('input')].filter(visible);
-    const user = fields.find((el) => /email|user|login|ì•„ì´ë””|ì´ë©”ì¼/i.test([el.name, el.id, el.type, el.autocomplete, el.placeholder, el.getAttribute('aria-label')].join(' ')) && el.type !== 'password');
-    const password = fields.find((el) => el.type === 'password' || /password|ë¹„ë°€ë²ˆí˜¸/i.test([el.name, el.id, el.placeholder, el.getAttribute('aria-label')].join(' ')));
-    if (!user || !password) return { formFound: false };
-    const setValue = (el, value) => { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set; setter?.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
-    setValue(user, ${JSON.stringify(credentials.id)});
-    setValue(password, ${JSON.stringify(credentials.password)});
-    const submit = [...document.querySelectorAll('button,input[type="submit"],[role="button"]')].filter(visible).find((el) => /ë¡œê·¸ì¸|log\s*in|sign\s*in/i.test([el.textContent, el.value, el.getAttribute('aria-label')].join(' ')));
-    if (!submit) return { formFound: true };
-    submit.scrollIntoView({ block: 'center' }); const r = submit.getBoundingClientRect();
-    return { formFound: true, x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
-  })()`, true).catch(() => null);
-  if (state?.x && state?.y) {
-    searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: state.x, y: state.y });
-    searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: state.x, y: state.y, button: "left", clickCount: 1 });
-    searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: state.x, y: state.y, button: "left", clickCount: 1 });
-    await wait(3_000);
-  }
-  const stillOnLogin = /login|signin|sign-in/i.test(searchWindow.webContents.getURL());
-  if (!state || stillOnLogin || (state.formFound === true && !state.x)) {
-    searchWindow.show();
-    searchWindow.focus();
-    searchWindow.setTitle(`${source.name} ë¡œê·¸ì¸ í™•ì¸ í•„ìš” Â· ë¡œê·¸ì¸ ì™„ë£Œ í›„ ë‹¤ì‹œ ê²€ìƒ‰`);
-    return { ok: false, required: true, reason: "OFFICIAL_LOGIN_FAILED" };
-  }
-  return { ok: true, required: true };
-}
-
-function publicConfig() {
-  const settings = store.snapshot().settings;
-  return {
-    appKey: settings.appKey || "",
-    apiBaseUrl: settings.apiBaseUrl || "https://open.poizon.com",
-    brandExportFolder: settings.brandExportFolder || "",
-    hasAppSecret: Boolean(settings.appSecretEncrypted),
-    hasAccessToken: Boolean(settings.accessTokenEncrypted),
-    poizonLoginId: settings.poizonLoginId || "",
-    hasPoizonPassword: Boolean(settings.poizonPasswordEncrypted),
-    nikeLoginId: settings.nikeLoginId || "",
-    hasNikePassword: Boolean(settings.nikePasswordEncrypted),
-    adidasLoginId: settings.adidasLoginId || "",
-    hasAdidasPassword: Boolean(settings.adidasPasswordEncrypted),
-    ledgerWebhookUrl: settings.ledgerWebhookUrl || "",
-    hasLedgerSecret: Boolean(settings.ledgerSecretEncrypted),
-  };
-}
-
-function openMusinsaLedgerWindow() {
-  if (musinsaLedgerWindow && !musinsaLedgerWindow.isDestroyed()) {
-    musinsaLedgerWindow.show(); musinsaLedgerWindow.focus();
-    return { ok: true };
-  }
-  musinsaLedgerWindow = new BrowserWindow({
-    icon: APP_ICON_PATH, width: 1320, height: 900, title: "ë¬´ì‹ ì‚¬ ì£¼ë¬¸ ìƒì„¸ Â· êµ¬ë§¤ìž¥ë¶€ ê°€ì ¸ì˜¤ê¸°",
-    webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, contextIsolation: true },
-  });
-  musinsaLedgerWindow.on("closed", () => { musinsaLedgerWindow = null; });
-  void musinsaLedgerWindow.loadURL("https://www.musinsa.com/mypage/orders");
-  return { ok: true };
-}
-
-async function captureMusinsaLedgerOrder() {
-  if (!musinsaLedgerWindow || musinsaLedgerWindow.isDestroyed()) return { ok: false, code: "ORDER_WINDOW_CLOSED", message: "ë¬´ì‹ ì‚¬ ì£¼ë¬¸ ìƒì„¸ í™”ë©´ì„ ë¨¼ì € ì—´ì–´ì£¼ì„¸ìš”." };
-  const url = musinsaLedgerWindow.webContents.getURL();
-  if (!/musinsa\.com/i.test(url)) return { ok: false, code: "NOT_MUSINSA", message: "ë¬´ì‹ ì‚¬ ì£¼ë¬¸ ìƒì„¸ í™”ë©´ì—ì„œ ë‹¤ì‹œ ì‹œë„í•´ ì£¼ì„¸ìš”." };
-  const rows = await musinsaLedgerWindow.webContents.executeJavaScript(`(() => {
-    const clean = value => String(value || '').replace(/\\s+/g, ' ').trim();
-    const body = clean(document.body?.innerText);
-    const orderNumber = body.match(/(?:ì£¼ë¬¸\\s*ë²ˆí˜¸|order\\s*(?:no|number))\\s*[:ï¼š]?\\s*([0-9A-Z-]{6,})/i)?.[1] || '';
-    const date = body.match(/(?:ì£¼ë¬¸\\s*(?:ì¼ìž|ì¼ì‹œ)|ê²°ì œ\\s*(?:ì¼ìž|ì¼ì‹œ))\\s*[:ï¼š]?\\s*(20\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2})/)?.[1]?.replace(/[.\\/]/g, '-') || '';
-    const links = [...document.querySelectorAll('a[href*="/products/"]')];
-    const unique = [...new Map(links.map(link => [new URL(link.href, location.href).pathname.match(/\\/products\\/(\\d+)/)?.[1], link])).entries()].filter(([id]) => id);
-    return unique.map(([id, link]) => {
-      const card = link.closest('article,li,[class*="order" i],[class*="product" i],[class*="goods" i]') || link.parentElement;
-      const text = clean(card?.innerText || link.innerText);
-      const image = card?.querySelector('img');
-      const priceMatches = [...text.matchAll(/([0-9][0-9,]{2,})\\s*ì›/g)].map(m => Number(m[1].replace(/,/g,''))).filter(Boolean);
-      const size = text.match(/(?:ì‚¬ì´ì¦ˆ|ì˜µì…˜)\\s*[:ï¼š]?\\s*([0-9A-Z./ -]{1,20})/i)?.[1]?.trim() || '';
-      const lines = String(card?.innerText || '').split('\\n').map(clean).filter(Boolean);
-      return { platform:'ë¬´ì‹ ì‚¬', orderNumber, purchaseDate:date, purchaseUrl:link.href, articleNumber:id,
-        modelName:clean(image?.alt) || lines.find(v => v.length > 3 && !/ì›|ì£¼ë¬¸|ë°°ì†¡|ì˜µì…˜|ì‚¬ì´ì¦ˆ/.test(v)) || '',
-        brand:lines[0] || '', krSize:size, purchasePrice:priceMatches.at(-1) || 0,
-        imageUrl:image?.currentSrc || image?.src || '', quantity:1, status:'êµ¬ë§¤ì™„ë£Œ' };
-    });
-  })()`, true).catch(() => []);
-  if (!rows.length) return { ok: false, code: "ORDER_PRODUCTS_NOT_FOUND", message: "ì£¼ë¬¸ ìƒì„¸ í™”ë©´ì—ì„œ ìƒí’ˆì„ ì°¾ì§€ ëª»í–ˆìŠµë‹ˆë‹¤. ì£¼ë¬¸ ìƒì„¸ë¥¼ ì—° ë’¤ ë‹¤ì‹œ ê°€ì ¸ì˜¤ì„¸ìš”." };
-  return { ok: true, rows: rows.map(normalizePurchaseLedgerRow) };
-}
-
-async function syncPurchaseLedger(input = {}) {
-  const row = normalizePurchaseLedgerRow(input);
-  const validation = validatePurchaseLedgerRow(row);
-  if (!validation.ok) return { ok: false, code: "REQUIRED_FIELDS_MISSING", message: `${validation.missing.join(", ")}ì„(ë¥¼) í™•ì¸í•´ ì£¼ì„¸ìš”.` };
-  const settings = store.snapshot().settings;
-  const endpoint = String(settings.ledgerWebhookUrl || "").trim();
-  const secret = decrypted(settings.ledgerSecretEncrypted);
-  if (!/^https:\/\/script\.google\.com\//i.test(endpoint) || !secret) return { ok: false, code: "LEDGER_NOT_CONNECTED", message: "Google êµ¬ë§¤ìž¥ë¶€ ì—°ê²° ì£¼ì†Œì™€ ë³´ì•ˆí‚¤ë¥¼ ë¨¼ì € ì €ìž¥í•´ ì£¼ì„¸ìš”." };
-  try {
-    const response = await fetch(endpoint, { method: "POST", redirect: "follow", headers: { "content-type": "text/plain;charset=utf-8" }, body: JSON.stringify({ secret, row }), signal: AbortSignal.timeout(20_000) });
-    const result = await response.json();
-    if (!result.ok) throw new Error(result.code || result.message || `HTTP_${response.status}`);
-    const saved = await store.upsert("ledger", { ...row, id: row.duplicateKey, sheetRow: result.rowNumber, syncStatus: result.duplicate ? "duplicate" : "synced", syncedAt: new Date().toISOString() });
-    return { ok: true, duplicate: Boolean(result.duplicate), rowNumber: result.rowNumber, saved };
-  } catch (error) {
-    await store.upsert("ledger", { ...row, id: row.duplicateKey, syncStatus: "failed", syncError: error instanceof Error ? error.message : String(error) });
-    void addProgramNotification({ type: "error", title: "êµ¬ë§¤ìž¥ë¶€ ê¸°ë¡ ì‹¤íŒ¨", message: `${row.modelName} Â· ë‹¤ì‹œ ê¸°ë¡í•´ ì£¼ì„¸ìš”.`, key: `ledger:failed:${row.duplicateKey}:${Date.now()}`, windows: true });
-    return { ok: false, code: "LEDGER_SYNC_FAILED", message: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-const SELLER_EXPORT_POLL_INTERVAL_MS = 60 * 1000;
-const SELLER_MULTI_EXPORT_POLL_INTERVAL_MS = 10 * 1000;
-const SELLER_EXPORT_MONITOR_DELAY_WARNING_MS = 20 * 60 * 1000;
-const RESTORED_PENDING_JOB_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const PROCESSED_BRAND_EXPORT_SUFFIX = "_ì´íŒë§¤ëŸ‰50ì´ìƒ_OR_ì •ë¦¬.xlsx";
-
-function defaultBrandExportFolder() {
-  return oneDriveBrandExportFolder()
-    || join(app.getPath("desktop"), "Around G POIZON", "POIZON ì „ì²´ë‚´ë³´ë‚´ê¸°");
-}
-
-function currentBrandExportFolder() {
-  return String(store?.snapshot()?.settings?.brandExportFolder || "").trim()
-    || defaultBrandExportFolder();
-}
-
-function oneDriveRootFolder() {
-  return [process.env.OneDriveConsumer, process.env.OneDrive, process.env.OneDriveCommercial]
-    .map((value) => String(value || "").trim())
-    .find(Boolean) || "";
-}
-
-function oneDrivePoizonBackupRoot() {
-  const root = oneDriveRootFolder();
-  return root ? join(root, "Around G POIZON", "POIZON ë‹¤ìš´ë¡œë“œ ë°±ì—…") : "";
-}
-
-function oneDriveBrandExportFolder() {
-  const root = oneDrivePoizonBackupRoot();
-  return root ? join(root, "ë¸Œëžœë“œ ì›ë³¸") : "";
-}
-
-function oneDrivePopularExportFolder() {
-  const root = oneDrivePoizonBackupRoot();
-  return root ? join(root, "ì¸ê¸°ìƒí’ˆ ì›ë³¸") : "";
-}
-
-function oneDriveInstallFolder() {
-  const root = oneDriveRootFolder();
-  return root ? join(root, "Around G POIZON", "ì„¤ì¹˜ íŒŒì¼") : "";
-}
-
-function oneDriveSettingsFolder() {
-  const root = oneDriveRootFolder();
-  return root ? join(root, "Around G POIZON", "ì„¤ì • ë³µêµ¬") : "";
-}
-
-function portableBackupPath() {
-  const folder = oneDriveSettingsFolder();
-  return folder ? join(folder, "Around-G-POIZON-ë³µêµ¬.json") : "";
-}
-
-function publicPortableSnapshot() {
-  const snapshot = store.snapshot();
-  const settings = { ...(snapshot.settings || {}) };
-  for (const key of [
-    "appSecretEncrypted", "accessTokenEncrypted", "poizonLoginId", "poizonPasswordEncrypted",
-    "nikeLoginId", "nikePasswordEncrypted", "adidasLoginId", "adidasPasswordEncrypted", "brandExportFolder",
-    "ledgerWebhookUrl", "ledgerSecretEncrypted",
-    "oneDrivePoizonBackupRoot", "brandExportJobCache", "brandExportFileValidationCache",
-  ]) delete settings[key];
-  return { ...snapshot, settings, collector: { status: "idle", lastPage: 0, lastFingerprint: "", repeatedPages: 0 } };
-}
-
-function setOneDriveBackupStatus(state, message, extra = {}) {
-  oneDriveBackupStatus = { state, message, folder: oneDriveRootFolder(), ...extra };
-  mainWindow?.webContents.send("backup:status", oneDriveBackupStatus);
-}
-
-async function writePortableOneDriveBackup() {
-  const filePath = portableBackupPath();
-  if (!filePath) throw new Error("ONEDRIVE_NOT_CONNECTED");
-  await mkdir(dirname(filePath), { recursive: true });
-  const temporary = `${filePath}.tmp`;
-  await writeFile(temporary, JSON.stringify(publicPortableSnapshot(), null, 2), "utf8");
-  await rename(temporary, filePath);
-  return filePath;
-}
-
-async function restorePortableOneDriveBackupIfFresh(hadLocalData) {
-  if (hadLocalData) return { restored: false };
-  const filePath = portableBackupPath();
-  if (!filePath) return { restored: false };
-  try {
-    const backup = JSON.parse(await readFile(filePath, "utf8"));
-    await store.restorePortableBackup(backup);
-    return { restored: true, filePath };
-  } catch (error) {
-    if (error?.code === "ENOENT") return { restored: false };
-    throw error;
-  }
-}
-
-async function removeOldOneDriveInstallers(folder, keepName) {
-  const entries = await readdir(folder, { withFileTypes: true });
-  let removed = 0;
-  for (const entry of entries) {
-    if (!entry.isFile() || entry.name === keepName || !/^Around-G-POIZON-Setup-.*\.exe$/i.test(entry.name)) continue;
-    await unlink(join(folder, entry.name));
-    removed += 1;
-  }
-  return removed;
-}
-
-async function backupCurrentInstallerToOneDrive() {
-  const folder = oneDriveInstallFolder();
-  if (!folder) throw new Error("ONEDRIVE_NOT_CONNECTED");
-  await mkdir(folder, { recursive: true });
-  const version = app.getVersion();
-  const fileName = `Around-G-POIZON-Setup-${version}.exe`;
-  const destination = join(folder, fileName);
-  const existing = await stat(destination).catch(() => null);
-  if (!existing?.size) {
-    const url = `https://github.com/7venik-bit/around-g-poizon-desktop/releases/download/v${version}/${fileName}`;
-    const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(10 * 60 * 1_000) });
-    if (!response.ok) throw new Error(`INSTALLER_DOWNLOAD_${response.status}`);
-    const temporary = `${destination}.download`;
-    await writeFile(temporary, Buffer.from(await response.arrayBuffer()));
-    await rename(temporary, destination);
-  }
-  const removed = await removeOldOneDriveInstallers(folder, fileName);
-  await writeFile(join(folder, "ìƒˆ PC ì„¤ì¹˜ ì•ˆë‚´.txt"), [
-    "Around G POIZON ìƒˆ PC ì„¤ì¹˜ ì•ˆë‚´", "", `1. ${fileName} íŒŒì¼ì„ ì‹¤í–‰í•©ë‹ˆë‹¤.`,
-    "2. ê¸°ì¡´ PCì™€ ê°™ì€ OneDrive ê³„ì •ìœ¼ë¡œ ë¡œê·¸ì¸í•©ë‹ˆë‹¤.",
-    "3. í”„ë¡œê·¸ëž¨ì„ ì²˜ìŒ ì‹¤í–‰í•˜ë©´ ì„¤ì •ê³¼ POIZON ìžë£Œë¥¼ ìžë™ ë³µêµ¬í•©ë‹ˆë‹¤.",
-    "4. POIZON ë° ì™¸ë¶€ ì‚¬ì´íŠ¸ ë¡œê·¸ì¸ì€ ë³´ì•ˆì„ ìœ„í•´ ìƒˆ PCì—ì„œ ë‹¤ì‹œ ì§„í–‰í•©ë‹ˆë‹¤.",
-  ].join("\r\n"), "utf8");
-  return { destination, removed };
-}
-
-async function runOneDriveRecoveryBackup() {
-  if (!oneDriveRootFolder()) {
-    setOneDriveBackupStatus("disconnected", "OneDrive ë¡œê·¸ì¸ì´ í•„ìš”í•©ë‹ˆë‹¤. ë°±ì—…ì´ ì¤‘ì§€ë˜ì—ˆìŠµë‹ˆë‹¤.");
-    return { ok: false, ...oneDriveBackupStatus };
-  }
-  try {
-    setOneDriveBackupStatus("syncing", "OneDriveì— ìµœì‹  ì„¤ì¹˜ë³¸ê³¼ ì„¤ì •ì„ ë°±ì—…í•˜ê³  ìžˆìŠµë‹ˆë‹¤.");
-    const settingsPath = await writePortableOneDriveBackup();
-    const installer = app.isPackaged ? await backupCurrentInstallerToOneDrive() : { destination: "", removed: 0 };
-    setOneDriveBackupStatus("connected", "ìµœì‹  ì„¤ì¹˜ë³¸ 1ê°œì™€ ì„¤ì •ì´ ì•ˆì „í•˜ê²Œ ë°±ì—…ë˜ì—ˆìŠµë‹ˆë‹¤.", {
-      settingsPath, installerPath: installer.destination, removedInstallers: installer.removed,
-    });
-    return { ok: true, ...oneDriveBackupStatus };
-  } catch (error) {
-    setOneDriveBackupStatus("warning", `OneDrive ë°±ì—… í™•ì¸ í•„ìš”: ${error instanceof Error ? error.message : String(error)}`);
-    return { ok: false, ...oneDriveBackupStatus };
-  }
-}
-
-function sameFolder(left = "", right = "") {
-  return resolve(String(left || "")).toLocaleLowerCase() === resolve(String(right || "")).toLocaleLowerCase();
-}
-
-function safeBrandExportLabel(value = "") {
-  return String(brandExportLabel(value) || "POIZON")
-    .replace(/[\\/:*?"<>|]/g, "-")
-    .trim() || "POIZON";
-}
-
-function brandExportFolderName(brandName = "", jobId = "") {
-  const safeBrand = safeBrandExportLabel(brandName);
-  const safeJobId = String(jobId || "").replace(/[^0-9]/g, "").trim();
-  return safeJobId ? `${safeBrand}_${safeJobId}` : safeBrand;
-}
-
-function parseBrandExportFolderName(folderName = "") {
-  const normalized = String(folderName || "").trim();
-  const matched = normalized.match(/^(.*)_([0-9]{7,})$/);
-  return matched
-    ? { brandName: String(matched[1] || "").trim(), jobId: matched[2] }
-    : { brandName: normalized, jobId: "" };
-}
-
-
-async function listBrandExportExcelEntries(folder) {
-  const files = [];
-  async function visit(directory) {
-    const entries = await readdir(directory, { withFileTypes: true });
-    for (const entry of entries) {
-      const path = join(directory, entry.name);
-      if (entry.isDirectory()) await visit(path);
-      else if (entry.isFile() && /\.xlsx$/i.test(entry.name) && !entry.name.startsWith("~$")) {
-        files.push({ path, name: entry.name, directory });
-      }
-    }
-  }
-  await visit(folder);
-  return files;
-}
-
-async function copyExcelTree(sourceFolder, destinationFolder) {
-  if (!sourceFolder || !destinationFolder || sameFolder(sourceFolder, destinationFolder)) return 0;
-  let entries = [];
-  try {
-    entries = await listBrandExportExcelEntries(sourceFolder);
-  } catch {
-    return 0;
-  }
-  let copied = 0;
-  for (const entry of entries) {
-    const nestedPath = relative(sourceFolder, entry.path);
-    if (!nestedPath || nestedPath.startsWith("..")) continue;
-    const destination = join(destinationFolder, nestedPath);
-    await mkdir(dirname(destination), { recursive: true });
-    const sourceInfo = await stat(entry.path);
-    const destinationInfo = await stat(destination).catch(() => null);
-    if (destinationInfo?.size === sourceInfo.size) continue;
-    await copyFile(entry.path, destination);
-    copied += 1;
-  }
-  return copied;
-}
-
-async function initializeOneDrivePoizonBackup() {
-  const backupRoot = oneDrivePoizonBackupRoot();
-  const brandFolder = oneDriveBrandExportFolder();
-  const popularFolder = oneDrivePopularExportFolder();
-  if (!backupRoot || !brandFolder || !popularFolder) return { enabled: false, copied: 0 };
-  await mkdir(brandFolder, { recursive: true });
-  await mkdir(popularFolder, { recursive: true });
-  const configuredBrandFolder = String(store.snapshot().settings.brandExportFolder || "").trim();
-  const previousBrandFolder = configuredBrandFolder
-    || join(app.getPath("desktop"), "Around G POIZON", "POIZON ì „ì²´ë‚´ë³´ë‚´ê¸°");
-  const copiedBrands = await copyExcelTree(previousBrandFolder, brandFolder);
-  const legacyPopularFolder = join(app.getPath("desktop"), "Around G POIZON");
-  let copiedPopular = 0;
-  try {
-    const entries = await readdir(legacyPopularFolder, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isFile() || !/^POIZON-ì¸ê¸°ìƒí’ˆ-ì›ë³¸-.*\.xlsx$/i.test(entry.name)) continue;
-      const source = join(legacyPopularFolder, entry.name);
-      const destination = join(popularFolder, entry.name);
-      const sourceInfo = await stat(source);
-      const destinationInfo = await stat(destination).catch(() => null);
-      if (destinationInfo?.size === sourceInfo.size) continue;
-      await copyFile(source, destination);
-      copiedPopular += 1;
-    }
-  } catch {
-    // A fresh installation may not have any desktop POIZON files yet.
-  }
-  await store.setSettings({
-    // A backup destination must never replace the user's existing source
-    // folder. Updating the app previously made historical files appear gone
-    // even though their bytes were still present in the old folder.
-    brandExportFolder: configuredBrandFolder || brandFolder,
-    oneDrivePoizonBackupRoot: backupRoot,
-    oneDrivePoizonBackupEnabled: true,
-  });
-  return { enabled: true, copied: copiedBrands + copiedPopular, folder: backupRoot };
-}
-
-function brandExportRecoveryFolders() {
-  const current = currentBrandExportFolder();
-  const desktopLegacy = join(app.getPath("desktop"), "Around G POIZON", "POIZON ì „ì²´ë‚´ë³´ë‚´ê¸°");
-  const candidates = [current, desktopLegacy, oneDriveBrandExportFolder()];
-  for (const root of [process.env.OneDriveConsumer, process.env.OneDrive, process.env.OneDriveCommercial]) {
-    const oneDriveRoot = String(root || "").trim();
-    if (!oneDriveRoot) continue;
-    candidates.push(
-      join(oneDriveRoot, "ë°”íƒ• í™”ë©´", "Around G POIZON", "POIZON ì „ì²´ë‚´ë³´ë‚´ê¸°"),
-      join(oneDriveRoot, "Desktop", "Around G POIZON", "POIZON ì „ì²´ë‚´ë³´ë‚´ê¸°"),
-    );
-  }
-  // Retain every historical workbook location recorded with a completed
-  // POIZON job. These paths survive folder-layout changes and let the app
-  // recover files stored outside the standard Desktop/OneDrive roots.
-  for (const job of savedBrandExportJobs()) {
-    const historicalFile = String(job?.filePath || "").trim();
-    if (historicalFile) candidates.push(dirname(historicalFile));
-  }
-  const seen = new Set();
-  return candidates.filter((folder) => {
-    const key = resolve(String(folder || "")).toLocaleLowerCase();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function brandFromExportFileName(name = "") {
-  return String(name)
-    .replace(/\.xlsx$/i, "")
-    .replace(/_ì´íŒë§¤ëŸ‰50ì´ìƒ_OR_ì •ë¦¬$/i, "")
-    .replace(/_íŒë§¤ëŸ‰30ì´ìƒ_ì •ë¦¬$/i, "")
-    .replace(/_\d{8}_\d{6}$/, "")
-    .trim();
-}
-
-function isProcessedBrandExportName(name = "") {
-  return /_(?:ì´íŒë§¤ëŸ‰50ì´ìƒ_OR|íŒë§¤ëŸ‰30ì´ìƒ)_ì •ë¦¬\.xlsx$/i.test(String(name));
-}
-
-function isPartialBrandExportName(name = "") {
-  return /_ë¶€ë¶„ë‹¤ìš´ë¡œë“œ_\d+_of_\d+_/i.test(String(name));
-}
-
-function processedBrandExportName(name = "") {
-  const sourceName = String(name || "POIZON.xlsx");
-  return sourceName.replace(/\.xlsx$/i, PROCESSED_BRAND_EXPORT_SUFFIX);
-}
-
-async function validateBrandExportFile(filePath, expectedBrands = []) {
-  const info = await stat(filePath);
-  const signature = `${filePath}:${info.mtimeMs}:${info.size}`;
-  if (brandExportValidationCache.has(signature)) return brandExportValidationCache.get(signature);
-  const saved = store?.snapshot()?.settings?.brandExportFileValidationCache;
-  const savedEntry = Array.isArray(saved)
-    ? saved.find((entry) => String(entry?.signature || "") === signature)
-    : null;
-  if (savedEntry?.result) {
-    brandExportValidationCache.set(signature, savedEntry.result);
-    return savedEntry.result;
-  }
-  const fileBuffer = await readFile(filePath);
-  const brandColumn = readPoizonColumnValues(fileBuffer, "ìƒí’ˆ ë¸Œëžœë“œ", "ë¸Œëžœë“œ");
-  const observedBrands = brandColumn.values;
-  const integrity = analyzeBrandValues(expectedBrands, observedBrands);
-  const result = {
-    ...integrity,
-    status: integrity.ok ? "matched" : "mismatch",
-    message: integrity.ok ? "ì„ íƒ ë¸Œëžœë“œì™€ Excel ë¸Œëžœë“œê°€ ì¼ì¹˜í•©ë‹ˆë‹¤." : brandMismatchMessage(integrity),
-  };
-  brandExportValidationCache.set(signature, result);
-  const nextCache = [
-    { signature, result },
-    ...(Array.isArray(saved) ? saved : []).filter((entry) => String(entry?.signature || "") !== signature),
-  ].slice(0, 500);
-  await store?.setSettings({ brandExportFileValidationCache: nextCache });
-  return result;
-}
-
-async function listBrandExportFiles({ emitRecoveryProgress = false } = {}) {
-  const folder = currentBrandExportFolder();
-  const emitStartupProgress = (percent, message, details = {}) => {
-    if (!emitRecoveryProgress) return;
-    mainWindow?.webContents.send("startup-recovery:progress", {
-      percent: Math.max(0, Math.min(100, Number(percent) || 0)),
-      message,
-      ...details,
-    });
-  };
-  emitStartupProgress(5, "POIZON ë‹¤ìš´ë¡œë“œ í´ë”ë¥¼ í™•ì¸í•˜ê³  ìžˆìŠµë‹ˆë‹¤.");
-  await mkdir(folder, { recursive: true });
-  const entries = [];
-  const seenPaths = new Set();
-  for (const recoveryFolder of brandExportRecoveryFolders()) {
-    const recovered = await listBrandExportExcelEntries(recoveryFolder).catch(() => []);
-    for (const entry of recovered) {
-      const pathKey = resolve(entry.path).toLocaleLowerCase();
-      if (seenPaths.has(pathKey)) continue;
-      seenPaths.add(pathKey);
-      entries.push({ ...entry, rootFolder: recoveryFolder });
-    }
-  }
-  const sourceEntries = entries
-    .filter((entry) => !isProcessedBrandExportName(entry.name) && !isPartialBrandExportName(entry.name));
-  emitStartupProgress(12, `ê¸°ì¡´ POIZON Excel ${sourceEntries.length}ê°œë¥¼ í™•ì¸í•©ë‹ˆë‹¤.`, {
-    current: 0,
-    total: sourceEntries.length,
-  });
-  const preparedEntries = [];
-  for (let index = 0; index < sourceEntries.length; index += 1) {
-    const entry = sourceEntries[index];
-    preparedEntries.push({ entry, info: await stat(entry.path) });
-    emitStartupProgress(12 + Math.round(((index + 1) / Math.max(1, sourceEntries.length)) * 18),
-      `ê¸°ì¡´ POIZON Excel ëª©ë¡ í™•ì¸ ${index + 1}/${sourceEntries.length}`, {
-        current: index + 1,
-        total: sourceEntries.length,
-      });
-  }
-  preparedEntries.sort((left, right) => right.info.mtimeMs - left.info.mtimeMs);
-  const usedJobIds = new Set();
-  const files = [];
-  for (let index = 0; index < preparedEntries.length; index += 1) {
-    const { entry, info } = preparedEntries[index];
-    const path = entry.path;
-    const folderMeta = sameFolder(entry.directory, entry.rootFolder)
-      ? { brandName: "", jobId: "" }
-      : parseBrandExportFolderName(basename(entry.directory));
-    const expectedBrand = folderMeta.brandName || brandFromExportFileName(entry.name);
-    const savedJob = savedBrandExportJobForFile({
-      path,
-      name: entry.name,
-      brandName: expectedBrand,
-      mtimeMs: info.mtimeMs,
-    }, usedJobIds);
-    const recoveredJobId = String(folderMeta.jobId || savedJob?.jobId || "").trim();
-    if (recoveredJobId) usedJobIds.add(recoveredJobId);
-    const brandIntegrity = await validateBrandExportFile(path, [expectedBrand]).catch((error) => ({
-      ok: false,
-      status: "invalid",
-      expectedBrand,
-      dominantBrand: "",
-      ratio: 0,
-      message: `Excel ë¸Œëžœë“œ í™•ì¸ ì‹¤íŒ¨: ${error instanceof Error ? error.message : String(error)}`,
-    }));
-    emitStartupProgress(30 + Math.round(((index + 1) / Math.max(1, preparedEntries.length)) * 58),
-      `POIZON ë³€ê²½ ì‚¬í•­ í™•ì¸ ${index + 1}/${preparedEntries.length}`, {
-        current: index + 1,
-        total: preparedEntries.length,
-      });
-    const detectedBrand = String(brandIntegrity?.dominantBrand || "").trim();
-    const resolvedBrandName = detectedBrand || expectedBrand;
-    if (recoveredJobId && resolvedBrandName
-      && !brandsMatch(resolvedBrandName, savedJob?.brandName)) {
-      await rememberBrandExportJob({
-        jobId: recoveredJobId,
-        brandName: resolvedBrandName,
-        createdAt: Number(savedJob?.createdAt || info.mtimeMs),
-        lastDownloadedAt: Number(savedJob?.lastDownloadedAt || info.mtimeMs),
-        expectedProductCount: Number(savedJob?.expectedProductCount || 0),
-        filePath: path,
-        fileName: entry.name,
-        fileMtimeMs: info.mtimeMs,
-      });
-    }
-    files.push({
-      path,
-      name: entry.name,
-      brandName: resolvedBrandName,
-      detectedBrandName: detectedBrand,
-      brandIntegrity,
-      jobId: recoveredJobId,
-      jobIdRecovered: Boolean(recoveredJobId),
-      time: info.mtimeMs,
-      mtimeMs: info.mtimeMs,
-      size: info.size,
-    });
-  }
-  const visibleFiles = files.filter((file) => !isProcessedBrandExportName(file.name));
-  visibleFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  emitStartupProgress(90, `ê¸°ì¡´ POIZON Excel ${visibleFiles.length}ê°œ í™•ì¸ì„ ì™„ë£Œí–ˆìŠµë‹ˆë‹¤.`, {
-    current: visibleFiles.length,
-    total: visibleFiles.length,
-  });
-  return { ok: true, folder, files: visibleFiles };
-}
-
-function excelPreviewCell(value) {
-  if (value === null || value === undefined) return "";
-  if (value instanceof Date) return value.toISOString();
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-    ? value
-    : String(value);
-}
-
-function buildExcelPreviewProducts(headers = [], entries = []) {
-  const column = (...names) => findPoizonColumn(headers, ...names);
-  const recentSalesColumns = findPoizonRecentSalesColumns(headers);
-  const totalSalesColumns = findPoizonTotalSalesColumns(headers);
-  const columns = {
-    spuId: column("SPU ID", "SPU_ID"), image: column("SPU ì´ë¯¸ì§€", "ìƒí’ˆ ì´ë¯¸ì§€", "ì´ë¯¸ì§€", "ì´ë¯¸ì§€ URL"),
-    articleNumber: column("ìƒí’ˆ ë²ˆí˜¸", "ìƒí’ˆë²ˆí˜¸", "ìƒí’ˆì½”ë“œ", "í’ˆë²ˆ"), title: column("ìƒí’ˆëª…", "ì˜ë¬¸ ìƒí’ˆëª…"),
-    brand: column("ìƒí’ˆ ë¸Œëžœë“œ", "ë¸Œëžœë“œ"), category1: column("ì¹´í…Œê³ ë¦¬ ëŒ€ë¶„ë¥˜", "ëŒ€ë¶„ë¥˜"),
-    category2: column("ì¹´í…Œê³ ë¦¬ ì¤‘ë¶„ë¥˜", "ì¤‘ë¶„ë¥˜"), category3: column("ì¹´í…Œê³ ë¦¬ ì†Œë¶„ë¥˜", "ì†Œë¶„ë¥˜"),
-    averagePrice: column("ìµœê·¼ 30ì¼ê°„ í‰ê·  ê±°ëž˜ê°€", "ìµœê·¼ 30ì¼ í‰ê·  ê±°ëž˜ê°€", "í‰ê·  ê±°ëž˜ê°€"),
-    sales30d: recentSalesColumns.china,
-    localSales30d: recentSalesColumns.local,
-    totalSales: totalSalesColumns.china,
-    localTotalSales: totalSalesColumns.local,
-    option: column("ì‚¬ì´ì¦ˆ/ì˜µì…˜/ìƒ‰ìƒ", "ì˜µì…˜"), skuId: column("SKU ID", "SKU_ID"),
-  };
-  const cell = (row, index) => index >= 0 ? row[index] : "";
-  const raw = (row, index) => String(cell(row, index) ?? "").trim();
-  return entries.flatMap((entry) => {
-    const row = entry.values || [];
-    // Do not apply an invisible recent-sales threshold here. Filtering has
-    // already been completed against the user's explicit Excel conditions;
-    // dropping low recent-sales SKU rows at conversion time made qualified
-    // results disappear from the list.
-    const spuId = raw(row, columns.spuId);
-    const articleNumber = raw(row, columns.articleNumber);
-    const title = raw(row, columns.title);
-    const skuId = raw(row, columns.skuId);
-    const option = raw(row, columns.option);
-    if (!spuId && !articleNumber && !title && !skuId) return [];
-    return [{
-      key: `ROW:${entry.sourceRowNumber}:${skuId || articleNumber || spuId}`,
-      sourceRowNumber: entry.sourceRowNumber,
-      spuId,
-      skuId,
-      option,
-      articleNumber,
-      title,
-      brandName: raw(row, columns.brand),
-      logoUrl: raw(row, columns.image),
-      categoryName: [columns.category1, columns.category2, columns.category3].map((index) => raw(row, index)).filter(Boolean).join(" / "),
-      averagePrice: parsePoizonSalesMetric(cell(row, columns.averagePrice)),
-      optionCount: 1,
-      salesScope: headers.includes("POIZON ìƒí’ˆ ìµœê·¼ 30ì¼ íŒë§¤ëŸ‰") || headers.includes("POIZON ìƒí’ˆ í˜„ì§€ íŒë§¤ìž ìµœê·¼ 30ì¼ íŒë§¤ëŸ‰") ? "spu" : skuId ? "sku" : "spu",
-      totalSales: parsePoizonSalesMetric(cell(row, columns.totalSales)),
-      totalSalesRaw: raw(row, columns.totalSales),
-      hasTotalSalesData: columns.totalSales >= 0 && /\d/.test(raw(row, columns.totalSales)),
-      localTotalSales: parsePoizonSalesMetric(cell(row, columns.localTotalSales)),
-      localTotalSalesRaw: raw(row, columns.localTotalSales),
-      hasLocalTotalSalesData: columns.localTotalSales >= 0 && /\d/.test(raw(row, columns.localTotalSales)),
-      sales30d: parsePoizonSalesMetric(cell(row, columns.sales30d)),
-      sales30dRaw: raw(row, columns.sales30d),
-      hasSalesData: columns.sales30d >= 0 && /\d/.test(raw(row, columns.sales30d)),
-      localSales30d: parsePoizonSalesMetric(cell(row, columns.localSales30d)),
-      localSales30dRaw: raw(row, columns.localSales30d),
-      hasLocalSalesData: columns.localSales30d >= 0 && /\d/.test(raw(row, columns.localSales30d)),
-    }];
-  });
-}
-
-async function previewExcelFile(input = {}) {
-  const filePath = String(input.path || "").trim();
-  if (!filePath) return { ok: false, message: "íŒŒì¼ ê²½ë¡œê°€ ì—†ìŠµë‹ˆë‹¤." };
-  if (!/\.xlsx$/i.test(filePath)) return { ok: false, message: "Excel(.xlsx) íŒŒì¼ë§Œ ë³¼ ìˆ˜ ìžˆìŠµë‹ˆë‹¤." };
-  const info = await stat(filePath);
-  const signature = `${filePath}:${info.mtimeMs}:${info.size}`;
-  let workbook = excelPreviewCache.get(signature);
-  if (!workbook) {
-    const rows = await readFirstDataSheet(await readFile(filePath));
-    const columnCount = rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
-    workbook = {
-      headers: Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(rows[0]?.[index])),
-      rows: rows.slice(1).map((row) => Array.from({ length: columnCount }, (_unused, index) => excelPreviewCell(row[index]))),
-      columnCount,
-    };
-    excelPreviewCache.set(signature, workbook);
-    while (excelPreviewCache.size > 3) excelPreviewCache.delete(excelPreviewCache.keys().next().value);
-  }
-  const productView = input.filters?.productView !== false;
-  const manualRawFilter = !productView && [
-    input.filters?.minimumTotal,
-    input.filters?.maximumTotal,
-    input.filters?.minimumLocalTotal,
-    input.filters?.maximumLocalTotal,
-  ].some((value) => value !== null && value !== undefined && String(value).trim() !== "");
-  const filtered = productView || manualRawFilter
-    ? filterPoizonPreviewRows(workbook.headers, workbook.rows, {
-        ...(input.filters || {}),
-        rowLevel: manualRawFilter,
-      })
-    : {
-        entries: workbook.rows.map((values, index) => ({ values, sourceRowNumber: index + 2 })),
-        sourceRows: workbook.rows.length,
-        sourceProducts: workbook.rows.length,
-        filteredProducts: workbook.rows.length,
-        chinaQualifiedProducts: workbook.rows.length,
-        localQualifiedProducts: workbook.rows.length,
-        missingChinaProducts: 0,
-        missingLocalProducts: 0,
-        totalSalesColumn: -1,
-        localTotalSalesColumn: -1,
-        filterApplied: false,
-        matchMode: "all",
-      };
-  const selectionOnly = input.filters?.selectionOnly === true;
-  // Keep the viewer paged, but allow one explicit local read to select every
-  // searchable product across all result pages.
-  const limit = selectionOnly
-    ? Math.min(100000, Math.max(25, Number(input.limit) || 100))
-    : Math.min(200, Math.max(25, Number(input.limit) || 100));
-  const products = productView ? buildExcelPreviewProducts(workbook.headers, filtered.entries) : [];
-  const sourceTotalProducts = productView ? buildExcelPreviewProducts(workbook.headers, workbook.rows.map((values, index) => ({ values, sourceRowNumber: index + 2 }))).length : 0;
-  const resultCount = productView ? products.length : filtered.entries.length;
-  const maximumOffset = Math.max(0, Math.floor(Math.max(0, resultCount - 1) / limit) * limit);
-  const offset = Math.min(maximumOffset, Math.max(0, Number(input.offset) || 0));
-  const pageEntries = filtered.entries.slice(offset, offset + limit);
-  const pageProducts = productView
-    ? products.slice(offset, offset + limit)
-    : buildExcelPreviewProducts(workbook.headers, pageEntries);
-  return {
-    ok: true,
-    path: filePath,
-    name: basename(filePath),
-    headers: workbook.headers,
-    salesColumns: findPoizonRecentSalesColumns(workbook.headers),
-    rows: productView || selectionOnly ? [] : pageEntries.map((entry) => entry.values),
-    rowNumbers: productView || selectionOnly ? [] : pageEntries.map((entry) => entry.sourceRowNumber),
-    products: pageProducts,
-    productView,
-    offset,
-    limit,
-    totalRows: resultCount,
-    filteredSourceRows: filtered.entries.length,
-    sourceTotalRows: filtered.sourceRows,
-    sourceTotalProducts,
-    totalColumns: workbook.columnCount,
-    totalSalesColumn: filtered.totalSalesColumn,
-    localTotalSalesColumn: filtered.localTotalSalesColumn,
-    filterApplied: filtered.filterApplied,
-    matchMode: filtered.matchMode,
-    filterDiagnostics: {
-      sourceProducts: filtered.sourceProducts,
-      filteredProducts: filtered.filteredProducts,
-      chinaQualifiedProducts: filtered.chinaQualifiedProducts,
-      localQualifiedProducts: filtered.localQualifiedProducts,
-      missingChinaProducts: filtered.missingChinaProducts,
-      missingLocalProducts: filtered.missingLocalProducts,
-      totalSalesHeader: filtered.totalSalesColumn >= 0 ? workbook.headers[filtered.totalSalesColumn] : "",
-      localTotalSalesHeader: filtered.localTotalSalesColumn >= 0 ? workbook.headers[filtered.localTotalSalesColumn] : "",
-      totalSalesColumnNumber: filtered.totalSalesColumn >= 0 ? filtered.totalSalesColumn + 1 : 0,
-      localTotalSalesColumnNumber: filtered.localTotalSalesColumn >= 0 ? filtered.localTotalSalesColumn + 1 : 0,
-    },
-  };
-}
-
-async function scanBrandExportFolder() {
-  const folder = currentBrandExportFolder();
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  // The will-download handler owns files created by the active POIZON job.
-  // Polling a partially written file can otherwise attach the previous job's
-  // brand before the completed download is validated.
-  if (brandDownloadStarted) return;
-  try {
-    const entries = await listBrandExportExcelEntries(folder);
-    const candidates = await Promise.all(entries
-      .filter((entry) => !isProcessedBrandExportName(entry.name))
-      .map(async (entry) => {
-        const path = entry.path;
-        const info = await stat(path);
-        return { path, name: entry.name, directory: entry.directory, mtimeMs: info.mtimeMs, size: info.size };
-      }));
-    candidates.sort((left, right) => right.mtimeMs - left.mtimeMs);
-    const newest = candidates.find((candidate) => !brandDownloadPathsInProgress.has(candidate.path));
-    if (!newest) return;
-    // A download may be created outside Electron's will-download handler.
-    // Wait for the file to stop changing before treating it as terminal.
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    const stableInfo = await stat(newest.path);
-    if (stableInfo.size !== newest.size || stableInfo.mtimeMs !== newest.mtimeMs) return;
-    const signature = `${newest.path}:${newest.mtimeMs}:${newest.size}`;
-    if (lastBrandExportSignature === "__BASELINE_EXISTING_FILES__") {
-      lastBrandExportSignature = signature;
-      return;
-    }
-    if (signature === lastBrandExportSignature) return;
-    lastBrandExportSignature = signature;
-    const folderMeta = newest.directory === folder
-      ? { brandName: "", jobId: "" }
-      : parseBrandExportFolderName(basename(newest.directory));
-    const expectedBrand = folderMeta.brandName || brandFromExportFileName(newest.name);
-    if (!expectedBrand) return;
-    const matchingJobs = [...brandExportJobs.entries()].filter(([_jobId, job]) =>
-      brandsMatch(job?.brandName, expectedBrand)
-      || brandsMatch(job?.brandKo, expectedBrand)
-    );
-    const folderJobId = folderMeta.jobId && brandExportJobs.has(folderMeta.jobId)
-      ? folderMeta.jobId
-      : "";
-    const matchedJobId = folderJobId || (matchingJobs.length === 1 ? matchingJobs[0][0] : "");
-    // Existing files can receive a new OneDrive modification timestamp after
-    // startup. Only a file tied to one current POIZON job may emit a live
-    // completion event; historical files are restored through list-files.
-    if (!matchedJobId) return;
-    const brandIntegrity = await validateBrandExportFile(newest.path, [expectedBrand]).catch((error) => ({
-      ok: false,
-      status: "invalid",
-      expectedBrand,
-      dominantBrand: "",
-      ratio: 0,
-      message: `Excel ë¸Œëžœë“œ í™•ì¸ ì‹¤íŒ¨: ${error instanceof Error ? error.message : String(error)}`,
-    }));
-    mainWindow.webContents.send("brand-export:detected", {
-      ...newest,
-      brandName: expectedBrand,
-      jobId: matchedJobId,
-      brandIntegrity,
-    });
-    // The workbook already exists and is stable, so the active job is done even
-    // when POIZON's task-number cell could not be read. Leaving it in the map
-    // would restart the monitor forever and request a duplicate download.
-    await rememberBrandExportJob({
-      jobId: matchedJobId,
-      brandName: expectedBrand,
-      brandKo: brandExportJobs.get(matchedJobId)?.brandKo || "",
-      createdAt: Number(brandExportJobs.get(matchedJobId)?.createdAt || newest.mtimeMs),
-      lastDownloadedAt: Date.now(),
-      expectedProductCount: Number(brandExportJobs.get(matchedJobId)?.expectedProductCount || 0),
-      filePath: newest.path,
-      fileName: newest.name,
-      fileMtimeMs: newest.mtimeMs,
-      sessionGeneration: brandWorkSessionGeneration,
-    });
-    brandExportJobs.delete(matchedJobId);
-    if (activeBrandDownloadJobId === matchedJobId) activeBrandDownloadJobId = "";
-    if (brandExportJobs.size) scheduleBrandExportMonitor(500);
-    else emitBrandExportAllComplete();
-  } catch (error) {
-    mainWindow.webContents.send("brand-export:error", {
-      message: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-function startBrandExportFolderPolling() {
-  if (brandExportPollTimer) clearInterval(brandExportPollTimer);
-  brandExportPollTimer = setInterval(scanBrandExportFolder, 3000);
-  setTimeout(scanBrandExportFolder, 500);
-}
-
-function secretConfig() {
-  const settings = store.snapshot().settings;
-  return {
-    appKey: settings.appKey || "",
-    appSecret: decrypted(settings.appSecretEncrypted),
-    accessToken: decrypted(settings.accessTokenEncrypted),
-    apiBaseUrl: settings.apiBaseUrl || "https://open.poizon.com"
-  };
-}
-
-function createWindow() {
-  const win = new BrowserWindow({
-    show: false,
-    icon: APP_ICON_PATH,
-    width: 1440,
-    height: 920,
-    minWidth: 1040,
-    minHeight: 700,
-    backgroundColor: "#f4f1ea",
-    title: "Around G POIZON",
-    webPreferences: {
-      preload: join(import.meta.dirname, "preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true
-    }
-  });
-  mainWindow = win;
-  win.once("ready-to-show", () => {
-    if (!win.isDestroyed()) win.show();
-  });
-  win.webContents.on("render-process-gone", (_event, details) => {
-    const logLine = `${new Date().toISOString()} renderer-process-gone ${details.reason} exitCode=${details.exitCode}\n`;
-    appendFile(join(app.getPath("userData"), "around-g-crash.log"), logLine, "utf8").catch(() => {});
-    if (!win.isDestroyed() && details.reason !== "clean-exit") setTimeout(() => win.reload(), 800);
-  });
-  win.webContents.on("did-create-window", (childWindow, details) => {
-    const openedUrl = String(details?.url || "");
-    if (!/poizon-review-popup\.html(?:[?#]|$)/i.test(openedUrl)) return;
-    // Keep the live comparison surface above the collector while its hidden
-    // Seller Center window continues navigation in the background.
-    childWindow.setAlwaysOnTop(true, "floating");
-    if (childWindow.isMinimized()) childWindow.restore();
-    childWindow.show();
-    childWindow.moveTop();
-    childWindow.focus();
-  });
-  win.on("closed", () => {
-    if (mainWindow === win) mainWindow = null;
-  });
-  win.loadFile(join(import.meta.dirname, "src", "index.html"));
-}
-
-function openInventoryWindow(filePath, brandName = "") {
-  const inventoryWindow = new BrowserWindow({
-    icon: APP_ICON_PATH,
-    width: 1380,
-    height: 900,
-    minWidth: 980,
-    minHeight: 680,
-    backgroundColor: "#f3f9ff",
-    title: `${brandName || "POIZON"} êµ­ë‚´ ìž¬ê³ Â·ì‚¬ì´ì¦ˆ í™•ì¸`,
-    webPreferences: {
-      preload: join(import.meta.dirname, "preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-  inventoryWindows.add(inventoryWindow);
-  inventoryWindow.on("closed", () => inventoryWindows.delete(inventoryWindow));
-  inventoryWindow.loadFile(join(import.meta.dirname, "src", "inventory.html"), {
-    query: { path: filePath, brand: brandName },
-  });
-}
-
-function showCollectorWindow() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
-}
-
-function minimizeSellerAutomationWindow(message = "POIZON íŒë§¤ìžì„¼í„°ë¥¼ ë°±ê·¸ë¼ìš´ë“œì—ì„œ ì‹¤í–‰ ì¤‘ìž…ë‹ˆë‹¤.") {
-  if (!sellerWindow || sellerWindow.isDestroyed()) return;
-  sellerWindow.showInactive();
-  if (!sellerWindow.isMinimized()) sellerWindow.minimize();
-  showCollectorWindow();
-  mainWindow?.webContents.send("seller:capture-progress", {
-    background: true,
-    message,
-  });
-}
-
-function localFileTimestamp(date = new Date()) {
-  const two = (value) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}${two(date.getMonth() + 1)}${two(date.getDate())}_${two(date.getHours())}${two(date.getMinutes())}${two(date.getSeconds())}`;
-}
-
-function isPoizonExportDownloadUrl(value = "") {
-  try {
-    const url = new URL(String(value));
-    const hostname = url.hostname.toLowerCase();
-    const pathname = decodeURIComponent(url.pathname).toLowerCase();
-    return /\.xlsx(?:$|[?#])/i.test(url.href)
-      || pathname.includes("/intl-taskcenter/")
-      || (hostname.endsWith(".aliyuncs.com") && /poizon|dewu|oss-accelerate/.test(hostname));
-  } catch {
-    return false;
-  }
-}
-
-function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
-  const visible = options.visible !== false;
-  const activate = options.activate !== false;
-  const deferNavigation = options.deferNavigation === true;
-  if (sellerWindow && !sellerWindow.isDestroyed()) {
-    if (visible) {
-      if (activate) {
-        sellerWindow.show();
-        sellerWindow.focus();
-      } else {
-        sellerWindow.showInactive();
-      }
-    } else {
-      sellerWindow.hide();
-    }
-    if (!deferNavigation && targetUrl && sellerWindow.webContents.getURL() !== targetUrl) {
-      sellerWindow.loadURL(targetUrl);
-    }
-    return;
-  }
-  sellerWindow = new BrowserWindow({
-    icon: APP_ICON_PATH,
-    show: visible && activate,
-    width: 1500,
-    height: 940,
-    minWidth: 1000,
-    minHeight: 700,
-    title: "POIZON íŒë§¤ìžì„¼í„° Â· Around G ì§ì ‘ ì—°ê²°",
-    backgroundColor: "#ffffff",
-    webPreferences: {
-      partition: "persist:around-g-poizon-seller",
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      backgroundThrottling: false,
-    },
-  });
-  const sellerSession = sellerWindow.webContents.session;
-  if (!sellerDownloadSessions.has(sellerSession)) {
-    sellerSession.on("will-download", (_event, item) => {
-    const sessionGeneration = brandWorkSessionGeneration;
-    const requestedJobs = [...brandExportJobs.entries()]
-      .filter(([_jobId, job]) => Number(job?.downloadRequestedAt || 0) > 0 && !job?.downloadStarted)
-      .sort((left, right) => Number(left[1].downloadRequestedAt) - Number(right[1].downloadRequestedAt));
-    const lockedJobId = activeBrandDownloadJobId && brandExportJobs.has(activeBrandDownloadJobId)
-      ? activeBrandDownloadJobId
-      : "";
-    const downloadJobId = lockedJobId
-      || requestedJobs[0]?.[0]
-      || (brandExportJobs.size === 1 ? [...brandExportJobs.keys()][0] : "");
-    const downloadJob = brandExportJobs.get(downloadJobId);
-    if (!downloadJobId || !downloadJob) {
-      mainWindow?.webContents.send("brand-export:error", {
-        message: "ë‹¤ìš´ë¡œë“œ íŒŒì¼ê³¼ ë¸Œëžœë“œ ìž‘ì—…ë²ˆí˜¸ë¥¼ ì•ˆì „í•˜ê²Œ ì—°ê²°í•˜ì§€ ëª»í•´ ìžë™ ì €ìž¥ì„ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤.",
-      });
-      item.cancel();
-      return;
-    }
-    activeBrandDownloadJobId = downloadJobId;
-    downloadJob.downloadStarted = true;
-    brandDownloadStarted = true;
-    const folder = currentBrandExportFolder();
-    // Electron must receive the destination before this event handler yields.
-    // Waiting for an async mkdir here lets Windows open its Save As dialog first.
-    const exportBrand = safeBrandExportLabel(downloadJob.brandName);
-    const brandFolder = join(folder, brandExportFolderName(exportBrand, downloadJobId));
-    mkdirSync(brandFolder, { recursive: true });
-    const safeBrand = exportBrand;
-    const fileName = safeBrand
-      ? `${downloadJobId}_${safeBrand}_${localFileTimestamp()}.xlsx`
-      : `${downloadJobId}_POIZON_${localFileTimestamp()}.xlsx`;
-    const filePath = join(brandFolder, fileName);
-    brandDownloadPathsInProgress.add(filePath);
-    item.setSavePath(filePath);
-    mainWindow?.webContents.send("brand-export:progress", {
-      status: "download-started",
-      brandName: downloadJob.brandName,
-      jobId: downloadJobId,
-      jobState: "4ë‹¨ê³„/5 Â· Excel ë‹¤ìš´ë¡œë“œ ì¤‘",
-      message: `${downloadJob.brandName || "ì„ íƒ ë¸Œëžœë“œ"} Â· 4ë‹¨ê³„/5 Â· Excel ë‹¤ìš´ë¡œë“œë¥¼ ì‹œìž‘í–ˆìŠµë‹ˆë‹¤.`,
-    });
-    item.once("done", (_doneEvent, state) => {
-      void (async () => {
-      if (sessionGeneration !== brandWorkSessionGeneration) return;
-      if (state === "completed") {
-        // Persist the terminal download state before workbook inspection. If a
-        // later Excel/brand validation step fails, this job must never be
-        // downloaded or monitored again.
-        const completedInfo = await stat(filePath);
-        await rememberBrandExportJob({
-          jobId: downloadJobId,
-          brandName: downloadJob.brandName,
-          brandKo: downloadJob.brandKo,
-          createdAt: downloadJob.createdAt,
-          lastDownloadedAt: Date.now(),
-          expectedProductCount: Number(downloadJob.expectedProductCount || 0),
-          filePath,
-          fileName,
-          fileMtimeMs: completedInfo.mtimeMs,
-          sessionGeneration,
-        });
-        let finalPath = filePath;
-        let finalName = fileName;
-        const expectedProductCount = Number(downloadJob.expectedProductCount || 0);
-        const fileBuffer = await readFile(filePath);
-        const workbook = await readSheet(repairPoizonWorksheetDimensions(fileBuffer));
-        const workbookSummary = summarizePoizonRows(getPoizonWorksheetRows(workbook));
-        const actualProductCount = workbookSummary.dataRowCount;
-        const summaryLabel = `ì „ì²´ í–‰ ${actualProductCount.toLocaleString("ko-KR")}ê°œ Â· ê³ ìœ  SPU ${workbookSummary.uniqueSpuCount.toLocaleString("ko-KR")}ê°œ Â· ì¤‘ë³µ ${workbookSummary.duplicateSpuCount.toLocaleString("ko-KR")}ê°œ Â· ë¹ˆ SPU ${workbookSummary.blankSpuCount.toLocaleString("ko-KR")}ê°œ`;
-        if (expectedProductCount > 0 && actualProductCount < expectedProductCount) {
-          const partialName = `${safeBrand}_ë¶€ë¶„ë‹¤ìš´ë¡œë“œ_${actualProductCount}_of_${expectedProductCount}_rows_${localFileTimestamp()}.xlsx`;
-          const partialPath = join(brandFolder, partialName);
-          try {
-            await rename(filePath, partialPath);
-            finalPath = partialPath;
-            finalName = partialName;
-          } catch {
-            // Preserve the original downloaded workbook even if Windows keeps it locked.
-          }
-          mainWindow?.webContents.send("brand-export:progress", {
-            status: "partial-download",
-            brandName: downloadJob.brandName,
-            jobId: downloadJobId,
-            jobState: `ë¶€ë¶„ ë‹¤ìš´ë¡œë“œ ${actualProductCount}/${expectedProductCount}í–‰ Â· ì‹¤íŒ¨`,
-            message: `${downloadJob.brandName || "ì„ íƒ ë¸Œëžœë“œ"} ë¶€ë¶„ ë‹¤ìš´ë¡œë“œ ${actualProductCount.toLocaleString("ko-KR")}/${expectedProductCount.toLocaleString("ko-KR")}í–‰ Â· ${summaryLabel} Â· í™•ì¸ì™„ë£Œë¡œ ì²˜ë¦¬í•˜ì§€ ì•ŠìŠµë‹ˆë‹¤.`,
-          });
-          mainWindow?.webContents.send("brand-export:error", {
-            brandName: downloadJob.brandName,
-            jobId: downloadJobId,
-            jobState: `ë¶€ë¶„ ë‹¤ìš´ë¡œë“œ ${actualProductCount}/${expectedProductCount}í–‰ Â· ì‹¤íŒ¨`,
-            message: `${downloadJob.brandName || "ì„ íƒ ë¸Œëžœë“œ"} Excelì´ ${actualProductCount.toLocaleString("ko-KR")}/${expectedProductCount.toLocaleString("ko-KR")}í–‰ë§Œ í¬í•¨í•´ ë¶€ë¶„ íŒŒì¼ë¡œ ë³´ì¡´í–ˆìŠµë‹ˆë‹¤. ${summaryLabel}`,
-            path: finalPath,
-            name: finalName,
-          });
-          return;
-        }
-        const brandIntegrity = await validateBrandExportFile(filePath, [
-          downloadJob.brandName,
-          downloadJob.brandKo,
-        ]).catch((error) => ({
-          ok: false,
-          status: "invalid",
-          expectedBrand: downloadJob.brandName,
-          dominantBrand: "",
-          ratio: 0,
-          message: `Excel ë¸Œëžœë“œ í™•ì¸ ì‹¤íŒ¨: ${error instanceof Error ? error.message : String(error)}`,
-        }));
-        const detectedBrand = brandIntegrity.dominantBrand
-          ? safeBrandExportLabel(brandIntegrity.dominantBrand)
-          : exportBrand;
-        const detectedMatchesRequested = Boolean(detectedBrand) && [
-          downloadJob.brandName,
-          downloadJob.brandKo,
-        ].filter(Boolean).some((expected) => brandsMatch(detectedBrand, expected));
-        const resolvedBrandName = detectedMatchesRequested
-          ? downloadJob.brandName
-          : detectedBrand || downloadJob.brandName || exportBrand;
-        if (detectedBrand && !detectedMatchesRequested && detectedBrand !== exportBrand) {
-          const detectedFolder = join(folder, brandExportFolderName(detectedBrand, downloadJobId));
-          await mkdir(detectedFolder, { recursive: true });
-          finalName = `${detectedBrand}_${localFileTimestamp()}.xlsx`;
-          const detectedPath = join(detectedFolder, finalName);
-          try {
-            await rename(filePath, detectedPath);
-            finalPath = detectedPath;
-          } catch {
-            // Keep the completed workbook in its original requested-brand folder
-            // if Windows temporarily locks the file while the download closes.
-            finalName = fileName;
-          }
-        }
-        const info = await stat(finalPath);
-        lastBrandExportSignature = `${finalPath}:${info.mtimeMs}:${info.size}`;
-        await rememberBrandExportJob({
-          jobId: downloadJobId,
-          brandName: resolvedBrandName,
-          createdAt: downloadJob.createdAt,
-          lastDownloadedAt: Date.now(),
-          expectedProductCount,
-          filePath: finalPath,
-          fileName: finalName,
-          fileMtimeMs: info.mtimeMs,
-          sessionGeneration,
-        });
-        mainWindow?.webContents.send("brand-export:detected", {
-          path: finalPath,
-          name: finalName,
-          brandName: resolvedBrandName,
-          detectedBrandName: detectedMatchesRequested ? "" : detectedBrand || "",
-          jobId: downloadJobId,
-          size: info.size,
-          time: info.mtimeMs,
-          brandIntegrity,
-          workbookSummary,
-        });
-      } else {
-        mainWindow?.webContents.send("brand-export:error", {
-          message: `ë¸Œëžœë“œ ë°ì´í„° ì €ìž¥ ì‹¤íŒ¨: ${state}`,
-        });
-      }
-      })().catch((error) => {
-        mainWindow?.webContents.send("brand-export:error", {
-          brandName: downloadJob.brandName,
-          jobId: downloadJobId,
-          jobState: state === "completed" ? "ë‹¤ìš´ë¡œë“œ ì™„ë£Œ Â· Excel í™•ì¸ ì˜¤ë¥˜" : "ë‹¤ìš´ë¡œë“œ ì‹¤íŒ¨",
-          message: state === "completed"
-            ? `${downloadJob.brandName || "ì„ íƒ ë¸Œëžœë“œ"} íŒŒì¼ ë‹¤ìš´ë¡œë“œëŠ” ì™„ë£Œëìœ¼ë©° ë°˜ë³µ ê°ì‹œë¥¼ ì¢…ë£Œí•©ë‹ˆë‹¤. Excel í™•ì¸ ì˜¤ë¥˜: ${error instanceof Error ? error.message : String(error)}`
-            : `ë¸Œëžœë“œ ë°ì´í„° ì €ìž¥ ì‹¤íŒ¨: ${error instanceof Error ? error.message : String(error)}`,
-          path: filePath,
-          name: fileName,
-        });
-      }).finally(() => {
-        // Terminal cleanup is unconditional: a completed/failed Electron
-        // download must not leave its job in the polling queue forever.
-        brandExportJobs.delete(downloadJobId);
-        if (activeBrandDownloadJobId === downloadJobId) activeBrandDownloadJobId = "";
-        brandDownloadPathsInProgress.delete(filePath);
-        brandDownloadStarted = false;
-        if (brandExportJobs.size) scheduleBrandExportMonitor(500);
-        else emitBrandExportAllComplete();
-      });
-    });
-    });
-    sellerDownloadSessions.add(sellerSession);
-  }
-  sellerWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (isPoizonExportDownloadUrl(url) || /^https:\/\/seller\.poizon\.com\//i.test(url)) {
-      sellerWindow?.webContents.downloadURL(url);
-    } else if (/^https:\/\//i.test(url)) {
-      openExternalInChromeTab(url).catch(() => shell.openExternal(url));
-    }
-    return { action: "deny" };
-  });
-  sellerWindow.webContents.on("will-navigate", (event, url) => {
-    if (!isPoizonExportDownloadUrl(url)) return;
-    event.preventDefault();
-    sellerWindow?.webContents.downloadURL(url);
-  });
-  sellerWindow.on("closed", () => {
-    sellerWindow = null;
-    brandExportJobPending = false;
-  });
-  if (visible && !activate) {
-    sellerWindow.once("ready-to-show", () => {
-      if (sellerWindow && !sellerWindow.isDestroyed()) sellerWindow.showInactive();
-    });
-  }
-  if (!deferNavigation && targetUrl) sellerWindow.loadURL(targetUrl);
-}
-
-async function waitForSellerExportAndDownload() {
-  await new Promise((resolve) => setTimeout(resolve, 1800));
-  if (!sellerWindow || sellerWindow.isDestroyed()) return;
-  if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
-    await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
-  }
-  while (true) {
-    if (!sellerWindow || sellerWindow.isDestroyed()) return;
-    const result = await sellerWindow.webContents.executeJavaScript(`(() => {
-      const visible = (element) => element && element.getBoundingClientRect().width > 0
-        && element.getBoundingClientRect().height > 0;
-      const rows = [...document.querySelectorAll("tr, [role='row']")].filter(visible);
-      const exportRows = rows.filter((row) =>
-        /ìƒí’ˆê²€ìƒ‰\\s*ë‚´ë³´ë‚´ê¸°/.test(String(row.innerText || row.textContent || ""))
-      );
-      const row = exportRows[0];
-      if (!row) return { state: "WAITING_FOR_ROW" };
-      const text = String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim();
-      const download = [...row.querySelectorAll("a, button, [role='button']")]
-        .find((element) => visible(element)
-          && /^ë‹¤ìš´ë¡œë“œ$/.test(String(element.innerText || element.textContent || "").trim()));
-      if (download && /ì„±ê³µ/.test(text)) {
-        download.click();
-        return { state: "DOWNLOAD_CLICKED" };
-      }
-      return { state: /ì²˜ë¦¬\\s*ì¤‘/.test(text) ? "PROCESSING" : "WAITING" };
-    })()`, true).catch(() => ({ state: "PAGE_NOT_READY" }));
-    if (result?.state === "DOWNLOAD_CLICKED") return;
-    await new Promise((resolve) => setTimeout(resolve, SELLER_EXPORT_POLL_INTERVAL_MS));
-    if (!sellerWindow || sellerWindow.isDestroyed()) return;
-    if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
-      await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
-    } else {
-      await sellerWindow.webContents.reloadIgnoringCache();
-    }
-  }
-}
-
-async function waitForSellerExportAndAutoDownload() {
-  let lastReloadAt = 0;
-  await new Promise((resolve) => setTimeout(resolve, 1800));
-  if (!sellerWindow || sellerWindow.isDestroyed()) return;
-  if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
-    await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
-    lastReloadAt = Date.now();
-  }
-  while (true) {
-    if (!sellerWindow || sellerWindow.isDestroyed()) return;
-    const result = await sellerWindow.webContents.executeJavaScript(`(() => {
-      const visible = (element) => element && element.getBoundingClientRect().width > 0
-        && element.getBoundingClientRect().height > 0;
-      const textOf = (element) => String(element?.innerText || element?.textContent || "")
-        .replace(/\\s+/g, " ").trim();
-      const isDownload = (element) => {
-        const description = [
-          textOf(element),
-          element?.getAttribute?.("aria-label"),
-          element?.getAttribute?.("title"),
-          element?.getAttribute?.("href"),
-        ].filter(Boolean).join(" ");
-        return /\\uB2E4\\uC6B4\\uB85C\\uB4DC/i.test(description)
-          || /download|export/i.test(description);
-      };
-      const enabled = (element) => !element.disabled
-        && element.getAttribute("aria-disabled") !== "true"
-        && !element.classList.contains("disabled");
-      const rows = [...document.querySelectorAll("tbody tr, tr, [role='row']")].filter(visible);
-      for (const row of rows) {
-        const controls = [...row.querySelectorAll("a, button, [role='button']")]
-          .filter((element) => visible(element) && enabled(element) && isDownload(element));
-        if (!controls.length) continue;
-        const rowText = textOf(row);
-        if (/\\uCC98\\uB9AC\\s*\\uC911|processing|pending/i.test(rowText)) continue;
-        const control = controls[controls.length - 1];
-        control.scrollIntoView({ block: "center" });
-        control.click();
-        return { state: "DOWNLOAD_CLICKED" };
-      }
-      return { state: rows.length ? "PROCESSING" : "WAITING_FOR_ROW" };
-    })()`, true).catch(() => ({ state: "PAGE_NOT_READY" }));
-    if (result?.state === "DOWNLOAD_CLICKED") return;
-    await new Promise((resolve) => setTimeout(resolve, SELLER_EXPORT_POLL_INTERVAL_MS));
-    if (!sellerWindow || sellerWindow.isDestroyed()) return;
-    if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
-      await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
-      lastReloadAt = Date.now();
-    } else if (Date.now() - lastReloadAt >= SELLER_EXPORT_POLL_INTERVAL_MS) {
-      await sellerWindow.webContents.reloadIgnoringCache();
-      lastReloadAt = Date.now();
-    }
-  }
-}
-
-async function watchLatestSellerExportEveryTenSeconds() {
-  const pollIntervalMs = SELLER_EXPORT_POLL_INTERVAL_MS;
-  await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-  if (!sellerWindow || sellerWindow.isDestroyed()) return;
-  if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
-    await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
-  }
-
-  while (true) {
-    if (brandDownloadStarted) return;
-    if (!sellerWindow || sellerWindow.isDestroyed()) return;
-    const result = await sellerWindow.webContents.executeJavaScript(`(() => {
-      const expectedJobId = ${JSON.stringify(pendingBrandExportJobId)};
-      const visible = (element) => element && element.getBoundingClientRect().width > 0
-        && element.getBoundingClientRect().height > 0;
-      const textOf = (element) => String(element?.innerText || element?.textContent || "")
-        .replace(/\\s+/g, " ").trim();
-      const rows = [...document.querySelectorAll("tbody tr, [role='row'], tr")]
-        .filter(visible)
-        .filter((row) => /\\uC0C1\\uD488\\uAC80\\uC0C9\\s*\\uB0B4\\uBCF4\\uB0B4\\uAE30/i.test(textOf(row)));
-      const latestRow = expectedJobId
-        ? rows.find((row) => {
-          const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
-          const taskNumber = textOf(cells[0]).match(/\\b\\d{9,}\\b/)?.[0]
-            || textOf(row).match(/\\b\\d{9,}\\b/)?.[0]
-            || "";
-          return taskNumber === expectedJobId;
-        })
-        : rows[0];
-      if (!latestRow) return { state: "WAITING_FOR_LATEST_JOB" };
-
-      const rowText = textOf(latestRow);
-      if (/\\uCC98\\uB9AC\\s*\\uC911|processing|pending/i.test(rowText)) {
-        return { state: "PROCESSING" };
-      }
-      if (!/\\uC131\\uACF5|completed|success/i.test(rowText)) {
-        return { state: "WAITING_FOR_SUCCESS" };
-      }
-
-      const controls = [...latestRow.querySelectorAll("a, button, [role='button']")];
-      const download = controls.find((element) => {
-        if (!visible(element) || element.disabled || element.getAttribute("aria-disabled") === "true") return false;
-        const description = [
-          textOf(element),
-          element.getAttribute("aria-label"),
-          element.getAttribute("title"),
-          element.getAttribute("href"),
-        ].filter(Boolean).join(" ");
-        return /\\uB2E4\\uC6B4\\uB85C\\uB4DC/i.test(description)
-          || /download/i.test(description);
-      });
-      if (!download) return { state: "WAITING_FOR_DOWNLOAD" };
-
-      download.scrollIntoView({ block: "center" });
-      const href = String(download.href || download.getAttribute("href") || "");
-      if (!/^https:\\/\\//i.test(href)) {
-        download.focus();
-        download.click();
-      }
-      return {
-        state: /^https:\\/\\//i.test(href) ? "DOWNLOAD_URL_READY" : "DOWNLOAD_CLICKED",
-        href,
-      };
-    })()`, true).catch(() => ({ state: "PAGE_NOT_READY" }));
-
-    const stateLabel = {
-      WAITING_FOR_LATEST_JOB: "4ë‹¨ê³„/5 Â· ìž‘ì—…ë²ˆí˜¸ í–‰ í™•ì¸ ì¤‘",
-      PROCESSING: "4ë‹¨ê³„/5 Â· POIZON íŒŒì¼ ì²˜ë¦¬ ì¤‘ Â· 10ì´ˆë§ˆë‹¤ ìžë™ ê°ì‹œ",
-      WAITING_FOR_SUCCESS: "4ë‹¨ê³„/5 Â· POIZON ì²˜ë¦¬ ì™„ë£Œ ëŒ€ê¸° ì¤‘",
-      WAITING_FOR_DOWNLOAD: "4ë‹¨ê³„/5 Â· ë‹¤ìš´ë¡œë“œ ë²„íŠ¼ ëŒ€ê¸° ì¤‘",
-      PAGE_NOT_READY: "4ë‹¨ê³„/5 Â· ë‹¤ìš´ë¡œë“œì„¼í„° í™•ì¸ ì¤‘",
-    }[result?.state];
-    if (stateLabel) {
-      mainWindow?.webContents.send("brand-export:progress", {
-        status: "monitoring",
-        jobId: pendingBrandExportJobId,
-        jobState: stateLabel,
-        message: `${pendingBrandExportName || "ì„ íƒ ë¸Œëžœë“œ"} Â· ìž‘ì—…ë²ˆí˜¸ ${pendingBrandExportJobId} Â· ${stateLabel}`,
-      });
-    }
-
-    if (result?.state === "DOWNLOAD_URL_READY") {
-      sellerWindow.webContents.downloadURL(result.href);
-    }
-    if (result?.state === "DOWNLOAD_URL_READY" || result?.state === "DOWNLOAD_CLICKED") {
-      mainWindow?.webContents.send("brand-export:progress", {
-        status: "download-requested",
-        jobId: pendingBrandExportJobId,
-        jobState: "4ë‹¨ê³„/5 Â· ì²˜ë¦¬ ì„±ê³µ Â· ë‹¤ìš´ë¡œë“œ ì‹œìž‘",
-        message: `${pendingBrandExportName || "ì„ íƒ ë¸Œëžœë“œ"} Â· 4ë‹¨ê³„/5 Â· POIZON ì²˜ë¦¬ ì„±ê³µ Â· ë‹¤ìš´ë¡œë“œë¥¼ ìš”ì²­í–ˆìŠµë‹ˆë‹¤.`,
-      });
-    }
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-    if (brandDownloadStarted) return;
-    if (!sellerWindow || sellerWindow.isDestroyed()) return;
-    if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
-      await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
-    } else {
-      await sellerWindow.webContents.reloadIgnoringCache();
-    }
-  }
-
-  brandExportJobPending = false;
-  pendingBrandExportName = "";
-  pendingBrandExportJobId = "";
-}
-
-
-function sellerExportMonitorUrl() {
-  const url = new URL(SELLER_EXPORT_CENTER_URL);
-  url.searchParams.set("aroundGMonitor", String(Date.now()));
-  return url.toString();
-}
-
-function ensureSellerMonitorWindow() {
-  if (sellerMonitorWindow && !sellerMonitorWindow.isDestroyed()) return sellerMonitorWindow;
-  sellerMonitorWindow = new BrowserWindow({
-    icon: APP_ICON_PATH,
-    show: false,
-    skipTaskbar: true,
-    width: 1360,
-    height: 860,
-    title: "POIZON ë‹¤ìš´ë¡œë“œ ê°ì‹œ Â· Around G",
-    backgroundColor: "#ffffff",
-    webPreferences: {
-      partition: "persist:around-g-poizon-seller",
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      backgroundThrottling: false,
-    },
-  });
-  sellerMonitorWindow.on("closed", () => {
-    sellerMonitorWindow = null;
-    if (brandExportJobs.size) scheduleBrandExportMonitor(3_000);
-  });
-  // A unique navigation prevents POIZON's SPA from restoring an old
-  // "processing" job list after the export has already completed.
-  sellerMonitorWindow.loadURL(sellerExportMonitorUrl());
-  return sellerMonitorWindow;
-}
-
-function sellerMonitorFrames(targetWindow = sellerMonitorWindow) {
-  if (!targetWindow || targetWindow.isDestroyed()) return [];
-  const mainFrame = targetWindow.webContents.mainFrame;
-  return [mainFrame, ...(mainFrame.framesInSubtree || [])]
-    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
-}
-
-const SELLER_MONITOR_STATUS_PRIORITY = {
-  PAGE_NOT_READY: 0,
-  WAITING_FOR_ROW: 1,
-  WAITING_FOR_SUCCESS: 2,
-  PROCESSING: 3,
-  WAITING_FOR_COMPLETION: 4,
-  WAITING_FOR_DOWNLOAD: 5,
-  READY: 6,
-  FAILED: 5.5,
-};
-
-async function readSellerMonitorStatuses(expectedIds = []) {
-  const monitor = ensureSellerMonitorWindow();
-  if (!monitor.webContents.getURL().includes("/main/exportCenter")) {
-    await monitor.loadURL(SELLER_EXPORT_CENTER_URL);
-  }
-  await new Promise((resolve) => setTimeout(resolve, 1200));
-  const merged = new Map(expectedIds.map((jobId) => [jobId, { jobId, state: "WAITING_FOR_ROW" }]));
-  const sources = [
-    { name: "seller", window: sellerWindow },
-    { name: "monitor", window: monitor },
-  ].filter((source, index, all) => source.window
-    && !source.window.isDestroyed()
-    && source.window.webContents.getURL().includes("/main/exportCenter")
-    && all.findIndex((candidate) => candidate.window === source.window) === index);
-  for (const source of sources) {
-    const frames = sellerMonitorFrames(source.window);
-    for (const frame of frames) {
-    const expectedJobs = expectedIds.map((jobId) => {
-      const job = brandExportJobs.get(jobId);
-      return {
-        jobId,
-        restored: Boolean(job?.restored),
-        createdAt: Number(job?.createdAt || 0),
-        restoredAt: Number(job?.restoredAt || 0),
-        allowTimeRecovery: Boolean(job?.restored) || Number(job?.rowMisses || 0) >= 2,
-      };
-    });
-    const statuses = await Promise.race([
-      frame.executeJavaScript(`(() => {
-        const expectedJobs = ${JSON.stringify(expectedJobs)};
-        const usable = (element) => Boolean(element && element.isConnected);
-        const textOf = (element) => String(element?.textContent || element?.innerText || "")
-          .replace(/\\s+/g, " ").trim();
-        const downloadControlIn = (row) => [...row.querySelectorAll("a, button, [role='button'], [class*='download'], [class*='Download'], span, div")]
-          .filter(usable)
-          .filter((element) => !element.disabled && element.getAttribute("aria-disabled") !== "true")
-          .filter((element) => /ë‹¤ìš´ë¡œë“œ|download/i.test([
-            textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
-          ].filter(Boolean).join(" ")))
-          .sort((left, right) => textOf(left).length - textOf(right).length)[0] || null;
-        const compactNumber = (value) => String(value || "").replace(/\\D/g, "");
-        const datePattern = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/g;
-        const parseDate = (value) => {
-          const normalized = String(value || "").replace(/[/.]/g, "-");
-          const time = Date.parse(normalized.replace(" ", "T"));
-          return Number.isFinite(time) ? time : 0;
-        };
-        const selector = "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']";
-        const rowCandidates = [...document.querySelectorAll(selector)].filter(usable);
-        const findJobContainer = (jobId) => {
-          const direct = rowCandidates
-            .filter((candidate) => textOf(candidate).includes(jobId)
-              || compactNumber(textOf(candidate)).includes(compactNumber(jobId)))
-            .sort((left, right) => textOf(left).length - textOf(right).length)[0];
-          if (direct) return direct;
-          const leaf = [...document.querySelectorAll("body *")]
-            .filter(usable)
-            .filter((element) => {
-              const value = textOf(element);
-              const matched = value.includes(jobId) || compactNumber(value).includes(compactNumber(jobId));
-              if (!matched || value.length > 1000) return false;
-              return ![...element.children].some((child) => {
-                const childText = textOf(child);
-                return childText.includes(jobId) || compactNumber(childText).includes(compactNumber(jobId));
-              });
-            })
-            .sort((left, right) => textOf(left).length - textOf(right).length)[0];
-          return leaf?.closest("tr, [role='row'], [data-row-key], [class*='row'], [class*='item']")
-            || leaf?.parentElement
-            || leaf
-            || null;
-        };
-        const usedRows = new Set();
-        const parsedRows = rowCandidates.map((row) => {
-          const rowText = textOf(row);
-          const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
-          const cellTexts = cells.map(textOf);
-          const dates = cellTexts.flatMap((value) => value.match(datePattern) || []);
-          const workStateText = cellTexts.find((value) => /^(?:ì„±ê³µ|success|completed|ì‹¤íŒ¨|failed|error)$/i.test(value)) || "";
-          const control = downloadControlIn(row);
-          const rowJobId = String(cellTexts[0] || rowText).match(/\b\d{7,}\b/)?.[0] || "";
-          const failed = /^(?:ì‹¤íŒ¨|failed|error)$/i.test(workStateText)
-            || /(?:^|\s)(?:ì‹¤íŒ¨|failed|error)(?:\s|$)/i.test(rowText);
-          return { row, rowText, cells, dates, workStateText, control, rowJobId, failed, startAt: parseDate(dates[0]) };
-        });
-        return expectedJobs.map((expected) => {
-          const { jobId } = expected;
-          let row = findJobContainer(jobId);
-          const directParsed = parsedRows.find((item) => item.row === row);
-          const failedDirectRow = directParsed?.failed ? row : null;
-          if (failedDirectRow) row = null;
-          let recovered = false;
-          if (!row && expected.allowTimeRecovery && expected.createdAt > 0) {
-            const referenceAt = expected.restored && expected.restoredAt > 0
-              ? expected.restoredAt
-              : expected.createdAt;
-            const lowerBound = expected.restored ? referenceAt - 15 * 60_000 : expected.createdAt - 5 * 60_000;
-            const upperBound = expected.restored ? referenceAt + 5_000 : expected.createdAt + 5_000;
-            const candidates = parsedRows.filter((item) => !usedRows.has(item.row)
-              && item.control
-              && /^(?:ì„±ê³µ|success|completed)$/i.test(item.workStateText)
-              && item.dates.length > 0
-              && item.startAt >= lowerBound
-              // POIZON creates the export row before Around G registers it.
-              // Reject later rows so adjacent brand jobs cannot be swapped.
-              && item.startAt <= upperBound)
-              .sort((left, right) => Math.abs(left.startAt - referenceAt) - Math.abs(right.startAt - referenceAt));
-            row = candidates[0]?.row || null;
-            recovered = Boolean(row);
-          }
-          if (!row && failedDirectRow) {
-            return { jobId, state: "FAILED", workStateText: directParsed?.workStateText || "ì‹¤íŒ¨" };
-          }
-          if (!row) return { jobId, state: "WAITING_FOR_ROW" };
-          usedRows.add(row);
-          const rowText = textOf(row);
-          const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
-          const cellTexts = cells.map(textOf);
-          const dates = cellTexts.flatMap((value) => value.match(datePattern) || []);
-          const workStateText = cellTexts.find((value) => /^(?:ì„±ê³µ|success|completed)$/i.test(value)) || cellTexts[3] || "";
-          const startText = dates[0] || "";
-          const completionText = dates.at(-1) || "";
-          const recoveredJobId = recovered
-            ? (String(cellTexts[0] || rowText).match(/\b\d{7,}\b/)?.[0] || "")
-            : "";
-          const jobNumberMatched = recovered || compactNumber(rowText).includes(compactNumber(jobId));
-          const workSucceeded = /^(?:ì„±ê³µ|success|completed)$/i.test(workStateText);
-          const completionConfirmed = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/.test(completionText);
-          if (!jobNumberMatched) return { jobId, state: "WAITING_FOR_ROW" };
-          if (/ì²˜ë¦¬\\s*ì¤‘|processing|pending|ì§„í–‰\\s*ì¤‘/i.test(workStateText || rowText)) {
-            return { jobId, state: "PROCESSING", workStateText, completionText };
-          }
-          if (!workSucceeded) return { jobId, state: "WAITING_FOR_SUCCESS", workStateText, completionText };
-          if (!completionConfirmed) return { jobId, state: "WAITING_FOR_COMPLETION", workStateText, completionText };
-          const control = downloadControlIn(row);
-          let href = String(control?.href || control?.getAttribute?.("href") || "");
-          try {
-            if (href && !/^javascript:/i.test(href)) href = new URL(href, location.href).href;
-          } catch {}
-          return {
-            jobId,
-            state: control ? "READY" : "WAITING_FOR_DOWNLOAD",
-            href,
-            workStateText,
-            completionText,
-            startText,
-            startAtMs: parseDate(startText),
-            recovered,
-            recoveredJobId,
-            jobNumberMatched,
-            workSucceeded,
-            completionConfirmed,
-          };
-        });
-      })()`, true),
-      new Promise((resolve) => setTimeout(() => resolve([]), 5_000)),
-    ]).catch(() => []);
-    for (const status of Array.isArray(statuses) ? statuses : []) {
-      const previous = merged.get(status.jobId);
-      if (!previous || SELLER_MONITOR_STATUS_PRIORITY[status.state] > SELLER_MONITOR_STATUS_PRIORITY[previous.state]) {
-        merged.set(status.jobId, {
-          ...status,
-          frameRoutingId: frame.routingId,
-          windowSource: source.name,
-        });
-      }
-    }
-  }
-  }
-  return expectedIds.map((jobId) => merged.get(jobId) || { jobId, state: "PAGE_NOT_READY" });
-}
-
-async function replaceRecoveredBrandExportJobId(previousJobId, recoveredJobId, job, status = {}) {
-  const previousId = String(previousJobId || "").trim();
-  const nextId = String(recoveredJobId || "").trim();
-  if (!previousId || !nextId || previousId === nextId || brandExportJobs.has(nextId)) return previousId;
-  brandExportJobs.delete(previousId);
-  const recovered = {
-    ...job,
-    jobId: nextId,
-    createdAt: Number(status.startAtMs || job?.createdAt || Date.now()),
-    restored: true,
-    restoredAt: Number(job?.restoredAt || Date.now()),
-  };
-  brandExportJobs.set(nextId, recovered);
-  const saved = savedBrandExportJobs();
-  const previousSaved = saved.find((item) => String(item?.jobId || "").trim() === previousId) || {};
-  await store.setSettings({
-    brandExportJobCache: [
-      { ...previousSaved, ...recovered, lastDownloadedAt: 0, terminalState: "" },
-      ...saved.filter((item) => ![previousId, nextId].includes(String(item?.jobId || "").trim())),
-    ].slice(0, 500),
-  });
-  return nextId;
-}
-
-async function finishFailedBrandExportJob(jobId, job) {
-  const failedAt = Date.now();
-  brandExportJobs.delete(jobId);
-  const saved = savedBrandExportJobs();
-  const previous = saved.find((item) => String(item?.jobId || "").trim() === String(jobId)) || {};
-  await store.setSettings({
-    brandExportJobCache: [
-      { ...previous, ...job, jobId, terminalState: "failed", terminalAt: failedAt },
-      ...saved.filter((item) => String(item?.jobId || "").trim() !== String(jobId)),
-    ].slice(0, 500),
-  });
-  mainWindow?.webContents.send("brand-export:error", {
-    brandName: job?.brandName || "",
-    jobId,
-    jobState: "POIZON ìž‘ì—… ì‹¤íŒ¨ í™•ì¸ Â· ê°ì‹œ ì¢…ë£Œ",
-    message: `${job?.brandName || "ì„ íƒ ë¸Œëžœë“œ"} Â· ìž‘ì—…ë²ˆí˜¸ ${jobId}ëŠ” POIZONì—ì„œ ì‹¤íŒ¨ë¡œ í™•ì¸ë˜ì–´ ë¬´í•œ ê°ì‹œë¥¼ ì¢…ë£Œí–ˆìŠµë‹ˆë‹¤.`,
-  });
-}
-
-async function requestSellerMonitorDownload(jobId = "", preferredFrameRoutingId = null, windowSource = "monitor", rowLocator = {}) {
-  const targetWindow = windowSource === "seller" && sellerWindow && !sellerWindow.isDestroyed()
-    ? sellerWindow
-    : ensureSellerMonitorWindow();
-  const frames = sellerMonitorFrames(targetWindow);
-  const ordered = preferredFrameRoutingId === null
-    ? frames
-    : [...frames].sort((left, right) => Number(right.routingId === preferredFrameRoutingId) - Number(left.routingId === preferredFrameRoutingId));
-  for (const frame of ordered) {
-    const result = await frame.executeJavaScript(`(() => {
-      const jobId = ${JSON.stringify(String(jobId))};
-      const rowLocator = ${JSON.stringify(rowLocator || {})};
-      const usable = (element) => Boolean(element && element.isConnected);
-      const textOf = (element) => String(element?.textContent || element?.innerText || "").replace(/\\s+/g, " ").trim();
-      const downloadControlIn = (row) => [...row.querySelectorAll("a, button, [role='button'], [class*='download'], [class*='Download'], span, div")]
-        .filter(usable)
-        .filter((element) => !element.disabled && element.getAttribute("aria-disabled") !== "true")
-        .filter((element) => /ë‹¤ìš´ë¡œë“œ|download/i.test([
-          textOf(element), element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("href"),
-        ].filter(Boolean).join(" ")))
-        .sort((left, right) => textOf(left).length - textOf(right).length)[0] || null;
-      const selector = "tbody tr, [role='row'], tr, [data-row-key], [class*='table'] [class*='row'], [class*='list'] [class*='item']";
-      const rowCandidates = [...document.querySelectorAll(selector)].filter(usable);
-      const compactNumber = (value) => String(value || "").replace(/\\D/g, "");
-      const direct = rowCandidates
-        .filter((candidate) => textOf(candidate).includes(jobId)
-          || compactNumber(textOf(candidate)).includes(compactNumber(jobId)))
-        .sort((left, right) => textOf(left).length - textOf(right).length)[0];
-      const leaf = direct ? null : [...document.querySelectorAll("body *")]
-        .filter(usable)
-        .filter((element) => textOf(element).includes(jobId)
-          && ![...element.children].some((child) => textOf(child).includes(jobId)))
-        .sort((left, right) => textOf(left).length - textOf(right).length)[0];
-      const recoveredRow = rowLocator.recovered ? rowCandidates.find((candidate) => {
-        const value = textOf(candidate);
-        return (!rowLocator.startText || value.includes(rowLocator.startText))
-          && (!rowLocator.completionText || value.includes(rowLocator.completionText));
-      }) : null;
-      const row = direct
-        || recoveredRow
-        || leaf?.closest("tr, [role='row'], [data-row-key], [class*='row'], [class*='item']")
-        || leaf?.parentElement
-        || leaf
-        || null;
-      if (!row) return { clicked: false, href: "", reason: "JOB_ROW_NOT_FOUND" };
-      const rowText = textOf(row);
-      const cells = [...row.querySelectorAll("td, [role='cell'], [role='gridcell']")];
-      const cellTexts = cells.map(textOf);
-      const datePattern = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/g;
-      const dates = cellTexts.flatMap((value) => value.match(datePattern) || []);
-      const workStateText = cellTexts.find((value) => /^(?:ì„±ê³µ|success|completed)$/i.test(value)) || cellTexts[3] || "";
-      const completionText = dates.at(-1) || "";
-      const jobNumberMatched = Boolean(rowLocator.recovered) || compactNumber(rowText).includes(compactNumber(jobId));
-      const workSucceeded = /^(?:ì„±ê³µ|success|completed)$/i.test(workStateText);
-      const completionConfirmed = /\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}(?::\\d{2})?/.test(completionText);
-      if (!jobNumberMatched || !workSucceeded || !completionConfirmed) {
-        return {
-          clicked: false,
-          href: "",
-          reason: "DOWNLOAD_CONDITIONS_NOT_MET",
-          jobNumberMatched,
-          workSucceeded,
-          completionConfirmed,
-        };
-      }
-      const control = downloadControlIn(row);
-      if (!control) return { clicked: false, href: "" };
-      let href = String(control.href || control.getAttribute("href") || "");
-      try {
-        if (href && !/^javascript:/i.test(href)) href = new URL(href, location.href).href;
-      } catch {}
-      if (/^https:\\/\\//i.test(href)) return { clicked: true, href };
-      control.focus?.();
-      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
-        control.dispatchEvent(new MouseEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          view: window,
-          button: 0,
-        }));
-      }
-      if (typeof control.click === "function") control.click();
-      return { clicked: true, href: "" };
-    })()`, true).catch(() => ({ clicked: false, href: "" }));
-    if (result?.clicked) return { ...result, targetWindow };
-  }
-  return { clicked: false, href: "" };
-}
-
-function emitBrandExportAllComplete() {
-  if (brandExportJobs.size || brandDownloadStarted || activeBrandDownloadJobId || brandDownloadPathsInProgress.size) return false;
-  if (brandExportMonitorRestartTimer) {
-    clearTimeout(brandExportMonitorRestartTimer);
-    brandExportMonitorRestartTimer = null;
-  }
-  if (brandExportAllCompleteSent) return true;
-  brandExportAllCompleteSent = true;
-  mainWindow?.webContents.send("brand-export:progress", {
-    status: "all-complete",
-    monitorSource: "dedicated-window",
-    jobState: "ëª¨ë“  ìž‘ì—… í™•ì¸ì™„ë£Œ",
-    message: "ì„ íƒí•œ ë¸Œëžœë“œì˜ POIZON ì›ë³¸ Excel ë‹¤ìš´ë¡œë“œì™€ í”„ë¡œê·¸ëž¨ ë“±ë¡ì´ ëª¨ë‘ ì™„ë£Œë˜ì—ˆìŠµë‹ˆë‹¤.",
-  });
-  return true;
-}
-
-function scheduleBrandExportMonitor(delayMs = 0) {
-  if (!brandExportJobs.size || brandExportMonitorRunning) {
-    if (!brandExportJobs.size) emitBrandExportAllComplete();
-    return;
-  }
-  brandExportAllCompleteSent = false;
-  if (brandExportMonitorRestartTimer) clearTimeout(brandExportMonitorRestartTimer);
-  brandExportMonitorRestartTimer = setTimeout(() => {
-    brandExportMonitorRestartTimer = null;
-    if (!brandExportJobs.size || brandExportMonitorRunning) return;
-    void watchAllSellerExportJobsEveryTenSeconds();
-  }, Math.max(0, Number(delayMs) || 0));
-}
-
-async function rebuildStaleSellerExportMonitor(jobId = "", job = {}) {
-  const monitorSession = sellerMonitorWindow && !sellerMonitorWindow.isDestroyed()
-    ? sellerMonitorWindow.webContents.session
-    : sellerWindow && !sellerWindow.isDestroyed()
-      ? sellerWindow.webContents.session
-      : null;
-  if (sellerMonitorWindow && !sellerMonitorWindow.isDestroyed()) {
-    sellerMonitorWindow.removeAllListeners("closed");
-    sellerMonitorWindow.destroy();
-  }
-  sellerMonitorWindow = null;
-  // Cookies/login are preserved. Only cached download-center responses are
-  // discarded before opening a cache-busted monitor URL.
-  await monitorSession?.clearCache().catch(() => {});
-  ensureSellerMonitorWindow();
-
-  // Once registration has finished, the original Seller Center window can be
-  // refreshed as a second independent source. During another brand's export it
-  // must remain untouched.
-  if (!brandExportJobPending
-    && sellerWindow && !sellerWindow.isDestroyed()
-    && sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
-    await sellerWindow.webContents.reloadIgnoringCache().catch(() => {});
-  }
-  mainWindow?.webContents.send("brand-export:progress", {
-    status: "monitoring",
-    monitorSource: "dedicated-window-rebuilt",
-    brandName: job?.brandName || "",
-    jobId,
-    jobState: "4ë‹¨ê³„/5 Â· ì™„ë£Œ ìƒíƒœ ìƒˆë¡œê³ ì¹¨",
-    message: `${job?.brandName || "ì„ íƒ ë¸Œëžœë“œ"} Â· ìž‘ì—…ë²ˆí˜¸ ${jobId} Â· ì˜¤ëž˜ëœ ì²˜ë¦¬ ì¤‘ ìƒíƒœë¥¼ ë²„ë¦¬ê³  ë‹¤ìš´ë¡œë“œ ì„¼í„°ë¥¼ ë‹¤ì‹œ ì—°ê²°í•©ë‹ˆë‹¤.`,
-  });
-}
-
-async function watchAllSellerExportJobsEveryTenSeconds() {
-  if (brandExportMonitorRunning) return { ok: true, jobs: brandExportJobs.size };
-  brandExportMonitorRunning = true;
-  const pollIntervalMs = SELLER_MULTI_EXPORT_POLL_INTERVAL_MS;
-  try {
-    while (brandExportJobs.size) {
-      const expectedIds = [...brandExportJobs.keys()];
-      const statuses = await readSellerMonitorStatuses(expectedIds);
-      for (const status of statuses) {
-        const previousJobId = String(status.jobId || "").trim();
-        const recoveredJobId = String(status.recoveredJobId || "").trim();
-        const job = brandExportJobs.get(previousJobId);
-        if (job && recoveredJobId && recoveredJobId !== previousJobId) {
-          const nextJobId = await replaceRecoveredBrandExportJobId(previousJobId, recoveredJobId, job, status);
-          status.previousJobId = previousJobId;
-          status.jobId = nextJobId;
-          mainWindow?.webContents.send("brand-export:progress", {
-            status: "monitoring",
-            monitorSource: "dedicated-window",
-            brandName: job.brandName,
-            jobId: nextJobId,
-            jobState: "ìž¬ì‹œìž‘ ë³µêµ¬ Â· ìµœì‹  ì„±ê³µ ìž‘ì—…ë²ˆí˜¸ ìžë™ ì—°ê²°",
-            message: `${job.brandName} Â· ì €ìž¥ëœ ìž‘ì—…ë²ˆí˜¸ ${previousJobId} ëŒ€ì‹  ìµœì‹  ì„±ê³µ ìž‘ì—…ë²ˆí˜¸ ${nextJobId}ë¥¼ ì—°ê²°í–ˆìŠµë‹ˆë‹¤.`,
-          });
-        }
-      }
-      for (const status of statuses) {
-        const job = brandExportJobs.get(status.jobId);
-        if (!job) continue;
-        if (status.state === "FAILED") {
-          if (activeBrandDownloadJobId === status.jobId) activeBrandDownloadJobId = "";
-          await finishFailedBrandExportJob(status.jobId, job);
-          continue;
-        }
-        if (status.state === "WAITING_FOR_ROW") job.rowMisses = Number(job.rowMisses || 0) + 1;
-        else job.rowMisses = 0;
-        if (status.state === "PROCESSING") {
-          job.processingPolls = Number(job.processingPolls || 0) + 1;
-          if (job.processingPolls >= 6) {
-            job.processingPolls = 0;
-            await rebuildStaleSellerExportMonitor(status.jobId, job);
-          }
-        } else {
-          job.processingPolls = 0;
-        }
-        const stateLabel = {
-          WAITING_FOR_ROW: "4ë‹¨ê³„/5 Â· ìž‘ì—…ë²ˆí˜¸ í–‰ í™•ì¸ ì¤‘",
-          PROCESSING: "4ë‹¨ê³„/5 Â· POIZON íŒŒì¼ ì²˜ë¦¬ ì¤‘ Â· 10ì´ˆë§ˆë‹¤ ê°ì‹œ",
-          WAITING_FOR_SUCCESS: "4ë‹¨ê³„/5 Â· POIZON ì²˜ë¦¬ ì™„ë£Œ ëŒ€ê¸° ì¤‘",
-          WAITING_FOR_COMPLETION: "4ë‹¨ê³„/5 Â· ìž‘ì—… ì™„ë£Œ ì‹œê° í™•ì¸ ì¤‘",
-          WAITING_FOR_DOWNLOAD: "4ë‹¨ê³„/5 Â· ë‹¤ìš´ë¡œë“œ ë²„íŠ¼ ëŒ€ê¸°",
-          PAGE_NOT_READY: "4ë‹¨ê³„/5 Â· ë‹¤ìš´ë¡œë“œì„¼í„° í”„ë ˆìž„ í™•ì¸ ì¤‘",
-          READY: "4ë‹¨ê³„/5 Â· ì²˜ë¦¬ ì„±ê³µ Â· ë‹¤ìš´ë¡œë“œ ì‹œìž‘",
-        }[status.state] || status.state;
-        mainWindow?.webContents.send("brand-export:progress", {
-          status: "monitoring",
-          monitorSource: "dedicated-window",
-          brandName: job.brandName,
-          jobId: status.jobId,
-          jobState: stateLabel,
-          message: `${job.brandName} Â· ìž‘ì—…ë²ˆí˜¸ ${status.jobId} Â· ${stateLabel}`,
-        });
-      }
-
-      const statusCheckedAt = Date.now();
-      if (activeBrandDownloadJobId) {
-        const activeJob = brandExportJobs.get(activeBrandDownloadJobId);
-        const requestAge = statusCheckedAt - Number(activeJob?.downloadRequestedAt || statusCheckedAt);
-        if (!activeJob || (!activeJob.downloadStarted && requestAge >= 120_000)) {
-          if (activeJob) {
-            activeJob.downloadRequestedAt = 0;
-            activeJob.downloadStarted = false;
-          }
-          activeBrandDownloadJobId = "";
-        }
-      }
-      const ready = activeBrandDownloadJobId ? null : statuses.find((status) => {
-        const job = brandExportJobs.get(status.jobId);
-        return Boolean(job)
-          && status.state === "READY"
-          && status.jobNumberMatched
-          && status.workSucceeded
-          && status.completionConfirmed
-          && !job.downloadStarted
-          && !job.downloadRequestedAt;
-      });
-      if (ready) {
-        const job = brandExportJobs.get(ready.jobId);
-        if (!job) continue;
-        activeBrandDownloadJobId = ready.jobId;
-        job.downloadRequestedAt = Date.now();
-        const action = await requestSellerMonitorDownload(ready.jobId, ready.frameRoutingId, ready.windowSource, {
-          recovered: Boolean(ready.recovered),
-          startText: ready.startText || "",
-          completionText: ready.completionText || "",
-        });
-        if (action?.href && action?.targetWindow && !action.targetWindow.isDestroyed()) {
-          action.targetWindow.webContents.downloadURL(action.href);
-        }
-        if (!action?.clicked) {
-          const currentJob = brandExportJobs.get(ready.jobId);
-          if (!currentJob) continue;
-          currentJob.downloadRequestedAt = 0;
-          currentJob.downloadStarted = false;
-          if (activeBrandDownloadJobId === ready.jobId) activeBrandDownloadJobId = "";
-          mainWindow?.webContents.send("brand-export:progress", {
-            status: "monitoring",
-            monitorSource: "dedicated-window",
-            brandName: currentJob.brandName,
-            jobId: ready.jobId,
-            jobState: "4ë‹¨ê³„/5 Â· ë‹¤ìš´ë¡œë“œ ë²„íŠ¼ ìž¬íƒìƒ‰",
-            message: `${currentJob.brandName} Â· ìž‘ì—…ë²ˆí˜¸ ${ready.jobId} Â· ëª¨ë“  ë‹¤ìš´ë¡œë“œì„¼í„° í”„ë ˆìž„ì—ì„œ ë²„íŠ¼ì„ ë‹¤ì‹œ ì°¾ìŠµë‹ˆë‹¤.`,
-          });
-        }
-      }
-      for (const [jobId, job] of [...brandExportJobs.entries()]) {
-        const age = statusCheckedAt - Number(job?.createdAt || statusCheckedAt);
-        if (age >= SELLER_EXPORT_MONITOR_DELAY_WARNING_MS && !job.delayWarningSent) {
-          job.delayWarningSent = true;
-          mainWindow?.webContents.send("brand-export:progress", {
-            status: "monitoring",
-            monitorSource: "dedicated-window",
-            brandName: job.brandName,
-            jobId,
-            jobState: "POIZON ì²˜ë¦¬ ì§€ì—° Â· ê°ì‹œ ê³„ì†",
-            message: `${job.brandName} Â· ìž‘ì—…ë²ˆí˜¸ ${jobId} Â· 20ë¶„ì´ ì§€ë‚¬ì§€ë§Œ ë‹¤ìš´ë¡œë“œê°€ ì™„ë£Œë  ë•Œê¹Œì§€ ê³„ì† ê°ì‹œí•©ë‹ˆë‹¤.`,
-          });
-        }
-      }
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-      const monitor = ensureSellerMonitorWindow();
-      if (!monitor.webContents.getURL().includes("/main/exportCenter")) {
-        await monitor.loadURL(SELLER_EXPORT_CENTER_URL);
-      } else {
-        await monitor.webContents.reloadIgnoringCache();
-      }
-    }
-  } catch (error) {
-    mainWindow?.webContents.send("brand-export:progress", {
-      status: "monitor-recovering",
-      monitorSource: "dedicated-window",
-      jobState: "ë‹¤ìš´ë¡œë“œì„¼í„° ê°ì‹œ ìžë™ ë³µêµ¬ ì¤‘",
-      message: `ì „ìš© ê°ì‹œ ì°½ ì˜¤ë¥˜ë¥¼ 3ì´ˆ í›„ ìžë™ ë³µêµ¬í•©ë‹ˆë‹¤: ${error instanceof Error ? error.message : String(error)}`,
-    });
-  } finally {
-    brandExportMonitorRunning = false;
-    if (brandExportJobs.size) scheduleBrandExportMonitor(3_000);
-    else emitBrandExportAllComplete();
-  }
-  return { ok: true, jobs: brandExportJobs.size };
-}
-
-const SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT = `(() => {
-  const roots = [document];
-  for (let index = 0; index < roots.length; index += 1) {
-    for (const element of roots[index].querySelectorAll('*')) {
-      if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
-    }
-  }
-  const queryAll = (selector) => roots.flatMap((root) => [...root.querySelectorAll(selector)]);
-  const visible = (element) => {
-    const rect = element?.getBoundingClientRect?.();
-    const style = element ? getComputedStyle(element) : null;
-    return Boolean(element?.isConnected && rect && rect.width > 0 && rect.height > 0
-      && style?.display !== 'none' && style?.visibility !== 'hidden');
-  };
-  const textOf = (element) => String(element?.innerText || element?.textContent || "")
-    .replace(/\\s+/g, " ").trim();
-  const rowSelector = "tbody tr, [role='row'], tr, [data-row-key], [data-row-id], [data-id], [class*='table'] [class*='row'], [class*='list'] [class*='item']";
-  const candidates = queryAll(rowSelector).filter(visible);
-  // POIZON periodically changes the Download Center from a table to a
-  // virtualized list. In that layout none of the old row selectors match,
-  // although the job number remains visible. Promote the closest compact
-  // container around every visible job-number text node as a row candidate.
-  for (const root of roots) {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let node;
-    while ((node = walker.nextNode())) {
-      const value = String(node.nodeValue || '').trim();
-      if (!/\\b\\d{7,}\\b/.test(value)) continue;
-      let element = node.parentElement;
-      let best = null;
-      for (let depth = 0; element && depth < 7; depth += 1, element = element.parentElement) {
-        const text = textOf(element);
-        if (visible(element) && text.length >= value.length && text.length <= 2400) best = element;
-        if (element.matches?.(rowSelector)) { best = element; break; }
-      }
-      if (best && !candidates.includes(best)) candidates.push(best);
-    }
-  }
-  const jobs = [];
-  const seen = new Set();
-  const datePattern = /\\d{4}\\s*(?:[-/.]|ë…„)\\s*\\d{1,2}\\s*(?:[-/.]|ì›”)\\s*\\d{1,2}(?:\\s*ì¼)?(?:\\s*[-/.])?(?:\\s+|T)\\d{1,2}\\s*:\\s*\\d{2}(?:\\s*:\\s*\\d{2})?/g;
-  const parseDate = (value) => {
-    const parts = String(value || "").match(/\\d+/g)?.map(Number) || [];
-    if (parts.length < 5) return 0;
-    return new Date(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5] || 0).getTime();
-  };
-  for (const element of candidates) {
-    const text = textOf(element);
-    if (!text || text.length > 2400) continue;
-    const cells = [...element.querySelectorAll("td, [role='cell'], [role='gridcell'], [class*='cell'], [class*='Cell']")];
-    const cellTexts = cells.map(textOf);
-    const firstCellText = textOf(cells[0]);
-    const attributeText = [
-      element.getAttribute?.('data-row-key'), element.getAttribute?.('data-row-id'),
-      element.getAttribute?.('data-id'), element.getAttribute?.('aria-label'),
-    ].filter(Boolean).join(' ');
-    const id = firstCellText.match(/\\b\\d{7,}\\b/)?.[0]
-      || attributeText.match(/\\b\\d{7,}\\b/)?.[0]
-      || text.match(/\\b\\d{7,}\\b/)?.[0]
-      || "";
-    if (!id || seen.has(id)) continue;
-    const rowHint = cells.length >= 2
-      || /ë‚´ë³´ë‚´ê¸°|ë‹¤ìš´ë¡œë“œ|ìž‘ì—…|export|download|task|å¯¼å‡º|ä¸‹è½½|ä»»åŠ¡|ì²˜ë¦¬|æˆåŠŸ/i.test(text);
-    if (!rowHint) continue;
-    const workStateText = cellTexts.find((value) => /^(?:ì„±ê³µ|ì™„ë£Œ|ì²˜ë¦¬\\s*ì¤‘|ì§„í–‰\\s*ì¤‘|ìƒì„±\\s*ì¤‘|ëŒ€ê¸°|success|completed|processing|pending|ì‹¤íŒ¨|failed|error|æˆåŠŸ|å®Œæˆ|å¤„ç†ä¸­|è¿›è¡Œä¸­|ç­‰å¾…|å¤±è´¥)$/i.test(value))
-      || text.match(/ì„±ê³µ|ì™„ë£Œ|ì²˜ë¦¬\\s*ì¤‘|ì§„í–‰\\s*ì¤‘|ìƒì„±\\s*ì¤‘|ëŒ€ê¸°|success|completed|processing|pending|ì‹¤íŒ¨|failed|error|æˆåŠŸ|å®Œæˆ|å¤„ç†ä¸­|è¿›è¡Œä¸­|ç­‰å¾…|å¤±è´¥/i)?.[0]
-      || "";
-    const failed = /^(?:ì‹¤íŒ¨|failed|error|å¤±è´¥)$/i.test(workStateText);
-    const succeeded = /^(?:ì„±ê³µ|ì™„ë£Œ|success|completed|æˆåŠŸ|å®Œæˆ)$/i.test(workStateText);
-    const processing = /^(?:ì²˜ë¦¬\\s*ì¤‘|ì§„í–‰\\s*ì¤‘|ìƒì„±\\s*ì¤‘|ëŒ€ê¸°|processing|pending|å¤„ç†ä¸­|è¿›è¡Œä¸­|ç­‰å¾…)$/i.test(workStateText);
-    const dates = [firstCellText, ...cellTexts, text].flatMap((value) => value.match(datePattern) || []);
-    const startText = dates[0] || "";
-    const startAtMs = parseDate(startText);
-    seen.add(id);
-    jobs.push({ id, fingerprint: id, text: text.slice(0, 500), workStateText, failed, succeeded, processing, startText, startAtMs });
-  }
-  const bodyText = roots.map((root) => textOf(root.body || root.host || root)).join(' ');
-  const emptyState = /æš‚æ— æ•°æ®|æ²¡æœ‰æ•°æ®|æš‚æ— ä»»åŠ¡|ë°ì´í„°ê°€\\s*ì—†|ìž‘ì—…ì´\\s*ì—†|no\\s*(?:data|task)/i.test(bodyText);
-  return { ready: jobs.length > 0 || emptyState, jobs };
-})()`;
-
-async function readSellerExportJobsFromWindow(targetWindow) {
-  if (!targetWindow || targetWindow.isDestroyed()) return null;
-  const mainFrame = targetWindow.webContents.mainFrame;
-  const frames = [mainFrame, ...(mainFrame.framesInSubtree || [])]
-    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
-  const jobsById = new Map();
-  let ready = false;
-  for (const frame of frames) {
-    try {
-      const snapshot = await frame.executeJavaScript(SELLER_EXPORT_JOB_SNAPSHOT_SCRIPT, true);
-      if (snapshot?.ready) ready = true;
-      for (const job of snapshot?.jobs || []) {
-        const id = String(job?.id || "").trim();
-        if (id && !jobsById.has(id)) jobsById.set(id, job);
-      }
-    } catch {
-      // ì ‘ê·¼í•  ìˆ˜ ì—†ëŠ” ì™¸ë¶€ í”„ë ˆìž„ì€ ê±´ë„ˆë›°ê³  ë‚˜ë¨¸ì§€ í”„ë ˆìž„ì„ ê³„ì† í™•ì¸í•©ë‹ˆë‹¤.
-    }
-  }
-  return ready || jobsById.size ? [...jobsById.values()] : null;
-}
-
-async function readSellerExportJobs() {
-  if (!sellerWindow || sellerWindow.isDestroyed()) return null;
-  if (!sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
-    await sellerWindow.loadURL(SELLER_EXPORT_CENTER_URL);
-  }
-  await new Promise((resolve) => setTimeout(resolve, 1500));
-  return readSellerExportJobsFromWindow(sellerWindow);
-}
-
-async function readSellerExportJobsFromMonitor() {
-  const monitor = ensureSellerMonitorWindow();
-  if (!monitor.webContents.getURL().includes("/main/exportCenter")) {
-    await monitor.loadURL(SELLER_EXPORT_CENTER_URL);
-  }
-  await new Promise((resolve) => setTimeout(resolve, 1200));
-  return readSellerExportJobsFromWindow(monitor);
-}
-
-async function readSellerExportBaselineSeparately() {
-  let baselineWindow;
-  try {
-    baselineWindow = new BrowserWindow({
-      show: false,
-      width: 1100,
-      height: 760,
-      webPreferences: {
-        partition: "persist:around-g-poizon-seller",
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        backgroundThrottling: false,
-      },
-    });
-    await baselineWindow.loadURL(SELLER_EXPORT_CENTER_URL);
-    await new Promise((resolve) => setTimeout(resolve, 1800));
-    return await readSellerExportJobsFromWindow(baselineWindow);
-  } catch {
-    return null;
-  } finally {
-    if (baselineWindow && !baselineWindow.isDestroyed()) baselineWindow.destroy();
-  }
-}
-
-// The long-lived hidden monitor can keep a stale SPA table even after a hard
-// reload. Open a short-lived window in the same authenticated partition so a
-// newly-created POIZON export row cannot be missed and orphaned from its brand.
-async function readSellerExportJobsFreshly() {
-  return readSellerExportBaselineSeparately();
-}
-
-async function readStableSellerExportJobs() {
-  let previousSignature = null;
-  let stableReads = 0;
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const jobs = await readSellerExportJobs();
-    if (Array.isArray(jobs)) {
-      const signature = jobs.map((job) => String(job?.id || "").trim())
-        .filter(Boolean).sort().join("|");
-      if (signature === previousSignature) stableReads += 1;
-      else stableReads = 1;
-      previousSignature = signature;
-      if (stableReads >= 2) return jobs;
-    } else {
-      previousSignature = null;
-      stableReads = 0;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    if (!sellerWindow || sellerWindow.isDestroyed()) return null;
-  }
-  return null;
-}
-
-function normalizeBrandExportKey(value = "") {
-  return String(value || "")
-    .normalize("NFKC")
-    .trim()
-    .toLocaleLowerCase()
-    .replace(/[^a-z0-9\uAC00-\uD7A3]+/g, "");
-}
-
-function savedBrandExportJobs() {
-  const saved = store?.snapshot()?.settings?.brandExportJobCache;
-  return Array.isArray(saved) ? saved : [];
-}
-
-function normalizeSavedBrandExportPath(value = "") {
-  return String(value || "")
-    .trim()
-    .replace(/[\\/]+/g, "\\")
-    .toLocaleLowerCase();
-}
-
-function savedBrandExportJobForFile(input = {}, usedJobIds = new Set()) {
-  const pathKey = normalizeSavedBrandExportPath(input.path);
-  const fileNameKey = String(input.name || "").trim().toLocaleLowerCase();
-  const brandKey = normalizeBrandExportKey(input.brandName);
-  const mtimeMs = Number(input.mtimeMs || 0);
-  const candidates = savedBrandExportJobs()
-    .map((item) => ({
-      ...item,
-      jobId: String(item?.jobId || "").trim(),
-      brandName: String(item?.brandName || "").trim(),
-      brandKo: String(item?.brandKo || "").trim(),
-      filePath: String(item?.filePath || "").trim(),
-      fileName: String(item?.fileName || "").trim(),
-      fileMtimeMs: Number(item?.fileMtimeMs || 0),
-      lastDownloadedAt: Number(item?.lastDownloadedAt || 0),
-      createdAt: Number(item?.createdAt || 0),
-    }))
-    .filter((item) => item.jobId && item.lastDownloadedAt > 0 && !usedJobIds.has(item.jobId));
-  const exactPath = pathKey
-    ? candidates.find((item) => normalizeSavedBrandExportPath(item.filePath) === pathKey)
-    : null;
-  if (exactPath) return exactPath;
-  const brandMatches = (item) => {
-    if (!brandKey) return false;
-    return brandsMatch(item.brandName, input.brandName)
-      || brandsMatch(item.brandKo, input.brandName);
-  };
-  const exactNameMatches = fileNameKey
-    ? candidates.filter((item) => item.fileName.toLocaleLowerCase() === fileNameKey && brandMatches(item))
-    : [];
-  if (exactNameMatches.length === 1) return exactNameMatches[0];
-  const brandCandidates = candidates.filter(brandMatches);
-  if (!brandCandidates.length) return null;
-  const scored = brandCandidates.map((item) => {
-    const referenceTime = item.fileMtimeMs || item.lastDownloadedAt || item.createdAt;
-    return {
-      item,
-      difference: mtimeMs > 0 && referenceTime > 0
-        ? Math.abs(mtimeMs - referenceTime)
-        : Number.POSITIVE_INFINITY,
-    };
-  }).sort((left, right) => left.difference - right.difference);
-  const nearest = scored[0];
-  const second = scored[1];
-  const maximumDifference = 24 * 60 * 60 * 1000;
-  if (nearest && nearest.difference <= maximumDifference
-    && (!second || second.difference - nearest.difference >= 30_000)) {
-    return nearest.item;
-  }
-  return brandCandidates.length === 1 ? brandCandidates[0] : null;
-}
-
-async function findDownloadedFileForPendingBrandExport(saved, entries = []) {
-  const jobId = String(saved?.jobId || "").trim();
-  const brandName = String(saved?.brandName || "").trim();
-  const brandKo = String(saved?.brandKo || "").trim();
-  const createdAt = Number(saved?.createdAt || 0);
-  const candidates = (await Promise.all((entries || [])
-    .filter((entry) => !isProcessedBrandExportName(entry.name) && !isPartialBrandExportName(entry.name))
-    .map(async (entry) => ({ entry, info: await stat(entry.path).catch(() => null) }))))
-    .filter(({ info }) => info && info.size > 0 && info.mtimeMs >= createdAt - 5 * 60_000)
-    .sort((left, right) => right.info.mtimeMs - left.info.mtimeMs);
-  const exact = candidates.find(({ entry }) => {
-    const folderMeta = parseBrandExportFolderName(basename(entry.directory));
-    return String(folderMeta.jobId || "") === jobId
-      || new RegExp(`(?:^|\\D)${jobId}(?:\\D|$)`).test(entry.name);
-  });
-  if (exact) return exact;
-  for (const candidate of candidates) {
-    const integrity = await validateBrandExportFile(candidate.entry.path, [brandName, brandKo].filter(Boolean))
-      .catch(() => null);
-    if (integrity?.ok) return candidate;
-  }
-  return null;
-}
-
-async function restorePendingBrandExportJobs() {
-  const cutoff = Date.now() - RESTORED_PENDING_JOB_MAX_AGE_MS;
-  const savedJobs = savedBrandExportJobs();
-  const folder = currentBrandExportFolder();
-  await mkdir(folder, { recursive: true });
-  const entries = await listBrandExportExcelEntries(folder).catch(() => []);
-  mainWindow?.webContents.send("startup-recovery:progress", {
-    percent: 92,
-    message: `ì¤‘ë‹¨ëœ POIZON ìž‘ì—… ${savedJobs.length}ê°œë¥¼ í™•ì¸í•˜ê³  ìžˆìŠµë‹ˆë‹¤.`,
-    current: 0,
-    total: savedJobs.length,
-  });
-  const reconciledCache = [];
-  for (let index = 0; index < savedJobs.length; index += 1) {
-    const saved = savedJobs[index];
-    mainWindow?.webContents.send("startup-recovery:progress", {
-      percent: 92 + Math.round(((index + 1) / Math.max(1, savedJobs.length)) * 6),
-      message: `ì¤‘ë‹¨ëœ POIZON ìž‘ì—… í™•ì¸ ${index + 1}/${savedJobs.length}`,
-      current: index + 1,
-      total: savedJobs.length,
-    });
-    const jobId = String(saved?.jobId || "").trim();
-    const brandName = String(saved?.brandName || "").trim();
-    const createdAt = Number(saved?.createdAt || 0);
-    const lastDownloadedAt = Number(saved?.lastDownloadedAt || 0);
-    const terminalState = String(saved?.terminalState || "").trim();
-    if (!jobId || !brandName || lastDownloadedAt > 0 || terminalState || createdAt < cutoff) {
-      reconciledCache.push(saved);
-      continue;
-    }
-    const completedFile = await findDownloadedFileForPendingBrandExport(saved, entries);
-    if (completedFile) {
-      brandExportJobs.delete(jobId);
-      const completed = {
-        ...saved,
-        lastDownloadedAt: Number(completedFile.info.mtimeMs || Date.now()),
-        filePath: completedFile.entry.path,
-        fileName: completedFile.entry.name,
-        fileMtimeMs: Number(completedFile.info.mtimeMs || 0),
-        terminalState: "",
-      };
-      reconciledCache.push(completed);
-      mainWindow?.webContents.send("brand-export:progress", {
-        status: "startup-file-recovered",
-        brandName,
-        jobId,
-        jobState: "í”„ë¡œê·¸ëž¨ ì‹œìž‘ ë³µêµ¬ Â· ê¸°ì¡´ Excel í™•ì¸ì™„ë£Œ",
-        message: `${brandName} Â· ìž‘ì—…ë²ˆí˜¸ ${jobId}ì˜ ê¸°ì¡´ ë‹¤ìš´ë¡œë“œ íŒŒì¼ì„ í™•ì¸í•´ ë°˜ë³µ ê°ì‹œë¥¼ ê±´ë„ˆëœë‹ˆë‹¤.`,
-      });
-      continue;
-    }
-    reconciledCache.push(saved);
-    brandExportJobs.set(jobId, {
-      jobId,
-      brandName,
-      brandKo: String(saved?.brandKo || "").trim(),
-      createdAt,
-      expectedProductCount: Number(saved?.expectedProductCount || 0),
-      downloadStarted: false,
-      downloadRequestedAt: 0,
-      restored: true,
-      restoredAt: Date.now(),
-    });
-  }
-  if (JSON.stringify(reconciledCache) !== JSON.stringify(savedJobs)) {
-    await store.setSettings({ brandExportJobCache: reconciledCache.slice(0, 500) });
-  }
-  return [...brandExportJobs.entries()].map(([jobId, job]) => ({
-    jobId,
-    brandName: job.brandName,
-    brandKo: job.brandKo || "",
-    createdAt: Number(job.createdAt || 0),
-    expectedProductCount: Number(job.expectedProductCount || 0),
-    restored: Boolean(job.restored),
-  }));
-}
-
-async function rememberBrandExportJob(input = {}) {
-  if (input.sessionGeneration !== undefined
-    && input.sessionGeneration !== brandWorkSessionGeneration) return;
-  const jobId = String(input.jobId || "").trim();
-  const brandName = String(input.brandName || "").trim();
-  const brandKo = String(input.brandKo || "").trim();
-  const officialRegistry = safeOfficialDomainRegistry(
-    store.snapshot().settings.brandCatalog || explorerMetadata().brands
-  );
-  const officialRecord = officialDomainRecordForBrand(officialRegistry, brandName)
-    || officialDomainRecordForBrand(officialRegistry, brandKo);
-  const officialAliases = officialDomainSearchAliases(officialRecord);
-  if (!jobId || !brandName) return;
-  const next = {
-    jobId,
-    brandName,
-    brandKo,
-    brandKey: normalizeBrandExportKey(brandName),
-    createdAt: Number(input.createdAt) || Date.now(),
-    lastDownloadedAt: Number(input.lastDownloadedAt) || 0,
-    expectedProductCount: Number(input.expectedProductCount) || 0,
-    filePath: String(input.filePath || "").trim(),
-    fileName: String(input.fileName || "").trim(),
-    fileMtimeMs: Number(input.fileMtimeMs) || 0,
-  };
-  const cache = [
-    next,
-    ...savedBrandExportJobs().filter((item) => String(item?.jobId || "") !== jobId),
-  ].slice(0, 500);
-  await store.setSettings({ brandExportJobCache: cache });
-}
-
-function brandExportJobOwner(jobId = "") {
-  const normalizedId = String(jobId || "").trim();
-  if (!normalizedId) return null;
-  const active = brandExportJobs.get(normalizedId);
-  if (active) return active;
-  return savedBrandExportJobs().find((item) => String(item?.jobId || "").trim() === normalizedId) || null;
-}
-
-function recoverableSavedBrandExportJob(brandName = "", brandKo = "", currentJobs = []) {
-  const visibleJobIds = new Set((currentJobs || [])
-    .map((job) => String(job?.id || "").trim())
-    .filter(Boolean));
-  const cutoff = Date.now() - RESTORED_PENDING_JOB_MAX_AGE_MS;
-  const sameNonEmptyBrand = (left = "", right = "") => Boolean(String(left || "").trim())
-    && Boolean(String(right || "").trim())
-    && brandsMatch(left, right);
-  return savedBrandExportJobs()
-    .map((job) => ({
-      ...job,
-      jobId: String(job?.jobId || "").trim(),
-      brandName: String(job?.brandName || "").trim(),
-      brandKo: String(job?.brandKo || "").trim(),
-      createdAt: Number(job?.createdAt || 0),
-      lastDownloadedAt: Number(job?.lastDownloadedAt || 0),
-      terminalState: String(job?.terminalState || "").trim(),
-    }))
-    .filter((job) => job.jobId
-      && visibleJobIds.has(job.jobId)
-      && job.lastDownloadedAt === 0
-      && !job.terminalState
-      && !currentJobs.find((current) => String(current?.id || "").trim() === job.jobId)?.failed
-      && job.createdAt >= cutoff
-      && (sameNonEmptyBrand(job.brandName, brandName)
-        || sameNonEmptyBrand(job.brandKo, brandName)
-        || sameNonEmptyBrand(job.brandName, brandKo)
-        || sameNonEmptyBrand(job.brandKo, brandKo)))
-    .sort((left, right) => right.createdAt - left.createdAt)[0] || null;
-}
-
-function sellerWindowFrames() {
-  if (!sellerWindow || sellerWindow.isDestroyed()) return [];
-  const mainFrame = sellerWindow.webContents.mainFrame;
-  return [mainFrame, ...(mainFrame.framesInSubtree || [])]
-    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
-}
-
-async function executeSellerFrameWithTimeout(frame, script, timeoutMs = 4_000, fallback = null) {
-  return Promise.race([
-    frame.executeJavaScript(script, true),
-    new Promise((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
-  ]).catch(() => fallback);
-}
-
-async function sellerAuthenticationState() {
-  if (!sellerWindow || sellerWindow.isDestroyed()) return { login: false, authenticated: false, loading: false };
-  const url = String(sellerWindow.webContents.getURL() || "");
-  // Do not treat an empty/loading shell or an unrelated transient URL as a
-  // login form.  The old search flow reused the persistent Seller Center
-  // session and only authenticated when POIZON actually displayed its login
-  // route or a visible password form.  Misclassifying a blank component as a
-  // login page made the physical Ctrl+A/paste fallback run against the product
-  // screen and was the main source of repeated authentication and timeouts.
-  if (/login|signin|passport|auth/i.test(url)) return { login: true, authenticated: false, loading: false };
-  let sawContent = false;
-  for (const frame of sellerWindowFrames()) {
-    const state = await executeSellerFrameWithTimeout(frame, `(() => {
-      const roots = [document];
-      for (let index = 0; index < roots.length; index += 1) {
-        for (const element of roots[index].querySelectorAll('*')) {
-          if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
-        }
-      }
-      const queryAll = (selector) => roots.flatMap((root) => [...root.querySelectorAll(selector)]);
-      const visible = (element) => {
-        const rect = element?.getBoundingClientRect?.();
-        const style = element ? getComputedStyle(element) : null;
-        return Boolean(rect && rect.width > 0 && rect.height > 0 && style?.display !== 'none' && style?.visibility !== 'hidden');
-      };
-      const text = String(document.body?.innerText || "").replace(/\\s+/g, " ").slice(0, 5000);
-      const password = queryAll('input[type="password"],input[autocomplete="current-password"]').some(visible);
-      const loginText = /ë¡œê·¸ì¸|ç™»å½•|ç™»å…¥|sign\\s*in|log\\s*in/i.test(text);
-      const authenticated = /ìƒí’ˆ\\s*ë°\\s*ìž…ì°°\\s*ë¶„ì„|ìƒí’ˆ\\s*ê²€ìƒ‰|ì „ì²´\\s*ì‹œìž¥\\s*ë°ì´í„°|å•†å“(?:åŠç«žä»·åˆ†æž|æœç´¢)|ä¸‹è½½ä¸­å¿ƒ|ì£¼ë¬¸\\s*ê´€ë¦¬/i.test(text);
-      return { password, loginText, authenticated, hasContent: text.trim().length > 20 };
-    })()`, 4_000, { password: false, loginText: false, authenticated: false, hasContent: false });
-    sawContent ||= Boolean(state?.hasContent);
-    if (state?.password || (state?.loginText && !state?.authenticated)) {
-      return { login: true, authenticated: false, loading: false };
-    }
-    if (state?.authenticated) return { login: false, authenticated: true, loading: false };
-  }
-  return { login: false, authenticated: false, loading: !sawContent };
-}
-
-async function sellerPageRequiresLogin() {
-  return Boolean((await sellerAuthenticationState()).login);
-}
-
-async function waitForSellerAuthenticationState(timeoutMs = 45_000) {
-  const deadline = Date.now() + timeoutMs;
-  let state = { login: false, authenticated: false, loading: true };
-  while (Date.now() < deadline) {
-    state = await sellerAuthenticationState();
-    if (state.login || state.authenticated) return state;
-    await wait(750);
-  }
-  return state;
-}
-
-async function setSellerLoginStatusOverlay(state = "checking", title = "", detail = "") {
-  if (!sellerWindow || sellerWindow.isDestroyed()) return;
-  const colors = {
-    checking: ["#2563eb", "#eff6ff"],
-    filling: ["#d97706", "#fffbeb"],
-    success: ["#059669", "#ecfdf5"],
-    error: ["#dc2626", "#fef2f2"],
-  };
-  const [accent, background] = colors[state] || colors.checking;
-  const script = `(() => {
-    let panel = document.getElementById("around-g-login-status");
-    if (!panel) {
-      panel = document.createElement("section");
-      panel.id = "around-g-login-status";
-      panel.style.cssText = "position:fixed;z-index:2147483647;right:24px;top:24px;width:320px;box-sizing:border-box;padding:15px 17px;border-radius:12px;font-family:Arial,'Malgun Gothic',sans-serif;box-shadow:0 10px 35px rgba(0,0,0,.28);";
-      document.documentElement.appendChild(panel);
-    }
-    panel.style.border = "2px solid " + ${JSON.stringify(accent)};
-    panel.style.background = ${JSON.stringify(background)};
-    panel.style.color = "#172033";
-    panel.innerHTML = '<strong style="display:block;color:${String(accent)};font-size:15px;margin-bottom:6px"></strong><span style="display:block;font-size:12px;line-height:1.5"></span>';
-    panel.querySelector("strong").textContent = ${JSON.stringify(title)};
-    panel.querySelector("span").textContent = ${JSON.stringify(detail)};
-    return true;
-  })()`;
-  await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, script, 3_000, false).catch(() => false);
-}
-
-async function submitStoredSellerCredentialsWithAccessibility(loginId, password) {
-  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: "SELLER_WINDOW_CLOSED" };
-  const client = sellerWindow.webContents.debugger;
-  let attachedHere = false;
-  try {
-    if (!client.isAttached()) {
-      client.attach("1.3");
-      attachedHere = true;
-    }
-    await client.sendCommand("Accessibility.enable");
-    const pageTree = await client.sendCommand("Page.getFrameTree");
-    const frameIds = [];
-    const collectFrames = (entry) => {
-      if (entry?.frame?.id) frameIds.push(entry.frame.id);
-      for (const child of entry?.childFrames || []) collectFrames(child);
-    };
-    collectFrames(pageTree?.frameTree);
-    const axTrees = await Promise.all((frameIds.length ? frameIds : [undefined]).map((frameId) =>
-      client.sendCommand("Accessibility.getFullAXTree", frameId ? { frameId } : {})
-        .catch(() => ({ nodes: [] }))
-    ));
-    const nodes = axTrees.flatMap((tree) => Array.isArray(tree?.nodes) ? tree.nodes : [])
-      .filter((node) => !node.ignored && node.backendDOMNodeId);
-    const role = (node) => String(node?.role?.value || "").toLowerCase();
-    const label = (node) => [
-      node?.name?.value,
-      node?.description?.value,
-      ...(node?.properties || []).map((property) => property?.value?.value),
-    ].filter(Boolean).join(" ");
-    const textboxes = nodes.filter((node) => /textbox|textfield|input/.test(role(node)));
-    const passwordNode = textboxes.find((node) => /ë¹„ë°€ë²ˆí˜¸|password|å¯†ç |passcode/i.test(label(node)));
-    const idNode = textboxes.find((node) =>
-      node !== passwordNode && /íœ´ëŒ€í°|ì „í™”|ì´ë©”ì¼|ì•„ì´ë””|phone|email|account|username|æ‰‹æœºå·|é‚®ç®±|è´¦å·/i.test(label(node))
-    ) || textboxes.find((node) => node !== passwordNode);
-    const loginButton = nodes.find((node) =>
-      /button|link/.test(role(node)) && /ë¡œê·¸ì¸|ç™»å½•|ç™»å…¥|sign\s*in|log\s*in/i.test(label(node))
-    );
-    if (!idNode || !passwordNode) {
-      return { ok: false, step: "ACCESSIBILITY_LOGIN_INPUTS_NOT_FOUND", axNodes: nodes.length, textboxes: textboxes.length };
-    }
-    const replaceFocusedText = async (node, value) => {
-      await client.sendCommand("DOM.focus", { backendNodeId: node.backendDOMNodeId });
-      await client.sendCommand("Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", modifiers: 2 });
-      await client.sendCommand("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: 2 });
-      await client.sendCommand("Input.insertText", { text: value });
-      await wait(150);
-    };
-    await replaceFocusedText(idNode, loginId);
-    await replaceFocusedText(passwordNode, password);
-    if (!loginButton) return { ok: false, filled: true, step: "ACCESSIBILITY_LOGIN_BUTTON_NOT_FOUND" };
-    await client.sendCommand("DOM.focus", { backendNodeId: loginButton.backendDOMNodeId });
-    await client.sendCommand("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter" });
-    await client.sendCommand("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter" });
-    return { ok: true, filled: true, step: "ACCESSIBILITY_CREDENTIALS_SUBMITTED" };
-  } catch (error) {
-    return { ok: false, step: "ACCESSIBILITY_LOGIN_FAILED", reason: String(error?.message || error || "") };
-  } finally {
-    if (attachedHere && client.isAttached()) {
-      try { client.detach(); } catch {}
-    }
-  }
-}
-
-
-async function submitStoredSellerCredentialsWithRealMouse(loginId, password) {
-  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: "SELLER_WINDOW_CLOSED" };
-  let previousClipboard = "";
-  try {
-    const viewport = await executeSellerFrameWithTimeout(
-      sellerWindow.webContents.mainFrame,
-      "({ width: Math.round(innerWidth), height: Math.round(innerHeight) })",
-      3_000,
-      null
-    );
-    const width = Number(viewport?.width || 0);
-    const height = Number(viewport?.height || 0);
-    if (width < 800 || height < 500) {
-      return { ok: false, step: "REAL_MOUSE_VIEWPORT_TOO_SMALL", width, height };
-    }
-    if (sellerWindow.isMinimized()) sellerWindow.restore();
-    sellerWindow.show();
-    sellerWindow.focus();
-    const contents = sellerWindow.webContents;
-    previousClipboard = clipboard.readText();
-    const click = async (xRatio, yRatio) => {
-      const x = Math.round(width * xRatio);
-      const y = Math.round(height * yRatio);
-      contents.sendInputEvent({ type: "mouseMove", x, y });
-      contents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
-      contents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
-      await wait(180);
-    };
-    const paste = async (value) => {
-      contents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
-      contents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
-      clipboard.writeText(value);
-      contents.sendInputEvent({ type: "keyDown", keyCode: "V", modifiers: ["control"] });
-      contents.sendInputEvent({ type: "keyUp", keyCode: "V", modifiers: ["control"] });
-      await wait(250);
-    };
-    // POIZON seller login card stays at these responsive viewport ratios.
-    await click(0.72, 0.30);
-    await paste(loginId);
-    await click(0.72, 0.365);
-    await paste(password);
-    await click(0.72, 0.428);
-    return { ok: true, filled: true, step: "REAL_MOUSE_CREDENTIALS_SUBMITTED" };
-  } catch (error) {
-    return { ok: false, step: "REAL_MOUSE_LOGIN_FAILED", reason: String(error?.message || error || "") };
-  } finally {
-    try { clipboard.writeText(previousClipboard); } catch {}
-  }
-}
-
-async function submitStoredSellerCredentials() {
-  const settings = store.snapshot().settings || {};
-  const loginId = String(settings.poizonLoginId || "").trim();
-  let password = "";
-  try {
-    password = decrypted(settings.poizonPasswordEncrypted);
-  } catch {
-    await setSellerLoginStatusOverlay("error", "ì €ìž¥ ë¹„ë°€ë²ˆí˜¸ í™•ì¸ ì‹¤íŒ¨", "ì—°ë™ ê´€ë¦¬ì—ì„œ POIZON ë¹„ë°€ë²ˆí˜¸ë¥¼ ë‹¤ì‹œ ì €ìž¥í•´ ì£¼ì„¸ìš”.");
-    return { ok: false, stored: false, step: "PASSWORD_DECRYPT_FAILED" };
-  }
-  if (!loginId || !password) {
-    await setSellerLoginStatusOverlay("error", "POIZON ê³„ì • ì €ìž¥ í•„ìš”", "Around G POIZONì˜ ì—°ë™ ê´€ë¦¬ì—ì„œ ì•„ì´ë””ì™€ ë¹„ë°€ë²ˆí˜¸ë¥¼ ì•”í˜¸í™” ì €ìž¥í•´ ì£¼ì„¸ìš”.");
-    return { ok: false, stored: false, step: "STORED_CREDENTIALS_MISSING" };
-  }
-  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, stored: true, step: "SELLER_WINDOW_CLOSED" };
-  await setSellerLoginStatusOverlay("checking", "ì €ìž¥ ê³„ì • í™•ì¸ ì™„ë£Œ", "ë¡œê·¸ì¸ ìž…ë ¥ì¹¸ì„ ì°¾ê³  ìžˆìŠµë‹ˆë‹¤.");
-  let lastResult = { ok: false, step: "LOGIN_INPUTS_NOT_FOUND" };
-  for (const frame of sellerWindowFrames()) {
-    const result = await executeSellerFrameWithTimeout(frame, `(async () => {
-      const roots = [document];
-      for (let index = 0; index < roots.length; index += 1) {
-        for (const element of roots[index].querySelectorAll('*')) {
-          if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
-        }
-      }
-      const queryAll = (selector) => roots.flatMap((root) => [...root.querySelectorAll(selector)]);
-      const visible = (element) => {
-        if (!element || element.disabled) return false;
-        const rect = element.getBoundingClientRect();
-        const style = getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
-      };
-      const passwordInput = queryAll('input[type="password"], input[autocomplete="current-password"]').find(visible);
-      const idInputs = queryAll('input:not([type]), input[type="text"], input[type="email"], input[type="tel"], input[autocomplete="username"]').filter(visible);
-      const idInput = idInputs.find((element) => /user|account|email|phone|login|ì•„ì´ë””|íœ´ëŒ€í°|ì´ë©”ì¼|ì „í™”ë²ˆí˜¸|è´¦å·|å¸å·|æ‰‹æœºå·/i.test([
-        element.name, element.id, element.placeholder, element.autocomplete,
-      ].join(' '))) || idInputs[0];
-      if (!idInput || !passwordInput) return { ok: false, step: 'LOGIN_INPUTS_NOT_FOUND', inputs: idInputs.length, passwords: passwordInput ? 1 : 0 };
-      const setValue = (element, value) => {
-        element.focus();
-        const prototype = Object.getPrototypeOf(element);
-        const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
-          || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-        setter ? setter.call(element, value) : (element.value = value);
-        element.setAttribute('value', value);
-        element.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-        element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-        element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true, key: 'Unidentified' }));
-        element.blur();
-      };
-      setValue(idInput, ${JSON.stringify(loginId)});
-      setValue(passwordInput, ${JSON.stringify(password)});
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      if (!String(idInput.value || '').trim() || !String(passwordInput.value || '')) {
-        return { ok: false, step: 'LOGIN_VALUES_REJECTED' };
-      }
-      const buttons = queryAll('button, input[type="submit"], [role="button"], a').filter(visible);
-      const submit = buttons.find((element) => /ë¡œê·¸ì¸|ç™»å½•|ç™»å…¥|sign\\s*in|log\\s*in/i.test(String(element.innerText || element.textContent || element.value || element.getAttribute('aria-label') || '')))
-        || buttons.find((element) => element.type === 'submit')
-        || idInput.closest('form')?.querySelector('button, input[type="submit"]');
-      if (!submit) return { ok: false, step: 'LOGIN_BUTTON_NOT_FOUND', filled: true };
-      if (submit.disabled) return { ok: false, step: 'LOGIN_BUTTON_DISABLED', filled: true };
-      submit.focus();
-      submit.click();
-      return { ok: true, step: 'STORED_CREDENTIALS_SUBMITTED', filled: true };
-    })()`, 7_000, { ok: false, step: "LOGIN_FRAME_TIMEOUT" });
-    lastResult = result || lastResult;
-    if (result?.filled) {
-      await setSellerLoginStatusOverlay(
-        result.ok ? "filling" : "error",
-        result.ok ? "IDÂ·ë¹„ë°€ë²ˆí˜¸ ìžë™ ìž…ë ¥ ì™„ë£Œ" : "ë¡œê·¸ì¸ ë²„íŠ¼ í™•ì¸ í•„ìš”",
-        result.ok ? "ë¡œê·¸ì¸ ë²„íŠ¼ì„ ëˆŒë €ìŠµë‹ˆë‹¤. íŒë§¤ìžì„¼í„° ì§„ìž…ì„ í™•ì¸í•˜ê³  ìžˆìŠµë‹ˆë‹¤." : `ìž…ë ¥ì€ ì™„ë£Œí–ˆì§€ë§Œ ë²„íŠ¼ ì‹¤í–‰ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤. (${result.step || "UNKNOWN"})`
-      );
-    }
-    if (result?.ok) return { ...result, stored: true };
-  }
-  const accessibilityResult = await submitStoredSellerCredentialsWithAccessibility(loginId, password);
-  if (accessibilityResult?.filled) {
-    await setSellerLoginStatusOverlay(
-      accessibilityResult.ok ? "filling" : "error",
-      accessibilityResult.ok ? "IDÂ·ë¹„ë°€ë²ˆí˜¸ ì‹¤ì œ ìž…ë ¥ ì™„ë£Œ" : "ë¡œê·¸ì¸ ë²„íŠ¼ í™•ì¸ í•„ìš”",
-      accessibilityResult.ok
-        ? "POIZON í™”ë©´ ìš”ì†Œë¥¼ ì§ì ‘ ì°¾ì•„ ìž…ë ¥í–ˆìŠµë‹ˆë‹¤. íŒë§¤ìžì„¼í„° ì§„ìž…ì„ í™•ì¸í•˜ê³  ìžˆìŠµë‹ˆë‹¤."
-        : `ìž…ë ¥ì€ ì™„ë£Œí–ˆì§€ë§Œ ë²„íŠ¼ ì‹¤í–‰ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤. (${accessibilityResult.step || "UNKNOWN"})`
-    );
-  }
-  if (accessibilityResult?.ok) return { ...accessibilityResult, stored: true };
-  const realMouseResult = await submitStoredSellerCredentialsWithRealMouse(loginId, password);
-  if (realMouseResult?.ok) {
-    await setSellerLoginStatusOverlay(
-      "filling",
-      "IDÂ·ë¹„ë°€ë²ˆí˜¸ ì‹¤ì œ ë§ˆìš°ìŠ¤ ìž…ë ¥ ì™„ë£Œ",
-      "ë¡œê·¸ì¸ ë²„íŠ¼ì„ ì§ì ‘ ëˆŒë €ìŠµë‹ˆë‹¤. íŒë§¤ìžì„¼í„° ì§„ìž…ì„ í™•ì¸í•˜ê³  ìžˆìŠµë‹ˆë‹¤."
-    );
-    return { ...realMouseResult, stored: true };
-  }
-  await setSellerLoginStatusOverlay(
-    "error",
-    "ë¡œê·¸ì¸ ì‹¤ì œ ìž…ë ¥ ì‹¤íŒ¨",
-    `ì €ìž¥ ê³„ì •ì˜ ì‹¤ì œ ë§ˆìš°ìŠ¤ ìž…ë ¥ì„ ë‹¤ì‹œ ì‹œë„í•©ë‹ˆë‹¤. (${realMouseResult?.step || accessibilityResult?.step || lastResult.step || "UNKNOWN"})`
-  );
-  return { ...(realMouseResult || accessibilityResult || lastResult), ok: false, stored: true };
-}
-
-async function sellerProductSearchPageState() {
-  if (!sellerWindow || sellerWindow.isDestroyed()) {
-    return { ready: false, failed: false, frame: null, url: "" };
-  }
-  for (const frame of sellerWindowFrames()) {
-    const state = await executeSellerFrameWithTimeout(frame, `(() => {
-      const visible = (element) => element && element.getClientRects().length > 0;
-      const textOf = (element) => String(element?.innerText || element?.textContent || "")
-        .replace(/\\s+/g, " ").trim();
-      const body = String(document.body?.innerText || "");
-      const failed = /Page\\s*Not\\s*Found|Component\\s*Key\\s*Error|Load\\s*Component\\s*Timeout|è¯·æ±‚è¶…æ—¶/i.test(body);
-      const input = [...document.querySelectorAll("input,textarea")]
-        .filter(visible).find((element) => !element.disabled && !element.readOnly);
-      const search = [...document.querySelectorAll("button,[role='button']")]
-        .filter(visible).find((element) => /ê²€ìƒ‰\\s*ë°\\s*ìž…ì°°|å•†å“.{0,8}(?:æœç´¢|æŸ¥è¯¢)/i.test(textOf(element)));
-      return { ready: !failed && Boolean(input && search), failed, url: location.href };
-    })()`, 3_000, { ready: false, failed: false, url: "" });
-    if (state?.ready) return { ...state, frame };
-    if (state?.failed) return { ...state, frame: null };
-  }
-  return {
-    ready: false,
-    failed: false,
-    frame: null,
-    url: String(sellerWindow.webContents.getURL() || ""),
-  };
-}
-
-async function enterSellerProductSearchViaMenu({ forceHome = false } = {}) {
-  if (!sellerWindow || sellerWindow.isDestroyed()) return false;
-  const recoverSellerHome = async () => {
-    const homeClick = await physicalClickSellerElement(sellerWindow.webContents.mainFrame, `
-      return [...document.querySelectorAll("a,button,[role='button'],span")]
-        .filter(visible)
-        .find((element) => /^(?:í™ˆíŽ˜ì´ì§€ë¡œ\\s*ëŒì•„ê°€ê¸°|è¿”å›žé¦–é¡µ|å›žåˆ°é¦–é¡µ)$/.test(textOf(element)))
-        ?.closest("a,button,[role='button']") || null;
-    `, "PHYSICAL_SELLER_HOME_RECOVERY", 5_000);
-    if (!homeClick.ok) return false;
-    await wait(2_500);
-    return true;
-  };
-  let state = await sellerProductSearchPageState();
-  if (!forceHome && state.ready) return true;
-  let recoveredFromFailedPage = false;
-  if (state.failed) {
-    recoveredFromFailedPage = await recoverSellerHome();
-  }
-  const currentUrl = String(sellerWindow.webContents.getURL() || "");
-  const authentication = await sellerAuthenticationState();
-  // Keep the page that POIZON opened after a successful login. Reloading the
-  // Seller Center root here discards that freshly established navigation and
-  // sends the window back to the login card. The restored workflow expands
-  // ìƒí’ˆ and clicks ìƒí’ˆ ê²€ìƒ‰ in the authenticated page instead.
-  if (!authentication.authenticated
-      && ((forceHome && !recoveredFromFailedPage)
-        || (state.failed && !recoveredFromFailedPage)
-        || !currentUrl.includes("seller.poizon.com"))) {
-    await sellerWindow.loadURL(SELLER_CENTER_URL).catch(() => {});
-    await wait(2_500);
-  }
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    state = await sellerProductSearchPageState();
-    if (state.ready) return true;
-    if (state.failed) {
-      const recovered = await recoverSellerHome();
-      if (!recovered) return false;
-      state = await sellerProductSearchPageState();
-      if (state.ready) return true;
-    }
-    const menuFrame = sellerWindow.webContents.mainFrame;
-    const searchMenuVisible = await executeSellerFrameWithTimeout(menuFrame, `(() => {
-      const visible = (element) => element && element.getClientRects().length > 0;
-      const textOf = (element) => String(element?.innerText || element?.textContent || "")
-        .replace(/\\s+/g, " ").trim();
-      return [...document.querySelectorAll("a,button,[role='menuitem'],[role='button'],li,div,span")]
-        .filter(visible).some((element) => /^(?:ìƒí’ˆ\\s*ê²€ìƒ‰|å•†å“æœç´¢)$/.test(textOf(element)));
-    })()`, 2_000, false);
-    if (!searchMenuVisible) {
-      const productMenu = await physicalClickSellerElement(menuFrame, `
-        return [...document.querySelectorAll("a,button,[role='menuitem'],[role='button'],li,div,span")]
-          .filter(visible)
-          .filter((element) => /^(?:ìƒí’ˆ(?:\\s*ë°\\s*ìž…ì°°\\s*ë¶„ì„)?|å•†å“(?:åŠç«žä»·åˆ†æž)?)$/.test(textOf(element)))
-          .sort((left, right) => {
-            const a = left.getBoundingClientRect();
-            const b = right.getBoundingClientRect();
-            return a.width * a.height - b.width * b.height;
-          })[0]?.closest("a,button,[role='menuitem'],[role='button'],li") || null;
-      `, "PHYSICAL_PRODUCT_MENU", 5_000);
-      if (productMenu.ok) await wait(800);
-    }
-    const searchMenu = await physicalClickSellerElement(menuFrame, `
-      return [...document.querySelectorAll("a,button,[role='menuitem'],[role='button'],li,div,span")]
-        .filter(visible)
-        .filter((element) => /^(?:ìƒí’ˆ\\s*ê²€ìƒ‰|å•†å“æœç´¢)$/.test(textOf(element)))
-        .sort((left, right) => {
-          const a = left.getBoundingClientRect();
-          const b = right.getBoundingClientRect();
-          return a.width * a.height - b.width * b.height;
-        })[0]?.closest("a,button,[role='menuitem'],[role='button'],li") || null;
-    `, "PHYSICAL_PRODUCT_SEARCH_MENU", 6_000);
-    if (searchMenu.ok) {
-      const deadline = Date.now() + 12_000;
-      while (Date.now() < deadline) {
-        state = await sellerProductSearchPageState();
-        if (state.ready) return true;
-        if (state.failed) break;
-        await wait(500);
-      }
-    }
-    if (attempt < 2) {
-      state = await sellerProductSearchPageState();
-      if (state.failed) {
-        if (!await recoverSellerHome()) return false;
-      } else if (!(await sellerAuthenticationState()).authenticated) {
-        await sellerWindow.loadURL(SELLER_CENTER_URL).catch(() => {});
-        await wait(2_500);
-      }
-    }
-  }
-  return false;
-}
-
-async function ensureSellerLoginBeforeBrandSearch(brandName = "") {
-  const initialState = await waitForSellerAuthenticationState();
-  if (initialState.authenticated) return { ok: true, reused: true };
-  if (!initialState.login) return { ok: false, code: "SELLER_LOGIN_PAGE_TIMEOUT" };
-  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, code: "SELLER_WINDOW_CLOSED" };
-  if (sellerWindow.isMinimized()) sellerWindow.restore();
-  sellerWindow.show();
-  sellerWindow.focus();
-  let automatic = await submitStoredSellerCredentials();
-  let lastAutoLoginAttemptAt = Date.now();
-  mainWindow?.webContents.send("brand-export:progress", {
-    status: "seller-login-waiting",
-    brandName,
-    jobState: automatic.ok ? "ìžë™ ë¡œê·¸ì¸ ì¤‘ Â· ì™„ë£Œ í›„ ê²€ìƒ‰ ìž¬ê°œ" : "ë¡œê·¸ì¸ í™•ì¸ ëŒ€ê¸° Â· ì™„ë£Œ í›„ ê²€ìƒ‰ ìž¬ê°œ",
-    message: automatic.ok
-      ? `${brandName} Â· ì•”í˜¸í™” ì €ìž¥ëœ ê³„ì •ìœ¼ë¡œ POIZON ìžë™ ë¡œê·¸ì¸ì„ ì§„í–‰í•©ë‹ˆë‹¤.`
-      : `${brandName} Â· POIZON ë¡œê·¸ì¸ì´ í•„ìš”í•©ë‹ˆë‹¤. ë¡œê·¸ì¸ í›„ ë¸Œëžœë“œ ê²€ìƒ‰ì´ ìžë™ìœ¼ë¡œ ì´ì–´ì§‘ë‹ˆë‹¤.`,
-  });
-  const deadline = Date.now() + SELLER_LOGIN_WAIT_MS;
-  while (Date.now() < deadline) {
-    await wait(1_000);
-    if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, code: "SELLER_WINDOW_CLOSED" };
-    const pageState = await sellerAuthenticationState();
-    if (pageState.login) {
-      // The Korean login form is rendered asynchronously. Keep retrying the
-      // encrypted credentials after its inputs appear instead of trying only
-      // once while the page is still empty.
-      if (Date.now() - lastAutoLoginAttemptAt >= 2_500) {
-        automatic = await submitStoredSellerCredentials();
-        lastAutoLoginAttemptAt = Date.now();
-      }
-      continue;
-    }
-    if (!pageState.authenticated) continue;
-    await setSellerLoginStatusOverlay("success", "ìžë™ ë¡œê·¸ì¸ í…ŒìŠ¤íŠ¸ ì„±ê³µ ì™„ë£Œ", "POIZON íŒë§¤ìžì„¼í„° ì§„ìž…ì„ í™•ì¸í–ˆìŠµë‹ˆë‹¤. ë¸Œëžœë“œ ê²€ìƒ‰ì„ ìžë™ìœ¼ë¡œ ê³„ì†í•©ë‹ˆë‹¤.");
-    mainWindow?.webContents.send("brand-export:progress", {
-      status: "seller-login-restored",
-      brandName,
-      jobState: "ë¡œê·¸ì¸ ì™„ë£Œ Â· ë¸Œëžœë“œ ê²€ìƒ‰ ìžë™ ìž¬ê°œ",
-      message: `${brandName} Â· POIZON ë¡œê·¸ì¸ ì™„ë£Œ í›„ ë¸Œëžœë“œ ê²€ìƒ‰ì„ ìžë™ìœ¼ë¡œ ê³„ì†í•©ë‹ˆë‹¤.`,
-    });
-    return { ok: true, reused: false };
-  }
-  return { ok: false, code: "SELLER_LOGIN_TIMEOUT" };
-}
-
-function currentSellerProductFrame() {
-  const frames = sellerWindowFrames();
-  return frames.find((frame) => frame.routingId === sellerProductFrameRoutingId)
-    || frames[0]
-    || null;
-}
-
-async function detectSellerDailySearchLimit() {
-  const patterns = [
-    /(?:í•˜ë£¨|ì¼ì¼|ë‹¹ì¼|ì˜¤ëŠ˜)[^\n]{0,80}?20\s*(?:ë²ˆ|íšŒ)[^\n]{0,80}?(?:ê°€ëŠ¥|ì´ˆê³¼|ì œí•œ|ë„ë‹¬)/i,
-    /20\s*(?:ë²ˆ|íšŒ)[^\n]{0,80}?(?:ì´ˆê³¼|ì œí•œ|ê°€ëŠ¥|ë„ë‹¬)/i,
-    /(?:æ¯æ—¥|æ¯å¤©|ä»Šæ—¥)[^\n]{0,80}?20\s*æ¬¡[^\n]{0,80}?(?:ä¸Šé™|é™åˆ¶|è¶…è¿‡|å·²ç”¨å®Œ)/i,
-    /20\s*æ¬¡[^\n]{0,80}?(?:ä¸Šé™|é™åˆ¶|è¶…è¿‡|å·²ç”¨å®Œ)/i,
-  ];
-  for (const frame of sellerWindowFrames()) {
-    const notice = await executeSellerFrameWithTimeout(frame, `(() => {
-      const text = String(document.body?.innerText || "").replace(/\\s+/g, " ").trim();
-      const patterns = ${JSON.stringify(patterns.map((pattern) => pattern.source))}
-        .map((source) => new RegExp(source, "i"));
-      const matched = patterns.find((pattern) => pattern.test(text));
-      return matched ? (text.match(matched)?.[0] || "DAILY_LIMIT") : "";
-    })()`, 2_000, "").catch(() => "");
-    if (notice) return { exceeded: true, notice: String(notice) };
-  }
-  return { exceeded: false, notice: "" };
-}
-
-function sellerBrandExportFailureMessage(code = "", brandName = "") {
-  const label = String(brandName || "ì„ íƒ ë¸Œëžœë“œ").trim();
-  const messages = {
-    SEARCH_INPUT_NOT_FOUND: `${label} ìƒí’ˆê²€ìƒ‰ ìž…ë ¥ì°½ì´ í‘œì‹œë˜ì§€ ì•Šì•˜ìŠµë‹ˆë‹¤. ì‹œê°„ ê°„ê²©ì„ ë‘ê³  ë‹¤ì‹œ ì§„í–‰í•©ë‹ˆë‹¤.`,
-    SELLER_LOGIN_REQUIRED: `${label} ìž‘ì—… ì¤‘ íŒë§¤ìžì„¼í„° ë¡œê·¸ì¸ í™”ë©´ì´ í™•ì¸ëìŠµë‹ˆë‹¤. ë¡œê·¸ì¸ í›„ ë‹¤ì‹œ ì‹¤í–‰í•´ ì£¼ì„¸ìš”.`,
-    SELLER_SEARCH_SCRIPT_ERROR: `${label} ìƒí’ˆê²€ìƒ‰ í™”ë©´ ì œì–´ ì¤‘ ì˜¤ë¥˜ê°€ ë°œìƒí–ˆìŠµë‹ˆë‹¤. ìƒí’ˆê²€ìƒ‰ í™”ë©´ì„ ë‹¤ì‹œ ì—´ì–´ ìž¬ì‹œë„í•´ ì£¼ì„¸ìš”.`,
-    SELLER_SEARCH_STAGE_TIMEOUT: `${label} ìƒí’ˆê²€ìƒ‰ ë‹¨ê³„ê°€ 40ì´ˆ ì•ˆì— ëë‚˜ì§€ ì•Šì•„ íŽ˜ì´ì§€ë¥¼ ì´ˆê¸°í™”í–ˆìŠµë‹ˆë‹¤. ì´ì „ ê²€ìƒ‰ ìž‘ì—…ì€ ì¢…ë£Œë˜ì—ˆìŠµë‹ˆë‹¤.`,
-    SELLER_SECURITY_CHECK_REQUIRED: `${label} ê²€ìƒ‰ ì¤‘ POIZON ë³´ì•ˆ í™•ì¸ í™”ë©´ì´ í‘œì‹œëìŠµë‹ˆë‹¤. íŒë§¤ìžì„¼í„°ì—ì„œ ë³´ì•ˆ í™•ì¸ì„ ì™„ë£Œí•œ ë’¤ ë‹¤ì‹œ ì‹¤í–‰í•´ ì£¼ì„¸ìš”.`,
-    PRODUCT_VERIFICATION_TIMEOUT: `${label} ì „ì²´ íŽ˜ì´ì§€ í™•ì¸ì´ 70ì´ˆ ì•ˆì— ëë‚˜ì§€ ì•Šì•„ ë‹¤ìŒ ë¸Œëžœë“œë¡œ ì´ë™í•©ë‹ˆë‹¤.`,
-    BRAND_INPUT_NOT_APPLIED: `${label} ê²€ìƒ‰ì–´ê°€ íŒë§¤ìžì„¼í„°ì— ìž…ë ¥ë˜ì§€ ì•Šì•„ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤.`,
-    BRAND_RESULT_MISMATCH: `${label} ê²€ìƒ‰ ê²°ê³¼ê°€ í™•ì¸ë˜ì§€ ì•Šì•„ ë‚´ë³´ë‚´ê¸°ë¥¼ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤. ê¸°ì¡´ ê²€ìƒ‰ ê²°ê³¼ëŠ” ë‹¤ìš´ë¡œë“œí•˜ì§€ ì•ŠìŠµë‹ˆë‹¤.`,
-    SEARCH_RESULT_NOT_UPDATED: `${label} ê²€ìƒ‰ ê²°ê³¼ê°€ ìƒˆë¡œ ë°”ë€Œì§€ ì•Šì•„ ë‚´ë³´ë‚´ê¸°ë¥¼ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤. ê¸°ì¡´ ê²€ìƒ‰ ê²°ê³¼ëŠ” ë‹¤ìš´ë¡œë“œí•˜ì§€ ì•ŠìŠµë‹ˆë‹¤.`,
-    PARTIAL_PRODUCT_COLLECTION: `${label} ì „ì²´ ìƒí’ˆ ìˆ˜ì§‘ì´ ì™„ë£Œë˜ì§€ ì•Šì•„ ë‚´ë³´ë‚´ê¸°ë¥¼ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤. ë¶€ë¶„ íŒŒì¼ì€ ë‹¤ìš´ë¡œë“œí•˜ì§€ ì•ŠìŠµë‹ˆë‹¤.`,
-    PRODUCT_PAGE_NOT_READY: `${label} ìƒí’ˆ ìˆ˜ì™€ ì „ì²´ íŽ˜ì´ì§€ë¥¼ í™•ì¸í•˜ì§€ ëª»í•´ ë‚´ë³´ë‚´ê¸°ë¥¼ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤.`,
-    PRODUCT_LAST_PAGE_FAILED: `${label} ë§ˆì§€ë§‰ ìƒí’ˆ íŽ˜ì´ì§€ë¥¼ í™•ì¸í•˜ì§€ ëª»í•´ ë‚´ë³´ë‚´ê¸°ë¥¼ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤.`,
-    DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND: `${label} ë‚´ë³´ë‚´ê¸° í›„ ë‹¤ìš´ë¡œë“œì„¼í„° ë°”ë¡œ ê°€ê¸° ë²„íŠ¼ì„ ì°¾ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.`,
-    DAILY_SEARCH_LIMIT_EXCEEDED: "í¬ì´ì¦Œ ê²€ìƒ‰ ë°ì´í„°ëŠ” í•˜ë£¨ 20ë²ˆë§Œ ê°€ëŠ¥í•©ë‹ˆë‹¤. ì˜¤ëŠ˜ ì‚¬ìš© ê°€ëŠ¥ íšŸìˆ˜ë¥¼ ì´ˆê³¼í–ˆìŠµë‹ˆë‹¤.",
-  };
-  return messages[code] || `íŒë§¤ìžì„¼í„° ìžë™í™” ì‹¤íŒ¨: ${code || "UNKNOWN"}`;
-}
-
-async function verifyCompleteSellerExportAndClick(expectedTotal = 0) {
-  const productFrame = currentSellerProductFrame();
-  if (!productFrame) return { ok: false, code: "PRODUCT_PAGE_NOT_READY" };
-  return productFrame.executeJavaScript(`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getClientRects().length > 0;
-    const normalizedText = (element) => String(element?.innerText || element?.textContent || "")
-      .replace(/\\s+/g, " ").trim();
-    const readTotal = () => {
-      const match = String(document.body?.innerText || "").match(/ì´\\s*([\\d,]+)\\s*ê±´\\s*ê²°ê³¼/);
-      return Number(String(match?.[1] || "0").replace(/,/g, "")) || 0;
-    };
-    const readPage = () => {
-      const tables = [...document.querySelectorAll("table")].filter(visible);
-      const table = tables
-        .map((element) => ({
-          element,
-          rows: [...element.querySelectorAll("tbody tr")].filter(visible)
-            .filter((row) => normalizedText(row).length > 0),
-        }))
-        .sort((left, right) => right.rows.length - left.rows.length)[0];
-      const rows = table?.rows || [];
-      const keys = rows.map((row) => {
-        const explicit = row.getAttribute("data-row-key")
-          || row.getAttribute("data-key")
-          || row.getAttribute("data-id")
-          || row.id;
-        return String(explicit || normalizedText(row)).trim();
-      }).filter(Boolean);
-      const active = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
-      const pageSizeText = [...document.querySelectorAll(".ant-select-selection-item")]
-        .find((element) => visible(element) && /ê±´\\/íŽ˜ì´ì§€/.test(element.textContent))?.textContent || "";
-      const pageSize = Number(pageSizeText.match(/(\\d+)\\s*ê±´\\/íŽ˜ì´ì§€/)?.[1]) || keys.length || 10;
-      const total = readTotal();
-      const currentPage = Number(active?.textContent.trim()) || 1;
-      const pageCount = total > 0 ? Math.ceil(total / pageSize) : 0;
-      return { keys, currentPage, pageSize, pageCount, total };
-    };
-    const clickPage = async (targetPage) => {
-      for (let clickAttempt = 0; clickAttempt < 4; clickAttempt += 1) {
-        const direct = [...document.querySelectorAll(".ant-pagination-item")]
-          .find((item) => visible(item) && Number(item.textContent.trim()) === targetPage);
-        const current = readPage().currentPage;
-        if (current === targetPage) return true;
-        const pagination = [...document.querySelectorAll(".ant-pagination")].find(visible);
-        const jumper = pagination?.querySelector(".ant-pagination-options-quick-jumper input");
-        if (direct) {
-          (direct.querySelector("button,a") || direct).click();
-        } else if (jumper) {
-          jumper.focus();
-          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-          if (setter) setter.call(jumper, String(targetPage));
-          else jumper.value = String(targetPage);
-          jumper.dispatchEvent(new Event("input", { bubbles: true }));
-          jumper.dispatchEvent(new KeyboardEvent("keydown", {
-            key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true,
-          }));
-          jumper.dispatchEvent(new KeyboardEvent("keyup", {
-            key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true,
-          }));
-        } else {
-          const numbered = [...document.querySelectorAll(".ant-pagination-item")]
-            .filter(visible)
-            .map((item) => ({ item, page: Number(item.textContent.trim()) || 0 }))
-            .filter((entry) => entry.page > 0)
-            .sort((left, right) => right.page - left.page);
-          const boundary = targetPage > current ? numbered[0] : numbered[numbered.length - 1];
-          if (!boundary?.item || boundary.page === current) return false;
-          (boundary.item.querySelector("button,a") || boundary.item).click();
-        }
-        for (let attempt = 0; attempt < 40; attempt += 1) {
-          await wait(250);
-          if (readPage().currentPage === targetPage) {
-            await wait(500);
-            return true;
-          }
-        }
-      }
-      return false;
-    };
-
-    const sizeChanger = [...document.querySelectorAll(".ant-pagination-options-size-changer,.ant-pagination-options")]
-      .find(visible);
-    const selector = sizeChanger?.querySelector(".ant-select-selector");
-    if (selector) {
-      selector.click();
-      await wait(250);
-      const options = [...document.querySelectorAll('[role="option"],.ant-select-item-option')]
-        .filter(visible)
-        .map((element) => ({ element, size: Number(String(element.textContent || "").match(/\\d+/)?.[0] || 0) }))
-        .filter((entry) => entry.size > 0)
-        .sort((left, right) => right.size - left.size);
-      const currentSize = readPage().pageSize;
-      if (options[0] && options[0].size > currentSize) {
-        options[0].element.click();
-        await wait(1_200);
-      } else {
-        document.body.click();
-      }
-    }
-
-    let firstSnapshot = readPage();
-    for (let attempt = 0; attempt < 60 && (!firstSnapshot.total || !firstSnapshot.keys.length); attempt += 1) {
-      await wait(250);
-      firstSnapshot = readPage();
-    }
-    const expected = Math.max(${Number(expectedTotal) || 0}, firstSnapshot.total);
-    const finalPageCount = firstSnapshot.pageCount
-      || (expected > 0 && firstSnapshot.pageSize > 0 ? Math.ceil(expected / firstSnapshot.pageSize) : 0);
-    if (expected < 1 || finalPageCount < 1 || !firstSnapshot.keys.length) {
-      return { ok: false, code: "PRODUCT_PAGE_NOT_READY", expected, actual: 0, pageCount: finalPageCount };
-    }
-
-    if (finalPageCount > 1 && !(await clickPage(finalPageCount))) {
-      return { ok: false, code: "PRODUCT_LAST_PAGE_FAILED", expected, actual: 0, pageCount: finalPageCount };
-    }
-    let lastSnapshot = readPage();
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      if (lastSnapshot.currentPage === finalPageCount && lastSnapshot.keys.length > 0) break;
-      await wait(250);
-      lastSnapshot = readPage();
-    }
-    if (lastSnapshot.currentPage !== finalPageCount || !lastSnapshot.keys.length) {
-      return { ok: false, code: "PRODUCT_LAST_PAGE_FAILED", expected, actual: 0, pageCount: finalPageCount };
-    }
-    if (lastSnapshot.total > 0 && lastSnapshot.total !== expected) {
-      return { ok: false, code: "PARTIAL_PRODUCT_COLLECTION", expected, actual: lastSnapshot.total, pageCount: finalPageCount };
-    }
-
-    const exportPattern = /^ì „ì²´\\s*ë‚´ë³´ë‚´ê¸°$/;
-    let exportButton = null;
-    for (let attempt = 0; attempt < 20 && !exportButton; attempt += 1) {
-      const labelElement = [...document.querySelectorAll("button, [role='button'], a, span")]
-        .find((element) => visible(element) && exportPattern.test(normalizedText(element)));
-      exportButton = labelElement?.closest?.("button, [role='button'], a") || labelElement || null;
-      if (!exportButton) await wait(250);
-    }
-    if (!exportButton) return { ok: false, code: "EXPORT_BUTTON_NOT_FOUND_AFTER_VERIFICATION", expected, actual: expected };
-    if (exportButton.disabled || exportButton.getAttribute("aria-disabled") === "true") {
-      return { ok: false, code: "EXPORT_BUTTON_DISABLED_AFTER_VERIFICATION", expected, actual: expected };
-    }
-    const clickLikeUser = (element) => {
-      if (!element) return false;
-      element.scrollIntoView({ block: "center", inline: "center" });
-      element.focus?.();
-      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
-        element.dispatchEvent(new MouseEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          view: window,
-          button: 0,
-        }));
-      }
-      element.click?.();
-      return true;
-    };
-    clickLikeUser(exportButton);
-    await wait(700);
-
-    let confirmationObserved = false;
-    let confirmationClicked = false;
-    let confirmationClickCount = 0;
-    let requestAcknowledged = false;
-    const confirmationPattern = /^(?:í™•ì¸|ë‚´ë³´ë‚´ê¸°|ìƒì„±|í™•ì •|ì œì¶œ|ê³„ì†|ë°”ë¡œ\s*ê°€ê¸°|ë‹¤ìš´ë¡œë“œ\s*ì„¼í„°.*ë°”ë¡œ\s*ê°€ê¸°|ç¡®è®¤|ç¡®å®š|æäº¤|å¯¼å‡º|ç»§ç»­)$/i;
-    const cancelPattern = /ì·¨ì†Œ|ë‹«ê¸°|ë‚˜ì¤‘ì—|å–æ¶ˆ|å…³é—­/i;
-    const successPattern = /(?:ë‚´ë³´ë‚´ê¸°|ìž‘ì—…|íŒŒì¼).*(?:ë“±ë¡|ìƒì„±|ì™„ë£Œ|ì„±ê³µ|ì ‘ìˆ˜)|(?:å¯¼å‡º|ä»»åŠ¡).*(?:æˆåŠŸ|å·²åˆ›å»º|å·²æäº¤)/i;
-    for (let attempt = 0; attempt < 64; attempt += 1) {
-      const dialogs = [...document.querySelectorAll(
-        ".ant-modal, .ant-modal-confirm, [role='dialog'], .ant-popover, .ant-drawer"
-      )].filter(visible);
-      if (dialogs.length) confirmationObserved = true;
-      const controls = dialogs.flatMap((dialog) =>
-        [...dialog.querySelectorAll("button, [role='button'], a")].filter(visible)
-      );
-      const confirmControl = controls.find((element) => {
-        const label = normalizedText(element);
-        return confirmationPattern.test(label) && !cancelPattern.test(label);
-      }) || controls.find((element) => {
-        const label = normalizedText(element);
-        const className = String(element.className || "");
-        return /primary|confirm|ok/i.test(className) && !cancelPattern.test(label);
-      });
-      if (confirmControl) {
-        clickLikeUser(confirmControl);
-        confirmationClicked = true;
-        confirmationClickCount += 1;
-        await wait(900);
-        continue;
-      }
-      if (successPattern.test(normalizedText(document.body))) {
-        requestAcknowledged = true;
-        break;
-      }
-      if (confirmationClickCount > 0 && dialogs.length === 0) {
-        await wait(1_200);
-        const remainingDialogs = [...document.querySelectorAll(
-          ".ant-modal, .ant-modal-confirm, [role='dialog'], .ant-popover, .ant-drawer"
-        )].filter(visible);
-        if (!remainingDialogs.length) {
-          requestAcknowledged = true;
-          break;
-        }
-      }
-      await wait(250);
-    }
-    return {
-      ok: true,
-      expected,
-      actual: expected,
-      pageCount: finalPageCount,
-      firstPageCount: firstSnapshot.keys.length,
-      lastPageCount: lastSnapshot.keys.length,
-      confirmationObserved,
-      confirmationClicked,
-      confirmationClickCount,
-      requestAcknowledged,
-      confirmationTimedOut: !requestAcknowledged,
-    };
-  })()`, true);
-}
-
-async function captureSellerDiagnostic(brandName = "", stage = "error") {
-  if (!sellerWindow || sellerWindow.isDestroyed()) return "";
-  try {
-    const folder = join(app.getPath("userData"), "seller-diagnostics");
-    await mkdir(folder, { recursive: true });
-    const filePath = join(folder, `${safeBrandExportLabel(brandName) || "brand"}_${stage}_${localFileTimestamp()}.png`);
-    const image = await sellerWindow.webContents.capturePage();
-    await writeFile(filePath, image.toPNG());
-    return filePath;
-  } catch {
-    return "";
-  }
-}
-
-async function confirmSellerExportRequest(targetFrame) {
-  return targetFrame.executeJavaScript(`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getBoundingClientRect().width > 0
-      && element.getBoundingClientRect().height > 0;
-    const textOf = (element) => String(element?.innerText || element?.textContent || "")
-      .replace(/\\s+/g, " ").trim();
-    const clickLikeUser = (element) => {
-      element?.scrollIntoView?.({ block: "center", inline: "center" });
-      element?.focus?.();
-      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
-        element?.dispatchEvent(new MouseEvent(type, {
-          bubbles: true, cancelable: true, composed: true, view: window, button: 0,
-        }));
-      }
-      element?.click?.();
-    };
-    const confirmPattern = /^(?:í™•ì¸|ë‚´ë³´ë‚´ê¸°|ìƒì„±|í™•ì •|ì œì¶œ|ê³„ì†|ë°”ë¡œ\s*ê°€ê¸°|ë‹¤ìš´ë¡œë“œ\s*ì„¼í„°.*ë°”ë¡œ\s*ê°€ê¸°|ç¡®è®¤|ç¡®å®š|æäº¤|å¯¼å‡º|ç»§ç»­)$/i;
-    const cancelPattern = /ì·¨ì†Œ|ë‹«ê¸°|ë‚˜ì¤‘ì—|å–æ¶ˆ|å…³é—­/i;
-    let confirmationObserved = false;
-    let confirmationClicked = false;
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      const dialogs = [...document.querySelectorAll(
-        ".ant-modal, .ant-modal-confirm, [role='dialog'], .ant-popover, .ant-drawer"
-      )].filter(visible);
-      if (dialogs.length) confirmationObserved = true;
-      const controls = dialogs.flatMap((dialog) =>
-        [...dialog.querySelectorAll("button, [role='button'], a")].filter(visible)
-      );
-      const confirmControl = controls.find((element) => {
-        const label = textOf(element);
-        return confirmPattern.test(label) && !cancelPattern.test(label);
-      }) || controls.find((element) => {
-        const label = textOf(element);
-        return /primary|confirm|ok/i.test(String(element.className || ""))
-          && !cancelPattern.test(label);
-      });
-      if (confirmControl) {
-        clickLikeUser(confirmControl);
-        confirmationClicked = true;
-        await wait(900);
-        continue;
-      }
-      if (confirmationClicked && !dialogs.length) {
-        return { ok: true, confirmationObserved, confirmationClicked, requestAcknowledged: true };
-      }
-      await wait(250);
-    }
-    return {
-      ok: !confirmationObserved,
-      confirmationObserved,
-      confirmationClicked,
-      requestAcknowledged: !confirmationObserved,
-    };
-  })()`, true);
-}
-
-async function clickSellerDownloadCenterShortcut(targetFrame) {
-  return targetFrame.executeJavaScript(`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getBoundingClientRect().width > 0
-      && element.getBoundingClientRect().height > 0;
-    const textOf = (element) => String(element?.innerText || element?.textContent || "")
-      .replace(/\\s+/g, " ").trim();
-    const pattern = /^(?:ë‹¤ìš´ë¡œë“œì„¼í„°\\s*ë°”ë¡œ\\s*ê°€ê¸°|ë‹¤ìš´ë¡œë“œ\\s*ì„¼í„°\\s*ë°”ë¡œ\\s*ê°€ê¸°)$/;
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      const control = [...document.querySelectorAll("a, button, [role='button'], span")]
-        .filter(visible)
-        .find((element) => pattern.test(textOf(element)));
-      if (control) {
-        const target = control.closest("a, button, [role='button']") || control;
-        target.scrollIntoView?.({ block: "center", inline: "center" });
-        target.focus?.();
-        for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
-          target.dispatchEvent(new MouseEvent(type, {
-            bubbles: true, cancelable: true, composed: true, view: window, button: 0,
-          }));
-        }
-        target.click?.();
-        return { ok: true, clicked: true, label: textOf(control) };
-      }
-      await wait(250);
-    }
-    return { ok: false, clicked: false, code: "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND" };
-  })()`, true);
-}
-
-function moveWindowsCursorAndClick(screenX, screenY, hoverDelayMs = 0) {
-  if (process.platform !== "win32") return Promise.resolve({ ok: false, reason: "WINDOWS_ONLY" });
-  const x = Math.round(Number(screenX));
-  const y = Math.round(Number(screenY));
-  const hoverDelay = Math.max(0, Math.min(3_000, Math.round(Number(hoverDelayMs) || 0)));
-  if (!Number.isFinite(x) || !Number.isFinite(y)) {
-    return Promise.resolve({ ok: false, reason: "INVALID_SCREEN_COORDINATES" });
-  }
-  const script = `
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-public static class AroundGCursor {
-  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
-  [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
-  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
-  [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
-}
-'@
-$point = New-Object AroundGCursor+POINT
-[AroundGCursor]::GetCursorPos([ref]$point) | Out-Null
-$startX = $point.X
-$startY = $point.Y
-$targetX = ${x}
-$targetY = ${y}
-for ($step = 1; $step -le 18; $step++) {
-  $nextX = [Math]::Round($startX + (($targetX - $startX) * $step / 18))
-  $nextY = [Math]::Round($startY + (($targetY - $startY) * $step / 18))
-  [AroundGCursor]::SetCursorPos($nextX, $nextY) | Out-Null
-  Start-Sleep -Milliseconds 15
-}
-Start-Sleep -Milliseconds ${hoverDelay}
-[AroundGCursor]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
-Start-Sleep -Milliseconds 70
-[AroundGCursor]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
-`;
-  return new Promise((resolve) => {
-    execFile("powershell.exe", [
-      "-NoProfile",
-      "-NonInteractive",
-      "-WindowStyle", "Hidden",
-      "-Command", script,
-    ], { windowsHide: true, timeout: 5_000 }, (error) => {
-      resolve(error ? { ok: false, reason: String(error.message || error) } : { ok: true });
-    });
-  });
-}
-
-async function physicalClickSellerElement(targetFrame, locatorScript, step, timeoutMs = 20_000) {
-  if (!sellerWindow || sellerWindow.isDestroyed()) return { ok: false, step: `${step}_WINDOW_MISSING` };
-  sellerWindow.webContents.focus();
-  const startedAt = Date.now();
-  let point = null;
-  while (!point && Date.now() - startedAt < timeoutMs) {
-    point = await targetFrame.executeJavaScript(`(() => {
-        if (document.readyState === "loading") return null;
-        const visible = (element) => element && element.getBoundingClientRect().width > 0
-          && element.getBoundingClientRect().height > 0;
-        const textOf = (element) => String(element?.innerText || element?.textContent || "")
-          .replace(/\\s+/g, " ").trim();
-        const element = (() => { ${locatorScript} })();
-        if (!element || !visible(element)) return null;
-        element.scrollIntoView?.({ block: "center", inline: "center" });
-        const rect = element.getBoundingClientRect();
-        return {
-          x: rect.left + rect.width / 2,
-          y: rect.top + rect.height / 2,
-          label: textOf(element),
-          url: location.href,
-        };
-      })()`, true).catch(() => null);
-    if (!point) await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  if (!point) return { ok: false, step: `${step}_NOT_FOUND` };
-  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: point.x, y: point.y });
-  await new Promise((resolve) => setTimeout(resolve, 80));
-  sellerWindow.webContents.sendInputEvent({
-    type: "mouseDown", button: "left", clickCount: 1, x: point.x, y: point.y,
-  });
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  sellerWindow.webContents.sendInputEvent({
-    type: "mouseUp", button: "left", clickCount: 1, x: point.x, y: point.y,
-  });
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  return { ok: true, step, label: point.label, url: point.url, backgroundInput: true };
-}
-
-async function performPhysicalSellerSortAndExport(targetFrame) {
-  const sort = await physicalClickSellerElement(targetFrame, `
-    const pattern = /í˜„ì§€\\s*íŒë§¤ìž\\s*ìµœê·¼\\s*30ì¼\\s*íŒë§¤ëŸ‰/;
-    const label = [...document.querySelectorAll("th,[role='columnheader'],thead td,thead div")]
-      .filter(visible).find((element) => pattern.test(textOf(element)));
-    if (!label) return null;
-    const header = label.closest("th,[role='columnheader'],thead td") || label;
-    const candidates = [...header.querySelectorAll("button,[role='button'],[class*='sort'],svg,i")].filter(visible);
-    return candidates.sort((a, b) => b.getBoundingClientRect().left - a.getBoundingClientRect().left)[0]
-      || header;
-  `, "BACKGROUND_LOCAL_SALES_SORT");
-  if (!sort.ok) return sort;
-  const descending = await physicalClickSellerElement(targetFrame, `
-    return [...document.querySelectorAll("button,[role='button'],[role='menuitem'],li,span,div")]
-      .filter(visible).find((element) => /^ë‚´ë¦¼ì°¨ìˆœ$/.test(textOf(element)));
-  `, "BACKGROUND_DESCENDING");
-  if (!descending.ok) return descending;
-  const confirm = await physicalClickSellerElement(targetFrame, `
-    const dialogs = [...document.querySelectorAll("[role='dialog'],.ant-popover,.ant-dropdown,.ant-modal")].filter(visible);
-    const root = dialogs.at(-1) || document;
-    return [...root.querySelectorAll("button,[role='button'],a,span")]
-      .filter(visible).find((element) => /^í™•ì¸$/.test(textOf(element)))?.closest("button,[role='button'],a") || null;
-  `, "BACKGROUND_SORT_CONFIRM");
-  if (!confirm.ok) return confirm;
-  await new Promise((resolve) => setTimeout(resolve, 900));
-  const exportClick = await physicalClickSellerElement(targetFrame, `
-    return [...document.querySelectorAll("button,[role='button'],a,span")]
-      .filter(visible).find((element) => /^ì „ì²´\\s*ë‚´ë³´ë‚´ê¸°$/.test(textOf(element)))?.closest("button,[role='button'],a") || null;
-  `, "BACKGROUND_EXPORT");
-  return exportClick.ok ? { ok: true, sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC", exportClicked: true } : exportClick;
-}
-
-async function confirmSellerExportRequestPhysical(targetFrame) {
-  // POIZON sometimes replaces the old one-button confirmation with a
-  // completion popup containing "ë‚˜ì¤‘ì— / ë°”ë¡œê°€ê¸°". In that layout,
-  // "ë°”ë¡œê°€ê¸°" both acknowledges the export and opens Download Center.
-  const shortcut = await physicalClickSellerElement(targetFrame, `
-    const dialogs = [...document.querySelectorAll(
-      ".ant-modal,.ant-modal-confirm,[role='dialog'],.ant-popover,.ant-drawer,.semi-modal,.semi-portal"
-    )].filter(visible);
-    const dialog = dialogs.at(-1);
-    if (!dialog) return null;
-    return [...dialog.querySelectorAll("button,[role='button'],a,span")].filter(visible)
-      .find((element) => /^(?:ë°”ë¡œ\s*ê°€ê¸°|ë‹¤ìš´ë¡œë“œ\s*ì„¼í„°.*ë°”ë¡œ\s*ê°€ê¸°)$/.test(textOf(element)))
-      ?.closest("button,[role='button'],a") || null;
-  `, "PHYSICAL_EXPORT_DOWNLOAD_CENTER_SHORTCUT", 15_000);
-  if (shortcut.ok) {
-    return {
-      ok: true,
-      confirmationObserved: true,
-      confirmationClicked: true,
-      requestAcknowledged: true,
-      downloadCenterClicked: true,
-    };
-  }
-  const clicked = await physicalClickSellerElement(targetFrame, `
-    const dialogs = [...document.querySelectorAll(
-      ".ant-modal,.ant-modal-confirm,[role='dialog'],.ant-popover,.ant-drawer,.semi-modal,.semi-portal"
-    )].filter(visible);
-    const dialog = dialogs.at(-1);
-    if (!dialog) return null;
-    return [...dialog.querySelectorAll("button,[role='button'],a")].filter(visible)
-      .find((element) => /^(?:í™•ì¸|ë‚´ë³´ë‚´ê¸°|ìƒì„±|í™•ì •|ì œì¶œ|ê³„ì†|ç¡®è®¤|ç¡®å®š|æäº¤|å¯¼å‡º|ç»§ç»­)$/.test(textOf(element))) || null;
-  `, "PHYSICAL_EXPORT_CONFIRM", 15_000);
-  return clicked.ok
-    ? { ok: true, confirmationObserved: true, confirmationClicked: true, requestAcknowledged: true }
-    : { ok: false, confirmationObserved: false, confirmationClicked: false, requestAcknowledged: false };
-}
-
-async function clickSellerDownloadCenterShortcutPhysical(targetFrame) {
-  const mainFrame = sellerWindow?.webContents?.mainFrame;
-  const frames = [mainFrame, targetFrame, ...sellerWindowFrames()]
-    .filter(Boolean)
-    .filter((frame, index, all) =>
-      all.findIndex((candidate) => candidate.routingId === frame.routingId) === index
-    );
-  const locator = `
-    const controls = [...document.querySelectorAll("a,button,[role='button']")].filter(visible);
-    return controls.find((element) => {
-      const label = textOf(element);
-      const href = String(element.href || element.getAttribute?.("href") || "");
-      return /exportCenter/i.test(href)
-        || /^(?:ë‹¤ìš´ë¡œë“œ\\s*ì„¼í„°.*(?:ë°”ë¡œ\\s*ê°€ê¸°|ì´ë™)|ë°”ë¡œ\\s*ê°€ê¸°)$/.test(label);
-    }) || null;
-  `;
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    for (const frame of frames) {
-      const clicked = await physicalClickSellerElement(
-        frame,
-        locator,
-        "PHYSICAL_DOWNLOAD_CENTER",
-        700,
-      );
-      if (clicked.ok) {
-        const navigationDeadline = Date.now() + 10_000;
-        while (Date.now() < navigationDeadline) {
-          const currentUrl = String(sellerWindow?.webContents?.getURL?.() || "");
-          if (/\/main\/exportCenter(?:[/?#]|$)/i.test(currentUrl)) {
-            return { ok: true, clicked: true, navigated: true, url: currentUrl };
-          }
-          await new Promise((resolve) => setTimeout(resolve, 250));
-        }
-        return { ok: true, clicked: true, navigated: false };
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  }
-  return { ok: false, clicked: false, code: "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND" };
-}
-
-
-async function typeSellerBrandWithRealKeyboard(targetFrame, brandName) {
-  if (!sellerWindow || sellerWindow.isDestroyed()) {
-    return { ok: false, step: "SELLER_WINDOW_NOT_AVAILABLE" };
-  }
-  sellerWindow.webContents.focus();
-  const focused = await targetFrame.executeJavaScript(`(() => {
-    const visible = (element) => element && element.getBoundingClientRect().width > 0
-      && element.getBoundingClientRect().height > 0;
-    const textOf = (element) => String(element?.innerText || element?.textContent || "")
-      .replace(/\\s+/g, " ").trim();
-    const searchButton = [...document.querySelectorAll("button, [role='button']")]
-      .filter(visible)
-      .find((element) => /^ê²€ìƒ‰\\s*ë°\\s*ìž…ì°°$/.test(textOf(element)));
-    if (!searchButton) return { ok: false, step: "EXACT_SEARCH_BUTTON_NOT_FOUND" };
-    const buttonRect = searchButton.getBoundingClientRect();
-    const input = [...document.querySelectorAll("input, textarea")]
-      .filter(visible)
-      .filter((element) => !element.disabled && !element.readOnly)
-      .map((element) => {
-        const rect = element.getBoundingClientRect();
-        return {
-          element,
-          verticalDistance: Math.abs(
-            (rect.top + rect.height / 2) - (buttonRect.top + buttonRect.height / 2)
-          ),
-          horizontalGap: buttonRect.left - rect.right,
-        };
-      })
-      .filter((candidate) => candidate.verticalDistance < 24
-        && candidate.horizontalGap >= -4 && candidate.horizontalGap < 80)
-      .sort((left, right) => left.horizontalGap - right.horizontalGap)[0]?.element;
-    if (!input) return { ok: false, step: "EXACT_SEARCH_INPUT_NOT_FOUND" };
-    input.scrollIntoView({ block: "center", inline: "center" });
-    input.focus();
-    input.select?.();
-    return {
-      ok: true,
-      searchX: Math.round(buttonRect.left + buttonRect.width / 2),
-      searchY: Math.round(buttonRect.top + buttonRect.height / 2),
-    };
-  })()`, true).catch(() => ({ ok: false, step: "KEYBOARD_FOCUS_FAILED" }));
-  if (!focused?.ok || !sellerWindow || sellerWindow.isDestroyed()) return focused;
-  sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
-  sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
-  sellerWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "Backspace" });
-  sellerWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "Backspace" });
-  // Electron can leave insertText's returned promise pending while a web page
-  // is processing focus. Send it without awaiting and verify the visible value
-  // on a fixed deadline instead of blocking the entire brand queue forever.
-  void sellerWindow.webContents.insertText(String(brandName));
-  await new Promise((resolve) => setTimeout(resolve, 1200));
-  const verified = await Promise.race([
-    targetFrame.executeJavaScript(`(() => {
-    const active = document.activeElement;
-    const value = String(active?.value || "").trim();
-    return {
-      ok: value === ${JSON.stringify(String(brandName))},
-      step: value === ${JSON.stringify(String(brandName))} ? "REAL_KEYBOARD_INPUT_CONFIRMED" : "REAL_KEYBOARD_INPUT_FAILED",
-      inputValue: value,
-    };
-    })()`, true),
-    new Promise((resolve) => setTimeout(() => resolve({
-      ok: false,
-      step: "REAL_KEYBOARD_INPUT_VERIFY_TIMEOUT",
-    }), 3_000)),
-  ]).catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_VERIFY_FAILED" }));
-  if (!verified?.ok || !sellerWindow || sellerWindow.isDestroyed()) return verified;
-  const x = Number(focused.searchX);
-  const y = Number(focused.searchY);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) {
-    return { ...verified, ok: false, step: "REAL_SEARCH_BUTTON_COORDINATES_MISSING" };
-  }
-  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
-  await new Promise((resolve) => setTimeout(resolve, 80));
-  sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x, y });
-  await new Promise((resolve) => setTimeout(resolve, 1_500));
-  return {
-    ...verified,
-    submitted: true,
-    backgroundInput: true,
-    background: true,
-    step: "BACKGROUND_SEARCH_BUTTON_CLICKED",
-  };
-}
-
-async function applyExactSellerBrandFilter(targetFrame, names = []) {
-  const candidates = [...new Set((names || []).map((value) => String(value || "").trim()).filter(Boolean))];
-  if (!candidates.length) return { ok: false, step: "BRAND_FILTER_NAMES_MISSING" };
-  return executeSellerFrameWithTimeout(targetFrame, `(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getClientRects().length > 0;
-    const textOf = (element) => String(element?.innerText || element?.textContent || "")
-      .replace(/\\s+/g, " ").trim();
-    const normalize = (value) => String(value || "").normalize("NFKC")
-      .replace(/[^a-z0-9ê°€-íž£ä¸€-é¾¥]+/gi, "").toLocaleLowerCase();
-    const names = ${JSON.stringify(candidates)};
-    const normalizedNames = names.map(normalize).filter(Boolean);
-    const ownText = (element) => [...element.childNodes]
-      .filter((node) => node.nodeType === Node.TEXT_NODE)
-      .map((node) => node.textContent).join("").trim();
-    const brandLabel = [...document.querySelectorAll("button,[role=button],label,span,div")]
-      .filter(visible)
-      .filter((element) => ownText(element) === "ë¸Œëžœë“œ" || textOf(element) === "ë¸Œëžœë“œ")
-      .sort((left, right) => left.getBoundingClientRect().width - right.getBoundingClientRect().width)[0];
-    const brandButton = brandLabel?.closest(
-      "button,[role=button],.ant-select,.ant-dropdown-trigger,.semi-select,.semi-dropdown-trigger"
-    ) || brandLabel;
-    if (!brandButton) return { ok: false, step: "EXACT_BRAND_BUTTON_NOT_FOUND" };
-    brandButton.click();
-    await wait(600);
-    const popupSelector = '[role="tooltip"],[role="dialog"],.ant-popover,.ant-dropdown,.ant-select-dropdown,.semi-portal,.semi-popover,.semi-select-dropdown';
-    const popup = [...document.querySelectorAll(popupSelector)].filter(visible).at(-1);
-    if (!popup) return { ok: false, step: "EXACT_BRAND_POPUP_NOT_FOUND" };
-    const input = [...popup.querySelectorAll("input")].find((element) =>
-      visible(element) && !element.disabled && ["text", "search", ""].includes(element.type)
-    );
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-    for (const name of names) {
-      if (input) {
-        input.focus();
-        setter ? setter.call(input, name) : (input.value = name);
-        input.dispatchEvent(new InputEvent("input", { bubbles: true, data: name, inputType: "insertText" }));
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-      let option = null;
-      for (let attempt = 0; attempt < 24 && !option; attempt += 1) {
-        await wait(250);
-        const options = [...document.querySelectorAll(
-          '.ant-popover:not(.ant-popover-hidden) li.ant-list-item,[role=option],.ant-select-item-option,.semi-select-option'
-        )].filter(visible);
-        option = options.find((element) => {
-          const value = normalize(textOf(element));
-          const requested = normalize(name);
-          // Do not allow a parent brand to silently select a child brand.
-          // In particular, "PUMA" must not match "PUMA KIDS" merely because
-          // the option text starts with the requested value.
-          return value === requested;
-        });
-      }
-      if (!option) continue;
-      option.click();
-      await wait(350);
-      const confirm = [...document.querySelectorAll("button,[role=button],a")]
-        .filter(visible).find((element) => /^(í™•ì¸|ì ìš©|ê²€ìƒ‰)$/.test(textOf(element)));
-      if (confirm) confirm.click();
-      await wait(700);
-      const search = [...document.querySelectorAll("button,[role=button]")]
-        .filter(visible).find((element) => /^ê²€ìƒ‰\\s*ë°\\s*ìž…ì°°$/.test(textOf(element)));
-      if (!search) return { ok: false, step: "EXACT_BRAND_SEARCH_BUTTON_NOT_FOUND" };
-      search.click();
-      let stable = 0;
-      let signature = "";
-      for (let attempt = 0; attempt < 80; attempt += 1) {
-        await wait(250);
-        const rows = [...document.querySelectorAll("tbody tr")].filter(visible)
-          .map(textOf).filter(Boolean);
-        const matched = rows.filter((row) => normalizedNames.some((key) => normalize(row).includes(key)));
-        const nextSignature = rows.slice(0, 20).join("|");
-        if (rows.length && matched.length / rows.length >= 0.8) {
-          stable = nextSignature === signature ? stable + 1 : 1;
-          signature = nextSignature;
-          if (stable >= 3) {
-            return {
-              ok: true,
-              route: "EXACT_BRAND_FILTER",
-              selected: textOf(option),
-              inputValue: name,
-              resultRowCount: rows.length,
-              firstResult: rows[0] || "",
-            };
-          }
-        } else {
-          stable = 0;
-          signature = "";
-        }
-      }
-      return { ok: false, step: "EXACT_BRAND_RESULT_NOT_CONFIRMED", selected: textOf(option) };
-    }
-    return { ok: false, step: "EXACT_BRAND_OPTION_NOT_FOUND" };
-  })()`, 35_000, { ok: false, step: "EXACT_BRAND_FILTER_TIMEOUT" });
-}
-
-async function automateSellerBrandExport(input = {}) {
-  const sessionGeneration = brandWorkSessionGeneration;
-  const attemptGeneration = ++brandExportAttemptGeneration;
-  const cleared = () => sessionGeneration !== brandWorkSessionGeneration
-    || attemptGeneration !== brandExportAttemptGeneration;
-  const brandName = String(input.brandName || "").trim();
-  const brandKo = String(input.brandKo || "").trim();
-  if (brandExportJobPending) {
-    return {
-      ok: false,
-      code: "EXPORT_ALREADY_PENDING",
-      message: "ì´ë¯¸ POIZON ë°ì´í„°ë¥¼ ê°€ì ¸ì˜¤ê³  ìžˆìŠµë‹ˆë‹¤. ê°™ì€ ìž‘ì—…ì„ ë‹¤ì‹œ ë§Œë“¤ì§€ ì•ŠìŠµë‹ˆë‹¤.",
-    };
-  }
-  if (!brandName) return { ok: false, message: "ì„ íƒí•œ ë¸Œëžœë“œëª…ì´ ì—†ìŠµë‹ˆë‹¤." };
-  const officialAuditPaused = pauseOfficialDomainAuditForSellerAutomation();
-  if (officialAuditPaused) {
-    mainWindow?.webContents.send("brand-export:progress", {
-      status: "official-audit-paused-for-seller",
-      brandName,
-      jobState: "1ë‹¨ê³„/5 Â· ê³µì‹ëª° ê²€ì¦ ë¶„ë¦¬ Â· íŒë§¤ìžì„¼í„° ì—°ê²° ì¤€ë¹„",
-      message: `${brandName} Â· ê³µì‹ëª° ì „ì²´ ê²€ì¦ì„ ë©ˆì¶”ê³  POIZON ë¸Œëžœë“œ ê²€ìƒ‰ì„ ìš°ì„  ì‹¤í–‰í•©ë‹ˆë‹¤. ê²€ì¦ ê¸°ë¡ì€ ìœ ì§€ë˜ë©° ê²€ì¦ ê³„ì† ë²„íŠ¼ì„ ëˆ„ë¥¼ ë•Œë§Œ ìž¬ê°œë©ë‹ˆë‹¤.`,
-    });
-  }
-  const folder = currentBrandExportFolder();
-  await mkdir(folder, { recursive: true });
-  pendingBrandExportName = brandName;
-  pendingBrandExportJobId = "";
-  brandExportJobPending = true;
-  brandDownloadStarted = false;
-  // Keep Seller Center off-screen while its renderer performs the work. The
-  // persistent session and viewport remain active because background throttling
-  // is disabled on this BrowserWindow.
-  openSellerCenterWindow(SELLER_CENTER_URL, {
-    visible: false,
-    activate: false,
-    deferNavigation: true,
-  });
-  if (!sellerWindow || sellerWindow.isDestroyed()) {
-    brandExportJobPending = false;
-    pendingBrandExportName = "";
-    return { ok: false, message: "íŒë§¤ìžì„¼í„° ì°½ì„ ì—´ì§€ ëª»í–ˆìŠµë‹ˆë‹¤." };
-  }
-  const baselinePromise = readSellerExportBaselineSeparately().catch(() => null);
-  if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "ìž‘ì—… ê¸°ë¡ ì‚­ì œë¡œ ì´ì „ ìš”ì²­ì„ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤." };
-  mainWindow?.webContents.send("brand-export:progress", {
-    status: "opening-product-search",
-    brandName,
-    jobState: "1ë‹¨ê³„/5 Â· íŒë§¤ìžì„¼í„° ì—°ê²° ì‹œë„",
-    message: `${brandName} Â· íŒë§¤ìžì„¼í„° ìƒí’ˆê²€ìƒ‰ í™”ë©´ ì—°ê²°ì„ ì‹œë„í•©ë‹ˆë‹¤.`,
-  });
-  try {
-    // Start from the known working Seller Center data page where the left menu
-    // is rendered. The bare /main route itself returns Component Key Error.
-    await sellerWindow.loadURL(SELLER_CENTER_URL);
-  } catch (error) {
-    const diagnosticPath = await captureSellerDiagnostic(brandName, "page-load-failed");
-    brandExportJobPending = false;
-    pendingBrandExportName = "";
-    return {
-      ok: false,
-      code: "SELLER_PAGE_LOAD_FAILED",
-      message: `${brandName} íŒë§¤ìžì„¼í„° ìƒí’ˆê²€ìƒ‰ íŽ˜ì´ì§€ ì—°ê²°ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤.${diagnosticPath ? ` ì§„ë‹¨ í™”ë©´: ${diagnosticPath}` : ""}`,
-      diagnostics: { reason: String(error?.message || error || ""), path: diagnosticPath },
-    };
-  }
-  await new Promise((resolve) => setTimeout(resolve, 3_500));
-  const login = await ensureSellerLoginBeforeBrandSearch(brandName);
-  if (!login.ok) {
-    brandExportJobPending = false;
-    pendingBrandExportName = "";
-    return {
-      ok: false,
-      code: login.code || "SELLER_LOGIN_REQUIRED",
-      message: login.code === "SELLER_LOGIN_TIMEOUT"
-        ? `${brandName} Â· 10ë¶„ ë™ì•ˆ ë¡œê·¸ì¸ì´ í™•ì¸ë˜ì§€ ì•Šì•„ ìž‘ì—…ì„ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤.`
-        : `${brandName} Â· POIZON ë¡œê·¸ì¸ ì°½ì´ ë‹«í˜€ ìž‘ì—…ì„ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤.`,
-    };
-  }
-  mainWindow?.webContents.send("brand-export:progress", {
-    status: "seller-product-menu-clicking",
-    brandName,
-    jobState: "1ë‹¨ê³„/5 Â· íŒë§¤ìžì„¼í„° ìƒí’ˆ ë©”ë‰´ í´ë¦­ ì¤‘",
-    message: `${brandName} Â· íŒë§¤ìžì„¼í„° ì •ìƒ ë°ì´í„° í™”ë©´ì—ì„œ ìƒí’ˆ â†’ ìƒí’ˆ ê²€ìƒ‰ì„ ì‹¤ì œ ë§ˆìš°ìŠ¤ë¡œ í´ë¦­í•©ë‹ˆë‹¤.`,
-  });
-  // The login success page already owns the valid Seller Center session.
-  // Continue in that page and restore the old physical menu-click workflow.
-  const productSearchOpened = await enterSellerProductSearchViaMenu();
-  if (!productSearchOpened) {
-    const pageState = await sellerProductSearchPageState();
-    const diagnosticPath = await captureSellerDiagnostic(brandName, "physical-product-menu-failed");
-    brandExportJobPending = false;
-    pendingBrandExportName = "";
-    return {
-      ok: false,
-      code: pageState.failed ? "SELLER_COMPONENT_LOAD_TIMEOUT" : "SELLER_PRODUCT_MENU_CLICK_FAILED",
-      message: pageState.failed
-        ? `${brandName} Â· ë©”ë‰´ í´ë¦­ í›„ POIZON ìƒí’ˆê²€ìƒ‰ êµ¬ì„±ìš”ì†Œê°€ ì—´ë¦¬ì§€ ì•Šì•˜ìŠµë‹ˆë‹¤.`
-        : `${brandName} Â· íŒë§¤ìžì„¼í„°ì˜ ìƒí’ˆ â†’ ìƒí’ˆ ê²€ìƒ‰ ë©”ë‰´ë¥¼ ì‹¤ì œ ë§ˆìš°ìŠ¤ë¡œ í´ë¦­í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.`,
-      diagnostics: { url: pageState.url, path: diagnosticPath },
-    };
-  }
-  // Keep the authenticated renderer hidden while brand search, sorting and
-  // export continue through renderer-targeted input events.
-  if (sellerWindow && !sellerWindow.isDestroyed()) {
-    sellerWindow.hide();
-  }
-  const connectedPage = await executeSellerFrameWithTimeout(sellerWindow.webContents.mainFrame, `(() => ({
-    url: location.href,
-    title: document.title,
-    readyState: document.readyState,
-    login: /login|signin|passport/i.test(location.href),
-    inputCount: document.querySelectorAll("input, textarea").length,
-  }))()`, 4_000, { url: sellerWindow.webContents.getURL(), readyState: "timeout", inputCount: 0 });
-  mainWindow?.webContents.send("brand-export:progress", {
-    status: connectedPage.login ? "seller-login-required" : "seller-page-connected",
-    brandName,
-    jobState: connectedPage.login ? "1ë‹¨ê³„/5 Â· íŒë§¤ìžì„¼í„° ë¡œê·¸ì¸ í•„ìš”" : "1ë‹¨ê³„/5 Â· íŒë§¤ìžì„¼í„° íŽ˜ì´ì§€ ì—°ê²° í™•ì¸",
-    message: `${brandName} Â· URL ${connectedPage.url || "í™•ì¸ ë¶ˆê°€"} Â· ë¬¸ì„œ ${connectedPage.readyState || "unknown"} Â· ìž…ë ¥ ìš”ì†Œ ${Number(connectedPage.inputCount || 0)}ê°œ`,
-  });
-  if (connectedPage.login) {
-    brandExportJobPending = false;
-    pendingBrandExportName = "";
-    return {
-      ok: false,
-      code: "SELLER_LOGIN_REQUIRED",
-      message: `${brandName} ìž‘ì—…ì„ ì§„í–‰í•˜ë ¤ë©´ POIZON íŒë§¤ìžì„¼í„° ë¡œê·¸ì¸ì´ í•„ìš”í•©ë‹ˆë‹¤.`,
-    };
-  }
-  // Freeze the download-center job list before clicking "ì „ì²´ ë‚´ë³´ë‚´ê¸°".
-  // Waiting until after the export allowed the newly-created job to leak into
-  // the baseline, so the first job could never be recognized as new.
-  let baselineJobs = await baselinePromise;
-  if (!Array.isArray(baselineJobs)) {
-    baselineJobs = await Promise.race([
-      readSellerExportJobsFromMonitor(),
-      new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
-    ]).catch(() => null);
-  }
-  let baselineAvailable = Array.isArray(baselineJobs);
-  const recoverableJob = recoverableSavedBrandExportJob(brandName, brandKo, baselineJobs || []);
-  if (recoverableJob && !brandExportJobs.has(recoverableJob.jobId)) {
-    brandExportJobs.set(recoverableJob.jobId, {
-      jobId: recoverableJob.jobId,
-      brandName,
-      brandKo,
-      createdAt: recoverableJob.createdAt,
-      downloadStarted: false,
-      expectedProductCount: Number(recoverableJob.expectedProductCount || 0),
-      recovered: true,
-      restoredAt: Date.now(),
-    });
-    brandExportJobPending = false;
-    pendingBrandExportName = "";
-    pendingBrandExportJobId = "";
-    sellerWindow.hide();
-    mainWindow?.webContents.send("brand-export:progress", {
-      status: "job-created",
-      brandName,
-      jobId: recoverableJob.jobId,
-      jobState: "ì¤‘ë‹¨ ì „ ìž‘ì—…ë²ˆí˜¸ ë³µêµ¬ ì™„ë£Œ Â· ë‹¤ìš´ë¡œë“œ ê°ì‹œ ìž¬ê°œ",
-      message: `${brandName} Â· ì¤‘ë‹¨ ì „ ìž‘ì—…ë²ˆí˜¸ ${recoverableJob.jobId}ë¥¼ ë‹¤ì‹œ ì—°ê²°í–ˆìŠµë‹ˆë‹¤. ìƒˆ ë‚´ë³´ë‚´ê¸°ë¥¼ ì¤‘ë³µ ìƒì„±í•˜ì§€ ì•Šê³  ë‹¤ìš´ë¡œë“œë¥¼ ì´ì–´ê°‘ë‹ˆë‹¤.`,
-    });
-    if (!input.deferMonitor) void watchAllSellerExportJobsEveryTenSeconds();
-    return {
-      ok: true,
-      folder,
-      jobId: recoverableJob.jobId,
-      expectedProductCount: Number(recoverableJob.expectedProductCount || 0),
-      recovered: true,
-    };
-  }
-  const baselineJobIds = new Set([
-    ...brandExportJobs.keys(),
-    ...savedBrandExportJobs().map((job) => String(job?.jobId || "").trim()),
-    ...(baselineJobs || []).map((job) => String(job?.id || "").trim()),
-  ].filter(Boolean));
-  mainWindow?.webContents.send("brand-export:progress", {
-    status: baselineAvailable ? "job-baseline-ready" : "job-baseline-fallback",
-    brandName,
-    jobState: "ê¸°ì¡´ ìž‘ì—…ë²ˆí˜¸ í™•ì¸ ì™„ë£Œ Â· ìƒí’ˆê²€ìƒ‰ ì‹œìž‘",
-    message: baselineAvailable
-      ? `${brandName} Â· ë‚´ë³´ë‚´ê¸° ì „ ê¸°ì¡´ ìž‘ì—…ë²ˆí˜¸ ${baselineJobIds.size}ê°œë¥¼ ê³ ì •í–ˆìŠµë‹ˆë‹¤.`
-      : `${brandName} Â· ì €ìž¥ëœ ë¯¸ì‚¬ìš© ìž‘ì—…ë²ˆí˜¸ë¥¼ ì œì™¸í•˜ê³  ìƒˆ ìž‘ì—…ë²ˆí˜¸ë¥¼ í™•ì¸í•©ë‹ˆë‹¤.`,
-  });
-  const sellerBrandAliasGroups = [
-    ["Columbia", "ì»¬ëŸ¼ë¹„ì•„", "å“¥ä¼¦æ¯”äºš"],
-    ["Patagonia", "íŒŒíƒ€ê³ ë‹ˆì•„", "å·´å¡”å“¥å°¼äºš"],
-    ["Tommy Hilfiger", "íƒ€ë¯¸íží”¼ê±°", "æ±¤ç±³å¸Œå°”è´¹æ ¼"],
-    ["FILA", "íœ ë¼", "æ–ä¹"],
-    ["Reebok", "ë¦¬ë³µ", "é”æ­¥"],
-    ["PUMA", "Puma", "í‘¸ë§ˆ", "å½ªé©¬"],
-    ["On", "On Running", "ì˜¨", "ì˜¨ëŸ¬ë‹", "æ˜‚è·‘"],
-    ["Polo Ralph Lauren", "POLO RALPH LAUREN", "í´ë¡œ ëž„í”„ë¡œë Œ", "ëž„í”„ë¡œë Œ", "æ‹‰å¤«åŠ³ä¼¦"],
-    ["Adidas Originals", "adidas Originals", "ì•„ë””ë‹¤ìŠ¤ ì˜¤ë¦¬ì§€ë„ìŠ¤", "é˜¿è¿ªè¾¾æ–¯", "ä¸‰å¶è‰"],
-  ];
-  const brandKoInput = String(input.brandKo || "").trim();
-  const sellerOfficialRegistry = safeOfficialDomainRegistry(
-    store.snapshot().settings.brandCatalog || explorerMetadata().brands
-  );
-  const sellerOfficialRecord = officialDomainRecordForBrand(sellerOfficialRegistry, brandName)
-    || officialDomainRecordForBrand(sellerOfficialRegistry, brandKoInput);
-  const sellerBrandMatchKeys = sellerBrandAliases({
-    brandName,
-    brandKo: brandKoInput,
-    brandUrl: input.brandUrl,
-    officialHomepageUrl: input.officialHomepageUrl || sellerOfficialRecord?.homepageUrl,
-    officialAliases: officialDomainSearchAliases(sellerOfficialRecord),
-  });
-  const localizedAliases = sellerBrandAliasGroups.find((aliases) =>
-    aliases.some((alias) => brandsMatch(brandName, alias) || brandsMatch(brandKoInput, alias))
-  );
-  if (localizedAliases) sellerBrandMatchKeys.push(...localizedAliases);
-  if (brandsMatch(brandName, "Jordan")) {
-    sellerBrandMatchKeys.push("Jordan", "ì¡°ë˜", "ä¹”ä¸¹");
-  }
-  const sellerBrandSearchName = brandsMatch(brandName, "On")
-    ? "On Running"
-    : preferredSellerBrandSearchName(sellerBrandMatchKeys);
-  mainWindow?.webContents.send("brand-export:progress", {
-    status: "searching-brand-products",
-    brandName,
-    jobState: "1ë‹¨ê³„/5 Â· ë¸Œëžœë“œ ìž…ë ¥Â·ìƒí’ˆ ê²€ìƒ‰ ì¤‘",
-    message: `${brandName} Â· ë¸Œëžœë“œë¥¼ ìž…ë ¥í•˜ê³  ìƒí’ˆ ê²€ìƒ‰ì„ ì‹¤í–‰í•©ë‹ˆë‹¤.`,
-  });
-  const runSellerSearch = (targetFrame, searchAlreadySubmitted = false) => targetFrame.executeJavaScript(`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getBoundingClientRect().width > 0
-      && element.getBoundingClientRect().height > 0;
-    const textOf = (element) => String(element?.innerText || element?.textContent || "")
-      .replace(/\\s+/g, " ").trim();
-    const normalize = (value) => String(value || "").normalize("NFKC").toLocaleLowerCase()
-      .replace(/[^a-z0-9ê°€-íž£ä¸€-é¾¥]+/g, "")
-      .replace(/6ixty/g, "sixty").replace(/8ight/g, "eight");
-    const clickLikeUser = (element) => {
-      if (!element) return false;
-      element.scrollIntoView({ block: "center", inline: "center" });
-      element.focus?.();
-      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
-        element.dispatchEvent(new MouseEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          view: window,
-          button: 0,
-        }));
-      }
-      element.click?.();
-      return true;
-    };
-    const findVisibleByText = (selector, pattern) =>
-      [...document.querySelectorAll(selector)].filter(visible)
-        .find((element) => pattern.test(textOf(element)));
-        const roots = [document];
-        for (let rootIndex = 0; rootIndex < roots.length; rootIndex += 1) {
-          const root = roots[rootIndex];
-          for (const element of root.querySelectorAll("*")) {
-            if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
-          }
-        }
-        const inputs = roots.flatMap((root) => [...root.querySelectorAll("input, textarea")])
-          .filter((element, index, all) => all.indexOf(element) === index)
-          .filter(visible)
-          .filter((element) => {
-            const type = String(element.type || "text").toLowerCase();
-            return !element.disabled && !element.readOnly
-              && !["hidden", "password", "date", "datetime-local", "month", "time", "file", "checkbox", "radio"].includes(type);
-          });
-        // The proven Seller Center flow uses the global product query input at
-        // the very top of the page: [ìƒí’ˆ ì •ë³´] [query] [ê²€ìƒ‰ ë° ìž…ì°°]. Do not
-        // confuse it with one of the many product-filter inputs below it.
-        const exactSearchButtons = roots.flatMap((root) =>
-          [...root.querySelectorAll("button, [role='button']")]
-        ).filter((element, index, all) => all.indexOf(element) === index)
-          .filter(visible)
-          .filter((element) => /^ê²€ìƒ‰\\s*ë°\\s*ìž…ì°°$/.test(textOf(element)));
-        const exactSearchButton = exactSearchButtons
-          .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top)[0] || null;
-        const exactButtonRect = exactSearchButton?.getBoundingClientRect();
-        const exactInput = exactButtonRect
-          ? inputs.map((element) => {
-              const rect = element.getBoundingClientRect();
-              const verticalDistance = Math.abs(
-                (rect.top + rect.height / 2) - (exactButtonRect.top + exactButtonRect.height / 2)
-              );
-              const horizontalGap = exactButtonRect.left - rect.right;
-              return { element, verticalDistance, horizontalGap, top: rect.top };
-            }).filter((candidate) => candidate.verticalDistance < 24
-              && candidate.horizontalGap >= -4 && candidate.horizontalGap < 80)
-            .sort((left, right) => left.horizontalGap - right.horizontalGap)[0]?.element || null
-          : null;
-        const inputScore = (element) => {
-          const rect = element.getBoundingClientRect();
-          const attributes = [
-            element.placeholder,
-            element.getAttribute("aria-label"),
-            element.getAttribute("name"),
-            element.getAttribute("id"),
-            element.getAttribute("data-placeholder"),
-          ].filter(Boolean).join(" ");
-          const context = textOf(element.closest("form, .ant-form-item, [class*='form'], [class*='search']") || element.parentElement);
-          const strongHint = /ìƒí’ˆ|ìƒí’ˆëª…|ë¸Œëžœë“œ|í’ˆë²ˆ|ê²€ìƒ‰|product|brand|article|spu|sku|å•†å“|å“ç‰Œ|è´§å·|æœç´¢|æŸ¥è¯¢/i.test(attributes);
-          const contextHint = /ìƒí’ˆ|ë¸Œëžœë“œ|í’ˆë²ˆ|ê²€ìƒ‰|product|brand|spu|sku|å•†å“|å“ç‰Œ|è´§å·/i.test(context);
-          return (strongHint ? 1000 : 0)
-            + (contextHint ? 300 : 0)
-            + (rect.top >= 0 && rect.top < 360 ? 120 : 0)
-            + Math.min(180, Math.round(rect.width));
-        };
-        const searchInputs = inputs.map((element) => ({ element, score: inputScore(element) }))
-          .sort((left, right) => right.score - left.score);
-        const input = exactInput || searchInputs[0]?.element || null;
-        if (!input || (!exactInput && searchInputs[0].score < 200)) {
-          return { ok: false, step: "SEARCH_INPUT_NOT_FOUND", inputCount: inputs.length };
-        }
-        const readSearchState = () => {
-          const rows = [...document.querySelectorAll("tbody tr")].filter(visible);
-          const rowTexts = rows.slice(0, 30).map((row) =>
-            String(row.innerText || row.textContent || "").replace(/\\s+/g, " ").trim()
-          );
-          const rowText = rowTexts.join("\\n");
-          const totalText = [...document.querySelectorAll("body *")]
-            .filter(visible)
-            .map((element) => String(element.innerText || element.textContent || "").trim())
-            .find((text) => /^ì´\\s*[\\d,]+\\s*ê±´\\s*ê²°ê³¼$/.test(text)) || "";
-          const totalCount = Number(String(totalText).replace(/[^0-9]/g, "")) || 0;
-          return { rowText, rowTexts, totalText, totalCount };
-        };
-        const beforeSearch = readSearchState();
-        const requestedBrandKeys = ${JSON.stringify(sellerBrandMatchKeys)}
-          .map(normalize).filter(Boolean);
-        const requestedBrandRatio = (state) => {
-          const rows = Array.isArray(state?.rowTexts) ? state.rowTexts.filter(Boolean) : [];
-          if (!rows.length || !requestedBrandKeys.length) return 0;
-          const matches = rows.filter((row) => requestedBrandKeys.some((key) => {
-            const normalizedKey = normalize(key).toLocaleLowerCase();
-            if (normalizedKey.length > 3) return normalize(row).toLocaleLowerCase().includes(normalizedKey);
-            const tokens = String(row || "").toLocaleLowerCase()
-              .split(/[^a-z0-9ê°€-íž£]+/).filter(Boolean);
-            return tokens.includes(String(key || "").trim().toLocaleLowerCase());
-          })).length;
-          return matches / rows.length;
-        };
-        const hasRequestedBrand = (state) => requestedBrandRatio(state) >= 0.8;
-        const valuePrototype = input instanceof HTMLTextAreaElement
-          ? HTMLTextAreaElement.prototype
-          : HTMLInputElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(valuePrototype, "value")?.set;
-        const applyValue = (value) => {
-          const previousValue = String(input.value || "");
-          input.focus();
-          if (setter) setter.call(input, value);
-          else input.value = value;
-          // POIZON uses a React-controlled global search input. Reset React's
-          // value tracker to the previous DOM value so the synthetic input
-          // event is recognized as a real user change instead of being ignored
-          // and immediately rendered back to an empty string.
-          if (input._valueTracker && typeof input._valueTracker.setValue === "function") {
-            input._valueTracker.setValue(previousValue);
-          }
-          input.dispatchEvent(new InputEvent("input", {
-            bubbles: true,
-            composed: true,
-            inputType: value ? "insertText" : "deleteContentBackward",
-            data: value || null,
-          }));
-          input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-        };
-        if (String(input.value || "").trim() !== ${JSON.stringify(sellerBrandSearchName)}) {
-          applyValue("");
-          await wait(160);
-          applyValue(${JSON.stringify(sellerBrandSearchName)});
-          await wait(700);
-        }
-        if (String(input.value || "").trim() !== ${JSON.stringify(sellerBrandSearchName)}) {
-          return {
-            ok: false,
-            step: "BRAND_INPUT_NOT_APPLIED",
-            actualInputValue: String(input.value || "").trim(),
-            expectedInputValue: ${JSON.stringify(sellerBrandSearchName)},
-          };
-        }
-        const buttons = [...document.querySelectorAll("button, [role='button']")].filter(visible);
-        const inputRect = input.getBoundingClientRect();
-        const searchCandidates = buttons.filter((element) =>
-          /ê²€ìƒ‰\\s*ë°\\s*ìž…ì°°|^ê²€ìƒ‰$|^ê²€ìƒ‰í•˜ê¸°$|æœç´¢|æŸ¥è¯¢|search/i.test(String(element.innerText || element.textContent || "").trim())
-        );
-        const search = exactSearchButton || searchCandidates.find((element) => {
-          const rect = element.getBoundingClientRect();
-          return Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2)) < 90;
-        }) || searchCandidates[0];
-        const pressEnter = () => {
-          input.focus();
-          for (const type of ["keydown", "keypress", "keyup"]) {
-            input.dispatchEvent(new KeyboardEvent(type, {
-              key: "Enter",
-              code: "Enter",
-              keyCode: 13,
-              which: 13,
-              bubbles: true,
-              cancelable: true
-            }));
-          }
-        };
-        const waitForSearchUpdate = async () => {
-          let stableSignature = "";
-          let stableCount = 0;
-          for (let attempt = 0; attempt < 60; attempt += 1) {
-            await wait(250);
-            const current = readSearchState();
-            const changed = current.rowText !== beforeSearch.rowText || current.totalText !== beforeSearch.totalText;
-            const hasRows = current.rowText.length > 0;
-            const brandMatched = hasRequestedBrand(current);
-            // Result rows do not consistently repeat the brand label. A real
-            // before/after grid change is valid evidence for every brand; an
-            // unchanged stale grid still requires the strict brand match.
-            const resultUpdated = changed && current.rowTexts.length > 0;
-            const searchResultConfirmed = brandMatched || resultUpdated;
-            const signature = current.totalText + "\\n" + current.rowText;
-            // The working Seller Center keeps the visible "ì´ 9,900ê±´" label
-            // unchanged after a search. The rendered product rows are the
-            // authoritative signal that the brand search completed.
-            // The physical click happens before this verifier starts. On a
-            // fast response the first snapshot can already be the filtered
-            // result, so matching rows are authoritative even when the DOM no
-            // longer differs from that snapshot.
-            const requestedInputConfirmed = normalize(input.value).toLocaleLowerCase()
-              === normalize(${JSON.stringify(sellerBrandSearchName)}).toLocaleLowerCase();
-            // A submitted input is not proof that POIZON changed the result.
-            // Export only after the rendered product rows actually match the
-            // requested brand; otherwise the previous brand can be exported.
-            if (hasRows && searchResultConfirmed && requestedInputConfirmed) {
-              stableCount = signature === stableSignature ? stableCount + 1 : 1;
-              stableSignature = signature;
-              if (stableCount >= 3) return true;
-            } else {
-              stableCount = 0;
-              stableSignature = "";
-            }
-          }
-          return false;
-        };
-        const alreadySubmitted = ${JSON.stringify(Boolean(searchAlreadySubmitted))};
-        if (!alreadySubmitted) {
-          if (search) clickLikeUser(search);
-          else pressEnter();
-        }
-        let searchApplied = await waitForSearchUpdate();
-        if (!searchApplied && !alreadySubmitted) {
-          pressEnter();
-          searchApplied = await waitForSearchUpdate();
-        }
-        if (!searchApplied && !alreadySubmitted && search) {
-          clickLikeUser(search);
-          searchApplied = await waitForSearchUpdate();
-        }
-        if (!searchApplied
-          && ${JSON.stringify(brandKoInput)} !== ""
-          && ${JSON.stringify(brandKoInput)} !== ${JSON.stringify(brandName)}) {
-          applyValue("");
-          await wait(160);
-          applyValue(${JSON.stringify(brandKoInput)});
-          await wait(700);
-          if (search) clickLikeUser(search);
-          else pressEnter();
-          searchApplied = await waitForSearchUpdate();
-          if (!searchApplied) {
-            pressEnter();
-            searchApplied = await waitForSearchUpdate();
-          }
-        }
-        if (!searchApplied) {
-          const current = readSearchState();
-          return {
-            ok: false,
-            step: hasRequestedBrand(current) ? "SEARCH_RESULT_NOT_UPDATED" : "BRAND_RESULT_MISMATCH",
-            beforeTotal: beforeSearch.totalCount,
-            currentTotal: current.totalCount
-          };
-        }
-
-        // The remaining controls must be operated through the visible Windows
-        // cursor. Return after the product search has actually updated so the
-        // outer workflow can perform sorting and export physically.
-        const searchedState = readSearchState();
-        return {
-          ok: true,
-          inputValue: String(input.value || "").trim(),
-          resultRowCount: searchedState.rowTexts.length,
-          firstResult: searchedState.rowTexts[0] || "",
-        };
-
-    const localSalesPattern = /\\uD604\\uC9C0\\s*\\uD310\\uB9E4\\uC790\\s*\\uCD5C\\uADFC\\s*30\\uC77C\\s*\\uD310\\uB9E4\\uB7C9/;
-    const localSalesHeaderText = [...document.querySelectorAll(
-      "th, [role='columnheader'], thead td, thead div"
-    )].filter(visible)
-      .filter((element) => localSalesPattern.test(textOf(element)))
-      .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
-    if (!localSalesHeaderText) {
-      return { ok: false, step: "LOCAL_SELLER_30D_COLUMN_NOT_FOUND" };
-    }
-
-    let localSalesHeader = localSalesHeaderText.closest(
-      "th, [role='columnheader'], thead td"
-    );
-    if (!localSalesHeader) {
-      localSalesHeader = localSalesHeaderText;
-      for (let depth = 0; depth < 6 && localSalesHeader.parentElement; depth += 1) {
-        const parent = localSalesHeader.parentElement;
-        const rect = parent.getBoundingClientRect();
-        if (rect.width > 70 && rect.width < 360 && localSalesPattern.test(textOf(parent))) {
-          localSalesHeader = parent;
-        } else {
-          break;
-        }
-      }
-    }
-
-    const textRect = localSalesHeaderText.getBoundingClientRect();
-    const headerRect = localSalesHeader.getBoundingClientRect();
-    const headerSearchRoot = localSalesHeader.closest("thead, [role='row']")
-      || localSalesHeader.parentElement
-      || document;
-
-    const scoreCandidate = (element) => {
-      const target = element.closest?.("button, [role='button'], [class*='sort'], [class*='filter'], [aria-label], [title]")
-        || element;
-      const rect = target.getBoundingClientRect();
-      const hint = [
-        target.getAttribute?.("aria-label"),
-        target.getAttribute?.("title"),
-        target.className,
-        target.textContent
-      ].filter(Boolean).join(" ");
-      const centerY = (headerRect.top + headerRect.bottom) / 2;
-      const distance = Math.abs(rect.left - textRect.right) + Math.abs((rect.top + rect.bottom) / 2 - centerY);
-      const compact = rect.width > 0 && rect.width <= 56 && rect.height > 0 && rect.height <= 56;
-      const inHeader = rect.left >= headerRect.left - 8
-        && rect.right <= headerRect.right + 12
-        && rect.top >= headerRect.top - 8
-        && rect.bottom <= headerRect.bottom + 8;
-      const rightOfHeaderText = rect.left >= textRect.right - 6
-        && rect.left <= textRect.right + 72;
-      return {
-        target,
-        score: (/sort|filter|desc|order/i.test(hint) ? 100 : 0)
-          + (rightOfHeaderText ? 90 : 0)
-          + (compact ? 45 : 0)
-          + (inHeader ? 35 : 0)
-          - Math.min(distance, 160)
-      };
-    };
-
-    const candidateMap = new Map();
-    for (const element of headerSearchRoot.querySelectorAll(
-      "button, [role='button'], [class*='sort'], [class*='filter'], [aria-label], [title], svg, i, span"
-    )) {
-      if (!visible(element)) continue;
-      const candidate = scoreCandidate(element);
-      if (!candidateMap.has(candidate.target)) {
-        candidateMap.set(candidate.target, candidate);
-      }
-    }
-    const sortCandidates = [...candidateMap.values()]
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 12)
-      .map((entry) => entry.target);
-
-    const centerY = (headerRect.top + headerRect.bottom) / 2;
-    const probePoints = [
-      [textRect.right + 6, centerY],
-      [textRect.right + 13, centerY],
-      [textRect.right + 21, centerY],
-      [headerRect.right - 8, centerY],
-      [headerRect.right - 15, centerY],
-      [headerRect.right - 10, headerRect.bottom - 10]
-    ];
-
-    const descendingPattern = /^\uB0B4\uB9BC\uCC28\uC21C$/;
-    const findDescending = () => [...document.querySelectorAll(
-      "button, [role='button'], [role='menuitem'], label, li, span, div"
-    )].find((el) => visible(el) && descendingPattern.test(normalize(el.textContent)));
-
-    const clickAt = (x, y) => {
-      const target = document.elementFromPoint(x, y);
-      if (!target) return false;
-      target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: x, clientY: y }));
-      target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: x, clientY: y }));
-      target.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: x, clientY: y }));
-      return true;
-    };
-
-    let descending = findDescending();
-    for (const candidate of sortCandidates) {
-      if (descending) break;
-      clickLikeUser(candidate);
-      await wait(450);
-      descending = findDescending();
-    }
-    for (const [x, y] of probePoints) {
-      if (descending) break;
-      clickAt(x, y);
-      await wait(450);
-      descending = findDescending();
-    }
-    if (!descending) {
-      return { ok: false, code: "LOCAL_SALES_SORT_ICON_NOT_FOUND" };
-    }
-
-    clickLikeUser(descending);
-    await wait(350);
-
-    const confirmPattern = /^\uD655\uC778$/;
-    const findConfirm = () => [...document.querySelectorAll(
-      "button, [role='button'], a, span, div"
-    )].find((el) => visible(el) && confirmPattern.test(normalize(el.textContent)));
-    let confirmControl = findConfirm();
-    if (!confirmControl) {
-      return { ok: false, code: "LOCAL_SALES_SORT_CONFIRM_NOT_FOUND" };
-    }
-    clickLikeUser(confirmControl);
-    await wait(700);
-    confirmControl = findConfirm();
-    if (confirmControl) {
-      clickLikeUser(confirmControl);
-      await wait(900);
-    }
-
-    let exportButton = null;
-    const exportPattern = /^\uC804\uCCB4\s*\uB0B4\uBCF4\uB0B4\uAE30$/;
-    for (let attempt = 0; attempt < 12 && !exportButton; attempt += 1) {
-      exportButton = [...document.querySelectorAll("button, [role='button'], a, span")]
-        .find((element) => visible(element) && exportPattern.test(normalize(element.textContent)));
-      if (!exportButton) await wait(400);
-    }
-    if (!exportButton) return { ok: false, code: "EXPORT_BUTTON_NOT_FOUND_AFTER_SORT" };
-    if (exportButton.disabled || exportButton.getAttribute("aria-disabled") === "true") {
-      return { ok: false, code: "EXPORT_BUTTON_DISABLED_AFTER_SORT" };
-    }
-    clickLikeUser(exportButton);
-    await wait(500);
-    const verifiedState = readSearchState();
-    return {
-      ok: true,
-      sort: "LOCAL_SELLER_RECENT_30_DAYS_DESC",
-      exportClicked: true,
-      inputValue: String(input.value || "").trim(),
-      resultRowCount: verifiedState.rowTexts.length,
-      firstResult: verifiedState.rowTexts[0] || "",
-    };
-  })()`, true);
-  let searched = null;
-  let lastSearchDiagnostics = null;
-  let exportAcknowledgedAt = 0;
-  for (let searchInputAttempt = 1; searchInputAttempt <= 1; searchInputAttempt += 1) {
-    const frames = sellerWindowFrames();
-    const frameCandidates = [];
-    mainWindow?.webContents.send("brand-export:progress", {
-      status: "probing-search-frame",
-      brandName,
-      jobState: "1ë‹¨ê³„/5 Â· ìƒí’ˆê²€ìƒ‰ ìž…ë ¥ì°½ ì—°ê²° ì¤‘",
-      message: `${brandName} Â· ì‘ë‹µí•˜ì§€ ì•ŠëŠ” POIZON ë‚´ë¶€ í”„ë ˆìž„ì€ 4ì´ˆ í›„ ê±´ë„ˆëœë‹ˆë‹¤.`,
-    });
-    const probedFrames = await Promise.all(frames.map(async (frame) => {
-      const probe = await executeSellerFrameWithTimeout(frame, `(() => {
-          const visible = (element) => element && element.getClientRects().length > 0;
-          const inputs = [...document.querySelectorAll("input, textarea")].filter(visible)
-            .filter((element) => !element.disabled && !element.readOnly);
-          const body = String(document.body?.innerText || "").slice(0, 1200);
-          const hint = /ìƒí’ˆ|ë¸Œëžœë“œ|í’ˆë²ˆ|ê²€ìƒ‰|SPU|SKU|product|brand|å•†å“|å“ç‰Œ|è´§å·|æœç´¢/i.test(body);
-          return {
-            url: location.href,
-            title: document.title,
-            readyState: document.readyState,
-            inputCount: inputs.length,
-            hint,
-            login: /login|signin|passport/i.test(location.href),
-          };
-        })()`, 4_000, null);
-      return probe ? { frame, probe } : null;
-    }));
-    frameCandidates.push(...probedFrames.filter(Boolean));
-    frameCandidates.sort((left, right) =>
-      Number(right.probe?.inputCount > 0) - Number(left.probe?.inputCount > 0)
-      || Number(right.probe?.hint) - Number(left.probe?.hint)
-      || Number(right.frame.routingId === sellerWindow.webContents.mainFrame.routingId)
-        - Number(left.frame.routingId === sellerWindow.webContents.mainFrame.routingId)
-    );
-    const loginFrame = frameCandidates.find((candidate) => candidate.probe?.login);
-    if (loginFrame) {
-      searched = { ok: false, step: "SELLER_LOGIN_REQUIRED", diagnostics: loginFrame.probe };
-      break;
-    }
-    for (const candidate of frameCandidates) {
-      if (!candidate.probe?.inputCount && !candidate.probe?.hint) continue;
-      mainWindow?.webContents.send("brand-export:progress", {
-        status: "searching-brand-products",
-        brandName,
-        jobState: `1ë‹¨ê³„/5 Â· ë¸Œëžœë“œ ìž…ë ¥Â·ìƒí’ˆ ê²€ìƒ‰ ì¤‘ Â· ${brandName}`,
-        message: `${brandName} Â· ê¸°ì¡´ ê²€ìƒ‰ ì„œë¹„ìŠ¤ ë°©ì‹ìœ¼ë¡œ ë¸Œëžœë“œë¥¼ ìž…ë ¥í•˜ê³  ê²€ìƒ‰ì„ ì‹¤í–‰í•©ë‹ˆë‹¤.`,
-      });
-      // Restore the proven pre-module Seller Center route as one uninterrupted
-      // operation: enter the brand in the hidden product-search renderer, click
-      // ê²€ìƒ‰ ë° ìž…ì°°, verify the result, sort, and export in the same window.
-      const realKeyboardInput = await typeSellerBrandWithRealKeyboard(candidate.frame, sellerBrandSearchName)
-        .catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
-      if (sellerWindow && !sellerWindow.isDestroyed()) sellerWindow.hide();
-      mainWindow?.webContents.send("brand-export:progress", {
-        status: realKeyboardInput?.ok ? "seller-brand-input-confirmed" : "seller-brand-input-fallback",
-        brandName,
-        jobState: realKeyboardInput?.ok
-          ? `1ë‹¨ê³„/5 Â· ìƒí’ˆê²€ìƒ‰ ë¸Œëžœë“œ ìž…ë ¥ ì™„ë£Œ Â· ${brandName}`
-          : `1ë‹¨ê³„/5 Â· ìƒí’ˆê²€ìƒ‰ ìž…ë ¥ ìž¬ì‹œë„ Â· ${brandName}`,
-        message: realKeyboardInput?.ok
-          ? `${brandName} Â· íŒë§¤ìžì„¼í„° ìƒë‹¨ ìƒí’ˆê²€ìƒ‰ ìž…ë ¥ì„ í™•ì¸í•˜ê³  ê²€ìƒ‰ ë° ìž…ì°°ì„ ì‹¤í–‰í•©ë‹ˆë‹¤.`
-          : `${brandName} Â· ì‹¤ì œ í‚¤ë³´ë“œ ìž…ë ¥ì´ í™•ì¸ë˜ì§€ ì•Šì•„ ìž‘ì—…ì„ ì¤‘ë‹¨í•©ë‹ˆë‹¤.`,
-      });
-      if (!realKeyboardInput?.ok) {
-        searched = realKeyboardInput || { ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" };
-        lastSearchDiagnostics = candidate.probe;
-        break;
-      }
-      const result = await Promise.race([
-          runSellerSearch(candidate.frame, Boolean(realKeyboardInput?.submitted)),
-          new Promise((resolve) => setTimeout(() => resolve({
-            ok: false,
-            step: "SELLER_SEARCH_STAGE_TIMEOUT",
-          }), 70_000)),
-        ]).catch((error) => ({
-          ok: false,
-          step: "SELLER_SEARCH_SCRIPT_ERROR",
-          detail: String(error?.message || error || ""),
-        }));
-      lastSearchDiagnostics = candidate.probe;
-      if (result?.ok) {
-        mainWindow?.webContents.send("brand-export:progress", {
-          status: "waiting-for-seller-result-navigation",
-          brandName,
-          jobState: `2ë‹¨ê³„/5 Â· ê²°ê³¼ í™”ë©´ ì „í™˜ í™•ì¸ ì¤‘ Â· ${brandName}`,
-          message: `${brandName} Â· POIZON í™”ë©´ì—ì„œ ì‹¤ì œ ë§ˆìš°ìŠ¤ë¡œ ê²°ê³¼ í™•ì¸Â·ì •ë ¬Â·ë‚´ë³´ë‚´ê¸°ë¥¼ ì§„í–‰í•©ë‹ˆë‹¤. ìž‘ì—… ì¤‘ì—ëŠ” ë§ˆìš°ìŠ¤ë¥¼ ì›€ì§ì´ì§€ ë§ˆì„¸ìš”.`,
-        });
-        await new Promise((resolve) => setTimeout(resolve, 1_200));
-        const postSearch = await performPhysicalSellerSortAndExport(candidate.frame)
-          .catch((error) => ({
-            ok: false,
-            step: "PHYSICAL_POST_SEARCH_FAILED",
-            detail: String(error?.message || error || ""),
-          }));
-        if (postSearch?.ok) {
-          sellerProductFrameRoutingId = candidate.frame.routingId;
-          // POIZON can create the export job immediately when "ì „ì²´ ë‚´ë³´ë‚´ê¸°"
-          // is clicked, before (or while) the confirmation UI is observed.
-          // Never refresh the baseline here: a fast new job would be recorded
-          // as an old job and could then never be linked to this brand. The
-          // baseline frozen before product search remains authoritative, while
-          // the confirmation timestamp below rejects genuinely old rows.
-          // Clicking "ì „ì²´ ë‚´ë³´ë‚´ê¸°" only opens POIZON's confirmation
-          // dialog. The old rebuilt path skipped this existing confirmation
-          // helper and then waited three minutes for a job that had never
-          // actually been submitted.
-          const confirmationStartedAt = Date.now();
-          const confirmation = await confirmSellerExportRequestPhysical(candidate.frame)
-            .catch(() => ({
-              ok: false,
-              confirmationObserved: false,
-              confirmationClicked: false,
-              requestAcknowledged: false,
-            }));
-          // Follow the same proven Seller Center flow the user performs:
-          // export -> confirm -> Download Center shortcut -> read the job row.
-          // A separate hidden monitor can lag behind the live SPA session.
-          if (!confirmation?.requestAcknowledged) {
-            const dailyLimit = await detectSellerDailySearchLimit();
-            searched = {
-              ...result,
-              ...postSearch,
-              ...confirmation,
-              ok: false,
-              step: dailyLimit.exceeded ? "DAILY_SEARCH_LIMIT_EXCEEDED" : "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED",
-              code: dailyLimit.exceeded ? "DAILY_SEARCH_LIMIT_EXCEEDED" : "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED",
-              diagnostics: dailyLimit.exceeded ? { reason: dailyLimit.notice } : undefined,
-            };
-            break;
-          }
-          exportAcknowledgedAt = confirmationStartedAt;
-          const downloadCenter = confirmation.downloadCenterClicked
-            ? { ok: true, clicked: true, alreadyNavigated: true }
-            : confirmation.confirmationClicked
-            ? await clickSellerDownloadCenterShortcutPhysical(candidate.frame).catch(() => ({
-              ok: false,
-              clicked: false,
-              code: "DOWNLOAD_CENTER_SHORTCUT_NOT_FOUND",
-            }))
-            : { ok: false, clicked: false, code: "EXPORT_CONFIRMATION_NOT_ACKNOWLEDGED" };
-          searched = { ...result, ...postSearch, ...confirmation, downloadCenter, ok: true };
-          break;
-        }
-        searched = postSearch;
-        break;
-      }
-      if (result?.step !== "SEARCH_INPUT_NOT_FOUND") {
-        searched = result;
-        break;
-      }
-      searched = result;
-    }
-    if (searched?.ok || (searched?.step && searched.step !== "SEARCH_INPUT_NOT_FOUND")) break;
-  }
-  if (cleared()) {
-    brandExportJobPending = false;
-    pendingBrandExportName = "";
-    pendingBrandExportJobId = "";
-    return { ok: false, code: "BRAND_ATTEMPT_ABORTED", message: `${brandName} ìž‘ì—… ì‹œê°„ì´ ì´ˆê³¼ë˜ì–´ ë‹¤ìŒ ë¸Œëžœë“œë¡œ ì´ë™í•©ë‹ˆë‹¤.` };
-  }
-  if (!searched?.ok && searched?.step === "SEARCH_INPUT_NOT_FOUND") {
-    searched = { ...searched, diagnostics: lastSearchDiagnostics };
-  }
-  if (!searched?.ok) {
-    const diagnosticPath = await captureSellerDiagnostic(brandName, String(searched?.step || "search-failed").toLowerCase());
-    pendingBrandExportName = "";
-    pendingBrandExportJobId = "";
-    brandExportJobPending = false;
-    return {
-      ok: false,
-      code: searched?.code || searched?.step || "SELLER_AUTOMATION_FAILED",
-      message: `${sellerBrandExportFailureMessage(searched?.code || searched?.step, brandName)}${diagnosticPath ? ` ì§„ë‹¨ í™”ë©´: ${diagnosticPath}` : ""}`,
-      diagnostics: { ...(searched?.diagnostics || {}), path: diagnosticPath },
-    };
-  }
-
-  // The current brand remains in the live Download Center until its job and
-  // workbook are complete. The next queued brand opens a fresh product-search
-  // page, so there is no reason to keep relying on a stale background table.
-  if (sellerWindow && !sellerWindow.isDestroyed()) {
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    sellerWindow.hide();
-  }
-
-  mainWindow?.webContents.send("brand-export:progress", {
-    status: "seller-search-evidence",
-    brandName,
-    jobState: searched.confirmationClicked
-      ? "2ë‹¨ê³„/5 Â· ë‚´ë³´ë‚´ê¸° í™•ì¸ ì™„ë£Œ Â· ìž‘ì—…ë²ˆí˜¸ ìƒì„± í™•ì¸ ì¤‘"
-      : "2ë‹¨ê³„/5 Â· ì „ì²´ ë‚´ë³´ë‚´ê¸° í´ë¦­ Â· ìž‘ì—…ë²ˆí˜¸ ìƒì„± í™•ì¸ ì¤‘",
-    message: searched.confirmationClicked
-      ? `${brandName} Â· í˜„ì§€ 30ì¼ ë‚´ë¦¼ì°¨ìˆœ Â· POIZON ë‚´ë³´ë‚´ê¸° í™•ì¸ì°½ ì²˜ë¦¬ ì™„ë£Œ Â· ìƒˆ ìž‘ì—…ë²ˆí˜¸ í™•ì¸ ì¤‘`
-      : `${brandName} Â· ì „ì²´ ë‚´ë³´ë‚´ê¸° í´ë¦­ ì™„ë£Œ Â· í™•ì¸ì°½ ì—†ì´ ìž‘ì—…ë²ˆí˜¸ê°€ ìƒì„±ë˜ëŠ”ì§€ í™•ì¸ ì¤‘`,
-  });
-
-  const completeness = {
-    ok: true,
-    expected: 0,
-    pageCount: 0,
-    confirmationObserved: Boolean(searched.confirmationObserved),
-    confirmationClicked: Boolean(searched.confirmationClicked),
-    requestAcknowledged: Boolean(searched.requestAcknowledged),
-  };
-
-  mainWindow?.webContents.send("brand-export:progress", {
-    status: "waiting-for-job-creation",
-    brandName,
-    jobState: "2ë‹¨ê³„/5 Â· ì „ì²´ ë‚´ë³´ë‚´ê¸° í´ë¦­ ì™„ë£Œ Â· ìƒˆ ìž‘ì—…ë²ˆí˜¸ í™•ì¸ ì¤‘",
-    message: `${brandName} Â· ì „ì²´ ë‚´ë³´ë‚´ê¸°ë¥¼ ì™„ë£Œí–ˆìŠµë‹ˆë‹¤. ë³„ë„ í™•ì¸ ì°½ì—ì„œ ìƒˆ ìž‘ì—…ë²ˆí˜¸ë§Œ í™•ì¸í•œ ë’¤ ë‹¤ìŒ ë¸Œëžœë“œë¡œ ì´ë™í•©ë‹ˆë‹¤.`,
-  });
-
-  let createdJob = null;
-  const verificationStartedAt = Date.now();
-  const verificationTimeoutMs = 180000;
-  let lastReloadAt = 0;
-  let lastProgressAt = 0;
-  let fallbackCandidateJobId = "";
-  let fallbackCandidateStableReads = 0;
-  let lateConfirmationChecked = Boolean(searched.confirmationClicked);
-  let lastFreshReadAt = 0;
-  await new Promise((resolve) => setTimeout(resolve, 2500));
-  while (Date.now() - verificationStartedAt < verificationTimeoutMs) {
-    if (cleared()) break;
-    const jobSources = await Promise.all([
-      Promise.race([
-        readSellerExportJobsFromMonitor(),
-        new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
-      ]),
-      Promise.race([
-        readSellerExportJobs(),
-        new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
-      ]),
-    ]).catch(() => []);
-    let currentJobs = [...new Map(jobSources
-      .flatMap((jobs) => Array.isArray(jobs) ? jobs : [])
-      .map((job) => [String(job?.id || "").trim(), job])
-      .filter(([id]) => id)).values()];
-    const elapsedMs = Date.now() - verificationStartedAt;
-    if (elapsedMs >= 10_000 && Date.now() - lastFreshReadAt >= 15_000) {
-      lastFreshReadAt = Date.now();
-      const freshJobs = await Promise.race([
-        readSellerExportJobsFreshly(),
-        new Promise((resolve) => setTimeout(() => resolve(null), 20_000)),
-      ]).catch(() => null);
-      if (Array.isArray(freshJobs)) {
-        const mergedJobs = new Map();
-        for (const job of [...(Array.isArray(currentJobs) ? currentJobs : []), ...freshJobs]) {
-          const id = String(job?.id || "").trim();
-          if (id) mergedJobs.set(id, job);
-        }
-        currentJobs = [...mergedJobs.values()];
-      }
-    }
-    if (Array.isArray(currentJobs)) {
-      const unusedJobs = currentJobs.filter((job) => !brandExportJobOwner(job?.id));
-      let candidate = findNewSellerExportJob([...baselineJobIds], unusedJobs, {
-        notBeforeMs: exportAcknowledgedAt,
-        baselineAuthoritative: baselineAvailable,
-        // If every pre-export reader was still loading, accept only a stable
-        // post-request unowned row after 20 seconds. The two-read gate below
-        // prevents a transient/stale SPA row from being attached immediately.
-        allowMissingTimestamp: !baselineAvailable && elapsedMs >= 20_000,
-        // POIZON and the local PC can differ slightly, but a previous-day job
-        // (such as the PUMA row reused for KOLON SPORT) must always be rejected.
-        allowedClockSkewMs: 2 * 60_000,
-      });
-      // A slow baseline window can finish after POIZON has already inserted
-      // the new row and accidentally classify that row as old. The Download
-      // Center timestamp is independent evidence: an unowned job created for
-      // this request must be attached even if it leaked into the baseline.
-      if (!candidate && elapsedMs >= 10_000) {
-        candidate = findRecentSellerExportJob(unusedJobs, {
-          notBeforeMs: exportAcknowledgedAt,
-          allowedClockSkewMs: 2 * 60_000,
-        });
-      }
-      if (candidate && baselineAvailable) {
-        createdJob = candidate;
-      } else if (candidate) {
-        const candidateId = String(candidate.id || "").trim();
-        fallbackCandidateStableReads = candidateId === fallbackCandidateJobId
-          ? fallbackCandidateStableReads + 1
-          : 1;
-        fallbackCandidateJobId = candidateId;
-        if (fallbackCandidateStableReads >= 2) createdJob = candidate;
-      } else {
-        fallbackCandidateJobId = "";
-        fallbackCandidateStableReads = 0;
-      }
-    }
-    if (createdJob) break;
-
-    // Some Seller Center responses render the confirmation modal several
-    // seconds after the export click. Check once more before declaring that
-    // no job was created; do not click the export button again and risk a
-    // duplicate job.
-    if (!lateConfirmationChecked && elapsedMs >= 5_000) {
-      lateConfirmationChecked = true;
-      const lateConfirmation = await confirmSellerExportRequestPhysical(currentSellerProductFrame())
-        .catch(() => null);
-      if (lateConfirmation?.confirmationClicked) {
-        completeness.confirmationObserved = true;
-        completeness.confirmationClicked = true;
-        completeness.requestAcknowledged = true;
-        mainWindow?.webContents.send("brand-export:progress", {
-          status: "waiting-for-job-creation",
-          brandName,
-          jobState: "2ë‹¨ê³„/5 Â· ì§€ì—° í™•ì¸ì°½ ì²˜ë¦¬ ì™„ë£Œ Â· ìž‘ì—…ë²ˆí˜¸ ìƒì„± í™•ì¸ ì¤‘",
-          message: `${brandName} Â· ëŠ¦ê²Œ í‘œì‹œëœ POIZON ë‚´ë³´ë‚´ê¸° í™•ì¸ì°½ì„ ì²˜ë¦¬í–ˆìŠµë‹ˆë‹¤.`,
-        });
-      }
-    }
-    if (elapsedMs - lastProgressAt >= 10000) {
-      lastProgressAt = elapsedMs;
-      mainWindow?.webContents.send("brand-export:progress", {
-        status: "waiting-for-job-creation",
-        brandName,
-        jobState: `2ë‹¨ê³„/5 Â· ë‹¤ìš´ë¡œë“œì„¼í„° ìž‘ì—… ìƒì„± ëŒ€ê¸° Â· ${Math.floor(elapsedMs / 1000)}ì´ˆ`,
-        message: `${brandName} Â· ì „ì²´ ë‚´ë³´ë‚´ê¸° ìš”ì²­ ì™„ë£Œ Â· POIZONì´ ìƒˆ ìž‘ì—…ë²ˆí˜¸ë¥¼ ìƒì„±í•˜ëŠ” ì¤‘ìž…ë‹ˆë‹¤. í™”ë©´ì„ ë°˜ë³µ ì´ˆê¸°í™”í•˜ì§€ ì•Šê³  ê¸°ë‹¤ë¦½ë‹ˆë‹¤.`,
-      });
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 2500));
-    const monitor = ensureSellerMonitorWindow();
-    if (elapsedMs >= 15000 && Date.now() - lastReloadAt >= 15000) {
-      await monitor.webContents.reloadIgnoringCache();
-      lastReloadAt = Date.now();
-    }
-  }
-  if (cleared()) {
-    pendingBrandExportName = "";
-    pendingBrandExportJobId = "";
-    brandExportJobPending = false;
-    return { ok: false, code: "BRAND_ATTEMPT_ABORTED", message: `${brandName} ìž‘ì—… ì‹œê°„ì´ ì´ˆê³¼ë˜ì–´ ë‹¤ìŒ ë¸Œëžœë“œë¡œ ì´ë™í•©ë‹ˆë‹¤.` };
-  }
-  if (!createdJob) {
-    pendingBrandExportName = "";
-    pendingBrandExportJobId = "";
-    brandExportJobPending = false;
-    sellerWindow.hide();
-    return {
-      ok: false,
-      code: "EXPORT_JOB_NOT_CREATED",
-      confirmationObserved: Boolean(completeness?.confirmationObserved),
-      confirmationClicked: Boolean(completeness?.confirmationClicked),
-      requestAcknowledged: Boolean(completeness?.requestAcknowledged),
-      message: completeness?.confirmationObserved && !completeness?.confirmationClicked
-        ? "POIZON ì „ì²´ ë‚´ë³´ë‚´ê¸° í™•ì¸ì°½ì„ ì™„ë£Œí•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤. í™•ì¸ì°½ ì²˜ë¦¬ ë¡œì§ì„ ë‹¤ì‹œ ì ê²€í•´ ì£¼ì„¸ìš”."
-        : "ì‹¤ì œ ìƒí’ˆê²€ìƒ‰ê³¼ ì „ì²´ ë‚´ë³´ë‚´ê¸° ìš”ì²­ì€ ì‹¤í–‰ëì§€ë§Œ 3ë¶„ ë™ì•ˆ ìƒˆ ë¯¸ì‚¬ìš© ìž‘ì—…ë²ˆí˜¸ë¥¼ í™•ì¸í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤. ë‹¤ìš´ë¡œë“œì„¼í„° í™”ë©´ êµ¬ì¡° ë˜ëŠ” ë¡œê·¸ì¸ ì„¸ì…˜ì„ í™•ì¸í•´ ì£¼ì„¸ìš”.",
-    };
-  }
-  if (cleared()) return { ok: false, code: "WORK_CLEARED", message: "ìž‘ì—… ê¸°ë¡ ì‚­ì œë¡œ ì´ì „ ìš”ì²­ì„ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤." };
-  pendingBrandExportJobId = String(createdJob.id || "").trim();
-  const registeredJobId = pendingBrandExportJobId;
-  const existingOwner = brandExportJobOwner(registeredJobId);
-  if (existingOwner) {
-    pendingBrandExportName = "";
-    pendingBrandExportJobId = "";
-    brandExportJobPending = false;
-    sellerWindow.hide();
-    return {
-      ok: false,
-      code: "EXPORT_JOB_ID_REUSED",
-      message: `ìƒˆ ìž‘ì—…ë²ˆí˜¸ê°€ ìƒì„±ë˜ì§€ ì•Šì•˜ìŠµë‹ˆë‹¤. ê¸°ì¡´ ìž‘ì—…ë²ˆí˜¸ ${registeredJobId}ëŠ” ${existingOwner.brandName || "ë‹¤ë¥¸ ë¸Œëžœë“œ"} ìž‘ì—…ì— ì´ë¯¸ ì—°ê²°ë˜ì–´ ìžˆìŠµë‹ˆë‹¤.`,
-    };
-  }
-  const registeredCreatedAt = Number(createdJob.startAtMs || exportAcknowledgedAt || Date.now());
-  brandExportJobs.set(registeredJobId, {
-    jobId: registeredJobId,
-    brandName,
-    brandKo,
-    createdAt: registeredCreatedAt,
-    downloadStarted: false,
-    expectedProductCount: Number(completeness.expected || searched.expectedTotal || 0),
-  });
-  await rememberBrandExportJob({
-    jobId: registeredJobId,
-    brandName,
-    brandKo,
-    createdAt: registeredCreatedAt,
-    expectedProductCount: Number(completeness.expected || searched.expectedTotal || 0),
-    sessionGeneration,
-  });
-  mainWindow?.webContents.send("brand-export:progress", {
-    status: "job-created",
-    brandName,
-    jobId: registeredJobId,
-    jobState: "ìž‘ì—…ë²ˆí˜¸ ìƒì„± í™•ì¸ ì™„ë£Œ Â· ì „ì²´ ë“±ë¡ ëŒ€ê¸°",
-    message: `${brandName} Â· ìƒˆ ìž‘ì—…ë²ˆí˜¸ ${registeredJobId} ìƒì„± í™•ì¸ ì™„ë£Œ Â· ë‹¤ìŒ ë¸Œëžœë“œë¡œ ì´ë™`,
-  });
-  brandExportJobPending = false;
-  pendingBrandExportName = "";
-  pendingBrandExportJobId = "";
-  sellerWindow.hide();
-  if (!input.deferMonitor) void watchAllSellerExportJobsEveryTenSeconds();
-  return {
-    ok: true,
-    folder,
-    jobId: registeredJobId,
-    expectedProductCount: Number(completeness.expected || searched.expectedTotal || 0),
-  };
-}
-
-async function syncBrandCatalogFromKrPoizon() {
-  const window = new BrowserWindow({
-    show: false,
-    icon: APP_ICON_PATH,
-    width: 1280,
-    height: 900,
-    webPreferences: {
-      partition: "persist:around-g-poizon-brands",
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-  try {
-    await window.loadURL(KR_POIZON_BRAND_LIST_URL);
-    const source = await window.webContents.executeJavaScript(
-      `document.querySelector("#__NEXT_DATA__")?.textContent || ""`,
-      true
-    );
-    if (!source) throw new Error("KR_POIZON_BRAND_DATA_NOT_FOUND");
-    const koreanBrands = parseKrPoizonBrandData(source);
-    let englishBrands = [];
-    try {
-      await window.loadURL(EN_POIZON_BRAND_LIST_URL);
-      const englishSource = await window.webContents.executeJavaScript(
-        `document.querySelector("#__NEXT_DATA__")?.textContent || ""`,
-        true
-      );
-      if (englishSource) englishBrands = parseKrPoizonBrandData(englishSource);
-    } catch {
-      // í•œêµ­ ê³µì‹ ëª©ë¡ë§Œ ì™„ì „í•˜ë©´ ì „ì²´ ë¸Œëžœë“œ ê²€ìƒ‰ì„ ë§‰ì§€ ì•ŠëŠ”ë‹¤.
-    }
-    const brands = mergeLocalizedBrandCatalog(koreanBrands, englishBrands);
-    if (!Array.isArray(brands) || brands.length < FULL_BRAND_CATALOG_MINIMUM) {
-      throw new Error(`KR_POIZON_BRAND_COUNT_INVALID_${brands?.length || 0}`);
-    }
-    await store.setSettings({ brandCatalog: brands, brandCatalogUpdatedAt: new Date().toISOString() });
-    const officialBrandRegistry = await ensureOfficialDomainRegistry(brands);
-    return {
-      ok: true,
-      brands: brandsWithOfficialDomainStatus(brands, officialBrandRegistry),
-      officialDomainSummary: officialDomainRegistrySummary(officialBrandRegistry),
-      source: KR_POIZON_BRAND_LIST_URL,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: {
-        code: "KR_POIZON_BRAND_SYNC_FAILED",
-        message: "ê¸°ì¡´ í¬ë¡¬ ë°©ì‹ì˜ POIZON í•œêµ­ ë¸Œëžœë“œ ëª©ë¡ì„ ì½ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.",
-        detail: error instanceof Error ? error.message : String(error),
-      },
-    };
-  } finally {
-    if (!window.isDestroyed()) window.destroy();
-  }
-}
-
-async function queryPublicBrandProducts(input) {
-  const brandPath = publicBrandPath({
-    productUrl: input?.brandUrl,
-    name: input?.brandName,
-  });
-  if (!/^\/brand\/[a-z0-9][a-z0-9-]*$/i.test(brandPath)) {
-    return { ok: false, error: { code: "POIZON_BRAND_URL_INVALID", message: "POIZON ì˜ë¬¸ ë¸Œëžœë“œ ì£¼ì†Œë¥¼ ì°¾ì§€ ëª»í–ˆìŠµë‹ˆë‹¤." } };
-  }
-  const window = new BrowserWindow({
-    show: false,
-    icon: APP_ICON_PATH,
-    width: 1280,
-    height: 900,
-    webPreferences: {
-      partition: "persist:around-g-poizon-brands",
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-  try {
-    const productsByKey = new Map();
-    let pageCount = 1;
-    let sourceTotal = 0;
-    for (let pageNum = 1; pageNum <= pageCount; pageNum += 1) {
-      const pageUrl = new URL(brandPath, "https://kr.poizon.com");
-      if (pageNum > 1) pageUrl.searchParams.set("page", String(pageNum));
-      await window.loadURL(pageUrl.href);
-      const source = await window.webContents.executeJavaScript(
-        `document.querySelector("#__NEXT_DATA__")?.textContent || ""`,
-        true
-      );
-      if (!source) throw new Error(`KR_POIZON_BRAND_PRODUCTS_NOT_FOUND_PAGE_${pageNum}`);
-      const pageData = JSON.parse(source);
-      const pageProducts = parsePublicBrandProducts(pageData, input.brandId);
-      if (pageNum === 1) {
-        sourceTotal = Math.max(0, Number(pageData?.props?.pageProps?.total || pageProducts.length));
-        pageCount = publicBrandPageCount(sourceTotal, pageProducts.length, 100);
-      }
-      for (const product of pageProducts) {
-        const key = `${product.articleNumber}:${product.globalSpuId || product.spuId || ""}`;
-        productsByKey.set(key, product);
-      }
-      mainWindow?.webContents.send("explorer:brand-progress", {
-        percent: Math.round((pageNum / pageCount) * 100),
-        count: productsByKey.size,
-        pageNum,
-        pageCount,
-      });
-      if (!pageProducts.length) break;
-    }
-    if (!productsByKey.size) throw new Error("KR_POIZON_BRAND_PRODUCTS_EMPTY");
-    const salesByArticle = input?.salesByArticle || {};
-    let products = [...productsByKey.values()].map((product) => {
-      const articleNumber = String(product.articleNumber || "").trim();
-      const upperArticle = articleNumber.toUpperCase();
-      const normalizedArticle = upperArticle.replace(/[^A-Z0-9]/g, "");
-      const salesRecord = salesByArticle[articleNumber]
-        ?? salesByArticle[upperArticle]
-        ?? salesByArticle[normalizedArticle];
-      const hasSalesData = salesRecord !== undefined;
-      const hasLocalSalesData = salesRecord && typeof salesRecord === "object"
-        && salesRecord.localSales30d !== undefined;
-      return {
-        ...product,
-        brandName: String(input.brandName || ""),
-        hasSalesData,
-        hasLocalSalesData,
-        sales30d: hasSalesData ? Number(
-          salesRecord && typeof salesRecord === "object" ? salesRecord.sales30d : salesRecord,
-        ) || 0 : 0,
-        localSales30d: hasLocalSalesData ? Number(salesRecord.localSales30d || 0) : 0,
-      };
-    });
-    const salesDataCount = products.filter((product) => product.hasSalesData).length;
-    const localSalesDataCount = products.filter((product) => product.hasLocalSalesData).length;
-    const minimumChinaSales30 = input?.minimumChinaSales30 === null || input?.minimumChinaSales30 === undefined || input?.minimumChinaSales30 === ""
-      ? (input?.minimumSales30 ? 30 : null)
-      : Math.max(0, Number(input.minimumChinaSales30) || 0);
-    const minimumLocalSales30 = input?.minimumLocalSales30 === null || input?.minimumLocalSales30 === undefined || input?.minimumLocalSales30 === ""
-      ? (input?.minimumSales30 ? 30 : null)
-      : Math.max(0, Number(input.minimumLocalSales30) || 0);
-    if (minimumChinaSales30 !== null || minimumLocalSales30 !== null) {
-      products = products.filter((product) => (
-        minimumChinaSales30 === null || (product.hasSalesData && product.sales30d >= minimumChinaSales30)
-      ) && (
-        minimumLocalSales30 === null || (product.hasLocalSalesData && product.localSales30d >= minimumLocalSales30)
-      ));
-    }
-    return {
-      ok: true,
-      products,
-      total: products.length,
-      sourceTotal,
-      pages: pageCount,
-      pageNum: pageCount,
-      salesFilterAvailable: salesDataCount > 0,
-      salesDataCount,
-      localSalesDataCount,
-      minimumChinaSales30,
-      minimumLocalSales30,
-      sourceCount: pageCount,
-      failedSourceCount: 0,
-      publicSource: true,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: {
-        code: "KR_POIZON_BRAND_PRODUCTS_FAILED",
-        message: "POIZON ê³µê°œ ë¸Œëžœë“œ ìƒí’ˆì„ ì½ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.",
-        detail: error instanceof Error ? error.message : String(error),
-      },
-    };
-  } finally {
-    if (!window.isDestroyed()) window.destroy();
-  }
-}
-
-async function captureSellerCenterProducts() {
-  const revealSellerLogin = () => {
-    if (!sellerWindow || sellerWindow.isDestroyed()) return;
-    if (sellerWindow.isMinimized()) sellerWindow.restore();
-    sellerWindow.show();
-    sellerWindow.focus();
-    mainWindow?.webContents.send("seller:capture-progress", {
-      attentionRequired: true,
-      message: "POIZON ë¡œê·¸ì¸ ë˜ëŠ” ë³´ì•ˆ í™•ì¸ì´ í•„ìš”í•´ íŒë§¤ìžì„¼í„° ì°½ì„ í‘œì‹œí–ˆìŠµë‹ˆë‹¤.",
-    });
-  };
-  if (!sellerWindow || sellerWindow.isDestroyed()) {
-    mainWindow?.webContents.send("seller:capture-progress", { percent: 2, count: 0, message: "íŒë§¤ìžì„¼í„°ë¥¼ ì—¬ëŠ” ì¤‘" });
-    openSellerCenterWindow(SELLER_CENTER_URL, { visible: false });
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      await wait(500);
-      if (sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.getURL()) break;
-    }
-    if (!sellerWindow || sellerWindow.isDestroyed()) {
-      return { ok: false, message: "íŒë§¤ìžì„¼í„° ì°½ì„ ì—´ì§€ ëª»í–ˆìŠµë‹ˆë‹¤." };
-    }
-  }
-  if (sellerWindow && !sellerWindow.isDestroyed()) {
-    minimizeSellerAutomationWindow("POIZON ë¡œê·¸ì¸ ì„¸ì…˜ì„ ë°±ê·¸ë¼ìš´ë“œì—ì„œ í™•ì¸ ì¤‘ìž…ë‹ˆë‹¤.");
-  }
-  mainWindow?.webContents.send("seller:capture-progress", { percent: 5, count: 0, message: "ë¡œê·¸ì¸ ì„¸ì…˜ í™•ì¸ ì¤‘" });
-  let currentUrl = sellerWindow.webContents.getURL();
-  for (let attempt = 0; attempt < 20 && !currentUrl; attempt += 1) {
-    await wait(500);
-    currentUrl = sellerWindow.webContents.getURL();
-  }
-  if (!currentUrl.startsWith("https://seller.poizon.com/")) {
-    revealSellerLogin();
-    return { ok: false, message: "íŒë§¤ìžì„¼í„° ì¸ê¸°ìƒí’ˆ í™”ë©´ìœ¼ë¡œ ì´ë™í•´ ì£¼ì„¸ìš”." };
-  }
-  if (!currentUrl.includes("/main/dataCenter/merchantRankBoard")) {
-    await sellerWindow.loadURL(SELLER_CENTER_URL);
-    await wait(1_800);
-    currentUrl = sellerWindow.webContents.getURL();
-    if (!currentUrl.includes("/main/dataCenter/merchantRankBoard")) {
-      revealSellerLogin();
-      return { ok: false, message: "íŒë§¤ìžì„¼í„° ë¡œê·¸ì¸ì„ ì™„ë£Œí•´ ì£¼ì„¸ìš”. ë¡œê·¸ì¸ ì„¸ì…˜ì€ ë‹¤ìŒ ì‹¤í–‰ë¶€í„° ìžë™ìœ¼ë¡œ ìœ ì§€ë©ë‹ˆë‹¤." };
-    }
-  }
-  sellerWindow.maximize();
-  minimizeSellerAutomationWindow("POIZON ì¸ê¸°ìƒí’ˆ ì¡°ê±´ì„ ë°±ê·¸ë¼ìš´ë“œì—ì„œ ì ìš© ì¤‘ìž…ë‹ˆë‹¤.");
-  await wait(700);
-  const networkProducts = [];
-  let debuggerListener;
-  let debuggerAttachedHere = false;
-  try {
-    if (!sellerWindow.webContents.debugger.isAttached()) {
-      sellerWindow.webContents.debugger.attach("1.3");
-      debuggerAttachedHere = true;
-    }
-    await sellerWindow.webContents.debugger.sendCommand("Network.enable");
-    debuggerListener = async (_event, method, params) => {
-      if (method !== "Network.responseReceived" || !["XHR", "Fetch"].includes(params?.type)) return;
-      if (!String(params?.response?.url || "").includes("seller.poizon.com")) return;
-      try {
-        const body = await sellerWindow.webContents.debugger.sendCommand("Network.getResponseBody", {
-          requestId: params.requestId,
-        });
-        const parsed = JSON.parse(body.base64Encoded
-          ? Buffer.from(body.body, "base64").toString("utf8")
-          : body.body);
-        networkProducts.push(...extractSellerApiProducts(parsed, 200));
-      } catch {
-        // JSONì´ ì•„ë‹Œ ì‘ë‹µì´ë‚˜ ë³´ì•ˆ ì‘ë‹µì€ í™”ë©´ ì•ˆì •í™” ìˆ˜ì§‘ìœ¼ë¡œ ì²˜ë¦¬í•©ë‹ˆë‹¤.
-      }
-    };
-    sellerWindow.webContents.debugger.on("message", debuggerListener);
-  } catch {
-    debuggerAttachedHere = false;
-  }
-  const stopNetworkCapture = () => {
-    if (debuggerListener) sellerWindow?.webContents.debugger.removeListener("message", debuggerListener);
-    if (debuggerAttachedHere && sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.debugger.isAttached()) {
-      try { sellerWindow.webContents.debugger.detach(); } catch {}
-    }
-  };
-  let conditionResults = [];
-  let failedConditions = [];
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    mainWindow?.webContents.send("seller:capture-progress", {
-      percent: 5 + attempt,
-      count: 0,
-      message: `ì¸ê¸°ìƒí’ˆ ì¡°ê±´ ì ìš© ì¤‘ (${attempt}/3)`,
-    });
-    conditionResults = await applySellerPopularConditions();
-    failedConditions = conditionResults.filter((condition) => (
-      !condition.found
-      || (condition.action === "select" && !condition.verifiedSelected)
-      || (condition.action === "fullscreen" && !condition.expanded)
-    ));
-    if (!failedConditions.length) break;
-    await wait(1_500 * attempt);
-  }
-  if (failedConditions.length) {
-    stopNetworkCapture();
-    return {
-      ok: false,
-      message: `ì¸ê¸°ìƒí’ˆ ì¡°ê±´ í™•ì¸ ì‹¤íŒ¨: ${failedConditions.map((condition) => condition.label).join(", ")}. ìž˜ëª»ëœ ë°ì´í„°ëŠ” ì €ìž¥í•˜ì§€ ì•Šì•˜ìŠµë‹ˆë‹¤.`,
-      conditions: conditionResults,
-    };
-  }
-  mainWindow?.webContents.send("seller:capture-progress", {
-    percent: 12,
-    count: 0,
-    message: "ì¼ì£¼ì¼ ì „ Â· ì£¼ê°„ ëŒ€ë¹„ Â· íŒë§¤ ì¸ê¸° ë†’ì€ ìˆœ Â· SPU Â· ì¸ê¸°ìƒí’ˆ ì „ì²´í™”ë©´ í™•ì¸ ì™„ë£Œ",
-  });
-  const fullscreenCondition = conditionResults.find((condition) => condition.key === "fullscreen");
-  if (!fullscreenCondition?.found) {
-    stopNetworkCapture();
-    return {
-      ok: false,
-      message: `ì¸ê¸°ìƒí’ˆ ì „ì²´í™”ë©´ ë²„íŠ¼ì„ ëˆ„ë¥´ì§€ ëª»í–ˆìŠµë‹ˆë‹¤. ìž˜ëª»ëœ 9ê°œ ëª©ë¡ì€ ì €ìž¥í•˜ì§€ ì•ŠìŠµë‹ˆë‹¤.${fullscreenCondition?.x !== undefined ? ` í´ë¦­ ì¢Œí‘œ (${fullscreenCondition.x}, ${fullscreenCondition.y}), ëŒ€ìƒ ${fullscreenCondition.targetTag || "ì—†ìŒ"}` : ""}`,
-      conditions: conditionResults,
-    };
-  }
-  const frames = [sellerWindow.webContents.mainFrame, ...(sellerWindow.webContents.mainFrame.framesInSubtree || [])]
-    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
-  const captures = [];
-  const limit = 200;
-  const capturedNodes = new Map();
-  const rankSlots = new Map();
-  const stableObservations = new Map();
-  const rankPositions = new Map();
-  const rankIsComplete = (rank) => {
-    const product = rankSlots.get(rank);
-    return Boolean(
-      String(product?.articleNumber || "").trim()
-      && String(product?.name || "").trim()
-      && Number(product?.averagePrice || 0) > 0
-      && product?.missingRank !== true
-    );
-  };
-  const completeRankCount = () => popularCompleteness([...rankSlots.values()], limit).captured;
-  const addConfirmedProduct = (product) => {
-    const rank = Number(product.rank || 0);
-    const articleNumber = String(product.articleNumber || "").toUpperCase();
-    const name = String(product.name || "").trim();
-    if (rank < 1 || rank > limit || (!articleNumber && !name)) return;
-    const merged = mergeSellerProductsByRank([[rankSlots.get(rank)], [{ ...product, articleNumber, name }]], limit)[0];
-    if (merged) rankSlots.set(rank, merged);
-  };
-  const addNodesToSlots = (nodes, scrollTop = 0, scrollMaximum = 0) => {
-    for (const product of parseSellerDomNodes(nodes, limit)) {
-      const rank = Number(product.rank || 0);
-      const articleNumber = String(product.articleNumber || "").toUpperCase();
-      if (!product.rankDetected || rank < 1 || rank > limit || !articleNumber) continue;
-      const signature = JSON.stringify([
-        articleNumber,
-        product.name,
-        Number(product.averagePrice || 0),
-        Number(product.lowestPrice || 0),
-        Number(product.highestPrice || 0),
-      ]);
-      const previous = stableObservations.get(rank);
-      const observation = previous?.signature === signature
-        ? { signature, count: previous.count + 1, product }
-        : { signature, count: 1, product };
-      stableObservations.set(rank, observation);
-      if (scrollMaximum > 0) {
-        const ratio = Math.max(0, Math.min(1, Number(scrollTop || 0) / Number(scrollMaximum)));
-        const positions = rankPositions.get(rank) || [];
-        positions.push(ratio);
-        rankPositions.set(rank, positions.slice(-8));
-      }
-      // A detected rank is pasted directly into the matching 1-200 slot.
-      // Later observations may verify it, but a single valid row is never
-      // discarded merely because virtualization removed it from the screen.
-      addConfirmedProduct(product);
-    }
-  };
-  const captureFrameWithTimeout = async (frame, timeoutMs = 2_500) => Promise.race([
-    frame.executeJavaScript(SELLER_CAPTURE_SCRIPT, true),
-    new Promise((_, reject) => setTimeout(
-      () => reject(new Error("seller frame capture timeout")),
-      timeoutMs,
-    )),
-  ]);
-  const captureVisibleSlots = async () => {
-    const signatures = [];
-    for (const frame of frames) {
-      try {
-        const captured = await captureFrameWithTimeout(frame);
-        if (!captured?.scopeVerified) continue;
-        captures.push(captured);
-        if (captured.signature) signatures.push(String(captured.signature));
-        for (const node of captured.nodes || []) {
-          capturedNodes.set(`${String(node.text || "")}\n${String(node.imageUrl || "")}`, node);
-        }
-        addNodesToSlots(captured.nodes || [], captured.scrollTop, captured.scrollMaximum);
-      } catch {
-        // ì ‘ê·¼í•  ìˆ˜ ì—†ëŠ” ê´‘ê³ /ë³´ì•ˆ í”„ë ˆìž„ì€ ê±´ë„ˆëœë‹ˆë‹¤.
-      }
-    }
-    return signatures.sort().join("\n--frame--\n");
-  };
-  minimizeSellerAutomationWindow("POIZON ì¸ê¸°ìƒí’ˆ 200ê±´ì„ ë°±ê·¸ë¼ìš´ë“œì—ì„œ ìˆ˜ì§‘ ì¤‘ìž…ë‹ˆë‹¤.");
-  const captureAfterRowChange = async (previousSignature, atEnd = false) => {
-    let latestSignature = "";
-    // The rank board is virtualized and sometimes paints later than scrollTop.
-    // Do not advance again until the rendered row set actually changes. Every
-    // observation is still collected, so a short-lived row cannot be skipped.
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      await wait(attempt === 0 ? 140 : 110 + attempt * 15);
-      latestSignature = await captureVisibleSlots();
-      if (atEnd || !previousSignature || (latestSignature && latestSignature !== previousSignature)) break;
-    }
-    return latestSignature || previousSignature;
-  };
-  for (let pass = 0; pass < 3 && completeRankCount() < limit; pass += 1) {
-    await dragSellerScrollbarToRatio(0);
-    await wait(900);
-    let atEnd = false;
-    let iteration = 0;
-    let visibleSignature = "";
-    while (!atEnd && iteration < 2_000 && completeRankCount() < limit) {
-      iteration += 1;
-      visibleSignature = await captureVisibleSlots() || visibleSignature;
-      const scrollResult = await executeAcrossSellerFrames(SELLER_ROW_SCROLL_SCRIPT);
-      if (!scrollResult?.found) break;
-      atEnd = Boolean(scrollResult.atEnd);
-      visibleSignature = await captureAfterRowChange(visibleSignature, atEnd);
-      const tableRatio = scrollResult.maximum > 0
-        ? Math.min(1, scrollResult.after / scrollResult.maximum)
-        : 1;
-      const basePercent = pass === 0 ? 12 : 86 + ((pass - 1) * 6);
-      const passRange = pass === 0 ? 74 : 6;
-      mainWindow?.webContents.send("seller:capture-progress", {
-        percent: Math.min(99, Math.round(basePercent + tableRatio * passRange)),
-        count: completeRankCount(),
-        target: limit,
-        missing: limit - completeRankCount(),
-        message: pass === 0
-          ? `1~${limit}ìœ„ ìŠ¬ë¡¯ì„ í•œ í–‰ì”© í™•ì¸ ì¤‘ Â· í‘œ ìœ„ì¹˜ ${Math.round(tableRatio * 100)}%`
-          : `ëˆ„ë½ ìŠ¬ë¡¯ ìž¬í™•ì¸ ${pass}/2 Â· í‘œ ìœ„ì¹˜ ${Math.round(tableRatio * 100)}%`,
-      });
-    }
-    await captureVisibleSlots();
-  }
-  if (!captures.length) {
-    stopNetworkCapture();
-    return {
-      ok: false,
-      message: "íŒë§¤ìžì„¼í„°ì˜ â€˜ì¸ê¸°ìƒí’ˆâ€™ í‘œ ì˜ì—­ì„ í™•ì¸í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤. â€˜ì¸ê¸°ìƒí’ˆâ€™ ì œëª©ê³¼ SPU/SKU ê¸°ì¤€ì´ í•¨ê»˜ ë³´ì´ëŠ” ìƒíƒœì—ì„œ ë‹¤ì‹œ ëˆŒëŸ¬ ì£¼ì„¸ìš”.",
-    };
-  }
-  const missingRankGroups = () => {
-    const missing = popularCompleteness([...rankSlots.values()], limit).missingRanks;
-    const groups = [];
-    for (const rank of missing) {
-      const previous = groups.at(-1);
-      if (previous && previous.end + 1 === rank) previous.end = rank;
-      else groups.push({ start: rank, end: rank });
-    }
-    return groups;
-  };
-  const observedRatioForRank = (rank) => {
-    const observations = [...rankPositions.entries()]
-      .map(([observedRank, ratios]) => ({
-        rank: Number(observedRank),
-        ratio: ratios.reduce((sum, value) => sum + value, 0) / Math.max(1, ratios.length),
-      }))
-      .filter((entry) => Number.isFinite(entry.ratio))
-      .sort((left, right) => left.rank - right.rank);
-    const before = [...observations].reverse().find((entry) => entry.rank <= rank);
-    const after = observations.find((entry) => entry.rank >= rank);
-    if (before && after && before.rank !== after.rank) {
-      const progress = (rank - before.rank) / (after.rank - before.rank);
-      return before.ratio + (after.ratio - before.ratio) * progress;
-    }
-    if (before) return before.ratio;
-    if (after) return after.ratio;
-    return (rank - 1) / Math.max(1, limit - 1);
-  };
-
-  // Revisit only missing rank ranges. Positions observed during the full scan
-  // are authoritative; the simple rank/200 ratio is used only as a fallback.
-  for (let recoveryRound = 0; recoveryRound < 6 && completeRankCount() < limit; recoveryRound += 1) {
-    for (const product of networkProducts) addConfirmedProduct(product);
-    const groups = missingRankGroups();
-    if (!groups.length) break;
-    mainWindow?.webContents.send("seller:capture-progress", {
-      percent: 96 + Math.min(3, recoveryRound),
-      count: completeRankCount(),
-      target: limit,
-      missing: limit - completeRankCount(),
-      message: `ëˆ„ë½ ìˆœìœ„ë§Œ ì •ë°€ ìž¬ìˆ˜ì§‘ ${recoveryRound + 1}/6 Â· ${groups.map((group) => group.start === group.end ? group.start : `${group.start}-${group.end}`).slice(0, 18).join(", ")}`,
-    });
-    for (const group of groups) {
-      const groupRanks = Array.from({ length: group.end - group.start + 1 }, (_value, index) => group.start + index);
-      if (groupRanks.every(rankIsComplete)) continue;
-      const centerRatio = observedRatioForRank(group.start);
-      // Virtualized rows can leave a one-row paint gap at an otherwise correct
-      // scrollTop. Probe both sides of the observed position, wait for repaint,
-      // and nudge in both directions instead of replaying the same forward scan.
-      const probeOffsets = [-0.024, -0.012, 0, 0.012, 0.024];
-      for (const offset of probeOffsets) {
-        if (groupRanks.every(rankIsComplete)) break;
-        const probeRatio = Math.max(0, Math.min(1, centerRatio + offset));
-        const probeRank = 1 + probeRatio * (limit - 1);
-        const dragged = await dragSellerScrollbarToRatio(probeRatio);
-        if (!dragged) await executeAcrossSellerFrames(sellerJumpScript(probeRank, limit));
-        await wait(800 + recoveryRound * 120);
-        for (let repaint = 0; repaint < 8 && !groupRanks.every(rankIsComplete); repaint += 1) {
-          await captureVisibleSlots();
-          for (const product of networkProducts) addConfirmedProduct(product);
-          if (groupRanks.every(rankIsComplete)) break;
-          const direction = repaint % 2 === 0 ? 1 : -1;
-          const distance = 18 + Math.floor(repaint / 2) * 12;
-          await executeAcrossSellerFrames(sellerNudgeScript(direction * distance));
-          await wait(180 + repaint * 35);
-        }
-      }
-    }
-  }
-  await wait(600);
-  for (const product of networkProducts) addConfirmedProduct(product);
-  const captureCompleteness = popularCompleteness([...rankSlots.values()], limit);
-  if (!captureCompleteness.complete) {
-    const missingLabel = captureCompleteness.missingRanks.slice(0, 40).join(", ");
-    mainWindow?.webContents.send("seller:capture-progress", {
-      percent: 99,
-      count: captureCompleteness.captured,
-      target: limit,
-      missing: captureCompleteness.missingRanks.length,
-      attentionRequired: true,
-      message: `ìž¬ìˆ˜ì§‘ ì¢…ë£Œ Â· ${captureCompleteness.captured}/${limit} í™•ì¸ Â· ëˆ„ë½ ìˆœìœ„ ${missingLabel}${captureCompleteness.missingRanks.length > 40 ? "â€¦" : ""} Â· í™•ì¸ëœ ìƒí’ˆì„ ì €ìž¥í•©ë‹ˆë‹¤.`,
-    });
-  }
-  let products = [];
-  for (const captured of captures) {
-    const parsed = parsePopularProducts({ text: captured.text });
-    if (parsed.ok && parsed.products.length > products.length) products = parsed.products;
-  }
-  if (!products.length && captures.length > 1) {
-    const combined = parsePopularProducts({ text: captures.map((capture) => capture.text).join("\n") });
-    if (combined.ok) products = combined.products;
-  }
-  const nodes = [...capturedNodes.values()];
-  const nodeProducts = parseSellerDomNodes(nodes, limit);
-  if (nodeProducts.length > products.length) products = nodeProducts;
-  const slotProducts = [...rankSlots.values()].sort((left, right) => left.rank - right.rank);
-  products = mergeSellerProductsByRank([
-    products,
-    nodeProducts,
-    slotProducts,
-    networkProducts,
-  ], limit);
-  const validProducts = products.filter((product) => {
-    const articleNumber = String(product.articleNumber || "").trim();
-    const name = String(product.name || "").trim();
-    const hasRealArticle = !articleNumber
-      || /^[A-Z0-9][A-Z0-9._/-]{2,39}(?:\s+[A-Z0-9][A-Z0-9._/-]{0,19}){0,3}$/i.test(articleNumber);
-    const isHeader = /^(?:SPU ê¸°ì¤€|SKU ê¸°ì¤€|SPU ê¸°ì¤€ SKU ê¸°ì¤€|ìƒí’ˆì •ë³´|í‰ê·  ê±°ëž˜ê°€(?:\\(KRW\\))?)$/i.test(name);
-    return hasRealArticle && !isHeader && Boolean(articleNumber || name);
-  });
-  if (!validProducts.length) {
-    stopNetworkCapture();
-    const frameSummary = captures.map((capture) => `${capture.title || "frame"}:${capture.text.length}`).join(", ");
-    return {
-      ok: false,
-      message: `ì¸ê¸°ìƒí’ˆ í‘œëŠ” í™•ì¸í–ˆì§€ë§Œ ì‹¤ì œ í’ˆë²ˆê³¼ ê°€ê²©ì´ ìžˆëŠ” ìƒí’ˆ í–‰ì„ ì°¾ì§€ ëª»í–ˆìŠµë‹ˆë‹¤. í‘œì˜ 1ìœ„ ìƒí’ˆ í–‰ì´ ë³´ì´ë„ë¡ ìŠ¤í¬ë¡¤í•œ ë’¤ ë‹¤ì‹œ ëˆŒëŸ¬ ì£¼ì„¸ìš”.${frameSummary ? ` (í™•ì¸í•œ í™”ë©´ ${captures.length}ê°œ)` : ""}`,
-    };
-  }
-  const preservedSlots = new Map();
-  for (const product of validProducts.sort((left, right) => Number(left.rank) - Number(right.rank))) {
-    const rank = Number(product.rank || 0);
-    const articleNumber = String(product.articleNumber || "").toUpperCase();
-    if (rank < 1 || rank > limit || preservedSlots.has(rank)) continue;
-    preservedSlots.set(rank, { ...product, articleNumber });
-  }
-  const finalCompleteness = popularCompleteness([...preservedSlots.values()], limit);
-  products = createPopularSlots([...preservedSlots.values()], limit);
-  mainWindow?.webContents.send("seller:capture-progress", {
-    percent: 100,
-    count: preservedSlots.size,
-    target: limit,
-    missing: finalCompleteness.missingRanks.length,
-    message: finalCompleteness.complete
-      ? `1~${limit}ìœ„ ì™„ì „ ìˆ˜ì§‘ í™•ì¸ Â· ìƒí’ˆ ${preservedSlots.size}ê°œ Â· ëˆ„ë½ 0ê°œ`
-      : `ìˆ˜ì§‘ ì¢…ë£Œ Â· ìƒí’ˆ ${finalCompleteness.captured}/${limit} Â· ëˆ„ë½ ${finalCompleteness.missingRanks.length}ê°œ Â· Excel ì €ìž¥`,
-  });
-  stopNetworkCapture();
-  const codes = products.map((product) => product.articleNumber).filter(Boolean);
-  const imageMap = {};
-  for (const code of codes) {
-    const matchingNode = nodes
-      .filter((node) => node.imageUrl && String(node.text || "").includes(code))
-      .sort((left, right) => String(left.text || "").length - String(right.text || "").length)[0];
-    if (matchingNode) imageMap[code] = matchingNode.imageUrl;
-  }
-  return {
-    ok: true,
-    source: "seller-center-direct",
-    capturedAt: new Date().toISOString(),
-    partial: !finalCompleteness.complete,
-    missingRanks: finalCompleteness.missingRanks,
-    pageUrl: currentUrl,
-    conditions: conditionResults,
-    products: products.map((product) => ({
-      ...product,
-      logoUrl: imageMap[product.articleNumber] || "",
-      sellerCenterDirect: true,
-      apiMatched: undefined,
-    })),
-  };
-}
-
-async function captureSellerBrandSales(input = {}) {
-  const liveVerifier = input.verification?.runId ? createPageCrossCheck(input.verification) : null;
-  const verificationRunId = String(input.verification?.runId || '').trim();
-  const assertVerificationRunning = () => {
-    if (verificationRunId && cancelledSellerVerificationRuns.has(verificationRunId)) {
-      throw new Error('ì‚¬ìš©ìžê°€ ìƒí’ˆ ëŒ€ì¡°ë¥¼ ì¤‘ì§€í–ˆìŠµë‹ˆë‹¤. ì™„ë£Œëœ íŽ˜ì´ì§€ê¹Œì§€ ì €ìž¥ë˜ì—ˆìŠµë‹ˆë‹¤.');
-    }
-  };
-  const waitVerification = async (milliseconds) => {
-    const deadline = Date.now() + milliseconds;
-    while (Date.now() < deadline) {
-      assertVerificationRunning();
-      await wait(Math.min(250, deadline - Date.now()));
-    }
-    assertVerificationRunning();
-  };
-  const reportCaptureProgress = (progress) => {
-    mainWindow?.webContents.send("explorer:brand-progress", progress);
-    if (liveVerifier) mainWindow?.webContents.send("seller:verification-progress", {
-      runId: input.verification.runId, phase: "capture-status", message: progress.message,
-      conditions: liveVerifier.conditions, updatedAt: new Date().toISOString(),
-    });
-  };
-  // POIZON_PAGE_CHECKPOINT_BEFORE_NAVIGATION
-  const checkpointSummary = {
-    enabled: Boolean(liveVerifier),
-    filePath: String(input.verification?.filePath || input.filePath || "").trim(),
-    pagesCompleted: 0, changedRows: 0, changedCells: 0, addedRows: 0, addedProducts: 0, verifiedCells: 0, deferredProducts: 0,
-    reverified: true, backupPath: '', changes: [],
-  };
-  const checkpointPages = new Set();
-  // POIZON_PAGE_TRANSACTION_GATE: a visible Excel review must complete
-  // compare â†’ write â†’ disk reread â†’ recompare before the next page click.
-  if (checkpointSummary.enabled && !checkpointSummary.filePath) {
-    throw new Error("POIZON íŽ˜ì´ì§€ë³„ ê²€ì¦ìš© Excel íŒŒì¼ ê²½ë¡œê°€ ì—†ì–´ ë‹¤ìŒ íŽ˜ì´ì§€ ì´ë™ì„ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤.");
-  }
-  const sellerPageDelayMs = 12_000;
-  const sellerBatchPauseEvery = 10;
-  const sellerBatchPauseMs = 45_000;
-  const sellerPageResponseAttempts = 360; // 360 Ã— 250ms = 90 seconds
-  const sellerPageSettleMs = 10_000;
-  if (!sellerWindow || sellerWindow.isDestroyed()) {
-    openSellerCenterWindow();
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      await wait(500);
-      if (sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.getURL()) break;
-    }
-  }
-  if (!sellerWindow || sellerWindow.isDestroyed()) {
-    return { ok: false, message: "íŒë§¤ìžì„¼í„° ì°½ì„ ì—´ì§€ ëª»í–ˆìŠµë‹ˆë‹¤." };
-  }
-  reportCaptureProgress({
-    percent: 1,
-    count: 0,
-    pageNum: 0,
-    pageCount: 0,
-    phase: "seller-login",
-    brandName: input.brandKo || input.brandName || "ë¸Œëžœë“œ",
-    message: "POIZON íŒë§¤ìžì„¼í„° ë¡œê·¸ì¸ ìƒíƒœ í™•ì¸ ì¤‘",
-  });
-  const login = await ensureSellerLoginBeforeBrandSearch(input.brandKo || input.brandName || "");
-  if (!login.ok) {
-    return {
-      ok: false,
-      code: login.code || "SELLER_LOGIN_REQUIRED",
-      message: "POIZON íŒë§¤ìžì„¼í„° ë¡œê·¸ì¸ì´ í•„ìš”í•©ë‹ˆë‹¤. ì—´ë¦° ì°½ì—ì„œ ë¡œê·¸ì¸ í›„ ë‹¤ì‹œ ë™ê¸°í™”í•´ ì£¼ì„¸ìš”.",
-    };
-  }
-  // Screen synchronization must operate against the actually rendered Seller
-  // Center window. Real keyboard/mouse events and Ant pagination can be ignored
-  // while the BrowserWindow is hidden on some Windows systems.
-  if (sellerWindow.isMinimized()) sellerWindow.restore();
-  sellerWindow.show();
-  sellerWindow.focus();
-  await wait(350);
-  if (!await enterSellerProductSearchViaMenu()) {
-    if (sellerWindow && !sellerWindow.isDestroyed()) {
-      if (sellerWindow.isMinimized()) sellerWindow.restore();
-      sellerWindow.show();
-      sellerWindow.focus();
-    }
-    return {
-      ok: false,
-      code: "SELLER_PRODUCT_SEARCH_UNAVAILABLE",
-      message: "íŒë§¤ìžì„¼í„° ìƒí’ˆ ê²€ìƒ‰ í™”ë©´ì„ ì—´ì§€ ëª»í–ˆìŠµë‹ˆë‹¤. ì—´ë¦° í™”ë©´ì„ í™•ì¸í•œ ë’¤ ë‹¤ì‹œ ë™ê¸°í™”í•´ ì£¼ì„¸ìš”.",
-    };
-  }
-  const networkSellerProducts = [];
-  const pendingBrandResponses = new Set();
-  let brandDebuggerListener;
-  let brandDebuggerAttachedHere = false;
-  const stopBrandNetworkCapture = () => {
-    try {
-      if (brandDebuggerListener) {
-        sellerWindow?.webContents.debugger.removeListener("message", brandDebuggerListener);
-      }
-      if (brandDebuggerAttachedHere && sellerWindow?.webContents.debugger.isAttached()) {
-        sellerWindow.webContents.debugger.detach();
-      }
-    } catch {}
-  };
-  try {
-    const sellerDebugger = sellerWindow.webContents.debugger;
-    if (!sellerDebugger.isAttached()) {
-      sellerDebugger.attach("1.3");
-      brandDebuggerAttachedHere = true;
-    }
-    await sellerDebugger.sendCommand("Network.enable");
-    brandDebuggerListener = async (_event, method, params) => {
-      if (method === "Network.responseReceived") {
-        const response = params?.response || {};
-        if (!["XHR", "Fetch"].includes(params?.type)) return;
-        // Seller Center serves product metrics through several gateway hosts.
-        // This debugger is attached only to the dedicated Seller Center window,
-        // so inspect every XHR/Fetch response instead of assuming *.poizon.com.
-        pendingBrandResponses.add(params.requestId);
-        return;
-      }
-      if (method !== "Network.loadingFinished" || !pendingBrandResponses.has(params?.requestId)) return;
-      pendingBrandResponses.delete(params.requestId);
-      try {
-        const payload = await sellerDebugger.sendCommand("Network.getResponseBody", {
-          requestId: params.requestId,
-        });
-        const text = payload?.base64Encoded
-          ? Buffer.from(payload.body || "", "base64").toString("utf8")
-          : String(payload?.body || "");
-        if (!/^\s*[\[{]/.test(text)) return;
-        networkSellerProducts.push(...extractSellerBrandApiProducts(JSON.parse(text)));
-      } catch {}
-    };
-    sellerDebugger.on("message", brandDebuggerListener);
-  } catch {}
-  // Seller Center keeps brand names in their original English form. Searching
-  // a translated Korean label first can leave the unfiltered 9,900-row table.
-  const brandNames = [input.brandName, input.brandKo].map((value) => String(value || "").trim()).filter(Boolean);
-  const sellerBrandSearchName = brandsMatch(input.brandName, "On")
-    ? "On Running"
-    : preferredSellerBrandSearchName(brandNames);
-  // Reuse the proven POIZON ìƒí’ˆì •ë³´ workflow first: focus the same top
-  // product-search input, type with Electron's real keyboard events and click
-  // ê²€ìƒ‰ ë° ìž…ì°° with real pointer events. The exact brand dropdown remains a
-  // compatibility fallback for Seller Center layouts without that input.
-  const existingBrandSearch = await typeSellerBrandWithRealKeyboard(
-    sellerWindow.webContents.mainFrame,
-    sellerBrandSearchName,
-  ).catch(() => ({ ok: false, step: "REAL_KEYBOARD_INPUT_FAILED" }));
-  const selected = existingBrandSearch?.ok
-    ? { ok: true, selected: sellerBrandSearchName, route: "EXISTING_POIZON_BRAND_SEARCH" }
-    : await sellerWindow.webContents.executeJavaScript(`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getClientRects().length > 0;
-    const searchInput = [...document.querySelectorAll("input")].find((element) =>
-      visible(element) && /ìƒí’ˆëª…\\/ìƒí’ˆë²ˆí˜¸\\/ë¸Œëžœë“œ\\/ì¹´í…Œê³ ë¦¬\\/ì‹œë¦¬ì¦ˆ/.test(element.placeholder || "")
-    );
-    if (searchInput?.value) {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-      setter.call(searchInput, "");
-      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
-      searchInput.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-    const globalReset = [...document.querySelectorAll("button,[role=button]")].find((button) =>
-      visible(button) && button.textContent.trim() === "ì´ˆê¸°í™”"
-    );
-    if (globalReset) {
-      globalReset.click();
-      await wait(800);
-    }
-    // íŒë§¤ìžì„¼í„° ì‹¤ì œ ìƒí’ˆ ê²€ìƒ‰ í™”ë©´ê³¼ ë™ì¼í•œ ê¸°ë³¸ ê²½ë¡œ:
-    // ìƒë‹¨ ìƒí’ˆì •ë³´ ìž…ë ¥ëž€ì— ì„ íƒ ë¸Œëžœë“œë¥¼ ìž…ë ¥í•˜ê³  "ê²€ìƒ‰ ë° ìž…ì°°"ì„ ì‹¤í–‰í•œë‹¤.
-    const preferredNames = ${JSON.stringify(brandNames)};
-    // ìƒë‹¨ í†µí•©ê²€ìƒ‰ì€ React ìƒíƒœê°€ ë°˜ì˜ë˜ì§€ ì•Šì•„ ì „ì²´ 9,900ê±´ì´ ê·¸ëŒ€ë¡œ
-    // ë‚¨ëŠ” ê²½ìš°ê°€ ìžˆë‹¤. ì •í™•í•œ ë¸Œëžœë“œ ë“œë¡­ë‹¤ìš´ í•„í„°ë¥¼ ë¨¼ì € ì ìš©í•˜ê³ ,
-    // ë“œë¡­ë‹¤ìš´ì„ ì°¾ì§€ ëª»í–ˆì„ ë•Œë§Œ ìƒë‹¨ ê²€ìƒ‰ì„ ë³´ì¡° ê²½ë¡œë¡œ ì‚¬ìš©í•œë‹¤.
-    const ownText = (element) => [...element.childNodes]
-      .filter((node) => node.nodeType === Node.TEXT_NODE)
-      .map((node) => node.textContent)
-      .join("")
-      .trim();
-    const brandLabel = [...document.querySelectorAll("button,[role=button],label,span,div")]
-      .filter((element) => visible(element) && (ownText(element) === "ë¸Œëžœë“œ" || element.textContent.trim() === "ë¸Œëžœë“œ"))
-      .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
-    const brandButton = brandLabel?.closest("button,[role=button],.ant-select,.ant-dropdown-trigger,.semi-select,.semi-dropdown-trigger")
-      || brandLabel;
-    const names = ${JSON.stringify(brandNames)};
-    const searchFromTop = async () => {
-      const topSearchButton = [...document.querySelectorAll("button,[role=button]")]
-        .filter(visible)
-        .find((button) => /ê²€ìƒ‰\s*ë°\s*ìž…ì°°|ê²€ìƒ‰/.test(button.textContent.trim()));
-      const topSearchInput = [...document.querySelectorAll("input")]
-        .filter((element) => visible(element) && ["text", "search", ""].includes(element.type))
-        .sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0];
-      if (!topSearchInput || !topSearchButton || !names[0]) return null;
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-      setter.call(topSearchInput, names[0]);
-      topSearchInput.dispatchEvent(new Event("input", { bubbles: true }));
-      topSearchInput.dispatchEvent(new Event("change", { bubbles: true }));
-      topSearchButton.click();
-      await wait(1_500);
-      return { ok: true, selected: names[0], route: "TOP_PRODUCT_SEARCH" };
-    };
-    if (!brandButton) {
-      return await searchFromTop() || { ok: false, reason: "BRAND_BUTTON_AND_TOP_SEARCH_NOT_FOUND" };
-    }
-    brandButton.click();
-    await wait(500);
-    const popup = [...document.querySelectorAll('[role="tooltip"],[role="dialog"],.ant-popover,.ant-dropdown,.ant-select-dropdown,.semi-portal,.semi-popover,.semi-select-dropdown')]
-      .filter(visible).at(-1) || document.body;
-    if (!popup) return { ok: false, reason: "BRAND_POPUP_NOT_FOUND" };
-    const reset = [...popup.querySelectorAll("button,[role=button]")].find((button) =>
-      visible(button) && button.textContent.trim() === "ì´ˆê¸°í™”"
-    );
-    if (reset) {
-      reset.click();
-      await wait(350);
-    }
-    const input = [...popup.querySelectorAll("input")].find((element) =>
-      visible(element) && ["text", "search", ""].includes(element.type)
-    );
-    for (const name of names) {
-      if (input) {
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-        setter.call(input, name);
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-        await wait(250);
-      }
-      const expected = names.map((value) => value.toLowerCase());
-      let option;
-      for (let attempt = 0; attempt < 20 && !option; attempt += 1) {
-        await wait(250);
-        const candidates = [...document.querySelectorAll(
-          '.ant-popover:not(.ant-popover-hidden) li.ant-list-item,[role=option],.ant-select-item-option,.semi-select-option'
-        )].filter(visible);
-        option = candidates.find((element) => {
-          const text = element.textContent.trim().toLowerCase();
-          return expected.some((value) => text === value || text.startsWith(value + " ") || text.includes(value));
-        });
-      }
-      if (option) {
-        option.click();
-        await wait(250);
-        const confirm = [...document.querySelectorAll("button,[role=button]")].find((button) =>
-          visible(button) && /^(í™•ì¸|ì ìš©|ê²€ìƒ‰)$/.test(button.textContent.trim())
-        );
-        if (confirm) confirm.click();
-        await wait(1_200);
-        return { ok: true, selected: option.textContent.trim(), route: "EXACT_BRAND_FILTER" };
-      }
-    }
-    // íŒë§¤ìžì„¼í„°ê°€ ë¸Œëžœë“œ íŒì—… êµ¬ì¡°ë¥¼ ë³€ê²½í•œ ê²½ìš° ìƒë‹¨ í†µí•© ê²€ìƒ‰ì°½ìœ¼ë¡œ ì „í™˜í•œë‹¤.
-    // ìƒí’ˆì •ë³´ ê²€ìƒ‰ì€ ë¸Œëžœë“œëª…ë„ ì§€ì›í•˜ë©° ì´ ê²½ë¡œê°€ í™”ë©´ ê°œíŽ¸ì˜ ì˜í–¥ì„ ëœ ë°›ëŠ”ë‹¤.
-    return await searchFromTop() || { ok: false, reason: "BRAND_OPTION_AND_TOP_SEARCH_NOT_FOUND" };
-  })()`, true);
-  if (!selected?.ok) {
-    stopBrandNetworkCapture();
-    return {
-      ok: false,
-      code: "SELLER_BRAND_SEARCH_FAILED",
-      message: `íŒë§¤ìžì„¼í„° ë¸Œëžœë“œ ê²€ìƒ‰ì„ ì‹¤í–‰í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤. (${selected?.reason || selected?.step || "UNKNOWN"})`,
-    };
-  }
-  // ê²€ìƒ‰ ë²„íŠ¼ í´ë¦­ ì§í›„ì—ëŠ” ê¸°ì¡´ í‘œê°€ ìž ì‹œ ë‚¨ì•„ ìžˆë‹¤. ìƒí’ˆ ë²ˆí˜¸ê°€ ìžˆëŠ”
-  // ìƒˆ ê²°ê³¼ í‘œì™€ í†µê³„ ì—´ì´ ì‹¤ì œë¡œ ë Œë”ë§ë  ë•Œê¹Œì§€ ê¸°ë‹¤ë¦° ë’¤ ìˆ˜ì§‘í•œë‹¤.
-  await sellerWindow.webContents.executeJavaScript(`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    for (let attempt = 0; attempt < 80; attempt += 1) {
-      const headers = [...document.querySelectorAll("table thead th")]
-        .map((cell) => String(cell.innerText || "").replace(/\\s+/g, " ").trim());
-      const rows = [...document.querySelectorAll("table tbody tr")]
-        .map((row) => String(row.innerText || ""));
-      if (
-        rows.some((text) => /ìƒí’ˆ\\s*ë²ˆí˜¸\\s*[:ï¼š]/.test(text))
-        && headers.some((text) => /ìµœê·¼\\s*30ì¼\\s*íŒë§¤ëŸ‰/.test(text))
-      ) return true;
-      await wait(250);
-    }
-    return false;
-  })()`, true);
-  await sellerWindow.webContents.executeJavaScript(`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getClientRects().length > 0;
-    const current = [...document.querySelectorAll(".ant-select-selection-item")].find((element) =>
-      visible(element) && /ê±´\\/íŽ˜ì´ì§€/.test(element.textContent)
-    );
-    if (!current || /20\\s*ê±´\\/íŽ˜ì´ì§€/.test(current.textContent)) return;
-    current.closest(".ant-select")?.querySelector(".ant-select-selector")?.click();
-    await wait(250);
-    const option = [...document.querySelectorAll('[role="option"],.ant-select-item-option')]
-      .find((element) => visible(element) && /20\\s*ê±´\\/íŽ˜ì´ì§€/.test(element.textContent));
-    option?.click();
-    await wait(900);
-  })()`, true);
-  // Start at the first 20-row page. Synchronization physically visits every
-  // bottom pagination tab so every value visible in Seller Center is checked.
-  await sellerWindow.webContents.executeJavaScript(`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getClientRects().length > 0;
-    const active = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
-    if (Number(active?.textContent.trim()) === 1) return true;
-    const first = [...document.querySelectorAll(".ant-pagination-item")]
-      .find((element) => visible(element) && Number(element.textContent.trim()) === 1);
-    const button = first?.querySelector("button,a") || first;
-    if (!button) return false;
-    button.click();
-    for (let attempt = 0; attempt < 32; attempt += 1) {
-      await wait(250);
-      const current = [...document.querySelectorAll(".ant-pagination-item-active")].find(visible);
-      if (Number(current?.textContent.trim()) === 1) {
-        await wait(450);
-        return true;
-      }
-    }
-    return false;
-  })()`, true);
-  await wait(sellerPageSettleMs);
-  const pages = [];
-  let sellerSourceTotal = 0;
-  let capturedRowCount = 0;
-  let pageTransitionFailure = null;
-  let lastCapturedPage = 0;
-  let expectedPageCount = 1;
-  const capturedPageSignatures = new Set();
-  const bulkCorrectionApproval = checkpointSummary.enabled
-    ? waitForSellerVerificationAction(input.verification.runId, '__ALL__', 'auto')
-    : Promise.resolve('auto');
-  let bulkCorrectionApproved = !checkpointSummary.enabled;
-  for (let page = 1; page <= 1_000; page += 1) {
-    assertVerificationRunning();
-    const capture = await sellerWindow.webContents.executeJavaScript(`(() => {
-      const visible = (element) => element && element.getClientRects().length > 0;
-      const headers = [...document.querySelectorAll("table thead th")]
-        .filter(visible)
-        .map((cell) => String(cell.innerText || "").replace(/\\s+/g, " ").trim());
-      const rowElements = [...document.querySelectorAll("table tbody tr")].filter(visible);
-      const rows = rowElements.map((row) => ({
-        text: row.innerText || "",
-        cells: [...row.querySelectorAll("td")].map((cell) => cell.innerText || ""),
-        headers,
-        imageUrl: row.querySelector("img")?.src || ""
-      })).filter((row) => /ìƒí’ˆ\\s*ë²ˆí˜¸\\s*[:ï¼š]/.test(row.text));
-      const pagination = [...document.querySelectorAll(".ant-pagination")]
-        .filter((element) => visible(element) && element.querySelector(".ant-pagination-next"))
-        .at(-1);
-      const next = pagination?.querySelector(".ant-pagination-next");
-      const activePage = pagination?.querySelector(".ant-pagination-item-active");
-      const totalMatch = String(document.body?.innerText || "").match(/ì´\\s*([\\d,]+)\\s*ê±´\\s*ê²°ê³¼/);
-      const totalCount = Number(String(totalMatch?.[1] || "0").replace(/,/g, ""));
-      const currentPage = Number(activePage?.textContent.trim()) || ${page};
-      const visiblePageNumbers = [...document.querySelectorAll(".ant-pagination-item")]
-        .filter(visible)
-        .map((item) => Number(item.textContent.trim()))
-        .filter(Number.isFinite);
-      const pageSizeText = [...document.querySelectorAll(".ant-select-selection-item")]
-        .find((element) => visible(element) && /ê±´\\/íŽ˜ì´ì§€/.test(element.textContent))?.textContent || "";
-      const pageSize = Number(pageSizeText.match(/(\\d+)\\s*ê±´\\/íŽ˜ì´ì§€/)?.[1]) || rows.length || 10;
-      const pageCount = totalCount > 0
-        ? Math.ceil(totalCount / pageSize)
-        : Math.max(currentPage, ...visiblePageNumbers, 1);
-      return {
-        rows,
-        hasNext: Boolean(next && !next.classList.contains("ant-pagination-disabled") && currentPage < pageCount),
-        first: rows[0]?.text || "",
-        currentPage,
-        pageCount,
-        pageSize,
-        totalCount,
-        rowSignature: rows.map((row) => String(row.text || "").replace(/\\s+/g, " ").trim()).join("âž")
-      };
-    })()`, true);
-    if (Number(capture.currentPage || 0) !== page) {
-      pageTransitionFailure = { page: capture.currentPage, expectedPage: page, reason: "ACTIVE_PAGE_MISMATCH" };
-      break;
-    }
-    if (capturedPageSignatures.has(capture.rowSignature)) {
-      pageTransitionFailure = { page: capture.currentPage, expectedPage: page, reason: "DUPLICATE_PAGE_ROWS" };
-      break;
-    }
-    capturedPageSignatures.add(capture.rowSignature);
-    pages.push(capture.rows || []);
-    capturedRowCount += Number(capture.rows?.length || 0);
-    sellerSourceTotal = Math.max(sellerSourceTotal, Number(capture.totalCount || 0));
-    lastCapturedPage = Number(capture.currentPage || 0);
-    expectedPageCount = Math.max(expectedPageCount, Number(capture.pageCount || 1));
-    if (
-      page === 1
-      && selected.route !== "EXACT_BRAND_FILTER"
-      && Number(capture.totalCount || 0) >= 9_000
-    ) {
-      stopBrandNetworkCapture();
-      return {
-        ok: false,
-        message: "ì„ íƒ ë¸Œëžœë“œ í•„í„°ê°€ ì ìš©ë˜ì§€ ì•Šì•„ íŒë§¤ìžì„¼í„° ì „ì²´ ê²°ê³¼ê°€ í‘œì‹œë˜ì—ˆìŠµë‹ˆë‹¤. ì „ì²´ ìˆ˜ì§‘ì€ ì¤‘ë‹¨í–ˆìŠµë‹ˆë‹¤.",
-        code: "SELLER_BRAND_FILTER_NOT_APPLIED",
-      };
-    }
-    const products = mergeSellerBrandPages(pages);
-    // Compare the actual current page against the unfiltered workbook BEFORE
-    // the next pagination click. Only the view, never source capture, is filtered.
-    if (liveVerifier) {
-      const currentPageProducts = mergeSellerBrandPages([capture.rows || []]);
-      let livePage;
-      // Walk the visible page one product at a time. Excel row order is never
-      // used: acceptPage resolves every item against the full workbook by SPU.
-      for (let productIndex = 0; productIndex < currentPageProducts.length; productIndex += 1) {
-        livePage = liveVerifier.acceptPage(currentPageProducts.slice(0, productIndex + 1), {
-          pageNum: capture.currentPage, pageCount: capture.pageCount,
-        });
-        livePage.activeKey = livePage.rows.at(-1)?.key || '';
-        livePage.pageReadCount = productIndex + 1;
-        livePage.pageProductCount = currentPageProducts.length;
-        mainWindow?.webContents.send("seller:verification-progress", livePage);
-        await sellerWindow.webContents.executeJavaScript(
-          "(" + paintSellerVerification.toString() + ")(document," + JSON.stringify({
-            ...livePage, label: "ê³µí†µ ê²€ì¦ ì¡°ê±´: " + verificationConditionLabel(liveVerifier.conditions),
-          }) + ")", true,
-        );
-        const currentRow = livePage.rows.at(-1);
-        if (!currentRow) {
-          throw new Error(`POIZON ${capture.currentPage}íŽ˜ì´ì§€ Â· ${currentRow?.status || 'ìƒí’ˆ í™•ì¸ í•„ìš”'} Â· í˜„ìž¬ ìƒí’ˆì—ì„œ ì¤‘ë‹¨í•©ë‹ˆë‹¤.`);
-        }
-        if (currentRow.autoCorrectionBlocked) {
-          if (!isPoizonSkuScopeDeferredRow(currentRow)) {
-            throw new Error(`POIZON ${capture.currentPage}íŽ˜ì´ì§€ Â· ${currentRow.status || 'ìƒí’ˆ í™•ì¸ í•„ìš”'} Â· í˜„ìž¬ ìƒí’ˆì—ì„œ ì¤‘ë‹¨í•©ë‹ˆë‹¤.`);
-          }
-          mainWindow?.webContents.send("seller:verification-progress", {
-            runId: input.verification.runId, phase: 'product-action-complete',
-            activeKey: currentRow.key, productKey: currentRow.key,
-            pageNum: capture.currentPage, pageCount: capture.pageCount,
-            message: 'ì˜µì…˜ë³„ íŒë§¤ëŸ‰ í™•ì¸ Â· SPU ìžë™ìˆ˜ì • ì œì™¸ Â· Excel ì›ë³¸ ìœ ì§€ ë° ê²€ì¦ ì™„ë£Œ Â· OK',
-          });
-          await wait(180);
-          continue;
-        }
-        if (!currentRow.equal) {
-          const requiredAction = currentRow.matched ? 'correct' : 'add';
-          if (!bulkCorrectionApproved) {
-            mainWindow?.webContents.send("seller:verification-progress", {
-              runId: input.verification.runId, phase: 'bulk-action-required',
-              activeKey: currentRow.key, productKey: currentRow.key, requiredAction,
-              pageNum: capture.currentPage, pageCount: capture.pageCount,
-              message: 'ìˆ˜ì •Â·ì¶”ê°€ ëŒ€ìƒì´ ìžˆìŠµë‹ˆë‹¤. ì „ì²´ ìžë™ ìˆ˜ì • ì‹œìž‘ì„ í•œ ë²ˆë§Œ ëˆŒëŸ¬ ì£¼ì„¸ìš”.',
-            });
-            const approvalResult = await bulkCorrectionApproval;
-            if (approvalResult === 'cancel') throw new Error('ì‚¬ìš©ìžê°€ ìƒí’ˆ ëŒ€ì¡°ë¥¼ ì¤‘ì§€í–ˆìŠµë‹ˆë‹¤. ì™„ë£Œëœ íŽ˜ì´ì§€ê¹Œì§€ ì €ìž¥ë˜ì—ˆìŠµë‹ˆë‹¤.');
-            bulkCorrectionApproved = true;
-          }
-          mainWindow?.webContents.send("seller:verification-progress", {
-            runId: input.verification.runId, phase: 'product-action-required',
-            activeKey: currentRow.key, productKey: currentRow.key,
-            requiredAction,
-            pageNum: capture.currentPage, pageCount: capture.pageCount,
-            message: requiredAction === 'add' ? 'í˜„ìž¬ íŽ˜ì´ì§€ ì¼ê´„ ìƒí’ˆ ì¶”ê°€ ëŒ€ê¸°' : 'í˜„ìž¬ íŽ˜ì´ì§€ ì¼ê´„ ê°’ ìˆ˜ì • ëŒ€ê¸°',
-          });
-        }
-        await wait(180);
-      }
-      if (!livePage || livePage.rows.length !== currentPageProducts.length) {
-        throw new Error(`POIZON ${capture.currentPage}íŽ˜ì´ì§€ ìƒí’ˆ ${currentPageProducts.length}ê°œ ì „ì²´ ì¸ì‹ì„ ì™„ë£Œí•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.`);
-      }
-      if (typeof checkpointSummary !== 'undefined' && checkpointSummary.enabled) {
-        mainWindow?.webContents.send("seller:verification-progress", {
-          runId: input.verification.runId, phase: "page-checkpoint",
-          message: `POIZON ${capture.currentPage}/${capture.pageCount}íŽ˜ì´ì§€ Â· Excel ë°˜ì˜ ë° ì €ìž¥ í›„ ìž¬ê²€ì¦ ì¤‘`,
-        });
-        // POIZON_SKU_SAFE_PAGE_SELECTION: SKU-only Excel values are preserved and deferred.
-        // Only same-scope SPU evidence or true missing rows may be written on this page.
-        const pageCorrection = selectPoizonPageCorrectionProducts(currentPageProducts, livePage.rows, capture.currentPage);
-        const checkpoint = pageCorrection.products.length
-          ? await syncPoizonPageCheckpoint({
-              filePath: checkpointSummary.filePath,
-              products: pageCorrection.products,
-              pageNum: capture.currentPage,
-              backupPath: checkpointSummary.backupPath,
-            })
-          : { ok: true, reverified: true, changedRows: 0, changedCells: 0, addedRows: 0, addedProducts: 0, verifiedCells: 0, changes: [], backupPath: checkpointSummary.backupPath };
-        checkpoint.deferredProducts = Number(pageCorrection.deferredProducts || 0);
-        if (!checkpoint?.ok || checkpoint.reverified !== true) {
-          throw new Error(checkpoint?.message || `POIZON ${capture.currentPage}íŽ˜ì´ì§€ Excel ì²´í¬í¬ì¸íŠ¸ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤.`);
-        }
-        checkpointSummary.backupPath = checkpoint.backupPath || checkpointSummary.backupPath;
-        checkpointSummary.changedRows += Number(checkpoint.changedRows || 0);
-        checkpointSummary.changedCells += Number(checkpoint.changedCells || 0);
-        checkpointSummary.addedRows += Number(checkpoint.addedRows || 0);
-        checkpointSummary.addedProducts += Number(checkpoint.addedProducts || 0);
-        checkpointSummary.verifiedCells += Number(checkpoint.verifiedCells || 0);
-        checkpointSummary.deferredProducts += Number(checkpoint.deferredProducts || 0);
-        checkpointSummary.changes.push(...(checkpoint.changes || []));
-        checkpointPages.add(Number(capture.currentPage));
-        checkpointSummary.pagesCompleted = checkpointPages.size;
-        for (const row of livePage.rows.filter((item) => !item.equal && !item.autoCorrectionBlocked)) {
-          mainWindow?.webContents.send("seller:verification-progress", {
-            runId: input.verification.runId, phase: 'product-action-complete',
-            activeKey: row.key, productKey: row.key,
-            pageNum: capture.currentPage, pageCount: capture.pageCount,
-            message: row.matched ? 'íŽ˜ì´ì§€ ì¼ê´„ ê°’ ìˆ˜ì • ë° ìž¬ê²€ì¦ ì™„ë£Œ Â· OK' : 'íŽ˜ì´ì§€ ì¼ê´„ ìƒí’ˆ ì¶”ê°€ ë° ìž¬ê²€ì¦ ì™„ë£Œ Â· OK',
-          });
-        }
-        mainWindow?.webContents.send("seller:verification-progress", {
-          runId: input.verification.runId, phase: "page-checkpoint-complete",
-          activeKey: '', pageNum: capture.currentPage, pageCount: capture.pageCount,
-          message: checkpoint.changed
-            ? `POIZON ${capture.currentPage}/${capture.pageCount}íŽ˜ì´ì§€ í™•ì • Â· ìƒí’ˆ ${currentPageProducts.length}ê°œ Â· ìˆ˜ì • ${Number(checkpoint.changedRows || 0)}í–‰ Â· ì‹¤ì œ ëˆ„ë½ ì¶”ê°€ ${Number(checkpoint.addedRows || 0)}í–‰ Â· ì˜µì…˜ ë¹„êµ ë³´ë¥˜ ${Number(checkpoint.deferredProducts || 0)}ê°œ Â· ì¦‰ì‹œ ì €ìž¥ í™•ì¸ ì™„ë£Œ`
-            : `POIZON ${capture.currentPage}/${capture.pageCount}íŽ˜ì´ì§€ í™•ì • Â· ìƒí’ˆ ${currentPageProducts.length}ê°œ Â· ìˆ˜ì • ì—†ìŒ Â· ì €ìž¥ ìƒëžµ Â· ë‹¤ìŒ íŽ˜ì´ì§€ ì´ë™`,
-        });
-        await sellerWindow.webContents.executeJavaScript(
-          "(" + paintSellerVerification.toString() + ")(document," + JSON.stringify({
-            ...livePage, activeKey: '', label: "ê³µí†µ ê²€ì¦ ì¡°ê±´: " + verificationConditionLabel(liveVerifier.conditions),
-          }) + ")", true,
-        );
-      }
-    }
-    reportCaptureProgress({
-      percent: capture.hasNext
-        ? Math.min(99, 70 + Math.round((capture.currentPage / Math.max(capture.currentPage, capture.pageCount || capture.currentPage)) * 29))
-        : 99,
-      count: products.length,
-      pageNum: capture.currentPage,
-      pageCount: capture.pageCount,
-      message: `íŒë§¤ìžì„¼í„° í˜„ì§€ 30ì¼ íŒë§¤ëŸ‰ ìˆ˜ì§‘ ${capture.currentPage}/${capture.pageCount}íŽ˜ì´ì§€`,
-    });
-    if (!capture.hasNext) break;
-    if (capture.currentPage % sellerBatchPauseEvery === 0) {
-      reportCaptureProgress({
-        percent: Math.min(99, 70 + Math.round((capture.currentPage / Math.max(capture.currentPage, capture.pageCount || capture.currentPage)) * 29)),
-        count: products.length,
-        pageNum: capture.currentPage,
-        pageCount: capture.pageCount,
-        message: `íŒë§¤ìžì„¼í„° ${capture.currentPage}íŽ˜ì´ì§€ ì™„ë£Œ Â· ì„œë²„ ë³´í˜¸ë¥¼ ìœ„í•´ 45ì´ˆ íœ´ì‹ ì¤‘`,
-      });
-      await waitVerification(sellerBatchPauseMs);
-    } else {
-      await waitVerification(sellerPageDelayMs);
-    }
-    const expectedNextPage = capture.currentPage + 1;
-    const expectedNextRowCount = Number(capture.totalCount || 0) > 0 && Number(capture.pageSize || 0) > 0
-      ? expectedNextPage < Number(capture.pageCount || expectedNextPage)
-        ? Number(capture.pageSize)
-        : Math.max(1, Number(capture.totalCount) - (Number(capture.pageSize) * (Number(capture.pageCount) - 1)))
-      : 0;
-    let advanced = false;
-    // Ant pagination changes the visible number range after page 5. A DOM
-    // element.click() at that boundary is occasionally ignored by React, so
-    // scroll the exact control into view and send a real Electron mouse click.
-    // Retry transient page loads without discarding the pages already checked.
-    for (let clickAttempt = 0; clickAttempt < 5 && !advanced; clickAttempt += 1) {
-      const targetPoint = await sellerWindow.webContents.executeJavaScript(`(async () => {
-        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-        const visible = (element) => element && element.getClientRects().length > 0;
-        const expected = ${expectedNextPage};
-        const pagination = [...document.querySelectorAll(".ant-pagination")]
-          .filter((element) => visible(element) && Number(element.querySelector(".ant-pagination-item-active")?.textContent.trim()) === ${capture.currentPage})
-          .at(-1);
-        const directPage = [...(pagination || document).querySelectorAll(".ant-pagination-item")]
-          .find((item) => visible(item) && Number(item.textContent.trim()) === expected);
-        const next = [...(pagination || document).querySelectorAll(".ant-pagination-next:not(.ant-pagination-disabled)")]
-          .find(visible);
-        const target = directPage || next;
-        const button = target?.querySelector("button,a") || target;
-        if (!button) return null;
-        button.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
-        await wait(150);
-        const rect = button.getBoundingClientRect();
-        if (rect.width < 2 || rect.height < 2) return null;
-        return {
-          x: rect.left + rect.width / 2,
-          y: rect.top + rect.height / 2,
-          route: directPage ? "DIRECT_PAGE" : "NEXT_ARROW"
-        };
-      })()`, true);
-      if (!targetPoint) continue;
-      reportCaptureProgress({
-        percent: Math.min(99, 70 + Math.round((capture.currentPage / Math.max(capture.currentPage, capture.pageCount || capture.currentPage)) * 29)),
-        count: products.length,
-        pageNum: capture.currentPage,
-        pageCount: capture.pageCount,
-        message: clickAttempt > 0
-          ? `íŒë§¤ìžì„¼í„° ${expectedNextPage}íŽ˜ì´ì§€ ì´ë™ ìž¬ì‹œë„ ${clickAttempt + 1}/5`
-          : `íŒë§¤ìžì„¼í„° ${expectedNextPage}/${capture.pageCount}íŽ˜ì´ì§€ë¡œ ì´ë™ ì¤‘`,
-      });
-      await physicalSellerPointClick(targetPoint, 300);
-      for (let attempt = 0; attempt < sellerPageResponseAttempts; attempt += 1) {
-        await wait(250);
-        const nextState = await sellerWindow.webContents.executeJavaScript(
-          `(() => {
-            const visible = (element) => element && element.getClientRects().length > 0;
-            const pagination = [...document.querySelectorAll(".ant-pagination")]
-              .filter((element) => visible(element) && element.querySelector(".ant-pagination-next"))
-              .at(-1);
-            const active = pagination?.querySelector(".ant-pagination-item-active");
-            const rows = [...document.querySelectorAll("table tbody tr")]
-              .filter(visible)
-              .map((row) => String(row.innerText || ""))
-              .filter((text) => /ìƒí’ˆ\\s*ë²ˆí˜¸\\s*[:ï¼š]/.test(text));
-            return {
-              page: Number(active?.textContent.trim()) || 0,
-              rowCount: rows.length,
-              rowSignature: rows.map((text) => text.replace(/\\s+/g, " ").trim()).join("âž")
-            };
-          })()`,
-          true,
-        );
-        const transition = sellerPaginationTransitionStatus({
-          expectedPage: expectedNextPage,
-          currentPage: nextState?.page,
-          rowCount: nextState?.rowCount,
-          expectedRowCount: expectedNextRowCount,
-          previousSignature: capture.rowSignature,
-          currentSignature: nextState?.rowSignature,
-        });
-        if (transition.ready) {
-          advanced = true;
-          break;
-        }
-      }
-    }
-    if (!advanced) {
-      // Final compatibility fallback for layouts that reject physical events.
-      advanced = await sellerWindow.webContents.executeJavaScript(`(async () => {
-        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-        const visible = (element) => element && element.getClientRects().length > 0;
-        const expected = ${expectedNextPage};
-        const pagination = [...document.querySelectorAll(".ant-pagination")]
-          .filter((element) => visible(element) && Number(element.querySelector(".ant-pagination-item-active")?.textContent.trim()) === ${capture.currentPage})
-          .at(-1);
-        const item = [...(pagination || document).querySelectorAll(".ant-pagination-item")]
-          .find((element) => visible(element) && Number(element.textContent.trim()) === expected);
-        const next = [...(pagination || document).querySelectorAll(".ant-pagination-next:not(.ant-pagination-disabled)")]
-          .find(visible);
-        const target = item || next;
-        const button = target?.querySelector("button,a") || target;
-        if (!button) return false;
-        button.click();
-        for (let attempt = 0; attempt < ${sellerPageResponseAttempts}; attempt += 1) {
-          await wait(250);
-          const currentPagination = [...document.querySelectorAll(".ant-pagination")]
-            .filter((element) => visible(element) && element.querySelector(".ant-pagination-next"))
-            .at(-1);
-          const active = currentPagination?.querySelector(".ant-pagination-item-active");
-          const rows = [...document.querySelectorAll("table tbody tr")]
-            .filter(visible)
-            .map((row) => String(row.innerText || ""))
-            .filter((text) => /ìƒí’ˆ\\s*ë²ˆí˜¸\\s*[:ï¼š]/.test(text));
-          const rowSignature = rows.map((text) => text.replace(/\\s+/g, " ").trim()).join("âž");
-          if (Number(active?.textContent.trim()) === expected
-            && rows.length >= Math.max(1, ${expectedNextRowCount})
-            && rowSignature !== ${JSON.stringify(capture.rowSignature || "")}) return true;
-        }
-        return false;
-      })()`, true);
-    }
-    if (!advanced) {
-      pageTransitionFailure = { page: capture.currentPage, expectedNextPage, reason: "NEXT_PAGE_NOT_VERIFIED" };
-      break;
-    }
-    await wait(sellerPageSettleMs);
-  }
-  const paginationComplete = !pageTransitionFailure
-    && lastCapturedPage >= expectedPageCount;
-  const rowCountComplete = !sellerSourceTotal || capturedRowCount >= sellerSourceTotal;
-  if (!paginationComplete || !rowCountComplete) {
-    const reachedLastPage = !pageTransitionFailure && lastCapturedPage >= expectedPageCount;
-    stopBrandNetworkCapture();
-    return {
-      ok: false,
-      code: reachedLastPage ? "SELLER_ROW_COUNT_INCOMPLETE" : "SELLER_PAGINATION_INCOMPLETE",
-      message: reachedLastPage
-        ? `íŒë§¤ìžì„¼í„° ${lastCapturedPage}/${expectedPageCount}íŽ˜ì´ì§€ê¹Œì§€ ëª¨ë‘ í™•ì¸í–ˆì§€ë§Œ í™”ë©´ ìƒí’ˆì„ ${capturedRowCount}/${sellerSourceTotal}ê±´ë§Œ ì½ì—ˆìŠµë‹ˆë‹¤. ëˆ„ë½ í–‰ì„ ìž¬í™•ì¸í•´ì•¼ í•˜ë¯€ë¡œ ë¶€ë¶„ ë°ì´í„°ëŠ” ì €ìž¥í•˜ì§€ ì•ŠìŠµë‹ˆë‹¤.`
-        : `íŒë§¤ìžì„¼í„° í•˜ë‹¨ íŽ˜ì´ì§€ ê²€ì¦ì´ ${lastCapturedPage}/${expectedPageCount}íŽ˜ì´ì§€ì—ì„œ ì¤‘ë‹¨ë˜ì—ˆìŠµë‹ˆë‹¤. ë‹¤ìŒ íŽ˜ì´ì§€ë¥¼ 90ì´ˆì”© ìž¬ì‹œë„í–ˆì§€ë§Œ ì‘ë‹µí•˜ì§€ ì•Šì•˜ìŠµë‹ˆë‹¤. ë¶€ë¶„ ë°ì´í„°ëŠ” ì €ìž¥í•˜ì§€ ì•ŠìŠµë‹ˆë‹¤.`,
-      sourceTotal: sellerSourceTotal,
-      capturedRowCount,
-      pageTransitionFailure,
-    };
-  }
-  const expectedBrands = new Set(
-    [selected.selected, input.brandKo, input.brandName]
-      .map((value) => String(value || "").trim().toLowerCase())
-      .filter(Boolean),
-  );
-  const domProducts = mergeSellerBrandPages(pages);
-  const allProducts = input.verification?.screenOnly ? domProducts : mergeSellerBrandProducts(domProducts, networkSellerProducts);
-  const matchedProducts = allProducts.filter((product) => {
-    const rowBrand = String(product.brandName || "").trim().toLowerCase();
-    if (!rowBrand) return true;
-    return [...expectedBrands].some((expected) =>
-      rowBrand === expected || rowBrand.includes(expected) || expected.includes(rowBrand)
-    );
-  });
-  // íŒë§¤ìžì„¼í„°ì˜ ë¸Œëžœë“œ í‘œê¸°ê°€ ì˜ë¬¸/í•œê¸€/ë²•ì¸ëª…ìœ¼ë¡œ ë‹¬ë¼ ì¼ì¹˜í•˜ì§€ ì•Šë”ë¼ë„
-  // ì´ë¯¸ ë¸Œëžœë“œ ê²€ìƒ‰ìœ¼ë¡œ ì–»ì€ ì›ë³¸ í–‰ì€ ì‚­ì œí•˜ì§€ ì•ŠëŠ”ë‹¤.
-  const products = matchedProducts.length ? matchedProducts : allProducts;
-  const diagnostics = sellerBrandDiagnostics(pages);
-  sellerVerificationActionWaiters.delete(sellerVerificationActionKey(input.verification?.runId, '__ALL__'));
-  stopBrandNetworkCapture();
-  if (!sellerExcelVerificationLayout && sellerWindow && !sellerWindow.isDestroyed()) sellerWindow.hide();
-  mainWindow?.show();
-  mainWindow?.focus();
-  return {
-    ok: true,
-    products,
-    total: products.length,
-    sourceTotal: sellerSourceTotal || products.length,
-    uniqueSourceTotal: diagnostics.uniqueRowCount || products.length,
-    capturedRowCount,
-    missingCount: Math.max(0, (sellerSourceTotal || capturedRowCount) - capturedRowCount),
-    checkpointSync: { ...checkpointSummary, changes: [...checkpointSummary.changes] },
-    selectedBrand: selected.selected,
-    diagnostics: {
-      ...diagnostics,
-      domProductCount: domProducts.length,
-      networkProductCount: mergeSellerBrandProducts(networkSellerProducts).length,
-      mergedProductCount: allProducts.length,
-    },
-    pageTransitionFailure,
-  };
-}
-
-async function lookupSellerTransactionPrice(input = {}) {
-  const articleNumber = String(input.articleNumber || "").trim();
-  if (!articleNumber) return { ok: false, code: "ARTICLE_REQUIRED", message: "ìƒí’ˆë²ˆí˜¸ê°€ ì—†ìŠµë‹ˆë‹¤." };
-  if (!sellerWindow || sellerWindow.isDestroyed()) openSellerCenterWindow(SELLER_CENTER_URL);
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    if (sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.getURL()) break;
-    await wait(300);
-  }
-  if (!sellerWindow || sellerWindow.isDestroyed()) {
-    return { ok: false, code: "SELLER_WINDOW_UNAVAILABLE", message: "íŒë§¤ìžì„¼í„° ì°½ì„ ì—´ì§€ ëª»í–ˆìŠµë‹ˆë‹¤." };
-  }
-  if (!await enterSellerProductSearchViaMenu()) {
-    return { ok: false, code: "SELLER_LOGIN_REQUIRED", message: "íŒë§¤ìžì„¼í„° ë¡œê·¸ì¸ì„ í™•ì¸í•´ ì£¼ì„¸ìš”." };
-  }
-  sellerWindow.showInactive();
-  let productFrame = null;
-  for (let attempt = 0; attempt < 40 && !productFrame; attempt += 1) {
-    const frames = sellerWindowFrames();
-    const probes = await Promise.all(frames.map(async (frame) => ({
-      frame,
-      matched: await executeSellerFrameWithTimeout(frame, `(() => {
-        const visible = (element) => element && element.getClientRects().length > 0;
-        const inputs = [...document.querySelectorAll("input")].filter(visible);
-        const buttons = [...document.querySelectorAll("button,[role=button]")].filter(visible);
-        return inputs.some((element) => /ìƒí’ˆëª…|ìƒí’ˆë²ˆí˜¸|ë¸Œëžœë“œ|ì¹´í…Œê³ ë¦¬|ì‹œë¦¬ì¦ˆ/.test(element.placeholder || ""))
-          && buttons.some((element) => /ê²€ìƒ‰\\s*ë°\\s*ìž…ì°°|^ê²€ìƒ‰$/.test(element.textContent.trim()));
-      })()`, 2_000, false),
-    })));
-    productFrame = probes.find((candidate) => candidate.matched)?.frame || null;
-    if (!productFrame) await wait(250);
-  }
-  if (!productFrame) {
-    showCollectorWindow();
-    return { ok: false, code: "SEARCH_CONTROL_NOT_FOUND", message: `${articleNumber} ìƒí’ˆê²€ìƒ‰ ë‚´ë¶€ í™”ë©´ì„ ì°¾ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.` };
-  }
-  sellerProductFrameRoutingId = productFrame.routingId;
-  await productFrame.executeJavaScript(String.raw`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getClientRects().length > 0;
-    const back = [...document.querySelectorAll("button,a,[role=button],span")].filter((element) =>
-      visible(element) && element.getBoundingClientRect().left > innerWidth * 0.55
-    ).find((element) => /ë’¤ë¡œê°€ê¸°/.test(element.textContent.trim()));
-    const close = [...document.querySelectorAll("button,[role=button]")].filter((element) =>
-      visible(element) && element.getBoundingClientRect().left > innerWidth * 0.55
-    )
-      .find((element) => /ë‹«ê¸°|close/i.test((element.getAttribute("aria-label") || "") + " " + (element.title || "")));
-    const target = back?.closest("button,a,[role=button]") || back || close;
-    if (!target) return false;
-    target.click();
-    await wait(500);
-    return true;
-  })()`, true).catch(() => false);
-  const transactionNetworkResponses = [];
-  const pendingTransactionRequests = new Set();
-  const transactionBodyTasks = new Set();
-  let transactionCaptureActive = true;
-  let transactionDebuggerListener;
-  let transactionDebuggerAttachedHere = false;
-  const stopTransactionNetworkCapture = async () => {
-    transactionCaptureActive = false;
-    await Promise.allSettled([...transactionBodyTasks]);
-    try {
-      if (transactionDebuggerListener) sellerWindow?.webContents.debugger.removeListener("message", transactionDebuggerListener);
-      if (transactionDebuggerAttachedHere && sellerWindow && !sellerWindow.isDestroyed() && sellerWindow.webContents.debugger.isAttached()) {
-        sellerWindow.webContents.debugger.detach();
-      }
-    } catch {}
-  };
-  try {
-    const sellerDebugger = sellerWindow.webContents.debugger;
-    if (!sellerDebugger.isAttached()) {
-      sellerDebugger.attach("1.3");
-      transactionDebuggerAttachedHere = true;
-    }
-    await sellerDebugger.sendCommand("Network.enable");
-    transactionDebuggerListener = (_event, method, params) => {
-      if (method === "Network.responseReceived" && transactionCaptureActive && ["XHR", "Fetch"].includes(params?.type)) {
-        pendingTransactionRequests.add(params.requestId);
-        return;
-      }
-      if (method !== "Network.loadingFinished" || !pendingTransactionRequests.has(params?.requestId)) return;
-      pendingTransactionRequests.delete(params.requestId);
-      const task = sellerDebugger.sendCommand("Network.getResponseBody", { requestId: params.requestId })
-        .then((payload) => {
-          const body = payload?.base64Encoded
-            ? Buffer.from(payload.body || "", "base64").toString("utf8")
-            : String(payload?.body || "");
-          if (/^\s*[\[{]/.test(body) && body.length <= 5_000_000) transactionNetworkResponses.push({ body });
-        }).catch(() => {});
-      transactionBodyTasks.add(task);
-      task.finally(() => transactionBodyTasks.delete(task));
-    };
-    sellerDebugger.on("message", transactionDebuggerListener);
-  } catch {}
-  await productFrame.executeJavaScript(String.raw`(() => {
-    const storageKey = "__aroundGOptionResponses";
-    window[storageKey] = [];
-    const record = (url, body) => {
-      const text = String(body || "");
-      if (!text || text.length > 3_000_000) return;
-      if (!/price|sales|sold|volume|size|sku|option|ä»·æ ¼|å”®ä»·|é”€é‡|å°ºç |íŒë§¤ëŸ‰|ê°€ê²©/i.test(text)) return;
-      window[storageKey].push({ url: String(url || ""), body: text, time: Date.now() });
-      if (window[storageKey].length > 80) window[storageKey].splice(0, window[storageKey].length - 80);
-    };
-    if (!window.__aroundGFetchHooked && typeof window.fetch === "function") {
-      window.__aroundGFetchHooked = true;
-      const originalFetch = window.fetch.bind(window);
-      window.fetch = async (...args) => {
-        const response = await originalFetch(...args);
-        response.clone().text().then((body) => record(response.url || args[0], body)).catch(() => {});
-        return response;
-      };
-    }
-    if (!window.__aroundGXhrHooked && window.XMLHttpRequest) {
-      window.__aroundGXhrHooked = true;
-      const originalOpen = XMLHttpRequest.prototype.open;
-      const originalSend = XMLHttpRequest.prototype.send;
-      XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-        this.__aroundGUrl = url;
-        return originalOpen.call(this, method, url, ...rest);
-      };
-      XMLHttpRequest.prototype.send = function(...args) {
-        this.addEventListener("load", () => {
-          try { if (!this.responseType || this.responseType === "text") record(this.responseURL || this.__aroundGUrl, this.responseText); } catch {}
-        }, { once: true });
-        return originalSend.apply(this, args);
-      };
-    }
-    return true;
-  })()`, true).catch(() => false);
-  const searched = await productFrame.executeJavaScript(String.raw`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getClientRects().length > 0;
-    const article = ${JSON.stringify(articleNumber)};
-    const normalize = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-    const inputs = [...document.querySelectorAll("input")].filter(visible);
-    const input = inputs.find((element) => /ìƒí’ˆëª…|ìƒí’ˆë²ˆí˜¸|ë¸Œëžœë“œ|ì¹´í…Œê³ ë¦¬|ì‹œë¦¬ì¦ˆ/.test(element.placeholder || ""))
-      || inputs.sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0];
-    const button = [...document.querySelectorAll("button,[role=button]")].filter(visible)
-      .find((element) => /ê²€ìƒ‰\s*ë°\s*ìž…ì°°|^ê²€ìƒ‰$/.test(element.textContent.trim()));
-    if (!input || !button) return { ok: false, code: "SEARCH_CONTROL_NOT_FOUND" };
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-    setter.call(input, article);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-    button.click();
-    for (let attempt = 0; attempt < 120; attempt += 1) {
-      await wait(250);
-      // POIZON renders search results as virtual div rows, not only table rows.
-      // Locate the smallest visible result container that contains both the
-      // exact article number and the row's "ìƒí’ˆ ë°ì´í„°" action.
-      const normalizedArticle = normalize(article);
-      const candidates = [...document.querySelectorAll("tr,[role=row],li,div,section,article")]
-        .filter((element) => {
-          if (!visible(element)) return false;
-          const value = normalize(element.innerText);
-          if (!value.includes(normalizedArticle)) return false;
-          return [...element.querySelectorAll("a,button,[role=button],span,div")]
-            .some((item) => visible(item) && /ìƒí’ˆ\s*ë°ì´í„°/.test(item.textContent.trim()));
-        })
-        .sort((left, right) => {
-          const leftRect = left.getBoundingClientRect();
-          const rightRect = right.getBoundingClientRect();
-          return leftRect.width * leftRect.height - rightRect.width * rightRect.height;
-        });
-      let row = candidates[0];
-      // Network search can finish before the virtual list exposes a stable
-      // row wrapper. With an exact article query, a single visible
-      // "ìƒí’ˆ ë°ì´í„°" action is the searched product and can safely be used
-      // only as a trigger for the internal detail response.
-      if (!row && attempt >= 12) {
-        const actions = [...document.querySelectorAll("a,button,[role=button],span,div")]
-          .filter((element) => visible(element) && /ìƒí’ˆ\s*ë°ì´í„°/.test(element.textContent.trim()))
-          .sort((left, right) => {
-            const leftRect = left.getBoundingClientRect();
-            const rightRect = right.getBoundingClientRect();
-            return leftRect.width * leftRect.height - rightRect.width * rightRect.height;
-          });
-        // POIZON often omits the searched article number from the rendered
-        // virtual row even though the exact search returned products. Rank an
-        // action whose ancestors contain the article first; otherwise use the
-        // first visible result action. The search request itself is exact, so
-        // requiring the article to be rendered again creates a false
-        // "product not found" result.
-        const action = actions.find((item) => {
-          let candidate = item;
-          for (let depth = 0; candidate && depth < 12; depth += 1, candidate = candidate.parentElement) {
-            if (normalize(candidate.innerText).includes(normalizedArticle)) return true;
-          }
-          return false;
-        }) || actions[0];
-        if (action) {
-          let candidate = action;
-          for (let depth = 0; candidate && depth < 12; depth += 1, candidate = candidate.parentElement) {
-            if (normalize(candidate.innerText).includes(normalizedArticle)) {
-              row = candidate;
-              break;
-            }
-          }
-          row ||= action.parentElement || action;
-        }
-      }
-      if (!row) continue;
-      const rowText = String(row.innerText || "");
-      const salesMatch = rowText.match(/(?:ìµœê·¼\s*30ì¼\s*íŒë§¤ëŸ‰\D*)(<?\s*[\d,]+\+?)/i);
-      const salesRaw = String(salesMatch?.[1] || "").trim();
-      const dataLabels = [...row.querySelectorAll("a,button,[role=button],span,div")]
-        .filter((element) => visible(element) && /ìƒí’ˆ\s*ë°ì´í„°/.test(element.textContent.trim()))
-        .sort((left, right) => {
-          const leftRect = left.getBoundingClientRect();
-          const rightRect = right.getBoundingClientRect();
-          return leftRect.width * leftRect.height - rightRect.width * rightRect.height;
-        });
-      const dataLabel = dataLabels[0];
-      const target = dataLabel?.closest("a,button,[role=button]") || dataLabel;
-      if (!target) continue;
-      target.scrollIntoView({ block: "center", inline: "center" });
-      const rect = target.getBoundingClientRect();
-      return {
-        ok: true,
-        salesRaw,
-        rowText,
-        productDataPoint: {
-          x: Math.round(rect.left + rect.width / 2),
-          y: Math.round(rect.top + rect.height / 2),
-        },
-      };
-    }
-    const visibleDataActions = [...document.querySelectorAll("a,button,[role=button],span,div")]
-      .filter((element) => visible(element) && /ìƒí’ˆ\s*ë°ì´í„°/.test(element.textContent.trim())).length;
-    return { ok: false, code: "PRODUCT_ROW_NOT_FOUND", visibleDataActions };
-  })()`, true).catch(() => ({ ok: false, code: "PRODUCT_SEARCH_FAILED" }));
-  if (!searched?.ok) {
-    showCollectorWindow();
-    return {
-      ok: false,
-      code: searched?.code || "PRODUCT_SEARCH_FAILED",
-      message: `${articleNumber} ê²€ìƒ‰ ê²°ê³¼ ì—´ê¸° ì‹¤íŒ¨ Â· ìƒí’ˆ ë°ì´í„° ë²„íŠ¼ ${Number(searched?.visibleDataActions || 0)}ê°œ`,
-    };
-  }
-  const productDataClicked = await physicalSellerPointClick(searched.productDataPoint, 1_400);
-  if (!productDataClicked) {
-    showCollectorWindow();
-    return { ok: false, code: "PRODUCT_DATA_CLICK_POINT_NOT_FOUND", message: `${articleNumber} ìƒí’ˆ ë°ì´í„° ë²„íŠ¼ì„ í´ë¦­í•˜ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.` };
-  }
-  const productPanelOpened = await productFrame.executeJavaScript(String.raw`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getClientRects().length > 0;
-    const article = ${JSON.stringify(articleNumber.toUpperCase().replace(/[^A-Z0-9]/g, ""))};
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      const panel = [...document.querySelectorAll(".ant-drawer-content,[role=dialog],aside,.ant-drawer,section")].find((element) => {
-        if (!visible(element)) return false;
-        const rect = element.getBoundingClientRect();
-        const content = String(element.innerText || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-        return rect.left > innerWidth * 0.55 && rect.width > 240
-          && /ìƒí’ˆ\s*ë°ì´í„°/.test(element.innerText || "")
-          && (content.includes(article) || /ê±°ëž˜\s*ë‚´ì—­|ê°€ê²©\s*ì¶”ì´/.test(element.innerText || ""));
-      });
-      if (panel) return true;
-      await wait(250);
-    }
-    return false;
-  })()`, true).catch(() => false);
-  if (!productPanelOpened) {
-    showCollectorWindow();
-    return { ok: false, code: "PRODUCT_DATA_PANEL_NOT_OPENED", message: `${articleNumber} ìƒí’ˆ ë°ì´í„° í™”ë©´ìœ¼ë¡œ ì „í™˜ë˜ì§€ ì•Šì•˜ìŠµë‹ˆë‹¤.` };
-  }
-  let salesRaw = String(searched.salesRaw || "").trim();
-  if (!salesRaw) {
-    const rowText = String(searched.rowText || "");
-    const matches = [...rowText.matchAll(/(?:^|\s)(<?\s*[\d,]+)\+?(?=\s|$)/g)].map((match) => match[1]);
-    salesRaw = matches.at(-1) || "";
-  }
-  await productFrame.executeJavaScript(String.raw`(() => {
-    window.__aroundGOptionResponses = [];
-    return true;
-  })()`, true).catch(() => false);
-  const transactionHistoryTabPoint = await productFrame.executeJavaScript(String.raw`(() => {
-    const visible = (element) => element && element.getClientRects().length > 0;
-    const panels = [...document.querySelectorAll(".ant-drawer-content,[role=dialog],aside,.ant-drawer,section")]
-      .filter((element) => {
-        if (!visible(element)) return false;
-        const rect = element.getBoundingClientRect();
-        return rect.left > innerWidth * 0.55 && rect.width > 240 && /ìƒí’ˆ\s*ë°ì´í„°/.test(element.innerText || "");
-      }).sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
-    const panel = panels[0];
-    const label = [...(panel?.querySelectorAll("[role=tab],button,a,span,div") || [])].filter(visible)
-      .filter((element) => /ê±°ëž˜\s*ë‚´ì—­/.test(element.textContent.trim()))
-      .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
-    const target = label?.closest("[role=tab],button,a") || label;
-    if (!target) return null;
-    target.scrollIntoView({ block: "center", inline: "center" });
-    const rect = target.getBoundingClientRect();
-    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
-  })()`, true).catch(() => null);
-  if (!transactionHistoryTabPoint) {
-    await stopTransactionNetworkCapture();
-    showCollectorWindow();
-    return { ok: false, code: "TRANSACTION_HISTORY_TAB_NOT_FOUND", message: `${articleNumber} ìƒí’ˆ ë°ì´í„°ì˜ ê±°ëž˜ ë‚´ì—­ ë§í¬ë¥¼ ì°¾ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.` };
-  }
-  await physicalSellerPointClick(transactionHistoryTabPoint, 1_200);
-  const transactionHistoryTabOpened = await productFrame.executeJavaScript(String.raw`(async () => {
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (element) => element && element.getClientRects().length > 0;
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      const panel = [...document.querySelectorAll(".ant-drawer-content,[role=dialog],aside,.ant-drawer,section")].find((element) => {
-        if (!visible(element)) return false;
-        const rect = element.getBoundingClientRect();
-        return rect.left > innerWidth * 0.55 && rect.width > 240
-          && /ê±°ëž˜\s*ë‚´ì—­/.test(element.innerText || "")
-          && /ì „ì²´\s*\(ì˜µì…˜\s*ì„ íƒ\)|ì˜µì…˜\s*ì„ íƒ/.test(element.innerText || "");
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛ^·÷”èµ©hºÚn¶X§zÍZ[\ÜÈ™XY™]šY]ÕÛÜšØ›ÛÚËÚXÚÔ™]šY]ÕÛÜšØ›ÛÚÔ™]š\Ú[ÛˆHœ›ÛH‹‹ÜÙ\šXÙ\ËÜÚ^›Û‹\™]šY]Ë]ÛÜšØ›ÛÚË›ZœÈŽÂš[\ÜÈ\ÜÙ\Ú^›Û”YÙT™XYQ›ÜÛÜœ™XÝ[Û‹\ÔÚ^›Û”ÚÝTØÛÜQY™\œ™Y›ÝËÙ[XÝÚ^›Û”YÙPÛÜœ™XÝ[Û”›ÙXÝÈHœ›ÛH‹‹ÜÙ\šXÙ\ËÛ]™K\Ú^›Û‹XÜ›ÜÜØÚXÚË›ZœÈŽÂš[\ÜÈÞ[˜ÔÚ^›Û”YÙPÚXÚÜÚ[Hœ›ÛH‹‹ÜÙ\šXÙ\ËÜÚ^›Û‹\YÙKXÚXÚÜÚ[›ZœÈŽÂš[\ÜÈÜ™X]TYÙPÜ›ÜÜÐÚXÚË™\šYšXØ][ÛÛÛ™][Û“X™[Hœ›ÛH‹‹ÜÙ\šXÙ\ËÛ]™K\Ú^›Û‹XÜ›ÜÜØÚXÚË›ZœÈŽÂš[\ÜÈZ[™]šY]ÔYÙH\ÈZ[Ù[\•™\šYšXØ][ÛˆHœ›ÛH‹‹ÜÙ\šXÙ\ËÜÚ^›Û‹\™]šY]Ë\Z[›ZœÈŽÂš[\ÜÈ\œ›ÝÜÙ\•Ú[™ÝËÛ\›Ø\™X[ÙË\ÓXZ[‹˜]]™R[XYÙK˜]]™U[YK›ÝYšXØ][Û‹ØY™TÝÜ˜YÙKØÜ™Y[‹Ù\ÜÚ[Û‹Ú[Hœ›ÛH™[XÝ›ÛˆŽÂš[\ÜÈZÙ\”Þ[˜ÈHœ›ÛH››ÙN™œÈŽÂš[\ÜÈ\[™š[KÛÜQš[KZÙ\‹™XYš[K™XY\‹™[˜[YKÝ][›[šËÜš]Qš[HHœ›ÛH››ÙN™œËÜ›ÛZ\Ù\ÈŽÂš[\ÜÈ˜\Ù[˜[YK\›˜[YK›Ú[‹™[]]™K™\ÛÛ™HHœ›ÛH››ÙNœ]ŽÂš[\ÜÈ^XÑš[HHœ›ÛH››ÙN˜Ú[Ü›ØÙ\ÜÈŽÂš[\ÜÈ™XYÚY]Hœ›ÛHœ™XYY^Ù[Yš[KÛ›ÙHŽÂš[\ÜÜš]VÞš[Hœ›ÛHÜš]KY^Ù[Yš[KÛ›ÙHŽÂš[\ÜÈ™XYš\œÝ]TÚY]Hœ›ÛH‹‹ÜÙ\šXÙ\ËÙ^Ù[\™XY\‹›ZœÈŽÂš[\ÜÈ\TÚ^›Û”ØÜ™Y[”Ø[\ÕÕÛÜšØ›ÛÚÈHœ›ÛH‹‹ÜÙ\šXÙ\ËÜÚ^›Û‹\ØÜ™Y[‹Y^Ù[\Þ[˜Ë›ZœÈŽÂš[\ÜÂˆš[™Ú^›ÛÛÛ[[‹ˆš[™Ú^›Û”™XÙ[Ø[\ÐÛÛ[[œËˆš[™Ú^›Û•Ý[Ø[\ÐÛÛ[[œËˆÙ]Ú^›Û•ÛÜšÜÚY]›ÝÜËˆÝ[[X\š^™TÚ^›Û”›ÝÜËˆ™XYÚ^›ÛÛÛ[[•˜[Y\Ëˆ™\Z\”Ú^›Û•ÛÜšÜÚY][Y[œÚ[ÛœËŸHœ›ÛH‹‹ÜÙ\šXÙ\ËÜÚ^›Û‹^Þ›ZœÈŽÂš[\ÜÂˆš[\”Ú^›Û”™]šY]Ô›ÝÜËˆš[\”Ú^›Û”›ÝÜÐžUÝ[Ø[\Ëˆ\œÙTÚ^›Û”Ø[\ÓY]šXËˆÒV“Ó—ÓRS’SUSWÕÕSÔÐSTËŸHœ›ÛH‹‹ÜÙ\šXÙ\ËÜÚ^›Û‹\Ø[\ËYš[\‹›ZœÈŽÂš[\ÜÂˆ[˜[^™Pœ˜[™X]Úˆ[˜[^™Pœ˜[™˜[Y\Ëˆœ˜[™^ÜX™[ˆœ˜[™Z\ÛX]ÚY\ÜØYÙKˆœ˜[™ÓX]Úˆ™Y™\œ™YÙ[\œ˜[™ÙX\˜Ú˜[YKˆÙ[\œ˜[™[X\Ù\ËŸHœ›ÛH‹‹ÜÙ\šXÙ\ËØœ˜[™Z[YÜš]K›ZœÈŽÂš[\ÜÂˆÜ™X]TÜ[\”ÛÝËˆ^Ù[›ÝÜÕÔÜ[\”›ÙXÝËˆÜ[\ÛÛ\][™\ÜËˆÜ[\”ÛÝÕÑ^Ù[]KŸHœ›ÛH‹‹ÜÙ\šXÙ\ËÜÜ[\‹Y^Ù[›ZœÈŽÂš[\ÜÙÈœ›ÛH™[XÝ›Û‹]\]\ˆŽÂš[\ÜÈœÛÛ”ÝÜ™HHœ›ÛH‹‹ÜÙ\šXÙ\ËÜÝÜ™K›ZœÈŽÂš[\ÜÈÛY\ÝXÔ™XÛÝ™\žPÛÛÜ™[˜]Ü‹ÝØÚÓØœÙ\˜][ÛÛÛ\]KÛY\ÝXÓØœÙ\˜][ÛÛÛ\]HHœ›ÛH‹‹ÜÙ\šXÙ\ËÙÛY\ÝXË\™XÛÝ™\žK›ZœÈŽÂš[\ÜÂˆ•SÐ”S‘ÐÐUSÑ×ÓRS’SUSKˆœ˜[™Ø][ÙÓ™YYÔÞ[˜ËˆY\™ÙSØØ[^™Yœ˜[™Ø][ÙËˆ\œÙRÜ”Ú^›Ûœ˜[™]Kˆ\œÙTX›XÐœ˜[™›ÙXÝËˆš[Üš]^™Pœ˜[™Ø][ÙËˆš[Üš]^™Pœ˜[™Ø][ÙÐžTØ[\ËˆX›XÐœ˜[™YÙPÛÝ[ˆX›XÐœ˜[™]ŸHœ›ÛH‹‹ÜÙ\šXÙ\ËØœ˜[™XØ][ÙË›ZœÈŽÂš[\ÜÂˆÑ‘’PÒPSÑÓPRS—ÔÕUTËˆ]Y]YÙ™šXÚX[ÛXZ[”™XÛÜ™ˆÜ™X]SÙ™šXÚX[ÛXZ[”™YÚ\ÝžKˆ˜Z[YÙ™šXÚX[ÛXZ[]Y]™XÛÜ™ˆÙ™šXÚX[ÛXZ[‘\ØÛÝ™\žU\›ˆÙ™šXÚX[ÛXZ[”™XÛÜ™›Üœ˜[™ˆÙ™šXÚX[ÛXZ[”ÙX\˜Ú[X\Ù\ËˆÙ™šXÚX[ÛXZ[”™YÚ\ÝžTÝ[[X\žKˆÙ™šXÚX[ÛXZ[]Y]]Y]YKˆ˜[šÓÙ™šXÚX[ÛXZ[Ø[™Y]\ËŸHœ›ÛH‹‹ÜÙ\šXÙ\ËÛÙ™šXÚX[YÛXZ[‹\™YÚ\ÝžK›ZœÈŽÂš[\ÜÂˆ˜]™\“Ù™šXÚX[ÝÜ™S›Ý›Ý[™›ÝÜËˆ˜]™\“Ù™šXÚX[ÝÜ™S›Ý›Ý[™ÛÜšØ›ÛÚÑ]KŸHœ›ÛH‹‹ÜÙ\šXÙ\ËÛÙ™šXÚX[YÛXZ[‹[›ÝY›Ý[™›ZœÈŽÂš[\ÜÂˆÙ™šXÚX[X[Y\\”™XÛÜ™ˆÙ™šXÚX[X[Y\\”Ý[[X\žKˆØ\\™SÙ™šXÚX[ÛÛÝ]š[\‹ŸHœ›ÛH‹‹ÜÙ\šXÙ\ËÛÙ™šXÚX[[X[XY\\œË›ZœÈŽÂš[\ÜÈ™\]Y\ÝYÙ™šXÚX[œ˜[™™\ÛÛ™Pœ˜[™Ù™šXÚX[ÙX\˜ÚHœ›ÛH‹‹ÜÙ\šXÙ\ËØœ˜[™[Ù™šXÚX[\ÙX\˜Ú›ZœÈŽÂš[\ÜÈ^Ü™\“Y]Y]K\œÙTÜ[\”›ÙXÝË]Y\žQ^Ü™\ˆHœ›ÛH‹‹ÜÙ\šXÙ\ËÜÚ^›Û‹›ZœÈŽÂš[\ÜÂˆœ˜[™ÙX\˜Ú›Ùš[RÙ^Kˆ™XÛÜ™œ˜[™ÙX\˜ÚÝ]ÛÛYKˆÙ[XÝœ˜[™ÙX\˜ÚÝ˜]YÞKŸHœ›ÛH‹‹ÜÙ\šXÙ\ËØœ˜[™\ÙX\˜Ú\›Ùš[K›ZœÈŽÂš[\ÜÂˆ^˜XÝÙ[\œ˜[™\T›ÙXÝËˆY\™ÙTÙ[\œ˜[™YÙ\ËˆY\™ÙTÙ[\œ˜[™›ÙXÝËˆÙ[\œ˜[™XYÛ›ÜÝXÜËŸHœ›ÛH‹‹ÜÙ\šXÙ\ËÜÙ[\‹Xœ˜[™\Ø[\Ë›ZœÈŽÂš[\ÜÈÙ[\”YÚ[˜][Û•˜[œÚ][Û”Ý]\ÈHœ›ÛH‹‹ÜÙ\šXÙ\ËÜÙ[\‹\YÚ[˜][Û‹\Ý]K›ZœÈŽÂš[\ÜÂˆ[˜[^™T™[™\™YÚ[›™[›ÙXÝËˆÛ\ÜÚYžTÜÙÔ›ÙXÝ]šY[˜ÙKˆ^XÝ\XÛRY[]SX]ÚˆÝšXÝ›ÙXÝ\XÛRY[]SX]Úˆ]RY[]SX]Úˆ™\ÛÛ™TÜÙÔ›ÙXÝÛ\ÜÚYšXØ][Û‹ˆ]XÝY™]Z[\‹ˆ\ÐÛÛœÚYÛ›Y[Ü\˜]Y›ÙXÝˆ\ÓÝ™\œÙX\Ô\˜Ú\ÙT›ÙXÝˆ\Ô]›Ü›TÚÜ[™Ô›ÙXÝ\›ˆ\Õ\ÝY˜]™\‘˜\Ú[Û”›ÙXÝØ\™ˆ›Ü›X[^™T™[™\™YÝØÚÑ]šY[˜ÙKˆØ\\™T™[™\™YÝØÚÑ]šY[˜ÙKˆ™]Z[\”ÝØÚÔÝ˜]YÞKˆY\™ÙT™]Z[\”ÝØÚÔ›ÙXÝËˆÛÛXÝ˜]]™TÝØÚÕ˜\šX[ËˆØ\\™S˜]]™TÝØÚÐÛÛ›ÛËˆ˜]™\‘˜\Ú[Û•ÝÛ•\›ˆ\œÙS˜]™\‘˜\Ú[Û•ÝÛÚ[›™[ÛÝ[Ëˆ]Y\žQÛY\ÝXÔ›ÙXÝËˆØ[š]^™QÛY\ÝXÔ›ÙXÝÛÙKˆØ[š]^™QÛY\ÝXÔ]Y\žKŸHœ›ÛH‹‹Ü™[^KÙÛY\ÝXË\ÙX\˜Ú›ZœÈŽÂš[\ÜÈØÛÜ™T›ÙXÝØ[™Y]HHœ›ÛH‹‹ÜÙ\šXÙ\ËÛX]Ú\‹›ZœÈŽÂš[\ÜÈÛY\ÝXÐœ˜[™]šY[˜ÙSX]ÚHœ›ÛH‹‹Ü™[^KÙÛY\ÝXË\ÙX\˜Ú›ZœÈŽÂš[\ÜÈÛY\ÝXÔ›ÙXÝ\›Y[]KØ\\™QÛY\ÝXÑ]Z[YÙHHœ›ÛH‹‹ÜÙ\šXÙ\ËÙÛY\ÝXËY]Z[\YÙK›ZœÈŽÂš[\ÜÂˆ\Ð\›Ý™Y˜]™\‘ÛY\ÝXÔÙ[\‘]šY[˜ÙKˆ\ÑÛY\ÝXÓ˜]™\”šXÙPØ\™ˆÙ[XÝ˜]™\”Ù[[™ÔšXÙ\ËŸHœ›ÛH‹‹ÜÙ\šXÙ\ËÛ˜]™\‹\šXÙK›ZœÈŽÂš[\ÜÈY\™ÙTÙ[\”›ÙXÝÐžT˜[šË\œÙTÙ[\‘ÛS›Ù\ÈHœ›ÛH‹‹ÜÙ\šXÙ\ËÜÙ[\‹YÛK›ZœÈŽÂš[\ÜÈYÚ\Ý]X[YšYYÜ[Û”šXÙKÜ[Û”›ÝÜÑœ›ÛTÙ[\”™\ÜÛœÙ\Ë]X[YšYYÜ[Û”šXÙ\ÈHœ›ÛH‹‹ÜÙ\šXÙ\ËÜÙ[\‹]˜[œØXÝ[Û‹\šXÙK›ZœÈŽÂš[\ÜÈÑST—ÔÔST—ÐÓÓ‘USÓ”ÈHœ›ÛH‹‹ÜÙ\šXÙ\ËÜÙ[\‹XÛÛ™][ÛœË›ZœÈŽÂš[\ÜÈš[™™]ÔÙ[\‘^Ü›Ø‹š[™™XÙ[Ù[\‘^Ü›ØˆHœ›ÛH‹‹ÜÙ\šXÙ\ËØœ˜[™Y^ÜZ›ØœË›ZœÈŽÂš[\ÜÈÜ™X]QÛY\ÝXÔÙX\˜Ú[šÔ™\Ý[š[˜[^™S˜]™\‘˜\Ú[Û•ÝÛ”™\Ý[\Ó˜]™\”™[™\™Y™\Ý[™XYHHœ›ÛH‹‹ÜÙ\šXÙ\ËÛ˜]™\‹Y˜\Ú[ÛÝÛ‹\™\Ý[›ZœÈŽÂš[\ÜÂˆÒUWÒPSÕT‘ÑUËˆ™^ÙYZÛTÚ]RX[]ˆÙYZÛTÚ]RX[Ý[[X\žKŸHœ›ÛH‹‹ÜÙ\šXÙ\ËÝÙYZÛK\Ú]KZX[›ZœÈŽÂš[\ÜÈ›Ü›X[^™T\˜Ú\ÙSYÙ\”›ÝË˜[Y]T\˜Ú\ÙSYÙ\”›ÝÈHœ›ÛH‹‹ÜÙ\šXÙ\ËÜ\˜Ú\ÙK[YÙ\‹›ZœÈŽÂ‹ËÈÑTSP‘TŒLÑÓQTÕP×ÔÑPTÒÔ‘TÕÔ‘Nˆ^XÝ\™XÝÙX\˜Ú[™ÝØÚÈ›ÝÈ\ÙY™Y›Ü™HH]\ˆ[Y[Ý]Ü™XÛÝ™\žH™]Üš]\Ë‚›]ÝÜ™NÂ›]ÛY\ÝXÔ™XÛÝ™\žPÛÛÜ™[˜]ÜŽÂ™[˜Ý[Ûˆ™XÛÝ™\žPÛÛÜ™[˜]ÜŠ
+HÂˆ™]\›ˆÛY\ÝXÔ™XÛÝ™\žPÛÛÜ™[˜]ÜˆH™]ÈÛY\ÝXÔ™XÛÝ™\žPÛÛÜ™[˜]ÜŠÝÜ™JNÂŸB˜ÛÛœÝÈ]]Õ\]\ˆHHÙÎÂ›˜]]™U[YK[YTÛÝ\˜ÙHH›YÚŽÂ‹ËÈÙY\Y[ˆÛÛ[Y\˜ÙHYÙ\È[HXÝ]™KˆÚ]Ý]\ÙHÝÚ]Ú\ÈÚ›ÛZ][HØ[‚‹ËÈ›ÝH[Y\œÈ[™Z[[™È›ÜˆØØÛYYÚ[™ÝÜËÚXÚÛZ]È^žH™\Ý[Ë‚˜\˜ÛÛ[X[™[™K˜\[™ÝÚ]Ú
+™\ØX›K\™[™\™\‹X˜XÚÙÜ›Ý[™[™ÈŠNÂ˜\˜ÛÛ[X[™[™K˜\[™ÝÚ]Ú
+™\ØX›KX˜XÚÙÜ›Ý[™][Y\‹]›Ý[™ÈŠNÂ˜\˜ÛÛ[X[™[™K˜\[™ÝÚ]Ú
+™\ØX›KX˜XÚÙÜ›Ý[™[™Ë[ØØÛYY]Ú[™ÝÜÈŠNÂ‚˜\Þ[˜È[˜Ý[ÛˆÜ[‘^\›˜[[Ú›ÛYUXŠ˜]Õ\›
+HÂˆÛÛœÝ\œÙYH™]ÈT“
+Ýš[™Ê˜]Õ\›ˆŠJNÂˆYˆ
+VÈšÎˆ‹šˆ—Kš[˜ÛY\Ê\œÙYœ›ÝØÛÛ
+JH›ÝÈ™]È\œ›ÜŠ’S•SQÕT“ŠNÂˆYˆ
+›ØÙ\ÜËœ]›Ü›HOOHÚ[ŒÌˆŠHÂˆ]ØZ]Ú[›Ü[‘^\›˜[
+\œÙYš™YŠNÂˆ™]\›ˆÈœ›ÝÜÙ\Žˆ™Y˜][ˆNÂˆBˆÛÛœÝØÜš\HÝš[™Ëœ˜]Ø‰Ø[™Y]\ÈH
+ˆ
+›Ú[‹T]	[Ž“ÐÐSTUH	ÑÛÛÙÛWÚ›ÛYW\XØ][Û—Ú›ÛYK™^IÊKˆ
+›Ú[‹T]	[Ž”›ÙÜ˜[Qš[\È	ÑÛÛÙÛWÚ›ÛYW\XØ][Û—Ú›ÛYK™^IÊKˆ
+›Ú[‹T]
+Ñ[š\›Û›Y[NŽ‘Ù]›Û\”]
+	Ô›ÙÜ˜[Qš[\Ö‰ÊJH	ÑÛÛÙÛWÚ›ÛYW\XØ][Û—Ú›ÛYK™^IÊBŠB‰Ú›ÛYHH	Ø[™Y]\ÈÚ\™KSØš™XÝÈ	ÈX[™
+\ÝT]	ÊHHÙ[XÝSØš™XÝQš\œÝBšYˆ
+[›Ý	Ú›ÛYJHÈ›ÝÈ	ÐÒ“ÓQWÓ“ÕÑ“ÕS‘	ÈB”Ý\T›ØÙ\ÜÈQš[T]	Ú›ÛYHP\™Ý[Y[\Ý
+	ËK[™]Ë]X‰Ë	[ŽT“ÕS‘Ñ×ÑVT“SÕT“
+B˜ÂˆÛÛœÝÜ[™YH]ØZ]™]È›ÛZ\ÙJ
+™\ÛÛ™JHOˆÂˆ^XÑš[JœÝÙ\œÚ[™^H‹Âˆ‹S›Ô›Ùš[H‹ˆ‹S›Û’[\˜XÝ]™H‹ˆ‹UÚ[™ÝÔÝ[H‹’Y[ˆ‹ˆ‹PÛÛ[X[™‹ØÜš\ˆKÂˆÚ[™ÝÜÒYNˆYKˆ[Y[Ý]ˆLÌˆ[ŽˆÈ‹‹œ›ØÙ\ÜË™[‹T“ÕS‘Ñ×ÑVT“SÕT“ˆ\œÙYš™YˆKˆK
+\œ›ÜŠHOˆ™\ÛÛ™JY\œ›ÜŠJNÂˆJNÂˆYˆ
+Ü[™Y
+H™]\›ˆÈœ›ÝÜÙ\Žˆ˜Ú›ÛYHˆNÂˆ]ØZ]Ú[›Ü[‘^\›˜[
+\œÙYš™YŠNÂˆ™]\›ˆÈœ›ÝÜÙ\Žˆ™Y˜][ˆNÂŸB‚›]XZ[•Ú[™ÝÎÂ›]Ù[\•Ú[™ÝÎÂ›]Ù[\‘^Ù[™\šYšXØ][Û“^[Ý]H[Â˜ÛÛœÝÙ[\•™\šYšXØ][ÛXÝ[Û•ØZ]\œÈH™]ÈX\
+
+NÂ˜ÛÛœÝØ[˜Ù[YÙ[\•™\šYšXØ][Û”[œÈH™]ÈÙ]
+
+NÂ‚™[˜Ý[ÛˆÙ[\•™\šYšXØ][ÛXÝ[Û’Ù^J[’Y›ÙXÝÙ^JHÂˆ™]\›ˆ	ÔÝš[™Ê[’Y	ÉÊ_WL	ÔÝš[™Ê›ÙXÝÙ^H	ÉÊ_XÂŸB‚™[˜Ý[ÛˆØZ]›Ü”Ù[\•™\šYšXØ][ÛXÝ[ÛŠ[’Y›ÙXÝÙ^K™\]Z\™YXÝ[ÛŠHÂˆÛÛœÝÙ^HHÙ[\•™\šYšXØ][ÛXÝ[Û’Ù^J[’Y›ÙXÝÙ^JNÂˆYˆ
+\[’Y\›ÙXÝÙ^HÙ[\•™\šYšXØ][ÛXÝ[Û•ØZ]\œËš\ÊÙ^JJHÂˆ™]\›ˆ›ÛZ\ÙKœ™Z™XÝ
+™]È\œ›ÜŠ	û à{d¢;"&;(%H;"®{'n:ã :®,; à{`ç:éo:éã:äé;)à:ê®ûe¢;"­zââ:âé‰ÊJNÂˆBˆ™]\›ˆ™]È›ÛZ\ÙJ
+™\ÛÛ™JHOˆÙ[\•™\šYšXØ][ÛXÝ[Û•ØZ]\œËœÙ]
+Ù^KÈ™\]Z\™YXÝ[Û‹™\ÛÛ™HJJNÂŸB‚™[˜Ý[Ûˆ™\ÛÛ™TÙ[\•™\šYšXØ][ÛXÝ[ÛŠ[œ]HßJHÂˆÛÛœÝÙ^HHÙ[\•™\šYšXØ][ÛXÝ[Û’Ù^J[œ]œ[’Y[œ]œ›ÙXÝÙ^JNÂˆÛÛœÝØZ]\ˆHÙ[\•™\šYšXØ][ÛXÝ[Û•ØZ]\œË™Ù]
+Ù^JNÂˆYˆ
+]ØZ]\ˆ[œ]˜XÝ[ÛˆOOHØZ]\‹œ™\]Z\™YXÝ[ÛŠHÂˆ™]\›ˆÈÚÎ™˜[ÙKY\ÜØYÙN‰ûf!;'«; à{d¢;%ä;ea;&¥;eg;'¤{%áz¬ï;'o;.f;ef;)à;%b»"­zââ:âé‰ÈNÂˆBˆÙ[\•™\šYšXØ][ÛXÝ[Û•ØZ]\œË™[]JÙ^JNÂˆØZ]\‹œ™\ÛÛ™J[œ]˜XÝ[ÛŠNÂˆ™]\›ˆÈÚÎYHNÂŸB‚™[˜Ý[ÛˆØ[˜Ù[Ù[\‘^Ù[™\šYšXØ][ÛŠ[’Y
+HÂˆÛÛœÝYHÝš[™Ê[’Y	ÉÊKš[J
+NÂˆYˆ
+ZY
+H™]\›ˆÈÚÎ™˜[ÙKY\ÜØYÙN‰û)${)à;eh:ã ;(l;'¤{%á{'a;,/»)à:ê®ûe¢;"­zââ:âé‰ÈNÂˆØ[˜Ù[YÙ[\•™\šYšXØ][Û”[œË˜Y
+Y
+NÂˆ›Üˆ
+ÛÛœÝÚÙ^KØZ]\—HÙˆÙ[\•™\šYšXØ][ÛXÝ[Û•ØZ]\œÊHÂˆYˆ
+ZÙ^KœÝ\ÕÚ]
+	ÚYWL
+JHÛÛ[YNÂˆÙ[\•™\šYšXØ][ÛXÝ[Û•ØZ]\œË™[]JÙ^JNÂˆØZ]\‹œ™\ÛÛ™J	ØØ[˜Ù[	ÊNÂˆBˆ™]\›ˆÈÚÎYKÝÜYYHNÂŸB‚™[˜Ý[Ûˆ™YÚ[”Ù[\‘^Ù[™\šYšXØ][Û•Ú[™ÝÜÊ[œ]HßJHÂˆYˆ
+[XZ[•Ú[™ÝÈXZ[•Ú[™ÝËš\Ñ\Ý›ÞYY
+
+JH™]\›ˆÈÚÎˆ˜[ÙKY\ÜØYÙNˆ\›Ý[™È:êe;'n;,/{'a;,/»)à:ê®ûe¢;"­zââ:âéˆˆNÂˆYˆ
+\Ù[\•Ú[™ÝÈÙ[\•Ú[™ÝËš\Ñ\Ý›ÞYY
+
+JHÂˆÜ[”Ù[\Ù[\•Ú[™ÝÊÑST—ÐÑS•T—ÕT“Èš\ÚX›Nˆ˜[ÙKXÝ]˜]Nˆ˜[ÙHJNÂˆBˆYˆ
+\Ù[\•Ú[™ÝÈÙ[\•Ú[™ÝËš\Ñ\Ý›ÞYY
+
+JH™]\›ˆÈÚÎˆ˜[ÙKY\ÜØYÙNˆ”ÒV“Óˆ;c$:éé;'¤;!/;a,;,/{'a;%í;)à:ê®ûe¢;"­zââ:âéˆˆNÂˆYˆ
+\Ù[\‘^Ù[™\šYšXØ][Û“^[Ý]
+HÂˆÙ[\‘^Ù[™\šYšXØ][Û“^[Ý]HÂˆXZ[“Z[š[][NˆXZ[•Ú[™ÝË™Ù]Z[š[][TÚ^™OËŠ
+HÌLÌKˆÙ[\“Z[š[][NˆÙ[\•Ú[™ÝË™Ù]Z[š[][TÚ^™OËŠ
+HÌLÌKˆXZ[›Ý[™ÎˆXZ[•Ú[™ÝË™Ù]›Ý[™Ê
+KˆXZ[“X^[Z^™YˆXZ[•Ú[™ÝËš\ÓX^[Z^™Y
+
+KˆÙ[\›Ý[™ÎˆÙ[\•Ú[™ÝË™Ù]›Ý[™Ê
+KˆÙ[\“X^[Z^™YˆÙ[\•Ú[™ÝËš\ÓX^[Z^™Y
+
+KˆÙ[\•š\ÚX›NˆÙ[\•Ú[™ÝËš\Õš\ÚX›J
+KˆÙ[\“ÜXÚ]NˆÙ[\•Ú[™ÝË™Ù]ÜXÚ]OËŠ
+HÏÈKˆNÂˆBˆËÈÒV“Óˆ˜]šYØ][Ûˆ[™Ø\\™HÛÛ[YH[ˆ]ÈY[ˆœ›ÝÜÙ\•Ú[™ÝË‚ˆËÈHÙ\\˜]H™]šY]ÈÚ[™ÝÈ\ÈHÛ›H™\šYšXØ][ÛˆÝ\™˜XÙHÚÝÛˆÈ\Ù\œË‚ˆÙ[\•Ú[™ÝËœÙ]ÚÚ\\ÚØ˜\ËŠYJNÂˆÙ[\•Ú[™ÝËœÙ]ÜXÚ]OËŠ
+NÂˆÙ[\•Ú[™ÝËœÚÝÒ[˜XÝ]™J
+NÂˆXZ[•Ú[™ÝËœÚÝÊ
+NÂˆXZ[•Ú[™ÝË™›ØÝ\Ê
+NÂˆ™]\›ˆÂˆÚÎˆYKˆ˜XÚÙÜ›Ý[™Ù[\ŽˆYKˆ›Ü™YÜ›Ý[™™]šY]ÎˆYKˆœ˜[™˜[YNˆÝš[™Ê[œ]˜œ˜[™˜[YHˆŠKˆš[S˜[YNˆÝš[™Ê[œ]™š[S˜[YHˆŠKˆNÂŸB‚™[˜Ý[Ûˆ[™Ù[\‘^Ù[™\šYšXØ][Û•Ú[™ÝÜÊ
+HÂˆÛÛœÝØ]™YHÙ[\‘^Ù[™\šYšXØ][Û“^[Ý]ÂˆÙ[\‘^Ù[™\šYšXØ][Û“^[Ý]H[ÂˆYˆ
+Ù[\•Ú[™ÝÈ	‰ˆ\Ù[\•Ú[™ÝËš\Ñ\Ý›ÞYY
+
+JHÂˆÙ[\•Ú[™ÝËœÙ]ÜXÚ]OËŠØ]™YËœÙ[\“ÜXÚ]HÏÈJNÂˆÙ[\•Ú[™ÝËœÙ]ÚÚ\\ÚØ˜\ËŠ˜[ÙJNÂˆ›ÚYÙ[\•Ú[™ÝËÙXÛÛ[Ë™^XÝ]R˜]˜TØÜš\
+
+
+
+HOˆÂˆØÝ[Y[™Ù][[Y[žRY
+˜\›Ý[™YË[]™K]™\šYšXØ][ÛˆŠOËœ™[[Ý™J
+NÂˆ›Üˆ
+ÛÛœÝ›ÝÈÙˆØÝ[Y[œ]Y\žTÙ[XÝÜ[
+–Ù]KX\›Ý[™YË]™\šYšXØ][Û—HŠJHÂˆYˆ
+›ÝË™]\Ù]˜\›Ý[™Ô™]šY]ÔÝ[JHÈØš™XÝ˜\ÜÚYÛŠ›ÝËœÝ[K”ÓÓ‹œ\œÙJ›ÝË™]\Ù]˜\›Ý[™Ô™]šY]ÔÝ[JJNÈ[]H›ÝË™]\Ù]˜\›Ý[™Ô™]šY]ÔÝ[NÈBˆ[ÙHÈ›ÝËœÝ[K›Ý][™HHˆŽÈ›ÝËœÝ[K›Ý][™SÙ™œÙ]HˆŽÈBˆ[]H›ÝË™]\Ù]˜\›Ý[™Õ™\šYšXØ][ÛŽÈ[]H›ÝË™]\Ù]˜\›Ý[™Ô™]šY]ÒÙ^NÂˆBˆJJ
+XYJK˜Ø]Ú
+
+
+HOˆßJNÂˆBˆYˆ
+\Ø]™Y
+HÂˆYˆ
+XZ[•Ú[™ÝÈ	‰ˆ[XZ[•Ú[™ÝËš\Ñ\Ý›ÞYY
+
+JHÈXZ[•Ú[™ÝËœÚÝÊ
+NÈXZ[•Ú[™ÝË™›ØÝ\Ê
+NÈBˆ™]\›ˆÈÚÎˆYK™\ÝÜ™Yˆ˜[ÙHNÂˆBˆYˆ
+XZ[•Ú[™ÝÈ	‰ˆ[XZ[•Ú[™ÝËš\Ñ\Ý›ÞYY
+
+JHÂˆYˆ
+XZ[•Ú[™ÝËš\ÓX^[Z^™Y
+
+JHXZ[•Ú[™ÝË[›X^[Z^™J
+NÂˆXZ[•Ú[™ÝËœÙ]Z[š[][TÚ^™OËŠ‹‹œØ]™Y›XZ[“Z[š[][JNÂˆXZ[•Ú[™ÝËœÙ]›Ý[™ÊØ]™Y›XZ[›Ý[™ÊNÂˆYˆ
+Ø]™Y›XZ[“X^[Z^™Y
+HXZ[•Ú[™ÝË›X^[Z^™J
+NÂˆXZ[•Ú[™ÝËœÚÝÊ
+NÂˆBˆYˆ
+Ù[\•Ú[™ÝÈ	‰ˆ\Ù[\•Ú[™ÝËš\Ñ\Ý›ÞYY
+
+JHÂˆYˆ
+Ù[\•Ú[™ÝËš\ÓX^[Z^™Y
+
+JHÙ[\•Ú[™ÝË[›X^[Z^™J
+NÂˆÙ[\•Ú[™ÝËœÙ]Z[š[][TÚ^™OËŠ‹‹œØ]™YœÙ[\“Z[š[][JNÂˆÙ[\•Ú[™ÝËœÙ]›Ý[™ÊØ]™YœÙ[\›Ý[™ÊNÂˆYˆ
+Ø]™YœÙ[\“X^[Z^™Y
+HÙ[\•Ú[™ÝË›X^[Z^™J
+NÂˆÙ[\•Ú[™ÝËšYJ
+NÂˆBˆYˆ
+XZ[•Ú[™ÝÈ	‰ˆ[XZ[•Ú[™ÝËš\Ñ\Ý›ÞYY
+
+JHXZ[•Ú[™ÝË™›ØÝ\Ê
+NÂˆ™]\›ˆÈÚÎˆYK™\ÝÜ™YˆYHNÂŸB‚›]Ù[\“[Ûš]Ü•Ú[™ÝÎÂ›]]\Ú[œØSYÙ\•Ú[™ÝÎÂ˜ÛÛœÝ[™[ÜžUÚ[™ÝÜÈH™]ÈÙ]
+
+NÂ˜ÛÛœÝÙ™šXÚX[[\˜XÝ]™UÚ[™ÝÜÈH™]ÈÙ]
+
+NÂ˜ÛÛœÝÛY\ÝXÓÙÚ[•Ú[™ÝÜÈH™]ÈX\
+
+NÂ˜ÛÛœÝÓQTÕP×ÔÑPTÒÔT•USÓˆHœ\œÚ\Ý˜\›Ý[™YËYÛY\ÝXË\ÙX\˜ÚŽÂ˜ÛÛœÝÓQTÕP×Ô’PÑWÔT•USÓˆHœ\œÚ\Ý˜\›Ý[™YËYÛY\ÝXË\šXÙHŽÂ˜ÛÛœÝÓQTÕP×ÔÑST—ÑU’QSÑWÔT•USÓˆHœ\œÚ\Ý˜\›Ý[™YËYÛY\ÝXË\Ù[\‹Y]šY[˜ÙHŽÂ›]ÛY\ÝXÔÙX\˜ÚÙ[™\˜][ÛˆHÂ˜ÛÛœÝXÝ]™QÛY\ÝXÔÙX\˜ÚÚ[™ÝÜÈH™]ÈÙ]
+
+NÂ˜ÛÛœÝXÝ]™QÛY\ÝXÔšXÙUÚ[™ÝÜÈH™]ÈÙ]
+
+NÂ›]ÛY\ÝXÔšXÙSÛÚÝ\]Y]YHH›ÛZ\ÙKœ™\ÛÛ™J
+NÂ‹ËÈ›Ý[™[˜XÝ]š]K›ÝHÝ[[YH™YYYÈš\Ú]™X[ÝØÚÈÜ[ÛœË‚‹ËÈ™\X]Y]™[È›ÜˆHØ[YHÜ[Ûˆ™]™\ˆ™[™]ÈZ]\ˆØ]ÚÙË‚˜ÛÛœÝÓQTÕP×Ô‘URST—ÒT‘ÕSQSÕUÓTÈHL
+ˆLÂ˜ÛÛœÝÓQTÕP×ÔÑPTÒÒT‘ÕSQSÕUÓTÈH
+ˆŒ
+ˆLÂ‚™[˜Ý[ÛˆØ[˜Ù[ÛY\ÝXÔÙX\˜Ú\Ê
+HÂˆÛY\ÝXÔÙX\˜ÚÙ[™\˜][Ûˆ
+ÏHNÂˆ›Üˆ
+ÛÛœÝÚ[™ÝÈÙˆË‹‹˜XÝ]™QÛY\ÝXÔÙX\˜ÚÚ[™ÝÜ×JHÂˆYˆ
+Ú[™ÝÈ	‰ˆ]Ú[™ÝËš\Ñ\Ý›ÞYY
+
+JHÚ[™ÝË™\Ý›ÞJ
+NÂˆBˆXÝ]™QÛY\ÝXÔÙX\˜ÚÚ[™ÝÜË˜ÛX\Š
+NÂˆ™]\›ˆÈÚÎˆYKÙ[™\˜][ÛŽˆÛY\ÝXÔÙX\˜ÚÙ[™\˜][ÛˆNÂŸB‚™[˜Ý[ÛˆÛY\ÝXÔÙX\˜ÚØ[˜Ù[Y
+Ù[™\˜][ÛŠHÂˆ™]\›ˆÙ[™\˜][ÛˆOOHÛY\ÝXÔÙX\˜ÚÙ[™\˜][ÛŽÂŸB‚˜\Þ[˜È[˜Ý[ÛˆÚ]ÛY\ÝXÔÙX\˜Ú\™[Y[Ý]
+Ü\˜][Û‹Ù[™\˜][Û‹›ÙÜ™\ÜÔÝ]HHÈÚXÚÜÚ[ˆ[JHÂˆ][Y[Ý]YÂˆ›ÙÜ™\ÜÔÝ]K›\Ý›ÙÜ™\ÜÐ]ÏÏH]K››ÝÊ
+NÂˆÛÛœÝ[Y[Ý]™\Ý[H™]È›ÛZ\ÙJ
+™\ÛÛ™JHOˆÂˆÛÛœÝ^\™HH
+
+HOˆÂˆÛÛœÝ™[XZ[š[™ÈHÓQTÕP×ÔÑPTÒÒT‘ÕSQSÕUÓTÈH
+]K››ÝÊ
+HH›ÙÜ™\ÜÔÝ]K›\Ý›ÙÜ™\ÜÐ]
+NÂˆYˆ
+™[XZ[š[™Èˆ
+HÈ[Y[Ý]YHÙ][Y[Ý]
+^\™K™[XZ[š[™ÊNÈ™]\›ŽÈBˆYˆ
+YÛY\ÝXÔÙX\˜ÚØ[˜Ù[Y
+Ù[™\˜][ÛŠJHØ[˜Ù[ÛY\ÝXÔÙX\˜Ú\Ê
+NÂˆÛÛœÝY\ÜØYÙHH:í¡:ãæ{%b; â:¬ ; âH:¬¬:¬ï:¬ ;%á»%­;fe{'n:ä';c$:éé;,¦:¬¬:¬ï:éo;( ;'©{ef:¬è:âé;'c; à{d¢;'/:èg;'m:ãæ{ejzââ:âéˆŽÂˆ™\ÛÛ™J›ÙÜ™\ÜÔÝ]K˜ÚXÚÜÚ[ÈÂˆÚÎˆYKˆ[YYÝ]ˆYKˆ]NˆÈ‹‹œ›ÙÜ™\ÜÔÝ]K˜ÚXÚÜÚ[\X[ˆYKY\ÜØYÙHKˆHˆÂˆÚÎˆ˜[ÙKˆ[YYÝ]ˆYKˆY\ÜØYÙNˆ:í¡:ãæ{%b;c$:éé;,¦:¬ ; â{'m;)á;e¢zä&;)à;%b»%a;)$zâê;e¢;"­zââ:âéˆ‹ˆJNÂˆNÂˆ[Y[Ý]YHÙ][Y[Ý]
+^\™KÓQTÕP×ÔÑPTÒÒT‘ÕSQSÕUÓTÊNÂˆJNÂˆžHÂˆ™]\›ˆ]ØZ]›ÛZ\ÙKœ˜XÙJÛÜ\˜][Û‹[Y[Ý]™\Ý[JNÂˆHš[˜[HÂˆÛX\•[Y[Ý]
+[Y[Ý]Y
+NÂˆBŸB˜ÛÛœÝÓQTÕP×ÓÑÒS—ÔÓÕTÑTÈHÂˆÈYˆ›]\Ú[œØH‹˜[YNˆºë-;"è; «‹\›ˆšÎ‹ËÝÝÝË›]\Ú[œØK˜ÛÛKÈ‹ÛXZ[œÎˆÈ›]\Ú[œØK˜ÛÛH—HKˆÈYˆœÜÙÈ‹˜[YNˆ”ÔÑð­û"è;!.:¬á:ì,{fe;($‹\›ˆšÎ‹ËÝÝÝËœÜÙË˜ÛÛKÈ‹ÛXZ[œÎˆÈœÜÙË˜ÛÛH—HKˆÈYˆ›ÝH‹˜[YNˆºèkúãl;&*0­úèkúãl:ì,{fe;($‹\›ˆšÎ‹ËÝÝÝË›Ý[Û‹˜ÛÛKÈ‹ÛXZ[œÎˆÈ›Ý[Û‹˜ÛÛH—HKˆÈYˆØÛÛ˜Ù\‹˜[YNˆ•û.ê;!bH‹\›ˆšÎ‹ËÝÝÝËØÛÛ˜Ù\˜ÛËšÜ‹È‹ÛXZ[œÎˆÈØÛÛ˜Ù\˜ÛËšÜˆ—HKˆÈYˆ›ÚÛX[‹˜[YNˆ“Òúê¬‹\›ˆšÎ‹ËÝÝÝË›ÚÛX[˜ÛÛKÈ‹ÛXZ[œÎˆÈ›ÚÛX[˜ÛÛH—HKˆÈYˆœÚ]š[YÙH‹˜[YNˆ»"è;!.:¬á°­ÔË’K•’SQÑH‹\›ˆšÎ‹ËÝÝÝËœÚ]š[YÙK˜ÛÛKÈ‹ÛXZ[œÎˆÈœÚ]š[YÙK˜ÛÛH—HKˆÈYˆ˜X˜ÛX\‹˜[YNˆPúéâ;b®‹\›ˆšÎ‹ËØX˜ÛX\˜K\˜ÛÛKÈ‹ÛXZ[œÎˆÈ˜K\˜ÛÛH—HKˆÈYˆšØ\Ú[˜H‹˜[YNˆ».m;"ç:à¦‹\›ˆšÎ‹ËÝÝÝËšØ\Ú[˜K˜ÛËšÜ‹È‹ÛXZ[œÎˆÈšØ\Ú[˜K˜ÛËšÜˆ—HKˆÈYˆ›Û\ÜÝ‹˜[YNˆ»&*:ãe;"©;c'È‹\›ˆšÎ‹ËÝÝÝË›Û\ÜÝ˜ÛËšÜ‹È‹ÛXZ[œÎˆÈ›Û\ÜÝ˜ÛËšÜˆ—HKˆÈYˆ™›Û\ˆ‹˜[YNˆ»cí:ãe‹\›ˆšÎ‹ËÝÝÝË™›Û\œÝ[K˜ÛÛKÈ‹ÛXZ[œÎˆÈ™›Û\œÝ[K˜ÛÛH—HKˆÈYˆœÚÙ[X\šÙ\ˆ‹˜[YNˆ»"¢:éâ;.é‹\›ˆšÎ‹ËÝÝÝËœÚÙ[X\šÙ\‹˜ÛËšÜ‹È‹ÛXZ[œÎˆÈœÚÙ[X\šÙ\‹˜ÛËšÜˆ—HKˆÈYˆÛÜšÜÛÝ]‹˜[YNˆ»&ã{"©;%a;&àð­û.o;ef;b®ÒT‹\›ˆšÎ‹ËÝÛÜšÜÛÝ]˜ÛËšÜ‹È‹ÛXZ[œÎˆÈÛÜšÜÛÝ]˜ÛËšÜˆ—HKˆÈYˆšZYÚÈ‹˜[YNˆ»ef;'m;.(‹\›ˆšÎ‹ËÚZYÚË\ÝÜ™K˜ÛÛKÈ‹ÛXZ[œÎˆÈšZYÚË\ÝÜ™K˜ÛÛH—HKˆÈYˆ™\[‹˜[YNˆ‘TS‹\›ˆšÎ‹ËÝÝÝË™\[ÝÜ™K˜ÛÛKÈ‹ÛXZ[œÎˆÈ™\[ÝÜ™K˜ÛÛH—HKˆÈYˆš˜\Ú[Ûˆ‹˜[YNˆ’;c*;!f:ê¬‹\›ˆšÎ‹ËÝÝÝËš˜\Ú[Û›X[˜ÛÛKÈ‹ÛXZ[œÎˆÈš˜\Ú[Û›X[˜ÛÛH—HKˆÈYˆŒŽXÛH‹˜[YNˆŒŽPÓH‹\›ˆšÎ‹ËÝÝÝËŒŽXÛK˜ÛËšÜ‹È‹ÛXZ[œÎˆÈŒŽXÛK˜ÛËšÜˆ—HKˆÈYˆ›šZÙH‹˜[YNˆºà¦;'m;`©:¬í{"çzê¬‹\›ˆšÎ‹ËÝÝÝË›šZÙK˜ÛÛKÚÜ‹È‹ÙÚ[•\›ˆšÎ‹ËÝÝÝË›šZÙK˜ÛÛKÚÜ‹ÛY[X™\‹Ü›Ùš[KÛÙÚ[ˆ‹ÛXZ[œÎˆÈ›šZÙK˜ÛÛH—KÙ™šXÚX[XØÛÝ[ˆYHKˆÈYˆ˜YY\È‹˜[YNˆ»%a:å%:âé;"©:¬í{"çzê¬‹\›ˆšÎ‹ËÝÝÝË˜YY\Ë˜ÛËšÜ‹È‹ÙÚ[•\›ˆšÎ‹ËÝÝÝË˜YY\Ë˜ÛËšÜ‹ØXØÛÝ[[ÙÚ[ˆ‹ÛXZ[œÎˆÈ˜YY\Ë˜ÛËšÜˆ—KÙ™šXÚX[XØÛÝ[ˆYHK—NÂ›]\]T™XYHH˜[ÙNÂ›]\]PÚXÚÕ[Y\ŽÂ›]\]R[œÝ[[Y\ŽÂ›]\]PÚXÚÒ[‘›YÚH˜[ÙNÂ›]Û™Qš]™P˜XÚÝ\Ý]\ÈHÈÝ]Nˆ˜ÚXÚÚ[™È‹Y\ÜØYÙNˆ»e!:èg:­î:çª;"ç;'¤Hzí¡;fáÛ™Qš]™H:ì,{%á{'a;"ç;'¤{ejzââ:âéˆˆNÂ›]œ˜[™^ÜÛ[Y\ŽÂ›]\Ýœ˜[™^ÜÚYÛ˜]\™HH—×ÐTÑSS‘WÑVTÕS‘×Ñ’ST××ÈŽÂ›][™[™Ðœ˜[™^Ü˜[YHHˆŽÂ›][™[™Ðœ˜[™^Ü›Ø’YHˆŽÂ›]œ˜[™^Ü›Ø”[™[™ÈH˜[ÙNÂ›]œ˜[™ÝÛ›ØYÝ\YH˜[ÙNÂ˜ÛÛœÝœ˜[™^Ü›ØœÈH™]ÈX\
+
+NÂ˜ÛÛœÝÙ[\‘ÝÛ›ØYÙ\ÜÚ[ÛœÈH™]ÈÙXZÔÙ]
+
+NÂ˜ÛÛœÝœ˜[™^Ü˜[Y][ÛØXÚHH™]ÈX\
+
+NÂ˜ÛÛœÝ^Ù[™]šY]ÐØXÚHH™]ÈX\
+
+NÂ›]œ˜[™^Ü[Ûš]Ü”[›š[™ÈH˜[ÙNÂ›]œ˜[™^Ü[Ûš]Ü”™\Ý\[Y\ŽÂ›]Ù[\•˜[œØXÝ[Û“ÛÚÝ\]Y]YHH›ÛZ\ÙKœ™\ÛÛ™J
+NÂ›]Ù™šXÚX[ÛXZ[]Y][›š[™ÈH˜[ÙNÂ›]Ù™šXÚX[ÛXZ[]Y]ÝÜ™\]Y\ÝYH˜[ÙNÂ›]Ù™šXÚX[ÛXZ[]Y]Ú[™ÝÈH[Â›]Ù™šXÚX[ÛXZ[]Y]™\Ý[YU[Y\ˆH[Â›]ÙYZÛTÚ]RX[[Y\ˆH[Â›]ÙYZÛTÚ]RX[[›š[™ÈH˜[ÙNÂ›]Ù™šXÚX[ÛXZ[]Y]X›ÜÝ\œ™[H[Â›]œ˜[™^Ü[ÛÛ\]TÙ[H˜[ÙNÂ›]XÝ]™Pœ˜[™ÝÛ›ØY›Ø’YHˆŽÂ˜ÛÛœÝœ˜[™ÝÛ›ØY]Ò[”›ÙÜ™\ÜÈH™]ÈÙ]
+
+NÂ›]œ˜[™ÛÜšÔÙ\ÜÚ[Û‘Ù[™\˜][ÛˆHÂ›]œ˜[™^Ü][\Ù[™\˜][ÛˆHÂ›]Ù[\”›ÙXÝœ˜[YT›Ý][™ÒYH[Â‹ËÈÒV“ÓˆØØØ\Ú[Û˜[H™]\™\È[™]šYX[]KXÙ[\ˆÛÛ\Û™[›Ý]\Ëˆ[\‚‹ËÈ›ÝYÚHÝX›HÙ[\ˆÙ[\ˆÛYH[™\ÙHHš\ÚX›HYY[H[œÝXY‹ËÈÙˆ›ÛÝ[™Èœ›ÛHH›Ý]H]Ø[ˆÚÝÈ“ØYÛÛ\Û™[[Y[Ý]‹‚˜ÛÛœÝÑST—ÐÑS•T—ÕT“HšÎ‹ËÜÙ[\‹œÚ^›Û‹˜ÛÛKÛXZ[‹Ù]PÙ[\‹ÛY\˜Ú[˜[šÐ›Ø\™ŽÂ˜ÛÛœÝÑST—ÑVÔ•ÐÑS•T—ÕT“HšÎ‹ËÜÙ[\‹œÚ^›Û‹˜ÛÛKÛXZ[‹Ù^ÜÙ[\ˆŽÂ˜ÛÛœÝÑST—Ð”S‘ÑVÔ•ÒT‘ÕSQSÕUÓTÈHŒ
+ˆŒ
+ˆLÂ˜ÛÛœÝÔ—ÔÒV“Ó—Ð”S‘ÓTÕÕT“HšÎ‹ËÚÜ‹œÚ^›Û‹˜ÛÛKØœ˜[™Û\ÝŽÂ˜ÛÛœÝS—ÔÒV“Ó—Ð”S‘ÓTÕÕT“HšÎ‹ËÝÝÝËœÚ^›Û‹˜ÛÛKØœ˜[™Û\ÝŽÂ˜ÛÛœÝTÒPÓÓ—ÔUH›Ú[Š[\Ü›Y]K™\›˜[YK˜Z[‹šXÛÛ‹œ™ÈŠNÂ˜ÛÛœÝÒUWÒPSÕSQSÕUÓTÈHWÌÂ˜ÛÛœÝÑST—ÐÐTT‘WÔÐÔ’TH
+\Þ[˜È
+
+HOˆÂˆÛÛœÝÙ[XÝÜˆH‹Ü›ÛOIÜ›ÝÉ×KKØÛ\ÜÊIÜ›ÝÉ×KØÛ\ÜÊIÚ][I×KØÛ\ÜÊIÜ›ÙXÝ	×KØÛ\ÜÊIÝX›I×HŽÂˆÛÛœÝXY[™ÜÈHË‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+šK‹ËÝ›Û™ËÜ[‹]ˆŠWBˆ™š[\Š
+[[Y[
+HOˆÝš[™Ê[[Y[š[›™\•^[[Y[^ÛÛ[ˆŠKš[J
+HOOH»'n:®,; à{d¢ŠNÂˆÛÛœÝØÛÜ\ÈH×NÂˆ›Üˆ
+ÛÛœÝXY[™ÈÙˆXY[™ÜÊHÂˆ]Ø[™Y]HHXY[™Ëœ\™[[[Y[Âˆ›Üˆ
+]\HÈØ[™Y]H	‰ˆ\LŽÈ\
+ÏHKØ[™Y]HHØ[™Y]Kœ\™[[[Y[
+HÂˆÛÛœÝ^HÝš[™ÊØ[™Y]Kš[›™\•^ˆŠNÂˆÛÛœÝ\ÕX›RXY\œÈH^š[˜ÛY\Ê”ÔH:®,;) ŠBˆ	‰ˆ^š[˜ÛY\Ê”ÒÕH:®,;) ŠBˆ	‰ˆ^š[˜ÛY\Ê» à{d¢;(%zìíŠBˆ	‰ˆûcâz­èÊº¬l:ç¦:¬ Ë\Ý
+^
+NÂˆYˆ
+\ÕX›RXY\œÊHÂˆÛÛœÝ›ÝÐÛÝ[HØ[™Y]Kœ]Y\žTÙ[XÝÜ[
+Ù[XÝÜŠK›[™ÝÂˆÛÛœÝ\XÛPÛÝ[H
+^›X]Ú
+ÊÏVÐKVŒNK—ËËW^ÍÌWŠJÏVÐKVŒNK—ËËWJ–ÐKV—JJÏVÐKVŒNK—ËËWJ—
+VÐKVŒNWVÐKVŒNK—ËËW^ÌËŽ_KÙÚJH×JK›[™ÝÂˆÛÛœÝšXÙPÛÝ[H
+^›X]Ú
+ÊÎ—ÌKßK
+J×ÌßKÙÊH×JK›[™ÝÂˆYˆ
+›ÝÐÛÝ[HÈ	‰ˆ\XÛPÛÝ[HH	‰ˆšXÙPÛÝ[HJHÂˆØÛÜ\Ëœ\Ú
+È[[Y[ˆØ[™Y]K^[™Ýˆ^›[™Ý›ÝÐÛÝ[\XÛPÛÝ[šXÙPÛÝ[JNÂˆBˆBˆBˆBˆØÛÜ\ËœÛÜ
+
+YšYÚ
+HO‚ˆY^[™ÝHšYÚ^[™ÝˆšYÚ˜\XÛPÛÝ[HY˜\XÛPÛÝ[ˆšYÚœšXÙPÛÝ[HYœšXÙPÛÝ[ˆ
+NÂˆÛÛœÝØÛÜHHØÛÜ\ÖÌOË™[[Y[ÂˆYˆ
+\ØÛÜJHÂˆ™]\›ˆÈ^ˆˆ‹]NˆØÝ[Y[]K\›ˆØØ][Û‹š™Y‹›Ù\Îˆ×KØÛÜU™\šYšYYˆ˜[ÙHNÂˆBˆÛÛœÝÛÛXÝYH™]ÈX\
+
+NÂˆÛÛœÝÛÛXÝš\ÚX›T›ÝÜÈH
+
+HOˆÂˆ›Üˆ
+ÛÛœÝ[[Y[ÙˆØÛÜKœ]Y\žTÙ[XÝÜ[
+Ù[XÝÜŠJHÂˆÛÛœÝ^HÝš[™Ê[[Y[š[›™\•^ˆŠKš[J
+NÂˆYˆ
+]^^›[™ÝˆÌ
+HÛÛ[YNÂˆÛÛœÝ[XYÙHH[[Y[œ]Y\žTÙ[XÝÜËŠš[YÖÜÜ˜×HŠNÂˆÛÛœÝ[XYÙU\›H[XYÙOËœÜ˜ÈˆŽÂˆÛÛXÝYœÙ]
+^
+È—ˆˆ
+È[XYÙU\›È^[XYÙU\›JNÂˆBˆNÂˆÛÛXÝš\ÚX›T›ÝÜÊ
+NÂˆÛÛœÝ›Ù\ÈHË‹‹˜ÛÛXÝY˜[Y\Ê
+WKœÛXÙJL
+NÂˆÛÛœÝØÜ›ÛØ[™Y]\ÈHÜØÛÜK‹‹œØÛÜKœ]Y\žTÙ[XÝÜ[
+™]‹ÙXÝ[Û‹XZ[‹\XÛKÜ›ÛOIÙÜšY	×KÜ›ÛOIÝX›I×HŠWBˆ›X\
+
+[[Y[
+HOˆ
+Âˆ[[Y[ˆX^[][NˆX]›X^
+[[Y[œØÜ›ÛZYÚH[[Y[˜ÛY[ZYÚ
+KˆJJBˆ™š[\Š
+Ø[™Y]JHOˆØ[™Y]K›X^[][Hˆ
+BˆœÛÜ
+
+YšYÚ
+HOˆšYÚ›X^[][HHY›X^[][JNÂˆÛÛœÝØÜ›Û\™Ù]HØÜ›ÛØ[™Y]\ÖÌNÂˆ™]\›ˆÂˆ^ˆ›Ù\Ë›X\
+
+›ÙJHOˆ›ÙK^
+Kš›Ú[Š—ˆŠKœÛXÙJL
+Kˆ]NˆØÝ[Y[]Kˆ\›ˆØØ][Û‹š™Y‹ˆ›Ù\ËˆØÛÜU™\šYšYYˆYKˆØØ[›™Y›ÙPÛÝ[ˆ›Ù\Ë›[™ÝˆÚYÛ˜]\™Nˆ›Ù\Ë›X\
+
+›ÙJHOˆ›ÙK^
+ÈŸˆ
+È›ÙKš[XYÙU\›
+Kš›Ú[ŠŸŠKœÛXÙJŒ
+KˆØÜ›ÛÜˆ[X™\ŠØÜ›Û\™Ù]Ë™[[Y[ËœØÜ›ÛÜ
+KˆØÜ›ÛX^[][Nˆ[X™\ŠØÜ›Û\™Ù]Ë›X^[][H
+BˆNÂŸJJ
+XÂ˜ÛÛœÝÑST—ÔÐÔ“ÓÔÐÔ’TH
+
+
+HOˆÂˆÛÛœÝ›ÛÝHØÝ[Y[œØÜ›Û[™Ñ[[Y[ØÝ[Y[™ØÝ[Y[[[Y[ÂˆÛÛœÝØ[™Y]\ÈHÜ›ÛÝ‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+™]‹ÙXÝ[Û‹XZ[‹\XÛKÜ›ÛOIÙÜšY	×KÜ›ÛOIÝX›I×HŠWBˆ™š[\Š
+[[Y[[™^[
+HOˆ[š[™^ÙŠ[[Y[
+HOOH[™^
+Bˆ›X\
+
+[[Y[
+HOˆÂˆÛÛœÝ™XÝH[[Y[™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆÛÛœÝÝ[HHÙ]ÛÛ\]YÝ[J[[Y[
+NÂˆÛÛœÝX^[][HHX]›X^
+[[Y[œØÜ›ÛZYÚH[[Y[˜ÛY[ZYÚ
+NÂˆÛÛœÝš\ÚX›HH™XÝÚYHŽ	‰ˆ™XÝšZYÚHMŒˆ	‰ˆ™XÝ˜›ÝÛHˆ	‰ˆ™XÝÜ[›™\’ZYÚÂˆÛÛœÝØÜ›ÛÝ[HHØ]]ßØÜ›ÛÝ™\›^KÚK\Ý
+Ý[K›Ý™\™›ÝÖJNÂˆÛÛœÝ^HÝš[™Ê[[Y[š[›™\•^ˆŠNÂˆÛÛœÝ›ÙXÝX›HH^š[˜ÛY\Ê”ÔHŠH	‰ˆ^š[˜ÛY\Ê”ÒÕHŠBˆ	‰ˆû à{d¢;(%zìí;câz­èÊº¬l:ç¦:¬ Ë\Ý
+^
+NÂˆÛÛœÝØÛÜ™HH
+›ÙXÝX›HÈLˆ
+Bˆ
+È
+ØÜ›ÛÝ[HÈLˆ
+Bˆ
+ÈX^[][Bˆ
+ÈX]›Z[Š™XÝÚY
+ˆ™XÝšZYÚL
+NÂˆ™]\›ˆÈ[[Y[X^[][Kš\ÚX›KØÛÜ™HNÂˆJBˆ™š[\Š
+Ø[™Y]JHOˆØ[™Y]Kš\ÚX›H	‰ˆØ[™Y]K›X^[][Hˆ
+BˆœÛÜ
+
+YšYÚ
+HOˆšYÚœØÛÜ™HHYœØÛÜ™JNÂˆÛÛœÝ\™Ù]HØ[™Y]\ÖÌNÂˆYˆ
+]\™Ù]
+H™]\›ˆÈ›Ý[™ˆ˜[ÙK[Ý™Yˆ˜[ÙK][™ˆYHNÂˆÛÛœÝ™Y›Ü™HH\™Ù]™[[Y[œØÜ›ÛÜÂˆÛÛœÝÝ\HX]›X^
+ŒX]™›ÛÜŠ\™Ù]™[[Y[˜ÛY[ZYÚ
+ˆŽŠJNÂˆ\™Ù]™[[Y[œØÜ›ÛÜHX]›Z[Š\™Ù]›X^[][K™Y›Ü™H
+ÈÝ\
+NÂˆ\™Ù]™[[Y[™\Ü]Ú]™[
+™]È]™[
+œØÜ›Û‹ÈX˜›\ÎˆYHJJNÂˆÛÛœÝY\ˆH\™Ù]™[[Y[œØÜ›ÛÜÂˆ™]\›ˆÂˆ›Ý[™ˆYKˆ[Ý™YˆY\ˆˆ™Y›Ü™Kˆ][™ˆY\ˆH\™Ù]›X^[][HHËˆ™Y›Ü™KˆY\‹ˆX^[][Nˆ\™Ù]›X^[][BˆNÂŸJJ
+XÂ˜ÛÛœÝÑST—Ô“Õ×ÔÐÔ“ÓÔÐÔ’TH
+
+
+HOˆÂˆÛÛœÝ›ÛÝHØÝ[Y[œØÜ›Û[™Ñ[[Y[ØÝ[Y[™ØÝ[Y[[[Y[ÂˆÛÛœÝØ[™Y]\ÈHÜ›ÛÝ‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+™]‹ÙXÝ[Û‹XZ[‹\XÛKÜ›ÛOIÙÜšY	×KÜ›ÛOIÝX›I×HŠWBˆ™š[\Š
+[[Y[[™^[
+HOˆ[š[™^ÙŠ[[Y[
+HOOH[™^
+Bˆ›X\
+
+[[Y[
+HOˆÂˆÛÛœÝ™XÝH[[Y[™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆÛÛœÝX^[][HHX]›X^
+[[Y[œØÜ›ÛZYÚH[[Y[˜ÛY[ZYÚ
+NÂˆÛÛœÝ^HÝš[™Ê[[Y[š[›™\•^ˆŠNÂˆÛÛœÝ›ÙXÝX›HH^š[˜ÛY\Ê”ÔHŠH	‰ˆ^š[˜ÛY\Ê”ÒÕHŠBˆ	‰ˆû à{d¢;(%zìí;câz­èÊº¬l:ç¦:¬ Ë\Ý
+^
+NÂˆ™]\›ˆÂˆ[[Y[ˆX^[][Kˆš\ÚX›Nˆ™XÝÚYHŽ	‰ˆ™XÝšZYÚHMŒ	‰ˆ™XÝ˜›ÝÛHˆ	‰ˆ™XÝÜ[›™\’ZYÚˆØÛÜ™Nˆ
+›ÙXÝX›HÈLˆ
+H
+ÈX^[][KˆNÂˆJBˆ™š[\Š
+Ø[™Y]JHOˆØ[™Y]Kš\ÚX›H	‰ˆØ[™Y]K›X^[][Hˆ
+BˆœÛÜ
+
+YšYÚ
+HOˆšYÚœØÛÜ™HHYœØÛÜ™JNÂˆÛÛœÝ\™Ù]HØ[™Y]\ÖÌNÂˆYˆ
+]\™Ù]
+H™]\›ˆÈ›Ý[™ˆ˜[ÙK][™ˆYHNÂˆÛÛœÝ›ÝÒZYÚÈHË‹‹\™Ù]™[[Y[œ]Y\žTÙ[XÝÜ[
+‹Ü›ÛOIÜ›ÝÉ×HŠWBˆ›X\
+
+›ÝÊHOˆ›ÝË™Ù]›Ý[™[™ÐÛY[™XÝ
+
+KšZYÚ
+Bˆ™š[\Š
+ZYÚ
+HOˆZYÚHŒ	‰ˆZYÚHN
+BˆœÛÜ
+
+YšYÚ
+HOˆYHšYÚ
+NÂˆÛÛœÝYYX[’ZYÚH›ÝÒZYÚË›[™ÝˆÈ›ÝÒZYÚÖÓX]™›ÛÜŠ›ÝÒZYÚË›[™ÝÈŠWBˆˆÂˆËÈ[Ý™HžH\ÜÈ[ˆÛ™H›ÝÈÛÈ›Èš\X[^™Y›ÝÈØ[ˆ\ÜÈ™]ÙY[ˆØ\\™\Ë‚ˆÛÛœÝÝ\HX]›X^
+L‹X]›Z[ŠX]™›ÛÜŠYYX[’ZYÚ
+ˆMJJJNÂˆÛÛœÝ™Y›Ü™HH\™Ù]™[[Y[œØÜ›ÛÜÂˆ\™Ù]™[[Y[œØÜ›ÛÜHX]›Z[Š\™Ù]›X^[][K™Y›Ü™H
+ÈÝ\
+NÂˆ\™Ù]™[[Y[™\Ü]Ú]™[
+™]È]™[
+œØÜ›Û‹ÈX˜›\ÎˆYHJJNÂˆÛÛœÝY\ˆH\™Ù]™[[Y[œØÜ›ÛÜÂˆ™]\›ˆÂˆ›Ý[™ˆYKˆ[Ý™YˆY\ˆˆ™Y›Ü™Kˆ][™ˆY\ˆH\™Ù]›X^[][HH‹ˆ™Y›Ü™KˆY\‹ˆX^[][Nˆ\™Ù]›X^[][KˆÝ\ˆNÂŸJJ
+XÂ˜ÛÛœÝÙ[\’[\ØÜš\H
+˜[šË[Z]
+HOˆ
+
+
+HOˆÂˆÛÛœÝ™\]Y\ÝY˜[šÈH	Ó[X™\Š˜[šÊ_NÂˆÛÛœÝ™\]Y\ÝY[Z]H	Ó[X™\Š[Z]
+_NÂˆÛÛœÝ›ÛÝHØÝ[Y[œØÜ›Û[™Ñ[[Y[ØÝ[Y[™ØÝ[Y[[[Y[ÂˆÛÛœÝØ[™Y]\ÈHÜ›ÛÝ‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+™]‹ÙXÝ[Û‹XZ[‹\XÛKÜ›ÛOIÙÜšY	×KÜ›ÛOIÝX›I×HŠWBˆ™š[\Š
+[[Y[[™^[
+HOˆ[š[™^ÙŠ[[Y[
+HOOH[™^
+Bˆ›X\
+
+[[Y[
+HOˆÂˆÛÛœÝ™XÝH[[Y[™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆÛÛœÝÝ[HHÙ]ÛÛ\]YÝ[J[[Y[
+NÂˆÛÛœÝX^[][HHX]›X^
+[[Y[œØÜ›ÛZYÚH[[Y[˜ÛY[ZYÚ
+NÂˆÛÛœÝ^HÝš[™Ê[[Y[š[›™\•^ˆŠNÂˆÛÛœÝ›ÙXÝX›HH^š[˜ÛY\Ê”ÔHŠH	‰ˆ^š[˜ÛY\Ê”ÒÕHŠBˆ	‰ˆû à{d¢;(%zìí;câz­èÊº¬l:ç¦:¬ Ë\Ý
+^
+NÂˆÛÛœÝØÜ›ÛÝ[HHØ]]ßØÜ›ÛÝ™\›^KÚK\Ý
+Ý[K›Ý™\™›ÝÖJNÂˆÛÛœÝš\ÚX›HH™XÝÚYHŽ	‰ˆ™XÝšZYÚHMŒ	‰ˆ™XÝ˜›ÝÛHˆ	‰ˆ™XÝÜ[›™\’ZYÚÂˆ™]\›ˆÂˆ[[Y[ˆX^[][Kˆš\ÚX›KˆØÛÜ™Nˆ
+›ÙXÝX›HÈLˆ
+H
+È
+ØÜ›ÛÝ[HÈLˆ
+H
+ÈX^[][BˆNÂˆJBˆ™š[\Š
+Ø[™Y]JHOˆØ[™Y]Kš\ÚX›H	‰ˆØ[™Y]K›X^[][Hˆ
+BˆœÛÜ
+
+YšYÚ
+HOˆšYÚœØÛÜ™HHYœØÛÜ™JNÂˆÛÛœÝ\™Ù]HØ[™Y]\ÖÌNÂˆYˆ
+]\™Ù]
+H™]\›ˆÈ›Ý[™ˆ˜[ÙHNÂˆÛÛœÝ˜][ÈHX]›X^
+X]›Z[ŠK
+™\]Y\ÝY˜[šÈHJHÈX]›X^
+K™\]Y\ÝY[Z]HJJJNÂˆ\™Ù]™[[Y[œØÜ›ÛÜHX]œ›Ý[™
+\™Ù]›X^[][H
+ˆ˜][ÊNÂˆ\™Ù]™[[Y[™\Ü]Ú]™[
+™]È]™[
+œØÜ›Û‹ÈX˜›\ÎˆYHJJNÂˆ™]\›ˆÈ›Ý[™ˆYK˜[šÎˆ™\]Y\ÝY˜[šËÜÚ][ÛŽˆ\™Ù]™[[Y[œØÜ›ÛÜX^[][Nˆ\™Ù]›X^[][HNÂŸJJ
+XÂ˜ÛÛœÝÙ[\“YÙTØÜš\H
+^[ÊHOˆ
+
+
+HOˆÂˆÛÛœÝ™\]Y\ÝY^[ÈH	Ó[X™\Š^[Ê_NÂˆÛÛœÝ›ÛÝHØÝ[Y[œØÜ›Û[™Ñ[[Y[ØÝ[Y[™ØÝ[Y[[[Y[ÂˆÛÛœÝØ[™Y]\ÈHÜ›ÛÝ‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+™]‹ÙXÝ[Û‹XZ[‹\XÛKÜ›ÛOIÙÜšY	×KÜ›ÛOIÝX›I×HŠWBˆ™š[\Š
+[[Y[[™^[
+HOˆ[š[™^ÙŠ[[Y[
+HOOH[™^
+Bˆ›X\
+
+[[Y[
+HOˆÂˆÛÛœÝ™XÝH[[Y[™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆÛÛœÝX^[][HHX]›X^
+[[Y[œØÜ›ÛZYÚH[[Y[˜ÛY[ZYÚ
+NÂˆÛÛœÝ^HÝš[™Ê[[Y[š[›™\•^ˆŠNÂˆÛÛœÝ›ÙXÝX›HH^š[˜ÛY\Ê”ÔHŠH	‰ˆ^š[˜ÛY\Ê”ÒÕHŠBˆ	‰ˆû à{d¢;(%zìí;câz­èÊº¬l:ç¦:¬ Ë\Ý
+^
+NÂˆ™]\›ˆÈ[[Y[X^[][Kš\ÚX›Nˆ™XÝÚYHŽ	‰ˆ™XÝšZYÚHMŒ	‰ˆ™XÝ˜›ÝÛHˆ	‰ˆ™XÝÜ[›™\’ZYÚˆØÛÜ™Nˆ
+›ÙXÝX›HÈLˆ
+H
+ÈX^[][HNÂˆJBˆ™š[\Š
+Ø[™Y]JHOˆØ[™Y]Kš\ÚX›H	‰ˆØ[™Y]K›X^[][Hˆ
+BˆœÛÜ
+
+YšYÚ
+HOˆšYÚœØÛÜ™HHYœØÛÜ™JNÂˆÛÛœÝ\™Ù]HØ[™Y]\ÖÌNÂˆYˆ
+]\™Ù]
+H™]\›ˆÈ›Ý[™ˆ˜[ÙHNÂˆÛÛœÝ™Y›Ü™HH\™Ù]™[[Y[œØÜ›ÛÜÂˆ\™Ù]™[[Y[œØÜ›ÛÜHX]›X^
+X]›Z[Š\™Ù]›X^[][K™Y›Ü™H
+È™\]Y\ÝY^[ÊJNÂˆ\™Ù]™[[Y[™\Ü]Ú]™[
+™]È]™[
+œØÜ›Û‹ÈX˜›\ÎˆYHJJNÂˆ™]\›ˆÈ›Ý[™ˆYK™Y›Ü™KY\Žˆ\™Ù]™[[Y[œØÜ›ÛÜX^[][Nˆ\™Ù]›X^[][HNÂŸJJ
+XÂ˜ÛÛœÝÙ[\”ØÜ›Û˜\’[™›ÔØÜš\H
+˜][ÊHOˆ
+
+
+HOˆÂˆÛÛœÝ™\]Y\ÝY˜][ÈHX]›X^
+X]›Z[ŠK	Ó[X™\Š˜][Ê_JJNÂˆÛÛœÝ›ÛÝHØÝ[Y[œØÜ›Û[™Ñ[[Y[ØÝ[Y[™ØÝ[Y[[[Y[ÂˆÛÛœÝØ[™Y]\ÈHÜ›ÛÝ‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+™]‹ÙXÝ[Û‹XZ[‹\XÛKÜ›ÛOIÙÜšY	×KÜ›ÛOIÝX›I×HŠWBˆ™š[\Š
+[[Y[[™^[
+HOˆ[š[™^ÙŠ[[Y[
+HOOH[™^
+Bˆ›X\
+
+[[Y[
+HOˆÂˆÛÛœÝ™XÝH[[Y[™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆÛÛœÝÝ[HHÙ]ÛÛ\]YÝ[J[[Y[
+NÂˆÛÛœÝX^[][HHX]›X^
+[[Y[œØÜ›ÛZYÚH[[Y[˜ÛY[ZYÚ
+NÂˆÛÛœÝ^HÝš[™Ê[[Y[š[›™\•^ˆŠNÂˆÛÛœÝ›ÙXÝX›HH^š[˜ÛY\Ê”ÔHŠH	‰ˆ^š[˜ÛY\Ê”ÒÕHŠBˆ	‰ˆû à{d¢;(%zìí;câz­èÊº¬l:ç¦:¬ Ë\Ý
+^
+NÂˆÛÛœÝØÜ›ÛÝ[HHØ]]ßØÜ›ÛÝ™\›^KÚK\Ý
+Ý[K›Ý™\™›ÝÖJNÂˆÛÛœÝš\ÚX›HH™XÝÚYHŽ	‰ˆ™XÝšZYÚHMŒ	‰ˆ™XÝ˜›ÝÛHˆ	‰ˆ™XÝÜ[›™\’ZYÚÂˆ™]\›ˆÂˆ[[Y[ˆ™XÝˆX^[][Kˆš\ÚX›KˆØÛÜ™Nˆ
+›ÙXÝX›HÈLˆ
+H
+È
+ØÜ›ÛÝ[HÈLˆ
+H
+ÈX^[][BˆNÂˆJBˆ™š[\Š
+Ø[™Y]JHOˆØ[™Y]Kš\ÚX›H	‰ˆØ[™Y]K›X^[][Hˆ
+BˆœÛÜ
+
+YšYÚ
+HOˆšYÚœØÛÜ™HHYœØÛÜ™JNÂˆÛÛœÝ\™Ù]HØ[™Y]\ÖÌNÂˆYˆ
+]\™Ù]
+H™]\›ˆÈ›Ý[™ˆ˜[ÙHNÂˆÛÛœÝ[X’ZYÚHX]›X^
+Ž\™Ù]œ™XÝšZYÚ
+ˆ
+\™Ù]™[[Y[˜ÛY[ZYÚÈ\™Ù]™[[Y[œØÜ›ÛZYÚ
+JNÂˆÛÛœÝ˜]™[HX]›X^
+K\™Ù]œ™XÝšZYÚH[X’ZYÚ
+NÂˆÛÛœÝÝ\œ™[˜][ÈH\™Ù]™[[Y[œØÜ›ÛÜÈ\™Ù]›X^[][NÂˆ™]\›ˆÂˆ›Ý[™ˆYKˆˆX]›X^
+KX]™›ÛÜŠ\™Ù]œ™XÝœšYÚHÊJKˆÝ\NˆX]™›ÛÜŠ\™Ù]œ™XÝÜ
+È[X’ZYÚÈˆ
+È˜]™[
+ˆÝ\œ™[˜][ÊKˆ[™NˆX]™›ÛÜŠ\™Ù]œ™XÝÜ
+È[X’ZYÚÈˆ
+È˜]™[
+ˆ™\]Y\ÝY˜][ÊKˆ˜][Îˆ™\]Y\ÝY˜][ÂˆNÂŸJJ
+XÂ˜ÛÛœÝÑST—ÔÑSPÕSÓ—ÒS‘“×ÔÐÔ’TH
+
+
+HOˆÂˆÛÛœÝ›ÛÝHØÝ[Y[œØÜ›Û[™Ñ[[Y[ØÝ[Y[™ØÝ[Y[[[Y[ÂˆÛÛœÝØ[™Y]\ÈHÜ›ÛÝ‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+™]‹ÙXÝ[Û‹XZ[‹\XÛKÜ›ÛOIÙÜšY	×KÜ›ÛOIÝX›I×HŠWBˆ™š[\Š
+[[Y[[™^[
+HOˆ[š[™^ÙŠ[[Y[
+HOOH[™^
+Bˆ›X\
+
+[[Y[
+HOˆÂˆÛÛœÝ™XÝH[[Y[™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆÛÛœÝX^[][HHX]›X^
+[[Y[œØÜ›ÛZYÚH[[Y[˜ÛY[ZYÚ
+NÂˆÛÛœÝ^HÝš[™Ê[[Y[š[›™\•^ˆŠNÂˆÛÛœÝ›ÙXÝX›HH^š[˜ÛY\Ê”ÔHŠH	‰ˆ^š[˜ÛY\Ê”ÒÕHŠBˆ	‰ˆû à{d¢;(%zìí;câz­èÊº¬l:ç¦:¬ Ë\Ý
+^
+NÂˆ™]\›ˆÂˆ[[Y[ˆ™XÝˆX^[][KˆØÛÜ™Nˆ
+›ÙXÝX›HÈLˆ
+H
+ÈX^[][KˆNÂˆJBˆ™š[\Š
+È™XÝX^[][HJHO‚ˆX^[][Hˆ	‰ˆ™XÝÚYHŽ	‰ˆ™XÝšZYÚHMŒˆ	‰ˆ™XÝ˜›ÝÛHˆ	‰ˆ™XÝÜ[›™\’ZYÚˆ
+BˆœÛÜ
+
+YšYÚ
+HOˆšYÚœØÛÜ™HHYœØÛÜ™JNÂˆÛÛœÝ\™Ù]HØ[™Y]\ÖÌNÂˆYˆ
+]\™Ù]
+H™]\›ˆÈ›Ý[™ˆ˜[ÙHNÂˆ\™Ù]™[[Y[œØÜ›ÛÜHÂˆ\™Ù]™[[Y[™\Ü]Ú]™[
+™]È]™[
+œØÜ›Û‹ÈX˜›\ÎˆYHJJNÂˆÛÛœÝ™XÝH\™Ù]œ™XÝÂˆ™]\›ˆÂˆ›Ý[™ˆYKˆÝ\ˆX]™›ÛÜŠ™XÝ›Y
+ÈX]›Z[ŠLŒ™XÝÚY
+ˆŒLŠJKˆÝ\NˆX]™›ÛÜŠ™XÝÜ
+ÈX]›Z[ŠL™XÝšZYÚ
+ˆŒMŠJKˆ[™ˆX]™›ÛÜŠ™XÝœšYÚHX]›Z[ŠL™XÝÚY
+ˆŒ
+JKˆ[™NˆX]™›ÛÜŠ™XÝ˜›ÝÛHH
+KˆX^[][Nˆ\™Ù]›X^[][KˆNÂŸJJ
+XÂ‚˜ÛÛœÝØZ]H
+Z[\ÙXÛÛ™ÊHOˆ™]È›ÛZ\ÙJ
+™\ÛÛ™JHOˆÙ][Y[Ý]
+™\ÛÛ™KZ[\ÙXÛÛ™ÊJNÂ‚˜\Þ[˜È[˜Ý[Ûˆ\ÚXØ[Ù[\”Ú[ÛXÚÊÚ[Ù]SZ[\ÙXÛÛ™ÈHL
+HÂˆYˆ
+\Ù[\•Ú[™ÝÈÙ[\•Ú[™ÝËš\Ñ\Ý›ÞYY
+
+JH™]\›ˆ˜[ÙNÂˆÛÛœÝHX]œ›Ý[™
+[X™\ŠÚ[Ëž
+JNÂˆÛÛœÝHHX]œ›Ý[™
+[X™\ŠÚ[ËžJJNÂˆYˆ
+S[X™\‹š\Ñš[š]J
+HS[X™\‹š\Ñš[š]JJJH™]\›ˆ˜[ÙNÂˆËÈ›Ý]H[œ]\™XÝHÈHY[ˆÙ[\ˆÙ[\ˆ™[™\™\‹ˆ[Ýš[™ÈBˆËÈÚ[™ÝÜÈÝ\œÛÜˆÝX[ÈH\Ù\‰ÜÈXÝ]™H\XØ][Ûˆ[™™]™[ÈÙ[Z[™BˆËÈ˜XÚÙÜ›Ý[™ÛÛXÝ[Û‹‚ˆÙ[\•Ú[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙS[Ý™H‹HJNÂˆ]ØZ]ØZ]
+
+NÂˆÙ[\•Ú[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙQÝÛˆ‹]ÛŽˆ›Y‹ÛXÚÐÛÝ[ˆKHJNÂˆ]ØZ]ØZ]
+L
+NÂˆÙ[\•Ú[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙU\‹]ÛŽˆ›Y‹ÛXÚÐÛÝ[ˆKHJNÂˆ]ØZ]ØZ]
+Ù]SZ[\ÙXÛÛ™ÊNÂˆ™]\›ˆYNÂŸB‚™[˜Ý[Ûˆ^˜XÝÙ[\\T›ÙXÝÊØÝ[Y[[Z]HŒ
+HÂˆÛÛœÝ›ÙXÝÈH×NÂˆÛÛœÝš\Ú]YH™]ÈÙ]
+
+NÂˆÛÛœÝš\œÝH
+˜[YKÙ^\ÊHOˆÙ^\Ë›X\
+
+Ù^JHOˆ˜[YOË–ÚÙ^WJK™š[™
+
+][JHOˆ][HOOH[™Yš[™Y	‰ˆ][HOOH[	‰ˆ][HOOHˆŠNÂˆÛÛœÝØ[ÈH
+˜[YK\H
+HOˆÂˆYˆ
+]˜[YH\ˆLˆ\[Ùˆ˜[YHOOH›Øš™XÝˆš\Ú]Yš\Ê˜[YJJH™]\›ŽÂˆš\Ú]Y˜Y
+˜[YJNÂˆYˆ
+P\œ˜^Kš\Ð\œ˜^J˜[YJJHÂˆÛÛœÝ˜[šÈH[X™\Šš\œÝ
+˜[YKÈœ˜[šÈ‹œ˜[šÚ[™È‹œ˜[šÓ›È‹œÛÜ›È‹›Ü™\“›È‹››È—JJNÂˆÛÛœÝ\XÛS[X™\ˆHÝš[™Êš\œÝ
+˜[YKÂˆ˜\XÛS[X™\ˆ‹˜\XÛS›È‹˜\XÛPÛÙH‹œÝ[S›È‹œÜPÛÙH‹œÜS›È‹ˆœ›ÙXÝÛÙH‹œ›ÙXÝ›È‹™ÛÛÙÐÛÙH‹™ÛÛÙÓ›È‹œÚÝPÛÙH‹œÚÝS›È‚ˆJHˆŠKœ™\XÙJ×ÊËÙËˆŠKš[J
+NÂˆÛÛœÝ˜[YHHÝš[™Êš\œÝ
+˜[YKÂˆœ›ÙXÝ˜[YH‹™ÛÛÙÓ˜[YH‹œÜS˜[YH‹œÜU]H‹]H‹›˜[YH‚ˆJHˆŠKš[J
+NÂˆÛÛœÝ]™\˜YÙTšXÙHH[X™\ŠÝš[™Êš\œÝ
+˜[YKÂˆ˜]™\˜YÙTšXÙH‹˜]™ÔšXÙH‹˜[œØXÝ[Û”šXÙH‹™X[šXÙH‹œšXÙH‚ˆJHˆŠKœ™\XÙJÖ×ŒNK—KÙËˆŠJNÂˆYˆ
+˜[šÈHH	‰ˆ˜[šÈH[Z]	‰ˆ
+\XÛS[X™\ˆ˜[YJJHÂˆ›ÙXÝËœ\Ú
+Âˆ˜[šËˆ˜[šÑ]XÝYˆYKˆ\XÛS[X™\‹ˆ˜[YKˆ]™\˜YÙTšXÙKˆÝÙ\ÝšXÙNˆ[X™\Šš\œÝ
+˜[YKÈ›ÝÙ\ÝšXÙH‹›Z[”šXÙH‹›ÝÔšXÙH—JJHˆYÚ\ÝšXÙNˆ[X™\Šš\œÝ
+˜[YKÈšYÚ\ÝšXÙH‹›X^šXÙH‹šYÚšXÙH—JJHˆÙÛÕ\›ˆÝš[™Êš\œÝ
+˜[YKÈš[XYÙU\›‹›ÙÛÕ\›‹˜ÛÝ™\ˆ‹œXÕ\›‹š[YÕ\›—JHˆŠKˆØ[\ÌÌˆˆÛÝ\˜ÙNˆœÙ[\‹XÙ[\‹[™]ÛÜšÈ‹ˆÙ[\Ù[\‘\™XÝˆYKˆJNÂˆBˆBˆ›Üˆ
+ÛÛœÝÚ[Ùˆ\œ˜^Kš\Ð\œ˜^J˜[YJHÈ˜[YHˆØš™XÝ˜[Y\Ê˜[YJJHØ[ÊÚ[\
+ÈJNÂˆNÂˆØ[ÊØÝ[Y[
+NÂˆ™]\›ˆ›ÙXÝÎÂŸB‚˜\Þ[˜È[˜Ý[Ûˆ^XÝ]PXÜ›ÜÜÔÙ[\‘œ˜[Y\ÊØÜš\
+HÂˆÛÛœÝXZ[‘œ˜[YHHÙ[\•Ú[™ÝËÙXÛÛ[Ë›XZ[‘œ˜[YNÂˆÛÛœÝœ˜[Y\ÈHÛXZ[‘œ˜[YK‹‹ŠXZ[‘œ˜[YK™œ˜[Y\Ò[”ÝX™YH×JWBˆ™š[\Š
+œ˜[YK[™^[
+HOˆ[™š[™[™^
+
+Ø[™Y]JHOˆØ[™Y]Kœ›Ý][™ÒYOOHœ˜[YKœ›Ý][™ÒY
+HOOH[™^
+NÂˆ›Üˆ
+ÛÛœÝœ˜[YHÙˆœ˜[Y\ÊHÂˆžHÂˆÛÛœÝ™\Ý[H]ØZ]œ˜[YK™^XÝ]R˜]˜TØÜš\
+ØÜš\YJNÂˆYˆ
+™\Ý[Ë™›Ý[™
+H™]\›ˆ™\Ý[ÂˆHØ]ÚÂˆËÈ;($z­ï;eh;"&;%áºâ¥;&n:í ;e!:è";'¡;'`:¬m:á":ç zââ:âé‚ˆBˆBˆ™]\›ˆÈ›Ý[™ˆ˜[ÙHNÂŸB‚˜\Þ[˜È[˜Ý[Ûˆ˜YÔÙ[\”ØÜ›Û˜\•Ô˜][Ê˜][ÊHÂˆÛÛœÝ[™›ÈH]ØZ]^XÝ]PXÜ›ÜÜÔÙ[\‘œ˜[Y\ÊÙ[\”ØÜ›Û˜\’[™›ÔØÜš\
+˜][ÊJNÂˆYˆ
+Z[™›ÏË™›Ý[™\Ù[\•Ú[™ÝÈÙ[\•Ú[™ÝËš\Ñ\Ý›ÞYY
+
+JH™]\›ˆ˜[ÙNÂˆÙ[\•Ú[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙS[Ý™H‹ˆ[™›ËžNˆ[™›ËœÝ\HJNÂˆÙ[\•Ú[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+Âˆ\Nˆ›[Ý\ÙQÝÛˆ‹]ÛŽˆ›Y‹ÛXÚÐÛÝ[ˆKˆ[™›ËžNˆ[™›ËœÝ\BˆJNÂˆÛÛœÝÝ\ÈHX]›X^
+X]›Z[ŠNX]˜ÙZ[
+X]˜XœÊ[™›Ë™[™HH[™›ËœÝ\JHÈ
+JJNÂˆ›Üˆ
+]Ý\HNÈÝ\HÝ\ÎÈÝ\
+ÏHJHÂˆÛÛœÝHHX]œ›Ý[™
+[™›ËœÝ\H
+È
+
+[™›Ë™[™HH[™›ËœÝ\JH
+ˆÝ\
+HÈÝ\ÊNÂˆÙ[\•Ú[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙS[Ý™H‹ˆ[™›ËžK[Ý™[Y[ˆ[Ý™[Y[NˆHH[™›ËœÝ\HJNÂˆ]ØZ]ØZ]
+N
+NÂˆBˆÙ[\•Ú[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+Âˆ\Nˆ›[Ý\ÙU\‹]ÛŽˆ›Y‹ÛXÚÐÛÝ[ˆKˆ[™›ËžNˆ[™›Ë™[™BˆJNÂˆÚÝÐÛÛXÝÜ•Ú[™ÝÊ
+NÂˆ™]\›ˆYNÂŸB‚˜\Þ[˜È[˜Ý[Ûˆ\TÙ[\”Ü[\ÛÛ™][ÛœÊ
+HÂˆÛÛœÝ™\Ý[ÈH×NÂˆ›Üˆ
+ÛÛœÝÛÛ™][ÛˆÙˆÑST—ÔÔST—ÐÓÓ‘USÓ”ÊHÂˆÛÛœÝØÜš\H
+
+
+HOˆÂˆÛÛœÝX™[H	Ò”ÓÓ‹œÝš[™ÚYžJÛÛ™][Û‹›X™[
+_NÂˆÛÛœÝXÝ[ÛˆH	Ò”ÓÓ‹œÝš[™ÚYžJÛÛ™][Û‹˜XÝ[ÛŠ_NÂˆYˆ
+XÝ[ÛˆOOH™[ØÜ™Y[ˆŠHÂˆÛÛœÝXY[™ÜÈHË‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+šK‹ËÝ›Û™ËÜ[‹]ˆŠWBˆ™š[\Š
+[[Y[
+HOˆÝš[™Ê[[Y[š[›™\•^[[Y[^ÛÛ[ˆŠKš[J
+HOOH»'n:®,; à{d¢ŠNÂˆÛÛœÝ[™[ÈH×NÂˆ›Üˆ
+ÛÛœÝXY[™ÈÙˆXY[™ÜÊHÂˆ][™[HXY[™Ëœ\™[[[Y[Âˆ›Üˆ
+]\HÈ[™[	‰ˆ\LÈ\
+ÏHK[™[H[™[œ\™[[[Y[
+HÂˆÛÛœÝ^HÝš[™Ê[™[š[›™\•^ˆŠNÂˆÛÛœÝÛÛ›ÛÈHË‹‹œ[™[œ]Y\žTÙ[XÝÜ[
+˜]Û‹Ü›ÛOIØ]Û‰×KÝ™ËKØÛ\ÜÊIÚXÛÛ‰×HŠWBˆ™š[\Š
+ÛÛ›Û
+HOˆÂˆÛÛœÝ™XÝHÛÛ›Û™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆ™]\›ˆ™XÝÚYH	‰ˆ™XÝšZYÚH	‰ˆ™XÝÚYH	‰ˆ™XÝšZYÚHÂˆJNÂˆYˆ
+^š[˜ÛY\Ê”ÔH:®,;) ŠH	‰ˆ^š[˜ÛY\Ê”ÒÕH:®,;) ŠH	‰ˆ^š[˜ÛY\Ê» à{d¢;(%zìíŠH	‰ˆÛÛ›ÛË›[™ÝHJHÂˆ[™[Ëœ\Ú
+È[™[ÛÛ›ÛËXY[™Ë^[™Ýˆ^›[™ÝJNÂˆBˆBˆBˆ[™[ËœÛÜ
+
+YšYÚ
+HOˆY^[™ÝHšYÚ^[™Ý
+NÂˆÛÛœÝX]ÚH[™[ÖÌNÂˆYˆ
+[X]Ú
+H™]\›ˆÈ›Ý[™ˆ˜[ÙKX™[NÂˆÛÛœÝ™XÝHX]Úœ[™[™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆÛÛœÝ[™XYQ[ØÜ™Y[ˆH™XÝÚYHÚ[™ÝËš[›™\•ÚY
+ˆŽˆ	‰ˆ™XÝšZYÚHÚ[™ÝËš[›™\’ZYÚ
+ˆÌŽÂˆYˆ
+[™XYQ[ØÜ™Y[ŠH™]\›ˆÈ›Ý[™ˆYKÙ[XÝYˆYK[™XYTÙ[XÝYˆYKX™[NÂˆÛÛœÝXY[™Ô™XÝHX]ÚšXY[™Ë™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆÛÛœÝÚ[HÂˆˆX]›X^
+X]™›ÛÜŠ™XÝœšYÚHN
+JKˆNˆX]›X^
+X]™›ÛÜŠ
+XY[™Ô™XÝÜ
+ÈXY[™Ô™XÝ˜›ÝÛJHÈŠJKˆNÂˆÛÛœÝ\™Ù]HØÝ[Y[™[[Y[œ›ÛTÚ[
+Ú[žÚ[žJNÂˆ™]\›ˆÂˆ›Ý[™ˆ›ÛÛX[Š\™Ù]
+KˆÙ[XÝYˆ˜[ÙKˆ™\]Z\™\Ó˜]]™PÛXÚÎˆYKˆˆÚ[žˆNˆÚ[žKˆ\™Ù]YÎˆ\™Ù]ËYÓ˜[YHˆ‹ˆ\™Ù]Û\ÜÎˆÝš[™Ê\™Ù]Ë˜Û\ÜÓ˜[YOË˜˜\ÙU˜[\™Ù]Ë˜Û\ÜÓ˜[YHˆŠKœÛXÙJLŒ
+KˆX™[ˆNÂˆBˆÛÛœÝ[[Y[ÈHË‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+›X™[]Û‹Ü›ÛOIÜ˜Y[É×KÜ›ÛOIØÚXÚØ›Þ	×KÜ›ÛOIÝX‰×KÜ[‹]‹K‹ËŠWBˆ™š[\Š
+[[Y[
+HOˆÝš[™Ê[[Y[š[›™\•^[[Y[^ÛÛ[ˆŠKš[J
+HOOHX™[
+BˆœÛÜ
+
+YšYÚ
+HOˆÝš[™ÊYš[›™\•^ˆŠK›[™ÝHÝš[™ÊšYÚš[›™\•^ˆŠK›[™Ý
+NÂˆÛÛœÝ˜[šÙYH[[Y[Ë›X\
+
+[[Y[
+HOˆÂˆÛÛœÝÛÛ›ÛH[[Y[›X]Ú\Ê›X™[]Û‹Ü›ÛOIÜ˜Y[É×KÜ›ÛOIØÚXÚØ›Þ	×KÜ›ÛOIÝX‰×HŠBˆÈ[[Y[ˆˆ[[Y[˜ÛÜÙ\Ý
+›X™[]Û‹Ü›ÛOIÜ˜Y[É×KÜ›ÛOIØÚXÚØ›Þ	×KÜ›ÛOIÝX‰×HŠNÂˆÛÛœÝ[œ]HÛÛ›ÛËœ]Y\žTÙ[XÝÜËŠš[œ]ŠH
+ÛÛ›ÛË›X]Ú\ÏËŠš[œ]ŠHÈÛÛ›Ûˆ[
+NÂˆ™]\›ˆÈ[[Y[ÛÛ›Û[œ][\˜XÝ]™Nˆ›ÛÛX[ŠÛÛ›Û[œ]
+HNÂˆJKœÛÜ
+
+YšYÚ
+HOˆ[X™\ŠšYÚš[\˜XÝ]™JHH[X™\ŠYš[\˜XÝ]™JJNÂˆÛÛœÝ\™Ù]H˜[šÙYÌNÂˆYˆ
+]\™Ù]
+H™]\›ˆÈ›Ý[™ˆ˜[ÙKX™[NÂˆYˆ
+XÝ[ÛˆOOHœØÜ›ÛŠHÂˆ\™Ù]™[[Y[œØÜ›Û[ÕšY]ÊÈ›ØÚÎˆ˜Ù[\ˆ‹™Z]š[ÜŽˆ˜]]ÈˆJNÂˆ™]\›ˆÈ›Ý[™ˆYKÙ[XÝYˆYKX™[NÂˆBˆÛÛœÝÙ[XÝYH›ÛÛX[Šˆ\™Ù]š[œ]Ë˜ÚXÚÙYˆ\™Ù]˜ÛÛ›ÛË™Ù]]šX]OËŠ˜\šXKXÚXÚÙYŠHOOHYH‚ˆ\™Ù]˜ÛÛ›ÛË™Ù]]šX]OËŠ˜\šXK\Ù[XÝYŠHOOHYH‚ˆØXÝ]™_Ù[XÝYÚXÚÙYÚK\Ý
+Ýš[™Ê\™Ù]˜ÛÛ›ÛË˜Û\ÜÓ˜[YHˆŠJBˆ
+NÂˆYˆ
+\Ù[XÝY
+H
+\™Ù]˜ÛÛ›Û\™Ù]™[[Y[
+K˜ÛXÚÊ
+NÂˆ™]\›ˆÈ›Ý[™ˆYKÙ[XÝYˆYK[™XYTÙ[XÝYˆÙ[XÝYX™[NÂˆJJ
+XÂˆ]™\Ý[H]ØZ]^XÝ]PXÜ›ÜÜÔÙ[\‘œ˜[Y\ÊØÜš\
+NÂˆYˆ
+ÛÛ™][Û‹˜XÝ[ÛˆOOHœÙ[XÝˆ	‰ˆ™\Ý[™›Ý[™
+HÂˆ]ØZ]ØZ]
+L
+NÂˆÛÛœÝ™\šYšXØ][ÛˆH]ØZ]^XÝ]PXÜ›ÜÜÔÙ[\‘œ˜[Y\Ê
+
+
+HOˆÂˆÛÛœÝX™[H	Ò”ÓÓ‹œÝš[™ÚYžJÛÛ™][Û‹›X™[
+_NÂˆÛÛœÝ›Ü›X[^™YX™[HX™[œ™\XÙJ×ÊËÙËˆŠNÂˆÛÛœÝ[[Y[ÈHË‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+ˆ›X™[]Û‹Ü›ÛOIÜ˜Y[É×KÜ›ÛOIØÚXÚØ›Þ	×KÜ›ÛOIÝX‰×KÜ[‹]ˆ‚ˆ
+WK™š[\Š
+[[Y[
+HO‚ˆÝš[™Ê[[Y[š[›™\•^[[Y[^ÛÛ[ˆŠKš[J
+Kœ™\XÙJ×ÊËÙËˆŠHOOH›Ü›X[^™YX™[ˆ
+NÂˆ›Üˆ
+ÛÛœÝ[[Y[Ùˆ[[Y[ÊHÂˆÛÛœÝØ[™Y]\ÈH×NÂˆ]Ø[™Y]HH[[Y[Âˆ›Üˆ
+]\HÈØ[™Y]H	‰ˆ\È\
+ÏHKØ[™Y]HHØ[™Y]Kœ\™[[[Y[
+HÂˆØ[™Y]\Ëœ\Ú
+Ø[™Y]JNÂˆBˆ›Üˆ
+ÛÛœÝÛÛ›ÛÙˆØ[™Y]\ÊHÂˆÛÛœÝ[œ]HÛÛ›Ûœ]Y\žTÙ[XÝÜËŠš[œ]Ý\OIÜ˜Y[É×K[œ]Ý\OIØÚXÚØ›Þ	×K[œ]ŠNÂˆÛÛœÝÝ]U^HÂˆÛÛ›Û˜Û\ÜÓ˜[YOË˜˜\ÙU˜[ÛÛ›Û˜Û\ÜÓ˜[YHˆ‹ˆÛÛ›Û™Ù]]šX]OËŠ™]K\Ý]HŠHˆ‹ˆÛÛ›Û™Ù]]šX]OËŠ™]KXÚXÚÙYŠHˆ‹ˆKš›Ú[ŠˆŠNÂˆÛÛœÝÙ[XÝYH›ÛÛX[Šˆ[œ]Ë˜ÚXÚÙYˆÛÛ›Û™Ù]]šX]OËŠ˜\šXKXÚXÚÙYŠHOOHYH‚ˆÛÛ›Û™Ù]]šX]OËŠ˜\šXK\Ù[XÝYŠHOOHYH‚ˆØXÝ]™_Ù[XÝYÚXÚÙYÛŸYKÚK\Ý
+Ý]U^
+Bˆ
+NÂˆYˆ
+Ù[XÝY
+H™]\›ˆÈ›Ý[™ˆYK™\šYšYYÙ[XÝYˆYKX™[NÂˆBˆBˆ™]\›ˆÈ›Ý[™ˆ˜[ÙK™\šYšYYÙ[XÝYˆ˜[ÙKX™[NÂˆJJ
+X
+NÂˆ™\Ý[HÂˆ‹‹œ™\Ý[ˆ‹‹™\šYšXØ][Û‹ˆ›Ý[™ˆ™\šYšXØ][Û‹™›Ý[™™\Ý[™›Ý[™ˆËÈÒV“Óˆ; «;&ª{'¤;(%{'f:ço:å%;&):â¥;!(;`çH; à{`ç:éo;dg;) ÓH;!£{!,{'/:èg:án;-§;ef;)àˆËÈ;%bºâ¥:¬¯{&¬:¬ ;'¢;%­;(%{fe{eg:è";'m:î%;'f;`m:é«H;!,z¬í{'a:ìí;(l:¬ ;)§{'/:èg;'n;(%{ejzââ:âé‚ˆ™\šYšYYÙ[XÝYˆ™\šYšXØ][Û‹™\šYšYYÙ[XÝY›ÛÛX[Š™\Ý[™›Ý[™	‰ˆ™\Ý[œÙ[XÝY
+Kˆ™\šYšXØ][Û“[ÙNˆ™\šYšXØ][Û‹™\šYšYYÙ[XÝYÈ™ÛK\Ý]Hˆˆ›X™[XÛXÚÈ‹ˆNÂˆBˆYˆ
+ÛÛ™][Û‹˜XÝ[ÛˆOOH™[ØÜ™Y[ˆˆ	‰ˆ™\Ý[™›Ý[™	‰ˆ™\Ý[œ™\]Z\™\Ó˜]]™PÛXÚÊHÂˆÙ[\•Ú[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙS[Ý™H‹ˆ™\Ý[žNˆ™\Ý[žHJNÂˆÙ[\•Ú[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙQÝÛˆ‹]ÛŽˆ›Y‹ÛXÚÐÛÝ[ˆKˆ™\Ý[žNˆ™\Ý[žHJNÂˆ]ØZ]ØZ]
+LŒ
+NÂˆÙ[\•Ú[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙU\‹]ÛŽˆ›Y‹ÛXÚÐÛÝ[ˆKˆ™\Ý[žNˆ™\Ý[žHJNÂˆBˆYˆ
+ÛÛ™][Û‹˜XÝ[ÛˆOOH™[ØÜ™Y[ˆˆ	‰ˆ™\Ý[™›Ý[™
+HÂˆ]ØZ]ØZ]
+WÌŒ
+NÂˆÛÛœÝ™\šYšYYH]ØZ]^XÝ]PXÜ›ÜÜÔÙ[\‘œ˜[Y\Ê
+
+
+HOˆÂˆÛÛœÝXY[™ÜÈHË‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+šK‹ËÝ›Û™ËÜ[‹]ˆŠWBˆ™š[\Š
+[[Y[
+HOˆÝš[™Ê[[Y[š[›™\•^[[Y[^ÛÛ[ˆŠKš[J
+HOOH»'n:®,; à{d¢ŠNÂˆ›Üˆ
+ÛÛœÝXY[™ÈÙˆXY[™ÜÊHÂˆ][™[HXY[™Ëœ\™[[[Y[Âˆ›Üˆ
+]\HÈ[™[	‰ˆ\LÈ\
+ÏHK[™[H[™[œ\™[[[Y[
+HÂˆÛÛœÝ^HÝš[™Ê[™[š[›™\•^ˆŠNÂˆÛÛœÝ™XÝH[™[™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆYˆ
+^š[˜ÛY\Ê”ÔH:®,;) ŠH	‰ˆ^š[˜ÛY\Ê”ÒÕH:®,;) ŠBˆ	‰ˆ™XÝÚYHÚ[™ÝËš[›™\•ÚY
+ˆŽˆ	‰ˆ™XÝšZYÚHÚ[™ÝËš[›™\’ZYÚ
+ˆÌŠHÂˆ™]\›ˆÈ›Ý[™ˆYK^[™YˆYHNÂˆBˆBˆBˆ™]\›ˆÈ›Ý[™ˆ˜[ÙK^[™Yˆ˜[ÙHNÂˆJJ
+X
+NÂˆ™\Ý[HÈ‹‹œ™\Ý[›Ý[™ˆ™\šYšYY™›Ý[™^[™Yˆ™\šYšYY™^[™YNÂˆBˆ™\Ý[Ëœ\Ú
+È‹‹˜ÛÛ™][Û‹‹‹œ™\Ý[JNÂˆ]ØZ]ØZ]
+ÛÛ™][Û‹˜XÝ[ÛˆOOH™[ØÜ™Y[ˆˆÈWÎˆÛÛ™][Û‹˜XÝ[ÛˆOOHœØÜ›ÛˆÈLˆL
+NÂˆBˆ]ØZ]ØZ]
+WÎ
+NÂˆ™]\›ˆ™\Ý[ÎÂŸB‚˜ÛÛœÝÛY\ÝXÒ[XYÙQš[™Ù\œš[ØXÚHH™]ÈX\
+
+NÂ‚˜\Þ[˜È[˜Ý[Ûˆ[XYÙQš[™Ù\œš[
+\›
+HÂˆYˆ
+]\›
+H™]\›ˆ[ÂˆÛÛœÝØXÚRÙ^HHÝš[™Ê\›
+Kš[J
+NÂˆYˆ
+ÛY\ÝXÒ[XYÙQš[™Ù\œš[ØXÚKš\ÊØXÚRÙ^JJH™]\›ˆÛY\ÝXÒ[XYÙQš[™Ù\œš[ØXÚK™Ù]
+ØXÚRÙ^JNÂˆYˆ
+ÛY\ÝXÒ[XYÙQš[™Ù\œš[ØXÚKœÚ^™HHL
+HÛY\ÝXÒ[XYÙQš[™Ù\œš[ØXÚK˜ÛX\Š
+NÂˆÛÛœÝš[™Ù\œš[\ÚÈH
+\Þ[˜È
+
+HOˆÂˆ]ž]\ÎÂˆYˆ
+×™]Nš[XYÙWËÚK\Ý
+ØXÚRÙ^JJHÂˆÛÛœÝ[˜ÛÙYHØXÚRÙ^KœÜ]
+‹‹ŠVÌWHˆŽÂˆž]\ÈHY™™\‹™œ›ÛJ[˜ÛÙYÎØ˜\ÙMÚK\Ý
+ØXÚRÙ^JHÈ˜˜\ÙMˆˆ]ŽŠNÂˆH[ÙHÂˆÛÛœÝ\œÙYH™]ÈT“
+ØXÚRÙ^JNÂˆYˆ
+VÈšÎˆ‹šˆ—Kš[˜ÛY\Ê\œÙYœ›ÝØÛÛ
+JH™]\›ˆ[ÂˆÛÛœÝ™\ÜÛœÙHH]ØZ]™]Ú
+\œÙYš™Y‹ÈÚYÛ˜[ˆX›ÜÚYÛ˜[[Y[Ý]
+L—Ì
+HJNÂˆYˆ
+\™\ÜÛœÙK›ÚÊH™]\›ˆ[ÂˆÛÛœÝ[™ÝH[X™\Š™\ÜÛœÙKšXY\œË™Ù]
+˜ÛÛ[[[™ÝŠH
+NÂˆYˆ
+[™ÝˆWÌÌ
+H™]\›ˆ[Âˆž]\ÈHY™™\‹™œ›ÛJ]ØZ]™\ÜÛœÙK˜\œ˜^PY™™\Š
+JNÂˆBˆYˆ
+ž]\Ë›[™ÝˆWÌÌ
+H™]\›ˆ[ÂˆÛÛœÝ[XYÙHH˜]]™R[XYÙK˜Ü™X]Qœ›ÛPY™™\Šž]\ÊNÂˆYˆ
+[XYÙKš\Ñ[\J
+JH™]\›ˆ[ÂˆÛÛœÝš]X\H[XYÙKœ™\Ú^™JÈÚYˆZYÚˆ]X[]Nˆ™ÛÛÙˆJKÐš]X\
+
+NÂˆÛÛœÝ˜[Y\ÈH×NÂˆ›Üˆ
+][™^HÈ[™^
+ÈÈš]X\›[™ÝÈ[™^
+ÏH
+HÂˆ˜[Y\Ëœ\Ú
+
+š]X\Ú[™^H
+Èš]X\Ú[™^
+ÈWH
+Èš]X\Ú[™^
+È—JHÈÊNÂˆBˆYˆ
+]˜[Y\Ë›[™Ý
+H™]\›ˆ[ÂˆÛÛœÝ]™\˜YÙHH˜[Y\Ëœ™YXÙJ
+Ý[K˜[YJHOˆÝ[H
+È˜[YK
+HÈ˜[Y\Ë›[™ÝÂˆ™]\›ˆ˜[Y\Ë›X\
+
+˜[YJHOˆ˜[YHH]™\˜YÙJNÂˆJJ
+NÂˆÛY\ÝXÒ[XYÙQš[™Ù\œš[ØXÚKœÙ]
+ØXÚRÙ^Kš[™Ù\œš[\ÚÊNÂˆÛÛœÝ™\Ý[H]ØZ]š[™Ù\œš[\ÚÎÂˆYˆ
+\™\Ý[
+HÛY\ÝXÒ[XYÙQš[™Ù\œš[ØXÚK™[]JØXÚRÙ^JNÂˆ™]\›ˆ™\Ý[ÂŸB‚™[˜Ý[Ûˆš[™Ù\œš[Ú[Z[\š]JYšYÚ
+HÂˆYˆ
+[Y\šYÚY›[™ÝOOHšYÚ›[™Ý
+H™]\›ˆ[ÂˆÛÛœÝØ[YHHY™š[\Š
+˜[YK[™^
+HOˆ˜[YHOOHšYÚÚ[™^JK›[™ÝÂˆ™]\›ˆØ[YHÈY›[™ÝÂŸB‚˜\Þ[˜È[˜Ý[ÛˆYX]ÚÛÛ™šY[˜ÙJ]K[œ]
+HÂˆÛÛœÝÛÝ\˜ÙHHÂˆ\XÛS[X™\ŽˆÝš[™Ê[œ]˜\XÛS[X™\ˆˆŠKˆœ˜[™ˆÝš[™Ê[œ]˜œ˜[™ˆŠKˆ]NˆÝš[™Ê[œ]]HˆŠKˆNÂˆ]›ÙXÝÈH]Kœ›ÙXÝË›X\
+
+›ÙXÝ
+HOˆ
+Âˆ‹‹œ›ÙXÝˆ‹‹œØÛÜ™T›ÙXÝØ[™Y]JÛÝ\˜ÙK›ÙXÝ
+KˆJJNÂˆÛÛœÝÛÝ\˜ÙQš[™Ù\œš[H›ÙXÝË›[™ÝÈ]ØZ][XYÙQš[™Ù\œš[
+[œ]š[XYÙU\›
+K˜Ø]Ú
+
+
+HOˆ[
+Hˆ[ÂˆYˆ
+ÛÝ\˜ÙQš[™Ù\œš[
+HÂˆÛÛœÝ™\ÝžTÝÜ™HH™]ÈX\
+
+NÂˆ›ÙXÝË™›Ü‘XXÚ
+
+›ÙXÝ[™^
+HOˆÂˆÛÛœÝ™]š[Ý\ÈH™\ÝžTÝÜ™K™Ù]
+›ÙXÝœÝÜ™JNÂˆYˆ
+\™]š[Ý\È›ÙXÝ˜ÛÛ™šY[˜ÙHˆ™]š[Ý\Ë˜ÛÛ™šY[˜ÙJH™\ÝžTÝÜ™KœÙ]
+›ÙXÝœÝÜ™KÈ[™^ÛÛ™šY[˜ÙNˆ›ÙXÝ˜ÛÛ™šY[˜ÙHJNÂˆJNÂˆ]ØZ]›ÛZ\ÙK˜[
+Ë‹‹˜™\ÝžTÝÜ™K˜[Y\Ê
+WK›X\
+\Þ[˜È
+È[™^JHOˆÂˆÛÛœÝØ[™Y]Qš[™Ù\œš[H]ØZ][XYÙQš[™Ù\œš[
+›ÙXÝÖÚ[™^Kš[XYÙU\›
+K˜Ø]Ú
+
+
+HOˆ[
+NÂˆÛÛœÝ[XYÙTÚ[Z[\š]HHš[™Ù\œš[Ú[Z[\š]JÛÝ\˜ÙQš[™Ù\œš[Ø[™Y]Qš[™Ù\œš[
+NÂˆ›ÙXÝÖÚ[™^HHÈ‹‹œ›ÙXÝÖÚ[™^K‹‹œØÛÜ™T›ÙXÝØ[™Y]JÛÝ\˜ÙK›ÙXÝÖÚ[™^K[XYÙTÚ[Z[\š]JHNÂˆJJNÂˆBˆ›ÙXÝÈH›ÙXÝË›X\
+
+›ÙXÝ
+HOˆÂˆÛÛœÝ^XÝÙ™šXÚX[›ÙXÝH›ÙXÝœÝÜ™HOOHºî#:ç§:äç:¬í{"çzê¬‚ˆ	‰ˆ×šÏÎ—×ËÚK\Ý
+Ýš[™Ê›ÙXÝ\›ˆŠJBˆ	‰ˆ[X™\Š›ÙXÝœÚYÛ˜[ÏË˜ÛÙTØÛÜ™H
+HOOHBˆ	‰ˆ›ÙXÝ˜\XÛPÛÛ™›XÝOOHYBˆ	‰ˆ›ÙXÝœÚYÛ˜[ÏË˜ÛÙPÛÛ™›XÝOOHYNÂˆYˆ
+Y^XÝÙ™šXÚX[›ÙXÝ
+H™]\›ˆ›ÙXÝÂˆ™]\›ˆÂˆ‹‹œ›ÙXÝˆÛÛ™šY[˜ÙNˆMKˆ›ÙXÝX]ÚÛÛ™šY[˜ÙNˆMKˆÙ™šXÚX[ÝÜ™U™\šYšYYˆYKˆÛÝ\˜ÙU\ÝX™[ˆº¬í{"çzê¬;fe{'n;&a:èã‹ˆ[XYÙU™\šYšXØ][Û“X™[ˆ›ÙXÝš[XYÙU™\šYšYYœ›ÛQ]Z[ˆÈ» à{!.;'m:ëî;)à;fe{'n;&a:èã‚ˆˆ›ÙXÝš[XYÙU™\šYšYYœ›ÛPØ\™Èº¬í{"çzê¬;'m:ëî;)à;fe{'nˆˆ»'m:ëî;)à;fe{'n;ea;&¥‹ˆNÂˆJNÂˆÛÛœÝš[Üš]Y\ÈH™]ÈX\
+]KœÛÝ\˜Ù\Ë›X\
+
+ÛÝ\˜ÙT›ÝÊHOˆÜÛÝ\˜ÙT›ÝËœÝÜ™KÛÝ\˜ÙT›ÝËœš[Üš]WJJNÂˆ›ÙXÝÈH›ÙXÝËœÛÜ
+
+YšYÚ
+HO‚ˆ
+š[Üš]Y\Ë™Ù]
+YœÝÜ™JHNJHH
+š[Üš]Y\Ë™Ù]
+šYÚœÝÜ™JHNJBˆšYÚ˜ÛÛ™šY[˜ÙHHY˜ÛÛ™šY[˜ÙBˆ
+NÂˆÛÛœÝ\ÔÛÝ\˜ÙR[XYÙHH›ÛÛX[ŠÝš[™Ê[œ]š[XYÙU\›ˆŠKš[J
+JNÂˆ›ÙXÝÈH›ÙXÝË™š[\Š
+›ÙXÝ
+HOˆÂˆÛÛœÝÛÙSX]ÚYH[X™\Š›ÙXÝœÚYÛ˜[ÏË˜ÛÙTØÛÜ™H
+HOOHNÂˆÛÛœÝÛÙPÛÛ™›XÝH›ÙXÝ˜\XÛPÛÛ™›XÝOOHYH›ÙXÝœÚYÛ˜[ÏË˜ÛÙPÛÛ™›XÝOOHYNÂˆÛÛœÝ]TØÛÜ™HH[X™\Š›ÙXÝœÚYÛ˜[ÏË]TØÛÜ™H
+NÂˆÛÛœÝ[XYÙTØÛÜ™HH›ÙXÝœÚYÛ˜[ÏËš[XYÙTØÛÜ™NÂˆYˆ
+ÛÙPÛÛ™›XÝ
+H™]\›ˆ˜[ÙNÂˆYˆ
+›ÙXÝ˜œ˜[™™\šYšYYœ›ÛPØ\™OOH˜[ÙJH™]\›ˆ˜[ÙNÂˆÛÛœÝ™\šYšYY˜]™\’Y[]HHÝš[™Ê›ÙXÝËœÛÝ\˜ÙTÝÜ™H›ÙXÝËœÝÜ™HˆŠHOOHºá);'m:ì¡;c*;!f;`à;&­‚ˆ	‰ˆ›ÙXÝ™ÛY\ÝXÔÙ[\•™\šYšYYOOHYBˆ	‰ˆ
+›ÙXÝ˜\XÛS[X™\•™\šYšYYOOHYBˆ
+›ÙXÝ˜œ˜[™™\šYšYYœ›ÛPØ\™OOHYH	‰ˆ›ÙXÝ]U™\šYšYYœ›ÛQ]Z[OOHYJJNÂˆËÈ˜]™\‰ÜÈ^XÝ™\Ý[Ø\™Ù[ˆÛZ]ÈH[Ù[ÛÙH[™\Ù\ÈHØ[\ZYÛ‚ˆËÈÝÈ[œÝXYÙˆÒV“Ó‰ÜÈXÚÜÚÝˆH]Z[YÙH\È[™XYHÝ\YYˆËÈÝ›Û™Ù\ˆ]šY[˜ÙNˆ\›Ý™YÛY\ÝXÈÙ[\ˆ\È\XÛHY[]HÜ‚ˆËÈœ˜[™]]HY[]KˆÙY\]™\šYšYY›ÙXÝ™YØ\™\ÜÈÙˆHÙXZÂˆËÈ[X›˜Z[š[™Ù\œš[‚ˆYˆ
+™\šYšYY˜]™\’Y[]JH™]\›ˆYNÂˆYˆ
+ÛÙSX]ÚY
+H™]\›ˆYNÂˆËÈÙ™šXÚX[™\Ý[Ø\™ÈØ[ˆÛZ]HX[Y˜XÝ\™\ˆÛÙKˆ™\Ù\™HBˆËÈXÝX[œ˜[™YÛXZ[ˆ]Y\žH™\Ý[È›ÜˆHÜ\˜]Ü‰ÜÈX[X[ÛÛ\\š\ÛÛŽÂˆËÈÈ›Ý[™[[ˆ^XÝXÛÙHX]ÚÜˆYZ][ˆ[™^XÝ]YÛY\YÙHØ\™‚ˆYˆ
+›ÙXÝœÝÜ™HOOHºî#:ç§:äç:¬í{"çzê¬ŠH™]\›ˆ›ÙXÝ›Ù™šXÚX[ÙX\˜Ú™\Ý[™\šYšYYOOHYNÂˆYˆ
+Z\ÔÛÝ\˜ÙR[XYÙJH™]\›ˆ]TØÛÜ™HHÂˆ™]\›ˆ]TØÛÜ™HHÌ	‰ˆ[X™\Š[XYÙTØÛÜ™H
+HHMNÂˆJNÂˆÛÛœÝ[š\]YT›ÙXÝÈH™]ÈX\
+
+NÂˆ›Üˆ
+ÛÛœÝ›ÙXÝÙˆ›ÙXÝÊHÂˆ]\›Y[]HHˆŽÂˆžHÂˆÛÛœÝ\œÙYH™]ÈT“
+Ýš[™Ê›ÙXÝ\›ˆŠJNÂˆËÈÙ™šXÚX[X[È[ÛÈ\ÙHÜ›ÙXÝÙ]Z[ÙÛÛÙÓ›ÏK‹‹ˆY[]Y\Ë‚ˆËÈ›Ü[™ÈZ\ˆ]Y\žHÝš[™ÈY\™ÙYY™™\™[Ø\\™Y›ÙXÝË‚ˆYˆ
+›ÙXÝœÝÜ™HOOHºî#:ç§:äç:¬í{"çzê¬ŠH\œÙYœÙX\˜ÚHˆŽÂˆ\œÙYš\ÚHˆŽÂˆ\›Y[]HH\œÙYš™Y‹ÓØØ[SÝÙ\Ø\ÙJ
+NÂˆHØ]ÚßBˆÛÛœÝ^XÝÛÙHHÝš[™Ê›ÙXÝ™]XÝY\XÛS[X™\ˆˆŠKÕ\\Ø\ÙJ
+Kœ™\XÙJÖ×KVŒNWKÙËˆŠNÂˆÛÛœÝY[]HH^XÝÛÙBˆÈ	Ü›ÙXÝœÝÜ™_N˜ÛÙN‰Ù^XÝÛÙ_Xˆˆ	Ü›ÙXÝœÝÜ™_N\›‰Ý\›Y[]_XÂˆÛÛœÝ™]š[Ý\ÈH[š\]YT›ÙXÝË™Ù]
+Y[]JNÂˆYˆ
+\™]š[Ý\È[X™\Š›ÙXÝ˜ÛÛ™šY[˜ÙH
+Hˆ[X™\Š™]š[Ý\Ë˜ÛÛ™šY[˜ÙH
+JH[š\]YT›ÙXÝËœÙ]
+Y[]K›ÙXÝ
+NÂˆBˆ›ÙXÝÈHË‹‹[š\]YT›ÙXÝË˜[Y\Ê
+WNÂˆÛÛœÝ™\šYšYYÛÝ[ÈH›ÙXÝËœ™YXÙJ
+ÛÝ[Ë›ÙXÝ
+HOˆÂˆÛÛœÝÝÜ™HHÝš[™Ê›ÙXÝœÝÜ™HˆŠNÂˆYˆ
+ÝÜ™JHÛÝ[ËœÙ]
+ÝÜ™K
+ÛÝ[Ë™Ù]
+ÝÜ™JH
+H
+ÈJNÂˆ™]\›ˆÛÝ[ÎÂˆK™]ÈX\
+
+JNÂˆÛÛœÝÛÝ\˜Ù\ÈH]KœÛÝ\˜Ù\Ë›X\
+
+ÛÝ\˜ÙT›ÝÊHOˆ
+Âˆ‹‹œÛÝ\˜ÙT›ÝËˆÛÝ[ˆÛÝ\˜ÙT›ÝË›[šÓÛ›BˆÈ[X™\ŠÛÝ\˜ÙT›ÝË˜ÛÝ[
+Bˆˆ™\šYšYYÛÝ[Ë™Ù]
+ÛÝ\˜ÙT›ÝËœÝÜ™JHˆJJNÂˆ™]\›ˆÂˆ‹‹™]Kˆ›ÙXÝËˆÛÝ\˜Ù\ËˆËÈÙY\šXÙ\Èœ›ÛHH›ÙXÝÈ]\ÜÙYHY[]H[™[XYÙHØ]\Ë‚ˆËÈ\ØÛÝ™\™Y›ÙXÝÈ™[Û™ÜÈÈY™[™\™YÙX\˜ÚÛÝ[Ë›Ý\ÈØÛÜK‚ˆÛY\ÝXÔšXÙPØ[™Y]\Îˆ›ÙXÝË™š[\Š
+›ÙXÝ
+HOˆ[X™\Š›ÙXÝËœšXÙH
+Hˆ	‰ˆ›ÙXÝš[”ÝØÚÈOOH˜[ÙJKˆNÂŸB‚˜\Þ[˜È[˜Ý[Ûˆ™\šYžP[ÝÜ™\ÕÚ]]\Ú[œØR[XYÙJ]K[œ]HßJHÂˆÛÛœÝ›ÙXÝÈH\œ˜^Kš\Ð\œ˜^J]OËœ›ÙXÝÊHÈ]Kœ›ÙXÝÈˆ×NÂˆÛÛœÝ^XÝ]\Ú[œØHH›ÙXÝË™š[™
+
+›ÙXÝ
+HO‚ˆÝš[™Ê›ÙXÝËœÛÝ\˜ÙTÝÜ™H›ÙXÝËœÝÜ™HˆŠHOOHºë-;"è; «‚ˆ	‰ˆ[X™\Š›ÙXÝËœÚYÛ˜[ÏË˜ÛÙTØÛÜ™H
+HOOHBˆ	‰ˆ›ÙXÝË˜\XÛPÛÛ™›XÝOOHYBˆ	‰ˆ›ÙXÝËœÚYÛ˜[ÏË˜ÛÙPÛÛ™›XÝOOHYBˆ	‰ˆ×šÏÎ—×ËÚK\Ý
+Ýš[™Ê›ÙXÝË\›ˆŠJBˆ	‰ˆ×šÏÎ—×ËÚK\Ý
+Ýš[™Ê›ÙXÝËš[XYÙU\›ˆŠJBˆ
+NÂˆYˆ
+Y^XÝ]\Ú[œØJH™]\›ˆÈ‹‹™]K]\Ú[œØR[XYÙU™\šYšXØ][ÛŽˆÈ\YYˆ˜[ÙHHNÂˆÛÛœÝ™Y™\™[˜ÙQš[™Ù\œš[H]ØZ][XYÙQš[™Ù\œš[
+^XÝ]\Ú[œØKš[XYÙU\›
+K˜Ø]Ú
+
+
+HOˆ[
+NÂˆYˆ
+\™Y™\™[˜ÙQš[™Ù\œš[
+HÂˆ™]\›ˆÈ‹‹™]K]\Ú[œØR[XYÙU™\šYšXØ][ÛŽˆÈ\YYˆ˜[ÙK™Y™\™[˜ÙU\›ˆ^XÝ]\Ú[œØK\›HNÂˆBˆÛÛœÝ™\šYšYYH]ØZ]›ÛZ\ÙK˜[
+›ÙXÝË›X\
+\Þ[˜È
+›ÙXÝ
+HOˆÂˆÛÛœÝÝÜ™HHÝš[™Ê›ÙXÝËœÛÝ\˜ÙTÝÜ™H›ÙXÝËœÝÜ™HˆŠNÂˆYˆ
+›ÙXÝOOH^XÝ]\Ú[œØHÝÜ™HOOHºë-;"è; «ŠHÂˆ™]\›ˆÈ‹‹œ›ÙXÝ]\Ú[œØR[XYÙT™Y™\™[˜ÙNˆYK[XYÙU™\šYšXØ][Û“X™[ˆºë-;"è; «:®,;) ;'m:ëî;)àˆNÂˆBˆYˆ
+ÝÜ™HOOHºá);'m:ì¡;c*;!f;`à;&­‚ˆ	‰ˆ›ÙXÝË™ÛY\ÝXÔÙ[\•™\šYšYYOOHYBˆ	‰ˆ›ÙXÝË˜\XÛS[X™\•™\šYšYYOOHYJHÂˆ™]\›ˆÂˆ‹‹œ›ÙXÝˆ]\Ú[œØR[XYÙPÛÛ\\™Yˆ˜[ÙKˆ[XYÙU™\šYšXØ][Û“X™[ˆºá);'m:ì¡; à{!.;d¢:ì¢;fe{'n‹ˆNÂˆBˆÛÛœÝ^XÝÛÙHH[X™\Š›ÙXÝËœÚYÛ˜[ÏË˜ÛÙTØÛÜ™H
+HOOHBˆ	‰ˆ›ÙXÝË˜\XÛPÛÛ™›XÝOOHYBˆ	‰ˆ›ÙXÝËœÚYÛ˜[ÏË˜ÛÙPÛÛ™›XÝOOHYNÂˆÛÛœÝ[XYÙU\›HÝš[™Ê›ÙXÝËš[XYÙU\›ˆŠNÂˆYˆ
+Y^XÝÛÙHK×šÏÎ—×ËÚK\Ý
+[XYÙU\›
+JHÂˆ™]\›ˆÈ‹‹œ›ÙXÝ]\Ú[œØR[XYÙPÛÛ\\™Yˆ˜[ÙK[XYÙU™\šYšXØ][Û“X™[ˆ»'m:ëî;)à;fe{'n;ea;&¥ˆNÂˆBˆÛÛœÝØ[™Y]Qš[™Ù\œš[H]ØZ][XYÙQš[™Ù\œš[
+[XYÙU\›
+K˜Ø]Ú
+
+
+HOˆ[
+NÂˆÛÛœÝÚ[Z[\š]HHš[™Ù\œš[Ú[Z[\š]J™Y™\™[˜ÙQš[™Ù\œš[Ø[™Y]Qš[™Ù\œš[
+NÂˆYˆ
+S[X™\‹š\Ñš[š]JÚ[Z[\š]JJHÂˆ™]\›ˆÈ‹‹œ›ÙXÝ]\Ú[œØR[XYÙPÛÛ\\™Yˆ˜[ÙK[XYÙU™\šYšXØ][Û“X™[ˆ»'m:ëî;)à;fe{'n;ea;&¥ˆNÂˆBˆÛÛœÝ[XYÙTØÛÜ™HHX]œ›Ý[™
+Ú[Z[\š]H
+ˆL
+NÂˆ™]\›ˆÂˆ‹‹œ›ÙXÝˆ]\Ú[œØR[XYÙPÛÛ\\™YˆYKˆ]\Ú[œØR[XYÙTØÛÜ™Nˆ[XYÙTØÛÜ™Kˆ]\Ú[œØR[XYÙT™Z™XÝYˆ[XYÙTØÛÜ™HNˆ[XYÙU™\šYšXØ][Û“X™[ˆ[XYÙTØÛÜ™HHˆÈºë-;"è; «;'m:ëî;)à:á¤»'`;'o;.f‚ˆˆ[XYÙTØÛÜ™HHNÈºë-;"è; «;'m:ëî;)à;'o;.fˆˆºë-;"è; «;'m:ëî;)à:í¢;'o;.f‹ˆNÂˆJJNÂˆÛÛœÝXØÙ\YH™\šYšYY™š[\Š
+›ÙXÝ
+HOˆ›ÙXÝ›]\Ú[œØR[XYÙT™Z™XÝYOOHYJNÂˆ™]\›ˆÂˆ‹‹™]Kˆ›ÙXÝÎˆXØÙ\Yˆ]\Ú[œØR[XYÙU™\šYšXØ][ÛŽˆÂˆ\YYˆYKˆ™Y™\™[˜ÙTÝÜ™Nˆºë-;"è; «‹ˆ™Y™\™[˜ÙU\›ˆ^XÝ]\Ú[œØK\›ˆ™Y™\™[˜ÙR[XYÙU\›ˆ^XÝ]\Ú[œØKš[XYÙU\›ˆÛÛ\\™Yˆ™\šYšYY™š[\Š
+›ÙXÝ
+HOˆ›ÙXÝ›]\Ú[œØR[XYÙPÛÛ\\™YOOHYJK›[™Ýˆ™Z™XÝYˆ™\šYšYY™š[\Š
+›ÙXÝ
+HOˆ›ÙXÝ›]\Ú[œØR[XYÙT™Z™XÝYOOHYJK›[™Ýˆ\XÛS[X™\ŽˆÝš[™Ê[œ]˜\XÛS[X™\ˆˆŠKˆKˆNÂŸB‚˜\Þ[˜È[˜Ý[ÛˆÙ™šXÚX[]Z[[XYÙJÙX\˜ÚÚ[™ÝË›ÙXÝ\›Ù™šXÚX[YÙU\›Hˆ‹[šÙYÙX\˜Ú[XYÙU\›HˆŠHÂˆžHÂˆÛÛœÝ\™Ù]H™]ÈT“
+Ýš[™Ê›ÙXÝ\›ˆŠJNÂˆÛÛœÝÙ™šXÚX[H™]ÈT“
+Ýš[™ÊÙ™šXÚX[YÙU\››ÙXÝ\›ˆŠJNÂˆÛÛœÝØ[YSÙ™šXÚX[ÜÝH\™Ù]šÜÝ˜[YHOOHÙ™šXÚX[šÜÝ˜[YBˆ\™Ù]šÜÝ˜[YK™[™ÕÚ]
+‰ÛÙ™šXÚX[šÜÝ˜[Y_X
+BˆÙ™šXÚX[šÜÝ˜[YK™[™ÕÚ]
+‰Ý\™Ù]šÜÝ˜[Y_X
+NÂˆYˆ
+\™Ù]œ›ÝØÛÛOOHšÎˆˆ\Ø[YSÙ™šXÚX[ÜÝ
+H™]\›ˆˆŽÂˆ]ØZ]›ÛZ\ÙKœ˜XÙJÂˆÙX\˜ÚÚ[™ÝË›ØYT“
+\™Ù]š™YŠK˜Ø]Ú
+
+\œ›ÜŠHOˆÂˆYˆ
+KÑT”—ÐP“Ô•QÚK\Ý
+Ýš[™Ê\œ›ÜË›Y\ÜØYÙHˆŠJJH›ÝÈ\œ›ÜŽÂˆJKˆ™]È›ÛZ\ÙJ
+Ë™Z™XÝ
+HOˆÙ][Y[Ý]
+
+
+HOˆ™Z™XÝ
+™]È\œ›ÜŠ“Ñ‘’PÒPSÑURSÕSQSÕUŠJKŒÌ
+JKˆJNÂˆ]ØZ]ØZ]
+WÌŒ
+NÂˆÛÛœÝ]Z[[XYÙU\›HÝš[™Ê]ØZ]ÙX\˜ÚÚ[™ÝËÙXÛÛ[Ë›XZ[‘œ˜[YK™^XÝ]R˜]˜TØÜš\
+
+
+
+HOˆÂˆÛÛœÝXœÛÛ]HH
+˜[YJHOˆÂˆžHÈ™]\›ˆ™]ÈT“
+Ýš[™Ê˜[YHˆŠKš[J
+KØØ][Û‹š™YŠKš™YŽÈHØ]ÚÈ™]\›ˆˆŽÈBˆNÂˆÛÛœÝ\ØX›HH
+˜[YJHOˆÂˆÛÛœÝ\›HXœÛÛ]J˜[YJNÂˆ™]\›ˆ×šÎ—×ËÚK\Ý
+\›
+H	‰ˆKÛÙÛßXÛÛŸÜš]_˜YÙ_˜[›™\ŸXÙZÛ\ŸØY[™ß›ÖËW×OÚ[XYÙ_œÝ™ÊÎ‰ÊKÚK\Ý
+\›
+HÈ\›ˆˆŽÂˆNÂˆÛÛœÝ›ÙXÝœÛÛ’[XYÙ\ÈHË‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+	ÜØÜš\Ý\OH˜\XØ][Û‹Û
+ÚœÛÛˆ—IÊWK™›]X\
+
+›ÙJHOˆÂˆžHÂˆÛÛœÝ\œÙYH”ÓÓ‹œ\œÙJ›ÙK^ÛÛ[›[ŠNÂˆÛÛœÝ˜[Y\ÈH\œ˜^Kš\Ð\œ˜^J\œÙY
+HÈ\œÙYˆÜ\œÙYNÂˆ™]\›ˆ˜[Y\Ë™›]X\
+
+˜[YJHOˆÂˆÛÛœÝ[šY\ÈH\œ˜^Kš\Ð\œ˜^J˜[YOË–ÉÐÜ˜\	×JHÈ˜[YVÉÐÜ˜\	×HˆÝ˜[YWNÂˆ™]\›ˆ[šY\Ë™š[\Š
+[žJHOˆÝš[™Ê[žOË–ÉÐ\I×HˆŠKÓÝÙ\Ø\ÙJ
+Kš[˜ÛY\Êœ›ÙXÝŠJBˆ™›]X\
+
+[žJHOˆ\œ˜^Kš\Ð\œ˜^J[žOËš[XYÙJHÈ[žKš[XYÙHˆÙ[žOËš[XYÙWJNÂˆJNÂˆHØ]ÚÈ™]\›ˆ×NÈBˆJK›X\
+
+˜[YJHOˆ\[Ùˆ˜[YHOOHœÝš[™ÈˆÈ˜[YHˆ˜[YOË\›˜[YOË˜ÛÛ[\›
+K›X\
+\ØX›JK™š[\Š›ÛÛX[ŠNÂˆYˆ
+›ÙXÝœÛÛ’[XYÙ\ÖÌJH™]\›ˆ›ÙXÝœÛÛ’[XYÙ\ÖÌNÂˆÛÛœÝY]R[XYÙHH\ØX›JØÝ[Y[œ]Y\žTÙ[XÝÜŠ	ÛY]VÜ›Ü\OH›ÙÎš[XYÙH—IÊOË˜ÛÛ[
+Bˆ\ØX›JØÝ[Y[œ]Y\žTÙ[XÝÜŠ	ÛY]VÛ˜[YOHÚ]\Žš[XYÙH—IÊOË˜ÛÛ[
+NÂˆYˆ
+Y]R[XYÙJH™]\›ˆY]R[XYÙNÂˆÛÛœÝØ[™Y]\ÈHË‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+	ÛXZ[ˆ[YËÚ][\›ÜHš[XYÙH—KØÛ\ÜÊHœ›ÙXÝˆWH[YËØÛ\ÜÊH™ÛÛÙÈˆWH[YÉÊWBˆ›X\
+
+[XYÙJHOˆÂˆÛÛœÝÜ˜ÜÙ]HÝš[™Ê[XYÙKœÜ˜ÜÙ][XYÙK™Ù]]šX]J™]K\Ü˜ÜÙ]ŠHˆŠKœÜ]
+‹ŠKœÜ
+
+OËš[J
+KœÜ]
+×ÊËÊVÌNÂˆÛÛœÝ\›H\ØX›J[XYÙK˜Ý\œ™[Ü˜È[XYÙK™Ù]]šX]J™]K[ÜšYÚ[˜[ŠH[XYÙK™Ù]]šX]J™]K\Ü˜ÈŠHÜ˜ÜÙ][XYÙKœÜ˜ÊNÂˆÛÛœÝ™XÝH[XYÙK™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆÛÛœÝX™[HÚ[XYÙK˜[[XYÙK˜Û\ÜÓ˜[YK[XYÙKšY[XYÙK˜ÛÜÙ\Ý
+	ØIÊOËš™Y—Kš›Ú[ŠˆŠNÂˆÛÛœÝØÛÜ™HH
+™XÝÚYHN	‰ˆ™XÝšZYÚHNÈˆ
+Bˆ
+È
+[XYÙK›˜]\˜[ÚYHL[XYÙK›˜]\˜[ZYÚHLÈŒˆ
+Bˆ
+È
+ÛXZ[Ÿ:ã ;dg]Z[›ÙXÝÛÛÙËÚK\Ý
+X™[
+HÈÌˆ
+BˆH
+ÛÙÛßXÛÛŸÝØ]ÚÛÛÜŸ[XŸ˜[›™\‹ÚK\Ý
+X™[
+HÈLˆ
+NÂˆ™]\›ˆÈ\›ØÛÜ™HNÂˆJK™š[\Š
+Ø[™Y]JHOˆØ[™Y]K\›
+KœÛÜ
+
+YšYÚ
+HOˆšYÚœØÛÜ™HHYœØÛÜ™JNÂˆ™]\›ˆØ[™Y]\ÖÌOË\›ˆŽÂˆJJ
+XYJJNÂˆÛÛœÝÙ[XÝY[XYÙU\›H]Z[[XYÙU\›Ýš[™Ê[šÙYÙX\˜Ú[XYÙU\›ˆŠNÂˆYˆ
+K×šÏÎ—×ËÚK\Ý
+Ù[XÝY[XYÙU\›
+JH™]\›ˆˆŽÂˆÛÛœÝ™\ÜÛœÙHH]ØZ]ÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ\ÜÚ[Û‹™™]Ú
+Ù[XÝY[XYÙU\›ÂˆXY\œÎˆÈ™Y™\™\Žˆ\™Ù]š™YˆKˆJNÂˆYˆ
+\™\ÜÛœÙK›ÚÊH™]\›ˆˆŽÂˆÛÛœÝXÛ\™Y[™ÝH[X™\Š™\ÜÛœÙKšXY\œË™Ù]
+˜ÛÛ[[[™ÝŠH
+NÂˆYˆ
+XÛ\™Y[™ÝˆÌÌ
+H™]\›ˆˆŽÂˆÛÛœÝž]\ÈHY™™\‹™œ›ÛJ]ØZ]™\ÜÛœÙK˜\œ˜^PY™™\Š
+JNÂˆYˆ
+Xž]\Ë›[™Ýž]\Ë›[™ÝˆÌÌ
+H™]\›ˆˆŽÂˆÛÛœÝ[XYÙHH˜]]™R[XYÙK˜Ü™X]Qœ›ÛPY™™\Šž]\ÊNÂˆYˆ
+[XYÙKš\Ñ[\J
+JH™]\›ˆˆŽÂˆÛÛœÝÚ^™HH[XYÙK™Ù]Ú^™J
+NÂˆÛÛœÝØØ[HHX]›Z[ŠKÈX]›X^
+Ú^™KÚYÚ^™KšZYÚJJNÂˆÛÛœÝ™]šY]ÈHØØ[HBˆÈ[XYÙKœ™\Ú^™JÈÚYˆX]›X^
+KX]œ›Ý[™
+Ú^™KÚY
+ˆØØ[JJKZYÚˆX]›X^
+KX]œ›Ý[™
+Ú^™KšZYÚ
+ˆØØ[JJK]X[]Nˆ™ÛÛÙˆJBˆˆ[XYÙNÂˆ™]\›ˆ™]šY]ËÑ]UT“
+
+NÂˆHØ]ÚÂˆ™]\›ˆˆŽÂˆBŸB‚™[˜Ý[Ûˆ\Ó˜]™\”ÙXÝ\š]U™\šYšXØ][Û•^
+˜[YJHÂˆ™]\›ˆØØ\Ú_:ìí;%bÊ»fe{'n;'¤:ãæWÊ»'¡zè)_:èg:í!ß;"©;c.;'aÊºì*{)à;"é;('Ê» «;&ª{'¤:îa;(%{ à{( {'nÊ»($z­ïÚK\Ý
+Ýš[™Ê˜[YHˆŠJNÂŸB‚˜\Þ[˜È[˜Ý[ÛˆØZ]›Ü“˜]™\”ÙXÝ\š]U™\šYšXØ][ÛŠÙX\˜ÚÚ[™ÝÊHÂˆYˆ
+\ÙX\˜ÚÚ[™ÝÈÙX\˜ÚÚ[™ÝËš\Ñ\Ý›ÞYY
+
+JH™]\›ˆ˜[ÙNÂˆÙX\˜ÚÚ[™ÝËœÙ]]Jºá);'m:ì¡; «:ç£;fe{'n;'a;&a:èã;em;(ï;!.;&¥0­È\›Ý[™ÈŠNÂˆÙX\˜ÚÚ[™ÝËœÙ][Ø^\ÓÛ•Ü
+YJNÂˆÙX\˜ÚÚ[™ÝËœÚÝÊ
+NÂˆÙX\˜ÚÚ[™ÝË™›ØÝ\Ê
+NÂˆXZ[•Ú[™ÝÏËÙXÛÛ[ËœÙ[™
+™ÛY\ÝXË\ÙX\˜ÚœÙXÝ\š]K\™\]Z\™Y‹ÂˆÛÝ\˜ÙNˆºá);'m:ì¡‹ˆY\ÜØYÙNˆºá);'m:ì¡; «:ç£;fe{'n;'a;&a:èã;ef:êm; à{d¢:¬ ; â{'a;'¤:ãæ{'/:èg:¬á;!£{ejzââ:âéˆ‹ˆJNÂˆÛÛœÝXY[™HH]K››ÝÊ
+H
+È
+L
+ˆŒÌ
+NÂˆÚ[H
+]K››ÝÊ
+HXY[™JHÂˆYˆ
+ÙX\˜ÚÚ[™ÝËš\Ñ\Ý›ÞYY
+
+JH™]\›ˆ˜[ÙNÂˆÛÛœÝÝ]HH]ØZ]ÙX\˜ÚÚ[™ÝËÙXÛÛ[Ë›XZ[‘œ˜[YK™^XÝ]R˜]˜TØÜš\
+”ÓÓ‹œÝš[™ÚYžJÂˆ^ˆÝš[™ÊØÝ[Y[˜›ÙOËš[›™\•^ˆŠKœÛXÙJŒ
+Kˆ\›ˆÝš[™ÊØØ][Û‹š™YˆˆŠBˆJXYJK[Š”ÓÓ‹œ\œÙJK˜Ø]Ú
+
+
+HOˆ[
+NÂˆYˆ
+Ý]H	‰ˆZ\Ó˜]™\”ÙXÝ\š]U™\šYšXØ][Û•^
+Ý]K^
+JHÂˆÙX\˜ÚÚ[™ÝËœÙ][Ø^\ÓÛ•Ü
+˜[ÙJNÂˆÙX\˜ÚÚ[™ÝËšYJ
+NÂˆXZ[•Ú[™ÝÏËÙXÛÛ[ËœÙ[™
+™ÛY\ÝXË\ÙX\˜ÚœÙXÝ\š]KXÛÛ\]H‹ÂˆÛÝ\˜ÙNˆºá);'m:ì¡‹ˆY\ÜØYÙNˆºá);'m:ì¡; «:ç£;fe{'n;&a:èã0­È; à{d¢:¬ ; â{'a:âé;"ç;"ç;'¤{ejzââ:âéˆ‹ˆJNÂˆ™]\›ˆYNÂˆBˆ]ØZ]ØZ]
+WÌ
+NÂˆBˆ™]\›ˆ˜[ÙNÂŸB‚˜\Þ[˜È[˜Ý[ÛˆÝX›Z]Ù™šXÚX[X[ÙX\˜Ú
+ÙX\˜ÚÚ[™ÝË]Y\žJHÂˆÛÛœÝ^XÝ]Y\žHHØ[š]^™QÛY\ÝXÔ›ÙXÝÛÙJ]Y\žJHØ[š]^™QÛY\ÝXÔ]Y\žJ]Y\žJNÂˆYˆ
+Y^XÝ]Y\žH\ÙX\˜ÚÚ[™ÝÈÙX\˜ÚÚ[™ÝËš\Ñ\Ý›ÞYY
+
+JH™]\›ˆ˜[ÙNÂˆ›Üˆ
+]][\HÈ][\LŽÈ][\
+ÏHJHÂˆÛÛœÝØÜš\H
+
+
+HOˆÂˆÛÛœÝ]Y\žHH	Ò”ÓÓ‹œÝš[™ÚYžJ^XÝ]Y\žJ_NÂˆÛÛœÝš\ÚX›HH
+[[Y[
+HOˆÂˆYˆ
+Y[[Y[
+H™]\›ˆ˜[ÙNÂˆÛÛœÝÝ[HHÙ]ÛÛ\]YÝ[J[[Y[
+NÂˆÛÛœÝ™XÝH[[Y[™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆ™]\›ˆÝ[K™\Ü^HOOH››Û™Hˆ	‰ˆÝ[Kš\ÚXš[]HOOHšY[ˆˆ	‰ˆ™XÝÚYˆ	‰ˆ™XÝšZYÚˆÂˆNÂˆÛÛœÝ›ÛÝÈHÙØÝ[Y[NÂˆ›Üˆ
+][™^HÈ[™^›ÛÝË›[™ÝÈ[™^
+ÏHJHÂˆ›Üˆ
+ÛÛœÝ[[Y[Ùˆ›ÛÝÖÚ[™^Kœ]Y\žTÙ[XÝÜ[ËŠ	Ê‰ÊH×JHÂˆYˆ
+[[Y[œÚYÝÔ›ÛÝ	‰ˆ\›ÛÝËš[˜ÛY\Ê[[Y[œÚYÝÔ›ÛÝ
+JH›ÛÝËœ\Ú
+[[Y[œÚYÝÔ›ÛÝ
+NÂˆBˆBˆÛÛœÝÙ[XÝ[H
+Ù[XÝÜŠHOˆ›ÛÝË™›]X\
+
+›ÛÝ
+HOˆË‹‹Š›ÛÝœ]Y\žTÙ[XÝÜ[ËŠÙ[XÝÜŠH×JWJNÂˆÚ[™ÝË—×Ø\›Ý[™Ó\ÝÙX\˜Ú[\HˆŽÂˆÚ[™ÝË˜[\H
+Y\ÜØYÙJHOˆÈÚ[™ÝË—×Ø\›Ý[™Ó\ÝÙX\˜Ú[\HÝš[™ÊY\ÜØYÙHˆŠNÈNÂˆ][œ]HÙ[XÝ[
+	Ú[œ]Ý\OHœÙX\˜Ú—K[œ]Ý\OH^—VÜXÙZÛ\ŠHº¬ ; âH—K[œ]ÜXÙZÛ\ŠHº¬ ; â{%­—K[œ]ÜXÙZÛ\ŠHº¬ ; âH—K[œ]Û˜[YJHœÙX\˜ÚˆWK[œ]Û˜[YOHœHˆWK[œ]Û˜[YJHœ]Y\žHˆWK[œ]Û˜[YJHšÙ^]ÛÜ™ˆWK[œ]Û˜[YJHœØÚÛÜ™ˆWIÊK™š[™
+š\ÚX›JNÂˆYˆ
+Z[œ]
+HÂˆÛÛœÝÛÛ›ÛÈHÙ[XÝ[
+	ÚXY\ˆ]Û‹XY\ˆK]Û‹KÜ›ÛOH˜]Ûˆ—IÊNÂˆÛÛœÝÜ[™\ˆHÛÛ›ÛË™š[™
+
+[[Y[
+HOˆÂˆÛÛœÝX™[HÙ[[Y[™Ù]]šX]J˜\šXK[X™[ŠK[[Y[™Ù]]šX]J]HŠK[[Y[˜Û\ÜÓ˜[YK[[Y[^ÛÛ[Kš›Ú[ŠˆŠNÂˆ™]\›ˆš\ÚX›J[[Y[
+H	‰ˆÜÙX\˜Ú:¬ ; âKÚK\Ý
+X™[
+NÂˆJHÛÛ›ÛË™š[™
+
+[[Y[
+HOˆÂˆYˆ
+]š\ÚX›J[[Y[
+HY[[Y[œ]Y\žTÙ[XÝÜŠ	ÜÝ™ÉÊJH™]\›ˆ˜[ÙNÂˆÛÛœÝX™[HÙ[[Y[›Ý]\’S[[Y[œ\™[[[Y[Ë˜Û\ÜÓ˜[YWKš›Ú[ŠˆŠNÂˆ™]\›ˆÜÙX\˜Ú:¬ ; â_XYÛšYŸXÛÖ×ËWOÜØÚÚK\Ý
+X™[
+NÂˆJNÂˆYˆ
+[Ü[™\ŠH™]\›ˆ˜[ÙNÂˆÜ[™\‹œØÜ›Û[ÕšY]ÊÈ›ØÚÎˆ˜Ù[\ˆ‹[›[™Nˆ›™X\™\ÝˆJNÂˆÛÛœÝ™XÝHÜ[™\‹™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆ™]\›ˆÈÜ[•\™Ù]ˆÈˆX]œ›Ý[™
+™XÝ›Y
+È™XÝÚYÈŠKNˆX]œ›Ý[™
+™XÝÜ
+È™XÝšZYÚÈŠHHNÂˆBˆÛÛœÝÙ]\ˆHØš™XÝ™Ù]ÝÛ”›Ü\Q\ØÜš\ÜŠS[œ][[Y[œ›ÝÝ\K˜[YHŠOËœÙ]ÂˆÙ]\ˆÈÙ]\‹˜Ø[
+[œ]]Y\žJHˆ
+[œ]˜[YHH]Y\žJNÂˆ[œ]™\Ü]Ú]™[
+™]È]™[
+š[œ]‹ÈX˜›\ÎˆYHJJNÂˆ[œ]™\Ü]Ú]™[
+™]È]™[
+˜Ú[™ÙH‹ÈX˜›\ÎˆYHJJNÂˆ[œ]™›ØÝ\Ê
+NÂˆYˆ
+TÝš[™Ê[œ]˜[YHˆŠKš[J
+JH™]\›ˆ˜[ÙNÂˆÛÛœÝ[œ]™XÝH[œ]™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆÛÛœÝ[œ]\™Ù]HÈˆX]œ›Ý[™
+[œ]™XÝ›Y
+È[œ]™XÝÚYÈŠKNˆX]œ›Ý[™
+[œ]™XÝÜ
+È[œ]™XÝšZYÚÈŠHNÂˆÛÛœÝ›Ü›HH[œ]™›Ü›NÂˆÛÛœÝ™X\˜žHH[œ]˜ÛÜÙ\Ý
+	Ù›Ü›KÜ›ÛOHœÙX\˜Ú—KXY\‹ÙXÝ[Û‹]‰ÊNÂˆÛÛœÝÝX›Z]Ø[™Y]\ÈHÂˆ‹‹Š›Ü›OËœ]Y\žTÙ[XÝÜ[
+	Ø]Û–Ý\OHœÝX›Z]—K[œ]Ý\OHœÝX›Z]—IÊH×JKˆ‹‹Š™X\˜žOËœ]Y\žTÙ[XÝÜ[
+	Ø]Û–Ý\OHœÝX›Z]—K[œ]Ý\OHœÝX›Z]—KØ\šXK[X™[
+Hº¬ ; âH—KÝ]JHº¬ ; âH—IÊH×JKˆNÂˆÛÛœÝÝX›Z]HÝX›Z]Ø[™Y]\Ë™š[™
+
+[[Y[
+HOˆÂˆYˆ
+]š\ÚX›J[[Y[
+H[[Y[OOH[œ]
+H™]\›ˆ˜[ÙNÂˆÛÛœÝX™[HÙ[[Y[™Ù]]šX]J	Ø\šXK[X™[	ÊK[[Y[™Ù]]šX]J	Ý]IÊK[[Y[˜Û\ÜÓ˜[YK[[Y[^ÛÛ[[[Y[›Ý]\’SKš›Ú[Š	È	ÊNÂˆ™]\›ˆÜÙX\˜Ú:¬ ; â_XYÛšYŸXÛÖ×ËWOÜØÚÚK\Ý
+X™[
+H[[Y[\HOOH	ÜÝX›Z]	ÎÂˆJNÂˆYˆ
+ÝX›Z]	‰ˆš\ÚX›JÝX›Z]
+JHÂˆÝX›Z]œØÜ›Û[ÕšY]ÊÈ›ØÚÎˆ˜Ù[\ˆ‹[›[™Nˆ›™X\™\ÝˆJNÂˆÛÛœÝ™XÝHÝX›Z]™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆ™]\›ˆÈ™XYNˆYK[œ]\™Ù]\™Ù]ˆÈˆX]œ›Ý[™
+™XÝ›Y
+È™XÝÚYÈŠKNˆX]œ›Ý[™
+™XÝÜ
+È™XÝšZYÚÈŠHHNÂˆBˆ™]\›ˆÈ™XYNˆYK[œ]\™Ù][\ŽˆYHNÂˆJJ
+XÂˆÛÛœÝœ˜[Y\ÈHÜÙX\˜ÚÚ[™ÝËÙXÛÛ[Ë›XZ[‘œ˜[YK‹‹œÙX\˜ÚÚ[™ÝËÙXÛÛ[Ë›XZ[‘œ˜[YK™œ˜[Y\Ò[”ÝX™YWNÂˆ]ÝX›Z]YH˜[ÙNÂˆ]Ü[™YH˜[ÙNÂˆ›Üˆ
+ÛÛœÝœ˜[YHÙˆœ˜[Y\ÊHÂˆÛÛœÝ™\\™YH]ØZ]œ˜[YK™^XÝ]R˜]˜TØÜš\
+ØÜš\YJK˜Ø]Ú
+
+
+HOˆ˜[ÙJNÂˆYˆ
+™\\™YË›Ü[•\™Ù]
+HÂˆYˆ
+œ˜[YHOOHÙX\˜ÚÚ[™ÝËÙXÛÛ[Ë›XZ[‘œ˜[YJHÂˆÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙS[Ý™H‹ˆ™\\™Y›Ü[•\™Ù]žNˆ™\\™Y›Ü[•\™Ù]žHJNÂˆÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙQÝÛˆ‹ˆ™\\™Y›Ü[•\™Ù]žNˆ™\\™Y›Ü[•\™Ù]žK]ÛŽˆ›Y‹ÛXÚÐÛÝ[ˆHJNÂˆÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙU\‹ˆ™\\™Y›Ü[•\™Ù]žNˆ™\\™Y›Ü[•\™Ù]žK]ÛŽˆ›Y‹ÛXÚÐÛÝ[ˆHJNÂˆH[ÙHÂˆ]ØZ]œ˜[YK™^XÝ]R˜]˜TØÜš\
+Ë‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+	Ø]Û‹KÜ›ÛOH˜]Ûˆ—IÊWK™š[™
+
+[[Y[
+HOˆÜÙX\˜Ú:¬ ; âKÚK\Ý
+Ù[[Y[™Ù]]šX]J˜\šXK[X™[ŠK[[Y[™Ù]]šX]J]HŠK[[Y[^ÛÛ[Kš›Ú[ŠˆŠJJOË˜ÛXÚÊ
+XYJK˜Ø]Ú
+
+
+HOˆßJNÂˆBˆÜ[™YHYNÂˆœ™XZÎÂˆBˆYˆ
+\™\\™YËœ™XYJHÛÛ[YNÂˆËÈœ˜[Y]ÛÜšËXÛÛ›ÛYÙ™šXÚX[[X[[œ]ÈØ[ˆYÛ›Ü™HH˜]˜TØÜš\[Û›BˆËÈ˜[YH\ÜÚYÛ›Y[ˆ\ÚXØ[H›ØÝ\ÈHš\ÚX›HšY[[™\HH^XÝˆËÈ]Y\žHÛÈHÚ]IÜÈÝÛˆÙ^KÚ[œ][™\œÈ™XÙZ]™HHØ[YH]™[È\ÈH\Ù\‹‚ˆYˆ
+™\\™Yš[œ]\™Ù]	‰ˆœ˜[YHOOHÙX\˜ÚÚ[™ÝËÙXÛÛ[Ë›XZ[‘œ˜[YJHÂˆÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙS[Ý™H‹ˆ™\\™Yš[œ]\™Ù]žNˆ™\\™Yš[œ]\™Ù]žHJNÂˆÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙQÝÛˆ‹ˆ™\\™Yš[œ]\™Ù]žNˆ™\\™Yš[œ]\™Ù]žK]ÛŽˆ›Y‹ÛXÚÐÛÝ[ˆHJNÂˆÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙU\‹ˆ™\\™Yš[œ]\™Ù]žNˆ™\\™Yš[œ]\™Ù]žK]ÛŽˆ›Y‹ÛXÚÐÛÝ[ˆHJNÂˆÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\NˆšÙ^QÝÛˆ‹Ù^PÛÙNˆH‹[ÙYšY\œÎˆÈ˜ÛÛ›Û—HJNÂˆÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\NˆšÙ^U\‹Ù^PÛÙNˆH‹[ÙYšY\œÎˆÈ˜ÛÛ›Û—HJNÂˆ]ØZ]ÙX\˜ÚÚ[™ÝËÙXÛÛ[Ëš[œÙ\^
+^XÝ]Y\žJNÂˆ]ØZ]ØZ]
+ÍL
+NÂˆBˆYˆ
+™\\™Y\™Ù]	‰ˆœ˜[YHOOHÙX\˜ÚÚ[™ÝËÙXÛÛ[Ë›XZ[‘œ˜[YJHÂˆÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙS[Ý™H‹ˆ™\\™Y\™Ù]žNˆ™\\™Y\™Ù]žHJNÂˆÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙQÝÛˆ‹ˆ™\\™Y\™Ù]žNˆ™\\™Y\™Ù]žK]ÛŽˆ›Y‹ÛXÚÐÛÝ[ˆHJNÂˆÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\Nˆ›[Ý\ÙU\‹ˆ™\\™Y\™Ù]žNˆ™\\™Y\™Ù]žK]ÛŽˆ›Y‹ÛXÚÐÛÝ[ˆHJNÂˆH[ÙHYˆ
+™\\™Y™[\ˆ	‰ˆœ˜[YHOOHÙX\˜ÚÚ[™ÝËÙXÛÛ[Ë›XZ[‘œ˜[YJHÂˆÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\NˆšÙ^QÝÛˆ‹Ù^PÛÙNˆ‘[\ˆˆJNÂˆÙX\˜ÚÚ[™ÝËÙXÛÛ[ËœÙ[™[œ]]™[
+È\NˆšÙ^U\‹Ù^PÛÙNˆ‘[\ˆˆJNÂˆH[ÙHÂˆ]ØZ]œ˜[YK™^XÝ]R˜]˜TØÜš\
+ØÝ[Y[˜XÝ]™Q[[Y[Ë™›Ü›OËœ™\]Y\ÝÝX›Z]ËŠ
+HØÝ[Y[˜XÝ]™Q[[Y[Ë™\Ü]Ú]™[
+™]ÈÙ^X›Ø\™]™[
+šÙ^YÝÛˆ‹ÈÙ^Nˆ‘[\ˆ‹ÛÙNˆ‘[\ˆ‹X˜›\ÎˆYHJJXYJK˜Ø]Ú
+
+
+HOˆßJNÂˆBˆÝX›Z]YHYNÂˆœ™XZÎÂˆBˆYˆ
+ÝX›Z]Y
+H™]\›ˆYNÂˆ]ØZ]ØZ]
+Ü[™YÈLˆÌ
+NÂˆBˆ™]\›ˆ˜[ÙNÂŸB‚˜\Þ[˜È[˜Ý[ÛˆÙ™šXÚX[X[ÙX\˜ÚØ\Ñ^XÝ]Y
+ÙX\˜ÚÚ[™ÝË]Y\žK™]š[Ý\Õ\›HˆŠHÂˆYˆ
+\ÙX\˜ÚÚ[™ÝÈÙX\˜ÚÚ[™ÝËš\Ñ\Ý›ÞYY
+
+JH™]\›ˆ˜[ÙNÂˆÛÛœÝÝ]HH]ØZ]ÙX\˜ÚÚ[™ÝËÙXÛÛ[Ë›XZ[‘œ˜[YK™^XÝ]R˜]˜TØÜš\
+
+
+
+HOˆÂˆÛÛœÝ]Y\žHH	Ò”ÓÓ‹œÝš[™ÚYžJÝš[™Ê]Y\žHˆŠJ_NÂˆÛÛœÝÛÛ\XÝH
+˜[YJHOˆÝš[™Ê˜[YHˆŠKœ™\XÙJÖ×KVŒNz¬ {g¨×KÙÚKˆŠKÕ\\Ø\ÙJ
+NÂˆÛÛœÝ^XÝYHÛÛ\XÝ
+]Y\žJNÂˆÛÛœÝ[œ]ÈHË‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+	Ú[œ]Ý\OHœÙX\˜Ú—K[œ]Û˜[YJHœÙX\˜ÚˆWK[œ]Û˜[YOHœHˆWK[œ]Û˜[YJHœ]Y\žHˆWK[œ]Û˜[YJHšÙ^]ÛÜ™ˆWK[œ]Û˜[YJHœØÚÛÜ™ˆWIÊWNÂˆÛÛœÝ[œ]X]ÚYH[œ]ËœÛÛYJ
+[œ]
+HOˆÛÛ\XÝ
+[œ]˜[YJKš[˜ÛY\Ê^XÝY
+JNÂˆÛÛœÝYÙU^HÝš[™ÊØÝ[Y[˜›ÙOËš[›™\•^ˆŠNÂˆÛÛœÝYÙSX]ÚYH^XÝY›[™ÝH	‰ˆÛÛ\XÝ
+YÙU^
+Kš[˜ÛY\Ê^XÝY
+NÂˆÛÛœÝ™\Ý[ÛÝ[HÊÎ» à{d¢:¬ ; âz¬¬:¬ï
+WÊ—
+×Ê–ÌKNWV×J—ÊŠÎº¬':¬m
+JKÚK\Ý
+YÙU^
+Bˆû-'WÊ–ÌKNWV×J—Êº¬'ÚK\Ý
+YÙU^
+NÂˆÛÛœÝ›ÙXÝ[šÜÈHË‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+	ØVÚ™Y—IÊWK™š[\Š
+[šÊHO‚ˆ×ÊÎ™ÛÛÙß›ÙXÝ›ÙXÝß][_
+WËÚK\Ý
+Ýš[™Ê[šËš™YˆˆŠJJK›[™ÝÂˆ™]\›ˆÈ\›ˆÝš[™ÊØØ][Û‹š™YˆˆŠK[œ]X]ÚYYÙSX]ÚY™\Ý[ÛÝ[›ÙXÝ[šÜÈNÂˆJJ
+XYJK˜Ø]Ú
+
+
+HOˆ[
+NÂˆYˆ
+\Ý]JH™]\›ˆ˜[ÙNÂˆÛÛœÝ\›Ú[™ÙYH›ÛÛX[Š™]š[Ý\Õ\›	‰ˆÝ]K\›	‰ˆÝ]K\›OOH™]š[Ý\Õ\›
+NÂˆÛÛœÝ]Y\žR[•\›H
+
+
+HOˆÂˆžHÈ™]\›ˆXÛÙUT’PÛÛ\Û™[
+Ý]K\›
+KÕ\\Ø\ÙJ
+Kš[˜ÛY\ÊÝš[™Ê]Y\žHˆŠKÕ\\Ø\ÙJ
+JNÈBˆØ]ÚÈ™]\›ˆ˜[ÙNÈBˆJJ
+NÂˆËÈY\™[HÙYZ[™ÈHÛÙH[ˆHÙX\˜Ú[œ]ÜÝYÙÙ\Ý[Ûˆ\È›Ý›ÛÙˆ]ˆËÈHXYÛšYšY\ˆØ\È™\ÜÙYˆ™\]Z\™H˜]šYØ][ÛˆÜˆ™[™\™Y›ÙXÝ™\Ý[Ë‚ˆ™]\›ˆ›ÛÛX[Š\›Ú[™ÙY]Y\žR[•\›
+Ý]KœYÙSX]ÚY	‰ˆ
+Ý]Kœ™\Ý[ÛÝ[Ý]Kœ›ÙXÝ[šÜÈˆ
+JJNÂŸB‚˜\Þ[˜È[˜Ý[Ûˆ^XÝ]SÙ™šXÚX[X[ÙX\˜Ú
+ÙX\˜ÚÚ[™ÝËÛY\YÙU\›]Y\žJHÂˆËÈÛ™H›ÙXÝ]Y\žH]\Ý™HÝX›Z]YÛ›HÛ˜ÙKˆ™K[ØY[™ÈHÛY\YÙH[™ˆËÈ[\š[™ÈHØ[YH]Y\žHYØZ[ˆXYHHXÚšXØ[˜Z[\™HÛÚÈZÙHHœ™\ÚˆËÈ™YØ]]™H™\Ý[[™[ÛÈYH™]š[Ý\ÈÙX\˜Úš\ÚX›H[ˆHÚ[™ÝË‚ˆÛÛœÝ^XÝ]Y\žHHØ[š]^™QÛY\ÝXÔ›ÙXÝÛÙJ]Y\žJHØ[š]^™QÛY\ÝXÔ]Y\žJ]Y\žJNÂˆYˆ
+Y^XÝ]Y\žJH™]\›ˆ˜[ÙNÂˆÛÛœÝ™]š[Ý\Õ\›HÝš[™ÊÙX\˜ÚÚ[™ÝËÙXÛÛ[Ë™Ù]T“
+
+HÛY\YÙU\›
+NÂˆÛÛœÝÝX›Z]YH]ØZ]ÝX›Z]Ù™šXÚX[X[ÙX\˜Ú
+ÙX\˜ÚÚ[™ÝË^XÝ]Y\žJNÂˆYˆ
+\ÝX›Z]Y
+H™]\›ˆ˜[ÙNÂˆ]ØZ]ØZ]
+—Ì
+NÂˆ™]\›ˆÙ™šXÚX[X[ÙX\˜ÚØ\Ñ^XÝ]Y
+ÙX\˜ÚÚ[™ÝË^XÝ]Y\žK™]š[Ý\Õ\›
+NÂŸB‚˜\Þ[˜È[˜Ý[ÛˆÛÛXÝÙ™šXÚX[X[ÙX\˜Ú›ÙXÝÊÙX\˜ÚÚ[™ÝË]Y\žJHÂˆYˆ
+Xœ›ÝÜÙ\•Ú[™ÝÕ\ØX›JÙX\˜ÚÚ[™ÝÊJH™]\›ˆ×NÂˆ]Ø\\™P][\HÂˆÚ[H
+Ø\\™P][\MŠHÂˆYˆ
+Ø\\™P][\ˆ
+H]ØZ]ØZ]
+L
+NÂˆØ\\™P][\
+ÏHNÂˆÛÛœÝ›ÙXÝÈH]ØZ]ÙX\˜ÚÚ[™ÝËÙXÛÛ[Ë›XZ[‘œ˜[YK™^XÝ]R˜]˜TØÜš\
+
+
+
+HOˆÂˆÛÛœÝ]Y\žHH	Ò”ÓÓ‹œÝš[™ÚYžJÝš[™Ê]Y\žHˆŠJ_NÂˆÛÛœÝÛÛ\XÝH
+˜[YJHOˆÝš[™Ê˜[YHˆŠKœ™\XÙJÖ×KVŒNz¬ {g¨×KÙÚKˆŠKÕ\\Ø\ÙJ
+NÂˆÛÛœÝ^XÝYHÛÛ\XÝ
+]Y\žJNÂˆÛÛœÝ›ÙXÝ]H×ÊÎ™ÛÛÙß›ÙXÝ›ÙXÝß][_ÚÜ
+WËÚNÂˆÛÛœÝš\ÚX›HH
+[[Y[
+HOˆÂˆYˆ
+Y[[Y[
+H™]\›ˆ˜[ÙNÂˆÛÛœÝ™XÝH[[Y[™Ù]›Ý[™[™ÐÛY[™XÝ
+
+NÂˆÛÛœÝÝ[HHÙ]ÛÛ\]YÝ[J[[Y[
+NÂˆ™]\›ˆ™XÝÚYˆ	‰ˆ™XÝšZYÚˆ	‰ˆÝ[K™\Ü^HOOH››Û™Hˆ	‰ˆÝ[Kš\ÚXš[]HOOHšY[ˆŽÂˆNÂˆÛÛœÝ[Û™^HH
+˜[YJHOˆÂˆÛÛœÝX]ÚHÝš[™Ê˜[YHˆŠK›X]Ú
+ÊÎ¸ ª_;ïéŸ;&ä
+WÊŠ×^ÌËJ_
+×^ÌËJWÊ»&äÊNÂˆ™]\›ˆ[X™\ŠÝš[™ÊX]ÚË–ÌWHX]ÚË–Ì—HˆŠKœ™\XÙJËÙËˆŠJHÂˆNÂˆÛÛœÝ›Ý[™H™]ÈX\
+
+NÂˆ›Üˆ
+ÛÛœÝ[šÈÙˆË‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
+	ØVÚ™Y—IÊWJHÂˆYˆ
+]š\ÚX›J[šÊH\›ÙXÝ]\Ý
+Ýš[™Ê[šËš™YˆˆŠJJHÛÛ[YNÂˆ]Ø\™H[šË˜ÛÜÙ\Ý
+	ÛK\XÛKØÛ\ÜÊHœ›ÙXÝˆWKØÛ\ÜÊH™ÛÛÙÈˆWKØÛ\ÜÊHš][HˆWIÊH[šÎÂˆÛÛœÝ˜]Õ^HÝš[™ÊØ\™š[›™\•^[šËš[›™\•^ˆŠKœ™\XÙJ×ÊËÙËˆŠKš[J
+NÂˆYˆ
+\˜]Õ^˜]Õ^›[™ÝˆLŒ
+HÛÛ[YNÂˆÛÛœÝ[XYÙHHØ\™œ]Y\žTÙ[XÝÜŠ	Ú[YÖÜÜ˜×IÊH[šËœ]Y\žTÙ[XÝÜŠ	Ú[YÖÜÜ˜×IÊNÂˆÛÛœÝXY[™ÈHØ\™œ]Y\žTÙ[XÝÜŠ	ÚK‹ËKØÛ\ÜÊH›˜[YHˆWKØÛ\ÜÊH]HˆWIÊNÂˆÛÛœÝ]HHÝš[™ÊXY[™ÏË^ÛÛ[[XYÙOË˜[[šË™Ù]]šX]J	Ý]IÊH˜]Õ^
+Bˆœ™\XÙJ×ÊËÙËˆŠKš[J
+KœÛXÙJ
+NÂˆÛÛœÝ\XÛSX]ÚH˜]Õ^›X]Ú
+ÊÏVÐKVŒNK—ËËW^ÍÌŸWŠJÏVÐKVŒNK—ËËWJ–ÐKV—JJÏVÐKVŒNK—ËËWJ—
+VÐKVŒNWVÐKVŒNK—ËËW^ÌËÌ_KÚJNÂˆÛÛœÝ\XÛS[X™\ˆH\XÛSX]ÚË–ÌH
+^XÝY	‰ˆÛÛ\XÝ
+˜]Õ^
+Kš[˜ÛY\Ê^XÝY
+HÈ]Y\žHˆˆŠNÂˆÛÛœÝ\›HÝš[™Ê[šËš™YˆˆŠKœÜ]
+	ÈÉÊVÌNÂˆÛÛœÝØ\™šXÙHH[Û™^J˜]Õ^
+NÂˆÛÛœÝ˜]šYØ][Û“X™[H×ŠÎ»fbÛY_:êe:âmY[_;(!;,­[ÚÜ;!ï;edJIÚK\Ý
+]JNÂˆÛÛœÝÝÛœÑ^XÝYÛÙHH›ÛÛX[Š^XÝY	‰ˆÛÛ\XÝ
+˜]Õ^
+Èˆˆ
+È\›
+Kš[˜ÛY\Ê^XÝY
+JNÂˆËÈ›ÙXÝ[ÛÚÚ[™È]È[ÛÈØØÝ\ˆ[ˆÛØ˜[˜]šYØ][Ûˆ
+›Üˆ^[\BˆËÈÜÚÜË‹‹ˆ[šÜÈ]Y»fbŠKˆ™\]Z\™HØ\™[ÝÛ™Y›ÙXÝ]šY[˜ÙK‚ˆYˆ
+˜]šYØ][Û“X™[
+Z[XYÙH	‰ˆXØ\™šXÙH	‰ˆ[ÝÛœÑ^XÝYÛÙJJHÛÛ[YNÂˆYˆ
+]\››Ý[™š\Ê\›
+JHÛÛ[YNÂˆ›Ý[™œÙ]
+\›ÂˆYˆ\›ˆÝÜ™Nˆºî#:ç§:äç:¬í{"çzê¬‹ˆÛÝ\˜ÙTÝÜ™Nˆºî#:ç§:äç:¬í{"çzê¬‹ˆ™]Z[\“˜[YNˆØÝ[Y[]HØØ][Û‹šÜÝ˜[YKˆ]Kˆ˜[YNˆ]Kˆ\XÛS[X™\‹ˆšXÙNˆØ\™šXÙKˆ[XYÙU\›ˆÝš[™Ê[XYÙOË˜Ý\œ™[Ü˜È[XYÙOËœÜ˜ÈˆŠKˆ\›ˆ[”ÝØÚÎˆ[ˆÝØÚÑ]šY[˜ÙNˆ
+	ØØ\\™T™[™\™YÝØÚÑ]šY[˜ÙKÔÝš[™Ê
+_JJ×KØ\™
+Kˆ[šÓÛ›NˆYKˆÙ™šXÚX[ÝÜ™U™\šYšYYˆ›ÛÛX[Š^XÝY	‰ˆÛÛ\XÝ
+˜]Õ^
+Kš[˜ÛY\Ê^XÝY
+JKˆÛÝ\˜ÙU\ÝX™[ˆº¬í{"çzê¬:¬ ; âH:¬¬:¬ï‹ˆJNÂˆBˆ™]\›ˆË‹‹™›Ý[™˜[Y\Ê
+WKœÛXÙJL
+NÂˆJJ
+XYJK˜Ø]Ú
+
+
+HOˆ×JNÂˆYˆ
+\œ˜^Kš\Ð\œ˜^J›ÙXÝÊH	‰ˆ›ÙXÝË›[™Ý
+H™]\›ˆ›ÙXÝË›X\
+
+ÜÝØÚÑ]šY[˜ÙK‹‹œ›ÙXÝJHOˆ
+Âˆ‹‹œ›ÙXÝˆ‹‹››Ü›X[^™T™[™\™YÝØÚÑ]šY[˜ÙJÝØÚÑ]šY[˜ÙHßJKˆJJNÂˆBˆ™]\›ˆ×NÂŸB‚™[˜Ý[Ûˆ™[™\™YÙX\˜Úµë­ýæÚ$z{-®éÜj×(element.innerText || "");
       });
       if (panel) return true;
       await wait(250);
