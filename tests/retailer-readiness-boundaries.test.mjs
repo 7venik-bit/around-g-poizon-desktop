@@ -84,6 +84,8 @@ for (const [label, html, options, expectedBusy] of [
   ['recommendation class', PRODUCT + '<aside class="product-recommendations"><div role="progressbar"></div></aside>', {}, false],
   ['advertisement test id', PRODUCT + '<aside data-testid="advertisement-panel"><div role="progressbar"></div></aside>', {}, false],
   ['purchase panel outside main', PRODUCT + '<aside aria-label="상품 구매 옵션" aria-busy="true"><button>사이즈 선택</button></aside>', {}, true],
+  ['recommended size panel is not unrelated goods', PRODUCT + '<aside class="recommended-size" aria-busy="true"><button>사이즈 선택</button></aside>', {}, true],
+  ['Korean recommended options remain commerce', PRODUCT + '<aside aria-label="추천 옵션 구매" aria-busy="true"><button>옵션 선택</button></aside>', {}, true],
   ['dependent size options', '<main><h1>아디다스 JH9976</h1><section aria-busy="true"><button>사이즈 선택</button></section></main>', {}, true],
   ['whole document loading', PRODUCT, {bodyBusy: true}, true],
   ['main product still loading beside recommendations', '<main aria-busy="true"><h1>아디다스 JH9976</h1><button>구매하기</button><aside aria-label="추천"><div role="progressbar"></div></aside></main>', {}, true],

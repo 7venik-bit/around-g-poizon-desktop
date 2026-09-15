@@ -61,6 +61,8 @@ export function captureDomesticDetailPage(captureStock, selectors = []) {
     for (let node = element; node && node !== document.body && node !== document.documentElement; node = node.parentElement) {
       if (node.matches('main,[role="main"]')) break;
       const labels = ['id', 'class', 'aria-label', 'data-testid'].map(key => node.getAttribute(key) || '').join(' ');
+      // Recommended sizes/options belong to commerce, not unrelated goods.
+      if (/size|option|purchase|buy|사이즈|옵션|구매/i.test(labels)) return false;
       if (/recommend|related[-_ ]?(?:product|goods)|advert(?:isement|ising)?|(?:^|[\s_-])ads?(?:$|[\s_-])|추천|광고/i.test(labels)) return true;
     }
     return false;
