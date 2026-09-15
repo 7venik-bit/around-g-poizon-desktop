@@ -1654,6 +1654,13 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         let optionStock = null;
         let optionError = null;
         try {
+          // Product identity does not bypass the original inventory gate.
+          // Open a collapsed menu, then wait for stock-bearing content.
+          // A stuck option loader leaves the checkpoint above intact.
+          if (!snapshot.ready) {
+            await openRenderedSizeOptions(evidenceWindow);
+            await waitForDomesticDetailReady(evidenceWindow, "네이버 패션타운", productUrl, generation, articleNumber);
+          }
           const savedOptions = recoveryOptions[candidate.url];
           optionStock = await collectRenderedProductStock(evidenceWindow, "네이버 패션타운", generation, onActivity,
             savedOptions && Date.now() - Date.parse(savedOptions.checkedAt || '') < 30 * 60_000 ? savedOptions.options : [], savedOptions?.branches || [], candidate.url);

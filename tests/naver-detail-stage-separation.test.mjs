@@ -26,7 +26,7 @@ function productionFunction(name) {
   new Script(source);
   return source;
 }
-function fixture(t, {html = documentHtml(), resolvedUrl = URL_PRODUCT, collectStock} = {}) {
+function fixture(t, {html = documentHtml(), resolvedUrl = URL_PRODUCT, collectStock, paintAfter = 0, laterHtml = ""} = {}) {
   let now = 0, optionCalls = 0;
   const windows = [], updates = [], navigations = [];
   class BrowserWindow {
@@ -56,7 +56,7 @@ function fixture(t, {html = documentHtml(), resolvedUrl = URL_PRODUCT, collectSt
     destroy(){this.destroyed=true;}
   }
   const context = createContext({...relay,...detail,...price,...recovery,BrowserWindow,URL,console,
-    Date:class extends Date{static now(){return now;}},wait:async ms=>{now+=ms;},
+    Date:class extends Date{static now(){return now;}},wait:async ms=>{now+=ms;if(paintAfter && now>=paintAfter)for(const w of windows)if(!w.destroyed)w.dom.window.document.body.innerHTML=laterHtml;},
     domesticSearchGeneration:0,domesticSearchCanceled:()=>false,APP_ICON_PATH:'',
     DOMESTIC_SEARCH_PARTITION:'offline-test',activeDomesticSearchWindows:new Set(),
     renderedStockSelectors:()=>[],openRenderedSizeOptions:async()=>false});
@@ -119,11 +119,12 @@ test('REGRESSION: Naver retains a card price when only the detail contains its m
   assert.equal(r.products[0].stockVerified,false);
   assert.equal(r.products[0].inStock,null);
   assert.equal(recovery.stockObservationComplete(r.products[0]),false);
-  assert.equal(f.optionCalls(),1,'the actual option collector must still be attempted');
+  assert.equal(f.optionCalls(),0,'unready inventory must not bypass the stock gate');
+  assert.ok(f.now()>=25000,'the separate stock gate must actually be observed');
 });
 test('REGRESSION: identity checkpoint precedes optional inventory collection', async t=>{
   let checkpointSeen=false;
-  const f=fixture(t,{collectStock:async({updates})=>{
+  const f=fixture(t,{html:documentHtml('<button>구매하기</button>'),collectStock:async({updates})=>{
     checkpointSeen=updates.some(u=>u.products?.some(p=>p.articleNumber==='JH9976'&&p.price===149000));
     assert.ok(checkpointSeen,'verified product was not published before the option wait');
     const p=updates.find(u=>u.products.length)?.products[0];
@@ -173,4 +174,25 @@ test('54 captured unique links remain 54; tracking duplicates are not extra deta
   assert.equal(r.products.length,54);
   assert.equal(r.verificationDiagnostics.productCardCount,55);
   assert.equal(r.verificationDiagnostics.extractedProductCount,54);
+});
+
+
+test('REGRESSION: an option loader cannot become complete inventory after identity succeeds',async t=>{
+  const f=fixture(t,{html:documentHtml('<section aria-busy="true"><button>구매하기</button></section>'),collectStock:async()=>completeStock()});
+  const r=await f.verify();
+  assert.equal(r.products.length,1);
+  assert.equal(r.products[0].price,149000);
+  assert.equal(f.optionCalls(),0);
+  assert.equal(recovery.stockObservationComplete(r.products[0]),false);
+  assert.equal(r.products[0].inStock,null);
+  assert.ok(f.updates.some(u=>u.products?.length),'identity checkpoint is retained while options stay pending');
+});
+test('REGRESSION: late inventory is collected only after the stock document becomes ready',async t=>{
+  const f=fixture(t,{paintAfter:800,laterHtml:documentHtml('<button>구매하기</button>'),collectStock:async()=>completeStock()});
+  const r=await f.verify();
+  assert.ok(f.now()>=800&&f.now()<25000);
+  assert.equal(f.optionCalls(),1);
+  assert.equal(r.products.length,1);
+  assert.equal(recovery.stockObservationComplete(r.products[0]),true);
+  assert.equal(f.updates[0].products[0].stockVerified,false);
 });
