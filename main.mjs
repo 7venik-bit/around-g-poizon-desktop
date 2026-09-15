@@ -1505,10 +1505,12 @@ function renderedSearchFailure(reason, searchWindow = null, details = {}) {
     page_load_timeout: "page_navigation",
     page_load_failed: "page_navigation",
     network_error: "page_navigation",
+    naver_result_not_settled: "naver_result_navigation",
     security_verification_required: "access_verification",
     login_required: "access_verification",
   };
-  const verificationStage = String(details.verificationStage || stageByReason[verificationReason] || "unknown");
+  const observed = { ...searchWindow?.domesticDiagnostics, ...details.verificationDiagnostics };
+  const verificationStage = String(details.verificationStage || observed.stage || stageByReason[verificationReason] || "unknown");
   return {
     count: null,
     products: [],
@@ -1517,12 +1519,13 @@ function renderedSearchFailure(reason, searchWindow = null, details = {}) {
     verificationReason,
     verificationStage,
     verificationDiagnostics: {
+      visibleResultCount: null,
+      productCardCount: 0,
+      ...observed,
       stage: verificationStage,
       reason: verificationReason,
       resolvedUrl: resolvedSearchUrl,
-      errorMessage: String(details.errorMessage || ""),
-      visibleResultCount: null,
-      productCardCount: 0,
+      errorMessage: String(details.errorMessage || observed.errorMessage || ""),
     },
     securityVerificationRequired: details.securityVerificationRequired === true,
     loginRequired: details.loginRequired === true,
@@ -2837,6 +2840,9 @@ async function refreshDomesticProductStock(product, generation = domesticSearchG
 
 async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
   const expectedQuery = sanitizeDomesticQuery(query);
+  const diagnostic = searchWindow.domesticDiagnostics = {
+    stage: "naver_result_navigation", targetUrl, inspectedFrames: 0, inspectionError: "", navigationError: "",
+  };
   const inspectSettledResult = async () => {
     for (let attempt = 0; attempt < 60; attempt += 1) {
       if (searchWindow.isDestroyed()) return {ok: false, verificationReason: "search_canceled"};
@@ -2851,9 +2857,12 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
         ].join(',')).length;
         const explicitEmpty = /검색\\s*결과가?\\s*(?:없|0)|상품이?\\s*(?:없|0)|일치하는\\s*(?:상품|제안)이\\s*없/i.test(text);
         const positiveCount = /(?:전체|검색\\s*결과)\\s*[1-9][\\d,]*\\s*개/i.test(text);
-        return { href, text, cards, explicitEmpty, positiveCount };
-      })()`, true).catch(() => null);
+        return { href, text, cards, explicitEmpty, positiveCount, documentReadyState: document.readyState };
+      })()`, true).catch((error) => { diagnostic.inspectionError = String(error?.message || error); return null; });
       if (!state) continue;
+      Object.assign(diagnostic, { inspectedFrames: diagnostic.inspectedFrames + 1, resolvedUrl: state.href,
+        documentReadyState: state.documentReadyState, bodyLength: state.text.length, productCardCount: state.cards,
+        explicitEmpty: state.explicitEmpty, positiveCount: state.positiveCount });
       const access = domesticPageAccessState(state.text, state.cards);
       if (access.verificationReason) return { ok: false, resolvedUrl: state.href, ...access };
       let decodedUrl = String(state.href || "");
@@ -2861,6 +2870,7 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
       const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
       const exactResult = /shopping\.naver\.com\/window\/search\//i.test(state.href)
         && compact(decodedUrl).includes(compact(expectedQuery));
+      diagnostic.expectedPage = exactResult;
       // Fashion Town often keeps its loadURL promise pending while the exact
       // result document is already interactive. Once that DOM and query URL
       // exist, the later bounded card collector—not the browser load event—
@@ -2877,7 +2887,7 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
   // the Fashion Town result DOM is usable.
   let firstError = null;
   const navigation = searchWindow.loadURL(targetUrl)
-    .catch((error) => { firstError = error; });
+    .catch((error) => { firstError = error; diagnostic.navigationError = String(error?.message || error); });
   const firstResult = await inspectSettledResult();
   if (firstResult.ok || firstResult.verificationReason) return firstResult;
   const errorMessage = String(firstError?.message || "NAVER_RESULT_PAGE_NOT_SETTLED");
@@ -2891,7 +2901,10 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
 }
 
 async function loadDomesticRetailerResultPage(searchWindow, targetUrl) {
-  void searchWindow.loadURL(targetUrl).catch(() => {});
+  const diagnostic = searchWindow.domesticDiagnostics = {
+    stage: "retailer_result_navigation", targetUrl, inspectedFrames: 0, inspectionError: "", navigationError: "",
+  };
+  void searchWindow.loadURL(targetUrl).catch((error) => { diagnostic.navigationError = String(error?.message || error); });
   for (let attempt = 0; attempt < 60; attempt++) {
     if (searchWindow.isDestroyed()) return {ok: false, verificationReason: "search_canceled"};
     const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
@@ -2902,8 +2915,12 @@ async function loadDomesticRetailerResultPage(searchWindow, targetUrl) {
       const text = String(document.body?.innerText || "").slice(0, 50000);
       const cards = document.querySelectorAll('a[href*="itemView.ssg"],a[href*="/p/product/"],a[href*="productDetail.action"]').length;
       const empty = /검색\\s*결과가?\\s*없|검색된\\s*상품이\\s*없|일치하는\\s*상품이\\s*없/i.test(text);
-      return {text, cards, href: current.href, ready: expectedPage && (cards > 0 || empty)};
-    })()`, true).catch(() => null);
+      return {text, cards, href: current.href, expectedPage, explicitEmpty: empty, documentReadyState: document.readyState,
+        ready: expectedPage && (cards > 0 || empty)};
+    })()`, true).catch((error) => { diagnostic.inspectionError = String(error?.message || error); return null; });
+    if (state) Object.assign(diagnostic, { inspectedFrames: diagnostic.inspectedFrames + 1, resolvedUrl: state.href,
+      documentReadyState: state.documentReadyState, bodyLength: state.text.length, productCardCount: state.cards,
+      expectedPage: state.expectedPage, explicitEmpty: state.explicitEmpty });
     const access = domesticPageAccessState(state?.text, state?.cards);
     if (access.verificationReason) return {ok: false, ...access, resolvedUrl: state?.href};
     if (state?.ready) return {ok: true, resolvedUrl: state.href};
@@ -3260,6 +3277,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         await wait(submitted ? 2_000 : 1_200);
       }
     }
+    if (searchWindow.domesticDiagnostics) searchWindow.domesticDiagnostics.stage = "result_capture";
     if (naverPortalSource) {
       // Counts are useful metadata, but they are no longer a prerequisite for
       // reading the overview result. Naver can change or delay tab-count markup
@@ -3752,6 +3770,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       let failedDetails = 0;
       for (const [productIndex, product] of inspectedProducts.entries()) {
         if (domesticSearchCanceled(generation) || searchWindow.isDestroyed()) throw new Error("DOMESTIC_SEARCH_CANCELED");
+        if (searchWindow.domesticDiagnostics) Object.assign(searchWindow.domesticDiagnostics,
+          { stage: "product_detail", lastDetailUrl: product.url, totalProducts: inspectedProducts.length });
         let detailVerified = false;
         let detailFailure = "";
         try {
@@ -4026,13 +4046,15 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
             if (remaining > 0) { sourceTimeoutId = setTimeout(expire, remaining); return; }
             stopped = true;
             if (domesticSearchCanceled(generation)) return resolve(renderedSearchFailure("search_canceled"));
+            const diagnosticWindow = [...activeDomesticSearchWindows].find((window) => window.domesticDiagnostics);
+            const failure = renderedSearchFailure("collection_stalled", diagnosticWindow, {
+              verificationStage: lastWork === "search_result" ? diagnosticWindow?.domesticDiagnostics?.stage || lastWork : lastWork,
+              source: String(source.store || "판매처"),
+            });
             for (const searchWindow of [...activeDomesticSearchWindows]) {
               if (searchWindow && !searchWindow.isDestroyed()) searchWindow.destroy();
             }
             activeDomesticSearchWindows.clear();
-            const failure = renderedSearchFailure("collection_stalled", null, {
-              verificationStage: lastWork, source: String(source.store || "판매처"),
-            });
             resolve({...failure, verificationDiagnostics: {...failure.verificationDiagnostics, ...detailProgress},
               products: [...pendingProducts], count: pendingProducts.length || null,
               detailVerificationPending: true});

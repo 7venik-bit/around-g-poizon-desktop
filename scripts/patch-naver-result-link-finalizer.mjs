@@ -111,10 +111,12 @@ replaceOnce(
     page_load_timeout: "page_navigation",
     page_load_failed: "page_navigation",
     network_error: "page_navigation",
+    naver_result_not_settled: "naver_result_navigation",
     security_verification_required: "access_verification",
     login_required: "access_verification",
   };
-  const verificationStage = String(details.verificationStage || stageByReason[verificationReason] || "unknown");
+  const observed = { ...searchWindow?.domesticDiagnostics, ...details.verificationDiagnostics };
+  const verificationStage = String(details.verificationStage || observed.stage || stageByReason[verificationReason] || "unknown");
   return {
     count: null,
     products: [],
@@ -123,12 +125,13 @@ replaceOnce(
     verificationReason,
     verificationStage,
     verificationDiagnostics: {
+      visibleResultCount: null,
+      productCardCount: 0,
+      ...observed,
       stage: verificationStage,
       reason: verificationReason,
       resolvedUrl: resolvedSearchUrl,
-      errorMessage: String(details.errorMessage || ""),
-      visibleResultCount: null,
-      productCardCount: 0,
+      errorMessage: String(details.errorMessage || observed.errorMessage || ""),
     },
     securityVerificationRequired: details.securityVerificationRequired === true,
     loginRequired: details.loginRequired === true,

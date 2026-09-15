@@ -153,6 +153,52 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
   return { search, context, drive, captures, navigations, installHandler, now: () => now };
 }
 
+test('Naver navigation diagnostics retain a rendered page that never exposes results', async t => {
+  const f = fixture(t);
+  f.context.BrowserWindow.prototype.loadURL = async function(url) {
+    this.dom.reconfigure({url});
+    this.dom.window.document.body.innerHTML = '<main>상품 검색 화면을 준비하고 있습니다</main>';
+  };
+  const result = await f.search([channels[0]]);
+  const source = result.sources[0], d = source.verificationDiagnostics;
+  assert.equal(source.verificationReason, 'naver_result_not_settled');
+  assert.equal(source.verificationStage, 'naver_result_navigation');
+  assert.equal(d.expectedPage, true);
+  assert.equal(d.productCardCount, 0);
+  assert.equal(d.inspectedFrames, 60);
+  assert.ok(d.bodyLength > 0);
+  assert.equal(d.resolvedUrl, channels[0][1]);
+  assert.equal(source.absenceConfirmed, false);
+  assert.equal('text' in d, false, 'do not copy the page body into diagnostics');
+});
+
+for (const channel of channels.slice(1)) test(`${channel[0]} preserves navigation and frame errors instead of discarding them`, async t => {
+  const f = fixture(t);
+  f.context.BrowserWindow.prototype.loadURL = async function(url) {
+    this.dom.reconfigure({url});
+    this.webContents.mainFrame.executeJavaScript = async () => { throw new Error('FRAME_NOT_AVAILABLE'); };
+    throw new Error('net::ERR_CONNECTION_RESET');
+  };
+  const result = await f.search([channel]);
+  const d = result.sources[0].verificationDiagnostics;
+  assert.equal(d.stage, 'retailer_result_navigation');
+  assert.equal(d.navigationError, 'net::ERR_CONNECTION_RESET');
+  assert.equal(d.inspectionError, 'FRAME_NOT_AVAILABLE');
+  assert.equal(d.inspectedFrames, 0);
+  assert.equal(result.sources[0].absenceConfirmed, false);
+});
+
+test('a frozen retailer frame retains its navigation stage after the watchdog destroys the window', async t => {
+  const f = fixture(t, {executeFrozen: true});
+  const result = await f.search([channels[2]]);
+  const source = result.sources[0];
+  assert.equal(source.verificationReason, 'collection_stalled');
+  assert.equal(source.verificationStage, 'retailer_result_navigation');
+  assert.equal(source.verificationDiagnostics.inspectedFrames, 0);
+  assert.equal(source.verificationDiagnostics.resolvedUrl, channels[2][1]);
+  assert.equal(source.absenceConfirmed, false);
+});
+
 test('production Naver matching retains Adidas Originals JH9976 with Korean retailer brand wording', async t => {
   const f=fixture(t);
   Object.assign(f.context,{DOMESTIC_SELLER_EVIDENCE_PARTITION:'evidence'});

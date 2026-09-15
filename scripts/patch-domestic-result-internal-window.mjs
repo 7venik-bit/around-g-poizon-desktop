@@ -9,6 +9,8 @@ const replaceOnce = (source, before, after, label) => {
 
 const mainPath = new URL("../main.mjs", import.meta.url);
 let main = await readFile(mainPath, "utf8");
+const searchUserAgent = main.match(/searchWindow\.webContents\.setUserAgent\(("[^"]+")\)/)?.[1];
+if (!searchUserAgent) throw new Error("domestic search user agent missing");
 const externalHandler = `  ipcMain.handle("external:open", async (_event, url) => {
     return openExternalInChromeTab(url);
   });`;
@@ -36,6 +38,7 @@ const internalHandler = `${externalHandler}
       autoHideMenuBar: false, icon: APP_ICON_PATH,
       webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, contextIsolation: true, backgroundThrottling: false },
     });
+    resultWindow.webContents.setUserAgent(${searchUserAgent});
     resultWindow.webContents.setWindowOpenHandler(({ url }) => {
       if (/^https:\\/\\//i.test(String(url || ""))) resultWindow.loadURL(url).catch(() => {});
       return { action: "deny" };
