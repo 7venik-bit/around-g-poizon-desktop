@@ -55,7 +55,30 @@ export function captureDomesticDetailPage(captureStock, selectors = []) {
   const stockEvidence = captureStock(selectors);
   const hasOptions = [...document.querySelectorAll('select,[role="combobox"],button,[role="button"]')].filter(visible)
     .some(el => !el.closest('header,footer,nav') && /사이즈|옵션|size|option/i.test(`${el.getAttribute('aria-label') || ''} ${el.textContent || ''}`));
-  const busy = [...document.querySelectorAll('[aria-busy="true"],[role="progressbar"]')].some(visible);
+  // Ignore only explicitly identified recommendation/advertisement regions.
+  // Purchase panels may live in an aside. Unknown/global loaders still block.
+  const unrelatedLoadingRegion = element => {
+    for (let node = element; node && node !== document.body && node !== document.documentElement; node = node.parentElement) {
+      if (node.matches('main,[role="main"]')) break;
+      const labels = ['id', 'class', 'aria-label', 'data-testid'].map(key => node.getAttribute(key) || '').join(' ');
+      // Recommended sizes/options belong to commerce, not unrelated goods.
+      if (/size|option|purchase|buy|사이즈|옵션|구매/i.test(labels)) return false;
+      if (/recommend|related[-_ ]?(?:product|goods)|advert(?:isement|ising)?|(?:^|[\s_-])ads?(?:$|[\s_-])|추천|광고/i.test(labels)) return true;
+    }
+    return false;
+  };
+  const visibleLoading = element => {
+    if (!visible(element)) return false;
+    // A hidden ancestor must not turn a child spinner into a loading gate.
+    for (let node = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (node.hidden || node.getAttribute('aria-hidden') === 'true'
+        || style.display === 'none' || style.visibility === 'hidden') return false;
+    }
+    return true;
+  };
+  const busy = [...document.querySelectorAll('[aria-busy="true"],[role="progressbar"]')]
+    .some(element => visibleLoading(element) && !unrelatedLoadingRegion(element));
   const commerce = stockEvidence.options?.length || stockEvidence.stockTexts?.length || stockEvidence.purchaseAvailable || hasOptions;
   return {
     href: String(location.href || ""), fullText, pageText: fullText, sellerEvidenceText,

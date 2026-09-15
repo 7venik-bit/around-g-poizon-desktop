@@ -2957,19 +2957,21 @@ async function loadDomesticRetailerResultPage(searchWindow, targetUrl) {
 }
 
 async function loadMusinsaResultPage(searchWindow, targetUrl, query) {
-  const expectedQuery = sanitizeDomesticProductCode(query) || sanitizeDomesticQuery(query);
+  // A fallback title is a phrase, not an article code. Keep its word boundaries.
+  const expectedQuery = sanitizeDomesticQuery(query);
   let navigationError = null;
   const navigation = searchWindow.loadURL(targetUrl).catch((error) => { navigationError = error; });
   for (let attempt = 0; attempt < 60; attempt += 1) {
     if (attempt > 0) await wait(500);
     const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const current = new URL(String(location.href || ""));
-      const expected = ${JSON.stringify(expectedQuery)};
-      const actual = String(current.searchParams.get("keyword") || "").trim();
+      const normalizeQuery = value => String(value || "").replace(/\\s+/g, " ").trim().toUpperCase();
+      const expected = normalizeQuery(${JSON.stringify(expectedQuery)});
+      const actual = normalizeQuery(current.searchParams.get("keyword"));
       const pageText = String(document.body?.innerText || "").slice(0, 50000);
       const exactSearch = /(^|\\.)musinsa\\.com$/i.test(current.hostname)
         && current.pathname.includes("/search/goods")
-        && actual.toUpperCase() === expected.toUpperCase();
+        && expected.length > 0 && actual === expected;
       const cards = document.querySelectorAll('a[href*="/products/"],a[href*="/product/"]').length;
       const explicitEmpty = /검색\\s*결과가?\\s*(?:없|0)|상품이?\\s*(?:없|0)|검색된\\s*상품이\\s*없/i.test(pageText);
       return { href: current.href, text: pageText, cards, explicitEmpty: exactSearch && explicitEmpty,
