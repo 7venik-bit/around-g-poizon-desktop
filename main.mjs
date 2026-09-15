@@ -3813,7 +3813,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           const retailer = detectedRetailer(evidence);
           products.push({
             ...product,
-            sourceStore: String(product.sourceStore || product.store || source.store || ""),
+            // The classified display label (e.g. SSG 브랜드 공식관) is not
+            // the query's source identity. Completion/recovery joins by source.
+            sourceStore: String(source.store || product.sourceStore || product.store || ""),
             // Search cards can omit the manufacturer's code. Preserve the code
             // verified on the detail page so same-model colour cards are merged
             // later and the best matching image/price remains.

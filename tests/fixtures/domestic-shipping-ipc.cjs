@@ -111,7 +111,6 @@ app.whenReady().then(async () => {
     assert.equal(result.ok, true, JSON.stringify(result));
     assert.deepEqual(result.data.technicalWarnings, [], JSON.stringify(result.data.technicalWarnings));
     assert.equal(result.data.sources.length, 4);
-    assert.equal(result.data.partial, false, JSON.stringify(result.data.sources));
     for (const [store,,url] of cases) {
       const product = result.data.products.find(p => modules.domesticProductUrlIdentity(p.url) === modules.domesticProductUrlIdentity(url));
       assert.ok(product, JSON.stringify({store, sources:result.data.sources, products:result.data.products}));
@@ -121,6 +120,7 @@ app.whenReady().then(async () => {
       assert.ok(!product.sizes.some(s => s.quantity === 2), 'purchase limit is not inventory');
       console.log(JSON.stringify({productionPreload:true, productionIpc:true, store, price:product.price, sizes:product.sizes, offline:true}));
     }
+    assert.equal(result.data.partial, false, JSON.stringify({sources:result.data.sources, products:result.data.products}));
     assert.ok(requests.some(url => url.includes('/hold.svg')));
     assert.ok(windows.length >= 4, 'search must use real retailer frames');
     console.log(JSON.stringify({productionSearchComplete:true, retailers:4, offline:true}));

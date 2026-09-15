@@ -355,7 +355,7 @@ for (const ErrorType of [SyntaxError, ReferenceError, TypeError]) test(`IPC expo
   assert.equal(source.verificationDiagnostics.errorMessage, 'collector fixture error');
   assert.equal(source.absenceConfirmed, false);
   assert.equal(source.searchCompleted, false);
-  assert.ok(response.data.products.some(p => p.store === '롯데온'));
+  assert.ok(response.data.products.some(p => (p.sourceStore || p.store) === '롯데온'));
 });
 
 test('Electron-wrapped capture exceptions remain script failures in the production IPC', async t => {
@@ -365,6 +365,17 @@ test('Electron-wrapped capture exceptions remain script failures in the producti
   assert.equal(response.data.sources[0].verificationDiagnostics.errorMessage, 'Script failed to execute');
   assert.equal(response.data.sources[0].absenceConfirmed, false);
   assert.equal(response.data.partial, true);
+});
+
+test('SSG classification preserves query-source identity for completed stock in the IPC', async t => {
+  const f = fixture(t);
+  const response = await f.installHandler([channels[1]]).run();
+  assert.equal(response.ok, true);
+  assert.equal(response.data.products.length, 1);
+  assert.match(response.data.products[0].store, /^SSG/);
+  assert.equal(response.data.products[0].sourceStore, 'SSG');
+  assert.equal(response.data.products[0].stockVerified, true);
+  assert.equal(response.data.partial, false, JSON.stringify(response.data));
 });
 
 test('the shared IPC finishes every retailer while new stock options continue past four minutes', async t => {
