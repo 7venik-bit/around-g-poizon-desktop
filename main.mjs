@@ -1633,38 +1633,38 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         // product, but identity alone must never become verified inventory.
         const initialStock = snapshot.stockEvidence ? normalizeRenderedStockEvidence(snapshot.stockEvidence) : {};
         const verifiedProduct = {
-...candidate, ...initialStock,
-inStock: null, stockVerified: false,
-stockCoverage: initialStock.sizes?.length ? "partial" : "unknown",
-stockStatus: "unknown", detailVerificationPending: true,
-domesticSellerVerified: true,
-domesticSellerEvidence: String(snapshot.sellerEvidenceText || "").slice(0, 240),
-brandVerifiedFromCard: brandVerified,
-articleNumber: articleVerified ? sanitizeDomesticProductCode(articleNumber) : "",
-detectedArticleNumber: articleVerified ? sanitizeDomesticProductCode(articleNumber) : "",
-articleNumberVerified: articleVerified,
-titleVerifiedFromDetail: productTitleVerified,
-matchBasis: articleVerified ? "article" : "brand_title",
+          ...candidate, ...initialStock,
+          inStock: null, stockVerified: false,
+          stockCoverage: initialStock.sizes?.length ? "partial" : "unknown",
+          stockStatus: "unknown", detailVerificationPending: true,
+          domesticSellerVerified: true,
+          domesticSellerEvidence: String(snapshot.sellerEvidenceText || "").slice(0, 240),
+          brandVerifiedFromCard: brandVerified,
+          articleNumber: articleVerified ? sanitizeDomesticProductCode(articleNumber) : "",
+          detectedArticleNumber: articleVerified ? sanitizeDomesticProductCode(articleNumber) : "",
+          articleNumberVerified: articleVerified,
+          titleVerifiedFromDetail: productTitleVerified,
+          matchBasis: articleVerified ? "article" : "brand_title",
         };
         const approvedIndex = approved.length;
         approved.push(verifiedProduct);
         await onActivity?.({products: [...approved], completedProducts: checkedCount + failedCount,
-totalProducts: candidates.length, detailVerified: true, detailUrl: productUrl,
-failedDetails: failedCount, detailFailure: ""});
+          totalProducts: candidates.length, detailVerified: true, detailUrl: productUrl,
+          failedDetails: failedCount, detailFailure: ""});
         let optionStock = null;
         let optionError = null;
         try {
-const savedOptions = recoveryOptions[candidate.url];
-optionStock = await collectRenderedProductStock(evidenceWindow, "네이버 패션타운", generation, onActivity,
-  savedOptions && Date.now() - Date.parse(savedOptions.checkedAt || '') < 30 * 60_000 ? savedOptions.options : [], savedOptions?.branches || [], candidate.url);
+          const savedOptions = recoveryOptions[candidate.url];
+          optionStock = await collectRenderedProductStock(evidenceWindow, "네이버 패션타운", generation, onActivity,
+            savedOptions && Date.now() - Date.parse(savedOptions.checkedAt || '') < 30 * 60_000 ? savedOptions.options : [], savedOptions?.branches || [], candidate.url);
         } catch (error) {
-if (error?.securityVerificationRequired || error?.loginRequired || domesticSearchCanceled(generation)) throw error;
-optionError = error;
+          if (error?.securityVerificationRequired || error?.loginRequired || domesticSearchCanceled(generation)) throw error;
+          optionError = error;
         }
         approved[approvedIndex] = {
-...verifiedProduct, ...(optionStock || {}),
-detailVerificationPending: !optionStock || !stockObservationComplete(optionStock),
-...(optionError ? {detailVerificationReason: String(optionError.message || "stock_collection_failed")} : {}),
+          ...verifiedProduct, ...(optionStock || {}),
+          detailVerificationPending: !optionStock || !stockObservationComplete(optionStock),
+          ...(optionError ? {detailVerificationReason: String(optionError.message || "stock_collection_failed")} : {}),
         };
       } catch (error) {
         failedCount += 1;
@@ -2733,12 +2733,12 @@ async function waitForDomesticDetailReady(searchWindow, storeName, productUrl, g
         // return a visible exact product document before options are ready.
         // Metadata-only skeletons cannot satisfy the visible-evidence gate.
         const identityReady = readiness === "product" && storeName === "네이버 패션타운"
-&& Boolean(observed.visibleTitleText || observed.labeledText)
-&& strictProductArticleIdentityMatch({
-  titleText: observed.visibleTitleText || "",
-  labeledText: observed.labeledText || "",
-  structuredCodes: observed.structuredCodes || [],
-}, articleNumber);
+          && Boolean(observed.visibleTitleText || observed.labeledText)
+          && strictProductArticleIdentityMatch({
+            titleText: observed.visibleTitleText || "",
+            labeledText: observed.labeledText || "",
+            structuredCodes: observed.structuredCodes || [],
+          }, articleNumber);
         if (observed.ready || identityReady) return observed;
       }
     }
