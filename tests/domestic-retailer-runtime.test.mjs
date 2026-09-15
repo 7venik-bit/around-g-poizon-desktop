@@ -22,7 +22,7 @@ const channels = [
   ['롯데온', 'https://www.lotteon.com/search/search/search.ecn?render=search&q=SR123UPS11', 'https://www.lotteon.com/p/product/LO100'],
 ];
 
-function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, executeFrozen = false, empty = false, lateSecond = 0, pendingPrice = 0, pages = {} } = {}) {
+function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, executeFrozen = false, captureError = false, empty = false, lateSecond = 0, pendingPrice = 0, pages = {} } = {}) {
   let now = 0, nextId = 0;
   const timers = new Map(), windows = [], captures = [], navigations = [];
   const setTimer = (fn, ms = 0) => { const id = ++nextId; timers.set(id, { fn, at: now + ms }); return id; };
@@ -44,6 +44,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
         executeJavaScript: async code => {
           if (this.destroyed) throw new Error('Object has been destroyed');
           if (executeFrozen) return new Promise(() => {});
+          if (captureError && code.includes('const productCards = []')) throw new Error('Script failed to execute');
           if (code.includes('const productCards = []')) captures.push({ at: now, url: this.webContents.getURL() });
           try { new Script(code); } catch (error) { console.error(error.stack); throw error; }
           return this.dom.window.eval(code);
@@ -133,6 +134,10 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
   const search = list => drive(context.addRenderedSearchCounts({products: [], sources: list.map(([store, searchUrl]) => ({store, searchUrl, searchQuery:'SR123UPS11',renderCount:true,linkOnly:true}))}, 'SR123UPS11', '데상트', '카라 셔츠'));
   function installHandler(list = channels) {
     const handlers = new Map(), events = [];
+    // Load the shipping entry-point dependencies too. The restored collector
+    // used to be absent here, silently selecting the IPC's otherwise-dead path.
+    const restoredStart = main.indexOf('async function september10AddMatchConfidence(');
+    if (restoredStart >= 0) runInContext(main.slice(restoredStart, main.indexOf('\nlet store;', restoredStart)), context);
     Object.assign(context, {
       ipcMain: { handle: (name, fn) => handlers.set(name, fn) },
       session: { fromPartition: () => ({ clearCache: async () => {} }) },
@@ -147,6 +152,101 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
   }
   return { search, context, drive, captures, navigations, installHandler, now: () => now };
 }
+
+test('Naver navigation diagnostics retain a rendered page that never exposes results', async t => {
+  const f = fixture(t);
+  f.context.BrowserWindow.prototype.loadURL = async function(url) {
+    this.dom.reconfigure({url});
+    this.dom.window.document.body.innerHTML = '<main>상품 검색 화면을 준비하고 있습니다</main>';
+  };
+  const result = await f.search([channels[0]]);
+  const source = result.sources[0], d = source.verificationDiagnostics;
+  assert.equal(source.verificationReason, 'naver_result_not_settled');
+  assert.equal(source.verificationStage, 'naver_result_navigation');
+  assert.equal(d.expectedPage, true);
+  assert.equal(d.productCardCount, 0);
+  assert.equal(d.inspectedFrames, 60);
+  assert.ok(d.bodyLength > 0);
+  assert.equal(d.resolvedUrl, channels[0][1]);
+  assert.equal(source.absenceConfirmed, false);
+  assert.equal('text' in d, false, 'do not copy the page body into diagnostics');
+});
+
+test('Naver accepts a visible external official-store card when the query appears only in its input', async t => {
+  const f = fixture(t);
+  f.context.BrowserWindow.prototype.loadURL = async function(url) {
+    this.dom.reconfigure({url});
+    this.dom.window.document.body.innerHTML = '<main><input aria-label="검색" value="SR123UPS11">'
+      + '<ul><li><a href="https://dk-on.com/DESCENTE/detail.html?goodsNo=123"><img alt="데상트 카라 셔츠"></a>'
+      + '<strong>데상트 카라 셔츠</strong><span>브랜드직영몰</span><span>84,550원</span></li></ul></main>';
+  };
+  const window = new f.context.BrowserWindow();
+  const result = await f.drive(f.context.loadNaverFashionTownResultPage(window,channels[0][1],'SR123UPS11'));
+  assert.equal(result.ok,true,JSON.stringify(result));
+});
+
+test('Lotte product clicks wait for the actual navigation instead of rejecting after two seconds', async t => {
+  const f = fixture(t);
+  runInContext(section('async function clickRenderedProductCard(', '\nfunction browserWindowUsable('),f.context);
+  const window = new f.context.BrowserWindow();
+  const target = channels[2][2];
+  window.dom.window.HTMLElement.prototype.scrollIntoView = () => {};
+  window.dom.window.HTMLElement.prototype.getBoundingClientRect = () => ({left:20,top:20,width:160,height:80});
+  await window.loadURL(channels[2][1]);
+  window.webContents.sendInputEvent = event => {
+    if (event.type === 'mouseUp') f.context.setTimeout(() => window.dom.reconfigure({url:target}),5000);
+  };
+  const result = await f.drive(f.context.clickRenderedProductCard(window,target,channels[2][1]));
+  assert.equal(result,true,'the exact observed product opens after 5 seconds');
+  assert.equal(window.webContents.getURL(),target);
+});
+
+test('a product click that opens the wrong product stops without repeating the click', async t => {
+  const f = fixture(t);
+  runInContext(section('async function clickRenderedProductCard(', '\nfunction browserWindowUsable('),f.context);
+  const window = new f.context.BrowserWindow();
+  window.dom.window.HTMLElement.prototype.scrollIntoView = () => {};
+  window.dom.window.HTMLElement.prototype.getBoundingClientRect = () => ({left:20,top:20,width:160,height:80});
+  await window.loadURL(channels[2][1]);
+  let clicks = 0;
+  window.webContents.sendInputEvent = event => {
+    if (event.type === 'mouseUp') {
+      clicks++;
+      window.dom.reconfigure({url:'https://www.lotteon.com/p/product/WRONG'});
+    }
+  };
+  const result = await f.drive(f.context.clickRenderedProductCard(window,channels[2][2],channels[2][1]));
+  assert.equal(result,false,'a different product must never be accepted');
+  assert.equal(clicks,1,'observe the existing navigation without resubmitting it');
+  assert.ok(f.now() >= 25000 && f.now() < 30000,'navigation observation must remain bounded');
+});
+
+for (const channel of channels.slice(1)) test(`${channel[0]} preserves navigation and frame errors instead of discarding them`, async t => {
+  const f = fixture(t);
+  f.context.BrowserWindow.prototype.loadURL = async function(url) {
+    this.dom.reconfigure({url});
+    this.webContents.mainFrame.executeJavaScript = async () => { throw new Error('FRAME_NOT_AVAILABLE'); };
+    throw new Error('net::ERR_CONNECTION_RESET');
+  };
+  const result = await f.search([channel]);
+  const d = result.sources[0].verificationDiagnostics;
+  assert.equal(d.stage, 'retailer_result_navigation');
+  assert.equal(d.navigationError, 'net::ERR_CONNECTION_RESET');
+  assert.equal(d.inspectionError, 'FRAME_NOT_AVAILABLE');
+  assert.equal(d.inspectedFrames, 0);
+  assert.equal(result.sources[0].absenceConfirmed, false);
+});
+
+test('a frozen retailer frame retains its navigation stage after the watchdog destroys the window', async t => {
+  const f = fixture(t, {executeFrozen: true});
+  const result = await f.search([channels[2]]);
+  const source = result.sources[0];
+  assert.equal(source.verificationReason, 'collection_stalled');
+  assert.equal(source.verificationStage, 'retailer_result_navigation');
+  assert.equal(source.verificationDiagnostics.inspectedFrames, 0);
+  assert.equal(source.verificationDiagnostics.resolvedUrl, channels[2][1]);
+  assert.equal(source.absenceConfirmed, false);
+});
 
 test('production Naver matching retains Adidas Originals JH9976 with Korean retailer brand wording', async t => {
   const f=fixture(t);
@@ -331,6 +431,46 @@ test('the complete IPC path keeps progressing past two minutes and returns every
   assert.equal(response.data.products.length, 3,JSON.stringify(response.data.sources));
   assert.ok(f.now() > 120_000, 'exercise the former overall cutoff');
   assert.ok(response.data.sources.every(s => !s.verificationFailed));
+  assert.equal(response.data.technicalWarnings.length, 0, JSON.stringify(response.data.technicalWarnings));
+  assert.ok(h.events.some(event => event.phase === 'checkpoint'), 'shipping IPC must retain stock checkpoints');
+});
+
+for (const ErrorType of [SyntaxError, ReferenceError, TypeError]) test(`IPC exposes ${ErrorType.name} as a collector error and continues the next retailer`, async t => {
+  const f = fixture(t);
+  const original = f.context.analyzeRenderedChannelProducts;
+  f.context.analyzeRenderedChannelProducts = (content, store, ...rest) => {
+    if (store === 'SSG') throw new ErrorType('collector fixture error');
+    return original(content, store, ...rest);
+  };
+  const response = await f.installHandler(channels.slice(1)).run();
+  assert.equal(response.ok, true);
+  const source = response.data.sources.find(s => s.store === 'SSG');
+  assert.equal(source.verificationReason, 'result_script_failed');
+  assert.equal(source.verificationStage, 'result_capture');
+  assert.equal(source.verificationDiagnostics.errorMessage, 'collector fixture error');
+  assert.equal(source.absenceConfirmed, false);
+  assert.equal(source.searchCompleted, false);
+  assert.ok(response.data.products.some(p => (p.sourceStore || p.store) === '롯데온'));
+});
+
+test('Electron-wrapped capture exceptions remain script failures in the production IPC', async t => {
+  const f = fixture(t, {captureError:true});
+  const response = await f.installHandler([channels[0]]).run();
+  assert.equal(response.data.sources[0].verificationReason, 'result_script_failed');
+  assert.equal(response.data.sources[0].verificationDiagnostics.errorMessage, 'Script failed to execute');
+  assert.equal(response.data.sources[0].absenceConfirmed, false);
+  assert.equal(response.data.partial, true);
+});
+
+test('SSG classification preserves query-source identity for completed stock in the IPC', async t => {
+  const f = fixture(t);
+  const response = await f.installHandler([channels[1]]).run();
+  assert.equal(response.ok, true);
+  assert.equal(response.data.products.length, 1);
+  assert.match(response.data.products[0].store, /^SSG/);
+  assert.equal(response.data.products[0].sourceStore, 'SSG');
+  assert.equal(response.data.products[0].stockVerified, true);
+  assert.equal(response.data.partial, false, JSON.stringify(response.data));
 });
 
 test('the shared IPC finishes every retailer while new stock options continue past four minutes', async t => {
@@ -915,6 +1055,30 @@ test('a stalled later detail retains the completed product checkpoint', async t 
   f.context.clickRenderedProductCard=async(...args)=>{visited++;if(visited===2)return new Promise(()=>{});return original(...args);};
   const result=await f.search([channels[2]]);
   assert.equal(result.products.length,1);assert.equal(result.sources[0].verificationStage,'product_detail');assert.equal(result.sources[0].verificationPending,true);
+});
+
+for (const [store, baseSearch, baseProduct] of channels) test(`${store}: failed detail visits cannot keep renewing both search watchdogs`, async t => {
+  const searchUrl = `${baseSearch}&fixture=failed-details`;
+  const productUrls = Array.from({length:12}, (_, index) => baseProduct.replace(/123$|100$/, String(1000 + index)));
+  const pages = {[searchUrl]: `<main><p>전체 12개</p><ul>${productUrls.map(url =>
+    `<li><a href="${url}"><img alt="데상트 SR123UPS11 카라 셔츠"></a><strong>데상트 SR123UPS11 카라 셔츠</strong><span>본사직영 롯데백화점</span><span>84,550원</span></li>`).join('')}</ul></main>`};
+  for (const url of productUrls) pages[url] = '<main>상품 정보를 불러오는 중</main>';
+  const nextUrl = 'https://www.lotteon.com/search/search/search.ecn?q=next&fixture=empty';
+  pages[nextUrl] = '<main>검색 결과가 없습니다</main>';
+  const f = fixture(t, {pages});
+  const h = f.installHandler([[store,searchUrl],['롯데온',nextUrl]]);
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('), f.context);
+  const response = await h.run();
+  t.diagnostic(`12 failing detail pages: ${f.now()} ms virtual elapsed`);
+  assert.equal(response.data.sources[0].verificationReason, 'collection_stalled');
+  assert.ok(response.data.sources[0].verificationDiagnostics.failedDetails > 0);
+  assert.equal(response.data.sources[0].verificationDiagnostics.totalProducts, 12);
+  assert.equal(response.data.sources[0].verificationDiagnostics.lastDetailFailure, 'product_detail_not_ready');
+  assert.equal(response.data.sources[0].absenceConfirmed, false);
+  assert.equal(response.data.partial, true);
+  assert.equal(response.data.sources[1].absenceConfirmed, true, 'the next retailer still runs');
+  assert.ok(f.now() < 150_000, 'failed visits are not new observed detail/stock progress');
+  assert.ok(f.navigations.filter(url => productUrls.includes(url)).length < 12, 'do not keep opening a stalled retailer');
 });
 
 test('live Naver colour radios pair with all thirteen sizes without repeating sticky controls', async t => {

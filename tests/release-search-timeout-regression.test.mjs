@@ -5,6 +5,15 @@ import { readFile } from "node:fs/promises";
 const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 const releasePatch = await readFile(new URL("../scripts/patch-naver-result-link-finalizer.mjs", import.meta.url), "utf8");
 
+test("Windows validation applies every release source patch and verifier in release order", async () => {
+  const commands = async name => {
+    const workflow = await readFile(new URL(`../.github/workflows/${name}.yml`, import.meta.url), "utf8");
+    return [...workflow.matchAll(/^\s+run: node (scripts\/(?:patch|verify)[^\s]+\.mjs)\s*$/gm)].map(match => match[1]);
+  };
+  assert.deepEqual(await commands('windows-package-test'),await commands('release'),
+    'real Electron verification must run against the same source transformations as release');
+});
+
 test("release source keeps exactly one guarded Naver result navigation", () => {
   assert.equal((main.match(/const resultPage = await loadNaverFashionTownResultPage\(/g) || []).length, 1);
   assert.match(releasePatch, /if \(!source\.includes\(naverResultNavigationMarker\)\) replaceOnce/);

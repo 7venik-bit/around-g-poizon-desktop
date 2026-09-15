@@ -11,6 +11,7 @@
     fashion_town_click_failed: "패션타운 진입 실패",
     search_submission_failed: "검색 실행 확인 실패",
     result_parse_failed: "검색 결과 판독 실패",
+    result_script_failed: "상품 수집 코드 실행 오류",
     result_analysis_failed: "검색 결과 분석 실패",
     page_load_timeout: "검색 페이지 응답 지연",
     collection_stalled: "상품·재고 수집 응답 지연",

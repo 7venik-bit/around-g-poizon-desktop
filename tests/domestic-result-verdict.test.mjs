@@ -75,6 +75,14 @@ test("result summary uses the same canonical verdict", () => {
   assert.equal(missing.className, "missing");
 });
 
+test("collector code errors are not labeled as retailer connection failures or absence", () => {
+  const result = sourceVerdict({store:'네이버 패션타운', count:0, verificationFailed:true,
+    verificationReason:'result_script_failed', verificationStage:'result_capture'});
+  assert.equal(result.state, 'failed');
+  assert.equal(result.label, '상품 수집 코드 실행 오류 · result_script_failed');
+  assert.equal(result.stage, 'result_capture');
+});
+
 test("result summary preserves the next-day access cooldown label", () => {
   const cooldown = resultPresentation({
     accessLimitedUntil: "2026-08-31T00:05:00.000Z",

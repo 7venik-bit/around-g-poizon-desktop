@@ -74,6 +74,9 @@
       .domestic-inline-empty{padding:8px 0!important;color:#7b8794!important;font-size:11px!important;text-align:left!important}
       .domestic-inline-empty.error{color:#b42318!important;font-weight:700!important}
       .domestic-inline-warning{padding:5px 0!important;color:#9a6700!important;font-size:8px!important;font-weight:700!important}
+      .domestic-inline-diagnostics{margin:6px 0!important;font-size:12px!important;color:#334155!important;white-space:normal!important}
+      .domestic-inline-diagnostics summary{cursor:pointer!important;font-weight:700!important}
+      .domestic-inline-diagnostics pre{margin:8px 0!important;padding:10px!important;background:#f1f5f9!important;white-space:pre-wrap!important;overflow-wrap:anywhere!important;font:inherit!important;user-select:text!important}
 
       /* Explorer/popular views also use the same compact rows without thumbnails. */
       .domestic-source-list.sourcing-product-list{display:flex!important;flex-direction:column!important;gap:0!important;border:0!important;border-radius:0!important;overflow:visible!important;background:transparent!important;box-shadow:none!important}
@@ -159,7 +162,51 @@
     if (source?.officialStatus && !productUrl) {
       return `<button type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}" data-official-result-key="${encodeURIComponent(contextKey)}">${label}</button>`;
     }
+    try {
+      const target = new URL(openUrl);
+      if (target.protocol === "https:" && /(?:^|\.)(?:naver\.com|ssg\.com|lotteon\.com)$/i.test(target.hostname)
+        && typeof window.aroundG?.openDomesticResult === "function") {
+        return `<button type="button" data-domestic-result-url="${encodeURIComponent(openUrl)}" title="앱 검색 세션에서 열기">${label}</button>`;
+      }
+    } catch {}
     return `<button type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
+  }
+
+  function renderSearchDiagnostics(sources) {
+    const failures = sources.filter(source => source?.verificationReason || source?.verificationFailed
+      || source?.securityVerificationRequired || source?.loginRequired);
+    if (!failures.length) return "";
+    const safeUrl = value => {
+      try {
+        const url = new URL(value);
+        if (!/^https?:$/.test(url.protocol)) return "";
+        const params = new URLSearchParams();
+        for (const key of ["q", "query", "keyword", "itemId", "productNo"]) {
+          if (url.searchParams.has(key)) params.set(key, url.searchParams.get(key));
+        }
+        return url.origin + url.pathname + (params.size ? `?${params}` : "");
+      } catch { return ""; }
+    };
+    const blocks = failures.map(source => {
+      const d = source.verificationDiagnostics || {};
+      const lines = [source.store || "판매처", `검색어: ${source.searchQuery || "-"}`,
+        `오류: ${source.verificationReason || (source.loginRequired ? "login_required" : source.securityVerificationRequired ? "security_verification_required" : "unknown")}`,
+        `단계: ${source.verificationStage || d.stage || "unknown"}`];
+      const fields = [
+        ["요청 주소", safeUrl(d.targetUrl || source.searchUrl)], ["실제 주소", safeUrl(d.resolvedUrl)],
+        ["페이지 상태", d.documentReadyState], ["검색 주소 일치", d.expectedPage],
+        ["화면 확인 횟수", d.inspectedFrames], ["화면 글자 수", d.bodyLength], ["상품 링크 수", d.productCardCount],
+        ["표시 결과 수", d.visibleResultCount], ["양수 결과 표시", d.positiveCount], ["상품 없음 표시", d.explicitEmpty],
+        ["접속 오류", d.navigationError], ["화면 읽기 오류", d.inspectionError], ["수집 오류", d.errorMessage],
+        ["상세 처리 수", d.processedProducts], ["상세 전체 수", d.totalProducts], ["상세 실패 수", d.failedDetails],
+        ["마지막 상세 주소", safeUrl(d.lastDetailUrl)], ["마지막 상세 오류", d.lastDetailFailure],
+      ];
+      for (const [label, value] of fields) {
+        if (value !== undefined && value !== null && value !== "") lines.push(`${label}: ${String(value).slice(0, 1600)}`);
+      }
+      return `<pre>${safeText(lines.join("\n"))}</pre>`;
+    });
+    return `<details class="domestic-inline-diagnostics"><summary>검색 진단 보기 (${failures.length})</summary>${blocks.join("")}</details>`;
   }
 
   function renderStockCell(product = {}) {
@@ -202,6 +249,7 @@
 
     const products = Array.isArray(result.products) ? result.products.filter((product) => product && approvedDomesticProduct(product)) : [];
     const sources = Array.isArray(result.sources) ? result.sources : [];
+    const diagnostics = renderSearchDiagnostics(sources);
     const sourceForProduct = (product) => sources.find((source) => sourceOwnsProduct(source, product)) || {};
 
     const rows = products.map((product) => {
@@ -266,8 +314,8 @@
       ? `<div class="domestic-inline-warning">일부 판매처 추가 확인 실패 · 확보된 검색 결과를 표시합니다.</div>`
       : "";
     return rows.length
-      ? `${warning}${timestamp}<div class="domestic-inline-results"><div class="domestic-inline-head"><span>판매처</span><span>상품명</span><span>사이즈·재고</span><span>품번</span><span>가격</span><span>링크</span></div>${rows.join("")}</div>`
-      : `${warning}${timestamp}<div class="domestic-inline-empty">${result.partial ? "재고 확인이 끝나지 않았습니다. 미완료 검색을 이어갈 수 있습니다." : "일치하는 국내 판매 상품 없음"}</div>`;
+      ? `${warning}${timestamp}${diagnostics}<div class="domestic-inline-results"><div class="domestic-inline-head"><span>판매처</span><span>상품명</span><span>사이즈·재고</span><span>품번</span><span>가격</span><span>링크</span></div>${rows.join("")}</div>`
+      : `${warning}${timestamp}${diagnostics}<div class="domestic-inline-empty">${result.partial ? "재고 확인이 끝나지 않았습니다. 미완료 검색을 이어갈 수 있습니다." : "일치하는 국내 판매 상품 없음"}</div>`;
   }
 
   function sizeSalesValue(product) {

@@ -158,6 +158,19 @@ test('new verified work keeps the frontend waiting for the complete search', asy
   assert.equal(result.data.partial, undefined);
 });
 
+test('checkpoint notifications retain the current retailer and detail failure progress', async t => {
+  const f = createFixture(t);
+  const pending = deferred();
+  f.window.aroundG.searchDomestic = () => pending.promise;
+  const running = f.run();
+  await tick();
+  f.api.progress({phase:'searching',source:'네이버 패션타운 · 상세 3/60 · 응답 지연 3건'});
+  f.api.progress({phase:'checkpoint',source:'확인 결과 저장',checkpoint:{products:[],sources:[]}});
+  assert.match(f.overlay().querySelector('.domestic-overlay-guide').textContent, /네이버 패션타운.*3\/60.*응답 지연 3건/);
+  pending.resolve({ok:true,data:{products:[],sources:[]}});
+  await running;
+});
+
 test('repeated progress revisions and unrelated requests cannot extend the frontend watchdog', async t => {
   const f = createFixture(t);
   f.window.aroundG.searchDomestic = input => {
@@ -230,7 +243,7 @@ test('retailer checkpoints do not replace the selected-product batch count with 
   assert.match(f.overlay().querySelector('.domestic-overlay-count').textContent, /0\s*\/\s*2개/);
   f.api.progress({phase:'checkpoint',source:'확인 결과 저장',checkpoint:{products:[],sources:[{store:'무신사',countVerified:true}]}});
   assert.match(f.overlay().querySelector('.domestic-overlay-count').textContent, /0\s*\/\s*2개/);
-  assert.match(f.overlay().querySelector('.domestic-overlay-guide').textContent, /저장/);
+  assert.match(f.overlay().querySelector('.domestic-overlay-guide').textContent, /보관/);
   f.api.stop();
   response.resolve({ok:false,canceled:true});
   await run;

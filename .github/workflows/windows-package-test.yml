@@ -73,6 +73,12 @@ jobs:
       - name: Verify simplified official and Naver search
         run: node scripts/verify-simplify-official-naver-search.mjs
 
+      - name: Apply Naver result-link finalizer
+        run: node scripts/patch-naver-result-link-finalizer.mjs
+
+      - name: Verify Naver result-link finalizer
+        run: node scripts/verify-naver-result-link-finalizer.mjs
+
       - name: Apply next-day access cooldown
         run: node scripts/patch-domestic-access-next-day.mjs
 
@@ -118,16 +124,35 @@ jobs:
       - name: Test local category search and explicit POIZON review separation
         run: node --test tests/category-excel-runtime.test.mjs tests/favorite-category-search-v2.10.294.test.mjs tests/live-poizon-crosscheck.test.mjs
 
+      - name: Assign a distinct validation version
+        id: candidate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: release } = await github.rest.repos.getLatestRelease(context.repo);
+            const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(release.tag_name);
+            if (!match) throw new Error(`Expected a stable release version, got ${release.tag_name}`);
+            const version = `${match[1]}.${match[2]}.${Number(match[3]) + 1}-rc.${context.issue.number}.${context.runNumber}.${process.env.GITHUB_RUN_ATTEMPT}`;
+            await exec.exec('npm', ['version', version, '--no-git-tag-version', '--ignore-scripts']);
+            core.setOutput('version', version);
+            core.info(`Validation installer: ${version}; stable release remains ${release.tag_name}`);
+
       - name: Build Windows installer
         run: npx electron-builder --win nsis --publish never
 
       - name: Verify package outputs
         shell: pwsh
+        env:
+          CANDIDATE_VERSION: ${{ steps.candidate.outputs.version }}
+          CANDIDATE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           $version = node -p "require('./package.json').version"
+          if ($version -ne $env:CANDIDATE_VERSION) {
+            throw "Built package version does not match the validation version."
+          }
           $installers = @(Get-ChildItem -Path dist -File -Filter "*.exe")
           $blockmaps = @(Get-ChildItem -Path dist -File -Filter "*.exe.blockmap")
-          $latest = Get-Item -Path "dist/latest.yml" -ErrorAction SilentlyContinue
+          $updateInfo = Get-Item -Path "dist/latest.yml" -ErrorAction SilentlyContinue
 
           if ($installers.Count -ne 1) {
             throw "Expected exactly one Windows installer, found $($installers.Count)."
@@ -135,12 +160,36 @@ jobs:
           if ($blockmaps.Count -ne 1) {
             throw "Expected exactly one installer blockmap, found $($blockmaps.Count)."
           }
-          if ($null -eq $latest) {
+          if ($null -eq $updateInfo) {
             throw "dist/latest.yml was not generated."
           }
 
-          $latestContent = Get-Content -LiteralPath $latest.FullName -Raw
-          if ($latestContent -notmatch "version:\s*$([regex]::Escape($version))") {
+          $updateContent = Get-Content -LiteralPath $updateInfo.FullName -Raw
+          if ($updateContent -notmatch "version:\s*$([regex]::Escape($version))") {
             throw "latest.yml does not contain version $version."
           }
-          Write-Host "Windows installer, blockmap, and latest.yml were generated for $version."
+          $installer = $installers[0]
+          $manifest = [ordered]@{
+            version = $version
+            sourceCommit = $env:CANDIDATE_SOURCE_SHA
+            buildCommit = $env:GITHUB_SHA
+            runId = $env:GITHUB_RUN_ID
+            installer = $installer.Name
+            sizeBytes = $installer.Length
+            sha256 = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            validation = "Automated regression and Electron fixture checks passed; live retailer verification pending."
+          }
+          $manifest | ConvertTo-Json | Set-Content -LiteralPath "dist/validation-build.json" -Encoding utf8
+          Write-Host "Windows validation installer and local update metadata were generated for $version."
+
+      - name: Save validation installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Around-G-POIZON-validation-${{ steps.candidate.outputs.version }}
+          path: |
+            dist/*.exe
+            dist/*.exe.blockmap
+            dist/latest.yml
+            dist/validation-build.json
+          if-no-files-found: error
+          retention-days: 14
