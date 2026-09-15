@@ -79,15 +79,15 @@ export function brandSearchQueries({ strategy = "brand_code", brand = "", articl
   const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
 
   // 모든 국내 쇼핑몰은 사용자 지정 고정 우선순위를 사용한다.
-  // 1순위: 상품명 + 상품코드
+  // 1순위: 상품코드
   // 2순위: 상품명
-  // 3순위: 상품코드
+  // 3순위: 상품명 + 상품코드
   // 이전 검색 성공률(profile)이나 strategy 값으로 순서를 변경하지 않는다.
   // 호출부는 현재 검색 결과가 확정적으로 없을 때에만 다음 검색어로 진행한다.
   const fixedPriority = [
-    clean([title, articleNumber].filter(Boolean).join(" ")),
-    clean(title),
     clean(articleNumber),
+    clean(title),
+    clean([title, articleNumber].filter(Boolean).join(" ")),
   ];
 
   return [...new Set(fixedPriority.filter(Boolean))];

@@ -29,14 +29,14 @@ test("정확 일치가 없으면 다음 검색방식으로 순환하고 거짓 �
   assert.equal(selectBrandSearchStrategy(profile), "code_only");
 });
 
-test("검색전략에 따라 첫 검색어만 바꾸고 나머지 교차검색 후보도 보존한다", () => {
+test("모든 판매처는 정확한 상품코드를 먼저 검색하고 교차검색 후보도 보존한다", () => {
   const queries = brandSearchQueries({
     strategy: "brand_title", brand: "Descente", articleNumber: "SR123UTS11",
     title: "티프 폴로 반팔 티셔츠", query: "Descente SR123UTS11 티프 폴로 반팔 티셔츠",
   });
-  assert.equal(queries[0], "Descente 티프 폴로 반팔 티셔츠");
-  assert.ok(queries.includes("Descente SR123UTS11"));
-  assert.ok(queries.includes("SR123UTS11"));
+  assert.equal(queries[0], "SR123UTS11");
+  assert.equal(queries[1], "티프 폴로 반팔 티셔츠");
+  assert.equal(queries[2], "티프 폴로 반팔 티셔츠 SR123UTS11");
 });
 
 test("저장 프로필은 최근 사용 브랜드 500개까지만 유지한다", () => {

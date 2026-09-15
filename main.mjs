@@ -2950,7 +2950,7 @@ async function loadDomesticRetailerResultPage(searchWindow, targetUrl) {
       expectedPage: state.expectedPage, explicitEmpty: state.explicitEmpty });
     const access = domesticPageAccessState(state?.text, state?.cards);
     if (access.verificationReason) return {ok: false, ...access, resolvedUrl: state?.href};
-    if (state?.ready) return {ok: true, resolvedUrl: state.href};
+    if (state?.ready) return {ok: true, resolvedUrl: state.href, explicitEmpty: state.explicitEmpty};
     await wait(500);
   }
   return {ok: false, verificationReason: "page_load_timeout", resolvedUrl: searchWindow.webContents.getURL()};
@@ -3128,6 +3128,13 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       if (domesticRetailerSource) {
         const loaded = await loadDomesticRetailerResultPage(searchWindow, initialUrl);
         if (!loaded.ok) return renderedSearchFailure(loaded.verificationReason, searchWindow, {...loaded, searchSubmitted: true});
+        // An empty-result message on the exact submitted SSG/LotteON URL is an
+        // authoritative completed result. Do not send it into card capture,
+        // where the expected zero links previously expired as collection_stalled.
+        if (loaded.explicitEmpty) return {
+          count: 0, products: [], absenceConfirmed: true, searchCompleted: true,
+          searchSubmitted: true, resolvedSearchUrl: loaded.resolvedUrl,
+        };
       }
       if (musinsaSource) {
         const resultPage = await loadMusinsaResultPage(
