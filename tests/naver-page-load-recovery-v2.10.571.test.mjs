@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
+const main = (await readFile(new URL("../main.mjs", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 const patch = await readFile(new URL("../scripts/patch-naver-result-link-finalizer.mjs", import.meta.url), "utf8");
 
 test("네이버는 홈 세션을 만든 뒤 패션타운 결과 주소를 연다", () => {
