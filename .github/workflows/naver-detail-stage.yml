@@ -13,45 +13,6 @@ on:
 permissions:
   contents: read
 jobs:
-  format-once:
-    if: github.head_ref == 'codex/naver-detail-stage-separation' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-      - name: Restore source indentation without changing tokens
-        env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-        shell: bash
-        run: |
-          node --input-type=module <<'NODE'
-          import {readFileSync,writeFileSync} from 'node:fs';
-          import assert from 'node:assert/strict';
-          const original=readFileSync('main.mjs','utf8');
-          let source=original;
-          for(const [startMarker,endMarker] of [
-            ['        const verifiedProduct = {','\n      } catch (error) {'],
-            ['        const identityReady = readiness === "product"','\n        if (observed.ready || identityReady)'],
-          ]) {
-            const start=source.indexOf(startMarker),end=source.indexOf(endMarker,start);
-            assert.ok(start>=0&&end>start);
-            const block=source.slice(start,end).split('\n').map(line=>/^\S/.test(line)?'          '+line:/^  \S/.test(line)?'          '+line:line).join('\n');
-            source=source.slice(0,start)+block+source.slice(end);
-          }
-          assert.equal(source.replace(/\s+/g,''),original.replace(/\s+/g,''));
-          writeFileSync('main.mjs',source);
-          NODE
-          node --check main.mjs
-          if git diff --quiet -- main.mjs; then exit 0; fi
-          test "$(git ls-remote origin refs/heads/codex/naver-detail-stage-separation | cut -f1)" = "$EXPECTED_HEAD"
-          git add main.mjs
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'style: align the Naver staged verification blocks'
-          git push origin HEAD:refs/heads/codex/naver-detail-stage-separation
   regression:
     strategy:
       fail-fast: false
