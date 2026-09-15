@@ -50,13 +50,14 @@ test("overseas and barcode-removed products are always rejected", () => {
   }), false);
 });
 
-test("Naver result and price lookup both use isolated seller-evidence filtering", () => {
+test("Naver result and price lookup use seller verification and preserve exact partial prices", () => {
   const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8");
   const patchScript = fs.readFileSync(new URL("../scripts/patch-naver-result-link-finalizer.mjs", import.meta.url), "utf8");
   assert.match(main, /async function filterApprovedNaverDomesticProducts/);
   assert.match(main, /const approvedCandidates = await filterApprovedNaverDomesticProducts\(candidates\)/);
-  assert.match(main, /DOMESTIC_SELLER_EVIDENCE_PARTITION/);
-  assert.match(main, /A single inaccessible product is omitted without affecting/);
+  assert.match(main, /browserSession: searchWindow\.webContents\.session/);
+  assert.match(main, /cardArticleVerified && cardBrandVerified && domesticRoute/);
+  assert.match(main, /stockVerified: false, stockCoverage: "unknown"/);
   assert.match(patchScript, /const approval = await verifyApprovedNaverDomesticProducts/);
   assert.match(patchScript, /requireArticleIdentity/);
   assert.match(patchScript, /naver_seller_evidence_failed/);

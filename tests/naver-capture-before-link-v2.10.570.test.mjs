@@ -17,7 +17,7 @@ test("네이버 패션타운은 검색 링크에서 조기 종료하지 않고 �
 test("네이버 상세페이지는 판매처와 상품 정체성을 함께 검증한다", () => {
   assert.match(main, /async function verifyApprovedNaverDomesticProducts/);
   assert.match(main, /const articleVerified = strictProductArticleIdentityMatch/);
-  assert.match(main, /observedBrandTokens\.some\(\(token\) => brandsMatch\(brand, token\)\)/);
+  assert.match(main, /domesticBrandEvidenceMatch\(brand, observedIdentityText\)/);
   assert.match(main, /titleIdentityMatch\(observedIdentityText, title\)/);
   assert.match(main, /domesticSellerVerified: true/);
   assert.match(main, /matchBasis: articleVerified \? "article" : "brand_title"/);

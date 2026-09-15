@@ -14,6 +14,6 @@ test("Musinsa accepts its exact result DOM without waiting for the page load eve
   const loader = main.slice(main.indexOf("async function loadMusinsaResultPage"), main.indexOf("async function renderedSearchSourceResult"));
   assert.match(loader, /const navigation = searchWindow\.loadURL\(targetUrl\)/);
   assert.match(loader, /if \(state\?\.ready\) return/);
-  assert.match(main, /if \(!directNaverFashionResult && !musinsaSource\) try/);
+  assert.match(main, /if \(!directNaverFashionResult && !musinsaSource && !domesticRetailerSource\) try/);
   assert.match(main, /if \(musinsaSource\) \{[\s\S]*?loadMusinsaResultPage/);
 });

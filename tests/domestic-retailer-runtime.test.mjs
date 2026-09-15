@@ -10,6 +10,9 @@ import * as matcher from '../services/matcher.mjs';
 import * as recovery from '../services/domestic-recovery.mjs';
 import * as brandOfficial from '../services/brand-official-search.mjs';
 import * as officialAdapters from '../services/official-mall-adapters.mjs';
+import * as brandIntegrity from '../services/brand-integrity.mjs';
+import * as naverPrice from '../services/naver-price.mjs';
+import * as detailPage from '../services/domestic-detail-page.mjs';
 
 const main = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
 const section = (start, end) => main.slice(main.indexOf(start), main.indexOf(end, main.indexOf(start)));
@@ -25,7 +28,8 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
   const setTimer = (fn, ms = 0) => { const id = ++nextId; timers.set(id, { fn, at: now + ms }); return id; };
   const clearTimer = id => timers.delete(id);
   class BrowserWindow {
-    constructor() {
+    constructor(options = {}) {
+      this.options = options;
       this.destroyed = false;
       this.dom = new JSDOM('<body></body>', { url: 'https://offline.test', runScripts: 'outside-only', pretendToBeVisual: true });
       const w = this.dom.window;
@@ -81,7 +85,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     }
   }
   const sandbox = {
-    ...relay, ...naver, ...matcher, ...recovery, ...brandOfficial, ...officialAdapters, BrowserWindow, URL, console,
+    ...relay, ...naver, ...matcher, ...recovery, ...brandOfficial, ...officialAdapters, ...brandIntegrity, ...naverPrice, ...detailPage, BrowserWindow, URL, console,
     Date: class extends Date { static now() { return now; } },
     setTimeout: setTimer, clearTimeout: clearTimer, wait: ms => new Promise(r => setTimer(r, ms)),
     domesticSearchGeneration: 0, domesticSearchCanceled: () => false,
@@ -92,7 +96,11 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     // Network detail adapters are controlled; the actual browser scripts,
     // card parsers, source deadline and aggregation execute unchanged.
     verifyApprovedNaverDomesticProducts: async products => ({ products: products.map(p => ({ ...p, domesticSellerVerified: true, articleNumberVerified: true })), candidateCount: products.length, checkedCount: products.length, failedCount: 0 }),
-    clickRenderedProductCard: async (w, url) => { if (Object.hasOwn(pages,url)) await w.loadURL(url); else w.dom.reconfigure({url}); return true; },
+    clickRenderedProductCard: async (w, url) => {
+      await w.loadURL(url);
+      if (!Object.hasOwn(pages,url)) w.dom.window.document.body.innerHTML='<main><h1>데상트 SR123UPS11 카라 셔츠</h1><button data-size="100">100 (3개 남음)</button><button>구매하기</button></main>';
+      return true;
+    },
     openRenderedSizeOptions: async () => {}, renderedStockSelectors: () => [],
     imageFingerprint: async () => null,
     browserWindowUsable: w => Boolean(w && !w.isDestroyed()),
@@ -140,6 +148,118 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
   return { search, context, drive, captures, navigations, installHandler, now: () => now };
 }
 
+test('production Naver matching retains Adidas Originals JH9976 with Korean retailer brand wording', async t => {
+  const f=fixture(t);
+  Object.assign(f.context,{DOMESTIC_SELLER_EVIDENCE_PARTITION:'evidence'});
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  const url='https://shopping.naver.com/window-products/department/123';
+  const load=f.context.BrowserWindow.prototype.loadURL;
+  f.context.BrowserWindow.prototype.loadURL=async function(value){await load.call(this,value);this.dom.window.document.body.innerHTML='<main><h1>아디다스 오리지널스 JH9976 슈퍼스타</h1><p>현대백화점에서 판매하는 상품</p><button data-size="270">270 (3개 남음)</button><button>구매하기</button></main>';};
+  const approval=await f.drive(f.context.verifyApprovedNaverDomesticProducts([{store:'네이버 패션타운',title:'아디다스 오리지널스 JH9976 슈퍼스타',url,price:99000}],{articleNumber:'JH9976',brand:'Adidas Originals',title:'슈퍼스타',requireArticleIdentity:true}));
+  assert.equal(approval.products.length,1);
+  const matched=await f.context.addMatchConfidence({products:approval.products,sources:[{store:'네이버 패션타운'}]}, {articleNumber:'JH9976',brand:'Adidas Originals',title:'슈퍼스타'});
+  assert.equal(matched.products.length,1,'a POIZON brand label must not discard the exact retailer product');
+  assert.equal(matched.products[0].sizes[0].quantity,3);
+});
+
+test('Naver waits for hydrated product/options after the document reports complete', async t => {
+  const f=fixture(t);
+  Object.assign(f.context,{DOMESTIC_SELLER_EVIDENCE_PARTITION:'evidence'});
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  const load=f.context.BrowserWindow.prototype.loadURL;
+  f.context.BrowserWindow.prototype.loadURL=async function(value){await load.call(this,value);this.dom.window.document.body.innerHTML='<main>상품 정보를 불러오는 중</main>';Object.defineProperty(this.dom.window.document,'readyState',{value:'complete',configurable:true});f.context.setTimeout(()=>{this.dom.window.document.body.innerHTML='<main><h1>아디다스 JH9976 슈퍼스타</h1><p>현대백화점에서 판매하는 상품</p><button data-size="270">270 (3개 남음)</button><button>구매하기</button></main>';},6_000);};
+  const approval=await f.drive(f.context.verifyApprovedNaverDomesticProducts([{store:'네이버 패션타운',title:'아디다스 JH9976 슈퍼스타',url:'https://shopping.naver.com/window-products/department/123',price:99000}],{articleNumber:'JH9976',brand:'아디다스',title:'슈퍼스타',requireArticleIdentity:true}));
+  assert.equal(approval.products[0]?.sizes?.[0]?.quantity,3,'document completion is not product/stock readiness');
+});
+
+for (const channel of channels.slice(1)) test(`${channel[0]} waits for its hydrated product and public stock`, async t => {
+  const f=fixture(t,{pages:{[channel[2]]:'<main>상품 정보를 불러오는 중</main>'}});
+  const load=f.context.BrowserWindow.prototype.loadURL;
+  f.context.BrowserWindow.prototype.loadURL=async function(url) {
+    await load.call(this,url);
+    if(url===channel[2]) f.context.setTimeout(()=>{this.dom.window.document.body.innerHTML='<main><h1>데상트 SR123UPS11 카라 셔츠</h1><button data-size="100">100 (5개 남음)</button><button data-size="105" disabled>105 품절</button><button>구매하기</button></main>';},6_000);
+  };
+  const result=await f.search([channel]);
+  assert.equal(result.products[0].price,84550);
+  assert.equal(result.products[0].sizes.find(size=>/100/.test(size.label))?.quantity,5,JSON.stringify(result.products[0]));
+  assert.equal(result.products[0].sizes.find(size=>/105/.test(size.label))?.inStock,false);
+  assert.equal(result.sources[0].verificationFailed,false);
+});
+
+test('SSG card navigation respects itemId with tracking parameters instead of opening the first item', async t => {
+  const f=fixture(t);
+  runInContext(section('async function clickRenderedProductCard(', '\nfunction browserWindowUsable('),f.context);
+  const w=new f.context.BrowserWindow();
+  w.dom.reconfigure({url:channels[1][1]});
+  w.dom.window.document.body.innerHTML='<a href="https://www.ssg.com/item/itemView.ssg?itemId=999&siteNo=6001">다른 상품</a><a href="https://www.ssg.com/item/itemView.ssg?itemId=100&siteNo=6001">JH9976</a>';
+  let scrolled='';
+  for (const [index,link] of [...w.dom.window.document.querySelectorAll('a')].entries()) {
+    link.scrollIntoView=()=>{scrolled=link.href;};
+    link.getBoundingClientRect=()=>({left:index*200,top:0,width:100,height:40});
+  }
+  w.webContents.sendInputEvent=event=>{if(event.type==='mouseUp') w.dom.reconfigure({url:w.dom.window.document.querySelectorAll('a')[event.x>200?1:0].href});};
+  assert.equal(await f.drive(f.context.clickRenderedProductCard(w,channels[1][2],channels[1][1])),true);
+  assert.match(scrolled,/itemId=100/);
+  assert.match(w.webContents.getURL(),/itemId=100/);
+  w.dom.reconfigure({url:channels[1][1]});
+  w.webContents.sendInputEvent=event=>{if(event.type==='mouseUp') w.dom.reconfigure({url:'https://www.ssg.com/item/itemView.ssg?itemId=999'});};
+  assert.equal(await f.drive(f.context.clickRenderedProductCard(w,channels[1][2],channels[1][1])),false,'another item with the same pathname must fail');
+});
+
+test('Naver keeps exact observed card prices when detail data fails and shares the search session', async t => {
+  const url='https://shopping.naver.com/window-products/department/123';
+  const f=fixture(t,{pages:{[url]:'<main>상품 정보를 불러오는 중</main>'}});
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  const browserSession={name:'existing-search-session'};
+  let actualSession;
+  const load=f.context.BrowserWindow.prototype.loadURL;
+  f.context.BrowserWindow.prototype.loadURL=async function(value){actualSession=this.options.webPreferences.session;return load.call(this,value);};
+  const approval=await f.drive(f.context.verifyApprovedNaverDomesticProducts([{store:'네이버 패션타운',title:'아디다스 JH9976',url,price:99000}],{articleNumber:'JH9976',brand:'Adidas Originals',requireArticleIdentity:true,browserSession}));
+  const matched=await f.context.addMatchConfidence({products:approval.products,sources:[]},{articleNumber:'JH9976',brand:'Adidas Originals'});
+  assert.equal(actualSession,browserSession);
+  assert.equal(matched.products[0]?.price,99000);
+  assert.equal(matched.products[0]?.inStock,null);
+  assert.equal(matched.products[0]?.stockCoverage,'unknown');
+  assert.equal(approval.failedCount,1);
+  assert.equal(approval.detailFailures[0].reason,'product_detail_not_ready');
+});
+
+test('native size placeholder waits for the retailer option response', async t => {
+  const f=fixture(t),w=new f.context.BrowserWindow();
+  w.dom.window.document.body.innerHTML='<main><h1>아디다스 JH9976</h1><select aria-label="사이즈"><option value="">사이즈 선택</option></select><button>구매하기</button></main>';
+  f.context.setTimeout(()=>{w.dom.window.document.querySelector('select').innerHTML+='<option value="270">270 (3개 남음)</option><option value="280" disabled>280 품절</option>';},6_000);
+  const stock=await f.drive(f.context.collectRenderedProductStock(w,'롯데온'));
+  assert.equal(stock.sizes.find(size=>/270/.test(size.label))?.quantity,3,JSON.stringify(stock));
+  assert.equal(stock.sizes.find(size=>/280/.test(size.label))?.inStock,false);
+});
+
+test('detail navigation preserves colour variants while ignoring retailer tracking fields', () => {
+  const base='https://www.ssg.com/item/itemView.ssg?itemId=100';
+  assert.equal(detailPage.domesticProductUrlIdentity(base),detailPage.domesticProductUrlIdentity(base+'&siteNo=6001&NaPm=tracking'));
+  assert.notEqual(detailPage.domesticProductUrlIdentity(base+'&color=BLACK'),detailPage.domesticProductUrlIdentity(base+'&color=WHITE'));
+});
+
+test('Naver partial-price retention excludes wrong models, brands and barcode-removed sellers', async t => {
+  const f=fixture(t);
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  f.context.waitForDomesticDetailReady=async()=>{throw new Error('product_detail_not_ready');};
+  const candidates=[{title:'아디다스 JI0079'},{title:'Nike JH9976'},{title:'아디다스 JH9976',text:'바코드 제거 상품'}]
+    .map((p,index)=>({...p,url:'https://shopping.naver.com/window-products/department/'+index,price:99000}));
+  const result=await f.drive(f.context.verifyApprovedNaverDomesticProducts(candidates,{articleNumber:'JH9976',brand:'Adidas Originals',requireArticleIdentity:true}));
+  assert.equal(result.products.length,0);
+});
+
+test('a Naver detail access restriction remains explicit and stops further detail attempts', async t => {
+  const url='https://shopping.naver.com/window-products/department/123';
+  const f=fixture(t,{pages:{[url]:'<main>보안 확인 CAPTCHA</main>'}});
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  const result=await f.drive(f.context.verifyApprovedNaverDomesticProducts([{title:'아디다스 JH9976',url,price:99000},{title:'아디다스 JH9976',url:url+'4',price:99000}],{articleNumber:'JH9976',brand:'Adidas Originals',requireArticleIdentity:true}));
+  assert.equal(result.securityVerificationRequired,true);
+  assert.equal(f.navigations.length,1);
+  assert.equal(result.products[0]?.price,99000);
+  assert.equal(result.products[0]?.stockVerified,false);
+});
+
 for (const channel of channels) test(`${channel[0]}: actual source deadline allows visible cards and prices to reach aggregation`, async t => {
   const f = fixture(t);
   const result = await f.search([channel]);
@@ -153,6 +273,14 @@ test('matching returns verified prices without an out-of-scope aggregation varia
   const f = fixture(t);
   const result = await f.drive(f.context.addMatchConfidence({sources:[],products:[{store:'무신사',title:'데상트 SR123UPS11',articleNumber:'SR123UPS11',price:84550,url:'https://www.musinsa.com/products/1'}]}, {articleNumber:'SR123UPS11',brand:'데상트'}));
   assert.equal(result.domesticPriceCandidates[0].price, 84550);
+});
+
+for (const channel of channels.slice(1)) test(`${channel[0]} reads search data before nonessential resources finish loading`, async t => {
+  const f=fixture(t,{navigation:'pending'});
+  const result=await f.search([channel]);
+  assert.equal(result.products[0]?.price,84550);
+  assert.equal(result.products[0]?.sizes[0]?.quantity,3);
+  assert.ok(f.now()<35_000,'the full-page load promise must not consume the collection budget');
 });
 
 test('three retailer card parsers retain their own prices in one complete search', async t => {
@@ -195,12 +323,12 @@ test('a stalled retailer remains bounded and is not reported as product absence'
 });
 
 test('the complete IPC path keeps progressing past two minutes and returns every retailer', async t => {
-  const f = fixture(t, {navigationDelay:18_000});
+  const f = fixture(t, {delay:18_000,navigationDelay:18_000});
   const h = f.installHandler([...channels,...channels]);
   const response = await h.run();
   assert.equal(response.ok, true, JSON.stringify(response));
   assert.equal(response.data.sources.length, 6);
-  assert.equal(response.data.products.length, 3);
+  assert.equal(response.data.products.length, 3,JSON.stringify(response.data.sources));
   assert.ok(f.now() > 120_000, 'exercise the former overall cutoff');
   assert.ok(response.data.sources.every(s => !s.verificationFailed));
 });
@@ -514,7 +642,7 @@ test('the JH9976 queryType=ac source collects its detail price and public stock 
 
 test('the Naver detail browser belongs to cancellation cleanup during stock collection', async t => {
   const url=channels[0][2];
-  const f=fixture(t,{pages:{[url]:'<main><h1>데상트 SR123UPS11 카라 셔츠</h1><p>공식 롯데백화점 품번 SR123UPS11</p></main>'}});
+  const f=fixture(t,{pages:{[url]:'<main><h1>데상트 SR123UPS11 카라 셔츠</h1><p>공식 롯데백화점 품번 SR123UPS11</p><button>구매하기</button></main>'}});
   Object.assign(f.context,{DOMESTIC_SELLER_EVIDENCE_PARTITION:'test',isDomesticNaverPriceCard:()=>true,isApprovedNaverDomesticSellerEvidence:()=>true,brandsMatch:()=>true});
   let tracked=false;
   f.context.collectRenderedProductStock=async w=>{tracked=f.context.activeDomesticSearchWindows.has(w);w.destroy();return {};};

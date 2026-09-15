@@ -106,6 +106,7 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
       id: identity,
       url,
       title: String(card?.title || card?.text || "네이버 패션타운 검색 결과").trim().slice(0, 240),
+      text: String(card?.text || "").slice(0, 4000),
       articleNumber,
       imageUrl: String(card?.imageUrl || ""),
       imageVerifiedFromCard: Boolean(card?.imageUrl),
