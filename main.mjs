@@ -3879,7 +3879,14 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           try {
             const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
             if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");
-            const identitySnapshot = await waitForDomesticDetailReady(searchWindow, source.store, product.url, generation, articleNumber);
+            // Naver renders the exact product identity before its optional
+            // size/stock widget. Preserve that verified product first, then
+            // let collectRenderedProductStock handle the slower inventory
+            // stage. Other retailers keep the strict stock-ready gate.
+            const detailReadiness = /^네이버\s/.test(String(source.store || "")) ? "product" : "stock";
+            const identitySnapshot = await waitForDomesticDetailReady(
+              searchWindow, source.store, product.url, generation, articleNumber, detailReadiness,
+            );
             detailVerified = true;
             detailText = String(identitySnapshot.pageText || "");
             detailIdentity = identitySnapshot;
