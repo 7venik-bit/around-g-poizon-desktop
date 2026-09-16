@@ -103,6 +103,10 @@ test('REGRESSION: product identity can be read before inventory controls exist',
   assert.equal(s.ready,false,'identity readiness is not inventory readiness');
   assert.ok(f.now()<25000,'do not wait out the stock deadline for an observed exact identity');
 });
+test('REGRESSION: rendered Naver search requests product readiness before stock collection',()=>{
+  assert.match(main,/const detailReadiness = \/\^네이버\\s\/\.test\(String\(source\.store \|\| ""\)\) \? "product" : "stock"/);
+  assert.match(main,/articleNumber, detailReadiness,/);
+});
 test('default stock readiness remains strict for other callers', async t=>{
   const f=fixture(t),w=await f.document();
   await assert.rejects(f.context.waitForDomesticDetailReady(w,'무신사',URL_PRODUCT,0,'JH9976'),/product_detail_not_ready/);
