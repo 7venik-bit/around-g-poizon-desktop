@@ -1,0 +1,30 @@
+name: Prepare Naver login regression workspace
+on:
+  push:
+    branches: [codex/naver-login-session-resume]
+    paths: [.github/workflows/naver-auth-source-checkout.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Archive tracked source and offline test dependencies only
+        run: |
+          git archive --format=tar --output="$RUNNER_TEMP/naver-auth-source.tar" HEAD
+          tar --append --file="$RUNNER_TEMP/naver-auth-source.tar" node_modules
+          gzip "$RUNNER_TEMP/naver-auth-source.tar"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: naver-auth-regression-source
+          path: ${{ runner.temp }}/naver-auth-source.tar.gz
+          retention-days: 1
