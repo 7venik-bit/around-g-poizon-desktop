@@ -11,7 +11,7 @@ import { createPageCrossCheck } from '../services/live-poizon-crosscheck.mjs';
 import { findPoizonColumn, findPoizonRecentSalesColumns, findPoizonTotalSalesColumns } from '../services/poizon-xlsx.mjs';
 import { parsePoizonSalesMetric } from '../services/poizon-sales-filter.mjs';
 import { createReviewWorkbookSnapshot, readReviewWorkbook, checkReviewWorkbookRevision } from '../services/poizon-review-workbook.mjs';
-import { loadReviewSnapshots, reviewCoverage, buildReviewReport, reviewReportText, runPoizonReviewBatch, reviewTone } from '../services/poizon-review-session.mjs';
+import { loadReviewSnapshots, reviewCoverage, buildReviewReport, reviewReportText, applyExcelSaveOutcome, runPoizonReviewBatch, reviewTone } from '../services/poizon-review-session.mjs';
 import { paintReviewPage } from '../services/poizon-review-paint.mjs';
 import { openReviewPopup } from '../src/poizon-review-workspace.js';
 
@@ -119,6 +119,21 @@ test('Excel-only rows are reported only after complete POIZON coverage', () => {
   const rows = compared(snapshot.products, [source('11')]).rows;
   assert.equal(buildReviewReport(snapshot, rows, { complete:false }).summary.absentRows, 0);
   assert.equal(buildReviewReport(snapshot, rows).summary.absentRows, 1);
+});
+
+test('saved missing POIZON rows are reported as added while rejected candidates remain explicit', () => {
+  const report = { file:'a.xlsx', complete:true, summary:{ checked:2, equal:0, different:0, unknown:0, missing:2, absentRows:0 }, changes:[
+    { type:'missing', spuId:'77', articleNumber:'NEW-77', excelRows:[], pageNum:1, status:'Excel 상품 없음 · 누락 후보' },
+    { type:'missing', spuId:'88', articleNumber:'NEW-88', excelRows:[], pageNum:1, status:'Excel 상품 없음 · 누락 후보' },
+  ] };
+  applyExcelSaveOutcome(report, { changes:[{ reason:'MISSING_PRODUCT_ROW', spuId:'77', articleNumber:'NEW-77', row:9 }] });
+  assert.equal(report.addedCandidates, 1);
+  assert.equal(report.excludedCandidates, 1);
+  assert.equal(report.changes[0].type, 'added');
+  assert.deepEqual(report.changes[0].excelRows, [9]);
+  assert.match(report.changes[1].status, /자동 추가 제외/);
+  report.addedRows = 1; report.changedRows = 0;
+  assert.match(reviewReportText({ complete:true, files:[report] }), /POIZON 누락 1행 신규 추가/);
 });
 
 test('real Seller Center painting uses the same verdict palette and refuses a different SPU with the same code', () => {

@@ -204,11 +204,19 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
       const completedRows = Array.isArray(result.rows)
         ? result.rows
         : [...pageEvents].sort((a, b) => a[0] - b[0]).flatMap(([, e]) => e.rows);
-      finished = true; cumulative = completedRows
-        .map((row) => result.corrected && (reviewTone(row) === 'different' || /새 행 추가 대상/.test(row.status || ''))
-          ? { ...row, matched: true, equal: true, status: /새 행 추가 대상/.test(row.status || '')
-            ? 'POIZON 값으로 새 행 추가 완료 · 저장 후 재검증 완료'
-            : 'POIZON 값으로 수정 완료 · 저장 후 재검증 완료' } : row);
+      const addedKeys = new Set((result.report?.changes || []).filter((item) => item.type === 'added').flatMap((item) => [
+        item.spuId ? `SPU:${String(item.spuId).trim()}` : '',
+        item.articleNumber ? `ARTICLE:${String(item.articleNumber).normalize('NFKC').toUpperCase().replace(/[^A-Z0-9]/g, '')}` : '',
+      ]).filter(Boolean));
+      finished = true; cumulative = completedRows.map((row) => {
+        const spuKey = row.spuId ? `SPU:${String(row.spuId).trim()}` : '';
+        const articleKey = row.articleNumber ? `ARTICLE:${String(row.articleNumber).normalize('NFKC').toUpperCase().replace(/[^A-Z0-9]/g, '')}` : '';
+        const wasAdded = addedKeys.has(spuKey) || addedKeys.has(articleKey);
+        if (wasAdded) return { ...row, matched:true, equal:true, actionComplete:true, status:'Excel 누락 상품 추가 완료 · 저장 후 SPU 재검증 완료' };
+        if (!row.matched && result.corrected) return { ...row, status:'자동 추가 제외 · SPU·판매량·상품 식별 검증 조건 미충족' };
+        if (result.corrected && !row.autoCorrectionBlocked && reviewTone(row) === 'different') return { ...row, matched:true, equal:true, status:'POIZON 값으로 수정 완료 · 저장 후 재검증 완료' };
+        return row;
+      });
       pageOffset = 0;
       get('.review-phase').textContent = result.ok ? `대조 완료 · 기존 ${Number(result.changedRows || 0).toLocaleString('ko-KR')}행 수정 · 누락 ${Number(result.addedRows || 0).toLocaleString('ko-KR')}행 추가 · 중복 ${Number(result.duplicateRows || 0).toLocaleString('ko-KR')}건 정리 · 재검증 완료` : `검증 미완료 · ${result.message || '전체 페이지 확인 실패'}`;
       if (result.ok) get('.review-counters').textContent = `전체 ${number(state.checkedProducts)}상품 대조 완료 · 수정 ${number(result.changedRows || 0)}행 · 추가 ${number(result.addedRows || 0)}행 · 수정 대기 0`;

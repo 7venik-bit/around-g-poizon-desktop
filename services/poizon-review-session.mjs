@@ -107,6 +107,7 @@ export function reviewReportText(report = {}) {
     report.complete ? '전체 대조 완료' : '검증 미완료 · 부분 결과를 전체 일치로 확정하지 않습니다.', ''];
   for (const file of report.files || []) {
     lines.push(`[${file.file}] ${file.complete ? '전체 완료' : '미완료'}${file.message ? ' · ' + file.message : ''}`);
+    if (file.complete) lines.push(`Excel 저장 결과 · 기존 ${Number(file.changedRows || 0)}행 수정 · POIZON 누락 ${Number(file.addedRows || 0)}행 신규 추가 · 저장 후 재검증 완료`);
     if (file.summary) lines.push(`대조 ${file.summary.checked} · 일치 ${file.summary.equal} · 값 다름 ${file.summary.different} · 기준/값 미확인 ${file.summary.unknown} · 연결 불가 ${file.summary.missing} · POIZON 미발견 원본행 ${file.summary.absentRows}`);
     for (const item of file.changes || []) {
       lines.push(`상품 ${item.articleNumber || '-'} · SPU ${item.spuId || '-'} · Excel 행 ${(item.excelRows || []).join(', ') || '없음'} · POIZON ${item.pageNum || '-'}페이지`);
@@ -118,6 +119,41 @@ export function reviewReportText(report = {}) {
     lines.push('');
   }
   return lines.join('\n');
+}
+
+function normalizedIdentity(value = '') {
+  return String(value || '').normalize('NFKC').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+// buildReviewReport compares against the immutable pre-save snapshot. Reconcile
+// its missing candidates with the rows that were actually written and read back.
+export function applyExcelSaveOutcome(report, saved = {}) {
+  const added = new Map();
+  for (const change of saved.changes || []) {
+    if (change.reason !== 'MISSING_PRODUCT_ROW') continue;
+    const spu = String(change.spuId || '').trim();
+    const article = normalizedIdentity(change.articleNumber);
+    if (spu) added.set(`SPU:${spu}`, change);
+    if (article) added.set(`ARTICLE:${article}`, change);
+  }
+  let missingCandidates = 0, addedCandidates = 0, excludedCandidates = 0;
+  report.changes = (report.changes || []).map((item) => {
+    if (item.type !== 'missing' || (item.excelRows || []).length || !item.pageNum) return item;
+    missingCandidates++;
+    const match = added.get(`SPU:${String(item.spuId || '').trim()}`)
+      || added.get(`ARTICLE:${normalizedIdentity(item.articleNumber)}`);
+    if (match) {
+      addedCandidates++;
+      return { ...item, type: 'added', excelRows: Number(match.row) > 0 ? [Number(match.row)] : [],
+        status: 'Excel 누락 상품 추가 완료 · 저장 후 SPU 재검증 완료' };
+    }
+    excludedCandidates++;
+    return { ...item, type: 'missing', status: '자동 추가 제외 · SPU·판매량·상품 식별 검증 조건 미충족' };
+  });
+  report.missingCandidates = missingCandidates;
+  report.addedCandidates = addedCandidates;
+  report.excludedCandidates = excludedCandidates;
+  return report;
 }
 
 export async function runPoizonReviewBatch({ files, conditions = {}, api, createView, onProgress = () => {}, notify = () => {} }) {
@@ -194,7 +230,7 @@ export async function runPoizonReviewBatch({ files, conditions = {}, api, create
         throw new Error('신규 상품 행 저장 후 SPU 재검증 실패 ' + addedVerificationFailures.length + '건 · ' + addedVerificationFailures.slice(0, 5).map((item) => item.spuId || item.reason).join(', '));
       }
 
-      const report = buildReviewReport(snapshot, coverage.rows);
+      const report = applyExcelSaveOutcome(buildReviewReport(snapshot, coverage.rows), saved);
       report.autoCorrection = 'POIZON_AUTO_CORRECTION_APPLIED';
       report.changedRows = Number(saved.changedRows || 0);
       report.changedCells = Number(saved.changedCells || 0);

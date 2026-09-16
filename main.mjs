@@ -354,6 +354,7 @@ async function withDomesticSearchHardTimeout(operation, generation, progressStat
   }
 }
 const DOMESTIC_LOGIN_SOURCES = [
+  { id: "naver", name: "네이버", url: "https://nid.naver.com/nidlogin.login", domains: ["naver.com", "nid.naver.com"] },
   { id: "musinsa", name: "무신사", url: "https://www.musinsa.com/", domains: ["musinsa.com"] },
   { id: "ssg", name: "SSG·신세계백화점", url: "https://www.ssg.com/", domains: ["ssg.com"] },
   { id: "lotte", name: "롯데온·롯데백화점", url: "https://www.lotteon.com/", domains: ["lotteon.com"] },
@@ -373,6 +374,28 @@ const DOMESTIC_LOGIN_SOURCES = [
   { id: "nike", name: "나이키 공식몰", url: "https://www.nike.com/kr/", loginUrl: "https://www.nike.com/kr/member/profile/login", domains: ["nike.com"], officialAccount: true },
   { id: "adidas", name: "아디다스 공식몰", url: "https://www.adidas.co.kr/", loginUrl: "https://www.adidas.co.kr/account-login", domains: ["adidas.co.kr"], officialAccount: true },
 ];
+
+async function reuseNaverLoginForPriceSession() {
+  const sourceSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
+  const priceSession = session.fromPartition(DOMESTIC_PRICE_PARTITION);
+  const cookies = await sourceSession.cookies.get({ domain: "naver.com" }).catch(() => []);
+  for (const cookie of cookies) {
+    const host = String(cookie.domain || "naver.com").replace(/^\./, "");
+    const details = {
+      url: `${cookie.secure === false ? "http" : "https"}://${host}${cookie.path || "/"}`,
+      name: cookie.name,
+      value: cookie.value,
+      path: cookie.path || "/",
+      secure: cookie.secure !== false,
+      httpOnly: cookie.httpOnly === true,
+    };
+    if (cookie.domain) details.domain = cookie.domain;
+    if (Number.isFinite(cookie.expirationDate)) details.expirationDate = cookie.expirationDate;
+    if (["unspecified", "no_restriction", "lax", "strict"].includes(cookie.sameSite)) details.sameSite = cookie.sameSite;
+    await priceSession.cookies.set(details).catch(() => {});
+  }
+  return cookies.length;
+}
 let updateReady = false;
 let updateCheckTimer;
 let updateInstallTimer;
@@ -1732,6 +1755,9 @@ async function lookupNaverDomesticPrice(input = {}) {
   const searchUrl = naverFashionTownUrl("overview", brand, query);
   let priceWindow;
   try {
+    // The price collector stays isolated, but receives the already-approved
+    // Naver login cookies so one manual login remains valid for every lookup.
+    await reuseNaverLoginForPriceSession();
     await session.fromPartition(DOMESTIC_PRICE_PARTITION).clearCache();
     priceWindow = new BrowserWindow({
       show: false,
