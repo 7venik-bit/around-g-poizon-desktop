@@ -2566,29 +2566,48 @@ function browserWindowUsable(window) {
 
 async function loadOfficialPageForAutomation(searchWindow, targetUrl, timeoutMs = 8_000) {
   if (!browserWindowUsable(searchWindow)) return false;
+  const contents = searchWindow.webContents;
   // Official malls often keep hero images, analytics and campaign resources
   // loading for tens of seconds. The search field is usable at dom-ready, so
   // waiting for BrowserWindow.loadURL() to fully resolve only leaves a large
   // foreground window sitting idle.
   const ready = new Promise((resolve) => {
     let settled = false;
+    let timer;
+    const removeLifecycleListeners = () => {
+      clearTimeout(timer);
+      // BrowserWindow can be destroyed between the readiness check and this
+      // cleanup. EventEmitter cleanup must therefore never dereference the
+      // window's webContents again after the close event.
+      try {
+        contents.removeListener("dom-ready", onReady);
+        contents.removeListener("did-fail-load", onFailed);
+      } catch {}
+      try {
+        searchWindow.removeListener("closed", onClosed);
+      } catch {}
+    };
     const finish = (value) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
-      searchWindow.webContents.removeListener("dom-ready", onReady);
-      searchWindow.webContents.removeListener("did-fail-load", onFailed);
+      removeLifecycleListeners();
       resolve(value);
     };
     const onReady = () => finish(true);
     const onFailed = (_event, errorCode, _description, _url, isMainFrame) => {
       if (isMainFrame !== false && errorCode !== -3) finish(false);
     };
-    const timer = setTimeout(() => finish(browserWindowUsable(searchWindow)), timeoutMs);
-    searchWindow.webContents.once("dom-ready", onReady);
-    searchWindow.webContents.once("did-fail-load", onFailed);
+    const onClosed = () => finish(false);
+    timer = setTimeout(() => finish(browserWindowUsable(searchWindow)), timeoutMs);
+    contents.once("dom-ready", onReady);
+    contents.once("did-fail-load", onFailed);
+    searchWindow.once("closed", onClosed);
   });
-  void searchWindow.loadURL(targetUrl).catch(() => {});
+  try {
+    void searchWindow.loadURL(targetUrl).catch(() => {});
+  } catch {
+    return false;
+  }
   return ready;
 }
 
@@ -2651,6 +2670,7 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
     const submitted = await executeOfficialMallSearch(searchWindow, homepage.href, exactQuery);
     if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
     const products = submitted ? await collectOfficialMallSearchProducts(searchWindow, exactQuery) : [];
+    if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
     if (!submitted) {
       searchWindow.setTitle(`공식몰 돋보기를 눌러 ${exactQuery}을(를) 검색해 주세요`);
       searchWindow.show();
