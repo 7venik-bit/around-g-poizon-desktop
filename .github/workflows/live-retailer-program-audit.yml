@@ -1,0 +1,62 @@
+name: Live retailer program audit (no user credentials)
+on:
+  push:
+    branches: [codex/live-retailer-program-audit]
+    paths:
+      - scripts/live-retailer-program-audit.mjs
+      - .github/workflows/live-retailer-program-audit.yml
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: windows-latest
+    timeout-minutes: 14
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [naver-jh9976, naver-crocs, official-crocs, lotte-crocs]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Apply the shipping release transformations in their actual order
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          import {spawnSync} from 'node:child_process';
+          import assert from 'node:assert/strict';
+          const workflow=readFileSync('.github/workflows/release.yml','utf8');
+          const scripts=[...workflow.matchAll(/^\s+run: node (scripts\/(?:patch|verify)-[a-z0-9-]+\.mjs)\s*$/gm)].map(m=>m[1]);
+          assert.ok(scripts.length>20,'Shipping transformation list was not recognized');
+          for(const script of scripts){
+            const r=spawnSync(process.execPath,[script],{stdio:'inherit'});
+            if(r.error)throw r.error;
+            assert.equal(r.status,0,script);
+          }
+          NODE
+      - name: Boot actual app and click its real search control against live HTTPS
+        env:
+          AROUNDG_LIVE_CASE: ${{ matrix.scenario }}
+          AROUNDG_LIVE_OUTPUT: ${{ runner.temp }}/live-retailer-audit/${{ matrix.scenario }}
+          AROUNDG_BASE_COMMIT: d46413855c0a70b6a856bf4f8f1d4a9d800b977d
+        shell: pwsh
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          node --check scripts/live-retailer-program-audit.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & .\node_modules\electron\dist\electron.exe scripts/live-retailer-program-audit.mjs
+          exit $LASTEXITCODE
+      - name: Keep observed failure status and publish diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-program-${{ matrix.scenario }}
+          path: ${{ runner.temp }}/live-retailer-audit/${{ matrix.scenario }}
+          retention-days: 7
+          if-no-files-found: warn
