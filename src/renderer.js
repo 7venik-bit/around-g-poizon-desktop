@@ -5016,11 +5016,15 @@ $("#ledger-capture")?.addEventListener("click", async () => {
   const result = await window.aroundG.captureMusinsaLedger();
   if (!result.ok) { status.className = "status error"; status.textContent = result.message; return; }
   capturedLedgerRows = result.rows || []; fillLedgerForm(capturedLedgerRows[0]);
-  $("#ledger-captured-list").innerHTML = capturedLedgerRows.map((row,index) => `<button type="button" data-ledger-captured="${index}">${text(row.modelName || row.articleNumber || `상품 ${index+1}`)}</button>`).join("");
-  status.className = "status success"; status.textContent = `${capturedLedgerRows.length}개 상품을 가져왔습니다. 값을 확인한 뒤 기록해 주세요.`;
+  $("#ledger-captured-list").innerHTML = capturedLedgerRows.map((row,index) => `<button type="button" class="ledger-captured-card${index === 0 ? " selected" : ""}" data-ledger-captured="${index}">${row.imageUrl ? `<img src="${text(row.imageUrl)}" alt="">` : `<span class="ledger-image-empty">이미지 없음</span>`}<span><strong>${text(row.modelName || row.articleNumber || `상품 ${index+1}`)}</strong><small>${text(row.krSize || row.euSize || "사이즈 확인 필요")} · ${Number(row.purchasePrice || 0).toLocaleString("ko-KR")}원</small></span></button>`).join("");
+  status.className = "status success"; status.textContent = `${capturedLedgerRows.length}개 상품의 이미지·가격·사이즈를 가져왔습니다. 내용을 확인한 뒤 Google 장부에 기록해 주세요.`;
 });
 $("#ledger-captured-list")?.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-ledger-captured]"); if (button) fillLedgerForm(capturedLedgerRows[Number(button.dataset.ledgerCaptured)] || {});
+  const button = event.target.closest("[data-ledger-captured]");
+  if (button) {
+    fillLedgerForm(capturedLedgerRows[Number(button.dataset.ledgerCaptured)] || {});
+    $("#ledger-captured-list").querySelectorAll(".ledger-captured-card").forEach((card) => card.classList.toggle("selected", card === button));
+  }
 });
 $("#purchase-ledger-form")?.addEventListener("submit", async (event) => {
   event.preventDefault(); const status = $("#ledger-status"); status.className = "status"; status.textContent = "중복 확인 후 Google 시트에 기록하고 있습니다.";
