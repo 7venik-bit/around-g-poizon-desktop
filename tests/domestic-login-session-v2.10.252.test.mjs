@@ -43,3 +43,12 @@ test("Naver security verification reuses the persistent domestic search session"
   assert.match(main, /partition: DOMESTIC_SEARCH_PARTITION/);
   assert.match(main, /domestic-search:security-complete/);
 });
+
+test("one completed Naver login is listed and reused by the isolated price collector", () => {
+  assert.match(main, /id: "naver", name: "네이버", url: "https:\/\/nid\.naver\.com\/nidlogin\.login"/);
+  assert.match(main, /async function reuseNaverLoginForPriceSession\(\)/);
+  assert.match(main, /sourceSession\.cookies\.get\(\{ domain: "naver\.com" \}\)/);
+  const priceLookup = main.slice(main.indexOf("async function lookupNaverDomesticPrice"), main.indexOf("async function readNaverFashionTownChannelCounts"));
+  assert.match(priceLookup, /await reuseNaverLoginForPriceSession\(\)/);
+  assert.doesNotMatch(priceLookup, /cookies\.remove|clearStorageData/);
+});
