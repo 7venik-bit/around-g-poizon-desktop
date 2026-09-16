@@ -6,7 +6,7 @@ const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 
 test("공식몰 내부 자동 검색은 숨은 창에서 DOM 준비 즉시 시작한다", () => {
   assert.match(main, /async function loadOfficialPageForAutomation/);
-  assert.match(main, /webContents\.once\("dom-ready", onReady\)/);
+  assert.match(main, /(?:webContents|contents)\.once\("dom-ready", onReady\)/);
   assert.match(main, /async function openOfficialMallInternalSearch[\s\S]*?show: false/);
   assert.match(main, /loadOfficialPageForAutomation\(searchWindow, homepage\.href\)/);
 });
