@@ -147,4 +147,5 @@ salesFilter = replaceOnce(salesFilter, '    if (totalSales < threshold && localT
 salesFilter = replaceOnce(salesFilter, '    matchMode: "any",', '    matchMode: "all",', "report processed workbook filter as AND");
 await writeFile(salesFilterPath, salesFilter, "utf8");
 
+// canonical Naver card-list logic preserved
 console.log("official mall, live retailer visible-card recovery, and Excel filtering patched");
