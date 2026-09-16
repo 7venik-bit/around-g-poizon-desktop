@@ -1,28 +1,35 @@
-// A shell launch is not a test result. Await the GUI process and its report.
-const {spawn}=require('node:child_process');
+// Await the real GUI child and require saved evidence; shell exit is not proof.
+const {spawn,spawnSync}=require('node:child_process');
 const {mkdirSync,createWriteStream,readFileSync,writeFileSync,existsSync}=require('node:fs');
 const {join}=require('node:path');
-const {Script}=require('node:vm');
 const out=process.env.AROUNDG_LIVE_OUTPUT;
 if(!out)throw new Error('AROUNDG_LIVE_OUTPUT is required');
 mkdirSync(out,{recursive:true});
+const startedAt=new Date().toISOString();
+writeFileSync(join(out,'launcher.json'),JSON.stringify({startedAt,scenario:process.env.AROUNDG_LIVE_CASE,platform:process.platform,stage:'preparing'}));
 const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
-// Keep the native ESM main-entry contract: await bootstrap setup BEFORE ready,
-// schedule the interactive audit AFTER ready, and do not hold startup waiting
-// for the ready event itself. No production app/search/network code is edited.
-let source=readFileSync(join(__dirname,'live-retailer-program-audit.mjs'),'utf8');
-source=source.split('\n').map(line=>line.includes('const relevant=links.filter(')
-  ? "          const relevant=links.filter(a=>['window-products','/products/','/product/','.html','itemView'].some(path=>a.href.includes(path)));"
-  : line).join('\n');
-source=source.replace('let finishing=false, ui=null, sequence=0;','let finishing=false, ui=null, uiReady=false, sequence=0;')
-  .replace('if(ready)break;','if(ready){uiReady=true;break;}')
-  .replace("if(!ui)throw new Error('APP_WINDOW_NOT_READY');","if(!ui || !uiReady)throw new Error('APP_WINDOW_NOT_READY');");
-const boundary="await import('../bootstrap.mjs');\nawait app.whenReady();\ntry {";
-if(!source.includes(boundary))throw new Error('Audit ESM startup boundary missing');
-source=source.replace(boundary,"await import('../bootstrap.mjs');\napp.whenReady().then(async () => {\ntry {");
-source+="\n}).catch(error => { report.errors.push(String(error?.stack||error)); report.outcome='audit_execution_error'; void finish(2); });\n";
-writeFileSync(join(__dirname,'.live-retailer-runtime.mjs'),source);
-const entry=`import {app} from 'electron';
+let appDir;
+try {
+  // Normalize only diagnostic input, not application source. Windows checkout
+  // must not break this LF-delimited native ESM startup transformation.
+  let source=readFileSync(join(__dirname,'live-retailer-program-audit.mjs'),'utf8').replace(/\r\n?/g,'\n');
+  source=source.split('\n').map(line=>{
+    if(line.includes('const relevant=links.filter('))return "          const relevant=links.filter(a=>['window-products','/products/','/product/','.html','itemView'].some(path=>a.href.includes(path)));";
+    if(line.includes('report.openResult=await ui.webContents.executeJavaScript('))return line.replace('report.openResult=await ','void ').replace('.catch(error=>({error:error.message}));','.then(value=>{report.openResult=value;save();}).catch(error=>{report.openResult={error:error.message};save();});');
+    return line;
+  }).join('\n');
+  source=source.replace('let finishing=false, ui=null, sequence=0;','let finishing=false, ui=null, uiReady=false, sequence=0;')
+    .replace('if(ready)break;','if(ready){uiReady=true;break;}')
+    .replace("if(!ui)throw new Error('APP_WINDOW_NOT_READY');","if(!ui || !uiReady)throw new Error('APP_WINDOW_NOT_READY');");
+  const boundary="await import('../bootstrap.mjs');\nawait app.whenReady();\ntry {";
+  if(!source.includes(boundary))throw new Error('Audit ESM startup boundary missing');
+  source=source.replace(boundary,"await import('../bootstrap.mjs');\napp.whenReady().then(async () => {\ntry {");
+  source+="\n}).catch(error => { report.errors.push(String(error?.stack||error)); report.outcome='audit_execution_error'; void finish(2); });\n";
+  const runtime=join(__dirname,'.live-retailer-runtime.mjs');
+  writeFileSync(runtime,source);
+  const checked=spawnSync(process.execPath,['--check',runtime],{encoding:'utf8'});
+  if(checked.status!==0)throw new Error('Diagnostic syntax: '+checked.stderr);
+  const entry=`import {app} from 'electron';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 const out=process.env.AROUNDG_LIVE_OUTPUT;mkdirSync(out,{recursive:true});
@@ -32,11 +39,13 @@ process.on('uncaughtException',fail);process.on('unhandledRejection',fail);
 writeFileSync(join(out,'electron-started.json'),JSON.stringify({pid:process.pid,electron:process.versions.electron,at:new Date().toISOString()}));
 try { await import('./.live-retailer-runtime.mjs'); } catch(error) { fail(error); }
 `;
-writeFileSync(join(__dirname,'.live-retailer-entry.mjs'),entry);
-const appDir=join(__dirname,'..','.live-retailer-app');mkdirSync(appDir,{recursive:true});
-writeFileSync(join(appDir,'package.json'),JSON.stringify({name:'around-g-live-retailer-audit',version:'2.10.744-audit',type:'module',main:'../scripts/.live-retailer-entry.mjs'}));
-const startedAt=new Date().toISOString();
-writeFileSync(join(out,'launcher.json'),JSON.stringify({startedAt,scenario:env.AROUNDG_LIVE_CASE,platform:process.platform}));
+  writeFileSync(join(__dirname,'.live-retailer-entry.mjs'),entry);
+  appDir=join(__dirname,'..','.live-retailer-app');mkdirSync(appDir,{recursive:true});
+  writeFileSync(join(appDir,'package.json'),JSON.stringify({name:'around-g-live-retailer-audit',version:'2.10.744-audit',type:'module',main:'../scripts/.live-retailer-entry.mjs'}));
+} catch(error) {
+  writeFileSync(join(out,'launcher-error.txt'),String(error?.stack||error));
+  console.error('LIVE_PREPARATION_FAILED',error);process.exit(2);
+}
 const log=createWriteStream(join(out,'launcher.log'));
 const child=spawn(require('electron'),[appDir],{env,stdio:['ignore','pipe','pipe'],windowsHide:false});
 for(const stream of [child.stdout,child.stderr])stream.on('data',data=>{log.write(data);process.stdout.write(data);});
