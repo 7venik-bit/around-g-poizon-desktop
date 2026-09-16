@@ -645,21 +645,24 @@ async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
 
 async function openIntegratedPopularExcel(file) {
   if (!file?.path) return;
-  $("#popular-product-workspace-title").textContent = "POIZON 인기리스트 · 원본 Excel 상품검색";
-  $("#popular-product-workspace-meta").textContent = `${file.name || file.path} · 우측 마지막 칸에서 국내 상품과 구매 링크를 확인합니다.`;
-  excelPreviewProductMode = false;
+  $("#popular-product-workspace-title").textContent = "POIZON 인기리스트 · 통합 상품검색";
+  $("#popular-product-workspace-meta").textContent = `${file.name || file.path} · 브랜드 검색과 같은 상품 단위 화면에서 국내 상품과 구매 링크를 확인합니다.`;
+  // Popular-list workbooks used to reopen as raw Excel rows. Keep the saved
+  // workbook untouched, but present its mapped products through the same
+  // product-oriented renderer used by brand search.
+  excelPreviewProductMode = true;
   await showExcelPreview(file, 0, {
     minimumTotal: "",
     minimumLocalTotal: "",
     fixedTotalAnd: true,
     matchMode: "all",
-    productView: false,
+    productView: true,
   }, {
     integrated: true,
     integratedHostId: "popular-integrated-preview-host",
     integratedWorkspaceId: "popular-product-workspace",
     preserveFilters: false,
-    productView: false,
+    productView: true,
   });
 }
 
