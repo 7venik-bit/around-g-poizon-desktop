@@ -2673,6 +2673,8 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
     },
   });
   officialInteractiveWindows.add(searchWindow);
+  // Adidas rejects Electron's default identity before product search begins.
+  searchWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
   searchWindow.on("closed", () => officialInteractiveWindows.delete(searchWindow));
   searchWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url) && browserWindowUsable(searchWindow)) {
@@ -2688,7 +2690,8 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
     stage = "account_login";
     const login = await ensureOfficialAccountLogin(searchWindow, homepage.href);
     if (!browserWindowUsable(searchWindow)) return closedInternalSearchResult(stage);
-    if (!login.ok) return { ok: false, submitted: false, loginRequired: true, reason: login.reason };
+    if (!login.ok) return { ok: false, submitted: false, loginRequired: login.required === true,
+      securityVerificationRequired: login.blocked === true, reason: login.reason };
     if (login.required) {
       stage = "homepage_restore";
       await loadOfficialPageForAutomation(searchWindow, homepage.href);
@@ -3309,7 +3312,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       }
       if (interactiveOfficialSearch) {
         const login = await ensureOfficialAccountLogin(searchWindow, String(source.homepageUrl || url));
-        if (!login.ok) return renderedSearchFailure("login_required", searchWindow, { loginRequired: true });
+        if (!login.ok) return renderedSearchFailure(login.blocked ? "access_denied" : "login_required", searchWindow, {
+          loginRequired: login.required === true,
+          securityVerificationRequired: login.blocked === true,
+        });
         if (login.required) await searchWindow.loadURL(String(source.homepageUrl || url)).catch(() => {});
       }
       if (interactiveSiteSearch && !directNaverFashionResult) {
@@ -4978,6 +4984,27 @@ function officialAccountSourceForUrl(value) {
 async function ensureOfficialAccountLogin(searchWindow, homepageUrl) {
   const source = officialAccountSourceForUrl(homepageUrl);
   if (!source) return { ok: true, required: false };
+  const access = await searchWindow.webContents.executeJavaScript(`(() => {
+    const text = String(document.body?.innerText || '').slice(0, 30000);
+    const url = String(location.href || '');
+    return {
+      url,
+      blocked: /unable to give you access|security issue was automatically identified|http\\s*403|forbidden|reference error/i.test(text),
+      loginPage: /(?:account-?login|login|sign-?in)/i.test(url),
+    };
+  })()`, true).catch(() => ({ url: String(searchWindow.webContents.getURL() || ''), blocked: false, loginPage: false }));
+  if (access?.blocked) {
+    searchWindow.show();
+    searchWindow.focus();
+    searchWindow.setTitle(`${source.name} 보안 차단 · 잠시 후 일반 브라우저에서 접속해 주세요`);
+    return { ok: false, required: false, blocked: true, reason: "OFFICIAL_ACCESS_BLOCKED" };
+  }
+  // Adidas product search and public stock do not require a member login.
+  // Reopening account-login for every query was the repeated navigation that
+  // triggered its 403 protection. Authenticate only after a real login redirect.
+  if (source.id === "adidas" && !access?.loginPage) {
+    return { ok: true, required: false, reused: true };
+  }
   const credentials = officialAccountCredentials(source.id);
   if (!credentials.id || !credentials.password) {
     searchWindow.show();

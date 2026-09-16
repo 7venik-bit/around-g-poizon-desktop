@@ -16,9 +16,22 @@ test("official Nike and Adidas credentials use Windows encryption", () => {
 
 test("official search stops before product search when login is not verified", () => {
   assert.match(main, /ensureOfficialAccountLogin\(searchWindow, homepage\.href\)/);
-  assert.match(main, /if \(!login\.ok\) return \{ ok: false, submitted: false, loginRequired: true/);
-  assert.match(main, /if \(!login\.ok\) return renderedSearchFailure\("login_required"/);
+  assert.match(main, /if \(!login\.ok\) return \{ ok: false, submitted: false, loginRequired: login\.required === true/);
+  assert.match(main, /if \(!login\.ok\) return renderedSearchFailure\(login\.blocked \? "access_denied" : "login_required"/);
   assert.match(main, /sendInputEvent\(\{ type: "mouseDown"/);
+});
+
+test("Adidas public search reuses the current session without forcing account login", () => {
+  const login = main.slice(main.indexOf("async function ensureOfficialAccountLogin"), main.indexOf("function publicConfig"));
+  assert.match(login, /source\.id === "adidas" && !access\?\.loginPage/);
+  assert.match(login, /return \{ ok: true, required: false, reused: true \}/);
+  assert.match(login, /OFFICIAL_ACCESS_BLOCKED/);
+  assert.ok(login.indexOf('source.id === "adidas"') < login.indexOf("officialAccountCredentials(source.id)"));
+});
+
+test("official internal search uses Chrome identity before opening Adidas", () => {
+  const search = main.slice(main.indexOf("async function openOfficialMallInternalSearch"), main.indexOf("async function waitForDomesticCaptureReady"));
+  assert.match(search, /searchWindow\.webContents\.setUserAgent\("Mozilla\/5\.0 \(Windows NT 10\.0; Win64; x64\)/);
 });
 
 test("settings UI exposes both official accounts without rendering passwords", () => {
