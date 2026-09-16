@@ -1,0 +1,107 @@
+diff --git a/main.mjs b/main.mjs
+index 236ed8e..2fc0672 100644
+--- a/main.mjs
++++ b/main.mjs
+@@ -93,6 +93,7 @@ import {
+ import { sellerPaginationTransitionStatus } from "./services/seller-pagination-state.mjs";
+ import {
+   analyzeRenderedChannelProducts,
++  isNonProductNavigationLink,
+   classifySsgProductEvidence,
+   exactArticleIdentityMatch,
+   strictProductArticleIdentityMatch,
+@@ -3525,6 +3526,13 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
+       const seen = new Set();
+       const productCards = [];
+       for (const link of productLinks) {
++        // Test the raw href before dropping fragments. A #main-content skip
++        // link resolves to the search URL, whose query can contain the SKU.
++        if ((${isNonProductNavigationLink.toString()})({
++          url: link.href, href: link.getAttribute("href"),
++          title: link.getAttribute("aria-label") || link.innerText || link.textContent,
++          baseUrl: location.href, inNavigation: Boolean(link.closest("header,nav,footer,[role='navigation']")),
++        })) continue;
+         const productUrl = String(link.href || "").split("#")[0];
+         let productKey = productUrl;
+         try {
+@@ -3645,7 +3653,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
+       }
+       const pageBlocked = /captcha|보안\\s*확인|자동\\s*입력|로봇|접속.{0,12}(?:제한|차단)|서비스.{0,12}(?:제한|지연)|비정상적인\\s*접근/i.test(pageText);
+       return JSON.stringify({
+-        productCards, pageBlocked, pageText, pageHeaderText, selectedChannelEmpty, selectedChannelCount,
++        pageUrl: location.href, productCards, pageBlocked, pageText, pageHeaderText, selectedChannelEmpty, selectedChannelCount,
+         visibleResultCount, visibleResultCountObserved,
+       });
+     })()`, true).catch(error => {
+ diff --git a/relay/domestic-search.mjs b/relay/domestic-search.mjs
+index cb1f155..5a0d9d4 100644
+--- a/relay/domestic-search.mjs
++++ b/relay/domestic-search.mjs
+@@ -16,6 +16,9 @@ import {
+ import { brandSearchQueries } from "../services/brand-search-profile.mjs";
+ import { dedupeNaverOverlappingProducts } from "../services/naver-result-dedupe.mjs";
+ 
++import { isNonProductNavigationLink } from "../services/domestic-product-link.mjs";
++export { isNonProductNavigationLink } from "../services/domestic-product-link.mjs";
++
+ const MAX_QUERY_LENGTH = 120;
+ 
+ const OVERSEAS_PURCHASE_PATTERN = /(?:해외\s*(?:직구|구매\s*대행|배송|상품)|구매\s*대행|직구\s*상품|해외배송비|국제\s*배송|해외에서\s*배송|overseas\s*(?:shipping|purchase)|international\s*shipping|cross[- ]?border)/i;
+@@ -463,7 +466,9 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
+     try {
+       const rendered = JSON.parse(source);
+       if (!Array.isArray(rendered?.productCards)) throw new Error("RENDERED_PRODUCT_CARDS_MISSING");
+-      const cards = rendered.productCards || [];
++      const cards = rendered.productCards.filter(card => !isNonProductNavigationLink({
++        url: card?.productUrl, href: card?.href, title: card?.title, baseUrl: rendered.pageUrl,
++      }));
+       const pageText = String(rendered.pageText || "");
+       const selectedChannelEmpty = rendered.selectedChannelEmpty === true;
+       const scopedLabels = String(store || "").includes("공식 브랜드스토어")
+diff --git a/src/domestic-inline-results.js b/src/domestic-inline-results.js
+index 800615f..0814578 100644
+--- a/src/domestic-inline-results.js
++++ b/src/domestic-inline-results.js
+@@ -15,6 +15,13 @@
+       .replace(/'/g, "&#39;");
+   }
+ 
++  function cleanDomesticSearchText(value) {
++    // Display/manual-search projection only: keep POIZON rows and workbook
++    // identities unchanged, including the source's original colour metadata.
++    return String(value || "").replace(/\p{Script=Han}+/gu, " ")
++      .replace(/\s+/g, " ").trim().replace(/[-_/]+$/g, "").trim();
++  }
++
+   function safeMoney(value) {
+     const number = Number(value || 0);
+     if (!(number > 0)) return "-";
+@@ -156,8 +163,8 @@
+       || source?.homepageUrl
+       || source?.searchUrl
+       || "").trim();
+-    const query = source?.searchQuery || sourceProduct?.articleNumber || sourceProduct?.productCode
+-      || sourceProduct?.spuId || "";
++    const query = cleanDomesticSearchText(source?.searchQuery || sourceProduct?.articleNumber || sourceProduct?.productCode
++      || sourceProduct?.spuId || "");
+     if (!openUrl) return `<button type="button" disabled>${label}</button>`;
+     if (source?.officialStatus && !productUrl) {
+       return `<button type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}" data-official-result-key="${encodeURIComponent(contextKey)}">${label}</button>`;
+@@ -257,7 +264,7 @@
+       const retailer = product?.retailerName || product?.store || source?.store || "판매처";
+       const rawTitle = product?.title || product?.name || product?.articleNumber || "국내 상품";
+       const title = displayedProductTitle(product, sourceProduct);
+-      const article = product?.articleNumber || sourceProduct?.articleNumber || sourceProduct?.productCode || "-";
++      const article = cleanDomesticSearchText(product?.articleNumber || sourceProduct?.articleNumber || sourceProduct?.productCode) || "-";
+       const official = product?.officialStoreVerified === true || Boolean(source?.officialStatus);
+       return `<div class="domestic-inline-row">
+         <div class="domestic-inline-store" title="${safeText(retailer)}"><span>${safeText(retailer)}</span>${official ? `<span class="domestic-inline-official">공식</span>` : ""}</div>
+@@ -299,7 +306,7 @@
+         <div class="domestic-inline-store" title="${safeText(store)}">${safeText(store)}</div>
+         <div class="domestic-inline-title">${safeText(message)}</div>
+         <div class="domestic-inline-stock-cell">-</div>
+-        <div class="domestic-inline-code">${safeText(source?.searchQuery || sourceProduct?.articleNumber || "-")}</div>
++        <div class="domestic-inline-code">${safeText(cleanDomesticSearchText(source?.searchQuery || sourceProduct?.articleNumber) || "-")}</div>
+         <div class="domestic-inline-price">${naverPriceAction}</div>
+         <div>${sourceAction(source, {}, sourceProduct, contextKey)}</div>
+       </div>`);
