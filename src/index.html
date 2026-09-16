@@ -301,7 +301,7 @@
 
       <section id="ledger" class="view">
         <form id="purchase-ledger-form" class="panel stock-watch-form">
-          <div class="panel-title"><div><small>GOOGLE PURCHASE LEDGER</small><h2>구매 장부</h2><p>무신사 주문 상세 정보를 확인한 뒤 Google 시트의 1-구매완료 탭에 기록합니다.</p></div><div class="stock-watch-row-actions"><button id="ledger-open-musinsa" type="button">무신사 주문내역 열기</button><button id="ledger-capture" type="button">현재 주문 가져오기</button></div></div>
+          <div class="panel-title"><div><small>GOOGLE PURCHASE LEDGER</small><h2>구매 장부</h2><p>무신사 주문 상세 화면에서 장부기록을 누르면 이미지·가격·사이즈를 자동으로 가져옵니다.</p></div><div class="stock-watch-row-actions"><button id="ledger-open-musinsa" type="button">무신사 주문내역 열기</button><button id="ledger-capture" type="button" class="primary">장부기록</button></div></div>
           <div class="stock-watch-fields ledger-fields">
             <label>브랜드<input id="ledger-brand" required></label><label>상품명<input id="ledger-name" required></label>
             <label>품번<input id="ledger-article" required></label><label>사이즈<input id="ledger-size" required></label>
@@ -310,7 +310,7 @@
             <label>이미지 URL<input id="ledger-image" type="url"></label><label>수량<input id="ledger-quantity" type="number" min="1" value="1"></label>
           </div>
           <div id="ledger-captured-list" class="ledger-captured-list"></div>
-          <div class="stock-watch-actions"><button class="primary" type="submit">Google 시트에 기록</button></div>
+          <div class="stock-watch-actions"><button class="primary" type="submit">Google 장부에 기록</button></div>
           <div id="ledger-status" class="status" aria-live="polite"></div>
         </form>
         <section class="panel"><div class="panel-title"><div><small>SYNC HISTORY</small><h2>장부 기록 내역</h2></div></div><div id="ledger-list" class="cards"></div></section>

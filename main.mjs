@@ -134,8 +134,10 @@ import {
   weeklySiteHealthSummary,
 } from "./services/weekly-site-health.mjs";
 import { normalizePurchaseLedgerRow, validatePurchaseLedgerRow } from "./services/purchase-ledger.mjs";
+import { PURCHASE_LEDGER_BACKUP_COLUMNS, purchaseLedgerBackupRows, weeklyLedgerBackupDue } from "./services/purchase-ledger-backup.mjs";
 // SEPTEMBER10_DOMESTIC_SEARCH_RESTORE: exact direct search and stock flow used before the later timeout/recovery rewrites.
 let store;
+let weeklyLedgerBackupPromise = null;
 let domesticRecoveryCoordinator;
 function recoveryCoordinator() {
   return domesticRecoveryCoordinator ||= new DomesticRecoveryCoordinator(store);
@@ -5056,6 +5058,7 @@ async function syncPurchaseLedger(input = {}) {
     const result = await response.json();
     if (!result.ok) throw new Error(result.code || result.message || `HTTP_${response.status}`);
     const saved = await store.upsert("ledger", { ...row, id: row.duplicateKey, sheetRow: result.rowNumber, syncStatus: result.duplicate ? "duplicate" : "synced", syncedAt: new Date().toISOString() });
+    void runWeeklyLedgerBackup();
     return { ok: true, duplicate: Boolean(result.duplicate), rowNumber: result.rowNumber, saved };
   } catch (error) {
     await store.upsert("ledger", { ...row, id: row.duplicateKey, syncStatus: "failed", syncError: error instanceof Error ? error.message : String(error) });
@@ -5109,6 +5112,62 @@ function oneDriveInstallFolder() {
 function oneDriveSettingsFolder() {
   const root = oneDriveRootFolder();
   return root ? join(root, "Around G POIZON", "설정 복구") : "";
+}
+
+function oneDriveLedgerBackupFolder() {
+  const root = oneDriveRootFolder();
+  return root ? join(root, "Around G POIZON", "구매장부 백업") : "";
+}
+
+function koreaDateLabel(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(date);
+}
+
+async function writeWeeklyLedgerExcelBackup(now = new Date()) {
+  const folder = oneDriveLedgerBackupFolder();
+  if (!folder) throw new Error("ONEDRIVE_NOT_CONNECTED");
+  await mkdir(folder, { recursive: true });
+  const rows = purchaseLedgerBackupRows(store.snapshot().ledger);
+  const data = [
+    PURCHASE_LEDGER_BACKUP_COLUMNS.map(([label]) => ({ value: label, fontWeight: "bold", backgroundColor: "#DCECF8" })),
+    ...rows.map((row) => PURCHASE_LEDGER_BACKUP_COLUMNS.map(([, key]) => {
+      const raw = row[key];
+      if (["purchasePrice", "quantity", "sheetRow"].includes(key)) return { value: Number(raw) || 0, type: Number, format: "#,##0" };
+      return { value: raw === null || raw === undefined ? "" : String(raw) };
+    })),
+  ];
+  const destination = join(folder, `Around-G-구매장부-${koreaDateLabel(now)}.xlsx`);
+  const temporary = `${destination}.tmp.xlsx`;
+  await writeXlsxFile([{
+    data, sheet: "구매장부", stickyRowsCount: 1,
+    columns: PURCHASE_LEDGER_BACKUP_COLUMNS.map(([, key]) => ({
+      width: key === "modelName" ? 42 : ["purchaseUrl", "imageUrl"].includes(key) ? 36 : 18,
+    })),
+  }]).toFile(temporary);
+  await rename(temporary, destination);
+  return { destination, rowCount: rows.length };
+}
+
+async function runWeeklyLedgerBackup({ force = false, now = new Date() } = {}) {
+  if (weeklyLedgerBackupPromise) return weeklyLedgerBackupPromise;
+  if (!store.snapshot().ledger.length) return { ok: true, skipped: true, reason: "EMPTY_LEDGER" };
+  const lastBackupAt = store.snapshot().settings?.lastLedgerBackupAt;
+  if (!force && !weeklyLedgerBackupDue(lastBackupAt, now)) return { ok: true, skipped: true, lastBackupAt };
+  weeklyLedgerBackupPromise = (async () => {
+    try {
+      const result = await writeWeeklyLedgerExcelBackup(now);
+      const completedAt = now.toISOString();
+      await store.setSettings({ lastLedgerBackupAt: completedAt, lastLedgerBackupPath: result.destination });
+      return { ok: true, skipped: false, completedAt, ...result };
+    } catch (error) {
+      return { ok: false, skipped: false, message: error instanceof Error ? error.message : String(error) };
+    } finally {
+      weeklyLedgerBackupPromise = null;
+    }
+  })();
+  return weeklyLedgerBackupPromise;
 }
 
 function portableBackupPath() {
@@ -5203,8 +5262,11 @@ async function runOneDriveRecoveryBackup() {
     setOneDriveBackupStatus("syncing", "OneDrive에 최신 설치본과 설정을 백업하고 있습니다.");
     const settingsPath = await writePortableOneDriveBackup();
     const installer = app.isPackaged ? await backupCurrentInstallerToOneDrive() : { destination: "", removed: 0 };
+    const ledgerBackup = await runWeeklyLedgerBackup();
+    if (!ledgerBackup.ok) throw new Error(`LEDGER_BACKUP_FAILED: ${ledgerBackup.message}`);
     setOneDriveBackupStatus("connected", "최신 설치본 1개와 설정이 안전하게 백업되었습니다.", {
       settingsPath, installerPath: installer.destination, removedInstallers: installer.removed,
+      ledgerBackupPath: ledgerBackup.destination || store.snapshot().settings?.lastLedgerBackupPath || "",
     });
     return { ok: true, ...oneDriveBackupStatus };
   } catch (error) {
