@@ -2944,9 +2944,10 @@ function renderDomestic(result, sourceProduct = {}, contextKey = "") {
     if (source.store === "병행수입·편집샵" && Number(source.count || 0) <= 0
       && !(source.parallelRetailerListEnforced === true && source.absenceConfirmed === true)) return [];
     const status = sourceStatus(source, matchedProducts);
+    const sourceResultLabel = status.className === "missing" ? "상품 없음" : "검색 결과";
     return [`<div class="domestic-result-line source-only ${status.className}">
       <strong class="domestic-result-store">${text(source.store)}</strong>
-      <span class="domestic-result-product"><b>검색 결과</b></span>
+      <span class="domestic-result-product"><b>${sourceResultLabel}</b></span>
       <span class="confidence ${status.className}">${text(status.label)}</span>
       <span class="domestic-result-price">–</span>
       <span class="stock-state ${status.className}">${text(status.label)}</span>
