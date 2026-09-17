@@ -1302,10 +1302,14 @@ function renderRawExcelDomesticCell(key, product, result) {
   );
   const credentialSaveRequired = (result.sources || []).some((source) =>
     String(source?.errorCode || source?.verificationDiagnostics?.errorCode || "") === "NAVER_CREDENTIALS_REQUIRED");
+  const credentialUnreadable = (result.sources || []).some((source) =>
+    String(source?.errorCode || source?.verificationDiagnostics?.errorCode || "") === "NAVER_CREDENTIALS_UNREADABLE");
   const securityRequired = (result.sources || []).some((source) => source?.securityVerificationRequired === true);
   const loginRequired = (result.sources || []).some((source) => source?.loginRequired === true);
   const state = !products.length && credentialSaveRequired
     ? { label: "네이버 계정 저장 필요", className: "pending" }
+    : !products.length && credentialUnreadable
+      ? { label: "네이버 비밀번호 다시 저장 필요", className: "pending" }
     : !products.length && securityRequired
       ? { label: "보안 확인 필요", className: "pending" }
     : !products.length && loginRequired
@@ -2895,10 +2899,14 @@ function renderDomestic(result, sourceProduct = {}, contextKey = "") {
     </div>`;
   };
   const sourceAction = (source, label = "판매처 검색") => {
-    const openUrl = String(source.verifiedProductUrl || source.officialProductUrl || source.officialSearchUrl || source.homepageUrl || source.searchUrl || "");
-    const query = source.searchQuery || sourceProduct.articleNumber || sourceProduct.productCode || sourceProduct.spuId || result.queryCandidates?.[0] || "";
+    if (source.store === "네이버 패션타운" && (source.loginRequired || source.securityVerificationRequired)) {
+      return '<button type="button" data-naver-account-settings>계정 설정</button><button type="button" data-domestic-login-source="naver">로그인 확인</button>';
+    }
+    const manualSearchUrl = source.manualSearchUrl || (!source.officialStatus ? source.searchAttempts?.[0]?.url : "");
+    const openUrl = String(source.verifiedProductUrl || manualSearchUrl || source.officialProductUrl || source.officialSearchUrl || source.homepageUrl || source.searchUrl || "");
+    const query = source.manualSearchQuery || source.searchAttempts?.[0]?.query || source.searchQuery || sourceProduct.articleNumber || sourceProduct.productCode || sourceProduct.spuId || result.queryCandidates?.[0] || "";
     if (!openUrl) return `<button class="source-platform-action" type="button" disabled>${label}</button>`;
-    if (source.officialStatus) {
+    if (source.officialStatus && !source.verifiedProductUrl && !manualSearchUrl) {
       return `<button class="source-platform-action" type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}" data-official-result-key="${encodeURIComponent(contextKey)}">${label}</button>`;
     }
     return `<button class="source-platform-action" type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
@@ -3313,39 +3321,70 @@ document.addEventListener("click", async (event) => {
     if (file) await openIntegratedBrandExcel(file, false);
     return;
   }
+  if (event.target.closest("[data-naver-account-settings]")) {
+    document.querySelector('.nav[data-view="settings"]')?.click();
+    $("#naver-login-id")?.scrollIntoView({ block: "center" });
+    $("#naver-login-id")?.focus();
+    return;
+  }
+  const accountLoginButton = event.target.closest("[data-domestic-login-source]");
+  if (accountLoginButton) {
+    if (accountLoginButton.disabled) return;
+    accountLoginButton.disabled = true;
+    accountLoginButton.textContent = "로그인 확인 중…";
+    try {
+      const opened = await window.aroundG.openDomesticLogin(accountLoginButton.dataset.domesticLoginSource);
+      accountLoginButton.textContent = opened?.automatic?.ok ? "로그인 확인됨 · 다시 검색해 주세요" : "로그인 창에서 확인해 주세요";
+      await renderDomesticLoginStatuses();
+    } catch {
+      accountLoginButton.textContent = "로그인 창 열기 실패 · 다시 시도";
+    } finally {
+      accountLoginButton.disabled = false;
+    }
+    return;
+  }
   const officialInternalButton = event.target.closest("[data-official-homepage][data-official-query]");
   if (officialInternalButton) {
-    const resultKey = decodeURIComponent(officialInternalButton.dataset.officialResultKey || "");
-    officialInternalButton.disabled = true;
-    officialInternalButton.textContent = "공식몰 결과 가져오는 중…";
-    const result = await window.aroundG.openOfficialInternalSearch({
-      homepageUrl: decodeURIComponent(officialInternalButton.dataset.officialHomepage),
-      query: decodeURIComponent(officialInternalButton.dataset.officialQuery),
-    });
-    // Closing an internal result window is a normal user action. The main
-    // process returns a canceled result so this click cannot become an
-    // unhandled rejection in the Popular List status area.
-    if (result?.canceled) return;
-    if (result?.ok && Array.isArray(result.products) && result.products.length) {
-      const mergeResult = (current = {}) => ({
-        ...current,
-        products: [...(current.products || []).filter((product) => String(product?.store || "") !== "브랜드 공식몰"), ...result.products],
-        sources: (current.sources || []).map((source) => String(source?.store || "") === "브랜드 공식몰"
-          ? { ...source, count: result.products.length, countVerified: true, verificationPending: false, verificationFailed: false, resultsUrl: result.resultsUrl }
-          : source),
+    if (officialInternalButton.disabled) return;
+    try {
+      const resultKey = decodeURIComponent(officialInternalButton.dataset.officialResultKey || "");
+      officialInternalButton.disabled = true;
+      officialInternalButton.textContent = "공식몰 결과 가져오는 중…";
+      const result = await window.aroundG.openOfficialInternalSearch({
+        homepageUrl: decodeURIComponent(officialInternalButton.dataset.officialHomepage),
+        query: decodeURIComponent(officialInternalButton.dataset.officialQuery),
       });
-      if (resultKey && domesticResults.has(resultKey)) domesticResults.set(resultKey, mergeResult(domesticResults.get(resultKey)));
-      if (resultKey && excelPreviewSearchResults.has(resultKey)) excelPreviewSearchResults.set(resultKey, mergeResult(excelPreviewSearchResults.get(resultKey)));
-      const panel = document.createElement("div");
-      panel.className = "official-imported-results";
-      panel.innerHTML = `<strong>브랜드몰 상품 ${result.products.length}개 가져오기 완료</strong>${result.products.map((product) => `<div><span>${text(product.title || product.name || "공식몰 상품")}</span><b>${product.price ? money(product.price) : "가격 확인"}</b><button type="button" data-url="${encodeURIComponent(product.url)}">상품 열기</button></div>`).join("")}`;
-      officialInternalButton.closest(".domestic-result-line,.domestic-inline-source,.sourcing-price-row")?.append(panel);
-      officialInternalButton.textContent = `상품 ${result.products.length}개 가져옴`;
+      // Closing an internal result window is a normal user action. The main
+      // process returns a canceled result so this click cannot become an
+      // unhandled rejection in the Popular List status area.
+      if (result?.canceled) return;
+      if (result?.ok && Array.isArray(result.products) && result.products.length) {
+        const mergeResult = (current = {}) => ({
+          ...current,
+          products: [...(current.products || []).filter((product) => String(product?.store || "") !== "브랜드 공식몰"), ...result.products],
+          sources: (current.sources || []).map((source) => String(source?.store || "") === "브랜드 공식몰"
+            ? { ...source, count: result.products.length, countVerified: true, verificationPending: false, verificationFailed: false, resultsUrl: result.resultsUrl }
+            : source),
+        });
+        if (resultKey && domesticResults.has(resultKey)) domesticResults.set(resultKey, mergeResult(domesticResults.get(resultKey)));
+        if (resultKey && excelPreviewSearchResults.has(resultKey)) excelPreviewSearchResults.set(resultKey, mergeResult(excelPreviewSearchResults.get(resultKey)));
+        const panel = document.createElement("div");
+        panel.className = "official-imported-results";
+        panel.innerHTML = `<strong>브랜드몰 상품 ${result.products.length}개 가져오기 완료</strong>${result.products.map((product) => `<div><span>${text(product.title || product.name || "공식몰 상품")}</span><b>${product.price ? money(product.price) : "가격 확인"}</b><button type="button" data-url="${encodeURIComponent(product.url)}">상품 열기</button></div>`).join("")}`;
+        officialInternalButton.closest(".domestic-result-line,.domestic-inline-source,.sourcing-price-row")?.append(panel);
+        officialInternalButton.textContent = `상품 ${result.products.length}개 가져옴`;
+        officialInternalButton.disabled = false;
+        return;
+      }
+      // No parsed cards alone is not authoritative absence. The actual page
+      // stays visible so the user can verify it without losing the Open action.
+      officialInternalButton.textContent = result?.ok ? "검색 화면 열림" : "열기 실패 · 다시 시도";
+    } catch {
+      officialInternalButton.textContent = "열기 실패 · 다시 시도";
+    } finally {
       officialInternalButton.disabled = false;
-      return;
+      if (officialInternalButton.textContent === "공식몰 결과 가져오는 중…") officialInternalButton.textContent = "열기";
     }
-    officialInternalButton.textContent = result?.submitted ? "검색 결과 없음" : "검색 실패 · 다시 시도";
-    officialInternalButton.disabled = false;
   }
   const officialButton = event.target.closest("[data-official-discovery][data-official-product]");
   const officialDiscovery = officialButton?.dataset.officialDiscovery;
@@ -5145,30 +5184,42 @@ window.aroundG.onDomesticLoginChanged?.(() => renderDomesticLoginStatuses());
 
 $("#settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const saved = await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value, naverLoginId:$("#naver-login-id").value, naverPassword:$("#naver-password").value, nikeLoginId:$("#nike-login-id").value, nikePassword:$("#nike-password").value, adidasLoginId:$("#adidas-login-id").value, adidasPassword:$("#adidas-password").value, ledgerWebhookUrl:$("#ledger-webhook-url").value, ledgerSecret:$("#ledger-secret").value });
-  $("#app-secret").value = "";
-  $("#access-token").value = "";
-  $("#poizon-password").value = "";
-  $("#naver-password").value = "";
-  $("#nike-password").value = "";
-  $("#adidas-password").value = "";
-  $("#ledger-secret").value = "";
-  $("#poizon-login-id").value = saved.poizonLoginId || "";
-  $("#poizon-password").placeholder = saved.hasPoizonPassword ? "암호화 저장됨 · 브랜드 검색 시 자동 입력" : "자동 로그인에 필요";
-  $("#naver-login-id").value = saved.naverLoginId || "";
-  $("#naver-password").placeholder = saved.hasNaverPassword ? "Windows 암호화 저장됨 · 검색 전 자동 로그인" : "자동 로그인에 필요";
-  $("#nike-login-id").value = saved.nikeLoginId || "";
-  $("#nike-password").placeholder = saved.hasNikePassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
-  $("#adidas-login-id").value = saved.adidasLoginId || "";
-  $("#adidas-password").placeholder = saved.hasAdidasPassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
-  $("#ledger-webhook-url").value = saved.ledgerWebhookUrl || "";
-  $("#ledger-secret").placeholder = saved.hasLedgerSecret ? "Windows 암호화 저장됨" : "Apps Script 보안키 입력";
-  $("#settings-status").className = "status success";
-  $("#settings-status").textContent = saved.naverLoginId && saved.hasNaverPassword
-    ? "네이버 아이디와 비밀번호를 기억했습니다. 상품 검색 전에 자동 로그인합니다."
-    : saved.poizonLoginId && saved.hasPoizonPassword
-      ? "POIZON 아이디와 비밀번호를 기억했습니다. 브랜드 검색 시 자동 로그인합니다."
-      : "Windows 암호화 저장소에 설정했습니다.";
+  try {
+    const saved = await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value, naverLoginId:$("#naver-login-id").value, naverPassword:$("#naver-password").value, nikeLoginId:$("#nike-login-id").value, nikePassword:$("#nike-password").value, adidasLoginId:$("#adidas-login-id").value, adidasPassword:$("#adidas-password").value, ledgerWebhookUrl:$("#ledger-webhook-url").value, ledgerSecret:$("#ledger-secret").value });
+    $("#app-secret").value = "";
+    $("#access-token").value = "";
+    $("#poizon-password").value = "";
+    $("#naver-password").value = "";
+    $("#nike-password").value = "";
+    $("#adidas-password").value = "";
+    $("#ledger-secret").value = "";
+    $("#poizon-login-id").value = saved.poizonLoginId || "";
+    $("#poizon-password").placeholder = saved.hasPoizonPassword ? "암호화 저장됨 · 브랜드 검색 시 자동 입력" : "자동 로그인에 필요";
+    $("#naver-login-id").value = saved.naverLoginId || "";
+    $("#naver-password").placeholder = saved.naverCredentialCode === "NAVER_CREDENTIALS_UNREADABLE"
+      ? "이 PC에서 읽을 수 없음 · 비밀번호 다시 입력" : saved.hasNaverPassword ? "Windows 암호화 저장됨 · 검색 전 자동 로그인" : "자동 로그인에 필요";
+    $("#nike-login-id").value = saved.nikeLoginId || "";
+    $("#nike-password").placeholder = saved.hasNikePassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
+    $("#adidas-login-id").value = saved.adidasLoginId || "";
+    $("#adidas-password").placeholder = saved.hasAdidasPassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
+    $("#ledger-webhook-url").value = saved.ledgerWebhookUrl || "";
+    $("#ledger-secret").placeholder = saved.hasLedgerSecret ? "Windows 암호화 저장됨" : "Apps Script 보안키 입력";
+    $("#settings-status").className = saved.naverCredentialCode ? "status" : "status success";
+    $("#settings-status").textContent = saved.naverCredentialCode
+      ? `설정을 저장했습니다. ${saved.naverCredentialMessage}`
+      : saved.naverLoginId && saved.hasNaverPassword
+      ? "네이버 아이디와 비밀번호를 기억했습니다. 상품 검색 전에 자동 로그인합니다."
+      : saved.poizonLoginId && saved.hasPoizonPassword
+        ? "POIZON 아이디와 비밀번호를 기억했습니다. 브랜드 검색 시 자동 로그인합니다."
+        : "Windows 암호화 저장소에 설정했습니다.";
+  } catch (error) {
+    const message = String(error?.message || "");
+    $("#settings-status").className = "status error";
+    $("#settings-status").textContent = message.includes("NAVER_PASSWORD_REQUIRED_ON_ACCOUNT_CHANGE")
+      ? "네이버 아이디 변경 시 새 계정의 비밀번호도 입력해 주세요. 기존 계정은 변경하지 않았습니다."
+      : message.includes("NAVER_LOGIN_ID_REQUIRED") ? "네이버 아이디와 비밀번호를 함께 입력해 주세요."
+      : "설정 저장에 실패했습니다. 기존 설정은 유지됩니다. 다시 시도해 주세요.";
+  }
 });
 $("#guard-check").addEventListener("click", async () => {
   const result = await window.aroundG.collectorCheck({ page:Number($("#guard-page").value), fingerprint:$("#guard-fingerprint").value, captcha:$("#guard-captcha").checked });
@@ -5460,7 +5511,8 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   $("#poizon-login-id").value = config.poizonLoginId || "";
   $("#poizon-password").placeholder = config.hasPoizonPassword ? "암호화 저장됨 · 변경할 때만 입력" : "자동 로그인에 필요";
   $("#naver-login-id").value = config.naverLoginId || "";
-  $("#naver-password").placeholder = config.hasNaverPassword ? "Windows 암호화 저장됨 · 검색 전 자동 로그인" : "자동 로그인에 필요";
+  $("#naver-password").placeholder = config.naverCredentialCode === "NAVER_CREDENTIALS_UNREADABLE"
+    ? "이 PC에서 읽을 수 없음 · 비밀번호 다시 입력" : config.hasNaverPassword ? "Windows 암호화 저장됨 · 검색 전 자동 로그인" : "자동 로그인에 필요";
   $("#nike-login-id").value = config.nikeLoginId || "";
   $("#nike-password").placeholder = config.hasNikePassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
   $("#adidas-login-id").value = config.adidasLoginId || "";

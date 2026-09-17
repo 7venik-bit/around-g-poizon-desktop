@@ -147,8 +147,14 @@
 
   function sourceAction(source = {}, product = {}, sourceProduct = {}, contextKey = "", label = "열기") {
     const productUrl = String(product?.url || "").trim();
+    if (!productUrl && source?.store === "네이버 패션타운"
+      && (source.loginRequired || source.securityVerificationRequired)) {
+      return '<button type="button" data-naver-account-settings>계정 설정</button><button type="button" data-domestic-login-source="naver">로그인 확인</button>';
+    }
+    const manualSearchUrl = source?.manualSearchUrl || (!source?.officialStatus ? source?.searchAttempts?.[0]?.url : "");
     const openUrl = String(productUrl
       || source?.verifiedProductUrl
+      || manualSearchUrl
       || source?.officialProductUrl
       || source?.resultsUrl
       || source?.searchResultsUrl
@@ -156,10 +162,10 @@
       || source?.homepageUrl
       || source?.searchUrl
       || "").trim();
-    const query = source?.searchQuery || sourceProduct?.articleNumber || sourceProduct?.productCode
+    const query = source?.manualSearchQuery || source?.searchAttempts?.[0]?.query || source?.searchQuery || sourceProduct?.articleNumber || sourceProduct?.productCode
       || sourceProduct?.spuId || "";
     if (!openUrl) return `<button type="button" disabled>${label}</button>`;
-    if (source?.officialStatus && !productUrl) {
+    if (source?.officialStatus && !productUrl && !source?.verifiedProductUrl && !manualSearchUrl) {
       return `<button type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}" data-official-result-key="${encodeURIComponent(contextKey)}">${label}</button>`;
     }
     try {
@@ -293,7 +299,7 @@
       if (!(count > 0 || searched || source?.verificationPending || source?.verificationFailed
         || source?.loginRequired || source?.securityVerificationRequired || hasUsefulLink)) continue;
       const message = verdict.label;
-      const naverPriceAction = store === "네이버 패션타운" && contextKey
+      const naverPriceAction = store === "네이버 패션타운" && contextKey && !source?.loginRequired && !source?.securityVerificationRequired
         ? `<button type="button" class="domestic-inline-price-fetch" data-inline-naver-price="${encodeURIComponent(contextKey)}">가격 가져오기</button>`
         : "-";
       rows.push(`<div class="domestic-inline-row domestic-inline-fallback">

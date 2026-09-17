@@ -1015,7 +1015,18 @@ export async function queryDomesticProducts({
     { store: "롯데온 아울렛", linkOnly: true, domesticChannel: "lotte-outlet", renderCount: true },
     { store: "병행수입·편집샵", linkOnly: true, retailerDiscovery: true, renderCount: true },
     { store: "코오롱몰", parser: (html) => parseKolonSearch(html, articleNumber) },
-  ].filter((source) => !enabledGroups || enabledGroups.has(sourceGroup(source)));
+  ].filter((source) => !enabledGroups || enabledGroups.has(sourceGroup(source)))
+    .filter((source, _index, selected) => {
+      if (source.store !== "코오롱몰") return true;
+      // Only merge sources when the selected, usable official adapter queries
+      // this very merchant. Keep the retailer if official search is disabled.
+      return !selected.some((candidate) => {
+        if (!candidate.officialBrand || !candidate.renderCount
+          || candidate.officialStatus !== OFFICIAL_DOMAIN_STATUS.VERIFIED) return false;
+        try { return new URL(candidate.homepageUrl).hostname.replace(/^www\./, "") === "kolonmall.com"; }
+        catch { return false; }
+      });
+    });
   // Keep the source order observable and deterministic. Each brand/product is
   // checked from the official mall through the domestic channels one at a
   // time, so a blocked source cannot hide which step failed.
@@ -1149,6 +1160,10 @@ export async function queryDomesticProducts({
       priority: priority + 1,
       count: Number.isFinite(count) ? count : products.length,
       searchUrl,
+      // Collection may finish on a title fallback; manual verification starts
+      // with the exact code and must not overwrite that collection evidence.
+      manualSearchUrl: officialStatus ? (officialProductUrl || "") : (searchAttempts?.[0]?.url || searchUrl),
+      manualSearchQuery: searchAttempts?.[0]?.query || searchQuery || "",
       officialSearchUrl: officialSearchUrl || "",
       officialProductUrl,
       interactiveSearch: Boolean(interactiveSearch),

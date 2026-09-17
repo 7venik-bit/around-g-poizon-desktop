@@ -2663,7 +2663,8 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
     title: `공식몰 상품 검색 · ${exactQuery}`,
     width: 1320,
     height: 900,
-    show: false,
+    // This path is the user's Open button, not the background collector.
+    show: true,
     autoHideMenuBar: true,
     icon: APP_ICON_PATH,
     webPreferences: {
@@ -2674,6 +2675,8 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
     },
   });
   officialInteractiveWindows.add(searchWindow);
+  searchWindow.show();
+  searchWindow.focus();
   // Adidas rejects Electron's default identity before product search begins.
   searchWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
   searchWindow.on("closed", () => officialInteractiveWindows.delete(searchWindow));
@@ -2707,8 +2710,6 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
       searchWindow.setTitle(`공식몰 돋보기를 눌러 ${exactQuery}을(를) 검색해 주세요`);
       searchWindow.show();
       searchWindow.focus();
-    } else {
-      searchWindow.hide();
     }
     return { ok: true, submitted, products, count: products.length, resultsUrl: searchWindow.webContents.getURL() };
   } catch (error) {
@@ -5048,6 +5049,7 @@ async function ensureOfficialAccountLogin(searchWindow, homepageUrl) {
 
 function publicConfig() {
   const settings = store.snapshot().settings;
+  const naverCredentials = naverAccountCredentials();
   return {
     appKey: settings.appKey || "",
     apiBaseUrl: settings.apiBaseUrl || "https://open.poizon.com",
@@ -5058,6 +5060,8 @@ function publicConfig() {
     hasPoizonPassword: Boolean(settings.poizonPasswordEncrypted),
     naverLoginId: settings.naverLoginId || "",
     hasNaverPassword: Boolean(settings.naverPasswordEncrypted),
+    naverCredentialCode: naverCredentials.code,
+    naverCredentialMessage: naverCredentialMessage(naverCredentials.code),
     nikeLoginId: settings.nikeLoginId || "",
     hasNikePassword: Boolean(settings.nikePasswordEncrypted),
     adidasLoginId: settings.adidasLoginId || "",
@@ -11709,19 +11713,29 @@ async function hasUsableNaverLoginSession() {
 
 function naverAccountCredentials() {
   const settings = store.snapshot().settings;
-  let password = "";
-  try { password = decrypted(settings.naverPasswordEncrypted); } catch {}
-  return {
-    id: String(settings.naverLoginId || "").trim(),
-    password,
-  };
+  const id = String(settings.naverLoginId || "").trim();
+  if (!id || !settings.naverPasswordEncrypted) return { id, password: "", code: "NAVER_CREDENTIALS_REQUIRED" };
+  try {
+    const password = decrypted(settings.naverPasswordEncrypted);
+    return { id, password, code: password ? "" : "NAVER_CREDENTIALS_UNREADABLE" };
+  } catch {
+    // A saved secret from another Windows profile is not a missing account.
+    // Never expose the encrypted value or the underlying crypto exception.
+    return { id, password: "", code: "NAVER_CREDENTIALS_UNREADABLE" };
+  }
+}
+
+function naverCredentialMessage(code) {
+  if (code === "NAVER_CREDENTIALS_UNREADABLE") return "이 PC에서 저장된 네이버 비밀번호를 읽을 수 없습니다. 연동 관리에서 비밀번호를 다시 저장하거나 직접 로그인해 주세요.";
+  if (code === "NAVER_CREDENTIALS_REQUIRED") return "이 PC에 네이버 자동 로그인 정보가 없습니다. 연동 관리에서 네이버 아이디와 비밀번호를 암호화 저장하거나 직접 로그인해 주세요.";
+  return "";
 }
 
 async function submitStoredNaverCredentials(loginWindow) {
   if (!loginWindow || loginWindow.isDestroyed()) return { ok: false, code: "NAVER_LOGIN_WINDOW_CLOSED" };
   if (await hasUsableNaverLoginSession()) return { ok: true, reused: true };
   const credentials = naverAccountCredentials();
-  if (!credentials.id || !credentials.password) return { ok: false, code: "NAVER_CREDENTIALS_REQUIRED" };
+  if (credentials.code) return { ok: false, code: credentials.code };
   let current;
   try { current = new URL(String(loginWindow.webContents.getURL() || "")); } catch { return { ok: false, code: "NAVER_LOGIN_URL_INVALID" }; }
   // Credentials must never be entered into a redirect, advertisement, or a
@@ -11844,14 +11858,15 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
     if (!source || await hasUsableDomesticLoginSession(sourceId)) continue;
     if (sourceId === "naver") {
       const credentials = naverAccountCredentials();
-      if (!credentials.id || !credentials.password) {
-        const message = "네이버 자동 로그인 정보가 저장되지 않았습니다. 연동 관리에서 네이버 아이디와 비밀번호를 암호화 저장해 주세요.";
+      if (credentials.code) {
+        const code = credentials.code;
+        const message = naverCredentialMessage(code);
         mainWindow?.webContents.send("domestic-search:security-required", {
           source: source.name,
-          code: "NAVER_CREDENTIALS_REQUIRED",
+          code,
           message,
         });
-        failures.push(domesticLoginFailure(source, "NAVER_CREDENTIALS_REQUIRED", message));
+        failures.push(domesticLoginFailure(source, code, message));
         continue;
       }
     }
@@ -11871,6 +11886,8 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
     }
     const automaticErrorCode = String(opened?.automatic?.code || "");
     if (sourceId === "naver" && [
+      "NAVER_CREDENTIALS_REQUIRED",
+      "NAVER_CREDENTIALS_UNREADABLE",
       "NAVER_LOGIN_WINDOW_CLOSED",
       "NAVER_LOGIN_URL_INVALID",
       "NAVER_LOGIN_PAGE_NOT_CONFIRMED",
@@ -12070,11 +12087,19 @@ app.whenReady().then(async () => {
   ipcMain.handle("domestic-login:open", (_event, sourceId) => openDomesticLogin(sourceId));
   ipcMain.handle("domestic-login:clear", (_event, sourceId) => clearDomesticLogin(sourceId));
   ipcMain.handle("config:save", async (_event, config) => {
+    const previous = store.snapshot().settings;
+    const naverLoginId = typeof config.naverLoginId === "string"
+      ? config.naverLoginId.trim() : String(previous.naverLoginId || "").trim();
+    if (config.naverPassword && !naverLoginId) throw new Error("NAVER_LOGIN_ID_REQUIRED");
+    if (naverLoginId !== String(previous.naverLoginId || "").trim()
+      && previous.naverPasswordEncrypted && !config.naverPassword) {
+      throw new Error("NAVER_PASSWORD_REQUIRED_ON_ACCOUNT_CHANGE");
+    }
     const next = {
       appKey: String(config.appKey || "").trim(),
       apiBaseUrl: String(config.apiBaseUrl || "https://open.poizon.com").trim(),
       poizonLoginId: String(config.poizonLoginId || "").trim(),
-      naverLoginId: String(config.naverLoginId || "").trim(),
+      naverLoginId,
       nikeLoginId: String(config.nikeLoginId || "").trim(),
       adidasLoginId: String(config.adidasLoginId || "").trim(),
     };

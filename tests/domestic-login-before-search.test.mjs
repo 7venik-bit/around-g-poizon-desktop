@@ -43,10 +43,10 @@ test("missing Naver credentials skip only Naver before opening a recurring login
   const end = main.indexOf("async function domesticLoginStatuses", start);
   const block = main.slice(start, end);
   assert.ok(block.indexOf("naverAccountCredentials()") < block.indexOf("await openDomesticLogin"));
-  assert.match(block, /failures\.push\(domesticLoginFailure\(source, "NAVER_CREDENTIALS_REQUIRED", message\)\)/);
+  assert.match(block, /failures\.push\(domesticLoginFailure\(source, code, message\)\)/);
   assert.match(block, /continue;/);
   assert.doesNotMatch(block, /return \{ ok: false, source, code: "NAVER_CREDENTIALS_REQUIRED"/);
-  assert.match(block, /연동 관리에서 네이버 아이디와 비밀번호를 암호화 저장/);
+  assert.match(block, /naverCredentialMessage\(code\)/);
 });
 
 test("login error codes remain attached to one source while other groups continue", () => {

@@ -252,12 +252,17 @@
         const poizonPrice = verifiedExcelProductPoizonPrice(sourceProduct);
         const sourceAction = (source, product = {}, label = "판매처 열기") => {
           const productUrl = String(product?.url || "").trim();
+          if (!productUrl && source?.store === "네이버 패션타운"
+            && (source.loginRequired || source.securityVerificationRequired)) {
+            return '<button type="button" data-naver-account-settings>계정 설정</button><button type="button" data-domestic-login-source="naver">로그인 확인</button>';
+          }
+          const manualSearchUrl = source?.manualSearchUrl || (!source?.officialStatus ? source?.searchAttempts?.[0]?.url : "");
           const openUrl = String(productUrl || source?.verifiedProductUrl || source?.officialProductUrl
-            || source?.officialSearchUrl || source?.homepageUrl || source?.searchUrl || "");
-          const query = source?.searchQuery || sourceProduct.articleNumber || sourceProduct.productCode
+            || manualSearchUrl || source?.officialSearchUrl || source?.homepageUrl || source?.searchUrl || "");
+          const query = source?.manualSearchQuery || source?.searchAttempts?.[0]?.query || source?.searchQuery || sourceProduct.articleNumber || sourceProduct.productCode
             || sourceProduct.spuId || result.queryCandidates?.[0] || "";
           if (!openUrl) return `<button type="button" disabled>${label}</button>`;
-          if (source?.officialStatus && !productUrl) {
+          if (source?.officialStatus && !productUrl && !source?.verifiedProductUrl && !manualSearchUrl) {
             return `<button type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}" data-official-result-key="${encodeURIComponent(contextKey)}">${label}</button>`;
           }
           return `<button type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;

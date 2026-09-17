@@ -79,6 +79,9 @@
     }
 
     const loginErrorCode = String(source?.errorCode || source?.verificationDiagnostics?.errorCode || "");
+    if (loginErrorCode === "NAVER_CREDENTIALS_UNREADABLE") {
+      return { state: "login", className: "pending", count: 0, label: "네이버 비밀번호 다시 저장 필요" };
+    }
     if (loginErrorCode === "NAVER_CREDENTIALS_REQUIRED") {
       return { state: "login", className: "pending", count: 0, label: "네이버 계정 저장 필요" };
     }
