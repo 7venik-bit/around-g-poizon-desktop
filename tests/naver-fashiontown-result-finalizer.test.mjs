@@ -104,6 +104,24 @@ test("only an authoritative zero becomes Naver product absence", () => {
   assert.equal(result.count, 0);
 });
 
+test("Naver's explicit no-product message becomes 상품 없음 without a parsed count", () => {
+  const result = finalizeNaverFashionTownResult({
+    pageText: "'JWJJM26321'로 검색된 상품이 없습니다. 다른 검색어를 입력해보세요.",
+    visibleResultCountObserved: false,
+    productCards: [],
+  }, {
+    articleNumber: "JWJJM26321",
+    resolvedSearchUrl: "https://shopping.naver.com/window/search/fashion-group?q=JWJJM26321",
+  });
+
+  assert.equal(result.naverAllSearchVerdict, "absent");
+  assert.equal(result.absenceConfirmed, true);
+  assert.equal(result.verificationPending, false);
+  assert.equal(result.verificationReason, "naver_explicit_empty");
+  assert.equal(result.verificationDiagnostics.explicitEmptyText, true);
+  assert.equal(result.count, 0);
+});
+
 test("a positive total never becomes failure when individual card links are late", () => {
   const result = finalizeNaverFashionTownResult({
     visibleResultCount: 2,
