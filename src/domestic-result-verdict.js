@@ -78,7 +78,20 @@
       return { state: "link", className: "available", count: 0, label: "검색 결과" };
     }
 
-    if (source?.securityVerificationRequired === true) {
+    const loginErrorCode = String(source?.errorCode || source?.verificationDiagnostics?.errorCode || "");
+    if (loginErrorCode === "NAVER_CREDENTIALS_REQUIRED") {
+      return { state: "login", className: "pending", count: 0, label: "네이버 계정 저장 필요" };
+    }
+    if (loginErrorCode === "NAVER_LOGIN_INPUTS_NOT_FOUND") {
+      return { state: "login", className: "pending", count: 0, label: "로그인 화면 인식 오류" };
+    }
+    if (loginErrorCode === "NAVER_LOGIN_WINDOW_CLOSED") {
+      return { state: "login", className: "pending", count: 0, label: "로그인 중단" };
+    }
+    if (["NAVER_LOGIN_URL_INVALID", "NAVER_LOGIN_PAGE_NOT_CONFIRMED"].includes(loginErrorCode)) {
+      return { state: "login", className: "pending", count: 0, label: "로그인 연결 오류" };
+    }
+    if (source?.securityVerificationRequired === true || loginErrorCode === "NAVER_VERIFICATION_REQUIRED") {
       return { state: "security", className: "pending", count: 0, label: "보안 확인 필요" };
     }
     if (source?.loginRequired === true) {

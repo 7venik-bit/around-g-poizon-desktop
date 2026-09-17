@@ -1300,7 +1300,17 @@ function renderRawExcelDomesticCell(key, product, result) {
   const needsReview = Boolean(result.error) || (result.sources || []).some((source) =>
     source?.verificationPending || source?.verificationFailed || source?.securityVerificationRequired || source?.loginRequired
   );
-  const state = result.partial
+  const credentialSaveRequired = (result.sources || []).some((source) =>
+    String(source?.errorCode || source?.verificationDiagnostics?.errorCode || "") === "NAVER_CREDENTIALS_REQUIRED");
+  const securityRequired = (result.sources || []).some((source) => source?.securityVerificationRequired === true);
+  const loginRequired = (result.sources || []).some((source) => source?.loginRequired === true);
+  const state = !products.length && credentialSaveRequired
+    ? { label: "네이버 계정 저장 필요", className: "pending" }
+    : !products.length && securityRequired
+      ? { label: "보안 확인 필요", className: "pending" }
+    : !products.length && loginRequired
+      ? { label: "로그인 필요", className: "pending" }
+    : result.partial
     ? { label: "일부 결과", className: "pending" }
     : products.length
     ? { label: `상품 있음 · ${products.length.toLocaleString("ko-KR")}개`, className: "available" }
