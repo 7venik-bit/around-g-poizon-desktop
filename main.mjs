@@ -11705,17 +11705,22 @@ async function hasUsableNaverLoginSession() {
 }
 
 function domesticLoginSourceIdsForSearch(enabledSourceGroups) {
-  if (!Array.isArray(enabledSourceGroups)) return DOMESTIC_LOGIN_SOURCES.map((source) => source.id);
   const groupSources = {
     naver: ["naver"],
     musinsa: ["musinsa"],
     ssg: ["ssg"],
     lotte: ["lotte"],
     official: DOMESTIC_LOGIN_SOURCES.filter((source) => source.officialAccount).map((source) => source.id),
-    retailers: DOMESTIC_LOGIN_SOURCES.filter((source) => !["naver", "musinsa", "ssg", "lotte"].includes(source.id)
-      && !source.officialAccount).map((source) => source.id),
+    // The current `retailers` search group is the public Kolon Mall product
+    // search/API. W Concept, OK Mall, ABC Mart and the other optional login
+    // entries are not queried by that group. Opening all of them here caused
+    // unrelated security pages to appear before a Kolon search could start.
+    retailers: [],
   };
-  return [...new Set(enabledSourceGroups.flatMap((group) => groupSources[group] || []))];
+  const selectedGroups = Array.isArray(enabledSourceGroups)
+    ? enabledSourceGroups
+    : ["naver", "musinsa", "ssg", "lotte", "official", "retailers"];
+  return [...new Set(selectedGroups.flatMap((group) => groupSources[group] || []))];
 }
 
 async function hasUsableDomesticLoginSession(sourceId) {

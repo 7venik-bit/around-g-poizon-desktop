@@ -34,11 +34,23 @@ test("missing retailer logins open the shared persistent login window sequential
   assert.match(block, /로그인 후 다음 판매처 확인을 자동으로 계속합니다/);
 });
 
-test("all enabled source groups map to their platform login checks", () => {
+test("enabled source groups map only to platforms actually queried by that group", () => {
   assert.match(main, /naver: \["naver"\]/);
   assert.match(main, /musinsa: \["musinsa"\]/);
   assert.match(main, /ssg: \["ssg"\]/);
   assert.match(main, /lotte: \["lotte"\]/);
   assert.match(main, /official: DOMESTIC_LOGIN_SOURCES\.filter/);
-  assert.match(main, /retailers: DOMESTIC_LOGIN_SOURCES\.filter/);
+  assert.match(main, /retailers: \[\]/);
+  assert.doesNotMatch(main, /retailers: DOMESTIC_LOGIN_SOURCES\.filter/);
+});
+
+test("Kolon retailer search does not open unrelated retailer login windows", () => {
+  const start = main.indexOf("function domesticLoginSourceIdsForSearch");
+  const end = main.indexOf("async function hasUsableDomesticLoginSession", start);
+  const block = main.slice(start, end);
+  assert.match(block, /retailers: \[\]/);
+  assert.doesNotMatch(block, /DOMESTIC_LOGIN_SOURCES\.map\(\(source\) => source\.id\)/);
+  for (const unrelated of ["wconcept", "okmall", "abcmart", "kasina", "onthespot"]) {
+    assert.doesNotMatch(block, new RegExp(`retailers:[^}]+${unrelated}`));
+  }
 });
