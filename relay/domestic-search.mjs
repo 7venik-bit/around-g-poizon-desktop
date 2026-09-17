@@ -18,6 +18,17 @@ import { dedupeNaverOverlappingProducts } from "../services/naver-result-dedupe.
 
 const MAX_QUERY_LENGTH = 120;
 
+export function domesticDetailProgressStatus(update = {}, fallbackProducts = []) {
+  const products = Array.isArray(update?.products) ? update.products
+    : Array.isArray(fallbackProducts) ? fallbackProducts : [];
+  const soldOutProducts = products.filter(product => product?.inStock === false).length;
+  const unresolvedDetails = Math.max(0, Number(update?.failedDetails || 0));
+  return [
+    soldOutProducts ? `품절·재고 없음 ${soldOutProducts}건` : "",
+    unresolvedDetails ? `상세 확인 필요 ${unresolvedDetails}건` : "",
+  ].filter(Boolean).join(" · ");
+}
+
 const OVERSEAS_PURCHASE_PATTERN = /(?:해외\s*(?:직구|구매\s*대행|배송|상품)|구매\s*대행|직구\s*상품|해외배송비|국제\s*배송|해외에서\s*배송|overseas\s*(?:shipping|purchase)|international\s*shipping|cross[- ]?border)/i;
 
 export function isOverseasPurchaseProduct(value = "") {

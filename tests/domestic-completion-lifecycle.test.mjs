@@ -158,16 +158,17 @@ test('new verified work keeps the frontend waiting for the complete search', asy
   assert.equal(result.data.partial, undefined);
 });
 
-test('checkpoint notifications distinguish search-result progress from actual detail failures', async t => {
+test('checkpoint notifications describe unresolved details without calling products failed', async t => {
   const f = createFixture(t);
   const pending = deferred();
   f.window.aroundG.searchDomestic = () => pending.promise;
   const running = f.run();
   await tick();
-  f.api.progress({phase:'searching',source:'네이버 패션타운 · 검색 결과 60개 중 3개 상세 확인 · 실제 응답 실패 3건'});
+  f.api.progress({phase:'searching',source:'네이버 패션타운 · 검색 결과 60개 중 3개 상세 확인 · 상세 확인 필요 3건'});
   f.api.progress({phase:'checkpoint',source:'확인 결과 저장',checkpoint:{products:[],sources:[]}});
   const message = f.overlay().querySelector('.domestic-overlay-guide').textContent;
-  assert.match(message, /네이버 패션타운.*검색 결과 60개 중 3개 상세 확인.*실제 응답 실패 3건/);
+  assert.match(message, /네이버 패션타운.*검색 결과 60개 중 3개 상세 확인.*상세 확인 필요 3건/);
+  assert.doesNotMatch(message, /응답 실패/);
   assert.doesNotMatch(message, /상세 3\/60/,'result progress must not look like a failure count');
   pending.resolve({ok:true,data:{products:[],sources:[]}});
   await running;

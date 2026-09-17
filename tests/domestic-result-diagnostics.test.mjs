@@ -47,7 +47,7 @@ test('diagnostics stay available alongside partial products without exposing who
   assert.equal(details.open, false);
   details.open = true;
   assert.match(details.textContent, /단계: product_detail/);
-  assert.match(details.textContent, /상세 실패 수: 1/);
+  assert.match(details.textContent, /상세 확인 필요 수: 1/);
   assert.doesNotMatch(details.textContent, /private-token|secret|PRIVATE PAGE BODY/);
   assert.equal(details.querySelector('img'), null);
   assert.match(body.textContent, /149,000원/);

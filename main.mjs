@@ -109,6 +109,7 @@ import {
   mergeRetailerStockProducts,
   collectNativeStockVariants,
   captureNativeStockControls,
+  domesticDetailProgressStatus,
   naverFashionTownUrl,
   parseNaverFashionTownChannelCounts,
   queryDomesticProducts,
@@ -4212,9 +4213,10 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
             sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
             lastWork = update.option ? "stock_options" : "product_detail";
           }
+          const detailStatus = domesticDetailProgressStatus(update, pendingProducts);
           const stage = update.option ? `옵션 ${update.option}`
             : Number.isFinite(update.completedProducts)
-              ? `검색 결과 ${update.totalProducts}개 중 ${update.completedProducts}개 상세 확인${update.failedDetails ? ` · 실제 응답 실패 ${update.failedDetails}건` : ""}`
+              ? `검색 결과 ${update.totalProducts}개 중 ${update.completedProducts}개 상세 확인${detailStatus ? ` · ${detailStatus}` : ""}`
               : "상품·가격 확인";
           onProgress?.({completed:sources.length, total:progressTotal,
             source:`${source.store || "판매처"} · ${stage}`, phase:"searching", query:queryAttempt.query,
