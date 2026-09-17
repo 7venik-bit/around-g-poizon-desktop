@@ -11691,6 +11691,84 @@ function domesticLoginSource(sourceId) {
   return DOMESTIC_LOGIN_SOURCES.find((source) => source.id === String(sourceId || ""));
 }
 
+async function hasUsableNaverLoginSession() {
+  const persistentSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
+  const cookieGroups = await Promise.all([
+    persistentSession.cookies.get({ domain: "naver.com" }).catch(() => []),
+    persistentSession.cookies.get({ domain: "nid.naver.com" }).catch(() => []),
+  ]);
+  const now = Date.now() / 1000;
+  const usableNames = new Set(cookieGroups.flat()
+    .filter((cookie) => !Number.isFinite(cookie.expirationDate) || cookie.expirationDate > now)
+    .map((cookie) => String(cookie.name || "").toUpperCase()));
+  return usableNames.has("NID_AUT") && usableNames.has("NID_SES");
+}
+
+function domesticLoginSourceIdsForSearch(enabledSourceGroups) {
+  if (!Array.isArray(enabledSourceGroups)) return DOMESTIC_LOGIN_SOURCES.map((source) => source.id);
+  const groupSources = {
+    naver: ["naver"],
+    musinsa: ["musinsa"],
+    ssg: ["ssg"],
+    lotte: ["lotte"],
+    official: DOMESTIC_LOGIN_SOURCES.filter((source) => source.officialAccount).map((source) => source.id),
+    retailers: DOMESTIC_LOGIN_SOURCES.filter((source) => !["naver", "musinsa", "ssg", "lotte"].includes(source.id)
+      && !source.officialAccount).map((source) => source.id),
+  };
+  return [...new Set(enabledSourceGroups.flatMap((group) => groupSources[group] || []))];
+}
+
+async function hasUsableDomesticLoginSession(sourceId) {
+  if (sourceId === "naver") return hasUsableNaverLoginSession();
+  const source = domesticLoginSource(sourceId);
+  if (!source) return false;
+  const persistentSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
+  const cookieGroups = await Promise.all(source.domains.map((domain) =>
+    persistentSession.cookies.get({ domain }).catch(() => [])));
+  const now = Date.now() / 1000;
+  return cookieGroups.flat().some((cookie) =>
+    (!Number.isFinite(cookie.expirationDate) || cookie.expirationDate > now)
+    && /(?:auth|login|session|token|member|user|account|sid|jwt)/i.test(String(cookie.name || ""))
+    && Boolean(String(cookie.value || "")));
+}
+
+async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress = () => {}) {
+  const sourceIds = domesticLoginSourceIdsForSearch(enabledSourceGroups);
+  for (const [index, sourceId] of sourceIds.entries()) {
+    const source = domesticLoginSource(sourceId);
+    if (!source || await hasUsableDomesticLoginSession(sourceId)) continue;
+    onProgress({
+      completed: index,
+      total: sourceIds.length,
+      phase: "authentication",
+      source: `${source.name} 로그인 확인`,
+      progressObserved: false,
+    });
+    await openDomesticLogin(sourceId);
+    mainWindow?.webContents.send("domestic-search:security-required", {
+      source: source.name,
+      message: `상품 검색 전에 ${source.name} 로그인을 완료해 주세요. 로그인 후 다음 판매처 확인을 자동으로 계속합니다.`,
+    });
+    const deadline = Date.now() + (10 * 60_000);
+    let authenticated = false;
+    while (Date.now() < deadline) {
+      if (await hasUsableDomesticLoginSession(sourceId)) {
+        authenticated = true;
+        break;
+      }
+      await wait(1_000);
+    }
+    if (!authenticated) return { ok: false, source };
+    const loginWindow = domesticLoginWindows.get(sourceId);
+    if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
+    mainWindow?.webContents.send("domestic-search:security-complete", {
+      source: source.name,
+      message: `${source.name} 로그인 확인 완료`,
+    });
+  }
+  return { ok: true };
+}
+
 async function domesticLoginStatuses() {
   const persistentSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
   return Promise.all(DOMESTIC_LOGIN_SOURCES.map(async (source) => {
@@ -12354,6 +12432,16 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       const allowedSourceGroups = new Set(["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"]);
       const enabledSourceGroups = Array.isArray(input?.sourceGroups)
         ? input.sourceGroups.filter((group) => allowedSourceGroups.has(group)) : null;
+      if (typeof waitForDomesticLoginsBeforeSearch === "function") {
+        const loginReadiness = await waitForDomesticLoginsBeforeSearch(enabledSourceGroups, sendDomesticProgress);
+        if (!loginReadiness.ok) {
+          return {
+            ok: false,
+            loginRequired: true,
+            message: `${loginReadiness.source?.name || "판매처"} 로그인이 완료되지 않아 상품 검색을 시작하지 않았습니다.`,
+          };
+        }
+      }
       let officialBrandRecord = requestedOfficialBrand(input, settings);
       try {
         officialBrandRecord = await resolveDomesticOfficialBrand(
