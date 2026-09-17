@@ -33,7 +33,7 @@ test("official mall automation clicks a magnifier before entering the article", 
 test("official mall UI button opens a controlled visible search window", () => {
   assert.match(mainSource, /openOfficialMallInternalSearch/);
   assert.match(mainSource, /official:open-internal-search/);
-  assert.match(mainSource, /show: true/);
+  assert.match(mainSource, /searchWindow\.show\(\)/);
 });
 
 test("Naver security verification shows the window and resumes in the same session", () => {

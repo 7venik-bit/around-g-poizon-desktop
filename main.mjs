@@ -11819,6 +11819,18 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
   for (const [index, sourceId] of sourceIds.entries()) {
     const source = domesticLoginSource(sourceId);
     if (!source || await hasUsableDomesticLoginSession(sourceId)) continue;
+    if (sourceId === "naver") {
+      const credentials = naverAccountCredentials();
+      if (!credentials.id || !credentials.password) {
+        const message = "네이버 자동 로그인 정보가 저장되지 않았습니다. 연동 관리에서 네이버 아이디와 비밀번호를 암호화 저장해 주세요.";
+        mainWindow?.webContents.send("domestic-search:security-required", {
+          source: source.name,
+          code: "NAVER_CREDENTIALS_REQUIRED",
+          message,
+        });
+        return { ok: false, source, code: "NAVER_CREDENTIALS_REQUIRED", credentialsRequired: true, message };
+      }
+    }
     onProgress({
       completed: index,
       total: sourceIds.length,
@@ -11826,11 +11838,13 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
       source: `${source.name} 로그인 확인`,
       progressObserved: false,
     });
-    await openDomesticLogin(sourceId);
-    mainWindow?.webContents.send("domestic-search:security-required", {
-      source: source.name,
-      message: `상품 검색 전에 ${source.name} 로그인을 완료해 주세요. 로그인 후 다음 판매처 확인을 자동으로 계속합니다.`,
-    });
+    const opened = await openDomesticLogin(sourceId, { background: sourceId === "naver" });
+    if (opened?.automatic?.ok !== true) {
+      mainWindow?.webContents.send("domestic-search:security-required", {
+        source: source.name,
+        message: `상품 검색 전에 ${source.name} 로그인을 완료해 주세요. 로그인 후 다음 판매처 확인을 자동으로 계속합니다.`,
+      });
+    }
     const deadline = Date.now() + (10 * 60_000);
     let authenticated = false;
     while (Date.now() < deadline) {
@@ -11869,16 +11883,22 @@ async function domesticLoginStatuses() {
   }));
 }
 
-async function openDomesticLogin(sourceId) {
+async function openDomesticLogin(sourceId, { background = false } = {}) {
   const source = domesticLoginSource(sourceId);
   if (!source) return { ok: false, message: "지원하지 않는 소싱몰입니다." };
   const existing = domesticLoginWindows.get(source.id);
   if (existing && !existing.isDestroyed()) {
-    existing.show();
-    existing.focus();
+    if (!background) {
+      existing.show();
+      existing.focus();
+    }
     if (source.id === "naver" && existing.naverAutoLoginAttempted !== true) {
       const automatic = await submitStoredNaverCredentials(existing);
       existing.naverAutoLoginAttempted = automatic.ok === true || automatic.submitted === true;
+      if (background && automatic.ok !== true) {
+        existing.show();
+        existing.focus();
+      }
       return { ok: true, opened: true, automatic };
     }
     return { ok: true, opened: true };
@@ -11887,9 +11907,9 @@ async function openDomesticLogin(sourceId) {
     title: `${source.name} 로그인 · Around G`,
     width: 1280,
     height: 860,
-    show: true,
+    show: !background,
     autoHideMenuBar: true,
-    webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, contextIsolation: true },
+    webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, contextIsolation: true, backgroundThrottling: false },
   });
   domesticLoginWindows.set(source.id, loginWindow);
   loginWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -11904,6 +11924,10 @@ async function openDomesticLogin(sourceId) {
   if (source.id === "naver") {
     const automatic = await submitStoredNaverCredentials(loginWindow);
     loginWindow.naverAutoLoginAttempted = automatic.ok === true || automatic.submitted === true;
+    if (background && automatic.ok !== true && !loginWindow.isDestroyed()) {
+      loginWindow.show();
+      loginWindow.focus();
+    }
     return { ok: true, opened: true, automatic };
   }
   return { ok: true, opened: true };
@@ -12535,7 +12559,8 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
           return {
             ok: false,
             loginRequired: true,
-            message: `${loginReadiness.source?.name || "판매처"} 로그인이 완료되지 않아 상품 검색을 시작하지 않았습니다.`,
+            code: loginReadiness.code || "DOMESTIC_LOGIN_REQUIRED",
+            message: loginReadiness.message || `${loginReadiness.source?.name || "판매처"} 로그인이 완료되지 않아 상품 검색을 시작하지 않았습니다.`,
           };
         }
       }

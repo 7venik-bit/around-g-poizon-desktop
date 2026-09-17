@@ -43,3 +43,17 @@ test("two-step verification remains visible and credentials are not submitted re
   assert.match(main, /existing\.naverAutoLoginAttempted = automatic\.ok === true \|\| automatic\.submitted === true/);
   assert.match(renderer, /상품 검색 전에 자동 로그인합니다/);
 });
+
+test("automatic preflight does not repeatedly open an empty Naver login window", () => {
+  const start = main.indexOf("async function waitForDomesticLoginsBeforeSearch");
+  const end = main.indexOf("async function domesticLoginStatuses", start);
+  const block = main.slice(start, end);
+  const credentialGuard = block.indexOf('sourceId === "naver"');
+  const openWindow = block.indexOf("await openDomesticLogin");
+  assert.ok(credentialGuard >= 0 && credentialGuard < openWindow);
+  assert.match(block, /NAVER_CREDENTIALS_REQUIRED/);
+  assert.match(block, /\{ background: sourceId === "naver" \}/);
+  assert.match(main, /show: !background/);
+  assert.match(main, /backgroundThrottling: false/);
+  assert.match(main, /background && automatic\.ok !== true/);
+});
