@@ -5056,6 +5056,8 @@ function publicConfig() {
     hasAccessToken: Boolean(settings.accessTokenEncrypted),
     poizonLoginId: settings.poizonLoginId || "",
     hasPoizonPassword: Boolean(settings.poizonPasswordEncrypted),
+    naverLoginId: settings.naverLoginId || "",
+    hasNaverPassword: Boolean(settings.naverPasswordEncrypted),
     nikeLoginId: settings.nikeLoginId || "",
     hasNikePassword: Boolean(settings.nikePasswordEncrypted),
     adidasLoginId: settings.adidasLoginId || "",
@@ -5242,6 +5244,7 @@ function publicPortableSnapshot() {
   const settings = { ...(snapshot.settings || {}) };
   for (const key of [
     "appSecretEncrypted", "accessTokenEncrypted", "poizonLoginId", "poizonPasswordEncrypted",
+    "naverLoginId", "naverPasswordEncrypted",
     "nikeLoginId", "nikePasswordEncrypted", "adidasLoginId", "adidasPasswordEncrypted", "brandExportFolder",
     "ledgerWebhookUrl", "ledgerSecretEncrypted",
     "oneDrivePoizonBackupRoot", "brandExportJobCache", "brandExportFileValidationCache",
@@ -11704,6 +11707,80 @@ async function hasUsableNaverLoginSession() {
   return usableNames.has("NID_AUT") && usableNames.has("NID_SES");
 }
 
+function naverAccountCredentials() {
+  const settings = store.snapshot().settings;
+  let password = "";
+  try { password = decrypted(settings.naverPasswordEncrypted); } catch {}
+  return {
+    id: String(settings.naverLoginId || "").trim(),
+    password,
+  };
+}
+
+async function submitStoredNaverCredentials(loginWindow) {
+  if (!loginWindow || loginWindow.isDestroyed()) return { ok: false, code: "NAVER_LOGIN_WINDOW_CLOSED" };
+  if (await hasUsableNaverLoginSession()) return { ok: true, reused: true };
+  const credentials = naverAccountCredentials();
+  if (!credentials.id || !credentials.password) return { ok: false, code: "NAVER_CREDENTIALS_REQUIRED" };
+  let current;
+  try { current = new URL(String(loginWindow.webContents.getURL() || "")); } catch { return { ok: false, code: "NAVER_LOGIN_URL_INVALID" }; }
+  // Credentials must never be entered into a redirect, advertisement, or a
+  // page that merely resembles Naver. Limit automatic input to Naver's own
+  // login origin and its actual login route.
+  if (current.protocol !== "https:" || current.hostname !== "nid.naver.com"
+    || !/nidlogin\.login|login/i.test(current.pathname)) {
+    return { ok: false, code: "NAVER_LOGIN_PAGE_NOT_CONFIRMED" };
+  }
+  let fields = null;
+  const inputsDeadline = Date.now() + 15_000;
+  while (!fields && Date.now() < inputsDeadline && !loginWindow.isDestroyed()) {
+    fields = await loginWindow.webContents.executeJavaScript(`(() => {
+    const visible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    const point = (element) => {
+      const rect = element.getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+    };
+    const id = document.querySelector("#id") || [...document.querySelectorAll('input:not([type="password"])')]
+      .find((element) => visible(element) && /id|user|아이디|전화번호/i.test([element.id, element.name, element.placeholder, element.autocomplete].join(" ")));
+    const password = document.querySelector("#pw") || [...document.querySelectorAll('input[type="password"]')].find(visible);
+    const submit = document.getElementById("log.login") || [...document.querySelectorAll('button,input[type="submit"],[role="button"]')]
+      .find((element) => visible(element) && /로그인|log\\s*in/i.test([element.textContent, element.value, element.getAttribute("aria-label")].join(" ")));
+    return id && password && submit ? { id: point(id), password: point(password), submit: point(submit) } : null;
+    })()`, true).catch(() => null);
+    if (!fields) await wait(250);
+  }
+  if (!fields) return { ok: false, code: "NAVER_LOGIN_INPUTS_NOT_FOUND" };
+  const click = async ({ x, y }) => {
+    loginWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
+    loginWindow.webContents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+    loginWindow.webContents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+    await wait(120);
+  };
+  const replaceText = async (point, value) => {
+    await click(point);
+    loginWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
+    loginWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
+    loginWindow.webContents.insertText(value);
+    await wait(120);
+  };
+  await replaceText(fields.id, credentials.id);
+  await replaceText(fields.password, credentials.password);
+  await click(fields.submit);
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline && !loginWindow.isDestroyed()) {
+    if (await hasUsableNaverLoginSession()) return { ok: true, submitted: true };
+    await wait(500);
+  }
+  // CAPTCHA, device confirmation and two-step verification must remain visible
+  // for the user. Do not resubmit credentials while one of those pages is open.
+  return { ok: false, submitted: true, verificationRequired: true, code: "NAVER_VERIFICATION_REQUIRED" };
+}
+
 function domesticLoginSourceIdsForSearch(enabledSourceGroups) {
   const groupSources = {
     naver: ["naver"],
@@ -11779,11 +11856,14 @@ async function domesticLoginStatuses() {
   return Promise.all(DOMESTIC_LOGIN_SOURCES.map(async (source) => {
     const cookieGroups = await Promise.all(source.domains.map((domain) => persistentSession.cookies.get({ domain }).catch(() => [])));
     const cookies = cookieGroups.flat();
+    const hasSession = source.id === "naver"
+      ? await hasUsableNaverLoginSession()
+      : cookies.length > 0;
     return {
       id: source.id,
       name: source.name,
       url: source.url,
-      hasSession: cookies.length > 0,
+      hasSession,
       windowOpen: Boolean(domesticLoginWindows.get(source.id) && !domesticLoginWindows.get(source.id).isDestroyed()),
     };
   }));
@@ -11796,6 +11876,11 @@ async function openDomesticLogin(sourceId) {
   if (existing && !existing.isDestroyed()) {
     existing.show();
     existing.focus();
+    if (source.id === "naver" && existing.naverAutoLoginAttempted !== true) {
+      const automatic = await submitStoredNaverCredentials(existing);
+      existing.naverAutoLoginAttempted = automatic.ok === true || automatic.submitted === true;
+      return { ok: true, opened: true, automatic };
+    }
     return { ok: true, opened: true };
   }
   const loginWindow = new BrowserWindow({
@@ -11816,6 +11901,11 @@ async function openDomesticLogin(sourceId) {
     mainWindow?.webContents.send("domestic-login:changed", { sourceId: source.id });
   });
   await loginWindow.loadURL(source.url).catch(() => {});
+  if (source.id === "naver") {
+    const automatic = await submitStoredNaverCredentials(loginWindow);
+    loginWindow.naverAutoLoginAttempted = automatic.ok === true || automatic.submitted === true;
+    return { ok: true, opened: true, automatic };
+  }
   return { ok: true, opened: true };
 }
 
@@ -11919,12 +12009,14 @@ app.whenReady().then(async () => {
       appKey: String(config.appKey || "").trim(),
       apiBaseUrl: String(config.apiBaseUrl || "https://open.poizon.com").trim(),
       poizonLoginId: String(config.poizonLoginId || "").trim(),
+      naverLoginId: String(config.naverLoginId || "").trim(),
       nikeLoginId: String(config.nikeLoginId || "").trim(),
       adidasLoginId: String(config.adidasLoginId || "").trim(),
     };
     if (config.appSecret) next.appSecretEncrypted = encrypted(config.appSecret);
     if (config.accessToken) next.accessTokenEncrypted = encrypted(config.accessToken);
     if (config.poizonPassword) next.poizonPasswordEncrypted = encrypted(config.poizonPassword);
+    if (config.naverPassword) next.naverPasswordEncrypted = encrypted(config.naverPassword);
     if (config.nikePassword) next.nikePasswordEncrypted = encrypted(config.nikePassword);
     if (config.adidasPassword) next.adidasPasswordEncrypted = encrypted(config.adidasPassword);
     if (typeof config.ledgerWebhookUrl === "string") next.ledgerWebhookUrl = config.ledgerWebhookUrl.trim();
