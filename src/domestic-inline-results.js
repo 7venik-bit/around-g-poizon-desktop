@@ -290,7 +290,8 @@
             : { label: "확인 중", state: "pending" };
       const searched = source?.searchCompleted || source?.searchSubmitted || source?.countVerified
         || source?.absenceConfirmed || source?.presenceConfirmed;
-      if (!(count > 0 || searched || source?.verificationPending || source?.verificationFailed || hasUsefulLink)) continue;
+      if (!(count > 0 || searched || source?.verificationPending || source?.verificationFailed
+        || source?.loginRequired || source?.securityVerificationRequired || hasUsefulLink)) continue;
       const message = verdict.label;
       const naverPriceAction = store === "네이버 패션타운" && contextKey
         ? `<button type="button" class="domestic-inline-price-fetch" data-inline-naver-price="${encodeURIComponent(contextKey)}">가격 가져오기</button>`

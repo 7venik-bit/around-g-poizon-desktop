@@ -143,3 +143,29 @@ test("link-only mode never hides a confirmed empty Naver or official-mall result
     assert.equal(result.label, "상품 없음", store);
   }
 });
+
+test("missing saved Naver credentials are a login action, not a search failure", () => {
+  const verdict = sourceVerdict({
+    store: "네이버 패션타운",
+    loginRequired: true,
+    errorCode: "NAVER_CREDENTIALS_REQUIRED",
+    verificationReason: "naver_credentials_required",
+  });
+  assert.equal(verdict.state, "login");
+  assert.equal(verdict.label, "네이버 계정 저장 필요");
+  assert.equal(verdict.className, "pending");
+});
+
+test("Naver automatic-login technical codes keep distinct user-facing states", () => {
+  for (const [errorCode, label] of [
+    ["NAVER_LOGIN_INPUTS_NOT_FOUND", "로그인 화면 인식 오류"],
+    ["NAVER_LOGIN_WINDOW_CLOSED", "로그인 중단"],
+    ["NAVER_LOGIN_URL_INVALID", "로그인 연결 오류"],
+    ["NAVER_LOGIN_PAGE_NOT_CONFIRMED", "로그인 연결 오류"],
+    ["NAVER_VERIFICATION_REQUIRED", "보안 확인 필요"],
+  ]) {
+    const verdict = sourceVerdict({ store: "네이버 패션타운", loginRequired: true, errorCode });
+    assert.equal(verdict.label, label, errorCode);
+    assert.notEqual(verdict.state, "failed", errorCode);
+  }
+});

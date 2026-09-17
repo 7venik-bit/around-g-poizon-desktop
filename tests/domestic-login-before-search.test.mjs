@@ -14,8 +14,10 @@ test("domestic search verifies selected retailer logins before querying products
   assert.ok(loginCheck >= 0, "Naver login preflight is missing");
   assert.ok(retailerQuery > loginCheck, "retailer search started before login verification");
   assert.match(handler, /typeof waitForDomesticLoginsBeforeSearch === "function"/);
-  assert.match(handler, /loginRequired: true/);
-  assert.match(handler, /상품 검색을 시작하지 않았습니다/);
+  assert.match(handler, /loginFailures = Array\.isArray\(loginReadiness\.failures\)/);
+  assert.match(handler, /searchableSourceGroups = requestedGroups\.filter/);
+  assert.match(handler, /loginErrors: loginFailures\.map/);
+  assert.doesNotMatch(handler, /상품 검색을 시작하지 않았습니다/);
 });
 
 test("Naver login preflight requires the authenticated NID cookie pair", () => {
@@ -32,15 +34,38 @@ test("missing retailer logins open the shared persistent login window sequential
   assert.match(block, /10 \* 60_000/);
   assert.match(block, /await hasUsableDomesticLoginSession\(sourceId\)/);
   assert.match(block, /로그인 후 다음 판매처 확인을 자동으로 계속합니다/);
+  assert.match(block, /NAVER_LOGIN_INPUTS_NOT_FOUND/);
+  assert.ok(block.indexOf("NAVER_LOGIN_INPUTS_NOT_FOUND") < block.indexOf("const deadline = Date.now()"));
 });
 
-test("missing Naver credentials stop before opening a recurring login popup", () => {
+test("missing Naver credentials skip only Naver before opening a recurring login popup", () => {
   const start = main.indexOf("async function waitForDomesticLoginsBeforeSearch");
   const end = main.indexOf("async function domesticLoginStatuses", start);
   const block = main.slice(start, end);
   assert.ok(block.indexOf("naverAccountCredentials()") < block.indexOf("await openDomesticLogin"));
-  assert.match(block, /credentialsRequired: true/);
+  assert.match(block, /failures\.push\(domesticLoginFailure\(source, "NAVER_CREDENTIALS_REQUIRED", message\)\)/);
+  assert.match(block, /continue;/);
+  assert.doesNotMatch(block, /return \{ ok: false, source, code: "NAVER_CREDENTIALS_REQUIRED"/);
   assert.match(block, /연동 관리에서 네이버 아이디와 비밀번호를 암호화 저장/);
+});
+
+test("login error codes remain attached to one source while other groups continue", () => {
+  const handler = main.slice(
+    main.indexOf('ipcMain.handle("domestic:search"'),
+    main.indexOf('ipcMain.handle("domestic:recovery-start"'),
+  );
+  assert.match(handler, /enabledSourceGroups: searchableSourceGroups/);
+  assert.match(handler, /errorCode: failure\.errorCode/);
+  assert.match(handler, /verificationStage: failure\.verificationStage/);
+  assert.match(handler, /sources: \[/);
+});
+
+test("login-required sources remain visible instead of becoming a generic search failure", async () => {
+  const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
+  const inline = await readFile(new URL("../src/domestic-inline-results.js", import.meta.url), "utf8");
+  assert.match(renderer, /!products\.length && credentialSaveRequired/);
+  assert.match(renderer, /label: "네이버 계정 저장 필요"/);
+  assert.match(inline, /source\?\.loginRequired \|\| source\?\.securityVerificationRequired/);
 });
 
 test("enabled source groups map only to platforms actually queried by that group", () => {

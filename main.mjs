@@ -11800,6 +11800,28 @@ function domesticLoginSourceIdsForSearch(enabledSourceGroups) {
   return [...new Set(selectedGroups.flatMap((group) => groupSources[group] || []))];
 }
 
+function domesticLoginSourceGroup(sourceId) {
+  return ["naver", "musinsa", "ssg", "lotte"].includes(String(sourceId || ""))
+    ? String(sourceId) : "";
+}
+
+function domesticLoginFailure(source, code, message) {
+  const errorCode = String(code || "DOMESTIC_LOGIN_REQUIRED");
+  const verificationReason = errorCode.toLowerCase();
+  const securityVerificationRequired = errorCode === "NAVER_VERIFICATION_REQUIRED";
+  return {
+    sourceId: String(source?.id || ""),
+    sourceGroup: domesticLoginSourceGroup(source?.id),
+    store: source?.id === "naver" ? "네이버 패션타운" : String(source?.name || "판매처"),
+    errorCode,
+    message: String(message || `${source?.name || "판매처"} 로그인이 필요합니다.`),
+    loginRequired: !securityVerificationRequired,
+    securityVerificationRequired,
+    verificationReason,
+    verificationStage: "login_preflight",
+  };
+}
+
 async function hasUsableDomesticLoginSession(sourceId) {
   if (sourceId === "naver") return hasUsableNaverLoginSession();
   const source = domesticLoginSource(sourceId);
@@ -11816,6 +11838,7 @@ async function hasUsableDomesticLoginSession(sourceId) {
 
 async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress = () => {}) {
   const sourceIds = domesticLoginSourceIdsForSearch(enabledSourceGroups);
+  const failures = [];
   for (const [index, sourceId] of sourceIds.entries()) {
     const source = domesticLoginSource(sourceId);
     if (!source || await hasUsableDomesticLoginSession(sourceId)) continue;
@@ -11828,7 +11851,8 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
           code: "NAVER_CREDENTIALS_REQUIRED",
           message,
         });
-        return { ok: false, source, code: "NAVER_CREDENTIALS_REQUIRED", credentialsRequired: true, message };
+        failures.push(domesticLoginFailure(source, "NAVER_CREDENTIALS_REQUIRED", message));
+        continue;
       }
     }
     onProgress({
@@ -11845,6 +11869,16 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
         message: `상품 검색 전에 ${source.name} 로그인을 완료해 주세요. 로그인 후 다음 판매처 확인을 자동으로 계속합니다.`,
       });
     }
+    const automaticErrorCode = String(opened?.automatic?.code || "");
+    if (sourceId === "naver" && [
+      "NAVER_LOGIN_WINDOW_CLOSED",
+      "NAVER_LOGIN_URL_INVALID",
+      "NAVER_LOGIN_PAGE_NOT_CONFIRMED",
+      "NAVER_LOGIN_INPUTS_NOT_FOUND",
+    ].includes(automaticErrorCode)) {
+      failures.push(domesticLoginFailure(source, automaticErrorCode, "네이버 자동 로그인 화면을 확인하지 못했습니다."));
+      continue;
+    }
     const deadline = Date.now() + (10 * 60_000);
     let authenticated = false;
     while (Date.now() < deadline) {
@@ -11854,7 +11888,14 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
       }
       await wait(1_000);
     }
-    if (!authenticated) return { ok: false, source };
+    if (!authenticated) {
+      const errorCode = String(opened?.automatic?.code || "DOMESTIC_LOGIN_REQUIRED");
+      const message = errorCode === "NAVER_VERIFICATION_REQUIRED"
+        ? "네이버 2단계 인증 또는 보안 확인이 필요합니다."
+        : `${source.name} 로그인이 완료되지 않았습니다.`;
+      failures.push(domesticLoginFailure(source, errorCode, message));
+      continue;
+    }
     const loginWindow = domesticLoginWindows.get(sourceId);
     if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
     mainWindow?.webContents.send("domestic-search:security-complete", {
@@ -11862,7 +11903,7 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
       message: `${source.name} 로그인 확인 완료`,
     });
   }
-  return { ok: true };
+  return { ok: failures.length === 0, failures };
 }
 
 async function domesticLoginStatuses() {
@@ -12553,25 +12594,25 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       const allowedSourceGroups = new Set(["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"]);
       const enabledSourceGroups = Array.isArray(input?.sourceGroups)
         ? input.sourceGroups.filter((group) => allowedSourceGroups.has(group)) : null;
+      let loginFailures = [];
+      let searchableSourceGroups = enabledSourceGroups;
       if (typeof waitForDomesticLoginsBeforeSearch === "function") {
         const loginReadiness = await waitForDomesticLoginsBeforeSearch(enabledSourceGroups, sendDomesticProgress);
-        if (!loginReadiness.ok) {
-          return {
-            ok: false,
-            loginRequired: true,
-            code: loginReadiness.code || "DOMESTIC_LOGIN_REQUIRED",
-            message: loginReadiness.message || `${loginReadiness.source?.name || "판매처"} 로그인이 완료되지 않아 상품 검색을 시작하지 않았습니다.`,
-          };
+        loginFailures = Array.isArray(loginReadiness.failures) ? loginReadiness.failures : [];
+        if (loginFailures.length) {
+          const blockedGroups = new Set(loginFailures.map((failure) => failure.sourceGroup).filter(Boolean));
+          const requestedGroups = enabledSourceGroups || [...allowedSourceGroups];
+          searchableSourceGroups = requestedGroups.filter((group) => !blockedGroups.has(group));
         }
       }
       let officialBrandRecord = requestedOfficialBrand(input, settings);
       try {
         officialBrandRecord = await resolveDomesticOfficialBrand(
-          {...input, sourceGroups: enabledSourceGroups}, searchGeneration, sendDomesticProgress,
+          {...input, sourceGroups: searchableSourceGroups}, searchGeneration, sendDomesticProgress,
         );
         if (officialBrandRecord?.searchPersistenceError) rememberWarning("official_brand_registry_save", officialBrandRecord.searchPersistenceError);
       } catch (error) { rememberWarning("official_brand_discovery", error); }
-      const data = await queryDomesticProducts({
+      const queriedData = await queryDomesticProducts({
         query: sanitizeDomesticQuery(input?.query),
         articleNumber: searchArticleNumber,
         productCode: searchProductCode,
@@ -12581,8 +12622,43 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         verifyLinkCounts: false,
         officialBrandRecord,
         searchStrategy,
-        enabledSourceGroups,
+        enabledSourceGroups: searchableSourceGroups,
       });
+      const data = loginFailures.length ? {
+        ...queriedData,
+        sources: [
+          ...(Array.isArray(queriedData?.sources) ? queriedData.sources : []),
+          ...loginFailures.map((failure, index) => ({
+            store: failure.store,
+            ok: false,
+            count: 0,
+            products: [],
+            searchCompleted: false,
+            searchSubmitted: false,
+            countVerified: false,
+            absenceConfirmed: false,
+            loginRequired: failure.loginRequired,
+            securityVerificationRequired: failure.securityVerificationRequired,
+            errorCode: failure.errorCode,
+            verificationReason: failure.verificationReason,
+            verificationStage: failure.verificationStage,
+            verificationDiagnostics: {
+              stage: failure.verificationStage,
+              reason: failure.verificationReason,
+              errorCode: failure.errorCode,
+              message: failure.message,
+              sourceId: failure.sourceId,
+            },
+            priority: (queriedData?.sources?.length || 0) + index + 1,
+          })),
+        ],
+        loginErrors: loginFailures.map((failure) => ({
+          sourceId: failure.sourceId,
+          store: failure.store,
+          code: failure.errorCode,
+          message: failure.message,
+        })),
+      } : queriedData;
       if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
       // Core retailer results are authoritative. Optional enrichment must never
       // turn a successful search into a full-row failure.
