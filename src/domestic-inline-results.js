@@ -198,7 +198,7 @@
         ["화면 확인 횟수", d.inspectedFrames], ["화면 글자 수", d.bodyLength], ["상품 링크 수", d.productCardCount],
         ["표시 결과 수", d.visibleResultCount], ["양수 결과 표시", d.positiveCount], ["상품 없음 표시", d.explicitEmpty],
         ["접속 오류", d.navigationError], ["화면 읽기 오류", d.inspectionError], ["수집 오류", d.errorMessage],
-        ["상세 처리 수", d.processedProducts], ["상세 전체 수", d.totalProducts], ["상세 실패 수", d.failedDetails],
+        ["상세 처리 수", d.processedProducts], ["상세 전체 수", d.totalProducts], ["상세 확인 필요 수", d.failedDetails],
         ["마지막 상세 주소", safeUrl(d.lastDetailUrl)], ["마지막 상세 오류", d.lastDetailFailure],
       ];
       for (const [label, value] of fields) {
@@ -311,7 +311,7 @@
     const warning = result.partial
       ? `<div class="domestic-inline-warning">${safeText(result.message || "일부 판매처 검색이 중단되어 완료된 결과를 표시합니다.")}</div>`
       : warningCount
-      ? `<div class="domestic-inline-warning">일부 판매처 추가 확인 실패 · 확보된 검색 결과를 표시합니다.</div>`
+      ? `<div class="domestic-inline-warning">일부 판매처 상세 확인 필요 · 확보된 검색 결과를 표시합니다.</div>`
       : "";
     return rows.length
       ? `${warning}${timestamp}${diagnostics}<div class="domestic-inline-results"><div class="domestic-inline-head"><span>판매처</span><span>상품명</span><span>사이즈·재고</span><span>품번</span><span>가격</span><span>링크</span></div>${rows.join("")}</div>`

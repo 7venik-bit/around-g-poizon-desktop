@@ -28,6 +28,6 @@ test("search-learning persistence reports failure without discarding products", 
 
 test("inline rows reveal a core error and distinguish optional warnings", () => {
   assert.match(inline, /국내 검색 실패: \$\{safeText\(result\.error\)\}/);
-  assert.match(inline, /일부 판매처 추가 확인 실패 · 확보된 검색 결과를 표시합니다/);
+  assert.match(inline, /일부 판매처 상세 확인 필요 · 확보된 검색 결과를 표시합니다/);
   assert.doesNotMatch(inline, /if \(result\.error\) return `<div class="domestic-inline-empty">국내 상품 검색 실패<\/div>`/);
 });
