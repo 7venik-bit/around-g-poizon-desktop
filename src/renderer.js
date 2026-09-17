@@ -5134,15 +5134,18 @@ window.aroundG.onDomesticLoginChanged?.(() => renderDomesticLoginStatuses());
 
 $("#settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const saved = await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value, nikeLoginId:$("#nike-login-id").value, nikePassword:$("#nike-password").value, adidasLoginId:$("#adidas-login-id").value, adidasPassword:$("#adidas-password").value, ledgerWebhookUrl:$("#ledger-webhook-url").value, ledgerSecret:$("#ledger-secret").value });
+  const saved = await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value, naverLoginId:$("#naver-login-id").value, naverPassword:$("#naver-password").value, nikeLoginId:$("#nike-login-id").value, nikePassword:$("#nike-password").value, adidasLoginId:$("#adidas-login-id").value, adidasPassword:$("#adidas-password").value, ledgerWebhookUrl:$("#ledger-webhook-url").value, ledgerSecret:$("#ledger-secret").value });
   $("#app-secret").value = "";
   $("#access-token").value = "";
   $("#poizon-password").value = "";
+  $("#naver-password").value = "";
   $("#nike-password").value = "";
   $("#adidas-password").value = "";
   $("#ledger-secret").value = "";
   $("#poizon-login-id").value = saved.poizonLoginId || "";
   $("#poizon-password").placeholder = saved.hasPoizonPassword ? "암호화 저장됨 · 브랜드 검색 시 자동 입력" : "자동 로그인에 필요";
+  $("#naver-login-id").value = saved.naverLoginId || "";
+  $("#naver-password").placeholder = saved.hasNaverPassword ? "Windows 암호화 저장됨 · 검색 전 자동 로그인" : "자동 로그인에 필요";
   $("#nike-login-id").value = saved.nikeLoginId || "";
   $("#nike-password").placeholder = saved.hasNikePassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
   $("#adidas-login-id").value = saved.adidasLoginId || "";
@@ -5150,9 +5153,11 @@ $("#settings-form").addEventListener("submit", async (event) => {
   $("#ledger-webhook-url").value = saved.ledgerWebhookUrl || "";
   $("#ledger-secret").placeholder = saved.hasLedgerSecret ? "Windows 암호화 저장됨" : "Apps Script 보안키 입력";
   $("#settings-status").className = "status success";
-  $("#settings-status").textContent = saved.poizonLoginId && saved.hasPoizonPassword
-    ? "POIZON 아이디와 비밀번호를 기억했습니다. 브랜드 검색 시 자동 로그인합니다."
-    : "Windows 암호화 저장소에 설정했습니다.";
+  $("#settings-status").textContent = saved.naverLoginId && saved.hasNaverPassword
+    ? "네이버 아이디와 비밀번호를 기억했습니다. 상품 검색 전에 자동 로그인합니다."
+    : saved.poizonLoginId && saved.hasPoizonPassword
+      ? "POIZON 아이디와 비밀번호를 기억했습니다. 브랜드 검색 시 자동 로그인합니다."
+      : "Windows 암호화 저장소에 설정했습니다.";
 });
 $("#guard-check").addEventListener("click", async () => {
   const result = await window.aroundG.collectorCheck({ page:Number($("#guard-page").value), fingerprint:$("#guard-fingerprint").value, captcha:$("#guard-captcha").checked });
@@ -5443,6 +5448,8 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   $("#access-token").placeholder = config.hasAccessToken ? "저장됨 · 변경할 때만 입력" : "선택 사항";
   $("#poizon-login-id").value = config.poizonLoginId || "";
   $("#poizon-password").placeholder = config.hasPoizonPassword ? "암호화 저장됨 · 변경할 때만 입력" : "자동 로그인에 필요";
+  $("#naver-login-id").value = config.naverLoginId || "";
+  $("#naver-password").placeholder = config.hasNaverPassword ? "Windows 암호화 저장됨 · 검색 전 자동 로그인" : "자동 로그인에 필요";
   $("#nike-login-id").value = config.nikeLoginId || "";
   $("#nike-password").placeholder = config.hasNikePassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
   $("#adidas-login-id").value = config.adidasLoginId || "";
