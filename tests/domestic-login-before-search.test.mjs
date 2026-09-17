@@ -28,10 +28,19 @@ test("missing retailer logins open the shared persistent login window sequential
   const start = main.indexOf("async function waitForDomesticLoginsBeforeSearch");
   const end = main.indexOf("async function domesticLoginStatuses", start);
   const block = main.slice(start, end);
-  assert.match(block, /await openDomesticLogin\(sourceId\)/);
+  assert.match(block, /await openDomesticLogin\(sourceId, \{ background: sourceId === "naver" \}\)/);
   assert.match(block, /10 \* 60_000/);
   assert.match(block, /await hasUsableDomesticLoginSession\(sourceId\)/);
   assert.match(block, /로그인 후 다음 판매처 확인을 자동으로 계속합니다/);
+});
+
+test("missing Naver credentials stop before opening a recurring login popup", () => {
+  const start = main.indexOf("async function waitForDomesticLoginsBeforeSearch");
+  const end = main.indexOf("async function domesticLoginStatuses", start);
+  const block = main.slice(start, end);
+  assert.ok(block.indexOf("naverAccountCredentials()") < block.indexOf("await openDomesticLogin"));
+  assert.match(block, /credentialsRequired: true/);
+  assert.match(block, /연동 관리에서 네이버 아이디와 비밀번호를 암호화 저장/);
 });
 
 test("enabled source groups map only to platforms actually queried by that group", () => {
