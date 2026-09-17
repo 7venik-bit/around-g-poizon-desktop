@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   bulkUpsert: (collection, items) => ipcRenderer.invoke("store:bulk-upsert", collection, items),
   remove: (collection, id) => ipcRenderer.invoke("store:remove", collection, id),
   saveConfig: (config) => ipcRenderer.invoke("config:save", config),
+  saveNaverAccount: (config) => ipcRenderer.invoke("naver-account:save", config),
   openMusinsaLedger: () => ipcRenderer.invoke("ledger:open-musinsa"),
   captureMusinsaLedger: () => ipcRenderer.invoke("ledger:capture-musinsa"),
   syncPurchaseLedger: (input) => ipcRenderer.invoke("ledger:sync", input),

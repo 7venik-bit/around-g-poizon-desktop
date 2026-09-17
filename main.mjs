@@ -11706,7 +11706,8 @@ async function hasUsableNaverLoginSession() {
   ]);
   const now = Date.now() / 1000;
   const usableNames = new Set(cookieGroups.flat()
-    .filter((cookie) => !Number.isFinite(cookie.expirationDate) || cookie.expirationDate > now)
+    .filter((cookie) => Boolean(String(cookie.value || ""))
+      && (!Number.isFinite(cookie.expirationDate) || cookie.expirationDate > now))
     .map((cookie) => String(cookie.name || "").toUpperCase()));
   return usableNames.has("NID_AUT") && usableNames.has("NID_SES");
 }
@@ -11729,6 +11730,63 @@ function naverCredentialMessage(code) {
   if (code === "NAVER_CREDENTIALS_UNREADABLE") return "이 PC에서 저장된 네이버 비밀번호를 읽을 수 없습니다. 연동 관리에서 비밀번호를 다시 저장하거나 직접 로그인해 주세요.";
   if (code === "NAVER_CREDENTIALS_REQUIRED") return "이 PC에 네이버 자동 로그인 정보가 없습니다. 연동 관리에서 네이버 아이디와 비밀번호를 암호화 저장하거나 직접 로그인해 주세요.";
   return "";
+}
+
+async function saveNaverAccount(config = {}) {
+  const previous = store.snapshot().settings;
+  const id = String(config.naverLoginId || "").trim();
+  const password = typeof config.naverPassword === "string" ? config.naverPassword : "";
+  if (!id) throw new Error("NAVER_LOGIN_ID_REQUIRED");
+  const accountChanged = id !== String(previous.naverLoginId || "").trim();
+  if (!password && accountChanged) throw new Error("NAVER_PASSWORD_REQUIRED_ON_ACCOUNT_CHANGE");
+  if (!password && naverAccountCredentials().code) throw new Error("NAVER_PASSWORD_REQUIRED");
+  const next = { naverLoginId: id };
+  if (password) next.naverPasswordEncrypted = encrypted(password);
+  // This action saves only Naver; unrelated, possibly unsaved form fields
+  // must not reset POIZON, official-mall or ledger settings.
+  await store.setSettings(next);
+  if (accountChanged) await clearDomesticLogin("naver");
+  else if (password) {
+    // An explicit replacement password starts a fresh user-requested attempt.
+    // Leaving the old window's attempted flag set would ignore the new secret.
+    const previousWindow = domesticLoginWindows.get("naver");
+    if (previousWindow && !previousWindow.isDestroyed()) previousWindow.close();
+  }
+  return publicConfig();
+}
+
+function observeNaverLoginSession(loginWindow) {
+  const cookies = loginWindow.webContents.session.cookies;
+  let disposed = false;
+  let lastState;
+  let queue = Promise.resolve();
+  const update = () => {
+    queue = queue.then(async () => {
+      if (disposed) return;
+      const hasSession = await hasUsableNaverLoginSession();
+      // Keep Naver's own expiry unchanged. Flush its issued cookies rather
+      // than extending a session cookie or copying a browser's credentials.
+      await cookies.flushStore();
+      if (disposed || hasSession === lastState) return;
+      lastState = hasSession;
+      mainWindow?.webContents.send("domestic-login:changed", { sourceId: "naver", hasSession });
+    }).catch(() => {
+      if (!disposed) mainWindow?.webContents.send("domestic-login:changed", {
+        sourceId: "naver", code: "NAVER_SESSION_SAVE_FAILED",
+      });
+    });
+  };
+  const changed = (_event, cookie) => {
+    if (/^(?:NID_AUT|NID_SES)$/.test(String(cookie?.name || ""))
+      && /(?:^|\.)naver\.com$/i.test(String(cookie?.domain || ""))) update();
+  };
+  cookies.on("changed", changed);
+  loginWindow.on("closed", () => {
+    disposed = true;
+    cookies.removeListener("changed", changed);
+    void cookies.flushStore().catch(() => {});
+  });
+  update();
 }
 
 async function submitStoredNaverCredentials(loginWindow) {
@@ -11764,7 +11822,11 @@ async function submitStoredNaverCredentials(loginWindow) {
     const password = document.querySelector("#pw") || [...document.querySelectorAll('input[type="password"]')].find(visible);
     const submit = document.getElementById("log.login") || [...document.querySelectorAll('button,input[type="submit"],[role="button"]')]
       .find((element) => visible(element) && /로그인|log\\s*in/i.test([element.textContent, element.value, element.getAttribute("aria-label")].join(" ")));
-    return id && password && submit ? { id: point(id), password: point(password), submit: point(submit) } : null;
+    const keepLabel = [...document.querySelectorAll('label')]
+      .find((element) => visible(element) && /로그인\\s*상태\\s*유지/.test(element.textContent || ""));
+    const keepInput = keepLabel && (document.getElementById(keepLabel.htmlFor) || keepLabel.querySelector('input[type="checkbox"]'));
+    return id && password && submit ? { id: point(id), password: point(password), submit: point(submit),
+      keepLogin: keepInput?.type === "checkbox" && !keepInput.checked ? point(keepLabel) : null } : null;
     })()`, true).catch(() => null);
     if (!fields) await wait(250);
   }
@@ -11784,6 +11846,7 @@ async function submitStoredNaverCredentials(loginWindow) {
   };
   await replaceText(fields.id, credentials.id);
   await replaceText(fields.password, credentials.password);
+  if (fields.keepLogin) await click(fields.keepLogin);
   await click(fields.submit);
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline && !loginWindow.isDestroyed()) {
@@ -11936,6 +11999,7 @@ async function domesticLoginStatuses() {
       name: source.name,
       url: source.url,
       hasSession,
+      credentialCode: source.id === "naver" ? naverAccountCredentials().code : "",
       windowOpen: Boolean(domesticLoginWindows.get(source.id) && !domesticLoginWindows.get(source.id).isDestroyed()),
     };
   }));
@@ -11944,6 +12008,9 @@ async function domesticLoginStatuses() {
 async function openDomesticLogin(sourceId, { background = false } = {}) {
   const source = domesticLoginSource(sourceId);
   if (!source) return { ok: false, message: "지원하지 않는 소싱몰입니다." };
+  if (source.id === "naver" && await hasUsableNaverLoginSession()) {
+    return { ok: true, reused: true, automatic: { ok: true, reused: true } };
+  }
   const existing = domesticLoginWindows.get(source.id);
   if (existing && !existing.isDestroyed()) {
     if (!background) {
@@ -11970,6 +12037,7 @@ async function openDomesticLogin(sourceId, { background = false } = {}) {
     webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, contextIsolation: true, backgroundThrottling: false },
   });
   domesticLoginWindows.set(source.id, loginWindow);
+  if (source.id === "naver") observeNaverLoginSession(loginWindow);
   loginWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//i.test(url)) loginWindow.loadURL(url).catch(() => {});
     return { action: "deny" };
@@ -12086,6 +12154,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("domestic-login:list", () => domesticLoginStatuses());
   ipcMain.handle("domestic-login:open", (_event, sourceId) => openDomesticLogin(sourceId));
   ipcMain.handle("domestic-login:clear", (_event, sourceId) => clearDomesticLogin(sourceId));
+  ipcMain.handle("naver-account:save", (_event, config) => saveNaverAccount(config));
   ipcMain.handle("config:save", async (_event, config) => {
     const previous = store.snapshot().settings;
     const naverLoginId = typeof config.naverLoginId === "string"

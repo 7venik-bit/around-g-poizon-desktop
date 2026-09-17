@@ -3327,6 +3327,11 @@ document.addEventListener("click", async (event) => {
     $("#naver-login-id")?.focus();
     return;
   }
+  const naverSaveLoginButton = event.target.closest("[data-naver-save-login]");
+  if (naverSaveLoginButton) {
+    await saveNaverAccountAndLogin(naverSaveLoginButton);
+    return;
+  }
   const accountLoginButton = event.target.closest("[data-domestic-login-source]");
   if (accountLoginButton) {
     if (accountLoginButton.disabled) return;
@@ -5160,6 +5165,55 @@ function calculate(margin) {
 }
 document.querySelectorAll("[data-margin]").forEach((button) => button.addEventListener("click", () => calculate(button.dataset.margin)));
 
+async function saveNaverAccountAndLogin(button) {
+  if (button.disabled) return;
+  const status = $("#naver-account-status");
+  button.disabled = true;
+  button.textContent = "저장 중…";
+  status.className = "status";
+  status.textContent = "네이버 계정을 암호화 저장하고 있습니다.";
+  let saved = false;
+  try {
+    const config = await window.aroundG.saveNaverAccount({
+      naverLoginId: $("#naver-login-id").value,
+      naverPassword: $("#naver-password").value,
+    });
+    saved = true;
+    $("#naver-login-id").value = config.naverLoginId || "";
+    $("#naver-password").value = "";
+    $("#naver-password").placeholder = "암호화 저장됨 · 변경할 때만 입력";
+    button.textContent = "로그인 확인 중…";
+    status.textContent = "계정을 저장했습니다. 네이버 로그인 상태를 확인합니다.";
+    const opened = await window.aroundG.openDomesticLogin("naver");
+    if (opened?.automatic?.ok) {
+      status.className = "status success";
+      status.textContent = "계정 저장·로그인 확인 완료. 상품 검색을 다시 실행해 주세요.";
+    } else {
+      status.textContent = opened?.ok === false ? "계정은 저장됐지만 로그인 창을 열지 못했습니다. 다시 시도해 주세요."
+        : "계정을 저장했습니다. 열린 네이버 창에서 로그인 또는 보안 확인을 완료해 주세요.";
+    }
+    await renderDomesticLoginStatuses();
+  } catch (error) {
+    const code = String(error?.message || "");
+    status.className = "status error";
+    status.textContent = code.includes("NAVER_LOGIN_ID_REQUIRED") ? "네이버 아이디를 입력해 주세요."
+      : /NAVER_PASSWORD_REQUIRED/.test(code) ? "네이버 비밀번호를 입력한 뒤 저장하고 로그인을 눌러 주세요."
+      : saved ? "계정은 저장됐지만 로그인 확인을 완료하지 못했습니다. 다시 시도해 주세요."
+        : "네이버 계정을 저장하지 못했습니다. 다시 시도해 주세요.";
+  } finally {
+    button.disabled = false;
+    button.textContent = "저장하고 로그인";
+  }
+}
+
+function domesticLoginStateLabel(source) {
+  if (source.hasSession) return "로그인 유지 중";
+  if (source.id !== "naver") return "로그인 필요";
+  if (source.credentialCode === "NAVER_CREDENTIALS_REQUIRED") return "계정 저장 필요";
+  if (source.credentialCode === "NAVER_CREDENTIALS_UNREADABLE") return "비밀번호 다시 저장 필요";
+  return "자동 로그인 준비됨";
+}
+
 async function renderDomesticLoginStatuses() {
   const list = $("#domestic-login-list");
   if (!list || !window.aroundG.listDomesticLogins) return;
@@ -5167,8 +5221,8 @@ async function renderDomesticLoginStatuses() {
   const sources = await window.aroundG.listDomesticLogins().catch(() => []);
   list.innerHTML = sources.map((source) => `
     <div class="domestic-login-row" data-source-id="${text(source.id)}">
-      <div><strong>${text(source.name)}</strong><span class="domestic-login-state ${source.hasSession ? "saved" : "required"}">${source.hasSession ? "세션 저장됨" : "로그인 필요"}</span></div>
-      <div class="domestic-login-actions"><button type="button" data-domestic-login>${source.hasSession ? "다시 로그인" : "로그인"}</button>${source.hasSession ? '<button type="button" data-domestic-clear>연동 해제</button>' : ""}</div>
+      <div><strong>${text(source.name)}</strong><span class="domestic-login-state ${source.hasSession ? "saved" : "required"}">${text(domesticLoginStateLabel(source))}</span></div>
+      <div class="domestic-login-actions"><button type="button" data-domestic-login>${source.hasSession && source.id === "naver" ? "로그인 확인" : source.hasSession ? "다시 로그인" : "로그인"}</button>${source.hasSession ? '<button type="button" data-domestic-clear>연동 해제</button>' : ""}</div>
     </div>`).join("") || '<div class="domestic-login-empty">표시할 소싱몰이 없습니다.</div>';
 }
 
@@ -5180,7 +5234,19 @@ $("#domestic-login-list")?.addEventListener("click", async (event) => {
   if (event.target.closest("[data-domestic-clear]")) await window.aroundG.clearDomesticLogin(row.dataset.sourceId);
   await renderDomesticLoginStatuses();
 });
-window.aroundG.onDomesticLoginChanged?.(() => renderDomesticLoginStatuses());
+window.aroundG.onDomesticLoginChanged?.((event) => {
+  if (event?.sourceId === "naver") {
+    const status = $("#naver-account-status");
+    if (status && event.code === "NAVER_SESSION_SAVE_FAILED") {
+      status.className = "status error";
+      status.textContent = "로그인 상태 저장을 확인하지 못했습니다. 상태 새로고침 후 다시 확인해 주세요.";
+    } else if (status && event.hasSession === true) {
+      status.className = "status success";
+      status.textContent = "네이버 로그인 확인 완료. 상품 검색을 다시 실행해 주세요.";
+    }
+  }
+  void renderDomesticLoginStatuses();
+});
 
 $("#settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
