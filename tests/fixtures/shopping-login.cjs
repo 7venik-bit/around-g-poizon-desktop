@@ -12,7 +12,7 @@ app.on('window-all-closed',()=>{});
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const deadline=setTimeout(()=>{console.error('SHOPPING_LOGIN_FIXTURE_TIMEOUT');app.exit(1);},50000);
 app.whenReady().then(async()=>{
-  const {ShoppingLoginConnector}=await import(pathToFileURL(resolve(root,'services/shopping-accounts.mjs')));
+  const {ShoppingLoginConnector,captureShoppingLoginPage}=await import(pathToFileURL(resolve(root,'services/shopping-accounts.mjs')));
   for(const method of ['password','naver','kakao']) {
     const partition='persist:offline-shopping-'+method,isolated=session.fromPartition(partition);
     const merchant='https://www.kolonmall.com',provider=method==='naver'?'https://nid.naver.com':'https://accounts.kakao.com';
@@ -37,6 +37,8 @@ app.whenReady().then(async()=>{
     const connector=new ShoppingLoginConnector({accounts,BrowserWindow,partition,windows,notify:()=>{}});
     await connector.open('kolon');const win=windows.get('kolon');
     for(let i=0;i<120 && connector.status('kolon').code!=='LOGIN_CONFIRMED';i++) await wait(100);
+    if(connector.status('kolon').code!=='LOGIN_CONFIRMED') console.log(JSON.stringify({method,
+      url:win.webContents.getURL(),page:await win.webContents.executeJavaScript(`(${captureShoppingLoginPage.toString()})(${JSON.stringify(method)})`)}));
     assert.equal(connector.status('kolon').code,'LOGIN_CONFIRMED',method+': '+JSON.stringify(connector.status('kolon')));
     assert.equal(submissions.length,1,method+' submitted exactly once');
     const expectedId=method==='password'?'kolon':method;

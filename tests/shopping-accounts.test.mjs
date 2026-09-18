@@ -89,6 +89,7 @@ function browserFixture(t,accounts) {
       Object.defineProperty(w.HTMLElement.prototype,'innerText',{get(){return this.textContent;}});
       w.HTMLElement.prototype.getBoundingClientRect=function(){const index=[...w.document.querySelectorAll('*')].indexOf(this);return {left:0,top:index*30,width:100,height:20};};
       const wc=this.webContents=new EventEmitter();
+      wc.focus=()=>{};
       wc.getURL=()=>w.location.href;wc.session={cookies:{flushStore:async()=>{this.flushed=true;}}};
       wc.mainFrame={executeJavaScript:async script=>{scripts.push(script);return w.eval(script);}};
       wc.setWindowOpenHandler=fn=>{this.popupHandler=fn;};

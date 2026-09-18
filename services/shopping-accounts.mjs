@@ -199,6 +199,9 @@ export class ShoppingLoginConnector {
     if(state.blocked) { setStatus('LOGIN_VERIFICATION_REQUIRED','보안 확인이 필요합니다. 열린 로그인 창에서 완료해 주세요.'); return; }
     const click=async point=>{
       if(win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+      win.focus();
+      win.webContents.focus();
+      win.webContents.sendInputEvent({type:'mouseMove',...point});
       win.webContents.sendInputEvent({type:'mouseDown',...point,button:'left',clickCount:1});
       win.webContents.sendInputEvent({type:'mouseUp',...point,button:'left',clickCount:1});
       await this.wait(120);
