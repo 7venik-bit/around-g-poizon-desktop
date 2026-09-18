@@ -1572,12 +1572,25 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
   recoveryProducts = [], recoveryOptions = {},
   browserSession = null,
 } = {}) {
-  const candidates = (Array.isArray(products) ? products : [])
+  let candidates = (Array.isArray(products) ? products : [])
     .filter((product) => isDomesticNaverPriceCard({
       productUrl: product?.url || product?.productUrl,
       title: product?.title,
       text: product?.text,
     }));
+  // A Fashion Town page can expose hundreds of recommendation/navigation
+  // links around the real result card. When the exact article is already
+  // visible in one or more cards, those exact cards are the complete candidate
+  // set for a code-priority search. Do not open every unrelated recommendation
+  // detail page and exhaust the retailer watchdog.
+  if (requireArticleIdentity) {
+    const expectedArticle = sanitizeDomesticProductCode(articleNumber);
+    const compact = (value) => String(value || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+    const exactCardCandidates = expectedArticle ? candidates.filter((product) =>
+      compact(`${product?.title || ""} ${product?.text || ""} ${product?.url || product?.productUrl || ""}`)
+        .includes(compact(expectedArticle))) : [];
+    if (exactCardCandidates.length) candidates = exactCardCandidates;
+  }
   if (!candidates.length) {
     return { products: [], candidateCount: 0, checkedCount: 0, rejectedCount: 0, failedCount: 0 };
   }
@@ -12017,15 +12030,12 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
       });
     }
     const automaticErrorCode = String(opened?.automatic?.code || "");
-    if (sourceId === "naver" && [
-      "NAVER_CREDENTIALS_REQUIRED",
-      "NAVER_CREDENTIALS_UNREADABLE",
-      "NAVER_LOGIN_WINDOW_CLOSED",
-      "NAVER_LOGIN_URL_INVALID",
-      "NAVER_LOGIN_PAGE_NOT_CONFIRMED",
-      "NAVER_LOGIN_INPUTS_NOT_FOUND",
-      "NAVER_LOGIN_FOCUS_REQUIRED",
-    ].includes(automaticErrorCode)) {
+    // If Naver changed its login DOM, redirected, or did not accept automated
+    // focus, the visible login window is still a valid manual recovery path.
+    // Do not immediately mark Naver failed and move to the next retailer while
+    // that window is waiting for the user. Only a window that was actually
+    // closed cannot complete the current preflight.
+    if (sourceId === "naver" && automaticErrorCode === "NAVER_LOGIN_WINDOW_CLOSED") {
       failures.push(domesticLoginFailure(source, automaticErrorCode, "네이버 자동 로그인 화면을 확인하지 못했습니다."));
       continue;
     }
@@ -12119,6 +12129,12 @@ async function openDomesticLogin(sourceId, { background = false } = {}) {
     domesticLoginWindows.delete(source.id);
     mainWindow?.webContents.send("domestic-login:changed", { sourceId: source.id });
   });
+  if (source.id === "naver") {
+    // A cold Electron session can leave the direct nid.naver.com document as
+    // a white page. Establish the first-party Naver session first, then open
+    // the login route in the same persistent partition.
+    await loginWindow.loadURL("https://www.naver.com/").catch(() => {});
+  }
   await loginWindow.loadURL(source.url).catch(() => {});
   if (source.id === "naver") {
     const automatic = await submitStoredNaverCredentials(loginWindow);

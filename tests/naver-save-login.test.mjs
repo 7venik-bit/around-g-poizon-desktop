@@ -153,6 +153,15 @@ test('authenticated Naver login checks reuse the session without opening a login
   assert.equal(result.automatic.ok, true);
 });
 
+test('a fresh Naver login establishes the home session before opening nid login', () => {
+  const start = main.indexOf('async function openDomesticLogin(');
+  const end = main.indexOf('async function clearDomesticLogin(', start);
+  const block = main.slice(start, end);
+  const home = block.indexOf('loginWindow.loadURL("https://www.naver.com/")');
+  const login = block.indexOf('loginWindow.loadURL(source.url)', home);
+  assert.ok(home >= 0 && login > home);
+});
+
 test('Naver session recognition rejects empty or expired authentication cookies', async () => {
   let cookies = [];
   const usable = runInNewContext(section(main, 'async function hasUsableNaverLoginSession()', 'function naverAccountCredentials()')
