@@ -24,6 +24,26 @@ test('Kolon official and retailer selections collect the same merchant only once
   assert.equal(requests.length, 0, 'duplicate Kolon HTTP collection must not run');
 });
 
+for (const status of ['verified', 'search_unsupported']) {
+  for (const host of ['kolonmall.com', 'www.kolonmall.com', 'm.kolonmall.com']) {
+    test(`saved Kolon ${status} at ${host} collects one merchant`, async () => {
+      let requests = 0;
+      const result = await queryDomesticProducts({ ...product, enabledSourceGroups: ['official', 'retailers'],
+        officialBrandRecord: { status, homepageUrl: `https://${host}/KOLONSPORT` },
+        fetchImpl: async () => { requests++; return new Response(emptyPage); } });
+      assert.deepEqual(result.sources.map(s => s.store), ['브랜드 공식몰']);
+      assert.equal(requests, 0);
+    });
+  }
+}
+
+test('an unrelated host containing the Kolon name cannot suppress the retailer', async () => {
+  const result = await queryDomesticProducts({ ...product, enabledSourceGroups: ['official', 'retailers'],
+    officialBrandRecord: { status: 'verified', homepageUrl: 'https://kolonmall.com.example.test/' },
+    fetchImpl: async () => new Response(emptyPage) });
+  assert.deepEqual(result.sources.map(s => s.store), ['브랜드 공식몰', '코오롱몰']);
+});
+
 test('disabling official search keeps the explicitly selected Kolon retailer', async () => {
   const result = await queryDomesticProducts({ ...product, enabledSourceGroups: ['retailers'],
     fetchImpl: async () => new Response(emptyPage) });
@@ -43,6 +63,7 @@ test('manual retailer links retain the exact code independently of the last fall
     const url = new URL(source.manualSearchUrl);
     assert.equal(url.searchParams.get('keyword') || url.searchParams.get('q'), product.articleNumber);
     assert.equal(source.searchAttempts[0].query, product.articleNumber);
+    assert.equal(source.searchQuery, product.articleNumber);
   }
 });
 
@@ -106,7 +127,7 @@ test('saved Naver credentials distinguish missing, readable, and unreadable encr
 function configSaver(settings) {
   let handler;
   const ctx = { ipcMain: { handle: (_name, fn) => { handler = fn; } },
-    store: { snapshot: () => ({ settings }), setSettings: async next => Object.assign(settings, next) },
+    store: { snapshot: () => ({ settings }), setSettingsCommitted: async next => Object.assign(settings, next) },
     encrypted: () => 'new-encrypted-fixture', publicConfig: () => ({ hasNaverPassword: Boolean(settings.naverPasswordEncrypted) }) };
   runInNewContext(section(main, '  ipcMain.handle("config:save"', '  ipcMain.handle("ledger:open-musinsa"'), ctx);
   return config => handler(null, config);

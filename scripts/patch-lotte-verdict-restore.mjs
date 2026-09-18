@@ -21,7 +21,9 @@ main = replaceOnce(
   '  const ssgChannelSource = /^SSG(?:\\s|$)/.test(String(source.store || ""));\n  const lotteChannelSource = /^롯데온(?:\\s|$)/.test(String(source.store || ""));',
   "declare Lotte rendered channel",
 );
-main = replaceOnce(
+// The canonical collector now includes LotteON through domesticRetailerSource.
+// Retain compatibility with older sources without rewriting the new path.
+if (!main.includes("    } else if (naverPortalSource || domesticRetailerSource || musinsaSource) {")) main = replaceOnce(
   main,
   "    } else if (naverPortalSource || ssgChannelSource || musinsaSource) {",
   "    } else if (naverPortalSource || ssgChannelSource || lotteChannelSource || musinsaSource) {",

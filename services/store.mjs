@@ -158,6 +158,22 @@ export class JsonStore {
     return index >= 0;
   }
 
+  setSettingsCommitted(settings) {
+    const submitted = structuredClone(settings);
+    const pendingSave = this.queue.then(async () => {
+      const snapshot = structuredClone(this.data);
+      snapshot.settings = { ...snapshot.settings, ...submitted };
+      const temporary = `${this.path}.tmp`;
+      await writeFile(temporary, JSON.stringify(snapshot, null, 2), "utf8");
+      await replaceWithRetry(temporary, this.path);
+      // Credentials become usable only after their durable write succeeds.
+      // Preserve unrelated mutations queued while this write was in flight.
+      this.data.settings = { ...this.data.settings, ...submitted };
+    });
+    this.queue = pendingSave.catch(() => {});
+    return pendingSave;
+  }
+
   async setSettings(settings) {
     this.data.settings = { ...this.data.settings, ...settings };
     await this.save();

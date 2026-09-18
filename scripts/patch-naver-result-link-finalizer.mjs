@@ -266,7 +266,9 @@ replaceOnce(
   "Naver presence and pending propagation",
 );
 
-replaceOnce(
+// Current aggregation also retains the actual attempted query. Do not insert
+// the legacy diagnostic object before that newer object during packaging.
+if (!source.includes('          query: String(attemptedQuery?.query || source.searchQuery || ""),')) replaceOnce(
   '        verificationReason: String(result?.verificationReason || ""),',
   '        verificationReason: String(result?.verificationReason || ""),\n        verificationStage: String(result?.verificationStage || result?.verificationDiagnostics?.stage || ""),\n        verificationDiagnostics: result?.verificationDiagnostics || {\n          stage: String(result?.verificationStage || "result_aggregation"),\n          reason: String(result?.verificationReason || ""),\n          resolvedUrl: String(result?.resolvedSearchUrl || source.searchUrl || ""),\n          visibleResultCount: Number.isFinite(count) ? Number(count) : null,\n          productCardCount: Number(result?.candidateCount || result?.products?.length || 0),\n        },\n        naverAllSearchVerdict: result?.naverAllSearchVerdict || null,',
   "Naver verdict propagation",
