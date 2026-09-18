@@ -61,9 +61,34 @@ export function normalizeStockOptions(options=[]) {
 export function mergeRetailerStockProducts(products = []) {
   const found = new Map();
   for (const product of products) {
-    const key = `${product.store}:${product.id || product.url}`;
+    const store = String(product.store || '').replace(/\s+/g,' ').trim();
+    const article = String(product.articleNumber || product.productCode || '')
+      .replace(/[^A-Z0-9]/gi,'').toUpperCase();
+    let urlIdentity='';
+    try {
+      const url=new URL(String(product.url||''));url.hash='';
+      for(const name of [...url.searchParams.keys()]) if(/^(?:utm_|NaPm$|n_media$|n_query$|n_rank$|n_ad$|from$|ref$)/i.test(name))url.searchParams.delete(name);
+      url.searchParams.sort();urlIdentity=url.href;
+    }catch{}
+    // Official-mall collectors can emit the same physical product once for
+    // the card, price, detail and each option checkpoint, each with a different
+    // transient id. The exact official article number is the stable identity.
+    // Marketplace rows still retain their seller/product URL identity.
+    const identity = store === '브랜드 공식몰' && article
+      ? `article:${article}` : urlIdentity ? `url:${urlIdentity}` : `id:${product.id || article}`;
+    const key = `${store}:${identity}`;
     const previous = found.get(key);
     const merged = {...previous, ...product};
+    if(previous?.sizes?.length || product.sizes?.length){
+      const sizes=new Map();
+      for(const size of [...(previous?.sizes||[]),...(product.sizes||[])]){
+        const sizeKey=Array.isArray(size.optionPath)&&size.optionPath.length
+          ? size.optionPath.join('\u0000') : String(size.label||'').replace(/\s+/g,' ').trim();
+        if(!sizeKey)continue;
+        sizes.set(sizeKey,{...sizes.get(sizeKey),...size});
+      }
+      merged.sizes=[...sizes.values()];
+    }
     // Fresh detail evidence wins, especially sold-out. A page with no stock
     // evidence must not erase the API options collected in the same search.
     if (previous && product.inStock == null && !product.stockText && !product.sizes?.length) {

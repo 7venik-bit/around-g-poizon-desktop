@@ -56,6 +56,24 @@ test('fresh detail stock replaces the search API result, while unknown detail pr
   assert.equal(preserved.sizes[0].quantity,3);
 });
 
+test('simulation: five repeated official rows collapse into one product with every size retained', () => {
+  const rows=Array.from({length:5},(_,index)=>({
+    store:'브랜드 공식몰',id:`capture-${index+1}`,articleNumber:'SR123LCR26',
+    title:'풀문워크 10% 티레인디',price:170100,
+    url:`https://www.example-official.co.kr/product/SR123LCR26?utm_source=pass${index+1}`,
+    inStock:index%2===0?true:null,stockVerified:index%2===0,
+    sizes:index%2===0?[{label:`GRWH_GREY-WHITE / ${230+index*5}`,inStock:true}]:[],
+  }));
+  const merged=mergeRetailerStockProducts(rows);
+  assert.equal(merged.length,1);
+  assert.equal(merged[0].articleNumber,'SR123LCR26');
+  assert.equal(merged[0].price,170100);
+  assert.deepEqual(merged[0].sizes.map(size=>size.label),[
+    'GRWH_GREY-WHITE / 230','GRWH_GREY-WHITE / 240','GRWH_GREY-WHITE / 250',
+  ]);
+  assert.equal(merged[0].inStock,true);
+});
+
 
 test('interrupted dependent options resume the failed colour only, preserving platform quantities', async () => {
   let color='',fail=true; const selected=[]; let checkpoint;
