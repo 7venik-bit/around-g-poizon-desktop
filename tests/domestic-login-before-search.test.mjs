@@ -20,9 +20,9 @@ test("domestic search verifies selected retailer logins before querying products
   assert.doesNotMatch(handler, /상품 검색을 시작하지 않았습니다/);
 });
 
-test("Naver login preflight requires the authenticated NID cookie pair", () => {
+test("Naver login preflight accepts either rotating authenticated NID token", () => {
   assert.match(main, /async function hasUsableNaverLoginSession\(\)/);
-  assert.match(main, /usableNames\.has\("NID_AUT"\) && usableNames\.has\("NID_SES"\)/);
+  assert.match(main, /usableNames\.has\("NID_AUT"\) \|\| usableNames\.has\("NID_SES"\)/);
   assert.match(main, /domesticCookieStillUsable\(cookie\)/);
   assert.match(main, /expiration <= 0/);
 });
