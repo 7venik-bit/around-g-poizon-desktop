@@ -14,6 +14,39 @@ async function fixture(t) {
 }
 
 for (const phase of ['write', 'rename']) {
+  test(`committed credentials remain unchanged after ${phase} failure`, async t => {
+    const store = await fixture(t);
+    await store.setSettings({naverLoginId:'previous',naverPasswordEncrypted:'encrypted:previous'});
+    const obstruction = phase === 'write' ? `${store.path}.tmp` : store.path;
+    if (phase === 'rename') await rm(store.path);
+    await mkdir(obstruction);
+    await assert.rejects(store.setSettingsCommitted({naverLoginId:'new',naverPasswordEncrypted:'encrypted:new'}));
+    assert.equal(store.snapshot().settings.naverLoginId, 'previous');
+    await rm(obstruction, {recursive:true});
+    await store.setSettings({unrelated:true});
+    const reopened = new JsonStore(dirname(store.path));
+    assert.equal((await reopened.load()).settings.naverLoginId, 'previous');
+  });
+}
+
+test('committed credentials preserve queued settings and ledger writes', async t => {
+  const store = await fixture(t);
+  const input = {naverLoginId:'saved',naverPasswordEncrypted:'encrypted:saved'};
+  const pending = store.setSettingsCommitted(input);
+  input.naverLoginId = 'mutated';
+  await Promise.resolve();
+  assert.equal(store.snapshot().settings.naverLoginId, undefined);
+  await Promise.all([pending, store.setSettings({unrelated:true}),
+    store.setSettingsCommitted({nikeLoginId:'nike'}), store.upsert('ledger',{id:'purchase',amount:100})]);
+  const memory = store.snapshot();
+  assert.equal(memory.settings.naverLoginId, 'saved');
+  assert.equal(memory.settings.nikeLoginId, 'nike');
+  assert.equal(memory.settings.unrelated, true);
+  assert.equal(memory.ledger[0].amount, 100);
+  assert.deepEqual(JSON.parse(await readFile(store.path,'utf8')), memory);
+});
+
+for (const phase of ['write', 'rename']) {
   test(`a ${phase} failure reaches its caller and the next save recovers`, async t => {
     const store = await fixture(t);
     // A directory at the relevant file path creates a real filesystem error

@@ -1022,8 +1022,11 @@ export async function queryDomesticProducts({
       // this very merchant. Keep the retailer if official search is disabled.
       return !selected.some((candidate) => {
         if (!candidate.officialBrand || !candidate.renderCount
-          || candidate.officialStatus !== OFFICIAL_DOMAIN_STATUS.VERIFIED) return false;
-        try { return new URL(candidate.homepageUrl).hostname.replace(/^www\./, "") === "kolonmall.com"; }
+          || ![OFFICIAL_DOMAIN_STATUS.VERIFIED, OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED].includes(candidate.officialStatus)) return false;
+        try {
+          const host = new URL(candidate.homepageUrl).hostname.toLowerCase();
+          return host === "kolonmall.com" || host.endsWith(".kolonmall.com");
+        }
         catch { return false; }
       });
     });
@@ -1087,7 +1090,7 @@ export async function queryDomesticProducts({
         searchQuery: interactiveOfficialSearch || source.fashionTown
           ? sanitizeDomesticProductCode(articleNumber || productCode || preferredQuery)
           : source.retailerDiscovery
-            ? internalPortalSearchQuery(brand || title, preferredQuery) : "",
+            ? internalPortalSearchQuery(brand || title, preferredQuery) : preferredQuery,
         searchAttempts: queryCandidates.map((candidate) => ({
           query: candidate,
           url: source.officialBrand ? officialAttemptUrlFor(candidate) : searchUrlFor(candidate),

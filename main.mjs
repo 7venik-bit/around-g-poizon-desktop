@@ -3442,7 +3442,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         );
       }
     }
-    // Naver and SSG exact results are already rendered above the fold.
+    // Naver, SSG and LotteON exact results are already rendered above the fold.
     // Scrolling first loads unrelated recommendations and can remove the
     // single exact card from the candidate set.
     if (musinsaSource) {
@@ -3483,7 +3483,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     }
     if (officialDirectDetail) {
       await wait(750);
-    } else if (naverPortalSource || ssgChannelSource || musinsaSource) {
+    } else if (naverPortalSource || domesticRetailerSource || musinsaSource) {
       await wait(1_500);
     } else {
       for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -4143,14 +4143,16 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       const queryAttempts = source.store === "브랜드 공식몰"
         ? allQueryAttempts.slice(0, 1) : allQueryAttempts;
       let result = null;
+      let attemptedQuery = allQueryAttempts[0];
       let sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
       const observedWork = new Set();
       let lastWork = "search_result";
       let detailProgress = {};
-      // Query fallbacks share the watchdog. Only a newly observed product or
-      // option renews it; an unchanged page/heartbeat cannot keep it alive.
+      // Query fallbacks share the watchdog. A completed empty search or new
+      // product/option is progress; an unchanged page cannot keep it alive.
       for (let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts.length; queryAttemptIndex += 1) {
         const queryAttempt = queryAttempts[queryAttemptIndex];
+        attemptedQuery = queryAttempt;
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
         onProgress?.({ completed: sources.length, total: progressTotal, source: String(source.store || "판매처"), phase: "searching", query: queryAttempt.query });
         // A Naver overview DOM belongs to exactly one submitted query. When an
@@ -4242,6 +4244,11 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       // next query (product code -> title -> title+code). A page/parser/detail
       // failure ends this source once and is never submitted as another query.
         if (queryResult.absenceConfirmed !== true) break;
+        if (queryResult.searchCompleted === true) {
+          // An authoritative result completed real work. Do not leave the next
+          // distinct query only the few seconds remaining from earlier queries.
+          sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
+        }
       }
       if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
       pendingProducts = [];
@@ -4258,7 +4265,8 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         .find((product) => /^https?:\/\//i.test(String(product?.url || "")))?.url || "");
       return {
         ...source,
-        searchUrl: String(result?.resolvedSearchUrl || source.searchUrl || ""),
+        searchQuery: String(attemptedQuery?.query || source.searchQuery || ""),
+        searchUrl: String(result?.resolvedSearchUrl || attemptedQuery?.url || source.searchUrl || ""),
         count: displayCount,
         countVerified: Number.isFinite(count) && (Number(count) > 0 || absenceConfirmed),
         verificationFailed: result?.resultLinkOnly === true ? false : !Number.isFinite(count),
@@ -4273,12 +4281,15 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         searchSubmitted: result?.searchSubmitted === true,
         verificationReason: String(result?.verificationReason || ""),
         verificationStage: String(result?.verificationStage || result?.verificationDiagnostics?.stage || ""),
-        verificationDiagnostics: result?.verificationDiagnostics || {
+        verificationDiagnostics: {
           stage: String(result?.verificationStage || "result_aggregation"),
           reason: String(result?.verificationReason || ""),
           resolvedUrl: String(result?.resolvedSearchUrl || source.searchUrl || ""),
           visibleResultCount: Number.isFinite(count) ? Number(count) : null,
           productCardCount: Number(result?.candidateCount || result?.products?.length || 0),
+          ...result?.verificationDiagnostics,
+          query: String(attemptedQuery?.query || source.searchQuery || ""),
+          targetUrl: String(attemptedQuery?.url || source.searchUrl || ""),
         },
         naverAllSearchVerdict: result?.naverAllSearchVerdict || null,
         securityVerificationRequired: result?.securityVerificationRequired === true,
@@ -11744,7 +11755,7 @@ async function saveNaverAccount(config = {}) {
   if (password) next.naverPasswordEncrypted = encrypted(password);
   // This action saves only Naver; unrelated, possibly unsaved form fields
   // must not reset POIZON, official-mall or ledger settings.
-  await store.setSettings(next);
+  await store.setSettingsCommitted(next);
   if (accountChanged) await clearDomesticLogin("naver");
   else if (password) {
     // An explicit replacement password starts a fresh user-requested attempt.
@@ -12180,7 +12191,7 @@ app.whenReady().then(async () => {
     if (config.adidasPassword) next.adidasPasswordEncrypted = encrypted(config.adidasPassword);
     if (typeof config.ledgerWebhookUrl === "string") next.ledgerWebhookUrl = config.ledgerWebhookUrl.trim();
     if (config.ledgerSecret) next.ledgerSecretEncrypted = encrypted(config.ledgerSecret);
-    await store.setSettings(next);
+    await store.setSettingsCommitted(next);
     return publicConfig();
   });
   ipcMain.handle("ledger:open-musinsa", () => openMusinsaLedgerWindow());

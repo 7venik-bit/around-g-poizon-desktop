@@ -14,5 +14,5 @@ test("Musinsa exact-code URL keeps the all-goods scope", () => {
 test("Musinsa captures the exact first result before virtual-list scrolling", async () => {
   const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
   assert.match(main, /const musinsaSource = String\(source\.store \|\| ""\) === "무신사"/);
-  assert.match(main, /naverPortalSource \|\| ssgChannelSource \|\| musinsaSource/);
+  assert.match(main, /naverPortalSource \|\| domesticRetailerSource \|\| musinsaSource/);
 });

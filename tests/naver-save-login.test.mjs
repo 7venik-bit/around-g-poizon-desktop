@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
@@ -49,10 +49,36 @@ test('Naver save survives reload and preserves other account/ledger settings', a
   assert.equal(store.snapshot().settings.naverPasswordEncrypted, 'encrypted:fixture-password');
 });
 
+test('failed Naver disk save cannot replace the active account or appear saved until restart', async t => {
+  const folder = await mkdtemp(join(tmpdir(), 'naver-save-failure-'));
+  t.after(() => rm(folder, { recursive: true, force: true }));
+  const store = new JsonStore(folder);
+  await store.load();
+  await store.setSettings({ naverLoginId: 'previous', naverPasswordEncrypted: 'encrypted:previous', ledgerWebhookUrl:'https://example.test' });
+  await mkdir(`${store.path}.tmp`);
+  let cleared = 0;
+  const save = saver(store, async () => { cleared++; });
+  await assert.rejects(save({ naverLoginId:'replacement', naverPassword:'replacement-password' }));
+  assert.equal(store.snapshot().settings.naverLoginId, 'previous');
+  assert.equal(store.snapshot().settings.naverPasswordEncrypted, 'encrypted:previous');
+  assert.equal(cleared, 0);
+  await rm(`${store.path}.tmp`, { recursive:true });
+  await store.setSettings({ unrelated:'saved later' });
+  const reopened = new JsonStore(folder);
+  await reopened.load();
+  assert.equal(reopened.snapshot().settings.naverLoginId, 'previous');
+  await save({ naverLoginId:'replacement', naverPassword:'replacement-password' });
+  assert.equal(cleared, 1);
+  const restarted = new JsonStore(folder);
+  await restarted.load();
+  assert.equal(restarted.snapshot().settings.naverLoginId, 'replacement');
+  assert.equal(restarted.snapshot().settings.ledgerWebhookUrl, 'https://example.test');
+});
+
 test('incomplete credentials never save or clear a working session', async () => {
   let writes = 0, clears = 0;
   const save = saver({ snapshot: () => ({ settings: { naverLoginId: 'old', naverPasswordEncrypted: 'encrypted:old' } }),
-    setSettings: async () => { writes++; } }, async () => { clears++; });
+    setSettingsCommitted: async () => { writes++; } }, async () => { clears++; });
   await assert.rejects(save({ naverPassword: 'fixture' }), /NAVER_LOGIN_ID_REQUIRED/);
   await assert.rejects(save({ naverLoginId: 'new' }), /NAVER_PASSWORD_REQUIRED_ON_ACCOUNT_CHANGE/);
   assert.equal(writes, 0);
@@ -62,7 +88,7 @@ test('incomplete credentials never save or clear a working session', async () =>
 test('an explicitly replaced password resets the previous attempt but an unchanged account does not', async () => {
   let closed = 0;
   const settings = { naverLoginId: 'fixture', naverPasswordEncrypted: 'encrypted:old' };
-  const store = { snapshot: () => ({ settings }), setSettings: async next => Object.assign(settings, next) };
+  const store = { snapshot: () => ({ settings }), setSettingsCommitted: async next => Object.assign(settings, next) };
   const windows = new Map([['naver', { isDestroyed: () => false, close: () => { closed++; } }]]);
   const save = saver(store, async () => { assert.fail('same account must keep its valid session'); }, windows);
   await save({ naverLoginId: 'fixture', naverPassword: '' });

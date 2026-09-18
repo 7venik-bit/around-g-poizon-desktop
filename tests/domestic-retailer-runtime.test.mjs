@@ -22,7 +22,7 @@ const channels = [
   ['롯데온', 'https://www.lotteon.com/search/search/search.ecn?render=search&q=SR123UPS11', 'https://www.lotteon.com/p/product/LO100'],
 ];
 
-function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, executeFrozen = false, captureError = false, empty = false, lateSecond = 0, pendingPrice = 0, pages = {} } = {}) {
+function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, executeFrozen = false, captureError = false, empty = false, lateSecond = 0, pendingPrice = 0, scrollPage = null, pages = {} } = {}) {
   let now = 0, nextId = 0;
   const timers = new Map(), windows = [], captures = [], navigations = [];
   const setTimer = (fn, ms = 0) => { const id = ++nextId; timers.set(id, { fn, at: now + ms }); return id; };
@@ -35,7 +35,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
       const w = this.dom.window;
       Object.defineProperty(w.HTMLElement.prototype, 'innerText', { get() { return this.textContent; } });
       w.HTMLElement.prototype.getBoundingClientRect = () => ({ width: 180, height: 100 });
-      w.scrollTo = () => {};
+      w.scrollTo = () => { if (scrollPage !== null) w.document.body.innerHTML = scrollPage; };
       this.webContents = {
         getURL: () => this.dom.window.location.href,
         isDestroyed: () => this.destroyed,
@@ -535,6 +535,49 @@ test('repeating the same stock option remains bounded and the next retailer runs
   assert.ok(f.now() <= 110_000);
 });
 
+test('LotteON captures the result grid before scrolling can replace it with recommendations', async t => {
+  const f = fixture(t, { scrollPage: '<aside>추천 상품<a href="https://www.lotteon.com/p/product/LO999"><img alt="다른 상품">OTHER12345 9,000원</a></aside>' });
+  const result = await f.search([channels[2]]);
+  assert.equal(result.products.length, 1);
+  assert.equal(result.products[0].url, channels[2][2]);
+  assert.equal(f.navigations.includes('https://www.lotteon.com/p/product/LO999'), false);
+});
+
+test('fallback failure retains the actual query and submitted URL in diagnostics', async t => {
+  const f = fixture(t);
+  const queries = ['SR123UPS11', '데상트 카라 셔츠'];
+  const attempts = queries.map(query => ({ query, url: `https://www.lotteon.com/csearch/search/search?q=${encodeURIComponent(query)}` }));
+  let calls = 0;
+  f.context.renderedSearchSourceResult = async () => ++calls === 1
+    ? { count: 0, products: [], absenceConfirmed: true, searchCompleted: true }
+    : { count: null, products: [], verificationReason: 'result_script_failed', verificationStage: 'result_capture' };
+  const result = await f.drive(f.context.addRenderedSearchCounts({ products: [], sources: [{store:'롯데온',renderCount:true,
+    searchQuery:queries[0],searchUrl:attempts[0].url,searchAttempts:attempts}] }, queries[0]));
+  assert.equal(calls, 2);
+  assert.equal(result.sources[0].searchQuery, queries[1]);
+  assert.equal(result.sources[0].verificationDiagnostics.targetUrl, attempts[1].url);
+  assert.equal(result.sources[0].absenceConfirmed, false);
+});
+
+test('completed empty queries count as progress before the next distinct fallback', async t => {
+  const f = fixture(t);
+  const attempts = ['SR123UPS11', '데상트 카라 셔츠', '데상트 카라 셔츠 SR123UPS11']
+    .map(query => ({query, url:`https://www.lotteon.com/csearch/search/search?q=${encodeURIComponent(query)}`}));
+  const seen = [];
+  f.context.renderedSearchSourceResult = async (_source,_code,_brand,_title,_retry,attempt) => {
+    seen.push(attempt.query);
+    await f.context.wait(40_000);
+    return {count:0,products:[],absenceConfirmed:true,searchCompleted:true,resolvedSearchUrl:attempt.url};
+  };
+  const result = await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{
+    store:'롯데온',renderCount:true,searchAttempts:attempts,searchUrl:attempts[0].url,
+  }]}, 'SR123UPS11'));
+  assert.deepEqual(seen, attempts.map(a => a.query));
+  assert.equal(result.sources[0].absenceConfirmed, true);
+  assert.equal(result.sources[0].verificationReason, '');
+  assert.equal(f.now(), 120_000);
+});
+
 for (const [store,url,html,reason] of [
   ['네이버 패션타운','https://shopping.naver.com/window/search/fashion-group?q=JH9976','<main>보안 확인을 완료해 주세요. <input placeholder="정답"></main>','security_verification_required'],
   ['무신사','https://www.musinsa.com/search/goods?keyword=JH9976&gf=A','<main>서비스 접속이 원활하지 않습니다. 잠시 후 다시 이용해 주세요.</main>','service_unavailable'],
@@ -589,14 +632,14 @@ test('IPC returns verified retailer prices promptly if final preference saving n
   assert.ok(f.now() < 120_000, 'completed results must not wait for stalled preference saving');
 });
 
-test('slow fallback queries share one retailer budget and return a partial source instead of blocking', async t => {
+test('a stalled fallback remains bounded after a completed empty query', async t => {
   const f = fixture(t);
   const h = f.installHandler([channels[1]]);
   f.context.queryDomesticProducts = async () => ({products:[],sources:[{store:'SSG',renderCount:true,linkOnly:true,searchUrl:channels[1][1],searchAttempts:[{query:'SR123UPS11'},{query:'카라 셔츠'},{query:'카라 셔츠 SR123UPS11'}]}]});
   const attempts = [];
   f.context.renderedSearchSourceResult = async (_source,_article,_brand,_title,_retry,attempt) => {
     attempts.push(attempt.query);
-    await f.context.wait(60_000);
+    await f.context.wait(attempts.length === 1 ? 60_000 : 120_000);
     const products = attempts.length === 3 ? [{store:'SSG',title:'데상트 SR123UPS11 카라 셔츠',articleNumber:'SR123UPS11',articleNumberVerified:true,price:84550,url:channels[1][2]}] : [];
     return {count:products.length,products,absenceConfirmed:!products.length,searchCompleted:true};
   };
@@ -606,7 +649,7 @@ test('slow fallback queries share one retailer budget and return a partial sourc
   assert.equal(response.data.products.length, 0);
   assert.equal(response.data.sources[0].verificationReason, 'collection_stalled');
   assert.equal(response.data.sources[0].absenceConfirmed, false);
-  assert.ok(f.now() <= 90_000);
+  assert.equal(f.now(), 150_000);
 });
 
 test('an expired old source timer cannot close a window opened after cancellation', async t => {

@@ -289,7 +289,7 @@ test("직접 검색 URL이 있는 브랜드 공식몰은 품번 링크를 사용
   assert.match(official.searchAttempts[0]?.url, /dk-on\.com\/DESCENTE\/search\?keyword=SR123UTS15/);
   assert.doesNotMatch(official.searchAttempts[0]?.url, /naver\.com/);
   assert.equal(official.interactiveSearch, false);
-  assert.equal(official.searchQuery, "");
+  assert.equal(official.searchQuery, "SR123UTS15");
 });
 
 test("브랜드 공식몰은 품번이 없을 때 상품코드로 검색한다", async () => {
@@ -302,7 +302,7 @@ test("브랜드 공식몰은 품번이 없을 때 상품코드로 검색한다",
   });
   const official = result.sources.find((source) => source.store === "브랜드 공식몰");
   assert.match(official.officialProductUrl, /keyword=DESCENTE-001/);
-  assert.equal(official.searchQuery, "");
+  assert.equal(official.searchQuery, "DESCENTE-001");
 });
 
 test("병행수입 검색은 상품코드가 포함된 네이버 쇼핑 결과 링크를 사용한다", async () => {
@@ -1081,7 +1081,7 @@ test("official-store direct search URL is preserved instead of replaying the mag
   assert.match(official.officialProductUrl, /adidas\.co\.kr\/search\?q=IH0274/);
   assert.match(official.searchAttempts[0]?.url, /adidas\.co\.kr\/search\?q=IH0274/);
   assert.equal(official.interactiveSearch, false);
-  assert.equal(official.searchQuery, "");
+  assert.equal(official.searchQuery, "IH0274");
 });
 
 test("official-store text matches without a product-detail URL are discarded", () => {

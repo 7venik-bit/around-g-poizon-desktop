@@ -21,7 +21,7 @@ test("a stalled domestic search stops after the main-process deadline", () => {
   assert.match(cachedSearch, /activeDomesticCheckpoint/);
 });
 
-test("fallbacks share an inactivity deadline renewed only for previously unseen stock work", () => {
+test("fallbacks share an inactivity deadline renewed for completed search or unseen stock work", () => {
   const start = main.indexOf("async function addRenderedSearchCounts(");
   const end = main.indexOf("async function verifyAllStoresWithMusinsaImage(", start);
   const renderedCounts = main.slice(start, end);
