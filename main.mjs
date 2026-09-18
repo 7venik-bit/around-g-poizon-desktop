@@ -2910,7 +2910,7 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
     stockCoverage: !variants.complete ? 'partial' : observed.stockVerified ? 'observed' : 'unknown'};
 }
 
-async function refreshDomesticProductStock(product, generation = domesticSearchGeneration, onActivity = null, resumeOptions = [], resumeBranches = []) {
+async function refreshDomesticProductStock(product, generation = domesticSearchGeneration, onActivity = null, resumeOptions = [], resumeBranches = [], hardTimeoutMs = DOMESTIC_RETAILER_HARD_TIMEOUT_MS) {
   if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
   const fallback = { inStock: product.inStock === false ? false : null, sizes: product.sizes || [],
     stockText: String(product.stockText || ""), stockStatus: product.inStock === false ? "soldout" : "unknown", stockVerified: product.inStock === false };
@@ -2919,8 +2919,15 @@ async function refreshDomesticProductStock(product, generation = domesticSearchG
     webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, backgroundThrottling: false, paintWhenInitiallyHidden: true, offscreen: true } });
   activeDomesticSearchWindows.add(stockWindow);
   stockWindow.on("closed", () => activeDomesticSearchWindows.delete(stockWindow));
-  let timer, expire, stopped = false;
+  let timer, hardTimer, expire, stopped = false;
   const deadline = new Promise(resolve => { expire = () => resolve(fallback); timer = setTimeout(expire, 45_000); });
+  // A product page can keep emitting changing option text without ever
+  // completing its option tree. Activity extends the inactivity timer, but it
+  // must not keep one retailer/product alive indefinitely and block every
+  // following product. Keep a separate absolute deadline that is never reset.
+  const hardDeadline = new Promise(resolve => {
+    hardTimer = setTimeout(() => resolve(fallback), Math.max(1, Number(hardTimeoutMs) || DOMESTIC_RETAILER_HARD_TIMEOUT_MS));
+  });
   const activity = async update => {
     if (stopped || stockWindow.isDestroyed()) return;
     clearTimeout(timer); timer = setTimeout(expire, 45_000);
@@ -2935,6 +2942,7 @@ async function refreshDomesticProductStock(product, generation = domesticSearchG
         return observed.stockText || observed.purchaseLimitText || observed.sizes.length || observed.inStock !== null ? observed : fallback;
       })(),
       deadline,
+      hardDeadline,
     ]);
   } catch (error) {
     if (domesticSearchCanceled(generation)) throw error;
@@ -2942,6 +2950,7 @@ async function refreshDomesticProductStock(product, generation = domesticSearchG
   } finally {
     stopped = true;
     clearTimeout(timer);
+    clearTimeout(hardTimer);
     if (!stockWindow.isDestroyed()) stockWindow.destroy();
     activeDomesticSearchWindows.delete(stockWindow);
   }
@@ -11756,12 +11765,23 @@ async function hasUsableNaverLoginSession() {
     persistentSession.cookies.get({ domain: "naver.com" }).catch(() => []),
     persistentSession.cookies.get({ domain: "nid.naver.com" }).catch(() => []),
   ]);
-  const now = Date.now() / 1000;
   const usableNames = new Set(cookieGroups.flat()
     .filter((cookie) => Boolean(String(cookie.value || ""))
-      && (!Number.isFinite(cookie.expirationDate) || cookie.expirationDate > now))
+      && domesticCookieStillUsable(cookie))
     .map((cookie) => String(cookie.name || "").toUpperCase()));
   return usableNames.has("NID_AUT") && usableNames.has("NID_SES");
+}
+
+function domesticCookieStillUsable(cookie, now = Date.now() / 1000) {
+  const expiration = Number(cookie?.expirationDate);
+  // Chromium/Electron may serialize a live session cookie with no expiry,
+  // `session: true`, 0, or -1. Only a positive timestamp at or before now is
+  // proof that the cookie expired. Treating 0/-1 as expired caused NID_SES to
+  // be rejected and reopened Naver login before every search.
+  return cookie?.session === true
+    || !Number.isFinite(expiration)
+    || expiration <= 0
+    || expiration > now;
 }
 
 function naverAccountCredentials() {
@@ -11988,9 +12008,8 @@ async function hasUsableDomesticLoginSession(sourceId) {
   const persistentSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
   const cookieGroups = await Promise.all(source.domains.map((domain) =>
     persistentSession.cookies.get({ domain }).catch(() => [])));
-  const now = Date.now() / 1000;
   return cookieGroups.flat().some((cookie) =>
-    (!Number.isFinite(cookie.expirationDate) || cookie.expirationDate > now)
+    domesticCookieStillUsable(cookie)
     && /(?:auth|login|session|token|member|user|account|sid|jwt)/i.test(String(cookie.name || ""))
     && Boolean(String(cookie.value || "")));
 }

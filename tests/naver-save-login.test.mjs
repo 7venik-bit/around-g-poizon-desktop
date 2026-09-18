@@ -176,6 +176,18 @@ test('Naver session recognition rejects empty or expired authentication cookies'
   assert.equal(await usable(), true);
 });
 
+test('Naver session recognition accepts Chromium session-cookie expiry sentinels', async () => {
+  let cookies = [{ name: 'NID_AUT', value: 'persistent', expirationDate: Date.now() / 1000 + 3600 },
+    { name: 'NID_SES', value: 'session', expirationDate: 0, session: true }];
+  const usable = runInNewContext(section(main, 'async function hasUsableNaverLoginSession()', 'function naverAccountCredentials()')
+    + '\nhasUsableNaverLoginSession', {
+    DOMESTIC_SEARCH_PARTITION: 'fixture', session: { fromPartition: () => ({ cookies: { get: async () => cookies } }) },
+  });
+  assert.equal(await usable(), true);
+  cookies[1] = { name: 'NID_SES', value: 'session', expirationDate: -1 };
+  assert.equal(await usable(), true);
+});
+
 test('manual login cookie changes persist and update the UI before the window closes', async () => {
   const cookies = new EventEmitter(), win = new EventEmitter(), events = [];
   let usable = false, writes = 0;
