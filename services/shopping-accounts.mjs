@@ -199,8 +199,15 @@ export class ShoppingLoginConnector {
     if(state.blocked) { setStatus('LOGIN_VERIFICATION_REQUIRED','보안 확인이 필요합니다. 열린 로그인 창에서 완료해 주세요.'); return; }
     const click=async point=>{
       if(win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
-      win.focus();
-      win.webContents.focus();
+      // A newly opened OAuth popup may not own keyboard focus yet. Wait for
+      // native focus before its first click instead of dropping the ID input.
+      let focused=false;
+      for(let attempt=0;attempt<6;attempt++) {
+        win.focus();win.webContents.focus();await this.wait(80);
+        if(win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+        if(win.isFocused() && win.webContents.isFocused()) {focused=true;break;}
+      }
+      if(!focused) throw new Error('LOGIN_FOCUS_REQUIRED');
       win.webContents.sendInputEvent({type:'mouseMove',...point});
       win.webContents.sendInputEvent({type:'mouseDown',...point,button:'left',clickCount:1});
       win.webContents.sendInputEvent({type:'mouseUp',...point,button:'left',clickCount:1});
@@ -226,6 +233,11 @@ export class ShoppingLoginConnector {
     const fill=async(point,value)=>{
       await click(point);
       if(win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+      const focused=await win.webContents.mainFrame.executeJavaScript(`(() => {
+        const target=document.elementFromPoint(${point.x},${point.y});
+        return document.activeElement===target && target?.tagName==='INPUT';
+      })()`,true);
+      if(!focused || win.webContents.getURL()!==url) throw new Error('LOGIN_INPUT_NOT_FOCUSED');
       win.webContents.sendInputEvent({type:'keyDown',keyCode:'A',modifiers:['control']});
       win.webContents.sendInputEvent({type:'keyUp',keyCode:'A',modifiers:['control']});
       await win.webContents.insertText(value);

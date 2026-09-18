@@ -88,19 +88,21 @@ function browserFixture(t,accounts) {
       w.document.addEventListener('submit',event=>event.preventDefault());
       Object.defineProperty(w.HTMLElement.prototype,'innerText',{get(){return this.textContent;}});
       w.HTMLElement.prototype.getBoundingClientRect=function(){const index=[...w.document.querySelectorAll('*')].indexOf(this);return {left:0,top:index*30,width:100,height:20};};
+      w.document.elementFromPoint=(_x,y)=>[...w.document.querySelectorAll('*')].find(el=>{const r=el.getBoundingClientRect();return Math.round(r.top+r.height/2)===y;});
       const wc=this.webContents=new EventEmitter();
       wc.focus=()=>{};
+      wc.isFocused=()=>true;
       wc.getURL=()=>w.location.href;wc.session={cookies:{flushStore:async()=>{this.flushed=true;}}};
       wc.mainFrame={executeJavaScript:async script=>{scripts.push(script);return w.eval(script);}};
       wc.setWindowOpenHandler=fn=>{this.popupHandler=fn;};
       wc.sendInputEvent=event=>{if(event.type==='mouseUp'){
         const el=[...w.document.querySelectorAll('*')].find(el=>{const r=el.getBoundingClientRect();return Math.round(r.top+r.height/2)===event.y;});
-        if(el?.tagName==='INPUT') this.focused=el; else el?.click();
+        if(el?.tagName==='INPUT') {this.focused=el;el.focus();} else el?.click();
       }};
       wc.insertText=async value=>{inserted.push({url:wc.getURL(),value});this.focused.value=value;};
       windows.push(this);
     }
-    isDestroyed(){return Boolean(this.destroyed);} show(){} focus(){}
+    isDestroyed(){return Boolean(this.destroyed);} isFocused(){return true;} show(){} focus(){}
     close(){this.destroyed=true;this.emit('closed');}
     async loadURL(url){this.dom.reconfigure({url});}
   }
@@ -169,6 +171,13 @@ test('navigation during native focus prevents secrets from reaching the changed 
   const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
   w.webContents.sendInputEvent=()=>w.dom.reconfigure({url:'https://untrusted.test/login'});
   await assert.rejects(b.connector.advance(w,{source:sources[1],method:'password',started:Date.now(),acted:new Set()}),/LOGIN_PAGE_CHANGED/);
+  assert.equal(b.inserted.length,0);
+});
+test('a lost input focus never types credentials into another control or submits a login',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
+  w.webContents.sendInputEvent=()=>{};
+  await assert.rejects(b.connector.advance(w,{source:sources[1],method:'password',started:Date.now(),acted:new Set()}),/LOGIN_INPUT_NOT_FOCUSED/);
   assert.equal(b.inserted.length,0);
 });
 test('automatic login stops at its deadline while a later manual callback can still be confirmed',async t=>{
