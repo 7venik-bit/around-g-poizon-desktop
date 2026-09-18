@@ -948,6 +948,18 @@ test('Kolon stock refresh opens size choices before capturing the result', async
   assert.deepEqual(result.sizes.map(s=>s.label),['90','95 품절']);
 });
 
+test('Kolon stock refresh has an absolute deadline even while option activity continues', async t => {
+  const url='https://www.kolonmall.com/Product/JKJGX25272SBU';
+  const f=fixture(t,{pages:{[url]:'<main><h1>여성 방수재킷</h1><button>구매하기</button></main>'}});
+  f.context.waitForDomesticCaptureReady=async()=>true;
+  f.context.collectRenderedProductStock=async(_w,_store,_generation,onActivity)=>{
+    for (;;) { await onActivity({option:'확인 중'}); await f.context.wait(5); }
+  };
+  const result=await f.drive(f.context.refreshDomesticProductStock({url,store:'코오롱몰'},0,null,[],[],25));
+  assert.equal(result.stockStatus,'unknown');
+  assert.equal(result.stockVerified,false);
+});
+
 test('opening size options keeps already-visible choices open', async t => {
   const url='https://official.example/products/open-options';
   const f=fixture(t,{pages:{[url]:'<main><h1>재킷</h1><button aria-expanded="true">사이즈 선택</button><div role="listbox"><div role="option">90</div><div role="option">95 품절</div></div><button>구매하기</button></main>'}});

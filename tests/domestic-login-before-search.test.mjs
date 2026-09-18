@@ -23,7 +23,8 @@ test("domestic search verifies selected retailer logins before querying products
 test("Naver login preflight requires the authenticated NID cookie pair", () => {
   assert.match(main, /async function hasUsableNaverLoginSession\(\)/);
   assert.match(main, /usableNames\.has\("NID_AUT"\) && usableNames\.has\("NID_SES"\)/);
-  assert.match(main, /cookie\.expirationDate > now/);
+  assert.match(main, /domesticCookieStillUsable\(cookie\)/);
+  assert.match(main, /expiration <= 0/);
 });
 
 test("missing retailer logins open the shared persistent login window sequentially", () => {
