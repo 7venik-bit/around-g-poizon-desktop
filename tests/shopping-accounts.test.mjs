@@ -149,6 +149,45 @@ test('verification pages receive no automatic credential input',async t=>{
   await b.connector.advance(w,{source:sources[1],method:'password',started:Date.now(),acted:new Set()});
   assert.equal(b.inserted.length,0);assert.equal(b.connector.status('kolon').code,'LOGIN_VERIFICATION_REQUIRED');
 });
+for(const provider of ['naver','kakao']) test(`${provider} merchant confirmation survives a slower popup submission`,async t=>{
+  const f=await fixture(t);await f.accounts.save({id:provider,loginId:'provider-id',password:'provider-secret'});
+  const b=browserFixture(t,f.accounts),parent=new b.BrowserWindow(),child=new b.BrowserWindow();
+  parent.dom.window.document.body.innerHTML='<button>로그아웃</button>';
+  child.dom.window.document.body.innerHTML=form;
+  await child.loadURL(`https://${provider==='naver'?'nid.naver.com':'accounts.kakao.com'}/login`);
+  const flow={source:sources[1],method:provider,started:Date.now(),acted:new Set()};
+  let submitted=false,confirmedDuringClick=false;
+  child.dom.window.document.querySelector('form').addEventListener('submit',()=>{submitted=true;});
+  b.connector.wait=async()=>{
+    if(submitted && !confirmedDuringClick) {
+      confirmedDuringClick=true;
+      await b.connector.advance(parent,flow);
+      assert.equal(b.connector.status('kolon').code,'LOGIN_CONFIRMED');
+    }
+  };
+  await b.connector.advance(child,flow);
+  assert.equal(confirmedDuringClick,true);assert.equal(flow.stopped,true);
+  assert.equal(b.connector.status('kolon').code,'LOGIN_CONFIRMED');
+  assert.deepEqual(b.inserted.map(x=>x.value),['provider-id','provider-secret']);
+  assert.equal(b.events.at(-1).code,'LOGIN_CONFIRMED');
+});
+test('a pending popup capture cannot replace confirmed merchant status or enter more credentials',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kakao',loginId:'provider-id',password:'provider-secret'});
+  const b=browserFixture(t,f.accounts),parent=new b.BrowserWindow(),child=new b.BrowserWindow();
+  parent.dom.window.document.body.innerHTML='<button>로그아웃</button>';
+  child.dom.window.document.body.innerHTML=form;
+  await child.loadURL('https://accounts.kakao.com/login');
+  const flow={source:sources[1],method:'kakao',started:Date.now(),acted:new Set()};
+  let releaseCapture;
+  const capture=child.webContents.mainFrame.executeJavaScript;
+  child.webContents.mainFrame.executeJavaScript=script=>new Promise(resolve=>{releaseCapture=async()=>{
+    child.webContents.mainFrame.executeJavaScript=capture;resolve(await capture(script));
+  };});
+  const pending=b.connector.advance(child,flow);
+  await b.connector.advance(parent,flow);await releaseCapture();await pending;
+  assert.equal(b.connector.status('kolon').code,'LOGIN_CONFIRMED');
+  assert.equal(b.inserted.length,0);
+});
 test('social discovery ignores unrelated footer links and hidden social buttons',t=>{
   const dom=new JSDOM('<body><footer><a href="https://blog.naver.com">네이버</a></footer><div hidden><button>네이버 로그인</button></div></body>',{url:'https://www.kolonmall.com/',runScripts:'outside-only'});
   t.after(()=>dom.window.close());
