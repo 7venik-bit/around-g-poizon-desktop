@@ -147,7 +147,9 @@ export class ShoppingLoginConnector {
       if(this.windows.get(id)===win) this.windows.delete(id);
       this.notify?.({sourceId:id});
     });
-    void win.loadURL(source.loginUrl || source.url).catch(()=>this.update(id,'LOGIN_PAGE_LOAD_FAILED','로그인 페이지를 열지 못했습니다. 다시 연결해 주세요.'));
+    void win.loadURL(source.loginUrl || source.url).catch(()=>{
+      if(!flow.stopped) this.update(id,'LOGIN_PAGE_LOAD_FAILED','로그인 페이지를 열지 못했습니다. 다시 연결해 주세요.');
+    });
     return {ok:true,opened:true,automatic:{ok:false,pending:true}};
   }
   attach(win,flow) {
@@ -158,7 +160,7 @@ export class ShoppingLoginConnector {
       if(busy) return;
       busy=true;
       try { await this.advance(win,flow); }
-      catch { this.update(flow.source.id,'LOGIN_ACTION_FAILED','자동 입력을 완료하지 못했습니다. 열린 창에서 이어서 로그인해 주세요.'); }
+      catch { if(!flow.stopped) this.update(flow.source.id,'LOGIN_ACTION_FAILED','자동 입력을 완료하지 못했습니다. 열린 창에서 이어서 로그인해 주세요.'); }
       finally { busy=false;if(flow.automaticStopped)this.clearIntervalImpl(timer); }
     };
     win.webContents.setWindowOpenHandler(({url})=> {
@@ -176,6 +178,7 @@ export class ShoppingLoginConnector {
     void tick();
   }
   async advance(win,flow) {
+    if(flow.stopped || win.isDestroyed()) return;
     const url=win.webContents.getURL();
     const merchant=shoppingLoginHostAllowed(url,flow.source.domains);
     const provider=flow.method==='naver' && shoppingLoginHostAllowed(url,['nid.naver.com']) ? 'naver'
@@ -187,12 +190,15 @@ export class ShoppingLoginConnector {
     }
     const method=merchant && !['naver','kakao'].includes(flow.source.id) ? flow.method : 'password';
     const state=await win.webContents.mainFrame.executeJavaScript(`(${captureShoppingLoginPage.toString()})(${JSON.stringify(method)})`,true);
-    if(!state || state.href!==url || win.webContents.getURL()!==url) return;
-    const setStatus=(code,message)=>this.update(flow.source.id,code,message);
+    if(flow.stopped || win.isDestroyed() || !state || state.href!==url || win.webContents.getURL()!==url) return;
+    // Parent and OAuth popup ticks can overlap. A callback may confirm the
+    // merchant while the popup is still awaiting its native submit click.
+    const setStatus=(code,message)=>{if(!flow.stopped) this.update(flow.source.id,code,message);};
     if(merchant && state.authenticated && !state.blocked) {
       await win.webContents.session.cookies.flushStore();
+      if(flow.stopped || win.isDestroyed()) return;
       flow.stopped=true;
-      setStatus('LOGIN_CONFIRMED','쇼핑몰 로그인 확인 완료'); return;
+      this.update(flow.source.id,'LOGIN_CONFIRMED','쇼핑몰 로그인 확인 완료'); return;
     }
     if(Date.now()-flow.started>120000) {
       flow.automaticStopped=true;
@@ -201,13 +207,13 @@ export class ShoppingLoginConnector {
     }
     if(state.blocked) { setStatus('LOGIN_VERIFICATION_REQUIRED','보안 확인이 필요합니다. 열린 로그인 창에서 완료해 주세요.'); return; }
     const click=async point=>{
-      if(win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+      if(flow.stopped || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
       // A newly opened OAuth popup may not own keyboard focus yet. Wait for
       // native focus before its first click instead of dropping the ID input.
       let focused=false;
       for(let attempt=0;attempt<6;attempt++) {
         win.focus();win.webContents.focus();await this.wait(80);
-        if(win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+        if(flow.stopped || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
         if(win.isFocused() && win.webContents.isFocused()) {focused=true;break;}
       }
       if(!focused) throw new Error('LOGIN_FOCUS_REQUIRED');
@@ -235,12 +241,12 @@ export class ShoppingLoginConnector {
     }
     const fill=async(point,value)=>{
       await click(point);
-      if(win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+      if(flow.stopped || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
       const focused=await win.webContents.mainFrame.executeJavaScript(`(() => {
         const target=document.elementFromPoint(${point.x},${point.y});
         return document.activeElement===target && target?.tagName==='INPUT';
       })()`,true);
-      if(!focused || win.webContents.getURL()!==url) throw new Error('LOGIN_INPUT_NOT_FOCUSED');
+      if(flow.stopped || win.isDestroyed() || !focused || win.webContents.getURL()!==url) throw new Error('LOGIN_INPUT_NOT_FOCUSED');
       win.webContents.sendInputEvent({type:'keyDown',keyCode:'A',modifiers:['control']});
       win.webContents.sendInputEvent({type:'keyUp',keyCode:'A',modifiers:['control']});
       await win.webContents.insertText(value);
