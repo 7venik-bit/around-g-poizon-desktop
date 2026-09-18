@@ -4,6 +4,7 @@ import {mkdtemp,mkdir,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {EventEmitter} from 'node:events';
+import {runInNewContext} from 'node:vm';
 import {JSDOM} from 'jsdom';
 import {JsonStore} from '../services/store.mjs';
 import {ShoppingAccounts,ShoppingLoginConnector,captureShoppingLoginPage,shoppingLoginHostAllowed} from '../services/shopping-accounts.mjs';
@@ -176,6 +177,22 @@ test('automatic login stops at its deadline while a later manual callback can st
   await b.connector.advance(w,flow);assert.equal(flow.automaticStopped,true);assert.equal(b.inserted.length,0);
   w.dom.window.document.body.innerHTML='<button>로그아웃</button>';
   await b.connector.advance(w,flow);assert.equal(b.connector.status('kolon').code,'LOGIN_CONFIRMED');
+});
+test('provider account changes clear only the shops linked through that provider',async()=>{
+  const main=await readFile(new URL('../main.mjs',import.meta.url),'utf8');
+  const start=main.indexOf('async function clearDomesticLogin(');
+  const code=main.slice(start,main.indexOf('\napp.whenReady()',start));
+  const removed=[],closed=[],statuses=[];
+  const context={DOMESTIC_LOGIN_SOURCES:sources,domesticLoginSource:id=>sources.find(source=>source.id===id),
+    DOMESTIC_SEARCH_PARTITION:'persist:fixture',store:{snapshot:()=>({settings:{shoppingAccounts:{kolon:{method:'naver'},musinsa:{method:'kakao'}}}})},
+    session:{fromPartition:()=>({cookies:{get:async({domain})=>[{name:'member_session',domain,secure:true}],remove:async url=>removed.push(new URL(url).hostname)}})},
+    domesticLoginWindows:new Map(['kolon','naver','musinsa'].map(id=>[id,{close:()=>closed.push(id)}])),
+    shoppingAccountServicesCache:{connector:{update:id=>statuses.push(id)}}};
+  const clear=runInNewContext(code+'\nclearDomesticLogin',context);
+  await clear('naver');
+  assert.deepEqual(closed,['kolon','naver']);assert.deepEqual(statuses,['kolon','naver']);
+  assert.ok(removed.includes('kolonmall.com'));assert.ok(removed.includes('naver.com'));
+  assert.ok(!removed.includes('musinsa.com'));
 });
 test('shopping secrets are excluded from portable backup and renderer snapshot',async()=>{
   const main=await readFile(new URL('../main.mjs',import.meta.url),'utf8');

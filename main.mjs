@@ -12104,6 +12104,13 @@ async function openDomesticLogin(sourceId, { background = false } = {}) {
 async function clearDomesticLogin(sourceId) {
   const source = domesticLoginSource(sourceId);
   if (!source) return { ok: false, message: "지원하지 않는 소싱몰입니다." };
+  // A provider account change must not leave a linked shop signed into the
+  // previous person while reporting the new provider account as connected.
+  if (["naver", "kakao"].includes(source.id)) {
+    const savedAccounts = store.snapshot().settings.shoppingAccounts || {};
+    for (const linked of DOMESTIC_LOGIN_SOURCES.filter(item => !["naver", "kakao"].includes(item.id)
+      && savedAccounts[item.id]?.method === source.id)) await clearDomesticLogin(linked.id);
+  }
   const persistentSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
   for (const domain of source.domains) {
     const cookies = await persistentSession.cookies.get({ domain }).catch(() => []);
