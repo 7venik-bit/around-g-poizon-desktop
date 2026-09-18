@@ -238,6 +238,26 @@ test('existing authenticated session works without a stored password', async () 
   assert.equal(result.ok, true);
 });
 
+test('a visible Naver login page waits for manual completion instead of skipping the source', async () => {
+  let checks = 0;
+  const loginWindow = { isDestroyed: () => false, close() {} };
+  const ctx = {
+    domesticLoginSourceIdsForSearch: () => ['naver'],
+    domesticLoginSource: () => ({ id: 'naver', name: '네이버' }),
+    hasUsableDomesticLoginSession: async () => ++checks >= 3,
+    naverAccountCredentials: () => ({ code: '' }),
+    openDomesticLogin: async () => ({ ok: true, automatic: { ok: false, code: 'NAVER_LOGIN_INPUTS_NOT_FOUND' } }),
+    domesticLoginWindows: new Map([['naver', loginWindow]]),
+    mainWindow: { webContents: { send() {} } },
+    wait: async () => {},
+    domesticLoginFailure: () => { throw new Error('manual login must not be reported as failed'); },
+  };
+  const result = await runInNewContext(section(main, 'async function waitForDomesticLoginsBeforeSearch', 'async function domesticLoginStatuses')
+    + '\nwaitForDomesticLoginsBeforeSearch(["naver"])', ctx);
+  assert.equal(result.ok, true);
+  assert.ok(checks >= 3);
+});
+
 test('public config returns credential health, never the decrypted password', () => {
   const ctx = { store: { snapshot: () => ({ settings: { naverLoginId: 'fixture', naverPasswordEncrypted: 'encrypted-fixture' } }) },
     naverAccountCredentials: () => ({ code: '', password: 'fixture-secret' }), naverCredentialMessage: () => '' };

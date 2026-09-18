@@ -51,7 +51,8 @@ test("automatic preflight does not repeatedly open an empty Naver login window",
   const credentialGuard = block.indexOf('sourceId === "naver"');
   const openWindow = block.indexOf("await openDomesticLogin");
   assert.ok(credentialGuard >= 0 && credentialGuard < openWindow);
-  assert.match(block, /NAVER_CREDENTIALS_REQUIRED/);
+  assert.match(block, /const credentials = naverAccountCredentials\(\)/);
+  assert.match(block, /if \(credentials\.code\)[\s\S]*?continue;/);
   assert.match(block, /\{ background: sourceId === "naver" \}/);
   assert.match(main, /show: !background/);
   assert.match(main, /backgroundThrottling: false/);

@@ -34,8 +34,8 @@ test("missing retailer logins open the shared persistent login window sequential
   assert.match(block, /10 \* 60_000/);
   assert.match(block, /await hasUsableDomesticLoginSession\(sourceId\)/);
   assert.match(block, /로그인 후 다음 판매처 확인을 자동으로 계속합니다/);
-  assert.match(block, /NAVER_LOGIN_INPUTS_NOT_FOUND/);
-  assert.ok(block.indexOf("NAVER_LOGIN_INPUTS_NOT_FOUND") < block.indexOf("const deadline = Date.now()"));
+  assert.match(block, /automaticErrorCode === "NAVER_LOGIN_WINDOW_CLOSED"/);
+  assert.doesNotMatch(block, /NAVER_LOGIN_INPUTS_NOT_FOUND[\s\S]*?continue;/);
 });
 
 test("missing Naver credentials skip only Naver before opening a recurring login popup", () => {

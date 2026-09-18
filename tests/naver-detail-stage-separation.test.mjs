@@ -193,6 +193,21 @@ test('54 captured unique links remain 54; tracking duplicates are not extra deta
   assert.equal(r.verificationDiagnostics.extractedProductCount,54);
 });
 
+test('exact-code search verifies matching cards without opening 165 unrelated recommendations',async t=>{
+  const f=fixture(t,{html:documentHtml('<button>구매하기</button>'),collectStock:async()=>completeStock()});
+  const decoys=Array.from({length:165},(_,i)=>({...f.candidate,
+    url:`https://shopping.naver.com/window-products/outlet/${20000000000+i}`,
+    title:`추천 운동화 ${i+1}`,text:`추천 운동화 ${i+1}`}));
+  const exact={...f.candidate,title:`${TITLE} JH9976`,text:`${TITLE} JH9976 149,000원`};
+  const r=await f.context.verifyApprovedNaverDomesticProducts([...decoys,exact],{
+    articleNumber:'JH9976',brand:'아디다스',title:TITLE,requireArticleIdentity:true,
+  });
+  assert.equal(r.candidateCount,1);
+  assert.equal(r.checkedCount,1);
+  assert.equal(r.products.length,1);
+  assert.deepEqual(f.navigations,[URL_PRODUCT]);
+});
+
 
 test('REGRESSION: an option loader cannot become complete inventory after identity succeeds',async t=>{
   const f=fixture(t,{html:documentHtml('<section aria-busy="true"><button>구매하기</button></section>'),collectStock:async()=>completeStock()});
