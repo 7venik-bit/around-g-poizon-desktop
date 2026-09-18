@@ -88,6 +88,8 @@ export function captureShoppingLoginPage(method = 'password') {
   };
   const label = element => [element.innerText || element.textContent || element.value,element.getAttribute('aria-label'),element.title,
     ...[...element.querySelectorAll('img')].map(img=>img.alt)].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
+  const alternateAuth=element=>/pass[\s_-]*key|패스\s*키|webauthn|fido|security[\s_-]*key|보안\s*키|qrcode|qr\s*코드|일회용|one[\s_-]*time|biometric|생체/i.test(
+    [label(element),element.id,element.className,element.getAttribute('name'),element.getAttribute('href'),element.getAttribute('onclick')].join(' '));
   const controls=[...document.querySelectorAll('a,button,input[type="submit"],[role="button"]')].filter(visible);
   const point=element=>{ if (!element) return null; const r=element.getBoundingClientRect();
     return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}; };
@@ -95,9 +97,10 @@ export function captureShoppingLoginPage(method = 'password') {
   const blocked=/보안\s*(?:확인|문자)|자동입력\s*방지|2단계\s*인증|인증번호를?\s*입력|비정상적인\s*접근|access\s*denied/i.test(text);
   const authenticated=controls.some(el=>/로그아웃|log\s*out|sign\s*out/i.test(label(el)));
   const loginEntry=controls.find(el=>/로그인|log\s*in|sign\s*in/i.test(label(el))
-    && !/네이버|naver|카카오|kakao|회원가입|sign\s*up/i.test(label(el)));
+    && !alternateAuth(el) && !/네이버|naver|카카오|kakao|회원가입|sign\s*up/i.test(label(el)));
   const providerPattern=method==='naver' ? /네이버|naver/i : /카카오|kakao/i;
   const provider=method==='password' ? null : controls.find(el=>providerPattern.test(label(el))
+    && !alternateAuth(el)
     && !/공유|share|채널\s*추가|상담|문의|회원가입|sign\s*up/i.test(label(el))
     && (/로그인|login|간편|시작|계속/i.test(label(el))
       || /login|signin|auth|oauth|sns/i.test([el.id,el.className,el.getAttribute('href'),el.getAttribute('onclick'),location.pathname].join(' '))));
@@ -108,8 +111,8 @@ export function captureShoppingLoginPage(method = 'password') {
   const id=candidates.find(el=>!['password','hidden','checkbox','radio','submit','button'].includes(el.type)
     && /email|user|login|아이디|이메일|전화번호|(?:^|\s)id(?:\s|$)/i.test([el.type,el.id,el.name,el.placeholder,el.autocomplete,el.getAttribute('aria-label')].join(' ')));
   const submit=controls.find(el=>(!form || form.contains(el)) && /로그인|log\s*in|sign\s*in/i.test(label(el))
-    && !/네이버|naver|카카오|kakao|가입|sign\s*up/i.test(label(el)))
-    || (form && [...form.querySelectorAll('button[type="submit"],input[type="submit"]')].find(visible));
+    && !alternateAuth(el) && !/네이버|naver|카카오|kakao|가입|sign\s*up/i.test(label(el)))
+    || (form && [...form.querySelectorAll('button[type="submit"],input[type="submit"]')].find(el=>visible(el) && !alternateAuth(el)));
   const next=!password && id && controls.find(el=>/^(?:다음|계속|continue|next)$/i.test(label(el)));
   return {href:location.href,blocked,authenticated,provider:point(provider),loginEntry:point(loginEntry),
     id:point(id),password:point(password),submit:point(submit),next:point(next)};

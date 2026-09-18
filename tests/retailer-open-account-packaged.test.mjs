@@ -25,7 +25,7 @@ test('official Open, exact manual links, and credential recovery survive every r
   };
   for (const script of scripts) run([script]);
   for (const path of ['main.mjs', 'src/renderer.js', 'src/domestic-inline-results.js', 'src/sourcing-view.js']) run(['--check', path]);
-  const output = run(['--test', '--test-reporter=tap', 'tests/retailer-open-account-regression.test.mjs', 'tests/naver-save-login.test.mjs', 'tests/domestic-retailer-runtime.test.mjs', 'tests/store-save-recovery.test.mjs', 'tests/shopping-accounts.test.mjs', 'tests/shopping-accounts-ui.test.mjs']);
+  const output = run(['--test', '--test-reporter=tap', 'tests/retailer-open-account-regression.test.mjs', 'tests/naver-save-login.test.mjs', 'tests/naver-password-route.test.mjs', 'tests/domestic-retailer-runtime.test.mjs', 'tests/store-save-recovery.test.mjs', 'tests/shopping-accounts.test.mjs', 'tests/shopping-accounts-ui.test.mjs']);
   assert.match(output, /# tests [1-9]\d*/);
   assert.match(output, /# fail 0/);
 });

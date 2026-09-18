@@ -5,29 +5,70 @@ const assert=require('node:assert/strict');
 const {readFileSync,writeFileSync,mkdirSync}=require('node:fs');
 const {resolve}=require('node:path');
 const {pathToFileURL}=require('node:url');
+const {createContext,runInContext}=require('node:vm');
 const root=resolve(__dirname,'../..');
 app.setPath('userData',process.env.AROUNDG_STOCK_TEST_PROFILE);
 app.disableHardwareAcceleration();
 app.on('window-all-closed',()=>{});
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+// Current public Naver controls: passkey buttons precede ordinary password
+// buttons and both are type=button. Only the ordinary button submits the form.
+const naverForm=`<style>.naver-buttons-column{display:none}.naver-buttons-row{display:block}@media(max-width:599px){.naver-buttons-column{display:block}.naver-buttons-row{display:none}}</style>
+  <form method="post" action="/submit"><input id="id" name="id"><input id="pw" name="pw" type="password">
+  <input id="loginStay" type="checkbox"><label for="loginStay">로그인 상태 유지</label>
+  <div class="naver-buttons-column">
+  <button id="passkeyBtn_column" type="button" onclick="fetch('/passkey-trigger')">패스키 로그인</button>
+  <button id="loginBtn_column" type="button" onclick="this.form.requestSubmit()">로그인</button>
+  </div><div class="naver-buttons-row"><button id="passkeyBtn_row" type="button" onclick="fetch('/passkey-trigger')">패스키 로그인</button>
+  <button id="loginBtn_row" type="button" onclick="this.form.requestSubmit()">로그인</button></div></form>`;
 const deadline=setTimeout(()=>{console.error('SHOPPING_LOGIN_FIXTURE_TIMEOUT');app.exit(1);},50000);
 app.whenReady().then(async()=>{
   const {ShoppingLoginConnector,captureShoppingLoginPage}=await import(pathToFileURL(resolve(root,'services/shopping-accounts.mjs')));
+  const directPartition='persist:offline-direct-naver',directSession=session.fromPartition(directPartition);
+  let directPosts=0,directPasskeyClicks=0;
+  directSession.protocol.handle('https',async request=>{
+    const url=new URL(request.url);
+    if(url.pathname==='/passkey-trigger'){directPasskeyClicks++;return new Response('unexpected passkey click');}
+    let body=naverForm;
+    if(url.pathname==='/submit') {
+      const fields=new URLSearchParams(await request.text());directPosts++;
+      assert.equal(fields.get('id'),'naver-fixture-id');assert.equal(fields.get('pw'),'naver-fixture-secret');
+      body='<script>document.cookie="NID_AUT=fixture;Domain=naver.com;path=/;Secure";document.cookie="NID_SES=fixture;Domain=naver.com;path=/;Secure";</script><button>로그아웃</button>';
+    }
+    return new Response('<!doctype html><meta charset="utf-8"><body>'+body+'</body>',{headers:{'content-type':'text/html;charset=utf-8'}});
+  });
+  const mainSource=readFileSync(resolve(root,'main.mjs'),'utf8'),directWindows=new Map();
+  const directContext=createContext({BrowserWindow,session,URL,Date,wait,DOMESTIC_SEARCH_PARTITION:directPartition,
+    domesticLoginWindows:directWindows,mainWindow:{webContents:{send:()=>{}}},
+    domesticLoginSource:()=>({id:'naver',name:'네이버',url:'https://nid.naver.com/nidlogin.login'}),
+    naverAccountCredentials:()=>({id:'naver-fixture-id',password:'naver-fixture-secret',code:''})});
+  const section=(start,end)=>mainSource.slice(mainSource.indexOf(start),mainSource.indexOf(end,mainSource.indexOf(start)));
+  runInContext(section('async function hasUsableNaverLoginSession()', 'function naverAccountCredentials()'),directContext);
+  runInContext(section('function observeNaverLoginSession(', 'function domesticLoginSourceIdsForSearch('),directContext);
+  runInContext(section('async function openDomesticLogin(', 'async function clearDomesticLogin('),directContext);
+  const opened=await directContext.openDomesticLogin('naver',{background:true});
+  assert.equal(opened.automatic?.ok,true,JSON.stringify(opened));
+  assert.equal(directPosts,1);assert.equal(directPasskeyClicks,0);
+  const reused=await directContext.openDomesticLogin('naver',{background:true});
+  assert.equal(reused.reused,true);assert.equal(directPosts,1);
+  directWindows.get('naver').close();directSession.protocol.unhandle('https');
+  console.log(JSON.stringify({method:'direct-naver',offline:true,passwordSubmittedOnce:true,passkeyClicks:0,sessionReused:true}));
   for(const method of ['password','naver','kakao']) {
     const partition='persist:offline-shopping-'+method,isolated=session.fromPartition(partition);
     const merchant='https://www.kolonmall.com',provider=method==='naver'?'https://nid.naver.com':'https://accounts.kakao.com';
     const source={id:'kolon',name:'코오롱몰',url:merchant,domains:['kolonmall.com']};
     const credentials=id=>({loginId:id+'-fixture-id',password:id+'-fixture-secret',code:''});
     const accounts={source:()=>source,publicAccount:()=>({method}),credentials};
-    const windows=new Map(),submissions=[];
+    const windows=new Map(),submissions=[];let passkeyClicks=0;
     const form='<form method="post" action="/submit"><input name="username" autocomplete="username"><input type="password" name="password"><button type="submit">로그인</button></form>';
     isolated.protocol.handle('https',async request=>{
       const url=new URL(request.url);let body='';
+      if(url.pathname==='/passkey-trigger'){passkeyClicks++;return new Response('unexpected passkey click');}
       if(url.pathname==='/submit') {
         const fields=new URLSearchParams(await request.text());
-        submissions.push({origin:url.origin,id:fields.get('username'),password:fields.get('password')});
+        submissions.push({origin:url.origin,id:fields.get('username') ?? fields.get('id'),password:fields.get('password') ?? fields.get('pw')});
         body=`<script>location.href=${JSON.stringify(merchant+'/callback')}</script>`;
-      } else if(url.origin===provider) body=form;
+      } else if(url.origin===provider) body=method==='naver'?naverForm:form;
       else if(url.pathname==='/callback') body=`<script>document.cookie='member_session=fixture;path=/;SameSite=Lax;Secure';if(window.opener){window.opener.postMessage('fixture-login-complete',${JSON.stringify(merchant)});setTimeout(()=>window.close(),100);}else{document.write('<button>로그아웃</button>');}</script>`;
       else if(url.pathname==='/login') body=method==='password' ? form
         : `<button onclick="const popup=window.open('about:blank','fixture-social');popup.location.href='${provider}/login';">${method} 로그인</button><script>addEventListener('message',event=>{if(event.origin===${JSON.stringify(merchant)}&&event.data==='fixture-login-complete'){window.callbackReceived=true;document.body.innerHTML='<button>로그아웃</button>';}});</script>`;
@@ -41,6 +82,7 @@ app.whenReady().then(async()=>{
       url:win.webContents.getURL(),page:await win.webContents.executeJavaScript(`(${captureShoppingLoginPage.toString()})(${JSON.stringify(method)})`)}));
     assert.equal(connector.status('kolon').code,'LOGIN_CONFIRMED',method+': '+JSON.stringify(connector.status('kolon')));
     assert.equal(submissions.length,1,method+' submitted exactly once');
+    assert.equal(passkeyClicks,0,method+' must never start passkey authentication');
     const expectedId=method==='password'?'kolon':method;
     assert.deepEqual(submissions[0],{origin:method==='password'?merchant:provider,id:credentials(expectedId).loginId,password:credentials(expectedId).password});
     if(method!=='password') assert.equal(await win.webContents.executeJavaScript('window.callbackReceived'),true);

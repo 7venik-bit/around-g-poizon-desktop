@@ -11847,7 +11847,11 @@ async function submitStoredNaverCredentials(loginWindow) {
   while (!fields && Date.now() < inputsDeadline && !loginWindow.isDestroyed()) {
     fields = await loginWindow.webContents.executeJavaScript(`(() => {
     const visible = (element) => {
-      if (!element) return false;
+      if (!element || element.disabled || element.closest('[hidden],[aria-hidden="true"]')) return false;
+      for (let node=element; node && node.nodeType===1; node=node.parentElement) {
+        const style=getComputedStyle(node);
+        if (style.display==='none' || style.visibility==='hidden') return false;
+      }
       const rect = element.getBoundingClientRect();
       const style = getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
@@ -11859,18 +11863,33 @@ async function submitStoredNaverCredentials(loginWindow) {
     const id = document.querySelector("#id") || [...document.querySelectorAll('input:not([type="password"])')]
       .find((element) => visible(element) && /id|user|아이디|전화번호/i.test([element.id, element.name, element.placeholder, element.autocomplete].join(" ")));
     const password = document.querySelector("#pw") || [...document.querySelectorAll('input[type="password"]')].find(visible);
-    const submit = document.getElementById("log.login") || [...document.querySelectorAll('button,input[type="submit"],[role="button"]')]
-      .find((element) => visible(element) && /로그인|log\\s*in/i.test([element.textContent, element.value, element.getAttribute("aria-label")].join(" ")));
+    const alternateAuth = (element) => /pass[\\s_-]*key|패스\\s*키|webauthn|fido|security[\\s_-]*key|보안\\s*키|qrcode|qr\\s*코드|일회용|one[\\s_-]*time|biometric|생체/i.test(
+      [element.id, element.className, element.textContent, element.value, element.getAttribute("aria-label"), element.getAttribute("onclick")].join(" "));
+    // Naver's current page places passkeyBtn_* before loginBtn_* and no
+    // longer uses log.login. Never treat a passkey label as password submit.
+    const submit = [document.getElementById("loginBtn_column"), document.getElementById("loginBtn_row"), document.getElementById("log.login")]
+      .find((element) => visible(element) && !alternateAuth(element))
+      || [...document.querySelectorAll('button,input[type="submit"],[role="button"]')]
+        .find((element) => visible(element) && !alternateAuth(element)
+          && /로그인|log\\s*in|sign\\s*in/i.test([element.textContent, element.value, element.getAttribute("aria-label")].join(" ")));
     const keepLabel = [...document.querySelectorAll('label')]
       .find((element) => visible(element) && /로그인\\s*상태\\s*유지/.test(element.textContent || ""));
     const keepInput = keepLabel && (document.getElementById(keepLabel.htmlFor) || keepLabel.querySelector('input[type="checkbox"]'));
-    return id && password && submit ? { id: point(id), password: point(password), submit: point(submit),
+    return visible(id) && visible(password) && submit ? { id: point(id), password: point(password), submit: point(submit),
       keepLogin: keepInput?.type === "checkbox" && !keepInput.checked ? point(keepLabel) : null } : null;
     })()`, true).catch(() => null);
     if (!fields) await wait(250);
   }
   if (!fields) return { ok: false, code: "NAVER_LOGIN_INPUTS_NOT_FOUND" };
   const click = async ({ x, y }) => {
+    let focused = false;
+    loginWindow.show();
+    for (let attempt=0; attempt<6; attempt++) {
+      loginWindow.focus(); loginWindow.webContents.focus(); await wait(80);
+      if (loginWindow.isDestroyed() || loginWindow.webContents.getURL() !== current.href) throw new Error("NAVER_LOGIN_PAGE_NOT_CONFIRMED");
+      if (loginWindow.isFocused() && loginWindow.webContents.isFocused()) { focused=true; break; }
+    }
+    if (!focused) throw new Error("NAVER_LOGIN_FOCUS_REQUIRED");
     loginWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
     loginWindow.webContents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
     loginWindow.webContents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
@@ -11878,15 +11897,26 @@ async function submitStoredNaverCredentials(loginWindow) {
   };
   const replaceText = async (point, value) => {
     await click(point);
+    const focused = await loginWindow.webContents.executeJavaScript(`(() => {
+      const target=document.elementFromPoint(${point.x},${point.y});
+      return target?.tagName==='INPUT' && document.activeElement===target;
+    })()`, true);
+    if (!focused) throw new Error("NAVER_LOGIN_FOCUS_REQUIRED");
+    if (loginWindow.isDestroyed() || loginWindow.webContents.getURL() !== current.href) throw new Error("NAVER_LOGIN_PAGE_NOT_CONFIRMED");
     loginWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["control"] });
     loginWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["control"] });
-    loginWindow.webContents.insertText(value);
+    await loginWindow.webContents.insertText(value);
     await wait(120);
   };
-  await replaceText(fields.id, credentials.id);
-  await replaceText(fields.password, credentials.password);
-  if (fields.keepLogin) await click(fields.keepLogin);
-  await click(fields.submit);
+  try {
+    await replaceText(fields.id, credentials.id);
+    await replaceText(fields.password, credentials.password);
+    if (fields.keepLogin) await click(fields.keepLogin);
+    await click(fields.submit);
+  } catch (error) {
+    return { ok: false, code: error?.message === "NAVER_LOGIN_PAGE_NOT_CONFIRMED"
+      ? "NAVER_LOGIN_PAGE_NOT_CONFIRMED" : "NAVER_LOGIN_FOCUS_REQUIRED" };
+  }
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline && !loginWindow.isDestroyed()) {
     if (await hasUsableNaverLoginSession()) return { ok: true, submitted: true };
@@ -11994,6 +12024,7 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
       "NAVER_LOGIN_URL_INVALID",
       "NAVER_LOGIN_PAGE_NOT_CONFIRMED",
       "NAVER_LOGIN_INPUTS_NOT_FOUND",
+      "NAVER_LOGIN_FOCUS_REQUIRED",
     ].includes(automaticErrorCode)) {
       failures.push(domesticLoginFailure(source, automaticErrorCode, "네이버 자동 로그인 화면을 확인하지 못했습니다."));
       continue;
