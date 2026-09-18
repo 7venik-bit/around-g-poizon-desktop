@@ -2344,3 +2344,12 @@ body .shell>header{
   font-weight:900;
   line-height:1
 }
+.shopping-account-card{border:1px solid #dfe7f1;border-radius:9px;background:#f8fbff;padding:0 12px}
+.shopping-account-card summary{cursor:pointer;padding:12px 0;font-size:13px}
+.shopping-account-card summary span{float:right;color:#496989;font-size:11px;margin-left:8px}
+.shopping-account-body{padding-bottom:12px}.shopping-account-body>label{display:block}
+.shopping-account-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.shopping-account-fields[hidden]{display:none}.shopping-account-fields label{min-width:0}
+.shopping-account-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.shopping-account-actions button{font-size:12px;padding:7px 10px}
+.shopping-account-body p{font-size:12px;margin:7px 0;line-height:1.5}
