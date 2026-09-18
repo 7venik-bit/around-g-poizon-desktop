@@ -14,7 +14,8 @@ test("domestic login windows and hidden inventory checks share one persistent se
   assert.match(main, /ipcMain\.handle\("domestic-login:list"/);
   assert.match(main, /ipcMain\.handle\("domestic-login:open"/);
   assert.match(preload, /listDomesticLogins/);
-  assert.match(html, /국내 소싱몰 로그인/);
+  assert.match(html, /쇼핑몰 계정과 로그인 연결/);
+  assert.match(html, /src="\.\/shopping-accounts\.js"/);
 });
 
 test("domestic login status uses the renderer's existing safe text helper", () => {

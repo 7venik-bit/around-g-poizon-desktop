@@ -44,6 +44,7 @@ import {
 } from "./services/popular-excel.mjs";
 import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
+import { ShoppingAccounts, ShoppingLoginConnector } from "./services/shopping-accounts.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
 import {
   FULL_BRAND_CATALOG_MINIMUM,
@@ -356,6 +357,8 @@ async function withDomesticSearchHardTimeout(operation, generation, progressStat
 }
 const DOMESTIC_LOGIN_SOURCES = [
   { id: "naver", name: "네이버", url: "https://nid.naver.com/nidlogin.login", domains: ["naver.com", "nid.naver.com"] },
+  { id: "kakao", name: "카카오 계정", url: "https://accounts.kakao.com/login", domains: ["accounts.kakao.com"] },
+  { id: "kolon", name: "코오롱몰·코오롱스포츠", url: "https://www.kolonmall.com/", domains: ["kolonmall.com"] },
   { id: "musinsa", name: "무신사", url: "https://www.musinsa.com/", domains: ["musinsa.com"] },
   { id: "ssg", name: "SSG·신세계백화점", url: "https://www.ssg.com/", domains: ["ssg.com"] },
   { id: "lotte", name: "롯데온·롯데백화점", url: "https://www.lotteon.com/", domains: ["lotteon.com"] },
@@ -5019,6 +5022,14 @@ async function ensureOfficialAccountLogin(searchWindow, homepageUrl) {
   if (source.id === "adidas" && !access?.loginPage) {
     return { ok: true, required: false, reused: true };
   }
+  const savedAccount = shoppingAccountServices().accounts.publicAccount(source.id);
+  if (savedAccount.configured && savedAccount.method !== "password") {
+    if (!access?.loginPage && await hasUsableDomesticLoginSession(source.id)) {
+      return { ok: true, required: false, reused: true };
+    }
+    await shoppingAccountServices().connector.open(source.id);
+    return { ok: false, required: true, reason: "OFFICIAL_LOGIN_REQUIRED" };
+  }
   const credentials = officialAccountCredentials(source.id);
   if (!credentials.id || !credentials.password) {
     searchWindow.show();
@@ -5259,7 +5270,7 @@ function publicPortableSnapshot() {
   const settings = { ...(snapshot.settings || {}) };
   for (const key of [
     "appSecretEncrypted", "accessTokenEncrypted", "poizonLoginId", "poizonPasswordEncrypted",
-    "naverLoginId", "naverPasswordEncrypted",
+    "naverLoginId", "naverPasswordEncrypted", "shoppingAccounts",
     "nikeLoginId", "nikePasswordEncrypted", "adidasLoginId", "adidasPasswordEncrypted", "brandExportFolder",
     "ledgerWebhookUrl", "ledgerSecretEncrypted",
     "oneDrivePoizonBackupRoot", "brandExportJobCache", "brandExportFileValidationCache",
@@ -11709,6 +11720,23 @@ function domesticLoginSource(sourceId) {
   return DOMESTIC_LOGIN_SOURCES.find((source) => source.id === String(sourceId || ""));
 }
 
+let shoppingAccountServicesCache;
+function shoppingAccountServices() {
+  if (shoppingAccountServicesCache) return shoppingAccountServicesCache;
+  const accounts = new ShoppingAccounts({store, sources:DOMESTIC_LOGIN_SOURCES, encrypt:encrypted, decrypt:decrypted,
+    onChanged:async (id, changes) => {
+      if (changes.accountChanged || changes.methodChanged) await clearDomesticLogin(id);
+      else if (changes.passwordChanged) {
+        const previous = domesticLoginWindows.get(id);
+        if (previous && !previous.isDestroyed()) previous.close();
+      }
+      mainWindow?.webContents.send("domestic-login:changed", {sourceId:id});
+    }});
+  const connector = new ShoppingLoginConnector({accounts, BrowserWindow, partition:DOMESTIC_SEARCH_PARTITION,
+    windows:domesticLoginWindows, notify:event=>mainWindow?.webContents.send("domestic-login:changed",event)});
+  return shoppingAccountServicesCache = {accounts, connector};
+}
+
 async function hasUsableNaverLoginSession() {
   const persistentSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
   const cookieGroups = await Promise.all([
@@ -12019,6 +12047,9 @@ async function domesticLoginStatuses() {
 async function openDomesticLogin(sourceId, { background = false } = {}) {
   const source = domesticLoginSource(sourceId);
   if (!source) return { ok: false, message: "지원하지 않는 소싱몰입니다." };
+  if (source.id !== "naver" && shoppingAccountServices().accounts.publicAccount(source.id).configured) {
+    return shoppingAccountServices().connector.open(source.id);
+  }
   if (source.id === "naver" && await hasUsableNaverLoginSession()) {
     return { ok: true, reused: true, automatic: { ok: true, reused: true } };
   }
@@ -12073,6 +12104,13 @@ async function openDomesticLogin(sourceId, { background = false } = {}) {
 async function clearDomesticLogin(sourceId) {
   const source = domesticLoginSource(sourceId);
   if (!source) return { ok: false, message: "지원하지 않는 소싱몰입니다." };
+  // A provider account change must not leave a linked shop signed into the
+  // previous person while reporting the new provider account as connected.
+  if (["naver", "kakao"].includes(source.id)) {
+    const savedAccounts = store.snapshot().settings.shoppingAccounts || {};
+    for (const linked of DOMESTIC_LOGIN_SOURCES.filter(item => !["naver", "kakao"].includes(item.id)
+      && savedAccounts[item.id]?.method === source.id)) await clearDomesticLogin(linked.id);
+  }
   const persistentSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
   for (const domain of source.domains) {
     const cookies = await persistentSession.cookies.get({ domain }).catch(() => []);
@@ -12083,6 +12121,7 @@ async function clearDomesticLogin(sourceId) {
     }
   }
   domesticLoginWindows.get(source.id)?.close();
+  shoppingAccountServicesCache?.connector.update(source.id, "LOGIN_CLEARED", "로그인을 해제했습니다. 저장한 계정은 유지됩니다.");
   return { ok: true };
 }
 
@@ -12112,7 +12151,11 @@ app.whenReady().then(async () => {
   // update can reconnect the same selected brand without auto-selecting or
   // mixing any previous brand into the new screen.
   await initializeOneDrivePoizonBackup();
-  ipcMain.handle("store:snapshot", () => store.snapshot());
+  ipcMain.handle("store:snapshot", () => {
+    const snapshot = store.snapshot();
+    delete snapshot.settings.shoppingAccounts;
+    return snapshot;
+  });
   ipcMain.handle("store:upsert", (_event, collection, item) => store.upsert(collection, item));
   ipcMain.handle("store:bulk-upsert", (_event, collection, items) => store.bulkUpsert(collection, items));
   ipcMain.handle("store:remove", (_event, collection, id) => store.remove(collection, id));
@@ -12166,6 +12209,18 @@ app.whenReady().then(async () => {
   ipcMain.handle("domestic-login:open", (_event, sourceId) => openDomesticLogin(sourceId));
   ipcMain.handle("domestic-login:clear", (_event, sourceId) => clearDomesticLogin(sourceId));
   ipcMain.handle("naver-account:save", (_event, config) => saveNaverAccount(config));
+  ipcMain.handle("shopping-accounts:list", async () => {
+    const {accounts,connector} = shoppingAccountServices();
+    return Promise.all(DOMESTIC_LOGIN_SOURCES.map(async source => ({
+      ...accounts.publicAccount(source.id), name:source.name,
+      hasSession:await hasUsableDomesticLoginSession(source.id),
+      connection:connector.status(source.id),
+      methods:["naver","kakao"].includes(source.id) ? ["password"] : ["password","naver","kakao"],
+    })));
+  });
+  ipcMain.handle("shopping-accounts:save", (_event, input) => shoppingAccountServices().accounts.save(input));
+  ipcMain.handle("shopping-accounts:open", (_event, sourceId) => sourceId === "naver"
+    ? openDomesticLogin(sourceId) : shoppingAccountServices().connector.open(sourceId));
   ipcMain.handle("config:save", async (_event, config) => {
     const previous = store.snapshot().settings;
     const naverLoginId = typeof config.naverLoginId === "string"

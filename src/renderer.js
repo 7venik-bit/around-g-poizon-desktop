@@ -5215,6 +5215,7 @@ function domesticLoginStateLabel(source) {
 }
 
 async function renderDomesticLoginStatuses() {
+  if (window.AroundGShoppingAccounts) return window.AroundGShoppingAccounts.render();
   const list = $("#domestic-login-list");
   if (!list || !window.aroundG.listDomesticLogins) return;
   list.innerHTML = '<div class="domestic-login-empty">로그인 상태 확인 중…</div>';
