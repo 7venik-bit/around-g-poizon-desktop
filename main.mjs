@@ -11769,7 +11769,13 @@ async function hasUsableNaverLoginSession() {
     .filter((cookie) => Boolean(String(cookie.value || ""))
       && domesticCookieStillUsable(cookie))
     .map((cookie) => String(cookie.name || "").toUpperCase()));
-  return usableNames.has("NID_AUT") && usableNames.has("NID_SES");
+  // Naver rotates NID_SES while moving between shopping/product pages. During
+  // that rotation Chromium can briefly expose only NID_AUT, while an active
+  // browser session can conversely retain NID_SES without the persistent
+  // token. Either non-expired token is sufficient for the shared partition to
+  // resume the authenticated session. Requiring both reopened the login window
+  // before every product in a multi-product sourcing run.
+  return usableNames.has("NID_AUT") || usableNames.has("NID_SES");
 }
 
 function domesticCookieStillUsable(cookie, now = Date.now() / 1000) {

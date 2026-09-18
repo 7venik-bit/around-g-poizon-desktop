@@ -169,11 +169,25 @@ test('Naver session recognition rejects empty or expired authentication cookies'
     DOMESTIC_SEARCH_PARTITION: 'fixture', session: { fromPartition: () => ({ cookies: { get: async () => cookies } }) },
   });
   cookies = [{ name: 'NID_AUT', value: 'fixture' }, { name: 'NID_SES', value: '' }];
-  assert.equal(await usable(), false);
-  cookies[1] = { name: 'NID_SES', value: 'fixture', expirationDate: Date.now() / 1000 - 1 };
+  assert.equal(await usable(), true);
+  cookies = [{ name: 'NID_AUT', value: 'fixture', expirationDate: Date.now() / 1000 - 1 },
+    { name: 'NID_SES', value: 'fixture', expirationDate: Date.now() / 1000 - 1 }];
   assert.equal(await usable(), false);
   cookies[1] = { name: 'NID_SES', value: 'fixture' };
   assert.equal(await usable(), true);
+});
+
+test('Naver authentication remains reusable while product pages rotate one session token', async () => {
+  let cookies = [{ name: 'NID_AUT', value: 'persistent', expirationDate: Date.now() / 1000 + 3600 }];
+  const usable = runInNewContext(section(main, 'async function hasUsableNaverLoginSession()', 'function naverAccountCredentials()')
+    + '\nhasUsableNaverLoginSession', {
+    DOMESTIC_SEARCH_PARTITION: 'fixture', session: { fromPartition: () => ({ cookies: { get: async () => cookies } }) },
+  });
+  assert.equal(await usable(), true, 'first product reuses persistent authentication');
+  cookies = [{ name: 'NID_SES', value: 'rotated-session', expirationDate: 0, session: true }];
+  assert.equal(await usable(), true, 'next product reuses the rotated browser session');
+  cookies = [{ name: 'NID_AUT', value: 'persistent-2', expirationDate: Date.now() / 1000 + 3600 }];
+  assert.equal(await usable(), true, 'later products do not reopen login during another rotation');
 });
 
 test('Naver session recognition accepts Chromium session-cookie expiry sentinels', async () => {
