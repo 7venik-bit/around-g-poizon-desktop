@@ -70,15 +70,16 @@ export function mergeRetailerStockProducts(products = []) {
       const variant = url.pathname.match(/^\/DESCENTE\/product\/([^/]+)\/([A-Z0-9]+)\/?$/i);
       if (/^(?:www\.)?dk-on\.com$/i.test(url.hostname) && variant) {
         officialColor = variant[2].toUpperCase();
-        const colorName = ({BLK0:'블랙',WHT0:'화이트'})[officialColor] || officialColor;
+        const colorName = ({BLK0:'블랙',WHT0:'화이트',BLU0:'BLU'})[officialColor] || officialColor;
         const suffix = ` [${colorName}]`;
         product = {...input, colorCode:officialColor, colorName,
           ...(input.title ? {title:input.title.endsWith(suffix) ? input.title : input.title + suffix} : {}),
           ...(input.name ? {name:input.name.endsWith(suffix) ? input.name : input.name + suffix} : {}),
           sizes:(input.sizes || []).map(size => {
-            const prefix = `${colorName} / `;
-            if (String(size.label || '').startsWith(prefix)) return size;
-            return {...size,label:prefix + size.label,optionPath:[colorName,...(size.optionPath || [size.label])]};
+            const parts = [...(size.optionPath?.length ? size.optionPath : String(size.label || '').split(' / '))];
+            while (parts[0] === officialColor || parts[0] === colorName) parts.shift();
+            const optionPath = [colorName,...parts];
+            return {...size,label:optionPath.join(' / '),optionPath};
           })};
       }
     } catch {}
@@ -216,9 +217,19 @@ export function captureNativeStockControls() {
   // Standard radio inputs are often visually hidden behind labels. Collect
   // each named group, including mixed radio-colour/native-select-size widgets.
   const inputGroups=new Map();
+  const dkVariant=/^(?:www\.)?dk-on\.com$/i.test(location.hostname)
+    ? location.pathname.match(/^\/DESCENTE\/product\/([^/]+)\/([^/]+)\/?$/i) : null;
+  let dkSizeControl='';
   for(const el of scope.querySelectorAll('input[type="radio"]')){
     if(el.closest(excluded)||el.closest('[role="radiogroup"]')||!(visible(el)||visible(el.labels?.[0])))continue;
     const name=el.name||el.getAttribute('data-attributename')||'';
+    // DK's upper and purchase panels mirror one size selector. Traversing
+    // both as independent dimensions invents size x size combinations.
+    if(dkVariant&&/^rdoProdSize[12]$/.test(name)){
+      if(el.getAttribute('data-prod-cd')!==dkVariant[1]||el.getAttribute('data-color-cd')!==dkVariant[2])continue;
+      if(dkSizeControl&&name!==dkSizeControl)continue;
+      dkSizeControl=name;
+    }
     if(!/size|color|colour|width|length|option|사이즈|색상|컬러|발볼|기장|옵션/i.test(name))continue;
     const label=String(el.labels?.[0]?.textContent||el.getAttribute('data-friendly-name')||el.getAttribute('aria-label')||'').replace(/\s+/g,' ').trim();
     if(!label||/guide|chart|가이드|조견표/i.test(label))continue;
