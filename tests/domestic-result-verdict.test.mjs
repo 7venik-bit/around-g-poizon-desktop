@@ -52,7 +52,7 @@ test("completed exact zero is product absence, not confirmation failure", () => 
   assert.equal(parallel.label, "상품 없음");
 });
 
-test("technical failure exposes its actual stage and internal code", () => {
+test("technical failure keeps its stage and code in diagnostics without exposing the code in the row", () => {
   const failed = sourceVerdict({
     store: "SSG",
     count: 0,
@@ -61,7 +61,7 @@ test("technical failure exposes its actual stage and internal code", () => {
     verificationStage: "page_navigation",
   });
   assert.equal(failed.state, "failed");
-  assert.equal(failed.label, "검색 페이지 연결 실패 · page_load_failed");
+  assert.equal(failed.label, "검색 페이지 연결 실패");
   assert.equal(failed.reason, "page_load_failed");
   assert.equal(failed.stage, "page_navigation");
 });
@@ -79,8 +79,15 @@ test("collector code errors are not labeled as retailer connection failures or a
   const result = sourceVerdict({store:'네이버 패션타운', count:0, verificationFailed:true,
     verificationReason:'result_script_failed', verificationStage:'result_capture'});
   assert.equal(result.state, 'failed');
-  assert.equal(result.label, '상품 수집 코드 실행 오류 · result_script_failed');
+  assert.equal(result.label, '상품 수집 코드 실행 오류');
   assert.equal(result.stage, 'result_capture');
+});
+
+test("Naver collection timeout gives an actionable Korean retry status", () => {
+  const result = sourceVerdict({store:"네이버 패션타운", verificationFailed:true,
+    verificationReason:"collection_stalled", verificationStage:"product_detail"});
+  assert.equal(result.label, "상품·재고 확인 지연 · 다시 가져오기 필요");
+  assert.equal(result.reason, "collection_stalled");
 });
 
 test("result summary preserves the next-day access cooldown label", () => {
