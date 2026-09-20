@@ -31,6 +31,7 @@ export function captureRenderedStockEvidence(selectors = [], root = document) {
       const select = el.closest('select');
       const controlText = select ? [select.name, select.id, select.getAttribute('aria-label'), select.closest('label')?.textContent].join(' ') : '';
       return !/quantity|qty|구매\s*수량|주문\s*수량|^수량$/i.test(controlText.trim())
+        && !/^(?:공유(?:하기)?|share|사이즈\s*비교|size\s*comparison|\d+\s*개씩\s*보기)$/i.test(rawText(el))
         && !/사이즈\s*(?:가이드|안내|표)|SIZE\s*(?:GUIDE|CHART)/i.test(rawText(el));
     });
   // Broad store selectors can match an entire size list. Keep individual choices.
@@ -62,6 +63,7 @@ export function normalizeRenderedStockEvidence({ pageText = '', stockTexts, purc
   for (const option of Array.isArray(options) ? options : []) {
     const label = String(option?.label ?? option?.name ?? option ?? '').replace(/\s+/g,' ').trim();
     if (!label || label.length > 80 || /선택(?:해\s*주세요|하세요|해주세요)?$|^(?:옵션|수량|컬러|색상|사이즈)$/i.test(label)) continue;
+    if (/^(?:공유(?:하기)?|share|사이즈\s*비교|size\s*comparison|\d+\s*개씩\s*보기)$/i.test(label)) continue;
     const rawStockText = typeof option === 'object' ? String(option.stockText || option.statusText || '').replace(/\s+/g,' ').trim() : '';
     const rawQuantity = (rawStockText || label).match(/(?:재고(?:\s*수량)?|남은\s*(?:재고|수량))\s*[:：]?\s*([\d,]+)|([\d,]+)\s*개\s*남(?:음|았)/);
     const quantity = normalizeStockQuantity(option?.quantity ?? option?.stockQuantity ?? rawQuantity?.[1] ?? rawQuantity?.[2]);

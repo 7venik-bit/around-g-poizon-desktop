@@ -1,4 +1,6 @@
 import { normalizeStockOptions } from "../services/retailer-stock-strategies.mjs";
+import { isOfficialProductCandidateUrl } from "../services/official-product-candidate.mjs";
+export { isOfficialProductCandidateUrl } from "../services/official-product-candidate.mjs";
 import { isNaverAccountUrl } from "../services/naver-price.mjs";
 export { mergeRetailerStockProducts, retailerStockStrategy, collectNativeStockVariants, captureNativeStockControls } from "../services/retailer-stock-strategies.mjs";
 import { normalizeRenderedStockEvidence } from "../services/domestic-stock.mjs";
@@ -523,6 +525,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         const titleText = String(card?.title || "").trim();
         const cardBodyText = String(card?.text || "").trim();
         const trustedOfficialCard = String(store || "") === "브랜드 공식몰";
+        if (trustedOfficialCard && !isOfficialProductCandidateUrl(productUrl, rendered.resolvedSearchUrl)) continue;
         const identityText = trustedOfficialCard
           ? `${titleText} ${cardBodyText} ${String(card?.markup || "")} ${productUrl}`.trim()
           : titleText || cardBodyText;

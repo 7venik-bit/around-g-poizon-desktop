@@ -60,7 +60,28 @@ export function normalizeStockOptions(options=[]) {
 
 export function mergeRetailerStockProducts(products = []) {
   const found = new Map();
-  for (const product of products) {
+  for (const input of products) {
+    let product = input;
+    // DK colour pages share a model number but own separate size/stock states.
+    // Keep their URL colour identity even when the visible card omits its name.
+    let officialColor = '';
+    try {
+      const url = new URL(String(input.url || ''));
+      const variant = url.pathname.match(/^\/DESCENTE\/product\/([^/]+)\/([A-Z0-9]+)\/?$/i);
+      if (/^(?:www\.)?dk-on\.com$/i.test(url.hostname) && variant) {
+        officialColor = variant[2].toUpperCase();
+        const colorName = ({BLK0:'블랙',WHT0:'화이트'})[officialColor] || officialColor;
+        const suffix = ` [${colorName}]`;
+        product = {...input, colorCode:officialColor, colorName,
+          ...(input.title ? {title:input.title.endsWith(suffix) ? input.title : input.title + suffix} : {}),
+          ...(input.name ? {name:input.name.endsWith(suffix) ? input.name : input.name + suffix} : {}),
+          sizes:(input.sizes || []).map(size => {
+            const prefix = `${colorName} / `;
+            if (String(size.label || '').startsWith(prefix)) return size;
+            return {...size,label:prefix + size.label,optionPath:[colorName,...(size.optionPath || [size.label])]};
+          })};
+      }
+    } catch {}
     const store = String(product.store || '').replace(/\s+/g,' ').trim();
     const sourceStore = String(product.sourceStore || '').replace(/\s+/g,' ').trim();
     const officialMall = store === '브랜드 공식몰' || sourceStore === '브랜드 공식몰';
@@ -77,7 +98,7 @@ export function mergeRetailerStockProducts(products = []) {
     // transient id. The exact official article number is the stable identity.
     // Marketplace rows still retain their seller/product URL identity.
     const identity = officialMall && article
-      ? `article:${article}` : urlIdentity ? `url:${urlIdentity}` : `id:${product.id || article}`;
+      ? `article:${article}${officialColor ? ':color:' + officialColor : ''}` : urlIdentity ? `url:${urlIdentity}` : `id:${product.id || article}`;
     // Detail enrichment may replace `store` with a retailer-specific display
     // label while retaining the query identity in `sourceStore`. Keep those
     // rows in the same official-mall bucket so the search card, detail card,
