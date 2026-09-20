@@ -46,6 +46,7 @@ import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
 import { ShoppingAccounts, ShoppingLoginConnector } from "./services/shopping-accounts.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
+import { recoverOfficialCollection } from "./services/official-auto-recovery.mjs";
 import {
   FULL_BRAND_CATALOG_MINIMUM,
   brandCatalogNeedsSync,
@@ -4410,7 +4411,10 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           });
         };
         const queryResult = await Promise.race([
-          renderedSearchSourceResult(source, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession, generation, activity),
+          recoverOfficialCollection({source, code:articleNumber,
+            canceled:() => stopped || domesticSearchCanceled(generation),
+            onProgress: update => onProgress?.({...update, source:source.store, completed:sources.length, total:progressTotal}),
+            collect: candidate => renderedSearchSourceResult(candidate, articleNumber, brand, title, 0, queryAttempt, sharedNaverSession, generation, activity)}),
           timeoutResult,
         ]).finally(() => { stopped = true; clearTimeout(sourceTimeoutId); });
         if (!queryResult) {
@@ -4460,6 +4464,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         searchCompleted: result?.searchCompleted === true,
         searchSubmitted: result?.searchSubmitted === true,
         verificationReason: String(result?.verificationReason || ""),
+        autoRecovery: result?.autoRecovery || null,
         verificationStage: String(result?.verificationStage || result?.verificationDiagnostics?.stage || ""),
         verificationDiagnostics: {
           stage: String(result?.verificationStage || "result_aggregation"),

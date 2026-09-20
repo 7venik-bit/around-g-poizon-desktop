@@ -13,8 +13,27 @@ import * as officialAdapters from '../services/official-mall-adapters.mjs';
 import * as brandIntegrity from '../services/brand-integrity.mjs';
 import * as naverPrice from '../services/naver-price.mjs';
 import * as detailPage from '../services/domestic-detail-page.mjs';
+import * as autoRecovery from '../services/official-auto-recovery.mjs';
 
 const main = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
+
+test('shipping source aggregation automatically collects a known official detail and retains its diagnosis', async t => {
+  const f=fixture(t);
+  const url='https://new-brand.example/products/SR123UPS11';
+  let calls=0;
+  f.context.renderedSearchSourceResult=async source=>{
+    calls++;
+    if(!source.directProductUrls) return {products:[],detailVerificationPending:true};
+    return {count:1,products:[{store:source.store,url,articleNumber:'SR123UPS11',price:49000,
+      stockVerified:true,stockCoverage:'observed',sizes:[{label:'95',inStock:true}]}]};
+  };
+  const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{store:'브랜드 공식몰',
+    homepageUrl:'https://new-brand.example/',verifiedProductUrl:url,renderCount:true}]},'SR123UPS11'));
+  assert.equal(calls,2);
+  assert.equal(result.products[0].price,49000);
+  assert.equal(result.sources[0].autoRecovery.status,'recovered');
+  assert.equal(result.sources[0].verificationPending,false);
+});
 
 test('official known detail returns price and unavailable Adidas sizes', async t => {
   const url=new URL('https://www.adidas.co.kr/슈퍼스타-ii/JI0079.html').href;
@@ -108,7 +127,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     }
   }
   const sandbox = {
-    ...relay, ...naver, ...matcher, ...recovery, ...brandOfficial, ...officialAdapters, ...brandIntegrity, ...naverPrice, ...detailPage, BrowserWindow, URL, console,
+    ...relay, ...naver, ...matcher, ...recovery, ...brandOfficial, ...officialAdapters, ...brandIntegrity, ...naverPrice, ...detailPage, ...autoRecovery, BrowserWindow, URL, console,
     Date: class extends Date { static now() { return now; } },
     setTimeout: setTimer, clearTimeout: clearTimer, wait: ms => new Promise(r => setTimer(r, ms)),
     domesticSearchGeneration: 0, domesticSearchCanceled: () => false,
