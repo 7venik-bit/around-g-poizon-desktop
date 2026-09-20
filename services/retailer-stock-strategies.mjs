@@ -62,7 +62,9 @@ export function mergeRetailerStockProducts(products = []) {
   const found = new Map();
   for (const product of products) {
     const store = String(product.store || '').replace(/\s+/g,' ').trim();
-    const article = String(product.articleNumber || product.productCode || '')
+    const sourceStore = String(product.sourceStore || '').replace(/\s+/g,' ').trim();
+    const officialMall = store === '브랜드 공식몰' || sourceStore === '브랜드 공식몰';
+    const article = String(product.articleNumber || product.detectedArticleNumber || product.productCode || '')
       .replace(/[^A-Z0-9]/gi,'').toUpperCase();
     let urlIdentity='';
     try {
@@ -74,9 +76,13 @@ export function mergeRetailerStockProducts(products = []) {
     // the card, price, detail and each option checkpoint, each with a different
     // transient id. The exact official article number is the stable identity.
     // Marketplace rows still retain their seller/product URL identity.
-    const identity = store === '브랜드 공식몰' && article
+    const identity = officialMall && article
       ? `article:${article}` : urlIdentity ? `url:${urlIdentity}` : `id:${product.id || article}`;
-    const key = `${store}:${identity}`;
+    // Detail enrichment may replace `store` with a retailer-specific display
+    // label while retaining the query identity in `sourceStore`. Keep those
+    // rows in the same official-mall bucket so the search card, detail card,
+    // price capture and option capture cannot appear as separate products.
+    const key = `${officialMall ? '브랜드 공식몰' : store}:${identity}`;
     const previous = found.get(key);
     const merged = {...previous, ...product};
     if(previous?.sizes?.length || product.sizes?.length){
@@ -88,6 +94,11 @@ export function mergeRetailerStockProducts(products = []) {
         sizes.set(sizeKey,{...sizes.get(sizeKey),...size});
       }
       merged.sizes=[...sizes.values()];
+      if(product.inStock==null){
+        const states=merged.sizes.map(size=>size.inStock).filter(state=>typeof state==='boolean');
+        if(states.includes(true))merged.inStock=true;
+        else if(states.length===merged.sizes.length&&states.every(state=>state===false))merged.inStock=false;
+      }
     }
     // Fresh detail evidence wins, especially sold-out. A page with no stock
     // evidence must not erase the API options collected in the same search.
@@ -95,6 +106,12 @@ export function mergeRetailerStockProducts(products = []) {
       for (const field of ['inStock','sizes','stockText','stockStatus','stockVerified','purchaseLimitText']) {
         if (previous[field] !== undefined) merged[field] = previous[field];
       }
+    }
+    // An incomplete later option checkpoint is not newer contrary evidence.
+    // Keep a previously verified product state when the incoming row itself
+    // is undecided and the combined sizes do not establish availability.
+    if(previous && product.inStock==null && merged.inStock==null && previous.inStock!=null){
+      merged.inStock=previous.inStock;
     }
     found.set(key, merged);
   }

@@ -74,6 +74,36 @@ test('simulation: five repeated official rows collapse into one product with eve
   assert.equal(merged[0].inStock,true);
 });
 
+test('official search, detail, and option rows collapse through source identity and detected article', () => {
+  const merged=mergeRetailerStockProducts([
+    {
+      store:'브랜드 공식몰',sourceStore:'브랜드 공식몰',id:'search-result',
+      articleNumber:'SR123UPS11',title:"'SR123UPS11'에 대한 브랜드관 내 검색결과",
+      price:49000,url:'https://www.example-official.co.kr/search?q=SR123UPS11',
+      linkOnly:true,inStock:null,sizes:[],
+    },
+    {
+      store:'데상트 공식몰',sourceStore:'브랜드 공식몰',id:'detail-result',
+      detectedArticleNumber:'SR123UPS11-服',title:'티폰 플로 반팔 티셔츠',
+      price:80100,url:'https://www.example-official.co.kr/product/SR123UPS11',
+      inStock:true,sizes:[{label:'BLKO_BLACK / 85',inStock:true}],
+    },
+    {
+      store:'데상트 공식몰',sourceStore:'브랜드 공식몰',id:'option-result',
+      detectedArticleNumber:'SR123UPS11',title:'티폰 플로 반팔 티셔츠',
+      price:80100,url:'https://www.example-official.co.kr/product/SR123UPS11?utm_source=stock',
+      inStock:null,sizes:[{label:'BLKO_BLACK / 90',inStock:false}],
+    },
+  ]);
+  assert.equal(merged.length,1);
+  assert.equal(merged[0].title,'티폰 플로 반팔 티셔츠');
+  assert.equal(merged[0].price,80100);
+  assert.deepEqual(merged[0].sizes.map(size=>[size.label,size.inStock]),[
+    ['BLKO_BLACK / 85',true],['BLKO_BLACK / 90',false],
+  ]);
+  assert.equal(merged[0].inStock,true);
+});
+
 
 test('interrupted dependent options resume the failed colour only, preserving platform quantities', async () => {
   let color='',fail=true; const selected=[]; let checkpoint;
