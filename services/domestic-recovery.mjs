@@ -37,7 +37,7 @@ export function mergeDomesticCheckpoint(previous = {}, next = {}) {
 
 function requiresInteraction(data = {}) {
   data ||= {};
-  return (data.sources || []).some(s => s.loginRequired || s.securityVerificationRequired
+  return (data.sources || []).some(s => s.rateLimited || s.loginRequired || s.securityVerificationRequired
     || /captcha|access.?denied|blocked|보안|접근.?차단|로그인|next_day|cooldown/i.test(s.verificationReason || ''))
     || (data.products || []).some(p => p.stockStatus === 'login_required');
 }

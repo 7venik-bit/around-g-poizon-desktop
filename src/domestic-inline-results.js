@@ -146,6 +146,7 @@
   }
 
   function sourceAction(source = {}, product = {}, sourceProduct = {}, contextKey = "", label = "열기") {
+    if (source.rateLimited) return '<span class="pending">접속량 제한 · 자동 재조회 중지</span>';
     const productUrl = String(product?.url || "").trim();
     if (!productUrl && source?.store === "네이버 패션타운"
       && (source.loginRequired || source.securityVerificationRequired)) {
@@ -206,6 +207,13 @@
         ["접속 오류", d.navigationError], ["화면 읽기 오류", d.inspectionError], ["수집 오류", d.errorMessage],
         ["상세 처리 수", d.processedProducts], ["상세 전체 수", d.totalProducts], ["상세 확인 필요 수", d.failedDetails],
         ["마지막 상세 주소", safeUrl(d.lastDetailUrl)], ["마지막 상세 오류", d.lastDetailFailure],
+        ["상세 실제 도착 주소", safeUrl(d.lastDetailResolvedUrl)],
+        ["상세 확인 단계", d.lastDetailState?.readiness],
+        ["상세 문서 상태", d.lastDetailState?.documentReadyState],
+        ["로그인 입력창 감지", d.lastDetailState?.loginFormVisible],
+        ["상세 제목 감지", d.lastDetailState?.hasVisibleTitle],
+        ["옵션 감지", d.lastDetailState?.hasOptions], ["로딩 표시", d.lastDetailState?.busy],
+        ["요청 상세 주소 일치", d.lastDetailState?.expectedPage],
       ];
       for (const [label, value] of fields) {
         if (value !== undefined && value !== null && value !== "") lines.push(`${label}: ${String(value).slice(0, 1600)}`);
@@ -299,7 +307,7 @@
       if (!(count > 0 || searched || source?.verificationPending || source?.verificationFailed
         || source?.loginRequired || source?.securityVerificationRequired || hasUsefulLink)) continue;
       const message = verdict.label;
-      const naverPriceAction = store === "네이버 패션타운" && contextKey && !source?.loginRequired && !source?.securityVerificationRequired
+      const naverPriceAction = store === "네이버 패션타운" && contextKey && !source?.rateLimited && !source?.loginRequired && !source?.securityVerificationRequired
         ? `<button type="button" class="domestic-inline-price-fetch" data-inline-naver-price="${encodeURIComponent(contextKey)}">가격 가져오기</button>`
         : "-";
       rows.push(`<div class="domestic-inline-row domestic-inline-fallback">
@@ -453,8 +461,8 @@
         title: product.apiTitle || product.title || product.name || "",
       });
       if (!response?.ok || !Array.isArray(response.candidates) || !response.candidates.length) {
-        button.disabled = false;
-        button.textContent = "다시 가져오기";
+        button.disabled = response?.rateLimited === true;
+        button.textContent = response?.rateLimited ? "접속량 제한 · 조회 중지" : "다시 가져오기";
         button.title = response?.message || "가격을 확인하지 못했습니다.";
         return;
       }

@@ -304,6 +304,7 @@ const inventoryWindows = new Set();
 const officialInteractiveWindows = new Set();
 const domesticLoginWindows = new Map();
 const confirmedNaverLoginScopes = new Map();
+const blockedNaverLoginScopes = new Map();
 const DOMESTIC_SEARCH_PARTITION = "persist:around-g-domestic-search";
 const DOMESTIC_PRICE_PARTITION = "persist:around-g-domestic-price";
 const DOMESTIC_SELLER_EVIDENCE_PARTITION = "persist:around-g-domestic-seller-evidence";
@@ -1564,6 +1565,7 @@ function renderedSearchFailure(reason, searchWindow = null, details = {}) {
       errorMessage: String(details.errorMessage || observed.errorMessage || ""),
     },
     securityVerificationRequired: details.securityVerificationRequired === true,
+    rateLimited: details.rateLimited === true,
     loginRequired: details.loginRequired === true,
     resolvedSearchUrl,
   };
@@ -1609,6 +1611,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
   const detailFailures = [];
   let securityVerificationRequired = false;
   let loginRequired = false;
+  let rateLimited = false;
   try {
     evidenceWindow = new BrowserWindow({
       show: false,
@@ -1631,6 +1634,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
       if (!productUrl) continue;
       let detailVerified = false;
       let detailFailure = "";
+      let detailDiagnostics = {};
       try {
         const retained = recoveryProducts.find(p => p.url === candidate.url && p.domesticSellerVerified === true);
         if (retained && stockObservationComplete(retained)
@@ -1714,8 +1718,11 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           optionStock = await collectRenderedProductStock(evidenceWindow, "네이버 패션타운", generation, onActivity,
             savedOptions && Date.now() - Date.parse(savedOptions.checkedAt || '') < 30 * 60_000 ? savedOptions.options : [], savedOptions?.branches || [], candidate.url);
         } catch (error) {
-          if (error?.securityVerificationRequired || error?.loginRequired || domesticSearchCanceled(generation)) throw error;
+          if (error?.rateLimited || error?.securityVerificationRequired || error?.loginRequired || domesticSearchCanceled(generation)) throw error;
           optionError = error;
+          detailFailure = String(error?.message || "stock_collection_failed");
+          detailDiagnostics = error?.detailDiagnostics || {};
+          detailFailures.push({url: productUrl, reason: detailFailure, ...detailDiagnostics});
         }
         approved[approvedIndex] = {
           ...verifiedProduct, ...(optionStock || {}),
@@ -1725,9 +1732,11 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
       } catch (error) {
         failedCount += 1;
         detailFailure = String(error?.message || "product_detail_failed");
+        detailDiagnostics = error?.detailDiagnostics || {};
         securityVerificationRequired ||= error?.securityVerificationRequired === true;
         loginRequired ||= error?.loginRequired === true;
-        detailFailures.push({url: productUrl, reason: String(error?.message || "product_detail_failed")});
+        rateLimited ||= error?.rateLimited === true;
+        detailFailures.push({url: productUrl, reason: String(error?.message || "product_detail_failed"), ...detailDiagnostics});
         // The observed search-card price remains useful when its own exact
         // model and domestic seller are verified but the stock page is delayed.
         const cardArticleVerified = strictProductArticleIdentityMatch({titleText: candidate.title}, articleNumber);
@@ -1744,10 +1753,10 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
             stockText: "", stockStatus: "unknown", detailVerificationPending: true,
             detailVerificationReason: String(error?.message || "product_detail_failed")});
         }
-        if (error?.securityVerificationRequired || error?.loginRequired || domesticSearchCanceled(generation)) break;
+        if (error?.rateLimited || error?.securityVerificationRequired || error?.loginRequired || domesticSearchCanceled(generation)) break;
       } finally {
         await onActivity?.({products: [...approved], completedProducts: checkedCount + failedCount, totalProducts: candidates.length,
-          detailVerified, detailUrl: productUrl, failedDetails: failedCount, detailFailure});
+          detailVerified, detailUrl: productUrl, failedDetails: failedCount, detailFailure, detailDiagnostics});
       }
     }
   } finally {
@@ -1763,11 +1772,20 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
     detailFailures,
     securityVerificationRequired,
     loginRequired,
+    rateLimited,
   };
 }
 
 async function filterApprovedNaverDomesticProducts(products = []) {
-  return (await verifyApprovedNaverDomesticProducts(products)).products;
+  const result = await verifyApprovedNaverDomesticProducts(products);
+  if (result.rateLimited || result.loginRequired || result.securityVerificationRequired) {
+    throw Object.assign(new Error(result.rateLimited ? "rate_limited" : result.loginRequired ? "login_required" : "security_verification_required"), {
+      rateLimited: result.rateLimited === true,
+      loginRequired: result.loginRequired === true,
+      securityVerificationRequired: result.securityVerificationRequired === true,
+    });
+  }
+  return result.products;
 }
 
 async function lookupNaverDomesticPrice(input = {}) {
@@ -1853,11 +1871,16 @@ async function lookupNaverDomesticPrice(input = {}) {
         const pageText = String(document.body?.innerText || "").slice(0, 50000);
         return {
           productCards,
+          href: location.href,
           pageText,
           explicitEmpty: /검색\\s*결과가?\\s*없|검색된\\s*상품이\\s*없/i.test(pageText),
         };
       })()`, true).catch(() => null);
       if (!snapshot) continue;
+      const access = domesticPageAccessState(snapshot.pageText, snapshot.productCards?.length || 0, snapshot);
+      if (access.verificationReason) return { ok:false, searchUrl, candidates:[], ...access,
+        message: access.rateLimited ? "네이버 접속량 제한으로 가격 조회를 중지했습니다."
+          : "네이버 페이지에서 인증 또는 서비스 상태 확인이 필요합니다." };
       snapshot.productCards = (snapshot.productCards || []).filter(isDomesticNaverPriceCard).map((card) => {
         const selectedPrices = selectNaverSellingPrices(card?.text || "");
         return {
@@ -1884,6 +1907,11 @@ async function lookupNaverDomesticPrice(input = {}) {
     return { ok: false, searchUrl, candidates: [], message: "일치 상품의 가격을 안전하게 확인하지 못했습니다." };
   } catch (error) {
     const timeout = /PRICE_LOOKUP_TIMEOUT/i.test(String(error?.message || ""));
+    if (error?.rateLimited || error?.loginRequired || error?.securityVerificationRequired) {
+      return { ok:false, searchUrl, candidates:[], rateLimited:error.rateLimited === true,
+        loginRequired:error.loginRequired === true, securityVerificationRequired:error.securityVerificationRequired === true,
+        message:error.rateLimited ? "네이버 접속량 제한으로 가격 조회를 중지했습니다." : "네이버 인증 확인이 필요합니다." };
+    }
     return {
       ok: false,
       searchUrl,
@@ -2785,27 +2813,40 @@ async function waitForDomesticCaptureReady(searchWindow, timeoutMs = 25_000) {
   if (lastSignature && Date.now() - stableSince < 1_500 && !searchWindow.isDestroyed()) await wait(1_500);
 }
 
-function domesticPageAccessState(text = "", cards = 0) {
+function domesticPageAccessState(text = "", cards = 0, page = {}) {
+  const rateLimited = /^https:\/\/shopv\.pstatic\.net\/web\/maintenance\/rate-limit\.html(?:[?#]|$)/i.test(String(page.href || ""))
+    || /현재\s*서비스\s*접속량이\s*많습니다|일시적인\s*트래픽\s*증가로|too\s+many\s+requests/i.test(text);
   const securityVerificationRequired = /captcha|보안\s*확인|비정상적인\s*접근|접속.{0,12}(?:제한|차단)/i.test(text);
-  const loginRequired = !cards && /로그인(?:이)?\s*필요(?:합니다|해요)|로그인(?:을)?\s*해주세요/i.test(text);
+  const loginDestination = /^https:\/\/nid\.naver\.com\/(?:nidlogin\.login|(?:nidlogin\.)?login(?:\/|[?#]|$))/i.test(String(page.href || ""));
+  const loginRequired = loginDestination || page.loginFormVisible === true
+    || (!cards && /로그인(?:이)?\s*필요(?:합니다|해요)|로그인(?:을)?\s*해주세요|로그인\s*후\s*(?:이용|확인|계속)/i.test(text));
   const unavailable = /서비스\s*접속이\s*원활하지\s*않|서비스를\s*이용할\s*수\s*없|일시적인\s*오류가\s*발생/i.test(text);
   return {
-    verificationReason: securityVerificationRequired ? "security_verification_required"
+    verificationReason: rateLimited ? "rate_limited" : securityVerificationRequired ? "security_verification_required"
       : loginRequired ? "login_required" : unavailable ? "service_unavailable" : "",
-    securityVerificationRequired, loginRequired,
+    securityVerificationRequired, loginRequired, rateLimited,
   };
 }
 
 async function waitForDomesticDetailReady(searchWindow, storeName, productUrl, generation = domesticSearchGeneration, articleNumber = "", readiness = "stock") {
   const deadline = Date.now() + 25_000;
   let snapshot = null;
+  let detailDiagnostics = {};
   while (Date.now() < deadline) {
     if (domesticSearchCanceled(generation) || searchWindow.isDestroyed()) throw new Error("DOMESTIC_SEARCH_CANCELED");
     const observed = await searchWindow.webContents.mainFrame.executeJavaScript(
       `(${captureDomesticDetailPage.toString()})(${captureRenderedStockEvidence.toString()}, ${JSON.stringify(renderedStockSelectors(storeName))})`, true).catch(() => null);
     if (observed) {
-      const access = domesticPageAccessState(observed.fullText);
-      if (access.verificationReason) throw Object.assign(new Error(access.verificationReason), access);
+      // Strip query/hash and credentials before recording a redirect; a login
+      // URL can contain OAuth state or other private tokens.
+      let resolvedUrl = "";
+      try { const url = new URL(observed.href); url.search = ""; url.hash = ""; url.username = ""; url.password = ""; resolvedUrl = url.href; } catch {}
+      detailDiagnostics = { resolvedUrl, readiness, documentReadyState: observed.documentReadyState,
+        loginFormVisible: observed.loginFormVisible === true, hasVisibleTitle: Boolean(observed.visibleTitleText),
+        hasOptions: observed.hasOptions === true, busy: observed.busy === true,
+        expectedPage: domesticProductUrlIdentity(observed.href) === domesticProductUrlIdentity(productUrl) };
+      const access = domesticPageAccessState(observed.fullText, 0, observed);
+      if (access.verificationReason) throw Object.assign(new Error(access.verificationReason), access, { detailDiagnostics });
       const expectedPage = domesticProductUrlIdentity(observed.href) === domesticProductUrlIdentity(productUrl);
       const naverCanonicalPage = storeName === "네이버 패션타운"
         && /^https:\/\/(?:shopping|m\.shopping|brand|smartstore)\.naver\.com\//i.test(observed.href)
@@ -2827,7 +2868,7 @@ async function waitForDomesticDetailReady(searchWindow, storeName, productUrl, g
     }
     await wait(400);
   }
-  throw Object.assign(new Error("product_detail_not_ready"), { snapshot });
+  throw Object.assign(new Error("product_detail_not_ready"), { snapshot, detailDiagnostics });
 }
 
 async function collectRenderedProductStock(searchWindow, storeName = "", generation = domesticSearchGeneration, onActivity = null, resumeOptions = [], resumeBranches = [], checkpointUrl = "") {
@@ -3008,7 +3049,7 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
       Object.assign(diagnostic, { inspectedFrames: diagnostic.inspectedFrames + 1, resolvedUrl: state.href,
         documentReadyState: state.documentReadyState, bodyLength: state.text.length, productCardCount: state.cards,
         explicitEmpty: state.explicitEmpty, positiveCount: state.positiveCount });
-      const access = domesticPageAccessState(state.text, state.cards);
+      const access = domesticPageAccessState(state.text, state.cards, state);
       if (access.verificationReason) return { ok: false, resolvedUrl: state.href, ...access };
       let decodedUrl = String(state.href || "");
       try { decodedUrl = decodeURIComponent(decodedUrl); } catch {}
@@ -3066,7 +3107,7 @@ async function loadDomesticRetailerResultPage(searchWindow, targetUrl) {
     if (state) Object.assign(diagnostic, { inspectedFrames: diagnostic.inspectedFrames + 1, resolvedUrl: state.href,
       documentReadyState: state.documentReadyState, bodyLength: state.text.length, productCardCount: state.cards,
       expectedPage: state.expectedPage, explicitEmpty: state.explicitEmpty });
-    const access = domesticPageAccessState(state?.text, state?.cards);
+    const access = domesticPageAccessState(state?.text, state?.cards, state || {});
     if (access.verificationReason) return {ok: false, ...access, resolvedUrl: state?.href};
     if (state?.ready) return {ok: true, resolvedUrl: state.href, explicitEmpty: state.explicitEmpty};
     await wait(500);
@@ -3095,7 +3136,7 @@ async function loadMusinsaResultPage(searchWindow, targetUrl, query) {
       return { href: current.href, text: pageText, cards, explicitEmpty: exactSearch && explicitEmpty,
         ready: Boolean(exactSearch && document.documentElement && (cards > 0 || explicitEmpty)) };
     })()`, true).catch(() => null);
-    const access = domesticPageAccessState(state?.text, state?.cards);
+    const access = domesticPageAccessState(state?.text, state?.cards, state || {});
     if (access.verificationReason) return { ok: false, resolvedUrl: state.href, ...access };
     if (state?.ready) return { ok: true, resolvedUrl: state.href, explicitEmpty: state.explicitEmpty };
   }
@@ -3810,7 +3851,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         verificationPending: technicalPending || (!approved && !absenceConfirmed),
         securityVerificationRequired: approval.securityVerificationRequired === true,
         loginRequired: approval.loginRequired === true,
-        verificationReason: approval.securityVerificationRequired ? "security_verification_required"
+        rateLimited: approval.rateLimited === true,
+        verificationReason: approval.rateLimited ? "rate_limited" : approval.securityVerificationRequired ? "security_verification_required"
           : approval.loginRequired ? "login_required" : approved ? "approved_domestic_seller"
           : technicalPending ? "naver_seller_evidence_failed"
             : finalized.verificationReason || "",
@@ -3822,6 +3864,17 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           sellerRejectedCount: approval.rejectedCount,
           sellerFailedCount: approval.failedCount,
           detailFailures: approval.detailFailures || [],
+          lastDetailFailure: approval.detailFailures?.at(-1)?.reason || "",
+          lastDetailResolvedUrl: approval.detailFailures?.at(-1)?.resolvedUrl || "",
+          lastDetailState: approval.detailFailures?.at(-1) ? {
+            readiness: approval.detailFailures.at(-1).readiness,
+            documentReadyState: approval.detailFailures.at(-1).documentReadyState,
+            loginFormVisible: approval.detailFailures.at(-1).loginFormVisible,
+            hasVisibleTitle: approval.detailFailures.at(-1).hasVisibleTitle,
+            hasOptions: approval.detailFailures.at(-1).hasOptions,
+            busy: approval.detailFailures.at(-1).busy,
+            expectedPage: approval.detailFailures.at(-1).expectedPage,
+          } : {},
           identityMode: requireArticleIdentity ? "article" : "brand_title",
         },
       };
@@ -4258,7 +4311,9 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
             lastWork = "product_detail";
             detailProgress = { processedProducts: update.completedProducts, totalProducts: update.totalProducts,
               failedDetails: Number(update.failedDetails || 0), lastDetailUrl: update.detailUrl || "",
-              lastDetailFailure: update.detailFailure || "" };
+              lastDetailFailure: update.detailFailure || "",
+              lastDetailResolvedUrl: update.detailDiagnostics?.resolvedUrl || "",
+              lastDetailState: update.detailDiagnostics || {} };
           }
           if (progressObserved && !observedWork.has(work)) {
             observedWork.add(work);
@@ -4343,6 +4398,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         naverAllSearchVerdict: result?.naverAllSearchVerdict || null,
         securityVerificationRequired: result?.securityVerificationRequired === true,
         loginRequired: result?.loginRequired === true,
+        rateLimited: result?.rateLimited === true,
         candidateCount: Number(result?.candidateCount || 0),
         parallelRetailerListEnforced: result?.parallelRetailerListEnforced === true,
       // The official search URL and a verified product-detail URL are
@@ -12018,13 +12074,15 @@ function domesticLoginFailure(source, code, message) {
   const errorCode = String(code || "DOMESTIC_LOGIN_REQUIRED");
   const verificationReason = errorCode.toLowerCase();
   const securityVerificationRequired = errorCode === "NAVER_VERIFICATION_REQUIRED";
+  const rateLimited = errorCode === "NAVER_RATE_LIMITED";
   return {
     sourceId: String(source?.id || ""),
     sourceGroup: domesticLoginSourceGroup(source?.id),
     store: source?.id === "naver" ? "네이버 패션타운" : String(source?.name || "판매처"),
     errorCode,
     message: String(message || `${source?.name || "판매처"} 로그인이 필요합니다.`),
-    loginRequired: !securityVerificationRequired,
+    loginRequired: !securityVerificationRequired && !rateLimited,
+    rateLimited,
     securityVerificationRequired,
     verificationReason,
     verificationStage: "login_preflight",
@@ -12070,12 +12128,37 @@ function invalidateNaverLoginScope(scopeId = "") {
   else confirmedNaverLoginScopes.clear();
 }
 
+function naverLoginScopeRestriction(scopeId, failure = null, now = Date.now()) {
+  const key = String(scopeId || "").trim();
+  if (!key) return null;
+  for (const [savedKey, entry] of blockedNaverLoginScopes) {
+    if (now - entry.at > NAVER_LOGIN_SCOPE_TTL_MS) blockedNaverLoginScopes.delete(savedKey);
+  }
+  if (failure) {
+    // Store only a restriction, not a previous product's price, URL or stock.
+    blockedNaverLoginScopes.set(key, {at: now, failure: {
+      code: failure.rateLimited ? "NAVER_RATE_LIMITED" : failure.securityVerificationRequired ? "NAVER_VERIFICATION_REQUIRED" : "DOMESTIC_LOGIN_REQUIRED",
+      message: failure.rateLimited
+        ? "네이버가 접속량 제한 화면을 반환해 이 검색 묶음의 네이버 조회를 중지했습니다. 재로그인하지 않고 기존 결과를 보관합니다."
+        : "네이버 상세 페이지에서 인증이 필요해 이 검색 묶음의 네이버 수집을 중지했습니다. 인증 상태 확인 후 다시 시작해 주세요.",
+    }});
+    if (blockedNaverLoginScopes.size > 1000) blockedNaverLoginScopes.delete(blockedNaverLoginScopes.keys().next().value);
+  }
+  return blockedNaverLoginScopes.get(key)?.failure || null;
+}
+
 async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress = () => {}, loginScopeId = "") {
   const sourceIds = domesticLoginSourceIdsForSearch(enabledSourceGroups);
   const failures = [];
   for (const [index, sourceId] of sourceIds.entries()) {
     const source = domesticLoginSource(sourceId);
     if (!source) continue;
+    const restriction = sourceId === "naver" && typeof naverLoginScopeRestriction === "function"
+      ? naverLoginScopeRestriction(loginScopeId) : null;
+    if (restriction) {
+      failures.push(domesticLoginFailure(source, restriction.code, restriction.message));
+      continue;
+    }
     // One product batch owns one login preflight. Naver can briefly hide both
     // rotating authentication cookies while navigating between Shopping and a
     // product detail. That transient gap is not a logout and must not create a
@@ -12933,6 +13016,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
             countVerified: false,
             absenceConfirmed: false,
             loginRequired: failure.loginRequired,
+            rateLimited: failure.rateLimited,
             securityVerificationRequired: failure.securityVerificationRequired,
             errorCode: failure.errorCode,
             verificationReason: failure.verificationReason,
@@ -13002,6 +13086,11 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         }
       }
       const products = Array.isArray(matched?.products) ? matched.products : [];
+      const naverRestriction = (matched?.sources || []).find(source => String(source?.store || "") === "네이버 패션타운"
+        && (source.rateLimited === true || source.loginRequired === true || source.securityVerificationRequired === true));
+      if (naverRestriction && typeof naverLoginScopeRestriction === "function") {
+        naverLoginScopeRestriction(input?.loginScopeId, naverRestriction);
+      }
       if ((matched?.sources || []).some((source) => String(source?.store || "") === "네이버 패션타운"
         && source?.loginRequired === true)) invalidateNaverLoginScope(input?.loginScopeId);
       await preserveVerifiedResults(matched);

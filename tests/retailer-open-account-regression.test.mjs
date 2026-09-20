@@ -260,7 +260,7 @@ test('a confirmed Naver batch scope never opens another login window for its nex
 test('107 products reuse one confirmed session and invalidation requires a fresh check', async () => {
   let checks = 0;
   const ctx = {
-    confirmedNaverLoginScopes: new Map(), NAVER_LOGIN_SCOPE_TTL_MS: 21600000,
+    confirmedNaverLoginScopes: new Map(), blockedNaverLoginScopes: new Map(), NAVER_LOGIN_SCOPE_TTL_MS: 21600000,
     domesticLoginSourceIdsForSearch: () => ['naver'],
     domesticLoginSource: () => ({ id: 'naver', name: '네이버' }),
     hasUsableDomesticLoginSession: async () => { checks++; return true; },

@@ -20,6 +20,11 @@ export function domesticProductUrlIdentity(value = "") {
 // Serialized into the retailer frame. Keep this function self-contained.
 export function captureDomesticDetailPage(captureStock, selectors = []) {
   const visible = element => {
+    for (let node = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (node.hidden || node.getAttribute('aria-hidden') === 'true'
+        || style.display === 'none' || style.visibility === 'hidden') return false;
+    }
     const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
   };
@@ -54,6 +59,16 @@ export function captureDomesticDetailPage(captureStock, selectors = []) {
     } catch {}
   }
   const stockEvidence = captureStock(selectors);
+  // Read only the presence of a login form, never its field values. Retailers
+  // often redirect to a plain ID/password page without "login required" text.
+  const loginFormVisible = [...document.querySelectorAll('input[type="password"]')]
+    .filter(visible).filter(input => input.autocomplete !== 'new-password')
+    .some(input => {
+      const scope = input.closest('form') || document;
+      return [...scope.querySelectorAll('button,input[type="submit"],[role="button"]')]
+        .some(button => visible(button) && /로그인|log\s*in|sign\s*in/i.test(
+          button.innerText || button.textContent || button.value || button.getAttribute('aria-label') || ''));
+    });
   const hasOptions = [...document.querySelectorAll('select,[role="combobox"],button,[role="button"]')].filter(visible)
     .some(el => !el.closest('header,footer,nav') && /사이즈|옵션|size|option/i.test(`${el.getAttribute('aria-label') || ''} ${el.textContent || ''}`));
   // Ignore only explicitly identified recommendation/advertisement regions.
@@ -83,6 +98,7 @@ export function captureDomesticDetailPage(captureStock, selectors = []) {
   const commerce = stockEvidence.options?.length || stockEvidence.stockTexts?.length || stockEvidence.purchaseAvailable || hasOptions;
   return {
     href: String(location.href || ""), fullText, pageText: fullText, sellerEvidenceText,
+    loginFormVisible, documentReadyState: document.readyState,
     titleText, visibleTitleText, labeledText, structuredCodes: [...new Set(structuredCodes)].slice(0, 30), stockEvidence,
     hasOptions, busy, ready: Boolean(titleText && commerce && !busy),
   };

@@ -41,6 +41,8 @@ test('diagnostics stay available alongside partial products without exposing who
     verificationReason:'collection_stalled',verificationPending:true,verificationStage:'product_detail',
     verificationDiagnostics:{stage:'product_detail',processedProducts:1,totalProducts:3,failedDetails:1,
       resolvedUrl:'https://www.lotteon.com/search?q=JI0079&token=private-token#secret',
+      lastDetailResolvedUrl:'https://nid.naver.com/nidlogin.login?token=private-token#secret',
+      lastDetailState:{readiness:'product',loginFormVisible:true,hasVisibleTitle:false},
       lastDetailFailure:'<img src=x onerror=alert(1)>',text:'PRIVATE PAGE BODY',productCardCount:3}}]});
   const details = body.querySelector('details.domestic-inline-diagnostics');
   assert.ok(details);
@@ -50,6 +52,8 @@ test('diagnostics stay available alongside partial products without exposing who
   assert.match(details.textContent, /상세 확인 필요 수: 1/);
   assert.doesNotMatch(details.textContent, /private-token|secret|PRIVATE PAGE BODY/);
   assert.equal(details.querySelector('img'), null);
+  assert.match(details.textContent, /https:\/\/nid\.naver\.com\/nidlogin\.login/);
+  assert.match(details.textContent, /로그인 입력창 감지: true/);
   assert.match(body.textContent, /149,000원/);
   assert.match(body.textContent, /재고 3개/);
 });
