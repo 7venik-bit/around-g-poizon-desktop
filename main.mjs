@@ -94,6 +94,7 @@ import {
 import { sellerPaginationTransitionStatus } from "./services/seller-pagination-state.mjs";
 import {
   analyzeRenderedChannelProducts,
+  isOfficialProductCandidateUrl,
   classifySsgProductEvidence,
   exactArticleIdentityMatch,
   strictProductArticleIdentityMatch,
@@ -1477,6 +1478,7 @@ async function collectOfficialMallSearchProducts(searchWindow, query) {
       const found = new Map();
       for (const link of [...document.querySelectorAll('a[href]')]) {
         if (!visible(link) || !productPath.test(String(link.href || ""))) continue;
+        if (!(${isOfficialProductCandidateUrl.toString()})(link.href, location.href)) continue;
         let card = link.closest('li,article,[class*="product" i],[class*="goods" i],[class*="item" i]') || link;
         const rawText = String(card.innerText || link.innerText || "").replace(/\\s+/g, " ").trim();
         if (!rawText || rawText.length > 1200) continue;
@@ -3962,7 +3964,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       officialSearchResultVerified = belongsToOfficialMall(currentUrl)
         && Boolean(officialDirectDetail || officialSearchSubmitted || exactQueryRoute);
       // A source's official label does not make external links official.
-      parsedContent.productCards = (parsedContent.productCards || []).filter(card => belongsToOfficialMall(card.productUrl));
+      parsedContent.productCards = (parsedContent.productCards || []).filter(card => belongsToOfficialMall(card.productUrl)
+        && isOfficialProductCandidateUrl(card.productUrl, officialDirectDetail ? '' : currentUrl));
       content = JSON.stringify(parsedContent);
     }
     const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
