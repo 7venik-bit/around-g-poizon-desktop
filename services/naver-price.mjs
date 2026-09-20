@@ -18,8 +18,17 @@ function excludedPriceKind(prefix = "", suffix = "") {
   return "";
 }
 
+export function isNaverAccountUrl(value) {
+  try {
+    return new URL(String(value || "")).hostname.toLowerCase().replace(/^www\./, "") === "nid.naver.com";
+  } catch {
+    return false;
+  }
+}
+
 export function isDomesticNaverPriceCard(card = {}) {
   const productUrl = String(card?.productUrl || "");
+  if (isNaverAccountUrl(productUrl)) return false;
   const evidence = [card?.title, card?.text, card?.markup].filter(Boolean).join(" ").replace(/\s+/g, " ");
   if (/\/window-products\/(?:foreign|overseas|global)(?:\/|$)/i.test(productUrl)) return false;
   if (/(?:해외\s*직구|해외\s*구매|해외\s*배송|구매\s*대행|관부가세(?:가)?\s*포함|해외\s*상품)/i.test(evidence)) return false;

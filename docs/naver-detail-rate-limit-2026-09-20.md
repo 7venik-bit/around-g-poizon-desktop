@@ -60,3 +60,38 @@ passed, 1 failed. The Windows Electron review smoke process exits with
 disabled. Release source transformations pass, but Windows runtime/package
 validation and a successful live Naver detail collection remain unverified.
 Keep the change as a draft until required checks and runtime validation pass.
+
+## Authenticated follow-up
+
+The user completed Naver login and device confirmation in the isolated Windows
+test profile. The Naver page displayed a logout control, and the sourcing UI
+reported successful saved-account/login verification. A JH9977 search still
+reported login required. A sanitized production `domestic:search` diagnostic at
+2026-09-20T05:02:19Z captured 83 rendered cards, 33 candidates, one failed detail,
+and a final destination of `https://nid.naver.com/nidlogin.login` with
+`expectedPage: true`, `loginRequired: true`, and `rateLimited: false`.
+
+That identity match suggests an account link was selected as a candidate; the
+original candidate URL was omitted by the diagnostic allowlist, so this is an
+inference rather than an independently captured original URL. Both candidate
+filters demonstrably accepted Naver account links carrying product/seller text.
+Exclude the `nid.naver.com` account host at both gates, while preserving genuine
+Naver product links and external official-mall links. Actual redirects from valid
+product pages to login remain access failures; they are not bypassed.
+
+Three new regression cases failed before this correction. Afterwards all 196
+focused tests passed. Full `npm test`: 1,106 passed, 1 failed (1,107 total).
+The Windows Electron smoke test still fails launching its GPU process in the
+shell environment, this time exit 2147483651 with GPU-unusable diagnostics.
+This is not a successful Windows package validation. No tests were skipped.
+
+The corrected production search was then exercised once in the actual Windows
+test app, reusing the saved login session. At 2026-09-20T05:10:10Z it read 83 cards
+and 31 candidates. Its first detail attempt was the genuine product URL
+`https://shopping.naver.com/window-products/department/13723139483`, which resolved
+to `https://shopv.pstatic.net/web/maintenance/rate-limit.html`. The result retained
+`rateLimited: true`, `loginRequired: false`, and one failed detail; traversal
+stopped. This confirms the logged-in full search still encounters a Naver access
+restriction after excluding account links. It does not prove account suspension
+or successful stock collection. The test-only automatic diagnostic was removed
+after this single run; no extra authentication was submitted.
