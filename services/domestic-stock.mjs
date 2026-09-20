@@ -38,7 +38,8 @@ export function captureRenderedStockEvidence(selectors = [], root = document) {
   const optionNodes = optionCandidates.filter(el => !optionCandidates.some(child => child !== el && el.contains(child)));
   const options = optionNodes.map(el => {
     const label = rawText(el);
-    const disabled = el.disabled || el.getAttribute('aria-disabled') === 'true' || /disabled|sold.?out|품절/i.test(String(el.className || ''))
+    const disabled = el.disabled || el.getAttribute('aria-disabled') === 'true' || /disabled|sold.?out|unavailable|unselectable|품절/i.test(String(el.className || ''))
+      || /currently unavailable|out of stock|sold out|품절|선택 불가/i.test(el.getAttribute('aria-label') || '')
       || (el.tagName === 'INPUT' && /disabled|sold.?out/i.test(String(el.parentElement?.className || '')));
     return {label, inStock:!disabled && !unavailablePattern.test(label), stockText:label};
   }).filter(option => option.label && option.label.length <= 80);

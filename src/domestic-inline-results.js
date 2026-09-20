@@ -166,6 +166,16 @@
     const query = source?.manualSearchQuery || source?.searchAttempts?.[0]?.query || source?.searchQuery || sourceProduct?.articleNumber || sourceProduct?.productCode
       || sourceProduct?.spuId || "";
     if (!openUrl) return `<button type="button" disabled>${label}</button>`;
+    if (source?.store === "브랜드 공식몰" && contextKey && (!product?.price || !product?.stockVerified)) {
+      try {
+        const target = new URL(openUrl);
+        const home = new URL(source.homepageUrl || target.origin);
+        if (target.protocol === "https:" && target.hostname === home.hostname && target.pathname !== "/"
+          && !/search|category|catalog/i.test(target.pathname + target.search)) {
+          return `<button type="button" data-official-homepage="${encodeURIComponent(home.href)}" data-official-query="${encodeURIComponent(sourceProduct?.articleNumber || query)}" data-official-product-url="${encodeURIComponent(target.href)}" data-official-result-key="${encodeURIComponent(contextKey)}">상세 수집</button><button type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
+        }
+      } catch {}
+    }
     if (source?.officialStatus && !productUrl && !source?.verifiedProductUrl && !manualSearchUrl) {
       return `<button type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}" data-official-result-key="${encodeURIComponent(contextKey)}">${label}</button>`;
     }

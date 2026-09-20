@@ -1477,7 +1477,7 @@ async function collectOfficialMallSearchProducts(searchWindow, query) {
       };
       const found = new Map();
       for (const link of [...document.querySelectorAll('a[href]')]) {
-        if (!visible(link) || !productPath.test(String(link.href || ""))) continue;
+        if (!visible(link)) continue;
         if (!(${isOfficialProductCandidateUrl.toString()})(link.href, location.href)) continue;
         let card = link.closest('li,article,[class*="product" i],[class*="goods" i],[class*="item" i]') || link;
         const rawText = String(card.innerText || link.innerText || "").replace(/\\s+/g, " ").trim();
@@ -1495,6 +1495,7 @@ async function collectOfficialMallSearchProducts(searchWindow, query) {
         // Product-looking paths also occur in global navigation (for example
         // /shop/... links titled "홈"). Require card-owned product evidence.
         if (navigationLabel || (!image && !cardPrice && !ownsExpectedCode)) continue;
+        if (!productPath.test(url) && !(ownsExpectedCode && (image || cardPrice))) continue;
         if (!url || found.has(url)) continue;
         found.set(url, {
           id: url,
@@ -2781,6 +2782,20 @@ async function openOfficialMallInternalSearch(homepageUrl, query) {
   }
 }
 
+async function collectKnownOfficialDetail(input) {
+  const home = new URL(String(input.homepageUrl || ""));
+  const target = new URL(String(input.productUrl || ""));
+  const host = home.hostname.replace(/^www\./, "");
+  if (home.protocol !== "https:" || target.protocol !== "https:"
+    || !(target.hostname.replace(/^www\./, "") === host || target.hostname.endsWith("." + host))
+    || target.pathname === "/" || !isOfficialProductCandidateUrl(target.href)
+    || !String(input.query || "").trim()) throw new Error("INVALID_OFFICIAL_PRODUCT_URL");
+  const result = await renderedSearchSourceResult({store:"브랜드 공식몰", homepageUrl:home.href,
+    officialStatus:"verified", officialProductUrl:target.href, directProductUrls:[target.href], renderCount:true},
+    String(input.query).trim(), String(input.brand || ""), "");
+  return {...result, ok:true, products:result.products || [], resultsUrl:result.resolvedSearchUrl || target.href};
+}
+
 async function waitForDomesticCaptureReady(searchWindow, timeoutMs = 25_000) {
   // webContents.executeJavaScript waits for did-stop-loading in Electron.
   // Read the live main frame so pending images/analytics cannot block stock.
@@ -3359,7 +3374,25 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           if (!expected || (!compact(currentUrl).includes(compact(expected))
             && !compact(pageText).includes(compact(expected)))) return null;
           const titleElement = document.querySelector('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]');
-          const productTitle = String(titleElement?.textContent || document.title || "").replace(/\\s+/g, " ").trim();
+          let matchingDetail = null;
+          const visit = value => {
+            if (!value || typeof value !== "object") return;
+            if (Array.isArray(value)) { value.forEach(visit); return; }
+            if (value["@type"] === "Product" && value.url) {
+              try {
+                const candidate = new URL(value.url, currentUrl), current = new URL(currentUrl);
+                if (candidate.origin === current.origin && candidate.pathname === current.pathname && value.offers?.price
+                  && (!matchingDetail || !matchingDetail.offers?.price)) matchingDetail = value;
+              } catch {}
+            }
+            for (const child of Object.values(value)) if (child && typeof child === "object") visit(child);
+          };
+          for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+            try { visit(JSON.parse(script.textContent)); } catch {}
+          }
+          const color = String(matchingDetail?.color || "");
+          const productTitle = String(titleElement?.textContent || document.title || "").replace(/\\s+/g, " ").trim()
+            + (color ? " [" + color + "]" : "");
           const priceNodes = [...document.querySelectorAll('[itemprop="price"],[class*="price" i],strong,em,b,span')];
           const prices = priceNodes.map((element) => {
             const raw = String(element.getAttribute?.("content") || element.textContent || "").trim();
@@ -3390,7 +3423,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             markup: String(titleElement?.outerHTML || ""),
             imageUrl: String(image?.currentSrc || image?.src || ""),
             imageLinkedToProduct: Boolean(image),
-            price: prices[0]?.value || "",
+            price: Number(matchingDetail?.offers?.price) > 0
+              ? Number(matchingDetail.offers.price).toLocaleString("ko-KR") + "원" : prices[0]?.value || "",
             originalPrice: "",
           };
         })()`, true).catch(() => null);
@@ -3595,6 +3629,19 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       }
     }
     await waitForDomesticCaptureReady(searchWindow, officialDirectDetail ? 1_000 : 25_000);
+    // Some official searches navigate directly to the only matching product.
+    // That page has no search card linking to itself; use the detail pipeline.
+    if (source.store === "브랜드 공식몰" && !officialDirectUrl) {
+      const current = new URL(searchWindow.webContents.getURL());
+      const home = new URL(source.homepageUrl || url);
+      const code = sanitizeDomesticProductCode(articleNumber);
+      const pathCodes = decodeURIComponent(current.pathname).toUpperCase().split(/[^A-Z0-9-]+/);
+      if (code && pathCodes.includes(code.toUpperCase()) && current.origin === home.origin
+        && isOfficialProductCandidateUrl(current.href)) {
+        return await renderedSearchSourceResult({...source, directProductUrls:[current.href], officialProductUrl:current.href},
+          articleNumber, brand, title, securityRetry, null, sharedNaverSession, generation, onActivity);
+      }
+    }
     if (source.store === "브랜드 공식몰" && !officialDirectDetail) {
       const filter = await searchWindow.webContents.mainFrame.executeJavaScript(`(${captureOfficialSoldOutFilter.toString()})()`, true).catch(() => null);
       if (filter) {
@@ -13254,6 +13301,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   });
   ipcMain.handle("official:open-internal-search", async (_event, input) => {
     try {
+      if (input?.productUrl) return await collectKnownOfficialDetail(input);
       return await openOfficialMallInternalSearch(input?.homepageUrl, input?.query);
     } catch (error) {
       const message = String(error?.message || error || "");
