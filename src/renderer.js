@@ -22,6 +22,7 @@ let domesticStockOnly = false;
 let domesticBatchRunning = false;
 let domesticBatchVerifyCounts = false;
 let domesticBatchStopRequested = false;
+let domesticBatchLoginScopeId = "";
 const DOMESTIC_BATCH_PROGRESS_KEY = "around-g-domestic-batch-progress-v3";
 const DOMESTIC_RESULT_POLICY_VERSION = 6;
 let brandProgressActive = false;
@@ -1406,6 +1407,10 @@ async function cachedDomesticSearch(product, verifyLinkCounts = true) {
     input.recoveryProductKey = identity;
   }
   const runId = excelPreviewSearchRunId;
+  const batchLoginScopeId = typeof domesticBatchLoginScopeId === "string"
+    ? domesticBatchLoginScopeId
+    : "";
+  input.loginScopeId = String(batchLoginScopeId || `renderer:${runId}`);
   input.requestId = `${runId}:${Date.now()}:${identity}`;
   activeDomesticProgressRequestId = input.requestId;
   const task = (async () => {
@@ -3814,6 +3819,7 @@ async function runDomesticBatch(options = {}) {
     return;
   }
   const batchId = domesticBatchId(batchProducts);
+  domesticBatchLoginScopeId = `explorer:${Date.now()}:${batchId}`;
   const savedProgress = selectedOnly ? null : readDomesticBatchProgress(batchId);
   if (!selectedOnly && savedProgress) {
     await restoreDomesticStockResults(batchId);
@@ -3848,6 +3854,7 @@ async function runDomesticBatch(options = {}) {
   domesticBatchRunning = false;
   domesticBatchVerifyCounts = false;
   domesticBatchStopRequested = false;
+  domesticBatchLoginScopeId = "";
   button.disabled = false;
   button.textContent = "표시 목록 국내 재고 검색";
   updateExplorerSelectionUi();

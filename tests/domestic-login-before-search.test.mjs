@@ -34,9 +34,22 @@ test("missing retailer logins open the shared persistent login window sequential
   assert.match(block, /await openDomesticLogin\(sourceId, \{ background: sourceId === "naver" \}\)/);
   assert.match(block, /10 \* 60_000/);
   assert.match(block, /await hasUsableDomesticLoginSession\(sourceId\)/);
+  assert.match(block, /naverLoginScopeConfirmed\(loginScopeId\)/);
+  assert.match(block, /rememberNaverLoginScope\(loginScopeId\)/);
   assert.match(block, /로그인 후 다음 판매처 확인을 자동으로 계속합니다/);
   assert.match(block, /automaticErrorCode === "NAVER_LOGIN_WINDOW_CLOSED"/);
   assert.doesNotMatch(block, /NAVER_LOGIN_INPUTS_NOT_FOUND[\s\S]*?continue;/);
+});
+
+test("one confirmed Naver login scope skips repeated per-product login preflights", () => {
+  const start = main.indexOf("async function waitForDomesticLoginsBeforeSearch");
+  const end = main.indexOf("async function domesticLoginStatuses", start);
+  const block = main.slice(start, end);
+  assert.match(block, /loginScopeId = ""/);
+  assert.ok(block.indexOf("naverLoginScopeConfirmed(loginScopeId)") < block.indexOf("openDomesticLogin(sourceId"));
+  const handler = main.slice(main.indexOf('ipcMain.handle("domestic:search"'), main.indexOf('ipcMain.handle("domestic:recovery-start"'));
+  assert.match(handler, /input\?\.loginScopeId/);
+  assert.match(handler, /invalidateNaverLoginScope\(input\?\.loginScopeId\)/);
 });
 
 test("missing Naver credentials skip only Naver before opening a recurring login popup", () => {

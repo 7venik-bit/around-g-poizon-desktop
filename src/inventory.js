@@ -155,7 +155,7 @@ function showResults(article, data) {
   }).join("");
 }
 
-async function searchOne(index) {
+async function searchOne(index, loginScopeId = "") {
   const product = state.products[index];
   const article = $(`.product[data-index="${index}"]`);
   if (!product || !article) return;
@@ -174,6 +174,7 @@ async function searchOne(index) {
     imageUrl: product.logoUrl || "",
     // 인기상품의 선택 검색과 동일하게 각 검색 경로의 실제 결과 수도 확인한다.
     verifyLinkCounts: true,
+    loginScopeId: loginScopeId || `inventory-single:${Date.now()}:${index}`,
   });
   if (result?.ok) showResults(article, result.data);
   else article.querySelector(".results").innerHTML = `<div class="empty">${esc(result?.message || "검색에 실패했습니다.")}</div>`;
@@ -188,11 +189,12 @@ async function searchSelected() {
   $("#stop").hidden = false;
   updateSelection();
   const indexes = state.products.map((p, i) => ({ key: keyOf(p, i), i })).filter((row) => state.selected.has(row.key)).map((row) => row.i);
+  const loginScopeId = `inventory-batch:${Date.now()}`;
   let completed = 0;
   for (const index of indexes) {
     if (state.stopped) break;
     $("#status").textContent = `${completed + 1}/${indexes.length} 상품의 국내 재고와 사이즈를 확인하는 중입니다.`;
-    await searchOne(index);
+    await searchOne(index, loginScopeId);
     completed += 1;
     progress(completed, indexes.length);
   }
