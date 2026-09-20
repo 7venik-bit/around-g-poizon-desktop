@@ -14,5 +14,7 @@ test("Naver Shopping preserves the physical click and recovers its new-tab href"
   assert.match(route, /if \(!\/\^https:\\\/\\\/shopping\\\.naver\\\.com/);
   assert.doesNotMatch(route, /if \(\/\^https:\\\/\\\/(?:www\\\.)\?naver/);
   assert.match(route, /await searchWindow\.loadURL\(target\.href\)/);
-  assert.match(route, /const afterFashionClickUrl/);
+  const fashion = route.slice(route.indexOf('async function clickNaverFashionTownMenu'));
+  assert.match(fashion, /setAttribute\("target", "_self"\)/);
+  assert.doesNotMatch(fashion, /loadURL\(/, 'Fashion Town must follow the observed menu click, without a URL replay');
 });

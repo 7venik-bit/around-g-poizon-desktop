@@ -23,6 +23,7 @@ app.whenReady().then(async () => {
     domesticSearchGeneration:0, domesticSearchCanceled:()=>false});
   const section = (start,end) => source.slice(source.indexOf(start), source.indexOf(end,source.indexOf(start)));
   runInContext(section('async function openRenderedSizeOptions(', '\nfunction browserWindowUsable('), context);
+  runInContext(section('async function clickNaverFashionTownMenu(', '\nasync function openRenderedSizeOptions('), context);
   runInContext(section('async function waitForDomesticCaptureReady(', '\nasync function renderedSearchSourceResult('), context);
   runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('), context);
   const cases = [
@@ -38,6 +39,8 @@ app.whenReady().then(async () => {
     // All HTTPS requests, including the retailer URLs, are local fixtures.
     // Keep an image pending so Electron never emits did-stop-loading.
     isolated.protocol.handle('https', request => {
+      const searchUi = require('./naver-search-ui.cjs')(request.url);
+      if (searchUi) return new Response(searchUi, {headers:{'content-type':'text/html;charset=utf-8'}});
       if (request.url.includes('/hold.svg')) return new Promise(resolve => {
         releases.push(() => resolve(new Response('<svg xmlns="http://www.w3.org/2000/svg"/>',{headers:{'content-type':'image/svg+xml'}})));
       });

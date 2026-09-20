@@ -18,7 +18,7 @@ test("네이버 패션타운은 검색 링크에서 실제 상품 카드를 수�
 
 test("네이버는 전체 load 이벤트를 기다리지 않고 정확한 결과 DOM에서 계속한다", () => {
   assert.match(main, /async function loadNaverFashionTownResultPage/);
-  assert.match(main, /const navigation = searchWindow\.loadURL\(targetUrl\)/);
+  assert.match(main, /const navigation = searchWindow\.loadURL\("https:\/\/shopping\.naver\.com\/ns\/home"\)/);
   assert.match(main, /const firstResult = await inspectSettledResult\(\)/);
   assert.match(main, /isNaverRenderedResultReady\(\{ url: state\.href, text: state\.text, cards: state\.cards \}, expectedQuery\)/);
   assert.match(main, /if \(!directNaverFashionResult && !musinsaSource && !domesticRetailerSource\) try \{/);
