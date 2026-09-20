@@ -2510,8 +2510,17 @@ async function submitNaverShoppingSearch(searchWindow, query) {
       catch { return false; }
     })();
     const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));
+    const submittedQueryUrl = (() => {
+      try {
+        const current = new URL(state?.url || "");
+        return current.hostname === "shopping.naver.com"
+          && current.pathname.startsWith("/window/search/")
+          && current.searchParams.get("q") === exactQuery;
+      } catch { return false; }
+    })();
     // Reaching the exact query result URL proves the input and magnifier action
     // succeeded. Final capture decides product presence or authoritative zero.
+    if (urlChanged && submittedQueryUrl) return true;
     if (isNaverRenderedResultReady(state, exactQuery)) return true;
     if (state && !/페이지를\s*찾을\s*수\s*없습니다/.test(state.text)
       && ((urlChanged && queryInUrl)

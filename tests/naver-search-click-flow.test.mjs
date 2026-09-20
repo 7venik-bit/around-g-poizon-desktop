@@ -9,6 +9,20 @@ const section = (start, end) => main.slice(main.indexOf(start), main.indexOf(end
 const resultUrl = 'https://shopping.naver.com/window/search/fashion-group?q=JH9977';
 const productUrl = 'https://shopping.naver.com/window-products/department/123';
 
+test('a submitted query with only external official cards reaches the bounded result collector',async()=>{
+  let clicks=0;
+  const win={isDestroyed:()=>false,webContents:{focus(){},getURL:()=> 'https://shopping.naver.com/window/main/fashion',
+    sendInputEvent:e=>{if(e.type==='mouseUp')clicks++;},
+    mainFrame:{executeJavaScript:async script=>script.startsWith('JSON.stringify')
+      ? JSON.stringify({url:resultUrl,text:'아디다스 슈퍼스타',resultMatched:false,noResult:false}) : {x:100,y:40}}}};
+  const context=createContext({URL,wait:async()=>{},openNaverFashionTownSearchInput:async()=>({x:10,y:10}),
+    typeNaverQueryLikeUser:async()=>true,isNaverRenderedResultReady:()=>false,
+    waitForNaverSearchResultsStable:async()=>false});
+  runInContext(section('async function submitNaverShoppingSearch(', '\nasync function openRenderedSizeOptions('),context);
+  assert.equal(await context.submitNaverShoppingSearch(win,'JH9977'),true);
+  assert.equal(clicks,1);
+});
+
 for (const failure of ['', 'menu', 'submit', 'rate']) test(`search uses home/menu/input once and never loads a result URL: ${failure || 'success'}`, async () => {
   let url = '', calls = [], now = 0;
   const win = { isDestroyed:()=>false, loadURL:async value=>{calls.push(['load', value]);url=value;}, webContents:{getURL:()=>url,
