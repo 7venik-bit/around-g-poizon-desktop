@@ -17,6 +17,21 @@ const good = (group, extra = {}) => ({
 const failure = group => ({ sources: [{ store: names[group], verificationFailed: true }], products: [] });
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
+test('automatic diagnosis is durable and exhausted recovery does not repeat the same search', async t => {
+  const f=await fixture(t);
+  const job=await start(f.coordinator);
+  let calls=0;
+  await f.coordinator.run({jobId:job.id,productKey:'A',execute:async()=>{
+    calls++;
+    return {ok:true,data:{products:[],sources:[{store:names.official,verificationPending:true,
+      autoRecovery:{status:'partial',issues:['price_missing'],attempts:[{strategy:'known_detail'}]}}]}};
+  }});
+  assert.equal(calls,1);
+  const reopened=await f.open();
+  assert.equal(reopened.coordinator.get(job.id).products[0].tasks[0].data.sources[0].autoRecovery.status,'partial');
+  assert.equal(reopened.coordinator.get(job.id).status,'pending');
+});
+
 async function fixture(t, options = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'around-g-recovery-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));

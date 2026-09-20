@@ -20,7 +20,7 @@ const watchdog = setTimeout(() => { console.error('SHIPPING_IPC_TIMEOUT'); app.e
 app.whenReady().then(async () => {
   const modules = {};
   for (const file of ['relay/domestic-search.mjs', 'services/naver-fashiontown-result.mjs',
-    'services/matcher.mjs', 'services/domestic-recovery.mjs', 'services/brand-official-search.mjs',
+    'services/matcher.mjs', 'services/domestic-recovery.mjs', 'services/official-auto-recovery.mjs', 'services/brand-official-search.mjs',
     'services/official-mall-adapters.mjs', 'services/brand-integrity.mjs', 'services/naver-price.mjs',
     'services/domestic-detail-page.mjs', 'services/brand-search-profile.mjs', 'services/official-domain-registry.mjs']) {
     Object.assign(modules, await import(pathToFileURL(resolve(root, file))));
@@ -179,3 +179,4 @@ app.whenReady().then(async () => {
   clearTimeout(watchdog);
   app.exit(0);
 }).catch(error => {console.error(error?.stack || error);clearTimeout(watchdog);app.exit(1);});
+

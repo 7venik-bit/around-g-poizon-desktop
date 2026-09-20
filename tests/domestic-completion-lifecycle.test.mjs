@@ -372,6 +372,9 @@ test('single-row mixed-source search preserves the direct official product URL',
   assert.match(detail.textContent, /49,000원/);
   const link = detail.querySelector('[data-url]');
   assert.equal(decodeURIComponent(link.dataset.url), url);
+  const collect = detail.querySelector('[data-official-product-url]');
+  assert.equal(decodeURIComponent(collect.dataset.officialProductUrl), url);
+  assert.equal(collect.textContent, '상세 수집');
   assert.ok(detail.querySelector('[data-inline-naver-price]'));
   assert.equal(f.overlay().hidden, true);
 });

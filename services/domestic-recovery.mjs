@@ -175,7 +175,8 @@ export class DomesticRecoveryCoordinator {
           onProgress({completed: product.tasks.filter(t => t.status === 'complete').length,
             total: product.tasks.length, source: task.group, phase: complete ? 'completed' : 'pending'});
           if (response?.canceled || canceled()) { interrupted = true; break; }
-          if (complete || requiresInteraction(task.data) || attempt === 1) break;
+          if (complete || requiresInteraction(task.data) || attempt === 1
+            || task.data?.sources?.some(source => source.autoRecovery)) break;
           onProgress({source: task.group, phase: 'retry_wait', message: '미완료 판매처를 잠시 후 다시 확인합니다.'});
           try { await this.cancelable(this.delay(this.retryDelayMs), canceled); }
           catch { interrupted = true; break; }

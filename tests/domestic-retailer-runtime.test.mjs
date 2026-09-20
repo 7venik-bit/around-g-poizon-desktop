@@ -13,8 +13,49 @@ import * as officialAdapters from '../services/official-mall-adapters.mjs';
 import * as brandIntegrity from '../services/brand-integrity.mjs';
 import * as naverPrice from '../services/naver-price.mjs';
 import * as detailPage from '../services/domestic-detail-page.mjs';
+import * as autoRecovery from '../services/official-auto-recovery.mjs';
 
 const main = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
+
+test('shipping source aggregation automatically collects a known official detail and retains its diagnosis', async t => {
+  const f=fixture(t);
+  const url='https://new-brand.example/products/SR123UPS11';
+  let calls=0;
+  f.context.renderedSearchSourceResult=async source=>{
+    calls++;
+    if(!source.directProductUrls) return {products:[],detailVerificationPending:true};
+    return {count:1,products:[{store:source.store,url,articleNumber:'SR123UPS11',price:49000,
+      stockVerified:true,stockCoverage:'observed',sizes:[{label:'95',inStock:true}]}]};
+  };
+  const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{store:'브랜드 공식몰',
+    homepageUrl:'https://new-brand.example/',verifiedProductUrl:url,renderCount:true}]},'SR123UPS11'));
+  assert.equal(calls,2);
+  assert.equal(result.products[0].price,49000);
+  assert.equal(result.sources[0].autoRecovery.status,'recovered');
+  assert.equal(result.sources[0].verificationPending,false);
+});
+
+test('official known detail returns price and unavailable Adidas sizes', async t => {
+  const url=new URL('https://www.adidas.co.kr/슈퍼스타-ii/JI0079.html').href;
+  const f=fixture(t,{pages:{[url]:'<main><h1>슈퍼스타 II JI0079</h1><span class="price">149,000원</span><div data-auto-id="size-selector"><button role="radio" aria-label="크기: 295">295</button><button role="radio" aria-label="Size: 300 is currently unavailable." class="size--unavailable">300</button></div><button>장바구니 담기</button></main>'}});
+  const result=await f.drive(f.context.renderedSearchSourceResult({store:'브랜드 공식몰',homepageUrl:'https://www.adidas.co.kr/',officialProductUrl:url,directProductUrls:[url]},'JI0079','아디다스','슈퍼스타 II'));
+  assert.equal(result.products.length,1);
+  assert.equal(result.products[0].price,149000);
+  assert.deepEqual(Array.from(result.products[0].sizes,s=>[s.label,s.inStock]),[['295',true],['300',false]]);
+});
+
+test('official search landing on a detail page collects it rather than requiring a self-link', async t => {
+  const url='https://www.adidas.co.kr/shoe/JI0079.html';
+  const product={"@type":"Product",url,sku:'JI0079',color:'Black',offers:{price:149000}};
+  const f=fixture(t,{pages:{[url]:`<main><h1>슈퍼스타 II</h1><span class="price">149,000원</span><div data-auto-id="size-selector"><button>295</button><button class="unavailable">300</button></div><button>장바구니 담기</button></main><aside class="recommend"><span class="price">29,000원</span></aside><script type="application/ld+json">${JSON.stringify(product)}</script>`}});
+  f.context.ensureOfficialAccountLogin=async()=>({ok:true});
+  f.context.executeOfficialMallSearch=async w=>{await w.loadURL(url);return true;};
+  const result=await f.drive(f.context.renderedSearchSourceResult({store:'브랜드 공식몰',homepageUrl:'https://www.adidas.co.kr/'},'JI0079','',''));
+  assert.equal(result.products.length,1,JSON.stringify(result));
+  assert.equal(result.products[0].price,149000);
+  assert.match(result.products[0].title,/Black/);
+  assert.deepEqual(Array.from(result.products[0].sizes,s=>[s.label,s.inStock]),[['295',true],['300',false]]);
+});
 const section = (start, end) => main.slice(main.indexOf(start), main.indexOf(end, main.indexOf(start)));
 const channels = [
   ['네이버 패션타운', 'https://shopping.naver.com/window/search/fashion-group?q=SR123UPS11', 'https://shopping.naver.com/window-products/department/123'],
@@ -86,7 +127,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     }
   }
   const sandbox = {
-    ...relay, ...naver, ...matcher, ...recovery, ...brandOfficial, ...officialAdapters, ...brandIntegrity, ...naverPrice, ...detailPage, BrowserWindow, URL, console,
+    ...relay, ...naver, ...matcher, ...recovery, ...brandOfficial, ...officialAdapters, ...brandIntegrity, ...naverPrice, ...detailPage, ...autoRecovery, BrowserWindow, URL, console,
     Date: class extends Date { static now() { return now; } },
     setTimeout: setTimer, clearTimeout: clearTimer, wait: ms => new Promise(r => setTimer(r, ms)),
     domesticSearchGeneration: 0, domesticSearchCanceled: () => false,

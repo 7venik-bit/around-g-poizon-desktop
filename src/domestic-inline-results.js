@@ -166,6 +166,16 @@
     const query = source?.manualSearchQuery || source?.searchAttempts?.[0]?.query || source?.searchQuery || sourceProduct?.articleNumber || sourceProduct?.productCode
       || sourceProduct?.spuId || "";
     if (!openUrl) return `<button type="button" disabled>${label}</button>`;
+    if (source?.store === "브랜드 공식몰" && contextKey && (!product?.price || !product?.stockVerified)) {
+      try {
+        const target = new URL(openUrl);
+        const home = new URL(source.homepageUrl || target.origin);
+        if (target.protocol === "https:" && target.hostname === home.hostname && target.pathname !== "/"
+          && !/search|category|catalog/i.test(target.pathname + target.search)) {
+          return `<button type="button" data-official-homepage="${encodeURIComponent(home.href)}" data-official-query="${encodeURIComponent(sourceProduct?.articleNumber || query)}" data-official-product-url="${encodeURIComponent(target.href)}" data-official-result-key="${encodeURIComponent(contextKey)}">상세 수집</button><button type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
+        }
+      } catch {}
+    }
     if (source?.officialStatus && !productUrl && !source?.verifiedProductUrl && !manualSearchUrl) {
       return `<button type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}" data-official-result-key="${encodeURIComponent(contextKey)}">${label}</button>`;
     }
@@ -180,7 +190,7 @@
   }
 
   function renderSearchDiagnostics(sources) {
-    const failures = sources.filter(source => source?.verificationReason || source?.verificationFailed
+    const failures = sources.filter(source => source?.autoRecovery || source?.verificationReason || source?.verificationFailed
       || source?.securityVerificationRequired || source?.loginRequired);
     if (!failures.length) return "";
     const safeUrl = value => {
@@ -197,9 +207,12 @@
     const blocks = failures.map(source => {
       const d = source.verificationDiagnostics || {};
       const lines = [source.store || "판매처", `검색어: ${source.searchQuery || "-"}`,
-        `오류: ${source.verificationReason || (source.loginRequired ? "login_required" : source.securityVerificationRequired ? "security_verification_required" : "unknown")}`,
+        `오류: ${source.verificationReason || (source.autoRecovery?.status === 'recovered' ? '복구 완료' : source.loginRequired ? "login_required" : source.securityVerificationRequired ? "security_verification_required" : "확인 필요")}`,
         `단계: ${source.verificationStage || d.stage || "unknown"}`];
       const fields = [
+        ["자동 복구", ({recovered:'복구 완료',partial:'일부 미해결',manual:'수동 확인 필요',blocked:'로그인·접속 제한으로 중지'})[source.autoRecovery?.status]],
+        ["진단 원인", source.autoRecovery?.issues?.map(issue => ({price_missing:'가격 누락',stock_incomplete:'재고 미확인',non_product_option:'상품이 아닌 옵션',duplicate_options:'중복 옵션',identity_mismatch:'품번 불일치',product_not_collected:'상품 정보 미수집',collection_incomplete:'수집 미완료',interaction_required:'로그인·접속 제한'})[issue] || issue).join(', ')],
+        ["복구 시도", source.autoRecovery?.attempts?.map(a => `${safeUrl(a.url)}: ${a.issues.length ? a.issues.join(', ') : '성공'}`).join('\n')],
         ["요청 주소", safeUrl(d.targetUrl || source.searchUrl)], ["실제 주소", safeUrl(d.resolvedUrl)],
         ["페이지 상태", d.documentReadyState], ["검색 주소 일치", d.expectedPage],
         ["화면 확인 횟수", d.inspectedFrames], ["화면 글자 수", d.bodyLength], ["상품 링크 수", d.productCardCount],

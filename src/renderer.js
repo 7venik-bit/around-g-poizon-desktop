@@ -3363,6 +3363,7 @@ document.addEventListener("click", async (event) => {
       const result = await window.aroundG.openOfficialInternalSearch({
         homepageUrl: decodeURIComponent(officialInternalButton.dataset.officialHomepage),
         query: decodeURIComponent(officialInternalButton.dataset.officialQuery),
+        productUrl: decodeURIComponent(officialInternalButton.dataset.officialProductUrl || ""),
       });
       // Closing an internal result window is a normal user action. The main
       // process returns a canceled result so this click cannot become an
@@ -3371,9 +3372,9 @@ document.addEventListener("click", async (event) => {
       if (result?.ok && Array.isArray(result.products) && result.products.length) {
         const mergeResult = (current = {}) => ({
           ...current,
-          products: [...(current.products || []).filter((product) => String(product?.store || "") !== "브랜드 공식몰"), ...result.products],
+          products: [...(current.products || []).filter((product) => !result.products.some(fresh => fresh.url && fresh.url === product.url && fresh.store === product.store)), ...result.products],
           sources: (current.sources || []).map((source) => String(source?.store || "") === "브랜드 공식몰"
-            ? { ...source, count: result.products.length, countVerified: true, verificationPending: false, verificationFailed: false, resultsUrl: result.resultsUrl }
+            ? { ...source, count: result.products.length, countVerified: true, verificationPending: result.detailVerificationPending === true, verificationFailed: false, resultsUrl: result.resultsUrl }
             : source),
         });
         if (resultKey && domesticResults.has(resultKey)) domesticResults.set(resultKey, mergeResult(domesticResults.get(resultKey)));
@@ -3384,11 +3385,23 @@ document.addEventListener("click", async (event) => {
         officialInternalButton.closest(".domestic-result-line,.domestic-inline-source,.sourcing-price-row")?.append(panel);
         officialInternalButton.textContent = `상품 ${result.products.length}개 가져옴`;
         officialInternalButton.disabled = false;
+        const merged = excelPreviewSearchResults.get(resultKey) || domesticResults.get(resultKey);
+        const row = officialInternalButton.closest('.excel-product-search-detail');
+        if (row && merged) {
+          const original = excelPreviewProductCache.get(resultKey) || {articleNumber:decodeURIComponent(officialInternalButton.dataset.officialQuery)};
+          const cell = row.querySelector('td');
+          if (cell) cell.innerHTML = renderDomestic(merged, original, resultKey);
+        }
+        if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
+        if (!row && merged && domesticResults.has(resultKey)) {
+          renderExplorerResults($("#explorer-result-title").textContent, domesticStockOnly ? domesticStockProducts() : allExplorerProducts, true);
+        }
         return;
       }
       // No parsed cards alone is not authoritative absence. The actual page
       // stays visible so the user can verify it without losing the Open action.
-      officialInternalButton.textContent = result?.ok ? "검색 화면 열림" : "열기 실패 · 다시 시도";
+      officialInternalButton.textContent = result?.rateLimited ? "접속 제한 · 수집 중지"
+        : result?.loginRequired ? "로그인 필요" : result?.ok ? "상세 확인 필요" : "열기 실패 · 다시 시도";
     } catch {
       officialInternalButton.textContent = "열기 실패 · 다시 시도";
     } finally {
