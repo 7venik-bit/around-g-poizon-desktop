@@ -37,6 +37,8 @@ app.whenReady().then(async () => {
   const retailers = session.fromPartition('offline-shipping-retailers');
   const releases = [], requests = [], windows = [];
   function htmlFor(rawUrl) {
+    const searchUi = require('./naver-search-ui.cjs')(rawUrl);
+    if (searchUi) return searchUi;
     const url = new URL(rawUrl);
     const item = cases.find(c => c[1] === url.hostname || new URL(c[2]).hostname === url.hostname);
     assert.ok(item, `unexpected external destination: ${url.origin}`);
@@ -113,6 +115,7 @@ app.whenReady().then(async () => {
     ['let domesticSearchGeneration = 0;', '\nconst DOMESTIC_LOGIN_SOURCES'],
     ['async function readNaverFashionTownChannelCounts(', '\nasync function ensureNaverOfficialBrandFilter('],
     ['async function openRenderedSizeOptions(', '\nfunction browserWindowUsable('],
+    ['async function clickNaverFashionTownMenu(', '\nasync function openRenderedSizeOptions('],
     ['function browserWindowUsable(', '\nasync function loadOfficialPageForAutomation('],
     ['async function submitOfficialMallSearch(', '\nfunction renderedSearchFailure('],
     ['function renderedSearchFailure(', '\nasync function '],

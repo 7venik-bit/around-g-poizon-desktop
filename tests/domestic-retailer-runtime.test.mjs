@@ -106,6 +106,13 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     openRenderedSizeOptions: async () => {}, renderedStockSelectors: () => [],
     imageFingerprint: async () => null,
     browserWindowUsable: w => Boolean(w && !w.isDestroyed()),
+    // This suite controls search UI navigation; real input/click events are
+    // exercised by the offline Electron shipping fixture.
+    clickNaverFashionTownMenu: async () => true,
+    submitNaverShoppingSearch: async (w, query) => {
+      void w.loadURL(w.domesticDiagnostics?.targetUrl || 'https://shopping.naver.com/window/search/fashion-group?q=' + encodeURIComponent(query)).catch(() => {});
+      return true;
+    },
   };
   const context = createContext(sandbox);
   runInContext(section('async function readNaverFashionTownChannelCounts(', '\nasync function ensureNaverOfficialBrandFilter('), context);
@@ -153,6 +160,35 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
   }
   return { search, context, drive, captures, navigations, installHandler, now: () => now };
 }
+
+test('Naver clicks the result in the same window and stops on a rate-limit redirect', async t => {
+  const f = fixture(t);
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('), f.context);
+  runInContext(section('async function clickRenderedProductCard(', '\nfunction browserWindowUsable('), f.context);
+  const win = new f.context.BrowserWindow();
+  await win.loadURL(channels[0][1]);
+  f.context.activeDomesticSearchWindows.add(win);
+  win.dom.window.HTMLElement.prototype.scrollIntoView = () => {};
+  win.dom.window.HTMLElement.prototype.getBoundingClientRect = () => ({left:20,top:20,width:160,height:80});
+  let clicks = 0;
+  win.webContents.sendInputEvent = event => {
+    if (event.type !== 'mouseUp') return;
+    clicks++;
+    win.dom.reconfigure({url:'https://shopv.pstatic.net/web/maintenance/rate-limit.html'});
+    win.dom.window.document.body.innerHTML = '현재 서비스 접속량이 많습니다.';
+  };
+  const result = await f.drive(f.context.verifyApprovedNaverDomesticProducts([
+    {url:channels[0][2],title:'데상트 SR123UPS11'},
+    {url:channels[0][2]+'2',title:'데상트 SR123UPS11'},
+  ],{searchWindow:win,articleNumber:'SR123UPS11',requireArticleIdentity:true}));
+  assert.equal(clicks,1);
+  assert.equal(result.rateLimited,true);
+  assert.equal(result.loginRequired,false);
+  assert.equal(result.failedCount,1);
+  assert.equal(win.isDestroyed(),false,'borrowed search window belongs to the outer collector');
+  assert.equal(f.context.activeDomesticSearchWindows.has(win),true);
+  assert.deepEqual(f.navigations,[channels[0][1]],'no direct detail load or result reload');
+});
 
 test('Naver navigation diagnostics retain a rendered page that never exposes results', async t => {
   const f = fixture(t);
@@ -1140,6 +1176,7 @@ for (const [store, baseSearch, baseProduct] of channels) test(`${store}: failed 
   pages[nextUrl] = '<main>검색 결과가 없습니다</main>';
   const f = fixture(t, {pages});
   const h = f.installHandler([[store,searchUrl],['롯데온',nextUrl]]);
+  f.context.clickRenderedProductCard = async (w, url) => { await w.loadURL(url); return true; };
   runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('), f.context);
   const response = await h.run();
   t.diagnostic(`12 failing detail pages: ${f.now()} ms virtual elapsed`);

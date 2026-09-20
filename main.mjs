@@ -1580,6 +1580,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
   onActivity = null,
   recoveryProducts = [], recoveryOptions = {},
   browserSession = null,
+  searchWindow = null,
 } = {}) {
   let candidates = (Array.isArray(products) ? products : [])
     .filter((product) => isDomesticNaverPriceCard({
@@ -1613,7 +1614,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
   let loginRequired = false;
   let rateLimited = false;
   try {
-    evidenceWindow = new BrowserWindow({
+    evidenceWindow = searchWindow || new BrowserWindow({
       show: false,
       width: 1360,
       height: 900,
@@ -1626,7 +1627,8 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         offscreen: true,
       },
     });
-    activeDomesticSearchWindows.add(evidenceWindow);
+    const searchResultsUrl = searchWindow ? String(searchWindow.webContents.getURL() || "") : "";
+    if (!searchWindow) activeDomesticSearchWindows.add(evidenceWindow);
     evidenceWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
     for (const candidate of candidates) {
       const productUrl = String(candidate?.url || candidate?.productUrl || "");
@@ -1642,7 +1644,13 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           approved.push(retained); checkedCount += 1; detailVerified = true; continue;
         }
         // Read the product document while optional images/analytics keep loading.
-        void evidenceWindow.loadURL(productUrl).catch(() => {});
+        if (searchWindow) {
+          const opened = await clickRenderedProductCard(evidenceWindow, productUrl, searchResultsUrl,
+            { historyOnly: true, sameWindow: true, acceptRedirect: true });
+          if (!opened) throw new Error("naver_product_click_failed");
+        } else {
+          void evidenceWindow.loadURL(productUrl).catch(() => {});
+        }
         const snapshot = await waitForDomesticDetailReady(evidenceWindow, "네이버 패션타운", productUrl, generation, articleNumber, "product");
         detailVerified = true;
         checkedCount += 1;
@@ -1753,15 +1761,18 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
             stockText: "", stockStatus: "unknown", detailVerificationPending: true,
             detailVerificationReason: String(error?.message || "product_detail_failed")});
         }
-        if (error?.rateLimited || error?.securityVerificationRequired || error?.loginRequired || domesticSearchCanceled(generation)) break;
+        if (error?.rateLimited || error?.securityVerificationRequired || error?.loginRequired
+          || detailFailure === "naver_product_click_failed" || domesticSearchCanceled(generation)) break;
       } finally {
         await onActivity?.({products: [...approved], completedProducts: checkedCount + failedCount, totalProducts: candidates.length,
           detailVerified, detailUrl: productUrl, failedDetails: failedCount, detailFailure, detailDiagnostics});
       }
     }
   } finally {
-    if (evidenceWindow && !evidenceWindow.isDestroyed()) evidenceWindow.destroy();
-    activeDomesticSearchWindows.delete(evidenceWindow);
+    if (!searchWindow) {
+      if (evidenceWindow && !evidenceWindow.isDestroyed()) evidenceWindow.destroy();
+      activeDomesticSearchWindows.delete(evidenceWindow);
+    }
   }
   return {
     products: approved,
@@ -1776,8 +1787,8 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
   };
 }
 
-async function filterApprovedNaverDomesticProducts(products = []) {
-  const result = await verifyApprovedNaverDomesticProducts(products);
+async function filterApprovedNaverDomesticProducts(products = [], options = {}) {
+  const result = await verifyApprovedNaverDomesticProducts(products, options);
   if (result.rateLimited || result.loginRequired || result.securityVerificationRequired) {
     throw Object.assign(new Error(result.rateLimited ? "rate_limited" : result.loginRequired ? "login_required" : "security_verification_required"), {
       rateLimited: result.rateLimited === true,
@@ -1817,15 +1828,8 @@ async function lookupNaverDomesticPrice(input = {}) {
     activeDomesticPriceWindows.add(priceWindow);
     priceWindow.on("closed", () => activeDomesticPriceWindows.delete(priceWindow));
     priceWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
-    try {
-      await Promise.race([
-        priceWindow.loadURL(searchUrl),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("PRICE_LOOKUP_TIMEOUT")), 20_000)),
-      ]);
-    } catch (error) {
-      const currentUrl = String(priceWindow.webContents.getURL() || "");
-      if (!/ERR_ABORTED/i.test(String(error?.message || "")) || !/^https:\/\//i.test(currentUrl)) throw error;
-    }
+    const priceSearch = await loadNaverFashionTownResultPage(priceWindow, searchUrl, query);
+    if (!priceSearch.ok) return { ok: false, searchUrl, candidates: [], ...priceSearch };
     for (let attempt = 0; attempt < 24; attempt += 1) {
       await wait(attempt === 0 ? 1_500 : 500);
       const snapshot = await priceWindow.webContents.executeJavaScript(`(() => {
@@ -1898,7 +1902,7 @@ async function lookupNaverDomesticPrice(input = {}) {
         .sort((left, right) => Number(left.price) - Number(right.price))
         .slice(0, 5);
       if (candidates.length) {
-        const approvedCandidates = await filterApprovedNaverDomesticProducts(candidates);
+        const approvedCandidates = await filterApprovedNaverDomesticProducts(candidates, { searchWindow: priceWindow, articleNumber, brand, title });
         if (approvedCandidates.length) return { ok: true, searchUrl, candidates: approvedCandidates };
         return { ok: true, searchUrl, candidates: [], message: "승인된 국내 정품 판매처 상품이 없습니다." };
       }
@@ -2145,6 +2149,7 @@ async function clickNaverFashionTownMenu(searchWindow) {
       const selected = candidates[0];
       const element = selected?.element;
       if (!element || !selected?.matchedLabel) return null;
+      if (element.tagName === "A") element.setAttribute("target", "_self");
       element.scrollIntoView({ block: "center", inline: "center" });
       const rect = element.getBoundingClientRect();
       return {
@@ -2162,12 +2167,6 @@ async function clickNaverFashionTownMenu(searchWindow) {
   searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
   searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
   await wait(1_200);
-  const afterFashionClickUrl = String(searchWindow.webContents.getURL() || "");
-  if (!/fashion|style/i.test(afterFashionClickUrl)
-    && /^https:\/\/shopping\.naver\.com\//i.test(String(target.href || ""))
-    && /fashion|style/i.test(String(target.href || ""))) {
-    await searchWindow.loadURL(target.href).catch(() => {});
-  }
   // Navigation and search activation are separate steps. Naver changes both
   // the route and the search-control markup, so entering Fashion Town must not
   // depend on a writable input already existing. Either visible service name
@@ -2470,7 +2469,7 @@ async function submitNaverShoppingSearch(searchWindow, query) {
         return {
           element,
           score,
-          eligible: !clearOrToggle && (explicitSearch || typeSubmit || rightAdjacent || insideRightEdge)
+          eligible: !clearOrToggle && (explicitSearch || typeSubmit)
         };
       })
       .filter((candidate) => candidate.eligible)
@@ -2479,23 +2478,8 @@ async function submitNaverShoppingSearch(searchWindow, query) {
       const rect = button.getBoundingClientRect();
       return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), fallback: false };
     }
-    // Last physical fallback for Naver builds whose magnifier has no button,
-    // role, accessible name, or searchable class. Click the right edge of the
-    // smallest search container surrounding the verified input.
-    let container = input.parentElement;
-    let containerRect = null;
-    for (let depth = 0; container && depth < 6; depth += 1, container = container.parentElement) {
-      const rect = container.getBoundingClientRect();
-      if (!containerRect && rect.width >= inputRect.width && rect.width <= inputRect.width + 220 && rect.height <= 120) {
-        containerRect = rect;
-      }
-    }
-    if (!containerRect) return null;
-    return {
-      x: Math.round(Math.min(window.innerWidth - 8, containerRect.right - 24)),
-      y: Math.round(inputRect.top + inputRect.height / 2),
-      fallback: true
-    };
+    // An unidentified control is a failed submission, not a guessed click.
+    return null;
     })()`, true).catch(() => null);
     if (!submitTarget) await wait(300);
   }
@@ -2526,8 +2510,17 @@ async function submitNaverShoppingSearch(searchWindow, query) {
       catch { return false; }
     })();
     const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));
+    const submittedQueryUrl = (() => {
+      try {
+        const current = new URL(state?.url || "");
+        return current.hostname === "shopping.naver.com"
+          && current.pathname.startsWith("/window/search/")
+          && current.searchParams.get("q") === exactQuery;
+      } catch { return false; }
+    })();
     // Reaching the exact query result URL proves the input and magnifier action
     // succeeded. Final capture decides product presence or authoritative zero.
+    if (urlChanged && submittedQueryUrl) return true;
     if (isNaverRenderedResultReady(state, exactQuery)) return true;
     if (state && !/페이지를\s*찾을\s*수\s*없습니다/.test(state.text)
       && ((urlChanged && queryInUrl)
@@ -2581,14 +2574,25 @@ function renderedStockSelectors(store = "", url = "") {
   return retailerStockStrategy({store, url}).optionSelectors;
 }
 
-async function clickRenderedProductCard(searchWindow, productUrl, searchResultsUrl = "") {
+async function clickRenderedProductCard(searchWindow, productUrl, searchResultsUrl = "", options = {}) {
   if (!searchWindow || searchWindow.isDestroyed()) return false;
   const expectedUrl = String(productUrl || "").split("#")[0];
   if (!/^https?:\/\//i.test(expectedUrl)) return false;
   const resultsUrl = String(searchResultsUrl || "");
   const currentUrl = String(searchWindow.webContents.getURL() || "");
   if (resultsUrl && currentUrl !== resultsUrl) {
-    void searchWindow.loadURL(resultsUrl).catch(() => {});
+    if (options.historyOnly) {
+      const history = searchWindow.webContents.navigationHistory;
+      if (!history?.canGoBack()) return false;
+      history.goBack();
+      for (let attempt = 0; attempt < 60 && searchWindow.webContents.getURL() !== resultsUrl; attempt++) {
+        if (searchWindow.isDestroyed()) return false;
+        await wait(250);
+      }
+      if (searchWindow.isDestroyed() || searchWindow.webContents.getURL() !== resultsUrl) return false;
+    } else {
+      void searchWindow.loadURL(resultsUrl).catch(() => {});
+    }
   }
   let cardFound = false;
   for (let attempt = 0; attempt < 30 && !cardFound; attempt++) {
@@ -2599,6 +2603,7 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
     const links = [...document.querySelectorAll("a[href]")];
     const link = links.find(candidate => identity(candidate.href) === identity(expected));
     if (!link) return false;
+    if (${options.sameWindow === true}) link.setAttribute('target', '_self');
     link.scrollIntoView({ block: "center", inline: "center" });
     return true;
   })()`, true).catch(() => false);
@@ -2632,6 +2637,7 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
   while (!searchWindow.isDestroyed() && Date.now() < navigationDeadline) {
     const openedUrl = String(searchWindow.webContents.getURL() || "").split("#")[0];
     if (domesticProductUrlIdentity(openedUrl) === domesticProductUrlIdentity(expectedUrl)) return true;
+    if (options.acceptRedirect && /^https?:\/\//i.test(openedUrl) && openedUrl !== resultsUrl) return true;
     await wait(250);
   }
   return false;
@@ -3068,12 +3074,31 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
     return { ok: false, resolvedUrl: String(searchWindow.webContents.getURL() || "") };
   };
 
-  // Start navigation without waiting for the full page load. Advertising and
-  // recommendation frames can keep Electron's load promise open long after
-  // the Fashion Town result DOM is usable.
+  // Enter through the actual search controls. Never replay a constructed
+  // result URL when a field, menu or submission cannot be verified.
   let firstError = null;
-  const navigation = searchWindow.loadURL(targetUrl)
+  const navigation = searchWindow.loadURL("https://shopping.naver.com/ns/home")
     .catch((error) => { firstError = error; diagnostic.navigationError = String(error?.message || error); });
+  let homeReady = false;
+  for (let attempt = 0; attempt < 60 && !homeReady; attempt++) {
+    if (searchWindow.isDestroyed()) return { ok: false, verificationReason: "search_canceled" };
+    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`({href:location.href,text:String(document.body?.innerText || ''),ready:Boolean(document.body)})`, true).catch(() => null);
+    if (state) {
+      const access = domesticPageAccessState(state.text, 0, state);
+      if (access.verificationReason) return { ok: false, resolvedUrl: state.href, ...access };
+      homeReady = /^https:\/\/shopping\.naver\.com\/ns\/home(?:[/?#]|$)/i.test(state.href) && state.ready;
+    }
+    if (!homeReady) await wait(500);
+  }
+  const failedInput = async reason => {
+    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`({href:location.href,text:String(document.body?.innerText || '')})`, true).catch(() => ({}));
+    const access = domesticPageAccessState(state.text || "", 0, state);
+    return { ok: false, verificationReason: reason, resolvedUrl: state.href, ...access,
+      ...(access.verificationReason ? {} : { verificationReason: reason }) };
+  };
+  if (!homeReady) return failedInput("naver_home_not_ready");
+  if (!await clickNaverFashionTownMenu(searchWindow)) return failedInput("fashion_town_click_failed");
+  if (!await submitNaverShoppingSearch(searchWindow, expectedQuery)) return failedInput("search_submission_failed");
   const firstResult = await inspectSettledResult();
   if (firstResult.ok || firstResult.verificationReason) return firstResult;
   const errorMessage = String(firstError?.message || "NAVER_RESULT_PAGE_NOT_SETTLED");
@@ -3830,6 +3855,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         generation,
         onActivity,
         browserSession: searchWindow.webContents.session,
+        searchWindow,
         recoveryProducts: source.recoveryProducts, recoveryOptions: source.recoveryOptions,
       });
       const approvedProducts = approval.products;
