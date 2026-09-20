@@ -303,6 +303,7 @@ let musinsaLedgerWindow;
 const inventoryWindows = new Set();
 const officialInteractiveWindows = new Set();
 const domesticLoginWindows = new Map();
+const confirmedNaverLoginScopes = new Map();
 const DOMESTIC_SEARCH_PARTITION = "persist:around-g-domestic-search";
 const DOMESTIC_PRICE_PARTITION = "persist:around-g-domestic-price";
 const DOMESTIC_SELLER_EVIDENCE_PARTITION = "persist:around-g-domestic-seller-evidence";
@@ -318,6 +319,7 @@ const DOMESTIC_RETAILER_HARD_TIMEOUT_MS = 90 * 1000;
 // one bounded grace period without reloading, resubmitting the query or
 // reopening login. Other retailers keep the existing deadline.
 const NAVER_COLLECTION_GRACE_MS = 45 * 1000;
+const NAVER_LOGIN_SCOPE_TTL_MS = 6 * 60 * 60 * 1000;
 const DOMESTIC_SEARCH_HARD_TIMEOUT_MS = 4 * 60 * 1000;
 
 function cancelDomesticSearches() {
@@ -12042,12 +12044,47 @@ async function hasUsableDomesticLoginSession(sourceId) {
     && Boolean(String(cookie.value || "")));
 }
 
-async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress = () => {}) {
+function naverLoginScopeConfirmed(scopeId, now = Date.now()) {
+  const key = String(scopeId || "").trim();
+  if (!key) return false;
+  const confirmedAt = Number(confirmedNaverLoginScopes.get(key) || 0);
+  if (!confirmedAt || now - confirmedAt > NAVER_LOGIN_SCOPE_TTL_MS) {
+    confirmedNaverLoginScopes.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function rememberNaverLoginScope(scopeId, now = Date.now()) {
+  const key = String(scopeId || "").trim();
+  if (!key) return;
+  for (const [savedKey, confirmedAt] of confirmedNaverLoginScopes) {
+    if (now - Number(confirmedAt || 0) > NAVER_LOGIN_SCOPE_TTL_MS) confirmedNaverLoginScopes.delete(savedKey);
+  }
+  confirmedNaverLoginScopes.set(key, now);
+}
+
+function invalidateNaverLoginScope(scopeId = "") {
+  const key = String(scopeId || "").trim();
+  if (key) confirmedNaverLoginScopes.delete(key);
+  else confirmedNaverLoginScopes.clear();
+}
+
+async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress = () => {}, loginScopeId = "") {
   const sourceIds = domesticLoginSourceIdsForSearch(enabledSourceGroups);
   const failures = [];
   for (const [index, sourceId] of sourceIds.entries()) {
     const source = domesticLoginSource(sourceId);
-    if (!source || await hasUsableDomesticLoginSession(sourceId)) continue;
+    if (!source) continue;
+    // One product batch owns one login preflight. Naver can briefly hide both
+    // rotating authentication cookies while navigating between Shopping and a
+    // product detail. That transient gap is not a logout and must not create a
+    // fresh login BrowserWindow for every next product in the same batch.
+    if (sourceId === "naver" && naverLoginScopeConfirmed(loginScopeId)) continue;
+    if (await hasUsableDomesticLoginSession(sourceId)) {
+      if (sourceId === "naver") rememberNaverLoginScope(loginScopeId);
+      continue;
+    }
     if (sourceId === "naver") {
       const credentials = naverAccountCredentials();
       if (credentials.code) {
@@ -12103,6 +12140,7 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
       failures.push(domesticLoginFailure(source, errorCode, message));
       continue;
     }
+    if (sourceId === "naver") rememberNaverLoginScope(loginScopeId);
     const loginWindow = domesticLoginWindows.get(sourceId);
     if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
     mainWindow?.webContents.send("domestic-search:security-complete", {
@@ -12198,6 +12236,7 @@ async function openDomesticLogin(sourceId, { background = false } = {}) {
 async function clearDomesticLogin(sourceId) {
   const source = domesticLoginSource(sourceId);
   if (!source) return { ok: false, message: "지원하지 않는 소싱몰입니다." };
+  if (source.id === "naver" && typeof invalidateNaverLoginScope === "function") invalidateNaverLoginScope();
   // A provider account change must not leave a linked shop signed into the
   // previous person while reporting the new provider account as connected.
   if (["naver", "kakao"].includes(source.id)) {
@@ -12851,7 +12890,9 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       let loginFailures = [];
       let searchableSourceGroups = enabledSourceGroups;
       if (typeof waitForDomesticLoginsBeforeSearch === "function") {
-        const loginReadiness = await waitForDomesticLoginsBeforeSearch(enabledSourceGroups, sendDomesticProgress);
+        const loginReadiness = await waitForDomesticLoginsBeforeSearch(
+          enabledSourceGroups, sendDomesticProgress, input?.loginScopeId,
+        );
         loginFailures = Array.isArray(loginReadiness.failures) ? loginReadiness.failures : [];
         if (loginFailures.length) {
           const blockedGroups = new Set(loginFailures.map((failure) => failure.sourceGroup).filter(Boolean));
@@ -12961,6 +13002,8 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         }
       }
       const products = Array.isArray(matched?.products) ? matched.products : [];
+      if ((matched?.sources || []).some((source) => String(source?.store || "") === "네이버 패션타운"
+        && source?.loginRequired === true)) invalidateNaverLoginScope(input?.loginScopeId);
       await preserveVerifiedResults(matched);
       if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
       const exactMatch = products.some((product) =>
@@ -13017,7 +13060,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     const generation = domesticSearchGeneration;
     return recoveryCoordinator().run({jobId: input.recoveryJobId, productKey: input.recoveryProductKey,
       canceled: () => domesticSearchCanceled(generation),
-      execute: (task, checkpoint) => execute({...task, requestId: input.requestId}, checkpoint),
+      execute: (task, checkpoint) => execute({...task, requestId: input.requestId, loginScopeId: input.loginScopeId}, checkpoint),
       onProgress: payload => {
         if (!_event.sender.isDestroyed()) _event.sender.send("domestic-search:progress", {...payload, requestId: input.requestId});
       },

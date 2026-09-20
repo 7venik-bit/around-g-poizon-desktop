@@ -219,6 +219,7 @@ test('saved credential errors remain source-scoped and do not open an empty logi
     const ctx = {
       domesticLoginSourceIdsForSearch: () => ['naver'], domesticLoginSource: () => ({ id: 'naver', name: '네이버' }),
       hasUsableDomesticLoginSession: async () => false, naverAccountCredentials: () => ({ code }),
+      naverLoginScopeConfirmed: () => false, rememberNaverLoginScope() {},
       naverCredentialMessage: () => '안내', mainWindow: { webContents: { send() {} } },
       domesticLoginFailure: (_source, code) => ({ code }), openDomesticLogin: async () => { opened++; },
     };
@@ -232,10 +233,54 @@ test('saved credential errors remain source-scoped and do not open an empty logi
 test('existing authenticated session works without a stored password', async () => {
   const ctx = { domesticLoginSourceIdsForSearch: () => ['naver'], domesticLoginSource: () => ({ id: 'naver' }),
     hasUsableDomesticLoginSession: async () => true,
+    naverLoginScopeConfirmed: () => false, rememberNaverLoginScope() {},
     naverAccountCredentials: () => { throw new Error('must reuse session first'); } };
   const result = await runInNewContext(section(main, 'async function waitForDomesticLoginsBeforeSearch', 'async function domesticLoginStatuses')
     + '\nwaitForDomesticLoginsBeforeSearch(["naver"])', ctx);
   assert.equal(result.ok, true);
+});
+
+test('a confirmed Naver batch scope never opens another login window for its next product', async () => {
+  let sessionChecks = 0;
+  let opened = 0;
+  const ctx = {
+    domesticLoginSourceIdsForSearch: () => ['naver'],
+    domesticLoginSource: () => ({ id: 'naver', name: '네이버' }),
+    naverLoginScopeConfirmed: scope => scope === 'batch-17',
+    hasUsableDomesticLoginSession: async () => { sessionChecks++; return false; },
+    openDomesticLogin: async () => { opened++; return { ok: true }; },
+  };
+  const result = await runInNewContext(section(main, 'async function waitForDomesticLoginsBeforeSearch', 'async function domesticLoginStatuses')
+    + '\nwaitForDomesticLoginsBeforeSearch(["naver"], undefined, "batch-17")', ctx);
+  assert.equal(result.ok, true);
+  assert.equal(sessionChecks, 0, 'transient cookie gaps are not rechecked inside a confirmed batch');
+  assert.equal(opened, 0, 'the next product must not open another login window');
+});
+
+test('107 products reuse one confirmed session and invalidation requires a fresh check', async () => {
+  let checks = 0;
+  const ctx = {
+    confirmedNaverLoginScopes: new Map(), NAVER_LOGIN_SCOPE_TTL_MS: 21600000,
+    domesticLoginSourceIdsForSearch: () => ['naver'],
+    domesticLoginSource: () => ({ id: 'naver', name: '네이버' }),
+    hasUsableDomesticLoginSession: async () => { checks++; return true; },
+    openDomesticLogin: async () => { throw new Error('must reuse the authenticated session'); },
+  };
+  await runInNewContext(section(main, 'function naverLoginScopeConfirmed', 'async function domesticLoginStatuses') + `
+    (async () => {
+      for (let index = 0; index < 107; index++) {
+        await waitForDomesticLoginsBeforeSearch(['naver'], undefined, 'batch-107');
+      }
+    })()
+  `, ctx);
+  assert.equal(checks, 1);
+  await ctx.invalidateNaverLoginScope('batch-107');
+  await ctx.waitForDomesticLoginsBeforeSearch(['naver'], undefined, 'batch-107');
+  assert.equal(checks, 2);
+  ctx.rememberNaverLoginScope('expired', 1);
+  assert.equal(ctx.naverLoginScopeConfirmed('expired', 21600002), false);
+  ctx.invalidateNaverLoginScope();
+  assert.equal(ctx.confirmedNaverLoginScopes.size, 0);
 });
 
 test('a visible Naver login page waits for manual completion instead of skipping the source', async () => {
@@ -245,6 +290,7 @@ test('a visible Naver login page waits for manual completion instead of skipping
     domesticLoginSourceIdsForSearch: () => ['naver'],
     domesticLoginSource: () => ({ id: 'naver', name: '네이버' }),
     hasUsableDomesticLoginSession: async () => ++checks >= 3,
+    naverLoginScopeConfirmed: () => false, rememberNaverLoginScope() {},
     naverAccountCredentials: () => ({ code: '' }),
     openDomesticLogin: async () => ({ ok: true, automatic: { ok: false, code: 'NAVER_LOGIN_INPUTS_NOT_FOUND' } }),
     domesticLoginWindows: new Map([['naver', loginWindow]]),
