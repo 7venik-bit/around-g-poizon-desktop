@@ -16,6 +16,8 @@
     page_load_timeout: "검색 페이지 응답 지연",
     collection_stalled: "상품·재고 확인 지연 · 다시 가져오기 필요",
     service_unavailable: "판매처 서비스 응답 오류",
+    rate_limited: "네이버 접속량 제한 · 조회 중지",
+    naver_rate_limited: "네이버 접속량 제한 · 조회 중지",
     page_load_failed: "검색 페이지 연결 실패",
     network_error: "판매처 연결 실패",
     security_verification_required: "보안 확인 필요",
@@ -79,6 +81,9 @@
     }
 
     const loginErrorCode = String(source?.errorCode || source?.verificationDiagnostics?.errorCode || "");
+    if (source?.rateLimited || loginErrorCode === "NAVER_RATE_LIMITED") {
+      return {state:"failed",className:"pending",count:0,label:failureLabels.rate_limited};
+    }
     if (loginErrorCode === "NAVER_CREDENTIALS_UNREADABLE") {
       return { state: "login", className: "pending", count: 0, label: "네이버 비밀번호 다시 저장 필요" };
     }

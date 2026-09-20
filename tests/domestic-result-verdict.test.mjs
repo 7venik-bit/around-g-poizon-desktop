@@ -8,6 +8,12 @@ const context = vm.createContext({ Intl, Number, Object, Array });
 vm.runInContext(source, context);
 const { sourceVerdict, resultPresentation } = context.AroundGDomesticVerdict;
 
+test('rate limiting is shown as stopped collection, not missing products or required login',()=>{
+  const v=sourceVerdict({store:'네이버 패션타운',rateLimited:true,verificationPending:true,count:null});
+  assert.equal(v.state,'failed');
+  assert.equal(v.label,'네이버 접속량 제한 · 조회 중지');
+});
+
 test("visible product evidence overrides a simultaneous parser failure", () => {
   const official = sourceVerdict({
     store: "브랜드 공식몰",

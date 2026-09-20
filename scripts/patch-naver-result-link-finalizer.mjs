@@ -74,7 +74,8 @@ replaceOnce(
   "live HTTPS document after Electron navigation replacement",
 );
 
-replaceOnce(
+// Current sources already include diagnostics and may carry newer access flags.
+if (!source.includes('const stageByReason = {')) replaceOnce(
   String.raw`function renderedSearchFailure(reason, searchWindow = null, details = {}) {
   return {
     count: null,

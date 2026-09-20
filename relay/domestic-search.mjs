@@ -1,4 +1,5 @@
 import { normalizeStockOptions } from "../services/retailer-stock-strategies.mjs";
+import { isNaverAccountUrl } from "../services/naver-price.mjs";
 export { mergeRetailerStockProducts, retailerStockStrategy, collectNativeStockVariants, captureNativeStockControls } from "../services/retailer-stock-strategies.mjs";
 import { normalizeRenderedStockEvidence } from "../services/domestic-stock.mjs";
 export { normalizeRenderedStockEvidence, captureRenderedStockEvidence } from "../services/domestic-stock.mjs";
@@ -426,6 +427,7 @@ export function isPlatformShoppingProductUrl(value = "") {
 
 export function isTrustedNaverFashionProductCard(card = {}) {
   const productUrl = String(card?.productUrl || "");
+  if (isNaverAccountUrl(productUrl)) return false;
   if (isPlatformShoppingProductUrl(productUrl)) return true;
   const trustedChannelLabel = card?.officialBrandStoreLabelMatched === true
     || card?.departmentStoreLabelMatched === true

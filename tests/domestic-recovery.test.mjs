@@ -129,7 +129,7 @@ test('expired completed stock is rechecked even when run follows start without a
   assert.deepEqual(calls, ['official', 'musinsa']);
 });
 
-for (const sourceState of [{ loginRequired: true }, { securityVerificationRequired: true }, { verificationReason: 'access_denied' }]) {
+for (const sourceState of [{ rateLimited:true }, { loginRequired: true }, { securityVerificationRequired: true }, { verificationReason: 'access_denied' }]) {
   test(`interaction-required source is retained without automatic retries: ${JSON.stringify(sourceState)}`, async t => {
     const f = await fixture(t);
     const job = await start(f.coordinator);

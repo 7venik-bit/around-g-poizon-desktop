@@ -228,3 +228,86 @@ test('REGRESSION: late inventory is collected only after the stock document beco
   assert.equal(recovery.stockObservationComplete(r.products[0]),true);
   assert.equal(f.updates[0].products[0].stockVerified,false);
 });
+
+test('plain Naver login redirect stops immediately without a login-required sentence', async t => {
+  const f = fixture(t, {resolvedUrl:'https://nid.naver.com/nidlogin.login?url=private-token#secret',
+    html:'<form><input name="id"><input type="password"><button>로그인</button></form>'});
+  const w = await f.document();
+  await assert.rejects(f.context.waitForDomesticDetailReady(w,'네이버 패션타운',URL_PRODUCT,0,'JH9976','product'), error => {
+    assert.equal(error.message, 'login_required');
+    assert.equal(error.loginRequired, true);
+    assert.equal(error.detailDiagnostics.resolvedUrl, 'https://nid.naver.com/nidlogin.login');
+    assert.equal(error.detailDiagnostics.loginFormVisible, true);
+    assert.doesNotMatch(JSON.stringify(error.detailDiagnostics), /private-token|secret/);
+    return true;
+  });
+  assert.equal(f.now(), 0);
+});
+
+test('login overlay on the product URL is detected, but a hidden login form is not', async t => {
+  for (const hidden of [false, true]) {
+    const f = fixture(t, {html:documentHtml(`<section ${hidden ? 'style="display:none"' : ''}><form><input type="password"><button>로그인</button></form></section>`)});
+    const w = await f.document();
+    const pending = f.context.waitForDomesticDetailReady(w,'네이버 패션타운',URL_PRODUCT,0,'JH9976','product');
+    if (hidden) assert.ok((await pending).visibleTitleText.includes('JH9976'));
+    else await assert.rejects(pending, /login_required/);
+  }
+});
+
+test('a login redirect stops the candidate loop and preserves its diagnostic reason', async t => {
+  const f = fixture(t, {resolvedUrl:'https://nid.naver.com/nidlogin.login', html:'<h1>NAVER 로그인</h1>'});
+  const result = await f.context.verifyApprovedNaverDomesticProducts([f.candidate,
+    {...f.candidate, url:URL_PRODUCT.replace(/\d+$/, '99999999')}], {
+    articleNumber:'JH9976', requireArticleIdentity:true, onActivity:async update=>f.updates.push(update),
+  });
+  assert.equal(result.loginRequired, true);
+  assert.equal(result.failedCount, 1);
+  assert.equal(result.products.length, 0);
+  assert.equal(f.navigations.length, 1, 'do not visit the next candidate after an authentication redirect');
+  assert.equal(result.detailFailures[0].reason, 'login_required');
+  assert.equal(f.updates.at(-1).detailDiagnostics.resolvedUrl, 'https://nid.naver.com/nidlogin.login');
+});
+
+test('non-login redirect retains a safe actual destination for diagnosis', async t => {
+  const f = fixture(t, {resolvedUrl:'https://shopping.naver.com/error?token=private#secret', html:'<main>잠시 후 다시 시도해 주세요.</main>'});
+  const w = await f.document();
+  await assert.rejects(f.context.waitForDomesticDetailReady(w,'네이버 패션타운',URL_PRODUCT,0,'JH9976','product'), error => {
+    assert.equal(error.message, 'product_detail_not_ready');
+    assert.equal(error.detailDiagnostics.resolvedUrl, 'https://shopping.naver.com/error');
+    assert.equal(error.detailDiagnostics.expectedPage, false);
+    assert.equal(error.detailDiagnostics.hasVisibleTitle, false);
+    return true;
+  });
+});
+
+test('live-observed Naver rate-limit page stops the detail loop without requesting login', async t => {
+  // Text and destination observed through the installed app on 2026-09-20.
+  // This fixture does not make live requests or imply the restriction is lifted.
+  const f = fixture(t, {resolvedUrl:'https://shopv.pstatic.net/web/maintenance/rate-limit.html',
+    html:'<main>현재 서비스 접속량이 많습니다. 일시적인 트래픽 증가로 인하여 서비스 연결이 지연되고 있습니다. 잠시 후 다시 시도해주세요.</main>'});
+  const r = await f.context.verifyApprovedNaverDomesticProducts([f.candidate,
+    {...f.candidate,url:URL_PRODUCT.replace(/\d+$/,'99999999')}],{articleNumber:'JH9976',requireArticleIdentity:true});
+  assert.equal(r.rateLimited,true);
+  assert.equal(r.loginRequired,false);
+  assert.equal(r.securityVerificationRequired,false);
+  assert.equal(r.detailFailures[0].reason,'rate_limited');
+  assert.equal(r.detailFailures[0].resolvedUrl,'https://shopv.pstatic.net/web/maintenance/rate-limit.html');
+  assert.equal(r.products.length,0);
+  assert.equal(f.navigations.length,1);
+  assert.equal(f.now(),0,'no 25-second wait and no next product request');
+});
+
+test('price candidate filtering preserves access restrictions instead of reporting no products', async () => {
+  for (const flag of ['rateLimited', 'loginRequired', 'securityVerificationRequired']) {
+    const context = createContext({ verifyApprovedNaverDomesticProducts:async()=>({products:[],[flag]:true}) });
+    runInContext(productionFunction('filterApprovedNaverDomesticProducts'), context);
+    await assert.rejects(context.filterApprovedNaverDomesticProducts([]), error => error[flag] === true);
+  }
+});
+
+test('rate-limit URL is recognized before its text renders', async t => {
+  const f=fixture(t,{resolvedUrl:'https://shopv.pstatic.net/web/maintenance/rate-limit.html',html:''});
+  const w=await f.document();
+  await assert.rejects(f.context.waitForDomesticDetailReady(w,'네이버 패션타운',URL_PRODUCT,0,'JH9976','product'),/rate_limited/);
+  assert.equal(f.now(),0);
+});
