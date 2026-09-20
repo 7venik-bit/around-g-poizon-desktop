@@ -93,6 +93,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     store: { data: { settings: {} }, snapshot: () => ({ settings: {} }), setSettings: async () => {} },
     activeDomesticSearchWindows: new Set(), APP_ICON_PATH: '', DOMESTIC_SEARCH_PARTITION: 'test',
     DOMESTIC_RETAILER_HARD_TIMEOUT_MS: 90_000,
+    NAVER_COLLECTION_GRACE_MS: 45_000,
     OFFICIAL_DOMAIN_STATUS: { VERIFIED: 'verified', SEARCH_UNSUPPORTED: 'unsupported', NO_OFFICIAL_STORE: 'no_official_store' },
     // Network detail adapters are controlled; the actual browser scripts,
     // card parsers, source deadline and aggregation execute unchanged.
@@ -420,6 +421,23 @@ test('a stalled retailer remains bounded and is not reported as product absence'
   assert.equal(result.sources[0].verificationReason, 'collection_stalled');
   assert.equal(result.sources[0].absenceConfirmed, false);
   assert.ok(f.now() <= 90_000);
+});
+
+test('Naver gets one bounded collection grace period without repeating its search', async t => {
+  const f = fixture(t);
+  let searches = 0;
+  f.context.renderedSearchSourceResult = async (source) => {
+    searches += 1;
+    await f.context.wait(100_000);
+    return {count:1,products:[{store:source.store,sourceStore:source.store,title:'데상트 SR123UPS11 카라 셔츠',
+      articleNumber:'SR123UPS11',articleNumberVerified:true,price:84550,url:channels[0][2],
+      inStock:null,sizes:[],stockVerified:false,stockCoverage:'unknown'}],searchCompleted:true};
+  };
+  const result = await f.search([channels[0]]);
+  assert.equal(searches, 1, 'the grace period must not resubmit the Naver query');
+  assert.equal(f.now(), 100_000);
+  assert.equal(result.products.length, 1);
+  assert.equal(result.sources[0].verificationFailed, false);
 });
 
 test('the complete IPC path keeps progressing past two minutes and returns every retailer', async t => {

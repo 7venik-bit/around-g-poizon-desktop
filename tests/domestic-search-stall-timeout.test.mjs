@@ -28,6 +28,7 @@ test("fallbacks share an inactivity deadline renewed for completed search or uns
 
   assert.match(renderedCounts, /Promise\.race\(\[/);
   assert.match(main, /const DOMESTIC_RETAILER_HARD_TIMEOUT_MS = 90 \* 1000/);
+  assert.match(main, /const NAVER_COLLECTION_GRACE_MS = 45 \* 1000/);
   assert.match(renderedCounts, /let sourceDeadlineAt = Date\.now\(\) \+ DOMESTIC_RETAILER_HARD_TIMEOUT_MS/);
   assert.match(renderedCounts, /sourceTimeoutId = setTimeout\(expire, Math\.max\(0, sourceDeadlineAt - Date\.now\(\)\)\)/);
   assert.ok(renderedCounts.indexOf('const timeoutResult') > renderedCounts.indexOf('for (let queryAttemptIndex'));
@@ -36,6 +37,8 @@ test("fallbacks share an inactivity deadline renewed for completed search or uns
   assert.match(renderedCounts, /products: \[\.\.\.pendingProducts\]/);
   assert.match(renderedCounts, /!observedWork\.has\(work\)/);
   assert.match(renderedCounts, /renderedSearchFailure\("collection_stalled"/);
+  assert.match(renderedCounts, /!naverCollectionGraceUsed/);
+  assert.match(renderedCounts, /sourceDeadlineAt = Date\.now\(\) \+ NAVER_COLLECTION_GRACE_MS/);
   assert.match(renderedCounts, /verificationStage: lastWork/);
   assert.match(renderedCounts, /activeDomesticSearchWindows\.clear\(\)/);
 });

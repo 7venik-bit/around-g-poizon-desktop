@@ -313,6 +313,11 @@ let domesticPriceLookupQueue = Promise.resolve();
 // Bound inactivity, not the total time needed to visit real stock options.
 // Repeated events for the same option never renew either watchdog.
 const DOMESTIC_RETAILER_HARD_TIMEOUT_MS = 90 * 1000;
+// Naver Fashion Town can finish painting the exact result and stock controls
+// shortly after the ordinary retailer inactivity limit. Give that same page
+// one bounded grace period without reloading, resubmitting the query or
+// reopening login. Other retailers keep the existing deadline.
+const NAVER_COLLECTION_GRACE_MS = 45 * 1000;
 const DOMESTIC_SEARCH_HARD_TIMEOUT_MS = 4 * 60 * 1000;
 
 function cancelDomesticSearches() {
@@ -4170,6 +4175,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       let result = null;
       let attemptedQuery = allQueryAttempts[0];
       let sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
+      let naverCollectionGraceUsed = false;
       const observedWork = new Set();
       let lastWork = "search_result";
       let detailProgress = {};
@@ -4203,6 +4209,22 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           expire = () => {
             const remaining = sourceDeadlineAt - Date.now();
             if (remaining > 0) { sourceTimeoutId = setTimeout(expire, remaining); return; }
+            if (/^네이버\s/.test(String(source.store || "")) && !naverCollectionGraceUsed) {
+              // Keep the current authenticated result/detail page alive. A
+              // reload here would repeat both the search and login checks.
+              naverCollectionGraceUsed = true;
+              sourceDeadlineAt = Date.now() + NAVER_COLLECTION_GRACE_MS;
+              onProgress?.({
+                completed: sources.length,
+                total: progressTotal,
+                source: `${source.store || "네이버 패션타운"} · 상품·재고 응답 추가 대기`,
+                phase: "searching",
+                query: queryAttempt.query,
+                progressObserved: false,
+              });
+              sourceTimeoutId = setTimeout(expire, NAVER_COLLECTION_GRACE_MS);
+              return;
+            }
             stopped = true;
             if (domesticSearchCanceled(generation)) return resolve(renderedSearchFailure("search_canceled"));
             const diagnosticWindow = [...activeDomesticSearchWindows].find((window) => window.domesticDiagnostics);

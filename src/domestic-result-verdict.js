@@ -14,7 +14,7 @@
     result_script_failed: "상품 수집 코드 실행 오류",
     result_analysis_failed: "검색 결과 분석 실패",
     page_load_timeout: "검색 페이지 응답 지연",
-    collection_stalled: "상품·재고 수집 응답 지연",
+    collection_stalled: "상품·재고 확인 지연 · 다시 가져오기 필요",
     service_unavailable: "판매처 서비스 응답 오류",
     page_load_failed: "검색 페이지 연결 실패",
     network_error: "판매처 연결 실패",
@@ -108,7 +108,10 @@
         state: "failed",
         className: "pending",
         count: 0,
-        label: `${failureLabels[reason] || "기술 오류"} · ${reason}`,
+        // Internal collector codes remain available in the collapsed
+        // diagnostics, but the product row shows only an actionable Korean
+        // status. Raw codes confused a recoverable delay with product absence.
+        label: failureLabels[reason] || "기술 오류",
         reason,
         stage,
         diagnostics: source?.verificationDiagnostics || null,
