@@ -2924,6 +2924,24 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
   const capture = () => searchWindow.webContents.mainFrame.executeJavaScript(
     `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(strategy.optionSelectors)})`, true);
   const readControls = () => searchWindow.webContents.mainFrame.executeJavaScript(`(${captureNativeStockControls.toString()})()`, true);
+  const readVariantControls = async depth => {
+    let state = await readControls();
+    const group = state.groups?.[depth];
+    if (group?.kind === "custom" && !group.options.length) {
+      await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
+        const el = document.querySelector(${JSON.stringify(group.selector)});
+        if (el && el.getAttribute('aria-expanded') !== 'true' && !el.disabled) el.click();
+      })()`, true);
+      const optionDeadline = Date.now() + 25_000;
+      while (Date.now() < optionDeadline) {
+        if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
+        await wait(300);
+        state = await readControls();
+        if (state.groups?.[depth]?.options?.length) break;
+      }
+    }
+    return state;
+  };
   const declaredControls = await readControls();
   // Explicit dropdowns own their open/select sequence below. A generic
   // "사이즈" click on Musinsa instead opens the measurement/recommendation tab.
@@ -2944,28 +2962,24 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
     initial = await capture();
     variants = await collectNativeStockVariants({
       canceled, resumeOptions, resumeBranches,
-      read: async depth => {
-        let state = await readControls();
-        const group = state.groups?.[depth];
-        if (group?.kind === "custom" && !group.options.length) {
-          await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-            const el = document.querySelector(${JSON.stringify(group.selector)});
-            if (el && el.getAttribute('aria-expanded') !== 'true' && !el.disabled) el.click();
-          })()`, true);
-          const optionDeadline = Date.now() + 25_000;
-          while (Date.now() < optionDeadline) {
-            if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
-            await wait(300);
-            state = await readControls();
-            if (state.groups?.[depth]?.options?.length) break;
-          }
-        }
-        return state;
-      },
+      read: readVariantControls,
       select: async (group, option) => {
         if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
+        let optionSelector = option.selector || group.selector;
+        if (group.kind === 'custom') {
+          // Selecting a colour may unmount its menu. Reopen and resolve the
+          // observed label again before another branch, never reuse a stale
+          // positional selector that could now refer to a different option.
+          const state = await readControls();
+          const depth = state.groups?.findIndex(current => group.key ? current.key === group.key : current.selector === group.selector) ?? -1;
+          if (depth < 0) throw new Error("STOCK_OPTION_CHANGED");
+          const fresh = (await readVariantControls(depth)).groups?.[depth];
+          const choice = fresh?.options?.find(current => current.label === option.label && !current.placeholder);
+          if (!choice || choice.inStock === false) throw new Error("STOCK_OPTION_CHANGED");
+          optionSelector = choice.selector;
+        }
         const selected = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-          const el = document.querySelector(${JSON.stringify(option.selector || group.selector)});
+          const el = document.querySelector(${JSON.stringify(optionSelector)});
           if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
           if (el.tagName === 'SELECT') {
             const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;

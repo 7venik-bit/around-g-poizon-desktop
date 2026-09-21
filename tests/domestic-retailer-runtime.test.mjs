@@ -44,22 +44,29 @@ test('MDS colour and size dropdowns collect stock without opening measurement ta
   const w=new f.context.BrowserWindow();await w.loadURL(url);
   const doc=w.dom.window.document;
   const item=label=>`<div data-mds="StaticDropdownMenuItem" class="data-[disabled]:pointer-events-none"><div class="DropdownItemContent__ContentColumn">${label}</div></div>`;
-  let colourSelected=false,wrongClicks=0;
+  let colourSelected='',wrongClicks=0;
   doc.querySelector('#size-guide').onclick=doc.querySelector('#cart').onclick=()=>{wrongClicks++;};
-  for(const input of doc.querySelectorAll('input')) input.onclick=()=>{
-    const list=input.nextElementSibling;list.style.display='block';
-    if(input.placeholder==='컬러') {
-      list.innerHTML=item('WHT0_WHITE');
-      list.firstElementChild.onclick=()=>{
-        colourSelected=true;list.style.display='none';
-        const selected=doc.createElement('div');selected.dataset.mds='DropdownTriggerInputBox';
-        selected.innerHTML='<div class="ColorChip"></div><div class="DropdownItemContent__ContentColumn">WHT0_WHITE</div>';
-        selected.onclick=input.onclick;input.replaceWith(selected);
-      };
-    } else if(colourSelected) {
-      list.innerHTML=item('85 (품절)')+item('110<div>09.24 도착 예정</div><div>마지막 1개</div>')+item('115<div>09.24 도착 예정</div>');
-    }
-  };
+  for(const input of doc.querySelectorAll('input')) {
+    const menu=input.parentElement,label=input.placeholder;
+    const open=()=>{
+      const list=menu.lastElementChild;list.style.display='block';
+      if(label==='컬러') {
+        list.innerHTML=item('WHT0_WHITE')+item('BLK0_BLACK');
+        for(const choice of list.children) choice.onclick=()=>{
+          colourSelected=choice.textContent;list.style.display='none';list.innerHTML='';
+          const selected=doc.createElement('div');selected.dataset.mds='DropdownTriggerInputBox';
+          selected.innerHTML=`<div class="ColorChip"></div><div class="DropdownItemContent__ContentColumn">${colourSelected}</div>`;
+          selected.onclick=open;menu.firstElementChild.replaceWith(selected);
+          const dependent=menu.nextElementSibling.lastElementChild;dependent.innerHTML='';dependent.style.display='none';
+        };
+      } else if(colourSelected) {
+        list.innerHTML=colourSelected==='WHT0_WHITE'
+          ? item('85 (품절)')+item('110<div>09.24 도착 예정</div><div>마지막 1개</div>')+item('115<div>09.24 도착 예정</div>')
+          : item('85')+item('110 (품절)');
+      }
+    };
+    input.onclick=open;
+  }
   f.context.openRenderedSizeOptions=async()=>{wrongClicks++;};
   const result=await f.drive(f.context.collectRenderedProductStock(w,'무신사'));
   assert.equal(wrongClicks,0);
@@ -67,6 +74,7 @@ test('MDS colour and size dropdowns collect stock without opening measurement ta
   assert.equal(result.stockCoverage,'observed');
   assert.deepEqual(Array.from(result.sizes,s=>[s.label,s.inStock,s.quantity??null]),[
     ['WHT0_WHITE / 85 (품절)',false,null],['WHT0_WHITE / 110',true,1],['WHT0_WHITE / 115',true,null],
+    ['BLK0_BLACK / 85',true,null],['BLK0_BLACK / 110 (품절)',false,null],
   ]);
 });
 

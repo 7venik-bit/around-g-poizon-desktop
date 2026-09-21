@@ -292,12 +292,13 @@ export function captureNativeStockControls() {
     ? [...scope.querySelectorAll('[data-mds="DropdownTriggerInput"],[data-mds="DropdownTriggerInputBox"]')]
       .filter(el=>visible(el)&&!el.closest(excluded)&&(/컬러|색상|사이즈|color|size/i.test(el.placeholder)||el.querySelector('[class*="ContentColumn"]')))
       .map(el=>{
-        const list=el.closest('[data-mds="StaticDropdownMenu"]')?.querySelector('[data-mds="StaticDropdownMenuContent"]');
+        const menu=el.closest('[data-mds="StaticDropdownMenu"]');
+        const list=menu?.querySelector('[data-mds="StaticDropdownMenuContent"]');
         const options=list&&visible(list)?[...list.querySelectorAll('[data-mds="StaticDropdownMenuItem"]')]:[];
         // Selecting a colour replaces its input with a display box. Retain
         // that dimension so the next read still opens the size group at depth 1.
         const label=el.placeholder||(el.querySelector('[class*="ColorChip"]')?'color':'option');
-        return {selector:path(el),kind:'custom',label,options:options.map(o=>{
+        return {selector:path(el),key:menu?'musinsa:'+path(menu):'',kind:'custom',label,options:options.map(o=>{
           const text=String(o.innerText||o.textContent||'').trim();
           const title=o.querySelector('[class*="ContentColumn"]');
           const label=String(title?[...title.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join(''):text.split('\n')[0]).trim();
