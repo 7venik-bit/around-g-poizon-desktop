@@ -5,6 +5,7 @@ import {
   createNaverFashionTownSearchLinkResult,
   finalizeNaverFashionTownResult,
   isNaverRenderedResultReady,
+  retainNaverCardsOnDetailRestriction,
 } from "../services/naver-fashiontown-result.mjs";
 
 test("SSG and Lotte exact query URLs become direct result links", () => {
@@ -40,6 +41,29 @@ test("Naver link helper remains available as a non-capture fallback", () => {
   assert.equal(result.verificationPending, false);
   assert.equal(result.verificationStage, "naver_direct_result_link");
   assert.equal(result.resolvedSearchUrl.includes("SR123UPS11"), true);
+});
+
+test("a detail-only traffic restriction keeps captured Naver cards as link-only results", () => {
+  const card = {
+    store: "네이버 패션타운",
+    title: "데상트 SR123UPS11",
+    url: "https://shopping.naver.com/window-products/department/123",
+    price: 80100,
+    inStock: true,
+    sizes: [{ label: "100", inStock: true }],
+  };
+  const retained = retainNaverCardsOnDetailRestriction({ products: [card] }, {
+    products: [],
+    rateLimited: true,
+  });
+  assert.equal(retained.length, 1);
+  assert.equal(retained[0].url, card.url);
+  assert.equal(retained[0].price, 80100);
+  assert.equal(retained[0].linkOnly, true);
+  assert.equal(retained[0].stockVerified, false);
+  assert.equal(retained[0].inStock, null);
+  assert.deepEqual(retained[0].sizes, []);
+  assert.equal(retained[0].detailVerificationReason, "rate_limited");
 });
 
 test("visible positive total on the exact Naver result URL bypasses the legacy card gate", () => {

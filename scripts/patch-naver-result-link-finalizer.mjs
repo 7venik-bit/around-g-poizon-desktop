@@ -12,7 +12,7 @@ function replaceOnce(before, after, label) {
   source = source.slice(0, first) + after + source.slice(first + before.length);
 }
 
-replaceOnce(
+if (!source.includes('from "./services/naver-fashiontown-result.mjs";')) replaceOnce(
   'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";',
   'import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";\nimport { createDomesticSearchLinkResult, finalizeNaverFashionTownResult, isNaverRenderedResultReady } from "./services/naver-fashiontown-result.mjs";',
   "Naver result finalizer import",

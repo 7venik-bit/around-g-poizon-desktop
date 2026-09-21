@@ -87,6 +87,25 @@ export function createNaverFashionTownSearchLinkResult(options = {}) {
   };
 }
 
+export function retainNaverCardsOnDetailRestriction(finalized = {}, approval = {}) {
+  const approved = Array.isArray(approval?.products) ? approval.products.filter(Boolean) : [];
+  if (approved.length || approval?.rateLimited !== true) return approved;
+  const cards = Array.isArray(finalized?.products) ? finalized.products.filter(Boolean) : [];
+  return cards.map((product) => ({
+    ...product,
+    inStock: null,
+    sizes: [],
+    stockVerified: false,
+    stockCoverage: "unknown",
+    stockStatus: "unknown",
+    stockText: "",
+    linkOnly: true,
+    linkVerified: true,
+    detailVerificationPending: true,
+    detailVerificationReason: "rate_limited",
+  }));
+}
+
 export function finalizeNaverFashionTownResult(snapshot = {}, {
   articleNumber = "",
   resolvedSearchUrl = "",

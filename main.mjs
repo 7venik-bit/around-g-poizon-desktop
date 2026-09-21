@@ -132,7 +132,7 @@ import { mergeSellerProductsByRank, parseSellerDomNodes } from "./services/selle
 import { highestQualifiedOptionPrice, optionRowsFromSellerResponses, qualifiedOptionPrices } from "./services/seller-transaction-price.mjs";
 import { SELLER_POPULAR_CONDITIONS } from "./services/seller-conditions.mjs";
 import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/brand-export-jobs.mjs";
-import { createDomesticSearchLinkResult, finalizeNaverFashionTownResult, isNaverRenderedResultReady } from "./services/naver-fashiontown-result.mjs";
+import { createDomesticSearchLinkResult, finalizeNaverFashionTownResult, isNaverRenderedResultReady, retainNaverCardsOnDetailRestriction } from "./services/naver-fashiontown-result.mjs";
 import {
   SITE_HEALTH_TARGETS,
   nextWeeklySiteHealthAt,
@@ -3909,7 +3909,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         searchWindow,
         recoveryProducts: source.recoveryProducts, recoveryOptions: source.recoveryOptions,
       });
-      const approvedProducts = approval.products;
+      // If only the automated detail click is rate-limited, retain the cards
+      // already captured from the successful result page. No second request is
+      // made and stock remains explicitly unverified.
+      const approvedProducts = retainNaverCardsOnDetailRestriction(finalized, approval);
       const approved = approvedProducts.length > 0;
       const technicalPending = approval.failedCount > 0 || approvedProducts.some(product => !stockObservationComplete(product));
       const authoritativelyRejected = !approved
