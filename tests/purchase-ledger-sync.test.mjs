@@ -62,3 +62,17 @@ test("desktop exposes Musinsa capture, sheet sync, retry, and encrypted settings
   assert.match(renderer, /row\.krSize \|\| row\.euSize/);
   assert.match(script, /LockService/); assert.match(script, /구매완료/); assert.match(script, /duplicate: true/);
 });
+
+test("Musinsa ledger opens the current My page and explains login or detail selection", async () => {
+  const root = new URL("../", import.meta.url);
+  const [main, html] = await Promise.all([
+    readFile(new URL("main.mjs", root), "utf8"),
+    readFile(new URL("src/index.html", root), "utf8"),
+  ]);
+  assert.doesNotMatch(main, /musinsa\.com\/mypage\/orders/);
+  assert.match(main, /loadURL\("https:\/\/www\.musinsa\.com\/mypage"\)/);
+  assert.match(main, /MUSINSA_LOGIN_REQUIRED/);
+  assert.match(main, /ORDER_DETAIL_REQUIRED/);
+  assert.match(html, /무신사 마이 열기/);
+  assert.match(html, /로그인 후 주문 상세/);
+});
