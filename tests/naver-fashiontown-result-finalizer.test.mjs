@@ -128,6 +128,23 @@ test("only an authoritative zero becomes Naver product absence", () => {
   assert.equal(result.count, 0);
 });
 
+test("Fashion Town navigation links cannot become detail candidates by borrowing card text", () => {
+  const result = finalizeNaverFashionTownResult({productCards: [
+    ...[
+      'https://shopping.naver.com/window/brand-fashion/category',
+      'https://shopping.naver.com/window/brand-fashion/store/100035097',
+      'https://m.shopping.naver.com/window/brand-fashion/category',
+      'https://shopping.naver.com/window/brand-fashion/category?next=/window-products/brandfashion/123',
+    ].map(productUrl => ({productUrl,title:'데상트 SR123UPS11',price:84550,officialBrandStoreLabelMatched:true})),
+    {productUrl:'https://shopping.naver.com/window-products/brandfashion/12842936435',title:'데상트 SR123UPS11'},
+    {productUrl:'https://m.shopping.naver.com/window-products/brandfashion/123',title:'데상트 SR123UPS11'},
+    {productUrl:'https://dk-on.com/DESCENTE/product/SR123UPS11',title:'데상트 SR123UPS11',officialBrandStoreLabelMatched:true},
+  ]}, {articleNumber:'SR123UPS11'});
+  assert.equal(result.products.length,3);
+  assert.ok(result.products.every(product => !product.url.includes('/window/')));
+  assert.equal(result.products[2].naverTrustedChannelEvidence,true);
+});
+
 test("Naver's explicit no-product message becomes 상품 없음 without a parsed count", () => {
   const result = finalizeNaverFashionTownResult({
     pageText: "'JWJJM26321'로 검색된 상품이 없습니다. 다른 검색어를 입력해보세요.",

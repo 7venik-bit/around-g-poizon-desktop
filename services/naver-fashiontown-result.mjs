@@ -1,4 +1,5 @@
 import { normalizeRenderedStockEvidence } from "./domestic-stock.mjs";
+import { isTrustedNaverFashionProductCard } from "../relay/domestic-search.mjs";
 
 function stableUrlIdentity(value = "") {
   try {
@@ -114,6 +115,7 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
   const seen = new Set();
   const products = [];
   for (const card of cards) {
+    if (!isTrustedNaverFashionProductCard(card)) continue;
     const url = String(card?.productUrl || "").split("#")[0];
     const identity = stableUrlIdentity(url);
     if (!identity || seen.has(identity)) continue;

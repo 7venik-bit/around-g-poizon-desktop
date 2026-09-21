@@ -30,9 +30,26 @@ export function captureDomesticDetailPage(captureStock, selectors = []) {
   };
   const fullText = String(document.body?.innerText || "").slice(0, 80000);
   const lines = fullText.split(/\n+/).map(line => line.replace(/\s+/g, " ").trim());
-  const sellerEvidenceText = lines.filter(line => line.length >= 3 && line.length <= 240)
+  // Fashion Town's product heading is an h3 in its copyable title panel,
+  // outside main. Its h1 is the site name, not product identity.
+  const naverDetail = /^(?:m\.)?shopping\.naver\.com$/i.test(location.hostname)
+    && location.pathname.startsWith('/window-products/');
+  const naverTitles = naverDetail
+    ? [...document.querySelectorAll('._copyable > h3')].filter(visible) : [];
+  // The global Fashion Town menu contains "해외직구" on domestic products too.
+  // Scope seller eligibility to this product's purchase, description and seller
+  // sections. Keep fullText intact for access/login diagnostics.
+  const naverProductPanel = naverTitles[0]?.closest('.vcontainer_item');
+  const sellerDetailText = naverProductPanel
+    ? [naverProductPanel, ...document.querySelectorAll('#DEFAULT, #SELLER')]
+      .filter(visible).map(element => element.innerText || element.textContent || '').join('\n').slice(0, 80000)
+    : fullText;
+  const sellerEvidenceText = sellerDetailText.split(/\n+/).map(line => line.replace(/\s+/g, ' ').trim())
+    .filter(line => line.length >= 3 && line.length <= 240)
     .filter(line => /판매(?:중)?인?\s*상품|공식\s*판매처|브랜드\s*(?:공식|직영)|공식\s*(?:브랜드|스토어|온라인몰)|직영\s*(?:스토어|온라인몰)|관부가세|해외\s*직구|구매\s*대행/i.test(line)).slice(0, 20).join(" ");
-  const visibleTitleText = [...document.querySelectorAll('h1,main h2,main h3,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')]
+  const titleElements = naverTitles.length ? naverTitles
+    : [...document.querySelectorAll('h1,main h2,main h3,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')];
+  const visibleTitleText = titleElements
     .filter(visible).map(element => String(element.innerText || element.textContent || "").replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 8).join(" ").slice(0, 2000);
   const titleText = visibleTitleText
     || String(document.querySelector('meta[property="og:title"]')?.content || "")
@@ -97,7 +114,7 @@ export function captureDomesticDetailPage(captureStock, selectors = []) {
     .some(element => visibleLoading(element) && !unrelatedLoadingRegion(element));
   const commerce = stockEvidence.options?.length || stockEvidence.stockTexts?.length || stockEvidence.purchaseAvailable || hasOptions;
   return {
-    href: String(location.href || ""), fullText, pageText: fullText, sellerEvidenceText,
+    href: String(location.href || ""), fullText, pageText: fullText, sellerEvidenceText, sellerDetailText,
     loginFormVisible, documentReadyState: document.readyState,
     titleText, visibleTitleText, labeledText, structuredCodes: [...new Set(structuredCodes)].slice(0, 30), stockEvidence,
     hasOptions, busy, ready: Boolean(titleText && commerce && !busy),

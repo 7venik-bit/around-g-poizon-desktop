@@ -594,6 +594,10 @@ async function openVerifiedCombinedBrandPreview(files, filters = {}) {
 }
 
 async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
+  // The full catalog can contain thousands of cards. Collapse its live layout
+  // while the product workspace is active; selection and catalog data stay intact.
+  const brandPicker = $("#brand-picker");
+  if (brandPicker) brandPicker.open = false;
   const products = [];
   let loadedCount = 0;
   const minimumTotal = String(filters.minimumTotal ?? "100");

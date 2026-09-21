@@ -51,7 +51,7 @@ export class DomesticRecoveryCoordinator {
     this.retryDelayMs = retryDelayMs; this.delay = delay; this.active = new Set();
     this.activeRuns = new Map();
   }
-  jobs() { return this.store.snapshot()[COLLECTION] || []; }
+  jobs() { return this.store.snapshot([COLLECTION])[COLLECTION] || []; }
   get(id) { return this.jobs().find(job => job.id === id); }
   async save(job) {
     job.status = job.products.every(p => p.tasks.every(t => t.status === 'complete')) ? 'complete' : 'pending';

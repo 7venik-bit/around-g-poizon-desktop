@@ -1270,6 +1270,39 @@ test('production custom dropdown collector follows dependent colour and size men
   assert.deepEqual(result.sizes.map(s=>s.label),['블랙 / 95','블랙 / 100 품절','화이트 / 100']);
 });
 
+test('switching from an automatically opened size list collects every Naver colour', async t => {
+  const url='https://shopping.naver.com/window-products/brandfashion/12842936435';
+  const menu=(id,label)=>`<div><button aria-haspopup="listbox" aria-expanded="false" aria-controls="${id}">${label}</button><ul id="${id}" role="listbox" hidden></ul></div>`;
+  const f=fixture(t,{pages:{[url]:`<main><h1>데상트 SR123UPS11</h1>${menu('colors','색상')}${menu('sizes','사이즈')}<button>구매하기</button></main>`}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);const d=w.dom.window.document;
+  let opened='',color='',clicks=0;
+  const show=id=>{
+    opened=id;
+    for(const name of ['colors','sizes']) {
+      d.querySelector('#'+name).hidden=name!==id;
+      d.querySelector(`[aria-controls=${name}]`).setAttribute('aria-expanded',String(name===id));
+    }
+  };
+  d.querySelector('#colors').innerHTML=['BEG0','BLK0','WHT0','LGRN'].map(c=>`<li role="option">${c}</li>`).join('');
+  for(const name of ['colors','sizes']) d.querySelector(`[aria-controls=${name}]`).addEventListener('click',()=>{
+    clicks++;
+    // The first click while another menu is open dismisses it. A fresh click
+    // is needed once the requested trigger reports aria-expanded=false.
+    show(opened?'':name);
+  });
+  d.querySelector('#colors').addEventListener('click',event=>{
+    color=event.target.textContent;
+    d.querySelector('#sizes').innerHTML=`<li role="option">85</li><li role="option" aria-disabled="true">90 (품절)</li>`;
+    show('sizes');
+  });
+  const result=await f.drive(f.context.collectRenderedProductStock(w,'네이버 패션타운'));
+  assert.equal(result.stockCoverage,'observed');
+  assert.equal(result.sizes.length,8);
+  assert.deepEqual([...new Set(result.sizes.map(s=>s.label.split(' / ')[0]))],['BEG0','BLK0','WHT0','LGRN']);
+  assert.ok(result.sizes.every(s=>s.inStock===!s.label.includes('품절')));
+  assert.ok(clicks<12,'reopen only a confirmed collapsed menu');
+});
+
 test('size-guide tabs are never stock and member-only text stays explicit', async t => {
   const url='https://www.musinsa.com/products/member';
   const f=fixture(t,{pages:{[url]:'<main><h1>카라 셔츠</h1><div class="StandardSizeTable__Tab"><button>남성 의류</button><button>여성 의류</button></div><button>장바구니</button><button>회원 전용</button></main>'}});

@@ -69,8 +69,13 @@ export class JsonStore {
     return this.snapshot();
   }
 
-  snapshot() {
-    return structuredClone(this.data);
+  snapshot(collections) {
+    // Settings lookups must not clone every saved Excel/category result.
+    // Keep the same detached values while reading only requested collections.
+    const source = Array.isArray(collections)
+      ? Object.fromEntries(collections.map(name => [name, this.data[name]]))
+      : this.data;
+    return structuredClone(source);
   }
 
   save() {

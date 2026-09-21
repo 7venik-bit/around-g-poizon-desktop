@@ -415,7 +415,7 @@ export function isPlatformShoppingProductUrl(value = "") {
   const path = (parsed.pathname + parsed.search).toLowerCase();
   if (CONTENT_ONLY_HOSTS.has(host)) return false;
   if (["smartstore.naver.com", "m.smartstore.naver.com", "brand.naver.com"].includes(host)) return /\/products\/\d+/.test(path);
-  if (["shopping.naver.com", "search.shopping.naver.com"].includes(host)) return /\/(?:catalog|window-products|products?)\//.test(path);
+  if (["shopping.naver.com", "m.shopping.naver.com", "search.shopping.naver.com"].includes(host)) return /\/(?:catalog|window-products|products?)\//.test(parsed.pathname.toLowerCase());
   if (host === "ssg.com" || host.endsWith(".ssg.com")) return /\/item\//.test(path) || /itemview\.ssg/.test(path);
   if (host === "lotteon.com" || host.endsWith(".lotteon.com")) return /\/p\/product\//.test(path);
   if (host === "coupang.com" || host.endsWith(".coupang.com")) return /\/vp\/products\//.test(path);
@@ -442,7 +442,7 @@ export function isTrustedNaverFashionProductCard(card = {}) {
     // Fashion Town brand-direct cards can link straight to the Korean brand
     // mall instead of a naver.com product path. The card's trusted seller
     // label is the evidence; rejecting that external href loses a real result.
-    return !["search.naver.com", "shopping.naver.com", "search.shopping.naver.com"].includes(host);
+    return !["search.naver.com", "shopping.naver.com", "m.shopping.naver.com", "search.shopping.naver.com"].includes(host);
   } catch {
     return false;
   }

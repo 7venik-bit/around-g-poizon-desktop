@@ -1677,12 +1677,12 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         const sellerVerifiedByWording = isApprovedNaverDomesticSellerEvidence({
           productUrl,
           sellerEvidenceText: snapshot.sellerEvidenceText,
-          detailText: snapshot.fullText,
+          detailText: snapshot.sellerDetailText ?? snapshot.fullText,
         });
         // Fashion Town already limits these cards to its domestic department,
         // outlet and brand-store routes. Do not discard an exact product just
         // because one brand omits the optional "공식 판매처" banner.
-        const naverFashionTownEvidenceText = `${snapshot.sellerEvidenceText} ${snapshot.fullText}`;
+        const naverFashionTownEvidenceText = `${snapshot.sellerEvidenceText} ${snapshot.sellerDetailText ?? snapshot.fullText}`;
         const naverFashionTownBarcodeRemoved = /(?:(?:바코드|qr\s*(?:코드)?)\s*(?:가|은|는|이)?\s*.{0,24}(?:삭제|제거|훼손)|(?:삭제|제거|훼손)\s*.{0,24}(?:바코드|qr\s*(?:코드)?))/i.test(naverFashionTownEvidenceText);
         const naverFashionTownDomesticRoute = /^https:\/\/(?:m\.)?shopping\.naver\.com\/window-products\/(?!foreign(?:\/|$)|overseas(?:\/|$)|global(?:\/|$))/i.test(productUrl)
           && !naverFashionTownBarcodeRemoved
@@ -2938,6 +2938,18 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
         await wait(300);
         state = await readControls();
         if (state.groups?.[depth]?.options?.length) break;
+        // Fashion Town automatically opens sizes after a colour selection.
+        // The next colour click can merely dismiss that previous menu. Open
+        // the requested control again only if it explicitly reports closed;
+        // an expanded menu still loading its options must not be toggled shut.
+        const pendingGroup = state.groups?.[depth];
+        if (pendingGroup?.kind === 'custom') {
+          await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
+            const el = document.querySelector(${JSON.stringify(pendingGroup.selector)});
+            if (el?.getAttribute('aria-expanded') === 'false' && !el.disabled
+              && el.getAttribute('aria-disabled') !== 'true') el.click();
+          })()`, true);
+        }
       }
     }
     return state;
@@ -4581,7 +4593,7 @@ function brandsWithOfficialDomainStatus(brands, registry) {
 }
 
 async function ensureOfficialDomainRegistry(brands) {
-  const settings = store.snapshot().settings;
+  const settings = store.snapshot(["settings"]).settings;
   const current = Array.isArray(settings.officialBrandRegistry) ? settings.officialBrandRegistry : [];
   const registry = createOfficialDomainRegistry(brands, current).map(officialMallAdapterRecord);
   const changed = registry.length !== current.length || registry.some((record, index) =>
@@ -4596,7 +4608,7 @@ async function ensureOfficialDomainRegistry(brands) {
 }
 
 function safeOfficialDomainRegistry(brands) {
-  const saved = store.snapshot().settings.officialBrandRegistry;
+  const saved = store.snapshot(["settings"]).settings.officialBrandRegistry;
   const registry = createOfficialDomainRegistry(brands, Array.isArray(saved) ? saved : []).map(officialMallAdapterRecord);
   // Persisting thousands of domain records is maintenance work; it must never
   // block the brand picker from rendering.
@@ -4605,7 +4617,7 @@ function safeOfficialDomainRegistry(brands) {
 }
 
 function officialDomainAuditSnapshot(registry, extra = {}) {
-  const saved = store.snapshot().settings.officialDomainAudit || {};
+  const saved = store.snapshot(["settings"]).settings.officialDomainAudit || {};
   const savedState = String(saved.state || "idle");
   return {
     running: officialDomainAuditRunning,
@@ -4617,8 +4629,8 @@ function officialDomainAuditSnapshot(registry, extra = {}) {
     lastError: String(saved.lastError || ""),
     phase: String(saved.phase || ""),
     attempt: Number(saved.attempt || 0),
-    notFoundExcelPath: String(saved.notFoundExcelPath || store.snapshot().settings.officialDomainNotFoundExcelPath || ""),
-    notFoundCount: Number(saved.notFoundCount || store.snapshot().settings.officialDomainNotFoundCount || 0),
+    notFoundExcelPath: String(saved.notFoundExcelPath || store.snapshot(["settings"]).settings.officialDomainNotFoundExcelPath || ""),
+    notFoundCount: Number(saved.notFoundCount || store.snapshot(["settings"]).settings.officialDomainNotFoundCount || 0),
     notFoundExportError: String(saved.notFoundExportError || ""),
     updatedAt: String(saved.updatedAt || ""),
     nextRunAt: String(saved.nextRunAt || ""),
@@ -4866,7 +4878,7 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
 
 async function resolveDomesticOfficialBrand(input, generation, onProgress) {
   return resolveBrandOfficialSearch({
-    input, settings: store.snapshot().settings,
+    input, settings: store.snapshot(["settings"]).settings,
     canceled: () => domesticSearchCanceled(generation),
     discover: async record => {
       const window = createOfficialDomainAuditWindow();
@@ -4894,7 +4906,7 @@ async function resolveDomesticOfficialBrand(input, generation, onProgress) {
     },
     persist: async record => {
       if (domesticSearchCanceled(generation)) return;
-      const rows = [...(store.snapshot().settings.officialBrandRegistry || [])];
+      const rows = [...(store.snapshot(["settings"]).settings.officialBrandRegistry || [])];
       const index = rows.findIndex(row => row.registryId === record.registryId);
       if (index >= 0) rows[index] = record; else rows.push(record);
       let saveTimeout;
@@ -4922,9 +4934,9 @@ async function runOfficialDomainAudit({ recheckAll = false } = {}) {
   officialDomainAuditResumeTimer = null;
   officialDomainAuditRunning = true;
   officialDomainAuditStopRequested = false;
-  const brands = store.snapshot().settings.brandCatalog || explorerMetadata().brands;
+  const brands = store.snapshot(["settings"]).settings.brandCatalog || explorerMetadata().brands;
   let registry = await ensureOfficialDomainRegistry(brands);
-  const previousAudit = store.snapshot().settings.officialDomainAudit || {};
+  const previousAudit = store.snapshot(["settings"]).settings.officialDomainAudit || {};
   const continuingFullRecheck = recheckAll && previousAudit.recheckAll === true
     && ["running", "paused", "blocked"].includes(String(previousAudit.state || ""))
     && Boolean(previousAudit.startedAt);
@@ -4933,6 +4945,7 @@ async function runOfficialDomainAudit({ recheckAll = false } = {}) {
   let processed = 0;
   let blocked = false;
   let lastError = "";
+  let runTotal = 0;
   officialDomainAuditWindow = createOfficialDomainAuditWindow();
   try {
     const auditQueue = recheckAll
@@ -4940,7 +4953,7 @@ async function runOfficialDomainAudit({ recheckAll = false } = {}) {
         .filter(({ record }) => Date.parse(record.lastCheckedAt || 0) < startedAtMs)
         .map(({ index }) => index)
       : officialDomainAuditQueue(registry);
-    const runTotal = auditQueue.length;
+    runTotal = auditQueue.length;
     await persistOfficialDomainAudit(registry, {
       state: "running", currentBrand: "", processed: 0, blocked: false, lastError: "",
       recheckAll, startedAt, runTotal,
@@ -5097,8 +5110,8 @@ function sendUpdateStatus(status, message, extra = {}) {
 
 async function addProgramNotification({ type = "info", title = "프로그램 알림", message = "", key = "", windows = false } = {}) {
   if (!store) return null;
-  const current = Array.isArray(store.snapshot()?.settings?.programNotifications)
-    ? store.snapshot().settings.programNotifications : [];
+  const current = Array.isArray(store.snapshot(["settings"])?.settings?.programNotifications)
+    ? store.snapshot(["settings"]).settings.programNotifications : [];
   if (key && current.some((item) => item.key === key)) return null;
   const item = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -5207,7 +5220,7 @@ function decrypted(value) {
 }
 
 function officialAccountCredentials(sourceId) {
-  const settings = store.snapshot().settings;
+  const settings = store.snapshot(["settings"]).settings;
   const prefix = sourceId === "nike" ? "nike" : sourceId === "adidas" ? "adidas" : "";
   if (!prefix) return { id: "", password: "" };
   return {
@@ -5295,7 +5308,7 @@ async function ensureOfficialAccountLogin(searchWindow, homepageUrl) {
 }
 
 function publicConfig() {
-  const settings = store.snapshot().settings;
+  const settings = store.snapshot(["settings"]).settings;
   const naverCredentials = naverAccountCredentials();
   return {
     appKey: settings.appKey || "",
@@ -5337,7 +5350,7 @@ function musinsaCredentialsFromGoogleWorkbook(workbook) {
 async function importMusinsaCredentialsFromGoogleDrive() {
   const services = shoppingAccountServices();
   if (!services.accounts.credentials("musinsa").code) return { ok: true, reused: true };
-  const settings = store.snapshot().settings;
+  const settings = store.snapshot(["settings"]).settings;
   const endpoint = String(settings.ledgerWebhookUrl || "").trim();
   const secret = decrypted(settings.ledgerSecretEncrypted);
   if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(endpoint) || !secret) {
@@ -5437,7 +5450,7 @@ async function syncPurchaseLedger(input = {}) {
   const row = normalizePurchaseLedgerRow(input);
   const validation = validatePurchaseLedgerRow(row);
   if (!validation.ok) return { ok: false, code: "REQUIRED_FIELDS_MISSING", message: `${validation.missing.join(", ")}을(를) 확인해 주세요.` };
-  const settings = store.snapshot().settings;
+  const settings = store.snapshot(["settings"]).settings;
   const endpoint = String(settings.ledgerWebhookUrl || "").trim();
   const secret = decrypted(settings.ledgerSecretEncrypted);
   if (!/^https:\/\/script\.google\.com\//i.test(endpoint) || !secret) return { ok: false, code: "LEDGER_NOT_CONNECTED", message: "Google 구매장부 연결 주소와 보안키를 먼저 저장해 주세요." };
@@ -5467,7 +5480,7 @@ function defaultBrandExportFolder() {
 }
 
 function currentBrandExportFolder() {
-  return String(store?.snapshot()?.settings?.brandExportFolder || "").trim()
+  return String(store?.snapshot(["settings"])?.settings?.brandExportFolder || "").trim()
     || defaultBrandExportFolder();
 }
 
@@ -5541,7 +5554,7 @@ async function writeWeeklyLedgerExcelBackup(now = new Date()) {
 async function runWeeklyLedgerBackup({ force = false, now = new Date() } = {}) {
   if (weeklyLedgerBackupPromise) return weeklyLedgerBackupPromise;
   if (!store.snapshot().ledger.length) return { ok: true, skipped: true, reason: "EMPTY_LEDGER" };
-  const lastBackupAt = store.snapshot().settings?.lastLedgerBackupAt;
+  const lastBackupAt = store.snapshot(["settings"]).settings?.lastLedgerBackupAt;
   if (!force && !weeklyLedgerBackupDue(lastBackupAt, now)) return { ok: true, skipped: true, lastBackupAt };
   weeklyLedgerBackupPromise = (async () => {
     try {
@@ -5655,7 +5668,7 @@ async function runOneDriveRecoveryBackup() {
     if (!ledgerBackup.ok) throw new Error(`LEDGER_BACKUP_FAILED: ${ledgerBackup.message}`);
     setOneDriveBackupStatus("connected", "최신 설치본 1개와 설정이 안전하게 백업되었습니다.", {
       settingsPath, installerPath: installer.destination, removedInstallers: installer.removed,
-      ledgerBackupPath: ledgerBackup.destination || store.snapshot().settings?.lastLedgerBackupPath || "",
+      ledgerBackupPath: ledgerBackup.destination || store.snapshot(["settings"]).settings?.lastLedgerBackupPath || "",
     });
     return { ok: true, ...oneDriveBackupStatus };
   } catch (error) {
@@ -5735,7 +5748,7 @@ async function initializeOneDrivePoizonBackup() {
   if (!backupRoot || !brandFolder || !popularFolder) return { enabled: false, copied: 0 };
   await mkdir(brandFolder, { recursive: true });
   await mkdir(popularFolder, { recursive: true });
-  const configuredBrandFolder = String(store.snapshot().settings.brandExportFolder || "").trim();
+  const configuredBrandFolder = String(store.snapshot(["settings"]).settings.brandExportFolder || "").trim();
   const previousBrandFolder = configuredBrandFolder
     || join(app.getPath("desktop"), "Around G POIZON", "POIZON 전체내보내기");
   const copiedBrands = await copyExcelTree(previousBrandFolder, brandFolder);
@@ -5821,7 +5834,7 @@ async function validateBrandExportFile(filePath, expectedBrands = []) {
   const info = await stat(filePath);
   const signature = `${filePath}:${info.mtimeMs}:${info.size}`;
   if (brandExportValidationCache.has(signature)) return brandExportValidationCache.get(signature);
-  const saved = store?.snapshot()?.settings?.brandExportFileValidationCache;
+  const saved = store?.snapshot(["settings"])?.settings?.brandExportFileValidationCache;
   const savedEntry = Array.isArray(saved)
     ? saved.find((entry) => String(entry?.signature || "") === signature)
     : null;
@@ -6212,7 +6225,7 @@ function startBrandExportFolderPolling() {
 }
 
 function secretConfig() {
-  const settings = store.snapshot().settings;
+  const settings = store.snapshot(["settings"]).settings;
   return {
     appKey: settings.appKey || "",
     appSecret: decrypted(settings.appSecretEncrypted),
@@ -7532,7 +7545,7 @@ function normalizeBrandExportKey(value = "") {
 }
 
 function savedBrandExportJobs() {
-  const saved = store?.snapshot()?.settings?.brandExportJobCache;
+  const saved = store?.snapshot(["settings"])?.settings?.brandExportJobCache;
   return Array.isArray(saved) ? saved : [];
 }
 
@@ -7703,7 +7716,7 @@ async function rememberBrandExportJob(input = {}) {
   const brandName = String(input.brandName || "").trim();
   const brandKo = String(input.brandKo || "").trim();
   const officialRegistry = safeOfficialDomainRegistry(
-    store.snapshot().settings.brandCatalog || explorerMetadata().brands
+    store.snapshot(["settings"]).settings.brandCatalog || explorerMetadata().brands
   );
   const officialRecord = officialDomainRecordForBrand(officialRegistry, brandName)
     || officialDomainRecordForBrand(officialRegistry, brandKo);
@@ -7979,7 +7992,7 @@ async function submitStoredSellerCredentialsWithRealMouse(loginId, password) {
 }
 
 async function submitStoredSellerCredentials() {
-  const settings = store.snapshot().settings || {};
+  const settings = store.snapshot(["settings"]).settings || {};
   const loginId = String(settings.poizonLoginId || "").trim();
   let password = "";
   try {
@@ -9202,7 +9215,7 @@ async function automateSellerBrandExport(input = {}) {
   ];
   const brandKoInput = String(input.brandKo || "").trim();
   const sellerOfficialRegistry = safeOfficialDomainRegistry(
-    store.snapshot().settings.brandCatalog || explorerMetadata().brands
+    store.snapshot(["settings"]).settings.brandCatalog || explorerMetadata().brands
   );
   const sellerOfficialRecord = officialDomainRecordForBrand(sellerOfficialRegistry, brandName)
     || officialDomainRecordForBrand(sellerOfficialRegistry, brandKoInput);
@@ -11853,7 +11866,7 @@ async function lookupSellerTransactionPrice(input = {}) {
 
 function sendWeeklySiteHealthStatus(payload = {}) {
   const status = {
-    ...store?.snapshot()?.settings?.weeklySiteHealth,
+    ...store?.snapshot(["settings"])?.settings?.weeklySiteHealth,
     ...payload,
     scheduleLabel: "매주 수요일 밤 12시",
     nextRunAt: nextWeeklySiteHealthAt(new Date()).toISOString(),
@@ -12067,7 +12080,7 @@ function domesticCookieStillUsable(cookie, now = Date.now() / 1000) {
 }
 
 function naverAccountCredentials() {
-  const settings = store.snapshot().settings;
+  const settings = store.snapshot(["settings"]).settings;
   const id = String(settings.naverLoginId || "").trim();
   if (!id || !settings.naverPasswordEncrypted) return { id, password: "", code: "NAVER_CREDENTIALS_REQUIRED" };
   try {
@@ -12087,7 +12100,7 @@ function naverCredentialMessage(code) {
 }
 
 async function saveNaverAccount(config = {}) {
-  const previous = store.snapshot().settings;
+  const previous = store.snapshot(["settings"]).settings;
   const id = String(config.naverLoginId || "").trim();
   const password = typeof config.naverPassword === "string" ? config.naverPassword : "";
   if (!id) throw new Error("NAVER_LOGIN_ID_REQUIRED");
@@ -12519,7 +12532,7 @@ async function clearDomesticLogin(sourceId) {
   // A provider account change must not leave a linked shop signed into the
   // previous person while reporting the new provider account as connected.
   if (["naver", "kakao"].includes(source.id)) {
-    const savedAccounts = store.snapshot().settings.shoppingAccounts || {};
+    const savedAccounts = store.snapshot(["settings"]).settings.shoppingAccounts || {};
     for (const linked of DOMESTIC_LOGIN_SOURCES.filter(item => !["naver", "kakao"].includes(item.id)
       && savedAccounts[item.id]?.method === source.id)) await clearDomesticLogin(linked.id);
   }
@@ -12543,7 +12556,7 @@ app.whenReady().then(async () => {
   const hadLocalData = Boolean(await stat(join(userDataFolder, "around-g-data.json")).catch(() => null));
   store = new JsonStore(userDataFolder);
   await store.load();
-  const previousVersion = String(store.snapshot()?.settings?.lastLaunchedVersion || "");
+  const previousVersion = String(store.snapshot(["settings"])?.settings?.lastLaunchedVersion || "");
   const currentVersion = app.getVersion();
   if (app.isPackaged && previousVersion && previousVersion !== currentVersion) {
     await addProgramNotification({
@@ -12602,12 +12615,12 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
   ipcMain.handle("notifications:list", () => {
-    const items = store.snapshot()?.settings?.programNotifications;
+    const items = store.snapshot(["settings"])?.settings?.programNotifications;
     return Array.isArray(items) ? items : [];
   });
   ipcMain.handle("notifications:mark-read", async () => {
-    const items = Array.isArray(store.snapshot()?.settings?.programNotifications)
-      ? store.snapshot().settings.programNotifications : [];
+    const items = Array.isArray(store.snapshot(["settings"])?.settings?.programNotifications)
+      ? store.snapshot(["settings"]).settings.programNotifications : [];
     const programNotifications = items.map((item) => ({ ...item, read: true }));
     await store.setSettings({ programNotifications });
     return programNotifications;
@@ -12623,8 +12636,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("naver-account:save", (_event, config) => saveNaverAccount(config));
   ipcMain.handle("shopping-accounts:list", async () => {
     const {accounts,connector} = shoppingAccountServices();
+    const publicAccounts = new Map(accounts.list().map(account => [account.id, account]));
     return Promise.all(DOMESTIC_LOGIN_SOURCES.map(async source => ({
-      ...accounts.publicAccount(source.id), name:source.name,
+      ...publicAccounts.get(source.id), name:source.name,
       hasSession:await hasUsableDomesticLoginSession(source.id),
       connection:connector.status(source.id),
       methods:["naver","kakao"].includes(source.id) ? ["password"] : ["password","naver","kakao"],
@@ -12634,7 +12648,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("shopping-accounts:open", (_event, sourceId) => sourceId === "naver"
     ? openDomesticLogin(sourceId) : shoppingAccountServices().connector.open(sourceId));
   ipcMain.handle("config:save", async (_event, config) => {
-    const previous = store.snapshot().settings;
+    const previous = store.snapshot(["settings"]).settings;
     const naverLoginId = typeof config.naverLoginId === "string"
       ? config.naverLoginId.trim() : String(previous.naverLoginId || "").trim();
     if (config.naverPassword && !naverLoginId) throw new Error("NAVER_LOGIN_ID_REQUIRED");
@@ -12677,7 +12691,7 @@ app.whenReady().then(async () => {
     if (workbookOperation) return {ok:false,code:"WORKBOOK_BUSY"};
     workbookOperation = true;
     try {
-      const settings = store.snapshot().settings;
+      const settings = store.snapshot(["settings"]).settings;
       const endpoint = String(settings.ledgerWebhookUrl || "").trim();
       const secret = decrypted(settings.ledgerSecretEncrypted);
       if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(endpoint) || !secret) throw new Error("LEDGER_NOT_CONNECTED");
@@ -12714,7 +12728,7 @@ app.whenReady().then(async () => {
     } catch (error) { return {ok:false,code:String(error.message || error)}; }
   });
   ipcMain.handle("explorer:meta", async () => {
-    const settings = store.snapshot().settings;
+    const settings = store.snapshot(["settings"]).settings;
     const cached = settings.brandCatalog;
     const brands = Array.isArray(cached) && cached.length ? cached : explorerMetadata().brands;
     // Brand selection must remain available even when the much larger official
@@ -12742,7 +12756,7 @@ app.whenReady().then(async () => {
       count: result.ok ? result.brands.length : 0,
     });
     if (result.ok) return result;
-    const settings = store.snapshot().settings;
+    const settings = store.snapshot(["settings"]).settings;
     const preserved = Array.isArray(settings.brandCatalog) && settings.brandCatalog.length
       ? settings.brandCatalog
       : explorerMetadata().brands;
@@ -12753,7 +12767,7 @@ app.whenReady().then(async () => {
     };
   });
   ipcMain.handle("official-domain:audit-status", async () => {
-    const settings = store.snapshot().settings;
+    const settings = store.snapshot(["settings"]).settings;
     const brands = settings.brandCatalog || explorerMetadata().brands;
     const registry = await ensureOfficialDomainRegistry(brands);
     return officialDomainAuditSnapshot(registry);
@@ -12762,7 +12776,7 @@ app.whenReady().then(async () => {
     clearTimeout(officialDomainAuditResumeTimer);
     officialDomainAuditResumeTimer = null;
     if (!officialDomainAuditRunning) void runOfficialDomainAudit({ recheckAll: options?.recheckAll === true });
-    const settings = store.snapshot().settings;
+    const settings = store.snapshot(["settings"]).settings;
     const registry = await ensureOfficialDomainRegistry(settings.brandCatalog || explorerMetadata().brands);
     return { ok: true, audit: officialDomainAuditSnapshot(registry, { running: true, state: "running" }) };
   });
@@ -12780,10 +12794,10 @@ app.whenReady().then(async () => {
     // Continue click to start exactly one replacement worker.
     const stopDeadline = Date.now() + 2_000;
     while (officialDomainAuditRunning && Date.now() < stopDeadline) await wait(25);
-    const settings = store.snapshot().settings;
+    const settings = store.snapshot(["settings"]).settings;
     const brands = settings.brandCatalog || explorerMetadata().brands;
     const registry = await ensureOfficialDomainRegistry(brands);
-    const savedAudit = store.snapshot().settings.officialDomainAudit || {};
+    const savedAudit = store.snapshot(["settings"]).settings.officialDomainAudit || {};
     const pausedAudit = {
       ...savedAudit,
       state: "paused",
@@ -13106,7 +13120,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     }
   });
   ipcMain.handle("popular:workflow-get", () => {
-    const settings = store.snapshot().settings;
+    const settings = store.snapshot(["settings"]).settings;
     return {
       period: settings.popularPeriod || "week",
       compare: settings.popularCompare || "week",
@@ -13137,7 +13151,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       unit: next.popularUnit,
       limit: next.popularLimit,
       reminder: next.popularReminder,
-      lastSyncAt: next.popularLastSyncAt || store.snapshot().settings.popularLastSyncAt || "",
+      lastSyncAt: next.popularLastSyncAt || store.snapshot(["settings"]).settings.popularLastSyncAt || "",
     };
   });
   ipcMain.handle("domestic:search", (_event, input) => {
@@ -13201,7 +13215,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       } catch (error) {
         rememberWarning("search_cache_clear", error);
       }
-      const settings = store.snapshot().settings;
+      const settings = store.snapshot(["settings"]).settings;
       const profileKey = brandSearchProfileKey(input?.brand, input?.brandId);
       const searchProfiles = settings.brandSearchProfiles || {};
       const searchStrategy = selectBrandSearchStrategy(searchProfiles[profileKey]);
@@ -13420,7 +13434,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     return { ok: true };
   });
   ipcMain.handle("explorer:query", async (_event, input) => {
-    const settings = store.snapshot().settings;
+    const settings = store.snapshot(["settings"]).settings;
     const catalog = settings.brandCatalog || explorerMetadata().brands;
     const requestedBrandIds = (Array.isArray(input?.brandIds) ? input.brandIds : []).map(Number).filter(Number.isFinite);
     const catalogById = new Map(catalog.map((brand) => [Number(brand.id), brand]));

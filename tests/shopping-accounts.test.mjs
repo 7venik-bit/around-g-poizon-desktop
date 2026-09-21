@@ -24,6 +24,25 @@ async function fixture(t) {
   return {folder,store,accounts,changes};
 }
 
+test('account status refresh reads settings once and never traverses saved search results', () => {
+  const store = new JsonStore('unused');
+  store.data.settings = {naverLoginId:'naver-fixture',naverPasswordEncrypted:encrypt('naver-secret'),
+    shoppingAccounts:{musinsa:{method:'password',idEncrypted:encrypt('musinsa-fixture'),passwordEncrypted:encrypt('musinsa-secret')}}};
+  Object.defineProperty(store.data,'categorySearches',{enumerable:true,get(){throw Error('unrelated search history read');}});
+  let reads = 0;
+  const snapshot = store.snapshot.bind(store);
+  store.snapshot = (...args) => { reads++; return snapshot(...args); };
+  const accounts = new ShoppingAccounts({store,sources,encrypt,decrypt});
+  const result = accounts.list();
+  assert.equal(reads, 1);
+  assert.equal(result.find(a=>a.id==='naver').loginId,'naver-fixture');
+  assert.equal(result.find(a=>a.id==='musinsa').hasPassword,true);
+  assert.doesNotMatch(JSON.stringify(result),/secret|Encrypted/);
+  assert.equal(accounts.credentials('musinsa').password,'musinsa-secret');
+  store.data.settings.naverLoginId='new-fixture';
+  assert.equal(accounts.list().find(a=>a.id==='naver').loginId,'new-fixture');
+});
+
 test('shopping credentials are encrypted, survive restart and are absent from public account data',async t=>{
   const f=await fixture(t);
   const result=await f.accounts.save({id:'musinsa',loginId:'shop-fixture-id',password:'shop-fixture-secret'});
