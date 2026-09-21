@@ -5297,7 +5297,7 @@ async function captureMusinsaLedgerOrder() {
   if (!musinsaLedgerWindow || musinsaLedgerWindow.isDestroyed()) return { ok: false, code: "ORDER_WINDOW_CLOSED", message: "무신사 주문 상세 화면을 먼저 열어주세요." };
   const url = musinsaLedgerWindow.webContents.getURL();
   if (!/musinsa\.com/i.test(url)) return { ok: false, code: "NOT_MUSINSA", message: "무신사 주문 상세 화면에서 다시 시도해 주세요." };
-  if (/\/auth\/login(?:[/?#]|$)/i.test(url)) return { ok: false, code: "MUSINSA_LOGIN_REQUIRED", message: "무신사 로그인을 완료한 뒤 마이 > 주문 내역에서 주문 상세를 열어주세요." };
+  if (/\/auth\/login(?:[/?#]|$)/i.test(url) || /^https?:\/\/member\.one\.musinsa\.com\/login(?:[/?#]|$)/i.test(url)) return { ok: false, code: "MUSINSA_LOGIN_REQUIRED", message: "무신사 로그인을 완료한 뒤 마이 > 주문 내역에서 주문 상세를 열어주세요." };
   if (/\/mypage\/?(?:[?#].*)?$/i.test(url) || /\/main\//i.test(url)) return { ok: false, code: "ORDER_DETAIL_REQUIRED", message: "마이 > 주문 내역에서 기록할 주문 상세를 연 뒤 장부기록을 눌러주세요." };
   const rows = await musinsaLedgerWindow.webContents.executeJavaScript(`(() => {
     const clean = value => String(value || '').replace(/\\s+/g, ' ').trim();
