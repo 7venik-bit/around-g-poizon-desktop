@@ -470,11 +470,13 @@ test('numeric inventory is displayed per colour/size and partial coverage stays 
   const f=createFixture(t);
   f.window.aroundG.searchDomestic=async()=>({ok:true,data:{products:[{store:'무신사',title:'재킷',price:99000,url:'https://www.musinsa.com/products/1',inStock:true,stockCoverage:'partial',sizes:[{label:'블랙 / 95',quantity:3,inStock:true},{label:'화이트 / 95',quantity:0,inStock:false},{label:'화이트 / 100',inStock:null}]}],sources:[]}});
   await f.run();
-  const stock=f.window.document.querySelector('.domestic-inline-stock-cell');
-  assert.match(stock.textContent,/블랙 \/ 95 · 재고 3개/);
-  assert.match(stock.textContent,/화이트 \/ 95 · 재고 0개/);
-  assert.match(stock.textContent,/화이트 \/ 100 · 재고 확인 필요/);
-  assert.match(stock.textContent,/일부 옵션 재고 확인 필요/);
+  const rows=[...f.window.document.querySelectorAll('.domestic-inline-row[data-stock-color]')];
+  assert.deepEqual(rows.map(row=>row.dataset.stockColor),['블랙','화이트']);
+  assert.match(rows[0].textContent,/블랙 \/ 95 · 재고 3개/);
+  assert.doesNotMatch(rows[0].textContent,/화이트/);
+  assert.match(rows[1].textContent,/화이트 \/ 95 · 재고 0개/);
+  assert.match(rows[1].textContent,/화이트 \/ 100 · 재고 확인 필요/);
+  for(const row of rows) assert.match(row.textContent,/일부 옵션 재고 확인 필요/);
   assert.equal(f.overlay().hidden,true);
 });
 

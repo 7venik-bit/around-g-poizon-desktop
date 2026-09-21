@@ -55,6 +55,8 @@
       .domestic-inline-official{flex:0 0 auto!important;padding:2px 5px!important;border-radius:999px!important;background:#fff3e8!important;color:#b86624!important;font-size:10px!important;font-weight:800!important}
       .domestic-inline-title{min-width:0!important;color:#111827!important;font-weight:650!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
       .domestic-inline-product{min-width:0!important}
+      .domestic-inline-color{margin-top:5px!important;color:#314a68!important;font-size:11px!important;font-weight:800!important;overflow-wrap:anywhere!important}
+      .domestic-inline-row[data-stock-color]{border-bottom:1px solid #dfe5ec!important}
       .domestic-inline-stock{margin-top:3px!important;white-space:pre-line!important;overflow-wrap:anywhere!important;color:#537563!important;font-weight:650!important}
       .domestic-inline-stock.soldout,.domestic-inline-stock-option.soldout{color:#9a5c32!important}
       .domestic-inline-stock-cell{display:flex!important;align-items:center!important;align-content:center!important;gap:5px!important;min-width:0!important;flex-wrap:wrap!important;white-space:normal!important;color:#537563!important;line-height:1.35!important}
@@ -274,6 +276,29 @@
     return `<div class="domestic-inline-stock-cell">${lines.join("")}</div>`;
   }
 
+  function stockColorRows(product) {
+    const store = String(product.sourceStore || product.store || "");
+    const sizes = Array.isArray(product.sizes) ? product.sizes : [];
+    if (!/^(?:네이버(?: 패션타운)?|무신사)$/.test(store) || !sizes.length) return [{product, color:""}];
+    const groups = new Map();
+    for (const option of sizes) {
+      // The retailer collector puts colour before size in an option path.
+      // Older saved results retain the same path only in their label.
+      const path = Array.isArray(option?.optionPath) && option.optionPath.length
+        ? option.optionPath.map(part => String(part).trim())
+        : String(option?.label || option?.name || (typeof option === "string" ? option : "")).split(" / ").map(part => part.trim());
+      const first = path[0] || "";
+      const sizeOnly = /^(?:(?:EU|US|UK|KR)?\s*\d+(?:\.\d+)?(?:\s*(?:mm|cm))?|[2-6]?X{0,3}[SML]|FREE|ONE\s*SIZE)(?:\s*\([^)]*\))?$/i.test(first);
+      const color = path.length > 1 && !sizeOnly ? first : "";
+      if (!groups.has(color)) groups.set(color, []);
+      groups.get(color).push(option);
+    }
+    if (groups.size === 1 && groups.has("")) return [{product, color:""}];
+    // This is a display projection only: the saved product, option evidence,
+    // source totals and product-level actions keep their original identity.
+    return [...groups].map(([color, options]) => ({product:{...product, sizes:options}, color}));
+  }
+
   function inlineRenderDomestic(result, sourceProduct = {}, contextKey = "") {
     if (!result) return `<div class="domestic-inline-empty">국내 상품 검색 전</div>`;
     if (result.loading) return `<div class="domestic-inline-empty">국내 판매처 검색 중…</div>`;
@@ -284,21 +309,21 @@
     const diagnostics = renderSearchDiagnostics(sources);
     const sourceForProduct = (product) => sources.find((source) => sourceOwnsProduct(source, product)) || {};
 
-    const rows = products.map((product) => {
+    const rows = products.flatMap((product) => {
       const source = sourceForProduct(product);
       const retailer = product?.retailerName || product?.store || source?.store || "판매처";
       const rawTitle = product?.title || product?.name || product?.articleNumber || "국내 상품";
       const title = displayedProductTitle(product, sourceProduct);
       const article = product?.articleNumber || sourceProduct?.articleNumber || sourceProduct?.productCode || "-";
       const official = product?.officialStoreVerified === true || Boolean(source?.officialStatus);
-      return `<div class="domestic-inline-row">
+      return stockColorRows(product).map(({product: colorProduct, color}) => `<div class="domestic-inline-row"${color ? ` data-stock-color="${safeText(color)}"` : ""}>
         <div class="domestic-inline-store" title="${safeText(retailer)}"><span>${safeText(retailer)}</span>${official ? `<span class="domestic-inline-official">공식</span>` : ""}</div>
-        <div class="domestic-inline-product"><div class="domestic-inline-title" title="${safeText(rawTitle)}">${safeText(title)}</div></div>
-        ${renderStockCell(product)}
+        <div class="domestic-inline-product"><div class="domestic-inline-title" title="${safeText(rawTitle)}">${safeText(title)}</div>${color ? `<div class="domestic-inline-color">${safeText(color)}</div>` : ""}</div>
+        ${renderStockCell(colorProduct)}
         <div class="domestic-inline-code" title="${safeText(article)}">${safeText(article)}</div>
         <div class="domestic-inline-price">${safeMoney(product?.price)}</div>
         <div class="domestic-inline-actions">${sourceAction(source, product, sourceProduct, contextKey)}${typeof stockWatchRegistrationButton === "function" ? stockWatchRegistrationButton(product, sourceProduct) : ""}</div>
-      </div>`;
+      </div>`);
     });
 
     const representedSources = new Set();
