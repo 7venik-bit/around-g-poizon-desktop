@@ -1,3 +1,4 @@
+import { saveLedgerWorkbook, readLedgerWorkbook, exportLedgerWorkbook, workbookView } from "./services/ledger-workbook.mjs";
 import { readReviewWorkbook, checkReviewWorkbookRevision } from "./services/poizon-review-workbook.mjs";
 import { assertPoizonPageReadyForCorrection, isPoizonSkuScopeDeferredRow, selectPoizonPageCorrectionProducts } from "./services/live-poizon-crosscheck.mjs";
 import { syncPoizonPageCheckpoint } from "./services/poizon-page-checkpoint.mjs";
@@ -12549,6 +12550,38 @@ app.whenReady().then(async () => {
   ipcMain.handle("ledger:open-musinsa", () => openMusinsaLedgerWindow());
   ipcMain.handle("ledger:capture-musinsa", () => captureMusinsaLedgerOrder());
   ipcMain.handle("ledger:sync", (_event, input) => syncPurchaseLedger(input));
+  const ledgerWorkbookPath = join(app.getPath("userData"), "ledger-workbook.encrypted");
+  const loadOriginalWorkbook = () => readLedgerWorkbook(ledgerWorkbookPath, bytes => safeStorage.decryptString(bytes));
+  ipcMain.handle("ledger:workbook-load", async () => {
+    try { return { ok: true, workbook: workbookView(await loadOriginalWorkbook()) }; }
+    catch (error) { return { ok: false, code: error.code === "ENOENT" ? "WORKBOOK_NOT_IMPORTED" : "WORKBOOK_READ_FAILED" }; }
+  });
+  ipcMain.handle("ledger:workbook-import", async () => {
+    try {
+      const settings = store.snapshot().settings;
+      const endpoint = String(settings.ledgerWebhookUrl || "").trim();
+      const secret = decrypted(settings.ledgerSecretEncrypted);
+      if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(endpoint) || !secret) throw new Error("LEDGER_NOT_CONNECTED");
+      if (!safeStorage.isEncryptionAvailable()) throw new Error("WINDOWS_ENCRYPTION_UNAVAILABLE");
+      // Older bridges treat any POST as a write; require read capability first.
+      const handshake = await fetch(endpoint, {signal:AbortSignal.timeout(20000)});
+      if (!handshake.ok || !(await handshake.json()).capabilities?.includes("workbook.read.v1")) throw new Error("WORKBOOK_BRIDGE_UPDATE_REQUIRED");
+      const response = await fetch(endpoint, { method:"POST", redirect:"follow", headers:{"content-type":"text/plain;charset=utf-8"}, body:JSON.stringify({secret, action:"workbook.read"}), signal:AbortSignal.timeout(120000) });
+      if (!response.ok) throw new Error("WORKBOOK_HTTP_FAILED");
+      const result = await response.json();
+      if (!result.ok || !result.workbook) throw new Error(result.code || "WORKBOOK_BRIDGE_UPDATE_REQUIRED");
+      await saveLedgerWorkbook(ledgerWorkbookPath, result.workbook, value => safeStorage.encryptString(value));
+      return {ok:true, workbook:workbookView(await loadOriginalWorkbook())};
+    } catch (error) { return {ok:false, code:String(error.message || error)}; }
+  });
+  ipcMain.handle("ledger:workbook-export", async () => {
+    try {
+      const original = await loadOriginalWorkbook();
+      const result = await dialog.showSaveDialog({title:"원본 장부 엑셀 내보내기", defaultPath:"어라운드지_포이즌시트.xlsx", filters:[{name:"Excel",extensions:["xlsx"]}]});
+      if (result.canceled || !result.filePath) return {ok:false,canceled:true};
+      return await exportLedgerWorkbook(result.filePath, original);
+    } catch (error) { return {ok:false,code:String(error.message || error)}; }
+  });
   ipcMain.handle("explorer:meta", async () => {
     const settings = store.snapshot().settings;
     const cached = settings.brandCatalog;

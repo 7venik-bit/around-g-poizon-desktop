@@ -300,6 +300,15 @@
       </section>
 
       <section id="ledger" class="view">
+        <section class="panel" id="original-ledger-workbook">
+          <div class="panel-title"><div><h2>어라운드지 원본 장부</h2><p>기존 입력값·수식·시트 순서를 그대로 불러옵니다. 원본은 변경하지 않습니다.</p></div>
+          <div><button type="button" id="workbook-import">Google 장부 그대로 가져오기</button><button type="button" id="workbook-export" disabled>엑셀로 내보내기</button></div></div>
+          <p id="workbook-status" role="status">저장된 장부를 확인 중입니다.</p>
+          <label><input type="checkbox" id="workbook-hidden"> 숨겨진 시트 표시</label>
+          <div id="workbook-tabs" role="tablist" aria-label="원본 장부 시트"></div>
+          <div id="workbook-table" style="overflow:auto;max-height:65vh"></div>
+          <div><button type="button" id="workbook-prev">이전 100행</button><span id="workbook-page"></span><button type="button" id="workbook-next">다음 100행</button></div>
+        </section>
         <form id="purchase-ledger-form" class="panel stock-watch-form">
           <div class="panel-title"><div><small>GOOGLE PURCHASE LEDGER</small><h2>구매 장부</h2><p>무신사 주문 상세 화면에서 장부기록을 누르면 이미지·가격·사이즈를 자동으로 가져옵니다.</p></div><div class="stock-watch-row-actions"><button id="ledger-open-musinsa" type="button">무신사 주문내역 열기</button><button id="ledger-capture" type="button" class="primary">장부기록</button></div></div>
           <div class="stock-watch-fields ledger-fields">
@@ -396,5 +405,6 @@
   <script src="./domestic-result-verdict.js"></script>
   <script src="./shopping-accounts.js"></script>
   <script src="./renderer.js"></script>
+  <script src="./ledger-workbook.js"></script>
 </body>
 </html>

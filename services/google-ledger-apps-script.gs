@@ -6,7 +6,7 @@ function json_(value) {
 }
 
 function doGet(e) {
-  return json_({ ok: true, service: 'Around G 구매장부', sheet: SHEET_NAME });
+  return json_({ ok: true, service: 'Around G 구매장부', sheet: SHEET_NAME, capabilities: ['workbook.read.v1'] });
 }
 
 function doPost(e) {
@@ -16,6 +16,7 @@ function doPost(e) {
     const body = JSON.parse((e.postData && e.postData.contents) || '{}');
     const secret = PropertiesService.getScriptProperties().getProperty('LEDGER_SECRET');
     if (!secret || body.secret !== secret) return json_({ ok: false, code: 'UNAUTHORIZED' });
+    if (body.action === 'workbook.read') return json_({ ok: true, workbook: readOriginalWorkbook_() });
     const row = body.row || {};
     const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_NAME);
     if (!sheet) return json_({ ok: false, code: 'SHEET_NOT_FOUND' });
@@ -44,4 +45,35 @@ function doPost(e) {
   } catch (error) {
     return json_({ ok: false, code: 'WRITE_FAILED', message: String(error && error.message || error) });
   } finally { lock.releaseLock(); }
+}
+
+
+// Read-only migration: never call setValues, insert/delete, sort or formula repair.
+function readOriginalWorkbook_() {
+  const file = DriveApp.getFileById(SPREADSHEET_ID);
+  const revision = file.getLastUpdated().toISOString();
+  const book = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheets = book.getSheets().map(sheet => {
+    const range = sheet.getDataRange();
+    return {
+      id: sheet.getSheetId(), name: sheet.getName(), hidden: sheet.isSheetHidden(),
+      rowCount: sheet.getMaxRows(), columnCount: sheet.getMaxColumns(),
+      frozenRows: sheet.getFrozenRows(), frozenColumns: sheet.getFrozenColumns(),
+      displayValues: range.getDisplayValues(), formulas: range.getFormulas(),
+      backgrounds: range.getBackgrounds(), fontColors: range.getFontColors(),
+      fontWeights: range.getFontWeights(), numberFormats: range.getNumberFormats(),
+      notes: range.getNotes(),
+      merges: range.getMergedRanges().map(r => ({row:r.getRow()-1,column:r.getColumn()-1,rows:r.getNumRows(),columns:r.getNumColumns()}))
+    };
+  });
+  const response = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + SPREADSHEET_ID + '/export?format=xlsx', {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true
+  });
+  if (response.getResponseCode() !== 200) throw new Error('WORKBOOK_EXPORT_FAILED');
+  const bytes = response.getContent();
+  if (bytes.length < 4 || bytes[0] !== 80 || bytes[1] !== 75) throw new Error('WORKBOOK_EXPORT_INVALID');
+  if (DriveApp.getFileById(SPREADSHEET_ID).getLastUpdated().toISOString() !== revision) throw new Error('WORKBOOK_CHANGED_DURING_READ');
+  const checksum = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, bytes).map(b => ('0' + ((b + 256) % 256).toString(16)).slice(-2)).join('');
+  return {schemaVersion:1, spreadsheetId:SPREADSHEET_ID, title:book.getName(), revision,
+    capturedAt:new Date().toISOString(), sheets, xlsxBase64:Utilities.base64Encode(bytes), xlsxSha256:checksum};
 }
