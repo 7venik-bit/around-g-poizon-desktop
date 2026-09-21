@@ -5088,7 +5088,25 @@ function ledgerFormRow() {
     orderNumber:$("#ledger-order").value, purchaseUrl:$("#ledger-url").value, imageUrl:$("#ledger-image").value,
     quantity:$("#ledger-quantity").value, status:"구매완료" };
 }
-$("#ledger-open-musinsa")?.addEventListener("click", () => window.aroundG.openMusinsaLedger());
+$("#ledger-open-musinsa")?.addEventListener("click", async () => {
+  const status = $("#ledger-status"); status.className = "status"; status.textContent = "무신사 로그인 상태와 저장 계정을 확인하고 있습니다.";
+  const result = await window.aroundG.openMusinsaLedger();
+  const code = result?.automaticLogin?.code || "";
+  if (!result?.ok || (result.automaticLogin && !result.automaticLogin.ok)) {
+    const messages = {
+      GOOGLE_ACCOUNT_CONNECTION_REQUIRED:"Google 구매장부 연결 정보가 필요합니다.",
+      GOOGLE_ACCOUNT_READ_FAILED:"Google Drive 계정정보를 읽지 못했습니다.",
+      MUSINSA_ACCOUNT_NOT_FOUND:"계정정보 탭에서 무신사 계정을 찾지 못했습니다.",
+      LOGIN_VERIFICATION_REQUIRED:"무신사 보안 인증은 열린 창에서 직접 완료해 주세요.",
+      LOGIN_MANUAL_REQUIRED:"자동 로그인을 완료하지 못했습니다. 열린 무신사 창에서 이어서 로그인해 주세요.",
+    };
+    status.className = "status error"; status.textContent = messages[code] || "무신사 로그인 연결을 확인해 주세요."; return;
+  }
+  status.className = "status success"; status.textContent = result.automaticLogin?.imported
+    ? "Google Drive 계정을 Windows에 암호화 저장하고 무신사 로그인을 완료했습니다."
+    : "저장된 무신사 로그인 상태를 사용했습니다.";
+});
+
 $("#ledger-capture")?.addEventListener("click", async () => {
   const status = $("#ledger-status"); status.className = "status"; status.textContent = "현재 무신사 주문 상세 정보를 확인하고 있습니다.";
   const result = await window.aroundG.captureMusinsaLedger();
