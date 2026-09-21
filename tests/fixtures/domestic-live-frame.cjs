@@ -119,6 +119,8 @@ app.whenReady().then(async () => {
           below:Boolean(detail?.matches('.excel-verified-search-detail') && detail.getBoundingClientRect().top>=productRow.getBoundingClientRect().bottom),
           rows:[...document.querySelectorAll('.domestic-inline-row')].map(row=>({
             text:row.innerText,columns:row.children.length,stock:row.querySelector('.domestic-inline-stock-cell')?.innerText})),
+          sellers:[...document.querySelectorAll('.domestic-inline-retailer-label')].map(label=>label.textContent),
+          headingColumns:document.querySelector('.domestic-inline-head')?.children.length,
           extraAction:Boolean(document.querySelector('[data-domestic-stock-refresh]')),
           errors:document.querySelector('#fixture-errors').textContent};
       })()`);
@@ -128,7 +130,9 @@ app.whenReady().then(async () => {
     assert.equal(rendered.below,true,'retailer list belongs directly below the product');
     assert.equal(rendered.extraAction,false,'no separate stock-fetch action');
     assert.equal(rendered.rows.length,4);
-    for(const row of rendered.rows){assert.equal(row.columns,6);assert.match(row.stock,/270.*3개 남음/);assert.match(row.stock,/280.*품절/);assert.match(row.text,/99,000원/);}
+    assert.equal(rendered.headingColumns,6);
+    assert.deepEqual(rendered.sellers,collected.map(product=>product.store));
+    for(const row of rendered.rows){assert.equal(row.columns,5);assert.match(row.stock,/270.*3개 남음/);assert.match(row.stock,/280.*품절/);assert.match(row.text,/99,000원/);}
     assert.equal(rendered.errors,'');
     console.log(JSON.stringify({automaticProductSearch:true,retailerRows:rendered.rows.length,belowProduct:true,extraStockClick:false,offline:true}));
   } finally {ui.destroy();uiSession.protocol.unhandle('https');}
