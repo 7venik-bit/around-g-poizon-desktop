@@ -12551,31 +12551,48 @@ app.whenReady().then(async () => {
   ipcMain.handle("ledger:capture-musinsa", () => captureMusinsaLedgerOrder());
   ipcMain.handle("ledger:sync", (_event, input) => syncPurchaseLedger(input));
   const ledgerWorkbookPath = join(app.getPath("userData"), "ledger-workbook.encrypted");
+  const ledgerPendingPath = ledgerWorkbookPath + ".pending";
   const loadOriginalWorkbook = () => readLedgerWorkbook(ledgerWorkbookPath, bytes => safeStorage.decryptString(bytes));
+  const workbookNeedsRefresh = async () => { try { await stat(ledgerPendingPath); return true; } catch(error) {if (error.code === "ENOENT") return false; throw error;} };
+  let workbookOperation = false;
   ipcMain.handle("ledger:workbook-load", async () => {
-    try { return { ok: true, workbook: workbookView(await loadOriginalWorkbook()) }; }
+    try { return { ok: true, needsRefresh:await workbookNeedsRefresh(), workbook: workbookView(await loadOriginalWorkbook()) }; }
     catch (error) { return { ok: false, code: error.code === "ENOENT" ? "WORKBOOK_NOT_IMPORTED" : "WORKBOOK_READ_FAILED" }; }
   });
-  ipcMain.handle("ledger:workbook-import", async () => {
+  async function requestOriginalWorkbook(action, edit) {
+    if (workbookOperation) return {ok:false,code:"WORKBOOK_BUSY"};
+    workbookOperation = true;
     try {
       const settings = store.snapshot().settings;
       const endpoint = String(settings.ledgerWebhookUrl || "").trim();
       const secret = decrypted(settings.ledgerSecretEncrypted);
       if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(endpoint) || !secret) throw new Error("LEDGER_NOT_CONNECTED");
       if (!safeStorage.isEncryptionAvailable()) throw new Error("WINDOWS_ENCRYPTION_UNAVAILABLE");
-      // Older bridges treat any POST as a write; require read capability first.
       const handshake = await fetch(endpoint, {signal:AbortSignal.timeout(20000)});
-      if (!handshake.ok || !(await handshake.json()).capabilities?.includes("workbook.read.v1")) throw new Error("WORKBOOK_BRIDGE_UPDATE_REQUIRED");
-      const response = await fetch(endpoint, { method:"POST", redirect:"follow", headers:{"content-type":"text/plain;charset=utf-8"}, body:JSON.stringify({secret, action:"workbook.read"}), signal:AbortSignal.timeout(120000) });
+      const capability = action === "workbook.edit" ? "workbook.edit.v1" : "workbook.read.v1";
+      if (!handshake.ok || !(await handshake.json()).capabilities?.includes(capability)) throw new Error("WORKBOOK_BRIDGE_UPDATE_REQUIRED");
+      if (action === "workbook.edit") {
+        if (await workbookNeedsRefresh()) throw new Error("WORKBOOK_REFRESH_REQUIRED");
+        // A lost response may mean the remote write succeeded. Block stale exports
+        // across restarts until a fresh read completes; never auto-retry a write.
+        await writeFile(ledgerPendingPath, "refresh-required", {mode:0o600});
+      }
+      const response = await fetch(endpoint, { method:"POST", redirect:"follow", headers:{"content-type":"text/plain;charset=utf-8"}, body:JSON.stringify({secret, action, edit}), signal:AbortSignal.timeout(120000) });
       if (!response.ok) throw new Error("WORKBOOK_HTTP_FAILED");
       const result = await response.json();
       if (!result.ok || !result.workbook) throw new Error(result.code || "WORKBOOK_BRIDGE_UPDATE_REQUIRED");
       await saveLedgerWorkbook(ledgerWorkbookPath, result.workbook, value => safeStorage.encryptString(value));
-      return {ok:true, workbook:workbookView(await loadOriginalWorkbook())};
+      const verified = workbookView(await loadOriginalWorkbook());
+      await unlink(ledgerPendingPath).catch(error => {if (error.code !== "ENOENT") throw error;});
+      return {ok:true, workbook:verified};
     } catch (error) { return {ok:false, code:String(error.message || error)}; }
-  });
+    finally {workbookOperation = false;}
+  }
+  ipcMain.handle("ledger:workbook-import", () => requestOriginalWorkbook("workbook.read"));
+  ipcMain.handle("ledger:workbook-edit", (_event, edit) => requestOriginalWorkbook("workbook.edit", edit));
   ipcMain.handle("ledger:workbook-export", async () => {
     try {
+      if (workbookOperation || await workbookNeedsRefresh()) throw new Error("WORKBOOK_REFRESH_REQUIRED");
       const original = await loadOriginalWorkbook();
       const result = await dialog.showSaveDialog({title:"원본 장부 엑셀 내보내기", defaultPath:"어라운드지_포이즌시트.xlsx", filters:[{name:"Excel",extensions:["xlsx"]}]});
       if (result.canceled || !result.filePath) return {ok:false,canceled:true};

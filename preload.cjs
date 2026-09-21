@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   listShoppingAccounts: () => ipcRenderer.invoke("shopping-accounts:list"),
   saveShoppingAccount: (input) => ipcRenderer.invoke("shopping-accounts:save", input),
   openShoppingAccount: (sourceId) => ipcRenderer.invoke("shopping-accounts:open", sourceId),
+  editLedgerWorkbookCell: (edit) => ipcRenderer.invoke("ledger:workbook-edit", edit),
   loadLedgerWorkbook: () => ipcRenderer.invoke("ledger:workbook-load"),
   importLedgerWorkbook: () => ipcRenderer.invoke("ledger:workbook-import"),
   exportLedgerWorkbook: () => ipcRenderer.invoke("ledger:workbook-export"),

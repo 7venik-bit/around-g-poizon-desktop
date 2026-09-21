@@ -301,11 +301,19 @@
 
       <section id="ledger" class="view">
         <section class="panel" id="original-ledger-workbook">
-          <div class="panel-title"><div><h2>어라운드지 원본 장부</h2><p>기존 입력값·수식·시트 순서를 그대로 불러옵니다. 원본은 변경하지 않습니다.</p></div>
+          <div class="panel-title"><div><h2>어라운드지 원본 장부</h2><p>기존 내용은 그대로 불러옵니다. 셀을 선택해 편집하고 저장하면 해당 셀만 Google 장부에 반영합니다.</p></div>
           <div><button type="button" id="workbook-import">Google 장부 그대로 가져오기</button><button type="button" id="workbook-export" disabled>엑셀로 내보내기</button></div></div>
           <p id="workbook-status" role="status">저장된 장부를 확인 중입니다.</p>
           <label><input type="checkbox" id="workbook-hidden"> 숨겨진 시트 표시</label>
           <div id="workbook-tabs" role="tablist" aria-label="원본 장부 시트"></div>
+          <form id="workbook-cell-editor" hidden>
+            <strong id="workbook-cell-address"></strong>
+            <p id="workbook-cell-original"></p>
+            <label>입력 형식<select id="workbook-cell-type"><option value="text">문자</option><option value="number">숫자 (금액·수량)</option><option value="date">날짜 (YYYY-MM-DD)</option><option value="boolean">체크값 (true/false)</option><option value="formula">수식</option></select></label>
+            <label id="workbook-cell-options-label" hidden>허용 값<select id="workbook-cell-options"></select></label>
+            <label>수정할 내용<textarea id="workbook-cell-value" rows="2"></textarea></label>
+            <button type="submit" id="workbook-cell-save">선택한 셀 저장</button><button type="button" id="workbook-cell-cancel">취소</button>
+          </form>
           <div id="workbook-table" style="overflow:auto;max-height:65vh"></div>
           <div><button type="button" id="workbook-prev">이전 100행</button><span id="workbook-page"></span><button type="button" id="workbook-next">다음 100행</button></div>
         </section>
