@@ -39,12 +39,13 @@
     [/^(?:품번|상품번호|제품번호|품목코드|SKU)$/i, 'code', 105],
     [/^(?:구매링크|상품링크|링크|URL)$/i, 'link', 100],
     [/^(?:판매가(?:\(원화\))?|구매가|예상수수료|택배비|간이마진|부가세환급|일반마진|매입가|배송비)$/, 'money', 84],
+    [/^(?:구매가|판매가)(?:기준|대비|비)?마진율$/, 'percent', 84],
     [/^(?:EU사이즈|한국사이즈|사이즈)$/i, 'size', 60],
     [/^(?:판매일자|구매일자|주문일자|날짜)$/, 'date', 60],
     [/^(?:성별|사진|카드)$/, 'short', 42],
     [/^(?:판매량|수량)$/, 'count', 52],
     [/^상태$/, 'status', 84],
-    [/^브랜드$/, 'text', 68],
+    [/^브랜드$/, 'brand', 76],
   ];
   function sheetColumns(sheet,width) {
     const rows=sheet.displayValues;
@@ -54,7 +55,17 @@
     rows.slice(0,10).forEach((row,index)=>{const count=row.filter(value=>match(value)).length;if(count>score){header=index;score=count;}});
     const columns=Array.from({length:width},(_,c)=>{
       const type=header>=0 && match(rows[header][c]);
-      if(type)return {kind:type[1],weight:type[2]};
+      if(type) {
+        let weight=type[2];
+        if(!['model','link'].includes(type[1])) {
+          // Reserve readable space for the actual original values, including
+          // bold article codes, currency and Korean brand/status names.
+          const longest=rows.reduce((max,row,r)=>r===header?max:Math.max(max,
+            [...String(row[c] || '')].reduce((size,char)=>size+(/[^\x00-\x7f]/.test(char)?12:8),0)),0);
+          weight=Math.max(weight,Math.min(240,(longest+10)/0.8));
+        }
+        return {kind:type[1],weight};
+      }
       const used=rows.some((row,r)=>row[c] || sheet.formulas?.[r]?.[c]);
       return {kind:'text',weight:used?84:24};
     });
@@ -70,6 +81,7 @@
     const width=Math.max(sheet.columnCount || 0,...rows.map(row=>row.length));
     const layout=sheetColumns(sheet,width),weights=[34,...layout.columns.map(column=>column.weight)];
     const totalWeight=weights.reduce((sum,value)=>sum+value,0),colgroup=document.createElement('colgroup');
+    if(width>=16)table.style.minWidth=`${Math.ceil(totalWeight*0.8)}px`;
     for(const weight of weights){const col=document.createElement('col');col.style.width=`${weight/totalWeight*100}%`;colgroup.append(col);}
     table.dataset.wideSheet=String(width>=16);table.append(colgroup);
     const thead=document.createElement('thead'),header=document.createElement('tr');header.append(document.createElement('th'));

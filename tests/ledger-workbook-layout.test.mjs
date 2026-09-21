@@ -53,3 +53,17 @@ test('ragged generic sheets keep aligned cells and literal text without inventin
   assert.ok(d.querySelector('link[href="./ledger-workbook.css"]'));
   assert.ok(d.querySelector('.workbook-hidden-toggle #workbook-hidden'));
 });
+
+test('wide ledgers reserve readable minimum widths from original long codes, brands and margins',async t=>{
+  const book=fixture.ledgerLayoutBook(30),before=structuredClone(book),{d,calls}=await render(t,book);
+  const table=d.querySelector('#workbook-table table'),cols=[...table.querySelectorAll('col')];
+  const minimum=parseFloat(table.style.minWidth),cells=table.querySelectorAll('tbody tr')[2].children;
+  assert.ok(minimum>1200,'30 original columns must scroll instead of squeezing values');
+  assert.ok(minimum*parseFloat(cols[3].style.width)/100>110,'full long article code gets readable width');
+  assert.ok(minimum*parseFloat(cols[1].style.width)/100>75,'Korean brand text gets readable width');
+  assert.equal(cells[21].dataset.columnKind,'percent');
+  assert.equal(cells[22].textContent,'-876.02%');
+  assert.equal(cells[3].textContent,'ABCD000-N50CRS');
+  assert.equal(cells[3].style.fontWeight,'bold');
+  assert.equal(calls.length,0);assert.deepEqual(book,before);
+});
