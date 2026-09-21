@@ -28,7 +28,9 @@ test("runtime always loads the below-row retailer list directly", () => {
 
 test("retailer list columns are loaded through CSP-safe CSS", () => {
   assert.match(inlineCss, /\.domestic-inline-head,\.domestic-inline-row\{display:grid!important/);
-  assert.match(inlineCss, /grid-template-columns:110px minmax\(240px,1fr\) 120px 90px 70px!important/);
+  assert.match(inlineCss, /grid-template-columns:120px minmax\(160px,1fr\) minmax\(200px,1\.4fr\) 110px 100px 180px!important/);
+  assert.match(inlineCss, /\.domestic-inline-retailer-group\{display:grid!important;grid-template-columns:120px minmax\(0,1fr\)!important/);
+  assert.match(inlineCss, /\.domestic-inline-retailer-rows>\.domestic-inline-row\{grid-template-columns:minmax\(160px,1fr\) minmax\(200px,1\.4fr\) 110px 100px 180px!important/);
   assert.match(inlineCss, /\.excel-product-search-detail\{display:table-row!important/);
 });
 

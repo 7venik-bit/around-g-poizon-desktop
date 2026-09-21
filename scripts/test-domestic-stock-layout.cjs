@@ -27,7 +27,8 @@ const data = {
         [85,90,92,95,100,105,110,115,120].map(size=>({label:color+' / '+size,inStock:(color==='WHT0_WHITE'&&size>=110)||(color==='BLK0_BLACK'&&size===85)})))},
     {store:'무신사',title:'데상트 폴로 반팔 티셔츠',articleNumber:'SR123UPS11',price:84550,url:'https://example.test/musinsa-colors',inStock:true,stockVerified:true,sizes:
       ['WHT0_WHITE','BLK0_BLACK'].flatMap(color=>[85,90,92,95,100,105,110,115,120].map(size=>({label:color+' / '+size,inStock:color==='WHT0_WHITE'&&size>=110})))},
-  ], sources:[{store:'SSG',verificationPending:true,searchUrl:'https://example.test/search'}],
+    {store:'브랜드 공식몰',title:'여성 고어텍스 2L 방수재킷 [블랙]',articleNumber:'JKJGX25272',price:187200,url:'https://example.test/one-black',inStock:true,stockVerified:true,sizes:[{label:'블랙 / 90',quantity:3,inStock:true},{label:'블랙 / 95',quantity:0,inStock:false}]},
+  ], sources:[{store:'브랜드 공식몰',officialStatus:'verified'},{store:'SSG',verificationPending:true,searchUrl:'https://example.test/search'}],
 };
 function measure() {
   const list=document.querySelector('.domestic-inline-results');
@@ -37,8 +38,10 @@ function measure() {
   const rows=[...list.querySelectorAll('.domestic-inline-row')];
   if(headers.length!==6 || headers[2].textContent!=='사이즈·재고') errors.push('stock heading missing');
   for(const row of rows) {
-    if(row.children.length!==6) {errors.push('misaligned fallback row');continue;}
-    [...row.children].forEach((cell,i)=>{
+    const group=row.closest('.domestic-inline-retailer-group');
+    const cells=group?[group.querySelector('.domestic-inline-retailer-label'),...row.children]:[...row.children];
+    if(cells.length!==6) {errors.push('misaligned row');continue;}
+    cells.forEach((cell,i)=>{
       const r=cell.getBoundingClientRect(), h=headers[i].getBoundingClientRect();
       if(Math.abs(r.x-h.x)>1 || Math.abs(r.width-h.width)>1) errors.push('column alignment '+i);
       if(r.right>list.getBoundingClientRect().right+1) errors.push('row overflow '+i);
@@ -46,11 +49,25 @@ function measure() {
     });
     for(const button of row.querySelectorAll('button')) if(button.scrollWidth>button.clientWidth+1) errors.push('button clipped');
   }
-  const stock=rows[0].children[2];
+  const groups=[...list.querySelectorAll('.domestic-inline-retailer-group')];
+  if(groups.length!==4) errors.push('seller groups not merged');
+  const groupRowCounts={'브랜드 공식몰':2,'코오롱몰':1,'무신사':4,'네이버 패션타운':6};
+  for(const group of groups) {
+    const label=group.querySelector('.domestic-inline-retailer-label'), content=group.querySelector('.domestic-inline-retailer-rows');
+    if(group.querySelectorAll('.domestic-inline-store').length!==1) errors.push('repeated seller label');
+    if(group.querySelectorAll('.domestic-inline-row').length!==groupRowCounts[group.getAttribute('aria-label')]) errors.push('seller rows lost');
+    const a=label.getBoundingClientRect(),b=content.getBoundingClientRect();
+    if(Math.abs(a.top-b.top)>1||Math.abs(a.bottom-b.bottom)>1||a.right>b.left) errors.push('seller cell does not span product rows');
+    if(getComputedStyle(label).alignItems!=='center') errors.push('seller label not vertically centred');
+    const s=getComputedStyle(group);
+    if(s.borderBottomStyle!=='solid'||parseFloat(s.borderBottomWidth)*devicePixelRatio<0.99) errors.push('seller separator missing');
+  }
+  const stock=rows[0].querySelector('.domestic-inline-stock-cell');
   if(!/90.*선택 가능/.test(stock.textContent)||!/95.*재고 3개/.test(stock.textContent)||!/100 SOLD OUT/.test(stock.textContent)) errors.push('size omitted');
   if(!/구매 제한:/.test(stock.textContent)) errors.push('purchase limit conflated');
-  if(rows[1].children[2].innerText.trim()!=='현재 구매할 수 없는 상품입니다.\n품절') errors.push('platform wording changed');
-  if(rows[2].children[2].innerText.trim()!=='재고 확인 필요') errors.push('unknown stock invented');
+  const stockFor=code=>rows.find(row=>row.querySelector('.domestic-inline-code')?.textContent===code)?.querySelector('.domestic-inline-stock-cell');
+  if(stockFor('JWJJM26321DGY').innerText.trim()!=='현재 구매할 수 없는 상품입니다.\n품절') errors.push('platform wording changed');
+  if(stockFor('EXAMPLE12345').innerText.trim()!=='재고 확인 필요') errors.push('unknown stock invented');
 
   // The old harness allowed inline styles, masking the production CSS omission.
   // Require the actual application policy to reject that inline style now.
@@ -59,7 +76,7 @@ function measure() {
   const cspBlockedInline=(window.__stockCspViolations || []).some(v=>v.directive.startsWith('style-src') && v.blocked==='inline');
   if(!cspBlockedInline) errors.push('inline stylesheet was not rejected by CSP');
 
-  const shoeCell=rows.find(row=>row.querySelector('.domestic-inline-code')?.textContent==='JI0079')?.children[2];
+  const shoeCell=stockFor('JI0079');
   const badges=[...(shoeCell?.querySelectorAll('.domestic-inline-stock-option') || [])];
   const unavailable=badges.filter(b=>b.classList.contains('soldout'));
   const available=badges.filter(b=>b.tagName==='BUTTON');
@@ -114,7 +131,7 @@ function measure() {
     const color=row.dataset.stockColor, options=[...row.querySelectorAll('.domestic-inline-stock-option')];
     if(options.length!==9 || options.some(option=>!option.textContent.startsWith(color+' / '))) errors.push('mixed or missing colour options');
     if(row.querySelector('.domestic-inline-color')?.textContent!==color) errors.push('colour heading missing');
-    const style=getComputedStyle(row);
+    const style=getComputedStyle(row.nextElementSibling?row:row.closest('.domestic-inline-retailer-group'));
     if(style.borderBottomStyle!=='solid'||parseFloat(style.borderBottomWidth)*devicePixelRatio<0.99) errors.push('colour separator missing');
     const optionBounds=options.map(option=>option.getBoundingClientRect()),bounds=row.getBoundingClientRect();
     if(optionBounds.some(option=>option.top<bounds.top||option.bottom>bounds.bottom)) errors.push('colour option outside its row');
@@ -122,7 +139,7 @@ function measure() {
     if(!open || !decodeURIComponent(open.dataset.url).endsWith('-colors')) errors.push('colour row lost product link');
   }
   return {viewport:innerWidth,devicePixelRatio,columns:getComputedStyle(rows[0]).gridTemplateColumns,cspBlockedInline,
-    badgeCount:badges.length,unavailableCount:unavailable.length,availableCount:available.length,colorRowCount:colorRows.length,geometry,errors};
+    badgeCount:badges.length,unavailableCount:unavailable.length,availableCount:available.length,colorRowCount:colorRows.length,sellerGroupCount:groups.length,geometry,errors};
 }
 async function cleanup(){
   clearTimeout(deadline);
@@ -160,9 +177,9 @@ document.addEventListener('click',event=>{const action=event.target.closest('[da
   const failed=results.filter(r=>r.errors.length);
   if(failed.length)throw new Error(JSON.stringify(failed));
   win.setContentSize(1920,1100);win.webContents.setZoomFactor(1);
-  await win.webContents.executeJavaScript('document.getElementById("stock-fixture").innerHTML=renderDomestic('+JSON.stringify({products:data.products.slice(4),sources:[]})+');');
+  await win.webContents.executeJavaScript('document.getElementById("stock-fixture").innerHTML=renderDomestic('+JSON.stringify({products:[data.products[0],data.products[6],...data.products.slice(4,6)],sources:data.sources.slice(0,1)})+');');
   await new Promise(r=>setTimeout(r,80));
   await writeFile(join(out,'domestic-color-rows-1920.png'),(await win.webContents.capturePage()).toPNG());
-  console.log('PASS: 8 rendered stock-column cases with production CSP; separate Naver/Musinsa colour rows, all 72 colour options, visible separators, aligned columns, preserved links and availability.');
+  console.log('PASS: 8 rendered stock-column cases with production CSP; merged seller cells, separate Naver/Musinsa colour rows, all 72 colour options, visible separators, aligned columns, preserved links and availability.');
   await cleanup();app.exit(0);
 })().catch(async e=>{console.error(e.stack||e);await cleanup();app.exit(1)});

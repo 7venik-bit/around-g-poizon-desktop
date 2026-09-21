@@ -4,12 +4,12 @@ import {readFileSync} from 'node:fs';
 import {JSDOM} from 'jsdom';
 
 const script=readFileSync(new URL('../src/domestic-inline-results.js',import.meta.url),'utf8');
-function render(t,products) {
+function render(t,products,sources=[]) {
   const dom=new JSDOM('<body><main></main></body>',{runScripts:'outside-only'});
   t.after(()=>dom.window.close());
   dom.window.renderDomestic=()=>'';
   dom.window.eval(script);
-  dom.window.document.querySelector('main').innerHTML=dom.window.renderDomestic({products,sources:[]});
+  dom.window.document.querySelector('main').innerHTML=dom.window.renderDomestic({products,sources});
   return [...dom.window.document.querySelectorAll('.domestic-inline-row')];
 }
 const base={title:'데상트 카라 셔츠',articleNumber:'SR123UPS11',price:84550,inStock:true,stockVerified:true};
@@ -22,7 +22,7 @@ test('Naver renders six separate colour rows without dropping any of the 54 opti
   assert.equal(rows.length,6);
   assert.deepEqual(rows.map(row=>row.dataset.stockColor),colors);
   for(const [index,row] of rows.entries()) {
-    assert.equal(row.children.length,6);
+    assert.equal(row.children.length,5);
     assert.equal(row.querySelector('.domestic-inline-color').textContent,colors[index]);
     const options=[...row.querySelectorAll('.domestic-inline-stock-option')];
     assert.equal(options.length,9);
@@ -78,4 +78,54 @@ test('unclassified options survive alongside escaped colour names',t=>{
   assert.equal(rows[0].querySelector('.domestic-inline-color').textContent,'블랙 <한정>');
   assert.equal(rows[0].querySelector('한정'),null);
   assert.match(rows[1].textContent,/FREE · 재고 확인 필요/);
+});
+
+test('one seller cell spans official products and Naver/Musinsa colour rows without changing their actions',t=>{
+  const official=color=>({...base,store:'브랜드 공식몰',title:`셔츠 [${color}]`,url:`https://example.test/${encodeURIComponent(color)}`,sizes:[{label:`${color} / 95`,quantity:3,inStock:true}]});
+  const colors=store=>({...base,store,url:`https://example.test/${encodeURIComponent(store)}`,sizes:[{label:'블랙 / 95',inStock:true},{label:'화이트 / 95',inStock:false}]});
+  // Interleaved products from the same seller still share a single cell.
+  const products=[official('화이트'),colors('네이버 패션타운'),official('블랙'),colors('무신사')];
+  const sources=[{store:'브랜드 공식몰',officialStatus:'verified'},{store:'네이버 패션타운'},{store:'무신사'},
+    {store:'SSG',verificationPending:true,searchUrl:'https://example.test/search'}];
+  const before=structuredClone({products,sources}),rows=render(t,products,sources);
+  const list=rows[0].closest('.domestic-inline-results');
+  const groups=[...list.querySelectorAll('.domestic-inline-retailer-group')];
+  assert.deepEqual(groups.map(group=>group.getAttribute('aria-label')),['브랜드 공식몰','네이버 패션타운','무신사']);
+  for(const group of groups) {
+    assert.equal(group.querySelectorAll('.domestic-inline-store').length,1);
+    assert.equal(group.querySelectorAll('.domestic-inline-row').length,2);
+    assert.equal(group.querySelectorAll('.domestic-inline-row .domestic-inline-store').length,0);
+    assert.equal(group.querySelectorAll('.domestic-inline-price').length,2);
+  }
+  assert.equal(groups[0].querySelectorAll('.domestic-inline-official').length,1);
+  assert.equal(groups[1].querySelectorAll('.domestic-inline-official').length,0);
+  const titles=[...groups[0].querySelectorAll('.domestic-inline-title')].map(title=>title.textContent);
+  assert.deepEqual(titles,['셔츠 [화이트]','셔츠 [블랙]']);
+  assert.deepEqual([...groups[0].querySelectorAll('.domestic-inline-actions [data-url]')].map(button=>decodeURIComponent(button.dataset.url)),[products[0].url,products[2].url]);
+  assert.equal(list.querySelectorAll('.domestic-inline-stock-option').length,6);
+  assert.equal(list.querySelector('.domestic-inline-fallback .domestic-inline-store').textContent,'SSG');
+  assert.deepEqual({products,sources},before);
+});
+
+test('seller groups do not transfer official status or merge different sources with the same display name',t=>{
+  const products=[
+    {...base,store:'무신사',retailerName:'데상트',officialStoreVerified:true},
+    {...base,store:'무신사',retailerName:'데상트'},
+    {...base,store:'네이버 패션타운',retailerName:'데상트'},
+  ];
+  const rows=render(t,products);
+  const groups=[...rows[0].closest('.domestic-inline-results').querySelectorAll('.domestic-inline-retailer-group')];
+  assert.equal(groups.length,3);
+  assert.deepEqual(groups.map(group=>group.querySelectorAll('.domestic-inline-official').length),[1,0,0]);
+});
+
+test('merged seller names are escaped and unknown inventory remains unknown',t=>{
+  const rows=render(t,[{...base,store:'무신사',retailerName:'판매처 <한정>',inStock:null,stockVerified:false},
+    {...base,store:'무신사',retailerName:'판매처 <한정>',inStock:false}]);
+  const group=rows[0].closest('.domestic-inline-retailer-group');
+  assert.equal(group.getAttribute('aria-label'),'판매처 <한정>');
+  assert.equal(group.querySelector('.domestic-inline-store').textContent,'판매처 <한정>');
+  assert.equal(group.querySelector('한정'),null);
+  assert.equal(rows[0].querySelector('.domestic-inline-stock-cell').textContent,'재고 확인 필요');
+  assert.equal(rows[1].querySelector('.domestic-inline-stock-cell').textContent,'품절');
 });
