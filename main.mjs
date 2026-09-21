@@ -1677,12 +1677,12 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         const sellerVerifiedByWording = isApprovedNaverDomesticSellerEvidence({
           productUrl,
           sellerEvidenceText: snapshot.sellerEvidenceText,
-          detailText: snapshot.fullText,
+          detailText: snapshot.sellerDetailText ?? snapshot.fullText,
         });
         // Fashion Town already limits these cards to its domestic department,
         // outlet and brand-store routes. Do not discard an exact product just
         // because one brand omits the optional "공식 판매처" banner.
-        const naverFashionTownEvidenceText = `${snapshot.sellerEvidenceText} ${snapshot.fullText}`;
+        const naverFashionTownEvidenceText = `${snapshot.sellerEvidenceText} ${snapshot.sellerDetailText ?? snapshot.fullText}`;
         const naverFashionTownBarcodeRemoved = /(?:(?:바코드|qr\s*(?:코드)?)\s*(?:가|은|는|이)?\s*.{0,24}(?:삭제|제거|훼손)|(?:삭제|제거|훼손)\s*.{0,24}(?:바코드|qr\s*(?:코드)?))/i.test(naverFashionTownEvidenceText);
         const naverFashionTownDomesticRoute = /^https:\/\/(?:m\.)?shopping\.naver\.com\/window-products\/(?!foreign(?:\/|$)|overseas(?:\/|$)|global(?:\/|$))/i.test(productUrl)
           && !naverFashionTownBarcodeRemoved

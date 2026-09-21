@@ -115,6 +115,32 @@ test('a recommendation heading cannot replace a different Fashion Town product t
   const f=fixture(t,{html:'<header><h1>네이버플러스 스토어</h1></header><div class="_copyable"><h3>다른 상품 OTHER123</h3></div><section><h3>추천 상품 JH9976</h3></section>'}),w=await f.document();
   await assert.rejects(f.context.waitForDomesticDetailReady(w,'네이버 패션타운',URL_PRODUCT,0,'JH9976','product'),/product_detail_not_ready/);
 });
+
+const fashionTownDocument = (productNotice = '') => `<div>디자이너뷰티해외직구</div>
+  <div class="vcontainer_item"><p>아디다스 공식 스토어 상품</p>
+    <div class="_copyable"><h3>${TITLE} JH9976</h3></div><button>사이즈 선택</button>
+  </div><section id="DEFAULT">상품정보\n${productNotice}</section>
+  <section id="SELLER">브랜드 공식</section>
+  <section id="RECOMMEND">해외직구 추천 상품 QR코드 제거</section>`;
+
+test('Fashion Town global overseas menu and recommended goods do not reject domestic product stock', async t=>{
+  const f=fixture(t,{html:fashionTownDocument(),collectStock:()=>completeStock()});
+  const result=await f.verify();
+  assert.equal(result.products.length,1);
+  assert.equal(result.products[0].stockVerified,true);
+  assert.equal(result.products[0].domesticSellerVerified,true);
+  assert.equal(f.optionCalls(),1);
+});
+
+for (const notice of ['해외직구 상품', '해외 배송', '구매 대행', 'QR코드 제거 후 발송']) {
+  test(`Fashion Town still rejects the current product notice: ${notice}`, async t=>{
+    const f=fixture(t,{html:fashionTownDocument(notice),collectStock:()=>completeStock()});
+    const result=await f.verify();
+    assert.equal(result.products.length,0);
+    assert.equal(result.rejectedCount,1);
+    assert.equal(f.optionCalls(),0);
+  });
+}
 test('REGRESSION: rendered Naver search requests product readiness before stock collection',()=>{
   assert.match(main,/const detailReadiness = \/\^네이버\\s\/\.test\(String\(source\.store \|\| ""\)\) \? "product" : "stock"/);
   assert.match(main,/articleNumber, detailReadiness,/);
