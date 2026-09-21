@@ -17,25 +17,27 @@ export class ShoppingAccounts {
     this.queue = Promise.resolve();
   }
   source(id) { return this.sources.find(source => source.id === id); }
-  record(id) {
-    const settings = this.store.snapshot().settings;
+  record(id, settings = this.store.snapshot(['settings']).settings) {
     const saved = settings.shoppingAccounts?.[id] || {};
     return LEGACY.has(id) ? { ...saved, loginId:settings[`${id}LoginId`] || '',
       passwordEncrypted:settings[`${id}PasswordEncrypted`] || '' } : saved;
   }
-  credentials(id) {
-    const record = this.record(id);
+  credentials(id, record = this.record(id)) {
     try {
       const loginId = record.idEncrypted ? this.decrypt(record.idEncrypted) : record.loginId || '';
       const password = record.passwordEncrypted ? this.decrypt(record.passwordEncrypted) : '';
       return { loginId, password, code:loginId && password ? '' : 'ACCOUNT_CREDENTIALS_REQUIRED' };
     } catch { return {loginId:'',password:'',code:'ACCOUNT_CREDENTIALS_UNREADABLE'}; }
   }
-  publicAccount(id) {
-    const record = this.record(id), credentials = this.credentials(id);
+  publicAccount(id, record = this.record(id)) {
+    const credentials = this.credentials(id, record);
     return { id, loginId:credentials.loginId, hasPassword:Boolean(record.passwordEncrypted),
       method:record.method || 'password', credentialCode:credentials.code,
       configured:Boolean(record.method || credentials.loginId || record.passwordEncrypted) };
+  }
+  list() {
+    const settings = this.store.snapshot(['settings']).settings;
+    return this.sources.map(source => this.publicAccount(source.id, this.record(source.id, settings)));
   }
   save(input = {}) {
     const submitted = structuredClone(input);
@@ -64,7 +66,7 @@ export class ShoppingAccounts {
         if (password) record.passwordEncrypted = this.encrypt(password);
         else if (old.passwordEncrypted) record.passwordEncrypted = old.passwordEncrypted;
       }
-      next.shoppingAccounts = {...this.store.snapshot().settings.shoppingAccounts, [id]:record};
+      next.shoppingAccounts = {...this.store.snapshot(['settings']).settings.shoppingAccounts, [id]:record};
       await this.store.setSettingsCommitted(next);
       await this.onChanged(id, {accountChanged, methodChanged:previous.method !== method, passwordChanged:Boolean(password)});
       return this.publicAccount(id);
