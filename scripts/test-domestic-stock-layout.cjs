@@ -22,6 +22,11 @@ const data = {
       const size=220+index*5, inStock=availableShoeSizes.has(size);
       return {label:String(size),stockText:inStock?'선택 가능':'선택 불가',inStock};
     })},
+    {store:'네이버 패션타운',title:'데상트 남녀공용 카라 셔츠',articleNumber:'SR123UPS11',price:79550,url:'https://example.test/naver-colors',inStock:true,stockVerified:true,sizes:
+      ['BEG0_BEIGE','BLK0_BLACK','CORL_CORAL','WHT0_WHITE','DNVY_DARK-NAVY','LGRN_LIGHT-GREEN'].flatMap(color=>
+        [85,90,92,95,100,105,110,115,120].map(size=>({label:color+' / '+size,inStock:(color==='WHT0_WHITE'&&size>=110)||(color==='BLK0_BLACK'&&size===85)})))},
+    {store:'무신사',title:'데상트 폴로 반팔 티셔츠',articleNumber:'SR123UPS11',price:84550,url:'https://example.test/musinsa-colors',inStock:true,stockVerified:true,sizes:
+      ['WHT0_WHITE','BLK0_BLACK'].flatMap(color=>[85,90,92,95,100,105,110,115,120].map(size=>({label:color+' / '+size,inStock:color==='WHT0_WHITE'&&size>=110})))},
   ], sources:[{store:'SSG',verificationPending:true,searchUrl:'https://example.test/search'}],
 };
 function measure() {
@@ -103,8 +108,21 @@ function measure() {
   if(window.__stockFixtureLinks.length!==0) errors.push('unavailable size exposes a link action');
   available.forEach(badge=>badge.click());
   if(window.__stockFixtureLinks.length!==8) errors.push('available size action lost');
+  const colorRows=rows.filter(row=>row.hasAttribute('data-stock-color'));
+  if(colorRows.length!==8) errors.push('colour rows not separated');
+  for(const row of colorRows) {
+    const color=row.dataset.stockColor, options=[...row.querySelectorAll('.domestic-inline-stock-option')];
+    if(options.length!==9 || options.some(option=>!option.textContent.startsWith(color+' / '))) errors.push('mixed or missing colour options');
+    if(row.querySelector('.domestic-inline-color')?.textContent!==color) errors.push('colour heading missing');
+    const style=getComputedStyle(row);
+    if(style.borderBottomStyle!=='solid'||parseFloat(style.borderBottomWidth)*devicePixelRatio<0.99) errors.push('colour separator missing');
+    const optionBounds=options.map(option=>option.getBoundingClientRect()),bounds=row.getBoundingClientRect();
+    if(optionBounds.some(option=>option.top<bounds.top||option.bottom>bounds.bottom)) errors.push('colour option outside its row');
+    const open=row.querySelector('.domestic-inline-actions [data-url]');
+    if(!open || !decodeURIComponent(open.dataset.url).endsWith('-colors')) errors.push('colour row lost product link');
+  }
   return {viewport:innerWidth,devicePixelRatio,columns:getComputedStyle(rows[0]).gridTemplateColumns,cspBlockedInline,
-    badgeCount:badges.length,unavailableCount:unavailable.length,availableCount:available.length,geometry,errors};
+    badgeCount:badges.length,unavailableCount:unavailable.length,availableCount:available.length,colorRowCount:colorRows.length,geometry,errors};
 }
 async function cleanup(){
   clearTimeout(deadline);
@@ -141,6 +159,10 @@ document.addEventListener('click',event=>{const action=event.target.closest('[da
   await writeFile(join(out,'stock-results.json'),JSON.stringify(results,null,2));
   const failed=results.filter(r=>r.errors.length);
   if(failed.length)throw new Error(JSON.stringify(failed));
-  console.log('PASS: 8 rendered stock-column cases with production CSP; 19 separate size boxes (8 actionable, 11 unavailable), spacing, no clipping, unchanged retailer wording and non-interactive unavailable sizes.');
+  win.setContentSize(1920,1100);win.webContents.setZoomFactor(1);
+  await win.webContents.executeJavaScript('document.getElementById("stock-fixture").innerHTML=renderDomestic('+JSON.stringify({products:data.products.slice(4),sources:[]})+');');
+  await new Promise(r=>setTimeout(r,80));
+  await writeFile(join(out,'domestic-color-rows-1920.png'),(await win.webContents.capturePage()).toPNG());
+  console.log('PASS: 8 rendered stock-column cases with production CSP; separate Naver/Musinsa colour rows, all 72 colour options, visible separators, aligned columns, preserved links and availability.');
   await cleanup();app.exit(0);
 })().catch(async e=>{console.error(e.stack||e);await cleanup();app.exit(1)});

@@ -25,6 +25,8 @@
 .domestic-inline-official{flex:0 0 auto!important;padding:2px 5px!important;border-radius:999px!important;background:#fff3e8!important;color:#b86624!important;font-size:10px!important;font-weight:800!important}
 .domestic-inline-title{min-width:0!important;color:#111827!important;font-weight:650!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
 .domestic-inline-product{min-width:0!important}
+.domestic-inline-color{margin-top:5px!important;color:#314a68!important;font-size:11px!important;font-weight:800!important;overflow-wrap:anywhere!important}
+.domestic-inline-row[data-stock-color]{border-bottom:1px solid #dfe5ec!important}
 .domestic-inline-stock{margin-top:3px!important;white-space:pre-line!important;overflow-wrap:anywhere!important;color:#537563!important;font-weight:650!important}
 .domestic-inline-stock.soldout,.domestic-inline-stock-option.soldout{color:#9a5c32!important}
 /* The application blocks injected inline styles. Keep badge geometry here for
