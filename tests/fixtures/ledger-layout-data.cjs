@@ -3,7 +3,7 @@ const headings=['브랜드','구매링크','품번','모델명','성별','EU\n�
 const product=['테스트','https://shop.example.test/products/a-very-long-product-name-with-colour-and-size?option=123456789','ABC123-900','테스트 운동화 롱 모델명 화이트 블랙 에디션','공용','39','245','','300','₩259,000','5/22','구매완료','5/19','₩239,000','카드','₩25,900','₩3,490','-₩15,690','₩21,727','₩6,037'];
 function ledgerLayoutBook(columnCount=20) {
   const wide=columnCount>=30;
-  const sheetHeadings=wide?[...headings,'구매가 대비\n마진율','판매가 대비\n마진율']:headings;
+  const sheetHeadings=wide?[...headings,'구매가비\n마진율','판매가비\n마진율']:headings;
   const data=wide?[...product,'-108.22%','-876.02%']:product;
   const displayValues=[Array.from({length:sheetHeadings.length},(_,c)=>c===18?'₩294,623':c===19?'#VALUE!':''),sheetHeadings,
     ...Array.from({length:100},(_,r)=>data.map((value,c)=>c===0&&wide?'테스트브랜드':c===2?(wide?`ABCD${String(r).padStart(3,'0')}-N50CRS`:`ABC${String(r).padStart(3,'0')}-900`):value))];
