@@ -17,7 +17,7 @@
 #workbook-table thead th:first-child{left:0;z-index:4}
 #workbook-table .workbook-cell-text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #workbook-table td[data-column-kind="model"] .workbook-cell-text{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere}
-#workbook-table td[data-column-kind="money"],#workbook-table td[data-column-kind="count"]{text-align:right;font-variant-numeric:tabular-nums;font-size:11px}
+#workbook-table td[data-column-kind="money"],#workbook-table td[data-column-kind="count"],#workbook-table td[data-column-kind="percent"]{text-align:right;font-variant-numeric:tabular-nums;font-size:11px}
 #workbook-table td[data-column-kind="size"],#workbook-table td[data-column-kind="short"],#workbook-table td[data-column-kind="date"]{text-align:center;font-size:11px}
 #workbook-table .workbook-data-header td{position:sticky;top:26px;z-index:2;background:#eef2f7;font-weight:700;font-size:11px;text-align:left}
 #workbook-table .workbook-data-header th{top:26px;z-index:3}
@@ -27,5 +27,4 @@
 #workbook-cell-value{width:100%;max-width:100%;min-height:64px;resize:vertical}
 @media(max-width:1500px){
   #workbook-table th,#workbook-table td{font-size:11px;padding:5px 3px}
-  #workbook-table table[data-wide-sheet="true"]{min-width:1080px}
 }
