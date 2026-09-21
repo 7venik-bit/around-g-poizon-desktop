@@ -196,6 +196,15 @@ test('verified official product links open directly and do not restart collectio
   }
 });
 
+test('rate-limited Naver rows keep saved links openable without restarting collection', () => {
+  const action = sourceActions()[0];
+  const url = 'https://search.shopping.naver.com/catalog/1234567890';
+  const html = action({ store: '네이버 패션타운', rateLimited: true, resultsUrl: url }, {}, product);
+  assert.match(html, /접속량 제한 · 자동 재조회 중지/);
+  assert.ok(html.includes(`data-url="${encodeURIComponent(url)}"`), html);
+  assert.doesNotMatch(html, /data-domestic-result-url|data-inline-naver-price/);
+});
+
 test('account-required rows have working recovery actions even without a search URL', () => {
   for (const action of sourceActions()) {
     const html = action({ store: '네이버 패션타운', loginRequired: true }, {}, product);

@@ -146,7 +146,6 @@
   }
 
   function sourceAction(source = {}, product = {}, sourceProduct = {}, contextKey = "", label = "열기") {
-    if (source.rateLimited) return '<span class="pending">접속량 제한 · 자동 재조회 중지</span>';
     const productUrl = String(product?.url || "").trim();
     if (!productUrl && source?.store === "네이버 패션타운"
       && (source.loginRequired || source.securityVerificationRequired)) {
@@ -165,6 +164,12 @@
       || "").trim();
     const query = source?.manualSearchQuery || source?.searchAttempts?.[0]?.query || source?.searchQuery || sourceProduct?.articleNumber || sourceProduct?.productCode
       || sourceProduct?.spuId || "";
+    if (source.rateLimited) {
+      const status = '<span class="pending">접속량 제한 · 자동 재조회 중지</span>';
+      return openUrl
+        ? `${status}<button type="button" data-url="${encodeURIComponent(openUrl)}" title="자동 재조회 없이 저장된 링크를 외부 브라우저에서 열기">${label}</button>`
+        : status;
+    }
     if (!openUrl) return `<button type="button" disabled>${label}</button>`;
     if (source?.store === "브랜드 공식몰" && contextKey && (!product?.price || !product?.stockVerified)) {
       try {
