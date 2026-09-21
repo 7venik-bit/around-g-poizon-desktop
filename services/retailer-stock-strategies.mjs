@@ -285,7 +285,31 @@ export function captureNativeStockControls() {
       inStock:!o.disabled&&o.getAttribute('aria-disabled')!=='true'&&!/disabled|unselectable|unavailable|sold.?out/i.test(o.className+' '+o.parentElement.className)&&!/품절(?!\s*임박)|매진|SOLD[\s_-]*OUT/i.test(o.textContent)})).filter(o=>o.label);
     return options.length?[{selector:path(el),kind:'swatch',label,options}]:[];
   });
-  const combined=[...groups,...radios,...inputGroups.values(),...customGroups,...swatches];
+  // Musinsa's current MDS dropdowns have readonly inputs and div items, not
+  // ARIA listboxes. Keep the declared colour/size controls even while closed
+  // so dependent lists are opened in order by the same variant traversal.
+  const musinsaGroups=/(^|\.)musinsa\.com$/i.test(location.hostname)
+    ? [...scope.querySelectorAll('[data-mds="DropdownTriggerInput"],[data-mds="DropdownTriggerInputBox"]')]
+      .filter(el=>visible(el)&&!el.closest(excluded)&&(/컬러|색상|사이즈|color|size/i.test(el.placeholder)||el.querySelector('[class*="ContentColumn"]')))
+      .map(el=>{
+        const menu=el.closest('[data-mds="StaticDropdownMenu"]');
+        const list=menu?.querySelector('[data-mds="StaticDropdownMenuContent"]');
+        const options=list&&visible(list)?[...list.querySelectorAll('[data-mds="StaticDropdownMenuItem"]')]:[];
+        // Selecting a colour replaces its input with a display box. Retain
+        // that dimension so the next read still opens the size group at depth 1.
+        const label=el.placeholder||(el.querySelector('[class*="ColorChip"]')?'color':'option');
+        return {selector:path(el),key:menu?'musinsa:'+path(menu):'',kind:'custom',label,options:options.map(o=>{
+          const text=String(o.innerText||o.textContent||'').trim();
+          const title=o.querySelector('[class*="ContentColumn"]');
+          const label=String(title?[...title.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join(''):text.split('\n')[0]).trim();
+          const count=text.match(/마지막\s*([\d,]+)\s*개|([\d,]+)\s*개\s*남음/);
+          const quantity=count?Number((count[1]||count[2]).replace(/,/g,'')):null;
+          return {selector:path(o),label,stockText:text,
+            inStock:!o.hasAttribute('data-disabled')&&o.getAttribute('aria-disabled')!=='true'&&!/품절(?!\s*임박)|매진|SOLD\s*OUT|재고\s*없/i.test(text),
+            ...(Number.isSafeInteger(quantity)&&quantity>=0?{quantity}:{})};
+        }).filter(o=>o.label)};
+      }):[];
+  const combined=[...groups,...radios,...inputGroups.values(),...customGroups,...swatches,...musinsaGroups];
   combined.sort((a,b)=>{
     const color=label=>/color|colour|색상|컬러/i.test(label)?0:1;
     const rank=color(a.label)-color(b.label);if(rank)return rank;

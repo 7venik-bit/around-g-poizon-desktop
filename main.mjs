@@ -1450,6 +1450,19 @@ async function executeOfficialMallSearch(searchWindow, homepageUrl, query) {
   const exactQuery = sanitizeDomesticProductCode(query) || sanitizeDomesticQuery(query);
   if (!exactQuery) return false;
   const previousUrl = String(searchWindow.webContents.getURL() || homepageUrl);
+  // A verified adapter can already have navigated to this exact search. On
+  // DK, opening the header search again leaves an overlay covering the cards.
+  // Reuse that result document; the collector still verifies cards and stock.
+  const existingSearch = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
+    const current = new URL(location.href), home = new URL(${JSON.stringify(homepageUrl)});
+    const normalize = value => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
+    const expected = normalize(${JSON.stringify(exactQuery)});
+    const exactParameter = [...current.searchParams].some(([key, value]) =>
+      /^(?:q|query|keyword|search|searchWord|schWord|searchTerm)$/i.test(key) && normalize(value) === expected);
+    return Boolean(document.body && current.origin === home.origin && exactParameter
+      && /search|검색결과/i.test(current.pathname + " " + document.body.innerText));
+  })()`, true).catch(() => false);
+  if (existingSearch) return true;
   const submitted = await submitOfficialMallSearch(searchWindow, exactQuery);
   if (!submitted) return false;
   await wait(2_000);
@@ -1634,7 +1647,9 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
     });
     const searchResultsUrl = searchWindow ? String(searchWindow.webContents.getURL() || "") : "";
     if (!searchWindow) activeDomesticSearchWindows.add(evidenceWindow);
-    evidenceWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
+    // Keep the authenticated Naver session's browser identity. Replacing it
+    // between login, search and detail with a different Chromium version can
+    // invalidate the session; a borrowed result window already owns its UA.
     for (const candidate of candidates) {
       const productUrl = String(candidate?.url || candidate?.productUrl || "");
       if (domesticSearchCanceled(generation) || evidenceWindow.isDestroyed()) break;
@@ -2599,40 +2614,46 @@ async function clickRenderedProductCard(searchWindow, productUrl, searchResultsU
       void searchWindow.loadURL(resultsUrl).catch(() => {});
     }
   }
-  let cardFound = false;
-  for (let attempt = 0; attempt < 30 && !cardFound; attempt++) {
-    if (searchWindow.isDestroyed()) return false;
-    cardFound = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
+  const locateCard = () => searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
     const expected = ${JSON.stringify(expectedUrl)};
     const identity = (${domesticProductUrlIdentity.toString()});
     const links = [...document.querySelectorAll("a[href]")];
-    const link = links.find(candidate => identity(candidate.href) === identity(expected));
-    if (!link) return false;
-    if (${options.sameWindow === true}) link.setAttribute('target', '_self');
-    link.scrollIntoView({ block: "center", inline: "center" });
-    return true;
-  })()`, true).catch(() => false);
-    if (!cardFound) await wait(500);
-  }
-  if (!cardFound) return false;
-  // scrollIntoView can move a responsive card after the first layout pass.
-  // Wait for that movement to settle, then measure the actual clickable link.
-  await wait(650);
-  const target = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-    const expected = ${JSON.stringify(expectedUrl)};
-    const identity = (${domesticProductUrlIdentity.toString()});
-    const links = [...document.querySelectorAll("a[href]")];
-    const link = links.find(candidate => identity(candidate.href) === identity(expected));
-    if (!link) return null;
-    const rect = link.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return null;
-    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + Math.min(rect.height / 2, 180)) };
+    for (const link of links.filter(candidate => identity(candidate.href) === identity(expected))) {
+      const style = getComputedStyle(link), before = link.getBoundingClientRect();
+      if (style.display === 'none' || style.visibility === 'hidden' || before.width <= 0 || before.height <= 0
+        || link.closest('[hidden],[aria-hidden="true"]')) continue;
+      link.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+      const rect = link.getBoundingClientRect();
+      const left = Math.max(0, rect.left), right = Math.min(innerWidth, rect.left + rect.width);
+      const top = Math.max(0, rect.top), bottom = Math.min(innerHeight, rect.top + rect.height);
+      if (right <= left || bottom <= top) continue;
+      const x = Math.floor((left + right) / 2);
+      for (const fraction of [0.5, 0.75, 0.25]) {
+        const y = Math.floor(top + (bottom - top) * fraction);
+        const hit = document.elementFromPoint(x, y);
+        if (!hit || !link.contains(hit)) continue;
+        if (${options.sameWindow === true}) link.setAttribute('target', '_self');
+        return { x, y };
+      }
+    }
+    return null;
   })()`, true).catch(() => null);
+  let target = null;
+  for (let attempt = 0; attempt < 30 && !target; attempt++) {
+    if (searchWindow.isDestroyed()) return false;
+    target = await locateCard();
+    if (!target) await wait(500);
+  }
   if (!target) return false;
   // Keep automated product inspection in the background. Electron input events
   // work against the hidden renderer and do not steal the user's real cursor.
   searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
   await wait(650);
+  // Images and hover styles can move a freshly loaded card. Measure again
+  // and hit-test the actual link before clicking; an overlay is not a card.
+  target = await locateCard();
+  if (!target) return false;
+  searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
   searchWindow.webContents.sendInputEvent({ type: "mouseDown", x: target.x, y: target.y, button: "left", clickCount: 1 });
   searchWindow.webContents.sendInputEvent({ type: "mouseUp", x: target.x, y: target.y, button: "left", clickCount: 1 });
   // A physical click may start a delayed SPA/server navigation. A fixed
@@ -2902,17 +2923,38 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
   const strategy = retailerStockStrategy({store: storeName, url: searchWindow.webContents.getURL()});
   const capture = () => searchWindow.webContents.mainFrame.executeJavaScript(
     `(${captureRenderedStockEvidence.toString()})(${JSON.stringify(strategy.optionSelectors)})`, true);
-  await openRenderedSizeOptions(searchWindow);
+  const readControls = () => searchWindow.webContents.mainFrame.executeJavaScript(`(${captureNativeStockControls.toString()})()`, true);
+  const readVariantControls = async depth => {
+    let state = await readControls();
+    const group = state.groups?.[depth];
+    if (group?.kind === "custom" && !group.options.length) {
+      await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
+        const el = document.querySelector(${JSON.stringify(group.selector)});
+        if (el && el.getAttribute('aria-expanded') !== 'true' && !el.disabled) el.click();
+      })()`, true);
+      const optionDeadline = Date.now() + 25_000;
+      while (Date.now() < optionDeadline) {
+        if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
+        await wait(300);
+        state = await readControls();
+        if (state.groups?.[depth]?.options?.length) break;
+      }
+    }
+    return state;
+  };
+  const declaredControls = await readControls();
+  // Explicit dropdowns own their open/select sequence below. A generic
+  // "사이즈" click on Musinsa instead opens the measurement/recommendation tab.
+  if (!declaredControls.groups?.some(group => group.kind === 'custom')) await openRenderedSizeOptions(searchWindow);
   let initial = await capture();
   let variants = {options: [], complete: true};
-  const readControls = () => searchWindow.webContents.mainFrame.executeJavaScript(`(${captureNativeStockControls.toString()})()`, true);
   try {
     // Opening a seller's option menu can start an asynchronous request. An
     // empty/placeholder control is pending data, not an exhausted size list.
     const optionsDeadline = Date.now() + 25_000;
     while (!canceled()) {
       const controls = await readControls();
-      const unpopulated = controls.groups?.some(group => !(group.options || []).some(option => !option.placeholder));
+      const unpopulated = controls.groups?.some(group => group.kind !== 'custom' && !(group.options || []).some(option => !option.placeholder));
       if (!unpopulated || Date.now() >= optionsDeadline) break;
       await openRenderedSizeOptions(searchWindow);
       await wait(400);
@@ -2920,28 +2962,24 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
     initial = await capture();
     variants = await collectNativeStockVariants({
       canceled, resumeOptions, resumeBranches,
-      read: async depth => {
-        let state = await readControls();
-        const group = state.groups?.[depth];
-        if (group?.kind === "custom" && !group.options.length) {
-          await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-            const el = document.querySelector(${JSON.stringify(group.selector)});
-            if (el && el.getAttribute('aria-expanded') !== 'true' && !el.disabled) el.click();
-          })()`, true);
-          const optionDeadline = Date.now() + 25_000;
-          while (Date.now() < optionDeadline) {
-            if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
-            await wait(300);
-            state = await readControls();
-            if (state.groups?.[depth]?.options?.length) break;
-          }
-        }
-        return state;
-      },
+      read: readVariantControls,
       select: async (group, option) => {
         if (canceled()) throw new Error("DOMESTIC_SEARCH_CANCELED");
+        let optionSelector = option.selector || group.selector;
+        if (group.kind === 'custom') {
+          // Selecting a colour may unmount its menu. Reopen and resolve the
+          // observed label again before another branch, never reuse a stale
+          // positional selector that could now refer to a different option.
+          const state = await readControls();
+          const depth = state.groups?.findIndex(current => group.key ? current.key === group.key : current.selector === group.selector) ?? -1;
+          if (depth < 0) throw new Error("STOCK_OPTION_CHANGED");
+          const fresh = (await readVariantControls(depth)).groups?.[depth];
+          const choice = fresh?.options?.find(current => current.label === option.label && !current.placeholder);
+          if (!choice || choice.inStock === false) throw new Error("STOCK_OPTION_CHANGED");
+          optionSelector = choice.selector;
+        }
         const selected = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
-          const el = document.querySelector(${JSON.stringify(option.selector || group.selector)});
+          const el = document.querySelector(${JSON.stringify(optionSelector)});
           if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
           if (el.tagName === 'SELECT') {
             const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
@@ -3267,7 +3305,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         if (/^https?:\/\//i.test(String(popupUrl || ""))) searchWindow.loadURL(popupUrl).catch(() => {});
         return { action: "deny" };
       });
-      searchWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
+      if (!naverPortalSource) searchWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
       // Direct Fashion Town result URLs must not depend on a Naver-home bootstrap.
       // The home navigation is the recurring source of Electron page-load failures.
       const initialUrl = directNaverFashionResult

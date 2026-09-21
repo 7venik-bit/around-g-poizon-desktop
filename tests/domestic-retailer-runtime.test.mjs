@@ -17,6 +17,67 @@ import * as autoRecovery from '../services/official-auto-recovery.mjs';
 
 const main = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
 
+test('an exact official search URL is collected without reopening the header overlay', async t => {
+  const url='https://dk-on.com/DESCENTE/search?keyword=SR123UPS11';
+  const f=fixture(t,{pages:{[url]:'<main><h2>SR123UPS11 검색결과</h2><a href="/DESCENTE/product/SR123UPS11/WHT0">상품 상세보기</a></main>'}});
+  const w=new f.context.BrowserWindow(); await w.loadURL(url);
+  let submissions=0;
+  f.context.submitOfficialMallSearch=async()=>{submissions++;throw Error('header overlay opened');};
+  assert.equal(await f.context.executeOfficialMallSearch(w,'https://dk-on.com/DESCENTE','SR123UPS11'),true);
+  assert.equal(submissions,0);
+  assert.equal(w.webContents.getURL(),url);
+});
+
+test('a different official query still submits once through the actual search control', async t => {
+  const f=fixture(t);
+  const w=new f.context.BrowserWindow(); await w.loadURL('https://dk-on.com/DESCENTE/search?keyword=OTHER');
+  let submissions=0;
+  f.context.submitOfficialMallSearch=async(_w,query)=>{submissions++;await w.loadURL('https://dk-on.com/DESCENTE/search?keyword='+query);return true;};
+  assert.equal(await f.drive(f.context.executeOfficialMallSearch(w,'https://dk-on.com/DESCENTE','SR123UPS11')),true);
+  assert.equal(submissions,1);
+});
+
+test('MDS colour and size dropdowns collect stock without opening measurement tabs or cart', async t => {
+  const url='https://www.musinsa.com/products/4693116';
+  const menu=label=>`<div data-mds="StaticDropdownMenu"><input readonly placeholder="${label}" data-mds="DropdownTriggerInput"><div data-mds="StaticDropdownMenuContent" style="display:none"></div></div>`;
+  const f=fixture(t,{pages:{[url]:`<main><h1>데상트 SR123UPS11</h1><button id="size-guide">사이즈</button><p>1인당 최대 1개 구매 가능</p>${menu('컬러')}${menu('사이즈')}<button id="cart">장바구니</button><button>회원 전용</button></main>`}});
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const doc=w.dom.window.document;
+  const item=label=>`<div data-mds="StaticDropdownMenuItem" class="data-[disabled]:pointer-events-none"><div class="DropdownItemContent__ContentColumn">${label}</div></div>`;
+  let colourSelected='',wrongClicks=0;
+  doc.querySelector('#size-guide').onclick=doc.querySelector('#cart').onclick=()=>{wrongClicks++;};
+  for(const input of doc.querySelectorAll('input')) {
+    const menu=input.parentElement,label=input.placeholder;
+    const open=()=>{
+      const list=menu.lastElementChild;list.style.display='block';
+      if(label==='컬러') {
+        list.innerHTML=item('WHT0_WHITE')+item('BLK0_BLACK');
+        for(const choice of list.children) choice.onclick=()=>{
+          colourSelected=choice.textContent;list.style.display='none';list.innerHTML='';
+          const selected=doc.createElement('div');selected.dataset.mds='DropdownTriggerInputBox';
+          selected.innerHTML=`<div class="ColorChip"></div><div class="DropdownItemContent__ContentColumn">${colourSelected}</div>`;
+          selected.onclick=open;menu.firstElementChild.replaceWith(selected);
+          const dependent=menu.nextElementSibling.lastElementChild;dependent.innerHTML='';dependent.style.display='none';
+        };
+      } else if(colourSelected) {
+        list.innerHTML=colourSelected==='WHT0_WHITE'
+          ? item('85 (품절)')+item('110<div>09.24 도착 예정</div><div>마지막 1개</div>')+item('115<div>09.24 도착 예정</div>')
+          : item('85')+item('110 (품절)');
+      }
+    };
+    input.onclick=open;
+  }
+  f.context.openRenderedSizeOptions=async()=>{wrongClicks++;};
+  const result=await f.drive(f.context.collectRenderedProductStock(w,'무신사'));
+  assert.equal(wrongClicks,0);
+  assert.equal(result.stockVerified,true,JSON.stringify(result));
+  assert.equal(result.stockCoverage,'observed');
+  assert.deepEqual(Array.from(result.sizes,s=>[s.label,s.inStock,s.quantity??null]),[
+    ['WHT0_WHITE / 85 (품절)',false,null],['WHT0_WHITE / 110',true,1],['WHT0_WHITE / 115',true,null],
+    ['BLK0_BLACK / 85',true,null],['BLK0_BLACK / 110 (품절)',false,null],
+  ]);
+});
+
 test('shipping source aggregation automatically collects a known official detail and retains its diagnosis', async t => {
   const f=fixture(t);
   const url='https://new-brand.example/products/SR123UPS11';
@@ -76,6 +137,9 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
       const w = this.dom.window;
       Object.defineProperty(w.HTMLElement.prototype, 'innerText', { get() { return this.textContent; } });
       w.HTMLElement.prototype.getBoundingClientRect = () => ({ width: 180, height: 100 });
+      w.document.elementFromPoint = (x,y) => [...w.document.querySelectorAll('a[href]')].find(el => {
+        const r=el.getBoundingClientRect(); return x>=r.left && x<r.left+r.width && y>=r.top && y<r.top+r.height;
+      }) || null;
       w.scrollTo = () => { if (scrollPage !== null) w.document.body.innerHTML = scrollPage; };
       this.webContents = {
         getURL: () => this.dom.window.location.href,
@@ -208,6 +272,7 @@ test('Naver clicks the result in the same window and stops on a rate-limit redir
   runInContext(section('async function clickRenderedProductCard(', '\nfunction browserWindowUsable('), f.context);
   const win = new f.context.BrowserWindow();
   await win.loadURL(channels[0][1]);
+  win.webContents.setUserAgent=()=>assert.fail('detail must preserve the authenticated search identity');
   f.context.activeDomesticSearchWindows.add(win);
   win.dom.window.HTMLElement.prototype.scrollIntoView = () => {};
   win.dom.window.HTMLElement.prototype.getBoundingClientRect = () => ({left:20,top:20,width:160,height:80});
@@ -297,6 +362,35 @@ test('a product click that opens the wrong product stops without repeating the c
   assert.equal(result,false,'a different product must never be accepted');
   assert.equal(clicks,1,'observe the existing navigation without resubmitting it');
   assert.ok(f.now() >= 25000 && f.now() < 30000,'navigation observation must remain bounded');
+});
+
+test('product click skips hidden duplicate links and remeasures a card moved by hover', async t => {
+  const f=fixture(t);
+  runInContext(section('async function clickRenderedProductCard(', '\nfunction browserWindowUsable('),f.context);
+  const w=new f.context.BrowserWindow();await w.loadURL(channels[2][1]);
+  w.dom.window.document.body.innerHTML=`<a style="display:none" href="${channels[2][2]}">hidden</a><a id="card" href="${channels[2][2]}">상품</a>`;
+  const card=w.dom.window.document.querySelector('#card');let moved=false,clicks=[];
+  card.scrollIntoView=options=>assert.equal(options.behavior,'instant');
+  card.getBoundingClientRect=()=>({left:20,top:moved?400:100,width:160,height:80});
+  w.dom.window.document.elementFromPoint=(x,y)=>y>=(moved?400:100)&&y<(moved?480:180)?card:null;
+  w.webContents.sendInputEvent=event=>{
+    if(event.type==='mouseMove')moved=true;
+    if(event.type==='mouseUp'){clicks.push([event.x,event.y]);w.dom.reconfigure({url:channels[2][2]});}
+  };
+  assert.equal(await f.drive(f.context.clickRenderedProductCard(w,channels[2][2],channels[2][1])),true);
+  assert.deepEqual(clicks,[[100,440]]);
+});
+
+test('an overlay covering every product point is never clicked as the product', async t => {
+  const f=fixture(t);
+  runInContext(section('async function clickRenderedProductCard(', '\nfunction browserWindowUsable('),f.context);
+  const w=new f.context.BrowserWindow();await w.loadURL(channels[2][1]);
+  w.dom.window.HTMLElement.prototype.scrollIntoView=()=>{};
+  w.dom.window.HTMLElement.prototype.getBoundingClientRect=()=>({left:20,top:20,width:160,height:80});
+  w.dom.window.document.elementFromPoint=()=>w.dom.window.document.body;
+  w.webContents.sendInputEvent=()=>assert.fail('must not click the overlay');
+  assert.equal(await f.drive(f.context.clickRenderedProductCard(w,channels[2][2],channels[2][1])),false);
+  assert.equal(w.webContents.getURL(),channels[2][1]);
 });
 
 for (const channel of channels.slice(1)) test(`${channel[0]} preserves navigation and frame errors instead of discarding them`, async t => {
