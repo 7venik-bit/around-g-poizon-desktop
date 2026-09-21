@@ -103,6 +103,18 @@ test('REGRESSION: product identity can be read before inventory controls exist',
   assert.equal(s.ready,false,'identity readiness is not inventory readiness');
   assert.ok(f.now()<25000,'do not wait out the stock deadline for an observed exact identity');
 });
+
+test('Fashion Town copyable h3 outside main identifies the current product before options load', async t=>{
+  const f=fixture(t,{html:'<header><h1>네이버플러스 스토어</h1></header><div class="_copyable"><h3>아디다스 슈퍼스타 JH9976</h3></div><section><h3>추천 상품 OTHER123</h3></section>'}),w=await f.document();
+  const snapshot=await f.context.waitForDomesticDetailReady(w,'네이버 패션타운',URL_PRODUCT,0,'JH9976','product');
+  assert.equal(snapshot.visibleTitleText,'아디다스 슈퍼스타 JH9976');
+  assert.equal(snapshot.ready,false);
+});
+
+test('a recommendation heading cannot replace a different Fashion Town product title', async t=>{
+  const f=fixture(t,{html:'<header><h1>네이버플러스 스토어</h1></header><div class="_copyable"><h3>다른 상품 OTHER123</h3></div><section><h3>추천 상품 JH9976</h3></section>'}),w=await f.document();
+  await assert.rejects(f.context.waitForDomesticDetailReady(w,'네이버 패션타운',URL_PRODUCT,0,'JH9976','product'),/product_detail_not_ready/);
+});
 test('REGRESSION: rendered Naver search requests product readiness before stock collection',()=>{
   assert.match(main,/const detailReadiness = \/\^네이버\\s\/\.test\(String\(source\.store \|\| ""\)\) \? "product" : "stock"/);
   assert.match(main,/articleNumber, detailReadiness,/);

@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 
 test('an empty official audit durably saves its final total and releases the running state', async () => {
-  const main = await readFile(new URL('../main.mjs', import.meta.url), 'utf8');
+  const main = (await readFile(new URL('../main.mjs', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
   const start = main.indexOf('async function runOfficialDomainAudit(');
   const end = main.indexOf('\n}\n', start) + 2;
   const saves = [];
