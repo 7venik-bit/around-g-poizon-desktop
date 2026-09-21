@@ -2938,6 +2938,18 @@ async function collectRenderedProductStock(searchWindow, storeName = "", generat
         await wait(300);
         state = await readControls();
         if (state.groups?.[depth]?.options?.length) break;
+        // Fashion Town automatically opens sizes after a colour selection.
+        // The next colour click can merely dismiss that previous menu. Open
+        // the requested control again only if it explicitly reports closed;
+        // an expanded menu still loading its options must not be toggled shut.
+        const pendingGroup = state.groups?.[depth];
+        if (pendingGroup?.kind === 'custom') {
+          await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
+            const el = document.querySelector(${JSON.stringify(pendingGroup.selector)});
+            if (el?.getAttribute('aria-expanded') === 'false' && !el.disabled
+              && el.getAttribute('aria-disabled') !== 'true') el.click();
+          })()`, true);
+        }
       }
     }
     return state;
