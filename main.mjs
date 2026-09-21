@@ -5277,10 +5277,78 @@ function publicConfig() {
   };
 }
 
+function musinsaCredentialsFromGoogleWorkbook(workbook) {
+  const sheet = workbook?.sheets?.find((item) => String(item?.name || "").trim() === "계정정보");
+  const rows = Array.isArray(sheet?.displayValues) ? sheet.displayValues : [];
+  for (const row of rows) {
+    const cells = Array.isArray(row) ? row.map(value => String(value || "").trim()) : [];
+    const merchantIndex = cells.findIndex(value => /^무신사$/i.test(value));
+    if (merchantIndex < 0) continue;
+    const urlIndex = cells.findIndex((value, index) => index > merchantIndex && /^https:\/\/(?:www\.)?musinsa\.com(?:[/?#]|$)/i.test(value));
+    if (urlIndex < 0) continue;
+    const loginId = String(cells[urlIndex + 1] || "").trim();
+    const password = String(cells[urlIndex + 2] || "");
+    if (loginId && password && loginId.length <= 320 && password.length <= 1024) return { loginId, password };
+  }
+  return null;
+}
+
+async function importMusinsaCredentialsFromGoogleDrive() {
+  const services = shoppingAccountServices();
+  if (!services.accounts.credentials("musinsa").code) return { ok: true, reused: true };
+  const settings = store.snapshot().settings;
+  const endpoint = String(settings.ledgerWebhookUrl || "").trim();
+  const secret = decrypted(settings.ledgerSecretEncrypted);
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(endpoint) || !secret) {
+    return { ok: false, code: "GOOGLE_ACCOUNT_CONNECTION_REQUIRED" };
+  }
+  const response = await fetch(endpoint, { method: "POST", redirect: "follow", headers: { "content-type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ secret, action: "workbook.read" }), signal: AbortSignal.timeout(120000) });
+  if (!response.ok) return { ok: false, code: "GOOGLE_ACCOUNT_READ_FAILED" };
+  const payload = await response.json();
+  const credentials = payload?.ok ? musinsaCredentialsFromGoogleWorkbook(payload.workbook) : null;
+  if (!credentials) return { ok: false, code: "MUSINSA_ACCOUNT_NOT_FOUND" };
+  await services.accounts.save({ id: "musinsa", method: "password", ...credentials });
+  return { ok: true, imported: true };
+}
+
+async function waitForMusinsaAutomaticLogin(timeoutMs = 45000) {
+  const services = shoppingAccountServices();
+  await services.connector.open("musinsa");
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const status = services.connector.status("musinsa");
+    if (status.code === "LOGIN_CONFIRMED") {
+      await session.fromPartition(DOMESTIC_SEARCH_PARTITION).cookies.flushStore().catch(() => {});
+      const loginWindow = domesticLoginWindows.get("musinsa");
+      if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
+      return { ok: true };
+    }
+    if (["LOGIN_VERIFICATION_REQUIRED", "LOGIN_MANUAL_REQUIRED", "ACCOUNT_CREDENTIALS_UNREADABLE", "ACCOUNT_CREDENTIALS_REQUIRED"].includes(status.code)) {
+      return { ok: false, code: status.code };
+    }
+    await wait(500);
+  }
+  return { ok: false, code: "LOGIN_MANUAL_REQUIRED" };
+}
+
 function openMusinsaLedgerWindow() {
+  return openMusinsaLedgerWindowAsync();
+}
+
+async function openMusinsaLedgerWindowAsync() {
   if (musinsaLedgerWindow && !musinsaLedgerWindow.isDestroyed()) {
     musinsaLedgerWindow.show(); musinsaLedgerWindow.focus();
     return { ok: true };
+  }
+  let automaticLogin = { ok: true, reused: true };
+  if (!await hasUsableDomesticLoginSession("musinsa")) {
+    try {
+      const imported = await importMusinsaCredentialsFromGoogleDrive();
+      automaticLogin = imported.ok ? await waitForMusinsaAutomaticLogin() : imported;
+    } catch {
+      automaticLogin = { ok: false, code: "GOOGLE_ACCOUNT_READ_FAILED" };
+    }
   }
   musinsaLedgerWindow = new BrowserWindow({
     icon: APP_ICON_PATH, width: 1320, height: 900, title: "무신사 주문 상세 · 구매장부 가져오기",
@@ -5289,9 +5357,10 @@ function openMusinsaLedgerWindow() {
   musinsaLedgerWindow.on("closed", () => { musinsaLedgerWindow = null; });
   // Musinsa removed the former /mypage/orders route. Its current My page
   // remains the stable entry point and exposes the order list after login.
-  void musinsaLedgerWindow.loadURL("https://www.musinsa.com/mypage");
-  return { ok: true };
+  await musinsaLedgerWindow.loadURL("https://www.musinsa.com/mypage").catch(() => {});
+  return { ok: true, automaticLogin };
 }
+
 
 async function captureMusinsaLedgerOrder() {
   if (!musinsaLedgerWindow || musinsaLedgerWindow.isDestroyed()) return { ok: false, code: "ORDER_WINDOW_CLOSED", message: "무신사 주문 상세 화면을 먼저 열어주세요." };
