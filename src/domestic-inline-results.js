@@ -57,6 +57,11 @@
       .domestic-inline-product{min-width:0!important}
       .domestic-inline-color{margin-top:5px!important;color:#314a68!important;font-size:11px!important;font-weight:800!important;overflow-wrap:anywhere!important}
       .domestic-inline-row[data-stock-color]{border-bottom:1px solid #dfe5ec!important}
+      .domestic-inline-retailer-group{display:grid!important;grid-template-columns:120px minmax(0,1fr)!important;column-gap:8px!important;border-bottom:1px solid #dfe5ec!important}
+      .domestic-inline-retailer-label{align-self:stretch!important;font-size:11px!important;line-height:1.35!important}
+      .domestic-inline-retailer-rows{min-width:0!important}
+      .domestic-inline-retailer-rows>.domestic-inline-row{grid-template-columns:minmax(160px,1fr) minmax(200px,1.4fr) 110px 100px 180px!important}
+      .domestic-inline-retailer-rows>.domestic-inline-row:last-child{border-bottom:0!important}
       .domestic-inline-stock{margin-top:3px!important;white-space:pre-line!important;overflow-wrap:anywhere!important;color:#537563!important;font-weight:650!important}
       .domestic-inline-stock.soldout,.domestic-inline-stock-option.soldout{color:#9a5c32!important}
       .domestic-inline-stock-cell{display:flex!important;align-items:center!important;align-content:center!important;gap:5px!important;min-width:0!important;flex-wrap:wrap!important;white-space:normal!important;color:#537563!important;line-height:1.35!important}
@@ -88,6 +93,8 @@
 
       @media(max-width:1180px){
         .domestic-inline-head,.domestic-inline-row{grid-template-columns:100px minmax(140px,1fr) minmax(160px,1.4fr) 100px 90px 168px!important;gap:6px!important}
+        .domestic-inline-retailer-group{grid-template-columns:100px minmax(0,1fr)!important;column-gap:6px!important}
+        .domestic-inline-retailer-rows>.domestic-inline-row{grid-template-columns:minmax(140px,1fr) minmax(160px,1.4fr) 100px 90px 168px!important}
       }
     `;
     document.head.appendChild(style);
@@ -309,22 +316,31 @@
     const diagnostics = renderSearchDiagnostics(sources);
     const sourceForProduct = (product) => sources.find((source) => sourceOwnsProduct(source, product)) || {};
 
-    const rows = products.flatMap((product) => {
+    const retailerGroups = new Map();
+    for (const product of products) {
       const source = sourceForProduct(product);
       const retailer = product?.retailerName || product?.store || source?.store || "판매처";
       const rawTitle = product?.title || product?.name || product?.articleNumber || "국내 상품";
       const title = displayedProductTitle(product, sourceProduct);
       const article = product?.articleNumber || sourceProduct?.articleNumber || sourceProduct?.productCode || "-";
       const official = product?.officialStoreVerified === true || Boolean(source?.officialStatus);
-      return stockColorRows(product).map(({product: colorProduct, color}) => `<div class="domestic-inline-row"${color ? ` data-stock-color="${safeText(color)}"` : ""}>
-        <div class="domestic-inline-store" title="${safeText(retailer)}"><span>${safeText(retailer)}</span>${official ? `<span class="domestic-inline-official">공식</span>` : ""}</div>
+      // Group display rows only; keep each product's stock and action identity.
+      // Different sources or official status must not share a seller badge.
+      const groupKey = JSON.stringify([source.store || product.sourceStore || product.store || "", retailer, official]);
+      if (!retailerGroups.has(groupKey)) retailerGroups.set(groupKey, {retailer, official, rows: []});
+      retailerGroups.get(groupKey).rows.push(...stockColorRows(product).map(({product: colorProduct, color}) => `<div class="domestic-inline-row"${color ? ` data-stock-color="${safeText(color)}"` : ""}>
         <div class="domestic-inline-product"><div class="domestic-inline-title" title="${safeText(rawTitle)}">${safeText(title)}</div>${color ? `<div class="domestic-inline-color">${safeText(color)}</div>` : ""}</div>
         ${renderStockCell(colorProduct)}
         <div class="domestic-inline-code" title="${safeText(article)}">${safeText(article)}</div>
         <div class="domestic-inline-price">${safeMoney(product?.price)}</div>
         <div class="domestic-inline-actions">${sourceAction(source, product, sourceProduct, contextKey)}${typeof stockWatchRegistrationButton === "function" ? stockWatchRegistrationButton(product, sourceProduct) : ""}</div>
+      </div>`));
+    }
+    const rows = [...retailerGroups.values()].map(({retailer, official, rows: productRows}) =>
+      `<div class="domestic-inline-retailer-group" role="group" aria-label="${safeText(retailer)}">
+        <div class="domestic-inline-store domestic-inline-retailer-label" title="${safeText(retailer)}"><span>${safeText(retailer)}</span>${official ? `<span class="domestic-inline-official">공식</span>` : ""}</div>
+        <div class="domestic-inline-retailer-rows">${productRows.join("")}</div>
       </div>`);
-    });
 
     const representedSources = new Set();
     for (const product of products) {

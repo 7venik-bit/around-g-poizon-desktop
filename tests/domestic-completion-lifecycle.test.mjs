@@ -105,8 +105,8 @@ test('상품검색 once automatically displays prices and stock in the list dire
   assert.deepEqual([...detail.querySelectorAll('.domestic-inline-head>span')].map(el=>el.textContent),
     ['판매처','상품명','사이즈·재고','품번','가격','링크']);
   const row=detail.querySelector('.domestic-inline-row');
-  assert.equal(row.children.length,6);
-  assert.match(row.textContent,/무신사/);
+  assert.equal(row.children.length,5);
+  assert.equal(row.closest('.domestic-inline-retailer-group').querySelector('.domestic-inline-store').textContent,'무신사');
   assert.match(row.querySelector('.domestic-inline-price').textContent,/59,000원/);
   assert.match(row.querySelector('.domestic-inline-stock-cell').textContent,/270.*3개 남음/);
   assert.match(row.querySelector('.domestic-inline-stock-cell').textContent,/280.*품절/);
@@ -432,8 +432,9 @@ test('stock and every captured size occupy a separate aligned column below the p
   const detail=f.window.document.querySelector('.excel-verified-spu-row').nextElementSibling;
   assert.deepEqual([...detail.querySelector('.domestic-inline-head').children].map(e=>e.textContent),['판매처','상품명','사이즈·재고','품번','가격','링크']);
   const rows=[...detail.querySelectorAll('.domestic-inline-row')];
-  assert.ok(rows.every(row=>row.children.length===6));
-  const stock=rows[0].children[2];
+  assert.equal(rows[0].children.length,5);
+  assert.equal(rows[1].children.length,6,'fallback retains its own seller cell');
+  const stock=rows[0].querySelector('.domestic-inline-stock-cell');
   assert.ok(stock.matches('.domestic-inline-stock-cell'));
   assert.match(stock.textContent,/90.*선택 가능/);
   assert.match(stock.textContent,/95.*재고 3개/);
@@ -446,8 +447,8 @@ test('stock and every captured size occupy a separate aligned column below the p
   assert.match(sizeLinks[0].textContent,/90.*↗/);
   assert.equal(stock.querySelectorAll('.domestic-inline-stock-option.soldout').length,1);
   assert.equal(stock.querySelector('.domestic-inline-stock-option.soldout').hasAttribute('data-url'),false);
-  assert.equal(rows[1].children[2].textContent.trim(),'-');
-  assert.match(rows[0].children[3].textContent,/JKJGX25272/);
+  assert.equal(rows[1].querySelector('.domestic-inline-stock-cell').textContent.trim(),'-');
+  assert.match(rows[0].querySelector('.domestic-inline-code').textContent,/JKJGX25272/);
   assert.equal(f.overlay().hidden,true);
 });
 
