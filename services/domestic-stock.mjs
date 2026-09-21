@@ -61,7 +61,6 @@ export function captureRenderedStockEvidence(selectors = [], root = document) {
 }
 
 export function normalizeRenderedStockEvidence({ pageText = '', stockTexts, purchaseAvailable = false, options = [], loginRequired = false, accessText = "" } = {}) {
-  if (loginRequired) return {inStock:null,sizes:[],stockStatus:'login_required',stockText:accessText || '로그인 필요',stockVerified:false};
   const unavailable = /(?:일시\s*)?품절(?!\s*임박)|매진|솔드\s*아웃|재고(?:\s*수량)?\s*[:：]?\s*(?:없|소진|0(?:개|\s|$|\)))|남은\s*(?:재고|수량)\s*[:：]?\s*0(?:개|\s|$|\))|SOLD[\s_-]*OUT|OUT[\s_-]*OF[\s_-]*STOCK|구매\s*(?:불가|할\s*수\s*없)|판매\s*(?:종료|중지)/i;
   const unique = new Map();
   for (const option of Array.isArray(options) ? options : []) {
@@ -76,6 +75,10 @@ export function normalizeRenderedStockEvidence({ pageText = '', stockTexts, purc
     const key = label.toUpperCase();
     if (!unique.has(key) || inStock === true) unique.set(key,{label,inStock,stockText:rawStockText,...(quantity !== null ? {quantity} : {})});
   }
+  // Membership can restrict checkout while the public option menu still
+  // exposes inventory. Keep observed stock and the separate purchase notice.
+  if (loginRequired && ![...unique.values()].some(option=>typeof option.inStock==='boolean'))
+    return {inStock:null,sizes:[],stockStatus:'login_required',stockText:accessText || '로그인 필요',stockVerified:false};
   const lines = (Array.isArray(stockTexts) ? stockTexts : String(pageText || '').split(/\n+/))
     .map(line => String(line || '').replace(/\s+/g,' ').trim());
   const purchaseLimit = /(?:ID|아이디|회원|계정|1인|인당).{0,20}구매.{0,20}(?:수량|한도|최대|제한)|구매\s*(?:가능\s*)?(?:수량|한도|제한)|최대\s*[\d,]+\s*개.{0,12}구매/i;
@@ -84,7 +87,7 @@ export function normalizeRenderedStockEvidence({ pageText = '', stockTexts, purc
     .filter(line => line && line.length <= 240 && /품절|매진|솔드\s*아웃|재고(?:\s*수량)?\s*[:：]?\s*(?:없|소진|있|[\d,]+)|남은\s*(?:재고|수량)\s*[:：]?\s*[\d,]+|SOLD[\s_-]*OUT|OUT[\s_-]*OF[\s_-]*STOCK|구매\s*(?:불가|할\s*수\s*없|가능)|판매\s*(?:종료|중지)|재입고/i.test(line))
     .filter(line => !purchaseLimit.test(line) && !/품절\s*임박|완판\s*임박|SOLD[\s_-]*OUT\s*SOON/i.test(line))
     .filter(line => !/(?:품절|재고).{0,40}(?:경우|시\s*(?:에는|에|취소|환불|연락))|(?:교환|환불|반품).{0,25}품절/.test(line)))];
-  const stockText = notices.join('\n');
+  const stockText = [...notices, ...(loginRequired ? [accessText || '로그인 필요'] : [])].join('\n');
   const sizes = [...unique.values()];
   const explicitQuantity = stockText.match(/(?:재고(?:\s*수량)?|남은\s*(?:재고|수량))\s*[:：]?\s*([\d,]+)/);
   const explicitlyAvailable = /재고\s*있|구매\s*가능/i.test(stockText) || Number(explicitQuantity?.[1]?.replace(/,/g,'')) > 0;
@@ -92,5 +95,5 @@ export function normalizeRenderedStockEvidence({ pageText = '', stockTexts, purc
     : sizes.some(size => size.inStock) ? true
       : sizes.length && sizes.every(size => size.inStock === false) ? false : purchaseAvailable || explicitlyAvailable ? true : null;
   if (unavailable.test(stockText)) for (const size of sizes) size.inStock = false;
-  return {inStock,sizes,stockStatus:inStock === true ? 'available' : inStock === false ? 'soldout' : 'unknown',stockText,...(purchaseLimitText ? {purchaseLimitText} : {}),stockVerified:inStock !== null};
+  return {inStock,sizes,stockStatus:inStock === true ? 'available' : inStock === false ? 'soldout' : 'unknown',stockText,...(purchaseLimitText ? {purchaseLimitText} : {}),...(loginRequired ? {purchaseLoginRequired:true} : {}),stockVerified:inStock !== null};
 }

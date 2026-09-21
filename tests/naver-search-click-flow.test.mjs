@@ -46,6 +46,7 @@ for(const redirect of [false,true]) test(`detail uses an observed card and brows
   let now=0, back=0, clicks=0;
   dom.window.HTMLElement.prototype.scrollIntoView=()=>{};
   dom.window.HTMLElement.prototype.getBoundingClientRect=()=>({left:10,top:10,width:100,height:40});
+  dom.window.document.elementFromPoint=()=>dom.window.document.querySelector('a');
   const win={isDestroyed:()=>false,loadURL:()=>{throw new Error('direct navigation forbidden');},webContents:{
     getURL:()=>dom.window.location.href,
     mainFrame:{executeJavaScript:async script=>dom.window.eval(script)},
