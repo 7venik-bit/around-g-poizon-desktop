@@ -1,0 +1,31 @@
+/* Scoped, CSP-safe presentation: workbook values and export bytes stay intact. */
+#original-ledger-workbook{min-width:0;padding:18px 20px}
+#original-ledger-workbook>.panel-title{align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+#original-ledger-workbook>.panel-title>div:last-child{display:flex;gap:6px;flex-wrap:wrap}
+#workbook-status{font-size:12px;overflow-wrap:anywhere;margin-bottom:10px}
+#original-ledger-workbook .workbook-hidden-toggle{display:inline-flex;align-items:center;gap:7px;margin:4px 0 10px;font-size:12px}
+#workbook-hidden{width:14px;height:14px;min-width:14px;flex:0 0 14px;padding:0;margin:0;appearance:auto}
+#workbook-tabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
+#workbook-tabs button{padding:7px 10px;font-size:12px}
+#workbook-tabs button[aria-selected="true"]{background:#eaf3ff;border-color:#6aa4eb;color:#1557a4;font-weight:700}
+#original-ledger-workbook .workbook-display-hint{margin:4px 0 8px;font-size:11px;color:#64748b}
+#workbook-table{width:100%;min-width:0;max-height:min(65vh,max(240px,calc(100vh - 380px)));overflow:auto;border:1px solid #dbe2ec;border-radius:6px;scrollbar-gutter:stable}
+#workbook-table table{width:100%;min-width:0;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:12px}
+#workbook-table th,#workbook-table td{padding:5px 4px;min-width:0;max-width:none;height:34px;border:0;border-right:1px solid #e1e5eb;border-bottom:1px solid #e1e5eb;font-size:12px;line-height:1.35;vertical-align:middle;white-space:normal;overflow:hidden}
+#workbook-table thead th{position:sticky;top:0;z-index:3;height:26px;background:#f1f5fa;color:#63748a;text-align:center;font-size:10px;padding:3px}
+#workbook-table tbody th{position:sticky;left:0;z-index:1;background:#f1f5fa;color:#63748a;text-align:center;font-size:10px;font-weight:400;padding:3px}
+#workbook-table thead th:first-child{left:0;z-index:4}
+#workbook-table .workbook-cell-text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#workbook-table td[data-column-kind="model"] .workbook-cell-text{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere}
+#workbook-table td[data-column-kind="money"],#workbook-table td[data-column-kind="count"]{text-align:right;font-variant-numeric:tabular-nums;font-size:11px}
+#workbook-table td[data-column-kind="size"],#workbook-table td[data-column-kind="short"],#workbook-table td[data-column-kind="date"]{text-align:center;font-size:11px}
+#workbook-table .workbook-data-header td{position:sticky;top:26px;z-index:2;background:#eef2f7;font-weight:700;font-size:11px;text-align:left}
+#workbook-table .workbook-data-header th{top:26px;z-index:3}
+#workbook-table .workbook-data-header .workbook-cell-text{display:block;white-space:pre-line;overflow-wrap:anywhere}
+#workbook-table td:focus{outline:2px solid #287de0;outline-offset:-2px}
+#workbook-cell-original{white-space:pre-wrap;overflow-wrap:anywhere}
+#workbook-cell-value{width:100%;max-width:100%;min-height:64px;resize:vertical}
+@media(max-width:1500px){
+  #workbook-table th,#workbook-table td{font-size:11px;padding:5px 3px}
+  #workbook-table table[data-wide-sheet="true"]{min-width:1080px}
+}

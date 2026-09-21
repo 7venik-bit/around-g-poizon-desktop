@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="./style.css">
   <link id="poizon-review-styles" rel="stylesheet" href="./poizon-review-workspace.css">
   <link id="retired-download-sync-styles" rel="stylesheet" href="./retired-download-sync.css">
+  <link rel="stylesheet" href="./ledger-workbook.css">
   <link id="header-brand-layout-styles" rel="stylesheet" href="./header-brand-layout.css">
 </head>
 <body>
@@ -304,7 +305,7 @@
           <div class="panel-title"><div><h2>어라운드지 원본 장부</h2><p>기존 내용은 그대로 불러옵니다. 셀을 선택해 편집하고 저장하면 해당 셀만 Google 장부에 반영합니다.</p></div>
           <div><button type="button" id="workbook-import">Google 장부 그대로 가져오기</button><button type="button" id="workbook-export" disabled>엑셀로 내보내기</button></div></div>
           <p id="workbook-status" role="status">저장된 장부를 확인 중입니다.</p>
-          <label><input type="checkbox" id="workbook-hidden"> 숨겨진 시트 표시</label>
+          <label class="workbook-hidden-toggle"><input type="checkbox" id="workbook-hidden"> 숨겨진 시트 표시</label>
           <div id="workbook-tabs" role="tablist" aria-label="원본 장부 시트"></div>
           <form id="workbook-cell-editor" hidden>
             <strong id="workbook-cell-address"></strong>
@@ -314,7 +315,8 @@
             <label>수정할 내용<textarea id="workbook-cell-value" rows="2"></textarea></label>
             <button type="submit" id="workbook-cell-save">선택한 셀 저장</button><button type="button" id="workbook-cell-cancel">취소</button>
           </form>
-          <div id="workbook-table" style="overflow:auto;max-height:65vh"></div>
+          <p class="workbook-display-hint">긴 내용은 셀을 선택하거나 마우스를 올려 전체 내용을 확인할 수 있습니다.</p>
+          <div id="workbook-table" tabindex="0" aria-label="원본 장부 표"></div>
           <div><button type="button" id="workbook-prev">이전 100행</button><span id="workbook-page"></span><button type="button" id="workbook-next">다음 100행</button></div>
         </section>
         <form id="purchase-ledger-form" class="panel stock-watch-form">

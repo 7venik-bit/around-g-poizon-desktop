@@ -34,33 +34,67 @@
     }));
   }
   const columnName = index => {let name='';for(let n=index+1;n>0;n=Math.floor((n-1)/26))name=String.fromCharCode(65+(n-1)%26)+name;return name;};
+  const columnTypes = [
+    [/^(?:모델명|상품명|제품명)$/, 'model', 170],
+    [/^(?:품번|상품번호|제품번호|품목코드|SKU)$/i, 'code', 105],
+    [/^(?:구매링크|상품링크|링크|URL)$/i, 'link', 100],
+    [/^(?:판매가(?:\(원화\))?|구매가|예상수수료|택배비|간이마진|부가세환급|일반마진|매입가|배송비)$/, 'money', 84],
+    [/^(?:EU사이즈|한국사이즈|사이즈)$/i, 'size', 60],
+    [/^(?:판매일자|구매일자|주문일자|날짜)$/, 'date', 60],
+    [/^(?:성별|사진|카드)$/, 'short', 42],
+    [/^(?:판매량|수량)$/, 'count', 52],
+    [/^상태$/, 'status', 84],
+    [/^브랜드$/, 'text', 68],
+  ];
+  function sheetColumns(sheet,width) {
+    const rows=sheet.displayValues;
+    const match=value=>columnTypes.find(([pattern])=>pattern.test(String(value || '').replace(/\s/g,'')));
+    // The original ledger can have a totals row above its real headings.
+    let header=-1, score=1;
+    rows.slice(0,10).forEach((row,index)=>{const count=row.filter(value=>match(value)).length;if(count>score){header=index;score=count;}});
+    const columns=Array.from({length:width},(_,c)=>{
+      const type=header>=0 && match(rows[header][c]);
+      if(type)return {kind:type[1],weight:type[2]};
+      const used=rows.some((row,r)=>row[c] || sheet.formulas?.[r]?.[c]);
+      return {kind:'text',weight:used?84:24};
+    });
+    return {header,columns};
+  }
   function render() {
     const sheet = visible().find(s => s.id === active);
     const host = $('workbook-table'); host.replaceChildren();
     if (!sheet) return;
     const rows = sheet.displayValues, total = Math.max(rows.length,sheet.rowCount || 0), start = page * 100, end = Math.min(total,start+100);
-    const table = document.createElement('table');table.style.cssText='border-collapse:collapse;white-space:pre-wrap;font-size:13px';
+    const table = document.createElement('table');
     table.setAttribute('aria-label',sheet.name);
-    const header=document.createElement('tr');header.append(document.createElement('th'));
     const width=Math.max(sheet.columnCount || 0,...rows.map(row=>row.length));
-    for(let c=0;c<width;c++){const th=document.createElement('th');th.textContent=columnName(c);header.append(th);}table.append(header);
+    const layout=sheetColumns(sheet,width),weights=[34,...layout.columns.map(column=>column.weight)];
+    const totalWeight=weights.reduce((sum,value)=>sum+value,0),colgroup=document.createElement('colgroup');
+    for(const weight of weights){const col=document.createElement('col');col.style.width=`${weight/totalWeight*100}%`;colgroup.append(col);}
+    table.dataset.wideSheet=String(width>=16);table.append(colgroup);
+    const thead=document.createElement('thead'),header=document.createElement('tr');header.append(document.createElement('th'));
+    for(let c=0;c<width;c++){const th=document.createElement('th');th.scope='col';th.textContent=columnName(c);header.append(th);}thead.append(header);table.append(thead);
+    const body=document.createElement('tbody');
     for(let r=start;r<end;r++) {
-      const tr=document.createElement('tr'), label=document.createElement('th');label.textContent=String(r+1);tr.append(label);
-      for(let c=0;c<Math.max(rows[r]?.length || 0,sheet.columnCount || 0);c++) {
-        const cell=document.createElement('td');cell.textContent=rows[r]?.[c] || '';
+      const tr=document.createElement('tr'), label=document.createElement('th');label.scope='row';label.textContent=String(r+1);tr.append(label);
+      if(r===layout.header)tr.className='workbook-data-header';
+      for(let c=0;c<width;c++) {
+        const cell=document.createElement('td'),content=document.createElement('span');
+        content.className='workbook-cell-text';content.textContent=rows[r]?.[c] || '';cell.append(content);
+        cell.dataset.columnKind=layout.columns[c].kind;
         cell.tabIndex=0;cell.setAttribute("aria-label",`${sheet.name} ${r+1}행 ${c+1}열`);
         const select=()=>selectCell(sheet,r,c);
         cell.addEventListener("click",select);cell.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();select();}});
-        cell.style.cssText='border:1px solid #ddd;padding:6px;min-width:80px;max-width:320px;overflow-wrap:anywhere';
         cell.style.backgroundColor=sheet.backgrounds?.[r]?.[c] || '';
         cell.style.color=sheet.fontColors?.[r]?.[c] || '';
         cell.style.fontWeight=sheet.fontWeights?.[r]?.[c] || '';
-        cell.title=[sheet.formulas[r]?.[c],sheet.notes?.[r]?.[c]].filter(Boolean).join('\n');
+        cell.title=[rows[r]?.[c],sheet.formulas?.[r]?.[c],sheet.notes?.[r]?.[c]].filter(Boolean).join('\n');
         // Use textContent: sheet text and formulas must never execute in the app.
         tr.append(cell);
       }
-      table.append(tr);
+      body.append(tr);
     }
+    table.append(body);
     host.append(table);
     $('workbook-page').textContent=` ${start+1}–${end} / ${total}행 `;
     $('workbook-prev').disabled=page===0;
