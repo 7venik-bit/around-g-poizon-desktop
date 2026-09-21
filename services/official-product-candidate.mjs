@@ -15,6 +15,12 @@ export function isOfficialProductCandidateUrl(value, resultsUrl = '') {
     if (/(?:^|\/)(?:goods|product)[_-]?list(?:[./]|$)/i.test(path)) return false;
     if ([...url.searchParams.keys()].some(key => /^(?:keyword|searchText|searchWord|searchKeyword|query)$/i.test(key))
       && ![...url.searchParams.keys()].some(key => /^(?:goodsNo|goodsId|productId|productNo|product_no|itemId)$/i.test(key))) return false;
+    // DK's navigation can inherit a nearby card's code/price from its ancestor.
+    // Keep product/detail-shaped routes; BEST, newArrival, events and the brand
+    // home must never enter the detail/stock queue.
+    if (url.hostname.replace(/^www\./i, '').toLowerCase() === 'dk-on.com') {
+      return /^\/[^/]+\/(?:product|goods(?:\/detail)?)\/[^/]+(?:\/[^/]+)?\/?$/i.test(path);
+    }
     return true;
   } catch { return false; }
 }

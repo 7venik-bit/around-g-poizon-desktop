@@ -38,10 +38,13 @@ export function captureRenderedStockEvidence(selectors = [], root = document) {
   const optionNodes = optionCandidates.filter(el => !optionCandidates.some(child => child !== el && el.contains(child)));
   const options = optionNodes.map(el => {
     const label = rawText(el);
+    const rawQuantity = String(el.getAttribute('data-stock-qty') || '').replace(/,/g, '').trim();
+    const quantity = /^\d+$/.test(rawQuantity) && Number.isSafeInteger(Number(rawQuantity)) ? Number(rawQuantity) : null;
     const disabled = el.disabled || el.getAttribute('aria-disabled') === 'true' || /disabled|sold.?out|unavailable|unselectable|품절/i.test(String(el.className || ''))
       || /currently unavailable|out of stock|sold out|품절|선택 불가/i.test(el.getAttribute('aria-label') || '')
       || (el.tagName === 'INPUT' && /disabled|sold.?out/i.test(String(el.parentElement?.className || '')));
-    return {label, inStock:!disabled && !unavailablePattern.test(label), stockText:label};
+    return {label, inStock:quantity !== 0 && !disabled && !unavailablePattern.test(label), stockText:label,
+      ...(quantity !== null ? {quantity} : {})};
   }).filter(option => option.label && option.label.length <= 80);
   const isOption = el => optionNodes.some(option => option === el || option.contains(el) || el.contains(option));
   const nodes = [...scope.querySelectorAll('p,div,span,strong,b,em,button,a,label')]

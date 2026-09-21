@@ -234,21 +234,36 @@ export function captureNativeStockControls() {
     const label=String(el.labels?.[0]?.textContent||el.getAttribute('data-friendly-name')||el.getAttribute('aria-label')||'').replace(/\s+/g,' ').trim();
     if(!label||/guide|chart|가이드|조견표/i.test(label))continue;
     if(!inputGroups.has(name))inputGroups.set(name,{selector:path(el.parentElement),kind:'radio',label:name,options:[]});
+    // Explicit stock belongs to this option. Gift allowance/order limits are
+    // different fields and missing/invalid quantities must remain unknown.
+    const rawQuantity=String(el.getAttribute('data-stock-qty')||'').replace(/,/g,'').trim();
+    const quantity=/^\d+$/.test(rawQuantity)&&Number.isSafeInteger(Number(rawQuantity))?Number(rawQuantity):null;
     inputGroups.get(name).options.push({selector:path(el),label,
-      inStock:!el.disabled&&el.getAttribute('aria-disabled')!=='true'&&!/disabled|unavailable|unselectable|sold.?out/i.test(el.parentElement.className)&&!/품절(?!\s*임박)|매진|SOLD[\s_-]*OUT|재고\s*없/i.test(label)});
+      ...(quantity!==null?{quantity}:{}),
+      inStock:quantity!==0&&!el.disabled&&el.getAttribute('aria-disabled')!=='true'&&!/disabled|unavailable|unselectable|sold.?out/i.test(el.parentElement.className)&&!/품절(?!\s*임박)|매진|SOLD[\s_-]*OUT|재고\s*없/i.test(label)});
   }
   // Accessible custom dropdowns (Naver and React storefronts). Only explicit
   // option controls are traversed; purchase/cart and notification buttons are
   // never clicked. Controls without a discoverable option list remain unknown.
+  const naverDimension=el=>/(^|\.)naver\.com$/i.test(location.hostname)
+    &&el.getAttribute('data-shp-area-id')==='optselect'&&el.getAttribute('data-shp-page-key')
+    ?el.getAttribute('data-shp-contents-type')||'':'';
+  const controlIdentity=el=>{
+    const dimension=naverDimension(el);
+    return dimension?'naver:'+el.getAttribute('data-shp-page-key')+':'+dimension
+      :el.querySelector('input')?.name?'input:'+el.querySelector('input').name:'';
+  };
   const controls=[...scope.querySelectorAll('[role="combobox"],[aria-haspopup="listbox"]')]
     .filter(el=>el.tagName!=='SELECT'&&visible(el)&&!el.closest(excluded))
     .filter(el=>!/quantity|qty|수량|정렬|sort|검색|search/i.test([el.textContent,el.getAttribute('aria-label'),el.id].join(' ')))
-    .filter((el,index,all)=>{const name=el.querySelector('input')?.name;return !name||all.findIndex(other=>other.querySelector('input')?.name===name)===index;});
+    // Naver's upper and sticky panels mirror the same dimensions without an
+    // input name. Traversing both invents colour x size x colour x size rows.
+    .filter((el,index,all)=>{const key=controlIdentity(el);return !key||all.findIndex(other=>controlIdentity(other)===key)===index;});
   const customGroups=controls.map(el=>{
     const listId=el.getAttribute('aria-controls')||el.getAttribute('aria-owns');
     const list=listId?document.getElementById(listId):el.parentElement?.querySelector('[role="listbox"]');
     const options=list&&visible(list)?[...list.querySelectorAll('[role="option"]')]:[];
-    return {selector:path(el),kind:'custom',label:el.getAttribute('aria-label')||el.textContent,
+    return {selector:path(el),kind:'custom',label:naverDimension(el)||el.getAttribute('aria-label')||el.textContent,
       options:options.map(o=>({selector:path(o),label:String(o.querySelector('.labelTextWrap .caption')?.textContent||o.innerText||o.textContent||'').trim(),stockText:String(o.querySelector('.labelTextWrap .stock')?.textContent||'').trim(),inStock:o.getAttribute('aria-disabled')!=='true'&&!/disabled|sold.?out/i.test(o.className)&&!/품절(?!\s*임박)|매진|SOLD\s*OUT|재고\s*없/i.test(o.textContent)}))};
   });
   // SFCC/Shopify and brand-owned button swatches without ARIA groups. Follow
