@@ -145,10 +145,14 @@ export function updateLedgerXlsx(book,edits=[]) {
     const addresses=new Map(changed.map(e=>[`${e.row}:${e.column}`,e]));
     for(let r=0;r<sheet.formulas.length;r++)for(let c=0;c<sheet.formulas[r].length;c++)if(sheet.formulas[r][c])addresses.set(`${r+1}:${c+1}`,addresses.get(`${r+1}:${c+1}`)||{row:r+1,column:c+1});
     for(const edit of addresses.values()) {
-      const r=edit.row-1,c=edit.column-1,cell=cellAt(edit.row,edit.column,edit.templateRow);
+      const r=edit.row-1,c=edit.column-1,formula=sheet.formulas[r]?.[c],raw=sheet.rawValues[r]?.[c]||{type:'text',value:''};
+      const existing=rows.get(edit.row)&&children(rows.get(edit.row),'c').find(n=>n.getAttribute('r')===ledgerColumnName(c)+edit.row);
+      // A picture anchored to an otherwise absent cell does not require a cell
+      // element. Materializing it would apply style 0 instead of its implicit blank style.
+      if(!formula&&raw.type==='text'&&raw.value===''&&!existing&&!edit.templateRow)continue;
+      const cell=cellAt(edit.row,edit.column,edit.templateRow);
       for(const node of [...children(cell,'v'),...children(cell,'is'),...children(cell,'f')])cell.removeChild(node);
       cell.removeAttribute('t');
-      const formula=sheet.formulas[r]?.[c];
       if(formula) {
         append(cell,'f',formula.slice(1));const calculated=sheet.calculatedValues?.[r]?.[c];
         if(calculated) {
@@ -158,7 +162,7 @@ export function updateLedgerXlsx(book,edits=[]) {
           append(cell,'v',calculated.type==='boolean'?(calculated.value?1:0):calculated.value??'');
         }
       } else {
-        const raw=sheet.rawValues[r]?.[c] || {type:'text',value:''},value=ledgerScalar(raw);
+        const value=ledgerScalar(raw);
         if(raw.type==='text') {cell.setAttribute('t','inlineStr');const t=append(append(cell,'is'),'t',value);t.setAttribute('xml:space','preserve');}
         else {if(raw.type==='boolean')cell.setAttribute('t','b');append(cell,'v',raw.type==='boolean'?(value?1:0):value);}
       }

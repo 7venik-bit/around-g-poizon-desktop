@@ -182,4 +182,5 @@ test('copied embedded pictures survive clearing the source and copying into an e
  assert.deepEqual(next.sheets[0].images.map(i=>i.row),[6,7]);
  const book=await ledger.load();readLedgerImages(book);assert.deepEqual(book.sheets[0].images.map(i=>i.row),[6,7]);
  await ledger.export(join(dir,'images.xlsx'));const parts=unzipSync(await readFile(join(dir,'images.xlsx'))),doc=new DOMParser().parseFromString(strFromU8(parts['xl/worksheets/sheet1.xml']),'application/xml');assert.equal(doc.getElementsByTagName('drawing').length,1);
+ assert.equal(Array.from(doc.getElementsByTagName('c')).some(c=>['H6','H7'].includes(c.getAttribute('r'))),false,'picture-only cells keep their implicit blank style');
 });

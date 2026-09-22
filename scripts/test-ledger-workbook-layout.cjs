@@ -109,7 +109,7 @@ document.getElementById('workbook-cell-cancel').click();`);
   await win.webContents.executeJavaScript(`window.ledgerToolCalls=[];
 window.aroundG.resizeLedgerWorkbook=async input=>{window.ledgerToolCalls.push({action:'resize',...input});const book=structuredClone(window.ledgerFixtureFreshBook),sheet=book.sheets[0];for(const change of input.changes)(sheet[change.axis==='column'?'columnWidths':'rowHeights']||={})[change.index]=change.pixels;window.ledgerFixtureFreshBook=book;return {ok:true,workbook:book};};
 window.aroundG.copyLedgerWorkbookCells=async input=>{window.ledgerToolCalls.push({action:'copy',...input});return {ok:true};};
-window.aroundG.clearLedgerWorkbookCells=async input=>{window.ledgerToolCalls.push({action:'clear',...input});return {ok:true,workbook:window.ledgerFixtureFreshBook};};`);
+window.aroundG.clearLedgerWorkbookCells=async input=>{window.ledgerToolCalls.push({action:'clear',...input});return {ok:true,workbook:window.ledgerFixtureFreshBook};};void 0;`);
   const drag=async(selector,axis,delta)=>{
     const box=await win.webContents.executeJavaScript(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()`);
     await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new PointerEvent('pointerdown',{button:0,clientX:${box.x},clientY:${box.y},bubbles:true,cancelable:true}));window.dispatchEvent(new PointerEvent('pointermove',{clientX:${box.x+(axis==='x'?delta:0)},clientY:${box.y+(axis==='y'?delta:0)}}));window.dispatchEvent(new PointerEvent('pointerup',{clientX:${box.x+(axis==='x'?delta:0)},clientY:${box.y+(axis==='y'?delta:0)}}));`);
