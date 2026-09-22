@@ -93,9 +93,11 @@ export function calculateLedger(book) {
 }
 
 // Fill-down preserves quoted text/URLs, quoted sheet names and absolute row references.
-export function shiftLedgerFormula(formula,offset) {
-  return formula.replace(/"(?:[^"]|"")*"|'(?:[^']|'')*'|(?<![A-Za-z0-9_])\$?[A-Za-z]{1,3}(\$?)([1-9]\d*)(?![A-Za-z0-9_])/g,(whole,absolute,row)=>{
-    if(row===undefined||absolute)return whole;
-    const next=Number(row)+offset;return next>0?whole.slice(0,-row.length)+next:'#REF!';
+export function shiftLedgerFormula(formula,offset,columnOffset=0) {
+  return formula.replace(/"(?:[^"]|"")*"|'(?:[^']|'')*'|[A-Za-z_][A-Za-z0-9_.]*!|(?<![A-Za-z0-9_.])(\$?)([A-Za-z]{1,3})(\$?)([1-9]\d*)(?![A-Za-z0-9_.!(])/g,(whole,absoluteColumn,column,absoluteRow,row)=>{
+    if(row===undefined)return whole;
+    const nextRow=Number(row)+(absoluteRow?0:offset);
+    const nextColumn=[...column.toUpperCase()].reduce((n,ch)=>n*26+ch.charCodeAt(0)-64,0)+(absoluteColumn?0:columnOffset);
+    return nextRow>0&&nextRow<=1048576&&nextColumn>0&&nextColumn<=16384?`${absoluteColumn}${ledgerColumnName(nextColumn-1)}${absoluteRow}${nextRow}`:'#REF!';
   });
 }

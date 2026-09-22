@@ -1,4 +1,5 @@
 import { createLocalLedger } from "./services/local-ledger.mjs";
+import {ledgerClipboardData,parseLedgerClipboard} from './services/ledger-clipboard.mjs';
 import { readReviewWorkbook, checkReviewWorkbookRevision } from "./services/poizon-review-workbook.mjs";
 import { assertPoizonPageReadyForCorrection, isPoizonSkuScopeDeferredRow, selectPoizonPageCorrectionProducts } from "./services/live-poizon-crosscheck.mjs";
 import { syncPoizonPageCheckpoint } from "./services/poizon-page-checkpoint.mjs";
@@ -12774,6 +12775,13 @@ app.whenReady().then(async () => {
   // Keep the old IPC name for upgrade compatibility; it is now strictly local.
   ipcMain.handle('ledger:workbook-import',()=>localWorkbookResult(()=>purchaseWorkbook().view()));
   ipcMain.handle('ledger:workbook-edit',(_event,edit)=>localWorkbookResult(()=>purchaseWorkbook().edit(edit)));
+  ipcMain.handle('ledger:workbook-clear',(_event,input)=>localWorkbookResult(()=>purchaseWorkbook().change({...input,action:'clear'})));
+  ipcMain.handle('ledger:workbook-resize',(_event,input)=>localWorkbookResult(()=>purchaseWorkbook().resize(input)));
+  ipcMain.handle('ledger:workbook-copy',async(_event,input)=>{
+    try {clipboard.write(ledgerClipboardData(await purchaseWorkbook().copy(input)));return {ok:true};}
+    catch(error){return {ok:false,code:String(error.message||error)};}
+  });
+  ipcMain.handle('ledger:workbook-paste',(_event,input)=>localWorkbookResult(()=>purchaseWorkbook().change({...input,action:'paste',payload:parseLedgerClipboard({text:clipboard.readText(),html:clipboard.readHTML()})})));
   ipcMain.handle('ledger:workbook-export',async()=>{
     try {
       await purchaseWorkbook().load();

@@ -27,3 +27,24 @@ edits, failed writes, original archive preservation, and receipt idempotency. Th
 one-time migration's 757 formula results were compared privately to the source
 results, with no differences. Existing source errors are retained as errors rather
 than converted into plausible totals. No real workbook/account data is in fixtures.
+
+Cell tools support single cells and Shift+click/Shift+arrow ranges (up to 5,000
+cells). Delete clears values, formulas and cell pictures, preserving coordinates,
+formatting, dropdown rules and receipt notes. All cells in a block are validated
+before the single durable write. Invalid, stale or out-of-bounds operations never
+partially apply.
+
+Ctrl+C/Ctrl+V and the toolbar use the native clipboard. Copies from this ledger
+carry typed values, formulas and embedded pictures; relative formula references
+move with the destination and absolute references stay fixed. Existing destination
+styles remain. External TSV/text is pasted literally, including leading zeros and
+strings starting with `=`. Use the explicit formula editor to enter a new formula.
+Clipboard actions only run from the grid or their buttons; text-editor shortcuts
+keep their normal meaning.
+
+Column-letter right edges and row-number bottom edges resize by dragging. Numeric
+controls apply widths/heights to the selected columns/rows. Sizes are stored in the
+encrypted workbook, survive restart and are patched into Excel column widths and
+row heights while preserving unrelated dimension attributes. Default columns keep
+the existing responsive layout until resized. Resizing preserves an unsaved cell
+editor draft.

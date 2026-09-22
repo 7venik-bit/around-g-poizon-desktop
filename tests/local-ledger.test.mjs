@@ -10,6 +10,7 @@ import {LEDGER_SPREADSHEET_ID,saveLedgerWorkbook} from '../services/ledger-workb
 import {createLocalLedger} from '../services/local-ledger.mjs';
 import {calculateLedger,shiftLedgerFormula} from '../services/ledger-calculation.mjs';
 import {readLedgerImages} from '../services/ledger-xlsx.mjs';
+import {ledgerClipboardData,parseLedgerClipboard,LEDGER_COPY_SCHEMA} from '../services/ledger-clipboard.mjs';
 
 const ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
 function fixture() {
@@ -118,4 +119,68 @@ test('formula calculation respects blank fees, lookup sheets, error propagation 
  s.formulas[2][5]='=COUNTA(A3:B4)';s.formulas[2][6]='=SUM("2",TRUE,3)';s.formulas[2][7]='=AVERAGE(C3:C4)';calculateLedger(book);
  assert.equal(s.calculatedValues[2][5].value,2);assert.equal(s.calculatedValues[2][6].value,6);assert.equal(s.calculatedValues[2][7].value,'#VALUE!');
  assert.equal(shiftLedgerFormula('=IF(A5="A5",\'시트5\'!$B$3+$C5,"https://example.test/A5")',2),'=IF(A7="A5",\'시트5\'!$B$3+$C7,"https://example.test/A5")');
+});
+
+test('clear dropdown and formula contents atomically, preserve styles/rules and recalculate/export blanks',async t=>{
+ const book=fixture(),s=book.sheets[0];s.validations[4][11]={type:'list',values:['구매완료']};s.rawValues[4][11]={type:'text',value:'구매완료'};s.displayValues[4][11]='구매완료';
+ const {ledger,dir,options}=await setup(t,book),current=await ledger.load();
+ const next=await ledger.change({action:'clear',sheetId:1,revision:current.revision,range:{row:5,column:12,endColumn:20}});
+ assert.equal(next.sheets[0].rawValues[4][11].value,'');assert.equal(next.sheets[0].formulas[4][19],'');assert.equal(next.sheets[0].calculatedValues[0][19].value,0);
+ assert.deepEqual(next.sheets[0].validations[4][11],s.validations[4][11]);assert.equal(next.sheets[0].numberFormats[4][13],'#,##0');
+ assert.equal((await createLocalLedger(options).view()).sheets[0].rawValues[4][13].value,'');
+ await ledger.export(join(dir,'clear.xlsx'));const parts=unzipSync(await readFile(join(dir,'clear.xlsx'))),doc=new DOMParser().parseFromString(strFromU8(parts['xl/worksheets/sheet1.xml']),'application/xml');
+ const cell=Array.from(doc.getElementsByTagName('c')).find(c=>c.getAttribute('r')==='N5');assert.equal(cell.getAttribute('s'),'3');assert.equal(cell.textContent,'');
+ await assert.rejects(ledger.change({action:'clear',sheetId:1,revision:next.revision,range:{row:1,column:1,endColumn:2}}),/CELL_MERGED/);
+ assert.equal((await ledger.load()).revision,next.revision);
+});
+
+test('typed copy/paste shifts mixed references, preserves leading zeros and dates, and rejects an invalid whole block',async t=>{
+ const {ledger}=await setup(t),current=await ledger.load();
+ const selected={sheetId:1,revision:current.revision,range:{row:5,column:16,endColumn:20}};
+ const payload=parseLedgerClipboard(ledgerClipboardData(await ledger.copy(selected)));
+ const next=await ledger.change({action:'paste',sheetId:1,revision:current.revision,range:{row:6,column:16},payload});
+ assert.equal(next.sheets[0].formulas[5][17],'=IF(J6="","",J6-N6-P6-Q6)');assert.equal(next.sheets[0].rawValues[5][16].value,'3000');
+ assert.equal(shiftLedgerFormula('=IF(A5="A5",$B5+C$2+$D$3+LOG10(100)+TAB1!A5,\'시트5\'!B5)',2,1),'=IF(B7="A5",$B7+D$2+$D$3+LOG10(100)+TAB1!B7,\'시트5\'!C7)');
+ assert.equal(shiftLedgerFormula('=A1+$B1',-1,-1),'=#REF!+#REF!');
+ const pasted=await ledger.change({action:'paste',sheetId:1,revision:next.revision,range:{row:7,column:1},payload:{schema:LEDGER_COPY_SCHEMA,cells:[[{type:'text',value:'001-ABC'},{type:'date',value:'2026-09-20T15:00:00.000Z'}]]}});
+ assert.equal(pasted.sheets[0].rawValues[6][0].value,'001-ABC');assert.equal(pasted.sheets[0].rawValues[6][1].value,'2026-09-20T15:00:00.000Z');
+ const before=await ledger.load();
+ await assert.rejects(ledger.change({action:'paste',sheetId:1,revision:before.revision,range:{row:8,column:1},payload:{schema:LEDGER_COPY_SCHEMA,cells:[[{type:'text',value:'must not save'},{type:'number',value:'bad'}]]}}),/CELL_NUMBER_INVALID/);
+ assert.equal((await ledger.load()).revision,before.revision);
+ await assert.rejects(ledger.change({action:'paste',sheetId:1,revision:current.revision,range:{row:8,column:1},payload}),/CELL_CONFLICT/);
+});
+
+test('resize persists through restart and patches only the chosen Excel dimensions including grouped columns',async t=>{
+ const book=fixture(),files=unzipSync(Buffer.from(book.xlsxBase64,'base64'));
+ files['xl/worksheets/sheet1.xml']=strToU8(strFromU8(files['xl/worksheets/sheet1.xml']).replace('<sheetData>','<cols><col min="1" max="4" width="12" style="2" hidden="0"/></cols><sheetData>'));
+ const bytes=Buffer.from(zipSync(files));book.xlsxBase64=bytes.toString('base64');book.xlsxSha256=createHash('sha256').update(bytes).digest('hex');
+ const {ledger,dir,options}=await setup(t,book),current=await ledger.load();
+ const next=await ledger.resize({sheetId:1,revision:current.revision,changes:[{axis:'column',index:3,pixels:215},{axis:'row',index:5,pixels:80}]});
+ assert.equal(next.sheets[0].columnWidths[3],215);assert.equal((await createLocalLedger(options).view()).sheets[0].rowHeights[5],80);
+ await ledger.export(join(dir,'resize.xlsx'));const after=unzipSync(await readFile(join(dir,'resize.xlsx'))),doc=new DOMParser().parseFromString(strFromU8(after['xl/worksheets/sheet1.xml']),'application/xml');
+ const cols=Array.from(doc.getElementsByTagName('col'));assert.deepEqual(cols.map(c=>[c.getAttribute('min'),c.getAttribute('max'),c.getAttribute('width'),c.getAttribute('style')]),[['1','2','12','2'],['3','3','30','2'],['4','4','12','2']]);
+ assert.equal(Array.from(doc.getElementsByTagName('row')).find(r=>r.getAttribute('r')==='5').getAttribute('ht'),'60');assert.deepEqual(after['xl/styles.xml'],files['xl/styles.xml']);
+ await assert.rejects(ledger.resize({sheetId:1,revision:next.revision,changes:[{axis:'column',index:3,pixels:NaN}]}),/CELL_DIMENSION_INVALID/);
+ assert.equal((await ledger.load()).revision,next.revision);
+});
+
+test('clipboard round-trip handles quoted tabs/newlines and keeps external formula-like strings literal',()=>{
+ const payload={schema:LEDGER_COPY_SCHEMA,row:4,column:2,cells:[[{type:'text',value:'001'},{type:'text',value:'줄1\n줄2\t"인용"'},{type:'formula',value:'=A4*2'}]]};
+ const data=ledgerClipboardData(payload);assert.deepEqual(parseLedgerClipboard(data),payload);
+ assert.deepEqual(parseLedgerClipboard({text:data.text}).cells[0].map(c=>c.value),['001','줄1\n줄2\t"인용"','=A4*2']);
+ assert.equal(parseLedgerClipboard({text:'=WEBSERVICE("https://example.test")\r\n'}).cells[0][0].type,'text');
+ assert.throws(()=>parseLedgerClipboard({text:''}),/CELL_CLIPBOARD_EMPTY/);
+});
+
+test('copied embedded pictures survive clearing the source and copying into an existing drawing without duplicate worksheet drawings',async t=>{
+ const {ledger,dir}=await setup(t),current=await ledger.load();
+ const payload={schema:LEDGER_COPY_SCHEMA,row:5,column:8,cells:[[{type:'text',value:''}]],images:[{row:0,column:0,url:'data:image/png;base64,iVBORw=='}]};
+ let next=await ledger.change({action:'paste',sheetId:1,revision:current.revision,range:{row:5,column:8},payload});
+ const copy=await ledger.copy({sheetId:1,revision:next.revision,range:{row:5,column:8}});
+ next=await ledger.change({action:'clear',sheetId:1,revision:next.revision,range:{row:5,column:8}});
+ next=await ledger.change({action:'paste',sheetId:1,revision:next.revision,range:{row:6,column:8,endRow:7},payload:copy});
+ assert.deepEqual(next.sheets[0].images.map(i=>i.row),[6,7]);
+ const book=await ledger.load();readLedgerImages(book);assert.deepEqual(book.sheets[0].images.map(i=>i.row),[6,7]);
+ await ledger.export(join(dir,'images.xlsx'));const parts=unzipSync(await readFile(join(dir,'images.xlsx'))),doc=new DOMParser().parseFromString(strFromU8(parts['xl/worksheets/sheet1.xml']),'application/xml');assert.equal(doc.getElementsByTagName('drawing').length,1);
+ assert.equal(Array.from(doc.getElementsByTagName('c')).some(c=>['H6','H7'].includes(c.getAttribute('r'))),false,'picture-only cells keep their implicit blank style');
 });
