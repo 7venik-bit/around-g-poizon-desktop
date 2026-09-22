@@ -8,6 +8,7 @@ import {autofillLedger,LEDGER_FORMULA_VERSION,ledgerCalculationSheet} from './le
 
 const fail=code=>{throw Error(code);};
 const empty=()=>({type:'text',value:''});
+const blank=raw=>raw?.value==null||String(raw.value).trim()==='';
 const fields=['displayValues','formulas','rawValues','numberFormats','backgrounds','fontColors','fontWeights','validations','notes'];
 function ensureCell(sheet,row,col) {
   for(const field of fields) {
@@ -96,6 +97,69 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
     book.local.formulaRepair={at:new Date().toISOString(),backupPath,changes:repair.audit};
     return commit(book,repair.edits,{autofill:false});
   };
+  const relocateReceipt=async(book,sheet,existing,destination)=>{
+    const previousRowNumbers=existing.map(x=>x.row),sources=new Set(previousRowNumbers);
+    const rowNumbers=existing.map((_,i)=>destination.row+i),overrides=book.local.formulaOverrides?.[sheet.id]||{};
+    const touched=new Set([...previousRowNumbers,...rowNumbers]);
+    for(const number of touched)if(sheet.merges?.some(m=>number-1>=m.row&&number-1<m.row+m.rows))fail('PURCHASE_DESTINATION_MERGED');
+    for(const number of rowNumbers) {
+      if(sources.has(number))continue;
+      // Only empty rows with normal gender/status/shipping defaults and formula
+      // templates are destinations. Preserve unrelated notes and manual amounts.
+      const occupied=sheet.rawValues[number-1]?.some((raw,c)=>!blank(raw)
+        &&![4,11,16].includes(c)&&!(raw.type==='formula'&&[6,15,17,18,19,20,21].includes(c)));
+      if(occupied||sheet.images?.some(image=>image.row===number)||sheet.notes?.[number-1]?.some(Boolean)
+        ||Object.keys(overrides).some(key=>key.startsWith(`${number}:`)))fail('PURCHASE_DESTINATION_OCCUPIED');
+    }
+    // Snapshot all sources before touching the model, including overlapping moves.
+    const snapshots=existing.map(({row})=>({row,raw:structuredClone(sheet.rawValues[row-1]),notes:structuredClone(sheet.notes[row-1]),
+      images:structuredClone((sheet.images||[]).filter(image=>image.row===row)),
+      overrides:Object.entries(overrides).filter(([key])=>key.startsWith(`${row}:`)),
+      category:structuredClone(book.local.categories?.[sheet.id]?.rows?.[row]),fee:structuredClone(book.local.fees?.[sheet.id]?.rows?.[row])}));
+    const defaults=rowNumbers.map(number=>sources.has(number)?[]:structuredClone(sheet.rawValues[number-1]||[]));
+    const backupPath=`${path}.before-receipt-move-${randomUUID()}.encrypted`;
+    await save(backupPath,book,encrypt);
+    if((await read(backupPath,decrypt)).revision!==book.revision)fail('WORKBOOK_SAVE_VERIFY_FAILED');
+    const edits=[];
+    for(const number of touched) {
+      for(let column=1;column<=sheet.columnCount;column++) {
+        put(sheet,number,column,empty());sheet.notes[number-1][column-1]='';
+        edits.push({sheetId:sheet.id,row:number,column,clearNote:true});
+        delete overrides[`${number}:${column}`];
+      }
+      for(const state of [book.local.categories?.[sheet.id],book.local.fees?.[sheet.id]])if(state?.rows)delete state.rows[number];
+    }
+    sheet.images=(sheet.images||[]).filter(image=>!touched.has(image.row));
+    for(const [i,snapshot] of snapshots.entries()) {
+      const number=rowNumbers[i];
+      for(let column=1;column<=sheet.columnCount;column++) {
+        let raw=structuredClone(snapshot.raw?.[column-1]||empty());
+        const manuallyCleared=snapshot.overrides.some(([key])=>key===`${snapshot.row}:${column}`);
+        if(blank(raw)&&!manuallyCleared&&[5,12,17].includes(column))raw=defaults[i][column-1]||raw;
+        if(raw.type==='formula')raw.value=shiftLedgerFormula(raw.value,number-snapshot.row);
+        put(sheet,number,column,raw);sheet.notes[number-1][column-1]=snapshot.notes?.[column-1]||'';
+        edits.push({sheetId:sheet.id,row:number,column,clearNote:true,image:snapshot.images.find(image=>image.column===column)?.url});
+      }
+      sheet.images.push(...snapshot.images.map(image=>({...image,row:number})));
+      for(const [key,value] of snapshot.overrides)overrides[`${number}:${key.split(':')[1]}`]=value;
+      if(snapshot.category)book.local.categories[sheet.id].rows[number]=snapshot.category;
+      if(snapshot.fee)book.local.fees[sheet.id].rows[number]=snapshot.fee;
+    }
+    for(let r=0;r<2;r++)for(let c=0;c<sheet.columnCount;c++) {
+      const range=sheet.formulas[r]?.[c]?.match(/^=(SUM|COUNTA|AVERAGE)\((\$?[A-Z]{1,3}\$?)(\d+):(\$?[A-Z]{1,3}\$?)(\d+)\)$/i);
+      if(!range||range[2].replace(/\$/g,'')!==range[4].replace(/\$/g,''))continue;
+      const from=Number(range[3]),to=Number(range[5]);
+      if(previousRowNumbers.some(n=>n<from||n>to)||rowNumbers.every(n=>n>=from&&n<=to))continue;
+      put(sheet,r+1,c+1,{type:'formula',value:`=${range[1]}(${range[2]}${Math.min(from,...rowNumbers)}:${range[4]}${Math.max(to,...rowNumbers)})`});
+      edits.push({sheetId:sheet.id,row:r+1,column:c+1});
+    }
+    (book.local.receiptMoves||=[]).push({at:new Date().toISOString(),sheetId:sheet.id,previousRowNumbers,rowNumbers,backupPath});
+    // A cell in an overlapping move is patched exactly once from its final state.
+    const finalEdits=[...new Map(edits.map(e=>[`${e.row}:${e.column}`,e])).values()];
+    await commit(book,finalEdits,{manual:false});
+    return {ok:true,duplicate:false,moved:true,previousRowNumbers,rowNumber:rowNumbers[0],rowNumbers,
+      unitPrices:rowNumbers.map(n=>Number(sheet.rawValues[n-1]?.[13]?.value)),imageStatus:'existing'};
+  };
   return {
     load:()=>serial(load),
     view:()=>serial(async()=>workbookView(await load())),
@@ -163,7 +227,7 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
       for(const {axis,index,pixels} of changes)(sheet[axis==='column'?'columnWidths':'rowHeights']||={})[index]=pixels;
       return workbookView(await commit(book,[]));
     }),
-    record:(row,destination)=>serial(async()=>{
+    record:(row,destination,{existingOnly=false}={})=>serial(async()=>{
       if(!validatePurchaseLedgerRow(row).ok)fail('REQUIRED_FIELDS_MISSING');
       const quantity=Number(row.quantity),total=Number(row.purchasePrice);
       if(!Number.isInteger(quantity)||quantity<1||quantity>1000||!Number.isSafeInteger(total)||total<quantity)fail('PURCHASE_UNITS_INVALID');
@@ -180,10 +244,12 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
         try {const note=JSON.parse(sheet.notes[r]?.[7]||'');if(note.schema==='around-g.purchase.units.v1'&&note.key===key)existing.push({row:r+1,note});}catch{}
       }
       if(existing.length) {
-        if(existing.length!==quantity||existing.some(x=>x.note.quantity!==quantity||x.note.total!==total)||new Set(existing.map(x=>x.note.unit)).size!==quantity)fail('PURCHASE_EXISTING_CONFLICT');
+        if(existing.length!==quantity||existing.some(x=>x.note.quantity!==quantity||x.note.total!==total||!Number.isInteger(x.note.unit)||x.note.unit<1||x.note.unit>quantity)||new Set(existing.map(x=>x.note.unit)).size!==quantity)fail('PURCHASE_EXISTING_CONFLICT');
         const rowNumbers=existing.sort((a,b)=>a.note.unit-b.note.unit).map(x=>x.row);
+        if(destination&&rowNumbers.some((number,i)=>number!==destination.row+i))return relocateReceipt(book,sheet,existing,destination);
         return {ok:true,duplicate:true,rowNumber:rowNumbers[0],rowNumbers,unitPrices:rowNumbers.map(n=>Number(sheet.rawValues[n-1]?.[13]?.value)),imageStatus:'existing'};
       }
+      if(existingOnly)fail('PURCHASE_EXISTING_NOT_FOUND');
       let last=1,template=-1;
       for(let r=2;r<sheet.displayValues.length;r++) {
         if(sheet.rawValues[r]?.some((v,c)=>v?.value!==''&&v?.value!=null && (v.type!=='formula'||c!==6)))last=r;
@@ -195,7 +261,7 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
         // a free purchase row. Product data, photos and receipt notes cannot.
         const productColumns=[0,1,2,3,5,6,7,8,9,10,12,13,14];
         for(let r=start;r<start+quantity;r++) {
-          const occupied=productColumns.some(c=>{const raw=sheet.rawValues[r]?.[c];return raw?.value!==''&&raw?.value!=null&&!(c===6&&raw.type==='formula');});
+          const occupied=productColumns.some(c=>{const raw=sheet.rawValues[r]?.[c];return !blank(raw)&&!(c===6&&raw.type==='formula');});
           if(occupied||sheet.images?.some(image=>image.row===r+1)||sheet.notes?.[r]?.some(Boolean))fail('PURCHASE_DESTINATION_OCCUPIED');
           if(sheet.merges?.some(m=>r>=m.row&&r<m.row+m.rows))fail('PURCHASE_DESTINATION_MERGED');
         }
@@ -216,7 +282,7 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
             // Keep the selected row's fees, formulas, formatting and manual
             // defaults. Only fill purchase fields and missing formula cells.
             if([8,9,10].includes(c)||(c===4&&!row.gender))continue;
-            if(c>=14&&(sheet.rawValues[r]?.[c]?.value!==''||!sheet.formulas[template]?.[c]))continue;
+            if(c>=14&&(!blank(sheet.rawValues[r]?.[c])||!sheet.formulas[template]?.[c]))continue;
           }
           const raw=c<14?values[c]:template>=0&&sheet.formulas[template]?.[c]?{type:'formula',value:shiftLedgerFormula(sheet.formulas[template][c],r-template)}:empty();
           put(sheet,number,c+1,raw);edits.push({sheetId:sheet.id,row:number,column:c+1,...(!destination&&{templateRow:template+1})});

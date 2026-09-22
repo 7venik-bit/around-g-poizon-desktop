@@ -151,3 +151,18 @@ test('a failed selected-row write unlocks the same destination without marking t
   assert.equal(writes,1);assert.equal(w.aroundGLedgerWorkbook.getPurchaseDestination().destination.row,42);
   assert.equal(d.querySelector('#ledger-submit').disabled,false);assert.match(d.querySelector('#ledger-status').textContent,/기존 상품/);
 });
+
+test('saved history moves to the selected row without recapture and shows page 1 with all moved units',async t=>{
+ const fresh=book(false),s=fresh.sheets[0];
+ for(let r=41;r<44;r++){s.rawValues[r][2]={type:'text',value:'MOVED-42'};s.displayValues[r][2]='MOVED-42';}
+ const {w,d,calls}=await boot(t,{fresh});let writes=0;
+ w.$=selector=>d.querySelector(selector);w.text=value=>String(value??'');w.refresh=async()=>{};
+ w.state={ledger:[{id:'saved',modelName:'저장된 주문',quantity:3,storage:'local',syncStatus:'synced',sheetRows:[575,576,577]}]};
+ w.aroundG.syncPurchaseLedger=async input=>{writes++;assert.deepEqual(Object.keys(input).sort(),['destination','moveId']);assert.equal(input.moveId,'saved');assert.equal(input.destination.row,42);return {ok:true,moved:true,previousRowNumbers:[575,576,577],rowNumbers:[42,43,44]};};
+ w.eval(purchaseCode);w.eval(historyCode);w.renderLedgerRecords();
+ d.querySelector('[data-ledger-move="saved"]').click();await flush();assert.equal(writes,0);
+ d.querySelector('td[data-row="42"][data-column="1"]').click();d.querySelector('[data-ledger-move="saved"]').click();await flush();
+ assert.equal(writes,1);assert.equal(calls.reads,1);assert.match(d.querySelector('#workbook-page').textContent,/1–100/);
+ assert.deepEqual([...d.querySelectorAll('.workbook-recorded-row')].map(row=>row.dataset.rowNumber),['42','43','44']);
+ assert.match(d.querySelector('#ledger-status').textContent,/575, 576, 577행.*42, 43, 44행으로 옮겼/);
+});
