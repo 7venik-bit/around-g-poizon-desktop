@@ -30,7 +30,9 @@ app.whenReady().then(async()=>{
     else if(url.pathname.endsWith('-photo.png'))return new Response(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNI8AAAAASUVORK5CYII=','base64'),{headers:{'content-type':'image/png'}});
     return new Response('<!doctype html><meta charset="utf-8"><style>a{display:block;padding:8px}article{border:1px solid;margin:8px}</style>'+html,{headers:{'content-type':'text/html;charset=utf-8'}});
   });
-  function FixtureWindow(options){const win=new BrowserWindow({...options,show:false,webPreferences:{...options.webPreferences,partition,offscreen:true}});windows.push(win);win.show=()=>{};win.focus=()=>{};return win;}
+  // Real input requires a focused BrowserWindow. Keep the isolated profile and
+  // fake HTTPS pages, but exercise the same show/focus path as the application.
+  function FixtureWindow(options){const win=new BrowserWindow({...options,show:false,webPreferences:{...options.webPreferences,partition}});windows.push(win);return win;}
   const context=createContext({...page,...flow,...purchase,URL,setTimeout,clearTimeout,wait,BrowserWindow:FixtureWindow,
     APP_ICON_PATH:undefined,DOMESTIC_SEARCH_PARTITION:partition,mainWindow:null,
     hasUsableDomesticLoginSession:async()=>true,
@@ -45,7 +47,7 @@ app.whenReady().then(async()=>{
   const start=source.indexOf('function openMusinsaLedgerWindow()'),end=source.indexOf('const SELLER_EXPORT_POLL_INTERVAL_MS',start);
   assert.ok(start>0&&end>start);
   runInContext('let musinsaLedgerWindow,musinsaLedgerOpening,musinsaLedgerCapturing;const musinsaLedgerCaptures=new MusinsaLedgerCaptures();\n'+source.slice(start,end),context);
-  const opened=await context.openMusinsaLedgerWindow();assert.equal(opened.ok,true);assert.equal(opened.stage,'orders');assert.equal(loginCount,1);assert.equal(googleWrites,0);
+  const opened=await context.openMusinsaLedgerWindow();assert.equal(opened.ok,true);assert.equal(opened.stage,'orders',JSON.stringify({opened,visits}));assert.equal(loginCount,1);assert.equal(googleWrites,0);
   const noDetail=await context.captureMusinsaLedgerOrder();assert.equal(noDetail.code,'ORDER_DETAIL_REQUIRED');assert.equal(googleWrites,0);
   // Simulate the user's explicit choice of the displayed detail link.
   const orderWindow=windows[0];await orderWindow.webContents.executeJavaScript("document.querySelector('a').click()",true);

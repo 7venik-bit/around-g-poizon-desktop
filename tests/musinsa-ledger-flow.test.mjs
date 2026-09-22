@@ -56,6 +56,16 @@ test('order capture requires one order number and a labeled purchase date',t=>{
   assert.equal(frame(t,detail(item())+'<p>주문번호: ORDER-20002</p>').capture().code,'ORDER_IDENTITY_INCOMPLETE');
   assert.equal(frame(t,detail(item()).replace('2026.9.2','2026.2.30')).capture().code,'ORDER_IDENTITY_INCOMPLETE');
 });
+test('current order detail reads the date above its order number and compact option/quantity/payment lines',t=>{
+  const card=item({size:'BLACK · 105',qty:'3',price:'163,460'}).replace('<p>옵션: BLACK · 105</p><p>수량: 3개</p>','<p>BLACK · 105 / 3개</p>').replace('실결제금액: ','');
+  const html='<h1>주문 상세</h1><p>26.09.17(목)</p><p>주문번호 2026091700000000</p>'+card+'<aside><h2>결제 정보</h2><p>상품 금액 327,000원</p><p>즉시 할인가 158,460원</p></aside>';
+  const page=frame(t,html).capture();assert.equal(page.purchaseDate,'2026-09-17');assert.equal(page.rows.length,1);
+  assert.equal(page.rows[0].krSize,'BLACK · 105');assert.equal(page.rows[0].quantity,3);assert.equal(page.rows[0].purchasePrice,163460);
+  assert.equal(frame(t,html.replace('<p>26.09.17(목)</p>','')).capture().code,'ORDER_IDENTITY_INCOMPLETE');
+  assert.equal(frame(t,html.replace('26.09.17(목)','26.02.30(월)')).capture().code,'ORDER_IDENTITY_INCOMPLETE');
+  const uncertain=html.replace('<p>163,460원</p>','<del>327,000원</del><p>163,460원</p>');
+  assert.equal(frame(t,uncertain).capture().rows[0].purchasePrice,0);
+});
 test('catalog IDs, old price, shipping and total-order payments never substitute purchase evidence',t=>{
   const html=detail(item({code:'',qty:'',price:'',extra:'<p>수량 확인 중</p><del>99,000원</del><p>판매가 80,000원</p><p>쿠폰 5,000원</p>'}))+'<aside>총 결제금액 83,000원 배송비 3,000원</aside>';
   const row=frame(t,html).capture().rows[0];assert.equal(row.articleNumber,'');assert.equal(row.purchasePrice,0);assert.equal(row.quantity,0);

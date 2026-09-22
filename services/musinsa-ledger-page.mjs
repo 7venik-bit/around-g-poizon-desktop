@@ -39,7 +39,16 @@ export function captureMusinsaLedgerPage() {
     || /\/(?:order|orders)(?:\/|[-_])detail(?:[/?#]|$)/i.test(href);
   if (!detail) return {kind:headings.some(value => /^주문\s*(?:내역|조회|[\/·]\s*배송)/.test(value)) ? 'orders' : 'my', href, orderAction};
   const numbers = [...new Set([...flat.matchAll(/주문\s*번호\s*[:：]?\s*([0-9A-Z][0-9A-Z-]{5,})/gi)].map(m => m[1]))];
-  const dateMatch = flat.match(/(?:주문|결제)\s*(?:일자|일시|일)\s*[:：]?\s*(20\d{2})[.\/-]\s*(\d{1,2})[.\/-]\s*(\d{1,2})/);
+  let dateMatch = flat.match(/(?:주문|결제)\s*(?:일자|일시|일)\s*[:：]?\s*(20\d{2})[.\/-]\s*(\d{1,2})[.\/-]\s*(\d{1,2})/);
+  // The current order detail shows "26.09.17(목)" immediately above its
+  // order number, without an 주문일 label. Do not pick a delivery date elsewhere.
+  if(!dateMatch && numbers.length===1) {
+    const bodyLines=body.split(/\n+/).map(clean).filter(Boolean);
+    const index=bodyLines.findIndex(line=>/^주문\s*번호/.test(line) && line.includes(numbers[0]));
+    const nearby=index>=0?bodyLines.slice(Math.max(0,index-2),index):[];
+    const dates=nearby.map(line=>line.match(/^((?:20)?\d{2})[.\/-]\s*(\d{1,2})[.\/-]\s*(\d{1,2})\s*(?:\([월화수목금토일]\))?$/)).filter(Boolean);
+    if(dates.length===1){dateMatch=dates[0];if(dateMatch[1].length===2)dateMatch[1]='20'+dateMatch[1];}
+  }
   const purchaseDate = dateMatch ? `${dateMatch[1]}-${dateMatch[2].padStart(2,'0')}-${dateMatch[3].padStart(2,'0')}` : '';
   const parsedDate=new Date(`${purchaseDate}T00:00:00Z`);
   if (numbers.length !== 1 || !purchaseDate || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0,10)!==purchaseDate) return {kind:'detail', href, rows:[], code:'ORDER_IDENTITY_INCOMPLETE'};
@@ -79,12 +88,18 @@ export function captureMusinsaLedgerPage() {
       || images.find(el=>!el.closest('a[href]') && !/로고|logo/i.test(el.alt || '') && imageSource(el));
     const imageUrl=imageSource(image);
     const labelValue=pattern => lines.map((line,i)=> { const m=line.match(pattern); return m ? clean(m[1] || lines[i+1]) : ''; }).find(Boolean) || '';
-    const option=labelValue(/^(?:옵션|사이즈)\s*[:：]?\s*(.*)$/);
+    const optionQuantity=lines.map(line=>line.match(/^(.+?)\s*\/\s*(\d+)\s*개$/)).find(Boolean);
+    const option=labelValue(/^(?:옵션|사이즈)\s*[:：]?\s*(.*)$/) || clean(optionQuantity?.[1]);
     const qtyMatch=value.match(/수량\s*[:：]?\s*(\d+)\s*(?:개)?/) || value.match(/(?:^|\s)(\d+)\s*개(?:\s|$)/);
-    const quantity=qtyMatch ? Number(qtyMatch[1]) : 0;
+    const quantity=qtyMatch ? Number(qtyMatch[1]) : Number(optionQuantity?.[2] || 0);
     const amount=labelValue(/^(?:(?:상품별|상품|실제|최종)\s*)?(?:실\s*)?(?:결제|구매)\s*(?:금액|가격)\s*[:：]?\s*(.*)$/);
     const priceMatch=amount.match(/^([0-9][0-9,]*)\s*원(?:\s|$)/);
-    const purchasePrice=priceMatch ? Number(priceMatch[1].replace(/,/g,'')) : 0;
+    // Current cards show one plain item payment below "BLACK · 105 / 3개".
+    // Ambiguous multiple prices remain unknown; the order-total section is out
+    // of this card and must never supply a line's payment.
+    const cardPrices=optionQuantity?lines.map(line=>line.match(/^([0-9][0-9,]*)\s*원$/)).filter(Boolean):[];
+    const amounts=[...new Set(cardPrices.map(match=>Number(match[1].replace(/,/g,''))))];
+    const purchasePrice=priceMatch ? Number(priceMatch[1].replace(/,/g,'')) : amounts.length===1?amounts[0]:0;
     const articleNumber=labelValue(/^(?:품번|스타일\s*(?:번호|코드)|제품\s*코드)\s*[:：]?\s*(.*)$/).split(/\s/)[0];
     const brand=labelValue(/^브랜드\s*[:：]?\s*(.*)$/) || clean(card.querySelector('a[href*="/brand/"],a[href*="/brands/"]')?.innerText);
     const named=[...card.querySelectorAll('a[href]')].find(el=>productId(el)===id && clean(text(el)));

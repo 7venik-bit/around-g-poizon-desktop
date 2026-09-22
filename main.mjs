@@ -5429,6 +5429,11 @@ async function openMusinsaLedgerWindowAsync() {
     inspect: () => inspectMusinsaLedgerWindow(win), wait,
     click: async page => {
       if (win.isDestroyed() || win.webContents.getURL() !== page.href) return;
+      // An automatic login window can take focus away from this page.
+      // Electron ignores mouse input until the target window is focused.
+      win.show();win.focus();win.webContents.focus();
+      await wait(80);
+      if (win.isDestroyed() || win.webContents.getURL() !== page.href) return;
       const {x,y} = page.orderAction;
       win.webContents.sendInputEvent({type:"mouseMove",x,y});
       win.webContents.sendInputEvent({type:"mouseDown",x,y,button:"left",clickCount:1});
