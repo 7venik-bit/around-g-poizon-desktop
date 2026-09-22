@@ -54,6 +54,7 @@
     [/^(?:판매량|수량)$/, 'count', 52],
     [/^상태$/, 'status', 84],
     [/^브랜드$/, 'brand', 76],
+    [/^카테고리$/, 'category', 150],
   ];
   function sheetColumns(sheet,width) {
     const rows=sheet.displayValues;
@@ -143,6 +144,12 @@
         cell.style.color=sheet.fontColors?.[r]?.[c] || '';
         cell.style.fontWeight=sheet.fontWeights?.[r]?.[c] || '';
         cell.title=[rows[r]?.[c],sheet.formulas?.[r]?.[c],sheet.notes?.[r]?.[c]].filter(Boolean).join('\n');
+        const categoryState=workbook.local?.categories?.[sheet.id],category=categoryState?.rows?.[r+1];
+        if(c+1===categoryState?.column&&category) {
+          const explanation=category.status==='missing'?'저장된 POIZON Excel에 일치하는 품번이 없습니다.':category.status==='conflict'?'저장된 POIZON Excel의 카테고리가 서로 다릅니다.':category.source;
+          cell.title=[cell.title,explanation].filter(Boolean).join('\n');
+          if(!rows[r]?.[c])content.textContent='확인 필요';
+        }
         // Use textContent: sheet text and formulas must never execute in the app.
         tr.append(cell);
       }

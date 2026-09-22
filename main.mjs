@@ -1,4 +1,5 @@
 import { createLocalLedger } from "./services/local-ledger.mjs";
+import { ledgerArticleKey } from "./services/ledger-categories.mjs";
 import {ledgerClipboardData,parseLedgerClipboard} from './services/ledger-clipboard.mjs';
 import { readReviewWorkbook, checkReviewWorkbookRevision } from "./services/poizon-review-workbook.mjs";
 import { assertPoizonPageReadyForCorrection, isPoizonSkuScopeDeferredRow, selectPoizonPageCorrectionProducts } from "./services/live-poizon-crosscheck.mjs";
@@ -5354,10 +5355,35 @@ function musinsaCredentialsFromLocalWorkbook(workbook) {
 }
 
 let localLedger;
+const ledgerCategoryFiles=new Map();
+async function localLedgerCategories(book) {
+  const wanted=new Set(book.sheets.filter(s=>['1-구매완료','5-판매완료','2-사무실','3,4-포이즌창고'].includes(s.name)).flatMap(s=>(s.rawValues||[]).slice(2).map(row=>ledgerArticleKey(row[2]?.value))).filter(Boolean));
+  const products=[];
+  // This is a read of completed local exports only. No POIZON window, download,
+  // verification job or network request is started for category lookup.
+  const entries=await listBrandExportExcelEntries(currentBrandExportFolder()).catch(()=>[]);
+  for(const entry of entries) {
+    if(isProcessedBrandExportName(entry.name)||brandDownloadPathsInProgress.has(entry.path))continue;
+    try {
+      const info=await stat(entry.path),signature=`${info.size}:${info.mtimeMs}`;
+      let cached=ledgerCategoryFiles.get(entry.path);
+      if(cached?.signature!==signature) {
+        const rows=await readFirstDataSheet(await readFile(entry.path));
+        const records=buildExcelPreviewProducts(rows[0]||[],rows.slice(1).map((values,index)=>({values,sourceRowNumber:index+2})));
+        cached={signature,records:records.filter(r=>r.categoryName).map(r=>({articleNumber:r.articleNumber,categoryName:r.categoryName,source:entry.name}))};
+        ledgerCategoryFiles.set(entry.path,cached);
+      }
+      products.push(...cached.records.filter(r=>wanted.has(ledgerArticleKey(r.articleNumber))));
+    } catch { /* An incomplete/unreadable export cannot establish a category. */ }
+  }
+  for(const path of ledgerCategoryFiles.keys())if(!entries.some(e=>e.path===path))ledgerCategoryFiles.delete(path);
+  return products;
+}
 function purchaseWorkbook() {
   if (!localLedger) localLedger=createLocalLedger({
     path:join(app.getPath('userData'),'ledger-local-workbook.encrypted'),
     sourcePath:join(app.getPath('userData'),'ledger-workbook.encrypted'),
+    categories:localLedgerCategories,
     encrypt:value=>{if(!safeStorage.isEncryptionAvailable())throw Error('WINDOWS_ENCRYPTION_UNAVAILABLE');return safeStorage.encryptString(value);},
     decrypt:bytes=>safeStorage.decryptString(bytes),
   });

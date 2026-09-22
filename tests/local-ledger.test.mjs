@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {zipSync,unzipSync,strToU8,strFromU8} from 'fflate';
 import {DOMParser} from '@xmldom/xmldom';
-import {LEDGER_SPREADSHEET_ID,saveLedgerWorkbook} from '../services/ledger-workbook.mjs';
+import {LEDGER_SPREADSHEET_ID,saveLedgerWorkbook,readLedgerWorkbook} from '../services/ledger-workbook.mjs';
 import {createLocalLedger} from '../services/local-ledger.mjs';
 import {calculateLedger,shiftLedgerFormula} from '../services/ledger-calculation.mjs';
 import {readLedgerImages} from '../services/ledger-xlsx.mjs';
@@ -43,6 +43,40 @@ async function setup(t,book=fixture()) {
 }
 const editN=(book,value)=>({sheetId:1,row:5,column:14,revision:book.revision,expected:book.sheets[0].rawValues[4][13],next:{type:'number',value:String(value)}});
 const purchase={brand:'TEST',articleNumber:'NEW-001',modelName:'주문 검증 상품',krSize:'105',purchaseDate:'2026-09-17',purchasePrice:100001,quantity:3,imageUrl:'https://image.msscdn.net/test.jpg',purchaseUrl:'https://www.musinsa.com/products/123',orderNumber:'fixture-order',orderEvidence:{orderLineId:'fixture-line'}};
+
+function calculationFixture() {
+ const book=fixture(),s=book.sheets[0];
+ const headers=['브랜드','구매링크','품번','모델명','성별','EU 사이즈','한국 사이즈','사진','판매량','판매가 (원화)','판매 일자','상태','구매 일자','구매가','카드','예상 수수료','택배비','간이마진','부가세환급','일반마진','구매가비 마진율','판매가비 마진율'];
+ headers.forEach((value,c)=>{s.rawValues[1][c]={type:'text',value};s.displayValues[1][c]=value;});
+ s.formulas[4][17]='=IF(K574="","",K574-N574-P574-Q574)';s.rawValues[4][17]={type:'formula',value:s.formulas[4][17]};
+ return book;
+}
+
+test('template repair backs up the encrypted workbook, persists formulas/categories and exports calculated caches without touching pictures',async t=>{
+ const {ledger:unused,options,dir,book}=await setup(t,calculationFixture());
+ const ledger=createLocalLedger({...options,categories:async()=>[{articleNumber:'001-ABC',categoryName:'의류 / 상의',source:'saved.xlsx'}]});
+ const repaired=await ledger.load();assert.equal(repaired.local.formulaVersion,1);assert.equal(repaired.sheets[0].calculatedValues[4][17].value,32000);
+ const backup=await readLedgerWorkbook(repaired.local.formulaRepair.backupPath,options.decrypt);assert.equal(backup.sheets[0].formulas[4][17],'=IF(K574="","",K574-N574-P574-Q574)');
+ assert.equal(repaired.sheets[0].rawValues[4][22].value,'의류 / 상의');assert.ok(repaired.local.formulaRepair.changes.length>0);
+ const again=await createLocalLedger(options).view();assert.equal(again.revision,repaired.revision);
+ await ledger.export(join(dir,'repaired.xlsx'));const files=unzipSync(await readFile(join(dir,'repaired.xlsx'))),original=unzipSync(Buffer.from(book.xlsxBase64,'base64'));
+ const doc=new DOMParser().parseFromString(strFromU8(files['xl/worksheets/sheet1.xml']),'application/xml'),cells=Array.from(doc.getElementsByTagName('c'));
+ assert.equal(cells.find(c=>c.getAttribute('r')==='R5').getElementsByTagName('v')[0].textContent,'32000');assert.equal(cells.find(c=>c.getAttribute('r')==='W5').textContent,'의류 / 상의');
+ assert.deepEqual(files['xl/styles.xml'],original['xl/styles.xml']);assert.deepEqual(files['xl/media/image1.png'],original['xl/media/image1.png']);
+});
+
+test('backup failure prevents any automatic repair from replacing the working workbook',async t=>{
+ const {options}=await setup(t,calculationFixture());
+ let writes=[];const ledger=createLocalLedger({...options,save:async(path,...args)=>{writes.push(path);if(path.includes('before-formulas'))throw Error('BACKUP_DISK_FULL');return saveLedgerWorkbook(path,...args);}});
+ await assert.rejects(ledger.load(),/BACKUP_DISK_FULL/);
+ const saved=await readLedgerWorkbook(options.path,options.decrypt);assert.equal(saved.local.formulaVersion,undefined);assert.match(saved.sheets[0].formulas[4][17],/574/);assert.equal(writes.filter(p=>p===options.path).length,1);
+});
+
+test('explicit clearing of an automatic formula survives restart and subsequent input edits',async t=>{
+ const {ledger,options}=await setup(t,calculationFixture()),current=await ledger.load();
+ const cleared=await ledger.change({action:'clear',sheetId:1,revision:current.revision,range:{row:5,column:18}});
+ const reopened=createLocalLedger(options);const next=await reopened.edit(editN(cleared,60000));assert.equal(next.sheets[0].formulas[4][17],'');assert.equal(next.sheets[0].calculatedValues[4][19].value,'');
+});
 
 test('one-time encrypted migration preserves source and all tabs; restart never imports over local edits',async t=>{
  const {ledger,options,book,dir}=await setup(t);const source=await readFile(options.sourcePath);
