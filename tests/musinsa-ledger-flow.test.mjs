@@ -123,6 +123,22 @@ test('My navigation clicks only the observed order-history entry, once, and stop
   const actions=[];const result=await advanceMusinsaLedgerToOrders({inspect:async()=>pages.shift(),click:async page=>actions.push(page),wait:async()=>{}});
   assert.equal(result.stage,'orders');assert.equal(actions.length,1);
 });
+test('current My-page history button with subtitle opens the order list once',async t=>{
+  for(const label of ['주문 내역 온·오프라인, 상품권, 티켓 주문 내역 모아보기',
+    '<span>주문 내역</span><span>온·오프라인, 상품권, 티켓 주문 내역 모아보기</span>']) {
+    const {capture}=frame(t,`<h1>마이</h1><button>${label}</button>`,'https://www.musinsa.com/mypage');
+    const observed=capture();assert.equal(observed.kind,'my');assert.ok(observed.orderAction);
+    let clicks=0;
+    const result=await advanceMusinsaLedgerToOrders({inspect:async()=>clicks?{kind:'orders'}:capture(),
+      click:async page=>{assert.equal(page.href,observed.href);clicks++;},wait:async()=>{}});
+    assert.equal(result.stage,'orders');assert.equal(clicks,1);
+  }
+  for(const control of ['<button>주문 내역 삭제</button>','<button><span>주문 내역</span><span>취소</span></button>',
+    '<button hidden>주문 내역</button>','<a href="https://evil.test/orders">주문 내역 온·오프라인, 상품권, 티켓 주문 내역 모아보기</a>']) {
+    const page=frame(t,`<h1>마이</h1>${control}`,'https://www.musinsa.com/mypage').capture();
+    assert.equal(page.orderAction,null);
+  }
+});
 test('login/access restrictions stop navigation without repeated clicks',async()=>{
   for(const kind of ['login','blocked','outside']){
     let clicks=0;const result=await advanceMusinsaLedgerToOrders({inspect:async()=>({kind}),click:async()=>clicks++,wait:async()=>{}});
