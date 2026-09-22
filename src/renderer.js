@@ -2397,7 +2397,7 @@ function renderRecords(collection) {
 function renderLedgerRecords() {
   const host = $("#ledger-list");
   const rows = Array.isArray(state.ledger) ? state.ledger : [];
-  host.innerHTML = rows.length ? rows.map((row) => `<div class="record"><div class="ledger-record-product">${ledgerPhotoMarkup(row)}<div><strong>${text(row.modelName || row.name)}</strong><small>${text(row.brand)} · ${text(row.articleNumber)} · ${text(row.krSize || row.euSize || "-")}</small></div></div><div><span class="ledger-sync-state ${row.syncStatus === "failed" ? "failed" : ""}">${row.syncStatus === "synced" ? `시트 ${text((row.sheetRows || [row.sheetRow]).join(", "))}행 기록완료` : row.syncStatus === "duplicate" ? `기존 ${text((row.sheetRows || [row.sheetRow]).join(", "))}행 연결` : "기록실패"}${row.imageStatus==='link-only'?' · 사진 표시를 위한 사진 확인 필요':''}</span>${row.syncStatus === "failed" ? ` <button data-ledger-retry="${text(row.id)}">다시 기록</button>` : ["synced","duplicate"].includes(row.syncStatus) ? ` <button type="button" data-ledger-view="${text(row.id)}">기록 위치 보기</button>` : ""}</div></div>`).join("") : `<div class="empty">구매장부 기록 내역이 없습니다.</div>`;
+  host.innerHTML = rows.length ? rows.map((row) => `<div class="record"><div class="ledger-record-product">${ledgerPhotoMarkup(row)}<div><strong>${text(row.modelName || row.name)}</strong><small>${text(row.brand)} · ${text(row.articleNumber)} · ${text(row.krSize || row.euSize || "-")}</small></div></div><div><span class="ledger-sync-state ${row.syncStatus === "failed" ? "failed" : ""}">${row.syncStatus === "synced" ? `시트 ${text((row.sheetRows || [row.sheetRow]).join(", "))}행 기록완료` : row.syncStatus === "duplicate" ? `기존 ${text((row.sheetRows || [row.sheetRow]).join(", "))}행 연결` : "기록실패"}${row.imageStatus==='link-only'?' · 사진 표시를 위한 사진 확인 필요':''}</span>${row.syncStatus === "failed" ? ` <button data-ledger-retry="${text(row.id)}">다시 기록</button>` : ["synced","duplicate"].includes(row.syncStatus) ? ` <button type="button" data-ledger-view="${text(row.id)}">기록 위치 보기</button>${row.storage==='local'?` <button type="button" data-ledger-move="${text(row.id)}">선택한 행으로 이동</button>`:''}` : ""}</div></div>`).join("") : `<div class="empty">구매장부 기록 내역이 없습니다.</div>`;
 }
 
 function stockWatchTime(value) {
@@ -5099,6 +5099,22 @@ async function showLedgerRecordLocation(recordedRows) {
   return result;
 }
 $("#ledger-list")?.addEventListener('click',async event=>{
+  const moveButton=event.target.closest('[data-ledger-move]');
+  if(moveButton) {
+    if(moveButton.disabled||ledgerBusy)return;
+    const placement=window.aroundGLedgerWorkbook?.beginPurchaseRecord(),status=$("#ledger-status");
+    if(!placement?.ok){status.className='status error';status.textContent=ledgerFlowMessage(placement||{code:'PURCHASE_DESTINATION_REQUIRED'});return;}
+    setLedgerBusy(true);moveButton.disabled=true;status.className='status';status.textContent='저장된 주문을 선택한 행으로 옮기고 있습니다.';
+    try {
+      const result=await window.aroundG.syncPurchaseLedger({moveId:moveButton.dataset.ledgerMove,destination:placement.destination});
+      window.aroundGLedgerWorkbook.endPurchaseRecord(Boolean(result?.ok));
+      if(!result?.ok){status.className='status error';status.textContent=ledgerFlowMessage(result);return;}
+      status.className='status success';status.textContent=ledgerRecordResultMessage(result);
+      await refresh();await showLedgerRecordLocation(result.rowNumbers);
+    } catch {status.className='status error';status.textContent='이동 결과를 확인하지 못했습니다. 내부 장부를 새로 불러온 뒤 기록 위치를 확인해 주세요.';}
+    finally {window.aroundGLedgerWorkbook.endPurchaseRecord();setLedgerBusy(false);moveButton.disabled=false;}
+    return;
+  }
   const button=event.target.closest('[data-ledger-view]');
   if(!button || button.disabled)return;
   const row=state.ledger.find(item=>item.id===button.dataset.ledgerView);
@@ -5164,6 +5180,8 @@ function ledgerFlowMessage(result) {
     PURCHASE_DESTINATION_INVALID:"1-구매완료 시트의 빈 행 하나를 선택해 주세요. 수량만큼 아래쪽 행이 필요합니다.",
     PURCHASE_DESTINATION_OCCUPIED:"선택한 행 또는 이어지는 행에 기존 상품·사진·기록이 있습니다. 수량만큼 연속된 빈 행을 선택해 주세요.",
     PURCHASE_DESTINATION_MERGED:"병합된 행에는 상품을 기록할 수 없습니다. 다른 빈 행을 선택해 주세요.",
+    PURCHASE_EXISTING_CONFLICT:"저장된 주문의 수량 또는 금액이 인식한 주문과 다릅니다. 기존 기록을 확인해 주세요.",
+    PURCHASE_EXISTING_NOT_FOUND:"옮길 주문 기록을 내부 장부에서 찾지 못했습니다. 장부를 새로 불러온 뒤 기록을 확인해 주세요.",
     WORKBOOK_EDIT_PENDING:"편집 중인 셀을 먼저 저장하거나 취소한 뒤 입력할 행을 선택해 주세요.",
     WORKBOOK_BUSY:"장부를 처리 중입니다. 완료 후 다시 기록해 주세요.",
     WORKBOOK_REFRESH_REQUIRED:"내부 장부를 새로 불러온 뒤 입력할 행을 다시 선택해 주세요.",
@@ -5176,6 +5194,11 @@ function ledgerFlowMessage(result) {
     LOGIN_ACTION_FAILED:"자동 로그인 입력이 중단됐습니다. 연동 관리의 무신사 오류 내용을 확인해 주세요.",
     LOGIN_PAGE_LOAD_FAILED:"무신사 로그인 페이지를 열지 못했습니다. 열린 창을 확인해 주세요.",
   })[code] || result?.message || "무신사 주문 연결을 확인해 주세요.";
+}
+function ledgerRecordResultMessage(result) {
+  const rows=(result.rowNumbers||[result.rowNumber]).join(', ');
+  return result.moved?`기존 ${result.previousRowNumbers.join(', ')}행의 주문을 선택한 ${rows}행으로 옮겼습니다. 사진·금액·수식도 함께 이동했습니다.`
+    :result.duplicate?`내부 장부의 기존 ${rows}행을 확인했습니다.`:`내부 장부 ${rows}행에 기록했습니다.`;
 }
 function renderCapturedLedgerRows() {
   $("#ledger-captured-list").innerHTML=capturedLedgerRows.map((row,index)=>`<button type="button" class="ledger-captured-card${index===selectedLedgerIndex?" selected":""}" data-ledger-captured="${index}">${ledgerPhotoMarkup(row)}<span><strong>${text(row.modelName || row.articleNumber || `상품 ${index+1}`)}</strong><small>${text(row.krSize || row.euSize || "옵션 확인 필요")} · ${row.quantity?`${Number(row.quantity)}개`:"수량 확인 필요"} · ${row.purchasePrice?`${Number(row.purchasePrice).toLocaleString("ko-KR")}원`:"결제금액 확인 필요"}</small><small>${row.recorded?"기록 완료":row.missing?.length?`${text(row.missing.join(" · "))} 확인 필요`:"주문상세 인식 완료"}</small></span></button>`).join("");
@@ -5225,8 +5248,7 @@ $("#purchase-ledger-form")?.addEventListener("submit", async event => {
     if(selectedLedgerIndex>=0 && capturedLedgerRows[selectedLedgerIndex])capturedLedgerRows[selectedLedgerIndex].recorded=true;
     selectedLedgerProof=null;renderCapturedLedgerRows();status.className="status success";
     const recordedRows=Array.isArray(result.rowNumbers)?result.rowNumbers:[result.rowNumber];
-    const rowLabel=recordedRows.join(', ');
-    status.textContent=result.duplicate?`내부 장부의 기존 ${rowLabel}행을 확인했습니다.`:`내부 장부 ${rowLabel}행에 기록했습니다.`;
+    status.textContent=ledgerRecordResultMessage(result);
     if(recordedRows.length>1)status.textContent+=` 수량 ${recordedRows.length}개를 각각 한 행으로 나눴습니다.`;
     if(result.imageStatus==='formula')status.textContent+=' 상품 사진도 연결했습니다.';
     else if(result.imageStatus==='link-only')status.textContent+=' 사진 주소만 저장되었습니다. 기존 기록의 사진 주소를 확인해 주세요.';

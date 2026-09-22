@@ -170,7 +170,7 @@ export function updateLedgerXlsx(book,edits=[]) {
     const dimension=first(doc.documentElement,'dimension');
     if(dimension && changed.length)dimension.setAttribute('ref',`A1:${ledgerColumnName(sheet.columnCount-1)}${Math.max(sheet.rowCount,...rows.keys())}`);
     // Preserve existing comment parts and append receipt notes in that same format.
-    const noteEdits=changed.filter(e=>sheet.notes?.[e.row-1]?.[e.column-1]);
+    const noteEdits=changed.filter(e=>e.clearNote||sheet.notes?.[e.row-1]?.[e.column-1]);
     if(noteEdits.length) {
       const relPath=posix.join(posix.dirname(path),'_rels',posix.basename(path)+'.rels');
       let sheetRels=files[relPath]&&xml(files[relPath]);
@@ -189,6 +189,7 @@ export function updateLedgerXlsx(book,edits=[]) {
       for(const e of noteEdits) {
         const ref=ledgerColumnName(e.column-1)+e.row;
         let comment=children(list,'comment').find(n=>n.getAttribute('ref')===ref);
+        if(!sheet.notes?.[e.row-1]?.[e.column-1]){if(comment)list.removeChild(comment);continue;}
         if(!comment){comment=append(list,'comment');comment.setAttribute('ref',ref);comment.setAttribute('authorId','0');}
         for(const child of children(comment,'text'))comment.removeChild(child);
         append(append(comment,'text'),'t',sheet.notes[e.row-1][e.column-1]);

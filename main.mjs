@@ -5562,8 +5562,17 @@ async function captureMusinsaLedgerOrderAsync() {
 
 
 async function syncPurchaseLedger(input = {}) {
+  const destination=input.destination;
+  const moving=Boolean(input.moveId);
+  if(moving) {
+    // A history move uses only the stored, previously verified purchase. Renderer
+    // fields cannot alter its order identity, and a missing receipt is not inserted.
+    const saved=store.snapshot(['ledger']).ledger.find(row=>row.id===input.moveId&&row.storage==='local'&&['synced','duplicate'].includes(row.syncStatus));
+    if(!saved)return {ok:false,code:'PURCHASE_EXISTING_NOT_FOUND'};
+    input={...saved,destination};
+  }
   const failedRow = input.retryId ? store.snapshot(["ledger"]).ledger.find(row => row.id === input.retryId) : null;
-  const proof = musinsaLedgerCaptures.resolve(input, failedRow);
+  const proof = moving ? {ok:true,evidence:input.orderEvidence} : musinsaLedgerCaptures.resolve(input, failedRow);
   if (!proof.ok) return proof;
   if (!Number.isInteger(Number(input.quantity)) || Number(input.quantity) < 1) return {ok:false,code:"REQUIRED_FIELDS_MISSING",message:"주문상세의 수량을 확인해 주세요."};
   const row = normalizePurchaseLedgerRow({ ...input, orderEvidence: proof.evidence });
@@ -5572,7 +5581,7 @@ async function syncPurchaseLedger(input = {}) {
   if (!validation.ok) return { ok: false, code: "REQUIRED_FIELDS_MISSING", message: `${validation.missing.join(", ")}을(를) 확인해 주세요.` };
   if (!input.destination) return {ok:false,code:'PURCHASE_DESTINATION_REQUIRED'};
   try {
-    const result=await purchaseWorkbook().record(row,input.destination);
+    const result=await purchaseWorkbook().record(row,input.destination,{existingOnly:moving});
     const saved={...row,imageStatus:result.imageStatus,id:row.duplicateKey,sheetRow:result.rowNumber,sheetRows:result.rowNumbers,unitPrices:result.unitPrices,syncStatus:result.duplicate?'duplicate':'synced',storage:'local',syncedAt:new Date().toISOString()};
     // The workbook receipt is authoritative even if the secondary history fails.
     let historySaved=true;

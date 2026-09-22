@@ -193,9 +193,86 @@ test('selected purchase row fills units at 42 instead of after 575, preserves de
  assert.equal(sheet.rawValues[574][2].value,'EXISTING-575');assert.equal(sheet.rawValues[41][4].value,'공용');assert.equal(sheet.rawValues[41][16].value,'4890');
  assert.equal(sheet.formulas[0][19],'=SUM(T3:T575)');assert.equal(sheet.formulas[41][18],'=N42*0.08');assert.equal(sheet.formulas[41][17],'=IF(J42="","",J42-N42-P42-Q42)');
  assert.match(sheet.formulas[41][7],/^=IMAGE/);assert.equal(sheet.rawValues.filter(r=>r[2]?.value==='NEW-001').length,3);
- const duplicate=await createLocalLedger(options).record(purchase,{...destination,row:45,revision:saved.revision});assert.equal(duplicate.duplicate,true);assert.deepEqual(duplicate.rowNumbers,[42,43,44]);
+ const duplicate=await createLocalLedger(options).record(purchase,{...destination,revision:saved.revision});assert.equal(duplicate.duplicate,true);assert.deepEqual(duplicate.rowNumbers,[42,43,44]);
  await ledger.export(join(dir,'selected.xlsx'));const files=unzipSync(await readFile(join(dir,'selected.xlsx'))),doc=new DOMParser().parseFromString(strFromU8(files['xl/worksheets/sheet1.xml']),'application/xml'),cells=Array.from(doc.getElementsByTagName('c'));
  assert.match(cells.find(c=>c.getAttribute('r')==='H42').textContent,/IMAGE/);assert.match(cells.find(c=>c.getAttribute('r')==='C42').textContent,/NEW-001/);assert.match(strFromU8(files['xl/comments/aroundg-1.xml']),/ref="H42"/);
+});
+
+test('re-recording the receipt at 42 relocates 575-577, preserving prices, photos, formulas and a verified backup',async t=>{
+ const {options,dir}=await setup(t,calculationFixture()),row={...purchase,purchasePrice:163460};
+ const ledger=createLocalLedger({...options,categories:async()=>[{articleNumber:'NEW-001',categoryName:'의류'}]});
+ let current=await ledger.load();
+ await ledger.record(row,{sheetId:1,row:575,revision:current.revision});current=await ledger.load();
+ current=await ledger.edit({sheetId:1,row:575,column:10,revision:current.revision,expected:current.sheets[0].rawValues[574][9],next:{type:'number',value:'75000'}});
+ current=await ledger.change({action:'clear',sheetId:1,revision:current.revision,range:{row:575,column:18}});
+ const before=await ledger.load(),partsBefore=unzipSync(Buffer.from(before.xlsxBase64,'base64'));
+ const result=await ledger.record(row,{sheetId:1,row:42,revision:before.revision});
+ assert.equal(result.moved,true);assert.deepEqual(result.previousRowNumbers,[575,576,577]);assert.deepEqual(result.rowNumbers,[42,43,44]);assert.deepEqual(result.unitPrices,[54487,54487,54486]);
+ const saved=await createLocalLedger(options).load(),s=saved.sheets[0];
+ assert.equal(s.rawValues.filter(r=>r[2]?.value==='NEW-001').length,3);assert.equal(s.rawValues[41][9].value,'75000');
+ assert.equal(s.formulas[41][17],'');assert.equal(saved.local.formulaOverrides[1]['42:18'],true);assert.equal(saved.local.formulaOverrides[1]['575:18'],undefined);
+ assert.equal(saved.local.categories[1].rows[575],undefined);assert.ok(saved.local.categories[1].rows[42]);
+ for(let r=41;r<44;r++){assert.match(s.formulas[r][7],/^=IMAGE/);assert.match(s.formulas[r][18],new RegExp(`N${r+1}`));assert.equal(JSON.parse(s.notes[r][7]).unit,r-40);}
+ for(let r=574;r<577;r++){assert.ok(s.rawValues[r].every(v=>v.value===''));assert.ok(s.notes[r].every(v=>v===''));}
+ const backup=await readLedgerWorkbook(saved.local.receiptMoves[0].backupPath,options.decrypt);assert.equal(backup.revision,before.revision);assert.equal(backup.sheets[0].rawValues[574][2].value,'NEW-001');
+ const duplicate=await ledger.record(row,{sheetId:1,row:42,revision:saved.revision});assert.equal(duplicate.duplicate,true);assert.equal((await ledger.load()).revision,saved.revision);
+ await ledger.export(join(dir,'moved.xlsx'));const parts=unzipSync(await readFile(join(dir,'moved.xlsx'))),comments=strFromU8(parts['xl/comments/aroundg-1.xml']);
+ assert.doesNotMatch(comments,/ref="H57[567]"/);for(const n of [42,43,44])assert.match(comments,new RegExp(`ref="H${n}"`));
+ assert.deepEqual(parts['xl/styles.xml'],partsBefore['xl/styles.xml']);assert.deepEqual(parts['xl/worksheets/sheet2.xml'],partsBefore['xl/worksheets/sheet2.xml']);
+});
+
+test('overlapping receipt moves keep each unit once and move embedded photos and notes',async t=>{
+ const {ledger}=await setup(t),first=await ledger.load();await ledger.record(purchase,{sheetId:1,row:42,revision:first.revision});let current=await ledger.load();
+ current=await ledger.change({action:'paste',sheetId:1,revision:current.revision,range:{row:42,column:8},payload:{schema:LEDGER_COPY_SCHEMA,cells:[[{type:'text',value:''}]],images:[{row:0,column:0,url:'data:image/png;base64,iVBORw=='}]}});
+ await ledger.record(purchase,{sheetId:1,row:43,revision:current.revision});const moved=await ledger.load();readLedgerImages(moved);
+ assert.deepEqual(moved.sheets[0].images.map(i=>i.row),[43]);assert.equal(moved.sheets[0].rawValues[41][2].value,'');
+ assert.deepEqual([43,44,45].map(n=>JSON.parse(moved.sheets[0].notes[n-1][7]).unit),[1,2,3]);
+ const comments=strFromU8(unzipSync(Buffer.from(moved.xlsxBase64,'base64'))['xl/comments/aroundg-1.xml']);assert.doesNotMatch(comments,/ref="H42"/);
+});
+
+test('receipt relocation rejects occupied rows, stale views, merged rows and changed receipt totals without mutation',async t=>{
+ const {ledger,options}=await setup(t),first=await ledger.load();await ledger.record(purchase,{sheetId:1,row:575,revision:first.revision});let current=await ledger.load();
+ for(const [destination,change,error] of [[3,{},'OCCUPIED'],[42,{purchasePrice:100002},'EXISTING_CONFLICT'],[42,{quantity:2},'EXISTING_CONFLICT']]) {
+  await assert.rejects(ledger.record({...purchase,...change},{sheetId:1,row:destination,revision:current.revision}),new RegExp(error));assert.equal((await ledger.load()).revision,current.revision);
+ }
+ await assert.rejects(ledger.record(purchase,{sheetId:1,row:42,revision:'stale'}),/CELL_CONFLICT/);
+ for(const kind of ['note','image','manual','merge']) {
+  const changed=structuredClone(current),s=changed.sheets[0];
+  if(kind==='note')s.notes[41][0]='keep note';if(kind==='image')s.images=[{row:42,column:8,url:'data:image/png;base64,iVBORw=='}];
+  if(kind==='manual')s.rawValues[41][19]={type:'number',value:'123'};if(kind==='merge')s.merges.push({row:41,column:0,rows:1,columns:2});
+  await saveLedgerWorkbook(options.path,changed,options.encrypt);
+  await assert.rejects(ledger.record(purchase,{sheetId:1,row:42,revision:current.revision}),/OCCUPIED|MERGED/);
+  assert.equal((await ledger.load()).sheets[0].rawValues[574][2].value,'NEW-001');
+ }
+});
+
+test('history relocation requires existing receipts and a failed backup or commit leaves all original rows intact',async t=>{
+ const {ledger,options}=await setup(t),first=await ledger.load();
+ await assert.rejects(ledger.record(purchase,{sheetId:1,row:42,revision:first.revision},{existingOnly:true}),/EXISTING_NOT_FOUND/);
+ await ledger.record(purchase,{sheetId:1,row:575,revision:first.revision});const before=await readFile(options.path),current=await ledger.load();
+ for(const failure of ['backup','commit']) {
+  const broken=createLocalLedger({...options,save:async(path,...args)=>{if(failure==='backup'?path.includes('before-receipt-move'):path===options.path)throw Error('DISK_FULL');return saveLedgerWorkbook(path,...args);}});
+  await assert.rejects(broken.record(purchase,{sheetId:1,row:42,revision:current.revision},{existingOnly:true}),/DISK_FULL/);
+  assert.deepEqual(await readFile(options.path),before);
+ }
+});
+
+test('moving beyond a header total extends its range and preserves destination defaults',async t=>{
+ const {ledger}=await setup(t),first=await ledger.load();await ledger.record(purchase);
+ let current=await ledger.load();current=await ledger.edit({sheetId:1,row:900,column:17,revision:current.revision,expected:{type:'text',value:''},next:{type:'number',value:'4890'}});
+ const moved=await ledger.record(purchase,{sheetId:1,row:900,revision:current.revision});assert.deepEqual(moved.rowNumbers,[900,901,902]);
+ const saved=await ledger.load();assert.equal(saved.sheets[0].formulas[0][19],'=SUM(T3:T902)');assert.equal(saved.sheets[0].rawValues[899][16].value,'4890');
+});
+
+test('visually blank whitespace cells allow new purchases and relocation while numeric zero is occupied',async t=>{
+ const {ledger}=await setup(t),first=await ledger.load();
+ let current=await ledger.change({action:'paste',sheetId:1,revision:first.revision,range:{row:42,column:1},payload:{schema:LEDGER_COPY_SCHEMA,cells:[Array.from({length:14},()=>({type:'text',value:' \t\u00a0'}))]}});
+ const initial=await ledger.record(purchase,{sheetId:1,row:42,revision:current.revision});assert.deepEqual(initial.rowNumbers,[42,43,44]);
+ current=await ledger.load();
+ current=await ledger.change({action:'paste',sheetId:1,revision:current.revision,range:{row:50,column:1},payload:{schema:LEDGER_COPY_SCHEMA,cells:[Array.from({length:14},()=>({type:'text',value:' '}))]}});
+ assert.equal((await ledger.record(purchase,{sheetId:1,row:50,revision:current.revision})).moved,true);
+ current=await ledger.load();current=await ledger.edit({sheetId:1,row:60,column:14,revision:current.revision,expected:{type:'text',value:''},next:{type:'number',value:'0'}});
+ await assert.rejects(ledger.record(purchase,{sheetId:1,row:60,revision:current.revision}),/DESTINATION_OCCUPIED/);
 });
 
 test('selected-row writes reject stale/invalid destinations and any occupied unit atomically',async t=>{
