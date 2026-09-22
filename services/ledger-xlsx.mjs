@@ -14,6 +14,38 @@ function xml(bytes) {
 const output=doc=>strToU8(new XMLSerializer().serializeToString(doc));
 const append=(parent,name,value)=>{const node=parent.ownerDocument.createElementNS(NS,name);if(value!==undefined)node.appendChild(parent.ownerDocument.createTextNode(String(value)));parent.appendChild(node);return node;};
 const resolvePart=(parent,target)=>target.startsWith('/')?target.slice(1):posix.normalize(posix.join(posix.dirname(parent),target));
+const relPart=part=>posix.join(posix.dirname(part),'_rels',posix.basename(part)+'.rels');
+function linkedParts(files,part) {
+  if(!files[relPart(part)])return new Map();
+  return new Map(Array.from(xml(files[relPart(part)]).documentElement.childNodes).filter(n=>n.nodeType===1&&n.getAttribute('TargetMode')!=='External').map(n=>[n.getAttribute('Id'),resolvePart(part,n.getAttribute('Target'))]));
+}
+function anchors(files,sheetPath) {
+  const links=linkedParts(files,sheetPath),sheet=xml(files[sheetPath]),found=[];
+  for(const drawing of Array.from(sheet.getElementsByTagNameNS(NS,'drawing'))) {
+    const path=links.get(drawing.getAttribute('r:id'));if(!path||!files[path])continue;
+    const doc=xml(files[path]),media=linkedParts(files,path);
+    for(const anchor of Array.from(doc.documentElement.childNodes).filter(n=>n.nodeType===1)) {
+      const from=first(anchor,'from');if(!from)continue;
+      const row=Number(first(from,'row')?.textContent)+1,column=Number(first(from,'col')?.textContent)+1;
+      const blip=Array.from(anchor.getElementsByTagName('*')).find(n=>n.localName==='blip');
+      const imagePath=blip&&media.get(blip.getAttribute('r:embed'));
+      if(imagePath)found.push({doc,path,anchor,row,column,imagePath});
+    }
+  }
+  return found;
+}
+export function readLedgerImages(book) {
+  const files=unzipSync(Buffer.from(book.xlsxBase64,'base64')),root=xml(files['xl/workbook.xml']),links=linkedParts(files,'xl/workbook.xml');
+  for(const sheet of book.sheets) {
+    const entry=Array.from(root.getElementsByTagNameNS(NS,'sheet')).find(n=>n.getAttribute('name')===sheet.name);
+    const path=entry&&links.get(entry.getAttribute('r:id'));sheet.images=[];
+    if(!path)continue;
+    for(const found of anchors(files,path)) {
+      const ext=posix.extname(found.imagePath).toLowerCase(),mime={'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp'}[ext];
+      if(mime&&files[found.imagePath])sheet.images.push({row:found.row,column:found.column,url:`data:${mime};base64,${Buffer.from(files[found.imagePath]).toString('base64')}`});
+    }
+  }
+}
 
 // Patch the original archive rather than recreating a simplified workbook.
 // All untouched parts (styles, images, hidden tabs, validations, names) survive.
@@ -50,6 +82,11 @@ export function updateLedgerXlsx(book,edits=[]) {
       return cell;
     }
     const changed=edits.filter(e=>e.sheetId===sheet.id);
+    const drawings=new Map();
+    for(const found of anchors(files,path))if(changed.some(e=>e.row===found.row&&e.column===found.column)) {
+      found.anchor.parentNode.removeChild(found.anchor);drawings.set(found.path,found.doc);
+    }
+    for(const [part,document] of drawings)files[part]=output(document);
     const addresses=new Map(changed.map(e=>[`${e.row}:${e.column}`,e]));
     for(let r=0;r<sheet.formulas.length;r++)for(let c=0;c<sheet.formulas[r].length;c++)if(sheet.formulas[r][c])addresses.set(`${r+1}:${c+1}`,addresses.get(`${r+1}:${c+1}`)||{row:r+1,column:c+1});
     for(const edit of addresses.values()) {

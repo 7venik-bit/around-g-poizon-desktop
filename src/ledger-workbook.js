@@ -106,8 +106,9 @@
         const cell=document.createElement('td'),content=document.createElement('span');
         content.className='workbook-cell-text';content.textContent=rows[r]?.[c] || '';cell.append(content);
         cell.dataset.columnKind=layout.columns[c].kind;
-        if(layout.columns[c].kind==='image' && r>layout.header) {
-          const url=photoUrl(rows[r]?.[c],sheet.formulas?.[r]?.[c]);
+        const embedded=sheet.images?.find(image=>image.row===r+1&&image.column===c+1);
+        if(embedded || layout.columns[c].kind==='image' && r>layout.header) {
+          const url=/^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/.test(embedded?.url || '')?embedded.url:photoUrl(rows[r]?.[c],sheet.formulas?.[r]?.[c]);
           if(url) {
             const image=document.createElement('img');image.className='workbook-product-photo';image.alt='상품 사진';image.loading='lazy';image.referrerPolicy='no-referrer';image.src=url;
             content.hidden=true;cell.append(image);

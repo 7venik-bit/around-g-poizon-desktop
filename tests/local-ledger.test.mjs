@@ -9,6 +9,7 @@ import {DOMParser} from '@xmldom/xmldom';
 import {LEDGER_SPREADSHEET_ID,saveLedgerWorkbook} from '../services/ledger-workbook.mjs';
 import {createLocalLedger} from '../services/local-ledger.mjs';
 import {calculateLedger,shiftLedgerFormula} from '../services/ledger-calculation.mjs';
+import {readLedgerImages} from '../services/ledger-xlsx.mjs';
 
 const ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
 function fixture() {
@@ -94,6 +95,20 @@ test('failed durable save never publishes changed money or a successful purchase
  const failing=createLocalLedger({...options,save:async()=>{throw Error('DISK_FULL');}});
  await assert.rejects(failing.edit(editN(current,60000)),/DISK_FULL/);await assert.rejects(failing.record(purchase),/DISK_FULL/);
  assert.equal((await ledger.load()).revision,current.revision);assert.equal((await ledger.load()).sheets[0].rawValues.length,5);
+});
+
+test('embedded product pictures are available offline and a photo-cell edit removes only its old drawing',async t=>{
+ const book=fixture(),files=unzipSync(Buffer.from(book.xlsxBase64,'base64'));
+ files['xl/worksheets/sheet1.xml']=strToU8(strFromU8(files['xl/worksheets/sheet1.xml']).replace('</worksheet>','<drawing xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="picture"/></worksheet>'));
+ files['xl/worksheets/_rels/sheet1.xml.rels']=strToU8('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="picture" Target="../drawings/drawing1.xml"/></Relationships>');
+ files['xl/drawings/drawing1.xml']=strToU8('<x:wsDr xmlns:x="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><x:twoCellAnchor><x:from><x:col>7</x:col><x:row>4</x:row></x:from><x:pic><a:blip r:embed="photo"/></x:pic></x:twoCellAnchor></x:wsDr>');
+ files['xl/drawings/_rels/drawing1.xml.rels']=strToU8('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="photo" Target="/xl/media/image1.png"/></Relationships>');
+ const bytes=Buffer.from(zipSync(files));book.xlsxBase64=bytes.toString('base64');book.xlsxSha256=createHash('sha256').update(bytes).digest('hex');
+ readLedgerImages(book);assert.deepEqual(book.sheets[0].images,[{row:5,column:8,url:'data:image/png;base64,iVBORw=='}]);
+ const {ledger,dir}=await setup(t,book),migrated=await ledger.load();
+ const next=await ledger.edit({...editN(migrated,1),column:8,expected:{type:'text',value:''},next:{type:'formula',value:'=IMAGE("https://image.msscdn.net/new.jpg",1)'}});
+ assert.equal(next.sheets[0].images.length,0);await ledger.export(join(dir,'photo.xlsx'));
+ const updated=unzipSync(await readFile(join(dir,'photo.xlsx')));assert.doesNotMatch(strFromU8(updated['xl/drawings/drawing1.xml']),/twoCellAnchor/);assert.deepEqual(updated['xl/media/image1.png'],files['xl/media/image1.png']);
 });
 
 test('formula calculation respects blank fees, lookup sheets, error propagation and relative fill',()=>{

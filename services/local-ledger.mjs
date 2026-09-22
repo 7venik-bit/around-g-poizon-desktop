@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {readLedgerWorkbook,saveLedgerWorkbook,exportLedgerWorkbook,workbookView} from './ledger-workbook.mjs';
 import {calculateLedger,formatLedgerValue,ledgerScalar,shiftLedgerFormula} from './ledger-calculation.mjs';
-import {updateLedgerXlsx} from './ledger-xlsx.mjs';
+import {updateLedgerXlsx,readLedgerImages} from './ledger-xlsx.mjs';
 import {purchaseLedgerImageUrl,validatePurchaseLedgerRow} from './purchase-ledger.mjs';
 
 const fail=code=>{throw Error(code);};
@@ -45,7 +45,7 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
     try {book=await read(sourcePath,decrypt);}catch(error){if(error.code==='ENOENT')fail('WORKBOOK_NOT_IMPORTED');throw error;}
     if(book.sheets.some(s=>!Array.isArray(s.rawValues)))fail('WORKBOOK_SOURCE_INCOMPLETE');
     book.local={version:1,migratedAt:new Date().toISOString(),sourceRevision:book.revision,sourceXlsxSha256:book.xlsxSha256};
-    book.revision=randomUUID();calculateLedger(book);
+    book.revision=randomUUID();calculateLedger(book);readLedgerImages(book);
     await save(path,book,encrypt);return await read(path,decrypt);
   };
   const commit=async(book,edits)=>{
@@ -69,6 +69,7 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
       if(rule?.type==='other')fail('CELL_VALIDATION_REVIEW');
       if(rule?.type==='list'&&!rule.values.includes(next.value))fail('CELL_VALIDATION_FAILED');
       put(sheet,edit.row,edit.column,next);
+      sheet.images=sheet.images?.filter(image=>image.row!==edit.row||image.column!==edit.column);
       return workbookView(await commit(book,[edit]));
     }),
     record:row=>serial(async()=>{
