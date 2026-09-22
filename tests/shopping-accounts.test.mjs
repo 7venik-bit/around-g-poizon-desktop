@@ -238,6 +238,37 @@ test('a lost input focus never types credentials into another control or submits
   await assert.rejects(b.connector.advance(w,{source:sources[1],method:'password',started:Date.now(),acted:new Set()}),/LOGIN_INPUT_NOT_FOCUSED/);
   assert.equal(b.inserted.length,0);
 });
+
+test('login rereads the password and submit positions after the form shifts',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
+  const insert=w.webContents.insertText;let submitted=0;
+  w.dom.window.document.querySelector('form').addEventListener('submit',()=>submitted++);
+  w.webContents.insertText=async value=>{
+    await insert(value);
+    // The old password position now contains the username field.
+    w.dom.window.document.querySelector('form').prepend(w.dom.window.document.createElement('p'));
+  };
+  await b.connector.advance(w,{source:sources[1],method:'password',started:Date.now(),acted:new Set()});
+  assert.equal(w.dom.window.document.querySelector('[name=username]').value,'fixture-id');
+  assert.equal(w.dom.window.document.querySelector('[type=password]').value,'fixture-secret');
+  assert.equal(submitted,1);
+});
+
+test('a password control replaced during the click receives no secret and is never retried',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
+  const send=w.webContents.sendInputEvent;let submitted=0;
+  w.dom.window.document.querySelector('form').addEventListener('submit',()=>submitted++);
+  w.webContents.sendInputEvent=event=>{
+    send(event);
+    if(event.type==='mouseUp' && w.focused?.type==='password') w.focused.type='text';
+  };
+  const flow={source:sources[1],method:'password',started:Date.now(),acted:new Set()};
+  await assert.rejects(b.connector.advance(w,flow),/LOGIN_INPUT_NOT_FOCUSED/);
+  await b.connector.advance(w,flow);
+  assert.deepEqual(b.inserted.map(x=>x.value),['fixture-id']);assert.equal(submitted,0);
+});
 test('automatic login stops at its deadline while a later manual callback can still be confirmed',async t=>{
   const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
   const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;

@@ -13,6 +13,8 @@ on:
       - 'scripts/test-header-brand-layout.cjs'
       - 'scripts/test-domestic-stock-layout.cjs'
       - 'scripts/test-ledger-workbook-layout.cjs'
+      - 'scripts/test-musinsa-ledger.cjs'
+      - 'services/musinsa-ledger-*.mjs'
       - 'tests/fixtures/ledger-layout-data.cjs'
       - 'tests/header-brand-layout.test.mjs'
       - 'package.json'
@@ -47,6 +49,10 @@ jobs:
         shell: pwsh
         run: >-
           node -e "const {spawnSync}=require('node:child_process');const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;const r=spawnSync(require('electron'),['scripts/test-ledger-workbook-layout.cjs'],{stdio:'inherit',env,shell:false});if(r.error)throw r.error;process.exit(r.status??1)"
+      - name: Verify Musinsa detail-to-ledger flow with offline Electron pages
+        shell: pwsh
+        run: >-
+          node -e "const {spawnSync}=require('node:child_process');const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;const r=spawnSync(require('electron'),['scripts/test-musinsa-ledger.cjs'],{stdio:'inherit',env,shell:false});if(r.error)throw r.error;process.exit(r.status??1)"
       - name: Save rendered screenshots and geometry report
         if: always()
         uses: actions/upload-artifact@v4

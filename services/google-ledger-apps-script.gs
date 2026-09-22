@@ -6,7 +6,15 @@ function json_(value) {
 }
 
 function doGet(e) {
-  return json_({ ok: true, service: 'Around G 구매장부', sheet: SHEET_NAME, capabilities: ['workbook.read.v1', 'workbook.edit.v1'] });
+  return json_({ ok: true, service: 'Around G 구매장부', sheet: SHEET_NAME, capabilities: ['workbook.read.v1', 'workbook.edit.v1', 'purchase.image.v1', 'purchase.units.v1'] });
+}
+
+// A literal HTTPS image formula fits the original photo cell, and remains a
+// formula in workbook reads/exports. Never evaluate caller-supplied formulas.
+function purchaseImageFormula_(value) {
+  const url=String(value || '').trim();
+  if (!/^https:\/\/[a-z0-9.-]+(?::443)?\/[^\s<>"\\]*$/i.test(url) || /\.svg(?:[?#]|$)/i.test(url)) return '';
+  return '=IMAGE("' + url + '",1)';
 }
 
 function doPost(e) {
@@ -22,28 +30,7 @@ function doPost(e) {
     const row = body.row || {};
     const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_NAME);
     if (!sheet) return json_({ ok: false, code: 'SHEET_NOT_FOUND' });
-    const last = Math.max(2, sheet.getLastRow());
-    const values = last > 2 ? sheet.getRange(3, 1, last - 2, 30).getDisplayValues() : [];
-    const same = values.findIndex(r => {
-      const link = String(r[1] || '').replace(/[?#].*$/, '');
-      const code = String(r[2] || '').toUpperCase().replace(/[^0-9A-Z가-힣]/g, '');
-      const size = String(r[6] || r[5] || '').toUpperCase().replace(/\s+/g, '');
-      const date = Utilities.formatDate(new Date(r[12] || 0), 'Asia/Seoul', 'yyyy-MM-dd');
-      const price = Number(String(r[13] || '').replace(/[^0-9.-]/g, '')) || 0;
-      return (link && link === row.purchaseUrl && size === String(row.krSize || row.euSize).toUpperCase().replace(/\s+/g, ''))
-        || (code && code === row.articleNumber && size === String(row.krSize || row.euSize).toUpperCase().replace(/\s+/g, '') && date === row.purchaseDate && price === Number(row.purchasePrice));
-    });
-    if (same >= 0) return json_({ ok: true, duplicate: true, rowNumber: same + 3 });
-    const target = sheet.getLastRow() + 1;
-    const output = Array(30).fill('');
-    output[0]=row.brand; output[1]=row.purchaseUrl; output[2]=row.articleNumber; output[3]=row.modelName;
-    output[4]=row.gender; output[5]=row.euSize; output[6]=row.krSize; output[7]=row.imageUrl;
-    output[11]=row.status === '반품중' ? '반품중' : '구매완료'; output[12]=row.purchaseDate; output[13]=Number(row.purchasePrice);
-    sheet.getRange(target, 1, 1, 30).setValues([output]);
-    sheet.getRange(target - 1, 1, 1, 30).copyTo(sheet.getRange(target, 1, 1, 30), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
-    sheet.getRange(target, 1, 1, 30).setValues([output]);
-    const verify = sheet.getRange(target, 1, 1, 14).getDisplayValues()[0];
-    return json_({ ok: verify[2] === row.articleNumber && verify[11] === output[11], duplicate: false, rowNumber: target });
+    return json_(appendPurchaseUnits_(sheet, row));
   } catch (error) {
     return json_({ ok: false, code: 'WRITE_FAILED', message: String(error && error.message || error) });
   } finally { lock.releaseLock(); }
@@ -162,4 +149,69 @@ function workbookValidation_(rule) {
   }
   if (type === types.CHECKBOX) return {type:'list', values:args.length ? args.map(String) : ['true','false']};
   return {type:'other'};
+}
+
+// Each purchased unit occupies one original ledger row. Notes identify the
+// receipt line without adding columns or merging separate, identical purchases.
+function appendPurchaseUnits_(sheet, row) {
+  const quantity = Number(row.quantity == null ? 1 : row.quantity);
+  const total = Number(row.purchasePrice);
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 1000
+      || !Number.isSafeInteger(total) || total < quantity) return {ok:false,code:'PURCHASE_UNITS_INVALID'};
+  const imageFormula = purchaseImageFormula_(row.imageUrl);
+  if (!imageFormula) return {ok:false,code:'PRODUCT_IMAGE_REQUIRED'};
+  const evidence = row.orderEvidence || {};
+  const orderNumber = String(row.orderNumber || '').trim();
+  const lineId = String(evidence.orderLineId || row.orderLineId || '').trim();
+  if (!orderNumber || !lineId) return {ok:false,code:'ORDER_EVIDENCE_REQUIRED'};
+  const key = JSON.stringify([orderNumber, lineId]);
+  const prices = Array.from({length:quantity}, (_, i) => Math.floor(total / quantity) + (i < total % quantity ? 1 : 0));
+  const output = prices.map(price => {
+    const out = Array(14).fill('');
+    out[0]=String(row.brand || ''); out[1]=String(row.purchaseUrl || ''); out[2]=String(row.articleNumber || '');
+    out[3]=String(row.modelName || ''); out[4]=String(row.gender || '');
+    out[5]=String(row.euSize || ''); out[6]=String(row.krSize || ''); out[7]=imageFormula;
+    out[11]=row.status === '반품중' ? '반품중' : '구매완료';
+    out[12]=String(row.purchaseDate || ''); out[13]=price;
+    // Only the photo cell may contain an executable formula.
+    for (let c=0;c<out.length;c++) if (c!==7 && typeof out[c]==='string' && /^[=+@]/.test(out[c])) out[c]="'"+out[c];
+    return out;
+  });
+  const last = Math.max(2, sheet.getLastRow());
+  const scanEnd = Math.min(sheet.getMaxRows(), last + quantity);
+  const notes = scanEnd > 2 ? sheet.getRange(3,8,scanEnd-2,1).getNotes() : [];
+  const found = [];
+  notes.forEach((note, index) => {
+    try {
+      const mark=JSON.parse(note[0]);
+      if (mark.schema==='around-g.purchase.units.v1' && mark.key===key) found.push({row:index+3,mark:mark});
+    } catch (_) {}
+  });
+  const verify = (numbers) => numbers.every((number,index) => {
+    const values=sheet.getRange(number,1,1,14).getValues()[0];
+    const date=values[12] instanceof Date ? Utilities.formatDate(values[12],'Asia/Seoul','yyyy-MM-dd') : String(values[12]);
+    return [0,1,2,3,4,5,6,11].every(c => String(values[c])===output[index][c])
+      && date===output[index][12] && Number(values[13])===prices[index]
+      && sheet.getRange(number,8).getFormula()===imageFormula;
+  });
+  if (found.length) {
+    found.sort((a,b)=>a.mark.unit-b.mark.unit);
+    if (found.length!==quantity || found.some((item,index)=>item.mark.unit!==index+1
+        || item.mark.quantity!==quantity || item.mark.total!==total)) return {ok:false,code:'PURCHASE_RECEIPT_CONFLICT'};
+    const numbers=found.map(item=>item.row);
+    if (!verify(numbers)) return {ok:false,code:'PURCHASE_RECEIPT_REVIEW'};
+    return {ok:true,duplicate: true,rowNumber:numbers[0],rowNumbers:numbers,unitPrices:prices,quantity:quantity,imageStatus:'formula'};
+  }
+  const target=last+1;
+  if (target+quantity-1>sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(),target+quantity-1-sheet.getMaxRows());
+  const marks=prices.map((_,i)=>[JSON.stringify({schema:'around-g.purchase.units.v1',key:key,unit:i+1,quantity:quantity,total:total})]);
+  // Reserve the receipt before writing. An interrupted write is flagged for
+  // review on retry, never silently appended a second time.
+  sheet.getRange(target,8,quantity,1).setNotes(marks);
+  sheet.getRange(target,1,quantity,14).setValues(output);
+  sheet.setRowHeights(target,quantity,72);
+  SpreadsheetApp.flush();
+  const numbers=prices.map((_,i)=>target+i);
+  if (!verify(numbers)) return {ok:false,code:'PURCHASE_WRITE_VERIFY_FAILED',written:true,rowNumbers:numbers};
+  return {ok:true,duplicate:false,rowNumber:target,rowNumbers:numbers,unitPrices:prices,quantity:quantity,imageStatus:'formula'};
 }

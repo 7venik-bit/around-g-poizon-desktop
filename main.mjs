@@ -139,6 +139,8 @@ import {
   weeklySiteHealthSummary,
 } from "./services/weekly-site-health.mjs";
 import { normalizePurchaseLedgerRow, validatePurchaseLedgerRow } from "./services/purchase-ledger.mjs";
+import { captureMusinsaLedgerPage, captureMusinsaLedgerProductIdentity } from "./services/musinsa-ledger-page.mjs";
+import { advanceMusinsaLedgerToOrders, MusinsaLedgerCaptures, musinsaLedgerFailure } from "./services/musinsa-ledger-flow.mjs";
 import { PURCHASE_LEDGER_BACKUP_COLUMNS, purchaseLedgerBackupRows, weeklyLedgerBackupDue } from "./services/purchase-ledger-backup.mjs";
 // SEPTEMBER10_DOMESTIC_SEARCH_RESTORE: exact direct search and stock flow used before the later timeout/recovery rewrites.
 let store;
@@ -303,6 +305,9 @@ function endSellerExcelVerificationWindows() {
 
 let sellerMonitorWindow;
 let musinsaLedgerWindow;
+let musinsaLedgerOpening;
+let musinsaLedgerCapturing;
+const musinsaLedgerCaptures = new MusinsaLedgerCaptures();
 const inventoryWindows = new Set();
 const officialInteractiveWindows = new Set();
 const domesticLoginWindows = new Map();
@@ -5375,7 +5380,7 @@ async function waitForMusinsaAutomaticLogin(timeoutMs = 45000) {
     if (status.code === "LOGIN_CONFIRMED") {
       await session.fromPartition(DOMESTIC_SEARCH_PARTITION).cookies.flushStore().catch(() => {});
       const loginWindow = domesticLoginWindows.get("musinsa");
-      if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
+      if (loginWindow && !loginWindow.isDestroyed() && (await inspectMusinsaLedgerWindow(loginWindow))?.kind !== "detail") loginWindow.close();
       return { ok: true };
     }
     if (["LOGIN_VERIFICATION_REQUIRED", "LOGIN_MANUAL_REQUIRED", "ACCOUNT_CREDENTIALS_UNREADABLE", "ACCOUNT_CREDENTIALS_REQUIRED"].includes(status.code)) {
@@ -5387,67 +5392,155 @@ async function waitForMusinsaAutomaticLogin(timeoutMs = 45000) {
 }
 
 function openMusinsaLedgerWindow() {
-  return openMusinsaLedgerWindowAsync();
+  if (!musinsaLedgerOpening) musinsaLedgerOpening = openMusinsaLedgerWindowAsync().finally(() => { musinsaLedgerOpening = null; });
+  return musinsaLedgerOpening;
+}
+
+async function inspectMusinsaLedgerWindow(win) {
+  if (!win || win.isDestroyed()) return null;
+  return win.webContents.executeJavaScript(`(${captureMusinsaLedgerPage.toString()})()`, true).catch(() => null);
+}
+
+async function resumeSelectedMusinsaLedgerWindow() {
+  const current = musinsaLedgerWindow;
+  if ((await inspectMusinsaLedgerWindow(current))?.kind === "detail") return current;
+  const helper = domesticLoginWindows.get("musinsa");
+  if (!helper || helper === current || (await inspectMusinsaLedgerWindow(helper))?.kind !== "detail") return current;
+  // Manual login can finish in the account helper. Keep the exact order the
+  // user opened there instead of capturing an expired, separate login page.
+  musinsaLedgerWindow = helper;
+  helper.on("closed", () => { if (musinsaLedgerWindow === helper) musinsaLedgerWindow = null; });
+  if (current && !current.isDestroyed()) current.close();
+  return helper;
 }
 
 async function openMusinsaLedgerWindowAsync() {
-  if (musinsaLedgerWindow && !musinsaLedgerWindow.isDestroyed()) {
-    musinsaLedgerWindow.show(); musinsaLedgerWindow.focus();
-    return { ok: true };
+  const selected = await resumeSelectedMusinsaLedgerWindow();
+  if ((await inspectMusinsaLedgerWindow(selected))?.kind === "detail") {
+    selected.show(); selected.focus();
+    return {ok:true,stage:"detail",automaticLogin:{ok:true,reused:true}};
   }
+  const reused = musinsaLedgerWindow && !musinsaLedgerWindow.isDestroyed();
   let automaticLogin = { ok: true, reused: true };
   if (!await hasUsableDomesticLoginSession("musinsa")) {
     try {
       const imported = await importMusinsaCredentialsFromGoogleDrive();
-      automaticLogin = imported.ok ? await waitForMusinsaAutomaticLogin() : imported;
-    } catch {
-      automaticLogin = { ok: false, code: "GOOGLE_ACCOUNT_READ_FAILED" };
-    }
+      automaticLogin = imported.ok ? { ...await waitForMusinsaAutomaticLogin(), imported: imported.imported } : imported;
+    } catch { automaticLogin = { ok: false, code: "GOOGLE_ACCOUNT_READ_FAILED" }; }
+    if (!automaticLogin.ok) return { ok: false, automaticLogin };
   }
-  musinsaLedgerWindow = new BrowserWindow({
-    icon: APP_ICON_PATH, width: 1320, height: 900, title: "무신사 주문 상세 · 구매장부 가져오기",
-    webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, contextIsolation: true },
-  });
-  musinsaLedgerWindow.on("closed", () => { musinsaLedgerWindow = null; });
-  // Musinsa removed the former /mypage/orders route. Its current My page
-  // remains the stable entry point and exposes the order list after login.
-  await musinsaLedgerWindow.loadURL("https://www.musinsa.com/mypage").catch(() => {});
-  return { ok: true, automaticLogin };
-}
-
-
-async function captureMusinsaLedgerOrder() {
-  if (!musinsaLedgerWindow || musinsaLedgerWindow.isDestroyed()) return { ok: false, code: "ORDER_WINDOW_CLOSED", message: "무신사 주문 상세 화면을 먼저 열어주세요." };
-  const url = musinsaLedgerWindow.webContents.getURL();
-  if (!/musinsa\.com/i.test(url)) return { ok: false, code: "NOT_MUSINSA", message: "무신사 주문 상세 화면에서 다시 시도해 주세요." };
-  if (/\/auth\/login(?:[/?#]|$)/i.test(url) || /^https?:\/\/member\.one\.musinsa\.com\/login(?:[/?#]|$)/i.test(url)) return { ok: false, code: "MUSINSA_LOGIN_REQUIRED", message: "무신사 로그인을 완료한 뒤 마이 > 주문 내역에서 주문 상세를 열어주세요." };
-  if (/\/mypage\/?(?:[?#].*)?$/i.test(url) || /\/main\//i.test(url)) return { ok: false, code: "ORDER_DETAIL_REQUIRED", message: "마이 > 주문 내역에서 기록할 주문 상세를 연 뒤 장부기록을 눌러주세요." };
-  const rows = await musinsaLedgerWindow.webContents.executeJavaScript(`(() => {
-    const clean = value => String(value || '').replace(/\\s+/g, ' ').trim();
-    const body = clean(document.body?.innerText);
-    const orderNumber = body.match(/(?:주문\\s*번호|order\\s*(?:no|number))\\s*[:：]?\\s*([0-9A-Z-]{6,})/i)?.[1] || '';
-    const date = body.match(/(?:주문\\s*(?:일자|일시)|결제\\s*(?:일자|일시))\\s*[:：]?\\s*(20\\d{2}[.\\/-]\\d{1,2}[.\\/-]\\d{1,2})/)?.[1]?.replace(/[.\\/]/g, '-') || '';
-    const links = [...document.querySelectorAll('a[href*="/products/"]')];
-    const unique = [...new Map(links.map(link => [new URL(link.href, location.href).pathname.match(/\\/products\\/(\\d+)/)?.[1], link])).entries()].filter(([id]) => id);
-    return unique.map(([id, link]) => {
-      const card = link.closest('article,li,[class*="order" i],[class*="product" i],[class*="goods" i]') || link.parentElement;
-      const text = clean(card?.innerText || link.innerText);
-      const image = card?.querySelector('img');
-      const priceMatches = [...text.matchAll(/([0-9][0-9,]{2,})\\s*원/g)].map(m => Number(m[1].replace(/,/g,''))).filter(Boolean);
-      const size = text.match(/(?:사이즈|옵션)\\s*[:：]?\\s*([0-9A-Z./ -]{1,20})/i)?.[1]?.trim() || '';
-      const lines = String(card?.innerText || '').split('\\n').map(clean).filter(Boolean);
-      return { platform:'무신사', orderNumber, purchaseDate:date, purchaseUrl:link.href, articleNumber:id,
-        modelName:clean(image?.alt) || lines.find(v => v.length > 3 && !/원|주문|배송|옵션|사이즈/.test(v)) || '',
-        brand:lines[0] || '', krSize:size, purchasePrice:priceMatches.at(-1) || 0,
-        imageUrl:image?.currentSrc || image?.src || '', quantity:1, status:'구매완료' };
+  if (!musinsaLedgerWindow || musinsaLedgerWindow.isDestroyed()) {
+    musinsaLedgerWindow = new BrowserWindow({
+      icon: APP_ICON_PATH, width: 1320, height: 900, title: "무신사 주문 내역 → 주문상세 → 구매장부",
+      webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, contextIsolation: true },
     });
-  })()`, true).catch(() => []);
-  if (!rows.length) return { ok: false, code: "ORDER_PRODUCTS_NOT_FOUND", message: "주문 상세 화면에서 상품을 찾지 못했습니다. 주문 상세를 연 뒤 다시 가져오세요." };
-  return { ok: true, rows: rows.map(normalizePurchaseLedgerRow) };
+    const created = musinsaLedgerWindow;
+    created.on("closed", () => { if (musinsaLedgerWindow === created) musinsaLedgerWindow = null; });
+    await musinsaLedgerWindow.loadURL("https://www.musinsa.com/mypage").catch(() => {});
+  }
+  const win = musinsaLedgerWindow;
+  win.show(); win.focus();
+  const firstPage = await inspectMusinsaLedgerWindow(win);
+  if (reused && firstPage?.kind === "my" && new URL(firstPage.href).pathname !== "/mypage") {
+    await win.loadURL("https://www.musinsa.com/mypage").catch(() => {});
+  }
+  const navigate = () => advanceMusinsaLedgerToOrders({
+    inspect: () => inspectMusinsaLedgerWindow(win), wait,
+    click: async page => {
+      if (win.isDestroyed() || win.webContents.getURL() !== page.href) return;
+      // An automatic login window can take focus away from this page.
+      // Electron ignores mouse input until the target window is focused.
+      win.show();win.focus();win.webContents.focus();
+      await wait(80);
+      if (win.isDestroyed() || win.webContents.getURL() !== page.href) return;
+      const {x,y} = page.orderAction;
+      win.webContents.sendInputEvent({type:"mouseMove",x,y});
+      win.webContents.sendInputEvent({type:"mouseDown",x,y,button:"left",clickCount:1});
+      win.webContents.sendInputEvent({type:"mouseUp",x,y,button:"left",clickCount:1});
+    },
+  });
+  let result = await navigate();
+  // A cookie is only a hint. A visible login redirect means the saved session
+  // expired; make one login attempt, then stop on any verification/error.
+  if (result.code === "MUSINSA_LOGIN_REQUIRED" && automaticLogin.reused) {
+    try {
+      const imported = await importMusinsaCredentialsFromGoogleDrive();
+      automaticLogin = imported.ok ? { ...await waitForMusinsaAutomaticLogin(), imported: imported.imported } : imported;
+    } catch { automaticLogin = {ok:false,code:"GOOGLE_ACCOUNT_READ_FAILED"}; }
+    if (!automaticLogin.ok) return {ok:false,automaticLogin};
+    if (win.isDestroyed()) return musinsaLedgerFailure("ORDER_DETAIL_REQUIRED");
+    await win.loadURL("https://www.musinsa.com/mypage").catch(() => {});
+    result = await navigate();
+  }
+  return {...result,automaticLogin};
 }
+
+async function supplementMusinsaLedgerIdentity(rows) {
+  const identities = new Map();
+  for (const row of rows.filter(row => !row.articleNumber || !row.imageUrl)) {
+    if (!identities.has(row.productId)) {
+      const detail = new BrowserWindow({show:false,webPreferences:{partition:DOMESTIC_SEARCH_PARTITION,sandbox:true,contextIsolation:true,backgroundThrottling:false}});
+      let identity = null;
+      const related=rows.filter(item=>item.productId===row.productId);
+      const needsCode=related.some(item=>!item.articleNumber),needsImage=related.some(item=>!item.imageUrl);
+      try {
+        // Loading can stay pending on analytics. Read rendered identity while
+        // it is progressing, with a bounded wait and no access/login retries.
+        void detail.loadURL(row.purchaseUrl).catch(() => {});
+        for (let attempt=0;attempt<20 && !detail.isDestroyed();attempt++) {
+          await wait(350);
+          const observed = await detail.webContents.executeJavaScript(`(${captureMusinsaLedgerProductIdentity.toString()})(${JSON.stringify(row.productId)})`,true).catch(() => null);
+          if (observed) identity={...identity,...observed};
+          if ((!needsCode || identity?.articleNumber) && (!needsImage || identity?.imageUrl)) break;
+          const page = await inspectMusinsaLedgerWindow(detail);
+          if (["login","blocked"].includes(page?.kind)) break;
+        }
+      } finally { if (!detail.isDestroyed()) detail.destroy(); }
+      identities.set(row.productId,identity);
+    }
+    const identity = identities.get(row.productId);
+    if (!row.articleNumber && identity?.articleNumber) { row.articleNumber=identity.articleNumber;row.missing=row.missing.filter(field=>field!=="품번"); }
+    if (!row.imageUrl && identity?.imageUrl) { row.imageUrl=identity.imageUrl;row.missing=row.missing.filter(field=>field!=="상품 사진"); }
+  }
+  return rows;
+}
+
+function captureMusinsaLedgerOrder() {
+  if (!musinsaLedgerCapturing) musinsaLedgerCapturing = captureMusinsaLedgerOrderAsync().finally(() => {musinsaLedgerCapturing=null;});
+  return musinsaLedgerCapturing;
+}
+
+async function captureMusinsaLedgerOrderAsync() {
+  await resumeSelectedMusinsaLedgerWindow();
+  if (!musinsaLedgerWindow || musinsaLedgerWindow.isDestroyed()) {
+    const opened = await openMusinsaLedgerWindow();
+    if (!opened.ok) return opened;
+  }
+  const win=musinsaLedgerWindow;
+  const page=await inspectMusinsaLedgerWindow(win);
+  if (page?.kind === "login") return musinsaLedgerFailure("MUSINSA_LOGIN_REQUIRED");
+  if (page?.kind === "blocked") return musinsaLedgerFailure("MUSINSA_ACCESS_RESTRICTED");
+  if (page?.kind === "outside") return musinsaLedgerFailure("NOT_MUSINSA");
+  if (page?.kind !== "detail") return musinsaLedgerFailure("ORDER_DETAIL_REQUIRED");
+  if (page.code) return musinsaLedgerFailure(page.code);
+  const rows=await supplementMusinsaLedgerIdentity(page.rows);
+  const current=await inspectMusinsaLedgerWindow(win);
+  if (current?.kind !== "detail" || current.href !== page.href || current.orderNumber !== page.orderNumber) return musinsaLedgerFailure("ORDER_PAGE_CHANGED");
+  // Preserve the unknown fields as unknown for review, including quantity.
+  const captured=musinsaLedgerCaptures.register(rows.map(row=>({...normalizePurchaseLedgerRow(row),
+    quantity:row.quantity,missing:row.missing,sourceOrderUrl:row.sourceOrderUrl,orderLineId:row.orderLineId,productId:row.productId})));
+  if (mainWindow && !mainWindow.isDestroyed()) {mainWindow.show();mainWindow.focus();}
+  return {ok:true,rows:captured,orderNumber:page.orderNumber,purchaseDate:page.purchaseDate};
+}
+
 
 async function syncPurchaseLedger(input = {}) {
-  const row = normalizePurchaseLedgerRow(input);
+  const failedRow = input.retryId ? store.snapshot(["ledger"]).ledger.find(row => row.id === input.retryId) : null;
+  const proof = musinsaLedgerCaptures.resolve(input, failedRow);
+  if (!proof.ok) return proof;
+  if (!Number.isInteger(Number(input.quantity)) || Number(input.quantity) < 1) return {ok:false,code:"REQUIRED_FIELDS_MISSING",message:"주문상세의 수량을 확인해 주세요."};
+  const row = normalizePurchaseLedgerRow({ ...input, orderEvidence: proof.evidence });
+  row.orderEvidence = proof.evidence;
   const validation = validatePurchaseLedgerRow(row);
   if (!validation.ok) return { ok: false, code: "REQUIRED_FIELDS_MISSING", message: `${validation.missing.join(", ")}을(를) 확인해 주세요.` };
   const settings = store.snapshot(["settings"]).settings;
@@ -5458,9 +5551,12 @@ async function syncPurchaseLedger(input = {}) {
     const response = await fetch(endpoint, { method: "POST", redirect: "follow", headers: { "content-type": "text/plain;charset=utf-8" }, body: JSON.stringify({ secret, row }), signal: AbortSignal.timeout(20_000) });
     const result = await response.json();
     if (!result.ok) throw new Error(result.code || result.message || `HTTP_${response.status}`);
-    const saved = await store.upsert("ledger", { ...row, id: row.duplicateKey, sheetRow: result.rowNumber, syncStatus: result.duplicate ? "duplicate" : "synced", syncedAt: new Date().toISOString() });
+    const imageStatus=result.imageStatus || (result.duplicate ? "existing" : "link-only");
+    const sheetRows = Array.isArray(result.rowNumbers) ? result.rowNumbers : [result.rowNumber];
+    const unitPrices = Array.isArray(result.unitPrices) ? result.unitPrices : [row.purchasePrice];
+    const saved = await store.upsert("ledger", { ...row, imageStatus, id: row.duplicateKey, sheetRow: result.rowNumber, sheetRows, unitPrices, syncStatus: result.duplicate ? "duplicate" : "synced", syncedAt: new Date().toISOString() });
     void runWeeklyLedgerBackup();
-    return { ok: true, duplicate: Boolean(result.duplicate), rowNumber: result.rowNumber, saved };
+    return { ok: true, duplicate: Boolean(result.duplicate), imageStatus, rowNumber: result.rowNumber, rowNumbers: sheetRows, unitPrices, saved };
   } catch (error) {
     await store.upsert("ledger", { ...row, id: row.duplicateKey, syncStatus: "failed", syncError: error instanceof Error ? error.message : String(error) });
     void addProgramNotification({ type: "error", title: "구매장부 기록 실패", message: `${row.modelName} · 다시 기록해 주세요.`, key: `ledger:failed:${row.duplicateKey}:${Date.now()}`, windows: true });

@@ -320,16 +320,17 @@
           <div><button type="button" id="workbook-prev">이전 100행</button><span id="workbook-page"></span><button type="button" id="workbook-next">다음 100행</button></div>
         </section>
         <form id="purchase-ledger-form" class="panel stock-watch-form">
-          <div class="panel-title"><div><small>GOOGLE PURCHASE LEDGER</small><h2>구매 장부</h2><p>로그아웃 상태면 Google Drive 계정정보의 무신사 계정을 Windows에 암호화 저장해 자동 로그인합니다. 로그인 상태는 다음 실행에도 유지됩니다.</p></div><div class="stock-watch-row-actions"><button id="ledger-open-musinsa" type="button">무신사 마이 열기</button><button id="ledger-capture" type="button" class="primary">장부기록</button></div></div>
+          <div class="panel-title"><div><small>GOOGLE PURCHASE LEDGER</small><h2>무신사 주문상세 장부기록</h2><p>자동 로그인 → 마이 → 주문 내역 → 주문상세 선택 → 인식 → Google 장부 기록 순서로 진행합니다. 로그아웃 상태면 Google Drive 계정정보의 무신사 계정을 Windows에 암호화 저장해 자동 로그인합니다. 로그인 상태는 다음 실행에도 유지됩니다.</p></div><div class="stock-watch-row-actions"><button id="ledger-open-musinsa" type="button">① 무신사 주문 내역 열기</button><button id="ledger-capture" type="button" class="primary">② 선택한 주문상세 인식</button></div></div>
           <div class="stock-watch-fields ledger-fields">
             <label>브랜드<input id="ledger-brand" required></label><label>상품명<input id="ledger-name" required></label>
             <label>품번<input id="ledger-article" required></label><label>사이즈<input id="ledger-size" required></label>
-            <label>구매가격<input id="ledger-price" type="number" min="0" required></label><label>구매일<input id="ledger-date" type="date" required></label>
-            <label>주문번호<input id="ledger-order"></label><label>구매 링크<input id="ledger-url" type="url"></label>
-            <label>이미지 URL<input id="ledger-image" type="url"></label><label>수량<input id="ledger-quantity" type="number" min="1" value="1"></label>
+            <label>상품별 실결제금액<input id="ledger-price" type="number" min="1" required></label><label>구매일<input id="ledger-date" type="date" required readonly></label>
+            <label>주문번호<input id="ledger-order" required readonly></label><label>구매 링크<input id="ledger-url" type="url" required readonly></label>
+            <label>상품 사진 주소<input id="ledger-image" type="url" required placeholder="주문상세에서 자동으로 가져옵니다"></label><label>수량<input id="ledger-quantity" type="number" min="1" required></label>
           </div>
+          <div class="ledger-selected-photo"><img id="ledger-image-preview" alt="선택한 상품 사진" hidden><span id="ledger-image-state">주문상세를 인식하면 상품 사진을 함께 가져옵니다.</span></div>
           <div id="ledger-captured-list" class="ledger-captured-list"></div>
-          <div class="stock-watch-actions"><button class="primary" type="submit">Google 장부에 기록</button></div>
+          <div class="stock-watch-actions"><button id="ledger-submit" class="primary" type="submit" disabled>③ 확인한 상품을 Google 장부에 기록</button></div>
           <div id="ledger-status" class="status" aria-live="polite"></div>
         </form>
         <section class="panel"><div class="panel-title"><div><small>SYNC HISTORY</small><h2>장부 기록 내역</h2></div></div><div id="ledger-list" class="cards"></div></section>
