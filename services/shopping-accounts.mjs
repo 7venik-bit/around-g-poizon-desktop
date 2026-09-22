@@ -289,10 +289,16 @@ export class ShoppingLoginConnector {
       const point=await currentControl(field);
       await click(point);
       if(flow.stopped || flow.failure || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+      // Clicking can move/re-render the form without focusing its input. Resolve
+      // the visible hit-tested control again, then focus only that exact input.
+      const focusPoint=await currentControl(field);
       const focused=await win.webContents.mainFrame.executeJavaScript(`(() => {
-        const target=document.elementFromPoint(${point.x},${point.y});
-        return document.activeElement===target && target?.tagName==='INPUT'
+        const target=document.elementFromPoint(${focusPoint.x},${focusPoint.y});
+        const valid=()=>target?.tagName==='INPUT' && !target.disabled && !target.readOnly
           && ${field==='password' ? "target.type==='password' && target.autocomplete!=='new-password'" : "!['password','hidden','checkbox','radio','submit','button'].includes(target.type)"};
+        if(!valid()) return false;
+        if(document.activeElement!==target) target.focus({preventScroll:true});
+        return valid() && document.activeElement===target;
       })()`,true);
       if(flow.stopped || flow.failure || win.isDestroyed() || !focused || win.webContents.getURL()!==url) throw new Error('LOGIN_INPUT_NOT_FOCUSED');
       progress.stage=field+'_input';
