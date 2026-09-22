@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import SSF from 'ssf';
 import {readLedgerWorkbook,saveLedgerWorkbook,exportLedgerWorkbook,workbookView} from './ledger-workbook.mjs';
 import {calculateLedger,formatLedgerValue,ledgerScalar,shiftLedgerFormula} from './ledger-calculation.mjs';
 import {updateLedgerXlsx,readLedgerImages} from './ledger-xlsx.mjs';
@@ -19,6 +20,7 @@ function ensureCell(sheet,row,col) {
 }
 function put(sheet,row,column,raw) {
   ensureCell(sheet,row,column);sheet.rawValues[row-1][column-1]=raw;
+  if(raw.type==='date'&&!SSF.is_date(sheet.numberFormats[row-1][column-1]||'General'))sheet.numberFormats[row-1][column-1]='yyyy-mm-dd';
   sheet.formulas[row-1][column-1]=raw.type==='formula'?raw.value:'';
   sheet.displayValues[row-1][column-1]=raw.type==='formula'?'':formatLedgerValue(ledgerScalar(raw),sheet.numberFormats[row-1][column-1]);
 }
@@ -81,9 +83,28 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
     if(verified.revision!==book.revision)fail('WORKBOOK_SAVE_VERIFY_FAILED');
     return verified;
   };
+  const repairDateFormats=async(book)=>{
+    const edits=[];
+    for(const sheet of book.sheets)for(const [r,values] of (sheet.rawValues||[]).entries())for(const [c,raw] of values.entries())
+      if(raw?.type==='date'&&!SSF.is_date(sheet.numberFormats?.[r]?.[c]||'General'))edits.push({sheetId:sheet.id,row:r+1,column:c+1,formatOnly:true});
+    if(!edits.length)return book;
+    const backupPath=`${path}.before-date-formats-v1.encrypted`;
+    try {await read(backupPath,decrypt);}catch(error) {
+      if(error.code!=='ENOENT')throw error;
+      await save(backupPath,book,encrypt);
+      if((await read(backupPath,decrypt)).revision!==book.revision)fail('WORKBOOK_SAVE_VERIFY_FAILED');
+    }
+    for(const edit of edits) {
+      const sheet=book.sheets.find(s=>s.id===edit.sheetId);
+      ensureCell(sheet,edit.row,edit.column);sheet.numberFormats[edit.row-1][edit.column-1]='yyyy-mm-dd';
+      put(sheet,edit.row,edit.column,sheet.rawValues[edit.row-1][edit.column-1]);
+    }
+    book.local.dateFormatRepair={at:new Date().toISOString(),backupPath,cells:edits};
+    return commit(book,edits,{autofill:false});
+  };
   const load=async()=>{
     const book=await readLocal();
-    if(book.local?.formulaVersion===LEDGER_FORMULA_VERSION||!book.sheets.some(ledgerCalculationSheet))return book;
+    if(book.local?.formulaVersion===LEDGER_FORMULA_VERSION||!book.sheets.some(ledgerCalculationSheet))return repairDateFormats(book);
     // Keep an encrypted, verified pre-repair copy. Never overwrite that recovery
     // point on restart, and never publish a migration whose backup failed.
     const backupPath=`${path}.before-formulas-v${LEDGER_FORMULA_VERSION}.encrypted`;
@@ -95,7 +116,7 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
     const repair=autofillLedger(book,{repair:true,categories:categories?await categories(book):undefined});
     book.local.formulaVersion=LEDGER_FORMULA_VERSION;
     book.local.formulaRepair={at:new Date().toISOString(),backupPath,changes:repair.audit};
-    return commit(book,repair.edits,{autofill:false});
+    return repairDateFormats(await commit(book,repair.edits,{autofill:false}));
   };
   const relocateReceipt=async(book,sheet,existing,destination)=>{
     const previousRowNumbers=existing.map(x=>x.row),sources=new Set(previousRowNumbers);
@@ -156,7 +177,9 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
     (book.local.receiptMoves||=[]).push({at:new Date().toISOString(),sheetId:sheet.id,previousRowNumbers,rowNumbers,backupPath});
     // A cell in an overlapping move is patched exactly once from its final state.
     const finalEdits=[...new Map(edits.map(e=>[`${e.row}:${e.column}`,e])).values()];
-    await commit(book,finalEdits,{manual:false});
+    // Relocation keeps the existing category and calculation formulas. It needs
+    // recalculation, but no full catalog scan or formula generation for new rows.
+    await commit(book,finalEdits,{autofill:false});
     return {ok:true,duplicate:false,moved:true,previousRowNumbers,rowNumber:rowNumbers[0],rowNumbers,
       unitPrices:rowNumbers.map(n=>Number(sheet.rawValues[n-1]?.[13]?.value)),imageStatus:'existing'};
   };

@@ -29,7 +29,7 @@ function fixture() {
   '[Content_Types].xml':strToU8('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>'),
   'xl/workbook.xml':strToU8(`<workbook xmlns="${ns}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="1-구매완료" sheetId="1" r:id="rId1"/><sheet name="사이즈" sheetId="2" state="hidden" r:id="rId2"/><sheet name="계정정보" sheetId="3" r:id="rId3"/></sheets><definedNames><definedName name="Existing">'사이즈'!$A$1:$B$1</definedName></definedNames></workbook>`),
   'xl/_rels/workbook.xml.rels':strToU8('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+[1,2,3].map(n=>`<Relationship Id="rId${n}" Target="worksheets/sheet${n}.xml" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"/>`).join('')+'</Relationships>'),
-  'xl/styles.xml':strToU8('<styles>original styles</styles>'),
+  'xl/styles.xml':strToU8(`<styleSheet xmlns="${ns}"><fonts count="1"><font><sz val="11"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4">${[0,44,14,3].map(numFmtId=>`<xf numFmtId="${numFmtId}" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="center"/></xf>`).join('')}</cellXfs></styleSheet>`),
   'xl/media/image1.png':new Uint8Array([137,80,78,71]),
  };
  for(const [i,s] of [sheet,hidden,account].entries())files[`xl/worksheets/sheet${i+1}.xml`]=strToU8(`<worksheet xmlns="${ns}"><dimension ref="A1:V1000"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="2" state="frozen"/></sheetView></sheetViews><sheetData><row r="5" ht="44"><c r="N5" s="3"><v>50000</v></c></row></sheetData><mergeCells><mergeCell ref="A1:B1"/></mergeCells><dataValidations count="0"/></worksheet>`);
@@ -218,7 +218,10 @@ test('re-recording the receipt at 42 relocates 575-577, preserving prices, photo
  const duplicate=await ledger.record(row,{sheetId:1,row:42,revision:saved.revision});assert.equal(duplicate.duplicate,true);assert.equal((await ledger.load()).revision,saved.revision);
  await ledger.export(join(dir,'moved.xlsx'));const parts=unzipSync(await readFile(join(dir,'moved.xlsx'))),comments=strFromU8(parts['xl/comments/aroundg-1.xml']);
  assert.doesNotMatch(comments,/ref="H57[567]"/);for(const n of [42,43,44])assert.match(comments,new RegExp(`ref="H${n}"`));
- assert.deepEqual(parts['xl/styles.xml'],partsBefore['xl/styles.xml']);assert.deepEqual(parts['xl/worksheets/sheet2.xml'],partsBefore['xl/worksheets/sheet2.xml']);
+ const oldStyles=new DOMParser().parseFromString(strFromU8(partsBefore['xl/styles.xml']),'application/xml'),newStyles=new DOMParser().parseFromString(strFromU8(parts['xl/styles.xml']),'application/xml');
+ const oldXfs=oldStyles.getElementsByTagName('cellXfs')[0].childNodes,newXfs=newStyles.getElementsByTagName('cellXfs')[0].childNodes;
+ for(let i=0;i<oldXfs.length;i++)assert.equal(newXfs[i].toString(),oldXfs[i].toString());
+ assert.deepEqual(parts['xl/worksheets/sheet2.xml'],partsBefore['xl/worksheets/sheet2.xml']);
 });
 
 test('overlapping receipt moves keep each unit once and move embedded photos and notes',async t=>{
@@ -273,6 +276,45 @@ test('visually blank whitespace cells allow new purchases and relocation while n
  assert.equal((await ledger.record(purchase,{sheetId:1,row:50,revision:current.revision})).moved,true);
  current=await ledger.load();current=await ledger.edit({sheetId:1,row:60,column:14,revision:current.revision,expected:{type:'text',value:''},next:{type:'number',value:'0'}});
  await assert.rejects(ledger.record(purchase,{sheetId:1,row:60,revision:current.revision}),/DESTINATION_OCCUPIED/);
+});
+
+test('typed purchase dates repair numeric/currency display once and export date styles without changing original style definitions',async t=>{
+ const book=fixture(),s=book.sheets[0],date={type:'date',value:'2026-09-16T15:00:00.000Z'};
+ s.rawValues[2][12]=date;s.numberFormats[2][12]='#,##0원';
+ const files=unzipSync(Buffer.from(book.xlsxBase64,'base64'));
+ files['xl/worksheets/sheet1.xml']=strToU8(strFromU8(files['xl/worksheets/sheet1.xml']).replace('<sheetData>','<sheetData><row r="3"><c r="M3" s="1"><v>46282</v></c></row>'));
+ const bytes=Buffer.from(zipSync(files));book.xlsxBase64=bytes.toString('base64');book.xlsxSha256=createHash('sha256').update(bytes).digest('hex');
+ const {ledger,options,dir}=await setup(t,book),repaired=await ledger.load();
+ assert.equal(repaired.sheets[0].displayValues[2][12],'2026-09-17');assert.deepEqual(repaired.sheets[0].rawValues[2][12],date);
+ const backup=await readLedgerWorkbook(repaired.local.dateFormatRepair.backupPath,options.decrypt);assert.equal(backup.sheets[0].numberFormats[2][12],'#,##0원');
+ const again=await createLocalLedger(options).load();assert.equal(again.revision,repaired.revision);
+ await ledger.export(join(dir,'dates.xlsx'));const parts=unzipSync(await readFile(join(dir,'dates.xlsx'))),parse=part=>new DOMParser().parseFromString(strFromU8(part),'application/xml');
+ const cell=Array.from(parse(parts['xl/worksheets/sheet1.xml']).getElementsByTagName('c')).find(c=>c.getAttribute('r')==='M3');assert.equal(cell.textContent,'46282');
+ const styles=parse(parts['xl/styles.xml']),old=parse(files['xl/styles.xml']);
+ const xfs=styles.getElementsByTagName('cellXfs')[0],original=old.getElementsByTagName('cellXfs')[0];
+ for(let i=0;i<4;i++)assert.equal(xfs.childNodes[i].toString(),original.childNodes[i].toString());
+ const dateStyle=xfs.childNodes[Number(cell.getAttribute('s'))],id=dateStyle.getAttribute('numFmtId');
+ assert.equal(dateStyle.getElementsByTagName('alignment')[0].getAttribute('horizontal'),'center');
+ assert.equal(Array.from(styles.getElementsByTagName('numFmt')).find(n=>n.getAttribute('numFmtId')===id).getAttribute('formatCode'),'yyyy-mm-dd');
+ assert.deepEqual(parts['xl/media/image1.png'],files['xl/media/image1.png']);
+});
+
+test('moving a receipt keeps date semantics, category metadata and formulas without rereading the catalog',async t=>{
+ const {options}=await setup(t,calculationFixture());let reads=0;
+ const ledger=createLocalLedger({...options,categories:async()=>{reads++;return [{articleNumber:'NEW-001',categoryName:'의류'}];}});
+ let current=await ledger.load();await ledger.record(purchase,{sheetId:1,row:575,revision:current.revision});current=await ledger.load();
+ const beforeReads=reads;await ledger.record(purchase,{sheetId:1,row:42,revision:current.revision});const moved=await ledger.load();
+ assert.equal(reads,beforeReads);assert.equal(moved.sheets[0].displayValues[41][12],'2026-09-17');
+ assert.equal(moved.local.categories[1].rows[42].category,'의류');assert.match(moved.sheets[0].formulas[41][18],/N42/);
+ const pasted=await ledger.change({action:'paste',sheetId:1,revision:moved.revision,range:{row:50,column:13},payload:{schema:LEDGER_COPY_SCHEMA,cells:[[{type:'date',value:'2026-09-17'}]]}});
+ assert.equal(pasted.sheets[0].displayValues[49][12],'2026-09-17');
+});
+
+test('failed date-format backup preserves the current workbook',async t=>{
+ const {options}=await setup(t),ledger=createLocalLedger(options),book=await ledger.load();book.sheets[0].rawValues[2][12]={type:'date',value:'2026-09-16T15:00:00.000Z'};
+ await saveLedgerWorkbook(options.path,book,options.encrypt);const bytes=await readFile(options.path);
+ const failing=createLocalLedger({...options,save:async(path,...args)=>{if(path.includes('before-date-formats'))throw Error('BACKUP_FAILED');return saveLedgerWorkbook(path,...args);}});
+ await assert.rejects(failing.load(),/BACKUP_FAILED/);assert.deepEqual(await readFile(options.path),bytes);
 });
 
 test('selected-row writes reject stale/invalid destinations and any occupied unit atomically',async t=>{
