@@ -32,7 +32,10 @@ export function captureMusinsaLedgerPage() {
   if (/\/(?:auth\/)?login(?:[/?#]|$)/i.test(href) || [...document.querySelectorAll('input[type="password"]')].some(visible)) return {kind:'login', href};
   const headings = [...document.querySelectorAll('h1,h2,h3,[role="heading"]')].filter(visible).map(el => clean(text(el)));
   const controls = [...document.querySelectorAll('a,button,[role="button"]')].filter(visible);
-  const orderEntry = controls.find(el => /^(?:주문\s*(?:내역|조회|배송|[\/·]\s*배송)(?:\s*(?:조회|내역))?)(?:\s*\d+)?$/.test(clean(text(el) || el.getAttribute('aria-label')))
+  // The current My-page button includes a subtitle in its accessible text.
+  // Accept that observed subtitle, while keeping cancellation and other order
+  // actions out instead of matching every control that starts with "주문 내역".
+  const orderEntry = controls.find(el => /^(?:주문\s*(?:내역|조회|배송|[\/·]\s*배송)(?:\s*(?:조회|내역))?)(?:\s*\d+)?(?:\s+온\s*[·ㆍ]\s*오프라인,\s*상품권,\s*티켓\s+주문\s*내역\s*모아보기)?$/.test(clean(text(el) || el.getAttribute('aria-label')))
     && (!el.href || allowed(el.href)));
   const orderAction = orderEntry ? (() => { const r = orderEntry.getBoundingClientRect(); return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}; })() : null;
   const detail = headings.some(value => /^주문\s*상세(?:\s*(?:내역|정보))?$/.test(value))
