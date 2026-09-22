@@ -57,13 +57,16 @@ test('renderer preserves tab order, hidden tabs, literal cell text and all paged
  assert.deepEqual([...d.querySelectorAll('#workbook-tabs button')].map(x=>x.textContent),['1-구매완료','사이즈 (숨김)']);dom.window.close();
 });
 
-test('desktop refuses old bridge before sending any POST that could mutate the sheet',async()=>{
+test('desktop load, legacy import, edit and export IPC use local services without fetching Google',async()=>{
  const main=await readFile(new URL('../main.mjs',import.meta.url),'utf8');
- const start=main.indexOf('  const ledgerWorkbookPath =');
- const end=main.indexOf('  ipcMain.handle("explorer:meta"',start);
- const handlers=new Map(), calls=[];
- const context={join,app:{getPath:()=>'/tmp'},readLedgerWorkbook,safeStorage:{isEncryptionAvailable:()=>true},ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},store:{snapshot:()=>({settings:{ledgerWebhookUrl:'https://script.google.com/macros/s/example/exec',ledgerSecretEncrypted:'test'}})},decrypted:()=> 'test',AbortSignal,fetch:async(url,options={})=>{calls.push(options.method || 'GET');return {ok:true,json:async()=>({ok:true,service:'old bridge'})}}};
+ const start=main.indexOf('  const localWorkbookResult='),end=main.indexOf('  ipcMain.handle("explorer:meta"',start);
+ const handlers=new Map(),calls=[];
+ const ledger={view:async()=>{calls.push('view');return {title:'local'};},load:async()=>({title:'local'}),edit:async edit=>{calls.push(edit);return {title:'edited'};},export:async path=>{calls.push(path);return {ok:true,path};}};
+ const context={purchaseWorkbook:()=>ledger,ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},dialog:{showSaveDialog:async()=>({filePath:'local.xlsx'})},fetch:()=>{throw Error('No network allowed');}};
  vm.createContext(context);vm.runInContext(main.slice(start,end),context);
- const result=await handlers.get('ledger:workbook-import')();
- assert.equal(result.ok,false);assert.equal(result.code,'WORKBOOK_BRIDGE_UPDATE_REQUIRED');assert.deepEqual(calls,['GET']);
+ assert.equal((await handlers.get('ledger:workbook-load')()).workbook.title,'local');
+ assert.equal((await handlers.get('ledger:workbook-import')()).workbook.title,'local');
+ assert.equal((await handlers.get('ledger:workbook-edit')(null,{row:5})).workbook.title,'edited');
+ assert.equal((await handlers.get('ledger:workbook-export')()).path,'local.xlsx');
+ assert.deepEqual(calls,['view','view',{row:5},'local.xlsx']);
 });
