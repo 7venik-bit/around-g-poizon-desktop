@@ -51,7 +51,7 @@ app.whenReady().then(async()=>{
     decrypted:()=> 'offline-secret',runWeeklyLedgerBackup:async()=>{},addProgramNotification:async()=>{},
     store:{snapshot:()=>({ledger:saved}),
       upsertCommitted:async(collection,row)=>{saved.push(row);return row;}},
-    purchaseWorkbook:()=>({record:async row=>{localWrites++;assert.equal(row.purchasePrice,62330);assert.equal(row.imageUrl,'https://www.musinsa.com/order-photo.png');return {ok:true,rowNumber:45,rowNumbers:[45,46],unitPrices:[31165,31165],imageStatus:'formula'};}}),
+    purchaseWorkbook:()=>({record:async(row,destination)=>{localWrites++;assert.equal(destination.row,42);assert.equal(destination.sheetId,1);assert.equal(destination.revision,'fixture-revision');assert.equal(row.purchasePrice,62330);assert.equal(row.imageUrl,'https://www.musinsa.com/order-photo.png');return {ok:true,rowNumber:42,rowNumbers:[42,43],unitPrices:[31165,31165],imageStatus:'formula'};}}),
     fetch:async()=>{throw Error('Local ledger must not contact Google');},AbortSignal,
   });
   const source=readFileSync(join(root,'main.mjs'),'utf8');
@@ -70,7 +70,8 @@ app.whenReady().then(async()=>{
   assert.equal(captured.rows[0].imageUrl,'https://www.musinsa.com/order-photo.png');assert.equal(captured.rows[1].imageUrl,'https://www.musinsa.com/catalog-photo.png');
   const same=await context.openMusinsaLedgerWindow();assert.equal(same.stage,'detail');assert.equal(loginCount,1);
   const noProof=await context.syncPurchaseLedger({...captured.rows[0],captureId:''});assert.equal(noProof.code,'ORDER_CAPTURE_REQUIRED');assert.equal(localWrites,0);
-  const wrote=await context.syncPurchaseLedger(captured.rows[0]);assert.equal(wrote.ok,true);assert.equal(localWrites,1);assert.equal(saved[0].orderEvidence.orderNumber,'ORDER-10001');
+  const noDestination=await context.syncPurchaseLedger(captured.rows[0]);assert.equal(noDestination.code,'PURCHASE_DESTINATION_REQUIRED');assert.equal(localWrites,0);
+  const wrote=await context.syncPurchaseLedger({...captured.rows[0],destination:{sheetId:1,row:42,revision:'fixture-revision'}});assert.equal(wrote.ok,true);assert.equal(localWrites,1);assert.equal(saved[0].orderEvidence.orderNumber,'ORDER-10001');assert.deepEqual(saved[0].sheetRows,[42,43]);
   assert.equal(wrote.imageStatus,'formula');assert.equal(saved[0].imageUrl,captured.rows[0].imageUrl);
   assert.ok(visits.indexOf('/orders')>visits.indexOf('/mypage'));
   // A user may finish manual login and choose an order in the login helper,
