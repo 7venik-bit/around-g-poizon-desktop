@@ -241,12 +241,23 @@ export class ShoppingLoginConnector {
         : `${credentialId==='naver'?'네이버':credentialId==='kakao'?'카카오':flow.source.name} 계정을 저장하거나 열린 창에서 직접 로그인해 주세요.`);
       return;
     }
-    const fill=async(point,value)=>{
+    const currentControl=async field=>{
+      if(flow.stopped || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+      const current=await win.webContents.mainFrame.executeJavaScript(`(${captureShoppingLoginPage.toString()})(${JSON.stringify(method)})`,true);
+      if(flow.stopped || win.isDestroyed() || current?.href!==url || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+      if(current.blocked || !current[field]) throw new Error('LOGIN_INPUT_NOT_FOCUSED');
+      return current[field];
+    };
+    const fill=async(field,value)=>{
+      // Hydration, banners and validation can move the second input after the
+      // first one was filled. Never reuse the initial password coordinates.
+      const point=await currentControl(field);
       await click(point);
       if(flow.stopped || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
       const focused=await win.webContents.mainFrame.executeJavaScript(`(() => {
         const target=document.elementFromPoint(${point.x},${point.y});
-        return document.activeElement===target && target?.tagName==='INPUT';
+        return document.activeElement===target && target?.tagName==='INPUT'
+          && ${field==='password' ? "target.type==='password' && target.autocomplete!=='new-password'" : "!['password','hidden','checkbox','radio','submit','button'].includes(target.type)"};
       })()`,true);
       if(flow.stopped || win.isDestroyed() || !focused || win.webContents.getURL()!==url) throw new Error('LOGIN_INPUT_NOT_FOCUSED');
       win.webContents.sendInputEvent({type:'keyDown',keyCode:'A',modifiers:['control']});
@@ -254,13 +265,16 @@ export class ShoppingLoginConnector {
       await win.webContents.insertText(value);
     };
     const origin=new URL(url).origin;
+    // A partial or failed submission must not fall through to loginEntry and
+    // submit the changed form on a later timer tick.
+    if(flow.acted.has(origin+':submit')) return;
     if(state.password && state.submit && (state.id || flow.acted.has(origin+':id')) && once(origin+':submit')) {
-      if(state.id) await fill(state.id,credentials.loginId);
-      await fill(state.password,credentials.password);
-      await click(state.submit);
+      if(state.id) await fill('id',credentials.loginId);
+      await fill('password',credentials.password);
+      await click(await currentControl('submit'));
       setStatus('LOGIN_SUBMITTED','로그인 정보를 입력했습니다. 인증 또는 로그인 결과를 확인해 주세요.');
     } else if(state.id && state.next && once(origin+':id')) {
-      await fill(state.id,credentials.loginId);await click(state.next);
+      await fill('id',credentials.loginId);await click(await currentControl('next'));
     } else if(!state.password && state.loginEntry && once('entry')) await click(state.loginEntry);
   }
 }

@@ -16,6 +16,7 @@ app.whenReady().then(async()=>{
   const page=await import(pathToFileURL(join(root,'services/musinsa-ledger-page.mjs')));
   const flow=await import(pathToFileURL(join(root,'services/musinsa-ledger-flow.mjs')));
   const purchase=await import(pathToFileURL(join(root,'services/purchase-ledger.mjs')));
+  const {ShoppingLoginConnector}=await import(pathToFileURL(join(root,'services/shopping-accounts.mjs')));
   const partition='offline-musinsa-ledger',isolated=session.fromPartition(partition);
   let loggedIn=false,loginCount=0,googleWrites=0,productReads=0;
   const visits=[],saved=[],windows=[];
@@ -23,7 +24,9 @@ app.whenReady().then(async()=>{
   isolated.protocol.handle('https',request=>{
     const url=new URL(request.url);visits.push(url.pathname);
     let html='';
-    if(url.pathname==='/mypage')html=loggedIn?'<h1>마이</h1><a href="/orders">주문/배송 조회</a>':'<h1>로그인</h1><input type="password">';
+    if(url.pathname==='/login-shift')html=`<form id="login"><div id="banner"></div><input name="username" autocomplete="username"><input type="password"><button type="submit">로그인</button></form>
+      <script>document.querySelector('[name=username]').addEventListener('input',()=>{document.getElementById('banner').style.height='64px';});document.getElementById('login').addEventListener('submit',e=>{e.preventDefault();document.body.dataset.submitted='yes';});</script>`;
+    else if(url.pathname==='/mypage')html=loggedIn?'<h1>마이</h1><a href="/orders">주문/배송 조회</a>':'<h1>로그인</h1><input type="password">';
     else if(url.pathname==='/orders')html='<h1>주문 내역</h1><a href="/orders/detail/ORDER-10001">주문상세</a>';
     else if(url.pathname==='/orders/detail/ORDER-10001')html='<h1>주문상세</h1><p>주문번호: ORDER-10001</p><p>주문일시: 2026.9.2 12:00</p>'+card('블랙 / 270','a')+card('블랙 / 280','b');
     else if(url.pathname==='/products/10001'){productReads++;html='<meta property="og:image" content="https://www.musinsa.com/catalog-photo.png"><h1>테스트 운동화</h1><p>현재 판매가 1원</p><p>품번: AB123-001</p>';}
@@ -33,6 +36,13 @@ app.whenReady().then(async()=>{
   // Real input requires a focused BrowserWindow. Keep the isolated profile and
   // fake HTTPS pages, but exercise the same show/focus path as the application.
   function FixtureWindow(options){const win=new BrowserWindow({...options,show:false,webPreferences:{...options.webPreferences,partition}});windows.push(win);return win;}
+  const loginWindow=new FixtureWindow({width:900,height:700,webPreferences:{partition,sandbox:true,contextIsolation:true}});
+  await loginWindow.loadURL('https://www.musinsa.com/login-shift');loginWindow.show();loginWindow.focus();
+  const loginConnector=new ShoppingLoginConnector({accounts:{credentials:()=>({loginId:'fixture-id',password:'fixture-secret'})},wait});
+  await loginConnector.advance(loginWindow,{source:{id:'musinsa',domains:['musinsa.com']},method:'password',started:Date.now(),acted:new Set()});
+  const loginResult=await loginWindow.webContents.executeJavaScript("({id:document.querySelector('[name=username]').value,password:document.querySelector('[type=password]').value,submitted:document.body.dataset.submitted})",true);
+  assert.deepEqual(loginResult,{id:'fixture-id',password:'fixture-secret',submitted:'yes'});
+  loginWindow.destroy();windows.splice(windows.indexOf(loginWindow),1);
   const context=createContext({...page,...flow,...purchase,URL,setTimeout,clearTimeout,wait,BrowserWindow:FixtureWindow,
     APP_ICON_PATH:undefined,DOMESTIC_SEARCH_PARTITION:partition,mainWindow:null,
     hasUsableDomesticLoginSession:async()=>true,
