@@ -316,15 +316,7 @@
             <label>행 높이 <input id="workbook-row-height" type="number" min="24" max="400" step="1" placeholder="px" aria-label="선택 행 높이 (픽셀)"></label>
             <button type="button" id="workbook-size-save" disabled>크기 적용</button>
           </div>
-          <form id="workbook-cell-editor" hidden>
-            <strong id="workbook-cell-address"></strong>
-            <p id="workbook-cell-original"></p>
-            <label>입력 형식<select id="workbook-cell-type"><option value="text">문자</option><option value="number">숫자 (금액·수량)</option><option value="date">날짜 (YYYY-MM-DD)</option><option value="boolean">체크값 (true/false)</option><option value="formula">수식</option></select></label>
-            <label id="workbook-cell-options-label" hidden>허용 값<select id="workbook-cell-options"></select></label>
-            <label>수정할 내용<textarea id="workbook-cell-value" rows="2"></textarea></label>
-            <button type="submit" id="workbook-cell-save">선택한 셀 저장</button><button type="button" id="workbook-cell-cancel">취소</button>
-          </form>
-          <p class="workbook-display-hint">Shift+클릭으로 여러 셀 선택 · 열 문자와 행 번호의 경계를 끌어 크기 조절 · 내용 지우기는 셀 위치와 서식을 유지합니다. 표를 선택한 상태에서 단축키를 사용하세요.</p>
+          <p class="workbook-display-hint">셀 더블클릭·F2 또는 바로 입력으로 편집 · Enter/Tab 저장 · Esc 취소 · Shift+클릭 여러 셀 선택 · 열/행 경계를 끌어 크기 조절</p>
           <div id="workbook-table" tabindex="0" aria-label="원본 장부 표"></div>
           <div><button type="button" id="workbook-prev">이전 100행</button><span id="workbook-page"></span><button type="button" id="workbook-next">다음 100행</button></div>
         </section>

@@ -33,6 +33,8 @@ function measure() {
   const h=box(host),letters=box(table.querySelector('thead th')),head=box(table.querySelector('.workbook-data-header td'));
   if(Math.abs(letters.top-h.top-1)>1||Math.abs(head.top-letters.bottom)>1)errors.push('column headings not sticky');
   if(Math.abs(box(table.querySelector('.workbook-data-header th')).top-head.top)>1)errors.push('sticky header row number lost');
+  if([...data.querySelectorAll('td')].some(cell=>getComputedStyle(cell).textAlign!=='center'))errors.push('cells are not centered');
+  if(q('#original-ledger-workbook > #workbook-cell-editor'))errors.push('separate editor returned');
   if(window.ledgerFixtureWrites!==0)errors.push('layout triggered a workbook write');
   return {viewport:innerWidth,columns:window.ledgerFixtureBook.sheets[0].columnCount,rowHeight:box(data).height,tableWidth:box(table).width,hostWidth:host.clientWidth,modelWidth:box(model).width,articleWidth:box(article).width,errors};
 }
@@ -72,8 +74,8 @@ window.aroundG={loadLedgerWorkbook:async()=>({ok:true,workbook:window.ledgerFixt
       if(count===20&&scale===1&&[1426,1920].includes(width))await writeFile(join(out,'ledger-screen-fit-'+width+'.png'),(await win.webContents.capturePage()).toPNG());
       if(count===30&&width===1920&&scale===1)await writeFile(join(out,'ledger-readable-30-columns.png'),(await win.webContents.capturePage()).toPNG());
     }
-    const selected=await win.webContents.executeJavaScript(`(()=>{document.querySelectorAll('#workbook-table tbody tr')[2].children[2].click();return {address:document.getElementById('workbook-cell-address').textContent,value:document.getElementById('workbook-cell-value').value,writes:window.ledgerFixtureWrites};})()`);
-    if(selected.address!=='1-구매완료 · B3'||selected.value!==ledgerLayoutBook().sheets[0].displayValues[2][1]||selected.writes!==0)throw Error('Original link edit identity lost');
+    const selected=await win.webContents.executeJavaScript(`(()=>{document.querySelectorAll('#workbook-table tbody tr')[2].children[2].dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));return {address:document.getElementById('workbook-selection').textContent,value:document.getElementById('workbook-cell-value').value,writes:window.ledgerFixtureWrites};})()`);
+    if(selected.address!=='B3'||selected.value!==ledgerLayoutBook().sheets[0].displayValues[2][1]||selected.writes!==0)throw Error('Original link edit identity lost');
   }
   const recordedBook=ledgerLayoutBook(30),recordedSheet=recordedBook.sheets[0];
   for(const key of ['displayValues','formulas','rawValues','notes','backgrounds','fontColors','fontWeights']) {
@@ -85,7 +87,7 @@ window.aroundG={loadLedgerWorkbook:async()=>({ok:true,workbook:window.ledgerFixt
   recordedSheet.rowCount=1002;
   await win.webContents.executeJavaScript(`window.ledgerFixtureFreshBook=${JSON.stringify(recordedBook)};window.ledgerFixtureReads=0;
 window.aroundG.loadLedgerWorkbook=async()=>{window.ledgerFixtureReads++;return {ok:true,workbook:window.ledgerFixtureFreshBook};};
-document.getElementById('workbook-cell-cancel').click();`);
+document.getElementById('workbook-cell-value').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));`);
   win.setContentSize(1426,1032);win.webContents.setZoomFactor(1);await new Promise(resolve=>setTimeout(resolve,200));
   const location=await win.webContents.executeJavaScript('window.aroundGLedgerWorkbook.showRecordedRows([575,576,577])');
   if(!location.ok)throw Error('Recorded row navigation failed');
@@ -135,12 +137,39 @@ window.aroundG.clearLedgerWorkbookCells=async input=>{window.ledgerToolCalls.pus
     q('td[data-row="42"][data-column="1"]').click();
     const selected=api.getPurchaseDestination(),label=q('#ledger-destination').textContent;
     const locked=api.beginPurchaseRecord();q('td[data-row="43"][data-column="1"]').click();
-    const blocked=api.getPurchaseDestination().code,editorDisabled=q('#workbook-cell-value').disabled;
+    const blocked=api.getPurchaseDestination().code,editorDisabled=q('#workbook-cell-clear').disabled;
     api.endPurchaseRecord(false);const restored=api.getPurchaseDestination();
     return {selected,label,locked,blocked,editorDisabled,restored};
   })()`);
   if(destination.selected.destination?.row!==42||destination.locked.destination?.row!==42||destination.restored.destination?.row!==42||destination.blocked!=='WORKBOOK_BUSY'||!destination.editorDisabled||!destination.label.includes('42행'))throw Error('Selected purchase destination lost: '+JSON.stringify(destination));
   await writeFile(join(out,'ledger-selected-row.json'),JSON.stringify(destination,null,2));
   console.log('PASS: The clicked purchase row is shown as row 42 and remains locked during recording, then restores on failure.');
+  await win.webContents.executeJavaScript(`
+    window.ledgerInlineWrites=[];
+    window.ledgerFixtureFreshBook.sheets[0].rawValues[41][9]={type:'number',value:'75000'};
+    window.ledgerFixtureFreshBook.sheets[0].displayValues[41][9]='75000';
+    window.aroundG.editLedgerWorkbookCell=async edit=>{
+      window.ledgerInlineWrites.push(edit);const book=structuredClone(window.ledgerFixtureFreshBook),sheet=book.sheets[0];book.revision+='x';
+      sheet.rawValues[edit.row-1][edit.column-1]=edit.next;sheet.displayValues[edit.row-1][edit.column-1]=edit.next.value;
+      window.ledgerFixtureFreshBook=book;return {ok:true,workbook:book};
+    };
+    document.getElementById('workbook-import').click();`);
+  await new Promise(resolve=>setTimeout(resolve,150));
+  const inline=await win.webContents.executeJavaScript(`(()=>{
+    const cell=document.querySelector('td[data-row="42"][data-column="10"]');cell.scrollIntoView({block:'center'});cell.click();
+    const value=cell.textContent;cell.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
+    const input=document.getElementById('workbook-cell-value'),a=cell.getBoundingClientRect(),b=input.getBoundingClientRect();
+    return {value,raw:input.value,inside:input.closest('td')===cell&&Math.abs(a.width-b.width)<3&&Math.abs(a.height-b.height)<3,center:getComputedStyle(input).textAlign};
+  })()`);
+  if(inline.value!=='₩75,000'||inline.raw!=='75000'||!inline.inside||inline.center!=='center')throw Error('Inline editor or won display failed: '+JSON.stringify(inline));
+  await writeFile(join(out,'ledger-inline-edit.png'),(await win.webContents.capturePage()).toPNG());
+  await win.webContents.executeJavaScript(`document.getElementById('workbook-cell-value').select();`);
+  await win.webContents.insertText('76000');
+  win.webContents.sendInputEvent({type:'keyDown',keyCode:'Tab'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Tab'});
+  await new Promise(resolve=>setTimeout(resolve,150));
+  const committed=await win.webContents.executeJavaScript(`({writes:window.ledgerInlineWrites,value:document.querySelector('td[data-row="42"][data-column="10"]').textContent,selected:document.getElementById('workbook-selection').textContent,editor:!!document.getElementById('workbook-cell-editor')})`);
+  if(committed.writes.length!==1||committed.writes[0].next.type!=='number'||committed.writes[0].next.value!=='76000'||committed.value!=='₩76,000'||committed.selected!=='K42'||committed.editor)throw Error('Native Tab did not save the inline edit: '+JSON.stringify(committed));
+  await writeFile(join(out,'ledger-inline-edit.json'),JSON.stringify({inline,committed},null,2));
+  console.log('PASS: The editor stays inside J42, native typing and Tab save numeric 76000 once, show ₩76,000 and select K42.');
   await cleanup();app.exit(0);
 })().catch(async error=>{console.error(error.stack||error);await cleanup();app.exit(1);});
