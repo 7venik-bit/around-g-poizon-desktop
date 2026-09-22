@@ -31,6 +31,19 @@ test('detail evidence keeps each option, quantity and paid amount without duplic
   assert.equal(page.rows[0].orderLineId,'line-a');assert.equal(page.rows[1].orderLineId,'line-b');
   assert.equal(page.rows[0].imageUrl,'https://images.example.test/shoe.png');
 });
+test('nested image and text envelopes yield one row per actual order line, preserving identical sibling lines',t=>{
+  const nested=line=>`<article data-order-item-id="${line}"><a href="/products/10001"><img src="https://images.example.test/ordered.png"></a>
+    <div><a href="/brands/test">Test brand</a><a href="/products/10001">Test vest</a><p>BLACK / 105 / 3개</p><p>163,460원</p></div></article>`;
+  const single=frame(t,detail(nested('a'))).capture().rows;
+  assert.equal(single.length,1);assert.equal(single[0].orderLineId,'a');assert.equal(single[0].quantity,3);
+  assert.equal(single[0].purchasePrice,163460);assert.equal(single[0].imageUrl,'https://images.example.test/ordered.png');
+  const sibling=frame(t,detail(nested('a')+nested('b'))).capture().rows;
+  assert.equal(sibling.length,2);assert.deepEqual(Array.from(sibling,row=>row.orderLineId),['a','b']);
+  assert.ok(sibling.every(row=>row.quantity===3 && row.purchasePrice===163460));
+  const parent=frame(t,detail(`<section><a href="/products/10001">Combined summary</a>${nested('a')+nested('b')}</section>`)).capture().rows;
+  assert.equal(parent.length,2);assert.deepEqual(Array.from(parent,row=>row.orderLineId),['a','b']);
+});
+
 test('order photos use product-linked lazy images instead of brand logos or placeholders',t=>{
   const black=item().replace('<a href="/products/10001"><img', '<a href="/brands/test"><img src="https://images.example.test/brand-logo.png"></a><a href="/products/10001"><img')
     .replace('src="https://images.example.test/shoe.png"','src="data:image/gif;base64,AAAA" data-src="//images.example.test/black.jpg"');

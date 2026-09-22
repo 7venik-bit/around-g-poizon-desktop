@@ -76,8 +76,21 @@ export function captureMusinsaLedgerPage() {
       }
     }
   }
+  // The image link can find an outer card while the title link finds its
+  // inner text panel. They are one ordered item. Keep the outer envelope only
+  // when it contains one leaf card; never collapse two separate order lines,
+  // even if their product, option, quantity and price happen to be identical.
+  const candidates=[...cards.keys()];
+  const leaves=candidates.filter(card=>!candidates.some(other=>other!==card && card.contains(other)));
+  const orderCards=new Map();
+  for (const leaf of leaves) {
+    const envelopes=candidates.filter(card=>(card===leaf || card.contains(leaf))
+      && leaves.filter(other=>card===other || card.contains(other)).length===1);
+    const card=envelopes.find(card=>!envelopes.some(other=>other!==card && other.contains(card))) || leaf;
+    orderCards.set(card,cards.get(card));
+  }
   const rows=[];
-  for (const [card,{id,link}] of cards) {
+  for (const [card,{id,link}] of orderCards) {
     const raw=text(card), value=clean(raw), lines=raw.split(/\n+/).map(clean).filter(Boolean);
     // Cancellation/refund lines cannot become a completed purchase.
     if (/취소\s*(?:완료|접수)|반품\s*(?:완료|접수|중)|환불\s*(?:완료|진행)/.test(value)) continue;
@@ -113,7 +126,9 @@ export function captureMusinsaLedgerPage() {
     rows.push({platform:'무신사',orderNumber:numbers[0],purchaseDate,purchaseUrl:new URL(link.href,href).origin+new URL(link.href,href).pathname,
       productId:id,articleNumber,brand,modelName,krSize:option,optionText:option,purchasePrice,quantity,
       imageUrl,status:'구매완료',missing,
-      sourceOrderUrl:new URL(href).origin+new URL(href).pathname,orderLineId:card.getAttribute('data-order-item-id') || `${id}:${rows.length}`});
+      sourceOrderUrl:new URL(href).origin+new URL(href).pathname,orderLineId:card.getAttribute('data-order-item-id')
+        || card.closest('[data-order-item-id]')?.getAttribute('data-order-item-id')
+        || card.querySelector('[data-order-item-id]')?.getAttribute('data-order-item-id') || `${id}:${rows.length}`});
   }
   return {kind:'detail',href,orderNumber:numbers[0],purchaseDate,rows,code:rows.length ? '' : 'ORDER_PRODUCTS_NOT_FOUND'};
 }
