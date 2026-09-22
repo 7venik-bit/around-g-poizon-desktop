@@ -307,6 +307,15 @@
           <p id="workbook-status" role="status">저장된 장부를 확인 중입니다.</p>
           <label class="workbook-hidden-toggle"><input type="checkbox" id="workbook-hidden"> 숨겨진 시트 표시</label>
           <div id="workbook-tabs" role="tablist" aria-label="원본 장부 시트"></div>
+          <div id="workbook-tools" class="workbook-tools" aria-label="장부 셀 도구">
+            <strong id="workbook-selection">셀을 선택하세요</strong>
+            <button type="button" id="workbook-cell-clear" disabled>내용 지우기 (Del)</button>
+            <button type="button" id="workbook-cell-copy" disabled>셀 복사 (Ctrl+C)</button>
+            <button type="button" id="workbook-cell-paste" disabled>붙여넣기 (Ctrl+V)</button>
+            <label>열 너비 <input id="workbook-column-width" type="number" min="32" max="600" step="1" placeholder="px" aria-label="선택 열 너비 (픽셀)"></label>
+            <label>행 높이 <input id="workbook-row-height" type="number" min="24" max="400" step="1" placeholder="px" aria-label="선택 행 높이 (픽셀)"></label>
+            <button type="button" id="workbook-size-save" disabled>크기 적용</button>
+          </div>
           <form id="workbook-cell-editor" hidden>
             <strong id="workbook-cell-address"></strong>
             <p id="workbook-cell-original"></p>
@@ -315,7 +324,7 @@
             <label>수정할 내용<textarea id="workbook-cell-value" rows="2"></textarea></label>
             <button type="submit" id="workbook-cell-save">선택한 셀 저장</button><button type="button" id="workbook-cell-cancel">취소</button>
           </form>
-          <p class="workbook-display-hint">긴 내용은 셀을 선택하거나 마우스를 올려 전체 내용을 확인할 수 있습니다.</p>
+          <p class="workbook-display-hint">Shift+클릭으로 여러 셀 선택 · 열 문자와 행 번호의 경계를 끌어 크기 조절 · 내용 지우기는 셀 위치와 서식을 유지합니다. 표를 선택한 상태에서 단축키를 사용하세요.</p>
           <div id="workbook-table" tabindex="0" aria-label="원본 장부 표"></div>
           <div><button type="button" id="workbook-prev">이전 100행</button><span id="workbook-page"></span><button type="button" id="workbook-next">다음 100행</button></div>
         </section>

@@ -29,6 +29,27 @@
 #workbook-table .workbook-recorded-row th{background:#287de0;color:#fff;font-weight:700}
 #workbook-cell-original{white-space:pre-wrap;overflow-wrap:anywhere}
 #workbook-cell-value{width:100%;max-width:100%;min-height:64px;resize:vertical}
+#original-ledger-workbook [hidden]{display:none!important}
+.workbook-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px;background:#f3f7fc;border:1px solid #dbe2ec;border-radius:6px;margin-bottom:8px}
+#workbook-tools strong{font-size:12px;min-width:70px}
+#workbook-tools button{font-size:12px;padding:6px 8px}
+#workbook-tools label{display:flex;align-items:center;gap:4px;margin:0;font-size:12px}
+#workbook-tools input{width:70px;min-width:0;padding:6px;margin:0}
+#workbook-cell-editor{display:grid;grid-template-columns:180px minmax(180px,1fr);gap:6px 12px;padding:10px;border:1px solid #dbe2ec;border-radius:6px;margin-bottom:8px}
+#workbook-cell-editor>strong,#workbook-cell-original{grid-column:1/-1;margin:0;font-size:12px}
+#workbook-cell-editor label{margin:0;font-size:12px}
+#workbook-cell-editor label:has(textarea){grid-column:1/-1}
+#workbook-cell-editor button{justify-self:start;font-size:12px;padding:6px 10px}
+#workbook-table td.workbook-selected{outline:2px solid #287de0;outline-offset:-2px;background-image:linear-gradient(#287de014,#287de014)}
+#workbook-table th{position:relative}
+#workbook-table thead th,#workbook-table tbody th{position:sticky}
+#workbook-table .workbook-resize-handle{position:absolute;display:block;padding:0;margin:0;border:0;border-radius:0;background:transparent;z-index:5;touch-action:none;min-width:0;min-height:0}
+#workbook-table .workbook-column-resize{right:-1px;top:0;width:8px;height:100%;cursor:col-resize}
+#workbook-table .workbook-row-resize{left:0;bottom:-1px;width:100%;height:8px;cursor:row-resize}
+#workbook-table .workbook-resize-handle:hover,#workbook-table .workbook-resize-handle:focus{background:#287de080}
+#workbook-table tr[data-custom-height] th,#workbook-table tr[data-custom-height] td{height:var(--workbook-row-height);box-sizing:border-box}
+#workbook-table tr[data-custom-height] .workbook-cell-text{max-height:calc(var(--workbook-row-height) - 12px)}
+#workbook-table tr[data-custom-height] .workbook-product-photo{height:calc(var(--workbook-row-height) - 12px)}
 @media(max-width:1500px){
   #workbook-table th,#workbook-table td{font-size:11px;padding:5px 3px}
 }

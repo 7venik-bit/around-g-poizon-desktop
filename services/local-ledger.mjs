@@ -3,6 +3,7 @@ import {readLedgerWorkbook,saveLedgerWorkbook,exportLedgerWorkbook,workbookView}
 import {calculateLedger,formatLedgerValue,ledgerScalar,shiftLedgerFormula} from './ledger-calculation.mjs';
 import {updateLedgerXlsx,readLedgerImages} from './ledger-xlsx.mjs';
 import {purchaseLedgerImageUrl,validatePurchaseLedgerRow} from './purchase-ledger.mjs';
+import {LEDGER_COPY_SCHEMA} from './ledger-clipboard.mjs';
 
 const fail=code=>{throw Error(code);};
 const empty=()=>({type:'text',value:''});
@@ -31,6 +32,28 @@ function typedInput(input) {
   } else if(type==='formula') {if(!value.startsWith('='))fail('CELL_FORMULA_INVALID');}
   else if(type!=='text')fail('CELL_VALUE_INVALID');
   return {type,value};
+}
+
+function target(book,input) {
+  const sheet=book.sheets.find(s=>s.id===input?.sheetId);
+  if(!sheet)fail('CELL_ADDRESS_INVALID');
+  if(book.revision!==input.revision)fail('CELL_CONFLICT');
+  return sheet;
+}
+function rectangle(sheet,range) {
+  const {row,column,endRow=row,endColumn=column}=range||{};
+  if(![row,column,endRow,endColumn].every(Number.isSafeInteger)||row<1||column<1||endRow<row||endColumn<column||endRow>sheet.rowCount||endColumn>sheet.columnCount)fail('CELL_ADDRESS_INVALID');
+  if((endRow-row+1)*(endColumn-column+1)>5000)fail('CELL_RANGE_TOO_LARGE');
+  return {row,column,endRow,endColumn};
+}
+function validateChange(sheet,row,column,next) {
+  const r=row-1,c=column-1;
+  if(sheet.merges?.some(m=>r>=m.row&&r<m.row+m.rows&&c>=m.column&&c<m.column+m.columns&&(r!==m.row||c!==m.column)))fail('CELL_MERGED');
+  // Clearing content must work even in a dropdown. Preserve its validation.
+  if(next.type==='text'&&next.value==='')return;
+  const rule=sheet.validations?.[r]?.[c];
+  if(rule?.type==='other')fail('CELL_VALIDATION_REVIEW');
+  if(rule?.type==='list'&&!rule.values.includes(next.value))fail('CELL_VALIDATION_FAILED');
 }
 
 // The only source migration is the already encrypted, verified local snapshot.
@@ -64,13 +87,63 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
       if(!sheet||!Number.isInteger(edit.row)||!Number.isInteger(edit.column)||edit.row<1||edit.column<1||edit.row>sheet.rowCount||edit.column>sheet.columnCount)fail('CELL_ADDRESS_INVALID');
       const r=edit.row-1,c=edit.column-1,current=sheet.rawValues[r]?.[c]||empty();
       if(book.revision!==edit.revision||current.type!==edit.expected?.type||current.value!==edit.expected?.value)fail('CELL_CONFLICT');
-      if(sheet.merges?.some(m=>r>=m.row&&r<m.row+m.rows&&c>=m.column&&c<m.column+m.columns&&(r!==m.row||c!==m.column)))fail('CELL_MERGED');
-      const next=typedInput(edit.next),rule=sheet.validations?.[r]?.[c];
-      if(rule?.type==='other')fail('CELL_VALIDATION_REVIEW');
-      if(rule?.type==='list'&&!rule.values.includes(next.value))fail('CELL_VALIDATION_FAILED');
+      const next=typedInput(edit.next);validateChange(sheet,edit.row,edit.column,next);
       put(sheet,edit.row,edit.column,next);
       sheet.images=sheet.images?.filter(image=>image.row!==edit.row||image.column!==edit.column);
       return workbookView(await commit(book,[edit]));
+    }),
+    copy:input=>serial(async()=>{
+      const book=await load(),sheet=target(book,input),range=rectangle(sheet,input.range),cells=[],images=[];
+      for(let r=range.row;r<=range.endRow;r++) {
+        const row=[];
+        for(let c=range.column;c<=range.endColumn;c++)row.push(structuredClone(sheet.rawValues[r-1]?.[c-1]||empty()));
+        cells.push(row);
+      }
+      for(const image of sheet.images||[])if(image.row>=range.row&&image.row<=range.endRow&&image.column>=range.column&&image.column<=range.endColumn)
+        images.push({row:image.row-range.row,column:image.column-range.column,url:image.url});
+      return {schema:LEDGER_COPY_SCHEMA,row:range.row,column:range.column,cells,images};
+    }),
+    change:input=>serial(async()=>{
+      const book=await load(),sheet=target(book,input),range=rectangle(sheet,input.range),edits=[];
+      if(input.action==='clear') {
+        for(let row=range.row;row<=range.endRow;row++)for(let column=range.column;column<=range.endColumn;column++)edits.push({sheetId:sheet.id,row,column,next:empty()});
+      } else if(input.action==='paste') {
+        const payload=input.payload,cells=payload?.cells;
+        if(payload?.schema!==LEDGER_COPY_SCHEMA||!Array.isArray(cells)||!cells.length||!Array.isArray(cells[0])||!cells[0].length||cells.length*cells[0].length>5000||cells.some(row=>!Array.isArray(row)||row.length!==cells[0].length))fail('CELL_CLIPBOARD_INVALID');
+        const height=cells.length,width=cells[0].length;
+        // A single copied cell fills the selected range; a block starts at its top left.
+        const endRow=height===1&&width===1?range.endRow:range.row+height-1,endColumn=height===1&&width===1?range.endColumn:range.column+width-1;
+        rectangle(sheet,{...range,endRow,endColumn});
+        for(let row=range.row;row<=endRow;row++)for(let column=range.column;column<=endColumn;column++) {
+          const r=(row-range.row)%height,c=(column-range.column)%width,raw={...cells[r][c]};
+          if(raw.type==='formula'&&Number.isSafeInteger(payload.row)&&Number.isSafeInteger(payload.column))raw.value=shiftLedgerFormula(raw.value,row-payload.row-r,column-payload.column-c);
+          if(raw.type==='date'&&/T/.test(raw.value)) {
+            const instant=Date.parse(raw.value);if(!Number.isFinite(instant))fail('CELL_DATE_INVALID');
+            raw.value=new Date(instant+9*3600000).toISOString().slice(0,10);
+          }
+          const image=payload.images?.find(image=>image.row===r&&image.column===c);
+          if(image&&(!/^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/.test(image.url)||image.url.length>10000000))fail('CELL_CLIPBOARD_INVALID');
+          edits.push({sheetId:sheet.id,row,column,next:typedInput(raw),image:image?.url});
+        }
+      } else fail('CELL_ACTION_INVALID');
+      // Validate the entire selection before changing any cell or committing a file.
+      for(const edit of edits)validateChange(sheet,edit.row,edit.column,edit.next);
+      for(const edit of edits) {
+        put(sheet,edit.row,edit.column,edit.next);
+        sheet.images=(sheet.images||[]).filter(image=>image.row!==edit.row||image.column!==edit.column);
+        if(edit.image)sheet.images.push({row:edit.row,column:edit.column,url:edit.image});
+      }
+      return workbookView(await commit(book,edits));
+    }),
+    resize:input=>serial(async()=>{
+      const book=await load(),sheet=target(book,input),changes=input.changes;
+      if(!Array.isArray(changes)||!changes.length||changes.length>2000)fail('CELL_DIMENSION_INVALID');
+      for(const {axis,index,pixels} of changes) {
+        const limit=axis==='column'?sheet.columnCount:axis==='row'?sheet.rowCount:0;
+        if(!Number.isSafeInteger(index)||index<1||index>limit||!Number.isInteger(pixels)||pixels<(axis==='column'?32:24)||pixels>(axis==='column'?600:400))fail('CELL_DIMENSION_INVALID');
+      }
+      for(const {axis,index,pixels} of changes)(sheet[axis==='column'?'columnWidths':'rowHeights']||={})[index]=pixels;
+      return workbookView(await commit(book,[]));
     }),
     record:row=>serial(async()=>{
       if(!validatePurchaseLedgerRow(row).ok)fail('REQUIRED_FIELDS_MISSING');

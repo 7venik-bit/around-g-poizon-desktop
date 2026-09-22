@@ -15,6 +15,43 @@ const output=doc=>strToU8(new XMLSerializer().serializeToString(doc));
 const append=(parent,name,value)=>{const node=parent.ownerDocument.createElementNS(NS,name);if(value!==undefined)node.appendChild(parent.ownerDocument.createTextNode(String(value)));parent.appendChild(node);return node;};
 const resolvePart=(parent,target)=>target.startsWith('/')?target.slice(1):posix.normalize(posix.join(posix.dirname(parent),target));
 const relPart=part=>posix.join(posix.dirname(part),'_rels',posix.basename(part)+'.rels');
+const REL='http://schemas.openxmlformats.org/package/2006/relationships';
+function addRelation(files,part,id,type,target) {
+  const path=relPart(part),doc=files[path]?xml(files[path]):xml(strToU8(`<Relationships xmlns="${REL}"/>`));
+  const node=doc.createElementNS(REL,'Relationship');
+  for(const [key,value] of Object.entries({Id:id,Type:`http://schemas.openxmlformats.org/officeDocument/2006/relationships/${type}`,Target:target}))node.setAttribute(key,value);
+  doc.documentElement.appendChild(node);files[path]=output(doc);
+}
+function addImageCopies(files,path,doc,edits) {
+  const copies=edits.filter(e=>e.image);if(!copies.length)return;
+  const types=xml(files['[Content_Types].xml']);
+  const suffix=createHash('sha256').update(JSON.stringify(copies)).update(String(Object.keys(files).length)).digest('hex').slice(0,20);
+  const existing=first(doc.documentElement,'drawing'),id=`aroundg${suffix}`;
+  const part=existing?linkedParts(files,path).get(existing.getAttribute('r:id')):`xl/drawings/aroundg-${suffix}.xml`;
+  if(!part)throw Error('WORKBOOK_XML_INVALID');
+  const drawing=existing?xml(files[part]):xml(strToU8('<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/>'));
+  const firstId=Math.max(0,...Array.from(drawing.getElementsByTagName('*')).filter(n=>n.localName==='cNvPr').map(n=>Number(n.getAttribute('id'))||0))+1;
+  for(const [i,edit] of copies.entries()) {
+    const [,mime,base64]=edit.image.match(/^data:(image\/(?:png|jpeg|gif|webp));base64,(.+)$/);
+    const ext={'image/png':'png','image/jpeg':'jpg','image/gif':'gif','image/webp':'webp'}[mime],media=`xl/media/aroundg-${suffix}-${i}.${ext}`,rid=`${id}image${i}`;
+    files[media]=Buffer.from(base64,'base64');addRelation(files,part,rid,'image',posix.relative(posix.dirname(part),media));
+    const anchor=xml(strToU8(`<xdr:oneCellAnchor xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:from><xdr:col>${edit.column-1}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${edit.row-1}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:ext cx="457200" cy="457200"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${i+1}" name="상품 사진 ${i+1}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`));
+    Array.from(anchor.getElementsByTagName('*')).find(n=>n.localName==='cNvPr').setAttribute('id',String(firstId+i));
+    drawing.documentElement.appendChild(drawing.importNode(anchor.documentElement,true));
+    if(!children(types.documentElement,'Default').some(n=>n.getAttribute('Extension')===ext)) {
+      const type=types.createElementNS(types.documentElement.namespaceURI,'Default');type.setAttribute('Extension',ext);type.setAttribute('ContentType',mime);types.documentElement.appendChild(type);
+    }
+  }
+  files[part]=output(drawing);
+  if(!existing) {
+  addRelation(files,path,id,'drawing',posix.relative(posix.dirname(path),part));
+  const node=doc.createElementNS(NS,'drawing');node.setAttributeNS('http://www.w3.org/2000/xmlns/','xmlns:r','http://schemas.openxmlformats.org/officeDocument/2006/relationships');node.setAttribute('r:id',id);
+  const afterDrawing=new Set(['legacyDrawing','legacyDrawingHF','picture','oleObjects','controls','webPublishItems','tableParts','extLst']);
+  doc.documentElement.insertBefore(node,Array.from(doc.documentElement.childNodes).find(n=>afterDrawing.has(n.localName))||null);
+  const type=types.createElementNS(types.documentElement.namespaceURI,'Override');type.setAttribute('PartName','/'+part);type.setAttribute('ContentType','application/vnd.openxmlformats-officedocument.drawing+xml');types.documentElement.appendChild(type);
+  }
+  files['[Content_Types].xml']=output(types);
+}
 function linkedParts(files,part) {
   if(!files[relPart(part)])return new Map();
   return new Map(Array.from(xml(files[relPart(part)]).documentElement.childNodes).filter(n=>n.nodeType===1&&n.getAttribute('TargetMode')!=='External').map(n=>[n.getAttribute('Id'),resolvePart(part,n.getAttribute('Target'))]));
@@ -81,12 +118,30 @@ export function updateLedgerXlsx(book,edits=[]) {
       }
       return cell;
     }
+    if(Object.keys(sheet.columnWidths||{}).length) {
+      let cols=first(doc.documentElement,'cols');
+      if(!cols){cols=doc.createElementNS(NS,'cols');doc.documentElement.insertBefore(cols,data);}
+      for(const [index,pixels] of Object.entries(sheet.columnWidths)) {
+        const number=Number(index),existing=children(cols,'col').find(n=>Number(n.getAttribute('min'))<=number&&Number(n.getAttribute('max'))>=number);
+        const column=existing?existing.cloneNode(true):doc.createElementNS(NS,'col');
+        if(existing) {
+          const min=Number(existing.getAttribute('min')),max=Number(existing.getAttribute('max'));
+          if(min<number){const before=existing.cloneNode(true);before.setAttribute('max',String(number-1));cols.insertBefore(before,existing);}
+          if(max>number){const after=existing.cloneNode(true);after.setAttribute('min',String(number+1));cols.insertBefore(after,existing);}
+          cols.removeChild(existing);
+        }
+        column.setAttribute('min',index);column.setAttribute('max',index);column.setAttribute('width',String(Math.round((pixels-5)/7*256)/256));column.setAttribute('customWidth','1');column.removeAttribute('bestFit');
+        cols.insertBefore(column,children(cols,'col').find(n=>Number(n.getAttribute('min'))>number)||null);
+      }
+    }
+    for(const [number,pixels] of Object.entries(sheet.rowHeights||{})) {const row=rowAt(Number(number));row.setAttribute('ht',String(pixels*0.75));row.setAttribute('customHeight','1');}
     const changed=edits.filter(e=>e.sheetId===sheet.id);
     const drawings=new Map();
     for(const found of anchors(files,path))if(changed.some(e=>e.row===found.row&&e.column===found.column)) {
       found.anchor.parentNode.removeChild(found.anchor);drawings.set(found.path,found.doc);
     }
     for(const [part,document] of drawings)files[part]=output(document);
+    addImageCopies(files,path,doc,changed);
     const addresses=new Map(changed.map(e=>[`${e.row}:${e.column}`,e]));
     for(let r=0;r<sheet.formulas.length;r++)for(let c=0;c<sheet.formulas[r].length;c++)if(sheet.formulas[r][c])addresses.set(`${r+1}:${c+1}`,addresses.get(`${r+1}:${c+1}`)||{row:r+1,column:c+1});
     for(const edit of addresses.values()) {
