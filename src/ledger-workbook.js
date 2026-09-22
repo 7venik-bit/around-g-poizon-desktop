@@ -42,7 +42,8 @@
     [/^(?:구매가|판매가)(?:기준|대비|비)?마진율$/, 'percent', 84],
     [/^(?:EU사이즈|한국사이즈|사이즈)$/i, 'size', 60],
     [/^(?:판매일자|구매일자|주문일자|날짜)$/, 'date', 60],
-    [/^(?:성별|사진|카드)$/, 'short', 42],
+    [/^(?:사진|상품사진|이미지)$/, 'image', 62],
+    [/^(?:성별|카드)$/, 'short', 42],
     [/^(?:판매량|수량)$/, 'count', 52],
     [/^상태$/, 'status', 84],
     [/^브랜드$/, 'brand', 76],
@@ -57,7 +58,7 @@
       const type=header>=0 && match(rows[header][c]);
       if(type) {
         let weight=type[2];
-        if(!['model','link'].includes(type[1])) {
+        if(!['model','link','image'].includes(type[1])) {
           // Reserve readable space for the actual original values, including
           // bold article codes, currency and Korean brand/status names.
           const longest=rows.reduce((max,row,r)=>r===header?max:Math.max(max,
@@ -70,6 +71,12 @@
       return {kind:'text',weight:used?84:24};
     });
     return {header,columns};
+  }
+  function photoUrl(value,formula) {
+    // Recognize only a literal IMAGE URL, never evaluate sheet expressions.
+    const literal=String(formula || '').match(/^=IMAGE\("(https:\/\/[^"\r\n]+)"(?:[,;]\s*1)?\)$/i);
+    if(formula && !literal)return '';
+    try {const url=new URL(literal?literal[1]:String(value || ''));return url.protocol==='https:' && !url.username && !url.password && !/\.svg$/i.test(url.pathname)?url.href:'';}catch{return '';}
   }
   function render() {
     const sheet = visible().find(s => s.id === active);
@@ -94,6 +101,14 @@
         const cell=document.createElement('td'),content=document.createElement('span');
         content.className='workbook-cell-text';content.textContent=rows[r]?.[c] || '';cell.append(content);
         cell.dataset.columnKind=layout.columns[c].kind;
+        if(layout.columns[c].kind==='image' && r>layout.header) {
+          const url=photoUrl(rows[r]?.[c],sheet.formulas?.[r]?.[c]);
+          if(url) {
+            const image=document.createElement('img');image.className='workbook-product-photo';image.alt='상품 사진';image.loading='lazy';image.referrerPolicy='no-referrer';image.src=url;
+            content.hidden=true;cell.append(image);
+            image.addEventListener('error',()=>{image.remove();content.hidden=false;content.textContent=rows[r]?.[c] || '사진 확인 필요';});
+          }
+        }
         cell.tabIndex=0;cell.setAttribute("aria-label",`${sheet.name} ${r+1}행 ${c+1}열`);
         const select=()=>selectCell(sheet,r,c);
         cell.addEventListener("click",select);cell.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();select();}});

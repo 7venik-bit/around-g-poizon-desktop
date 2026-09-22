@@ -2397,7 +2397,7 @@ function renderRecords(collection) {
 function renderLedgerRecords() {
   const host = $("#ledger-list");
   const rows = Array.isArray(state.ledger) ? state.ledger : [];
-  host.innerHTML = rows.length ? rows.map((row) => `<div class="record"><div><strong>${text(row.modelName || row.name)}</strong><small>${text(row.brand)} · ${text(row.articleNumber)} · ${text(row.krSize || row.euSize || "-")}</small></div><div><span class="ledger-sync-state ${row.syncStatus === "failed" ? "failed" : ""}">${row.syncStatus === "synced" ? `시트 ${text(row.sheetRow)}행 기록완료` : row.syncStatus === "duplicate" ? `기존 ${text(row.sheetRow)}행 연결` : "기록실패"}</span>${row.syncStatus === "failed" ? ` <button data-ledger-retry="${text(row.id)}">다시 기록</button>` : ""}</div></div>`).join("") : `<div class="empty">구매장부 기록 내역이 없습니다.</div>`;
+  host.innerHTML = rows.length ? rows.map((row) => `<div class="record"><div class="ledger-record-product">${ledgerPhotoMarkup(row)}<div><strong>${text(row.modelName || row.name)}</strong><small>${text(row.brand)} · ${text(row.articleNumber)} · ${text(row.krSize || row.euSize || "-")}</small></div></div><div><span class="ledger-sync-state ${row.syncStatus === "failed" ? "failed" : ""}">${row.syncStatus === "synced" ? `시트 ${text(row.sheetRow)}행 기록완료` : row.syncStatus === "duplicate" ? `기존 ${text(row.sheetRow)}행 연결` : "기록실패"}${row.imageStatus==='link-only'?' · 사진 표시를 위한 Google 연결 업데이트 필요':''}</span>${row.syncStatus === "failed" ? ` <button data-ledger-retry="${text(row.id)}">다시 기록</button>` : ""}</div></div>`).join("") : `<div class="empty">구매장부 기록 내역이 없습니다.</div>`;
 }
 
 function stockWatchTime(value) {
@@ -5098,8 +5098,31 @@ function fillLedgerForm(row = {}) {
   $("#ledger-price").value = row.purchasePrice || ""; $("#ledger-date").value = row.purchaseDate || "";
   $("#ledger-order").value = row.orderNumber || ""; $("#ledger-url").value = row.purchaseUrl || "";
   $("#ledger-image").value = row.imageUrl || ""; $("#ledger-quantity").value = row.quantity || "";
+  updateLedgerImagePreview();
   $("#ledger-submit").disabled=ledgerBusy || !selectedLedgerProof;
 }
+function ledgerPhotoUrl(value) {
+  try {const url=new URL(String(value || '').trim());return url.protocol==='https:' && !url.username && !url.password && !/\.svg$/i.test(url.pathname)?url.href:'';}catch{return '';}
+}
+function ledgerPhotoMarkup(row) {
+  const url=ledgerPhotoUrl(row.imageUrl);
+  return `<span class="ledger-photo">${url?`<img src="${text(url)}" alt="${text(row.modelName || row.name || '상품')} 사진" loading="lazy" referrerpolicy="no-referrer">`:''}<span class="ledger-image-empty" ${url?'hidden':''}>사진 확인 필요</span></span>`;
+}
+function updateLedgerImagePreview() {
+  const image=$("#ledger-image-preview"),url=ledgerPhotoUrl($("#ledger-image").value);
+  image.hidden=!url;image.removeAttribute('src');
+  image.alt=`${$("#ledger-name").value || '선택한 상품'} 사진`;
+  if(url)image.src=url;
+  $("#ledger-image-state").textContent=url?'Google 장부의 사진 칸에 함께 기록할 상품 사진입니다.':'상품 사진을 확인해 주세요. 주문상세를 다시 인식하거나 사진 주소를 입력할 수 있습니다.';
+}
+$("#ledger-image")?.addEventListener('input',updateLedgerImagePreview);
+$("#ledger-image-preview")?.addEventListener('error',()=>{
+  $("#ledger-image-preview").hidden=true;$("#ledger-image-state").textContent='사진을 불러오지 못했습니다. 상품 사진 주소를 확인해 주세요.';
+});
+for(const host of [$("#ledger-captured-list"),$("#ledger-list")]) host?.addEventListener('error',event=>{
+  const image=event.target;if(!image.matches?.('.ledger-photo img'))return;
+  image.hidden=true;image.nextElementSibling.hidden=false;
+},true);
 function ledgerFormRow() {
   return { ...selectedLedgerProof, brand:$("#ledger-brand").value, modelName:$("#ledger-name").value, articleNumber:$("#ledger-article").value,
     krSize:$("#ledger-size").value, purchasePrice:$("#ledger-price").value, purchaseDate:$("#ledger-date").value,
@@ -5117,7 +5140,7 @@ function ledgerFlowMessage(result) {
   })[code] || result?.message || "무신사 주문 연결을 확인해 주세요.";
 }
 function renderCapturedLedgerRows() {
-  $("#ledger-captured-list").innerHTML=capturedLedgerRows.map((row,index)=>`<button type="button" class="ledger-captured-card${index===selectedLedgerIndex?" selected":""}" data-ledger-captured="${index}">${row.imageUrl?`<img src="${text(row.imageUrl)}" alt="">`:`<span class="ledger-image-empty">이미지 없음</span>`}<span><strong>${text(row.modelName || row.articleNumber || `상품 ${index+1}`)}</strong><small>${text(row.krSize || row.euSize || "옵션 확인 필요")} · ${row.quantity?`${Number(row.quantity)}개`:"수량 확인 필요"} · ${row.purchasePrice?`${Number(row.purchasePrice).toLocaleString("ko-KR")}원`:"결제금액 확인 필요"}</small><small>${row.recorded?"기록 완료":row.missing?.length?`${text(row.missing.join(" · "))} 확인 필요`:"주문상세 인식 완료"}</small></span></button>`).join("");
+  $("#ledger-captured-list").innerHTML=capturedLedgerRows.map((row,index)=>`<button type="button" class="ledger-captured-card${index===selectedLedgerIndex?" selected":""}" data-ledger-captured="${index}">${ledgerPhotoMarkup(row)}<span><strong>${text(row.modelName || row.articleNumber || `상품 ${index+1}`)}</strong><small>${text(row.krSize || row.euSize || "옵션 확인 필요")} · ${row.quantity?`${Number(row.quantity)}개`:"수량 확인 필요"} · ${row.purchasePrice?`${Number(row.purchasePrice).toLocaleString("ko-KR")}원`:"결제금액 확인 필요"}</small><small>${row.recorded?"기록 완료":row.missing?.length?`${text(row.missing.join(" · "))} 확인 필요`:"주문상세 인식 완료"}</small></span></button>`).join("");
 }
 $("#ledger-open-musinsa")?.addEventListener("click", async () => {
   if(ledgerBusy)return;
@@ -5133,7 +5156,7 @@ $("#ledger-open-musinsa")?.addEventListener("click", async () => {
 });
 $("#ledger-capture")?.addEventListener("click", async () => {
   if(ledgerBusy)return;
-  const status=$("#ledger-status");status.className="status";status.textContent="선택한 주문상세의 주문번호·구매일·옵션·수량·결제금액을 확인하고 있습니다.";
+  const status=$("#ledger-status");status.className="status";status.textContent="선택한 주문상세의 상품 사진·주문번호·구매일·옵션·수량·결제금액을 확인하고 있습니다.";
   capturedLedgerRows=[];selectedLedgerIndex=-1;fillLedgerForm();renderCapturedLedgerRows();setLedgerBusy(true);
   try {
     const result=await window.aroundG.captureMusinsaLedger();
@@ -5161,6 +5184,9 @@ $("#purchase-ledger-form")?.addEventListener("submit", async event => {
     if(selectedLedgerIndex>=0 && capturedLedgerRows[selectedLedgerIndex])capturedLedgerRows[selectedLedgerIndex].recorded=true;
     selectedLedgerProof=null;renderCapturedLedgerRows();status.className="status success";
     status.textContent=result.duplicate?`Google 장부에서 기존 ${result.rowNumber}행과 중복으로 확인했습니다.`:`Google 장부 ${result.rowNumber}행에 기록했습니다.`;
+    if(result.imageStatus==='formula')status.textContent+=' 상품 사진도 연결했습니다.';
+    else if(result.imageStatus==='link-only')status.textContent+=' 사진 주소만 저장되었습니다. 장부에 사진을 표시하려면 Google 장부 연결 스크립트 업데이트가 필요합니다.';
+    else if(result.duplicate)status.textContent+=' 기존 행의 사진은 유지했습니다.';
     await refresh();
   } catch {status.className="status error";status.textContent="Google 장부 기록 결과를 확인하지 못했습니다. 기록 내역을 확인한 뒤 다시 시도해 주세요.";}
   finally {setLedgerBusy(false);}

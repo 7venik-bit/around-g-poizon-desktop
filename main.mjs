@@ -5453,18 +5453,21 @@ async function openMusinsaLedgerWindowAsync() {
 
 async function supplementMusinsaLedgerIdentity(rows) {
   const identities = new Map();
-  for (const row of rows.filter(row => !row.articleNumber)) {
+  for (const row of rows.filter(row => !row.articleNumber || !row.imageUrl)) {
     if (!identities.has(row.productId)) {
       const detail = new BrowserWindow({show:false,webPreferences:{partition:DOMESTIC_SEARCH_PARTITION,sandbox:true,contextIsolation:true,backgroundThrottling:false}});
       let identity = null;
+      const related=rows.filter(item=>item.productId===row.productId);
+      const needsCode=related.some(item=>!item.articleNumber),needsImage=related.some(item=>!item.imageUrl);
       try {
         // Loading can stay pending on analytics. Read rendered identity while
         // it is progressing, with a bounded wait and no access/login retries.
         void detail.loadURL(row.purchaseUrl).catch(() => {});
         for (let attempt=0;attempt<20 && !detail.isDestroyed();attempt++) {
           await wait(350);
-          identity = await detail.webContents.executeJavaScript(`(${captureMusinsaLedgerProductIdentity.toString()})(${JSON.stringify(row.productId)})`,true).catch(() => null);
-          if (identity) break;
+          const observed = await detail.webContents.executeJavaScript(`(${captureMusinsaLedgerProductIdentity.toString()})(${JSON.stringify(row.productId)})`,true).catch(() => null);
+          if (observed) identity={...identity,...observed};
+          if ((!needsCode || identity?.articleNumber) && (!needsImage || identity?.imageUrl)) break;
           const page = await inspectMusinsaLedgerWindow(detail);
           if (["login","blocked"].includes(page?.kind)) break;
         }
@@ -5472,7 +5475,8 @@ async function supplementMusinsaLedgerIdentity(rows) {
       identities.set(row.productId,identity);
     }
     const identity = identities.get(row.productId);
-    if (identity?.articleNumber) { row.articleNumber=identity.articleNumber;row.missing=row.missing.filter(field=>field!=="품번"); }
+    if (!row.articleNumber && identity?.articleNumber) { row.articleNumber=identity.articleNumber;row.missing=row.missing.filter(field=>field!=="품번"); }
+    if (!row.imageUrl && identity?.imageUrl) { row.imageUrl=identity.imageUrl;row.missing=row.missing.filter(field=>field!=="상품 사진"); }
   }
   return rows;
 }
@@ -5522,9 +5526,10 @@ async function syncPurchaseLedger(input = {}) {
     const response = await fetch(endpoint, { method: "POST", redirect: "follow", headers: { "content-type": "text/plain;charset=utf-8" }, body: JSON.stringify({ secret, row }), signal: AbortSignal.timeout(20_000) });
     const result = await response.json();
     if (!result.ok) throw new Error(result.code || result.message || `HTTP_${response.status}`);
-    const saved = await store.upsert("ledger", { ...row, id: row.duplicateKey, sheetRow: result.rowNumber, syncStatus: result.duplicate ? "duplicate" : "synced", syncedAt: new Date().toISOString() });
+    const imageStatus=result.imageStatus || (result.duplicate ? "existing" : "link-only");
+    const saved = await store.upsert("ledger", { ...row, imageStatus, id: row.duplicateKey, sheetRow: result.rowNumber, syncStatus: result.duplicate ? "duplicate" : "synced", syncedAt: new Date().toISOString() });
     void runWeeklyLedgerBackup();
-    return { ok: true, duplicate: Boolean(result.duplicate), rowNumber: result.rowNumber, saved };
+    return { ok: true, duplicate: Boolean(result.duplicate), imageStatus, rowNumber: result.rowNumber, saved };
   } catch (error) {
     await store.upsert("ledger", { ...row, id: row.duplicateKey, syncStatus: "failed", syncError: error instanceof Error ? error.message : String(error) });
     void addProgramNotification({ type: "error", title: "구매장부 기록 실패", message: `${row.modelName} · 다시 기록해 주세요.`, key: `ledger:failed:${row.duplicateKey}:${Date.now()}`, windows: true });

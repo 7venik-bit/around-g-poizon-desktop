@@ -6,7 +6,15 @@ function json_(value) {
 }
 
 function doGet(e) {
-  return json_({ ok: true, service: 'Around G 구매장부', sheet: SHEET_NAME, capabilities: ['workbook.read.v1', 'workbook.edit.v1'] });
+  return json_({ ok: true, service: 'Around G 구매장부', sheet: SHEET_NAME, capabilities: ['workbook.read.v1', 'workbook.edit.v1', 'purchase.image.v1'] });
+}
+
+// A literal HTTPS image formula fits the original photo cell, and remains a
+// formula in workbook reads/exports. Never evaluate caller-supplied formulas.
+function purchaseImageFormula_(value) {
+  const url=String(value || '').trim();
+  if (!/^https:\/\/[a-z0-9.-]+(?::443)?\/[^\s<>"\\]*$/i.test(url) || /\.svg(?:[?#]|$)/i.test(url)) return '';
+  return '=IMAGE("' + url + '",1)';
 }
 
 function doPost(e) {
@@ -33,17 +41,20 @@ function doPost(e) {
       return (link && link === row.purchaseUrl && size === String(row.krSize || row.euSize).toUpperCase().replace(/\s+/g, ''))
         || (code && code === row.articleNumber && size === String(row.krSize || row.euSize).toUpperCase().replace(/\s+/g, '') && date === row.purchaseDate && price === Number(row.purchasePrice));
     });
-    if (same >= 0) return json_({ ok: true, duplicate: true, rowNumber: same + 3 });
+    if (same >= 0) return json_({ ok: true, duplicate: true, rowNumber: same + 3, imageStatus:'existing' });
+    const imageFormula=purchaseImageFormula_(row.imageUrl);
+    if (!imageFormula) return json_({ok:false,code:'PRODUCT_IMAGE_REQUIRED'});
     const target = sheet.getLastRow() + 1;
     const output = Array(30).fill('');
     output[0]=row.brand; output[1]=row.purchaseUrl; output[2]=row.articleNumber; output[3]=row.modelName;
-    output[4]=row.gender; output[5]=row.euSize; output[6]=row.krSize; output[7]=row.imageUrl;
+    output[4]=row.gender; output[5]=row.euSize; output[6]=row.krSize; output[7]=imageFormula;
     output[11]=row.status === '반품중' ? '반품중' : '구매완료'; output[12]=row.purchaseDate; output[13]=Number(row.purchasePrice);
     sheet.getRange(target, 1, 1, 30).setValues([output]);
     sheet.getRange(target - 1, 1, 1, 30).copyTo(sheet.getRange(target, 1, 1, 30), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
     sheet.getRange(target, 1, 1, 30).setValues([output]);
     const verify = sheet.getRange(target, 1, 1, 14).getDisplayValues()[0];
-    return json_({ ok: verify[2] === row.articleNumber && verify[11] === output[11], duplicate: false, rowNumber: target });
+    const imageSaved=sheet.getRange(target,8).getFormula()===imageFormula;
+    return json_({ ok: verify[2] === row.articleNumber && verify[11] === output[11] && imageSaved, duplicate: false, rowNumber: target, imageStatus:imageSaved?'formula':'unverified' });
   } catch (error) {
     return json_({ ok: false, code: 'WRITE_FAILED', message: String(error && error.message || error) });
   } finally { lock.releaseLock(); }

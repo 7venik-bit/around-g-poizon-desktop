@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {readFileSync} from 'node:fs';
+import {createContext,runInContext} from 'node:vm';
 import {captureMusinsaLedgerPage,captureMusinsaLedgerProductIdentity} from '../services/musinsa-ledger-page.mjs';
 import {advanceMusinsaLedgerToOrders,MusinsaLedgerCaptures} from '../services/musinsa-ledger-flow.mjs';
 
@@ -28,6 +29,18 @@ test('detail evidence keeps each option, quantity and paid amount without duplic
   assert.equal(page.rows.length,2);assert.equal(page.rows[0].articleNumber,'AB123-001');assert.equal(page.rows[0].quantity,2);
   assert.equal(page.rows[0].purchasePrice,62330);assert.equal(page.rows[1].krSize,'화이트 / 280');assert.equal(page.rows[1].quantity,1);
   assert.equal(page.rows[0].orderLineId,'line-a');assert.equal(page.rows[1].orderLineId,'line-b');
+  assert.equal(page.rows[0].imageUrl,'https://images.example.test/shoe.png');
+});
+test('order photos use product-linked lazy images instead of brand logos or placeholders',t=>{
+  const black=item().replace('<a href="/products/10001"><img', '<a href="/brands/test"><img src="https://images.example.test/brand-logo.png"></a><a href="/products/10001"><img')
+    .replace('src="https://images.example.test/shoe.png"','src="data:image/gif;base64,AAAA" data-src="//images.example.test/black.jpg"');
+  const white=item({size:'화이트 / 280',line:'b'}).replace('src="https://images.example.test/shoe.png"','src="/placeholder.png" srcset="https://images.example.test/white-small.jpg 100w, https://images.example.test/white.jpg 400w"');
+  const rows=frame(t,detail(black+white)).capture().rows;
+  assert.deepEqual(Array.from(rows,row=>row.imageUrl),['https://images.example.test/black.jpg','https://images.example.test/white.jpg']);
+  for(const src of ['data:image/png;base64,AAAA','javascript:alert(1)','https://user:password@images.example.test/x.png','/placeholder.png']) {
+    const row=frame(t,detail(item().replace('https://images.example.test/shoe.png',src))).capture().rows[0];
+    assert.equal(row.imageUrl,'');assert.ok(row.missing.includes('상품 사진'));
+  }
 });
 test('listing, My and lookalike hosts cannot produce order captures',t=>{
   for(const [html,url,kind] of [
@@ -59,6 +72,29 @@ test('product page supplements only a labeled real code for the matching product
   assert.deepEqual(Object.keys(page.identity('10001')),['articleNumber']);
   assert.equal(frame(t,'<p>상품번호 10001</p>','https://www.musinsa.com/products/10001').identity('10001'),null);
 });
+test('product photo fallback is bound to the matching catalog page and excludes recommendation images',t=>{
+  const html='<meta property="og:image" content="https://images.example.test/product.jpg"><link rel="canonical" href="https://www.musinsa.com/products/10001"><p>품번: AB123-001</p><p>현재 판매가 1원</p><aside class="recommend"><img src="https://images.example.test/unrelated.jpg"></aside>';
+  const identity=frame(t,html,'https://www.musinsa.com/products/10001').identity('10001');
+  assert.equal(identity.imageUrl,'https://images.example.test/product.jpg');assert.equal(identity.purchasePrice,undefined);
+  assert.equal(frame(t,'<meta property="og:image" content="https://images.example.test/product.jpg">','https://www.musinsa.com/products/10001').identity('10001').imageUrl,identity.imageUrl);
+  assert.equal(frame(t,html,'https://www.musinsa.com/products/20002').identity('10001'),null);
+  assert.equal(frame(t,html.replace('/products/10001','/products/20002'),'https://www.musinsa.com/products/10001').identity('10001').imageUrl,undefined);
+  assert.equal(frame(t,html+'<p>접근 제한</p>','https://www.musinsa.com/products/10001').identity('10001'),null);
+  assert.equal(frame(t,'<aside class="recommend"><img src="https://images.example.test/unrelated.jpg"></aside>','https://www.musinsa.com/products/10001').identity('10001'),null);
+});
+test('supplementation shares a catalog read but retains each ordered photo, option and paid price',async()=>{
+  const source=readFileSync(new URL('../main.mjs',import.meta.url),'utf8');let reads=0,closed=0;
+  const context=createContext({captureMusinsaLedgerProductIdentity,DOMESTIC_SEARCH_PARTITION:'fixture',wait:async()=>{},inspectMusinsaLedgerWindow:async()=>({kind:'my'}),
+    BrowserWindow:function(){return {isDestroyed:()=>false,destroy:()=>closed++,loadURL:async()=>{},webContents:{executeJavaScript:async()=>{reads++;return {articleNumber:'AB123-001',imageUrl:'https://images.example.test/catalog.jpg'};}}};}});
+  runInContext(source.slice(source.indexOf('async function supplementMusinsaLedgerIdentity('),source.indexOf('function captureMusinsaLedgerOrder()')),context);
+  const rows=[{productId:'10001',purchaseUrl:'https://www.musinsa.com/products/10001',articleNumber:'',imageUrl:'https://images.example.test/ordered-black.jpg',optionText:'블랙 / 270',purchasePrice:62330,quantity:2,missing:['품번']},
+    {productId:'10001',purchaseUrl:'https://www.musinsa.com/products/10001',articleNumber:'ORDER-CODE',imageUrl:'',optionText:'화이트 / 280',purchasePrice:55000,quantity:1,missing:['상품 사진']}];
+  const result=await context.supplementMusinsaLedgerIdentity(rows);
+  assert.equal(reads,1);assert.equal(closed,1);assert.equal(result[0].imageUrl,'https://images.example.test/ordered-black.jpg');
+  assert.equal(result[1].imageUrl,'https://images.example.test/catalog.jpg');assert.equal(result[1].articleNumber,'ORDER-CODE');
+  assert.equal(result[0].purchasePrice,62330);assert.equal(result[0].quantity,2);assert.equal(result[1].optionText,'화이트 / 280');
+  assert.deepEqual(Array.from(result,row=>row.missing),[[],[]]);
+});
 test('My navigation clicks only the observed order-history entry, once, and stops before selecting an order',async()=>{
   const pages=[{kind:'my',href:'https://www.musinsa.com/mypage',orderAction:{x:10,y:20}},{kind:'my',orderAction:{x:10,y:20}},{kind:'orders'}];
   const actions=[];const result=await advanceMusinsaLedgerToOrders({inspect:async()=>pages.shift(),click:async page=>actions.push(page),wait:async()=>{}});
@@ -88,15 +124,22 @@ test('renderer cannot submit before detail capture and restores controls after e
   const dom=new JSDOM(html,{runScripts:'outside-only'});t.after(()=>dom.window.close());
   const w=dom.window,d=w.document;let writes=0,openCalls=0;
   w.$=selector=>d.querySelector(selector);w.text=value=>String(value??'').replace(/[&<>"']/g,'');w.refresh=async()=>{};
-  const row={captureId:'fixture',orderNumber:'ORDER-1',purchaseDate:'2026-09-02',brand:'테스트',modelName:'테스트 상품',articleNumber:'AB123',krSize:'블랙 / 270',purchasePrice:62330,quantity:2,purchaseUrl:'https://www.musinsa.com/products/10001',missing:[]};
-  w.aroundG={openMusinsaLedger:async()=>{openCalls++;throw Error('offline');},captureMusinsaLedger:async()=>({ok:true,rows:[row],orderNumber:row.orderNumber}),syncPurchaseLedger:async input=>{writes++;assert.equal(input.captureId,'fixture');return {ok:true,rowNumber:45};}};
+  const row={captureId:'fixture',orderNumber:'ORDER-1',purchaseDate:'2026-09-02',brand:'테스트',modelName:'테스트 상품',articleNumber:'AB123',krSize:'블랙 / 270',purchasePrice:62330,quantity:2,purchaseUrl:'https://www.musinsa.com/products/10001',imageUrl:'https://images.example.test/black.jpg',missing:[]};
+  const second={...row,captureId:'second',krSize:'화이트 / 280',imageUrl:'https://images.example.test/white.jpg'};
+  w.aroundG={openMusinsaLedger:async()=>{openCalls++;throw Error('offline');},captureMusinsaLedger:async()=>({ok:true,rows:[row,second],orderNumber:row.orderNumber}),syncPurchaseLedger:async input=>{writes++;assert.equal(input.captureId,'fixture');assert.equal(input.imageUrl,row.imageUrl);return {ok:true,rowNumber:45,imageStatus:'link-only'};}};
   w.eval('let capturedLedgerRows = [];'+script);
   const flush=()=>new Promise(resolve=>setTimeout(resolve,5));
   d.querySelector('#purchase-ledger-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();assert.equal(writes,0);
   d.querySelector('#ledger-open-musinsa').click();await flush();assert.equal(openCalls,1);assert.equal(d.querySelector('#ledger-open-musinsa').disabled,false);
   d.querySelector('#ledger-capture').click();await flush();assert.equal(d.querySelector('#ledger-submit').disabled,false);
   assert.equal(d.querySelector('#ledger-quantity').value,'2');assert.equal(d.querySelector('#ledger-order').readOnly,true);
+  assert.equal(d.querySelector('#ledger-image-preview').src,row.imageUrl);
+  d.querySelector('[data-ledger-captured="1"]').click();assert.equal(d.querySelector('#ledger-image-preview').src,second.imageUrl);
+  d.querySelector('#ledger-image-preview').dispatchEvent(new w.Event('error'));assert.equal(d.querySelector('#ledger-image-preview').hidden,true);
+  d.querySelector('[data-ledger-captured="0"]').click();assert.equal(d.querySelector('#ledger-image-preview').src,row.imageUrl);assert.equal(d.querySelector('#ledger-image-preview').hidden,false);
   d.querySelector('#purchase-ledger-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();assert.equal(writes,1);assert.equal(d.querySelector('#ledger-submit').disabled,true);
+  assert.match(d.querySelector('#ledger-status').textContent,/사진 주소만 저장/);
   w.aroundG.captureMusinsaLedger=async()=>({ok:false,code:'ORDER_DETAIL_REQUIRED',message:'주문상세 필요'});
   d.querySelector('#ledger-capture').click();await flush();assert.equal(d.querySelector('#ledger-submit').disabled,true);assert.equal(d.querySelector('#ledger-order').value,'');
+  assert.equal(d.querySelector('#ledger-image-preview').getAttribute('src'),null);
 });

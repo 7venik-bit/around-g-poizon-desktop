@@ -326,8 +326,9 @@
             <label>품번<input id="ledger-article" required></label><label>사이즈<input id="ledger-size" required></label>
             <label>상품별 실결제금액<input id="ledger-price" type="number" min="1" required></label><label>구매일<input id="ledger-date" type="date" required readonly></label>
             <label>주문번호<input id="ledger-order" required readonly></label><label>구매 링크<input id="ledger-url" type="url" required readonly></label>
-            <label>이미지 URL<input id="ledger-image" type="url"></label><label>수량<input id="ledger-quantity" type="number" min="1" required></label>
+            <label>상품 사진 주소<input id="ledger-image" type="url" required placeholder="주문상세에서 자동으로 가져옵니다"></label><label>수량<input id="ledger-quantity" type="number" min="1" required></label>
           </div>
+          <div class="ledger-selected-photo"><img id="ledger-image-preview" alt="선택한 상품 사진" hidden><span id="ledger-image-state">주문상세를 인식하면 상품 사진을 함께 가져옵니다.</span></div>
           <div id="ledger-captured-list" class="ledger-captured-list"></div>
           <div class="stock-watch-actions"><button id="ledger-submit" class="primary" type="submit" disabled>③ 확인한 상품을 Google 장부에 기록</button></div>
           <div id="ledger-status" class="status" aria-live="polite"></div>

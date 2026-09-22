@@ -12,6 +12,19 @@ export function captureMusinsaLedgerPage() {
     const r = element.getBoundingClientRect(); return r.width > 0 && r.height > 0;
   };
   const text = element => String(element?.innerText || '').trim();
+  const imageSource = image => {
+    if (!image) return '';
+    const srcset = image.getAttribute('data-srcset') || image.getAttribute('srcset') || '';
+    const candidates = [image.getAttribute('data-original'),image.getAttribute('data-src'),image.getAttribute('data-lazy-src'),
+      ...srcset.split(',').reverse().map(part=>part.trim().split(/\s+/)[0]),image.currentSrc,image.getAttribute('src')];
+    for (const candidate of candidates.filter(Boolean)) {
+      try {
+        const url=new URL(candidate,location.href);
+        if (url.protocol==='https:' && !url.username && !url.password && !/placeholder|no[-_]?image|(?:^|\/)(?:blank|spacer|logo)(?:[._/-]|$)|\.svg$/i.test(url.pathname)) return url.href;
+      } catch { /* An invalid or temporary image is not purchase evidence. */ }
+    }
+    return '';
+  };
   const href = location.href;
   if (!allowed(href)) return {kind:'outside', href};
   const body = text(document.body), flat = clean(body);
@@ -59,7 +72,12 @@ export function captureMusinsaLedgerPage() {
     const raw=text(card), value=clean(raw), lines=raw.split(/\n+/).map(clean).filter(Boolean);
     // Cancellation/refund lines cannot become a completed purchase.
     if (/취소\s*(?:완료|접수)|반품\s*(?:완료|접수|중)|환불\s*(?:완료|진행)/.test(value)) continue;
-    const image=[...card.querySelectorAll('img')].find(visible);
+    const images=[...card.querySelectorAll('img')].filter(el=>visible(el) && !unrelated(el));
+    // Prefer the thumbnail linked to this ordered product over brand logos or
+    // another option's image. Only use an unlinked image inside this same card.
+    const image=images.find(el=>productId(el.closest('a[href]') || {})===id && imageSource(el))
+      || images.find(el=>!el.closest('a[href]') && !/로고|logo/i.test(el.alt || '') && imageSource(el));
+    const imageUrl=imageSource(image);
     const labelValue=pattern => lines.map((line,i)=> { const m=line.match(pattern); return m ? clean(m[1] || lines[i+1]) : ''; }).find(Boolean) || '';
     const option=labelValue(/^(?:옵션|사이즈)\s*[:：]?\s*(.*)$/);
     const qtyMatch=value.match(/수량\s*[:：]?\s*(\d+)\s*(?:개)?/) || value.match(/(?:^|\s)(\d+)\s*개(?:\s|$)/);
@@ -76,29 +94,45 @@ export function captureMusinsaLedgerPage() {
     if (!option) missing.push('옵션·사이즈');
     if (!purchasePrice) missing.push('상품별 실결제금액');
     if (!quantity) missing.push('수량');
+    if (!imageUrl) missing.push('상품 사진');
     rows.push({platform:'무신사',orderNumber:numbers[0],purchaseDate,purchaseUrl:new URL(link.href,href).origin+new URL(link.href,href).pathname,
       productId:id,articleNumber,brand,modelName,krSize:option,optionText:option,purchasePrice,quantity,
-      imageUrl:image?.currentSrc || image?.src || '',status:'구매완료',missing,
+      imageUrl,status:'구매완료',missing,
       sourceOrderUrl:new URL(href).origin+new URL(href).pathname,orderLineId:card.getAttribute('data-order-item-id') || `${id}:${rows.length}`});
   }
   return {kind:'detail',href,orderNumber:numbers[0],purchaseDate,rows,code:rows.length ? '' : 'ORDER_PRODUCTS_NOT_FOUND'};
 }
 
-// Supplement identity only. Current catalog prices/stock never replace the
+// Supplement identity and a missing photo only. Current catalog prices/stock never replace the
 // purchased amount, quantity or selected option from the order detail.
 export function captureMusinsaLedgerProductIdentity(expectedProductId) {
   const url=new URL(location.href);
-  if (url.protocol!=='https:' || !/(^|\.)musinsa\.com$/i.test(url.hostname)
-    || url.pathname.match(/\/(?:products|app\/goods)\/(\d+)/)?.[1]!==String(expectedProductId)) return null;
+  if (url.protocol!=='https:' || url.username || url.password || !/(^|\.)musinsa\.com$/i.test(url.hostname)
+    || url.pathname.match(/\/(?:products|app\/goods)\/(\d+)(?:\/|$)/)?.[1]!==String(expectedProductId)) return null;
   const clean=value=>String(value||'').replace(/\s+/g,' ').trim();
   const body=String(document.body?.innerText||'');
+  if (/비정상적인\s*접근|접근이?\s*제한|자동입력\s*방지|보안\s*(?:확인|문자)|access\s*denied|too\s*many\s*requests/i.test(body)
+    || document.querySelector('input[type="password"]')) return null;
   const lines=body.split(/\n+/).map(clean).filter(Boolean);
   let articleNumber='';
   for (let i=0;i<lines.length;i++) {
     const match=lines[i].match(/^(?:품번|스타일\s*(?:번호|코드)|제품\s*코드)\s*[:：]?\s*(.*)$/);
     if (match) { articleNumber=clean(match[1]||lines[i+1]);break; }
   }
-  if (!articleNumber) return null;
-  if (articleNumber===String(expectedProductId) || articleNumber.length>80 || !/[0-9]/.test(articleNumber)) return null;
-  return {articleNumber};
+  if (articleNumber===String(expectedProductId) || articleNumber.length>80 || !/[0-9]/.test(articleNumber)) articleNumber='';
+  let imageUrl='';
+  const canonical=document.querySelector('link[rel="canonical"]')?.href;
+  let canonicalMatches=!canonical;
+  if(canonical)try {const target=new URL(canonical,url);canonicalMatches=target.origin===url.origin && target.pathname.replace(/\/$/,'')===url.pathname.replace(/\/$/,'');}catch { /* Ignore invalid catalog metadata. */ }
+  // Social metadata identifies the current product; never scan recommended
+  // products for a replacement image when its main photo is unavailable.
+  if (canonicalMatches) {
+    for (const meta of document.querySelectorAll('meta[property="og:image"],meta[name="twitter:image"]')) {
+      try {
+        const image=new URL(meta.content,url);
+        if (image.protocol==='https:' && !image.username && !image.password && !/placeholder|no[-_]?image|(?:^|\/)(?:blank|spacer|logo)(?:[._/-]|$)|\.svg$/i.test(image.pathname)) {imageUrl=image.href;break;}
+      } catch { /* Keep a missing image explicit. */ }
+    }
+  }
+  return articleNumber || imageUrl ? {...(articleNumber?{articleNumber}:{}),...(imageUrl?{imageUrl}:{})} : null;
 }

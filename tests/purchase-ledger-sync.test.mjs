@@ -45,7 +45,15 @@ test("desktop writes the weekly ledger workbook into OneDrive", async () => {
 test("sheet write is blocked when required purchase evidence is missing", () => {
   const result = validatePurchaseLedgerRow(normalizePurchaseLedgerRow({ modelName:"상품" }));
   assert.equal(result.ok, false);
-  assert.deepEqual(result.missing, ["품번", "사이즈", "구매일자", "구매가"]);
+  assert.deepEqual(result.missing, ["품번", "사이즈", "구매일자", "구매가", "상품 사진"]);
+});
+
+test('product images survive normalization but executable or temporary URLs do not',()=>{
+  const source={modelName:'상품',articleNumber:'AB123',krSize:'270',purchaseDate:'2026-09-22',purchasePrice:1000,imageUrl:'https://images.example.test/photo.jpg?w=500&quality=90'};
+  const row=normalizePurchaseLedgerRow(source);assert.equal(row.imageUrl,source.imageUrl);assert.equal(validatePurchaseLedgerRow(row).ok,true);
+  for(const imageUrl of ['javascript:alert(1)','data:image/png;base64,AAA','file:///C:/private.png','https://user:pass@images.example.test/a.jpg','=IMAGE("https://example.test/x")']) {
+    const invalid=normalizePurchaseLedgerRow({...source,imageUrl});assert.equal(invalid.imageUrl,'');assert.deepEqual(validatePurchaseLedgerRow(invalid).missing,['상품 사진']);
+  }
 });
 
 test("desktop exposes Musinsa capture, sheet sync, retry, and encrypted settings", async () => {

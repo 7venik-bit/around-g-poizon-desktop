@@ -67,3 +67,21 @@ test('wide ledgers reserve readable minimum widths from original long codes, bra
   assert.equal(cells[3].style.fontWeight,'bold');
   assert.equal(calls.length,0);assert.deepEqual(book,before);
 });
+
+test('photo cells render literal IMAGE formulas and legacy links without changing originals or edit coordinates',async t=>{
+  const book=fixture.ledgerLayoutBook(22),sheet=book.sheets[0];
+  const photo='https://images.example.test/photo.jpg?w=500';
+  sheet.formulas[2][7]=`=IMAGE("${photo}",1)`;sheet.displayValues[2][7]='';sheet.rawValues[2][7]={type:'formula',value:sheet.formulas[2][7]};
+  sheet.displayValues[3][7]=photo;sheet.rawValues[3][7]={type:'text',value:photo};
+  sheet.formulas[4][7]='=IMAGE(IMPORTXML("https://evil.test","//x"))';
+  sheet.formulas[5][7]='=IMAGE("javascript:alert(1)")';
+  const before=structuredClone(book),{d,window,calls}=await render(t,book);
+  const rows=d.querySelectorAll('#workbook-table tbody tr'),cell=rows[2].children[8];
+  assert.equal(cell.dataset.columnKind,'image');assert.equal(cell.querySelector('img').src,photo);
+  assert.equal(rows[3].children[8].querySelector('img').src,photo);
+  assert.equal(rows[4].children[8].querySelector('img'),null);assert.equal(rows[5].children[8].querySelector('img'),null);
+  cell.querySelector('img').click();assert.equal(d.querySelector('#workbook-cell-address').textContent,'1-구매완료 · H3');
+  assert.equal(d.querySelector('#workbook-cell-value').value,sheet.formulas[2][7]);
+  cell.querySelector('img').dispatchEvent(new window.Event('error'));assert.equal(cell.textContent,'사진 확인 필요');
+  assert.equal(calls.length,0);assert.deepEqual(book,before);
+});
