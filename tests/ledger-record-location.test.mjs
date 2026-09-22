@@ -49,7 +49,7 @@ test('record location refreshes the committed local workbook, opens page 501-600
   assert.equal(row.children[3].textContent,'FIXTURE-575');
   assert.equal(row.querySelector('img').src,'https://images.example.test/record.jpg');
   assert.deepEqual(calls.scrolls,['original-ledger-workbook']);
-  assert.equal(d.querySelector('#workbook-cell-editor').hidden,true);
+  assert.equal(d.querySelector('#workbook-cell-editor'),null);
   assert.match(d.querySelector('#workbook-status').textContent,/575, 576, 577행/);
   assert.deepEqual(fresh,before);
 });
@@ -75,10 +75,10 @@ test('refresh failure preserves the cached view, blocks stale exports and never 
 
 test('location navigation preserves an open cell edit and rejects missing sheet/row destinations',async t=>{
   const {w,d,calls}=await boot(t);
-  d.querySelector('#workbook-table td').click();d.querySelector('#workbook-cell-value').value='저장 전 편집';
+  d.querySelector('#workbook-table td').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));d.querySelector('#workbook-cell-value').value='저장 전 편집';
   assert.equal((await w.aroundGLedgerWorkbook.showRecordedRows([575])).code,'WORKBOOK_EDIT_PENDING');
   assert.equal(d.querySelector('#workbook-cell-value').value,'저장 전 편집');assert.equal(calls.reads,0);
-  d.querySelector('#workbook-cell-cancel').click();
+  d.querySelector('#workbook-cell-value').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
   assert.equal((await w.aroundGLedgerWorkbook.showRecordedRows([9999])).code,'WORKBOOK_RECORD_LOCATION_MISSING');
   assert.equal(d.querySelector('.workbook-recorded-row'),null);
   const other=book();other.sheets[0].name='다른 시트';w.aroundG.loadLedgerWorkbook=async()=>({ok:true,workbook:other});
@@ -127,7 +127,7 @@ test('purchase destination follows the clicked row, requires one data row and pr
   const cell=(row,column=1)=>d.querySelector(`td[data-row="${row}"][data-column="${column}"]`);
   cell(2).click();assert.equal(api.getPurchaseDestination().code,'PURCHASE_DESTINATION_INVALID');
   cell(42,8).click();assert.equal(api.getPurchaseDestination().destination.row,42);assert.match(d.querySelector('#ledger-destination').textContent,/42행/);
-  d.querySelector('#workbook-cell-value').value='unsaved';assert.equal(api.beginPurchaseRecord().code,'WORKBOOK_EDIT_PENDING');
+  cell(42,8).dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));d.querySelector('#workbook-cell-value').value='unsaved';assert.equal(api.beginPurchaseRecord().code,'WORKBOOK_EDIT_PENDING');
   d.querySelector('#workbook-cell-value').value='';
   const placement=api.beginPurchaseRecord();assert.equal(placement.destination.row,42);
   cell(43).click();assert.equal(api.getPurchaseDestination().code,'WORKBOOK_BUSY');

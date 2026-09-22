@@ -3,7 +3,7 @@
   if (!$('original-ledger-workbook')) return;
   let workbook, active, selected, page = 0, busy = false, needsRefresh = false;
   let recordedLocation;
-  let selection,anchor,editorValue,purchaseRecording=false;
+  let selection,anchor,editor,purchaseRecording=false;
   const messages = {
     CELL_CONFLICT:'원본이 다른 곳에서 변경됐습니다. 다시 가져온 뒤 수정해 주세요.',
     CELL_PROTECTED:'보호된 셀이라 편집할 수 없습니다.',
@@ -36,7 +36,7 @@
       const button = document.createElement('button'); button.type = 'button';
       button.textContent = s.name + (s.hidden ? ' (숨김)' : '');
       button.setAttribute('role','tab'); button.setAttribute('aria-selected',String(s.id === active));
-      button.addEventListener('click',() => {clearSelection();active=s.id;page=0;tabs();render();});
+      button.addEventListener('click',() => afterEdit(()=>{clearSelection();active=s.id;page=0;tabs();render();}));
       return button;
     }));
   }
@@ -69,7 +69,7 @@
           // Reserve readable space for the actual original values, including
           // bold article codes, currency and Korean brand/status names.
           const longest=rows.reduce((max,row,r)=>r===header?max:Math.max(max,
-            [...String(row[c] || '')].reduce((size,char)=>size+(/[^\x00-\x7f]/.test(char)?12:8),0)),0);
+            [...displayCell(sheet,r,c,type[1])].reduce((size,char)=>size+(/[^\x00-\x7f]/.test(char)?12:8),0)),0);
           weight=Math.max(weight,Math.min(240,(longest+10)/0.8));
         }
         return {kind:type[1],weight};
@@ -84,6 +84,13 @@
     const literal=String(formula || '').match(/^=IMAGE\("(https:\/\/[^"\r\n]+)"(?:[,;]\s*1)?\)$/i);
     if(formula && !literal)return '';
     try {const url=new URL(literal?literal[1]:String(value || ''));return url.protocol==='https:' && !url.username && !url.password && !/\.svg$/i.test(url.pathname)?url.href:'';}catch{return '';}
+  }
+  const won=new Intl.NumberFormat('ko-KR',{style:'currency',currency:'KRW',maximumFractionDigits:2});
+  function displayCell(sheet,r,c,kind) {
+    const display=sheet.displayValues[r]?.[c] || '',raw=sheet.rawValues?.[r]?.[c],calculated=sheet.calculatedValues?.[r]?.[c];
+    if(kind!=='money')return display;
+    const value=raw?.type==='number'?Number(raw.value):calculated?.type==='number'?calculated.value:undefined;
+    return Number.isFinite(value)?won.format(value):display;
   }
   function render() {
     const sheet = visible().find(s => s.id === active);
@@ -116,7 +123,7 @@
       if(recordedLocation?.sheetId===sheet.id && recordedLocation.rows.includes(r+1))tr.classList.add('workbook-recorded-row');
       for(let c=0;c<width;c++) {
         const cell=document.createElement('td'),content=document.createElement('span');
-        content.className='workbook-cell-text';content.textContent=rows[r]?.[c] || '';cell.append(content);
+        content.className='workbook-cell-text';content.textContent=displayCell(sheet,r,c,layout.columns[c].kind);cell.append(content);
         cell.dataset.columnKind=layout.columns[c].kind;
         cell.dataset.row=String(r+1);cell.dataset.column=String(c+1);
         const embedded=sheet.images?.find(image=>image.row===r+1&&image.column===c+1);
@@ -129,9 +136,8 @@
           }
         }
         cell.tabIndex=0;cell.setAttribute("aria-label",`${sheet.name} ${r+1}행 ${c+1}열`);
-        cell.addEventListener('click',event=>selectCell(sheet,r,c,event.shiftKey));
-        cell.addEventListener('dblclick',()=>{$('workbook-cell-value').focus();});
-        cell.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();selectCell(sheet,r,c);$('workbook-cell-value').focus();}});
+        cell.addEventListener('click',event=>{if(event.target.closest('#workbook-cell-editor'))return;afterEdit(()=>selectCell(workbook.sheets.find(s=>s.id===sheet.id),r,c,event.shiftKey));});
+        cell.addEventListener('dblclick',()=>{if(!editor){selectCell(sheet,r,c);startEdit();}});
         cell.style.backgroundColor=sheet.backgrounds?.[r]?.[c] || '';
         cell.style.color=sheet.fontColors?.[r]?.[c] || '';
         cell.style.fontWeight=sheet.fontWeights?.[r]?.[c] || '';
@@ -155,32 +161,85 @@
     selection={sheetId:sheet.id,row:Math.min(anchor.row,r+1),column:Math.min(anchor.column,c+1),endRow:Math.max(anchor.row,r+1),endColumn:Math.max(anchor.column,c+1),focusRow:r+1,focusColumn:c+1};
     paintSelection();
     const focus=$('workbook-table').querySelector(`td[data-row="${r+1}"][data-column="${c+1}"]`);focus?.focus({preventScroll:true});
-    if(selection.row!==selection.endRow||selection.column!==selection.endColumn){selected=undefined;$('workbook-cell-editor').hidden=true;announcePurchaseDestination();return;}
+    if(selection.row!==selection.endRow||selection.column!==selection.endColumn){selected=undefined;announcePurchaseDestination();return;}
     selected={sheetId:sheet.id,row:r+1,column:c+1,revision:workbook.revision,expected:sheet.rawValues[r]?.[c] || {type:'text',value:''}};
-    $('workbook-cell-address').textContent=`${sheet.name} · ${columnName(c)}${r+1}`;
-    $('workbook-cell-original').textContent=`현재 내용: ${sheet.displayValues[r]?.[c] || '(빈 셀)'}`;
-    $('workbook-cell-type').value=selected.expected.type;
+    announcePurchaseDestination();
+  }
+  function startEdit(replacement,restoring=false) {
+    if(!selected||editor||busy&&!restoring||needsRefresh)return;
+    const cell=$('workbook-table').querySelector(`td[data-row="${selected.row}"][data-column="${selected.column}"]`);
+    if(!cell)return;
+    const sheet=workbook.sheets.find(s=>s.id===selected.sheetId),rule=sheet.validations?.[selected.row-1]?.[selected.column-1];
     let value=selected.expected.value;
     if(selected.expected.type==='date') {
       const parts=new Intl.DateTimeFormat('en-CA',{timeZone:workbook.timeZone || 'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value));
       const part=type=>parts.find(p=>p.type===type).value;value=`${part('year')}-${part('month')}-${part('day')}`;
     }
-    $('workbook-cell-value').value=value;
-    editorValue=String(value);
-    const options=sheet.validations?.[r]?.[c];
-    $('workbook-cell-options-label').hidden=options?.type!=='list';
-    $('workbook-cell-options').replaceChildren();
-    if(options?.type==='list') {
-      for(const item of [...new Set([value,...options.values])]) {
-        const option=document.createElement('option');option.value=item;option.textContent=item || '(빈 값)';$('workbook-cell-options').append(option);
-      }
-      $('workbook-cell-options').value=value;
+    const form=document.createElement('form'),input=document.createElement(rule?.type==='list'?'input':'textarea');
+    form.id='workbook-cell-editor';input.id='workbook-cell-value';input.value=replacement??value;input.autocomplete='off';input.spellcheck=false;
+    input.setAttribute('aria-label',`${sheet.name} ${columnName(selected.column-1)}${selected.row} 편집`);
+    input.title='Enter 저장 · Tab 저장 후 다음 셀 · Esc 취소 · 수식은 =로 시작';
+    if(input.tagName==='TEXTAREA')input.rows=1;
+    form.append(input);
+    if(rule?.type==='list') {
+      const list=document.createElement('datalist');list.id='workbook-cell-options';input.setAttribute('list',list.id);
+      for(const item of rule.values){const option=document.createElement('option');option.value=item;list.append(option);}form.append(list);
     }
-    $('workbook-cell-editor').hidden=false;
-    focus?.focus({preventScroll:true});
+    editor={form,input,cell,target:{...selected},original:String(value),kind:cell.closest('.workbook-data-header')?'text':cell.dataset.columnKind,composing:false};
+    cell.classList.add('workbook-editing');cell.append(form);
+    form.addEventListener('submit',event=>{event.preventDefault();commitEdit([1,0]);});
+    input.addEventListener('input',()=>{input.removeAttribute('aria-invalid');announcePurchaseDestination();});
+    input.addEventListener('compositionstart',()=>{if(editor)editor.composing=true;});
+    input.addEventListener('compositionend',()=>{if(editor)editor.composing=false;});
+    input.addEventListener('keydown',event=>{
+      if(event.isComposing||event.keyCode===229||editor?.composing)return;
+      if(event.key==='Escape'){event.preventDefault();event.stopPropagation();cancelEdit();}
+      else if(event.key==='Tab'||event.key==='Enter'&&!event.altKey){event.preventDefault();event.stopPropagation();commitEdit(event.key==='Tab'?[0,event.shiftKey?-1:1]:[event.shiftKey?-1:1,0]);}
+    });
+    input.addEventListener('blur',()=>{
+      if(busy)return;
+      // A clicked cell/toolbar gets to choose its action before plain focus loss saves.
+      const current=editor;queueMicrotask(()=>{if(current&&editor===current&&!busy&&!current.composing&&!current.input.hasAttribute('aria-invalid'))commitEdit();});
+    });
+    input.focus({preventScroll:true});if(replacement===undefined)input.select();
     announcePurchaseDestination();
   }
-  function clearSelection() {selection=anchor=selected=undefined;$('workbook-cell-editor').hidden=true;paintSelection();}
+  function removeEditor(){if(!editor)return;const current=editor;editor=undefined;current.form.remove();current.cell.classList.remove('workbook-editing');}
+  function cancelEdit(){const cell=editor?.cell;removeEditor();cell?.focus({preventScroll:true});announcePurchaseDestination();}
+  function inferredInput(draft) {
+    const value=draft.input.value,trimmed=value.trim(),previous=draft.target.expected;
+    if(value==='')return {type:'text',value:''};
+    if(value.startsWith("'"))return {type:'text',value:value.slice(1)};
+    if(value.startsWith('='))return {type:'formula',value};
+    if(['code','link','image','size'].includes(draft.kind))return {type:'text',value};
+    if(previous.type==='date'||draft.kind==='date')return {type:'date',value:trimmed};
+    if(previous.type==='boolean'||/^(true|false)$/i.test(trimmed))return {type:'boolean',value:trimmed.toLowerCase()};
+    let number=trimmed;
+    if(draft.kind==='money'&&/^-?₩?\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*원?$/.test(trimmed))number=trimmed.replace(/[₩,원\s]/g,'');
+    if(previous.type==='number'||draft.kind==='money'||draft.kind==='count')return {type:'number',value:number};
+    if(/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(number)&&number.replace(/[-.]/g,'').replace(/^0+/,'').length<=15)return {type:'number',value:number};
+    return {type:'text',value};
+  }
+  async function commitEdit(delta,then) {
+    if(!editor){then?.();return true;}if(busy||needsRefresh||editor.composing)return false;
+    const draft=editor;
+    if(draft.input.value===draft.original){removeEditor();if(delta)moveSelection(delta);then?.();return true;}
+    const edit={...draft.target,next:inferredInput(draft)},host=$('workbook-table'),scroll={top:host.scrollTop,left:host.scrollLeft};
+    let saved=false;
+    await run(async()=>{
+      needsRefresh=true;status('셀을 저장하고 수식을 다시 계산하는 중입니다.');
+      const result=await window.aroundG.editLedgerWorkbookCell(edit);
+      if(result.ok){accept(result.workbook);const sheet=workbook.sheets.find(s=>s.id===edit.sheetId);selectCell(sheet,edit.row-1,edit.column-1,false,true);host.scrollTop=scroll.top;host.scrollLeft=scroll.left;saved=true;status('셀 저장 완료 · Excel 내보내기에 반영됐습니다.');}
+      else {
+        if(/^CELL_(?:ADDRESS_INVALID|MERGED|PROTECTED|VALIDATION_|NUMBER_INVALID|DATE_INVALID|VALUE_INVALID|FORMULA_INVALID)/.test(result.code))needsRefresh=false;
+        draft.input.setAttribute('aria-invalid','true');status(messages[result.code]||'저장 결과를 확인하지 못했습니다. 내부 장부를 다시 불러와 주세요.');
+      }
+    });
+    if(saved){if(delta)moveSelection(delta);then?.();}else if(!needsRefresh)draft.input.focus({preventScroll:true});
+    return saved;
+  }
+  function afterEdit(fn){if(busy||needsRefresh)return;if(editor)return commitEdit(undefined,fn);fn();}
+  function clearSelection() {removeEditor();selection=anchor=selected=undefined;paintSelection();}
   function paintSelection() {
     for(const tab of $('workbook-tabs').querySelectorAll('button'))tab.disabled=busy;
     $('workbook-hidden').disabled=busy;
@@ -197,10 +256,10 @@
       $('workbook-column-width').value=sheet.columnWidths?.[selection.column]||Math.round(table?.querySelectorAll('thead th')[selection.column]?.getBoundingClientRect().width||0)||'';
       $('workbook-row-height').value=sheet.rowHeights?.[selection.row]||Math.round(table?.querySelector(`[data-row-number="${selection.row}"]`)?.getBoundingClientRect().height||0)||'';
     }
-    for(const control of $('workbook-cell-editor').querySelectorAll('input,select,textarea,button'))control.disabled=busy||needsRefresh;
+    if(editor)editor.input.disabled=busy||needsRefresh;
     announcePurchaseDestination();
   }
-  function hasPendingEdit() {return selected&&($('workbook-cell-type').value!==selected.expected.type||$('workbook-cell-value').value!==editorValue);}
+  function hasPendingEdit() {return Boolean(editor&&editor.input.value!==editor.original);}
   function getPurchaseDestination() {
     if(busy)return {ok:false,code:'WORKBOOK_BUSY'};
     if(needsRefresh)return {ok:false,code:'WORKBOOK_REFRESH_REQUIRED'};
@@ -232,14 +291,15 @@
   const selectionInput=()=>({sheetId:selection.sheetId,revision:workbook.revision,range:{row:selection.row,column:selection.column,endRow:selection.endRow,endColumn:selection.endColumn}});
   async function changeCells(method,message,input=selection&&selectionInput()) {
     if(!input||busy||needsRefresh)return;
-    const draft=method==='resizeLedgerWorkbook'&&selected?{row:selected.row,column:selected.column,type:$('workbook-cell-type').value,value:$('workbook-cell-value').value}:undefined;
+    const draft=method==='resizeLedgerWorkbook'&&editor?{row:selected.row,column:selected.column,value:editor.input.value}:undefined;
     const previous=selection&&{...selection},host=$('workbook-table'),scroll={top:host.scrollTop,left:host.scrollLeft};
     await run(async()=>{
       needsRefresh=true;status('내부 장부에 저장하고 수식을 다시 계산하는 중입니다.');
       const result=await window.aroundG[method](input);
       if(result.ok) {
         accept(result.workbook);selection=previous;anchor=previous&&{row:previous.row,column:previous.column};paintSelection();
-        if(draft){const sheet=workbook.sheets.find(s=>s.id===active);selectCell(sheet,draft.row-1,draft.column-1,false,true);$('workbook-cell-type').value=draft.type;$('workbook-cell-value').value=draft.value;}
+        if(previous&&previous.row===previous.endRow&&previous.column===previous.endColumn)selectCell(workbook.sheets.find(s=>s.id===active),previous.row-1,previous.column-1,false,true);
+        if(draft)startEdit(draft.value,true);
         host.scrollTop=scroll.top;host.scrollLeft=scroll.left;host.focus({preventScroll:true});status(message);
       } else {
         // Validation failures have not written any cells. Storage failures require a reread.
@@ -275,9 +335,9 @@
     status(`${book.title} · ${book.sheets.length}개 시트 · 수식 ${book.calculation?.formulaCount ?? 0}개 · PC 내부 저장 · Google 연동 없음`);
   }
   async function run(fn) {
-    if(busy)return {ok:false,code:'WORKBOOK_BUSY'};busy=true;paintSelection();$('workbook-cell-save').disabled=true;$('workbook-import').disabled=true;$('workbook-export').disabled=true;
+    if(busy)return {ok:false,code:'WORKBOOK_BUSY'};busy=true;paintSelection();$('workbook-import').disabled=true;$('workbook-export').disabled=true;
     try { return await fn(); } catch {status('장부 처리에 실패했습니다. 다시 시도해 주세요.');return {ok:false,code:'WORKBOOK_READ_FAILED'};}
-    finally {busy=false;$('workbook-import').disabled=false;$('workbook-export').disabled=!workbook || needsRefresh;$('workbook-cell-save').disabled=needsRefresh;paintSelection();}
+    finally {busy=false;$('workbook-import').disabled=false;$('workbook-export').disabled=!workbook || needsRefresh;paintSelection();}
   }
   // Reload the committed local workbook before jumping; never resubmit a purchase.
   async function showRecordedRows(numbers) {
@@ -307,15 +367,11 @@
     });
   }
   window.aroundGLedgerWorkbook={showRecordedRows,getPurchaseDestination,beginPurchaseRecord,endPurchaseRecord};
-  $('workbook-cell-editor').addEventListener('input',announcePurchaseDestination);
-  $('workbook-cell-editor').addEventListener('change',announcePurchaseDestination);
-  $('workbook-cell-options').addEventListener('change',()=>{$('workbook-cell-value').value=$('workbook-cell-options').value;});
-  $('workbook-cell-cancel').addEventListener('click',clearSelection);
-  $('workbook-cell-clear').addEventListener('click',()=>changeCells('clearLedgerWorkbookCells','선택한 셀의 내용을 지웠습니다. 셀 위치와 서식은 유지됩니다.'));
-  $('workbook-cell-paste').addEventListener('click',()=>changeCells('pasteLedgerWorkbookCells','붙여넣기 및 수식 계산 완료. Excel 내보내기에 반영됐습니다.'));
-  $('workbook-cell-copy').addEventListener('click',()=>{if(!selection||busy||needsRefresh)return;const input=selectionInput();run(async()=>{
+  $('workbook-cell-clear').addEventListener('click',()=>afterEdit(()=>changeCells('clearLedgerWorkbookCells','선택한 셀의 내용을 지웠습니다. 셀 위치와 서식은 유지됩니다.')));
+  $('workbook-cell-paste').addEventListener('click',()=>afterEdit(()=>changeCells('pasteLedgerWorkbookCells','붙여넣기 및 수식 계산 완료. Excel 내보내기에 반영됐습니다.')));
+  $('workbook-cell-copy').addEventListener('click',()=>afterEdit(()=>{if(!selection||busy||needsRefresh)return;const input=selectionInput();run(async()=>{
     const result=await window.aroundG.copyLedgerWorkbookCells(input);status(result.ok?'셀을 복사했습니다. 붙여넣을 셀을 선택하고 Ctrl+V를 누르세요.':messages[result.code]||'셀을 복사하지 못했습니다.');
-  });});
+  });}));
   $('workbook-size-save').addEventListener('click',()=>{
     if(!selection)return;const changes=[],width=$('workbook-column-width').value,height=$('workbook-row-height').value;
     if(width)for(let index=selection.column;index<=selection.endColumn;index++)changes.push({axis:'column',index,pixels:Number(width)});
@@ -327,34 +383,37 @@
     const modifier=event.ctrlKey||event.metaKey,key=event.key.toLowerCase();
     if(modifier&&['c','v'].includes(key)){event.preventDefault();$(key==='c'?'workbook-cell-copy':'workbook-cell-paste').click();return;}
     if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();$('workbook-cell-clear').click();return;}
-    const delta={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]}[event.key];
-    if(delta){event.preventDefault();const sheet=workbook.sheets.find(s=>s.id===active),r=Math.max(1,Math.min(sheet.rowCount||sheet.displayValues.length,(selection.focusRow||selection.row)+delta[0])),c=Math.max(1,Math.min(sheet.columnCount||sheet.displayValues[0].length,(selection.focusColumn||selection.column)+delta[1]));
-      const nextPage=Math.floor((r-1)/100);if(nextPage!==page){page=nextPage;render();}selectCell(sheet,r-1,c-1,event.shiftKey);
-      $('workbook-table').querySelector(`td[data-row="${r}"][data-column="${c}"]`)?.scrollIntoView?.({block:'nearest',inline:'nearest'});
+    if(event.key==='Enter'||event.key==='F2'){event.preventDefault();startEdit();return;}
+    if(event.key==='Tab'){event.preventDefault();moveSelection([0,event.shiftKey?-1:1]);return;}
+    if(!modifier&&!event.altKey&&(event.key.length===1||event.key==='Process'||event.key==='Unidentified')) {
+      if(event.key.length===1)event.preventDefault();startEdit(event.key.length===1?event.key:'');return;
     }
+    const delta={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]}[event.key];
+    if(delta){event.preventDefault();moveSelection(delta,event.shiftKey);}
   });
-  $('workbook-cell-editor').addEventListener('submit',event=>{
-    event.preventDefault();if(!selected || busy || needsRefresh)return;
-    const edit={...selected,next:{type:$('workbook-cell-type').value,value:$('workbook-cell-value').value}};
-    run(async()=>{
-      needsRefresh=true;status('선택한 셀을 저장하고 내부 수식과 Excel 값을 다시 계산하는 중입니다.');
-      const result=await window.aroundG.editLedgerWorkbookCell(edit);
-      if(result.ok){accept(result.workbook);status('선택한 셀 저장 및 다시 읽기 완료. 엑셀 내보내기에 반영됐습니다.');}
-      else {status(messages[result.code] || '저장 결과를 확인하지 못했습니다. 다시 가져와 주세요.');}
-    });
+  function moveSelection(delta,extend=false) {
+    if(!selection)return;
+    const sheet=workbook.sheets.find(s=>s.id===active),r=Math.max(1,Math.min(sheet.rowCount||sheet.displayValues.length,(selection.focusRow||selection.row)+delta[0])),c=Math.max(1,Math.min(sheet.columnCount||Math.max(...sheet.displayValues.map(row=>row.length)),(selection.focusColumn||selection.column)+delta[1]));
+    const nextPage=Math.floor((r-1)/100);if(nextPage!==page){page=nextPage;render();}selectCell(sheet,r-1,c-1,extend);
+    $('workbook-table').querySelector('td[data-row="'+r+'"][data-column="'+c+'"]')?.scrollIntoView?.({block:'nearest',inline:'nearest'});
+  }
+  // Keep a draft focused until its clicked action has saved or deliberately retained it.
+  $('original-ledger-workbook').addEventListener('pointerdown',event=>{
+    if(editor&&!event.target.closest('#workbook-cell-editor')&&event.target.closest('td,button'))event.preventDefault();
   });
-  $('workbook-import').addEventListener('click',()=>run(async()=>{
+  function reloadWorkbook(){return run(async()=>{
     status('전체 시트와 엑셀을 가져오는 중입니다.');
     const result=await window.aroundG.loadLedgerWorkbook();
     if(result.ok)accept(result.workbook);else status(messages[result.code] || `가져오기 실패: ${result.code || '알 수 없는 오류'}`);
-  }));
-  $('workbook-export').addEventListener('click',()=>run(async()=>{
+  });}
+  $('workbook-import').addEventListener('click',()=>needsRefresh?reloadWorkbook():afterEdit(reloadWorkbook));
+  $('workbook-export').addEventListener('click',()=>afterEdit(()=>run(async()=>{
     const result=await window.aroundG.exportLedgerWorkbook();
     if(result.ok)status('Excel 내보내기 완료. 모든 시트·수식과 내부에서 저장한 수정 내용이 포함되었습니다.');
     else if(!result.canceled)status(messages[result.code] || '엑셀 내보내기에 실패했습니다.');
-  }));
-  $('workbook-hidden').addEventListener('change',()=>{clearSelection();page=0;tabs();render();});
-  $('workbook-prev').addEventListener('click',()=>{if(page>0){clearSelection();page--;render();}});
-  $('workbook-next').addEventListener('click',()=>{clearSelection();page++;render();});
+  })));
+  $('workbook-hidden').addEventListener('change',()=>afterEdit(()=>{clearSelection();page=0;tabs();render();}));
+  $('workbook-prev').addEventListener('click',()=>afterEdit(()=>{if(page>0){clearSelection();page--;render();}}));
+  $('workbook-next').addEventListener('click',()=>afterEdit(()=>{clearSelection();page++;render();}));
   run(async()=>{const result=await window.aroundG.loadLedgerWorkbook();if(result.ok){accept(result.workbook);needsRefresh=Boolean(result.needsRefresh);if(needsRefresh)status(messages.WORKBOOK_REFRESH_REQUIRED);}else status(messages[result.code] || '장부를 불러오지 못했습니다.');});
 })();

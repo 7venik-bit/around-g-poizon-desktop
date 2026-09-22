@@ -23,15 +23,15 @@ test('Shift selection, Ctrl+C/V and Delete send the same exact range once withou
  const {dom,d,cell,key,calls}=await setup(t);
  cell(1,2).click();assert.equal(d.activeElement,cell(1,2));
  cell(2,3).dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true,shiftKey:true}));
- assert.equal(d.getElementById('workbook-selection').textContent,'B1:C2');assert.equal(d.querySelectorAll('.workbook-selected').length,4);assert.equal(d.getElementById('workbook-cell-editor').hidden,true);
+ assert.equal(d.getElementById('workbook-selection').textContent,'B1:C2');assert.equal(d.querySelectorAll('.workbook-selected').length,4);assert.equal(d.getElementById('workbook-cell-editor'),null);
  key(cell(2,3),'c',{ctrlKey:true});await tick();
  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].input.range)),{row:1,column:2,endRow:2,endColumn:3});
  cell(2,1).click();key(cell(2,1),'v',{ctrlKey:true});await tick();assert.equal(calls[1].type,'paste');assert.equal(calls[1].input.range.column,1);
  key(d.getElementById('workbook-table'),'Delete');await tick();assert.equal(calls[2].type,'clear');assert.equal(calls.length,3);
- cell(1,2).click();const editor=d.getElementById('workbook-cell-value');editor.focus();key(editor,'Delete');key(editor,'c',{ctrlKey:true});await tick();assert.equal(calls.length,3);
+ cell(1,2).dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true}));const editor=d.getElementById('workbook-cell-value');editor.focus();key(editor,'Delete');key(editor,'c',{ctrlKey:true});await tick();assert.equal(calls.length,3);
 });
 test('numeric size controls and drag handles persist bounded dimensions once; changing pages clears stale selection',async t=>{
- const {dom,d,cell,calls}=await setup(t);cell(2,2).click();
+ const {dom,d,cell,calls}=await setup(t);cell(2,2).dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true}));
  d.getElementById('workbook-cell-value').value='저장 전 편집';
  d.getElementById('workbook-column-width').value='220';d.getElementById('workbook-row-height').value='80';d.getElementById('workbook-size-save').click();await tick();
  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].input.changes)),[{axis:'column',index:2,pixels:220},{axis:'row',index:2,pixels:80}]);
@@ -42,6 +42,7 @@ test('numeric size controls and drag handles persist bounded dimensions once; ch
  handle.dispatchEvent(new dom.window.MouseEvent('pointerdown',{button:0,clientX:100,bubbles:true,cancelable:true}));
  dom.window.dispatchEvent(new dom.window.MouseEvent('pointermove',{clientX:160}));assert.equal(calls.length,1);
  dom.window.dispatchEvent(new dom.window.MouseEvent('pointerup',{clientX:160}));await tick();assert.equal(calls.length,2);assert.equal(calls[1].input.changes[0].pixels,160);
+ d.getElementById('workbook-cell-value').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
  d.getElementById('workbook-next').click();assert.equal(d.getElementById('workbook-cell-clear').disabled,true);assert.equal(d.querySelectorAll('.workbook-selected').length,0);
 });
 test('failed whole-block paste reports validation without hiding original data or allowing uncertain exports',async t=>{

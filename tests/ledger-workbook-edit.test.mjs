@@ -41,8 +41,8 @@ test('editor sends selected coordinate and untouched expected value, then render
  const html=await readFile(new URL('../src/index.html',import.meta.url),'utf8');const script=await readFile(new URL('../src/ledger-workbook.js',import.meta.url),'utf8');
  const dom=new JSDOM(html,{runScripts:'outside-only'});const book={title:'장부',revision,capturedAt:revision,sheets:[{id:1,name:'구매완료',displayValues:[['₩62,330']],formulas:[['']],rawValues:[[{type:'number',value:'62330'}]]}]};let sent;
  dom.window.aroundG={loadLedgerWorkbook:async()=>({ok:true,workbook:book}),editLedgerWorkbookCell:async edit=>{sent=JSON.parse(JSON.stringify(edit));const next=structuredClone(book);next.sheets[0].displayValues=[['₩65,000']];next.sheets[0].rawValues=[[{type:'number',value:'65000'}]];return {ok:true,workbook:next};}};
- dom.window.eval(script);await new Promise(r=>setTimeout(r,20));const d=dom.window.document;d.querySelector('#workbook-table td').click();
- assert.equal(d.getElementById('workbook-cell-value').value,'62330');assert.equal(d.getElementById('workbook-cell-type').value,'number');
+ dom.window.eval(script);await new Promise(r=>setTimeout(r,20));const d=dom.window.document;d.querySelector('#workbook-table td').dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true}));
+ assert.equal(d.getElementById('workbook-cell-value').value,'62330');assert.ok(d.querySelector('#workbook-table td #workbook-cell-value'));
  d.getElementById('workbook-cell-value').value='65000';d.getElementById('workbook-cell-editor').dispatchEvent(new dom.window.Event('submit',{cancelable:true}));
  await new Promise(r=>setTimeout(r,20));assert.deepEqual(sent,{sheetId:1,row:1,column:1,revision,expected:{type:'number',value:'62330'},next:{type:'number',value:'65000'}});
  assert.equal(d.querySelector('#workbook-table td').textContent,'₩65,000');assert.equal(d.getElementById('workbook-export').disabled,false);dom.window.close();
@@ -50,7 +50,7 @@ test('editor sends selected coordinate and untouched expected value, then render
 test('unconfirmed write disables stale export and further edits in the UI',async()=>{
  const html=await readFile(new URL('../src/index.html',import.meta.url),'utf8');const script=await readFile(new URL('../src/ledger-workbook.js',import.meta.url),'utf8');
  const dom=new JSDOM(html,{runScripts:'outside-only'});const book={title:'장부',revision,capturedAt:revision,sheets:[{id:1,name:'구매완료',displayValues:[['1']],formulas:[['']],rawValues:[[{type:'number',value:'1'}]]}]};
- dom.window.aroundG={loadLedgerWorkbook:async()=>({ok:true,workbook:book}),editLedgerWorkbookCell:async()=>({ok:false,code:'CELL_SAVED_REFRESH_REQUIRED'})};dom.window.eval(script);await new Promise(r=>setTimeout(r,20));const d=dom.window.document;d.querySelector('#workbook-table td').click();d.getElementById('workbook-cell-value').value='2';d.getElementById('workbook-cell-editor').dispatchEvent(new dom.window.Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,20));assert.equal(d.getElementById('workbook-export').disabled,true);assert.equal(d.getElementById('workbook-cell-save').disabled,true);dom.window.close();
+ dom.window.aroundG={loadLedgerWorkbook:async()=>({ok:true,workbook:book}),editLedgerWorkbookCell:async()=>({ok:false,code:'CELL_SAVED_REFRESH_REQUIRED'})};dom.window.eval(script);await new Promise(r=>setTimeout(r,20));const d=dom.window.document;d.querySelector('#workbook-table td').dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true}));d.getElementById('workbook-cell-value').value='2';d.getElementById('workbook-cell-editor').dispatchEvent(new dom.window.Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,20));assert.equal(d.getElementById('workbook-export').disabled,true);assert.equal(d.getElementById('workbook-cell-value').disabled,true);dom.window.close();
 });
 
 test('a local storage failure is returned honestly and export cancellation does not write',async()=>{

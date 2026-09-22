@@ -33,14 +33,14 @@ test('ledger assigns semantic widths while preserving every displayed value, col
 test('clipped links retain their full tooltip and edit value at the original sheet coordinate',async t=>{
   const book=fixture.ledgerLayoutBook(),{d,calls}=await render(t,book);
   const link=d.querySelectorAll('#workbook-table tbody tr')[2].children[2];
-  assert.equal(link.title,book.sheets[0].displayValues[2][1]);link.click();
-  assert.equal(d.querySelector('#workbook-cell-address').textContent,'1-구매완료 · B3');
+  assert.equal(link.title,book.sheets[0].displayValues[2][1]);link.dispatchEvent(new d.defaultView.MouseEvent('dblclick',{bubbles:true}));
+  assert.equal(d.querySelector('#workbook-selection').textContent,'B3');
   assert.equal(d.querySelector('#workbook-cell-value').value,book.sheets[0].rawValues[2][1].value);
-  assert.ok(d.querySelector('#workbook-cell-original').textContent.includes(book.sheets[0].displayValues[2][1]));
+  assert.equal(d.querySelector('#workbook-cell-value').closest('td'),link);
   assert.equal(calls.length,0);
   d.querySelector('#workbook-next').click();
   const next=d.querySelector('#workbook-table tbody tr');assert.equal(next.firstChild.textContent,'101');
-  next.children[3].click();assert.equal(d.querySelector('#workbook-cell-address').textContent,'1-구매완료 · C101');
+  next.children[3].dispatchEvent(new d.defaultView.MouseEvent('dblclick',{bubbles:true}));assert.equal(d.querySelector('#workbook-selection').textContent,'C101');
   assert.equal(d.querySelector('#workbook-cell-value').value,book.sheets[0].rawValues[100][2].value);
 });
 test('ragged generic sheets keep aligned cells and literal text without inventing a header',async t=>{
@@ -80,8 +80,9 @@ test('photo cells render literal IMAGE formulas and legacy links without changin
   assert.equal(cell.dataset.columnKind,'image');assert.equal(cell.querySelector('img').src,photo);
   assert.equal(rows[3].children[8].querySelector('img').src,photo);
   assert.equal(rows[4].children[8].querySelector('img'),null);assert.equal(rows[5].children[8].querySelector('img'),null);
-  cell.querySelector('img').click();assert.equal(d.querySelector('#workbook-cell-address').textContent,'1-구매완료 · H3');
+  cell.dispatchEvent(new window.MouseEvent('dblclick',{bubbles:true}));assert.equal(d.querySelector('#workbook-selection').textContent,'H3');
   assert.equal(d.querySelector('#workbook-cell-value').value,sheet.formulas[2][7]);
+  d.querySelector('#workbook-cell-value').dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
   cell.querySelector('img').dispatchEvent(new window.Event('error'));assert.equal(cell.textContent,'사진 확인 필요');
   assert.equal(calls.length,0);assert.deepEqual(book,before);
 });
