@@ -68,6 +68,7 @@ test('offline purchase appends individual units, images, notes and filled formul
  const {ledger,options,dir}=await setup(t);const originalFetch=global.fetch;global.fetch=()=>{throw Error('NETWORK_MUST_NOT_BE_USED');};t.after(()=>{global.fetch=originalFetch;});
  const result=await ledger.record(purchase);assert.deepEqual(result.rowNumbers,[6,7,8]);assert.deepEqual(result.unitPrices,[33334,33334,33333]);
  const loaded=await ledger.load();assert.equal(loaded.sheets[0].formulas[5][17],'=IF(J6="","",J6-N6-P6-Q6)');assert.match(loaded.sheets[0].formulas[5][7],/^=IMAGE/);
+ assert.equal(loaded.sheets[0].formulas[0][19],'=SUM(T3:T8)');
  const again=await createLocalLedger(options).record(purchase);assert.equal(again.duplicate,true);assert.deepEqual(again.rowNumbers,result.rowNumbers);
  await assert.rejects(ledger.record({...purchase,purchasePrice:100002}),/PURCHASE_EXISTING_CONFLICT/);
  await ledger.export(join(dir,'orders.xlsx'));const parts=unzipSync(await readFile(join(dir,'orders.xlsx')));

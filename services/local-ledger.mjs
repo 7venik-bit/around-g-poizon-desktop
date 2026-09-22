@@ -108,6 +108,14 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
         sheet.notes[r][7]=JSON.stringify({schema:'around-g.purchase.units.v1',key,unit:i+1,quantity,total});
       }
       sheet.rowCount=Math.max(sheet.rowCount,rowNumbers.at(-1));
+      // Extend simple header totals when appending beyond their last data row.
+      // Migration itself leaves every original formula unchanged.
+      for(let r=0;r<Math.min(2,sheet.formulas.length);r++)for(let c=0;c<sheet.formulas[r].length;c++) {
+        const formula=sheet.formulas[r][c],range=formula.match(/^=(SUM|COUNTA|AVERAGE)\((\$?[A-Z]{1,3}\$?)(\d+):(\$?[A-Z]{1,3}\$?)(\d+)\)$/i);
+        if(!range||range[2].replace(/\$/g,'')!==range[4].replace(/\$/g,'')||Number(range[3])<3||Number(range[5])<Math.max(3,template+1)||Number(range[5])>last+1)continue;
+        put(sheet,r+1,c+1,{type:'formula',value:`=${range[1]}(${range[2]}${range[3]}:${range[4]}${rowNumbers.at(-1)})`});
+        edits.push({sheetId:sheet.id,row:r+1,column:c+1});
+      }
       await commit(book,edits);
       return {ok:true,duplicate:false,rowNumber:rowNumbers[0],rowNumbers,unitPrices:prices,imageStatus:'formula'};
     })
