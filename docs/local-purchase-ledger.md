@@ -90,7 +90,29 @@ are not changed by this repair.
 Category lookup reads completed local POIZON exports and requires an exact article
 match with agreeing categories. It never opens Seller Center or starts a download.
 The category is placed in an unused trailing column; a conflict or absent match
-shows a review hint, and a user's category edit is preserved. Category-specific
-fee policy is pending a verified user-provided reference: this change preserves
-existing numeric fee overrides and the imported 10% / 15,000 template rule rather
-than claiming that unverified category rates came from Google Drive.
+shows a review hint, and a user's category edit is preserved.
+
+## Category fee table supplied on 2026-09-22
+
+The user supplied `22678.jpg`, a POIZON service-fee table, as the policy reference.
+Version 2 of the encrypted migration applies this local table:
+
+| Categories | Rate | Minimum KRW | Maximum KRW |
+| --- | ---: | ---: | ---: |
+| Bags/carriers, watches, accessories | 14% | 18,000 | 45,000 |
+| Shoes, clothing, beauty, toys/instruments, sports/outdoors, liquor, furniture, electronics, health foods, foods, other | 10% | 15,000 | 45,000 |
+
+The fee is `MIN(maximum, MAX(minimum, ROUND(selling price * rate, 0)))`.
+The fee formula references the same row's selling price and category cells, so
+editing either cell also works after Excel export. Category matching uses the
+explicit top-level category before `/`, not a substring of a product title.
+Missing/unrecognized categories do not default to 10%: automatic fees and dependent
+margins remain blank with a category-review hint. Zero/negative or missing selling
+prices produce a blank fee; malformed numbers remain visible calculation errors.
+
+Known-category imported numeric fees and version-1 template formulas migrate to
+automatic fees. Explicit direct fee edits/clears, unrelated custom formulas and
+existing numeric fees whose category is unknown remain manual. The service retains
+a separate encrypted version-2 recovery copy and an audit of changed cells. The
+fee tooltip distinguishes automatic policy, missing category and manual amounts.
+No Google synchronization, seller navigation or network lookup is added.

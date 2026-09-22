@@ -11,6 +11,7 @@ import {createLocalLedger} from '../services/local-ledger.mjs';
 import {calculateLedger,shiftLedgerFormula} from '../services/ledger-calculation.mjs';
 import {readLedgerImages} from '../services/ledger-xlsx.mjs';
 import {ledgerClipboardData,parseLedgerClipboard,LEDGER_COPY_SCHEMA} from '../services/ledger-clipboard.mjs';
+import {autofillLedger} from '../services/ledger-autofill.mjs';
 
 const ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
 function fixture() {
@@ -55,7 +56,7 @@ function calculationFixture() {
 test('template repair backs up the encrypted workbook, persists formulas/categories and exports calculated caches without touching pictures',async t=>{
  const {ledger:unused,options,dir,book}=await setup(t,calculationFixture());
  const ledger=createLocalLedger({...options,categories:async()=>[{articleNumber:'001-ABC',categoryName:'의류 / 상의',source:'saved.xlsx'}]});
- const repaired=await ledger.load();assert.equal(repaired.local.formulaVersion,1);assert.equal(repaired.sheets[0].calculatedValues[4][17].value,32000);
+ const repaired=await ledger.load();assert.equal(repaired.local.formulaVersion,2);assert.equal(repaired.sheets[0].calculatedValues[4][17].value,32000);
  const backup=await readLedgerWorkbook(repaired.local.formulaRepair.backupPath,options.decrypt);assert.equal(backup.sheets[0].formulas[4][17],'=IF(K574="","",K574-N574-P574-Q574)');
  assert.equal(repaired.sheets[0].rawValues[4][22].value,'의류 / 상의');assert.ok(repaired.local.formulaRepair.changes.length>0);
  const again=await createLocalLedger(options).view();assert.equal(again.revision,repaired.revision);
@@ -70,6 +71,31 @@ test('backup failure prevents any automatic repair from replacing the working wo
  let writes=[];const ledger=createLocalLedger({...options,save:async(path,...args)=>{writes.push(path);if(path.includes('before-formulas'))throw Error('BACKUP_DISK_FULL');return saveLedgerWorkbook(path,...args);}});
  await assert.rejects(ledger.load(),/BACKUP_DISK_FULL/);
  const saved=await readLedgerWorkbook(options.path,options.decrypt);assert.equal(saved.local.formulaVersion,undefined);assert.match(saved.sheets[0].formulas[4][17],/574/);assert.equal(writes.filter(p=>p===options.path).length,1);
+});
+
+test('version-1 ledger upgrades fee policy with a separate backup, updates on category edits and exports live formulas',async t=>{
+ const original=calculationFixture(),s=original.sheets[0];
+ autofillLedger(original,{repair:true,categories:[{articleNumber:'001-ABC',categoryName:'가방 / 숄더백'}]});
+ original.local.formulaVersion=1;delete original.local.fees;
+ s.rawValues[4][9]={type:'number',value:'126000'};s.rawValues[4][15]={type:'number',value:'17640'};s.formulas[4][15]='';
+ const {options,dir}=await setup(t,original);
+ await saveLedgerWorkbook(options.path,original,options.encrypt);
+ const oldBackup=options.path+'.before-formulas-v1.encrypted';await saveLedgerWorkbook(oldBackup,original,options.encrypt);const oldBytes=await readFile(oldBackup);
+ const ledger=createLocalLedger(options),upgraded=await ledger.load();
+ assert.equal(upgraded.local.formulaVersion,2);assert.equal(upgraded.sheets[0].calculatedValues[4][15].value,18000);
+ assert.match(upgraded.local.formulaRepair.backupPath,/before-formulas-v2/);
+ assert.equal((await readLedgerWorkbook(upgraded.local.formulaRepair.backupPath,options.decrypt)).sheets[0].rawValues[4][15].value,'17640');
+ assert.deepEqual(await readFile(oldBackup),oldBytes);
+ const changed=await ledger.edit({sheetId:1,row:5,column:23,revision:upgraded.revision,expected:upgraded.sheets[0].rawValues[4][22],next:{type:'text',value:'의류'}});
+ assert.equal(changed.sheets[0].calculatedValues[4][15].value,15000);
+ const capped=await ledger.edit({sheetId:1,row:5,column:10,revision:changed.revision,expected:changed.sheets[0].rawValues[4][9],next:{type:'number',value:'1000000'}});
+ assert.equal(capped.sheets[0].calculatedValues[4][15].value,45000);
+ const reopened=await createLocalLedger(options).load();assert.equal(reopened.revision,capped.revision);
+ await ledger.export(join(dir,'fees.xlsx'));const files=unzipSync(await readFile(join(dir,'fees.xlsx')));
+ const doc=new DOMParser().parseFromString(strFromU8(files['xl/worksheets/sheet1.xml']),'application/xml');
+ const p=Array.from(doc.getElementsByTagName('c')).find(c=>c.getAttribute('r')==='P5');
+ assert.equal(p.getElementsByTagName('v')[0].textContent,'45000');assert.match(p.getElementsByTagName('f')[0].textContent,/W5/);
+ assert.deepEqual(files['xl/styles.xml'],unzipSync(Buffer.from(original.xlsxBase64,'base64'))['xl/styles.xml']);
 });
 
 test('explicit clearing of an automatic formula survives restart and subsequent input edits',async t=>{
