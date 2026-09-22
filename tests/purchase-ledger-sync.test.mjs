@@ -72,9 +72,9 @@ test("Musinsa ledger opens the current My page and explains login or detail sele
   assert.doesNotMatch(main, /musinsa\.com\/mypage\/orders/);
   assert.match(main, /loadURL\("https:\/\/www\.musinsa\.com\/mypage"\)/);
   assert.match(main, /MUSINSA_LOGIN_REQUIRED/);
-  assert.match(main, /member\\\.one\\\.musinsa\\\.com\\\/login/);
+  assert.match(main, /captureMusinsaLedgerPage/);
   assert.match(main, /ORDER_DETAIL_REQUIRED/);
-  assert.match(html, /무신사 마이 열기/);
+  assert.match(html, /무신사 주문 내역 열기/);
   assert.match(html, /로그인 상태는 다음 실행에도 유지/);
 });
 
