@@ -121,6 +121,44 @@ test('formula calculation respects blank fees, lookup sheets, error propagation 
  assert.equal(shiftLedgerFormula('=IF(A5="A5",\'시트5\'!$B$3+$C5,"https://example.test/A5")',2),'=IF(A7="A5",\'시트5\'!$B$3+$C7,"https://example.test/A5")');
 });
 
+test('selected purchase row fills units at 42 instead of after 575, preserves defaults/formulas and exports the same cells',async t=>{
+ const book=fixture(),s=book.sheets[0];
+ while(s.rawValues.length<575){s.rawValues.push(Array.from({length:22},()=>({type:'text',value:''})));s.formulas.push(Array(22).fill(''));s.displayValues.push(Array(22).fill(''));}
+ s.rawValues[574][2]={type:'text',value:'EXISTING-575'};s.formulas[0][19]='=SUM(T3:T575)';s.rawValues[0][19]={type:'formula',value:s.formulas[0][19]};
+ for(let r=41;r<=43;r++){s.rawValues[r][4]={type:'text',value:'공용'};s.rawValues[r][11]={type:'text',value:'구매완료'};s.rawValues[r][16]={type:'number',value:'4890'};}
+ s.formulas[41][18]='=N42*0.08';s.rawValues[41][18]={type:'formula',value:s.formulas[41][18]};
+ const {ledger,dir,options}=await setup(t,book),current=await ledger.load(),destination={sheetId:1,row:42,revision:current.revision};
+ const result=await ledger.record(purchase,destination);assert.deepEqual(result.rowNumbers,[42,43,44]);assert.deepEqual(result.unitPrices,[33334,33334,33333]);
+ const saved=await ledger.load(),sheet=saved.sheets[0];
+ assert.equal(sheet.rawValues[574][2].value,'EXISTING-575');assert.equal(sheet.rawValues[41][4].value,'공용');assert.equal(sheet.rawValues[41][16].value,'4890');
+ assert.equal(sheet.formulas[0][19],'=SUM(T3:T575)');assert.equal(sheet.formulas[41][18],'=N42*0.08');assert.equal(sheet.formulas[41][17],'=IF(J42="","",J42-N42-P42-Q42)');
+ assert.match(sheet.formulas[41][7],/^=IMAGE/);assert.equal(sheet.rawValues.filter(r=>r[2]?.value==='NEW-001').length,3);
+ const duplicate=await createLocalLedger(options).record(purchase,{...destination,row:45,revision:saved.revision});assert.equal(duplicate.duplicate,true);assert.deepEqual(duplicate.rowNumbers,[42,43,44]);
+ await ledger.export(join(dir,'selected.xlsx'));const files=unzipSync(await readFile(join(dir,'selected.xlsx'))),doc=new DOMParser().parseFromString(strFromU8(files['xl/worksheets/sheet1.xml']),'application/xml'),cells=Array.from(doc.getElementsByTagName('c'));
+ assert.match(cells.find(c=>c.getAttribute('r')==='H42').textContent,/IMAGE/);assert.match(cells.find(c=>c.getAttribute('r')==='C42').textContent,/NEW-001/);assert.match(strFromU8(files['xl/comments/aroundg-1.xml']),/ref="H42"/);
+});
+
+test('selected-row writes reject stale/invalid destinations and any occupied unit atomically',async t=>{
+ const {ledger}=await setup(t),current=await ledger.load();
+ for(const destination of [{sheetId:2,row:42,revision:current.revision},{sheetId:1,row:2,revision:current.revision},{sheetId:1,row:999,revision:current.revision},{sheetId:1,row:42,revision:'stale'}])await assert.rejects(ledger.record(purchase,destination),/PURCHASE_DESTINATION_INVALID|CELL_CONFLICT/);
+ // First two rows are blank, but the third contains an existing product.
+ await assert.rejects(ledger.record(purchase,{sheetId:1,row:3,revision:current.revision}),/PURCHASE_DESTINATION_OCCUPIED/);
+ assert.equal((await ledger.load()).revision,current.revision);assert.equal((await ledger.load()).sheets[0].rawValues[2][2].value,'');
+});
+
+test('selected rows with embedded pictures, receipt notes or merges are never overwritten',async t=>{
+ for(const kind of ['image','note','merge']) {
+  const book=fixture(),s=book.sheets[0];
+  if(kind==='image')s.images=[{row:3,column:8,url:'data:image/png;base64,iVBORw=='}];
+  if(kind==='note')s.notes[2][7]='existing receipt';
+  if(kind==='merge')s.merges.push({row:2,column:0,rows:1,columns:2});
+  const {ledger,options}=await setup(t,book);let current=await ledger.load();
+  if(kind==='image'){current.sheets[0].images=s.images;await saveLedgerWorkbook(options.path,current,options.encrypt);}
+  await assert.rejects(ledger.record({...purchase,quantity:1},{sheetId:1,row:3,revision:current.revision}),/PURCHASE_DESTINATION_OCCUPIED|PURCHASE_DESTINATION_MERGED/);
+  assert.equal((await ledger.load()).revision,current.revision);
+ }
+});
+
 test('clear dropdown and formula contents atomically, preserve styles/rules and recalculate/export blanks',async t=>{
  const book=fixture(),s=book.sheets[0];s.validations[4][11]={type:'list',values:['구매완료']};s.rawValues[4][11]={type:'text',value:'구매완료'};s.displayValues[4][11]='구매완료';
  const {ledger,dir,options}=await setup(t,book),current=await ledger.load();

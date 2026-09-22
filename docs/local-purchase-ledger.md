@@ -48,3 +48,19 @@ encrypted workbook, survive restart and are patched into Excel column widths and
 row heights while preserving unrelated dimension attributes. Default columns keep
 the existing responsive layout until resized. Resizing preserves an unsaved cell
 editor draft.
+
+Musinsa recording starts at the clicked row in `1-구매완료`. The form shows that
+row before submission and requires a single data-row selection. The destination
+sheet ID, row and workbook revision are passed independently of normalized order
+evidence. Selecting a cell does not write; the record button still commits the
+recognized order. Multiple units occupy consecutive rows starting there.
+
+All destination rows are checked before a write. Existing product data, pictures,
+notes, merged rows, invalid ranges and stale revisions block the whole operation.
+Gender/status/shipping defaults and existing calculation formulas do not make an
+otherwise empty purchase row occupied. Destination formatting, fees and formulas
+remain; missing calculation formulas use the closest preceding product template.
+Recording locks workbook selection and editing until it finishes. Unsaved cell
+edits must be resolved first. Success reloads and highlights the committed rows.
+Existing receipts stay idempotent at their original rows; choosing another row
+does not move or duplicate an already recorded order. No Google calls are added.

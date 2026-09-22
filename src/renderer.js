@@ -5114,8 +5114,9 @@ $("#ledger-list")?.addEventListener('click',async event=>{
 function setLedgerBusy(value) {
   ledgerBusy=value;
   for (const id of ["#ledger-open-musinsa","#ledger-capture"]) if ($(id)) $(id).disabled=value;
-  $("#ledger-submit").disabled=value || !selectedLedgerProof;
+  $("#ledger-submit").disabled=value || !selectedLedgerProof || !window.aroundGLedgerWorkbook?.getPurchaseDestination()?.ok;
 }
+window.addEventListener('aroundg:ledger-selection',()=>setLedgerBusy(ledgerBusy));
 function fillLedgerForm(row = {}) {
   selectedLedgerProof=row.captureId && !row.recorded ? {captureId:row.captureId}
     : row.id && row.syncStatus === "failed" && row.orderEvidence?.version === 1 ? {retryId:row.id} : null;
@@ -5125,7 +5126,7 @@ function fillLedgerForm(row = {}) {
   $("#ledger-order").value = row.orderNumber || ""; $("#ledger-url").value = row.purchaseUrl || "";
   $("#ledger-image").value = row.imageUrl || ""; $("#ledger-quantity").value = row.quantity || "";
   updateLedgerImagePreview();
-  $("#ledger-submit").disabled=ledgerBusy || !selectedLedgerProof;
+  setLedgerBusy(ledgerBusy);
 }
 function ledgerPhotoUrl(value) {
   try {const url=new URL(String(value || '').trim());return url.protocol==='https:' && !url.username && !url.password && !/\.svg$/i.test(url.pathname)?url.href:'';}catch{return '';}
@@ -5159,6 +5160,14 @@ function ledgerFlowMessage(result) {
   const code=result?.automaticLogin?.code || result?.code;
   if(result?.automaticLogin?.message) return result.automaticLogin.message;
   return ({
+    PURCHASE_DESTINATION_REQUIRED:"위 장부에서 입력할 빈 행의 셀을 먼저 클릭해 주세요.",
+    PURCHASE_DESTINATION_INVALID:"1-구매완료 시트의 빈 행 하나를 선택해 주세요. 수량만큼 아래쪽 행이 필요합니다.",
+    PURCHASE_DESTINATION_OCCUPIED:"선택한 행 또는 이어지는 행에 기존 상품·사진·기록이 있습니다. 수량만큼 연속된 빈 행을 선택해 주세요.",
+    PURCHASE_DESTINATION_MERGED:"병합된 행에는 상품을 기록할 수 없습니다. 다른 빈 행을 선택해 주세요.",
+    WORKBOOK_EDIT_PENDING:"편집 중인 셀을 먼저 저장하거나 취소한 뒤 입력할 행을 선택해 주세요.",
+    WORKBOOK_BUSY:"장부를 처리 중입니다. 완료 후 다시 기록해 주세요.",
+    WORKBOOK_REFRESH_REQUIRED:"내부 장부를 새로 불러온 뒤 입력할 행을 다시 선택해 주세요.",
+    CELL_CONFLICT:"장부가 변경되었습니다. 내부 장부를 새로 불러온 뒤 입력할 행을 다시 선택해 주세요.",
     GOOGLE_ACCOUNT_CONNECTION_REQUIRED:"내부 장부 계정정보를 확인해 주세요.",
     LOCAL_ACCOUNT_READ_FAILED:"내부 장부 계정정보를 읽지 못했습니다.",
     MUSINSA_ACCOUNT_NOT_FOUND:"계정정보 탭에서 무신사 계정을 찾지 못했습니다.",
@@ -5206,9 +5215,12 @@ $("#purchase-ledger-form")?.addEventListener("submit", async event => {
   event.preventDefault();if(ledgerBusy)return;
   const status=$("#ledger-status");
   if(!selectedLedgerProof){status.className="status error";status.textContent="주문상세 인식을 먼저 완료해 주세요.";return;}
+  const placement=window.aroundGLedgerWorkbook?.beginPurchaseRecord();
+  if(!placement?.ok){status.className='status error';status.textContent=ledgerFlowMessage(placement||{code:'PURCHASE_DESTINATION_REQUIRED'});return;}
   status.className="status";status.textContent="확인한 주문 상품을 내부 장부에 기록하고 있습니다.";setLedgerBusy(true);
   try {
-    const result=await window.aroundG.syncPurchaseLedger(ledgerFormRow());
+    const result=await window.aroundG.syncPurchaseLedger({...ledgerFormRow(),destination:placement.destination});
+    window.aroundGLedgerWorkbook.endPurchaseRecord(Boolean(result?.ok));
     if(!result?.ok){status.className="status error";status.textContent=ledgerFlowMessage(result);return;}
     if(selectedLedgerIndex>=0 && capturedLedgerRows[selectedLedgerIndex])capturedLedgerRows[selectedLedgerIndex].recorded=true;
     selectedLedgerProof=null;renderCapturedLedgerRows();status.className="status success";
@@ -5222,7 +5234,7 @@ $("#purchase-ledger-form")?.addEventListener("submit", async event => {
     await refresh();
     await showLedgerRecordLocation(recordedRows);
   } catch {status.className="status error";status.textContent="내부 장부 기록 결과를 확인하지 못했습니다. 기록 내역을 확인한 뒤 다시 시도해 주세요.";}
-  finally {setLedgerBusy(false);}
+  finally {window.aroundGLedgerWorkbook.endPurchaseRecord();setLedgerBusy(false);}
 });
 
 function openEntry(collection) {

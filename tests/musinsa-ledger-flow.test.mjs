@@ -207,6 +207,7 @@ test('renderer cannot submit before detail capture and restores controls after e
   w.$=selector=>d.querySelector(selector);w.text=value=>String(value??'').replace(/[&<>"']/g,'');w.refresh=async()=>{};
   const row={captureId:'fixture',orderNumber:'ORDER-1',purchaseDate:'2026-09-02',brand:'테스트',modelName:'테스트 상품',articleNumber:'AB123',krSize:'블랙 / 270',purchasePrice:62330,quantity:2,purchaseUrl:'https://www.musinsa.com/products/10001',imageUrl:'https://images.example.test/black.jpg',missing:[]};
   const second={...row,captureId:'second',krSize:'화이트 / 280',imageUrl:'https://images.example.test/white.jpg'};
+  w.aroundGLedgerWorkbook={getPurchaseDestination:()=>({ok:true,destination:{sheetId:1,row:45,revision:'fixture'}}),beginPurchaseRecord:()=>w.aroundGLedgerWorkbook.getPurchaseDestination(),endPurchaseRecord:()=>{},showRecordedRows:async()=>({ok:true,rows:[45]})};
   w.aroundG={openMusinsaLedger:async()=>{openCalls++;throw Error('offline');},captureMusinsaLedger:async()=>({ok:true,rows:[row,second],orderNumber:row.orderNumber}),syncPurchaseLedger:async input=>{writes++;assert.equal(input.captureId,'fixture');assert.equal(input.imageUrl,row.imageUrl);return {ok:true,rowNumber:45,imageStatus:'link-only'};}};
   w.eval('let capturedLedgerRows = [];'+script);
   const flush=()=>new Promise(resolve=>setTimeout(resolve,5));

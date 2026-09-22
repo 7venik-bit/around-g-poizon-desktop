@@ -109,8 +109,9 @@ test('a successful or duplicate purchase automatically refreshes the original ta
     w.$=selector=>d.querySelector(selector);w.text=value=>String(value??'').replace(/[&<>"']/g,'');w.refresh=async()=>{};
     const row={captureId:'fixture',brand:'테스트',articleNumber:'FIXTURE-575',modelName:'기록 확인용 상품',krSize:'270',quantity:3,purchasePrice:30000,purchaseDate:'2026-09-22',orderNumber:'FIXTURE-ORDER',purchaseUrl:'https://www.musinsa.com/products/10001',imageUrl:'https://images.example.test/record.jpg'};
     w.aroundG.captureMusinsaLedger=async()=>({ok:true,rows:[row]});
-    w.aroundG.syncPurchaseLedger=async()=>{writes++;return {ok:true,duplicate,rowNumbers:[575,576,577],imageStatus:'formula'};};
+    w.aroundG.syncPurchaseLedger=async input=>{writes++;assert.equal(input.destination.row,42);assert.equal(input.destination.sheetId,1);return {ok:true,duplicate,rowNumbers:[575,576,577],imageStatus:'formula'};};
     w.eval(purchaseCode);d.querySelector('#ledger-capture').click();await flush();
+    d.querySelector('td[data-row="42"][data-column="1"]').click();
     d.querySelector('#purchase-ledger-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();
     assert.equal(writes,1);assert.equal(calls.reads,1);assert.equal(calls.writes,0);
     assert.match(d.querySelector('#workbook-page').textContent,/501–600/);
@@ -118,4 +119,35 @@ test('a successful or duplicate purchase automatically refreshes the original ta
     assert.equal(d.querySelector('#ledger-submit').disabled,true);
     assert.match(d.querySelector('#ledger-status').textContent,duplicate?/기존 575, 576, 577행/:/575, 576, 577행에 기록/);
   }
+});
+
+test('purchase destination follows the clicked row, requires one data row and protects dirty edits',async t=>{
+  const {w,d}=await boot(t),api=w.aroundGLedgerWorkbook;
+  assert.equal(api.getPurchaseDestination().code,'PURCHASE_DESTINATION_REQUIRED');
+  const cell=(row,column=1)=>d.querySelector(`td[data-row="${row}"][data-column="${column}"]`);
+  cell(2).click();assert.equal(api.getPurchaseDestination().code,'PURCHASE_DESTINATION_INVALID');
+  cell(42,8).click();assert.equal(api.getPurchaseDestination().destination.row,42);assert.match(d.querySelector('#ledger-destination').textContent,/42행/);
+  d.querySelector('#workbook-cell-value').value='unsaved';assert.equal(api.beginPurchaseRecord().code,'WORKBOOK_EDIT_PENDING');
+  d.querySelector('#workbook-cell-value').value='';
+  const placement=api.beginPurchaseRecord();assert.equal(placement.destination.row,42);
+  cell(43).click();assert.equal(api.getPurchaseDestination().code,'WORKBOOK_BUSY');
+  assert.equal(d.querySelector('#workbook-import').disabled,true);assert.equal(d.querySelector('#workbook-cell-value').disabled,true);
+  api.endPurchaseRecord(false);assert.equal(api.getPurchaseDestination().destination.row,42);
+  cell(43).dispatchEvent(new w.MouseEvent('click',{bubbles:true,shiftKey:true}));assert.equal(api.getPurchaseDestination().code,'PURCHASE_DESTINATION_INVALID');
+  cell(42).click();api.beginPurchaseRecord();api.endPurchaseRecord(true);assert.equal(api.getPurchaseDestination().code,'PURCHASE_DESTINATION_REQUIRED');
+  cell(42).click();d.querySelector('#workbook-next').click();assert.equal(api.getPurchaseDestination().code,'PURCHASE_DESTINATION_REQUIRED');
+});
+
+test('a failed selected-row write unlocks the same destination without marking the captured order recorded',async t=>{
+  const {w,d}=await boot(t);w.$=selector=>d.querySelector(selector);w.text=value=>String(value??'');w.refresh=async()=>{};
+  const row={captureId:'fixture',brand:'TEST',articleNumber:'AB123',modelName:'fixture product',krSize:'270',quantity:1,purchasePrice:10000,purchaseDate:'2026-09-22',orderNumber:'fixture-order',purchaseUrl:'https://www.musinsa.com/products/1',imageUrl:'https://images.example.test/p.jpg'};
+  w.aroundG.captureMusinsaLedger=async()=>({ok:true,rows:[row]});let writes=0;
+  w.aroundG.syncPurchaseLedger=async input=>{writes++;assert.equal(input.destination.row,42);return {ok:false,code:'PURCHASE_DESTINATION_OCCUPIED'};};
+  w.eval(purchaseCode);d.querySelector('#ledger-capture').click();await flush();
+  assert.equal(d.querySelector('#ledger-submit').disabled,true);
+  d.querySelector('#purchase-ledger-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();assert.equal(writes,0);
+  d.querySelector('td[data-row="42"][data-column="1"]').click();assert.equal(d.querySelector('#ledger-submit').disabled,false);
+  d.querySelector('#purchase-ledger-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await flush();
+  assert.equal(writes,1);assert.equal(w.aroundGLedgerWorkbook.getPurchaseDestination().destination.row,42);
+  assert.equal(d.querySelector('#ledger-submit').disabled,false);assert.match(d.querySelector('#ledger-status').textContent,/기존 상품/);
 });

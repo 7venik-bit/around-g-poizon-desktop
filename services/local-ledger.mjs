@@ -145,7 +145,7 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
       for(const {axis,index,pixels} of changes)(sheet[axis==='column'?'columnWidths':'rowHeights']||={})[index]=pixels;
       return workbookView(await commit(book,[]));
     }),
-    record:row=>serial(async()=>{
+    record:(row,destination)=>serial(async()=>{
       if(!validatePurchaseLedgerRow(row).ok)fail('REQUIRED_FIELDS_MISSING');
       const quantity=Number(row.quantity),total=Number(row.purchasePrice);
       if(!Number.isInteger(quantity)||quantity<1||quantity>1000||!Number.isSafeInteger(total)||total<quantity)fail('PURCHASE_UNITS_INVALID');
@@ -153,6 +153,10 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
       if(!order||!line)fail('ORDER_EVIDENCE_REQUIRED');
       const key=JSON.stringify([order,line]),book=await load(),sheet=book.sheets.find(s=>s.name==='1-구매완료');
       if(!sheet||sheet.columnCount<14)fail('WORKBOOK_PURCHASE_SHEET_MISSING');
+      if(destination) {
+        if(destination.sheetId!==sheet.id||!Number.isSafeInteger(destination.row)||destination.row<3||destination.row+quantity-1>sheet.rowCount)fail('PURCHASE_DESTINATION_INVALID');
+        if(destination.revision!==book.revision)fail('CELL_CONFLICT');
+      }
       const existing=[];
       for(let r=0;r<(sheet.notes?.length||0);r++) {
         try {const note=JSON.parse(sheet.notes[r]?.[7]||'');if(note.schema==='around-g.purchase.units.v1'&&note.key===key)existing.push({row:r+1,note});}catch{}
@@ -167,16 +171,37 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
         if(sheet.rawValues[r]?.some((v,c)=>v?.value!==''&&v?.value!=null && (v.type!=='formula'||c!==6)))last=r;
         if(sheet.rawValues[r]?.[2]?.value&&sheet.formulas[r]?.slice(14).some(Boolean))template=r;
       }
+      const start=destination?destination.row-1:last+1;
+      if(destination) {
+        // Defaults (gender/status/shipping) and calculation formulas can exist in
+        // a free purchase row. Product data, photos and receipt notes cannot.
+        const productColumns=[0,1,2,3,5,6,7,8,9,10,12,13,14];
+        for(let r=start;r<start+quantity;r++) {
+          const occupied=productColumns.some(c=>{const raw=sheet.rawValues[r]?.[c];return raw?.value!==''&&raw?.value!=null&&!(c===6&&raw.type==='formula');});
+          if(occupied||sheet.images?.some(image=>image.row===r+1)||sheet.notes?.[r]?.some(Boolean))fail('PURCHASE_DESTINATION_OCCUPIED');
+          if(sheet.merges?.some(m=>r>=m.row&&r<m.row+m.rows))fail('PURCHASE_DESTINATION_MERGED');
+        }
+        // Prefer the closest preceding product as the formula template. Rows
+        // recorded farther down the sheet must not dictate this row's formulas.
+        const preceding=sheet.rawValues.slice(2,start).findLastIndex((values,index)=>values?.[2]?.value&&sheet.formulas[index+2]?.slice(14).some(Boolean));
+        if(preceding>=0)template=preceding+2;
+      }
       const prices=Array.from({length:quantity},(_,i)=>Math.floor(total/quantity)+(i<total%quantity?1:0)),edits=[],rowNumbers=[];
       for(let i=0;i<quantity;i++) {
-        const r=last+i+1,number=r+1;rowNumbers.push(number);ensureCell(sheet,number,sheet.columnCount);
-        if(template>=0)for(const field of ['numberFormats','backgrounds','fontColors','fontWeights','validations'])sheet[field][r]=structuredClone(sheet[field][template]);
+        const r=start+i,number=r+1;rowNumbers.push(number);ensureCell(sheet,number,sheet.columnCount);
+        if(!destination&&template>=0)for(const field of ['numberFormats','backgrounds','fontColors','fontWeights','validations'])sheet[field][r]=structuredClone(sheet[field][template]);
         const text=value=>({type:'text',value:String(value||'')});
         const values=[text(row.brand),text(row.purchaseUrl),text(row.articleNumber),text(row.modelName),text(row.gender),text(row.euSize),text(row.krSize),{type:'formula',value:`=IMAGE("${purchaseLedgerImageUrl(row.imageUrl).replace(/"/g,'%22')}",1)`},empty(),empty(),empty(),text(row.status||'구매완료'),typedInput({type:'date',value:row.purchaseDate}),{type:'number',value:String(prices[i])}];
         sheet.numberFormats[r][12] ||= 'm/d';
         for(let c=0;c<sheet.columnCount;c++) {
+          if(destination) {
+            // Keep the selected row's fees, formulas, formatting and manual
+            // defaults. Only fill purchase fields and missing formula cells.
+            if([8,9,10].includes(c)||(c===4&&!row.gender))continue;
+            if(c>=14&&(sheet.rawValues[r]?.[c]?.value!==''||!sheet.formulas[template]?.[c]))continue;
+          }
           const raw=c<14?values[c]:template>=0&&sheet.formulas[template]?.[c]?{type:'formula',value:shiftLedgerFormula(sheet.formulas[template][c],r-template)}:empty();
-          put(sheet,number,c+1,raw);edits.push({sheetId:sheet.id,row:number,column:c+1,templateRow:template+1});
+          put(sheet,number,c+1,raw);edits.push({sheetId:sheet.id,row:number,column:c+1,...(!destination&&{templateRow:template+1})});
         }
         sheet.notes[r][7]=JSON.stringify({schema:'around-g.purchase.units.v1',key,unit:i+1,quantity,total});
       }
@@ -185,7 +210,7 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
       // Migration itself leaves every original formula unchanged.
       for(let r=0;r<Math.min(2,sheet.formulas.length);r++)for(let c=0;c<sheet.formulas[r].length;c++) {
         const formula=sheet.formulas[r][c],range=formula.match(/^=(SUM|COUNTA|AVERAGE)\((\$?[A-Z]{1,3}\$?)(\d+):(\$?[A-Z]{1,3}\$?)(\d+)\)$/i);
-        if(!range||range[2].replace(/\$/g,'')!==range[4].replace(/\$/g,'')||Number(range[3])<3||Number(range[5])<Math.max(3,template+1)||Number(range[5])>last+1)continue;
+        if(!range||range[2].replace(/\$/g,'')!==range[4].replace(/\$/g,'')||Number(range[3])<3||Number(range[5])<Math.max(3,template+1)||Number(range[5])>last+1||Number(range[5])>=rowNumbers.at(-1))continue;
         put(sheet,r+1,c+1,{type:'formula',value:`=${range[1]}(${range[2]}${range[3]}:${range[4]}${rowNumbers.at(-1)})`});
         edits.push({sheetId:sheet.id,row:r+1,column:c+1});
       }
