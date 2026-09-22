@@ -215,7 +215,14 @@ export class ShoppingLoginConnector {
       return;
     }
     const method=merchant && !['naver','kakao'].includes(flow.source.id) ? flow.method : 'password';
-    const state=await win.webContents.mainFrame.executeJavaScript(`(${captureShoppingLoginPage.toString()})(${JSON.stringify(method)})`,true);
+    let state;
+    try { state=await win.webContents.mainFrame.executeJavaScript(`(${captureShoppingLoginPage.toString()})(${JSON.stringify(method)})`,true); }
+    catch(error) {
+      // Reading the departing document can be cancelled by navigation. No
+      // input occurred in this step; let the destination's event inspect it.
+      if(flow.stopped || win.isDestroyed() || win.webContents.getURL()!==url) return;
+      throw error;
+    }
     if(flow.stopped || win.isDestroyed() || !state || state.href!==url || win.webContents.getURL()!==url) return;
     // Parent and OAuth popup ticks can overlap. A callback may confirm the
     // merchant while the popup is still awaiting its native submit click.

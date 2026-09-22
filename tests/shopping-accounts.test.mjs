@@ -363,6 +363,17 @@ test('a failure in another login window stops pending input and preserves its fi
   assert.equal(b.inserted.length,0);assert.equal(b.connector.status('kolon').code,'LOGIN_PAGE_LOAD_FAILED');
 });
 
+test('navigation cancelling a read-only capture does not fail the destination login or enter credentials on the departing page',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
+  const capture=w.webContents.mainFrame.executeJavaScript;
+  w.webContents.mainFrame.executeJavaScript=async()=>{w.dom.reconfigure({url:'https://www.kolonmall.com/login'});throw Error('context destroyed');};
+  b.connector.attach(w,{source:sources[1],method:'password',started:Date.now(),acted:new Set(),children:new Set()});
+  await new Promise(setImmediate);assert.equal(b.connector.status('kolon').code,'');assert.equal(b.inserted.length,0);
+  w.webContents.mainFrame.executeJavaScript=capture;await b.ticks[0]();
+  assert.equal(b.connector.status('kolon').code,'LOGIN_SUBMITTED');assert.equal(b.inserted.length,2);
+});
+
 test('provider account changes clear only the shops linked through that provider',async()=>{
   const main=await readFile(new URL('../main.mjs',import.meta.url),'utf8');
   const start=main.indexOf('async function clearDomesticLogin(');
