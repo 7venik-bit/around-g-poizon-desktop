@@ -18,7 +18,7 @@ export function normalizePurchaseLedgerRow(input = {}) {
     status: input.status === "반품중" ? "반품중" : "구매완료", purchaseDate, purchasePrice,
     orderNumber: clean(input.orderNumber), quantity: Math.max(1, Math.round(Number(input.quantity || 1))),
     duplicateKey: clean(input.duplicateKey) || crypto.createHash("sha256")
-      .update([clean(input.orderNumber), articleNumber, size, purchaseDate, purchasePrice].join("|"))
+      .update([clean(input.orderNumber), clean(input.orderEvidence?.orderLineId), articleNumber, size, purchaseDate, purchasePrice].join("|"))
       .digest("hex").slice(0, 24),
   };
 }

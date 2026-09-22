@@ -2397,7 +2397,7 @@ function renderRecords(collection) {
 function renderLedgerRecords() {
   const host = $("#ledger-list");
   const rows = Array.isArray(state.ledger) ? state.ledger : [];
-  host.innerHTML = rows.length ? rows.map((row) => `<div class="record"><div class="ledger-record-product">${ledgerPhotoMarkup(row)}<div><strong>${text(row.modelName || row.name)}</strong><small>${text(row.brand)} · ${text(row.articleNumber)} · ${text(row.krSize || row.euSize || "-")}</small></div></div><div><span class="ledger-sync-state ${row.syncStatus === "failed" ? "failed" : ""}">${row.syncStatus === "synced" ? `시트 ${text(row.sheetRow)}행 기록완료` : row.syncStatus === "duplicate" ? `기존 ${text(row.sheetRow)}행 연결` : "기록실패"}${row.imageStatus==='link-only'?' · 사진 표시를 위한 Google 연결 업데이트 필요':''}</span>${row.syncStatus === "failed" ? ` <button data-ledger-retry="${text(row.id)}">다시 기록</button>` : ""}</div></div>`).join("") : `<div class="empty">구매장부 기록 내역이 없습니다.</div>`;
+  host.innerHTML = rows.length ? rows.map((row) => `<div class="record"><div class="ledger-record-product">${ledgerPhotoMarkup(row)}<div><strong>${text(row.modelName || row.name)}</strong><small>${text(row.brand)} · ${text(row.articleNumber)} · ${text(row.krSize || row.euSize || "-")}</small></div></div><div><span class="ledger-sync-state ${row.syncStatus === "failed" ? "failed" : ""}">${row.syncStatus === "synced" ? `시트 ${text((row.sheetRows || [row.sheetRow]).join(", "))}행 기록완료` : row.syncStatus === "duplicate" ? `기존 ${text((row.sheetRows || [row.sheetRow]).join(", "))}행 연결` : "기록실패"}${row.imageStatus==='link-only'?' · 사진 표시를 위한 Google 연결 업데이트 필요':''}</span>${row.syncStatus === "failed" ? ` <button data-ledger-retry="${text(row.id)}">다시 기록</button>` : ""}</div></div>`).join("") : `<div class="empty">구매장부 기록 내역이 없습니다.</div>`;
 }
 
 function stockWatchTime(value) {
@@ -5183,7 +5183,10 @@ $("#purchase-ledger-form")?.addEventListener("submit", async event => {
     if(!result?.ok){status.className="status error";status.textContent=ledgerFlowMessage(result);return;}
     if(selectedLedgerIndex>=0 && capturedLedgerRows[selectedLedgerIndex])capturedLedgerRows[selectedLedgerIndex].recorded=true;
     selectedLedgerProof=null;renderCapturedLedgerRows();status.className="status success";
-    status.textContent=result.duplicate?`Google 장부에서 기존 ${result.rowNumber}행과 중복으로 확인했습니다.`:`Google 장부 ${result.rowNumber}행에 기록했습니다.`;
+    const recordedRows=Array.isArray(result.rowNumbers)?result.rowNumbers:[result.rowNumber];
+    const rowLabel=recordedRows.join(', ');
+    status.textContent=result.duplicate?`Google 장부의 기존 ${rowLabel}행을 확인했습니다.`:`Google 장부 ${rowLabel}행에 기록했습니다.`;
+    if(recordedRows.length>1)status.textContent+=` 수량 ${recordedRows.length}개를 각각 한 행으로 나눴습니다.`;
     if(result.imageStatus==='formula')status.textContent+=' 상품 사진도 연결했습니다.';
     else if(result.imageStatus==='link-only')status.textContent+=' 사진 주소만 저장되었습니다. 장부에 사진을 표시하려면 Google 장부 연결 스크립트 업데이트가 필요합니다.';
     else if(result.duplicate)status.textContent+=' 기존 행의 사진은 유지했습니다.';

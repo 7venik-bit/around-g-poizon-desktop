@@ -5539,7 +5539,7 @@ async function syncPurchaseLedger(input = {}) {
   const proof = musinsaLedgerCaptures.resolve(input, failedRow);
   if (!proof.ok) return proof;
   if (!Number.isInteger(Number(input.quantity)) || Number(input.quantity) < 1) return {ok:false,code:"REQUIRED_FIELDS_MISSING",message:"주문상세의 수량을 확인해 주세요."};
-  const row = normalizePurchaseLedgerRow(input);
+  const row = normalizePurchaseLedgerRow({ ...input, orderEvidence: proof.evidence });
   row.orderEvidence = proof.evidence;
   const validation = validatePurchaseLedgerRow(row);
   if (!validation.ok) return { ok: false, code: "REQUIRED_FIELDS_MISSING", message: `${validation.missing.join(", ")}을(를) 확인해 주세요.` };
@@ -5552,9 +5552,11 @@ async function syncPurchaseLedger(input = {}) {
     const result = await response.json();
     if (!result.ok) throw new Error(result.code || result.message || `HTTP_${response.status}`);
     const imageStatus=result.imageStatus || (result.duplicate ? "existing" : "link-only");
-    const saved = await store.upsert("ledger", { ...row, imageStatus, id: row.duplicateKey, sheetRow: result.rowNumber, syncStatus: result.duplicate ? "duplicate" : "synced", syncedAt: new Date().toISOString() });
+    const sheetRows = Array.isArray(result.rowNumbers) ? result.rowNumbers : [result.rowNumber];
+    const unitPrices = Array.isArray(result.unitPrices) ? result.unitPrices : [row.purchasePrice];
+    const saved = await store.upsert("ledger", { ...row, imageStatus, id: row.duplicateKey, sheetRow: result.rowNumber, sheetRows, unitPrices, syncStatus: result.duplicate ? "duplicate" : "synced", syncedAt: new Date().toISOString() });
     void runWeeklyLedgerBackup();
-    return { ok: true, duplicate: Boolean(result.duplicate), imageStatus, rowNumber: result.rowNumber, saved };
+    return { ok: true, duplicate: Boolean(result.duplicate), imageStatus, rowNumber: result.rowNumber, rowNumbers: sheetRows, unitPrices, saved };
   } catch (error) {
     await store.upsert("ledger", { ...row, id: row.duplicateKey, syncStatus: "failed", syncError: error instanceof Error ? error.message : String(error) });
     void addProgramNotification({ type: "error", title: "구매장부 기록 실패", message: `${row.modelName} · 다시 기록해 주세요.`, key: `ledger:failed:${row.duplicateKey}:${Date.now()}`, windows: true });

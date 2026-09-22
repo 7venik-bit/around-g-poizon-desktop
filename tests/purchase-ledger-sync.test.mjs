@@ -48,6 +48,14 @@ test("sheet write is blocked when required purchase evidence is missing", () => 
   assert.deepEqual(result.missing, ["품번", "사이즈", "구매일자", "구매가", "상품 사진"]);
 });
 
+test('separate identical receipt lines keep separate local sync history',()=>{
+  const row={orderNumber:'fixture-order',articleNumber:'AB123',krSize:'270',purchaseDate:'2026-09-22',purchasePrice:10000};
+  const first=normalizePurchaseLedgerRow({...row,orderEvidence:{orderLineId:'line-1'}});
+  const second=normalizePurchaseLedgerRow({...row,orderEvidence:{orderLineId:'line-2'}});
+  assert.notEqual(first.duplicateKey,second.duplicateKey);
+  assert.equal(first.duplicateKey,normalizePurchaseLedgerRow({...row,orderEvidence:{orderLineId:'line-1'}}).duplicateKey);
+});
+
 test('product images survive normalization but executable or temporary URLs do not',()=>{
   const source={modelName:'상품',articleNumber:'AB123',krSize:'270',purchaseDate:'2026-09-22',purchasePrice:1000,imageUrl:'https://images.example.test/photo.jpg?w=500&quality=90'};
   const row=normalizePurchaseLedgerRow(source);assert.equal(row.imageUrl,source.imageUrl);assert.equal(validatePurchaseLedgerRow(row).ok,true);
