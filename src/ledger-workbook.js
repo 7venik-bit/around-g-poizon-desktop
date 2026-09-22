@@ -3,7 +3,7 @@
   if (!$('original-ledger-workbook')) return;
   let workbook, active, selected, page = 0, busy = false, needsRefresh = false;
   let recordedLocation;
-  let selection,anchor,purchaseRecording=false;
+  let selection,anchor,editorValue,purchaseRecording=false;
   const messages = {
     CELL_CONFLICT:'원본이 다른 곳에서 변경됐습니다. 다시 가져온 뒤 수정해 주세요.',
     CELL_PROTECTED:'보호된 셀이라 편집할 수 없습니다.',
@@ -155,7 +155,7 @@
     selection={sheetId:sheet.id,row:Math.min(anchor.row,r+1),column:Math.min(anchor.column,c+1),endRow:Math.max(anchor.row,r+1),endColumn:Math.max(anchor.column,c+1),focusRow:r+1,focusColumn:c+1};
     paintSelection();
     const focus=$('workbook-table').querySelector(`td[data-row="${r+1}"][data-column="${c+1}"]`);focus?.focus({preventScroll:true});
-    if(selection.row!==selection.endRow||selection.column!==selection.endColumn){selected=undefined;$('workbook-cell-editor').hidden=true;return;}
+    if(selection.row!==selection.endRow||selection.column!==selection.endColumn){selected=undefined;$('workbook-cell-editor').hidden=true;announcePurchaseDestination();return;}
     selected={sheetId:sheet.id,row:r+1,column:c+1,revision:workbook.revision,expected:sheet.rawValues[r]?.[c] || {type:'text',value:''}};
     $('workbook-cell-address').textContent=`${sheet.name} · ${columnName(c)}${r+1}`;
     $('workbook-cell-original').textContent=`현재 내용: ${sheet.displayValues[r]?.[c] || '(빈 셀)'}`;
@@ -166,7 +166,7 @@
       const part=type=>parts.find(p=>p.type===type).value;value=`${part('year')}-${part('month')}-${part('day')}`;
     }
     $('workbook-cell-value').value=value;
-    selected.editorValue=String(value);
+    editorValue=String(value);
     const options=sheet.validations?.[r]?.[c];
     $('workbook-cell-options-label').hidden=options?.type!=='list';
     $('workbook-cell-options').replaceChildren();
@@ -200,7 +200,7 @@
     for(const control of $('workbook-cell-editor').querySelectorAll('input,select,textarea,button'))control.disabled=busy||needsRefresh;
     announcePurchaseDestination();
   }
-  function hasPendingEdit() {return selected&&($('workbook-cell-type').value!==selected.expected.type||$('workbook-cell-value').value!==selected.editorValue);}
+  function hasPendingEdit() {return selected&&($('workbook-cell-type').value!==selected.expected.type||$('workbook-cell-value').value!==editorValue);}
   function getPurchaseDestination() {
     if(busy)return {ok:false,code:'WORKBOOK_BUSY'};
     if(needsRefresh)return {ok:false,code:'WORKBOOK_REFRESH_REQUIRED'};
