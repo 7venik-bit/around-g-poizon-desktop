@@ -129,5 +129,18 @@ window.aroundG.clearLedgerWorkbookCells=async input=>{window.ledgerToolCalls.pus
   await writeFile(join(out,'ledger-cell-tools.png'),(await win.webContents.capturePage()).toPNG());
   await writeFile(join(out,'ledger-cell-tools.json'),JSON.stringify({resized,toolCalls},null,2));
   console.log('PASS: Pointer column/row resizing and range copy/delete shortcuts preserve the selected coordinates and rendered sizes.');
+  const destination=await win.webContents.executeJavaScript(`(()=>{
+    const q=s=>document.querySelector(s),api=window.aroundGLedgerWorkbook;
+    while(!q('#workbook-prev').disabled)q('#workbook-prev').click();
+    q('td[data-row="42"][data-column="1"]').click();
+    const selected=api.getPurchaseDestination(),label=q('#ledger-destination').textContent;
+    const locked=api.beginPurchaseRecord();q('td[data-row="43"][data-column="1"]').click();
+    const blocked=api.getPurchaseDestination().code,editorDisabled=q('#workbook-cell-value').disabled;
+    api.endPurchaseRecord(false);const restored=api.getPurchaseDestination();
+    return {selected,label,locked,blocked,editorDisabled,restored};
+  })()`);
+  if(destination.selected.destination?.row!==42||destination.locked.destination?.row!==42||destination.restored.destination?.row!==42||destination.blocked!=='WORKBOOK_BUSY'||!destination.editorDisabled||!destination.label.includes('42행'))throw Error('Selected purchase destination lost: '+JSON.stringify(destination));
+  await writeFile(join(out,'ledger-selected-row.json'),JSON.stringify(destination,null,2));
+  console.log('PASS: The clicked purchase row is shown as row 42 and remains locked during recording, then restores on failure.');
   await cleanup();app.exit(0);
 })().catch(async error=>{console.error(error.stack||error);await cleanup();app.exit(1);});

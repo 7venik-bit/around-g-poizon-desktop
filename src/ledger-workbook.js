@@ -3,7 +3,7 @@
   if (!$('original-ledger-workbook')) return;
   let workbook, active, selected, page = 0, busy = false, needsRefresh = false;
   let recordedLocation;
-  let selection,anchor;
+  let selection,anchor,editorValue,purchaseRecording=false;
   const messages = {
     CELL_CONFLICT:'원본이 다른 곳에서 변경됐습니다. 다시 가져온 뒤 수정해 주세요.',
     CELL_PROTECTED:'보호된 셀이라 편집할 수 없습니다.',
@@ -155,7 +155,7 @@
     selection={sheetId:sheet.id,row:Math.min(anchor.row,r+1),column:Math.min(anchor.column,c+1),endRow:Math.max(anchor.row,r+1),endColumn:Math.max(anchor.column,c+1),focusRow:r+1,focusColumn:c+1};
     paintSelection();
     const focus=$('workbook-table').querySelector(`td[data-row="${r+1}"][data-column="${c+1}"]`);focus?.focus({preventScroll:true});
-    if(selection.row!==selection.endRow||selection.column!==selection.endColumn){selected=undefined;$('workbook-cell-editor').hidden=true;return;}
+    if(selection.row!==selection.endRow||selection.column!==selection.endColumn){selected=undefined;$('workbook-cell-editor').hidden=true;announcePurchaseDestination();return;}
     selected={sheetId:sheet.id,row:r+1,column:c+1,revision:workbook.revision,expected:sheet.rawValues[r]?.[c] || {type:'text',value:''}};
     $('workbook-cell-address').textContent=`${sheet.name} · ${columnName(c)}${r+1}`;
     $('workbook-cell-original').textContent=`현재 내용: ${sheet.displayValues[r]?.[c] || '(빈 셀)'}`;
@@ -166,6 +166,7 @@
       const part=type=>parts.find(p=>p.type===type).value;value=`${part('year')}-${part('month')}-${part('day')}`;
     }
     $('workbook-cell-value').value=value;
+    editorValue=String(value);
     const options=sheet.validations?.[r]?.[c];
     $('workbook-cell-options-label').hidden=options?.type!=='list';
     $('workbook-cell-options').replaceChildren();
@@ -177,6 +178,7 @@
     }
     $('workbook-cell-editor').hidden=false;
     focus?.focus({preventScroll:true});
+    announcePurchaseDestination();
   }
   function clearSelection() {selection=anchor=selected=undefined;$('workbook-cell-editor').hidden=true;paintSelection();}
   function paintSelection() {
@@ -195,6 +197,37 @@
       $('workbook-column-width').value=sheet.columnWidths?.[selection.column]||Math.round(table?.querySelectorAll('thead th')[selection.column]?.getBoundingClientRect().width||0)||'';
       $('workbook-row-height').value=sheet.rowHeights?.[selection.row]||Math.round(table?.querySelector(`[data-row-number="${selection.row}"]`)?.getBoundingClientRect().height||0)||'';
     }
+    for(const control of $('workbook-cell-editor').querySelectorAll('input,select,textarea,button'))control.disabled=busy||needsRefresh;
+    announcePurchaseDestination();
+  }
+  function hasPendingEdit() {return selected&&($('workbook-cell-type').value!==selected.expected.type||$('workbook-cell-value').value!==editorValue);}
+  function getPurchaseDestination() {
+    if(busy)return {ok:false,code:'WORKBOOK_BUSY'};
+    if(needsRefresh)return {ok:false,code:'WORKBOOK_REFRESH_REQUIRED'};
+    if(hasPendingEdit())return {ok:false,code:'WORKBOOK_EDIT_PENDING'};
+    const sheet=workbook?.sheets.find(s=>s.id===selection?.sheetId);
+    if(!selection)return {ok:false,code:'PURCHASE_DESTINATION_REQUIRED'};
+    if(sheet?.name!=='1-구매완료'||selection.row<3||selection.row!==selection.endRow)return {ok:false,code:'PURCHASE_DESTINATION_INVALID'};
+    return {ok:true,destination:{sheetId:sheet.id,row:selection.row,revision:workbook.revision}};
+  }
+  function announcePurchaseDestination() {
+    const label=$('ledger-destination'),result=getPurchaseDestination();
+    if(label)label.textContent=result.ok?`입력 위치: 1-구매완료 · ${result.destination.row}행부터 수량별 한 행씩 기록합니다.`
+      :purchaseRecording?'선택한 행에 기록 중입니다.'
+      :result.code==='WORKBOOK_EDIT_PENDING'?'편집 중인 셀을 먼저 저장하거나 취소해 주세요.'
+      :result.code==='PURCHASE_DESTINATION_INVALID'?'1-구매완료 시트에서 입력할 빈 행 하나를 선택해 주세요. 제목 행에는 기록할 수 없습니다.'
+      :'위 장부에서 입력할 빈 행의 셀을 클릭해 주세요. 선택한 행부터 수량별로 한 행씩 기록합니다.';
+    window.dispatchEvent(new Event('aroundg:ledger-selection'));
+  }
+  function beginPurchaseRecord() {
+    const result=getPurchaseDestination();if(!result.ok)return result;
+    purchaseRecording=busy=true;paintSelection();$('workbook-import').disabled=true;$('workbook-export').disabled=true;
+    return result;
+  }
+  function endPurchaseRecord(committed=false) {
+    if(!purchaseRecording)return;
+    purchaseRecording=busy=false;if(committed)clearSelection();
+    $('workbook-import').disabled=false;$('workbook-export').disabled=!workbook||needsRefresh;paintSelection();
   }
   const selectionInput=()=>({sheetId:selection.sheetId,revision:workbook.revision,range:{row:selection.row,column:selection.column,endRow:selection.endRow,endColumn:selection.endColumn}});
   async function changeCells(method,message,input=selection&&selectionInput()) {
@@ -251,7 +284,7 @@
     const rows=[...new Set((Array.isArray(numbers)?numbers:[]).filter(Number.isSafeInteger).filter(n=>n>0))].sort((a,b)=>a-b);
     if(!rows.length)return {ok:false,code:'WORKBOOK_RECORD_LOCATION_MISSING'};
     if(busy)return {ok:false,code:'WORKBOOK_BUSY'};
-    if(selected)return {ok:false,code:'WORKBOOK_EDIT_PENDING'};
+    if(hasPendingEdit())return {ok:false,code:'WORKBOOK_EDIT_PENDING'};
     return run(async()=>{
       needsRefresh=true;status('기록한 행을 확인하기 위해 내부 장부를 새로 불러오고 있습니다.');
       const result=await window.aroundG.loadLedgerWorkbook();
@@ -273,7 +306,9 @@
       return {ok:true,rows,sheetId:sheet.id};
     });
   }
-  window.aroundGLedgerWorkbook={showRecordedRows};
+  window.aroundGLedgerWorkbook={showRecordedRows,getPurchaseDestination,beginPurchaseRecord,endPurchaseRecord};
+  $('workbook-cell-editor').addEventListener('input',announcePurchaseDestination);
+  $('workbook-cell-editor').addEventListener('change',announcePurchaseDestination);
   $('workbook-cell-options').addEventListener('change',()=>{$('workbook-cell-value').value=$('workbook-cell-options').value;});
   $('workbook-cell-cancel').addEventListener('click',clearSelection);
   $('workbook-cell-clear').addEventListener('click',()=>changeCells('clearLedgerWorkbookCells','선택한 셀의 내용을 지웠습니다. 셀 위치와 서식은 유지됩니다.'));

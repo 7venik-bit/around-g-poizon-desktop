@@ -5544,8 +5544,9 @@ async function syncPurchaseLedger(input = {}) {
   row.orderEvidence = proof.evidence;
   const validation = validatePurchaseLedgerRow(row);
   if (!validation.ok) return { ok: false, code: "REQUIRED_FIELDS_MISSING", message: `${validation.missing.join(", ")}을(를) 확인해 주세요.` };
+  if (!input.destination) return {ok:false,code:'PURCHASE_DESTINATION_REQUIRED'};
   try {
-    const result=await purchaseWorkbook().record(row);
+    const result=await purchaseWorkbook().record(row,input.destination);
     const saved={...row,imageStatus:result.imageStatus,id:row.duplicateKey,sheetRow:result.rowNumber,sheetRows:result.rowNumbers,unitPrices:result.unitPrices,syncStatus:result.duplicate?'duplicate':'synced',storage:'local',syncedAt:new Date().toISOString()};
     // The workbook receipt is authoritative even if the secondary history fails.
     let historySaved=true;

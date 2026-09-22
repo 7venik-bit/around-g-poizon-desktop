@@ -1,8 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import {runInNewContext} from 'node:vm';
 import { normalizePurchaseLedgerRow, validatePurchaseLedgerRow } from "../services/purchase-ledger.mjs";
 import { PURCHASE_LEDGER_BACKUP_COLUMNS, purchaseLedgerBackupRows, weeklyLedgerBackupDue } from "../services/purchase-ledger-backup.mjs";
+
+test('desktop passes the selected row separately from normalized purchase evidence and blocks missing destinations',async()=>{
+ const main=await readFile(new URL('../main.mjs',import.meta.url),'utf8'),calls=[];
+ const context={normalizePurchaseLedgerRow,validatePurchaseLedgerRow,musinsaLedgerCaptures:{resolve:()=>({ok:true,evidence:{version:1,orderLineId:'fixture-line'}})},
+  store:{upsertCommitted:async()=>{}},runWeeklyLedgerBackup:()=>{},purchaseWorkbook:()=>({record:async(row,destination)=>{calls.push({row,destination});return {ok:true,rowNumber:42,rowNumbers:[42],unitPrices:[10000],imageStatus:'formula'};}})};
+ runInNewContext(main.slice(main.indexOf('async function syncPurchaseLedger(input'),main.indexOf('const SELLER_EXPORT_POLL_INTERVAL_MS')),context);
+ const input={modelName:'fixture',articleNumber:'AB123',krSize:'105',quantity:1,purchaseDate:'2026-09-22',purchasePrice:10000,imageUrl:'https://images.example.test/a.jpg',orderNumber:'fixture-order'};
+ assert.equal((await context.syncPurchaseLedger(input)).code,'PURCHASE_DESTINATION_REQUIRED');assert.equal(calls.length,0);
+ const destination={sheetId:1,row:42,revision:'fixture-revision'};assert.equal((await context.syncPurchaseLedger({...input,destination})).ok,true);
+ assert.equal(calls.length,1);assert.equal(calls[0].destination,destination);assert.equal(calls[0].row.orderEvidence.orderLineId,'fixture-line');
+});
 
 test("purchase rows normalize manual and captured values consistently", () => {
   const row = normalizePurchaseLedgerRow({ orderNumber:" 20260903-1 ", articleNumber:"ji-0079", size:" KR 270 ", purchasePrice:"62,330원", purchaseDate:"2026-09-03 10:20", purchaseUrl:"https://www.musinsa.com/products/123?source=x", modelName:"테스트 상품" });
