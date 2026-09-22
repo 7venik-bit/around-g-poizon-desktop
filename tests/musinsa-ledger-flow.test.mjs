@@ -44,7 +44,7 @@ test('ledger displays the original login failure message and keeps fallback mess
   assert.equal(message({automaticLogin:{code:'LOGIN_ACTION_FAILED',message:reason}}),reason);
   assert.match(message({automaticLogin:{code:'LOGIN_PAGE_LOAD_FAILED'}}),/로그인 페이지를 열지 못/);
   assert.match(message({automaticLogin:{code:'LOGIN_ACTION_FAILED'}}),/입력이 중단/);
-  assert.match(message({automaticLogin:{code:'GOOGLE_ACCOUNT_READ_FAILED'}}),/Google Drive/);
+  assert.match(message({automaticLogin:{code:'LOCAL_ACCOUNT_READ_FAILED'}}),/내부 장부/);
 });
 
 test('detail evidence keeps each option, quantity and paid amount without duplicating image/title links',t=>{

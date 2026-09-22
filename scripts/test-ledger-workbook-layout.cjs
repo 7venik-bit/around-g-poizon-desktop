@@ -75,8 +75,35 @@ window.aroundG={loadLedgerWorkbook:async()=>({ok:true,workbook:window.ledgerFixt
     const selected=await win.webContents.executeJavaScript(`(()=>{document.querySelectorAll('#workbook-table tbody tr')[2].children[2].click();return {address:document.getElementById('workbook-cell-address').textContent,value:document.getElementById('workbook-cell-value').value,writes:window.ledgerFixtureWrites};})()`);
     if(selected.address!=='1-구매완료 · B3'||selected.value!==ledgerLayoutBook().sheets[0].displayValues[2][1]||selected.writes!==0)throw Error('Original link edit identity lost');
   }
+  const recordedBook=ledgerLayoutBook(30),recordedSheet=recordedBook.sheets[0];
+  for(const key of ['displayValues','formulas','rawValues','notes','backgrounds','fontColors','fontWeights']) {
+    const sample=recordedSheet[key][2];
+    recordedSheet[key]=recordedSheet[key].slice(0,2);
+    while(recordedSheet[key].length<600)recordedSheet[key].push(sample.map(()=>key==='rawValues'?{type:'text',value:''}:''));
+    for(let row=574;row<=576;row++)recordedSheet[key][row]=structuredClone(sample);
+  }
+  recordedSheet.rowCount=1002;
+  await win.webContents.executeJavaScript(`window.ledgerFixtureFreshBook=${JSON.stringify(recordedBook)};window.ledgerFixtureReads=0;
+window.aroundG.loadLedgerWorkbook=async()=>{window.ledgerFixtureReads++;return {ok:true,workbook:window.ledgerFixtureFreshBook};};
+document.getElementById('workbook-cell-cancel').click();`);
+  win.setContentSize(1426,1032);win.webContents.setZoomFactor(1);await new Promise(resolve=>setTimeout(resolve,200));
+  const location=await win.webContents.executeJavaScript('window.aroundGLedgerWorkbook.showRecordedRows([575,576,577])');
+  if(!location.ok)throw Error('Recorded row navigation failed');
+  await win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+  const position=await win.webContents.executeJavaScript(`(()=>{
+    const host=document.getElementById('workbook-table'),rows=[...host.querySelectorAll('.workbook-recorded-row')];
+    const h=host.getBoundingClientRect(),first=rows[0]?.getBoundingClientRect(),last=rows.at(-1)?.getBoundingClientRect();
+    return {rows:rows.map(row=>row.dataset.rowNumber),page:document.getElementById('workbook-page').textContent,
+      visible:first?.top>=h.top+26 && last?.bottom<=h.bottom && h.bottom<=innerHeight,
+      reads:window.ledgerFixtureReads,writes:window.ledgerFixtureWrites};
+  })()`);
+  if(position.rows.join(',')!=='575,576,577'||!position.page.includes('501–600')||!position.visible||position.reads!==1||position.writes!==0)
+    throw Error('Recorded rows not visible: '+JSON.stringify(position));
+  await writeFile(join(out,'ledger-record-location.png'),(await win.webContents.capturePage()).toPNG());
+  await writeFile(join(out,'ledger-record-location.json'),JSON.stringify(position,null,2));
   await writeFile(join(out,'ledger-results.json'),JSON.stringify(results,null,2));
   const failed=results.filter(result=>result.errors.length);if(failed.length)throw Error(JSON.stringify(failed));
   console.log('PASS: 18 production-CSP ledger layouts; readable original values including bold long codes and 30 columns, compact rows, contained scrolling, aligned checkbox and sticky headings.');
+  console.log('PASS: Freshly read purchase rows 575–577 are highlighted and visible on page 501–600 without another write.');
   await cleanup();app.exit(0);
 })().catch(async error=>{console.error(error.stack||error);await cleanup();app.exit(1);});

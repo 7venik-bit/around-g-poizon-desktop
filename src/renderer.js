@@ -2397,7 +2397,7 @@ function renderRecords(collection) {
 function renderLedgerRecords() {
   const host = $("#ledger-list");
   const rows = Array.isArray(state.ledger) ? state.ledger : [];
-  host.innerHTML = rows.length ? rows.map((row) => `<div class="record"><div class="ledger-record-product">${ledgerPhotoMarkup(row)}<div><strong>${text(row.modelName || row.name)}</strong><small>${text(row.brand)} · ${text(row.articleNumber)} · ${text(row.krSize || row.euSize || "-")}</small></div></div><div><span class="ledger-sync-state ${row.syncStatus === "failed" ? "failed" : ""}">${row.syncStatus === "synced" ? `시트 ${text((row.sheetRows || [row.sheetRow]).join(", "))}행 기록완료` : row.syncStatus === "duplicate" ? `기존 ${text((row.sheetRows || [row.sheetRow]).join(", "))}행 연결` : "기록실패"}${row.imageStatus==='link-only'?' · 사진 표시를 위한 Google 연결 업데이트 필요':''}</span>${row.syncStatus === "failed" ? ` <button data-ledger-retry="${text(row.id)}">다시 기록</button>` : ""}</div></div>`).join("") : `<div class="empty">구매장부 기록 내역이 없습니다.</div>`;
+  host.innerHTML = rows.length ? rows.map((row) => `<div class="record"><div class="ledger-record-product">${ledgerPhotoMarkup(row)}<div><strong>${text(row.modelName || row.name)}</strong><small>${text(row.brand)} · ${text(row.articleNumber)} · ${text(row.krSize || row.euSize || "-")}</small></div></div><div><span class="ledger-sync-state ${row.syncStatus === "failed" ? "failed" : ""}">${row.syncStatus === "synced" ? `시트 ${text((row.sheetRows || [row.sheetRow]).join(", "))}행 기록완료` : row.syncStatus === "duplicate" ? `기존 ${text((row.sheetRows || [row.sheetRow]).join(", "))}행 연결` : "기록실패"}${row.imageStatus==='link-only'?' · 사진 표시를 위한 사진 확인 필요':''}</span>${row.syncStatus === "failed" ? ` <button data-ledger-retry="${text(row.id)}">다시 기록</button>` : ["synced","duplicate"].includes(row.syncStatus) ? ` <button type="button" data-ledger-view="${text(row.id)}">기록 위치 보기</button>` : ""}</div></div>`).join("") : `<div class="empty">구매장부 기록 내역이 없습니다.</div>`;
 }
 
 function stockWatchTime(value) {
@@ -5085,6 +5085,32 @@ let capturedLedgerRows = [];
 let selectedLedgerProof = null;
 let selectedLedgerIndex = -1;
 let ledgerBusy = false;
+async function showLedgerRecordLocation(recordedRows) {
+  let result;
+  try {result=await window.aroundGLedgerWorkbook?.showRecordedRows(recordedRows);}
+  catch {result={ok:false};}
+  if(!result?.ok) {
+    const status=$("#ledger-status");
+    const message=result?.code==='WORKBOOK_EDIT_PENDING' ? '선택한 장부 셀의 편집을 저장하거나 취소한 뒤 기록 위치 보기를 눌러주세요.'
+      : result?.code==='WORKBOOK_BUSY' ? '장부를 불러오는 중입니다. 완료 후 기록 위치 보기를 눌러주세요.'
+      : '내부 장부 기록은 완료됐지만 표에서 위치를 확인하지 못했습니다. 기록 내역의 기록 위치 보기를 다시 눌러주세요.';
+    status.textContent+=' '+message;
+  }
+  return result;
+}
+$("#ledger-list")?.addEventListener('click',async event=>{
+  const button=event.target.closest('[data-ledger-view]');
+  if(!button || button.disabled)return;
+  const row=state.ledger.find(item=>item.id===button.dataset.ledgerView);
+  if(!row || !['synced','duplicate'].includes(row.syncStatus))return;
+  button.disabled=true;
+  $("#ledger-status").className='status';$("#ledger-status").textContent='기록된 내부 장부의 위치를 확인하고 있습니다.';
+  try {
+    const result=await showLedgerRecordLocation(row.sheetRows || [row.sheetRow]);
+    if(result?.ok){$("#ledger-status").className='status success';$("#ledger-status").textContent=`내부 장부 ${result.rows.join(', ')}행을 표시했습니다.`;}
+  }
+  finally {button.disabled=false;}
+});
 function setLedgerBusy(value) {
   ledgerBusy=value;
   for (const id of ["#ledger-open-musinsa","#ledger-capture"]) if ($(id)) $(id).disabled=value;
@@ -5113,7 +5139,7 @@ function updateLedgerImagePreview() {
   image.hidden=!url;image.removeAttribute('src');
   image.alt=`${$("#ledger-name").value || '선택한 상품'} 사진`;
   if(url)image.src=url;
-  $("#ledger-image-state").textContent=url?'Google 장부의 사진 칸에 함께 기록할 상품 사진입니다.':'상품 사진을 확인해 주세요. 주문상세를 다시 인식하거나 사진 주소를 입력할 수 있습니다.';
+  $("#ledger-image-state").textContent=url?'내부 장부의 사진 칸에 함께 기록할 상품 사진입니다.':'상품 사진을 확인해 주세요. 주문상세를 다시 인식하거나 사진 주소를 입력할 수 있습니다.';
 }
 $("#ledger-image")?.addEventListener('input',updateLedgerImagePreview);
 $("#ledger-image-preview")?.addEventListener('error',()=>{
@@ -5133,8 +5159,8 @@ function ledgerFlowMessage(result) {
   const code=result?.automaticLogin?.code || result?.code;
   if(result?.automaticLogin?.message) return result.automaticLogin.message;
   return ({
-    GOOGLE_ACCOUNT_CONNECTION_REQUIRED:"Google 구매장부 연결 정보가 필요합니다.",
-    GOOGLE_ACCOUNT_READ_FAILED:"Google Drive 계정정보를 읽지 못했습니다.",
+    GOOGLE_ACCOUNT_CONNECTION_REQUIRED:"내부 장부 계정정보를 확인해 주세요.",
+    LOCAL_ACCOUNT_READ_FAILED:"내부 장부 계정정보를 읽지 못했습니다.",
     MUSINSA_ACCOUNT_NOT_FOUND:"계정정보 탭에서 무신사 계정을 찾지 못했습니다.",
     LOGIN_VERIFICATION_REQUIRED:"무신사 보안 인증은 열린 창에서 직접 완료해 주세요.",
     LOGIN_MANUAL_REQUIRED:"자동 로그인을 완료하지 못했습니다. 열린 무신사 창에서 이어서 로그인해 주세요.",
@@ -5166,7 +5192,7 @@ $("#ledger-capture")?.addEventListener("click", async () => {
     if(!result?.ok){status.className="status error";status.textContent=ledgerFlowMessage(result);return;}
     capturedLedgerRows=result.rows || [];selectedLedgerIndex=capturedLedgerRows.length?0:-1;fillLedgerForm(capturedLedgerRows[0]);renderCapturedLedgerRows();
     const incomplete=capturedLedgerRows.some(row=>row.missing?.length);
-    status.className="status success";status.textContent=`주문 ${result.orderNumber || ""} · ${capturedLedgerRows.length}개 상품을 인식했습니다. ${incomplete?"확인 필요 항목을 주문상세와 비교해 채운 뒤":"기록할 상품과 금액을 확인한 뒤"} ③ Google 장부에 기록을 눌러주세요.`;
+    status.className="status success";status.textContent=`주문 ${result.orderNumber || ""} · ${capturedLedgerRows.length}개 상품을 인식했습니다. ${incomplete?"확인 필요 항목을 주문상세와 비교해 채운 뒤":"기록할 상품과 금액을 확인한 뒤"} ③ 내부 장부에 기록을 눌러주세요.`;
   } catch {status.className="status error";status.textContent="주문상세 인식을 완료하지 못했습니다. 해당 주문 화면에서 다시 시도해 주세요.";}
   finally {setLedgerBusy(false);}
 });
@@ -5180,7 +5206,7 @@ $("#purchase-ledger-form")?.addEventListener("submit", async event => {
   event.preventDefault();if(ledgerBusy)return;
   const status=$("#ledger-status");
   if(!selectedLedgerProof){status.className="status error";status.textContent="주문상세 인식을 먼저 완료해 주세요.";return;}
-  status.className="status";status.textContent="확인한 주문 상품을 Google 장부에 기록하고 있습니다.";setLedgerBusy(true);
+  status.className="status";status.textContent="확인한 주문 상품을 내부 장부에 기록하고 있습니다.";setLedgerBusy(true);
   try {
     const result=await window.aroundG.syncPurchaseLedger(ledgerFormRow());
     if(!result?.ok){status.className="status error";status.textContent=ledgerFlowMessage(result);return;}
@@ -5188,13 +5214,14 @@ $("#purchase-ledger-form")?.addEventListener("submit", async event => {
     selectedLedgerProof=null;renderCapturedLedgerRows();status.className="status success";
     const recordedRows=Array.isArray(result.rowNumbers)?result.rowNumbers:[result.rowNumber];
     const rowLabel=recordedRows.join(', ');
-    status.textContent=result.duplicate?`Google 장부의 기존 ${rowLabel}행을 확인했습니다.`:`Google 장부 ${rowLabel}행에 기록했습니다.`;
+    status.textContent=result.duplicate?`내부 장부의 기존 ${rowLabel}행을 확인했습니다.`:`내부 장부 ${rowLabel}행에 기록했습니다.`;
     if(recordedRows.length>1)status.textContent+=` 수량 ${recordedRows.length}개를 각각 한 행으로 나눴습니다.`;
     if(result.imageStatus==='formula')status.textContent+=' 상품 사진도 연결했습니다.';
-    else if(result.imageStatus==='link-only')status.textContent+=' 사진 주소만 저장되었습니다. 장부에 사진을 표시하려면 Google 장부 연결 스크립트 업데이트가 필요합니다.';
+    else if(result.imageStatus==='link-only')status.textContent+=' 사진 주소만 저장되었습니다. 기존 기록의 사진 주소를 확인해 주세요.';
     else if(result.duplicate)status.textContent+=' 기존 행의 사진은 유지했습니다.';
     await refresh();
-  } catch {status.className="status error";status.textContent="Google 장부 기록 결과를 확인하지 못했습니다. 기록 내역을 확인한 뒤 다시 시도해 주세요.";}
+    await showLedgerRecordLocation(recordedRows);
+  } catch {status.className="status error";status.textContent="내부 장부 기록 결과를 확인하지 못했습니다. 기록 내역을 확인한 뒤 다시 시도해 주세요.";}
   finally {setLedgerBusy(false);}
 });
 
@@ -5358,14 +5385,13 @@ window.aroundG.onDomesticLoginChanged?.((event) => {
 $("#settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    const saved = await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value, naverLoginId:$("#naver-login-id").value, naverPassword:$("#naver-password").value, nikeLoginId:$("#nike-login-id").value, nikePassword:$("#nike-password").value, adidasLoginId:$("#adidas-login-id").value, adidasPassword:$("#adidas-password").value, ledgerWebhookUrl:$("#ledger-webhook-url").value, ledgerSecret:$("#ledger-secret").value });
+    const saved = await window.aroundG.saveConfig({ appKey:$("#app-key").value, appSecret:$("#app-secret").value, accessToken:$("#access-token").value, apiBaseUrl:$("#api-base-url").value, poizonLoginId:$("#poizon-login-id").value, poizonPassword:$("#poizon-password").value, naverLoginId:$("#naver-login-id").value, naverPassword:$("#naver-password").value, nikeLoginId:$("#nike-login-id").value, nikePassword:$("#nike-password").value, adidasLoginId:$("#adidas-login-id").value, adidasPassword:$("#adidas-password").value });
     $("#app-secret").value = "";
     $("#access-token").value = "";
     $("#poizon-password").value = "";
     $("#naver-password").value = "";
     $("#nike-password").value = "";
     $("#adidas-password").value = "";
-    $("#ledger-secret").value = "";
     $("#poizon-login-id").value = saved.poizonLoginId || "";
     $("#poizon-password").placeholder = saved.hasPoizonPassword ? "암호화 저장됨 · 브랜드 검색 시 자동 입력" : "자동 로그인에 필요";
     $("#naver-login-id").value = saved.naverLoginId || "";
@@ -5375,8 +5401,6 @@ $("#settings-form").addEventListener("submit", async (event) => {
     $("#nike-password").placeholder = saved.hasNikePassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
     $("#adidas-login-id").value = saved.adidasLoginId || "";
     $("#adidas-password").placeholder = saved.hasAdidasPassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
-    $("#ledger-webhook-url").value = saved.ledgerWebhookUrl || "";
-    $("#ledger-secret").placeholder = saved.hasLedgerSecret ? "Windows 암호화 저장됨" : "Apps Script 보안키 입력";
     $("#settings-status").className = saved.naverCredentialCode ? "status" : "status success";
     $("#settings-status").textContent = saved.naverCredentialCode
       ? `설정을 저장했습니다. ${saved.naverCredentialMessage}`
@@ -5690,8 +5714,6 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   $("#nike-password").placeholder = config.hasNikePassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
   $("#adidas-login-id").value = config.adidasLoginId || "";
   $("#adidas-password").placeholder = config.hasAdidasPassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
-  $("#ledger-webhook-url").value = config.ledgerWebhookUrl || "";
-  $("#ledger-secret").placeholder = config.hasLedgerSecret ? "Windows 암호화 저장됨" : "Apps Script 보안키 입력";
   await renderDomesticLoginStatuses();
   await refresh();
   await pruneCategorySearchHistory();

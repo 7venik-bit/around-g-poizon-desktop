@@ -1,4 +1,4 @@
-import { saveLedgerWorkbook, readLedgerWorkbook, exportLedgerWorkbook, workbookView } from "./services/ledger-workbook.mjs";
+import { createLocalLedger } from "./services/local-ledger.mjs";
 import { readReviewWorkbook, checkReviewWorkbookRevision } from "./services/poizon-review-workbook.mjs";
 import { assertPoizonPageReadyForCorrection, isPoizonSkuScopeDeferredRow, selectPoizonPageCorrectionProducts } from "./services/live-poizon-crosscheck.mjs";
 import { syncPoizonPageCheckpoint } from "./services/poizon-page-checkpoint.mjs";
@@ -5336,7 +5336,7 @@ function publicConfig() {
   };
 }
 
-function musinsaCredentialsFromGoogleWorkbook(workbook) {
+function musinsaCredentialsFromLocalWorkbook(workbook) {
   const sheet = workbook?.sheets?.find((item) => String(item?.name || "").trim() === "계정정보");
   const rows = Array.isArray(sheet?.displayValues) ? sheet.displayValues : [];
   for (const row of rows) {
@@ -5352,23 +5352,23 @@ function musinsaCredentialsFromGoogleWorkbook(workbook) {
   return null;
 }
 
-async function importMusinsaCredentialsFromGoogleDrive() {
-  const services = shoppingAccountServices();
-  if (!services.accounts.credentials("musinsa").code) return { ok: true, reused: true };
-  const settings = store.snapshot(["settings"]).settings;
-  const endpoint = String(settings.ledgerWebhookUrl || "").trim();
-  const secret = decrypted(settings.ledgerSecretEncrypted);
-  if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(endpoint) || !secret) {
-    return { ok: false, code: "GOOGLE_ACCOUNT_CONNECTION_REQUIRED" };
-  }
-  const response = await fetch(endpoint, { method: "POST", redirect: "follow", headers: { "content-type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ secret, action: "workbook.read" }), signal: AbortSignal.timeout(120000) });
-  if (!response.ok) return { ok: false, code: "GOOGLE_ACCOUNT_READ_FAILED" };
-  const payload = await response.json();
-  const credentials = payload?.ok ? musinsaCredentialsFromGoogleWorkbook(payload.workbook) : null;
-  if (!credentials) return { ok: false, code: "MUSINSA_ACCOUNT_NOT_FOUND" };
+let localLedger;
+function purchaseWorkbook() {
+  if (!localLedger) localLedger=createLocalLedger({
+    path:join(app.getPath('userData'),'ledger-local-workbook.encrypted'),
+    sourcePath:join(app.getPath('userData'),'ledger-workbook.encrypted'),
+    encrypt:value=>{if(!safeStorage.isEncryptionAvailable())throw Error('WINDOWS_ENCRYPTION_UNAVAILABLE');return safeStorage.encryptString(value);},
+    decrypt:bytes=>safeStorage.decryptString(bytes),
+  });
+  return localLedger;
+}
+async function importMusinsaCredentialsFromLocalLedger() {
+  const services=shoppingAccountServices();
+  if(!services.accounts.credentials('musinsa').code)return {ok:true,reused:true};
+  const credentials=musinsaCredentialsFromLocalWorkbook(await purchaseWorkbook().load());
+  if(!credentials)return {ok:false,code:'MUSINSA_ACCOUNT_NOT_FOUND'};
   await services.accounts.save({ id: "musinsa", method: "password", ...credentials });
-  return { ok: true, imported: true };
+  return {ok:true,imported:true};
 }
 
 async function waitForMusinsaAutomaticLogin(timeoutMs = 45000) {
@@ -5424,9 +5424,9 @@ async function openMusinsaLedgerWindowAsync() {
   let automaticLogin = { ok: true, reused: true };
   if (!await hasUsableDomesticLoginSession("musinsa")) {
     try {
-      const imported = await importMusinsaCredentialsFromGoogleDrive();
+      const imported = await importMusinsaCredentialsFromLocalLedger();
       automaticLogin = imported.ok ? { ...await waitForMusinsaAutomaticLogin(), imported: imported.imported } : imported;
-    } catch { automaticLogin = { ok: false, code: "GOOGLE_ACCOUNT_READ_FAILED" }; }
+    } catch { automaticLogin = { ok: false, code: "LOCAL_ACCOUNT_READ_FAILED" }; }
     if (!automaticLogin.ok) return { ok: false, automaticLogin };
   }
   if (!musinsaLedgerWindow || musinsaLedgerWindow.isDestroyed()) {
@@ -5464,9 +5464,9 @@ async function openMusinsaLedgerWindowAsync() {
   // expired; make one login attempt, then stop on any verification/error.
   if (result.code === "MUSINSA_LOGIN_REQUIRED" && automaticLogin.reused) {
     try {
-      const imported = await importMusinsaCredentialsFromGoogleDrive();
+      const imported = await importMusinsaCredentialsFromLocalLedger();
       automaticLogin = imported.ok ? { ...await waitForMusinsaAutomaticLogin(), imported: imported.imported } : imported;
-    } catch { automaticLogin = {ok:false,code:"GOOGLE_ACCOUNT_READ_FAILED"}; }
+    } catch { automaticLogin = {ok:false,code:"LOCAL_ACCOUNT_READ_FAILED"}; }
     if (!automaticLogin.ok) return {ok:false,automaticLogin};
     if (win.isDestroyed()) return musinsaLedgerFailure("ORDER_DETAIL_REQUIRED");
     await win.loadURL("https://www.musinsa.com/mypage").catch(() => {});
@@ -5543,24 +5543,16 @@ async function syncPurchaseLedger(input = {}) {
   row.orderEvidence = proof.evidence;
   const validation = validatePurchaseLedgerRow(row);
   if (!validation.ok) return { ok: false, code: "REQUIRED_FIELDS_MISSING", message: `${validation.missing.join(", ")}을(를) 확인해 주세요.` };
-  const settings = store.snapshot(["settings"]).settings;
-  const endpoint = String(settings.ledgerWebhookUrl || "").trim();
-  const secret = decrypted(settings.ledgerSecretEncrypted);
-  if (!/^https:\/\/script\.google\.com\//i.test(endpoint) || !secret) return { ok: false, code: "LEDGER_NOT_CONNECTED", message: "Google 구매장부 연결 주소와 보안키를 먼저 저장해 주세요." };
   try {
-    const response = await fetch(endpoint, { method: "POST", redirect: "follow", headers: { "content-type": "text/plain;charset=utf-8" }, body: JSON.stringify({ secret, row }), signal: AbortSignal.timeout(20_000) });
-    const result = await response.json();
-    if (!result.ok) throw new Error(result.code || result.message || `HTTP_${response.status}`);
-    const imageStatus=result.imageStatus || (result.duplicate ? "existing" : "link-only");
-    const sheetRows = Array.isArray(result.rowNumbers) ? result.rowNumbers : [result.rowNumber];
-    const unitPrices = Array.isArray(result.unitPrices) ? result.unitPrices : [row.purchasePrice];
-    const saved = await store.upsert("ledger", { ...row, imageStatus, id: row.duplicateKey, sheetRow: result.rowNumber, sheetRows, unitPrices, syncStatus: result.duplicate ? "duplicate" : "synced", syncedAt: new Date().toISOString() });
+    const result=await purchaseWorkbook().record(row);
+    const saved={...row,imageStatus:result.imageStatus,id:row.duplicateKey,sheetRow:result.rowNumber,sheetRows:result.rowNumbers,unitPrices:result.unitPrices,syncStatus:result.duplicate?'duplicate':'synced',storage:'local',syncedAt:new Date().toISOString()};
+    // The workbook receipt is authoritative even if the secondary history fails.
+    let historySaved=true;
+    try {await store.upsertCommitted('ledger',saved);}catch {historySaved=false;}
     void runWeeklyLedgerBackup();
-    return { ok: true, duplicate: Boolean(result.duplicate), imageStatus, rowNumber: result.rowNumber, rowNumbers: sheetRows, unitPrices, saved };
-  } catch (error) {
-    await store.upsert("ledger", { ...row, id: row.duplicateKey, syncStatus: "failed", syncError: error instanceof Error ? error.message : String(error) });
-    void addProgramNotification({ type: "error", title: "구매장부 기록 실패", message: `${row.modelName} · 다시 기록해 주세요.`, key: `ledger:failed:${row.duplicateKey}:${Date.now()}`, windows: true });
-    return { ok: false, code: "LEDGER_SYNC_FAILED", message: error instanceof Error ? error.message : String(error) };
+    return {...result,saved,historySaved};
+  } catch(error) {
+    return {ok:false,code:String(error.message||error)};
   }
 }
 
@@ -12774,54 +12766,21 @@ app.whenReady().then(async () => {
   ipcMain.handle("ledger:open-musinsa", () => openMusinsaLedgerWindow());
   ipcMain.handle("ledger:capture-musinsa", () => captureMusinsaLedgerOrder());
   ipcMain.handle("ledger:sync", (_event, input) => syncPurchaseLedger(input));
-  const ledgerWorkbookPath = join(app.getPath("userData"), "ledger-workbook.encrypted");
-  const ledgerPendingPath = ledgerWorkbookPath + ".pending";
-  const loadOriginalWorkbook = () => readLedgerWorkbook(ledgerWorkbookPath, bytes => safeStorage.decryptString(bytes));
-  const workbookNeedsRefresh = async () => { try { await stat(ledgerPendingPath); return true; } catch(error) {if (error.code === "ENOENT") return false; throw error;} };
-  let workbookOperation = false;
-  ipcMain.handle("ledger:workbook-load", async () => {
-    try { return { ok: true, needsRefresh:await workbookNeedsRefresh(), workbook: workbookView(await loadOriginalWorkbook()) }; }
-    catch (error) { return { ok: false, code: error.code === "ENOENT" ? "WORKBOOK_NOT_IMPORTED" : "WORKBOOK_READ_FAILED" }; }
-  });
-  async function requestOriginalWorkbook(action, edit) {
-    if (workbookOperation) return {ok:false,code:"WORKBOOK_BUSY"};
-    workbookOperation = true;
+  const localWorkbookResult=async operation=>{
+    try {return {ok:true,workbook:await operation()};}
+    catch(error){return {ok:false,code:error.code==='ENOENT'?'WORKBOOK_NOT_IMPORTED':String(error.message||error)};}
+  };
+  ipcMain.handle('ledger:workbook-load',()=>localWorkbookResult(()=>purchaseWorkbook().view()));
+  // Keep the old IPC name for upgrade compatibility; it is now strictly local.
+  ipcMain.handle('ledger:workbook-import',()=>localWorkbookResult(()=>purchaseWorkbook().view()));
+  ipcMain.handle('ledger:workbook-edit',(_event,edit)=>localWorkbookResult(()=>purchaseWorkbook().edit(edit)));
+  ipcMain.handle('ledger:workbook-export',async()=>{
     try {
-      const settings = store.snapshot(["settings"]).settings;
-      const endpoint = String(settings.ledgerWebhookUrl || "").trim();
-      const secret = decrypted(settings.ledgerSecretEncrypted);
-      if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(endpoint) || !secret) throw new Error("LEDGER_NOT_CONNECTED");
-      if (!safeStorage.isEncryptionAvailable()) throw new Error("WINDOWS_ENCRYPTION_UNAVAILABLE");
-      const handshake = await fetch(endpoint, {signal:AbortSignal.timeout(20000)});
-      const capability = action === "workbook.edit" ? "workbook.edit.v1" : "workbook.read.v1";
-      if (!handshake.ok || !(await handshake.json()).capabilities?.includes(capability)) throw new Error("WORKBOOK_BRIDGE_UPDATE_REQUIRED");
-      if (action === "workbook.edit") {
-        if (await workbookNeedsRefresh()) throw new Error("WORKBOOK_REFRESH_REQUIRED");
-        // A lost response may mean the remote write succeeded. Block stale exports
-        // across restarts until a fresh read completes; never auto-retry a write.
-        await writeFile(ledgerPendingPath, "refresh-required", {mode:0o600});
-      }
-      const response = await fetch(endpoint, { method:"POST", redirect:"follow", headers:{"content-type":"text/plain;charset=utf-8"}, body:JSON.stringify({secret, action, edit}), signal:AbortSignal.timeout(120000) });
-      if (!response.ok) throw new Error("WORKBOOK_HTTP_FAILED");
-      const result = await response.json();
-      if (!result.ok || !result.workbook) throw new Error(result.code || "WORKBOOK_BRIDGE_UPDATE_REQUIRED");
-      await saveLedgerWorkbook(ledgerWorkbookPath, result.workbook, value => safeStorage.encryptString(value));
-      const verified = workbookView(await loadOriginalWorkbook());
-      await unlink(ledgerPendingPath).catch(error => {if (error.code !== "ENOENT") throw error;});
-      return {ok:true, workbook:verified};
-    } catch (error) { return {ok:false, code:String(error.message || error)}; }
-    finally {workbookOperation = false;}
-  }
-  ipcMain.handle("ledger:workbook-import", () => requestOriginalWorkbook("workbook.read"));
-  ipcMain.handle("ledger:workbook-edit", (_event, edit) => requestOriginalWorkbook("workbook.edit", edit));
-  ipcMain.handle("ledger:workbook-export", async () => {
-    try {
-      if (workbookOperation || await workbookNeedsRefresh()) throw new Error("WORKBOOK_REFRESH_REQUIRED");
-      const original = await loadOriginalWorkbook();
-      const result = await dialog.showSaveDialog({title:"원본 장부 엑셀 내보내기", defaultPath:"어라운드지_포이즌시트.xlsx", filters:[{name:"Excel",extensions:["xlsx"]}]});
-      if (result.canceled || !result.filePath) return {ok:false,canceled:true};
-      return await exportLedgerWorkbook(result.filePath, original);
-    } catch (error) { return {ok:false,code:String(error.message || error)}; }
+      await purchaseWorkbook().load();
+      const result=await dialog.showSaveDialog({title:'내부 장부 Excel 내보내기',defaultPath:'어라운드지_내부장부.xlsx',filters:[{name:'Excel',extensions:['xlsx']}]});
+      if(result.canceled||!result.filePath)return {ok:false,canceled:true};
+      return await purchaseWorkbook().export(result.filePath);
+    }catch(error){return {ok:false,code:String(error.message||error)};}
   });
   ipcMain.handle("explorer:meta", async () => {
     const settings = store.snapshot(["settings"]).settings;

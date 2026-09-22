@@ -25,6 +25,8 @@
 #workbook-table .workbook-data-header th{top:26px;z-index:3}
 #workbook-table .workbook-data-header .workbook-cell-text{display:block;white-space:pre-line;overflow-wrap:anywhere}
 #workbook-table td:focus{outline:2px solid #287de0;outline-offset:-2px}
+#workbook-table .workbook-recorded-row td{box-shadow:inset 0 2px #287de0,inset 0 -2px #287de0}
+#workbook-table .workbook-recorded-row th{background:#287de0;color:#fff;font-weight:700}
 #workbook-cell-original{white-space:pre-wrap;overflow-wrap:anywhere}
 #workbook-cell-value{width:100%;max-width:100%;min-height:64px;resize:vertical}
 @media(max-width:1500px){

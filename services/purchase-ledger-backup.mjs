@@ -5,7 +5,7 @@ export const PURCHASE_LEDGER_BACKUP_COLUMNS = [
   ["품번", "articleNumber"], ["사이즈", "size"], ["수량", "quantity"],
   ["구매가격", "purchasePrice"], ["구매일", "purchaseDate"], ["주문번호", "orderNumber"],
   ["상태", "status"], ["구매 링크", "purchaseUrl"], ["이미지 URL", "imageUrl"],
-  ["Google 시트 행", "sheetRow"], ["Google 시트 기록상태", "syncStatus"], ["마지막 기록일시", "syncedAt"],
+  ["내부 장부 행", "sheetRow"], ["내부 장부 기록상태", "syncStatus"], ["마지막 기록일시", "syncedAt"],
 ];
 
 export function weeklyLedgerBackupDue(lastBackupAt, now = new Date()) {

@@ -2,20 +2,21 @@
   const $ = id => document.getElementById(id);
   if (!$('original-ledger-workbook')) return;
   let workbook, active, selected, page = 0, busy = false, needsRefresh = false;
+  let recordedLocation;
   const messages = {
     CELL_CONFLICT:'원본이 다른 곳에서 변경됐습니다. 다시 가져온 뒤 수정해 주세요.',
     CELL_PROTECTED:'보호된 셀이라 편집할 수 없습니다.',
     CELL_MERGED:'병합된 셀의 왼쪽 위 셀을 선택해 주세요.',
     CELL_NUMBER_INVALID:'금액·수량은 통화 기호와 쉼표 없이 숫자만 입력해 주세요. 최대 15자리입니다.',
     CELL_DATE_INVALID:'날짜를 YYYY-MM-DD 형식으로 확인해 주세요.',
-    CELL_VALIDATION_REVIEW:'이 셀의 입력 규칙은 프로그램에서 확인할 수 없습니다. Google 시트에서 편집해 주세요.',
+    CELL_VALIDATION_REVIEW:'이 셀의 입력 규칙은 프로그램에서 확인할 수 없습니다. 지원되지 않는 입력 규칙입니다. 원본 값은 유지됩니다.',
     CELL_VALIDATION_FAILED:'시트에 지정된 허용 값과 맞지 않습니다.',
-    CELL_SAVED_REFRESH_REQUIRED:'Google 저장 후 전체 장부를 다시 가져오지 못했습니다. 다시 가져와 저장 내용을 확인해 주세요.',
+    CELL_SAVED_REFRESH_REQUIRED:'저장된 내부 장부를 다시 확인하지 못했습니다. 다시 가져와 저장 내용을 확인해 주세요.',
     CELL_WRITE_VERIFY_FAILED:'저장 결과가 입력값과 다릅니다. 다시 가져와 확인해 주세요.',
-    WORKBOOK_REFRESH_REQUIRED:'저장 결과 확인이 필요합니다. Google 장부를 다시 가져온 뒤 편집·내보내기를 이용해 주세요.',
+    WORKBOOK_REFRESH_REQUIRED:'저장 결과 확인이 필요합니다. 내부 장부를 다시 가져온 뒤 편집·내보내기를 이용해 주세요.',
     WORKBOOK_NOT_IMPORTED:'아직 가져온 장부가 없습니다.',
-    WORKBOOK_BRIDGE_UPDATE_REQUIRED:'Google 장부 연결 스크립트 업데이트가 필요합니다. 원본은 변경되지 않았습니다.',
-    LEDGER_NOT_CONNECTED:'연동관리에서 Google 구매장부 연결을 먼저 확인해 주세요.',
+    WORKBOOK_BRIDGE_UPDATE_REQUIRED:'내부 장부 연결 스크립트 업데이트가 필요합니다. 원본은 변경되지 않았습니다.',
+    LEDGER_NOT_CONNECTED:'연동관리에서 내부 장부 파일을 확인해 주세요.',
     WORKBOOK_CHANGED_DURING_READ:'가져오는 동안 원본이 변경됐습니다. 다시 가져와 주세요.',
     WORKBOOK_EXPORT_CHECKSUM_FAILED:'엑셀 데이터 검증 실패: 기존 장부를 유지합니다.',
     WORKBOOK_READ_FAILED:'저장된 원본 장부를 읽지 못했습니다. 기존 파일은 유지됩니다.'
@@ -82,7 +83,9 @@
     const sheet = visible().find(s => s.id === active);
     const host = $('workbook-table'); host.replaceChildren();
     if (!sheet) return;
-    const rows = sheet.displayValues, total = Math.max(rows.length,sheet.rowCount || 0), start = page * 100, end = Math.min(total,start+100);
+    const rows = sheet.displayValues, total = Math.max(rows.length,sheet.rowCount || 0);
+    page=Math.min(page,Math.max(0,Math.ceil(total/100)-1));
+    const start = page * 100, end = Math.min(total,start+100);
     const table = document.createElement('table');
     table.setAttribute('aria-label',sheet.name);
     const width=Math.max(sheet.columnCount || 0,...rows.map(row=>row.length));
@@ -96,13 +99,16 @@
     const body=document.createElement('tbody');
     for(let r=start;r<end;r++) {
       const tr=document.createElement('tr'), label=document.createElement('th');label.scope='row';label.textContent=String(r+1);tr.append(label);
+      tr.dataset.rowNumber=String(r+1);
       if(r===layout.header)tr.className='workbook-data-header';
+      if(recordedLocation?.sheetId===sheet.id && recordedLocation.rows.includes(r+1))tr.classList.add('workbook-recorded-row');
       for(let c=0;c<width;c++) {
         const cell=document.createElement('td'),content=document.createElement('span');
         content.className='workbook-cell-text';content.textContent=rows[r]?.[c] || '';cell.append(content);
         cell.dataset.columnKind=layout.columns[c].kind;
-        if(layout.columns[c].kind==='image' && r>layout.header) {
-          const url=photoUrl(rows[r]?.[c],sheet.formulas?.[r]?.[c]);
+        const embedded=sheet.images?.find(image=>image.row===r+1&&image.column===c+1);
+        if(embedded || layout.columns[c].kind==='image' && r>layout.header) {
+          const url=/^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/.test(embedded?.url || '')?embedded.url:photoUrl(rows[r]?.[c],sheet.formulas?.[r]?.[c]);
           if(url) {
             const image=document.createElement('img');image.className='workbook-product-photo';image.alt='상품 사진';image.loading='lazy';image.referrerPolicy='no-referrer';image.src=url;
             content.hidden=true;cell.append(image);
@@ -129,7 +135,7 @@
   }
   function selectCell(sheet,r,c) {
     if(busy || needsRefresh)return;
-    if (!Array.isArray(sheet.rawValues)) {status('편집용 데이터를 포함해 Google 장부를 다시 가져와 주세요.');return;}
+    if (!Array.isArray(sheet.rawValues)) {status('편집용 데이터를 포함해 내부 장부를 다시 가져와 주세요.');return;}
     selected={sheetId:sheet.id,row:r+1,column:c+1,revision:workbook.revision,expected:sheet.rawValues[r]?.[c] || {type:'text',value:''}};
     $('workbook-cell-address').textContent=`${sheet.name} · ${columnName(c)}${r+1}`;
     $('workbook-cell-original').textContent=`현재 내용: ${sheet.displayValues[r]?.[c] || '(빈 셀)'}`;
@@ -154,20 +160,48 @@
   }
   function accept(book) {
     workbook=book;needsRefresh=false;selected=undefined;$('workbook-cell-editor').hidden=true;tabs();render();$('workbook-export').disabled=false;
-    status(`${book.title} · ${book.sheets.length}개 시트 · 가져온 시각 ${book.capturedAt} · 원본 표시값 유지 (금액·수식 정확성 검증과 별도)`);
+    status(`${book.title} · ${book.sheets.length}개 시트 · 수식 ${book.calculation?.formulaCount ?? 0}개 · PC 내부 저장 · Google 연동 없음`);
   }
   async function run(fn) {
-    if(busy)return;busy=true;$('workbook-cell-save').disabled=true;$('workbook-import').disabled=true;$('workbook-export').disabled=true;
-    try { await fn(); } catch {status('장부 처리에 실패했습니다. 다시 시도해 주세요.');}
+    if(busy)return {ok:false,code:'WORKBOOK_BUSY'};busy=true;$('workbook-cell-save').disabled=true;$('workbook-import').disabled=true;$('workbook-export').disabled=true;
+    try { return await fn(); } catch {status('장부 처리에 실패했습니다. 다시 시도해 주세요.');return {ok:false,code:'WORKBOOK_READ_FAILED'};}
     finally {busy=false;$('workbook-import').disabled=false;$('workbook-export').disabled=!workbook || needsRefresh;$('workbook-cell-save').disabled=needsRefresh;}
   }
+  // Reload the committed local workbook before jumping; never resubmit a purchase.
+  async function showRecordedRows(numbers) {
+    const rows=[...new Set((Array.isArray(numbers)?numbers:[]).filter(Number.isSafeInteger).filter(n=>n>0))].sort((a,b)=>a-b);
+    if(!rows.length)return {ok:false,code:'WORKBOOK_RECORD_LOCATION_MISSING'};
+    if(busy)return {ok:false,code:'WORKBOOK_BUSY'};
+    if(selected)return {ok:false,code:'WORKBOOK_EDIT_PENDING'};
+    return run(async()=>{
+      needsRefresh=true;status('기록한 행을 확인하기 위해 내부 장부를 새로 불러오고 있습니다.');
+      const result=await window.aroundG.loadLedgerWorkbook();
+      if(!result?.ok){status('내부 장부를 새로 불러오지 못했습니다. 기록 내역의 기록 위치 보기를 다시 눌러주세요.');return {ok:false,code:result?.code || 'WORKBOOK_READ_FAILED'};}
+      const sheet=result.workbook.sheets.find(s=>s.name==='1-구매완료');
+      const total=sheet && Math.max(sheet.displayValues.length,sheet.rowCount || 0);
+      if(!sheet || rows.some(row=>row>total)) {
+        accept(result.workbook);status('기록 위치가 현재 장부 범위를 벗어납니다. 내부 장부의 행을 확인해 주세요.');
+        return {ok:false,code:'WORKBOOK_RECORD_LOCATION_MISSING'};
+      }
+      active=sheet.id;page=Math.floor((rows[0]-1)/100);recordedLocation={sheetId:sheet.id,rows};
+      if(sheet.hidden)$('workbook-hidden').checked=true;
+      accept(result.workbook);
+      status(`${sheet.name} · 기록 위치 ${rows.join(', ')}행 · 내부 장부 새로 불러오기 완료`);
+      $('original-ledger-workbook').scrollIntoView({block:'start'});
+      const host=$('workbook-table'),target=host.querySelector(`[data-row-number="${rows[0]}"]`);
+      host.scrollLeft=0;
+      if(target)host.scrollTop+=target.getBoundingClientRect().top-host.getBoundingClientRect().top-(host.querySelector('thead')?.offsetHeight || 26)-12;
+      return {ok:true,rows,sheetId:sheet.id};
+    });
+  }
+  window.aroundGLedgerWorkbook={showRecordedRows};
   $('workbook-cell-options').addEventListener('change',()=>{$('workbook-cell-value').value=$('workbook-cell-options').value;});
   $('workbook-cell-cancel').addEventListener('click',()=>{selected=undefined;$('workbook-cell-editor').hidden=true;});
   $('workbook-cell-editor').addEventListener('submit',event=>{
     event.preventDefault();if(!selected || busy || needsRefresh)return;
     const edit={...selected,next:{type:$('workbook-cell-type').value,value:$('workbook-cell-value').value}};
     run(async()=>{
-      needsRefresh=true;status('선택한 셀을 저장하고 Google 장부·엑셀을 다시 확인하는 중입니다.');
+      needsRefresh=true;status('선택한 셀을 저장하고 내부 수식과 Excel 값을 다시 계산하는 중입니다.');
       const result=await window.aroundG.editLedgerWorkbookCell(edit);
       if(result.ok){accept(result.workbook);status('선택한 셀 저장 및 다시 읽기 완료. 엑셀 내보내기에 반영됐습니다.');}
       else {status(messages[result.code] || '저장 결과를 확인하지 못했습니다. 다시 가져와 주세요.');}
@@ -175,7 +209,7 @@
   });
   $('workbook-import').addEventListener('click',()=>run(async()=>{
     status('전체 시트와 엑셀을 가져오는 중입니다.');
-    const result=await window.aroundG.importLedgerWorkbook();
+    const result=await window.aroundG.loadLedgerWorkbook();
     if(result.ok)accept(result.workbook);else status(messages[result.code] || `가져오기 실패: ${result.code || '알 수 없는 오류'}`);
   }));
   $('workbook-export').addEventListener('click',()=>run(async()=>{

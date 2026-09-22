@@ -30,7 +30,7 @@ test("ledger Excel rows keep visible purchase fields and newest purchases first"
   assert.equal(rows[0].size, "270");
   assert.equal(rows[1].size, "42");
   assert.equal(rows[1].quantity, 1);
-  assert.ok(PURCHASE_LEDGER_BACKUP_COLUMNS.some(([label, key]) => label === "Google 시트 기록상태" && key === "syncStatus"));
+  assert.ok(PURCHASE_LEDGER_BACKUP_COLUMNS.some(([label, key]) => label === "내부 장부 기록상태" && key === "syncStatus"));
 });
 
 test("desktop writes the weekly ledger workbook into OneDrive", async () => {
@@ -94,19 +94,19 @@ test("Musinsa ledger opens the current My page and explains login or detail sele
   assert.match(html, /로그인 상태는 다음 실행에도 유지/);
 });
 
-test("Musinsa ledger imports Google account credentials once and persists its login session", async () => {
+test("Musinsa ledger imports local account credentials once and persists its login session", async () => {
   const [main, html, renderer] = await Promise.all([
     readFile(new URL("../main.mjs", import.meta.url), "utf8"),
     readFile(new URL("../src/index.html", import.meta.url), "utf8"),
     readFile(new URL("../src/renderer.js", import.meta.url), "utf8"),
   ]);
-  assert.match(main, /function musinsaCredentialsFromGoogleWorkbook\(workbook\)/);
+  assert.match(main, /function musinsaCredentialsFromLocalWorkbook\(workbook\)/);
   assert.match(main, /String\(item\?\.name \|\| ""\)\.trim\(\) === "계정정보"/);
   assert.match(main, /services\.accounts\.save\(\{ id: "musinsa", method: "password", \.\.\.credentials \}\)/);
   assert.match(main, /if \(!await hasUsableDomesticLoginSession\("musinsa"\)\)/);
   assert.match(main, /cookies\.flushStore\(\)/);
   assert.match(main, /partition: DOMESTIC_SEARCH_PARTITION/);
-  assert.match(html, /Google Drive 계정정보의 무신사 계정을 Windows에 암호화 저장/);
+  assert.match(html, /내부 장부 계정정보의 무신사 계정을 Windows에 암호화 저장/);
   assert.match(renderer, /MUSINSA_ACCOUNT_NOT_FOUND/);
 });
 

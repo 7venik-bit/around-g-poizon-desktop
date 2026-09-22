@@ -53,12 +53,10 @@ test('unconfirmed write disables stale export and further edits in the UI',async
  dom.window.aroundG={loadLedgerWorkbook:async()=>({ok:true,workbook:book}),editLedgerWorkbookCell:async()=>({ok:false,code:'CELL_SAVED_REFRESH_REQUIRED'})};dom.window.eval(script);await new Promise(r=>setTimeout(r,20));const d=dom.window.document;d.querySelector('#workbook-table td').click();d.getElementById('workbook-cell-value').value='2';d.getElementById('workbook-cell-editor').dispatchEvent(new dom.window.Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,20));assert.equal(d.getElementById('workbook-export').disabled,true);assert.equal(d.getElementById('workbook-cell-save').disabled,true);dom.window.close();
 });
 
-test('unconfirmed remote write leaves persistent marker and blocks export after restart',async()=>{
- const fs=await import('node:fs/promises');const {join}=await import('node:path');const {tmpdir}=await import('node:os');
- const main=await readFile(new URL('../main.mjs',import.meta.url),'utf8');const start=main.indexOf('  const ledgerWorkbookPath ='),end=main.indexOf('  ipcMain.handle("explorer:meta"',start);
- const dir=await fs.mkdtemp(join(tmpdir(),'ledger-edit-'));let dialogs=0;
- function boot(){const handlers=new Map();const ctx={join,app:{getPath:()=>dir},stat:fs.stat,writeFile:fs.writeFile,unlink:fs.unlink,readLedgerWorkbook:async()=>({title:'cached'}),workbookView:v=>v,safeStorage:{isEncryptionAvailable:()=>true,decryptString:x=>x},store:{snapshot:()=>({settings:{ledgerWebhookUrl:'https://script.google.com/macros/s/test/exec',ledgerSecretEncrypted:'test'}})},decrypted:()=> 'test',AbortSignal,ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},dialog:{showSaveDialog:async()=>{dialogs++;return {canceled:true};}},fetch:async(url,options={})=>({ok:true,json:async()=>options.method==='POST'?{ok:false,code:'CELL_SAVED_REFRESH_REQUIRED'}:{capabilities:['workbook.edit.v1']}})};vm.createContext(ctx);vm.runInContext(main.slice(start,end),ctx);return handlers;}
- try{let h=boot();assert.equal((await h.get('ledger:workbook-edit')(null,{})).code,'CELL_SAVED_REFRESH_REQUIRED');
- h=boot();assert.equal((await h.get('ledger:workbook-load')()).needsRefresh,true);assert.equal((await h.get('ledger:workbook-export')()).code,'WORKBOOK_REFRESH_REQUIRED');assert.equal(dialogs,0);
- }finally{await fs.rm(dir,{recursive:true,force:true});}
+test('a local storage failure is returned honestly and export cancellation does not write',async()=>{
+ const main=await readFile(new URL('../main.mjs',import.meta.url),'utf8');const start=main.indexOf('  const localWorkbookResult='),end=main.indexOf('  ipcMain.handle("explorer:meta"',start);
+ const handlers=new Map();let exports=0;
+ const context={purchaseWorkbook:()=>({edit:async()=>{throw Error('DISK_FULL');},load:async()=>({}),export:async()=>{exports++;}}),ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},dialog:{showSaveDialog:async()=>({canceled:true})},fetch:()=>{throw Error('No network allowed');}};
+ vm.createContext(context);vm.runInContext(main.slice(start,end),context);
+ assert.equal((await handlers.get('ledger:workbook-edit')(null,{})).code,'DISK_FULL');assert.equal((await handlers.get('ledger:workbook-export')()).canceled,true);assert.equal(exports,0);
 });
