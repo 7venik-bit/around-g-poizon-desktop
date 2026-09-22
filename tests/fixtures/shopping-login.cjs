@@ -53,17 +53,19 @@ app.whenReady().then(async()=>{
   assert.equal(reused.reused,true);assert.equal(directPosts,1);
   directWindows.get('naver').close();directSession.protocol.unhandle('https');
   console.log(JSON.stringify({method:'direct-naver',offline:true,passwordSubmittedOnce:true,passkeyClicks:0,sessionReused:true}));
-  for(const method of ['password','naver','kakao']) {
-    const partition='persist:offline-shopping-'+method,isolated=session.fromPartition(partition);
+  for(const scenario of ['password','password-click-unfocused','naver','kakao']) {
+    const method=scenario.startsWith('password')?'password':scenario;
+    const partition='persist:offline-shopping-'+scenario,isolated=session.fromPartition(partition);
     const merchant='https://www.kolonmall.com',provider=method==='naver'?'https://nid.naver.com':'https://accounts.kakao.com';
     const source={id:'kolon',name:'코오롱몰',url:merchant,domains:['kolonmall.com']};
     const credentials=id=>({loginId:id+'-fixture-id',password:id+'-fixture-secret',code:''});
     const accounts={source:()=>source,publicAccount:()=>({method}),credentials};
-    const windows=new Map(),submissions=[];let passkeyClicks=0;
+    const windows=new Map(),submissions=[];let passkeyClicks=0,preventedFocus=0;
     const form='<form method="post" action="/submit"><input name="username" autocomplete="username"><input type="password" name="password"><button type="submit">로그인</button></form>';
     isolated.protocol.handle('https',async request=>{
       const url=new URL(request.url);let body='';
       if(url.pathname==='/passkey-trigger'){passkeyClicks++;return new Response('unexpected passkey click');}
+      if(url.pathname==='/blocked-focus'){preventedFocus++;return new Response('fixture native focus prevented');}
       if(url.pathname==='/submit') {
         const fields=new URLSearchParams(await request.text());
         submissions.push({origin:url.origin,id:fields.get('username') ?? fields.get('id'),password:fields.get('password') ?? fields.get('pw')});
@@ -73,6 +75,7 @@ app.whenReady().then(async()=>{
       else if(url.pathname==='/login') body=method==='password' ? form
         : `<button onclick="const popup=window.open('about:blank','fixture-social');popup.location.href='${provider}/login';">${method} 로그인</button><script>addEventListener('message',event=>{if(event.origin===${JSON.stringify(merchant)}&&event.data==='fixture-login-complete'){window.callbackReceived=true;document.body.innerHTML='<button>로그아웃</button>';}});</script>`;
       else body='<a href="/login">로그인</a>';
+      if(scenario==='password-click-unfocused' && body.includes('<form')) body+='<script>document.querySelectorAll("input").forEach(input=>input.addEventListener("mousedown",event=>{event.preventDefault();fetch("/blocked-focus");}));</script>';
       return new Response('<!doctype html><meta charset="utf-8"><body>'+body+'</body>',{headers:{'content-type':'text/html;charset=utf-8'}});
     });
     const connector=new ShoppingLoginConnector({accounts,BrowserWindow,partition,windows,notify:()=>{}});
@@ -83,11 +86,12 @@ app.whenReady().then(async()=>{
     assert.equal(connector.status('kolon').code,'LOGIN_CONFIRMED',method+': '+JSON.stringify(connector.status('kolon')));
     assert.equal(submissions.length,1,method+' submitted exactly once');
     assert.equal(passkeyClicks,0,method+' must never start passkey authentication');
+    if(scenario==='password-click-unfocused') assert.equal(preventedFocus,2,'both inputs require explicit focus repair');
     const expectedId=method==='password'?'kolon':method;
     assert.deepEqual(submissions[0],{origin:method==='password'?merchant:provider,id:credentials(expectedId).loginId,password:credentials(expectedId).password});
     if(method!=='password') assert.equal(await win.webContents.executeJavaScript('window.callbackReceived'),true);
     assert.equal((await isolated.cookies.get({url:merchant,name:'member_session'})).length,1);
-    console.log(JSON.stringify({method,electron:process.versions.electron,offline:true,submittedOnce:true,merchantCallback:true,sharedSession:true}));
+    console.log(JSON.stringify({method,scenario,electron:process.versions.electron,offline:true,submittedOnce:true,merchantCallback:true,sharedSession:true}));
     win.close();isolated.protocol.unhandle('https');
   }
   // Render the shipping settings markup and account script with fixture data.

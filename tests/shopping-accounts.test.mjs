@@ -235,6 +235,7 @@ test('a lost input focus never types credentials into another control or submits
   const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
   const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
   w.webContents.sendInputEvent=()=>{};
+  w.dom.window.HTMLElement.prototype.focus=()=>{};
   await assert.rejects(b.connector.advance(w,{source:sources[1],method:'password',started:Date.now(),acted:new Set()}),/LOGIN_INPUT_NOT_FOCUSED/);
   assert.equal(b.inserted.length,0);
 });
@@ -281,6 +282,7 @@ test('password focus failure keeps its safe stage through later ticks and timeou
   const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
   const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
   const send=w.webContents.sendInputEvent;
+  w.dom.window.document.querySelector('[type=password]').focus=()=>{};
   w.webContents.sendInputEvent=event=>{
     if(event.type==='mouseUp' && w.dom.window.document.elementFromPoint(event.x,event.y)?.type==='password')return;
     send(event);
@@ -372,6 +374,50 @@ test('navigation cancelling a read-only capture does not fail the destination lo
   await new Promise(setImmediate);assert.equal(b.connector.status('kolon').code,'');assert.equal(b.inserted.length,0);
   w.webContents.mainFrame.executeJavaScript=capture;await b.ticks[0]();
   assert.equal(b.connector.status('kolon').code,'LOGIN_SUBMITTED');assert.equal(b.inserted.length,2);
+});
+
+test('a native click that leaves focus on the page is repaired before the first credential input',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
+  const send=w.webContents.sendInputEvent;let submitted=0;
+  w.webContents.sendInputEvent=event=>{
+    const el=w.dom.window.document.elementFromPoint(event.x,event.y);
+    if(event.type==='mouseUp'&&el?.tagName==='INPUT')return;
+    send(event);
+  };
+  w.webContents.insertText=async value=>{
+    const el=w.dom.window.document.activeElement;
+    assert.equal(el.tagName,'INPUT');b.inserted.push({value});el.value=value;
+  };
+  w.dom.window.document.querySelector('form').addEventListener('submit',()=>submitted++);
+  const flow={source:sources[1],method:'password',started:Date.now(),acted:new Set()};
+  await b.connector.advance(w,flow);await b.connector.advance(w,flow);
+  assert.equal(submitted,1);assert.deepEqual(b.inserted.map(x=>x.value),['fixture-id','fixture-secret']);
+  assert.ok(b.scripts.every(script=>!script.includes('fixture-secret')));
+});
+
+test('input positions are reread when the native click shifts the form',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
+  const send=w.webContents.sendInputEvent;
+  w.webContents.sendInputEvent=event=>{
+    send(event);
+    if(event.type==='mouseUp'&&w.dom.window.document.activeElement.tagName==='INPUT')
+      w.dom.window.document.querySelector('form').prepend(w.dom.window.document.createElement('p'));
+  };
+  await b.connector.advance(w,{source:sources[1],method:'password',started:Date.now(),acted:new Set()});
+  assert.equal(b.connector.status('kolon').code,'LOGIN_SUBMITTED');
+  assert.deepEqual(b.inserted.map(x=>x.value),['fixture-id','fixture-secret']);
+});
+
+test('a password input that changes type while focus is acquired never receives a password',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
+  const password=w.dom.window.document.querySelector('[type=password]');
+  const focus=password.focus.bind(password);password.focus=()=>{password.type='text';focus();};
+  const flow={source:sources[1],method:'password',started:Date.now(),acted:new Set()};
+  await assert.rejects(b.connector.advance(w,flow),/LOGIN_INPUT_NOT_FOCUSED/);
+  await b.connector.advance(w,flow);assert.deepEqual(b.inserted.map(x=>x.value),['fixture-id']);
 });
 
 test('provider account changes clear only the shops linked through that provider',async()=>{
