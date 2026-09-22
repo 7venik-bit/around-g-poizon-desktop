@@ -44,7 +44,7 @@ app.whenReady().then(async()=>{
   assert.deepEqual(loginResult,{id:'fixture-id',password:'fixture-secret',submitted:'yes'});
   loginWindow.destroy();windows.splice(windows.indexOf(loginWindow),1);
   const context=createContext({...page,...flow,...purchase,URL,setTimeout,clearTimeout,wait,BrowserWindow:FixtureWindow,
-    APP_ICON_PATH:undefined,DOMESTIC_SEARCH_PARTITION:partition,mainWindow:null,
+    APP_ICON_PATH:undefined,DOMESTIC_SEARCH_PARTITION:partition,mainWindow:null,domesticLoginWindows:new Map(),
     hasUsableDomesticLoginSession:async()=>true,
     importMusinsaCredentialsFromGoogleDrive:async()=>({ok:true,imported:true}),
     waitForMusinsaAutomaticLogin:async()=>{loginCount++;loggedIn=true;return {ok:true};},
@@ -72,6 +72,16 @@ app.whenReady().then(async()=>{
   const wrote=await context.syncPurchaseLedger(captured.rows[0]);assert.equal(wrote.ok,true);assert.equal(googleWrites,1);assert.equal(saved[0].orderEvidence.orderNumber,'ORDER-10001');
   assert.equal(wrote.imageStatus,'formula');assert.equal(saved[0].imageUrl,captured.rows[0].imageUrl);
   assert.ok(visits.indexOf('/orders')>visits.indexOf('/mypage'));
+  // A user may finish manual login and choose an order in the login helper,
+  // while the older ledger window still displays the expired login form.
+  loggedIn=false;await orderWindow.loadURL('https://www.musinsa.com/mypage');
+  const helper=new FixtureWindow({width:900,height:700,webPreferences:{partition,sandbox:true,contextIsolation:true}});
+  await helper.loadURL('https://www.musinsa.com/orders/detail/ORDER-10001');
+  context.domesticLoginWindows.set('musinsa',helper);
+  const resumed=await context.captureMusinsaLedgerOrder();
+  assert.equal(resumed.ok,true);assert.equal(resumed.rows.length,2);assert.equal(googleWrites,1);
+  assert.equal(orderWindow.isDestroyed(),true);assert.equal(helper.isDestroyed(),false);
+  assert.equal((await context.openMusinsaLedgerWindow()).stage,'detail');assert.equal(loginCount,1);
   windows.forEach(win=>{if(!win.isDestroyed())win.destroy();});isolated.protocol.unhandle('https');clearTimeout(deadline);
   console.log('PASS: offline Electron My → one expired-session login → order history → explicitly selected detail → two options → matching product code → explicit Google write. No real account or ledger used.');app.exit(0);
 }).catch(error=>{console.error(error.stack||error);clearTimeout(deadline);app.exit(1);});

@@ -5380,7 +5380,7 @@ async function waitForMusinsaAutomaticLogin(timeoutMs = 45000) {
     if (status.code === "LOGIN_CONFIRMED") {
       await session.fromPartition(DOMESTIC_SEARCH_PARTITION).cookies.flushStore().catch(() => {});
       const loginWindow = domesticLoginWindows.get("musinsa");
-      if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
+      if (loginWindow && !loginWindow.isDestroyed() && (await inspectMusinsaLedgerWindow(loginWindow))?.kind !== "detail") loginWindow.close();
       return { ok: true };
     }
     if (["LOGIN_VERIFICATION_REQUIRED", "LOGIN_MANUAL_REQUIRED", "ACCOUNT_CREDENTIALS_UNREADABLE", "ACCOUNT_CREDENTIALS_REQUIRED"].includes(status.code)) {
@@ -5401,7 +5401,25 @@ async function inspectMusinsaLedgerWindow(win) {
   return win.webContents.executeJavaScript(`(${captureMusinsaLedgerPage.toString()})()`, true).catch(() => null);
 }
 
+async function resumeSelectedMusinsaLedgerWindow() {
+  const current = musinsaLedgerWindow;
+  if ((await inspectMusinsaLedgerWindow(current))?.kind === "detail") return current;
+  const helper = domesticLoginWindows.get("musinsa");
+  if (!helper || helper === current || (await inspectMusinsaLedgerWindow(helper))?.kind !== "detail") return current;
+  // Manual login can finish in the account helper. Keep the exact order the
+  // user opened there instead of capturing an expired, separate login page.
+  musinsaLedgerWindow = helper;
+  helper.on("closed", () => { if (musinsaLedgerWindow === helper) musinsaLedgerWindow = null; });
+  if (current && !current.isDestroyed()) current.close();
+  return helper;
+}
+
 async function openMusinsaLedgerWindowAsync() {
+  const selected = await resumeSelectedMusinsaLedgerWindow();
+  if ((await inspectMusinsaLedgerWindow(selected))?.kind === "detail") {
+    selected.show(); selected.focus();
+    return {ok:true,stage:"detail",automaticLogin:{ok:true,reused:true}};
+  }
   const reused = musinsaLedgerWindow && !musinsaLedgerWindow.isDestroyed();
   let automaticLogin = { ok: true, reused: true };
   if (!await hasUsableDomesticLoginSession("musinsa")) {
@@ -5416,7 +5434,8 @@ async function openMusinsaLedgerWindowAsync() {
       icon: APP_ICON_PATH, width: 1320, height: 900, title: "무신사 주문 내역 → 주문상세 → 구매장부",
       webPreferences: { partition: DOMESTIC_SEARCH_PARTITION, sandbox: true, contextIsolation: true },
     });
-    musinsaLedgerWindow.on("closed", () => { musinsaLedgerWindow = null; });
+    const created = musinsaLedgerWindow;
+    created.on("closed", () => { if (musinsaLedgerWindow === created) musinsaLedgerWindow = null; });
     await musinsaLedgerWindow.loadURL("https://www.musinsa.com/mypage").catch(() => {});
   }
   const win = musinsaLedgerWindow;
@@ -5492,6 +5511,7 @@ function captureMusinsaLedgerOrder() {
 }
 
 async function captureMusinsaLedgerOrderAsync() {
+  await resumeSelectedMusinsaLedgerWindow();
   if (!musinsaLedgerWindow || musinsaLedgerWindow.isDestroyed()) {
     const opened = await openMusinsaLedgerWindow();
     if (!opened.ok) return opened;

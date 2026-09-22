@@ -128,6 +128,24 @@ test('main-process capture proof rejects manual rows, stale tokens and switched 
   assert.equal(captures.resolve({...source,retryId:'saved'},failed).ok,true);
   assert.equal(captures.resolve({...source,retryId:'saved'},{...failed,orderEvidence:null}).code,'ORDER_CAPTURE_REQUIRED');
 });
+test('manual-login helper hands the selected detail to capture without another login or losing its window',async()=>{
+  const source=readFileSync(new URL('../main.mjs',import.meta.url),'utf8');
+  const makeWindow=kind=>({kind,closed:false,handlers:[],isDestroyed(){return this.closed;},
+    on(event,fn){if(event==='closed')this.handlers.push(fn);},close(){this.closed=true;this.handlers.forEach(fn=>fn());}});
+  const stale=makeWindow('login'),helper=makeWindow('detail');
+  const context=createContext({domesticLoginWindows:new Map([['musinsa',helper]]),
+    inspectMusinsaLedgerWindow:async win=>win&&!win.closed?{kind:win.kind}:null,stale});
+  runInContext('let musinsaLedgerWindow=stale;stale.on("closed",()=>{if(musinsaLedgerWindow===stale)musinsaLedgerWindow=null;});\n'+
+    source.slice(source.indexOf('async function resumeSelectedMusinsaLedgerWindow()'),source.indexOf('async function openMusinsaLedgerWindowAsync()')),context);
+  assert.equal(await context.resumeSelectedMusinsaLedgerWindow(),helper);assert.equal(stale.closed,true);
+  assert.equal(await context.resumeSelectedMusinsaLedgerWindow(),helper);assert.equal(helper.closed,false);
+  helper.close();assert.equal(runInContext('musinsaLedgerWindow',context),null);
+  for(const kind of ['login','blocked','orders','outside']) {
+    const ignored=makeWindow(kind);context.domesticLoginWindows.set('musinsa',ignored);
+    assert.equal(await context.resumeSelectedMusinsaLedgerWindow(),null);assert.equal(ignored.closed,false);
+  }
+});
+
 test('renderer cannot submit before detail capture and restores controls after errors',async t=>{
   const html=readFileSync(new URL('../src/index.html',import.meta.url),'utf8');
   const script=readFileSync(new URL('../src/renderer.js',import.meta.url),'utf8').split('let capturedLedgerRows = [];')[1].split('function openEntry(collection)')[0];
