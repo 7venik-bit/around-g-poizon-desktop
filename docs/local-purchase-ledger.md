@@ -25,8 +25,8 @@ calculation do not need network access.
 Validation includes offline load/edit/record/export, restart persistence, stale
 edits, failed writes, original archive preservation, and receipt idempotency. The
 one-time migration's 757 formula results were compared privately to the source
-results, with no differences. Existing source errors are retained as errors rather
-than converted into plausible totals. No real workbook/account data is in fixtures.
+results, with no differences. Unknown source errors remain errors rather than
+being converted into plausible totals. No real workbook/account data is in fixtures.
 
 Cell tools support single cells and Shift+click/Shift+arrow ranges (up to 5,000
 cells). Delete clears values, formulas and cell pictures, preserving coordinates,
@@ -64,3 +64,33 @@ Recording locks workbook selection and editing until it finishes. Unsaved cell
 edits must be resolved first. Success reloads and highlights the committed rows.
 Existing receipts stay idempotent at their original rows; choosing another row
 does not move or duplicate an already recorded order. No Google calls are added.
+
+## Transaction formula repair and automatic fill
+
+The recognized original transaction tables now receive a one-time template repair.
+Before changing anything, the service saves and rereads an encrypted recovery copy
+alongside the working file. A backup failure prevents repair. The working workbook
+stores the repair version, old/new formulas and affected addresses, and the normal
+atomic save/reread path commits calculated caches to the original XLSX archive.
+
+Recognized imported formulas that used the sale-date column, a preceding row or
+rows 573/574 now refer to the same row's selling price and purchase inputs. The
+original VAT template uses purchase price / 1.1 * 0.1. Whitespace-only missing
+amounts stay missing, valid numeric money text is converted to numbers for native
+Excel totals, and zero denominators return a blank rate. Invalid money is still an
+error. Existing manual fees, shipping values and unrelated custom formulas remain.
+Missing input totals and simple transaction total ranges include later purchases.
+
+New product rows receive missing fee/margin/refund/rate formulas on manual entry,
+paste or Musinsa recording. Unused rows receive no new calculations. A direct edit
+or Delete in a calculation cell becomes a persistent override; later input edits
+do not silently restore that cell. Original images, size lookups and account data
+are not changed by this repair.
+
+Category lookup reads completed local POIZON exports and requires an exact article
+match with agreeing categories. It never opens Seller Center or starts a download.
+The category is placed in an unused trailing column; a conflict or absent match
+shows a review hint, and a user's category edit is preserved. Category-specific
+fee policy is pending a verified user-provided reference: this change preserves
+existing numeric fee overrides and the imported 10% / 15,000 template rule rather
+than claiming that unverified category rates came from Google Drive.

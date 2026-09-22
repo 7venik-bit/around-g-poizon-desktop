@@ -4,6 +4,7 @@ import {calculateLedger,formatLedgerValue,ledgerScalar,shiftLedgerFormula} from 
 import {updateLedgerXlsx,readLedgerImages} from './ledger-xlsx.mjs';
 import {purchaseLedgerImageUrl,validatePurchaseLedgerRow} from './purchase-ledger.mjs';
 import {LEDGER_COPY_SCHEMA} from './ledger-clipboard.mjs';
+import {autofillLedger,LEDGER_FORMULA_VERSION,ledgerCalculationSheet} from './ledger-autofill.mjs';
 
 const fail=code=>{throw Error(code);};
 const empty=()=>({type:'text',value:''});
@@ -58,10 +59,10 @@ function validateChange(sheet,row,column,next) {
 
 // The only source migration is the already encrypted, verified local snapshot.
 // No network client/configuration is accepted by this service.
-export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedgerWorkbook,read=readLedgerWorkbook}) {
+export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedgerWorkbook,read=readLedgerWorkbook,categories}) {
   let queue=Promise.resolve();
   const serial=fn=>{const result=queue.then(fn);queue=result.catch(()=>{});return result;};
-  const load=async()=>{
+  const readLocal=async()=>{
     try {return await read(path,decrypt);}
     catch(error) {if(error.code!=='ENOENT')throw error;}
     let book;
@@ -71,12 +72,29 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
     book.revision=randomUUID();calculateLedger(book);readLedgerImages(book);
     await save(path,book,encrypt);return await read(path,decrypt);
   };
-  const commit=async(book,edits)=>{
+  const commit=async(book,edits,{manual=true,autofill=true}={})=>{
+    if(autofill&&edits.length)edits=[...edits,...autofillLedger(book,{edits,manual,categories:categories?await categories(book):undefined}).edits];
     calculateLedger(book);updateLedgerXlsx(book,edits);
     book.revision=randomUUID();book.local.updatedAt=new Date().toISOString();
     await save(path,book,encrypt);const verified=await read(path,decrypt);
     if(verified.revision!==book.revision)fail('WORKBOOK_SAVE_VERIFY_FAILED');
     return verified;
+  };
+  const load=async()=>{
+    const book=await readLocal();
+    if(book.local?.formulaVersion===LEDGER_FORMULA_VERSION||!book.sheets.some(ledgerCalculationSheet))return book;
+    // Keep an encrypted, verified pre-repair copy. Never overwrite that recovery
+    // point on restart, and never publish a migration whose backup failed.
+    const backupPath=`${path}.before-formulas-v${LEDGER_FORMULA_VERSION}.encrypted`;
+    try {await read(backupPath,decrypt);}catch(error) {
+      if(error.code!=='ENOENT')throw error;
+      await save(backupPath,book,encrypt);
+      if((await read(backupPath,decrypt)).revision!==book.revision)fail('WORKBOOK_SAVE_VERIFY_FAILED');
+    }
+    const repair=autofillLedger(book,{repair:true,categories:categories?await categories(book):undefined});
+    book.local.formulaVersion=LEDGER_FORMULA_VERSION;
+    book.local.formulaRepair={at:new Date().toISOString(),backupPath,changes:repair.audit};
+    return commit(book,repair.edits,{autofill:false});
   };
   return {
     load:()=>serial(load),
@@ -214,7 +232,7 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
         put(sheet,r+1,c+1,{type:'formula',value:`=${range[1]}(${range[2]}${range[3]}:${range[4]}${rowNumbers.at(-1)})`});
         edits.push({sheetId:sheet.id,row:r+1,column:c+1});
       }
-      await commit(book,edits);
+      await commit(book,edits,{manual:false});
       return {ok:true,duplicate:false,rowNumber:rowNumbers[0],rowNumbers,unitPrices:prices,imageStatus:'formula'};
     })
   };
