@@ -10,11 +10,11 @@ async function setup(t) {
   const dom=new JSDOM(html,{runScripts:'outside-only'}),w=dom.window,d=w.document;t.after(()=>w.close());
   const raw=[['브랜드','품번','모델명','판매가 (원화)','구매일자','상태','한국 사이즈'],
     ['TEST','00123','기존 상품',75000,'2026-09-21T15:00:00.000Z','구매완료','095'],
-    ['TEST','00007','',0,'','','ONE']].map(row=>row.map(value=>({type:typeof value==='number'?'number':'text',value:String(value)})));
+    ['TEST','00007','',0,'','','ONE'],['','','','75000']].map(row=>row.map(value=>({type:typeof value==='number'?'number':'text',value:String(value)})));
   raw[1][4].type='date';
   let book={title:'장부',revision:'r1',timeZone:'Asia/Seoul',sheets:[{id:1,name:'1-구매완료',rowCount:102,columnCount:7,rawValues:raw,
     displayValues:raw.map(row=>row.map(cell=>cell.value)),formulas:raw.map(row=>row.map(()=>'')),validations:[[],[null,null,null,null,null,{type:'list',values:['구매완료','반품완료']}]],
-    calculatedValues:[[],[],[],[null,null,null,{type:'number',value:-15000}]]}]};
+    calculatedValues:[[],[],[],[],[null,null,null,{type:'number',value:-15000}]]}]};
   book.sheets[0].displayValues.push(['','','','-15000']);
   const source=structuredClone(book),calls=[];
   w.HTMLElement.prototype.scrollIntoView=function(){};
@@ -56,7 +56,7 @@ test('typing replaces a selected value, Enter saves once, Tab uses the refreshed
 
 test('currency display handles existing numbers, zero and calculated negatives without mutating source, codes or dates',async t=>{
   const {cell,book,source}=await setup(t);
-  assert.equal(cell(2,4).textContent,'₩75,000');assert.equal(cell(3,4).textContent,'₩0');assert.equal(cell(4,4).textContent,'-₩15,000');
+  assert.equal(cell(2,4).textContent,'₩75,000');assert.equal(cell(3,4).textContent,'₩0');assert.equal(cell(4,4).textContent,'₩75,000');assert.equal(cell(5,4).textContent,'-₩15,000');
   assert.equal(cell(2,2).textContent,'00123');assert.equal(cell(2,7).textContent,'095');assert.deepEqual(book(),source);
 });
 

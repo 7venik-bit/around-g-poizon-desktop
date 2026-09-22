@@ -89,7 +89,8 @@
   function displayCell(sheet,r,c,kind) {
     const display=sheet.displayValues[r]?.[c] || '',raw=sheet.rawValues?.[r]?.[c],calculated=sheet.calculatedValues?.[r]?.[c];
     if(kind!=='money')return display;
-    const value=raw?.type==='number'?Number(raw.value):calculated?.type==='number'?calculated.value:undefined;
+    const numericText=raw?.type==='text'&&/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(raw.value)&&raw.value.replace(/[-.]/g,'').replace(/^0+/,'').length<=15;
+    const value=raw?.type==='number'||numericText?Number(raw.value):calculated?.type==='number'?calculated.value:undefined;
     return Number.isFinite(value)?won.format(value):display;
   }
   function render() {
