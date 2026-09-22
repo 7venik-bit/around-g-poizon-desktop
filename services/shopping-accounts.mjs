@@ -2,6 +2,11 @@
 // exposed to the settings view; passwords are never sent back to the renderer.
 export const SHOPPING_LOGIN_METHODS = ['password', 'naver', 'kakao'];
 const LEGACY = new Set(['naver', 'nike', 'adidas']);
+const LOGIN_STAGES = {page_read:'로그인 화면 확인',page_load:'로그인 화면 열기',account_read:'저장 계정 확인',
+  login_entry:'로그인 화면 이동',social_entry:'간편 로그인 연결',id_focus:'아이디 입력란 선택',id_input:'아이디 입력',id_verify:'아이디 입력 확인',
+  password_focus:'비밀번호 입력란 선택',password_input:'비밀번호 입력',password_verify:'비밀번호 입력 확인',submit:'로그인 제출',result:'로그인 결과 확인'};
+const LOGIN_FAILURES = {LOGIN_PAGE_CHANGED:'입력 중 화면이 바뀌었습니다.',LOGIN_FOCUS_REQUIRED:'로그인 창의 입력 초점을 확보하지 못했습니다.',
+  LOGIN_INPUT_NOT_FOCUSED:'입력란의 초점을 확인하지 못했습니다.',LOGIN_INPUT_NOT_RETAINED:'입력한 정보가 입력란에 유지되지 않았습니다.'};
 
 export function shoppingLoginHostAllowed(value, domains = []) {
   try {
@@ -127,9 +132,17 @@ export class ShoppingLoginConnector {
     this.states=new Map();
   }
   status(id) { return this.states.get(id) || {code:'',message:''}; }
-  update(id,code,message) {
-    if(this.states.get(id)?.code===code && this.states.get(id)?.message===message) return;
-    this.states.set(id,{code,message}); this.notify?.({sourceId:id,code,message});
+  update(id,code,message,diagnostic) {
+    const state={code,message,...(diagnostic ? {diagnostic} : {})};
+    if(JSON.stringify(this.states.get(id))===JSON.stringify(state)) return;
+    this.states.set(id,state); this.notify?.({sourceId:id,...state});
+  }
+  fail(flow,code,message,diagnostic) {
+    // Keep the first failure; later timer ticks must not replace it with a
+    // timeout or enter credentials again. Manual navigation can still confirm login.
+    if(flow.stopped || flow.failure) return;
+    flow.failure={code,message,diagnostic};flow.automaticStopped=true;
+    this.update(flow.source.id,code,message,diagnostic);
   }
   async open(id) {
     const source=this.accounts.source(id);
@@ -149,8 +162,11 @@ export class ShoppingLoginConnector {
       if(this.windows.get(id)===win) this.windows.delete(id);
       this.notify?.({sourceId:id});
     });
-    void win.loadURL(source.loginUrl || source.url).catch(()=>{
-      if(!flow.stopped) this.update(id,'LOGIN_PAGE_LOAD_FAILED','로그인 페이지를 열지 못했습니다. 다시 연결해 주세요.');
+    void win.loadURL(source.loginUrl || source.url).catch(error=>{
+      // Following the visible login link can cancel the initial homepage load.
+      // Cancellation is not a failed login and must not stop the destination.
+      if(error?.code==='ERR_ABORTED' || error?.errno===-3) return;
+      this.fail(flow,'LOGIN_PAGE_LOAD_FAILED','로그인 페이지를 열지 못했습니다. 열린 창을 확인해 주세요.',{stage:'page_load',reason:'LOGIN_PAGE_LOAD_FAILED'});
     });
     return {ok:true,opened:true,automatic:{ok:false,pending:true}};
   }
@@ -161,8 +177,15 @@ export class ShoppingLoginConnector {
       if(flow.stopped || win.isDestroyed()) {this.clearIntervalImpl(timer);return;}
       if(busy) return;
       busy=true;
-      try { await this.advance(win,flow); }
-      catch { if(!flow.stopped) this.update(flow.source.id,'LOGIN_ACTION_FAILED','자동 입력을 완료하지 못했습니다. 열린 창에서 이어서 로그인해 주세요.'); }
+      const progress={stage:'page_read'};
+      try { await this.advance(win,flow,progress); }
+      catch(error) {
+        // Only fixed codes/labels leave the main process. Never expose an
+        // arbitrary Electron error, credential, URL query or page text.
+        const reason=Object.hasOwn(LOGIN_FAILURES,error?.message) ? error.message : 'LOGIN_ACTION_FAILED';
+        const stage=Object.hasOwn(LOGIN_STAGES,progress.stage) ? progress.stage : 'page_read';
+        this.fail(flow,'LOGIN_ACTION_FAILED',`${LOGIN_STAGES[stage]} 단계에서 중단됐습니다. ${LOGIN_FAILURES[reason] || '자동 입력을 완료하지 못했습니다.'} 열린 창에서 이어서 로그인해 주세요.`,{stage,reason});
+      }
       finally { busy=false;if(flow.automaticStopped)this.clearIntervalImpl(timer); }
     };
     win.webContents.setWindowOpenHandler(({url})=> {
@@ -179,43 +202,52 @@ export class ShoppingLoginConnector {
     win.on('closed',()=>{this.clearIntervalImpl(timer);void cookies.flushStore().catch(()=>{});});
     void tick();
   }
-  async advance(win,flow) {
+  async advance(win,flow,progress = {}) {
     if(flow.stopped || win.isDestroyed()) return;
     const url=win.webContents.getURL();
     const merchant=shoppingLoginHostAllowed(url,flow.source.domains);
     const provider=flow.method==='naver' && shoppingLoginHostAllowed(url,['nid.naver.com']) ? 'naver'
       : flow.method==='kakao' && shoppingLoginHostAllowed(url,['accounts.kakao.com']) ? 'kakao' : '';
     if(!merchant && !provider) {
+      if(flow.failure) return;
       if(Date.now()-flow.started>120000) flow.automaticStopped=true;
       if(Date.now()-flow.started>15000) this.update(flow.source.id,'LOGIN_MANUAL_REQUIRED','외부 인증 화면입니다. 열린 창에서 직접 로그인을 진행해 주세요.');
       return;
     }
     const method=merchant && !['naver','kakao'].includes(flow.source.id) ? flow.method : 'password';
-    const state=await win.webContents.mainFrame.executeJavaScript(`(${captureShoppingLoginPage.toString()})(${JSON.stringify(method)})`,true);
+    let state;
+    try { state=await win.webContents.mainFrame.executeJavaScript(`(${captureShoppingLoginPage.toString()})(${JSON.stringify(method)})`,true); }
+    catch(error) {
+      // Reading the departing document can be cancelled by navigation. No
+      // input occurred in this step; let the destination's event inspect it.
+      if(flow.stopped || win.isDestroyed() || win.webContents.getURL()!==url) return;
+      throw error;
+    }
     if(flow.stopped || win.isDestroyed() || !state || state.href!==url || win.webContents.getURL()!==url) return;
     // Parent and OAuth popup ticks can overlap. A callback may confirm the
     // merchant while the popup is still awaiting its native submit click.
-    const setStatus=(code,message)=>{if(!flow.stopped) this.update(flow.source.id,code,message);};
+    const setStatus=(code,message)=>{if(!flow.stopped && !flow.failure) this.update(flow.source.id,code,message);};
     if(merchant && state.authenticated && !state.blocked) {
       await win.webContents.session.cookies.flushStore();
       if(flow.stopped || win.isDestroyed()) return;
       flow.stopped=true;
       this.update(flow.source.id,'LOGIN_CONFIRMED','쇼핑몰 로그인 확인 완료'); return;
     }
+    if(flow.failure) return;
     if(Date.now()-flow.started>120000) {
       flow.automaticStopped=true;
       setStatus('LOGIN_MANUAL_REQUIRED','자동 연결 시간이 끝났습니다. 열린 창에서 로그인을 이어서 완료해 주세요.');
       return;
     }
-    if(state.blocked) { setStatus('LOGIN_VERIFICATION_REQUIRED','보안 확인이 필요합니다. 열린 로그인 창에서 완료해 주세요.'); return; }
+    if(state.blocked) { this.fail(flow,'LOGIN_VERIFICATION_REQUIRED','보안 확인이 필요합니다. 열린 로그인 창에서 완료해 주세요.',{stage:'result',reason:'LOGIN_VERIFICATION_REQUIRED'}); return; }
     const click=async point=>{
-      if(flow.stopped || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+      if(flow.stopped || flow.failure || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
       // A newly opened OAuth popup may not own keyboard focus yet. Wait for
       // native focus before its first click instead of dropping the ID input.
       let focused=false;
       for(let attempt=0;attempt<6;attempt++) {
         win.focus();win.webContents.focus();await this.wait(80);
-        if(flow.stopped || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+        if(flow.stopped || flow.failure || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
         if(win.isFocused() && win.webContents.isFocused()) {focused=true;break;}
       }
       if(!focused) throw new Error('LOGIN_FOCUS_REQUIRED');
@@ -227,42 +259,57 @@ export class ShoppingLoginConnector {
     const once=key=>{if(flow.acted.has(key))return false;flow.acted.add(key);return true;};
     if(merchant && method!=='password') {
       if(state.provider && once('provider')) {
+        progress.stage='social_entry';
         await click(state.provider);setStatus('SOCIAL_LOGIN_OPENED',`${method==='naver'?'네이버':'카카오'} 로그인 창에서 연결을 진행해 주세요.`);
-      } else if(!state.provider && state.loginEntry && once('entry')) await click(state.loginEntry);
+      } else if(!state.provider && state.loginEntry && once('entry')) {progress.stage='login_entry';await click(state.loginEntry);}
       else if(!state.provider && Date.now()-flow.started>15000 && !flow.acted.has('provider'))
         setStatus('SOCIAL_LOGIN_NOT_FOUND','선택한 간편 로그인 버튼을 찾지 못했습니다. 쇼핑몰 창에서 지원 여부를 확인해 주세요.');
       return;
     }
     const credentialId=provider || flow.source.id;
+    progress.stage='account_read';
     const credentials=this.accounts.credentials(credentialId);
     if(credentials.code) {
-      setStatus(credentials.code,credentials.code==='ACCOUNT_CREDENTIALS_UNREADABLE'
+      this.fail(flow,credentials.code,credentials.code==='ACCOUNT_CREDENTIALS_UNREADABLE'
         ? '저장 계정을 읽을 수 없습니다. 비밀번호를 다시 저장해 주세요.'
-        : `${credentialId==='naver'?'네이버':credentialId==='kakao'?'카카오':flow.source.name} 계정을 저장하거나 열린 창에서 직접 로그인해 주세요.`);
+        : `${credentialId==='naver'?'네이버':credentialId==='kakao'?'카카오':flow.source.name} 계정을 저장하거나 열린 창에서 직접 로그인해 주세요.`,{stage:'account_read',reason:credentials.code});
       return;
     }
     const currentControl=async field=>{
-      if(flow.stopped || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+      if(flow.stopped || flow.failure || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
       const current=await win.webContents.mainFrame.executeJavaScript(`(${captureShoppingLoginPage.toString()})(${JSON.stringify(method)})`,true);
-      if(flow.stopped || win.isDestroyed() || current?.href!==url || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+      if(flow.stopped || flow.failure || win.isDestroyed() || current?.href!==url || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
       if(current.blocked || !current[field]) throw new Error('LOGIN_INPUT_NOT_FOCUSED');
       return current[field];
     };
     const fill=async(field,value)=>{
       // Hydration, banners and validation can move the second input after the
       // first one was filled. Never reuse the initial password coordinates.
+      progress.stage=field+'_focus';
       const point=await currentControl(field);
       await click(point);
-      if(flow.stopped || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+      if(flow.stopped || flow.failure || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
       const focused=await win.webContents.mainFrame.executeJavaScript(`(() => {
         const target=document.elementFromPoint(${point.x},${point.y});
         return document.activeElement===target && target?.tagName==='INPUT'
           && ${field==='password' ? "target.type==='password' && target.autocomplete!=='new-password'" : "!['password','hidden','checkbox','radio','submit','button'].includes(target.type)"};
       })()`,true);
-      if(flow.stopped || win.isDestroyed() || !focused || win.webContents.getURL()!==url) throw new Error('LOGIN_INPUT_NOT_FOCUSED');
+      if(flow.stopped || flow.failure || win.isDestroyed() || !focused || win.webContents.getURL()!==url) throw new Error('LOGIN_INPUT_NOT_FOCUSED');
+      progress.stage=field+'_input';
       win.webContents.sendInputEvent({type:'keyDown',keyCode:'A',modifiers:['control']});
       win.webContents.sendInputEvent({type:'keyUp',keyCode:'A',modifiers:['control']});
       await win.webContents.insertText(value);
+      progress.stage=field+'_verify';
+      await this.wait(80);
+      const observed=await currentControl(field);
+      const retained=await win.webContents.mainFrame.executeJavaScript(`(() => {
+        const target=document.elementFromPoint(${observed.x},${observed.y});
+        return document.activeElement===target && target?.tagName==='INPUT'
+          && ${field==='password' ? "target.type==='password' && target.autocomplete!=='new-password'" : "!['password','hidden','checkbox','radio','submit','button'].includes(target.type)"}
+          && target.value.length>0;
+      })()`,true);
+      if(flow.stopped || flow.failure || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
+      if(!retained) throw new Error('LOGIN_INPUT_NOT_RETAINED');
     };
     const origin=new URL(url).origin;
     // A partial or failed submission must not fall through to loginEntry and
@@ -271,10 +318,11 @@ export class ShoppingLoginConnector {
     if(state.password && state.submit && (state.id || flow.acted.has(origin+':id')) && once(origin+':submit')) {
       if(state.id) await fill('id',credentials.loginId);
       await fill('password',credentials.password);
+      progress.stage='submit';
       await click(await currentControl('submit'));
       setStatus('LOGIN_SUBMITTED','로그인 정보를 입력했습니다. 인증 또는 로그인 결과를 확인해 주세요.');
     } else if(state.id && state.next && once(origin+':id')) {
-      await fill('id',credentials.loginId);await click(await currentControl('next'));
-    } else if(!state.password && state.loginEntry && once('entry')) await click(state.loginEntry);
+      await fill('id',credentials.loginId);progress.stage='submit';await click(await currentControl('next'));
+    } else if(!state.password && state.loginEntry && once('entry')) {progress.stage='login_entry';await click(state.loginEntry);}
   }
 }
