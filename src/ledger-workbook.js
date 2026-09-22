@@ -150,6 +150,12 @@
           cell.title=[cell.title,explanation].filter(Boolean).join('\n');
           if(!rows[r]?.[c])content.textContent='확인 필요';
         }
+        const fee=workbook.local?.fees?.[sheet.id]?.rows?.[r+1];
+        if(c===15&&fee) {
+          const explanation=fee.status==='category-required'?'카테고리를 입력하면 수수료와 마진이 자동 계산됩니다.':fee.status==='manual'?'직접 입력한 수수료입니다.':`${fee.rate*100}% · 최소 ${fee.minimum.toLocaleString('ko-KR')}원 · 최대 ${fee.maximum.toLocaleString('ko-KR')}원`;
+          cell.title=[cell.title,explanation,fee.source].filter(Boolean).join('\n');
+          if(fee.status==='category-required'&&!rows[r]?.[c])content.textContent='카테고리 확인';
+        }
         // Use textContent: sheet text and formulas must never execute in the app.
         tr.append(cell);
       }
