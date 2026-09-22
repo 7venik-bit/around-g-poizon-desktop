@@ -214,7 +214,7 @@
   }));
   $('workbook-export').addEventListener('click',()=>run(async()=>{
     const result=await window.aroundG.exportLedgerWorkbook();
-    if(result.ok)status('엑셀 내보내기 완료. 가져온 시점의 파일과 바이트 단위로 일치합니다.');
+    if(result.ok)status('Excel 내보내기 완료. 모든 시트·수식과 내부에서 저장한 수정 내용이 포함되었습니다.');
     else if(!result.canceled)status(messages[result.code] || '엑셀 내보내기에 실패했습니다.');
   }));
   $('workbook-hidden').addEventListener('change',()=>{page=0;tabs();render();});
