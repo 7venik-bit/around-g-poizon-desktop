@@ -5383,8 +5383,8 @@ async function waitForMusinsaAutomaticLogin(timeoutMs = 45000) {
       if (loginWindow && !loginWindow.isDestroyed() && (await inspectMusinsaLedgerWindow(loginWindow))?.kind !== "detail") loginWindow.close();
       return { ok: true };
     }
-    if (["LOGIN_VERIFICATION_REQUIRED", "LOGIN_MANUAL_REQUIRED", "ACCOUNT_CREDENTIALS_UNREADABLE", "ACCOUNT_CREDENTIALS_REQUIRED"].includes(status.code)) {
-      return { ok: false, code: status.code };
+    if (["LOGIN_ACTION_FAILED", "LOGIN_PAGE_LOAD_FAILED", "LOGIN_VERIFICATION_REQUIRED", "LOGIN_MANUAL_REQUIRED", "ACCOUNT_CREDENTIALS_UNREADABLE", "ACCOUNT_CREDENTIALS_REQUIRED"].includes(status.code)) {
+      return { ok: false, code: status.code, message: status.message, diagnostic: status.diagnostic };
     }
     await wait(500);
   }

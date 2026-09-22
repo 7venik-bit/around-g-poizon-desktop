@@ -23,6 +23,30 @@ function frame(t,html,url='https://www.musinsa.com/orders/detail/ORDER-10001') {
     identity:id=>dom.window.eval(`(${captureMusinsaLedgerProductIdentity.toString()})(${JSON.stringify(id)})`)};
 }
 
+test('Musinsa login returns action and page failures immediately with the original diagnostic',async()=>{
+  const main=readFileSync(new URL('../main.mjs',import.meta.url),'utf8');
+  const code=main.slice(main.indexOf('async function waitForMusinsaAutomaticLogin('),main.indexOf('\nfunction openMusinsaLedgerWindow()'));
+  for(const failure of ['LOGIN_ACTION_FAILED','LOGIN_PAGE_LOAD_FAILED']) {
+    const status={code:failure,message:'비밀번호 입력 확인 단계에서 중단됐습니다.',diagnostic:{stage:'password_verify',reason:'LOGIN_INPUT_NOT_RETAINED'}};
+    let waited=0;
+    const context=createContext({shoppingAccountServices:()=>({connector:{open:async()=>{},status:()=>status}}),wait:async()=>{waited++;throw Error('must return before polling');}});
+    const result=await runInContext(code+'\nwaitForMusinsaAutomaticLogin()',context);
+    assert.equal(result.ok,false);assert.equal(result.code,failure);assert.equal(result.message,status.message);
+    assert.equal(result.diagnostic,status.diagnostic);assert.equal(waited,0);
+  }
+});
+
+test('ledger displays the original login failure message and keeps fallback messages',()=>{
+  const renderer=readFileSync(new URL('../src/renderer.js',import.meta.url),'utf8');
+  const code=renderer.slice(renderer.indexOf('function ledgerFlowMessage('),renderer.indexOf('\nfunction renderCapturedLedgerRows()'));
+  const message=runInContext(code+'\nledgerFlowMessage',createContext({}));
+  const reason='비밀번호 입력란 선택 단계에서 중단됐습니다. 입력란의 초점을 확인하지 못했습니다.';
+  assert.equal(message({automaticLogin:{code:'LOGIN_ACTION_FAILED',message:reason}}),reason);
+  assert.match(message({automaticLogin:{code:'LOGIN_PAGE_LOAD_FAILED'}}),/로그인 페이지를 열지 못/);
+  assert.match(message({automaticLogin:{code:'LOGIN_ACTION_FAILED'}}),/입력이 중단/);
+  assert.match(message({automaticLogin:{code:'GOOGLE_ACCOUNT_READ_FAILED'}}),/Google Drive/);
+});
+
 test('detail evidence keeps each option, quantity and paid amount without duplicating image/title links',t=>{
   const {capture}=frame(t,detail(item()+item({size:'화이트 / 280',line:'line-b',qty:'1',price:'55,000'})));
   const page=capture();assert.equal(page.kind,'detail');assert.equal(page.purchaseDate,'2026-09-02');

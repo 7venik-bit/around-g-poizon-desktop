@@ -99,7 +99,7 @@ test('automatic input trusts HTTPS merchant boundaries and the exact provider lo
 });
 
 function browserFixture(t,accounts) {
-  const windows=[],inserted=[],scripts=[],events=[];
+  const windows=[],inserted=[],scripts=[],events=[],ticks=[],cleared=[];
   class BrowserWindow extends EventEmitter {
     constructor(options={}) {
       super();this.options=options;this.dom=new JSDOM('<body></body>',{url:'https://www.kolonmall.com/',runScripts:'outside-only'});
@@ -126,8 +126,8 @@ function browserFixture(t,accounts) {
     async loadURL(url){this.dom.reconfigure({url});}
   }
   const connector=new ShoppingLoginConnector({accounts,BrowserWindow,partition:'persist:test',windows:new Map(),notify:event=>events.push(event),
-    wait:async()=>{},setIntervalImpl:()=>1,clearIntervalImpl:()=>{}});
-  return {BrowserWindow,connector,windows,inserted,scripts,events};
+    wait:async()=>{},setIntervalImpl:fn=>{ticks.push(fn);return ticks.length;},clearIntervalImpl:id=>cleared.push(id)});
+  return {BrowserWindow,connector,windows,inserted,scripts,events,ticks,cleared};
 }
 const form='<form><input name="username" autocomplete="username"><input type="password"><button type="submit">로그인</button></form>';
 test('merchant password submits once and never appears inside injected scripts',async t=>{
@@ -277,6 +277,92 @@ test('automatic login stops at its deadline while a later manual callback can st
   w.dom.window.document.body.innerHTML='<button>로그아웃</button>';
   await b.connector.advance(w,flow);assert.equal(b.connector.status('kolon').code,'LOGIN_CONFIRMED');
 });
+test('password focus failure keeps its safe stage through later ticks and timeout, then allows manual confirmation',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
+  const send=w.webContents.sendInputEvent;
+  w.webContents.sendInputEvent=event=>{
+    if(event.type==='mouseUp' && w.dom.window.document.elementFromPoint(event.x,event.y)?.type==='password')return;
+    send(event);
+  };
+  const flow={source:sources[1],method:'password',started:Date.now(),acted:new Set(),children:new Set()};
+  b.connector.attach(w,flow);await new Promise(setImmediate);
+  const status=b.connector.status('kolon');
+  assert.equal(status.code,'LOGIN_ACTION_FAILED');
+  assert.deepEqual(status.diagnostic,{stage:'password_focus',reason:'LOGIN_INPUT_NOT_FOCUSED'});
+  assert.match(status.message,/비밀번호 입력란 선택/);assert.equal(flow.automaticStopped,true);assert.ok(b.cleared.length);
+  flow.started=Date.now()-121000;await b.ticks[0]();
+  assert.deepEqual(b.connector.status('kolon'),status);assert.deepEqual(b.inserted.map(x=>x.value),['fixture-id']);
+  w.dom.window.document.body.innerHTML='<button>로그아웃</button>';
+  await b.connector.advance(w,flow);
+  assert.equal(b.connector.status('kolon').code,'LOGIN_CONFIRMED');
+  assert.equal(b.connector.status('kolon').diagnostic,undefined);
+});
+
+for(const field of ['id','password']) test(`unretained ${field} input stops before submit without exposing credentials`,async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
+  const insert=w.webContents.insertText;let submitted=0;
+  w.webContents.insertText=async value=>{if((w.focused.type==='password')===(field==='password'))return;await insert(value);};
+  w.dom.window.document.querySelector('form').addEventListener('submit',()=>submitted++);
+  const flow={source:sources[1],method:'password',started:Date.now(),acted:new Set(),children:new Set()};
+  b.connector.attach(w,flow);await new Promise(setImmediate);
+  assert.deepEqual(b.connector.status('kolon').diagnostic,{stage:field+'_verify',reason:'LOGIN_INPUT_NOT_RETAINED'});
+  assert.equal(submitted,0);await b.ticks[0]();assert.equal(submitted,0);
+  assert.doesNotMatch(JSON.stringify(b.events),/fixture-id|fixture-secret/);
+  assert.ok(b.scripts.every(script=>!script.includes('fixture-secret')&&!script.includes('fixture-id')));
+});
+
+test('unexpected input exceptions never expose raw error text or URL query in diagnostics',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
+  w.webContents.insertText=async()=>{throw Error('fixture-secret https://private.test/?token=private-token');};
+  b.connector.attach(w,{source:sources[1],method:'password',started:Date.now(),acted:new Set(),children:new Set()});
+  await new Promise(setImmediate);
+  assert.deepEqual(b.connector.status('kolon').diagnostic,{stage:'id_input',reason:'LOGIN_ACTION_FAILED'});
+  assert.doesNotMatch(JSON.stringify(b.events),/fixture-secret|private\.test|private-token/);
+});
+
+test('page load failure remains the first failure after later connector ticks',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts);
+  b.BrowserWindow.prototype.loadURL=async()=>{throw Error('private navigation detail');};
+  await b.connector.open('kolon');await new Promise(setImmediate);
+  const status=b.connector.status('kolon');
+  assert.equal(status.code,'LOGIN_PAGE_LOAD_FAILED');assert.equal(status.diagnostic.stage,'page_load');
+  await b.ticks[0]();assert.deepEqual(b.connector.status('kolon'),status);
+  assert.doesNotMatch(JSON.stringify(b.events),/private navigation detail/);
+});
+
+test('verification failure is preserved without automatic credential retries',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML='<h1>보안 확인</h1>'+form;
+  const flow={source:sources[1],method:'password',started:Date.now(),acted:new Set()};
+  await b.connector.advance(w,flow);flow.started=Date.now()-121000;
+  w.dom.window.document.querySelector('h1').remove();await b.connector.advance(w,flow);
+  assert.equal(b.connector.status('kolon').code,'LOGIN_VERIFICATION_REQUIRED');assert.equal(b.inserted.length,0);
+});
+
+test('following a login navigation may cancel the initial load without becoming a terminal failure',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts);
+  b.BrowserWindow.prototype.loadURL=async()=>{throw Object.assign(Error('navigation cancelled'),{code:'ERR_ABORTED',errno:-3});};
+  await b.connector.open('kolon');await new Promise(setImmediate);
+  assert.equal(b.connector.status('kolon').code,'LOGIN_OPENED');
+  b.windows[0].dom.window.document.body.innerHTML=form;await b.ticks[0]();
+  assert.equal(b.connector.status('kolon').code,'LOGIN_SUBMITTED');
+  assert.deepEqual(b.inserted.map(x=>x.value),['fixture-id','fixture-secret']);
+});
+
+test('a failure in another login window stops pending input and preserves its first diagnostic',async t=>{
+  const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'fixture-id',password:'fixture-secret'});
+  const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
+  const flow={source:sources[1],method:'password',started:Date.now(),acted:new Set()};
+  b.connector.wait=async()=>b.connector.fail(flow,'LOGIN_PAGE_LOAD_FAILED','로그인 페이지를 열지 못했습니다.',{stage:'page_load',reason:'LOGIN_PAGE_LOAD_FAILED'});
+  await assert.rejects(b.connector.advance(w,flow),/LOGIN_PAGE_CHANGED/);
+  assert.equal(b.inserted.length,0);assert.equal(b.connector.status('kolon').code,'LOGIN_PAGE_LOAD_FAILED');
+});
+
 test('provider account changes clear only the shops linked through that provider',async()=>{
   const main=await readFile(new URL('../main.mjs',import.meta.url),'utf8');
   const start=main.indexOf('async function clearDomesticLogin(');

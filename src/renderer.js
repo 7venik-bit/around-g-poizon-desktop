@@ -5131,12 +5131,15 @@ function ledgerFormRow() {
 }
 function ledgerFlowMessage(result) {
   const code=result?.automaticLogin?.code || result?.code;
+  if(result?.automaticLogin?.message) return result.automaticLogin.message;
   return ({
     GOOGLE_ACCOUNT_CONNECTION_REQUIRED:"Google 구매장부 연결 정보가 필요합니다.",
     GOOGLE_ACCOUNT_READ_FAILED:"Google Drive 계정정보를 읽지 못했습니다.",
     MUSINSA_ACCOUNT_NOT_FOUND:"계정정보 탭에서 무신사 계정을 찾지 못했습니다.",
     LOGIN_VERIFICATION_REQUIRED:"무신사 보안 인증은 열린 창에서 직접 완료해 주세요.",
     LOGIN_MANUAL_REQUIRED:"자동 로그인을 완료하지 못했습니다. 열린 무신사 창에서 이어서 로그인해 주세요.",
+    LOGIN_ACTION_FAILED:"자동 로그인 입력이 중단됐습니다. 연동 관리의 무신사 오류 내용을 확인해 주세요.",
+    LOGIN_PAGE_LOAD_FAILED:"무신사 로그인 페이지를 열지 못했습니다. 열린 창을 확인해 주세요.",
   })[code] || result?.message || "무신사 주문 연결을 확인해 주세요.";
 }
 function renderCapturedLedgerRows() {
