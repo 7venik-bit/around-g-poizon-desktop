@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {posix} from 'node:path';
 import {unzipSync,zipSync,strFromU8,strToU8} from 'fflate';
 import {DOMParser,XMLSerializer} from '@xmldom/xmldom';
+import SSF from 'ssf';
 import {ledgerColumnName,ledgerScalar} from './ledger-calculation.mjs';
 
 const NS='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
@@ -88,6 +89,30 @@ export function readLedgerImages(book) {
 // All untouched parts (styles, images, hidden tabs, validations, names) survive.
 export function updateLedgerXlsx(book,edits=[]) {
   const files=unzipSync(Buffer.from(book.xlsxBase64,'base64'));
+  let styles,stylesChanged=false;
+  const dateStyle=(cell,format)=>{
+    styles ||= xml(files['xl/styles.xml']);
+    const xfs=first(styles.documentElement,'cellXfs'),original=children(xfs,'xf')[Number(cell.getAttribute('s')||0)];
+    if(!original)throw Error('WORKBOOK_STYLE_INVALID');
+    let formats=first(styles.documentElement,'numFmts');
+    const custom=formats?children(formats,'numFmt'):[],builtin=SSF.get_table();
+    const currentId=original.getAttribute('numFmtId'),currentFormat=custom.find(n=>n.getAttribute('numFmtId')===currentId)?.getAttribute('formatCode')||builtin[currentId];
+    if(currentFormat===format)return;
+    let formatId=custom.find(n=>n.getAttribute('formatCode')===format)?.getAttribute('numFmtId')||Object.keys(builtin).find(id=>builtin[id]===format);
+    if(formatId===undefined) {
+      if(!formats){formats=styles.createElementNS(NS,'numFmts');styles.documentElement.insertBefore(formats,styles.documentElement.firstChild);}
+      formatId=String(Math.max(163,...custom.map(n=>Number(n.getAttribute('numFmtId'))))+1);
+      const node=append(formats,'numFmt');node.setAttribute('numFmtId',formatId);node.setAttribute('formatCode',format);
+      formats.setAttribute('count',String(children(formats,'numFmt').length));
+    }
+    // Clone only the number format. Original fonts, fills, borders, alignment,
+    // protections and every pre-existing style definition stay intact.
+    const next=original.cloneNode(true);next.setAttribute('numFmtId',formatId);next.setAttribute('applyNumberFormat','1');
+    const serialized=new XMLSerializer().serializeToString(next),definitions=children(xfs,'xf');
+    let index=definitions.findIndex(n=>new XMLSerializer().serializeToString(n)===serialized);
+    if(index<0){index=definitions.length;xfs.appendChild(next);xfs.setAttribute('count',String(index+1));}
+    cell.setAttribute('s',String(index));stylesChanged=true;
+  };
   const root=xml(files['xl/workbook.xml']),rels=xml(files['xl/_rels/workbook.xml.rels']);
   const targets=new Map(Array.from(rels.documentElement.childNodes).filter(n=>n.nodeType===1).map(n=>[n.getAttribute('Id'),n.getAttribute('Target')]));
   const sheets=Array.from(root.getElementsByTagNameNS(NS,'sheet'));
@@ -137,7 +162,7 @@ export function updateLedgerXlsx(book,edits=[]) {
     for(const [number,pixels] of Object.entries(sheet.rowHeights||{})) {const row=rowAt(Number(number));row.setAttribute('ht',String(pixels*0.75));row.setAttribute('customHeight','1');}
     const changed=edits.filter(e=>e.sheetId===sheet.id);
     const drawings=new Map();
-    for(const found of anchors(files,path))if(changed.some(e=>e.row===found.row&&e.column===found.column)) {
+    for(const found of anchors(files,path))if(changed.some(e=>!e.formatOnly&&e.row===found.row&&e.column===found.column)) {
       found.anchor.parentNode.removeChild(found.anchor);drawings.set(found.path,found.doc);
     }
     for(const [part,document] of drawings)files[part]=output(document);
@@ -151,6 +176,7 @@ export function updateLedgerXlsx(book,edits=[]) {
       // element. Materializing it would apply style 0 instead of its implicit blank style.
       if(!formula&&raw.type==='text'&&raw.value===''&&!existing&&!edit.templateRow)continue;
       const cell=cellAt(edit.row,edit.column,edit.templateRow);
+      if(raw.type==='date')dateStyle(cell,sheet.numberFormats[r]?.[c]||'yyyy-mm-dd');
       for(const node of [...children(cell,'v'),...children(cell,'is'),...children(cell,'f')])cell.removeChild(node);
       cell.removeAttribute('t');
       if(formula) {
@@ -198,6 +224,7 @@ export function updateLedgerXlsx(book,edits=[]) {
     }
     files[path]=output(doc);
   }
+  if(stylesChanged)files['xl/styles.xml']=output(styles);
   let calc=first(root.documentElement,'calcPr');if(!calc)calc=append(root.documentElement,'calcPr');
   calc.setAttribute('fullCalcOnLoad','1');calc.setAttribute('forceFullCalc','1');calc.setAttribute('calcMode','auto');
   // A former calculation chain is stale after local edits.
