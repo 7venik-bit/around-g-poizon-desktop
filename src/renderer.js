@@ -3708,7 +3708,7 @@ async function pauseOfficialDomainAudit() {
   if (officialDomainAuditStopPending) return;
   officialDomainAuditStopPending = true;
   const current = explorerMeta.officialDomainAudit || {};
-  renderOfficialDomainAudit({ ...current, running: true, state: "running", phase: "stopping" });
+  renderOfficialDomainAudit({ ...current, running: true, autoPaused: true, state: "running", phase: "stopping" });
   button.disabled = true;
   let statusUnavailable = false;
   try {

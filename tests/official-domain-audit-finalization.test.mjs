@@ -72,18 +72,23 @@ test('stop returns a stopping snapshot without persisting stale progress', async
   assert.ok(start > 0 && end > start);
   let stop;
   let writes = 0;
+  const settingsWrites = [];
   let ticks = 0;
   const progress = [];
   const saved = { state: 'running', processed: 0, runTotal: 3400 };
   const context = vm.createContext({
     ipcMain:{handle:(_name,handler)=>{stop=handler;}},
     officialDomainAuditRunning:true, officialDomainAuditStopRequested:false,
+    officialDomainAuditAutoPaused:false,
     officialDomainAuditLastProgress:{ processed:2, runTotal:3400, startedAt:'run-1' },
     officialDomainAuditAbortCurrent:null, officialDomainAuditWindow:null,
     officialDomainAuditResumeTimer:null, clearTimeout,
     mainWindow:{webContents:{send:(_channel,payload)=>progress.push(payload)}},
     Date:{now:()=>ticks++ * 1_000}, wait:async()=>{},
-    store:{snapshot:()=>({settings:{brandCatalog:[]}})},
+    store:{
+      snapshot:()=>({settings:{brandCatalog:[]}}),
+      setSettings:async(value)=>settingsWrites.push(value),
+    },
     explorerMetadata:()=>({brands:[]}), ensureOfficialDomainRegistry:async()=>[],
     officialDomainAuditSnapshot:(_registry,overrides={})=>({...saved,...overrides}),
     persistOfficialDomainAudit:async()=>{writes++;},
@@ -94,6 +99,10 @@ test('stop returns a stopping snapshot without persisting stale progress', async
   assert.equal(result.audit.phase, 'stopping');
   assert.equal(result.audit.running, true);
   assert.equal(progress[0].phase, 'stopping', 'stop must notify the screen before cleanup finishes');
+  assert.equal(progress[0].autoPaused, true);
+  assert.equal(context.officialDomainAuditAutoPaused, true);
+  assert.equal(settingsWrites.length, 1);
+  assert.equal(settingsWrites[0].officialDomainAuditAutoPaused, true);
   assert.equal(writes, 0);
   context.officialDomainAuditRunning = false;
   saved.state = 'paused';
@@ -102,4 +111,39 @@ test('stop returns a stopping snapshot without persisting stale progress', async
   assert.equal(finished.audit.processed, 2);
   assert.equal(finished.audit.state, 'paused');
   assert.equal(writes, 0);
+});
+
+test('automatic favorite checks stay paused until the user explicitly resumes', async () => {
+  const main = (await readFile(new URL('../main.mjs', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+  const start = main.indexOf('  ipcMain.handle("official-domain:audit-start"');
+  const end = main.indexOf('\n  ipcMain.handle("official-domain:audit-stop"', start);
+  assert.ok(start > 0 && end > start);
+  let startAudit;
+  let runs = 0;
+  const settingsWrites = [];
+  const context = vm.createContext({
+    ipcMain:{handle:(_name,handler)=>{startAudit=handler;}},
+    officialDomainAuditAutoPaused:true, officialDomainAuditRunning:false,
+    officialDomainAuditResumeTimer:null, clearTimeout,
+    store:{
+      snapshot:()=>({settings:{brandCatalog:[]}}),
+      setSettings:async(value)=>settingsWrites.push(value),
+    },
+    explorerMetadata:()=>({brands:[]}), ensureOfficialDomainRegistry:async()=>[],
+    officialDomainAuditSnapshot:()=>({autoPaused:context.officialDomainAuditAutoPaused}),
+    runOfficialDomainAudit:async()=>{runs++;},
+  });
+  vm.runInContext(main.slice(start,end), context);
+  const blocked = await startAudit(null, {brandIds:[100], automatic:true});
+  assert.equal(blocked.paused, true);
+  assert.equal(blocked.audit.autoPaused, true);
+  assert.equal(runs, 0);
+  assert.equal(settingsWrites.length, 0);
+
+  const resumed = await startAudit(null, {recheckAll:true});
+  assert.equal(resumed.ok, true);
+  assert.equal(context.officialDomainAuditAutoPaused, false);
+  assert.equal(runs, 1);
+  assert.equal(settingsWrites.length, 1);
+  assert.equal(settingsWrites[0].officialDomainAuditAutoPaused, false);
 });
