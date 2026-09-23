@@ -2305,6 +2305,7 @@ body .shell>header{
 #startup-recovery-run::after{content:'POIZON 확인'!important}
 #brand-export-folder-select::after{content:'저장 폴더'!important}
 #official-domain-audit-toggle[data-running="true"]::after{content:'점검 일시 중지'!important}
+#official-domain-audit-toggle[data-running="true"]:disabled::after{content:'중지 처리 중'!important}
 #weekly-site-health-run:disabled::after{content:'점검 중'!important}
 #official-domain-audit-view[hidden],#weekly-site-health-view[hidden]{display:none!important}
 #official-domain-audit-view,#weekly-site-health-view{min-width:58px!important;padding:0 8px!important;border-color:#6ed9e6!important;background:#123f58!important;color:#e8ffff!important;font-size:11px!important;font-weight:800!important}

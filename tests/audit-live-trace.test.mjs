@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import vm from "node:vm";
 import { JSDOM } from "jsdom";
 
 const source = await readFile(new URL("../src/audit-trace.js", import.meta.url), "utf8");
+const rendererSource = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
 const mainSource = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 
-function createTrace() {
+function createTrace(actions = {}) {
   const dom = new JSDOM(`
     <button id="official-domain-audit-toggle" data-running="true"></button>
     <section id="audit-trace-panel" tabindex="-1" hidden>
@@ -26,7 +28,7 @@ function createTrace() {
   window.requestAnimationFrame = (callback) => callback();
   window.eval(source);
   const trace = window.AroundGAuditTrace.createAuditTraceController(window.document,
-    () => new Date("2026-09-23T01:00:00Z"));
+    () => new Date("2026-09-23T01:00:00Z"), actions);
   return { trace, dom, output, scrolls };
 }
 
@@ -85,10 +87,10 @@ test("official trace prints one final line when stop response repeats the worker
 });
 
 test("expanded trace follows real progress and offers an in-screen pause", () => {
-  const { trace, dom, output } = createTrace();
-  const doc = dom.window.document;
   let pauses = 0;
-  doc.getElementById("official-domain-audit-toggle").addEventListener("click", () => { pauses += 1; });
+  const { trace, dom, output } = createTrace({ pauseOfficial: () => { pauses += 1; } });
+  const doc = dom.window.document;
+  doc.getElementById("official-domain-audit-toggle").disabled = true;
   trace.open("official");
   trace.official({ running: true, state: "running", startedAt: "run-5",
     currentBrand: "Nike", phase: "official_site", processed: 1, runTotal: 4,
@@ -98,14 +100,46 @@ test("expanded trace follows real progress and offers an in-screen pause", () =>
   assert.equal(doc.getElementById("audit-trace-state").textContent, "실행 중");
   assert.equal(doc.getElementById("audit-trace-stop").hidden, false);
   doc.getElementById("audit-trace-stop").click();
+  doc.getElementById("audit-trace-stop").click();
   assert.equal(pauses, 1);
   assert.equal(doc.getElementById("audit-trace-stop").disabled, true);
-  assert.equal(output.children.length, 2, "the control must not add fabricated audit events");
+  assert.equal(doc.getElementById("audit-trace-stop").textContent, "중지 처리 중…");
+  assert.equal(doc.getElementById("audit-trace-state").textContent, "중지 처리 중");
+  assert.match(output.lastElementChild.textContent, /auditOfficialStores\.pause/);
   trace.official({ running: false, state: "paused", startedAt: "run-5", processed: 1, runTotal: 4 });
   assert.equal(doc.getElementById("audit-trace-stop").hidden, true);
   assert.equal(doc.getElementById("audit-trace-state").textContent, "일시 중지");
   doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   assert.equal(doc.getElementById("audit-trace-panel").hidden, true);
+});
+
+test("pause shows stopping immediately while the main-process request is pending", async () => {
+  const start = rendererSource.indexOf("async function pauseOfficialDomainAudit() {");
+  const end = rendererSource.indexOf('\n$("#official-domain-audit-toggle")?.addEventListener', start);
+  assert.ok(start >= 0 && end > start);
+  let finishStop;
+  const stopping = new Promise((resolve) => { finishStop = resolve; });
+  const button = { disabled: false };
+  const renders = [];
+  const context = vm.createContext({
+    officialDomainAuditStopPending: false,
+    explorerMeta: { officialDomainAudit: { running: true, state: "running", phase: "official_site" } },
+    $: () => button,
+    renderOfficialDomainAudit: (audit) => {
+      renders.push(audit);
+      context.explorerMeta.officialDomainAudit = audit;
+    },
+    auditTrace: { append: () => {} },
+    window: { aroundG: { stopOfficialDomainAudit: () => stopping } },
+  });
+  vm.runInContext(rendererSource.slice(start, end), context);
+  const request = context.pauseOfficialDomainAudit();
+  assert.equal(renders[0].phase, "stopping");
+  assert.equal(button.disabled, true);
+  finishStop({ audit: { running: false, state: "paused", phase: "", processed: 2 } });
+  await request;
+  assert.equal(renders.at(-1).state, "paused");
+  assert.equal(button.disabled, false);
 });
 
 test("dismissed official trace reopens with prior rows and the latest live state", () => {
