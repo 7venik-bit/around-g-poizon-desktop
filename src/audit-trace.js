@@ -11,6 +11,7 @@
 
     let activeKind = "";
     let lastEvent = "";
+    let lastFinalEvent = "";
     const timeLabel = () => clock().toLocaleTimeString("ko-KR", { hour12: false });
     const follow = () => {
       const scroll = () => {
@@ -35,6 +36,7 @@
     const open = (kind) => {
       activeKind = kind;
       lastEvent = "";
+      lastFinalEvent = "";
       output.replaceChildren();
       panel.hidden = false;
       panel.dataset.kind = kind;
@@ -74,9 +76,15 @@
         const command = commands[phase];
         if (command) append("official", detail ? `${command} // ${detail}` : command,
           phase === "security_wait" || phase === "timed_out" ? "warn" : phase === "saved" ? "success" : "info");
+      } else if (audit.running && phase === "stopping") {
+        append("official", "await finishPendingAuditWrite(); // 점검 중지 처리 및 결과 저장", "warn");
       } else if (!audit.running && ["paused", "completed", "completed_with_pending", "failed"].includes(state)) {
-        append("official", `auditOfficialStores.finish({ state: ${JSON.stringify(state)}, processed: ${processed}, total: ${total} });`,
-          state === "completed" ? "success" : "warn");
+        const finalEvent = [audit.startedAt, state, processed, total].join("|");
+        if (finalEvent !== lastFinalEvent) {
+          lastFinalEvent = finalEvent;
+          append("official", `auditOfficialStores.finish({ state: ${JSON.stringify(state)}, processed: ${processed}, total: ${total} });`,
+            state === "completed" ? "success" : "warn");
+        }
         summary.textContent = `${summary.textContent} · ${state === "completed" ? "완료" : state === "paused" ? "일시 중지" : "추가 확인 필요"}`;
       }
     };

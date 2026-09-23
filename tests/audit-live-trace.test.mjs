@@ -67,6 +67,17 @@ test("site-health trace shows each actual request, HTTP result and saved report"
   assert.match(dom.window.document.getElementById("audit-trace-summary").textContent, /2개 응답/);
 });
 
+test("official trace prints one final line when stop response repeats the worker result", () => {
+  const { trace, output } = createTrace();
+  trace.open("official");
+  const final = { running: false, state: "paused", startedAt: "run-4", processed: 2, runTotal: 3400 };
+  trace.official(final);
+  trace.official({ ...final, phase: "paused", updatedAt: "later" });
+  const finishes = [...output.children].filter((line) => line.textContent.includes("auditOfficialStores.finish"));
+  assert.equal(finishes.length, 1);
+  assert.match(finishes[0].textContent, /processed: 2/);
+});
+
 test("trace stops writing after dismissal, caps old lines and uses only actual checks", () => {
   const { trace, output, dom } = createTrace();
   trace.open("official");
