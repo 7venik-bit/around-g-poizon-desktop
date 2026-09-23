@@ -1,5 +1,8 @@
 const $ = (selector) => document.querySelector(selector);
-const auditTrace = window.AroundGAuditTrace?.createAuditTraceController();
+const auditTrace = window.AroundGAuditTrace?.createAuditTraceController(undefined, undefined, {
+  pauseOfficial: () => pauseOfficialDomainAudit(),
+});
+let officialDomainAuditStopPending = false;
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString("ko-KR")}원`;
 let state = { products: [], poizonSyncs: [], brandVerifications: [], ledger: [], orders: [], stockWatches: [], favorites: [] };
 let entryCollection = "ledger";
@@ -2593,6 +2596,7 @@ function renderOfficialDomainAudit(audit = {}) {
   status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%)${fullRunProgress} · 전용 연동 ${adapterDedicated.toLocaleString("ko-KR")} · 공통 연동 ${adapterCommon.toLocaleString("ko-KR")} · 연동 대기 ${adapterPending.toLocaleString("ko-KR")} · 공식몰·상품검색 확인 ${verified.toLocaleString("ko-KR")} · 공식몰 확인·상품검색 연결 불가 ${unsupported.toLocaleString("ko-KR")} · 공식몰 미발견·재확인 필요 ${pending.toLocaleString("ko-KR")}${current}${notFoundExcel}`;
   const resumable = audit.recheckAll && fullRunTotal > 0 && fullRunProcessed < fullRunTotal;
   button.dataset.running = audit.running ? "true" : "false";
+  button.disabled = officialDomainAuditStopPending || audit.phase === "stopping";
   button.textContent = audit.running ? "검증 일시 정지"
     : resumable ? "검증 계속" : "전체 브랜드 공식몰 재검증·연동";
   button.classList.toggle("primary", !audit.running);
@@ -3699,16 +3703,41 @@ async function syncFullBrandCatalog({ automatic = false } = {}) {
   return true;
 }
 $("#brand-sync").addEventListener("click", () => syncFullBrandCatalog());
+async function pauseOfficialDomainAudit() {
+  const button = $("#official-domain-audit-toggle");
+  if (officialDomainAuditStopPending) return;
+  officialDomainAuditStopPending = true;
+  const current = explorerMeta.officialDomainAudit || {};
+  renderOfficialDomainAudit({ ...current, running: true, state: "running", phase: "stopping" });
+  button.disabled = true;
+  let statusUnavailable = false;
+  try {
+    const result = await window.aroundG.stopOfficialDomainAudit();
+    if (result?.audit) renderOfficialDomainAudit(result.audit);
+  } catch (error) {
+    auditTrace?.append("official", `audit.error(${JSON.stringify(String(error?.message || error))});`, "warn");
+    try {
+      renderOfficialDomainAudit(await window.aroundG.getOfficialDomainAudit());
+    } catch {
+      statusUnavailable = true;
+      renderOfficialDomainAudit(current);
+    }
+  } finally {
+    officialDomainAuditStopPending = false;
+    button.disabled = !statusUnavailable && explorerMeta.officialDomainAudit?.phase === "stopping";
+  }
+}
 $("#official-domain-audit-toggle")?.addEventListener("click", async () => {
   const button = $("#official-domain-audit-toggle");
+  if (button.dataset.running === "true") {
+    auditTrace?.append("official", "await auditOfficialStores.pause();");
+    await pauseOfficialDomainAudit();
+    return;
+  }
   button.disabled = true;
-  const stopping = button.dataset.running === "true";
-  if (!stopping) auditTrace?.open("official");
-  else auditTrace?.append("official", "await auditOfficialStores.pause();");
+  auditTrace?.open("official");
   try {
-    const result = stopping
-      ? await window.aroundG.stopOfficialDomainAudit()
-      : await window.aroundG.startOfficialDomainAudit({ recheckAll: true });
+    const result = await window.aroundG.startOfficialDomainAudit({ recheckAll: true });
     if (result?.audit) renderOfficialDomainAudit(result.audit);
   } catch (error) {
     auditTrace?.append("official", `audit.error(${JSON.stringify(String(error?.message || error))});`, "warn");

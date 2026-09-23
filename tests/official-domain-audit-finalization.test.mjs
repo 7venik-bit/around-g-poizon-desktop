@@ -73,6 +73,7 @@ test('stop returns a stopping snapshot without persisting stale progress', async
   let stop;
   let writes = 0;
   let ticks = 0;
+  const progress = [];
   const saved = { state: 'running', processed: 0, runTotal: 3400 };
   const context = vm.createContext({
     ipcMain:{handle:(_name,handler)=>{stop=handler;}},
@@ -80,6 +81,7 @@ test('stop returns a stopping snapshot without persisting stale progress', async
     officialDomainAuditLastProgress:{ processed:2, runTotal:3400, startedAt:'run-1' },
     officialDomainAuditAbortCurrent:null, officialDomainAuditWindow:null,
     officialDomainAuditResumeTimer:null, clearTimeout,
+    mainWindow:{webContents:{send:(_channel,payload)=>progress.push(payload)}},
     Date:{now:()=>ticks++ * 1_000}, wait:async()=>{},
     store:{snapshot:()=>({settings:{brandCatalog:[]}})},
     explorerMetadata:()=>({brands:[]}), ensureOfficialDomainRegistry:async()=>[],
@@ -91,6 +93,7 @@ test('stop returns a stopping snapshot without persisting stale progress', async
   assert.equal(result.audit.processed, 2);
   assert.equal(result.audit.phase, 'stopping');
   assert.equal(result.audit.running, true);
+  assert.equal(progress[0].phase, 'stopping', 'stop must notify the screen before cleanup finishes');
   assert.equal(writes, 0);
   context.officialDomainAuditRunning = false;
   saved.state = 'paused';

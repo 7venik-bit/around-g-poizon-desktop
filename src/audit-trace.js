@@ -1,7 +1,7 @@
 (function (root) {
   const MAX_LINES = 240;
 
-  function createAuditTraceController(doc = root.document, clock = () => new Date()) {
+  function createAuditTraceController(doc = root.document, clock = () => new Date(), actions = {}) {
     const panel = doc.getElementById("audit-trace-panel");
     const title = doc.getElementById("audit-trace-title");
     const summary = doc.getElementById("audit-trace-summary");
@@ -96,6 +96,7 @@
       if (stop) {
         stop.hidden = !audit.running;
         stop.disabled = phase === "stopping";
+        stop.textContent = phase === "stopping" ? "중지 처리 중…" : "점검 일시 중지";
       }
       progress(processed, total);
       const key = [audit.startedAt, brand, processed, phase, detail, audit.attempt, state, audit.running].join("|");
@@ -170,10 +171,20 @@
     };
     close.addEventListener("click", hide);
     stop?.addEventListener("click", () => {
-      const toggle = doc.getElementById("official-domain-audit-toggle");
-      if (activeKind === "official" && toggle?.dataset.running === "true") {
-        stop.disabled = true;
-        toggle.click();
+      if (activeKind !== "official" || !latestOfficial?.running || stop.disabled
+        || typeof actions.pauseOfficial !== "function") return;
+      stop.disabled = true;
+      stop.textContent = "중지 처리 중…";
+      if (stateBadge) stateBadge.textContent = "중지 처리 중";
+      append("official", "await auditOfficialStores.pause();", "warn");
+      try {
+        Promise.resolve(actions.pauseOfficial()).catch((error) => {
+          stop.disabled = false;
+          append("official", `audit.error(${JSON.stringify(String(error?.message || error))});`, "warn");
+        });
+      } catch (error) {
+        stop.disabled = false;
+        append("official", `audit.error(${JSON.stringify(String(error?.message || error))});`, "warn");
       }
     });
     doc.addEventListener("keydown", (event) => {

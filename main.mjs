@@ -4321,6 +4321,9 @@ function officialDomainAuditSnapshot(registry, extra = {}) {
 }
 
 function sendOfficialDomainAuditProgress(registry, extra = {}) {
+  if (officialDomainAuditStopRequested && officialDomainAuditRunning && extra.running !== false) {
+    extra = { ...extra, phase: "stopping", currentBrand: "" };
+  }
   const payload = officialDomainAuditSnapshot(registry, extra);
   if (officialDomainAuditRunning) officialDomainAuditLastProgress = payload;
   mainWindow?.webContents.send("official-domain:audit-progress", payload);
@@ -12564,6 +12567,12 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("official-domain:audit-stop", async () => {
     officialDomainAuditStopRequested = true;
+    if (officialDomainAuditRunning && officialDomainAuditLastProgress) {
+      officialDomainAuditLastProgress = {
+        ...officialDomainAuditLastProgress, phase: "stopping", currentBrand: "",
+      };
+      mainWindow?.webContents.send("official-domain:audit-progress", officialDomainAuditLastProgress);
+    }
     officialDomainAuditAbortCurrent?.();
     officialDomainAuditAbortCurrent = null;
     if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) {
