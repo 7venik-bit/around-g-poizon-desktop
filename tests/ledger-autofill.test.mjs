@@ -44,6 +44,23 @@ test('new product rows get formulas; empty rows are not populated and user clear
   assert.equal(s.formulas[41][18],'=N42*0.08');assert.equal(s.formulas[41][19],'');
 });
 
+test('repairs a missing middle-row size lookup only when the original size table has that size',()=>{
+  const {book,s,put}=fixture();
+  const size={id:2,name:'사이즈',rowCount:24,columnCount:10,rawValues:Array.from({length:24},()=>Array.from({length:10},()=>({type:'text',value:''}))),formulas:Array.from({length:24},()=>Array(10).fill('')),displayValues:Array.from({length:24},()=>Array(10).fill(''))};
+  size.rawValues[9][6]={type:'number',value:'39'};size.rawValues[9][7]={type:'number',value:'245'};
+  book.sheets.push(size);
+  for(const row of [40,41,42,43]){put(row,3,`SHOE-${row}`);put(row,5,'남성');put(row,6,39);}
+  put(40,7,245);put(41,7,'=IFERROR(IF(E574="여성",VLOOKUP(F574,\'사이즈\'!$B$4:$E$24,2,FALSE),VLOOKUP(F574,\'사이즈\'!$G$4:$J$24,2,FALSE)),"")');
+  put(43,6,95);
+  const repaired=autofillLedger(book,{repair:true});calculateLedger(book);
+  assert.equal(s.rawValues[39][6].value,'245');
+  for(const row of [41,42]){assert.match(s.formulas[row-1][6],new RegExp(`F${row}`));assert.equal(s.calculatedValues[row-1][6].value,245);}
+  assert.equal(s.formulas[42][6],'');
+  assert.ok(repaired.audit.some(change=>change.cell==='G42'));
+  put(42,7,'');autofillLedger(book,{edits:[{sheetId:1,row:42,column:7}]});
+  autofillLedger(book,{repair:true});assert.equal(s.formulas[41][6],'');
+});
+
 test('missing inputs are not zero, invalid money remains visible, and zero denominators stay undefined',()=>{
   const {book,s,put}=fixture();put(5,3,'ITEM');put(5,10,' ');put(5,14,50000);put(5,17,3490);autofillLedger(book,{repair:true});calculateLedger(book);
   assert.equal(s.calculatedValues[4][15].value,'');assert.equal(s.calculatedValues[4][19].value,'');

@@ -332,7 +332,35 @@
             <label>열 너비 <input id="workbook-column-width" type="number" min="32" max="600" step="1" placeholder="px" aria-label="선택 열 너비 (픽셀)"></label>
             <label>행 높이 <input id="workbook-row-height" type="number" min="24" max="400" step="1" placeholder="px" aria-label="선택 행 높이 (픽셀)"></label>
             <button type="button" id="workbook-size-save" disabled>크기 적용</button>
+            <button type="button" id="workbook-category-review" disabled>사진으로 카테고리 확인</button>
           </div>
+          <section id="workbook-category-panel" class="workbook-category-panel" hidden aria-label="상품 사진과 수수료 카테고리 확인">
+            <img id="workbook-category-photo" alt="분류할 상품 사진" hidden>
+            <div class="workbook-category-details">
+              <strong id="workbook-category-product"></strong>
+              <p id="workbook-category-hint"></p>
+              <label>수수료 카테고리
+                <select id="workbook-category-choice">
+                  <option value="">사진을 확인한 뒤 선택</option>
+                  <option value="신발류">신발류 · 10%</option>
+                  <option value="의류">의류 · 10%</option>
+                  <option value="가방 및 캐리어">가방 및 캐리어 · 14%</option>
+                  <option value="시계류">시계류 · 14%</option>
+                  <option value="액세서리류">액세서리류 · 14%</option>
+                  <option value="뷰티제품">뷰티제품 · 10%</option>
+                  <option value="완구·악기류">완구·악기류 · 10%</option>
+                  <option value="운동·아웃도어">운동·아웃도어 · 10%</option>
+                  <option value="주류">주류 · 10%</option>
+                  <option value="가구류">가구류 · 10%</option>
+                  <option value="3C전자제품">3C전자제품 · 10%</option>
+                  <option value="건강식품">건강식품 · 10%</option>
+                  <option value="식품류">식품류 · 10%</option>
+                  <option value="기타">기타 · 10%</option>
+                </select>
+              </label>
+              <button type="button" id="workbook-category-save">카테고리 저장</button>
+            </div>
+          </section>
           <p class="workbook-display-hint">셀 더블클릭·F2 또는 바로 입력으로 편집 · Enter/Tab 저장 · Esc 취소 · Shift+클릭 여러 셀 선택 · 열/행 경계를 끌어 크기 조절</p>
           <div id="workbook-table" tabindex="0" aria-label="원본 장부 표"></div>
           <div><button type="button" id="workbook-prev">이전 100행</button><span id="workbook-page"></span><button type="button" id="workbook-next">다음 100행</button></div>

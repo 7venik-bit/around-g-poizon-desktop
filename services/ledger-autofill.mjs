@@ -2,12 +2,22 @@ import {ledgerColumnName} from './ledger-calculation.mjs';
 import {ledgerArticleKey,ledgerCategoryIndex} from './ledger-categories.mjs';
 import {ledgerFeeFormula,ledgerFeePolicy,LEDGER_FEE_SOURCE} from './ledger-fees.mjs';
 
-export const LEDGER_FORMULA_VERSION=2;
+export const LEDGER_FORMULA_VERSION=3;
 const compact=value=>String(value??'').replace(/\s/g,'');
 const valueAt=(sheet,r,c)=>sheet.rawValues?.[r-1]?.[c-1]?.value??sheet.displayValues?.[r-1]?.[c-1]??'';
 const rawAt=(sheet,r,c)=>sheet.rawValues?.[r-1]?.[c-1]||{type:'text',value:''};
 const blank=value=>String(value??'').trim()==='';
 const calculationColumns=[16,18,19,20,21,22];
+const editableFormulaColumns=[7,...calculationColumns];
+const sizeFormula=row=>`=IFERROR(IF(E${row}="여성",VLOOKUP(F${row},'사이즈'!$B$4:$E$24,2,FALSE),VLOOKUP(F${row},'사이즈'!$G$4:$J$24,2,FALSE)),"")`;
+const legacySizeFormula=formula=>/^=\s*(?:IFERROR\s*\()?\s*IF\s*\(.*VLOOKUP\s*\(.*'사이즈'!/i.test(formula);
+function sizeLookupAvailable(book,sheet,row) {
+  const lookup=book.sheets.find(s=>s.name==='사이즈');
+  const size=String(valueAt(sheet,row,6)).trim();
+  if(!lookup||!size)return false;
+  const keyColumn=String(valueAt(sheet,row,5)).trim()==='여성'?2:7;
+  return Array.from({length:21},(_,i)=>i+4).some(r=>String(valueAt(lookup,r,keyColumn)).trim()===size);
+}
 
 // Only the original transaction-table layout is eligible. Other worksheets,
 // arbitrary user formulas and the size lookup are not calculation templates.
@@ -81,10 +91,20 @@ export function autofillLedger(book,{repair=false,edits:inputEdits=[],manual=tru
     }
     // Direct edits (including Delete) are explicit overrides. Other row edits
     // must never silently re-create a calculation the user deliberately cleared.
-    if(manual)for(const e of changed)if(e.row>2&&calculationColumns.includes(e.column))overrides[`${e.row}:${e.column}`]=true;
+    if(manual)for(const e of changed)if(e.row>2&&editableFormulaColumns.includes(e.column))overrides[`${e.row}:${e.column}`]=true;
     const rows=repair?Array.from({length:sheet.rawValues.length-2},(_,i)=>i+3):[...new Set(changed.map(e=>e.row).filter(r=>r>2))];
     for(const row of rows) {
       const product=ledgerProductRow(sheet,row),formulas=ledgerRowFormulas(row,categoryState.column);
+      const sizeRaw=rawAt(sheet,row,7),sizeExisting=sheet.formulas?.[row-1]?.[6]||'';
+      const sizeReferences=[...sizeExisting.matchAll(/\b[EF](\d+)\b/g)].map(match=>Number(match[1]));
+      if(product&&!overrides[`${row}:7`]&&sizeLookupAvailable(book,sheet,row)
+        &&(blank(sizeRaw.value)||legacySizeFormula(sizeExisting)&&sizeReferences.some(reference=>reference!==row))) {
+        const next=sizeFormula(row);
+        if(sizeExisting!==next) {
+          write(sheet,row,7,{type:'formula',value:next},edits);
+          audit.push({sheetId:sheet.id,cell:'G'+row,before:sizeRaw,after:next,reason:'missing-size-lookup'});
+        }
+      }
       if(repair)for(const column of [10,14,16,17,18,19,20]) {
         const raw=rawAt(sheet,row,column);
         // Earlier versions saved typed money as text. Repair only unambiguous
