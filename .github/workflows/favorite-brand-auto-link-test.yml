@@ -1,14 +1,14 @@
-name: Verify favorite-brand automatic site linkage
+name: Verify manual official-store audit
 on:
   push:
     branches: [codex/favorite-brand-auto-link]
   pull_request:
     branches: [main]
     paths:
-      - scripts/patch-favorite-brand-auto-link.mjs
       - scripts/patch-domestic-authenticity-guide.mjs
-      - scripts/verify-favorite-brand-auto-link.mjs
+      - scripts/verify-manual-official-audit.mjs
       - src/renderer.js
+      - src/style.css
       - main.mjs
       - .github/workflows/favorite-brand-auto-link-test.yml
 permissions:
@@ -24,9 +24,9 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - name: Apply shipping linkage patch
+      - name: Apply shipping authenticity patch
         run: node scripts/patch-domestic-authenticity-guide.mjs
-      - name: Verify targeted favorite linkage
-        run: node scripts/verify-favorite-brand-auto-link.mjs
+      - name: Verify manual-only official-store audit
+        run: node scripts/verify-manual-official-audit.mjs
       - name: Verify final source syntax and official-domain policy
         run: node --check main.mjs && node --check src/renderer.js && node --test tests/official-domain-registry.test.mjs

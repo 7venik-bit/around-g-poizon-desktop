@@ -52,9 +52,4 @@ renderer = replaceOnce(
 );
 await writeFile(rendererPath, renderer, "utf8");
 
-// Release builds already execute this patch at the correct point in the source
-// transformation sequence. Keep favorite-brand linkage in the same guarded step
-// so the packaged app, Windows validation and release build all receive it.
-await import("./patch-favorite-brand-auto-link.mjs");
-
-console.log("Domestic authenticity guide patch applied; account-sheet trusted retailers, exact-card labels, and favorite-brand auto linkage finish as confirmed");
+console.log("Domestic authenticity guide patch applied; account-sheet trusted retailers and exact-card labels finish as confirmed");
