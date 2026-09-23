@@ -10449,7 +10449,7 @@ async function captureSellerCenterProducts() {
     conditions: conditionResults,
     products: products.map((product) => ({
       ...product,
-      logoUrl: imageMap[product.articleNumber] || "",
+      logoUrl: product.logoUrl || imageMap[product.articleNumber] || "",
       sellerCenterDirect: true,
       apiMatched: undefined,
     })),
