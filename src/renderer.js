@@ -1,4 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
+const auditTrace = window.AroundGAuditTrace?.createAuditTraceController();
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString("ko-KR")}원`;
 let state = { products: [], poizonSyncs: [], brandVerifications: [], ledger: [], orders: [], stockWatches: [], favorites: [] };
 let entryCollection = "ledger";
@@ -2546,6 +2547,7 @@ function mergeExcelProductsWithSellerScreen(excelProducts = [], sellerProducts =
 }
 
 function renderOfficialDomainAudit(audit = {}) {
+  auditTrace?.official(audit);
   const total = Number(audit.total || explorerMeta.officialDomainSummary?.total || 0);
   const inspected = Number(audit.inspected || 0);
   const verified = Number(audit.verified || 0);
@@ -2600,6 +2602,7 @@ function renderOfficialDomainAudit(audit = {}) {
 }
 
 function renderWeeklySiteHealth(health = {}) {
+  auditTrace?.server(health);
   const panel = $("#weekly-site-health");
   const status = $("#weekly-site-health-status");
   const report = $("#weekly-site-health-report");
@@ -3695,14 +3698,19 @@ $("#brand-sync").addEventListener("click", () => syncFullBrandCatalog());
 $("#official-domain-audit-toggle")?.addEventListener("click", async () => {
   const button = $("#official-domain-audit-toggle");
   button.disabled = true;
-  if (button.dataset.running === "true") {
-    const result = await window.aroundG.stopOfficialDomainAudit();
+  const stopping = button.dataset.running === "true";
+  if (!stopping) auditTrace?.open("official");
+  else auditTrace?.append("official", "await auditOfficialStores.pause();");
+  try {
+    const result = stopping
+      ? await window.aroundG.stopOfficialDomainAudit()
+      : await window.aroundG.startOfficialDomainAudit({ recheckAll: true });
     if (result?.audit) renderOfficialDomainAudit(result.audit);
-  } else {
-    const result = await window.aroundG.startOfficialDomainAudit({ recheckAll: true });
-    if (result?.audit) renderOfficialDomainAudit(result.audit);
+  } catch (error) {
+    auditTrace?.append("official", `audit.error(${JSON.stringify(String(error?.message || error))});`, "warn");
+  } finally {
+    button.disabled = false;
   }
-  button.disabled = false;
 });
 
 async function acceptSellerCenterProducts(products, sourceLabel, options = {}) {
@@ -5632,9 +5640,16 @@ window.aroundG.onBackupStatus(renderBackupStatus);
 $("#backup-state")?.addEventListener("click", async () => renderBackupStatus(await window.aroundG.runBackup()));
 
 $("#weekly-site-health-run")?.addEventListener("click", async () => {
+  auditTrace?.open("server");
   renderWeeklySiteHealth({ running: true, message: "모든 연동 서버 정기점검을 시작합니다." });
-  const result = await window.aroundG.runWeeklySiteHealth();
-  renderWeeklySiteHealth(result || {});
+  try {
+    const result = await window.aroundG.runWeeklySiteHealth();
+    renderWeeklySiteHealth(result || {});
+  } catch (error) {
+    const message = String(error?.message || error);
+    auditTrace?.append("server", `checkSiteHealth.error(${JSON.stringify(message)});`, "warn");
+    renderWeeklySiteHealth({ running: false, state: "failed", message: `서버 점검 실패: ${message}` });
+  }
 });
 window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
 
