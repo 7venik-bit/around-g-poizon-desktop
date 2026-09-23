@@ -15,6 +15,7 @@ export function normalizePurchaseLedgerRow(input = {}) {
     platform: "무신사", brand: clean(input.brand), purchaseUrl: url,
     articleNumber, modelName: clean(input.modelName || input.name), gender: clean(input.gender),
     euSize: clean(input.euSize), krSize: clean(input.krSize || input.size), imageUrl: purchaseLedgerImageUrl(input.imageUrl),
+    cardIssuer: clean(input.cardIssuer),
     status: input.status === "반품중" ? "반품중" : "구매완료", purchaseDate, purchasePrice,
     orderNumber: clean(input.orderNumber), quantity: Math.max(1, Math.round(Number(input.quantity || 1))),
     duplicateKey: clean(input.duplicateKey) || crypto.createHash("sha256")

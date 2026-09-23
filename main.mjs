@@ -5258,7 +5258,7 @@ async function syncPurchaseLedger(input = {}) {
   const proof = moving ? {ok:true,evidence:input.orderEvidence} : musinsaLedgerCaptures.resolve(input, failedRow);
   if (!proof.ok) return proof;
   if (!Number.isInteger(Number(input.quantity)) || Number(input.quantity) < 1) return {ok:false,code:"REQUIRED_FIELDS_MISSING",message:"주문상세의 수량을 확인해 주세요."};
-  const row = normalizePurchaseLedgerRow({ ...input, orderEvidence: proof.evidence });
+  const row = normalizePurchaseLedgerRow({ ...input, cardIssuer: moving ? input.cardIssuer : proof.cardIssuer, orderEvidence: proof.evidence });
   row.orderEvidence = proof.evidence;
   const validation = validatePurchaseLedgerRow(row);
   if (!validation.ok) return { ok: false, code: "REQUIRED_FIELDS_MISSING", message: `${validation.missing.join(", ")}을(를) 확인해 주세요.` };

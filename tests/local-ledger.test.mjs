@@ -338,6 +338,30 @@ test('selected rows with embedded pictures, receipt notes or merges are never ov
  }
 });
 
+test('a verified payment card fills all purchased units and an existing receipt without overwriting a manual card',async t=>{
+ const book=calculationFixture(),s=book.sheets[0];s.validations[4][14]={type:'other'};
+ const {ledger}=await setup(t,book);let current=await ledger.load();
+ const withCard={...purchase,cardIssuer:'삼성'};
+ await ledger.record(withCard,{sheetId:1,row:42,revision:current.revision});current=await ledger.load();
+ assert.deepEqual([42,43,44].map(n=>current.sheets[0].rawValues[n-1][14].value),['삼성','삼성','삼성']);
+ const edited=await ledger.edit({sheetId:1,row:43,column:15,revision:current.revision,
+   expected:current.sheets[0].rawValues[42][14],next:{type:'text',value:'현대'}});
+ assert.equal(edited.sheets[0].rawValues[42][14].value,'현대');
+ assert.deepEqual(edited.sheets[0].validations[4][14],s.validations[4][14]);
+ await ledger.record(withCard,{sheetId:1,row:42,revision:edited.revision});
+ assert.equal((await ledger.load()).sheets[0].rawValues[42][14].value,'현대');
+});
+
+test('unrecognized validation still blocks unrelated cells while the card column remains editable',async t=>{
+ const book=calculationFixture(),s=book.sheets[0];s.validations[4][14]={type:'other'};s.validations[4][2]={type:'other'};
+ const {ledger}=await setup(t,book),current=await ledger.load();
+ const edit=(column,value)=>({sheetId:1,row:5,column,revision:current.revision,
+   expected:current.sheets[0].rawValues[4][column-1],next:{type:'text',value}});
+ const changed=await ledger.edit(edit(15,'삼성'));
+ assert.equal(changed.sheets[0].rawValues[4][14].value,'삼성');
+ await assert.rejects(ledger.edit({...edit(3,'DIFFERENT'),revision:changed.revision}),/CELL_VALIDATION_REVIEW/);
+});
+
 test('clear dropdown and formula contents atomically, preserve styles/rules and recalculate/export blanks',async t=>{
  const book=fixture(),s=book.sheets[0];s.validations[4][11]={type:'list',values:['구매완료']};s.rawValues[4][11]={type:'text',value:'구매완료'};s.displayValues[4][11]='구매완료';
  const {ledger,dir,options}=await setup(t,book),current=await ledger.load();
