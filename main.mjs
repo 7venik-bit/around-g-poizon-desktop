@@ -1,3 +1,4 @@
+import { popularTableScript } from "./services/popular-table-runtime.mjs";
 import { createLocalLedger } from "./services/local-ledger.mjs";
 import { ledgerArticleKey } from "./services/ledger-categories.mjs";
 import {ledgerClipboardData,parseLedgerClipboard} from './services/ledger-clipboard.mjs';
@@ -459,279 +460,13 @@ const KR_POIZON_BRAND_LIST_URL = "https://kr.poizon.com/brand/list";
 const EN_POIZON_BRAND_LIST_URL = "https://www.poizon.com/brand/list";
 const APP_ICON_PATH = join(import.meta.dirname, "build", "icon.png");
 const SITE_HEALTH_TIMEOUT_MS = 25_000;
-const SELLER_CAPTURE_SCRIPT = `(async () => {
-  const selector = "tr, [role='row'], li, [class*='row'], [class*='item'], [class*='product'], [class*='table']";
-  const headings = [...document.querySelectorAll("h1, h2, h3, h4, strong, span, div")]
-    .filter((element) => String(element.innerText || element.textContent || "").trim() === "인기상품");
-  const scopes = [];
-  for (const heading of headings) {
-    let candidate = heading.parentElement;
-    for (let depth = 0; candidate && depth < 12; depth += 1, candidate = candidate.parentElement) {
-      const text = String(candidate.innerText || "");
-      const hasTableHeaders = text.includes("SPU 기준")
-        && text.includes("SKU 기준")
-        && text.includes("상품정보")
-        && /평균\\s*거래가/.test(text);
-      if (hasTableHeaders) {
-        const rowCount = candidate.querySelectorAll(selector).length;
-        const articleCount = (text.match(/(?=[A-Z0-9._/-]{4,30}\\b)(?=[A-Z0-9._/-]*[A-Z])(?=[A-Z0-9._/-]*\\d)[A-Z0-9][A-Z0-9._/-]{3,29}/gi) || []).length;
-        const priceCount = (text.match(/(?:\\d{1,3},)+\\d{3}/g) || []).length;
-        if (rowCount >= 3 && articleCount >= 1 && priceCount >= 1) {
-          scopes.push({ element: candidate, textLength: text.length, rowCount, articleCount, priceCount });
-        }
-      }
-    }
-  }
-  scopes.sort((left, right) =>
-    left.textLength - right.textLength
-    || right.articleCount - left.articleCount
-    || right.priceCount - left.priceCount
-  );
-  const scope = scopes[0]?.element;
-  if (!scope) {
-    return { text: "", title: document.title, url: location.href, nodes: [], scopeVerified: false };
-  }
-  const collected = new Map();
-  const collectVisibleRows = () => {
-    for (const element of scope.querySelectorAll(selector)) {
-      const text = String(element.innerText || "").trim();
-      if (!text || text.length > 3000) continue;
-      const image = element.querySelector?.("img[src]");
-      const imageUrl = image?.src || "";
-      collected.set(text + "\\n" + imageUrl, { text, imageUrl });
-    }
-  };
-  collectVisibleRows();
-  const nodes = [...collected.values()].slice(0, 5000);
-  const scrollCandidates = [scope, ...scope.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .map((element) => ({
-      element,
-      maximum: Math.max(0, element.scrollHeight - element.clientHeight),
-    }))
-    .filter((candidate) => candidate.maximum > 80)
-    .sort((left, right) => right.maximum - left.maximum);
-  const scrollTarget = scrollCandidates[0];
-  return {
-    text: nodes.map((node) => node.text).join("\\n").slice(0, 1000000),
-    title: document.title,
-    url: location.href,
-    nodes,
-    scopeVerified: true,
-    scannedNodeCount: nodes.length,
-    signature: nodes.map((node) => node.text + "|" + node.imageUrl).join("||").slice(0, 200000),
-    scrollTop: Number(scrollTarget?.element?.scrollTop || 0),
-    scrollMaximum: Number(scrollTarget?.maximum || 0)
-  };
-})()`;
-const SELLER_SCROLL_SCRIPT = `(() => {
-  const root = document.scrollingElement || document.documentElement;
-  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .filter((element, index, all) => all.indexOf(element) === index)
-    .map((element) => {
-      const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
-      const visible = rect.width >= 280 && rect.height >= 160
-        && rect.bottom > 0 && rect.top < innerHeight;
-      const scrollStyle = /auto|scroll|overlay/i.test(style.overflowY);
-      const text = String(element.innerText || "");
-      const productTable = text.includes("SPU") && text.includes("SKU")
-        && /상품정보|평균\\s*거래가/.test(text);
-      const score = (productTable ? 1000000 : 0)
-        + (scrollStyle ? 100000 : 0)
-        + maximum
-        + Math.min(rect.width * rect.height, 500000);
-      return { element, maximum, visible, score };
-    })
-    .filter((candidate) => candidate.visible && candidate.maximum > 80)
-    .sort((left, right) => right.score - left.score);
-  const target = candidates[0];
-  if (!target) return { found: false, moved: false, atEnd: true };
-  const before = target.element.scrollTop;
-  const step = Math.max(420, Math.floor(target.element.clientHeight * 0.82));
-  target.element.scrollTop = Math.min(target.maximum, before + step);
-  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
-  const after = target.element.scrollTop;
-  return {
-    found: true,
-    moved: after > before,
-    atEnd: after >= target.maximum - 3,
-    before,
-    after,
-    maximum: target.maximum
-  };
-})()`;
-const SELLER_ROW_SCROLL_SCRIPT = `(() => {
-  const root = document.scrollingElement || document.documentElement;
-  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .filter((element, index, all) => all.indexOf(element) === index)
-    .map((element) => {
-      const rect = element.getBoundingClientRect();
-      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
-      const text = String(element.innerText || "");
-      const productTable = text.includes("SPU") && text.includes("SKU")
-        && /상품정보|평균\\s*거래가/.test(text);
-      return {
-        element,
-        maximum,
-        visible: rect.width >= 280 && rect.height >= 160 && rect.bottom > 0 && rect.top < innerHeight,
-        score: (productTable ? 1000000 : 0) + maximum,
-      };
-    })
-    .filter((candidate) => candidate.visible && candidate.maximum > 80)
-    .sort((left, right) => right.score - left.score);
-  const target = candidates[0];
-  if (!target) return { found: false, atEnd: true };
-  const rowHeights = [...target.element.querySelectorAll("tr, [role='row']")]
-    .map((row) => row.getBoundingClientRect().height)
-    .filter((height) => height >= 20 && height <= 180)
-    .sort((left, right) => left - right);
-  const medianHeight = rowHeights.length
-    ? rowHeights[Math.floor(rowHeights.length / 2)]
-    : 48;
-  // Move by less than one row so no virtualized row can pass between captures.
-  const step = Math.max(12, Math.min(48, Math.floor(medianHeight * 0.55)));
-  const before = target.element.scrollTop;
-  target.element.scrollTop = Math.min(target.maximum, before + step);
-  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
-  const after = target.element.scrollTop;
-  return {
-    found: true,
-    moved: after > before,
-    atEnd: after >= target.maximum - 2,
-    before,
-    after,
-    maximum: target.maximum,
-    step,
-  };
-})()`;
-const sellerJumpScript = (rank, limit) => `(() => {
-  const requestedRank = ${Number(rank)};
-  const requestedLimit = ${Number(limit)};
-  const root = document.scrollingElement || document.documentElement;
-  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .filter((element, index, all) => all.indexOf(element) === index)
-    .map((element) => {
-      const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
-      const text = String(element.innerText || "");
-      const productTable = text.includes("SPU") && text.includes("SKU")
-        && /상품정보|평균\\s*거래가/.test(text);
-      const scrollStyle = /auto|scroll|overlay/i.test(style.overflowY);
-      const visible = rect.width >= 280 && rect.height >= 160 && rect.bottom > 0 && rect.top < innerHeight;
-      return {
-        element,
-        maximum,
-        visible,
-        score: (productTable ? 1000000 : 0) + (scrollStyle ? 100000 : 0) + maximum
-      };
-    })
-    .filter((candidate) => candidate.visible && candidate.maximum > 80)
-    .sort((left, right) => right.score - left.score);
-  const target = candidates[0];
-  if (!target) return { found: false };
-  const ratio = Math.max(0, Math.min(1, (requestedRank - 1) / Math.max(1, requestedLimit - 1)));
-  target.element.scrollTop = Math.round(target.maximum * ratio);
-  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
-  return { found: true, rank: requestedRank, position: target.element.scrollTop, maximum: target.maximum };
-})()`;
-const sellerNudgeScript = (pixels) => `(() => {
-  const requestedPixels = ${Number(pixels)};
-  const root = document.scrollingElement || document.documentElement;
-  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .filter((element, index, all) => all.indexOf(element) === index)
-    .map((element) => {
-      const rect = element.getBoundingClientRect();
-      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
-      const text = String(element.innerText || "");
-      const productTable = text.includes("SPU") && text.includes("SKU")
-        && /상품정보|평균\\s*거래가/.test(text);
-      return { element, maximum, visible: rect.width >= 280 && rect.height >= 160 && rect.bottom > 0 && rect.top < innerHeight,
-        score: (productTable ? 1000000 : 0) + maximum };
-    })
-    .filter((candidate) => candidate.visible && candidate.maximum > 80)
-    .sort((left, right) => right.score - left.score);
-  const target = candidates[0];
-  if (!target) return { found: false };
-  const before = target.element.scrollTop;
-  target.element.scrollTop = Math.max(0, Math.min(target.maximum, before + requestedPixels));
-  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
-  return { found: true, before, after: target.element.scrollTop, maximum: target.maximum };
-})()`;
-const sellerScrollbarInfoScript = (ratio) => `(() => {
-  const requestedRatio = Math.max(0, Math.min(1, ${Number(ratio)}));
-  const root = document.scrollingElement || document.documentElement;
-  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .filter((element, index, all) => all.indexOf(element) === index)
-    .map((element) => {
-      const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
-      const text = String(element.innerText || "");
-      const productTable = text.includes("SPU") && text.includes("SKU")
-        && /상품정보|평균\\s*거래가/.test(text);
-      const scrollStyle = /auto|scroll|overlay/i.test(style.overflowY);
-      const visible = rect.width >= 280 && rect.height >= 160 && rect.bottom > 0 && rect.top < innerHeight;
-      return {
-        element,
-        rect,
-        maximum,
-        visible,
-        score: (productTable ? 1000000 : 0) + (scrollStyle ? 100000 : 0) + maximum
-      };
-    })
-    .filter((candidate) => candidate.visible && candidate.maximum > 80)
-    .sort((left, right) => right.score - left.score);
-  const target = candidates[0];
-  if (!target) return { found: false };
-  const thumbHeight = Math.max(28, target.rect.height * (target.element.clientHeight / target.element.scrollHeight));
-  const travel = Math.max(1, target.rect.height - thumbHeight);
-  const currentRatio = target.element.scrollTop / target.maximum;
-  return {
-    found: true,
-    x: Math.max(1, Math.floor(target.rect.right - 7)),
-    startY: Math.floor(target.rect.top + thumbHeight / 2 + travel * currentRatio),
-    endY: Math.floor(target.rect.top + thumbHeight / 2 + travel * requestedRatio),
-    ratio: requestedRatio
-  };
-})()`;
-const SELLER_SELECTION_INFO_SCRIPT = `(() => {
-  const root = document.scrollingElement || document.documentElement;
-  const candidates = [root, ...document.querySelectorAll("div, section, main, article, [role='grid'], [role='table']")]
-    .filter((element, index, all) => all.indexOf(element) === index)
-    .map((element) => {
-      const rect = element.getBoundingClientRect();
-      const maximum = Math.max(0, element.scrollHeight - element.clientHeight);
-      const text = String(element.innerText || "");
-      const productTable = text.includes("SPU") && text.includes("SKU")
-        && /상품정보|평균\\s*거래가/.test(text);
-      return {
-        element,
-        rect,
-        maximum,
-        score: (productTable ? 1000000 : 0) + maximum,
-      };
-    })
-    .filter(({ rect, maximum }) =>
-      maximum > 80 && rect.width >= 280 && rect.height >= 160
-      && rect.bottom > 0 && rect.top < innerHeight
-    )
-    .sort((left, right) => right.score - left.score);
-  const target = candidates[0];
-  if (!target) return { found: false };
-  target.element.scrollTop = 0;
-  target.element.dispatchEvent(new Event("scroll", { bubbles: true }));
-  const rect = target.rect;
-  return {
-    found: true,
-    startX: Math.floor(rect.left + Math.min(120, rect.width * 0.12)),
-    startY: Math.floor(rect.top + Math.min(100, rect.height * 0.16)),
-    endX: Math.floor(rect.right - Math.min(100, rect.width * 0.08)),
-    endY: Math.floor(rect.bottom - 8),
-    maximum: target.maximum,
-  };
-})()`;
+const SELLER_CAPTURE_SCRIPT = popularTableScript("capture");
+const SELLER_SCROLL_SCRIPT = popularTableScript("scroll");
+const SELLER_ROW_SCROLL_SCRIPT = popularTableScript("scroll");
+const sellerJumpScript = (rank, limit) => popularTableScript("jump", {
+  ratio: (Number(rank) - 1) / Math.max(1, Number(limit) - 1),
+});
+const sellerNudgeScript = (pixels) => popularTableScript("nudge", { pixels });
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -809,72 +544,31 @@ async function executeAcrossSellerFrames(script) {
 }
 
 async function dragSellerScrollbarToRatio(ratio) {
-  const info = await executeAcrossSellerFrames(sellerScrollbarInfoScript(ratio));
-  if (!info?.found || !sellerWindow || sellerWindow.isDestroyed()) return false;
-  sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: info.x, y: info.startY });
-  sellerWindow.webContents.sendInputEvent({
-    type: "mouseDown", button: "left", clickCount: 1, x: info.x, y: info.startY
-  });
-  const steps = Math.max(4, Math.min(18, Math.ceil(Math.abs(info.endY - info.startY) / 24)));
-  for (let step = 1; step <= steps; step += 1) {
-    const y = Math.round(info.startY + ((info.endY - info.startY) * step) / steps);
-    sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: info.x, y, movementX: 0, movementY: y - info.startY });
-    await wait(18);
+  const result = await executeAcrossSellerFrames(popularTableScript("jump", { ratio }));
+  return Boolean(result?.found && result.expanded);
+}
+
+async function ensurePopularTableExpanded() {
+  const result = await executeAcrossSellerFrames(popularTableScript("expand"));
+  if (!result.found) return result;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const verified = await executeAcrossSellerFrames(popularTableScript("state"));
+    if (verified.expanded) return { ...result, ...verified, selected: true };
+    await wait(300);
   }
-  sellerWindow.webContents.sendInputEvent({
-    type: "mouseUp", button: "left", clickCount: 1, x: info.x, y: info.endY
-  });
-  showCollectorWindow();
-  return true;
+  return { ...result, found: false, expanded: false, reason: "popular_expansion_not_verified" };
 }
 
 async function applySellerPopularConditions() {
   const results = [];
   for (const condition of SELLER_POPULAR_CONDITIONS) {
+    if (condition.action === "fullscreen") {
+      results.push({ ...condition, ...await ensurePopularTableExpanded() });
+      continue;
+    }
     const script = `(() => {
       const label = ${JSON.stringify(condition.label)};
       const action = ${JSON.stringify(condition.action)};
-      if (action === "fullscreen") {
-        const headings = [...document.querySelectorAll("h1, h2, h3, h4, strong, span, div")]
-          .filter((element) => String(element.innerText || element.textContent || "").trim() === "인기상품");
-        const panels = [];
-        for (const heading of headings) {
-          let panel = heading.parentElement;
-          for (let depth = 0; panel && depth < 10; depth += 1, panel = panel.parentElement) {
-            const text = String(panel.innerText || "");
-            const controls = [...panel.querySelectorAll("button, [role='button'], svg, i, [class*='icon']")]
-              .filter((control) => {
-                const rect = control.getBoundingClientRect();
-                return rect.width >= 8 && rect.height >= 8 && rect.width <= 64 && rect.height <= 64;
-              });
-            if (text.includes("SPU 기준") && text.includes("SKU 기준") && text.includes("상품정보") && controls.length >= 1) {
-              panels.push({ panel, controls, heading, textLength: text.length });
-            }
-          }
-        }
-        panels.sort((left, right) => left.textLength - right.textLength);
-        const match = panels[0];
-        if (!match) return { found: false, label };
-        const rect = match.panel.getBoundingClientRect();
-        const alreadyFullscreen = rect.width >= window.innerWidth * 0.82 && rect.height >= window.innerHeight * 0.72;
-        if (alreadyFullscreen) return { found: true, selected: true, alreadySelected: true, label };
-        const headingRect = match.heading.getBoundingClientRect();
-        const point = {
-          x: Math.max(0, Math.floor(rect.right - 18)),
-          y: Math.max(0, Math.floor((headingRect.top + headingRect.bottom) / 2)),
-        };
-        const target = document.elementFromPoint(point.x, point.y);
-        return {
-          found: Boolean(target),
-          selected: false,
-          requiresNativeClick: true,
-          x: point.x,
-          y: point.y,
-          targetTag: target?.tagName || "",
-          targetClass: String(target?.className?.baseVal || target?.className || "").slice(0, 120),
-          label
-        };
-      }
       const elements = [...document.querySelectorAll("label, button, [role='radio'], [role='checkbox'], [role='tab'], span, div, h1, h2, h3, h4")]
         .filter((element) => String(element.innerText || element.textContent || "").trim() === label)
         .sort((left, right) => String(left.innerText || "").length - String(right.innerText || "").length);
@@ -944,32 +638,6 @@ async function applySellerPopularConditions() {
         verifiedSelected: verification.verifiedSelected || Boolean(result.found && result.selected),
         verificationMode: verification.verifiedSelected ? "dom-state" : "label-click",
       };
-    }
-    if (condition.action === "fullscreen" && result.found && result.requiresNativeClick) {
-      sellerWindow.webContents.sendInputEvent({ type: "mouseMove", x: result.x, y: result.y });
-      sellerWindow.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x: result.x, y: result.y });
-      await wait(120);
-      sellerWindow.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x: result.x, y: result.y });
-    }
-    if (condition.action === "fullscreen" && result.found) {
-      await wait(1_200);
-      const verified = await executeAcrossSellerFrames(`(() => {
-        const headings = [...document.querySelectorAll("h1, h2, h3, h4, strong, span, div")]
-          .filter((element) => String(element.innerText || element.textContent || "").trim() === "인기상품");
-        for (const heading of headings) {
-          let panel = heading.parentElement;
-          for (let depth = 0; panel && depth < 10; depth += 1, panel = panel.parentElement) {
-            const text = String(panel.innerText || "");
-            const rect = panel.getBoundingClientRect();
-            if (text.includes("SPU 기준") && text.includes("SKU 기준")
-              && rect.width >= window.innerWidth * 0.82 && rect.height >= window.innerHeight * 0.72) {
-              return { found: true, expanded: true };
-            }
-          }
-        }
-        return { found: false, expanded: false };
-      })()`);
-      result = { ...result, found: verified.found, expanded: verified.expanded };
     }
     results.push({ ...condition, ...result });
     await wait(condition.action === "fullscreen" ? 1_800 : condition.action === "scroll" ? 250 : 650);
@@ -10612,7 +10280,7 @@ async function captureSellerCenterProducts() {
         target: limit,
         missing: limit - completeRankCount(),
         message: pass === 0
-          ? `1~${limit}위 슬롯을 한 행씩 확인 중 · 표 위치 ${Math.round(tableRatio * 100)}%`
+          ? `1~${limit}위 순위를 확인 중 · 표 위치 ${Math.round(tableRatio * 100)}%`
           : `누락 슬롯 재확인 ${pass}/2 · 표 위치 ${Math.round(tableRatio * 100)}%`,
       });
     }
@@ -10731,6 +10399,7 @@ async function captureSellerCenterProducts() {
     const articleNumber = String(product.articleNumber || "").trim();
     const name = String(product.name || "").trim();
     const hasRealArticle = !articleNumber
+      || product.articleNumberSource === "seller-product-cell"
       || /^[A-Z0-9][A-Z0-9._/-]{2,39}(?:\s+[A-Z0-9][A-Z0-9._/-]{0,19}){0,3}$/i.test(articleNumber);
     const isHeader = /^(?:SPU 기준|SKU 기준|SPU 기준 SKU 기준|상품정보|평균 거래가(?:\\(KRW\\))?)$/i.test(name);
     return hasRealArticle && !isHeader && Boolean(articleNumber || name);
@@ -10753,8 +10422,8 @@ async function captureSellerCenterProducts() {
   const finalCompleteness = popularCompleteness([...preservedSlots.values()], limit);
   products = createPopularSlots([...preservedSlots.values()], limit);
   mainWindow?.webContents.send("seller:capture-progress", {
-    percent: 100,
-    count: preservedSlots.size,
+    percent: finalCompleteness.complete ? 99 : Math.min(99, Math.round(finalCompleteness.captured / limit * 100)),
+    count: finalCompleteness.captured,
     target: limit,
     missing: finalCompleteness.missingRanks.length,
     message: finalCompleteness.complete

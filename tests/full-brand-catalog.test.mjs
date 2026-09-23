@@ -85,7 +85,7 @@ test("카테고리 검색은 현재 다운로드 완료 브랜드로 바로 조�
   assert.match(categoryHandler, /const favoriteBrandIds = \[\.\.\.categoryBrandIds\]/);
   assert.match(categoryHandler, /categoryGroupFromProduct\(product\) !== selection\.category/);
   assert.match(categoryHandler, /categorySelections\.some\(\(selection\) =>/);
-  assert.match(renderer, /return \{ ok: true, products: storedProducts \}/);
+  assert.match(renderer, /return \{ ok: true, partial, products: storedProducts \}/);
   assert.match(renderer, /완료된 결과만 안전하게 누적합니다/);
   assert.match(renderer, /다음 브랜드를 준비합니다/);
 });

@@ -3718,9 +3718,9 @@ async function acceptSellerCenterProducts(products, sourceLabel, options = {}) {
     source: "seller-center-direct",
   }));
   await window.aroundG.bulkUpsert("products", storedProducts);
-  await window.aroundG.savePopularWorkflow(popularWorkflowInput(true));
+  await window.aroundG.savePopularWorkflow(popularWorkflowInput(!options.partial));
   await refresh();
-  $("#popular-status").className = "status success";
+  $("#popular-status").className = options.partial ? "status error" : "status success";
   $("#popular-status").textContent = `${sourceLabel} · 판매자센터 인기상품 ${limited.length}개를 직접 가져왔습니다.`;
   if (options.renderResults !== false) {
     renderExplorerResults("POIZON 판매자센터 인기상품", limited.map((product) => ({
@@ -3734,9 +3734,12 @@ async function acceptSellerCenterProducts(products, sourceLabel, options = {}) {
 window.aroundG.onSellerCaptureProgress((progress) => {
   const host = $("#popular-progress");
   const reportedPercent = Number(progress.percent);
-  const percent = Number.isFinite(reportedPercent)
+  let percent = Number.isFinite(reportedPercent)
     ? Math.max(0, Math.min(100, reportedPercent))
     : Number.parseFloat(host.querySelector("i").style.width) || 0;
+  if (percent >= 100 && Number(progress.missing) > 0) {
+    percent = Math.min(99, Math.round(Number(progress.count || 0) / Math.max(1, Number(progress.target || 200)) * 100));
+  }
   host.hidden = false;
   host.querySelector("i").style.width = `${percent}%`;
   host.querySelector("span").textContent = `${percent}%`;
@@ -3768,12 +3771,14 @@ async function capturePopularProducts(options = {}) {
     }
     const verifiedProducts = excelResult.products;
     const missingRanks = Array.isArray(excelResult.missing) ? excelResult.missing : [];
+    const partial = Boolean(excelResult.partial || result.partial || missingRanks.length || excelResult.imported !== 200);
     const missingLabel = missingRanks.length
-      ? ` · 누락 ${missingRanks.length}개 (${missingRanks.join(", ")})`
+      ? ` · 누락 ${missingRanks.length}개 (${missingRanks.slice(0, 20).join(", ")}${missingRanks.length > 20 ? " 등" : ""})`
       : " · 누락 0개";
-    const sourceLabel = `바탕화면 Excel 재검증 완료 ${excelResult.imported}/200${missingLabel} · ${excelResult.path}`;
+    const sourceLabel = `${partial ? "부분 수집" : "전체 수집 완료"} ${excelResult.imported}/200${missingLabel} · Excel 저장·다시 읽기 검증 완료 · ${excelResult.path}`;
     const storedProducts = await acceptSellerCenterProducts(verifiedProducts, sourceLabel, {
       renderResults: false,
+      partial,
     });
     const completedProducts = verifiedProducts.filter((product) => !product.missingRank);
     latestPopularExcelFile = {
@@ -3783,10 +3788,14 @@ async function capturePopularProducts(options = {}) {
       jobId: `인기상품 ${excelResult.imported}/200`,
     };
     searchButton.hidden = !completedProducts.length;
+    const verifiedPercent = partial ? Math.min(99, Math.round(excelResult.imported / 200 * 100)) : 100;
+    $("#popular-progress").querySelector("i").style.width = `${verifiedPercent}%`;
+    $("#popular-progress").querySelector("span").textContent = `${verifiedPercent}%`;
+    $("#popular-status").className = partial ? "status error" : "status success";
     $("#popular-status").textContent = completedProducts.length
       ? `${sourceLabel} · 인기리스트 Excel 저장이 완료되었습니다. 상품검색 버튼을 눌러 결과를 열 수 있습니다.`
       : `${sourceLabel} · 검색 가능한 상품이 없습니다.`;
-    return { ok: true, products: storedProducts };
+    return { ok: true, partial, products: storedProducts };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error || "인기리스트 수집 실패");
     $("#popular-status").className = "status error";

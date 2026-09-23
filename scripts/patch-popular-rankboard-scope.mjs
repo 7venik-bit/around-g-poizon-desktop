@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 
 const mainPath = new URL("../main.mjs", import.meta.url);
 let main = String(await readFile(mainPath, "utf8")).replace(/\r\n/g, "\n");
+const popularRuntime = await readFile(new URL("../services/popular-table-runtime.mjs", import.meta.url), "utf8");
 
 const replaceOnce = (source, before, after, label) => {
   if (source.includes(after)) return source;
@@ -16,10 +17,10 @@ const rankRoute = 'const SELLER_CENTER_URL = "https://seller.poizon.com/main/dat
 if (main.includes(homeRoute)) main = main.replace(homeRoute, rankRoute);
 if (!main.includes(rankRoute)) throw new Error("known-good popular list route restore failed");
 
-if (!main.includes('String(element.innerText || element.textContent || "").trim() === "인기상품"')) {
+if (!popularRuntime.includes('textOf(element).trim() === "인기상품"')) {
   throw new Error("known-good popular heading detector missing");
 }
-if (!main.includes('const hasTableHeaders = text.includes("SPU 기준")')) {
+if (!popularRuntime.includes('const hasTableHeaders = text.includes("SPU 기준")')) {
   throw new Error("known-good popular table detector missing");
 }
 

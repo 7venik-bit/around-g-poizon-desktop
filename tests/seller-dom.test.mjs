@@ -18,6 +18,12 @@ test("가격이 없는 메뉴 텍스트는 상품으로 오인하지 않는다",
   assert.equal(products.length, 0);
 });
 
+test("numeric article numbers and years in names are not prices", () => {
+  const [product] = parseSellerDomNodes([{ text: "83.\n416175\nGUCCI Sunglasses 2025 Edition\n196,152\n170,032\n234,940" }]);
+  assert.equal(product.articleNumber, "416175");
+  assert.deepEqual([product.averagePrice, product.lowestPrice, product.highestPrice], [196152, 170032, 234940]);
+});
+
 test("순위와 품번 및 품명이 있으면 가격 셀이 분리되어도 상품 슬롯을 유지한다", () => {
   const products = parseSellerDomNodes([{
     text: "20.\nAQ1774-102\nNike EBERNON Synthetic Leather Low Top",
