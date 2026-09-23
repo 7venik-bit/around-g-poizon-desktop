@@ -8,6 +8,28 @@ function price(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function exactPrice(value) {
+  const text = String(value || "").trim();
+  return /^(?:₩\s*)?(?:\d{1,3}(?:,\d{3})+|\d{4,})(?:\s*원)?$/.test(text) ? price(text) : 0;
+}
+
+function tableProduct(node, limit) {
+  const fields = node?.tableFields;
+  const rank = sellerRankFromLine(fields?.rank, limit)?.rank;
+  const labels = fields?.product;
+  if (!rank || !Array.isArray(labels) || labels.length < 2) return null;
+  const articleNumber = String(labels[0] || "").trim();
+  const name = labels.slice(1).join(" ").trim();
+  if (!articleNumber || articleNumber.length > 240 || !name || ignored(articleNumber)) return null;
+  const readPrice = (key) => (Array.isArray(fields[key]) ? fields[key] : []).map(exactPrice).find(Boolean) || 0;
+  if (!readPrice("averagePrice")) return null;
+  return { rank, rankDetected: true, articleNumber, name,
+    articleNumberSource: "seller-product-cell", averagePrice: readPrice("averagePrice"),
+    lowestPrice: readPrice("lowestPrice"), highestPrice: readPrice("highestPrice"), sales30d: 0,
+    source: "seller-center-dom", logoUrl: String(node.imageUrl || ""),
+    sellerCenterDirect: true, rawText: String(node.text || "") };
+}
+
 function ignored(line) {
   return /주간 대비|검색 지수|즐겨찾기|거래가|검색 추세|상품정보|SPU 기준|SKU 기준/i.test(line);
 }
@@ -73,6 +95,13 @@ export function parseSellerDomNodes(nodes, limit = 200) {
   const products = [];
   const seen = new Set();
   for (const node of Array.isArray(nodes) ? nodes : []) {
+    const structured = tableProduct(node, limit);
+    if (structured) {
+      const key = `${structured.rank}:${structured.articleNumber}`;
+      if (!seen.has(key)) { seen.add(key); products.push(structured); }
+      if (products.length >= limit) break;
+      continue;
+    }
     const lines = normalizedSellerLines(node?.text, limit);
     // Some Seller Center rows include accessibility labels and option text.
     // Keep accepting a complete product row without discarding it merely
@@ -98,8 +127,8 @@ export function parseSellerDomNodes(nodes, limit = 200) {
     const articleNumber = /\s/.test(rawArticleNumber) ? rawArticleNumber : rawArticleNumber.toUpperCase();
     if (!articleNumber) continue;
     const numericPrices = lines
-      .filter((line) => !ARTICLE_PATTERN.test(line) && /(?:\d{1,3},)+\d{3}|\d{4,}/.test(line))
-      .map(price)
+      .filter((_line, index) => index !== codeIndex)
+      .map(exactPrice)
       .filter((value) => value >= 1_000);
     const sameLineName = structuredCodeIndex >= 0
       ? ""
@@ -149,7 +178,8 @@ export function dedupeSellerProducts(products, limit = 200) {
 export function mergeSellerProductsByRank(productGroups, limit = 200) {
   const slots = new Map();
   const score = (product) => (
-    (String(product?.articleNumber || "").trim() ? 8 : 0)
+    (product?.articleNumberSource === "seller-product-cell" ? 32 : 0)
+    + (String(product?.articleNumber || "").trim() ? 8 : 0)
     + (String(product?.name || "").trim() ? 6 : 0)
     + (Number(product?.averagePrice || 0) > 0 ? 3 : 0)
     + (Number(product?.lowestPrice || 0) > 0 ? 1 : 0)

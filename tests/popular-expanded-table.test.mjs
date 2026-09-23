@@ -138,6 +138,36 @@ test("unknown layout without the popular table never scrolls a different panel",
   page.close();
 });
 
+test("header-mapped product cells preserve descriptive labels and numeric SKUs without shifting prices", () => {
+  const page = board({ expanded: true });
+  const table = page.window.document.createElement("table");
+  table.innerHTML = `<thead><tr><th>순위</th><th>상품정보</th><th>검색 지수</th><th>즐겨찾기 지수</th>
+    <th>평균 거래가(KRW)</th><th>최저 거래가(KRW)</th><th>최고 거래가(KRW)</th></tr></thead><tbody></tbody>`;
+  const cases = [
+    [39, "Dio's Enchanting Plump Lip Balm", "DIOR Enchanting Full Lips Lip Gloss 6ml", 61300, 59163, 62368],
+    [48, "VN0009QC6BT1( White Lining )", "Vans Knu Skool Black White", 72843, 65347, 102718],
+    [75, "AirPods Pro 3 Special Offer", "Apple AirPods Pro 3", 271002, 271002, 271002],
+    [83, "416175", "GUCCI Sunglasses 2025 Edition", 196152, 170032, 234940],
+    [195, "Pink Lipstick Tube", "SAINT LAURENT Pink Tube Lipsticks 3.1g", 44327, 42893, 58177],
+  ];
+  for (const [rank, code, name, avg, low, high] of cases) {
+    const row = table.tBodies[0].insertRow();
+    for (const text of [`${rank}.`, "", "9,999", "8,888", "", low.toLocaleString("en-US"), high.toLocaleString("en-US")]) row.insertCell().textContent = text;
+    for (const text of [code, name]) { const span = page.window.document.createElement("span"); span.textContent = text; row.cells[1].append(span); }
+    for (const text of [avg.toLocaleString("en-US"), "주간 대비", "14.34%"]) { const span = page.window.document.createElement("span"); span.textContent = text; row.cells[4].append(span); }
+  }
+  page.$("#rows").replaceChildren(table);
+  for (const element of [table, ...table.querySelectorAll("*")]) element.getBoundingClientRect = () => ({ left: 20, top: 100, right: 1180, bottom: 140, width: 1160, height: 40 });
+  const parsed = parseSellerDomNodes(page.run("capture").nodes);
+  assert.equal(parsed.length, cases.length);
+  for (const [rank, code, name, avg, low, high] of cases) {
+    const item = parsed.find((product) => product.rank === rank);
+    assert.deepEqual([item.articleNumber, item.name, item.averagePrice, item.lowestPrice, item.highestPrice], [code, name, avg, low, high]);
+    assert.equal(item.articleNumberSource, "seller-product-cell");
+  }
+  page.close();
+});
+
 test("an expanded document scroller remains readable after its heading leaves the viewport", () => {
   const page = board({ expanded: true, pageScroll: true });
   page.run("scroll");

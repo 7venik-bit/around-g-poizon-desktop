@@ -10399,6 +10399,7 @@ async function captureSellerCenterProducts() {
     const articleNumber = String(product.articleNumber || "").trim();
     const name = String(product.name || "").trim();
     const hasRealArticle = !articleNumber
+      || product.articleNumberSource === "seller-product-cell"
       || /^[A-Z0-9][A-Z0-9._/-]{2,39}(?:\s+[A-Z0-9][A-Z0-9._/-]{0,19}){0,3}$/i.test(articleNumber);
     const isHeader = /^(?:SPU 기준|SKU 기준|SPU 기준 SKU 기준|상품정보|평균 거래가(?:\\(KRW\\))?)$/i.test(name);
     return hasRealArticle && !isHeader && Boolean(articleNumber || name);

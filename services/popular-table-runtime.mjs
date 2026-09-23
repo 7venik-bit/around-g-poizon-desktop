@@ -89,12 +89,40 @@ export function popularTableRuntime(action = "state", options = {}) {
   const scrollTarget = scrollCandidates[0];
   if (action === "capture") {
     const selector = "tr, [role='row'], li, [class*='row'], [class*='item'], [class*='product']";
+    const headerGroups = [...panel.querySelectorAll("tr, [role='row']")]
+      .map((row) => [...row.querySelectorAll(":scope > th, :scope > [role='columnheader']")].map(textOf))
+      .filter((headers) => headers.some((text) => /상품\s*정보/.test(text))
+        && headers.some((text) => /평균\s*거래가/.test(text)));
+    const headerFields = headerGroups[0]?.map((text) => /상품\s*정보/.test(text) ? "product"
+      : /평균\s*거래가/.test(text) ? "averagePrice" : /최저\s*거래가/.test(text) ? "lowestPrice"
+        : /최고\s*거래가/.test(text) ? "highestPrice" : "");
     const collected = new Map();
     for (const element of panel.querySelectorAll(selector)) {
       const text = textOf(element).trim();
       if (!text || text.length > 3000 || !visible(element)) continue;
       const imageUrl = element.querySelector("img[src]")?.src || "";
-      collected.set(text + "\n" + imageUrl, { text, imageUrl });
+      const cells = [...element.querySelectorAll(":scope > td, :scope > [role='cell'], :scope > [role='gridcell']")];
+      let tableFields;
+      if (headerFields && cells.length === headerFields.length) {
+        tableFields = { rank: textOf(cells[0]).trim() };
+        headerFields.forEach((field, index) => {
+          if (!field) return;
+          // Text nodes preserve the two product labels even when inline spans
+          // do not add a newline to innerText. Do not mix metric cells into it.
+          const walker = document.createTreeWalker(cells[index], NodeFilter.SHOW_TEXT);
+          const parts = [];
+          while (walker.nextNode()) {
+            const node = walker.currentNode;
+            if (!node.parentElement?.closest("script, style") && visible(node.parentElement)) {
+              const part = node.textContent.replace(/\s+/g, " ").trim();
+              if (part) parts.push(part);
+            }
+          }
+          tableFields[field] = parts;
+        });
+      }
+      const key = text + "\n" + imageUrl;
+      if (!collected.get(key)?.tableFields || tableFields) collected.set(key, { text, imageUrl, tableFields });
     }
     const nodes = [...collected.values()];
     return { ...state, text: nodes.map((node) => node.text).join("\n"), title: document.title,
