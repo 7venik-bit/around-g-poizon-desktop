@@ -7,12 +7,21 @@
     const summary = doc.getElementById("audit-trace-summary");
     const output = doc.getElementById("audit-trace-output");
     const close = doc.getElementById("audit-trace-close");
+    const stop = doc.getElementById("audit-trace-stop");
+    const current = doc.getElementById("audit-trace-current");
+    const stateBadge = doc.getElementById("audit-trace-state");
+    const progressFill = doc.getElementById("audit-trace-progress-fill");
     if (!panel || !title || !summary || !output || !close) return null;
 
     let activeKind = "";
     let lastEvent = "";
     let lastFinalEvent = "";
+    let previousFocus = null;
     const timeLabel = () => clock().toLocaleTimeString("ko-KR", { hour12: false });
+    const progress = (done, total) => {
+      if (progressFill) progressFill.style.width = total > 0
+        ? `${Math.min(100, Math.max(0, done / total * 100))}%` : "0%";
+    };
     const follow = () => {
       const scroll = () => {
         if (typeof output.scrollTo === "function") {
@@ -30,18 +39,25 @@
       line.className = `audit-trace-line ${tone}`;
       line.textContent = `[${timeLabel()}] ${message}`;
       output.append(line);
+      if (current) current.textContent = message;
       while (output.childElementCount > MAX_LINES) output.firstElementChild.remove();
       follow();
     };
     const open = (kind) => {
+      previousFocus = doc.activeElement;
       activeKind = kind;
       lastEvent = "";
       lastFinalEvent = "";
       output.replaceChildren();
       panel.hidden = false;
       panel.dataset.kind = kind;
+      panel.dataset.running = "true";
+      if (stateBadge) stateBadge.textContent = "실행 중";
+      if (stop) stop.hidden = true;
+      progress(0, 0);
       title.textContent = kind === "official" ? "공식몰 점검 · 실시간 실행 로그" : "서버 점검 · 실시간 실행 로그";
       summary.textContent = "실제 점검 단계와 응답이 아래에 기록됩니다.";
+      panel.focus?.();
       append(kind, kind === "official"
         ? "await auditOfficialStores({ scope: '전체 브랜드' });"
         : "await checkSiteHealth({ targets: 9 });");
@@ -54,6 +70,15 @@
       const phase = String(audit.phase || "");
       const detail = String(audit.detail || "");
       const state = String(audit.state || "");
+      panel.dataset.running = String(Boolean(audit.running));
+      if (stateBadge) stateBadge.textContent = audit.running
+        ? phase === "stopping" ? "중지 처리 중" : "실행 중"
+        : state === "paused" ? "일시 중지" : state === "completed" ? "완료" : "확인 필요";
+      if (stop) {
+        stop.hidden = !audit.running;
+        stop.disabled = phase === "stopping";
+      }
+      progress(processed, total);
       const key = [audit.startedAt, brand, processed, phase, detail, audit.attempt, state, audit.running].join("|");
       if (key === lastEvent) return;
       lastEvent = key;
@@ -90,10 +115,16 @@
     };
     const server = (health = {}) => {
       if (activeKind !== "server" || panel.hidden) return;
-      const completed = Number(health.completed || 0);
-      const total = Number(health.total || 0);
+      const total = Number(health.total || health.results?.length || 0);
+      const completed = Number(health.completed ?? (Array.isArray(health.results)
+        ? health.results.length : health.running ? 0 : total));
       const target = health.currentTarget || {};
       const result = health.lastResult || {};
+      panel.dataset.running = String(Boolean(health.running));
+      if (stateBadge) stateBadge.textContent = health.running
+        ? "실행 중" : health.state === "completed" ? "완료" : "확인 필요";
+      if (stop) stop.hidden = true;
+      progress(completed, total);
       const key = [health.startedAt, completed, target.id, result.id, result.statusCode,
         result.responseMs, health.state, health.running].join("|");
       if (key === lastEvent) return;
@@ -113,8 +144,22 @@
         summary.textContent = `${Number(health.passed || 0)}개 응답 · ${Number(health.failed || 0)}개 확인 필요`;
       }
     };
-    close.addEventListener("click", () => { panel.hidden = true; });
-    return { open, append, official, server, close: () => { panel.hidden = true; } };
+    const hide = () => {
+      panel.hidden = true;
+      if (previousFocus?.isConnected) previousFocus.focus?.();
+    };
+    close.addEventListener("click", hide);
+    stop?.addEventListener("click", () => {
+      const toggle = doc.getElementById("official-domain-audit-toggle");
+      if (activeKind === "official" && toggle?.dataset.running === "true") {
+        stop.disabled = true;
+        toggle.click();
+      }
+    });
+    doc.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !panel.hidden) hide();
+    });
+    return { open, append, official, server, close: hide };
   }
 
   root.AroundGAuditTrace = Object.freeze({ createAuditTraceController });
