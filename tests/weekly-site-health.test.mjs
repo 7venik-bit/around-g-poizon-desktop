@@ -2,12 +2,31 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   SITE_HEALTH_TARGETS,
+  classifySiteHealthResponse,
   nextWeeklySiteHealthAt,
   weeklySiteHealthSummary,
 } from "../services/weekly-site-health.mjs";
 import { readFile } from "node:fs/promises";
 
 const mainSource = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
+
+test("site health treats missing pages and access restrictions as checks needed", () => {
+  assert.deepEqual(classifySiteHealthResponse(200), { ok: true, result: "정상", error: "" });
+  for (const status of [401, 403, 429]) {
+    const result = classifySiteHealthResponse(status);
+    assert.equal(result.ok, false);
+    assert.match(result.result, /접속 제한/);
+    assert.equal(result.error, `HTTP ${status}`);
+  }
+  for (const status of [404, 410]) {
+    const result = classifySiteHealthResponse(status);
+    assert.equal(result.ok, false);
+    assert.match(result.result, /페이지 없음/);
+    assert.equal(result.error, `HTTP ${status}`);
+  }
+  assert.equal(classifySiteHealthResponse(500).ok, false);
+  assert.equal(SITE_HEALTH_TARGETS.find((target) => target.id === "hyundai").url, "https://www.hmall.com/");
+});
 
 test("수요일 밤 12시는 목요일 00:00로 예약한다", () => {
   const wednesday = new Date(2026, 7, 12, 15, 30);

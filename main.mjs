@@ -138,6 +138,7 @@ import { findNewSellerExportJob, findRecentSellerExportJob } from "./services/br
 import { createDomesticSearchLinkResult, finalizeNaverFashionTownResult, isNaverRenderedResultReady, retainNaverCardsOnDetailRestriction } from "./services/naver-fashiontown-result.mjs";
 import {
   SITE_HEALTH_TARGETS,
+  classifySiteHealthResponse,
   nextWeeklySiteHealthAt,
   weeklySiteHealthSummary,
 } from "./services/weekly-site-health.mjs";
@@ -439,6 +440,7 @@ let brandExportMonitorRestartTimer;
 let sellerTransactionLookupQueue = Promise.resolve();
 let officialDomainAuditRunning = false;
 let officialDomainAuditStopRequested = false;
+let officialDomainAuditLastProgress = null;
 let officialDomainAuditWindow = null;
 let officialDomainAuditResumeTimer = null;
 let weeklySiteHealthTimer = null;
@@ -4300,6 +4302,8 @@ function officialDomainAuditSnapshot(registry, extra = {}) {
       : ["running", "cooldown", "blocked"].includes(savedState) ? "paused" : savedState,
     currentBrand: String(saved.currentBrand || ""),
     processed: Number(saved.processed || 0),
+    startedAt: String(saved.startedAt || ""),
+    runTotal: Number(saved.runTotal || 0),
     blocked: Boolean(saved.blocked),
     lastError: String(saved.lastError || ""),
     phase: String(saved.phase || ""),
@@ -4318,6 +4322,7 @@ function officialDomainAuditSnapshot(registry, extra = {}) {
 
 function sendOfficialDomainAuditProgress(registry, extra = {}) {
   const payload = officialDomainAuditSnapshot(registry, extra);
+  if (officialDomainAuditRunning) officialDomainAuditLastProgress = payload;
   mainWindow?.webContents.send("official-domain:audit-progress", payload);
   return payload;
 }
@@ -4610,6 +4615,7 @@ async function runOfficialDomainAudit({ recheckAll = false } = {}) {
   officialDomainAuditResumeTimer = null;
   officialDomainAuditRunning = true;
   officialDomainAuditStopRequested = false;
+  officialDomainAuditLastProgress = null;
   const brands = store.snapshot(["settings"]).settings.brandCatalog || explorerMetadata().brands;
   let registry = await ensureOfficialDomainRegistry(brands);
   const previousAudit = store.snapshot(["settings"]).settings.officialDomainAudit || {};
@@ -4727,7 +4733,6 @@ async function runOfficialDomainAudit({ recheckAll = false } = {}) {
     officialDomainAuditAbortCurrent = null;
     if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) officialDomainAuditWindow.destroy();
     officialDomainAuditWindow = null;
-    officialDomainAuditRunning = false;
     const summary = officialDomainRegistrySummary(registry);
     const resumeAt = "";
     const state = blocked ? "paused"
@@ -4746,7 +4751,11 @@ async function runOfficialDomainAudit({ recheckAll = false } = {}) {
       notFoundCount: notFoundExcel.count,
       notFoundExportError: notFoundExcel.error,
     };
-    await persistOfficialDomainAudit(registry, finalAudit);
+    try {
+      await persistOfficialDomainAudit(registry, finalAudit);
+    } finally {
+      officialDomainAuditRunning = false;
+    }
     sendOfficialDomainAuditProgress(registry, { running: false, ...finalAudit });
   }
 }
@@ -11682,20 +11691,17 @@ async function inspectSiteHealthTarget(target) {
       },
     });
     const endedAt = new Date();
-    // 401/403 means that the server itself responded and a login/security
-    // session is required. Record it separately instead of misreporting a
-    // network outage.
-    const reachable = response.status > 0 && response.status < 500;
+    const classification = classifySiteHealthResponse(response.status);
     return {
       ...target,
-      ok: reachable,
-      result: reachable ? (response.ok ? "정상" : "접속 가능·로그인/보안 확인 필요") : "오류",
+      ok: classification.ok,
+      result: classification.result,
       statusCode: response.status,
       responseMs: endedAt.getTime() - startedAt.getTime(),
       startedAt: startedAt.toISOString(),
       endedAt: endedAt.toISOString(),
       finalUrl: response.url || target.url,
-      error: reachable ? "" : `HTTP ${response.status}`,
+      error: classification.error,
     };
   } catch (error) {
     const endedAt = new Date();
@@ -12573,18 +12579,14 @@ app.whenReady().then(async () => {
     const settings = store.snapshot(["settings"]).settings;
     const brands = settings.brandCatalog || explorerMetadata().brands;
     const registry = await ensureOfficialDomainRegistry(brands);
-    const savedAudit = store.snapshot(["settings"]).settings.officialDomainAudit || {};
-    const pausedAudit = {
-      ...savedAudit,
-      state: "paused",
-      currentBrand: "",
-      blocked: false,
-      phase: "paused",
-      updatedAt: new Date().toISOString(),
-    };
-    await persistOfficialDomainAudit(registry, pausedAudit);
-    const audit = sendOfficialDomainAuditProgress(registry, { ...pausedAudit, running: false });
-    return { ok: true, audit };
+    if (officialDomainAuditRunning) {
+      return { ok: true, audit: {
+        ...officialDomainAuditSnapshot(registry),
+        ...officialDomainAuditLastProgress,
+        running: true, state: "running", phase: "stopping", currentBrand: "",
+      } };
+    }
+    return { ok: true, audit: officialDomainAuditSnapshot(registry) };
   });
   ipcMain.handle("weekly-site-health:status", () => sendWeeklySiteHealthStatus());
   ipcMain.handle("weekly-site-health:run", () => runWeeklySiteHealthCheck({ manual: true }));

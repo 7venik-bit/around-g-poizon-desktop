@@ -10,8 +10,20 @@ export const SITE_HEALTH_TARGETS = Object.freeze([
   { id: "ssg-outlet", name: "SSG 아울렛", url: "https://www.ssg.com/search.ssg?target=all&siteNo=7008&query=%EB%82%98%EC%9D%B4%ED%82%A4" },
   { id: "lotte-department", name: "롯데온 백화점", url: "https://www.lotteon.com/search/search/search.ecn?render=search&platform=pc&q=%EB%82%98%EC%9D%B4%ED%82%A4&mallFilter=%EB%B0%B1%ED%99%94%EC%A0%90" },
   { id: "lotte-outlet", name: "롯데온 아울렛", url: "https://www.lotteon.com/search/search/search.ecn?render=search&platform=pc&q=%EB%82%98%EC%9D%B4%ED%82%A4&mallFilter=%EC%95%84%EC%9A%B8%EB%A0%9B" },
-  { id: "hyundai", name: "현대Hmall", url: "https://www.hmall.com/p/smSearch.do?searchTerm=%EB%82%98%EC%9D%B4%ED%82%A4" },
+  { id: "hyundai", name: "현대Hmall", url: "https://www.hmall.com/" },
 ]);
+
+export function classifySiteHealthResponse(status) {
+  const code = Number(status || 0);
+  if (code >= 200 && code < 300) return { ok: true, result: "정상", error: "" };
+  if ([401, 403, 429].includes(code)) {
+    return { ok: false, result: "접속 제한·로그인/보안 확인 필요", error: `HTTP ${code}` };
+  }
+  if ([404, 410].includes(code)) {
+    return { ok: false, result: "페이지 없음·점검 주소 확인 필요", error: `HTTP ${code}` };
+  }
+  return { ok: false, result: "오류", error: code ? `HTTP ${code}` : "응답 없음" };
+}
 
 export function nextWeeklySiteHealthAt(now = new Date()) {
   const next = new Date(now);
