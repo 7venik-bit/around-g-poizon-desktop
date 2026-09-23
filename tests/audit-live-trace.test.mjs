@@ -8,10 +8,15 @@ const mainSource = await readFile(new URL("../main.mjs", import.meta.url), "utf8
 
 function createTrace() {
   const dom = new JSDOM(`
-    <section id="audit-trace-panel" hidden>
+    <button id="official-domain-audit-toggle" data-running="true"></button>
+    <section id="audit-trace-panel" tabindex="-1" hidden>
       <strong id="audit-trace-title"></strong>
       <p id="audit-trace-summary"></p>
+      <span id="audit-trace-state"></span>
+      <button id="audit-trace-stop" hidden></button>
       <button id="audit-trace-close"></button>
+      <i id="audit-trace-progress-fill"></i>
+      <strong id="audit-trace-current"></strong>
       <div id="audit-trace-output"></div>
     </section>`, { runScripts: "outside-only" });
   const { window } = dom;
@@ -65,6 +70,7 @@ test("site-health trace shows each actual request, HTTP result and saved report"
   assert.match(lines, /HTTP 403 · 40ms · 접속 가능·로그인 필요/);
   assert.match(lines, /report\.saved\("C:\/reports\/health\.xlsx"\)/);
   assert.match(dom.window.document.getElementById("audit-trace-summary").textContent, /2개 응답/);
+  assert.equal(dom.window.document.getElementById("audit-trace-progress-fill").style.width, "100%");
 });
 
 test("official trace prints one final line when stop response repeats the worker result", () => {
@@ -76,6 +82,30 @@ test("official trace prints one final line when stop response repeats the worker
   const finishes = [...output.children].filter((line) => line.textContent.includes("auditOfficialStores.finish"));
   assert.equal(finishes.length, 1);
   assert.match(finishes[0].textContent, /processed: 2/);
+});
+
+test("expanded trace follows real progress and offers an in-screen pause", () => {
+  const { trace, dom, output } = createTrace();
+  const doc = dom.window.document;
+  let pauses = 0;
+  doc.getElementById("official-domain-audit-toggle").addEventListener("click", () => { pauses += 1; });
+  trace.open("official");
+  trace.official({ running: true, state: "running", startedAt: "run-5",
+    currentBrand: "Nike", phase: "official_site", processed: 1, runTotal: 4,
+    detail: "https://www.nike.com/" });
+  assert.equal(doc.getElementById("audit-trace-progress-fill").style.width, "25%");
+  assert.match(doc.getElementById("audit-trace-current").textContent, /nike\.com/);
+  assert.equal(doc.getElementById("audit-trace-state").textContent, "실행 중");
+  assert.equal(doc.getElementById("audit-trace-stop").hidden, false);
+  doc.getElementById("audit-trace-stop").click();
+  assert.equal(pauses, 1);
+  assert.equal(doc.getElementById("audit-trace-stop").disabled, true);
+  assert.equal(output.children.length, 2, "the control must not add fabricated audit events");
+  trace.official({ running: false, state: "paused", startedAt: "run-5", processed: 1, runTotal: 4 });
+  assert.equal(doc.getElementById("audit-trace-stop").hidden, true);
+  assert.equal(doc.getElementById("audit-trace-state").textContent, "일시 중지");
+  doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert.equal(doc.getElementById("audit-trace-panel").hidden, true);
 });
 
 test("trace stops writing after dismissal, caps old lines and uses only actual checks", () => {

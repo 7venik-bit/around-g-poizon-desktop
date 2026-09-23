@@ -96,13 +96,20 @@
         <button id="export-button" class="primary">전체 백업</button>
       </div>
     </header>
-    <section id="audit-trace-panel" class="audit-trace-panel" aria-label="실시간 점검 실행 로그" hidden>
+    <section id="audit-trace-panel" class="audit-trace-panel" aria-label="실시간 점검 실행 로그" tabindex="-1" hidden>
       <div class="audit-trace-heading">
-        <div><small>LIVE CHECK</small><strong id="audit-trace-title">점검 실행 로그</strong></div>
-        <button id="audit-trace-close" type="button" aria-label="점검 로그 닫기">닫기</button>
+        <div><small>LIVE CHECK · ACTUAL EVENTS</small><strong id="audit-trace-title">점검 실행 로그</strong></div>
+        <div class="audit-trace-actions">
+          <span id="audit-trace-state" class="audit-trace-state">실행 중</span>
+          <button id="audit-trace-stop" type="button" hidden>점검 일시 중지</button>
+          <button id="audit-trace-close" type="button" aria-label="점검 로그 화면 닫기">화면 닫기</button>
+        </div>
       </div>
       <p id="audit-trace-summary" role="status">실제 점검 단계와 응답이 아래에 기록됩니다.</p>
+      <div class="audit-trace-progress" aria-hidden="true"><i id="audit-trace-progress-fill"></i></div>
+      <div class="audit-trace-current"><span>지금 실행 중</span><strong id="audit-trace-current">점검을 준비하고 있습니다.</strong></div>
       <div id="audit-trace-output" class="audit-trace-output" role="log" aria-live="off" aria-label="실시간 점검 기록"></div>
+      <div class="audit-trace-footer"><span class="audit-trace-live-dot"></span>실제 점검 단계와 서버 응답만 표시합니다. 새 기록이 들어오면 자동으로 따라갑니다.</div>
     </section>
     <main>
       <section id="products" class="view active">
