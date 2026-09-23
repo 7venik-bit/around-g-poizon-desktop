@@ -2564,7 +2564,9 @@ function renderOfficialDomainAudit(audit = {}) {
     ? ` · 이번 전수검사 ${fullRunProcessed.toLocaleString("ko-KR")}/${fullRunTotal.toLocaleString("ko-KR")}` : "";
   const status = $("#official-domain-audit-status");
   const button = $("#official-domain-audit-toggle");
+  const viewButton = $("#official-domain-audit-view");
   if (!status || !button) return;
+  if (viewButton) viewButton.hidden = !audit.running && !audit.startedAt;
   const phaseLabel = {
     starting: "검색 준비 중",
     naver_search: "공식 홈페이지 찾는 중",
@@ -2607,7 +2609,9 @@ function renderWeeklySiteHealth(health = {}) {
   const status = $("#weekly-site-health-status");
   const report = $("#weekly-site-health-report");
   const button = $("#weekly-site-health-run");
+  const viewButton = $("#weekly-site-health-view");
   if (!panel || !status || !report || !button) return;
+  if (viewButton) viewButton.hidden = !health.running && !health.startedAt;
   panel.classList.toggle("running", Boolean(health.running));
   panel.classList.toggle("success", !health.running && health.state === "completed");
   panel.classList.toggle("error", !health.running && ["failed", "completed_with_errors"].includes(health.state));
@@ -3712,6 +3716,7 @@ $("#official-domain-audit-toggle")?.addEventListener("click", async () => {
     button.disabled = false;
   }
 });
+$("#official-domain-audit-view")?.addEventListener("click", () => auditTrace?.show("official"));
 
 async function acceptSellerCenterProducts(products, sourceLabel, options = {}) {
   const limited = products.slice(0, 200);
@@ -5651,6 +5656,7 @@ $("#weekly-site-health-run")?.addEventListener("click", async () => {
     renderWeeklySiteHealth({ running: false, state: "failed", message: `서버 점검 실패: ${message}` });
   }
 });
+$("#weekly-site-health-view")?.addEventListener("click", () => auditTrace?.show("server"));
 window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
 
 (async () => {
