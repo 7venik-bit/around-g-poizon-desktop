@@ -17,6 +17,8 @@
     let lastEvent = "";
     let lastFinalEvent = "";
     let previousFocus = null;
+    let latestOfficial = null;
+    let latestServer = null;
     const timeLabel = () => clock().toLocaleTimeString("ko-KR", { hour12: false });
     const progress = (done, total) => {
       if (progressFill) progressFill.style.width = total > 0
@@ -62,7 +64,24 @@
         ? "await auditOfficialStores({ scope: '전체 브랜드' });"
         : "await checkSiteHealth({ targets: 9 });");
     };
+    const show = (kind) => {
+      if (panel.hidden && activeKind === kind) {
+        previousFocus = doc.activeElement;
+        panel.hidden = false;
+        panel.focus?.();
+        if (kind === "official" && latestOfficial) official(latestOfficial);
+        if (kind === "server" && latestServer) server(latestServer);
+        follow();
+      } else if (activeKind !== kind || panel.hidden) {
+        open(kind);
+        if (kind === "official" && latestOfficial) official(latestOfficial);
+        if (kind === "server" && latestServer) server(latestServer);
+      } else {
+        panel.focus?.();
+      }
+    };
     const official = (audit = {}) => {
+      latestOfficial = audit;
       if (activeKind !== "official" || panel.hidden) return;
       const processed = Number(audit.processed || 0);
       const total = Number(audit.runTotal || 0);
@@ -114,6 +133,7 @@
       }
     };
     const server = (health = {}) => {
+      latestServer = health;
       if (activeKind !== "server" || panel.hidden) return;
       const total = Number(health.total || health.results?.length || 0);
       const completed = Number(health.completed ?? (Array.isArray(health.results)
@@ -159,7 +179,7 @@
     doc.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && !panel.hidden) hide();
     });
-    return { open, append, official, server, close: hide };
+    return { open, show, append, official, server, close: hide };
   }
 
   root.AroundGAuditTrace = Object.freeze({ createAuditTraceController });

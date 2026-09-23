@@ -108,6 +108,36 @@ test("expanded trace follows real progress and offers an in-screen pause", () =>
   assert.equal(doc.getElementById("audit-trace-panel").hidden, true);
 });
 
+test("dismissed official trace reopens with prior rows and the latest live state", () => {
+  const { trace, output, dom } = createTrace();
+  const panel = dom.window.document.getElementById("audit-trace-panel");
+  trace.open("official");
+  trace.official({ running: true, state: "running", startedAt: "run-6",
+    currentBrand: "Nike", phase: "saved", processed: 1, runTotal: 4,
+    updatedBrand: { status: "verified" } });
+  const earlier = output.children.length;
+  trace.close();
+  trace.official({ running: true, state: "running", startedAt: "run-6",
+    currentBrand: "Adidas", phase: "official_site", processed: 1, runTotal: 4,
+    detail: "https://www.adidas.co.kr/" });
+  assert.equal(output.children.length, earlier, "closing the screen should only hide live rows");
+  trace.show("official");
+  assert.equal(panel.hidden, false);
+  assert.match(output.textContent, /saveResult\("Nike", "verified"\)/);
+  assert.match(output.textContent, /adidas\.co\.kr/);
+  assert.match(dom.window.document.getElementById("audit-trace-summary").textContent, /Adidas/);
+});
+
+test("a running server check can attach its display after it has started", () => {
+  const { trace, dom, output } = createTrace();
+  trace.server({ running: true, state: "running", startedAt: "run-7", total: 9,
+    completed: 4, currentTarget: { id: "store", name: "Store", url: "https://store.example/" } });
+  trace.show("server");
+  assert.equal(dom.window.document.getElementById("audit-trace-panel").hidden, false);
+  assert.match(dom.window.document.getElementById("audit-trace-summary").textContent, /4\/9/);
+  assert.match(output.textContent, /store\.example/);
+});
+
 test("trace stops writing after dismissal, caps old lines and uses only actual checks", () => {
   const { trace, output, dom } = createTrace();
   trace.open("official");
