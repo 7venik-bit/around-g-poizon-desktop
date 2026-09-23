@@ -43,6 +43,25 @@ renderer = replaceOnce(
 );
 renderer = replaceOnce(
   renderer,
+  "if (!window.aroundG?.startOfficialDomainAudit || favoriteCatalogFallbackActive) return;",
+  "if (!window.aroundG?.startOfficialDomainAudit || favoriteCatalogFallbackActive\n    || explorerMeta.officialDomainAudit?.autoPaused) return;",
+  "pause automatic favorite linkage",
+);
+renderer = replaceOnce(
+  renderer,
+  `    const result = await window.aroundG.startOfficialDomainAudit({ brandIds: ids, automatic: true });
+    if (result?.audit) renderOfficialDomainAudit(result.audit);`,
+  `    const result = await window.aroundG.startOfficialDomainAudit({ brandIds: ids, automatic: true });
+    if (result?.paused) {
+      ids.forEach((id) => favoriteBrandLinkageRequested.delete(id));
+      if (result.audit) renderOfficialDomainAudit(result.audit);
+      return;
+    }
+    if (result?.audit) renderOfficialDomainAudit(result.audit);`,
+  "release favorite linkage request when paused",
+);
+renderer = replaceOnce(
+  renderer,
   `  localStorage.setItem("around-g-brand-selection-history", JSON.stringify(brandSelectionHistory.slice(0, 100)));\n}`,
   `  localStorage.setItem("around-g-brand-selection-history", JSON.stringify(brandSelectionHistory.slice(0, 100)));\n  // Any current or future favorite UI that persists pinnedBrandIds automatically\n  // starts site linkage for only the brands that still need it.\n  void queueFavoriteBrandSiteLinkage(pinnedBrandIds);\n}`,
   "favorite save triggers automatic linkage",

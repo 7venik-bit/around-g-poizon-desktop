@@ -17,6 +17,10 @@ assert.match(renderer, /function favoriteBrandNeedsAutoLink\(brand\)/,
   "renderer must decide whether a favorite still needs linkage");
 assert.match(renderer, /window\.aroundG\.startOfficialDomainAudit\(\{ brandIds: ids, automatic: true \}\)/,
   "favorite linkage must start a targeted audit automatically");
+assert.match(renderer, /explorerMeta\.officialDomainAudit\?\.autoPaused/,
+  "favorite linkage must respect a user-paused audit");
+assert.match(renderer, /if \(result\?\.paused\) \{[\s\S]*favoriteBrandLinkageRequested\.delete\(id\)/,
+  "a rejected automatic start must release its request guard");
 assert.match(renderer, /void queueFavoriteBrandSiteLinkage\(pinnedBrandIds\);/,
   "persisted or download-complete favorite brands must trigger linkage");
 assert.match(renderer, /favoriteBrandLinkageRequested\.delete\(Number\(audit\.updatedBrand\.brandId\)\)/,

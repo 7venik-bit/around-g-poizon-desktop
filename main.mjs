@@ -440,6 +440,7 @@ let brandExportMonitorRestartTimer;
 let sellerTransactionLookupQueue = Promise.resolve();
 let officialDomainAuditRunning = false;
 let officialDomainAuditStopRequested = false;
+let officialDomainAuditAutoPaused = false;
 let officialDomainAuditLastProgress = null;
 let officialDomainAuditWindow = null;
 let officialDomainAuditResumeTimer = null;
@@ -4298,6 +4299,7 @@ function officialDomainAuditSnapshot(registry, extra = {}) {
   const savedState = String(saved.state || "idle");
   return {
     running: officialDomainAuditRunning,
+    autoPaused: officialDomainAuditAutoPaused,
     state: officialDomainAuditRunning ? "running"
       : ["running", "cooldown", "blocked"].includes(savedState) ? "paused" : savedState,
     currentBrand: String(saved.currentBrand || ""),
@@ -12382,6 +12384,7 @@ app.whenReady().then(async () => {
     return;
   }
   await restorePortableOneDriveBackupIfFresh(hadLocalData).catch(() => {});
+  officialDomainAuditAutoPaused = Boolean(store.snapshot(["settings"]).settings.officialDomainAuditAutoPaused);
   // Starting the program creates a clean visible sourcing session. Preserve
   // the job-to-brand cache only as hidden recovery evidence so an interrupted
   // update can reconnect the same selected brand without auto-selecting or
@@ -12558,6 +12561,16 @@ app.whenReady().then(async () => {
     return officialDomainAuditSnapshot(registry);
   });
   ipcMain.handle("official-domain:audit-start", async (_event, options = {}) => {
+    const automatic = options?.automatic === true;
+    if (automatic && officialDomainAuditAutoPaused) {
+      const settings = store.snapshot(["settings"]).settings;
+      const registry = await ensureOfficialDomainRegistry(settings.brandCatalog || explorerMetadata().brands);
+      return { ok: false, paused: true, audit: officialDomainAuditSnapshot(registry) };
+    }
+    if (!automatic) {
+      officialDomainAuditAutoPaused = false;
+      await store.setSettings({ officialDomainAuditAutoPaused: false });
+    }
     clearTimeout(officialDomainAuditResumeTimer);
     officialDomainAuditResumeTimer = null;
     if (!officialDomainAuditRunning) void runOfficialDomainAudit({ recheckAll: options?.recheckAll === true });
@@ -12567,9 +12580,10 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("official-domain:audit-stop", async () => {
     officialDomainAuditStopRequested = true;
+    officialDomainAuditAutoPaused = true;
     if (officialDomainAuditRunning && officialDomainAuditLastProgress) {
       officialDomainAuditLastProgress = {
-        ...officialDomainAuditLastProgress, phase: "stopping", currentBrand: "",
+        ...officialDomainAuditLastProgress, autoPaused: true, phase: "stopping", currentBrand: "",
       };
       mainWindow?.webContents.send("official-domain:audit-progress", officialDomainAuditLastProgress);
     }
@@ -12581,6 +12595,7 @@ app.whenReady().then(async () => {
     officialDomainAuditWindow = null;
     clearTimeout(officialDomainAuditResumeTimer);
     officialDomainAuditResumeTimer = null;
+    await store.setSettings({ officialDomainAuditAutoPaused: true });
     // Wait for the audit loop's abort race and cleanup, allowing an immediate
     // Continue click to start exactly one replacement worker.
     const stopDeadline = Date.now() + 2_000;
