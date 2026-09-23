@@ -12562,15 +12562,13 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("official-domain:audit-start", async (_event, options = {}) => {
     const automatic = options?.automatic === true;
-    if (automatic && officialDomainAuditAutoPaused) {
+    if (automatic) {
       const settings = store.snapshot(["settings"]).settings;
       const registry = await ensureOfficialDomainRegistry(settings.brandCatalog || explorerMetadata().brands);
-      return { ok: false, paused: true, audit: officialDomainAuditSnapshot(registry) };
+      return { ok: false, manualOnly: true, paused: true, audit: officialDomainAuditSnapshot(registry) };
     }
-    if (!automatic) {
-      officialDomainAuditAutoPaused = false;
-      await store.setSettings({ officialDomainAuditAutoPaused: false });
-    }
+    officialDomainAuditAutoPaused = false;
+    await store.setSettings({ officialDomainAuditAutoPaused: false });
     clearTimeout(officialDomainAuditResumeTimer);
     officialDomainAuditResumeTimer = null;
     if (!officialDomainAuditRunning) void runOfficialDomainAudit({ recheckAll: options?.recheckAll === true });

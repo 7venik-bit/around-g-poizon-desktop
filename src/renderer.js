@@ -1969,16 +1969,20 @@ function renderStartupRecoveryProgress(payload = {}) {
   const bar = $("#startup-recovery-bar");
   const percentLabel = $("#startup-recovery-percent");
   const message = $("#startup-recovery-message");
+  const button = $("#startup-recovery-run");
   if (!panel || !bar || !percentLabel || !message) return;
   const percent = Math.max(0, Math.min(100, Number(payload.percent) || 0));
+  const running = payload.running === undefined ? startupRecoveryRunning : Boolean(payload.running);
   panel.hidden = false;
   panel.classList.toggle("complete", percent >= 100);
-  panel.classList.toggle("running", payload.running === undefined
-    ? startupRecoveryRunning
-    : Boolean(payload.running));
+  panel.classList.toggle("running", running);
   bar.style.width = `${percent}%`;
   percentLabel.textContent = `${percent}%`;
   message.textContent = payload.message || "기존 POIZON 작업과 변경 사항을 확인하고 있습니다.";
+  if (button) {
+    button.dataset.state = payload.state || (running ? "running" : percent >= 100 ? "complete" : "idle");
+    button.title = message.textContent;
+  }
 }
 
 window.aroundG.onStartupRecoveryProgress(renderStartupRecoveryProgress);
@@ -2001,6 +2005,8 @@ async function runManualPoizonRecovery() {
     const pendingCount = await recoverInterruptedBrandWorkOnDemand();
     renderStartupRecoveryProgress({
       percent: 100,
+      running: false,
+      state: "complete",
       message: pendingCount
         ? `기존 작업 확인 완료 · 중단된 ${pendingCount}개 작업의 감시를 재개했습니다.`
         : "기존 POIZON 작업 및 변경 사항 확인을 완료했습니다.",
@@ -2009,6 +2015,8 @@ async function runManualPoizonRecovery() {
   } catch (error) {
     renderStartupRecoveryProgress({
       percent: 100,
+      running: false,
+      state: "error",
       message: `수동 확인을 마쳤지만 일부 파일을 확인하지 못했습니다: ${error?.message || "확인 필요"}`,
     });
   } finally {
@@ -2596,6 +2604,7 @@ function renderOfficialDomainAudit(audit = {}) {
   status.textContent = `${stateLabel} · 검사 ${inspected.toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")} (${percent}%)${fullRunProgress} · 전용 연동 ${adapterDedicated.toLocaleString("ko-KR")} · 공통 연동 ${adapterCommon.toLocaleString("ko-KR")} · 연동 대기 ${adapterPending.toLocaleString("ko-KR")} · 공식몰·상품검색 확인 ${verified.toLocaleString("ko-KR")} · 공식몰 확인·상품검색 연결 불가 ${unsupported.toLocaleString("ko-KR")} · 공식몰 미발견·재확인 필요 ${pending.toLocaleString("ko-KR")}${current}${notFoundExcel}`;
   const resumable = audit.recheckAll && fullRunTotal > 0 && fullRunProcessed < fullRunTotal;
   button.dataset.running = audit.running ? "true" : "false";
+  button.dataset.resumable = resumable ? "true" : "false";
   button.disabled = officialDomainAuditStopPending || audit.phase === "stopping";
   button.textContent = audit.running ? "검증 일시 정지"
     : resumable ? "검증 계속" : "전체 브랜드 공식몰 재검증·연동";

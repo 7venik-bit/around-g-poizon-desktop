@@ -113,7 +113,7 @@ test('stop returns a stopping snapshot without persisting stale progress', async
   assert.equal(writes, 0);
 });
 
-test('automatic favorite checks stay paused until the user explicitly resumes', async () => {
+test('only a manual click starts the official audit, including after a pause', async () => {
   const main = (await readFile(new URL('../main.mjs', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
   const start = main.indexOf('  ipcMain.handle("official-domain:audit-start"');
   const end = main.indexOf('\n  ipcMain.handle("official-domain:audit-stop"', start);
@@ -123,7 +123,7 @@ test('automatic favorite checks stay paused until the user explicitly resumes', 
   const settingsWrites = [];
   const context = vm.createContext({
     ipcMain:{handle:(_name,handler)=>{startAudit=handler;}},
-    officialDomainAuditAutoPaused:true, officialDomainAuditRunning:false,
+    officialDomainAuditAutoPaused:false, officialDomainAuditRunning:false,
     officialDomainAuditResumeTimer:null, clearTimeout,
     store:{
       snapshot:()=>({settings:{brandCatalog:[]}}),
@@ -134,8 +134,13 @@ test('automatic favorite checks stay paused until the user explicitly resumes', 
     runOfficialDomainAudit:async()=>{runs++;},
   });
   vm.runInContext(main.slice(start,end), context);
+  const automaticAtStartup = await startAudit(null, {brandIds:[100], automatic:true});
+  assert.equal(automaticAtStartup.manualOnly, true);
+  assert.equal(runs, 0);
+  context.officialDomainAuditAutoPaused = true;
   const blocked = await startAudit(null, {brandIds:[100], automatic:true});
   assert.equal(blocked.paused, true);
+  assert.equal(blocked.manualOnly, true);
   assert.equal(blocked.audit.autoPaused, true);
   assert.equal(runs, 0);
   assert.equal(settingsWrites.length, 0);
