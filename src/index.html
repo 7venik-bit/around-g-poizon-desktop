@@ -96,6 +96,14 @@
         <button id="export-button" class="primary">전체 백업</button>
       </div>
     </header>
+    <section id="audit-trace-panel" class="audit-trace-panel" aria-label="실시간 점검 실행 로그" hidden>
+      <div class="audit-trace-heading">
+        <div><small>LIVE CHECK</small><strong id="audit-trace-title">점검 실행 로그</strong></div>
+        <button id="audit-trace-close" type="button" aria-label="점검 로그 닫기">닫기</button>
+      </div>
+      <p id="audit-trace-summary" role="status">실제 점검 단계와 응답이 아래에 기록됩니다.</p>
+      <div id="audit-trace-output" class="audit-trace-output" role="log" aria-live="off" aria-label="실시간 점검 기록"></div>
+    </section>
     <main>
       <section id="products" class="view active">
         <div class="explorer-modes raw-data-modes">
@@ -415,6 +423,7 @@
   </dialog>
   <script src="./domestic-result-verdict.js"></script>
   <script src="./shopping-accounts.js"></script>
+  <script src="./audit-trace.js"></script>
   <script src="./renderer.js"></script>
   <script src="./ledger-workbook.js"></script>
 </body>

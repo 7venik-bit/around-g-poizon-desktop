@@ -4468,7 +4468,7 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
   if (existingHomepage && existingHost !== "brand.naver.com"
     && [OFFICIAL_DOMAIN_STATUS.VERIFIED, OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED].includes(record.status)) {
     try {
-      onPhase("official_site");
+      onPhase("official_site", existingHomepage);
       const page = await loadAuditPage(auditWindow, existingHomepage);
       if (!page.blocked) {
         const logoComparison = await compareOfficialBrandLogosWithinLimit(record.brandLogoUrl, page.logoUrls || []);
@@ -4506,8 +4506,9 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
   }
   let discovery;
   try {
-    onPhase("naver_search");
-    discovery = await loadAuditPage(auditWindow, officialDomainDiscoveryUrl(brand, record.brandName));
+    const discoveryUrl = officialDomainDiscoveryUrl(brand, record.brandName);
+    onPhase("naver_search", discoveryUrl);
+    discovery = await loadAuditPage(auditWindow, discoveryUrl);
   } catch {
     return { record: failedOfficialDomainAuditRecord(record, "DISCOVERY_LOAD_FAILED"), blocked: false };
   }
@@ -4515,7 +4516,7 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
     return { record: failedOfficialDomainAuditRecord(record, "DISCOVERY_BLOCKED"), blocked: true };
   }
   const discoveryLogoCandidates = (discovery.candidates || []).filter((candidate) => candidate.imageUrl).slice(0, 8);
-  onPhase("logo_compare");
+  onPhase("logo_compare", `${discoveryLogoCandidates.length} candidates`);
   const discoveryLogoScores = await Promise.all(discoveryLogoCandidates.map(async (candidate) => ({
     candidate,
     comparison: await compareOfficialBrandLogosWithinLimit(record.brandLogoUrl, [candidate.imageUrl]),
@@ -4527,7 +4528,7 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
   })), brand, record.brandName).slice(0, OFFICIAL_DOMAIN_AUDIT_MAX_CANDIDATES);
   for (const candidate of candidates) {
     try {
-      onPhase("official_site");
+      onPhase("official_site", candidate.url);
       const page = await loadAuditPage(auditWindow, candidate.url);
       if (page.blocked) continue;
       const logoComparison = await compareOfficialBrandLogosWithinLimit(record.brandLogoUrl, [candidate.imageUrl, ...(page.logoUrls || [])]);
@@ -4639,8 +4640,8 @@ async function runOfficialDomainAudit({ recheckAll = false } = {}) {
       const record = registry[index];
       if (!recheckAll && record.status !== OFFICIAL_DOMAIN_STATUS.PENDING) return;
       const currentBrand = record.brandKo || record.brandName;
-      const progress = (phase) => sendOfficialDomainAuditProgress(registry, {
-        state: "running", currentBrand, processed, blocked: false, lastError: "", phase, attempt,
+      const progress = (phase, detail = "") => sendOfficialDomainAuditProgress(registry, {
+        state: "running", currentBrand, processed, blocked: false, lastError: "", phase, detail, attempt,
         recheckAll, startedAt, runTotal,
       });
       progress(attempt === 1 ? "starting" : "retrying");
@@ -11769,8 +11770,15 @@ async function runWeeklySiteHealthCheck({ manual = false } = {}) {
   const results = [];
   try {
     for (const target of SITE_HEALTH_TARGETS) {
-      sendWeeklySiteHealthStatus({ running: true, state: "running", message: `${target.name} 연동 상태를 점검하고 있습니다.`, completed: results.length, total: SITE_HEALTH_TARGETS.length });
-      results.push(await inspectSiteHealthTarget(target));
+      sendWeeklySiteHealthStatus({ running: true, state: "running", startedAt: startedAt.toISOString(),
+        completed: results.length, total: SITE_HEALTH_TARGETS.length,
+        currentTarget: { id: target.id, name: target.name, url: target.url }, lastResult: null,
+        message: `${target.name} 연동 상태를 점검하고 있습니다.` });
+      const result = await inspectSiteHealthTarget(target);
+      results.push(result);
+      sendWeeklySiteHealthStatus({ running: true, state: "running", startedAt: startedAt.toISOString(),
+        completed: results.length, total: SITE_HEALTH_TARGETS.length,
+        currentTarget: null, lastResult: result, message: `${target.name}: ${result.result}` });
     }
     const endedAt = new Date();
     const summary = weeklySiteHealthSummary(results);
