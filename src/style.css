@@ -2307,7 +2307,7 @@ body .shell>header{
 #official-domain-audit-toggle[data-running="true"]::after{content:'점검 일시 중지'!important}
 #weekly-site-health-run:disabled::after{content:'점검 중'!important}
 #official-domain-audit-view[hidden],#weekly-site-health-view[hidden]{display:none!important}
-#official-domain-audit-view,#weekly-site-health-view{border-color:#6ed9e6!important;background:#123f58!important;color:#e8ffff!important}
+#official-domain-audit-view,#weekly-site-health-view{min-width:58px!important;padding:0 8px!important;border-color:#6ed9e6!important;background:#123f58!important;color:#e8ffff!important;font-size:11px!important;font-weight:800!important}
 
 .audit-trace-panel{position:fixed;inset:14px;z-index:100;display:flex;flex-direction:column;gap:16px;width:auto;min-width:0;min-height:0;padding:clamp(18px,2.5vw,38px);overflow:hidden;border:1px solid #347eaa;border-radius:20px;background:radial-gradient(circle at 85% 4%,#124368 0,transparent 38%),linear-gradient(145deg,#0e263e 0%,#081625 68%,#06111d 100%);color:#e7f2ff;box-shadow:0 0 0 100vmax #020c18d9,0 28px 90px #020c18b3}
 .audit-trace-panel[hidden]{display:none!important}
