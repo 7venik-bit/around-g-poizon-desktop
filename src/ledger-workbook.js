@@ -4,6 +4,7 @@
   let workbook, active, selected, page = 0, busy = false, needsRefresh = false;
   let recordedLocation;
   let selection,anchor,editor,purchaseRecording=false;
+  let categoryReviewRow;
   const messages = {
     CELL_CONFLICT:'원본이 다른 곳에서 변경됐습니다. 다시 가져온 뒤 수정해 주세요.',
     CELL_PROTECTED:'보호된 셀이라 편집할 수 없습니다.',
@@ -85,6 +86,34 @@
     const literal=String(formula || '').match(/^=IMAGE\("(https:\/\/[^"\r\n]+)"(?:[,;]\s*1)?\)$/i);
     if(formula && !literal)return '';
     try {const url=new URL(literal?literal[1]:String(value || ''));return url.protocol==='https:' && !url.username && !url.password && !/\.svg$/i.test(url.pathname)?url.href:'';}catch{return '';}
+  }
+  function categoryReviewContext() {
+    const sheet=workbook?.sheets?.find(s=>s.id===selection?.sheetId);
+    if(sheet?.name!=='1-구매완료'||!selection||selection.row<3||selection.row!==selection.endRow)return null;
+    const row=selection.row,values=sheet.rawValues?.[row-1]||[];
+    if(![0,1,2,3,13].some(c=>String(values[c]?.value??'').trim()))return null;
+    const column=workbook.local?.categories?.[sheet.id]?.column;
+    if(!column)return null;
+    const image=sheet.images?.find(item=>item.row===row&&item.column===8);
+    const embedded=/^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/.test(image?.url||'')?image.url:'';
+    return {sheet,row,column,values,photo:embedded||photoUrl(sheet.displayValues?.[row-1]?.[7],sheet.formulas?.[row-1]?.[7])};
+  }
+  function showCategoryReview() {
+    const context=categoryReviewContext();
+    if(!context)return;
+    categoryReviewRow={sheetId:context.sheet.id,row:context.row};
+    const photo=$('workbook-category-photo');
+    photo.hidden=!context.photo;photo.removeAttribute('src');
+    if(context.photo)photo.src=context.photo;
+    photo.onerror=()=>{photo.hidden=true;$('workbook-category-hint').textContent='상품 사진을 불러올 수 없습니다. 상품 링크와 품번을 확인해 주세요.';};
+    $('workbook-category-product').textContent=`${context.values[0]?.value||''} · ${context.values[3]?.value||''} · ${context.values[2]?.value||''}`;
+    const current=String(context.values[context.column-1]?.value||'').trim();
+    const choice=$('workbook-category-choice');
+    choice.value=[...choice.options].some(option=>option.value===current)?current:'';
+    $('workbook-category-hint').textContent=context.photo
+      ?`장부 ${context.row}행의 상품 사진을 확인하세요. 현재 분류: ${current||'확인 필요'}. 저장하면 해당 행의 수수료와 마진을 다시 계산합니다.`
+      :`장부 ${context.row}행에 확인할 사진이 없습니다. 상품 링크와 품번을 확인한 뒤 카테고리를 선택하세요.`;
+    $('workbook-category-panel').hidden=false;
   }
   const won=new Intl.NumberFormat('ko-KR',{style:'currency',currency:'KRW',maximumFractionDigits:2});
   function displayCell(sheet,r,c,kind) {
@@ -173,6 +202,7 @@
     if (!Array.isArray(sheet.rawValues)) {status('편집용 데이터를 포함해 내부 장부를 다시 가져와 주세요.');return;}
     if(!extend||!anchor||selection?.sheetId!==sheet.id)anchor={row:r+1,column:c+1};
     selection={sheetId:sheet.id,row:Math.min(anchor.row,r+1),column:Math.min(anchor.column,c+1),endRow:Math.max(anchor.row,r+1),endColumn:Math.max(anchor.column,c+1),focusRow:r+1,focusColumn:c+1};
+    if(categoryReviewRow&&(categoryReviewRow.sheetId!==sheet.id||categoryReviewRow.row!==r+1)){$('workbook-category-panel').hidden=true;categoryReviewRow=undefined;}
     paintSelection();
     const focus=$('workbook-table').querySelector(`td[data-row="${r+1}"][data-column="${c+1}"]`);focus?.focus({preventScroll:true});
     if(selection.row!==selection.endRow||selection.column!==selection.endColumn){selected=undefined;announcePurchaseDestination();return;}
@@ -253,7 +283,7 @@
     return saved;
   }
   function afterEdit(fn){if(busy||needsRefresh)return;if(editor)return commitEdit(undefined,fn);fn();}
-  function clearSelection() {removeEditor();selection=anchor=selected=undefined;paintSelection();}
+  function clearSelection() {removeEditor();selection=anchor=selected=categoryReviewRow=undefined;$('workbook-category-panel').hidden=true;paintSelection();}
   function paintSelection() {
     for(const tab of $('workbook-tabs').querySelectorAll('button'))tab.disabled=busy;
     $('workbook-hidden').disabled=busy;
@@ -265,6 +295,7 @@
     }
     $('workbook-selection').textContent=selection?`${columnName(selection.column-1)}${selection.row}${selection.row!==selection.endRow||selection.column!==selection.endColumn?`:${columnName(selection.endColumn-1)}${selection.endRow}`:''}`:'셀을 선택하세요';
     for(const id of ['workbook-cell-clear','workbook-cell-copy','workbook-cell-paste','workbook-size-save'])$(id).disabled=!selection||busy||needsRefresh;
+    $('workbook-category-review').disabled=!categoryReviewContext()||busy||needsRefresh;
     if(selection) {
       const sheet=workbook.sheets.find(s=>s.id===active),table=$('workbook-table').querySelector('table');
       $('workbook-column-width').value=sheet.columnWidths?.[selection.column]||Math.round(table?.querySelectorAll('thead th')[selection.column]?.getBoundingClientRect().width||0)||'';
@@ -381,6 +412,20 @@
     });
   }
   window.aroundGLedgerWorkbook={showRecordedRows,getPurchaseDestination,beginPurchaseRecord,endPurchaseRecord};
+  $('workbook-category-review').addEventListener('click',()=>afterEdit(showCategoryReview));
+  $('workbook-category-save').addEventListener('click',()=>afterEdit(async()=>{
+    const context=categoryReviewContext(),category=$('workbook-category-choice').value;
+    if(!context||!category||categoryReviewRow?.row!==context.row){status('상품 사진을 확인하고 수수료 카테고리를 선택해 주세요.');return;}
+    const current=context.values[context.column-1]||{type:'text',value:''};
+    const edit={sheetId:context.sheet.id,row:context.row,column:context.column,revision:workbook.revision,
+      expected:current,next:{type:'text',value:category}};
+    await run(async()=>{
+      needsRefresh=true;status('카테고리와 수수료를 저장하고 다시 계산합니다.');
+      const result=await window.aroundG.editLedgerWorkbookCell(edit);
+      if(result.ok){accept(result.workbook);status(`${context.row}행 카테고리 ${category} 저장 완료. 수수료와 마진을 다시 계산했습니다.`);}
+      else{needsRefresh=!/^CELL_(?:ADDRESS_INVALID|MERGED|PROTECTED|VALIDATION_|VALUE_INVALID)/.test(result.code);status(messages[result.code]||'카테고리를 저장하지 못했습니다. 장부를 새로 불러와 다시 확인해 주세요.');}
+    });
+  }));
   $('workbook-cell-clear').addEventListener('click',()=>afterEdit(()=>changeCells('clearLedgerWorkbookCells','선택한 셀의 내용을 지웠습니다. 셀 위치와 서식은 유지됩니다.')));
   $('workbook-cell-paste').addEventListener('click',()=>afterEdit(()=>changeCells('pasteLedgerWorkbookCells','붙여넣기 및 수식 계산 완료. Excel 내보내기에 반영됐습니다.')));
   $('workbook-cell-copy').addEventListener('click',()=>afterEdit(()=>{if(!selection||busy||needsRefresh)return;const input=selectionInput();run(async()=>{
