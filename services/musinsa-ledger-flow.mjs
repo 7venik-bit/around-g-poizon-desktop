@@ -42,7 +42,7 @@ export class MusinsaLedgerCaptures {
     if(!captured)return musinsaLedgerFailure('ORDER_CAPTURE_REQUIRED');
     const identity=value=>String(value||'').trim().replace(/[?#].*$/,'');
     if(['orderNumber','purchaseDate','purchaseUrl'].some(key=>identity(input[key])!==identity(captured[key])))return musinsaLedgerFailure('ORDER_CAPTURE_MISMATCH');
-    return {ok:true,evidence:{version:1,orderNumber:captured.orderNumber,purchaseDate:captured.purchaseDate,
+    return {ok:true,cardIssuer:captured.cardIssuer || '',evidence:{version:1,orderNumber:captured.orderNumber,purchaseDate:captured.purchaseDate,
       sourceOrderUrl:captured.sourceOrderUrl,orderLineId:captured.orderLineId,productId:captured.productId}};
   }
 }

@@ -103,6 +103,14 @@ test('current order detail reads the date above its order number and compact opt
   const uncertain=html.replace('<p>163,460원</p>','<del>327,000원</del><p>163,460원</p>');
   assert.equal(frame(t,uncertain).capture().rows[0].purchasePrice,0);
 });
+test('only the labeled payment method supplies the card issuer for every item',t=>{
+  const ordered=detail(item()+item({line:'line-b',id:'10002'}));
+  const payment='<aside><h2>결제 정보</h2><p>결제 수단</p><p>무신사페이 - 삼성카드(일시불)</p><p>무신사 삼성카드 혜택</p></aside>';
+  const rows=frame(t,ordered+payment).capture().rows;
+  assert.deepEqual(Array.from(rows,row=>row.cardIssuer),['삼성','삼성']);
+  assert.equal(frame(t,ordered+'<p>무신사 삼성카드 혜택</p>').capture().rows[0].cardIssuer,'');
+  assert.equal(frame(t,ordered+'<p>결제 수단: 무신사머니</p>').capture().rows[0].cardIssuer,'');
+});
 test('catalog IDs, old price, shipping and total-order payments never substitute purchase evidence',t=>{
   const html=detail(item({code:'',qty:'',price:'',extra:'<p>수량 확인 중</p><del>99,000원</del><p>판매가 80,000원</p><p>쿠폰 5,000원</p>'}))+'<aside>총 결제금액 83,000원 배송비 3,000원</aside>';
   const row=frame(t,html).capture().rows[0];assert.equal(row.articleNumber,'');assert.equal(row.purchasePrice,0);assert.equal(row.quantity,0);
@@ -173,7 +181,8 @@ test('main-process capture proof rejects manual rows, stale tokens and switched 
   const captures=new MusinsaLedgerCaptures();
   const source={orderNumber:'ORDER-10001',purchaseDate:'2026-09-02',purchaseUrl:'https://www.musinsa.com/products/10001',sourceOrderUrl:'https://www.musinsa.com/orders/detail/ORDER-10001',orderLineId:'line-a',productId:'10001'};
   assert.equal(captures.resolve(source).code,'ORDER_CAPTURE_REQUIRED');
-  const [row]=captures.register([source]);assert.equal(captures.resolve(row).ok,true);
+  const [row]=captures.register([{...source,cardIssuer:'삼성'}]);assert.equal(captures.resolve(row).ok,true);
+  assert.equal(captures.resolve({...row,cardIssuer:'다른 카드'}).cardIssuer,'삼성');
   assert.equal(captures.resolve({...row,orderNumber:'ORDER-OTHER'}).code,'ORDER_CAPTURE_MISMATCH');
   assert.equal(captures.resolve({...row,purchaseUrl:'https://evil.test'}).code,'ORDER_CAPTURE_MISMATCH');
   captures.register([source]);assert.equal(captures.resolve(row).code,'ORDER_CAPTURE_REQUIRED');

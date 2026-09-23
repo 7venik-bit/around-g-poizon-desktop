@@ -56,7 +56,10 @@ function validateChange(sheet,row,column,next) {
   // Clearing content must work even in a dropdown. Preserve its validation.
   if(next.type==='text'&&next.value==='')return;
   const rule=sheet.validations?.[r]?.[c];
-  if(rule?.type==='other')fail('CELL_VALIDATION_REVIEW');
+  const cardColumn=sheet.name==='1-구매완료' && column===15
+    && String(sheet.rawValues?.[1]?.[14]?.value||'').trim()==='카드';
+  if(rule?.type==='other' && !(cardColumn && next.type==='text'
+    && /^[A-Za-z가-힣· .-]{1,32}$/.test(next.value.trim())))fail('CELL_VALIDATION_REVIEW');
   if(rule?.type==='list'&&!rule.values.includes(next.value))fail('CELL_VALIDATION_FAILED');
 }
 
@@ -257,7 +260,7 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
       const order=String(row.orderNumber||'').trim(),line=String(row.orderEvidence?.orderLineId||'').trim();
       if(!order||!line)fail('ORDER_EVIDENCE_REQUIRED');
       const key=JSON.stringify([order,line]),book=await load(),sheet=book.sheets.find(s=>s.name==='1-구매완료');
-      if(!sheet||sheet.columnCount<14)fail('WORKBOOK_PURCHASE_SHEET_MISSING');
+      if(!sheet||sheet.columnCount<15)fail('WORKBOOK_PURCHASE_SHEET_MISSING');
       if(destination) {
         if(destination.sheetId!==sheet.id||!Number.isSafeInteger(destination.row)||destination.row<3||destination.row+quantity-1>sheet.rowCount)fail('PURCHASE_DESTINATION_INVALID');
         if(destination.revision!==book.revision)fail('CELL_CONFLICT');
@@ -270,6 +273,16 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
         if(existing.length!==quantity||existing.some(x=>x.note.quantity!==quantity||x.note.total!==total||!Number.isInteger(x.note.unit)||x.note.unit<1||x.note.unit>quantity)||new Set(existing.map(x=>x.note.unit)).size!==quantity)fail('PURCHASE_EXISTING_CONFLICT');
         const rowNumbers=existing.sort((a,b)=>a.note.unit-b.note.unit).map(x=>x.row);
         if(destination&&rowNumbers.some((number,i)=>number!==destination.row+i))return relocateReceipt(book,sheet,existing,destination);
+        // A receipt may be recognized after the product was already recorded.
+        // Fill its previously unknown card, but preserve any manual card value.
+        if(row.cardIssuer) {
+          const cardEdits=[];
+          for(const number of rowNumbers)if(blank(sheet.rawValues[number-1]?.[14])) {
+            put(sheet,number,15,{type:'text',value:row.cardIssuer});
+            cardEdits.push({sheetId:sheet.id,row:number,column:15});
+          }
+          if(cardEdits.length)await commit(book,cardEdits,{autofill:false});
+        }
         return {ok:true,duplicate:true,rowNumber:rowNumbers[0],rowNumbers,unitPrices:rowNumbers.map(n=>Number(sheet.rawValues[n-1]?.[13]?.value)),imageStatus:'existing'};
       }
       if(existingOnly)fail('PURCHASE_EXISTING_NOT_FOUND');
@@ -298,16 +311,17 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
         const r=start+i,number=r+1;rowNumbers.push(number);ensureCell(sheet,number,sheet.columnCount);
         if(!destination&&template>=0)for(const field of ['numberFormats','backgrounds','fontColors','fontWeights','validations'])sheet[field][r]=structuredClone(sheet[field][template]);
         const text=value=>({type:'text',value:String(value||'')});
-        const values=[text(row.brand),text(row.purchaseUrl),text(row.articleNumber),text(row.modelName),text(row.gender),text(row.euSize),text(row.krSize),{type:'formula',value:`=IMAGE("${purchaseLedgerImageUrl(row.imageUrl).replace(/"/g,'%22')}",1)`},empty(),empty(),empty(),text(row.status||'구매완료'),typedInput({type:'date',value:row.purchaseDate}),{type:'number',value:String(prices[i])}];
+        const values=[text(row.brand),text(row.purchaseUrl),text(row.articleNumber),text(row.modelName),text(row.gender),text(row.euSize),text(row.krSize),{type:'formula',value:`=IMAGE("${purchaseLedgerImageUrl(row.imageUrl).replace(/"/g,'%22')}",1)`},empty(),empty(),empty(),text(row.status||'구매완료'),typedInput({type:'date',value:row.purchaseDate}),{type:'number',value:String(prices[i])},text(row.cardIssuer)];
         sheet.numberFormats[r][12] ||= 'm/d';
         for(let c=0;c<sheet.columnCount;c++) {
           if(destination) {
             // Keep the selected row's fees, formulas, formatting and manual
             // defaults. Only fill purchase fields and missing formula cells.
             if([8,9,10].includes(c)||(c===4&&!row.gender))continue;
-            if(c>=14&&(!blank(sheet.rawValues[r]?.[c])||!sheet.formulas[template]?.[c]))continue;
+            if(c===14 && (!row.cardIssuer || !blank(sheet.rawValues[r]?.[c])))continue;
+            if(c>=15&&(!blank(sheet.rawValues[r]?.[c])||!sheet.formulas[template]?.[c]))continue;
           }
-          const raw=c<14?values[c]:template>=0&&sheet.formulas[template]?.[c]?{type:'formula',value:shiftLedgerFormula(sheet.formulas[template][c],r-template)}:empty();
+          const raw=c<15?values[c]:template>=0&&sheet.formulas[template]?.[c]?{type:'formula',value:shiftLedgerFormula(sheet.formulas[template][c],r-template)}:empty();
           put(sheet,number,c+1,raw);edits.push({sheetId:sheet.id,row:number,column:c+1,...(!destination&&{templateRow:template+1})});
         }
         sheet.notes[r][7]=JSON.stringify({schema:'around-g.purchase.units.v1',key,unit:i+1,quantity,total});
