@@ -1148,6 +1148,28 @@ async function executeOfficialMallSearch(searchWindow, homepageUrl, query) {
   return officialMallSearchWasExecuted(searchWindow, exactQuery, previousUrl);
 }
 
+async function inspectLululemonSearchResult(searchWindow, query) {
+  let observed = { exactSearch: false, explicitEmpty: false, resolvedUrl: String(searchWindow.webContents.getURL() || "") };
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (attempt) await wait(500);
+    const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
+      const current = new URL(location.href);
+      const expected = ${JSON.stringify(String(query || ""))};
+      const exactSearch = /(^|\\.)lululemon\\.co\\.kr$/i.test(current.hostname)
+        && /^\\/ko-kr\\/search\\/?$/i.test(current.pathname)
+        && String(current.searchParams.get("q") || "").toUpperCase() === expected.toUpperCase();
+      const alertText = [...document.querySelectorAll('[role="alert"]')]
+        .map(element => String(element.textContent || "")).join(" ");
+      return { exactSearch, resolvedUrl: current.href,
+        explicitEmpty: exactSearch && /검색하신\\s*제품을\\s*찾을\\s*수\\s*없어요/.test(alertText)
+          && alertText.toUpperCase().includes(expected.toUpperCase()) };
+    })()`, true).catch(() => null);
+    if (state) observed = state;
+    if (observed.exactSearch && observed.explicitEmpty) break;
+  }
+  return observed;
+}
+
 async function collectOfficialMallSearchProducts(searchWindow, query) {
   if (!browserWindowUsable(searchWindow)) return [];
   let captureAttempt = 0;
@@ -3335,6 +3357,21 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         // detector does not observe a URL change. Continue to the bounded result
         // capture; only an explicit empty message may become "상품 없음".
         await wait(submitted ? 2_000 : 1_200);
+        if (source.store === "브랜드 공식몰"
+          && /(^|\.)lululemon\.co\.kr$/i.test(new URL(String(source.homepageUrl || url)).hostname)) {
+          const observed = await inspectLululemonSearchResult(searchWindow, searchQuery);
+          if (observed.explicitEmpty) return {
+            count: 0, products: [], absenceConfirmed: true, searchCompleted: true,
+            searchSubmitted: true, resolvedSearchUrl: observed.resolvedUrl,
+            verificationReason: "official_explicit_empty", verificationStage: "official_result_capture",
+            verificationDiagnostics: {stage: "official_result_capture", resolvedUrl: observed.resolvedUrl,
+              explicitEmptyText: true, productCardCount: 0},
+          };
+          if (!observed.exactSearch) return renderedSearchFailure("search_submission_failed", searchWindow, {
+            verificationStage: "official_result_navigation", searchSubmitted: submitted,
+            resolvedSearchUrl: observed.resolvedUrl,
+          });
+        }
       }
     }
     if (searchWindow.domesticDiagnostics) searchWindow.domesticDiagnostics.stage = "result_capture";

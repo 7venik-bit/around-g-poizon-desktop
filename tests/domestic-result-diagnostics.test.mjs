@@ -76,6 +76,19 @@ test('Naver search submission diagnostics show the input limit and original requ
   assert.doesNotMatch(details.textContent, /private-token|secret/);
 });
 
+test('authoritative empty Naver and official searches are labeled as absent, not errors', t => {
+  const f = renderer(t);
+  const sources=['네이버 패션타운','브랜드 공식몰'].map((store,index)=>({store,
+    searchQuery:'LM7B80S',count:0,absenceConfirmed:true,searchCompleted:true,
+    verificationReason:index?'official_explicit_empty':'naver_explicit_empty',
+    verificationStage:index?'official_result_capture':'naver_result_capture'}));
+  const body=f.render({products:[],sources});
+  const details=body.querySelector('details.domestic-inline-diagnostics');
+  assert.ok(details);
+  assert.equal((details.textContent.match(/상태: 상품 없음/g)||[]).length,2);
+  assert.doesNotMatch(details.textContent,/상태: 오류/);
+});
+
 for (const newline of ['\n', '\r\n']) test(`Windows-patched lower-list button uses the search session and user agent (${newline.length === 1 ? 'LF' : 'CRLF'})`, async t => {
   const dir = mkdtempSync(join(tmpdir(), 'aroundg-result-route-'));
   t.after(() => rmSync(dir, {recursive:true,force:true}));
