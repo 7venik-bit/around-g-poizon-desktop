@@ -166,7 +166,7 @@ replaceOnce(
   "generated-class Naver product card detection",
 );
 
-replaceOnce(
+if (!source.includes('const visibleCountMatches =')) replaceOnce(
   String.raw`      const selectedChannelEmpty = /검색된\s*상품이\s*없(?:습니다|어)|검색\s*결과가?\s*없(?:습니다|어)|상품이\s*없(?:습니다|어)|검색결과\s*없음/i.test(fullPageText);`,
   String.raw`      const selectedChannelEmpty = /검색된\\s*상품이\\s*없(?:습니다|어)|검색\\s*결과가?\\s*없(?:습니다|어)|상품이\\s*없(?:습니다|어)|검색결과\\s*없음/i.test(fullPageText);
       const visibleCountMatches = [...fullPageText.matchAll(/(?:전체|검색\\s*결과)\\s*([\\d,]+)\\s*개/gi)];

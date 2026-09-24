@@ -40,6 +40,30 @@ for (const failure of ['', 'menu', 'submit', 'rate']) test(`search uses home/men
   if(failure==='rate') assert.equal(result.rateLimited,true);
 });
 
+test('Naver waits past a transient empty frame and clears a recovered aborted navigation', async () => {
+  let url='', inspections=0;
+  const win={isDestroyed:()=>false,loadURL:async value=>{url=value;throw new Error('ERR_ABORTED');},
+    webContents:{getURL:()=>url,mainFrame:{executeJavaScript:async script=>{
+      if(script.includes('const href = String(location.href')) {
+        inspections++;
+        const empty=inspections<3;
+        return {href:resultUrl,text:empty?"'JH9977'로 검색된 상품이 없습니다.":'JH9977 전체 1개',
+          cards:empty?10:1,explicitEmpty:empty,positiveCount:!empty,documentReadyState:'complete'};
+      }
+      return {href:url,text:'JH9977',ready:true};
+    }}}};
+  const context=createContext({URL,sanitizeDomesticQuery:s=>s,wait:async()=>{},
+    domesticPageAccessState:()=>({}),isNaverRenderedResultReady:()=>true,
+    clickNaverFashionTownMenu:async()=>true,
+    submitNaverShoppingSearch:async()=>{url=resultUrl;return true;}});
+  runInContext(section('async function loadNaverFashionTownResultPage(', '\nasync function loadDomesticRetailerResultPage('),context);
+  const result=await context.loadNaverFashionTownResultPage(win,resultUrl,'JH9977');
+  assert.equal(result.ok,true);
+  assert.equal(result.explicitEmpty,false);
+  assert.equal(inspections,3);
+  assert.equal(win.domesticDiagnostics.navigationError,'');
+});
+
 for(const redirect of [false,true]) test(`detail uses an observed card and browser back, not loadURL (redirect=${redirect})`,async t=>{
   const dom=new JSDOM(`<a target="_blank" href="${productUrl}">JH9977</a>`,{url:resultUrl,runScripts:'outside-only'});
   t.after(()=>dom.window.close());

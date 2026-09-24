@@ -163,6 +163,37 @@ test("Naver's explicit no-product message becomes 상품 없음 without a parsed
   assert.equal(result.count, 0);
 });
 
+test("Naver's explicit empty search wins over unrelated popular-product links", () => {
+  const result = finalizeNaverFashionTownResult({
+    pageText: "'JWJJM26321'로 검색된 상품이 없습니다. 다른 검색어를 입력해보세요. 내 또래 남성 인기 브랜드",
+    selectedChannelEmpty: true,
+    productCards: [
+      { productUrl: "https://shopping.naver.com/window-products/brandfashion/9024125489", title: "인기 정장", price: "129,000원" },
+      { productUrl: "https://shopping.naver.com/window-products/brandfashion/13678768582", title: "인기 재킷", price: "89,000원" },
+    ],
+  }, {
+    articleNumber: "JWJJM26321",
+    resolvedSearchUrl: "https://shopping.naver.com/window/search/fashion-group?q=JWJJM26321",
+  });
+
+  assert.equal(result.naverAllSearchVerdict, "absent");
+  assert.equal(result.absenceConfirmed, true);
+  assert.equal(result.count, 0);
+  assert.deepEqual(result.products, []);
+});
+
+test("a generic empty notice elsewhere does not hide a positive search result", () => {
+  const result = finalizeNaverFashionTownResult({
+    pageText: "전체 1개. 추천 상품이 없습니다.",
+    visibleResultCount: 1,
+    visibleResultCountObserved: true,
+    productCards: [{ productUrl: "https://shopping.naver.com/window-products/brandfashion/9024125489",
+      title: "JWJJM26321 남성 재킷", price: "129,000원" }],
+  }, { articleNumber: "JWJJM26321" });
+  assert.equal(result.naverAllSearchVerdict, "confirmed");
+  assert.equal(result.products.length, 1);
+});
+
 test("a positive total never becomes failure when individual card links are late", () => {
   const result = finalizeNaverFashionTownResult({
     visibleResultCount: 2,

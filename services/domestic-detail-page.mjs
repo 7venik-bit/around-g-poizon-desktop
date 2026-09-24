@@ -4,6 +4,13 @@ export function domesticProductUrlIdentity(value = "") {
     const url = new URL(value);
     if (!/^https?:$/.test(url.protocol)) return "";
     url.hash = "";
+    // Fashion Town's numeric path is the product identity. Its query string
+    // changes between a search card and the opened detail, even for one item.
+    if (/^(?:shopping|m\.shopping)\.naver\.com$/i.test(url.hostname)
+      && /^\/window-products\/(?:brandfashion|department|outlet)\/\d+\/?$/i.test(url.pathname)) {
+      url.search = "";
+      return url.href;
+    }
     const ids = [...url.searchParams].filter(([key]) => /^(?:itemId|goodsNo|goodsId|productId|productNo|prdNo|prdtNo|goods_seq|product_no)$/i.test(key));
     if (ids.length) {
       url.search = "";
