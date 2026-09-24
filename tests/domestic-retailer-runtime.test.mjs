@@ -37,6 +37,39 @@ test('a different official query still submits once through the actual search co
   assert.equal(submissions,1);
 });
 
+test('Lululemon exact empty search ignores recommended products instead of visiting their details', async t => {
+  const home='https://www.lululemon.co.kr/';
+  const search='https://www.lululemon.co.kr/ko-kr/search?q=LM7B80S';
+  const recommendations=Array.from({length:48},(_,index)=>
+    `<article><a href="https://www.lululemon.co.kr/ko-kr/p/recommendation/prod${index}.html"><img src="https://images.test/${index}.jpg"></a><strong>추천 상품 ${index}</strong><span>109,000원</span></article>`).join('');
+  const f=fixture(t,{pages:{[home]:'<main><h1>룰루레몬</h1></main>',
+    [search]:`<div role="main"><span role="alert">검색하신 제품을 찾을 수 없어요: LM7B80S</span><h2>나를 위한 추천 제품</h2>${recommendations}</div>`}});
+  f.context.ensureOfficialAccountLogin=async()=>({ok:true});
+  f.context.executeOfficialMallSearch=async w=>{await w.loadURL(search);return true;};
+  const result=await f.drive(f.context.renderedSearchSourceResult({store:'브랜드 공식몰',homepageUrl:home},
+    'LM7B80S','룰루레몬','페이스 브레이커 라이너리스 쇼츠 7inch'));
+  assert.equal(result.count,0);
+  assert.equal(result.absenceConfirmed,true);
+  assert.equal(result.verificationReason,'official_explicit_empty');
+  assert.equal(result.products.length,0);
+  assert.equal(f.captures.length,0,'recommendations must not enter product capture');
+  assert.deepEqual(f.navigations,[home,search]);
+});
+
+test('Lululemon homepage cards are not results when the product search never navigates', async t => {
+  const home='https://www.lululemon.co.kr/';
+  const f=fixture(t,{pages:{[home]:'<main><h1>룰루레몬</h1><article><a href="/ko-kr/p/other/prod11870629.html"><img src="https://images.test/bag.jpg"></a><strong>시티 에센셜 숄더백</strong><span>109,000원</span></article></main>'}});
+  f.context.ensureOfficialAccountLogin=async()=>({ok:true});
+  f.context.executeOfficialMallSearch=async()=>false;
+  const result=await f.drive(f.context.renderedSearchSourceResult({store:'브랜드 공식몰',homepageUrl:home},
+    'LM7B80S','룰루레몬','페이스 브레이커 라이너리스 쇼츠 7inch'));
+  assert.equal(result.verificationReason,'search_submission_failed');
+  assert.equal(result.verificationStage,'official_result_navigation');
+  assert.equal(result.absenceConfirmed,undefined,'an unsubmitted query is not proof of absence');
+  assert.equal(f.captures.length,0);
+  assert.deepEqual(f.navigations,[home]);
+});
+
 test('MDS colour and size dropdowns collect stock without opening measurement tabs or cart', async t => {
   const url='https://www.musinsa.com/products/4693116';
   const menu=label=>`<div data-mds="StaticDropdownMenu"><input readonly placeholder="${label}" data-mds="DropdownTriggerInput"><div data-mds="StaticDropdownMenuContent" style="display:none"></div></div>`;

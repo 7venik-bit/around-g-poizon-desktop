@@ -227,7 +227,8 @@
       const needsAttention = source.verificationFailed || source.verificationPending || source.detailVerificationPending
         || source.loginRequired || source.securityVerificationRequired || source.rateLimited
         || ["partial", "manual", "blocked"].includes(source.autoRecovery?.status);
-      const status = needsAttention ? "확인 필요" : recovered ? "자동 복구 완료"
+      const status = needsAttention ? "확인 필요" : source.absenceConfirmed === true ? "상품 없음"
+        : recovered ? "자동 복구 완료"
         : approved ? "판매처·상품 확인 완료" : "오류";
       const lines = [source.store || "판매처", `검색어: ${source.searchQuery || "-"}`,
         `상태: ${status}`, `판정 코드: ${reason}`,
