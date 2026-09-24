@@ -589,6 +589,47 @@ test('Naver partial-price retention excludes wrong models, brands and barcode-re
   assert.equal(result.products.length,0);
 });
 
+test('a visible brandfashion card survives a temporary detail failure without inventing stock', async t => {
+  const url='https://shopping.naver.com/window-products/brandfashion/13615365121?tr=swsc';
+  const f=fixture(t);
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  f.context.waitForDomesticDetailReady=async()=>{throw new Error('product_detail_not_ready');};
+  const result=await f.drive(f.context.verifyApprovedNaverDomesticProducts([{
+    title:'[데상트] 터프 스몰 워딩 폴로 반팔 티셔츠 SR323UPS74',
+    text:'데상트 브랜드직영몰 84,550원', url, price:84550,
+    imageUrl:'https://shop-phinf.pstatic.net/product.jpg',
+  }],{articleNumber:'SR323UPS74',brand:'데상트',requireArticleIdentity:true}));
+  assert.equal(result.products.length,1);
+  assert.equal(result.products[0].url,url);
+  assert.equal(result.products[0].price,84550);
+  assert.equal(result.products[0].imageUrl,'https://shop-phinf.pstatic.net/product.jpg');
+  assert.equal(result.products[0].stockVerified,false);
+  assert.equal(result.products[0].inStock,null);
+  assert.equal(result.products[0].detailVerificationPending,true);
+});
+
+test('Naver captures the image beside a product overlay link from the owning card', async t => {
+  const searchUrl='https://shopping.naver.com/window/search/fashion-group?q=SR323UPS74';
+  const productUrl='https://shopping.naver.com/window-products/brandfashion/13615365121?tr=swsc';
+  const imageUrl='https://shop-phinf.pstatic.net/product.jpg';
+  const page=`<main><p>SR323UPS74에 대한 패션타운 검색결과입니다.</p><button>전체 1개</button>
+    <div class="fashionProductCard_product_card_inner__leQm7">
+      <picture><img src="${imageUrl}" alt="[데상트] 터프 스몰 워딩 폴로 반팔 티셔츠 SR323UPS74 이미지"></picture>
+      <div class="fashionProductCard_information__2lxUO">
+        <strong class="productName_product_name__HTpXG">[데상트] 터프 스몰 워딩 폴로 반팔 티셔츠 SR323UPS74</strong>
+        <span class="productPrice_price__xLMK1">84,550원</span>
+      </div><a href="${productUrl}" aria-label="상품 상세"></a>
+    </div></main>`;
+  const f=fixture(t,{pages:{[searchUrl]:page}});
+  f.context.loadNaverFashionTownResultPage=async w=>{await w.loadURL(searchUrl);return {ok:true,resolvedUrl:searchUrl};};
+  const result=await f.drive(f.context.renderedSearchSourceResult({store:'네이버 패션타운',searchUrl},
+    'SR323UPS74','데상트','터프 스몰 워딩 폴로 반팔 티셔츠'));
+  assert.equal(result.products.length,1,JSON.stringify(result.verificationDiagnostics));
+  assert.equal(result.products[0].url,productUrl);
+  assert.equal(result.products[0].imageUrl,imageUrl);
+  assert.equal(result.products[0].price,84550);
+});
+
 test('a Naver detail access restriction remains explicit and stops further detail attempts', async t => {
   const url='https://shopping.naver.com/window-products/department/123';
   const f=fixture(t,{pages:{[url]:'<main>보안 확인 CAPTCHA</main>'}});

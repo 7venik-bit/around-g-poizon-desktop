@@ -1470,7 +1470,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         // model and domestic seller are verified but the stock page is delayed.
         const cardArticleVerified = strictProductArticleIdentityMatch({titleText: candidate.title}, articleNumber);
         const cardBrandVerified = domesticBrandEvidenceMatch(brand, candidate.title);
-        const domesticRoute = /^https:\/\/(?:m\.)?shopping\.naver\.com\/window-products\/(?:department|outlet|brand-store)\//i.test(productUrl)
+        const domesticRoute = /^https:\/\/(?:m\.)?shopping\.naver\.com\/window-products\/(?:brandfashion|department|outlet|brand-store)\//i.test(productUrl)
           || candidate.naverTrustedChannelEvidence === true;
         const barcodeRemoved = /(?:바코드|QR\s*코드|큐알\s*코드).{0,24}(?:삭제|제거|훼손)|(?:삭제|제거|훼손).{0,24}(?:바코드|QR\s*코드|큐알\s*코드)/i.test(`${candidate.title || ''} ${candidate.text || ''}`);
         if (cardArticleVerified && cardBrandVerified && domesticRoute && Number(candidate.price) > 0
@@ -3598,7 +3598,12 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         const sameProductLinks = [link, ...(card?.querySelectorAll?.("a[href]") || [])]
           .filter((candidate) => String(candidate.href || "").split("#")[0] === productUrl);
         const linkedImages = sameProductLinks.flatMap((candidate) => [...candidate.querySelectorAll("img")]);
-        const image = linkedImages.find((candidate) => {
+        // Fashion Town's product image is a sibling of its full-card overlay
+        // link. Scope the fallback to the smallest owning card, so images from
+        // adjacent products or global recommendations cannot leak into it.
+        const cardImages = /\\/window-products\\//i.test(productUrl)
+          ? [...(card?.querySelectorAll?.("picture img, img") || [])] : [];
+        const image = [...linkedImages, ...cardImages].find((candidate) => {
           const value = String(candidate.currentSrc || candidate.dataset?.original || candidate.dataset?.src || candidate.src || "");
           return value && !/logo|icon|sprite|badge|banner|placeholder|loading|swatch|color/i.test([value, candidate.alt, candidate.className].join(" "));
         });
