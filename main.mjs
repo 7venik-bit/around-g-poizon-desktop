@@ -1528,6 +1528,7 @@ async function lookupNaverDomesticPrice(input = {}) {
     priceWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
     const priceSearch = await loadNaverFashionTownResultPage(priceWindow, searchUrl, query);
     if (!priceSearch.ok) return { ok: false, searchUrl, candidates: [], ...priceSearch };
+    if (priceSearch.explicitEmpty) return { ok: true, searchUrl, candidates: [], message: "검색 결과에 상품이 없습니다." };
     for (let attempt = 0; attempt < 24; attempt += 1) {
       await wait(attempt === 0 ? 1_500 : 500);
       const snapshot = await priceWindow.webContents.executeJavaScript(`(() => {
@@ -2763,6 +2764,7 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
     stage: "naver_result_navigation", targetUrl, inspectedFrames: 0, inspectionError: "", navigationError: "",
   };
   const inspectSettledResult = async () => {
+    let emptySamples = 0;
     for (let attempt = 0; attempt < 60; attempt += 1) {
       if (searchWindow.isDestroyed()) return {ok: false, verificationReason: "search_canceled"};
       if (attempt > 0) await wait(500);
@@ -2794,7 +2796,7 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
           }
           cards = found.size;
         }
-        const explicitEmpty = /검색\\s*결과가?\\s*(?:없|0)|상품이?\\s*(?:없|0)|일치하는\\s*(?:상품|제안)이\\s*없/i.test(text);
+        const explicitEmpty = /검색\\s*결과가?\\s*(?:없|0)|검색된\\s*상품이\\s*없|일치하는\\s*(?:상품|제안)이\\s*없/i.test(text);
         const positiveCount = /(?:전체|검색\\s*결과)\\s*[1-9][\\d,]*\\s*개/i.test(text);
         return { href, text, cards, explicitEmpty, positiveCount, documentReadyState: document.readyState };
       })()`, true).catch((error) => { diagnostic.inspectionError = String(error?.message || error); return null; });
@@ -2810,12 +2812,19 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
       const exactResult = /shopping\.naver\.com\/window\/search\//i.test(state.href)
         && compact(decodedUrl).includes(compact(expectedQuery));
       diagnostic.expectedPage = exactResult;
+      emptySamples = exactResult && state.explicitEmpty ? emptySamples + 1 : 0;
       // Fashion Town often keeps its loadURL promise pending while the exact
       // result document is already interactive. Once that DOM and query URL
       // exist, the later bounded card collector—not the browser load event—
       // decides whether products or an explicit empty result are present.
       if (exactResult && isNaverRenderedResultReady({ url: state.href, text: state.text, cards: state.cards }, expectedQuery)) {
-        return { ok: true, resolvedUrl: state.href };
+        // A stale empty-state frame can precede the new query's cards. Require
+        // three observations of the same exact-query empty result first.
+        if (state.explicitEmpty && emptySamples < 3) continue;
+        // A canceled intermediate SPA navigation is not an access error once
+        // the exact search document has settled on screen.
+        diagnostic.navigationError = "";
+        return { ok: true, resolvedUrl: state.href, explicitEmpty: state.explicitEmpty };
       }
     }
     return { ok: false, resolvedUrl: String(searchWindow.webContents.getURL() || "") };
@@ -3175,6 +3184,14 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             ...resultPage, searchSubmitted: true, resolvedSearchUrl: resultPage.resolvedUrl || url,
           });
         }
+        if (resultPage.explicitEmpty) return {
+          count: 0, products: [], presenceConfirmed: false, absenceConfirmed: true,
+          searchCompleted: true, searchSubmitted: true, resolvedSearchUrl: resultPage.resolvedUrl,
+          naverAllSearchVerdict: "absent", verificationPending: false,
+          verificationReason: "naver_explicit_empty", verificationStage: "naver_result_capture",
+          verificationDiagnostics: { stage: "naver_result_capture", resolvedUrl: resultPage.resolvedUrl,
+            explicitEmptyText: true, productCardCount: 0 },
+        };
       }
       if (interactiveOfficialSearch) {
         const login = await ensureOfficialAccountLogin(searchWindow, String(source.homepageUrl || url));
@@ -3557,7 +3574,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const pageHeaderText = [...document.querySelectorAll('header,nav')]
         .map((element) => String(element.innerText || ""))
         .join(" ").slice(0, 20000);
-      const selectedChannelEmpty = /검색된\\s*상품이\\s*없(?:습니다|어)|검색\\s*결과가?\\s*없(?:습니다|어)|상품이\\s*없(?:습니다|어)|검색결과\\s*없음/i.test(fullPageText);
+      const selectedChannelEmpty = /검색된\\s*상품이\\s*없(?:습니다|어)|검색\\s*결과가?\\s*없(?:습니다|어)|일치하는\\s*상품이\\s*없(?:습니다|어)|검색결과\\s*없음/i.test(fullPageText);
       const visibleCountMatches = [...fullPageText.matchAll(/(?:전체|검색\\s*결과)\\s*([\\d,]+)\\s*개/gi)];
       const visibleResultCountObserved = visibleCountMatches.length > 0;
       const visibleResultCount = visibleCountMatches.reduce((maximum, match) =>
@@ -4154,7 +4171,8 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           break;
         }
         result = queryResult;
-        if (queryResult.verificationReason || queryResult.detailVerificationPending) break;
+        if ((queryResult.verificationReason && queryResult.absenceConfirmed !== true)
+          || queryResult.detailVerificationPending) break;
         if (Number(queryResult.count || 0) > 0 || (queryResult.products || []).length > 0) break;
       // Only a completed, authoritative zero-result search may advance to the
       // next query (product code -> title -> title+code). A page/parser/detail

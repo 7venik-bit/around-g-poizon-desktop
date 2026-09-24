@@ -315,6 +315,33 @@ test('Naver navigation diagnostics retain a rendered page that never exposes res
   assert.equal('text' in d, false, 'do not copy the page body into diagnostics');
 });
 
+test('Naver explicit empty results skip popular cards and advance to the distinct title query', async t => {
+  const article='JWJJM26321';
+  const title='남성 재킷';
+  const codeUrl=`https://shopping.naver.com/window/search/fashion-group?q=${article}`;
+  const titleUrl=`https://shopping.naver.com/window/search/fashion-group?q=${encodeURIComponent(title)}`;
+  const f=fixture(t);
+  f.context.BrowserWindow.prototype.loadURL=async function(url) {
+    f.navigations.push(url);
+    this.dom.reconfigure({url});
+    const query=new URL(url).searchParams.get('q');
+    this.dom.window.document.body.innerHTML=query
+      ? `<main><input value="${query}"><p>'${query}'로 검색된 상품이 없습니다. 다른 검색어를 입력해보세요.</p>`
+        + '<section><h2>내 또래 남성 인기 브랜드</h2><a href="https://shopping.naver.com/window-products/brandfashion/9024125489">인기 정장</a></section></main>'
+      : '<main>패션타운</main>';
+  };
+  f.context.verifyApprovedNaverDomesticProducts=async()=>assert.fail('popular cards are not search candidates');
+  const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{
+    store:'네이버 패션타운',searchUrl:codeUrl,searchQuery:article,renderCount:true,
+    searchAttempts:[{query:article,url:codeUrl},{query:title,url:titleUrl}],
+  }]},article,'코오롱스포츠',title));
+  assert.deepEqual(f.navigations.filter(url=>url.includes('/window/search/')),[codeUrl,titleUrl]);
+  assert.equal(result.sources[0].searchQuery,title);
+  assert.equal(result.sources[0].absenceConfirmed,true);
+  assert.equal(result.sources[0].verificationReason,'naver_explicit_empty');
+  assert.deepEqual(result.products,[]);
+});
+
 test('Naver accepts a visible external official-store card when the query appears only in its input', async t => {
   const f = fixture(t);
   f.context.BrowserWindow.prototype.loadURL = async function(url) {
@@ -509,6 +536,14 @@ test('detail navigation preserves colour variants while ignoring retailer tracki
   const base='https://www.ssg.com/item/itemView.ssg?itemId=100';
   assert.equal(detailPage.domesticProductUrlIdentity(base),detailPage.domesticProductUrlIdentity(base+'&siteNo=6001&NaPm=tracking'));
   assert.notEqual(detailPage.domesticProductUrlIdentity(base+'&color=BLACK'),detailPage.domesticProductUrlIdentity(base+'&color=WHITE'));
+});
+
+test('Naver product identity uses its path ID despite changing tracking parameters', () => {
+  const base='https://shopping.naver.com/window-products/brandfashion/13678768582';
+  assert.equal(detailPage.domesticProductUrlIdentity(base+'?query=JWJJM26321&NaPm=card'),
+    detailPage.domesticProductUrlIdentity(base+'?trace=detail'));
+  assert.notEqual(detailPage.domesticProductUrlIdentity(base),
+    detailPage.domesticProductUrlIdentity('https://shopping.naver.com/window-products/brandfashion/9024125489'));
 });
 
 test('Naver partial-price retention excludes wrong models, brands and barcode-removed sellers', async t => {

@@ -31,9 +31,11 @@ test("현재 네이버 로더는 보안 확인과 수집 실패를 검색 완료
   const fallbackStart = main.lastIndexOf("async function renderedSearchSourceResult");
   const start = main.indexOf('      if (directNaverFashionResult) {\n        const resultPage', fallbackStart);
   const block = main.slice(start, main.indexOf('      if (interactiveOfficialSearch)', start));
-  assert.match(block, /return renderedSearchFailure\(resultPage\.verificationReason/);
-  assert.match(block, /resolvedSearchUrl: resultPage\.resolvedUrl \|\| url/);
-  assert.doesNotMatch(block, /resultLinkOnly: true|searchCompleted: true/);
+  const failedNavigation = block.slice(block.indexOf('if (!resultPage.ok)'), block.indexOf('if (resultPage.explicitEmpty)'));
+  assert.match(failedNavigation, /return renderedSearchFailure\(resultPage\.verificationReason/);
+  assert.match(failedNavigation, /resolvedSearchUrl: resultPage\.resolvedUrl \|\| url/);
+  assert.doesNotMatch(failedNavigation, /resultLinkOnly: true|searchCompleted: true/);
+  assert.match(block, /if \(resultPage\.explicitEmpty\) return \{/);
 });
 
 test("검색 링크 판정은 최종 소스 행까지 손실 없이 전달된다", () => {

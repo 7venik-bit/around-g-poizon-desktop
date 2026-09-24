@@ -152,7 +152,7 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
   const visibleCount = Number.isFinite(Number(snapshot?.visibleResultCount))
     ? Math.max(0, Number(snapshot.visibleResultCount)) : null;
   const channelText = [snapshot?.pageHeaderText, snapshot?.pageText].filter(Boolean).join("\n");
-  const explicitEmptyText = /검색된\s*상품이\s*없(?:습니다|어)|검색\s*결과가?\s*없(?:습니다|어)|일치하는\s*상품이\s*없(?:습니다|어)|상품이\s*없(?:습니다|어)|검색결과\s*없음/i.test(channelText);
+  const explicitEmptyText = /검색된\s*상품이\s*없(?:습니다|어)|검색\s*결과가?\s*없(?:습니다|어)|일치하는\s*상품이\s*없(?:습니다|어)|검색결과\s*없음/i.test(channelText);
   const totalChannelCount = naverChannelCount(channelText, "전체");
   const overseasDirectCount = naverChannelCount(channelText, "해외직구");
   const effectiveTotalCount = totalChannelCount ?? visibleCount;
@@ -196,22 +196,8 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
     };
   }
 
-  if (products.length > 0) {
-    return {
-      count: Math.max(products.length, visibleCount || 0),
-      products,
-      presenceConfirmed: true,
-      absenceConfirmed: false,
-      searchCompleted: true,
-      searchSubmitted: true,
-      resolvedSearchUrl,
-      naverAllSearchVerdict: "confirmed",
-      verificationPending: false,
-      verificationStage: "naver_result_capture",
-      verificationDiagnostics,
-    };
-  }
-
+  // Naver fills an empty result page with popular-brand cards. Those links
+  // belong to recommendations, not to the submitted product-code search.
   if (explicitEmpty) {
     return {
       count: 0,
@@ -224,6 +210,22 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
       naverAllSearchVerdict: "absent",
       verificationPending: false,
       verificationReason: explicitEmptyText ? "naver_explicit_empty" : "naver_authoritative_zero",
+      verificationStage: "naver_result_capture",
+      verificationDiagnostics,
+    };
+  }
+
+  if (products.length > 0) {
+    return {
+      count: Math.max(products.length, visibleCount || 0),
+      products,
+      presenceConfirmed: true,
+      absenceConfirmed: false,
+      searchCompleted: true,
+      searchSubmitted: true,
+      resolvedSearchUrl,
+      naverAllSearchVerdict: "confirmed",
+      verificationPending: false,
       verificationStage: "naver_result_capture",
       verificationDiagnostics,
     };
