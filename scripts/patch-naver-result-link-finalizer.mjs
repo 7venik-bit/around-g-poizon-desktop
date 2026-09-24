@@ -51,7 +51,7 @@ replaceOnce(
   "skip redundant Naver menu and search submission",
 );
 
-if (!source.includes('if (urlChanged && submittedQueryUrl) return true;')) replaceOnce(
+if (!source.includes('if (isNaverRenderedResultReady(state, exactQuery))')) replaceOnce(
   String.raw`    const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));
     if (state && !/페이지를\s*찾을\s*수\s*없습니다/.test(state.text)`,
   String.raw`    const queryVisibleInPage = compact(state?.text || "").includes(compact(exactQuery));

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createContext, runInContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { domesticProductUrlIdentity } from '../services/domestic-detail-page.mjs';
+import { fitNaverFashionTownSearchQuery } from '../relay/domestic-search.mjs';
 const main = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
 const section = (start, end) => main.slice(main.indexOf(start), main.indexOf(end, main.indexOf(start)));
 const resultUrl = 'https://shopping.naver.com/window/search/fashion-group?q=JH9977';
@@ -23,11 +24,63 @@ test('a submitted query with only external official cards reaches the bounded re
   assert.equal(clicks,1);
 });
 
+test('Naver reports the field limit before trying to type an overlong query',async()=>{
+  const query='코오롱스포츠 남녀공용 소로나 그래픽 라운드넥 반팔 티셔츠 TLTCM26603WHX TLTCM26603';
+  let typed=false;
+  const win={isDestroyed:()=>false,domesticDiagnostics:{},webContents:{focus(){},getURL:()=> 'https://shopping.naver.com/window/main/fashion-group'}};
+  const context=createContext({URL,
+    openNaverFashionTownSearchInput:async()=>({x:10,y:10,maxLength:50}),
+    typeNaverQueryLikeUser:async()=>{typed=true;return true;}});
+  runInContext(section('async function submitNaverShoppingSearch(', '\nasync function openRenderedSizeOptions('),context);
+  assert.equal(await context.submitNaverShoppingSearch(win,query),false);
+  assert.equal(typed,false);
+  assert.equal(win.domesticDiagnostics.inputMaxLength,50);
+  assert.equal(win.domesticDiagnostics.submittedQueryLength,56);
+  assert.equal(win.domesticDiagnostics.submissionFailure,'query_exceeds_input_limit');
+});
+
+test('an older overlong Naver attempt submits the fitted query and records its real target URL',async()=>{
+  const original='코오롱스포츠 남녀공용 소로나 그래픽 라운드넥 반팔 티셔츠 TLTCM26603WHX TLTCM26603';
+  const target=`https://shopping.naver.com/window/search/fashion-group?q=${encodeURIComponent(original)}`;
+  let url='',submitted='';
+  const win={isDestroyed:()=>false,loadURL:async value=>{url=value;},webContents:{getURL:()=>url,
+    mainFrame:{executeJavaScript:async script=>script.includes('const href = String(location.href')
+      ? {href:url,text:'검색 결과',cards:1,explicitEmpty:false,positiveCount:true,documentReadyState:'complete'}
+      : {href:url,text:'패션타운',ready:true}}}};
+  const context=createContext({URL,fitNaverFashionTownSearchQuery,wait:async()=>{},
+    domesticPageAccessState:()=>({}),isNaverRenderedResultReady:()=>true,
+    clickNaverFashionTownMenu:async()=>true,
+    submitNaverShoppingSearch:async(_window,query)=>{submitted=query;url=`https://shopping.naver.com/window/search/fashion-group?q=${encodeURIComponent(query)}`;return true;}});
+  runInContext(section('async function loadNaverFashionTownResultPage(', '\nasync function loadDomesticRetailerResultPage('),context);
+  const result=await context.loadNaverFashionTownResultPage(win,target,original);
+  assert.equal(result.ok,true);
+  assert.equal(submitted,fitNaverFashionTownSearchQuery(original));
+  assert.equal(new URL(win.domesticDiagnostics.targetUrl).searchParams.get('q'),submitted);
+  assert.equal(win.domesticDiagnostics.originalTargetUrl,target);
+});
+
+test('a visible Fashion Town menu clears a superseded ERR_ABORTED before reporting input failure',async()=>{
+  let url='';
+  const win={isDestroyed:()=>false,loadURL:async value=>{url=value;throw new Error('ERR_ABORTED (-3)');},
+    webContents:{getURL:()=>url,mainFrame:{executeJavaScript:async()=>({href:url,text:'패션타운',ready:true})}}};
+  const context=createContext({URL,fitNaverFashionTownSearchQuery,wait:async()=>{},
+    domesticPageAccessState:()=>({}),
+    clickNaverFashionTownMenu:async()=>{url='https://shopping.naver.com/window/main/fashion-group';return true;},
+    submitNaverShoppingSearch:async()=>false});
+  runInContext(section('async function loadNaverFashionTownResultPage(', '\nasync function loadDomesticRetailerResultPage('),context);
+  const result=await context.loadNaverFashionTownResultPage(win,resultUrl,'JH9977');
+  assert.equal(result.verificationReason,'search_submission_failed');
+  assert.equal(result.resolvedUrl,url);
+  assert.equal(win.domesticDiagnostics.inspectedFrames,0);
+  assert.equal(win.domesticDiagnostics.navigationError,'');
+});
+
 for (const failure of ['', 'menu', 'submit', 'rate']) test(`search uses home/menu/input once and never loads a result URL: ${failure || 'success'}`, async () => {
   let url = '', calls = [], now = 0;
   const win = { isDestroyed:()=>false, loadURL:async value=>{calls.push(['load', value]);url=value;}, webContents:{getURL:()=>url,
     mainFrame:{executeJavaScript:async()=>({href:url,text:failure==='rate'?'현재 서비스 접속량이 많습니다.':'JH9977',ready:true,cards:1,documentReadyState:'complete'})}} };
   const context=createContext({URL, sanitizeDomesticQuery:s=>s, wait:async ms=>{now+=ms;},
+    fitNaverFashionTownSearchQuery:s=>s,
     domesticPageAccessState:text=>text.includes('접속량')?{verificationReason:'rate_limited',rateLimited:true}:{},
     isNaverRenderedResultReady:()=>true,
     clickNaverFashionTownMenu:async()=>{calls.push(['menu']);return failure!=='menu';},
@@ -53,6 +106,7 @@ test('Naver waits past a transient empty frame and clears a recovered aborted na
       return {href:url,text:'JH9977',ready:true};
     }}}};
   const context=createContext({URL,sanitizeDomesticQuery:s=>s,wait:async()=>{},
+    fitNaverFashionTownSearchQuery:s=>s,
     domesticPageAccessState:()=>({}),isNaverRenderedResultReady:()=>true,
     clickNaverFashionTownMenu:async()=>true,
     submitNaverShoppingSearch:async()=>{url=resultUrl;return true;}});

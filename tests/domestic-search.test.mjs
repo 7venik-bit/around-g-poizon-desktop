@@ -14,6 +14,7 @@ import {
   countRenderedChannelProducts,
   domesticChannelUrl,
   exactArticleIdentityMatch,
+  fitNaverFashionTownSearchQuery,
   isSsgOfficialBrandHall,
   internalPortalSearchQuery,
   naverFashionTownUrl,
@@ -39,6 +40,24 @@ test("POIZON category suffix is removed before a product code is typed", () => {
   assert.equal(sanitizeDomesticProductCode("207521-001黑色"), "207521-001");
   assert.equal(sanitizeDomesticProductCode("207521-001 黑色"), "207521-001");
   assert.equal(sanitizeDomesticQuery("크록스 207521-001黑色"), "크록스 207521-001");
+});
+
+test("Naver title fallback fits the observed 50-character search field without losing the model", async () => {
+  const title = "코오롱스포츠 남녀공용 소로나 그래픽 라운드넥 반팔 티셔츠 TLTCM26603WHX TLTCM26603";
+  const fitted = "코오롱스포츠 남녀공용 소로나 그래픽 라운드넥 반팔 티셔츠 TLTCM26603WHX";
+  assert.equal(title.length, 56);
+  assert.equal(fitNaverFashionTownSearchQuery(title), fitted);
+  assert.ok(fitted.length <= 50);
+  const data = await queryDomesticProducts({
+    query: "TLTCM26603WHX", articleNumber: "TLTCM26603WHX", title,
+    brand: "코오롱스포츠", enabledSourceGroups: ["naver"],
+  });
+  const naver = data.sources.find((source) => source.store === "네이버 패션타운");
+  assert.deepEqual(naver.searchAttempts.map((attempt) => attempt.query), ["TLTCM26603WHX", fitted]);
+  for (const attempt of naver.searchAttempts) {
+    assert.equal(new URL(attempt.url).searchParams.get("q"), attempt.query);
+    assert.ok(attempt.query.length <= 50);
+  }
 });
 
 test("국내 검색 IPC는 한자를 제거한 상품번호만 모든 판매처에 전달한다", async () => {
