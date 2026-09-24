@@ -12443,6 +12443,10 @@ app.whenReady().then(async () => {
     await store.setSettings({ programNotifications: [] });
     return [];
   });
+  ipcMain.handle("diagnostics:copy", (_event, report) => {
+    clipboard.writeText(String(report || "").slice(0, 50000));
+    return true;
+  });
   ipcMain.handle("config:get", () => publicConfig());
   ipcMain.handle("domestic-login:list", () => domesticLoginStatuses());
   ipcMain.handle("domestic-login:open", (_event, sourceId) => openDomesticLogin(sourceId));

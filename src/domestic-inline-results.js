@@ -220,8 +220,17 @@
     };
     const blocks = failures.map(source => {
       const d = source.verificationDiagnostics || {};
+      const reason = source.verificationReason || (source.autoRecovery?.status === 'recovered' ? '복구 완료'
+        : source.loginRequired ? "login_required" : source.securityVerificationRequired ? "security_verification_required" : "확인 필요");
+      const approved = reason === "approved_domestic_seller";
+      const recovered = reason === "복구 완료" || source.autoRecovery?.status === "recovered";
+      const needsAttention = source.verificationFailed || source.verificationPending || source.detailVerificationPending
+        || source.loginRequired || source.securityVerificationRequired || source.rateLimited
+        || ["partial", "manual", "blocked"].includes(source.autoRecovery?.status);
+      const status = needsAttention ? "확인 필요" : recovered ? "자동 복구 완료"
+        : approved ? "판매처·상품 확인 완료" : "오류";
       const lines = [source.store || "판매처", `검색어: ${source.searchQuery || "-"}`,
-        `오류: ${source.verificationReason || (source.autoRecovery?.status === 'recovered' ? '복구 완료' : source.loginRequired ? "login_required" : source.securityVerificationRequired ? "security_verification_required" : "확인 필요")}`,
+        `상태: ${status}`, `판정 코드: ${reason}`,
         `단계: ${source.verificationStage || d.stage || "unknown"}`];
       const fields = [
         ["자동 복구", ({recovered:'복구 완료',partial:'일부 미해결',manual:'수동 확인 필요',blocked:'로그인·접속 제한으로 중지'})[source.autoRecovery?.status]],

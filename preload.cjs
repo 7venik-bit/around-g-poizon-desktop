@@ -147,6 +147,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   getNotifications: () => ipcRenderer.invoke("notifications:list"),
   markNotificationsRead: () => ipcRenderer.invoke("notifications:mark-read"),
   clearNotifications: () => ipcRenderer.invoke("notifications:clear"),
+  copyDiagnostics: (report) => ipcRenderer.invoke("diagnostics:copy", report),
   onNotificationAdded: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on("notifications:added", handler);

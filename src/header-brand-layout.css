@@ -24,6 +24,7 @@ body .shell > header .header-actions > .update-anchor {
   padding: 0 !important;
 }
 body .shell > header .header-actions > #notification-open,
+body .shell > header .header-actions > #search-diagnostics-open,
 body .shell > header .header-actions > #export-button,
 body .shell > header .header-actions > .update-anchor > #update-check {
   flex: 0 0 auto !important;

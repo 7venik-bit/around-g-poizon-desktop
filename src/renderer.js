@@ -21,6 +21,10 @@ const CATEGORY_DETAILS = {
 let currentExplorerProducts = [];
 let allExplorerProducts = [];
 const domesticResults = new Map();
+let searchDiagnostics = null;
+function recordSearchDiagnostics(result, product, scope, key, scan = false) {
+  searchDiagnostics?.recordResult(result, product, {scope, key, scan});
+}
 const selectedExplorerKeys = new Set();
 let domesticStockOnly = false;
 let domesticBatchRunning = false;
@@ -1639,6 +1643,7 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
     if (runId !== excelPreviewSearchRunId) return;
     const result = response?.ok ? response.data : { products: [], sources: [], error: response?.message || "검색 응답이 없습니다." };
     excelPreviewSearchResults.set(key, result);
+    if (typeof recordSearchDiagnostics === "function") recordSearchDiagnostics(result, product, "excel", key);
     if (file?.path) persistExcelSearchResults(file.path);
     refreshDomesticSearchRows();
     $("#excel-filter-status").textContent = result.error || result.message || "상품 검색 결과를 표시했습니다.";
@@ -3248,6 +3253,7 @@ async function searchDomesticAt(index, sourceProducts = currentExplorerProducts)
   }
   const result = response.ok ? response.data : { products: [], sources: [], error: response.message };
   domesticResults.set(key, result);
+  if (typeof recordSearchDiagnostics === "function") recordSearchDiagnostics(result, product, "explorer", key);
   if (hasDomesticStock(result) && domesticBatchRunning && !domesticBatchVerifyCounts) {
     const batchId = domesticBatchId(sourceProducts);
     await window.aroundG.upsert("domesticSearches", { id: `${batchId}:${key}`, batchId, key, result, policyVersion: DOMESTIC_RESULT_POLICY_VERSION });
@@ -4420,6 +4426,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       if (!response?.ok) failed += groupKeys.length;
       if (result.partial) partial += groupKeys.length;
       for (const key of groupKeys) excelPreviewSearchResults.set(key, result);
+      if (typeof recordSearchDiagnostics === "function") recordSearchDiagnostics(result, product, "excel", groupKeys[0]);
       if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
       refreshDomesticSearchRows();
       completed += groupKeys.length;
@@ -5522,6 +5529,36 @@ let updateButtonState = "idle";
 let updateButtonResetTimer;
 let updatePanelCloseTimer;
 let programNotifications = [];
+searchDiagnostics = window.AroundGSearchDiagnostics?.createController({
+  onOpen: () => {
+    for (const [key, result] of excelPreviewSearchResults) {
+      recordSearchDiagnostics(result, excelPreviewProductCache.get(key) || {}, "excel", key, true);
+    }
+    for (const [key, result] of domesticResults) {
+      const product = allExplorerProducts.find((item, index) => domesticKey(item, index) === key) || {};
+      recordSearchDiagnostics(result, product, "explorer", key, true);
+    }
+  },
+  onAction: async (entry) => {
+    if (entry.action === "login") {
+      const sourceId = /네이버/.test(entry.store) ? "naver" : /무신사/.test(entry.store) ? "musinsa" : "";
+      if (!sourceId) throw new Error("연동 관리에서 해당 판매처의 로그인을 확인해 주세요.");
+      await window.aroundG.openDomesticLogin(sourceId);
+      return;
+    }
+    if (entry.scope === "excel") {
+      if (!excelPreviewProductCache.has(entry.key)) throw new Error("원본 Excel 상품 목록을 먼저 열어 주세요.");
+      if (excelPreviewBatchSearching) throw new Error("진행 중인 상품 검색이 끝나면 다시 시도해 주세요.");
+      await searchExcelPreviewProduct(entry.key);
+      return;
+    }
+    const index = allExplorerProducts.findIndex((item, row) => domesticKey(item, row) === entry.key);
+    if (index < 0) throw new Error("해당 브랜드의 상품 목록을 먼저 열어 주세요.");
+    if (domesticBatchRunning) throw new Error("진행 중인 상품 검색이 끝나면 다시 시도해 주세요.");
+    clearDomesticIdentityCache(allExplorerProducts[index]);
+    await searchDomesticAt(index, allExplorerProducts);
+  },
+}) || null;
 const renderProgramNotifications = (items = programNotifications) => {
   programNotifications = Array.isArray(items) ? items : [];
   const unread = programNotifications.filter((item) => !item.read).length;
