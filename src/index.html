@@ -75,6 +75,7 @@
         </div>
       </section>
       <div class="header-actions">
+        <button id="search-diagnostics-open" type="button" aria-label="검색 오류 진단 열기">오류 점검 <b id="search-diagnostics-count" hidden>0</b></button>
         <button id="notification-open" class="notification-open" type="button" aria-label="프로그램 알림 열기">알림 <b id="notification-count" hidden>0</b></button>
         <div class="update-anchor">
           <button id="update-check" class="update-button">자동 업데이트<b id="update-alert" class="update-button-alert" hidden>NEW</b></button>
@@ -458,9 +459,17 @@
     <div id="notification-list" class="notification-list"><div class="empty">알림이 없습니다.</div></div>
     <div class="dialog-actions"><button id="notification-clear" type="button">전체 삭제</button></div>
   </dialog>
+  <dialog id="search-diagnostics-dialog" class="search-diagnostics-dialog" aria-labelledby="search-diagnostics-title">
+    <div class="notification-dialog-head"><div><small>LOCAL SEARCH DIAGNOSTICS</small><h2 id="search-diagnostics-title">검색 오류 점검</h2></div><button id="search-diagnostics-close" type="button">닫기</button></div>
+    <p class="search-diagnostics-guide">상품 검색 중 수집한 상태를 이 PC에 보관합니다. 복구·승인 상태는 오류와 구분하며, 재검색과 로그인 확인은 버튼을 누를 때만 시작합니다.</p>
+    <p id="search-diagnostics-summary" class="search-diagnostics-summary" role="status">진단 기록을 확인하고 있습니다.</p>
+    <div id="search-diagnostics-list" class="search-diagnostics-list"><p class="empty">기록된 검색 진단이 없습니다.</p></div>
+    <div class="search-diagnostics-footer"><p id="search-diagnostics-action-status" class="search-diagnostics-action-status" role="status"></p><button id="search-diagnostics-copy" type="button">진단 코드 복사</button></div>
+  </dialog>
   <script src="./domestic-result-verdict.js"></script>
   <script src="./shopping-accounts.js"></script>
   <script src="./audit-trace.js"></script>
+  <script src="./search-diagnostics.js"></script>
   <script src="./renderer.js"></script>
   <script src="./ledger-workbook.js"></script>
 </body>

@@ -2,6 +2,9 @@ const { app, BrowserWindow } = require('electron');
 const { join } = require('node:path');
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-gpu');
+// This smoke checks CSP and rendered rows. The outer Windows test sandbox can
+// block Chromium's nested sandbox from loading a local fixture before the check.
+app.commandLine.appendSwitch('no-sandbox');
 const fail = (error) => { console.error(error?.stack || String(error)); app.exit(1); };
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ width:780, height:800, show:false, webPreferences:{ contextIsolation:true, nodeIntegration:false, sandbox:true } });

@@ -745,6 +745,26 @@ body.excel-preview-active{overflow:hidden}
 .weekly-site-health.success{border-color:#8bc7a3;background:#f3fbf6}
 .weekly-site-health button{flex:0 0 auto}
 .notification-open{position:relative;white-space:nowrap}
+.search-diagnostics-dialog{width:min(760px,calc(100vw - 40px));max-height:82vh;padding:0;border:1px solid #cfe0f2;border-radius:16px;color:#142c4c}
+.search-diagnostics-dialog::backdrop{background:rgba(12,30,56,.38)}
+.search-diagnostics-guide,.search-diagnostics-summary,.search-diagnostics-action-status{margin:12px 22px;color:#526782;font-size:12px}
+.search-diagnostics-summary{font-weight:800;color:#214d7e}
+.search-diagnostics-list{max-height:56vh;overflow:auto;padding:0 22px 18px;display:grid;gap:8px}
+.search-diagnostics-item{padding:12px;border:1px solid #d9e4f0;border-radius:10px;background:#f9fbff;font-size:12px}
+.search-diagnostics-item.open{border-color:#e9b7a9;background:#fff9f6}
+.search-diagnostics-item.recovered,.search-diagnostics-item.verified,.search-diagnostics-item.resolved{border-color:#b8dfc9;background:#f7fcf9}
+.search-diagnostics-item-head{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.search-diagnostics-item-head strong{overflow-wrap:anywhere}
+.search-diagnostics-item-head span{white-space:nowrap;font-weight:800;color:#ab542f}
+.search-diagnostics-item:not(.open) .search-diagnostics-item-head span{color:#187450}
+.search-diagnostics-item p{margin:5px 0;color:#38516d}
+.search-diagnostics-item small{display:block;color:#667d95;overflow-wrap:anywhere}
+.search-diagnostics-item button{margin-top:8px;padding:5px 9px;font-size:11px}
+.search-diagnostics-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 22px 18px}
+.search-diagnostics-footer .search-diagnostics-action-status{margin:0}
+.search-diagnostics-footer button{white-space:nowrap}
+#search-diagnostics-open b{display:inline-flex;min-width:19px;height:19px;margin-left:5px;padding:0 5px;align-items:center;justify-content:center;border-radius:10px;background:#ef4444;color:#fff;font-size:10px}
+#search-diagnostics-open b[hidden]{display:none}
 .notification-open b{display:inline-flex;min-width:19px;height:19px;margin-left:5px;padding:0 5px;align-items:center;justify-content:center;border-radius:10px;background:#ef4444;color:#fff;font-size:10px}
 .notification-dialog{width:min(620px,calc(100vw - 40px));max-height:75vh;padding:0;border:1px solid #cfe0f2;border-radius:16px;color:#142c4c}
 .notification-dialog::backdrop{background:rgba(12,30,56,.32)}
