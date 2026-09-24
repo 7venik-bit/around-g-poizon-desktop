@@ -58,6 +58,24 @@ test('diagnostics stay available alongside partial products without exposing who
   assert.match(body.textContent, /재고 3개/);
 });
 
+test('Naver search submission diagnostics show the input limit and original request safely', t => {
+  const f = renderer(t);
+  const body = f.render({products:[],sources:[{store:'네이버 패션타운',
+    verificationReason:'search_submission_failed',verificationPending:true,
+    verificationStage:'naver_result_navigation',verificationDiagnostics:{
+      targetUrl:'https://shopping.naver.com/window/search/fashion-group?q=TLTCM26603WHX',
+      originalTargetUrl:'https://shopping.naver.com/window/search/fashion-group?q=LONG&token=private-token#secret',
+      submissionStage:'search_input',submissionFailure:'query_exceeds_input_limit',
+      inputMaxLength:50,submittedQueryLength:56}}]});
+  const details = body.querySelector('details.domestic-inline-diagnostics');
+  assert.ok(details);
+  assert.match(details.textContent, /검색 입력 실패: query_exceeds_input_limit/);
+  assert.match(details.textContent, /입력칸 최대 글자 수: 50/);
+  assert.match(details.textContent, /입력 검색어 글자 수: 56/);
+  assert.match(details.textContent, /원래 요청 주소: https:\/\/shopping\.naver\.com\/window\/search\/fashion-group\?q=LONG/);
+  assert.doesNotMatch(details.textContent, /private-token|secret/);
+});
+
 for (const newline of ['\n', '\r\n']) test(`Windows-patched lower-list button uses the search session and user agent (${newline.length === 1 ? 'LF' : 'CRLF'})`, async t => {
   const dir = mkdtempSync(join(tmpdir(), 'aroundg-result-route-'));
   t.after(() => rmSync(dir, {recursive:true,force:true}));

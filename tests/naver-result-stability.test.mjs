@@ -7,7 +7,7 @@ const main = String(await readFile(new URL("../main.mjs", import.meta.url), "utf
 test("Naver search waits for stable rendered cards before accepting results", () => {
   assert.match(main, /async function waitForNaverSearchResultsStable\(searchWindow, query\)/);
   assert.match(main, /stableSamples >= 4/);
-  assert.match(main, /return await waitForNaverSearchResultsStable\(searchWindow, exactQuery\);/);
+  assert.match(main, /await waitForNaverSearchResultsStable\(searchWindow, exactQuery\)/);
   assert.doesNotMatch(main, /queryVisibleInPage\)\)\) return true;/);
 });
 

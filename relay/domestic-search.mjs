@@ -228,8 +228,36 @@ function naverBrandStore(brandOrQuery) {
   );
 }
 
+export function fitNaverFashionTownSearchQuery(value, maxLength = 50) {
+  const cleaned = sanitizeDomesticQuery(value);
+  if (cleaned.length <= maxLength) return cleaned;
+  const tokens = cleaned.split(" ");
+  const isModelCode = (token) => token.length >= 6 && /[a-z]/i.test(token)
+    && /\d/.test(token) && /^[a-z\d_-]+$/i.test(token);
+  const codes = tokens.filter(isModelCode);
+  // A long colour SKU already contains its shorter base model. Dropping that
+  // duplicate preserves the useful product name within Naver's 50-char field.
+  const distinct = tokens.filter((token) => !isModelCode(token)
+    || !codes.some((code) => code.length > token.length
+      && code.toUpperCase().startsWith(token.toUpperCase())));
+  const withoutDuplicate = distinct.join(" ");
+  if (withoutDuplicate.length <= maxLength) return withoutDuplicate;
+  const model = distinct.filter(isModelCode).sort((a, b) => b.length - a.length)[0] || "";
+  if (model) {
+    let description = "";
+    for (const token of distinct) {
+      if (token === model) continue;
+      const next = description ? `${description} ${token}` : token;
+      if (next.length + model.length + 1 <= maxLength) description = next;
+    }
+    return description ? `${description} ${model}` : model.slice(0, maxLength);
+  }
+  const prefix = cleaned.slice(0, maxLength);
+  return prefix.replace(/\s+\S*$/, "") || prefix;
+}
+
 export function naverFashionTownUrl(channel, brand, query) {
-  const cleanedQuery = sanitizeDomesticQuery(query);
+  const cleanedQuery = fitNaverFashionTownSearchQuery(query);
   if (channel === "brand-store" || channel === "overview") {
     return `https://shopping.naver.com/window/search/fashion-group?q=${encodeURIComponent(cleanedQuery)}&queryType=ac`;
   }
@@ -1092,14 +1120,17 @@ export async function queryDomesticProducts({
         officialSearchUrl: source.officialBrand ? officialProductUrl : "",
         officialProductUrl,
         interactiveSearch: Boolean(source.fashionTown || source.retailerDiscovery || interactiveOfficialSearch),
-        searchQuery: interactiveOfficialSearch || source.fashionTown
+        searchQuery: interactiveOfficialSearch
           ? sanitizeDomesticProductCode(articleNumber || productCode || preferredQuery)
+          : source.fashionTown
+            ? fitNaverFashionTownSearchQuery(preferredQuery)
           : source.retailerDiscovery
             ? internalPortalSearchQuery(brand || title, preferredQuery) : preferredQuery,
         searchAttempts: queryCandidates.map((candidate) => ({
-          query: candidate,
+          query: source.fashionTown ? fitNaverFashionTownSearchQuery(candidate) : candidate,
           url: source.officialBrand ? officialAttemptUrlFor(candidate) : searchUrlFor(candidate),
-        })),
+        })).filter((attempt, index, attempts) => !source.fashionTown
+          || attempts.findIndex((item) => item.query === attempt.query) === index),
         count,
         products: [],
       });

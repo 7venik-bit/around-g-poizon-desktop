@@ -6,7 +6,7 @@ const required = [
   "const technicalPending = approval.failedCount > 0 || approvedProducts.some(product => !stockObservationComplete(product));",
   'from "./services/naver-fashiontown-result.mjs";',
   "retainNaverCardsOnDetailRestriction(finalized, approval)",
-  "if (isNaverRenderedResultReady(state, exactQuery)) return true;",
+  "if (isNaverRenderedResultReady(state, exactQuery))",
   "verificationStage,",
   "verificationDiagnostics: {",
   "productCardCount: Number(result?.candidateCount || result?.products?.length || 0)",

@@ -117,6 +117,7 @@ import {
   collectNativeStockVariants,
   captureNativeStockControls,
   domesticDetailProgressStatus,
+  fitNaverFashionTownSearchQuery,
   naverFashionTownUrl,
   parseNaverFashionTownChannelCounts,
   queryDomesticProducts,
@@ -1942,7 +1943,8 @@ async function openNaverFashionTownSearchInput(searchWindow) {
       if (!selected) return null;
       selected.element.scrollIntoView({ block: "center", inline: "center" });
       const rect = selected.element.getBoundingClientRect();
-      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2),
+        maxLength: selected.element.maxLength > 0 ? selected.element.maxLength : null };
     })()`, true).catch(() => null);
     if (!launcher) await wait(400);
   }
@@ -1985,7 +1987,8 @@ async function openNaverFashionTownSearchInput(searchWindow) {
       if (!selected) return null;
       selected.scrollIntoView({ block: "center", inline: "center" });
       const rect = selected.getBoundingClientRect();
-      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2),
+        maxLength: selected.maxLength > 0 ? selected.maxLength : null };
     })()`, true).catch(() => null);
     if (inputTarget) return inputTarget;
   }
@@ -2108,10 +2111,28 @@ async function submitNaverShoppingSearch(searchWindow, query) {
   if (!exactQuery || !searchWindow || searchWindow.isDestroyed()) return false;
   searchWindow.webContents.focus();
   const previousUrl = String(searchWindow.webContents.getURL() || "");
+  const diagnostic = searchWindow.domesticDiagnostics;
+  if (diagnostic) diagnostic.submissionStage = "open_input";
   const inputTarget = await openNaverFashionTownSearchInput(searchWindow);
-  if (!inputTarget) return false;
+  if (!inputTarget) {
+    if (diagnostic) diagnostic.submissionFailure = "search_input_not_found";
+    return false;
+  }
+  if (diagnostic) {
+    diagnostic.inputMaxLength = inputTarget.maxLength || null;
+    diagnostic.submittedQueryLength = exactQuery.length;
+    diagnostic.submissionStage = "type_query";
+  }
+  if (inputTarget.maxLength > 0 && exactQuery.length > inputTarget.maxLength) {
+    if (diagnostic) diagnostic.submissionFailure = "query_exceeds_input_limit";
+    return false;
+  }
   const inputVerified = await typeNaverQueryLikeUser(searchWindow, inputTarget, exactQuery);
-  if (!inputVerified) return false;
+  if (!inputVerified) {
+    if (diagnostic) diagnostic.submissionFailure = "input_value_not_verified";
+    return false;
+  }
+  if (diagnostic) diagnostic.submissionStage = "find_search_button";
 
   // The suggestion layer can replace the search button after the final input
   // event. Re-query its live coordinates instead of closing the window after
@@ -2182,7 +2203,11 @@ async function submitNaverShoppingSearch(searchWindow, query) {
     })()`, true).catch(() => null);
     if (!submitTarget) await wait(300);
   }
-  if (!submitTarget) return false;
+  if (!submitTarget) {
+    if (diagnostic) diagnostic.submissionFailure = "search_button_not_found";
+    return false;
+  }
+  if (diagnostic) diagnostic.submissionStage = "await_result_navigation";
   searchWindow.webContents.sendInputEvent({ type: "mouseMove", x: submitTarget.x, y: submitTarget.y });
   // Make the hand-off visible: completed code, pointer movement, then click.
   await wait(800);
@@ -2219,13 +2244,24 @@ async function submitNaverShoppingSearch(searchWindow, query) {
     })();
     // Reaching the exact query result URL proves the input and magnifier action
     // succeeded. Final capture decides product presence or authoritative zero.
-    if (urlChanged && submittedQueryUrl) return true;
-    if (isNaverRenderedResultReady(state, exactQuery)) return true;
+    if (urlChanged && submittedQueryUrl) {
+      if (diagnostic) diagnostic.submissionStage = "complete";
+      return true;
+    }
+    if (isNaverRenderedResultReady(state, exactQuery)) {
+      if (diagnostic) diagnostic.submissionStage = "complete";
+      return true;
+    }
     if (state && !/페이지를\s*찾을\s*수\s*없습니다/.test(state.text)
       && ((urlChanged && queryInUrl)
         || state.resultMatched === true
-        || (state.noResult === true && queryVisibleInPage))) return await waitForNaverSearchResultsStable(searchWindow, exactQuery);
+        || (state.noResult === true && queryVisibleInPage))) {
+      const stable = await waitForNaverSearchResultsStable(searchWindow, exactQuery);
+      if (stable && diagnostic) diagnostic.submissionStage = "complete";
+      return stable;
+    }
   }
+  if (diagnostic) diagnostic.submissionFailure = "result_navigation_not_observed";
   return false;
 }
 
@@ -2759,9 +2795,20 @@ async function refreshDomesticProductStock(product, generation = domesticSearchG
 }
 
 async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
-  const expectedQuery = sanitizeDomesticQuery(query);
+  const expectedQuery = fitNaverFashionTownSearchQuery(query);
+  let effectiveTargetUrl = targetUrl;
+  try {
+    const parsed = new URL(targetUrl);
+    if (parsed.hostname === "shopping.naver.com" && parsed.searchParams.has("q")
+      && parsed.searchParams.get("q") !== expectedQuery) {
+      parsed.searchParams.set("q", expectedQuery);
+      effectiveTargetUrl = parsed.toString();
+    }
+  } catch {}
   const diagnostic = searchWindow.domesticDiagnostics = {
-    stage: "naver_result_navigation", targetUrl, inspectedFrames: 0, inspectionError: "", navigationError: "",
+    stage: "naver_result_navigation", targetUrl: effectiveTargetUrl,
+    ...(effectiveTargetUrl === targetUrl ? {} : { originalTargetUrl: targetUrl }),
+    inspectedFrames: 0, inspectionError: "", navigationError: "",
   };
   const inspectSettledResult = async () => {
     let emptySamples = 0;
@@ -2854,6 +2901,13 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
   };
   if (!homeReady) return failedInput("naver_home_not_ready");
   if (!await clickNaverFashionTownMenu(searchWindow)) return failedInput("fashion_town_click_failed");
+  // Fashion Town replaces the prior SPA navigation. Its own visible route is
+  // stronger evidence than the superseded loadURL promise's ERR_ABORTED.
+  if (/ERR_ABORTED/i.test(diagnostic.navigationError)
+    && /shopping\.naver\.com\/window\/main\/fashion-group/i.test(String(searchWindow.webContents.getURL() || ""))) {
+    diagnostic.navigationError = "";
+    firstError = null;
+  }
   if (!await submitNaverShoppingSearch(searchWindow, expectedQuery)) return failedInput("search_submission_failed");
   const firstResult = await inspectSettledResult();
   if (firstResult.ok || firstResult.verificationReason) return firstResult;
