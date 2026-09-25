@@ -5,6 +5,7 @@
   let recordedLocation;
   let selection,anchor,editor,purchaseRecording=false;
   let categoryReviewRow;
+  let poizonRenderedPages=0;
   const messages = {
     CELL_CONFLICT:'원본이 다른 곳에서 변경됐습니다. 다시 가져온 뒤 수정해 주세요.',
     CELL_PROTECTED:'보호된 셀이라 편집할 수 없습니다.',
@@ -476,6 +477,7 @@
   $('workbook-next').addEventListener('click',()=>afterEdit(()=>{clearSelection();page++;render();}));
   const poizonStatus=payload=>{
     if(!payload)return;
+    if(payload.state==='running'&&!payload.checked)poizonRenderedPages=0;
     $('workbook-poizon-sync-status').textContent=payload.message||'포이즌 주문 확인 대기 중';
     $('workbook-poizon-sync').disabled=payload.state==='running';
     const review=Array.isArray(payload.review)?payload.review:[];
@@ -484,10 +486,14 @@
     $('workbook-poizon-review-list').replaceChildren(...review.slice(0,100).map(item=>{
       const li=document.createElement('li');li.textContent=`주문 ${item.orderNumber||'번호 없음'} · ${item.reason}`;return li;
     }));
-    if(payload.state==='complete'&&payload.updated&&!busy&&!hasPendingEdit())run(async()=>{
+    const savedPages=Number(payload.savedPages)||0;
+    if((payload.state==='complete'||savedPages>poizonRenderedPages)&&payload.updated&&!busy&&!hasPendingEdit()){
+      poizonRenderedPages=savedPages;
+      run(async()=>{
       const result=await window.aroundG.loadLedgerWorkbook();
       if(result.ok)accept(result.workbook);
-    });
+      });
+    }
   };
   window.aroundG.onPoizonLedgerSyncProgress?.(poizonStatus);
   window.aroundG.getPoizonLedgerSyncStatus?.().then(poizonStatus).catch(()=>{});

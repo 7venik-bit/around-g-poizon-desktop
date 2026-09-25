@@ -46,6 +46,8 @@ test('an already recorded order is counted without reopening its detail',async()
 
 test('pagination waits for new order rows after the selected page number changes',async()=>{
   const first='21315202429263299',second='21315202429263300';
+  const savedPages=[];
+  let navigatedBeforeSave=false;
   const cells=Array.from({length:23},(_,index)=>`<td>${index===10?'거래 성공':index===12?'1':index===21?'<a>주문 내역</a>':''}</td>`).join('');
   const row=id=>`<tr class="ant-table-row" data-row-key="${id}">${cells}</tr>`;
   const {window,contents}=browser(`<div class="global-text-label-wrap global-text-label-wrap-selected">전체 (2)</div>
@@ -57,6 +59,7 @@ test('pagination waits for new order rows after the selected page number changes
     event.currentTarget.classList.add('global-text-label-wrap-selected');
   });
   window.document.querySelector('.ant-pagination-next').addEventListener('click',()=>{
+    navigatedBeforeSave=savedPages.length===0;
     window.document.querySelector('.ant-pagination-item-active').textContent='2';
     // POIZON can change the pagination control before replacing table rows.
     window.setTimeout(()=>{
@@ -72,7 +75,9 @@ test('pagination waits for new order rows after the selected page number changes
     drawer.innerHTML='<div class="ant-drawer-title"><span class="ant-tag">거래 성공</span></div><button class="ant-drawer-close">닫기</button>';
     window.document.body.append(drawer);drawer.querySelector('button').addEventListener('click',()=>drawer.remove());
   });
-  const result=await collectPoizonSuccessfulOrders(contents);
+  const result=await collectPoizonSuccessfulOrders(contents,{onPage:async page=>savedPages.push(page.orders.map(order=>order.orderNumber))});
   assert.deepEqual(result.orders.map(order=>order.orderNumber),[first,second]);
   assert.equal(result.scanned,2);
+  assert.deepEqual(savedPages,[[first],[second]]);
+  assert.equal(navigatedBeforeSave,false);
 });
