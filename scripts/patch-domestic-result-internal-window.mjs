@@ -20,6 +20,13 @@ const internalHandler = `${externalHandler}
     if (target.protocol !== "https:" || !/(?:^|\\.)(?:naver\\.com|ssg\\.com|lotteon\\.com)$/i.test(target.hostname)) {
       throw new Error("INVALID_DOMESTIC_RESULT_URL");
     }
+    // A user's explicit Naver product click should use their normal browser.
+    // The background search session may already be rate-limited; reopening its
+    // product window in that same session cannot clear Naver's restriction.
+    // Do not retry or launch another automated request after the manual open.
+    if (/(?:^|\\.)naver\\.com$/i.test(target.hostname)) {
+      return openExternalInChromeTab(target.href);
+    }
     const existing = BrowserWindow.getAllWindows().find((candidate) => {
       if (candidate.isDestroyed()) return false;
       try {

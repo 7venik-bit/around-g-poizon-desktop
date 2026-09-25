@@ -21,7 +21,7 @@ function renderer(t) {
   }};
 }
 
-test('lower list routes Naver, SSG and Lotte result links through the app search session', t => {
+test('lower list routes Naver, SSG and Lotte result links through the manual-open handler', t => {
   const f = renderer(t);
   const urls = ['https://shopping.naver.com/window/search/fashion-group?q=JI0079',
     'https://www.ssg.com/search.ssg?query=JI0079', 'https://www.lotteon.com/search/search/search.ecn?q=JI0079'];
@@ -89,7 +89,7 @@ test('authoritative empty Naver and official searches are labeled as absent, not
   assert.doesNotMatch(details.textContent,/상태: 오류/);
 });
 
-for (const newline of ['\n', '\r\n']) test(`Windows-patched lower-list button uses the search session and user agent (${newline.length === 1 ? 'LF' : 'CRLF'})`, async t => {
+for (const newline of ['\n', '\r\n']) test(`Windows-patched Naver click uses Chrome while SSG keeps the search session (${newline.length === 1 ? 'LF' : 'CRLF'})`, async t => {
   const dir = mkdtempSync(join(tmpdir(), 'aroundg-result-route-'));
   t.after(() => rmSync(dir, {recursive:true,force:true}));
   for (const folder of ['src','scripts']) mkdirSync(join(dir,folder));
@@ -101,7 +101,7 @@ for (const newline of ['\n', '\r\n']) test(`Windows-patched lower-list button us
   const patchedRenderer = readFileSync(join(dir,'src/renderer.js'),'utf8');
   const ipcStart = main.indexOf('  ipcMain.handle("domestic:open-result"');
   const ipcEnd = main.indexOf('\n  });',ipcStart) + '\n  });'.length;
-  const handlers = new Map(), windows = [];
+  const handlers = new Map(), windows = [], externalOpens = [];
   class BrowserWindow {
     static getAllWindows() {return windows;}
     constructor(options) {this.options=options;this.webContents={setUserAgent:ua=>this.ua=ua,setWindowOpenHandler(){},getURL:()=>this.url};windows.push(this);}
@@ -109,7 +109,8 @@ for (const newline of ['\n', '\r\n']) test(`Windows-patched lower-list button us
     async loadURL(url){this.url=url;}
   }
   runInNewContext(main.slice(ipcStart,ipcEnd),{ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},BrowserWindow,URL,
-    APP_ICON_PATH:'',DOMESTIC_SEARCH_PARTITION:'persist:domestic-fixture'});
+    APP_ICON_PATH:'',DOMESTIC_SEARCH_PARTITION:'persist:domestic-fixture',
+    openExternalInChromeTab:async url=>{externalOpens.push(url);return {browser:'chrome'};}});
   const f = renderer(t);
   const url = 'https://shopping.naver.com/window/search/fashion-group?q=JI0079';
   const body = f.render({sources:[{store:'네이버 패션타운',searchUrl:url}],products:[]});
@@ -118,11 +119,17 @@ for (const newline of ['\n', '\r\n']) test(`Windows-patched lower-list button us
   const clickStart = patchedRenderer.indexOf('  const domesticResultButton = event.target.closest("[data-domestic-result-url]");');
   const clickEnd = patchedRenderer.indexOf('\n  }',clickStart) + '\n  }'.length;
   await runInNewContext(`(async () => {${patchedRenderer.slice(clickStart,clickEnd)}})()`,{event:{target:button},window:f.window});
+  assert.equal(windows.length,0,'a manual Naver click must not reuse the rate-limited app session');
+  assert.deepEqual(externalOpens,[url]);
+  assert.equal(button.title,'일반 브라우저에서 열기');
+  const ssgUrl='https://www.ssg.com/search.ssg?query=JI0079';
+  await handlers.get('domestic:open-result')({},ssgUrl);
   assert.equal(windows.length,1);
-  assert.equal(windows[0].url,url);
+  assert.equal(windows[0].url,ssgUrl);
   assert.equal(windows[0].options.webPreferences.partition,'persist:domestic-fixture');
   assert.equal(windows[0].options.show,true);
   assert.equal(windows[0].ua,JSON.parse(main.match(/searchWindow\.webContents\.setUserAgent\(("[^"]+")\)/)[1]));
-  await handlers.get('domestic:open-result')({},url);
+  await handlers.get('domestic:open-result')({},ssgUrl);
   assert.equal(windows.length,1,'reuse the same manual inspection window');
+  assert.deepEqual(externalOpens,[url],'no automatic second Naver request');
 });
