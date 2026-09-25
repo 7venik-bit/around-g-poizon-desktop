@@ -970,6 +970,26 @@ const officialProduct = 'https://official.example/products/4021';
 const officialCard = (title = '남녀공용 카라 셔츠', url = officialProduct) => `<main><h1>SR123UPS11 검색 결과</h1><ul><li><a href="${url}"><img src="https://images.test/product.jpg" alt="${title}"></a><strong>${title}</strong><span class="price">84,550원</span></li></ul></main>`;
 const officialSource = {store:'브랜드 공식몰',renderCount:true,linkOnly:true,officialStatus:'verified',homepageUrl:officialHome,officialProductUrl:officialSearch,searchUrl:officialSearch,searchQuery:'SR123UPS11'};
 
+test('Nike collector opens only the exact style, not category links or unrelated styles', async t => {
+  const code='CZ5478-001';
+  const search=`https://www.nike.com/kr/w?q=${code}&vst=${code}`;
+  const filter=`https://www.nike.com/kr/w?q=${code}&vst=${code}&category=men`;
+  const unrelated='https://www.nike.com/kr/t/mind-001-BaaDLjpP/HQ4309-610';
+  const matching='https://www.nike.com/kr/t/requested-style-123/CZ5478-001';
+  const card=(url,title)=>`<article><a href="${url}"><img src="https://images.test/nike.jpg" alt="${title}"></a><strong>${title}</strong><span>119,000원</span></article>`;
+  const html=`<main><h1>${code} 검색 결과</h1><a href="${filter}">남성(으)로 필터링</a>${card(unrelated,'나이키 마인드 001')}${card(matching,'요청한 나이키 상품')}</main>`;
+  const f=fixture(t,{pages:{[search]:html,[matching]:`<main><h1>요청한 나이키 상품 ${code}</h1><button>구매하기</button></main>`}});
+  f.context.waitForDomesticCaptureReady=async()=>true;
+  f.context.waitForDomesticDetailReady=async()=>({pageText:`요청한 나이키 상품 ${code}`,titleText:`요청한 나이키 상품 ${code}`,structuredCodes:[code]});
+  f.context.collectRenderedProductStock=async()=>({sizes:[],inStock:null,stockText:'',purchaseLimitText:''});
+  f.context.officialDetailImage=async()=>'';
+  const source={store:'브랜드 공식몰',homepageUrl:'https://www.nike.com/kr/',officialProductUrl:search,searchUrl:search,searchQuery:code};
+  const result=await f.drive(f.context.renderedSearchSourceResult(source,code,'나이키','나이키 상품'));
+  assert.deepEqual(Array.from(result.products,product=>product.url),[matching]);
+  assert.equal(result.candidateCount,1);
+  assert.deepEqual(f.navigations,[search,matching]);
+});
+
 test('official search execution check runs its generated script and recognizes the submitted result', async t => {
   const f = fixture(t, {pages:{[officialSearch]:officialCard()}});
   const w = new f.context.BrowserWindow();

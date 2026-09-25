@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {analyzeRenderedChannelProducts} from '../relay/domestic-search.mjs';
+import {isOfficialProductCandidateUrl} from '../services/official-product-candidate.mjs';
 import {captureRenderedStockEvidence, normalizeRenderedStockEvidence} from '../services/domestic-stock.mjs';
 
 const code = 'SR123UTL11';
@@ -14,6 +15,33 @@ test('official search and paging links cannot borrow a product code, image and p
     card(`https://dk-on.com/shop/search?keyword=${code}`), real];
   const result = analyzeRenderedChannelProducts(JSON.stringify({productCards:cards}), '브랜드 공식몰',code,'데상트');
   assert.deepEqual(result.products.map(p=>p.url), [real.productUrl]);
+});
+
+test('Nike exact-code search excludes filters and other product styles', () => {
+  const expected = 'CZ5478-001';
+  const search = `https://www.nike.com/kr/w?q=${expected}&vst=${expected}`;
+  const filter = `https://www.nike.com/kr/w?q=${expected}&vst=${expected}&category=men`;
+  const unrelated = 'https://www.nike.com/kr/t/mind-001-BaaDLjpP/HQ4309-610';
+  const matching = 'https://www.nike.com/kr/t/expected-style-123/CZ5478-001';
+  const nestedMatching = 'https://www.nike.com/kr/t/expected-style/123abc/CZ5478-001';
+  assert.equal(isOfficialProductCandidateUrl(filter, search, expected), false);
+  assert.equal(isOfficialProductCandidateUrl(unrelated, search, expected), false);
+  assert.equal(isOfficialProductCandidateUrl(matching, search, expected), true);
+  assert.equal(isOfficialProductCandidateUrl(nestedMatching, search, expected), true);
+  const candidate = (productUrl, title) => ({productUrl, title,
+    text:`${title} ${expected} 119,000원`, price:'119,000원'});
+  const content = productCards => JSON.stringify({pageText:`${expected} 검색 결과`,
+    resolvedSearchUrl:search, productCards});
+  const onlyNoise = analyzeRenderedChannelProducts(content([
+    candidate(filter,'남성(으)로 필터링'), candidate(unrelated,'나이키 마인드 001'),
+  ]), '브랜드 공식몰', expected, '나이키', '나이키 신발');
+  assert.deepEqual(onlyNoise.products, []);
+  assert.equal(onlyNoise.absenceConfirmed, false, 'unrelated links cannot prove product absence');
+  const result = analyzeRenderedChannelProducts(content([
+    candidate(filter,'남성(으)로 필터링'), candidate(unrelated,'나이키 마인드 001'),
+    candidate(matching,'요청한 나이키 상품'),
+  ]), '브랜드 공식몰', expected, '나이키', '나이키 신발');
+  assert.deepEqual(result.products.map(product => product.url), [matching]);
 });
 
 test('utility controls are neither available nor sold-out sizes', () => {
