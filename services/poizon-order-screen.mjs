@@ -50,7 +50,7 @@ function parseDetail(row,detail) {
 
 // Read the rendered seller order pages. No private API, export endpoint,
 // request interception, login retry, or access-limit bypass is used.
-export async function collectPoizonSuccessfulOrders(contents,{onProgress=()=>{},knownOrderNumbers=[]}={}) {
+export async function collectPoizonSuccessfulOrders(contents,{onProgress=()=>{},onPage=async()=>{},knownOrderNumbers=[]}={}) {
   const initial=await until(contents,async()=>{
     const state=await evaluate(contents,pageState),problem=pageProblem(state);
     if(problem)throw Error(problem);
@@ -71,6 +71,7 @@ export async function collectPoizonSuccessfulOrders(contents,{onProgress=()=>{},
         &&current.rows.every(row=>row.cells[10]==='거래 성공'&&!seen.has(row.orderNumber))?current:null;
     });
     const rows=state.rows;
+    const pageOrders=[];
     for(const row of rows) {
       if(!/^\d{10,25}$/.test(row.orderNumber)||seen.has(row.orderNumber))throw Error('POIZON_ORDER_LIST_INCOMPLETE');
       seen.add(row.orderNumber);
@@ -85,16 +86,18 @@ export async function collectPoizonSuccessfulOrders(contents,{onProgress=()=>{},
         const problem=pageProblem(await evaluate(contents,pageState));if(problem)throw Error(problem);
         return evaluate(contents,rowDetail,row.orderNumber);
       },{timeout:12000});
-      try {orders.push(parseDetail(row,detail));}
+      try {pageOrders.push(parseDetail(row,detail));}
       catch(error) {
         if(!/^POIZON_ORDER_(?:DETAIL_INCOMPLETE|PRICE_INVALID):/.test(String(error?.message||error)))throw error;
-        orders.push({orderNumber:row.orderNumber,status:'확인 필요',failure:String(error.message)});
+        pageOrders.push({orderNumber:row.orderNumber,status:'확인 필요',failure:String(error.message)});
       }
       await evaluate(contents,()=>document.querySelector('.ant-drawer-open .ant-drawer-close')?.click());
       await until(contents,async()=>!(await evaluate(contents,()=>Boolean(document.querySelector('.ant-drawer-open')))));
       onProgress({checked:seen.size,total:expected});
       await pause(750);
     }
+    orders.push(...pageOrders);
+    await onPage({orders:pageOrders,checked:seen.size,total:expected,counts});
     if(state.nextDisabled)break;
     page++;
     await evaluate(contents,()=>document.querySelector('.ant-pagination-next:not(.ant-pagination-disabled)')?.click());

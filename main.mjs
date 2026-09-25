@@ -5188,19 +5188,29 @@ async function syncPoizonSellerOrders({manual=false}={}) {
   if(poizonLedgerAutoPaused&&!manual)return {ok:false,code:'POIZON_SYNC_PAUSED',status:poizonLedgerSyncStatus};
   poizonLedgerSyncRunning=true;
   let scanner;
+  const saved={recorded:[],review:[],verified:0,pages:0,updated:false};
   try {
     const ledger=await purchaseWorkbook().load();
-    setPoizonLedgerSyncStatus({state:'running',message:'포이즌 판매자센터 주문 확인 중',checked:0,recorded:[],verified:0,review:[],updated:false,code:''});
+    setPoizonLedgerSyncStatus({state:'running',message:'포이즌 판매자센터 주문 확인 중',checked:0,recorded:[],verified:0,review:[],savedPages:0,updated:false,code:''});
     scanner=new BrowserWindow({show:false,width:1400,height:950,webPreferences:{partition:'persist:around-g-poizon-seller',contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
     try {await scanner.loadURL('https://seller.poizon.com/main/spot/orders');}
     catch(error) {if(!/ERR_ABORTED/.test(String(error?.message||error)))throw error;}
     const captured=await collectPoizonSuccessfulOrders(scanner.webContents,{knownOrderNumbers:manual?[]:Object.keys(ledger.local?.poizonOrders||{}),
-      onProgress:progress=>setPoizonLedgerSyncStatus({state:'running',message:`거래 성공 주문 ${progress.checked}/${progress.total}건 확인 중`,...progress})});
-    const result=await purchaseWorkbook().syncPoizonSales(captured.orders);
+      onProgress:progress=>setPoizonLedgerSyncStatus({state:'running',message:`거래 성공 주문 ${progress.checked}/${progress.total}건 확인 중 · 장부 기록 ${saved.recorded.length}건 · 확인 필요 ${saved.review.length}건`,...progress}),
+      onPage:async page=>{
+        const result=await purchaseWorkbook().syncPoizonSales(page.orders);
+        saved.recorded.push(...result.recorded);
+        saved.review.push(...result.review);
+        saved.verified+=result.verified;
+        saved.updated ||=result.updated;
+        saved.pages++;
+        setPoizonLedgerSyncStatus({state:'running',message:`거래 성공 ${page.checked}/${page.total}건 확인 · 장부 기록 ${saved.recorded.length}건 · 저장 검증 ${saved.verified}건 · 확인 필요 ${saved.review.length}건`,
+          checked:page.checked,recorded:[...saved.recorded],verified:saved.verified,review:[...saved.review],savedPages:saved.pages,updated:saved.updated});
+      }});
     poizonLedgerAutoPaused=false;
     await store.setSettings({poizonLedgerAutoPaused:false}).catch(()=>{});
-    setPoizonLedgerSyncStatus({state:'complete',message:`거래 성공 ${captured.scanned}건 확인 · 신규 장부 기록 ${result.recorded.length}건 · 저장 검증 ${result.verified}건 · 확인 필요 ${result.review.length}건`,
-      checked:captured.scanned,counts:captured.counts,recorded:result.recorded,verified:result.verified,review:result.review,at:new Date().toISOString(),updated:result.updated});
+    setPoizonLedgerSyncStatus({state:'complete',message:`거래 성공 ${captured.scanned}건 확인 · 신규 장부 기록 ${saved.recorded.length}건 · 저장 검증 ${saved.verified}건 · 확인 필요 ${saved.review.length}건`,
+      checked:captured.scanned,counts:captured.counts,recorded:saved.recorded,verified:saved.verified,review:saved.review,savedPages:saved.pages,at:new Date().toISOString(),updated:saved.updated});
     return {ok:true,status:poizonLedgerSyncStatus};
   } catch(error) {
     const currentUrl=scanner&&!scanner.isDestroyed()?scanner.webContents.getURL():'';
@@ -5209,9 +5219,9 @@ async function syncPoizonSellerOrders({manual=false}={}) {
       poizonLedgerAutoPaused=true;
       await store.setSettings({poizonLedgerAutoPaused:true}).catch(()=>{});
     }
-    setPoizonLedgerSyncStatus({state:'error',code,message:code==='POIZON_LOGIN_REQUIRED'?'포이즌 판매자센터 로그인이 필요합니다. 로그인 후 다시 확인을 누르세요.'
+    setPoizonLedgerSyncStatus({state:'error',code,message:`${saved.pages?`앞선 ${saved.pages}페이지의 장부 기록 ${saved.recorded.length}건은 저장됐습니다. `:''}${code==='POIZON_LOGIN_REQUIRED'?'포이즌 판매자센터 로그인이 필요합니다. 로그인 후 다시 확인을 누르세요.'
       :code==='POIZON_ACCESS_LIMITED'?'포이즌 접속 제한으로 자동 확인을 멈췄습니다. 잠시 후 직접 다시 확인해 주세요.'
-      :`포이즌 주문 확인 실패: ${code}`,at:new Date().toISOString()});
+      :`포이즌 주문 확인 실패: ${code}`}`,at:new Date().toISOString()});
     return {ok:false,code,status:poizonLedgerSyncStatus};
   } finally {
     poizonLedgerSyncRunning=false;

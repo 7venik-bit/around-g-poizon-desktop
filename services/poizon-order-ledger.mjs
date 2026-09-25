@@ -6,7 +6,24 @@ const raw=(sheet,row,column)=>sheet.rawValues?.[row-1]?.[column-1];
 const value=(sheet,row,column)=>String(raw(sheet,row,column)?.value??'').trim();
 const blank=cell=>cell?.value==null||String(cell.value).trim()==='';
 const norm=text=>String(text||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+const sizeKey=text=>{
+  const key=norm(String(text||'').split(/[·,/|]/).at(-1).replace(/^(?:SIZE|EU|KR|US)\s*/i,''));
+  return key==='ONESIZE'?'ONE':key;
+};
+const sizeMatches=(sheet,row,order)=>{
+  const size=sizeKey(order.size);
+  if(!size)return true;
+  const choices=[value(sheet,row,6),value(sheet,row,7)].map(sizeKey).filter(Boolean);
+  return !choices.length||choices.includes(size);
+};
 const colorNames=[['블랙','BLACK','BLK','BLKO'],['화이트','WHITE','WHT','WHTO'],['베이지','BEIGE','BEGO'],['그레이','GREY','GRAY','GRY'],['네이비','NAVY','NVY'],['레드','RED'],['블루','BLUE'],['핑크','PINK'],['브라운','BROWN'],['그린','GREEN']];
+function articleMatches(article,order) {
+  const key=norm(order.articleNumber);
+  if(article===key)return true;
+  if(key.length<8||!article.startsWith(key))return false;
+  const suffix=article.slice(key.length),group=colorNames.find(tokens=>tokens.includes(suffix));
+  return Boolean(group&&group.some(token=>String(order.color||'').toUpperCase().includes(token)));
+}
 function colorConflict(name,option) {
   if(!option)return false;
   const fromName=colorNames.find(group=>group.some(token=>name.toUpperCase().includes(token)));
@@ -41,15 +58,14 @@ function validOrder(order) {
     &&Number.isInteger(order.quantity)&&order.quantity===1;
 }
 function matchingRows(sheet,order) {
-  const key=norm(order.articleNumber),size=norm(order.size).replace(/^SIZE/,'');
+  const key=norm(order.articleNumber);
   const matched=[];
   for(let row=3;row<=sheet.rawValues.length;row++) {
     const article=norm(value(sheet,row,3)),name=norm(value(sheet,row,4));
-    if(article!==key&&!(article===''&&name.includes(key)&&key.length>=7))continue;
-    if(colorConflict(value(sheet,row,4),order.color))continue;
+    if(!articleMatches(article,order)&&!(article===''&&name.includes(key)&&key.length>=7))continue;
+    if(colorConflict(`${value(sheet,row,4)} ${value(sheet,row,7)}`,order.color))continue;
     if(/(?:\d+\s*개|\d+\s*PCS)/i.test(value(sheet,row,4)))continue; // grouped purchase cannot represent one sale
-    const rowSize=norm(value(sheet,row,6)||value(sheet,row,7)).replace(/^SIZE/,'');
-    if(size&&rowSize&&size!==rowSize)continue;
+    if(!sizeMatches(sheet,row,order))continue;
     const existingPrice=raw(sheet,row,10),existingDate=raw(sheet,row,11);
     if(!blank(existingPrice)&&money(existingPrice)!==order.salePrice)continue;
     if(!blank(existingDate)&&datePart(existingDate)!==order.saleDate)continue;
@@ -59,10 +75,9 @@ function matchingRows(sheet,order) {
 }
 function sameSale(sheet,row,order) {
   const article=norm(value(sheet,row,3)),name=norm(value(sheet,row,4)),key=norm(order.articleNumber);
-  const size=norm(order.size).replace(/^SIZE/,''),rowSize=norm(value(sheet,row,6)||value(sheet,row,7)).replace(/^SIZE/,'');
-  return (article===key||article===''&&key.length>=7&&name.includes(key))
-    &&!colorConflict(value(sheet,row,4),order.color)
-    &&(!size||!rowSize||size===rowSize)
+  return (articleMatches(article,order)||article===''&&key.length>=7&&name.includes(key))
+    &&!colorConflict(`${value(sheet,row,4)} ${value(sheet,row,7)}`,order.color)
+    &&sizeMatches(sheet,row,order)
     &&money(raw(sheet,row,10))===order.salePrice&&datePart(raw(sheet,row,11))===order.saleDate;
 }
 function orderNote(order) {
@@ -88,8 +103,8 @@ function firstFreeRow(sheet) {
   throw Error('POIZON_SALES_DESTINATION_FULL');
 }
 
-// Mutates an in-memory workbook only. Caller commits all edits atomically after
-// the complete seller-center scan; ambiguous matches remain untouched.
+// Mutates an in-memory workbook only. Caller commits each completed seller-center
+// page; rows with conflicting sale evidence remain untouched.
 export function reconcilePoizonOrders(book,orders) {
   if(!Array.isArray(orders)||orders.length>10000)throw Error('POIZON_ORDERS_INVALID');
   const purchase=book.sheets.find(s=>s.name==='1-구매완료'),sales=book.sheets.find(s=>s.name==='5-판매완료');
@@ -103,10 +118,17 @@ export function reconcilePoizonOrders(book,orders) {
     if(!validOrder(order)) {review.push({orderNumber:id,reason:order?.failure||'거래 성공·일반판매·금액·체결일 검증 필요'});continue;}
     const linked=links[id];
     const candidates=linked?[linked.purchaseRow]:matchingRows(purchase,order).filter(row=>!usedPurchase.has(row));
-    if(candidates.length!==1||!Number.isInteger(candidates[0])){review.push({orderNumber:id,reason:candidates.length?'구매 행이 여러 개입니다':'일치하는 단일 구매 행이 없습니다'});continue;}
-    const row=candidates[0],actual=matchingRows(purchase,order);
+    const noted=candidates.filter(row=>existingNote(purchase,row)===id);
+    const available=candidates.filter(row=>blank(raw(purchase,row,10))&&blank(raw(purchase,row,11))&&!existingNote(purchase,row));
+    const row=linked?candidates[0]:noted.length===1?noted[0]:candidates.length===1?candidates[0]
+      :noted.length===0&&available.length===candidates.length?available[0]:undefined;
+    if(!Number.isInteger(row)){review.push({orderNumber:id,reason:candidates.length?'구매 행이 여러 개이거나 기존 판매값과 충돌합니다':'일치하는 구매 행이 없습니다'});continue;}
+    const actual=matchingRows(purchase,order);
     if(!actual.includes(row)){review.push({orderNumber:id,reason:'기존 판매 값과 주문 상세가 다릅니다'});continue;}
-    const existingSales=linked?[linked.salesRow]:Array.from({length:Math.max(sales.rawValues.length,3)-2},(_,i)=>i+3).filter(n=>existingNote(sales,n)===id||sameSale(sales,n,order));
+    const existingSales=linked?[linked.salesRow]:Array.from({length:Math.max(sales.rawValues.length,3)-2},(_,i)=>i+3).filter(n=>{
+      const prior=existingNote(sales,n);
+      return prior===id||!prior&&sameSale(sales,n,order);
+    });
     if(existingSales.length>1||linked&&(!Number.isInteger(existingSales[0])||!sameSale(sales,existingSales[0],order))){review.push({orderNumber:id,reason:'판매완료 행 확인 필요'});continue;}
     const salesRow=existingSales[0]||firstFreeRow(sales),templateRow=lastProductRow(sales)||undefined;
     if(existingSales.length&&!['','구매완료','일판완료'].includes(value(sales,salesRow,12))){review.push({orderNumber:id,reason:'판매완료 상태 확인 필요'});continue;}
