@@ -2,6 +2,7 @@
 (() => {
   const STORAGE_KEY = "around-g-search-diagnostics-v1";
   const SUCCESS_CODES = new Set(["approved_domestic_seller", "복구 완료"]);
+  const ABSENCE_CODES = new Set(["naver_explicit_empty", "naver_authoritative_zero", "overseas_direct_only"]);
   const ACCESS_CODES = new Set(["login_required", "security_verification_required", "rate_limited"]);
   const ISSUE_NAMES = {
     stock_unverified: "상품은 확인됨 · 재고 확인 필요",
@@ -26,13 +27,16 @@
       || ["partial", "manual", "blocked"].includes(recovery)) {
       return { code: reason && !SUCCESS_CODES.has(reason) ? reason : "stock_unverified", state: "open", action: "retry" };
     }
+    if (source.absenceConfirmed === true && source.searchCompleted === true) {
+      return { code: reason || "authoritative_absence", state: "absent", action: "" };
+    }
     if (reason && !SUCCESS_CODES.has(reason)) return { code: reason, state: "open", action: "retry" };
     if (recovery === "recovered" || reason === "복구 완료") return { code: "복구 완료", state: "recovered", action: "" };
     if (reason === "approved_domestic_seller") return { code: reason, state: "verified", action: "" };
     return null;
   };
   const safeLabel = (value, limit = 120) => String(value || "").replace(/[\x00-\x1f]/g, " ").trim().slice(0, limit);
-  const describe = (entry) => ISSUE_NAMES[entry.code] || (entry.state === "verified" ? "국내 판매처·상품 확인" : entry.state === "recovered" ? "자동 복구 완료" : "확인 또는 재검색 필요");
+  const describe = (entry) => ISSUE_NAMES[entry.code] || (entry.state === "absent" ? "검색 결과에서 상품 없음 확인" : entry.state === "verified" ? "국내 판매처·상품 확인" : entry.state === "recovered" ? "자동 복구 완료" : "확인 또는 재검색 필요");
 
   function createController({ document: doc = document, storage = localStorage, onAction = async () => {}, onOpen = () => {} } = {}) {
     const button = doc.getElementById("search-diagnostics-open");
@@ -42,7 +46,9 @@
     let entries = [];
     try {
       const saved = JSON.parse(storage.getItem(STORAGE_KEY) || "[]");
-      if (Array.isArray(saved)) entries = saved.slice(0, 200).filter((item) => item?.id && item?.code);
+      if (Array.isArray(saved)) entries = saved.slice(0, 200).filter((item) => item?.id && item?.code)
+        .map((item) => item.state === "open" && ABSENCE_CODES.has(item.code)
+          ? {...item, state: "absent", action: ""} : item);
     } catch { /* Damaged diagnostics must not stop sourcing. */ }
     const save = () => {
       entries = entries.slice(0, 200);
@@ -58,7 +64,7 @@
       const observations = sources.map((source) => ({
         store: safeLabel(source.store || "판매처", 80), source,
         outcome: sourceOutcome(source),
-      })).filter((item) => item.outcome);
+      })).filter((item) => item.outcome && item.outcome.state !== "absent");
       if (result.error) observations.push({ store: "국내 검색", outcome: {
         code: shortCode(result.error, "search_failed"), state: "open", action: "retry",
       } });
@@ -66,8 +72,11 @@
         observations.push({ store: "국내 검색", outcome: {code: "collection_incomplete", state: "open", action: "retry"} });
       }
       const now = new Date().toISOString();
-      const settledStores = sources.filter((source) => !sourceOutcome(source)
-        && (source.searchCompleted || source.absenceConfirmed || source.presenceConfirmed))
+      const settledStores = sources.filter((source) => {
+        const outcome = sourceOutcome(source);
+        return (!outcome || outcome.state === "absent")
+          && (source.searchCompleted || source.absenceConfirmed || source.presenceConfirmed);
+      })
         .map((source) => safeLabel(source.store || "판매처", 80));
       if (!result.error && !result.partial) settledStores.push("국내 검색");
       for (const old of entries) if (old.scope === scope && old.key === key && old.state === "open"
@@ -114,7 +123,7 @@
         const row = doc.createElement("article"); row.className = `search-diagnostics-item ${entry.state}`;
         const heading = doc.createElement("div"); heading.className = "search-diagnostics-item-head";
         const title = doc.createElement("strong"); title.textContent = `${entry.brand ? `${entry.brand} · ` : ""}${entry.article} · ${entry.store}`;
-        const state = doc.createElement("span"); state.textContent = ({open:"조치 필요",verified:"확인 완료",recovered:"복구 완료",resolved:"해결됨"})[entry.state] || entry.state;
+        const state = doc.createElement("span"); state.textContent = ({open:"조치 필요",absent:"상품 없음",verified:"확인 완료",recovered:"복구 완료",resolved:"해결됨"})[entry.state] || entry.state;
         heading.append(title, state);
         const detail = doc.createElement("p"); detail.textContent = describe(entry);
         const meta = doc.createElement("small"); meta.textContent = `코드 ${entry.code}${entry.stage ? ` · 단계 ${entry.stage}` : ""} · ${new Date(entry.lastSeenAt).toLocaleString("ko-KR")}`;
