@@ -1,5 +1,6 @@
 import { popularTableScript } from "./services/popular-table-runtime.mjs";
 import { createLocalLedger } from "./services/local-ledger.mjs";
+import { collectPoizonSuccessfulOrders } from "./services/poizon-order-screen.mjs";
 import { ledgerArticleKey } from "./services/ledger-categories.mjs";
 import {ledgerClipboardData,parseLedgerClipboard} from './services/ledger-clipboard.mjs';
 import { readReviewWorkbook, checkReviewWorkbookRevision } from "./services/poizon-review-workbook.mjs";
@@ -5175,6 +5176,47 @@ async function localLedgerCategories(book) {
   }
   for(const path of ledgerCategoryFiles.keys())if(!entries.some(e=>e.path===path))ledgerCategoryFiles.delete(path);
   return products;
+}
+let poizonLedgerSyncRunning=false,poizonLedgerSyncTimer,poizonLedgerAutoPaused=false;
+let poizonLedgerSyncStatus={state:'waiting',message:'포이즌 판매 내역 확인 대기 중'};
+function setPoizonLedgerSyncStatus(next) {
+  poizonLedgerSyncStatus={...poizonLedgerSyncStatus,...next};
+  if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('ledger:poizon-sales-progress',poizonLedgerSyncStatus);
+}
+async function syncPoizonSellerOrders({manual=false}={}) {
+  if(poizonLedgerSyncRunning)return {ok:false,code:'POIZON_SYNC_BUSY',status:poizonLedgerSyncStatus};
+  if(poizonLedgerAutoPaused&&!manual)return {ok:false,code:'POIZON_SYNC_PAUSED',status:poizonLedgerSyncStatus};
+  poizonLedgerSyncRunning=true;
+  let scanner;
+  try {
+    const ledger=await purchaseWorkbook().load();
+    setPoizonLedgerSyncStatus({state:'running',message:'포이즌 판매자센터 주문 확인 중',checked:0});
+    scanner=new BrowserWindow({show:false,width:1400,height:950,webPreferences:{partition:'persist:around-g-poizon-seller',contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
+    try {await scanner.loadURL('https://seller.poizon.com/main/spot/orders');}
+    catch(error) {if(!/ERR_ABORTED/.test(String(error?.message||error)))throw error;}
+    const captured=await collectPoizonSuccessfulOrders(scanner.webContents,{knownOrderNumbers:manual?[]:Object.keys(ledger.local?.poizonOrders||{}),
+      onProgress:progress=>setPoizonLedgerSyncStatus({state:'running',message:`거래 성공 주문 ${progress.checked}/${progress.total}건 확인 중`,...progress})});
+    const result=await purchaseWorkbook().syncPoizonSales(captured.orders);
+    poizonLedgerAutoPaused=false;
+    await store.setSettings({poizonLedgerAutoPaused:false}).catch(()=>{});
+    setPoizonLedgerSyncStatus({state:'complete',message:`거래 성공 ${captured.scanned}건 확인 · 장부 반영 ${result.recorded.length}건 · 확인 필요 ${result.review.length}건 · 발송 완료 ${captured.counts['발송 완료']||0}건`,
+      checked:captured.scanned,counts:captured.counts,recorded:result.recorded,review:result.review,at:new Date().toISOString(),updated:result.updated});
+    return {ok:true,status:poizonLedgerSyncStatus};
+  } catch(error) {
+    const currentUrl=scanner&&!scanner.isDestroyed()?scanner.webContents.getURL():'';
+    const code=/login|signin|passport|auth/i.test(currentUrl)?'POIZON_LOGIN_REQUIRED':String(error?.message||error);
+    if(/POIZON_LOGIN_REQUIRED|POIZON_ACCESS_LIMITED/.test(code)) {
+      poizonLedgerAutoPaused=true;
+      await store.setSettings({poizonLedgerAutoPaused:true}).catch(()=>{});
+    }
+    setPoizonLedgerSyncStatus({state:'error',code,message:code==='POIZON_LOGIN_REQUIRED'?'포이즌 판매자센터 로그인이 필요합니다. 로그인 후 다시 확인을 누르세요.'
+      :code==='POIZON_ACCESS_LIMITED'?'포이즌 접속 제한으로 자동 확인을 멈췄습니다. 잠시 후 직접 다시 확인해 주세요.'
+      :`포이즌 주문 확인 실패: ${code}`,at:new Date().toISOString()});
+    return {ok:false,code,status:poizonLedgerSyncStatus};
+  } finally {
+    poizonLedgerSyncRunning=false;
+    if(scanner&&!scanner.isDestroyed())scanner.destroy();
+  }
 }
 function purchaseWorkbook() {
   if (!localLedger) localLedger=createLocalLedger({
@@ -12499,6 +12541,8 @@ app.whenReady().then(async () => {
   }
   await restorePortableOneDriveBackupIfFresh(hadLocalData).catch(() => {});
   officialDomainAuditAutoPaused = Boolean(store.snapshot(["settings"]).settings.officialDomainAuditAutoPaused);
+  poizonLedgerAutoPaused = Boolean(store.snapshot(["settings"]).settings.poizonLedgerAutoPaused);
+  if(poizonLedgerAutoPaused)setPoizonLedgerSyncStatus({state:'paused',message:'포이즌 로그인 또는 접속 제한으로 자동 확인을 멈췄습니다. 로그인 후 판매 내역 확인을 누르세요.'});
   // Starting the program creates a clean visible sourcing session. Preserve
   // the job-to-brand cache only as hidden recovery evidence so an interrupted
   // update can reconnect the same selected brand without auto-selecting or
@@ -12615,6 +12659,8 @@ app.whenReady().then(async () => {
     catch(error){return {ok:false,code:error.code==='ENOENT'?'WORKBOOK_NOT_IMPORTED':String(error.message||error)};}
   };
   ipcMain.handle('ledger:workbook-load',()=>localWorkbookResult(()=>purchaseWorkbook().view()));
+  ipcMain.handle('ledger:poizon-sales-status',()=>poizonLedgerSyncStatus);
+  ipcMain.handle('ledger:poizon-sales-sync',()=>syncPoizonSellerOrders({manual:true}));
   // Keep the old IPC name for upgrade compatibility; it is now strictly local.
   ipcMain.handle('ledger:workbook-import',()=>localWorkbookResult(()=>purchaseWorkbook().view()));
   ipcMain.handle('ledger:workbook-edit',(_event,edit)=>localWorkbookResult(()=>purchaseWorkbook().edit(edit)));
@@ -13735,6 +13781,9 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
 
   configureUpdater();
   createWindow();
+  setTimeout(() => void syncPoizonSellerOrders(), 30_000);
+  poizonLedgerSyncTimer=setInterval(() => void syncPoizonSellerOrders(), 30*60*1_000);
+  poizonLedgerSyncTimer.unref?.();
   setTimeout(() => void runOneDriveRecoveryBackup(), 5 * 60 * 1_000);
   setInterval(() => void runOneDriveRecoveryBackup(), 30 * 60 * 1_000).unref?.();
   scheduleWeeklySiteHealthCheck();
@@ -13750,6 +13799,7 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 app.on("before-quit", () => {
+  if(poizonLedgerSyncTimer)clearInterval(poizonLedgerSyncTimer);
   if (brandExportPollTimer) clearInterval(brandExportPollTimer);
   if (brandExportMonitorRestartTimer) clearTimeout(brandExportMonitorRestartTimer);
   if (updateCheckTimer) clearTimeout(updateCheckTimer);

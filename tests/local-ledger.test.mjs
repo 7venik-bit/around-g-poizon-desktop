@@ -45,6 +45,27 @@ async function setup(t,book=fixture()) {
 const editN=(book,value)=>({sheetId:1,row:5,column:14,revision:book.revision,expected:book.sheets[0].rawValues[4][13],next:{type:'number',value:String(value)}});
 const purchase={brand:'TEST',articleNumber:'NEW-001',modelName:'주문 검증 상품',krSize:'105',purchaseDate:'2026-09-17',purchasePrice:100001,quantity:3,imageUrl:'https://image.msscdn.net/test.jpg',purchaseUrl:'https://www.musinsa.com/products/123',orderNumber:'fixture-order',orderEvidence:{orderLineId:'fixture-line'}};
 
+test('successful seller order is committed to both local tabs and remains idempotent after reopening',async t=>{
+ const original=fixture(),source=original.sheets[0],sales=structuredClone(source);
+ sales.id=4;sales.name='5-판매완료';sales.rawValues=source.rawValues.map(row=>row.map(()=>({type:'text',value:''})));
+ sales.displayValues=sales.rawValues.map(row=>row.map(()=>''));sales.formulas=sales.rawValues.map(row=>row.map(()=>''));
+ sales.notes=sales.rawValues.map(row=>row.map(()=>''));sales.images=[];
+ original.sheets.push(sales);
+ const files=unzipSync(Buffer.from(original.xlsxBase64,'base64'));
+ files['xl/workbook.xml']=strToU8(strFromU8(files['xl/workbook.xml']).replace('</sheets>','<sheet name="5-판매완료" sheetId="4" r:id="rId4"/></sheets>'));
+ files['xl/_rels/workbook.xml.rels']=strToU8(strFromU8(files['xl/_rels/workbook.xml.rels']).replace('</Relationships>','<Relationship Id="rId4" Target="worksheets/sheet4.xml" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"/></Relationships>'));
+ files['xl/worksheets/sheet4.xml']=strToU8(`<worksheet xmlns="${ns}"><dimension ref="A1:V1000"/><sheetData/></worksheet>`);
+ const bytes=Buffer.from(zipSync(files));original.xlsxBase64=bytes.toString('base64');original.xlsxSha256=createHash('sha256').update(bytes).digest('hex');
+ const {ledger,options,dir}=await setup(t,original),order={orderNumber:'21315202429263299',status:'거래 성공',route:'일반판매',quantity:1,articleNumber:'001-ABC',size:'',saleDate:'2026-09-16',salePrice:100000,income:85000};
+ const first=await ledger.syncPoizonSales([order]);assert.equal(first.recorded.length,1);
+ const reopened=createLocalLedger(options),second=await reopened.syncPoizonSales([order]);assert.equal(second.updated,false);
+ const book=await reopened.load(),record=first.recorded[0];
+ assert.equal(book.sheets[0].rawValues[4][10].type,'date');assert.equal(book.sheets[0].rawValues[4][15].value,'15000');
+ assert.equal(book.sheets[3].rawValues[record.salesRow-1][9].value,'100000');
+ await reopened.export(join(dir,'poizon.xlsx'));const exported=unzipSync(await readFile(join(dir,'poizon.xlsx')));
+ assert.match(strFromU8(exported['xl/worksheets/sheet4.xml']),new RegExp(`r="J${record.salesRow}"`));
+});
+
 function calculationFixture() {
  const book=fixture(),s=book.sheets[0];
  const headers=['브랜드','구매링크','품번','모델명','성별','EU 사이즈','한국 사이즈','사진','판매량','판매가 (원화)','판매 일자','상태','구매 일자','구매가','카드','예상 수수료','택배비','간이마진','부가세환급','일반마진','구매가비 마진율','판매가비 마진율'];
