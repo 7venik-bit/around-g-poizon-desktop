@@ -45,6 +45,39 @@ test('approved Naver seller and completed recovery are not counted as errors', t
   assert.equal(window.document.querySelectorAll('[data-diagnostic-action]').length,0);
 });
 
+test('a completed explicit Naver empty result does not create an error', t => {
+  const {window, controller} = fixture(t);
+  controller.recordResult({sources:[{store:'네이버 패션타운',verificationReason:'naver_explicit_empty',
+    verificationStage:'naver_result_capture',searchCompleted:true,absenceConfirmed:true}]},
+  {articleNumber:'SQ323XJK91',brand:'데상트'},{scope:'excel',key:'row-2'});
+  assert.equal(controller.entries().length,0);
+  assert.equal(window.document.querySelector('#search-diagnostics-count').hidden,true);
+  assert.equal(window.document.querySelectorAll('[data-diagnostic-action]').length,0);
+});
+
+test('previously saved explicit empty results no longer inflate the error badge', t => {
+  const storage = new Map([['around-g-search-diagnostics-v1',JSON.stringify([{
+    id:'previous-result',scope:'excel',key:'row-2',store:'네이버 패션타운',
+    article:'SQ323XJK91',code:'naver_explicit_empty',state:'open',action:'retry',
+    lastSeenAt:new Date().toISOString(),
+  }])]]);
+  const {window} = fixture(t);
+  const controller = window.AroundGSearchDiagnostics.createController({
+    document:window.document,storage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)},
+  });
+  assert.equal(controller.entries()[0].state,'absent');
+  assert.equal(window.document.querySelector('#search-diagnostics-count').hidden,true);
+  assert.equal(window.document.querySelectorAll('[data-diagnostic-action]').length,0);
+});
+
+test('pending Naver collection is still actionable even if an absence flag is present', t => {
+  const {controller} = fixture(t);
+  controller.recordResult({sources:[{store:'네이버 패션타운',verificationReason:'collection_stalled',
+    searchCompleted:true,absenceConfirmed:true,detailVerificationPending:true}]},
+  {articleNumber:'A1'},{scope:'excel',key:'row-3'});
+  assert.equal(controller.entries()[0].state,'open');
+});
+
 test('incomplete stock remains actionable; manual retry updates and resolves the saved issue', async t => {
   let action;
   const {window, controller} = fixture(t, async entry => {action = entry;});
