@@ -16,6 +16,13 @@ contextBridge.exposeInMainWorld("aroundG", {
   pasteLedgerWorkbookCells: (input) => ipcRenderer.invoke('ledger:workbook-paste', input),
   resizeLedgerWorkbook: (input) => ipcRenderer.invoke('ledger:workbook-resize', input),
   loadLedgerWorkbook: () => ipcRenderer.invoke("ledger:workbook-load"),
+  getPoizonLedgerSyncStatus: () => ipcRenderer.invoke('ledger:poizon-sales-status'),
+  syncPoizonLedgerSales: () => ipcRenderer.invoke('ledger:poizon-sales-sync'),
+  onPoizonLedgerSyncProgress: (callback) => {
+    const handler=(_event,payload)=>callback(payload);
+    ipcRenderer.on('ledger:poizon-sales-progress',handler);
+    return ()=>ipcRenderer.removeListener('ledger:poizon-sales-progress',handler);
+  },
   importLedgerWorkbook: () => ipcRenderer.invoke("ledger:workbook-import"),
   exportLedgerWorkbook: () => ipcRenderer.invoke("ledger:workbook-export"),
   openMusinsaLedger: () => ipcRenderer.invoke("ledger:open-musinsa"),

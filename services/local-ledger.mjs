@@ -6,6 +6,7 @@ import {updateLedgerXlsx,readLedgerImages} from './ledger-xlsx.mjs';
 import {purchaseLedgerImageUrl,validatePurchaseLedgerRow} from './purchase-ledger.mjs';
 import {LEDGER_COPY_SCHEMA} from './ledger-clipboard.mjs';
 import {autofillLedger,LEDGER_FORMULA_VERSION,ledgerCalculationSheet} from './ledger-autofill.mjs';
+import {reconcilePoizonOrders} from './poizon-order-ledger.mjs';
 
 const fail=code=>{throw Error(code);};
 const empty=()=>({type:'text',value:''});
@@ -190,6 +191,17 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
     load:()=>serial(load),
     view:()=>serial(async()=>workbookView(await load())),
     export:destination=>serial(async()=>exportLedgerWorkbook(destination,await load())),
+    syncPoizonSales:orders=>serial(async()=>{
+      const book=await load(),result=reconcilePoizonOrders(book,orders);
+      if(result.edits.length) {
+        // A verified recovery point precedes every batch of external sales.
+        const backupPath=`${path}.before-poizon-sales-${randomUUID()}.encrypted`;
+        await save(backupPath,await read(path,decrypt),encrypt);
+        if((await read(backupPath,decrypt)).revision!==book.revision)fail('WORKBOOK_SAVE_VERIFY_FAILED');
+        await commit(book,result.edits,{manual:false,autofill:false});
+      }
+      return {ok:true,recorded:result.recorded,review:result.review,updated:result.edits.length>0};
+    }),
     edit:edit=>serial(async()=>{
       const book=await load(),sheet=book.sheets.find(s=>s.id===edit?.sheetId);
       if(!sheet||!Number.isInteger(edit.row)||!Number.isInteger(edit.column)||edit.row<1||edit.column<1||edit.row>sheet.rowCount||edit.column>sheet.columnCount)fail('CELL_ADDRESS_INVALID');

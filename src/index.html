@@ -321,7 +321,9 @@
       <section id="ledger" class="view">
         <section class="panel" id="original-ledger-workbook">
           <div class="panel-title"><div><h2>어라운드지 내부 장부</h2><p>가져온 모든 시트와 수식을 이 PC에 보관합니다. 셀을 편집하면 내부에서 계산·저장하며 Google과 연동하지 않습니다.</p></div>
-          <div><button type="button" id="workbook-import">내부 장부 새로고침</button><button type="button" id="workbook-export" disabled>엑셀로 내보내기</button></div></div>
+          <div><button type="button" id="workbook-poizon-open">포이즌 로그인</button><button type="button" id="workbook-poizon-sync">포이즌 판매 내역 확인</button><button type="button" id="workbook-import">내부 장부 새로고침</button><button type="button" id="workbook-export" disabled>엑셀로 내보내기</button></div></div>
+          <p id="workbook-poizon-sync-status" role="status">포이즌 주문 자동 확인 대기 중</p>
+          <details id="workbook-poizon-review" hidden><summary>자동 기록 확인 필요 <span id="workbook-poizon-review-count">0</span>건</summary><ul id="workbook-poizon-review-list"></ul></details>
           <p id="workbook-status" role="status">저장된 장부를 확인 중입니다.</p>
           <label class="workbook-hidden-toggle"><input type="checkbox" id="workbook-hidden"> 숨겨진 시트 표시</label>
           <div id="workbook-tabs" role="tablist" aria-label="원본 장부 시트"></div>

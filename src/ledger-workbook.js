@@ -474,5 +474,26 @@
   $('workbook-hidden').addEventListener('change',()=>afterEdit(()=>{clearSelection();page=0;tabs();render();}));
   $('workbook-prev').addEventListener('click',()=>afterEdit(()=>{if(page>0){clearSelection();page--;render();}}));
   $('workbook-next').addEventListener('click',()=>afterEdit(()=>{clearSelection();page++;render();}));
+  const poizonStatus=payload=>{
+    if(!payload)return;
+    $('workbook-poizon-sync-status').textContent=payload.message||'포이즌 주문 확인 대기 중';
+    $('workbook-poizon-sync').disabled=payload.state==='running';
+    const review=Array.isArray(payload.review)?payload.review:[];
+    $('workbook-poizon-review').hidden=!review.length;
+    $('workbook-poizon-review-count').textContent=String(review.length);
+    $('workbook-poizon-review-list').replaceChildren(...review.slice(0,100).map(item=>{
+      const li=document.createElement('li');li.textContent=`주문 ${item.orderNumber||'번호 없음'} · ${item.reason}`;return li;
+    }));
+    if(payload.state==='complete'&&payload.updated&&!busy&&!hasPendingEdit())run(async()=>{
+      const result=await window.aroundG.loadLedgerWorkbook();
+      if(result.ok)accept(result.workbook);
+    });
+  };
+  window.aroundG.onPoizonLedgerSyncProgress?.(poizonStatus);
+  window.aroundG.getPoizonLedgerSyncStatus?.().then(poizonStatus).catch(()=>{});
+  $('workbook-poizon-open').addEventListener('click',()=>window.aroundG.openSellerCenter());
+  $('workbook-poizon-sync').addEventListener('click',()=>window.aroundG.syncPoizonLedgerSales().then(result=>poizonStatus(result.status)).catch(error=>{
+    $('workbook-poizon-sync-status').textContent=`포이즌 주문 확인 실패: ${error.message}`;
+  }));
   run(async()=>{const result=await window.aroundG.loadLedgerWorkbook();if(result.ok){accept(result.workbook);needsRefresh=Boolean(result.needsRefresh);if(needsRefresh)status(messages.WORKBOOK_REFRESH_REQUIRED);}else status(messages[result.code] || '장부를 불러오지 못했습니다.');});
 })();
