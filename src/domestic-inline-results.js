@@ -197,7 +197,9 @@
       const target = new URL(openUrl);
       if (target.protocol === "https:" && /(?:^|\.)(?:naver\.com|ssg\.com|lotteon\.com)$/i.test(target.hostname)
         && typeof window.aroundG?.openDomesticResult === "function") {
-        return `<button type="button" data-domestic-result-url="${encodeURIComponent(openUrl)}" title="앱 검색 세션에서 열기">${label}</button>`;
+        const openTitle = /(?:^|\.)naver\.com$/i.test(target.hostname)
+          ? "일반 브라우저에서 열기" : "앱 검색 세션에서 열기";
+        return `<button type="button" data-domestic-result-url="${encodeURIComponent(openUrl)}" title="${openTitle}">${label}</button>`;
       }
     } catch {}
     return `<button type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;

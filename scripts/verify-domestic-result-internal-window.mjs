@@ -13,4 +13,6 @@ if (!renderer.includes("data-domestic-result-url")) throw new Error("internal re
 if (!renderer.includes("window.aroundG.openDomesticResult")) throw new Error("internal result click missing");
 if (!inline.includes("data-domestic-result-url")) throw new Error("lower product list still opens a separate browser session");
 if (!main.includes("resultWindow.webContents.setUserAgent(")) throw new Error("manual result window differs from search user agent");
-console.log("controlled domestic result window verified");
+if (!main.includes("return openExternalInChromeTab(target.href)")) throw new Error("manual Naver result does not open in the normal browser");
+if (!inline.includes("일반 브라우저에서 열기")) throw new Error("Naver open button does not describe its destination");
+console.log("manual domestic result routing verified");
