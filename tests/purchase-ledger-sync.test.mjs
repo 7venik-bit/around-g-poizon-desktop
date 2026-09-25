@@ -91,7 +91,7 @@ test("desktop exposes Musinsa capture, sheet sync, retry, and encrypted settings
   assert.match(script, /LockService/); assert.match(script, /구매완료/); assert.match(script, /duplicate: true/);
 });
 
-test("Musinsa ledger opens the current My page and explains login or detail selection", async () => {
+test("Musinsa ledger opens the current My page without the removed header explanation", async () => {
   const root = new URL("../", import.meta.url);
   const [main, html] = await Promise.all([
     readFile(new URL("main.mjs", root), "utf8"),
@@ -103,7 +103,7 @@ test("Musinsa ledger opens the current My page and explains login or detail sele
   assert.match(main, /captureMusinsaLedgerPage/);
   assert.match(main, /ORDER_DETAIL_REQUIRED/);
   assert.match(html, /무신사 주문 내역 열기/);
-  assert.match(html, /로그인 상태는 다음 실행에도 유지/);
+  assert.doesNotMatch(html, /로그인 상태는 다음 실행에도 유지/);
 });
 
 test("Musinsa ledger imports local account credentials once and persists its login session", async () => {
@@ -118,7 +118,7 @@ test("Musinsa ledger imports local account credentials once and persists its log
   assert.match(main, /if \(!await hasUsableDomesticLoginSession\("musinsa"\)\)/);
   assert.match(main, /cookies\.flushStore\(\)/);
   assert.match(main, /partition: DOMESTIC_SEARCH_PARTITION/);
-  assert.match(html, /내부 장부 계정정보의 무신사 계정을 Windows에 암호화 저장/);
+  assert.doesNotMatch(html, /내부 장부 계정정보의 무신사 계정을 Windows에 암호화 저장/);
   assert.match(renderer, /MUSINSA_ACCOUNT_NOT_FOUND/);
 });
 
