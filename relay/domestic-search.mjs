@@ -553,7 +553,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         const titleText = String(card?.title || "").trim();
         const cardBodyText = String(card?.text || "").trim();
         const trustedOfficialCard = String(store || "") === "브랜드 공식몰";
-        if (trustedOfficialCard && !isOfficialProductCandidateUrl(productUrl, rendered.resolvedSearchUrl)) continue;
+        if (trustedOfficialCard && !isOfficialProductCandidateUrl(productUrl, rendered.resolvedSearchUrl, articleCode)) continue;
         const identityText = trustedOfficialCard
           ? `${titleText} ${cardBodyText} ${String(card?.markup || "")} ${productUrl}`.trim()
           : titleText || cardBodyText;

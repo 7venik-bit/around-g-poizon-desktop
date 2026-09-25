@@ -3859,7 +3859,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         && Boolean(officialDirectDetail || officialSearchSubmitted || exactQueryRoute);
       // A source's official label does not make external links official.
       parsedContent.productCards = (parsedContent.productCards || []).filter(card => belongsToOfficialMall(card.productUrl)
-        && isOfficialProductCandidateUrl(card.productUrl, officialDirectDetail ? '' : currentUrl));
+        && isOfficialProductCandidateUrl(card.productUrl, officialDirectDetail ? '' : currentUrl, articleNumber));
       content = JSON.stringify(parsedContent);
     }
     const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
