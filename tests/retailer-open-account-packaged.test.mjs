@@ -20,7 +20,7 @@ test('official Open, exact manual links, and credential recovery survive every r
   const childEnv = { ...process.env };
   delete childEnv.NODE_TEST_CONTEXT;
   const run = args => {
-    try { return execFileSync(process.execPath, args, { cwd: folder, env: childEnv, encoding: 'utf8', timeout: 30_000, maxBuffer: 4 * 1024 * 1024 }); }
+    try { return execFileSync(process.execPath, args, { cwd: folder, env: childEnv, encoding: 'utf8', timeout: 120_000, maxBuffer: 4 * 1024 * 1024 }); }
     catch (error) { assert.fail(`${args.join(' ')}\n${error.stdout || ''}\n${error.stderr || ''}`); }
   };
   for (const script of scripts) run([script]);

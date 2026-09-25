@@ -321,9 +321,7 @@
       <section id="ledger" class="view">
         <section class="panel" id="original-ledger-workbook">
           <div class="panel-title"><div><h2>어라운드지 내부 장부</h2><p>가져온 모든 시트와 수식을 이 PC에 보관합니다. 셀을 편집하면 내부에서 계산·저장하며 Google과 연동하지 않습니다.</p></div>
-          <div><button type="button" id="workbook-poizon-open">포이즌 로그인</button><button type="button" id="workbook-poizon-sync">포이즌 판매 내역 확인</button><button type="button" id="workbook-import">내부 장부 새로고침</button><button type="button" id="workbook-export" disabled>엑셀로 내보내기</button></div></div>
-          <p id="workbook-poizon-sync-status" role="status">포이즌 주문 자동 확인 대기 중</p>
-          <details id="workbook-poizon-review" hidden><summary>자동 기록 확인 필요 <span id="workbook-poizon-review-count">0</span>건</summary><ul id="workbook-poizon-review-list"></ul></details>
+          <div><button type="button" id="workbook-import">내부 장부 새로고침</button><button type="button" id="workbook-export" disabled>엑셀로 내보내기</button></div></div>
           <p id="workbook-status" role="status">저장된 장부를 확인 중입니다.</p>
           <label class="workbook-hidden-toggle"><input type="checkbox" id="workbook-hidden"> 숨겨진 시트 표시</label>
           <div id="workbook-tabs" role="tablist" aria-label="원본 장부 시트"></div>
@@ -368,8 +366,13 @@
           <div id="workbook-table" tabindex="0" aria-label="원본 장부 표"></div>
           <div><button type="button" id="workbook-prev">이전 100행</button><span id="workbook-page"></span><button type="button" id="workbook-next">다음 100행</button></div>
         </section>
+        <section class="panel" id="poizon-ledger-record">
+          <div class="panel-title"><div><small>POIZON SALES LEDGER</small><h2>포이즌 판매자센터 장부기록</h2></div><div class="stock-watch-row-actions"><button type="button" id="workbook-poizon-open">포이즌 로그인</button><button type="button" id="workbook-poizon-sync" class="primary">포이즌 주문 → 구매장부 자동 기록</button></div></div>
+          <p id="workbook-poizon-sync-status" role="status" aria-live="polite">포이즌 주문 확인 대기 중</p>
+          <details id="workbook-poizon-review" hidden><summary>자동 기록 확인 필요 <span id="workbook-poizon-review-count">0</span>건</summary><ul id="workbook-poizon-review-list"></ul></details>
+        </section>
         <form id="purchase-ledger-form" class="panel stock-watch-form">
-          <div class="panel-title"><div><small>LOCAL PURCHASE LEDGER</small><h2>무신사 주문상세 장부기록</h2><p>자동 로그인 → 마이 → 주문 내역 → 주문상세 선택 → 인식 → 내부 장부 기록 순서로 진행합니다. 로그아웃 상태면 내부 장부 계정정보의 무신사 계정을 Windows에 암호화 저장해 자동 로그인합니다. 로그인 상태는 다음 실행에도 유지됩니다.</p></div><div class="stock-watch-row-actions"><button id="ledger-open-musinsa" type="button">① 무신사 주문 내역 열기</button><button id="ledger-capture" type="button" class="primary">② 선택한 주문상세 인식</button></div></div>
+          <div class="panel-title"><div><small>LOCAL PURCHASE LEDGER</small><h2>무신사 주문상세 장부기록</h2></div><div class="stock-watch-row-actions"><button id="ledger-open-musinsa" type="button">① 무신사 주문 내역 열기</button><button id="ledger-capture" type="button" class="primary">② 선택한 주문상세 인식</button></div></div>
           <div class="stock-watch-fields ledger-fields">
             <label>브랜드<input id="ledger-brand" required></label><label>상품명<input id="ledger-name" required></label>
             <label>품번<input id="ledger-article" required></label><label>사이즈<input id="ledger-size" required></label>

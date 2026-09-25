@@ -109,6 +109,7 @@ export function reconcilePoizonOrders(book,orders) {
     const existingSales=linked?[linked.salesRow]:Array.from({length:Math.max(sales.rawValues.length,3)-2},(_,i)=>i+3).filter(n=>existingNote(sales,n)===id||sameSale(sales,n,order));
     if(existingSales.length>1||linked&&(!Number.isInteger(existingSales[0])||!sameSale(sales,existingSales[0],order))){review.push({orderNumber:id,reason:'판매완료 행 확인 필요'});continue;}
     const salesRow=existingSales[0]||firstFreeRow(sales),templateRow=lastProductRow(sales)||undefined;
+    if(existingSales.length&&!['','구매완료','일판완료'].includes(value(sales,salesRow,12))){review.push({orderNumber:id,reason:'판매완료 상태 확인 필요'});continue;}
     if(!existingSales.length&&[1,3,4,10,11,14].some(column=>!blank(raw(sales,salesRow,column)))){review.push({orderNumber:id,reason:'판매완료 입력 위치가 사용 중입니다'});continue;}
     if([[purchase,row],[sales,salesRow]].some(([sheet,targetRow])=>{
       const fee=raw(sheet,targetRow,16);
@@ -147,6 +148,7 @@ export function reconcilePoizonOrders(book,orders) {
       }
     }
     if(existingSales.length) {
+      if(value(sales,salesRow,12)!=='일판완료')write(sales,salesRow,12,{type:'text',value:'일판완료'},edits);
       if(blank(raw(sales,salesRow,16))||raw(sales,salesRow,16)?.type==='formula')write(sales,salesRow,16,number(fee),edits);
     }
     for(const [sheet,targetRow] of [[purchase,row],[sales,salesRow]]) {
@@ -163,4 +165,23 @@ export function reconcilePoizonOrders(book,orders) {
   }
   book.local.poizonOrders=links;
   return {edits,recorded,review};
+}
+
+export function verifyPoizonRecordedSales(book,orders,recorded) {
+  const purchase=book.sheets.find(sheet=>sheet.name==='1-구매완료');
+  const sales=book.sheets.find(sheet=>sheet.name==='5-판매완료');
+  const byNumber=new Map(orders.map(order=>[String(order.orderNumber),order]));
+  if(!purchase||!sales)throw Error('POIZON_LEDGER_SAVE_VERIFY_FAILED');
+  for(const entry of recorded) {
+    const order=byNumber.get(entry.orderNumber),link=book.local?.poizonOrders?.[entry.orderNumber];
+    const fee=order?.salePrice-order?.income;
+    if(!order||!link||link.purchaseRow!==entry.purchaseRow||link.salesRow!==entry.salesRow
+      ||!sameSale(purchase,entry.purchaseRow,order)||!sameSale(sales,entry.salesRow,order)
+      ||money(raw(purchase,entry.purchaseRow,16))!==fee||money(raw(sales,entry.salesRow,16))!==fee
+      ||value(sales,entry.salesRow,12)!=='일판완료'
+      ||existingNote(purchase,entry.purchaseRow)!==entry.orderNumber
+      ||existingNote(sales,entry.salesRow)!==entry.orderNumber)
+      throw Error(`POIZON_LEDGER_SAVE_VERIFY_FAILED:${entry.orderNumber}`);
+  }
+  return recorded.length;
 }

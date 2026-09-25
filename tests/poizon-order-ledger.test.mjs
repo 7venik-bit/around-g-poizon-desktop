@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {reconcilePoizonOrders} from '../services/poizon-order-ledger.mjs';
+import {reconcilePoizonOrders,verifyPoizonRecordedSales} from '../services/poizon-order-ledger.mjs';
 
 const blank=()=>({type:'text',value:''});
 function sheet(id,name) {
@@ -31,9 +31,27 @@ test('verified POIZON sale fills purchase and sales tabs once with actual fee an
   assert.equal(sales.rawValues[saleRow-1][9].value,'75000');assert.equal(sales.rawValues[saleRow-1][15].value,'15000');
   assert.equal(sales.formulas[saleRow-1][17],`=IF(J${saleRow}="","",J${saleRow}-N${saleRow}-P${saleRow}-Q${saleRow})`);
   assert.equal(workbook.local.poizonOrders[order().orderNumber].purchaseRow,5);
+  assert.equal(verifyPoizonRecordedSales(workbook,[order()],first.recorded),1);
   const second=reconcilePoizonOrders(workbook,[order()]);
   assert.equal(second.edits.length,0);assert.equal(second.recorded.length,0);
   assert.equal(sales.rawValues.filter(row=>row[2]?.value==='SR123UPS11').length,1);
+});
+
+test('readback verification rejects a changed saved sale',()=>{
+  const workbook=book(),recorded=reconcilePoizonOrders(workbook,[order()]).recorded;
+  workbook.sheets[1].rawValues[recorded[0].salesRow-1][9]={type:'number',value:'76000'};
+  assert.throws(()=>verifyPoizonRecordedSales(workbook,[order()],recorded),/POIZON_LEDGER_SAVE_VERIFY_FAILED/);
+});
+
+test('an existing matching sales row receives the completed status before verification',()=>{
+  const workbook=book(),sales=workbook.sheets[1],prior=structuredClone(workbook.sheets[0].rawValues[4]);
+  prior[9]={type:'number',value:'75000'};prior[10]={type:'date',value:new Date('2026-09-16T00:00:00+09:00').toISOString()};
+  sales.rawValues[4]=prior;
+  const result=reconcilePoizonOrders(workbook,[order()]);
+  assert.equal(result.review.length,0);
+  assert.equal(result.recorded.length,1);
+  assert.equal(sales.rawValues[4][11].value,'일판완료');
+  assert.equal(verifyPoizonRecordedSales(workbook,[order()],result.recorded),1);
 });
 
 test('incomplete or ambiguous order never changes financial cells',()=>{

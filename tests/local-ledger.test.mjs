@@ -57,7 +57,7 @@ test('successful seller order is committed to both local tabs and remains idempo
  files['xl/worksheets/sheet4.xml']=strToU8(`<worksheet xmlns="${ns}"><dimension ref="A1:V1000"/><sheetData/></worksheet>`);
  const bytes=Buffer.from(zipSync(files));original.xlsxBase64=bytes.toString('base64');original.xlsxSha256=createHash('sha256').update(bytes).digest('hex');
  const {ledger,options,dir}=await setup(t,original),order={orderNumber:'21315202429263299',status:'거래 성공',route:'일반판매',quantity:1,articleNumber:'001-ABC',size:'',saleDate:'2026-09-16',salePrice:100000,income:85000};
- const first=await ledger.syncPoizonSales([order]);assert.equal(first.recorded.length,1);
+ const first=await ledger.syncPoizonSales([order]);assert.equal(first.recorded.length,1);assert.equal(first.verified,1);
  const reopened=createLocalLedger(options),second=await reopened.syncPoizonSales([order]);assert.equal(second.updated,false);
  const book=await reopened.load(),record=first.recorded[0];
  assert.equal(book.sheets[0].rawValues[4][10].type,'date');assert.equal(book.sheets[0].rawValues[4][15].value,'15000');

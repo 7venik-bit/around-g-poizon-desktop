@@ -43,3 +43,36 @@ test('an already recorded order is counted without reopening its detail',async()
   const result=await collectPoizonSuccessfulOrders(contents,{knownOrderNumbers:['21315202429263299']});
   assert.equal(result.scanned,1);assert.equal(result.orders.length,0);
 });
+
+test('pagination waits for new order rows after the selected page number changes',async()=>{
+  const first='21315202429263299',second='21315202429263300';
+  const cells=Array.from({length:23},(_,index)=>`<td>${index===10?'거래 성공':index===12?'1':index===21?'<a>주문 내역</a>':''}</td>`).join('');
+  const row=id=>`<tr class="ant-table-row" data-row-key="${id}">${cells}</tr>`;
+  const {window,contents}=browser(`<div class="global-text-label-wrap global-text-label-wrap-selected">전체 (2)</div>
+    <div id="success" class="global-text-label-wrap">거래 성공 (2)</div>
+    <table><tbody>${row(first)}</tbody></table>
+    <ul class="ant-pagination"><li class="ant-pagination-item-active">1</li><li class="ant-pagination-next"></li></ul>`);
+  window.document.getElementById('success').addEventListener('click',event=>{
+    window.document.querySelector('.global-text-label-wrap-selected').classList.remove('global-text-label-wrap-selected');
+    event.currentTarget.classList.add('global-text-label-wrap-selected');
+  });
+  window.document.querySelector('.ant-pagination-next').addEventListener('click',()=>{
+    window.document.querySelector('.ant-pagination-item-active').textContent='2';
+    // POIZON can change the pagination control before replacing table rows.
+    window.setTimeout(()=>{
+      window.document.querySelector('tbody').innerHTML=row(second);
+      window.document.querySelector('.ant-pagination-next').classList.add('ant-pagination-disabled');
+    },100);
+  });
+  window.document.querySelector('tbody').addEventListener('click',event=>{
+    if(event.target.tagName!=='A')return;
+    const id=event.target.closest('tr').getAttribute('data-row-key');
+    const drawer=window.document.createElement('div');drawer.className='ant-drawer-open';
+    drawer.setAttribute('data-text',`일반판매\n주문 번호: ${id}\n상품 번호: SR123UPS11\n사이즈: SIZE 95\n입찰가(세금 별도) ₩75,000\n예상 수익: ₩60,000\n주문 체결 시간: 2026/09/16 18:06:50`);
+    drawer.innerHTML='<div class="ant-drawer-title"><span class="ant-tag">거래 성공</span></div><button class="ant-drawer-close">닫기</button>';
+    window.document.body.append(drawer);drawer.querySelector('button').addEventListener('click',()=>drawer.remove());
+  });
+  const result=await collectPoizonSuccessfulOrders(contents);
+  assert.deepEqual(result.orders.map(order=>order.orderNumber),[first,second]);
+  assert.equal(result.scanned,2);
+});
