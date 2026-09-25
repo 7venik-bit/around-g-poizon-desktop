@@ -6,7 +6,7 @@ import {updateLedgerXlsx,readLedgerImages} from './ledger-xlsx.mjs';
 import {purchaseLedgerImageUrl,validatePurchaseLedgerRow} from './purchase-ledger.mjs';
 import {LEDGER_COPY_SCHEMA} from './ledger-clipboard.mjs';
 import {autofillLedger,LEDGER_FORMULA_VERSION,ledgerCalculationSheet} from './ledger-autofill.mjs';
-import {reconcilePoizonOrders} from './poizon-order-ledger.mjs';
+import {reconcilePoizonOrders,verifyPoizonRecordedSales} from './poizon-order-ledger.mjs';
 
 const fail=code=>{throw Error(code);};
 const empty=()=>({type:'text',value:''});
@@ -193,14 +193,22 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
     export:destination=>serial(async()=>exportLedgerWorkbook(destination,await load())),
     syncPoizonSales:orders=>serial(async()=>{
       const book=await load(),result=reconcilePoizonOrders(book,orders);
+      let verified=0;
       if(result.edits.length) {
         // A verified recovery point precedes every batch of external sales.
         const backupPath=`${path}.before-poizon-sales-${randomUUID()}.encrypted`;
-        await save(backupPath,await read(path,decrypt),encrypt);
+        const before=await read(path,decrypt);
+        await save(backupPath,before,encrypt);
         if((await read(backupPath,decrypt)).revision!==book.revision)fail('WORKBOOK_SAVE_VERIFY_FAILED');
-        await commit(book,result.edits,{manual:false,autofill:false});
+        const saved=await commit(book,result.edits,{manual:false,autofill:false});
+        try {verified=verifyPoizonRecordedSales(saved,orders,result.recorded);}
+        catch(error) {
+          await save(path,before,encrypt);
+          if((await read(path,decrypt)).revision!==before.revision)fail('WORKBOOK_SAVE_VERIFY_FAILED');
+          throw error;
+        }
       }
-      return {ok:true,recorded:result.recorded,review:result.review,updated:result.edits.length>0};
+      return {ok:true,recorded:result.recorded,verified,review:result.review,updated:result.edits.length>0};
     }),
     edit:edit=>serial(async()=>{
       const book=await load(),sheet=book.sheets.find(s=>s.id===edit?.sheetId);

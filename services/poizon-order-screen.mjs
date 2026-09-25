@@ -68,7 +68,7 @@ export async function collectPoizonSuccessfulOrders(contents,{onProgress=()=>{},
       const current=await evaluate(contents,pageState),problem=pageProblem(current);
       if(problem)throw Error(problem);
       return /^거래 성공/.test(current.selectedTab)&&current.rows.length&&current.currentPage===String(page+1)
-        &&current.rows.every(row=>row.cells[10]==='거래 성공')?current:null;
+        &&current.rows.every(row=>row.cells[10]==='거래 성공'&&!seen.has(row.orderNumber))?current:null;
     });
     const rows=state.rows;
     for(const row of rows) {
