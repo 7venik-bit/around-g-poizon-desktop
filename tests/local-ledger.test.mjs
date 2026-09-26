@@ -82,6 +82,7 @@ test('successful seller order fills freight and recalculates margins in both loc
  const stale=await readLedgerWorkbook(options.path,options.decrypt);
  for(const [sheet,row] of [[stale.sheets[0],5],[stale.sheets[3],record.salesRow]])
    for(const column of [17,18,19,20,21,22])sheet.numberFormats[row-1][column-1]='General';
+ stale.local.poizonOrders={}; // Old snapshots may retain the order note but lose the row index.
  await saveLedgerWorkbook(options.path,stale,options.encrypt);
  const repaired=await createLocalLedger(options).load();
  for(const [sheet,row] of [[repaired.sheets[0],5],[repaired.sheets[3],record.salesRow]]) {
