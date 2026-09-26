@@ -85,7 +85,8 @@ function parseDetail(row,detail) {
 }
 function expandProfitDetails() {
   const drawer=document.querySelector('.ant-drawer-open');
-  if(!drawer||/기본 수수료/.test(drawer.innerText||'')&&amount(drawer.innerText,'운임')!=null)return false;
+  // This function is serialized into the seller page: keep it self-contained.
+  if(!drawer||/기본 수수료/.test(drawer.innerText||'')&&/운임\s*[:：]?\s*-?\s*₩?\s*[\d,]+/.test(drawer.innerText||''))return false;
   const item=[...drawer.querySelectorAll('button,[role="button"],a,[class*="collapse-header"]')]
     .find(node=>/예상 수익(?:내역)?|수익 내역|수수료 상세/.test(node.innerText||''));
   if(!item)return false;
