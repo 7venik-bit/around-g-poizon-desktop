@@ -481,7 +481,7 @@
             return `<tr class="excel-product-row ${groupClass}">
               <td class="excel-product-select-column"><input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택"></td>
               <td class="excel-product-image">${product.logoUrl ? `<img src="${safeText(product.logoUrl)}" alt="">` : "-"}</td>
-              <td><b>${safeText(product.articleNumber || "-")}</b></td>
+              <td><b>${safeText(product.articleNumber || "-")}</b>${typeof purchaseAwarenessBadge === "function" ? purchaseAwarenessBadge(product) : ""}</td>
               <td title="${safeText(product.title || "")}">${safeText(product.title || "-")}</td>
               <td>${safeText(product.brandName || "-")}</td>
               <td class="sourcing-size">${safeText(referenceProduct.option || product.option || "-")}</td>
@@ -491,6 +491,7 @@
               <td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
             </tr>${result ? `<tr class="excel-product-search-detail ${groupClass}"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>${safeText(product.title || product.articleNumber || "상품")}</strong> 국내 검색 결과<em>${safeText(search.label)}</em></div>${inlineRenderDomestic(result, product, key)}</td></tr>` : ""}`;
           }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
+          if (typeof updatePurchaseAwarenessDisplay === "function") updatePurchaseAwarenessDisplay();
           return pageKeys;
         } catch (error) {
           console.warn("[domestic-inline-results] excel renderer fallback", error);

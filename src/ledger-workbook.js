@@ -379,6 +379,7 @@
   function accept(book) {
     workbook=book;needsRefresh=false;clearSelection();tabs();render();$('workbook-export').disabled=false;
     status(`${book.title} · ${book.sheets.length}개 시트 · 수식 ${book.calculation?.formulaCount ?? 0}개 · PC 내부 저장 · Google 연동 없음`);
+    window.dispatchEvent(new Event('aroundg:ledger-updated'));
   }
   async function run(fn) {
     if(busy)return {ok:false,code:'WORKBOOK_BUSY'};busy=true;paintSelection();$('workbook-import').disabled=true;$('workbook-export').disabled=true;

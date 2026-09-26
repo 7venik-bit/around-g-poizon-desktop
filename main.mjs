@@ -1,5 +1,6 @@
 import { popularTableScript } from "./services/popular-table-runtime.mjs";
 import { createLocalLedger } from "./services/local-ledger.mjs";
+import { purchaseLedgerAwareness } from "./services/purchase-ledger-awareness.mjs";
 import { collectPoizonSuccessfulOrders } from "./services/poizon-order-screen.mjs";
 import { ledgerArticleKey } from "./services/ledger-categories.mjs";
 import {ledgerClipboardData,parseLedgerClipboard} from './services/ledger-clipboard.mjs';
@@ -12669,6 +12670,10 @@ app.whenReady().then(async () => {
     catch(error){return {ok:false,code:error.code==='ENOENT'?'WORKBOOK_NOT_IMPORTED':String(error.message||error)};}
   };
   ipcMain.handle('ledger:workbook-load',()=>localWorkbookResult(()=>purchaseWorkbook().view()));
+  ipcMain.handle('ledger:purchase-awareness',async()=>{
+    try {return {ok:true,data:purchaseLedgerAwareness(await purchaseWorkbook().load())};}
+    catch(error){return {ok:false,code:error.code==='ENOENT'?'WORKBOOK_NOT_IMPORTED':String(error.message||error)};}
+  });
   ipcMain.handle('ledger:poizon-sales-status',()=>poizonLedgerSyncStatus);
   ipcMain.handle('ledger:poizon-sales-sync',()=>syncPoizonSellerOrders({manual:true}));
   // Keep the old IPC name for upgrade compatibility; it is now strictly local.

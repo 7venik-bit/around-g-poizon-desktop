@@ -5,6 +5,41 @@ const auditTrace = window.AroundGAuditTrace?.createAuditTraceController(undefine
 let officialDomainAuditStopPending = false;
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString("ko-KR")}원`;
 let state = { products: [], poizonSyncs: [], brandVerifications: [], ledger: [], orders: [], stockWatches: [], favorites: [] };
+let purchaseAwareness = null;
+function updatePurchaseAwarenessDisplay() {
+  const summary = $("#purchase-ledger-awareness");
+  if (summary) {
+    if (purchaseAwareness?.ok) {
+      const data = purchaseAwareness.data;
+      summary.textContent = `내부 구매 장부 · 구매 상품 ${data.purchasedCount.toLocaleString("ko-KR")}행 · 기록 가능한 빈 행 ${data.freeRowCount.toLocaleString("ko-KR")}개${data.firstFreeRow ? ` (첫 빈 행 ${data.firstFreeRow}행)` : ""}`;
+    } else if (purchaseAwareness?.code === "WORKBOOK_NOT_IMPORTED") summary.textContent = "내부 구매 장부가 아직 없습니다. 구매 장부에서 먼저 가져와 주세요.";
+    else if (purchaseAwareness) summary.textContent = "내부 구매 장부를 읽지 못했습니다. 구매 장부를 확인해 주세요.";
+  }
+  const byArticle = new Map();
+  for (const product of purchaseAwareness?.data?.products || []) {
+    const key = String(product.articleNumber || "").trim().toUpperCase().replace(/\s+/g, "");
+    if (!key) continue;
+    if (!byArticle.has(key)) byArticle.set(key, []);
+    byArticle.get(key).push(product);
+  }
+  document.querySelectorAll("[data-purchase-article]").forEach(element => {
+    const key = decodeURIComponent(element.dataset.purchaseArticle || "").trim().toUpperCase().replace(/\s+/g, "");
+    const rows = byArticle.get(key) || [];
+    element.textContent = rows.length ? `구매 장부 ${rows.length}행 · ${rows.slice(0, 5).map(row => row.row).join(", ")}${rows.length > 5 ? "…" : ""}행` : "";
+    element.title = rows.length ? rows.map(row => `${row.row}행 · ${row.krSize || row.euSize || "사이즈 미기록"} · ${row.status || "상태 미기록"}`).join("\n") : "";
+    element.hidden = !rows.length;
+  });
+}
+async function refreshPurchaseAwareness() {
+  if (!window.aroundG.getPurchaseLedgerAwareness) return;
+  try { purchaseAwareness = await window.aroundG.getPurchaseLedgerAwareness(); }
+  catch { purchaseAwareness = {ok:false,code:"WORKBOOK_READ_FAILED"}; }
+  updatePurchaseAwarenessDisplay();
+}
+function purchaseAwarenessBadge(product) {
+  return `<span class="purchase-ledger-match" data-purchase-article="${encodeURIComponent(product.articleNumber || "")}" hidden></span>`;
+}
+window.addEventListener('aroundg:ledger-updated', () => { void refreshPurchaseAwareness(); });
 let entryCollection = "ledger";
 let explorerMeta = { brands: [], categories: [] };
 let selectedBrandId = null;
@@ -523,8 +558,9 @@ function renderVerifiedSpuRows(file, products) {
     const detailRow = result && !result.loading
       ? '<tr class="excel-product-search-detail excel-verified-search-detail"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>' + text(p.title || p.articleNumber || '상품') + '</strong> 국내 검색 결과</div>' + renderDomestic(result, p, keys[i]) + '</td></tr>'
       : '';
-    return '<tr class="excel-product-row excel-verified-spu-row"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(keys[i]) + '"></td><td class="excel-verified-image-cell">' + image + '</td><td><b>' + text(p.articleNumber) + '</b><small> SPU ' + text(p.spuId) + '</small></td><td>' + text(p.title) + '<details><summary>원본 사이즈 ' + p.optionCount + '행</summary>' + options + '</details></td><td>' + text(p.brandName) + '</td><td>' + (p.hasPriceData ? money(p.averagePrice) : '미확인') + '</td><td>' + text(p.hasSalesData ? p.sales30dRaw : '미확인') + '</td><td>' + text(p.hasLocalSalesData ? p.localSales30dRaw : '미확인') + '</td><td>' + text(p.verificationStatus) + '</td>' + resultCell + '</tr>' + detailRow;
+    return '<tr class="excel-product-row excel-verified-spu-row"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(keys[i]) + '"></td><td class="excel-verified-image-cell">' + image + '</td><td><b>' + text(p.articleNumber) + '</b>' + (typeof purchaseAwarenessBadge === 'function' ? purchaseAwarenessBadge(p) : '') + '<small> SPU ' + text(p.spuId) + '</small></td><td>' + text(p.title) + '<details><summary>원본 사이즈 ' + p.optionCount + '행</summary>' + options + '</details></td><td>' + text(p.brandName) + '</td><td>' + (p.hasPriceData ? money(p.averagePrice) : '미확인') + '</td><td>' + text(p.hasSalesData ? p.sales30dRaw : '미확인') + '</td><td>' + text(p.hasLocalSalesData ? p.localSales30dRaw : '미확인') + '</td><td>' + text(p.verificationStatus) + '</td>' + resultCell + '</tr>' + detailRow;
   }).join('') : '<tr><td colspan="10">동일 조건에 맞는 검증 완료 상품이 없습니다. 실패·누락 집계도 확인해 주세요.</td></tr>';
+  if (typeof updatePurchaseAwarenessDisplay === 'function') updatePurchaseAwarenessDisplay();
   return keys;
 }
 
@@ -1588,13 +1624,14 @@ function renderExcelProductRows(file, products = []) {
     return `<tr class="excel-product-row ${groupClass} ${outcomeClass}">
       <td class="excel-product-select-column"><input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택"></td>
       <td class="excel-product-image">${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : "-"}</td>
-      <td><b>${text(product.articleNumber || "-")}</b></td><td title="${text(product.title)}">${text(product.title || "-")}</td>
+      <td><b>${text(product.articleNumber || "-")}</b>${typeof purchaseAwarenessBadge === "function" ? purchaseAwarenessBadge(product) : ""}</td><td title="${text(product.title)}">${text(product.title || "-")}</td>
       <td>${text(product.brandName || "-")}</td><td title="${text(product.categoryName)}">${text(product.categoryName || "-")}</td>
       <td>${poizonPrice ? money(poizonPrice) : "가격 없음"}</td>
       <td>${product.screenVerified ? excelProductMetric(product.sales30dRaw, product.sales30d) : "미동기화"}</td><td>${product.screenVerified ? excelProductMetric(product.localSales30dRaw, product.localSales30d) : "미동기화"}</td>
       <td>${result?.loading ? `<span class="excel-raw-search-state loading">수달 사원이 검색 중…</span>` : `<button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">${status}</button>`}</td>
     </tr>${result && !result.loading ? `<tr class="excel-product-search-detail ${groupClass} ${outcomeClass}"><td colspan="10"><div class="excel-product-search-result-label"><span></span><strong>${text(productLabel)}</strong>의 국내 검색 결과 <b class="excel-search-outcome-label">${text(outcome?.label || "확인 완료")}</b></div>${renderDomestic(result, product)}</td></tr>` : ""}`;
   }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
+  if (typeof updatePurchaseAwarenessDisplay === "function") updatePurchaseAwarenessDisplay();
   return pageKeys;
 }
 
@@ -3064,7 +3101,7 @@ function renderExplorerResults(title, products, preserveDomestic = false, emptyM
           <div class="product-badges"><span class="badge">${text(product.categoryGroup || "인기상품")}</span>${product.apiMatched ? `<span class="badge">API 연결</span>` : product.apiMatched === false ? `<span class="badge muted">API 미일치</span>` : ""}</div>
           <h3>${text(product.title || product.name)}</h3>
           <p>${text(product.brandName || product.brand || "")}</p>
-          <div class="explorer-product-meta"><code>${text(product.articleNumber || "")}</code><span>${product.averagePrice || product.minPrice?.value ? money(product.averagePrice || product.minPrice.value) : ""}</span></div>
+          <div class="explorer-product-meta"><code>${text(product.articleNumber || "")}</code><span>${product.averagePrice || product.minPrice?.value ? money(product.averagePrice || product.minPrice.value) : ""}</span>${typeof purchaseAwarenessBadge === "function" ? purchaseAwarenessBadge(product) : ""}</div>
         </div>
       </div>
       <label class="product-select-option"><input type="checkbox" data-product-select="${encodeURIComponent(key)}" ${selectedExplorerKeys.has(key) ? "checked" : ""}> 선택</label>
@@ -3074,6 +3111,7 @@ function renderExplorerResults(title, products, preserveDomestic = false, emptyM
       </div>
     </article>`;
   }).join("")}` : `<div class="empty">${text(emptyMessage || (domesticStockOnly ? "국내 재고가 확인된 상품이 없습니다." : "조건에 맞는 상품이 없습니다."))}</div>`;
+  if (typeof updatePurchaseAwarenessDisplay === "function") updatePurchaseAwarenessDisplay();
   bindExplorerSelectionControls();
   updateDomesticStockFilter();
 }
@@ -3149,7 +3187,7 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
         <div class="seller-product-info">
           <label class="seller-row-select" title="상품 선택"><input type="checkbox" data-product-select="${encodeURIComponent(domesticKey(product, index))}" ${selectedExplorerKeys.has(domesticKey(product, index)) ? "checked" : ""}></label>
           ${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : `<div class="image-placeholder">POIZON</div>`}
-          <div><code>상품 번호: <b>${text(product.articleNumber || "")}</b></code>
+          <div><code>상품 번호: <b>${text(product.articleNumber || "")}</b></code>${typeof purchaseAwarenessBadge === "function" ? purchaseAwarenessBadge(product) : ""}
           <strong>${text(product.title || product.name || "")}</strong>
           ${product.spuId ? `<small>SPU_ID：${text(product.spuId)}</small>` : ""}</div>
         </div>
@@ -3161,6 +3199,7 @@ function renderBrandSellerResults(title, products, sourceTotal = products.length
         <b class="seller-local-sales">${product.hasLocalSalesData ? text(product.localSales30dRaw || Number(product.localSales30d || 0).toLocaleString("ko-KR")) : "확인 불가"}</b>
         <button data-domestic="${encodeURIComponent(domesticKey(product, index))}" data-index="${index}" class="primary">국내 재고 검색</button>
       </article>`).join("") : `<div class="empty">현재 필터 조건에 맞는 상품이 없습니다.</div>`;
+    if (typeof updatePurchaseAwarenessDisplay === "function") updatePurchaseAwarenessDisplay();
     const visibleKeys = currentExplorerProducts.map((product, index) => domesticKey(product, index));
     const updateBrandSelection = () => {
       const selectedCount = visibleKeys.filter((key) => selectedExplorerKeys.has(key)).length;
@@ -3265,6 +3304,7 @@ async function searchDomesticAt(index, sourceProducts = currentExplorerProducts)
 
 async function refresh() {
   state = await window.aroundG.snapshot();
+  void refreshPurchaseAwareness();
   state.poizonSyncs = Array.isArray(state.poizonSyncs) ? state.poizonSyncs : [];
   renderLedgerRecords();
   renderRecords("orders");
@@ -3275,6 +3315,7 @@ document.addEventListener("click", async (event) => {
   const nav = event.target.closest(".nav");
   if (nav) {
     if (nav.dataset.view !== "products") clearExplorerResults();
+    else void refreshPurchaseAwareness();
     document.querySelectorAll(".nav,.view").forEach((item) => item.classList.remove("active"));
     nav.classList.add("active");
     $(`#${nav.dataset.view}`).classList.add("active");
