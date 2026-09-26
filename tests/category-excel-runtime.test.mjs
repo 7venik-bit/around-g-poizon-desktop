@@ -336,10 +336,9 @@ test('missing saved recent metrics produce guidance without running verification
   assert.equal(h.captures.length,0);
 });
 
-test('the identified POIZON raw export schema remains searchable from its saved values', async () => {
+test('POIZON raw lifetime totals do not pass recent-30-day search thresholds', async () => {
   const h=harness({sheets:{'/kolon.xlsx':[[...standardHeaders,'SKU ID','최근 30일간 평균 거래가'],[...vest.slice(0,4),150,90,'123456','100000']]}});
   await h.click();
-  assert.equal(h.rendered.at(-1).length,1);
-  assert.equal(h.rendered.at(-1)[0].sales30d,150);
-  assert.equal(h.rendered.at(-1)[0].localSales30d,90);
+  assert.equal(h.rendered.at(-1).length,0);
+  assert.match(h.status(),/판매량 값이 없는 상품 1개/);
 });

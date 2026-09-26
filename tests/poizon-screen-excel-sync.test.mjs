@@ -6,7 +6,7 @@ import { applyPoizonScreenSalesToWorkbook } from '../services/poizon-screen-exce
 function workbook() {
   const shared = '<sst>'
     + '<si><t>SPU ID</t></si><si><t>상품 번호</t></si>'
-    + '<si><t>중국 총 판매량</t></si><si><t>현지 판매자 총 판매량</t></si>'
+    + '<si><t>중국 최근 30일 판매량</t></si><si><t>현지 판매자 최근 30일 판매량</t></si>'
     + '<si><t>SKU ID</t></si><si><t>최근 30일간 평균 거래가</t></si>'
     + '<si><t>19438508</t></si><si><t>JWVAX25017</t></si><si><t>다른상품</t></si>'
     + '<si><t>SKU-1</t></si><si><t>SKU-2</t></si>'
@@ -18,6 +18,45 @@ function workbook() {
     + '</sheetData></worksheet>';
   return Buffer.from(zipSync({ 'xl/sharedStrings.xml': strToU8(shared), 'xl/worksheets/sheet1.xml': strToU8(sheet) }));
 }
+
+function rawSkuWorkbook() {
+  const headers = ['SPU ID','SPU 이미지','상품 번호','상품명','상품 브랜드','카테고리 대분류','카테고리 중분류','카테고리 소분류',
+    '사용자의 입찰 가능 여부 1: 입찰 가능 0: 입찰 불가','SKU ID','사이즈/옵션/색상','SKU 이미지','바코드',
+    '입찰 상태 0:미입찰 1:입찰 완료','최근 30일간 평균 거래가','현재 중국 최저 입찰가',
+    '현재 중국 최저 입찰가 예상 수익','중국 총 판매량','현지 판매자 총 판매량','SKU 상품 출처','판매자 SKU ID'];
+  const col = n => String.fromCharCode(65+n);
+  const cell = (row,n,value) => `<c r="${n>20?String.fromCharCode(64+Math.floor(n/26))+String.fromCharCode(65+n%26):col(n)}${row}" t="inlineStr"><is><t>${value}</t></is></c>`;
+  const row = (number,values) => `<row r="${number}">${values.map((value,index)=>value==null?'':cell(number,index,value)).join('')}</row>`;
+  const sheet = '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:U3"/><sheetData>'
+    + row(1,headers)
+    + row(2,['35770',null,'DL408-0490',null,null,null,null,null,null,'SKU-225',null,null,null,null,null,null,null,'400+','--'])
+    + row(3,['35770',null,'DL408-0490',null,null,null,null,null,null,'SKU-230',null,null,null,null,null,null,null,'500+','--'])
+    + '</sheetData></worksheet>';
+  return Buffer.from(zipSync({ 'xl/worksheets/sheet1.xml': strToU8(sheet) }));
+}
+
+test('raw SKU totals remain untouched while verified product recent-30 values go to dedicated columns', () => {
+  const original = rawSkuWorkbook();
+  const product = { spuId:'35770', articleNumber:'DL408-0490', salesScope:'spu',
+    sales30dRaw:'500+', hasSalesData:true, localSales30dRaw:'20', hasLocalSalesData:true };
+  const first = applyPoizonScreenSalesToWorkbook(original,[product]);
+  assert.equal(first.ok,true);
+  assert.equal(first.usedDedicatedColumns,true);
+  assert.equal(first.addedColumns,2);
+  assert.equal(first.changedRows,2);
+  const xml=strFromU8(unzipSync(new Uint8Array(first.buffer))['xl/worksheets/sheet1.xml']);
+  assert.match(xml,/<dimension ref="A1:W3"\/>/);
+  assert.match(xml,/<c r="R2"[^>]*><is><t>400\+<\/t><\/is><\/c>/);
+  assert.match(xml,/<c r="S2"[^>]*><is><t>--<\/t><\/is><\/c>/);
+  assert.match(xml,/<c r="V1"[^>]*><is><t>POIZON 상품 최근 30일 판매량<\/t><\/is><\/c>/);
+  assert.match(xml,/<c r="W1"[^>]*><is><t>POIZON 상품 현지 판매자 최근 30일 판매량<\/t><\/is><\/c>/);
+  assert.match(xml,/<c r="V2"[^>]*><is><t>500\+<\/t><\/is><\/c>/);
+  assert.match(xml,/<c r="W2"[^>]*><is><t>20<\/t><\/is><\/c>/);
+  const again = applyPoizonScreenSalesToWorkbook(first.buffer,[product]);
+  assert.equal(again.ok,true);
+  assert.equal(again.changed,false);
+  assert.equal(again.addedColumns,0);
+});
 
 test('POIZON 화면값을 기준으로 기존 Excel 판매량 셀의 불일치와 누락을 직접 수정한다', () => {
   const result = applyPoizonScreenSalesToWorkbook(workbook(), [{

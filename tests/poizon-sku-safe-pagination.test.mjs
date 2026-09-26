@@ -48,16 +48,17 @@ test('uploaded POIZON raw export retains SKU rows and exposes them as SKU-scope 
   assert.equal(snapshot.ok, true, snapshot.message);
   assert.equal(snapshot.products.length, 3);
   assert.deepEqual(snapshot.products.map((p) => p.skuId), ['700031743','624556738','624556739']);
-  assert.deepEqual(snapshot.products.map((p) => p.sales30dRaw), ['100+','300+','200+']);
+  assert.deepEqual(snapshot.products.map((p) => p.sales30dRaw), ['','','']);
+  assert.ok(snapshot.products.every((p) => p.rawExportSchema));
 
   const page = createPageCrossCheck({ runId:'reader-evidence', excelProducts:snapshot.products })
     .acceptPage([source('4962345','HQ1801','4,000+','200')], { pageNum:1, pageCount:150 });
   const row = page.rows[0];
-  assert.equal(row.excelChinaState, 'scope-mismatch');
-  assert.equal(row.excelLocalState, 'scope-mismatch');
-  assert.deepEqual(row.excelChinaEvidence.map((e) => e.raw), ['100+','300+','200+']);
-  assert.ok(row.excelChinaEvidence.every((e) => e.scope === 'sku'));
-  assert.ok(row.excelLocalEvidence.every((e) => e.scope === 'sku'));
+  assert.equal(row.excelChinaState, 'unavailable');
+  assert.equal(row.excelLocalState, 'unavailable');
+  assert.deepEqual(row.excelChinaEvidence.map((e) => e.raw), ['','','']);
+  assert.ok(row.excelChinaEvidence.every((e) => !e.columnFound));
+  assert.ok(row.excelLocalEvidence.every((e) => !e.columnFound));
   assert.equal(row.missingSalesCells, 0);
 });
 
@@ -71,7 +72,7 @@ test('SKU rows are selected for POIZON platform-value correction', async (t) => 
   assert.equal(page.missingProducts, 0);
   assert.equal(page.missingSalesCells, 0);
   assert.equal(page.deferredProducts, 0);
-  assert.match(page.rows[0].status, /POIZON 상품 판매량으로 수정 대상/);
+  assert.match(page.rows[0].status, /새 비교 열 추가 대상/);
   const selected = selectPoizonPageCorrectionProducts(screen, page.rows, 1);
   assert.equal(selected.products.length, 1);
   assert.equal(selected.deferredProducts, 0);

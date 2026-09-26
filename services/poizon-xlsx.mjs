@@ -93,9 +93,8 @@ export function findPoizonTotalSalesColumns(headers = []) {
 export function isPoizonRawExportSchema(headers = []) {
   const normalized = new Set(headers.map(normalizePoizonHeader).filter(Boolean));
   const has = (...aliases) => aliases.some((alias) => normalized.has(normalizePoizonHeader(alias)));
-  // Gate the export-label fallback to POIZON's own raw SKU export. Generic
-  // spreadsheets may contain similarly named lifetime totals and must never be
-  // silently treated as recent-30-day values.
+  // Identify POIZON's raw SKU export before adding separate SPU recent-30-day
+  // columns. Its existing total-sales fields must retain their original meaning.
   return has("SPU ID", "SPU_ID")
     && has("상품 번호")
     && has("SKU ID")
@@ -116,21 +115,9 @@ export function findPoizonRecentSalesColumns(headers = []) {
   const localMatches = recent.filter(({ header }) => isLocal(header));
   const chinaCandidates = recent.filter(({ header }) => !isLocal(header));
   const unique = (items) => items.length === 1 ? items[0].index : -1;
-  const explicit = {
+  return {
     china: unique(chinaCandidates),
     local: unique(localMatches),
-  };
-
-  // POIZON's raw SKU export currently labels the two screen-comparison sales
-  // fields as "중국 총 판매량" and "현지 판매자 총 판매량" even though the
-  // seller-center screen describes the same comparison context differently.
-  // Apply that interpretation only after the whole POIZON export schema is
-  // positively identified. Explicit recent headers still take priority.
-  if (!isPoizonRawExportSchema(headers)) return explicit;
-  const totals = findPoizonTotalSalesColumns(headers);
-  return {
-    china: explicit.china >= 0 ? explicit.china : totals.china,
-    local: explicit.local >= 0 ? explicit.local : totals.local,
   };
 }
 
