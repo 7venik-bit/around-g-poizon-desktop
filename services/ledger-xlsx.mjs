@@ -176,7 +176,7 @@ export function updateLedgerXlsx(book,edits=[]) {
       // element. Materializing it would apply style 0 instead of its implicit blank style.
       if(!formula&&raw.type==='text'&&raw.value===''&&!existing&&!edit.templateRow)continue;
       const cell=cellAt(edit.row,edit.column,edit.templateRow);
-      if(raw.type==='date')dateStyle(cell,sheet.numberFormats[r]?.[c]||'yyyy-mm-dd');
+      if(raw.type==='date'||edit.formatOnly)dateStyle(cell,sheet.numberFormats[r]?.[c]||'yyyy-mm-dd');
       for(const node of [...children(cell,'v'),...children(cell,'is'),...children(cell,'f')])cell.removeChild(node);
       cell.removeAttribute('t');
       if(formula) {
