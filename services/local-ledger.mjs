@@ -200,7 +200,7 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
         const before=await read(path,decrypt);
         await save(backupPath,before,encrypt);
         if((await read(backupPath,decrypt)).revision!==book.revision)fail('WORKBOOK_SAVE_VERIFY_FAILED');
-        const saved=await commit(book,result.edits,{manual:false,autofill:false});
+        const saved=await commit(book,result.edits,{manual:false});
         try {verified=verifyPoizonRecordedSales(saved,orders,result.recorded);}
         catch(error) {
           await save(path,before,encrypt);
