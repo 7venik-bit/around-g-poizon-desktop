@@ -1,6 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
-import { findPoizonColumn, findPoizonRecentSalesColumns } from './poizon-xlsx.mjs';
-import { indexProductIdentities, resolveProductIdentity, consistentParentProduct, verifiedParentMetric } from './poizon-product-identity.mjs';
+import { findPoizonColumn, findPoizonRecentSalesColumns, isPoizonRawExportSchema } from './poizon-xlsx.mjs';
+import { indexProductIdentities, resolveProductIdentity, consistentParentProduct, verifiedParentMetric, VERIFIED_PARENT_HEADERS } from './poizon-product-identity.mjs';
 
 const SHEET = /^xl\/worksheets\/sheet\d+\.xml$/;
 const ROW = /<row\b[^>]*\br="(\d+)"[^>]*>[\s\S]*?<\/row>/g;
@@ -63,7 +63,7 @@ export function applyPoizonScreenSalesToWorkbook(buffer, screenProducts = []) {
   const index = indexProductIdentities(screenProducts);
   let matchedRows = 0, changedRows = 0, changedCells = 0, unresolvedRows = 0, conflictedRows = 0, productSheets = 0;
   let missingCells = 0, mismatchedCells = 0, alreadyMatchedCells = 0, verifiedCells = 0;
-  let addedRows = 0, addedCells = 0, addedProducts = 0, addedVerifiedRows = 0;
+  let addedRows = 0, addedCells = 0, addedProducts = 0, addedVerifiedRows = 0, addedColumns = 0;
   let skippedMissingSpu = 0, skippedUnverifiedProducts = 0, skippedConflictedProducts = 0;
   const columnMappings = [], changes = [], verificationTargets = [], addedIdentityTargets = [];
   const metadata = [];
@@ -73,8 +73,8 @@ export function applyPoizonScreenSalesToWorkbook(buffer, screenProducts = []) {
   try {
     // First pass: discover product sheets and all existing identities before writing anything.
     for (const path of paths) {
-      const xml = strFromU8(archive[path]);
-      const rows = [...xml.matchAll(ROW)];
+      let xml = strFromU8(archive[path]);
+      let rows = [...xml.matchAll(ROW)];
       const header = rows.find((r) => Number(r[1]) === 1);
       if (!header) continue;
       const headers = values(header[0], shared);
@@ -84,7 +84,28 @@ export function applyPoizonScreenSalesToWorkbook(buffer, screenProducts = []) {
       if (spu < 0 && article < 0) continue;
       const salesColumns = findPoizonRecentSalesColumns(headers);
       if (salesColumns.china < 0 && salesColumns.local < 0) {
-        return { ok: false, code: 'EXCEL_RECENT_SALES_COLUMNS_MISSING', message: 'Excel에서 최근 30일 판매량 또는 POIZON 원본 판매량 열을 찾지 못했습니다.' };
+        if (!isPoizonRawExportSchema(headers)) {
+          return { ok: false, code: 'EXCEL_RECENT_SALES_COLUMNS_MISSING', message: 'Excel에서 상품 최근 30일 판매량 열을 찾지 못했습니다.' };
+        }
+      }
+      if ((salesColumns.china < 0 || salesColumns.local < 0) && isPoizonRawExportSchema(headers)
+          && screenProducts.some((product) => verifiedParentMetric(product) !== null || verifiedParentMetric(product, true) !== null)) {
+        let headerXml = header[0];
+        let nextColumn = headers.length + 1;
+        for (const [side, label] of [['china', VERIFIED_PARENT_HEADERS.china], ['local', VERIFIED_PARENT_HEADERS.local]]) {
+          if (salesColumns[side] >= 0) continue;
+          headerXml = writeCell(headerXml, nextColumn, 1, label);
+          headers[nextColumn - 1] = label;
+          salesColumns[side] = nextColumn - 1;
+          changes.push({ sheet: path, row: 1, column: colName(nextColumn), field: label, before: '', after: label,
+            reason: 'RECENT30_COLUMN_ADDED', result: 'POIZON_SCREEN_COLUMN_CREATED' });
+          verificationTargets.push({ path, row: 1, column: nextColumn, field: label, expected: label });
+          addedColumns++;
+          nextColumn++;
+        }
+        xml = fixDimension(xml.replace(header[0], headerXml));
+        archive[path] = strToU8(xml);
+        rows = [...xml.matchAll(ROW)];
       }
       productSheets++;
       const title = findPoizonColumn(headers, '상품명', '상품 이름', '상품제목', '상품 제목', '상품명(중문)', '제품명');
@@ -151,7 +172,7 @@ export function applyPoizonScreenSalesToWorkbook(buffer, screenProducts = []) {
       });
       if (updated !== xml) archive[path] = strToU8(fixDimension(updated));
       columnMappings.push({ sheet: path, china: columns[0] > 0 ? colName(columns[0]) : '', local: columns[1] > 0 ? colName(columns[1]) : '',
-        scope: 'spu', period: 'recent30', mode: 'overwrite-original-with-poizon-screen-and-append-missing-spu' });
+        scope: 'spu', period: 'recent30', mode: 'preserve-total-sales-and-write-dedicated-product-recent30' });
     }
 
     // Missing-product append. Only a confirmed SPU can create a new Excel row.
@@ -249,12 +270,12 @@ export function applyPoizonScreenSalesToWorkbook(buffer, screenProducts = []) {
   } catch (error) {
     return { ok: false, code: 'EXCEL_SAFE_SYNC_REJECTED', message: error.message };
   }
-  const changed = changedRows > 0 || addedRows > 0;
+  const changed = changedRows > 0 || addedRows > 0 || addedColumns > 0;
   return {
     ok: true, changed, matchedRows, changedRows, changedCells, missingCells, mismatchedCells, alreadyMatchedCells, verifiedCells,
-    addedRows, addedCells, addedProducts, addedVerifiedRows, skippedMissingSpu, skippedUnverifiedProducts, skippedConflictedProducts,
+    addedRows, addedCells, addedProducts, addedVerifiedRows, addedColumns, skippedMissingSpu, skippedUnverifiedProducts, skippedConflictedProducts,
     unresolvedRows, conflictedRows, comparisonMode: 'POIZON_SCREEN_IS_SOURCE_OF_TRUTH', reverified: true,
-    usedRecentColumns: true, usedDedicatedColumns: false, columnMappings, changes,
+    usedRecentColumns: true, usedDedicatedColumns: addedColumns > 0, columnMappings, changes,
     buffer: changed ? Buffer.from(zipSync(archive, { level: 6 })) : Buffer.from(buffer),
   };
 }

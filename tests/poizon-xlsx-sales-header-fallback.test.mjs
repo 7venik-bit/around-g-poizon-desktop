@@ -17,9 +17,9 @@ test('explicit recent-30-day headers take priority', () => {
   assert.deepEqual(findPoizonRecentSalesColumns(headers), { china: 21, local: 22 });
 });
 
-test('actual POIZON raw export schema recognizes its total-sales labels as comparison fields', () => {
+test('actual POIZON raw export keeps total-sales labels distinct from recent-30-day values', () => {
   assert.equal(isPoizonRawExportSchema(poizonRawHeaders), true);
-  assert.deepEqual(findPoizonRecentSalesColumns(poizonRawHeaders), { china: 17, local: 18 });
+  assert.deepEqual(findPoizonRecentSalesColumns(poizonRawHeaders), { china: -1, local: -1 });
 });
 
 test('generic spreadsheets never substitute total sales for recent sales', () => {
@@ -32,7 +32,7 @@ test('POIZON schema accepts normalized SPU header but still requires raw-export 
   const headers = [...poizonRawHeaders];
   headers[0] = 'SPU_ID';
   assert.equal(isPoizonRawExportSchema(headers), true);
-  assert.deepEqual(findPoizonRecentSalesColumns(headers), { china: 17, local: 18 });
+  assert.deepEqual(findPoizonRecentSalesColumns(headers), { china: -1, local: -1 });
 });
 
 test('ambiguous duplicate total-sales columns are not guessed even in POIZON export', () => {
@@ -40,5 +40,5 @@ test('ambiguous duplicate total-sales columns are not guessed even in POIZON exp
   headers.splice(18, 0, '중국 총 판매량(건)');
   const result = findPoizonRecentSalesColumns(headers);
   assert.equal(result.china, -1);
-  assert.equal(result.local, 19);
+  assert.equal(result.local, -1);
 });

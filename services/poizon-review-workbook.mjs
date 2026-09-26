@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { readFirstDataSheet } from './excel-reader.mjs';
-import { findPoizonRecentSalesColumns, normalizePoizonHeader } from './poizon-xlsx.mjs';
+import { findPoizonRecentSalesColumns, isPoizonRawExportSchema, normalizePoizonHeader } from './poizon-xlsx.mjs';
 
 const digest = (buffer) => createHash('sha256').update(buffer).digest('hex');
 const pathOf = (input) => {
@@ -15,6 +15,7 @@ export function createReviewWorkbookSnapshot(rows, buildProducts, revision = '')
   if (!Array.isArray(rows) || !rows.length || !Array.isArray(rows[0])) throw new Error('Excel 헤더를 읽지 못했습니다.');
   const headers = rows[0].map((v) => String(v ?? ''));
   const columns = findPoizonRecentSalesColumns(headers);
+  const rawExportSchema = isPoizonRawExportSchema(headers);
   const normalized = headers.map(normalizePoizonHeader);
   const isParent = (h) => /상품.*최근30일.*판매량/.test(h) && !/sku|사이즈|옵션/.test(h);
   const parentColumns = {};
@@ -45,6 +46,7 @@ export function createReviewWorkbookSnapshot(rows, buildProducts, revision = '')
       sourceValues: entry.values.map((v) => v == null ? '' : v instanceof Date ? v.toISOString() : String(v)),
       reviewColumnNames: { china: reviewMetricEvidence.china.columnName, local: reviewMetricEvidence.local.columnName },
       reviewMetricEvidence,
+      rawExportSchema,
       identityReadable: Boolean(p && (p.spuId || p.articleNumber)),
     };
   });

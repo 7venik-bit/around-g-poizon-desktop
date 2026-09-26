@@ -148,9 +148,9 @@ test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input re
   assert.equal(snapshot.ok,true,snapshot.message); assert.equal(snapshot.products.length,3);
   const input = snapshot.products.map(({sourceValues,...p}) => p);
   const r = check(input);
-  assert.equal(r.rows[0].excelChinaState,'scope-mismatch'); assert.equal(r.missingSalesCells,0);
-  assert.equal(r.rows[0].excelChinaEvidence[0].column,'중국 총 판매량');
-  assert.deepEqual(r.rows[0].excelChinaEvidence.map((e) => e.raw), ['33','100+','--']);
+  assert.equal(r.rows[0].excelChinaState,'unavailable'); assert.equal(r.missingSalesCells,0);
+  assert.equal(r.rows[0].excelChinaEvidence[0].column,'');
+  assert.deepEqual(r.rows[0].excelChinaEvidence.map((e) => e.raw), ['','','']);
   assert.deepEqual(await readFile(path),before);
 
   // Execute the real capture block with the failing page, not just a guard-string assertion.

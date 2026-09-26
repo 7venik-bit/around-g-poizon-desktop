@@ -181,7 +181,11 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
     const sourceAvailable = source.every(Boolean);
     const hasConflict = excelResolved.some((entry) => entry.state === 'conflict');
     const scopeMismatch = excelResolved.some((entry) => entry.state === 'scope-mismatch');
-    const unresolved = excelResolved.some((entry) => !['resolved', 'missing', 'scope-mismatch'].includes(entry.state));
+    const missingColumns = excelResolved.some((entry) => entry.reasonCode === 'EXCEL_RECENT30_COLUMN_UNRESOLVED');
+    const canAddColumns = missingColumns && candidates.length > 0 && candidates.every((candidate) => candidate.rawExportSchema === true)
+      && excelResolved.every((entry) => entry.state !== 'unavailable' || entry.reasonCode === 'EXCEL_RECENT30_COLUMN_UNRESOLVED');
+    const unresolved = excelResolved.some((entry) => !['resolved', 'missing', 'scope-mismatch'].includes(entry.state)
+      && !(canAddColumns && entry.reasonCode === 'EXCEL_RECENT30_COLUMN_UNRESOLVED'));
     const identityConflict = /충돌|식별자 없음/.test(matchBy || '');
     const equal = candidates.length > 0 && sourceAvailable
       && excelResolved.every((entry, i) => entry.state === 'resolved' && entry.metric.signature === source[i].signature);
@@ -193,6 +197,7 @@ export function createPageCrossCheck({ runId, excelProducts = [], conditions = {
       : hasConflict ? 'Excel 값 충돌 · 자동수정 보류'
       : scopeMismatch ? '상품 인식 완료 · 옵션별 판매량 존재 · Excel 옵션 행을 POIZON 상품 판매량으로 수정 대상'
       : unresolved ? '상품 인식 완료 · 원본값·비교 열 확인 필요 · 자동수정 보류'
+      : canAddColumns ? '상품 인식 완료 · 최근 30일 열 없음 · 새 비교 열 추가 대상'
       : equal ? '상품 인식 완료 · 판매량 일치 · 수정 없음'
       : missingSides ? `상품 인식 완료 · 판매량 누락 ${missingSides}개 · POIZON 값으로 수정 대상`
       : '상품 인식 완료 · 판매량 값 다름 · POIZON 값으로 수정 대상';
