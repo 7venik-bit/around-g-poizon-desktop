@@ -3,11 +3,6 @@ const money=text=>Number(String(text||'').replace(/[^0-9]/g,''));
 const articleKey=text=>String(text||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 const saleInProgress=status=>/^(?:거래 성공|발송 대기|발송 완료|판매자 발송 완료)$/.test(String(status||'').trim());
 const listArticle=row=>row.productInfo.match(/상품 번호\s*[:：]\s*([^\n]+)/)?.[1]?.replace(/-Server Region$/i,'').trim()||'';
-const purchaseArticleMatch=(row,articles)=>{
-  if(!articles?.length)return true;
-  const key=articleKey(listArticle(row));
-  return key.length>=5&&articles.some(article=>article===key||article.startsWith(key)||key.startsWith(article));
-};
 const amount=(text,label)=>{
   const escaped=label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   const found=String(text||'').match(new RegExp(`${escaped}\\s*[:：]?\\s*(?:\\(\\d+(?:\\.\\d+)?%\\)\\s*)?(?:-\\s*)?(?:₩\\s*)?([\\d,]+)\\s*(?:원)?`));
@@ -25,7 +20,7 @@ const pageState=()=>({url:location.href,text:document.body?.innerText||'',passwo
       imageUrl:image?.getAttribute('src')||image?.getAttribute('data-src')||'',
       productInfo:cells.find(cell=>/상품 번호\s*[:：]/.test(cell))||cells[2]||'',
       optionInfo:cells.find(cell=>/색상\s*[:：]|사이즈\s*[:：]|포장\s*[:：]/.test(cell))||cells[3]||'',
-      status:cells[column('주문 상태',10)]||'',quantity:cells[column('수량',12)]||'',
+      status:cells.find(cell=>/^(?:거래 성공|발송 대기|발송 완료|판매자 발송 완료)$/.test(cell))||cells[column('주문 상태',10)]||'',quantity:cells[column('수량',12)]||'',
       incomeText:cells[column('예상 총 수익',14)]||'',priceText:cells[column('구매자 결제 금액',15)]||'',
       timeline:cells[column('거래 타임라인',18)]||''};
   }),
@@ -96,9 +91,10 @@ function expandProfitDetails() {
 
 // Read the rendered seller order pages. No private API, export endpoint,
 // request interception, login retry, or access-limit bypass is used.
-export async function collectPoizonSuccessfulOrders(contents,{onProgress=()=>{},onPage=async()=>{},knownOrderNumbers=[],includeInProgress=false,candidateArticleNumbers=[]}={}) {
+export async function collectPoizonSuccessfulOrders(contents,{onProgress=()=>{},onPage=async()=>{},knownOrderNumbers=[],includeInProgress=false}={}) {
   const tabName=includeInProgress?'전체':'거래 성공';
-  const articles=[...new Set(candidateArticleNumbers.map(articleKey).filter(key=>key.length>=5))];
+  // List article numbers are advisory only. A changed table or imported workbook
+  // must not silently discard a sale before its detail can be checked.
   const initial=await until(contents,async()=>{
     const state=await evaluate(contents,pageState),problem=pageProblem(state);
     if(problem)throw Error(problem);
@@ -123,7 +119,7 @@ export async function collectPoizonSuccessfulOrders(contents,{onProgress=()=>{},
     for(const row of rows) {
       if(!/^\d{10,25}$/.test(row.orderNumber)||seen.has(row.orderNumber))throw Error('POIZON_ORDER_LIST_INCOMPLETE');
       seen.add(row.orderNumber);
-      if(!saleInProgress(row.status)||!purchaseArticleMatch(row,articles)) {onProgress({checked:seen.size,total:expected});continue;}
+      if(!saleInProgress(row.status)) {onProgress({checked:seen.size,total:expected});continue;}
       if(known.has(row.orderNumber)) {onProgress({checked:seen.size,total:expected});continue;}
       const opened=await evaluate(contents,id=>{
         const tr=[...document.querySelectorAll('tr.ant-table-row[data-row-key]')].find(n=>n.getAttribute('data-row-key')===id);

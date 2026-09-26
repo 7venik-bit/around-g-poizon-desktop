@@ -37,7 +37,7 @@ test('seller access restriction stops collection without partial results',async(
   await assert.rejects(collectPoizonSuccessfulOrders(contents),/POIZON_ACCESS_LIMITED/);
 });
 
-test('purchase-aware scan includes an in-progress shipment and skips unrelated or failed orders',async()=>{
+test('scan includes in-progress shipments and leaves purchase matching to the ledger',async()=>{
   const item=(id,article,status)=>{
     const cells=Array.from({length:23},(_,index)=>`<td>${index===1?'<img src="https://example.com/vest.png">':index===2?`상품 번호: ${article}`:index===10?status:index===12?'1':index===21?'<a>주문 내역</a>':''}</td>`).join('');
     return `<tr class="ant-table-row" data-row-key="${id}">${cells}</tr>`;
@@ -51,18 +51,21 @@ test('purchase-aware scan includes an in-progress shipment and skips unrelated o
   window.document.querySelector('tbody').addEventListener('click',event=>{
     if(event.target.tagName!=='A')return;
     opened++;
+    const orderId=event.target.closest('tr').getAttribute('data-row-key');
+    const article=orderId===id?'NV5VS03A':'OTHER-001';
+    const status=orderId===id?'판매자 발송 완료':'거래 성공';
     const drawer=window.document.createElement('div');drawer.className='ant-drawer-open';
-    drawer.setAttribute('data-text',`주문 내역\n판매자 발송 완료\n일반판매\n주문 번호: ${id}\n상품 번호: NV5VS03A\n색상: 블랙\n사이즈: KR 105\n입찰가(세금 별도) ₩62,000\n기본 수수료 (10%) -₩15,000\n예상 수익: ₩44,000\n구매자 결제: 2026/09/25 23:00:00\n주문 체결 시간: 2026/09/25 23:00:01`);
-    drawer.innerHTML='<div class="ant-drawer-title"><span class="ant-tag">판매자 발송 완료</span></div><button class="ant-drawer-close">닫기</button>';
+    drawer.setAttribute('data-text',`주문 내역\n${status}\n일반판매\n주문 번호: ${orderId}\n상품 번호: ${article}\n색상: 블랙\n사이즈: KR 105\n입찰가(세금 별도) ₩62,000\n기본 수수료 (10%) -₩15,000\n예상 수익: ₩44,000\n구매자 결제: 2026/09/25 23:00:00\n주문 체결 시간: 2026/09/25 23:00:01`);
+    drawer.innerHTML=`<div class="ant-drawer-title"><span class="ant-tag">${status}</span></div><button class="ant-drawer-close">닫기</button>`;
     window.document.body.append(drawer);drawer.querySelector('button').addEventListener('click',()=>drawer.remove());
   });
-  const result=await collectPoizonSuccessfulOrders(contents,{includeInProgress:true,candidateArticleNumbers:['NV5VS03A']});
+  const result=await collectPoizonSuccessfulOrders(contents,{includeInProgress:true});
   assert.equal(result.scanned,3);
-  assert.equal(opened,1);
-  assert.deepEqual(result.orders.map(order=>[order.orderNumber,order.status,order.salePrice]),[[id,'판매자 발송 완료',62000]]);
+  assert.equal(opened,2);
+  assert.deepEqual(result.orders.map(order=>[order.orderNumber,order.status,order.articleNumber,order.salePrice]),[[id,'판매자 발송 완료','NV5VS03A',62000],['21315206481443300','거래 성공','OTHER-001',62000]]);
 });
 
-test('purchase-aware filter locates the labeled article when the seller table shifts columns',async()=>{
+test('collector locates the labeled article when the seller table shifts columns',async()=>{
   const id='21315206481443299';
   const headers=['선택','상품 정보','옵션','판매자 상품 정보','신속 발송 약속 주문 여부','처리 기한','주문 번호','즉시 주문 체결건 여부','관련 주문 번호','주문 상태','적용 서비스','수량','판매 경로','예상 총 수익','구매자 결제 금액','POIZON 주소','배송 정보','거래 타임라인','주문 취소 사유','반송 운송장 번호','관리'];
   const cells=Array.from({length:headers.length},(_,index)=>`<td>${index===1?'<img src="https://example.com/vest.png">상품 번호: NV5VS03A':index===2?'색상: 블랙\n사이즈: KR 105':index===9?'판매자 발송 완료':index===11?'1':index===13?'₩44,000':index===14?'₩62,000':index===17?'주문 체결 시간: 2026/09/25 23:00:01 구매자 결제: 2026/09/25 23:00:00':index===20?'<a>주문 내역</a>':''}</td>`).join('');
@@ -73,7 +76,7 @@ test('purchase-aware filter locates the labeled article when the seller table sh
     drawer.innerHTML='<div class="ant-drawer-title"><span class="ant-tag">판매자 발송 완료</span></div><button class="ant-drawer-close">닫기</button>';
     window.document.body.append(drawer);drawer.querySelector('button').addEventListener('click',()=>drawer.remove());
   });
-  const result=await collectPoizonSuccessfulOrders(contents,{includeInProgress:true,candidateArticleNumbers:['NV5VS03A']});
+  const result=await collectPoizonSuccessfulOrders(contents,{includeInProgress:true});
   assert.equal(result.orders.length,1);
   assert.equal(result.orders[0].articleNumber,'NV5VS03A');
 });
