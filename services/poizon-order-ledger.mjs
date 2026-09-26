@@ -52,9 +52,15 @@ function write(sheet,row,column,next,edits,extras={}) {
 }
 function validOrder(order) {
   return order?.status==='거래 성공'&&order?.route==='일반판매'&&/^\d{10,25}$/.test(String(order.orderNumber||''))
-    &&norm(order.articleNumber).length>=5&&/^\d{4}-\d\d-\d\d$/.test(order.saleDate||'')
+    &&norm(order.articleNumber).length>=5&&Boolean(order.size||order.packaging)&&Boolean(order.imageUrl)
+    &&/^\d{4}-\d\d-\d\d$/.test(order.saleDate||'')
+    &&/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(order.buyerPaidAt||'')
+    &&/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(order.orderClosedAt||'')
+    &&order.orderClosedAt.slice(0,10)===order.saleDate
     &&Number.isSafeInteger(order.salePrice)&&order.salePrice>0
+    &&Number.isSafeInteger(order.basicFee)&&order.basicFee>=0&&order.basicFee<=order.salePrice
     &&Number.isSafeInteger(order.income)&&order.income>=0&&order.income<=order.salePrice
+    &&order.income<=order.salePrice-order.basicFee
     &&Number.isInteger(order.quantity)&&order.quantity===1;
 }
 function matchingRows(sheet,order) {
@@ -82,8 +88,10 @@ function sameSale(sheet,row,order) {
 }
 function orderNote(order) {
   return JSON.stringify({schema:'around-g.poizon.sale.v1',orderNumber:order.orderNumber,
-    salePrice:order.salePrice,income:order.income,fee:order.salePrice-order.income,
-    saleDate:order.saleDate,articleNumber:order.articleNumber,size:order.size||'',source:'POIZON 판매자센터 · 주문 내역'});
+    salePrice:order.salePrice,income:order.income,fee:order.basicFee,
+    saleDate:order.saleDate,buyerPaidAt:order.buyerPaidAt,orderClosedAt:order.orderClosedAt,
+    articleNumber:order.articleNumber,size:order.size||'',packaging:order.packaging||'',color:order.color||'',imageUrl:order.imageUrl,
+    source:'POIZON 판매자센터 · 주문 내역'});
 }
 function existingNote(sheet,row) {
   try {const note=JSON.parse(sheet.notes?.[row-1]?.[9]||'');return note.schema==='around-g.poizon.sale.v1'?note.orderNumber:'';}catch{return '';}
@@ -135,13 +143,13 @@ export function reconcilePoizonOrders(book,orders) {
     if(!existingSales.length&&[1,3,4,10,11,14].some(column=>!blank(raw(sales,salesRow,column)))){review.push({orderNumber:id,reason:'판매완료 입력 위치가 사용 중입니다'});continue;}
     if([[purchase,row],[sales,salesRow]].some(([sheet,targetRow])=>{
       const fee=raw(sheet,targetRow,16);
-      return fee&&!blank(fee)&&fee.type==='number'&&money(fee)!==order.salePrice-order.income;
+      return fee&&!blank(fee)&&fee.type==='number'&&money(fee)!==order.basicFee;
     })){review.push({orderNumber:id,reason:'기존 수수료와 주문 상세가 다릅니다'});continue;}
     if([[purchase,row],[sales,salesRow]].some(([sheet,targetRow])=>{
       const prior=existingNote(sheet,targetRow),current=sheet.notes?.[targetRow-1]?.[9]||'';
       return prior&&prior!==id||!prior&&current&&current!==orderNote(order);
     })){review.push({orderNumber:id,reason:'판매가 셀에 다른 주문 메모가 있습니다'});continue;}
-    const fee=order.salePrice-order.income,source=structuredClone(purchase.rawValues[row-1]||[]),sourceNotes=structuredClone(purchase.notes?.[row-1]||[]);
+    const fee=order.basicFee,source=structuredClone(purchase.rawValues[row-1]||[]),sourceNotes=structuredClone(purchase.notes?.[row-1]||[]);
     const sourceImages=structuredClone((purchase.images||[]).filter(image=>image.row===row));
     for(const sheet of [purchase,...(existingSales.length?[]:[sales])]) {
       const targetRow=sheet===purchase?row:salesRow;
@@ -174,8 +182,7 @@ export function reconcilePoizonOrders(book,orders) {
       if(blank(raw(sales,salesRow,16))||raw(sales,salesRow,16)?.type==='formula')write(sales,salesRow,16,number(fee),edits);
     }
     for(const [sheet,targetRow] of [[purchase,row],[sales,salesRow]]) {
-      const prior=existingNote(sheet,targetRow);
-      if(!prior) {
+      if(sheet.notes?.[targetRow-1]?.[9]!==orderNote(order)) {
         ensure(sheet,targetRow,10);sheet.notes[targetRow-1][9]=orderNote(order);
         edits.push({sheetId:sheet.id,row:targetRow,column:10});
       }
@@ -196,13 +203,15 @@ export function verifyPoizonRecordedSales(book,orders,recorded) {
   if(!purchase||!sales)throw Error('POIZON_LEDGER_SAVE_VERIFY_FAILED');
   for(const entry of recorded) {
     const order=byNumber.get(entry.orderNumber),link=book.local?.poizonOrders?.[entry.orderNumber];
-    const fee=order?.salePrice-order?.income;
+    const fee=order?.basicFee;
     if(!order||!link||link.purchaseRow!==entry.purchaseRow||link.salesRow!==entry.salesRow
       ||!sameSale(purchase,entry.purchaseRow,order)||!sameSale(sales,entry.salesRow,order)
       ||money(raw(purchase,entry.purchaseRow,16))!==fee||money(raw(sales,entry.salesRow,16))!==fee
       ||value(sales,entry.salesRow,12)!=='일판완료'
       ||existingNote(purchase,entry.purchaseRow)!==entry.orderNumber
-      ||existingNote(sales,entry.salesRow)!==entry.orderNumber)
+      ||existingNote(sales,entry.salesRow)!==entry.orderNumber
+      ||purchase.notes?.[entry.purchaseRow-1]?.[9]!==orderNote(order)
+      ||sales.notes?.[entry.salesRow-1]?.[9]!==orderNote(order))
       throw Error(`POIZON_LEDGER_SAVE_VERIFY_FAILED:${entry.orderNumber}`);
   }
   return recorded.length;
