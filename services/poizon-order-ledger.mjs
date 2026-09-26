@@ -34,6 +34,7 @@ const money=cell=>Number(String(cell?.value??'').replace(/[₩,\s]/g,''));
 const empty=()=>({type:'text',value:''});
 const number=n=>({type:'number',value:String(n)});
 const date=s=>({type:'date',value:new Date(`${s}T00:00:00+09:00`).toISOString()});
+const saleFormats={17:'"₩"#,##0',18:'"₩"#,##0',19:'"₩"#,##0.00',20:'"₩"#,##0.00',21:'0.00%',22:'0.00%'};
 function ensure(sheet,row,column) {
   for(const field of fields) {
     sheet[field]||=[];
@@ -193,9 +194,17 @@ export function reconcilePoizonOrders(book,orders) {
       (book.local.formulaOverrides||={})[sheet.id]||={};
       book.local.formulaOverrides[sheet.id][`${targetRow}:16`]=true;
       book.local.formulaOverrides[sheet.id][`${targetRow}:17`]=true;
+      for(const [columnText,format] of Object.entries(saleFormats)) {
+        const column=Number(columnText),current=sheet.numberFormats?.[targetRow-1]?.[column-1];
+        if(current&&current!=='General')continue;
+        ensure(sheet,targetRow,column);sheet.numberFormats[targetRow-1][column-1]=format;
+        const cell=raw(sheet,targetRow,column);
+        if(cell?.type!=='formula')sheet.displayValues[targetRow-1][column-1]=formatLedgerValue(ledgerScalar(cell),format);
+        edits.push({sheetId:sheet.id,row:targetRow,column,formatOnly:true});
+      }
     }
     links[id]={purchaseRow:row,salesRow,salePrice:order.salePrice,saleDate:order.saleDate,fee,freight};
-    usedPurchase.add(row);if(!linked||edits.some(edit=>edit.row===row&&edit.sheetId===purchase.id||edit.row===salesRow&&edit.sheetId===sales.id))recorded.push({orderNumber:id,purchaseRow:row,salesRow});
+    usedPurchase.add(row);if(!linked||edits.some(edit=>!edit.formatOnly&&(edit.row===row&&edit.sheetId===purchase.id||edit.row===salesRow&&edit.sheetId===sales.id)))recorded.push({orderNumber:id,purchaseRow:row,salesRow});
   }
   book.local.poizonOrders=links;
   return {edits,recorded,review};
