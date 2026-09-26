@@ -86,3 +86,21 @@ test('photo cells render literal IMAGE formulas and legacy links without changin
   cell.querySelector('img').dispatchEvent(new window.Event('error'));assert.equal(cell.textContent,'사진 확인 필요');
   assert.equal(calls.length,0);assert.deepEqual(book,before);
 });
+
+test('purchase and sales ledgers show whole-won refund and margin and two-decimal percentages',async t=>{
+  const book=fixture.ledgerLayoutBook(30);
+  const sales=structuredClone(book.sheets[0]);sales.id=3;sales.name='5-판매완료';book.sheets[1]=sales;
+  for(const sheet of [book.sheets[0],sales]) {
+    sheet.calculatedValues=sheet.displayValues.map(row=>row.map(()=>null));
+    for(const [column,value,display] of [[19,4953.36,'₩4,953.36'],[20,-14266.36,'-₩14,266.36'],[21,-0.14210516307276,'-0.14210516307276'],[22,-0.150172248803828,'-0.150172248803828']]) {
+      sheet.rawValues[2][column-1]={type:'formula',value:'=1'};
+      sheet.calculatedValues[2][column-1]={type:'number',value};
+      sheet.displayValues[2][column-1]=display;
+    }
+  }
+  const {d}=await render(t,book);
+  const values=()=>[...d.querySelectorAll('#workbook-table tbody tr')[2].querySelectorAll('td')].slice(18,22).map(cell=>cell.textContent);
+  assert.deepEqual(values(),['₩4,953','-₩14,266','-14.21%','-15.02%']);
+  d.querySelectorAll('#workbook-tabs button')[1].click();
+  assert.deepEqual(values(),['₩4,953','-₩14,266','-14.21%','-15.02%']);
+});

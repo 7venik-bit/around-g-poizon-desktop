@@ -72,7 +72,7 @@
           // Reserve readable space for the actual original values, including
           // bold article codes, currency and Korean brand/status names.
           const longest=rows.reduce((max,row,r)=>r===header?max:Math.max(max,
-            [...displayCell(sheet,r,c,type[1])].reduce((size,char)=>size+(/[^\x00-\x7f]/.test(char)?12:8),0)),0);
+            [...displayCell(sheet,r,c,type[1],header)].reduce((size,char)=>size+(/[^\x00-\x7f]/.test(char)?12:8),0)),0);
           weight=Math.max(weight,Math.min(240,(longest+10)/0.8));
         }
         return {kind:type[1],weight};
@@ -117,12 +117,17 @@
     $('workbook-category-panel').hidden=false;
   }
   const won=new Intl.NumberFormat('ko-KR',{style:'currency',currency:'KRW',maximumFractionDigits:2});
-  function displayCell(sheet,r,c,kind) {
+  const wholeWon=new Intl.NumberFormat('ko-KR',{style:'currency',currency:'KRW',maximumFractionDigits:0});
+  const percent=new Intl.NumberFormat('ko-KR',{style:'percent',minimumFractionDigits:2,maximumFractionDigits:2});
+  function displayCell(sheet,r,c,kind,headerRow=1) {
     const display=sheet.displayValues[r]?.[c] || '',raw=sheet.rawValues?.[r]?.[c],calculated=sheet.calculatedValues?.[r]?.[c];
-    if(kind!=='money')return display;
+    if(kind!=='money'&&kind!=='percent')return display;
     const numericText=raw?.type==='text'&&/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(raw.value)&&raw.value.replace(/[-.]/g,'').replace(/^0+/,'').length<=15;
     const value=raw?.type==='number'||numericText?Number(raw.value):calculated?.type==='number'?calculated.value:undefined;
-    return Number.isFinite(value)?won.format(value):display;
+    if(!Number.isFinite(value))return display;
+    if(kind==='percent')return percent.format(value);
+    const heading=String(sheet.displayValues[headerRow]?.[c]||'').replace(/\s/g,'');
+    return (heading==='부가세환급'||heading==='일반마진'?wholeWon:won).format(value);
   }
   function render() {
     const sheet = visible().find(s => s.id === active);
@@ -155,7 +160,7 @@
       if(recordedLocation?.sheetId===sheet.id && recordedLocation.rows.includes(r+1))tr.classList.add('workbook-recorded-row');
       for(let c=0;c<width;c++) {
         const cell=document.createElement('td'),content=document.createElement('span');
-        content.className='workbook-cell-text';content.textContent=displayCell(sheet,r,c,layout.columns[c].kind);cell.append(content);
+        content.className='workbook-cell-text';content.textContent=displayCell(sheet,r,c,layout.columns[c].kind,layout.header);cell.append(content);
         cell.dataset.columnKind=layout.columns[c].kind;
         cell.dataset.row=String(r+1);cell.dataset.column=String(c+1);
         const embedded=sheet.images?.find(image=>image.row===r+1&&image.column===c+1);
