@@ -47,7 +47,7 @@ test('verified POIZON sale fills purchase and sales tabs once with actual fee an
   assert.equal(sales.rawValues.filter(row=>row[2]?.value==='SR123UPS11').length,1);
 });
 
-test('a linked sale repairs General money and percent formats without rewriting a custom format or counting another sale',()=>{
+test('a linked sale normalizes money and percent formats without counting another sale',()=>{
   const workbook=book(),first=reconcilePoizonOrders(workbook,[order()]),saleRow=first.recorded[0].salesRow;
   for(const sheet of workbook.sheets) {
     const row=sheet===workbook.sheets[0]?5:saleRow;
@@ -65,7 +65,7 @@ test('a linked sale repairs General money and percent formats without rewriting 
     assert.equal(sheet.numberFormats[row-1][16],'"₩"#,##0');
     assert.equal(sheet.numberFormats[row-1][17],'"₩"#,##0');
     assert.equal(sheet.numberFormats[row-1][20],'0.00%');
-    assert.equal(sheet.numberFormats[row-1][19],'0.000');
+    assert.equal(sheet.numberFormats[row-1][19],'"₩"#,##0');
   }
 });
 

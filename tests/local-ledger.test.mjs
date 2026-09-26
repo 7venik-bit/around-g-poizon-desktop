@@ -82,13 +82,29 @@ test('successful seller order fills freight and recalculates margins in both loc
  const stale=await readLedgerWorkbook(options.path,options.decrypt);
  for(const [sheet,row] of [[stale.sheets[0],5],[stale.sheets[3],record.salesRow]])
    for(const column of [17,18,19,20,21,22])sheet.numberFormats[row-1][column-1]='General';
+ for(const [sheet,row] of [[stale.sheets[0],5],[stale.sheets[3],record.salesRow]])
+   for(const column of [19,20])sheet.numberFormats[row-1][column-1]='"₩"#,##0.00';
+ for(const sheet of [stale.sheets[0],stale.sheets[3]]) {
+   sheet.rawValues[3][2]={type:'text',value:'MANUAL-ROW'};
+   for(const [column,value] of [[19,'1234.56'],[20,'6789.44'],[21,'0.123456'],[22,'0.234567']])
+     sheet.rawValues[3][column-1]={type:'number',value};
+ }
  stale.local.poizonOrders={}; // Old snapshots may retain the order note but lose the row index.
  await saveLedgerWorkbook(options.path,stale,options.encrypt);
  const repaired=await createLocalLedger(options).load();
  for(const [sheet,row] of [[repaired.sheets[0],5],[repaired.sheets[3],record.salesRow]]) {
    assert.equal(sheet.numberFormats[row-1][20],'0.00%');
+   assert.equal(sheet.numberFormats[row-1][18],'"₩"#,##0');
+   assert.equal(sheet.numberFormats[row-1][19],'"₩"#,##0');
    assert.match(sheet.displayValues[row-1][20],/%$/);
    assert.match(sheet.displayValues[row-1][17],/₩/);
+   assert.doesNotMatch(sheet.displayValues[row-1][18],/\.\d/);
+ }
+ for(const sheet of [repaired.sheets[0],repaired.sheets[3]]) {
+   assert.equal(sheet.displayValues[3][18],'₩1,235');
+   assert.equal(sheet.displayValues[3][19],'₩6,789');
+   assert.equal(sheet.displayValues[3][20],'12.35%');
+   assert.equal(sheet.displayValues[3][21],'23.46%');
  }
  assert.ok(repaired.local.poizonFormatRepair);
  const backup=await readLedgerWorkbook(repaired.local.poizonFormatRepair.backupPath,options.decrypt);
