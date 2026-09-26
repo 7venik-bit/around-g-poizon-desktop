@@ -30,9 +30,13 @@ test('verified POIZON sale fills purchase and sales tabs once with actual fee an
   const purchase=workbook.sheets[0],sales=workbook.sheets[1],saleRow=first.recorded[0].salesRow;
   assert.equal(purchase.rawValues[4][9].value,'75000');assert.equal(purchase.rawValues[4][15].value,'7500');
   assert.equal(purchase.rawValues[4][16].value,'3000');
+  assert.equal(purchase.displayValues[4][16],'₩3,000');
+  assert.equal(purchase.numberFormats[4][20],'0.00%');
   assert.equal(sales.rawValues[saleRow-1][11].value,'일판완료');
   assert.equal(sales.rawValues[saleRow-1][9].value,'75000');assert.equal(sales.rawValues[saleRow-1][15].value,'7500');
   assert.equal(sales.rawValues[saleRow-1][16].value,'3000');
+  assert.equal(sales.displayValues[saleRow-1][16],'₩3,000');
+  assert.equal(sales.numberFormats[saleRow-1][21],'0.00%');
   assert.match(purchase.notes[4][9],/"buyerPaidAt":"2026-09-16 18:01:00"/);
   assert.match(sales.notes[saleRow-1][9],/"imageUrl":"https:\/\/example.com\/shirt.png"/);
   assert.equal(sales.formulas[saleRow-1][17],`=IF(J${saleRow}="","",J${saleRow}-N${saleRow}-P${saleRow}-Q${saleRow})`);
@@ -41,6 +45,28 @@ test('verified POIZON sale fills purchase and sales tabs once with actual fee an
   const second=reconcilePoizonOrders(workbook,[order()]);
   assert.equal(second.edits.length,0);assert.equal(second.recorded.length,0);
   assert.equal(sales.rawValues.filter(row=>row[2]?.value==='SR123UPS11').length,1);
+});
+
+test('a linked sale repairs General money and percent formats without rewriting a custom format or counting another sale',()=>{
+  const workbook=book(),first=reconcilePoizonOrders(workbook,[order()]),saleRow=first.recorded[0].salesRow;
+  for(const sheet of workbook.sheets) {
+    const row=sheet===workbook.sheets[0]?5:saleRow;
+    sheet.numberFormats[row-1][16]='General';
+    sheet.numberFormats[row-1][17]='General';
+    sheet.numberFormats[row-1][20]='General';
+    sheet.numberFormats[row-1][19]='0.000';
+  }
+  const again=reconcilePoizonOrders(workbook,[order()]);
+  assert.deepEqual(again.review,[]);
+  assert.equal(again.recorded.length,0);
+  assert.ok(again.edits.some(edit=>edit.formatOnly));
+  for(const sheet of workbook.sheets) {
+    const row=sheet===workbook.sheets[0]?5:saleRow;
+    assert.equal(sheet.numberFormats[row-1][16],'"₩"#,##0');
+    assert.equal(sheet.numberFormats[row-1][17],'"₩"#,##0');
+    assert.equal(sheet.numberFormats[row-1][20],'0.00%');
+    assert.equal(sheet.numberFormats[row-1][19],'0.000');
+  }
 });
 
 test('readback verification rejects a changed saved sale',()=>{
