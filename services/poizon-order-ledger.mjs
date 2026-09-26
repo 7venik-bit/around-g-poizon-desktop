@@ -51,9 +51,12 @@ export function repairPoizonSaleFormats(book) {
   const purchase=book.sheets.find(s=>s.name==='1-구매완료'),sales=book.sheets.find(s=>s.name==='5-판매완료');
   if(!purchase||!sales)return [];
   const edits=[];
-  for(const [id,link] of Object.entries(book.local?.poizonOrders||{}))
-    for(const [sheet,row] of [[purchase,link?.purchaseRow],[sales,link?.salesRow]])
-      if(Number.isInteger(row)&&row>=3&&existingNote(sheet,row)===id)applySaleFormats(sheet,row,edits);
+  // The signed order note is persisted with the worksheet, while older local
+  // snapshots can lack the separate order-to-row index. Repair only rows with
+  // our own POIZON sale evidence so unrelated ledger formatting stays intact.
+  for(const sheet of [purchase,sales])
+    for(let row=3;row<=(sheet.notes?.length||0);row++)
+      if(/^\d{10,25}$/.test(String(existingNote(sheet,row))))applySaleFormats(sheet,row,edits);
   return edits;
 }
 function ensure(sheet,row,column) {
