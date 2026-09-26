@@ -34,11 +34,12 @@ const money=cell=>Number(String(cell?.value??'').replace(/[₩,\s]/g,''));
 const empty=()=>({type:'text',value:''});
 const number=n=>({type:'number',value:String(n)});
 const date=s=>({type:'date',value:new Date(`${s}T00:00:00+09:00`).toISOString()});
-const saleFormats={17:'"₩"#,##0',18:'"₩"#,##0',19:'"₩"#,##0.00',20:'"₩"#,##0.00',21:'0.00%',22:'0.00%'};
-function applySaleFormats(sheet,row,edits) {
-  for(const [columnText,format] of Object.entries(saleFormats)) {
+const marginFormats={19:'"₩"#,##0',20:'"₩"#,##0',21:'0.00%',22:'0.00%'};
+const saleFormats={17:'"₩"#,##0',18:'"₩"#,##0',...marginFormats};
+function applyFormats(sheet,row,formats,edits,{force=false}={}) {
+  for(const [columnText,format] of Object.entries(formats)) {
     const column=Number(columnText),current=sheet.numberFormats?.[row-1]?.[column-1];
-    if(current&&current!=='General')continue;
+    if(current===format&&!force)continue;
     ensure(sheet,row,column);sheet.numberFormats[row-1][column-1]=format;
     const cell=raw(sheet,row,column);
     if(cell?.type!=='formula')sheet.displayValues[row-1][column-1]=formatLedgerValue(ledgerScalar(cell),format);
@@ -51,12 +52,14 @@ export function repairPoizonSaleFormats(book) {
   const purchase=book.sheets.find(s=>s.name==='1-구매완료'),sales=book.sheets.find(s=>s.name==='5-판매완료');
   if(!purchase||!sales)return [];
   const edits=[];
-  // The signed order note is persisted with the worksheet, while older local
-  // snapshots can lack the separate order-to-row index. Repair only rows with
-  // our own POIZON sale evidence so unrelated ledger formatting stays intact.
-  for(const sheet of [purchase,sales])
-    for(let row=3;row<=(sheet.notes?.length||0);row++)
-      if(/^\d{10,25}$/.test(String(existingNote(sheet,row))))applySaleFormats(sheet,row,edits);
+  for(const sheet of [purchase,sales])for(let row=3;row<=sheet.rowCount;row++) {
+    const poizonSale=/^\d{10,25}$/.test(String(existingNote(sheet,row)));
+    // Product rows in both tabs need the same presentation, including old
+    // rows that were entered manually and have no POIZON order metadata.
+    if(!poizonSale&&blank(raw(sheet,row,3)))continue;
+    applyFormats(sheet,row,marginFormats,edits);
+    if(poizonSale)applyFormats(sheet,row,{17:saleFormats[17],18:saleFormats[18]},edits);
+  }
   return edits;
 }
 function ensure(sheet,row,column) {
@@ -218,7 +221,9 @@ export function reconcilePoizonOrders(book,orders) {
       (book.local.formulaOverrides||={})[sheet.id]||={};
       book.local.formulaOverrides[sheet.id][`${targetRow}:16`]=true;
       book.local.formulaOverrides[sheet.id][`${targetRow}:17`]=true;
-      applySaleFormats(sheet,targetRow,edits);
+      // A newly copied sales row may already have the right in-memory format
+      // while its worksheet XML still needs the corresponding style patch.
+      applyFormats(sheet,targetRow,saleFormats,edits,{force:sheet===sales&&!existingSales.length});
     }
     links[id]={purchaseRow:row,salesRow,salePrice:order.salePrice,saleDate:order.saleDate,fee,freight};
     usedPurchase.add(row);if(!linked||edits.some(edit=>!edit.formatOnly&&(edit.row===row&&edit.sheetId===purchase.id||edit.row===salesRow&&edit.sheetId===sales.id)))recorded.push({orderNumber:id,purchaseRow:row,salesRow});
