@@ -62,6 +62,22 @@ test('purchase-aware scan includes an in-progress shipment and skips unrelated o
   assert.deepEqual(result.orders.map(order=>[order.orderNumber,order.status,order.salePrice]),[[id,'판매자 발송 완료',62000]]);
 });
 
+test('purchase-aware filter locates the labeled article when the seller table shifts columns',async()=>{
+  const id='21315206481443299';
+  const headers=['선택','상품 정보','옵션','판매자 상품 정보','신속 발송 약속 주문 여부','처리 기한','주문 번호','즉시 주문 체결건 여부','관련 주문 번호','주문 상태','적용 서비스','수량','판매 경로','예상 총 수익','구매자 결제 금액','POIZON 주소','배송 정보','거래 타임라인','주문 취소 사유','반송 운송장 번호','관리'];
+  const cells=Array.from({length:headers.length},(_,index)=>`<td>${index===1?'<img src="https://example.com/vest.png">상품 번호: NV5VS03A':index===2?'색상: 블랙\n사이즈: KR 105':index===9?'판매자 발송 완료':index===11?'1':index===13?'₩44,000':index===14?'₩62,000':index===17?'주문 체결 시간: 2026/09/25 23:00:01 구매자 결제: 2026/09/25 23:00:00':index===20?'<a>주문 내역</a>':''}</td>`).join('');
+  const {window,contents}=browser(`<div class="global-text-label-wrap global-text-label-wrap-selected">전체 (1)</div><table><thead><tr>${headers.map(header=>`<th>${header}</th>`).join('')}</tr></thead><tbody><tr class="ant-table-row" data-row-key="${id}">${cells}</tr></tbody></table><ul class="ant-pagination"><li class="ant-pagination-item-active">1</li><li class="ant-pagination-next ant-pagination-disabled"></li></ul>`);
+  window.document.querySelector('a').addEventListener('click',()=>{
+    const drawer=window.document.createElement('div');drawer.className='ant-drawer-open';
+    drawer.setAttribute('data-text',`주문 내역\n판매자 발송 완료\n일반판매\n주문 번호: ${id}\n상품 번호: NV5VS03A\n색상: 블랙\n사이즈: KR 105\n입찰가(세금 별도) ₩62,000\n기본 수수료 (10%) -₩15,000\n예상 수익: ₩44,000\n구매자 결제: 2026/09/25 23:00:00\n주문 체결 시간: 2026/09/25 23:00:01`);
+    drawer.innerHTML='<div class="ant-drawer-title"><span class="ant-tag">판매자 발송 완료</span></div><button class="ant-drawer-close">닫기</button>';
+    window.document.body.append(drawer);drawer.querySelector('button').addEventListener('click',()=>drawer.remove());
+  });
+  const result=await collectPoizonSuccessfulOrders(contents,{includeInProgress:true,candidateArticleNumbers:['NV5VS03A']});
+  assert.equal(result.orders.length,1);
+  assert.equal(result.orders[0].articleNumber,'NV5VS03A');
+});
+
 test('seller list and opened detail must agree before a sale is recorded',async()=>{
   const cells=Array.from({length:23},(_,index)=>`<td>${index===2?'상품 번호: OTHER-001':index===10?'거래 성공':index===12?'1':index===14?'₩60,000':index===15?'₩75,000':index===18?'주문 체결 시간: 2026/09/16 18:06:50 구매자 결제: 2026/09/16 18:06:55':index===21?'<a>주문 내역</a>':''}</td>`).join('');
   const {window,contents}=browser(`<div class="global-text-label-wrap global-text-label-wrap-selected">거래 성공 (1)</div><table><tr class="ant-table-row" data-row-key="21315202429263299">${cells}</tr></table><ul class="ant-pagination"><li class="ant-pagination-item-active">1</li><li class="ant-pagination-next ant-pagination-disabled"></li></ul>`);

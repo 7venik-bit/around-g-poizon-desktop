@@ -18,10 +18,16 @@ const pageState=()=>({url:location.href,text:document.body?.innerText||'',passwo
   selectedTab:[...document.querySelectorAll('[class*="global-text-label-wrap-selected"]')].map(node=>node.innerText.trim()).find(Boolean)||'',
   rows:[...document.querySelectorAll('tr.ant-table-row[data-row-key]')].map(node=>{
     const cells=[...node.querySelectorAll(':scope > td')].map(cell=>cell.innerText.trim());
+    const headers=[...node.closest('table')?.querySelectorAll('thead th')||[]].map(cell=>cell.innerText.trim().replace(/\s+/g,' '));
+    const column=(label,fallback)=>{const index=headers.findIndex(header=>header.includes(label));return index<0?fallback:index;};
     const image=node.querySelector('img');
     return {orderNumber:node.getAttribute('data-row-key'),cells,
       imageUrl:image?.getAttribute('src')||image?.getAttribute('data-src')||'',
-      productInfo:cells[2]||'',optionInfo:cells[3]||'',timeline:cells[18]||''};
+      productInfo:cells.find(cell=>/상품 번호\s*[:：]/.test(cell))||cells[2]||'',
+      optionInfo:cells.find(cell=>/색상\s*[:：]|사이즈\s*[:：]|포장\s*[:：]/.test(cell))||cells[3]||'',
+      status:cells[column('주문 상태',10)]||'',quantity:cells[column('수량',12)]||'',
+      incomeText:cells[column('예상 총 수익',14)]||'',priceText:cells[column('구매자 결제 금액',15)]||'',
+      timeline:cells[column('거래 타임라인',18)]||''};
   }),
   nextDisabled:document.querySelector('.ant-pagination-next')?.classList.contains('ant-pagination-disabled')??true,
   currentPage:document.querySelector('.ant-pagination-item-active')?.innerText.trim()||''});
@@ -63,7 +69,7 @@ function parseDetail(row,detail) {
   const color=text.match(/색상\s*[:：]\s*([^\n]+)/)?.[1]?.trim()||row.optionInfo.match(/색상\s*[:：]\s*([^\n]+)/)?.[1]?.trim()||'';
   const imageUrl=detail.imageUrl||row.imageUrl;
   const route=/\n일반판매\n/.test(text)?'일반판매':'';
-  const quantity=Number(row.cells[12]);
+  const quantity=Number(row.quantity);
   if(price==null||income==null||basicFee==null||!closed||!paid||!articleNumber||(!size&&!packaging)||!imageUrl||!saleInProgress(detail.status)||route!=='일반판매'||quantity!==1)
     throw Error(`POIZON_ORDER_DETAIL_INCOMPLETE:${row.orderNumber}`);
   const result={orderNumber:row.orderNumber,status:detail.status,route,quantity,
@@ -71,8 +77,8 @@ function parseDetail(row,detail) {
     buyerPaidAt:stamp(paid),orderClosedAt:stamp(closed),saleDate:stamp(closed).slice(0,10),
     salePrice:price,basicFee,income};
   if(listedArticle&&articleKey(listedArticle)!==articleKey(articleNumber)
-    ||row.cells[15]&&money(row.cells[15])!==price
-    ||row.cells[14]&&money(row.cells[14])!==income)
+    ||row.priceText&&money(row.priceText)!==price
+    ||row.incomeText&&money(row.incomeText)!==income)
     throw Error(`POIZON_ORDER_LIST_DETAIL_MISMATCH:${row.orderNumber}`);
   if(!Number.isSafeInteger(price)||price<=0||!Number.isSafeInteger(basicFee)||basicFee<0||basicFee>price
     ||!Number.isSafeInteger(income)||income<0||income>price-basicFee)
@@ -110,14 +116,14 @@ export async function collectPoizonSuccessfulOrders(contents,{onProgress=()=>{},
       const current=await evaluate(contents,pageState),problem=pageProblem(current);
       if(problem)throw Error(problem);
       return current.selectedTab.startsWith(tabName)&&current.rows.length&&current.currentPage===String(page+1)
-        &&current.rows.every(row=>(includeInProgress||row.cells[10]==='거래 성공')&&!seen.has(row.orderNumber))?current:null;
+        &&current.rows.every(row=>(includeInProgress||row.status==='거래 성공')&&!seen.has(row.orderNumber))?current:null;
     });
     const rows=state.rows;
     const pageOrders=[];
     for(const row of rows) {
       if(!/^\d{10,25}$/.test(row.orderNumber)||seen.has(row.orderNumber))throw Error('POIZON_ORDER_LIST_INCOMPLETE');
       seen.add(row.orderNumber);
-      if(!saleInProgress(row.cells[10])||!purchaseArticleMatch(row,articles)) {onProgress({checked:seen.size,total:expected});continue;}
+      if(!saleInProgress(row.status)||!purchaseArticleMatch(row,articles)) {onProgress({checked:seen.size,total:expected});continue;}
       if(known.has(row.orderNumber)) {onProgress({checked:seen.size,total:expected});continue;}
       const opened=await evaluate(contents,id=>{
         const tr=[...document.querySelectorAll('tr.ant-table-row[data-row-key]')].find(n=>n.getAttribute('data-row-key')===id);
