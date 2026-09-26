@@ -37,6 +37,25 @@ test('seller access restriction stops collection without partial results',async(
   await assert.rejects(collectPoizonSuccessfulOrders(contents),/POIZON_ACCESS_LIMITED/);
 });
 
+test('a visible basic fee with hidden freight expands inside the isolated seller page',async()=>{
+  const id='21315202429263299';
+  const cells=Array.from({length:23},(_,index)=>`<td>${index===1?'<img src="https://example.com/shoe.png">':index===2?'상품 번호: SR323LSN75':index===10?'거래 성공':index===12?'1':index===21?'<a>주문 내역</a>':''}</td>`).join('');
+  const {window,contents}=browser(`<div class="global-text-label-wrap global-text-label-wrap-selected">거래 성공 (1)</div><table><tr class="ant-table-row" data-row-key="${id}">${cells}</tr></table><ul class="ant-pagination"><li class="ant-pagination-item-active">1</li><li class="ant-pagination-next ant-pagination-disabled"></li></ul>`);
+  let expanded=0;
+  window.document.querySelector('a').addEventListener('click',()=>{
+    const drawer=window.document.createElement('div');drawer.className='ant-drawer-open';
+    drawer.setAttribute('data-text',`주문 내역\n거래 성공\n일반판매\n주문 번호: ${id}\n상품 번호: SR323LSN75\n색상: 화이트-WHT0\n사이즈: EU 40.5\n입찰가(세금 별도) ₩95,000\n기본 수수료 (10%) -₩15,000\n예상 수익: ₩77,000\n구매자 결제: 2026/09/19 12:00:00\n주문 체결 시간: 2026/09/26 12:00:00`);
+    drawer.innerHTML='<div class="ant-drawer-title"><span class="ant-tag">거래 성공</span></div><button class="ant-drawer-close">닫기</button>';
+    const button=window.document.createElement('button');button.textContent='예상 수익 내역';
+    button.addEventListener('click',()=>{expanded++;drawer.setAttribute('data-text',`${drawer.getAttribute('data-text')}\n운임 -₩3,000`);});
+    drawer.append(button);window.document.body.append(drawer);drawer.querySelector('.ant-drawer-close').addEventListener('click',()=>drawer.remove());
+  });
+  const result=await collectPoizonSuccessfulOrders(contents);
+  assert.equal(expanded,1);
+  assert.equal(result.orders[0].freightFee,3000);
+  assert.equal(result.orders[0].income,77000);
+});
+
 test('scan includes in-progress shipments and leaves purchase matching to the ledger',async()=>{
   const item=(id,article,status)=>{
     const cells=Array.from({length:23},(_,index)=>`<td>${index===1?'<img src="https://example.com/vest.png">':index===2?`상품 번호: ${article}`:index===10?status:index===12?'1':index===21?'<a>주문 내역</a>':''}</td>`).join('');
