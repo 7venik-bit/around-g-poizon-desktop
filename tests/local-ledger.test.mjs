@@ -70,9 +70,15 @@ test('successful seller order fills freight and recalculates margins in both loc
    for(const column of [18,19,20,21,22])assert.equal(sheet.rawValues[row-1][column-1].type,'formula');
    assert.equal(sheet.calculatedValues[row-1][17].value,32000);
    assert.ok(Number(sheet.calculatedValues[row-1][19].value)>32000);
+   assert.match(sheet.displayValues[row-1][17],/₩/);
+   assert.match(sheet.displayValues[row-1][20],/%$/);
  }
  await reopened.export(join(dir,'poizon.xlsx'));const exported=unzipSync(await readFile(join(dir,'poizon.xlsx')));
  assert.match(strFromU8(exported['xl/worksheets/sheet4.xml']),new RegExp(`r="J${record.salesRow}"`));
+ const styles=strFromU8(exported['xl/styles.xml']);
+ assert.match(styles,/numFmtId="10"[^>]*applyNumberFormat="1"/);
+ assert.match(styles,/formatCode="&quot;₩&quot;#,##0"/);
+ assert.match(strFromU8(exported['xl/worksheets/sheet4.xml']),new RegExp(`<c r="U${record.salesRow}" s="\\d+"`));
 });
 
 function calculationFixture() {
