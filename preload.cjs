@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   pasteLedgerWorkbookCells: (input) => ipcRenderer.invoke('ledger:workbook-paste', input),
   resizeLedgerWorkbook: (input) => ipcRenderer.invoke('ledger:workbook-resize', input),
   loadLedgerWorkbook: () => ipcRenderer.invoke("ledger:workbook-load"),
+  getPurchaseLedgerAwareness: () => ipcRenderer.invoke("ledger:purchase-awareness"),
   getPoizonLedgerSyncStatus: () => ipcRenderer.invoke('ledger:poizon-sales-status'),
   syncPoizonLedgerSales: () => ipcRenderer.invoke('ledger:poizon-sales-sync'),
   onPoizonLedgerSyncProgress: (callback) => {
