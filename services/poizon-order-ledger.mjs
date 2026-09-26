@@ -51,7 +51,7 @@ function write(sheet,row,column,next,edits,extras={}) {
   edits.push({sheetId:sheet.id,row,column,...extras});
 }
 function validOrder(order) {
-  return order?.status==='거래 성공'&&order?.route==='일반판매'&&/^\d{10,25}$/.test(String(order.orderNumber||''))
+  return ['거래 성공','발송 대기','발송 완료','판매자 발송 완료'].includes(order?.status)&&order?.route==='일반판매'&&/^\d{10,25}$/.test(String(order.orderNumber||''))
     &&norm(order.articleNumber).length>=5&&Boolean(order.size||order.packaging)&&Boolean(order.imageUrl)
     &&/^\d{4}-\d\d-\d\d$/.test(order.saleDate||'')
     &&/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(order.buyerPaidAt||'')
@@ -123,7 +123,7 @@ export function reconcilePoizonOrders(book,orders) {
   for(const order of orders) {
     const id=String(order?.orderNumber||'');
     if(seen.has(id)){review.push({orderNumber:id,reason:'중복 주문번호'});continue;}seen.add(id);
-    if(!validOrder(order)) {review.push({orderNumber:id,reason:order?.failure||'거래 성공·일반판매·금액·체결일 검증 필요'});continue;}
+    if(!validOrder(order)) {review.push({orderNumber:id,reason:order?.failure||'판매 진행 상태·일반판매·금액·체결일 검증 필요'});continue;}
     const linked=links[id];
     const candidates=linked?[linked.purchaseRow]:matchingRows(purchase,order).filter(row=>!usedPurchase.has(row));
     const noted=candidates.filter(row=>existingNote(purchase,row)===id);

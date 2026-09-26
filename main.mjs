@@ -5192,12 +5192,14 @@ async function syncPoizonSellerOrders({manual=false}={}) {
   const saved={recorded:[],review:[],verified:0,pages:0,updated:false};
   try {
     const ledger=await purchaseWorkbook().load();
+    const purchaseArticles=(ledger.sheets.find(sheet=>sheet.name==='1-구매완료')?.rawValues||[])
+      .slice(2).map(row=>row?.[2]?.value).filter(Boolean);
     setPoizonLedgerSyncStatus({state:'running',message:'포이즌 판매자센터 주문 확인 중',checked:0,recorded:[],verified:0,review:[],savedPages:0,updated:false,code:''});
     scanner=new BrowserWindow({show:false,width:1400,height:950,webPreferences:{partition:'persist:around-g-poizon-seller',contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
     try {await scanner.loadURL('https://seller.poizon.com/main/spot/orders');}
     catch(error) {if(!/ERR_ABORTED/.test(String(error?.message||error)))throw error;}
-    const captured=await collectPoizonSuccessfulOrders(scanner.webContents,{knownOrderNumbers:manual?[]:Object.keys(ledger.local?.poizonOrders||{}),
-      onProgress:progress=>setPoizonLedgerSyncStatus({state:'running',message:`거래 성공 주문 ${progress.checked}/${progress.total}건 확인 중 · 장부 기록 ${saved.recorded.length}건 · 확인 필요 ${saved.review.length}건`,...progress}),
+    const captured=await collectPoizonSuccessfulOrders(scanner.webContents,{knownOrderNumbers:manual?[]:Object.keys(ledger.local?.poizonOrders||{}),includeInProgress:true,candidateArticleNumbers:purchaseArticles,
+      onProgress:progress=>setPoizonLedgerSyncStatus({state:'running',message:`주문 ${progress.checked}/${progress.total}건 대조 중 · 장부 기록 ${saved.recorded.length}건 · 확인 필요 ${saved.review.length}건`,...progress}),
       onPage:async page=>{
         const result=await purchaseWorkbook().syncPoizonSales(page.orders);
         saved.recorded.push(...result.recorded);
@@ -5205,12 +5207,12 @@ async function syncPoizonSellerOrders({manual=false}={}) {
         saved.verified+=result.verified;
         saved.updated ||=result.updated;
         saved.pages++;
-        setPoizonLedgerSyncStatus({state:'running',message:`거래 성공 ${page.checked}/${page.total}건 확인 · 장부 기록 ${saved.recorded.length}건 · 저장 검증 ${saved.verified}건 · 확인 필요 ${saved.review.length}건`,
+        setPoizonLedgerSyncStatus({state:'running',message:`주문 ${page.checked}/${page.total}건 대조 · 장부 기록 ${saved.recorded.length}건 · 저장 검증 ${saved.verified}건 · 확인 필요 ${saved.review.length}건`,
           checked:page.checked,recorded:[...saved.recorded],verified:saved.verified,review:[...saved.review],savedPages:saved.pages,updated:saved.updated});
       }});
     poizonLedgerAutoPaused=false;
     await store.setSettings({poizonLedgerAutoPaused:false}).catch(()=>{});
-    setPoizonLedgerSyncStatus({state:'complete',message:`거래 성공 ${captured.scanned}건 확인 · 신규 장부 기록 ${saved.recorded.length}건 · 저장 검증 ${saved.verified}건 · 확인 필요 ${saved.review.length}건`,
+    setPoizonLedgerSyncStatus({state:'complete',message:`주문 ${captured.scanned}건 대조 · 신규 장부 기록 ${saved.recorded.length}건 · 저장 검증 ${saved.verified}건 · 확인 필요 ${saved.review.length}건`,
       checked:captured.scanned,counts:captured.counts,recorded:saved.recorded,verified:saved.verified,review:saved.review,savedPages:saved.pages,at:new Date().toISOString(),updated:saved.updated});
     return {ok:true,status:poizonLedgerSyncStatus};
   } catch(error) {

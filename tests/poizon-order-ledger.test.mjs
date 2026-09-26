@@ -73,6 +73,20 @@ test('matching KR or EU size uses both workbook size columns and assigns identic
   assert.equal(verifyPoizonRecordedSales(workbook,[first,second],result.recorded),2);
 });
 
+test('a seller shipment with verified payment and price fills an existing purchase row',()=>{
+  const workbook=book(),purchase=workbook.sheets[0];
+  purchase.rawValues[4][2]={type:'text',value:'NV5VS03A'};
+  purchase.rawValues[4][3]={type:'text',value:'NV5VS03A 에어리 베스트 BLACK'};
+  purchase.rawValues[4][5]={type:'text',value:'ONE'};
+  purchase.rawValues[4][6]={type:'text',value:'BLACK·105'};
+  const shipment={...order(),status:'판매자 발송 완료',articleNumber:'NV5VS03A',size:'KR 105',color:'블랙',salePrice:62000,basicFee:15000,income:44000};
+  const result=reconcilePoizonOrders(workbook,[shipment]);
+  assert.deepEqual(result.review,[]);
+  assert.equal(result.recorded[0].purchaseRow,5);
+  assert.equal(purchase.rawValues[4][9].value,'62000');
+  assert.equal(verifyPoizonRecordedSales(workbook,[shipment],result.recorded),1);
+});
+
 test('a retailer base article matches only its proven colour suffix and EU or KR size',()=>{
   const workbook=book(),purchase=workbook.sheets[0];
   purchase.rawValues[4][2]={type:'text',value:'SR323LSN75WHTO'};
