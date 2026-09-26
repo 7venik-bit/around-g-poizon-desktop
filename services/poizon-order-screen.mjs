@@ -3,11 +3,11 @@ const money=text=>Number(String(text||'').replace(/[^0-9]/g,''));
 const articleKey=text=>String(text||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 const saleInProgress=status=>/^(?:거래 성공|발송 대기|발송 완료|판매자 발송 완료)$/.test(String(status||'').trim());
 const listArticle=row=>row.productInfo.match(/상품 번호\s*[:：]\s*([^\n]+)/)?.[1]?.replace(/-Server Region$/i,'').trim()||'';
-const amount=(text,label)=>{
+const amounts=(text,label)=>{
   const escaped=label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-  const found=String(text||'').match(new RegExp(`${escaped}\\s*[:：]?\\s*(?:\\(\\d+(?:\\.\\d+)?%\\)\\s*)?(?:-\\s*)?(?:₩\\s*)?([\\d,]+)\\s*(?:원)?`));
-  return found?money(found[1]):null;
+  return [...String(text||'').matchAll(new RegExp(`${escaped}\\s*[:：]?\\s*(?:\\(\\d+(?:\\.\\d+)?%\\)\\s*)?(?:-\\s*)?(?:₩\\s*)?([\\d,]+)\\s*(?:원)?`,'g'))].map(found=>money(found[1]));
 };
+const amount=(text,label)=>amounts(text,label)[0]??null;
 const pageState=()=>({url:location.href,text:document.body?.innerText||'',passwordInput:Boolean(document.querySelector('input[type="password"],input[autocomplete="current-password"]')),
   tabs:[...document.querySelectorAll('[class*="global-text-label-wrap"]')].map(node=>node.innerText.trim()),
   selectedTab:[...document.querySelectorAll('[class*="global-text-label-wrap-selected"]')].map(node=>node.innerText.trim()).find(Boolean)||'',
@@ -53,6 +53,8 @@ function rowDetail(node) {
 }
 function parseDetail(row,detail) {
   const text=detail.text,price=amount(text,'입찰가(세금 별도)'),income=amount(text,'예상 수익'),basicFee=amount(text,'기본 수수료');
+  const freightAmounts=amounts(text,'운임'),freightFee=freightAmounts[0];
+  if(freightAmounts.some(value=>value!==freightFee))throw Error(`POIZON_ORDER_FREIGHT_MISMATCH:${row.orderNumber}`);
   const timestamp=(source,label)=>source.match(new RegExp(`${label}\\s*[:：]?\\s*(\\d{4})[./-](\\d{1,2})[./-](\\d{1,2})\\s+(\\d{1,2}:\\d{2}:\\d{2})`));
   const closed=timestamp(text,'주문 체결 시간')||timestamp(row.timeline,'주문 체결 시간');
   const paid=timestamp(text,'구매자 결제(?: 시간)?')||timestamp(row.timeline,'구매자 결제(?: 시간)?');
@@ -65,24 +67,25 @@ function parseDetail(row,detail) {
   const imageUrl=detail.imageUrl||row.imageUrl;
   const route=/\n일반판매\n/.test(text)?'일반판매':'';
   const quantity=Number(row.quantity);
-  if(price==null||income==null||basicFee==null||!closed||!paid||!articleNumber||(!size&&!packaging)||!imageUrl||!saleInProgress(detail.status)||route!=='일반판매'||quantity!==1)
+  if(price==null||income==null||basicFee==null||freightFee==null||!closed||!paid||!articleNumber||(!size&&!packaging)||!imageUrl||!saleInProgress(detail.status)||route!=='일반판매'||quantity!==1)
     throw Error(`POIZON_ORDER_DETAIL_INCOMPLETE:${row.orderNumber}`);
   const result={orderNumber:row.orderNumber,status:detail.status,route,quantity,
     articleNumber,size,packaging,color,productName:detail.productName||row.productInfo,imageUrl,
     buyerPaidAt:stamp(paid),orderClosedAt:stamp(closed),saleDate:stamp(closed).slice(0,10),
-    salePrice:price,basicFee,income};
+    salePrice:price,basicFee,freightFee,income};
   if(listedArticle&&articleKey(listedArticle)!==articleKey(articleNumber)
     ||row.priceText&&money(row.priceText)!==price
     ||row.incomeText&&money(row.incomeText)!==income)
     throw Error(`POIZON_ORDER_LIST_DETAIL_MISMATCH:${row.orderNumber}`);
   if(!Number.isSafeInteger(price)||price<=0||!Number.isSafeInteger(basicFee)||basicFee<0||basicFee>price
-    ||!Number.isSafeInteger(income)||income<0||income>price-basicFee)
+    ||!Number.isSafeInteger(freightFee)||freightFee<0||freightFee>price-basicFee
+    ||!Number.isSafeInteger(income)||income<0||income>price-basicFee-freightFee)
     throw Error(`POIZON_ORDER_PRICE_INVALID:${row.orderNumber}`);
   return result;
 }
 function expandProfitDetails() {
   const drawer=document.querySelector('.ant-drawer-open');
-  if(!drawer||/기본 수수료/.test(drawer.innerText||''))return false;
+  if(!drawer||/기본 수수료/.test(drawer.innerText||'')&&amount(drawer.innerText,'운임')!=null)return false;
   const item=[...drawer.querySelectorAll('button,[role="button"],a,[class*="collapse-header"]')]
     .find(node=>/예상 수익(?:내역)?|수익 내역|수수료 상세/.test(node.innerText||''));
   if(!item)return false;
@@ -131,16 +134,16 @@ export async function collectPoizonSuccessfulOrders(contents,{onProgress=()=>{},
         const problem=pageProblem(await evaluate(contents,pageState));if(problem)throw Error(problem);
         return evaluate(contents,rowDetail,row.orderNumber);
       },{timeout:12000});
-      if(!/기본 수수료/.test(detail.text)) {
+      if(!/기본 수수료/.test(detail.text)||amount(detail.text,'운임')==null) {
         const expanded=await evaluate(contents,expandProfitDetails);
         if(expanded)await until(contents,async()=>{
           const current=await evaluate(contents,rowDetail,row.orderNumber);
-          return current&&/기본 수수료/.test(current.text)?current:null;
+          return current&&/기본 수수료/.test(current.text)&&amount(current.text,'운임')!=null?current:null;
         },{timeout:4000}).then(current=>Object.assign(detail,current)).catch(()=>{});
       }
       try {pageOrders.push(parseDetail(row,detail));}
       catch(error) {
-        if(!/^POIZON_ORDER_(?:DETAIL_INCOMPLETE|PRICE_INVALID|LIST_DETAIL_MISMATCH):/.test(String(error?.message||error)))throw error;
+        if(!/^POIZON_ORDER_(?:DETAIL_INCOMPLETE|PRICE_INVALID|LIST_DETAIL_MISMATCH|FREIGHT_MISMATCH):/.test(String(error?.message||error)))throw error;
         pageOrders.push({orderNumber:row.orderNumber,status:'확인 필요',failure:String(error.message)});
       }
       await evaluate(contents,()=>document.querySelector('.ant-drawer-open .ant-drawer-close')?.click());

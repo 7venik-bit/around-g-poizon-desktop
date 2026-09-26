@@ -22,15 +22,17 @@ const book=()=>({sheets:[sheet(1,'1-구매완료'),sheet(2,'5-판매완료')],lo
 const order=()=>({orderNumber:'21315202429263299',status:'거래 성공',route:'일반판매',quantity:1,
   articleNumber:'SR123UPS11',size:'SIZE 95',imageUrl:'https://example.com/shirt.png',
   buyerPaidAt:'2026-09-16 18:01:00',orderClosedAt:'2026-09-16 18:06:50',
-  saleDate:'2026-09-16',salePrice:75000,basicFee:7500,income:60000});
+  saleDate:'2026-09-16',salePrice:75000,basicFee:7500,freightFee:3000,income:60000});
 
 test('verified POIZON sale fills purchase and sales tabs once with actual fee and shifted formulas',()=>{
   const workbook=book(),first=reconcilePoizonOrders(workbook,[order()]);
   assert.equal(first.review.length,0);assert.equal(first.recorded.length,1);
   const purchase=workbook.sheets[0],sales=workbook.sheets[1],saleRow=first.recorded[0].salesRow;
   assert.equal(purchase.rawValues[4][9].value,'75000');assert.equal(purchase.rawValues[4][15].value,'7500');
+  assert.equal(purchase.rawValues[4][16].value,'3000');
   assert.equal(sales.rawValues[saleRow-1][11].value,'일판완료');
   assert.equal(sales.rawValues[saleRow-1][9].value,'75000');assert.equal(sales.rawValues[saleRow-1][15].value,'7500');
+  assert.equal(sales.rawValues[saleRow-1][16].value,'3000');
   assert.match(purchase.notes[4][9],/"buyerPaidAt":"2026-09-16 18:01:00"/);
   assert.match(sales.notes[saleRow-1][9],/"imageUrl":"https:\/\/example.com\/shirt.png"/);
   assert.equal(sales.formulas[saleRow-1][17],`=IF(J${saleRow}="","",J${saleRow}-N${saleRow}-P${saleRow}-Q${saleRow})`);
@@ -79,7 +81,7 @@ test('a seller shipment with verified payment and price fills an existing purcha
   purchase.rawValues[4][3]={type:'text',value:'NV5VS03A 에어리 베스트 BLACK'};
   purchase.rawValues[4][5]={type:'text',value:'ONE'};
   purchase.rawValues[4][6]={type:'text',value:'BLACK·105'};
-  const shipment={...order(),status:'판매자 발송 완료',articleNumber:'NV5VS03A',size:'KR 105',color:'블랙',salePrice:62000,basicFee:15000,income:44000};
+  const shipment={...order(),status:'판매자 발송 완료',articleNumber:'NV5VS03A',size:'KR 105',color:'블랙',salePrice:62000,basicFee:15000,freightFee:3000,income:44000};
   const result=reconcilePoizonOrders(workbook,[shipment]);
   assert.deepEqual(result.review,[]);
   assert.equal(result.recorded[0].purchaseRow,5);
@@ -150,5 +152,19 @@ test('a linked sale upgrades its evidence note with payment time and image witho
   const again=reconcilePoizonOrders(workbook,[order()]);
   assert.equal(again.recorded.length,1);
   assert.equal(again.recorded[0].salesRow,first.recorded[0].salesRow);
+  assert.equal(verifyPoizonRecordedSales(workbook,[order()],again.recorded),1);
+});
+
+test('a linked sale backfills both shipping cells from explicit seller freight and keeps one sales row',()=>{
+  const workbook=book(),first=reconcilePoizonOrders(workbook,[order()]);
+  const row=first.recorded[0].salesRow;
+  workbook.sheets[0].rawValues[4][16]=blank();
+  workbook.sheets[1].rawValues[row-1][16]=blank();
+  delete workbook.local.poizonOrders[order().orderNumber].freight;
+  const again=reconcilePoizonOrders(workbook,[order()]);
+  assert.equal(again.recorded.length,1);
+  assert.equal(again.recorded[0].salesRow,row);
+  assert.equal(workbook.sheets[0].rawValues[4][16].value,'3000');
+  assert.equal(workbook.sheets[1].rawValues[row-1][16].value,'3000');
   assert.equal(verifyPoizonRecordedSales(workbook,[order()],again.recorded),1);
 });

@@ -23,13 +23,13 @@ test('seller screen collector checks the success tab and verified order detail b
     drawer.setAttribute('data-text','주문 내역\n거래 성공\n데상트 남녀공용 카라 셔츠\n일반판매\n주문 번호: 21315202429263299\n상품 번호: SR123UPS11-Server Region\n색상:블랙/BLKO\n사이즈:SIZE 95\n입찰가(세금 별도)\n₩75,000\n예상 수익:\n₩60,000\n구매자 결제:\n2026/09/16 18:06:55\n주문 체결 시간:\n2026/09/16 18:06:50');
     drawer.innerHTML='<div class="ant-drawer-title"><span class="ant-tag">거래 성공</span></div><div class="goods-name">데상트 남녀공용 카라 셔츠</div><button class="ant-drawer-close">닫기</button>';
     const breakdown=window.document.createElement('button');breakdown.textContent='예상 수익 내역';
-    breakdown.addEventListener('click',()=>drawer.setAttribute('data-text',`${drawer.getAttribute('data-text')}\n기본 수수료\n(10%)\n-₩15,000`));
+    breakdown.addEventListener('click',()=>drawer.setAttribute('data-text',`${drawer.getAttribute('data-text')}\n기본 수수료\n(10%)\n-₩15,000\n운임\n-₩0`));
     drawer.append(breakdown);
     window.document.body.append(drawer);drawer.querySelector('button').addEventListener('click',()=>drawer.remove());
   });
   const result=await collectPoizonSuccessfulOrders(contents);
-  assert.equal(result.orders.length,1);assert.deepEqual({price:result.orders[0].salePrice,fee:result.orders[0].basicFee,income:result.orders[0].income,date:result.orders[0].saleDate,paid:result.orders[0].buyerPaidAt,image:result.orders[0].imageUrl},
-    {price:75000,fee:15000,income:60000,date:'2026-09-16',paid:'2026-09-16 18:06:55',image:'https://example.com/shirt.png'});
+  assert.equal(result.orders.length,1);assert.deepEqual({price:result.orders[0].salePrice,fee:result.orders[0].basicFee,freight:result.orders[0].freightFee,income:result.orders[0].income,date:result.orders[0].saleDate,paid:result.orders[0].buyerPaidAt,image:result.orders[0].imageUrl},
+    {price:75000,fee:15000,freight:0,income:60000,date:'2026-09-16',paid:'2026-09-16 18:06:55',image:'https://example.com/shirt.png'});
 });
 
 test('seller access restriction stops collection without partial results',async()=>{
@@ -55,7 +55,7 @@ test('scan includes in-progress shipments and leaves purchase matching to the le
     const article=orderId===id?'NV5VS03A':'OTHER-001';
     const status=orderId===id?'판매자 발송 완료':'거래 성공';
     const drawer=window.document.createElement('div');drawer.className='ant-drawer-open';
-    drawer.setAttribute('data-text',`주문 내역\n${status}\n일반판매\n주문 번호: ${orderId}\n상품 번호: ${article}\n색상: 블랙\n사이즈: KR 105\n입찰가(세금 별도) ₩62,000\n기본 수수료 (10%) -₩15,000\n예상 수익: ₩44,000\n구매자 결제: 2026/09/25 23:00:00\n주문 체결 시간: 2026/09/25 23:00:01`);
+    drawer.setAttribute('data-text',`주문 내역\n${status}\n일반판매\n주문 번호: ${orderId}\n상품 번호: ${article}\n색상: 블랙\n사이즈: KR 105\n입찰가(세금 별도) ₩62,000\n기본 수수료 (10%) -₩15,000\n운임 -₩3,000\n예상 수익: ₩44,000\n구매자 결제: 2026/09/25 23:00:00\n주문 체결 시간: 2026/09/25 23:00:01`);
     drawer.innerHTML=`<div class="ant-drawer-title"><span class="ant-tag">${status}</span></div><button class="ant-drawer-close">닫기</button>`;
     window.document.body.append(drawer);drawer.querySelector('button').addEventListener('click',()=>drawer.remove());
   });
@@ -72,7 +72,7 @@ test('collector locates the labeled article when the seller table shifts columns
   const {window,contents}=browser(`<div class="global-text-label-wrap global-text-label-wrap-selected">전체 (1)</div><table><thead><tr>${headers.map(header=>`<th>${header}</th>`).join('')}</tr></thead><tbody><tr class="ant-table-row" data-row-key="${id}">${cells}</tr></tbody></table><ul class="ant-pagination"><li class="ant-pagination-item-active">1</li><li class="ant-pagination-next ant-pagination-disabled"></li></ul>`);
   window.document.querySelector('a').addEventListener('click',()=>{
     const drawer=window.document.createElement('div');drawer.className='ant-drawer-open';
-    drawer.setAttribute('data-text',`주문 내역\n판매자 발송 완료\n일반판매\n주문 번호: ${id}\n상품 번호: NV5VS03A\n색상: 블랙\n사이즈: KR 105\n입찰가(세금 별도) ₩62,000\n기본 수수료 (10%) -₩15,000\n예상 수익: ₩44,000\n구매자 결제: 2026/09/25 23:00:00\n주문 체결 시간: 2026/09/25 23:00:01`);
+    drawer.setAttribute('data-text',`주문 내역\n판매자 발송 완료\n일반판매\n주문 번호: ${id}\n상품 번호: NV5VS03A\n색상: 블랙\n사이즈: KR 105\n입찰가(세금 별도) ₩62,000\n기본 수수료 (10%) -₩15,000\n운임 -₩3,000\n예상 수익: ₩44,000\n구매자 결제: 2026/09/25 23:00:00\n주문 체결 시간: 2026/09/25 23:00:01`);
     drawer.innerHTML='<div class="ant-drawer-title"><span class="ant-tag">판매자 발송 완료</span></div><button class="ant-drawer-close">닫기</button>';
     window.document.body.append(drawer);drawer.querySelector('button').addEventListener('click',()=>drawer.remove());
   });
@@ -86,7 +86,7 @@ test('seller list and opened detail must agree before a sale is recorded',async(
   const {window,contents}=browser(`<div class="global-text-label-wrap global-text-label-wrap-selected">거래 성공 (1)</div><table><tr class="ant-table-row" data-row-key="21315202429263299">${cells}</tr></table><ul class="ant-pagination"><li class="ant-pagination-item-active">1</li><li class="ant-pagination-next ant-pagination-disabled"></li></ul>`);
   window.document.querySelector('a').addEventListener('click',()=>{
     const drawer=window.document.createElement('div');drawer.className='ant-drawer-open';
-    drawer.setAttribute('data-text','주문 내역\n일반판매\n주문 번호: 21315202429263299\n상품 번호: SR123UPS11\n사이즈: SIZE 95\n입찰가(세금 별도) ₩75,000\n기본 수수료 (10%) -₩15,000\n예상 수익: ₩60,000');
+    drawer.setAttribute('data-text','주문 내역\n일반판매\n주문 번호: 21315202429263299\n상품 번호: SR123UPS11\n사이즈: SIZE 95\n입찰가(세금 별도) ₩75,000\n기본 수수료 (10%) -₩15,000\n운임 -₩0\n예상 수익: ₩60,000');
     drawer.innerHTML='<div class="ant-drawer-title"><span class="ant-tag">거래 성공</span></div><div class="goods-info"><img src="https://example.com/shirt.png"></div><button class="ant-drawer-close">닫기</button>';
     window.document.body.append(drawer);drawer.querySelector('button').addEventListener('click',()=>drawer.remove());
   });
@@ -132,7 +132,7 @@ test('pagination waits for new order rows after the selected page number changes
     if(event.target.tagName!=='A')return;
     const id=event.target.closest('tr').getAttribute('data-row-key');
     const drawer=window.document.createElement('div');drawer.className='ant-drawer-open';
-    drawer.setAttribute('data-text',`일반판매\n주문 번호: ${id}\n상품 번호: SR123UPS11\n사이즈: SIZE 95\n입찰가(세금 별도) ₩75,000\n기본 수수료: ₩7,500\n예상 수익: ₩60,000\n구매자 결제 시간: 2026/09/16 18:01:00\n주문 체결 시간: 2026/09/16 18:06:50`);
+    drawer.setAttribute('data-text',`일반판매\n주문 번호: ${id}\n상품 번호: SR123UPS11\n사이즈: SIZE 95\n입찰가(세금 별도) ₩75,000\n기본 수수료: ₩7,500\n운임 -₩0\n예상 수익: ₩60,000\n구매자 결제 시간: 2026/09/16 18:01:00\n주문 체결 시간: 2026/09/16 18:06:50`);
     drawer.innerHTML='<div class="ant-drawer-title"><span class="ant-tag">거래 성공</span></div><button class="ant-drawer-close">닫기</button>';
     window.document.body.append(drawer);drawer.querySelector('button').addEventListener('click',()=>drawer.remove());
   });

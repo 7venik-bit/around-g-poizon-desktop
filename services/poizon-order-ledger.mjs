@@ -59,8 +59,9 @@ function validOrder(order) {
     &&order.orderClosedAt.slice(0,10)===order.saleDate
     &&Number.isSafeInteger(order.salePrice)&&order.salePrice>0
     &&Number.isSafeInteger(order.basicFee)&&order.basicFee>=0&&order.basicFee<=order.salePrice
+    &&Number.isSafeInteger(order.freightFee)&&order.freightFee>=0&&order.freightFee<=order.salePrice-order.basicFee
     &&Number.isSafeInteger(order.income)&&order.income>=0&&order.income<=order.salePrice
-    &&order.income<=order.salePrice-order.basicFee
+    &&order.income<=order.salePrice-order.basicFee-order.freightFee
     &&Number.isInteger(order.quantity)&&order.quantity===1;
 }
 function matchingRows(sheet,order) {
@@ -88,7 +89,7 @@ function sameSale(sheet,row,order) {
 }
 function orderNote(order) {
   return JSON.stringify({schema:'around-g.poizon.sale.v1',orderNumber:order.orderNumber,
-    salePrice:order.salePrice,income:order.income,fee:order.basicFee,
+    salePrice:order.salePrice,income:order.income,fee:order.basicFee,freightFee:order.freightFee,
     saleDate:order.saleDate,buyerPaidAt:order.buyerPaidAt,orderClosedAt:order.orderClosedAt,
     articleNumber:order.articleNumber,size:order.size||'',packaging:order.packaging||'',color:order.color||'',imageUrl:order.imageUrl,
     source:'POIZON 판매자센터 · 주문 내역'});
@@ -149,7 +150,7 @@ export function reconcilePoizonOrders(book,orders) {
       const prior=existingNote(sheet,targetRow),current=sheet.notes?.[targetRow-1]?.[9]||'';
       return prior&&prior!==id||!prior&&current&&current!==orderNote(order);
     })){review.push({orderNumber:id,reason:'판매가 셀에 다른 주문 메모가 있습니다'});continue;}
-    const fee=order.basicFee,source=structuredClone(purchase.rawValues[row-1]||[]),sourceNotes=structuredClone(purchase.notes?.[row-1]||[]);
+    const fee=order.basicFee,freight=order.freightFee,source=structuredClone(purchase.rawValues[row-1]||[]),sourceNotes=structuredClone(purchase.notes?.[row-1]||[]);
     const sourceImages=structuredClone((purchase.images||[]).filter(image=>image.row===row));
     for(const sheet of [purchase,...(existingSales.length?[]:[sales])]) {
       const targetRow=sheet===purchase?row:salesRow;
@@ -163,6 +164,7 @@ export function reconcilePoizonOrders(book,orders) {
           if(column===11)next=date(order.saleDate);
           if(column===12)next={type:'text',value:'일판완료'};
           if(column===16)next=number(fee);
+          if(column===17)next=number(freight);
           const image=sourceImages.find(x=>x.column===column)?.url;
           write(sheet,targetRow,column,next,edits,{templateRow,...(image?{image}:{})});
           sheet.notes[targetRow-1][column-1]=sourceNotes[column-1]||'';
@@ -175,11 +177,13 @@ export function reconcilePoizonOrders(book,orders) {
         if((!status||status==='구매완료')&&(!rule||rule.type==='list'&&rule.values?.includes('일판완료')))
           write(sheet,row,12,{type:'text',value:'일판완료'},edits);
         if(blank(raw(sheet,row,16))||raw(sheet,row,16)?.type==='formula')write(sheet,row,16,number(fee),edits);
+        if(raw(sheet,row,17)?.type!=='number'||money(raw(sheet,row,17))!==freight)write(sheet,row,17,number(freight),edits);
       }
     }
     if(existingSales.length) {
       if(value(sales,salesRow,12)!=='일판완료')write(sales,salesRow,12,{type:'text',value:'일판완료'},edits);
       if(blank(raw(sales,salesRow,16))||raw(sales,salesRow,16)?.type==='formula')write(sales,salesRow,16,number(fee),edits);
+      if(raw(sales,salesRow,17)?.type!=='number'||money(raw(sales,salesRow,17))!==freight)write(sales,salesRow,17,number(freight),edits);
     }
     for(const [sheet,targetRow] of [[purchase,row],[sales,salesRow]]) {
       if(sheet.notes?.[targetRow-1]?.[9]!==orderNote(order)) {
@@ -188,8 +192,9 @@ export function reconcilePoizonOrders(book,orders) {
       }
       (book.local.formulaOverrides||={})[sheet.id]||={};
       book.local.formulaOverrides[sheet.id][`${targetRow}:16`]=true;
+      book.local.formulaOverrides[sheet.id][`${targetRow}:17`]=true;
     }
-    links[id]={purchaseRow:row,salesRow,salePrice:order.salePrice,saleDate:order.saleDate,fee};
+    links[id]={purchaseRow:row,salesRow,salePrice:order.salePrice,saleDate:order.saleDate,fee,freight};
     usedPurchase.add(row);if(!linked||edits.some(edit=>edit.row===row&&edit.sheetId===purchase.id||edit.row===salesRow&&edit.sheetId===sales.id))recorded.push({orderNumber:id,purchaseRow:row,salesRow});
   }
   book.local.poizonOrders=links;
@@ -203,10 +208,11 @@ export function verifyPoizonRecordedSales(book,orders,recorded) {
   if(!purchase||!sales)throw Error('POIZON_LEDGER_SAVE_VERIFY_FAILED');
   for(const entry of recorded) {
     const order=byNumber.get(entry.orderNumber),link=book.local?.poizonOrders?.[entry.orderNumber];
-    const fee=order?.basicFee;
+    const fee=order?.basicFee,freight=order?.freightFee;
     if(!order||!link||link.purchaseRow!==entry.purchaseRow||link.salesRow!==entry.salesRow
       ||!sameSale(purchase,entry.purchaseRow,order)||!sameSale(sales,entry.salesRow,order)
       ||money(raw(purchase,entry.purchaseRow,16))!==fee||money(raw(sales,entry.salesRow,16))!==fee
+      ||money(raw(purchase,entry.purchaseRow,17))!==freight||money(raw(sales,entry.salesRow,17))!==freight
       ||value(sales,entry.salesRow,12)!=='일판완료'
       ||existingNote(purchase,entry.purchaseRow)!==entry.orderNumber
       ||existingNote(sales,entry.salesRow)!==entry.orderNumber

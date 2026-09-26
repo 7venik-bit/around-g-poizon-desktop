@@ -5198,7 +5198,9 @@ async function syncPoizonSellerOrders({manual=false}={}) {
     scanner=new BrowserWindow({show:false,width:1400,height:950,webPreferences:{partition:'persist:around-g-poizon-seller',contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
     try {await scanner.loadURL('https://seller.poizon.com/main/spot/orders');}
     catch(error) {if(!/ERR_ABORTED/.test(String(error?.message||error)))throw error;}
-    const captured=await collectPoizonSuccessfulOrders(scanner.webContents,{knownOrderNumbers:manual?[]:Object.keys(ledger.local?.poizonOrders||{}),includeInProgress:true,candidateArticleNumbers:purchaseArticles,
+    const knownOrderNumbers=manual?[]:Object.entries(ledger.local?.poizonOrders||{})
+      .filter(([,link])=>Number.isSafeInteger(link?.freight)).map(([id])=>id);
+    const captured=await collectPoizonSuccessfulOrders(scanner.webContents,{knownOrderNumbers,includeInProgress:true,candidateArticleNumbers:purchaseArticles,
       onProgress:progress=>setPoizonLedgerSyncStatus({state:'running',message:`주문 ${progress.checked}/${progress.total}건 대조 중 · 장부 기록 ${saved.recorded.length}건 · 확인 필요 ${saved.review.length}건`,...progress}),
       onPage:async page=>{
         const result=await purchaseWorkbook().syncPoizonSales(page.orders);
