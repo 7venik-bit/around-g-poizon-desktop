@@ -105,6 +105,19 @@ test('a retailer base article matches only its proven colour suffix and EU or KR
   assert.equal(rejected.recorded.length,0);
 });
 
+test('a seller WHT0 option matches the numeric-zero suffix in a purchased shoe',()=>{
+  const workbook=book(),purchase=workbook.sheets[0];
+  purchase.rawValues[4][2]={type:'text',value:'SR323LSN75WHT0'};
+  purchase.rawValues[4][3]={type:'text',value:'드리블 네오 화이트 SR323LSN75'};
+  purchase.rawValues[4][5]={type:'text',value:'40.5'};
+  purchase.rawValues[4][6]={type:'text',value:'WHT0_WHITE·260'};
+  const seller={...order(),status:'판매자 발송 완료',articleNumber:'SR323LSN75',size:'EU 40.5',color:'화이트-WHT0'};
+  const result=reconcilePoizonOrders(workbook,[seller]);
+  assert.deepEqual(result.review,[]);
+  assert.equal(result.recorded[0].purchaseRow,5);
+  assert.equal(verifyPoizonRecordedSales(workbook,[seller],result.recorded),1);
+});
+
 test('a duplicate candidate with existing sale values stays in review',()=>{
   const workbook=book(),purchase=workbook.sheets[0];
   const second=structuredClone(purchase.rawValues[4]);purchase.rawValues.push(second);purchase.displayValues.push(second.map(cell=>cell.value));

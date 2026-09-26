@@ -16,7 +16,7 @@ const sizeMatches=(sheet,row,order)=>{
   const choices=[value(sheet,row,6),value(sheet,row,7)].map(sizeKey).filter(Boolean);
   return !choices.length||choices.includes(size);
 };
-const colorNames=[['블랙','BLACK','BLK','BLKO'],['화이트','WHITE','WHT','WHTO'],['베이지','BEIGE','BEGO'],['그레이','GREY','GRAY','GRY'],['네이비','NAVY','NVY'],['레드','RED'],['블루','BLUE'],['핑크','PINK'],['브라운','BROWN'],['그린','GREEN']];
+const colorNames=[['블랙','BLACK','BLK','BLKO','BLK0'],['화이트','WHITE','WHT','WHTO','WHT0'],['베이지','BEIGE','BEGO'],['그레이','GREY','GRAY','GRY'],['네이비','NAVY','NVY'],['레드','RED'],['블루','BLUE'],['핑크','PINK'],['브라운','BROWN'],['그린','GREEN']];
 function articleMatches(article,order) {
   const key=norm(order.articleNumber);
   if(article===key)return true;
