@@ -1,5 +1,13 @@
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const money=text=>Number(String(text||'').replace(/[^0-9]/g,''));
+const articleKey=text=>String(text||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+const saleInProgress=status=>/^(?:거래 성공|발송 대기|발송 완료|판매자 발송 완료)$/.test(String(status||'').trim());
+const listArticle=row=>row.productInfo.match(/상품 번호\s*[:：]\s*([^\n]+)/)?.[1]?.replace(/-Server Region$/i,'').trim()||'';
+const purchaseArticleMatch=(row,articles)=>{
+  if(!articles?.length)return true;
+  const key=articleKey(listArticle(row));
+  return key.length>=5&&articles.some(article=>article===key||article.startsWith(key)||key.startsWith(article));
+};
 const amount=(text,label)=>{
   const escaped=label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   const found=String(text||'').match(new RegExp(`${escaped}\\s*[:：]?\\s*(?:\\(\\d+(?:\\.\\d+)?%\\)\\s*)?(?:-\\s*)?(?:₩\\s*)?([\\d,]+)\\s*(?:원)?`));
@@ -49,20 +57,20 @@ function parseDetail(row,detail) {
   const paid=timestamp(text,'구매자 결제(?: 시간)?')||timestamp(row.timeline,'구매자 결제(?: 시간)?');
   const stamp=match=>match?`${match[1]}-${match[2].padStart(2,'0')}-${match[3].padStart(2,'0')} ${match[4]}`:'';
   const articleNumber=text.match(/상품 번호\s*[:：]\s*([^\n]+)/)?.[1]?.replace(/-Server Region$/i,'').trim();
-  const listArticle=row.productInfo.match(/상품 번호\s*[:：]\s*([^\n]+)/)?.[1]?.replace(/-Server Region$/i,'').trim();
+  const listedArticle=listArticle(row);
   const size=text.match(/사이즈\s*[:：]\s*([^\n]+)/)?.[1]?.trim()||row.optionInfo.match(/사이즈\s*[:：]\s*([^\n]+)/)?.[1]?.trim()||'';
   const packaging=text.match(/포장\s*[:：]\s*([^\n]+)/)?.[1]?.trim()||row.optionInfo.match(/포장\s*[:：]\s*([^\n]+)/)?.[1]?.trim()||'';
   const color=text.match(/색상\s*[:：]\s*([^\n]+)/)?.[1]?.trim()||row.optionInfo.match(/색상\s*[:：]\s*([^\n]+)/)?.[1]?.trim()||'';
   const imageUrl=detail.imageUrl||row.imageUrl;
   const route=/\n일반판매\n/.test(text)?'일반판매':'';
   const quantity=Number(row.cells[12]);
-  if(price==null||income==null||basicFee==null||!closed||!paid||!articleNumber||(!size&&!packaging)||!imageUrl||detail.status!=='거래 성공'||route!=='일반판매'||quantity!==1)
+  if(price==null||income==null||basicFee==null||!closed||!paid||!articleNumber||(!size&&!packaging)||!imageUrl||!saleInProgress(detail.status)||route!=='일반판매'||quantity!==1)
     throw Error(`POIZON_ORDER_DETAIL_INCOMPLETE:${row.orderNumber}`);
   const result={orderNumber:row.orderNumber,status:detail.status,route,quantity,
     articleNumber,size,packaging,color,productName:detail.productName||row.productInfo,imageUrl,
     buyerPaidAt:stamp(paid),orderClosedAt:stamp(closed),saleDate:stamp(closed).slice(0,10),
     salePrice:price,basicFee,income};
-  if(listArticle&&listArticle.toUpperCase().replace(/[^A-Z0-9]/g,'')!==articleNumber.toUpperCase().replace(/[^A-Z0-9]/g,'')
+  if(listedArticle&&articleKey(listedArticle)!==articleKey(articleNumber)
     ||row.cells[15]&&money(row.cells[15])!==price
     ||row.cells[14]&&money(row.cells[14])!==income)
     throw Error(`POIZON_ORDER_LIST_DETAIL_MISMATCH:${row.orderNumber}`);
@@ -82,31 +90,34 @@ function expandProfitDetails() {
 
 // Read the rendered seller order pages. No private API, export endpoint,
 // request interception, login retry, or access-limit bypass is used.
-export async function collectPoizonSuccessfulOrders(contents,{onProgress=()=>{},onPage=async()=>{},knownOrderNumbers=[]}={}) {
+export async function collectPoizonSuccessfulOrders(contents,{onProgress=()=>{},onPage=async()=>{},knownOrderNumbers=[],includeInProgress=false,candidateArticleNumbers=[]}={}) {
+  const tabName=includeInProgress?'전체':'거래 성공';
+  const articles=[...new Set(candidateArticleNumbers.map(articleKey).filter(key=>key.length>=5))];
   const initial=await until(contents,async()=>{
     const state=await evaluate(contents,pageState),problem=pageProblem(state);
     if(problem)throw Error(problem);
-    return state.tabs.some(tab=>/^거래 성공\s*\(\d+\)/.test(tab))?state:null;
+    return state.tabs.some(tab=>new RegExp(`^${tabName}\\s*\\(\\d+\\)`).test(tab))?state:null;
   });
   const counts=Object.fromEntries(initial.tabs.map(tab=>{
     const match=tab.match(/^(.+?)\s*\((\d+)\)$/);return match?[match[1],Number(match[2])]:null;
   }).filter(Boolean));
-  await evaluate(contents,()=>{const node=[...document.querySelectorAll('[class*="global-text-label-wrap"]')].find(el=>/^거래 성공\s*\(\d+\)/.test(el.innerText.trim()));node?.click();});
-  const expected=counts['거래 성공']||0,orders=[],seen=new Set(),known=new Set(knownOrderNumbers);
+  await evaluate(contents,name=>{const node=[...document.querySelectorAll('[class*="global-text-label-wrap"]')].find(el=>el.innerText.trim().startsWith(`${name} (`));node?.click();},tabName);
+  const expected=counts[tabName]||0,orders=[],seen=new Set(),known=new Set(knownOrderNumbers);
   if(!expected)return {orders,counts,scanned:0};
   let page=0;
   while(true) {
     const state=await until(contents,async()=>{
       const current=await evaluate(contents,pageState),problem=pageProblem(current);
       if(problem)throw Error(problem);
-      return /^거래 성공/.test(current.selectedTab)&&current.rows.length&&current.currentPage===String(page+1)
-        &&current.rows.every(row=>row.cells[10]==='거래 성공'&&!seen.has(row.orderNumber))?current:null;
+      return current.selectedTab.startsWith(tabName)&&current.rows.length&&current.currentPage===String(page+1)
+        &&current.rows.every(row=>(includeInProgress||row.cells[10]==='거래 성공')&&!seen.has(row.orderNumber))?current:null;
     });
     const rows=state.rows;
     const pageOrders=[];
     for(const row of rows) {
       if(!/^\d{10,25}$/.test(row.orderNumber)||seen.has(row.orderNumber))throw Error('POIZON_ORDER_LIST_INCOMPLETE');
       seen.add(row.orderNumber);
+      if(!saleInProgress(row.cells[10])||!purchaseArticleMatch(row,articles)) {onProgress({checked:seen.size,total:expected});continue;}
       if(known.has(row.orderNumber)) {onProgress({checked:seen.size,total:expected});continue;}
       const opened=await evaluate(contents,id=>{
         const tr=[...document.querySelectorAll('tr.ant-table-row[data-row-key]')].find(n=>n.getAttribute('data-row-key')===id);

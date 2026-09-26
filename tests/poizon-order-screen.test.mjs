@@ -37,6 +37,31 @@ test('seller access restriction stops collection without partial results',async(
   await assert.rejects(collectPoizonSuccessfulOrders(contents),/POIZON_ACCESS_LIMITED/);
 });
 
+test('purchase-aware scan includes an in-progress shipment and skips unrelated or failed orders',async()=>{
+  const item=(id,article,status)=>{
+    const cells=Array.from({length:23},(_,index)=>`<td>${index===1?'<img src="https://example.com/vest.png">':index===2?`상품 번호: ${article}`:index===10?status:index===12?'1':index===21?'<a>주문 내역</a>':''}</td>`).join('');
+    return `<tr class="ant-table-row" data-row-key="${id}">${cells}</tr>`;
+  };
+  const id='21315206481443299';
+  const {window,contents}=browser(`<div class="global-text-label-wrap global-text-label-wrap-selected">전체 (3)</div>
+    <div class="global-text-label-wrap">거래 성공 (1)</div>
+    <table><tbody>${item(id,'NV5VS03A','발송 완료')}${item('21315206481443300','OTHER-001','거래 성공')}${item('21315206481443301','NV5VS03A','거래 실패')}</tbody></table>
+    <ul class="ant-pagination"><li class="ant-pagination-item-active">1</li><li class="ant-pagination-next ant-pagination-disabled"></li></ul>`);
+  let opened=0;
+  window.document.querySelector('tbody').addEventListener('click',event=>{
+    if(event.target.tagName!=='A')return;
+    opened++;
+    const drawer=window.document.createElement('div');drawer.className='ant-drawer-open';
+    drawer.setAttribute('data-text',`주문 내역\n판매자 발송 완료\n일반판매\n주문 번호: ${id}\n상품 번호: NV5VS03A\n색상: 블랙\n사이즈: KR 105\n입찰가(세금 별도) ₩62,000\n기본 수수료 (10%) -₩15,000\n예상 수익: ₩44,000\n구매자 결제: 2026/09/25 23:00:00\n주문 체결 시간: 2026/09/25 23:00:01`);
+    drawer.innerHTML='<div class="ant-drawer-title"><span class="ant-tag">판매자 발송 완료</span></div><button class="ant-drawer-close">닫기</button>';
+    window.document.body.append(drawer);drawer.querySelector('button').addEventListener('click',()=>drawer.remove());
+  });
+  const result=await collectPoizonSuccessfulOrders(contents,{includeInProgress:true,candidateArticleNumbers:['NV5VS03A']});
+  assert.equal(result.scanned,3);
+  assert.equal(opened,1);
+  assert.deepEqual(result.orders.map(order=>[order.orderNumber,order.status,order.salePrice]),[[id,'판매자 발송 완료',62000]]);
+});
+
 test('seller list and opened detail must agree before a sale is recorded',async()=>{
   const cells=Array.from({length:23},(_,index)=>`<td>${index===2?'상품 번호: OTHER-001':index===10?'거래 성공':index===12?'1':index===14?'₩60,000':index===15?'₩75,000':index===18?'주문 체결 시간: 2026/09/16 18:06:50 구매자 결제: 2026/09/16 18:06:55':index===21?'<a>주문 내역</a>':''}</td>`).join('');
   const {window,contents}=browser(`<div class="global-text-label-wrap global-text-label-wrap-selected">거래 성공 (1)</div><table><tr class="ant-table-row" data-row-key="21315202429263299">${cells}</tr></table><ul class="ant-pagination"><li class="ant-pagination-item-active">1</li><li class="ant-pagination-next ant-pagination-disabled"></li></ul>`);
