@@ -7176,7 +7176,8 @@ async function rebuildStaleSellerExportMonitor(jobId = "", job = {}) {
   if (!brandExportJobPending
     && sellerWindow && !sellerWindow.isDestroyed()
     && sellerWindow.webContents.getURL().includes("/main/exportCenter")) {
-    await sellerWindow.webContents.reloadIgnoringCache().catch(() => {});
+    // Electron's reloadIgnoringCache() returns void, not a Promise.
+    try { sellerWindow.webContents.reloadIgnoringCache(); } catch {}
   }
   mainWindow?.webContents.send("brand-export:progress", {
     status: "monitoring",
