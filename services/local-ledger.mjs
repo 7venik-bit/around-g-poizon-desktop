@@ -6,7 +6,7 @@ import {updateLedgerXlsx,readLedgerImages} from './ledger-xlsx.mjs';
 import {purchaseLedgerImageUrl,validatePurchaseLedgerRow} from './purchase-ledger.mjs';
 import {LEDGER_COPY_SCHEMA} from './ledger-clipboard.mjs';
 import {autofillLedger,LEDGER_FORMULA_VERSION,ledgerCalculationSheet} from './ledger-autofill.mjs';
-import {reconcilePoizonOrders,verifyPoizonRecordedSales} from './poizon-order-ledger.mjs';
+import {reconcilePoizonOrders,repairPoizonSaleFormats,verifyPoizonRecordedSales} from './poizon-order-ledger.mjs';
 
 const fail=code=>{throw Error(code);};
 const empty=()=>({type:'text',value:''});
@@ -106,9 +106,23 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
     book.local.dateFormatRepair={at:new Date().toISOString(),backupPath,cells:edits};
     return commit(book,edits,{autofill:false});
   };
+  const repairPoizonFormats=async(book)=>{
+    const edits=repairPoizonSaleFormats(book);
+    if(!edits.length)return book;
+    const backupPath=`${path}.before-poizon-formats-v1.encrypted`;
+    try {await read(backupPath,decrypt);}catch(error) {
+      if(error.code!=='ENOENT')throw error;
+      const source=await read(path,decrypt);
+      await save(backupPath,source,encrypt);
+      if((await read(backupPath,decrypt)).revision!==source.revision)fail('WORKBOOK_SAVE_VERIFY_FAILED');
+    }
+    book.local.poizonFormatRepair={at:new Date().toISOString(),backupPath,cells:edits};
+    return commit(book,edits,{autofill:false});
+  };
+  const finalizeFormats=async(book)=>repairPoizonFormats(await repairDateFormats(book));
   const load=async()=>{
     const book=await readLocal();
-    if(book.local?.formulaVersion===LEDGER_FORMULA_VERSION||!book.sheets.some(ledgerCalculationSheet))return repairDateFormats(book);
+    if(book.local?.formulaVersion===LEDGER_FORMULA_VERSION||!book.sheets.some(ledgerCalculationSheet))return finalizeFormats(book);
     // Keep an encrypted, verified pre-repair copy. Never overwrite that recovery
     // point on restart, and never publish a migration whose backup failed.
     const backupPath=`${path}.before-formulas-v${LEDGER_FORMULA_VERSION}.encrypted`;
@@ -120,7 +134,7 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
     const repair=autofillLedger(book,{repair:true,categories:categories?await categories(book):undefined});
     book.local.formulaVersion=LEDGER_FORMULA_VERSION;
     book.local.formulaRepair={at:new Date().toISOString(),backupPath,changes:repair.audit};
-    return repairDateFormats(await commit(book,repair.edits,{autofill:false}));
+    return finalizeFormats(await commit(book,repair.edits,{autofill:false}));
   };
   const relocateReceipt=async(book,sheet,existing,destination)=>{
     const previousRowNumbers=existing.map(x=>x.row),sources=new Set(previousRowNumbers);
@@ -360,3 +374,4 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
     })
   };
 }
+

@@ -35,6 +35,27 @@ const empty=()=>({type:'text',value:''});
 const number=n=>({type:'number',value:String(n)});
 const date=s=>({type:'date',value:new Date(`${s}T00:00:00+09:00`).toISOString()});
 const saleFormats={17:'"₩"#,##0',18:'"₩"#,##0',19:'"₩"#,##0.00',20:'"₩"#,##0.00',21:'0.00%',22:'0.00%'};
+function applySaleFormats(sheet,row,edits) {
+  for(const [columnText,format] of Object.entries(saleFormats)) {
+    const column=Number(columnText),current=sheet.numberFormats?.[row-1]?.[column-1];
+    if(current&&current!=='General')continue;
+    ensure(sheet,row,column);sheet.numberFormats[row-1][column-1]=format;
+    const cell=raw(sheet,row,column);
+    if(cell?.type!=='formula')sheet.displayValues[row-1][column-1]=formatLedgerValue(ledgerScalar(cell),format);
+    edits.push({sheetId:sheet.id,row,column,formatOnly:true});
+  }
+}
+// Repair previously linked seller orders on workbook load as well as during a
+// seller scan. Existing orders may be skipped by incremental scans.
+export function repairPoizonSaleFormats(book) {
+  const purchase=book.sheets.find(s=>s.name==='1-구매완료'),sales=book.sheets.find(s=>s.name==='5-판매완료');
+  if(!purchase||!sales)return [];
+  const edits=[];
+  for(const [id,link] of Object.entries(book.local?.poizonOrders||{}))
+    for(const [sheet,row] of [[purchase,link?.purchaseRow],[sales,link?.salesRow]])
+      if(Number.isInteger(row)&&row>=3&&existingNote(sheet,row)===id)applySaleFormats(sheet,row,edits);
+  return edits;
+}
 function ensure(sheet,row,column) {
   for(const field of fields) {
     sheet[field]||=[];
@@ -194,14 +215,7 @@ export function reconcilePoizonOrders(book,orders) {
       (book.local.formulaOverrides||={})[sheet.id]||={};
       book.local.formulaOverrides[sheet.id][`${targetRow}:16`]=true;
       book.local.formulaOverrides[sheet.id][`${targetRow}:17`]=true;
-      for(const [columnText,format] of Object.entries(saleFormats)) {
-        const column=Number(columnText),current=sheet.numberFormats?.[targetRow-1]?.[column-1];
-        if(current&&current!=='General')continue;
-        ensure(sheet,targetRow,column);sheet.numberFormats[targetRow-1][column-1]=format;
-        const cell=raw(sheet,targetRow,column);
-        if(cell?.type!=='formula')sheet.displayValues[targetRow-1][column-1]=formatLedgerValue(ledgerScalar(cell),format);
-        edits.push({sheetId:sheet.id,row:targetRow,column,formatOnly:true});
-      }
+      applySaleFormats(sheet,targetRow,edits);
     }
     links[id]={purchaseRow:row,salesRow,salePrice:order.salePrice,saleDate:order.saleDate,fee,freight};
     usedPurchase.add(row);if(!linked||edits.some(edit=>!edit.formatOnly&&(edit.row===row&&edit.sheetId===purchase.id||edit.row===salesRow&&edit.sheetId===sales.id)))recorded.push({orderNumber:id,purchaseRow:row,salesRow});
@@ -231,3 +245,4 @@ export function verifyPoizonRecordedSales(book,orders,recorded) {
   }
   return recorded.length;
 }
+

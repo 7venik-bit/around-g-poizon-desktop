@@ -79,6 +79,19 @@ test('successful seller order fills freight and recalculates margins in both loc
  assert.match(styles,/numFmtId="10"[^>]*applyNumberFormat="1"/);
  assert.match(styles,/formatCode="&quot;₩&quot;#,##0"/);
  assert.match(strFromU8(exported['xl/worksheets/sheet4.xml']),new RegExp(`<c r="U${record.salesRow}" s="\\d+"`));
+ const stale=await readLedgerWorkbook(options.path,options.decrypt);
+ for(const [sheet,row] of [[stale.sheets[0],5],[stale.sheets[3],record.salesRow]])
+   for(const column of [17,18,19,20,21,22])sheet.numberFormats[row-1][column-1]='General';
+ await saveLedgerWorkbook(options.path,stale,options.encrypt);
+ const repaired=await createLocalLedger(options).load();
+ for(const [sheet,row] of [[repaired.sheets[0],5],[repaired.sheets[3],record.salesRow]]) {
+   assert.equal(sheet.numberFormats[row-1][20],'0.00%');
+   assert.match(sheet.displayValues[row-1][20],/%$/);
+   assert.match(sheet.displayValues[row-1][17],/₩/);
+ }
+ assert.ok(repaired.local.poizonFormatRepair);
+ const backup=await readLedgerWorkbook(repaired.local.poizonFormatRepair.backupPath,options.decrypt);
+ assert.equal(backup.sheets[0].numberFormats[4][20],'General');
 });
 
 function calculationFixture() {
@@ -475,3 +488,4 @@ test('copied embedded pictures survive clearing the source and copying into an e
  await ledger.export(join(dir,'images.xlsx'));const parts=unzipSync(await readFile(join(dir,'images.xlsx'))),doc=new DOMParser().parseFromString(strFromU8(parts['xl/worksheets/sheet1.xml']),'application/xml');assert.equal(doc.getElementsByTagName('drawing').length,1);
  assert.equal(Array.from(doc.getElementsByTagName('c')).some(c=>['H6','H7'].includes(c.getAttribute('r'))),false,'picture-only cells keep their implicit blank style');
 });
+
