@@ -199,8 +199,9 @@ test('150 pages and 3000 SPUs with 6000 Excel size rows keep identities and veri
 test('shipping combined view describes corrected POIZON recent values separately from collapsible original option totals', async () => {
   const renderer = await readFile(new URL('../src/renderer.js', import.meta.url), 'utf8');
   const from = renderer.indexOf('function renderVerifiedSpuRows('), to = renderer.indexOf('async function openVerifiedCombinedBrandPreview', from);
+  const labelFrom = renderer.indexOf('function combinedProductSalesLabels('), labelTo = renderer.indexOf('function renderCombinedBrandPreviewPage(', labelFrom);
   assert.ok(from > 0 && to > from); const nodes = new Map(); const $ = (s) => { if (!nodes.has(s)) nodes.set(s, {}); return nodes.get(s); };
-  const fn = new Function('$', 'excelPreviewStableSelectionKey', 'excelPreviewProductCache', 'text', 'money', 'renderRawExcelDomesticCell', 'excelPreviewSearchResults', renderer.slice(from, to) + '; return renderVerifiedSpuRows;')($, (p) => p.key, new Map(), (s) => String(s ?? ''), String, () => '<td></td>', new Map());
+  const fn = new Function('$', 'excelPreviewStableSelectionKey', 'excelPreviewProductCache', 'text', 'money', 'renderRawExcelDomesticCell', 'excelPreviewSearchResults', 'combinedBrandPreview', renderer.slice(labelFrom, labelTo) + renderer.slice(from, to) + '; return renderVerifiedSpuRows;')($, (p) => p.key, new Map(), (s) => String(s ?? ''), String, () => '<td></td>', new Map(), null);
   fn({}, [{ ...screen('11', '1,400+'), key: 'SPU:11', optionCount: 1, verificationStatus: 'POIZON 값으로 수정 후 대조 완료', verificationOptions: [{ skuId: '111', option: '95', totalSalesRaw: '700', localTotalSalesRaw: '40' }] }]);
   assert.match($('#excel-preview-columns').innerHTML, /현지 상품 최근 30일/);
   assert.match($('#excel-preview-rows').innerHTML, /<details>/); assert.match($('#excel-preview-rows').innerHTML, /1,400\+/);

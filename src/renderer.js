@@ -488,6 +488,12 @@ async function openIntegratedBrandExcel(file, productSearch = false) {
   }, { integrated: true, preserveFilters: false, productView: false });
 }
 
+function combinedProductSalesLabels(basis = "recent30") {
+  if (basis === "total") return { china: "중국 총 판매량 (원본)", local: "현지 판매자 총 판매량 (원본)" };
+  if (basis === "mixed") return { china: "중국 판매량 (표시값)", local: "현지 판매량 (표시값)" };
+  return { china: "중국 상품 최근 30일 판매량", local: "현지 상품 최근 30일 판매량" };
+}
+
 function renderCombinedBrandPreviewPage(offset = 0) {
   if (!combinedBrandPreview) return;
   const minimumTotal = String(combinedBrandPreview.filters?.minimumTotal ?? "100");
@@ -496,6 +502,7 @@ function renderCombinedBrandPreviewPage(offset = 0) {
   const totalRows = combinedBrandPreview.products.length;
   const safeOffset = Math.max(0, Math.min(Number(offset) || 0, Math.max(0, Math.floor(Math.max(0, totalRows - 1) / limit) * limit)));
   const products = combinedBrandPreview.products.slice(safeOffset, safeOffset + limit);
+  const salesLabels = combinedProductSalesLabels(combinedBrandPreview.salesBasis);
   const file = { path: "combined://selected-brands", name: "선택 브랜드 통합 검색" };
   excelPreviewPageProducts = products;
   excelPreviewPageKeys = combinedBrandPreview.verified ? renderVerifiedSpuRows(file, products) : renderExcelProductRows(file, products);
@@ -511,12 +518,15 @@ function renderCombinedBrandPreviewPage(offset = 0) {
   $("#excel-preview-pager").hidden = false;
   $("#excel-preview-selection").hidden = false;
   $("#excel-preview-name").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 · 통합 상품검색`;
-  $("#excel-preview-summary").textContent = `중국 판매량 ${minimumTotal || "전체"} 이상 AND 현지 판매량 ${minimumLocalTotal || "전체"} 이상 · 통합 ${totalRows.toLocaleString("ko-KR")}개 · 현재 ${totalRows ? safeOffset + 1 : 0}~${Math.min(totalRows, safeOffset + products.length)}번째`;
+  $("#excel-preview-summary").textContent = `${salesLabels.china} ${minimumTotal || "전체"} 이상 AND ${salesLabels.local} ${minimumLocalTotal || "전체"} 이상 · 통합 ${totalRows.toLocaleString("ko-KR")}개 · 현재 ${totalRows ? safeOffset + 1 : 0}~${Math.min(totalRows, safeOffset + products.length)}번째`;
   $("#excel-filter-status").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 중 Excel ${combinedBrandPreview.loadedCount}개 통합 · 조건 충족 ${totalRows.toLocaleString("ko-KR")}개`;
   $("#excel-filter-min-total").value = minimumTotal;
   $("#excel-filter-min-local-total").value = minimumLocalTotal;
   $("#brand-product-workspace-title").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 · 통합 국내 상품검색`;
-  $("#brand-product-workspace-meta").textContent = `중국 판매량 ${minimumTotal || "전체"} 이상 AND 현지 판매량 ${minimumLocalTotal || "전체"} 이상 · 화면은 100개씩, 검색은 전체 선택 상품 기준`;
+  $("#brand-product-workspace-meta").textContent = `${salesLabels.china} ${minimumTotal || "전체"} 이상 AND ${salesLabels.local} ${minimumLocalTotal || "전체"} 이상 · 화면은 100개씩, 검색은 전체 선택 상품 기준`;
+  const filterLabels = [$("#excel-filter-min-total")?.closest('label')?.querySelector('span'), $("#excel-filter-min-local-total")?.closest('label')?.querySelector('span')];
+  if (filterLabels[0]) filterLabels[0].textContent = salesLabels.china;
+  if (filterLabels[1]) filterLabels[1].textContent = salesLabels.local;
   const totalPages = Math.max(1, Math.ceil(totalRows / limit));
   $("#excel-preview-page").textContent = `${Math.floor(safeOffset / limit) + 1} / ${totalPages.toLocaleString("ko-KR")}페이지`;
   $("#excel-preview-prev").disabled = safeOffset <= 0;
@@ -550,8 +560,14 @@ function renderCombinedBrandPreviewPage(offset = 0) {
 function renderVerifiedSpuRows(file, products) {
   const keys = products.map((p) => excelPreviewStableSelectionKey(p, file));
   products.forEach((p, i) => excelPreviewProductCache.set(keys[i], p));
-  $("#excel-preview-columns").innerHTML = '<tr><th>선택</th><th>이미지</th><th>상품번호 · SPU</th><th>상품명 · 사이즈 펼치기</th><th>브랜드</th><th>상품 최근 30일 평균 거래가</th><th>중국 상품 최근 30일</th><th>현지 상품 최근 30일</th><th>검증</th><th>상품 검색 결과</th></tr>';
+  const salesLabels = combinedProductSalesLabels(products.some((p) => p.salesBasis)
+    ? combinedBrandPreview?.salesBasis || products[0]?.salesBasis : "recent30");
+  $("#excel-preview-columns").innerHTML = '<tr><th>선택</th><th>이미지</th><th>상품번호 · SPU</th><th>상품명 · 사이즈 펼치기</th><th>브랜드</th><th>상품 최근 30일 평균 거래가</th><th>' + text(salesLabels.china) + '</th><th>' + text(salesLabels.local) + '</th><th>검증</th><th>상품 검색 결과</th></tr>';
   $("#excel-preview-rows").innerHTML = products.length ? products.map((p, i) => {
+    const chinaRaw = p.salesBasis === "total" ? p.hasTotalSalesData ? p.totalSalesRaw : "미확인" : p.hasSalesData ? p.sales30dRaw : "미확인";
+    const localRaw = p.salesBasis === "total" ? p.hasLocalTotalSalesData ? p.localTotalSalesRaw : "미확인" : p.hasLocalSalesData ? p.localSales30dRaw : "미확인";
+    const basisHint = combinedBrandPreview?.salesBasis === "mixed" && p.salesBasis
+      ? '<small>' + (p.salesBasis === "total" ? '원본 총판매량' : '상품 최근 30일') + '</small>' : '';
     const result = excelPreviewSearchResults.get(keys[i]);
     const options = (p.verificationOptions || []).map((o) => '<div><b>' + text(o.option || o.skuId || '옵션 미확인') + '</b> · SKU ' + text(o.skuId || '-') + ' · 원본 중국 총판매 ' + text(o.totalSalesRaw || '-') + ' · 원본 현지 총판매 ' + text(o.localTotalSalesRaw || '-') + '</div>').join('');
     const image = /^https?:\/\//.test(p.logoUrl || '') ? '<img class="excel-verified-image" src="' + text(p.logoUrl) + '" alt="">' : '';
@@ -563,7 +579,7 @@ function renderVerifiedSpuRows(file, products) {
     const detailRow = result && !result.loading
       ? '<tr class="excel-product-search-detail excel-verified-search-detail"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>' + text(p.title || p.articleNumber || '상품') + '</strong> 국내 검색 결과</div>' + renderDomestic(result, p, keys[i]) + '</td></tr>'
       : '';
-    return '<tr class="excel-product-row excel-verified-spu-row"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(keys[i]) + '"></td><td class="excel-verified-image-cell">' + image + '</td><td><b>' + text(p.articleNumber) + '</b>' + (typeof purchaseAwarenessBadge === 'function' ? purchaseAwarenessBadge(p) : '') + '<small> SPU ' + text(p.spuId) + '</small></td><td>' + text(p.title) + '<details><summary>원본 사이즈 ' + p.optionCount + '행</summary>' + options + '</details></td><td>' + text(p.brandName) + '</td><td>' + (p.hasPriceData ? money(p.averagePrice) : '미확인') + '</td><td>' + text(p.hasSalesData ? p.sales30dRaw : '미확인') + '</td><td>' + text(p.hasLocalSalesData ? p.localSales30dRaw : '미확인') + '</td><td>' + text(p.verificationStatus) + '</td>' + resultCell + '</tr>' + detailRow;
+    return '<tr class="excel-product-row excel-verified-spu-row"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(keys[i]) + '"></td><td class="excel-verified-image-cell">' + image + '</td><td><b>' + text(p.articleNumber) + '</b>' + (typeof purchaseAwarenessBadge === 'function' ? purchaseAwarenessBadge(p) : '') + '<small> SPU ' + text(p.spuId) + '</small></td><td>' + text(p.title) + '<details><summary>원본 사이즈 ' + p.optionCount + '행</summary>' + options + '</details></td><td>' + text(p.brandName) + '</td><td>' + (p.hasPriceData ? money(p.averagePrice) : '미확인') + '</td><td>' + text(chinaRaw) + basisHint + '</td><td>' + text(localRaw) + basisHint + '</td><td>' + text(p.verificationStatus) + '</td>' + resultCell + '</tr>' + detailRow;
   }).join('') : '<tr><td colspan="10">동일 조건에 맞는 검증 완료 상품이 없습니다. 실패·누락 집계도 확인해 주세요.</td></tr>';
   if (typeof updatePurchaseAwarenessDisplay === 'function') updatePurchaseAwarenessDisplay();
   return keys;
@@ -597,11 +613,13 @@ function mergeDomesticSearchProducts(products = [], file = {}) {
     }
     current.optionCount += 1;
     current.verificationOptions.push(option);
-    for (const metric of ["totalSales", "localTotalSales", "sales30d", "localSales30d"]) {
-      if (Number(product[metric] || 0) > Number(current[metric] || 0)) {
+    for (const [metric, available] of [["totalSales", "hasTotalSalesData"], ["localTotalSales", "hasLocalTotalSalesData"],
+      ["sales30d", "hasSalesData"], ["localSales30d", "hasLocalSalesData"]]) {
+      if (product[available] && (!current[available] || Number(product[metric] || 0) > Number(current[metric] || 0))) {
         current[metric] = product[metric];
         current[`${metric}Raw`] = product[`${metric}Raw`];
       }
+      current[available] = Boolean(current[available] || product[available]);
     }
   }
   return [...grouped.values()];
@@ -648,6 +666,7 @@ async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
   const brandPicker = $("#brand-picker");
   if (brandPicker) brandPicker.open = false;
   const products = [];
+  const salesBases = new Set();
   let loadedCount = 0;
   const minimumTotal = String(filters.minimumTotal ?? "100");
   const minimumLocalTotal = String(filters.minimumLocalTotal ?? "25");
@@ -666,14 +685,17 @@ async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
       fixedTotalAnd: true,
       matchMode: "all",
       productView: true,
+      productSales: true,
       selectionOnly: true,
     });
     if (!result?.ok) continue;
     loadedCount += 1;
+    salesBases.add(result.salesBasis || "recent30");
     products.push(...mergeDomesticSearchProducts(Array.isArray(result.products) ? result.products : [], file));
   }
   combinedBrandPreview = {
     products,
+    salesBasis: salesBases.size > 1 ? "mixed" : [...salesBases][0] || "recent30",
     brandCount: files.length,
     loadedCount,
     files: [...files],
