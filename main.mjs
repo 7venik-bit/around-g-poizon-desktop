@@ -11184,6 +11184,7 @@ async function captureSellerBrandSales(input = {}) {
         : Math.max(1, Number(capture.totalCount) - (Number(capture.pageSize) * (Number(capture.pageCount) - 1)))
       : 0;
     let advanced = false;
+    let lastTransition = { reason: "PAGINATION_CONTROL_MISSING", page: capture.currentPage, rowCount: 0 };
     // Ant pagination changes the visible number range after page 5. A DOM
     // element.click() at that boundary is occasionally ignored by React, so
     // scroll the exact control into view and send a real Electron mouse click.
@@ -11200,7 +11201,10 @@ async function captureSellerBrandSales(input = {}) {
           .find((item) => visible(item) && Number(item.textContent.trim()) === expected);
         const next = [...(pagination || document).querySelectorAll(".ant-pagination-next:not(.ant-pagination-disabled)")]
           .find(visible);
-        const target = directPage || next;
+        // A numbered Ant page item can stop responding after its visible range
+        // shifts. Try the next-arrow on alternate attempts instead of clicking
+        // the same unresponsive item five times.
+        const target = ${clickAttempt % 2 === 1} ? (next || directPage) : (directPage || next);
         const button = target?.querySelector("button,a") || target;
         if (!button) return null;
         button.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
@@ -11253,11 +11257,17 @@ async function captureSellerBrandSales(input = {}) {
           previousSignature: capture.rowSignature,
           currentSignature: nextState?.rowSignature,
         });
+        lastTransition = { reason: transition.reason, page: Number(nextState?.page || 0),
+          rowCount: Number(nextState?.rowCount || 0), expectedRowCount: expectedNextRowCount,
+          route: targetPoint.route };
         if (transition.ready) {
           advanced = true;
           break;
         }
       }
+      // The requested page is visible but its product rows are incomplete.
+      // Another arrow click could skip that page, so fail closed instead.
+      if (lastTransition.page >= expectedNextPage) break;
     }
     if (!advanced) {
       // Final compatibility fallback for layouts that reject physical events.
@@ -11266,36 +11276,43 @@ async function captureSellerBrandSales(input = {}) {
         const visible = (element) => element && element.getClientRects().length > 0;
         const expected = ${expectedNextPage};
         const pagination = [...document.querySelectorAll(".ant-pagination")]
-          .filter((element) => visible(element) && Number(element.querySelector(".ant-pagination-item-active")?.textContent.trim()) === ${capture.currentPage})
+          .filter(visible)
           .at(-1);
         const item = [...(pagination || document).querySelectorAll(".ant-pagination-item")]
           .find((element) => visible(element) && Number(element.textContent.trim()) === expected);
         const next = [...(pagination || document).querySelectorAll(".ant-pagination-next:not(.ant-pagination-disabled)")]
           .find(visible);
-        const target = item || next;
-        const button = target?.querySelector("button,a") || target;
-        if (!button) return false;
-        button.click();
-        for (let attempt = 0; attempt < ${sellerPageResponseAttempts}; attempt += 1) {
-          await wait(250);
-          const currentPagination = [...document.querySelectorAll(".ant-pagination")]
-            .filter((element) => visible(element) && element.querySelector(".ant-pagination-next"))
-            .at(-1);
-          const active = currentPagination?.querySelector(".ant-pagination-item-active");
-          const rows = [...document.querySelectorAll("table tbody tr")]
-            .filter(visible)
-            .map((row) => String(row.innerText || ""))
-            .filter((text) => /상품\\s*번호\\s*[:：]/.test(text));
-          const rowSignature = rows.map((text) => text.replace(/\\s+/g, " ").trim()).join("␞");
-          if (Number(active?.textContent.trim()) === expected
-            && rows.length >= Math.max(1, ${expectedNextRowCount})
-            && rowSignature !== ${JSON.stringify(capture.rowSignature || "")}) return true;
+        // Do not advance again when the target page is already active but its
+        // rows have not finished rendering.
+        if (Number(pagination?.querySelector(".ant-pagination-item-active")?.textContent.trim()) === expected) return false;
+        for (const target of [item, next].filter(Boolean)) {
+          const button = target.querySelector("button,a") || target;
+          button.click();
+          for (let attempt = 0; attempt < ${sellerPageResponseAttempts}; attempt += 1) {
+            await wait(250);
+            const currentPagination = [...document.querySelectorAll(".ant-pagination")]
+              .filter((element) => visible(element) && element.querySelector(".ant-pagination-next"))
+              .at(-1);
+            const active = currentPagination?.querySelector(".ant-pagination-item-active");
+            const rows = [...document.querySelectorAll("table tbody tr")]
+              .filter(visible)
+              .map((row) => String(row.innerText || ""))
+              .filter((text) => /상품\\s*번호\\s*[:：]/.test(text));
+            const rowSignature = rows.map((text) => text.replace(/\\s+/g, " ").trim()).join("␞");
+            if (Number(active?.textContent.trim()) === expected
+              && rows.length >= Math.max(1, ${expectedNextRowCount})
+              && rowSignature !== ${JSON.stringify(capture.rowSignature || "")}) return true;
+            if (Number(active?.textContent.trim()) === expected && attempt === ${sellerPageResponseAttempts} - 1) return false;
+          }
         }
         return false;
       })()`, true);
     }
     if (!advanced) {
-      pageTransitionFailure = { page: capture.currentPage, expectedNextPage, reason: "NEXT_PAGE_NOT_VERIFIED" };
+      pageTransitionFailure = { page: capture.currentPage, expectedNextPage,
+        reason: lastTransition.reason, observedPage: lastTransition.page,
+        observedRows: lastTransition.rowCount, expectedRows: expectedNextRowCount,
+        route: lastTransition.route || "DOM_FALLBACK" };
       break;
     }
     await wait(sellerPageSettleMs);
@@ -11310,11 +11327,12 @@ async function captureSellerBrandSales(input = {}) {
       ok: false,
       code: reachedLastPage ? "SELLER_ROW_COUNT_INCOMPLETE" : "SELLER_PAGINATION_INCOMPLETE",
       message: reachedLastPage
-        ? `판매자센터 ${lastCapturedPage}/${expectedPageCount}페이지까지 모두 확인했지만 화면 상품을 ${capturedRowCount}/${sellerSourceTotal}건만 읽었습니다. 누락 행을 재확인해야 하므로 부분 데이터는 저장하지 않습니다.`
-        : `판매자센터 하단 페이지 검증이 ${lastCapturedPage}/${expectedPageCount}페이지에서 중단되었습니다. 다음 페이지를 90초씩 재시도했지만 응답하지 않았습니다. 부분 데이터는 저장하지 않습니다.`,
+        ? `판매자센터 ${lastCapturedPage}/${expectedPageCount}페이지까지 모두 확인했지만 화면 상품을 ${capturedRowCount}/${sellerSourceTotal}건만 읽었습니다. ${checkpointSummary.pagesCompleted ? `확인된 ${checkpointSummary.pagesCompleted}페이지는 Excel에 저장·재검증했습니다. ` : ''}누락 행이 있어 전체 검증은 미완료입니다.`
+        : `판매자센터 하단 페이지 검증이 ${lastCapturedPage}/${expectedPageCount}페이지에서 중단되었습니다. 다음 페이지를 90초씩 재시도했지만 응답하지 않았습니다. ${pageTransitionFailure?.expectedNextPage || lastCapturedPage + 1}페이지 판정: ${pageTransitionFailure?.reason || '확인 불가'} · 화면 ${pageTransitionFailure?.observedPage || 0}페이지 · 상품 ${pageTransitionFailure?.observedRows || 0}/${pageTransitionFailure?.expectedRows || '?'}건. ${checkpointSummary.pagesCompleted ? `앞선 ${checkpointSummary.pagesCompleted}페이지는 Excel에 저장·재검증했습니다. ` : ''}전체 검증은 미완료입니다.`,
       sourceTotal: sellerSourceTotal,
       capturedRowCount,
       pageTransitionFailure,
+      checkpointSync: checkpointSummary,
     };
   }
   const expectedBrands = new Set(
