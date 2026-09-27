@@ -20,7 +20,7 @@ function fixture(t, onAction = async () => {}) {
   const dom = new JSDOM(`<button id="search-diagnostics-open">오류 점검<b id="search-diagnostics-count" hidden>0</b></button>
     <dialog id="search-diagnostics-dialog"><button id="search-diagnostics-close">닫기</button>
       <p id="search-diagnostics-summary"></p><div id="search-diagnostics-list"></div>
-      <p id="search-diagnostics-action-status"></p><button id="search-diagnostics-copy">진단 코드 복사</button></dialog>`, {url:'https://offline.test',runScripts:'outside-only'});
+      <textarea id="search-diagnostics-description"></textarea><p id="search-diagnostics-action-status"></p><button id="search-diagnostics-copy">진단 코드 복사</button><button id="search-diagnostics-ai-request">AI 코드 수정 요청</button></dialog>`, {url:'https://offline.test',runScripts:'outside-only'});
   t.after(() => dom.window.close());
   dom.window.HTMLDialogElement.prototype.showModal = function () {this.open = true;};
   dom.window.HTMLDialogElement.prototype.close = function () {this.open = false;};
@@ -130,6 +130,32 @@ test('copied diagnostics contain codes and stages without raw page or account ev
   await new Promise(resolve=>setTimeout(resolve,0));
   assert.match(copied,/rate_limited.*product_detail/);
   assert.doesNotMatch(copied,/PRIVATE PAGE|secret/);
+});
+
+test('AI repair request opens a reviewable issue with codes but no private page evidence', async t => {
+  const {window, controller} = fixture(t);
+  let opened = '';
+  window.aroundG = {openExternal: async url => {opened = url;}};
+  controller.recordResult({sources:[{store:'네이버 패션타운',verificationReason:'collection_stalled',
+    verificationStage:'product_detail',verificationDiagnostics:{pageText:'PRIVATE PAGE',token:'secret'}}]},
+  {articleNumber:'SR323UTS71',brand:'데상트'},{scope:'excel',key:'row-1'});
+  window.document.querySelector('#search-diagnostics-ai-request').click();
+  await new Promise(resolve=>setTimeout(resolve,0));
+  const issue = new URL(opened);
+  assert.equal(issue.hostname,'github.com');
+  assert.match(issue.searchParams.get('title'),/^\[AI 수정 요청\]/);
+  assert.match(issue.searchParams.get('body'),/collection_stalled.*product_detail/);
+  assert.doesNotMatch(opened,/PRIVATE PAGE|secret/);
+});
+
+test('comparison or ledger errors can be reported without a search diagnostic', async t => {
+  const {window} = fixture(t);
+  let opened = '';
+  window.aroundG = {openExternal: async url => {opened = url;}};
+  window.document.querySelector('#search-diagnostics-description').value = '장부 대조가 115페이지에서 중단됨';
+  window.document.querySelector('#search-diagnostics-ai-request').click();
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.match(new URL(opened).searchParams.get('body'),/장부 대조가 115페이지에서 중단됨/);
 });
 
 test('an authoritative completed search closes a previous retailer failure without a new code', t => {
