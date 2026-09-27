@@ -66,11 +66,13 @@ test("판매자센터 대량 동기화는 저속 안정 모드로 서버 응답�
   assert.match(capture, /expectedRowCount: expectedNextRowCount/);
 });
 
-test("마지막 페이지와 전체 행 수 검증 전에는 부분 데이터를 저장하지 않는다", () => {
+test("페이지별 저장은 유지하고 전체 검증 완료로 오인하지 않는다", () => {
   assert.match(capture, /lastCapturedPage >= expectedPageCount/);
   assert.match(capture, /const rowCountComplete = !sellerSourceTotal \|\| capturedRowCount >= sellerSourceTotal/);
   assert.match(capture, /SELLER_ROW_COUNT_INCOMPLETE/);
   assert.match(capture, /SELLER_PAGINATION_INCOMPLETE/);
   assert.match(capture, /페이지까지 모두 확인했지만 화면 상품을/);
-  assert.match(capture, /부분 데이터는 저장하지 않습니다/);
+  assert.match(capture, /앞선 \$\{checkpointSummary\.pagesCompleted\}페이지는 Excel에 저장·재검증했습니다/);
+  assert.match(capture, /전체 검증은 미완료입니다/);
+  assert.match(capture, /checkpointSync: checkpointSummary/);
 });
