@@ -155,7 +155,30 @@ test('comparison or ledger errors can be reported without a search diagnostic', 
   window.document.querySelector('#search-diagnostics-description').value = '장부 대조가 115페이지에서 중단됨';
   window.document.querySelector('#search-diagnostics-ai-request').click();
   await new Promise(resolve=>setTimeout(resolve,0));
-  assert.match(new URL(opened).searchParams.get('body'),/장부 대조가 115페이지에서 중단됨/);
+  const issue = new URL(opened);
+  assert.equal(issue.searchParams.get('title'),'[AI 수정 요청] 수동 오류 보고');
+  assert.match(issue.searchParams.get('body'),/장부 대조가 115페이지에서 중단됨/);
+});
+
+test('runtime failures are counted without persisting private error messages or stacks', async t => {
+  const {window, controller} = fixture(t);
+  let opened = '';
+  window.aroundG = {openExternal: async url => {opened = url;}};
+  const failure = {code:'TypeError',stage:'unhandled_rejection',area:'프로그램',
+    message:'PRIVATE ORDER 123',stack:'SECRET STACK'};
+  controller.recordProgramError(failure);
+  controller.recordProgramError(failure);
+  const entry = controller.entries()[0];
+  assert.equal(entry.count,2);
+  assert.equal(entry.code,'TypeError');
+  assert.equal(entry.stage,'unhandled_rejection');
+  assert.equal(window.document.querySelector('#search-diagnostics-count').textContent,'1');
+  assert.equal(window.document.querySelectorAll('[data-diagnostic-action]').length,0);
+  assert.doesNotMatch(window.localStorage.getItem('around-g-search-diagnostics-v1'),/PRIVATE ORDER|SECRET STACK/);
+  window.document.querySelector('#search-diagnostics-ai-request').click();
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.match(new URL(opened).searchParams.get('body'),/TypeError.*unhandled_rejection/);
+  assert.doesNotMatch(opened,/PRIVATE ORDER|SECRET STACK/);
 });
 
 test('an authoritative completed search closes a previous retailer failure without a new code', t => {
