@@ -130,6 +130,85 @@ function browserFixture(t,accounts) {
   return {BrowserWindow,connector,windows,inserted,scripts,events,ticks,cleared};
 }
 const form='<form><input name="username" autocomplete="username"><input type="password"><button type="submit">로그인</button></form>';
+
+async function adidasFixture(t) {
+  const f=await fixture(t);
+  const main=await readFile(new URL('../main.mjs',import.meta.url),'utf8');
+  const start=main.indexOf('const DOMESTIC_LOGIN_SOURCES = [');
+  const end=main.indexOf('\n];',start)+3;
+  assert.ok(start>=0 && end>start);
+  const source=runInNewContext(main.slice(start,end)+'; DOMESTIC_LOGIN_SOURCES.find(source=>source.id==="adidas");');
+  f.accounts.sources=[...sources,source];
+  await f.accounts.save({id:'naver',loginId:'naver-fixture',password:'naver-secret'});
+  await f.accounts.save({id:'adidas',method:'naver'});
+  return {...f,source,...browserFixture(t,f.accounts)};
+}
+
+// Labels observed on adidas.co.kr: the homepage opens an inline account panel;
+// its icon-only Naver button carries an English accessible label.
+const adidasEntry='<button aria-label="아디클럽 가입 또는 로그인하기"></button>';
+const adidasPanel='<div id="account-portal-inline"><h1>아디클럽 회원 로그인</h1>'
+  +'<button id="social-button-naver" aria-label="Login with naver"><svg><title>Naver</title></svg></button></div>';
+
+test('Adidas Naver login opens the official homepage and follows its inline panel once',async t=>{
+  const b=await adidasFixture(t);
+  await b.connector.open('adidas');await new Promise(setImmediate);
+  const w=b.windows[0];
+  assert.equal(w.webContents.getURL(),'https://www.adidas.co.kr/');
+  let entries=0,providers=0;
+  w.dom.window.document.body.innerHTML=adidasEntry;
+  w.dom.window.document.querySelector('button').onclick=()=>{
+    entries++;w.dom.window.document.body.innerHTML=adidasPanel;
+    w.dom.window.document.getElementById('social-button-naver').onclick=()=>providers++;
+  };
+  await b.ticks[0]();await b.ticks[0]();await b.ticks[0]();
+  assert.equal(entries,1);assert.equal(providers,1);
+  assert.equal(b.connector.status('adidas').code,'SOCIAL_LOGIN_OPENED');
+  assert.equal(b.inserted.length,0,'Naver credentials must never be typed into the merchant page');
+});
+
+test('Adidas cookie consent waits for the user without consuming the login-entry action',async t=>{
+  const b=await adidasFixture(t),w=new b.BrowserWindow();await w.loadURL(b.source.url);
+  const flow={source:b.source,method:'naver',started:Date.now(),acted:new Set()};
+  w.dom.window.document.body.innerHTML=adidasEntry
+    +'<div id="modal-content"><h6>쿠키를 통한 아디다스 맞춤형 서비스 제공 관련 안내</h6><button>모두 동의합니다</button></div>';
+  let entries=0,consents=0;
+  w.dom.window.document.querySelector('button').onclick=()=>entries++;
+  w.dom.window.document.querySelector('#modal-content button').onclick=()=>consents++;
+  await b.connector.advance(w,flow);
+  assert.equal(b.connector.status('adidas').code,'LOGIN_CONSENT_REQUIRED');
+  assert.equal(entries,0);assert.equal(consents,0);assert.equal(flow.acted.size,0);
+  w.dom.window.document.getElementById('modal-content').remove();
+  await b.connector.advance(w,flow);
+  assert.equal(entries,1);assert.equal(b.inserted.length,0);
+});
+
+test('a login panel explaining cookies is not itself a cookie-consent prompt',async t=>{
+  const b=await adidasFixture(t),w=new b.BrowserWindow();await w.loadURL(b.source.url);
+  w.dom.window.document.body.innerHTML='<div role="dialog"><p>로그인 상태는 쿠키에 저장됩니다.</p>'+adidasPanel+'</div>';
+  const flow={source:b.source,method:'naver',started:Date.now(),acted:new Set()};
+  let clicks=0;w.dom.window.document.querySelector('button').onclick=()=>clicks++;
+  await b.connector.advance(w,flow);
+  assert.equal(clicks,1);
+  assert.equal(b.connector.status('adidas').code,'SOCIAL_LOGIN_OPENED');
+});
+
+for(const text of ['UNFORTUNATELY WE ARE UNABLE TO GIVE YOU ACCESS TO OUR SITE AT THIS TIME.',
+  'A security issue was automatically identified when you tried to access the website.', 'HTTP 403 - Forbidden'])
+test(`Adidas access restriction stops login without retries: ${text}`,async t=>{
+  const b=await adidasFixture(t),w=new b.BrowserWindow();await w.loadURL(b.source.url);
+  const flow={source:b.source,method:'naver',started:Date.now(),acted:new Set()};
+  let clicks=0;w.dom.window.document.body.innerHTML=`<h1>${text}</h1>`+adidasPanel;
+  w.dom.window.document.querySelector('button').onclick=()=>clicks++;
+  await b.connector.advance(w,flow);
+  assert.equal(b.connector.status('adidas').code,'LOGIN_ACCESS_BLOCKED');
+  assert.equal(flow.automaticStopped,true);
+  w.dom.window.document.querySelector('h1').remove();
+  await b.connector.advance(w,flow);
+  assert.equal(clicks,0);assert.equal(b.inserted.length,0);
+  assert.equal(b.connector.status('adidas').code,'LOGIN_ACCESS_BLOCKED');
+});
+
 test('merchant password submits once and never appears inside injected scripts',async t=>{
   const f=await fixture(t);await f.accounts.save({id:'kolon',loginId:'merchant-id',password:'merchant-secret'});
   const b=browserFixture(t,f.accounts),w=new b.BrowserWindow();w.dom.window.document.body.innerHTML=form;
