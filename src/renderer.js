@@ -57,6 +57,11 @@ let currentExplorerProducts = [];
 let allExplorerProducts = [];
 const domesticResults = new Map();
 let searchDiagnostics = null;
+const pendingProgramErrors = [];
+function recordProgramError(detail) {
+  if (searchDiagnostics) searchDiagnostics.recordProgramError(detail);
+  else if (pendingProgramErrors.length < 20) pendingProgramErrors.push(detail);
+}
 function recordSearchDiagnostics(result, product, scope, key, scan = false) {
   searchDiagnostics?.recordResult(result, product, {scope, key, scan});
 }
@@ -2427,7 +2432,8 @@ function text(value) {
   return span.innerHTML;
 }
 
-function showRuntimeError(error) {
+function showRuntimeError(error, stage = "renderer_error") {
+  recordProgramError({code: error?.name || "runtime_error", stage});
   const status = $("#popular-status");
   if (!status) return;
   const message = error instanceof Error ? error.message : String(error || "UNKNOWN_ERROR");
@@ -2435,10 +2441,10 @@ function showRuntimeError(error) {
   status.textContent = `처리 오류: ${message}`;
 }
 
-window.addEventListener("error", (event) => showRuntimeError(event.error || event.message));
+window.addEventListener("error", (event) => showRuntimeError(event.error || event.message, "renderer_error"));
 window.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
-  showRuntimeError(event.reason);
+  showRuntimeError(event.reason, "unhandled_rejection");
 });
 
 function renderRecords(collection) {
@@ -4588,6 +4594,7 @@ window.aroundG.onBrandExportProgress((progress) => {
 });
 window.aroundG.onBrandExportError((error) => {
   if (!acceptBrandWorkEvents) return;
+  recordProgramError({code: error?.code || "brand_export_error", stage: "brand_export", area: "POIZON 내보내기"});
   updateBrandExportJob(error?.jobId, error?.jobState || "데이터 가져오기 실패", error?.brandName);
   if (error?.brandName) updateBrandBatchState(error.brandName, error?.jobState || "데이터 가져오기 실패", error?.jobId);
   $("#brand-status").className = "status error";
@@ -5600,6 +5607,8 @@ searchDiagnostics = window.AroundGSearchDiagnostics?.createController({
     await searchDomesticAt(index, allExplorerProducts);
   },
 }) || null;
+for (const detail of pendingProgramErrors) searchDiagnostics?.recordProgramError(detail);
+pendingProgramErrors.length = 0;
 const renderProgramNotifications = (items = programNotifications) => {
   programNotifications = Array.isArray(items) ? items : [];
   const unread = programNotifications.filter((item) => !item.read).length;
