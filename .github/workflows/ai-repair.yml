@@ -2,7 +2,7 @@ name: AI repair from program diagnostics
 
 on:
   issues:
-    types: [opened]
+    types: [opened, labeled]
 
 concurrency:
   group: ai-repair-${{ github.event.issue.number }}
@@ -10,7 +10,7 @@ concurrency:
 
 jobs:
   propose:
-    if: github.event.issue.user.login == github.repository_owner && startsWith(github.event.issue.title, '[AI 수정 요청]')
+    if: github.event.issue.user.login == github.repository_owner && startsWith(github.event.issue.title, '[AI 수정 요청]') && (github.event.action == 'opened' || github.event.label.name == 'ai-repair-retry')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,6 +26,14 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Check AI API key is available to this workflow
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo '::error::OPENAI_API_KEY is empty. Add it as a repository Actions secret, not a variable or environment-only secret.'
+            exit 1
+          fi
       - name: Prepare bounded diagnostic prompt
         run: |
           node --input-type=module -e '
