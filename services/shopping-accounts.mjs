@@ -101,7 +101,12 @@ export function captureShoppingLoginPage(method = 'password') {
   const point=element=>{ if (!element) return null; const r=element.getBoundingClientRect();
     return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}; };
   const text=String(document.body?.innerText || '').slice(0,40000);
-  const blocked=/보안\s*(?:확인|문자)|자동입력\s*방지|2단계\s*인증|인증번호를?\s*입력|비정상적인\s*접근|access\s*denied/i.test(text);
+  const accessBlocked=/unable\s+to\s+give\s+you\s+access|security\s+issue\s+was\s+automatically\s+identified|http\s*403\s*[-:]?\s*forbidden/i.test(text);
+  const blocked=accessBlocked || /보안\s*(?:확인|문자)|자동입력\s*방지|2단계\s*인증|인증번호를?\s*입력|비정상적인\s*접근|access\s*denied/i.test(text);
+  const consentRequired=[...document.querySelectorAll('[role="dialog"],[aria-modal="true"],#modal-content')]
+    .some(element=>visible(element) && /쿠키|cookies?/i.test(label(element))
+      && [...element.querySelectorAll('button,[role="button"]')].some(button=>visible(button)
+        && /모두\s*동의|동의합니다|맞춤형\s*광고\s*설정|accept\s*all|reject\s*all|(?:manage|settings?|preferences?).*cookies?|cookies?.*(?:settings?|preferences?)/i.test(label(button))));
   const authenticated=controls.some(el=>/로그아웃|log\s*out|sign\s*out/i.test(label(el)));
   const loginEntry=controls.find(el=>/로그인|log\s*in|sign\s*in/i.test(label(el))
     && !alternateAuth(el) && !/네이버|naver|카카오|kakao|회원가입|sign\s*up/i.test(label(el)));
@@ -121,7 +126,7 @@ export function captureShoppingLoginPage(method = 'password') {
     && !alternateAuth(el) && !/네이버|naver|카카오|kakao|가입|sign\s*up/i.test(label(el)))
     || (form && [...form.querySelectorAll('button[type="submit"],input[type="submit"]')].find(el=>visible(el) && !alternateAuth(el)));
   const next=!password && id && controls.find(el=>/^(?:다음|계속|continue|next)$/i.test(label(el)));
-  return {href:location.href,blocked,authenticated,provider:point(provider),loginEntry:point(loginEntry),
+  return {href:location.href,blocked,accessBlocked,consentRequired,authenticated,provider:point(provider),loginEntry:point(loginEntry),
     id:point(id),password:point(password),submit:point(submit),next:point(next)};
 }
 
@@ -162,7 +167,11 @@ export class ShoppingLoginConnector {
       if(this.windows.get(id)===win) this.windows.delete(id);
       this.notify?.({sourceId:id});
     });
-    void win.loadURL(source.loginUrl || source.url).catch(error=>{
+    // Adidas now opens an inline account panel from its homepage. The legacy
+    // source URL is not the social-login entry; follow the visible merchant
+    // buttons so it creates the current provider state and callback itself.
+    const entryUrl=source.id==='adidas' ? source.url : source.loginUrl || source.url;
+    void win.loadURL(entryUrl).catch(error=>{
       // Following the visible login link can cancel the initial homepage load.
       // Cancellation is not a failed login and must not stop the destination.
       if(error?.code==='ERR_ABORTED' || error?.errno===-3) return;
@@ -239,7 +248,15 @@ export class ShoppingLoginConnector {
       setStatus('LOGIN_MANUAL_REQUIRED','자동 연결 시간이 끝났습니다. 열린 창에서 로그인을 이어서 완료해 주세요.');
       return;
     }
+    if(state.accessBlocked) {
+      this.fail(flow,'LOGIN_ACCESS_BLOCKED','쇼핑몰에서 접속을 차단했습니다. 자동 연결을 중단했습니다. 잠시 후 직접 다시 시도해 주세요.',{stage:'page_load',reason:'LOGIN_ACCESS_BLOCKED'});
+      return;
+    }
     if(state.blocked) { this.fail(flow,'LOGIN_VERIFICATION_REQUIRED','보안 확인이 필요합니다. 열린 로그인 창에서 완료해 주세요.',{stage:'result',reason:'LOGIN_VERIFICATION_REQUIRED'}); return; }
+    if(state.consentRequired) {
+      setStatus('LOGIN_CONSENT_REQUIRED','쇼핑몰 창의 쿠키 선택을 직접 완료해 주세요. 선택 후 로그인 연결을 이어갑니다.');
+      return;
+    }
     const click=async point=>{
       if(flow.stopped || flow.failure || win.isDestroyed() || win.webContents.getURL()!==url) throw new Error('LOGIN_PAGE_CHANGED');
       // A newly opened OAuth popup may not own keyboard focus yet. Wait for
