@@ -470,8 +470,10 @@
     <div class="notification-dialog-head"><div><small>LOCAL SEARCH DIAGNOSTICS</small><h2 id="search-diagnostics-title">검색 오류 점검</h2></div><button id="search-diagnostics-close" type="button">닫기</button></div>
     <p class="search-diagnostics-guide">상품 검색 중 수집한 상태를 이 PC에 보관합니다. 복구·승인 상태는 오류와 구분하며, 재검색과 로그인 확인은 버튼을 누를 때만 시작합니다.</p>
     <p id="search-diagnostics-summary" class="search-diagnostics-summary" role="status">진단 기록을 확인하고 있습니다.</p>
+    <label class="search-diagnostics-guide" for="search-diagnostics-description">검색·대조·업데이트·장부 중 문제가 발생한 기능과 증상</label>
+    <textarea id="search-diagnostics-description" class="search-diagnostics-description" maxlength="1000" placeholder="예: 포이즌 대조가 115페이지에서 멈췄습니다."></textarea>
     <div id="search-diagnostics-list" class="search-diagnostics-list"><p class="empty">기록된 검색 진단이 없습니다.</p></div>
-    <div class="search-diagnostics-footer"><p id="search-diagnostics-action-status" class="search-diagnostics-action-status" role="status"></p><button id="search-diagnostics-copy" type="button">진단 코드 복사</button></div>
+    <div class="search-diagnostics-footer"><p id="search-diagnostics-action-status" class="search-diagnostics-action-status" role="status"></p><button id="search-diagnostics-copy" type="button">진단 코드 복사</button><button id="search-diagnostics-ai-request" type="button">AI 코드 수정 요청</button></div>
   </dialog>
   <script src="./domestic-result-verdict.js"></script>
   <script src="./shopping-accounts.js"></script>
