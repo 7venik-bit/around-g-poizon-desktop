@@ -1,4 +1,4 @@
-import { findPoizonColumn, findPoizonTotalSalesColumns } from "./poizon-xlsx.mjs";
+import { findPoizonColumn, findPoizonTotalSalesColumns, findPoizonRecentSalesColumns } from "./poizon-xlsx.mjs";
 
 export const POIZON_MINIMUM_TOTAL_SALES = 50;
 
@@ -32,7 +32,8 @@ function hasSalesMetric(value) {
 
 export function filterPoizonPreviewRows(headers = [], rows = [], filters = {}) {
   const fixedTotalAnd = filters.fixedTotalAnd === true;
-  const totalSalesColumns = findPoizonTotalSalesColumns(headers);
+  const totalSalesColumns = filters.salesMetric === "recent30"
+    ? findPoizonRecentSalesColumns(headers) : findPoizonTotalSalesColumns(headers);
   const totalSalesColumn = totalSalesColumns.china;
   const localTotalSalesColumn = totalSalesColumns.local;
   const minimumTotal = optionalSalesBoundary(filters.minimumTotal);
@@ -40,8 +41,8 @@ export function filterPoizonPreviewRows(headers = [], rows = [], filters = {}) {
   const minimumLocalTotal = optionalSalesBoundary(filters.minimumLocalTotal);
   const maximumLocalTotal = optionalSalesBoundary(filters.maximumLocalTotal);
   const matchMode = fixedTotalAnd || filters.matchMode === "all" ? "all" : "any";
-  const chinaActive = totalSalesColumn >= 0 && (minimumTotal !== null || maximumTotal !== null);
-  const localActive = localTotalSalesColumn >= 0
+  const chinaActive = (totalSalesColumn >= 0 || filters.requireSalesColumns === true) && (minimumTotal !== null || maximumTotal !== null);
+  const localActive = (localTotalSalesColumn >= 0 || filters.requireSalesColumns === true)
     && (minimumLocalTotal !== null || maximumLocalTotal !== null);
   const spuIdColumn = findPoizonColumn(headers, "SPU ID", "SPU_ID", "SPUID");
   const articleNumberColumn = findPoizonColumn(headers, "상품 번호", "상품번호", "품번");

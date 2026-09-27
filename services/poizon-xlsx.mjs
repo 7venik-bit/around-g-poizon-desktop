@@ -121,6 +121,16 @@ export function findPoizonRecentSalesColumns(headers = []) {
   };
 }
 
+export function findPoizonProductSalesColumns(headers = []) {
+  // A saved product-recent metric and an original SKU total are different
+  // measurements. Missing/ambiguous recent columns must not fall back to totals.
+  const hasRecent = headers.map(normalizePoizonHeader).some((header) =>
+    header.includes("최근30일") && header.includes("판매량") && !header.includes("총판매량"));
+  return hasRecent
+    ? { ...findPoizonRecentSalesColumns(headers), basis: "recent30" }
+    : { ...findPoizonTotalSalesColumns(headers), basis: "total" };
+}
+
 export function getPoizonWorksheetRows(workbookResult) {
   if (Array.isArray(workbookResult?.[0]?.data)) {
     return (

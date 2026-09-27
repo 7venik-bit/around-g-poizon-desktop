@@ -21,6 +21,7 @@ import { applyPoizonScreenSalesToWorkbook } from "./services/poizon-screen-excel
 import {
   findPoizonColumn,
   findPoizonRecentSalesColumns,
+  findPoizonProductSalesColumns,
   findPoizonTotalSalesColumns,
   getPoizonWorksheetRows,
   summarizePoizonRows,
@@ -6033,6 +6034,8 @@ async function previewExcelFile(input = {}) {
     while (excelPreviewCache.size > 3) excelPreviewCache.delete(excelPreviewCache.keys().next().value);
   }
   const productView = input.filters?.productView !== false;
+  const productSales = productView && input.filters?.productSales === true;
+  const productSalesColumns = productSales ? findPoizonProductSalesColumns(workbook.headers) : null;
   const manualRawFilter = !productView && [
     input.filters?.minimumTotal,
     input.filters?.maximumTotal,
@@ -6043,6 +6046,10 @@ async function previewExcelFile(input = {}) {
     ? filterPoizonPreviewRows(workbook.headers, workbook.rows, {
         ...(input.filters || {}),
         rowLevel: manualRawFilter,
+        // Combined search filters the same grouped product values it displays.
+        // Raw Excel continues to filter individual original rows.
+        ...(productSales ? { salesMetric: productSalesColumns.basis, requireSalesColumns: true,
+          fixedTotalAnd: false, matchMode: "all" } : {}),
       })
     : {
         entries: workbook.rows.map((values, index) => ({ values, sourceRowNumber: index + 2 })),
@@ -6064,7 +6071,8 @@ async function previewExcelFile(input = {}) {
   const limit = selectionOnly
     ? Math.min(100000, Math.max(25, Number(input.limit) || 100))
     : Math.min(200, Math.max(25, Number(input.limit) || 100));
-  const products = productView ? buildExcelPreviewProducts(workbook.headers, filtered.entries) : [];
+  const products = productView ? buildExcelPreviewProducts(workbook.headers, filtered.entries)
+    .map((product) => productSales ? { ...product, salesBasis: productSalesColumns.basis } : product) : [];
   const sourceTotalProducts = productView ? buildExcelPreviewProducts(workbook.headers, workbook.rows.map((values, index) => ({ values, sourceRowNumber: index + 2 }))).length : 0;
   const resultCount = productView ? products.length : filtered.entries.length;
   const maximumOffset = Math.max(0, Math.floor(Math.max(0, resultCount - 1) / limit) * limit);
@@ -6083,6 +6091,7 @@ async function previewExcelFile(input = {}) {
     rowNumbers: productView || selectionOnly ? [] : pageEntries.map((entry) => entry.sourceRowNumber),
     products: pageProducts,
     productView,
+    salesBasis: productSalesColumns?.basis,
     offset,
     limit,
     totalRows: resultCount,
