@@ -15,16 +15,19 @@ assert.ok(literalEnd > literalStart);
 const renderScript = new Function("expectedNextPage", "expectedNextRowCount", "capture", "sellerPageResponseAttempts",
   "return " + fallback.slice(literalStart, literalEnd) + ";");
 
-async function simulate({ target = 2, current = target, rowCount = 20, expectedRows = 20, previous = "previous page" } = {}) {
+async function simulate({ target = 2, current = target, rowCount = 20, expectedRows = 20, previous = "previous page",
+  directResponsive = true, initialPage = target - 1 } = {}) {
   let polls = 0;
   let clicks = 0;
   const visible = { getClientRects: () => [{}] };
-  const active = { ...visible, textContent: String(target - 1) };
-  const button = { click: () => { clicks += 1; active.textContent = String(current); } };
-  const item = { ...visible, textContent: String(target), querySelector: () => button };
+  const active = { ...visible, textContent: String(initialPage) };
+  const directButton = { click: () => { clicks += 1; if (directResponsive) active.textContent = String(current); } };
+  const nextButton = { click: () => { clicks += 1; active.textContent = String(current); } };
+  const item = { ...visible, textContent: String(target), querySelector: () => directButton };
+  const nextElement = { ...visible, querySelector: () => nextButton };
   const pagination = { ...visible,
-    querySelector: (selector) => selector === ".ant-pagination-item-active" ? active : button,
-    querySelectorAll: () => [item],
+    querySelector: (selector) => selector === ".ant-pagination-item-active" ? active : nextElement,
+    querySelectorAll: (selector) => selector.includes(".ant-pagination-next") ? [nextElement] : [item],
   };
   const rows = Array.from({ length: rowCount }, (_, index) => ({ ...visible, innerText: `상품 번호 : CODE${index} 최근 30일 판매량 100` }));
   const document = { querySelectorAll: (selector) => selector === "table tbody tr" ? rows : selector === ".ant-pagination" ? [pagination] : [item] };
@@ -36,6 +39,14 @@ async function simulate({ target = 2, current = target, rowCount = 20, expectedR
 
 test("isolated seller browser receives a concrete retry bound and parses spaced product labels", async () => {
   assert.deepEqual(await simulate(), { result: true, polls: 1, clicks: 1 });
+});
+
+test("a nonresponsive numbered page falls back to the next arrow", async () => {
+  assert.deepEqual(await simulate({ directResponsive: false }), { result: true, polls: 361, clicks: 2 });
+});
+
+test("an active but incomplete target page is never skipped by another click", async () => {
+  assert.deepEqual(await simulate({ initialPage: 2, rowCount: 19 }), { result: false, polls: 0, clicks: 0 });
 });
 test("partially rendered pages wait all 360 observations and cannot be accepted", async () => {
   assert.deepEqual(await simulate({ rowCount: 19 }), { result: false, polls: 360, clicks: 1 });
