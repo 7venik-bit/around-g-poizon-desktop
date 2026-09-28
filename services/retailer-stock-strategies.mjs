@@ -1,3 +1,5 @@
+import { descenteColorIdentity, descenteColorEvidence, resolveDescenteColor, replaceColorSuffix, colorLabelHasCode } from './retailer-color-names.mjs';
+
 // A strategy follows the actual retailer host, not the POIZON brand label.
 // Unlisted/new brands still receive semantic option and native-select discovery.
 const PROFILES = [
@@ -60,24 +62,25 @@ export function normalizeStockOptions(options=[]) {
 
 export function mergeRetailerStockProducts(products = []) {
   const found = new Map();
+  const colorEvidence = descenteColorEvidence(products);
   for (const input of products) {
     let product = input;
     // DK colour pages share a model number but own separate size/stock states.
     // Keep their URL colour identity even when the visible card omits its name.
     let officialColor = '';
     try {
-      const url = new URL(String(input.url || ''));
-      const variant = url.pathname.match(/^\/DESCENTE\/product\/([^/]+)\/([A-Z0-9]+)\/?$/i);
-      if (/^(?:www\.)?dk-on\.com$/i.test(url.hostname) && variant) {
-        officialColor = variant[2].toUpperCase();
-        const colorName = ({BLK0:'블랙',WHT0:'화이트',BLU0:'BLU'})[officialColor] || officialColor;
-        const suffix = ` [${colorName}]`;
+      const identity = descenteColorIdentity(input);
+      if (identity) {
+        officialColor = identity.code;
+        const {name:colorName, source:colorNameSource} = resolveDescenteColor(input, identity, colorEvidence);
+        const previousNames = [officialColor, input.colorName, colorName].filter(Boolean);
         product = {...input, colorCode:officialColor, colorName,
-          ...(input.title ? {title:input.title.endsWith(suffix) ? input.title : input.title + suffix} : {}),
-          ...(input.name ? {name:input.name.endsWith(suffix) ? input.name : input.name + suffix} : {}),
+          ...(colorNameSource ? {colorNameSource} : {}),
+          ...(input.title ? {title:replaceColorSuffix(input.title, previousNames, colorName)} : {}),
+          ...(input.name ? {name:replaceColorSuffix(input.name, previousNames, colorName)} : {}),
           sizes:(input.sizes || []).map(size => {
             const parts = [...(size.optionPath?.length ? size.optionPath : String(size.label || '').split(' / '))];
-            while (parts[0] === officialColor || parts[0] === colorName) parts.shift();
+            while (parts.length && (previousNames.includes(parts[0]) || colorLabelHasCode(parts[0], officialColor))) parts.shift();
             const optionPath = [colorName,...parts];
             return {...size,label:optionPath.join(' / '),optionPath};
           })};
