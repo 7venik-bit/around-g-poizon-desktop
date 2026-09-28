@@ -9,6 +9,15 @@
   let request=0;
   const list=()=>document.getElementById('domestic-login-list');
   function updateMethod(row) {
+    if(row.dataset.shoppingAccount==='adidas') {
+      row.querySelector('[data-shop-method]').closest('label').hidden=true;
+      row.querySelector('[data-shop-fields]').hidden=true;
+      row.querySelector('[data-shop-save]').hidden=true;
+      row.querySelector('[data-shop-clear]').hidden=true;
+      row.querySelector('[data-shop-connect]').textContent='Chrome에서 로그인';
+      row.querySelector('[data-shop-method-hint]').textContent='Chrome에서 공식홈을 열고 로그인 → 네이버 로그인을 선택하세요. 로그인 상태는 Chrome에만 유지되며 프로그램의 자동 검색에는 공유되지 않습니다.';
+      return;
+    }
     const method=row.querySelector('[data-shop-method]').value;
     row.querySelector('[data-shop-fields]').hidden=method!=='password';
     row.querySelector('[data-shop-method-hint]').textContent=method==='password'
@@ -47,7 +56,7 @@
         row.querySelector('[data-shop-method]').value=source.method;
         row.querySelector('[data-shop-id]').value=source.loginId || '';
       }
-      row.querySelector('[data-shop-state]').textContent=source.connection?.code==='LOGIN_CONFIRMED'
+      row.querySelector('[data-shop-state]').textContent=source.id==='adidas' ? 'Chrome에서 직접 로그인' : source.connection?.code==='LOGIN_CONFIRMED'
         ? '로그인 확인 완료' : source.hasSession ? '저장된 세션 있음'
           : source.configured ? '계정·방식 저장됨' : '계정 설정 필요';
       if(source.connection?.message && row.dataset.busy!=='true') row.querySelector('[data-shop-message]').textContent=source.connection.message;
@@ -63,6 +72,12 @@
     const status=row.querySelector('[data-shop-message]');status.textContent='계정 정보를 저장하고 있습니다.';
     let saved=false;
     try {
+      if(row.dataset.shoppingAccount==='adidas') {
+        status.textContent='Chrome을 열고 있습니다.';
+        const result=await api.openShoppingAccount('adidas');
+        status.textContent=result?.message || (result?.ok ? 'Chrome에서 로그인을 이어서 진행해 주세요.' : 'Chrome을 열지 못했습니다. 설치와 실행 상태를 확인해 주세요.');
+        return;
+      }
       const account=await api.saveShoppingAccount({id:row.dataset.shoppingAccount,
         method:row.querySelector('[data-shop-method]').value,
         loginId:row.querySelector('[data-shop-id]').value,password:row.querySelector('[data-shop-password]').value});
@@ -79,7 +94,7 @@
         status.textContent=result?.ok ? '로그인 창에서 연결을 진행하고 있습니다.' : '계정은 저장됐지만 로그인 창을 열지 못했습니다.';
       }
     } catch(error) {
-      status.textContent=saved ? '계정은 저장됐지만 로그인 연결을 완료하지 못했습니다.'
+      status.textContent=row.dataset.shoppingAccount==='adidas' ? 'Chrome을 열지 못했습니다. 설치와 실행 상태를 확인해 주세요.' : saved ? '계정은 저장됐지만 로그인 연결을 완료하지 못했습니다.'
         : messages[String(error?.message || '').match(/ACCOUNT_[A-Z_]+/)?.[0]] || '계정을 저장하지 못했습니다. 입력값은 유지됩니다.';
     } finally { row.dataset.busy='false';controls.forEach(control=>control.disabled=false); }
     if(saved) await render();
