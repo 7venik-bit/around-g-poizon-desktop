@@ -131,9 +131,9 @@ export function captureShoppingLoginPage(method = 'password') {
 }
 
 export class ShoppingLoginConnector {
-  constructor({accounts, BrowserWindow, partition, windows, notify, wait = ms=>new Promise(resolve=>setTimeout(resolve,ms)),
+  constructor({accounts, BrowserWindow, partition, windows, notify, openChrome, wait = ms=>new Promise(resolve=>setTimeout(resolve,ms)),
     setIntervalImpl=setInterval, clearIntervalImpl=clearInterval}) {
-    Object.assign(this,{accounts,BrowserWindow,partition,windows,notify,wait,setIntervalImpl,clearIntervalImpl});
+    Object.assign(this,{accounts,BrowserWindow,partition,windows,notify,openChrome,wait,setIntervalImpl,clearIntervalImpl});
     this.states=new Map();
   }
   status(id) { return this.states.get(id) || {code:'',message:''}; }
@@ -152,6 +152,21 @@ export class ShoppingLoginConnector {
   async open(id) {
     const source=this.accounts.source(id);
     if (!source) return {ok:false,code:'ACCOUNT_SOURCE_INVALID'};
+    if (id==='adidas') {
+      // Chrome owns its login session. Never read saved credentials, start an
+      // embedded login, or report the external launch as authenticated.
+      try {
+        if (!shoppingLoginHostAllowed(source.url,['adidas.co.kr'])) throw new Error('INVALID_URL');
+        await this.openChrome(source.url);
+        const message='Chrome에서 아디다스 공식홈을 열었습니다. 로그인 버튼에서 네이버 로그인을 선택해 주세요. 로그인 상태는 Chrome에만 유지됩니다.';
+        this.update(id,'LOGIN_EXTERNAL_OPENED',message);
+        return {ok:true,opened:true,external:true,browser:'chrome',message};
+      } catch {
+        const message='Chrome을 열지 못했습니다. Chrome 설치와 실행 상태를 확인한 후 다시 눌러 주세요.';
+        this.update(id,'CHROME_OPEN_FAILED',message);
+        return {ok:false,code:'CHROME_OPEN_FAILED',message};
+      }
+    }
     const existing=this.windows.get(id);
     if (existing && !existing.isDestroyed()) { existing.show(); existing.focus(); return {ok:true,opened:true}; }
     const record=this.accounts.publicAccount(id), method=record.method;
@@ -167,10 +182,7 @@ export class ShoppingLoginConnector {
       if(this.windows.get(id)===win) this.windows.delete(id);
       this.notify?.({sourceId:id});
     });
-    // Adidas now opens an inline account panel from its homepage. The legacy
-    // source URL is not the social-login entry; follow the visible merchant
-    // buttons so it creates the current provider state and callback itself.
-    const entryUrl=source.id==='adidas' ? source.url : source.loginUrl || source.url;
+    const entryUrl=source.loginUrl || source.url;
     void win.loadURL(entryUrl).catch(error=>{
       // Following the visible login link can cancel the initial homepage load.
       // Cancellation is not a failed login and must not stop the destination.

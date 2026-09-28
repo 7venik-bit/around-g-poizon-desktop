@@ -165,10 +165,11 @@ app.commandLine.appendSwitch("disable-renderer-backgrounding");
 app.commandLine.appendSwitch("disable-background-timer-throttling");
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 
-async function openExternalInChromeTab(rawUrl) {
+async function openExternalInChromeTab(rawUrl, { requireChrome = false, newWindow = false } = {}) {
   const parsed = new URL(String(rawUrl || ""));
   if (!["https:", "http:"].includes(parsed.protocol)) throw new Error("INVALID_URL");
   if (process.platform !== "win32") {
+    if (requireChrome) throw new Error("CHROME_OPEN_FAILED");
     await shell.openExternal(parsed.href);
     return { browser: "default" };
   }
@@ -180,7 +181,8 @@ $candidates = @(
 )
 $chrome = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 if (-not $chrome) { throw 'CHROME_NOT_FOUND' }
-Start-Process -FilePath $chrome -ArgumentList @('--new-tab', $env:AROUND_G_EXTERNAL_URL)
+$mode = if ($env:AROUND_G_CHROME_NEW_WINDOW -eq '1') { '--new-window' } else { '--new-tab' }
+Start-Process -FilePath $chrome -ArgumentList @($mode, $env:AROUND_G_EXTERNAL_URL) -ErrorAction Stop
 `;
   const opened = await new Promise((resolve) => {
     execFile("powershell.exe", [
@@ -191,10 +193,11 @@ Start-Process -FilePath $chrome -ArgumentList @('--new-tab', $env:AROUND_G_EXTER
     ], {
       windowsHide: true,
       timeout: 10_000,
-      env: { ...process.env, AROUND_G_EXTERNAL_URL: parsed.href },
+      env: { ...process.env, AROUND_G_EXTERNAL_URL: parsed.href, AROUND_G_CHROME_NEW_WINDOW: newWindow ? "1" : "0" },
     }, (error) => resolve(!error));
   });
   if (opened) return { browser: "chrome" };
+  if (requireChrome) throw new Error("CHROME_OPEN_FAILED");
   await shell.openExternal(parsed.href);
   return { browser: "default" };
 }
@@ -12056,6 +12059,7 @@ function shoppingAccountServices() {
       mainWindow?.webContents.send("domestic-login:changed", {sourceId:id});
     }});
   const connector = new ShoppingLoginConnector({accounts, BrowserWindow, partition:DOMESTIC_SEARCH_PARTITION,
+    openChrome:url=>openExternalInChromeTab(url, {requireChrome:true,newWindow:true}),
     windows:domesticLoginWindows, notify:event=>mainWindow?.webContents.send("domestic-login:changed",event)});
   return shoppingAccountServicesCache = {accounts, connector};
 }
@@ -12477,6 +12481,7 @@ async function domesticLoginStatuses() {
 async function openDomesticLogin(sourceId, { background = false } = {}) {
   const source = domesticLoginSource(sourceId);
   if (!source) return { ok: false, message: "지원하지 않는 소싱몰입니다." };
+  if (source.id === "adidas") return shoppingAccountServices().connector.open(source.id);
   if (source.id !== "naver" && shoppingAccountServices().accounts.publicAccount(source.id).configured) {
     return shoppingAccountServices().connector.open(source.id);
   }
@@ -12658,7 +12663,7 @@ app.whenReady().then(async () => {
     const publicAccounts = new Map(accounts.list().map(account => [account.id, account]));
     return Promise.all(DOMESTIC_LOGIN_SOURCES.map(async source => ({
       ...publicAccounts.get(source.id), name:source.name,
-      hasSession:await hasUsableDomesticLoginSession(source.id),
+      hasSession:source.id === "adidas" ? false : await hasUsableDomesticLoginSession(source.id),
       connection:connector.status(source.id),
       methods:["naver","kakao"].includes(source.id) ? ["password"] : ["password","naver","kakao"],
     })));

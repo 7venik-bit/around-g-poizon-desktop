@@ -150,23 +150,6 @@ const adidasEntry='<button aria-label="아디클럽 가입 또는 로그인하�
 const adidasPanel='<div id="account-portal-inline"><h1>아디클럽 회원 로그인</h1>'
   +'<button id="social-button-naver" aria-label="Login with naver"><svg><title>Naver</title></svg></button></div>';
 
-test('Adidas Naver login opens the official homepage and follows its inline panel once',async t=>{
-  const b=await adidasFixture(t);
-  await b.connector.open('adidas');await new Promise(setImmediate);
-  const w=b.windows[0];
-  assert.equal(w.webContents.getURL(),'https://www.adidas.co.kr/');
-  let entries=0,providers=0;
-  w.dom.window.document.body.innerHTML=adidasEntry;
-  w.dom.window.document.querySelector('button').onclick=()=>{
-    entries++;w.dom.window.document.body.innerHTML=adidasPanel;
-    w.dom.window.document.getElementById('social-button-naver').onclick=()=>providers++;
-  };
-  await b.ticks[0]();await b.ticks[0]();await b.ticks[0]();
-  assert.equal(entries,1);assert.equal(providers,1);
-  assert.equal(b.connector.status('adidas').code,'SOCIAL_LOGIN_OPENED');
-  assert.equal(b.inserted.length,0,'Naver credentials must never be typed into the merchant page');
-});
-
 test('Adidas cookie consent waits for the user without consuming the login-entry action',async t=>{
   const b=await adidasFixture(t),w=new b.BrowserWindow();await w.loadURL(b.source.url);
   const flow={source:b.source,method:'naver',started:Date.now(),acted:new Set()};
