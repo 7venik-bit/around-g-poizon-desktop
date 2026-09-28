@@ -132,6 +132,7 @@ import { scoreProductCandidate } from "./services/matcher.mjs";
 import { reconcileMatchedSources, reconcileSearchAttempt } from "./services/matcher.mjs";
 import { domesticBrandEvidenceMatch } from "./relay/domestic-search.mjs";
 import { domesticProductUrlIdentity, captureDomesticDetailPage } from "./services/domestic-detail-page.mjs";
+import { captureOfficialProductPrice } from "./services/official-product-price.mjs";
 import {
   isApprovedNaverDomesticSellerEvidence,
   isDomesticNaverPriceCard,
@@ -1226,7 +1227,10 @@ async function collectOfficialMallSearchProducts(searchWindow, query) {
           title,
           name: title,
           articleNumber,
-          price: cardPrice,
+          price: 0,
+          priceVerified: false,
+          priceVerificationVersion: 1,
+          priceStatus: "unverified",
           imageUrl: String(image?.currentSrc || image?.src || ""),
           url,
           inStock: null,
@@ -3218,7 +3222,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           const currentUrl = String(location.href || "");
           if (!expected || (!compact(currentUrl).includes(compact(expected))
             && !compact(pageText).includes(compact(expected)))) return null;
-          const titleElement = document.querySelector('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]');
+          const titleElement = document.querySelector("#prod-title") || document.querySelector('main h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]');
           let matchingDetail = null;
           const visit = value => {
             if (!value || typeof value !== "object") return;
@@ -3238,22 +3242,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           const color = String(matchingDetail?.color || "");
           const productTitle = String(titleElement?.textContent || document.title || "").replace(/\\s+/g, " ").trim()
             + (color ? " [" + color + "]" : "");
-          const priceNodes = [...document.querySelectorAll('[itemprop="price"],[class*="price" i],strong,em,b,span')];
-          const prices = priceNodes.map((element) => {
-            const raw = String(element.getAttribute?.("content") || element.textContent || "").trim();
-            const priceSemantic = element.getAttribute?.("itemprop") === "price"
-              || /price/i.test(String(element.className?.baseVal || element.className || ""));
-            const match = priceSemantic
-              ? raw.match(/(?:[₩￦]\\s*)?([1-9][\\d,]{2,})\\s*원?/)
-              : raw.match(/(?:[₩￦]\\s*([1-9][\\d,]{2,})|([1-9][\\d,]{2,})\\s*원)/);
-            if (!match) return null;
-            const amount = Number(String(match[1] || match[2]).replace(/,/g, ""));
-            if (!Number.isFinite(amount) || amount < 1_000) return null;
-            const style = getComputedStyle(element);
-            const struck = /line-through/.test(style.textDecorationLine || style.textDecoration || "")
-              || Boolean(element.closest("del,s,strike"));
-            return { amount, value: amount.toLocaleString("ko-KR") + "원", struck };
-          }).filter(Boolean).filter((item) => !item.struck).sort((a, b) => a.amount - b.amount);
+          const priceEvidence = (${captureOfficialProductPrice.toString()})(${JSON.stringify(officialDirectUrl)}, expected, (${domesticProductUrlIdentity.toString()}));
           const image = [...document.querySelectorAll('img')].find((element) => {
             const src = String(element.currentSrc || element.src || "");
             const label = [src, element.alt, element.className].join(" ");
@@ -3264,13 +3253,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           return {
             productUrl: currentUrl,
             title: productTitle,
-            text: [productTitle, expected, prices[0]?.value || ""].filter(Boolean).join(" "),
+            text: [productTitle, expected].filter(Boolean).join(" "),
             markup: String(titleElement?.outerHTML || ""),
             imageUrl: String(image?.currentSrc || image?.src || ""),
             imageLinkedToProduct: Boolean(image),
-            price: Number(matchingDetail?.offers?.price) > 0
-              ? Number(matchingDetail.offers.price).toLocaleString("ko-KR") + "원" : prices[0]?.value || "",
-            originalPrice: "",
+            ...priceEvidence,
           };
         })()`, true).catch(() => null);
         if (!officialDirectDetail) {
@@ -3923,7 +3910,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     // list-only results.
     if (Array.isArray(analyzed?.products)) {
       const products = [];
-      const inspectedProducts = analyzed.products;
+      const officialPricePending = {price:0, originalPrice:0, priceVerified:false, priceVerificationVersion:1, priceStatus:"unverified", priceReason:"detail_unavailable"};
+      const inspectedProducts = source.store === "브랜드 공식몰"
+        ? analyzed.products.map(product => ({...product, ...officialPricePending})) : analyzed.products;
       let incompleteDetails = 0;
       const attemptedQuery = sanitizeDomesticQuery(searchAttempt?.query || source.searchQuery || articleNumber || title);
       const exactCodeQuery = sanitizeDomesticProductCode(articleNumber);
@@ -3941,10 +3930,12 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         try {
           const retained = (source.recoveryProducts || []).find(p => p.url === product.url);
           if (retained && stockObservationComplete(retained)
+            && (source.store !== "브랜드 공식몰" || (retained.priceVerified === true && retained.priceVerificationVersion === 1))
             && Date.now() - Date.parse(retained.stockCheckedAt || '') < 30 * 60_000) {
             products.push(retained); detailVerified = true; continue;
           }
           let detailText = "";
+          let officialPrice = source.store === "브랜드 공식몰" ? {...officialPricePending} : null;
           let detailIdentity = { titleText: "", labeledText: "", structuredCodes: [] };
           let detailLoaded = false;
           let detailFailed = false;
@@ -3964,6 +3955,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             detailText = String(identitySnapshot.pageText || "");
             detailIdentity = identitySnapshot;
             detailLoaded = true;
+            if (officialPrice) {
+              officialPrice = await searchWindow.webContents.mainFrame.executeJavaScript(
+                `(${captureOfficialProductPrice.toString()})(${JSON.stringify(product.url)}, ${JSON.stringify(articleNumber)}, (${domesticProductUrlIdentity.toString()}))`, true,
+              ).catch(() => ({...officialPricePending}));
+            }
             const optionsCheckpoint = source.recoveryOptions?.[product.url];
             const resumeOptions = optionsCheckpoint && Date.now() - Date.parse(optionsCheckpoint.checkedAt || '') < 30 * 60_000
               ? optionsCheckpoint.options : [];
@@ -4006,7 +4002,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
           if (isOverseasPurchaseProduct(evidence)) continue;
           if (isConsignmentOperatedProduct(evidence)) continue;
-          if (detailFailed || !stockObservationComplete(stockEvidence)) incompleteDetails += 1;
+          if (detailFailed || !stockObservationComplete(stockEvidence) || (officialPrice && !officialPrice.priceVerified)) incompleteDetails += 1;
           const isSsg = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(String(product.url || ""));
           const detailClassification = isSsg
             ? classifySsgProductEvidence({ brand, url: product.url, text: evidence })
@@ -4038,6 +4034,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             ssgClassification: classification,
             ssgDetailVerified: Boolean(detailText),
             ...stockEvidence,
+            ...(officialPrice || {}),
           });
         } finally {
           await onActivity?.({products: [...products], completedProducts: productIndex + 1, totalProducts: inspectedProducts.length,
