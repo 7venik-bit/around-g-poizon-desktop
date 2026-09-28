@@ -110,6 +110,15 @@ export function mergeRetailerStockProducts(products = []) {
     const key = `${officialMall ? '브랜드 공식몰' : store}:${identity}`;
     const previous = found.get(key);
     const merged = {...previous, ...product};
+    // A later card/stock checkpoint must not replace an owned detail price.
+    // A new explicit failed price observation may still clear the old value.
+    if (officialMall && previous?.priceVerified === true && previous.priceVerificationVersion === 1
+      && product.priceVerified !== true && !product.priceReason
+      && previous.url === product.url) {
+      for (const field of ['price','originalPrice','priceVerified','priceVerificationVersion','priceStatus','priceReason','priceSource','priceBasis','priceUrl']) {
+        if (previous[field] !== undefined) merged[field] = previous[field];
+      }
+    }
     if(previous?.sizes?.length || product.sizes?.length){
       const sizes=new Map();
       for(const size of [...(previous?.sizes||[]),...(product.sizes||[])]){
