@@ -481,7 +481,7 @@
             return `<tr class="excel-product-row ${groupClass}">
               <td class="excel-product-select-column"><input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택"></td>
               <td class="excel-product-image">${product.logoUrl ? `<img src="${safeText(product.logoUrl)}" alt="">` : "-"}</td>
-              <td><b>${safeText(product.articleNumber || "-")}</b>${typeof purchaseAwarenessBadge === "function" ? purchaseAwarenessBadge(product) : ""}</td>
+              <td>${globalThis.AroundGPoizonProductView?.button(product) || ""}<b>${safeText(product.articleNumber || "-")}</b>${typeof purchaseAwarenessBadge === "function" ? purchaseAwarenessBadge(product) : ""}</td>
               <td title="${safeText(product.title || "")}">${safeText(product.title || "-")}</td>
               <td>${safeText(product.brandName || "-")}</td>
               <td class="sourcing-size">${safeText(referenceProduct.option || product.option || "-")}</td>
