@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld("aroundG", {
     return () => ipcRenderer.removeListener("explorer:brand-progress", handler);
   },
   openSellerCenter: () => ipcRenderer.invoke("seller:open"),
+  openPoizonProduct: (product) => ipcRenderer.invoke("seller:open-product", product),
   openSellerProductSearch: () => ipcRenderer.invoke("seller:open-product-search"),
   beginSellerExcelVerification: (input = {}) => ipcRenderer.invoke("seller:excel-verification-start", input),
   cancelSellerExcelVerification: (runId) => ipcRenderer.invoke("seller:excel-verification-cancel", runId),

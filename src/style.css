@@ -2422,3 +2422,9 @@ body .shell>header{
 .shopping-account-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .shopping-account-actions button{font-size:12px;padding:7px 10px}
 .shopping-account-body p{font-size:12px;margin:7px 0;line-height:1.5}
+/* POIZON source-product navigation stays available beside domestic results. */
+.poizon-product-view { display:block; padding:4px 6px; margin:3px auto; min-height:24px; height:auto; max-width:100%; font-size:11px; line-height:1.2; white-space:nowrap; color:#075b88; border:1px solid #8ecbd2; background:#edfcfc; border-radius:5px; cursor:pointer; }
+.poizon-product-view:disabled { opacity:.65; cursor:wait; }
+.poizon-product-view-status:empty { display:none; }
+.poizon-product-view-status { position:fixed; bottom:22px; right:22px; z-index:10000; max-width:420px; padding:12px 16px; color:#173b54; background:#f0fcff; border:1px solid #7dbbcc; border-radius:8px; box-shadow:0 3px 18px #10284426; font-size:13px; }
+.poizon-product-view-status[data-state="error"] { color:#803014; background:#fff5ef; border-color:#d89c7c; }

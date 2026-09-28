@@ -1,4 +1,5 @@
 import { popularTableScript } from "./services/popular-table-runtime.mjs";
+import { createPoizonProductViewer } from "./services/poizon-product-viewer.mjs";
 import { createLocalLedger } from "./services/local-ledger.mjs";
 import { purchaseLedgerAwareness } from "./services/purchase-ledger-awareness.mjs";
 import { collectPoizonSuccessfulOrders } from "./services/poizon-order-screen.mjs";
@@ -12828,6 +12829,8 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("weekly-site-health:status", () => sendWeeklySiteHealthStatus());
   ipcMain.handle("weekly-site-health:run", () => runWeeklySiteHealthCheck({ manual: true }));
+  const poizonProductViewer = createPoizonProductViewer({ BrowserWindow, icon: APP_ICON_PATH });
+  ipcMain.handle("seller:open-product", (_event, product) => poizonProductViewer.open(product));
   ipcMain.handle("seller:open", () => {
     openSellerCenterWindow();
     return { ok: true };

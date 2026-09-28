@@ -7,6 +7,7 @@ files.push("tests/naver-save-login.test.mjs");
 files.push("tests/combined-brand-sales-filter.test.mjs");
 files.push("tests/shopping-accounts.test.mjs");
 files.push("tests/adidas-chrome-login.test.mjs");
+files.push("tests/poizon-product-viewer.test.mjs");
 if (!files.length) throw new Error("At least one regression test file is required");
 const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", ...files], {
   encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
