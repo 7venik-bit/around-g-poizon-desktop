@@ -63,7 +63,8 @@
         && source?.verificationFailed !== true
         && source?.verificationPending !== true);
     if (productAbsent) {
-      return { state: "missing", className: "missing", count: 0, label: "상품 없음" };
+      return { state: "missing", className: "missing", count: 0,
+        label: source.identityRejectedCount > 0 ? "일치 상품 없음" : "상품 없음" };
     }
 
     // A confirmed zero is stronger than the link-only display mode. Previously

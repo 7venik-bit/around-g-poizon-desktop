@@ -7,6 +7,7 @@ import * as relay from '../relay/domestic-search.mjs';
 import * as detail from '../services/domestic-detail-page.mjs';
 import * as price from '../services/naver-price.mjs';
 import * as recovery from '../services/domestic-recovery.mjs';
+import * as matcher from '../services/matcher.mjs';
 import { finalizeNaverFashionTownResult } from '../services/naver-fashiontown-result.mjs';
 
 // Offline regression tests execute the production predicates and Naver verifier.
@@ -68,7 +69,7 @@ function fixture(t, {html = documentHtml(), resolvedUrl = URL_PRODUCT, collectSt
     isDestroyed(){return this.destroyed;}
     destroy(){this.destroyed=true;}
   }
-  const context = createContext({...relay,...detail,...price,...recovery,BrowserWindow,URL,console,
+  const context = createContext({...relay,...detail,...price,...recovery,...matcher,BrowserWindow,URL,console,
     Date:class extends Date{static now(){return now;}},wait:async ms=>{now+=ms;if(paintAfter && now>=paintAfter)for(const w of windows)if(!w.destroyed)w.dom.window.document.body.innerHTML=laterHtml;},
     domesticSearchGeneration:0,domesticSearchCanceled:()=>false,APP_ICON_PATH:'',
     DOMESTIC_SEARCH_PARTITION:'offline-test',activeDomesticSearchWindows:new Set(),
@@ -113,7 +114,7 @@ test('Fashion Town copyable h3 outside main identifies the current product befor
 
 test('a recommendation heading cannot replace a different Fashion Town product title', async t=>{
   const f=fixture(t,{html:'<header><h1>네이버플러스 스토어</h1></header><div class="_copyable"><h3>다른 상품 OTHER123</h3></div><section><h3>추천 상품 JH9976</h3></section>'}),w=await f.document();
-  await assert.rejects(f.context.waitForDomesticDetailReady(w,'네이버 패션타운',URL_PRODUCT,0,'JH9976','product'),/product_detail_not_ready/);
+  await assert.rejects(f.context.waitForDomesticDetailReady(w,'네이버 패션타운',URL_PRODUCT,0,'JH9976','product'),/product_identity_mismatch/);
 });
 
 const fashionTownDocument = (productNotice = '') => `<div>디자이너뷰티해외직구</div>
@@ -348,4 +349,30 @@ test('rate-limit URL is recognized before its text renders', async t => {
   const w=await f.document();
   await assert.rejects(f.context.waitForDomesticDetailReady(w,'네이버 패션타운',URL_PRODUCT,0,'JH9976','product'),/rate_limited/);
   assert.equal(f.now(),0);
+});
+
+test('a wrong detail title overrides a matching card and is rejected before waiting for stock', async t => {
+  const f=fixture(t,{html:'<div class="_copyable"><h3>아디다스 다른 상품 JH9977</h3></div>'});
+  const result=await f.context.verifyApprovedNaverDomesticProducts([{...f.candidate,title:TITLE+' JH9976'}],{
+    articleNumber:'JH9976',brand:'아디다스',title:TITLE,requireArticleIdentity:true,
+  });
+  assert.equal(result.products.length,0);
+  assert.equal(result.rejectedCount,1);
+  assert.equal(result.failedCount,0,'an observed mismatch is not a network failure');
+  assert.equal(f.optionCalls(),0);
+  assert.equal(f.now(),0);
+  assert.ok(result.rejectedProductUrls.includes(URL_PRODUCT));
+});
+
+test('the same rejected product is not reopened on a later query, including tracking duplicates', async t => {
+  const f=fixture(t);
+  const r=await f.context.verifyApprovedNaverDomesticProducts([{...f.candidate,url:URL_PRODUCT+'?tr=swsc'}],{
+    articleNumber:'JH9976',requireArticleIdentity:true,rejectedProductUrls:[URL_PRODUCT],
+  });
+  assert.equal(r.products.length,0);
+  assert.equal(r.candidateCount,1);
+  assert.equal(r.checkedCount,1);
+  assert.equal(r.rejectedCount,1);
+  assert.equal(r.failedCount,0);
+  assert.equal(f.navigations.length,0);
 });
