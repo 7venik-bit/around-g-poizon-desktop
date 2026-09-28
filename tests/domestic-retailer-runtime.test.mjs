@@ -118,7 +118,7 @@ test('shipping source aggregation automatically collects a known official detail
   f.context.renderedSearchSourceResult=async source=>{
     calls++;
     if(!source.directProductUrls) return {products:[],detailVerificationPending:true};
-    return {count:1,products:[{store:source.store,url,articleNumber:'SR123UPS11',price:49000,
+    return {count:1,products:[{store:source.store,url,title:'데상트 SR123UPS11 카라 셔츠',articleNumber:'SR123UPS11',price:49000,
       stockVerified:true,stockCoverage:'observed',sizes:[{label:'95',inStock:true}]}]};
   };
   const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{store:'브랜드 공식몰',

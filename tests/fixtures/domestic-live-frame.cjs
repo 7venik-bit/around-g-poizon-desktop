@@ -17,8 +17,9 @@ app.whenReady().then(async () => {
   const detailPage = await import(pathToFileURL(resolve(root, 'services/domestic-detail-page.mjs')));
   const naverPrice = await import(pathToFileURL(resolve(root, 'services/naver-price.mjs')));
   const recovery = await import(pathToFileURL(resolve(root, 'services/domestic-recovery.mjs')));
+  const matcher = await import(pathToFileURL(resolve(root, 'services/matcher.mjs')));
   const source = readFileSync(resolve(root, 'main.mjs'), 'utf8');
-  const context = createContext({...relay, ...naver, ...detailPage, ...naverPrice, ...recovery, URL, setTimeout, clearTimeout, wait, BrowserWindow,
+  const context = createContext({...relay, ...naver, ...detailPage, ...naverPrice, ...recovery, ...matcher, URL, setTimeout, clearTimeout, wait, BrowserWindow,
     APP_ICON_PATH:undefined, DOMESTIC_SEARCH_PARTITION:'offline-unused', activeDomesticSearchWindows:new Set(),
     domesticSearchGeneration:0, domesticSearchCanceled:()=>false});
   const section = (start,end) => source.slice(source.indexOf(start), source.indexOf(end,source.indexOf(start)));
