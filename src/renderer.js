@@ -576,10 +576,12 @@ function renderVerifiedSpuRows(file, products) {
       : result
         ? '<td class="excel-raw-search-cell"><div class="excel-raw-search-summary"><span class="excel-raw-search-state ' + (result.error || result.partial ? 'pending' : 'available') + '">' + (result.error ? '검색 실패' : result.partial ? '일부 결과' : '검색 완료') + '</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">다시 검색</button></div></td>'
         : '<td class="excel-raw-search-cell excel-raw-search-pending"><button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">상품검색</button></td>';
+    const poizonButton = globalThis.AroundGPoizonProductView?.button(p) || '';
+    const linkedResultCell = resultCell.replace('</td>', poizonButton + '</td>');
     const detailRow = result && !result.loading
       ? '<tr class="excel-product-search-detail excel-verified-search-detail"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>' + text(p.title || p.articleNumber || '상품') + '</strong> 국내 검색 결과</div>' + renderDomestic(result, p, keys[i]) + '</td></tr>'
       : '';
-    return '<tr class="excel-product-row excel-verified-spu-row"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(keys[i]) + '"></td><td class="excel-verified-image-cell">' + image + '</td><td><b>' + text(p.articleNumber) + '</b>' + (typeof purchaseAwarenessBadge === 'function' ? purchaseAwarenessBadge(p) : '') + '<small> SPU ' + text(p.spuId) + '</small></td><td>' + text(p.title) + '<details><summary>원본 사이즈 ' + p.optionCount + '행</summary>' + options + '</details></td><td>' + text(p.brandName) + '</td><td>' + (p.hasPriceData ? money(p.averagePrice) : '미확인') + '</td><td>' + text(chinaRaw) + basisHint + '</td><td>' + text(localRaw) + basisHint + '</td><td>' + text(p.verificationStatus) + '</td>' + resultCell + '</tr>' + detailRow;
+    return '<tr class="excel-product-row excel-verified-spu-row"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(keys[i]) + '"></td><td class="excel-verified-image-cell">' + image + '</td><td><b>' + text(p.articleNumber) + '</b>' + (typeof purchaseAwarenessBadge === 'function' ? purchaseAwarenessBadge(p) : '') + '<small> SPU ' + text(p.spuId) + '</small></td><td>' + text(p.title) + '<details><summary>원본 사이즈 ' + p.optionCount + '행</summary>' + options + '</details></td><td>' + text(p.brandName) + '</td><td>' + (p.hasPriceData ? money(p.averagePrice) : '미확인') + '</td><td>' + text(chinaRaw) + basisHint + '</td><td>' + text(localRaw) + basisHint + '</td><td>' + text(p.verificationStatus) + '</td>' + linkedResultCell + '</tr>' + detailRow;
   }).join('') : '<tr><td colspan="10">동일 조건에 맞는 검증 완료 상품이 없습니다. 실패·누락 집계도 확인해 주세요.</td></tr>';
   if (typeof updatePurchaseAwarenessDisplay === 'function') updatePurchaseAwarenessDisplay();
   return keys;
@@ -1651,7 +1653,7 @@ function renderExcelProductRows(file, products = []) {
     return `<tr class="excel-product-row ${groupClass} ${outcomeClass}">
       <td class="excel-product-select-column"><input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택"></td>
       <td class="excel-product-image">${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : "-"}</td>
-      <td><b>${text(product.articleNumber || "-")}</b>${typeof purchaseAwarenessBadge === "function" ? purchaseAwarenessBadge(product) : ""}</td><td title="${text(product.title)}">${text(product.title || "-")}</td>
+      <td>${globalThis.AroundGPoizonProductView?.button(product) || ""}<b>${text(product.articleNumber || "-")}</b>${typeof purchaseAwarenessBadge === "function" ? purchaseAwarenessBadge(product) : ""}</td><td title="${text(product.title)}">${text(product.title || "-")}</td>
       <td>${text(product.brandName || "-")}</td><td title="${text(product.categoryName)}">${text(product.categoryName || "-")}</td>
       <td>${poizonPrice ? money(poizonPrice) : "가격 없음"}</td>
       <td>${product.screenVerified ? excelProductMetric(product.sales30dRaw, product.sales30d) : "미동기화"}</td><td>${product.screenVerified ? excelProductMetric(product.localSales30dRaw, product.localSales30d) : "미동기화"}</td>
@@ -3129,7 +3131,7 @@ function renderExplorerResults(title, products, preserveDomestic = false, emptyM
           <div class="product-badges"><span class="badge">${text(product.categoryGroup || "인기상품")}</span>${product.apiMatched ? `<span class="badge">API 연결</span>` : product.apiMatched === false ? `<span class="badge muted">API 미일치</span>` : ""}</div>
           <h3>${text(product.title || product.name)}</h3>
           <p>${text(product.brandName || product.brand || "")}</p>
-          <div class="explorer-product-meta"><code>${text(product.articleNumber || "")}</code><span>${product.averagePrice || product.minPrice?.value ? money(product.averagePrice || product.minPrice.value) : ""}</span>${typeof purchaseAwarenessBadge === "function" ? purchaseAwarenessBadge(product) : ""}</div>
+          <div class="explorer-product-meta">${globalThis.AroundGPoizonProductView?.button(product) || ""}<code>${text(product.articleNumber || "")}</code><span>${product.averagePrice || product.minPrice?.value ? money(product.averagePrice || product.minPrice.value) : ""}</span>${typeof purchaseAwarenessBadge === "function" ? purchaseAwarenessBadge(product) : ""}</div>
         </div>
       </div>
       <label class="product-select-option"><input type="checkbox" data-product-select="${encodeURIComponent(key)}" ${selectedExplorerKeys.has(key) ? "checked" : ""}> 선택</label>
