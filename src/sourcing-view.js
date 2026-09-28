@@ -432,7 +432,7 @@
             return `<tr class="excel-product-row ${groupClass}">
               <td class="excel-product-select-column"><input type="checkbox" data-excel-product-select="${encodeURIComponent(key)}" aria-label="제품 선택"></td>
               <td class="excel-product-image">${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : "-"}</td>
-              <td><b>${text(product.articleNumber || "-")}</b></td>
+              <td>${globalThis.AroundGPoizonProductView?.button(product) || ""}<b>${text(product.articleNumber || "-")}</b></td>
               <td title="${text(product.title)}">${text(product.title || "-")}</td>
               <td>${text(product.brandName || "-")}</td>
               <td class="sourcing-size">${text(referenceProduct.option || product.option || "-")}</td>
