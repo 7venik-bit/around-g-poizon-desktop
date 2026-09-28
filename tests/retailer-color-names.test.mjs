@@ -101,6 +101,21 @@ test('confirmed charcoal remains readable when peer sites are disabled and unkno
   assert.equal(readableColorName('OFF_WHITE'),'오프화이트');
 });
 
+test('fresh official stock preserves an earlier name without needing the peer to be present again', () => {
+  const [saved] = mergeRetailerStockProducts([official('LGR0'),peer('LGR0_LIGHT-GREY')]);
+  const fresh = official('LGR0',{sizes:[{label:'95',quantity:2,inStock:true},{label:'100',quantity:1,inStock:true}]});
+  for (const input of [[saved,fresh],[fresh,saved]]) {
+    const [result] = mergeRetailerStockProducts(input);
+    assert.equal(result.colorName,'라이트 그레이');
+    assert.equal(result.title,'터프 긴팔 티셔츠 [라이트 그레이]');
+    assert.equal(result.sizes.length,2);
+    assert.ok(result.sizes.every(s => s.label.startsWith('라이트 그레이 / ')));
+  }
+  const [result] = mergeRetailerStockProducts([saved,fresh]);
+  assert.deepEqual(result.sizes.map(s => s.quantity),[2,1]);
+  assert.equal(result.colorNameSource.url,peer().url);
+});
+
 test('an incomplete colour-only option terminates without inventing a size or quantity', () => {
   const [result] = mergeRetailerStockProducts([official('CHC0',{sizes:[{label:'CHC0',optionPath:['CHC0'],inStock:null}]})]);
   assert.equal(result.sizes[0].label,'차콜 그레이');

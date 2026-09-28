@@ -78,6 +78,17 @@ export function descenteColorEvidence(products) {
   const wanted = new Set(products.map(descenteColorIdentity).filter(Boolean).map(value => value.article));
   const evidence = new Map();
   if (!wanted.size) return evidence;
+  // A fresh stock checkpoint may omit a name learned earlier. Reuse only a
+  // saved name bound to this exact official model/colour, regardless of order.
+  for (const product of products) {
+    const identity = descenteColorIdentity(product);
+    const name = readableColorName(product.colorName);
+    if (!identity || !name || compact(name) === identity.code
+      || String(product.colorCode || '').toUpperCase() !== identity.code) continue;
+    const key = `saved:${identity.article}:${identity.code}`;
+    if (!evidence.has(key)) evidence.set(key, new Map());
+    evidence.get(key).set(sameName(name), {name, source:product.colorNameSource});
+  }
   for (const product of products) {
     let host;
     try { host = new URL(product.url).hostname.toLowerCase(); } catch { continue; }
@@ -111,6 +122,8 @@ export function resolveDescenteColor(product, identity, evidence) {
     const own = [...ownNames.values()][0];
     return {name:own.name, source:{kind:'official', article, code, url:product.url, rawName:own.rawName}};
   }
+  const saved = evidence.get(`saved:${article}:${code}`);
+  if (saved?.size === 1 && ownNames.size === 0) return [...saved.values()][0];
   const peers = evidence.get(`${article}:${code}`);
   if (peers?.size === 1 && ownNames.size === 0) {
     const peer = [...peers.values()][0];
