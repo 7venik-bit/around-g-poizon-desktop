@@ -129,6 +129,7 @@ import {
   sanitizeDomesticQuery,
 } from "./relay/domestic-search.mjs";
 import { scoreProductCandidate } from "./services/matcher.mjs";
+import { reconcileMatchedSources, reconcileSearchAttempt } from "./services/matcher.mjs";
 import { domesticBrandEvidenceMatch } from "./relay/domestic-search.mjs";
 import { domesticProductUrlIdentity, captureDomesticDetailPage } from "./services/domestic-detail-page.mjs";
 import {
@@ -714,15 +715,18 @@ async function addMatchConfidence(data, input) {
   }));
   const sourceFingerprint = products.length ? await imageFingerprint(input.imageUrl).catch(() => null) : null;
   if (sourceFingerprint) {
-    const bestByStore = new Map();
-    products.forEach((product, index) => {
-      const previous = bestByStore.get(product.store);
-      if (!previous || product.confidence > previous.confidence) bestByStore.set(product.store, { index, confidence: product.confidence });
-    });
-    await Promise.all([...bestByStore.values()].map(async ({ index }) => {
-      const candidateFingerprint = await imageFingerprint(products[index].imageUrl).catch(() => null);
-      const imageSimilarity = fingerprintSimilarity(sourceFingerprint, candidateFingerprint);
-      products[index] = { ...products[index], ...scoreProductCandidate(source, products[index], imageSimilarity) };
+    // DOMESTIC_COMPARE_EVERY_CANDIDATE: include all viable seller candidates.
+    // Bound image requests and reuse the fingerprint cache across query attempts.
+    let nextIndex = 0;
+    await Promise.all(Array.from({length: Math.min(4, products.length)}, async () => {
+      while (nextIndex < products.length) {
+        const index = nextIndex++;
+        if (products[index].signals?.codeConflict || products[index].articleConflict) continue;
+        const candidateFingerprint = await imageFingerprint(products[index].imageUrl).catch(() => null);
+        const imageSimilarity = fingerprintSimilarity(sourceFingerprint, candidateFingerprint);
+        products[index] = { ...products[index], imageCompared: Number.isFinite(imageSimilarity),
+          ...scoreProductCandidate(source, products[index], imageSimilarity) };
+      }
     }));
   }
   products = products.map((product) => {
@@ -759,7 +763,8 @@ async function addMatchConfidence(data, input) {
     const verifiedNaverIdentity = String(product?.sourceStore || product?.store || "") === "네이버 패션타운"
       && product.domesticSellerVerified === true
       && (product.articleNumberVerified === true
-        || (product.brandVerifiedFromCard === true && product.titleVerifiedFromDetail === true));
+        || (!source.articleNumber && product.brandVerifiedFromCard === true && product.titleVerifiedFromDetail === true
+          && Number(imageScore || 0) >= 95));
     // Naver's exact result card often omits the model code and uses a campaign
     // photo instead of POIZON's packshot. The detail page has already supplied
     // stronger evidence: approved domestic seller plus article identity or
@@ -776,19 +781,11 @@ async function addMatchConfidence(data, input) {
   });
   const uniqueProducts = new Map();
   for (const product of products) {
-    let urlIdentity = "";
-    try {
-      const parsed = new URL(String(product.url || ""));
-      // Official malls also use /product/detail?goodsNo=... identities.
-      // Dropping their query string merged different captured products.
-      if (product.store !== "브랜드 공식몰") parsed.search = "";
-      parsed.hash = "";
-      urlIdentity = parsed.href.toLocaleLowerCase();
-    } catch {}
+    const urlIdentity = domesticProductUrlIdentity(product.url);
     const exactCode = String(product.detectedArticleNumber || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-    const identity = exactCode
-      ? `${product.store}:code:${exactCode}`
-      : `${product.store}:url:${urlIdentity}`;
+    // Different seller listings/colours of one model remain separate. Only
+    // duplicate links are merged; query product IDs must not be discarded.
+    const identity = urlIdentity ? `${product.store}:url:${urlIdentity}` : `${product.store}:code:${exactCode}`;
     const previous = uniqueProducts.get(identity);
     if (!previous || Number(product.confidence || 0) > Number(previous.confidence || 0)) uniqueProducts.set(identity, product);
   }
@@ -798,12 +795,12 @@ async function addMatchConfidence(data, input) {
     if (store) counts.set(store, (counts.get(store) || 0) + 1);
     return counts;
   }, new Map());
-  const sources = data.sources.map((sourceRow) => ({
+  const sources = reconcileMatchedSources(data.sources.map((sourceRow) => ({
     ...sourceRow,
     count: sourceRow.linkOnly
       ? Number(sourceRow.count || 0)
       : verifiedCounts.get(sourceRow.store) || 0,
-  }));
+  })), data.products, products);
   return {
     ...data,
     products,
@@ -869,6 +866,7 @@ async function verifyAllStoresWithMusinsaImage(data, input = {}) {
   return {
     ...data,
     products: accepted,
+    sources: reconcileMatchedSources(data.sources, products, accepted),
     musinsaImageVerification: {
       applied: true,
       referenceStore: "무신사",
@@ -1305,6 +1303,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
   generation = domesticSearchGeneration,
   onActivity = null,
   recoveryProducts = [], recoveryOptions = {},
+  rejectedProductUrls = [],
   browserSession = null,
   searchWindow = null,
 } = {}) {
@@ -1327,13 +1326,20 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         .includes(compact(expectedArticle))) : [];
     if (exactCardCandidates.length) candidates = exactCardCandidates;
   }
+  const rejectedUrls = new Set(rejectedProductUrls.map(domesticProductUrlIdentity));
+  const identityRejected = candidates.filter(product =>
+    rejectedUrls.has(domesticProductUrlIdentity(product.url || product.productUrl))
+    || scoreProductCandidate({articleNumber}, product).signals.codeConflict);
+  identityRejected.forEach(product => rejectedUrls.add(domesticProductUrlIdentity(product.url || product.productUrl)));
+  candidates = candidates.filter(product => !identityRejected.includes(product));
   if (!candidates.length) {
-    return { products: [], candidateCount: 0, checkedCount: 0, rejectedCount: 0, failedCount: 0 };
+    return { products: [], candidateCount: identityRejected.length, checkedCount: identityRejected.length,
+      rejectedCount: identityRejected.length, failedCount: 0, rejectedProductUrls: [...rejectedUrls] };
   }
   let evidenceWindow;
   const approved = [];
-  let checkedCount = 0;
-  let rejectedCount = 0;
+  let checkedCount = identityRejected.length;
+  let rejectedCount = identityRejected.length;
   let failedCount = 0;
   const detailFailures = [];
   let securityVerificationRequired = false;
@@ -1368,6 +1374,9 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
       try {
         const retained = recoveryProducts.find(p => p.url === candidate.url && p.domesticSellerVerified === true);
         if (retained && stockObservationComplete(retained)
+          && !scoreProductCandidate({articleNumber}, retained).signals.codeConflict
+          && (!requireArticleIdentity || strictProductArticleIdentityMatch({titleText: retained.title,
+            structuredCodes: [retained.detectedArticleNumber].filter(Boolean)}, articleNumber))
           && Date.now() - Date.parse(retained.stockCheckedAt || '') < 30 * 60_000) {
           approved.push(retained); checkedCount += 1; detailVerified = true; continue;
         }
@@ -1402,19 +1411,20 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         const sellerVerified = sellerVerifiedByWording
           || naverFashionTownDomesticRoute
           || naverTrustedExternalOfficialRoute;
-        const articleVerified = strictProductArticleIdentityMatch({
-          ...snapshot,
-          titleText: `${String(candidate?.title || "")} ${String(snapshot.titleText || "")}`,
-        }, articleNumber);
-        const observedIdentityText = `${String(candidate?.title || "")} ${String(snapshot.titleText || "")}`;
+        // The destination must prove its own identity. A matching search-card
+        // title must not conceal a different product on the opened page.
+        const detailConflict = scoreProductCandidate({articleNumber}, {title: snapshot.visibleTitleText || snapshot.titleText}).signals.codeConflict;
+        const articleVerified = strictProductArticleIdentityMatch(snapshot, articleNumber);
+        const observedIdentityText = String(snapshot.visibleTitleText || snapshot.titleText || candidate.title || "");
         const brandVerified = domesticBrandEvidenceMatch(brand, observedIdentityText);
         const productTitleVerified = !String(title || "").trim()
           || titleIdentityMatch(observedIdentityText, title);
         const identityVerified = requireArticleIdentity
           ? articleVerified
           : brandVerified && productTitleVerified;
-        if (!sellerVerified || !identityVerified) {
+        if (detailConflict || !sellerVerified || !identityVerified) {
           rejectedCount += 1;
+          rejectedUrls.add(domesticProductUrlIdentity(productUrl));
           continue;
         }
         // Publish verified identity/price before optional stock inspection.
@@ -1423,6 +1433,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         const initialStock = snapshot.stockEvidence ? normalizeRenderedStockEvidence(snapshot.stockEvidence) : {};
         const verifiedProduct = {
           ...candidate, ...initialStock,
+          title: String(snapshot.visibleTitleText || snapshot.titleText || candidate.title || ""),
           inStock: null, stockVerified: false,
           stockCoverage: initialStock.sizes?.length ? "partial" : "unknown",
           stockStatus: "unknown", detailVerificationPending: true,
@@ -1466,6 +1477,13 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           ...(optionError ? {detailVerificationReason: String(optionError.message || "stock_collection_failed")} : {}),
         };
       } catch (error) {
+        if (error?.identityMismatch === true) {
+          checkedCount += 1;
+          rejectedCount += 1;
+          rejectedUrls.add(domesticProductUrlIdentity(productUrl));
+          detailVerified = true;
+          continue;
+        }
         failedCount += 1;
         detailFailure = String(error?.message || "product_detail_failed");
         detailDiagnostics = error?.detailDiagnostics || {};
@@ -1492,7 +1510,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         if (error?.rateLimited || error?.securityVerificationRequired || error?.loginRequired
           || detailFailure === "naver_product_click_failed" || domesticSearchCanceled(generation)) break;
       } finally {
-        await onActivity?.({products: [...approved], completedProducts: checkedCount + failedCount, totalProducts: candidates.length,
+        await onActivity?.({products: [...approved], completedProducts: checkedCount + failedCount, totalProducts: candidates.length + identityRejected.length,
           detailVerified, detailUrl: productUrl, failedDetails: failedCount, detailFailure, detailDiagnostics});
       }
     }
@@ -1504,9 +1522,10 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
   }
   return {
     products: approved,
-    candidateCount: candidates.length,
+    candidateCount: candidates.length + identityRejected.length,
     checkedCount,
     rejectedCount,
+    rejectedProductUrls: [...rejectedUrls],
     failedCount,
     detailFailures,
     securityVerificationRequired,
@@ -2643,6 +2662,10 @@ async function waitForDomesticDetailReady(searchWindow, storeName, productUrl, g
         && strictProductArticleIdentityMatch(observed, articleNumber);
       if (expectedPage || naverCanonicalPage) {
         snapshot = observed;
+        if (storeName === "네이버 패션타운" && observed.visibleTitleText
+          && scoreProductCandidate({articleNumber}, {title: observed.visibleTitleText}).signals.codeConflict) {
+          throw Object.assign(new Error("product_identity_mismatch"), {identityMismatch: true, snapshot, detailDiagnostics});
+        }
         // NAVER_PRODUCT_IDENTITY_BEFORE_STOCK: only this explicit mode may
         // return a visible exact product document before options are ready.
         // Metadata-only skeletons cannot satisfy the visible-evidence gate.
@@ -3736,16 +3759,15 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       return renderedSearchFailure("result_parse_failed", searchWindow, { searchSubmitted: interactiveSiteSearch });
     }
     if (naverPortalSource && String(source.store || "") === "네이버 패션타운") {
-      // The requested output is Naver's rendered result list itself. Do not run
-      // those links through the generic brand/article matcher again: the exact
-      // query was already submitted and that second gate discarded real cards.
+      // Broader queries discover candidates; they never relax the original
+      // product identity. The per-query comparison runs before fallback stops.
       const finalized = finalizeNaverFashionTownResult(parsedContent, {
         articleNumber,
         resolvedSearchUrl: String(searchWindow.webContents.getURL() || url),
       });
       const attemptedQuery = sanitizeDomesticQuery(searchAttempt?.query || source.searchQuery || articleNumber || title);
       const exactCodeQuery = sanitizeDomesticProductCode(articleNumber);
-      const requireArticleIdentity = Boolean(exactCodeQuery && attemptedQuery === exactCodeQuery);
+      const requireArticleIdentity = Boolean(exactCodeQuery);
       const approval = await verifyApprovedNaverDomesticProducts(finalized?.products || [], {
         articleNumber,
         brand,
@@ -3756,6 +3778,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         browserSession: searchWindow.webContents.session,
         searchWindow,
         recoveryProducts: source.recoveryProducts, recoveryOptions: source.recoveryOptions,
+        rejectedProductUrls: source.rejectedProductUrls,
       });
       // If only the automated detail click is rate-limited, retain the cards
       // already captured from the successful result page. No second request is
@@ -3772,6 +3795,8 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         ...finalized,
         count: technicalPending && !approved ? null : approvedProducts.length,
         products: approvedProducts,
+        rejectedProductUrls: approval.rejectedProductUrls || [],
+        identityRejectedCount: approval.rejectedCount || 0,
         presenceConfirmed: approved,
         absenceConfirmed,
         naverAllSearchVerdict: approved ? "confirmed" : absenceConfirmed ? "absent" : "pending",
@@ -4074,7 +4099,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
   }
 }
 
-async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "", generation = domesticSearchGeneration, onProgress = null, onCheckpoint = null) {
+async function addRenderedSearchCounts(data, articleNumber, brand = "", title = "", generation = domesticSearchGeneration, onProgress = null, onCheckpoint = null, comparisonInput = {}) {
   const discoveredProducts = [];
   let pendingProducts = [];
   const sources = [];
@@ -4152,10 +4177,12 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
     // stock state can be reported as a purchasable domestic result.
       const allQueryAttempts = Array.isArray(source.searchAttempts) && source.searchAttempts.length
         ? source.searchAttempts : [{ query: source.searchQuery || articleNumber || title || "", url: source.searchUrl || "" }];
-    // Official malls remain product-code-only. Other stores use the complete
-    // accuracy-first fallback order: code -> title -> title+code.
-      const queryAttempts = source.store === "브랜드 공식몰"
-        ? allQueryAttempts.slice(0, 1) : allQueryAttempts;
+    // Preserve the store's supported query plan, submitting each distinct query
+    // once. Every returned candidate is compared before choosing the next step.
+      const queryAttempts = (source.store === "브랜드 공식몰" ? allQueryAttempts.slice(0, 1) : allQueryAttempts)
+        .filter((attempt, index, all) => all.findIndex(other => other.query === attempt.query) === index);
+      const rejectedProductUrls = new Set();
+      const queryComparisons = [];
       let result = null;
       let attemptedQuery = allQueryAttempts[0];
       let sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
@@ -4168,6 +4195,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       for (let queryAttemptIndex = 0; queryAttemptIndex < queryAttempts.length; queryAttemptIndex += 1) {
         const queryAttempt = queryAttempts[queryAttemptIndex];
         attemptedQuery = queryAttempt;
+        source.rejectedProductUrls = [...rejectedProductUrls];
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
         onProgress?.({ completed: sources.length, total: progressTotal, source: String(source.store || "판매처"), phase: "searching", query: queryAttempt.query });
         // A Naver overview DOM belongs to exactly one submitted query. When an
@@ -4262,7 +4290,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
             optionsOnly: !Array.isArray(update.products),
           });
         };
-        const queryResult = await Promise.race([
+        let queryResult = await Promise.race([
           recoverOfficialCollection({source, code:articleNumber,
             canceled:() => stopped || domesticSearchCanceled(generation),
             onProgress: update => onProgress?.({...update, source:source.store, completed:sources.length, total:progressTotal}),
@@ -4273,6 +4301,15 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           result = renderedSearchFailure("unknown_search_failure");
           break;
         }
+        // A raw search hit is not success. Compare code/title/images now so a
+        // wrong hit advances to the next query instead of leaving a stale link.
+        const compared = await addMatchConfidence({products: queryResult.products || [], sources: [source]},
+          {...comparisonInput, articleNumber, brand, title});
+        if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
+        queryResult = reconcileSearchAttempt(queryResult, compared.products);
+        for (const url of queryResult.rejectedProductUrls || []) rejectedProductUrls.add(domesticProductUrlIdentity(url));
+        queryComparisons.push({query: queryAttempt.query, matched: compared.products.length,
+          rejected: Number(queryResult.identityRejectedCount || 0), reason: queryResult.verificationReason || ""});
         result = queryResult;
         if ((queryResult.verificationReason && queryResult.absenceConfirmed !== true)
           || queryResult.detailVerificationPending) break;
@@ -4281,6 +4318,11 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       // next query (product code -> title -> title+code). A page/parser/detail
       // failure ends this source once and is never submitted as another query.
         if (queryResult.absenceConfirmed !== true) break;
+        if (queryAttemptIndex + 1 < queryAttempts.length && rejectedProductUrls.size) {
+          onProgress?.({completed: sources.length, total: progressTotal,
+            source: `${source.store} · 다른 상품 제외 후 다시 검색`, phase: "searching",
+            query: queryAttempts[queryAttemptIndex + 1].query});
+        }
         if (queryResult.searchCompleted === true) {
           // An authoritative result completed real work. Do not leave the next
           // distinct query only the few seconds remaining from earlier queries.
@@ -4305,6 +4347,8 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         searchQuery: String(attemptedQuery?.query || source.searchQuery || ""),
         searchUrl: String(result?.resolvedSearchUrl || attemptedQuery?.url || source.searchUrl || ""),
         count: displayCount,
+        identityChecked: queryComparisons.length > 0,
+        identityRejectedCount: rejectedProductUrls.size,
         countVerified: Number.isFinite(count) && (Number(count) > 0 || absenceConfirmed),
         verificationFailed: result?.resultLinkOnly === true ? false : !Number.isFinite(count),
         verificationPending: result?.resultLinkOnly === true ? false : (
@@ -4328,6 +4372,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           ...result?.verificationDiagnostics,
           query: String(attemptedQuery?.query || source.searchQuery || ""),
           targetUrl: String(attemptedQuery?.url || source.searchUrl || ""),
+          queryComparisons,
         },
         naverAllSearchVerdict: result?.naverAllSearchVerdict || null,
         securityVerificationRequired: result?.securityVerificationRequired === true,
@@ -4345,6 +4390,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       };
     })();
     delete resolvedSource.recoveryProducts; delete resolvedSource.recoveryOptions;
+    delete resolvedSource.rejectedProductUrls;
     sources.push(resolvedSource);
     await onCheckpoint?.(snapshot());
     onProgress?.({
@@ -13336,7 +13382,8 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
           searchTitle,
           searchGeneration,
           sendDomesticProgress,
-          preserveVerifiedResults
+          preserveVerifiedResults,
+          input || {}
         );
         } catch (error) {
           rememberWarning("rendered_search_counts", error);
