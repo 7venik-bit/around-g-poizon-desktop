@@ -14,10 +14,11 @@ delete env.ELECTRON_RUN_AS_NODE;
 try {
   const shipping = ['domestic-shipping-ipc.cjs'];
   const stalled = ['domestic-shipping-ipc.cjs', '--stalled-details'];
-  const fixtures = process.argv.includes('--shopping-login') ? [['shopping-login.cjs']]
+  const fixtures = process.argv.includes('--official-price') ? [['official-product-price.cjs']]
+    : process.argv.includes('--shopping-login') ? [['shopping-login.cjs']]
     : process.argv.includes('--stalled') ? [stalled]
     : process.argv.includes('--shipping') ? [shipping]
-    : [['shopping-login.cjs'], ['domestic-live-frame.cjs'], shipping, stalled];
+    : [['shopping-login.cjs'], ['official-product-price.cjs'], ['domestic-live-frame.cjs'], shipping, stalled];
   for (const [fixture, ...fixtureArgs] of fixtures) {
     const args = process.platform === 'linux' ? ['--no-sandbox', '--headless', '--ozone-platform=headless'] : [];
     args.push(fileURLToPath(new URL('../tests/fixtures/' + fixture, import.meta.url)));

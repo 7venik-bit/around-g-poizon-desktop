@@ -13,6 +13,7 @@ import * as officialAdapters from '../services/official-mall-adapters.mjs';
 import * as brandIntegrity from '../services/brand-integrity.mjs';
 import * as naverPrice from '../services/naver-price.mjs';
 import * as detailPage from '../services/domestic-detail-page.mjs';
+import * as officialPrice from '../services/official-product-price.mjs';
 import * as autoRecovery from '../services/official-auto-recovery.mjs';
 
 const main = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
@@ -224,7 +225,7 @@ function fixture(t, { delay = 0, navigation = 'resolved', navigationDelay = 0, e
     }
   }
   const sandbox = {
-    ...relay, ...naver, ...matcher, ...recovery, ...brandOfficial, ...officialAdapters, ...brandIntegrity, ...naverPrice, ...detailPage, ...autoRecovery, BrowserWindow, URL, console,
+    ...relay, ...naver, ...matcher, ...recovery, ...brandOfficial, ...officialAdapters, ...brandIntegrity, ...naverPrice, ...detailPage, ...officialPrice, ...autoRecovery, BrowserWindow, URL, console,
     Date: class extends Date { static now() { return now; } },
     setTimeout: setTimer, clearTimeout: clearTimer, wait: ms => new Promise(r => setTimer(r, ms)),
     domesticSearchGeneration: 0, domesticSearchCanceled: () => false,
@@ -997,7 +998,7 @@ test('official search execution check runs its generated script and recognizes t
   assert.equal(await f.context.officialMallSearchWasExecuted(w,'SR123UPS11',officialHome),true);
 });
 
-test('official cards without a printed model number survive the complete IPC and matching path', async t => {
+test('official cards without owned detail evidence retain their link without a confirmed price', async t => {
   const f = fixture(t, {pages:{[officialSearch]:officialCard(),[officialProduct]:'<main><h1>남녀공용 카라 셔츠</h1><span class="price">84,550원</span></main>'}});
   const h = f.installHandler([]);
   f.context.queryDomesticProducts = async () => ({products:[],sources:[officialSource]});
@@ -1005,9 +1006,32 @@ test('official cards without a printed model number survive the complete IPC and
   assert.equal(response.ok,true,JSON.stringify(response));
   assert.equal(response.data.products.length,1,'captured official card was lost during final matching');
   assert.equal(response.data.products[0].url,officialProduct);
-  assert.equal(response.data.products[0].price,84550);
+  assert.equal(response.data.products[0].price,0);
   assert.notEqual(response.data.products[0].articleNumberVerified,true,'a search-result card must not fabricate exact article evidence');
-  assert.equal(response.data.domesticPriceCandidates[0].price,84550);
+  assert.equal(response.data.domesticPriceCandidates.length,0);
+});
+
+test('shipping official detail replaces the cheap card with its visible purchase price', async t => {
+  const product='https://official.example/products/SR313LCR71';
+  const search='https://official.example/search?keyword=SR313LCR71';
+  const card=`<main><h1>검색 결과</h1><li><a href="${product}"><img src="https://images.test/product.jpg"><strong>크론 레이서 SR313LCR71</strong></a> <span class="price">49,000원</span></li></main>`;
+  const detail='<main><h1>크론 레이서 SR313LCR71</h1> <span class="price">141,550원</span><div class="size"><button>260</button></div><button>장바구니 담기</button><aside class="recommend"><span class="price">49,000원</span></aside></main>';
+  const f=fixture(t,{pages:{[search]:card,[product]:detail}});
+  const result=await f.drive(f.context.renderedSearchSourceResult({store:'브랜드 공식몰',homepageUrl:officialHome,officialProductUrl:search,searchUrl:search,searchQuery:'SR313LCR71'},'SR313LCR71'));
+  assert.equal(result.products.length,1,JSON.stringify(result));
+  assert.equal(result.products[0].price,141550);
+  assert.equal(result.products[0].priceVerified,true);
+});
+
+test('shipping official recovery rechecks legacy prices and keeps missing detail price unknown', async t => {
+  const url='https://official.example/products/SR313LCR71';
+  const f=fixture(t,{pages:{[url]:'<main><h1>크론 레이서 SR313LCR71</h1> <div class="size"><button>260</button></div><button>장바구니 담기</button><aside class="recommend"><span class="price">49,000원</span></aside></main>'}});
+  const old={url,price:49000,stockVerified:true,stockCoverage:'observed',stockCheckedAt:new Date(0).toISOString(),sizes:[{label:'260',inStock:true}]};
+  const result=await f.drive(f.context.renderedSearchSourceResult({store:'브랜드 공식몰',homepageUrl:officialHome,officialProductUrl:url,directProductUrls:[url],recoveryProducts:[old]},'SR313LCR71'));
+  assert.equal(result.products.length,1,JSON.stringify(result));
+  assert.equal(result.products[0].price,0);
+  assert.equal(result.products[0].priceVerified,false);
+  assert.equal(result.detailVerificationPending,true);
 });
 
 test('an official result exposing a conflicting model stays excluded', async t => {

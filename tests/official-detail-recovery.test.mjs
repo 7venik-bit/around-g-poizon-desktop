@@ -30,7 +30,7 @@ test('official import accepts exact-code html cards but rejects navigation and o
     const start=main.indexOf('async function collectOfficialMallSearchProducts(');
     vm.runInContext(main.slice(start,main.indexOf('\nasync function ',start+1)),ctx);
     const result=await ctx.collectOfficialMallSearchProducts({webContents:{mainFrame:{executeJavaScript:async code=>d.window.eval(code)}}},'JI0079');
-    assert.equal(result.length,1);assert.equal(result[0].price,149000);
+    assert.equal(result.length,1);assert.equal(result[0].price,0);assert.equal(result[0].priceVerified,false);
   }finally{d.window.close();}
 });
 

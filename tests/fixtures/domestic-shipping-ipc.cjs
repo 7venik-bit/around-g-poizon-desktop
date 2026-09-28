@@ -22,7 +22,7 @@ app.whenReady().then(async () => {
   for (const file of ['relay/domestic-search.mjs', 'services/naver-fashiontown-result.mjs',
     'services/matcher.mjs', 'services/domestic-recovery.mjs', 'services/official-auto-recovery.mjs', 'services/brand-official-search.mjs',
     'services/official-mall-adapters.mjs', 'services/brand-integrity.mjs', 'services/naver-price.mjs',
-    'services/domestic-detail-page.mjs', 'services/brand-search-profile.mjs', 'services/official-domain-registry.mjs']) {
+    'services/domestic-detail-page.mjs', 'services/official-product-price.mjs', 'services/brand-search-profile.mjs', 'services/official-domain-registry.mjs']) {
     Object.assign(modules, await import(pathToFileURL(resolve(root, file))));
   }
   const allCases = [
