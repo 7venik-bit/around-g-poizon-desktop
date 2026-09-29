@@ -158,3 +158,35 @@ test('duplicate recent headers are unavailable, not an excuse to fall back to hi
   const h = harness([[...headers, '중국 상품 최근 30일 판매량'], [...rows[1], 300]]);
   assert.equal((await h.preview(criteria)).products.length, 0);
 });
+
+const skuTotalSheet = [headers.slice(0, 6),
+  ...[5, 16, 15, 8, 5, '<5', '<5', '--', '--', '--'].map((count, i) =>
+    ['4171247', '54053401001', '사이즈 합계로 조건 충족', `SIZE-${i}`, 10, count]),
+  ...Array.from({ length: 7 }, (_, i) => ['UNCERTAIN', 'UNCERTAIN', '미확정 수량', `U-${i}`, 10, '<5']),
+];
+
+test('downloaded SKU totals survive preview, grouping, 25-count filtering and visible cells', async () => {
+  const h = uiHarness({ '/ecco.xlsx': skuTotalSheet });
+  await h.open({ minimumTotal: '', minimumLocalTotal: 25 });
+  const products = h.context.combinedBrandPreview.products;
+  assert.equal(products.length, 1);
+  assert.equal(products[0].articleNumber, '54053401001');
+  assert.equal(products[0].localTotalSales, 49);
+  assert.equal(products[0].localTotalSalesRaw, '49+');
+  assert.equal(products[0].optionCount, 10);
+  assert.match(h.html(), /<td>100<\/td><td>49\+<\/td>/);
+  assert.match(h.html(), /원본 현지 총판매 16/);
+  assert.match(h.html(), /원본 현지 총판매 <5/);
+  assert.match(h.html(), /원본 현지 총판매 --/);
+  assert.doesNotMatch(h.html(), />UNCERTAIN</);
+});
+
+test('full selection and page previews carry the same total even when a page cuts through an SPU', async () => {
+  const h = harness([headers.slice(0, 6),
+    ...Array.from({ length: 151 }, (_, i) => ['ONE', 'MANY-SIZES', '상품', `SKU-${i}`, 1, 1])]);
+  const all = h.group(await h.preview({ minimumLocalTotal: 100 }));
+  const page = h.group(await h.preview({ minimumLocalTotal: 100, selectionOnly: false }, 100, 100));
+  assert.equal(all[0].localTotalSales, 151);
+  assert.equal(page[0].localTotalSales, 151);
+  assert.equal(page[0].optionCount, 51);
+});

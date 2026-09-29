@@ -5,6 +5,7 @@ const files = [...new Set([...process.argv.slice(2), "tests/poizon-review-worksp
 files.push("tests/retailer-open-account-regression.test.mjs");
 files.push("tests/naver-save-login.test.mjs");
 files.push("tests/combined-brand-sales-filter.test.mjs");
+files.push("tests/poizon-sku-sales-totals.test.mjs");
 files.push("tests/shopping-accounts.test.mjs");
 files.push("tests/adidas-chrome-login.test.mjs");
 files.push("tests/poizon-product-viewer.test.mjs");

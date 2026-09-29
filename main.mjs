@@ -6052,6 +6052,7 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
       localTotalSales: parsePoizonSalesMetric(cell(row, columns.localTotalSales)),
       localTotalSalesRaw: raw(row, columns.localTotalSales),
       hasLocalTotalSalesData: columns.localTotalSales >= 0 && /\d/.test(raw(row, columns.localTotalSales)),
+      originalSalesTotals: entry.originalSalesTotals,
       sales30d: parsePoizonSalesMetric(cell(row, columns.sales30d)),
       sales30dRaw: raw(row, columns.sales30d),
       hasSalesData: columns.sales30d >= 0 && /\d/.test(raw(row, columns.sales30d)),
