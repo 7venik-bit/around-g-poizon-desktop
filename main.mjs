@@ -6031,10 +6031,11 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
     const title = raw(row, columns.title);
     const skuId = raw(row, columns.skuId);
     const option = raw(row, columns.option);
-    if (!spuId && !articleNumber && !title && !skuId) return [];
+    if (!spuId && !articleNumber && !title && !skuId && !entry.originalRow) return [];
     return [{
       key: `ROW:${entry.sourceRowNumber}:${skuId || articleNumber || spuId}`,
       sourceRowNumber: entry.sourceRowNumber,
+      originalRow: entry.originalRow,
       spuId,
       skuId,
       option,
@@ -6082,8 +6083,11 @@ async function previewExcelFile(input = {}) {
     while (excelPreviewCache.size > 3) excelPreviewCache.delete(excelPreviewCache.keys().next().value);
   }
   const productView = input.filters?.productView !== false;
-  const productSales = productView && input.filters?.productSales === true;
-  const productSalesColumns = productSales ? findPoizonProductSalesColumns(workbook.headers) : null;
+  const originalRowView = productView && input.filters?.originalRowView === true;
+  const productSales = productView && (input.filters?.productSales === true || originalRowView);
+  const productSalesColumns = originalRowView
+    ? { ...findPoizonTotalSalesColumns(workbook.headers), basis: "total" }
+    : productSales ? findPoizonProductSalesColumns(workbook.headers) : null;
   const manualRawFilter = !productView && [
     input.filters?.minimumTotal,
     input.filters?.maximumTotal,
@@ -6093,7 +6097,7 @@ async function previewExcelFile(input = {}) {
   const filtered = productView || manualRawFilter
     ? filterPoizonPreviewRows(workbook.headers, workbook.rows, {
         ...(input.filters || {}),
-        rowLevel: manualRawFilter,
+        rowLevel: manualRawFilter || originalRowView,
         // Original export metrics use the same SKU row for both conditions.
         // Verified recent metrics retain their separate SPU-level meaning.
         ...(productSales ? { salesMetric: productSalesColumns.basis, requireSalesColumns: true,
@@ -6119,7 +6123,9 @@ async function previewExcelFile(input = {}) {
   const limit = selectionOnly
     ? Math.min(100000, Math.max(25, Number(input.limit) || 100))
     : Math.min(200, Math.max(25, Number(input.limit) || 100));
-  const products = productView ? buildExcelPreviewProducts(workbook.headers, filtered.entries)
+  const products = productView ? buildExcelPreviewProducts(workbook.headers, originalRowView
+    ? filtered.entries.map((entry) => ({ ...entry, originalRow: { headers: workbook.headers, values: entry.values } }))
+    : filtered.entries)
     .map((product) => productSales ? { ...product, salesBasis: productSalesColumns.basis } : product) : [];
   const sourceTotalProducts = productView ? buildExcelPreviewProducts(workbook.headers, workbook.rows.map((values, index) => ({ values, sourceRowNumber: index + 2 }))).length : 0;
   const resultCount = productView ? products.length : filtered.entries.length;

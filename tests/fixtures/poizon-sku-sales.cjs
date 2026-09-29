@@ -28,7 +28,7 @@ app.whenReady().then(async () => {
   runInContext(section(readFileSync(resolve(root, 'main.mjs'), 'utf8'), 'function excelPreviewCell(', 'async function scanBrandExportFolder('), context);
   ipcMain.handle('sales-fixture-preview', (_event, filters) => context.previewExcelFile({
     path: '/fixture.xlsx', limit: 100000,
-    filters: { productView: true, productSales: true, selectionOnly: true, ...filters },
+    filters: { productView: true, productSales: true, originalRowView: true, selectionOnly: true, ...filters },
   }));
   const preload = resolve(profile, 'sales-preload.cjs');
   writeFileSync(preload, `require('electron').contextBridge.exposeInMainWorld('salesFixture', {read: n => require('electron').ipcRenderer.invoke('sales-fixture-preview', n)});`);
@@ -38,7 +38,7 @@ app.whenReady().then(async () => {
     const css = ['style.css','excel-column-layout.css','domestic-inline-results.css'].map(name=>readFileSync(resolve(root,'src',name),'utf8')).join('\n');
     await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><meta charset="utf-8">
       <style>${css}</style><body style="display:block;padding:24px"><label>중국 최소 판매량 <input id="china" type="number" value=""></label><label>현지 최소 판매량 <input id="minimum" type="number" value="25"></label><button id="apply">필터 적용</button>
-      <output id="count"></output><section id="excel-preview" class="product-view"><div id="excel-preview-grid"><table><thead id="excel-preview-columns"></thead><tbody id="excel-preview-rows"></tbody></table></div></section>`));
+      <output id="count"></output><section id="excel-preview" class="product-view"><div id="excel-preview-grid" class="excel-preview-grid"><table><thead id="excel-preview-columns"></thead><tbody id="excel-preview-rows"></tbody></table></div></section>`));
     const renderer = readFileSync(resolve(root, 'src/renderer.js'), 'utf8');
     await win.webContents.executeJavaScript(`
       const $ = s => document.querySelector(s);
@@ -51,7 +51,8 @@ app.whenReady().then(async () => {
       async function filter() {
         const result = await window.salesFixture.read({minimumTotal:$('#china').value, minimumLocalTotal:$('#minimum').value});
         const products = mergeDomesticSearchProducts(result.products, {path:'/fixture.xlsx'});
-        renderVerifiedSpuRows({}, products);
+        combinedBrandPreview.originalColumns = originalExcelColumns([{originalRow:{headers:result.headers}}]);
+        renderOriginalExcelRows({}, products);
         $('#count').textContent = products.length;
         window.completedFilters = (window.completedFilters || 0) + 1;
       }
@@ -66,15 +67,15 @@ app.whenReady().then(async () => {
       throw Error('filter did not complete');
     };
 
-    const visible = () => win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.excel-product-row')).map(r=>({article:r.cells[2].querySelector('b').textContent,local:Array.from(r.cells[7].querySelectorAll('.excel-original-sale b'),e=>e.textContent),china:Array.from(r.cells[6].querySelectorAll('.excel-original-sale b'),e=>e.textContent),options:r.querySelector('details').textContent}))`);
+    const visible = () => win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.excel-source-row')).map(r=>({source:Number(r.dataset.sourceRow),values:Array.from(r.querySelectorAll('.excel-source-value'),e=>e.textContent),key:r.querySelector('input').dataset.excelProductSelect}))`);
     await waitFor(1);
     let rows = await visible();
-    assert.deepEqual(rows.map(r=>[r.article,r.local]), [['85030451094',['49','48','54','50']], ['85082354477',['26']]]);
-    assert.deepEqual(rows[0].china, ['70','70','78','57']);
-    assert.match(rows[0].options, /원본 현지 총판매 24/);
-    assert.match(rows[0].options, /원본 현지 총판매 --/);
-    const layout = await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.excel-product-row')).flatMap(row=>[6,7].flatMap(i=>Array.from(row.cells[i].querySelectorAll('.excel-original-sale'),e=>{const r=e.getBoundingClientRect(), cell=row.cells[i].getBoundingClientRect();return {height:r.height,inside:r.top>=cell.top&&r.bottom<=cell.bottom,values:e.querySelector('b').getBoundingClientRect().width>0}})))`);
-    assert.ok(layout.length === 10 && layout.every(e=>e.height>=24 && e.inside && e.values), JSON.stringify(layout));
+    assert.deepEqual(rows.map(r=>r.values[5]), ['49','48','54','50','26']);
+    assert.deepEqual(rows.map(r=>r.values[4]), ['70','70','78','57','31']);
+    for (const row of rows) assert.deepEqual(row.values,sheet[row.source-1].map(String));
+    assert.equal(new Set(rows.map(r=>r.key)).size,5);
+    const layout = await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.excel-source-row')).flatMap(row=>Array.from(row.querySelectorAll('.excel-source-value'),e=>{const r=e.getBoundingClientRect(), cell=e.parentElement.getBoundingClientRect();return {inside:r.top>=cell.top&&r.bottom<=cell.bottom,width:r.width}}))`);
+    assert.ok(layout.length === 35 && layout.every(e=>e.inside && e.width>0), JSON.stringify(layout));
     const apply = async (china, local, n) => {
       for (const [id, value] of [['china',china],['minimum',local]]) {
         await win.webContents.executeJavaScript(`document.getElementById('${id}').focus();document.getElementById('${id}').select()`);
@@ -91,14 +92,14 @@ app.whenReady().then(async () => {
     };
     await apply('', '30', 2);
     rows = await visible();
-    assert.deepEqual(rows.map(r=>r.local), [['49','48','54','50']]);
+    assert.deepEqual(rows.map(r=>r.values[5]), ['49','48','54','50']);
     await apply('100', '25', 3);
     assert.equal((await visible()).length, 0);
     await apply('', '', 4);
     rows = await visible();
-    assert.equal(rows.length, 3);
-    assert.deepEqual(rows[2].local, ['<5','5','16','15','8','<5','5','--','--','--']);
-    console.log(JSON.stringify({offline:true,minimum25Products:2,matchingSkuValues:[49,48,54,50,26],minimum30Products:1,china100Local25Products:0,showAllProducts:3,rawOptionsPreserved:true,salesCellsUnclipped:true,nativeFilterClick:true}));
+    assert.equal(rows.length, 28);
+    assert.deepEqual(rows.map(r=>r.values),sheet.slice(1).map(row=>row.map(String)));
+    console.log(JSON.stringify({offline:true,minimum25Rows:5,matchingValues:[49,48,54,50,26],minimum30Rows:4,china100Local25Rows:0,showAllRows:28,allSourceCellsPreserved:true,separateRowKeys:true,cellsUnclipped:true,nativeFilterClick:true}));
   } finally { win.destroy(); ipcMain.removeHandler('sales-fixture-preview'); }
   clearTimeout(timer); app.exit(0);
 }).catch((error) => { console.error(error.stack); clearTimeout(timer); app.exit(1); });

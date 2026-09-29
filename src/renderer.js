@@ -505,7 +505,8 @@ function renderCombinedBrandPreviewPage(offset = 0) {
   const salesLabels = combinedProductSalesLabels(combinedBrandPreview.salesBasis);
   const file = { path: "combined://selected-brands", name: "선택 브랜드 통합 검색" };
   excelPreviewPageProducts = products;
-  excelPreviewPageKeys = combinedBrandPreview.verified ? renderVerifiedSpuRows(file, products) : renderExcelProductRows(file, products);
+  excelPreviewPageKeys = combinedBrandPreview.originalRowView ? renderOriginalExcelRows(file, products)
+    : combinedBrandPreview.verified ? renderVerifiedSpuRows(file, products) : renderExcelProductRows(file, products);
   activeExcelPreview = {
     file, offset: safeOffset, limit, totalRows, sourceTotalRows: totalRows,
     filters: { minimumTotal, minimumLocalTotal, fixedTotalAnd: true, matchMode: "all", productView: true },
@@ -520,7 +521,10 @@ function renderCombinedBrandPreviewPage(offset = 0) {
   $("#excel-preview-name").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 · 통합 상품검색`;
   $("#excel-preview-summary").textContent = `${salesLabels.china} ${minimumTotal || "전체"} 이상 AND ${salesLabels.local} ${minimumLocalTotal || "전체"} 이상 · 통합 ${totalRows.toLocaleString("ko-KR")}개 · 현재 ${totalRows ? safeOffset + 1 : 0}~${Math.min(totalRows, safeOffset + products.length)}번째`;
   $("#excel-filter-status").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 중 Excel ${combinedBrandPreview.loadedCount}개 통합 · 조건 충족 ${totalRows.toLocaleString("ko-KR")}개`;
-  if (["total", "mixed"].includes(combinedBrandPreview.salesBasis)) {
+  if (combinedBrandPreview.originalRowView) {
+    $("#excel-filter-status").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 중 Excel ${combinedBrandPreview.loadedCount}개 통합 · 조건 충족 ${totalRows.toLocaleString("ko-KR")}행 · 엑셀 원본의 각 행과 열 값을 그대로 표시합니다.`;
+    $("#excel-preview-summary").textContent = `엑셀 원본 ${totalRows.toLocaleString("ko-KR")}행 · 현재 ${totalRows ? safeOffset + 1 : 0}~${Math.min(totalRows, safeOffset + products.length)}행 · 가로로 스크롤하면 모든 원본 열을 볼 수 있습니다.`;
+  } else if (["total", "mixed"].includes(combinedBrandPreview.salesBasis)) {
     const sourceRows = combinedBrandPreview.products.reduce((sum, p) => sum + (p.originalSalesRows?.length || 0), 0);
     $("#excel-filter-status").textContent += ` · 원본 조건 충족 ${sourceRows.toLocaleString("ko-KR")}개 사이즈 · 원본 판매량은 같은 사이즈 행 기준`;
   }
@@ -561,6 +565,57 @@ function renderCombinedBrandPreviewPage(offset = 0) {
 }
 
 
+// The source-row view never uses mapped/max/summed values for its cells.
+// Occurrence numbers retain duplicate and empty headers without shifting data.
+function originalExcelColumnKeys(headers = []) {
+  const counts = new Map();
+  return headers.map((header) => {
+    const label = String(header ?? '');
+    const occurrence = counts.get(label) || 0;
+    counts.set(label, occurrence + 1);
+    return { header: label, key: JSON.stringify([label, occurrence]) };
+  });
+}
+
+function originalExcelColumns(products = []) {
+  const columns = new Map(), seen = new Set();
+  for (const p of products) {
+    const headers = p.originalRow?.headers;
+    if (!headers || seen.has(headers)) continue;
+    seen.add(headers);
+    for (const column of originalExcelColumnKeys(headers)) if (!columns.has(column.key)) columns.set(column.key, column);
+  }
+  return [...columns.values()];
+}
+
+function renderOriginalExcelRows(file, products = []) {
+  $("#excel-preview").classList.add('original-row-view');
+  const keys = products.map((p) => excelPreviewStableSelectionKey(p, file));
+  const columns = combinedBrandPreview?.originalColumns || originalExcelColumns(products);
+  const kind = (header) => /^(상품명|영문상품명)$/.test(header.replace(/\s/g, '')) ? 'title'
+    : /옵션|색상/.test(header) ? 'option' : 'value';
+  $("#excel-preview-columns").innerHTML = '<tr><th>선택</th><th>원본 행</th>'
+    + columns.map((column) => '<th class="excel-source-cell" data-original-kind="' + kind(column.header) + '" title="' + text(column.header) + '">' + text(column.header) + '</th>').join('')
+    + '<th>상품 검색 결과</th></tr>';
+  $("#excel-preview-rows").innerHTML = products.length ? products.map((p, i) => {
+    const key = keys[i];
+    excelPreviewProductCache.set(key, p);
+    const cells = new Map(originalExcelColumnKeys(p.originalRow.headers).map((column, index) => [column.key, p.originalRow.values[index]]));
+    const result = excelPreviewSearchResults.get(key);
+    const resultLabel = result?.loading ? '검색 중…' : result ? '다시 검색' : '상품검색';
+    const resultCell = '<td class="excel-raw-search-cell">' + (result?.loading ? '<span>' + resultLabel + '</span>'
+      : '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '">' + resultLabel + '</button>')
+      + (globalThis.AroundGPoizonProductView?.button(p) || '') + '</td>';
+    const sourceLabel = (p._sourceBrandName || '') + ' · 원본 ' + p.sourceRowNumber + '행';
+    return '<tr class="excel-product-row excel-source-row" data-source-row="' + text(p.sourceRowNumber) + '"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(key) + '" aria-label="원본 행 선택"></td>'
+      + '<td title="' + text(sourceLabel) + '">' + text(p.sourceRowNumber) + '</td>'
+      + columns.map((column) => '<td class="excel-source-cell" data-original-kind="' + kind(column.header) + '" title="' + text(cells.get(column.key) ?? '') + '"><span class="excel-source-value">' + text(cells.get(column.key) ?? '') + '</span></td>').join('')
+      + resultCell + '</tr>'
+      + (result && !result.loading ? '<tr class="excel-product-search-detail"><td colspan="' + (columns.length + 3) + '">' + renderDomestic(result, p, key) + '</td></tr>' : '');
+  }).join('') : '<tr><td colspan="' + (columns.length + 3) + '">입력한 두 조건을 모두 충족하는 원본 행이 없습니다.</td></tr>';
+  return keys;
+}
+
 function renderOriginalSkuSales(rows, metric) {
   return '<div class="excel-original-sales">' + rows.map((row) => {
     const size = String(row.option || '').split(';').find((part) => /^\s*사이즈\s*:/.test(part));
@@ -571,6 +626,7 @@ function renderOriginalSkuSales(rows, metric) {
 }
 
 function renderVerifiedSpuRows(file, products) {
+  $("#excel-preview").classList?.remove?.('original-row-view');
   const keys = products.map((p) => excelPreviewStableSelectionKey(p, file));
   products.forEach((p, i) => excelPreviewProductCache.set(keys[i], p));
   const salesLabels = combinedProductSalesLabels(products.some((p) => p.salesBasis)
@@ -606,6 +662,13 @@ function renderVerifiedSpuRows(file, products) {
 function mergeDomesticSearchProducts(products = [], file = {}) {
   const grouped = new Map();
   for (const product of products) {
+    if (product.originalRow) {
+      // Distinct workbook rows stay distinct even with identical SPU/SKU IDs.
+      const key = `${brandImportPathKey(file.path)}::ROW:${product.sourceRowNumber}`;
+      grouped.set(key, { ...product, _sourceFilePath: file.path,
+        _sourceBrandName: file.brandName || '', _excelSelectionKey: key });
+      continue;
+    }
     const spuId = String(product?.spuId || "").trim();
     const articleNumber = String(product?.articleNumber || "").trim().toUpperCase();
     const identity = spuId ? `SPU:${spuId}` : articleNumber ? `ARTICLE:${articleNumber}` : String(product?.key || product?.sourceRowNumber || grouped.size);
@@ -686,6 +749,7 @@ async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
   if (brandPicker) brandPicker.open = false;
   const products = [];
   const salesBases = new Set();
+  const sourceTables = [];
   let loadedCount = 0;
   const minimumTotal = String(filters.minimumTotal ?? "100");
   const minimumLocalTotal = String(filters.minimumLocalTotal ?? "25");
@@ -705,15 +769,19 @@ async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
       matchMode: "all",
       productView: true,
       productSales: true,
+      originalRowView: true,
       selectionOnly: true,
     });
     if (!result?.ok) continue;
     loadedCount += 1;
+    sourceTables.push({ originalRow: { headers: result.headers || [] } });
     salesBases.add(result.salesBasis || "recent30");
     products.push(...mergeDomesticSearchProducts(Array.isArray(result.products) ? result.products : [], file));
   }
   combinedBrandPreview = {
     products,
+    originalRowView: true,
+    originalColumns: originalExcelColumns(sourceTables),
     salesBasis: salesBases.size > 1 ? "mixed" : [...salesBases][0] || "recent30",
     brandCount: files.length,
     loadedCount,
@@ -1441,7 +1509,8 @@ function updateExcelPreviewSelectionUi(pageKeys = []) {
   const profit = $("#excel-preview-profit");
   const search = $("#excel-preview-search-selected");
   const selectAll = $("#excel-preview-select-all-results");
-  if (count) count.textContent = `${selectedExcelPreviewProducts.size.toLocaleString("ko-KR")}개 제품 선택`;
+  const originalRows = Boolean(activeExcelPreview?.combinedProducts && combinedBrandPreview?.originalRowView);
+  if (count) count.textContent = `${selectedExcelPreviewProducts.size.toLocaleString("ko-KR")}${originalRows ? '행 선택' : '개 제품 선택'}`;
   if (clear) clear.disabled = selectedExcelPreviewProducts.size === 0;
   if (profit) profit.disabled = selectedExcelPreviewProducts.size === 0;
   if (search) {
@@ -1454,7 +1523,7 @@ function updateExcelPreviewSelectionUi(pageKeys = []) {
     selectAll.textContent = excelPreviewSelectingAll
       ? "전체 목록 불러오는 중…"
       : combined
-        ? `필터 결과 전체 선택 (${Number(activeExcelPreview.totalRows || 0).toLocaleString("ko-KR")}개)`
+        ? `필터 결과 전체 선택 (${Number(activeExcelPreview.totalRows || 0).toLocaleString("ko-KR")}${originalRows ? '행' : '개'})`
         : `원본 전체 선택 (${Number(activeExcelPreview?.sourceTotalRows || activeExcelPreview?.totalRows || 0).toLocaleString("ko-KR")}개)`;
   }
   if (selectPage) {
@@ -1650,6 +1719,8 @@ function excelPreviewStableSelectionKey(product = {}, file = {}) {
 
 function renderExcelProductRows(file, products = []) {
   if (products.some((p) => Array.isArray(p.verificationOptions))) return renderVerifiedSpuRows(file, products);
+  if (products.some((p) => p.originalRow)) return renderOriginalExcelRows(file, products);
+  $("#excel-preview").classList?.remove?.('original-row-view');
   const pageKeys = products.map((product) => excelPreviewStableSelectionKey(product, file));
   products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
   $("#excel-preview-columns").innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>카테고리</th><th>평균가격</th><th>중국 최근 30일</th><th>현지 최근 30일</th><th>상품 검색</th></tr>`;

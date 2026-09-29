@@ -16,6 +16,7 @@ test('opening domestic products collapses the full catalog before Excel work whi
     $:selector=>document.querySelector(selector),
     window:{aroundG:{previewExcelFile:async()=>{assert.equal(picker.open,false);return {ok:true,products:[product]};}}},
     mergeDomesticSearchProducts:products=>products,
+    originalExcelColumns:()=>[],
     combinedBrandPreview:null,excelPreviewIntegrated:false,
     selectedExcelPreviewProducts:new Set(),excelPreviewProductCache:new Map(),
     openIntegratedBrandExcel:async()=>{},restoreSavedExcelSearchResults:()=>{},

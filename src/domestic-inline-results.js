@@ -456,7 +456,9 @@
       if (typeof renderExcelProductRows !== "function") return;
       const previousRenderer = renderExcelProductRows;
       const inlineExcelRenderer = function inlineExcelProductRows(file, products = []) {
+        if (typeof renderOriginalExcelRows === "function" && products.some((p) => p.originalRow)) return renderOriginalExcelRows(file, products);
         try {
+          document.querySelector('#excel-preview')?.classList.remove('original-row-view');
           // Verified SPU products use stable cross-workbook selection keys and
           // their own full-width result rows. Reusing the raw Excel override
           // here changes those keys after search completion, so the saved
