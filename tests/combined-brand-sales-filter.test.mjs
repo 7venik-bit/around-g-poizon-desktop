@@ -5,6 +5,7 @@ import { basename } from 'node:path';
 import { createContext, runInContext } from 'node:vm';
 import * as columns from '../services/poizon-xlsx.mjs';
 import * as sales from '../services/poizon-sales-filter.mjs';
+import eccoSheet from './fixtures/ecco-original-sales.cjs';
 
 const main = await readFile(new URL('../main.mjs', import.meta.url), 'utf8');
 const renderer = await readFile(new URL('../src/renderer.js', import.meta.url), 'utf8');
@@ -140,7 +141,8 @@ test('total-only rows render original totals instead of missing recent metrics',
   await h.open(criteria);
   assert.match(h.nodes.get('#excel-filter-min-total-label').textContent, /총 판매량 \(원본\)/);
   assert.match(h.nodes.get('#excel-preview-columns').innerHTML, /총 판매량 \(원본\)/);
-  assert.match(h.html(), /<td>500\+<\/td><td>200<\/td>/);
+  assert.match(h.html(), /<b>500\+<\/b>/);
+  assert.match(h.html(), /<b>200<\/b>/);
 });
 
 test('mixed workbooks identify each displayed metric basis while applying the same thresholds', async () => {
@@ -159,34 +161,57 @@ test('duplicate recent headers are unavailable, not an excuse to fall back to hi
   assert.equal((await h.preview(criteria)).products.length, 0);
 });
 
-const skuTotalSheet = [headers.slice(0, 6),
-  ...[5, 16, 15, 8, 5, '<5', '<5', '--', '--', '--'].map((count, i) =>
-    ['4171247', '54053401001', '사이즈 합계로 조건 충족', `SIZE-${i}`, 10, count]),
-  ...Array.from({ length: 7 }, (_, i) => ['UNCERTAIN', 'UNCERTAIN', '미확정 수량', `U-${i}`, 10, '<5']),
-];
 
-test('downloaded SKU totals survive preview, grouping, 25-count filtering and visible cells', async () => {
-  const h = uiHarness({ '/ecco.xlsx': skuTotalSheet });
+test('downloaded SKU rows survive preview, grouping, 25-count filtering and visible cells', async () => {
+  const h = uiHarness({ '/ecco.xlsx': eccoSheet });
   await h.open({ minimumTotal: '', minimumLocalTotal: 25 });
   const products = h.context.combinedBrandPreview.products;
-  assert.equal(products.length, 1);
-  assert.equal(products[0].articleNumber, '54053401001');
-  assert.equal(products[0].localTotalSales, 49);
-  assert.equal(products[0].localTotalSalesRaw, '49+');
-  assert.equal(products[0].optionCount, 10);
-  assert.match(h.html(), /<td>100<\/td><td>49\+<\/td>/);
-  assert.match(h.html(), /원본 현지 총판매 16/);
-  assert.match(h.html(), /원본 현지 총판매 <5/);
+  assert.equal(products.length, 2);
+  assert.deepEqual(Array.from(products,p=>p.articleNumber), ['85030451094','85082354477']);
+  assert.deepEqual(Array.from(products[0].originalSalesRows,r=>r.localTotalSalesRaw), ['49','48','54','50']);
+  assert.equal(products[0].optionCount, 9);
+  assert.match(h.html(), /<small>EU 40<\/small><b>49<\/b>/);
+  assert.match(h.html(), /<small>EU 42<\/small><b>54<\/b>/);
+  assert.match(h.html(), /원본 현지 총판매 24/);
   assert.match(h.html(), /원본 현지 총판매 --/);
-  assert.doesNotMatch(h.html(), />UNCERTAIN</);
+  assert.doesNotMatch(h.html(), />254\+<|>70\+<|>54053401001</);
+  assert.match(h.nodes.get('#excel-filter-status').textContent, /5개 사이즈/);
+  await h.open(criteria);
+  assert.equal(h.context.combinedBrandPreview.products.length, 0);
+  assert.match(h.html(), /같은 사이즈 행/);
+  assert.match(h.nodes.get('#excel-filter-status').textContent, /0개 사이즈/);
 });
 
-test('full selection and page previews carry the same total even when a page cuts through an SPU', async () => {
+test('show-all retains exact original values, censored counts and missing data', async () => {
+  const h = uiHarness({ '/ecco.xlsx': eccoSheet });
+  await h.open({ minimumTotal: '', minimumLocalTotal: '' });
+  assert.equal(h.context.combinedBrandPreview.products.length,3);
+  const third = h.context.combinedBrandPreview.products[2];
+  assert.deepEqual(Array.from(third.originalSalesRows,r=>r.localTotalSalesRaw), ['<5','5','16','15','8','<5','5','--','--','--']);
+  assert.match(h.html(), /<small>EU 41<\/small><b>16<\/b>/);
+  assert.doesNotMatch(h.html(), />49\+<|>254\+<|>70\+<|합계/);
+});
+
+test('page previews carry matching source values even when a page cuts through an SPU', async () => {
   const h = harness([headers.slice(0, 6),
-    ...Array.from({ length: 151 }, (_, i) => ['ONE', 'MANY-SIZES', '상품', `SKU-${i}`, 1, 1])]);
-  const all = h.group(await h.preview({ minimumLocalTotal: 100 }));
-  const page = h.group(await h.preview({ minimumLocalTotal: 100, selectionOnly: false }, 100, 100));
-  assert.equal(all[0].localTotalSales, 151);
-  assert.equal(page[0].localTotalSales, 151);
+    ...Array.from({ length: 151 }, (_, i) => ['ONE', 'MANY-SIZES', '상품', 'SKU-'+i, 100, 25])]);
+  const all = h.group(await h.preview({ minimumLocalTotal: 25 }));
+  const page = h.group(await h.preview({ minimumLocalTotal: 25, selectionOnly: false }, 100, 100));
+  assert.equal(all[0].originalSalesRows.length, 151);
+  assert.deepEqual(page[0].originalSalesRows,all[0].originalSalesRows);
   assert.equal(page[0].optionCount, 51);
+});
+
+test('same-path replacement and a newly downloaded file automatically reread source counts', async () => {
+  let sheet = eccoSheet, revision = 1, reads = 0;
+  const h = harness();
+  h.context.stat = async () => ({size:100,mtimeMs:revision});
+  h.context.readFile = async () => { reads++; return sheet; };
+  assert.equal(h.group(await h.preview({minimumLocalTotal:25})).length,2);
+  sheet = [eccoSheet[0], ['NEW','NEW-ITEM','새 상품','SKU-NEW',100,30,'사이즈:EU 40']];
+  revision++;
+  assert.deepEqual(h.group(await h.preview(criteria)).map(p=>p.articleNumber),['NEW-ITEM']);
+  const result = await h.context.previewExcelFile({path:'/next-download.xlsx',filters:{productView:true,productSales:true,...criteria}});
+  assert.equal(result.products[0].localTotalSalesRaw,'30');
+  assert.equal(reads,3);
 });
