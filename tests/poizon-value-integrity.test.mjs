@@ -207,5 +207,5 @@ test('shipping combined view describes corrected POIZON recent values separately
   assert.match($('#excel-preview-rows').innerHTML, /<details>/); assert.match($('#excel-preview-rows').innerHTML, /1,400\+/);
   assert.match($('#excel-preview-rows').innerHTML, /원본 현지 총판매 40/);
   assert.match($('#excel-preview-rows').innerHTML, /수정 후 대조 완료/);
-  assert.match(renderer, /openCombinedSelectedBrandPreview\(files, \{ minimumTotal: "100", minimumLocalTotal: "25" \}\)/);
+  assert.match(renderer, /openCombinedSelectedBrandPreview\(files\)/);
 });
