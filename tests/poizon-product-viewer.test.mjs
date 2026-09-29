@@ -49,8 +49,46 @@ test('SPU search selects the observed mode and uses its editable field once', t 
   const dom = domFixture(t, '<div class="ant-select"><div class="ant-select-selector">상품 정보</div></div><div role="option">SKU_ID</div><div role="option">SPU_ID</div><input id="globalSpuIdList" readonly><input id="globalSpuIdList">');
   assert.equal(inspect(dom).next, 'mode');
   assert.equal(inspect(dom, 'mode').next, 'input');
-  assert.deepEqual(inspect(dom, 'input'), { input: { x: 50, y: 25 }, next: 'results' });
+  assert.deepEqual(inspect(dom, 'input'), { input: { x: 50, y: 25 }, next: 'submit' });
   assert.deepEqual(inspect(dom, 'results'), { wait: true }, 'do not retype or resubmit while loading results');
+});
+const searchForm = (value = spuId) => `<header><div class="ant-select">SPU_ID<input id="globalSpuIdList" readonly></div>
+  <div class="ant-select" id="search-field"><input id="globalSpuIdList" value="${value}"></div>
+  <button id="submit"><span>검색 및 입찰</span></button></header>`;
+test('autocomplete text is submitted by the explicit search button, not an old row or a bid button', t => {
+  const dom = domFixture(t, searchForm() + `<div role="option">${spuId}</div><table><tbody>${row()}</tbody></table>`);
+  dom.window.document.querySelector('#submit').getBoundingClientRect = () => ({ left: 200, top: 20, width: 100, height: 40 });
+  assert.deepEqual(inspect(dom, 'submit'), { click: { x: 250, y: 40 }, next: 'results' });
+  dom.window.document.querySelector('#submit').remove();
+  assert.deepEqual(inspect(dom, 'submit'), { wait: true }, 'never substitute bid registration for search');
+});
+test('submit validates the SPU input or its single committed tag and the SPU search mode', t => {
+  const dom = domFixture(t, searchForm(''));
+  const field = dom.window.document.querySelector('#search-field');
+  assert.deepEqual(inspect(dom, 'submit'), { wait: true });
+  field.insertAdjacentHTML('beforeend', `<span class="ant-select-selection-item"><span class="ant-select-selection-item-content">${spuId}</span></span>`);
+  assert.equal(inspect(dom, 'submit').next, 'results');
+  field.querySelector('input').value = '176926580';
+  assert.deepEqual(inspect(dom, 'submit'), { wait: true }, 'wrong pending text must not search');
+  field.querySelector('input').value = '';
+  field.insertAdjacentHTML('beforeend', '<span class="ant-select-selection-item">99</span>');
+  assert.deepEqual(inspect(dom, 'submit'), { wait: true }, 'multiple selected SPUs must not search');
+  dom.window.document.body.innerHTML = searchForm().replace('>SPU_ID<', '>SKU_ID<');
+  assert.deepEqual(inspect(dom, 'submit'), { wait: true }, 'SKU mode is not SPU mode');
+});
+test('submit waits for hidden, disabled, covered, offscreen or ambiguous search controls', t => {
+  for (const mutation of [
+    dom => { dom.window.document.querySelector('#submit').disabled = true; },
+    dom => { dom.window.document.querySelector('header').hidden = true; },
+    dom => { dom.window.document.querySelector('#submit').setAttribute('aria-disabled', 'true'); },
+    dom => { dom.window.document.querySelector('#submit').dataset.offscreen = 'true'; },
+    dom => { dom.window.document.elementFromPoint = () => dom.window.document.body; },
+    dom => { dom.window.document.querySelector('header').insertAdjacentHTML('beforeend', '<button>검색 및 입찰</button>'); },
+    dom => { dom.window.document.querySelector('#search-field').insertAdjacentHTML('beforeend', '<input id="globalSpuIdList">'); },
+  ]) {
+    const dom = domFixture(t, searchForm()); mutation(dom);
+    assert.deepEqual(inspect(dom, 'submit'), { wait: true });
+  }
 });
 test('out of view controls and hidden details do not falsely complete the operation', t => {
   const dom = domFixture(t, `<table><tbody>${row()}</tbody></table><div class="ant-drawer-content" hidden>JI0079 거래 추이</div>`);
@@ -92,7 +130,8 @@ function viewerFixture(states, options = {}) {
 }
 test('isolated viewer reuses seller login, searches once, and only reports success after confirmed drawer', async () => {
   const h = viewerFixture([{ wait: true }, { click: { x: 1, y: 2 }, next: 'mode' },
-    { click: { x: 3, y: 4 }, next: 'input' }, { input: { x: 5, y: 6 }, next: 'results' },
+    { click: { x: 3, y: 4 }, next: 'input' }, { input: { x: 5, y: 6 }, next: 'submit' },
+    { click: { x: 9, y: 10 }, next: 'results' },
     { wait: true }, { click: { x: 7, y: 8 }, next: 'detail', article: 'JI0079' },
     { click: { x: 7, y: 8 }, next: 'detail', article: 'JI0079' }, { done: true }]);
   const task = h.viewer.open({ globalSpuId: spuId });
@@ -104,12 +143,21 @@ test('isolated viewer reuses seller login, searches once, and only reports succe
   assert.equal(h.windows[0].config.webPreferences.nodeIntegration, false);
   assert.equal(h.windows[0].config.webPreferences.sandbox, true);
   assert.deepEqual(h.inserted, [spuId]);
-  assert.equal(h.events.filter(e => e.type === 'keyDown' && e.keyCode === 'Enter').length, 1);
-  assert.equal(h.events.filter(e => e.type === 'mouseDown').length, 4);
+  assert.equal(h.events.filter(e => e.type === 'keyDown' && e.keyCode === 'Enter').length, 0);
+  assert.equal(h.events.filter(e => e.type === 'mouseDown').length, 5);
+  assert.equal(h.events.filter(e => e.type === 'mouseDown' && e.x === 9 && e.y === 10).length, 1);
   assert.match(h.scripts.at(-1), /"stage":"detail","article":"JI0079"/);
   let blocked = false;
   h.windows[0].webContents.emit('will-navigate', { preventDefault() { blocked = true; } }, 'https://other.example/');
   assert.equal(blocked, true); assert.equal(h.windows[0].openHandler().action, 'deny');
+});
+test('unsubmitted search is distinct from submitted but unconfirmed results, with no automatic resubmission', async () => {
+  const blocked = viewerFixture([{ input: { x: 5, y: 6 }, next: 'submit' }]);
+  assert.equal((await blocked.viewer.open({ spuId })).code, 'SEARCH_NOT_SUBMITTED');
+  assert.deepEqual(blocked.inserted, [spuId]);
+  const submitted = viewerFixture([{ input: { x: 5, y: 6 }, next: 'submit' }, { click: { x: 9, y: 10 }, next: 'results' }]);
+  assert.equal((await submitted.viewer.open({ spuId })).code, 'PRODUCT_NOT_CONFIRMED');
+  assert.equal(submitted.events.filter(e => e.type === 'mouseDown' && e.x === 9).length, 1);
 });
 test('invalid identity never opens a window; restrictions stop immediately; unconfirmed results time out honestly', async () => {
   const invalid = viewerFixture([]);
@@ -120,7 +168,7 @@ test('invalid identity never opens a window; restrictions stop immediately; unco
     assert.equal((await h.viewer.open({ spuId })).code, code);
     assert.equal(h.scripts.length, 1); assert.equal(h.events.length, 0);
   }
-  const h = viewerFixture([{ next: 'detail', article: 'JI0079' }]);
+  const h = viewerFixture([{ next: 'detail', article: 'JI0079' }, { next: 'detail', article: 'JI0079' }]);
   assert.equal((await h.viewer.open({ spuId })).code, 'PRODUCT_NOT_CONFIRMED');
 });
 for (const outcome of ['success', 'failure', 'throw']) test(`product button ${outcome}: explicit action only, duplicate click suppressed and outcome visible`, async t => {

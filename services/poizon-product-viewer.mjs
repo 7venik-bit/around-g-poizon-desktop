@@ -13,15 +13,23 @@ export function sellerProductId(product = {}) {
 // Inspect only rendered controls. Returned coordinates are used by Electron's
 // ordinary input events; no network endpoints or application state are read.
 export function inspectSellerProductView({ spuId, stage, article = '' }) {
-  const visible = el => !!el && el.getClientRects().length > 0
-    && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none';
+  const visible = el => {
+    if (!el || !el.getClientRects().length) return false;
+    for (let parent = el; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);
+      if (parent.hidden || style.visibility === 'hidden' || style.display === 'none') return false;
+    }
+    return true;
+  };
   const text = el => String(el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim();
   const all = (selector, root = document) => [...root.querySelectorAll(selector)].filter(visible);
   const point = el => {
-    if (!el) return null;
+    if (!visible(el) || el.disabled || el.closest('[aria-disabled="true"]')) return null;
     const r = el.getBoundingClientRect();
     const x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2);
-    return x > 0 && y > 0 && x < innerWidth && y < innerHeight ? { x, y } : null;
+    if (!(x > 0 && y > 0 && x < innerWidth && y < innerHeight)) return null;
+    const hit = document.elementFromPoint?.(x, y);
+    return typeof document.elementFromPoint === 'function' && (!hit || !el.contains(hit)) ? null : { x, y };
   };
   if (location.href === 'about:blank') return { wait: true };
   if (location.origin !== 'https://seller.poizon.com') return { error: 'UNEXPECTED_PAGE' };
@@ -40,8 +48,10 @@ export function inspectSellerProductView({ spuId, stage, article = '' }) {
       && /거래 추이|거래 내역|최근 30일|Sales Trend|Transaction History|交易趋势/i.test(text(el)));
     return dialog ? { done: true } : { wait: true };
   }
-  if (rows.length > 1) return { error: 'AMBIGUOUS_PRODUCT' };
-  if (rows.length === 1) {
+  // Input/submit must finish even if an old row remains mounted beneath the form.
+  const canOpenRow = stage === 'start' || stage === 'results';
+  if (canOpenRow && rows.length > 1) return { error: 'AMBIGUOUS_PRODUCT' };
+  if (canOpenRow && rows.length === 1) {
     const button = exactButton(rows[0], /^(?:상품\s*데이터|Product\s*Data|商品数据)$/i);
     // Take the article from the same rendered row used for the exact SPU match.
     const info = all('td', rows[0]).find(cell => rowId(cell) === spuId);
@@ -55,9 +65,28 @@ export function inspectSellerProductView({ spuId, stage, article = '' }) {
     const option = all('.ant-select-item-option,[role="option"]').find(el => /^SPU[\s_]*ID$/i.test(text(el)));
     return option && point(option) ? { click: point(option), next: 'input' } : { wait: true };
   }
+  const inputs = all('input[id="globalSpuIdList"]').filter(el => !el.readOnly && !el.disabled);
+  const input = inputs.length === 1 ? inputs[0] : null;
   if (stage === 'input') {
-    const inputs = all('input[id="globalSpuIdList"]').filter(el => !el.readOnly && !el.disabled);
-    return inputs.length && point(inputs.at(-1)) ? { input: point(inputs.at(-1)), next: 'results' } : { wait: true };
+    return point(input) ? { input: point(input), next: 'submit' } : { wait: true };
+  }
+  if (stage === 'submit') {
+    if (!input || !all('.ant-select').some(el => /^SPU_ID$/i.test(text(el)))) return { wait: true };
+    const value = input.value.trim();
+    const selection = input.closest('.ant-select');
+    const tags = selection ? all('.ant-select-selection-item', selection)
+      .map(el => text(el.querySelector('.ant-select-selection-item-content') || el)) : [];
+    if (tags.length > 1 || tags.some(tag => tag !== spuId)
+      || (value !== spuId && !(value === '' && tags.length === 1))) return { wait: true };
+    // Enter can merely choose an autocomplete suggestion. Click only the actual
+    // search submit next to this input, never a row's separate bid-registration.
+    for (let root = input.parentElement; root; root = root.parentElement) {
+      const buttons = all('button,[role="button"]', root)
+        .filter(el => /^(?:검색\s*및\s*입찰|Search\s*(?:and|&)\s*Bid|搜索并出价)$/i.test(text(el)) && !el.closest('tbody'));
+      if (buttons.length) return buttons.length === 1 && point(buttons[0])
+        ? { click: point(buttons[0]), next: 'results' } : { wait: true };
+    }
+    return { wait: true };
   }
   const selects = all('.ant-select');
   const type = selects.find(el => /^(?:상품 정보|상품 번호|SPU_ID|SKU_ID|바코드|Product Information|Article Number)$/i.test(text(el)));
@@ -72,6 +101,7 @@ const messages = {
   AMBIGUOUS_PRODUCT: '같은 SPU의 상품이 여러 개 보여 자동 이동을 멈췄습니다.',
   UNEXPECTED_PAGE: '판매자센터 화면을 확인할 수 없어 자동 이동을 멈췄습니다.',
   WINDOW_CLOSED: '포이즌 상품 창이 닫혔습니다.',
+  SEARCH_NOT_SUBMITTED: 'SPU 검색을 실행하지 못했습니다. 열린 판매자센터의 검색 번호와 검색 및 입찰 버튼을 확인해 주세요.',
   PRODUCT_NOT_CONFIRMED: '해당 SPU의 상품 데이터를 확인하지 못했습니다. 열린 판매자센터에서 확인해 주세요.',
 };
 export function createPoizonProductViewer({ BrowserWindow, icon, wait = ms => new Promise(r => setTimeout(r, ms)), timeoutMs = 30000, now = Date.now }) {
@@ -126,15 +156,13 @@ export function createPoizonProductViewer({ BrowserWindow, icon, wait = ms => ne
             window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'A', modifiers: ['control'] });
             window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'A', modifiers: ['control'] });
             await window.webContents.insertText(spuId);
-            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
-            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
           }
         }
         if (state?.article) article = state.article;
         if (state?.next) stage = state.next;
         await wait(300);
       }
-      return failure('PRODUCT_NOT_CONFIRMED');
+      return failure(['start', 'mode', 'input', 'submit'].includes(stage) ? 'SEARCH_NOT_SUBMITTED' : 'PRODUCT_NOT_CONFIRMED');
     } catch { return failure(window?.isDestroyed() ? 'WINDOW_CLOSED' : 'PRODUCT_NOT_CONFIRMED'); }
   }
   return { open(product) {
