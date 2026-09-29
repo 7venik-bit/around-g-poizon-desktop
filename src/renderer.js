@@ -545,9 +545,9 @@ function renderCombinedBrandPreviewPage(offset = 0) {
   $("#excel-preview-summary").textContent = `${salesLabels.china} ${minimumTotal || "전체"} 이상 AND ${salesLabels.local} ${minimumLocalTotal || "전체"} 이상 · 통합 ${totalRows.toLocaleString("ko-KR")}개 · 현재 ${totalRows ? safeOffset + 1 : 0}~${Math.min(totalRows, safeOffset + products.length)}번째`;
   $("#excel-filter-status").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 중 Excel ${combinedBrandPreview.loadedCount}개 통합 · 조건 충족 ${totalRows.toLocaleString("ko-KR")}개`;
   if (combinedBrandPreview.originalRowView) {
-    $("#excel-filter-status").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 중 Excel ${combinedBrandPreview.loadedCount}개 통합 · 조건 충족 ${totalRows.toLocaleString("ko-KR")}행 · 엑셀 원본의 각 행과 열 값을 그대로 표시합니다.`;
+    $("#excel-filter-status").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 중 Excel ${combinedBrandPreview.loadedCount}개 통합 · 조건 충족 ${totalRows.toLocaleString("ko-KR")}행 · 판매량은 엑셀 원본의 같은 행 값입니다.`;
     if (!totalRows) $("#excel-filter-status").textContent += " 두 판매량 조건을 모두 충족하는 행이 없습니다. 조건을 낮추거나 전체 보기를 눌러주세요.";
-    $("#excel-preview-summary").textContent = `엑셀 원본 ${totalRows.toLocaleString("ko-KR")}행 · 현재 ${totalRows ? safeOffset + 1 : 0}~${Math.min(totalRows, safeOffset + products.length)}행 · 가로로 스크롤하면 모든 원본 열을 볼 수 있습니다.`;
+    $("#excel-preview-summary").textContent = `엑셀 원본 ${totalRows.toLocaleString("ko-KR")}행 · 현재 ${totalRows ? safeOffset + 1 : 0}~${Math.min(totalRows, safeOffset + products.length)}행 · 상품 아래에서 판매처별 검색 결과와 원본 정보를 확인할 수 있습니다.`;
   } else if (["total", "mixed"].includes(combinedBrandPreview.salesBasis)) {
     const sourceRows = combinedBrandPreview.products.reduce((sum, p) => sum + (p.originalSalesRows?.length || 0), 0);
     $("#excel-filter-status").textContent += ` · 원본 조건 충족 ${sourceRows.toLocaleString("ko-KR")}개 사이즈 · 원본 판매량은 같은 사이즈 행 기준`;
@@ -614,29 +614,36 @@ function originalExcelColumns(products = []) {
 
 function renderOriginalExcelRows(file, products = []) {
   $("#excel-preview").classList.add('original-row-view');
+  // Every brand keeps the established product/result layout. All workbook
+  // fields remain available below the title without widening the result table.
+  $("#excel-preview-grid").scrollLeft = 0;
   const keys = products.map((p) => excelPreviewStableSelectionKey(p, file));
-  const columns = combinedBrandPreview?.originalColumns || originalExcelColumns(products);
-  const kind = (header) => /^(상품명|영문상품명)$/.test(header.replace(/\s/g, '')) ? 'title'
-    : /옵션|색상/.test(header) ? 'option' : 'value';
-  $("#excel-preview-columns").innerHTML = '<tr><th>선택</th><th>원본 행</th>'
-    + columns.map((column) => '<th class="excel-source-cell" data-original-kind="' + kind(column.header) + '" title="' + text(column.header) + '">' + text(column.header) + '</th>').join('')
-    + '<th>상품 검색 결과</th></tr>';
+  const salesLabels = combinedProductSalesLabels('total');
+  $("#excel-preview-columns").innerHTML = '<tr><th>선택</th><th>이미지</th><th>상품번호 · SPU</th><th>상품명 · 원본 정보</th><th>브랜드</th><th>상품 최근 30일 평균 거래가</th><th>'
+    + text(salesLabels.china) + '</th><th>' + text(salesLabels.local) + '</th><th>검증</th><th>상품 검색 결과</th></tr>';
   $("#excel-preview-rows").innerHTML = products.length ? products.map((p, i) => {
     const key = keys[i];
     excelPreviewProductCache.set(key, p);
-    const cells = new Map(originalExcelColumnKeys(p.originalRow.headers).map((column, index) => [column.key, p.originalRow.values[index]]));
+    const source = p.originalValues || {};
+    const originalDetails = p.originalRow.headers.map((header, index) => '<div class="excel-source-field" data-source-column="' + index + '"><b>'
+      + text(header) + '</b><span class="excel-source-value">' + text(p.originalRow.values[index] ?? '') + '</span></div>').join('');
+    const image = /^https?:\/\//.test(p.logoUrl || '') ? '<img class="excel-verified-image" src="' + text(p.logoUrl) + '" alt="">' : '';
     const result = excelPreviewSearchResults.get(key);
     const resultLabel = result?.loading ? '검색 중…' : result ? '다시 검색' : '상품검색';
-    const resultCell = '<td class="excel-raw-search-cell">' + (result?.loading ? '<span>' + resultLabel + '</span>'
-      : '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '">' + resultLabel + '</button>')
+    const stateLabel = result?.error ? '검색 실패' : result?.partial ? '일부 결과' : '검색 완료';
+    const resultCell = '<td class="excel-raw-search-cell">' + (result?.loading ? '<span class="excel-raw-search-state loading">' + resultLabel + '</span>'
+      : (result ? '<span class="excel-raw-search-state ' + (result.error || result.partial ? 'pending' : 'available') + '">' + stateLabel + '</span>' : '')
+        + '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '">' + resultLabel + '</button>')
       + (globalThis.AroundGPoizonProductView?.button(p) || '') + '</td>';
     const sourceLabel = (p._sourceBrandName || '') + ' · 원본 ' + p.sourceRowNumber + '행';
     return '<tr class="excel-product-row excel-source-row" data-source-row="' + text(p.sourceRowNumber) + '"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(key) + '" aria-label="원본 행 선택"></td>'
-      + '<td title="' + text(sourceLabel) + '">' + text(p.sourceRowNumber) + '</td>'
-      + columns.map((column) => '<td class="excel-source-cell" data-original-kind="' + kind(column.header) + '" title="' + text(cells.get(column.key) ?? '') + '"><span class="excel-source-value">' + text(cells.get(column.key) ?? '') + '</span></td>').join('')
+      + '<td class="excel-verified-image-cell">' + image + '</td><td><b>' + text(source.articleNumber ?? p.articleNumber) + '</b><small> SPU ' + text(source.spuId ?? p.spuId) + '</small></td>'
+      + '<td class="excel-source-product"><div class="excel-source-title" title="' + text(source.title ?? p.title) + '">' + text(source.title ?? p.title) + '</div><details class="excel-source-details"><summary title="' + text(sourceLabel) + '">원본 ' + text(p.sourceRowNumber) + '행 정보</summary><div class="excel-source-fields">' + originalDetails + '</div></details></td>'
+      + '<td>' + text(source.brand ?? p.brandName) + '</td><td class="excel-source-price">' + text(source.averagePrice ?? '') + '</td>'
+      + '<td class="excel-source-china">' + text(source.totalSales ?? p.totalSalesRaw) + '</td><td class="excel-source-local">' + text(source.localTotalSales ?? p.localTotalSalesRaw) + '</td><td>' + text(p.verificationStatus || '') + '</td>'
       + resultCell + '</tr>'
-      + (result && !result.loading ? '<tr class="excel-product-search-detail"><td colspan="' + (columns.length + 3) + '">' + renderDomestic(result, p, key) + '</td></tr>' : '');
-  }).join('') : '<tr><td colspan="' + (columns.length + 3) + '">입력한 두 조건을 모두 충족하는 원본 행이 없습니다.</td></tr>';
+      + (result && !result.loading ? '<tr class="excel-product-search-detail excel-verified-search-detail"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>' + text(p.title || p.articleNumber || '상품') + '</strong> 국내 검색 결과</div>' + renderDomestic(result, p, key) + '</td></tr>' : '');
+  }).join('') : '<tr><td colspan="10">입력한 두 조건을 모두 충족하는 원본 행이 없습니다.</td></tr>';
   return keys;
 }
 

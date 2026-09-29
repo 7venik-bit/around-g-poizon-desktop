@@ -6036,6 +6036,8 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
       key: `ROW:${entry.sourceRowNumber}:${skuId || articleNumber || spuId}`,
       sourceRowNumber: entry.sourceRowNumber,
       originalRow: entry.originalRow,
+      originalValues: entry.originalRow
+        ? Object.fromEntries(Object.entries(columns).map(([name, index]) => [name, cell(row, index)])) : undefined,
       spuId,
       skuId,
       option,

@@ -146,6 +146,60 @@ async function cleanup(){
   if(win&&!win.isDestroyed())win.destroy();
   await Promise.all([fixture,fixtureStyle,fixtureBootstrap,fixtureRender].map(path=>rm(path,{force:true})));
 }
+async function checkOriginalProductLayout() {
+  const renderer=await readFile(join(root,'src/renderer.js'),'utf8');
+  const cut=(from,to)=>{
+    const start=renderer.indexOf(from),end=renderer.indexOf(to,start+from.length);
+    if(start<0||end<0)throw Error('Missing production renderer: '+from);
+    return renderer.slice(start,end);
+  };
+  await win.webContents.executeJavaScript(`
+    var $=selector=>document.querySelector(selector);
+    var text=value=>String(value??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    var excelPreviewStableSelectionKey=p=>p._excelSelectionKey;
+    var excelPreviewProductCache=new Map(),excelPreviewSearchResults=new Map();
+    ${cut('function combinedProductSalesLabels(', 'function rememberedCombinedSalesFilters(')}
+    ${cut('function renderOriginalExcelRows(', 'function renderOriginalSkuSales(')}
+    document.getElementById('stock-fixture').innerHTML='<section id="excel-preview" class="product-view"><div id="excel-preview-grid" class="excel-preview-grid"><table><thead id="excel-preview-columns"></thead><tbody id="excel-preview-rows"></tbody></table></div></section>';
+  `);
+  const observations=[];
+  for(const width of [1426,1920]) for(const brand of ['Ecco','새로 다운로드한 브랜드']) {
+    // An unfamiliar brand has reordered and additional columns. Neither the
+    // common ten-column list nor its retailer result width may depend on them.
+    const originalRow=brand==='Ecco'
+      ? {headers:['상품 번호','상품명','중국 총 판매량','현지 판매자 총 판매량','최근 30일간 평균 거래가'],values:['85030451094','에코 원본 상품',70,49,'KRW115,000']}
+      : {headers:['현지 판매자 총 판매량','새로운 브랜드 열','상품명','상품 번호',...Array.from({length:25},(_,i)=>'추가 열 '+i)],values:[26,'추가 원본 데이터','신규 상품','NEW-001',...Array.from({length:25},(_,i)=>'https://example.test/very-long-original-value/'+i)]};
+    const p={_excelSelectionKey:brand+':248',_sourceBrandName:brand,sourceRowNumber:248,articleNumber:brand==='Ecco'?'85030451094':'NEW-001',title:brand+' 원본 상품',brandName:brand,spuId:'32556274',logoUrl:'https://example.test/product.jpg',originalRow,
+      originalValues:{articleNumber:brand==='Ecco'?'85030451094':'NEW-001',title:brand+' 원본 상품',brand,spuId:'32556274',averagePrice:'KRW115,000',totalSales:70,localTotalSales:brand==='Ecco'?49:26}};
+    win.setContentSize(width,900);win.webContents.setZoomFactor(1);
+    await win.webContents.executeJavaScript(`excelPreviewSearchResults.set(${JSON.stringify(p._excelSelectionKey)},${JSON.stringify({products:[data.products[0],data.products[2]],sources:data.sources})});renderOriginalExcelRows({},[${JSON.stringify(p)}]);`);
+    await new Promise(r=>setTimeout(r,40));
+    const measured=await win.webContents.executeJavaScript(`(() => {
+      const q=s=>document.querySelector(s),grid=q('#excel-preview-grid'),table=grid.querySelector('table'),row=q('.excel-source-row'),list=q('.domestic-inline-results'),errors=[];
+      if(q('#excel-preview-columns tr').children.length!==10||row.children.length!==10)errors.push('product layout changed');
+      if(q('.excel-product-search-detail td').colSpan!==10)errors.push('retailer result colspan changed');
+      if(getComputedStyle(table).tableLayout!=='fixed'||grid.scrollWidth>grid.clientWidth+2)errors.push('workbook columns widened the result table');
+      if(list.querySelectorAll('.domestic-inline-head>span').length!==6)errors.push('retailer headings missing');
+      const bounds=grid.getBoundingClientRect();
+      for(const cell of list.querySelectorAll('.domestic-inline-price,.domestic-inline-actions')) {
+        const r=cell.getBoundingClientRect();if(r.left<bounds.left-1||r.right>bounds.right+1)errors.push('price/link outside visible result');
+      }
+      if(q('.excel-source-price').textContent!=='KRW115,000')errors.push('original price changed');
+      if(q('.excel-source-local').textContent!==${JSON.stringify(String(p.originalValues.localTotalSales))})errors.push('original sales changed');
+      if(row.querySelector('.excel-source-details').open)errors.push('raw fields replace normal product view');
+      row.querySelector('.excel-source-details').open=true;
+      if(grid.scrollWidth>grid.clientWidth+2)errors.push('expanded original information widens retailer results');
+      row.querySelector('.excel-source-details').open=false;
+      return {width:innerWidth,gridWidth:grid.clientWidth,tableWidth:table.getBoundingClientRect().width,sourceColumns:row.querySelectorAll('.excel-source-field').length,errors};
+    })()`);
+    observations.push({brand,...measured});
+    if(width===1426&&brand==='Ecco')await writeFile(join(out,'original-product-results-1426.png'),(await win.webContents.capturePage()).toPNG());
+  }
+  await writeFile(join(out,'original-product-layout-results.json'),JSON.stringify(observations,null,2));
+  const failures=observations.filter(r=>r.errors.length);
+  if(failures.length)throw Error(JSON.stringify(failures));
+  console.log('PASS: existing/new brands retain ten product columns, six retailer columns, exact source values, visible prices and links at 1426/1920 pixels.');
+}
 (async()=>{
   await app.whenReady();await mkdir(out,{recursive:true});
   session.defaultSession.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*']},(_d,cb)=>cb({cancel:true}));
@@ -181,5 +235,6 @@ document.addEventListener('click',event=>{const action=event.target.closest('[da
   await new Promise(r=>setTimeout(r,80));
   await writeFile(join(out,'domestic-color-rows-1920.png'),(await win.webContents.capturePage()).toPNG());
   console.log('PASS: 8 rendered stock-column cases with production CSP; merged seller cells, separate Naver/Musinsa colour rows, all 72 colour options, visible separators, aligned columns, preserved links and availability.');
+  await checkOriginalProductLayout();
   await cleanup();app.exit(0);
 })().catch(async e=>{console.error(e.stack||e);await cleanup();app.exit(1)});
