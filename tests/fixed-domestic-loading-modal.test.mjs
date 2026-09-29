@@ -62,10 +62,11 @@ test("domestic search elapsed time is displayed as Korean hours, minutes and sec
 });
 
 test("verified product rows keep a compact fixed height while scrolling", () => {
-  assert.match(renderer, /class="excel-product-row excel-verified-spu-row"/);
+  assert.match(renderer, /class="excel-product-row excel-verified-spu-row/);
   assert.match(renderer, /class="excel-verified-image"/);
   assert.match(renderer, /class="excel-verified-image-cell"/);
   assert.match(inlineResultsCss, /\.excel-verified-spu-row\{height:66px!important\}/);
+  assert.match(inlineResultsCss, /\.excel-original-sku-row>td\{height:auto!important;max-height:none!important/);
   assert.match(inlineResultsCss, /table\{height:fit-content!important;min-height:0!important;align-self:flex-start!important\}/);
   assert.match(inlineResultsCss, /\.excel-verified-image-cell>\.excel-verified-image\{display:block!important;width:40px!important;height:40px!important;max-width:40px!important;max-height:40px!important/);
   assert.match(inlineResults, /table\{width:100%!important;min-width:980px!important;table-layout:fixed!important;height:fit-content!important;min-height:0!important;align-self:flex-start!important\}/);

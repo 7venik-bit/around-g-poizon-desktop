@@ -20,28 +20,25 @@ app.whenReady().then(async () => {
   const root = resolve(__dirname, '../..');
   const columns = await import(pathToFileURL(resolve(root, 'services/poizon-xlsx.mjs')));
   const sales = await import(pathToFileURL(resolve(root, 'services/poizon-sales-filter.mjs')));
-  const sheet = [['SPU ID', '상품 번호', '상품명', 'SKU ID', '중국 총 판매량', '현지 판매자 총 판매량'],
-    ...[5, 16, 15, 8, 5, '<5', '<5', '--'].map((n, i) => ['A', '54053401001', '사이즈 합계', `A-${i}`, 20, n]),
-    ...[13, 17, 14, 26].map((n, i) => ['B', '85082354477', '사이즈 합계', `B-${i}`, 30, n]),
-    ...Array.from({ length: 7 }, (_, i) => ['C', 'UNCERTAIN', '미확정 수량', `C-${i}`, 10, '<5']),
-  ];
+  const sheet = require('./ecco-original-sales.cjs');
   const context = createContext({ ...columns, ...sales, basename, excelPreviewCache: new Map(),
     stat: async () => ({ size: 100, mtimeMs: 1 }), readFile: async () => sheet,
     readFirstDataSheet: async (value) => value,
   });
   runInContext(section(readFileSync(resolve(root, 'main.mjs'), 'utf8'), 'function excelPreviewCell(', 'async function scanBrandExportFolder('), context);
-  ipcMain.handle('sales-fixture-preview', (_event, minimumLocalTotal) => context.previewExcelFile({
+  ipcMain.handle('sales-fixture-preview', (_event, filters) => context.previewExcelFile({
     path: '/fixture.xlsx', limit: 100000,
-    filters: { productView: true, productSales: true, selectionOnly: true, minimumLocalTotal },
+    filters: { productView: true, productSales: true, selectionOnly: true, ...filters },
   }));
   const preload = resolve(profile, 'sales-preload.cjs');
   writeFileSync(preload, `require('electron').contextBridge.exposeInMainWorld('salesFixture', {read: n => require('electron').ipcRenderer.invoke('sales-fixture-preview', n)});`);
   const win = new BrowserWindow({ show: false, width: 1200, height: 800,
     webPreferences: { preload, sandbox: true, backgroundThrottling: false } });
   try {
+    const css = ['style.css','excel-column-layout.css','domestic-inline-results.css'].map(name=>readFileSync(resolve(root,'src',name),'utf8')).join('\n');
     await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><meta charset="utf-8">
-      <label>현지 최소 판매량 <input id="minimum" value="25"></label><button id="apply">필터 적용</button>
-      <output id="count"></output><table><thead id="excel-preview-columns"></thead><tbody id="excel-preview-rows"></tbody></table>`));
+      <style>${css}</style><body style="display:block;padding:24px"><label>중국 최소 판매량 <input id="china" type="number" value=""></label><label>현지 최소 판매량 <input id="minimum" type="number" value="25"></label><button id="apply">필터 적용</button>
+      <output id="count"></output><section id="excel-preview" class="product-view"><div id="excel-preview-grid"><table><thead id="excel-preview-columns"></thead><tbody id="excel-preview-rows"></tbody></table></div></section>`));
     const renderer = readFileSync(resolve(root, 'src/renderer.js'), 'utf8');
     await win.webContents.executeJavaScript(`
       const $ = s => document.querySelector(s);
@@ -52,7 +49,7 @@ app.whenReady().then(async () => {
       let combinedBrandPreview = {salesBasis:'total'};
       ${section(renderer, 'function combinedProductSalesLabels(', '// Plain Excel inspection')}
       async function filter() {
-        const result = await window.salesFixture.read($('#minimum').value);
+        const result = await window.salesFixture.read({minimumTotal:$('#china').value, minimumLocalTotal:$('#minimum').value});
         const products = mergeDomesticSearchProducts(result.products, {path:'/fixture.xlsx'});
         renderVerifiedSpuRows({}, products);
         $('#count').textContent = products.length;
@@ -68,22 +65,40 @@ app.whenReady().then(async () => {
       }
       throw Error('filter did not complete');
     };
-    const visible = () => win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.excel-product-row')).map(r=>({article:r.cells[2].querySelector('b').textContent,local:r.cells[7].textContent,options:r.querySelector('details').textContent}))`);
+
+    const visible = () => win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.excel-product-row')).map(r=>({article:r.cells[2].querySelector('b').textContent,local:Array.from(r.cells[7].querySelectorAll('.excel-original-sale b'),e=>e.textContent),china:Array.from(r.cells[6].querySelectorAll('.excel-original-sale b'),e=>e.textContent),options:r.querySelector('details').textContent}))`);
     await waitFor(1);
     let rows = await visible();
-    assert.deepEqual(rows.map((r) => [r.article, r.local]), [['54053401001', '49+'], ['85082354477', '70']]);
-    assert.match(rows[0].options, /원본 현지 총판매 16/);
-    assert.match(rows[0].options, /원본 현지 총판매 <5/);
+    assert.deepEqual(rows.map(r=>[r.article,r.local]), [['85030451094',['49','48','54','50']], ['85082354477',['26']]]);
+    assert.deepEqual(rows[0].china, ['70','70','78','57']);
+    assert.match(rows[0].options, /원본 현지 총판매 24/);
     assert.match(rows[0].options, /원본 현지 총판매 --/);
-    await win.webContents.executeJavaScript(`$('#minimum').focus();$('#minimum').select()`);
-    await win.webContents.insertText('60');
-    const point = await win.webContents.executeJavaScript(`(()=>{const r=$('#apply').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`);
-    win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point });
-    win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point });
-    await waitFor(2);
+    const layout = await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.excel-product-row')).flatMap(row=>[6,7].flatMap(i=>Array.from(row.cells[i].querySelectorAll('.excel-original-sale'),e=>{const r=e.getBoundingClientRect(), cell=row.cells[i].getBoundingClientRect();return {height:r.height,inside:r.top>=cell.top&&r.bottom<=cell.bottom,values:e.querySelector('b').getBoundingClientRect().width>0}})))`);
+    assert.ok(layout.length === 10 && layout.every(e=>e.height>=24 && e.inside && e.values), JSON.stringify(layout));
+    const apply = async (china, local, n) => {
+      for (const [id, value] of [['china',china],['minimum',local]]) {
+        await win.webContents.executeJavaScript(`document.getElementById('${id}').focus();document.getElementById('${id}').select()`);
+        if (value) await win.webContents.insertText(value);
+        else win.webContents.delete();
+        // Editing commands work in a hidden test window; unfocused keyboard
+        // events may be ignored. Confirm the actual input before clicking.
+        assert.equal(await win.webContents.executeJavaScript(`document.getElementById('${id}').value`), value);
+      }
+      const point = await win.webContents.executeJavaScript(`(()=>{const r=$('#apply').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})`+'()');
+      win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});
+      win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});
+      await waitFor(n);
+    };
+    await apply('', '30', 2);
     rows = await visible();
-    assert.deepEqual(rows.map((r) => [r.article, r.local]), [['85082354477', '70']]);
-    console.log(JSON.stringify({ offline: true, minimum25Products: 2, minimum60Products: 1, partialSum: '49+', uncertainSumExcluded: true, rawOptionsPreserved: true, nativeFilterClick: true }));
+    assert.deepEqual(rows.map(r=>r.local), [['49','48','54','50']]);
+    await apply('100', '25', 3);
+    assert.equal((await visible()).length, 0);
+    await apply('', '', 4);
+    rows = await visible();
+    assert.equal(rows.length, 3);
+    assert.deepEqual(rows[2].local, ['<5','5','16','15','8','<5','5','--','--','--']);
+    console.log(JSON.stringify({offline:true,minimum25Products:2,matchingSkuValues:[49,48,54,50,26],minimum30Products:1,china100Local25Products:0,showAllProducts:3,rawOptionsPreserved:true,salesCellsUnclipped:true,nativeFilterClick:true}));
   } finally { win.destroy(); ipcMain.removeHandler('sales-fixture-preview'); }
   clearTimeout(timer); app.exit(0);
 }).catch((error) => { console.error(error.stack); clearTimeout(timer); app.exit(1); });

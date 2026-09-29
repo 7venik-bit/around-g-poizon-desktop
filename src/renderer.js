@@ -520,8 +520,9 @@ function renderCombinedBrandPreviewPage(offset = 0) {
   $("#excel-preview-name").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 · 통합 상품검색`;
   $("#excel-preview-summary").textContent = `${salesLabels.china} ${minimumTotal || "전체"} 이상 AND ${salesLabels.local} ${minimumLocalTotal || "전체"} 이상 · 통합 ${totalRows.toLocaleString("ko-KR")}개 · 현재 ${totalRows ? safeOffset + 1 : 0}~${Math.min(totalRows, safeOffset + products.length)}번째`;
   $("#excel-filter-status").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 중 Excel ${combinedBrandPreview.loadedCount}개 통합 · 조건 충족 ${totalRows.toLocaleString("ko-KR")}개`;
-  if (combinedBrandPreview.products.some((p) => p.salesBasis === "total" && p.originalSalesTotals)) {
-    $("#excel-filter-status").textContent += " · 원본 사이즈별 합계 · +는 확인된 최소 건수";
+  if (["total", "mixed"].includes(combinedBrandPreview.salesBasis)) {
+    const sourceRows = combinedBrandPreview.products.reduce((sum, p) => sum + (p.originalSalesRows?.length || 0), 0);
+    $("#excel-filter-status").textContent += ` · 원본 조건 충족 ${sourceRows.toLocaleString("ko-KR")}개 사이즈 · 원본 판매량은 같은 사이즈 행 기준`;
   }
   $("#excel-filter-min-total").value = minimumTotal;
   $("#excel-filter-min-local-total").value = minimumLocalTotal;
@@ -560,6 +561,15 @@ function renderCombinedBrandPreviewPage(offset = 0) {
 }
 
 
+function renderOriginalSkuSales(rows, metric) {
+  return '<div class="excel-original-sales">' + rows.map((row) => {
+    const size = String(row.option || '').split(';').find((part) => /^\s*사이즈\s*:/.test(part));
+    const label = size ? size.replace(/^\s*사이즈\s*:\s*/, '') : row.option || row.skuId || '옵션 미확인';
+    const source = (row.option || row.skuId || '') + ' · 원본 ' + row.sourceRowNumber + '행';
+    return '<div class="excel-original-sale" title="' + text(source) + '" data-source-row="' + text(row.sourceRowNumber) + '"><small>' + text(label) + '</small><b>' + text(row[metric] || '미확인') + '</b></div>';
+  }).join('') + '</div>';
+}
+
 function renderVerifiedSpuRows(file, products) {
   const keys = products.map((p) => excelPreviewStableSelectionKey(p, file));
   products.forEach((p, i) => excelPreviewProductCache.set(keys[i], p));
@@ -569,6 +579,9 @@ function renderVerifiedSpuRows(file, products) {
   $("#excel-preview-rows").innerHTML = products.length ? products.map((p, i) => {
     const chinaRaw = p.salesBasis === "total" ? p.hasTotalSalesData ? p.totalSalesRaw : "미확인" : p.hasSalesData ? p.sales30dRaw : "미확인";
     const localRaw = p.salesBasis === "total" ? p.hasLocalTotalSalesData ? p.localTotalSalesRaw : "미확인" : p.hasLocalSalesData ? p.localSales30dRaw : "미확인";
+    const originalRows = p.salesBasis === "total" ? p.originalSalesRows || p.verificationOptions || [] : null;
+    const chinaCell = originalRows ? renderOriginalSkuSales(originalRows, 'totalSalesRaw') : text(chinaRaw);
+    const localCell = originalRows ? renderOriginalSkuSales(originalRows, 'localTotalSalesRaw') : text(localRaw);
     const basisHint = combinedBrandPreview?.salesBasis === "mixed" && p.salesBasis
       ? '<small>' + (p.salesBasis === "total" ? '원본 총판매량' : '상품 최근 30일') + '</small>' : '';
     const result = excelPreviewSearchResults.get(keys[i]);
@@ -584,8 +597,8 @@ function renderVerifiedSpuRows(file, products) {
     const detailRow = result && !result.loading
       ? '<tr class="excel-product-search-detail excel-verified-search-detail"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>' + text(p.title || p.articleNumber || '상품') + '</strong> 국내 검색 결과</div>' + renderDomestic(result, p, keys[i]) + '</td></tr>'
       : '';
-    return '<tr class="excel-product-row excel-verified-spu-row"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(keys[i]) + '"></td><td class="excel-verified-image-cell">' + image + '</td><td><b>' + text(p.articleNumber) + '</b>' + (typeof purchaseAwarenessBadge === 'function' ? purchaseAwarenessBadge(p) : '') + '<small> SPU ' + text(p.spuId) + '</small></td><td>' + text(p.title) + '<details><summary>원본 사이즈 ' + p.optionCount + '행</summary>' + options + '</details></td><td>' + text(p.brandName) + '</td><td>' + (p.hasPriceData ? money(p.averagePrice) : '미확인') + '</td><td>' + text(chinaRaw) + basisHint + '</td><td>' + text(localRaw) + basisHint + '</td><td>' + text(p.verificationStatus) + '</td>' + linkedResultCell + '</tr>' + detailRow;
-  }).join('') : '<tr><td colspan="10">동일 조건에 맞는 검증 완료 상품이 없습니다. 실패·누락 집계도 확인해 주세요.</td></tr>';
+    return '<tr class="excel-product-row excel-verified-spu-row' + (originalRows ? ' excel-original-sku-row' : '') + '"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(keys[i]) + '"></td><td class="excel-verified-image-cell">' + image + '</td><td><b>' + text(p.articleNumber) + '</b>' + (typeof purchaseAwarenessBadge === 'function' ? purchaseAwarenessBadge(p) : '') + '<small> SPU ' + text(p.spuId) + '</small></td><td>' + text(p.title) + '<details><summary>원본 사이즈 ' + p.optionCount + '행</summary>' + options + '</details></td><td>' + text(p.brandName) + '</td><td>' + (p.hasPriceData ? money(p.averagePrice) : '미확인') + '</td><td>' + chinaCell + basisHint + '</td><td>' + localCell + basisHint + '</td><td>' + text(p.verificationStatus) + '</td>' + linkedResultCell + '</tr>' + detailRow;
+  }).join('') : '<tr><td colspan="10">입력한 조건에 맞는 상품이 없습니다.' + (['total', 'mixed'].includes(combinedBrandPreview?.salesBasis) ? ' 원본 판매량은 같은 사이즈 행에서 두 조건을 모두 충족해야 합니다.' : '') + '</td></tr>';
   if (typeof updatePurchaseAwarenessDisplay === 'function') updatePurchaseAwarenessDisplay();
   return keys;
 }
@@ -602,6 +615,7 @@ function mergeDomesticSearchProducts(products = [], file = {}) {
       skuId: product.skuId || "",
       totalSalesRaw: product.totalSalesRaw || "",
       localTotalSalesRaw: product.localTotalSalesRaw || "",
+      sourceRowNumber: product.sourceRowNumber,
     };
     const current = grouped.get(key);
     if (!current) {
@@ -627,18 +641,7 @@ function mergeDomesticSearchProducts(products = [], file = {}) {
       current[available] = Boolean(current[available] || product[available]);
     }
   }
-  return [...grouped.values()].map((product) => {
-    if (product.salesBasis === "total" && product.originalSalesTotals) {
-      for (const [source, metric, available] of [["china", "totalSales", "hasTotalSalesData"],
-        ["local", "localTotalSales", "hasLocalTotalSalesData"]]) {
-        const summary = product.originalSalesTotals[source];
-        product[metric] = summary.minimum;
-        product[`${metric}Raw`] = summary.raw;
-        product[available] = summary.available;
-      }
-    }
-    return product;
-  });
+  return [...grouped.values()];
 }
 
 // Plain Excel inspection remains available for the explicit Excel-view action.
