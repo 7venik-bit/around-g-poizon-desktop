@@ -5,6 +5,26 @@ import {VERIFIED_OFFICIAL_BRANDS,verifiedOfficialBrand,officialDomainRecordForBr
 import {officialMallAdapter,officialMallAdapterRecord} from '../services/official-mall-adapters.mjs';
 import {queryDomesticProducts} from '../relay/domestic-search.mjs';
 
+test('Ecco searches its verified Korean store even when a previously verified registry points to another merchant', async () => {
+  const settings = {brandCatalog:[{id:22,name:'Ecco',ko:'에코'}],officialBrandRegistry:[{
+    registryId:'id:22',brandId:22,brandName:'Ecco',brandKo:'에코',status:'verified',
+    domain:'dfree.onetop.crd.kr',homepageUrl:'https://dfree.onetop.crd.kr/',
+    searchTemplate:'https://dfree.onetop.crd.kr/',interactiveSearch:true,
+  }]};
+  for (const brand of ['Ecco','ECCO','에코']) {
+    const record=await resolveBrandOfficialSearch({input:{brand,verifyLinkCounts:true,sourceGroups:['official']},settings,
+      discover:async()=>{throw Error('curated Ecco must not rediscover the wrong host');}});
+    assert.equal(record.homepageUrl,'https://kr.ecco.com/');
+    assert.equal(record.interactiveSearch,false);
+    const result=await queryDomesticProducts({query:'85030451094',brand,articleNumber:'85030451094',title:'BIOM 720',
+      officialBrandRecord:record,enabledSourceGroups:['official'],fetchImpl:async()=>({ok:true,text:async()=>''})});
+    assert.equal(result.sources[0].homepageUrl,'https://kr.ecco.com/');
+    assert.ok(result.sources[0].searchAttempts.some(a=>a.url==='https://kr.ecco.com/search?query=85030451094'));
+    assert.doesNotMatch(JSON.stringify(result.sources),/onetop\.crd/);
+  }
+  assert.equal(verifiedOfficialBrand('Ecco collaboration label'),null);
+});
+
 test('each curated brand and alias keeps its own official host through search resolution',()=>{
   for(const seed of VERIFIED_OFFICIAL_BRANDS)for(const brand of seed.aliases){
     const record=requestedOfficialBrand({brand});

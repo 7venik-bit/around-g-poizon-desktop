@@ -6,6 +6,7 @@ export const OFFICIAL_DOMAIN_STATUS = Object.freeze({
 });
 
 export const VERIFIED_OFFICIAL_BRANDS = Object.freeze([
+  { name: "Ecco", aliases: ["ecco", "에코"], domain: "kr.ecco.com", homepageUrl: "https://kr.ecco.com/", searchTemplate: "https://kr.ecco.com/search?query={query}" },
   { name: "노스페이스", aliases: ["the north face", "north face", "노스페이스", "the north face white label", "노스페이스 화이트라벨"], domain: "thenorthfacekorea.co.kr", homepageUrl: "https://www.thenorthfacekorea.co.kr/", searchTemplate: "https://www.thenorthfacekorea.co.kr/search?q={query}" },
   { name: "스케쳐스", aliases: ["skechers", "스케쳐스"], domain: "skecherskorea.co.kr", homepageUrl: "https://www.skecherskorea.co.kr/", searchTemplate: "https://www.skecherskorea.co.kr/search?q={query}" },
   { name: "룰루레몬", aliases: ["lululemon", "룰루레몬"], domain: "lululemon.co.kr", homepageUrl: "https://www.lululemon.co.kr/ko-kr/home", searchTemplate: "", interactiveSearch: true },
