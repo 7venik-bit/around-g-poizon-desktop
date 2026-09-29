@@ -15,11 +15,12 @@ try {
   const shipping = ['domestic-shipping-ipc.cjs'];
   const stalled = ['domestic-shipping-ipc.cjs', '--stalled-details'];
   const fixtures = process.argv.includes('--poizon-product') ? [['poizon-product-viewer.cjs']]
+    : process.argv.includes('--poizon-sales') ? [['poizon-sku-sales.cjs']]
     : process.argv.includes('--official-price') ? [['official-product-price.cjs']]
     : process.argv.includes('--shopping-login') ? [['shopping-login.cjs']]
     : process.argv.includes('--stalled') ? [stalled]
     : process.argv.includes('--shipping') ? [shipping]
-    : [['shopping-login.cjs'], ['official-product-price.cjs'], ['poizon-product-viewer.cjs'], ['domestic-live-frame.cjs'], shipping, stalled];
+    : [['shopping-login.cjs'], ['official-product-price.cjs'], ['poizon-product-viewer.cjs'], ['poizon-sku-sales.cjs'], ['domestic-live-frame.cjs'], shipping, stalled];
   for (const [fixture, ...fixtureArgs] of fixtures) {
     const args = process.platform === 'linux' ? ['--no-sandbox', '--headless', '--ozone-platform=headless'] : [];
     args.push(fileURLToPath(new URL('../tests/fixtures/' + fixture, import.meta.url)));

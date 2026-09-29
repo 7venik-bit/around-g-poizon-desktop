@@ -520,6 +520,9 @@ function renderCombinedBrandPreviewPage(offset = 0) {
   $("#excel-preview-name").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 · 통합 상품검색`;
   $("#excel-preview-summary").textContent = `${salesLabels.china} ${minimumTotal || "전체"} 이상 AND ${salesLabels.local} ${minimumLocalTotal || "전체"} 이상 · 통합 ${totalRows.toLocaleString("ko-KR")}개 · 현재 ${totalRows ? safeOffset + 1 : 0}~${Math.min(totalRows, safeOffset + products.length)}번째`;
   $("#excel-filter-status").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 중 Excel ${combinedBrandPreview.loadedCount}개 통합 · 조건 충족 ${totalRows.toLocaleString("ko-KR")}개`;
+  if (combinedBrandPreview.products.some((p) => p.salesBasis === "total" && p.originalSalesTotals)) {
+    $("#excel-filter-status").textContent += " · 원본 사이즈별 합계 · +는 확인된 최소 건수";
+  }
   $("#excel-filter-min-total").value = minimumTotal;
   $("#excel-filter-min-local-total").value = minimumLocalTotal;
   $("#brand-product-workspace-title").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 · 통합 국내 상품검색`;
@@ -624,7 +627,18 @@ function mergeDomesticSearchProducts(products = [], file = {}) {
       current[available] = Boolean(current[available] || product[available]);
     }
   }
-  return [...grouped.values()];
+  return [...grouped.values()].map((product) => {
+    if (product.salesBasis === "total" && product.originalSalesTotals) {
+      for (const [source, metric, available] of [["china", "totalSales", "hasTotalSalesData"],
+        ["local", "localTotalSales", "hasLocalTotalSalesData"]]) {
+        const summary = product.originalSalesTotals[source];
+        product[metric] = summary.minimum;
+        product[`${metric}Raw`] = summary.raw;
+        product[available] = summary.available;
+      }
+    }
+    return product;
+  });
 }
 
 // Plain Excel inspection remains available for the explicit Excel-view action.
