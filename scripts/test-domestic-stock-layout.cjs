@@ -181,6 +181,9 @@ async function checkOriginalProductLayout() {
       if(getComputedStyle(table).tableLayout!=='fixed'||grid.scrollWidth>grid.clientWidth+2)errors.push('workbook columns widened the result table');
       if(list.querySelectorAll('.domestic-inline-head>span').length!==6)errors.push('retailer headings missing');
       const bounds=grid.getBoundingClientRect();
+      const actionCell=row.querySelector('.excel-raw-search-cell'),retry=actionCell.querySelector('[data-excel-search-product]');
+      const actionBounds=actionCell.getBoundingClientRect(),retryBounds=retry.getBoundingClientRect();
+      if(retryBounds.left<actionBounds.left||retryBounds.right>actionBounds.right||retry.scrollWidth>retry.clientWidth+1)errors.push('retry button clipped after search');
       for(const cell of list.querySelectorAll('.domestic-inline-price,.domestic-inline-actions')) {
         const r=cell.getBoundingClientRect();if(r.left<bounds.left-1||r.right>bounds.right+1)errors.push('price/link outside visible result');
       }
