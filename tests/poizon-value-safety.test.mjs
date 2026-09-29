@@ -49,3 +49,19 @@ test('release regression runner keeps value-integrity simulations mandatory afte
   assert.match(runner, /tests\/poizon-value-integrity.test.mjs/);
   assert.match(runner, /process.exit/);
 });
+
+test('both renderer overrides return the original-row renderer before computing size references', async () => {
+  const products = [{originalRow:{headers:['상품명'],values:['원본 상품명']},sourceRowNumber:248}];
+  for (const [path, marker] of [
+    ['../src/sourcing-view.js','const sourcingRenderer = function sourcingRenderExcelProductRows(file, products = []) {'],
+    ['../src/domestic-inline-results.js','const inlineExcelRenderer = function inlineExcelProductRows(file, products = []) {'],
+  ]) {
+    const source = await readFile(new URL(path,import.meta.url),'utf8');
+    const start = source.indexOf(marker)+marker.length, end=source.indexOf('        try {',start);
+    assert.ok(start>=marker.length&&end>start);
+    const guard = new Function('file','products','renderOriginalExcelRows','renderVerifiedSpuRows',source.slice(start,end));
+    let received;
+    assert.deepEqual(guard({},products,(_file,rows)=>{received=rows;return ['ROW:248'];},()=>{throw Error('must not group source rows');}),['ROW:248']);
+    assert.equal(received,products);
+  }
+});

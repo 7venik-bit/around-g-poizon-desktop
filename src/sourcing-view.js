@@ -82,6 +82,7 @@
   }
 
   function hideCategoryColumns() {
+    if (document.querySelector('#excel-preview.original-row-view')) return;
     const headerRow = document.querySelector("#excel-preview-columns tr");
     if (!headerRow) return;
     const headers = [...headerRow.children];
@@ -412,7 +413,9 @@
       const originalRenderExcelProductRows = renderExcelProductRows;
       const sourcingRenderer = function sourcingRenderExcelProductRows(file, products = []) {
         if (typeof renderVerifiedSpuRows === "function" && products.some((p) => Array.isArray(p.verificationOptions))) return renderVerifiedSpuRows(file, products);
+        if (typeof renderOriginalExcelRows === "function" && products.some((p) => p.originalRow)) return renderOriginalExcelRows(file, products);
         try {
+          document.querySelector('#excel-preview')?.classList.remove('original-row-view');
           const highestSizeByIdentity = highestQualifiedSizeReference(products);
           const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.key || product.articleNumber || product.spuId}`);
           products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));

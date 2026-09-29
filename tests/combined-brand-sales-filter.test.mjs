@@ -102,7 +102,7 @@ function uiHarness(sheets = { '/brand.xlsx': [headers, ...rows] }) {
   const sources = Object.fromEntries(Object.entries(sheets).map(([path, sheet]) => [path, harness(sheet)]));
   const context = createContext({ $, combinedBrandPreview: null, excelPreviewProductCache: new Map(),
     excelPreviewSearchResults: new Map(), selectedExcelPreviewProducts: new Set(),
-    brandImportPathKey: (path) => String(path || '').toLowerCase(), text: (value) => String(value ?? ''), money: String,
+    brandImportPathKey: (path) => String(path || '').toLowerCase(), text: (value) => String(value ?? '').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])), money: String,
     excelPreviewStableSelectionKey: (p) => p._excelSelectionKey,
     updateExcelPreviewSelectionUi() {}, restoreSavedExcelSearchResults() {},
     openIntegratedBrandExcel: async () => {
@@ -125,35 +125,34 @@ function uiHarness(sheets = { '/brand.xlsx': [headers, ...rows] }) {
 test('the actual combined-view action filters the full list and renders matching labels and sales cells', async () => {
   const h = uiHarness();
   await h.open({ minimumTotal: '', minimumLocalTotal: '' });
-  assert.equal(h.context.combinedBrandPreview.products.length, 5);
+  assert.equal(h.context.combinedBrandPreview.products.length, 7);
   await h.open(criteria);
   assert.equal(h.reads.at(-1).filters.productSales, true);
-  assert.equal(h.context.combinedBrandPreview.products.length, 2);
-  assert.match(h.nodes.get('#excel-filter-min-total-label').textContent, /상품 최근 30일/);
-  assert.match(h.nodes.get('#excel-preview-columns').innerHTML, /상품 최근 30일/);
-  assert.match(h.html(), /<td>100\+<\/td><td>25<\/td>/);
-  assert.match(h.html(), /원본 사이즈 2행/);
-  assert.doesNotMatch(h.html(), />DROP<|>UNKNOWN<|>LESS</);
+  assert.equal(h.reads.at(-1).filters.originalRowView, true);
+  assert.deepEqual(Array.from(h.context.combinedBrandPreview.products,p=>p.articleNumber), ['DROP','UNKNOWN','LESS']);
+  assert.match(h.nodes.get('#excel-filter-min-total-label').textContent, /총 판매량 \(원본\)/);
+  assert.match(h.html(), /class="excel-source-value">500\+</);
+  assert.doesNotMatch(h.html(), /원본 사이즈|excel-original-sale|<small>EU/);
 });
 
 test('total-only rows render original totals instead of missing recent metrics', async () => {
   const h = uiHarness({ '/total.xlsx': [headers.slice(0, 6), ...rows.map((row) => row.slice(0, 6))] });
   await h.open(criteria);
   assert.match(h.nodes.get('#excel-filter-min-total-label').textContent, /총 판매량 \(원본\)/);
-  assert.match(h.nodes.get('#excel-preview-columns').innerHTML, /총 판매량 \(원본\)/);
-  assert.match(h.html(), /<b>500\+<\/b>/);
-  assert.match(h.html(), /<b>200<\/b>/);
+  assert.match(h.nodes.get('#excel-preview-columns').innerHTML, />현지 판매자 총 판매량<\/th>/);
+  assert.match(h.html(), /class="excel-source-value">500\+</);
+  assert.match(h.html(), /class="excel-source-value">200</);
 });
 
-test('mixed workbooks identify each displayed metric basis while applying the same thresholds', async () => {
+test('mixed workbooks keep original columns and compare original total counts', async () => {
   const h = uiHarness({ '/recent.xlsx': [headers, ...rows],
     '/total.xlsx': [headers.slice(0, 6), ...rows.map((row) => row.slice(0, 6))] });
   await h.open(criteria);
-  assert.equal(h.context.combinedBrandPreview.salesBasis, 'mixed');
-  assert.equal(h.context.combinedBrandPreview.products.length, 5);
-  assert.match(h.nodes.get('#excel-filter-min-total-label').textContent, /표시값/);
-  assert.match(h.html(), /<small>원본 총판매량<\/small>/);
-  assert.match(h.html(), /<small>상품 최근 30일<\/small>/);
+  assert.equal(h.context.combinedBrandPreview.salesBasis, 'total');
+  assert.equal(h.context.combinedBrandPreview.products.length, 6);
+  assert.equal(h.context.combinedBrandPreview.originalColumns.length,8);
+  assert.match(h.nodes.get('#excel-filter-min-total-label').textContent, /총 판매량/);
+  assert.doesNotMatch(h.html(), /<small>원본 총판매량<\/small>|<small>상품 최근 30일<\/small>/);
 });
 
 test('duplicate recent headers are unavailable, not an excuse to fall back to high original totals', async () => {
@@ -162,33 +161,32 @@ test('duplicate recent headers are unavailable, not an excuse to fall back to hi
 });
 
 
-test('downloaded SKU rows survive preview, grouping, 25-count filtering and visible cells', async () => {
+test('five qualifying downloaded rows stay five separate rows with every source cell', async () => {
   const h = uiHarness({ '/ecco.xlsx': eccoSheet });
   await h.open({ minimumTotal: '', minimumLocalTotal: 25 });
   const products = h.context.combinedBrandPreview.products;
-  assert.equal(products.length, 2);
-  assert.deepEqual(Array.from(products,p=>p.articleNumber), ['85030451094','85082354477']);
-  assert.deepEqual(Array.from(products[0].originalSalesRows,r=>r.localTotalSalesRaw), ['49','48','54','50']);
-  assert.equal(products[0].optionCount, 9);
-  assert.match(h.html(), /<small>EU 40<\/small><b>49<\/b>/);
-  assert.match(h.html(), /<small>EU 42<\/small><b>54<\/b>/);
-  assert.match(h.html(), /원본 현지 총판매 24/);
-  assert.match(h.html(), /원본 현지 총판매 --/);
+  assert.equal(products.length, 5);
+  assert.deepEqual(Array.from(products,p=>p.localTotalSalesRaw), ['49','48','54','50','26']);
+  for (const p of products) assert.deepEqual(Array.from(p.originalRow.values),eccoSheet[p.sourceRowNumber-1]);
+  assert.equal(new Set(products.map(p=>p._excelSelectionKey)).size,5);
+  assert.match(h.html(), /class="excel-source-value">49<\/span>/);
+  assert.match(h.html(), /class="excel-source-value">색상:블랙;사이즈:EU 42<\/span>/);
+  assert.doesNotMatch(h.html(), /<small>EU|excel-original-sale|원본 사이즈/);
   assert.doesNotMatch(h.html(), />254\+<|>70\+<|>54053401001</);
-  assert.match(h.nodes.get('#excel-filter-status').textContent, /5개 사이즈/);
+  assert.match(h.nodes.get('#excel-filter-status').textContent, /조건 충족 5행/);
   await h.open(criteria);
   assert.equal(h.context.combinedBrandPreview.products.length, 0);
-  assert.match(h.html(), /같은 사이즈 행/);
-  assert.match(h.nodes.get('#excel-filter-status').textContent, /0개 사이즈/);
+  assert.match(h.html(), /원본 행/);
+  assert.match(h.nodes.get('#excel-filter-status').textContent, /조건 충족 0행/);
+  assert.match(h.nodes.get('#excel-preview-columns').innerHTML, /현지 판매자 총 판매량/);
 });
 
 test('show-all retains exact original values, censored counts and missing data', async () => {
   const h = uiHarness({ '/ecco.xlsx': eccoSheet });
   await h.open({ minimumTotal: '', minimumLocalTotal: '' });
-  assert.equal(h.context.combinedBrandPreview.products.length,3);
-  const third = h.context.combinedBrandPreview.products[2];
-  assert.deepEqual(Array.from(third.originalSalesRows,r=>r.localTotalSalesRaw), ['<5','5','16','15','8','<5','5','--','--','--']);
-  assert.match(h.html(), /<small>EU 41<\/small><b>16<\/b>/);
+  assert.equal(h.context.combinedBrandPreview.products.length,28);
+  assert.deepEqual(Array.from(h.context.combinedBrandPreview.products,p=>Array.from(p.originalRow.values)),eccoSheet.slice(1));
+  assert.match(h.html(), /class="excel-source-value">16<\/span>/);
   assert.doesNotMatch(h.html(), />49\+<|>254\+<|>70\+<|합계/);
 });
 
@@ -214,4 +212,46 @@ test('same-path replacement and a newly downloaded file automatically reread sou
   const result = await h.context.previewExcelFile({path:'/next-download.xlsx',filters:{productView:true,productSales:true,...criteria}});
   assert.equal(result.products[0].localTotalSalesRaw,'30');
   assert.equal(reads,3);
+});
+
+test('original view keeps row order, duplicate identifiers, blank cells and literal text', async () => {
+  const rawHeaders = ['SPU ID','상품 번호','상품명','SKU ID','중국 총 판매량','현지 판매자 총 판매량','옵션','옵션',''];
+  const rawRows = [
+    ['S','ARTICLE','  원본 <상품>  ','DUP','100+','25','색상:블랙;사이즈:EU 40','  두 번째  ',''],
+    ['S','ARTICLE','다른 상품명','DUP',101,26,'CN 250','',0],
+  ];
+  const h = uiHarness({'/literal.xlsx':[rawHeaders,...rawRows]});
+  await h.open(criteria);
+  assert.deepEqual(Array.from(h.context.combinedBrandPreview.products,p=>Array.from(p.originalRow.values)),rawRows);
+  assert.equal(h.context.combinedBrandPreview.originalColumns.length,9);
+  assert.equal(new Set(h.context.combinedBrandPreview.products.map(p=>p._excelSelectionKey)).size,2);
+  assert.match(h.html(), /class="excel-source-value">  원본 &lt;상품&gt;  <\/span>/);
+  assert.match(h.html(), /class="excel-source-value"><\/span>/);
+  assert.match(h.html(), /class="excel-source-value">0<\/span>/);
+  assert.doesNotMatch(h.html(), /<상품>|>숨김<|>미확인<|원본 사이즈/);
+});
+
+test('original row pagination preserves all 151 matching rows with the same product IDs', async () => {
+  const sheet = [headers.slice(0,6), ...Array.from({length:151},(_,i)=>['ONE','ARTICLE','행 '+i,'DUP',100,25+i])];
+  const h = uiHarness({'/many.xlsx':sheet});
+  await h.open(criteria);
+  assert.equal(h.context.combinedBrandPreview.products.length,151);
+  assert.equal(h.context.excelPreviewProductCache.size,151);
+  assert.equal((h.html().match(/class="excel-product-row excel-source-row"/g)||[]).length,100);
+  h.context.renderCombinedBrandPreviewPage(100);
+  assert.equal((h.html().match(/class="excel-product-row excel-source-row"/g)||[]).length,51);
+  assert.match(h.html(), /data-source-row="102"/);
+  assert.match(h.html(), /data-source-row="152"/);
+});
+
+test('source columns from another workbook stay aligned even when their order changes', async () => {
+  const h = uiHarness({
+    '/one.xlsx': [['상품 번호','상품명','현지 판매자 총 판매량'],['A','첫 상품',25]],
+    '/two.xlsx': [['현지 판매자 총 판매량','상품명','상품 번호'],[30,'둘째 상품','B']],
+  });
+  await h.open({minimumTotal:'',minimumLocalTotal:25});
+  assert.equal(h.context.combinedBrandPreview.products.length,2);
+  assert.deepEqual(Array.from(h.context.combinedBrandPreview.originalColumns,c=>c.header),['상품 번호','상품명','현지 판매자 총 판매량']);
+  const displayed = [...h.html().matchAll(/class="excel-source-value">([^<]*)<\/span>/g)].map(m=>m[1]);
+  assert.deepEqual(displayed,['A','첫 상품','25','B','둘째 상품','30']);
 });
