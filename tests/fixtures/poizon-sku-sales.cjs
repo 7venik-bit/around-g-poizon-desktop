@@ -37,7 +37,7 @@ app.whenReady().then(async () => {
   try {
     const css = ['style.css','excel-column-layout.css','domestic-inline-results.css'].map(name=>readFileSync(resolve(root,'src',name),'utf8')).join('\n');
     await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><meta charset="utf-8">
-      <style>${css}</style><body style="display:block;padding:24px"><label>중국 최소 판매량 <input id="china" value=""></label><label>현지 최소 판매량 <input id="minimum" value="25"></label><button id="apply">필터 적용</button>
+      <style>${css}</style><body style="display:block;padding:24px"><label>중국 최소 판매량 <input id="china" type="number" value=""></label><label>현지 최소 판매량 <input id="minimum" type="number" value="25"></label><button id="apply">필터 적용</button>
       <output id="count"></output><section id="excel-preview" class="product-view"><div id="excel-preview-grid"><table><thead id="excel-preview-columns"></thead><tbody id="excel-preview-rows"></tbody></table></div></section>`));
     const renderer = readFileSync(resolve(root, 'src/renderer.js'), 'utf8');
     await win.webContents.executeJavaScript(`
@@ -79,7 +79,10 @@ app.whenReady().then(async () => {
       for (const [id, value] of [['china',china],['minimum',local]]) {
         await win.webContents.executeJavaScript(`document.getElementById('${id}').focus();document.getElementById('${id}').select()`);
         if (value) await win.webContents.insertText(value);
-        else { win.webContents.sendInputEvent({type:'keyDown',keyCode:'Backspace'}); win.webContents.sendInputEvent({type:'keyUp',keyCode:'Backspace'}); }
+        else win.webContents.delete();
+        // Editing commands work in a hidden test window; unfocused keyboard
+        // events may be ignored. Confirm the actual input before clicking.
+        assert.equal(await win.webContents.executeJavaScript(`document.getElementById('${id}').value`), value);
       }
       const point = await win.webContents.executeJavaScript(`(()=>{const r=$('#apply').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})`+'()');
       win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});
