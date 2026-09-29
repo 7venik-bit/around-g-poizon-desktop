@@ -632,8 +632,8 @@ function renderOriginalExcelRows(file, products = []) {
     const resultLabel = result?.loading ? '검색 중…' : result ? '다시 검색' : '상품검색';
     const stateLabel = result?.error ? '검색 실패' : result?.partial ? '일부 결과' : '검색 완료';
     const resultCell = '<td class="excel-raw-search-cell">' + (result?.loading ? '<span class="excel-raw-search-state loading">' + resultLabel + '</span>'
-      : (result ? '<span class="excel-raw-search-state ' + (result.error || result.partial ? 'pending' : 'available') + '">' + stateLabel + '</span>' : '')
-        + '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '">' + resultLabel + '</button>')
+      : result ? '<div class="excel-raw-search-summary"><span class="excel-raw-search-state ' + (result.error || result.partial ? 'pending' : 'available') + '">' + stateLabel + '</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(key) + '">다시 검색</button></div>'
+        : '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '">' + resultLabel + '</button>')
       + (globalThis.AroundGPoizonProductView?.button(p) || '') + '</td>';
     const sourceLabel = (p._sourceBrandName || '') + ' · 원본 ' + p.sourceRowNumber + '행';
     return '<tr class="excel-product-row excel-source-row" data-source-row="' + text(p.sourceRowNumber) + '"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(key) + '" aria-label="원본 행 선택"></td>'
