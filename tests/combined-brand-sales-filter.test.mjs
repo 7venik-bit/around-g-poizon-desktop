@@ -92,7 +92,7 @@ test('full selection includes qualifying products beyond the first 100 display r
   assert.equal(page.products[0].spuId, '100');
 });
 
-function uiHarness(sheets = { '/brand.xlsx': [headers, ...rows] }) {
+function uiHarness(sheets = { '/brand.xlsx': [headers, ...rows] }, storage = new Map()) {
   const nodes = new Map(), reads = [];
   const $ = (id) => {
     if (!nodes.has(id)) nodes.set(id, { value: '', textContent: '', innerHTML: '', dataset: {},
@@ -101,6 +101,7 @@ function uiHarness(sheets = { '/brand.xlsx': [headers, ...rows] }) {
   };
   const sources = Object.fromEntries(Object.entries(sheets).map(([path, sheet]) => [path, harness(sheet)]));
   const context = createContext({ $, combinedBrandPreview: null, excelPreviewProductCache: new Map(),
+    localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
     excelPreviewSearchResults: new Map(), selectedExcelPreviewProducts: new Set(),
     brandImportPathKey: (path) => String(path || '').toLowerCase(), text: (value) => String(value ?? '').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])), money: String,
     excelPreviewStableSelectionKey: (p) => p._excelSelectionKey,
@@ -116,11 +117,47 @@ function uiHarness(sheets = { '/brand.xlsx': [headers, ...rows] }) {
   runInContext(section(renderer, 'function combinedProductSalesLabels(', '// Plain Excel inspection'), context);
   context.renderExcelProductRows = (file, products) => context.renderVerifiedSpuRows(file, products);
   runInContext(section(renderer, 'async function openCombinedSelectedBrandPreview(', 'async function openIntegratedPopularExcel('), context);
-  return { context, nodes, reads, open: (filters = {}) => context.openCombinedSelectedBrandPreview(
+  return { context, nodes, reads, storage, open: (filters) => context.openCombinedSelectedBrandPreview(
     Object.keys(sheets).map((path) => ({ path, brandName: 'TEST' })), filters),
     html: () => $('#excel-preview-rows').innerHTML,
   };
 }
+
+test('reopening and restarting the combined view preserves an empty China threshold and the five original local25 rows', async () => {
+  const sheets = { '/ecco.xlsx': eccoSheet }, h = uiHarness(sheets);
+  await h.open({minimumTotal: '', minimumLocalTotal: '25'});
+  await h.open();
+  assert.equal(h.context.combinedBrandPreview.products.length, 5);
+  assert.equal(h.nodes.get('#excel-filter-min-total').value, '');
+  const restarted = uiHarness(sheets, h.storage);
+  await restarted.open();
+  assert.equal(restarted.context.combinedBrandPreview.products.length, 5);
+  assert.deepEqual(JSON.parse(JSON.stringify(restarted.reads.at(-1).filters)).minimumLocalTotal, '25');
+  await restarted.open({minimumTotal: '', minimumLocalTotal: ''});
+  const showAllRestarted = uiHarness(sheets, h.storage);
+  await showAllRestarted.open();
+  assert.equal(showAllRestarted.context.combinedBrandPreview.products.length, eccoSheet.length - 1);
+});
+
+test('zero qualifying rows keep strict AND filtering and display the remedy above the wide table', async () => {
+  const h = uiHarness({ '/ecco.xlsx': eccoSheet });
+  await h.open(criteria);
+  assert.equal(h.context.combinedBrandPreview.products.length, 0);
+  assert.match(h.nodes.get('#excel-filter-status').textContent, /두 판매량 조건을 모두 충족하는 행이 없습니다.*전체 보기/);
+});
+
+test('damaged filter preferences do not prevent opening the original Excel view', async () => {
+  for (const value of ['broken JSON', 'null', '[]', '{"minimumTotal":{},"minimumLocalTotal":-5}']) {
+    const h = uiHarness(undefined, new Map([['around-g-combined-sales-filters-v1', value]]));
+    await h.open();
+    assert.equal(h.nodes.get('#excel-filter-min-total').value, '100');
+    assert.equal(h.nodes.get('#excel-filter-min-local-total').value, '25');
+  }
+  const blocked = uiHarness();
+  blocked.context.localStorage = {getItem(){throw Error('unavailable');},setItem(){throw Error('unavailable');}};
+  await blocked.open({minimumTotal: '', minimumLocalTotal: ''});
+  assert.equal(blocked.context.combinedBrandPreview.products.length, rows.length);
+});
 
 test('the actual combined-view action filters the full list and renders matching labels and sales cells', async () => {
   const h = uiHarness();

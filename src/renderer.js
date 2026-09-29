@@ -494,6 +494,29 @@ function combinedProductSalesLabels(basis = "recent30") {
   return { china: "중국 상품 최근 30일 판매량", local: "현지 상품 최근 30일 판매량" };
 }
 
+function rememberedCombinedSalesFilters() {
+  const defaults = { minimumTotal: "100", minimumLocalTotal: "25" };
+  try {
+    const saved = JSON.parse(localStorage.getItem("around-g-combined-sales-filters-v1") || "null");
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return defaults;
+    for (const key of Object.keys(defaults)) {
+      const value = saved[key];
+      if (typeof value !== "string" && typeof value !== "number") continue;
+      const raw = String(value).trim();
+      if (raw === "" || (/^\d+(?:\.\d+)?$/.test(raw) && Number.isFinite(Number(raw)))) defaults[key] = raw;
+    }
+  } catch {}
+  return defaults;
+}
+
+function rememberCombinedSalesFilters(filters) {
+  try {
+    localStorage.setItem("around-g-combined-sales-filters-v1", JSON.stringify({
+      minimumTotal: filters.minimumTotal, minimumLocalTotal: filters.minimumLocalTotal,
+    }));
+  } catch {}
+}
+
 function renderCombinedBrandPreviewPage(offset = 0) {
   if (!combinedBrandPreview) return;
   const minimumTotal = String(combinedBrandPreview.filters?.minimumTotal ?? "100");
@@ -523,6 +546,7 @@ function renderCombinedBrandPreviewPage(offset = 0) {
   $("#excel-filter-status").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 중 Excel ${combinedBrandPreview.loadedCount}개 통합 · 조건 충족 ${totalRows.toLocaleString("ko-KR")}개`;
   if (combinedBrandPreview.originalRowView) {
     $("#excel-filter-status").textContent = `선택 브랜드 ${combinedBrandPreview.brandCount}개 중 Excel ${combinedBrandPreview.loadedCount}개 통합 · 조건 충족 ${totalRows.toLocaleString("ko-KR")}행 · 엑셀 원본의 각 행과 열 값을 그대로 표시합니다.`;
+    if (!totalRows) $("#excel-filter-status").textContent += " 두 판매량 조건을 모두 충족하는 행이 없습니다. 조건을 낮추거나 전체 보기를 눌러주세요.";
     $("#excel-preview-summary").textContent = `엑셀 원본 ${totalRows.toLocaleString("ko-KR")}행 · 현재 ${totalRows ? safeOffset + 1 : 0}~${Math.min(totalRows, safeOffset + products.length)}행 · 가로로 스크롤하면 모든 원본 열을 볼 수 있습니다.`;
   } else if (["total", "mixed"].includes(combinedBrandPreview.salesBasis)) {
     const sourceRows = combinedBrandPreview.products.reduce((sum, p) => sum + (p.originalSalesRows?.length || 0), 0);
@@ -742,7 +766,7 @@ async function openVerifiedCombinedBrandPreview(files, filters = {}) {
   return report;
 }
 
-async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
+async function openCombinedSelectedBrandPreview(files = [], filters = rememberedCombinedSalesFilters()) {
   // The full catalog can contain thousands of cards. Collapse its live layout
   // while the product workspace is active; selection and catalog data stay intact.
   const brandPicker = $("#brand-picker");
@@ -801,6 +825,7 @@ async function openCombinedSelectedBrandPreview(files = [], filters = {}) {
   }
   excelPreviewIntegrated = true;
   renderCombinedBrandPreviewPage(0);
+  if (loadedCount > 0) rememberCombinedSalesFilters({ minimumTotal, minimumLocalTotal });
   delete brandStatus.dataset.state;
   brandStatus.className = loadedCount === files.length ? "status success" : "status";
   brandStatus.textContent = `선택 브랜드 ${files.length}개 통합 완료 · Excel ${loadedCount}개 · 조건 충족 상품 ${products.length.toLocaleString("ko-KR")}개`;
@@ -3716,7 +3741,7 @@ $("#completed-brand-domestic-search")?.addEventListener("click", async () => {
   }
   selectedBrandDomesticQueueRunning = false;
   try {
-    await openCombinedSelectedBrandPreview(files, { minimumTotal: "100", minimumLocalTotal: "25" });
+    await openCombinedSelectedBrandPreview(files);
   } finally {
     combinedBrandPreviewLoading = false;
     updateBrandSelectionControls();
