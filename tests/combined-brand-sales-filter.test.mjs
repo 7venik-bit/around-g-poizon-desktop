@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { createContext, runInContext } from 'node:vm';
+import { JSDOM } from 'jsdom';
 import * as columns from '../services/poizon-xlsx.mjs';
 import * as sales from '../services/poizon-sales-filter.mjs';
 import eccoSheet from './fixtures/ecco-original-sales.cjs';
@@ -176,7 +177,7 @@ test('total-only rows render original totals instead of missing recent metrics',
   const h = uiHarness({ '/total.xlsx': [headers.slice(0, 6), ...rows.map((row) => row.slice(0, 6))] });
   await h.open(criteria);
   assert.match(h.nodes.get('#excel-filter-min-total-label').textContent, /총 판매량 \(원본\)/);
-  assert.match(h.nodes.get('#excel-preview-columns').innerHTML, />현지 판매자 총 판매량<\/th>/);
+  assert.match(h.nodes.get('#excel-preview-columns').innerHTML, />현지 판매자 총 판매량 \(원본\)<\/th>/);
   assert.match(h.html(), /class="excel-source-value">500\+</);
   assert.match(h.html(), /class="excel-source-value">200</);
 });
@@ -290,5 +291,45 @@ test('source columns from another workbook stay aligned even when their order ch
   assert.equal(h.context.combinedBrandPreview.products.length,2);
   assert.deepEqual(Array.from(h.context.combinedBrandPreview.originalColumns,c=>c.header),['상품 번호','상품명','현지 판매자 총 판매량']);
   const displayed = [...h.html().matchAll(/class="excel-source-value">([^<]*)<\/span>/g)].map(m=>m[1]);
-  assert.deepEqual(displayed,['A','첫 상품','25','B','둘째 상품','30']);
+  assert.deepEqual(displayed,['A','첫 상품','25','30','둘째 상품','B'], 'expanded fields retain each workbook column order');
+  const document = new JSDOM('<table>'+h.html()+'</table>').window.document;
+  assert.deepEqual([...document.querySelectorAll('.excel-source-local')].map(c=>c.textContent),['25','30']);
+  assert.deepEqual([...document.querySelectorAll('.excel-source-title')].map(c=>c.textContent),['첫 상품','둘째 상품']);
+});
+
+test('existing and newly downloaded brands always use the same ten product columns and six-column retailer result area', async () => {
+  const variants = [
+    eccoSheet,
+    [['상품 번호','상품명','현지 판매자 총 판매량','중국 총 판매량','SPU 이미지','상품 브랜드','최근 30일간 평균 거래가'],
+      ['NEW-001','신규 브랜드 상품',30,105,'https://example.test/new.jpg','새 브랜드','KRW115,000']],
+    [['새로운 추가 열','상품 브랜드','현지 판매자 총 판매량','상품명','상품 번호','SPU 이미지','중국 총 판매량','최근 30일간 평균 거래가'],
+      ['원본 추가 데이터','다른 브랜드',26,'다른 상품','OTHER-001','https://example.test/other.jpg',110,0]],
+  ];
+  let expectedHeaders;
+  for (const [index, sheet] of variants.entries()) {
+    const h = uiHarness({['/download-'+index+'.xlsx']:sheet});
+    await h.open({minimumTotal:'',minimumLocalTotal:25});
+    const headings = h.nodes.get('#excel-preview-columns').innerHTML;
+    expectedHeaders ??= headings;
+    assert.equal(headings,expectedHeaders, 'brand and extra workbook columns cannot alter the search layout');
+    const product = h.context.combinedBrandPreview.products[0];
+    h.context.renderDomestic = () => '<div class="domestic-inline-results"><div class="domestic-inline-head">판매처 상품명 사이즈·재고 품번 가격 링크</div><button data-url="https://example.test/product">열기</button></div>';
+    h.context.excelPreviewSearchResults.set(product._excelSelectionKey,{products:[],partial:true});
+    h.nodes.get('#excel-preview-grid').scrollLeft = 2400;
+    h.context.renderCombinedBrandPreviewPage(0);
+    const document = new JSDOM('<table><thead>'+headings+'</thead><tbody>'+h.html()+'</tbody></table>').window.document;
+    assert.equal(document.querySelectorAll('thead th').length,10);
+    assert.equal(document.querySelector('.excel-source-row').children.length,10);
+    assert.equal(document.querySelector('.excel-product-search-detail td').colSpan,10);
+    assert.equal(document.querySelector('.domestic-inline-results').closest('tr').previousElementSibling.dataset.sourceRow,String(product.sourceRowNumber));
+    assert.ok(document.querySelector('.domestic-inline-results [data-url]'));
+    assert.equal(document.querySelector('.excel-source-details').open,false);
+    assert.equal(document.querySelectorAll('.excel-source-row')[0].querySelectorAll('.excel-source-field').length,sheet[0].length);
+    assert.equal(h.nodes.get('#excel-preview-grid').scrollLeft,0);
+    if (index) {
+      assert.equal(document.querySelector('.excel-verified-image').getAttribute('src'),index===1?'https://example.test/new.jpg':'https://example.test/other.jpg');
+      assert.equal(document.querySelector('.excel-source-price').textContent,index===1?'KRW115,000':'0');
+      assert.equal(document.querySelector('.excel-source-local').textContent,index===1?'30':'26');
+    }
+  }
 });

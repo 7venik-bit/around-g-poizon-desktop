@@ -1,12 +1,14 @@
 /* CSP-safe styling for the full-width retailer result row. */
-/* Source rows retain their workbook columns, with horizontal scrolling. */
-#excel-preview.product-view.original-row-view #excel-preview-grid table{width:max-content!important;min-width:100%!important;table-layout:auto!important}
-#excel-preview.product-view.original-row-view #excel-preview-grid th,#excel-preview.product-view.original-row-view #excel-preview-grid .excel-source-row>td{width:140px!important;min-width:140px!important;max-width:140px!important;white-space:pre-wrap!important;overflow-wrap:anywhere!important;padding:6px!important}
-#excel-preview.product-view.original-row-view #excel-preview-grid th:nth-child(1),#excel-preview.product-view.original-row-view #excel-preview-grid .excel-source-row>td:nth-child(1){width:44px!important;min-width:44px!important;max-width:44px!important}
-#excel-preview.product-view.original-row-view #excel-preview-grid th:nth-child(2),#excel-preview.product-view.original-row-view #excel-preview-grid .excel-source-row>td:nth-child(2){width:64px!important;min-width:64px!important;max-width:64px!important}
-#excel-preview.product-view.original-row-view #excel-preview-grid .excel-source-cell[data-original-kind=title]{width:320px!important;min-width:320px!important;max-width:320px!important}
-#excel-preview.product-view.original-row-view #excel-preview-grid .excel-source-cell[data-original-kind=option]{width:220px!important;min-width:220px!important;max-width:220px!important}
-#excel-preview.product-view.original-row-view #excel-preview-grid .excel-source-value{display:block;white-space:pre-wrap;overflow-wrap:anywhere}
+/* Source data stays exact while every brand uses the same compact search UI. */
+#excel-preview.product-view #excel-preview-grid .excel-source-row>td{padding:6px!important;min-height:66px!important}
+#excel-preview.product-view #excel-preview-grid .excel-source-row>.excel-source-product{white-space:normal!important}
+#excel-preview .excel-source-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#excel-preview .excel-source-details{min-width:0;margin-top:3px;text-align:left}
+#excel-preview .excel-source-details summary{cursor:pointer;color:#526784}
+#excel-preview .excel-source-fields{max-height:220px;overflow:auto;margin-top:6px}
+#excel-preview .excel-source-field{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;padding:4px 0;border-bottom:1px solid #e7edf5;white-space:normal}
+#excel-preview .excel-source-field>b{color:#526784;font-size:10px;overflow-wrap:anywhere}
+#excel-preview .excel-source-value{display:block;white-space:pre-wrap;overflow-wrap:anywhere}
 #excel-preview.product-view #excel-preview-grid table{width:100%!important;min-width:980px!important;table-layout:fixed!important}
 #excel-preview.product-view #excel-preview-grid table{height:fit-content!important;min-height:0!important;align-self:flex-start!important}
 #excel-preview.product-view #excel-preview-grid tbody{height:fit-content!important;min-height:0!important}
