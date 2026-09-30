@@ -7,6 +7,7 @@ import { JSDOM } from 'jsdom';
 import * as columns from '../services/poizon-xlsx.mjs';
 import * as sales from '../services/poizon-sales-filter.mjs';
 import eccoSheet from './fixtures/ecco-original-sales.cjs';
+import { popularSearchBrand, popularSearchArticle } from '../services/popular-search-identity.mjs';
 
 const main = await readFile(new URL('../main.mjs', import.meta.url), 'utf8');
 const renderer = await readFile(new URL('../src/renderer.js', import.meta.url), 'utf8');
@@ -28,7 +29,7 @@ const rows = [
 ];
 
 function harness(sheet = [headers, ...rows]) {
-  const context = createContext({ ...columns, ...sales, basename, excelPreviewCache: new Map(),
+  const context = createContext({ ...columns, ...sales, popularSearchBrand, popularSearchArticle, basename, excelPreviewCache: new Map(),
     stat: async () => ({ size: 100, mtimeMs: 1 }), readFile: async () => sheet,
     readFirstDataSheet: async (value) => value,
     brandImportPathKey: (value) => String(value || '').toLowerCase(),

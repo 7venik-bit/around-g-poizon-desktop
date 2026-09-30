@@ -78,6 +78,7 @@ import {
   officialDomainAuditQueue,
   rankOfficialDomainCandidates,
 } from "./services/official-domain-registry.mjs";
+import { popularSearchBrand, popularSearchArticle } from "./services/popular-search-identity.mjs";
 import {
   naverOfficialStoreNotFoundRows,
   naverOfficialStoreNotFoundWorkbookData,
@@ -6044,6 +6045,8 @@ function buildExcelPreviewProducts(headers = [], entries = []) {
       articleNumber,
       title,
       brandName: raw(row, columns.brand),
+      searchBrandName: raw(row, columns.brand) || popularSearchBrand(title),
+      searchArticleNumber: popularSearchArticle(articleNumber, raw(row, columns.brand) || popularSearchBrand(title)),
       logoUrl: raw(row, columns.image),
       categoryName: [columns.category1, columns.category2, columns.category3].map((index) => raw(row, index)).filter(Boolean).join(" / "),
       averagePrice: parsePoizonSalesMetric(cell(row, columns.averagePrice)),

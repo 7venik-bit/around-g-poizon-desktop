@@ -10,6 +10,7 @@ import { findPoizonColumn, findPoizonRecentSalesColumns, findPoizonTotalSalesCol
 import { parsePoizonSalesMetric } from '../services/poizon-sales-filter.mjs';
 import { createPageCrossCheck, selectPoizonPageCorrectionProducts, assertPoizonPageReadyForCorrection } from '../services/live-poizon-crosscheck.mjs';
 import { syncPoizonPageCheckpoint } from '../services/poizon-page-checkpoint.mjs';
+import { popularSearchBrand, popularSearchArticle } from '../services/popular-search-identity.mjs';
 
 const source = (spuId, articleNumber, china, local) => ({
   spuId, articleNumber, sales30dRaw: china, localSales30dRaw: local,
@@ -38,7 +39,7 @@ async function fixture(t) {
 function productionBuilder(main) {
   const text = main.match(/function buildExcelPreviewProducts\([^]*?\n\}/)?.[0];
   assert.ok(text, 'production buildExcelPreviewProducts must exist');
-  return runInNewContext('(' + text + ')', { findPoizonColumn, findPoizonRecentSalesColumns, findPoizonTotalSalesColumns, parsePoizonSalesMetric });
+  return runInNewContext('(' + text + ')', { findPoizonColumn, findPoizonRecentSalesColumns, findPoizonTotalSalesColumns, parsePoizonSalesMetric, popularSearchBrand, popularSearchArticle });
 }
 
 test('uploaded POIZON raw export retains SKU rows and exposes them as SKU-scope comparison evidence', async (t) => {

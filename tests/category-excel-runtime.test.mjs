@@ -5,6 +5,7 @@ import { createContext, runInContext } from "node:vm";
 import { basename } from "node:path";
 import * as xlsx from "../services/poizon-xlsx.mjs";
 import { filterPoizonPreviewRows, parsePoizonSalesMetric } from "../services/poizon-sales-filter.mjs";
+import { popularSearchBrand, popularSearchArticle } from "../services/popular-search-identity.mjs";
 
 // Execute the shipping functions and click handler, not a reimplementation or
 // a regex asserting that a line of code happens to exist.
@@ -38,7 +39,7 @@ function harness({ sheets = { "/kolon.xlsx": [recentHeaders, savedVest] }, brand
   };
   $("#category-min-china-sales-30").value = china;
   $("#category-min-local-sales-30").value = local;
-  const previewContext = createContext({ ...xlsx, filterPoizonPreviewRows, parsePoizonSalesMetric,
+  const previewContext = createContext({ ...xlsx, filterPoizonPreviewRows, parsePoizonSalesMetric, popularSearchBrand, popularSearchArticle,
     excelPreviewCache: new Map(), basename,
     stat: async (path) => { if (!(path in sheets)) throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" }); return { size: 100, mtimeMs: 1 }; },
     readFile: async (path) => sheets[path], readFirstDataSheet: async (rows) => rows,

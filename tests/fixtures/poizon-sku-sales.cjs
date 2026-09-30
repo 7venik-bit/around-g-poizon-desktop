@@ -20,8 +20,9 @@ app.whenReady().then(async () => {
   const root = resolve(__dirname, '../..');
   const columns = await import(pathToFileURL(resolve(root, 'services/poizon-xlsx.mjs')));
   const sales = await import(pathToFileURL(resolve(root, 'services/poizon-sales-filter.mjs')));
+  const popularIdentity = await import(pathToFileURL(resolve(root, 'services/popular-search-identity.mjs')));
   const sheet = require('./ecco-original-sales.cjs');
-  const context = createContext({ ...columns, ...sales, basename, excelPreviewCache: new Map(),
+  const context = createContext({ ...columns, ...sales, ...popularIdentity, basename, excelPreviewCache: new Map(),
     stat: async () => ({ size: 100, mtimeMs: 1 }), readFile: async () => sheet,
     readFirstDataSheet: async (value) => value,
   });
