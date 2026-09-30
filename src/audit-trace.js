@@ -117,10 +117,11 @@
           saved: `saveResult(${quotedBrand}, ${JSON.stringify(String(audit.updatedBrand?.status || "확인 중"))}); // ${processed}/${total}`,
           timed_out: `timeout(${quotedBrand}); // 다음 브랜드로 이동`,
           security_wait: `pause(${quotedBrand}); // 보안 확인 필요`,
+          security_skipped: `skip(${quotedBrand}); // 보안 제한: 미확인으로 남기고 다음 브랜드로 이동`,
         };
         const command = commands[phase];
         if (command) append("official", detail ? `${command} // ${detail}` : command,
-          phase === "security_wait" || phase === "timed_out" ? "warn" : phase === "saved" ? "success" : "info");
+          phase === "security_wait" || phase === "security_skipped" || phase === "timed_out" ? "warn" : phase === "saved" ? "success" : "info");
       } else if (audit.running && phase === "stopping") {
         append("official", "await finishPendingAuditWrite(); // 점검 중지 처리 및 결과 저장", "warn");
       } else if (!audit.running && ["paused", "completed", "completed_with_pending", "failed"].includes(state)) {
