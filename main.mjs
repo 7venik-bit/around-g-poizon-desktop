@@ -4633,7 +4633,7 @@ async function compareOfficialBrandLogosWithinLimit(sourceLogoUrl, candidateLogo
   }
 }
 
-async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
+async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}, { skipDiscovery = false } = {}) {
   const brand = record.brandKo || record.brandName;
   const existingHomepage = String(record.homepageUrl || "");
   const existingHost = (() => {
@@ -4645,6 +4645,18 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
     try {
       onPhase("official_site", existingHomepage);
       const page = await loadAuditPage(auditWindow, existingHomepage);
+      if (page.blocked) {
+        return {
+          record: {
+            ...record,
+            verificationAttempts: Number(record.verificationAttempts || 0) + 1,
+            lastCheckedAt: new Date().toISOString(),
+            lastVerificationError: "OFFICIAL_PAGE_ACCESS_RESTRICTED",
+          },
+          blocked: false,
+          skipped: true,
+        };
+      }
       if (!page.blocked) {
         const logoComparison = await compareOfficialBrandLogosWithinLimit(record.brandLogoUrl, page.logoUrls || []);
         const rechecked = auditedOfficialDomainRecord(record, {
@@ -4678,6 +4690,15 @@ async function auditOneOfficialDomain(auditWindow, record, onPhase = () => {}) {
         blocked: false,
       };
     }
+  }
+  // A blocked discovery page is shared by all remaining brands. Preserve
+  // their pending status rather than repeatedly requesting that page.
+  if (skipDiscovery) {
+    return {
+      record: { ...record, lastVerificationError: "DISCOVERY_SKIPPED_ACCESS_RESTRICTED" },
+      blocked: false,
+      skipped: true,
+    };
   }
   let discovery;
   try {
@@ -4796,6 +4817,8 @@ async function runOfficialDomainAudit({ recheckAll = false } = {}) {
   const startedAtMs = Date.parse(startedAt) || Date.now();
   let processed = 0;
   let blocked = false;
+  let discoveryBlocked = false;
+  let securitySkipped = 0;
   let lastError = "";
   let runTotal = 0;
   officialDomainAuditWindow = createOfficialDomainAuditWindow();
@@ -4841,7 +4864,7 @@ async function runOfficialDomainAudit({ recheckAll = false } = {}) {
       let result;
       try {
         result = await Promise.race([
-          auditOneOfficialDomain(activeWindow, record, progress),
+          auditOneOfficialDomain(activeWindow, record, progress, { skipDiscovery: discoveryBlocked }),
           timeoutPromise,
           abortPromise,
         ]);
@@ -4860,17 +4883,20 @@ async function runOfficialDomainAudit({ recheckAll = false } = {}) {
       result.record = officialMallAdapterRecord(result.record);
       registry[index] = result.record;
       processed += 1;
-      blocked = result.blocked;
+      if (result.blocked) discoveryBlocked = true;
+      if (result.blocked || result.skipped) securitySkipped += 1;
+      blocked = discoveryBlocked;
       lastError = result.record.lastVerificationError || "";
-      if (processed % 5 === 0 || blocked) {
+      const phase = result.blocked || result.skipped ? "security_skipped" : "saved";
+      if (processed % 5 === 0 || result.blocked) {
         await persistOfficialDomainAudit(registry, {
-          state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError,
-          phase: blocked ? "security_wait" : "saved", attempt, recheckAll, startedAt, runTotal,
+          state: "running", currentBrand, processed, blocked, securitySkipped, lastError,
+          phase, attempt, recheckAll, startedAt, runTotal,
         });
       }
       sendOfficialDomainAuditProgress(registry, {
-        state: blocked ? "blocked" : "running", currentBrand, processed, blocked, lastError,
-        phase: blocked ? "security_wait" : "saved", attempt,
+        state: "running", currentBrand, processed, blocked, securitySkipped, lastError,
+        phase, attempt,
         recheckAll, startedAt, runTotal,
         updatedBrand: {
           brandId: Number(result.record.brandId),
@@ -4885,18 +4911,16 @@ async function runOfficialDomainAudit({ recheckAll = false } = {}) {
     for (const index of auditQueue) {
       if (officialDomainAuditStopRequested) break;
       const result = await processAuditIndex(index, 1);
-      if (result?.blocked) break;
-      if (result?.record?.status === OFFICIAL_DOMAIN_STATUS.PENDING) deferredIndices.push(index);
-      await wait(OFFICIAL_DOMAIN_AUDIT_BETWEEN_BRANDS_MS);
+      if (result?.record?.status === OFFICIAL_DOMAIN_STATUS.PENDING && !result.blocked && !result.skipped) deferredIndices.push(index);
+      if (!result?.skipped) await wait(OFFICIAL_DOMAIN_AUDIT_BETWEEN_BRANDS_MS);
     }
-    if (!blocked && !officialDomainAuditStopRequested && deferredIndices.length) {
+    if (!discoveryBlocked && !officialDomainAuditStopRequested && deferredIndices.length) {
       if (officialDomainAuditWindow && !officialDomainAuditWindow.isDestroyed()) officialDomainAuditWindow.destroy();
       officialDomainAuditWindow = createOfficialDomainAuditWindow();
       for (const index of deferredIndices) {
         if (officialDomainAuditStopRequested) break;
         const result = await processAuditIndex(index, 2);
-        if (result?.blocked) break;
-        await wait(OFFICIAL_DOMAIN_AUDIT_BETWEEN_BRANDS_MS);
+        if (!result?.skipped) await wait(OFFICIAL_DOMAIN_AUDIT_BETWEEN_BRANDS_MS);
       }
     }
   } finally {
@@ -4915,7 +4939,7 @@ async function runOfficialDomainAudit({ recheckAll = false } = {}) {
       notFoundExcel.error = error instanceof Error ? error.message : String(error || "EXCEL_EXPORT_FAILED");
     }
     const finalAudit = {
-      state, currentBrand: "", processed, blocked, lastError, resumeAt,
+      state, currentBrand: "", processed, blocked, securitySkipped, lastError, resumeAt,
       recheckAll, startedAt, runTotal,
       notFoundExcelPath: notFoundExcel.path,
       notFoundCount: notFoundExcel.count,
