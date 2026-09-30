@@ -14,11 +14,12 @@ import { createReviewWorkbookSnapshot, readReviewWorkbook, checkReviewWorkbookRe
 import { loadReviewSnapshots, reviewCoverage, buildReviewReport, reviewReportText, applyExcelSaveOutcome, runPoizonReviewBatch, reviewTone } from '../services/poizon-review-session.mjs';
 import { paintReviewPage } from '../services/poizon-review-paint.mjs';
 import { openReviewPopup } from '../src/poizon-review-workspace.js';
+import { popularSearchBrand, popularSearchArticle } from '../services/popular-search-identity.mjs';
 
 const main = await readFile(new URL('../main.mjs', import.meta.url), 'utf8');
 const renderer = await readFile(new URL('../src/renderer.js', import.meta.url), 'utf8');
 const builderSource = main.slice(main.indexOf('function buildExcelPreviewProducts('), main.indexOf('async function previewExcelFile('));
-const build = new Function('findPoizonColumn', 'findPoizonRecentSalesColumns', 'findPoizonTotalSalesColumns', 'parsePoizonSalesMetric', builderSource + ';return buildExcelPreviewProducts;')(findPoizonColumn, findPoizonRecentSalesColumns, findPoizonTotalSalesColumns, parsePoizonSalesMetric);
+const build = new Function('findPoizonColumn', 'findPoizonRecentSalesColumns', 'findPoizonTotalSalesColumns', 'parsePoizonSalesMetric', 'popularSearchBrand', 'popularSearchArticle', builderSource + ';return buildExcelPreviewProducts;')(findPoizonColumn, findPoizonRecentSalesColumns, findPoizonTotalSalesColumns, parsePoizonSalesMetric, popularSearchBrand, popularSearchArticle);
 const headers = ['SPU ID', '상품 번호', 'SKU ID', '사이즈/옵션/색상', '상품 브랜드', '중국 총 판매량', '현지 판매자 총 판매량', '최근 30일 판매량', '현지 판매자 최근 30일 판매량', '비고'];
 const row = (spu = '11', local = '10', sku = '') => [spu, 'ITEM-' + spu, sku, 'KR:95', 'TEST', '700', '40', '100', local, '원본 메모'];
 const source = (spu = '11', local = '83') => ({ spuId: spu, articleNumber: 'ITEM-' + spu, sales30dRaw: '100', localSales30dRaw: local, hasSalesData: true, hasLocalSalesData: true });

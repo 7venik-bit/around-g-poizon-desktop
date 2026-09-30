@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { createPageCrossCheck, resolveExcelRecentMetric, assertPoizonPageReadyForCorrection, isPoizonSkuScopeDeferredRow, selectPoizonPageCorrectionProducts } from '../services/live-poizon-crosscheck.mjs';
+import { popularSearchBrand, popularSearchArticle } from '../services/popular-search-identity.mjs';
 
 // Reproduced input shape from the screenshot: distinct scalar SKU rows, NOT one slash-separated cell.
 const source = (china = '1,300+', local = '78', extra = {}) => ({ spuId:'3507808', articleNumber:'1026592', sales30dRaw:china, localSales30dRaw:local, hasSalesData:true, hasLocalSalesData:true, ...extra });
@@ -136,7 +137,7 @@ test('shipping XLSX reader -> preview builder -> snapshot -> IPC-shaped input re
   }]).toFile(filePath);
   const functionText = main.match(/function buildExcelPreviewProducts\([^]*?\n\}/)?.[0];
   assert.ok(functionText,'The production preview builder must exist; do not substitute a test mapper.');
-  const build = runInNewContext('(' + functionText + ')',{findPoizonColumn,findPoizonRecentSalesColumns,findPoizonTotalSalesColumns,parsePoizonSalesMetric});
+  const build = runInNewContext('(' + functionText + ')',{findPoizonColumn,findPoizonRecentSalesColumns,findPoizonTotalSalesColumns,parsePoizonSalesMetric,popularSearchBrand,popularSearchArticle});
   const dir = await mkdtemp(join(tmpdir(),'poizon-sku-evidence-'));
   t.after(() => rm(dir,{recursive:true,force:true}));
   const path = join(dir,'synthetic-sku-export.xlsx');

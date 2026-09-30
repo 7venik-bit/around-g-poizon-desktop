@@ -1709,9 +1709,9 @@ async function showDomesticRecoveryNotice(filePath) {
 }
 
 function domesticSearchInput(product, sourceGroups = selectedDomesticSourceGroups(), verifyLinkCounts = true) {
-  const articleNumber = product.articleNumber || "";
+  const articleNumber = product.searchArticleNumber || product.articleNumber || "";
   const productCode = product.productCode || product.spuId || product.globalSpuId || "";
-  const brandName = product.brandName || product.brand || "";
+  const brandName = product.brandName || product.brand || product.searchBrandName || "";
   const productName = product.apiTitle || product.title || product.name || "";
   return {
     query: articleNumber

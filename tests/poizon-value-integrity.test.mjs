@@ -13,11 +13,12 @@ import { parsePoizonSalesMetric } from '../services/poizon-sales-filter.mjs';
 import { readFirstDataSheet } from '../services/excel-reader.mjs';
 import { createPageCrossCheck, recentMetric, meetsVerificationConditions } from '../services/live-poizon-crosscheck.mjs';
 import { runVerifiedCombinedSearch, readAllVerificationProducts, checkPersistedParentMetrics } from '../services/verified-combined-search.mjs';
+import { popularSearchBrand, popularSearchArticle } from '../services/popular-search-identity.mjs';
 
 const main = await readFile(new URL('../main.mjs', import.meta.url), 'utf8');
 const builderSource = main.slice(main.indexOf('function buildExcelPreviewProducts('), main.indexOf('async function previewExcelFile('));
 assert.ok(builderSource.length > 100, 'real shipped workbook reader is required');
-const build = new Function('findPoizonColumn', 'findPoizonRecentSalesColumns', 'findPoizonTotalSalesColumns', 'parsePoizonSalesMetric', builderSource + '; return buildExcelPreviewProducts;')(findPoizonColumn, findPoizonRecentSalesColumns, findPoizonTotalSalesColumns, parsePoizonSalesMetric);
+const build = new Function('findPoizonColumn', 'findPoizonRecentSalesColumns', 'findPoizonTotalSalesColumns', 'parsePoizonSalesMetric', 'popularSearchBrand', 'popularSearchArticle', builderSource + '; return buildExcelPreviewProducts;')(findPoizonColumn, findPoizonRecentSalesColumns, findPoizonTotalSalesColumns, parsePoizonSalesMetric, popularSearchBrand, popularSearchArticle);
 const screen = (spuId = '11', local = '83', extra = {}) => ({ spuId, articleNumber: 'ITEM-' + spuId, sales30dRaw: '100+', sales30d: 100, hasSalesData: true, localSales30dRaw: local, localSales30d: Number(local.replace(/[^\d]/g, '')), hasLocalSalesData: true, ...extra });
 const headers = ['SPU ID', '상품 번호', 'SKU ID', '사이즈/옵션/색상', '상품 브랜드', '중국 총 판매량', '현지 판매자 총 판매량', '최근 30일 판매량', '현지 판매자 최근 30일 판매량', '최근 30일 평균 거래가', '비고'];
 const row = (spu = '11', sku = '111', local = '10', code = 'ITEM-' + spu) => [spu, code, sku, 'KR:95/BLACK', 'TEST', '700', '40', '100', local, '86000', '원본 보존'];
