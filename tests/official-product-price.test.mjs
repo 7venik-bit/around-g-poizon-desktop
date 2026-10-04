@@ -78,3 +78,32 @@ test('verified detail prices survive a later raw card, but explicit new failures
   const missing=capture(dk().replace('141,550',''));
   assert.equal(mergeRetailerStockProducts([product,{...card,...missing}])[0].price,0);
 });
+const nikeCode='DD1503-101';
+const nikeUrl=`https://www.nike.com/kr/t/나이키-덩크-로우-여성-신발-hKQhY2Sx/${nikeCode}`;
+// Minimal markup transcribed from the live Nike PDP, 2026-10-04. Nike marks
+// its own purchase price spans aria-hidden, so only the Nike branch may read
+// them; the generic visible-price collection must keep skipping them.
+const nike=(current='134,100 원',initial='149,000 원')=>`<main><h1>나이키 덩크 로우 여성 신발</h1>
+<div class="css-1rzi5ti"><span class="nds-text" data-lu-target="price" data-testid="currentPrice-container" aria-hidden="true">${current}</span>
+<span class="nds-text" data-lu-target="initial-price" data-testid="initialPrice-container" aria-hidden="true" aria-label="목록: 149,000 원">${initial}</span>
+<span class="nds-text" data-testid="OfferPercentage">10% 할인</span></div>
+<button>장바구니 담기</button><button>240 사이즈 선택</button></main>`;
+function captureNike(html,{actualUrl=nikeUrl,expectedUrl=actualUrl}={}) {
+  const dom=new JSDOM(html,{url:actualUrl,runScripts:'outside-only'});
+  try {
+    dom.window.HTMLElement.prototype.getBoundingClientRect=()=>({width:100,height:30});
+    return JSON.parse(JSON.stringify(dom.window.eval(`(${captureOfficialProductPrice.toString()})(${JSON.stringify(expectedUrl)},${JSON.stringify(nikeCode)},(${domesticProductUrlIdentity.toString()}))`)));
+  } finally {dom.window.close();}
+}
+test('Nike reads its aria-hidden purchase price and list price instead of reporting missing',()=>{
+  const result=captureNike(nike());
+  assert.equal(result.price,134100); assert.equal(result.originalPrice,149000);
+  assert.equal(result.priceVerified,true); assert.equal(result.priceBasis,'할인가');
+  assert.equal(decodeURI(result.priceUrl),nikeUrl);
+});
+test('Nike without its price containers or with another style code stays unverified',()=>{
+  assert.equal(captureNike(nike().replace('currentPrice-container','soldout-container')).priceReason,'purchase_price_missing');
+  assert.equal(captureNike(nike('129,000원','129,000원')).originalPrice,0);
+  const other=`https://www.nike.com/kr/t/나이키-덩크-로우-여성-신발-hKQhY2Sx/AR1000-104`;
+  assert.equal(captureNike(nike(),{actualUrl:other}).priceReason,'product_not_ready');
+});
