@@ -2991,7 +2991,7 @@ async function loadDomesticRetailerResultPage(searchWindow, targetUrl) {
         .every(key => expected.searchParams.get(key) === current.searchParams.get(key));
       const expectedPage = current.origin === expected.origin && current.pathname === expected.pathname && sameQuery;
       const text = String(document.body?.innerText || "").slice(0, 50000);
-      const cards = document.querySelectorAll('a[href*="itemView.ssg"],a[href*="/p/product/"],a[href*="productDetail.action"]').length;
+      const cards = document.querySelectorAll('a[href*="itemView.ssg"],a[href*="/p/product/"],a[href*="/product/"],a[href*="productDetail.action"]').length;
       const empty = /검색\\s*결과가?\\s*없|검색된\\s*상품이\\s*없|일치하는\\s*상품이\\s*없/i.test(text);
       return {text, cards, href: current.href, expectedPage, explicitEmpty: empty, documentReadyState: document.readyState,
         ready: expectedPage && (cards > 0 || empty)};
