@@ -58,6 +58,24 @@ export function captureOfficialProductPrice(expectedUrl, articleNumber, urlIdent
     return verified(prices[0], originals.length===1 && originals[0]>prices[0]?originals[0]:0, 'descente_purchase_panel', member?'회원가':'판매가');
   }
 
+  // Nike renders its purchase price with aria-hidden (an accessible duplicate
+  // lives elsewhere), so the generic visible-price collection below always
+  // skips it. Read Nike's own price containers instead; the style code is the
+  // last pathname segment (/kr/t/<slug>/<STYLE>-<COLOR>).
+  const nike=/^(?:www\.)?nike\.com$/i.test(location.hostname)
+    ? decodeURIComponent(location.pathname).split('/').filter(Boolean).pop() || '' : null;
+  if (nike) {
+    if (!exactCode(nike)) return pending('product_not_ready');
+    const currents=unique([...document.querySelectorAll('[data-testid="currentPrice-container"]')]
+      .map(element=>amount(element.textContent)));
+    if (!currents.length) return pending('purchase_price_missing');
+    if (currents.length!==1) return pending('conflicting_purchase_prices');
+    const originals=unique([...document.querySelectorAll('[data-testid="initialPrice-container"]')]
+      .map(element=>amount(element.textContent)));
+    return verified(currents[0], originals.length===1 && originals[0]>currents[0]?originals[0]:0,
+      'nike_current_price', originals.length===1 && originals[0]>currents[0]?'할인가':'판매가');
+  }
+
   // Generic stores need an identifiable product heading and purchase controls
   // within one product container. Missing ownership is unknown, not a guess.
   const titles=[...document.querySelectorAll('h1,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')]
