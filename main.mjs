@@ -126,6 +126,7 @@ import {
   naverFashionTownUrl,
   parseNaverFashionTownChannelCounts,
   parseLotteInitialDataProducts,
+  lotteServerSearchCard,
   queryDomesticProducts,
   sanitizeDomesticProductCode,
   sanitizeDomesticQuery,
@@ -3894,22 +3895,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           const seen = new Set((parsedContent.productCards || []).map((card) => String(card?.productUrl || "")));
           const cards = (parsedContent.productCards = parsedContent.productCards || []);
           for (const item of serverCards) {
-            let absolute = "";
-            try {
-              absolute = new URL(item.url, "https://www.lotteon.com").href;
-            } catch {
-              continue;
-            }
-            if (!absolute || seen.has(absolute)) continue;
-            seen.add(absolute);
-            cards.push({
-              productUrl: absolute,
-              title: item.title,
-              text: [item.brand, item.title].filter(Boolean).join(" "),
-              imageUrl: item.imageUrl,
-              price: item.price,
-              originalPrice: item.originalPrice,
-            });
+            const card = lotteServerSearchCard(item);
+            if (!card || seen.has(card.productUrl)) continue;
+            seen.add(card.productUrl);
+            cards.push(card);
           }
           content = JSON.stringify(parsedContent);
         }

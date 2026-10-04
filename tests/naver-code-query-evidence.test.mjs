@@ -93,8 +93,8 @@ const LOTTE_SNAPSHOT = (cards) => JSON.stringify({
 const lotteCard = (index, title = "데상트 티프 폴로 반팔 티셔츠 블랙") => ({
   productUrl: `https://www.lotteon.com/product/PD0000000${index}?mall_no=1`,
   url: `https://www.lotteon.com/product/PD0000000${index}?mall_no=1`,
-  title,
-  text: `데상트 ${title} 95,130원 무료배송`,
+  title: `롯데백화점 ${title}`,
+  text: `롯데백화점 데상트 ${title} 95,130원 무료배송`,
   imageUrl: "",
 });
 
