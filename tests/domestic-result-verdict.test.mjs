@@ -14,6 +14,16 @@ test('rate limiting is shown as stopped collection, not missing products or requ
   assert.equal(v.label,'네이버 접속량 제한 · 조회 중지');
 });
 
+test('SSG bot-wall block stays a manual-check notice, never product absence',()=>{
+  const blocked=sourceVerdict({store:'SSG',securityVerificationRequired:true,count:null,
+    verificationReason:'ssg_access_limited_deferred',verificationStage:'retailer_result_navigation'});
+  assert.equal(blocked.state,'security');
+  assert.equal(blocked.label,'SSG 접속 제한 · 열기로 직접 확인');
+  const failed=sourceVerdict({store:'SSG 백화점',verificationFailed:true,
+    verificationReason:'ssg_access_limited_deferred',verificationStage:'retailer_result_navigation'});
+  assert.equal(failed.label,'SSG 접속 제한 · 열기로 직접 확인');
+});
+
 test("visible product evidence overrides a simultaneous parser failure", () => {
   const official = sourceVerdict({
     store: "브랜드 공식몰",

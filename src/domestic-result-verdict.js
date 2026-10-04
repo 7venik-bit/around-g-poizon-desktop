@@ -24,6 +24,7 @@
     login_required: "로그인 필요",
     channel_selection_failed: "판매 채널 선택 실패",
     channel_count_detection_failed: "결과 숫자 인식 실패",
+    ssg_access_limited_deferred: "SSG 접속 제한 · 열기로 직접 확인",
     overview_channel_card_collection_failed: "결과 카드 수집 실패",
     ssg_channel_evidence_mismatch: "SSG 결과 판독 실패",
     search_query_missing: "검색어 누락",
@@ -99,6 +100,11 @@
     }
     if (["NAVER_LOGIN_URL_INVALID", "NAVER_LOGIN_PAGE_NOT_CONFIRMED"].includes(loginErrorCode)) {
       return { state: "login", className: "pending", count: 0, label: "로그인 연결 오류" };
+    }
+    if (/^SSG(?:\s|$)/.test(String(source?.store || ""))
+      && (source?.securityVerificationRequired === true
+        || String(source?.verificationReason || "") === "ssg_access_limited_deferred")) {
+      return { state: "security", className: "pending", count: 0, label: "SSG 접속 제한 · 열기로 직접 확인" };
     }
     if (source?.securityVerificationRequired === true || loginErrorCode === "NAVER_VERIFICATION_REQUIRED") {
       return { state: "security", className: "pending", count: 0, label: "보안 확인 필요" };
