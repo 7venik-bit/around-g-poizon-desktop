@@ -17,6 +17,7 @@ import {
   fitNaverFashionTownSearchQuery,
   isSsgOfficialBrandHall,
   internalPortalSearchQuery,
+  lotteServerSearchCard,
   naverFashionTownUrl,
   naverFashionTownPortalUrl,
   naverShoppingPortalUrl,
@@ -213,7 +214,7 @@ test("롯데온 상품 링크는 /p/product와 /product 두 형태를 모두 인
   assert.equal(isPlatformShoppingProductUrl("https://www.lotteon.com/csearch/search/search?render=search&q=DD1503-101"), false);
   const rendered = JSON.stringify({ productCards: [
     { productUrl: "https://www.lotteon.com/product/PD49741415?mall_no=1",
-      title: "W 덩크 로우 DD1503-101", text: "나이키 W 덩크 로우 DD1503-101 104,300원 무료배송" },
+      title: "W 덩크 로우 DD1503-101", text: "롯데백화점 나이키 W 덩크 로우 DD1503-101 104,300원 무료배송" },
   ] });
   const result = analyzeRenderedChannelProducts(rendered, "롯데온", "DD1503-101", "나이키", "(W) 나이키 덩크 로우 블랙");
   assert.equal(result.products.length, 1);
@@ -229,11 +230,11 @@ test("롯데온 상품 링크는 /p/product와 /product 두 형태를 모두 인
 const lottePayload = `econJs.SearchApp.create('.srchResultWrap', {global: {domain: "search"},
 queryInfo: {query: "dd1503-101"},initialData: [{ "key": "LE1217199828_1300974667", "pdId": "PD49741415",
 "pdName": "W 덩크 로우 DD1503-101", "pdImage": "/itemimage/20260903160752/LE/12/17/19/98/28/_1/30/09/74/66/7/LE1217199828_1300974667_1.jpg/dims/optimize/resizemc/400x400",
-"pdLink": "/product/PD49741415?mall_no=1", "brandName": "나이키",
+"pdLink": "/product/PD49741415?mall_no=1", "brandName": "나이키", "salesFlagList": ["롯데백화점"],
 "priceInfo": { "original": "104300", "discount": "21", "finalPrice": "81360" } },
 { "key": "LO2598810463_2598810464", "pdId": "LO2598810463",
 "pdName": "화이트 블랙 덩크 로우탑 스니커즈 DD1503 101 TP869055991", "pdImage": "",
-"pdLink": "/product/LO2598810463?sitmNo=LO2598810463_2598810464&mall_no=1", "brandName": "나이키",
+"pdLink": "/product/LO2598810463?sitmNo=LO2598810463_2598810464&mall_no=1", "brandName": "나이키", "salesFlagList": [],
 "priceInfo": { "original": "270000", "discount": "23", "finalPrice": "207900" } }]});`;
 
 test("롯데온 서버 검색 데이터를 파싱해 상품·브랜드·가격을 살린다", () => {
@@ -245,19 +246,51 @@ test("롯데온 서버 검색 데이터를 파싱해 상품·브랜드·가격�
   assert.equal(items[0].price, 81360);
   assert.equal(items[0].originalPrice, 104300);
   assert.equal(items[1].price, 207900);
+  assert.equal(items[0].departmentStore, true);
+  assert.equal(items[1].departmentStore, false);
   assert.equal(parseLotteInitialDataProducts("<html>no payload</html>").length, 0);
   assert.equal(parseLotteInitialDataProducts("initialData: [broken").length, 0);
 });
 
+test("롯데온은 백화점 마크 없는 카드를 후보에서 제외한다", () => {
+  const rendered = JSON.stringify({ productCards: [
+    { productUrl: "https://www.lotteon.com/product/PD49741415?mall_no=1",
+      title: "W 덩크 로우 DD1503-101", text: "나이키 W 덩크 로우 DD1503-101 104,300원" },
+    { productUrl: "https://www.lotteon.com/product/LO2598810463?mall_no=1",
+      title: "화이트 블랙 덩크 로우탑 스니커즈 DD1503 101", text: "입점 판매자 화이트 블랙 덩크 DD1503 101" },
+  ] });
+  const result = analyzeRenderedChannelProducts(rendered, "롯데온", "DD1503-101", "나이키", "(W) 나이키 덩크 로우 블랙", "DD1503-101");
+  assert.equal(result.products.length, 0);
+});
+
+test("롯데온 서버 상품은 백화점 플래그를 살리고 카드로 만들 수 있다", () => {
+  const flagged = lotteServerSearchCard(
+    { title: "W 덩크 로우 DD1503-101", url: "/product/PD49741415?mall_no=1", brand: "나이키", price: 81360, departmentStore: true },
+  );
+  assert.equal(flagged.departmentStoreLabelMatched, true);
+  assert.match(flagged.text, /롯데백화점/);
+  assert.equal(flagged.productUrl, "https://www.lotteon.com/product/PD49741415?mall_no=1");
+  const plain = lotteServerSearchCard(
+    { title: "W 덩크 로우 DD1503-101", url: "/product/PD49741415?mall_no=1", brand: "나이키", price: 81360, departmentStore: false },
+  );
+  assert.equal(plain.departmentStoreLabelMatched, false);
+  assert.doesNotMatch(plain.text, /롯데백화점/);
+  assert.equal(lotteServerSearchCard({ title: "", url: "" }), null);
+});
+
 test("롯데온 서버 상품은 품번·브랜드 매칭으로 분석에 들어간다", () => {
   const items = parseLotteInitialDataProducts(lottePayload);
-  const rendered = JSON.stringify({ productCards: items.map((item) => ({
-    productUrl: new URL(item.url, "https://www.lotteon.com").href,
-    title: item.title,
-    text: [item.brand, item.title].filter(Boolean).join(" "),
-    imageUrl: item.imageUrl,
-    price: item.price,
-  })) });
+  const rendered = JSON.stringify({ productCards: items.map((item) => {
+    const card = lotteServerSearchCard(item);
+    return {
+      productUrl: card.productUrl,
+      title: card.title,
+      text: card.text,
+      imageUrl: card.imageUrl,
+      price: card.price,
+      departmentStoreLabelMatched: card.departmentStoreLabelMatched,
+    };
+  }) });
   const result = analyzeRenderedChannelProducts(rendered, "롯데온", "DD1503-101", "나이키", "(W) 나이키 덩크 로우 블랙");
   // Exact-code card survives; the card with a spaced code plus an unrelated
   // seller code stays excluded as ambiguous.
@@ -422,15 +455,17 @@ test("무신사 검색 카드에 품번이 없어도 같은 브랜드 상세페�
 
 test("SSG와 롯데온 카드에 품번이 없어도 상세 품번·재고 검증 후보로 유지한다", () => {
   const cases = [
-    ["SSG", "https://www.ssg.com/item/itemView.ssg?itemId=1000612345"],
-    ["롯데온", "https://www.lotteon.com/p/product/LE1219586328"],
+    ["SSG", "https://www.ssg.com/item/itemView.ssg?itemId=1000612345",
+      "나이키 P-6000 여성 신발", "나이키 P-6000 여성 신발 129,000원"],
+    ["롯데온", "https://www.lotteon.com/p/product/LE1219586328",
+      "롯데백화점 나이키 P-6000 여성 신발", "롯데백화점 나이키 P-6000 여성 신발 129,000원"],
   ];
-  for (const [store, productUrl] of cases) {
+  for (const [store, productUrl, title, text] of cases) {
     const result = analyzeRenderedChannelProducts(JSON.stringify({
       productCards: [{
         productUrl,
-        title: "나이키 P-6000 여성 신발",
-        text: "나이키 P-6000 여성 신발 129,000원",
+        title,
+        text,
       }],
       pageText: `${store} 검색 결과`,
     }), store, "CD6404-002", "나이키", "나이키 P-6000 여성 신발");

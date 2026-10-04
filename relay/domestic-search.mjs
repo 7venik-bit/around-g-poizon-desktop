@@ -551,6 +551,7 @@ export function parseLotteInitialDataProducts(html = "") {
     const price = Number(String(item.priceInfo?.finalPrice ?? "").replace(/[^0-9]/g, ""));
     const originalPrice = Number(String(item.priceInfo?.original ?? "").replace(/[^0-9]/g, ""));
     const imagePath = String(item.pdImage || "").trim();
+    const flags = Array.isArray(item.salesFlagList) ? item.salesFlagList.map((flag) => String(flag || "")) : [];
     items.push({
       title,
       url,
@@ -559,10 +560,36 @@ export function parseLotteInitialDataProducts(html = "") {
       originalPrice: Number.isFinite(originalPrice) && originalPrice > 0 ? originalPrice : 0,
       imageUrl: imagePath.startsWith("http") ? imagePath
         : imagePath.startsWith("/") ? `https://contents.lotteon.com${imagePath}` : "",
+      departmentStore: flags.some((flag) => /롯데\s*백화점/.test(flag)),
     });
     if (items.length >= 60) break;
   }
   return items;
+}
+
+// Build an analyze-ready card from a Lotte server payload item. Only
+// Lotte-department-store goods are kept: cards without the department flag
+// never reach domestic candidates.
+export function lotteServerSearchCard(item = {}, origin = "https://www.lotteon.com") {
+  const title = String(item?.title || "").trim();
+  const url = String(item?.url || "").trim();
+  if (!title || !url) return null;
+  let absolute = "";
+  try {
+    absolute = new URL(url, origin).href;
+  } catch {
+    return null;
+  }
+  const departmentStore = item?.departmentStore === true;
+  return {
+    productUrl: absolute,
+    title,
+    text: [item?.brand, title, departmentStore ? "롯데백화점" : ""].filter(Boolean).join(" "),
+    imageUrl: String(item?.imageUrl || ""),
+    price: Number(item?.price) || 0,
+    originalPrice: Number(item?.originalPrice) || 0,
+    departmentStoreLabelMatched: departmentStore,
+  };
 }
 
 export function analyzeRenderedChannelProducts(content, store = "", articleNumber = "", brand = "", expectedTitle = "", attemptedQuery = "") {
@@ -654,6 +681,12 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         if (naverStore === "SSG 아울렛"
           && card?.outletLabelMatched !== true
           && !/아울렛|outlet/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
+        // LotteON collects Lotte-department-store goods only. Cards without
+        // the department badge (marketplace/입점 sellers) never become
+        // domestic candidates, even with an exact article code.
+        if (naverStore === "롯데온"
+          && card?.departmentStoreLabelMatched !== true
+          && !/롯데\s*백화점/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
         // 국내 재고 검색에는 한국에서 바로 구매 가능한 상품만 남긴다.
         // 검색 경로가 네이버 공식스토어/백화점이어도 상품 카드가 해외직구,
         // 구매대행 또는 해외배송이면 국내 판매처로 계산하지 않는다.
