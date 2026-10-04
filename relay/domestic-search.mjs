@@ -499,6 +499,72 @@ export function parseNaverFashionTownChannelCounts(labels = []) {
   return Object.keys(channelLabels).every((store) => Number.isFinite(counts[store])) ? counts : null;
 }
 
+// Lotte renders its grid client-side and may serve automation an empty grid,
+// but the same response embeds the full search payload (econJs initialData)
+// server-side. Parse it so exact-code products are not lost when the rendered
+// DOM has no cards. Transcribed from live markup, 2026-10-04.
+export function parseLotteInitialDataProducts(html = "") {
+  const source = String(html || "");
+  const marker = source.indexOf("initialData:");
+  if (marker < 0) return [];
+  const arrayStart = source.indexOf("[", marker);
+  if (arrayStart < 0) return [];
+  const scanBlock = (text, open, close) => {
+    let depth = 0;
+    let quote = "";
+    for (let index = 0; index < text.length; index += 1) {
+      const character = text[index];
+      if (quote) {
+        if (character === "\\") index += 1;
+        else if (character === quote) quote = "";
+        continue;
+      }
+      if (character === '"' || character === "'") quote = character;
+      else if (character === open) depth += 1;
+      else if (character === close) {
+        depth -= 1;
+        if (depth === 0) return text.slice(0, index + 1);
+      }
+    }
+    return "";
+  };
+  const arrayText = scanBlock(source.slice(arrayStart), "[", "]");
+  if (!arrayText) return [];
+  const items = [];
+  let rest = arrayText.slice(1);
+  while (rest.trimStart().startsWith("{")) {
+    const objectText = scanBlock(rest.trimStart(), "{", "}");
+    if (!objectText) break;
+    rest = rest.slice(rest.indexOf(objectText) + objectText.length);
+    const comma = rest.indexOf(",");
+    if (comma >= 0 && !rest.slice(0, comma).trim()) rest = rest.slice(comma + 1);
+    let item = null;
+    try {
+      item = JSON.parse(objectText);
+    } catch {
+      continue;
+    }
+    if (!item || typeof item !== "object") continue;
+    const title = String(item.pdName || "").trim();
+    const url = String(item.pdLink || "").trim();
+    if (!title || !url) continue;
+    const price = Number(String(item.priceInfo?.finalPrice ?? "").replace(/[^0-9]/g, ""));
+    const originalPrice = Number(String(item.priceInfo?.original ?? "").replace(/[^0-9]/g, ""));
+    const imagePath = String(item.pdImage || "").trim();
+    items.push({
+      title,
+      url,
+      brand: String(item.brandName || "").trim(),
+      price: Number.isFinite(price) && price > 0 ? price : 0,
+      originalPrice: Number.isFinite(originalPrice) && originalPrice > 0 ? originalPrice : 0,
+      imageUrl: imagePath.startsWith("http") ? imagePath
+        : imagePath.startsWith("/") ? `https://contents.lotteon.com${imagePath}` : "",
+    });
+    if (items.length >= 60) break;
+  }
+  return items;
+}
+
 export function analyzeRenderedChannelProducts(content, store = "", articleNumber = "", brand = "", expectedTitle = "", attemptedQuery = "") {
   const source = String(content || "");
   const articleCode = sanitizeDomesticQuery(articleNumber).trim();

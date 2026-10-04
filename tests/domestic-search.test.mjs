@@ -21,6 +21,7 @@ import {
   naverFashionTownPortalUrl,
   naverShoppingPortalUrl,
   normalizeRenderedStockEvidence,
+  parseLotteInitialDataProducts,
   officialBrandProductSearchUrl,
   officialBrandSearchUrl,
   officialBrandUsesInternalSearch,
@@ -220,6 +221,49 @@ test("롯데온 상품 링크는 /p/product와 /product 두 형태를 모두 인
   const { readFile } = await import("node:fs/promises");
   const mainSource = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
   assert.match(mainSource, /a\[href\*="\/product\/"\]/);
+});
+
+// Live Lotte search payload (econJs initialData), transcribed 2026-10-04.
+// The rendered grid may be empty for automation while this server payload
+// still carries the exact products.
+const lottePayload = `econJs.SearchApp.create('.srchResultWrap', {global: {domain: "search"},
+queryInfo: {query: "dd1503-101"},initialData: [{ "key": "LE1217199828_1300974667", "pdId": "PD49741415",
+"pdName": "W 덩크 로우 DD1503-101", "pdImage": "/itemimage/20260903160752/LE/12/17/19/98/28/_1/30/09/74/66/7/LE1217199828_1300974667_1.jpg/dims/optimize/resizemc/400x400",
+"pdLink": "/product/PD49741415?mall_no=1", "brandName": "나이키",
+"priceInfo": { "original": "104300", "discount": "21", "finalPrice": "81360" } },
+{ "key": "LO2598810463_2598810464", "pdId": "LO2598810463",
+"pdName": "화이트 블랙 덩크 로우탑 스니커즈 DD1503 101 TP869055991", "pdImage": "",
+"pdLink": "/product/LO2598810463?sitmNo=LO2598810463_2598810464&mall_no=1", "brandName": "나이키",
+"priceInfo": { "original": "270000", "discount": "23", "finalPrice": "207900" } }]});`;
+
+test("롯데온 서버 검색 데이터를 파싱해 상품·브랜드·가격을 살린다", () => {
+  const items = parseLotteInitialDataProducts(lottePayload);
+  assert.equal(items.length, 2);
+  assert.equal(items[0].title, "W 덩크 로우 DD1503-101");
+  assert.equal(items[0].url, "/product/PD49741415?mall_no=1");
+  assert.equal(items[0].brand, "나이키");
+  assert.equal(items[0].price, 81360);
+  assert.equal(items[0].originalPrice, 104300);
+  assert.equal(items[1].price, 207900);
+  assert.equal(parseLotteInitialDataProducts("<html>no payload</html>").length, 0);
+  assert.equal(parseLotteInitialDataProducts("initialData: [broken").length, 0);
+});
+
+test("롯데온 서버 상품은 품번·브랜드 매칭으로 분석에 들어간다", () => {
+  const items = parseLotteInitialDataProducts(lottePayload);
+  const rendered = JSON.stringify({ productCards: items.map((item) => ({
+    productUrl: new URL(item.url, "https://www.lotteon.com").href,
+    title: item.title,
+    text: [item.brand, item.title].filter(Boolean).join(" "),
+    imageUrl: item.imageUrl,
+    price: item.price,
+  })) });
+  const result = analyzeRenderedChannelProducts(rendered, "롯데온", "DD1503-101", "나이키", "(W) 나이키 덩크 로우 블랙");
+  // Exact-code card survives; the card with a spaced code plus an unrelated
+  // seller code stays excluded as ambiguous.
+  assert.equal(result.products.length, 1);
+  assert.ok(result.products[0].url.includes("PD49741415"));
+  assert.equal(result.products[0].articleNumberVerified, true);
 });
 import { OFFICIAL_DOMAIN_STATUS } from "../services/official-domain-registry.mjs";
 

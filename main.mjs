@@ -125,6 +125,7 @@ import {
   fitNaverFashionTownSearchQuery,
   naverFashionTownUrl,
   parseNaverFashionTownChannelCounts,
+  parseLotteInitialDataProducts,
   queryDomesticProducts,
   sanitizeDomesticProductCode,
   sanitizeDomesticQuery,
@@ -3880,6 +3881,39 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       parsedContent.productCards = (parsedContent.productCards || []).filter(card => belongsToOfficialMall(card.productUrl)
         && isOfficialProductCandidateUrl(card.productUrl, officialDirectDetail ? '' : currentUrl, articleNumber));
       content = JSON.stringify(parsedContent);
+    }
+    if (String(source.store || "") === "롯데온" && !officialDirectDetail
+      && !((parsedContent.productCards || []).length)) {
+      // Lotte renders its grid client-side and may serve automation an empty
+      // grid, but the same response embeds the full search payload server-side.
+      // Merge it so exact-code products are not lost when the DOM has no cards.
+      try {
+        const serverHtml = await fetch(String(url || "")).then((response) => response.text());
+        const serverCards = parseLotteInitialDataProducts(serverHtml);
+        if (serverCards.length) {
+          const seen = new Set((parsedContent.productCards || []).map((card) => String(card?.productUrl || "")));
+          const cards = (parsedContent.productCards = parsedContent.productCards || []);
+          for (const item of serverCards) {
+            let absolute = "";
+            try {
+              absolute = new URL(item.url, "https://www.lotteon.com").href;
+            } catch {
+              continue;
+            }
+            if (!absolute || seen.has(absolute)) continue;
+            seen.add(absolute);
+            cards.push({
+              productUrl: absolute,
+              title: item.title,
+              text: [item.brand, item.title].filter(Boolean).join(" "),
+              imageUrl: item.imageUrl,
+              price: item.price,
+              originalPrice: item.originalPrice,
+            });
+          }
+          content = JSON.stringify(parsedContent);
+        }
+      } catch { /* server evidence is best-effort; the DOM result stands */ }
     }
     const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title, searchAttempt?.query || "");
     if (officialSearchResultVerified && Array.isArray(analyzed?.products)) {
