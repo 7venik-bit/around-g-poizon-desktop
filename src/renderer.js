@@ -612,6 +612,32 @@ function originalExcelColumns(products = []) {
   return [...columns.values()];
 }
 
+function articleRepresentativePlan(entries = []) {
+  const api = typeof globalThis !== "undefined" ? globalThis.AroundGArticleRepresentative : null;
+  if (!api || typeof api.selectArticlePriceRepresentatives !== "function") return null;
+  try {
+    return api.selectArticlePriceRepresentatives(entries);
+  } catch {
+    return null;
+  }
+}
+
+// Same article number appears once per size/option row. Only the
+// highest-price row is searched; the other rows stay visible but their
+// search buttons are skipped. `entries` are [{ key, product }] in page order.
+function articleRepresentativeSkipReason(key, product, entries = []) {
+  if (typeof articleRepresentativePlan !== "function") return "";
+  const pageEntries = entries.filter((entry) => entry?.product);
+  if (!pageEntries.some((entry) => entry.key === key)) return "";
+  const plan = articleRepresentativePlan(pageEntries);
+  if (!plan) return "";
+  const repKey = plan.representativeOf[key];
+  if (!repKey || repKey === key) return "";
+  const rep = pageEntries.find((entry) => entry.key === repKey)?.product;
+  const rowNo = rep?.sourceRowNumber || "";
+  return `같은 상품번호 중 최고금액 행${rowNo ? `(원본 ${rowNo}행)` : ""}만 검색합니다. 선택한 행의 검색은 생략했습니다.`;
+}
+
 function renderOriginalExcelRows(file, products = []) {
   $("#excel-preview").classList.add('original-row-view');
   // Every brand keeps the established product/result layout. All workbook
@@ -619,6 +645,17 @@ function renderOriginalExcelRows(file, products = []) {
   $("#excel-preview-grid").scrollLeft = 0;
   const keys = products.map((p) => excelPreviewStableSelectionKey(p, file));
   const salesLabels = combinedProductSalesLabels('total');
+  const repPlan = typeof articleRepresentativePlan === "function"
+    ? articleRepresentativePlan(products.map((p, i) => ({ key: keys[i], product: p })))
+    : null;
+  const repOf = repPlan ? repPlan.representativeOf : {};
+  const repRowByKey = {};
+  if (repPlan) {
+    for (const [rowKey, rowRepKey] of Object.entries(repOf)) {
+      const repIndex = keys.indexOf(rowRepKey);
+      if (repIndex >= 0) repRowByKey[rowKey] = products[repIndex]?.sourceRowNumber || "";
+    }
+  }
   $("#excel-preview-columns").innerHTML = '<tr><th>선택</th><th>이미지</th><th>상품번호 · SPU</th><th>상품명 · 원본 정보</th><th>브랜드</th><th>상품 최근 30일 평균 거래가</th><th>'
     + text(salesLabels.china) + '</th><th>' + text(salesLabels.local) + '</th><th>검증</th><th>상품 검색 결과</th></tr>';
   $("#excel-preview-rows").innerHTML = products.length ? products.map((p, i) => {
@@ -633,7 +670,9 @@ function renderOriginalExcelRows(file, products = []) {
     const stateLabel = result?.error ? '검색 실패' : result?.partial ? '일부 결과' : '검색 완료';
     const resultCell = '<td class="excel-raw-search-cell">' + (result?.loading ? '<span class="excel-raw-search-state loading">' + resultLabel + '</span>'
       : result ? '<div class="excel-raw-search-summary"><span class="excel-raw-search-state ' + (result.error || result.partial ? 'pending' : 'available') + '">' + stateLabel + '</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(key) + '">다시 검색</button></div>'
-        : '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '">' + resultLabel + '</button>')
+        : (repOf[key] && repOf[key] !== key)
+          ? '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '" disabled title="같은 상품번호 중 최고금액 행' + (repRowByKey[key] ? `(원본 ${text(repRowByKey[key])}행)` : "") + '에서 검색합니다.">상품검색</button>'
+          : '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '">' + resultLabel + '</button>')
       + (globalThis.AroundGPoizonProductView?.button(p) || '') + '</td>';
     const sourceLabel = (p._sourceBrandName || '') + ' · 원본 ' + p.sourceRowNumber + '행';
     return '<tr class="excel-product-row excel-source-row" data-source-row="' + text(p.sourceRowNumber) + '"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(key) + '" aria-label="원본 행 선택"></td>'
@@ -1811,6 +1850,14 @@ function persistExcelSearchResults(filePath = "") {
 async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
   const product = excelPreviewProductCache.get(key);
   if (!product || excelPreviewBatchSearching) return;
+  if (product?.originalRow && typeof articleRepresentativeSkipReason === "function") {
+    const pageEntries = excelPreviewPageKeys.map((pageKey) => ({ key: pageKey, product: excelPreviewProductCache.get(pageKey) }));
+    const skipReason = articleRepresentativeSkipReason(key, product, pageEntries);
+    if (skipReason) {
+      $("#excel-filter-status").textContent = skipReason;
+      return;
+    }
+  }
   const runId = ++excelPreviewSearchRunId;
   excelPreviewBatchSearching = true;
   // A direct row-button click is an explicit refresh. A selected-row batch,
@@ -4550,6 +4597,24 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     $("#excel-filter-status").textContent = "선택한 행에서 검색 가능한 상품번호를 찾지 못했습니다.";
     return;
   }
+  // Same article number repeats once per size/option row. Search only the
+  // highest-price row of each article; the other rows stay visible but are
+  // skipped instead of repeating the same domestic search.
+  const repPlan = typeof articleRepresentativePlan === "function"
+    ? articleRepresentativePlan(
+      keys.map((entryKey) => ({ key: entryKey, product: excelPreviewProductCache.get(entryKey) })),
+    )
+    : null;
+  const searchKeys = repPlan
+    ? keys.filter((entryKey) => repPlan.representativeKeys.includes(entryKey))
+    : [...keys];
+  const skippedCount = keys.length - searchKeys.length;
+  if (!searchKeys.length) {
+    button.disabled = false;
+    button.textContent = "상품검색";
+    $("#excel-filter-status").textContent = "선택한 행은 모두 대표 행이 아니어서 검색하지 않았습니다.";
+    return;
+  }
   // Refresh only the products selected for this run. Completed results for
   // other rows and brands remain visible instead of disappearing whenever the
   // operator starts the next selection.
@@ -4566,8 +4631,9 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       const status = $("#excel-filter-status");
       if (!status) return;
       const article = String(currentProduct?.articleNumber || currentProduct?.productNumber || "").trim();
-      status.textContent = `상품 검색 진행 중 · ${Number(completedCount).toLocaleString("ko-KR")} / ${keys.length.toLocaleString("ko-KR")}개${article ? ` · 현재 ${article}` : ""}`;
-      showDomesticSearchOverlay(batchStartedAt, completedCount, keys.length, currentProduct);
+      const skipNote = skippedCount > 0 ? ` · 같은 상품번호 ${skippedCount.toLocaleString("ko-KR")}행 생략` : "";
+      status.textContent = `상품 검색 진행 중 · ${Number(completedCount).toLocaleString("ko-KR")} / ${searchKeys.length.toLocaleString("ko-KR")}개${article ? ` · 현재 ${article}` : ""}${skipNote}`;
+      showDomesticSearchOverlay(batchStartedAt, completedCount, searchKeys.length, currentProduct);
     };
     renderBatchSearchProgress(0);
     // A normal search must use the original, ordered, all-retailer request.
@@ -4590,8 +4656,10 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     // Search each distinct product once, then write that result to every
     // selected Excel row for the same article. This prevents the first row from
     // being the only visible result while still avoiding duplicate site searches.
+    // Representative prefiltering above already reduced same-article rows to
+    // their highest-price row, so each group below holds a single searched row.
     const groups = new Map();
-    for (const key of keys) {
+    for (const key of searchKeys) {
       const product = excelPreviewProductCache.get(key);
       const identity = productCrossCheckIdentity(product);
       if (!groups.has(identity)) groups.set(identity, []);
@@ -4621,15 +4689,16 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
       refreshDomesticSearchRows();
       completed += groupKeys.length;
-      if (completed < keys.length) renderBatchSearchProgress(completed);
+      if (completed < searchKeys.length) renderBatchSearchProgress(completed);
     }
     refreshDomesticSearchRows();
     document.querySelector('#domestic-recovery-notice')?.remove();
+    const skipSuffix = skippedCount > 0 ? ` · 같은 상품번호 최고금액 대표만 검색하고 ${skippedCount.toLocaleString("ko-KR")}행 생략` : "";
     $("#excel-filter-status").textContent = partial
-      ? `선택 상품 ${keys.length.toLocaleString("ko-KR")}개 처리 · ${partial.toLocaleString("ko-KR")}개 일부 결과. 완료된 판매처 결과를 표시했습니다.`
+      ? `선택 상품 ${searchKeys.length.toLocaleString("ko-KR")}개 처리 · ${partial.toLocaleString("ko-KR")}개 일부 결과. 완료된 판매처 결과를 표시했습니다.${skipSuffix}`
       : failed
-      ? `선택 상품 ${keys.length.toLocaleString("ko-KR")}개 처리 · ${failed.toLocaleString("ko-KR")}개 검색 실패. 각 상품의 안내를 확인해 주세요.`
-      : `선택 상품 ${keys.length.toLocaleString("ko-KR")}개 검색을 완료했습니다.`;
+      ? `선택 상품 ${searchKeys.length.toLocaleString("ko-KR")}개 처리 · ${failed.toLocaleString("ko-KR")}개 검색 실패. 각 상품의 안내를 확인해 주세요.${skipSuffix}`
+      : `선택 상품 ${searchKeys.length.toLocaleString("ko-KR")}개 검색을 완료했습니다.${skipSuffix}`;
   } catch (error) {
     if (runId === excelPreviewSearchRunId) {
       console.error("[domestic-search] result display failed", error);
