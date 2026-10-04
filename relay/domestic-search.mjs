@@ -642,20 +642,25 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           && scopedPositiveCount === 1 && cards.length === 1 && brandMatched) {
           articleMatched = true;
         }
-        // An exact-code query already tells Naver which model is wanted. When the
-        // title language differs (POIZON English vs Naver Korean), a
-        // same-brand, conflict-free trusted card is a provisional candidate;
-        // the detail page must still prove the exact code, exactly like the
-        // Musinsa/SSG/Lotte provisional flow below. Brand evidence must come
-        // from a verified brand: with an unknown brand this gate stays closed
-        // so generic recommendation cards can never slip through.
+        // An exact-code query already tells the retailer which model is wanted.
+        // When the title language differs (POIZON English vs Naver Korean, or
+        // a terse card title), a same-brand, conflict-free trusted card is a
+        // provisional candidate; the detail page must still prove the exact
+        // code, exactly like the Musinsa/SSG/Lotte provisional flow below.
+        // Brand evidence must come from a verified brand: with an unknown
+        // brand this gate stays closed so generic recommendation cards can
+        // never slip through.
         const codeQueryText = sanitizeDomesticQuery(attemptedQuery);
-        const exactCodeText = sanitizeDomesticQuery(articleNumber).trim();
+        const exactCodeText = sanitizeDomesticProductCode(articleNumber).trim();
         const isCodePriorityAttempt = Boolean(exactCodeText)
           && codeQueryText.toUpperCase() === exactCodeText.toUpperCase();
-        if (!conflictingArticle && !articleMatched && /^네이버\s/.test(String(store || ""))
+        const trustedCodeSearchCard = /^네이버\s/.test(naverStore)
+          ? isTrustedNaverFashionProductCard(card)
+          : /^롯데온(?:\s|$)/.test(naverStore) && isPlatformShoppingProductUrl(productUrl);
+        if (!conflictingArticle && !articleMatched
+          && (/^네이버\s/.test(naverStore) || /^롯데온(?:\s|$)/.test(naverStore))
           && isCodePriorityAttempt && seed && brandMatched
-          && isTrustedNaverFashionProductCard(card)) {
+          && trustedCodeSearchCard) {
           articleMatched = true;
           detailArticleVerificationRequired = true;
         }

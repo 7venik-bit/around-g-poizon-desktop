@@ -83,6 +83,54 @@ test("provisional acceptance stays off for title queries, conflicting codes, and
   );
 });
 
+const LOTTE_CODE = "SR123UPS11";
+const LOTTE_SNAPSHOT = (cards) => JSON.stringify({
+  productCards: cards,
+  pageText: "68개의 [sr123ups11] 검색결과 입니다.",
+  selectedChannelEmpty: false,
+  resolvedSearchUrl: `https://www.lotteon.com/csearch/search/search?render=search&platform=pc&q=${LOTTE_CODE}&sort=ranking`,
+});
+const lotteCard = (index, title = "데상트 티프 폴로 반팔 티셔츠 블랙") => ({
+  productUrl: `https://www.lotteon.com/product/PD0000000${index}?mall_no=1`,
+  url: `https://www.lotteon.com/product/PD0000000${index}?mall_no=1`,
+  title,
+  text: `데상트 ${title} 95,130원 무료배송`,
+  imageUrl: "",
+});
+
+test("code-query Lotte cards with matching brand and no conflicting code become provisional candidates", () => {
+  const analyzed = analyzeRenderedChannelProducts(
+    LOTTE_SNAPSHOT([lotteCard(1), lotteCard(2)]),
+    "롯데온",
+    `${LOTTE_CODE}-服`,
+    "데상트",
+    "데상트 남녀공용 카라 셔츠",
+    LOTTE_CODE,
+  );
+  assert.equal(analyzed.products.length, 2);
+  for (const product of analyzed.products) {
+    assert.equal(product.detailArticleVerificationRequired, true);
+    assert.equal(product.brandVerifiedFromCard, true);
+  }
+});
+
+test("Lotte provisional acceptance stays off for title queries and conflicting codes", () => {
+  assert.equal(
+    analyzeRenderedChannelProducts(
+      LOTTE_SNAPSHOT([lotteCard(3)]), "롯데온", `${LOTTE_CODE}-服`, "데상트",
+      "데상트 남녀공용 카라 셔츠", "데상트 남녀공용 카라 셔츠",
+    ).products.length,
+    0,
+  );
+  assert.equal(
+    analyzeRenderedChannelProducts(
+      LOTTE_SNAPSHOT([{ ...lotteCard(4), title: "데상트 슈퍼스타 JI0079", text: "데상트 슈퍼스타 JI0079" }]),
+      "롯데온", LOTTE_CODE, "데상트", "데상트 남녀공용 카라 셔츠", LOTTE_CODE,
+    ).products.length,
+    0,
+  );
+});
+
 test("explicit-empty Naver pages never become provisional candidates", () => {
   const snapshot = JSON.stringify({
     productCards: [],
