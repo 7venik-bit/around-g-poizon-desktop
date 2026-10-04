@@ -485,7 +485,7 @@
               <td class="excel-product-image">${product.logoUrl ? `<img src="${safeText(product.logoUrl)}" alt="">` : "-"}</td>
               <td>${globalThis.AroundGPoizonProductView?.button(product) || ""}<b>${safeText(product.articleNumber || "-")}</b>${typeof purchaseAwarenessBadge === "function" ? purchaseAwarenessBadge(product) : ""}</td>
               <td title="${safeText(product.title || "")}">${safeText(product.title || "-")}</td>
-              <td>${safeText(product.brandName || "-")}</td>
+              <td>${safeText(product.brandName || product.searchBrandName || "-")}</td>
               <td class="sourcing-size">${safeText(referenceProduct.option || product.option || "-")}</td>
               <td><span class="sourcing-size-sales">${safeText(displaySizeSales(referenceProduct))}</span></td>
               <td>${poizonPrice ? safeMoney(poizonPrice) : "가격 없음"}</td>

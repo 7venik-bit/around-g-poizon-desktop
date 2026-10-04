@@ -3881,7 +3881,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         && isOfficialProductCandidateUrl(card.productUrl, officialDirectDetail ? '' : currentUrl, articleNumber));
       content = JSON.stringify(parsedContent);
     }
-    const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title);
+    const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title, searchAttempt?.query || "");
     if (officialSearchResultVerified && Array.isArray(analyzed?.products)) {
       analyzed.products = analyzed.products.map(product => ({ ...product, officialSearchResultVerified: true }));
     }
@@ -4183,6 +4183,12 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       const queryComparisons = [];
       let result = null;
       let attemptedQuery = allQueryAttempts[0];
+      // A diluted fallback query (title+code) that Naver answers with an
+      // authoritative empty page must never clobber an earlier attempt that
+      // actually returned candidates. Keep the first attempt with candidate
+      // evidence so the operator still gets the code manual link instead of
+      // a dead link to an empty search.
+      let bestEvidenceAttempt = null;
       let sourceDeadlineAt = Date.now() + DOMESTIC_RETAILER_HARD_TIMEOUT_MS;
       let naverCollectionGraceUsed = false;
       const observedWork = new Set();
@@ -4301,6 +4307,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         }
         // A raw search hit is not success. Compare code/title/images now so a
         // wrong hit advances to the next query instead of leaving a stale link.
+        const collectedProductCount = (queryResult?.products || []).length;
         const compared = await addMatchConfidence({products: queryResult.products || [], sources: [source]},
           {...comparisonInput, articleNumber, brand, title});
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
@@ -4309,6 +4316,9 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         queryComparisons.push({query: queryAttempt.query, matched: compared.products.length,
           rejected: Number(queryResult.identityRejectedCount || 0), reason: queryResult.verificationReason || ""});
         result = queryResult;
+        if (!bestEvidenceAttempt && collectedProductCount > 0 && (compared.products || []).length === 0) {
+          bestEvidenceAttempt = { attempt: { ...queryAttempt }, result: queryResult };
+        }
         if ((queryResult.verificationReason && queryResult.absenceConfirmed !== true)
           || queryResult.detailVerificationPending) break;
         if (Number(queryResult.count || 0) > 0 || (queryResult.products || []).length > 0) break;
@@ -4328,6 +4338,13 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         }
       }
       if (Array.isArray(result?.products)) discoveredProducts.push(...result.products);
+      if ((!result?.products || !result.products.length) && bestEvidenceAttempt
+        && result?.absenceConfirmed === true && !result?.verificationFailed
+        && !result?.verificationPending && !result?.detailVerificationPending
+        && !result?.rateLimited && !result?.loginRequired && !result?.securityVerificationRequired) {
+        result = bestEvidenceAttempt.result;
+        attemptedQuery = bestEvidenceAttempt.attempt;
+      }
       pendingProducts = [];
       const count = result?.count;
       const absenceConfirmed = result?.absenceConfirmed === true;

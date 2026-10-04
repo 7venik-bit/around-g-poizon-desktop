@@ -499,7 +499,7 @@ export function parseNaverFashionTownChannelCounts(labels = []) {
   return Object.keys(channelLabels).every((store) => Number.isFinite(counts[store])) ? counts : null;
 }
 
-export function analyzeRenderedChannelProducts(content, store = "", articleNumber = "", brand = "", expectedTitle = "") {
+export function analyzeRenderedChannelProducts(content, store = "", articleNumber = "", brand = "", expectedTitle = "", attemptedQuery = "") {
   const source = String(content || "");
   const articleCode = sanitizeDomesticQuery(articleNumber).trim();
   if (source.trimStart().startsWith("{")) {
@@ -641,6 +641,23 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         if (!conflictingArticle && !articleMatched && /^네이버\s/.test(String(store || ""))
           && scopedPositiveCount === 1 && cards.length === 1 && brandMatched) {
           articleMatched = true;
+        }
+        // An exact-code query already tells Naver which model is wanted. When the
+        // title language differs (POIZON English vs Naver Korean), a
+        // same-brand, conflict-free trusted card is a provisional candidate;
+        // the detail page must still prove the exact code, exactly like the
+        // Musinsa/SSG/Lotte provisional flow below. Brand evidence must come
+        // from a verified brand: with an unknown brand this gate stays closed
+        // so generic recommendation cards can never slip through.
+        const codeQueryText = sanitizeDomesticQuery(attemptedQuery);
+        const exactCodeText = sanitizeDomesticQuery(articleNumber).trim();
+        const isCodePriorityAttempt = Boolean(exactCodeText)
+          && codeQueryText.toUpperCase() === exactCodeText.toUpperCase();
+        if (!conflictingArticle && !articleMatched && /^네이버\s/.test(String(store || ""))
+          && isCodePriorityAttempt && seed && brandMatched
+          && isTrustedNaverFashionProductCard(card)) {
+          articleMatched = true;
+          detailArticleVerificationRequired = true;
         }
         // First-party platform cards commonly omit the manufacturer's article
         // number even though the product detail exposes it under 품번/SKU. Keep

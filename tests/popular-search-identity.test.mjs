@@ -24,3 +24,27 @@ test("popular search identity does not guess a brand inside an unrelated title o
   assert.equal(popularSearchBrand("Inspired by Crocs Crush Clog"), "");
   assert.equal(popularSearchArticle("KE3526 BLACK", "아디다스"), "KE3526 BLACK");
 });
+
+test("popular Adidas/Jordan exports recover a searchable brand and keep the exact article first", async () => {
+  // Reported 2026-10-02: KD8313 and AR1000-104 showed brand "-" and Naver
+  // reported no results even though a code-only search has results.
+  assert.equal(popularSearchBrand("Adidas Originals Firebird Jacket Men's"), "아디다스");
+  assert.equal(popularSearchBrand("Jordan Courtside 23 Concord"), "나이키");
+  for (const [title, article, officialHost] of [
+    ["Adidas Originals Firebird Jacket Men's", "KD8313", "adidas.co.kr"],
+    ["Jordan Courtside 23 Concord", "AR1000-104", "nike.com"],
+  ]) {
+    const brand = popularSearchBrand(title);
+    const result = await queryDomesticProducts({
+      query: `${brand} ${article}`, articleNumber: article, brand, title,
+      enabledSourceGroups: ["official", "naver"],
+    });
+    assert.equal(result.queryCandidates[0], article);
+    const official = result.sources.find((source) => source.store === "브랜드 공식몰");
+    assert.ok(official.officialSearchUrl.includes(officialHost));
+    assert.ok(official.officialSearchUrl.includes(article));
+    const naver = result.sources.find((source) => source.store === "네이버 패션타운");
+    assert.equal(naver.searchAttempts[0].query, article);
+    assert.ok(naver.searchAttempts[0].url.includes(`q=${article}`));
+  }
+});
