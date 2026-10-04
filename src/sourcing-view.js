@@ -437,7 +437,7 @@
               <td class="excel-product-image">${product.logoUrl ? `<img src="${text(product.logoUrl)}" alt="">` : "-"}</td>
               <td>${globalThis.AroundGPoizonProductView?.button(product) || ""}<b>${text(product.articleNumber || "-")}</b></td>
               <td title="${text(product.title)}">${text(product.title || "-")}</td>
-              <td>${text(product.brandName || "-")}</td>
+              <td>${text(product.brandName || product.searchBrandName || "-")}</td>
               <td class="sourcing-size">${text(referenceProduct.option || product.option || "-")}</td>
               <td><span class="sourcing-size-sales">${text(displaySizeSales(referenceProduct))}</span></td>
               <td>${poizonPrice ? money(poizonPrice) : "가격 없음"}</td>
