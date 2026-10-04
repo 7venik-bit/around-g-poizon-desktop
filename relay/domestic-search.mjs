@@ -445,7 +445,7 @@ export function isPlatformShoppingProductUrl(value = "") {
   if (["smartstore.naver.com", "m.smartstore.naver.com", "brand.naver.com"].includes(host)) return /\/products\/\d+/.test(path);
   if (["shopping.naver.com", "m.shopping.naver.com", "search.shopping.naver.com"].includes(host)) return /\/(?:catalog|window-products|products?)\//.test(parsed.pathname.toLowerCase());
   if (host === "ssg.com" || host.endsWith(".ssg.com")) return /\/item\//.test(path) || /itemview\.ssg/.test(path);
-  if (host === "lotteon.com" || host.endsWith(".lotteon.com")) return /\/p\/product\//.test(path);
+  if (host === "lotteon.com" || host.endsWith(".lotteon.com")) return /\/(?:p\/)?product\//.test(path);
   if (host === "coupang.com" || host.endsWith(".coupang.com")) return /\/vp\/products\//.test(path);
   if (host === "musinsa.com" || host.endsWith(".musinsa.com")) return /\/products?\//.test(path);
   if (host === "29cm.co.kr" || host.endsWith(".29cm.co.kr")) return /\/product\//.test(path);
@@ -670,7 +670,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           : /^SSG(?:\s|$)/.test(String(store || ""))
             ? /:\/\/(?:[^/]+\.)?ssg\.com\/item\/itemView\.ssg/i.test(productUrl)
             : /^롯데온(?:\s|$)/.test(String(store || ""))
-              ? /:\/\/(?:[^/]+\.)?lotteon\.com\/(?:p\/product|productDetail\.action)/i.test(productUrl)
+              ? /:\/\/(?:[^/]+\.)?lotteon\.com\/(?:(?:p\/)?product|productDetail\.action)/i.test(productUrl)
               : false;
         if (!conflictingArticle && !articleMatched && detailVerifiedPlatformCard && brandMatched
           && (!String(expectedTitle || "").trim() || titleIdentityMatch(rawCardText, expectedTitle))) {

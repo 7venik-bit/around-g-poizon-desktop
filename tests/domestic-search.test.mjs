@@ -203,6 +203,24 @@ test("편집샵·병행수입 검색은 쇼핑 플랫폼 상품 상세 주소만
   assert.equal(result.count, 1);
   assert.equal(result.products[0].url.includes("ssg.com/item/"), true);
 });
+
+test("롯데온 상품 링크는 /p/product와 /product 두 형태를 모두 인정한다", async () => {
+  // Live Lotte markup, 2026-10-04: search cards link to /product/<id> while
+  // the JSON-LD canonical uses /p/product/<id>.
+  assert.equal(isPlatformShoppingProductUrl("https://www.lotteon.com/p/product/PD49741415?mall_no=1"), true);
+  assert.equal(isPlatformShoppingProductUrl("https://www.lotteon.com/product/PD49741415?mall_no=1"), true);
+  assert.equal(isPlatformShoppingProductUrl("https://www.lotteon.com/csearch/search/search?render=search&q=DD1503-101"), false);
+  const rendered = JSON.stringify({ productCards: [
+    { productUrl: "https://www.lotteon.com/product/PD49741415?mall_no=1",
+      title: "W 덩크 로우 DD1503-101", text: "나이키 W 덩크 로우 DD1503-101 104,300원 무료배송" },
+  ] });
+  const result = analyzeRenderedChannelProducts(rendered, "롯데온", "DD1503-101", "나이키", "(W) 나이키 덩크 로우 블랙");
+  assert.equal(result.products.length, 1);
+  assert.equal(result.products[0].articleNumberVerified, true);
+  const { readFile } = await import("node:fs/promises");
+  const mainSource = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
+  assert.match(mainSource, /a\[href\*="\/product\/"\]/);
+});
 import { OFFICIAL_DOMAIN_STATUS } from "../services/official-domain-registry.mjs";
 
 test("Naver Fashion Town and a linked official mall both use the product code only", () => {
