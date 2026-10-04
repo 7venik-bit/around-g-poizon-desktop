@@ -21,17 +21,28 @@ function renderer(t) {
   }};
 }
 
-test('lower list routes Naver, SSG and Lotte result links through the manual-open handler', t => {
+test('lower list routes Naver result links through the manual-open handler', t => {
   const f = renderer(t);
   const urls = ['https://shopping.naver.com/window/search/fashion-group?q=JI0079',
     'https://www.ssg.com/search.ssg?query=JI0079', 'https://www.lotteon.com/search/search/search.ecn?q=JI0079'];
   const body = f.render({products:[],sources:urls.map((url,i)=>({store:`판매처 ${i}`,searchUrl:url}))});
-  assert.deepEqual([...body.querySelectorAll('[data-domestic-result-url]')].map(b=>decodeURIComponent(b.dataset.domesticResultUrl)), urls);
-  assert.equal(body.querySelectorAll('[data-url]').length, 0);
+  assert.deepEqual([...body.querySelectorAll('[data-domestic-result-url]')].map(b=>decodeURIComponent(b.dataset.domesticResultUrl)), [urls[0]]);
+  assert.equal(body.querySelectorAll('[data-url]').length, 2);
   const external = f.render({products:[],sources:[{store:'무신사',searchUrl:'https://www.musinsa.com/search/goods?keyword=JI0079'},
     {store:'untrusted',searchUrl:'https://naver.com.example.test/search?q=JI0079'}]});
   assert.equal(external.querySelectorAll('[data-domestic-result-url]').length, 0);
   assert.equal(external.querySelectorAll('[data-url]').length, 2);
+});
+
+test('SSG and Lotte links open in the external browser instead of the walled in-app session', t => {
+  const f = renderer(t);
+  const body = f.render({products:[],sources:[
+    {store:'SSG',searchUrl:'https://www.ssg.com/search.ssg?query=JI0079'},
+    {store:'롯데온',searchUrl:'https://www.lotteon.com/csearch/search/search?render=search&q=JI0079'}]});
+  assert.equal(body.querySelectorAll('[data-domestic-result-url]').length, 0);
+  const buttons = [...body.querySelectorAll('[data-url]')];
+  assert.equal(buttons.length, 2);
+  for (const button of buttons) assert.equal(button.title, '외부 브라우저(크롬)에서 열기');
 });
 
 test('diagnostics stay available alongside partial products without exposing whole pages or tokens', t => {
