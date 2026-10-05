@@ -383,9 +383,16 @@ function fakeCdpServer() {
   return { state, fetchImpl };
 }
 
-function fakeAuthSocket(cookies = [{ name: "auth", value: "ok" }]) {
+function fakeAuthSocket(cookies = [{ name: "auth", value: "ok" }], hooks = {}) {
   return fakeWebSocketClass((socket, text) => {
     const request = JSON.parse(text);
+    if (typeof hooks.onMethod === "function") {
+      try {
+        hooks.onMethod(request.method, request.params);
+      } catch {
+        // Observation hooks must not disturb the socket flow.
+      }
+    }
     if (request.method === "Runtime.evaluate") {
       const expression = request.params.expression;
       if (expression.includes("elementFromPoint")) {
@@ -432,6 +439,7 @@ test("retailer login launches chrome, opens one login tab and always closes it",
   assert.ok(server.state.tabs[0].url.includes("ssg.com"));
   assert.ok(spawned[0].args.some((arg) => arg.includes("--remote-debugging-port=")));
   assert.ok(spawned[0].args.some((arg) => arg.includes("--user-data-dir=")));
+  assert.ok(spawned[0].args.some((arg) => String(arg).includes("https://www.ssg.com/")));
 });
 
 test("login launch suppresses the crash-restore bubble", () => {
@@ -510,19 +518,23 @@ test("blank-only windows keep their last tab", async () => {
 });
 
 test("unreachable login pages fail loudly instead of blank tabs", async () => {
+  // Reproduces the reported blank-tab pileup: this Chrome accepts the tab
+  // request but never navigates it anywhere.
   const server = fakeCdpServer();
   server.state.versionUp = true;
-  const brokenNew = async (url, init) => {
+  const stuckNew = async (url, init) => {
     if (String(url).includes("/json/new")) {
-      return { ok: true, json: async () => ({ id: "B9", webSocketDebuggerUrl: "ws://B9" }) };
+      const id = "B9";
+      server.state.tabs.push({ id, url: "about:blank" });
+      return { ok: true, json: async () => ({ id, webSocketDebuggerUrl: "ws://B9" }) };
     }
     return server.fetchImpl(url, init);
   };
-  const DummySocket = class {};
+  const Socket = fakeAuthSocket();
   await assert.rejects(
     acquireLoginTab({
-      fetchImpl: brokenNew,
-      WebSocketImpl: DummySocket,
+      fetchImpl: stuckNew,
+      WebSocketImpl: Socket,
       port: 9222,
       loginUrl: "https://www.ssg.com/",
       tabKey: "ssg",
@@ -531,14 +543,17 @@ test("unreachable login pages fail loudly instead of blank tabs", async () => {
     }),
     /LOGIN_PAGE_UNREADABLE/,
   );
+  // The dead tab is removed so the next login check starts clean.
+  assert.equal(server.state.tabs.length, 0);
+  assert.deepEqual(server.state.closed, ["B9"]);
   await assert.rejects(
-    acquireLoginTab({ fetchImpl: brokenNew, port: 9222, loginUrl: "", sleepImpl: async () => {} }),
+    acquireLoginTab({ fetchImpl: stuckNew, port: 9222, loginUrl: "", sleepImpl: async () => {} }),
     /LOGIN_PAGE_UNREADABLE/,
   );
   await assert.rejects(
     acquireLoginTab({
-      fetchImpl: brokenNew,
-      WebSocketImpl: DummySocket,
+      fetchImpl: stuckNew,
+      WebSocketImpl: Socket,
       port: 9222,
       loginUrl: "https://www.ssg.com/",
       sleepImpl: async () => {},
@@ -546,6 +561,26 @@ test("unreachable login pages fail loudly instead of blank tabs", async () => {
     }),
     /LOGIN_CANCELED/,
   );
+});
+
+test("fresh tabs are navigated explicitly even when creation ignores the url", async () => {
+  const navigated = [];
+  const server = fakeCdpServer();
+  server.state.versionUp = true;
+  const Socket = fakeAuthSocket(
+    [{ name: "auth", value: "ok" }],
+    { onMethod: (method, params) => { if (method === "Page.navigate") navigated.push(params?.url); } },
+  );
+  const acquired = await acquireLoginTab({
+    fetchImpl: server.fetchImpl,
+    WebSocketImpl: Socket,
+    port: 9222,
+    loginUrl: "https://member.ssg.com/member/popup/popupLogin.ssg",
+    tabKey: "ssg",
+    sleepImpl: async () => {},
+  });
+  assert.ok(acquired.targetId);
+  assert.ok(navigated.includes("https://member.ssg.com/member/popup/popupLogin.ssg"));
 });
 
 test("login wait reports heartbeat ticks while observing", async () => {

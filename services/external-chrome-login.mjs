@@ -176,14 +176,18 @@ export async function acquireLoginTab({
   let tab = (knownId && targets.find((entry) => entry.id === knownId && entry.webSocketDebuggerUrl))
     || findRetailerTab(targets, loginUrl)
     || null;
+  const reused = Boolean(tab);
   const client = () => createCdpPageClient({ fetchImpl, WebSocketImpl, port, targetId: tab?.id || null });
   try {
-    if (tab) await client().navigate(loginUrl);
-    else {
+    if (!tab) {
       const created = await client().openTab(loginUrl);
       if (!created?.id) throw new Error("CDP_UNREACHABLE");
       tab = { id: created.id };
     }
+    // /json/new?url= is ignored by some Chrome builds, so always navigate
+    // explicitly: launching Chrome with the URL argument is the only path
+    // proven to work everywhere.
+    await client().navigate(loginUrl);
   } catch {
     throw new Error("CDP_UNREACHABLE");
   }
@@ -199,6 +203,15 @@ export async function acquireLoginTab({
     const current = targets.find((entry) => entry.id === id);
     if (current && tabHost(current.url) === expectedHost) return { targetId: id };
     await sleepImpl(1000);
+  }
+  // Never litter blank tabs: remove the tab this call created so the next
+  // login check starts clean instead of piling up dead tabs.
+  if (!reused) {
+    try {
+      await closePageTarget({ fetchImpl, port, targetId: id });
+    } catch {
+      // Cleanup failure must not hide the navigation outcome.
+    }
   }
   throw new Error("LOGIN_PAGE_UNREADABLE");
 }
@@ -546,7 +559,9 @@ export async function startExternalRetailerLogin({
     targetPort = Number(port) > 0 ? Number(port) : await pickRemoteDebuggingPort({ fetchImpl });
     if (!targetPort) return externalLoginFailure("CDP_UNREACHABLE");
     try {
-      child = spawnImpl(chromeExecutable, chromeLoginArgs({ userDataDir, port: targetPort, url: "about:blank" }), {
+      // Launching with the URL argument is the proven path: some Chrome
+      // builds ignore the /json/new?url= parameter and leave blank tabs.
+      child = spawnImpl(chromeExecutable, chromeLoginArgs({ userDataDir, port: targetPort, url: loginUrl }), {
         windowsHide: true,
       });
     } catch {
