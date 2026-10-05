@@ -16,6 +16,12 @@ import {
   externalFillScript,
   filterUsableLoginCookies,
   planExternalLoginStep,
+  tabHost,
+  listPageTargets,
+  closePageTarget,
+  findRetailerTab,
+  closeBlankTabs,
+  acquireLoginTab,
   waitForExternalLogin,
   startExternalRetailerLogin,
 } from "../services/external-chrome-login.mjs";
@@ -344,55 +350,86 @@ test("login wait reports blocks, timeouts and cancellation", async () => {
   assert.equal((await waitForExternalLogin({})).code, "CDP_UNREACHABLE");
 });
 
-test("retailer login launches chrome, logs in and always closes it", async () => {
-  const spawned = [];
-  let killed = 0;
-  const spawnImpl = (path, args) => {
-    spawned.push({ path, args });
-    return { killed: false, kill() { killed += 1; this.killed = true; } };
-  };
+function fakeCdpServer() {
+  const state = { tabs: [], nextId: 1, versionUp: false, closed: [] };
   const fetchImpl = async (url, init) => {
-    if (String(url).endsWith("/json/version")) {
-      if (!spawned.length) throw new Error("ECONNREFUSED");
+    const text = String(url);
+    if (text.endsWith("/json/version")) {
+      if (!state.versionUp) throw new Error("ECONNREFUSED");
       return { ok: true, json: async () => ({}) };
     }
-    if (String(url).endsWith("/json/list")) {
-      return { ok: true, json: async () => [{ id: "T", type: "page", webSocketDebuggerUrl: "ws://dbg" }] };
+    if (text.endsWith("/json/list")) {
+      return {
+        ok: true,
+        json: async () => state.tabs.map((tab) => ({
+          id: tab.id, type: "page", webSocketDebuggerUrl: `ws://${tab.id}`, url: tab.url,
+        })),
+      };
     }
-    if (String(url).includes("/json/new")) {
-      return { ok: true, json: async () => ({ id: "T", webSocketDebuggerUrl: "ws://dbg" }) };
+    if (text.includes("/json/new")) {
+      const tabUrl = new URL(text).searchParams.get("url") || "about:blank";
+      const id = `T${state.nextId++}`;
+      state.tabs.push({ id, url: tabUrl });
+      return { ok: true, json: async () => ({ id, webSocketDebuggerUrl: `ws://${id}` }) };
     }
-    throw new Error(`unexpected ${url} ${init?.method}`);
+    if (text.includes("/json/close/")) {
+      const id = decodeURIComponent(text.split("/json/close/")[1] || "");
+      state.tabs = state.tabs.filter((tab) => tab.id !== id);
+      state.closed.push(id);
+      return { ok: true, json: async () => ({}) };
+    }
+    throw new Error(`unexpected ${text} ${(init && init.method) || ""}`);
   };
-  const Socket = fakeWebSocketClass((socket, text) => {
+  return { state, fetchImpl };
+}
+
+function fakeAuthSocket(cookies = [{ name: "auth", value: "ok" }]) {
+  return fakeWebSocketClass((socket, text) => {
     const request = JSON.parse(text);
     if (request.method === "Runtime.evaluate") {
       const expression = request.params.expression;
-      if (expression.includes("elementFromPoint")) return reply(socket, { id: 1, result: { result: { value: true } } });
+      if (expression.includes("elementFromPoint")) {
+        return reply(socket, { id: 1, result: { result: { value: true } } });
+      }
       if (expression.includes("authenticated")) {
         return reply(socket, { id: 1, result: { result: { value: { authenticated: true, blocked: false } } } });
       }
       return reply(socket, {
         id: 1,
-        result: { result: { value: { id: { x: 1, y: 1 }, password: { x: 1, y: 2 }, submit: { x: 1, y: 3 } } } },
+        result: { value: { id: { x: 1, y: 1 }, password: { x: 1, y: 2 }, submit: { x: 1, y: 3 } } },
       });
     }
     if (request.method === "Network.getAllCookies") {
-      return reply(socket, { id: 1, result: { cookies: [{ name: "auth", value: "ok" }] } });
+      return reply(socket, { id: 1, result: { cookies } });
     }
     return reply(socket, { id: 1, result: {} });
   });
+}
+
+test("retailer login launches chrome, opens one login tab and always closes it", async () => {
+  const server = fakeCdpServer();
+  const spawned = [];
+  let killed = 0;
+  const spawnImpl = (path, args) => {
+    server.state.versionUp = true;
+    spawned.push({ path, args });
+    return { killed: false, kill() { killed += 1; this.killed = true; } };
+  };
+  const Socket = fakeAuthSocket();
   const result = await startExternalRetailerLogin({
     loginUrl: "https://www.ssg.com/",
     credentials: { loginId: "user01", password: "pw01" },
     chromeExecutable: "C:\\chrome.exe",
     userDataDir: "C:\\data",
+    tabKey: "ssg",
     detectControlsScript: "function detect() {}",
-    deps: { spawnImpl, fetchImpl, WebSocketImpl: Socket, sleepImpl: async () => {} },
+    deps: { spawnImpl, fetchImpl: server.fetchImpl, WebSocketImpl: Socket, sleepImpl: async () => {} },
   });
   assert.equal(result.ok, true);
   assert.deepEqual(result.cookies.map((cookie) => cookie.name), ["auth"]);
   assert.equal(killed, 1);
+  assert.equal(server.state.tabs.length, 1);
+  assert.ok(server.state.tabs[0].url.includes("ssg.com"));
   assert.ok(spawned[0].args.some((arg) => arg.includes("--remote-debugging-port=")));
   assert.ok(spawned[0].args.some((arg) => arg.includes("--user-data-dir=")));
 });
@@ -409,42 +446,18 @@ test("responsiveness probe distinguishes a live debugger", async () => {
 });
 
 test("shared window is reused across retailers without relaunch or close", async () => {
+  const server = fakeCdpServer();
   let spawns = 0;
   let kills = 0;
   const spawnImpl = () => {
+    server.state.versionUp = true;
     spawns += 1;
     return { killed: false, kill() { kills += 1; this.killed = true; } };
   };
-  const fetchImpl = async (url) => {
-    if (String(url).endsWith("/json/version")) {
-      if (!fetchImpl.probed) {
-        fetchImpl.probed = true;
-        throw new Error("ECONNREFUSED");
-      }
-      return { ok: true, json: async () => ({}) };
-    }
-    if (String(url).endsWith("/json/list")) {
-      return { ok: true, json: async () => [{ id: "T", type: "page", webSocketDebuggerUrl: "ws://dbg" }] };
-    }
-    if (String(url).includes("/json/new")) {
-      return { ok: true, json: async () => ({ id: "T", webSocketDebuggerUrl: "ws://dbg" }) };
-    }
-    throw new Error(`unexpected ${url}`);
-  };
-  const Socket = fakeWebSocketClass((socket, text) => {
-    const request = JSON.parse(text);
-    if (request.method === "Runtime.evaluate") {
-      return reply(socket, { id: 1, result: { result: { value: { authenticated: true, blocked: false } } } });
-    }
-    if (request.method === "Network.getAllCookies") {
-      return reply(socket, { id: 1, result: { cookies: [{ name: "auth", value: "ok" }] } });
-    }
-    return reply(socket, { id: 1, result: {} });
-  });
-  const deps = { spawnImpl, fetchImpl, WebSocketImpl: Socket, sleepImpl: async () => {} };
+  const Socket = fakeAuthSocket();
+  const deps = { spawnImpl, fetchImpl: server.fetchImpl, WebSocketImpl: Socket, sleepImpl: async () => {} };
   let handle = null;
   const common = {
-    loginUrl: "https://www.lotteon.com/",
     chromeExecutable: "C:\\chrome.exe",
     userDataDir: "C:\\shared",
     detectControlsScript: "function detect() {}",
@@ -454,14 +467,85 @@ test("shared window is reused across retailers without relaunch or close", async
     },
     deps,
   };
-  assert.equal((await startExternalRetailerLogin(common)).ok, true);
-  assert.equal((await startExternalRetailerLogin({ ...common, loginUrl: "https://www.ssg.com/", shared: handle })).ok, true);
+  assert.equal((await startExternalRetailerLogin({ ...common, tabKey: "lotte", loginUrl: "https://www.lotteon.com/" })).ok, true);
+  assert.equal((await startExternalRetailerLogin({ ...common, tabKey: "ssg", loginUrl: "https://www.ssg.com/", shared: handle })).ok, true);
+  // The third login reuses the SSG tab instead of opening another one.
+  assert.equal((await startExternalRetailerLogin({ ...common, tabKey: "ssg", loginUrl: "https://www.ssg.com/", shared: handle })).ok, true);
   assert.equal(spawns, 1);
   assert.equal(kills, 0);
+  assert.deepEqual(server.state.tabs.map((tab) => tab.url), ["https://www.lotteon.com/", "https://www.ssg.com/"]);
+  assert.deepEqual(handle.tabs, { lotte: "T1", ssg: "T2" });
   closeLoginChrome(handle.child);
   assert.equal(kills, 1);
   closeLoginChrome(null);
   closeLoginChrome({});
+});
+
+test("retailer tabs are found by login host and blanks are swept", async () => {
+  const server = fakeCdpServer();
+  server.state.versionUp = true;
+  server.state.tabs = [
+    { id: "B1", url: "about:blank" },
+    { id: "L1", url: "https://www.lotteon.com/p/display/main/lotteon" },
+    { id: "B2", url: "" },
+  ];
+  assert.equal(tabHost("https://member.ssg.com/member/popup/popupLogin.ssg"), "member.ssg.com");
+  assert.equal(tabHost("not a url"), "");
+  const targets = await listPageTargets({ fetchImpl: server.fetchImpl, port: 9222 });
+  assert.equal(targets.length, 3);
+  assert.equal(findRetailerTab(targets, "https://www.lotteon.com/p/member/login/common").id, "L1");
+  assert.equal(findRetailerTab(targets, "https://www.ssg.com/"), null);
+  assert.equal(findRetailerTab([], "https://www.ssg.com/"), null);
+  assert.equal(findRetailerTab(targets, ""), null);
+  assert.equal(await closeBlankTabs({ fetchImpl: server.fetchImpl, port: 9222 }), 2);
+  assert.deepEqual(server.state.closed.sort(), ["B1", "B2"]);
+  assert.equal(await closePageTarget({ fetchImpl: server.fetchImpl, port: 9222, targetId: "" }), false);
+});
+
+test("blank-only windows keep their last tab", async () => {
+  const server = fakeCdpServer();
+  server.state.tabs = [{ id: "B1", url: "about:blank" }];
+  assert.equal(await closeBlankTabs({ fetchImpl: server.fetchImpl, port: 9222 }), 0);
+  assert.equal(server.state.tabs.length, 1);
+});
+
+test("unreachable login pages fail loudly instead of blank tabs", async () => {
+  const server = fakeCdpServer();
+  server.state.versionUp = true;
+  const brokenNew = async (url, init) => {
+    if (String(url).includes("/json/new")) {
+      return { ok: true, json: async () => ({ id: "B9", webSocketDebuggerUrl: "ws://B9" }) };
+    }
+    return server.fetchImpl(url, init);
+  };
+  const DummySocket = class {};
+  await assert.rejects(
+    acquireLoginTab({
+      fetchImpl: brokenNew,
+      WebSocketImpl: DummySocket,
+      port: 9222,
+      loginUrl: "https://www.ssg.com/",
+      tabKey: "ssg",
+      navigateTimeoutMs: 3100,
+      sleepImpl: async () => {},
+    }),
+    /LOGIN_PAGE_UNREADABLE/,
+  );
+  await assert.rejects(
+    acquireLoginTab({ fetchImpl: brokenNew, port: 9222, loginUrl: "", sleepImpl: async () => {} }),
+    /LOGIN_PAGE_UNREADABLE/,
+  );
+  await assert.rejects(
+    acquireLoginTab({
+      fetchImpl: brokenNew,
+      WebSocketImpl: DummySocket,
+      port: 9222,
+      loginUrl: "https://www.ssg.com/",
+      sleepImpl: async () => {},
+      canceled: () => true,
+    }),
+    /LOGIN_CANCELED/,
+  );
 });
 
 test("login wait reports heartbeat ticks while observing", async () => {

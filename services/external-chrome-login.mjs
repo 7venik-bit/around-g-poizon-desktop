@@ -98,6 +98,111 @@ export function closeLoginChrome(child) {
   }
 }
 
+export function tabHost(url = "") {
+  try {
+    return new URL(String(url || "")).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+export async function listPageTargets({ fetchImpl = fetch, port = 0 } = {}) {
+  const response = await fetchImpl(`http://127.0.0.1:${Number(port) || 9222}/json/list`);
+  if (!response || response.ok !== true) throw new Error("CDP_HTTP_ERROR");
+  const targets = await response.json();
+  return (Array.isArray(targets) ? targets : [])
+    .filter((entry) => entry && entry.type === "page");
+}
+
+export async function closePageTarget({ fetchImpl = fetch, port = 0, targetId = "" } = {}) {
+  if (!targetId) return false;
+  try {
+    const response = await fetchImpl(
+      `http://127.0.0.1:${Number(port) || 9222}/json/close/${encodeURIComponent(targetId)}`,
+      { method: "PUT" },
+    );
+    return response?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+// One tab per retailer inside the shared window: reuse the retailer's tab
+// when it already exists so repeated searches never spray blank tabs.
+export function findRetailerTab(targets = [], loginUrl = "") {
+  const host = tabHost(loginUrl);
+  if (!host) return null;
+  return (Array.isArray(targets) ? targets : []).find((entry) => entry?.id
+    && entry?.webSocketDebuggerUrl && tabHost(entry.url) === host) || null;
+}
+
+export async function closeBlankTabs({ fetchImpl = fetch, port = 0 } = {}) {
+  try {
+    const targets = await listPageTargets({ fetchImpl, port });
+    const blanks = targets.filter((entry) => entry?.id && entry?.webSocketDebuggerUrl
+      && ["about:blank", ""].includes(String(entry.url || "")));
+    // Never close the last remaining tab: Chrome would reopen a blank one.
+    if (!blanks.length || blanks.length >= targets.length) return 0;
+    let closed = 0;
+    for (const blank of blanks) {
+      if (await closePageTarget({ fetchImpl, port, targetId: blank.id })) closed += 1;
+    }
+    return closed;
+  } catch {
+    return 0;
+  }
+}
+
+export async function acquireLoginTab({
+  fetchImpl = fetch,
+  WebSocketImpl = globalThis.WebSocket,
+  port = 0,
+  loginUrl = "",
+  knownTabs = {},
+  tabKey = "",
+  navigateTimeoutMs = 15000,
+  sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  canceled = () => false,
+} = {}) {
+  const expectedHost = tabHost(loginUrl);
+  if (!expectedHost) throw new Error("LOGIN_PAGE_UNREADABLE");
+  let targets = [];
+  try {
+    targets = await listPageTargets({ fetchImpl, port });
+  } catch {
+    throw new Error("CDP_UNREACHABLE");
+  }
+  const knownId = tabKey && knownTabs ? knownTabs[tabKey] : "";
+  let tab = (knownId && targets.find((entry) => entry.id === knownId && entry.webSocketDebuggerUrl))
+    || findRetailerTab(targets, loginUrl)
+    || null;
+  const client = () => createCdpPageClient({ fetchImpl, WebSocketImpl, port, targetId: tab?.id || null });
+  try {
+    if (tab) await client().navigate(loginUrl);
+    else {
+      const created = await client().openTab(loginUrl);
+      if (!created?.id) throw new Error("CDP_UNREACHABLE");
+      tab = { id: created.id };
+    }
+  } catch {
+    throw new Error("CDP_UNREACHABLE");
+  }
+  const id = tab.id;
+  const deadline = Date.now() + Math.max(3000, Number(navigateTimeoutMs) || 15000);
+  while (Date.now() < deadline) {
+    if (canceled()) throw new Error("LOGIN_CANCELED");
+    try {
+      targets = await listPageTargets({ fetchImpl, port });
+    } catch {
+      targets = [];
+    }
+    const current = targets.find((entry) => entry.id === id);
+    if (current && tabHost(current.url) === expectedHost) return { targetId: id };
+    await sleepImpl(1000);
+  }
+  throw new Error("LOGIN_PAGE_UNREADABLE");
+}
+
 // A port answers /json/version only while a debugging Chrome owns it.
 export async function pickRemoteDebuggingPort({ fetchImpl = fetch, base = 9222, count = 11 } = {}) {
   for (let port = base; port < base + Math.max(1, Number(count) || 1); port += 1) {
@@ -404,6 +509,7 @@ export async function startExternalRetailerLogin({
   chromeExecutable = "",
   userDataDir = "",
   port = 0,
+  tabKey = "",
   detectControlsScript = null,
   autoTimeoutMs = 180000,
   manualTimeoutMs = 600000,
@@ -466,11 +572,28 @@ export async function startExternalRetailerLogin({
     }
     if (!ready) return externalLoginFailure("CDP_UNREACHABLE");
     let page = null;
+    let loginTabId = "";
     try {
-      const client = createCdpPageClient({ fetchImpl, WebSocketImpl, port: targetPort });
-      await client.openTab(loginUrl);
-      page = client;
-    } catch {
+      const acquired = await acquireLoginTab({
+        fetchImpl,
+        WebSocketImpl,
+        port: targetPort,
+        loginUrl,
+        knownTabs: shared?.tabs,
+        tabKey,
+        sleepImpl,
+        canceled,
+      });
+      loginTabId = acquired.targetId;
+      page = createCdpPageClient({ fetchImpl, WebSocketImpl, port: targetPort, targetId: loginTabId });
+      await closeBlankTabs({ fetchImpl, port: targetPort });
+      if (typeof onShared === "function" && tabKey) {
+        onShared({ child, port: targetPort, tabs: { ...(shared?.tabs || {}), [tabKey]: loginTabId } });
+      }
+    } catch (error) {
+      const code = String(error?.message || "");
+      if (code === "LOGIN_CANCELED") return externalLoginFailure("LOGIN_CANCELED");
+      if (code === "LOGIN_PAGE_UNREADABLE") return externalLoginFailure("LOGIN_PAGE_UNREADABLE");
       return externalLoginFailure("CDP_UNREACHABLE");
     }
     const automatic = (method === "password" && credentials?.loginId && credentials?.password)

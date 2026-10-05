@@ -76,7 +76,7 @@ test("retailers share one external window that closes on quit", () => {
   assert.match(main, /let sharedExternalLoginChrome = null/);
   assert.match(main, /"external-login", "shared"/);
   assert.match(main, /keepAlive: true/);
-  assert.match(main, /onShared: \(handle\) => \{\s*sharedExternalLoginChrome = handle;\s*\}/);
+  assert.match(main, /onShared: \(handle\) => \{\s*sharedExternalLoginChrome = \{ \.\.\.\(sharedExternalLoginChrome \|\| \{\}\), \.\.\.handle \};\s*\}/);
   assert.match(main, /closeLoginChrome\(sharedExternalLoginChrome\?\.child\)/);
 });
 

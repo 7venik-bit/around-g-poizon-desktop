@@ -12612,10 +12612,11 @@ async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, c
     merchantDomains: source.domains,
     chromeExecutable,
     userDataDir,
+    tabKey: sourceId,
     shared: sharedExternalLoginChrome,
     keepAlive: true,
     onShared: (handle) => {
-      sharedExternalLoginChrome = handle;
+      sharedExternalLoginChrome = { ...(sharedExternalLoginChrome || {}), ...handle };
     },
     onProgress: heartbeat,
     detectControlsScript: captureShoppingLoginPage.toString(),
