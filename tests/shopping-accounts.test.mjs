@@ -488,6 +488,7 @@ test('provider account changes clear only the shops linked through that provider
   const code=main.slice(start,main.indexOf('\napp.whenReady()',start));
   const removed=[],closed=[],statuses=[];
   const context={DOMESTIC_LOGIN_SOURCES:sources,domesticLoginSource:id=>sources.find(source=>source.id===id),
+    retailersNeedingLogin:new Set(),confirmedExternalLogins:new Map(),
     DOMESTIC_SEARCH_PARTITION:'persist:fixture',store:{snapshot:()=>({settings:{shoppingAccounts:{kolon:{method:'naver'},musinsa:{method:'kakao'}}}})},
     session:{fromPartition:()=>({cookies:{get:async({domain})=>[{name:'member_session',domain,secure:true}],remove:async url=>removed.push(new URL(url).hostname)}})},
     domesticLoginWindows:new Map(['kolon','naver','musinsa'].map(id=>[id,{close:()=>closed.push(id)}])),
