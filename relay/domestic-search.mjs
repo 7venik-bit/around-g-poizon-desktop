@@ -606,6 +606,18 @@ export function lotteServerSearchCard(item = {}, origin = "https://www.lotteon.c
   };
 }
 
+// SSG result badge gate: official import, brand hall, or department/outlet
+// badge. Cards without any of these marks are plain marketplace listings and
+// never become domestic candidates, even with an exact article code.
+export function isSsgBadgedProductCard(card = {}, brand = "", cardText = "") {
+  const text = String(cardText || `${card?.title || ""} ${card?.text || ""} ${card?.markup || ""}`);
+  if (card?.officialBrandStoreLabelMatched === true
+    || card?.departmentStoreLabelMatched === true
+    || card?.outletLabelMatched === true) return true;
+  if (isSsgOfficialBrandHall({ brand, url: card?.productUrl, text })) return true;
+  return /본사\s*직영|공식\s*수입|공식\s*브랜드|공식\s*스토어|신세계\s*백화점/i.test(text);
+}
+
 export function analyzeRenderedChannelProducts(content, store = "", articleNumber = "", brand = "", expectedTitle = "", attemptedQuery = "") {
   const source = String(content || "");
   const articleCode = sanitizeDomesticQuery(articleNumber).trim();
@@ -701,6 +713,11 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         if (naverStore === "롯데온"
           && card?.departmentStoreLabelMatched !== true
           && !/롯데\s*백화점/i.test(`${rawCardText} ${String(card?.markup || "")}`)) continue;
+        // SSG collects badged goods only (official import, brand hall, or
+        // department/outlet badge). Unbadged marketplace cards never become
+        // domestic candidates; without any badged card the source reports
+        // absence.
+        if (/^SSG(?:\s|$)/.test(naverStore) && !isSsgBadgedProductCard(card, brand, rawCardText)) continue;
         // 국내 재고 검색에는 한국에서 바로 구매 가능한 상품만 남긴다.
         // 검색 경로가 네이버 공식스토어/백화점이어도 상품 카드가 해외직구,
         // 구매대행 또는 해외배송이면 국내 판매처로 계산하지 않는다.

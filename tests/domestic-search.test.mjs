@@ -466,10 +466,22 @@ test("무신사 검색 카드에 품번이 없어도 같은 브랜드 상세페�
   assert.equal(result.products[0].url, "https://www.musinsa.com/products/2311096");
 });
 
+test("SSG는 백화점·공식 마크 없는 카드를 후보에서 제외한다", () => {
+  const rendered = JSON.stringify({ productCards: [
+    { productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000612345",
+      title: "여성 나이키 덩크 로우 DD1503-101", text: "신세계백화점 여성 나이키 덩크 로우 DD1503-101" },
+    { productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000999888",
+      title: "여성 나이키 덩크 로우 DD1503-101", text: "여성 나이키 덩크 로우 DD1503-101" },
+  ] });
+  const result = analyzeRenderedChannelProducts(rendered, "SSG", "DD1503-101", "나이키", "여성 나이키 덩크 로우", "DD1503-101");
+  assert.equal(result.products.length, 1);
+  assert.ok(result.products[0].url.includes("1000612345"));
+});
+
 test("SSG와 롯데온 카드에 품번이 없어도 상세 품번·재고 검증 후보로 유지한다", () => {
   const cases = [
     ["SSG", "https://www.ssg.com/item/itemView.ssg?itemId=1000612345",
-      "나이키 P-6000 여성 신발", "나이키 P-6000 여성 신발 129,000원"],
+      "신세계백화점 나이키 P-6000 여성 신발", "신세계백화점 나이키 P-6000 여성 신발 129,000원"],
     ["롯데온", "https://www.lotteon.com/p/product/LE1219586328",
       "롯데백화점 나이키 P-6000 여성 신발", "롯데백화점 나이키 P-6000 여성 신발 129,000원"],
   ];
