@@ -243,7 +243,7 @@ export function filterUsableLoginCookies(cookies = [], now = Date.now() / 1000) 
   });
 }
 
-async function tryAutoFill(page, detectControlsScript, credentials) {
+async function fillPasswordForm(page, detectControlsScript, credentials) {
   let controls = null;
   try {
     controls = await page.evaluate(`(${String(detectControlsScript)})("password")`);
@@ -262,10 +262,51 @@ async function tryAutoFill(page, detectControlsScript, credentials) {
   }
 }
 
+async function clickProviderButton(page, detectControlsScript, method) {
+  let controls = null;
+  try {
+    controls = await page.evaluate(`(${String(detectControlsScript)})(${JSON.stringify(method)})`);
+  } catch {
+    return false;
+  }
+  if (!controls?.provider) return false;
+  try {
+    await page.clickPoint(controls.provider);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Pure step planner for the visible login route in screenshot order:
+// merchant login page → password fill or provider click → provider login
+// page → provider fill. Each automatic step fires at most once; afterwards
+// the visible window stays for manual completion.
+export function planExternalLoginStep({ pageUrl = "", merchantDomains = [], method = "password", acted = {} } = {}) {
+  let host = "";
+  try {
+    host = new URL(String(pageUrl || "")).hostname.toLowerCase();
+  } catch {
+    host = "";
+  }
+  const listed = Array.isArray(merchantDomains) ? merchantDomains : [];
+  const onMerchant = listed.length === 0
+    || listed.some((domain) => host === domain || (domain && host.endsWith(`.${domain}`)));
+  const onProvider = (method === "naver" && /(^|\.)nid\.naver\.com$/.test(host))
+    || (method === "kakao" && /(^|\.)accounts\.kakao\.com$/.test(host));
+  if (onMerchant && method === "password" && !acted.fill_merchant) return "fill_merchant";
+  if (onMerchant && (method === "naver" || method === "kakao") && !acted.click_provider) return "click_provider";
+  if (onProvider && !acted.fill_provider) return "fill_provider";
+  return "wait";
+}
+
 export async function waitForExternalLogin({
   page,
   detectControlsScript = null,
   credentials = null,
+  providerCredentials = null,
+  method = "password",
+  merchantDomains = [],
   timeoutMs = 180000,
   pollIntervalMs = 2000,
   sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -275,8 +316,11 @@ export async function waitForExternalLogin({
     return externalLoginFailure("CDP_UNREACHABLE");
   }
   const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 180000);
-  const canAutoFill = Boolean(credentials?.loginId && credentials?.password && detectControlsScript);
-  let submitted = false;
+  const usable = (entry) => Boolean(entry?.loginId && entry?.password);
+  const canFillMerchant = method === "password" && usable(credentials) && Boolean(detectControlsScript);
+  const canClickProvider = (method === "naver" || method === "kakao") && Boolean(detectControlsScript);
+  const canFillProvider = (method === "naver" || method === "kakao") && usable(providerCredentials) && Boolean(detectControlsScript);
+  const acted = {};
   let unreadable = 0;
   while (Date.now() < deadline) {
     if (canceled()) return externalLoginFailure("LOGIN_CANCELED");
@@ -303,8 +347,16 @@ export async function waitForExternalLogin({
       return { ok: true, cookies: filterUsableLoginCookies(cookies) };
     }
     if (state.blocked === true) return externalLoginFailure("LOGIN_BLOCKED");
-    if (!submitted && canAutoFill && state.hasLoginForm === true) {
-      submitted = await tryAutoFill(page, detectControlsScript, credentials);
+    const step = planExternalLoginStep({ pageUrl: state.url, merchantDomains, method, acted });
+    if (step === "fill_merchant" && canFillMerchant) {
+      acted.fill_merchant = true;
+      await fillPasswordForm(page, detectControlsScript, credentials);
+    } else if (step === "click_provider" && canClickProvider) {
+      acted.click_provider = true;
+      await clickProviderButton(page, detectControlsScript, method);
+    } else if (step === "fill_provider" && canFillProvider) {
+      acted.fill_provider = true;
+      await fillPasswordForm(page, detectControlsScript, providerCredentials);
     }
     await sleepImpl(pollIntervalMs);
   }
@@ -314,6 +366,9 @@ export async function waitForExternalLogin({
 export async function startExternalRetailerLogin({
   loginUrl = "",
   credentials = null,
+  providerCredentials = null,
+  method = "password",
+  merchantDomains = [],
   chromeExecutable = "",
   userDataDir = "",
   port = 0,
@@ -369,11 +424,16 @@ export async function startExternalRetailerLogin({
       }
     }
     if (!page) return externalLoginFailure(lastError ? "CDP_UNREACHABLE" : "CHROME_LAUNCH_FAILED");
+    const automatic = (method === "password" && credentials?.loginId && credentials?.password)
+      || ((method === "naver" || method === "kakao") && providerCredentials?.loginId && providerCredentials?.password);
     return await waitForExternalLogin({
       page,
       detectControlsScript,
       credentials,
-      timeoutMs: credentials?.loginId && credentials?.password ? autoTimeoutMs : manualTimeoutMs,
+      providerCredentials,
+      method,
+      merchantDomains,
+      timeoutMs: automatic ? autoTimeoutMs : manualTimeoutMs,
       canceled,
       sleepImpl,
     });

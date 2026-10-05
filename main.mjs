@@ -400,7 +400,7 @@ const DOMESTIC_LOGIN_SOURCES = [
   { id: "kolon", name: "코오롱몰·코오롱스포츠", url: "https://www.kolonmall.com/", domains: ["kolonmall.com"] },
   { id: "musinsa", name: "무신사", url: "https://www.musinsa.com/", domains: ["musinsa.com"] },
   { id: "ssg", name: "SSG·신세계백화점", url: "https://www.ssg.com/", domains: ["ssg.com"] },
-  { id: "lotte", name: "롯데온·롯데백화점", url: "https://www.lotteon.com/", domains: ["lotteon.com"] },
+  { id: "lotte", name: "롯데온·롯데백화점", url: "https://www.lotteon.com/", loginUrl: "https://www.lotteon.com/p/member/login/common?rtnUrl=https://www.lotteon.com/p/display/main/lotteon", domains: ["lotteon.com"] },
   { id: "wconcept", name: "W컨셉", url: "https://www.wconcept.co.kr/", domains: ["wconcept.co.kr"] },
   { id: "okmall", name: "OK몰", url: "https://www.okmall.com/", domains: ["okmall.com"] },
   { id: "sivillage", name: "신세계V·S.I.VILLAGE", url: "https://www.sivillage.com/", domains: ["sivillage.com"] },
@@ -12556,13 +12556,31 @@ async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, c
   const chromeExecutable = findChromeExecutable({ existsSyncImpl: existsSync });
   if (!chromeExecutable) return { ok: false, fallbackInApp: true };
   let credentials = null;
+  let providerCredentials = null;
+  let method = "password";
   try {
-    const saved = shoppingAccountServices().accounts.credentials(sourceId);
-    if (saved && !saved.code && saved.loginId && saved.password) {
-      credentials = { loginId: saved.loginId, password: saved.password };
+    const { accounts } = shoppingAccountServices();
+    method = accounts.publicAccount(sourceId).method || "password";
+    if (!["password", "naver", "kakao"].includes(method)) method = "password";
+    if (method === "password") {
+      const saved = accounts.credentials(sourceId);
+      if (saved && !saved.code && saved.loginId && saved.password) {
+        credentials = { loginId: saved.loginId, password: saved.password };
+      }
+    } else if (method === "naver") {
+      const saved = naverAccountCredentials();
+      if (saved && !saved.code && saved.id && saved.password) {
+        providerCredentials = { loginId: saved.id, password: saved.password };
+      }
+    } else if (method === "kakao") {
+      const saved = accounts.credentials("kakao");
+      if (saved && !saved.code && saved.loginId && saved.password) {
+        providerCredentials = { loginId: saved.loginId, password: saved.password };
+      }
     }
   } catch {
     credentials = null;
+    providerCredentials = null;
   }
   const userDataDir = join(app.getPath("userData"), "external-login", String(sourceId));
   try {
@@ -12574,6 +12592,9 @@ async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, c
   const started = await startExternalRetailerLogin({
     loginUrl: source.loginUrl || source.url,
     credentials,
+    providerCredentials,
+    method,
+    merchantDomains: source.domains,
     chromeExecutable,
     userDataDir,
     detectControlsScript: captureShoppingLoginPage.toString(),
