@@ -12786,15 +12786,19 @@ async function importChromeProfileCookies(sourceId) {
   const staging = mkdtempSync(join(tmpdir(), "around-g-chrome-"));
   const cleanup = () => { try { rmSync(staging, { recursive: true, force: true }); } catch {} };
   try {
+    const attempts = [];
     for (const profile of chromeProfileNamesToTry()) {
-      let cookies = [];
+      let read = null;
+      let failure = "";
       try {
-        cookies = await readChromeStagingCookies(chromeExe, userDataDir, profile, { stagingRoot: staging });
-      } catch {
-        continue;
+        read = await readChromeStagingCookies(chromeExe, userDataDir, profile, { stagingRoot: staging });
+      } catch (error) {
+        failure = String(error?.message || error);
       }
-      if (!cookies.length) continue;
-      const { cookies: scoped, rejected } = normalizeChromeCookieEntries(cookies, source.domains);
+      const total = read ? read.cookies.length : 0;
+      attempts.push({ profile, copied: read ? read.copiedFiles : 0, total, failure });
+      if (!read || !total) continue;
+      const { cookies: scoped, rejected } = normalizeChromeCookieEntries(read.cookies, source.domains);
       if (!scoped.length) continue;
       const { applied } = await applyCookiesToSearchSession(scoped);
       mainWindow?.webContents.send("domestic-login:changed", { sourceId: source.id });
@@ -12802,7 +12806,11 @@ async function importChromeProfileCookies(sourceId) {
         ? { ok: true, applied, rejected, profile }
         : { ok: false, message: `${source.name} 쿠키를 적용하지 못했습니다.`, rejected };
     }
-    return { ok: false, message: `${source.name}에 로그인된 Chrome 프로필을 찾지 못했습니다. Chrome에서 먼저 로그인해 주세요.` };
+    const summary = attempts.map((attempt) => {
+      if (attempt.failure) return `${attempt.profile}: 실패`;
+      return `${attempt.profile}: 파일 ${attempt.copied}개·쿠키 ${attempt.total}개`;
+    }).join(", ");
+    return { ok: false, message: `${source.name}에 로그인된 Chrome 프로필을 찾지 못했습니다[${summary}]. Chrome에서 먼저 로그인해 주세요.` };
   } finally {
     cleanup();
   }

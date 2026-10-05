@@ -72,12 +72,13 @@ test("a locally launched headless Chrome yields its cookie store", async (t) => 
   if (!chromeExe) t.skip("Chrome is not installed");
   const userDataDir = chromeUserDataDir(process.env);
   if (!userDataDir) t.skip("Chrome profile folder not found");
-  let cookies;
+  let read;
   try {
-    cookies = await readChromeStagingCookies(chromeExe, userDataDir, "Default", { timeoutMs: 45000 });
+    read = await readChromeStagingCookies(chromeExe, userDataDir, "Default", { timeoutMs: 45000 });
   } catch (error) {
     if (String(error?.message || error) === "CHROME_PROFILE_MISSING") t.skip("Default profile has no readable cookie store");
     throw error;
   }
-  assert.ok(Array.isArray(cookies));
+  assert.ok(Array.isArray(read.cookies));
+  assert.ok(Number.isInteger(read.copiedFiles));
 });
