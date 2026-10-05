@@ -1116,6 +1116,109 @@ async function enrichMusinsaOptions(products, fetchImpl) {
   }));
 }
 
+// Six-stage retailer pipeline executed in the operator's flow order:
+// 로그인 → 상품검색 → 로고확인 → 상품인식 → 재고확인 → 데이터.
+// The lightweight preflight never fabricates absence: an empty result only
+// means "no parsed product yet" and absence stays false for the authoritative
+// Electron collector to confirm. Each stage records flags so the row strip
+// (`searchStepProgress`) and the collector share one flow language.
+export const RETAILER_SEARCH_STAGES = Object.freeze([
+  { key: "login", label: "로그인" },
+  { key: "search", label: "상품검색" },
+  { key: "badges", label: "로고확인" },
+  { key: "identity", label: "상품인식" },
+  { key: "stock", label: "재고확인" },
+  { key: "data", label: "데이터" },
+]);
+
+export function hasRetailerBrandEvidence(products = []) {
+  const list = Array.isArray(products) ? products.filter(Boolean) : [];
+  return list.some((product) => product?.brandVerifiedFromCard === true
+    || product?.officialStoreVerified === true || product?.naverTrustedChannelEvidence === true);
+}
+
+export async function runRetailerSearchPipeline({
+  source = {},
+  queryCandidates = [],
+  candidateUrlFor = null,
+  parser = null,
+  fetchImpl = fetch,
+  enrichOptions = null,
+} = {}) {
+  const store = String(source?.store || "");
+  const candidates = [...new Set((Array.isArray(queryCandidates) ? queryCandidates : [])
+    .map((candidate) => String(candidate || "").trim()).filter(Boolean))];
+  const buildUrl = typeof candidateUrlFor === "function" ? candidateUrlFor : () => "";
+  const parse = typeof parser === "function" ? parser : () => [];
+
+  // Stage 1 로그인: a blocked source never spends a network request.
+  if (source?.loginRequired === true || source?.securityVerificationRequired === true) {
+    return {
+      store,
+      ok: true,
+      blocked: true,
+      blockStage: "login",
+      blockReason: source?.loginRequired === true ? "login_required" : "security_verification_required",
+      products: [],
+      count: 0,
+      searchSubmitted: false,
+      searchCompleted: false,
+      brandEvidence: false,
+      presenceConfirmed: false,
+      absenceConfirmed: false,
+      stockChecked: false,
+      attemptedQueries: [],
+      successfulQuery: "",
+    };
+  }
+
+  // Stage 2 상품검색: ordered candidates (exact code first), stop at first hit.
+  let products = [];
+  let successfulQuery = "";
+  const attemptedQueries = [];
+  for (const candidate of candidates) {
+    attemptedQueries.push(candidate);
+    const html = await fetchSearchPage(buildUrl(candidate), fetchImpl);
+    const parsed = parse(html) || [];
+    products = Array.isArray(parsed) ? parsed : [];
+    if (products.length) {
+      successfulQuery = candidate;
+      break;
+    }
+  }
+
+  // Stage 3 로고확인: explicit brand evidence only, unknown is not evidence.
+  const brandEvidence = hasRetailerBrandEvidence(products);
+
+  // Stage 4 상품인식: products found means presence; absence is never
+  // confirmed here so a quiet preflight cannot become a "상품 없음" verdict.
+  const presenceConfirmed = products.length > 0;
+
+  // Stage 5 재고확인: per-retailer option enrichment (e.g. Musinsa).
+  if (products.length && typeof enrichOptions === "function") {
+    products = await enrichOptions(products, fetchImpl);
+  }
+  const stockChecked = products.some((product) => product?.stockVerified === true
+    || product?.stockCoverage === "known" || Number(product?.price || 0) > 0);
+
+  // Stage 6 데이터: finalized payload for the caller to record.
+  return {
+    store,
+    ok: true,
+    blocked: false,
+    products,
+    count: products.length,
+    searchSubmitted: attemptedQueries.length > 0,
+    searchCompleted: true,
+    brandEvidence,
+    presenceConfirmed,
+    absenceConfirmed: false,
+    stockChecked,
+    attemptedQueries,
+    successfulQuery,
+  };
+}
+
 export async function queryDomesticProducts({
   query,
   articleNumber = "",
@@ -1289,20 +1392,15 @@ export async function queryDomesticProducts({
       continue;
     }
     try {
-      let products = [];
-      let successfulQuery = "";
-      for (const candidate of queryCandidates) {
-        const candidateUrl = DOMESTIC_SEARCH_LINKS[source.store](candidate);
-        const html = await fetchSearchPage(candidateUrl, fetchImpl);
-        products = source.parser(html);
-        if (products.length) {
-          successfulQuery = candidate;
-          break;
-        }
-      }
-      if (source.store === "무신사" && products.length) {
-        products = await enrichMusinsaOptions(products, fetchImpl);
-      }
+      const pipeline = await runRetailerSearchPipeline({
+        source,
+        queryCandidates,
+        candidateUrlFor: (candidate) => DOMESTIC_SEARCH_LINKS[source.store](candidate),
+        parser: source.parser,
+        fetchImpl,
+        enrichOptions: source.store === "무신사" ? enrichMusinsaOptions : null,
+      });
+      const successfulQuery = pipeline.successfulQuery;
       results.push({
         store: source.store,
         ok: true,
@@ -1311,7 +1409,12 @@ export async function queryDomesticProducts({
         searchUrl: successfulQuery ? searchUrlFor(successfulQuery) : searchUrl,
         searchQuery: successfulQuery || preferredQuery,
         searchAttempts: queryCandidates.map((candidate) => ({ query: candidate, url: searchUrlFor(candidate) })),
-        products,
+        products: pipeline.products,
+        searchSubmitted: pipeline.searchSubmitted,
+        searchCompleted: pipeline.searchCompleted,
+        brandEvidence: pipeline.brandEvidence,
+        presenceConfirmed: pipeline.presenceConfirmed,
+        stockChecked: pipeline.stockChecked,
       });
     } catch {
       // A lightweight HTTP preflight can fail while Electron can still render
@@ -1339,7 +1442,7 @@ export async function queryDomesticProducts({
     // Companies are shown only after an exact-model product is verified.
     // A registry entry alone must never look like a matching sourcing result.
     parallelImportCompanies: [],
-    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, adapterId, directProductUrls, searchUrl, officialSearchUrl, officialProductUrl, interactiveSearch, searchQuery, searchAttempts, count, products }, priority) => ({
+    sources: results.map(({ store, ok, linkOnly, renderCount, officialStatus, homepageUrl, adapterId, directProductUrls, searchUrl, officialSearchUrl, officialProductUrl, interactiveSearch, searchQuery, searchAttempts, count, products, searchSubmitted, searchCompleted, brandEvidence, presenceConfirmed, stockChecked }, priority) => ({
       store,
       ok,
       linkOnly,
@@ -1360,6 +1463,11 @@ export async function queryDomesticProducts({
       interactiveSearch: Boolean(interactiveSearch),
       searchQuery: searchQuery || "",
       searchAttempts: Array.isArray(searchAttempts) ? searchAttempts : [],
+      searchSubmitted: searchSubmitted === true,
+      searchCompleted: searchCompleted === true,
+      brandEvidence: brandEvidence === true,
+      presenceConfirmed: presenceConfirmed === true,
+      stockChecked: stockChecked === true,
     })),
   };
 }
