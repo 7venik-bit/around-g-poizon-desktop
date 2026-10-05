@@ -11,10 +11,11 @@ import { syncPoizonPageCheckpoint } from "./services/poizon-page-checkpoint.mjs"
 import { createPageCrossCheck, verificationConditionLabel } from "./services/live-poizon-crosscheck.mjs";
 import { paintReviewPage as paintSellerVerification } from "./services/poizon-review-paint.mjs";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, screen, session, shell } from "electron";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { appendFile, copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { execFile } from "node:child_process";
+import { tmpdir } from "node:os";
 import { readSheet } from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
 import { readFirstDataSheet } from "./services/excel-reader.mjs";
@@ -54,6 +55,14 @@ import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
 import { ShoppingAccounts, ShoppingLoginConnector } from "./services/shopping-accounts.mjs";
 import { parseBrowserCookieImport } from "./services/browser-cookie-import.mjs";
+import {
+  chromeUserDataDir,
+  chromeExecutableCandidates,
+  findChromeExecutable,
+  chromeProfileNamesToTry,
+  normalizeChromeCookieEntries,
+  readChromeStagingCookies,
+} from "./services/chrome-profile-cookies.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
 import { recoverOfficialCollection } from "./services/official-auto-recovery.mjs";
 import {
@@ -12711,22 +12720,14 @@ async function clearDomesticLogin(sourceId) {
 // operator's own Chrome passes.
 const COOKIE_IMPORT_SOURCES = new Set(["ssg", "lotte"]);
 
-async function importRetailerCookies(sourceId, text) {
-  const source = domesticLoginSource(sourceId);
-  if (!source || !COOKIE_IMPORT_SOURCES.has(source.id)) {
-    return { ok: false, message: "지원하지 않는 소싱몰입니다." };
-  }
-  const parsed = parseBrowserCookieImport(text, source.domains);
-  if (parsed.error === "COOKIE_EMPTY") return { ok: false, message: "먼저 쿠키 내용을 붙여넣어 주세요.", rejected: 0 };
-  if (parsed.error) return { ok: false, message: "쿠키 내용을 읽지 못했습니다. JSON Export 또는 cookie.txt 그대로 붙여넣어 주세요.", rejected: parsed.rejected };
-  if (!parsed.cookies.length) {
-    return { ok: false, message: `${source.name} 쿠키가 없습니다. 로그인된 상태에서 복사했는지 확인해 주세요.`, rejected: parsed.rejected };
-  }
+async function applyCookiesToSearchSession(cookies = []) {
   const jar = session.fromPartition(DOMESTIC_SEARCH_PARTITION).cookies;
   let applied = 0;
-  for (const cookie of parsed.cookies) {
+  let rejected = 0;
+  for (const cookie of Array.isArray(cookies) ? cookies : []) {
     try {
       const host = String(cookie.domain).replace(/^\./, "");
+      if (!host || !cookie.name) throw new Error("COOKIE_SHAPE_INVALID");
       const options = {
         url: `https://${host}/`,
         name: cookie.name,
@@ -12740,12 +12741,71 @@ async function importRetailerCookies(sourceId, text) {
       await jar.set(options);
       applied += 1;
     } catch {
-      parsed.rejected += 1;
+      rejected += 1;
     }
   }
   await jar.flushStore().catch(() => {});
+  return { applied, rejected };
+}
+
+async function importRetailerCookies(sourceId, text) {
+  const source = domesticLoginSource(sourceId);
+  if (!source || !COOKIE_IMPORT_SOURCES.has(source.id)) {
+    return { ok: false, message: "지원하지 않는 소싱몰입니다." };
+  }
+  const parsed = parseBrowserCookieImport(text, source.domains);
+  if (parsed.error === "COOKIE_EMPTY") return { ok: false, message: "먼저 쿠키 내용을 붙여넣어 주세요.", rejected: 0 };
+  if (parsed.error) return { ok: false, message: "쿠키 내용을 읽지 못했습니다. JSON Export 또는 cookie.txt 그대로 붙여넣어 주세요.", rejected: parsed.rejected };
+  if (!parsed.cookies.length) {
+    return { ok: false, message: `${source.name} 쿠키가 없습니다. 로그인된 상태에서 복사했는지 확인해 주세요.`, rejected: parsed.rejected };
+  }
+  const { applied, rejected } = await applyCookiesToSearchSession(parsed.cookies);
   mainWindow?.webContents.send("domestic-login:changed", { sourceId: source.id });
-  return { ok: applied > 0, applied, rejected: parsed.rejected };
+  return { ok: applied > 0, applied, rejected: rejected + parsed.rejected };
+}
+
+// One-click Chrome import: copy the operator's own Chrome profile cookies
+// into staging (the live profile is never written), read them through a
+// locally launched headless Chrome DevTools session, and apply the
+// retailer-scoped entries to the search session. No site is visited.
+async function importChromeProfileCookies(sourceId) {
+  const source = domesticLoginSource(sourceId);
+  if (!source || !COOKIE_IMPORT_SOURCES.has(source.id)) {
+    return { ok: false, message: "지원하지 않는 소싱몰입니다." };
+  }
+  if (typeof globalThis.WebSocket !== "function") {
+    return { ok: false, message: "이 PC에서 직접 가져오기를 지원하지 않습니다. 붙여넣기로 넣어 주세요." };
+  }
+  const chromeExe = findChromeExecutable(
+    (path) => { try { return existsSync(path); } catch { return false; } },
+    chromeExecutableCandidates(process.env),
+  );
+  if (!chromeExe) return { ok: false, message: "Chrome이 설치되어 있지 않습니다." };
+  const userDataDir = chromeUserDataDir(process.env);
+  if (!userDataDir) return { ok: false, message: "Chrome 프로필 폴더를 찾지 못했습니다." };
+  const staging = mkdtempSync(join(tmpdir(), "around-g-chrome-"));
+  const cleanup = () => { try { rmSync(staging, { recursive: true, force: true }); } catch {} };
+  try {
+    for (const profile of chromeProfileNamesToTry()) {
+      let cookies = [];
+      try {
+        cookies = await readChromeStagingCookies(chromeExe, userDataDir, profile, { stagingRoot: staging });
+      } catch {
+        continue;
+      }
+      if (!cookies.length) continue;
+      const { cookies: scoped, rejected } = normalizeChromeCookieEntries(cookies, source.domains);
+      if (!scoped.length) continue;
+      const { applied } = await applyCookiesToSearchSession(scoped);
+      mainWindow?.webContents.send("domestic-login:changed", { sourceId: source.id });
+      return applied > 0
+        ? { ok: true, applied, rejected, profile }
+        : { ok: false, message: `${source.name} 쿠키를 적용하지 못했습니다.`, rejected };
+    }
+    return { ok: false, message: `${source.name}에 로그인된 Chrome 프로필을 찾지 못했습니다. Chrome에서 먼저 로그인해 주세요.` };
+  } finally {
+    cleanup();
+  }
 }
 
 app.whenReady().then(async () => {
@@ -12839,6 +12899,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("domestic-login:open", (_event, sourceId) => openDomesticLogin(sourceId));
   ipcMain.handle("domestic-login:clear", (_event, sourceId) => clearDomesticLogin(sourceId));
   ipcMain.handle("domestic-login:import-cookies", (_event, input) => importRetailerCookies(input?.sourceId, input?.text));
+  ipcMain.handle("domestic-login:import-chrome-cookies", (_event, input) => importChromeProfileCookies(input?.sourceId));
   ipcMain.handle("naver-account:save", (_event, config) => saveNaverAccount(config));
   ipcMain.handle("shopping-accounts:list", async () => {
     const {accounts,connector} = shoppingAccountServices();
