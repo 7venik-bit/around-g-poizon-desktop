@@ -37,6 +37,10 @@
           <label>비밀번호<input data-shop-password type="password" autocomplete="new-password" placeholder="변경할 때만 입력" aria-label="${escape(source.name)} 비밀번호"></label>
         </div>
         <div class="shopping-account-actions"><button type="button" data-shop-save>저장</button><button type="button" class="primary" data-shop-connect>저장하고 로그인</button><button type="button" data-shop-clear>로그인 해제</button></div>
+        ${['ssg','lotte'].includes(source.id) ? `<details class="shopping-cookie-import"><summary>크롬 쿠키 가져오기</summary>
+        <p class="muted">로그인된 Chrome에서 Cookie-Editor 확장으로 Export한 JSON을 아래에 붙여넣으세요. 해당 쇼핑몰 쿠키만 저장되며, 자동 검색이 로그인 상태로 동작합니다.</p>
+        <textarea data-shop-cookies rows="3" aria-label="${escape(source.name)} 쿠키 JSON"></textarea>
+        <div class="shopping-account-actions"><button type="button" data-shop-cookies-apply>쿠키 적용</button></div></details>` : ""}
         <p data-shop-message role="status" aria-live="polite"></p>
       </div>`;
     return row;
@@ -106,6 +110,20 @@
     const row=event.target.closest('[data-shopping-account]');if(!row) return;
     if(event.target.closest('[data-shop-save]')) await act(row);
     if(event.target.closest('[data-shop-connect]')) await act(row,true);
+    if(event.target.closest('[data-shop-cookies-apply]') && row.dataset.busy!=='true') {
+      row.dataset.busy='true';
+      const message=row.querySelector('[data-shop-message]');
+      try {
+        if(typeof api.importRetailerCookies!=='function') throw new Error('UNSUPPORTED');
+        const result=await api.importRetailerCookies({sourceId:row.dataset.shoppingAccount,
+          text:row.querySelector('[data-shop-cookies]')?.value || ''});
+        message.textContent=result?.ok
+          ? `쿠키 ${result.applied}개를 적용했습니다.${result.rejected ? ` ${result.rejected}개 제외.` : ''} 자동 검색이 로그인 상태로 동작합니다.`
+          : (result?.message || '쿠키를 적용하지 못했습니다.');
+      } catch {message.textContent='쿠키를 적용하지 못했습니다. 다시 시도해 주세요.';}
+      finally {row.dataset.busy='false';}
+      await render();
+    }
     if(event.target.closest('[data-shop-clear]') && row.dataset.busy!=='true') {
       row.dataset.busy='true';
       let message;
