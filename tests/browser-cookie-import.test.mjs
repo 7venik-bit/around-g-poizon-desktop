@@ -24,8 +24,27 @@ test("pasted Chrome JSON keeps only the retailer domain cookies", () => {
 
 test("invalid JSON and subdomain lookalikes are rejected", () => {
   assert.equal(parseBrowserCookieImport("not json", SSG).error, "COOKIE_JSON_INVALID");
+  assert.equal(parseBrowserCookieImport("", SSG).error, "COOKIE_EMPTY");
   assert.equal(parseBrowserCookieImport(JSON.stringify([{ name: "A", value: "1", domain: "fakessg.com" }]), SSG).cookies.length, 0);
   assert.equal(parseBrowserCookieImport(JSON.stringify([{ name: "A", value: "1", domain: "ssg.com.evil.test" }]), SSG).rejected, 1);
+});
+
+test("Netscape cookie.txt is accepted with the same domain rules", () => {
+  const text = [
+    "# Netscape HTTP Cookie File",
+    ".ssg.com\tTRUE\t/\tTRUE\t2000000000\tSSG_DID\tabc",
+    "#HttpOnly.ssg.com\tTRUE\t/\tTRUE\t2000000000\tMBR\tx",
+    ".naver.com\tTRUE\t/\tTRUE\t2000000000\tOTHER\ty",
+    "broken-line",
+  ].join("\n");
+  const result = parseBrowserCookieImport(text, SSG);
+  assert.equal(result.error, "");
+  assert.equal(result.cookies.length, 2);
+  assert.equal(result.rejected, 1);
+  assert.equal(result.cookies[0].name, "SSG_DID");
+  assert.equal(result.cookies[0].httpOnly, false);
+  assert.equal(result.cookies[1].httpOnly, true);
+  assert.equal(result.cookies[1].expirationDate, 2000000000);
 });
 
 test("oversized entries are dropped and the count is capped", () => {
