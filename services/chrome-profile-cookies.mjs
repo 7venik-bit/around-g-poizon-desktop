@@ -72,6 +72,15 @@ export function chromeProfileNamesToTry() {
   return ["Default", "Profile 1", "Profile 2", "Profile 3"];
 }
 
+// The live cookie database cannot be copied while Chrome runs, so attempting
+// the import then always yields zero cookies. Detect the running browser
+// first from tasklist CSV output and ask for a full quit instead.
+export function isChromeRunning(tasklistOutput = "") {
+  return String(tasklistOutput || "")
+    .split(/\r?\n/)
+    .some((line) => /^\s*"chrome\.exe"\s*,/i.test(line));
+}
+
 // Final failure message for one-click import. When profile files copy but the
 // cookie database never does, Chrome is running and locking it: quitting
 // Chrome fully unlocks the copy. Counts only, never cookie contents.

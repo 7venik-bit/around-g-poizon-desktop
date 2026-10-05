@@ -62,6 +62,7 @@ import {
   chromeProfileNamesToTry,
   normalizeChromeCookieEntries,
   readChromeStagingCookies,
+  isChromeRunning,
   summarizeChromeImportAttempts,
 } from "./services/chrome-profile-cookies.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
@@ -12784,6 +12785,17 @@ async function importChromeProfileCookies(sourceId) {
   if (!chromeExe) return { ok: false, message: "Chrome이 설치되어 있지 않습니다." };
   const userDataDir = chromeUserDataDir(process.env);
   if (!userDataDir) return { ok: false, message: "Chrome 프로필 폴더를 찾지 못했습니다." };
+  try {
+    const running = await new Promise((resolve) => {
+      execFile("tasklist.exe", ["/FI", "IMAGENAME eq chrome.exe", "/FO", "CSV", "/NH"], { timeout: 10000 }, (error, stdout) => {
+        if (error) resolve(null);
+        else resolve(isChromeRunning(stdout));
+      });
+    });
+    if (running === true) {
+      return { ok: false, message: "Chrome이 실행 중이라 쿠키 파일을 읽지 못합니다. Chrome 메뉴(⋮) → 종료로 완전히 끈 뒤 다시 눌러주세요. 끄기 어려우면 붙여넣기로 넣어주세요." };
+    }
+  } catch { /* fall through to the copy attempt when detection itself fails */ }
   const staging = mkdtempSync(join(tmpdir(), "around-g-chrome-"));
   const cleanup = () => { try { rmSync(staging, { recursive: true, force: true }); } catch {} };
   try {
