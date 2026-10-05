@@ -68,6 +68,10 @@ test("LotteON external login starts at the login page with the saved method", ()
   assert.match(main, /merchantDomains: source\.domains/);
 });
 
+test("SSG external login starts at the member login popup with the saved method", () => {
+  assert.match(main, /id: "ssg"[^}]*loginUrl: "https:\/\/member\.ssg\.com\/member\/popup\/popupLogin\.ssg/);
+});
+
 test("store names map to their external login source", () => {
   const start = main.indexOf("function loginSourceIdForStore(");
   const end = main.indexOf("\n}\n", start) + 3;

@@ -186,6 +186,46 @@ test("login route follows the merchant, provider click, provider fill order", ()
   assert.equal(planExternalLoginStep({ pageUrl: "", method: "password" }), "fill_merchant");
 });
 
+test("SSG login route clicks Naver social login, then fills Naver credentials", async () => {
+  assert.equal(
+    planExternalLoginStep({ pageUrl: "https://member.ssg.com/member/popup/popupLogin.ssg", method: "naver", merchantDomains: ["ssg.com"] }),
+    "click_provider",
+  );
+  const clicked = [];
+  const states = [
+    { authenticated: false, blocked: false, hasLoginForm: false, url: "https://member.ssg.com/member/popup/popupLogin.ssg" },
+    { authenticated: false, blocked: false, hasLoginForm: true, url: "https://nid.naver.com/nidlogin.login" },
+    { authenticated: true, blocked: false, hasLoginForm: false, url: "https://www.ssg.com/" },
+  ];
+  const page = {
+    async evaluate(expression) {
+      const text = String(expression);
+      if (text.includes("elementFromPoint")) return true;
+      if (text.includes("authenticated") && text.includes("blocked")) return states.shift() || states[states.length - 1];
+      if (text.includes('"naver"')) return { provider: { x: 7, y: 7 } };
+      return { id: { x: 1, y: 1 }, password: { x: 1, y: 2 }, submit: { x: 1, y: 3 } };
+    },
+    async clickPoint(point) {
+      clicked.push(point);
+    },
+    async getCookies() {
+      return [{ name: "ssg_auth", value: "ok" }];
+    },
+  };
+  const result = await waitForExternalLogin({
+    page,
+    detectControlsScript: "function detect() {}",
+    method: "naver",
+    merchantDomains: ["ssg.com"],
+    providerCredentials: { loginId: "naver-id", password: "naver-pw" },
+    timeoutMs: 5000,
+    sleepImpl: async () => {},
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(clicked[0], { x: 7, y: 7 });
+  assert.deepEqual(result.cookies.map((cookie) => cookie.name), ["ssg_auth"]);
+});
+
 test("login wait clicks the provider then fills provider credentials", async () => {
   const clicked = [];
   const filled = [];

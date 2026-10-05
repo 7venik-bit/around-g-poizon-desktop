@@ -399,7 +399,7 @@ const DOMESTIC_LOGIN_SOURCES = [
   { id: "kakao", name: "카카오 계정", url: "https://accounts.kakao.com/login", domains: ["accounts.kakao.com"] },
   { id: "kolon", name: "코오롱몰·코오롱스포츠", url: "https://www.kolonmall.com/", domains: ["kolonmall.com"] },
   { id: "musinsa", name: "무신사", url: "https://www.musinsa.com/", domains: ["musinsa.com"] },
-  { id: "ssg", name: "SSG·신세계백화점", url: "https://www.ssg.com/", domains: ["ssg.com"] },
+  { id: "ssg", name: "SSG·신세계백화점", url: "https://www.ssg.com/", loginUrl: "https://member.ssg.com/member/popup/popupLogin.ssg?originSite=https://www.ssg.com/&gnb=login", domains: ["ssg.com"] },
   { id: "lotte", name: "롯데온·롯데백화점", url: "https://www.lotteon.com/", loginUrl: "https://www.lotteon.com/p/member/login/common?rtnUrl=https://www.lotteon.com/p/display/main/lotteon", domains: ["lotteon.com"] },
   { id: "wconcept", name: "W컨셉", url: "https://www.wconcept.co.kr/", domains: ["wconcept.co.kr"] },
   { id: "okmall", name: "OK몰", url: "https://www.okmall.com/", domains: ["okmall.com"] },
