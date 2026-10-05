@@ -13,6 +13,7 @@ import {
   EXTERNAL_LOGIN_STATE_SCRIPT,
   externalFillScript,
   filterUsableLoginCookies,
+  planExternalLoginStep,
   waitForExternalLogin,
   startExternalRetailerLogin,
 } from "../services/external-chrome-login.mjs";
@@ -166,6 +167,63 @@ test("expired and empty cookies never count as a login session", () => {
     ], now).map((cookie) => cookie.name),
     ["c", "d"],
   );
+});
+
+test("login route follows the merchant, provider click, provider fill order", () => {
+  const merchant = { merchantDomains: ["lotteon.com"] };
+  assert.equal(planExternalLoginStep({ pageUrl: "https://www.lotteon.com/p/member/login/common", method: "password", ...merchant }), "fill_merchant");
+  assert.equal(planExternalLoginStep({ pageUrl: "https://www.lotteon.com/", method: "naver", ...merchant }), "click_provider");
+  assert.equal(
+    planExternalLoginStep({ pageUrl: "https://nid.naver.com/nidlogin.login", method: "naver", ...merchant }),
+    "fill_provider",
+  );
+  assert.equal(planExternalLoginStep({ pageUrl: "https://example.test/", method: "naver", ...merchant }), "wait");
+  assert.equal(
+    planExternalLoginStep({ pageUrl: "https://nid.naver.com/nidlogin.login", method: "naver", acted: { fill_provider: true }, ...merchant }),
+    "wait",
+  );
+  // Without merchant domains every page keeps the legacy merchant behavior.
+  assert.equal(planExternalLoginStep({ pageUrl: "", method: "password" }), "fill_merchant");
+});
+
+test("login wait clicks the provider then fills provider credentials", async () => {
+  const clicked = [];
+  const filled = [];
+  const states = [
+    { authenticated: false, blocked: false, hasLoginForm: false, url: "https://www.lotteon.com/p/member/login/common" },
+    { authenticated: false, blocked: false, hasLoginForm: true, url: "https://nid.naver.com/nidlogin.login" },
+    { authenticated: true, blocked: false, hasLoginForm: false, url: "https://www.lotteon.com/" },
+  ];
+  const page = {
+    async evaluate(expression) {
+      const text = String(expression);
+      if (text.includes("elementFromPoint")) {
+        filled.push(text);
+        return true;
+      }
+      if (text.includes("authenticated") && text.includes("blocked")) return states.shift() || states[states.length - 1];
+      if (text.includes('"naver"')) return { provider: { x: 5, y: 5 } };
+      return { id: { x: 1, y: 1 }, password: { x: 1, y: 2 }, submit: { x: 1, y: 3 } };
+    },
+    async clickPoint(point) {
+      clicked.push(point);
+    },
+    async getCookies() {
+      return [{ name: "auth", value: "ok" }];
+    },
+  };
+  const result = await waitForExternalLogin({
+    page,
+    detectControlsScript: "function detect() {}",
+    method: "naver",
+    merchantDomains: ["lotteon.com"],
+    providerCredentials: { loginId: "naver-id", password: "naver-pw" },
+    timeoutMs: 5000,
+    sleepImpl: async () => {},
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(clicked[0], { x: 5, y: 5 });
+  assert.ok(filled.length >= 2);
 });
 
 test("login wait resolves on visible authentication", async () => {

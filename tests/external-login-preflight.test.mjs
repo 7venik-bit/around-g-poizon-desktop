@@ -61,6 +61,13 @@ test("external login failures keep actionable Korean labels per code", async () 
   }
 });
 
+test("LotteON external login starts at the login page with the saved method", () => {
+  assert.match(main, /id: "lotte"[^}]*loginUrl: "https:\/\/www\.lotteon\.com\/p\/member\/login\/common/);
+  assert.match(main, /method = accounts\.publicAccount\(sourceId\)\.method/);
+  assert.match(main, /providerCredentials/);
+  assert.match(main, /merchantDomains: source\.domains/);
+});
+
 test("store names map to their external login source", () => {
   const start = main.indexOf("function loginSourceIdForStore(");
   const end = main.indexOf("\n}\n", start) + 3;
