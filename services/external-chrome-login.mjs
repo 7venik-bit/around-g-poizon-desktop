@@ -44,10 +44,19 @@ export const CHROME_EXECUTABLE_CANDIDATES = Object.freeze([
   `${process.env["ProgramFiles(x86)"] || ""}\\Google\\Chrome\\Application\\chrome.exe`,
 ]);
 
-export function findChromeExecutable({ existsSyncImpl } = {}) {
+function chromeCandidatesForPlatform(platform) {
+  if (platform === "darwin") return ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"];
+  if (platform === "linux") {
+    return ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/opt/google/chrome/chrome"];
+  }
+  return [...CHROME_EXECUTABLE_CANDIDATES];
+}
+
+export function findChromeExecutable({ existsSyncImpl, platformImpl } = {}) {
   const exists = typeof existsSyncImpl === "function" ? existsSyncImpl : () => false;
-  for (const candidate of CHROME_EXECUTABLE_CANDIDATES) {
-    if (!candidate || candidate.startsWith("\\")) continue;
+  const platform = platformImpl || process.platform;
+  for (const candidate of chromeCandidatesForPlatform(platform)) {
+    if (!candidate) continue;
     try {
       if (exists(candidate)) return candidate;
     } catch {
