@@ -45,7 +45,8 @@ test('SSG and Lotte links open in the external browser instead of the walled in-
   for (const button of buttons) assert.equal(button.title, '외부 브라우저(크롬)에서 열기');
 });
 
-test('lotte server evidence opens diagnostics even without a failure reason', t => {  const f = renderer(t);
+test('lotte server evidence opens diagnostics even without a failure reason', t => {
+  const f = renderer(t);
   const body = f.render({products: [], sources: [{store: '롯데온', count: 0,
     searchQuery: 'DD1503-101', searchUrl: 'https://www.lotteon.com/csearch/search/search?render=search&q=DD1503-101',
     verificationDiagnostics: {lotteServerEvidence: {httpStatus: 200, bytes: 1500000, items: 4}}}]});
@@ -72,6 +73,30 @@ test('fallback rows show the six-stage pipeline progress', t => {
   const mismatchStates = [...strips[1].querySelectorAll('.domestic-inline-step')].map((step) =>
     step.className.match(/domestic-inline-step-(\w+)/)[1]);
   assert.deepEqual(mismatchStates, ['done', 'done', 'pending', 'blocked', 'pending', 'pending']);
+});
+
+test('retailer groups with products show the same six-stage progress', t => {
+  const f = renderer(t);
+  f.window.eval(readFileSync(join(root, 'src/domestic-result-verdict.js'), 'utf8'));
+  const body = f.render({products: [{
+    store: '무신사', retailerName: '무신사', title: 'JI0079', articleNumber: 'JI0079',
+    price: 81360, stockVerified: true, brandVerifiedFromCard: true,
+    sizes: [{label: '270', quantity: 3, inStock: true}],
+    url: 'https://www.musinsa.com/product/1',
+  }], sources: [{
+    store: '무신사', count: 1, countVerified: true,
+    searchSubmitted: true, searchCompleted: true,
+    searchQuery: 'JI0079', searchUrl: 'https://www.musinsa.com/search/goods?keyword=JI0079',
+  }]});
+  const group = body.querySelector('.domestic-inline-retailer-group');
+  assert.ok(group);
+  const strip = group.querySelector('.domestic-inline-steps');
+  assert.ok(strip);
+  assert.deepEqual([...strip.querySelectorAll('.domestic-inline-step')].map((step) => step.textContent),
+    ['로그인', '상품검색', '로고확인', '상품인식', '재고확인', '데이터']);
+  const states = [...strip.querySelectorAll('.domestic-inline-step')].map((step) =>
+    step.className.match(/domestic-inline-step-(\w+)/)[1]);
+  assert.deepEqual(states, ['done', 'done', 'done', 'done', 'done', 'done']);
 });
 
 test('diagnostics stay available alongside partial products without exposing whole pages or tokens', t => {

@@ -181,7 +181,7 @@
       || source?.absenceConfirmed || products.length > 0);
     const searchActive = Boolean(source?.verificationPending || source?.detailVerificationPending)
       && !searchDone;
-    const brandEvidence = products.some((product) => product?.brandVerifiedFromCard !== false
+    const brandEvidence = products.some((product) => product?.brandVerifiedFromCard === true
       || product?.officialStoreVerified === true || product?.naverTrustedChannelEvidence === true)
       || source?.naverTrustedChannelEvidence === true;
     const recognized = products.length > 0

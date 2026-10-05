@@ -340,6 +340,12 @@
     return [...groups].map(([color, options]) => ({product:{...product, sizes:options}, color}));
   }
 
+  function renderStepStrip(steps) {
+    if (!Array.isArray(steps) || !steps.length) return "";
+    return `<div class="domestic-inline-steps" role="list" aria-label="검색 단계 진행">${steps.map((step, index) =>
+      `${index ? '<span class="domestic-inline-step-sep" aria-hidden="true">›</span>' : ""}<span role="listitem" class="domestic-inline-step domestic-inline-step-${step.state}" title="${safeText(step.label)}">${safeText(step.label)}</span>`).join("")}</div>`;
+  }
+
   function inlineRenderDomestic(result, sourceProduct = {}, contextKey = "") {
     if (!result) return `<div class="domestic-inline-empty">국내 상품 검색 전</div>`;
     if (result.loading) return `<div class="domestic-inline-empty">국내 판매처 검색 중…</div>`;
@@ -361,8 +367,10 @@
       // Group display rows only; keep each product's stock and action identity.
       // Different sources or official status must not share a seller badge.
       const groupKey = JSON.stringify([source.store || product.sourceStore || product.store || "", retailer, official]);
-      if (!retailerGroups.has(groupKey)) retailerGroups.set(groupKey, {retailer, official, rows: []});
-      retailerGroups.get(groupKey).rows.push(...stockColorRows(product).map(({product: colorProduct, color}) => `<div class="domestic-inline-row"${color ? ` data-stock-color="${safeText(color)}"` : ""}>
+      if (!retailerGroups.has(groupKey)) retailerGroups.set(groupKey, {retailer, official, source, products: [], rows: []});
+      const group = retailerGroups.get(groupKey);
+      group.products.push(product);
+      group.rows.push(...stockColorRows(product).map(({product: colorProduct, color}) => `<div class="domestic-inline-row"${color ? ` data-stock-color="${safeText(color)}"` : ""}>
         <div class="domestic-inline-product"><div class="domestic-inline-title" title="${safeText(rawTitle)}">${safeText(title)}</div>${color ? `<div class="domestic-inline-color">${safeText(color)}</div>` : ""}</div>
         ${renderStockCell(colorProduct)}
         <div class="domestic-inline-code" title="${safeText(article)}">${safeText(article)}</div>
@@ -370,11 +378,14 @@
         <div class="domestic-inline-actions">${sourceAction(source, product, sourceProduct, contextKey)}${typeof stockWatchRegistrationButton === "function" ? stockWatchRegistrationButton(product, sourceProduct) : ""}</div>
       </div>`));
     }
-    const rows = [...retailerGroups.values()].map(({retailer, official, rows: productRows}) =>
-      `<div class="domestic-inline-retailer-group" role="group" aria-label="${safeText(retailer)}">
+    const rows = [...retailerGroups.values()].map(({retailer, official, source, products: groupProducts, rows: productRows}) => {
+      const steps = globalThis.AroundGDomesticVerdict?.searchStepProgress
+        ? globalThis.AroundGDomesticVerdict.searchStepProgress(source || {}, groupProducts || []) : [];
+      return `<div class="domestic-inline-retailer-group" role="group" aria-label="${safeText(retailer)}">
         <div class="domestic-inline-store domestic-inline-retailer-label" title="${safeText(retailer)}"><span>${safeText(retailer)}</span>${official ? `<span class="domestic-inline-official">공식</span>` : ""}</div>
-        <div class="domestic-inline-retailer-rows">${productRows.join("")}</div>
-      </div>`);
+        <div class="domestic-inline-retailer-rows">${productRows.join("")}${renderStepStrip(steps)}</div>
+      </div>`;
+    });
 
     const representedSources = new Set();
     for (const product of products) {
@@ -405,10 +416,7 @@
         : "-";
       const steps = globalThis.AroundGDomesticVerdict?.searchStepProgress
         ? globalThis.AroundGDomesticVerdict.searchStepProgress(source, []) : [];
-      const stepStrip = steps.length
-        ? `<div class="domestic-inline-steps" role="list" aria-label="검색 단계 진행">${steps.map((step, index) =>
-          `${index ? '<span class="domestic-inline-step-sep" aria-hidden="true">›</span>' : ""}<span role="listitem" class="domestic-inline-step domestic-inline-step-${step.state}" title="${safeText(step.label)}">${safeText(step.label)}</span>`).join("")}</div>`
-        : "";
+      const stepStrip = renderStepStrip(steps);
       rows.push(`<div class="domestic-inline-row domestic-inline-fallback">
         <div class="domestic-inline-store" title="${safeText(store)}">${safeText(store)}</div>
         <div class="domestic-inline-title">${safeText(message)}</div>
