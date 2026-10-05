@@ -72,10 +72,30 @@ export function chromeLoginArgs({ userDataDir = "", port = 0, url = "" } = {}) {
     `--user-data-dir=${String(userDataDir)}`,
     "--no-first-run",
     "--no-default-browser-check",
+    // A killed window must never greet the next launch with a restore bubble.
+    "--disable-session-crashed-bubble",
     "--disable-features=Translate",
     "--new-window",
     String(url || "about:blank"),
   ];
+}
+
+// A port answers /json/version only while a debugging Chrome owns it.
+export async function isChromeResponsive({ fetchImpl = fetch, port = 0 } = {}) {
+  try {
+    const response = await fetchImpl(`http://127.0.0.1:${Number(port) || 9222}/json/version`);
+    return response?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+export function closeLoginChrome(child) {
+  try {
+    if (child && child.killed !== true && typeof child.kill === "function") child.kill();
+  } catch {
+    // The external window is best-effort cleanup only.
+  }
 }
 
 // A port answers /json/version only while a debugging Chrome owns it.
@@ -311,6 +331,7 @@ export async function waitForExternalLogin({
   pollIntervalMs = 2000,
   sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   canceled = () => false,
+  onProgress = null,
 } = {}) {
   if (!page || typeof page.evaluate !== "function" || typeof page.getCookies !== "function") {
     return externalLoginFailure("CDP_UNREACHABLE");
@@ -322,6 +343,15 @@ export async function waitForExternalLogin({
   const canFillProvider = (method === "naver" || method === "kakao") && usable(providerCredentials) && Boolean(detectControlsScript);
   const acted = {};
   let unreadable = 0;
+  let tick = 0;
+  const heartbeat = (state) => {
+    if (typeof onProgress !== "function") return;
+    try {
+      onProgress({ tick: (tick += 1), authenticated: state?.authenticated === true });
+    } catch {
+      // Progress reporting must never stop the login observation.
+    }
+  };
   while (Date.now() < deadline) {
     if (canceled()) return externalLoginFailure("LOGIN_CANCELED");
     let state = null;
@@ -333,6 +363,7 @@ export async function waitForExternalLogin({
     if (!state || typeof state !== "object") {
       unreadable += 1;
       if (unreadable >= 5) return externalLoginFailure("LOGIN_PAGE_UNREADABLE");
+      heartbeat(state);
       await sleepImpl(pollIntervalMs);
       continue;
     }
@@ -358,6 +389,7 @@ export async function waitForExternalLogin({
       acted.fill_provider = true;
       await fillPasswordForm(page, detectControlsScript, providerCredentials);
     }
+    heartbeat(state);
     await sleepImpl(pollIntervalMs);
   }
   return externalLoginFailure("LOGIN_TIMEOUT");
@@ -376,6 +408,13 @@ export async function startExternalRetailerLogin({
   autoTimeoutMs = 180000,
   manualTimeoutMs = 600000,
   cdpLaunchTimeoutMs = 20000,
+  // Shared-window mode: retailers open as tabs of one Chrome process that
+  // stays alive across logins, so a logged-in session is kept instead of
+  // logging in again for every product search.
+  shared = null,
+  keepAlive = false,
+  onShared = null,
+  onProgress = null,
   deps = {},
 } = {}) {
   const {
@@ -389,41 +428,51 @@ export async function startExternalRetailerLogin({
   if (typeof spawnImpl !== "function" || typeof WebSocketImpl !== "function") {
     return externalLoginFailure("CHROME_LAUNCH_FAILED");
   }
-  const targetPort = Number(port) > 0 ? Number(port) : await pickRemoteDebuggingPort({ fetchImpl });
-  if (!targetPort) return externalLoginFailure("CDP_UNREACHABLE");
-  let child = null;
-  try {
-    child = spawnImpl(chromeExecutable, chromeLoginArgs({ userDataDir, port: targetPort, url: loginUrl }), {
-      windowsHide: true,
-    });
-  } catch {
-    return externalLoginFailure("CHROME_LAUNCH_FAILED");
-  }
-  const kill = () => {
+  // Reuse the shared window when its process is still alive: every retailer
+  // then opens as a tab of the same window instead of a new Chrome process.
+  let child = shared && shared.child && shared.child.killed !== true && shared.child.exitCode == null
+    ? shared.child
+    : null;
+  let targetPort = Number(port) > 0 ? Number(port) : Number(shared?.port) || 0;
+  let responsive = Boolean(child && targetPort) && await isChromeResponsive({ fetchImpl, port: targetPort });
+  if (!responsive) {
+    child = null;
+    targetPort = Number(port) > 0 ? Number(port) : await pickRemoteDebuggingPort({ fetchImpl });
+    if (!targetPort) return externalLoginFailure("CDP_UNREACHABLE");
     try {
-      if (child && child.killed !== true && typeof child.kill === "function") child.kill();
+      child = spawnImpl(chromeExecutable, chromeLoginArgs({ userDataDir, port: targetPort, url: "about:blank" }), {
+        windowsHide: true,
+      });
     } catch {
-      // The external window is best-effort cleanup only.
+      return externalLoginFailure("CHROME_LAUNCH_FAILED");
     }
-  };
-  try {
-    const launchDeadline = Date.now() + Math.max(5000, Number(cdpLaunchTimeoutMs) || 20000);
-    let page = null;
-    let lastError = null;
-    while (Date.now() < launchDeadline) {
-      if (canceled()) return externalLoginFailure("LOGIN_CANCELED");
+    if (typeof onShared === "function") {
       try {
-        const client = createCdpPageClient({ fetchImpl, WebSocketImpl, port: targetPort });
-        await client.openTab(loginUrl);
-        page = client;
-        lastError = null;
-        break;
-      } catch (error) {
-        lastError = error;
-        await sleepImpl(500);
+        onShared({ child, port: targetPort });
+      } catch {
+        // Retaining the shared handle must not fail the login itself.
       }
     }
-    if (!page) return externalLoginFailure(lastError ? "CDP_UNREACHABLE" : "CHROME_LAUNCH_FAILED");
+  }
+  const kill = () => closeLoginChrome(child);
+  try {
+    // Wait for the debugger first so a slow launch never sprays login tabs.
+    const launchDeadline = Date.now() + Math.max(5000, Number(cdpLaunchTimeoutMs) || 20000);
+    let ready = responsive;
+    while (!ready && Date.now() < launchDeadline) {
+      if (canceled()) return externalLoginFailure("LOGIN_CANCELED");
+      ready = await isChromeResponsive({ fetchImpl, port: targetPort });
+      if (!ready) await sleepImpl(500);
+    }
+    if (!ready) return externalLoginFailure("CDP_UNREACHABLE");
+    let page = null;
+    try {
+      const client = createCdpPageClient({ fetchImpl, WebSocketImpl, port: targetPort });
+      await client.openTab(loginUrl);
+      page = client;
+    } catch {
+      return externalLoginFailure("CDP_UNREACHABLE");
+    }
     const automatic = (method === "password" && credentials?.loginId && credentials?.password)
       || ((method === "naver" || method === "kakao") && providerCredentials?.loginId && providerCredentials?.password);
     return await waitForExternalLogin({
@@ -436,8 +485,12 @@ export async function startExternalRetailerLogin({
       timeoutMs: automatic ? autoTimeoutMs : manualTimeoutMs,
       canceled,
       sleepImpl,
+      onProgress,
     });
   } finally {
-    kill();
+    // keepAlive retains the single shared window (with its logged-in tabs)
+    // across retailers and products; otherwise close the one-off window so
+    // no stray Chrome survives the login.
+    if (!keepAlive) kill();
   }
 }

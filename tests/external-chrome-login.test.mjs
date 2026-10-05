@@ -8,6 +8,8 @@ import {
   externalLoginFailure,
   findChromeExecutable,
   chromeLoginArgs,
+  isChromeResponsive,
+  closeLoginChrome,
   pickRemoteDebuggingPort,
   createCdpPageClient,
   EXTERNAL_LOGIN_STATE_SCRIPT,
@@ -350,7 +352,10 @@ test("retailer login launches chrome, logs in and always closes it", async () =>
     return { killed: false, kill() { killed += 1; this.killed = true; } };
   };
   const fetchImpl = async (url, init) => {
-    if (String(url).endsWith("/json/version")) throw new Error("ECONNREFUSED");
+    if (String(url).endsWith("/json/version")) {
+      if (!spawned.length) throw new Error("ECONNREFUSED");
+      return { ok: true, json: async () => ({}) };
+    }
     if (String(url).endsWith("/json/list")) {
       return { ok: true, json: async () => [{ id: "T", type: "page", webSocketDebuggerUrl: "ws://dbg" }] };
     }
@@ -390,6 +395,90 @@ test("retailer login launches chrome, logs in and always closes it", async () =>
   assert.equal(killed, 1);
   assert.ok(spawned[0].args.some((arg) => arg.includes("--remote-debugging-port=")));
   assert.ok(spawned[0].args.some((arg) => arg.includes("--user-data-dir=")));
+});
+
+test("login launch suppresses the crash-restore bubble", () => {
+  const args = chromeLoginArgs({ userDataDir: "C:\\data\\shared", port: 9222, url: "about:blank" });
+  assert.ok(args.includes("--disable-session-crashed-bubble"));
+});
+
+test("responsiveness probe distinguishes a live debugger", async () => {
+  assert.equal(await isChromeResponsive({ fetchImpl: async () => ({ ok: true }) }), true);
+  assert.equal(await isChromeResponsive({ fetchImpl: async () => { throw new Error("no"); } }), false);
+  assert.equal(await isChromeResponsive({ fetchImpl: async () => ({ ok: false }) }), false);
+});
+
+test("shared window is reused across retailers without relaunch or close", async () => {
+  let spawns = 0;
+  let kills = 0;
+  const spawnImpl = () => {
+    spawns += 1;
+    return { killed: false, kill() { kills += 1; this.killed = true; } };
+  };
+  const fetchImpl = async (url) => {
+    if (String(url).endsWith("/json/version")) {
+      if (!fetchImpl.probed) {
+        fetchImpl.probed = true;
+        throw new Error("ECONNREFUSED");
+      }
+      return { ok: true, json: async () => ({}) };
+    }
+    if (String(url).endsWith("/json/list")) {
+      return { ok: true, json: async () => [{ id: "T", type: "page", webSocketDebuggerUrl: "ws://dbg" }] };
+    }
+    if (String(url).includes("/json/new")) {
+      return { ok: true, json: async () => ({ id: "T", webSocketDebuggerUrl: "ws://dbg" }) };
+    }
+    throw new Error(`unexpected ${url}`);
+  };
+  const Socket = fakeWebSocketClass((socket, text) => {
+    const request = JSON.parse(text);
+    if (request.method === "Runtime.evaluate") {
+      return reply(socket, { id: 1, result: { result: { value: { authenticated: true, blocked: false } } } });
+    }
+    if (request.method === "Network.getAllCookies") {
+      return reply(socket, { id: 1, result: { cookies: [{ name: "auth", value: "ok" }] } });
+    }
+    return reply(socket, { id: 1, result: {} });
+  });
+  const deps = { spawnImpl, fetchImpl, WebSocketImpl: Socket, sleepImpl: async () => {} };
+  let handle = null;
+  const common = {
+    loginUrl: "https://www.lotteon.com/",
+    chromeExecutable: "C:\\chrome.exe",
+    userDataDir: "C:\\shared",
+    detectControlsScript: "function detect() {}",
+    keepAlive: true,
+    onShared: (next) => {
+      handle = next;
+    },
+    deps,
+  };
+  assert.equal((await startExternalRetailerLogin(common)).ok, true);
+  assert.equal((await startExternalRetailerLogin({ ...common, loginUrl: "https://www.ssg.com/", shared: handle })).ok, true);
+  assert.equal(spawns, 1);
+  assert.equal(kills, 0);
+  closeLoginChrome(handle.child);
+  assert.equal(kills, 1);
+  closeLoginChrome(null);
+  closeLoginChrome({});
+});
+
+test("login wait reports heartbeat ticks while observing", async () => {
+  const ticks = [];
+  const page = {
+    evaluate: async () => ({ authenticated: false, blocked: false }),
+    getCookies: async () => [],
+  };
+  const result = await waitForExternalLogin({
+    page,
+    timeoutMs: 40,
+    sleepImpl: async () => {},
+    onProgress: (event) => ticks.push(event.tick),
+  });
+  assert.equal(result.code, "LOGIN_TIMEOUT");
+  assert.ok(ticks.length >= 1);
+  assert.equal(ticks[0], 1);
 });
 
 test("retailer login reports launch and connection failures with codes", async () => {
