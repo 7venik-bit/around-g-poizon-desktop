@@ -53,6 +53,7 @@ import {
 import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
 import { ShoppingAccounts, ShoppingLoginConnector } from "./services/shopping-accounts.mjs";
+import { parseBrowserCookieImport } from "./services/browser-cookie-import.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
 import { recoverOfficialCollection } from "./services/official-auto-recovery.mjs";
 import {
@@ -12691,6 +12692,48 @@ async function clearDomesticLogin(sourceId) {
   return { ok: true };
 }
 
+// Paste-import: the operator copies their own logged-in browser cookies
+// (JSON export) into the app's domestic search session. Scoped to SSG and
+// LotteON, whose bot walls block the app's anonymous automation while the
+// operator's own Chrome passes.
+const COOKIE_IMPORT_SOURCES = new Set(["ssg", "lotte"]);
+
+async function importRetailerCookies(sourceId, text) {
+  const source = domesticLoginSource(sourceId);
+  if (!source || !COOKIE_IMPORT_SOURCES.has(source.id)) {
+    return { ok: false, message: "지원하지 않는 소싱몰입니다." };
+  }
+  const parsed = parseBrowserCookieImport(text, source.domains);
+  if (parsed.error) return { ok: false, message: "쿠키 JSON을 읽지 못했습니다. 확장 프로그램에서 Export한 그대로 붙여넣어 주세요.", rejected: parsed.rejected };
+  if (!parsed.cookies.length) {
+    return { ok: false, message: `${source.name} 쿠키가 없습니다. 로그인된 상태에서 복사했는지 확인해 주세요.`, rejected: parsed.rejected };
+  }
+  const jar = session.fromPartition(DOMESTIC_SEARCH_PARTITION).cookies;
+  let applied = 0;
+  for (const cookie of parsed.cookies) {
+    try {
+      const host = String(cookie.domain).replace(/^\./, "");
+      const options = {
+        url: `https://${host}/`,
+        name: cookie.name,
+        value: cookie.value,
+        domain: `.${host}`,
+        path: cookie.path || "/",
+        secure: true,
+        httpOnly: cookie.httpOnly === true,
+      };
+      if (Number.isFinite(cookie.expirationDate)) options.expirationDate = cookie.expirationDate;
+      await jar.set(options);
+      applied += 1;
+    } catch {
+      parsed.rejected += 1;
+    }
+  }
+  await jar.flushStore().catch(() => {});
+  mainWindow?.webContents.send("domestic-login:changed", { sourceId: source.id });
+  return { ok: applied > 0, applied, rejected: parsed.rejected };
+}
+
 app.whenReady().then(async () => {
   app.setAppUserModelId("kr.aroundg.poizon");
   const userDataFolder = app.getPath("userData");
@@ -12781,6 +12824,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("domestic-login:list", () => domesticLoginStatuses());
   ipcMain.handle("domestic-login:open", (_event, sourceId) => openDomesticLogin(sourceId));
   ipcMain.handle("domestic-login:clear", (_event, sourceId) => clearDomesticLogin(sourceId));
+  ipcMain.handle("domestic-login:import-cookies", (_event, input) => importRetailerCookies(input?.sourceId, input?.text));
   ipcMain.handle("naver-account:save", (_event, config) => saveNaverAccount(config));
   ipcMain.handle("shopping-accounts:list", async () => {
     const {accounts,connector} = shoppingAccountServices();
