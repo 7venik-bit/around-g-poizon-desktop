@@ -12717,7 +12717,8 @@ async function importRetailerCookies(sourceId, text) {
     return { ok: false, message: "지원하지 않는 소싱몰입니다." };
   }
   const parsed = parseBrowserCookieImport(text, source.domains);
-  if (parsed.error) return { ok: false, message: "쿠키 JSON을 읽지 못했습니다. 확장 프로그램에서 Export한 그대로 붙여넣어 주세요.", rejected: parsed.rejected };
+  if (parsed.error === "COOKIE_EMPTY") return { ok: false, message: "먼저 쿠키 내용을 붙여넣어 주세요.", rejected: 0 };
+  if (parsed.error) return { ok: false, message: "쿠키 내용을 읽지 못했습니다. JSON Export 또는 cookie.txt 그대로 붙여넣어 주세요.", rejected: parsed.rejected };
   if (!parsed.cookies.length) {
     return { ok: false, message: `${source.name} 쿠키가 없습니다. 로그인된 상태에서 복사했는지 확인해 주세요.`, rejected: parsed.rejected };
   }
