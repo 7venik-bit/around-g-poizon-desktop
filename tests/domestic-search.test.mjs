@@ -18,6 +18,7 @@ import {
   isSsgOfficialBrandHall,
   internalPortalSearchQuery,
   lotteServerSearchCard,
+  mergeAnalyzedProducts,
   naverFashionTownUrl,
   naverFashionTownPortalUrl,
   naverShoppingPortalUrl,
@@ -263,8 +264,7 @@ test("롯데온은 백화점 마크 없는 카드를 후보에서 제외한다",
   assert.equal(result.products.length, 0);
 });
 
-test("롯데온 서버 상품은 백화점 플래그를 살리고 카드로 만들 수 있다", () => {
-  const flagged = lotteServerSearchCard(
+test("롯데온 서버 상품은 백화점 플래그를 살리고 카드로 만들 수 있다", () => {  const flagged = lotteServerSearchCard(
     { title: "W 덩크 로우 DD1503-101", url: "/product/PD49741415?mall_no=1", brand: "나이키", price: 81360, departmentStore: true },
   );
   assert.equal(flagged.departmentStoreLabelMatched, true);
@@ -297,6 +297,19 @@ test("롯데온 서버 상품은 품번·브랜드 매칭으로 분석에 들어
   assert.equal(result.products.length, 1);
   assert.ok(result.products[0].url.includes("PD49741415"));
   assert.equal(result.products[0].articleNumberVerified, true);
+});
+
+test("비어 보이는 DOM 판정과 별도로 서버 증거 상품을 합친다", () => {
+  const dom = [];
+  const server = [
+    { url: "https://www.lotteon.com/product/PD49741415?mall_no=1" },
+    { url: "https://www.lotteon.com/product/PD49741415?mall_no=1" },
+    { url: "" },
+  ];
+  const merged = mergeAnalyzedProducts(dom, server);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].url, "https://www.lotteon.com/product/PD49741415?mall_no=1");
+  assert.deepEqual(mergeAnalyzedProducts(null, null), []);
 });
 import { OFFICIAL_DOMAIN_STATUS } from "../services/official-domain-registry.mjs";
 

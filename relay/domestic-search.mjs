@@ -499,6 +499,20 @@ export function parseNaverFashionTownChannelCounts(labels = []) {
   return Object.keys(channelLabels).every((store) => Number.isFinite(counts[store])) ? counts : null;
 }
 
+// Merge server-side evidence products into DOM-analyzed products without
+// letting a bot-emptied DOM verdict discard them. Deduplicates by URL.
+export function mergeAnalyzedProducts(baseProducts = [], extraProducts = []) {
+  const base = Array.isArray(baseProducts) ? [...baseProducts] : [];
+  const seen = new Set(base.map((product) => String(product?.url || product?.id || "")));
+  for (const product of Array.isArray(extraProducts) ? extraProducts : []) {
+    const key = String(product?.url || product?.id || "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    base.push(product);
+  }
+  return base;
+}
+
 // Lotte renders its grid client-side and may serve automation an empty grid,
 // but the same response embeds the full search payload (econJs initialData)
 // server-side. Parse it so exact-code products are not lost when the rendered
