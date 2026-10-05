@@ -82,3 +82,15 @@ test("a locally launched headless Chrome yields its cookie store", async (t) => 
   assert.ok(Array.isArray(read.cookies));
   assert.ok(Number.isInteger(read.copiedFiles));
 });
+
+test("locked cookie database reports Chrome shutdown instead of missing login", async () => {
+  const { summarizeChromeImportAttempts } = await import("../services/chrome-profile-cookies.mjs");
+  const locked = summarizeChromeImportAttempts([
+    { profile: "Default", copied: 3, dbCopied: false, total: 0 },
+    { profile: "Profile 1", copied: 1, dbCopied: false, total: 0, failure: "" },
+  ], "SSG·신세계백화점");
+  assert.match(locked, /완전히 종료/);
+  assert.doesNotMatch(locked, /먼저 로그인/);
+  const missing = summarizeChromeImportAttempts([], "SSG·신세계백화점");
+  assert.match(missing, /먼저 로그인/);
+});

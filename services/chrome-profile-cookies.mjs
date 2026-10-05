@@ -63,6 +63,23 @@ export function chromeProfileNamesToTry() {
   return ["Default", "Profile 1", "Profile 2", "Profile 3"];
 }
 
+// Final failure message for one-click import. When profile files copy but the
+// cookie database never does, Chrome is running and locking it: quitting
+// Chrome fully unlocks the copy. Counts only, never cookie contents.
+export function summarizeChromeImportAttempts(attempts = [], sourceName = "") {
+  const list = Array.isArray(attempts) ? attempts : [];
+  const summary = list.map((attempt) => {
+    if (attempt?.failure) return `${attempt.profile}: 실패`;
+    return `${attempt.profile}: 파일 ${Number(attempt?.copied) || 0}개·쿠키 ${Number(attempt?.total) || 0}개`;
+  }).join(", ");
+  const filesCopied = list.some((attempt) => Number(attempt?.copied) > 0);
+  const dbCopied = list.some((attempt) => attempt?.dbCopied === true);
+  if (filesCopied && !dbCopied) {
+    return `${sourceName} 쿠키 파일을 읽지 못했습니다[${summary}]. Chrome이 실행 중이라 잠겨 있습니다. Chrome을 완전히 종료한 뒤 다시 눌러주세요.`;
+  }
+  return `${sourceName}에 로그인된 Chrome 프로필을 찾지 못했습니다[${summary}]. Chrome에서 먼저 로그인해 주세요.`;
+}
+
 // DevTools Network.getAllCookies entries use `expires` (seconds). Fold them
 // through the same retailer-domain validation as pasted exports.
 export function normalizeChromeCookieEntries(entries = [], allowedDomains = []) {
@@ -123,12 +140,16 @@ export async function readChromeStagingCookies(chromeExe = "", userDataDir = "",
     : join(tmpdir(), `around-g-chrome-${process.pid}-${Date.now()}`);
   const plan = chromeProfileCopyPlan(userDataDir, profileName, staging);
   let copiedFiles = 0;
+  let cookieDbCopied = false;
   for (const file of [...plan.files, { src: plan.localState, dst: plan.localStateDst }]) {
     try {
       if (!file.src || !existsSync(file.src)) continue;
       mkdirSync(dirname(file.dst), { recursive: true });
       cpSync(file.src, file.dst);
       copiedFiles += 1;
+      // The live cookie database is locked while Chrome runs. Only its
+      // presence proves the copy is usable; small JSON files copy anytime.
+      if (/cookies/i.test(String(file.src).split(/[\\/]/).pop() || "")) cookieDbCopied = true;
     } catch { /* a single unreadable file must not stop the import */ }
   }
   if (!copiedFiles) throw new Error("CHROME_PROFILE_MISSING");
@@ -156,8 +177,9 @@ export async function readChromeStagingCookies(chromeExe = "", userDataDir = "",
       || (Array.isArray(targets) ? targets : [])[0];
     if (!page?.webSocketDebuggerUrl) throw new Error("CHROME_TARGET_MISSING");
     const socket = new WebSocketImpl(page.webSocketDebuggerUrl);
+    let cookies = [];
     try {
-      const cookies = await new Promise((resolve, reject) => {
+      cookies = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("CHROME_DEVTOOLS_TIMEOUT")), timeoutMs);
         socket.onmessage = (event) => {
           let payload = null;
@@ -173,7 +195,7 @@ export async function readChromeStagingCookies(chromeExe = "", userDataDir = "",
         socket.onerror = () => { clearTimeout(timer); reject(new Error("CHROME_DEVTOOLS_TIMEOUT")); };
         socket.onopen = () => socket.send(JSON.stringify({ id: 1, method: "Network.getAllCookies" }));
       });
-      return { cookies, copiedFiles };
+      return { cookies, copiedFiles, cookieDbCopied };
     } finally {
       try { socket.close(); } catch {}
     }
