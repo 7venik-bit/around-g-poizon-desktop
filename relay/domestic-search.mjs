@@ -1219,6 +1219,94 @@ export async function runRetailerSearchPipeline({
   };
 }
 
+// Six-stage retailer flow driver in the operator's order:
+// 1 로그인(프로그램 내 네이버 로그인) → 2 상품검색(기존 그대로)
+// → 3 로고확인(공식·백화점) → 4 상품인식(이미지+상품명+상품코드 우선순위)
+// → 5 재고확인(상품 클릭 후 사이즈 재고) → 6 데이터(무신사식 나열 표시).
+// Pure planner: given a source state and its matched products, returns the
+// next stage action. Predicates mirror `searchStepProgress` in
+// src/domestic-result-verdict.js so the plan never contradicts the row strip.
+// Stage 4 priority itself lives in services/matcher.mjs `scoreProductCandidate`
+// (상품코드 55점 + 상품명 30점 + 이미지 15점).
+export const SIX_STAGE_RETAILER_FLOW = Object.freeze([
+  { key: "login", label: "로그인" },
+  { key: "search", label: "상품검색" },
+  { key: "badges", label: "로고확인" },
+  { key: "identity", label: "상품인식" },
+  { key: "stock", label: "재고확인" },
+  { key: "data", label: "데이터" },
+]);
+
+export function nextRetailerStageAction(source = {}, matchedProducts = []) {
+  const products = Array.isArray(matchedProducts) ? matchedProducts.filter(Boolean) : [];
+  const reason = String(source?.verificationReason || "");
+
+  // Stage 1 로그인: authentication gates everything, never retried automatically.
+  if (source?.loginRequired === true || source?.securityVerificationRequired === true) {
+    return {
+      stage: "login",
+      action: "manual_login",
+      blocked: true,
+      reason: source?.loginRequired === true ? "login_required" : "security_verification_required",
+    };
+  }
+
+  // Stage 2 상품검색: existing query order (code → title → title+code) unchanged.
+  const submissionBlocked = /^(search_query_missing|search_submission_failed|page_load_failed|page_load_timeout|network_error)$/
+    .test(reason);
+  const failed = source?.verificationFailed === true || source?.rateLimited === true;
+  const searchDone = Boolean(source?.searchCompleted || source?.countVerified
+    || source?.absenceConfirmed || products.length > 0);
+  if (!searchDone) {
+    if (submissionBlocked || failed) {
+      return { stage: "search", action: "fix_and_resubmit", blocked: true, reason: reason || "search_failed" };
+    }
+    const submitted = Boolean(source?.searchSubmitted
+      || source?.verificationPending || source?.detailVerificationPending);
+    return { stage: "search", action: submitted ? "await_search" : "submit_query", blocked: false, reason: "" };
+  }
+
+  // Stage 3 로고확인: official-mall and department-store badges before identity.
+  const brandEvidence = hasRetailerBrandEvidence(products)
+    || source?.naverTrustedChannelEvidence === true;
+  if (products.length > 0 && !brandEvidence) {
+    return { stage: "badges", action: "verify_badges", blocked: false, reason: "brand_evidence_missing" };
+  }
+
+  // Stage 4 상품인식: consumes the scoreProductCandidate priority result.
+  const count = Number(source?.count);
+  const recognized = products.length > 0
+    || source?.presenceConfirmed === true || source?.exactProductPresenceConfirmed === true
+    || (source?.searchCompleted === true && Number.isFinite(count) && count > 0);
+  const mismatch = products.length === 0 && Number(source?.identityRejectedCount || 0) > 0;
+  const authoritativeEmpty = products.length === 0 && (source?.absenceConfirmed === true
+    || source?.naverAllSearchVerdict === "absent"
+    || (source?.countVerified === true && Number(source?.count) === 0));
+  if (!recognized && !authoritativeEmpty) {
+    if (mismatch) {
+      return { stage: "identity", action: "try_next_query", blocked: true, reason: "product_identity_mismatch" };
+    }
+    return { stage: "identity", action: "match_identity", blocked: false, reason: "" };
+  }
+  if (!recognized && authoritativeEmpty) {
+    return { stage: "identity", action: "done_empty", blocked: false, reason: "" };
+  }
+
+  // Stage 5 재고확인: product-detail click first, then size/stock evidence.
+  const stockKnown = products.some((product) => product?.stockVerified === true
+    || product?.stockCoverage === "known" || Number(product?.price || 0) > 0);
+  if (!stockKnown) {
+    return { stage: "stock", action: "collect_stock", blocked: false, reason: "" };
+  }
+
+  // Stage 6 데이터: finalized values listed Musinsa-style by the renderer.
+  const hasPricedData = products.some((product) => Number(product?.price || 0) > 0);
+  if (!hasPricedData) {
+    return { stage: "data", action: "finalize_data", blocked: false, reason: "" };
+  }
+  return { stage: "data", action: "done", blocked: false, reason: "" };
+}
+
 export async function queryDomesticProducts({
   query,
   articleNumber = "",
