@@ -11,10 +11,10 @@ import { syncPoizonPageCheckpoint } from "./services/poizon-page-checkpoint.mjs"
 import { createPageCrossCheck, verificationConditionLabel } from "./services/live-poizon-crosscheck.mjs";
 import { paintReviewPage as paintSellerVerification } from "./services/poizon-review-paint.mjs";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, Notification, safeStorage, screen, session, shell } from "electron";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync } from "node:fs";
 import { appendFile, copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { readSheet } from "read-excel-file/node";
 import writeXlsxFile from "write-excel-file/node";
 import { readFirstDataSheet } from "./services/excel-reader.mjs";
@@ -52,7 +52,12 @@ import {
 } from "./services/popular-excel.mjs";
 import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
-import { ShoppingAccounts, ShoppingLoginConnector } from "./services/shopping-accounts.mjs";
+import { ShoppingAccounts, ShoppingLoginConnector, captureShoppingLoginPage } from "./services/shopping-accounts.mjs";
+import {
+  findChromeExecutable,
+  externalLoginMessage,
+  startExternalRetailerLogin,
+} from "./services/external-chrome-login.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
 import { recoverOfficialCollection } from "./services/official-auto-recovery.mjs";
 import {
@@ -12183,6 +12188,32 @@ function domesticLoginSource(sourceId) {
   return DOMESTIC_LOGIN_SOURCES.find((source) => source.id === String(sourceId || ""));
 }
 
+// External-Chrome login ledger for SSG/Lotte. Anonymous session cookies can
+// never prove these retailers are logged in, so an explicit confirmation
+// (external window login + imported session) gates their searches while a
+// mid-search loginRequired observation forces re-verification (fail-closed).
+const EXTERNAL_LOGIN_RETAILER_IDS = new Set(["ssg", "lotte"]);
+const EXTERNAL_LOGIN_CONFIRM_TTL_MS = 6 * 3600_000;
+const confirmedExternalLogins = new Map();
+const retailersNeedingLogin = new Set();
+
+function loginSourceIdForStore(store = "") {
+  const name = String(store || "");
+  if (/^(?:SSG)(?:\s|$)/.test(name)) return "ssg";
+  if (/^롯데온/.test(name)) return "lotte";
+  if (name === "무신사") return "musinsa";
+  if (/^네이버/.test(name)) return "naver";
+  if (name === "코오롱몰") return "kolon";
+  return "";
+}
+
+function noteExternalLoginRequired(store = "") {
+  const sourceId = loginSourceIdForStore(store);
+  if (!sourceId) return;
+  retailersNeedingLogin.add(sourceId);
+  confirmedExternalLogins.delete(sourceId);
+}
+
 let shoppingAccountServicesCache;
 function shoppingAccountServices() {
   if (shoppingAccountServicesCache) return shoppingAccountServicesCache;
@@ -12453,6 +12484,15 @@ function domesticLoginFailure(source, code, message) {
 
 async function hasUsableDomesticLoginSession(sourceId) {
   if (sourceId === "naver") return hasUsableNaverLoginSession();
+  if (EXTERNAL_LOGIN_RETAILER_IDS.has(String(sourceId || ""))) {
+    // SSG/Lotte set session-like cookies for anonymous visitors, so cookie
+    // names alone must never skip their login step. Only an explicit external
+    // login confirmation (or a fresh re-verification) counts.
+    if (retailersNeedingLogin.has(sourceId)) return false;
+    const confirmedAt = Number(confirmedExternalLogins.get(sourceId) || 0);
+    if (confirmedAt && Date.now() - confirmedAt < EXTERNAL_LOGIN_CONFIRM_TTL_MS) return true;
+    return false;
+  }
   const source = domesticLoginSource(sourceId);
   if (!source) return false;
   const persistentSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
@@ -12509,6 +12549,87 @@ function naverLoginScopeRestriction(scopeId, failure = null, now = Date.now()) {
   return blockedNaverLoginScopes.get(key)?.failure || null;
 }
 
+async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, canceled = () => false } = {}) {
+  const source = domesticLoginSource(sourceId);
+  if (!source) return { ok: false, code: "CHROME_LAUNCH_FAILED", message: "지원하지 않는 소싱몰입니다." };
+  if (typeof WebSocket === "undefined") return { ok: false, fallbackInApp: true };
+  const chromeExecutable = findChromeExecutable({ existsSyncImpl: existsSync });
+  if (!chromeExecutable) return { ok: false, fallbackInApp: true };
+  let credentials = null;
+  try {
+    const saved = shoppingAccountServices().accounts.credentials(sourceId);
+    if (saved && !saved.code && saved.loginId && saved.password) {
+      credentials = { loginId: saved.loginId, password: saved.password };
+    }
+  } catch {
+    credentials = null;
+  }
+  const userDataDir = join(app.getPath("userData"), "external-login", String(sourceId));
+  try {
+    mkdirSync(userDataDir, { recursive: true });
+  } catch {
+    // Directory creation failure surfaces as a launch failure below.
+  }
+  onProgress({ phase: "authentication", source: `${source.name} 외부 로그인 확인`, progressObserved: false });
+  const started = await startExternalRetailerLogin({
+    loginUrl: source.loginUrl || source.url,
+    credentials,
+    chromeExecutable,
+    userDataDir,
+    detectControlsScript: captureShoppingLoginPage.toString(),
+    deps: {
+      spawnImpl: spawn,
+      fetchImpl: fetch,
+      WebSocketImpl: WebSocket,
+      sleepImpl: wait,
+      canceled,
+    },
+  });
+  if (!started.ok) return started;
+  const persistentSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
+  let imported = 0;
+  for (const cookie of started.cookies || []) {
+    try {
+      const host = String(cookie.domain || "").replace(/^\./, "");
+      if (!host || !source.domains.some((domain) => host === domain || host.endsWith(`.${domain}`))) continue;
+      await persistentSession.cookies.set({
+        url: `${cookie.secure === false ? "http" : "https"}://${host}${cookie.path || "/"}`,
+        name: cookie.name,
+        value: cookie.value,
+        path: cookie.path || "/",
+        secure: cookie.secure !== false,
+        httpOnly: cookie.httpOnly === true,
+        ...(cookie.domain ? { domain: cookie.domain } : {}),
+        ...(Number.isFinite(cookie.expirationDate) ? { expirationDate: cookie.expirationDate } : {}),
+      });
+      imported += 1;
+    } catch {
+      // One rejected cookie must not discard the remaining session.
+    }
+  }
+  if (!imported) {
+    return { ok: false, code: "LOGIN_TIMEOUT", message: "외부 창 로그인은 확인됐지만 검색 세션을 가져오지 못했습니다." };
+  }
+  confirmedExternalLogins.set(sourceId, Date.now());
+  retailersNeedingLogin.delete(sourceId);
+  return { ok: true, imported };
+}
+
+async function openRetailerLoginForSearch(sourceId, { onProgress = () => {}, index = 0, total = 1 } = {}) {
+  onProgress({
+    completed: index,
+    total,
+    phase: "authentication",
+    source: `${domesticLoginSource(sourceId)?.name || "판매처"} 외부 로그인 확인`,
+    progressObserved: false,
+  });
+  const attempt = await attemptExternalRetailerLogin(sourceId, { onProgress });
+  if (attempt.ok) return { ok: true, opened: true, external: true, automatic: { ok: true, external: true } };
+  // Without Chrome or a CDP channel the shared in-app window path below runs.
+  if (attempt.fallbackInApp) return { ok: false, fallbackInApp: true };
+  return { ok: false, opened: false, external: true, automatic: { ok: false, code: attempt.code }, message: attempt.message };
+}
+
 async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress = () => {}, loginScopeId = "") {
   const sourceIds = domesticLoginSourceIdsForSearch(enabledSourceGroups);
   const failures = [];
@@ -12529,6 +12650,24 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
     if (await hasUsableDomesticLoginSession(sourceId)) {
       if (sourceId === "naver") rememberNaverLoginScope(loginScopeId);
       continue;
+    }
+    // SSG/Lotte log in through a visible external Chrome window (program
+    // credentials auto-filled when saved, manual otherwise) before any
+    // product search. Their step is never skipped on anonymous cookies.
+    if (EXTERNAL_LOGIN_RETAILER_IDS.has(sourceId)) {
+      const external = await openRetailerLoginForSearch(sourceId, { onProgress, index, total: sourceIds.length });
+      if (external?.ok === true) {
+        mainWindow?.webContents.send("domestic-search:security-complete", {
+          source: source.name,
+          message: `${source.name} 외부 로그인 확인 완료`,
+        });
+        continue;
+      }
+      if (external?.fallbackInApp !== true) {
+        failures.push(domesticLoginFailure(source, external?.automatic?.code || "LOGIN_TIMEOUT",
+          external?.message || `${source.name} 외부 로그인을 완료하지 못했습니다.`));
+        continue;
+      }
     }
     if (sourceId === "naver") {
       const credentials = naverAccountCredentials();
@@ -12682,6 +12821,8 @@ async function openDomesticLogin(sourceId, { background = false } = {}) {
 async function clearDomesticLogin(sourceId) {
   const source = domesticLoginSource(sourceId);
   if (!source) return { ok: false, message: "지원하지 않는 소싱몰입니다." };
+  retailersNeedingLogin.delete(String(sourceId || ""));
+  confirmedExternalLogins.delete(String(sourceId || ""));
   if (source.id === "naver" && typeof invalidateNaverLoginScope === "function") invalidateNaverLoginScope();
   // A provider account change must not leave a linked shop signed into the
   // previous person while reporting the new provider account as connected.
@@ -13508,6 +13649,11 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       }
       if ((matched?.sources || []).some((source) => String(source?.store || "") === "네이버 패션타운"
         && source?.loginRequired === true)) invalidateNaverLoginScope(input?.loginScopeId);
+      // A login requirement observed mid-search invalidates the explicit
+      // external confirmation so the next product re-verifies (fail-closed).
+      for (const source of matched?.sources || []) {
+        if (source?.loginRequired === true) noteExternalLoginRequired(source?.store);
+      }
       await preserveVerifiedResults(matched);
       if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
       const exactMatch = products.some((product) =>

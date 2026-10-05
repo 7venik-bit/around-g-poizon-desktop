@@ -226,6 +226,7 @@ test('saved credential errors remain source-scoped and do not open an empty logi
   for (const code of ['NAVER_CREDENTIALS_REQUIRED', 'NAVER_CREDENTIALS_UNREADABLE']) {
     let opened = 0;
     const ctx = {
+      EXTERNAL_LOGIN_RETAILER_IDS: new Set(),
       domesticLoginSourceIdsForSearch: () => ['naver'], domesticLoginSource: () => ({ id: 'naver', name: '네이버' }),
       hasUsableDomesticLoginSession: async () => false, naverAccountCredentials: () => ({ code }),
       naverLoginScopeConfirmed: () => false, rememberNaverLoginScope() {},
@@ -240,7 +241,7 @@ test('saved credential errors remain source-scoped and do not open an empty logi
 });
 
 test('existing authenticated session works without a stored password', async () => {
-  const ctx = { domesticLoginSourceIdsForSearch: () => ['naver'], domesticLoginSource: () => ({ id: 'naver' }),
+  const ctx = { EXTERNAL_LOGIN_RETAILER_IDS: new Set(), domesticLoginSourceIdsForSearch: () => ['naver'], domesticLoginSource: () => ({ id: 'naver' }),
     hasUsableDomesticLoginSession: async () => true,
     naverLoginScopeConfirmed: () => false, rememberNaverLoginScope() {},
     naverAccountCredentials: () => { throw new Error('must reuse session first'); } };
@@ -253,6 +254,7 @@ test('a confirmed Naver batch scope never opens another login window for its nex
   let sessionChecks = 0;
   let opened = 0;
   const ctx = {
+    EXTERNAL_LOGIN_RETAILER_IDS: new Set(),
     domesticLoginSourceIdsForSearch: () => ['naver'],
     domesticLoginSource: () => ({ id: 'naver', name: '네이버' }),
     naverLoginScopeConfirmed: scope => scope === 'batch-17',
@@ -269,6 +271,7 @@ test('a confirmed Naver batch scope never opens another login window for its nex
 test('107 products reuse one confirmed session and invalidation requires a fresh check', async () => {
   let checks = 0;
   const ctx = {
+    EXTERNAL_LOGIN_RETAILER_IDS: new Set(),
     confirmedNaverLoginScopes: new Map(), blockedNaverLoginScopes: new Map(), NAVER_LOGIN_SCOPE_TTL_MS: 21600000,
     domesticLoginSourceIdsForSearch: () => ['naver'],
     domesticLoginSource: () => ({ id: 'naver', name: '네이버' }),
@@ -296,6 +299,7 @@ test('a visible Naver login page waits for manual completion instead of skipping
   let checks = 0;
   const loginWindow = { isDestroyed: () => false, close() {} };
   const ctx = {
+    EXTERNAL_LOGIN_RETAILER_IDS: new Set(),
     domesticLoginSourceIdsForSearch: () => ['naver'],
     domesticLoginSource: () => ({ id: 'naver', name: '네이버' }),
     hasUsableDomesticLoginSession: async () => ++checks >= 3,
