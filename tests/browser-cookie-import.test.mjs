@@ -66,4 +66,9 @@ test("cookie import is wired from login card to the search session", async () =>
   const accounts = await readFile(new URL("../src/shopping-accounts.js", import.meta.url), "utf8");
   assert.match(accounts, /data-shop-cookies-apply/);
   assert.match(accounts, /importRetailerCookies/);
+  assert.match(main, /ipcMain\.handle\("domestic-login:import-chrome-cookies"/);
+  assert.match(main, /readChromeStagingCookies/);
+  assert.match(preload, /importChromeCookies/);
+  assert.match(accounts, /data-shop-chrome-import/);
+  assert.match(accounts, /importChromeCookies/);
 });

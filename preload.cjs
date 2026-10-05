@@ -138,6 +138,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   openDomesticLogin: (sourceId) => ipcRenderer.invoke("domestic-login:open", sourceId),
   clearDomesticLogin: (sourceId) => ipcRenderer.invoke("domestic-login:clear", sourceId),
   importRetailerCookies: (input) => ipcRenderer.invoke("domestic-login:import-cookies", input),
+  importChromeCookies: (input) => ipcRenderer.invoke("domestic-login:import-chrome-cookies", input),
   onDomesticLoginChanged: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on("domestic-login:changed", handler);

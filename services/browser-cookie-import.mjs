@@ -25,7 +25,7 @@ function sanitizeExpiration(value) {
   return Math.floor(timestamp);
 }
 
-function normalizeCookieEntry(entry, allowedDomains = []) {
+export function normalizeCookieEntry(entry, allowedDomains = []) {
   if (!entry || typeof entry !== "object") return null;
   const name = String(entry.name ?? "");
   const value = Object.hasOwn(entry, "value") ? String(entry.value ?? "") : null;
