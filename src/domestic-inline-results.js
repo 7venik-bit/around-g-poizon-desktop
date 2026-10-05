@@ -212,7 +212,8 @@
 
   function renderSearchDiagnostics(sources) {
     const failures = sources.filter(source => source?.autoRecovery || source?.verificationReason || source?.verificationFailed
-      || source?.securityVerificationRequired || source?.loginRequired);
+      || source?.securityVerificationRequired || source?.loginRequired
+      || source?.verificationDiagnostics?.lotteServerEvidence);
     if (!failures.length) return "";
     const safeUrl = value => {
       try {
@@ -251,6 +252,9 @@
         ["페이지 상태", d.documentReadyState], ["검색 주소 일치", d.expectedPage],
         ["화면 확인 횟수", d.inspectedFrames], ["화면 글자 수", d.bodyLength], ["상품 링크 수", d.productCardCount],
         ["표시 결과 수", d.visibleResultCount], ["양수 결과 표시", d.positiveCount], ["상품 없음 표시", d.explicitEmpty],
+        ["서버 검색 상태", d.lotteServerEvidence?.httpStatus],
+        ["서버 검색 크기", d.lotteServerEvidence?.bytes],
+        ["서버 검색 상품 수", d.lotteServerEvidence?.items],
         ["접속 오류", d.navigationError], ["화면 읽기 오류", d.inspectionError], ["수집 오류", d.errorMessage],
         ["상세 처리 수", d.processedProducts], ["상세 전체 수", d.totalProducts], ["상세 확인 필요 수", d.failedDetails],
         ["마지막 상세 주소", safeUrl(d.lastDetailUrl)], ["마지막 상세 오류", d.lastDetailFailure],
