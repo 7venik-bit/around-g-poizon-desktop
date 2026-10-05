@@ -62,6 +62,7 @@ import {
   chromeProfileNamesToTry,
   normalizeChromeCookieEntries,
   readChromeStagingCookies,
+  summarizeChromeImportAttempts,
 } from "./services/chrome-profile-cookies.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
 import { recoverOfficialCollection } from "./services/official-auto-recovery.mjs";
@@ -12796,7 +12797,7 @@ async function importChromeProfileCookies(sourceId) {
         failure = String(error?.message || error);
       }
       const total = read ? read.cookies.length : 0;
-      attempts.push({ profile, copied: read ? read.copiedFiles : 0, total, failure });
+      attempts.push({ profile, copied: read ? read.copiedFiles : 0, dbCopied: read ? read.cookieDbCopied === true : false, total, failure });
       if (!read || !total) continue;
       const { cookies: scoped, rejected } = normalizeChromeCookieEntries(read.cookies, source.domains);
       if (!scoped.length) continue;
@@ -12806,11 +12807,7 @@ async function importChromeProfileCookies(sourceId) {
         ? { ok: true, applied, rejected, profile }
         : { ok: false, message: `${source.name} 쿠키를 적용하지 못했습니다.`, rejected };
     }
-    const summary = attempts.map((attempt) => {
-      if (attempt.failure) return `${attempt.profile}: 실패`;
-      return `${attempt.profile}: 파일 ${attempt.copied}개·쿠키 ${attempt.total}개`;
-    }).join(", ");
-    return { ok: false, message: `${source.name}에 로그인된 Chrome 프로필을 찾지 못했습니다[${summary}]. Chrome에서 먼저 로그인해 주세요.` };
+    return { ok: false, message: summarizeChromeImportAttempts(attempts, source.name) };
   } finally {
     cleanup();
   }
