@@ -188,8 +188,12 @@
       || source?.absenceConfirmed || products.length > 0);
     const searchActive = Boolean(source?.verificationPending || source?.detailVerificationPending)
       && !searchDone;
-    const brandEvidence = products.some((product) => product?.brandVerifiedFromCard === true
-      || product?.officialStoreVerified === true || product?.naverTrustedChannelEvidence === true)
+    // Stage 3 admits official and department-store logos only. Parallel
+    // importers print the same brand names, so a bare brand-name match
+    // (brandVerifiedFromCard) must never pass the logo gate.
+    const brandEvidence = products.some((product) => product?.officialStoreVerified === true
+      || product?.departmentStoreLabelMatched === true
+      || product?.naverTrustedChannelEvidence === true)
       || source?.naverTrustedChannelEvidence === true;
     const recognized = products.length > 0
       || source?.presenceConfirmed === true || source?.exactProductPresenceConfirmed === true

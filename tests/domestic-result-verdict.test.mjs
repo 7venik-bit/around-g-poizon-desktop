@@ -28,12 +28,12 @@ test('step progress follows the login-search-badge-identity-stock-data pipeline'
   );
   const found = states(
     { searchSubmitted: true, searchCompleted: true, count: 2, countVerified: true },
-    [{ brandVerifiedFromCard: true, articleNumberVerified: true, price: 81360, stockVerified: true }],
+    [{ officialStoreVerified: true, articleNumberVerified: true, price: 81360, stockVerified: true }],
   );
   assert.equal(found, 'done,done,done,done,done,done');
 });
 
-test('logo step stays pending without explicit brand evidence',()=>{
+test('logo step stays pending without an official or department logo',()=>{
   const { searchStepProgress } = context.AroundGDomesticVerdict;
   const states = (source, products = []) => searchStepProgress(source, products).map((step) => step.state);
   assert.equal(states(
@@ -44,6 +44,16 @@ test('logo step stays pending without explicit brand evidence',()=>{
     { searchSubmitted: true, searchCompleted: true, count: 1, countVerified: true },
     [{ brandVerifiedFromCard: false, price: 81360 }],
   )[2], 'pending');
+  // A bare brand-name match proves nothing: parallel importers print the
+  // same brand names, so only official/department logos pass the gate.
+  assert.equal(states(
+    { searchSubmitted: true, searchCompleted: true, count: 1, countVerified: true },
+    [{ brandVerifiedFromCard: true, price: 81360 }],
+  )[2], 'pending');
+  assert.equal(states(
+    { searchSubmitted: true, searchCompleted: true, count: 1, countVerified: true },
+    [{ brandVerifiedFromCard: true, departmentStoreLabelMatched: true, price: 81360 }],
+  )[2], 'done');
 });
 
 test('SSG bot-wall block stays a manual-check notice, never product absence',()=>{

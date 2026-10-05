@@ -74,11 +74,14 @@ test("empty candidates complete the search but never confirm absence", async () 
   assert.equal(result.absenceConfirmed, false);
 });
 
-test("logo evidence requires an explicit brand flag", () => {
+test("logo evidence requires an official or department logo", () => {
   assert.equal(hasRetailerBrandEvidence([{ price: 1000 }]), false);
   assert.equal(hasRetailerBrandEvidence([{ brandVerifiedFromCard: false }]), false);
-  assert.equal(hasRetailerBrandEvidence([{ brandVerifiedFromCard: true }]), true);
+  // A bare brand-name match is not a logo: parallel importers print it too.
+  assert.equal(hasRetailerBrandEvidence([{ brandVerifiedFromCard: true }]), false);
   assert.equal(hasRetailerBrandEvidence([{ officialStoreVerified: true }]), true);
+  assert.equal(hasRetailerBrandEvidence([{ departmentStoreLabelMatched: true }]), true);
+  assert.equal(hasRetailerBrandEvidence([{ naverTrustedChannelEvidence: true }]), true);
 });
 
 test("stock enrichment runs only after products are recognized", async () => {
