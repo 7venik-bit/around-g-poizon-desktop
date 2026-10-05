@@ -3886,6 +3886,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       content = JSON.stringify(parsedContent);
     }
     let lotteServerAnalyzed = null;
+    let lotteServerEvidence = null;
     if (String(source.store || "") === "롯데온" && !officialDirectDetail
       && !((parsedContent.productCards || []).length)) {
       // Lotte renders its grid client-side and may serve automation an empty
@@ -3894,8 +3895,14 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       // authoritative-looking empty verdict that must not discard real
       // server-side candidates. Detail verification still decides.
       try {
-        const serverHtml = await fetch(String(url || "")).then((response) => response.text());
+        const serverResponse = await fetch(String(url || ""));
+        const serverHtml = await serverResponse.text();
         const serverCards = parseLotteInitialDataProducts(serverHtml);
+        lotteServerEvidence = {
+          httpStatus: Number(serverResponse?.status || 0),
+          bytes: serverHtml.length,
+          items: serverCards.length,
+        };
         if (serverCards.length) {
           lotteServerAnalyzed = analyzeRenderedChannelProducts(JSON.stringify({
             productCards: serverCards.map((item) => lotteServerSearchCard(item)).filter(Boolean),
@@ -3909,6 +3916,12 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title, searchAttempt?.query || "");
     if (lotteServerAnalyzed && Array.isArray(lotteServerAnalyzed.products) && Array.isArray(analyzed?.products)) {
       analyzed.products = mergeAnalyzedProducts(analyzed.products, lotteServerAnalyzed.products);
+    }
+    if (lotteServerEvidence) {
+      analyzed.verificationDiagnostics = {
+        ...(analyzed?.verificationDiagnostics || {}),
+        lotteServerEvidence,
+      };
     }
     if (officialSearchResultVerified && Array.isArray(analyzed?.products)) {
       analyzed.products = analyzed.products.map(product => ({ ...product, officialSearchResultVerified: true }));

@@ -45,6 +45,17 @@ test('SSG and Lotte links open in the external browser instead of the walled in-
   for (const button of buttons) assert.equal(button.title, '외부 브라우저(크롬)에서 열기');
 });
 
+test('lotte server evidence opens diagnostics even without a failure reason', t => {
+  const f = renderer(t);
+  const body = f.render({products: [], sources: [{store: '롯데온', count: 0,
+    searchQuery: 'DD1503-101', searchUrl: 'https://www.lotteon.com/csearch/search/search?render=search&q=DD1503-101',
+    verificationDiagnostics: {lotteServerEvidence: {httpStatus: 200, bytes: 1500000, items: 4}}}]});
+  const details = body.querySelector('details.domestic-inline-diagnostics');
+  assert.ok(details);
+  assert.match(details.textContent, /서버 검색 상태: 200/);
+  assert.match(details.textContent, /서버 검색 상품 수: 4/);
+});
+
 test('diagnostics stay available alongside partial products without exposing whole pages or tokens', t => {
   const f = renderer(t);
   const body = f.render({partial:true,products:[{store:'롯데온',url:'https://www.lotteon.com/p/product/LO100',price:149000,
