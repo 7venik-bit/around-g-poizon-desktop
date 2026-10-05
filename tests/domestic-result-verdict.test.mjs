@@ -33,6 +33,19 @@ test('step progress follows the login-search-badge-identity-stock-data pipeline'
   assert.equal(found, 'done,done,done,done,done,done');
 });
 
+test('logo step stays pending without explicit brand evidence',()=>{
+  const { searchStepProgress } = context.AroundGDomesticVerdict;
+  const states = (source, products = []) => searchStepProgress(source, products).map((step) => step.state);
+  assert.equal(states(
+    { searchSubmitted: true, searchCompleted: true, count: 1, countVerified: true },
+    [{ price: 81360 }],
+  )[2], 'pending');
+  assert.equal(states(
+    { searchSubmitted: true, searchCompleted: true, count: 1, countVerified: true },
+    [{ brandVerifiedFromCard: false, price: 81360 }],
+  )[2], 'pending');
+});
+
 test('SSG bot-wall block stays a manual-check notice, never product absence',()=>{
   const blocked=sourceVerdict({store:'SSG',securityVerificationRequired:true,count:null,
     verificationReason:'ssg_access_limited_deferred',verificationStage:'retailer_result_navigation'});
