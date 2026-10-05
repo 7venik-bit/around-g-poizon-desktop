@@ -109,7 +109,7 @@ export function chromeHeadlessArguments(userDataDir = "", profileName = "Default
 
 // Launch a disposable headless Chrome on a COPIED profile (the live profile
 // is never touched) and read its whole cookie store over DevTools. No site is
-// visited. Returns { cookies, staging } — the caller removes staging.
+// visited. Resolves { cookies, copiedFiles }.
 export async function readChromeStagingCookies(chromeExe = "", userDataDir = "", profileName = "Default", options = {}) {
   const WebSocketImpl = options.WebSocket ?? globalThis.WebSocket;
   const fetchImpl = options.fetch ?? globalThis.fetch;
@@ -122,16 +122,16 @@ export async function readChromeStagingCookies(chromeExe = "", userDataDir = "",
     ? join(String(options.stagingRoot), "around-g-chrome")
     : join(tmpdir(), `around-g-chrome-${process.pid}-${Date.now()}`);
   const plan = chromeProfileCopyPlan(userDataDir, profileName, staging);
-  let copied = false;
+  let copiedFiles = 0;
   for (const file of [...plan.files, { src: plan.localState, dst: plan.localStateDst }]) {
     try {
       if (!file.src || !existsSync(file.src)) continue;
       mkdirSync(dirname(file.dst), { recursive: true });
       cpSync(file.src, file.dst);
-      copied = true;
+      copiedFiles += 1;
     } catch { /* a single unreadable file must not stop the import */ }
   }
-  if (!copied) throw new Error("CHROME_PROFILE_MISSING");
+  if (!copiedFiles) throw new Error("CHROME_PROFILE_MISSING");
   const child = spawn(chromeExe, chromeHeadlessArguments(staging, profileName, 0),
     { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
   try {
@@ -157,7 +157,7 @@ export async function readChromeStagingCookies(chromeExe = "", userDataDir = "",
     if (!page?.webSocketDebuggerUrl) throw new Error("CHROME_TARGET_MISSING");
     const socket = new WebSocketImpl(page.webSocketDebuggerUrl);
     try {
-      return await new Promise((resolve, reject) => {
+      const cookies = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("CHROME_DEVTOOLS_TIMEOUT")), timeoutMs);
         socket.onmessage = (event) => {
           let payload = null;
@@ -173,6 +173,7 @@ export async function readChromeStagingCookies(chromeExe = "", userDataDir = "",
         socket.onerror = () => { clearTimeout(timer); reject(new Error("CHROME_DEVTOOLS_TIMEOUT")); };
         socket.onopen = () => socket.send(JSON.stringify({ id: 1, method: "Network.getAllCookies" }));
       });
+      return { cookies, copiedFiles };
     } finally {
       try { socket.close(); } catch {}
     }
