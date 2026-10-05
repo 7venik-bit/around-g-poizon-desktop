@@ -222,6 +222,19 @@ test('renderer deadline settles even if both search and cancellation IPC never r
   assert.equal(result?.timedOut, true);
 });
 
+test('authentication progress reports login verification instead of completion', async t => {
+  const f = createFixture(t);
+  const response = deferred();
+  f.window.aroundG.searchDomestic = () => response.promise;
+  const run = f.run();
+  await tick();
+  f.api.progress({phase:'authentication',source:'롯데온·롯데백화점'});
+  assert.match(f.overlay().querySelector('.domestic-overlay-guide').textContent, /롯데온·롯데백화점 로그인 확인 중입니다/);
+  assert.doesNotMatch(f.overlay().querySelector('.domestic-overlay-guide').textContent, /확인 완료/);
+  response.resolve({ok:true,data:{products:[],sources:[]}});
+  await run;
+});
+
 test('source progress cannot claim overall 100% or another retailer after the last stage', async (t) => {
   const f = createFixture(t);
   const response = deferred();

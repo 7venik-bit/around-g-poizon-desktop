@@ -1517,6 +1517,8 @@ window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
     ? `${overlay.dataset.currentActivity ? `${overlay.dataset.currentActivity} · ` : ""}확인된 결과를 보관했습니다.`
     : payload.phase === "searching"
     ? `${String(payload.source || "판매처")} 상품과 가격을 확인하고 있습니다.`
+    : payload.phase === "authentication"
+    ? `${String(payload.source || "판매처")} 로그인 확인 중입니다.`
     : `${String(payload.source || "판매처")} 확인 완료 · 다음 검색 단계를 진행하고 있습니다.`;
 });
 

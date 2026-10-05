@@ -55,7 +55,7 @@ import { JsonStore } from "./services/store.mjs";
 import { ShoppingAccounts, ShoppingLoginConnector, captureShoppingLoginPage } from "./services/shopping-accounts.mjs";
 import {
   findChromeExecutable,
-  externalLoginMessage,
+  closeLoginChrome,
   startExternalRetailerLogin,
 } from "./services/external-chrome-login.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
@@ -399,7 +399,7 @@ const DOMESTIC_LOGIN_SOURCES = [
   { id: "kakao", name: "카카오 계정", url: "https://accounts.kakao.com/login", domains: ["accounts.kakao.com"] },
   { id: "kolon", name: "코오롱몰·코오롱스포츠", url: "https://www.kolonmall.com/", domains: ["kolonmall.com"] },
   { id: "musinsa", name: "무신사", url: "https://www.musinsa.com/", domains: ["musinsa.com"] },
-  { id: "ssg", name: "SSG·신세계백화점", url: "https://www.ssg.com/", domains: ["ssg.com"] },
+  { id: "ssg", name: "SSG·신세계백화점", url: "https://www.ssg.com/", loginUrl: "https://member.ssg.com/member/popup/popupLogin.ssg?originSite=https://www.ssg.com/&gnb=login", domains: ["ssg.com"] },
   { id: "lotte", name: "롯데온·롯데백화점", url: "https://www.lotteon.com/", loginUrl: "https://www.lotteon.com/p/member/login/common?rtnUrl=https://www.lotteon.com/p/display/main/lotteon", domains: ["lotteon.com"] },
   { id: "wconcept", name: "W컨셉", url: "https://www.wconcept.co.kr/", domains: ["wconcept.co.kr"] },
   { id: "okmall", name: "OK몰", url: "https://www.okmall.com/", domains: ["okmall.com"] },
@@ -12196,6 +12196,10 @@ const EXTERNAL_LOGIN_RETAILER_IDS = new Set(["ssg", "lotte"]);
 const EXTERNAL_LOGIN_CONFIRM_TTL_MS = 6 * 3600_000;
 const confirmedExternalLogins = new Map();
 const retailersNeedingLogin = new Set();
+// One shared external Chrome window for every retailer: each login opens as
+// another tab of the same window, so sessions are kept instead of logging in
+// again for every product search. Closed only when the program quits.
+let sharedExternalLoginChrome = null;
 
 function loginSourceIdForStore(store = "") {
   const name = String(store || "");
@@ -12549,7 +12553,7 @@ function naverLoginScopeRestriction(scopeId, failure = null, now = Date.now()) {
   return blockedNaverLoginScopes.get(key)?.failure || null;
 }
 
-async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, canceled = () => false } = {}) {
+async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, canceled = () => false, index = 0, total = 1 } = {}) {
   const source = domesticLoginSource(sourceId);
   if (!source) return { ok: false, code: "CHROME_LAUNCH_FAILED", message: "지원하지 않는 소싱몰입니다." };
   if (typeof WebSocket === "undefined") return { ok: false, fallbackInApp: true };
@@ -12582,13 +12586,24 @@ async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, c
     credentials = null;
     providerCredentials = null;
   }
-  const userDataDir = join(app.getPath("userData"), "external-login", String(sourceId));
+  const userDataDir = join(app.getPath("userData"), "external-login", "shared");
   try {
     mkdirSync(userDataDir, { recursive: true });
   } catch {
     // Directory creation failure surfaces as a launch failure below.
   }
-  onProgress({ phase: "authentication", source: `${source.name} 외부 로그인 확인`, progressObserved: false });
+  onProgress({ completed: index, total, phase: "authentication", source: source.name });
+  const heartbeat = ({ tick } = {}) => {
+    // Every heartbeat is novel so the 4-minute search watchdog treats the
+    // visible login wait as live progress instead of a stall.
+    onProgress({
+      completed: index,
+      total,
+      phase: "authentication",
+      source: source.name,
+      progressKey: `external-login:${sourceId}:${tick}`,
+    });
+  };
   const started = await startExternalRetailerLogin({
     loginUrl: source.loginUrl || source.url,
     credentials,
@@ -12597,6 +12612,12 @@ async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, c
     merchantDomains: source.domains,
     chromeExecutable,
     userDataDir,
+    shared: sharedExternalLoginChrome,
+    keepAlive: true,
+    onShared: (handle) => {
+      sharedExternalLoginChrome = handle;
+    },
+    onProgress: heartbeat,
     detectControlsScript: captureShoppingLoginPage.toString(),
     deps: {
       spawnImpl: spawn,
@@ -12641,10 +12662,9 @@ async function openRetailerLoginForSearch(sourceId, { onProgress = () => {}, ind
     completed: index,
     total,
     phase: "authentication",
-    source: `${domesticLoginSource(sourceId)?.name || "판매처"} 외부 로그인 확인`,
-    progressObserved: false,
+    source: domesticLoginSource(sourceId)?.name || "판매처",
   });
-  const attempt = await attemptExternalRetailerLogin(sourceId, { onProgress });
+  const attempt = await attemptExternalRetailerLogin(sourceId, { onProgress, index, total });
   if (attempt.ok) return { ok: true, opened: true, external: true, automatic: { ok: true, external: true } };
   // Without Chrome or a CDP channel the shared in-app window path below runs.
   if (attempt.fallbackInApp) return { ok: false, fallbackInApp: true };
@@ -14158,6 +14178,8 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 app.on("before-quit", () => {
+  closeLoginChrome(sharedExternalLoginChrome?.child);
+  sharedExternalLoginChrome = null;
   if(poizonLedgerSyncTimer)clearInterval(poizonLedgerSyncTimer);
   if (brandExportPollTimer) clearInterval(brandExportPollTimer);
   if (brandExportMonitorRestartTimer) clearTimeout(brandExportMonitorRestartTimer);
