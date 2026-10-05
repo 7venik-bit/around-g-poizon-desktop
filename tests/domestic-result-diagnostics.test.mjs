@@ -45,8 +45,7 @@ test('SSG and Lotte links open in the external browser instead of the walled in-
   for (const button of buttons) assert.equal(button.title, '외부 브라우저(크롬)에서 열기');
 });
 
-test('lotte server evidence opens diagnostics even without a failure reason', t => {
-  const f = renderer(t);
+test('lotte server evidence opens diagnostics even without a failure reason', t => {  const f = renderer(t);
   const body = f.render({products: [], sources: [{store: '롯데온', count: 0,
     searchQuery: 'DD1503-101', searchUrl: 'https://www.lotteon.com/csearch/search/search?render=search&q=DD1503-101',
     verificationDiagnostics: {lotteServerEvidence: {httpStatus: 200, bytes: 1500000, items: 4}}}]});
@@ -54,6 +53,25 @@ test('lotte server evidence opens diagnostics even without a failure reason', t 
   assert.ok(details);
   assert.match(details.textContent, /서버 검색 상태: 200/);
   assert.match(details.textContent, /서버 검색 상품 수: 4/);
+});
+
+test('fallback rows show the six-stage pipeline progress', t => {
+  const f = renderer(t);
+  f.window.eval(readFileSync(join(root, 'src/domestic-result-verdict.js'), 'utf8'));
+  const body = f.render({products: [], sources: [
+    {store: '롯데온', count: 0, searchSubmitted: true, searchCompleted: true, absenceConfirmed: true, countVerified: true,
+      searchQuery: 'DD1503-101', searchUrl: 'https://www.lotteon.com/csearch/search/search?render=search&q=DD1503-101'},
+    {store: 'SSG', searchSubmitted: true, searchCompleted: true, identityRejectedCount: 2,
+      searchQuery: 'DD1503-101', searchUrl: 'https://www.ssg.com/search.ssg?query=DD1503-101'},
+  ]});
+  const strips = [...body.querySelectorAll('.domestic-inline-steps')];
+  assert.equal(strips.length, 2);
+  assert.deepEqual([...strips[0].querySelectorAll('.domestic-inline-step')].map((step) => step.textContent),
+    ['로그인', '상품검색', '로고확인', '상품인식', '재고확인', '데이터']);
+  assert.ok(strips[0].querySelector('.domestic-inline-step-done'));
+  const mismatchStates = [...strips[1].querySelectorAll('.domestic-inline-step')].map((step) =>
+    step.className.match(/domestic-inline-step-(\w+)/)[1]);
+  assert.deepEqual(mismatchStates, ['done', 'done', 'pending', 'blocked', 'pending', 'pending']);
 });
 
 test('diagnostics stay available alongside partial products without exposing whole pages or tokens', t => {

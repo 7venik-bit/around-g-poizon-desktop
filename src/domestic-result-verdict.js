@@ -166,5 +166,73 @@
     return { label: "상품 없음", className: "missing" };
   };
 
-  globalThis.AroundGDomesticVerdict = Object.freeze({ sourceVerdict, resultPresentation });
+  // Six-stage pipeline progress in the operator's flow language:
+  // 로그인 → 상품검색 → 로고확인 → 상품인식 → 재고확인 → 데이터.
+  // Each step reports done/active/blocked/pending from the same source flags
+  // the verdict uses, so the strip never contradicts the row status.
+  const searchStepProgress = (source = {}, matchedProducts = []) => {
+    const products = Array.isArray(matchedProducts) ? matchedProducts.filter(Boolean) : [];
+    const searched = Boolean(source?.searchSubmitted || source?.searchCompleted
+      || source?.countVerified || source?.absenceConfirmed || source?.presenceConfirmed
+      || products.length > 0);
+    const submissionBlocked = /^(search_query_missing|search_submission_failed|page_load_failed|page_load_timeout|network_error)$/
+      .test(String(source?.verificationReason || ""));
+    const searchDone = Boolean(source?.searchCompleted || source?.countVerified
+      || source?.absenceConfirmed || products.length > 0);
+    const searchActive = Boolean(source?.verificationPending || source?.detailVerificationPending)
+      && !searchDone;
+    const brandEvidence = products.some((product) => product?.brandVerifiedFromCard !== false
+      || product?.officialStoreVerified === true || product?.naverTrustedChannelEvidence === true)
+      || source?.naverTrustedChannelEvidence === true;
+    const recognized = products.length > 0
+      || source?.presenceConfirmed === true || source?.exactProductPresenceConfirmed === true
+      || (source?.searchCompleted === true && (finiteCount(source?.count) || 0) > 0);
+    const mismatch = products.length === 0 && Number(source?.identityRejectedCount || 0) > 0;
+    const authoritativeEmpty = products.length === 0 && (source?.absenceConfirmed === true
+      || source?.naverAllSearchVerdict === "absent"
+      || (source?.countVerified === true && finiteCount(source?.count) === 0));
+    const stockKnown = products.some((product) => product?.stockVerified === true
+      || product?.stockCoverage === "known" || Number(product?.price || 0) > 0);
+    const stockActive = Boolean(source?.detailVerificationPending)
+      || Number(source?.failedDetails || 0) > 0 && products.length > 0;
+    const hasPricedData = products.some((product) => Number(product?.price || 0) > 0);
+    const failed = source?.verificationFailed === true || source?.rateLimited === true;
+    return [
+      {
+        key: "login",
+        label: "로그인",
+        state: source?.loginRequired === true ? "blocked"
+          : searched ? "done" : "pending",
+      },
+      {
+        key: "search",
+        label: "상품검색",
+        state: submissionBlocked || (failed && !searchDone) ? "blocked"
+          : searchDone ? "done" : searchActive ? "active" : "pending",
+      },
+      {
+        key: "badges",
+        label: "로고확인",
+        state: brandEvidence ? "done" : "pending",
+      },
+      {
+        key: "identity",
+        label: "상품인식",
+        state: recognized ? "done"
+          : mismatch ? "blocked" : authoritativeEmpty ? "done" : "pending",
+      },
+      {
+        key: "stock",
+        label: "재고확인",
+        state: stockKnown ? "done" : stockActive ? "active" : "pending",
+      },
+      {
+        key: "data",
+        label: "데이터",
+        state: hasPricedData ? "done" : failed && !recognized ? "blocked" : "pending",
+      },
+    ];
+  };
+
+  globalThis.AroundGDomesticVerdict = Object.freeze({ sourceVerdict, resultPresentation, searchStepProgress });
 })();

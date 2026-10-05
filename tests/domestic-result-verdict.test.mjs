@@ -14,6 +14,25 @@ test('rate limiting is shown as stopped collection, not missing products or requ
   assert.equal(v.label,'네이버 접속량 제한 · 조회 중지');
 });
 
+test('step progress follows the login-search-badge-identity-stock-data pipeline',()=>{
+  const { searchStepProgress } = context.AroundGDomesticVerdict;
+  const states = (source, products = []) => searchStepProgress(source, products).map((step) => step.state).join(',');
+  assert.equal(states({ loginRequired: true }), 'blocked,pending,pending,pending,pending,pending');
+  assert.equal(
+    states({ searchSubmitted: true, searchCompleted: true, absenceConfirmed: true, count: 0, countVerified: true }),
+    'done,done,pending,done,pending,pending',
+  );
+  assert.equal(
+    states({ searchSubmitted: true, searchCompleted: true, identityRejectedCount: 3 }, []),
+    'done,done,pending,blocked,pending,pending',
+  );
+  const found = states(
+    { searchSubmitted: true, searchCompleted: true, count: 2, countVerified: true },
+    [{ brandVerifiedFromCard: true, articleNumberVerified: true, price: 81360, stockVerified: true }],
+  );
+  assert.equal(found, 'done,done,done,done,done,done');
+});
+
 test('SSG bot-wall block stays a manual-check notice, never product absence',()=>{
   const blocked=sourceVerdict({store:'SSG',securityVerificationRequired:true,count:null,
     verificationReason:'ssg_access_limited_deferred',verificationStage:'retailer_result_navigation'});
