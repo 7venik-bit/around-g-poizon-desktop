@@ -127,6 +127,7 @@ import {
   parseNaverFashionTownChannelCounts,
   parseLotteInitialDataProducts,
   lotteServerSearchCard,
+  mergeAnalyzedProducts,
   queryDomesticProducts,
   sanitizeDomesticProductCode,
   sanitizeDomesticQuery,
@@ -3883,28 +3884,31 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         && isOfficialProductCandidateUrl(card.productUrl, officialDirectDetail ? '' : currentUrl, articleNumber));
       content = JSON.stringify(parsedContent);
     }
+    let lotteServerAnalyzed = null;
     if (String(source.store || "") === "롯데온" && !officialDirectDetail
       && !((parsedContent.productCards || []).length)) {
       // Lotte renders its grid client-side and may serve automation an empty
       // grid, but the same response embeds the full search payload server-side.
-      // Merge it so exact-code products are not lost when the DOM has no cards.
+      // Analyze that payload separately: the DOM snapshot may carry an
+      // authoritative-looking empty verdict that must not discard real
+      // server-side candidates. Detail verification still decides.
       try {
         const serverHtml = await fetch(String(url || "")).then((response) => response.text());
         const serverCards = parseLotteInitialDataProducts(serverHtml);
         if (serverCards.length) {
-          const seen = new Set((parsedContent.productCards || []).map((card) => String(card?.productUrl || "")));
-          const cards = (parsedContent.productCards = parsedContent.productCards || []);
-          for (const item of serverCards) {
-            const card = lotteServerSearchCard(item);
-            if (!card || seen.has(card.productUrl)) continue;
-            seen.add(card.productUrl);
-            cards.push(card);
-          }
-          content = JSON.stringify(parsedContent);
+          lotteServerAnalyzed = analyzeRenderedChannelProducts(JSON.stringify({
+            productCards: serverCards.map((item) => lotteServerSearchCard(item)).filter(Boolean),
+            pageText: "",
+            pageHeaderText: "",
+            selectedChannelEmpty: false,
+          }), source.store, articleNumber, brand, title, searchAttempt?.query || "");
         }
       } catch { /* server evidence is best-effort; the DOM result stands */ }
     }
     const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title, searchAttempt?.query || "");
+    if (lotteServerAnalyzed && Array.isArray(lotteServerAnalyzed.products) && Array.isArray(analyzed?.products)) {
+      analyzed.products = mergeAnalyzedProducts(analyzed.products, lotteServerAnalyzed.products);
+    }
     if (officialSearchResultVerified && Array.isArray(analyzed?.products)) {
       analyzed.products = analyzed.products.map(product => ({ ...product, officialSearchResultVerified: true }));
     }
