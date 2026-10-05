@@ -54,13 +54,24 @@ test("every failure code carries a Korean message", () => {
   assert.equal(externalLoginFailure("LOGIN_BLOCKED").message, externalLoginMessage("LOGIN_BLOCKED"));
 });
 
-test("chrome discovery skips unusable candidates", () => {
-  assert.equal(findChromeExecutable({ existsSyncImpl: () => false }), "");
-  assert.equal(
-    findChromeExecutable({ existsSyncImpl: (path) => path.endsWith("chrome.exe") && !path.startsWith("\\") }),
-    findChromeExecutable({ existsSyncImpl: () => true }),
+test("chrome discovery skips unusable candidates on every platform", () => {
+  assert.equal(findChromeExecutable({ existsSyncImpl: () => false, platformImpl: "win32" }), "");
+  assert.equal(findChromeExecutable({ existsSyncImpl: () => false, platformImpl: "linux" }), "");
+  assert.match(
+    findChromeExecutable({ existsSyncImpl: () => true, platformImpl: "win32" }),
+    /chrome\.exe$/,
   );
-  assert.match(findChromeExecutable({ existsSyncImpl: () => true }), /chrome\.exe$/);
+  assert.equal(
+    findChromeExecutable({ existsSyncImpl: (path) => path === "/usr/bin/chromium", platformImpl: "linux" }),
+    "/usr/bin/chromium",
+  );
+  assert.equal(
+    findChromeExecutable({
+      existsSyncImpl: (path) => path === "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      platformImpl: "darwin",
+    }),
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  );
 });
 
 test("debugging port uses the first unreachable port", async () => {

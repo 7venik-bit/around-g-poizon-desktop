@@ -80,7 +80,7 @@ test('retailer groups with products show the same six-stage progress', t => {
   f.window.eval(readFileSync(join(root, 'src/domestic-result-verdict.js'), 'utf8'));
   const body = f.render({products: [{
     store: '무신사', retailerName: '무신사', title: 'JI0079', articleNumber: 'JI0079',
-    price: 81360, stockVerified: true, brandVerifiedFromCard: true,
+    price: 81360, stockVerified: true, officialStoreVerified: true,
     sizes: [{label: '270', quantity: 3, inStock: true}],
     url: 'https://www.musinsa.com/product/1',
   }], sources: [{

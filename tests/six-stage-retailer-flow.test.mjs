@@ -60,8 +60,17 @@ test("stage 3: products without official/department evidence verify badges first
   });
   assert.equal(stripStates(source, products).badges, "pending");
   assert.equal(hasRetailerBrandEvidence(products), false);
-  assert.equal(hasRetailerBrandEvidence([{ brandVerifiedFromCard: true }]), true);
   assert.equal(hasRetailerBrandEvidence([{ officialStoreVerified: true }]), true);
+  assert.equal(hasRetailerBrandEvidence([{ departmentStoreLabelMatched: true }]), true);
+});
+
+test("stage 3: a brand-name-only parallel importer never passes the logo gate", () => {
+  const source = { store: "병행수입·편집샵", searchSubmitted: true, searchCompleted: true, count: 1, countVerified: true };
+  const products = [{ brandVerifiedFromCard: true, articleNumberVerified: true, price: 81360, stockVerified: true }];
+  assert.deepEqual(nextRetailerStageAction(source, products), {
+    stage: "badges", action: "verify_badges", blocked: false, reason: "brand_evidence_missing",
+  });
+  assert.equal(stripStates(source, products).badges, "pending");
 });
 
 test("stage 4: identity mismatch advances to the next query", () => {
@@ -82,7 +91,7 @@ test("stage 4: an authoritative empty completes without stock collection", () =>
 
 test("stage 5: a recognized product without stock evidence collects stock", () => {
   const source = { store: "무신사", searchSubmitted: true, searchCompleted: true, count: 1, countVerified: true };
-  const products = [{ brandVerifiedFromCard: true, articleNumberVerified: true }];
+  const products = [{ officialStoreVerified: true, articleNumberVerified: true }];
   assert.deepEqual(nextRetailerStageAction(source, products), {
     stage: "stock", action: "collect_stock", blocked: false, reason: "",
   });
@@ -92,7 +101,7 @@ test("stage 5: a recognized product without stock evidence collects stock", () =
 
 test("stage 6: a priced, stock-verified product is done and the strip agrees", () => {
   const source = { store: "무신사", searchSubmitted: true, searchCompleted: true, count: 1, countVerified: true };
-  const products = [{ brandVerifiedFromCard: true, articleNumberVerified: true, price: 81360, stockVerified: true }];
+  const products = [{ officialStoreVerified: true, articleNumberVerified: true, price: 81360, stockVerified: true }];
   assert.deepEqual(nextRetailerStageAction(source, products), {
     stage: "data", action: "done", blocked: false, reason: "",
   });

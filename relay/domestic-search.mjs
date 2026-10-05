@@ -1133,8 +1133,12 @@ export const RETAILER_SEARCH_STAGES = Object.freeze([
 
 export function hasRetailerBrandEvidence(products = []) {
   const list = Array.isArray(products) ? products.filter(Boolean) : [];
-  return list.some((product) => product?.brandVerifiedFromCard === true
-    || product?.officialStoreVerified === true || product?.naverTrustedChannelEvidence === true);
+  // Stage 3 admits official and department-store logos only. Parallel
+  // importers print the same brand names, so a bare brand-name match
+  // (brandVerifiedFromCard) must never pass the logo gate.
+  return list.some((product) => product?.officialStoreVerified === true
+    || product?.departmentStoreLabelMatched === true
+    || product?.naverTrustedChannelEvidence === true);
 }
 
 export async function runRetailerSearchPipeline({
