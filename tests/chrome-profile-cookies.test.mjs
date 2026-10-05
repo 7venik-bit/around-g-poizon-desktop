@@ -84,7 +84,11 @@ test("a locally launched headless Chrome yields its cookie store", async (t) => 
 });
 
 test("locked cookie database reports Chrome shutdown instead of missing login", async () => {
-  const { summarizeChromeImportAttempts, isCookieDatabaseFileName } = await import("../services/chrome-profile-cookies.mjs");
+  const { summarizeChromeImportAttempts, isCookieDatabaseFileName, isChromeRunning } = await import("../services/chrome-profile-cookies.mjs");
+  assert.equal(isChromeRunning('"chrome.exe","1234","Console","1","100,000 K"'), true);
+  assert.equal(isChromeRunning('"firefox.exe","1234","Console","1","100,000 K"'), false);
+  assert.equal(isChromeRunning("정보: 지정된 조건과 일치하는 작업이 없습니다."), false);
+  assert.equal(isChromeRunning(""), false);
   assert.equal(isCookieDatabaseFileName("Cookies"), true);
   assert.equal(isCookieDatabaseFileName("Cookies-journal"), false);
   assert.equal(isCookieDatabaseFileName("Cookies-wal"), false);
@@ -96,4 +100,11 @@ test("locked cookie database reports Chrome shutdown instead of missing login", 
   assert.doesNotMatch(locked, /먼저 로그인/);
   const missing = summarizeChromeImportAttempts([], "SSG·신세계백화점");
   assert.match(missing, /먼저 로그인/);
+});
+
+test("one-click import refuses while Chrome runs instead of reading zero cookies", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
+  assert.match(main, /tasklist\.exe/);
+  assert.match(main, /isChromeRunning/);
 });
