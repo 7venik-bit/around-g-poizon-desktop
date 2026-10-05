@@ -12,6 +12,7 @@ const fn = name => {
 
 test('blocked batch skips session checks and login opening for every remaining product', async () => {
   const context = {blockedNaverLoginScopes:new Map(), NAVER_LOGIN_SCOPE_TTL_MS:60000,
+    EXTERNAL_LOGIN_RETAILER_IDS:new Set(),
     domesticLoginSourceIdsForSearch:()=>['naver'], domesticLoginSource:()=>({id:'naver'}),
     domesticLoginFailure:(_source,code,message)=>({code,message}),
     hasUsableDomesticLoginSession:()=>assert.fail('must not reopen authentication'),
@@ -39,6 +40,7 @@ test('security restriction remains distinct and stores no product or authenticat
 
 test('a rate-limited batch never opens login and stays distinct from expired authentication', async () => {
   const context = {blockedNaverLoginScopes:new Map(),NAVER_LOGIN_SCOPE_TTL_MS:60000,Date,Map,
+    EXTERNAL_LOGIN_RETAILER_IDS:new Set(),
     domesticLoginSourceIdsForSearch:()=>['naver'],domesticLoginSource:()=>({id:'naver'}),
     hasUsableDomesticLoginSession:()=>assert.fail('rate limiting must not initiate login'),
     domesticLoginSourceGroup:id=>id,naverLoginScopeConfirmed:()=>false};

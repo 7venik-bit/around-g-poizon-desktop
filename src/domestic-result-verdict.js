@@ -31,6 +31,13 @@
     naver_result_not_settled: "네이버 결과 대기 중",
     naver_seller_evidence_failed: "네이버 판매처 확인 실패",
     unknown_search_failure: "검색 처리 실패",
+    chrome_not_found: "Chrome 설치 필요",
+    chrome_launch_failed: "외부 로그인 실행 실패",
+    cdp_unreachable: "외부 로그인 연결 실패",
+    login_page_unreadable: "로그인 화면 인식 실패",
+    login_blocked: "판매처 보안 차단 · 직접 확인",
+    login_timeout: "외부 로그인 시간 초과",
+    login_canceled: "로그인 중단",
   });
 
   const sourceVerdict = (source = {}, matchedProducts = []) => {
