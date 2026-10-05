@@ -41,11 +41,20 @@ export function findChromeExecutable(existsSync, candidates = []) {
 const PROFILE_FILES = [
   "Cookies",
   "Cookies-journal",
+  "Cookies-wal",
   "Preferences",
   "Secure Preferences",
   "Network/Cookies",
   "Network/Cookies-journal",
+  "Network/Cookies-wal",
 ];
+
+// Only the database file itself proves a usable copy. Journals alone
+// (often 0 bytes) must not count: the live database is locked while Chrome
+// runs, and a copy without it always reads empty.
+export function isCookieDatabaseFileName(fileName = "") {
+  return /^cookies$/i.test(String(fileName || "").trim());
+}
 
 export function chromeProfileCopyPlan(userDataDir = "", profileName = "Default", stagingRoot = "") {
   const root = String(userDataDir || "");
@@ -75,7 +84,7 @@ export function summarizeChromeImportAttempts(attempts = [], sourceName = "") {
   const filesCopied = list.some((attempt) => Number(attempt?.copied) > 0);
   const dbCopied = list.some((attempt) => attempt?.dbCopied === true);
   if (filesCopied && !dbCopied) {
-    return `${sourceName} 쿠키 파일을 읽지 못했습니다[${summary}]. Chrome이 실행 중이라 잠겨 있습니다. Chrome을 완전히 종료한 뒤 다시 눌러주세요.`;
+    return `${sourceName} 쿠키 파일을 읽지 못했습니다[${summary}]. Chrome이 실행 중이라 잠겨 있습니다. Chrome을 완전히 종료한 뒤 다시 눌러주세요. 종료가 어려우면 붙여넣기로 넣어주세요.`;
   }
   return `${sourceName}에 로그인된 Chrome 프로필을 찾지 못했습니다[${summary}]. Chrome에서 먼저 로그인해 주세요.`;
 }
@@ -147,9 +156,7 @@ export async function readChromeStagingCookies(chromeExe = "", userDataDir = "",
       mkdirSync(dirname(file.dst), { recursive: true });
       cpSync(file.src, file.dst);
       copiedFiles += 1;
-      // The live cookie database is locked while Chrome runs. Only its
-      // presence proves the copy is usable; small JSON files copy anytime.
-      if (/cookies/i.test(String(file.src).split(/[\\/]/).pop() || "")) cookieDbCopied = true;
+      if (isCookieDatabaseFileName(String(file.src).split(/[\\/]/).pop() || "")) cookieDbCopied = true;
     } catch { /* a single unreadable file must not stop the import */ }
   }
   if (!copiedFiles) throw new Error("CHROME_PROFILE_MISSING");

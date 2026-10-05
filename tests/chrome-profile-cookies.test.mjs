@@ -84,7 +84,10 @@ test("a locally launched headless Chrome yields its cookie store", async (t) => 
 });
 
 test("locked cookie database reports Chrome shutdown instead of missing login", async () => {
-  const { summarizeChromeImportAttempts } = await import("../services/chrome-profile-cookies.mjs");
+  const { summarizeChromeImportAttempts, isCookieDatabaseFileName } = await import("../services/chrome-profile-cookies.mjs");
+  assert.equal(isCookieDatabaseFileName("Cookies"), true);
+  assert.equal(isCookieDatabaseFileName("Cookies-journal"), false);
+  assert.equal(isCookieDatabaseFileName("Cookies-wal"), false);
   const locked = summarizeChromeImportAttempts([
     { profile: "Default", copied: 3, dbCopied: false, total: 0 },
     { profile: "Profile 1", copied: 1, dbCopied: false, total: 0, failure: "" },
