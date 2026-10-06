@@ -440,6 +440,10 @@ export function planExternalLoginStep({ pageUrl = "", merchantDomains = [], meth
 
 export async function waitForExternalLogin({
   page,
+  // Extra tabs of the same window (SSG opens its Naver OAuth as another
+  // popup). Observed every poll so a login that continues in a popup still
+  // completes instead of timing out on the original tab.
+  discoverPages = null,
   detectControlsScript = null,
   credentials = null,
   providerCredentials = null,
@@ -470,44 +474,77 @@ export async function waitForExternalLogin({
       // Progress reporting must never stop the login observation.
     }
   };
+  const observeTabs = async () => {
+    let extras = [];
+    try {
+      const found = typeof discoverPages === "function" ? await discoverPages() : [];
+      if (Array.isArray(found)) {
+        extras = found.filter((client) => client && client !== page && typeof client.evaluate === "function");
+      }
+    } catch {
+      extras = [];
+    }
+    const observations = [];
+    for (const client of [page, ...extras]) {
+      let state = null;
+      try {
+        state = await client.evaluate(EXTERNAL_LOGIN_STATE_SCRIPT);
+      } catch {
+        state = null;
+      }
+      observations.push({
+        client,
+        state: state && typeof state === "object" ? state : null,
+      });
+    }
+    return observations;
+  };
   while (Date.now() < deadline) {
     if (canceled()) return externalLoginFailure("LOGIN_CANCELED");
-    let state = null;
-    try {
-      state = await page.evaluate(EXTERNAL_LOGIN_STATE_SCRIPT);
-    } catch {
-      state = null;
-    }
-    if (!state || typeof state !== "object") {
+    const observations = await observeTabs();
+    const readable = observations.filter((item) => item.state);
+    if (!readable.length) {
       unreadable += 1;
       if (unreadable >= 5) return externalLoginFailure("LOGIN_PAGE_UNREADABLE");
-      heartbeat(state);
+      heartbeat(null);
       await sleepImpl(pollIntervalMs);
       continue;
     }
     unreadable = 0;
-    if (state.authenticated === true) {
+    const done = readable.find((item) => item.state.authenticated === true);
+    if (done) {
       let cookies = [];
       try {
-        cookies = await page.getCookies();
+        cookies = await done.client.getCookies();
       } catch {
         cookies = [];
       }
       return { ok: true, cookies: filterUsableLoginCookies(cookies) };
     }
-    if (state.blocked === true) return externalLoginFailure("LOGIN_BLOCKED");
-    const step = planExternalLoginStep({ pageUrl: state.url, merchantDomains, method, acted });
-    if (step === "fill_merchant" && canFillMerchant) {
-      acted.fill_merchant = true;
-      await fillPasswordForm(page, detectControlsScript, credentials);
-    } else if (step === "click_provider" && canClickProvider) {
-      acted.click_provider = true;
-      await clickProviderButton(page, detectControlsScript, method);
-    } else if (step === "fill_provider" && canFillProvider) {
-      acted.fill_provider = true;
-      await fillPasswordForm(page, detectControlsScript, providerCredentials);
+    const actionable = readable.find((item) =>
+      planExternalLoginStep({ pageUrl: item.state.url, merchantDomains, method, acted }) !== "wait");
+    let actedThisRound = false;
+    if (actionable) {
+      const step = planExternalLoginStep({ pageUrl: actionable.state.url, merchantDomains, method, acted });
+      if (step === "fill_merchant" && canFillMerchant) {
+        acted.fill_merchant = true;
+        actedThisRound = true;
+        await fillPasswordForm(actionable.client, detectControlsScript, credentials);
+      } else if (step === "click_provider" && canClickProvider) {
+        acted.click_provider = true;
+        actedThisRound = true;
+        await clickProviderButton(actionable.client, detectControlsScript, method);
+      } else if (step === "fill_provider" && canFillProvider) {
+        acted.fill_provider = true;
+        actedThisRound = true;
+        await fillPasswordForm(actionable.client, detectControlsScript, providerCredentials);
+      }
     }
-    heartbeat(state);
+    if (!actedThisRound && readable.some((item) => item.state.blocked === true)
+      && !readable.some((item) => item.state.hasLoginForm === true)) {
+      return externalLoginFailure("LOGIN_BLOCKED");
+    }
+    heartbeat(readable[0]?.state);
     await sleepImpl(pollIntervalMs);
   }
   return externalLoginFailure("LOGIN_TIMEOUT");
@@ -613,8 +650,23 @@ export async function startExternalRetailerLogin({
     }
     const automatic = (method === "password" && credentials?.loginId && credentials?.password)
       || ((method === "naver" || method === "kakao") && providerCredentials?.loginId && providerCredentials?.password);
+    // SSG opens its Naver OAuth as another popup of the same window: observe
+    // every tab so a login that continues outside the login tab still
+    // completes instead of timing out on the original tab.
+    const discoverLoginTabs = async () => {
+      let targets = [];
+      try {
+        targets = await listPageTargets({ fetchImpl, port: targetPort });
+      } catch {
+        return [];
+      }
+      return targets
+        .filter((entry) => entry.id !== loginTabId && entry.webSocketDebuggerUrl)
+        .map((entry) => createCdpPageClient({ fetchImpl, WebSocketImpl, port: targetPort, targetId: entry.id }));
+    };
     return await waitForExternalLogin({
       page,
+      discoverPages: discoverLoginTabs,
       detectControlsScript,
       credentials,
       providerCredentials,
