@@ -200,15 +200,20 @@ test('100% source progress followed by a render exception releases the modal and
   assert.match(f.status(), /표시|화면/);
 });
 
-test('stop is immediate even if cancellation IPC never replies; late success is ignored', async (t) => {
+test('first stop press finishes the in-flight product; second press stops immediately and late success is ignored', async (t) => {
   const f = createFixture(t);
   const response = deferred();
+  let cancels = 0;
   f.window.aroundG.searchDomestic = () => response.promise;
-  f.window.aroundG.cancelDomesticSearch = () => new Promise(() => {});
+  f.window.aroundG.cancelDomesticSearch = () => { ++cancels; return new Promise(() => {}); };
   const run = f.run();
   await tick();
   void f.run();
-  assert.equal(f.overlay().hidden, true, 'stop must not await cancellation IPC');
+  assert.equal(f.overlay().hidden, false, 'graceful stop waits for the in-flight product');
+  assert.equal(cancels, 0, 'graceful stop must not cancel the main search');
+  void f.run();
+  assert.equal(f.overlay().hidden, true, 'second press stops immediately without awaiting cancellation IPC');
+  assert.equal(cancels, 1);
   response.resolve({ok:true,data:{products:[{price:999}],sources:[]}});
   await run;
   assert.notEqual(f.api.result()?.products?.[0]?.price, 999);
@@ -278,7 +283,7 @@ test('a partial product does not stop the following selected product', async (t)
   assert.equal(f.overlay().hidden, true);
 });
 
-test('single-row search can be stopped by the actual overlay button without starting a batch', async (t) => {
+test('single-row search finishes on first overlay stop press and ignores late results after a second press', async (t) => {
   const f = createFixture(t);
   const response = deferred();
   let calls = 0;
@@ -286,6 +291,8 @@ test('single-row search can be stopped by the actual overlay button without star
   f.window.aroundG.cancelDomesticSearch = () => new Promise(() => {});
   const run = f.api.direct();
   await tick();
+  f.overlay().querySelector('.domestic-overlay-stop').click();
+  assert.equal(f.overlay().hidden, false, 'first press waits for the in-flight product');
   f.overlay().querySelector('.domestic-overlay-stop').click();
   assert.equal(f.overlay().hidden, true);
   response.resolve({ok:true,data:{products:[{price:999}],sources:[]}});
@@ -301,7 +308,8 @@ test('a canceled old request cannot close or overwrite a newer search', async (t
   f.window.aroundG.searchDomestic = () => ++calls === 1 ? old.promise : next.promise;
   const firstRun = f.run();
   await tick();
-  await f.run(); // stop
+  f.api.stop(); // graceful: the old request keeps running
+  f.api.stop(); // immediate: cancels and invalidates the old run
   const secondRun = f.run();
   await tick();
   old.resolve({ok:true,data:{products:[{price:111}],sources:[]}});
@@ -552,6 +560,8 @@ test('stop keeps only the latest verified checkpoint for the current product', a
     return pending.promise;
   };
   const running=f.run();await tick(10);f.api.stop();
+  assert.equal(f.overlay().hidden, false, 'graceful stop waits for the in-flight product');
+  pending.resolve({ok:false,canceled:true});await running;
   const result=f.api.result();
   assert.equal(result.partial,true);
   assert.equal(result.products[0].title,'저장된 상품');

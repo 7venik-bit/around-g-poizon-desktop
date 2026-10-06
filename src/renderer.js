@@ -4704,7 +4704,15 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       showDomesticSearchOverlay(batchStartedAt, completed, keys.length, product);
       const response = await cachedDomesticSearch(product, true);
       if (runId !== excelPreviewSearchRunId) return;
-      const result = response?.ok ? response.data : { products: [], sources: [], error: response?.message || "검색 응답이 없습니다." };
+      // A graceful stop waits for the in-flight response. When it comes back
+      // canceled, keep the verified checkpoint instead of an empty error so
+      // stopping never discards already confirmed results.
+      const stoppedWithCheckpoint = !response?.ok && response?.canceled === true
+        && excelPreviewGracefulStop && activeDomesticCheckpoint;
+      const result = response?.ok ? response.data
+        : stoppedWithCheckpoint
+          ? { ...activeDomesticCheckpoint, partial: true, message: "검색을 중지했습니다. 중지 전까지 확인된 결과를 저장했습니다." }
+          : { products: [], sources: [], error: response?.message || "검색 응답이 없습니다." };
       if (!response?.ok) failed += groupKeys.length;
       if (result.partial) partial += groupKeys.length;
       for (const key of groupKeys) excelPreviewSearchResults.set(key, result);
