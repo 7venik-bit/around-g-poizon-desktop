@@ -274,6 +274,52 @@ test("login wait clicks the provider then fills provider credentials", async () 
   assert.ok(filled.length >= 2);
 });
 
+test("SSG OAuth popup login completes across tabs", async () => {
+  const merchantClicks = [];
+  const nid = { authenticated: false, blocked: false, hasLoginForm: true, url: "https://nid.naver.com/nidlogin.login" };
+  const merchant = {
+    async evaluate(expression) {
+      const text = String(expression);
+      if (text.includes("authenticated")) {
+        return { authenticated: false, blocked: false, hasLoginForm: false, url: "https://member.ssg.com/member/popup/popupLogin.ssg" };
+      }
+      return { provider: { x: 7, y: 7 } };
+    },
+    async clickPoint(point) {
+      merchantClicks.push(point);
+      nid.authenticated = true;
+    },
+    async getCookies() {
+      return [];
+    },
+  };
+  const popup = {
+    async evaluate(expression) {
+      const text = String(expression);
+      if (text.includes("elementFromPoint")) return true;
+      if (text.includes("authenticated")) return { ...nid };
+      return { id: { x: 1, y: 1 }, password: { x: 1, y: 2 }, submit: { x: 1, y: 3 } };
+    },
+    async clickPoint() {},
+    async getCookies() {
+      return [{ name: "ssg_auth", value: "ok" }];
+    },
+  };
+  const result = await waitForExternalLogin({
+    page: merchant,
+    discoverPages: async () => [popup],
+    detectControlsScript: "function detect() {}",
+    method: "naver",
+    merchantDomains: ["ssg.com"],
+    providerCredentials: { loginId: "naver-id", password: "naver-pw" },
+    timeoutMs: 5000,
+    sleepImpl: async () => {},
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(merchantClicks, [{ x: 7, y: 7 }]);
+  assert.deepEqual(result.cookies.map((cookie) => cookie.name), ["ssg_auth"]);
+});
+
 test("login wait resolves on visible authentication", async () => {
   const page = {
     async evaluate() {
