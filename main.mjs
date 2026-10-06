@@ -12430,16 +12430,16 @@ function noteExternalLoginRequired(store = "") {
   confirmedExternalLogins.delete(sourceId);
 }
 
-// Facet labels checked in the visible search window before collection.
-// Department labels come from the codebase-wide seller evidence wording;
-// brands always come from the searched product, never invented here.
-function retailerFacetLabels(sourceId, brand = "") {
-  const labels = [];
-  if (sourceId === "ssg") labels.push("신세계백화점");
-  if (sourceId === "lotte") labels.push("롯데백화점");
-  const name = String(brand || "").trim();
-  if (name) labels.push(name);
-  return labels;
+// Facet labels checked in the search window before collection.
+// Department wording only: SSG is scoped through its top-menu department
+// tab (there is no department checkbox), LotteON through its seller filter.
+// Brand boxes must never be checked: filtering by brand confuses products
+// (아디다스 vs 아디다스 오리지널스) and pulls in non-official sellers.
+// Brand matching stays in the analysis gates, never in a checkbox.
+function retailerFacetLabels(sourceId) {
+  if (sourceId === "ssg") return [];
+  if (sourceId === "lotte") return ["롯데백화점"];
+  return [];
 }
 
 // Visible logged-in search: once the external login is confirmed, each
