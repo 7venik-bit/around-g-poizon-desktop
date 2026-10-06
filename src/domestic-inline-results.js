@@ -267,6 +267,7 @@
         ["서버 검색 상태", d.lotteServerEvidence?.httpStatus],
         ["서버 검색 크기", d.lotteServerEvidence?.bytes],
         ["서버 검색 상품 수", d.lotteServerEvidence?.items],
+        ["서버 검색 출처", d.lotteServerEvidence?.origin === "session-dom" ? "세션 화면" : d.lotteServerEvidence?.origin === "direct-fetch" ? "직접 조회" : ""],
         ["판매처 체크 적용", [...(d.lotteCollectionEvidence?.facetChecked || []), ...(d.ssgCollectionEvidence?.facetChecked || [])].join(", ")],
         ["판매처 체크 누락", [...(d.lotteCollectionEvidence?.facetMissing || []), ...(d.ssgCollectionEvidence?.facetMissing || [])].join(", ")],
         ["판매처 체크 확정", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)
