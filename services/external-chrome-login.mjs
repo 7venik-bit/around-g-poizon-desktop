@@ -450,6 +450,31 @@ async function clickDeviceConfirmButton(page) {
   }
 }
 
+// SSG finishes its login inside an SSO callback popup (sslCallback.ssg)
+// that hands the session to the opener window. Our tab has no opener, so the
+// callback sits blank forever: detect it and recover by reloading the
+// merchant homepage, where the profile-wide session cookies already render
+// the logged-in state.
+export function isSsoCallbackUrl(url = "", merchantDomains = []) {
+  let host = "";
+  let path = "";
+  try {
+    const parsed = new URL(String(url || ""));
+    host = parsed.hostname.toLowerCase();
+    path = parsed.pathname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const listed = Array.isArray(merchantDomains) ? merchantDomains : [];
+  const merchant = listed.some((domain) => domain && (host === domain || host.endsWith(`.${domain}`)));
+  return merchant && /callback/i.test(path);
+}
+
+export function merchantHomepageUrl(merchantDomains = []) {
+  const domain = (Array.isArray(merchantDomains) ? merchantDomains : []).find(Boolean);
+  return domain ? `https://www.${domain}/` : "";
+}
+
 // Pure step planner for the visible login route in screenshot order:
 // merchant login page → password fill or provider click → provider login
 // page → provider fill. Each automatic step fires at most once; afterwards
@@ -568,17 +593,34 @@ export async function waitForExternalLogin({
       }
       return { ok: true, cookies: filterUsableLoginCookies(cookies) };
     }
-    const actionable = readable.find((item) =>
-      planExternalLoginStep({ pageUrl: item.state.url, merchantDomains, method, acted }) !== "wait");
+    // An SSO callback tab without any login form anywhere means the merchant
+    // already accepted the login and only the opener handshake is missing:
+    // reload the merchant homepage once so its session renders. Fires once.
+    const homeUrl = merchantHomepageUrl(merchantDomains);
+    const callbackStuck = homeUrl && !acted.recover_callback
+      && readable.some((item) => isSsoCallbackUrl(item.state.url, merchantDomains))
+      && !readable.some((item) => item.state.hasLoginForm === true);
     let actedThisRound = false;
+    if (callbackStuck) {
+      acted.recover_callback = true;
+      actedThisRound = true;
+      try {
+        await page.navigate(homeUrl);
+      } catch {
+        // A failed recovery navigation simply leaves manual observation.
+      }
+    }
+    const actionable = !callbackStuck && readable.find((item) =>
+      planExternalLoginStep({ pageUrl: item.state.url, merchantDomains, method, acted }) !== "wait");
     if (actionable) {
       const step = planExternalLoginStep({ pageUrl: actionable.state.url, merchantDomains, method, acted });
       const url = String(actionable.state.url || "");
       // Navigation opens a fresh opportunity: a new page may need its own
       // fill or click even when the previous page already consumed one.
+      // The one-shot callback recovery survives navigation.
       if (url !== lastActedUrl) {
         lastActedUrl = url;
-        for (const key of Object.keys(acted)) delete acted[key];
+        for (const key of Object.keys(acted)) if (key !== "recover_callback") delete acted[key];
       }
       if (step === "fill_merchant" && canFillMerchant && attemptsLeft(step, url)) {
         noteAttempt(step, url);

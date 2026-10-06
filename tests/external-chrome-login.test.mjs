@@ -9,6 +9,8 @@ import {
   findChromeExecutable,
   chromeLoginArgs,
   isChromeResponsive,
+  isSsoCallbackUrl,
+  merchantHomepageUrl,
   closeLoginChrome,
   pickRemoteDebuggingPort,
   createCdpPageClient,
@@ -448,6 +450,62 @@ test("a submitted form is never resubmitted on the same page", async () => {
     sleepImpl: async () => {},
   });
   assert.equal(clicked.length, 1);
+});
+
+test("SSO callback popups recover through the merchant homepage", () => {
+  assert.equal(isSsoCallbackUrl("https://ssg.com//comm/popup/sslCallback.ssg?", ["ssg.com"]), true);
+  assert.equal(isSsoCallbackUrl("https://member.ssg.com/member/popup/popupLogin.ssg", ["ssg.com"]), false);
+  assert.equal(isSsoCallbackUrl("https://www.ssg.com/", ["ssg.com"]), false);
+  assert.equal(isSsoCallbackUrl("https://evil.com/callback", ["ssg.com"]), false);
+  assert.equal(isSsoCallbackUrl("not a url", ["ssg.com"]), false);
+  assert.equal(merchantHomepageUrl(["ssg.com"]), "https://www.ssg.com/");
+  assert.equal(merchantHomepageUrl([]), "");
+});
+
+test("stuck SSO callbacks reload the merchant homepage once", async () => {
+  const navigated = [];
+  let home = false;
+  const merchant = {
+    async evaluate(expression) {
+      const text = String(expression);
+      if (text.includes("authenticated")) {
+        return home
+          ? { authenticated: true, blocked: false, hasLoginForm: false, url: "https://www.ssg.com/" }
+          : { authenticated: false, blocked: false, hasLoginForm: false, url: "https://member.ssg.com/member/popup/popupLogin.ssg" };
+      }
+      return null;
+    },
+    async navigate(url) {
+      navigated.push(String(url));
+      home = true;
+    },
+    async clickPoint() {},
+    async getCookies() {
+      return [{ name: "ssg_auth", value: "ok" }];
+    },
+  };
+  const callback = {
+    async evaluate() {
+      return { authenticated: false, blocked: false, hasLoginForm: false, url: "https://ssg.com//comm/popup/sslCallback.ssg?" };
+    },
+    async clickPoint() {},
+    async getCookies() {
+      return [];
+    },
+  };
+  const result = await waitForExternalLogin({
+    page: merchant,
+    discoverPages: async () => [callback],
+    detectControlsScript: "function detect() {}",
+    method: "naver",
+    merchantDomains: ["ssg.com"],
+    providerCredentials: { loginId: "naver-id", password: "naver-pw" },
+    timeoutMs: 5000,
+    sleepImpl: async () => {},
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(navigated, ["https://www.ssg.com/"]);
+  assert.deepEqual(result.cookies.map((cookie) => cookie.name), ["ssg_auth"]);
 });
 
 test("login wait resolves on visible authentication", async () => {
