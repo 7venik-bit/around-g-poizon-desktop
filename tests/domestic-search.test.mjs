@@ -38,6 +38,7 @@ import {
   sanitizeDomesticProductCode,
   sanitizeDomesticQuery,
 } from "../relay/domestic-search.mjs";
+import { scoreProductCandidate } from "../services/matcher.mjs";
 
 test("POIZON category suffix is removed before a product code is typed", () => {
   assert.equal(sanitizeDomesticProductCode("SR123UPS11-服"), "SR123UPS11");
@@ -1384,4 +1385,53 @@ test("channel-scoped outlet and department stores carry their logo", () => {
   assert.equal(hasChannelBadgeEvidence({ store: "SSG 병행수입" }), false);
   assert.equal(hasChannelBadgeEvidence({}), false);
   assert.equal(hasChannelBadgeEvidence(null), false);
+});
+
+test("LotteON department flow follows the operator reference order", () => {
+  // 1. 좌측 롯데백화점 체크 + 품번 검색: department scope keeps the code query.
+  const searchUrl = domesticChannelUrl("lotte-department", "나이키", "415445-102");
+  assert.ok(searchUrl.includes(encodeURIComponent("415445-102")));
+
+  // 2. 검색 결과 카드: 백화점 표시 + 할인가(최종가), 정가는 별도 보관.
+  const cards = [
+    { title: "나이키 에어 모나크 IV 415445-102", url: "https://www.lotteon.com/p/product/PD1?mall_no=1",
+      brand: "나이키", price: 60280, originalPrice: 76300, imageUrl: "https://contents.lotteon.com/a.jpg", departmentStore: true },
+    { title: "나이키 에어 모나크 IV 415445-102", url: "https://www.lotteon.com/p/product/PD2?mall_no=1",
+      brand: "나이키", price: 78480, originalPrice: 95700, imageUrl: "https://contents.lotteon.com/b.jpg", departmentStore: true },
+    { title: "나이키 에어 모나크 IV 415445-102", url: "https://www.lotteon.com/p/product/PD9?mall_no=1",
+      brand: "입점 판매자", price: 50000, originalPrice: 50000, imageUrl: "", departmentStore: false },
+  ].map((item) => lotteServerSearchCard(item));
+  assert.equal(cards.filter(Boolean).length, 3);
+
+  // 3. 상품 인식: 백화점 마크 없는 입점 카드는 탈락, 정품 후보만 남는다.
+  const analyzed = analyzeRenderedChannelProducts(
+    JSON.stringify({ productCards: cards, pageText: "" }),
+    "롯데온", "415445-102", "나이키", "나이키 에어 모나크 IV",
+  );
+  assert.equal(analyzed.products.length, 2);
+  for (const product of analyzed.products) {
+    assert.equal(product.departmentStoreLabelMatched, true);
+    assert.ok(product.price > 0 && product.price < product.originalPrice);
+  }
+  assert.ok(hasRetailerBrandEvidence(analyzed.products));
+
+  // 4. 이미지 비교: 같은 코드에 이미지가 일치하면 신뢰도가 붙는다.
+  const [first] = analyzed.products;
+  const scored = scoreProductCandidate(
+    { articleNumber: "415445-102", brand: "나이키", title: "나이키 에어 모나크 IV" },
+    { ...first, detectedArticleNumber: "415445-102" },
+    0.95,
+  );
+  assert.equal(scored.signals.codeScore, 1);
+  assert.equal(scored.signals.imageScore, 95);
+  assert.equal(scored.signals.codeConflict, false);
+  assert.ok(scored.confidence >= 80);
+
+  // 5. 사이즈·재고: 상세 증거가 있으면 그대로 살리고, 없으면 미확인으로 둔다.
+  const stocked = normalizeRenderedStockEvidence({
+    stockTexts: [],
+    options: [{ label: "270", inStock: true, stockText: "270 재고 3개" }],
+  });
+  assert.equal(stocked.sizes[0].label, "270");
+  assert.equal(stocked.sizes[0].inStock, true);
 });
