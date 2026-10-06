@@ -806,7 +806,7 @@ async function openVerifiedCombinedBrandPreview(files, filters = {}) {
   const report = await service.runPoizonReviewBatch({ files, conditions, api: window.aroundG,
     onProgress: (message) => { $("#brand-status").textContent = message; },
     createView: async (snapshot, frozen) => live.beginLiveVerification({ file: snapshot.file, brandName: snapshot.file.brandName, snapshot, conditions: frozen,
-      doc: reviewDoc }),
+      doc: reviewDoc, onRetry: () => openVerifiedCombinedBrandPreview(files, filters) }),
     notify: (report, view) => view ? view.showReport(report) : live.showReviewReport(report) });
   await saveBrandVerificationResults(files, report);
   return report;
