@@ -58,6 +58,8 @@ import {
   closeLoginChrome,
   acquireLoginTab,
   closeBlankTabs,
+  checkSearchFacets,
+  createCdpPageClient,
   startExternalRetailerLogin,
 } from "./services/external-chrome-login.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
@@ -4253,10 +4255,11 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         // operator watches it there. Fire-and-forget: collection never waits.
         // typeof guards keep sliced-vm test fixtures working without stubs.
         if (queryAttemptIndex === 0 && queryAttempt?.url
-          && typeof loginSourceIdForStore === "function" && typeof showRetailerSearchInWindow === "function") {
+          && typeof loginSourceIdForStore === "function" && typeof showRetailerSearchInWindow === "function"
+          && typeof retailerFacetLabels === "function") {
           const externalSourceId = loginSourceIdForStore(source.store);
           if (externalSourceId === "ssg" || externalSourceId === "lotte") {
-            void showRetailerSearchInWindow(externalSourceId, queryAttempt.url).catch(() => {});
+            void showRetailerSearchInWindow(externalSourceId, queryAttempt.url, retailerFacetLabels(externalSourceId, brand)).catch(() => {});
           }
         }
         // A Naver overview DOM belongs to exactly one submitted query. When an
@@ -12230,12 +12233,24 @@ function noteExternalLoginRequired(store = "") {
   confirmedExternalLogins.delete(sourceId);
 }
 
+// Facet labels checked in the visible search window before collection.
+// Department labels come from the codebase-wide seller evidence wording;
+// brands always come from the searched product, never invented here.
+function retailerFacetLabels(sourceId, brand = "") {
+  const labels = [];
+  if (sourceId === "ssg") labels.push("신세계백화점");
+  if (sourceId === "lotte") labels.push("롯데백화점");
+  const name = String(brand || "").trim();
+  if (name) labels.push(name);
+  return labels;
+}
+
 // Visible logged-in search: once the external login is confirmed, each
 // product search also navigates the retailer's tab of the shared window so
 // the operator watches the search happen in the logged-in session.
 // Collection verdicts still come from the existing collector; this helper
 // never blocks or fails the search itself.
-async function showRetailerSearchInWindow(sourceId, searchUrl) {
+async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = []) {
   try {
     if (!EXTERNAL_LOGIN_RETAILER_IDS.has(String(sourceId || ""))) return null;
     if (!sharedExternalLoginChrome?.child || !confirmedExternalLogins.has(sourceId)) return null;
@@ -12254,6 +12269,26 @@ async function showRetailerSearchInWindow(sourceId, searchUrl) {
       ...sharedExternalLoginChrome,
       tabs: { ...(sharedExternalLoginChrome.tabs || {}), [sourceId]: acquired.targetId },
     };
+    // Apply the operator's left-menu checks (department + brand) on the
+    // visible search page, then sweep strays. Best-effort only.
+    if (Array.isArray(facetLabels) && facetLabels.length) {
+      try {
+        const facetClient = createCdpPageClient({
+          fetchImpl: fetch,
+          WebSocketImpl: WebSocket,
+          port: Number(sharedExternalLoginChrome.port) || 0,
+          targetId: acquired.targetId,
+        });
+        await checkSearchFacets({
+          page: facetClient,
+          labels: facetLabels,
+          sleepImpl: wait,
+          settleMs: 3000,
+        });
+      } catch {
+        // Facet checks must never break the search itself.
+      }
+    }
     await closeBlankTabs({ fetchImpl: fetch, port: Number(sharedExternalLoginChrome.port) || 0 });
     return acquired.targetId;
   } catch {

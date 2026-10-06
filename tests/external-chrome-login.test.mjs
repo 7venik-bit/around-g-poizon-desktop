@@ -16,6 +16,8 @@ import {
   createCdpPageClient,
   EXTERNAL_LOGIN_STATE_SCRIPT,
   EXTERNAL_DEVICE_CONFIRM_SCRIPT,
+  EXTERNAL_FACET_CHECK_SCRIPT,
+  checkSearchFacets,
   externalFillScript,
   filterUsableLoginCookies,
   planExternalLoginStep,
@@ -152,6 +154,48 @@ test("login state script detects logout, blocks and login forms", () => {
   const formState = runState('<input type="text"><input type="password">', "https://www.lotteon.com/");
   assert.equal(formState.hasLoginForm, true);
   assert.equal(formState.authenticated, false);
+});
+
+test("facet script checks department and brand boxes, nothing else", () => {
+  const runFacets = (html, labels) => {
+    const dom = new JSDOM(html, { url: "https://www.lotteon.com/", runScripts: "outside-only" });
+    dom.window.Element.prototype.getBoundingClientRect = () => ({
+      width: 100, height: 20, top: 0, left: 0, right: 100, bottom: 20, x: 0, y: 0, toJSON: () => ({}),
+    });
+    const expression = `(${EXTERNAL_FACET_CHECK_SCRIPT})(${JSON.stringify(labels)})`;
+    return { dom, result: vm.runInContext(expression, dom.getInternalVMContext()) };
+  };
+  const html = [
+    '<label><input type="checkbox" id="dept"> 롯데백화점</label>',
+    '<input type="checkbox" id="brand"><label for="brand">나이키 (12)</label>',
+    '<label><input type="checkbox" checked> 입점 판매자</label>',
+    '<input type="checkbox" aria-label="무료배송">',
+  ].join("");
+  const { dom, result } = runFacets(`<form>${html}</form>`, ["롯데백화점", "나이키", "없는라벨"]);
+  assert.deepEqual([...result.checked].sort(), ["나이키", "롯데백화점"]);
+  assert.deepEqual([...result.missing], ["없는라벨"]);
+  assert.equal(result.settled, true);
+  assert.equal(dom.window.document.getElementById("dept").checked, true);
+  assert.equal(dom.window.document.getElementById("brand").checked, true);
+  const untouched = runFacets(`<form>${html}</form>`, ["입점"]);
+  assert.deepEqual([...untouched.result.checked], []);
+  assert.deepEqual([...untouched.result.missing], ["입점"]);
+});
+
+test("facet check settles across a results refresh", async () => {
+  let calls = 0;
+  const page = {
+    async evaluate() {
+      calls += 1;
+      if (calls === 1) return { checked: ["롯데백화점"], missing: ["나이키"], settled: false };
+      return { checked: ["롯데백화점", "나이키"], missing: [], settled: true };
+    },
+  };
+  const result = await checkSearchFacets({ page, labels: ["롯데백화점", "나이키"], sleepImpl: async () => {} });
+  assert.deepEqual(result, { checked: ["롯데백화점", "나이키"], missing: [], settled: true });
+  assert.equal(calls, 2);
+  assert.deepEqual(await checkSearchFacets({ page: null, labels: ["a"] }), { checked: [], missing: ["a"], settled: false });
+  assert.deepEqual(await checkSearchFacets({ page, labels: [] }), { checked: [], missing: [], settled: false });
 });
 
 test("device confirm script clicks 등록, never 등록안함", () => {

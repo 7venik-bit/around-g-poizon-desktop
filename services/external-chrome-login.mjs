@@ -390,6 +390,98 @@ export const EXTERNAL_DEVICE_CONFIRM_SCRIPT = `(() => {
   return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
 })()`;
 
+// Search-facet checkboxes (LotteON 판매처/브랜드, SSG department/brand).
+// Finds unchecked boxes whose label matches exactly (an optional result
+// count suffix is allowed) and clicks them. Never touches other controls;
+// unmatched labels are reported instead of guessed.
+export const EXTERNAL_FACET_CHECK_SCRIPT = `((wanted) => {
+  const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim().toLowerCase();
+  const wants = [...new Set((Array.isArray(wanted) ? wanted : []).map(normalize).filter(Boolean))];
+  const labelOf = (input) => {
+    const direct = input.getAttribute && input.getAttribute("aria-label");
+    if (direct && direct.trim()) return direct;
+    const id = input.id;
+    if (id && input.ownerDocument) {
+      try {
+        const labels = input.ownerDocument.querySelectorAll("label");
+        for (const el of labels) {
+          if (el.getAttribute && el.getAttribute("for") === id && el.textContent && el.textContent.trim()) {
+            return el.textContent;
+          }
+        }
+      } catch {
+        // Label lookup failure falls through to the wrapping label below.
+      }
+    }
+    const wrapping = input.closest ? input.closest("label") : null;
+    if (wrapping && wrapping.textContent && wrapping.textContent.trim()) return wrapping.textContent;
+    return "";
+  };
+  const visible = (el) => {
+    try {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    } catch {
+      return false;
+    }
+  };
+  const matches = (label, want) => label === want || new RegExp("^" + want.replace(/[.*+?^\${}()|[\\]\\\\]/g, "\\\\$&") + "(\\\\s*\\\\(?\\\\d+\\\\)?)?$").test(label);
+  const checked = [];
+  const missing = [];
+  const inputs = [...document.querySelectorAll('input[type="checkbox"]')].filter(visible);
+  for (const want of wants) {
+    const box = inputs.find((input) => matches(normalize(labelOf(input)), want));
+    if (!box) {
+      missing.push(want);
+      continue;
+    }
+    if (!box.checked) {
+      try {
+        box.click();
+      } catch {
+        // A failed click leaves the box for the verification pass below.
+      }
+    }
+    checked.push(want);
+  }
+  const settled = inputs.every((input) => {
+    const label = normalize(labelOf(input));
+    const want = wants.find((item) => matches(label, item));
+    return !want || input.checked === true;
+  });
+  return { checked, missing, settled };
+})`;
+
+export async function checkSearchFacets({ page, labels = [], sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), settleMs = 3000 } = {}) {
+  const wanted = [...new Set((Array.isArray(labels) ? labels : []).map((label) => String(label || "").trim()).filter(Boolean))];
+  if (!page || typeof page.evaluate !== "function" || !wanted.length) {
+    return { checked: [], missing: wanted, settled: false };
+  }
+  const run = async () => {
+    try {
+      return await page.evaluate(`(${EXTERNAL_FACET_CHECK_SCRIPT})(${JSON.stringify(wanted)})`);
+    } catch {
+      return null;
+    }
+  };
+  const first = await run();
+  if (!first || typeof first !== "object") return { checked: [], missing: wanted, settled: false };
+  if (first.missing && first.missing.length !== wanted.length) {
+    await sleepImpl(Math.max(0, Number(settleMs) || 0));
+    const again = await run();
+    if (again && typeof again === "object") return {
+      checked: Array.isArray(again.checked) ? again.checked : [],
+      missing: Array.isArray(again.missing) ? again.missing : wanted,
+      settled: again.settled === true,
+    };
+  }
+  return {
+    checked: Array.isArray(first.checked) ? first.checked : [],
+    missing: Array.isArray(first.missing) ? first.missing : wanted,
+    settled: first.settled === true,
+  };
+}
+
 export function filterUsableLoginCookies(cookies = [], now = Date.now() / 1000) {
   return (Array.isArray(cookies) ? cookies : []).filter((cookie) => {
     if (!cookie || !String(cookie.value || "")) return false;
