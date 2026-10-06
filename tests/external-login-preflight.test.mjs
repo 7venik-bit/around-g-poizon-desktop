@@ -88,11 +88,17 @@ test("external login heartbeats keep the search watchdog alive", () => {
 });
 
 test("product searches mirror into the logged-in external tab without blocking", () => {
-  assert.match(main, /async function showRetailerSearchInWindow\(sourceId, searchUrl\)/);
+  assert.match(main, /async function showRetailerSearchInWindow\(sourceId, searchUrl, facetLabels = \[\]\)/);
   assert.match(main, /if \(queryAttemptIndex === 0 && queryAttempt\?\.url/);
   assert.match(main, /typeof loginSourceIdForStore === "function" && typeof showRetailerSearchInWindow === "function"/);
-  assert.match(main, /void showRetailerSearchInWindow\(externalSourceId, queryAttempt\.url\)\.catch\(\(\) => \{\}\);/);
+  assert.match(main, /void showRetailerSearchInWindow\(externalSourceId, queryAttempt\.url, retailerFacetLabels\(externalSourceId, brand\)\)\.catch\(\(\) => \{\}\);/);
   assert.match(main, /import \{[\s\S]*?acquireLoginTab,[\s\S]*?closeBlankTabs,[\s\S]*?\} from "\.\/services\/external-chrome-login\.mjs";/);
+});
+
+test("retailer facet labels come from evidence wording and the product brand", () => {
+  assert.match(main, /function retailerFacetLabels/);
+  assert.match(main, /labels\.push\("신세계백화점"\)/);
+  assert.match(main, /labels\.push\("롯데백화점"\)/);
 });
 
 test("store names map to their external login source", () => {
