@@ -505,7 +505,7 @@
           const highestSizeByIdentity = highestQualifiedSizeReference(products);
           const pageKeys = products.map((product) => `${brandImportPathKey(file.path)}::${product.key || product.articleNumber || product.spuId}`);
           products.forEach((product, index) => excelPreviewProductCache.set(pageKeys[index], product));
-          columns.innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>사이즈</th><th>사이즈 판매량</th><th>사이즈 최고가</th><th>중국 총판매</th><th>현지 총판매</th></tr>`;
+          columns.innerHTML = `<tr><th class="excel-product-select-column">선택</th><th>이미지</th><th>상품번호</th><th>상품명</th><th>브랜드</th><th>사이즈</th><th>사이즈 판매량</th><th>사이즈 최고가</th><th>중국 총판매</th><th>현지 총판매</th><th>상품검색</th></tr>`;
           rows.innerHTML = products.length ? products.map((product, index) => {
             const key = pageKeys[index];
             const result = excelPreviewSearchResults.get(key);
@@ -524,8 +524,9 @@
               <td>${poizonPrice ? safeMoney(poizonPrice) : "가격 없음"}</td>
               <td>${excelProductMetric(product.totalSalesRaw, product.totalSales)}</td>
               <td>${excelProductMetric(product.localTotalSalesRaw, product.localTotalSales)}</td>
-            </tr>${result ? `<tr class="excel-product-search-detail ${groupClass}"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>${safeText(product.title || product.articleNumber || "상품")}</strong> 국내 검색 결과<em>${safeText(search.label)}</em></div>${inlineRenderDomestic(result, product, key)}</td></tr>` : ""}`;
-          }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
+              <td class="excel-product-search-cell"><button type="button" class="excel-product-search ${search.className || ""}" data-excel-search-product="${encodeURIComponent(key)}" title="국내 정확 상품 검색"${result?.loading ? " disabled" : ""}>${safeText(search.label)}</button></td>
+            </tr>${result ? `<tr class="excel-product-search-detail ${groupClass}"><td colspan="11"><div class="domestic-inline-detail-label"><span></span><strong>${safeText(product.title || product.articleNumber || "상품")}</strong> 국내 검색 결과<em>${safeText(search.label)}</em></div>${inlineRenderDomestic(result, product, key)}</td></tr>` : ""}`;
+          }).join("") : `<tr><td class="empty" colspan="11">조건에 맞는 상품이 없습니다.</td></tr>`;
           if (typeof updatePurchaseAwarenessDisplay === "function") updatePurchaseAwarenessDisplay();
           return pageKeys;
         } catch (error) {

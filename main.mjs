@@ -49,6 +49,7 @@ import {
   excelRowsToPopularProducts,
   popularCompleteness,
   popularSlotsToExcelData,
+  resolvePopularSpuIds,
 } from "./services/popular-excel.mjs";
 import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
@@ -98,7 +99,7 @@ import {
   captureOfficialSoldOutFilter,
 } from "./services/official-mall-adapters.mjs";
 import { requestedOfficialBrand, resolveBrandOfficialSearch } from "./services/brand-official-search.mjs";
-import { explorerMetadata, parsePopularProducts, queryExplorer } from "./services/poizon.mjs";
+import { explorerMetadata, parsePopularProducts, queryExplorer, queryPoizon } from "./services/poizon.mjs";
 import {
   brandSearchProfileKey,
   recordBrandSearchOutcome,
@@ -13493,7 +13494,32 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     try {
       const limit = 200;
       const beforeExcel = popularCompleteness(products, limit);
-      const slots = createPopularSlots(products, limit);
+      let slots = createPopularSlots(products, limit);
+      // Confirm a POIZON SPU for every collected article so the popular list
+      // offers the same product-view action as brand search. Saved API keys
+      // are required; without them the slots are staged exactly as before.
+      // A failed lookup keeps its slot: confirmation never drops products.
+      const poizonConfig = secretConfig();
+      if (poizonConfig.appKey && poizonConfig.appSecret) {
+        const lookupArticle = async (articleNumber) => {
+          const response = await queryPoizon(poizonConfig, { mode: "article", value: articleNumber });
+          if (!response?.ok) throw new Error(response?.error?.message || "SPU_LOOKUP_FAILED");
+          const data = response.data;
+          const matches = Array.isArray(data) ? data : data?.contents || data?.list || [];
+          return matches[0] || null;
+        };
+        const resolution = await resolvePopularSpuIds(slots, {
+          lookupArticle,
+          onProgress: ({ completed, total, matched }) => {
+            mainWindow?.webContents.send("seller:capture-progress", {
+              percent: Math.round((completed / Math.max(1, total)) * 100),
+              count: completed,
+              message: `포이즌 SPU 확인 중 (${completed}/${total}, 확인 ${matched})`,
+            });
+          },
+        });
+        slots = resolution.products;
+      }
       const folder = oneDrivePopularExportFolder()
         || join(app.getPath("desktop"), "Around G POIZON");
       await mkdir(folder, { recursive: true });
@@ -13506,6 +13532,7 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         columns: [
           { width: 8 }, { width: 46 }, { width: 20 }, { width: 54 }, { width: 18 },
           { width: 15 }, { width: 15 }, { width: 15 }, { width: 42 }, { width: 12 },
+          { width: 20 },
         ],
       }).toFile(filePath);
 
