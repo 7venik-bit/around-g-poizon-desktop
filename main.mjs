@@ -4031,6 +4031,28 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       // Analyze that payload separately: the DOM snapshot may carry an
       // authoritative-looking empty verdict that must not discard real
       // server-side candidates. Detail verification still decides.
+      // The embedded payload is read from the same logged-in session window:
+      // a session-less fetch often receives a different, bot-limited document.
+      try {
+        const sessionHtml = await searchWindow.webContents.mainFrame.executeJavaScript(
+          "String(document.documentElement ? document.documentElement.outerHTML : '')", true).catch(() => "");
+        const sessionCards = parseLotteInitialDataProducts(String(sessionHtml || "").slice(0, 2000000));
+        if (sessionCards.length) {
+          lotteServerEvidence = {
+            httpStatus: 0,
+            bytes: String(sessionHtml || "").length,
+            items: sessionCards.length,
+            origin: "session-dom",
+          };
+          lotteServerAnalyzed = analyzeRenderedChannelProducts(JSON.stringify({
+            productCards: sessionCards.map((item) => lotteServerSearchCard(item)).filter(Boolean),
+            pageText: "",
+            pageHeaderText: "",
+            selectedChannelEmpty: false,
+          }), source.store, articleNumber, brand, title, searchAttempt?.query || "");
+        }
+      } catch { /* session-DOM evidence is best-effort; the DOM result stands */ }
+      if (!lotteServerAnalyzed) {
       try {
         const serverResponse = await fetch(String(url || ""));
         const serverHtml = await serverResponse.text();
@@ -4039,6 +4061,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           httpStatus: Number(serverResponse?.status || 0),
           bytes: serverHtml.length,
           items: serverCards.length,
+          origin: "direct-fetch",
         };
         if (serverCards.length) {
           lotteServerAnalyzed = analyzeRenderedChannelProducts(JSON.stringify({
@@ -4049,6 +4072,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           }), source.store, articleNumber, brand, title, searchAttempt?.query || "");
         }
       } catch { /* server evidence is best-effort; the DOM result stands */ }
+      }
     }
     const analyzed = analyzeRenderedChannelProducts(content, source.store, articleNumber, brand, title, searchAttempt?.query || "");
     if (lotteServerAnalyzed && Array.isArray(lotteServerAnalyzed.products) && Array.isArray(analyzed?.products)) {
