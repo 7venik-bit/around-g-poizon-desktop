@@ -482,6 +482,46 @@ export async function checkSearchFacets({ page, labels = [], sleepImpl = (ms) =>
   };
 }
 
+// SSG top-menu department tab (백화점). Runs inside the page. Returns the
+// tab's department-scoped href, "clicked" after clicking a href-less tab, or
+// "" when absent. A header navigation link shares the 백화점 label, so only
+// the tab inside the search-filter area may be clicked; scoped hrefs are
+// preferred because they navigate to the exact operator-equivalent state.
+export function findSsgDepartmentTab() {
+  const text = (el) => String(el?.innerText || el?.textContent || "").replace(/\s+/g, " ").trim();
+  const visible = (el) => {
+    try {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    } catch {
+      return false;
+    }
+  };
+  const links = [...document.querySelectorAll("a[href]")].filter(visible);
+  const scopedLink = links.find((el) => /shpp=department/i.test(el.href || ""));
+  if (scopedLink) return scopedLink.href;
+  const tab = [...document.querySelectorAll("a,button,[role='tab']")].filter(visible).find((el) => {
+    if (text(el) !== "백화점") return false;
+    // Walk up only inside the filter panel: reaching BODY/HTML means the
+    // label came from the site header navigation, never the search tab.
+    let node = el.parentElement;
+    for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
+      if (/^(BODY|HTML)$/i.test(node.tagName || "")) break;
+      if (/검색\s*필터/.test(String(node.innerText || node.textContent || "").slice(0, 400))) return true;
+    }
+    return false;
+  });
+  if (tab) {
+    try {
+      tab.click();
+      return "clicked";
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
 export function filterUsableLoginCookies(cookies = [], now = Date.now() / 1000) {
   return (Array.isArray(cookies) ? cookies : []).filter((cookie) => {
     if (!cookie || !String(cookie.value || "")) return false;

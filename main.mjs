@@ -61,6 +61,7 @@ import {
   closeBlankTabs,
   checkSearchFacets,
   createCdpPageClient,
+  findSsgDepartmentTab,
   startExternalRetailerLogin,
 } from "./services/external-chrome-login.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
@@ -3521,6 +3522,63 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         await waitForDomesticCaptureReady(searchWindow, 25_000);
       }
     }
+    let ssgFacetOutcome = null;
+    let ssgDeptTab = "미적용";
+    if ((source.store === "SSG" || source.store === "SSG 백화점") && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
+      // The operator's top-menu department tab (백화점) scopes the grid before
+      // the left-menu brand check. Apply the same state: follow the tab's own
+      // department link when the current URL is not scoped yet. Best-effort.
+      // "SSG 아울렛" keeps its outlet channel scope and is intentionally excluded.
+      try {
+        const currentUrl = String(searchWindow.webContents.getURL() || "");
+        const scoped = /[?&]shpp=department/i.test(currentUrl) || !/^https?:\/\/(www\.)?ssg\.com\/search\.ssg/i.test(currentUrl);
+        if (scoped) {
+          ssgDeptTab = "이미 적용";
+        } else {
+          const deptAction = await searchWindow.webContents.mainFrame.executeJavaScript(
+            `(${findSsgDepartmentTab.toString()})()`, true).catch(() => "");
+          if (deptAction && deptAction !== "clicked") {
+            await searchWindow.loadURL(deptAction).catch(() => {});
+            ssgDeptTab = "탭 이동";
+            await waitForDomesticCaptureReady(searchWindow, 25_000);
+          } else if (deptAction === "clicked") {
+            ssgDeptTab = "탭 클릭";
+            await wait(3000);
+            await waitForDomesticCaptureReady(searchWindow, 25_000);
+          } else {
+            ssgDeptTab = "탭 없음";
+          }
+        }
+      } catch {
+        // Department scoping must never break the search itself.
+      }
+      // The operator's left-menu seller check (신세계백화점 + brand) narrows the
+      // grid to department goods before cards are captured. Best-effort only:
+      // a missing checkbox keeps today's unfiltered collection, never breaks it.
+      // "SSG 아울렛" keeps its outlet channel scope and is intentionally excluded.
+      try {
+        const facetPage = { evaluate: (expression) => searchWindow.webContents.mainFrame.executeJavaScript(expression, true) };
+        const facetResult = await checkSearchFacets({
+          page: facetPage,
+          labels: retailerFacetLabels("ssg", brand),
+          sleepImpl: wait,
+          settleMs: 3000,
+        });
+        if (facetResult && Array.isArray(facetResult.checked)) {
+          ssgFacetOutcome = {
+            checked: [...facetResult.checked],
+            missing: Array.isArray(facetResult.missing) ? [...facetResult.missing] : [],
+            settled: facetResult.settled === true,
+          };
+        }
+        if (facetResult && Array.isArray(facetResult.checked) && facetResult.checked.length) {
+          await onActivity?.({ phase: "searching", detail: "신세계백화점 판매처 적용" });
+          await waitForDomesticCaptureReady(searchWindow, 25_000);
+        }
+      } catch {
+        // Facet checks must never break the search itself.
+      }
+    }
     if (source.store === "롯데온" && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
       // The operator's left-menu seller check (롯데백화점 + brand) narrows the
       // grid to department goods before cards are captured. Best-effort only:
@@ -3958,6 +4016,25 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     const resolvedSearchUrl = String(searchWindow.webContents.getURL() || url);
     if (!analyzed) return renderedSearchFailure("result_analysis_failed", searchWindow, { searchSubmitted: interactiveSiteSearch });
     const candidateCount = Array.isArray(analyzed.products) ? analyzed.products.length : 0;
+    if (source.store === "SSG" || source.store === "SSG 백화점") {
+      // Record what the collection actually saw so a "no product" row can be
+      // diagnosed: whether the seller check applied and how many cards survived.
+      const renderedCards = Array.isArray(parsedContent?.productCards) ? parsedContent.productCards.length : 0;
+      const badgeCards = Array.isArray(parsedContent?.productCards)
+        ? parsedContent.productCards.filter((card) => card?.departmentStoreLabelMatched === true).length : 0;
+      analyzed.verificationDiagnostics = {
+        ...(analyzed?.verificationDiagnostics || {}),
+        ssgCollectionEvidence: {
+          deptTab: ssgDeptTab,
+          facetChecked: ssgFacetOutcome ? [...ssgFacetOutcome.checked] : [],
+          facetMissing: ssgFacetOutcome ? [...ssgFacetOutcome.missing] : [],
+          facetSettled: ssgFacetOutcome ? ssgFacetOutcome.settled === true : null,
+          renderedCards,
+          badgeCards,
+          candidateCount,
+        },
+      };
+    }
     let detailed = {
       ...analyzed,
       resolvedSearchUrl,
