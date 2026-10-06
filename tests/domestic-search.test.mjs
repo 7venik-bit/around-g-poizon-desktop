@@ -1329,6 +1329,58 @@ test("a transient Musinsa server failure is retried once", async () => {
   assert.equal(result.sources.find((source) => source.store === "무신사")?.count, 1);
 });
 
+test("SSG department flow follows the operator reference order", () => {
+  // 1. 좌측 브랜드(나이키) 체크 + 품번 검색: 코드는 그대로 채널 URL에 실린다.
+  const searchUrl = domesticChannelUrl("ssg-general", "나이키", "IB4595-001");
+  assert.ok(searchUrl.includes(encodeURIComponent("IB4595-001")));
+
+  // 2. 검색 결과 카드: 공식수입·백화점 표시 + 할인가(최종가).
+  const card = (overrides = {}) => ({
+    productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000000002",
+    title: "나이키 이니시에이터 IB4595-001",
+    text: "공식수입 나이키 이니시에이터 IB4595-001 47% 56,768원",
+    imageUrl: "https://simg.ssgcdn.com/test.jpg",
+    imageLinkedToProduct: true,
+    price: 56768,
+    originalPrice: 109000,
+    ...overrides,
+  });
+  const analyzed = analyzeRenderedChannelProducts(
+    JSON.stringify({ productCards: [card()], pageText: "" }),
+    "SSG", "IB4595-001", "나이키", "나이키 이니시에이터",
+  );
+  assert.equal(analyzed.products.length, 1);
+  assert.equal(analyzed.products[0].price, 56768);
+  assert.equal(analyzed.products[0].originalPrice, 109000);
+
+  // 3. 백화점 채널 카드는 로고 증거를 달고 정품 후보가 된다.
+  const department = analyzeRenderedChannelProducts(
+    JSON.stringify({ productCards: [card({ departmentStoreLabelMatched: true })], pageText: "" }),
+    "SSG 백화점", "IB4595-001", "나이키", "나이키 이니시에이터",
+  );
+  assert.equal(department.products.length, 1);
+  assert.equal(department.products[0].departmentStoreLabelMatched, true);
+  assert.ok(hasRetailerBrandEvidence(department.products));
+
+  // 4. 이미지 비교: 같은 코드에 이미지가 일치하면 신뢰도가 붙는다.
+  const scored = scoreProductCandidate(
+    { articleNumber: "IB4595-001", brand: "나이키", title: "나이키 이니시에이터" },
+    { ...department.products[0], detectedArticleNumber: "IB4595-001" },
+    0.95,
+  );
+  assert.equal(scored.signals.codeScore, 1);
+  assert.equal(scored.signals.imageScore, 95);
+  assert.equal(scored.signals.codeConflict, false);
+
+  // 5. 사이즈·재고: 상세 증거가 있으면 그대로 살린다.
+  const stocked = normalizeRenderedStockEvidence({
+    stockTexts: [],
+    options: [{ label: "270", inStock: true, stockText: "270 재고 5개" }],
+  });
+  assert.equal(stocked.sizes[0].label, "270");
+  assert.equal(stocked.sizes[0].inStock, true);
+});
+
 test("SSG Descente official brand hall outranks edit-shop discovery classification", () => {
   assert.equal(isSsgOfficialBrandHall({
     brand: "데상트",
