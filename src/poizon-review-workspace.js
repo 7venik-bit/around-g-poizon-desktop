@@ -80,7 +80,7 @@ export function showReviewReport(report = latestReport, doc = document) {
   if (!dialog.open) dialog.showModal();
 }
 
-export function beginLiveVerification({ file, brandName, excelProducts = [], snapshot, conditions = {}, api = window.aroundG, doc = document }) {
+export function beginLiveVerification({ file, brandName, excelProducts = [], snapshot, conditions = {}, api = window.aroundG, doc = document, onRetry = null }) {
   if (active?.running) throw new Error('다른 교차 검증이 진행 중입니다.');
   active?.dispose();
   installVerificationControls(doc);
@@ -106,7 +106,7 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
     <div class="review-tools"><span class="review-counters"></span><label><input class="review-follow" type="checkbox" checked>자동 따라가기</label></div>
     <div class="review-legend"><span data-tone="equal">일치</span><span data-tone="different">값 다름</span><span data-tone="missing">Excel 상품 없음/추가</span><span data-tone="unknown">기준·값 미확인</span></div>
     <div class="review-table-scroll" tabindex="0"><table class="review-table"><thead><tr><th>Excel 상품 · 원본 행</th><th>중국 최근 30일<br>Excel → POIZON</th><th>현지 최근 30일<br>Excel → POIZON</th><th>대조 결과</th></tr></thead><tbody></tbody></table></div>
-    <footer class="review-bottom"><button class="review-prev" type="button">이전</button><span class="review-page"></span><button class="review-next" type="button">다음</button><button class="review-auto-all" type="button">전체 자동 수정 시작</button><button class="review-report" type="button" disabled>대조 결과</button><small>POIZON 기준 자동 교정</small></footer>`;
+    <footer class="review-bottom"><button class="review-prev" type="button">이전</button><span class="review-page"></span><button class="review-next" type="button">다음</button><button class="review-auto-all" type="button">전체 자동 수정 시작</button><button class="review-report" type="button" disabled>대조 결과</button><button class="review-retry" type="button" hidden title="Excel을 다시 읽고 대조를 처음부터 다시 시작합니다">다시 시작</button><small>POIZON 기준 자동 교정</small></footer>`;
   doc.body.append(panel); doc.body.classList.add('poizon-review-open');
   const get = (s) => panel.querySelector(s);
   get('.review-file').textContent = `${brandName || file.brandName || ''} · ${file.name || file.path}`;
@@ -195,6 +195,25 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
     else get('.review-phase').textContent = '전체 자동 수정 승인 완료 · 페이지별 일괄 저장 및 재검증 중';
   };
   get('.review-report').onclick = () => showReviewReport(latestReport, doc);
+  // A stopped verification leaves completed pages saved but offers no way
+  // back in. The retry button restarts the same file list from a fresh disk
+  // read; it only appears when the starter provides an onRetry entry point.
+  const retryButton = get('.review-retry');
+  if (typeof onRetry === 'function' && retryButton) {
+    retryButton.onclick = async () => {
+      if (active?.running) return;
+      retryButton.disabled = true;
+      retryButton.textContent = '다시 시작 중…';
+      get('.review-phase').textContent = 'Excel을 다시 읽고 대조를 처음부터 다시 시작합니다…';
+      try {
+        await onRetry();
+      } catch (error) {
+        retryButton.disabled = false;
+        retryButton.textContent = '다시 시작';
+        get('.review-phase').textContent = `다시 시작하지 못했습니다 · ${error instanceof Error ? error.message : String(error || '')}`;
+      }
+    };
+  }
   const handle = {
     input, running: true, dispose,
     events: () => [...pageEvents.values()],
@@ -223,6 +242,11 @@ export function beginLiveVerification({ file, brandName, excelProducts = [], sna
       const stopButton = get('.review-stop');
       stopButton.disabled = true;
       stopButton.textContent = result.ok ? '대조 완료' : '대조 종료';
+      if (!result.ok && typeof onRetry === 'function' && retryButton) {
+        retryButton.hidden = false;
+        retryButton.disabled = false;
+        retryButton.textContent = '다시 시작';
+      }
       get('.review-close').disabled = false; renderRows(); dispose();
     },
     showReport(report) { latestReport = report; get('.review-report').disabled = false; showReviewReport(report, doc); },
