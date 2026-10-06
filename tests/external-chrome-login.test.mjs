@@ -13,6 +13,7 @@ import {
   pickRemoteDebuggingPort,
   createCdpPageClient,
   EXTERNAL_LOGIN_STATE_SCRIPT,
+  EXTERNAL_DEVICE_CONFIRM_SCRIPT,
   externalFillScript,
   filterUsableLoginCookies,
   planExternalLoginStep,
@@ -151,6 +152,57 @@ test("login state script detects logout, blocks and login forms", () => {
   assert.equal(formState.authenticated, false);
 });
 
+test("device confirm script clicks 등록, never 등록안함", () => {
+  const runScript = (html) => {
+    const dom = new JSDOM(html, { url: "https://nid.naver.com/", runScripts: "outside-only" });
+    dom.window.Element.prototype.getBoundingClientRect = () => ({
+      width: 100, height: 20, top: 0, left: 0, right: 100, bottom: 20, x: 0, y: 0, toJSON: () => ({}),
+    });
+    return vm.runInContext(EXTERNAL_DEVICE_CONFIRM_SCRIPT, dom.getInternalVMContext());
+  };
+  const point = runScript('<button>등록안함</button><button>등록</button>');
+  assert.ok(point && Number.isFinite(point.x) && Number.isFinite(point.y));
+  assert.equal(runScript('<button>등록안함</button>'), null);
+  assert.equal(runScript('<div>no buttons</div>'), null);
+});
+
+test("device confirmation completes the Naver leg", async () => {
+  const clicked = [];
+  let polls = 0;
+  const page = {
+    async evaluate(expression) {
+      const text = String(expression);
+      if (text.includes("getBoundingClientRect") && text.includes("등록")) return { x: 9, y: 9 };
+      if (text.includes("authenticated")) {
+        polls += 1;
+        return {
+          authenticated: polls >= 3,
+          blocked: false,
+          hasLoginForm: false,
+          url: "https://nid.naver.com/login/ext/deviceConfirm?svctype=1",
+        };
+      }
+      return null;
+    },
+    async clickPoint(point) {
+      clicked.push(point);
+    },
+    async getCookies() {
+      return [{ name: "NID_AUT", value: "ok" }];
+    },
+  };
+  const result = await waitForExternalLogin({
+    page,
+    detectControlsScript: "function detect() {}",
+    method: "naver",
+    merchantDomains: ["ssg.com"],
+    timeoutMs: 5000,
+    sleepImpl: async () => {},
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(clicked, [{ x: 9, y: 9 }]);
+});
+
 test("fill script assigns values through the element under the point", () => {
   const dom = new JSDOM('<input id="id" type="text"><input id="pw" type="password">', {
     url: "https://www.ssg.com/",
@@ -192,6 +244,22 @@ test("login route follows the merchant, provider click, provider fill order", ()
   );
   // Without merchant domains every page keeps the legacy merchant behavior.
   assert.equal(planExternalLoginStep({ pageUrl: "", method: "password" }), "fill_merchant");
+});
+
+test("Naver device confirmation clicks its 등록 button once", () => {
+  const deviceUrl = "https://nid.naver.com/login/ext/deviceConfirm?svctype=1";
+  assert.equal(
+    planExternalLoginStep({ pageUrl: deviceUrl, method: "naver", merchantDomains: ["ssg.com"] }),
+    "confirm_device",
+  );
+  assert.equal(
+    planExternalLoginStep({ pageUrl: deviceUrl, method: "naver", merchantDomains: ["ssg.com"], acted: { confirm_device: true } }),
+    "fill_provider",
+  );
+  assert.equal(
+    planExternalLoginStep({ pageUrl: deviceUrl, method: "password", merchantDomains: ["ssg.com"] }),
+    "wait",
+  );
 });
 
 test("SSG login route clicks Naver social login, then fills Naver credentials", async () => {
