@@ -13739,12 +13739,15 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
       // SSG reports a dead session as a security check, not loginRequired,
       // so both force re-verification: searching logged-out must never
       // continue, or repeated blind hits invite a traffic block.
-      for (const source of matched?.sources || []) {
-        if (!source) continue;
-        const externalId = loginSourceIdForStore(source?.store);
-        if ((externalId === "ssg" || externalId === "lotte")
-          && (source?.loginRequired === true || source?.securityVerificationRequired === true)) {
-          noteExternalLoginRequired(source?.store);
+      // typeof-guarded: sliced-vm fixtures run this handler without the ledger.
+      if (typeof noteExternalLoginRequired === "function") {
+        for (const source of matched?.sources || []) {
+          if (!source) continue;
+          const externalId = typeof loginSourceIdForStore === "function" ? loginSourceIdForStore(source?.store) : "";
+          if ((externalId === "ssg" || externalId === "lotte")
+            && (source?.loginRequired === true || source?.securityVerificationRequired === true)) {
+            noteExternalLoginRequired(source?.store);
+          }
         }
       }
       await preserveVerifiedResults(matched);
