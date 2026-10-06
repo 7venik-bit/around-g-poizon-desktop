@@ -272,6 +272,9 @@
         ["판매처 체크 확정", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)
           ? ((d.lotteCollectionEvidence || d.ssgCollectionEvidence).facetSettled === true ? "확정" : "미확정") : ""],
         ["백화점 탭", d.ssgCollectionEvidence?.deptTab],
+        ["범위 복원", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)
+          ? ((d.lotteCollectionEvidence || d.ssgCollectionEvidence).scopeReverted === true ? "복원됨" : "유지") : ""],
+        ["품번 카드 수", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.articleCards],
         ["수집 카드 수", d.lotteCollectionEvidence?.renderedCards ?? d.ssgCollectionEvidence?.renderedCards],
         ["백화점 카드 수", d.lotteCollectionEvidence?.badgeCards ?? d.ssgCollectionEvidence?.badgeCards],
         ["후보 상품 수", d.lotteCollectionEvidence?.candidateCount ?? d.ssgCollectionEvidence?.candidateCount],

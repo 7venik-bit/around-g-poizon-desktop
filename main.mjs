@@ -60,8 +60,14 @@ import {
   acquireLoginTab,
   closeBlankTabs,
   checkSearchFacets,
+  clickSearchFacetsVisibly,
   createCdpPageClient,
   findSsgDepartmentTab,
+  EXTERNAL_FACET_UNCHECK_SCRIPT,
+  EXTERNAL_GRID_ARTICLE_COUNT_SCRIPT,
+  EXTERNAL_PRODUCT_CARD_POINT_SCRIPT,
+  EXTERNAL_SSG_DEPARTMENT_HREF_SCRIPT,
+  EXTERNAL_SSG_DEPARTMENT_TAB_POINT_SCRIPT,
   startExternalRetailerLogin,
 } from "./services/external-chrome-login.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
@@ -3524,6 +3530,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     }
     let ssgFacetOutcome = null;
     let ssgDeptTab = "미적용";
+    let ssgPreScopeUrl = "";
+    let ssgTabNavigated = false;
+    let ssgScopeApplied = false;
     if ((source.store === "SSG" || source.store === "SSG 백화점") && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
       // The operator's top-menu department tab (백화점) scopes the grid before
       // the left-menu brand check. Apply the same state: follow the tab's own
@@ -3538,11 +3547,15 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           const deptAction = await searchWindow.webContents.mainFrame.executeJavaScript(
             `(${findSsgDepartmentTab.toString()})()`, true).catch(() => "");
           if (deptAction && deptAction !== "clicked") {
+            ssgPreScopeUrl = currentUrl;
             await searchWindow.loadURL(deptAction).catch(() => {});
             ssgDeptTab = "탭 이동";
+            ssgTabNavigated = true;
+            ssgScopeApplied = true;
             await waitForDomesticCaptureReady(searchWindow, 25_000);
           } else if (deptAction === "clicked") {
             ssgDeptTab = "탭 클릭";
+            ssgScopeApplied = true;
             await wait(3000);
             await waitForDomesticCaptureReady(searchWindow, 25_000);
           } else {
@@ -3573,12 +3586,14 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         }
         if (facetResult && Array.isArray(facetResult.checked) && facetResult.checked.length) {
           await onActivity?.({ phase: "searching", detail: "신세계백화점 판매처 적용" });
+          ssgScopeApplied = true;
           await waitForDomesticCaptureReady(searchWindow, 25_000);
         }
       } catch {
         // Facet checks must never break the search itself.
       }
     }
+    let lotteCheckedLabels = [];
     if (source.store === "롯데온" && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
       // The operator's left-menu seller check (롯데백화점 + brand) narrows the
       // grid to department goods before cards are captured. Best-effort only:
@@ -3592,11 +3607,46 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           settleMs: 3000,
         });
         if (facetResult && Array.isArray(facetResult.checked) && facetResult.checked.length) {
+          lotteCheckedLabels = [...facetResult.checked];
           await onActivity?.({ phase: "searching", detail: "롯데백화점 판매처 적용" });
           await waitForDomesticCaptureReady(searchWindow, 25_000);
         }
       } catch {
         // Facet checks must never break the search itself.
+      }
+    }
+    // A scope that empties the grid is reverted on the spot: SSG then shows
+    // "일치하는 상품이 없습니다" permanently, hiding genuine goods. Uncheck
+    // the applied boxes and, for a tab navigation, return to the pre-scope
+    // URL before cards are captured below.
+    let scopeReverted = false;
+    let scopeArticleCards = -1;
+    const scopeArticle = String(articleNumber || "").trim();
+    const scopeActive = (source.store === "롯데온" && lotteCheckedLabels.length > 0)
+      || ((source.store === "SSG" || source.store === "SSG 백화점") && ssgScopeApplied);
+    if (scopeActive && scopeArticle && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
+      try {
+        const countScopeArticles = () => searchWindow.webContents.mainFrame.executeJavaScript(
+          `(${EXTERNAL_GRID_ARTICLE_COUNT_SCRIPT})(${JSON.stringify(scopeArticle)})`, true).catch(() => -1);
+        scopeArticleCards = Number(await countScopeArticles()) || 0;
+        if (scopeArticleCards <= 0) {
+          const uncheckLabels = source.store === "롯데온"
+            ? lotteCheckedLabels
+            : [...(ssgFacetOutcome && Array.isArray(ssgFacetOutcome.checked) ? ssgFacetOutcome.checked : [])];
+          if (uncheckLabels.length) {
+            await searchWindow.webContents.mainFrame.executeJavaScript(
+              `(${EXTERNAL_FACET_UNCHECK_SCRIPT})(${JSON.stringify(uncheckLabels)})`, true).catch(() => null);
+            await wait(2000);
+          }
+          if (ssgTabNavigated && ssgPreScopeUrl) {
+            await searchWindow.loadURL(ssgPreScopeUrl).catch(() => {});
+          }
+          await waitForDomesticCaptureReady(searchWindow, 25_000);
+          scopeArticleCards = Number(await countScopeArticles()) || 0;
+          scopeReverted = true;
+        }
+      } catch {
+        // Revert failure keeps the scoped grid; collection continues below.
       }
     }
     let content = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
@@ -4029,6 +4079,26 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           facetChecked: ssgFacetOutcome ? [...ssgFacetOutcome.checked] : [],
           facetMissing: ssgFacetOutcome ? [...ssgFacetOutcome.missing] : [],
           facetSettled: ssgFacetOutcome ? ssgFacetOutcome.settled === true : null,
+          scopeReverted,
+          articleCards: scopeArticleCards < 0 ? null : scopeArticleCards,
+          renderedCards,
+          badgeCards,
+          candidateCount,
+        },
+      };
+    }
+    if (source.store === "롯데온") {
+      // Same collection evidence for the LotteON seller check, so an empty
+      // row carries its own diagnosis instead of silence.
+      const renderedCards = Array.isArray(parsedContent?.productCards) ? parsedContent.productCards.length : 0;
+      const badgeCards = Array.isArray(parsedContent?.productCards)
+        ? parsedContent.productCards.filter((card) => card?.departmentStoreLabelMatched === true).length : 0;
+      analyzed.verificationDiagnostics = {
+        ...(analyzed?.verificationDiagnostics || {}),
+        lotteCollectionEvidence: {
+          facetChecked: [...lotteCheckedLabels],
+          scopeReverted,
+          articleCards: scopeArticleCards < 0 ? null : scopeArticleCards,
           renderedCards,
           badgeCards,
           candidateCount,
@@ -4357,7 +4427,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           && typeof retailerFacetLabels === "function") {
           const externalSourceId = loginSourceIdForStore(source.store);
           if (externalSourceId === "ssg" || externalSourceId === "lotte") {
-            void showRetailerSearchInWindow(externalSourceId, queryAttempt.url, retailerFacetLabels(externalSourceId, brand)).catch(() => {});
+            void showRetailerSearchInWindow(externalSourceId, queryAttempt.url, retailerFacetLabels(externalSourceId, brand), articleNumber).catch(() => {});
           }
         }
         // A Naver overview DOM belongs to exactly one submitted query. When an
@@ -12345,10 +12415,14 @@ function retailerFacetLabels(sourceId, brand = "") {
 
 // Visible logged-in search: once the external login is confirmed, each
 // product search also navigates the retailer's tab of the shared window so
-// the operator watches the search happen in the logged-in session.
+// the operator watches the search happen in the logged-in session. Every
+// action below uses a real, observable CDP mouse (hover + click) or a
+// visible navigation: facet checks, the department scope, and finally the
+// article card itself. A scope that empties the grid is reverted on the
+// spot, because SSG then shows "일치하는 상품이 없습니다" permanently.
 // Collection verdicts still come from the existing collector; this helper
 // never blocks or fails the search itself.
-async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = []) {
+async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [], articleNumber = "") {
   try {
     if (!EXTERNAL_LOGIN_RETAILER_IDS.has(String(sourceId || ""))) return null;
     if (!sharedExternalLoginChrome?.child || !confirmedExternalLogins.has(sourceId)) return null;
@@ -12367,27 +12441,91 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [])
       ...sharedExternalLoginChrome,
       tabs: { ...(sharedExternalLoginChrome.tabs || {}), [sourceId]: acquired.targetId },
     };
-    // Apply the operator's left-menu checks (department + brand) on the
-    // visible search page, then sweep strays. Best-effort only.
-    if (Array.isArray(facetLabels) && facetLabels.length) {
-      try {
-        const facetClient = createCdpPageClient({
+    // One mirror client drives every visible action below.
+    let mirrorClient = null;
+    const mirrorPage = () => {
+      if (!mirrorClient) {
+        mirrorClient = createCdpPageClient({
           fetchImpl: fetch,
           WebSocketImpl: WebSocket,
           port: Number(sharedExternalLoginChrome.port) || 0,
           targetId: acquired.targetId,
         });
-        await checkSearchFacets({
-          page: facetClient,
-          labels: facetLabels,
-          sleepImpl: wait,
-          settleMs: 3000,
-        });
+      }
+      return mirrorClient;
+    };
+    const article = String(articleNumber || "").trim();
+    const labels = [...new Set((Array.isArray(facetLabels) ? facetLabels : []).map((label) => String(label || "").trim()).filter(Boolean))];
+    const gridArticleCount = async () => {
+      try {
+        return Number(await mirrorPage().evaluate(`(${EXTERNAL_GRID_ARTICLE_COUNT_SCRIPT})(${JSON.stringify(article)})`)) || 0;
       } catch {
-        // Facet checks must never break the search itself.
+        return -1;
+      }
+    };
+    // 1. SSG top-menu department scope first (brand check comes second).
+    // Without an article the scope cannot be verified, so it is skipped.
+    let deptScope = null;
+    if (sourceId === "ssg" && article) {
+      try {
+        const current = String(await mirrorPage().evaluate("String((typeof location !== 'undefined' && location.href) || '')") || "");
+        if (!/[?&]shpp=department/i.test(current)) {
+          const href = await mirrorPage().evaluate(EXTERNAL_SSG_DEPARTMENT_HREF_SCRIPT).catch(() => "");
+          if (href) {
+            deptScope = { kind: "navigate", backUrl: String(searchUrl) };
+            await mirrorPage().navigate(href);
+            await wait(3000);
+          } else {
+            const point = await mirrorPage().evaluate(EXTERNAL_SSG_DEPARTMENT_TAB_POINT_SCRIPT).catch(() => null);
+            if (point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y))) {
+              deptScope = { kind: "click", backUrl: String(searchUrl) };
+              await mirrorPage().clickPoint(point);
+              await wait(3000);
+            }
+          }
+        }
+      } catch {
+        deptScope = null;
+      }
+    }
+    // 2. Left-menu checks through the visible mouse, verified by the settle pass.
+    let facetResult = null;
+    if (labels.length) {
+      try {
+        facetResult = await clickSearchFacetsVisibly({ page: mirrorPage(), labels, sleepImpl: wait, settleMs: 3000 });
+      } catch {
+        facetResult = null;
+      }
+    }
+    // 3. A scope that emptied the grid is reverted: the filtered state must
+    // never stand when the article is gone from every card.
+    if (article && (deptScope || (facetResult && Array.isArray(facetResult.checked) && facetResult.checked.length))) {
+      const before = await gridArticleCount();
+      if (before === 0) {
+        try {
+          if (facetResult && Array.isArray(facetResult.checked) && facetResult.checked.length) {
+            await mirrorPage().evaluate(`(${EXTERNAL_FACET_UNCHECK_SCRIPT})(${JSON.stringify(facetResult.checked)})`);
+            await wait(2000);
+          }
+          if (deptScope) await mirrorPage().navigate(deptScope.backUrl);
+        } catch {
+          // Revert failure keeps the current grid; collection is unaffected.
+        }
       }
     }
     await closeBlankTabs({ fetchImpl: fetch, port: Number(sharedExternalLoginChrome.port) || 0 });
+    // 4. Open the article card with the visible mouse, after the sweep so a
+    // just-opened tab cannot be closed while navigation is still starting.
+    if (article) {
+      try {
+        const target = await mirrorPage().evaluate(`(${EXTERNAL_PRODUCT_CARD_POINT_SCRIPT})(${JSON.stringify(article)})`);
+        if (target && Number.isFinite(Number(target.x)) && Number.isFinite(Number(target.y))) {
+          await mirrorPage().clickPoint(target);
+        }
+      } catch {
+        // Opening the product is observational only.
+      }
+    }
     return acquired.targetId;
   } catch {
     return null;
