@@ -22,7 +22,8 @@ test("lotte seller check is scoped and never blocks unfiltered collection", () =
   const blockStart = collection.indexOf('if (source.store === "롯데온"');
   const captureStart = collection.indexOf("let content = await searchWindow", blockStart);
   assert.ok(blockStart < captureStart, "facet check must run before card capture");
-  const block = collection.slice(blockStart, captureStart);
+  const revertStart = collection.indexOf("// A scope that empties the grid", blockStart);
+  const block = collection.slice(blockStart, revertStart);
   assert.match(block, /!officialDirectDetail/);
   assert.match(block, /isDestroyed/);
   assert.match(block, /checked\.length/);

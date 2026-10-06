@@ -88,11 +88,21 @@ test("external login heartbeats keep the search watchdog alive", () => {
 });
 
 test("product searches mirror into the logged-in external tab without blocking", () => {
-  assert.match(main, /async function showRetailerSearchInWindow\(sourceId, searchUrl, facetLabels = \[\]\)/);
+  assert.match(main, /async function showRetailerSearchInWindow\(sourceId, searchUrl, facetLabels = \[\], articleNumber = ""\)/);
   assert.match(main, /if \(queryAttemptIndex === 0 && queryAttempt\?\.url/);
   assert.match(main, /typeof loginSourceIdForStore === "function" && typeof showRetailerSearchInWindow === "function"/);
-  assert.match(main, /void showRetailerSearchInWindow\(externalSourceId, queryAttempt\.url, retailerFacetLabels\(externalSourceId, brand\)\)\.catch\(\(\) => \{\}\);/);
-  assert.match(main, /import \{[\s\S]*?acquireLoginTab,[\s\S]*?closeBlankTabs,[\s\S]*?\} from "\.\/services\/external-chrome-login\.mjs";/);
+  assert.match(main, /void showRetailerSearchInWindow\(externalSourceId, queryAttempt\.url, retailerFacetLabels\(externalSourceId, brand\), articleNumber\)\.catch\(\(\) => \{\}\);/);
+  assert.match(main, /import \{[\s\S]*?acquireLoginTab,[\s\S]*?closeBlankTabs,[\s\S]*?clickSearchFacetsVisibly,[\s\S]*?\} from "\.\/services\/external-chrome-login\.mjs";/);
+});
+
+test("mirrored search drives a visible mouse from scope to product click", () => {
+  const start = main.indexOf("async function showRetailerSearchInWindow(");
+  const end = main.indexOf("let shoppingAccountServicesCache;", start);
+  const mirror = main.slice(start, end);
+  assert.match(mirror, /EXTERNAL_PRODUCT_CARD_POINT_SCRIPT/);
+  assert.match(mirror, /\.clickPoint\(/);
+  assert.ok(mirror.indexOf("closeBlankTabs") < mirror.indexOf("EXTERNAL_PRODUCT_CARD_POINT_SCRIPT"),
+    "the product must open after strays are swept");
 });
 
 test("retailer facet labels come from evidence wording and the product brand", () => {

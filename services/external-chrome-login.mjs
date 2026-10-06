@@ -317,6 +317,8 @@ export function createCdpPageClient({
       const x = Math.round(Number(point?.x));
       const y = Math.round(Number(point?.y));
       if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error("CDP_BAD_POINT");
+      // Hover first: the headed window visibly reacts before the click lands.
+      await call("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
       for (const type of ["mousePressed", "mouseReleased"]) {
         await call("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
       }
@@ -480,6 +482,223 @@ export async function checkSearchFacets({ page, labels = [], sleepImpl = (ms) =>
     missing: Array.isArray(first.missing) ? first.missing : wanted,
     settled: first.settled === true,
   };
+}
+
+// Facet checkbox points for VISIBLE mouse clicks. Unlike the checking
+// script above, this never clicks: it returns clickable points of matching
+// boxes (unchecked by default, or checked when wantChecked is true) so the
+// caller can drive a real, observable mouse through CDP.
+export const EXTERNAL_FACET_POINT_SCRIPT = `((wanted, wantChecked) => {
+  const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim().toLowerCase();
+  const wants = [...new Set((Array.isArray(wanted) ? wanted : []).map(normalize).filter(Boolean))];
+  const labelOf = (input) => {
+    const direct = input.getAttribute && input.getAttribute("aria-label");
+    if (direct && direct.trim()) return direct;
+    const id = input.id;
+    if (id && input.ownerDocument) {
+      try {
+        const labels = input.ownerDocument.querySelectorAll("label");
+        for (const el of labels) {
+          if (el.getAttribute && el.getAttribute("for") === id && el.textContent && el.textContent.trim()) {
+            return el.textContent;
+          }
+        }
+      } catch {
+        // Label lookup failure falls through to the wrapping label below.
+      }
+    }
+    const wrapping = input.closest ? input.closest("label") : null;
+    if (wrapping && wrapping.textContent && wrapping.textContent.trim()) return wrapping.textContent;
+    return "";
+  };
+  const pointOf = (input) => {
+    try {
+      const rect = input.getBoundingClientRect();
+      if (!rect.width || !rect.height) return null;
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+    } catch {
+      return null;
+    }
+  };
+  const matches = (label, want) => label === want || new RegExp("^" + want.replace(/[.*+?^\${}()|[\\]\\\\]/g, "\\\\$&") + "(\\\\s*\\\\(?\\\\d+\\\\)?)?$").test(label);
+  const points = [];
+  for (const input of document.querySelectorAll('input[type="checkbox"]')) {
+    if (Boolean(input.checked) !== Boolean(wantChecked)) continue;
+    const label = normalize(labelOf(input));
+    const want = wants.find((item) => matches(label, item));
+    if (!want) continue;
+    const point = pointOf(input);
+    if (point) points.push({ ...point, label: want });
+  }
+  return points;
+})`;
+
+// Unchecks matching facet boxes inside the page (collection flow, where no
+// CDP mouse exists). Returns the labels that were unchecked.
+export const EXTERNAL_FACET_UNCHECK_SCRIPT = `((wanted) => {
+  const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim().toLowerCase();
+  const wants = [...new Set((Array.isArray(wanted) ? wanted : []).map(normalize).filter(Boolean))];
+  const labelOf = (input) => {
+    const direct = input.getAttribute && input.getAttribute("aria-label");
+    if (direct && direct.trim()) return direct;
+    const id = input.id;
+    if (id && input.ownerDocument) {
+      try {
+        const labels = input.ownerDocument.querySelectorAll("label");
+        for (const el of labels) {
+          if (el.getAttribute && el.getAttribute("for") === id && el.textContent && el.textContent.trim()) {
+            return el.textContent;
+          }
+        }
+      } catch {
+        // Label lookup failure falls through to the wrapping label below.
+      }
+    }
+    const wrapping = input.closest ? input.closest("label") : null;
+    if (wrapping && wrapping.textContent && wrapping.textContent.trim()) return wrapping.textContent;
+    return "";
+  };
+  const matches = (label, want) => label === want || new RegExp("^" + want.replace(/[.*+?^\${}()|[\\]\\\\]/g, "\\\\$&") + "(\\\\s*\\\\(?\\\\d+\\\\)?)?$").test(label);
+  const unchecked = [];
+  for (const input of document.querySelectorAll('input[type="checkbox"]')) {
+    if (!input.checked) continue;
+    const label = normalize(labelOf(input));
+    const want = wants.find((item) => matches(label, item));
+    if (!want) continue;
+    try {
+      input.click();
+      unchecked.push(want);
+    } catch {
+      // A failed toggle leaves the box checked for the verification pass.
+    }
+  }
+  return { unchecked };
+})`;
+
+// Article card point for a VISIBLE mouse click. Returns the best point plus
+// its URL without clicking; the caller drives the observable mouse.
+export const EXTERNAL_PRODUCT_CARD_POINT_SCRIPT = `((article) => {
+  const compact = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const want = compact(article);
+  if (!want) return { reason: "missing" };
+  const visible = (el) => {
+    try {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    } catch {
+      return false;
+    }
+  };
+  const productShaped = (href) => /\\/(?:p\\/)?product(?:\\/|$)|itemView|goods\\/|products?\\/\\d/i.test(String(href || ""));
+  let best = null;
+  let bestScore = 0;
+  let bestUrl = "";
+  for (const link of [...document.querySelectorAll('a[href]')].filter(visible)) {
+    const href = String(link.href || "");
+    const selfHit = compact(href + " " + (link.textContent || "")).includes(want);
+    const card = link.closest ? link.closest("li,article") : null;
+    const cardHit = !selfHit && card && compact(card.textContent).includes(want);
+    const shaped = productShaped(href);
+    const score = selfHit && shaped ? 3 : selfHit ? 2 : cardHit && shaped ? 1 : -1;
+    if (score <= bestScore) continue;
+    let point = null;
+    try {
+      const rect = link.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        point = { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+      }
+    } catch {
+      point = null;
+    }
+    if (!point) continue;
+    bestScore = score;
+    best = point;
+    bestUrl = href;
+  }
+  if (!best) return { reason: "not-found" };
+  return { x: best.x, y: best.y, url: bestUrl };
+})`;
+
+// SSG top-menu department link (백화점 tab href). Prefers the tab's own
+// scoped href; the caller navigates so the scoping stays observable.
+export const EXTERNAL_SSG_DEPARTMENT_HREF_SCRIPT = `(() => {
+  const visible = (el) => {
+    try {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    } catch {
+      return false;
+    }
+  };
+  const scoped = [...document.querySelectorAll("a[href]")].filter(visible)
+    .find((el) => /shpp=department/i.test(el.href || ""));
+  return scoped ? String(scoped.href || "") : "";
+})()`;
+
+// SSG top-menu department tab point (href-less fallback). Only a tab inside
+// the search-filter area may be clicked; header navigation never qualifies.
+export const EXTERNAL_SSG_DEPARTMENT_TAB_POINT_SCRIPT = `(() => {
+  const text = (el) => String(el?.innerText || el?.textContent || "").replace(/\\s+/g, " ").trim();
+  const visible = (el) => {
+    try {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    } catch {
+      return false;
+    }
+  };
+  const tab = [...document.querySelectorAll("a,button,[role='tab']")].filter(visible).find((el) => {
+    if (text(el) !== "백화점") return false;
+    let node = el.parentElement;
+    for (let depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
+      if (/^(BODY|HTML)$/i.test(node.tagName || "")) break;
+      if (/검색\\s*필터/.test(text(node).slice(0, 400))) return true;
+    }
+    return false;
+  });
+  if (!tab) return null;
+  try {
+    const rect = tab.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+  } catch {
+    return null;
+  }
+})()`;
+
+// Counts distinct product links carrying the article at card level. Guards
+// scope filters: a scope that empties the grid must be reverted, never kept.
+export const EXTERNAL_GRID_ARTICLE_COUNT_SCRIPT = `((article) => {
+  const compact = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const want = compact(article);
+  if (!want) return 0;
+  const hits = new Set();
+  for (const link of document.querySelectorAll("a[href]")) {
+    const card = link.closest ? link.closest("li,article") : null;
+    const text = compact(String(link.href || "") + " " + String(link.textContent || "") + " " + (card ? String(card.textContent || "") : ""));
+    if (text.includes(want)) hits.add(String(link.href || "").split("#")[0]);
+  }
+  return hits.size;
+})`;
+
+// Applies facet labels through VISIBLE CDP mouse clicks, then verifies with
+// the standard settle pass. Returns the verification result.
+export async function clickSearchFacetsVisibly({ page, labels = [], sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), settleMs = 3000 } = {}) {
+  const wanted = [...new Set((Array.isArray(labels) ? labels : []).map((label) => String(label || "").trim()).filter(Boolean))];
+  if (!page || typeof page.evaluate !== "function" || !wanted.length) {
+    return { checked: [], missing: wanted, settled: false };
+  }
+  try {
+    const points = await page.evaluate(`(${EXTERNAL_FACET_POINT_SCRIPT})(${JSON.stringify(wanted)}, false)`);
+    for (const point of Array.isArray(points) ? points : []) {
+      if (typeof page.clickPoint !== "function") break;
+      await page.clickPoint(point);
+      await sleepImpl(400);
+    }
+  } catch {
+    // A failed visible click falls through to the verification pass below.
+  }
+  return checkSearchFacets({ page, labels: wanted, sleepImpl, settleMs });
 }
 
 // SSG top-menu department tab (백화점). Runs inside the page. Returns the
