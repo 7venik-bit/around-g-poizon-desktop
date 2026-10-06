@@ -3521,6 +3521,26 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         await waitForDomesticCaptureReady(searchWindow, 25_000);
       }
     }
+    if (source.store === "롯데온" && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
+      // The operator's left-menu seller check (롯데백화점 + brand) narrows the
+      // grid to department goods before cards are captured. Best-effort only:
+      // a missing checkbox keeps today's unfiltered collection, never breaks it.
+      try {
+        const facetPage = { evaluate: (expression) => searchWindow.webContents.mainFrame.executeJavaScript(expression, true) };
+        const facetResult = await checkSearchFacets({
+          page: facetPage,
+          labels: retailerFacetLabels("lotte", brand),
+          sleepImpl: wait,
+          settleMs: 3000,
+        });
+        if (facetResult && Array.isArray(facetResult.checked) && facetResult.checked.length) {
+          await onActivity?.({ phase: "searching", detail: "롯데백화점 판매처 적용" });
+          await waitForDomesticCaptureReady(searchWindow, 25_000);
+        }
+      } catch {
+        // Facet checks must never break the search itself.
+      }
+    }
     let content = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const expectedArticle = ${JSON.stringify(String(articleNumber || ""))};
       const expectedCompact = expectedArticle.replace(/[^A-Z0-9]/gi, "").toUpperCase();
