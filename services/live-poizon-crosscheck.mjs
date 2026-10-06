@@ -138,7 +138,31 @@ export function assertPoizonPageReadyForCorrection(products = [], rows = [], pag
     if (!key || byKey.has(key)) throw new Error('페이지 대조 식별자가 없거나 중복되어 Excel 수정을 중단했습니다.');
     byKey.set(key, row);
   }
-  if (!products.length || products.length !== rows.length) throw new Error('페이지 상품 수와 대조 증거 수가 달라 Excel 수정을 중단했습니다.');
+  if (!products.length || products.length !== rows.length) {
+    // A bare count never tells the operator which product lost its evidence
+    // (typically a page-boundary repeat or an unreadable row). Report both
+    // counts plus the first differing identities so the next run is actionable.
+    // The write still stops: partial evidence is never confirmed as complete.
+    const rowKeys = new Set(byKey.keys());
+    const productKeySet = new Set(productKeys);
+    const missing = [];
+    const seen = new Set();
+    for (const key of productKeys) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!rowKeys.has(key) && missing.length < 5) missing.push(key);
+    }
+    const extra = [];
+    for (const key of rowKeys) {
+      if (!productKeySet.has(key) && extra.length < 5) extra.push(key);
+    }
+    const detail = [
+      `POIZON ${pageNum || '?'}페이지 상품 ${products.length}개·대조 증거 ${rows.length}개`,
+      missing.length ? `증거 없음: ${missing.join(', ')}` : '',
+      extra.length ? `여분 증거: ${extra.join(', ')}` : '',
+    ].filter(Boolean).join(' · ');
+    throw new Error(`페이지 상품 수와 대조 증거 수가 달라 Excel 수정을 중단했습니다. (${detail})`);
+  }
   const writable = [];
   let skippedSkuScope = 0;
   for (const product of products) {
