@@ -842,6 +842,16 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           detailArticleVerificationRequired = false;
         }
         if (conflictingArticle && !allowProvisionalArticleConflict) articleMatched = false;
+        // A department-badged card that carries the exact code stays a
+        // candidate even when the seller prints a second internal code beside
+        // it (LotteON seller item numbers, SSG retailer-managed numbers). The
+        // badge gates above already removed unbadged marketplace listings, and
+        // cards without the exact code are still rejected, so generic
+        // recommendations cannot slip through on a conflicting code alone.
+        const badgedExactDepartmentCard = (String(store || "") === "롯데온" || /^SSG(?:\s|$)/.test(String(store || "")))
+          && card?.departmentStoreLabelMatched === true
+          && Boolean(exactDetectedArticle);
+        if (badgedExactDepartmentCard) articleMatched = true;
         // Naver can fill an exact-code query page with visually similar
         // recommendations. Parallel-import discovery must contain the requested
         // model in the product card itself; the page query or nearby card is not evidence.

@@ -302,6 +302,30 @@ test("롯데온 서버 상품은 품번·브랜드 매칭으로 분석에 들어
   assert.equal(result.products[0].articleNumberVerified, true);
 });
 
+test("백화점 배지 카드는 정확 품번이 있으면 판매자 내부번호와 함께 있어도 후보가 된다", () => {
+  const rendered = JSON.stringify({ productCards: [
+    { productUrl: "https://www.lotteon.com/p/product/PD2?mall_no=1",
+      title: "화이트 블랙 덩크 로우탑 스니커즈 DD1503 101 TP869055991",
+      text: "롯데백화점 나이키 화이트 블랙 덩크 로우탑 스니커즈 DD1503 101 TP869055991 270,000 23% 207,900",
+      price: 207900, originalPrice: 270000, departmentStoreLabelMatched: true },
+  ] });
+  const result = analyzeRenderedChannelProducts(rendered, "롯데온", "DD1503-101", "나이키", "(W) 나이키 덩크 로우 블랙 DD1503-101");
+  assert.equal(result.products.length, 1);
+  assert.ok(result.products[0].url.includes("/PD2"));
+  assert.equal(result.products[0].articleNumberVerified, true);
+  assert.equal(result.products[0].articleConflict, true);
+});
+
+test("배지 없는 모호 카드는 정확 품번이 있어도 여전히 제외된다", () => {
+  const rendered = JSON.stringify({ productCards: [
+    { productUrl: "https://www.lotteon.com/product/LO2598810463?mall_no=1",
+      title: "화이트 블랙 덩크 로우탑 스니커즈 DD1503 101 TP869055991",
+      text: "입점 판매자 화이트 블랙 덩크 DD1503 101 TP869055991" },
+  ] });
+  const result = analyzeRenderedChannelProducts(rendered, "롯데온", "DD1503-101", "나이키", "(W) 나이키 덩크 로우 블랙 DD1503-101");
+  assert.equal(result.products.length, 0);
+});
+
 test("비어 보이는 DOM 판정과 별도로 서버 증거 상품을 합친다", () => {
   const dom = [];
   const server = [
