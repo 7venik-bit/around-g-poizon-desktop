@@ -85,6 +85,14 @@ test("external login heartbeats keep the search watchdog alive", () => {
   assert.doesNotMatch(main, /외부 로그인 확인`,/);
 });
 
+test("product searches mirror into the logged-in external tab without blocking", () => {
+  assert.match(main, /async function showRetailerSearchInWindow\(sourceId, searchUrl\)/);
+  assert.match(main, /if \(queryAttemptIndex === 0 && queryAttempt\?\.url/);
+  assert.match(main, /typeof loginSourceIdForStore === "function" && typeof showRetailerSearchInWindow === "function"/);
+  assert.match(main, /void showRetailerSearchInWindow\(externalSourceId, queryAttempt\.url\)\.catch\(\(\) => \{\}\);/);
+  assert.match(main, /import \{[\s\S]*?acquireLoginTab,[\s\S]*?closeBlankTabs,[\s\S]*?\} from "\.\/services\/external-chrome-login\.mjs";/);
+});
+
 test("store names map to their external login source", () => {
   const start = main.indexOf("function loginSourceIdForStore(");
   const end = main.indexOf("\n}\n", start) + 3;

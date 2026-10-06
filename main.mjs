@@ -56,6 +56,8 @@ import { ShoppingAccounts, ShoppingLoginConnector, captureShoppingLoginPage } fr
 import {
   findChromeExecutable,
   closeLoginChrome,
+  acquireLoginTab,
+  closeBlankTabs,
   startExternalRetailerLogin,
 } from "./services/external-chrome-login.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
@@ -4247,6 +4249,16 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         source.rejectedProductUrls = [...rejectedProductUrls];
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
         onProgress?.({ completed: sources.length, total: progressTotal, source: String(source.store || "판매처"), phase: "searching", query: queryAttempt.query });
+        // Mirror the product search into the logged-in external tab so the
+        // operator watches it there. Fire-and-forget: collection never waits.
+        // typeof guards keep sliced-vm test fixtures working without stubs.
+        if (queryAttemptIndex === 0 && queryAttempt?.url
+          && typeof loginSourceIdForStore === "function" && typeof showRetailerSearchInWindow === "function") {
+          const externalSourceId = loginSourceIdForStore(source.store);
+          if (externalSourceId === "ssg" || externalSourceId === "lotte") {
+            void showRetailerSearchInWindow(externalSourceId, queryAttempt.url).catch(() => {});
+          }
+        }
         // A Naver overview DOM belongs to exactly one submitted query. When an
         // exact-code result is authoritatively absent, discard that DOM before
         // submitting the next ranked query; otherwise the old code result is
@@ -12216,6 +12228,37 @@ function noteExternalLoginRequired(store = "") {
   if (!sourceId) return;
   retailersNeedingLogin.add(sourceId);
   confirmedExternalLogins.delete(sourceId);
+}
+
+// Visible logged-in search: once the external login is confirmed, each
+// product search also navigates the retailer's tab of the shared window so
+// the operator watches the search happen in the logged-in session.
+// Collection verdicts still come from the existing collector; this helper
+// never blocks or fails the search itself.
+async function showRetailerSearchInWindow(sourceId, searchUrl) {
+  try {
+    if (!EXTERNAL_LOGIN_RETAILER_IDS.has(String(sourceId || ""))) return null;
+    if (!sharedExternalLoginChrome?.child || !confirmedExternalLogins.has(sourceId)) return null;
+    if (typeof WebSocket === "undefined" || !searchUrl) return null;
+    const acquired = await acquireLoginTab({
+      fetchImpl: fetch,
+      WebSocketImpl: WebSocket,
+      port: Number(sharedExternalLoginChrome.port) || 0,
+      loginUrl: String(searchUrl),
+      knownTabs: sharedExternalLoginChrome.tabs,
+      tabKey: sourceId,
+      navigateTimeoutMs: 8000,
+      sleepImpl: wait,
+    });
+    sharedExternalLoginChrome = {
+      ...sharedExternalLoginChrome,
+      tabs: { ...(sharedExternalLoginChrome.tabs || {}), [sourceId]: acquired.targetId },
+    };
+    await closeBlankTabs({ fetchImpl: fetch, port: Number(sharedExternalLoginChrome.port) || 0 });
+    return acquired.targetId;
+  } catch {
+    return null;
+  }
 }
 
 let shoppingAccountServicesCache;
