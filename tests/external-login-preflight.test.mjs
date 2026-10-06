@@ -35,6 +35,7 @@ test("anonymous SSG and Lotte cookies never satisfy the login check", () => {
 
 test("a mid-search login requirement forces the next preflight to re-verify", () => {
   assert.match(main, /noteExternalLoginRequired\(source\?\.store\)/);
+  assert.match(main, /source\?\.loginRequired === true \|\| source\?\.securityVerificationRequired === true/);
   assert.match(main, /retailersNeedingLogin\.add\(sourceId\)/);
   assert.match(main, /confirmedExternalLogins\.delete\(sourceId\)/);
 });

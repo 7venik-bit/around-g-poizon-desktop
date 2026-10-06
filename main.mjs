@@ -13736,8 +13736,16 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
         && source?.loginRequired === true)) invalidateNaverLoginScope(input?.loginScopeId);
       // A login requirement observed mid-search invalidates the explicit
       // external confirmation so the next product re-verifies (fail-closed).
+      // SSG reports a dead session as a security check, not loginRequired,
+      // so both force re-verification: searching logged-out must never
+      // continue, or repeated blind hits invite a traffic block.
       for (const source of matched?.sources || []) {
-        if (source?.loginRequired === true) noteExternalLoginRequired(source?.store);
+        if (!source) continue;
+        const externalId = loginSourceIdForStore(source?.store);
+        if ((externalId === "ssg" || externalId === "lotte")
+          && (source?.loginRequired === true || source?.securityVerificationRequired === true)) {
+          noteExternalLoginRequired(source?.store);
+        }
       }
       await preserveVerifiedResults(matched);
       if (domesticSearchCanceled(searchGeneration)) return { ok: false, canceled: true, message: "검색이 중지되었습니다." };
