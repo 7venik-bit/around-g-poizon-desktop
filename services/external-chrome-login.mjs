@@ -372,6 +372,24 @@ export function externalFillScript(x, y, value) {
   })()`;
 }
 
+// Naver shows a new-device confirmation ("새로운 기기에서 로그인") after the
+// password submit. It has no login form, so the flow would wait on it
+// forever: detect its 등록 button and click through once.
+export const EXTERNAL_DEVICE_CONFIRM_SCRIPT = `(() => {
+  const buttons = [...document.querySelectorAll("a,button,input")].filter((el) => {
+    try {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    } catch {
+      return false;
+    }
+  });
+  const target = buttons.find((el) => /^\\s*등록\\s*$/.test(String(el.innerText || el.textContent || el.value || "")));
+  if (!target) return null;
+  const rect = target.getBoundingClientRect();
+  return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+})()`;
+
 export function filterUsableLoginCookies(cookies = [], now = Date.now() / 1000) {
   return (Array.isArray(cookies) ? cookies : []).filter((cookie) => {
     if (!cookie || !String(cookie.value || "")) return false;
@@ -416,6 +434,22 @@ async function clickProviderButton(page, detectControlsScript, method) {
   }
 }
 
+async function clickDeviceConfirmButton(page) {
+  let point = null;
+  try {
+    point = await page.evaluate(EXTERNAL_DEVICE_CONFIRM_SCRIPT);
+  } catch {
+    return false;
+  }
+  if (!point) return false;
+  try {
+    await page.clickPoint(point);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Pure step planner for the visible login route in screenshot order:
 // merchant login page → password fill or provider click → provider login
 // page → provider fill. Each automatic step fires at most once; afterwards
@@ -432,6 +466,9 @@ export function planExternalLoginStep({ pageUrl = "", merchantDomains = [], meth
     || listed.some((domain) => host === domain || (domain && host.endsWith(`.${domain}`)));
   const onProvider = (method === "naver" && /(^|\.)nid\.naver\.com$/.test(host))
     || (method === "kakao" && /(^|\.)accounts\.kakao\.com$/.test(host));
+  const onDeviceConfirm = method === "naver"
+    && /nid\.naver\.com\/login\/ext\/deviceConfirm/i.test(String(pageUrl || ""));
+  if (onDeviceConfirm && !acted.confirm_device) return "confirm_device";
   if (onMerchant && method === "password" && !acted.fill_merchant) return "fill_merchant";
   if (onMerchant && (method === "naver" || method === "kakao") && !acted.click_provider) return "click_provider";
   if (onProvider && !acted.fill_provider) return "fill_provider";
@@ -464,6 +501,16 @@ export async function waitForExternalLogin({
   const canClickProvider = (method === "naver" || method === "kakao") && Boolean(detectControlsScript);
   const canFillProvider = (method === "naver" || method === "kakao") && usable(providerCredentials) && Boolean(detectControlsScript);
   const acted = {};
+  // A slow login page must not burn the single automatic attempt before its
+  // form exists: attempts are capped per page so a half-loaded first poll
+  // retries instead of giving up, without resubmitting forever.
+  const attempts = {};
+  const MAX_AUTO_ATTEMPTS_PER_PAGE = 5;
+  const attemptsLeft = (step, url) => (attempts[`${step}@${url}`] || 0) < MAX_AUTO_ATTEMPTS_PER_PAGE;
+  const noteAttempt = (step, url) => {
+    attempts[`${step}@${url}`] = (attempts[`${step}@${url}`] || 0) + 1;
+  };
+  let lastActedUrl = "";
   let unreadable = 0;
   let tick = 0;
   const heartbeat = (state) => {
@@ -526,18 +573,37 @@ export async function waitForExternalLogin({
     let actedThisRound = false;
     if (actionable) {
       const step = planExternalLoginStep({ pageUrl: actionable.state.url, merchantDomains, method, acted });
-      if (step === "fill_merchant" && canFillMerchant) {
-        acted.fill_merchant = true;
+      const url = String(actionable.state.url || "");
+      // Navigation opens a fresh opportunity: a new page may need its own
+      // fill or click even when the previous page already consumed one.
+      if (url !== lastActedUrl) {
+        lastActedUrl = url;
+        for (const key of Object.keys(acted)) delete acted[key];
+      }
+      if (step === "fill_merchant" && canFillMerchant && attemptsLeft(step, url)) {
+        noteAttempt(step, url);
         actedThisRound = true;
-        await fillPasswordForm(actionable.client, detectControlsScript, credentials);
-      } else if (step === "click_provider" && canClickProvider) {
-        acted.click_provider = true;
+        if (await fillPasswordForm(actionable.client, detectControlsScript, credentials)) {
+          acted.fill_merchant = true;
+        }
+      } else if (step === "click_provider" && canClickProvider && attemptsLeft(step, url)) {
+        noteAttempt(step, url);
         actedThisRound = true;
-        await clickProviderButton(actionable.client, detectControlsScript, method);
-      } else if (step === "fill_provider" && canFillProvider) {
-        acted.fill_provider = true;
+        if (await clickProviderButton(actionable.client, detectControlsScript, method)) {
+          acted.click_provider = true;
+        }
+      } else if (step === "fill_provider" && canFillProvider && attemptsLeft(step, url)) {
+        noteAttempt(step, url);
         actedThisRound = true;
-        await fillPasswordForm(actionable.client, detectControlsScript, providerCredentials);
+        if (await fillPasswordForm(actionable.client, detectControlsScript, providerCredentials)) {
+          acted.fill_provider = true;
+        }
+      } else if (step === "confirm_device" && canClickProvider && attemptsLeft(step, url)) {
+        noteAttempt(step, url);
+        actedThisRound = true;
+        if (await clickDeviceConfirmButton(actionable.client)) {
+          acted.confirm_device = true;
+        }
       }
     }
     if (!actedThisRound && readable.some((item) => item.state.blocked === true)
