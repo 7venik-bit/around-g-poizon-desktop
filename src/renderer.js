@@ -1400,6 +1400,11 @@ function renderDomesticLoading(startedAt = Date.now()) {
 
 let excelPreviewSearchRunId = 0;
 let domesticRecoveryResumeRequested = false;
+// Graceful stop: the first stop press during an active search finishes the
+// in-flight product (its result is saved and rendered) and stops before the
+// next product. A second press stops immediately, discarding the in-flight
+// result exactly like the old unconditional stop.
+let excelPreviewGracefulStop = false;
 let activeDomesticProgressRequestId = "";
 let activeDomesticProgressTouch = null;
 let activeDomesticCheckpoint = null;
@@ -1432,6 +1437,15 @@ function refreshDomesticSearchRows() {
 }
 
 function stopExcelPreviewSearch() {
+  // First press while a search is running: do NOT invalidate the run or
+  // cancel the main-side search. The in-flight product completes, its result
+  // is saved, and the batch stops before the next product below.
+  if (excelPreviewBatchSearching && !excelPreviewGracefulStop) {
+    excelPreviewGracefulStop = true;
+    $("#excel-filter-status").textContent = "현재 상품 검색을 마친 뒤 중지합니다. 다시 누르면 즉시 중지합니다.";
+    return;
+  }
+  excelPreviewGracefulStop = false;
   ++excelPreviewSearchRunId;
   globalThis.aroundGActiveDomesticRecovery = null;
   domesticRecoveryResumeRequested = false;
@@ -1861,6 +1875,7 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
     }
   }
   const runId = ++excelPreviewSearchRunId;
+  excelPreviewGracefulStop = false;
   excelPreviewBatchSearching = true;
   // A direct row-button click is an explicit refresh. A selected-row batch,
   // however, reuses the first verified result for duplicate POIZON rows with
@@ -1881,7 +1896,12 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
     if (typeof recordSearchDiagnostics === "function") recordSearchDiagnostics(result, product, "excel", key);
     if (file?.path) persistExcelSearchResults(file.path);
     refreshDomesticSearchRows();
-    $("#excel-filter-status").textContent = result.error || result.message || "상품 검색 결과를 표시했습니다.";
+    if (excelPreviewGracefulStop) {
+      excelPreviewGracefulStop = false;
+      $("#excel-filter-status").textContent = "상품 검색을 마친 뒤 중지했습니다.";
+    } else {
+      $("#excel-filter-status").textContent = result.error || result.message || "상품 검색 결과를 표시했습니다.";
+    }
   } catch (error) {
     if (runId === excelPreviewSearchRunId) {
       console.error("[domestic-search] result display failed", error);
@@ -4623,6 +4643,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   domesticIdentitySearchCache.clear();
   if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
   excelPreviewBatchSearching = true;
+  excelPreviewGracefulStop = false;
   const runId = ++excelPreviewSearchRunId;
   let failed = 0;
   let partial = 0;
@@ -4692,6 +4713,14 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       refreshDomesticSearchRows();
       completed += groupKeys.length;
       if (completed < searchKeys.length) renderBatchSearchProgress(completed);
+      if (excelPreviewGracefulStop) {
+        excelPreviewGracefulStop = false;
+        refreshDomesticSearchRows();
+        document.querySelector('#domestic-recovery-notice')?.remove();
+        const stopSuffix = skippedCount > 0 ? ` · 같은 상품번호 최고금액 대표만 검색하고 ${skippedCount.toLocaleString("ko-KR")}행 생략` : "";
+        $("#excel-filter-status").textContent = `선택 상품 ${searchKeys.length.toLocaleString("ko-KR")}개 중 ${completed.toLocaleString("ko-KR")}개까지 저장하고 중지했습니다.${stopSuffix}`;
+        return;
+      }
     }
     refreshDomesticSearchRows();
     document.querySelector('#domestic-recovery-notice')?.remove();
