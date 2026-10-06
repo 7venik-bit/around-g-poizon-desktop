@@ -20,7 +20,7 @@ test("runtime always loads the below-row retailer list directly", () => {
   assert.match(bootstrap, /insertCSS\([^)]*domesticInlineResultsCss/s);
   assert.match(inlineRenderer, /국내 검색 결과/);
   assert.match(inlineRenderer, /domestic-inline-detail-label/);
-  assert.match(inlineRenderer, /td colspan="10"/);
+  assert.match(inlineRenderer, /td colspan="11"/);
   assert.match(inlineRenderer, /domestic-inline-row/);
   assert.match(inlineRenderer, /AroundGDomesticVerdict\.sourceVerdict/);
   assert.match(verdict, /Product evidence is the strongest signal/);

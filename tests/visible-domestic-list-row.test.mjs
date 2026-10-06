@@ -6,7 +6,7 @@ const inlineRenderer = fs.readFileSync(new URL("../src/domestic-inline-results.j
 
 test("the retailer list uses a full-width row below the source product", () => {
   assert.match(inlineRenderer, /excel-product-search-detail\{display:table-row!important/);
-  assert.match(inlineRenderer, /<td colspan="10"><div class="domestic-inline-detail-label">/);
+  assert.match(inlineRenderer, /<td colspan="11"><div class="domestic-inline-detail-label">/);
   assert.match(inlineRenderer, /height:54px!important;vertical-align:middle!important/);
   assert.doesNotMatch(inlineRenderer, /min-width:1420px!important/);
   assert.doesNotMatch(inlineRenderer, /min-width:430px!important/);
