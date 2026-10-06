@@ -15,6 +15,8 @@ import {
   domesticChannelUrl,
   exactArticleIdentityMatch,
   fitNaverFashionTownSearchQuery,
+  hasChannelBadgeEvidence,
+  hasRetailerBrandEvidence,
   isSsgOfficialBrandHall,
   internalPortalSearchQuery,
   lotteServerSearchCard,
@@ -1353,4 +1355,33 @@ test("SSG official classification requires a listed brand and official evidence"
   assert.equal(isSsgOfficialBrandHall({ brand: "데상트", url: "https://www.ssg.com/item/1", text: "일반 판매상품 데상트" }), false);
   assert.equal(isSsgOfficialBrandHall({ brand: "임의브랜드", url: "https://www.ssg.com/item/1", text: "본사직영 브랜드관" }), false);
   assert.equal(isSsgOfficialBrandHall({ brand: "데상트", url: "https://example.com/item/1", text: "본사직영 데상트 브랜드관" }), false);
+});
+
+test("SSG outlet cards keep their badge flags on the analyzed product", () => {
+  const content = JSON.stringify({
+    productCards: [{
+      productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000000001",
+      title: "나이키 다운 자켓 DD1503-101",
+      text: "나이키 다운 자켓 DD1503-101 아울렛 89,400원",
+      imageUrl: "https://simg.ssgcdn.com/test.jpg",
+      imageLinkedToProduct: true,
+      outletLabelMatched: true,
+    }],
+    pageText: "",
+  });
+  const result = analyzeRenderedChannelProducts(content, "SSG 아울렛", "DD1503-101", "나이키", "나이키 다운 자켓");
+  assert.equal(result.products.length, 1);
+  assert.equal(result.products[0].outletLabelMatched, true);
+  assert.equal(hasRetailerBrandEvidence(result.products), true);
+});
+
+test("channel-scoped outlet and department stores carry their logo", () => {
+  assert.equal(hasChannelBadgeEvidence({ store: "SSG 아울렛" }), true);
+  assert.equal(hasChannelBadgeEvidence({ store: "롯데온 백화점" }), true);
+  assert.equal(hasChannelBadgeEvidence({ sourceStore: "네이버 아울렛" }), true);
+  assert.equal(hasChannelBadgeEvidence({ store: "브랜드 공식몰" }), true);
+  assert.equal(hasChannelBadgeEvidence({ store: "무신사" }), false);
+  assert.equal(hasChannelBadgeEvidence({ store: "SSG 병행수입" }), false);
+  assert.equal(hasChannelBadgeEvidence({}), false);
+  assert.equal(hasChannelBadgeEvidence(null), false);
 });

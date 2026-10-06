@@ -891,6 +891,11 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
             articleNumberVerified: Boolean(exactDetectedArticle),
             articleConflict: conflictingArticle,
             brandVerifiedFromCard: brandMatched,
+            // Keep the channel badge evidence the card gates above required:
+            // the stage-3 logo gate can only see what survives on the product.
+            officialBrandStoreLabelMatched: card?.officialBrandStoreLabelMatched === true,
+            departmentStoreLabelMatched: card?.departmentStoreLabelMatched === true,
+            outletLabelMatched: card?.outletLabelMatched === true,
             detailArticleVerificationRequired,
             imageUrl: String(card?.imageUrl || ""),
             imageVerifiedFromCard: card?.imageLinkedToProduct === true,
@@ -1133,12 +1138,35 @@ export const RETAILER_SEARCH_STAGES = Object.freeze([
 
 export function hasRetailerBrandEvidence(products = []) {
   const list = Array.isArray(products) ? products.filter(Boolean) : [];
-  // Stage 3 admits official and department-store logos only. Parallel
+  // Stage 3 admits official and department/outlet-store logos only. Parallel
   // importers print the same brand names, so a bare brand-name match
   // (brandVerifiedFromCard) must never pass the logo gate.
   return list.some((product) => product?.officialStoreVerified === true
+    || product?.officialBrandStoreLabelMatched === true
     || product?.departmentStoreLabelMatched === true
-    || product?.naverTrustedChannelEvidence === true);
+    || product?.outletLabelMatched === true
+    || product?.naverTrustedChannelEvidence === true
+    || hasChannelBadgeEvidence(product));
+}
+
+// Department/outlet-scoped channels enforce badge gates at collection, so a
+// product owned by one of these channels carries its logo by construction.
+const LOGO_CHANNEL_STORES = new Set([
+  "브랜드 공식몰",
+  "SSG 브랜드 공식관",
+  "네이버 공식 브랜드스토어",
+  "네이버 백화점",
+  "네이버 아울렛",
+  "SSG 백화점",
+  "SSG 아울렛",
+  "롯데온 백화점",
+  "롯데온 아울렛",
+]);
+
+export function hasChannelBadgeEvidence(product = {}) {
+  if (!product || typeof product !== "object") return false;
+  return LOGO_CHANNEL_STORES.has(String(product.store || ""))
+    || LOGO_CHANNEL_STORES.has(String(product.sourceStore || ""));
 }
 
 export async function runRetailerSearchPipeline({
