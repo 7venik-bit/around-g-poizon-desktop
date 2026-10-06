@@ -105,10 +105,19 @@ test("mirrored search drives a visible mouse from scope to product click", () =>
     "the product must open after strays are swept");
 });
 
-test("retailer facet labels come from evidence wording and the product brand", () => {
-  assert.match(main, /function retailerFacetLabels/);
-  assert.match(main, /labels\.push\("신세계백화점"\)/);
-  assert.match(main, /labels\.push\("롯데백화점"\)/);
+test("retailer facet labels carry department wording only, never the brand", async () => {
+  const { runInNewContext: run } = await import("node:vm");
+  const start = main.indexOf("function retailerFacetLabels(");
+  const end = main.indexOf("async function showRetailerSearchInWindow(", start);
+  const context = {};
+  run(`${main.slice(start, end)}\nthis.labels = {
+    ssg: retailerFacetLabels("ssg", "나이키"),
+    lotte: retailerFacetLabels("lotte", "아디다스"),
+    unknown: retailerFacetLabels("musinsa", "나이키"),
+  };`, context);
+  assert.deepEqual([...context.labels.ssg], []);
+  assert.deepEqual([...context.labels.lotte], ["롯데백화점"]);
+  assert.deepEqual([...context.labels.unknown], []);
 });
 
 test("store names map to their external login source", () => {
