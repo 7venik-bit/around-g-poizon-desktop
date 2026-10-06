@@ -62,6 +62,7 @@ import {
   checkSearchFacets,
   createCdpPageClient,
   findSsgDepartmentTab,
+  EXTERNAL_PRODUCT_OPEN_SCRIPT,
   startExternalRetailerLogin,
 } from "./services/external-chrome-login.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
@@ -4357,7 +4358,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           && typeof retailerFacetLabels === "function") {
           const externalSourceId = loginSourceIdForStore(source.store);
           if (externalSourceId === "ssg" || externalSourceId === "lotte") {
-            void showRetailerSearchInWindow(externalSourceId, queryAttempt.url, retailerFacetLabels(externalSourceId, brand)).catch(() => {});
+            void showRetailerSearchInWindow(externalSourceId, queryAttempt.url, retailerFacetLabels(externalSourceId, brand), articleNumber).catch(() => {});
           }
         }
         // A Naver overview DOM belongs to exactly one submitted query. When an
@@ -12345,10 +12346,12 @@ function retailerFacetLabels(sourceId, brand = "") {
 
 // Visible logged-in search: once the external login is confirmed, each
 // product search also navigates the retailer's tab of the shared window so
-// the operator watches the search happen in the logged-in session.
+// the operator watches the search happen in the logged-in session. After the
+// facet checks narrow the grid, the article-matching card is opened so the
+// operator sees the product itself.
 // Collection verdicts still come from the existing collector; this helper
 // never blocks or fails the search itself.
-async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = []) {
+async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [], articleNumber = "") {
   try {
     if (!EXTERNAL_LOGIN_RETAILER_IDS.has(String(sourceId || ""))) return null;
     if (!sharedExternalLoginChrome?.child || !confirmedExternalLogins.has(sourceId)) return null;
@@ -12367,18 +12370,25 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [])
       ...sharedExternalLoginChrome,
       tabs: { ...(sharedExternalLoginChrome.tabs || {}), [sourceId]: acquired.targetId },
     };
-    // Apply the operator's left-menu checks (department + brand) on the
-    // visible search page, then sweep strays. Best-effort only.
-    if (Array.isArray(facetLabels) && facetLabels.length) {
-      try {
-        const facetClient = createCdpPageClient({
+    // One mirror client serves the facet checks and the product open below.
+    let mirrorClient = null;
+    const mirrorPage = () => {
+      if (!mirrorClient) {
+        mirrorClient = createCdpPageClient({
           fetchImpl: fetch,
           WebSocketImpl: WebSocket,
           port: Number(sharedExternalLoginChrome.port) || 0,
           targetId: acquired.targetId,
         });
+      }
+      return mirrorClient;
+    };
+    // Apply the operator's left-menu checks (department + brand) on the
+    // visible search page. Best-effort only.
+    if (Array.isArray(facetLabels) && facetLabels.length) {
+      try {
         await checkSearchFacets({
-          page: facetClient,
+          page: mirrorPage(),
           labels: facetLabels,
           sleepImpl: wait,
           settleMs: 3000,
@@ -12388,6 +12398,16 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [])
       }
     }
     await closeBlankTabs({ fetchImpl: fetch, port: Number(sharedExternalLoginChrome.port) || 0 });
+    // Open the article-matching card last so the blank sweep above cannot
+    // close its tab while navigation is still starting. Best-effort only.
+    const article = String(articleNumber || "").trim();
+    if (article) {
+      try {
+        await mirrorPage().evaluate(`(${EXTERNAL_PRODUCT_OPEN_SCRIPT})(${JSON.stringify(article)})`);
+      } catch {
+        // Opening the product is observational only.
+      }
+    }
     return acquired.targetId;
   } catch {
     return null;

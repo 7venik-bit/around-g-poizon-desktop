@@ -482,6 +482,49 @@ export async function checkSearchFacets({ page, labels = [], sleepImpl = (ms) =>
   };
 }
 
+// Product-card opener for the visible logged-in search window. Runs inside
+// the page after the facet checks narrow the grid. Clicks the visible card
+// whose link or card text carries the requested article number and returns
+// its URL. Best-effort only: no match or a failed click returns opened:false
+// and must never break the search itself.
+export const EXTERNAL_PRODUCT_OPEN_SCRIPT = `((article) => {
+  const compact = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const want = compact(article);
+  if (!want) return { opened: false, reason: "missing" };
+  const visible = (el) => {
+    try {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    } catch {
+      return false;
+    }
+  };
+  const productShaped = (href) => /\\/(?:p\\/)?product(?:\\/|$)|itemView|goods\\/|products?\\/\\d/i.test(String(href || ""));
+  const candidates = [...document.querySelectorAll('a[href]')].filter(visible);
+  let best = null;
+  let bestScore = 0;
+  for (const link of candidates) {
+    const href = String(link.href || "");
+    const selfHit = compact(href + " " + (link.textContent || "")).includes(want);
+    const card = link.closest ? link.closest("li,article") : null;
+    const cardHit = !selfHit && card && compact(card.textContent).includes(want);
+    const shaped = productShaped(href);
+    const score = selfHit && shaped ? 3 : selfHit ? 2 : cardHit && shaped ? 1 : -1;
+    if (score > bestScore) {
+      bestScore = score;
+      best = link;
+    }
+  }
+  if (!best) return { opened: false, reason: "not-found" };
+  try {
+    if (best.scrollIntoView) best.scrollIntoView({ block: "center" });
+    best.click();
+    return { opened: true, url: String(best.href || "") };
+  } catch {
+    return { opened: false, reason: "error" };
+  }
+})`;
+
 // SSG top-menu department tab (백화점). Runs inside the page. Returns the
 // tab's department-scoped href, "clicked" after clicking a href-less tab, or
 // "" when absent. A header navigation link shares the 백화점 label, so only

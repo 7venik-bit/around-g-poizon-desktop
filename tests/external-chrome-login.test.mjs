@@ -17,6 +17,7 @@ import {
   EXTERNAL_LOGIN_STATE_SCRIPT,
   EXTERNAL_DEVICE_CONFIRM_SCRIPT,
   EXTERNAL_FACET_CHECK_SCRIPT,
+  EXTERNAL_PRODUCT_OPEN_SCRIPT,
   checkSearchFacets,
   externalFillScript,
   filterUsableLoginCookies,
@@ -196,6 +197,39 @@ test("facet check settles across a results refresh", async () => {
   assert.equal(calls, 2);
   assert.deepEqual(await checkSearchFacets({ page: null, labels: ["a"] }), { checked: [], missing: ["a"], settled: false });
   assert.deepEqual(await checkSearchFacets({ page, labels: [] }), { checked: [], missing: [], settled: false });
+});
+
+test("product open script clicks the visible article card, nothing else", () => {
+  const runOpen = (html, article) => {
+    const dom = new JSDOM(html, { url: "https://www.lotteon.com/", runScripts: "outside-only" });
+    dom.window.Element.prototype.getBoundingClientRect = () => ({
+      width: 100, height: 20, top: 0, left: 0, right: 100, bottom: 20, x: 0, y: 0, toJSON: () => ({}),
+    });
+    dom.window.HTMLElement.prototype.scrollIntoView = () => {};
+    const clicked = [];
+    for (const el of dom.window.document.querySelectorAll("a[href]")) {
+      el.addEventListener("click", () => clicked.push(el.getAttribute("href")));
+    }
+    const expression = `(${EXTERNAL_PRODUCT_OPEN_SCRIPT})(${JSON.stringify(article)})`;
+    const result = vm.runInContext(expression, dom.getInternalVMContext());
+    return { result, clicked };
+  };
+  const html = [
+    '<ul><li><a href="https://www.lotteon.com/p/product/PD1?mall_no=1">나이키 W 덩크 로우 DD1503-101</a></li>',
+    '<li><a href="https://www.lotteon.com/p/product/PD2?mall_no=1">나이키 에어 모나크 415445-102</a></li></ul>',
+    '<a href="https://www.lotteon.com/search?query=DD1503-101">검색어 링크</a>',
+  ].join("");
+  const { result, clicked } = runOpen(`<main>${html}</main>`, "DD1503-101");
+  assert.equal(result.opened, true);
+  assert.ok(String(result.url).includes("PD1"));
+  assert.deepEqual(clicked, ["https://www.lotteon.com/p/product/PD1?mall_no=1"]);
+  const missed = runOpen(`<main>${html}</main>`, "없는품번-000");
+  assert.equal(missed.result.opened, false);
+  assert.equal(missed.result.reason, "not-found");
+  assert.deepEqual(missed.clicked, []);
+  const empty = runOpen("<main></main>", "");
+  assert.equal(empty.result.opened, false);
+  assert.equal(empty.result.reason, "missing");
 });
 
 test("device confirm script clicks 등록, never 등록안함", () => {
