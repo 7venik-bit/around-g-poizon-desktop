@@ -320,6 +320,68 @@ test("SSG OAuth popup login completes across tabs", async () => {
   assert.deepEqual(result.cookies.map((cookie) => cookie.name), ["ssg_auth"]);
 });
 
+test("slow login pages are retried instead of burning the single attempt", async () => {
+  const clicked = [];
+  let detects = 0;
+  const page = {
+    async evaluate(expression) {
+      const text = String(expression);
+      if (text.includes("elementFromPoint")) return true;
+      if (text.includes("authenticated")) {
+        return { authenticated: false, blocked: false, hasLoginForm: true, url: "https://www.ssg.com/" };
+      }
+      detects += 1;
+      if (detects < 3) return { id: null, password: null, submit: null };
+      return { id: { x: 1, y: 1 }, password: { x: 1, y: 2 }, submit: { x: 1, y: 3 } };
+    },
+    async clickPoint(point) {
+      clicked.push(point);
+    },
+    async getCookies() {
+      return [];
+    },
+  };
+  const result = await waitForExternalLogin({
+    page,
+    detectControlsScript: "function detect() {}",
+    credentials: { loginId: "user01", password: "pw01" },
+    merchantDomains: ["ssg.com"],
+    timeoutMs: 120,
+    sleepImpl: async () => {},
+  });
+  assert.equal(result.code, "LOGIN_TIMEOUT");
+  assert.deepEqual(clicked, [{ x: 1, y: 3 }]);
+});
+
+test("a submitted form is never resubmitted on the same page", async () => {
+  const clicked = [];
+  const page = {
+    async evaluate(expression) {
+      const text = String(expression);
+      if (text.includes("elementFromPoint")) return true;
+      if (text.includes("authenticated")) {
+        return { authenticated: false, blocked: false, hasLoginForm: true, url: "https://www.ssg.com/" };
+      }
+      return { id: { x: 1, y: 1 }, password: { x: 1, y: 2 }, submit: { x: 1, y: 3 } };
+    },
+    async clickPoint(point) {
+      clicked.push(point);
+    },
+    async getCookies() {
+      return [];
+    },
+  };
+  await waitForExternalLogin({
+    page,
+    detectControlsScript: "function detect() {}",
+    credentials: { loginId: "user01", password: "pw01" },
+    merchantDomains: ["ssg.com"],
+    timeoutMs: 120,
+    sleepImpl: async () => {},
+  });
+  assert.equal(clicked.length, 1);
+});
+
 test("login wait resolves on visible authentication", async () => {
   const page = {
     async evaluate() {

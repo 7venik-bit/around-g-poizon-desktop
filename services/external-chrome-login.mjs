@@ -464,6 +464,16 @@ export async function waitForExternalLogin({
   const canClickProvider = (method === "naver" || method === "kakao") && Boolean(detectControlsScript);
   const canFillProvider = (method === "naver" || method === "kakao") && usable(providerCredentials) && Boolean(detectControlsScript);
   const acted = {};
+  // A slow login page must not burn the single automatic attempt before its
+  // form exists: attempts are capped per page so a half-loaded first poll
+  // retries instead of giving up, without resubmitting forever.
+  const attempts = {};
+  const MAX_AUTO_ATTEMPTS_PER_PAGE = 5;
+  const attemptsLeft = (step, url) => (attempts[`${step}@${url}`] || 0) < MAX_AUTO_ATTEMPTS_PER_PAGE;
+  const noteAttempt = (step, url) => {
+    attempts[`${step}@${url}`] = (attempts[`${step}@${url}`] || 0) + 1;
+  };
+  let lastActedUrl = "";
   let unreadable = 0;
   let tick = 0;
   const heartbeat = (state) => {
@@ -526,18 +536,31 @@ export async function waitForExternalLogin({
     let actedThisRound = false;
     if (actionable) {
       const step = planExternalLoginStep({ pageUrl: actionable.state.url, merchantDomains, method, acted });
-      if (step === "fill_merchant" && canFillMerchant) {
-        acted.fill_merchant = true;
+      const url = String(actionable.state.url || "");
+      // Navigation opens a fresh opportunity: a new page may need its own
+      // fill or click even when the previous page already consumed one.
+      if (url !== lastActedUrl) {
+        lastActedUrl = url;
+        for (const key of Object.keys(acted)) delete acted[key];
+      }
+      if (step === "fill_merchant" && canFillMerchant && attemptsLeft(step, url)) {
+        noteAttempt(step, url);
         actedThisRound = true;
-        await fillPasswordForm(actionable.client, detectControlsScript, credentials);
-      } else if (step === "click_provider" && canClickProvider) {
-        acted.click_provider = true;
+        if (await fillPasswordForm(actionable.client, detectControlsScript, credentials)) {
+          acted.fill_merchant = true;
+        }
+      } else if (step === "click_provider" && canClickProvider && attemptsLeft(step, url)) {
+        noteAttempt(step, url);
         actedThisRound = true;
-        await clickProviderButton(actionable.client, detectControlsScript, method);
-      } else if (step === "fill_provider" && canFillProvider) {
-        acted.fill_provider = true;
+        if (await clickProviderButton(actionable.client, detectControlsScript, method)) {
+          acted.click_provider = true;
+        }
+      } else if (step === "fill_provider" && canFillProvider && attemptsLeft(step, url)) {
+        noteAttempt(step, url);
         actedThisRound = true;
-        await fillPasswordForm(actionable.client, detectControlsScript, providerCredentials);
+        if (await fillPasswordForm(actionable.client, detectControlsScript, providerCredentials)) {
+          acted.fill_provider = true;
+        }
       }
     }
     if (!actedThisRound && readable.some((item) => item.state.blocked === true)
