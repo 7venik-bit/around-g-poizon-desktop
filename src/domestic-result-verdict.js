@@ -188,11 +188,21 @@
       || source?.absenceConfirmed || products.length > 0);
     const searchActive = Boolean(source?.verificationPending || source?.detailVerificationPending)
       && !searchDone;
-    // Stage 3 admits official and department-store logos only. Parallel
-    // importers print the same brand names, so a bare brand-name match
-    // (brandVerifiedFromCard) must never pass the logo gate.
-    const brandEvidence = products.some((product) => product?.officialStoreVerified === true
+    // Stage 3 admits official and department/outlet-store logos only.
+    // Parallel importers print the same brand names, so a bare brand-name
+    // match (brandVerifiedFromCard) must never pass the logo gate.
+    // Mirrors hasRetailerBrandEvidence/hasChannelBadgeEvidence in
+    // relay/domestic-search.mjs so the strip never contradicts the plan.
+    const logoChannelStores = ["브랜드 공식몰", "SSG 브랜드 공식관",
+      "네이버 공식 브랜드스토어", "네이버 백화점", "네이버 아울렛",
+      "SSG 백화점", "SSG 아울렛", "롯데온 백화점", "롯데온 아울렛"];
+    const channelBadged = products.some((product) =>
+      logoChannelStores.includes(String(product?.store || ""))
+      || logoChannelStores.includes(String(product?.sourceStore || "")));
+    const brandEvidence = channelBadged || products.some((product) => product?.officialStoreVerified === true
+      || product?.officialBrandStoreLabelMatched === true
       || product?.departmentStoreLabelMatched === true
+      || product?.outletLabelMatched === true
       || product?.naverTrustedChannelEvidence === true)
       || source?.naverTrustedChannelEvidence === true;
     const recognized = products.length > 0

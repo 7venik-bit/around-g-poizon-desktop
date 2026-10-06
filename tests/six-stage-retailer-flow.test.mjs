@@ -73,6 +73,15 @@ test("stage 3: a brand-name-only parallel importer never passes the logo gate", 
   assert.equal(stripStates(source, products).badges, "pending");
 });
 
+test("stage 3: an outlet product proceeds to stock collection", () => {
+  const source = { store: "SSG 아울렛", searchSubmitted: true, searchCompleted: true, count: 1, countVerified: true };
+  const products = [{ store: "SSG 아울렛", brandVerifiedFromCard: true, articleNumberVerified: true, price: 64000, stockVerified: true }];
+  assert.deepEqual(nextRetailerStageAction(source, products), {
+    stage: "data", action: "done", blocked: false, reason: "",
+  });
+  assert.equal(stripStates(source, products).badges, "done");
+});
+
 test("stage 4: identity mismatch advances to the next query", () => {
   const source = { store: "SSG", searchSubmitted: true, searchCompleted: true, identityRejectedCount: 2 };
   assert.deepEqual(nextRetailerStageAction(source, []), {

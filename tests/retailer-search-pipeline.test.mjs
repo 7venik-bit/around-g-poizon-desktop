@@ -81,7 +81,10 @@ test("logo evidence requires an official or department logo", () => {
   assert.equal(hasRetailerBrandEvidence([{ brandVerifiedFromCard: true }]), false);
   assert.equal(hasRetailerBrandEvidence([{ officialStoreVerified: true }]), true);
   assert.equal(hasRetailerBrandEvidence([{ departmentStoreLabelMatched: true }]), true);
+  assert.equal(hasRetailerBrandEvidence([{ outletLabelMatched: true }]), true);
   assert.equal(hasRetailerBrandEvidence([{ naverTrustedChannelEvidence: true }]), true);
+  assert.equal(hasRetailerBrandEvidence([{ store: "롯데온 아울렛" }]), true);
+  assert.equal(hasRetailerBrandEvidence([{ store: "SSG 병행수입" }]), false);
 });
 
 test("stock enrichment runs only after products are recognized", async () => {

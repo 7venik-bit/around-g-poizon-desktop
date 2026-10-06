@@ -54,6 +54,14 @@ test('logo step stays pending without an official or department logo',()=>{
     { searchSubmitted: true, searchCompleted: true, count: 1, countVerified: true },
     [{ brandVerifiedFromCard: true, departmentStoreLabelMatched: true, price: 81360 }],
   )[2], 'done');
+  assert.equal(states(
+    { searchSubmitted: true, searchCompleted: true, count: 1, countVerified: true },
+    [{ brandVerifiedFromCard: true, outletLabelMatched: true, price: 81360 }],
+  )[2], 'done');
+  assert.equal(states(
+    { store: 'SSG 아울렛', searchSubmitted: true, searchCompleted: true, count: 1, countVerified: true },
+    [{ store: 'SSG 아울렛', brandVerifiedFromCard: true, price: 81360 }],
+  )[2], 'done');
 });
 
 test('SSG bot-wall block stays a manual-check notice, never product absence',()=>{
