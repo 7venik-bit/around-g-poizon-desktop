@@ -130,6 +130,7 @@ import {
   detectedRetailer,
   isConsignmentOperatedProduct,
   isOverseasPurchaseProduct,
+  isParallelImportProductDetail,
   isPlatformShoppingProductUrl,
   isTrustedNaverFashionProductCard,
   normalizeRenderedStockEvidence,
@@ -4244,6 +4245,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
           if (isOverseasPurchaseProduct(evidence)) continue;
           if (isConsignmentOperatedProduct(evidence)) continue;
+          // Department-first rule: a LotteON detail page that declares
+          // parallel import in its mandatory product information is excluded,
+          // even when the search card carried a department badge.
+          if (/^롯데온(?:\s|$)/.test(String(source.store || "")) && isParallelImportProductDetail(evidence)) continue;
           if (detailFailed || !stockObservationComplete(stockEvidence) || (officialPrice && !officialPrice.priceVerified)) incompleteDetails += 1;
           const isSsg = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(String(product.url || ""));
           const detailClassification = isSsg

@@ -54,6 +54,21 @@ export function isConsignmentOperatedProduct(value = "") {
   return CONSIGNMENT_OPERATED_PATTERN.test(String(evidence || ""));
 }
 
+// A LotteON detail page declares parallel import in its mandatory product
+// information (상품필수정보 · 제조자, 수입자). Such rows can never satisfy the
+// department-genuine rule, even when the search card carried a badge.
+// The declaration itself is excluded from the context check so the word
+// cannot confirm itself, and explicit non-parallel statements stay kept.
+export function isParallelImportProductDetail(text = "") {
+  const source = String(text || "");
+  const hit = /병행\s*수입|parallel\s*import/i.exec(source);
+  if (!hit) return false;
+  const window = source.slice(Math.max(0, hit.index - 80), hit.index + 80);
+  if (/병행수입\s*(?:이\s*)?(?:아니|아닙니|아님|없음|제외)/i.test(window)) return false;
+  const declared = window.replace(/병행\s*수입|parallel\s*import/gi, "");
+  return /제조|수입|원산지|브랜드|통관|manufacturer|brand|origin|customs/i.test(declared);
+}
+
 export const DOMESTIC_RETAILER_GROUPS = {
   "온라인 편집샵": [
     "OK몰", "카시나", "S.I.VILLAGE", "ABC마트", "그랜드스테이지", "온더스팟", "폴더",
