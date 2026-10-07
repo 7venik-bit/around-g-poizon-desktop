@@ -60,6 +60,15 @@ test("lotte without a department menu reports an authoritative absence", () => {
   assert.match(forcing, /detailVerificationPending = false/);
 });
 
+test("lotte facet settlement is recorded truthfully", () => {
+  const facetAt = collection.indexOf('labels: retailerFacetLabels("lotte", brand)');
+  assert.ok(facetAt >= 0, "lotte facet check missing");
+  assert.match(collection.slice(facetAt, facetAt + 800), /lotteFacetSettled = facetResult\.settled === true/);
+  const evidenceAt = collection.indexOf("lotteCollectionEvidence: {");
+  assert.ok(evidenceAt >= 0, "lotte collection evidence missing");
+  assert.match(collection.slice(evidenceAt, evidenceAt + 1200), /facetSettled: lotteFacetSettled/);
+});
+
 test("lotte server evidence records which document it came from", () => {
   assert.match(inline, /서버 검색 출처/);
   assert.match(inline, /origin === "session-dom" \? "세션 화면"/);
