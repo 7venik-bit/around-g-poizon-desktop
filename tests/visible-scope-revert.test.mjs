@@ -189,6 +189,15 @@ test("collection reverts a scope that empties the grid", () => {
   assert.match(collection, /ssgPreScopeUrl/);
 });
 
+test("fallback rows name the filter state of that exact run", () => {
+  assert.match(inline, /function filterStatusText\(source/);
+  assert.match(inline, /체크 유지/);
+  assert.match(inline, /체크 없음/);
+  assert.match(inline, /백화점 상품 없음 · 병행수입으로 판단/);
+  assert.match(inline, /domestic-inline-filter/);
+  assert.match(inline, /const filterStatus = filterStatusText\(source\)/);
+});
+
 test("empty rows expose scope evidence in the diagnostics block", () => {
   assert.match(inline, /source\?\.verificationDiagnostics\?\.lotteCollectionEvidence/);
   assert.match(inline, /source\?\.verificationDiagnostics\?\.ssgCollectionEvidence/);

@@ -3598,6 +3598,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     }
     let lotteCheckedLabels = [];
     let lotteMissingLabels = [];
+    let lotteFacetSettled = null;
     if (source.store === "롯데온" && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
       // The operator's left-menu seller check (롯데백화점 + brand) narrows the
       // grid to department goods before cards are captured. Best-effort only:
@@ -3610,7 +3611,10 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           sleepImpl: wait,
           settleMs: 3000,
         });
-        if (facetResult && Array.isArray(facetResult.missing)) lotteMissingLabels = [...facetResult.missing];
+        if (facetResult && typeof facetResult === "object") {
+          if (Array.isArray(facetResult.missing)) lotteMissingLabels = [...facetResult.missing];
+          lotteFacetSettled = facetResult.settled === true;
+        }
         if (facetResult && Array.isArray(facetResult.checked) && facetResult.checked.length) {
           lotteCheckedLabels = [...facetResult.checked];
           await onActivity?.({ phase: "searching", detail: "롯데백화점 판매처 적용" });
@@ -4153,6 +4157,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         lotteCollectionEvidence: {
           facetChecked: [...lotteCheckedLabels],
           facetMissing: [...lotteMissingLabels],
+          facetSettled: lotteFacetSettled,
           noDepartmentGoods: lotteNoDepartmentGoods,
           scopeReverted,
           articleCards: scopeArticleCards < 0 ? null : scopeArticleCards,

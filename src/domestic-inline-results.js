@@ -220,6 +220,26 @@
     return `<button type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
   }
 
+  // One-line filter state for an SSG/Lotte row of this exact product run:
+  // which department checks held, which menu was missing, whether a scope
+  // that emptied the grid was reverted. Shown on rows without products,
+  // where the filter state is the whole story.
+  function filterStatusText(source = {}) {
+    const d = source?.verificationDiagnostics || {};
+    const lotte = d.lotteCollectionEvidence || null;
+    const ssg = d.ssgCollectionEvidence || null;
+    if (!lotte && !ssg) return "";
+    if (lotte?.noDepartmentGoods === true) return "백화점 상품 없음 · 병행수입으로 판단";
+    const parts = [];
+    const checked = [...(lotte?.facetChecked || []), ...(ssg?.facetChecked || [])].filter(Boolean);
+    const missing = [...(lotte?.facetMissing || []), ...(ssg?.facetMissing || [])].filter(Boolean);
+    if (checked.length) parts.push(`${checked.join(", ")} 체크 유지`);
+    else if (missing.length) parts.push(`${missing.join(", ")} 체크 없음`);
+    if (ssg?.deptTab && ssg.deptTab !== "미적용") parts.push(`백화점 탭 ${ssg.deptTab}`);
+    if ((lotte || ssg).scopeReverted === true) parts.push("범위 복원됨");
+    return parts.join(" · ");
+  }
+
   function renderSearchDiagnostics(sources) {
     const failures = sources.filter(source => source?.autoRecovery || source?.verificationReason || source?.verificationFailed
       || source?.securityVerificationRequired || source?.loginRequired
@@ -432,9 +452,10 @@
       const steps = globalThis.AroundGDomesticVerdict?.searchStepProgress
         ? globalThis.AroundGDomesticVerdict.searchStepProgress(source, []) : [];
       const stepStrip = renderStepStrip(steps);
+      const filterStatus = filterStatusText(source);
       rows.push(`<div class="domestic-inline-row domestic-inline-fallback">
         <div class="domestic-inline-store" title="${safeText(store)}">${safeText(store)}</div>
-        <div class="domestic-inline-title">${safeText(message)}</div>
+        <div class="domestic-inline-title">${safeText(message)}${filterStatus ? `<div class="domestic-inline-filter">${safeText(filterStatus)}</div>` : ""}</div>
         <div class="domestic-inline-stock-cell">-</div>
         <div class="domestic-inline-code">${safeText(source?.searchQuery || sourceProduct?.articleNumber || "-")}</div>
         <div class="domestic-inline-price">${naverPriceAction}</div>
