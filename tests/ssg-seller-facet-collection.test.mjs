@@ -57,6 +57,7 @@ test("ssg collection records facet outcome and card evidence for diagnosis", () 
   assert.match(evidence, /renderedCards/);
   assert.match(evidence, /badgeCards/);
   assert.match(evidence, /candidateCount/);
+  assert.match(evidence, /identityDrops/);
 });
 
 test("empty ssg rows are included in the diagnostics block", () => {

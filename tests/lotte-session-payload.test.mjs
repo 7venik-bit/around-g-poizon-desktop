@@ -54,6 +54,7 @@ test("lotte without a department menu reports an authoritative absence", () => {
   const evidence = collection.slice(evidenceAt, evidenceAt + 1200);
   assert.match(evidence, /facetMissing: \[\.\.\.lotteMissingLabels\]/);
   assert.match(evidence, /noDepartmentGoods/);
+  assert.match(evidence, /identityDrops/);
   const forcing = collection.slice(Math.max(0, evidenceAt - 900), evidenceAt);
   assert.match(forcing, /lotteMenuMissing/);
   assert.match(forcing, /absenceConfirmed = true/);

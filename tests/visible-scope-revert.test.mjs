@@ -241,4 +241,5 @@ test("empty rows expose scope evidence in the diagnostics block", () => {
   assert.match(inline, /수집 카드 수/);
   assert.match(inline, /백화점 상품/);
   assert.match(inline, /병행수입으로 판단/);
+  assert.match(inline, /백화점 탈락 내역/);
 });
