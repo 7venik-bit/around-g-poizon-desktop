@@ -10,6 +10,7 @@ import {
   EXTERNAL_SSG_DEPARTMENT_HREF_SCRIPT,
   EXTERNAL_SSG_DEPARTMENT_TAB_POINT_SCRIPT,
   EXTERNAL_GRID_ARTICLE_COUNT_SCRIPT,
+  checkSearchFacets,
   clickSearchFacetsVisibly,
 } from "../services/external-chrome-login.mjs";
 
@@ -112,6 +113,53 @@ test("visible facet clicks drive the mouse, then verify with the settle pass", a
   assert.deepEqual(result, { checked: ["롯데백화점"], missing: [], settled: true });
   assert.deepEqual(calls.clicks, [{ x: 5, y: 6, label: "롯데백화점" }]);
   assert.ok(calls.checks >= 1);
+});
+
+test("facet verification retries when every label misses on the first pass", async () => {
+  // A reused warm tab resolves its navigation before the filter panel
+  // renders: the first pass misses everything, the settle retry finds it.
+  let calls = 0;
+  const page = {
+    async evaluate() {
+      calls += 1;
+      if (calls === 1) return { checked: [], missing: ["롯데백화점"], settled: false };
+      return { checked: ["롯데백화점"], missing: [], settled: true };
+    },
+  };
+  const slept = [];
+  const result = await checkSearchFacets({
+    page,
+    labels: ["롯데백화점"],
+    sleepImpl: async (ms) => { slept.push(ms); },
+    settleMs: 3000,
+  });
+  assert.deepEqual(result, { checked: ["롯데백화점"], missing: [], settled: true });
+  assert.equal(calls, 2);
+  assert.ok(slept.length >= 1);
+});
+
+test("visible facet clicks wait for a late-rendering filter panel", async () => {
+  let probes = 0;
+  const calls = { clicks: [] };
+  const page = {
+    async evaluate(expression) {
+      const text = String(expression);
+      if (text.includes("wantChecked")) {
+        probes += 1;
+        // The filter panel renders between the first and second probe.
+        if (probes < 3) return [];
+        return text.includes(", true)") ? [] : [{ x: 5, y: 6, label: "롯데백화점" }];
+      }
+      return { checked: ["롯데백화점"], missing: [], settled: true };
+    },
+    async clickPoint(point) {
+      calls.clicks.push(point);
+    },
+  };
+  const result = await clickSearchFacetsVisibly({ page, labels: ["롯데백화점"], sleepImpl: async () => {} });
+  assert.deepEqual(result, { checked: ["롯데백화점"], missing: [], settled: true });
+  assert.deepEqual(calls.clicks, [{ x: 5, y: 6, label: "롯데백화점" }]);
+  assert.ok(probes >= 3);
 });
 
 test("mirror drives a visible mouse from scope to product click", () => {
