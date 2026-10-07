@@ -516,6 +516,160 @@ test("event-page stall returns to the login entry instead of clicking blindly", 
   assert.deepEqual(clicked, [{ x: 5, y: 5 }]);
 });
 
+test("a provider OAuth landing is left alone after the provider click", async () => {
+  const loginUrl = "https://www.lotteon.com/p/member/login/common?rtnUrl=https://www.lotteon.com/";
+  let currentUrl = loginUrl;
+  const navigated = [];
+  const clicked = [];
+  const page = {
+    async evaluate(expression) {
+      const text = String(expression);
+      if (text.includes("authenticated") && text.includes("blocked")) {
+        return {
+          authenticated: false,
+          blocked: false,
+          hasLoginForm: currentUrl === loginUrl,
+          url: currentUrl,
+        };
+      }
+      if (text.includes('"naver"')) return { provider: { x: 5, y: 5 } };
+      return null;
+    },
+    async navigate(url) {
+      navigated.push(url);
+      currentUrl = String(url);
+    },
+    async clickPoint(point) {
+      clicked.push(point);
+      // The provider button opens the OAuth flow; the tab lands on a
+      // formless merchant page that belongs to the running flow.
+      currentUrl = "https://www.lotteon.com/";
+    },
+    async getCookies() {
+      return [];
+    },
+  };
+  const result = await waitForExternalLogin({
+    page,
+    detectControlsScript: "function detect() {}",
+    method: "naver",
+    merchantDomains: ["lotteon.com"],
+    loginUrl,
+    providerCredentials: { loginId: "naver-id", password: "naver-pw" },
+    timeoutMs: 300,
+    sleepImpl: async () => {},
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "LOGIN_TIMEOUT");
+  assert.ok(clicked.length >= 1);
+  assert.deepEqual(clicked[0], { x: 5, y: 5 });
+  assert.deepEqual(navigated, []);
+});
+
+test("a stalled post-action page is revived for a fresh attempt", async () => {
+  const loginUrl = "https://www.lotteon.com/p/member/login/common?rtnUrl=https://www.lotteon.com/";
+  let currentUrl = loginUrl;
+  const navigated = [];
+  const clicked = [];
+  const page = {
+    async evaluate(expression) {
+      const text = String(expression);
+      if (text.includes("authenticated") && text.includes("blocked")) {
+        return {
+          authenticated: false,
+          blocked: false,
+          hasLoginForm: currentUrl === loginUrl,
+          url: currentUrl,
+        };
+      }
+      if (text.includes('"naver"')) return { provider: { x: 5, y: 5 } };
+      return null;
+    },
+    async navigate(url) {
+      navigated.push(url);
+      currentUrl = String(url);
+    },
+    async clickPoint(point) {
+      clicked.push(point);
+      // The provider button opens the OAuth flow; the tab lands on a
+      // formless merchant page that belongs to the running flow.
+      currentUrl = "https://www.lotteon.com/";
+    },
+    async getCookies() {
+      return [];
+    },
+  };
+  const result = await waitForExternalLogin({
+    page,
+    detectControlsScript: "function detect() {}",
+    method: "naver",
+    merchantDomains: ["lotteon.com"],
+    loginUrl,
+    providerCredentials: { loginId: "naver-id", password: "naver-pw" },
+    timeoutMs: 300,
+    sleepImpl: async () => {},
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "LOGIN_TIMEOUT");
+  // Without the stall revival the flow freezes after the first click and
+  // the landing page is never retried.
+  assert.ok(clicked.length > 1);
+  assert.deepEqual(navigated, []);
+});
+
+test("a post-submit interstitial keeps its flow instead of reloading login", async () => {
+  const loginUrl = "https://www.lotteon.com/p/member/login/common?rtnUrl=https://www.lotteon.com/";
+  let currentUrl = loginUrl;
+  let submitted = false;
+  let detects = 0;
+  const navigated = [];
+  const page = {
+    async evaluate(expression) {
+      const text = String(expression);
+      if (text.includes("authenticated") && text.includes("blocked")) {
+        return {
+          authenticated: false,
+          blocked: false,
+          hasLoginForm: currentUrl === loginUrl,
+          url: currentUrl,
+        };
+      }
+      if (text.includes('"password"')) {
+        detects += 1;
+        return submitted ? null : { id: { x: 1, y: 1 }, password: { x: 1, y: 2 }, submit: { x: 1, y: 3 } };
+      }
+      if (text.includes("elementFromPoint")) return true;
+      return null;
+    },
+    async navigate(url) {
+      navigated.push(url);
+      currentUrl = String(url);
+    },
+    async clickPoint() {
+      submitted = true;
+      currentUrl = "https://www.lotteon.com/p/member/login/processing";
+    },
+    async getCookies() {
+      return [];
+    },
+  };
+  const result = await waitForExternalLogin({
+    page,
+    detectControlsScript: "function detect() {}",
+    credentials: { loginId: "lotte-id", password: "lotte-pw" },
+    method: "password",
+    merchantDomains: ["lotteon.com"],
+    loginUrl,
+    timeoutMs: 300,
+    sleepImpl: async () => {},
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "LOGIN_TIMEOUT");
+  assert.deepEqual(navigated, []);
+  // Without the stall revival the interstitial is never re-examined.
+  assert.ok(detects > 1);
+});
+
 test("slow login pages are retried instead of burning the single attempt", async () => {
   const clicked = [];
   let detects = 0;
