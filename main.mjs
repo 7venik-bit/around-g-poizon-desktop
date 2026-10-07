@@ -3540,7 +3540,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     let ssgScopeApplied = false;
     // Baseline before any scope (the page already settled above): revert only
     // a scope that demonstrably emptied a non-empty grid, mirroring the
-    // shared-window logic below.
+    // per-retailer window logic below.
     let scopeBaselineArticles = -1;
     const scopeBaselineArticle = String(articleNumber || "").trim();
     if (scopeBaselineArticle && !officialDirectDetail && !searchWindow.webContents.isDestroyed()
@@ -4764,8 +4764,8 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           visibleResultCount: Number.isFinite(count) ? Number(count) : null,
           productCardCount: Number(result?.candidateCount || result?.products?.length || 0),
           ...result?.verificationDiagnostics,
-          // Per-run receipt from the shared external tab (same-window search,
-          // facet checks, product click). Absent while the mirror still runs.
+          // Per-run receipt from the retailer's own external window tab (isolated
+          // per-retailer search, facet checks, product click). Absent while the mirror still runs.
           mirrorReceipt: (typeof mirrorReceiptFor === "function"
             ? mirrorReceiptFor(source, articleNumber,
               queryAttempts[0]?.url || attemptedQuery?.url || source.searchUrl || "") : null) || null,
@@ -7037,7 +7037,7 @@ function openSellerCenterWindow(targetUrl = SELLER_CENTER_URL, options = {}) {
     if (isPoizonExportDownloadUrl(url) || /^https:\/\/seller\.poizon\.com\//i.test(url)) {
       sellerWindow?.webContents.downloadURL(url);
     } else if (/^https:\/\//i.test(url)) {
-      openExternalInChromeTab(url).catch(() => shell.openExternal(url));
+      openExternalInChromeTab(url, { newWindow: true }).catch(() => shell.openExternal(url));
     }
     return { action: "deny" };
   });
@@ -12535,15 +12535,52 @@ const EXTERNAL_LOGIN_RETAILER_IDS = new Set(["ssg", "lotte"]);
 const EXTERNAL_LOGIN_CONFIRM_TTL_MS = 6 * 3600_000;
 const confirmedExternalLogins = new Map();
 const retailersNeedingLogin = new Set();
-// One shared external Chrome window for every retailer: each login opens as
-// another tab of the same window, so sessions are kept instead of logging in
-// again for every product search. Closed only when the program quits.
-let sharedExternalLoginChrome = null;
+// One external Chrome window per retailer: SSG and LotteON each keep their
+// own logged-in window instead of sharing tabs of a single window, so one
+// retailer's navigation or logout can never clobber the other's session.
+// Profiles are isolated per retailer as well. Handles close only when the
+// program quits.
+const externalRetailerChromeHandles = new Map();
+function externalRetailerChromeHandle(sourceId) {
+  try {
+    const handle = externalRetailerChromeHandles.get(String(sourceId || ""));
+    return handle && typeof handle === "object" ? handle : null;
+  } catch {
+    return null;
+  }
+}
+function setExternalRetailerChromeHandle(sourceId, handle) {
+  try {
+    const key = String(sourceId || "");
+    if (!key || !handle || typeof handle !== "object") return;
+    externalRetailerChromeHandles.set(key, { ...(externalRetailerChromeHandle(key) || {}), ...handle });
+  } catch {
+    // Handle bookkeeping must never break the login itself.
+  }
+}
+function closeAllExternalRetailerChrome() {
+  try {
+    for (const handle of externalRetailerChromeHandles.values()) {
+      closeLoginChrome(handle?.child);
+    }
+  } catch {
+    // External windows are best-effort cleanup only.
+  }
+  try {
+    externalRetailerChromeHandles.clear();
+  } catch {
+    // Clearing a broken map must not block shutdown.
+  }
+}
+function externalRetailerUserDataDir(sourceId) {
+  const key = String(sourceId || "").trim() || "shared";
+  return join(app.getPath("userData"), "external-login", key);
+}
 
 // Serialized visible mirrors per retailer: concurrent products must not
-// thrash the single shared tab with interleaved navigations. Every product
-// search for the same retailer runs visibly in that retailer's tab of the
-// shared external window, one after another. Collection never waits for the
+// thrash the retailer's own window tab with interleaved navigations. Every product
+// search for the same retailer runs visibly in that retailer's tab of its own
+// external window, one after another. Collection never waits for the
 // mirror; the chain only orders the observational navigation.
 const retailerMirrorChains = new Map();
 function queueRetailerMirror(sourceId, run) {
@@ -12562,7 +12599,7 @@ function queueRetailerMirror(sourceId, run) {
   return next;
 }
 
-// Mirror receipts: what the shared-window run for one product actually did
+// Mirror receipts: what the per-retailer window run for one product actually did
 // (navigated, facet checks, product click), keyed by retailer so the finished
 // source result can prove the per-run filter state. The mirror never blocks
 // collection; a still-running mirror simply leaves no receipt behind.
@@ -12581,7 +12618,7 @@ function mirrorReceiptFor(source = {}, articleNumber = "", searchUrl = "") {
   }
 }
 
-// Per-run login watchdog for the shared external window: the batch preflight
+// Per-run login watchdog for each retailer's own external window: the batch preflight
 // confirms login once, but a long batch must not keep searching on a tab the
 // retailer logged out. A double-negative read (two polls, still logged out)
 // triggers the same blocking re-login as the preflight; anything unclear
@@ -12597,8 +12634,9 @@ async function verifyExternalRetailerSession(sourceId, { onProgress = () => {}, 
     // failed or never ran it): never block a product run on a fresh login.
     // Only a confirmed-then-lost session earns a bounded mid-batch re-login.
     if (!confirmedExternalLogins.has(sourceId)) return { ok: true, checked: false };
-    const targetId = sharedExternalLoginChrome?.tabs?.[sourceId];
-    const port = Number(sharedExternalLoginChrome?.port) || 0;
+    const retailerHandle = externalRetailerChromeHandle(sourceId);
+    const targetId = retailerHandle?.tabs?.[sourceId];
+    const port = Number(retailerHandle?.port) || 0;
     if (!targetId || !port || typeof WebSocket === "undefined") return { ok: true, checked: false };
     const client = createCdpPageClient({ fetchImpl: fetch, WebSocketImpl: WebSocket, port, targetId });
     const readState = async () => {
@@ -12653,7 +12691,7 @@ function retailerFacetLabels(sourceId) {
 }
 
 // Visible logged-in search: once the external login is confirmed, each
-// product search also navigates the retailer's tab of the shared window so
+// product search also navigates the retailer's tab of its own window so
 // the operator watches the search happen in the logged-in session. Every
 // action below uses a real, observable CDP mouse (hover + click) or a
 // visible navigation: facet checks, the department scope, and finally the
@@ -12690,7 +12728,7 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
       keepReceipt();
       return null;
     }
-    if (!sharedExternalLoginChrome?.child) {
+    if (!externalRetailerChromeHandle(sourceId)?.child) {
       receipt.skipped = "no-shared-window";
       keepReceipt();
       return null;
@@ -12700,20 +12738,20 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
       keepReceipt();
       return null;
     }
+    const retailerWindow = externalRetailerChromeHandle(sourceId) || {};
     const acquired = await acquireLoginTab({
       fetchImpl: fetch,
       WebSocketImpl: WebSocket,
-      port: Number(sharedExternalLoginChrome.port) || 0,
+      port: Number(retailerWindow.port) || 0,
       loginUrl: String(searchUrl),
-      knownTabs: sharedExternalLoginChrome.tabs,
+      knownTabs: retailerWindow.tabs,
       tabKey: sourceId,
       navigateTimeoutMs: 8000,
       sleepImpl: wait,
     });
-    sharedExternalLoginChrome = {
-      ...sharedExternalLoginChrome,
-      tabs: { ...(sharedExternalLoginChrome.tabs || {}), [sourceId]: acquired.targetId },
-    };
+    setExternalRetailerChromeHandle(sourceId, {
+      tabs: { ...((retailerWindow.tabs) || {}), [sourceId]: acquired.targetId },
+    });
     receipt.navigated = true;
     // One mirror client drives every visible action below.
     let mirrorClient = null;
@@ -12722,7 +12760,7 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
         mirrorClient = createCdpPageClient({
           fetchImpl: fetch,
           WebSocketImpl: WebSocket,
-          port: Number(sharedExternalLoginChrome.port) || 0,
+          port: Number(retailerWindow.port) || 0,
           targetId: acquired.targetId,
         });
       }
@@ -12830,7 +12868,7 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
         }
       }
     }
-    await closeBlankTabs({ fetchImpl: fetch, port: Number(sharedExternalLoginChrome.port) || 0 });
+    await closeBlankTabs({ fetchImpl: fetch, port: Number(retailerWindow.port) || 0 });
     // Collection snapshot from the proven surface: the logged-in tab renders
     // what automation surfaces cannot. Captured after scoping settles and
     // before the product click navigates away. Best-effort; hidden and
@@ -12848,7 +12886,7 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
     // 4. Open the article card with the visible mouse, after the sweep so a
     // just-opened tab cannot be closed while navigation is still starting.
     // The click may spray a product tab; the search itself always stays in
-    // this retailer's tab of the same shared window. Spawned tabs are closed
+    // this retailer's tab of its own window. Spawned tabs are closed
     // and the card URL is navigated in the same tab, so one product after
     // another is watched in one place instead of piling up tabs.
     if (article) {
@@ -12857,7 +12895,7 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
         if (target && Number.isFinite(Number(target.x)) && Number.isFinite(Number(target.y))) {
           let knownTabIds = null;
           try {
-            const before = await listPageTargets({ fetchImpl: fetch, port: Number(sharedExternalLoginChrome.port) || 0 });
+            const before = await listPageTargets({ fetchImpl: fetch, port: Number(retailerWindow.port) || 0 });
             knownTabIds = new Set((Array.isArray(before) ? before : []).map((entry) => entry?.id).filter(Boolean));
           } catch {
             knownTabIds = null;
@@ -12869,12 +12907,12 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
           try {
             await wait(1500);
             if (knownTabIds) {
-              const after = await listPageTargets({ fetchImpl: fetch, port: Number(sharedExternalLoginChrome.port) || 0 });
+              const after = await listPageTargets({ fetchImpl: fetch, port: Number(retailerWindow.port) || 0 });
               for (const entry of Array.isArray(after) ? after : []) {
                 if (!entry?.id || entry.id === acquired.targetId) continue;
                 if (knownTabIds.has(entry.id)) continue;
                 try {
-                  await closePageTarget({ fetchImpl: fetch, port: Number(sharedExternalLoginChrome.port) || 0, targetId: entry.id });
+                  await closePageTarget({ fetchImpl: fetch, port: Number(retailerWindow.port) || 0, targetId: entry.id });
                 } catch {
                   // One unclosable tab must not hide the same-tab navigation below.
                 }
@@ -13318,7 +13356,7 @@ async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, c
     credentials = null;
     providerCredentials = null;
   }
-  const userDataDir = join(app.getPath("userData"), "external-login", "shared");
+  const userDataDir = externalRetailerUserDataDir(sourceId);
   try {
     mkdirSync(userDataDir, { recursive: true });
   } catch {
@@ -13345,10 +13383,10 @@ async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, c
     chromeExecutable,
     userDataDir,
     tabKey: sourceId,
-    shared: sharedExternalLoginChrome,
+    shared: externalRetailerChromeHandle(sourceId),
     keepAlive: true,
     onShared: (handle) => {
-      sharedExternalLoginChrome = { ...(sharedExternalLoginChrome || {}), ...handle };
+      setExternalRetailerChromeHandle(sourceId, handle);
     },
     onProgress: heartbeat,
     detectControlsScript: captureShoppingLoginPage.toString(),
@@ -14577,7 +14615,9 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     };
   });
   ipcMain.handle("external:open", async (_event, url) => {
-    return openExternalInChromeTab(url);
+    // Each platform opens in its own Chrome window so one retailer's tabs
+    // can never steal another retailer's login session.
+    return openExternalInChromeTab(url, { newWindow: true });
   });
   ipcMain.handle("official:open-internal-search", async (_event, input) => {
     try {
@@ -14597,9 +14637,9 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
     if (![discovery.protocol, product.protocol].every((protocol) => ["https:", "http:"].includes(protocol))) {
       throw new Error("INVALID_URL");
     }
-    await openExternalInChromeTab(discovery.href);
+    await openExternalInChromeTab(discovery.href, { newWindow: true });
     await wait(1_500);
-    await openExternalInChromeTab(product.href);
+    await openExternalInChromeTab(product.href, { newWindow: true });
     return { ok: true };
   });
   ipcMain.handle("excel:import", async () => {
@@ -14932,8 +14972,7 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 app.on("before-quit", () => {
-  closeLoginChrome(sharedExternalLoginChrome?.child);
-  sharedExternalLoginChrome = null;
+  closeAllExternalRetailerChrome();
   if(poizonLedgerSyncTimer)clearInterval(poizonLedgerSyncTimer);
   if (brandExportPollTimer) clearInterval(brandExportPollTimer);
   if (brandExportMonitorRestartTimer) clearTimeout(brandExportMonitorRestartTimer);
