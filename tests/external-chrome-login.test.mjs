@@ -17,7 +17,9 @@ import {
   EXTERNAL_LOGIN_STATE_SCRIPT,
   EXTERNAL_DEVICE_CONFIRM_SCRIPT,
   EXTERNAL_FACET_CHECK_SCRIPT,
+  EXTERNAL_SSG_LOGIN_ENTRY_SCRIPT,
   checkSearchFacets,
+  isOffLoginEntry,
   externalFillScript,
   filterUsableLoginCookies,
   planExternalLoginStep,
@@ -432,6 +434,86 @@ test("SSG OAuth popup login completes across tabs", async () => {
   assert.equal(result.ok, true);
   assert.deepEqual(merchantClicks, [{ x: 7, y: 7 }]);
   assert.deepEqual(result.cookies.map((cookie) => cookie.name), ["ssg_auth"]);
+});
+
+test("person-icon login entry prefers the visible header link", () => {
+  const runEntry = (html) => {
+    const dom = new JSDOM(html, { url: "https://event.ssg.com/eventDetail.ssg", runScripts: "outside-only" });
+    dom.window.Element.prototype.getBoundingClientRect = () => ({
+      width: 40, height: 40, top: 0, left: 0, right: 40, bottom: 40, x: 0, y: 0, toJSON: () => ({}),
+    });
+    return vm.runInContext(EXTERNAL_SSG_LOGIN_ENTRY_SCRIPT, dom.getInternalVMContext());
+  };
+  const eventPage = [
+    '<header><nav><a href="https://www.ssg.com/">홈</a>',
+    '<a href="https://member.ssg.com/member/login.ssg">로그인</a></nav></header>',
+    '<main>출석체크 이벤트</main>',
+  ].join("");
+  assert.equal(runEntry(eventPage), "https://member.ssg.com/member/login.ssg");
+  assert.equal(runEntry("<header><nav></nav></header><main>이벤트</main>"), "");
+  assert.equal(
+    runEntry('<header><nav><a href="https://www.ssg.com/customer/help.ssg?login=1">고객센터</a></nav></header>'),
+    "",
+  );
+});
+
+test("isOffLoginEntry compares entry pages without query strings", () => {
+  const login = "https://member.ssg.com/member/popup/popupLogin.ssg?originSite=https://www.ssg.com/&gnb=login";
+  assert.equal(isOffLoginEntry(login, login), false);
+  assert.equal(isOffLoginEntry("https://member.ssg.com/member/popup/popupLogin.ssg?other=1", login), false);
+  assert.equal(isOffLoginEntry("https://event.ssg.com/eventDetail.ssg?neventId=1", login), true);
+  assert.equal(isOffLoginEntry("https://www.ssg.com/", login), true);
+  assert.equal(isOffLoginEntry("https://event.ssg.com/eventDetail.ssg", ""), false);
+  assert.equal(isOffLoginEntry("not a url", login), false);
+});
+
+test("event-page stall returns to the login entry instead of clicking blindly", async () => {
+  const loginUrl = "https://member.ssg.com/member/popup/popupLogin.ssg?originSite=https://www.ssg.com/";
+  const entryHref = "https://member.ssg.com/member/login.ssg";
+  let currentUrl = "https://event.ssg.com/eventDetail.ssg?neventId=1";
+  const navigated = [];
+  const clicked = [];
+  let loggedIn = false;
+  const page = {
+    async evaluate(expression) {
+      const text = String(expression);
+      if (text.includes("authenticated") && text.includes("blocked")) {
+        return {
+          authenticated: loggedIn,
+          blocked: false,
+          hasLoginForm: currentUrl.includes("member.ssg.com"),
+          url: currentUrl,
+        };
+      }
+      if (text.includes("HEADER|NAV") || text.includes("고객센터")) return entryHref;
+      if (text.includes('"naver"')) return { provider: { x: 5, y: 5 } };
+      return null;
+    },
+    async navigate(url) {
+      navigated.push(url);
+      currentUrl = String(url);
+    },
+    async clickPoint(point) {
+      clicked.push(point);
+      loggedIn = true;
+    },
+    async getCookies() {
+      return [{ name: "ssg_auth", value: "ok" }];
+    },
+  };
+  const result = await waitForExternalLogin({
+    page,
+    detectControlsScript: "function detect() {}",
+    method: "naver",
+    merchantDomains: ["ssg.com"],
+    loginUrl,
+    providerCredentials: { loginId: "naver-id", password: "naver-pw" },
+    timeoutMs: 5000,
+    sleepImpl: async () => {},
+  });
+  assert.equal(result.ok, true);
+  assert.equal(navigated[0], entryHref);
+  assert.deepEqual(clicked, [{ x: 5, y: 5 }]);
 });
 
 test("slow login pages are retried instead of burning the single attempt", async () => {

@@ -619,6 +619,39 @@ export const EXTERNAL_PRODUCT_CARD_POINT_SCRIPT = `((article) => {
   return { x: best.x, y: best.y, url: bestUrl };
 })`;
 
+// SSG top-right person-icon login entry. The event/promotion pages where a
+// stalled login sits have no login form and no provider button; the header
+// person icon is the visible way back. Returns its href or "". Visible links
+// win; hidden dropdown links (person-icon hover menu) still count because
+// navigation needs no visibility.
+export const EXTERNAL_SSG_LOGIN_ENTRY_SCRIPT = `(() => {
+  const visible = (el) => {
+    try {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    } catch {
+      return false;
+    }
+  };
+  const inTopChrome = (el) => {
+    let node = el.parentElement;
+    for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
+      if (/^(HEADER|NAV)$/i.test(node.tagName || "")) return true;
+    }
+    return false;
+  };
+  const loginHref = (el) => {
+    if (!/login/i.test(el.href || "")) return false;
+    if (!inTopChrome(el)) return false;
+    return !/고객센터|고객|help|support|join|register|회원가입/i.test(el.textContent || "");
+  };
+  const links = [...document.querySelectorAll("a[href]")];
+  const shown = links.filter(visible).find(loginHref);
+  if (shown) return String(shown.href || "");
+  const hidden = links.find(loginHref);
+  return hidden ? String(hidden.href || "") : "";
+})()`;
+
 // SSG top-menu department link (백화점 tab href). Prefers the tab's own
 // scoped href; the caller navigates so the scoping stays observable.
 export const EXTERNAL_SSG_DEPARTMENT_HREF_SCRIPT = `(() => {
@@ -826,6 +859,21 @@ export function merchantHomepageUrl(merchantDomains = []) {
   return domain ? `https://www.${domain}/` : "";
 }
 
+// True when the observed page is anywhere but the login entry (event or
+// promotion landing, stale tab). Query strings are ignored: the entry
+// itself keeps the legacy path so a slowly rendering form is never
+// reloaded away. Unparseable URLs fail closed (no re-entry).
+export function isOffLoginEntry(pageUrl = "", loginUrl = "") {
+  if (!String(loginUrl || "")) return false;
+  try {
+    const here = new URL(String(pageUrl || ""));
+    const entry = new URL(String(loginUrl));
+    return `${here.origin}${here.pathname}` !== `${entry.origin}${entry.pathname}`;
+  } catch {
+    return false;
+  }
+}
+
 // Pure step planner for the visible login route in screenshot order:
 // merchant login page → password fill or provider click → provider login
 // page → provider fill. Each automatic step fires at most once; afterwards
@@ -862,6 +910,7 @@ export async function waitForExternalLogin({
   providerCredentials = null,
   method = "password",
   merchantDomains = [],
+  loginUrl = "",
   timeoutMs = 180000,
   pollIntervalMs = 2000,
   sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -973,7 +1022,48 @@ export async function waitForExternalLogin({
         lastActedUrl = url;
         for (const key of Object.keys(acted)) if (key !== "recover_callback") delete acted[key];
       }
-      if (step === "fill_merchant" && canFillMerchant && attemptsLeft(step, url)) {
+      // A merchant page without a login form (event/promotion landing, stale
+      // tab) has no provider button to click. Return to the login entry
+      // instead of clicking blindly until attempts run out. The login entry
+      // itself keeps the old path so a slowly rendering form is never
+      // reloaded away, and SSO callbacks keep their recovery below. On SSG
+      // the top-right person icon is the visible way back; elsewhere (and as
+      // a fallback) the login URL is used.
+      const needsLoginForm = step === "click_provider" || step === "fill_merchant";
+      if (needsLoginForm
+        && actionable.state.hasLoginForm !== true
+        && isOffLoginEntry(url, loginUrl)
+        && !isSsoCallbackUrl(url, merchantDomains)
+        && attemptsLeft("navigate_login", String(loginUrl || "login-entry"))) {
+        noteAttempt("navigate_login", String(loginUrl || "login-entry"));
+        actedThisRound = true;
+        const navigateTarget = async () => {
+          const listed = Array.isArray(merchantDomains) ? merchantDomains : [];
+          const ssgMerchant = listed.some((domain) => String(domain || "").toLowerCase() === "ssg.com"
+            || String(domain || "").toLowerCase().endsWith(".ssg.com"));
+          if (ssgMerchant) {
+            try {
+              const entryHref = String(await actionable.client.evaluate(EXTERNAL_SSG_LOGIN_ENTRY_SCRIPT) || "").trim();
+              if (/^https?:\/\//i.test(entryHref)) return entryHref;
+            } catch {
+              // Fall through to the login URL below.
+            }
+          }
+          return String(loginUrl || "");
+        };
+        try {
+          const target = await navigateTarget();
+          if (/^https?:\/\//i.test(target)) {
+            if (typeof actionable.client.navigate === "function") {
+              await actionable.client.navigate(target);
+            } else if (actionable.client === page && typeof page.navigate === "function") {
+              await page.navigate(target);
+            }
+          }
+        } catch {
+          // A failed re-entry leaves manual observation.
+        }
+      } else if (step === "fill_merchant" && canFillMerchant && attemptsLeft(step, url)) {
         noteAttempt(step, url);
         actedThisRound = true;
         if (await fillPasswordForm(actionable.client, detectControlsScript, credentials)) {
@@ -1131,6 +1221,7 @@ export async function startExternalRetailerLogin({
       providerCredentials,
       method,
       merchantDomains,
+      loginUrl,
       timeoutMs: automatic ? autoTimeoutMs : manualTimeoutMs,
       canceled,
       sleepImpl,
