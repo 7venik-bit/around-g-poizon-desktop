@@ -151,7 +151,9 @@ test("store names map to their external login source", () => {
   const context = {};
   runInNewContext(`${main.slice(start, end)}\nthis.mapped = {
     ssg: loginSourceIdForStore("SSG 백화점"),
+    ssgLogin: loginSourceIdForStore("SSG·신세계백화점"),
     lotte: loginSourceIdForStore("롯데온 아울렛"),
+    lotteLogin: loginSourceIdForStore("롯데온·롯데백화점"),
     musinsa: loginSourceIdForStore("무신사"),
     naver: loginSourceIdForStore("네이버 패션타운"),
     kolon: loginSourceIdForStore("코오롱몰"),
@@ -159,7 +161,9 @@ test("store names map to their external login source", () => {
   };`, context);
   assert.deepEqual({ ...context.mapped }, {
     ssg: "ssg",
+    ssgLogin: "ssg",
     lotte: "lotte",
+    lotteLogin: "lotte",
     musinsa: "musinsa",
     naver: "naver",
     kolon: "kolon",
@@ -177,7 +181,28 @@ test("each product run re-verifies the external login before searching", () => {
   assert.match(watchdog, /confirmedExternalLogins\.delete\(sourceId\)/);
   assert.match(watchdog, /await openRetailerLoginForSearch\(sourceId/);
   assert.match(watchdog, /checked: false/);
+  // No clobbering, no fresh-login blocks, no runaway waits.
+  assert.match(watchdog, /retailerMirrorChains\.has\(/);
+  assert.match(watchdog, /confirmedExternalLogins\.has\(sourceId\)/);
+  assert.match(watchdog, /autoTimeoutMs: 90000/);
+  assert.match(watchdog, /manualTimeoutMs: 90000/);
   assert.match(main, /await verifyExternalRetailerSession\(externalSourceId/);
+  assert.match(main, /canceled: \(\) => domesticSearchCanceled\(generation\)/);
+});
+
+test("mid-batch re-login stays cancelable with preserved preflight defaults", () => {
+  const attemptStart = main.indexOf("async function attemptExternalRetailerLogin(");
+  assert.ok(attemptStart >= 0, "external login attempt missing");
+  const attemptEnd = main.indexOf("async function openRetailerLoginForSearch(", attemptStart);
+  const attempt = main.slice(attemptStart, attemptEnd);
+  assert.match(attempt, /autoTimeoutMs = 180000/);
+  assert.match(attempt, /manualTimeoutMs = 600000/);
+  assert.match(attempt, /detectControlsScript: captureShoppingLoginPage\.toString\(\),\s*\n\s*autoTimeoutMs,\s*\n\s*manualTimeoutMs,/);
+  const openStart = main.indexOf("async function openRetailerLoginForSearch(");
+  const openEnd = main.indexOf("async function waitForDomesticLoginsBeforeSearch(", openStart);
+  const open = main.slice(openStart, openEnd);
+  assert.match(open, /canceled = \(\) => false/);
+  assert.match(open, /attemptExternalRetailerLogin\(sourceId, \{\s*\n?\s*onProgress, index, total, canceled, autoTimeoutMs, manualTimeoutMs,/);
 });
 
 test("the mirror leaves a per-run receipt for the finished result", () => {

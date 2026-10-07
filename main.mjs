@@ -4509,7 +4509,10 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
             // continues and the next preflight re-verifies.
             if (typeof verifyExternalRetailerSession === "function") {
               await verifyExternalRetailerSession(externalSourceId, {
-                onProgress, index: sources.length, total: progressTotal,
+                onProgress,
+                index: sources.length,
+                total: progressTotal,
+                canceled: () => domesticSearchCanceled(generation),
               }).catch(() => null);
             }
             queueRetailerMirror(externalSourceId, () => showRetailerSearchInWindow(
@@ -12522,9 +12525,17 @@ function mirrorReceiptFor(source = {}, articleNumber = "", searchUrl = "") {
 // retailer logged out. A double-negative read (two polls, still logged out)
 // triggers the same blocking re-login as the preflight; anything unclear
 // fails open so collection continues and the next preflight re-verifies.
-async function verifyExternalRetailerSession(sourceId, { onProgress = () => {}, index = 0, total = 1 } = {}) {
+async function verifyExternalRetailerSession(sourceId, { onProgress = () => {}, index = 0, total = 1, canceled = () => false } = {}) {
   try {
     if (!EXTERNAL_LOGIN_RETAILER_IDS.has(String(sourceId || ""))) return { ok: true, checked: false };
+    // A mirror driving this retailer's tab right now makes any read
+    // unreliable, and a re-login navigation would clobber it: skip while
+    // the retailer's mirror chain is pending.
+    if (retailerMirrorChains.has(String(sourceId || ""))) return { ok: true, checked: false };
+    // No prior confirmation means the batch preflight owns login (it already
+    // failed or never ran it): never block a product run on a fresh login.
+    // Only a confirmed-then-lost session earns a bounded mid-batch re-login.
+    if (!confirmedExternalLogins.has(sourceId)) return { ok: true, checked: false };
     const targetId = sharedExternalLoginChrome?.tabs?.[sourceId];
     const port = Number(sharedExternalLoginChrome?.port) || 0;
     if (!targetId || !port || typeof WebSocket === "undefined") return { ok: true, checked: false };
@@ -12542,7 +12553,9 @@ async function verifyExternalRetailerSession(sourceId, { onProgress = () => {}, 
     if (!state || state.authenticated === true) return { ok: true, checked: true };
     retailersNeedingLogin.add(sourceId);
     confirmedExternalLogins.delete(sourceId);
-    const attempt = await openRetailerLoginForSearch(sourceId, { onProgress, index, total });
+    const attempt = await openRetailerLoginForSearch(sourceId, {
+      onProgress, index, total, canceled, autoTimeoutMs: 90000, manualTimeoutMs: 90000,
+    });
     return { ok: attempt?.ok === true, checked: true, relogin: attempt?.ok === true };
   } catch {
     return { ok: true, checked: false };
@@ -12551,7 +12564,7 @@ async function verifyExternalRetailerSession(sourceId, { onProgress = () => {}, 
 
 function loginSourceIdForStore(store = "") {
   const name = String(store || "");
-  if (/^(?:SSG)(?:\s|$)/.test(name)) return "ssg";
+  if (/^(?:SSG)(?:[\s·]|$)/.test(name)) return "ssg";
   if (/^롯데온/.test(name)) return "lotte";
   if (name === "무신사") return "musinsa";
   if (/^네이버/.test(name)) return "naver";
@@ -13121,7 +13134,7 @@ function naverLoginScopeRestriction(scopeId, failure = null, now = Date.now()) {
   return blockedNaverLoginScopes.get(key)?.failure || null;
 }
 
-async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, canceled = () => false, index = 0, total = 1 } = {}) {
+async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, canceled = () => false, index = 0, total = 1, autoTimeoutMs = 180000, manualTimeoutMs = 600000 } = {}) {
   const source = domesticLoginSource(sourceId);
   if (!source) return { ok: false, code: "CHROME_LAUNCH_FAILED", message: "지원하지 않는 소싱몰입니다." };
   if (typeof WebSocket === "undefined") return { ok: false, fallbackInApp: true };
@@ -13188,6 +13201,8 @@ async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, c
     },
     onProgress: heartbeat,
     detectControlsScript: captureShoppingLoginPage.toString(),
+    autoTimeoutMs,
+    manualTimeoutMs,
     deps: {
       spawnImpl: spawn,
       fetchImpl: fetch,
@@ -13226,14 +13241,16 @@ async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, c
   return { ok: true, imported };
 }
 
-async function openRetailerLoginForSearch(sourceId, { onProgress = () => {}, index = 0, total = 1 } = {}) {
+async function openRetailerLoginForSearch(sourceId, { onProgress = () => {}, index = 0, total = 1, canceled = () => false, autoTimeoutMs, manualTimeoutMs } = {}) {
   onProgress({
     completed: index,
     total,
     phase: "authentication",
     source: domesticLoginSource(sourceId)?.name || "판매처",
   });
-  const attempt = await attemptExternalRetailerLogin(sourceId, { onProgress, index, total });
+  const attempt = await attemptExternalRetailerLogin(sourceId, {
+    onProgress, index, total, canceled, autoTimeoutMs, manualTimeoutMs,
+  });
   if (attempt.ok) return { ok: true, opened: true, external: true, automatic: { ok: true, external: true } };
   // Without Chrome or a CDP channel the shared in-app window path below runs.
   if (attempt.fallbackInApp) return { ok: false, fallbackInApp: true };
