@@ -219,3 +219,15 @@ test("the mirror leaves a per-run receipt for the finished result", () => {
   assert.match(main, /mirrorReceiptFor\(source, articleNumber/);
   assert.match(main, /mirrorReceipt: \(typeof mirrorReceiptFor/);
 });
+
+test("a visibly logged-in tab re-confirms instead of skipping every mirror", () => {
+  assert.match(main, /async function importExternalLoginCookies\(sourceId, getCookies\)/);
+  assert.match(main, /await importExternalLoginCookies\(sourceId, async \(\) => started\.cookies/);
+  const start = main.indexOf("async function showRetailerSearchInWindow(");
+  const end = main.indexOf("let shoppingAccountServicesCache;", start);
+  const mirror = main.slice(start, end);
+  assert.match(mirror, /mirrorPage\(\)\.evaluate\(EXTERNAL_LOGIN_STATE_SCRIPT\)/);
+  assert.match(mirror, /importExternalLoginCookies\(sourceId, \(\) => mirrorPage\(\)\.getCookies/);
+  assert.match(mirror, /no-shared-window/);
+  assert.match(mirror, /no-confirmed-login/);
+});

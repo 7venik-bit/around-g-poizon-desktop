@@ -12629,8 +12629,8 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
       keepReceipt();
       return null;
     }
-    if (!sharedExternalLoginChrome?.child || !confirmedExternalLogins.has(sourceId)) {
-      receipt.skipped = "no-confirmed-login";
+    if (!sharedExternalLoginChrome?.child) {
+      receipt.skipped = "no-shared-window";
       keepReceipt();
       return null;
     }
@@ -12667,6 +12667,28 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
       }
       return mirrorClient;
     };
+    // Opportunistic re-confirmation: the in-memory confirmation may have
+    // lapsed (restart, TTL) while the profile session stayed logged in, and
+    // then every mirror silently skips although the tab is usable. A
+    // logged-in tab re-confirms here; anything else keeps the gate below.
+    // Never blocks the mirror itself.
+    try {
+      const loginState = await mirrorPage().evaluate(EXTERNAL_LOGIN_STATE_SCRIPT).catch(() => null);
+      if (loginState?.authenticated === true && !confirmedExternalLogins.has(sourceId)) {
+        const imported = await importExternalLoginCookies(sourceId, () => mirrorPage().getCookies().catch(() => []));
+        if (imported > 0) {
+          confirmedExternalLogins.set(sourceId, Date.now());
+          retailersNeedingLogin.delete(sourceId);
+        }
+      }
+    } catch {
+      // Opportunistic only; the mirror continues regardless.
+    }
+    if (!confirmedExternalLogins.has(sourceId)) {
+      receipt.skipped = "no-confirmed-login";
+      keepReceipt();
+      return null;
+    }
     const labels = [...new Set((Array.isArray(facetLabels) ? facetLabels : []).map((label) => String(label || "").trim()).filter(Boolean))];
     const gridArticleCount = async () => {
       try {
@@ -13136,6 +13158,50 @@ function naverLoginScopeRestriction(scopeId, failure = null, now = Date.now()) {
   return blockedNaverLoginScopes.get(key)?.failure || null;
 }
 
+// Moves the external window session cookies of one retailer into the
+// Electron search partition. Returns the imported count; one rejected cookie
+// never discards the rest. Shared by the login flow and the opportunistic
+// re-confirmation below.
+async function importExternalLoginCookies(sourceId, getCookies) {
+  try {
+    const source = typeof domesticLoginSource === "function" ? domesticLoginSource(sourceId) : null;
+    const domains = Array.isArray(source?.domains) ? source.domains : [];
+    if (!domains.length || typeof getCookies !== "function") return 0;
+    let cookies = [];
+    try {
+      cookies = await getCookies();
+    } catch {
+      return 0;
+    }
+    if (!Array.isArray(cookies)) return 0;
+    const persistentSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
+    let imported = 0;
+    for (const cookie of cookies) {
+      try {
+        const host = String(cookie.domain || "").replace(/^\./, "");
+        if (!host || !String(cookie.value || "")) continue;
+        if (!domains.some((domain) => host === domain || host.endsWith(`.${domain}`))) continue;
+        await persistentSession.cookies.set({
+          url: `${cookie.secure === false ? "http" : "https"}://${host}${cookie.path || "/"}`,
+          name: cookie.name,
+          value: cookie.value,
+          path: cookie.path || "/",
+          secure: cookie.secure !== false,
+          httpOnly: cookie.httpOnly === true,
+          ...(cookie.domain ? { domain: cookie.domain } : {}),
+          ...(Number.isFinite(cookie.expirationDate) ? { expirationDate: cookie.expirationDate } : {}),
+        });
+        imported += 1;
+      } catch {
+        // One rejected cookie must not discard the remaining session.
+      }
+    }
+    return imported;
+  } catch {
+    return 0;
+  }
+}
+
 async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, canceled = () => false, index = 0, total = 1, autoTimeoutMs = 180000, manualTimeoutMs = 600000 } = {}) {
   const source = domesticLoginSource(sourceId);
   if (!source) return { ok: false, code: "CHROME_LAUNCH_FAILED", message: "지원하지 않는 소싱몰입니다." };
@@ -13214,27 +13280,7 @@ async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, c
     },
   });
   if (!started.ok) return started;
-  const persistentSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
-  let imported = 0;
-  for (const cookie of started.cookies || []) {
-    try {
-      const host = String(cookie.domain || "").replace(/^\./, "");
-      if (!host || !source.domains.some((domain) => host === domain || host.endsWith(`.${domain}`))) continue;
-      await persistentSession.cookies.set({
-        url: `${cookie.secure === false ? "http" : "https"}://${host}${cookie.path || "/"}`,
-        name: cookie.name,
-        value: cookie.value,
-        path: cookie.path || "/",
-        secure: cookie.secure !== false,
-        httpOnly: cookie.httpOnly === true,
-        ...(cookie.domain ? { domain: cookie.domain } : {}),
-        ...(Number.isFinite(cookie.expirationDate) ? { expirationDate: cookie.expirationDate } : {}),
-      });
-      imported += 1;
-    } catch {
-      // One rejected cookie must not discard the remaining session.
-    }
-  }
+  const imported = await importExternalLoginCookies(sourceId, async () => started.cookies || []);
   if (!imported) {
     return { ok: false, code: "LOGIN_TIMEOUT", message: "외부 창 로그인은 확인됐지만 검색 세션을 가져오지 못했습니다." };
   }
