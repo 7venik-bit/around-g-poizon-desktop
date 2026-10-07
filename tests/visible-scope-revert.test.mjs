@@ -198,6 +198,14 @@ test("fallback rows name the filter state of that exact run", () => {
   assert.match(inline, /const filterStatus = filterStatusText\(source\)/);
 });
 
+test("mirror receipts surface the shared-window run state", () => {
+  assert.match(inline, /function mirrorFilterText\(receipt/);
+  assert.match(inline, /mirrorReceipt/);
+  assert.match(inline, /\["외부 창 검색"/);
+  assert.match(inline, /\["외부 창 필터"/);
+  assert.match(inline, /같은 탭 이동/);
+});
+
 test("empty rows expose scope evidence in the diagnostics block", () => {
   assert.match(inline, /source\?\.verificationDiagnostics\?\.lotteCollectionEvidence/);
   assert.match(inline, /source\?\.verificationDiagnostics\?\.ssgCollectionEvidence/);

@@ -65,6 +65,7 @@ import {
   clickSearchFacetsVisibly,
   createCdpPageClient,
   findSsgDepartmentTab,
+  EXTERNAL_LOGIN_STATE_SCRIPT,
   EXTERNAL_FACET_UNCHECK_SCRIPT,
   EXTERNAL_GRID_ARTICLE_COUNT_SCRIPT,
   EXTERNAL_PRODUCT_CARD_POINT_SCRIPT,
@@ -4503,6 +4504,14 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           && typeof retailerFacetLabels === "function" && typeof queueRetailerMirror === "function") {
           const externalSourceId = loginSourceIdForStore(source.store);
           if (externalSourceId === "ssg" || externalSourceId === "lotte") {
+            // Per-run login watchdog: a batch that outlives its login must
+            // re-login instead of searching logged out. Fail-open: collection
+            // continues and the next preflight re-verifies.
+            if (typeof verifyExternalRetailerSession === "function") {
+              await verifyExternalRetailerSession(externalSourceId, {
+                onProgress, index: sources.length, total: progressTotal,
+              }).catch(() => null);
+            }
             queueRetailerMirror(externalSourceId, () => showRetailerSearchInWindow(
               externalSourceId, queryAttempt.url, retailerFacetLabels(externalSourceId, brand), articleNumber,
             ).catch(() => null));
@@ -4691,6 +4700,11 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
           visibleResultCount: Number.isFinite(count) ? Number(count) : null,
           productCardCount: Number(result?.candidateCount || result?.products?.length || 0),
           ...result?.verificationDiagnostics,
+          // Per-run receipt from the shared external tab (same-window search,
+          // facet checks, product click). Absent while the mirror still runs.
+          mirrorReceipt: (typeof mirrorReceiptFor === "function"
+            ? mirrorReceiptFor(source, articleNumber,
+              queryAttempts[0]?.url || attemptedQuery?.url || source.searchUrl || "") : null) || null,
           query: String(attemptedQuery?.query || source.searchQuery || ""),
           targetUrl: String(attemptedQuery?.url || source.searchUrl || ""),
           queryComparisons,
@@ -12484,6 +12498,57 @@ function queueRetailerMirror(sourceId, run) {
   return next;
 }
 
+// Mirror receipts: what the shared-window run for one product actually did
+// (navigated, facet checks, product click), keyed by retailer so the finished
+// source result can prove the per-run filter state. The mirror never blocks
+// collection; a still-running mirror simply leaves no receipt behind.
+const retailerMirrorReceipts = new Map();
+function mirrorReceiptFor(source = {}, articleNumber = "", searchUrl = "") {
+  try {
+    const sourceId = loginSourceIdForStore(source?.store || "");
+    if (!sourceId) return null;
+    const receipt = retailerMirrorReceipts.get(sourceId);
+    if (!receipt || typeof receipt !== "object") return null;
+    if (String(receipt.article || "") !== String(articleNumber || "").trim()) return null;
+    if (String(receipt.searchUrl || "") !== String(searchUrl || "")) return null;
+    return receipt;
+  } catch {
+    return null;
+  }
+}
+
+// Per-run login watchdog for the shared external window: the batch preflight
+// confirms login once, but a long batch must not keep searching on a tab the
+// retailer logged out. A double-negative read (two polls, still logged out)
+// triggers the same blocking re-login as the preflight; anything unclear
+// fails open so collection continues and the next preflight re-verifies.
+async function verifyExternalRetailerSession(sourceId, { onProgress = () => {}, index = 0, total = 1 } = {}) {
+  try {
+    if (!EXTERNAL_LOGIN_RETAILER_IDS.has(String(sourceId || ""))) return { ok: true, checked: false };
+    const targetId = sharedExternalLoginChrome?.tabs?.[sourceId];
+    const port = Number(sharedExternalLoginChrome?.port) || 0;
+    if (!targetId || !port || typeof WebSocket === "undefined") return { ok: true, checked: false };
+    const client = createCdpPageClient({ fetchImpl: fetch, WebSocketImpl: WebSocket, port, targetId });
+    const readState = async () => {
+      try {
+        return await client.evaluate(EXTERNAL_LOGIN_STATE_SCRIPT);
+      } catch {
+        return null;
+      }
+    };
+    if ((await readState())?.authenticated === true) return { ok: true, checked: true };
+    await wait(3000);
+    const state = await readState();
+    if (!state || state.authenticated === true) return { ok: true, checked: true };
+    retailersNeedingLogin.add(sourceId);
+    confirmedExternalLogins.delete(sourceId);
+    const attempt = await openRetailerLoginForSearch(sourceId, { onProgress, index, total });
+    return { ok: attempt?.ok === true, checked: true, relogin: attempt?.ok === true };
+  } catch {
+    return { ok: true, checked: false };
+  }
+}
+
 function loginSourceIdForStore(store = "") {
   const name = String(store || "");
   if (/^(?:SSG)(?:\s|$)/.test(name)) return "ssg";
@@ -12523,10 +12588,44 @@ function retailerFacetLabels(sourceId) {
 // Collection verdicts still come from the existing collector; this helper
 // never blocks or fails the search itself.
 async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [], articleNumber = "") {
+  const article = String(articleNumber || "").trim();
+  const receipt = {
+    at: Date.now(),
+    article,
+    searchUrl: String(searchUrl || ""),
+    navigated: false,
+    deptScope: "none",
+    facetChecked: [],
+    facetMissing: [],
+    facetSettled: null,
+    reverted: false,
+    productOpened: false,
+    productUrl: "",
+    skipped: "",
+  };
+  const keepReceipt = () => {
+    try {
+      retailerMirrorReceipts.set(String(sourceId || ""), { ...receipt });
+    } catch {
+      // Receipt bookkeeping must never break the search itself.
+    }
+  };
   try {
-    if (!EXTERNAL_LOGIN_RETAILER_IDS.has(String(sourceId || ""))) return null;
-    if (!sharedExternalLoginChrome?.child || !confirmedExternalLogins.has(sourceId)) return null;
-    if (typeof WebSocket === "undefined" || !searchUrl) return null;
+    if (!EXTERNAL_LOGIN_RETAILER_IDS.has(String(sourceId || ""))) {
+      receipt.skipped = "unsupported-retailer";
+      keepReceipt();
+      return null;
+    }
+    if (!sharedExternalLoginChrome?.child || !confirmedExternalLogins.has(sourceId)) {
+      receipt.skipped = "no-confirmed-login";
+      keepReceipt();
+      return null;
+    }
+    if (typeof WebSocket === "undefined" || !searchUrl) {
+      receipt.skipped = "no-cdp-channel";
+      keepReceipt();
+      return null;
+    }
     const acquired = await acquireLoginTab({
       fetchImpl: fetch,
       WebSocketImpl: WebSocket,
@@ -12541,6 +12640,7 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
       ...sharedExternalLoginChrome,
       tabs: { ...(sharedExternalLoginChrome.tabs || {}), [sourceId]: acquired.targetId },
     };
+    receipt.navigated = true;
     // One mirror client drives every visible action below.
     let mirrorClient = null;
     const mirrorPage = () => {
@@ -12554,7 +12654,6 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
       }
       return mirrorClient;
     };
-    const article = String(articleNumber || "").trim();
     const labels = [...new Set((Array.isArray(facetLabels) ? facetLabels : []).map((label) => String(label || "").trim()).filter(Boolean))];
     const gridArticleCount = async () => {
       try {
@@ -12575,14 +12674,18 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
             deptScope = { kind: "navigate", backUrl: String(searchUrl) };
             await mirrorPage().navigate(href);
             await wait(3000);
+            receipt.deptScope = "navigate";
           } else {
             const point = await mirrorPage().evaluate(EXTERNAL_SSG_DEPARTMENT_TAB_POINT_SCRIPT).catch(() => null);
             if (point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y))) {
               deptScope = { kind: "click", backUrl: String(searchUrl) };
               await mirrorPage().clickPoint(point);
               await wait(3000);
+              receipt.deptScope = "click";
             }
           }
+        } else {
+          receipt.deptScope = "already";
         }
       } catch {
         deptScope = null;
@@ -12593,6 +12696,11 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
     if (labels.length) {
       try {
         facetResult = await clickSearchFacetsVisibly({ page: mirrorPage(), labels, sleepImpl: wait, settleMs: 3000 });
+        if (facetResult && typeof facetResult === "object") {
+          if (Array.isArray(facetResult.checked)) receipt.facetChecked = [...facetResult.checked];
+          if (Array.isArray(facetResult.missing)) receipt.facetMissing = [...facetResult.missing];
+          receipt.facetSettled = facetResult.settled === true;
+        }
       } catch {
         facetResult = null;
       }
@@ -12605,9 +12713,14 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
         try {
           if (facetResult && Array.isArray(facetResult.checked) && facetResult.checked.length) {
             await mirrorPage().evaluate(`(${EXTERNAL_FACET_UNCHECK_SCRIPT})(${JSON.stringify(facetResult.checked)})`);
+            receipt.facetChecked = [];
+            receipt.reverted = true;
             await wait(2000);
           }
-          if (deptScope) await mirrorPage().navigate(deptScope.backUrl);
+          if (deptScope) {
+            await mirrorPage().navigate(deptScope.backUrl);
+            receipt.reverted = true;
+          }
         } catch {
           // Revert failure keeps the current grid; collection is unaffected.
         }
@@ -12632,7 +12745,9 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
             knownTabIds = null;
           }
           await mirrorPage().clickPoint(target);
+          receipt.productOpened = true;
           const cardUrl = /^https?:\/\//i.test(String(target?.url || "")) ? String(target.url) : "";
+          if (cardUrl) receipt.productUrl = cardUrl;
           try {
             await wait(1500);
             if (knownTabIds) {
@@ -12662,8 +12777,11 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
         // Opening the product is observational only.
       }
     }
-    return acquired.targetId;
+    keepReceipt();
+    return receipt;
   } catch {
+    receipt.skipped = "failed";
+    keepReceipt();
     return null;
   }
 }

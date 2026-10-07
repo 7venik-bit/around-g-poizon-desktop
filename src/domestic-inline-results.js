@@ -228,7 +228,7 @@
     const d = source?.verificationDiagnostics || {};
     const lotte = d.lotteCollectionEvidence || null;
     const ssg = d.ssgCollectionEvidence || null;
-    if (!lotte && !ssg) return "";
+    if (!lotte && !ssg && !d.mirrorReceipt) return "";
     if (lotte?.noDepartmentGoods === true) return "백화점 상품 없음 · 병행수입으로 판단";
     const parts = [];
     const checked = [...(lotte?.facetChecked || []), ...(ssg?.facetChecked || [])].filter(Boolean);
@@ -236,7 +236,35 @@
     if (checked.length) parts.push(`${checked.join(", ")} 체크 유지`);
     else if (missing.length) parts.push(`${missing.join(", ")} 체크 없음`);
     if (ssg?.deptTab && ssg.deptTab !== "미적용") parts.push(`백화점 탭 ${ssg.deptTab}`);
-    if ((lotte || ssg).scopeReverted === true) parts.push("범위 복원됨");
+    if ((lotte || ssg)?.scopeReverted === true) parts.push("범위 복원됨");
+    if (!lotte && !ssg && d.mirrorReceipt) {
+      // Evidence-free channel rows: the mirror receipt is the only record.
+      const receipt = d.mirrorReceipt;
+      parts.push(receipt.navigated === true ? "외부 창 같은 탭 이동" : (mirrorSkipLabel(receipt.skipped) || "외부 창 미이동"));
+      const mirrorFilters = mirrorFilterText(receipt);
+      if (mirrorFilters) parts.push(mirrorFilters);
+    }
+    return parts.join(" · ");
+  }
+
+  function mirrorSkipLabel(skipped = "") {
+    return {
+      "unsupported-retailer": "대상 아님",
+      "no-confirmed-login": "로그인 미확인",
+      "no-cdp-channel": "연결 없음",
+      failed: "실패",
+    }[String(skipped || "")] || "";
+  }
+
+  function mirrorFilterText(receipt = {}) {
+    if (!receipt || typeof receipt !== "object") return "";
+    const checked = Array.isArray(receipt.facetChecked) ? receipt.facetChecked.filter(Boolean) : [];
+    const missing = Array.isArray(receipt.facetMissing) ? receipt.facetMissing.filter(Boolean) : [];
+    const parts = [];
+    if (checked.length) parts.push(`${checked.join(", ")} 체크`);
+    else if (missing.length) parts.push(`${missing.join(", ")} 없음`);
+    if (receipt.reverted === true) parts.push("범위 복원됨");
+    if (receipt.productOpened === true) parts.push("상품 클릭됨");
     return parts.join(" · ");
   }
 
@@ -245,7 +273,8 @@
       || source?.securityVerificationRequired || source?.loginRequired
       || source?.verificationDiagnostics?.lotteServerEvidence
       || source?.verificationDiagnostics?.lotteCollectionEvidence
-      || source?.verificationDiagnostics?.ssgCollectionEvidence);
+      || source?.verificationDiagnostics?.ssgCollectionEvidence
+      || source?.verificationDiagnostics?.mirrorReceipt);
     if (!failures.length) return "";
     const safeUrl = value => {
       try {
@@ -300,6 +329,8 @@
         ["백화점 카드 수", d.lotteCollectionEvidence?.badgeCards ?? d.ssgCollectionEvidence?.badgeCards],
         ["후보 상품 수", d.lotteCollectionEvidence?.candidateCount ?? d.ssgCollectionEvidence?.candidateCount],
         ["백화점 상품", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.noDepartmentGoods === true ? "없음 · 병행수입으로 판단" : ""],
+        ["외부 창 검색", typeof mirrorSkipLabel === "function" && d.mirrorReceipt ? (d.mirrorReceipt.navigated === true ? "같은 탭 이동" : (mirrorSkipLabel(d.mirrorReceipt.skipped) || "미이동")) : ""],
+        ["외부 창 필터", typeof mirrorFilterText === "function" ? mirrorFilterText(d.mirrorReceipt) : ""],
         ["접속 오류", d.navigationError], ["화면 읽기 오류", d.inspectionError], ["수집 오류", d.errorMessage],
         ["상세 처리 수", d.processedProducts], ["상세 전체 수", d.totalProducts], ["상세 확인 필요 수", d.failedDetails],
         ["마지막 상세 주소", safeUrl(d.lastDetailUrl)], ["마지막 상세 오류", d.lastDetailFailure],
