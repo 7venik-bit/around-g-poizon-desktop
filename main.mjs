@@ -4027,8 +4027,14 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     }
     let lotteServerAnalyzed = null;
     let lotteServerEvidence = null;
+    // Department-badge evidence decides whether the DOM snapshot alone can
+    // answer: marketplace cards without the badge never become candidates, so
+    // a DOM grid full of them must not suppress the server payload that flags
+    // the real department goods.
+    const lotteDomBadgeCards = (parsedContent.productCards || [])
+      .filter((card) => card?.departmentStoreLabelMatched === true).length;
     if (String(source.store || "") === "롯데온" && !officialDirectDetail
-      && !((parsedContent.productCards || []).length)) {
+      && (!((parsedContent.productCards || []).length) || lotteDomBadgeCards === 0)) {
       // Lotte renders its grid client-side and may serve automation an empty
       // grid, but the same response embeds the full search payload server-side.
       // Analyze that payload separately: the DOM snapshot may carry an
@@ -4057,7 +4063,15 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       } catch { /* session-DOM evidence is best-effort; the DOM result stands */ }
       if (!lotteServerAnalyzed) {
       try {
-        const serverResponse = await fetch(String(url || ""));
+        // Automation fetch must identify as the same desktop browser the
+        // search window uses: a session-less, non-browser request is answered
+        // with a bot-limited document that carries no search payload.
+        const serverResponse = await fetch(String(url || ""), {
+          headers: {
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "accept-language": "ko-KR,ko;q=0.9",
+          },
+        });
         const serverHtml = await serverResponse.text();
         const serverCards = parseLotteInitialDataProducts(serverHtml);
         lotteServerEvidence = {

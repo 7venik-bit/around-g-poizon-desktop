@@ -22,6 +22,29 @@ test("lotte server payload is read from the logged-in session window first", () 
   assert.match(block, /if \(!lotteServerAnalyzed\)/);
 });
 
+test("lotte server payload is consulted when DOM cards carry no department badge", () => {
+  // The badge gate sits just before the fallback condition, outside the
+  // session-payload block slice, so anchor on the gate itself.
+  const gateAt = collection.indexOf("lotteDomBadgeCards");
+  assert.ok(gateAt >= 0, "lotte badge gate missing");
+  const gate = collection.slice(Math.max(0, gateAt - 600), gateAt + 400);
+  // Marketplace cards without the badge never become candidates, so a DOM
+  // grid full of them must not suppress the flagged server payload.
+  assert.match(gate, /departmentStoreLabelMatched === true/);
+  assert.match(gate, /lotteDomBadgeCards === 0/);
+});
+
+test("lotte session-less fetch identifies as a desktop browser", () => {
+  const blockStart = collection.indexOf('String(source.store || "") === "롯데온"');
+  assert.ok(blockStart >= 0, "lotte server fallback block missing");
+  const block = collection.slice(blockStart, collection.indexOf("const analyzed = analyzeRenderedChannelProducts(content", blockStart));
+  const fetchAt = block.indexOf('origin: "direct-fetch"');
+  assert.ok(fetchAt > 0, "direct-fetch fallback missing");
+  assert.match(block, /user-agent/);
+  assert.match(block, /Chrome\/151\.0\.0\.0/);
+  assert.match(block, /accept-language/);
+});
+
 test("lotte server evidence records which document it came from", () => {
   assert.match(inline, /서버 검색 출처/);
   assert.match(inline, /origin === "session-dom" \? "세션 화면"/);
