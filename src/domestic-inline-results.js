@@ -347,6 +347,8 @@
         ["백화점 탈락 내역", dropReasonsText((d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.identityDrops)],
         ["외부 창 검색", typeof mirrorSkipLabel === "function" && d.mirrorReceipt ? (d.mirrorReceipt.navigated === true ? "같은 탭 이동" : (mirrorSkipLabel(d.mirrorReceipt.skipped) || "미이동")) : ""],
         ["외부 창 필터", typeof mirrorFilterText === "function" ? mirrorFilterText(d.mirrorReceipt) : ""],
+        ["외부 창 수집", Number((d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.mirrorCards || 0) > 0
+          ? `그리드 ${Number((d.lotteCollectionEvidence || d.ssgCollectionEvidence).mirrorCards)}장 병합` : ""],
         ["접속 오류", d.navigationError], ["화면 읽기 오류", d.inspectionError], ["수집 오류", d.errorMessage],
         ["상세 처리 수", d.processedProducts], ["상세 전체 수", d.totalProducts], ["상세 확인 필요 수", d.failedDetails],
         ["마지막 상세 주소", safeUrl(d.lastDetailUrl)], ["마지막 상세 오류", d.lastDetailFailure],

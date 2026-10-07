@@ -734,6 +734,107 @@ export const EXTERNAL_GRID_ARTICLE_COUNT_SCRIPT = `((article) => {
   return hits.size;
 })`;
 
+// Grid cards for collection from the logged-in shared tab. Returns an array
+// of product cards for product-shaped links. Never clicks; the caller
+// analyzes and merges these with hidden/server evidence, which applies all
+// seller and identity gates. No shadow-DOM walk: the hidden capture already
+// covers shadow roots.
+export const EXTERNAL_GRID_CARDS_SCRIPT = `((article) => {
+  const compact = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const expectedCompact = compact(article);
+  const expectedBase = String(article || "").split(/[-_]/)[0].replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  const matchesExpected = (value) => {
+    const text = compact(value);
+    return Boolean(expectedCompact && text.includes(expectedCompact))
+      || Boolean(expectedBase.length >= 5 && text.includes(expectedBase));
+  };
+  const visible = (el) => {
+    try {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    } catch {
+      return false;
+    }
+  };
+  const productShaped = (href) => {
+    const url = String(href || "");
+    return url.includes("/product/") || url.includes("/products/") || url.includes("itemView")
+      || url.includes("productDetail") || url.includes("/goods/");
+  };
+  const cards = [];
+  const seen = new Set();
+  for (const link of [...document.querySelectorAll("a[href]")]) {
+    const productUrl = String(link.href || "").split("#")[0];
+    if (!productUrl || seen.has(productUrl)) continue;
+    if (!productShaped(productUrl)) continue;
+    const inCard = visible(link) || matchesExpected(link.href) || matchesExpected(link.outerHTML);
+    if (!inCard) continue;
+    seen.add(productUrl);
+    const card = link.closest ? (link.closest("li,article,[data-product-id],[class*='product-card'],[class*='goods-item']") || link.closest("li,article,div")) : null;
+    const text = String((card && card.textContent) || link.textContent || "").trim();
+    const image = card ? card.querySelector("img[src],img[data-src]") : null;
+    const imageUrl = String((image && (image.currentSrc || image.src)) || "");
+    const title = String((image && image.alt) || link.getAttribute("aria-label") || text || "").trim();
+    // Display only: the detail page proves the authoritative price. Cards
+    // render the struck original first and the sale price last. The article
+    // code itself glues onto prices in condensed card text, so strip it
+    // first. Plain character scans: no regex escapes involved.
+    const SPACE_CHARS = [" ", String.fromCharCode(9), String.fromCharCode(10), String.fromCharCode(13), String.fromCharCode(160)];
+    const WON = String.fromCharCode(50896);
+    const isDigit = (ch) => ch >= "0" && ch <= "9";
+    const scanPrices = (input) => {
+      const found = [];
+      let digits = "";
+      let gap = "";
+      const push = () => {
+        if (digits) found.push(digits + WON);
+        digits = "";
+        gap = "";
+      };
+      for (const ch of String(input || "")) {
+        if (isDigit(ch)) {
+          digits += gap + ch;
+          gap = "";
+        } else if (ch === ",") {
+          if (digits) digits += ch;
+        } else if (SPACE_CHARS.indexOf(ch) >= 0) {
+          if (digits) gap += ch;
+        } else if (ch === WON) {
+          if (digits) push();
+          else {
+            digits = "";
+            gap = "";
+          }
+        } else {
+          digits = "";
+          gap = "";
+        }
+      }
+      return found;
+    };
+    const priceStripped = String(article || "").trim()
+      ? text.split(String(article || "").trim()).join(" ")
+      : text;
+    const priceMatches = scanPrices(priceStripped);
+    const priceLine = priceMatches.length ? priceMatches[priceMatches.length - 1] : "";
+    const channelText = [text, link.outerHTML].join(" ");
+    cards.push({
+      productUrl,
+      title,
+      text,
+      imageUrl,
+      imageLinkedToProduct: Boolean(imageUrl),
+      price: priceLine,
+      originalPrice: "",
+      officialBrandStoreLabelMatched: /브랜드 ?직영몰|공식 ?브랜드|브랜드 ?스토어/.test(channelText),
+      departmentStoreLabelMatched: /백화점/.test(channelText),
+      outletLabelMatched: /아울렛|outlet/i.test(channelText),
+    });
+    if (cards.length >= 60) break;
+  }
+  return cards;
+})`;
+
 // Applies facet labels through VISIBLE CDP mouse clicks, then verifies with
 // the standard settle pass. Returns the verification result.
 export async function clickSearchFacetsVisibly({ page, labels = [], sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), settleMs = 3000 } = {}) {

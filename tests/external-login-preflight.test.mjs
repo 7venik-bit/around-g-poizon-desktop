@@ -216,6 +216,8 @@ test("the mirror leaves a per-run receipt for the finished result", () => {
   assert.match(mirror, /no-confirmed-login/);
   assert.match(mirror, /PRODUCT_CARD_POINT_SCRIPT\}\)\(\$\{JSON\.stringify\(article\)\}, true\)/);
   assert.match(mirror, /no-badged-card/);
+  assert.match(mirror, /EXTERNAL_GRID_CARDS_SCRIPT/);
+  assert.match(mirror, /receipt\.gridCards/);
   assert.match(mirror, /baselineArticles/);
   assert.match(mirror, /article && baselineArticles > 0 && \(deptScope/);
   assert.match(main, /mirrorReceiptFor\(source, articleNumber/);
@@ -225,6 +227,17 @@ test("the mirror leaves a per-run receipt for the finished result", () => {
 test("scopes revert only after emptying a non-empty grid", () => {
   assert.match(main, /scopeBaselineArticles/);
   assert.match(main, /scopeActive && scopeArticle && scopeBaselineArticles > 0/);
+});
+
+test("hidden collection merges the shared-tab grid snapshot", () => {
+  const start = main.indexOf("async function renderedSearchSourceResult(");
+  const end = main.indexOf("async function renderedSearchFailure(", start);
+  const collection = main.slice(start, end);
+  assert.match(collection, /mirrorGridAnalyzed/);
+  assert.match(collection, /mergeAnalyzedProducts\(analyzed\.products, mirrorGridAnalyzed\.products\)/);
+  assert.match(collection, /mirrorDeadline/);
+  assert.match(collection, /domesticSearchCanceled\(generation\)/);
+  assert.match(collection, /mirrorCards: mirrorGridCards/);
 });
 
 test("a visibly logged-in tab re-confirms instead of skipping every mirror", () => {
