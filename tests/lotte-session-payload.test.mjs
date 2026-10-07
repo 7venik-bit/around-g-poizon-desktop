@@ -45,6 +45,21 @@ test("lotte session-less fetch identifies as a desktop browser", () => {
   assert.match(block, /accept-language/);
 });
 
+test("lotte without a department menu reports an authoritative absence", () => {
+  const facetAt = collection.indexOf('labels: retailerFacetLabels("lotte", brand)');
+  assert.ok(facetAt >= 0, "lotte facet check missing");
+  assert.match(collection.slice(facetAt, facetAt + 600), /lotteMissingLabels = \[\.\.\.facetResult\.missing/);
+  const evidenceAt = collection.indexOf("lotteCollectionEvidence: {");
+  assert.ok(evidenceAt >= 0, "lotte collection evidence missing");
+  const evidence = collection.slice(evidenceAt, evidenceAt + 1200);
+  assert.match(evidence, /facetMissing: \[\.\.\.lotteMissingLabels\]/);
+  assert.match(evidence, /noDepartmentGoods/);
+  const forcing = collection.slice(Math.max(0, evidenceAt - 900), evidenceAt);
+  assert.match(forcing, /lotteMenuMissing/);
+  assert.match(forcing, /absenceConfirmed = true/);
+  assert.match(forcing, /detailVerificationPending = false/);
+});
+
 test("lotte server evidence records which document it came from", () => {
   assert.match(inline, /서버 검색 출처/);
   assert.match(inline, /origin === "session-dom" \? "세션 화면"/);

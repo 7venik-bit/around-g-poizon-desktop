@@ -3597,6 +3597,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       }
     }
     let lotteCheckedLabels = [];
+    let lotteMissingLabels = [];
     if (source.store === "롯데온" && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
       // The operator's left-menu seller check (롯데백화점 + brand) narrows the
       // grid to department goods before cards are captured. Best-effort only:
@@ -3609,6 +3610,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           sleepImpl: wait,
           settleMs: 3000,
         });
+        if (facetResult && Array.isArray(facetResult.missing)) lotteMissingLabels = [...facetResult.missing];
         if (facetResult && Array.isArray(facetResult.checked) && facetResult.checked.length) {
           lotteCheckedLabels = [...facetResult.checked];
           await onActivity?.({ phase: "searching", detail: "롯데백화점 판매처 적용" });
@@ -4134,10 +4136,24 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const renderedCards = Array.isArray(parsedContent?.productCards) ? parsedContent.productCards.length : 0;
       const badgeCards = Array.isArray(parsedContent?.productCards)
         ? parsedContent.productCards.filter((card) => card?.departmentStoreLabelMatched === true).length : 0;
+      // No department filter menu means the result set holds no department
+      // goods: whatever rendered is marketplace/parallel-import stock, which
+      // this collection never buys. With goods demonstrably rendered and no
+      // candidate surviving, mark an authoritative absence instead of leaving
+      // the row pending review.
+      const lotteMenuMissing = lotteMissingLabels.includes("롯데백화점");
+      const lotteRenderedGoods = renderedCards > 0 || Number(lotteServerEvidence?.items || 0) > 0;
+      const lotteNoDepartmentGoods = lotteMenuMissing && candidateCount === 0 && lotteRenderedGoods;
+      if (lotteNoDepartmentGoods) {
+        analyzed.absenceConfirmed = true;
+        analyzed.detailVerificationPending = false;
+      }
       analyzed.verificationDiagnostics = {
         ...(analyzed?.verificationDiagnostics || {}),
         lotteCollectionEvidence: {
           facetChecked: [...lotteCheckedLabels],
+          facetMissing: [...lotteMissingLabels],
+          noDepartmentGoods: lotteNoDepartmentGoods,
           scopeReverted,
           articleCards: scopeArticleCards < 0 ? null : scopeArticleCards,
           renderedCards,

@@ -193,8 +193,11 @@ test("empty rows expose scope evidence in the diagnostics block", () => {
   assert.match(inline, /source\?\.verificationDiagnostics\?\.lotteCollectionEvidence/);
   assert.match(inline, /source\?\.verificationDiagnostics\?\.ssgCollectionEvidence/);
   assert.match(inline, /판매처 체크 적용/);
+  assert.match(inline, /판매처 체크 누락/);
   assert.match(inline, /백화점 탭/);
   assert.match(inline, /범위 복원/);
   assert.match(inline, /품번 카드 수/);
   assert.match(inline, /수집 카드 수/);
+  assert.match(inline, /백화점 상품/);
+  assert.match(inline, /병행수입으로 판단/);
 });
