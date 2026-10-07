@@ -468,7 +468,11 @@ export async function checkSearchFacets({ page, labels = [], sleepImpl = (ms) =>
   };
   const first = await run();
   if (!first || typeof first !== "object") return { checked: [], missing: wanted, settled: false };
-  if (first.missing && first.missing.length !== wanted.length) {
+  // A reused tab resolves its next search navigation instantly while the
+  // filter panel still renders: the first pass can miss every label even
+  // though the boxes appear a moment later. Retry whenever anything is
+  // missing so a late-rendering panel still gets checked.
+  if (first.missing && first.missing.length) {
     await sleepImpl(Math.max(0, Number(settleMs) || 0));
     const again = await run();
     if (again && typeof again === "object") return {
@@ -720,6 +724,25 @@ export async function clickSearchFacetsVisibly({ page, labels = [], sleepImpl = 
   const wanted = [...new Set((Array.isArray(labels) ? labels : []).map((label) => String(label || "").trim()).filter(Boolean))];
   if (!page || typeof page.evaluate !== "function" || !wanted.length) {
     return { checked: [], missing: wanted, settled: false };
+  }
+  // The search tab is reused across products: a warm SPA navigation resolves
+  // instantly while its filter panel still renders. The first (cold) search
+  // then checks the box and every later (warm) search misses it. Wait for at
+  // least one wanted label to exist before computing click points. The point
+  // script never clicks, so probing in both states is side-effect free; an
+  // already-checked box also counts as rendered. Bounded and fail-open: the
+  // verification pass below still reports the outcome.
+  for (let waited = 0; waited < 8000; waited += 1000) {
+    let seen = 0;
+    try {
+      const unchecked = await page.evaluate(`(${EXTERNAL_FACET_POINT_SCRIPT})(${JSON.stringify(wanted)}, false)`);
+      const checked = await page.evaluate(`(${EXTERNAL_FACET_POINT_SCRIPT})(${JSON.stringify(wanted)}, true)`);
+      seen = (Array.isArray(unchecked) ? unchecked.length : 0) + (Array.isArray(checked) ? checked.length : 0);
+    } catch {
+      seen = 0;
+    }
+    if (seen > 0) break;
+    await sleepImpl(1000);
   }
   try {
     const points = await page.evaluate(`(${EXTERNAL_FACET_POINT_SCRIPT})(${JSON.stringify(wanted)}, false)`);
