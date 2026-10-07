@@ -3597,6 +3597,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       }
     }
     let lotteCheckedLabels = [];
+    let lotteMissingLabels = [];
     if (source.store === "롯데온" && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
       // The operator's left-menu seller check (롯데백화점 + brand) narrows the
       // grid to department goods before cards are captured. Best-effort only:
@@ -3609,6 +3610,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           sleepImpl: wait,
           settleMs: 3000,
         });
+        if (facetResult && Array.isArray(facetResult.missing)) lotteMissingLabels = [...facetResult.missing];
         if (facetResult && Array.isArray(facetResult.checked) && facetResult.checked.length) {
           lotteCheckedLabels = [...facetResult.checked];
           await onActivity?.({ phase: "searching", detail: "롯데백화점 판매처 적용" });
@@ -4027,8 +4029,14 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     }
     let lotteServerAnalyzed = null;
     let lotteServerEvidence = null;
+    // Department-badge evidence decides whether the DOM snapshot alone can
+    // answer: marketplace cards without the badge never become candidates, so
+    // a DOM grid full of them must not suppress the server payload that flags
+    // the real department goods.
+    const lotteDomBadgeCards = (parsedContent.productCards || [])
+      .filter((card) => card?.departmentStoreLabelMatched === true).length;
     if (String(source.store || "") === "롯데온" && !officialDirectDetail
-      && !((parsedContent.productCards || []).length)) {
+      && (!((parsedContent.productCards || []).length) || lotteDomBadgeCards === 0)) {
       // Lotte renders its grid client-side and may serve automation an empty
       // grid, but the same response embeds the full search payload server-side.
       // Analyze that payload separately: the DOM snapshot may carry an
@@ -4057,7 +4065,15 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       } catch { /* session-DOM evidence is best-effort; the DOM result stands */ }
       if (!lotteServerAnalyzed) {
       try {
-        const serverResponse = await fetch(String(url || ""));
+        // Automation fetch must identify as the same desktop browser the
+        // search window uses: a session-less, non-browser request is answered
+        // with a bot-limited document that carries no search payload.
+        const serverResponse = await fetch(String(url || ""), {
+          headers: {
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "accept-language": "ko-KR,ko;q=0.9",
+          },
+        });
         const serverHtml = await serverResponse.text();
         const serverCards = parseLotteInitialDataProducts(serverHtml);
         lotteServerEvidence = {
@@ -4120,10 +4136,24 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const renderedCards = Array.isArray(parsedContent?.productCards) ? parsedContent.productCards.length : 0;
       const badgeCards = Array.isArray(parsedContent?.productCards)
         ? parsedContent.productCards.filter((card) => card?.departmentStoreLabelMatched === true).length : 0;
+      // No department filter menu means the result set holds no department
+      // goods: whatever rendered is marketplace/parallel-import stock, which
+      // this collection never buys. With goods demonstrably rendered and no
+      // candidate surviving, mark an authoritative absence instead of leaving
+      // the row pending review.
+      const lotteMenuMissing = lotteMissingLabels.includes("롯데백화점");
+      const lotteRenderedGoods = renderedCards > 0 || Number(lotteServerEvidence?.items || 0) > 0;
+      const lotteNoDepartmentGoods = lotteMenuMissing && candidateCount === 0 && lotteRenderedGoods;
+      if (lotteNoDepartmentGoods) {
+        analyzed.absenceConfirmed = true;
+        analyzed.detailVerificationPending = false;
+      }
       analyzed.verificationDiagnostics = {
         ...(analyzed?.verificationDiagnostics || {}),
         lotteCollectionEvidence: {
           facetChecked: [...lotteCheckedLabels],
+          facetMissing: [...lotteMissingLabels],
+          noDepartmentGoods: lotteNoDepartmentGoods,
           scopeReverted,
           articleCards: scopeArticleCards < 0 ? null : scopeArticleCards,
           renderedCards,

@@ -279,6 +279,7 @@
         ["수집 카드 수", d.lotteCollectionEvidence?.renderedCards ?? d.ssgCollectionEvidence?.renderedCards],
         ["백화점 카드 수", d.lotteCollectionEvidence?.badgeCards ?? d.ssgCollectionEvidence?.badgeCards],
         ["후보 상품 수", d.lotteCollectionEvidence?.candidateCount ?? d.ssgCollectionEvidence?.candidateCount],
+        ["백화점 상품", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.noDepartmentGoods === true ? "없음 · 병행수입으로 판단" : ""],
         ["접속 오류", d.navigationError], ["화면 읽기 오류", d.inspectionError], ["수집 오류", d.errorMessage],
         ["상세 처리 수", d.processedProducts], ["상세 전체 수", d.totalProducts], ["상세 확인 필요 수", d.failedDetails],
         ["마지막 상세 주소", safeUrl(d.lastDetailUrl)], ["마지막 상세 오류", d.lastDetailFailure],
