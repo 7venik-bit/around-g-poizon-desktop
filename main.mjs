@@ -3537,6 +3537,21 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     let ssgPreScopeUrl = "";
     let ssgTabNavigated = false;
     let ssgScopeApplied = false;
+    // Baseline before any scope (the page already settled above): revert only
+    // a scope that demonstrably emptied a non-empty grid, mirroring the
+    // shared-window logic below.
+    let scopeBaselineArticles = -1;
+    const scopeBaselineArticle = String(articleNumber || "").trim();
+    if (scopeBaselineArticle && !officialDirectDetail && !searchWindow.webContents.isDestroyed()
+      && (source.store === "롯데온" || source.store === "SSG" || source.store === "SSG 백화점")) {
+      try {
+        await wait(2000);
+        scopeBaselineArticles = Number(await searchWindow.webContents.mainFrame.executeJavaScript(
+          `(${EXTERNAL_GRID_ARTICLE_COUNT_SCRIPT})(${JSON.stringify(scopeBaselineArticle)})`, true).catch(() => -1)) || 0;
+      } catch {
+        scopeBaselineArticles = -1;
+      }
+    }
     if ((source.store === "SSG" || source.store === "SSG 백화점") && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
       // The operator's top-menu department tab (백화점) scopes the grid before
       // the left-menu brand check. Apply the same state: follow the tab's own
@@ -3634,7 +3649,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     const scopeArticle = String(articleNumber || "").trim();
     const scopeActive = (source.store === "롯데온" && lotteCheckedLabels.length > 0)
       || ((source.store === "SSG" || source.store === "SSG 백화점") && ssgScopeApplied);
-    if (scopeActive && scopeArticle && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
+    if (scopeActive && scopeArticle && scopeBaselineArticles > 0 && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
       try {
         const countScopeArticles = () => searchWindow.webContents.mainFrame.executeJavaScript(
           `(${EXTERNAL_GRID_ARTICLE_COUNT_SCRIPT})(${JSON.stringify(scopeArticle)})`, true).catch(() => -1);
@@ -12697,6 +12712,14 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
         return -1;
       }
     };
+    // Baseline before any scope: revert only a scope that demonstrably
+    // emptied a non-empty grid. Codeless cards (baseline 0) keep the scope
+    // instead of bouncing back to unfiltered on every run.
+    let baselineArticles = -1;
+    if (article && (sourceId === "ssg" || labels.length)) {
+      await wait(2000);
+      baselineArticles = await gridArticleCount();
+    }
     // 1. SSG top-menu department scope first (brand check comes second).
     // Without an article the scope cannot be verified, so it is skipped.
     let deptScope = null;
@@ -12742,7 +12765,7 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
     }
     // 3. A scope that emptied the grid is reverted: the filtered state must
     // never stand when the article is gone from every card.
-    if (article && (deptScope || (facetResult && Array.isArray(facetResult.checked) && facetResult.checked.length))) {
+    if (article && baselineArticles > 0 && (deptScope || (facetResult && Array.isArray(facetResult.checked) && facetResult.checked.length))) {
       const before = await gridArticleCount();
       if (before === 0) {
         try {
