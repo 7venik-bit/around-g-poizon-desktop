@@ -87,12 +87,37 @@ test("external login heartbeats keep the search watchdog alive", () => {
   assert.doesNotMatch(main, /외부 로그인 확인`,/);
 });
 
-test("product searches mirror into the logged-in external tab without blocking", () => {
+test("product searches mirror into the same shared tab without blocking", () => {
   assert.match(main, /async function showRetailerSearchInWindow\(sourceId, searchUrl, facetLabels = \[\], articleNumber = ""\)/);
   assert.match(main, /if \(queryAttemptIndex === 0 && queryAttempt\?\.url/);
   assert.match(main, /typeof loginSourceIdForStore === "function" && typeof showRetailerSearchInWindow === "function"/);
-  assert.match(main, /void showRetailerSearchInWindow\(externalSourceId, queryAttempt\.url, retailerFacetLabels\(externalSourceId, brand\), articleNumber\)\.catch\(\(\) => \{\}\);/);
+  assert.match(main, /queueRetailerMirror\(externalSourceId, \(\) => showRetailerSearchInWindow\(/);
+  assert.match(main, /retailerFacetLabels\(externalSourceId, brand\), articleNumber,/);
   assert.match(main, /import \{[\s\S]*?acquireLoginTab,[\s\S]*?closeBlankTabs,[\s\S]*?clickSearchFacetsVisibly,[\s\S]*?\} from "\.\/services\/external-chrome-login\.mjs";/);
+});
+
+test("mirrored searches serialize per retailer so one tab shows one product at a time", () => {
+  assert.match(main, /const retailerMirrorChains = new Map\(\)/);
+  assert.match(main, /function queueRetailerMirror\(sourceId, run\)/);
+  assert.match(main, /retailerMirrorChains\.get\(key\) \|\| Promise\.resolve\(null\)/);
+  assert.match(main, /retailerMirrorChains\.set\(key, next\)/);
+  // Collection never waits for the observational mirror.
+  assert.doesNotMatch(main, /await queueRetailerMirror\(/);
+});
+
+test("the article click stays in the same tab instead of spraying product tabs", () => {
+  const start = main.indexOf("async function showRetailerSearchInWindow(");
+  const end = main.indexOf("let shoppingAccountServicesCache;", start);
+  const mirror = main.slice(start, end);
+  // Spawned product tabs are closed; the card opens in the same search tab.
+  // Other retailers' tabs are preserved: the sweep only closes tabs that
+  // appeared after the click snapshot.
+  assert.match(mirror, /listPageTargets\(\{ fetchImpl: fetch, port:/);
+  assert.match(mirror, /if \(knownTabIds\)/);
+  assert.match(mirror, /closePageTarget\(\{ fetchImpl: fetch, port:[^}]*targetId: entry\.id \}\)/);
+  assert.match(mirror, /await mirrorPage\(\)\.navigate\(cardUrl\)/);
+  assert.ok(mirror.indexOf("closePageTarget") > mirror.indexOf("EXTERNAL_PRODUCT_CARD_POINT_SCRIPT"),
+    "the sweep must run after the visible product click");
 });
 
 test("mirrored search drives a visible mouse from scope to product click", () => {
