@@ -120,8 +120,40 @@ export function captureDomesticDetailPage(captureStock, selectors = []) {
   const busy = [...document.querySelectorAll('[aria-busy="true"],[role="progressbar"]')]
     .some(element => visibleLoading(element) && !unrelatedLoadingRegion(element));
   const commerce = stockEvidence.options?.length || stockEvidence.stockTexts?.length || stockEvidence.purchaseAvailable || hasOptions;
+  // Seller-eligibility gates (overseas/consignment/parallel-import) must not
+  // read global chrome: every commerce header carries menu words like
+  // "해외직구" that would condemn genuine department goods. Collect visible
+  // text outside header/nav/footer once; hidden filter drawers may still
+  // contribute, so this narrows but never replaces the card-stage wording.
+  let scopeText = "";
+  try {
+    const accept = (node) => {
+      const parent = node.parentElement;
+      if (!parent) return false;
+      const tag = String(parent.tagName || "").toUpperCase();
+      if (tag === "SCRIPT" || tag === "STYLE" || tag === "NOSCRIPT" || tag === "TEMPLATE") return false;
+      return !parent.closest('header,nav,footer,[role="banner"],[role="contentinfo"],[role="navigation"]');
+    };
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const parts = [];
+    let node = walker.nextNode();
+    let size = 0;
+    while (node) {
+      if (size < 80000) {
+        const text = String(node.nodeValue || "").replace(/\s+/g, " ").trim();
+        if (text && accept(node)) {
+          parts.push(text);
+          size += text.length + 1;
+        }
+      }
+      node = walker.nextNode();
+    }
+    scopeText = parts.join(" ").slice(0, 80000);
+  } catch {
+    scopeText = "";
+  }
   return {
-    href: String(location.href || ""), fullText, pageText: fullText, sellerEvidenceText, sellerDetailText,
+    href: String(location.href || ""), fullText, pageText: fullText, sellerEvidenceText, sellerDetailText, scopeText,
     loginFormVisible, documentReadyState: document.readyState,
     titleText, visibleTitleText, labeledText, structuredCodes: [...new Set(structuredCodes)].slice(0, 30), stockEvidence,
     hasOptions, busy, ready: Boolean(titleText && commerce && !busy),

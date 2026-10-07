@@ -69,6 +69,14 @@ test("lotte facet settlement is recorded truthfully", () => {
   assert.match(collection.slice(evidenceAt, evidenceAt + 1200), /facetSettled: lotteFacetSettled/);
 });
 
+test("lotte detail exclusion gates read chrome-free scope text", () => {
+  assert.match(main, /detailScopeText = String\(identitySnapshot\.scopeText/);
+  assert.match(main, /const gateEvidence = /);
+  assert.match(main, /isOverseasPurchaseProduct\(gateEvidence\)/);
+  assert.match(main, /isConsignmentOperatedProduct\(gateEvidence\)/);
+  assert.match(main, /isParallelImportProductDetail\(gateEvidence\)/);
+});
+
 test("lotte server evidence records which document it came from", () => {
   assert.match(inline, /서버 검색 출처/);
   assert.match(inline, /origin === "session-dom" \? "세션 화면"/);

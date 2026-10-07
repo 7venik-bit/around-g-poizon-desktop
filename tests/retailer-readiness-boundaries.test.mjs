@@ -99,3 +99,12 @@ for (const [label, html, options, expectedBusy] of [
     assert.equal(observed.ready, !expectedBusy);
   });
 }
+
+test('Detail scope text excludes header/nav/footer menu words', t => {
+  const observed = detail(t, '<header><nav><a>해외직구</a><a>구매대행</a></nav></header>'
+    + '<div><h1>아디다스 B75807</h1><p>롯데백화점 판매</p></div>'
+    + '<footer><a>국제배송 안내</a></footer>');
+  assert.ok(/해외직구/.test(observed.fullText), 'full text keeps chrome for access diagnostics');
+  assert.ok(!/해외직구|구매대행|국제배송/.test(observed.scopeText), 'scope text drops global chrome');
+  assert.ok(/B75807/.test(observed.scopeText), 'scope text keeps the product area');
+});
