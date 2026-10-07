@@ -965,6 +965,9 @@ export async function waitForExternalLogin({
   const canClickProvider = (method === "naver" || method === "kakao") && Boolean(detectControlsScript);
   const canFillProvider = (method === "naver" || method === "kakao") && usable(providerCredentials) && Boolean(detectControlsScript);
   const acted = {};
+  // Survives navigation unlike acted: once a fill or provider click has
+  // fired, post-submit and OAuth landings belong to the running flow.
+  let loginFlowStarted = false;
   // A slow login page must not burn the single automatic attempt before its
   // form exists: attempts are capped per page so a half-loaded first poll
   // retries instead of giving up, without resubmitting forever.
@@ -1051,6 +1054,20 @@ export async function waitForExternalLogin({
     }
     const actionable = !callbackStuck && readable.find((item) =>
       planExternalLoginStep({ pageUrl: item.state.url, merchantDomains, method, acted }) !== "wait");
+    if (!actionable && !callbackStuck) {
+      // Stale one-shot flags from a previous page can pin every tab to
+      // "wait" forever: the navigation already consumed them, so a new page
+      // deserves a fresh evaluation instead of idling to timeout. Same-page
+      // flags are never cleared, so a submitted form is never resubmitted.
+      // The callback recovery above survives this reset.
+      const fresh = acted.recover_callback ? { recover_callback: true } : {};
+      const revived = readable.find((item) =>
+        planExternalLoginStep({ pageUrl: item.state.url, merchantDomains, method, acted: fresh }) !== "wait");
+      if (revived && String(revived.state.url || "") !== lastActedUrl) {
+        for (const key of Object.keys(acted)) if (key !== "recover_callback") delete acted[key];
+        lastActedUrl = String(revived.state.url || "");
+      }
+    }
     if (actionable) {
       const step = planExternalLoginStep({ pageUrl: actionable.state.url, merchantDomains, method, acted });
       const url = String(actionable.state.url || "");
@@ -1067,9 +1084,12 @@ export async function waitForExternalLogin({
       // itself keeps the old path so a slowly rendering form is never
       // reloaded away, and SSO callbacks keep their recovery below. On SSG
       // the top-right person icon is the visible way back; elsewhere (and as
-      // a fallback) the login URL is used.
+      // a fallback) the login URL is used. Once a fill or provider click has
+      // fired, the flow owns the tab: post-submit interstitials and OAuth
+      // landings are formless but must be left alone, never yanked away.
       const needsLoginForm = step === "click_provider" || step === "fill_merchant";
       if (needsLoginForm
+        && !loginFlowStarted
         && actionable.state.hasLoginForm !== true
         && isOffLoginEntry(url, loginUrl)
         && !isSsoCallbackUrl(url, merchantDomains)
@@ -1107,12 +1127,14 @@ export async function waitForExternalLogin({
         actedThisRound = true;
         if (await fillPasswordForm(actionable.client, detectControlsScript, credentials)) {
           acted.fill_merchant = true;
+          loginFlowStarted = true;
         }
       } else if (step === "click_provider" && canClickProvider && attemptsLeft(step, url)) {
         noteAttempt(step, url);
         actedThisRound = true;
         if (await clickProviderButton(actionable.client, detectControlsScript, method)) {
           acted.click_provider = true;
+          loginFlowStarted = true;
         }
       } else if (step === "fill_provider" && canFillProvider && attemptsLeft(step, url)) {
         noteAttempt(step, url);
