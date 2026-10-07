@@ -30,10 +30,10 @@ test("lotte detail loop drops parallel-import declarations", () => {
   const start = main.indexOf("async function renderedSearchSourceResult(");
   const end = main.indexOf("async function renderedSearchFailure(", start);
   const collection = main.slice(start, end);
-  assert.match(collection, /isParallelImportProductDetail\(evidence\)/);
+  assert.match(collection, /isParallelImportProductDetail\(gateEvidence\)/);
   const line = collection.slice(
-    collection.indexOf("isParallelImportProductDetail(evidence)") - 200,
-    collection.indexOf("isParallelImportProductDetail(evidence)"),
+    collection.indexOf("isParallelImportProductDetail(gateEvidence)") - 200,
+    collection.indexOf("isParallelImportProductDetail(gateEvidence)"),
   );
   assert.match(line, /\^롯데온/);
 });

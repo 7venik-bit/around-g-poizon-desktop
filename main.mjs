@@ -4215,6 +4215,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             products.push(retained); detailVerified = true; continue;
           }
           let detailText = "";
+          let detailScopeText = "";
           let officialPrice = source.store === "브랜드 공식몰" ? {...officialPricePending} : null;
           let detailIdentity = { titleText: "", labeledText: "", structuredCodes: [] };
           let detailLoaded = false;
@@ -4233,6 +4234,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             );
             detailVerified = true;
             detailText = String(identitySnapshot.pageText || "");
+            detailScopeText = String(identitySnapshot.scopeText || "");
             detailIdentity = identitySnapshot;
             detailLoaded = true;
             if (officialPrice) {
@@ -4280,12 +4282,17 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             continue;
           }
           const evidence = `${String(product.title || "")} ${String(detailText || "")}`;
-          if (isOverseasPurchaseProduct(evidence)) continue;
-          if (isConsignmentOperatedProduct(evidence)) continue;
+          // Eligibility gates read the chrome-free scope text: the full body
+          // carries header/nav/footer menu words ("해외직구") that would
+          // condemn genuine department goods. Classification and retailer
+          // detection keep the full evidence below.
+          const gateEvidence = `${String(product.title || "")} ${String(detailScopeText || detailText || "")}`;
+          if (isOverseasPurchaseProduct(gateEvidence)) continue;
+          if (isConsignmentOperatedProduct(gateEvidence)) continue;
           // Department-first rule: a LotteON detail page that declares
           // parallel import in its mandatory product information is excluded,
           // even when the search card carried a department badge.
-          if (/^롯데온(?:\s|$)/.test(String(source.store || "")) && isParallelImportProductDetail(evidence)) continue;
+          if (/^롯데온(?:\s|$)/.test(String(source.store || "")) && isParallelImportProductDetail(gateEvidence)) continue;
           if (detailFailed || !stockObservationComplete(stockEvidence) || (officialPrice && !officialPrice.priceVerified)) incompleteDetails += 1;
           const isSsg = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(String(product.url || ""));
           const detailClassification = isSsg
