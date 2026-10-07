@@ -12748,7 +12748,7 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
     // another is watched in one place instead of piling up tabs.
     if (article) {
       try {
-        const target = await mirrorPage().evaluate(`(${EXTERNAL_PRODUCT_CARD_POINT_SCRIPT})(${JSON.stringify(article)})`);
+        const target = await mirrorPage().evaluate(`(${EXTERNAL_PRODUCT_CARD_POINT_SCRIPT})(${JSON.stringify(article)}, true)`);
         if (target && Number.isFinite(Number(target.x)) && Number.isFinite(Number(target.y))) {
           let knownTabIds = null;
           try {
@@ -12785,6 +12785,8 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
               // The visible click already happened; same-tab navigation is best-effort.
             }
           }
+        } else if (!receipt.skipped) {
+          receipt.skipped = String(target?.reason || "") === "not-badged" ? "no-badged-card" : "no-product-card";
         }
       } catch {
         // Opening the product is observational only.

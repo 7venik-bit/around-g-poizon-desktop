@@ -87,6 +87,7 @@ test("department href and tab point stay inside the search filter", () => {
 test("grid article count separates card hits from page echoes", () => {
   const dom = visibleDom([
     '<h1>DD1503-101 검색결과</h1>',
+    '<nav><a href="https://www.ssg.com/search.ssg?query=DD1503-101">연관검색어 DD1503-101</a></nav>',
     '<ul><li><a href="https://www.lotteon.com/p/product/PD1">W 덩크 로우 DD1503-101</a></li>',
     '<li><a href="https://www.lotteon.com/p/product/PD2">에어 모나크 415445-102</a></li></ul>',
   ].join(""), "https://www.lotteon.com/");
@@ -162,6 +163,27 @@ test("visible facet clicks wait for a late-rendering filter panel", async () => 
   assert.ok(probes >= 3);
 });
 
+test("visible product click skips cards without department wording", () => {
+  const dom = visibleDom([
+    '<ul><li><a href="https://www.lotteon.com/p/product/MKT1">MUST IT 나이키 DD1503-101</a></li>',
+    '<li><a href="https://www.lotteon.com/p/product/PD1">롯데백화점 W 덩크 로우 DD1503-101</a></li></ul>',
+  ].join(""), "https://www.lotteon.com/");
+  const picked = runScript(EXTERNAL_PRODUCT_CARD_POINT_SCRIPT, ["DD1503-101", true], dom);
+  assert.ok(String(picked.url).includes("/PD1"), "must click the badged card");
+  const marketplaceOnly = visibleDom(
+    '<ul><li><a href="https://www.lotteon.com/p/product/MKT1">MUST IT 나이키 DD1503-101</a></li></ul>',
+    "https://www.lotteon.com/",
+  );
+  assert.equal(
+    runScript(EXTERNAL_PRODUCT_CARD_POINT_SCRIPT, ["DD1503-101", true], marketplaceOnly).reason,
+    "not-badged",
+  );
+  assert.ok(
+    String(runScript(EXTERNAL_PRODUCT_CARD_POINT_SCRIPT, ["DD1503-101"], marketplaceOnly).url).includes("MKT1"),
+    "legacy callers keep clicking the best article match",
+  );
+});
+
 test("mirror drives a visible mouse from scope to product click", () => {
   const start = main.indexOf("async function showRetailerSearchInWindow(");
   const end = main.indexOf("let shoppingAccountServicesCache;", start);
@@ -204,6 +226,7 @@ test("mirror receipts surface the shared-window run state", () => {
   assert.match(inline, /\["외부 창 검색"/);
   assert.match(inline, /\["외부 창 필터"/);
   assert.match(inline, /같은 탭 이동/);
+  assert.match(inline, /백화점 상품 없음/);
 });
 
 test("empty rows expose scope evidence in the diagnostics block", () => {

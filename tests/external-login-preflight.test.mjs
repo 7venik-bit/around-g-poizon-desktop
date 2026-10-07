@@ -214,6 +214,8 @@ test("the mirror leaves a per-run receipt for the finished result", () => {
   assert.match(mirror, /receipt\.facetChecked/);
   assert.match(mirror, /receipt\.productOpened = true/);
   assert.match(mirror, /no-confirmed-login/);
+  assert.match(mirror, /PRODUCT_CARD_POINT_SCRIPT\}\)\(\$\{JSON\.stringify\(article\)\}, true\)/);
+  assert.match(mirror, /no-badged-card/);
   assert.match(main, /mirrorReceiptFor\(source, articleNumber/);
   assert.match(main, /mirrorReceipt: \(typeof mirrorReceiptFor/);
 });
