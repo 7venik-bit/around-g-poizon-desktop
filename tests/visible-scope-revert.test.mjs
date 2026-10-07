@@ -227,6 +227,7 @@ test("mirror receipts surface the shared-window run state", () => {
   assert.match(inline, /\["외부 창 필터"/);
   assert.match(inline, /같은 탭 이동/);
   assert.match(inline, /백화점 상품 없음/);
+  assert.match(inline, /공유 창 없음/);
 });
 
 test("empty rows expose scope evidence in the diagnostics block", () => {
