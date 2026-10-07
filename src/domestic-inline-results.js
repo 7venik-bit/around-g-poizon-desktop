@@ -252,6 +252,8 @@
       "unsupported-retailer": "대상 아님",
       "no-confirmed-login": "로그인 미확인",
       "no-cdp-channel": "연결 없음",
+      "no-badged-card": "백화점 상품 없음",
+      "no-product-card": "상품 카드 없음",
       failed: "실패",
     }[String(skipped || "")] || "";
   }

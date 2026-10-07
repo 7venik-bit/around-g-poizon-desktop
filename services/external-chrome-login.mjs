@@ -581,7 +581,11 @@ export const EXTERNAL_FACET_UNCHECK_SCRIPT = `((wanted) => {
 
 // Article card point for a VISIBLE mouse click. Returns the best point plus
 // its URL without clicking; the caller drives the observable mouse.
-export const EXTERNAL_PRODUCT_CARD_POINT_SCRIPT = `((article) => {
+// With requireBadge, only cards carrying department wording (백화점/아울렛)
+// qualify: marketplace/parallel-import cards must never be clicked, even
+// with an exact article code. Reports "not-badged" when the article exists
+// but no badged card does, so the caller can skip instead of clicking blind.
+export const EXTERNAL_PRODUCT_CARD_POINT_SCRIPT = `((article, requireBadge) => {
   const compact = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const want = compact(article);
   if (!want) return { reason: "missing" };
@@ -597,6 +601,7 @@ export const EXTERNAL_PRODUCT_CARD_POINT_SCRIPT = `((article) => {
   let best = null;
   let bestScore = 0;
   let bestUrl = "";
+  let sawArticle = false;
   for (const link of [...document.querySelectorAll('a[href]')].filter(visible)) {
     const href = String(link.href || "");
     const selfHit = compact(href + " " + (link.textContent || "")).includes(want);
@@ -604,6 +609,12 @@ export const EXTERNAL_PRODUCT_CARD_POINT_SCRIPT = `((article) => {
     const cardHit = !selfHit && card && compact(card.textContent).includes(want);
     const shaped = productShaped(href);
     const score = selfHit && shaped ? 3 : selfHit ? 2 : cardHit && shaped ? 1 : -1;
+    if (score > -1) sawArticle = true;
+    if (requireBadge) {
+      const badgeScope = card || (link.closest ? link.closest("li,article,div") : null);
+      const badgeText = String(link.textContent || "") + " " + String(badgeScope ? badgeScope.textContent : "");
+      if (!/백화점|아울렛/i.test(badgeText)) continue;
+    }
     if (score <= bestScore) continue;
     let point = null;
     try {
@@ -619,7 +630,7 @@ export const EXTERNAL_PRODUCT_CARD_POINT_SCRIPT = `((article) => {
     best = point;
     bestUrl = href;
   }
-  if (!best) return { reason: "not-found" };
+  if (!best) return { reason: sawArticle ? "not-badged" : "not-found" };
   return { x: best.x, y: best.y, url: bestUrl };
 })`;
 
@@ -705,15 +716,20 @@ export const EXTERNAL_SSG_DEPARTMENT_TAB_POINT_SCRIPT = `(() => {
 
 // Counts distinct product links carrying the article at card level. Guards
 // scope filters: a scope that empties the grid must be reverted, never kept.
+// Only product-shaped links count: navigation and related-search links that
+// echo the article must never pass for grid evidence.
 export const EXTERNAL_GRID_ARTICLE_COUNT_SCRIPT = `((article) => {
   const compact = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const want = compact(article);
   if (!want) return 0;
+  const productShaped = (href) => /\\/(?:p\\/)?product(?:\\/|$)|itemView|productDetail\\.action|goods\\/|products?\\/\\d/i.test(String(href || ""));
   const hits = new Set();
   for (const link of document.querySelectorAll("a[href]")) {
+    const href = String(link.href || "");
+    if (!productShaped(href)) continue;
     const card = link.closest ? link.closest("li,article") : null;
-    const text = compact(String(link.href || "") + " " + String(link.textContent || "") + " " + (card ? String(card.textContent || "") : ""));
-    if (text.includes(want)) hits.add(String(link.href || "").split("#")[0]);
+    const text = compact(href + " " + String(link.textContent || "") + " " + (card ? String(card.textContent || "") : ""));
+    if (text.includes(want)) hits.add(href.split("#")[0]);
   }
   return hits.size;
 })`;
