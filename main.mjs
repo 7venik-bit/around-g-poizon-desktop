@@ -4200,6 +4200,13 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const renderedCards = Array.isArray(parsedContent?.productCards) ? parsedContent.productCards.length : 0;
       const badgeCards = Array.isArray(parsedContent?.productCards)
         ? parsedContent.productCards.filter((card) => card?.departmentStoreLabelMatched === true).length : 0;
+      // Bare 백화점 wording anywhere in the card (flag or raw text): when this
+      // is zero the grid truly carries no department wording (image-only
+      // badges or a renamed label); when it exceeds badgeCards the flag
+      // itself missed wording the card visibly carries.
+      const badgeWordCards = Array.isArray(parsedContent?.productCards)
+        ? parsedContent.productCards.filter((card) => /백화점/i.test(
+          `${card?.title || ""} ${card?.text || ""} ${String(card?.markup || "")}`)).length : 0;
       // No department filter menu means the result set holds no department
       // goods: whatever rendered is marketplace/parallel-import stock, which
       // this collection never buys. With goods demonstrably rendered and no
@@ -4224,6 +4231,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           articleCards: scopeArticleCards < 0 ? null : scopeArticleCards,
           renderedCards,
           badgeCards,
+          badgeWordCards,
           candidateCount,
           mirrorCards: mirrorGridCards,
         },

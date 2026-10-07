@@ -342,6 +342,7 @@
         ["품번 카드 수", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.articleCards],
         ["수집 카드 수", d.lotteCollectionEvidence?.renderedCards ?? d.ssgCollectionEvidence?.renderedCards],
         ["백화점 카드 수", d.lotteCollectionEvidence?.badgeCards ?? d.ssgCollectionEvidence?.badgeCards],
+        ["백화점 문구 카드 수", d.lotteCollectionEvidence?.badgeWordCards],
         ["후보 상품 수", d.lotteCollectionEvidence?.candidateCount ?? d.ssgCollectionEvidence?.candidateCount],
         ["백화점 상품", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.noDepartmentGoods === true ? "없음 · 병행수입으로 판단" : ""],
         ["백화점 탈락 내역", dropReasonsText((d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.identityDrops)],
