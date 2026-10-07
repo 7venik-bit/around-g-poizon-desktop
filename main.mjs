@@ -59,6 +59,8 @@ import {
   closeLoginChrome,
   acquireLoginTab,
   closeBlankTabs,
+  closePageTarget,
+  listPageTargets,
   checkSearchFacets,
   clickSearchFacetsVisibly,
   createCdpPageClient,
@@ -4448,15 +4450,20 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         source.rejectedProductUrls = [...rejectedProductUrls];
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
         onProgress?.({ completed: sources.length, total: progressTotal, source: String(source.store || "판매처"), phase: "searching", query: queryAttempt.query });
-        // Mirror the product search into the logged-in external tab so the
-        // operator watches it there. Fire-and-forget: collection never waits.
+        // Mirror the product search into the retailer's tab of the shared
+        // external window so the operator watches every product there, in the
+        // same tab, one after another. Queued and fire-and-forget: collection
+        // never waits, and the per-retailer chain keeps concurrent products
+        // from thrashing the single tab with interleaved navigations.
         // typeof guards keep sliced-vm test fixtures working without stubs.
         if (queryAttemptIndex === 0 && queryAttempt?.url
           && typeof loginSourceIdForStore === "function" && typeof showRetailerSearchInWindow === "function"
-          && typeof retailerFacetLabels === "function") {
+          && typeof retailerFacetLabels === "function" && typeof queueRetailerMirror === "function") {
           const externalSourceId = loginSourceIdForStore(source.store);
           if (externalSourceId === "ssg" || externalSourceId === "lotte") {
-            void showRetailerSearchInWindow(externalSourceId, queryAttempt.url, retailerFacetLabels(externalSourceId, brand), articleNumber).catch(() => {});
+            queueRetailerMirror(externalSourceId, () => showRetailerSearchInWindow(
+              externalSourceId, queryAttempt.url, retailerFacetLabels(externalSourceId, brand), articleNumber,
+            ).catch(() => null));
           }
         }
         // A Naver overview DOM belongs to exactly one submitted query. When an
@@ -12413,6 +12420,28 @@ const retailersNeedingLogin = new Set();
 // again for every product search. Closed only when the program quits.
 let sharedExternalLoginChrome = null;
 
+// Serialized visible mirrors per retailer: concurrent products must not
+// thrash the single shared tab with interleaved navigations. Every product
+// search for the same retailer runs visibly in that retailer's tab of the
+// shared external window, one after another. Collection never waits for the
+// mirror; the chain only orders the observational navigation.
+const retailerMirrorChains = new Map();
+function queueRetailerMirror(sourceId, run) {
+  const key = String(sourceId || "");
+  if (typeof run !== "function") return Promise.resolve(null);
+  const prev = retailerMirrorChains.get(key) || Promise.resolve(null);
+  const next = prev.catch(() => {}).then(run);
+  retailerMirrorChains.set(key, next);
+  next.catch(() => {}).finally(() => {
+    try {
+      if (retailerMirrorChains.get(key) === next) retailerMirrorChains.delete(key);
+    } catch {
+      // Chain bookkeeping must never break the search itself.
+    }
+  });
+  return next;
+}
+
 function loginSourceIdForStore(store = "") {
   const name = String(store || "");
   if (/^(?:SSG)(?:\s|$)/.test(name)) return "ssg";
@@ -12545,11 +12574,47 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
     await closeBlankTabs({ fetchImpl: fetch, port: Number(sharedExternalLoginChrome.port) || 0 });
     // 4. Open the article card with the visible mouse, after the sweep so a
     // just-opened tab cannot be closed while navigation is still starting.
+    // The click may spray a product tab; the search itself always stays in
+    // this retailer's tab of the same shared window. Spawned tabs are closed
+    // and the card URL is navigated in the same tab, so one product after
+    // another is watched in one place instead of piling up tabs.
     if (article) {
       try {
         const target = await mirrorPage().evaluate(`(${EXTERNAL_PRODUCT_CARD_POINT_SCRIPT})(${JSON.stringify(article)})`);
         if (target && Number.isFinite(Number(target.x)) && Number.isFinite(Number(target.y))) {
+          let knownTabIds = null;
+          try {
+            const before = await listPageTargets({ fetchImpl: fetch, port: Number(sharedExternalLoginChrome.port) || 0 });
+            knownTabIds = new Set((Array.isArray(before) ? before : []).map((entry) => entry?.id).filter(Boolean));
+          } catch {
+            knownTabIds = null;
+          }
           await mirrorPage().clickPoint(target);
+          const cardUrl = /^https?:\/\//i.test(String(target?.url || "")) ? String(target.url) : "";
+          try {
+            await wait(1500);
+            if (knownTabIds) {
+              const after = await listPageTargets({ fetchImpl: fetch, port: Number(sharedExternalLoginChrome.port) || 0 });
+              for (const entry of Array.isArray(after) ? after : []) {
+                if (!entry?.id || entry.id === acquired.targetId) continue;
+                if (knownTabIds.has(entry.id)) continue;
+                try {
+                  await closePageTarget({ fetchImpl: fetch, port: Number(sharedExternalLoginChrome.port) || 0, targetId: entry.id });
+                } catch {
+                  // One unclosable tab must not hide the same-tab navigation below.
+                }
+              }
+            }
+          } catch {
+            // Listing or sweeping spawned tabs is observational only.
+          }
+          if (cardUrl) {
+            try {
+              await mirrorPage().navigate(cardUrl);
+            } catch {
+              // The visible click already happened; same-tab navigation is best-effort.
+            }
+          }
         }
       } catch {
         // Opening the product is observational only.
