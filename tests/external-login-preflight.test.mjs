@@ -74,12 +74,18 @@ test("SSG external login starts at the member login popup with the saved method"
   assert.match(main, /id: "ssg"[^}]*loginUrl: "https:\/\/member\.ssg\.com\/member\/popup\/popupLogin\.ssg/);
 });
 
-test("retailers share one external window that closes on quit", () => {
-  assert.match(main, /let sharedExternalLoginChrome = null/);
-  assert.match(main, /"external-login", "shared"/);
+test("retailers keep one external window per retailer that closes on quit", () => {
+  assert.match(main, /const externalRetailerChromeHandles = new Map\(\)/);
+  assert.match(main, /function externalRetailerChromeHandle\(sourceId/);
+  assert.match(main, /function setExternalRetailerChromeHandle\(sourceId, handle/);
+  assert.match(main, /function externalRetailerUserDataDir\(sourceId/);
+  assert.match(main, /"external-login", key/);
+  assert.match(main, /shared: externalRetailerChromeHandle\(sourceId\)/);
+  assert.match(main, /setExternalRetailerChromeHandle\(sourceId, handle\)/);
   assert.match(main, /keepAlive: true/);
-  assert.match(main, /onShared: \(handle\) => \{\s*sharedExternalLoginChrome = \{ \.\.\.\(sharedExternalLoginChrome \|\| \{\}\), \.\.\.handle \};\s*\}/);
-  assert.match(main, /closeLoginChrome\(sharedExternalLoginChrome\?\.child\)/);
+  assert.match(main, /closeAllExternalRetailerChrome\(\)/);
+  assert.doesNotMatch(main, /let sharedExternalLoginChrome = null/);
+  assert.doesNotMatch(main, /"external-login", "shared"/);
 });
 
 test("external login heartbeats keep the search watchdog alive", () => {
@@ -87,7 +93,7 @@ test("external login heartbeats keep the search watchdog alive", () => {
   assert.doesNotMatch(main, /외부 로그인 확인`,/);
 });
 
-test("product searches mirror into the same shared tab without blocking", () => {
+test("product searches mirror into the retailer's own window tab without blocking", () => {
   assert.match(main, /async function showRetailerSearchInWindow\(sourceId, searchUrl, facetLabels = \[\], articleNumber = ""\)/);
   assert.match(main, /if \(queryAttemptIndex === 0 && queryAttempt\?\.url/);
   assert.match(main, /typeof loginSourceIdForStore === "function" && typeof showRetailerSearchInWindow === "function"/);

@@ -127,7 +127,7 @@ export async function closePageTarget({ fetchImpl = fetch, port = 0, targetId = 
   }
 }
 
-// One tab per retailer inside the shared window: reuse the retailer's tab
+// One tab per retailer inside its own window: reuse the retailer's tab
 // when it already exists so repeated searches never spray blank tabs.
 export function findRetailerTab(targets = [], loginUrl = "") {
   const host = tabHost(loginUrl);
@@ -1275,9 +1275,10 @@ export async function startExternalRetailerLogin({
   autoTimeoutMs = 180000,
   manualTimeoutMs = 600000,
   cdpLaunchTimeoutMs = 20000,
-  // Shared-window mode: retailers open as tabs of one Chrome process that
+  // Per-retailer window mode: each retailer keeps its own Chrome process that
   // stays alive across logins, so a logged-in session is kept instead of
-  // logging in again for every product search.
+  // logging in again for every product search. Callers pass the retailer's
+  // own handle (never another retailer's) so windows stay isolated.
   shared = null,
   keepAlive = false,
   onShared = null,
@@ -1295,8 +1296,8 @@ export async function startExternalRetailerLogin({
   if (typeof spawnImpl !== "function" || typeof WebSocketImpl !== "function") {
     return externalLoginFailure("CHROME_LAUNCH_FAILED");
   }
-  // Reuse the shared window when its process is still alive: every retailer
-  // then opens as a tab of the same window instead of a new Chrome process.
+  // Reuse the retailer's own window when its process is still alive: the
+  // retailer then opens as a tab of its own window instead of a new Chrome process.
   let child = shared && shared.child && shared.child.killed !== true && shared.child.exitCode == null
     ? shared.child
     : null;
@@ -1390,8 +1391,8 @@ export async function startExternalRetailerLogin({
       onProgress,
     });
   } finally {
-    // keepAlive retains the single shared window (with its logged-in tabs)
-    // across retailers and products; otherwise close the one-off window so
+    // keepAlive retains the retailer's own window (with its logged-in tab)
+    // across products; otherwise close the one-off window so
     // no stray Chrome survives the login.
     if (!keepAlive) kill();
   }

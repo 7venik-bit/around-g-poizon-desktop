@@ -12,7 +12,9 @@ let main = (await readFile(mainPath, "utf8")).replace(/\r\n/g, "\n");
 const searchUserAgent = main.match(/searchWindow\.webContents\.setUserAgent\(("[^"]+")\)/)?.[1];
 if (!searchUserAgent) throw new Error("domestic search user agent missing");
 const externalHandler = `  ipcMain.handle("external:open", async (_event, url) => {
-    return openExternalInChromeTab(url);
+    // Each platform opens in its own Chrome window so one retailer's tabs
+    // can never steal another retailer's login session.
+    return openExternalInChromeTab(url, { newWindow: true });
   });`;
 const internalHandler = `${externalHandler}
   ipcMain.handle("domestic:open-result", async (_event, rawUrl) => {

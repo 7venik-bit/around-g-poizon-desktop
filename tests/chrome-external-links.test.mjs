@@ -4,16 +4,16 @@ import test from "node:test";
 
 const mainSource = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 
-test("program links open in a new Chrome tab on Windows", () => {
+test("program links open in a new Chrome window per platform on Windows", () => {
   assert.match(mainSource, /async function openExternalInChromeTab/);
   assert.match(mainSource, /Google\\Chrome\\Application\\chrome\.exe/);
-  assert.match(mainSource, /'--new-tab'/);
-  assert.match(mainSource, /ipcMain\.handle\("external:open"[\s\S]*?return openExternalInChromeTab\(url\)/);
+  assert.match(mainSource, /'--new-window'/);
+  assert.match(mainSource, /ipcMain\.handle\("external:open"[\s\S]*?return openExternalInChromeTab\(url, \{ newWindow: true \}\)/);
 });
 
-test("official verification opens both pages through Chrome tabs", () => {
-  assert.match(mainSource, /await openExternalInChromeTab\(discovery\.href\)/);
-  assert.match(mainSource, /await openExternalInChromeTab\(product\.href\)/);
+test("official verification opens both pages through separate Chrome windows", () => {
+  assert.match(mainSource, /await openExternalInChromeTab\(discovery\.href, \{ newWindow: true \}\)/);
+  assert.match(mainSource, /await openExternalInChromeTab\(product\.href, \{ newWindow: true \}\)/);
 });
 
 test("official mall automation clicks a magnifier before entering the article", () => {
