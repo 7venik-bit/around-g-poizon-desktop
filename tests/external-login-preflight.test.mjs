@@ -166,3 +166,29 @@ test("store names map to their external login source", () => {
     unknown: "",
   });
 });
+
+test("each product run re-verifies the external login before searching", () => {
+  const start = main.indexOf("async function verifyExternalRetailerSession(");
+  assert.ok(start >= 0, "login watchdog missing");
+  const end = main.indexOf("function loginSourceIdForStore(", start);
+  const watchdog = main.slice(start, end);
+  assert.match(watchdog, /await client\.evaluate\(EXTERNAL_LOGIN_STATE_SCRIPT\)/);
+  assert.match(watchdog, /retailersNeedingLogin\.add\(sourceId\)/);
+  assert.match(watchdog, /confirmedExternalLogins\.delete\(sourceId\)/);
+  assert.match(watchdog, /await openRetailerLoginForSearch\(sourceId/);
+  assert.match(watchdog, /checked: false/);
+  assert.match(main, /await verifyExternalRetailerSession\(externalSourceId/);
+});
+
+test("the mirror leaves a per-run receipt for the finished result", () => {
+  const start = main.indexOf("async function showRetailerSearchInWindow(");
+  const end = main.indexOf("let shoppingAccountServicesCache;", start);
+  const mirror = main.slice(start, end);
+  assert.match(mirror, /retailerMirrorReceipts\.set/);
+  assert.match(mirror, /receipt\.navigated = true/);
+  assert.match(mirror, /receipt\.facetChecked/);
+  assert.match(mirror, /receipt\.productOpened = true/);
+  assert.match(mirror, /no-confirmed-login/);
+  assert.match(main, /mirrorReceiptFor\(source, articleNumber/);
+  assert.match(main, /mirrorReceipt: \(typeof mirrorReceiptFor/);
+});
