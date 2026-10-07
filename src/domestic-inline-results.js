@@ -272,6 +272,18 @@
   }
 
   function renderSearchDiagnostics(sources) {
+    // Badged-card drop reasons for rows that found department cards but kept
+    // no candidate. Counts only; matching behavior lives in the collector.
+    const dropReasonsText = (drops = {}) => {
+      if (!drops || typeof drops !== "object") return "";
+      const parts = [];
+      if (Number(drops.evaluated) > 0) parts.push(`인식시도 ${drops.evaluated}`);
+      if (Number(drops.noArticle) > 0) parts.push(`품번불일치 ${drops.noArticle}`);
+      if (Number(drops.brand) > 0) parts.push(`브랜드불일치 ${drops.brand}`);
+      if (Number(drops.conflict) > 0) parts.push(`품번충돌 ${drops.conflict}`);
+      if (Number(drops.filtered) > 0) parts.push(`후단제외 ${drops.filtered}`);
+      return parts.join(" · ");
+    };
     const failures = sources.filter(source => source?.autoRecovery || source?.verificationReason || source?.verificationFailed
       || source?.securityVerificationRequired || source?.loginRequired
       || source?.verificationDiagnostics?.lotteServerEvidence
@@ -332,6 +344,7 @@
         ["백화점 카드 수", d.lotteCollectionEvidence?.badgeCards ?? d.ssgCollectionEvidence?.badgeCards],
         ["후보 상품 수", d.lotteCollectionEvidence?.candidateCount ?? d.ssgCollectionEvidence?.candidateCount],
         ["백화점 상품", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.noDepartmentGoods === true ? "없음 · 병행수입으로 판단" : ""],
+        ["백화점 탈락 내역", dropReasonsText((d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.identityDrops)],
         ["외부 창 검색", typeof mirrorSkipLabel === "function" && d.mirrorReceipt ? (d.mirrorReceipt.navigated === true ? "같은 탭 이동" : (mirrorSkipLabel(d.mirrorReceipt.skipped) || "미이동")) : ""],
         ["외부 창 필터", typeof mirrorFilterText === "function" ? mirrorFilterText(d.mirrorReceipt) : ""],
         ["접속 오류", d.navigationError], ["화면 읽기 오류", d.inspectionError], ["수집 오류", d.errorMessage],

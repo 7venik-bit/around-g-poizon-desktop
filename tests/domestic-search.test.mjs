@@ -481,6 +481,34 @@ test("SSG는 백화점·공식 마크 없는 카드를 후보에서 제외한다
   assert.ok(result.products[0].url.includes("1000612345"));
 });
 
+test("백화점 뱃지 카드의 상품인식 탈락 사유를 집계한다", () => {
+  const rendered = JSON.stringify({ productCards: [
+    { productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000612345",
+      title: "신세계백화점 나이키 에어포스 1 07 FZ0627-010",
+      text: "신세계백화점 나이키 에어포스 1 07 FZ0627-010 139,000원",
+      departmentStoreLabelMatched: true },
+    { productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000999888",
+      title: "신세계백화점 나이키 덩크 로우 DD1503-101",
+      text: "신세계백화점 나이키 덩크 로우 DD1503-101 129,000원",
+      departmentStoreLabelMatched: true },
+    { productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000777666",
+      title: "신세계백화점 런닝화 쿠션",
+      text: "신세계백화점 런닝화 쿠션 89,000원",
+      departmentStoreLabelMatched: true },
+    { productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000555444",
+      title: "신세계백화점 나이키 런닝화 쿠션",
+      text: "신세계백화점 나이키 런닝화 쿠션 89,000원",
+      departmentStoreLabelMatched: true },
+  ],
+  pageText: "SSG 검색 결과",
+  });
+  const result = analyzeRenderedChannelProducts(
+    rendered, "SSG", "FZ0627-010", "나이키", "나이키 에어포스 1 블랙", "나이키 에어포스",
+  );
+  assert.equal(result.products.length, 1);
+  assert.deepEqual(result.identityDrops, { evaluated: 4, noArticle: 1, brand: 1, conflict: 1, filtered: 0 });
+});
+
 test("SSG와 롯데온 카드에 품번이 없어도 상세 품번·재고 검증 후보로 유지한다", () => {
   const cases = [
     ["SSG", "https://www.ssg.com/item/itemView.ssg?itemId=1000612345",

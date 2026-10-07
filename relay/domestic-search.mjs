@@ -678,6 +678,11 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
       const brandKeys = [brand, ...(seed?.aliases || [])].map(normalizeOfficialBrand).filter(Boolean);
       const requiresBrandMatch = /^(?:네이버|무신사|SSG|롯데온|병행수입·편집샵)/.test(String(store || "")) && brandKeys.length > 0;
       const requiresExactParallelModel = String(store || "") === "병행수입·편집샵";
+      // Badged-department tallies below explain empty rows: how many badged
+      // cards reached identity matching and which gate dropped each of them.
+      // Additive counters only; matching behavior is unchanged.
+      const badgedIdentityStore = /^(?:SSG|롯데온)(?:[\s·]|$)/.test(String(store || ""));
+      const identityDrops = { evaluated: 0, noArticle: 0, brand: 0, conflict: 0, filtered: 0 };
       // NAVER_SINGLE_OVERVIEW_SEARCH_V1: cards were classified from one Naver overview page before matching.
       const matchingProducts = new Map();
       const domesticVisibleProducts = new Set();
@@ -737,6 +742,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // 검색 경로가 네이버 공식스토어/백화점이어도 상품 카드가 해외직구,
         // 구매대행 또는 해외배송이면 국내 판매처로 계산하지 않는다.
         if (isOverseasPurchaseProduct({ ...card, text: rawCardText })) continue;
+        if (badgedIdentityStore) identityDrops.evaluated += 1;
         const expectedCompact = articleCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
         const detectedArticleNumbers = articleIdentityTokens(rawCardText);
         const titleOwnsExactArticle = exactArticleIdentityMatch(titleText, articleCode);
@@ -873,13 +879,26 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           text: `${rawCardText} ${String(card?.markup || "")}`,
         });
         if (requiresExactParallelModel && !parallelRetailer && !listedOfficialSsgCard) articleMatched = false;
-        if (!articleMatched) continue;
+        if (!articleMatched) {
+          if (badgedIdentityStore) {
+            if (conflictingArticle) identityDrops.conflict += 1;
+            else if (requiresBrandMatch && !brandMatched) identityDrops.brand += 1;
+            else identityDrops.noArticle += 1;
+          }
+          continue;
+        }
         if (requiresBrandMatch) {
-          if (!brandMatched) continue;
+          if (!brandMatched) {
+            if (badgedIdentityStore) identityDrops.brand += 1;
+            continue;
+          }
         }
         // A text-only search suggestion is not a purchasable product.  Keep
         // official results only when the card owns a real product-detail URL.
-        if (!/^https?:\/\//i.test(productUrl)) continue;
+        if (!/^https?:\/\//i.test(productUrl)) {
+          if (badgedIdentityStore) identityDrops.filtered += 1;
+          continue;
+        }
         // Editing-shop and parallel-import results must be real shopping-platform product pages.
         if (String(store || "") === "병행수입·편집샵" && !isPlatformShoppingProductUrl(productUrl)) continue;
         const productKey = productUrl;
@@ -890,7 +909,10 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         const ssgOfficialBrandHall = ssgClassification === "official_brand";
         const detectedSsgRetailer = detectedParallelImportRetailer(ssgEvidence);
         const isSsgParallelImport = ssgClassification === "parallel_import";
-        if (isSsgParallelImport && !detectedSsgRetailer) continue;
+        if (isSsgParallelImport && !detectedSsgRetailer) {
+          if (badgedIdentityStore) identityDrops.filtered += 1;
+          continue;
+        }
         if (!matchingProducts.has(productKey)) {
           matchingProducts.set(productKey, {
             store: ssgOfficialBrandHall ? "SSG 브랜드 공식관" : isSsgParallelImport ? "SSG 병행수입" : store,
@@ -956,6 +978,7 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           && (exactMusinsaSearchChecked || exactSsgSearchChecked || parallelRetailerListChecked),
         ssgSearchChecked: /^SSG(?:\s|$)/.test(String(store || "")),
         parallelRetailerListEnforced: requiresExactParallelModel,
+        identityDrops,
       };
     } catch {
       return null;
