@@ -68,6 +68,7 @@ import {
   EXTERNAL_LOGIN_STATE_SCRIPT,
   EXTERNAL_FACET_UNCHECK_SCRIPT,
   EXTERNAL_GRID_ARTICLE_COUNT_SCRIPT,
+  EXTERNAL_GRID_CARDS_SCRIPT,
   EXTERNAL_PRODUCT_CARD_POINT_SCRIPT,
   EXTERNAL_SSG_DEPARTMENT_HREF_SCRIPT,
   EXTERNAL_SSG_DEPARTMENT_TAB_POINT_SCRIPT,
@@ -4117,6 +4118,47 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     if (lotteServerAnalyzed && Array.isArray(lotteServerAnalyzed.products) && Array.isArray(analyzed?.products)) {
       analyzed.products = mergeAnalyzedProducts(analyzed.products, lotteServerAnalyzed.products);
     }
+    // Shared-window grid evidence: the logged-in tab provably renders what
+    // automation surfaces cannot. Await this run's own mirror bounded so its
+    // snapshot is in hand; anything else fails open to hidden/server results.
+    let mirrorGridAnalyzed = null;
+    let mirrorGridCards = 0;
+    const mirrorSourceId = typeof loginSourceIdForStore === "function" ? loginSourceIdForStore(source.store) : "";
+    if ((mirrorSourceId === "ssg" || mirrorSourceId === "lotte") && !officialDirectDetail) {
+      try {
+        const chain = retailerMirrorChains.get(mirrorSourceId);
+        if (chain && typeof chain.then === "function") {
+          let mirrorSettled = false;
+          chain.catch(() => null).finally(() => {
+            mirrorSettled = true;
+          });
+          const mirrorDeadline = Date.now() + 25000;
+          while (!mirrorSettled && Date.now() < mirrorDeadline && !domesticSearchCanceled(generation)) {
+            await wait(1000);
+          }
+        }
+      } catch {
+        // Mirror wait is best-effort; collection continues regardless.
+      }
+      try {
+        const receipt = mirrorReceiptFor(source, articleNumber, url);
+        const gridCards = Array.isArray(receipt?.gridCards) ? receipt.gridCards : [];
+        mirrorGridCards = gridCards.length;
+        if (gridCards.length) {
+          mirrorGridAnalyzed = analyzeRenderedChannelProducts(JSON.stringify({
+            productCards: gridCards,
+            pageText: "",
+            pageHeaderText: "",
+            selectedChannelEmpty: false,
+          }), source.store, articleNumber, brand, title, searchAttempt?.query || "");
+        }
+      } catch {
+        mirrorGridAnalyzed = null;
+      }
+      if (mirrorGridAnalyzed && Array.isArray(mirrorGridAnalyzed.products) && Array.isArray(analyzed?.products)) {
+        analyzed.products = mergeAnalyzedProducts(analyzed.products, mirrorGridAnalyzed.products);
+      }
+    }
     if (lotteServerEvidence) {
       analyzed.verificationDiagnostics = {
         ...(analyzed?.verificationDiagnostics || {}),
@@ -4148,6 +4190,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           renderedCards,
           badgeCards,
           candidateCount,
+          mirrorCards: mirrorGridCards,
         },
       };
     }
@@ -4182,6 +4225,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           renderedCards,
           badgeCards,
           candidateCount,
+          mirrorCards: mirrorGridCards,
         },
       };
     }
@@ -12787,6 +12831,20 @@ async function showRetailerSearchInWindow(sourceId, searchUrl, facetLabels = [],
       }
     }
     await closeBlankTabs({ fetchImpl: fetch, port: Number(sharedExternalLoginChrome.port) || 0 });
+    // Collection snapshot from the proven surface: the logged-in tab renders
+    // what automation surfaces cannot. Captured after scoping settles and
+    // before the product click navigates away. Best-effort; hidden and
+    // server evidence stand on their own.
+    if (article && (sourceId === "ssg" || sourceId === "lotte")) {
+      try {
+        const gridCards = await mirrorPage().evaluate(
+          `(${EXTERNAL_GRID_CARDS_SCRIPT})(${JSON.stringify(article)})`,
+        );
+        if (Array.isArray(gridCards)) receipt.gridCards = gridCards.slice(0, 60);
+      } catch {
+        // Grid snapshot is best-effort; collection continues regardless.
+      }
+    }
     // 4. Open the article card with the visible mouse, after the sweep so a
     // just-opened tab cannot be closed while navigation is still starting.
     // The click may spray a product tab; the search itself always stays in

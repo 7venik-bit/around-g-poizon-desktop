@@ -6,6 +6,7 @@ import { JSDOM } from "jsdom";
 import {
   EXTERNAL_FACET_POINT_SCRIPT,
   EXTERNAL_FACET_UNCHECK_SCRIPT,
+  EXTERNAL_GRID_CARDS_SCRIPT,
   EXTERNAL_PRODUCT_CARD_POINT_SCRIPT,
   EXTERNAL_SSG_DEPARTMENT_HREF_SCRIPT,
   EXTERNAL_SSG_DEPARTMENT_TAB_POINT_SCRIPT,
@@ -184,6 +185,25 @@ test("visible product click skips cards without department wording", () => {
   );
 });
 
+test("shared-tab grid capture returns collection-ready cards", () => {
+  const dom = visibleDom([
+    '<header><a href="https://www.lotteon.com/">롯데ON</a><nav><a href="https://www.lotteon.com/search?q=DD1503-101">검색 DD1503-101</a></nav></header>',
+    '<ul><li><span>롯데백화점</span><a href="https://www.lotteon.com/p/product/PD1"><img src="https://contents.lotteon.com/pd1.jpg" alt="W 덩크 로우 DD1503-101">W 덩크 로우 DD1503-101</a><span>149,000원</span></li>',
+    '<li><a href="https://www.lotteon.com/p/product/MKT1">MUST IT 나이키 DD1503-101</a><span>129,000원</span></li>',
+    '<li><a href="https://www.ssg.com/item/itemView.ssg?itemId=7">신세계백화점 나이키 DD1503-101</a><span>139,000원</span></li></ul>',
+  ].join(""), "https://www.lotteon.com/");
+  const cards = runScript(EXTERNAL_GRID_CARDS_SCRIPT, ["DD1503-101"], dom);
+  assert.equal(cards.length, 3);
+  const byUrl = Object.fromEntries(cards.map((card) => [card.productUrl, card]));
+  const dept = byUrl["https://www.lotteon.com/p/product/PD1"];
+  assert.equal(dept.title, "W 덩크 로우 DD1503-101");
+  assert.equal(dept.price, "149,000원");
+  assert.equal(dept.imageUrl, "https://contents.lotteon.com/pd1.jpg");
+  assert.equal(dept.departmentStoreLabelMatched, true);
+  assert.equal(byUrl["https://www.lotteon.com/p/product/MKT1"].departmentStoreLabelMatched, false);
+  assert.equal(byUrl["https://www.ssg.com/item/itemView.ssg?itemId=7"].departmentStoreLabelMatched, true);
+});
+
 test("mirror drives a visible mouse from scope to product click", () => {
   const start = main.indexOf("async function showRetailerSearchInWindow(");
   const end = main.indexOf("let shoppingAccountServicesCache;", start);
@@ -242,4 +262,6 @@ test("empty rows expose scope evidence in the diagnostics block", () => {
   assert.match(inline, /백화점 상품/);
   assert.match(inline, /병행수입으로 판단/);
   assert.match(inline, /백화점 탈락 내역/);
+  assert.match(inline, /외부 창 수집/);
+  assert.match(inline, /그리드 .*장 병합/);
 });
