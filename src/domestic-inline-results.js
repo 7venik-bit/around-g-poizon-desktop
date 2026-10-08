@@ -334,6 +334,7 @@
         ["서버 검색 출처", d.lotteServerEvidence?.origin === "session-dom" ? "세션 화면" : d.lotteServerEvidence?.origin === "direct-fetch" ? "직접 조회" : ""],
         ["판매처 체크 적용", [...(d.lotteCollectionEvidence?.facetChecked || []), ...(d.ssgCollectionEvidence?.facetChecked || [])].join(", ")],
         ["판매처 체크 누락", [...(d.lotteCollectionEvidence?.facetMissing || []), ...(d.ssgCollectionEvidence?.facetMissing || [])].join(", ")],
+        ["판매처 필터 목록", (d.lotteCollectionEvidence?.availableFacets || []).join(", ")],
         ["판매처 체크 확정", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)
           ? ((d.lotteCollectionEvidence || d.ssgCollectionEvidence).facetSettled === true ? "확정" : "미확정") : ""],
         ["백화점 탭", d.ssgCollectionEvidence?.deptTab],
