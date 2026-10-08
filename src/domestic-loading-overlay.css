@@ -99,8 +99,8 @@ body:has(> .domestic-search-overlay:not([hidden])) {
 .domestic-search-overlay .domestic-loading-copy strong::before {
   content: "국내 판매처 검색 중";
   display: block;
-  font-size: 27px;
-  font-weight: 800;
+  font-size: 22px;
+  font-weight: 700;
   letter-spacing: -.02em;
 }
 
@@ -226,7 +226,7 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   border: 1px solid #dadce0 !important;
   border-radius: 999px !important;
   padding: 4px 12px !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
   font-weight: 700 !important;
   background: #fff !important;
 }
@@ -253,12 +253,12 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   min-width: 180px !important;
   min-height: 44px !important;
   padding: 10px 24px !important;
-  color: #e64949 !important;
+  color: #fff !important;
   font-weight: 800 !important;
-  border: 1.5px solid #ef6464 !important;
-  border-radius: 11px !important;
-  background: #fff !important;
-  box-shadow: none !important;
+  border: 0 !important;
+  border-radius: 16px !important;
+  background: linear-gradient(135deg, #fb5245, #e8380d) !important;
+  box-shadow: 0 2px 8px rgba(232, 56, 13, .3) !important;
   cursor: pointer !important;
   touch-action: auto;
 }
@@ -266,8 +266,8 @@ body:has(> .domestic-search-overlay:not([hidden])) {
 .domestic-overlay-stop:hover,
 .domestic-overlay-stop:focus-visible {
   color: #fff !important;
-  border-color: #e64949 !important;
-  background: #e64949 !important;
+  border-color: transparent !important;
+  background: linear-gradient(135deg, #e8380d, #c81e0b) !important;
   outline: none;
 }
 
