@@ -250,7 +250,7 @@
   function mirrorSkipLabel(skipped = "") {
     return {
       "unsupported-retailer": "대상 아님",
-      "no-shared-window": "공유 창 없음",
+      "no-shared-window": "로그인 창 없음",
       "no-confirmed-login": "로그인 미확인",
       "no-cdp-channel": "연결 없음",
       "no-badged-card": "백화점 상품 없음",
