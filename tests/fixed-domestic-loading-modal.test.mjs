@@ -54,6 +54,13 @@ test("modal keeps the approved progress information hierarchy", () => {
   assert.match(overlayCss, /\.domestic-overlay-stop/);
 });
 
+test("progress modal uses the red brand point with a color bar", () => {
+  assert.match(overlayCss, /\.domestic-search-overlay-card::before/);
+  assert.match(overlayCss, /linear-gradient\(90deg, #e8380d/);
+  assert.match(overlayCss, /\.domestic-overlay-progress::\-webkit-progress-value[\s\S]*?linear-gradient\(90deg, #fb5245, #e8380d\)/);
+  assert.match(overlayCss, /\.domestic-overlay-count strong\s*\{[\s\S]*?color:\s*#e8380d/);
+});
+
 test("domestic search elapsed time is displayed as Korean hours, minutes and seconds", () => {
   assert.match(renderer, /function elapsedKoreanDuration\(milliseconds = 0\)/);
   assert.match(renderer, /hours > 0 \? `\$\{hours\}시간`/);
