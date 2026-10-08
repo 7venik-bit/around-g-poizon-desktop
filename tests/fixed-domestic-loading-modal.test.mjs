@@ -38,12 +38,11 @@ test("a direct product search also blocks the full screen with the otter employe
   assert.match(directSearch, /excelPreviewSearchResults\.set\(key, result\)/);
 });
 
-test("otter employee visibly types on a keyboard while search continues", () => {
-  assert.match(overlayCss, /\.domestic-loading-otter\.otter-single-tail-sprite/);
-  assert.match(overlayCss, /animation:\s*otter-single-tail-frames \.6s linear infinite/);
-  assert.match(overlayCss, /@keyframes otter-single-tail-frames/);
-  assert.doesNotMatch(overlayCss, /clip-path:\s*ellipse|otter-typing-paw-layer|approved-otter-paw-tap/);
-  assert.doesNotMatch(overlayCss, /\.domestic-loading-otter\.otter-single-tail-sprite\s*\{[^}]*background:\s*transparent\s*!important/);
+test("progress loader stays simple with no mascot", () => {
+  assert.doesNotMatch(overlayCss, /otter-approved-stage/);
+  assert.doesNotMatch(overlayCss, /otter-single-tail/);
+  assert.doesNotMatch(overlayCss, /otter-typing-tail-sway-sprite/);
+  assert.doesNotMatch(overlayCss, /@keyframes otter-single-tail-frames/);
 });
 
 test("modal keeps the approved progress information hierarchy", () => {
@@ -75,6 +74,9 @@ test("progress modal uses the red brand point with a color bar", () => {
   assert.match(overlayCss, /linear-gradient\(90deg, #e8380d/);
   assert.match(overlayCss, /\.domestic-overlay-progress::\-webkit-progress-value[\s\S]*?linear-gradient\(90deg, #fb5245, #e8380d\)/);
   assert.match(overlayCss, /\.domestic-overlay-count strong\s*\{[\s\S]*?color:\s*#e8380d/);
+  assert.match(overlayCss, /\.domestic-overlay-percent\s*\{[\s\S]*?color:\s*#e8380d/);
+  assert.match(overlayCss, /\.domestic-overlay-progress\s*\{[\s\S]*?background:\s*#fdecea/);
+  assert.match(renderer, /<span class="domestic-overlay-percent">\$\{percent\}%<\/span>/);
 });
 
 test("domestic search elapsed time is displayed as Korean hours, minutes and seconds", () => {

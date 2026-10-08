@@ -1426,9 +1426,6 @@ function rawExcelDomesticResultLinks(result = {}) {
 function renderDomesticLoading(startedAt = Date.now()) {
   const safeStartedAt = Number(startedAt) || Date.now();
   return `<div class="domestic-search-loading" role="status" aria-live="polite">
-    <span class="otter-approved-stage" aria-hidden="true">
-      <span class="domestic-loading-otter otter-single-tail-sprite"></span>
-    </span>
     <span class="domestic-loading-copy"><strong>상품을 찾고 있습니다<span class="domestic-loading-dots">…</span></strong>
       <small>국내 판매처 검색 중 · <b class="domestic-search-elapsed" data-search-started-at="${safeStartedAt}">0초</b></small>
     </span>
@@ -1560,10 +1557,10 @@ function showDomesticSearchOverlay(startedAt, completedCount, totalCount, curren
   overlay.innerHTML = `<div class="domestic-search-overlay-card">
     ${renderDomesticLoading(startedAt)}
     <p class="domestic-overlay-version">실행 버전 ${installedAppVersion ? `v${text(installedAppVersion)}` : "확인 중"}</p>
-    <p class="domestic-overlay-count"><strong>${Number(completedCount).toLocaleString("ko-KR")}</strong> / ${Number(totalCount).toLocaleString("ko-KR")}개 처리 · ${percent}%</p>
+    <p class="domestic-overlay-count"><strong>${Number(completedCount).toLocaleString("ko-KR")}</strong> / ${Number(totalCount).toLocaleString("ko-KR")}개 처리 · <span class="domestic-overlay-percent">${percent}%</span></p>
     <progress class="domestic-overlay-progress" max="100" value="${percent}" aria-label="상품 검색 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}">${percent}%</progress>
     <p class="domestic-overlay-current">${article ? `현재 상품번호 · <b>${text(article)}</b>` : "검색 준비 중입니다."}</p>
-    <p class="domestic-overlay-guide">수달 사원이 상품을 확인하고 있습니다. 완료될 때까지 잠시 기다려 주세요.</p>
+    <p class="domestic-overlay-guide">상품을 확인하고 있습니다. 완료될 때까지 잠시 기다려 주세요.</p>
     <div class="domestic-overlay-platforms" aria-label="판매처별 진행 상태" hidden></div>
     <button type="button" class="domestic-overlay-stop">검색 중지</button>
   </div>`;
