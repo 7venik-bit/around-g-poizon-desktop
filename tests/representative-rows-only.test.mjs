@@ -18,11 +18,18 @@ test("original rows show only the highest-price row per article number", () => {
 });
 
 test("hidden size rows leave the list but stay in the workbook", () => {
-  assert.match(originalRows, /products\.flatMap\(\(p, i\) => \{/);
-  assert.match(originalRows, /if \(!shownKeySet\.has\(keys\[i\]\)\) return \[\];/);
-});
-
-test("page selection follows the displayed representative rows", () => {
+  assert.match(originalRows, /displayOrder\.flatMap\(\(i\) => \{/);
+  assert.match(originalRows, /const p = products\[i\];/);
   assert.match(originalRows, /return shownKeys;/);
   assert.doesNotMatch(originalRows, /return keys;/);
+});
+
+test("original rows display in product-name order", () => {
+  assert.match(originalRows, /originalRowDisplayName/);
+  assert.match(originalRows, /localeCompare\(originalRowDisplayName\(products\[right\]\), "ko"\)/);
+});
+
+test("original rows show the POIZON highest figure", () => {
+  assert.match(originalRows, /poizonHighestPrice/);
+  assert.match(originalRows, /money\(highest\)/);
 });

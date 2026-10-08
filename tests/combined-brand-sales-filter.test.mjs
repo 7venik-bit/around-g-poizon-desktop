@@ -292,10 +292,10 @@ test('source columns from another workbook stay aligned even when their order ch
   assert.equal(h.context.combinedBrandPreview.products.length,2);
   assert.deepEqual(Array.from(h.context.combinedBrandPreview.originalColumns,c=>c.header),['상품 번호','상품명','현지 판매자 총 판매량']);
   const displayed = [...h.html().matchAll(/class="excel-source-value">([^<]*)<\/span>/g)].map(m=>m[1]);
-  assert.deepEqual(displayed,['A','첫 상품','25','30','둘째 상품','B'], 'expanded fields retain each workbook column order');
+  assert.deepEqual(displayed,['30','둘째 상품','B','A','첫 상품','25'], 'rows display in product-name order with each workbook column order intact');
   const document = new JSDOM('<table>'+h.html()+'</table>').window.document;
-  assert.deepEqual([...document.querySelectorAll('.excel-source-local')].map(c=>c.textContent),['25','30']);
-  assert.deepEqual([...document.querySelectorAll('.excel-source-title')].map(c=>c.textContent),['첫 상품','둘째 상품']);
+  assert.deepEqual([...document.querySelectorAll('.excel-source-local')].map(c=>c.textContent),['30','25']);
+  assert.deepEqual([...document.querySelectorAll('.excel-source-title')].map(c=>c.textContent),['둘째 상품','첫 상품']);
 });
 
 test('existing and newly downloaded brands always use the same ten product columns and six-column retailer result area', async () => {
@@ -329,7 +329,7 @@ test('existing and newly downloaded brands always use the same ten product colum
     assert.equal(h.nodes.get('#excel-preview-grid').scrollLeft,0);
     if (index) {
       assert.equal(document.querySelector('.excel-verified-image').getAttribute('src'),index===1?'https://example.test/new.jpg':'https://example.test/other.jpg');
-      assert.equal(document.querySelector('.excel-source-price').textContent,index===1?'KRW115,000':'0');
+      assert.equal(document.querySelector('.excel-source-price').textContent,index===1?'115000':'0', 'price cell shows the numeric POIZON highest figure');
       assert.equal(document.querySelector('.excel-source-local').textContent,index===1?'30':'26');
     }
   }

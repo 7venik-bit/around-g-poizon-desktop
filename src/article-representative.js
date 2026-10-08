@@ -10,9 +10,15 @@
     return [clean(articleNumber), clean(brand)].join("|");
   };
 
+  // Highest POIZON figure wins: explicit highest/lowest fields first, then
+  // the workbook average text. Ties keep the first row (strict > below).
   const articleRowPrice = (product = {}) => {
-    const direct = Number(product?.averagePrice);
-    if (Number.isFinite(direct) && direct > 0) return direct;
+    let best = 0;
+    for (const field of [product?.highestPrice, product?.averagePrice, product?.minPrice?.value]) {
+      const amount = Number(field);
+      if (Number.isFinite(amount) && amount > best) best = amount;
+    }
+    if (best > 0) return best;
     const raw = [product?.originalValues?.averagePrice, product?.averagePrice]
       .map((value) => String(value ?? "")).join(" ");
     const amount = Number(raw.replace(/[^0-9.]/g, ""));
