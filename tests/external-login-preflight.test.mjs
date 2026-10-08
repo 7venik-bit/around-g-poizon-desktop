@@ -74,6 +74,12 @@ test("SSG external login starts at the member login popup with the saved method"
   assert.match(main, /id: "ssg"[^}]*loginUrl: "https:\/\/member\.ssg\.com\/member\/popup\/popupLogin\.ssg/);
 });
 
+test("unreadable login tabs name where they actually landed", () => {
+  assert.match(main, /merchantDomains: source\.domains/);
+  assert.match(main, /attempt\?\.observedUrl/);
+  assert.match(main, /마지막 화면: /);
+});
+
 test("retailers keep one external window per retailer that closes on quit", () => {
   assert.match(main, /const externalRetailerChromeHandles = new Map\(\)/);
   assert.match(main, /function externalRetailerChromeHandle\(sourceId/);

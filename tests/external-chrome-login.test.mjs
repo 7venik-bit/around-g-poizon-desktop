@@ -1142,3 +1142,75 @@ test("retailer login reports launch and connection failures with codes", async (
   assert.equal(unreachable.code, "CDP_UNREACHABLE");
   assert.equal(killed, 1);
 });
+
+test("login tabs accept the same merchant host and name where they landed", async () => {
+  const server = fakeCdpServer();
+  server.state.versionUp = true;
+  const Socket = fakeAuthSocket();
+  // The entry lives on member.ssg.com but SSG bounces the tab to www.ssg.com.
+  const navigating = async (url, init) => {
+    const created = await server.fetchImpl(url, init);
+    for (const tab of server.state.tabs) tab.url = "https://www.ssg.com/member/login";
+    return created;
+  };
+  const acquired = await acquireLoginTab({
+    fetchImpl: navigating,
+    WebSocketImpl: Socket,
+    port: 9222,
+    loginUrl: "https://member.ssg.com/member/popup/popupLogin.ssg",
+    tabKey: "ssg",
+    allowedHostSuffixes: ["ssg.com"],
+    sleepImpl: async () => {},
+  });
+  assert.ok(acquired.targetId);
+  // An unrelated host never matches, even with suffixes allowed.
+  const other = fakeCdpServer();
+  other.state.versionUp = true;
+  const wrongHost = async (url, init) => {
+    if (String(url).includes("/json/new")) {
+      const id = "W1";
+      other.state.tabs.push({ id, url: "https://other.example/x" });
+      return { ok: true, json: async () => ({ id, webSocketDebuggerUrl: "ws://W1" }) };
+    }
+    return other.fetchImpl(url, init);
+  };
+  await assert.rejects(
+    acquireLoginTab({
+      fetchImpl: wrongHost,
+      WebSocketImpl: Socket,
+      port: 9222,
+      loginUrl: "https://member.ssg.com/member/popup/popupLogin.ssg",
+      tabKey: "other",
+      allowedHostSuffixes: ["ssg.com"],
+      navigateTimeoutMs: 3100,
+      sleepImpl: async () => {},
+    }),
+    /LOGIN_PAGE_UNREADABLE/,
+  );
+});
+
+test("an unreadable login tab reports where it actually landed", async () => {
+  const server = fakeCdpServer();
+  server.state.versionUp = true;
+  const stuckNew = async (url, init) => {
+    if (String(url).includes("/json/new")) {
+      const id = "B9";
+      server.state.tabs.push({ id, url: "about:blank" });
+      return { ok: true, json: async () => ({ id, webSocketDebuggerUrl: "ws://B9" }) };
+    }
+    return server.fetchImpl(url, init);
+  };
+  const Socket = fakeAuthSocket();
+  const error = await acquireLoginTab({
+    fetchImpl: stuckNew,
+    WebSocketImpl: Socket,
+    port: 9222,
+    loginUrl: "https://member.ssg.com/member/popup/popupLogin.ssg",
+    tabKey: "ssg",
+    allowedHostSuffixes: ["ssg.com"],
+    navigateTimeoutMs: 3100,
+    sleepImpl: async () => {},
+  }).then(() => null, (failure) => failure);
+  assert.equal(String(error?.message || ""), "LOGIN_PAGE_UNREADABLE");
+  assert.equal(error?.observedUrl, "about:blank");
+});
