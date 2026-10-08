@@ -54,6 +54,7 @@ import {
 import pkg from "electron-updater";
 import { JsonStore } from "./services/store.mjs";
 import { ShoppingAccounts, ShoppingLoginConnector, captureShoppingLoginPage } from "./services/shopping-accounts.mjs";
+import { fetchNaverOtpCode, NAVER_OTP_INPUT_SCRIPT } from "./services/naver-mail-otp.mjs";
 import {
   findChromeExecutable,
   closeLoginChrome,
@@ -5690,6 +5691,7 @@ function publicConfig() {
     hasNaverPassword: Boolean(settings.naverPasswordEncrypted),
     naverCredentialCode: naverCredentials.code,
     naverCredentialMessage: naverCredentialMessage(naverCredentials.code),
+    hasNaverMailAppPassword: Boolean(settings.naverMailAppPasswordEncrypted),
     nikeLoginId: settings.nikeLoginId || "",
     hasNikePassword: Boolean(settings.nikePasswordEncrypted),
     adidasLoginId: settings.adidasLoginId || "",
@@ -6122,7 +6124,7 @@ function publicPortableSnapshot() {
   const settings = { ...(snapshot.settings || {}) };
   for (const key of [
     "appSecretEncrypted", "accessTokenEncrypted", "poizonLoginId", "poizonPasswordEncrypted",
-    "naverLoginId", "naverPasswordEncrypted", "shoppingAccounts",
+    "naverLoginId", "naverPasswordEncrypted", "naverMailAppPasswordEncrypted", "shoppingAccounts",
     "nikeLoginId", "nikePasswordEncrypted", "adidasLoginId", "adidasPasswordEncrypted", "brandExportFolder",
     "ledgerWebhookUrl", "ledgerSecretEncrypted",
     "oneDrivePoizonBackupRoot", "brandExportJobCache", "brandExportFileValidationCache",
@@ -13101,6 +13103,21 @@ function naverCredentialMessage(code) {
   return "";
 }
 
+// Naver mail app password for reading the email verification code during
+// login. This is NOT the login password: Naver issues a separate app
+// password for IMAP, and unlike the login password it is only ever sent to
+// imap.naver.com over TLS, never to a login page.
+function naverMailOtpCredentials() {
+  const settings = store.snapshot(["settings"]).settings;
+  if (!settings.naverMailAppPasswordEncrypted) return { appPassword: "", code: "NAVER_MAIL_APP_PASSWORD_REQUIRED" };
+  try {
+    const appPassword = decrypted(settings.naverMailAppPasswordEncrypted);
+    return { appPassword, code: appPassword ? "" : "NAVER_MAIL_APP_PASSWORD_UNREADABLE" };
+  } catch {
+    return { appPassword: "", code: "NAVER_MAIL_APP_PASSWORD_UNREADABLE" };
+  }
+}
+
 async function saveNaverAccount(config = {}) {
   const previous = store.snapshot(["settings"]).settings;
   const id = String(config.naverLoginId || "").trim();
@@ -13111,6 +13128,9 @@ async function saveNaverAccount(config = {}) {
   if (!password && naverAccountCredentials().code) throw new Error("NAVER_PASSWORD_REQUIRED");
   const next = { naverLoginId: id };
   if (password) next.naverPasswordEncrypted = encrypted(password);
+  if (typeof config.naverMailAppPassword === "string" && config.naverMailAppPassword) {
+    next.naverMailAppPasswordEncrypted = encrypted(config.naverMailAppPassword);
+  }
   // This action saves only Naver; unrelated, possibly unsaved form fields
   // must not reset POIZON, official-mall or ledger settings.
   await store.setSettingsCommitted(next);
@@ -13251,6 +13271,41 @@ async function submitStoredNaverCredentials(loginWindow) {
   while (Date.now() < deadline && !loginWindow.isDestroyed()) {
     if (await hasUsableNaverLoginSession()) return { ok: true, submitted: true };
     await wait(500);
+  }
+  // Email verification step: Naver shows a code input on unfamiliar devices.
+  // With a saved mail app password the newest code is filled exactly once; a
+  // wrong or missing code is never retried, and the visible window stays for
+  // manual entry like every other verification page.
+  try {
+    const otpPage = await loginWindow.webContents.executeJavaScript(NAVER_OTP_INPUT_SCRIPT, true).catch(() => null);
+    const mail = naverMailOtpCredentials();
+    if (otpPage?.otp && otpPage?.submit && !mail.code && !loginWindow.isDestroyed()) {
+      const fetched = await fetchNaverOtpCode({
+        user: credentials.id,
+        appPassword: mail.appPassword,
+        sinceMs: Date.now() - 10_000,
+      });
+      if (fetched?.ok && fetched.code && !loginWindow.isDestroyed()) {
+        loginWindow.show();
+        const atPoint = async ({ x, y }) => {
+          loginWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
+          loginWindow.webContents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+          loginWindow.webContents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+          await wait(120);
+        };
+        await atPoint(otpPage.otp);
+        await loginWindow.webContents.insertText(String(fetched.code));
+        await wait(120);
+        await atPoint(otpPage.submit);
+        const otpDeadline = Date.now() + 20_000;
+        while (Date.now() < otpDeadline && !loginWindow.isDestroyed()) {
+          if (await hasUsableNaverLoginSession()) return { ok: true, submitted: true, otpAutofilled: true };
+          await wait(500);
+        }
+      }
+    }
+  } catch {
+    // OTP automation failure keeps the manual verification path below.
   }
   // CAPTCHA, device confirmation and two-step verification must remain visible
   // for the user. Do not resubmit credentials while one of those pages is open.
@@ -13451,6 +13506,11 @@ async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, c
     // Directory creation failure surfaces as a launch failure below.
   }
   onProgress({ completed: index, total, phase: "authentication", source: source.name });
+  // Naver email verification hook: with a saved mail app password the
+  // newest verification code is filled exactly once per login run.
+  const mailOtp = method === "naver" ? naverMailOtpCredentials() : { appPassword: "", code: "NAVER_MAIL_APP_PASSWORD_REQUIRED" };
+  const otpLoginId = method === "naver" && providerCredentials?.loginId ? providerCredentials.loginId : "";
+  const otpSinceMs = Date.now();
   const heartbeat = ({ tick } = {}) => {
     // Every heartbeat is novel so the 4-minute search watchdog treats the
     // visible login wait as live progress instead of a stall.
@@ -13478,6 +13538,15 @@ async function attemptExternalRetailerLogin(sourceId, { onProgress = () => {}, c
     },
     onProgress: heartbeat,
     detectControlsScript: captureShoppingLoginPage.toString(),
+    otpInputScript: method === "naver" ? NAVER_OTP_INPUT_SCRIPT : null,
+    fetchOtpCode: !mailOtp.code && otpLoginId ? async () => {
+      const fetched = await fetchNaverOtpCode({
+        user: otpLoginId,
+        appPassword: mailOtp.appPassword,
+        sinceMs: otpSinceMs,
+      }).catch(() => null);
+      return fetched?.ok ? String(fetched.code || "") : "";
+    } : null,
     autoTimeoutMs,
     manualTimeoutMs,
     deps: {
@@ -13854,6 +13923,7 @@ app.whenReady().then(async () => {
     if (config.accessToken) next.accessTokenEncrypted = encrypted(config.accessToken);
     if (config.poizonPassword) next.poizonPasswordEncrypted = encrypted(config.poizonPassword);
     if (config.naverPassword) next.naverPasswordEncrypted = encrypted(config.naverPassword);
+    if (config.naverMailAppPassword) next.naverMailAppPasswordEncrypted = encrypted(config.naverMailAppPassword);
     if (config.nikePassword) next.nikePasswordEncrypted = encrypted(config.nikePassword);
     if (config.adidasPassword) next.adidasPasswordEncrypted = encrypted(config.adidasPassword);
     if (typeof config.ledgerWebhookUrl === "string") next.ledgerWebhookUrl = config.ledgerWebhookUrl.trim();
