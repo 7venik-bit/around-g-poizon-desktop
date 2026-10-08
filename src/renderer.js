@@ -612,6 +612,24 @@ function originalExcelColumns(products = []) {
   return [...columns.values()];
 }
 
+// POIZON highest figure for display: same metric the representative rows
+// are selected with, so the shown row always carries its highest price.
+function poizonHighestPrice(product = {}) {
+  const api = typeof globalThis !== "undefined" ? globalThis.AroundGArticleRepresentative : null;
+  try {
+    const amount = api?.articleRowPrice?.(product);
+    if (Number.isFinite(amount) && amount > 0) return amount;
+  } catch {
+    // Fall through to the plain average below.
+  }
+  return Number(product?.averagePrice || 0);
+}
+
+// Product display name in the original-rows list (workbook title first).
+function originalRowDisplayName(product = {}) {
+  return String(product?.originalValues?.title ?? product?.title ?? product?.articleNumber ?? "");
+}
+
 function articleRepresentativePlan(entries = []) {
   const api = typeof globalThis !== "undefined" ? globalThis.AroundGArticleRepresentative : null;
   if (!api || typeof api.selectArticlePriceRepresentatives !== "function") return null;
@@ -665,10 +683,18 @@ function renderOriginalExcelRows(file, products = []) {
     if (representative.length) shownKeys = representative;
   }
   const shownKeySet = new Set(shownKeys);
+  // Display in product-name order so the list reads like a catalog instead
+  // of workbook row order. Keys and representative mapping stay by original
+  // index; only the presentation order changes.
+  const displayOrder = products
+    .map((_, index) => index)
+    .filter((index) => shownKeySet.has(keys[index]))
+    .sort((left, right) => originalRowDisplayName(products[left])
+      .localeCompare(originalRowDisplayName(products[right]), "ko"));
   $("#excel-preview-columns").innerHTML = '<tr><th>선택</th><th>이미지</th><th>상품번호 · SPU</th><th>상품명 · 원본 정보</th><th>브랜드</th><th>상품 최근 30일 평균 거래가</th><th>'
     + text(salesLabels.china) + '</th><th>' + text(salesLabels.local) + '</th><th>검증</th><th>상품 검색 결과</th></tr>';
-  $("#excel-preview-rows").innerHTML = products.length ? products.flatMap((p, i) => {
-    if (!shownKeySet.has(keys[i])) return [];
+  $("#excel-preview-rows").innerHTML = products.length ? displayOrder.flatMap((i) => {
+    const p = products[i];
     const key = keys[i];
     excelPreviewProductCache.set(key, p);
     const source = p.originalValues || {};
@@ -685,10 +711,11 @@ function renderOriginalExcelRows(file, products = []) {
           : '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '">' + resultLabel + '</button>')
       + (globalThis.AroundGPoizonProductView?.button(p) || '') + '</td>';
     const sourceLabel = (p._sourceBrandName || '') + ' · 원본 ' + p.sourceRowNumber + '행';
+    const highest = poizonHighestPrice(p);
     return ['<tr class="excel-product-row excel-source-row" data-source-row="' + text(p.sourceRowNumber) + '"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(key) + '" aria-label="원본 행 선택"></td>'
       + '<td class="excel-verified-image-cell">' + image + '</td><td><b>' + text(source.articleNumber ?? p.articleNumber) + '</b><small> SPU ' + text(source.spuId ?? p.spuId) + '</small></td>'
       + '<td class="excel-source-product"><div class="excel-source-title" title="' + text(source.title ?? p.title) + '">' + text(source.title ?? p.title) + '</div><details class="excel-source-details"><summary title="' + text(sourceLabel) + '">원본 ' + text(p.sourceRowNumber) + '행 정보</summary><div class="excel-source-fields">' + originalDetails + '</div></details></td>'
-      + '<td>' + text(source.brand ?? p.brandName) + '</td><td class="excel-source-price">' + text(source.averagePrice ?? '') + '</td>'
+      + '<td>' + text(source.brand ?? p.brandName) + '</td><td class="excel-source-price">' + (highest > 0 ? money(highest) : text(source.averagePrice ?? '')) + '</td>'
       + '<td class="excel-source-china">' + text(source.totalSales ?? p.totalSalesRaw) + '</td><td class="excel-source-local">' + text(source.localTotalSales ?? p.localTotalSalesRaw) + '</td><td>' + text(p.verificationStatus || '') + '</td>'
       + resultCell + '</tr>'
       + (result && !result.loading ? '<tr class="excel-product-search-detail excel-verified-search-detail"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>' + text(p.title || p.articleNumber || '상품') + '</strong> 국내 검색 결과</div>' + renderDomestic(result, p, key) + '</td></tr>' : '')];

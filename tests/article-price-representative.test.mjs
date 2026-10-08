@@ -61,6 +61,17 @@ test("raw workbook price text is parsed when the numeric price is missing", () =
   assert.equal(api.articleRowPrice({}), 0);
 });
 
+test("explicit highest and lowest fields join the price decision", () => {
+  assert.equal(api.articleRowPrice({ averagePrice: 80000, highestPrice: 101000 }), 101000);
+  assert.equal(api.articleRowPrice({ averagePrice: 80000, minPrice: { value: 75000 } }), 80000);
+  assert.equal(api.articleRowPrice({ highestPrice: 99000 }), 99000);
+  const r = plain(api.selectArticlePriceRepresentatives([
+    { key: "k1", product: { articleNumber: "DD1503-101", brandName: "나이키", averagePrice: 101000 } },
+    { key: "k2", product: { articleNumber: "DD1503-101", brandName: "나이키", averagePrice: 75000, highestPrice: 120000 } },
+  ]));
+  assert.deepEqual(r.representativeKeys, ["k2"]);
+});
+
 test("renderer wires representative filtering into row and bulk search", async () => {
   const { readFile } = await import("node:fs/promises");
   const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
