@@ -61,14 +61,31 @@ test("lotte collection snapshots the real filter menu when the label misses", ()
   assert.match(main, /EXTERNAL_FACET_LABELS_SCRIPT,\n/);
   const blockStart = main.indexOf("let lotteAvailableFacets = [];");
   assert.ok(blockStart >= 0, "available facets variable missing");
-  const block = main.slice(blockStart, blockStart + 2500);
+  const block = main.slice(blockStart, blockStart + 5000);
   assert.match(block, /if \(Array\.isArray\(lotteMissingLabels\) && lotteMissingLabels\.length\)/);
   assert.match(block, /facetPage\.evaluate\(EXTERNAL_FACET_LABELS_SCRIPT\)/);
   assert.match(block, /\.slice\(0, 20\)/);
   assert.match(main, /availableFacets: \[\.\.\.lotteAvailableFacets\]/);
 });
 
+test("lotte retries a missed seller check after the grid settles", () => {
+  const blockStart = main.indexOf("let lotteFacetRetried = false;");
+  assert.ok(blockStart >= 0, "facet retry flag missing");
+  const block = main.slice(blockStart, blockStart + 3500);
+  // One bounded retry only: settle the grid, re-check the same labels, and
+  // adopt the second outcome. Collection never waits on filters.
+  assert.match(block, /await waitForDomesticCaptureReady\(searchWindow, 15_000\)/);
+  assert.match(block, /lotteFacetRetried = true/);
+  assert.match(block, /const retry = await checkSearchFacets\(\{/);
+  assert.match(block, /labels: retailerFacetLabels\("lotte", brand\)/);
+  assert.match(block, /if \(Array\.isArray\(retry\.missing\)\) lotteMissingLabels = \[\.\.\.retry\.missing\]/);
+  assert.match(main, /availableFacets: \[\.\.\.lotteAvailableFacets\]/);
+  assert.match(main, /facetRetried: lotteFacetRetried/);
+});
+
 test("diagnostics show the real filter menu for empty lotte rows", () => {
   assert.match(inline, /판매처 필터 목록/);
   assert.match(inline, /d\.lotteCollectionEvidence\?\.availableFacets/);
+  assert.match(inline, /판매처 재확인/);
+  assert.match(inline, /d\.lotteCollectionEvidence\?\.facetRetried === true/);
 });
