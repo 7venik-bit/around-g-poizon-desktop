@@ -3009,6 +3009,11 @@ async function loadDomesticRetailerResultPage(searchWindow, targetUrl) {
     stage: "retailer_result_navigation", targetUrl, inspectedFrames: 0, inspectionError: "", navigationError: "",
   };
   void searchWindow.loadURL(targetUrl).catch((error) => { diagnostic.navigationError = String(error?.message || error); });
+  // An "empty" phrase during load is not a verdict: SPA sections render at
+  // different times and help text can carry the same wording. Accept the
+  // empty result only after it persists with zero cards on a complete
+  // document; a single transient match keeps polling for real cards.
+  let emptyStreak = 0;
   for (let attempt = 0; attempt < 60; attempt++) {
     if (searchWindow.isDestroyed()) return {ok: false, verificationReason: "search_canceled"};
     const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
@@ -3027,6 +3032,13 @@ async function loadDomesticRetailerResultPage(searchWindow, targetUrl) {
       expectedPage: state.expectedPage, explicitEmpty: state.explicitEmpty });
     const access = domesticPageAccessState(state?.text, state?.cards, state || {});
     if (access.verificationReason) return {ok: false, ...access, resolvedUrl: state?.href};
+    const settledEmpty = Boolean(state?.explicitEmpty) && Number(state?.cards || 0) === 0
+      && String(state?.documentReadyState || "") === "complete";
+    emptyStreak = settledEmpty ? emptyStreak + 1 : 0;
+    if (state) {
+      state.explicitEmpty = Boolean(state.explicitEmpty) && emptyStreak >= 3;
+      state.ready = Boolean(state.ready) && (Number(state.cards || 0) > 0 || emptyStreak >= 3);
+    }
     if (state?.ready) return {ok: true, resolvedUrl: state.href, explicitEmpty: state.explicitEmpty};
     await wait(500);
   }
@@ -3210,9 +3222,22 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         // An empty-result message on the exact submitted SSG/LotteON URL is an
         // authoritative completed result. Do not send it into card capture,
         // where the expected zero links previously expired as collection_stalled.
+        // The verdict keeps working, but the row names this path instead of
+        // staying silent: reason, stage, and zero counts travel with it.
         if (loaded.explicitEmpty) return {
           count: 0, products: [], absenceConfirmed: true, searchCompleted: true,
           searchSubmitted: true, resolvedSearchUrl: loaded.resolvedUrl,
+          verificationReason: "retailer_explicit_empty",
+          verificationStage: "retailer_result_navigation",
+          verificationDiagnostics: {
+            stage: "retailer_result_navigation",
+            reason: "retailer_explicit_empty",
+            resolvedUrl: loaded.resolvedUrl,
+            targetUrl: initialUrl,
+            productCardCount: 0,
+            visibleResultCount: 0,
+            explicitEmptyText: true,
+          },
         };
       }
       if (musinsaSource) {
