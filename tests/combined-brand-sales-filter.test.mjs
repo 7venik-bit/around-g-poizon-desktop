@@ -329,7 +329,7 @@ test('existing and newly downloaded brands always use the same ten product colum
     assert.equal(h.nodes.get('#excel-preview-grid').scrollLeft,0);
     if (index) {
       assert.equal(document.querySelector('.excel-verified-image').getAttribute('src'),index===1?'https://example.test/new.jpg':'https://example.test/other.jpg');
-      assert.equal(document.querySelector('.excel-source-price').textContent,index===1?'115000':'0', 'price cell shows the numeric POIZON highest figure');
+      assert.equal(document.querySelector('.excel-source-price').textContent,index===1?'KRW115,000':'0', 'price cell keeps the exact workbook text unless a higher figure is found');
       assert.equal(document.querySelector('.excel-source-local').textContent,index===1?'30':'26');
     }
   }

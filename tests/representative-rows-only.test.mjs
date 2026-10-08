@@ -25,11 +25,13 @@ test("hidden size rows leave the list but stay in the workbook", () => {
 });
 
 test("original rows display in product-name order", () => {
-  assert.match(originalRows, /originalRowDisplayName/);
-  assert.match(originalRows, /localeCompare\(originalRowDisplayName\(products\[right\]\), "ko"\)/);
+  assert.match(originalRows, /rowDisplayName/);
+  assert.match(originalRows, /localeCompare\(rowDisplayName\(products\[right\]\), "ko"\)/);
 });
 
 test("original rows show the POIZON highest figure", () => {
-  assert.match(originalRows, /poizonHighestPrice/);
+  assert.match(originalRows, /articleRowPrice\?\.\(p\)/);
+  assert.match(originalRows, /showsComputedHighest/);
   assert.match(originalRows, /money\(highest\)/);
+  assert.match(originalRows, /text\(source\.averagePrice \?\? ''\)/, "exact workbook text stays when nothing higher is found");
 });
