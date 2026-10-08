@@ -160,12 +160,24 @@ export async function acquireLoginTab({
   loginUrl = "",
   knownTabs = {},
   tabKey = "",
+  // Merchant registrable domains (["ssg.com"]): the login entry may bounce
+  // to another host of the same merchant (member.ssg.com → www.ssg.com).
+  // Same-organization hosts are accepted; anything else never matches.
+  allowedHostSuffixes = [],
   navigateTimeoutMs = 15000,
   sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   canceled = () => false,
 } = {}) {
   const expectedHost = tabHost(loginUrl);
   if (!expectedHost) throw new Error("LOGIN_PAGE_UNREADABLE");
+  const suffixes = [...new Set((Array.isArray(allowedHostSuffixes) ? allowedHostSuffixes : [])
+    .map((domain) => String(domain || "").toLowerCase().replace(/^\./, "")).filter(Boolean))];
+  const hostAccepted = (url = "") => {
+    const host = tabHost(url);
+    if (!host) return false;
+    if (host === expectedHost) return true;
+    return suffixes.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+  };
   let targets = [];
   try {
     targets = await listPageTargets({ fetchImpl, port });
@@ -174,8 +186,8 @@ export async function acquireLoginTab({
   }
   const knownId = tabKey && knownTabs ? knownTabs[tabKey] : "";
   let tab = (knownId && targets.find((entry) => entry.id === knownId && entry.webSocketDebuggerUrl))
-    || findRetailerTab(targets, loginUrl)
-    || null;
+    || (Array.isArray(targets) ? targets : []).find((entry) => entry?.id
+      && entry?.webSocketDebuggerUrl && hostAccepted(entry.url)) || null;
   const reused = Boolean(tab);
   const client = () => createCdpPageClient({ fetchImpl, WebSocketImpl, port, targetId: tab?.id || null });
   try {
@@ -193,15 +205,25 @@ export async function acquireLoginTab({
   }
   const id = tab.id;
   const deadline = Date.now() + Math.max(3000, Number(navigateTimeoutMs) || 15000);
+  const failWithUrl = (code) => {
+    const error = new Error(code);
+    try {
+      const current = (Array.isArray(targets) ? targets : []).find((entry) => entry.id === id);
+      if (current?.url) error.observedUrl = String(current.url);
+    } catch {
+      // The failing code is the contract; the URL is best-effort evidence.
+    }
+    throw error;
+  };
   while (Date.now() < deadline) {
-    if (canceled()) throw new Error("LOGIN_CANCELED");
+    if (canceled()) failWithUrl("LOGIN_CANCELED");
     try {
       targets = await listPageTargets({ fetchImpl, port });
     } catch {
       targets = [];
     }
     const current = targets.find((entry) => entry.id === id);
-    if (current && tabHost(current.url) === expectedHost) return { targetId: id };
+    if (current && hostAccepted(current.url)) return { targetId: id };
     await sleepImpl(1000);
   }
   // Never litter blank tabs: remove the tab this call created so the next
@@ -213,7 +235,7 @@ export async function acquireLoginTab({
       // Cleanup failure must not hide the navigation outcome.
     }
   }
-  throw new Error("LOGIN_PAGE_UNREADABLE");
+  failWithUrl("LOGIN_PAGE_UNREADABLE");
 }
 
 // A port answers /json/version only while a debugging Chrome owns it.
@@ -1427,6 +1449,7 @@ export async function startExternalRetailerLogin({
         loginUrl,
         knownTabs: shared?.tabs,
         tabKey,
+        allowedHostSuffixes: merchantDomains,
         sleepImpl,
         canceled,
       });
@@ -1438,9 +1461,11 @@ export async function startExternalRetailerLogin({
       }
     } catch (error) {
       const code = String(error?.message || "");
-      if (code === "LOGIN_CANCELED") return externalLoginFailure("LOGIN_CANCELED");
-      if (code === "LOGIN_PAGE_UNREADABLE") return externalLoginFailure("LOGIN_PAGE_UNREADABLE");
-      return externalLoginFailure("CDP_UNREACHABLE");
+      const observedUrl = String(error?.observedUrl || "");
+      const withUrl = (failure) => (observedUrl ? { ...failure, observedUrl } : failure);
+      if (code === "LOGIN_CANCELED") return withUrl(externalLoginFailure("LOGIN_CANCELED"));
+      if (code === "LOGIN_PAGE_UNREADABLE") return withUrl(externalLoginFailure("LOGIN_PAGE_UNREADABLE"));
+      return withUrl(externalLoginFailure("CDP_UNREACHABLE"));
     }
     const automatic = (method === "password" && credentials?.loginId && credentials?.password)
       || ((method === "naver" || method === "kakao") && providerCredentials?.loginId && providerCredentials?.password);

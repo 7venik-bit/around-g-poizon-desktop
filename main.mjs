@@ -13580,7 +13580,11 @@ async function openRetailerLoginForSearch(sourceId, { onProgress = () => {}, ind
   if (attempt.ok) return { ok: true, opened: true, external: true, automatic: { ok: true, external: true } };
   // Without Chrome or a CDP channel the shared in-app window path below runs.
   if (attempt.fallbackInApp) return { ok: false, fallbackInApp: true };
-  return { ok: false, opened: false, external: true, automatic: { ok: false, code: attempt.code }, message: attempt.message };
+  // A tab that never reached the login host names where it actually landed,
+  // so the next run can tell a redirect from a dead tab.
+  const observed = String(attempt?.observedUrl || "").trim();
+  const message = `${attempt.message || ""}${observed ? ` (마지막 화면: ${observed})` : ""}`.trim();
+  return { ok: false, opened: false, external: true, automatic: { ok: false, code: attempt.code }, message };
 }
 
 async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress = () => {}, loginScopeId = "") {
