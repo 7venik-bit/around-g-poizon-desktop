@@ -4227,12 +4227,18 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           `${card?.title || ""} ${card?.text || ""} ${String(card?.markup || "")}`)).length : 0;
       // No department filter menu means the result set holds no department
       // goods: whatever rendered is marketplace/parallel-import stock, which
-      // this collection never buys. With goods demonstrably rendered and no
-      // candidate surviving, mark an authoritative absence instead of leaving
-      // the row pending review.
+      // this collection never buys. But a missed checkbox alone proves
+      // nothing: the panel may have rendered late or under a renamed label.
+      // Confirm the absence only with corroboration, otherwise leave the row
+      // pending review with the evidence above instead of a false absence.
       const lotteMenuMissing = lotteMissingLabels.includes("롯데백화점");
       const lotteRenderedGoods = renderedCards > 0 || Number(lotteServerEvidence?.items || 0) > 0;
-      const lotteNoDepartmentGoods = lotteMenuMissing && candidateCount === 0 && lotteRenderedGoods;
+      const lotteMenuGenuinelyMissing = lotteMenuMissing
+        && lotteAvailableFacets.length > 0
+        && !lotteAvailableFacets.some((label) => /백화점/i.test(label));
+      const lotteNoDepartmentWord = badgeWordCards === 0;
+      const lotteNoDepartmentGoods = lotteMenuGenuinelyMissing && candidateCount === 0
+        && lotteRenderedGoods && lotteNoDepartmentWord;
       if (lotteNoDepartmentGoods) {
         analyzed.absenceConfirmed = true;
         analyzed.detailVerificationPending = false;
