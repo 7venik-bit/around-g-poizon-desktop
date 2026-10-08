@@ -84,16 +84,6 @@
       .domestic-inline-diagnostics{margin:6px 0!important;font-size:12px!important;color:#334155!important;white-space:normal!important}
       .domestic-inline-diagnostics summary{cursor:pointer!important;font-weight:700!important}
       .domestic-inline-diagnostics pre{margin:8px 0!important;padding:10px!important;background:#f1f5f9!important;white-space:pre-wrap!important;overflow-wrap:anywhere!important;font:inherit!important;user-select:text!important}
-      .domestic-inline-steps{display:flex!important;flex-wrap:wrap!important;align-items:center!important;gap:4px!important;margin:4px 0 2px!important}
-      .domestic-inline-step{display:inline-flex!important;align-items:center!important;gap:4px!important;padding:2px 7px!important;border:1px solid #dfe5ec!important;border-radius:999px!important;background:#f8fafc!important;color:#64748b!important;font-size:10px!important;font-weight:700!important;white-space:nowrap!important}
-      .domestic-inline-step::before{content:""!important;width:6px!important;height:6px!important;border-radius:50%!important;background:#cbd5e1!important}
-      .domestic-inline-step-done{border-color:#b9dfd1!important;background:#f1faf6!important;color:#16735a!important}
-      .domestic-inline-step-done::before{background:#16a34a!important}
-      .domestic-inline-step-active{border-color:#9cc5ff!important;background:#f3f8ff!important;color:#1769c2!important}
-      .domestic-inline-step-active::before{background:#2d91df!important}
-      .domestic-inline-step-blocked{border-color:#f3c1c1!important;background:#fef2f2!important;color:#b42318!important}
-      .domestic-inline-step-blocked::before{background:#dc2626!important}
-      .domestic-inline-step-sep{color:#cbd5e1!important;font-size:10px!important}
 
       /* Explorer/popular views also use the same compact rows without thumbnails. */
       .domestic-source-list.sourcing-product-list{display:flex!important;flex-direction:column!important;gap:0!important;border:0!important;border-radius:0!important;overflow:visible!important;background:transparent!important;box-shadow:none!important}
@@ -427,12 +417,6 @@
     return [...groups].map(([color, options]) => ({product:{...product, sizes:options}, color}));
   }
 
-  function renderStepStrip(steps) {
-    if (!Array.isArray(steps) || !steps.length) return "";
-    return `<div class="domestic-inline-steps" role="list" aria-label="검색 단계 진행">${steps.map((step, index) =>
-      `${index ? '<span class="domestic-inline-step-sep" aria-hidden="true">›</span>' : ""}<span role="listitem" class="domestic-inline-step domestic-inline-step-${step.state}" title="${safeText(step.label)}">${safeText(step.label)}</span>`).join("")}</div>`;
-  }
-
   function inlineRenderDomestic(result, sourceProduct = {}, contextKey = "") {
     if (!result) return `<div class="domestic-inline-empty">국내 상품 검색 전</div>`;
     if (result.loading) return `<div class="domestic-inline-empty">국내 판매처 검색 중…</div>`;
@@ -466,11 +450,9 @@
       </div>`));
     }
     const rows = [...retailerGroups.values()].map(({retailer, official, source, products: groupProducts, rows: productRows}) => {
-      const steps = globalThis.AroundGDomesticVerdict?.searchStepProgress
-        ? globalThis.AroundGDomesticVerdict.searchStepProgress(source || {}, groupProducts || []) : [];
       return `<div class="domestic-inline-retailer-group" role="group" aria-label="${safeText(retailer)}">
         <div class="domestic-inline-store domestic-inline-retailer-label" title="${safeText(retailer)}"><span>${safeText(retailer)}</span>${official ? `<span class="domestic-inline-official">공식</span>` : ""}</div>
-        <div class="domestic-inline-retailer-rows">${productRows.join("")}${renderStepStrip(steps)}</div>
+        <div class="domestic-inline-retailer-rows">${productRows.join("")}</div>
       </div>`;
     });
 
@@ -501,9 +483,6 @@
       const naverPriceAction = store === "네이버 패션타운" && contextKey && !source?.rateLimited && !source?.loginRequired && !source?.securityVerificationRequired
         ? `<button type="button" class="domestic-inline-price-fetch" data-inline-naver-price="${encodeURIComponent(contextKey)}">가격 가져오기</button>`
         : "-";
-      const steps = globalThis.AroundGDomesticVerdict?.searchStepProgress
-        ? globalThis.AroundGDomesticVerdict.searchStepProgress(source, []) : [];
-      const stepStrip = renderStepStrip(steps);
       const filterStatus = filterStatusText(source);
       rows.push(`<div class="domestic-inline-row domestic-inline-fallback">
         <div class="domestic-inline-store" title="${safeText(store)}">${safeText(store)}</div>
@@ -512,7 +491,7 @@
         <div class="domestic-inline-code">${safeText(source?.searchQuery || sourceProduct?.articleNumber || "-")}</div>
         <div class="domestic-inline-price">${naverPriceAction}</div>
         <div>${sourceAction(source, {}, sourceProduct, contextKey)}</div>
-      </div>${stepStrip}`);
+      </div>`);
     }
 
     const checkedAt = result.recovery?.checkedAt;
