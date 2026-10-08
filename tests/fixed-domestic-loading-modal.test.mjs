@@ -54,6 +54,22 @@ test("modal keeps the approved progress information hierarchy", () => {
   assert.match(overlayCss, /\.domestic-overlay-stop/);
 });
 
+test("progress modal shows live per-platform chips with brand colors", () => {
+  assert.match(renderer, /<div class="domestic-overlay-platforms" aria-label="판매처별 진행 상태" hidden><\/div>/);
+  assert.match(renderer, /const domesticOverlayPlatforms = new Map\(\)/);
+  assert.match(renderer, /function domesticOverlayPlatformMeta\(source/);
+  assert.match(renderer, /\{\s*label: "네이버", platform: "naver" \}/);
+  assert.match(renderer, /\{\s*label: "롯데온", platform: "lotte" \}/);
+  assert.match(renderer, /function domesticOverlayPhaseState\(phase/);
+  assert.match(renderer, /domesticOverlayPlatforms\.set\(String\(payload\.source\), String\(payload\.phase \|\| "done"\)\)/);
+  assert.match(renderer, /renderDomesticOverlayPlatforms\(\);/);
+  assert.match(overlayCss, /\.domestic-overlay-platforms/);
+  assert.match(overlayCss, /\.domestic-overlay-platform\.plat-naver/);
+  assert.match(overlayCss, /\.domestic-overlay-platform\.plat-lotte/);
+  assert.match(overlayCss, /\.plat-dot\.st-run/);
+  assert.match(overlayCss, /\.plat-dot\.st-done/);
+});
+
 test("progress modal uses the red brand point with a color bar", () => {
   assert.match(overlayCss, /\.domestic-search-overlay-card::before/);
   assert.match(overlayCss, /linear-gradient\(90deg, #e8380d/);

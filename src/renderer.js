@@ -1506,8 +1506,43 @@ function stopExcelPreviewSearch() {
   updateExcelPreviewSelectionUi(excelPreviewPageKeys);
 }
 
+// Live per-platform chips in the progress modal: platform colors stay fixed
+// while the dot follows the latest progress phase for that platform.
+const domesticOverlayPlatforms = new Map();
+function domesticOverlayPlatformMeta(source = "") {
+  const name = String(source || "").trim();
+  if (/^네이버/.test(name)) return { label: "네이버", platform: "naver" };
+  if (/무신사/.test(name)) return { label: "무신사", platform: "musinsa" };
+  if (/^SSG/.test(name)) return { label: "SSG", platform: "ssg" };
+  if (/^롯데온/.test(name)) return { label: "롯데온", platform: "lotte" };
+  if (/공식몰|브랜드/.test(name)) return { label: "공식몰", platform: "mall" };
+  return { label: name.slice(0, 12) || "판매처", platform: "other" };
+}
+function domesticOverlayPhaseState(phase = "") {
+  if (phase === "searching") return "run";
+  if (phase === "authentication") return "auth";
+  if (phase === "checkpoint") return "done";
+  return "done";
+}
+function renderDomesticOverlayPlatforms() {
+  const overlay = typeof document !== "undefined" ? document.querySelector("#domestic-search-overlay") : null;
+  const box = overlay?.querySelector(".domestic-overlay-platforms");
+  if (!box) return;
+  const entries = [...domesticOverlayPlatforms.entries()].slice(0, 8);
+  const safeLabel = typeof text === "function" ? text : (value) => String(value ?? "");
+  box.innerHTML = entries.map(([source, phase]) => {
+    const meta = domesticOverlayPlatformMeta(source);
+    return `<span class="domestic-overlay-platform plat-${meta.platform}">`
+      + `<span class="plat-dot st-${domesticOverlayPhaseState(phase)}"></span>${safeLabel(meta.label)}</span>`;
+  }).join("");
+  box.hidden = entries.length === 0;
+}
+
 function showDomesticSearchOverlay(startedAt, completedCount, totalCount, currentProduct = null) {
   let overlay = $("#domestic-search-overlay");
+  // Per-platform live chips restart with every overlay render; progress
+  // events refill them below without rebuilding the modal.
+  domesticOverlayPlatforms.clear();
   if (!overlay) {
     overlay = document.createElement("div");
     overlay.id = "domestic-search-overlay";
@@ -1529,6 +1564,7 @@ function showDomesticSearchOverlay(startedAt, completedCount, totalCount, curren
     <progress class="domestic-overlay-progress" max="100" value="${percent}" aria-label="상품 검색 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}">${percent}%</progress>
     <p class="domestic-overlay-current">${article ? `현재 상품번호 · <b>${text(article)}</b>` : "검색 준비 중입니다."}</p>
     <p class="domestic-overlay-guide">수달 사원이 상품을 확인하고 있습니다. 완료될 때까지 잠시 기다려 주세요.</p>
+    <div class="domestic-overlay-platforms" aria-label="판매처별 진행 상태" hidden></div>
     <button type="button" class="domestic-overlay-stop">검색 중지</button>
   </div>`;
   overlay.querySelector(".domestic-overlay-stop")?.addEventListener("click", () => {
@@ -1564,6 +1600,13 @@ window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
   // they cannot replace the real batch count with a misleading 0/1 stage.
   const guide = overlay.querySelector(".domestic-overlay-guide");
   if (payload.phase === "searching") overlay.dataset.currentActivity = String(payload.source || "판매처");
+  // Live platform chips: each progress event refreshes that platform's dot
+  // without rebuilding the modal. Generic preparation messages are skipped;
+  // any other phase (including completion notices) settles the dot.
+  if (payload.source && !/검색 준비/.test(String(payload.source))) {
+    domesticOverlayPlatforms.set(String(payload.source), String(payload.phase || "done"));
+    renderDomesticOverlayPlatforms();
+  }
   if (guide) guide.textContent = payload.phase === "checkpoint"
     ? `${overlay.dataset.currentActivity ? `${overlay.dataset.currentActivity} · ` : ""}확인된 결과를 보관했습니다.`
     : payload.phase === "searching"

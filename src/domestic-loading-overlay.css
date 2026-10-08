@@ -245,6 +245,55 @@ body:has(> .domestic-search-overlay:not([hidden])) {
   line-height: 1.45;
 }
 
+/* Live per-platform chips: fixed brand colors, state dots only. */
+.domestic-overlay-platforms {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  justify-content: center !important;
+  max-width: 440px !important;
+  margin: 2px 0 6px !important;
+  padding: 0 !important;
+}
+
+.domestic-overlay-platforms[hidden] {
+  display: none !important;
+}
+
+.domestic-overlay-platform {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  max-width: 150px !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+  border: 1px solid #dadce0 !important;
+  border-radius: 999px !important;
+  padding: 4px 12px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  background: #fff !important;
+}
+
+.domestic-overlay-platform .plat-dot {
+  flex: 0 0 auto !important;
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+}
+
+.domestic-overlay-platform .plat-dot.st-run { background: #1a73e8 !important; }
+.domestic-overlay-platform .plat-dot.st-auth { background: #ff9d00 !important; }
+.domestic-overlay-platform .plat-dot.st-done { background: #34a853 !important; }
+
+.domestic-overlay-platform.plat-naver { border-color: #03c75a !important; color: #03c75a !important; }
+.domestic-overlay-platform.plat-musinsa { border-color: #212121 !important; color: #212121 !important; }
+.domestic-overlay-platform.plat-ssg { border-color: #ee3e3e !important; color: #ee3e3e !important; }
+.domestic-overlay-platform.plat-lotte { border-color: #ed1c24 !important; color: #ed1c24 !important; }
+.domestic-overlay-platform.plat-mall { border-color: #7b1fa2 !important; color: #7b1fa2 !important; }
+.domestic-overlay-platform.plat-other { border-color: #dadce0 !important; color: #5f6368 !important; }
+
 .domestic-overlay-stop {
   min-width: 180px !important;
   min-height: 44px !important;
