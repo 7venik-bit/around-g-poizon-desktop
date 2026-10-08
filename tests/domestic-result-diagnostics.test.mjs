@@ -56,7 +56,7 @@ test('lotte server evidence opens diagnostics even without a failure reason', t 
   assert.match(details.textContent, /서버 검색 상품 수: 4/);
 });
 
-test('fallback rows show the six-stage pipeline progress', t => {
+test('fallback rows render without the pipeline progress strip', t => {
   const f = renderer(t);
   f.window.eval(readFileSync(join(root, 'src/domestic-result-verdict.js'), 'utf8'));
   const body = f.render({products: [], sources: [
@@ -65,17 +65,11 @@ test('fallback rows show the six-stage pipeline progress', t => {
     {store: 'SSG', searchSubmitted: true, searchCompleted: true, identityRejectedCount: 2,
       searchQuery: 'DD1503-101', searchUrl: 'https://www.ssg.com/search.ssg?query=DD1503-101'},
   ]});
-  const strips = [...body.querySelectorAll('.domestic-inline-steps')];
-  assert.equal(strips.length, 2);
-  assert.deepEqual([...strips[0].querySelectorAll('.domestic-inline-step')].map((step) => step.textContent),
-    ['로그인', '상품검색', '로고확인', '상품인식', '재고확인', '데이터']);
-  assert.ok(strips[0].querySelector('.domestic-inline-step-done'));
-  const mismatchStates = [...strips[1].querySelectorAll('.domestic-inline-step')].map((step) =>
-    step.className.match(/domestic-inline-step-(\w+)/)[1]);
-  assert.deepEqual(mismatchStates, ['done', 'done', 'pending', 'blocked', 'pending', 'pending']);
+  assert.deepEqual([...body.querySelectorAll('.domestic-inline-steps')], []);
+  assert.ok(body.textContent.includes('롯데온'));
 });
 
-test('retailer groups with products show the same six-stage progress', t => {
+test('retailer groups with products render without the pipeline progress strip', t => {
   const f = renderer(t);
   f.window.eval(readFileSync(join(root, 'src/domestic-result-verdict.js'), 'utf8'));
   const body = f.render({products: [{
@@ -90,13 +84,8 @@ test('retailer groups with products show the same six-stage progress', t => {
   }]});
   const group = body.querySelector('.domestic-inline-retailer-group');
   assert.ok(group);
-  const strip = group.querySelector('.domestic-inline-steps');
-  assert.ok(strip);
-  assert.deepEqual([...strip.querySelectorAll('.domestic-inline-step')].map((step) => step.textContent),
-    ['로그인', '상품검색', '로고확인', '상품인식', '재고확인', '데이터']);
-  const states = [...strip.querySelectorAll('.domestic-inline-step')].map((step) =>
-    step.className.match(/domestic-inline-step-(\w+)/)[1]);
-  assert.deepEqual(states, ['done', 'done', 'done', 'done', 'done', 'done']);
+  assert.equal(group.querySelector('.domestic-inline-steps'), null);
+  assert.ok(group.textContent.includes('JI0079'));
 });
 
 test('diagnostics stay available alongside partial products without exposing whole pages or tokens', t => {
