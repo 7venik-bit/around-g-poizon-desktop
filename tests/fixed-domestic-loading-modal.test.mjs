@@ -53,6 +53,15 @@ test("modal keeps the approved progress information hierarchy", () => {
   assert.match(overlayCss, /\.domestic-overlay-stop/);
 });
 
+test("progress modal narrates live activity like an assistant", () => {
+  assert.match(renderer, /<div class="domestic-overlay-activity" aria-live="polite" hidden><\/div>/);
+  assert.match(renderer, /const domesticOverlayActivity = \[\]/);
+  assert.match(renderer, /function pushDomesticOverlayActivity\(payload/);
+  assert.match(renderer, /while \(domesticOverlayActivity\.length > 6\) domesticOverlayActivity\.shift\(\);/);
+  assert.match(renderer, /pushDomesticOverlayActivity\(payload\);/);
+  assert.match(overlayCss, /\.domestic-overlay-activity-line/);
+});
+
 test("progress modal shows live per-platform chips with brand colors", () => {
   assert.match(renderer, /<div class="domestic-overlay-platforms" aria-label="판매처별 진행 상태" hidden><\/div>/);
   assert.match(renderer, /const domesticOverlayPlatforms = new Map\(\)/);

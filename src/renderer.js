@@ -1535,11 +1535,39 @@ function renderDomesticOverlayPlatforms() {
   box.hidden = entries.length === 0;
 }
 
+// Live activity feed: the newest progress events read like Jarvis narrating
+// the search. Capped so the modal never grows; reset with every render.
+const domesticOverlayActivity = [];
+function domesticOverlayActivityLabel(payload = {}) {
+  const source = String(payload.source || "판매처");
+  if (payload.phase === "searching") return `${source} 상품과 가격 확인 중`;
+  if (payload.phase === "authentication") return `${source} 로그인 확인 중`;
+  if (payload.phase === "checkpoint") return "확인된 결과 보관 중";
+  return `${source} 단계 완료`;
+}
+function renderDomesticOverlayActivity() {
+  const overlay = typeof document !== "undefined" ? document.querySelector("#domestic-search-overlay") : null;
+  const box = overlay?.querySelector(".domestic-overlay-activity");
+  if (!box) return;
+  box.innerHTML = domesticOverlayActivity.map((entry) =>
+    `<div class="domestic-overlay-activity-line"><span>${entry.time}</span>${entry.text}</div>`).join("");
+  box.hidden = domesticOverlayActivity.length === 0;
+}
+function pushDomesticOverlayActivity(payload = {}) {
+  const now = new Date();
+  const time = `${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
+  const safeText = typeof text === "function" ? text : (value) => String(value ?? "");
+  domesticOverlayActivity.push({ time, text: safeText(domesticOverlayActivityLabel(payload)) });
+  while (domesticOverlayActivity.length > 6) domesticOverlayActivity.shift();
+  renderDomesticOverlayActivity();
+}
+
 function showDomesticSearchOverlay(startedAt, completedCount, totalCount, currentProduct = null) {
   let overlay = $("#domestic-search-overlay");
   // Per-platform live chips restart with every overlay render; progress
   // events refill them below without rebuilding the modal.
   domesticOverlayPlatforms.clear();
+  domesticOverlayActivity.length = 0;
   if (!overlay) {
     overlay = document.createElement("div");
     overlay.id = "domestic-search-overlay";
@@ -1562,6 +1590,7 @@ function showDomesticSearchOverlay(startedAt, completedCount, totalCount, curren
     <p class="domestic-overlay-current">${article ? `현재 상품번호 · <b>${text(article)}</b>` : "검색 준비 중입니다."}</p>
     <p class="domestic-overlay-guide">상품을 확인하고 있습니다. 완료될 때까지 잠시 기다려 주세요.</p>
     <div class="domestic-overlay-platforms" aria-label="판매처별 진행 상태" hidden></div>
+    <div class="domestic-overlay-activity" aria-live="polite" hidden></div>
     <button type="button" class="domestic-overlay-stop">검색 중지</button>
   </div>`;
   overlay.querySelector(".domestic-overlay-stop")?.addEventListener("click", () => {
@@ -1603,6 +1632,7 @@ window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
   if (payload.source && !/검색 준비/.test(String(payload.source))) {
     domesticOverlayPlatforms.set(String(payload.source), String(payload.phase || "done"));
     renderDomesticOverlayPlatforms();
+    pushDomesticOverlayActivity(payload);
   }
   if (guide) guide.textContent = payload.phase === "checkpoint"
     ? `${overlay.dataset.currentActivity ? `${overlay.dataset.currentActivity} · ` : ""}확인된 결과를 보관했습니다.`

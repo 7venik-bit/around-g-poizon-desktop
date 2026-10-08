@@ -249,6 +249,45 @@ body:has(> .domestic-search-overlay:not([hidden])) {
 .domestic-overlay-platform.plat-mall { border-color: #7b1fa2 !important; color: #7b1fa2 !important; }
 .domestic-overlay-platform.plat-other { border-color: #dadce0 !important; color: #5f6368 !important; }
 
+/* Jarvis-style live activity feed: newest events read as narration. */
+.domestic-overlay-activity {
+  width: min(430px, 92%) !important;
+  max-height: 108px !important;
+  overflow: hidden !important;
+  margin: 2px 0 4px !important;
+  padding: 8px 12px !important;
+  border-radius: 12px !important;
+  background: #f6f8fb !important;
+  text-align: left !important;
+}
+
+.domestic-overlay-activity[hidden] {
+  display: none !important;
+}
+
+.domestic-overlay-activity-line {
+  display: flex !important;
+  gap: 8px !important;
+  padding: 2px 0 !important;
+  color: #5f6b7a !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.domestic-overlay-activity-line span {
+  flex: 0 0 auto !important;
+  color: #9aa5b1 !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+.domestic-overlay-activity-line:last-child {
+  color: #17365d !important;
+  font-weight: 700 !important;
+}
+
 .domestic-overlay-stop {
   min-width: 180px !important;
   min-height: 44px !important;
