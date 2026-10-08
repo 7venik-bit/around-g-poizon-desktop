@@ -9,10 +9,12 @@ const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), 
 test("Naver credentials are stored with Windows encryption and excluded from portable backup", () => {
   assert.match(html, /id="naver-login-id"/);
   assert.match(html, /id="naver-password" type="password"/);
+  assert.match(html, /id="naver-mail-app-password" type="password"/);
   assert.match(main, /naverPasswordEncrypted = encrypted\(config\.naverPassword\)/);
   assert.match(main, /decrypted\(settings\.naverPasswordEncrypted\)/);
-  assert.match(main, /"naverLoginId", "naverPasswordEncrypted"/);
+  assert.match(main, /"naverLoginId", "naverPasswordEncrypted", "naverMailAppPasswordEncrypted", "shoppingAccounts",/);
   assert.match(renderer, /hasNaverPassword/);
+  assert.match(renderer, /hasNaverMailAppPassword/);
 });
 
 test("automatic Naver login only enters credentials on the real Naver login origin", () => {

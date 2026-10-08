@@ -5748,11 +5748,16 @@ async function saveNaverAccountAndLogin(button) {
     const config = await window.aroundG.saveNaverAccount({
       naverLoginId: $("#naver-login-id").value,
       naverPassword: $("#naver-password").value,
+      naverMailAppPassword: $("#naver-mail-app-password").value,
     });
     saved = true;
     $("#naver-login-id").value = config.naverLoginId || "";
     $("#naver-password").value = "";
     $("#naver-password").placeholder = "암호화 저장됨 · 변경할 때만 입력";
+    $("#naver-mail-app-password").value = "";
+    $("#naver-mail-app-password").placeholder = config.hasNaverMailAppPassword
+      ? "메일 앱 비밀번호 저장됨 · 변경할 때만 입력"
+      : "이메일 인증 자동 입력용 · 변경할 때만 입력";
     button.textContent = "로그인 확인 중…";
     status.textContent = "계정을 저장했습니다. 네이버 로그인 상태를 확인합니다.";
     const opened = await window.aroundG.openDomesticLogin("naver");
@@ -6188,6 +6193,7 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
   $("#naver-login-id").value = config.naverLoginId || "";
   $("#naver-password").placeholder = config.naverCredentialCode === "NAVER_CREDENTIALS_UNREADABLE"
     ? "이 PC에서 읽을 수 없음 · 비밀번호 다시 입력" : config.hasNaverPassword ? "Windows 암호화 저장됨 · 검색 전 자동 로그인" : "자동 로그인에 필요";
+  $("#naver-mail-app-password").placeholder = config.hasNaverMailAppPassword ? "메일 앱 비밀번호 저장됨 · 변경할 때만 입력" : "이메일 인증 자동 입력용 · 변경할 때만 입력";
   $("#nike-login-id").value = config.nikeLoginId || "";
   $("#nike-password").placeholder = config.hasNikePassword ? "Windows 암호화 저장됨" : "공식몰 검색에 필요";
   $("#adidas-login-id").value = config.adidasLoginId || "";

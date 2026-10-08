@@ -203,7 +203,9 @@ test("mid-batch re-login stays cancelable with preserved preflight defaults", ()
   const attempt = main.slice(attemptStart, attemptEnd);
   assert.match(attempt, /autoTimeoutMs = 180000/);
   assert.match(attempt, /manualTimeoutMs = 600000/);
-  assert.match(attempt, /detectControlsScript: captureShoppingLoginPage\.toString\(\),\s*\n\s*autoTimeoutMs,\s*\n\s*manualTimeoutMs,/);
+  assert.match(attempt, /detectControlsScript: captureShoppingLoginPage\.toString\(\),/);
+  assert.match(attempt, /otpInputScript: method === "naver" \? NAVER_OTP_INPUT_SCRIPT : null,/);
+  assert.match(attempt, /autoTimeoutMs,\s*\n\s*manualTimeoutMs,/);
   const openStart = main.indexOf("async function openRetailerLoginForSearch(");
   const openEnd = main.indexOf("async function waitForDomesticLoginsBeforeSearch(", openStart);
   const open = main.slice(openStart, openEnd);

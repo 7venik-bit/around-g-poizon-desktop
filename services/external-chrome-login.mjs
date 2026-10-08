@@ -1086,6 +1086,12 @@ export async function waitForExternalLogin({
   // completes instead of timing out on the original tab.
   discoverPages = null,
   detectControlsScript = null,
+  // Email verification hook (Naver on unfamiliar devices): an OTP input
+  // script plus a mailbox code fetcher supplied by the caller. The newest
+  // code is filled exactly once per login run; without the hook, or after
+  // the single attempt, the visible window stays for manual entry.
+  otpInputScript = null,
+  fetchOtpCode = null,
   credentials = null,
   providerCredentials = null,
   method = "password",
@@ -1109,6 +1115,9 @@ export async function waitForExternalLogin({
   // Survives navigation unlike acted: once a fill or provider click has
   // fired, post-submit and OAuth landings belong to the running flow.
   let loginFlowStarted = false;
+  // Email verification codes are single-shot per login run: a wrong code is
+  // never resubmitted automatically, so guessing can never lock the account.
+  let otpSubmitted = false;
   // A slow login page must not burn the single automatic attempt before its
   // form exists: attempts are capped per page so a half-loaded first poll
   // retries instead of giving up, without resubmitting forever.
@@ -1291,6 +1300,36 @@ export async function waitForExternalLogin({
         }
       }
     }
+    if (!actedThisRound && !otpSubmitted && loginFlowStarted && typeof fetchOtpCode === "function" && otpInputScript) {
+      for (const item of readable) {
+        let points = null;
+        try {
+          points = await item.client.evaluate(String(otpInputScript));
+        } catch {
+          points = null;
+        }
+        if (!points?.otp || !points?.submit) continue;
+        let code = "";
+        try {
+          code = String(await fetchOtpCode() || "");
+        } catch {
+          code = "";
+        }
+        // No code from the mailbox: leave the visible page for manual entry.
+        if (!code) break;
+        try {
+          const filled = await item.client.evaluate(externalFillScript(points.otp.x, points.otp.y, code));
+          if (filled) {
+            await item.client.clickPoint(points.submit);
+            otpSubmitted = true;
+            actedThisRound = true;
+          }
+        } catch {
+          // A failed fill keeps the manual verification path below.
+        }
+        break;
+      }
+    }
     if (!actedThisRound && readable.some((item) => item.state.blocked === true)
       && !readable.some((item) => item.state.hasLoginForm === true)) {
       return externalLoginFailure("LOGIN_BLOCKED");
@@ -1315,6 +1354,9 @@ export async function startExternalRetailerLogin({
   autoTimeoutMs = 180000,
   manualTimeoutMs = 600000,
   cdpLaunchTimeoutMs = 20000,
+  // Email verification hook, passed through to the login wait below.
+  otpInputScript = null,
+  fetchOtpCode = null,
   // Per-retailer window mode: each retailer keeps its own Chrome process that
   // stays alive across logins, so a logged-in session is kept instead of
   // logging in again for every product search. Callers pass the retailer's
@@ -1420,6 +1462,8 @@ export async function startExternalRetailerLogin({
       page,
       discoverPages: discoverLoginTabs,
       detectControlsScript,
+      otpInputScript,
+      fetchOtpCode,
       credentials,
       providerCredentials,
       method,

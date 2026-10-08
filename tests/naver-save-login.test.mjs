@@ -101,6 +101,7 @@ test('an explicitly replaced password resets the previous attempt but an unchang
 function rendererSaver(api, refresh = async () => {}) {
   const elements = {
     '#naver-login-id': { value: 'fixture-id' }, '#naver-password': { value: 'fixture-password' },
+    '#naver-mail-app-password': { value: 'fixture-mail-secret', placeholder: '' },
     '#naver-account-status': { className: '', textContent: '' },
   };
   const save = runInNewContext(section(renderer, 'async function saveNaverAccountAndLogin(', 'function domesticLoginStateLabel(')
@@ -114,6 +115,7 @@ test('save-and-login waits for durable save, prevents double clicks and clears t
   const h = rendererSaver({
     saveNaverAccount: async input => {
       calls.push('save'); assert.equal(input.naverPassword, 'fixture-password');
+      assert.equal(input.naverMailAppPassword, 'fixture-mail-secret');
       await new Promise(resolve => { completeSave = resolve; });
       return { naverLoginId: 'fixture-id', hasNaverPassword: true };
     },
@@ -126,6 +128,7 @@ test('save-and-login waits for durable save, prevents double clicks and clears t
   completeSave(); await pending;
   assert.deepEqual(calls, ['save', 'login', 'refresh']);
   assert.equal(h.elements['#naver-password'].value, '');
+  assert.equal(h.elements['#naver-mail-app-password'].value, '');
   assert.equal(h.button.disabled, false);
   assert.match(h.elements['#naver-account-status'].textContent, /계정 저장·로그인 확인 완료/);
 });
