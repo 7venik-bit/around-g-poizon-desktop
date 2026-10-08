@@ -589,7 +589,11 @@ export function parseLotteInitialDataProducts(html = "") {
       originalPrice: Number.isFinite(originalPrice) && originalPrice > 0 ? originalPrice : 0,
       imageUrl: imagePath.startsWith("http") ? imagePath
         : imagePath.startsWith("/") ? `https://contents.lotteon.com${imagePath}` : "",
-      departmentStore: flags.some((flag) => /롯데\s*백화점/.test(flag)),
+      // Department flags are mall-controlled labels: any 백화점 wording counts,
+      // consistent with the DOM collection flag (/백화점/). Flag text varies
+      // ("롯데백화점", "백화점", "롯데백화점몰"), so only the absence of any
+      // such wording means marketplace stock.
+      departmentStore: flags.some((flag) => /백화점/.test(flag)),
     });
     if (items.length >= 60) break;
   }

@@ -45,18 +45,24 @@ test("lotte session-less fetch identifies as a desktop browser", () => {
   assert.match(block, /accept-language/);
 });
 
-test("lotte without a department menu reports an authoritative absence", () => {
+test("lotte confirms an absence only with corroborating evidence", () => {
   const facetAt = collection.indexOf('labels: retailerFacetLabels("lotte", brand)');
   assert.ok(facetAt >= 0, "lotte facet check missing");
   assert.match(collection.slice(facetAt, facetAt + 600), /lotteMissingLabels = \[\.\.\.facetResult\.missing/);
   const evidenceAt = collection.indexOf("lotteCollectionEvidence: {");
   assert.ok(evidenceAt >= 0, "lotte collection evidence missing");
-  const evidence = collection.slice(evidenceAt, evidenceAt + 1200);
+  const evidence = collection.slice(evidenceAt, evidenceAt + 1600);
   assert.match(evidence, /facetMissing: \[\.\.\.lotteMissingLabels\]/);
   assert.match(evidence, /noDepartmentGoods/);
   assert.match(evidence, /identityDrops/);
-  const forcing = collection.slice(Math.max(0, evidenceAt - 900), evidenceAt);
-  assert.match(forcing, /lotteMenuMissing/);
+  // A missed checkbox alone never confirms: the panel must have rendered
+  // without any department option and the grid must carry no department
+  // wording. Otherwise the row stays pending review with its evidence.
+  const forcing = collection.slice(Math.max(0, evidenceAt - 1400), evidenceAt);
+  assert.match(forcing, /lotteMenuGenuinelyMissing/);
+  assert.match(forcing, /lotteAvailableFacets\.length > 0/);
+  assert.match(forcing, /lotteNoDepartmentWord/);
+  assert.match(forcing, /badgeWordCards === 0/);
   assert.match(forcing, /absenceConfirmed = true/);
   assert.match(forcing, /detailVerificationPending = false/);
 });

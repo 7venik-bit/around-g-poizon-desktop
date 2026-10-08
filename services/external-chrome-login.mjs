@@ -579,6 +579,46 @@ export const EXTERNAL_FACET_UNCHECK_SCRIPT = `((wanted) => {
   return { unchecked };
 })`;
 
+// Visible filter checkbox labels for diagnosis. Never clicks: returns the
+// labels the page actually offers so a missed wanted label can be told
+// apart from a renamed filter menu. Capped and truncated; diagnostics only.
+export const EXTERNAL_FACET_LABELS_SCRIPT = `(() => {
+  const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+  const labelOf = (input) => {
+    const direct = input.getAttribute && input.getAttribute("aria-label");
+    if (direct && direct.trim()) return direct;
+    const id = input.id;
+    if (id && input.ownerDocument) {
+      try {
+        const labels = input.ownerDocument.querySelectorAll("label");
+        for (const el of labels) {
+          if (el.getAttribute && el.getAttribute("for") === id && el.textContent && el.textContent.trim()) {
+            return el.textContent;
+          }
+        }
+      } catch {
+        // Label lookup failure falls through to the wrapping label below.
+      }
+    }
+    const wrapping = input.closest ? input.closest("label") : null;
+    if (wrapping && wrapping.textContent && wrapping.textContent.trim()) return wrapping.textContent;
+    return "";
+  };
+  const seen = [];
+  for (const input of document.querySelectorAll('input[type="checkbox"]')) {
+    try {
+      const rect = input.getBoundingClientRect();
+      if (!rect.width || !rect.height) continue;
+    } catch {
+      continue;
+    }
+    const label = normalize(labelOf(input)).slice(0, 40);
+    if (!label || seen.some((entry) => entry.label === label)) continue;
+    seen.push({ label, checked: input.checked === true });
+    if (seen.length >= 40) break;
+  }
+  return seen;
+})()`;
 // Article card point for a VISIBLE mouse click. Returns the best point plus
 // its URL without clicking; the caller drives the observable mouse.
 // With requireBadge, only cards carrying department wording (백화점/아울렛)

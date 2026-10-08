@@ -250,7 +250,7 @@
   function mirrorSkipLabel(skipped = "") {
     return {
       "unsupported-retailer": "대상 아님",
-      "no-shared-window": "공유 창 없음",
+      "no-shared-window": "로그인 창 없음",
       "no-confirmed-login": "로그인 미확인",
       "no-cdp-channel": "연결 없음",
       "no-badged-card": "백화점 상품 없음",
@@ -334,6 +334,7 @@
         ["서버 검색 출처", d.lotteServerEvidence?.origin === "session-dom" ? "세션 화면" : d.lotteServerEvidence?.origin === "direct-fetch" ? "직접 조회" : ""],
         ["판매처 체크 적용", [...(d.lotteCollectionEvidence?.facetChecked || []), ...(d.ssgCollectionEvidence?.facetChecked || [])].join(", ")],
         ["판매처 체크 누락", [...(d.lotteCollectionEvidence?.facetMissing || []), ...(d.ssgCollectionEvidence?.facetMissing || [])].join(", ")],
+        ["판매처 필터 목록", (d.lotteCollectionEvidence?.availableFacets || []).join(", ")],
         ["판매처 체크 확정", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)
           ? ((d.lotteCollectionEvidence || d.ssgCollectionEvidence).facetSettled === true ? "확정" : "미확정") : ""],
         ["백화점 탭", d.ssgCollectionEvidence?.deptTab],
@@ -342,6 +343,7 @@
         ["품번 카드 수", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.articleCards],
         ["수집 카드 수", d.lotteCollectionEvidence?.renderedCards ?? d.ssgCollectionEvidence?.renderedCards],
         ["백화점 카드 수", d.lotteCollectionEvidence?.badgeCards ?? d.ssgCollectionEvidence?.badgeCards],
+        ["백화점 문구 카드 수", d.lotteCollectionEvidence?.badgeWordCards],
         ["후보 상품 수", d.lotteCollectionEvidence?.candidateCount ?? d.ssgCollectionEvidence?.candidateCount],
         ["백화점 상품", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.noDepartmentGoods === true ? "없음 · 병행수입으로 판단" : ""],
         ["백화점 탈락 내역", dropReasonsText((d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.identityDrops)],

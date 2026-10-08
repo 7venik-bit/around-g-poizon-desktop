@@ -67,6 +67,7 @@ import {
   findSsgDepartmentTab,
   EXTERNAL_LOGIN_STATE_SCRIPT,
   EXTERNAL_FACET_UNCHECK_SCRIPT,
+  EXTERNAL_FACET_LABELS_SCRIPT,
   EXTERNAL_GRID_ARTICLE_COUNT_SCRIPT,
   EXTERNAL_GRID_CARDS_SCRIPT,
   EXTERNAL_PRODUCT_CARD_POINT_SCRIPT,
@@ -3616,6 +3617,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     let lotteCheckedLabels = [];
     let lotteMissingLabels = [];
     let lotteFacetSettled = null;
+    let lotteAvailableFacets = [];
     if (source.store === "롯데온" && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
       // The operator's left-menu seller check (롯데백화점 + brand) narrows the
       // grid to department goods before cards are captured. Best-effort only:
@@ -3636,6 +3638,22 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           lotteCheckedLabels = [...facetResult.checked];
           await onActivity?.({ phase: "searching", detail: "롯데백화점 판매처 적용" });
           await waitForDomesticCaptureReady(searchWindow, 25_000);
+        }
+        // A missed label is ambiguous: late panel or a renamed filter menu.
+        // Snapshot what the page actually offers so the empty row names the
+        // real menu instead of silence. Diagnostics only, never clicked.
+        if (Array.isArray(lotteMissingLabels) && lotteMissingLabels.length) {
+          try {
+            const available = await facetPage.evaluate(EXTERNAL_FACET_LABELS_SCRIPT);
+            if (Array.isArray(available)) {
+              lotteAvailableFacets = available
+                .map((entry) => String(entry?.label || "").trim())
+                .filter(Boolean)
+                .slice(0, 20);
+            }
+          } catch {
+            // Label snapshot failure keeps the missing list as the evidence.
+          }
         }
       } catch {
         // Facet checks must never break the search itself.
@@ -4200,14 +4218,27 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       const renderedCards = Array.isArray(parsedContent?.productCards) ? parsedContent.productCards.length : 0;
       const badgeCards = Array.isArray(parsedContent?.productCards)
         ? parsedContent.productCards.filter((card) => card?.departmentStoreLabelMatched === true).length : 0;
+      // Bare 백화점 wording anywhere in the card (flag or raw text): when this
+      // is zero the grid truly carries no department wording (image-only
+      // badges or a renamed label); when it exceeds badgeCards the flag
+      // itself missed wording the card visibly carries.
+      const badgeWordCards = Array.isArray(parsedContent?.productCards)
+        ? parsedContent.productCards.filter((card) => /백화점/i.test(
+          `${card?.title || ""} ${card?.text || ""} ${String(card?.markup || "")}`)).length : 0;
       // No department filter menu means the result set holds no department
       // goods: whatever rendered is marketplace/parallel-import stock, which
-      // this collection never buys. With goods demonstrably rendered and no
-      // candidate surviving, mark an authoritative absence instead of leaving
-      // the row pending review.
+      // this collection never buys. But a missed checkbox alone proves
+      // nothing: the panel may have rendered late or under a renamed label.
+      // Confirm the absence only with corroboration, otherwise leave the row
+      // pending review with the evidence above instead of a false absence.
       const lotteMenuMissing = lotteMissingLabels.includes("롯데백화점");
       const lotteRenderedGoods = renderedCards > 0 || Number(lotteServerEvidence?.items || 0) > 0;
-      const lotteNoDepartmentGoods = lotteMenuMissing && candidateCount === 0 && lotteRenderedGoods;
+      const lotteMenuGenuinelyMissing = lotteMenuMissing
+        && lotteAvailableFacets.length > 0
+        && !lotteAvailableFacets.some((label) => /백화점/i.test(label));
+      const lotteNoDepartmentWord = badgeWordCards === 0;
+      const lotteNoDepartmentGoods = lotteMenuGenuinelyMissing && candidateCount === 0
+        && lotteRenderedGoods && lotteNoDepartmentWord;
       if (lotteNoDepartmentGoods) {
         analyzed.absenceConfirmed = true;
         analyzed.detailVerificationPending = false;
@@ -4218,12 +4249,14 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           facetChecked: [...lotteCheckedLabels],
           facetMissing: [...lotteMissingLabels],
           facetSettled: lotteFacetSettled,
+          availableFacets: [...lotteAvailableFacets],
           noDepartmentGoods: lotteNoDepartmentGoods,
           identityDrops: analyzed?.identityDrops || null,
           scopeReverted,
           articleCards: scopeArticleCards < 0 ? null : scopeArticleCards,
           renderedCards,
           badgeCards,
+          badgeWordCards,
           candidateCount,
           mirrorCards: mirrorGridCards,
         },

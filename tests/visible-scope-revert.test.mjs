@@ -240,14 +240,15 @@ test("fallback rows name the filter state of that exact run", () => {
   assert.match(inline, /const filterStatus = filterStatusText\(source\)/);
 });
 
-test("mirror receipts surface the shared-window run state", () => {
+test("mirror receipts surface the per-retailer window run state", () => {
   assert.match(inline, /function mirrorFilterText\(receipt/);
   assert.match(inline, /mirrorReceipt/);
   assert.match(inline, /\["외부 창 검색"/);
   assert.match(inline, /\["외부 창 필터"/);
   assert.match(inline, /같은 탭 이동/);
   assert.match(inline, /백화점 상품 없음/);
-  assert.match(inline, /공유 창 없음/);
+  assert.match(inline, /로그인 창 없음/);
+  assert.doesNotMatch(inline, /공유 창 없음/);
 });
 
 test("empty rows expose scope evidence in the diagnostics block", () => {
