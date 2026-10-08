@@ -3618,6 +3618,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     let lotteMissingLabels = [];
     let lotteFacetSettled = null;
     let lotteAvailableFacets = [];
+    let lotteFacetRetried = false;
     if (source.store === "롯데온" && !officialDirectDetail && !searchWindow.webContents.isDestroyed()) {
       // The operator's left-menu seller check (롯데백화점 + brand) narrows the
       // grid to department goods before cards are captured. Best-effort only:
@@ -3638,6 +3639,34 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           lotteCheckedLabels = [...facetResult.checked];
           await onActivity?.({ phase: "searching", detail: "롯데백화점 판매처 적용" });
           await waitForDomesticCaptureReady(searchWindow, 25_000);
+        }
+        // A miss on the first pass may be a late panel, not a missing menu:
+        // the seller section renders after the size filters. Wait for the
+        // grid to settle, then check once more before accepting the miss.
+        // Bounded to one retry; collection never waits on filters.
+        if (Array.isArray(lotteMissingLabels) && lotteMissingLabels.length
+          && !searchWindow.webContents.isDestroyed()) {
+          await waitForDomesticCaptureReady(searchWindow, 15_000);
+          lotteFacetRetried = true;
+          try {
+            const retry = await checkSearchFacets({
+              page: facetPage,
+              labels: retailerFacetLabels("lotte", brand),
+              sleepImpl: wait,
+              settleMs: 3000,
+            });
+            if (retry && typeof retry === "object") {
+              if (Array.isArray(retry.missing)) lotteMissingLabels = [...retry.missing];
+              lotteFacetSettled = retry.settled === true;
+              if (Array.isArray(retry.checked) && retry.checked.length) {
+                lotteCheckedLabels = [...retry.checked];
+                await onActivity?.({ phase: "searching", detail: "롯데백화점 판매처 적용" });
+                await waitForDomesticCaptureReady(searchWindow, 25_000);
+              }
+            }
+          } catch {
+            // Retry failure keeps the first-pass outcome as the evidence.
+          }
         }
         // A missed label is ambiguous: late panel or a renamed filter menu.
         // Snapshot what the page actually offers so the empty row names the
@@ -4249,6 +4278,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           facetChecked: [...lotteCheckedLabels],
           facetMissing: [...lotteMissingLabels],
           facetSettled: lotteFacetSettled,
+          facetRetried: lotteFacetRetried,
           availableFacets: [...lotteAvailableFacets],
           noDepartmentGoods: lotteNoDepartmentGoods,
           identityDrops: analyzed?.identityDrops || null,
