@@ -457,7 +457,7 @@ test('stock and every captured size occupy a separate aligned column below the p
   assert.equal(rows[1].children.length,6,'fallback retains its own seller cell');
   const stock=rows[0].querySelector('.domestic-inline-stock-cell');
   assert.ok(stock.matches('.domestic-inline-stock-cell'));
-  assert.match(stock.textContent,/90.*선택 가능/);
+  assert.match(stock.textContent,/90 ↗/);
   assert.match(stock.textContent,/95.*재고 3개/);
   assert.match(stock.textContent,/100 SOLD OUT/);
   assert.doesNotMatch(stock.textContent,/재고 10개/);
@@ -497,7 +497,7 @@ test('numeric inventory is displayed per colour/size and partial coverage stays 
   assert.match(rows[0].textContent,/블랙 \/ 95 · 재고 3개/);
   assert.doesNotMatch(rows[0].textContent,/화이트/);
   assert.match(rows[1].textContent,/화이트 \/ 95 · 재고 0개/);
-  assert.match(rows[1].textContent,/화이트 \/ 100 · 재고 확인 필요/);
+  assert.deepEqual([...rows[1].querySelectorAll('.domestic-inline-stock-option')].map(o=>o.textContent),['화이트 / 95 · 재고 0개','화이트 / 100']);
   for(const row of rows) assert.match(row.textContent,/일부 옵션 재고 확인 필요/);
   assert.equal(f.overlay().hidden,true);
 });

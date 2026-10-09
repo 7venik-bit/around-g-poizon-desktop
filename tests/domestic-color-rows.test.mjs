@@ -45,7 +45,7 @@ test('Musinsa groups interleaved colour paths while retaining quantities, notice
   const rows=render(t,[product]);
   assert.deepEqual(rows.map(row=>row.dataset.stockColor),['화이트','블랙']);
   assert.match(rows[0].textContent,/재고 1개/);
-  assert.match(rows[0].textContent,/115 · 재고 확인 필요/);
+  assert.equal(rows[0].querySelector('span.domestic-inline-stock-option').textContent,'화이트 / 115');
   assert.match(rows[1].textContent,/90 \(품절\) 재입고 알림/);
   assert.equal(decodeURIComponent(rows[0].querySelector('button.domestic-inline-stock-option').dataset.url),url+'?size=110');
   for(const row of rows) {
@@ -77,7 +77,7 @@ test('unclassified options survive alongside escaped colour names',t=>{
   assert.equal(rows.length,2);
   assert.equal(rows[0].querySelector('.domestic-inline-color').textContent,'블랙 <한정>');
   assert.equal(rows[0].querySelector('한정'),null);
-  assert.match(rows[1].textContent,/FREE · 재고 확인 필요/);
+  assert.equal(rows[1].querySelector('.domestic-inline-stock-option').textContent,'FREE');
 });
 
 test('one seller cell spans official products and Naver/Musinsa colour rows without changing their actions',t=>{
