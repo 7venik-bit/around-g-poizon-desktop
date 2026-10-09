@@ -343,12 +343,16 @@
     for (const option of sizes) {
       const label = String(option?.label || option?.name || (typeof option === "string" ? option : "")).trim();
       const raw = String(option?.stockText || option?.statusText || "").trim();
-      if (!label && !raw) continue;
-      // Retain bare available sizes as well as the platform's stock wording.
-      const sourceText = raw && raw !== label && !raw.includes(label) ? `${label} · ${raw}` : raw || label;
-      const explicitStatus = /품절|매진|솔드\s*아웃|SOLD[\s_-]*OUT|OUT[\s_-]*OF[\s_-]*STOCK|재고|남은\s*수량|구매\s*(?:가능|불가)|선택\s*(?:가능|불가)/i.test(sourceText);
+      // A bare availability word from the platform carries no per-option detail.
+      // Availability is already shown by the control itself (button vs grey label).
+      const statusOnly = /^(?:선택\s*(?:가능|불가)|재고\s*확인\s*필요|구매\s*가능)$/i.test(raw) ? "" : raw;
+      if (!label && !statusOnly) continue;
+      // Show the size label with the platform's own stock wording only.
+      // Availability stays visible through the control itself: available
+      // options are buttons, sold-out options are disabled grey labels.
+      const sourceText = statusOnly && statusOnly !== label && !statusOnly.includes(label) ? `${label} · ${statusOnly}` : statusOnly || label;
       const quantity = Number.isSafeInteger(option?.quantity) && option.quantity >= 0 ? option.quantity : null;
-      const optionText = quantity !== null && !/(?:재고|남은\s*(?:재고|수량))\s*(?:수량)?\s*[:：]?\s*[\d,]+|[\d,]+\s*개\s*남(?:음|았)/.test(sourceText) ? `${sourceText} · 재고 ${quantity.toLocaleString("ko-KR")}개` : explicitStatus ? sourceText : `${sourceText} · ${option?.inStock === true ? "선택 가능" : option?.inStock === false ? "선택 불가" : "재고 확인 필요"}`;
+      const optionText = quantity !== null && !/(?:재고|남은\s*(?:재고|수량))\s*(?:수량)?\s*[:：]?\s*[\d,]+|[\d,]+\s*개\s*남(?:음|았)/.test(sourceText) ? `${sourceText} · 재고 ${quantity.toLocaleString("ko-KR")}개` : sourceText;
       if (seen.has(optionText)) continue;
       seen.add(optionText);
       const optionUrl = String(option?.url || option?.productUrl || option?.href || product?.url || "").trim();
