@@ -74,8 +74,6 @@
       .domestic-inline-code{min-width:0!important;color:#64748b!important;font-family:inherit!important;text-align:center!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
       .domestic-inline-price{text-align:center!important;color:#111827!important;font-weight:800!important;white-space:nowrap!important}
       .domestic-inline-actions{display:flex!important;align-items:center!important;justify-content:center!important;gap:5px!important}
-      .domestic-inline-price-fetch{min-width:76px!important;border-color:#9cc5ff!important;background:#f3f8ff!important;color:#1769c2!important}
-      .domestic-inline-price-fetch:disabled{opacity:.65!important;cursor:wait!important}
       .domestic-inline-row button{min-width:64px!important;height:30px!important;padding:5px 8px!important;border-radius:6px!important;font-size:10px!important;font-weight:800!important;white-space:nowrap!important;overflow:visible!important}
       .domestic-inline-row .stock-watch-register-button{min-width:96px!important;flex:0 0 96px!important}
       .domestic-inline-fallback .domestic-inline-title{color:#64748b!important;font-weight:600!important}
@@ -470,15 +468,21 @@
       if (!(count > 0 || searched || source?.verificationPending || source?.verificationFailed
         || source?.loginRequired || source?.securityVerificationRequired || hasUsefulLink)) continue;
       const message = verdict.label;
-      const naverPriceAction = store === "네이버 패션타운" && contextKey && !source?.rateLimited && !source?.loginRequired && !source?.securityVerificationRequired
-        ? `<button type="button" class="domestic-inline-price-fetch" data-inline-naver-price="${encodeURIComponent(contextKey)}">가격 가져오기</button>`
-        : "-";
+      // Naver Fashion Town shows only department, outlet and brand-mall
+      // channel counts. Price is checked directly through the open link.
+      const naverChannels = source?.naverChannelCounts && typeof source.naverChannelCounts === "object"
+        ? [["네이버 백화점", "백화점"], ["네이버 아울렛", "아울렛"], ["네이버 공식 브랜드스토어", "브랜드몰"]].map(([key, short]) => {
+          const total = Number(source.naverChannelCounts[key]);
+          return `${short} - ${Number.isFinite(total) ? Math.max(0, Math.round(total)).toLocaleString("ko-KR") : 0}개`;
+        }).join(" · ")
+        : "";
+      const titleText = naverChannels || message;
       rows.push(`<div class="domestic-inline-row domestic-inline-fallback">
         <div class="domestic-inline-store" title="${safeText(store)}">${safeText(store)}</div>
-        <div class="domestic-inline-title">${safeText(message)}</div>
+        <div class="domestic-inline-title">${safeText(titleText)}</div>
         <div class="domestic-inline-stock-cell">-</div>
         <div class="domestic-inline-code">${safeText(source?.searchQuery || sourceProduct?.articleNumber || "-")}</div>
-        <div class="domestic-inline-price">${naverPriceAction}</div>
+        <div class="domestic-inline-price">-</div>
         <div class="domestic-inline-actions">${sourceAction(source, {}, sourceProduct, contextKey)}</div>
       </div>`);
     }
@@ -610,57 +614,6 @@
   }
 
   installRenderers();
-
-  document.addEventListener("click", async (event) => {
-    const button = event.target.closest?.("[data-inline-naver-price]");
-    if (!button || button.disabled) return;
-    const key = decodeURIComponent(button.dataset.inlineNaverPrice || "");
-    const product = typeof excelPreviewProductCache !== "undefined" ? excelPreviewProductCache.get(key) : null;
-    if (!product || typeof window.aroundG?.lookupDomesticPrice !== "function") return;
-    event.preventDefault();
-    button.disabled = true;
-    button.textContent = "확인 중…";
-    try {
-      const response = await window.aroundG.lookupDomesticPrice({
-        articleNumber: product.articleNumber || "",
-        productCode: product.productCode || product.spuId || product.globalSpuId || "",
-        brand: product.brandName || product.brand || "",
-        title: product.apiTitle || product.title || product.name || "",
-      });
-      if (!response?.ok || !Array.isArray(response.candidates) || !response.candidates.length) {
-        button.disabled = response?.rateLimited === true;
-        button.textContent = response?.rateLimited ? "접속량 제한 · 조회 중지" : "다시 가져오기";
-        button.title = response?.message || "가격을 확인하지 못했습니다.";
-        return;
-      }
-      const current = excelPreviewSearchResults.get(key) || { products: [], sources: [] };
-      const candidates = response.candidates.filter((candidate) => Number(candidate?.price || 0) > 0);
-      const byUrl = new Map();
-      for (const candidate of [...candidates, ...(current.products || [])]) {
-        const identity = String(candidate?.url || `${candidate?.store || "판매처"}:${candidate?.title || ""}:${candidate?.price || 0}`);
-        if (!byUrl.has(identity)) byUrl.set(identity, candidate);
-      }
-      excelPreviewSearchResults.set(key, {
-        ...current,
-        error: "",
-        products: [...byUrl.values()],
-        domesticPriceCandidates: [
-          ...candidates,
-          ...(current.domesticPriceCandidates || []),
-        ],
-      });
-      if (activeExcelPreview?.file?.path && typeof persistExcelSearchResults === "function") {
-        persistExcelSearchResults(activeExcelPreview.file.path);
-      }
-      if (activeExcelPreview?.file && activeExcelPreview?.viewMode === "products") {
-        renderExcelProductRows(activeExcelPreview.file, excelPreviewPageProducts);
-      }
-    } catch (error) {
-      button.disabled = false;
-      button.textContent = "다시 가져오기";
-      button.title = error instanceof Error ? error.message : "가격 확인 요청에 실패했습니다.";
-    }
-  });
 
   let scheduled = false;
   const observer = new MutationObserver(() => {

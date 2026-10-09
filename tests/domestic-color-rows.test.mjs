@@ -155,6 +155,14 @@ test('seller groups do not transfer official status or merge different sources w
   assert.deepEqual(groups.map(group=>group.querySelectorAll('.domestic-inline-official').length),[1,0,0]);
 });
 
+test('Naver rows summarize department, outlet and brand-mall counts',t=>{
+  const rows=render(t,[],[{store:'네이버 패션타운',absenceConfirmed:true,searchCompleted:true,searchUrl:'https://example.test/naver',searchQuery:'X',naverChannelCounts:{'네이버 백화점':2,'네이버 아울렛':0,'네이버 공식 브랜드스토어':5}}]);
+  const fallback=rows.find(r=>r.classList.contains('domestic-inline-fallback'));
+  assert.ok(fallback);
+  assert.equal(fallback.querySelector('.domestic-inline-title').textContent,'백화점 - 2개 · 아울렛 - 0개 · 브랜드몰 - 5개');
+  assert.equal(fallback.querySelector('.domestic-inline-price').textContent,'-');
+});
+
 test('domestic rows center-align text and actions',t=>{
   const product={...base,store:'브랜드 공식몰',retailerName:'브랜드 공식몰',url:'https://example.test/one',sizes:[{label:'230',inStock:true}]};
   const sources=[{store:'브랜드 공식몰',officialStatus:'verified',count:1,countVerified:true}];
