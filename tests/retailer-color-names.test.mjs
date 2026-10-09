@@ -133,8 +133,9 @@ test('the production result renderer displays the added name and keeps the offic
   dom.window.document.querySelector('main').innerHTML = dom.window.renderDomestic({products,sources:[]});
   const row = dom.window.document.querySelector('.domestic-inline-row');
   assert.match(row.textContent,/터프 긴팔 티셔츠 \[차콜 그레이\]/);
-  assert.match(row.textContent,/차콜 그레이 \/ 95 · 재고 5개/);
-  assert.match(row.textContent,/차콜 그레이 \/ 100 · 재고 0개/);
+  assert.match(row.textContent,/차콜 그레이 \/ 95/);
+  assert.match(row.textContent,/차콜 그레이 \/ 100/);
+  assert.doesNotMatch(row.querySelector('.domestic-inline-stock-cell').textContent,/재고/);
   const link = row.querySelector('.domestic-inline-actions [data-url]');
   assert.equal(decodeURIComponent(link.dataset.url),official().url);
 });

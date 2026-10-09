@@ -344,22 +344,33 @@
     for (const option of sizes) {
       const label = String(option?.label || option?.name || (typeof option === "string" ? option : "")).trim();
       const raw = String(option?.stockText || option?.statusText || "").trim();
-      // A bare availability word from the platform carries no per-option detail.
-      // Availability is already shown by the control itself (button vs grey label).
-      const statusOnly = /^(?:선택\s*(?:가능|불가)|재고\s*확인\s*필요|구매\s*가능)$/i.test(raw) ? "" : raw;
-      if (!label && !statusOnly) continue;
+      // Chips show the size only. Availability phrases (sold out, restock
+      // notices, arrival guarantees, stock counts) repeat on every chip while
+      // availability itself is already shown by the control: buttons are
+      // available, grey labels are sold out. Saved option evidence stays exact.
+      const chipText = text => String(text || "")
+        .replace(/^(?:선택\s*(?:가능|불가)|재고\s*확인\s*필요|구매\s*가능)$/i, "")
+        .replace(/재입고(\s*알림)?|입고\s*알림\s*받기|알림\s*받기/g, "")
+        .replace(/\(\s*품절\s*\)|\[\s*품절\s*\]|품절(?!\s*임박)/g, "")
+        .replace(/\(\s*매진\s*\)|\[\s*매진\s*\]|매진(?!\s*임박)/g, "")
+        .replace(/SOLD[\s_-]*OUT(?!\s*SOON)/gi, "")
+        .replace(/(?:[내모]일\s*\([^)]*\)\s*)?도착보장/g, "")
+        .replace(/(?:재고(?:\s*수량)?|남은\s*(?:재고|수량))\s*[:：]?\s*[\d,]+(?:\s*개)?|[\d,]+\s*개\s*남(?:음|았)/g, "")
+        .replace(/\s{2,}/g, " ").trim();
+      const labelText = chipText(label);
+      const rawText = chipText(raw);
+      if (!labelText && !rawText) continue;
       // Show the size label with the platform's own stock wording only.
-      // Availability stays visible through the control itself: available
-      // options are buttons, sold-out options are disabled grey labels.
-      const sourceText = statusOnly && statusOnly !== label && !statusOnly.includes(label) ? `${label} · ${statusOnly}` : statusOnly || label;
-      const quantity = Number.isSafeInteger(option?.quantity) && option.quantity >= 0 ? option.quantity : null;
-      const optionText = quantity !== null && !/(?:재고|남은\s*(?:재고|수량))\s*(?:수량)?\s*[:：]?\s*[\d,]+|[\d,]+\s*개\s*남(?:음|았)/.test(sourceText) ? `${sourceText} · 재고 ${quantity.toLocaleString("ko-KR")}개` : sourceText;
+      const sourceText = rawText && rawText !== labelText && !rawText.includes(labelText) && !labelText.includes(rawText)
+        ? `${labelText} · ${rawText}` : rawText.includes(labelText) ? rawText : labelText;
+      if (!sourceText) continue;
+      const optionText = sourceText;
       if (seen.has(optionText)) continue;
       seen.add(optionText);
       const optionUrl = String(option?.url || option?.productUrl || option?.href || product?.url || "").trim();
       const clickable = option?.inStock === true && Boolean(optionUrl);
       lines.push(clickable
-        ? `<button type="button" class="domestic-inline-stock-option" data-url="${encodeURIComponent(optionUrl)}" title="${safeText(label || optionText)} 상품 열기">${safeText(optionText)} ↗</button>`
+        ? `<button type="button" class="domestic-inline-stock-option" data-url="${encodeURIComponent(optionUrl)}" title="${safeText(optionText)} 상품 열기">${safeText(optionText)} ↗</button>`
         : `<span class="domestic-inline-stock-option${option?.inStock === false ? " soldout" : ""}"${option?.inStock === false ? ' aria-disabled="true"' : ""}>${safeText(optionText)}</span>`);
     }
     if (!lines.length) {
