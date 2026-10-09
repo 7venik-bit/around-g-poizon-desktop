@@ -439,8 +439,18 @@
       </div>`));
     }
     const rows = [...retailerGroups.values()].map(({retailer, official, source, products: groupProducts, rows: productRows}) => {
-      return `<div class="domestic-inline-retailer-group" role="group" aria-label="${safeText(retailer)}">
-        <div class="domestic-inline-store domestic-inline-retailer-label" title="${safeText(retailer)}"><span>${safeText(retailer)}</span>${official ? `<span class="domestic-inline-official">공식</span>` : ""}</div>
+      // The operation-type suffix ("· 본사직영", "· 공식수입") stays in saved
+      // evidence; the seller badge shows the short store name. A generic
+      // "브랜드 공식관" badge keeps its market from the stored store value
+      // ("SSG 브랜드 공식관") so the channel never goes missing.
+      const stripSuffix = text => String(text || "").replace(/\s*·\s*(본사\s*직영|공식\s*수입)\s*$/, "").trim();
+      const shortName = stripSuffix(retailer);
+      const first = groupProducts[0] || {};
+      const storeName = stripSuffix(first.store || first.sourceStore || "");
+      const displayRetailer = (/^브랜드\s*공식관/.test(shortName) && storeName.includes("브랜드 공식관")
+        ? storeName : shortName).replace(/^SSG(?=\s)/, "SSG닷컴");
+      return `<div class="domestic-inline-retailer-group" role="group" aria-label="${safeText(displayRetailer)}">
+        <div class="domestic-inline-store domestic-inline-retailer-label" title="${safeText(displayRetailer)}"><span>${safeText(displayRetailer)}</span>${official ? `<span class="domestic-inline-official">공식</span>` : ""}</div>
         <div class="domestic-inline-retailer-rows">${productRows.join("")}</div>
       </div>`;
     });

@@ -155,6 +155,25 @@ test('seller groups do not transfer official status or merge different sources w
   assert.deepEqual(groups.map(group=>group.querySelectorAll('.domestic-inline-official').length),[1,0,0]);
 });
 
+test('seller badges drop the operation-type suffix without merging groups',t=>{
+  const rows=render(t,[
+    {...base,store:'SSG 브랜드 공식관',retailerName:'브랜드 공식관 · 본사직영',url:'https://example.test/a',sizes:[{label:'230',inStock:true}]},
+    {...base,store:'SSG 브랜드 공식관',retailerName:'브랜드 공식관 · 공식수입',url:'https://example.test/b',sizes:[{label:'240',inStock:true}]},
+  ]);
+  const groups=[...rows[0].closest('.domestic-inline-results').querySelectorAll('.domestic-inline-retailer-group')];
+  assert.equal(groups.length,2);
+  for (const group of groups) {
+    assert.equal(group.querySelector('.domestic-inline-retailer-label span').textContent,'SSG닷컴 브랜드 공식관');
+    assert.equal(group.getAttribute('aria-label'),'SSG닷컴 브랜드 공식관');
+  }
+});
+
+test('a generic official-mall badge without a market store falls back to the short name',t=>{
+  const rows=render(t,[{...base,store:'SSG',retailerName:'브랜드 공식관 · 본사직영',url:'https://example.test/a',sizes:[{label:'230',inStock:true}]}]);
+  const label=rows[0].closest('.domestic-inline-retailer-group').querySelector('.domestic-inline-retailer-label span');
+  assert.equal(label.textContent,'브랜드 공식관');
+});
+
 test('domestic rows center-align text and actions',t=>{
   const product={...base,store:'브랜드 공식몰',retailerName:'브랜드 공식몰',url:'https://example.test/one',sizes:[{label:'230',inStock:true}]};
   const sources=[{store:'브랜드 공식몰',officialStatus:'verified',count:1,countVerified:true}];
