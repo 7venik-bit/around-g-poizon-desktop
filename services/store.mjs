@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { FULL_BRAND_CATALOG_MINIMUM } from "./brand-catalog.mjs";
 
 const EMPTY = {
   version: 1,
@@ -16,7 +17,7 @@ const EMPTY = {
   settings: {},
   collector: { status: "idle", lastPage: 0, lastFingerprint: "", repeatedPages: 0 }
 };
-const BRAND_CATALOG_BACKUP_MINIMUM = 3300;
+const BRAND_CATALOG_BACKUP_MINIMUM = FULL_BRAND_CATALOG_MINIMUM;
 
 async function replaceWithRetry(source, destination) {
   for (let attempt = 0; attempt < 6; attempt += 1) {

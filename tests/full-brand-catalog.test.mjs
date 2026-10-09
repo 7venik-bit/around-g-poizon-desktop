@@ -180,9 +180,23 @@ test("missing, partial, and stale brand catalogs automatically request a refresh
   const complete = Array.from({ length: 3388 }, () => ({}));
   const now = Date.parse("2026-08-07T12:00:00Z");
   assert.equal(brandCatalogNeedsSync([], "", now), true);
-  assert.equal(brandCatalogNeedsSync(complete.slice(0, 3299), new Date(now).toISOString(), now), true);
+  assert.equal(brandCatalogNeedsSync(complete.slice(0, FULL_BRAND_CATALOG_MINIMUM - 1), new Date(now).toISOString(), now), true);
   assert.equal(brandCatalogNeedsSync(complete, new Date(now).toISOString(), now), false);
   assert.equal(brandCatalogNeedsSync(complete, new Date(now - BRAND_CATALOG_MAX_AGE_MS - 1).toISOString(), now), true);
+});
+
+test("a shrunken live-size catalog still syncs instead of failing", () => {
+  const source = {
+    brands: Array.from({ length: 3284 }, (_value, index) => ({
+      brandId: index + 1,
+      brandName: `브랜드${index + 1}`,
+      brandUrl: `/brand/b-${index + 1}`,
+    })),
+  };
+  const brands = parseKrPoizonBrandData(source);
+  assert.equal(brands.length, 3284);
+  assert.ok(brands.length >= FULL_BRAND_CATALOG_MINIMUM);
+  assert.equal(brandCatalogNeedsSync(brands, new Date().toISOString(), Date.now()), false);
 });
 
 test("the desktop automatically syncs and displays the full catalog", async () => {

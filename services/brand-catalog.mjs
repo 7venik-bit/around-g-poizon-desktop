@@ -1,4 +1,7 @@
-export const FULL_BRAND_CATALOG_MINIMUM = 3300;
+// POIZON's live KR list parsed to 3,284 brands on 2026-10-09, below the old
+// 3,300 floor, which made every sync fail while a valid list existed. Keep a
+// tripwire against empty/garbage parses, not against small official delistings.
+export const FULL_BRAND_CATALOG_MINIMUM = 3200;
 export const BRAND_CATALOG_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function brandCatalogNeedsSync(brands, updatedAt = "", now = Date.now()) {
