@@ -63,7 +63,6 @@
 .domestic-inline-row button{min-width:64px!important;height:30px!important;padding:5px 8px!important;border-radius:6px!important;font-size:10px!important;font-weight:800!important;white-space:nowrap!important;overflow:visible!important}
 .domestic-inline-row .stock-watch-register-button{min-width:96px!important;flex:0 0 96px!important}
 .domestic-inline-fallback .domestic-inline-title{color:#64748b!important;font-weight:600!important}
-.domestic-inline-filter{margin-top:2px!important;color:#64748b!important;font-size:10px!important;font-weight:400!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
 .domestic-inline-empty{padding:8px 0!important;color:#7b8794!important;font-size:11px!important;text-align:left!important}
 
 @media(max-width:1180px){
