@@ -29,7 +29,20 @@ export function captureRenderedStockEvidence(selectors = [], root = document) {
     .filter(el => (visible(el) || (el.tagName === 'OPTION' && visible(el.parentElement)) || (el.tagName === 'INPUT' && visible(el.labels?.[0]))) && !el.closest(excluded))
     .filter(el => {
       const select = el.closest('select');
-      const controlText = select ? [select.name, select.id, select.getAttribute('aria-label'), select.closest('label')?.textContent].join(' ') : '';
+      const controlText = select ? [select.name, select.id, select.className, select.getAttribute('aria-label'), select.getAttribute('title'), select.closest('label')?.textContent].join(' ') : '';
+      // Navigation/utility selects (family-site menus, language/currency pickers,
+      // store locators, coupon/notice selectors) never own product stock options.
+      // Lotte pages expose a visible FAMILY SITE select whose affiliate entries
+      // would otherwise render as dozens of bogus "selectable" option chips.
+      const navigational = text => /language|언어|통화|currency|국가|고객\s*센터|공지|이벤트|쿠폰|coupon|정렬|sort|배송|주소|매장|지점|카드|은행|소식|구독/i.test(text)
+        || (/family|familysite|패밀리|계열사|관련\s*사이트/i.test(text) && !/font-family/i.test(text));
+      if (select && navigational(controlText)) return false;
+      if (!select) {
+        for (let node = el.parentElement, depth = 0; node && depth < 6; node = node.parentElement, depth += 1) {
+          const marker = `${node.className || ''} ${node.id || ''} ${typeof node.getAttribute === 'function' ? (node.getAttribute('aria-label') || '') : ''}`;
+          if (navigational(marker)) return false;
+        }
+      }
       return !/quantity|qty|구매\s*수량|주문\s*수량|^수량$/i.test(controlText.trim())
         && !/^(?:공유(?:하기)?|share|사이즈\s*비교|size\s*comparison|\d+\s*개씩\s*보기)$/i.test(rawText(el))
         && !/사이즈\s*(?:가이드|안내|표)|SIZE\s*(?:GUIDE|CHART)/i.test(rawText(el));

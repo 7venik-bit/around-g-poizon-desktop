@@ -1280,6 +1280,22 @@ test('size capture reads leaf controls and excludes purchase quantities and size
   assert.equal(result.purchaseLimitText,'*ID당 구매 가능 수량 10개');
 });
 
+test('Lotte family-site navigation selects are not collected as stock options', async t => {
+  const url='https://www.lotteon.com/p/product/LO100415445102';
+  const f=fixture(t,{pages:{[url]:'<main><h1>에어 모나크 IV 415445-102</h1>'
+    + '<div class="option-box"><label>사이즈<select name="optSize" aria-label="사이즈 선택"><option value="">사이즈를 선택하세요</option><option>250</option><option>255</option><option>260</option></select></label></div>'
+    + '<div class="family-site"><label>FAMILY SITE<select aria-label="FAMILY SITE" class="family-site-select"><option>롯데건설</option><option>롯데정밀화학</option><option>롯데네슬레코리아</option><option>롯데햄</option></select></label></div>'
+    + '<div class="family-dropdown"><button aria-haspopup="listbox" aria-label="계열사 바로가기">계열사</button><ul role="listbox"><li role="option">롯데칠성음료</li><li role="option">롯데제과</li></ul></div>'
+    + '<label>구매 수량<select name="quantity"><option>1</option><option>2</option></select></label>'
+    + '</main>'}});
+  runInContext(section('function renderedStockSelectors(', '\nasync function clickRenderedProductCard('),f.context);
+  const w=new f.context.BrowserWindow();await w.loadURL(url);
+  const snapshot=await w.webContents.executeJavaScript(`(${relay.captureRenderedStockEvidence.toString()})(${JSON.stringify(f.context.renderedStockSelectors('롯데온'))})`);
+  const result=relay.normalizeRenderedStockEvidence(snapshot);
+  assert.deepEqual(result.sizes.map(s=>s.label),['250','255','260']);
+  assert.equal(result.inStock,true);
+});
+
 test('Kolon stock refresh opens size choices before capturing the result', async t => {
   const url='https://www.kolonmall.com/Product/JKJGX25272SBU';
   const f=fixture(t,{pages:{[url]:'<main><h1>여성 방수재킷</h1><button>구매하기</button></main>'}});
