@@ -133,7 +133,7 @@ app.whenReady().then(async () => {
     assert.equal(rendered.rows.length,4);
     assert.equal(rendered.headingColumns,6);
     assert.deepEqual(rendered.sellers,collected.map(product=>product.store));
-    for(const row of rendered.rows){assert.equal(row.columns,5);assert.match(row.stock,/270.*3개 남음/);assert.match(row.stock,/280.*품절/);assert.match(row.text,/99,000원/);}
+    for(const row of rendered.rows){assert.equal(row.columns,5);assert.match(row.stock,/270/);assert.match(row.stock,/280/);assert.doesNotMatch(row.stock,/3개 남음|품절/);assert.match(row.text,/99,000원/);}
     assert.equal(rendered.errors,'');
     console.log(JSON.stringify({automaticProductSearch:true,retailerRows:rendered.rows.length,belowProduct:true,extraStockClick:false,offline:true}));
   } finally {ui.destroy();uiSession.protocol.unhandle('https');}

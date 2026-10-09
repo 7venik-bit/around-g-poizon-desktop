@@ -356,6 +356,7 @@
         .replace(/SOLD[\s_-]*OUT(?!\s*SOON)/gi, "")
         .replace(/(?:[내모]일\s*\([^)]*\)\s*)?도착보장/g, "")
         .replace(/(?:재고(?:\s*수량)?|남은\s*(?:재고|수량))\s*[:：]?\s*[\d,]+(?:\s*개)?|[\d,]+\s*개\s*남(?:음|았)/g, "")
+        .replace(/\(\s*\)|\[\s*\]/g, "")
         .replace(/\s{2,}/g, " ").trim();
       const labelText = chipText(label);
       const rawText = chipText(raw);
