@@ -440,8 +440,18 @@
       </div>`));
     }
     const rows = [...retailerGroups.values()].map(({retailer, official, source, products: groupProducts, rows: productRows}) => {
-      return `<div class="domestic-inline-retailer-group" role="group" aria-label="${safeText(retailer)}">
-        <div class="domestic-inline-store domestic-inline-retailer-label" title="${safeText(retailer)}"><span>${safeText(retailer)}</span>${official ? `<span class="domestic-inline-official">공식</span>` : ""}</div>
+      // Operation-type suffixes ("· 본사직영", "· 공식수입") stay in saved
+      // evidence; the seller badge shows a short name. The SSG official mall
+      // badge shows as SSG.COM; other SSG stores use the SSG닷컴 prefix.
+      const stripSuffix = text => String(text || "").replace(/\s*·\s*(본사\s*직영|공식\s*수입)\s*$/, "").trim();
+      const shortName = stripSuffix(retailer);
+      const first = groupProducts[0] || {};
+      const storeName = stripSuffix(first.store || first.sourceStore || "");
+      const marketName = /^브랜드\s*공식관/.test(shortName) && storeName.includes("브랜드 공식관")
+        ? storeName : shortName;
+      const badgeName = /^SSG\s+브랜드\s*공식관$/.test(marketName) ? "SSG.COM" : marketName.replace(/^SSG(?=\s)/, "SSG닷컴");
+      return `<div class="domestic-inline-retailer-group" role="group" aria-label="${safeText(badgeName)}">
+        <div class="domestic-inline-store domestic-inline-retailer-label" title="${safeText(badgeName)}"><span>${safeText(badgeName)}</span>${official ? `<span class="domestic-inline-official">공식</span>` : ""}</div>
         <div class="domestic-inline-retailer-rows">${productRows.join("")}</div>
       </div>`;
     });
@@ -470,12 +480,15 @@
       if (!(count > 0 || searched || source?.verificationPending || source?.verificationFailed
         || source?.loginRequired || source?.securityVerificationRequired || hasUsefulLink)) continue;
       const message = verdict.label;
+      // Presence verdicts ("상품 있음", "상품 없음") show as a dash like the
+      // other empty cells. Pending states ("확인 중") keep their label.
+      const titleText = /^\s*상품\s*(있음|없음)/.test(message) ? "-" : message;
       const naverPriceAction = store === "네이버 패션타운" && contextKey && !source?.rateLimited && !source?.loginRequired && !source?.securityVerificationRequired
         ? `<button type="button" class="domestic-inline-price-fetch" data-inline-naver-price="${encodeURIComponent(contextKey)}">가격 가져오기</button>`
         : "-";
       rows.push(`<div class="domestic-inline-row domestic-inline-fallback">
         <div class="domestic-inline-store" title="${safeText(store)}">${safeText(store)}</div>
-        <div class="domestic-inline-title">${safeText(message)}</div>
+        <div class="domestic-inline-title">${safeText(titleText)}</div>
         <div class="domestic-inline-stock-cell">-</div>
         <div class="domestic-inline-code">${safeText(source?.searchQuery || sourceProduct?.articleNumber || "-")}</div>
         <div class="domestic-inline-price">${naverPriceAction}</div>

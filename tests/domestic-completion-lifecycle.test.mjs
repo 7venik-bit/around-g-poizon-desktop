@@ -375,7 +375,7 @@ for (const [name, officialProducts, source] of [
     assert.ok(detail.querySelector('[data-stock-register]'), 'Musinsa stock-watch action is preserved');
     assert.equal(f.overlay().hidden, true);
     assert.doesNotMatch(row.textContent, /검색 중/);
-    if (source.absenceConfirmed) assert.match(detail.textContent, /상품 없음/);
+    if (source.absenceConfirmed) assert.equal(detail.querySelector('.domestic-inline-fallback .domestic-inline-title').textContent, '-');
   });
 }
 
