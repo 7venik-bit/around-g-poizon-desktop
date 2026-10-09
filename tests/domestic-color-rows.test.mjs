@@ -119,6 +119,23 @@ test('seller groups do not transfer official status or merge different sources w
   assert.deepEqual(groups.map(group=>group.querySelectorAll('.domestic-inline-official').length),[1,0,0]);
 });
 
+test('domestic rows center-align text and actions',t=>{
+  const product={...base,store:'브랜드 공식몰',retailerName:'브랜드 공식몰',url:'https://example.test/one',sizes:[{label:'230',inStock:true}]};
+  const sources=[{store:'브랜드 공식몰',officialStatus:'verified',count:1,countVerified:true}];
+  const rows=render(t,[product],sources);
+  const row=rows[0],view=row.ownerDocument.defaultView;
+  const cs=sel=>view.getComputedStyle(row.querySelector(sel));
+  assert.equal(cs('.domestic-inline-title').textAlign,'center');
+  assert.equal(cs('.domestic-inline-code').textAlign,'center');
+  assert.equal(cs('.domestic-inline-price').textAlign,'center');
+  assert.equal(cs('.domestic-inline-stock-cell').justifyContent,'center');
+  assert.equal(cs('.domestic-inline-actions').justifyContent,'center');
+  const group=row.closest('.domestic-inline-retailer-group');
+  assert.equal(view.getComputedStyle(group.querySelector('.domestic-inline-retailer-label')).justifyContent,'center');
+  const head=row.closest('.domestic-inline-results').querySelector('.domestic-inline-head');
+  assert.equal(view.getComputedStyle(head).textAlign,'center');
+});
+
 test('fallback rows right-align their action links like product rows',t=>{
   const product={...base,store:'브랜드 공식몰',url:'https://example.test/one',sizes:[{label:'230',inStock:true}]};
   const sources=[{store:'브랜드 공식몰',officialStatus:'verified',count:1,countVerified:true},
