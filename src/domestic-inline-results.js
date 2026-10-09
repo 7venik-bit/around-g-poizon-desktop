@@ -63,13 +63,13 @@
       .domestic-inline-retailer-rows>.domestic-inline-row{grid-template-columns:minmax(160px,1fr) minmax(200px,1.4fr) 110px 100px 180px!important}
       .domestic-inline-retailer-rows>.domestic-inline-row:last-child{border-bottom:0!important}
       .domestic-inline-stock{margin-top:3px!important;text-align:center!important;white-space:pre-line!important;overflow-wrap:anywhere!important;color:#537563!important;font-weight:650!important}
-      .domestic-inline-stock.soldout,.domestic-inline-stock-option.soldout{color:#9a5c32!important}
+      .domestic-inline-stock.soldout,.domestic-inline-stock-option.soldout{color:#6d747d!important}
       .domestic-inline-stock-cell{display:flex!important;align-items:center!important;align-content:center!important;justify-content:center!important;gap:5px!important;min-width:0!important;flex-wrap:wrap!important;white-space:normal!important;color:#537563!important;line-height:1.35!important}
       .domestic-inline-stock-cell>.domestic-inline-stock{flex:0 0 100%!important}
-      .domestic-inline-stock-option{display:inline-flex!important;align-items:center!important;min-height:25px!important;padding:3px 7px!important;border:1px solid #b9dfd1!important;border-radius:7px!important;background:#f1faf6!important;color:#16735a!important;font:inherit!important;font-weight:700!important;line-height:1.25!important;text-decoration:none!important;white-space:nowrap!important}
-      button.domestic-inline-stock-option{min-width:0!important;height:auto!important;cursor:pointer!important}
-      button.domestic-inline-stock-option:hover{border-color:#2d91df!important;background:#eef6ff!important;color:#1768c5!important}
-      .domestic-inline-stock-option.soldout{border-color:#ead6c8!important;background:#fff8f3!important;color:#9a5c32!important;cursor:not-allowed!important;opacity:.78!important}
+      .domestic-inline-stock-option{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-width:0!important;min-height:30px!important;height:auto!important;padding:5px 8px!important;border:1px solid #b9c9dc!important;border-radius:6px!important;background:#e7eef6!important;color:#33587e!important;font-family:inherit!important;font-size:10px!important;font-weight:800!important;line-height:1.25!important;text-decoration:none!important;white-space:nowrap!important}
+      button.domestic-inline-stock-option{cursor:pointer!important}
+      button.domestic-inline-stock-option:hover{border-color:#8fb3d9!important;background:#e6effa!important;color:#33587e!important}
+      .domestic-inline-stock-option.soldout{border-color:#d3d7dc!important;background:#f0f1f3!important;color:#6d747d!important;cursor:not-allowed!important;opacity:1!important}
       .domestic-inline-purchase-limit{margin-top:4px!important;color:#64748b!important;font-size:10px!important;font-weight:400!important;text-align:center!important}
       .domestic-inline-code{min-width:0!important;color:#64748b!important;font-family:inherit!important;text-align:center!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
       .domestic-inline-price{text-align:center!important;color:#111827!important;font-weight:800!important;white-space:nowrap!important}
@@ -344,22 +344,33 @@
     for (const option of sizes) {
       const label = String(option?.label || option?.name || (typeof option === "string" ? option : "")).trim();
       const raw = String(option?.stockText || option?.statusText || "").trim();
-      // A bare availability word from the platform carries no per-option detail.
-      // Availability is already shown by the control itself (button vs grey label).
-      const statusOnly = /^(?:선택\s*(?:가능|불가)|재고\s*확인\s*필요|구매\s*가능)$/i.test(raw) ? "" : raw;
-      if (!label && !statusOnly) continue;
+      // Chips show the size only. Availability phrases (sold out, restock
+      // notices, arrival guarantees, stock counts) repeat on every chip while
+      // availability itself is already shown by the control: buttons are
+      // available, grey labels are sold out. Saved option evidence stays exact.
+      const chipText = text => String(text || "")
+        .replace(/^(?:선택\s*(?:가능|불가)|재고\s*확인\s*필요|구매\s*가능)$/i, "")
+        .replace(/재입고(\s*알림)?|입고\s*알림\s*받기|알림\s*받기/g, "")
+        .replace(/\(\s*품절\s*\)|\[\s*품절\s*\]|품절(?!\s*임박)/g, "")
+        .replace(/\(\s*매진\s*\)|\[\s*매진\s*\]|매진(?!\s*임박)/g, "")
+        .replace(/SOLD[\s_-]*OUT(?!\s*SOON)/gi, "")
+        .replace(/(?:[내모]일\s*\([^)]*\)\s*)?도착보장/g, "")
+        .replace(/(?:재고(?:\s*수량)?|남은\s*(?:재고|수량))\s*[:：]?\s*[\d,]+(?:\s*개)?|[\d,]+\s*개\s*남(?:음|았)/g, "")
+        .replace(/\s{2,}/g, " ").trim();
+      const labelText = chipText(label);
+      const rawText = chipText(raw);
+      if (!labelText && !rawText) continue;
       // Show the size label with the platform's own stock wording only.
-      // Availability stays visible through the control itself: available
-      // options are buttons, sold-out options are disabled grey labels.
-      const sourceText = statusOnly && statusOnly !== label && !statusOnly.includes(label) ? `${label} · ${statusOnly}` : statusOnly || label;
-      const quantity = Number.isSafeInteger(option?.quantity) && option.quantity >= 0 ? option.quantity : null;
-      const optionText = quantity !== null && !/(?:재고|남은\s*(?:재고|수량))\s*(?:수량)?\s*[:：]?\s*[\d,]+|[\d,]+\s*개\s*남(?:음|았)/.test(sourceText) ? `${sourceText} · 재고 ${quantity.toLocaleString("ko-KR")}개` : sourceText;
+      const sourceText = rawText && rawText !== labelText && !rawText.includes(labelText) && !labelText.includes(rawText)
+        ? `${labelText} · ${rawText}` : rawText.includes(labelText) ? rawText : labelText;
+      if (!sourceText) continue;
+      const optionText = sourceText;
       if (seen.has(optionText)) continue;
       seen.add(optionText);
       const optionUrl = String(option?.url || option?.productUrl || option?.href || product?.url || "").trim();
       const clickable = option?.inStock === true && Boolean(optionUrl);
       lines.push(clickable
-        ? `<button type="button" class="domestic-inline-stock-option" data-url="${encodeURIComponent(optionUrl)}" title="${safeText(label || optionText)} 상품 열기">${safeText(optionText)} ↗</button>`
+        ? `<button type="button" class="domestic-inline-stock-option" data-url="${encodeURIComponent(optionUrl)}" title="${safeText(optionText)} 상품 열기">${safeText(optionText)}</button>`
         : `<span class="domestic-inline-stock-option${option?.inStock === false ? " soldout" : ""}"${option?.inStock === false ? ' aria-disabled="true"' : ""}>${safeText(optionText)}</span>`);
     }
     if (!lines.length) {

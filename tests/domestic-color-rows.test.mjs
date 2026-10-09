@@ -34,6 +34,40 @@ test('Naver renders six separate colour rows without dropping any of the 54 opti
   assert.deepEqual(product,before,'presentation must not change saved stock evidence');
 });
 
+test('stock chips share one calm palette across every style source',()=>{
+  const css=readFileSync(new URL('../src/domestic-inline-results.css',import.meta.url),'utf8');
+  const inline=readFileSync(new URL('../src/domestic-inline-results.js',import.meta.url),'utf8');
+  const appCss=readFileSync(new URL('../src/style.css',import.meta.url),'utf8');
+  assert.match(css, /\.domestic-inline-stock-cell>\.domestic-inline-stock-option\{[^}]*border:1px solid #b9c9dc/);
+  assert.match(css, /\.domestic-inline-stock-cell>\.domestic-inline-stock-option\{[^}]*background:#e7eef6/);
+  assert.match(css, /\.domestic-inline-stock-cell>\.domestic-inline-stock-option\{[^}]*color:#33587e/);
+  assert.match(css, /\.domestic-inline-stock-cell>\.domestic-inline-stock-option\.soldout\{[^}]*background:#f0f1f3/);
+  assert.match(css, /\.domestic-inline-stock-cell>\.domestic-inline-stock-option\.soldout\{[^}]*color:#6d747d/);
+  assert.match(inline, /\.domestic-inline-stock-option\{[^}]*border:1px solid #b9c9dc/);
+  assert.match(inline, /\.domestic-inline-stock-option\{[^}]*background:#e7eef6/);
+  assert.match(inline, /\.domestic-inline-stock-option\{[^}]*color:#33587e/);
+  assert.match(inline, /\.domestic-inline-stock-option\.soldout\{[^}]*background:#f0f1f3/);
+  assert.match(inline, /\.domestic-inline-stock-option\.soldout\{[^}]*color:#6d747d/);
+  assert.match(appCss, /\.size-chip\.available\{background:#e7eef6;color:#33587e/);
+  assert.match(appCss, /\.size-chip\.soldout\{background:#f0f1f3;color:#6d747d/);
+  assert.match(appCss, /\.size-chip\.unknown\{background:#f3f0e8;color:#77694f/);
+  assert.match(appCss, /\.stock-state\.soldout\{background:#f0f1f3;color:#6d747d/);
+  assert.doesNotMatch(appCss, /\.size-chip\.soldout\{background:#ffe5e1/);
+  assert.doesNotMatch(appCss, /\.stock-state\.soldout\{background:#fff0d8/);
+});
+
+test('restock notices collapse to the bare size',t=>{
+  const rows=render(t,[{...base,store:'무신사',url:'https://www.musinsa.com/products/1',sizes:[
+    {label:'245 (품절) 재입고 알림',stockText:'245 (품절) 재입고 알림',inStock:false},
+    {label:'255',stockText:'255',inStock:true,url:'https://www.musinsa.com/products/1?size=255'},
+    {label:'260 내일(토) 도착보장',stockText:'260 내일(토) 도착보장',inStock:true,url:'https://www.musinsa.com/products/1?size=260'},
+    {label:'265 SOLD OUT',stockText:'265 SOLD OUT',inStock:false},
+  ]}]);
+  assert.deepEqual([...rows[0].querySelectorAll('.domestic-inline-stock-option')].map(o=>o.textContent),['245','255','260','265']);
+  assert.equal(rows[0].querySelector('.soldout').tagName,'SPAN');
+  assert.doesNotMatch(rows[0].textContent,/재입고 알림|품절|SOLD OUT|도착보장/);
+});
+
 test('Musinsa groups interleaved colour paths while retaining quantities, notices and option links',t=>{
   const url='https://www.musinsa.com/products/4693116';
   const product={...base,store:'데상트',sourceStore:'무신사',url,stockText:'회원 전용',stockCoverage:'partial',purchaseLimitText:'1인당 최대 1개 구매 가능',sizes:[
@@ -44,9 +78,10 @@ test('Musinsa groups interleaved colour paths while retaining quantities, notice
   ]};
   const rows=render(t,[product]);
   assert.deepEqual(rows.map(row=>row.dataset.stockColor),['화이트','블랙']);
-  assert.match(rows[0].textContent,/재고 1개/);
+  assert.equal(rows[0].querySelector('button.domestic-inline-stock-option').textContent,'화이트 / 110');
   assert.equal(rows[0].querySelector('span.domestic-inline-stock-option').textContent,'화이트 / 115');
-  assert.match(rows[1].textContent,/90 \(품절\) 재입고 알림/);
+  assert.equal(rows[1].querySelector('span.domestic-inline-stock-option.soldout').textContent,'블랙 / 90');
+  assert.doesNotMatch(rows[1].textContent,/재입고 알림/);
   assert.equal(decodeURIComponent(rows[0].querySelector('button.domestic-inline-stock-option').dataset.url),url+'?size=110');
   for(const row of rows) {
     assert.match(row.textContent,/회원 전용/);
@@ -66,7 +101,8 @@ test('size-only, unknown and official rows are preserved without inventing colou
   assert.equal(rows.length,3);
   assert.ok(rows.every(row=>!row.hasAttribute('data-stock-color')));
   assert.match(rows[1].textContent,/재고 확인 필요/);
-  assert.match(rows[2].textContent,/재고 3개/);
+  assert.match(rows[2].textContent,/화이트 \/ 110/);
+  assert.doesNotMatch(rows[2].querySelector('.domestic-inline-stock-cell').textContent,/재고/);
 });
 
 test('unclassified options survive alongside escaped colour names',t=>{
