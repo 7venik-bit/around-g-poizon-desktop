@@ -210,33 +210,6 @@
     return `<button type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
   }
 
-  // One-line filter state for an SSG/Lotte row of this exact product run:
-  // which department checks held, which menu was missing, whether a scope
-  // that emptied the grid was reverted. Shown on rows without products,
-  // where the filter state is the whole story.
-  function filterStatusText(source = {}) {
-    const d = source?.verificationDiagnostics || {};
-    const lotte = d.lotteCollectionEvidence || null;
-    const ssg = d.ssgCollectionEvidence || null;
-    if (!lotte && !ssg && !d.mirrorReceipt) return "";
-    if (lotte?.noDepartmentGoods === true) return "백화점 상품 없음 · 병행수입으로 판단";
-    const parts = [];
-    const checked = [...(lotte?.facetChecked || []), ...(ssg?.facetChecked || [])].filter(Boolean);
-    const missing = [...(lotte?.facetMissing || []), ...(ssg?.facetMissing || [])].filter(Boolean);
-    if (checked.length) parts.push(`${checked.join(", ")} 체크 유지`);
-    else if (missing.length) parts.push(`${missing.join(", ")} 체크 없음`);
-    if (ssg?.deptTab && ssg.deptTab !== "미적용") parts.push(`백화점 탭 ${ssg.deptTab}`);
-    if ((lotte || ssg)?.scopeReverted === true) parts.push("범위 복원됨");
-    if (!lotte && !ssg && d.mirrorReceipt) {
-      // Evidence-free channel rows: the mirror receipt is the only record.
-      const receipt = d.mirrorReceipt;
-      parts.push(receipt.navigated === true ? "외부 창 같은 탭 이동" : (mirrorSkipLabel(receipt.skipped) || "외부 창 미이동"));
-      const mirrorFilters = mirrorFilterText(receipt);
-      if (mirrorFilters) parts.push(mirrorFilters);
-    }
-    return parts.join(" · ");
-  }
-
   function mirrorSkipLabel(skipped = "") {
     return {
       "unsupported-retailer": "대상 아님",
@@ -483,10 +456,9 @@
       const naverPriceAction = store === "네이버 패션타운" && contextKey && !source?.rateLimited && !source?.loginRequired && !source?.securityVerificationRequired
         ? `<button type="button" class="domestic-inline-price-fetch" data-inline-naver-price="${encodeURIComponent(contextKey)}">가격 가져오기</button>`
         : "-";
-      const filterStatus = filterStatusText(source);
       rows.push(`<div class="domestic-inline-row domestic-inline-fallback">
         <div class="domestic-inline-store" title="${safeText(store)}">${safeText(store)}</div>
-        <div class="domestic-inline-title">${safeText(message)}${filterStatus ? `<div class="domestic-inline-filter">${safeText(filterStatus)}</div>` : ""}</div>
+        <div class="domestic-inline-title">${safeText(message)}</div>
         <div class="domestic-inline-stock-cell">-</div>
         <div class="domestic-inline-code">${safeText(source?.searchQuery || sourceProduct?.articleNumber || "-")}</div>
         <div class="domestic-inline-price">${naverPriceAction}</div>

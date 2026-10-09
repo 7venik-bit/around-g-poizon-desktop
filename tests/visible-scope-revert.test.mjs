@@ -231,13 +231,13 @@ test("collection reverts a scope that empties the grid", () => {
   assert.match(collection, /ssgPreScopeUrl/);
 });
 
-test("fallback rows name the filter state of that exact run", () => {
-  assert.match(inline, /function filterStatusText\(source/);
-  assert.match(inline, /체크 유지/);
-  assert.match(inline, /체크 없음/);
-  assert.match(inline, /백화점 상품 없음 · 병행수입으로 판단/);
-  assert.match(inline, /domestic-inline-filter/);
-  assert.match(inline, /const filterStatus = filterStatusText\(source\)/);
+test("fallback rows hide the one-line filter state", () => {
+  assert.doesNotMatch(inline, /function filterStatusText\(source/);
+  assert.doesNotMatch(inline, /const filterStatus = filterStatusText\(source\)/);
+  assert.doesNotMatch(inline, /domestic-inline-filter/);
+  assert.doesNotMatch(inline, /체크 없음/);
+  assert.doesNotMatch(inline, /체크 유지/);
+  assert.doesNotMatch(inline, /백화점 상품 없음 · 병행수입으로 판단/);
 });
 
 test("mirror receipts surface the per-retailer window run state", () => {
