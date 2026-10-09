@@ -163,8 +163,8 @@ test('seller badges drop the operation-type suffix without merging groups',t=>{
   const groups=[...rows[0].closest('.domestic-inline-results').querySelectorAll('.domestic-inline-retailer-group')];
   assert.equal(groups.length,2);
   for (const group of groups) {
-    assert.equal(group.querySelector('.domestic-inline-retailer-label span').textContent,'SSG닷컴 브랜드 공식관');
-    assert.equal(group.getAttribute('aria-label'),'SSG닷컴 브랜드 공식관');
+    assert.equal(group.querySelector('.domestic-inline-retailer-label span').textContent,'SSG.COM');
+    assert.equal(group.getAttribute('aria-label'),'SSG.COM');
   }
 });
 
