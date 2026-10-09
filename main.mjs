@@ -4867,6 +4867,7 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         loginRequired: result?.loginRequired === true,
         rateLimited: result?.rateLimited === true,
         candidateCount: Number(result?.candidateCount || 0),
+        ...(result?.naverChannelCounts ? { naverChannelCounts: result.naverChannelCounts } : {}),
         parallelRetailerListEnforced: result?.parallelRetailerListEnforced === true,
       // The official search URL and a verified product-detail URL are
       // intentionally separate. A search page must never be presented as a
