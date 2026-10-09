@@ -466,7 +466,7 @@
         <div class="domestic-inline-stock-cell">-</div>
         <div class="domestic-inline-code">${safeText(source?.searchQuery || sourceProduct?.articleNumber || "-")}</div>
         <div class="domestic-inline-price">${naverPriceAction}</div>
-        <div>${sourceAction(source, {}, sourceProduct, contextKey)}</div>
+        <div class="domestic-inline-actions">${sourceAction(source, {}, sourceProduct, contextKey)}</div>
       </div>`);
     }
 

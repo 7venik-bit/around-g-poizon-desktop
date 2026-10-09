@@ -119,6 +119,19 @@ test('seller groups do not transfer official status or merge different sources w
   assert.deepEqual(groups.map(group=>group.querySelectorAll('.domestic-inline-official').length),[1,0,0]);
 });
 
+test('fallback rows right-align their action links like product rows',t=>{
+  const product={...base,store:'브랜드 공식몰',url:'https://example.test/one',sizes:[{label:'230',inStock:true}]};
+  const sources=[{store:'브랜드 공식몰',officialStatus:'verified',count:1,countVerified:true},
+    {store:'롯데온',absenceConfirmed:true,searchCompleted:true,searchUrl:'https://www.lotteon.com/csearch/search?q=SR123UPS11',searchQuery:'SR123UPS11'}];
+  const rows=render(t,[product],sources);
+  assert.equal(rows.length,2);
+  for(const row of rows) {
+    const actions=row.querySelector(':scope > .domestic-inline-actions');
+    assert.ok(actions,'every row aligns its action cell');
+    assert.equal(actions.querySelector('button[data-url]')?.textContent,'열기');
+  }
+});
+
 test('merged seller names are escaped and unknown inventory remains unknown',t=>{
   const rows=render(t,[{...base,store:'무신사',retailerName:'판매처 <한정>',inStock:null,stockVerified:false},
     {...base,store:'무신사',retailerName:'판매처 <한정>',inStock:false}]);
