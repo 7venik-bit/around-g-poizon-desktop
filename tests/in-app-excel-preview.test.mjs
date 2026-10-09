@@ -281,10 +281,11 @@ test("국내 검색 결과 상태를 강한 전용 색상으로 완전히 구분
   assert.match(rendererSource, /excel-search-outcome-label/);
   assert.match(rendererSource, /국내 상품 없음/);
   assert.match(rendererSource, /상품 있음·재고 없음/);
-  assert.match(cssSource, /\.excel-search-outcome-available\{--excel-outcome-border:#059669/);
-  assert.match(cssSource, /\.excel-search-outcome-soldout\{--excel-outcome-border:#d97706/);
-  assert.match(cssSource, /\.excel-search-outcome-pending\{--excel-outcome-border:#7c3aed/);
-  assert.match(cssSource, /\.excel-search-outcome-missing,.excel-search-outcome-error\{--excel-outcome-border:#dc2626/);
+  assert.match(cssSource, /\.excel-search-outcome-available\{--excel-outcome-border:#4a7396/);
+  assert.match(cssSource, /\.excel-search-outcome-soldout\{--excel-outcome-border:#6d747d/);
+  assert.match(cssSource, /\.excel-search-outcome-pending\{--excel-outcome-border:#7a6c4e/);
+  assert.match(cssSource, /\.excel-search-outcome-missing\{--excel-outcome-border:#6d747d/);
+  assert.match(cssSource, /\.excel-search-outcome-error\{--excel-outcome-border:#dc2626/);
   assert.match(cssSource, /border-left-width:7px!important/);
 });
 

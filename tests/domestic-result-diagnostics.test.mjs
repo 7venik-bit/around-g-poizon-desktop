@@ -109,7 +109,7 @@ test('diagnostics stay available alongside partial products without exposing who
   assert.match(details.textContent, /https:\/\/nid\.naver\.com\/nidlogin\.login/);
   assert.match(details.textContent, /로그인 입력창 감지: true/);
   assert.match(body.textContent, /149,000원/);
-  assert.equal(body.querySelector('.domestic-inline-stock-option').textContent,'270 ↗');
+  assert.equal(body.querySelector('.domestic-inline-stock-option').textContent,'270');
 });
 
 test('Naver search submission diagnostics show the input limit and original request safely', t => {

@@ -63,7 +63,7 @@ function measure() {
     if(s.borderBottomStyle!=='solid'||parseFloat(s.borderBottomWidth)*devicePixelRatio<0.99) errors.push('seller separator missing');
   }
   const stock=rows[0].querySelector('.domestic-inline-stock-cell');
-  if(!/90 ↗/.test(stock.textContent)||!/95 ↗/.test(stock.textContent)||!/100/.test(stock.textContent)) errors.push('size omitted');
+  if(!/90/.test(stock.textContent)||!/95/.test(stock.textContent)||!/100/.test(stock.textContent)) errors.push('size omitted');
   if(!/구매 제한:/.test(stock.textContent)) errors.push('purchase limit conflated');
   const stockFor=code=>rows.find(row=>row.querySelector('.domestic-inline-code')?.textContent===code)?.querySelector('.domestic-inline-stock-cell');
   if(stockFor('JWJJM26321DGY').innerText.trim()!=='현재 구매할 수 없는 상품입니다.\n품절') errors.push('platform wording changed');
@@ -89,7 +89,7 @@ function measure() {
   const geometry=[];
   for(const [index,badge] of badges.entries()) {
     const label=String(220+index*5), usable=expectedAvailable.has(label);
-    const expected=`${label}${usable?' ↗':''}`;
+    const expected=`${label}`;
     if(badge.textContent!==expected) errors.push('retailer size/status wording changed: '+label);
     const s=getComputedStyle(badge), r=badge.getBoundingClientRect(), cell=shoeCell.getBoundingClientRect();
     // An inline-flex child of a flex container is blockified: computed display

@@ -53,7 +53,7 @@
       .sourcing-price-summary{display:flex!important;flex-direction:column!important;gap:2px!important;white-space:nowrap!important}
       .sourcing-price-summary strong{font-size:10px!important}
       .sourcing-price-summary small{font-size:8px!important;color:#64748b!important}
-      .excel-search-outcome-soldout .sourcing-domestic-search{background:#eef7f0!important;color:#4f7d57!important;border-color:#d4e8d7!important}
+      .excel-search-outcome-soldout .sourcing-domestic-search{background:#f0f1f3!important;color:#6d747d!important;border-color:#d3d7dc!important}
       #excel-preview-grid .platform-row{display:grid!important;grid-template-columns:22px 90px minmax(260px,1fr) 74px 88px 110px 70px!important;grid-template-rows:56px!important;gap:0 7px!important;align-items:center!important;min-height:56px!important;padding:3px 0!important;text-align:center!important}
       #excel-preview-grid .platform-row>*{min-width:0!important}
       #excel-preview-grid .platform-row>strong{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
