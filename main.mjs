@@ -111,6 +111,10 @@ import {
   officialMallAdapterSummary,
   captureOfficialSoldOutFilter,
 } from "./services/official-mall-adapters.mjs";
+import {
+  CONSENT_ACCEPT_SOURCES,
+  CONSENT_DIALOG_SOURCES,
+} from "./services/official-consent.mjs";
 import { requestedOfficialBrand, resolveBrandOfficialSearch } from "./services/brand-official-search.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer, queryPoizon } from "./services/poizon.mjs";
 import {
@@ -148,6 +152,8 @@ import {
   domesticDetailProgressStatus,
   fitNaverFashionTownSearchQuery,
   naverFashionTownUrl,
+  naverFashionChannelSearchUrl,
+  NAVER_FASHION_FALLBACK_CHANNELS,
   parseNaverFashionTownChannelCounts,
   parseLotteInitialDataProducts,
   lotteServerSearchCard,
@@ -1018,9 +1024,63 @@ async function waitForNaverSecurityVerification(searchWindow) {
   return false;
 }
 
+// Cookie/privacy consent overlays (e.g. adidas.co.kr "모두 동의합니다") cover
+// the search input: typing and clicks land on the overlay, the search never
+// submits, and a real product ends as "확인 필요". Dismiss at most one
+// explicit consent dialog per call; anything else stays for the operator.
+async function dismissOfficialMallConsent(searchWindow) {
+  if (!searchWindow || searchWindow.isDestroyed()) return false;
+  try {
+    return await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
+      const dialogPatterns = ${JSON.stringify(CONSENT_DIALOG_SOURCES)}.map((source) => new RegExp(source, "i"));
+      const acceptPatterns = ${JSON.stringify(CONSENT_ACCEPT_SOURCES)}.map((source) => new RegExp(source, "i"));
+      const isDialog = (text) => dialogPatterns.some((pattern) => pattern.test(String(text || "")));
+      const isAccept = (label) => {
+        const normalized = String(label || "").replace(/\\s+/g, " ").trim();
+        return Boolean(normalized) && normalized.length <= 40
+          && acceptPatterns.some((pattern) => pattern.test(normalized));
+      };
+      const visible = (element) => {
+        if (!element) return false;
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      const roots = [document];
+      for (let index = 0; index < roots.length; index += 1) {
+        for (const element of roots[index].querySelectorAll?.("*") || []) {
+          if (element.shadowRoot && !roots.includes(element.shadowRoot)) roots.push(element.shadowRoot);
+        }
+      }
+      const buttons = [];
+      for (const root of roots) {
+        for (const button of root.querySelectorAll?.('button,[role="button"],a[href],input[type="button"],input[type="submit"]') || []) {
+          if (!visible(button)) continue;
+          const label = String(button.innerText || button.value || button.getAttribute?.("aria-label") || "").replace(/\\s+/g, " ").trim();
+          if (!label) continue;
+          const dialog = button.closest?.('[role="dialog"],[role="alertdialog"],[class*="modal" i],[class*="popup" i],[class*="consent" i],[class*="cookie" i],[id*="consent" i],[id*="cookie" i],div,section') || button.parentElement;
+          buttons.push({ label, dialogText: String(dialog?.innerText || "").slice(0, 2000), element: button });
+        }
+      }
+      const target = buttons.findIndex((entry) => isDialog(entry.dialogText) && isAccept(entry.label));
+      if (target < 0) return false;
+      try { buttons[target].element.click(); } catch { return false; }
+      return true;
+    })()`, true).catch(() => false);
+  } catch {
+    return false;
+  }
+}
+
 async function submitOfficialMallSearch(searchWindow, query) {
   const exactQuery = sanitizeDomesticProductCode(query) || sanitizeDomesticQuery(query);
   if (!exactQuery || !searchWindow || searchWindow.isDestroyed()) return false;
+  // Consent overlays cover the input: dismiss before typing so key/click
+  // events reach the site's own search control, not the popup.
+  for (let consent = 0; consent < 2; consent += 1) {
+    if (!await dismissOfficialMallConsent(searchWindow)) break;
+    await wait(800);
+  }
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const script = `(() => {
       const query = ${JSON.stringify(exactQuery)};
@@ -3005,6 +3065,60 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
   };
 }
 
+// Operator-verified 2026-10-10 (아디다스 JH9976): fashion-group overview can
+// settle explicitly empty while outlet/brand-fashion/department channel
+// searches hold real products. Retry the same query channel-direct before
+// declaring absence. Returns the first settled non-empty channel page, or
+// { ok, explicitEmpty: true } when every domestic channel is empty.
+async function loadNaverFashionChannelsFallback(searchWindow, query) {
+  const expectedQuery = fitNaverFashionTownSearchQuery(query);
+  const diagnostic = searchWindow.domesticDiagnostics || {};
+  for (const channel of NAVER_FASHION_FALLBACK_CHANNELS) {
+    if (searchWindow.isDestroyed()) return { ok: false, verificationReason: "search_canceled" };
+    const channelUrl = naverFashionChannelSearchUrl(channel, expectedQuery);
+    diagnostic.stage = "naver_channel_fallback";
+    diagnostic.fallbackChannel = channel;
+    diagnostic.fallbackUrl = channelUrl;
+    await searchWindow.loadURL(channelUrl).catch((error) => {
+      diagnostic.navigationError = String(error?.message || error);
+    });
+    let emptySamples = 0;
+    let settled = null;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (searchWindow.isDestroyed()) return { ok: false, verificationReason: "search_canceled" };
+      if (attempt > 0) await wait(500);
+      const state = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
+        const href = String(location.href || "");
+        const text = String(document.body?.innerText || "").slice(0, 60000);
+        const cards = document.querySelectorAll('a[href*="/window-products/"]').length;
+        const explicitEmpty = /검색\\s*결과가?\\s*(?:없|0)|검색된\\s*상품이\\s*없|일치하는\\s*(?:상품|제안)이\\s*없/i.test(text);
+        const positiveCount = /(?:전체|검색\\s*결과)\\s*[1-9][\\d,]*\\s*개/i.test(text);
+        return { href, text, cards, explicitEmpty, positiveCount, documentReadyState: document.readyState };
+      })()`, true).catch((error) => { diagnostic.inspectionError = String(error?.message || error); return null; });
+      if (!state) continue;
+      const access = domesticPageAccessState(state.text, state.cards, state);
+      if (access.verificationReason) {
+        return { ok: false, resolvedUrl: state.href, channel, ...access };
+      }
+      let decodedUrl = String(state.href || "");
+      try { decodedUrl = decodeURIComponent(decodedUrl); } catch {}
+      const compact = (value) => String(value || "").replace(/[^A-Z0-9가-힣]/gi, "").toUpperCase();
+      const onChannelPage = String(state.href || "").startsWith(channelUrl.split("?")[0])
+        && compact(decodedUrl).includes(compact(expectedQuery));
+      if (!onChannelPage) continue;
+      emptySamples = state.explicitEmpty ? emptySamples + 1 : 0;
+      const ready = Number(state.cards) > 0 || state.positiveCount
+        || (state.explicitEmpty && emptySamples >= 3 && String(state.documentReadyState || "") === "complete");
+      if (!ready) continue;
+      settled = { channel, resolvedUrl: state.href, explicitEmpty: state.explicitEmpty && Number(state.cards) === 0 };
+      break;
+    }
+    if (!settled) continue;
+    if (!settled.explicitEmpty) return { ok: true, ...settled };
+  }
+  return { ok: true, resolvedUrl: String(searchWindow.webContents.getURL() || ""), explicitEmpty: true, channel: "" };
+}
+
 async function loadDomesticRetailerResultPage(searchWindow, targetUrl) {
   const diagnostic = searchWindow.domesticDiagnostics = {
     stage: "retailer_result_navigation", targetUrl, inspectedFrames: 0, inspectionError: "", navigationError: "",
@@ -3330,14 +3444,28 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             ...resultPage, searchSubmitted: true, resolvedSearchUrl: resultPage.resolvedUrl || url,
           });
         }
-        if (resultPage.explicitEmpty) return {
-          count: 0, products: [], presenceConfirmed: false, absenceConfirmed: true,
-          searchCompleted: true, searchSubmitted: true, resolvedSearchUrl: resultPage.resolvedUrl,
-          naverAllSearchVerdict: "absent", verificationPending: false,
-          verificationReason: "naver_explicit_empty", verificationStage: "naver_result_capture",
-          verificationDiagnostics: { stage: "naver_result_capture", resolvedUrl: resultPage.resolvedUrl,
-            explicitEmptyText: true, productCardCount: 0 },
-        };
+        if (resultPage.explicitEmpty) {
+          // The overview can settle empty while channel searches hold real
+          // products. Retry the same query channel-direct (outlet, brand,
+          // department) before declaring absence; only a settled empty
+          // everywhere becomes "상품 없음".
+          const attemptQuery = searchAttempt?.query || source.searchQuery || articleNumber || title;
+          const channelPage = await loadNaverFashionChannelsFallback(searchWindow, attemptQuery);
+          if (!channelPage.ok && channelPage.verificationReason) {
+            return renderedSearchFailure(channelPage.verificationReason, searchWindow, {
+              ...channelPage, searchSubmitted: true, resolvedSearchUrl: channelPage.resolvedUrl || url,
+            });
+          }
+          if (!channelPage.ok || channelPage.explicitEmpty) return {
+            count: 0, products: [], presenceConfirmed: false, absenceConfirmed: true,
+            searchCompleted: true, searchSubmitted: true, resolvedSearchUrl: (channelPage.ok ? channelPage.resolvedUrl : resultPage.resolvedUrl) || url,
+            naverAllSearchVerdict: "absent", verificationPending: false,
+            verificationReason: "naver_explicit_empty", verificationStage: "naver_result_capture",
+            verificationDiagnostics: { stage: "naver_result_capture", resolvedUrl: resultPage.resolvedUrl,
+              explicitEmptyText: true, productCardCount: 0, channelFallback: channelPage.channel || "" },
+          };
+          await onActivity?.({ phase: "searching", detail: `패션타운 ${channelPage.channel} 채널에서 상품 확인` });
+        }
       }
       if (interactiveOfficialSearch) {
         const login = await ensureOfficialAccountLogin(searchWindow, String(source.homepageUrl || url));
@@ -3445,6 +3573,11 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       }
     }
     if (searchWindow.domesticDiagnostics) searchWindow.domesticDiagnostics.stage = "result_capture";
+    // A consent overlay surviving submission still blocks card clicks and
+    // detail navigation. Dismiss once more before capturing the grid.
+    if (source.store === "브랜드 공식몰" && !officialDirectDetail) {
+      if (await dismissOfficialMallConsent(searchWindow)) await wait(900);
+    }
     if (naverPortalSource) {
       // Counts are useful metadata, but they are no longer a prerequisite for
       // reading the overview result. Naver can change or delay tab-count markup
@@ -4831,7 +4964,14 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
       return {
         ...source,
         searchQuery: String(attemptedQuery?.query || source.searchQuery || ""),
-        searchUrl: String(result?.resolvedSearchUrl || attemptedQuery?.url || source.searchUrl || ""),
+        // A login/security wall URL is not the search: when access is blocked,
+        // 열기 must open the attempted search itself so the operator lands on
+        // the real result page instead of a login wall or blank document.
+        searchUrl: String(
+          ((result?.loginRequired === true || result?.securityVerificationRequired === true)
+            ? (attemptedQuery?.url || source.searchUrl)
+            : (result?.resolvedSearchUrl || attemptedQuery?.url || source.searchUrl)) || "",
+        ),
         count: displayCount,
         identityChecked: queryComparisons.length > 0,
         identityRejectedCount: rejectedProductUrls.size,

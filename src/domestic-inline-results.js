@@ -174,6 +174,15 @@
       || "").trim();
     const query = source?.manualSearchQuery || source?.searchAttempts?.[0]?.query || source?.searchQuery || sourceProduct?.articleNumber || sourceProduct?.productCode
       || sourceProduct?.spuId || "";
+    // SSG/롯데온이 로그인 벽에 막히면 열기는 실제 검색을 열고, 로그인 확인
+    // 버튼으로 외부 창 로그인을 바로 이어서 할 수 있게 한다.
+    const retailerLoginId = /^(?:SSG)(?:[\s·]|$)/.test(String(source?.store || "")) ? "ssg"
+      : /^롯데온/.test(String(source?.store || "")) ? "lotte" : "";
+    if (retailerLoginId && (source?.loginRequired || source?.securityVerificationRequired)) {
+      const loginButton = `<button type="button" data-domestic-login-source="${retailerLoginId}">로그인 확인</button>`;
+      if (!openUrl) return loginButton;
+      return `${loginButton}<button type="button" data-url="${encodeURIComponent(openUrl)}" title="외부 브라우저(크롬)에서 열기">${label}</button>`;
+    }
     if (source.rateLimited) {
       const status = '<span class="pending">접속량 제한 · 자동 재조회 중지</span>';
       return openUrl

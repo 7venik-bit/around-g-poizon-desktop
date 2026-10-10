@@ -1,9 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { analyzeRenderedChannelProducts } from "../relay/domestic-search.mjs";
+import {
+  analyzeRenderedChannelProducts,
+  naverFashionChannelSearchUrl,
+  NAVER_FASHION_FALLBACK_CHANNELS,
+} from "../relay/domestic-search.mjs";
 import { finalizeNaverFashionTownResult } from "../services/naver-fashiontown-result.mjs";
 import { isOfficialProductCandidateUrl } from "../services/official-product-candidate.mjs";
+import {
+  findConsentAcceptButton,
+  isConsentAcceptLabel,
+  isConsentDialogText,
+} from "../services/official-consent.mjs";
 
 // Regression: 실세 상품이 검색되지만 "상품 없음"으로 표시되던 오탐.
 // 빈 문구/0 카운트가 수집된 카드를 덮어쓰지 않아야 한다.
@@ -93,4 +102,83 @@ test("official mall keeps every distinct query instead of only the code", () => 
   const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.doesNotMatch(main, /브랜드 공식몰.*slice\(0,\s*1\)/);
   assert.match(main, /const queryAttempts = allQueryAttempts/);
+});
+
+test("adidas-style consent dialog resolves to its accept button only", () => {
+  const dialogText = "쿠키를 통한 아디다스 맞춤형 서비스 제공 관련 안내 하단의 모두 동의합니다 버튼을 클릭하지";
+  assert.equal(isConsentDialogText(dialogText), true);
+  assert.equal(isConsentDialogText("오늘의 특가 상품을 만나보세요"), false);
+  assert.equal(isConsentAcceptLabel("모두 동의합니다"), true);
+  assert.equal(isConsentAcceptLabel("장바구니 담기"), false);
+  assert.equal(isConsentAcceptLabel(""), false);
+  const buttons = [
+    { label: "장바구니 담기", dialogText: "오늘의 특가 상품을 만나보세요" },
+    { label: "모두 동의합니다", dialogText },
+  ];
+  assert.equal(findConsentAcceptButton(buttons), 1);
+  assert.equal(findConsentAcceptButton([{ label: "모두 동의합니다", dialogText: "일반 상품 설명" }]), -1);
+  assert.equal(findConsentAcceptButton([]), -1);
+});
+
+test("consent dismissal runs before official search submission and capture", () => {
+  const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(main, /async function dismissOfficialMallConsent\(searchWindow\)/);
+  const submitStart = main.indexOf("async function submitOfficialMallSearch(");
+  assert.ok(submitStart >= 0);
+  assert.ok(main.slice(submitStart, submitStart + 800).includes("dismissOfficialMallConsent(searchWindow)"));
+  assert.match(main, /if \(source\.store === "브랜드 공식몰" && !officialDirectDetail\) \{\s+if \(await dismissOfficialMallConsent\(searchWindow\)\) await wait\(900\);/);
+});
+
+test("naver channel-direct search urls cover the three domestic channels", () => {
+  assert.deepEqual([...NAVER_FASHION_FALLBACK_CHANNELS], ["outlet", "brand-store", "department"]);
+  assert.equal(
+    naverFashionChannelSearchUrl("outlet", "JH9976"),
+    "https://shopping.naver.com/window/outlet/search?q=JH9976&queryType=ac",
+  );
+  assert.equal(
+    naverFashionChannelSearchUrl("brand-store", "JH9976"),
+    "https://shopping.naver.com/window/brand-fashion/search?q=JH9976&queryType=ac",
+  );
+  assert.equal(
+    naverFashionChannelSearchUrl("department", "JH9976"),
+    "https://shopping.naver.com/window/department/search?q=JH9976&queryType=ac",
+  );
+});
+
+test("overview explicit empty falls back to channel-direct pages before absence", () => {
+  const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(main, /async function loadNaverFashionChannelsFallback\(searchWindow, query\)/);
+  assert.match(main, /loadNaverFashionChannelsFallback\(searchWindow, attemptQuery\)/);
+  assert.match(main, /NAVER_FASHION_FALLBACK_CHANNELS/);
+});
+
+test("outlet exact-code cards survive analyze for a code-priority naver query", () => {
+  const snapshot = JSON.stringify({
+    productCards: [{
+      productUrl: "https://shopping.naver.com/window-products/outlet/13001191641",
+      title: "ABC마트 ADIDAS 슈퍼스타 II 주니어 JH9976",
+      text: "ABC마트 ADIDAS 슈퍼스타 II 주니어 JH9976 119,000원 무료배송",
+      markup: "",
+      imageUrl: "",
+      price: "119,000원",
+    }],
+    pageText: "전체 10개 아울렛 10개",
+    selectedChannelEmpty: false,
+    resolvedSearchUrl: "https://shopping.naver.com/window/outlet/search?q=JH9976",
+  });
+  const analyzed = analyzeRenderedChannelProducts(
+    snapshot, "네이버 패션타운", "JH9976", "아디다스",
+    "(U) 아디다스 슈퍼스타 2 클라우드 화이트 코어 블랙", "JH9976",
+  );
+  assert.equal(analyzed.products.length, 1);
+  assert.notEqual(analyzed.absenceConfirmed, true);
+});
+
+test("login-blocked retailer rows open the real search and offer login", () => {
+  const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(main, /loginRequired === true \|\| result\?\.securityVerificationRequired === true/);
+  const inline = fs.readFileSync(new URL("../src/domestic-inline-results.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(inline, /data-domestic-login-source="\$\{retailerLoginId\}"/);
+  const sourcing = fs.readFileSync(new URL("../src/sourcing-view.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(sourcing, /data-domestic-login-source="\$\{sourcingRetailerLoginId\}"/);
 });

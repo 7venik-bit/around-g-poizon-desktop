@@ -282,6 +282,18 @@ export function naverFashionTownUrl(channel, brand, query) {
   )}`;
 }
 
+// Operator-verified 2026-10-10 (아디다스 JH9976): the fashion-group overview
+// can settle explicitly empty while the outlet/brand/department channel
+// searches hold real products. Channel-direct fallback loads these pages.
+export function naverFashionChannelSearchUrl(channel, query) {
+  const cleanedQuery = fitNaverFashionTownSearchQuery(query);
+  const section = channel === "brand-store" ? "brand-fashion"
+    : channel === "department" ? "department" : "outlet";
+  return `https://shopping.naver.com/window/${section}/search?q=${encodeURIComponent(cleanedQuery)}&queryType=ac`;
+}
+
+export const NAVER_FASHION_FALLBACK_CHANNELS = Object.freeze(["outlet", "brand-store", "department"]);
+
 export function naverFashionTownPortalUrl(channel) {
   if (channel === "department") return "https://shopping.naver.com/window/department";
   if (channel === "outlet") return "https://shopping.naver.com/window/outlet";
