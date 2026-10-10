@@ -106,6 +106,21 @@ export function tabHost(url = "") {
   }
 }
 
+// Shared watch window tab keys: every domestic source mirrors its search into
+// the operator-visible external window, one tab per retailer, so the run can
+// be watched live like the SSG/Lotte mirrors. Pure mapper, no side effects.
+export function watchTabKeyForStore(store = "") {
+  const name = String(store || "");
+  if (/^(?:SSG)(?:[\s·]|$)/.test(name)) return "ssg";
+  if (/^롯데온/.test(name)) return "lotte";
+  if (name === "무신사") return "musinsa";
+  if (/^네이버/.test(name)) return "naver";
+  if (name === "코오롱몰") return "kolon";
+  if (name === "브랜드 공식몰") return "official";
+  if (name === "병행수입·편집샵") return "parallel";
+  return "";
+}
+
 export async function listPageTargets({ fetchImpl = fetch, port = 0 } = {}) {
   const response = await fetchImpl(`http://127.0.0.1:${Number(port) || 9222}/json/list`);
   if (!response || response.ok !== true) throw new Error("CDP_HTTP_ERROR");
