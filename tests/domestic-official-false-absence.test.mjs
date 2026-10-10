@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
   analyzeRenderedChannelProducts,
+  allowsConflictingArticleCard,
   naverFashionChannelSearchUrl,
   NAVER_FASHION_FALLBACK_CHANNELS,
 } from "../relay/domestic-search.mjs";
@@ -102,6 +103,93 @@ test("official mall keeps every distinct query instead of only the code", () => 
   const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.doesNotMatch(main, /브랜드 공식몰.*slice\(0,\s*1\)/);
   assert.match(main, /const queryAttempts = allQueryAttempts/);
+});
+
+test("choose-one bundle titles survive a sibling-code conflict", () => {
+  assert.equal(
+    allowsConflictingArticleCard({
+      titleText: "[아디다스]신규입고 슈퍼스타 II 주니어/성인(JH9977/JH9976/JI0079)택1",
+      rawCardText: "[아디다스]신규입고 슈퍼스타 II 주니어/성인(JH9977/JH9976/JI0079)택1 79,310원",
+    }),
+    true,
+  );
+  assert.equal(
+    allowsConflictingArticleCard({
+      titleText: "아디다스 파이어버드 트랙탑 KD8313",
+      rawCardText: "아디다스 파이어버드 트랙탑 KD8313 함께 비교 AR1000-104",
+    }),
+    false,
+  );
+  assert.equal(allowsConflictingArticleCard({ titleText: "", rawCardText: "택1 JH9976" }), false);
+  assert.equal(
+    allowsConflictingArticleCard({ titleText: "슈퍼스타 II JH9976", rawCardText: "추천 상품 JH9977" }),
+    false,
+  );
+});
+
+test("bundle-titled exact cards become naver candidates despite sibling codes", () => {
+  const snapshot = JSON.stringify({
+    productCards: [{
+      productUrl: "https://shopping.naver.com/window-products/outlet/13001191642",
+      title: "[아디다스]신규입고 슈퍼스타 II 주니어/성인(JH9977/JH9976/JI0079)택1",
+      text: "아디다스 주니어 슈퍼스타 II 택1 79,310원 무료배송",
+      markup: "",
+      imageUrl: "",
+      price: "79,310원",
+    }],
+    pageText: "전체 10개 아울렛 10개",
+    selectedChannelEmpty: false,
+    resolvedSearchUrl: "https://shopping.naver.com/window/outlet/search?q=JH9976",
+  });
+  const analyzed = analyzeRenderedChannelProducts(
+    snapshot, "네이버 패션타운", "JH9976", "아디다스",
+    "(J) 아디다스 슈퍼스타 2 클라우드 화이트 코어 블랙 JH9976", "JH9976",
+  );
+  assert.equal(analyzed.products.length, 1);
+  assert.notEqual(analyzed.absenceConfirmed, true);
+});
+
+test("ssg badged cards ignore overseas wording hidden in markup", () => {
+  const snapshot = JSON.stringify({
+    productCards: [{
+      productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000000002",
+      title: "나이키 이니시에이터 IB4595-001",
+      text: "공식수입 나이키 이니시에이터 IB4595-001 47% 56,768원",
+      markup: '<div class="delivery-tabs"><span>해외직구</span></div>',
+      imageUrl: "",
+      price: "56,768원",
+      departmentStoreLabelMatched: true,
+    }],
+    pageText: "전체 1개",
+    selectedChannelEmpty: false,
+    resolvedSearchUrl: "https://www.ssg.com/search.ssg?query=IB4595-001",
+  });
+  const analyzed = analyzeRenderedChannelProducts(
+    snapshot, "SSG", "IB4595-001", "나이키", "나이키 이니시에이터", "IB4595-001",
+  );
+  assert.equal(analyzed.products.length, 1);
+  assert.notEqual(analyzed.absenceConfirmed, true);
+});
+
+test("ssg cards with visible overseas fulfillment are still excluded", () => {
+  const snapshot = JSON.stringify({
+    productCards: [{
+      productUrl: "https://www.ssg.com/item/itemView.ssg?itemId=1000000003",
+      title: "나이키 이니시에이터 IB4595-001 해외직구",
+      text: "해외직구 나이키 이니시에이터 IB4595-001 56,768원",
+      markup: "",
+      imageUrl: "",
+      price: "56,768원",
+      departmentStoreLabelMatched: true,
+    }],
+    pageText: "전체 1개",
+    selectedChannelEmpty: false,
+    resolvedSearchUrl: "https://www.ssg.com/search.ssg?query=IB4595-001",
+  });
+  const analyzed = analyzeRenderedChannelProducts(
+    snapshot, "SSG", "IB4595-001", "나이키", "나이키 이니시에이터", "IB4595-001",
+  );
+  assert.equal(analyzed.products.length, 0);
 });
 
 test("adidas-style consent dialog resolves to its accept button only", () => {

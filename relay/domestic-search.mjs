@@ -427,6 +427,21 @@ export function countLinkedSearchProducts(html, articleNumber = "") {
   return 0;
 }
 
+// A title that owns the exact article code can still name sibling models
+// (observed 2026-10-10: "[아디다스]신규입고 슈퍼스타 II 주니어/성인
+// (JH9977/JH9976/JI0079)택1"). Such choose-one bundle listings sell the exact
+// product as a purchasable option, so a conflicting code must not veto them.
+// Comparison/recommendation framing ("함께 비교", "추천") stays rejected:
+// the other code is not offered as the same purchase.
+const BUNDLE_EVIDENCE_PATTERN = /택\s*1|택\s*일|중\s*택|택일|선택\s*구매|옵션\s*선택|골라\s*담기|choose\s*(?:one|1)/i;
+const COMPARISON_EVIDENCE_PATTERN = /비교|추천|관련\s*상품|연관\s*상품|함께\s*보기|같이\s*보기|recommend/i;
+
+export function allowsConflictingArticleCard({ titleText = "", rawCardText = "" } = {}) {
+  if (!String(titleText || "").trim()) return false;
+  if (COMPARISON_EVIDENCE_PATTERN.test(String(rawCardText || ""))) return false;
+  return BUNDLE_EVIDENCE_PATTERN.test(String(rawCardText || ""));
+}
+
 export function titleIdentityMatch(candidate = "", expected = "") {
   const ignored = new Set(["남성", "여성", "공용", "정품", "공식", "신상", "상품"]);
   const tokens = (value) => String(value || "").toLocaleLowerCase()
@@ -754,11 +769,20 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // department/outlet badge). Unbadged marketplace cards never become
         // domestic candidates; without any badged card the source reports
         // absence.
-        if (/^SSG(?:\s|$)/.test(naverStore) && !isSsgBadgedProductCard(card, brand, rawCardText)) continue;
+        const ssgBadgedCard = /^SSG(?:\s|$)/.test(naverStore) && isSsgBadgedProductCard(card, brand, rawCardText);
+        if (/^SSG(?:\s|$)/.test(naverStore) && !ssgBadgedCard) continue;
         // 국내 재고 검색에는 한국에서 바로 구매 가능한 상품만 남긴다.
-        // 검색 경로가 네이버 공식스토어/백화점이어도 상품 카드가 해외직구,
-        // 구매대행 또는 해외배송이면 국내 판매처로 계산하지 않는다.
-        if (isOverseasPurchaseProduct({ ...card, text: rawCardText })) continue;
+        // 카드 단계에서는 보이는 카드 문구(제목+본문)만 본다. 마크업 속 숨은
+        // 해외직구 문구까지 걸면 백화점 실세 상품이 떨어진다. SSG 배지 상품은
+        // 상세 페이지의 판매처 판정이 최종 결정하므로 카드 단계에서 제외하지
+        // 않는다. 상세 단계의 해외직구/병행수입 판정은 그대로 유지된다.
+        if (!ssgBadgedCard && isOverseasPurchaseProduct({
+          title: titleText,
+          text: rawCardText,
+          seller: card?.seller,
+          sellerName: card?.sellerName,
+          mallName: card?.mallName,
+        })) continue;
         if (badgedIdentityStore) identityDrops.evaluated += 1;
         const expectedCompact = articleCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
         const detectedArticleNumbers = articleIdentityTokens(rawCardText);
@@ -879,7 +903,12 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           articleMatched = true;
           detailArticleVerificationRequired = false;
         }
-        if (conflictingArticle && !allowProvisionalArticleConflict) articleMatched = false;
+        // A title-owned exact code in a choose-one bundle (택1) survives a
+        // conflicting sibling code; comparison framing stays rejected.
+        // Detail verification below still proves the exact article.
+        const bundleConflictAllowed = conflictingArticle && titleOwnsExactArticle
+          && allowsConflictingArticleCard({ titleText, rawCardText });
+        if (conflictingArticle && !allowProvisionalArticleConflict && !bundleConflictAllowed) articleMatched = false;
         // Naver can fill an exact-code query page with visually similar
         // recommendations. Parallel-import discovery must contain the requested
         // model in the product card itself; the page query or nearby card is not evidence.
@@ -919,7 +948,11 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // Editing-shop and parallel-import results must be real shopping-platform product pages.
         if (String(store || "") === "병행수입·편집샵" && !isPlatformShoppingProductUrl(productUrl)) continue;
         const productKey = productUrl;
-        const ssgEvidence = `${rawCardText} ${String(card?.markup || "")}`;
+        // Card-stage classification reads visible card text only, matching the
+        // overseas gate above: hidden markup must not turn badged department
+        // goods into parallel imports. The detail stage re-classifies with
+        // full evidence before any purchase decision.
+        const ssgEvidence = rawCardText;
         const ssgClassification = /:\/\/(?:[^/]+\.)?ssg\.com\//i.test(productUrl)
           ? classifySsgProductEvidence({ brand, url: productUrl, text: ssgEvidence })
           : "";
