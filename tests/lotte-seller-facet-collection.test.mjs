@@ -11,7 +11,7 @@ const collection = main.slice(start, end);
 test("lotte collection applies the left-menu seller check before cards are captured", () => {
   const blockStart = collection.indexOf('if (source.store === "롯데온"');
   assert.ok(blockStart >= 0, "lotte seller facet block missing");
-  const block = collection.slice(blockStart, collection.indexOf("let content = await searchWindow", blockStart));
+  const block = collection.slice(blockStart, collection.indexOf("const captureContent = () => searchWindow", blockStart));
   assert.match(block, /checkSearchFacets\(/);
   assert.match(block, /retailerFacetLabels\("lotte", brand\)/);
   assert.match(block, /waitForDomesticCaptureReady\(searchWindow/);
@@ -20,7 +20,7 @@ test("lotte collection applies the left-menu seller check before cards are captu
 
 test("lotte seller check is scoped and never blocks unfiltered collection", () => {
   const blockStart = collection.indexOf('if (source.store === "롯데온"');
-  const captureStart = collection.indexOf("let content = await searchWindow", blockStart);
+  const captureStart = collection.indexOf("const captureContent = () => searchWindow", blockStart);
   assert.ok(blockStart < captureStart, "facet check must run before card capture");
   const revertStart = collection.indexOf("// A scope that empties the grid", blockStart);
   const block = collection.slice(blockStart, revertStart);
