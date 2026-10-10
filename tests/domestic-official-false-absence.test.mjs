@@ -11,6 +11,7 @@ import { finalizeNaverFashionTownResult } from "../services/naver-fashiontown-re
 import { isOfficialProductCandidateUrl } from "../services/official-product-candidate.mjs";
 import {
   findConsentAcceptButton,
+  findModalCloseButton,
   findNudgeCloseButton,
   isConsentAcceptLabel,
   isConsentDialogText,
@@ -315,9 +316,26 @@ test("login-nudge modals resolve to their X and never to credential buttons", ()
   assert.equal(findNudgeCloseButton([]), -1);
 });
 
+test("any modal X resolves to close while submit buttons never do", () => {
+  assert.equal(
+    findModalCloseButton([{ label: "×", aria: "", modal: true }]),
+    0,
+  );
+  assert.equal(
+    findModalCloseButton([{ label: "", aria: "Close", modal: true }]),
+    0,
+  );
+  assert.equal(findModalCloseButton([{ label: "×", aria: "", modal: false }]), -1);
+  for (const label of ["계속하기", "가입하기", "카카오 로그인", "장바구니 담기", "구매하기"]) {
+    assert.equal(findModalCloseButton([{ label, aria: "", modal: true }]), -1, label);
+  }
+  assert.equal(findModalCloseButton([]), -1);
+});
+
 test("official dismissal closes nudge modals without touching login", () => {
   const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
-  assert.match(main, /Phase 2: login-nudge modal X/);
+  assert.match(main, /Phase 2: any modal X/);
   assert.match(main, /nudgeGlyphPatterns/);
   assert.match(main, /modalOf\(element\)/);
+  assert.doesNotMatch(main, /isNudge\(String\(modal/);
 });

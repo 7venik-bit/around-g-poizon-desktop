@@ -105,3 +105,18 @@ export function findNudgeCloseButton(buttons = []) {
   }
   return -1;
 }
+
+// buttons: [{ label, aria, modal }]. Returns the index of the X/닫기 control
+// inside ANY modal dialog, or -1. A site-provided close control only ever
+// dismisses its own modal, so login flavour is not required. Credential and
+// submit buttons can never match a close pattern (see isNudgeCloseControl).
+export function findModalCloseButton(buttons = []) {
+  const list = Array.isArray(buttons) ? buttons : [];
+  for (let index = 0; index < list.length; index += 1) {
+    const entry = list[index] || {};
+    if (entry.modal !== true) continue;
+    if (!isNudgeCloseControl({ label: entry.label, aria: entry.aria })) continue;
+    return index;
+  }
+  return -1;
+}

@@ -119,7 +119,6 @@ import {
   CONSENT_DIALOG_SOURCES,
   NUDGE_CLOSE_GLYPH_SOURCES,
   NUDGE_CLOSE_WORD_SOURCES,
-  NUDGE_DIALOG_SOURCES,
 } from "./services/official-consent.mjs";
 import { requestedOfficialBrand, resolveBrandOfficialSearch } from "./services/brand-official-search.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer, queryPoizon } from "./services/poizon.mjs";
@@ -1022,10 +1021,8 @@ async function dismissOfficialMallConsent(searchWindow) {
           && acceptPatterns.some((pattern) => pattern.test(normalized));
       };
       const norm = (value) => String(value || "").split("\n").join(" ").split("\t").join(" ").trim().replace(/ +/g, " ");
-      const nudgePatterns = ["로그인","가입","회원","멤버십","login","sign\\s*-?\\s*up","join\\s*(?:now|free)?"].map((source) => new RegExp(source, "i"));
-      const nudgeGlyphPatterns = ["^[×✕✖✗xX]$"].map((source) => new RegExp(source, "i"));
-      const nudgeWordPatterns = ["^닫기$","^닫음$","^close$"].map((source) => new RegExp(source, "i"));
-      const isNudge = (text) => nudgePatterns.some((pattern) => pattern.test(String(text || "")));
+      const nudgeGlyphPatterns = ${JSON.stringify(NUDGE_CLOSE_GLYPH_SOURCES)}.map((source) => new RegExp(source, "i"));
+      const nudgeWordPatterns = ${JSON.stringify(NUDGE_CLOSE_WORD_SOURCES)}.map((source) => new RegExp(source, "i"));
       const visible = (element) => {
         if (!element) return false;
         const style = getComputedStyle(element);
@@ -1063,9 +1060,10 @@ async function dismissOfficialMallConsent(searchWindow) {
         try { buttons[target].element.click(); } catch { return false; }
         return true;
       }
-      // Phase 2: login-nudge modal X (adidas adiclub). Credentials and
-      // submit buttons are never touched: only an explicit close control
-      // inside a login-flavoured modal dialog may be pressed.
+      // Phase 2: any modal X/닫기 (login nudges, promos, app banners). A
+      // site-provided close control only dismisses its own modal, and only
+      // close-pattern controls are ever clicked, so credential and submit
+      // buttons stay untouched.
       const modalOf = (element) => {
         const direct = element.closest?.('[role="dialog"],[role="alertdialog"],[class*="modal" i],[class*="popup" i],[class*="dialog" i],[class*="layer" i],[class*="overlay" i]');
         if (direct) return direct;
@@ -1102,7 +1100,6 @@ async function dismissOfficialMallConsent(searchWindow) {
           if (!glyphClose && !wordClose) continue;
           const modal = modalOf(element);
           if (!modal) continue;
-          if (!isNudge(String(modal.innerText || "").slice(0, 2000))) continue;
           try { element.click(); } catch { return false; }
           return true;
         }
@@ -4523,6 +4520,13 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           let detailFailed = false;
           let stockEvidence = normalizeRenderedStockEvidence({ stockTexts: [product.stockText, product.purchaseLimitText].filter(Boolean), options: product.sizes || [] });
           try {
+            // A modal overlay (consent, login nudge) intercepts the card
+            // click and misdirects detail navigation. Clear it first.
+            // typeof guard keeps sliced-vm test fixtures working without stubs.
+            if (String(source.store || "") === "브랜드 공식몰"
+              && typeof dismissOfficialMallConsent === "function") {
+              await dismissOfficialMallConsent(searchWindow).catch(() => false);
+            }
             const productOpened = await clickRenderedProductCard(searchWindow, product.url, resolvedSearchUrl);
             if (!productOpened) throw new Error("PRODUCT_CARD_CLICK_FAILED");
             // Naver renders the exact product identity before its optional
@@ -4538,6 +4542,15 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             detailScopeText = String(identitySnapshot.scopeText || "");
             detailIdentity = identitySnapshot;
             detailLoaded = true;
+            // Consent/login-nudge modals also cover detail pages and block
+            // the size/stock controls below. Clear before collecting stock.
+            if (String(source.store || "") === "브랜드 공식몰"
+              && typeof dismissOfficialMallConsent === "function") {
+              for (let consent = 0; consent < 2; consent += 1) {
+                if (!await dismissOfficialMallConsent(searchWindow)) break;
+                await wait(700);
+              }
+            }
             if (officialPrice) {
               officialPrice = await searchWindow.webContents.mainFrame.executeJavaScript(
                 `(${captureOfficialProductPrice.toString()})(${JSON.stringify(product.url)}, ${JSON.stringify(articleNumber)}, (${domesticProductUrlIdentity.toString()}))`, true,
