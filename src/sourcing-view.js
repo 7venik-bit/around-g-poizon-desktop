@@ -266,6 +266,12 @@
           if (source?.officialStatus && !productUrl && !source?.verifiedProductUrl && !manualSearchUrl) {
             return `<button type="button" data-official-homepage="${encodeURIComponent(source.homepageUrl || openUrl)}" data-official-query="${encodeURIComponent(query)}" data-official-result-key="${encodeURIComponent(contextKey)}">${label}</button>`;
           }
+          const sourcingRetailerLoginId = /^(?:SSG)(?:[\s·]|$)/.test(String(source?.store || "")) ? "ssg"
+            : /^롯데온/.test(String(source?.store || "")) ? "lotte" : "";
+          if (sourcingRetailerLoginId && (source.loginRequired || source.securityVerificationRequired)) {
+            const retailerLoginButton = `<button type="button" data-domestic-login-source="${sourcingRetailerLoginId}">로그인 확인</button>`;
+            return `${retailerLoginButton}<button type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
+          }
           return `<button type="button" data-url="${encodeURIComponent(openUrl)}">${label}</button>`;
         };
         const productRows = products.map((product) => {

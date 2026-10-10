@@ -282,6 +282,18 @@ export function naverFashionTownUrl(channel, brand, query) {
   )}`;
 }
 
+// Operator-verified 2026-10-10 (아디다스 JH9976): the fashion-group overview
+// can settle explicitly empty while the outlet/brand/department channel
+// searches hold real products. Channel-direct fallback loads these pages.
+export function naverFashionChannelSearchUrl(channel, query) {
+  const cleanedQuery = fitNaverFashionTownSearchQuery(query);
+  const section = channel === "brand-store" ? "brand-fashion"
+    : channel === "department" ? "department" : "outlet";
+  return `https://shopping.naver.com/window/${section}/search?q=${encodeURIComponent(cleanedQuery)}&queryType=ac`;
+}
+
+export const NAVER_FASHION_FALLBACK_CHANNELS = Object.freeze(["outlet", "brand-store", "department"]);
+
 export function naverFashionTownPortalUrl(channel) {
   if (channel === "department") return "https://shopping.naver.com/window/department";
   if (channel === "outlet") return "https://shopping.naver.com/window/outlet";
@@ -653,12 +665,16 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           : String(store || "").includes("아울렛") ? ["아울렛"] : [];
       let scopedPositiveCount = 0;
       let scopedCountFound = false;
+      // Zero counts and empty phrases are authoritative only when identity
+      // matching below finds no product. They must never discard collected
+      // cards outright: counts can lag or parse from another channel, and the
+      // same wording appears in help text while real cards are visible.
+      // Record the signals here; absence is decided after matching.
+      let zeroCountObserved = false;
       if (Number.isFinite(rendered.selectedChannelCount)) {
         scopedCountFound = true;
         scopedPositiveCount = Math.max(0, Number(rendered.selectedChannelCount));
-        if (scopedPositiveCount === 0) {
-          return { count: 0, channelCount: 0, products: [], presenceConfirmed: false, absenceConfirmed: true };
-        }
+        if (scopedPositiveCount === 0) zeroCountObserved = true;
       }
       for (const label of scopedLabels) {
         const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -669,14 +685,11 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         // Naver Fashion Town's selected channel tab is the authoritative
         // result total. Preserve that number for the source badge instead of
         // collapsing a real five-item result to binary 1/0 availability.
-        if (scopedCount === 0) {
-          return { count: 0, channelCount: 0, products: [], presenceConfirmed: false, absenceConfirmed: true };
-        }
+        if (scopedCount === 0) zeroCountObserved = true;
         scopedPositiveCount = Math.max(scopedPositiveCount, scopedCount);
       }
-      if (selectedChannelEmpty || /검색된\s*상품이\s*없(?:습니다|어)|검색\s*결과가?\s*없(?:습니다|어)|상품이\s*없(?:습니다|어)|검색결과\s*없음/i.test(pageText)) {
-        return { count: 0, products: [], absenceConfirmed: true };
-      }
+      const explicitEmptyObserved = selectedChannelEmpty
+        || /검색된\s*상품이\s*없(?:습니다|어)|검색\s*결과가?\s*없(?:습니다|어)|상품이\s*없(?:습니다|어)|검색결과\s*없음/i.test(pageText);
       if (!articleCode) return { count: 0, products: [], absenceConfirmed: false };
       const seed = verifiedOfficialBrand(brand);
       const brandKeys = [brand, ...(seed?.aliases || [])].map(normalizeOfficialBrand).filter(Boolean);
@@ -975,11 +988,30 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
           ssgSearchChecked: false,
         };
       }
+      // An authoritative empty/zero signal with no identity-matched product
+      // stays an absence (recommendations are not products). Matched products
+      // above already returned; only the no-match case reaches here.
+      if (/^네이버\s/.test(String(store || ""))
+        && (zeroCountObserved || explicitEmptyObserved)
+        && matchingProducts.size === 0 && domesticChannelCandidateCount === 0) {
+        return {
+          count: 0,
+          channelCount: scopedCountFound ? scopedPositiveCount : 0,
+          products: [],
+          presenceConfirmed: false,
+          absenceConfirmed: true,
+          exactProductPresenceConfirmed: false,
+          ssgSearchChecked: false,
+        };
+      }
+      // Lotte/공식몰 등은 명시적 빈 결과 + 매칭 0이면 absence. 매칭된 실세
+      // 상품이 있으면 위에서 이미 반환되므로 여기서는 덮어쓰지 않는다.
+      const authoritativeEmptyObserved = explicitEmptyObserved || zeroCountObserved;
       return {
         count: matchingProducts.size,
         products: [...matchingProducts.values()],
         absenceConfirmed: matchingProducts.size === 0
-          && (exactMusinsaSearchChecked || exactSsgSearchChecked || parallelRetailerListChecked),
+          && (exactMusinsaSearchChecked || exactSsgSearchChecked || parallelRetailerListChecked || authoritativeEmptyObserved),
         ssgSearchChecked: /^SSG(?:\s|$)/.test(String(store || "")),
         parallelRetailerListEnforced: requiresExactParallelModel,
         identityDrops,
