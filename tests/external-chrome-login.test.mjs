@@ -29,6 +29,7 @@ import {
   findRetailerTab,
   closeBlankTabs,
   acquireLoginTab,
+  relistLandedTab,
   waitForExternalLogin,
   startExternalRetailerLogin,
 } from "../services/external-chrome-login.mjs";
@@ -1213,4 +1214,64 @@ test("an unreadable login tab reports where it actually landed", async () => {
   }).then(() => null, (failure) => failure);
   assert.equal(String(error?.message || ""), "LOGIN_PAGE_UNREADABLE");
   assert.equal(error?.observedUrl, "about:blank");
+});
+
+test("brief CDP blackouts during login redirects keep the login wait alive", async () => {
+  // SSG login runs SSO/bot-check redirect chains during which evaluation
+  // fails for tens of seconds. Only a sustained blackout ends the wait.
+  let calls = 0;
+  const result = await waitForExternalLogin({
+    page: {
+      evaluate: async () => {
+        calls += 1;
+        if (calls <= 10) throw new Error("navigating");
+        return { authenticated: true };
+      },
+      getCookies: async () => [{ name: "sid", value: "1" }],
+    },
+    timeoutMs: 60000,
+    sleepImpl: async () => {},
+  });
+  assert.equal(result.ok, true);
+  assert.ok(calls > 10);
+});
+
+test("a tab that lands as the list recovers is kept instead of reported unreadable", async () => {
+  const server = fakeCdpServer();
+  server.state.versionUp = true;
+  server.state.tabs.push({ id: "L8", url: "https://www.ssg.com/" });
+  const listed = await relistLandedTab({
+    fetchImpl: server.fetchImpl,
+    port: 9222,
+    targetId: "L8",
+    hostAccepted: (url) => String(url || "").startsWith("https://www.ssg.com/"),
+  });
+  assert.deepEqual(listed, { targetId: "L8" });
+  assert.deepEqual(
+    await relistLandedTab({
+      fetchImpl: server.fetchImpl,
+      port: 9222,
+      targetId: "L8",
+      hostAccepted: (url) => String(url || "").startsWith("https://www.other.com/"),
+    }),
+    null,
+  );
+  assert.deepEqual(
+    await relistLandedTab({
+      fetchImpl: server.fetchImpl,
+      port: 9222,
+      targetId: "missing",
+      hostAccepted: () => true,
+    }),
+    null,
+  );
+  assert.deepEqual(
+    await relistLandedTab({
+      fetchImpl: async () => { throw new Error("gone"); },
+      port: 9222,
+      targetId: "L8",
+      hostAccepted: () => true,
+    }),
+    null,
+  );
 });
