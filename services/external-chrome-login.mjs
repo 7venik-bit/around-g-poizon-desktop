@@ -153,6 +153,24 @@ export async function closeBlankTabs({ fetchImpl = fetch, port = 0 } = {}) {
   }
 }
 
+// A transient /json/list failure at the navigation deadline must not kill a
+// tab that actually landed: re-list once and keep it when it reports an
+// accepted host. Pure over fetchImpl so the rescue itself is unit-testable.
+export async function relistLandedTab({ fetchImpl = fetch, port = 0, targetId = "", hostAccepted = () => false } = {}) {
+  let targets = [];
+  try {
+    targets = await listPageTargets({ fetchImpl, port });
+  } catch {
+    return null;
+  }
+  const landed = (Array.isArray(targets) ? targets : []).find((entry) => entry.id === targetId);
+  try {
+    return landed && hostAccepted(landed.url) ? { targetId } : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function acquireLoginTab({
   fetchImpl = fetch,
   WebSocketImpl = globalThis.WebSocket,
@@ -227,7 +245,11 @@ export async function acquireLoginTab({
     await sleepImpl(1000);
   }
   // Never litter blank tabs: remove the tab this call created so the next
-  // login check starts clean instead of piling up dead tabs.
+  // login check starts clean instead of piling up dead tabs. A transient
+  // /json/list failure at the deadline must not kill a tab that actually
+  // landed, so re-list once before declaring the page unreadable.
+  const rescued = await relistLandedTab({ fetchImpl, port, targetId: id, hostAccepted: (url) => hostAccepted(url) });
+  if (rescued) return rescued;
   if (!reused) {
     try {
       await closePageTarget({ fetchImpl, port, targetId: id });
@@ -1191,7 +1213,10 @@ export async function waitForExternalLogin({
     const readable = observations.filter((item) => item.state);
     if (!readable.length) {
       unreadable += 1;
-      if (unreadable >= 5) return externalLoginFailure("LOGIN_PAGE_UNREADABLE");
+      // SSG login runs SSO/bot-check redirect chains during which CDP
+      // evaluation fails for tens of seconds. Only a sustained blackout
+      // proves a dead page; the overall timeout still bounds the wait.
+      if (unreadable >= 15) return externalLoginFailure("LOGIN_PAGE_UNREADABLE");
       heartbeat(null);
       await sleepImpl(pollIntervalMs);
       continue;
