@@ -1032,7 +1032,17 @@ async function dismissOfficialMallConsent(searchWindow) {
       }
       const buttons = [];
       for (const root of roots) {
-        for (const button of root.querySelectorAll?.('button,[role="button"],a[href],input[type="button"],input[type="submit"]') || []) {
+        const strict = [...(root.querySelectorAll?.('button,[role="button"],a[href],input[type="button"],input[type="submit"],[onclick],[tabindex]') || [])];
+        // Fallback for div/span-styled consent buttons: pointer cursor only,
+        // so plain text blocks never become click candidates.
+        const loose = [...(root.querySelectorAll?.("div,span,li") || [])].filter((element) => {
+          try {
+            return getComputedStyle(element).cursor === "pointer";
+          } catch {
+            return false;
+          }
+        });
+        for (const button of [...strict, ...loose]) {
           if (!visible(button)) continue;
           const label = String(button.innerText || button.value || button.getAttribute?.("aria-label") || "").replace(/\\s+/g, " ").trim();
           if (!label) continue;
@@ -1072,12 +1082,20 @@ async function submitOfficialMallSearch(searchWindow, query) {
   const exactQuery = sanitizeDomesticProductCode(query) || sanitizeDomesticQuery(query);
   if (!exactQuery || !searchWindow || searchWindow.isDestroyed()) return false;
   // Consent overlays cover the input: dismiss before typing so key/click
-  // events reach the site's own search control, not the popup.
+  // events reach the site's own search control, not the popup. A clean page
+  // proceeds after one grace re-check for late dialogs.
   // typeof guard keeps sliced-vm test fixtures working without stubs.
   if (typeof dismissOfficialMallConsent === "function") {
-    for (let consent = 0; consent < 2; consent += 1) {
-      if (!await dismissOfficialMallConsent(searchWindow)) break;
-      await wait(800);
+    for (let consent = 0; consent < 3; consent += 1) {
+      if (await dismissOfficialMallConsent(searchWindow)) {
+        await wait(800);
+        continue;
+      }
+      if (consent === 0) {
+        await wait(1200);
+        continue;
+      }
+      break;
     }
   }
   for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -3452,15 +3470,21 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     }
     if (searchWindow.domesticDiagnostics) searchWindow.domesticDiagnostics.stage = "result_capture";
     // A consent overlay surviving submission still blocks card clicks and
-    // detail navigation, and it can render late. Always sweep three rounds
-    // before capture: breaking on the first miss lets a late dialog cover
-    // the grid and ends the search with zero links.
+    // detail navigation, and it can render late. A clean page proceeds after
+    // one grace re-check instead of paying full rounds every search.
     // typeof guard keeps sliced-vm test fixtures working without stubs.
     if (source.store === "브랜드 공식몰" && !officialDirectDetail
       && typeof dismissOfficialMallConsent === "function") {
       for (let consent = 0; consent < 3; consent += 1) {
-        await dismissOfficialMallConsent(searchWindow);
-        await wait(900);
+        if (await dismissOfficialMallConsent(searchWindow)) {
+          await wait(900);
+          continue;
+        }
+        if (consent === 0) {
+          await wait(1200);
+          continue;
+        }
+        break;
       }
     }
     if (naverPortalSource) {
