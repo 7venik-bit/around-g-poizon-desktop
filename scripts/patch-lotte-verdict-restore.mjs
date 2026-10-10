@@ -79,8 +79,8 @@ relay = replaceOnce(
 );
 relay = replaceOnce(
   relay,
-  `          && (exactMusinsaSearchChecked || exactSsgSearchChecked || parallelRetailerListChecked),`,
-  `          && (exactMusinsaSearchChecked || exactPortalSearchChecked || parallelRetailerListChecked),`,
+  `          && (exactMusinsaSearchChecked || exactSsgSearchChecked || parallelRetailerListChecked || authoritativeEmptyObserved),`,
+  `          && (exactMusinsaSearchChecked || exactPortalSearchChecked || parallelRetailerListChecked || authoritativeEmptyObserved),`,
   "preserve Musinsa absence while extending the portal verdict to Lotte",
 );
 relay = replaceOnce(

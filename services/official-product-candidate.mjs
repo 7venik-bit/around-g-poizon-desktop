@@ -24,11 +24,16 @@ export function isOfficialProductCandidateUrl(value, resultsUrl = '', articleNum
     // Nike search results contain category/filter links and recommended items.
     // Its Korean product route ends with the manufacturer's full style code;
     // only that product-owned code can establish a match for an exact search.
+    // A base-code query (without colour suffix) must still reach candidates:
+    // prefix matching lets detail/identity logic decide the exact colour.
     if (url.hostname.replace(/^www\./i, '').toLowerCase() === 'nike.com') {
       const nikeProduct = path.match(/^\/kr\/t\/[^/]+(?:\/[^/]+)?\/([A-Z0-9]+(?:[-_][A-Z0-9]+)*)\/?$/i);
       if (!nikeProduct) return false;
       const expected = String(articleNumber || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-      return !expected || nikeProduct[1].replace(/[^A-Z0-9]/gi, '').toUpperCase() === expected;
+      if (!expected) return true;
+      const actual = nikeProduct[1].replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      if (actual === expected) return true;
+      return actual.startsWith(expected) || expected.startsWith(actual);
     }
     return true;
   } catch { return false; }

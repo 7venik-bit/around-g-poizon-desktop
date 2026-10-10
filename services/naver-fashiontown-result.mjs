@@ -1,5 +1,5 @@
 import { normalizeRenderedStockEvidence } from "./domestic-stock.mjs";
-import { isTrustedNaverFashionProductCard } from "../relay/domestic-search.mjs";
+import { exactArticleIdentityMatch, isTrustedNaverFashionProductCard } from "../relay/domestic-search.mjs";
 
 function stableUrlIdentity(value = "") {
   try {
@@ -177,8 +177,31 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
     extractedProductCount: products.length,
   };
 
+  // An empty page still ships popular-brand recommendation cards. Those links
+  // are not the submitted product search. Only a card carrying the requested
+  // article code overrides the empty signal here; unrelated cards stay
+  // discarded so recommendations never become a false "상품 있음".
+  // (Downstream seller verification still filters overseas/unapproved goods.)
+  const hasQueryRelatedCard = Boolean(String(articleNumber || "").trim()) && products.some((product) =>
+    exactArticleIdentityMatch(`${String(product?.title || "")} ${String(product?.text || "")} ${String(product?.url || "")}`, articleNumber));
+  if (products.length > 0 && hasQueryRelatedCard) {
+    return {
+      count: Math.max(products.length, visibleCount || 0),
+      products,
+      presenceConfirmed: true,
+      absenceConfirmed: false,
+      searchCompleted: true,
+      searchSubmitted: true,
+      resolvedSearchUrl,
+      naverAllSearchVerdict: "confirmed",
+      verificationPending: false,
+      verificationStage: "naver_result_capture",
+      verificationDiagnostics,
+    };
+  }
+
   // 해외직구 결과는 국내 판매처 상품으로 인정하지 않는다. 예: 전체 1개 / 해외직구 1개.
-  // 카드가 화면에 보여도 국내 소싱 기준에서는 상품없음으로 확정한다.
+  // 쿼리 관련 카드가 없을 때만 상품없음으로 확정한다.
   if (overseasOnly) {
     return {
       count: 0,
@@ -198,6 +221,7 @@ export function finalizeNaverFashionTownResult(snapshot = {}, {
 
   // Naver fills an empty result page with popular-brand cards. Those links
   // belong to recommendations, not to the submitted product-code search.
+  // 쿼리 관련 카드가 없을 때만 빈 결과로 확정한다.
   if (explicitEmpty) {
     return {
       count: 0,

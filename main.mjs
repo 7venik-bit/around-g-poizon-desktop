@@ -4618,7 +4618,10 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         ? source.searchAttempts : [{ query: source.searchQuery || articleNumber || title || "", url: source.searchUrl || "" }];
     // Preserve the store's supported query plan, submitting each distinct query
     // once. Every returned candidate is compared before choosing the next step.
-      const queryAttempts = (source.store === "브랜드 공식몰" ? allQueryAttempts.slice(0, 1) : allQueryAttempts)
+    // 브랜드 공식몰도 코드 1회만 시도하면 품번 형식이 다르거나 코드 검색을
+    // 지원하지 않는 몰에서 실제 상품을 놓치고 "상품 없음"이 된다. 코드가
+    // 권위 있게 비어 있을 때만 다음 쿼리(상품명, 상품명+코드)로 폴백한다.
+      const queryAttempts = allQueryAttempts
         .filter((attempt, index, all) => all.findIndex(other => other.query === attempt.query) === index);
       const rejectedProductUrls = new Set();
       const queryComparisons = [];
