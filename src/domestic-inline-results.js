@@ -262,6 +262,7 @@
       || source?.verificationDiagnostics?.lotteServerEvidence
       || source?.verificationDiagnostics?.lotteCollectionEvidence
       || source?.verificationDiagnostics?.ssgCollectionEvidence
+      || source?.verificationDiagnostics?.officialCollectionEvidence
       || source?.verificationDiagnostics?.mirrorReceipt);
     if (!failures.length) return "";
     const safeUrl = value => {
@@ -315,7 +316,9 @@
         ["범위 복원", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)
           ? ((d.lotteCollectionEvidence || d.ssgCollectionEvidence).scopeReverted === true ? "복원됨" : "유지") : ""],
         ["품번 카드 수", (d.lotteCollectionEvidence || d.ssgCollectionEvidence)?.articleCards],
-        ["수집 카드 수", d.lotteCollectionEvidence?.renderedCards ?? d.ssgCollectionEvidence?.renderedCards],
+        ["수집 카드 수", d.lotteCollectionEvidence?.renderedCards ?? d.ssgCollectionEvidence?.renderedCards ?? d.officialCollectionEvidence?.renderedCards],
+        ["공식몰 동의 해제", d.officialCollectionEvidence ? (d.officialCollectionEvidence.consentDismissed === true ? "해제됨" : "미해제") : ""],
+        ["공식몰 페이지 제목", d.officialCollectionEvidence?.pageTitle],
         ["백화점 카드 수", d.lotteCollectionEvidence?.badgeCards ?? d.ssgCollectionEvidence?.badgeCards],
         ["백화점 문구 카드 수", d.lotteCollectionEvidence?.badgeWordCards],
         ["후보 상품 수", d.lotteCollectionEvidence?.candidateCount ?? d.ssgCollectionEvidence?.candidateCount],
