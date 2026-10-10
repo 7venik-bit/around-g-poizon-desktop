@@ -1006,8 +1006,7 @@ async function waitForNaverSecurityVerification(searchWindow) {
 // explicit consent dialog per call; anything else stays for the operator.
 async function dismissOfficialMallConsent(searchWindow) {
   if (!searchWindow || searchWindow.isDestroyed()) return false;
-  try {
-    return await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
+  const script = `(() => {
       const dialogPatterns = ${JSON.stringify(CONSENT_DIALOG_SOURCES)}.map((source) => new RegExp(source, "i"));
       const acceptPatterns = ${JSON.stringify(CONSENT_ACCEPT_SOURCES)}.map((source) => new RegExp(source, "i"));
       const isDialog = (text) => dialogPatterns.some((pattern) => pattern.test(String(text || "")));
@@ -1042,10 +1041,21 @@ async function dismissOfficialMallConsent(searchWindow) {
       if (target < 0) return false;
       try { buttons[target].element.click(); } catch { return false; }
       return true;
-    })()`, true).catch(() => false);
+    })()`;
+  let frames = [];
+  try {
+    frames = [searchWindow.webContents.mainFrame, ...searchWindow.webContents.mainFrame.framesInSubtree];
   } catch {
     return false;
   }
+  for (const frame of frames) {
+    try {
+      if (await frame.executeJavaScript(script, true).catch(() => false)) return true;
+    } catch {
+      // A detached frame must not stop the remaining frames.
+    }
+  }
+  return false;
 }
 
 async function submitOfficialMallSearch(searchWindow, query) {
@@ -3432,11 +3442,15 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     }
     if (searchWindow.domesticDiagnostics) searchWindow.domesticDiagnostics.stage = "result_capture";
     // A consent overlay surviving submission still blocks card clicks and
-    // detail navigation. Dismiss once more before capturing the grid.
+    // detail navigation, and it can render late. Dismiss up to three rounds
+    // before capturing the grid.
     // typeof guard keeps sliced-vm test fixtures working without stubs.
     if (source.store === "브랜드 공식몰" && !officialDirectDetail
       && typeof dismissOfficialMallConsent === "function") {
-      if (await dismissOfficialMallConsent(searchWindow)) await wait(900);
+      for (let consent = 0; consent < 3; consent += 1) {
+        if (!await dismissOfficialMallConsent(searchWindow)) break;
+        await wait(900);
+      }
     }
     if (naverPortalSource) {
       // Counts are useful metadata, but they are no longer a prerequisite for
