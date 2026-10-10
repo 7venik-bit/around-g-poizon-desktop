@@ -1050,7 +1050,14 @@ async function dismissOfficialMallConsent(searchWindow) {
   }
   for (const frame of frames) {
     try {
-      if (await frame.executeJavaScript(script, true).catch(() => false)) return true;
+      if (await frame.executeJavaScript(script, true).catch(() => false)) {
+        try {
+          searchWindow.__officialConsentDismissed = true;
+        } catch {
+          // The flag is best-effort diagnosis only.
+        }
+        return true;
+      }
     } catch {
       // A detached frame must not stop the remaining frames.
     }
@@ -4251,6 +4258,26 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     const resolvedSearchUrl = String(searchWindow.webContents.getURL() || url);
     if (!analyzed) return renderedSearchFailure("result_analysis_failed", searchWindow, { searchSubmitted: interactiveSiteSearch });
     const candidateCount = Array.isArray(analyzed.products) ? analyzed.products.length : 0;
+    // Official-mall zero-candidate evidence: raw collected links vs matched
+    // candidates plus consent/page signals, so a "0 links" row tells whether
+    // the grid was empty, blocked, or filtered out.
+    if (String(source.store || "") === "브랜드 공식몰" && candidateCount === 0 && !searchWindow.isDestroyed()) {
+      let officialPageTitle = "";
+      try {
+        officialPageTitle = String(await searchWindow.webContents.mainFrame.executeJavaScript("String(document.title || '').slice(0, 160)", true).catch(() => ""));
+      } catch {
+        // The title is best-effort diagnosis only.
+      }
+      analyzed.verificationDiagnostics = {
+        ...(analyzed?.verificationDiagnostics || {}),
+        officialCollectionEvidence: {
+          renderedCards: Array.isArray(parsedContent?.productCards) ? parsedContent.productCards.length : 0,
+          candidateCount,
+          consentDismissed: searchWindow.__officialConsentDismissed === true,
+          pageTitle: officialPageTitle,
+        },
+      };
+    }
     if (source.store === "SSG" || source.store === "SSG 백화점") {
       // Record what the collection actually saw so a "no product" row can be
       // diagnosed: whether the seller check applied and how many cards survived.

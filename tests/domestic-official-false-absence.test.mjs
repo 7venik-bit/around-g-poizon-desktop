@@ -271,3 +271,14 @@ test("login-blocked retailer rows open the real search and offer login", () => {
   const sourcing = fs.readFileSync(new URL("../src/sourcing-view.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.match(sourcing, /data-domestic-login-source="\$\{sourcingRetailerLoginId\}"/);
 });
+
+test("official zero-candidate rows record collection evidence for diagnosis", () => {
+  const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(main, /officialCollectionEvidence: \{/);
+  assert.match(main, /consentDismissed: searchWindow\.__officialConsentDismissed === true/);
+  assert.match(main, /__officialConsentDismissed = true/);
+  const inline = fs.readFileSync(new URL("../src/domestic-inline-results.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(inline, /officialCollectionEvidence\?\.renderedCards/);
+  assert.match(inline, /공식몰 동의 해제/);
+  assert.match(inline, /공식몰 페이지 제목/);
+});
