@@ -362,12 +362,9 @@ const domesticLoginWindows = new Map();
 const confirmedNaverLoginScopes = new Map();
 const blockedNaverLoginScopes = new Map();
 const DOMESTIC_SEARCH_PARTITION = "persist:around-g-domestic-search";
-const DOMESTIC_PRICE_PARTITION = "persist:around-g-domestic-price";
 const DOMESTIC_SELLER_EVIDENCE_PARTITION = "persist:around-g-domestic-seller-evidence";
 let domesticSearchGeneration = 0;
 const activeDomesticSearchWindows = new Set();
-const activeDomesticPriceWindows = new Set();
-let domesticPriceLookupQueue = Promise.resolve();
 // Bound inactivity, not the total time needed to visit real stock options.
 // Repeated events for the same option never renew either watchdog.
 const DOMESTIC_RETAILER_HARD_TIMEOUT_MS = 90 * 1000;
@@ -443,27 +440,6 @@ const DOMESTIC_LOGIN_SOURCES = [
   { id: "adidas", name: "아디다스 공식몰", url: "https://www.adidas.co.kr/", loginUrl: "https://www.adidas.co.kr/account-login", domains: ["adidas.co.kr"], officialAccount: true },
 ];
 
-async function reuseNaverLoginForPriceSession() {
-  const sourceSession = session.fromPartition(DOMESTIC_SEARCH_PARTITION);
-  const priceSession = session.fromPartition(DOMESTIC_PRICE_PARTITION);
-  const cookies = await sourceSession.cookies.get({ domain: "naver.com" }).catch(() => []);
-  for (const cookie of cookies) {
-    const host = String(cookie.domain || "naver.com").replace(/^\./, "");
-    const details = {
-      url: `${cookie.secure === false ? "http" : "https"}://${host}${cookie.path || "/"}`,
-      name: cookie.name,
-      value: cookie.value,
-      path: cookie.path || "/",
-      secure: cookie.secure !== false,
-      httpOnly: cookie.httpOnly === true,
-    };
-    if (cookie.domain) details.domain = cookie.domain;
-    if (Number.isFinite(cookie.expirationDate)) details.expirationDate = cookie.expirationDate;
-    if (["unspecified", "no_restriction", "lax", "strict"].includes(cookie.sameSite)) details.sameSite = cookie.sameSite;
-    await priceSession.cookies.set(details).catch(() => {});
-  }
-  return cookies.length;
-}
 let updateReady = false;
 let updateCheckTimer;
 let updateInstallTimer;
@@ -1639,136 +1615,6 @@ async function filterApprovedNaverDomesticProducts(products = [], options = {}) 
     });
   }
   return result.products;
-}
-
-async function lookupNaverDomesticPrice(input = {}) {
-  const articleNumber = sanitizeDomesticProductCode(input?.articleNumber || input?.productCode);
-  const brand = sanitizeDomesticQuery(input?.brand);
-  const title = sanitizeDomesticQuery(input?.title);
-  const query = articleNumber || title;
-  if (!query) return { ok: false, message: "가격 검색용 상품번호가 없습니다.", candidates: [] };
-  const searchUrl = naverFashionTownUrl("overview", brand, query);
-  let priceWindow;
-  try {
-    // The price collector stays isolated, but receives the already-approved
-    // Naver login cookies so one manual login remains valid for every lookup.
-    await reuseNaverLoginForPriceSession();
-    await session.fromPartition(DOMESTIC_PRICE_PARTITION).clearCache();
-    priceWindow = new BrowserWindow({
-      show: false,
-      width: 1360,
-      height: 900,
-      icon: APP_ICON_PATH,
-      webPreferences: {
-        partition: DOMESTIC_PRICE_PARTITION,
-        sandbox: true,
-        backgroundThrottling: false,
-        paintWhenInitiallyHidden: true,
-        offscreen: true,
-      },
-    });
-    activeDomesticPriceWindows.add(priceWindow);
-    priceWindow.on("closed", () => activeDomesticPriceWindows.delete(priceWindow));
-    priceWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36");
-    const priceSearch = await loadNaverFashionTownResultPage(priceWindow, searchUrl, query);
-    if (!priceSearch.ok) return { ok: false, searchUrl, candidates: [], ...priceSearch };
-    if (priceSearch.explicitEmpty) return { ok: true, searchUrl, candidates: [], message: "검색 결과에 상품이 없습니다." };
-    for (let attempt = 0; attempt < 24; attempt += 1) {
-      await wait(attempt === 0 ? 1_500 : 500);
-      const snapshot = await priceWindow.webContents.executeJavaScript(`(() => {
-        const visible = (element) => {
-          if (!element) return false;
-          const style = getComputedStyle(element);
-          const rect = element.getBoundingClientRect();
-          return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-        };
-        const links = [...document.querySelectorAll('a[href*="/window-products/"]')].filter(visible);
-        const seen = new Set();
-        const productCards = [];
-        for (const link of links) {
-          const productUrl = String(link.href || "").split("#")[0];
-          if (!productUrl || seen.has(productUrl)) continue;
-          let card = link;
-          let best = link.parentElement;
-          for (let depth = 0; card?.parentElement && depth < 7; depth += 1) {
-            card = card.parentElement;
-            const body = String(card.innerText || "").replace(/\\s+/g, " ").trim();
-            const ownedLinks = card.querySelectorAll('a[href*="/window-products/"]').length;
-            if (/\\d[\\d,]{2,}\\s*원/.test(body) && body.length < 1800 && ownedLinks <= 3) best = card;
-            if (ownedLinks > 3 || body.length >= 1800) break;
-          }
-          const text = String(best?.innerText || link.innerText || "").replace(/\\s+/g, " ").trim();
-          const prices = [...text.matchAll(/([1-9][\\d,]{2,})\\s*원/g)]
-            .map((match) => Number(match[1].replace(/,/g, "")))
-            .filter((value) => value >= 1_000 && value <= 100_000_000);
-          if (!prices.length) continue;
-          const image = best?.querySelector('img[src],img[data-src]');
-          productCards.push({
-            productUrl,
-            title: String(link.getAttribute("title") || link.getAttribute("aria-label") || link.innerText || text).replace(/\\s+/g, " ").trim().slice(0, 300),
-            text,
-            markup: String(best?.outerHTML || "").slice(0, 12000),
-            price: Math.min(...prices),
-            originalPrice: Math.max(...prices),
-            imageUrl: String(image?.currentSrc || image?.src || image?.dataset?.src || ""),
-            imageLinkedToProduct: Boolean(image),
-          });
-          seen.add(productUrl);
-        }
-        const pageText = String(document.body?.innerText || "").slice(0, 50000);
-        return {
-          productCards,
-          href: location.href,
-          pageText,
-          explicitEmpty: /검색\\s*결과가?\\s*없|검색된\\s*상품이\\s*없/i.test(pageText),
-        };
-      })()`, true).catch(() => null);
-      if (!snapshot) continue;
-      const access = domesticPageAccessState(snapshot.pageText, snapshot.productCards?.length || 0, snapshot);
-      if (access.verificationReason) return { ok:false, searchUrl, candidates:[], ...access,
-        message: access.rateLimited ? "네이버 접속량 제한으로 가격 조회를 중지했습니다."
-          : "네이버 페이지에서 인증 또는 서비스 상태 확인이 필요합니다." };
-      snapshot.productCards = (snapshot.productCards || []).filter(isDomesticNaverPriceCard).map((card) => {
-        const selectedPrices = selectNaverSellingPrices(card?.text || "");
-        return {
-          ...card,
-          price: selectedPrices.price,
-          originalPrice: selectedPrices.originalPrice,
-          shippingFeeExcluded: selectedPrices.excludedShippingAmounts.length > 0,
-        };
-      }).filter((card) => Number(card.price || 0) > 0);
-      const analyzed = analyzeRenderedChannelProducts(
-        JSON.stringify(snapshot), "네이버 패션타운", articleNumber, brand, title,
-      );
-      const candidates = (analyzed?.products || [])
-        .filter((candidate) => Number(candidate?.price || 0) > 0)
-        .sort((left, right) => Number(left.price) - Number(right.price))
-        .slice(0, 5);
-      if (candidates.length) {
-        const approvedCandidates = await filterApprovedNaverDomesticProducts(candidates, { searchWindow: priceWindow, articleNumber, brand, title });
-        if (approvedCandidates.length) return { ok: true, searchUrl, candidates: approvedCandidates };
-        return { ok: true, searchUrl, candidates: [], message: "승인된 국내 정품 판매처 상품이 없습니다." };
-      }
-      if (snapshot.explicitEmpty) return { ok: true, searchUrl, candidates: [], message: "검색 결과에 상품이 없습니다." };
-    }
-    return { ok: false, searchUrl, candidates: [], message: "일치 상품의 가격을 안전하게 확인하지 못했습니다." };
-  } catch (error) {
-    const timeout = /PRICE_LOOKUP_TIMEOUT/i.test(String(error?.message || ""));
-    if (error?.rateLimited || error?.loginRequired || error?.securityVerificationRequired) {
-      return { ok:false, searchUrl, candidates:[], rateLimited:error.rateLimited === true,
-        loginRequired:error.loginRequired === true, securityVerificationRequired:error.securityVerificationRequired === true,
-        message:error.rateLimited ? "네이버 접속량 제한으로 가격 조회를 중지했습니다." : "네이버 인증 확인이 필요합니다." };
-    }
-    return {
-      ok: false,
-      searchUrl,
-      candidates: [],
-      message: timeout ? "가격 확인 시간이 초과되었습니다." : "가격 확인 창을 불러오지 못했습니다.",
-    };
-  } finally {
-    if (priceWindow && !priceWindow.isDestroyed()) priceWindow.destroy();
-    activeDomesticPriceWindows.delete(priceWindow);
-  }
 }
 
 async function readNaverFashionTownChannelCounts(searchWindow) {
@@ -14874,14 +14720,6 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   });
   ipcMain.handle("domestic:recovery-pending", () => recoveryCoordinator().pending());
   ipcMain.handle("domestic:cancel", () => cancelDomesticSearches());
-  ipcMain.handle("domestic-price:lookup", (_event, input) => {
-    const task = domesticPriceLookupQueue.then(
-      () => lookupNaverDomesticPrice(input),
-      () => lookupNaverDomesticPrice(input),
-    );
-    domesticPriceLookupQueue = task.then(() => undefined, () => undefined);
-    return task;
-  });
   let categorySearchGeneration = 0;
   ipcMain.handle("explorer:cancel-category", () => {
     categorySearchGeneration += 1;

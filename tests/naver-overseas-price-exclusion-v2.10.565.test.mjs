@@ -35,13 +35,3 @@ test("domestic Naver outlet card remains eligible", () => {
     text: "아디다스 슈퍼스타 JI0079 131,000원 무료배송",
   }), true);
 });
-
-test("isolated price lookup rejects overseas cards before price analysis", () => {
-  const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8");
-  const exclusion = main.indexOf("filter(isDomesticNaverPriceCard).map");
-  const classification = main.indexOf("selectNaverSellingPrices(card?.text", exclusion);
-  const analysis = main.indexOf("const analyzed = analyzeRenderedChannelProducts", classification);
-  assert.ok(exclusion > 0);
-  assert.ok(classification > exclusion);
-  assert.ok(analysis > classification);
-});

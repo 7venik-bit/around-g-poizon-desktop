@@ -4569,7 +4569,7 @@ function renderProfitComparisons(keys = activeProfitComparisonKeys) {
   $("#profit-comparison-rows").innerHTML = comparisons.map((item) => `<tr>
     <td><b>${text(item.product?.articleNumber || "-")}</b><small>${text(item.product?.title || "")}</small></td>
     <td>${item.poizonPrice ? money(item.poizonPrice) : "가격 없음"}</td>
-    <td><div class="profit-price-cell">${item.domesticPrice ? `<strong>${money(item.domesticPrice)}</strong>` : ""}<button type="button" class="profit-price-fetch" data-profit-price-key="${encodeURIComponent(item.key)}">${item.domesticPrice ? "다시 가져오기" : "가격 가져오기"}</button></div></td>
+    <td><div class="profit-price-cell">${item.domesticPrice ? `<strong>${money(item.domesticPrice)}</strong>` : "-"}</div></td>
     <td>${item.purchaseUrl
       ? `<button type="button" class="profit-store-link" data-url="${encodeURIComponent(item.purchaseUrl)}" title="구매 페이지 열기">${text(item.domestic?.store || "구매처 열기")} ↗</button>`
       : "-"}</td>
@@ -4594,46 +4594,6 @@ $("#excel-preview-profit")?.addEventListener("click", async () => {
   document.querySelector('.nav[data-view="profit"]')?.click();
   button.textContent = "수익계산";
   updateExcelPreviewSelectionUi(excelPreviewPageKeys);
-});
-$("#profit-comparison-rows")?.addEventListener("click", async (event) => {
-  const priceButton = event.target.closest("[data-profit-price-key]");
-  if (!priceButton) return;
-  const key = decodeURIComponent(priceButton.dataset.profitPriceKey || "");
-  if (!excelPreviewProductCache.has(key)) return;
-  priceButton.disabled = true;
-  priceButton.textContent = "가격 확인 중…";
-  const product = excelPreviewProductCache.get(key);
-  const current = excelPreviewSearchResults.get(key) || { products: [], sources: [] };
-  let response;
-  try {
-    response = await window.aroundG.lookupDomesticPrice(domesticSearchInput(product, ["naver"], true));
-  } catch (error) {
-    response = {
-      ok: false,
-      message: error instanceof Error ? error.message : "가격 확인 요청에 실패했습니다.",
-    };
-  }
-  let priceLookupError = "";
-  if (response?.ok) {
-    excelPreviewSearchResults.set(key, {
-      ...current,
-      error: "",
-      products: current.products || [],
-      sources: current.sources || [],
-      domesticPriceCandidates: [
-        ...(response.candidates || []),
-        ...(current.domesticPriceCandidates || []),
-      ],
-    });
-    if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
-  } else {
-    priceLookupError = response?.message || "다른 기능은 계속 사용할 수 있습니다.";
-  }
-  renderProfitComparisons(activeProfitComparisonKeys);
-  if (priceLookupError) {
-    const summary = $("#profit-selection-summary");
-    if (summary) summary.textContent = `가격 확인 실패 · ${priceLookupError}`;
-  }
 });
 $("#profit-back-to-list")?.addEventListener("click", () => {
   document.querySelector('.nav[data-view="products"]')?.click();

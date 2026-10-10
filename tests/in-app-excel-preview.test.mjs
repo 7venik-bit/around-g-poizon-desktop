@@ -140,15 +140,13 @@ test("profit comparison store names open their matched purchase links", () => {
   assert.match(cssSource, /\.profit-store-link/);
 });
 
-test("profit rows can fetch a missing domestic price and recalculate in the app", () => {
+test("profit rows show the main-search domestic price without a manual fetch button", () => {
   assert.match(rendererSource, /function domesticPriceCandidate/);
   assert.match(rendererSource, /result\?\.domesticPriceCandidates/);
-  assert.match(rendererSource, /data-profit-price-key="\$\{encodeURIComponent\(item\.key\)\}"/);
-  assert.match(rendererSource, /가격 가져오기/);
-  assert.match(rendererSource, /domesticSearchInput\(product, \["naver"\], true\)/);
-  assert.match(rendererSource, /domesticPriceCandidates: \[/);
-  assert.match(rendererSource, /renderProfitComparisons\(activeProfitComparisonKeys\)/);
-  assert.match(mainSource, /domesticPriceCandidates: discoveredProducts\.filter/);
+  assert.doesNotMatch(rendererSource, /data-profit-price-key/);
+  assert.doesNotMatch(rendererSource, /lookupDomesticPrice/);
+  assert.match(rendererSource, /function renderProfitComparisons\(keys = activeProfitComparisonKeys\)/);
+  assert.match(mainSource, /domesticPriceCandidates: products\.filter/);
   assert.match(cssSource, /\.profit-price-fetch/);
 });
 
