@@ -75,6 +75,9 @@ import {
   EXTERNAL_SSG_DEPARTMENT_HREF_SCRIPT,
   EXTERNAL_SSG_DEPARTMENT_TAB_POINT_SCRIPT,
   startExternalRetailerLogin,
+  watchTabKeyForStore,
+  pickRemoteDebuggingPort,
+  isChromeResponsive,
 } from "./services/external-chrome-login.mjs";
 import { DomesticRecoveryCoordinator, stockObservationComplete, domesticObservationComplete } from "./services/domestic-recovery.mjs";
 import { recoverOfficialCollection } from "./services/official-auto-recovery.mjs";
@@ -3449,13 +3452,14 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     }
     if (searchWindow.domesticDiagnostics) searchWindow.domesticDiagnostics.stage = "result_capture";
     // A consent overlay surviving submission still blocks card clicks and
-    // detail navigation, and it can render late. Dismiss up to three rounds
-    // before capturing the grid.
+    // detail navigation, and it can render late. Always sweep three rounds
+    // before capture: breaking on the first miss lets a late dialog cover
+    // the grid and ends the search with zero links.
     // typeof guard keeps sliced-vm test fixtures working without stubs.
     if (source.store === "브랜드 공식몰" && !officialDirectDetail
       && typeof dismissOfficialMallConsent === "function") {
       for (let consent = 0; consent < 3; consent += 1) {
-        if (!await dismissOfficialMallConsent(searchWindow)) break;
+        await dismissOfficialMallConsent(searchWindow);
         await wait(900);
       }
     }
@@ -4739,6 +4743,15 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
             queueRetailerMirror(externalSourceId, () => showRetailerSearchInWindow(
               externalSourceId, queryAttempt.url, retailerFacetLabels(externalSourceId, brand), articleNumber,
             ).catch(() => null));
+          } else if (typeof queueRetailerWatch === "function") {
+            // Every other source mirrors into the shared operator-visible
+            // watch window instead: the same fire-and-forget visibility
+            // without any login requirement. Collection never waits for it.
+            try {
+              queueRetailerWatch(source, queryAttempt.url, () => domesticSearchCanceled(generation));
+            } catch {
+              // Watch navigation must never break the search itself.
+            }
           }
         }
         // A Naver overview DOM belongs to exactly one submitted query. When an
@@ -12735,6 +12748,16 @@ function closeAllExternalRetailerChrome() {
     // External windows are best-effort cleanup only.
   }
   try {
+    closeLoginChrome(watchChromeHandle?.child);
+  } catch {
+    // The watch window is best-effort cleanup only.
+  }
+  try {
+    watchChromeHandle = null;
+  } catch {
+    // Clearing a broken handle must not block shutdown.
+  }
+  try {
     externalRetailerChromeHandles.clear();
   } catch {
     // Clearing a broken map must not block shutdown.
@@ -12765,6 +12788,124 @@ function queueRetailerMirror(sourceId, run) {
     }
   });
   return next;
+}
+
+// Shared operator-visible watch window: every domestic source mirrors its
+// search here, one tab per retailer, so the run can be watched live exactly
+// like the SSG/Lotte mirrors. Watch-only navigation never requires login,
+// never blocks collection, and never touches verdicts; failures stay silent.
+let watchChromeHandle = null;
+function setWatchChromeHandle(handle) {
+  try {
+    if (handle && typeof handle === "object") watchChromeHandle = handle;
+  } catch {
+    // Handle bookkeeping must never break the search itself.
+  }
+}
+async function ensureWatchChrome() {
+  try {
+    const alive = watchChromeHandle && watchChromeHandle.child
+      && watchChromeHandle.child.killed !== true && watchChromeHandle.child.exitCode == null
+      && Number(watchChromeHandle.port) > 0
+      && await isChromeResponsive({ fetchImpl: fetch, port: Number(watchChromeHandle.port) });
+    if (alive) return watchChromeHandle;
+  } catch {
+    // A dead handle falls through to relaunch below.
+  }
+  try {
+    const chromeExecutable = findChromeExecutable({ existsSyncImpl: existsSync });
+    if (!chromeExecutable || typeof WebSocket === "undefined") return null;
+    const port = await pickRemoteDebuggingPort({ fetchImpl: fetch });
+    if (!port) return null;
+    const userDataDir = externalRetailerUserDataDir("watch");
+    try {
+      mkdirSync(userDataDir, { recursive: true });
+    } catch {
+      // Directory creation failure surfaces as a launch failure below.
+    }
+    const child = spawn(chromeExecutable,
+      ["--remote-debugging-port=" + Number(port), "--user-data-dir=" + String(userDataDir),
+        "--no-first-run", "--no-default-browser-check",
+        "--disable-session-crashed-bubble", "--disable-features=Translate",
+        "--new-window", "about:blank"],
+      { detached: false, stdio: "ignore" });
+    if (!child || typeof child.kill !== "function") return null;
+    const launchDeadline = Date.now() + 20000;
+    let responsive = false;
+    while (!responsive && Date.now() < launchDeadline) {
+      responsive = await isChromeResponsive({ fetchImpl: fetch, port }).catch(() => false);
+      if (!responsive) await wait(500);
+    }
+    if (!responsive) {
+      closeLoginChrome(child);
+      return null;
+    }
+    setWatchChromeHandle({ child, port: Number(port), tabs: { ...(watchChromeHandle?.tabs || {}) } });
+    return watchChromeHandle;
+  } catch {
+    return null;
+  }
+}
+
+function watchTabDomains(tabKey = "", searchUrl = "") {
+  const key = String(tabKey || "");
+  if (key === "ssg") return ["ssg.com"];
+  if (key === "lotte") return ["lotteon.com"];
+  if (key === "musinsa") return ["musinsa.com"];
+  if (key === "naver" || key === "parallel") return ["naver.com"];
+  if (key === "kolon") return ["kolonmall.com"];
+  if (key === "official") {
+    try {
+      const host = new URL(String(searchUrl || "")).hostname.toLowerCase().replace(/^\./, "");
+      const bare = host.replace(/^www\./i, "");
+      return [...new Set([host, bare].filter(Boolean))];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+async function navigateWatchTab(tabKey = "", searchUrl = "", canceled = () => false) {
+  const key = String(tabKey || "");
+  const target = String(searchUrl || "");
+  if (!key || !/^https?:\/\//i.test(target)) return null;
+  try {
+    const handle = await ensureWatchChrome();
+    if (!handle || !handle.child || handle.child.killed === true) return null;
+    if (typeof WebSocket === "undefined") return null;
+    const acquired = await acquireLoginTab({
+      fetchImpl: fetch,
+      WebSocketImpl: WebSocket,
+      port: Number(handle.port) || 0,
+      loginUrl: target,
+      knownTabs: handle.tabs,
+      tabKey: `watch:${key}`,
+      allowedHostSuffixes: watchTabDomains(key, target),
+      navigateTimeoutMs: 15000,
+      sleepImpl: wait,
+      canceled,
+    }).catch(() => null);
+    if (!acquired?.targetId) return null;
+    setWatchChromeHandle({ child: handle.child, port: Number(handle.port), tabs: { ...(handle.tabs || {}), [`watch:${key}`]: acquired.targetId } });
+    return { tabKey: key, url: target };
+  } catch {
+    return null;
+  }
+}
+
+// Queue one visible watch navigation per source. Fire-and-forget: collection
+// never awaits the mirror. typeof-guarded at the call site so sliced-vm test
+// fixtures keep working without stubs.
+function queueRetailerWatch(source = {}, searchUrl = "", canceled = () => false) {
+  try {
+    const tabKey = typeof watchTabKeyForStore === "function" ? watchTabKeyForStore(source?.store || "") : "";
+    if (!tabKey || !/^https?:\/\//i.test(String(searchUrl || ""))) return;
+    if (typeof queueRetailerMirror !== "function") return;
+    queueRetailerMirror(`watch:${tabKey}`, () => navigateWatchTab(tabKey, searchUrl, canceled));
+  } catch {
+    // Watch navigation must never break the search itself.
+  }
 }
 
 // Mirror receipts: what the per-retailer window run for one product actually did
