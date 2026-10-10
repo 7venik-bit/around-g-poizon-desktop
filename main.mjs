@@ -1077,9 +1077,12 @@ async function submitOfficialMallSearch(searchWindow, query) {
   if (!exactQuery || !searchWindow || searchWindow.isDestroyed()) return false;
   // Consent overlays cover the input: dismiss before typing so key/click
   // events reach the site's own search control, not the popup.
-  for (let consent = 0; consent < 2; consent += 1) {
-    if (!await dismissOfficialMallConsent(searchWindow)) break;
-    await wait(800);
+  // typeof guard keeps sliced-vm test fixtures working without stubs.
+  if (typeof dismissOfficialMallConsent === "function") {
+    for (let consent = 0; consent < 2; consent += 1) {
+      if (!await dismissOfficialMallConsent(searchWindow)) break;
+      await wait(800);
+    }
   }
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const script = `(() => {
@@ -3448,23 +3451,32 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           // The overview can settle empty while channel searches hold real
           // products. Retry the same query channel-direct (outlet, brand,
           // department) before declaring absence; only a settled empty
-          // everywhere becomes "상품 없음".
+          // everywhere becomes "상품 없음". Channel fallback runs for the
+          // exact-code attempt only: diluted title queries stay single-shot
+          // so genuine empties do not pay for extra channel loads.
+          // typeof guard keeps sliced-vm test fixtures working without stubs.
           const attemptQuery = searchAttempt?.query || source.searchQuery || articleNumber || title;
-          const channelPage = await loadNaverFashionChannelsFallback(searchWindow, attemptQuery);
-          if (!channelPage.ok && channelPage.verificationReason) {
+          const attemptCode = sanitizeDomesticProductCode(articleNumber);
+          const isCodeAttempt = Boolean(attemptCode)
+            && sanitizeDomesticQuery(attemptQuery).toUpperCase() === attemptCode.toUpperCase();
+          const channelPage = isCodeAttempt && typeof loadNaverFashionChannelsFallback === "function"
+            ? await loadNaverFashionChannelsFallback(searchWindow, attemptQuery)
+            : null;
+          if (channelPage && !channelPage.ok && channelPage.verificationReason) {
             return renderedSearchFailure(channelPage.verificationReason, searchWindow, {
               ...channelPage, searchSubmitted: true, resolvedSearchUrl: channelPage.resolvedUrl || url,
             });
           }
-          if (!channelPage.ok || channelPage.explicitEmpty) return {
+          if (channelPage && channelPage.ok && !channelPage.explicitEmpty) {
+            await onActivity?.({ phase: "searching", detail: `패션타운 ${channelPage.channel} 채널에서 상품 확인` });
+          } else return {
             count: 0, products: [], presenceConfirmed: false, absenceConfirmed: true,
-            searchCompleted: true, searchSubmitted: true, resolvedSearchUrl: (channelPage.ok ? channelPage.resolvedUrl : resultPage.resolvedUrl) || url,
+            searchCompleted: true, searchSubmitted: true, resolvedSearchUrl: (channelPage && channelPage.ok ? channelPage.resolvedUrl : resultPage.resolvedUrl) || url,
             naverAllSearchVerdict: "absent", verificationPending: false,
             verificationReason: "naver_explicit_empty", verificationStage: "naver_result_capture",
             verificationDiagnostics: { stage: "naver_result_capture", resolvedUrl: resultPage.resolvedUrl,
-              explicitEmptyText: true, productCardCount: 0, channelFallback: channelPage.channel || "" },
+              explicitEmptyText: true, productCardCount: 0, channelFallback: (channelPage && channelPage.channel) || "" },
           };
-          await onActivity?.({ phase: "searching", detail: `패션타운 ${channelPage.channel} 채널에서 상품 확인` });
         }
       }
       if (interactiveOfficialSearch) {
@@ -3575,7 +3587,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
     if (searchWindow.domesticDiagnostics) searchWindow.domesticDiagnostics.stage = "result_capture";
     // A consent overlay surviving submission still blocks card clicks and
     // detail navigation. Dismiss once more before capturing the grid.
-    if (source.store === "브랜드 공식몰" && !officialDirectDetail) {
+    // typeof guard keeps sliced-vm test fixtures working without stubs.
+    if (source.store === "브랜드 공식몰" && !officialDirectDetail
+      && typeof dismissOfficialMallConsent === "function") {
       if (await dismissOfficialMallConsent(searchWindow)) await wait(900);
     }
     if (naverPortalSource) {
