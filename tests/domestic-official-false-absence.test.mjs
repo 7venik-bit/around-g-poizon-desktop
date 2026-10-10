@@ -11,8 +11,11 @@ import { finalizeNaverFashionTownResult } from "../services/naver-fashiontown-re
 import { isOfficialProductCandidateUrl } from "../services/official-product-candidate.mjs";
 import {
   findConsentAcceptButton,
+  findNudgeCloseButton,
   isConsentAcceptLabel,
   isConsentDialogText,
+  isNudgeCloseControl,
+  isNudgeDialogText,
 } from "../services/official-consent.mjs";
 
 // Regression: 실세 상품이 검색되지만 "상품 없음"으로 표시되던 오탐.
@@ -285,4 +288,36 @@ test("official zero-candidate rows record collection evidence for diagnosis", ()
   assert.match(inline, /officialCollectionEvidence\?\.renderedCards/);
   assert.match(inline, /공식몰 동의 해제/);
   assert.match(inline, /공식몰 페이지 제목/);
+});
+
+test("login-nudge modals resolve to their X and never to credential buttons", () => {
+  const dialogText = "아디클럽 가입 및 로그인하기 카카오 로그인 네이버 로그인 이메일 주소 계속하기 가입하기";
+  assert.equal(isNudgeDialogText(dialogText), true);
+  assert.equal(isNudgeDialogText("오늘의 특가 상품을 만나보세요"), false);
+  assert.equal(isNudgeCloseControl({ label: "×", aria: "" }), true);
+  assert.equal(isNudgeCloseControl({ label: "", aria: "닫기" }), true);
+  assert.equal(isNudgeCloseControl({ label: "", aria: "Close" }), true);
+  for (const label of ["계속하기", "가입하기", "카카오 로그인", "네이버 로그인", "로그인 상태 유지하기"]) {
+    assert.equal(isNudgeCloseControl({ label, aria: "" }), false, label);
+  }
+  const buttons = [
+    { label: "계속하기", aria: "", dialogText, modal: true },
+    { label: "카카오 로그인", aria: "", dialogText, modal: true },
+    { label: "×", aria: "닫기", dialogText, modal: true },
+  ];
+  assert.equal(findNudgeCloseButton(buttons), 2);
+  assert.equal(findNudgeCloseButton([
+    { label: "×", aria: "", dialogText: "일반 상품 설명", modal: true },
+  ]), -1);
+  assert.equal(findNudgeCloseButton([
+    { label: "×", aria: "", dialogText, modal: false },
+  ]), -1);
+  assert.equal(findNudgeCloseButton([]), -1);
+});
+
+test("official dismissal closes nudge modals without touching login", () => {
+  const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(main, /Phase 2: login-nudge modal X/);
+  assert.match(main, /nudgeGlyphPatterns/);
+  assert.match(main, /modalOf\(element\)/);
 });

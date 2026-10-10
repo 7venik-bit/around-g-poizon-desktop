@@ -117,6 +117,9 @@ import {
 import {
   CONSENT_ACCEPT_SOURCES,
   CONSENT_DIALOG_SOURCES,
+  NUDGE_CLOSE_GLYPH_SOURCES,
+  NUDGE_CLOSE_WORD_SOURCES,
+  NUDGE_DIALOG_SOURCES,
 } from "./services/official-consent.mjs";
 import { requestedOfficialBrand, resolveBrandOfficialSearch } from "./services/brand-official-search.mjs";
 import { explorerMetadata, parsePopularProducts, queryExplorer, queryPoizon } from "./services/poizon.mjs";
@@ -1018,6 +1021,11 @@ async function dismissOfficialMallConsent(searchWindow) {
         return Boolean(normalized) && normalized.length <= 40
           && acceptPatterns.some((pattern) => pattern.test(normalized));
       };
+      const norm = (value) => String(value || "").split("\n").join(" ").split("\t").join(" ").trim().replace(/ +/g, " ");
+      const nudgePatterns = ["로그인","가입","회원","멤버십","login","sign\\s*-?\\s*up","join\\s*(?:now|free)?"].map((source) => new RegExp(source, "i"));
+      const nudgeGlyphPatterns = ["^[×✕✖✗xX]$"].map((source) => new RegExp(source, "i"));
+      const nudgeWordPatterns = ["^닫기$","^닫음$","^close$"].map((source) => new RegExp(source, "i"));
+      const isNudge = (text) => nudgePatterns.some((pattern) => pattern.test(String(text || "")));
       const visible = (element) => {
         if (!element) return false;
         const style = getComputedStyle(element);
@@ -1051,9 +1059,55 @@ async function dismissOfficialMallConsent(searchWindow) {
         }
       }
       const target = buttons.findIndex((entry) => isDialog(entry.dialogText) && isAccept(entry.label));
-      if (target < 0) return false;
-      try { buttons[target].element.click(); } catch { return false; }
-      return true;
+      if (target >= 0) {
+        try { buttons[target].element.click(); } catch { return false; }
+        return true;
+      }
+      // Phase 2: login-nudge modal X (adidas adiclub). Credentials and
+      // submit buttons are never touched: only an explicit close control
+      // inside a login-flavoured modal dialog may be pressed.
+      const modalOf = (element) => {
+        const direct = element.closest?.('[role="dialog"],[role="alertdialog"],[class*="modal" i],[class*="popup" i],[class*="dialog" i],[class*="layer" i],[class*="overlay" i]');
+        if (direct) return direct;
+        let node = element.parentElement;
+        for (let depth = 0; node && depth < 5 && node !== document.body; depth += 1, node = node.parentElement) {
+          let position = "";
+          try {
+            position = String(getComputedStyle(node).position || "");
+          } catch {
+            position = "";
+          }
+          if (position === "fixed") return node;
+        }
+        return null;
+      };
+      const seen = new Set();
+      for (const root of roots) {
+        const clickables = [...(root.querySelectorAll?.('button,[role="button"],a[href],[onclick],[tabindex],div,span') || [])];
+        for (const element of clickables) {
+          const tag = String(element.tagName || "");
+          if (/^(?:DIV|SPAN)$/.test(tag)) {
+            let cursor = "";
+            try { cursor = String(getComputedStyle(element).cursor || ""); } catch { cursor = ""; }
+            if (cursor !== "pointer") continue;
+          }
+          if (!visible(element) || seen.has(element)) continue;
+          seen.add(element);
+          const label = norm(element.innerText || element.value || "");
+          const aria = norm(element.getAttribute?.("aria-label") || element.getAttribute?.("title") || "");
+          const glyphClose = Boolean(label) && nudgeGlyphPatterns.some((pattern) => pattern.test(label));
+          const wordTarget = aria || label;
+          const wordClose = Boolean(wordTarget) && wordTarget.length <= 20
+            && nudgeWordPatterns.some((pattern) => pattern.test(wordTarget));
+          if (!glyphClose && !wordClose) continue;
+          const modal = modalOf(element);
+          if (!modal) continue;
+          if (!isNudge(String(modal.innerText || "").slice(0, 2000))) continue;
+          try { element.click(); } catch { return false; }
+          return true;
+        }
+      }
+      return false;
     })()`;
   let frames = [];
   try {

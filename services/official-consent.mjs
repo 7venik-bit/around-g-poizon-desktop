@@ -29,8 +29,28 @@ export const CONSENT_ACCEPT_SOURCES = [
   "모두\\s*동의",
 ];
 
+// Login-nudge modals (e.g. adidas adiclub signup) are closed with their own X
+// instead: credentials must never be touched. Only an explicit close control
+// inside a login-flavoured modal dialog may be pressed.
+export const NUDGE_DIALOG_SOURCES = [
+  "로그인",
+  "가입",
+  "회원",
+  "멤버십",
+  "login",
+  "sign\\s*-?\\s*up",
+  "join\\s*(?:now|free)?",
+];
+
+export const NUDGE_CLOSE_GLYPH_SOURCES = ["^[×✕✖✗xX]$"];
+
+export const NUDGE_CLOSE_WORD_SOURCES = ["^닫기$", "^닫음$", "^close$"];
+
 const dialogPatterns = CONSENT_DIALOG_SOURCES.map((source) => new RegExp(source, "i"));
 const acceptPatterns = CONSENT_ACCEPT_SOURCES.map((source) => new RegExp(source, "i"));
+const nudgePatterns = NUDGE_DIALOG_SOURCES.map((source) => new RegExp(source, "i"));
+const nudgeGlyphPatterns = NUDGE_CLOSE_GLYPH_SOURCES.map((source) => new RegExp(source, "i"));
+const nudgeWordPatterns = NUDGE_CLOSE_WORD_SOURCES.map((source) => new RegExp(source, "i"));
 
 export function isConsentDialogText(text = "") {
   return dialogPatterns.some((pattern) => pattern.test(String(text || "")));
@@ -51,6 +71,36 @@ export function findConsentAcceptButton(buttons = []) {
     const entry = list[index] || {};
     if (!isConsentDialogText(entry.dialogText)) continue;
     if (!isConsentAcceptLabel(entry.label)) continue;
+    return index;
+  }
+  return -1;
+}
+
+export function isNudgeDialogText(text = "") {
+  return nudgePatterns.some((pattern) => pattern.test(String(text || "")));
+}
+
+// A close control is an X glyph or an explicit close word. Login/submit
+// wording (계속하기, 가입하기, ... 로그인) must never match here.
+export function isNudgeCloseControl({ label = "", aria = "" } = {}) {
+  const text = String(label || "").replace(/\s+/g, " ").trim();
+  const hint = String(aria || "").replace(/\s+/g, " ").trim();
+  if (text && nudgeGlyphPatterns.some((pattern) => pattern.test(text))) return true;
+  const word = hint || text;
+  return Boolean(word) && word.length <= 20
+    && nudgeWordPatterns.some((pattern) => pattern.test(word));
+}
+
+// buttons: [{ label, aria, dialogText, modal }]. Returns the index of the X
+// inside a login-flavoured modal dialog, or -1. Non-modal contexts and
+// credential/submit buttons are never returned.
+export function findNudgeCloseButton(buttons = []) {
+  const list = Array.isArray(buttons) ? buttons : [];
+  for (let index = 0; index < list.length; index += 1) {
+    const entry = list[index] || {};
+    if (entry.modal !== true) continue;
+    if (!isNudgeDialogText(entry.dialogText)) continue;
+    if (!isNudgeCloseControl({ label: entry.label, aria: entry.aria })) continue;
     return index;
   }
   return -1;
