@@ -35,7 +35,9 @@ test("현재 네이버 로더는 보안 확인과 수집 실패를 검색 완료
   assert.match(failedNavigation, /return renderedSearchFailure\(resultPage\.verificationReason/);
   assert.match(failedNavigation, /resolvedSearchUrl: resultPage\.resolvedUrl \|\| url/);
   assert.doesNotMatch(failedNavigation, /resultLinkOnly: true|searchCompleted: true/);
-  assert.match(block, /if \(resultPage\.explicitEmpty\) return \{/);
+  assert.match(block, /if \(resultPage\.explicitEmpty\) \{/);
+  assert.match(block, /loadNaverFashionChannelsFallback\(searchWindow, attemptQuery\)/);
+  assert.match(block, /verificationReason: "naver_explicit_empty"/);
 });
 
 test("검색 링크 판정은 최종 소스 행까지 손실 없이 전달된다", () => {

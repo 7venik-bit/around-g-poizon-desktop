@@ -354,6 +354,7 @@ test('Naver explicit empty results skip popular cards and advance to the distinc
   const title='남성 재킷';
   const codeUrl=`https://shopping.naver.com/window/search/fashion-group?q=${article}`;
   const titleUrl=`https://shopping.naver.com/window/search/fashion-group?q=${encodeURIComponent(title)}`;
+  const outletUrl=`https://shopping.naver.com/window/outlet/search?q=${article}&queryType=ac`;
   const f=fixture(t);
   f.context.BrowserWindow.prototype.loadURL=async function(url) {
     f.navigations.push(url);
@@ -364,12 +365,19 @@ test('Naver explicit empty results skip popular cards and advance to the distinc
         + '<section><h2>내 또래 남성 인기 브랜드</h2><a href="https://shopping.naver.com/window-products/brandfashion/9024125489">인기 정장</a></section></main>'
       : '<main>패션타운</main>';
   };
-  f.context.verifyApprovedNaverDomesticProducts=async()=>assert.fail('popular cards are not search candidates');
+  // An explicitly empty overview retries the exact code channel-direct before
+  // advancing. Popular cards still never become candidates: the finalizer
+  // discards them, so approval only ever sees an empty list.
+  f.context.verifyApprovedNaverDomesticProducts=async(products)=>{
+    assert.deepEqual(products,[]);
+    return {products:[],candidateCount:0,checkedCount:0,rejectedCount:0,failedCount:0,rejectedProductUrls:[],detailFailures:[]};
+  };
   const result=await f.drive(f.context.addRenderedSearchCounts({products:[],sources:[{
     store:'네이버 패션타운',searchUrl:codeUrl,searchQuery:article,renderCount:true,
     searchAttempts:[{query:article,url:codeUrl},{query:title,url:titleUrl}],
   }]},article,'코오롱스포츠',title));
   assert.deepEqual(f.navigations.filter(url=>url.includes('/window/search/')),[codeUrl,titleUrl]);
+  assert.ok(f.navigations.includes(outletUrl),'exact-code channel fallback runs before the title query');
   assert.equal(result.sources[0].searchQuery,title);
   assert.equal(result.sources[0].absenceConfirmed,true);
   assert.equal(result.sources[0].verificationReason,'naver_explicit_empty');
