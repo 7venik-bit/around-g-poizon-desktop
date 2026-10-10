@@ -132,7 +132,6 @@ contextBridge.exposeInMainWorld("aroundG", {
     ipcRenderer.on("domestic-search:progress", handler);
     return () => ipcRenderer.removeListener("domestic-search:progress", handler);
   },
-  lookupDomesticPrice: (input) => ipcRenderer.invoke("domestic-price:lookup", input),
   cancelDomesticSearch: () => ipcRenderer.invoke("domestic:cancel"),
   listDomesticLogins: () => ipcRenderer.invoke("domestic-login:list"),
   openDomesticLogin: (sourceId) => ipcRenderer.invoke("domestic-login:open", sourceId),

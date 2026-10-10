@@ -26,13 +26,3 @@ test("free-shipping badge before a price does not hide the product price", () =>
   const result = selectNaverSellingPrices("네이버 브랜드직영몰 무료배송 84,550원");
   assert.equal(result.price, 84_550);
 });
-
-test("isolated Naver lookup applies price classification before matching", () => {
-  const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8");
-  const classification = main.indexOf("selectNaverSellingPrices(card?.text");
-  const analysis = main.indexOf("const analyzed = analyzeRenderedChannelProducts", classification);
-  assert.ok(classification > 0);
-  assert.ok(analysis > classification);
-  assert.match(main, /shippingFeeExcluded: selectedPrices\.excludedShippingAmounts\.length > 0/);
-  assert.match(main, /filter\(\(card\) => Number\(card\.price \|\| 0\) > 0\)/);
-});

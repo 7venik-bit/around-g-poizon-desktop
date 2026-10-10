@@ -492,9 +492,7 @@
       // Presence verdicts ("상품 있음", "상품 없음") show as a dash like the
       // other empty cells. Pending states ("확인 중") keep their label.
       const titleText = /^\s*상품\s*(있음|없음)/.test(message) ? "-" : message;
-      const naverPriceAction = store === "네이버 패션타운" && contextKey && !source?.rateLimited && !source?.loginRequired && !source?.securityVerificationRequired
-        ? `<button type="button" class="domestic-inline-price-fetch" data-inline-naver-price="${encodeURIComponent(contextKey)}">가격 가져오기</button>`
-        : "-";
+      const naverPriceAction = "-";
       rows.push(`<div class="domestic-inline-row domestic-inline-fallback">
         <div class="domestic-inline-store" title="${safeText(store)}">${safeText(store)}</div>
         <div class="domestic-inline-title">${safeText(titleText)}</div>
@@ -632,57 +630,6 @@
   }
 
   installRenderers();
-
-  document.addEventListener("click", async (event) => {
-    const button = event.target.closest?.("[data-inline-naver-price]");
-    if (!button || button.disabled) return;
-    const key = decodeURIComponent(button.dataset.inlineNaverPrice || "");
-    const product = typeof excelPreviewProductCache !== "undefined" ? excelPreviewProductCache.get(key) : null;
-    if (!product || typeof window.aroundG?.lookupDomesticPrice !== "function") return;
-    event.preventDefault();
-    button.disabled = true;
-    button.textContent = "확인 중…";
-    try {
-      const response = await window.aroundG.lookupDomesticPrice({
-        articleNumber: product.articleNumber || "",
-        productCode: product.productCode || product.spuId || product.globalSpuId || "",
-        brand: product.brandName || product.brand || "",
-        title: product.apiTitle || product.title || product.name || "",
-      });
-      if (!response?.ok || !Array.isArray(response.candidates) || !response.candidates.length) {
-        button.disabled = response?.rateLimited === true;
-        button.textContent = response?.rateLimited ? "접속량 제한 · 조회 중지" : "다시 가져오기";
-        button.title = response?.message || "가격을 확인하지 못했습니다.";
-        return;
-      }
-      const current = excelPreviewSearchResults.get(key) || { products: [], sources: [] };
-      const candidates = response.candidates.filter((candidate) => Number(candidate?.price || 0) > 0);
-      const byUrl = new Map();
-      for (const candidate of [...candidates, ...(current.products || [])]) {
-        const identity = String(candidate?.url || `${candidate?.store || "판매처"}:${candidate?.title || ""}:${candidate?.price || 0}`);
-        if (!byUrl.has(identity)) byUrl.set(identity, candidate);
-      }
-      excelPreviewSearchResults.set(key, {
-        ...current,
-        error: "",
-        products: [...byUrl.values()],
-        domesticPriceCandidates: [
-          ...candidates,
-          ...(current.domesticPriceCandidates || []),
-        ],
-      });
-      if (activeExcelPreview?.file?.path && typeof persistExcelSearchResults === "function") {
-        persistExcelSearchResults(activeExcelPreview.file.path);
-      }
-      if (activeExcelPreview?.file && activeExcelPreview?.viewMode === "products") {
-        renderExcelProductRows(activeExcelPreview.file, excelPreviewPageProducts);
-      }
-    } catch (error) {
-      button.disabled = false;
-      button.textContent = "다시 가져오기";
-      button.title = error instanceof Error ? error.message : "가격 확인 요청에 실패했습니다.";
-    }
-  });
 
   let scheduled = false;
   const observer = new MutationObserver(() => {

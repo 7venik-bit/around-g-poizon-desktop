@@ -395,7 +395,7 @@ test('single-row mixed-source search preserves the direct official product URL',
   const collect = detail.querySelector('[data-official-product-url]');
   assert.equal(decodeURIComponent(collect.dataset.officialProductUrl), url);
   assert.equal(collect.textContent, '상세 수집');
-  assert.ok(detail.querySelector('[data-inline-naver-price]'));
+  assert.equal(detail.querySelector('[data-inline-naver-price]'), null);
   assert.equal(f.overlay().hidden, true);
 });
 
@@ -424,7 +424,7 @@ test('multi-product six-retailer results retain each product key and list positi
     assert.equal(detail.querySelector('td').colSpan, 10);
     assert.equal(detail.querySelectorAll('.domestic-inline-row').length, 6);
     assert.equal(decodeURIComponent(detail.querySelector('[data-official-result-key]').dataset.officialResultKey), key);
-    assert.equal(decodeURIComponent(detail.querySelector('[data-inline-naver-price]').dataset.inlineNaverPrice), key);
+    assert.equal(detail.querySelector('[data-inline-naver-price]'), null);
     assert.doesNotMatch(row.textContent, /검색 중/);
   }
   assert.equal(f.overlay().hidden, true);
