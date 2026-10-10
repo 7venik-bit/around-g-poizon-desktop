@@ -3762,7 +3762,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
         // Revert failure keeps the scoped grid; collection continues below.
       }
     }
-    let content = await searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
+    const captureContent = () => searchWindow.webContents.mainFrame.executeJavaScript(`(() => {
       const expectedArticle = ${JSON.stringify(String(articleNumber || ""))};
       const expectedCompact = expectedArticle.replace(/[^A-Z0-9]/gi, "").toUpperCase();
       const expectedBase = expectedArticle.split(/[-_]/)[0].replace(/[^A-Z0-9]/gi, "").toUpperCase();
@@ -3971,6 +3971,40 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
       // failed operation is result capture, not navigation to the retailer.
       throw Object.assign(new Error(String(error?.message || error)), {domesticFailureReason:"result_script_failed"});
     });
+    let content = await captureContent();
+    // Official-mall second chance: a late consent popup or transient block can
+    // leave the first capture empty even though the search URL is right and no
+    // dialog was found to dismiss. Reload once, dismiss again, and recapture
+    // before recording zero. Already-dismissed empties stay as-is so genuine
+    // empty results never pay for an extra load.
+    // typeof guard keeps sliced-vm test fixtures working without stubs.
+    if (String(source.store || "") === "브랜드 공식몰" && !officialDirectDetail
+      && typeof dismissOfficialMallConsent === "function" && !searchWindow.isDestroyed()) {
+      let firstCards = -1;
+      try {
+        const first = JSON.parse(content);
+        firstCards = Array.isArray(first?.productCards) ? first.productCards.length : -1;
+      } catch {
+        firstCards = -1;
+      }
+      if (firstCards === 0 && searchWindow.__officialConsentDismissed !== true) {
+        await searchWindow.loadURL(url).catch(() => {});
+        if (typeof waitForDomesticCaptureReady === "function") {
+          await waitForDomesticCaptureReady(searchWindow, 15_000);
+        } else {
+          await wait(2_000);
+        }
+        for (let consent = 0; consent < 3; consent += 1) {
+          if (!await dismissOfficialMallConsent(searchWindow)) break;
+          await wait(900);
+        }
+        try {
+          content = await captureContent();
+        } catch {
+          // The first capture stands when the second pass fails.
+        }
+      }
+    }
     let parsedContent;
     try {
       parsedContent = JSON.parse(content);

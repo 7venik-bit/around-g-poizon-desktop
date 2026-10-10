@@ -216,6 +216,8 @@ test("consent dismissal runs before official search submission and capture", () 
   assert.ok(main.slice(submitStart, submitStart + 800).includes("dismissOfficialMallConsent(searchWindow)"));
   assert.match(main, /typeof dismissOfficialMallConsent === "function"\) \{\s+for \(let consent = 0; consent < 3/);
   assert.match(main, /framesInSubtree/);
+  assert.match(main, /const captureContent = \(\) => searchWindow\.webContents\.mainFrame\.executeJavaScript/);
+  assert.match(main, /firstCards === 0 && searchWindow\.__officialConsentDismissed !== true/);
 });
 
 test("naver channel-direct search urls cover the three domestic channels", () => {

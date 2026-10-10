@@ -14,7 +14,7 @@ const collection = main.slice(fnStart, fnEnd);
 test("ssg collection applies the left-menu seller check before cards are captured", () => {
   const blockStart = collection.indexOf('source.store === "SSG" || source.store === "SSG 백화점"');
   assert.ok(blockStart >= 0, "ssg seller facet block missing");
-  const block = collection.slice(blockStart, collection.indexOf("let content = await searchWindow", blockStart));
+  const block = collection.slice(blockStart, collection.indexOf("const captureContent = () => searchWindow", blockStart));
   assert.match(block, /checkSearchFacets\(/);
   assert.match(block, /retailerFacetLabels\("ssg", brand\)/);
   assert.match(block, /waitForDomesticCaptureReady\(searchWindow/);
@@ -23,7 +23,7 @@ test("ssg collection applies the left-menu seller check before cards are capture
 
 test("ssg seller check keeps the outlet channel scope and never blocks collection", () => {
   const blockStart = collection.indexOf('source.store === "SSG" || source.store === "SSG 백화점"');
-  const captureStart = collection.indexOf("let content = await searchWindow", blockStart);
+  const captureStart = collection.indexOf("const captureContent = () => searchWindow", blockStart);
   assert.ok(blockStart < captureStart, "facet check must run before card capture");
   const block = collection.slice(blockStart, captureStart);
   assert.match(block, /!officialDirectDetail/);
@@ -35,7 +35,7 @@ test("ssg seller check keeps the outlet channel scope and never blocks collectio
 
 test("ssg collection follows the top-menu department tab before the brand check", () => {
   const blockStart = collection.indexOf('source.store === "SSG" || source.store === "SSG 백화점"');
-  const captureStart = collection.indexOf("let content = await searchWindow", blockStart);
+  const captureStart = collection.indexOf("const captureContent = () => searchWindow", blockStart);
   const block = collection.slice(blockStart, captureStart);
   assert.match(block, /shpp=department/);
   assert.match(block, /findSsgDepartmentTab/);
