@@ -16,23 +16,20 @@ const product = { query: 'TVJDW25612', articleNumber: 'TVJDW25612', brand: '코�
   title: '코오롱스포츠 여성 쿠치 윈드스토퍼 중기장 미드 다운 TVJDW25612OAT' };
 const emptyPage = '<script id="__NEXT_DATA__">{"props":{"pageProps":{"dehydratedState":{"queries":[]}}}}</script>';
 
-test('Kolon official and retailer selections collect the same merchant only once', async () => {
+test('Kolon retailer collects without an official-mall duplicate', async () => {
   const requests = [];
   const result = await queryDomesticProducts({ ...product, enabledSourceGroups: ['official', 'retailers'],
     fetchImpl: async url => { requests.push(url); return new Response(emptyPage); } });
-  assert.deepEqual(result.sources.map(s => s.store), ['브랜드 공식몰']);
-  assert.equal(requests.length, 0, 'duplicate Kolon HTTP collection must not run');
+  assert.deepEqual(result.sources.map(s => s.store), ['코오롱몰']);
 });
 
 for (const status of ['verified', 'search_unsupported']) {
   for (const host of ['kolonmall.com', 'www.kolonmall.com', 'm.kolonmall.com']) {
     test(`saved Kolon ${status} at ${host} collects one merchant`, async () => {
-      let requests = 0;
       const result = await queryDomesticProducts({ ...product, enabledSourceGroups: ['official', 'retailers'],
         officialBrandRecord: { status, homepageUrl: `https://${host}/KOLONSPORT` },
-        fetchImpl: async () => { requests++; return new Response(emptyPage); } });
-      assert.deepEqual(result.sources.map(s => s.store), ['브랜드 공식몰']);
-      assert.equal(requests, 0);
+        fetchImpl: async () => new Response(emptyPage) });
+      assert.deepEqual(result.sources.map(s => s.store), ['코오롱몰']);
     });
   }
 }
@@ -41,7 +38,7 @@ test('an unrelated host containing the Kolon name cannot suppress the retailer',
   const result = await queryDomesticProducts({ ...product, enabledSourceGroups: ['official', 'retailers'],
     officialBrandRecord: { status: 'verified', homepageUrl: 'https://kolonmall.com.example.test/' },
     fetchImpl: async () => new Response(emptyPage) });
-  assert.deepEqual(result.sources.map(s => s.store), ['브랜드 공식몰', '코오롱몰']);
+  assert.deepEqual(result.sources.map(s => s.store), ['코오롱몰']);
 });
 
 test('disabling official search keeps the explicitly selected Kolon retailer', async () => {
@@ -50,10 +47,10 @@ test('disabling official search keeps the explicitly selected Kolon retailer', a
   assert.deepEqual(result.sources.map(s => s.store), ['코오롱몰']);
 });
 
-test('another official merchant does not suppress Kolon retailer search', async () => {
+test('removed official search never suppresses Kolon retailer search', async () => {
   const result = await queryDomesticProducts({ ...product, brand: '나이키', enabledSourceGroups: ['official', 'retailers'],
     fetchImpl: async () => new Response(emptyPage) });
-  assert.deepEqual(result.sources.map(s => s.store), ['브랜드 공식몰', '코오롱몰']);
+  assert.deepEqual(result.sources.map(s => s.store), ['코오롱몰']);
 });
 
 test('manual retailer links retain the exact code independently of the last fallback', async () => {

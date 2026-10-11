@@ -140,7 +140,7 @@ const domesticIdentitySearchCache = new Map();
 const DOMESTIC_SEARCH_MAX_WAIT_MS = 4 * 60 * 1000 + 5_000;
 let installedAppVersion = "";
 const DOMESTIC_SOURCE_GROUPS_KEY = "around-g-domestic-source-groups-v1";
-const DOMESTIC_SOURCE_GROUPS = ["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"];
+const DOMESTIC_SOURCE_GROUPS = ["musinsa", "naver", "ssg", "lotte", "parallel", "retailers"];
 
 function selectedDomesticSourceGroups() {
   return [...document.querySelectorAll('.sidebar-search-sites input[type="checkbox"]:checked')]

@@ -383,8 +383,7 @@ test("품번이 있으면 상품코드, 상품명, 상품명+상품코드 순으
   assert.doesNotMatch(naver.searchQuery, /가죽|로우탑|스니커즈/);
 });
 
-test("MLB 공식몰은 홈페이지 돋보기 뒤 상품코드만 검색창에 입력한다", async () => {
-  assert.equal(officialBrandUsesInternalSearch("MLB"), true);
+test("MLB 공식몰은 자동 상품검색에서 제외된다", async () => {
   const result = await queryDomesticProducts({
     query: "MLB 3ASXCA12N-50WHS",
     articleNumber: "3ASXCA12N-50WHS",
@@ -395,16 +394,12 @@ test("MLB 공식몰은 홈페이지 돋보기 뒤 상품코드만 검색창에 �
       text: async () => '<script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"dehydratedState":{"queries":[]}}}}</script>',
     }),
   });
-  const official = result.sources.find((source) => source.store === "브랜드 공식몰");
-  assert.equal(official.homepageUrl, "https://www.mlb-korea.com/?gf=A");
-  assert.equal(official.officialProductUrl, "");
-  assert.equal(official.interactiveSearch, true);
-  assert.equal(official.searchQuery, "3ASXCA12N-50WHS");
-  assert.equal(official.searchAttempts[0]?.url, "https://www.mlb-korea.com/?gf=A");
+  assert.equal(result.sources.some((source) => source.officialBrand === true), false);
+  assert.equal(result.sources.some((source) => ["브랜드 공식몰", "국내 공식몰 없음 확인", "공식몰 추가 확인 필요"].includes(source.store)), false);
+  assert.ok(result.sources.some((source) => source.store === "네이버 패션타운"));
 });
 
-test("직접 검색 URL이 있는 브랜드 공식몰은 품번 링크를 사용한다", async () => {
-  assert.equal(officialBrandUsesInternalSearch("데상트"), false);
+test("직접 검색 URL이 있는 브랜드도 공식몰 행 없이 검색한다", async () => {
   const result = await queryDomesticProducts({
     query: "데상트 SR123UTS15",
     articleNumber: "SR123UTS15",
@@ -413,16 +408,12 @@ test("직접 검색 URL이 있는 브랜드 공식몰은 품번 링크를 사용
     title: "스몰 워딩 코튼 반팔 티셔츠",
     fetchImpl: async () => ({ ok: true, text: async () => "" }),
   });
-  const official = result.sources.find((source) => source.store === "브랜드 공식몰");
-  assert.equal(official.homepageUrl, "https://dk-on.com/DESCENTE");
-  assert.match(official.officialProductUrl, /dk-on\.com\/DESCENTE\/search\?keyword=SR123UTS15/);
-  assert.match(official.searchAttempts[0]?.url, /dk-on\.com\/DESCENTE\/search\?keyword=SR123UTS15/);
-  assert.doesNotMatch(official.searchAttempts[0]?.url, /naver\.com/);
-  assert.equal(official.interactiveSearch, false);
-  assert.equal(official.searchQuery, "SR123UTS15");
+  assert.equal(result.sources.some((source) => source.officialBrand === true), false);
+  assert.equal(result.sources.some((source) => ["브랜드 공식몰", "국내 공식몰 없음 확인", "공식몰 추가 확인 필요"].includes(source.store)), false);
+  assert.ok(result.sources.some((source) => source.store === "무신사"));
 });
 
-test("브랜드 공식몰은 품번이 없을 때 상품코드로 검색한다", async () => {
+test("브랜드 공식몰은 품번이 없어도 자동 검색에 포함되지 않는다", async () => {
   const result = await queryDomesticProducts({
     query: "데상트 DESCENTE-001",
     productCode: "DESCENTE-001",
@@ -430,9 +421,8 @@ test("브랜드 공식몰은 품번이 없을 때 상품코드로 검색한다",
     title: "스몰 워딩 코튼 반팔 티셔츠",
     fetchImpl: async () => ({ ok: true, text: async () => "" }),
   });
-  const official = result.sources.find((source) => source.store === "브랜드 공식몰");
-  assert.match(official.officialProductUrl, /keyword=DESCENTE-001/);
-  assert.equal(official.searchQuery, "DESCENTE-001");
+  assert.equal(result.sources.some((source) => source.officialBrand === true), false);
+  assert.equal(result.sources.some((source) => ["브랜드 공식몰", "국내 공식몰 없음 확인", "공식몰 추가 확인 필요"].includes(source.store)), false);
 });
 
 test("병행수입 검색은 상품코드가 포함된 네이버 쇼핑 결과 링크를 사용한다", async () => {
@@ -1197,7 +1187,7 @@ test("one domestic store failure does not stop the others", async () => {
   // post-processing consolidates each portal into one overview request. Both
   // topologies must preserve every independent source after Kolon fails.
   for (const requiredStore of [
-    "브랜드 공식몰", "네이버 패션타운", "무신사", "SSG",
+    "네이버 패션타운", "무신사", "SSG",
     "롯데온", "병행수입·편집샵", "코오롱몰",
   ]) assert.equal(stores.includes(requiredStore), true, requiredStore);
   assert.deepEqual(result.sources.map((source) => source.priority),
@@ -1210,18 +1200,16 @@ test("one domestic store failure does not stop the others", async () => {
   );
 });
 
-test("an unverified brand is not reported as a verified official-store zero", async () => {
+test("미연동 브랜드도 공식몰 행 없이 검색한다", async () => {
   const emptyNextData = `<script id="__NEXT_DATA__">${JSON.stringify({ props: { pageProps: { dehydratedState: { queries: [] } } } })}</script>`;
   const fetchImpl = async () => ({ ok: true, status: 200, text: async () => emptyNextData });
   const result = await queryDomesticProducts({ query: "TEST001", brand: "미연동테스트브랜드", fetchImpl });
-  const official = result.sources[0];
-  assert.equal(official.store, "공식몰 추가 확인 필요");
-  assert.equal(official.officialStatus, "pending");
-  assert.equal(official.renderCount, false);
-  assert.equal(official.officialProductUrl, "");
+  assert.equal(result.sources.some((source) => source.officialBrand === true), false);
+  assert.equal(result.sources.some((source) => ["브랜드 공식몰", "국내 공식몰 없음 확인", "공식몰 추가 확인 필요"].includes(source.store)), false);
+  assert.equal(result.sources[0].store, "네이버 패션타운");
 });
 
-test("a verified official homepage stays usable when product search is unsupported", async () => {
+test("공식몰 지원 여부와 무관하게 공식몰 행이 나가지 않는다", async () => {
   const result = await queryDomesticProducts({
     query: "L47581100",
     brand: "살로몬",
@@ -1232,28 +1220,20 @@ test("a verified official homepage stays usable when product search is unsupport
     },
     fetchImpl: async () => ({ ok: true, status: 200, text: async () => "" }),
   });
-  const official = result.sources[0];
-  assert.equal(official.store, "브랜드 공식몰");
-  assert.equal(official.officialStatus, OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED);
-  assert.equal(official.homepageUrl, "https://salomon.co.kr/");
-  assert.equal(official.officialProductUrl, "");
-  assert.equal(official.renderCount, true);
+  assert.equal(result.sources.some((source) => source.officialBrand === true), false);
+  assert.equal(result.sources.some((source) => source.store === "브랜드 공식몰"), false);
 });
 
-test("official-store direct search URL is preserved instead of replaying the magnifier", async () => {
+test("공식몰 직접 검색 URL이 있어도 공식몰 행이 나가지 않는다", async () => {
   const result = await queryDomesticProducts({
     query: "아디다스 IH0274",
     articleNumber: "IH0274",
     brand: "아디다스",
     fetchImpl: async () => ({ ok: true, text: async () => "" }),
   });
-  const official = result.sources.find((source) => source.store === "브랜드 공식몰");
-  assert.equal(official.homepageUrl, "https://www.adidas.co.kr/");
-  assert.match(official.officialSearchUrl, /adidas\.co\.kr\/search\?q=IH0274/);
-  assert.match(official.officialProductUrl, /adidas\.co\.kr\/search\?q=IH0274/);
-  assert.match(official.searchAttempts[0]?.url, /adidas\.co\.kr\/search\?q=IH0274/);
-  assert.equal(official.interactiveSearch, false);
-  assert.equal(official.searchQuery, "IH0274");
+  assert.equal(result.sources.some((source) => source.officialBrand === true), false);
+  assert.equal(result.sources.some((source) => source.store === "브랜드 공식몰"), false);
+  assert.ok(result.sources.some((source) => source.store === "네이버 패션타운"));
 });
 
 test("official-store text matches without a product-detail URL are discarded", () => {
