@@ -2500,6 +2500,18 @@ html body main{padding:10px 28px 48px}
 .traffic-lights button[data-window-control="close"]{animation:titlebar-running-dot 1.8s ease-in-out infinite}
 .traffic-lights button[data-window-control="minimize"]{animation:titlebar-running-dot 1.8s ease-in-out .3s infinite}
 .traffic-lights button[data-window-control="maximize"]{animation:titlebar-running-dot 1.8s ease-in-out .6s infinite}
+/* Sidebar nav emoji: relevant glyph next to each menu label. */
+html body .nav[data-view="products"]::before{content:"📑"}
+html body .nav[data-view="profit"]::before{content:"🧮"}
+html body .nav[data-view="ledger"]::before{content:"📒"}
+html body .nav[data-view="orders"]::before{content:"📦"}
+html body .nav[data-view="stock-watch"]::before{content:"🔔"}
+html body .nav[data-view="settings"]::before{content:"🔗"}
+html body .search-service-button>i{display:none}
+html body .search-service-button::before{font-size:14px;line-height:1}
+html body .search-service-button[data-service-explorer="popular"]::before{content:"🔥"}
+html body .search-service-button[data-service-explorer="brand"]::before{content:"🔍"}
+html body .search-service-button[data-service-explorer="files"]::before{content:"📁"}
 @media (prefers-reduced-motion:reduce){.traffic-lights button{animation:none}}
 /* Sidebar quick actions: update, folder select, and product compare live here. */
 html body aside{overflow-y:auto}

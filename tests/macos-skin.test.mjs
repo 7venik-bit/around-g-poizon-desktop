@@ -113,6 +113,8 @@ test("quick actions live at the bottom of the sidebar", () => {
   assert.match(style, /#sidebar-quick-actions \.brand-export-folder-path\{display:none!important\}/);
   assert.match(style, /#sidebar-quick-actions \.brand-search-action\{[^}]*justify-content:center/);
   assert.match(style, /html body \.search-service-button\{color:#333336\}/);
+  assert.match(style, /html body \.nav\[data-view="orders"\]::before\{content:"📦"\}/);
+  assert.match(style, /html body \.search-service-button\[data-service-explorer="brand"\]::before\{content:"🔍"\}/);
 });
 
 test("hidden-header layout check skips header geometry", () => {
