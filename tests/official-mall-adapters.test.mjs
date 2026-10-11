@@ -96,16 +96,14 @@ test("unknown official malls remain on the existing generic search path", () => 
   assert.deepEqual(officialMallDirectProductUrls({ brand: "테스트", domain: "example.com" }, "ABC123"), []);
 });
 
-test("domestic search carries the verified Descente official search attempt", async () => {
+test("domestic search emits no official-mall source for a verified brand", async () => {
   const result = await queryDomesticProducts({
     query: "데상트 SR123UPS11-服",
     articleNumber: "SR123UPS11-服",
     brand: "데상트",
     fetchImpl: async () => ({ ok: true, text: async () => "" }),
   });
-  const official = result.sources.find((source) => source.store === "브랜드 공식몰");
-  assert.equal(official.adapterId, "descente-dk-on");
-  assert.deepEqual(official.directProductUrls, []);
-  assert.equal(official.searchAttempts[0]?.url, "https://dk-on.com/DESCENTE/search?keyword=SR123UPS11");
+  assert.equal(result.sources.some((source) => source.officialBrand === true), false);
+  assert.equal(result.sources.some((source) => source.store === "브랜드 공식몰"), false);
   assert.equal(result.sources.find((source) => source.store === "무신사")?.adapterId, "");
 });

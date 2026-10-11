@@ -16,8 +16,9 @@ test("popular Crocs export supplies a searchable brand and exact article without
     enabledSourceGroups: ["official", "naver"],
   });
   assert.equal(result.queryCandidates[0], "207521-001");
-  assert.ok(result.sources.some((source) => source.store === "브랜드 공식몰"
-    && source.officialSearchUrl === "https://www.crocs.co.kr/search?q=207521-001"));
+  assert.equal(result.sources.some((source) => source.officialBrand === true), false);
+  assert.equal(result.sources.some((source) => source.store === "브랜드 공식몰"), false);
+  assert.ok(result.sources.some((source) => source.store === "네이버 패션타운"));
 });
 
 test("popular search identity does not guess a brand inside an unrelated title or rewrite another brand code", () => {
@@ -40,9 +41,8 @@ test("popular Adidas/Jordan exports recover a searchable brand and keep the exac
       enabledSourceGroups: ["official", "naver"],
     });
     assert.equal(result.queryCandidates[0], article);
-    const official = result.sources.find((source) => source.store === "브랜드 공식몰");
-    assert.ok(official.officialSearchUrl.includes(officialHost));
-    assert.ok(official.officialSearchUrl.includes(article));
+    assert.equal(result.sources.some((source) => source.officialBrand === true), false);
+    assert.equal(result.sources.some((source) => source.store === "브랜드 공식몰"), false);
     const naver = result.sources.find((source) => source.store === "네이버 패션타운");
     assert.equal(naver.searchAttempts[0].query, article);
     assert.ok(naver.searchAttempts[0].url.includes(`q=${article}`));

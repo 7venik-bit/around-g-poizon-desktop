@@ -12,10 +12,6 @@ import {
   officialSearchUrlFromRecord,
   verifiedOfficialBrand,
 } from "../services/official-domain-registry.mjs";
-import {
-  officialMallAdapterId,
-  officialMallDirectProductUrls,
-} from "../services/official-mall-adapters.mjs";
 import { brandSearchQueries } from "../services/brand-search-profile.mjs";
 import { dedupeNaverOverlappingProducts } from "../services/naver-result-dedupe.mjs";
 
@@ -1483,15 +1479,6 @@ export async function queryDomesticProducts({
   })).map(sanitizeDomesticQuery).filter(Boolean)
     .filter((candidate, index, all) => all.indexOf(candidate) === index);
 
-  const knownOfficial = officialBrandEntry(brand || title || normalizedQuery);
-  const officialStatus = officialBrandRecord?.status || (knownOfficial ? OFFICIAL_DOMAIN_STATUS.VERIFIED : OFFICIAL_DOMAIN_STATUS.PENDING);
-  const officialStoreLabel = officialStatus === OFFICIAL_DOMAIN_STATUS.VERIFIED ? "브랜드 공식몰"
-    : officialStatus === OFFICIAL_DOMAIN_STATUS.NO_OFFICIAL_STORE ? "국내 공식몰 없음 확인"
-      : officialStatus === OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED ? "브랜드 공식몰"
-        : "공식몰 추가 확인 필요";
-  // Keep the complete domestic search route in one ordered workflow. These
-  // sources intentionally live together so a product search cannot leave one
-  // adapter running independently or resume only part of a stale request.
   const sourceGroup = (source) => source.officialBrand ? "official"
     : source.store === "무신사" ? "musinsa"
       : /^네이버/.test(source.store) ? "naver"
@@ -1499,26 +1486,10 @@ export async function queryDomesticProducts({
           : /^롯데온/.test(source.store) ? "lotte"
             : source.retailerDiscovery ? "parallel" : "retailers";
   const enabledGroups = Array.isArray(enabledSourceGroups) ? new Set(enabledSourceGroups) : null;
+  // Brand official malls are excluded from automatic product search by policy:
+  // no official-mall source is emitted, so no official search, popup handling,
+  // or detail collection runs for any brand.
   const sources = [
-    {
-      store: officialStoreLabel,
-      linkOnly: true,
-      officialBrand: true,
-      renderCount: [OFFICIAL_DOMAIN_STATUS.VERIFIED, OFFICIAL_DOMAIN_STATUS.SEARCH_UNSUPPORTED].includes(officialStatus)
-        && Boolean(String(officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl || "")),
-      officialStatus,
-      homepageUrl: String(officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl || ""),
-      adapterId: officialMallAdapterId({
-        brand: brand || title || normalizedQuery,
-        domain: officialBrandRecord?.domain || knownOfficial?.domain,
-        homepageUrl: officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl,
-      }),
-      directProductUrls: officialMallDirectProductUrls({
-        brand: brand || title || normalizedQuery,
-        domain: officialBrandRecord?.domain || knownOfficial?.domain,
-        homepageUrl: officialBrandRecord?.homepageUrl || knownOfficial?.homepageUrl,
-      }, exactProductCode),
-    },
     // One overview request already includes official malls, department stores and outlets.
     { store: "네이버 패션타운", linkOnly: true, fashionTown: "overview", renderCount: true },
     { store: "무신사", parser: parseMusinsaSearch, renderCount: true },
@@ -1546,7 +1517,7 @@ export async function queryDomesticProducts({
       });
     });
   // Keep the source order observable and deterministic. Each brand/product is
-  // checked from the official mall through the domestic channels one at a
+  // checked through the domestic channels one at a
   // time, so a blocked source cannot hide which step failed.
   const results = [];
   for (const source of sources) {

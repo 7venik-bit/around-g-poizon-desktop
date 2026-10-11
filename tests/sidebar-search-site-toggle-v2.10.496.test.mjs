@@ -9,13 +9,16 @@ const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8");
 const domestic = fs.readFileSync(new URL("../relay/domestic-search.mjs", import.meta.url), "utf8");
 
 test("sidebar exposes every domestic search group as a compact on/off control", () => {
-  for (const value of ["official", "musinsa", "naver", "ssg", "lotte", "parallel", "retailers"]) {
+  for (const value of ["musinsa", "naver", "ssg", "lotte", "parallel", "retailers"]) {
     assert.match(html, new RegExp(`value="${value}"`));
   }
+  // Brand official malls are excluded from automatic product search by policy.
+  assert.doesNotMatch(html, /value="official"/);
   assert.match(html, /id="search-sites-all-on"/);
   assert.match(html, /id="search-sites-all-off"/);
   assert.match(css, /\.sidebar-search-sites input:checked\+span/);
-  assert.match(renderer, /sourceGroups: selectedDomesticSourceGroups\(\)/);
+  assert.match(renderer, /function selectedDomesticSourceGroups\(\)/);
+  assert.match(renderer, /domesticSearchInput\(product, selectedDomesticSourceGroups\(\)/);
 });
 
 test("selected groups reach the search engine and filter actual sources", () => {

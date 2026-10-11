@@ -18,8 +18,7 @@ test('Ecco searches its verified Korean store even when a previously verified re
     assert.equal(record.interactiveSearch,false);
     const result=await queryDomesticProducts({query:'85030451094',brand,articleNumber:'85030451094',title:'BIOM 720',
       officialBrandRecord:record,enabledSourceGroups:['official'],fetchImpl:async()=>({ok:true,text:async()=>''})});
-    assert.equal(result.sources[0].homepageUrl,'https://kr.ecco.com/');
-    assert.ok(result.sources[0].searchAttempts.some(a=>a.url==='https://kr.ecco.com/search?query=85030451094'));
+    assert.equal(result.sources.length,0);
     assert.doesNotMatch(JSON.stringify(result.sources),/onetop\.crd/);
   }
   assert.equal(verifiedOfficialBrand('Ecco collaboration label'),null);
@@ -47,8 +46,8 @@ test('an unlisted brand discovers and persists its own search route on demand',a
     discover:async r=>{calls.push(r);return {record:{...r,status:'verified',domain:'new-label.example',homepageUrl:'https://new-label.example/',searchTemplate:'https://new-label.example/find?term={query}'}};},persist:async r=>saved.push(r)});
   assert.equal(calls[0].brandName,'New Label');assert.equal(saved[0].registryId,'id:3401');
   const data=await queryDomesticProducts({query:'새 브랜드 ABC123',brand:'새 브랜드',articleNumber:'ABC123',title:'재킷',officialBrandRecord:record,enabledSourceGroups:['official'],fetchImpl:async()=>({ok:true,text:async()=>''})});
-  assert.equal(data.sources[0].homepageUrl,'https://new-label.example/');
-  assert.ok(data.sources[0].searchAttempts.some(x=>x.url.includes('new-label.example/find?term=')));
+  assert.equal(data.sources.length,0);
+  assert.doesNotMatch(JSON.stringify(data.sources),/new-label\.example/);
 });
 
 test('an audited store without a fixed URL keeps interactive search, while a known brand skips discovery',async()=>{
