@@ -108,6 +108,7 @@ test("quick actions live at the bottom of the sidebar", () => {
   assert.match(style, /#sidebar-quick-actions\{display:grid/);
   assert.match(style, /#sidebar-quick-actions #brand-export-selected\{display:none!important\}/);
   assert.match(style, /#sidebar-quick-actions #update-panel\{display:none!important\}/);
+  assert.match(style, /html body \.search-service-menu \.search-service-file-label,\nhtml body \.search-service-menu \.search-service-file\{display:none!important\}/);
   assert.match(style, /#sidebar-quick-actions #brand-export-folder-select::after\{content:none!important\}/);
   assert.match(style, /#sidebar-quick-actions \.brand-export-folder-path\{display:none!important\}/);
   assert.match(style, /#sidebar-quick-actions \.brand-search-action\{[^}]*justify-content:center/);

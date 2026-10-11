@@ -2513,8 +2513,11 @@ html body aside{overflow-y:auto}
 #sidebar-quick-actions #brand-export-folder-select::after{content:none!important}
 #sidebar-quick-actions #poizon-review-brand-start{width:100%;padding:8px 10px;font-size:11px}
 #sidebar-quick-actions .brand-search-action{width:100%;padding:8px 10px;font-size:11px;justify-content:center;text-align:center}
-/* The button label already carries progress; the detail panel is redundant. */
+/* Daily work does not use the files section. Button stays for logic. */
 #sidebar-quick-actions #update-panel{display:none!important}
+/* Hide the sidebar data-files group (label and button). */
+html body .search-service-menu .search-service-file-label,
+html body .search-service-menu .search-service-file{display:none!important}
 /* The folder path duplicates the folder dialog. The button stays. */
 #sidebar-quick-actions .brand-export-folder-path{display:none!important}
 /* Contrast pass: faint gray copy becomes readable ink. */
