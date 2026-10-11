@@ -6941,6 +6941,7 @@ function createWindow() {
     frame: false,
     titleBarStyle: "hidden",
     backgroundColor: "#f5f5f7",
+    title: "POIZON for Around G",
     title: "Around G POIZON",
     webPreferences: {
       preload: join(import.meta.dirname, "preload.cjs"),

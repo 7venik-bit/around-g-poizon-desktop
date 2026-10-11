@@ -58,3 +58,21 @@ test("renderers wire the traffic lights and maximize state", () => {
     assert.match(source, /window-maximized/, `${name}:maximized class`);
   }
 });
+
+test("titlebar shows the renamed program title", () => {
+  assert.match(indexHtml, /<p class="titlebar-title">POIZON for Around G<\/p>/);
+  assert.match(indexHtml, /<title>POIZON for Around G<\/title>/);
+  assert.match(main, /title: "POIZON for Around G"/);
+});
+
+test("top status and action menus are hidden with a slim header", () => {
+  assert.match(style, /html body \.shell>header \.header-status-stack,\nhtml body \.shell>header \.header-actions\{display:none\}/);
+  assert.match(style, /html body \.shell>header\{min-height:0;padding:8px 24px\}/);
+});
+
+test("traffic lights shimmer red-yellow-green in order", () => {
+  for (const [name, css] of [["style", style], ["inventory", inventoryCss]]) {
+    assert.match(css, /@keyframes titlebar-running-dot/, `${name}:keyframes`);
+    assert.match(css, /\.traffic-lights button\[data-window-control="minimize"\]\{animation:titlebar-running-dot[^}]*\.3s/, `${name}:sequence`);
+  }
+});

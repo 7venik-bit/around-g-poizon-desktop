@@ -16,3 +16,8 @@ html body button{border-radius:999px}
 .traffic-lights button[data-window-control="close"]:hover::before{content:"×"}
 .traffic-lights button[data-window-control="minimize"]:hover::before{content:"–"}
 .traffic-lights button[data-window-control="maximize"]:hover::before{content:"+"}
+@keyframes titlebar-running-dot{0%,100%{filter:brightness(1)}50%{filter:brightness(1.35)}}
+.traffic-lights button[data-window-control="close"]{animation:titlebar-running-dot 1.8s ease-in-out infinite}
+.traffic-lights button[data-window-control="minimize"]{animation:titlebar-running-dot 1.8s ease-in-out .3s infinite}
+.traffic-lights button[data-window-control="maximize"]{animation:titlebar-running-dot 1.8s ease-in-out .6s infinite}
+@media (prefers-reduced-motion:reduce){.traffic-lights button{animation:none}}
