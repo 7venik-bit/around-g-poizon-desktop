@@ -83,6 +83,16 @@ test("traffic lights shimmer red-yellow-green in order", () => {
   }
 });
 
+test("completed brands offer a delete action first", () => {
+  assert.match(indexHtml, /id="completed-brand-delete"[^>]*>삭제<\/button>/);
+  const heading = indexHtml.slice(
+    indexHtml.indexOf("frequent-brand-heading-actions"),
+    indexHtml.indexOf("frequent-brand-heading-actions") + 1200);
+  assert.ok(heading.indexOf("completed-brand-delete") < heading.indexOf("completed-brand-domestic-search"));
+  assert.match(renderer, /\$\("#completed-brand-delete"\)\?\.addEventListener\("click"/);
+  assert.match(renderer, /trashBrandExportFiles\(unique\.map\(\(file\) => file\.path\)\)/);
+});
+
 test("quick actions live at the bottom of the sidebar", () => {
   const aside = indexHtml.slice(indexHtml.indexOf("<aside>"), indexHtml.indexOf("</aside>"));
   assert.match(aside, /id="sidebar-quick-actions"/);

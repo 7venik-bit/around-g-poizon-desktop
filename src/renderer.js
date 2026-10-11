@@ -2414,6 +2414,7 @@ function updateBrandSelectionControls() {
   const search = $("#brand-export-selected");
   const frequentSearch = $("#frequent-brand-export");
   const domesticSearch = $("#completed-brand-domestic-search");
+  const completedDelete = $("#completed-brand-delete");
   const stopCurrent = $("#brand-stop-current");
   if (count) count.textContent = `${selectedCount}개 선택`;
   if (clear) clear.disabled = selectedCount === 0 || brandSelectionBusy;
@@ -2432,6 +2433,10 @@ function updateBrandSelectionControls() {
     domesticSearch.setAttribute("aria-busy", String(combinedBrandPreviewLoading));
   }
   if (stopCurrent) stopCurrent.disabled = !brandSelectionBusy && !activeExportBrand && !hasActiveBrandExportJobs();
+  if (completedDelete) {
+    completedDelete.disabled = brandSelectionBusy
+      || !selectedBrandsForExport().some((brand) => latestCompletedBrandDownload(brand));
+  }
   const lamps = $("#onedrive-lamps");
   if (lamps) {
     const sourcing = brandSelectionBusy || Boolean(activeExportBrand) || hasActiveBrandExportJobs();
@@ -3829,6 +3834,33 @@ $("#frequent-brand-export")?.addEventListener("click", () => {
     renderBrandCards($("#brand-filter")?.value || "");
   }
   $("#brand-export-selected")?.click();
+});
+$("#completed-brand-delete")?.addEventListener("click", async () => {
+  const targets = selectedBrandsForExport().filter((brand) => latestCompletedBrandDownload(brand));
+  if (!targets.length || brandSelectionBusy) return;
+  const files = [];
+  for (const brand of targets) {
+    const names = [brand.name, brand.ko].filter(Boolean);
+    for (const file of downloadedBrandFiles) {
+      if (names.some((name) => rendererBrandsMatch(name, file.brandName || file.brand))) files.push(file);
+    }
+  }
+  const unique = [...new Map(files.map((file) => [brandImportPathKey(file.path), file])).values()];
+  if (!unique.length) return;
+  if (!window.confirm(`선택한 ${targets.length}개 브랜드의 다운로드 파일 ${unique.length}개를 휴지통으로 이동할까요?`)) return;
+  const button = $("#completed-brand-delete");
+  if (button) { button.disabled = true; button.textContent = "삭제 중…"; }
+  try {
+    await window.aroundG.trashBrandExportFiles(unique.map((file) => file.path));
+  } finally {
+    if (button) button.textContent = "삭제";
+  }
+  for (const brand of targets) selectedBrandIds.delete(Number(brand.id));
+  if (selectedBrandId != null && ![...selectedBrandIds].some((id) => Number(id) === Number(selectedBrandId))) selectedBrandId = null;
+  saveBrandSelections();
+  await restoreDownloadedBrandFiles();
+  renderBrandCards($("#brand-filter")?.value || "");
+  updateBrandSelectionControls();
 });
 $("#completed-brand-domestic-search")?.addEventListener("click", async () => {
   if (combinedBrandPreviewLoading) return;
