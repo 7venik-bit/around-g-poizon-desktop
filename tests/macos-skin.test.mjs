@@ -69,6 +69,7 @@ test("top status and action menus are hidden with a slim header", () => {
   assert.match(style, /html body \.shell>header \.header-status-stack,\nhtml body \.shell>header \.header-actions\{display:none\}/);
   assert.match(style, /html body \.shell>header\{display:none\}/);
   assert.match(style, /html body #brand-export-completed\{display:none\}/);
+  assert.match(style, /html body #purchase-ledger-awareness\{display:none\}/);
 });
 
 test("traffic lights shimmer red-yellow-green in order", () => {

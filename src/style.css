@@ -2491,6 +2491,8 @@ html body .shell>header .header-actions{display:none}
 html body .shell>header{display:none}
 /* Hide the completed-downloads bar. */
 html body #brand-export-completed{display:none}
+/* Hide the internal purchase-ledger status strip. */
+html body #purchase-ledger-awareness{display:none}
 html body main{padding:10px 28px 48px}
 /* Running shimmer: traffic lights pulse red-yellow-green in order. */
 @keyframes titlebar-running-dot{0%,100%{filter:brightness(1)}50%{filter:brightness(1.35)}}
