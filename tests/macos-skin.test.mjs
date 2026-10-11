@@ -115,6 +115,9 @@ test("quick actions live at the bottom of the sidebar", () => {
   assert.match(style, /html body \.search-service-button\{color:#333336\}/);
   assert.match(style, /html body \.nav\[data-view="orders"\]::before\{content:"📦"\}/);
   assert.match(style, /html body \.search-service-button\[data-service-explorer="brand"\]::before\{content:"🔍"\}/);
+  assert.match(style, /html body \.brand\{display:none\}/);
+  assert.match(style, /html body \.search-service-menu>small\{display:none\}/);
+  assert.match(style, /html body \.search-service-button\{min-height:44px;padding:11px 12px 11px 17px;font-size:13px;font-weight:650/);
 });
 
 test("hidden-header layout check skips header geometry", () => {

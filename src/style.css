@@ -2512,6 +2512,12 @@ html body .search-service-button::before{font-size:14px;line-height:1}
 html body .search-service-button[data-service-explorer="popular"]::before{content:"🔥"}
 html body .search-service-button[data-service-explorer="brand"]::before{content:"🔍"}
 html body .search-service-button[data-service-explorer="files"]::before{content:"📁"}
+/* Remove the logo badge block. */
+html body .brand{display:none}
+/* Remove the service group label; match service buttons to main nav type. */
+html body .search-service-menu>small{display:none}
+html body .search-service-menu{margin:2px 0 6px;padding:0;border-left:0}
+html body .search-service-button{min-height:44px;padding:11px 12px 11px 17px;font-size:13px;font-weight:650;border-radius:9px}
 @media (prefers-reduced-motion:reduce){.traffic-lights button{animation:none}}
 /* Sidebar quick actions: update, folder select, and product compare live here. */
 html body aside{overflow-y:auto}
