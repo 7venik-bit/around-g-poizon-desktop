@@ -61,7 +61,8 @@ test("brand picker exposes accessible multi-select and search icons", () => {
   assert.match(indexHtml, /aria-label="브랜드 복수 선택 및 검색"/);
   assert.match(indexHtml, /id="brand-export-selected"/);
   assert.match(indexHtml, /<span>포이즌 상품정보<\/span>/);
-  assert.match(indexHtml, /id="brand-selected-count"[\s\S]*id="brand-sync"[\s\S]*id="brand-selection-clear"[\s\S]*id="brand-export-selected"/);
+  assert.match(indexHtml, /id="brand-selected-count"[\s\S]*id="brand-sync"[\s\S]*id="brand-selection-clear"/);
+  assert.match(indexHtml, /id="sidebar-quick-actions"[\s\S]*id="brand-export-selected"/);
   assert.doesNotMatch(indexHtml, /id="brand-move-top"/);
   assert.match(indexHtml, /<svg aria-hidden="true" viewBox="0 0 24 24">/);
 });

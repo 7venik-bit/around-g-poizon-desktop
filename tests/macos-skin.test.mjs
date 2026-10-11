@@ -83,6 +83,22 @@ test("traffic lights shimmer red-yellow-green in order", () => {
   }
 });
 
+test("quick actions live at the bottom of the sidebar", () => {
+  const aside = indexHtml.slice(indexHtml.indexOf("<aside>"), indexHtml.indexOf("</aside>"));
+  assert.match(aside, /id="sidebar-quick-actions"/);
+  assert.match(aside, /id="update-check"/);
+  assert.match(aside, /id="update-panel"/);
+  assert.match(aside, /id="brand-export-folder-select"/);
+  assert.match(aside, /<div class="brand-export-folder-setting">/);
+  const shell = indexHtml.slice(indexHtml.indexOf('<section class="shell">'));
+  assert.doesNotMatch(shell, /id="update-check"/);
+  assert.doesNotMatch(shell, /id="brand-export-folder-select"/);
+  assert.doesNotMatch(shell, /id="brand-export-selected"/);
+  assert.doesNotMatch(shell, /id="frequent-brand-export"/);
+  assert.match(style, /#sidebar-quick-actions\{display:grid/);
+  assert.match(style, /#sidebar-quick-actions #brand-export-selected\{display:none!important\}/);
+});
+
 test("hidden chrome stays hidden through the real stylesheet cascade", () => {
   // Regression: earlier theme blocks resurrect the header with
   // `display:flex!important`. The skin hides must win the cascade, not just

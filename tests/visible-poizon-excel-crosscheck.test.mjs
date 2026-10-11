@@ -29,7 +29,7 @@ test("검증 중 POIZON 자동화 창을 표시하거나 활성화하지 않는�
 test("대조 알림창은 상단 데이터 대조 버튼에서만 시작한다", () => {
   const category = renderer.slice(renderer.indexOf('$("#category-search").addEventListener'), renderer.indexOf('async function showPoizonExcelVerificationPair'));
   assert.doesNotMatch(category, /openReviewPopup|beginLiveVerification|beginSellerExcelVerification|syncExcelWithSellerScreen/);
-  assert.match(renderer, /add\("poizon-review-brand-start", "상품 대조", document\.querySelector\("\.header-actions"\)\)/);
+  assert.match(renderer, /add\("poizon-review-brand-start", "포이즌 상품동기화", document\.getElementById\("sidebar-quick-actions"\)\)/);
   assert.match(renderer, /await openVerifiedCombinedBrandPreview\(files\)/);
 });
 
