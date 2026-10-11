@@ -13,6 +13,7 @@ import {
   findConsentAcceptButton,
   isConsentAcceptLabel,
   isConsentDialogText,
+  resolveConsentDialogText,
 } from "../services/official-consent.mjs";
 
 // Regression: 실세 상품이 검색되지만 "상품 없음"으로 표시되던 오탐.
@@ -206,6 +207,41 @@ test("adidas-style consent dialog resolves to its accept button only", () => {
   assert.equal(findConsentAcceptButton(buttons), 1);
   assert.equal(findConsentAcceptButton([{ label: "모두 동의합니다", dialogText: "일반 상품 설명" }]), -1);
   assert.equal(findConsentAcceptButton([]), -1);
+});
+
+test("adidas nested consent button resolves through ancestor climb", () => {
+  // Observed 2026-10-11 (adidas.co.kr JH9976): the "모두 동의합니다" button
+  // sits in a nested actions div whose own text carries no consent wording.
+  // The dismissal must climb to the modal ancestor instead of stopping at the
+  // closest div, otherwise a real product ends as "확인 필요".
+  const actionsText = "모두 동의합니다";
+  const modalText = "쿠키를 통한 아디다스 맞춤형 서비스 제공 관련 안내 모두 동의합니다 맞춤형 광고 설정";
+  assert.equal(isConsentDialogText(actionsText), false);
+  assert.equal(isConsentDialogText(modalText), true);
+  assert.equal(resolveConsentDialogText([actionsText, modalText]), modalText);
+  assert.equal(resolveConsentDialogText([actionsText, "일반 상품 설명"]), "");
+  const buttons = [
+    { label: "장바구니 담기", dialogText: "오늘의 특가 상품을 만나보세요" },
+    { label: "모두 동의합니다", dialogText: resolveConsentDialogText([actionsText, modalText]) },
+  ];
+  assert.equal(findConsentAcceptButton(buttons), 1);
+});
+
+test("consent accept labels cover arrow-suffixed buttons and X closes", () => {
+  assert.equal(isConsentAcceptLabel("모두 동의합니다 →"), true);
+  assert.equal(isConsentAcceptLabel("×"), true);
+  assert.equal(isConsentAcceptLabel("장바구니 담기"), false);
+});
+
+test("page-side dismissal climbs ancestors instead of closest div", () => {
+  const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const start = main.indexOf("async function dismissOfficialMallConsent(searchWindow)");
+  assert.ok(start >= 0);
+  const end = main.indexOf("async function submitOfficialMallSearch(", start);
+  const body = main.slice(start, end >= 0 ? end : start + 6000);
+  assert.match(body, /ancestor = ancestor\.parentElement/);
+  assert.match(body, /for \(let depth = 0; ancestor && depth < 8/);
+  assert.doesNotMatch(body, /,div,section/);
 });
 
 test("consent dismissal runs before official search submission and capture", () => {
