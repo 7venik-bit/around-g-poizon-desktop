@@ -99,6 +99,12 @@ test("quick actions live at the bottom of the sidebar", () => {
   assert.match(style, /#sidebar-quick-actions #brand-export-selected\{display:none!important\}/);
 });
 
+test("hidden-header layout check skips header geometry", () => {
+  const layoutScript = fs.readFileSync(new URL("../scripts/test-header-brand-layout.cjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(layoutScript, /headerHidden = getComputedStyle\(q\('\.shell>header'\)\)\.display === 'none'/);
+  assert.match(layoutScript, /if \(!headerHidden\) \{/);
+});
+
 test("hidden chrome stays hidden through the real stylesheet cascade", () => {
   // Regression: earlier theme blocks resurrect the header with
   // `display:flex!important`. The skin hides must win the cascade, not just

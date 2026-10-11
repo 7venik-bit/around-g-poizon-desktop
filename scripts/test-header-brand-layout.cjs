@@ -42,6 +42,10 @@ function measure() {
   const titleGroup = box(title.parentElement);
   const actions = [...document.querySelectorAll('.frequent-brand-heading-actions > button')].filter((e) => e.getClientRects().length).map(box);
   const errors = [];
+  // The product header is intentionally hidden by the macOS skin. Skip its
+  // geometry assertions in that state; visible headers keep every check.
+  const headerHidden = getComputedStyle(q('.shell>header')).display === 'none';
+  if (!headerHidden) {
   for (let i=1;i<buttons.length;i++) {
     const sameRow = Math.abs(buttons[i].y-buttons[i-1].y) <= 1;
     if (sameRow) {
@@ -51,6 +55,7 @@ function measure() {
   }
   if (Math.abs(anchor.width-buttons[1].width)>1) errors.push('update anchor has blank width');
   for (const b of buttons) if (Math.abs(b.height-32)>1) errors.push('button height: '+b.id);
+  }
   if (lines(title)!==1 || lines(count)!==1) errors.push('title or count wrapped');
   if (count.scrollWidth > count.clientWidth+1) errors.push('count clipped');
   const a=box(title), b=box(count);
