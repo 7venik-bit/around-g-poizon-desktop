@@ -4817,7 +4817,7 @@ $("#brand-export-folder-select")?.addEventListener("click", async () => {
     status.textContent = `폴더 지정 실패: ${error?.message || "폴더를 선택할 수 없습니다."}`;
   } finally {
     button.disabled = false;
-    button.textContent = "폴더 지정";
+    button.textContent = "저장폴더";
   }
 });
 window.aroundG.onBrandWorkHistoryCleared?.(() => clearBrandWorkHistoryUi());
