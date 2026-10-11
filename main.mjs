@@ -1046,8 +1046,18 @@ async function dismissOfficialMallConsent(searchWindow) {
           if (!visible(button)) continue;
           const label = String(button.innerText || button.value || button.getAttribute?.("aria-label") || "").replace(/\\s+/g, " ").trim();
           if (!label) continue;
-          const dialog = button.closest?.('[role="dialog"],[role="alertdialog"],[class*="modal" i],[class*="popup" i],[class*="consent" i],[class*="cookie" i],[id*="consent" i],[id*="cookie" i],div,section') || button.parentElement;
-          buttons.push({ label, dialogText: String(dialog?.innerText || "").slice(0, 2000), element: button });
+          let dialogText = "";
+          let ancestor = button;
+          for (let depth = 0; ancestor && depth < 8; depth += 1) {
+            const text = String(ancestor.innerText || "").slice(0, 2000);
+            if (isDialog(text)) { dialogText = text; break; }
+            ancestor = ancestor.parentElement;
+          }
+          if (!dialogText) {
+            const dialog = button.closest?.('[role="dialog"],[role="alertdialog"],[class*="modal" i],[class*="popup" i],[class*="consent" i],[class*="cookie" i],[id*="consent" i],[id*="cookie" i]') || button.parentElement;
+            dialogText = String(dialog?.innerText || "").slice(0, 2000);
+          }
+          buttons.push({ label, dialogText, element: button });
         }
       }
       const target = buttons.findIndex((entry) => isDialog(entry.dialogText) && isAccept(entry.label));
