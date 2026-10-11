@@ -2511,7 +2511,39 @@ html body aside{overflow-y:auto}
 #sidebar-quick-actions .brand-export-folder-path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;color:#86868b}
 #sidebar-quick-actions .brand-export-folder-select{width:100%;padding:8px 10px;font-size:11px}
 #sidebar-quick-actions #poizon-review-brand-start{width:100%;padding:8px 10px;font-size:11px}
-#sidebar-quick-actions .brand-search-action{width:100%;padding:8px 10px;font-size:11px}
+#sidebar-quick-actions .brand-search-action{width:100%;padding:8px 10px;font-size:11px;justify-content:center;text-align:center}
+/* The folder path duplicates the folder dialog. The button stays. */
+#sidebar-quick-actions .brand-export-folder-path{display:none!important}
+/* Contrast pass: faint gray copy becomes readable ink. */
+html body .nav{color:#333336}
+html body .search-service-menu>small{color:#515154!important}
+html body .search-service-button{color:#333336}
+html body .search-service-button:hover{background:#e2e2e8;color:#1d1d1f}
+html body .sidebar-search-sites small,
+html body .local-state small,
+html body .brand small,
+html body .panel small,
+html body .shell header small,
+html body #sidebar-quick-actions #app-version-state,
+html body #update-message,
+html body #update-help,
+html body .update-live-state{color:#515154!important}
+html body .brand-download-name small,
+html body .brand-download-row time,
+html body .brand-download-history-row time,
+html body .seller-product-info small,
+html body .seller-brand-category small,
+html body .category-brand-card small,
+html body .category-brand-card>b,
+html body .ledger-captured-card small,
+html body .ledger-sync-state,
+html body .profit-comparison td:first-child small,
+html body .app-version-state,
+html body .update-inline small,
+html body .brand-verification-date,
+html body .brand-batch-columns,
+html body .domestic-login-empty,
+html body input::placeholder{color:#515154!important}
 /* Single visible product-info button: the completed-panel button delegates to
    the selection button internally, so the selection button stays in the DOM
    hidden instead of being deleted. */

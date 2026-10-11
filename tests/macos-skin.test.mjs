@@ -97,6 +97,9 @@ test("quick actions live at the bottom of the sidebar", () => {
   assert.doesNotMatch(shell, /id="frequent-brand-export"/);
   assert.match(style, /#sidebar-quick-actions\{display:grid/);
   assert.match(style, /#sidebar-quick-actions #brand-export-selected\{display:none!important\}/);
+  assert.match(style, /#sidebar-quick-actions \.brand-export-folder-path\{display:none!important\}/);
+  assert.match(style, /#sidebar-quick-actions \.brand-search-action\{[^}]*justify-content:center/);
+  assert.match(style, /html body \.search-service-button\{color:#333336\}/);
 });
 
 test("hidden-header layout check skips header geometry", () => {
@@ -134,6 +137,10 @@ test("hidden chrome stays hidden through the real stylesheet cascade", () => {
     </header></section>
     <details id="brand-export-completed"></details>
     <div id="purchase-ledger-awareness"></div>
+    <aside><section id="sidebar-quick-actions">
+      <div class="brand-export-folder-path"></div>
+      <button class="brand-search-action" type="button">action</button>
+    </section></aside>
   </body></html>`, { pretendToBeVisual: true });
   const computed = (selector) => dom.window.getComputedStyle(
     dom.window.document.querySelector(selector)).display;
@@ -143,4 +150,7 @@ test("hidden chrome stays hidden through the real stylesheet cascade", () => {
   assert.equal(computed(".workspace-title"), "none");
   assert.equal(computed("#brand-export-completed"), "none");
   assert.equal(computed("#purchase-ledger-awareness"), "none");
+  assert.equal(computed("#sidebar-quick-actions .brand-export-folder-path"), "none");
+  assert.equal(dom.window.getComputedStyle(
+    dom.window.document.querySelector("#sidebar-quick-actions .brand-search-action")).justifyContent, "center");
 });
