@@ -67,7 +67,7 @@ test("titlebar shows the renamed program title", () => {
 
 test("top status and action menus are hidden with a slim header", () => {
   assert.match(style, /html body \.shell>header \.header-status-stack,\nhtml body \.shell>header \.header-actions\{display:none\}/);
-  assert.match(style, /html body \.shell>header\{min-height:0;padding:8px 24px\}/);
+  assert.match(style, /html body \.shell>header\{min-height:0;height:auto;padding:8px 24px\}/);
 });
 
 test("traffic lights shimmer red-yellow-green in order", () => {
