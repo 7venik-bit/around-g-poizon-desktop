@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { JSDOM } from "jsdom";
 
 const indexHtml = fs.readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
 const inventoryHtml = fs.readFileSync(new URL("../src/inventory.html", import.meta.url), "utf8");
@@ -66,10 +67,13 @@ test("titlebar shows the renamed program title", () => {
 });
 
 test("top status and action menus are hidden with a slim header", () => {
-  assert.match(style, /html body \.shell>header \.header-status-stack,\nhtml body \.shell>header \.header-actions\{display:none\}/);
-  assert.match(style, /html body \.shell>header\{display:none\}/);
-  assert.match(style, /html body #brand-export-completed\{display:none\}/);
-  assert.match(style, /html body #purchase-ledger-awareness\{display:none\}/);
+  assert.match(style, /html body \.shell>header \.header-status-stack,\nhtml body \.shell>header \.header-actions\{display:none!important\}/);
+  assert.match(style, /html body \.shell>header\{display:none!important\}/);
+  assert.match(style, /html body #brand-export-completed\{display:none!important\}/);
+  assert.match(style, /html body #purchase-ledger-awareness\{display:none!important\}/);
+  const brandLayout = fs.readFileSync(new URL("../src/header-brand-layout.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(brandLayout, /html body \.shell>header\{display:none!important\}/);
+  assert.match(brandLayout, /html body \.shell>header \.header-actions\{display:none!important\}/);
 });
 
 test("traffic lights shimmer red-yellow-green in order", () => {
@@ -77,4 +81,44 @@ test("traffic lights shimmer red-yellow-green in order", () => {
     assert.match(css, /@keyframes titlebar-running-dot/, `${name}:keyframes`);
     assert.match(css, /\.traffic-lights button\[data-window-control="minimize"\]\{animation:titlebar-running-dot[^}]*\.3s/, `${name}:sequence`);
   }
+});
+
+test("hidden chrome stays hidden through the real stylesheet cascade", () => {
+  // Regression: earlier theme blocks resurrect the header with
+  // `display:flex!important`. The skin hides must win the cascade, not just
+  // exist as text. jsdom applies the same order, specificity and importance.
+  const linked = [
+    "style.css",
+    "poizon-review-workspace.css",
+    "retired-download-sync.css",
+    "ledger-workbook.css",
+    "purchase-ledger-awareness.css",
+    "header-brand-layout.css",
+  ];
+  const combined = linked
+    .map((file) => {
+      try {
+        return fs.readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8");
+      } catch {
+        return "";
+      }
+    })
+    .join("\n");
+  const dom = new JSDOM(`<!doctype html><html><head><style>${combined}</style></head><body>
+    <section class="shell"><header>
+      <div class="workspace-title"></div>
+      <section class="header-status-stack"></section>
+      <div class="header-actions"></div>
+    </header></section>
+    <details id="brand-export-completed"></details>
+    <div id="purchase-ledger-awareness"></div>
+  </body></html>`, { pretendToBeVisual: true });
+  const computed = (selector) => dom.window.getComputedStyle(
+    dom.window.document.querySelector(selector)).display;
+  assert.equal(computed(".shell>header"), "none");
+  assert.equal(computed(".header-status-stack"), "none");
+  assert.equal(computed(".header-actions"), "none");
+  assert.equal(computed(".workspace-title"), "none");
+  assert.equal(computed("#brand-export-completed"), "none");
+  assert.equal(computed("#purchase-ledger-awareness"), "none");
 });

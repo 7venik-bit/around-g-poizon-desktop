@@ -2487,12 +2487,13 @@ html body ::-webkit-scrollbar-track{background:transparent}
 html body.window-maximized #titlebar{border-radius:0}
 /* Slim header: hide the top status/action menus, keep a thin strip. */
 html body .shell>header .header-status-stack,
-html body .shell>header .header-actions{display:none}
-html body .shell>header{display:none}
+html body .shell>header .header-actions{display:none!important}
+html body .shell>header .workspace-title{display:none!important}
+html body .shell>header{display:none!important}
 /* Hide the completed-downloads bar. */
-html body #brand-export-completed{display:none}
+html body #brand-export-completed{display:none!important}
 /* Hide the internal purchase-ledger status strip. */
-html body #purchase-ledger-awareness{display:none}
+html body #purchase-ledger-awareness{display:none!important}
 html body main{padding:10px 28px 48px}
 /* Running shimmer: traffic lights pulse red-yellow-green in order. */
 @keyframes titlebar-running-dot{0%,100%{filter:brightness(1)}50%{filter:brightness(1.35)}}

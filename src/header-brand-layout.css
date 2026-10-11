@@ -114,3 +114,12 @@ body .shell > header .header-actions > .update-anchor > #update-check {
     overflow: visible !important;
   }
 }
+/* macOS skin (last stylesheet): hidden chrome must win the cascade even
+   against earlier `display:flex!important` header rules. Same selectors as
+   the skin block in style.css; duplicated here for document-order wins. */
+html body .shell>header .header-status-stack,
+html body .shell>header .header-actions{display:none!important}
+html body .shell>header .workspace-title{display:none!important}
+html body .shell>header{display:none!important}
+html body #brand-export-completed{display:none!important}
+html body #purchase-ledger-awareness{display:none!important}
