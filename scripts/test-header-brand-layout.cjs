@@ -36,7 +36,10 @@ function measure() {
   const box = (e) => { const r = e.getBoundingClientRect(); return { x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height }; };
   const lines = (e) => { const r = document.createRange(); r.selectNodeContents(e); return new Set([...r.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top))).size; };
   const buttons = ['notification-open','update-check','export-button'].map((id) => ({ id, ...box(q('#'+id)) }));
-  const anchor = box(q('.header-actions > .update-anchor'));
+  // The update anchor moved from the header into the sidebar quick actions.
+  // Resolve it wherever it lives; a missing anchor measures as zero.
+  const anchorSource = q('.header-actions > .update-anchor') || q('#sidebar-quick-actions .update-anchor');
+  const anchor = anchorSource ? box(anchorSource) : { x:0, y:0, right:0, bottom:0, width:0, height:0 };
   const title = q('#frequent-brand-title'), count = q('#frequent-brand-count');
   const heading = box(q('#frequent-brand-group > .brand-list-group-heading'));
   const titleGroup = box(title.parentElement);
@@ -87,7 +90,17 @@ async function cleanup() {
   fixture = join(root,'src','.header-brand-layout-fixture.html');
   baselineFixture = join(root,'src','.header-brand-layout-baseline.html');
   await writeFile(fixture, source, 'utf8');
-  await writeFile(baselineFixture, source.replace(/\s*<link\b[^>]*id="header-brand-layout-styles"[^>]*>/g,''), 'utf8');
+  // Baseline must reproduce the original header defect, but the macOS skin
+  // hides the header everywhere. Re-show it here (without the layout patch
+  // stylesheet) so the validity check keeps meaning; the override sits last
+  // so it wins the cascade for the baseline document only.
+  const baselineSkinOverride = `<style>
+html body .shell>header{display:flex!important}
+html body .shell>header .header-status-stack{display:flex!important}
+html body .shell>header .header-actions{display:flex!important}
+html body .shell>header .workspace-title{display:flex!important}
+</style>`;
+  await writeFile(baselineFixture, source.replace(/\s*<link\b[^>]*id="header-brand-layout-styles"[^>]*>/g,'').replace(/<\/head>/i, baselineSkinOverride+'</head>'), 'utf8');
   win = new BrowserWindow({ show:false,width:1426,height:900,useContentSize:true,webPreferences:{ nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false,offscreen:true } });
   await win.loadFile(baselineFixture); await evaluate(prepare);
   await win.webContents.executeJavaScript('document.fonts.ready');
