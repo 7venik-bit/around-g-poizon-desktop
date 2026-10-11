@@ -2429,3 +2429,59 @@ body .shell>header{
 .poizon-product-view-status:empty { display:none; }
 .poizon-product-view-status { position:fixed; bottom:22px; right:22px; z-index:10000; max-width:420px; padding:12px 16px; color:#173b54; background:#f0fcff; border:1px solid #7dbbcc; border-radius:8px; box-shadow:0 3px 18px #10284426; font-size:13px; }
 .poizon-product-view-status[data-state="error"] { color:#803014; background:#fff5ef; border-color:#d89c7c; }
+/* macOS light skin — calm gray workspace, frosted sidebar, pill controls.
+   Appended last so it wins over earlier themes without renaming classes. */
+html body{
+  font-family:-apple-system,"SF Pro Text","Segoe UI Variable Text","Segoe UI","Malgun Gothic",sans-serif;
+  color:#1d1d1f;
+  background:#f5f5f7;
+  padding-top:46px;
+}
+html body aside{
+  top:46px;
+  background:#ececf1;
+  border-right:1px solid #d2d2d7;
+  color:#1d1d1f;
+}
+html body .brand>span{background:linear-gradient(145deg,#0a84ff,#5ac8fa);color:#fff;box-shadow:0 4px 12px #0a84ff33}
+html body .brand small{color:#86868b}
+html body .nav{color:#515154;border-radius:10px;min-height:40px}
+html body .nav.active,html body .nav:hover{background:#e2e2e8;color:#1d1d1f}
+html body .local-state{background:#f5f5f7;border:1px solid #d2d2d7}
+html body .local-state small{color:#86868b}
+html body .local-state i{background:#30d158}
+html body .sidebar-search-sites{background:#f5f5f7;border-color:#d2d2d7}
+html body .sidebar-search-sites label>span{background:#fff;border-color:#d2d2d7;color:#515154;border-radius:999px}
+html body .sidebar-search-sites input:checked+span{background:#0a84ff;border-color:#0a84ff;color:#fff}
+html body .shell>header{background:#f5f5f7cc;border-bottom:1px solid #d2d2d7;top:46px;border-radius:0}
+html body main .panel,html body .panel{background:#fff;border:1px solid #e5e5ea;border-radius:18px;box-shadow:0 1px 3px #00000014}
+html body button{border-radius:999px;border-color:#d2d2d7}
+html body button:hover{border-color:#0a84ff}
+html body .primary{background:#0a84ff;border-color:#0a84ff}
+html body input,html body select,html body textarea{border-radius:10px}
+html body ::-webkit-scrollbar{width:10px;height:10px}
+html body ::-webkit-scrollbar-thumb{background:#c7c7cc;border-radius:999px;border:2px solid #f5f5f7}
+html body ::-webkit-scrollbar-track{background:transparent}
+/* Custom frameless titlebar with macOS traffic lights. */
+#titlebar{
+  position:fixed;top:0;left:0;right:0;height:46px;z-index:2000;
+  display:flex;align-items:center;gap:12px;padding:0 16px;
+  background:#ececf1ee;border-bottom:1px solid #d2d2d7;
+  -webkit-app-region:drag;user-select:none;
+}
+#titlebar .titlebar-title{margin:0;flex:1;text-align:center;font-size:13px;font-weight:600;color:#1d1d1f}
+#titlebar .titlebar-spacer{width:68px}
+.traffic-lights{display:flex;gap:8px;-webkit-app-region:no-drag}
+.traffic-lights button{
+  width:12px;height:12px;min-height:0;padding:0;border:1px solid #00000022;border-radius:50%;cursor:pointer;
+  display:grid;place-items:center;font-size:9px;line-height:1;color:transparent;
+}
+.traffic-lights button[data-window-control="close"]{background:#ff5f57}
+.traffic-lights button[data-window-control="minimize"]{background:#febc2e}
+.traffic-lights button[data-window-control="maximize"]{background:#28c840}
+.traffic-lights:hover button{color:#00000088}
+.traffic-lights button[data-window-control="close"]:hover::before{content:"×"}
+.traffic-lights button[data-window-control="minimize"]:hover::before{content:"–"}
+.traffic-lights button[data-window-control="maximize"]:hover::before{content:"+"}
+.traffic-lights button:hover{border-color:#00000022}
+html body.window-maximized #titlebar{border-radius:0}

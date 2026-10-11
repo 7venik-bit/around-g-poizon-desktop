@@ -149,6 +149,17 @@ contextBridge.exposeInMainWorld("aroundG", {
   openOfficialSearch: (input) => ipcRenderer.invoke("official:open-search", input),
   collectorCheck: (input) => ipcRenderer.invoke("collector:check", input),
   getAppInfo: () => ipcRenderer.invoke("app:info"),
+  windowControls: {
+    minimize: () => ipcRenderer.invoke("window:minimize"),
+    toggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
+    close: () => ipcRenderer.invoke("window:close"),
+    isMaximized: () => ipcRenderer.invoke("window:is-maximized"),
+    onMaximizeChanged: (callback) => {
+      const handler = (_event, maximized) => callback(maximized);
+      ipcRenderer.on("window:maximize-changed", handler);
+      return () => ipcRenderer.removeListener("window:maximize-changed", handler);
+    },
+  },
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
   restartForUpdate: () => ipcRenderer.invoke("update:restart"),
