@@ -295,3 +295,29 @@ $("#open-excel").addEventListener("click", () => window.aroundG.openOriginalExce
   }
   render();
 })();
+
+(function installMacWindowControls() {
+  const bar = document.querySelector("#titlebar");
+  if (!bar || bar.dataset.windowControlsInstalled === "true") return;
+  bar.dataset.windowControlsInstalled = "true";
+  const controls = window.aroundG?.windowControls;
+  bar.querySelectorAll("[data-window-control]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      if (!controls) return;
+      const action = String(button.dataset.windowControl || "");
+      if (action === "close") await controls.close();
+      else if (action === "minimize") await controls.minimize();
+      else if (action === "maximize") await controls.toggleMaximize();
+    });
+  });
+  bar.addEventListener("dblclick", async (event) => {
+    if (event.target.closest("[data-window-control]") || !controls) return;
+    await controls.toggleMaximize();
+  });
+  const syncMaximized = (maximized) => {
+    document.body.classList.toggle("window-maximized", maximized === true);
+  };
+  controls?.onMaximizeChanged?.(syncMaximized);
+  controls?.isMaximized?.().then(syncMaximized).catch(() => {});
+})();

@@ -6186,3 +6186,32 @@ function installReviewEntryButtons() {
   add("poizon-review-files-start", "선택 파일 POIZON 대조", document.getElementById("poizon-verification-controls"));
 }
 void import("./poizon-review-workspace.js").then((live) => { live.installVerificationControls(); installReviewEntryButtons(); }).catch(showRuntimeError);
+
+function installMacWindowControls() {
+  const bar = document.querySelector("#titlebar");
+  if (!bar || bar.dataset.windowControlsInstalled === "true") return;
+  bar.dataset.windowControlsInstalled = "true";
+  const controls = window.aroundG?.windowControls;
+  bar.querySelectorAll("[data-window-control]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      if (!controls) return;
+      const action = String(button.dataset.windowControl || "");
+      if (action === "close") await controls.close();
+      else if (action === "minimize") await controls.minimize();
+      else if (action === "maximize") await controls.toggleMaximize();
+    });
+  });
+  bar.addEventListener("dblclick", async (event) => {
+    if (event.target.closest("[data-window-control]") || !controls) return;
+    await controls.toggleMaximize();
+  });
+  const syncMaximized = (maximized) => {
+    document.body.classList.toggle("window-maximized", maximized === true);
+    bar.querySelector('[data-window-control="maximize"]')?.setAttribute(
+      "aria-label", maximized === true ? "복원" : "최대화");
+  };
+  controls?.onMaximizeChanged?.(syncMaximized);
+  controls?.isMaximized?.().then(syncMaximized).catch(() => {});
+}
+installMacWindowControls();

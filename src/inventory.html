@@ -8,6 +8,15 @@
   <link rel="stylesheet" href="./inventory-filter.css">
 </head>
 <body>
+  <header id="titlebar">
+    <div class="traffic-lights" role="group" aria-label="창 컨트롤">
+      <button type="button" data-window-control="close" aria-label="닫기"></button>
+      <button type="button" data-window-control="minimize" aria-label="최소화"></button>
+      <button type="button" data-window-control="maximize" aria-label="최대화"></button>
+    </div>
+    <p class="titlebar-title">국내 재고·사이즈 확인</p>
+    <span class="titlebar-spacer"></span>
+  </header>
   <header><div><small>AROUND G · DOMESTIC INVENTORY</small><h1 id="title">국내 재고·사이즈 확인</h1><p id="source"></p></div><div class="header-actions"><button id="clear-work" class="sub">현재 작업 지우기</button><button id="open-excel" class="sub">원본 Excel 열기</button></div></header>
   <main>
     <nav><label><input id="select-all" type="checkbox"> 전체 선택</label><b id="selected-count">0개 선택</b><i></i><button id="stop" class="sub" hidden>검색 중지</button><button id="search-selected">선택 상품 국내 재고·사이즈 검색</button></nav>

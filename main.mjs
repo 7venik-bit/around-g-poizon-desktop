@@ -6921,6 +6921,15 @@ function secretConfig() {
   };
 }
 
+function forwardWindowFrameState(win) {
+  if (!win || win.isDestroyed()) return;
+  const notify = () => {
+    if (!win.isDestroyed()) win.webContents.send("window:maximize-changed", win.isMaximized());
+  };
+  win.on("maximize", notify);
+  win.on("unmaximize", notify);
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     show: false,
@@ -6929,7 +6938,9 @@ function createWindow() {
     height: 920,
     minWidth: 1040,
     minHeight: 700,
-    backgroundColor: "#f4f1ea",
+    frame: false,
+    titleBarStyle: "hidden",
+    backgroundColor: "#f5f5f7",
     title: "Around G POIZON",
     webPreferences: {
       preload: join(import.meta.dirname, "preload.cjs"),
@@ -6939,6 +6950,7 @@ function createWindow() {
     }
   });
   mainWindow = win;
+  forwardWindowFrameState(win);
   win.once("ready-to-show", () => {
     if (!win.isDestroyed()) win.show();
   });
@@ -6971,7 +6983,9 @@ function openInventoryWindow(filePath, brandName = "") {
     height: 900,
     minWidth: 980,
     minHeight: 680,
-    backgroundColor: "#f3f9ff",
+    frame: false,
+    titleBarStyle: "hidden",
+    backgroundColor: "#f5f5f7",
     title: `${brandName || "POIZON"} 국내 재고·사이즈 확인`,
     webPreferences: {
       preload: join(import.meta.dirname, "preload.cjs"),
@@ -6981,6 +6995,7 @@ function openInventoryWindow(filePath, brandName = "") {
     },
   });
   inventoryWindows.add(inventoryWindow);
+  forwardWindowFrameState(inventoryWindow);
   inventoryWindow.on("closed", () => inventoryWindows.delete(inventoryWindow));
   inventoryWindow.loadFile(join(import.meta.dirname, "src", "inventory.html"), {
     query: { path: filePath, brand: brandName },
@@ -14099,6 +14114,23 @@ app.whenReady().then(async () => {
     packaged: app.isPackaged,
     automaticUpdates: app.isPackaged,
   }));
+  ipcMain.handle("window:minimize", (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize();
+  });
+  ipcMain.handle("window:toggle-maximize", (event) => {
+    const target = BrowserWindow.fromWebContents(event.sender);
+    if (!target || target.isDestroyed()) return false;
+    if (target.isMaximized()) target.unmaximize();
+    else target.maximize();
+    return target.isMaximized();
+  });
+  ipcMain.handle("window:close", (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.close();
+  });
+  ipcMain.handle("window:is-maximized", (event) => {
+    const target = BrowserWindow.fromWebContents(event.sender);
+    return target && !target.isDestroyed() ? target.isMaximized() : false;
+  });
   ipcMain.handle("backup:status", () => oneDriveBackupStatus);
   ipcMain.handle("backup:run", () => runOneDriveRecoveryBackup());
   ipcMain.handle("update:check", async () => {
