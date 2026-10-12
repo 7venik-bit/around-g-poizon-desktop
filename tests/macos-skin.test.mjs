@@ -125,6 +125,7 @@ test("quick actions live at the bottom of the sidebar", () => {
   assert.match(style, /#sidebar-quick-actions #frequent-brand-export::before\{content:"🔍"\}/);
   assert.match(style, /justify-content:center;gap:6px;text-align:center;font-weight:800\}/);
   assert.match(style, /#backup-state-message\{display:none!important\}/);
+  assert.match(style, /#backup-state\{text-align:center;justify-content:center\}/);
   assert.match(style, /html body \.search-service-menu \.search-service-file-label,\nhtml body \.search-service-menu \.search-service-file\{display:none!important\}/);
   assert.match(style, /#sidebar-quick-actions #brand-export-folder-select::after\{content:none!important\}/);
   assert.match(style, /#sidebar-quick-actions \.brand-export-folder-path\{display:none!important\}/);

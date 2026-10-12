@@ -2561,6 +2561,7 @@ html body aside{overflow-y:auto}
 /* Daily work does not use the files section. Button stays for logic. */
 #sidebar-quick-actions #update-panel{display:none!important}
 #backup-state-message{display:none!important}
+#backup-state{text-align:center;justify-content:center}
 /* Hide the sidebar data-files group (label and button). */
 html body .search-service-menu .search-service-file-label,
 html body .search-service-menu .search-service-file{display:none!important}
