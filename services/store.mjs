@@ -12,7 +12,6 @@ const EMPTY = {
   domesticRecoveryJobs: [],
   ledger: [],
   orders: [],
-  orderWatch: [],
   stockWatches: [],
   favorites: [],
   settings: {},

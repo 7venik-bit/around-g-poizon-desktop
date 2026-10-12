@@ -133,13 +133,6 @@ contextBridge.exposeInMainWorld("aroundG", {
     return () => ipcRenderer.removeListener("domestic-search:progress", handler);
   },
   cancelDomesticSearch: () => ipcRenderer.invoke("domestic:cancel"),
-  syncOrderWatch: () => ipcRenderer.invoke("order-watch:sync"),
-  getOrderWatch: () => ipcRenderer.invoke("order-watch:get"),
-  onOrderWatchProgress: (callback) => {
-    const handler = (_event, payload) => callback(payload);
-    ipcRenderer.on("order-watch:progress", handler);
-    return () => ipcRenderer.removeListener("order-watch:progress", handler);
-  },
   listDomesticLogins: () => ipcRenderer.invoke("domestic-login:list"),
   openDomesticLogin: (sourceId) => ipcRenderer.invoke("domestic-login:open", sourceId),
   clearDomesticLogin: (sourceId) => ipcRenderer.invoke("domestic-login:clear", sourceId),
