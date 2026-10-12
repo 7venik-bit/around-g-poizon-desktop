@@ -2504,7 +2504,6 @@ html body main{padding:10px 28px 48px}
 html body .nav[data-view="products"]::before{content:"📑"}
 html body .nav[data-view="profit"]::before{content:"🧮"}
 html body .nav[data-view="ledger"]::before{content:"📒"}
-html body .nav[data-view="orders"]::before{content:"📦"}
 html body .nav[data-view="stock-watch"]::before{content:"🔔"}
 html body .nav[data-view="settings"]::before{content:"🔗"}
 html body .search-service-button>i{display:none}

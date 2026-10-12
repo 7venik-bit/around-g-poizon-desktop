@@ -93,6 +93,13 @@ test("completed brands offer a delete action first", () => {
   assert.match(renderer, /trashBrandExportFiles\(unique\.map\(\(file\) => file\.path\)\)/);
 });
 
+test("orders menu and view are removed", () => {
+  const html = fs.readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
+  assert.doesNotMatch(html, /data-view="orders"/);
+  assert.doesNotMatch(html, /id="orders"/);
+  assert.doesNotMatch(html, /주문 관리/);
+});
+
 test("quick actions live at the bottom of the sidebar", () => {
   const aside = indexHtml.slice(indexHtml.indexOf("<aside>"), indexHtml.indexOf("</aside>"));
   assert.match(aside, /id="sidebar-quick-actions"/);
@@ -113,7 +120,6 @@ test("quick actions live at the bottom of the sidebar", () => {
   assert.match(style, /#sidebar-quick-actions \.brand-export-folder-path\{display:none!important\}/);
   assert.match(style, /#sidebar-quick-actions \.brand-search-action\{[^}]*justify-content:center/);
   assert.match(style, /html body \.search-service-button\{color:#333336\}/);
-  assert.match(style, /html body \.nav\[data-view="orders"\]::before\{content:"📦"\}/);
   assert.match(style, /html body \.search-service-button\[data-service-explorer="brand"\]::before\{content:"🔍"\}/);
   assert.match(style, /html body \.brand\{display:none\}/);
   assert.match(style, /html body \.search-service-menu>small\{display:none\}/);

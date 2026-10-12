@@ -2702,13 +2702,6 @@ window.addEventListener("unhandledrejection", (event) => {
   showRuntimeError(event.reason, "unhandled_rejection");
 });
 
-function renderRecords(collection) {
-  const host = $(`#${collection}-list`);
-  host.innerHTML = state[collection].length
-    ? state[collection].map((row) => `<div class="record"><div><strong>${text(row.name)}</strong><small>${text(row.brand)} · ${text(row.articleNumber)}</small></div><div>${money(row.price)} <button data-remove="${collection}:${row.id}">삭제</button></div></div>`).join("")
-    : `<div class="empty">저장된 항목이 없습니다.</div>`;
-}
-
 function renderLedgerRecords() {
   const host = $("#ledger-list");
   const rows = Array.isArray(state.ledger) ? state.ledger : [];
@@ -3568,7 +3561,6 @@ async function refresh() {
   void refreshPurchaseAwareness();
   state.poizonSyncs = Array.isArray(state.poizonSyncs) ? state.poizonSyncs : [];
   renderLedgerRecords();
-  renderRecords("orders");
   renderStockWatches();
 }
 
