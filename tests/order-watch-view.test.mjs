@@ -42,6 +42,8 @@ test("main process syncs daily with alarms and IPC", () => {
   assert.match(main, /ipcMain\.handle\("order-watch:get"/);
   assert.match(main, /order-watch:progress/);
   assert.match(main, /seller\.poizon\.com\/main\/orders\/management/);
+  assert.match(main, /around-g-order-watch-failure\.png/);
+  assert.match(main, /labelWraps/);
   assert.match(main, /6\*60\*60\*1_000/);
   assert.match(preload, /syncOrderWatch/);
   assert.match(preload, /getOrderWatch/);

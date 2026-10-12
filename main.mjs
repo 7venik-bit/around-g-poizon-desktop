@@ -5968,7 +5968,35 @@ async function syncPoizonOrderWatch({ manual = false } = {}) {
     if (/POIZON_LOGIN_REQUIRED|POIZON_ACCESS_LIMITED/.test(code)) {
       await addProgramNotification({ type: "warning", title: "POIZON 주문 동기화 로그인 필요", message: code === "POIZON_LOGIN_REQUIRED" ? "POIZON 판매자센터 로그인이 필요합니다. 로그인 후 동기화 버튼을 눌러주세요." : "POIZON 접속 제한으로 주문 동기화를 멈췄습니다. 잠시 후 동기화 버튼을 눌러주세요.", key: `order-watch:auth:${dayKey}`, windows: true });
     }
-    poizonOrderWatchStatus = { state: "error", code, message: code === "POIZON_LOGIN_REQUIRED" ? "POIZON 판매자센터 로그인이 필요합니다. 포이즌 로그인 버튼으로 로그인한 뒤 동기화 버튼을 눌러주세요." : `주문 동기화 실패: ${code}`, at: new Date().toISOString() };
+    let diagnostics = { url: currentUrl, title: "", bodyLength: 0, snippet: "", labelWraps: 0, antTabs: 0, roleTabs: 0, tables: 0, dataRows: 0, iframes: 0 };
+    let screenshotPath = "";
+    try {
+      if (watchWindow && !watchWindow.isDestroyed()) {
+        const info = await watchWindow.webContents.executeJavaScript(`(() => {
+          const text = String(document.body?.innerText || "");
+          return {
+            url: String(location.href || ""),
+            title: String(document.title || "").slice(0, 120),
+            bodyLength: text.length,
+            snippet: text.replace(/\\s+/g, " ").slice(0, 240),
+            labelWraps: document.querySelectorAll('[class*="global-text-label-wrap"]').length,
+            antTabs: document.querySelectorAll('.ant-tabs-tab').length,
+            roleTabs: document.querySelectorAll('[role="tab"]').length,
+            tables: document.querySelectorAll('table').length,
+            dataRows: document.querySelectorAll('tr.ant-table-row[data-row-key]').length,
+            iframes: document.querySelectorAll('iframe').length,
+          };
+        })()`, true).catch(() => null);
+        if (info) diagnostics = { ...diagnostics, ...info };
+        const image = await watchWindow.webContents.capturePage().catch(() => null);
+        if (image) {
+          screenshotPath = join(app.getPath("temp"), "around-g-order-watch-failure.png");
+          await writeFile(screenshotPath, image.toPNG()).catch(() => { screenshotPath = ""; });
+        }
+      }
+    } catch { /* diagnostics best-effort */ }
+    const baseMessage = code === "POIZON_LOGIN_REQUIRED" ? "POIZON 판매자센터 로그인이 필요합니다. 포이즌 로그인 버튼으로 로그인한 뒤 동기화 버튼을 눌러주세요." : `주문 동기화 실패: ${code}`;
+    poizonOrderWatchStatus = { state: "error", code, message: screenshotPath ? `${baseMessage} · 진단 저장: ${screenshotPath}` : baseMessage, diagnostics, screenshotPath, at: new Date().toISOString() };
     sendOrderWatchProgress();
     return { ok: false, code, status: poizonOrderWatchStatus };
   } finally {
