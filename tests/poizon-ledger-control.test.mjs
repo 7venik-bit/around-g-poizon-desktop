@@ -29,3 +29,11 @@ test('purchase ledger POIZON button runs seller sync and displays verified recor
   assert.match(window.document.querySelector('#workbook-poizon-review-list').textContent,/구매 행이 여러 개입니다/);
   window.close();
 });
+
+test('poizon order ledger sync status uses 확인 instead of 대조',async()=>{
+  const main=await readFile(new URL('../main.mjs',import.meta.url),'utf8');
+  assert.match(main,/건 확인 중 · 장부 기록/);
+  assert.match(main,/건 확인 · 장부 기록/);
+  assert.match(main,/건 확인 · 신규 장부 기록/);
+  assert.doesNotMatch(main,/건 대조/);
+});
