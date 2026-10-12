@@ -121,6 +121,7 @@ test("quick actions live at the bottom of the sidebar", () => {
   assert.match(style, /#sidebar-quick-actions\{display:grid/);
   assert.match(style, /#sidebar-quick-actions #brand-export-selected\{display:none!important\}/);
   assert.match(style, /#sidebar-quick-actions #update-panel\{display:none!important\}/);
+  assert.match(style, /#sidebar-quick-actions #poizon-review-brand-start:hover\{[^}]*border-radius:14px/);
   assert.match(style, /#sidebar-quick-actions #frequent-brand-export::before\{content:"🔍"\}/);
   assert.match(style, /justify-content:center;gap:6px;text-align:center;font-weight:800\}/);
   assert.match(style, /#backup-state-message\{display:none!important\}/);

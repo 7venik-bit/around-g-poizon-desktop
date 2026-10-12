@@ -2538,6 +2538,15 @@ html body aside{overflow-y:auto}
 #sidebar-quick-actions .brand-search-action:hover,
 #sidebar-quick-actions .brand-export-folder-select:hover,
 #sidebar-quick-actions #poizon-review-brand-start:hover{background:#fff;border-color:#d2d2d7;color:#333336;padding:6px 8px;font-size:10px;width:100%}
+/* Shape B: macOS squircle for quick-action buttons. */
+#sidebar-quick-actions .update-button,
+#sidebar-quick-actions .brand-search-action,
+#sidebar-quick-actions .brand-export-folder-select,
+#sidebar-quick-actions #poizon-review-brand-start,
+#sidebar-quick-actions .update-button:hover,
+#sidebar-quick-actions .brand-search-action:hover,
+#sidebar-quick-actions .brand-export-folder-select:hover,
+#sidebar-quick-actions #poizon-review-brand-start:hover{border-radius:14px;box-shadow:0 1px 3px #00000022}
 /* Quick-action buttons: centered bold labels with leading emoji. */
 #sidebar-quick-actions .update-button,
 #sidebar-quick-actions .brand-search-action,
