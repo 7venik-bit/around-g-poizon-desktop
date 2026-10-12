@@ -5968,7 +5968,7 @@ async function syncPoizonOrderWatch({ manual = false } = {}) {
     if (/POIZON_LOGIN_REQUIRED|POIZON_ACCESS_LIMITED/.test(code)) {
       await addProgramNotification({ type: "warning", title: "POIZON 주문 동기화 로그인 필요", message: code === "POIZON_LOGIN_REQUIRED" ? "POIZON 판매자센터 로그인이 필요합니다. 로그인 후 동기화 버튼을 눌러주세요." : "POIZON 접속 제한으로 주문 동기화를 멈췄습니다. 잠시 후 동기화 버튼을 눌러주세요.", key: `order-watch:auth:${dayKey}`, windows: true });
     }
-    poizonOrderWatchStatus = { state: "error", code, message: `주문 동기화 실패: ${code}`, at: new Date().toISOString() };
+    poizonOrderWatchStatus = { state: "error", code, message: code === "POIZON_LOGIN_REQUIRED" ? "POIZON 판매자센터 로그인이 필요합니다. 포이즌 로그인 버튼으로 로그인한 뒤 동기화 버튼을 눌러주세요." : `주문 동기화 실패: ${code}`, at: new Date().toISOString() };
     sendOrderWatchProgress();
     return { ok: false, code, status: poizonOrderWatchStatus };
   } finally {

@@ -171,6 +171,19 @@ export function watchDayKey(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+// Seller-center login walls (QR/app login) carry no password input, so a
+// bare tab check would poll until timeout. Detect them explicitly so the UI
+// reports "login required" instead of a cryptic not-ready failure.
+export function detectWatchPageProblem(state = {}) {
+  const url = String(state?.url || "");
+  const text = String(state?.text || "");
+  const tabs = Array.isArray(state?.tabs) ? state.tabs : [];
+  if (/login|signin|passport|auth/i.test(url)) return true;
+  if (state?.passwordInput && !tabs.length) return true;
+  return tabs.length === 0
+    && /로그인|sign[\s-]*in|qr\s*(code|login)?|扫码|手机.*登录/i.test(text);
+}
+
 // List-level collection of the order management page. Reads tab counts and
 // every row of every status tab without opening detail drawers.
 export async function collectPoizonOrderWatchSnapshot(webContents, { onProgress = () => {} } = {}) {
@@ -207,7 +220,7 @@ export async function collectPoizonOrderWatchSnapshot(webContents, { onProgress 
   });
   const problemOf = (state) => {
     if (/서비스 접속량이 많습니다|일시적인 트래픽 증가|access denied|too many requests/i.test(state.text)) return "POIZON_ACCESS_LIMITED";
-    if (/login|signin|passport|auth/i.test(state.url) || (state.passwordInput && !state.tabs.length)) return "POIZON_LOGIN_REQUIRED";
+    if (detectWatchPageProblem(state)) return "POIZON_LOGIN_REQUIRED";
     if (!state.url.startsWith("https://seller.poizon.com/")) return "POIZON_SELLER_PAGE_UNEXPECTED";
     return "";
   };
