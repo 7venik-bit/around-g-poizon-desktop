@@ -400,7 +400,7 @@
         </form>
         <section class="panel"><div class="panel-title"><div><small>RECORD HISTORY</small><h2>장부 기록 내역</h2></div></div><div id="ledger-list" class="cards"></div></section>
       </section>
-      <section id="orders" class="view"><div class="panel"><div class="panel-title"><div><small>ORDER TRACKER</small><h2>주문 관리</h2></div><button class="add-record" data-collection="orders">주문 추가</button></div><div id="orders-list" class="cards"></div></div></section>
+      <section id="orders" class="view"><div class="panel"><div class="panel-title"><div><small>POIZON ORDER TRACKER</small><h2>주문 관리</h2></div><div class="stock-watch-row-actions"><button type="button" id="order-watch-sync" class="primary">동기화</button></div></div><p id="order-watch-status" role="status" aria-live="polite">POIZON 주문 확인 대기 중입니다. 동기화 버튼을 누르면 판매자센터 주문을 가져옵니다.</p><div id="order-watch-tabs" class="order-watch-tabs" role="tablist" aria-label="주문 상태"></div><div class="order-watch-toolbar"><input id="order-watch-query" type="search" placeholder="품번·주문번호·상품명 검색" aria-label="주문 검색"><span id="order-watch-count"></span><small id="order-watch-updated"></small></div><table class="order-watch-table"><thead><tr><th>상품 정보</th><th>옵션</th><th>처리 기한</th><th>주문 번호</th><th>상태</th></tr></thead><tbody id="order-watch-rows"><tr><td colspan="5" class="empty">동기화 후 주문이 표시됩니다.</td></tr></tbody></table></div></section>
 
       <section id="stock-watch" class="view">
         <form id="stock-watch-form" class="panel stock-watch-form">
