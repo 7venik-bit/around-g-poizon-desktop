@@ -5890,7 +5890,7 @@ async function syncPoizonSellerOrders({manual=false}={}) {
     const knownOrderNumbers=manual?[]:Object.entries(ledger.local?.poizonOrders||{})
       .filter(([,link])=>Number.isSafeInteger(link?.freight)).map(([id])=>id);
     const captured=await collectPoizonSuccessfulOrders(scanner.webContents,{knownOrderNumbers,includeInProgress:true,candidateArticleNumbers:purchaseArticles,
-      onProgress:progress=>setPoizonLedgerSyncStatus({state:'running',message:`주문 ${progress.checked}/${progress.total}건 대조 중 · 장부 기록 ${saved.recorded.length}건 · 확인 필요 ${saved.review.length}건`,...progress}),
+      onProgress:progress=>setPoizonLedgerSyncStatus({state:'running',message:`주문 ${progress.checked}/${progress.total}건 확인 중 · 장부 기록 ${saved.recorded.length}건 · 확인 필요 ${saved.review.length}건`,...progress}),
       onPage:async page=>{
         const result=await purchaseWorkbook().syncPoizonSales(page.orders);
         saved.recorded.push(...result.recorded);
@@ -5898,12 +5898,12 @@ async function syncPoizonSellerOrders({manual=false}={}) {
         saved.verified+=result.verified;
         saved.updated ||=result.updated;
         saved.pages++;
-        setPoizonLedgerSyncStatus({state:'running',message:`주문 ${page.checked}/${page.total}건 대조 · 장부 기록 ${saved.recorded.length}건 · 저장 검증 ${saved.verified}건 · 확인 필요 ${saved.review.length}건`,
+        setPoizonLedgerSyncStatus({state:'running',message:`주문 ${page.checked}/${page.total}건 확인 · 장부 기록 ${saved.recorded.length}건 · 저장 검증 ${saved.verified}건 · 확인 필요 ${saved.review.length}건`,
           checked:page.checked,recorded:[...saved.recorded],verified:saved.verified,review:[...saved.review],savedPages:saved.pages,updated:saved.updated});
       }});
     poizonLedgerAutoPaused=false;
     await store.setSettings({poizonLedgerAutoPaused:false}).catch(()=>{});
-    setPoizonLedgerSyncStatus({state:'complete',message:`주문 ${captured.scanned}건 대조 · 신규 장부 기록 ${saved.recorded.length}건 · 저장 검증 ${saved.verified}건 · 확인 필요 ${saved.review.length}건`,
+    setPoizonLedgerSyncStatus({state:'complete',message:`주문 ${captured.scanned}건 확인 · 신규 장부 기록 ${saved.recorded.length}건 · 저장 검증 ${saved.verified}건 · 확인 필요 ${saved.review.length}건`,
       checked:captured.scanned,counts:captured.counts,recorded:saved.recorded,verified:saved.verified,review:saved.review,savedPages:saved.pages,at:new Date().toISOString(),updated:saved.updated});
     return {ok:true,status:poizonLedgerSyncStatus};
   } catch(error) {
