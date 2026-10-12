@@ -126,6 +126,50 @@ export function watchDayKey(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+// Page readiness probe shared by the page (serialized) and Node (unit tests
+// call it with a fake webContents). Never call it directly in Node: it reads
+// the live seller document.
+export function readWatchOrderPageState() {
+  return {
+    url: String(location.href || ""),
+    text: String(document.body?.innerText || "").slice(0, 20000),
+    passwordInput: Boolean(document.querySelector('input[type="password"],input[autocomplete="current-password"]')),
+    tabs: [...document.querySelectorAll('[class*="global-text-label-wrap"]')].map((node) => node.innerText.trim()).filter(Boolean),
+    ready: document.readyState === "complete",
+  };
+}
+
+export function watchPageProblem(state = {}) {
+  const text = String(state?.text || "");
+  const url = String(state?.url || "");
+  if (/서비스 접속량이 많습니다|일시적인 트래픽 증가|access denied|too many requests/i.test(text)) return "POIZON_ACCESS_LIMITED";
+  if (detectWatchPageProblem(state)) return "POIZON_LOGIN_REQUIRED";
+  if (url && !url.startsWith("https://seller.poizon.com/")) return "POIZON_SELLER_PAGE_UNEXPECTED";
+  return "";
+}
+
+// Wait until the order management SPA boots and its status tabs render.
+// Without this gate every control lookup races an empty document.
+export async function waitForWatchOrderPage(webContents, { timeout = 45000, interval = 800 } = {}) {
+  const frame = webContents?.mainFrame;
+  if (!frame) throw new Error("POIZON_ORDER_WATCH_NOT_READY");
+  const stop = Date.now() + timeout;
+  for (;;) {
+    const state = await frame.executeJavaScript(`(${readWatchOrderPageState.toString()})()`, true).catch(() => null);
+    if (state) {
+      const problem = watchPageProblem(state);
+      if (problem) throw new Error(problem);
+      const settled = state.tabs.some((tab) => {
+        const current = String(tab || "").trim();
+        return current === "전체" || current.startsWith("전체 (");
+      });
+      if (state.ready && settled) return state;
+    }
+    if (Date.now() > stop || webContents.isDestroyed()) throw new Error("POIZON_ORDER_WATCH_NOT_READY");
+    await new Promise((resolve) => setTimeout(resolve, interval));
+  }
+}
+
 // Seller-center login walls (QR/app login) carry no password input, so a
 // bare tab check would poll until timeout. Detect them explicitly so the UI
 // reports "login required" instead of a cryptic not-ready failure.
