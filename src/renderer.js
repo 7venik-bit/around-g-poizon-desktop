@@ -6069,6 +6069,8 @@ window.aroundG.onWeeklySiteHealthStatus(renderWeeklySiteHealth);
     const appInfo = await window.aroundG.getAppInfo();
     installedAppVersion = String(appInfo?.version || "").trim();
     renderInstalledVersion(appInfo?.version, appInfo?.automaticUpdates !== false);
+    const titlebarVersion = document.querySelector("#titlebar-version");
+    if (titlebarVersion && installedAppVersion) titlebarVersion.textContent = `v${installedAppVersion}`;
   } catch {
     renderInstalledVersion("2.10.17", true);
   }

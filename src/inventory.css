@@ -4,7 +4,9 @@
 html body{background:#f5f5f7;color:#1d1d1f;padding-top:46px}
 html body button{border-radius:999px}
 #titlebar{position:fixed;top:0;left:0;right:0;height:46px;z-index:2000;display:flex;align-items:center;gap:12px;padding:0 16px;background:#ececf1ee;border-bottom:1px solid #d2d2d7;-webkit-app-region:drag;user-select:none}
-#titlebar .titlebar-title{margin:0;flex:1;text-align:center;font-size:13px;font-weight:600;color:#1d1d1f}
+#titlebar .titlebar-titles{flex:1;text-align:center}
+#titlebar .titlebar-title{margin:0;font-size:12px;font-weight:600;color:#1d1d1f;line-height:1.25}
+#titlebar .titlebar-version{margin:0;font-size:9px;line-height:1.2;color:#86868b}
 #titlebar .titlebar-spacer{width:68px}
 .traffic-lights{display:flex;gap:8px;-webkit-app-region:no-drag}
 .traffic-lights button{width:12px;height:12px;min-height:0;padding:0;border:1px solid #00000022;border-radius:50%;cursor:pointer;display:grid;place-items:center;font-size:9px;line-height:1;color:transparent}

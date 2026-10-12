@@ -61,9 +61,15 @@ test("renderers wire the traffic lights and maximize state", () => {
 });
 
 test("titlebar shows the renamed program title", () => {
-  assert.match(indexHtml, /<p class="titlebar-title">POIZON for Around G<\/p>/);
+  assert.match(indexHtml, /<div class="titlebar-titles"><p class="titlebar-title">POIZON for Around G<\/p><p class="titlebar-version" id="titlebar-version"><\/p><\/div>/);
   assert.match(indexHtml, /<title>POIZON for Around G<\/title>/);
   assert.match(main, /title: "POIZON for Around G"/);
+});
+
+test("titlebar shows the running version below the title", () => {
+  assert.match(renderer, /document\.querySelector\("#titlebar-version"\)/);
+  assert.match(renderer, /titlebarVersion\.textContent = `v\$\{installedAppVersion\}`/);
+  assert.match(style, /#titlebar \.titlebar-version\{[^}]*font-size:9px/);
 });
 
 test("top status and action menus are hidden with a slim header", () => {
