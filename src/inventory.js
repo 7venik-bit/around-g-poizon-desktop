@@ -250,6 +250,11 @@ $("#reset-filter").addEventListener("click", () => {
   applySalesFilters();
 });
 $("#open-excel").addEventListener("click", () => window.aroundG.openOriginalExcelFile(filePath));
+window.aroundG.getAppInfo?.().then((appInfo) => {
+  const version = String(appInfo?.version || "").trim();
+  const titlebarVersion = document.querySelector("#titlebar-version");
+  if (titlebarVersion && version) titlebarVersion.textContent = `v${version}`;
+}).catch(() => {});
 
 (async () => {
   const generation = ++workGeneration;
