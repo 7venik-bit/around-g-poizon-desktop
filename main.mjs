@@ -3,6 +3,7 @@ import { createPoizonProductViewer } from "./services/poizon-product-viewer.mjs"
 import { createLocalLedger } from "./services/local-ledger.mjs";
 import { purchaseLedgerAwareness } from "./services/purchase-ledger-awareness.mjs";
 import { collectPoizonSuccessfulOrders } from "./services/poizon-order-screen.mjs";
+import { buildWatchAlarms, collectPoizonOrderWatchSnapshot, diffWatchSnapshots, normalizeWatchRow, watchDayKey } from "./services/poizon-order-watch.mjs";
 import { ledgerArticleKey } from "./services/ledger-categories.mjs";
 import {ledgerClipboardData,parseLedgerClipboard} from './services/ledger-clipboard.mjs';
 import { readReviewWorkbook, checkReviewWorkbookRevision } from "./services/poizon-review-workbook.mjs";
@@ -5920,6 +5921,59 @@ async function syncPoizonSellerOrders({manual=false}={}) {
   } finally {
     poizonLedgerSyncRunning=false;
     if(scanner&&!scanner.isDestroyed())scanner.destroy();
+  }
+}
+let poizonOrderWatchRunning = false, poizonOrderWatchTimer = null;
+let poizonOrderWatchStatus = { state: "idle", message: "주문 동기화 대기 중" };
+function sendOrderWatchProgress(payload = {}) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("order-watch:progress", { ...poizonOrderWatchStatus, ...payload });
+}
+// Daily order-management watch: list-level snapshot of every status tab with
+// new-order and status-change alarms. Detail drawers and ledger writes never
+// run here; the strict sale-record flow stays in syncPoizonSellerOrders.
+async function syncPoizonOrderWatch({ manual = false } = {}) {
+  if (poizonOrderWatchRunning) return { ok: false, code: "POIZON_ORDER_WATCH_BUSY", status: poizonOrderWatchStatus };
+  const dayKey = watchDayKey(new Date());
+  const previous = store.list("orderWatch").find((doc) => doc?.id === "daily") || null;
+  if (!manual && previous?.dayKey === dayKey && previous?.completedAt) {
+    return { ok: true, code: "ALREADY_SYNCED", status: poizonOrderWatchStatus };
+  }
+  poizonOrderWatchRunning = true;
+  let watchWindow = null;
+  try {
+    poizonOrderWatchStatus = { state: "running", message: "POIZON 주문 확인 중", checked: 0 };
+    sendOrderWatchProgress();
+    watchWindow = new BrowserWindow({ show: false, width: 1400, height: 950, webPreferences: { partition: "persist:around-g-poizon-seller", contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false } });
+    try { await watchWindow.loadURL("https://seller.poizon.com/main/orders/management"); }
+    catch (error) { if (!/ERR_ABORTED/.test(String(error?.message || error))) throw error; }
+    const collected = await collectPoizonOrderWatchSnapshot(watchWindow.webContents, {
+      onProgress: (progress) => {
+        poizonOrderWatchStatus = { ...poizonOrderWatchStatus, ...progress, message: `${progress.tab} 확인 중 · ${progress.checked}건` };
+        sendOrderWatchProgress();
+      },
+    });
+    const rows = collected.rows.map(normalizeWatchRow).filter((row) => /^\d{10,25}$/.test(row.orderNumber));
+    const diff = diffWatchSnapshots(previous || { rows: [] }, { rows });
+    const alarms = previous ? buildWatchAlarms(diff, dayKey) : [];
+    const doc = await store.upsert("orderWatch", { id: "daily", dayKey, at: new Date().toISOString(), completedAt: new Date().toISOString(), counts: diff.counts, tabCounts: collected.tabCounts, rows, newOrderNumbers: diff.newOrders.map((row) => row.orderNumber), changedNumbers: diff.statusChanges.map((change) => change.orderNumber) });
+    for (const alarm of alarms) {
+      await addProgramNotification({ type: "warning", title: alarm.title, message: alarm.message, key: alarm.key, windows: alarm.windows });
+    }
+    poizonOrderWatchStatus = { state: "complete", message: `주문 ${rows.length}건 동기화 · 신규 ${diff.newOrders.length}건 · 상태 변경 ${diff.statusChanges.length}건`, counts: diff.counts, newOrders: diff.newOrders.length, statusChanges: diff.statusChanges.length, at: doc.at };
+    sendOrderWatchProgress();
+    return { ok: true, status: poizonOrderWatchStatus, snapshot: doc };
+  } catch (error) {
+    const currentUrl = watchWindow && !watchWindow.isDestroyed() ? watchWindow.webContents.getURL() : "";
+    const code = /login|signin|passport|auth/i.test(currentUrl) ? "POIZON_LOGIN_REQUIRED" : String(error?.message || error);
+    if (/POIZON_LOGIN_REQUIRED|POIZON_ACCESS_LIMITED/.test(code)) {
+      await addProgramNotification({ type: "warning", title: "POIZON 주문 동기화 로그인 필요", message: code === "POIZON_LOGIN_REQUIRED" ? "POIZON 판매자센터 로그인이 필요합니다. 로그인 후 동기화 버튼을 눌러주세요." : "POIZON 접속 제한으로 주문 동기화를 멈췄습니다. 잠시 후 동기화 버튼을 눌러주세요.", key: `order-watch:auth:${dayKey}`, windows: true });
+    }
+    poizonOrderWatchStatus = { state: "error", code, message: `주문 동기화 실패: ${code}`, at: new Date().toISOString() };
+    sendOrderWatchProgress();
+    return { ok: false, code, status: poizonOrderWatchStatus };
+  } finally {
+    poizonOrderWatchRunning = false;
+    if (watchWindow && !watchWindow.isDestroyed()) watchWindow.destroy();
   }
 }
 function purchaseWorkbook() {
@@ -14352,6 +14406,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("weekly-site-health:run", () => runWeeklySiteHealthCheck({ manual: true }));
   const poizonProductViewer = createPoizonProductViewer({ BrowserWindow, icon: APP_ICON_PATH });
   ipcMain.handle("seller:open-product", (_event, product) => poizonProductViewer.open(product));
+  ipcMain.handle("order-watch:sync", () => syncPoizonOrderWatch({ manual: true }));
+  ipcMain.handle("order-watch:get", () => store.list("orderWatch").find((doc) => doc?.id === "daily") || null);
   ipcMain.handle("seller:open", () => {
     openSellerCenterWindow();
     return { ok: true };
@@ -15397,6 +15453,9 @@ ipcMain.handle("seller:start-brand-export-monitor", () => {
   setTimeout(() => void syncPoizonSellerOrders(), 30_000);
   poizonLedgerSyncTimer=setInterval(() => void syncPoizonSellerOrders(), 30*60*1_000);
   poizonLedgerSyncTimer.unref?.();
+  setTimeout(() => void syncPoizonOrderWatch(), 120_000);
+  poizonOrderWatchTimer=setInterval(() => void syncPoizonOrderWatch(), 6*60*60*1_000);
+  poizonOrderWatchTimer.unref?.();
   setTimeout(() => void runOneDriveRecoveryBackup(), 5 * 60 * 1_000);
   setInterval(() => void runOneDriveRecoveryBackup(), 30 * 60 * 1_000).unref?.();
   scheduleWeeklySiteHealthCheck();
@@ -15414,6 +15473,7 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   closeAllExternalRetailerChrome();
   if(poizonLedgerSyncTimer)clearInterval(poizonLedgerSyncTimer);
+  if(poizonOrderWatchTimer)clearInterval(poizonOrderWatchTimer);
   if (brandExportPollTimer) clearInterval(brandExportPollTimer);
   if (brandExportMonitorRestartTimer) clearTimeout(brandExportMonitorRestartTimer);
   if (updateCheckTimer) clearTimeout(updateCheckTimer);

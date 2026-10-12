@@ -2699,6 +2699,7 @@ window.addEventListener("unhandledrejection", (event) => {
 
 function renderRecords(collection) {
   const host = $(`#${collection}-list`);
+  if (!host) return;
   host.innerHTML = state[collection].length
     ? state[collection].map((row) => `<div class="record"><div><strong>${text(row.name)}</strong><small>${text(row.brand)} · ${text(row.articleNumber)}</small></div><div>${money(row.price)} <button data-remove="${collection}:${row.id}">삭제</button></div></div>`).join("")
     : `<div class="empty">저장된 항목이 없습니다.</div>`;
@@ -3563,7 +3564,6 @@ async function refresh() {
   void refreshPurchaseAwareness();
   state.poizonSyncs = Array.isArray(state.poizonSyncs) ? state.poizonSyncs : [];
   renderLedgerRecords();
-  renderRecords("orders");
   renderStockWatches();
 }
 
@@ -3575,6 +3575,7 @@ document.addEventListener("click", async (event) => {
     document.querySelectorAll(".nav,.view").forEach((item) => item.classList.remove("active"));
     nav.classList.add("active");
     $(`#${nav.dataset.view}`).classList.add("active");
+    if (nav.dataset.view === "orders") void refreshOrderWatch();
     const pageTitle = $("#page-title");
     if (pageTitle) pageTitle.textContent = nav.textContent;
   }
@@ -6185,6 +6186,86 @@ function installReviewEntryButtons() {
   add("poizon-review-brand-start", "포이즌 상품동기화", document.getElementById("sidebar-quick-actions"));
   add("poizon-review-files-start", "선택 파일 POIZON 대조", document.getElementById("poizon-verification-controls"));
 }
+let orderWatchSnapshot = null, orderWatchTab = "all", orderWatchQuery = "";
+const orderWatchExpanded = new Set();
+const ORDER_WATCH_TABS = [["all", "전체"], ["awaiting", "발송 대기"], ["shipped", "발송 완료"], ["success", "거래 성공"], ["failed", "거래 실패"]];
+async function refreshOrderWatch() {
+  try { orderWatchSnapshot = await window.aroundG.getOrderWatch?.(); }
+  catch { orderWatchSnapshot = null; }
+  renderOrderWatch();
+}
+function orderWatchFilteredRows() {
+  const rows = Array.isArray(orderWatchSnapshot?.rows) ? orderWatchSnapshot.rows : [];
+  const query = String(orderWatchQuery || "").trim().toUpperCase();
+  return rows.filter((row) => (orderWatchTab === "all" || String(row.statusKey || "") === orderWatchTab)
+    && (!query || [row.orderNumber, row.articleNumber, row.productName, row.skuId].some((value) => String(value || "").toUpperCase().includes(query))));
+}
+function renderOrderWatch() {
+  const tabsHost = document.querySelector("#order-watch-tabs");
+  if (!tabsHost) return;
+  const counts = orderWatchSnapshot?.counts?.byKey || {};
+  tabsHost.innerHTML = ORDER_WATCH_TABS.map(([key, label]) => `<button type="button" role="tab" aria-selected="${key === orderWatchTab}" class="${key === orderWatchTab ? "active" : ""}" data-order-watch-tab="${key}">${text(label)} (${Number(counts[key] || 0).toLocaleString("ko-KR")})</button>`).join("");
+  const fresh = new Set(orderWatchSnapshot?.newOrderNumbers || []);
+  const changed = new Set(orderWatchSnapshot?.changedNumbers || []);
+  const rows = orderWatchFilteredRows();
+  const host = document.querySelector("#order-watch-rows");
+  host.innerHTML = rows.length ? rows.map((row) => {
+    const badges = fresh.has(row.orderNumber) ? `<em class="order-watch-badge new">신규</em>` : changed.has(row.orderNumber) ? `<em class="order-watch-badge changed">변경</em>` : "";
+    const optionLines = [row.color && `색상: ${row.color}`, row.size && `사이즈: ${row.size}`, row.skuId && `SKU_ID:${row.skuId}`].filter(Boolean);
+    const open = orderWatchExpanded.has(row.orderNumber);
+    return `<tr data-order-watch-row="${text(row.orderNumber)}"><td><div class="order-watch-product">${row.imageUrl ? `<img src="${text(row.imageUrl)}" alt="" loading="lazy">` : ""}<div><strong>${text(row.productName || "-")}</strong><small>상품 번호:${text(row.articleNumber || "-")}${row.spuId ? ` · SPU_ID:${text(row.spuId)}` : ""}</small></div></div></td>`
+      + `<td>${optionLines.length ? optionLines.map((line) => text(line)).join("<br>") : "-"}</td>`
+      + `<td>${text(row.deadlineText || row.timelineText || "-")}</td>`
+      + `<td><code>${text(row.orderNumber)}</code></td>`
+      + `<td>${text(row.status || "-")}${badges}</td></tr>`
+      + (open ? `<tr class="order-watch-detail"><td colspan="5">${text(row.timelineText || "")}${row.priceText ? ` · 결제 ${text(row.priceText)}` : ""}${row.incomeText ? ` · 수익 ${text(row.incomeText)}` : ""}</td></tr>` : "");
+  }).join("") : `<tr><td colspan="5" class="empty">${orderWatchSnapshot ? "조건에 맞는 주문이 없습니다." : "동기화 후 주문이 표시됩니다."}</td></tr>`;
+  document.querySelector("#order-watch-count").textContent = `${rows.length.toLocaleString("ko-KR")}건`;
+  const updated = document.querySelector("#order-watch-updated");
+  if (updated) updated.textContent = orderWatchSnapshot?.at ? `마지막 동기화 ${new Date(orderWatchSnapshot.at).toLocaleString("ko-KR")}` : "";
+}
+function orderWatchStatusLine(status) {
+  const host = document.querySelector("#order-watch-status");
+  if (host && status?.message) host.textContent = status.message;
+}
+(function installOrderWatch() {
+  document.querySelector("#order-watch-tabs")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-order-watch-tab]");
+    if (!button) return;
+    orderWatchTab = button.dataset.orderWatchTab;
+    renderOrderWatch();
+  });
+  document.querySelector("#order-watch-query")?.addEventListener("input", (event) => {
+    orderWatchQuery = event.target.value || "";
+    renderOrderWatch();
+  });
+  document.querySelector("#order-watch-rows")?.addEventListener("click", (event) => {
+    const row = event.target.closest("[data-order-watch-row]");
+    if (!row) return;
+    const key = row.dataset.orderWatchRow;
+    if (orderWatchExpanded.has(key)) orderWatchExpanded.delete(key);
+    else orderWatchExpanded.add(key);
+    renderOrderWatch();
+  });
+  document.querySelector("#order-watch-sync")?.addEventListener("click", async () => {
+    const button = document.querySelector("#order-watch-sync");
+    if (button) button.disabled = true;
+    orderWatchStatusLine({ message: "POIZON 주문을 확인하고 있습니다…" });
+    try {
+      const result = await window.aroundG.syncOrderWatch?.();
+      if (result?.status) orderWatchStatusLine(result.status);
+      orderWatchSnapshot = result?.snapshot || await window.aroundG.getOrderWatch?.().catch(() => null);
+      renderOrderWatch();
+      if (result && result.ok === false) orderWatchStatusLine({ message: result.status?.message || "주문 동기화에 실패했습니다." });
+    } catch (error) {
+      orderWatchStatusLine({ message: `주문 동기화에 실패했습니다: ${error?.message || error}` });
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+  window.aroundG?.onOrderWatchProgress?.((payload = {}) => orderWatchStatusLine(payload));
+  void refreshOrderWatch();
+})();
 void import("./poizon-review-workspace.js").then((live) => { live.installVerificationControls(); installReviewEntryButtons(); }).catch(showRuntimeError);
 
 function installMacWindowControls() {
