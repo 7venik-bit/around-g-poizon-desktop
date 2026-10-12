@@ -2538,6 +2538,16 @@ html body aside{overflow-y:auto}
 #sidebar-quick-actions .brand-search-action:hover,
 #sidebar-quick-actions .brand-export-folder-select:hover,
 #sidebar-quick-actions #poizon-review-brand-start:hover{background:#fff;border-color:#d2d2d7;color:#333336;padding:6px 8px;font-size:10px;width:100%}
+/* Quick-action buttons: centered bold labels with leading emoji. */
+#sidebar-quick-actions .update-button,
+#sidebar-quick-actions .brand-search-action,
+#sidebar-quick-actions .brand-export-folder-select,
+#sidebar-quick-actions #poizon-review-brand-start{display:flex;align-items:center;justify-content:center;gap:6px;text-align:center;font-weight:800}
+#sidebar-quick-actions .brand-search-action svg{display:none}
+#sidebar-quick-actions .update-button::before{content:"🔄"}
+#sidebar-quick-actions .brand-export-folder-select::before{content:"📁"}
+#sidebar-quick-actions #frequent-brand-export::before{content:"🔍"}
+#sidebar-quick-actions #poizon-review-brand-start::before{content:"🔃"}
 #sidebar-quick-actions .brand-search-action{width:100%;padding:8px 10px;font-size:11px;justify-content:center;text-align:center}
 /* Daily work does not use the files section. Button stays for logic. */
 #sidebar-quick-actions #update-panel{display:none!important}
