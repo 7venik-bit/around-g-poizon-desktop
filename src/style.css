@@ -2529,9 +2529,19 @@ html body aside{overflow-y:auto}
 #sidebar-quick-actions .brand-export-folder-select{width:100%;padding:8px 10px;font-size:11px}
 #sidebar-quick-actions #brand-export-folder-select::after{content:none!important}
 #sidebar-quick-actions #poizon-review-brand-start{width:100%;padding:8px 10px;font-size:11px}
+/* Sidebar quick actions share one small neutral button treatment. */
+#sidebar-quick-actions .update-button,
+#sidebar-quick-actions .brand-search-action,
+#sidebar-quick-actions .brand-export-folder-select,
+#sidebar-quick-actions #poizon-review-brand-start,
+#sidebar-quick-actions .update-button:hover,
+#sidebar-quick-actions .brand-search-action:hover,
+#sidebar-quick-actions .brand-export-folder-select:hover,
+#sidebar-quick-actions #poizon-review-brand-start:hover{background:#fff;border-color:#d2d2d7;color:#333336;padding:6px 8px;font-size:10px;width:100%}
 #sidebar-quick-actions .brand-search-action{width:100%;padding:8px 10px;font-size:11px;justify-content:center;text-align:center}
 /* Daily work does not use the files section. Button stays for logic. */
 #sidebar-quick-actions #update-panel{display:none!important}
+#backup-state-message{display:none!important}
 /* Hide the sidebar data-files group (label and button). */
 html body .search-service-menu .search-service-file-label,
 html body .search-service-menu .search-service-file{display:none!important}

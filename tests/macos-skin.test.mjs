@@ -93,6 +93,12 @@ test("completed brands offer a delete action first", () => {
   assert.match(renderer, /trashBrandExportFiles\(unique\.map\(\(file\) => file\.path\)\)/);
 });
 
+test("sidebar backup card uses the English title", () => {
+  assert.match(renderer, /One Drive Backup/);
+  assert.match(indexHtml, /One Drive Backup/);
+  assert.match(style, /#sidebar-quick-actions \.update-button,\n#sidebar-quick-actions \.brand-search-action/);
+});
+
 test("orders menu and view are removed", () => {
   const html = fs.readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
   assert.doesNotMatch(html, /data-view="orders"/);
@@ -115,6 +121,7 @@ test("quick actions live at the bottom of the sidebar", () => {
   assert.match(style, /#sidebar-quick-actions\{display:grid/);
   assert.match(style, /#sidebar-quick-actions #brand-export-selected\{display:none!important\}/);
   assert.match(style, /#sidebar-quick-actions #update-panel\{display:none!important\}/);
+  assert.match(style, /#backup-state-message\{display:none!important\}/);
   assert.match(style, /html body \.search-service-menu \.search-service-file-label,\nhtml body \.search-service-menu \.search-service-file\{display:none!important\}/);
   assert.match(style, /#sidebar-quick-actions #brand-export-folder-select::after\{content:none!important\}/);
   assert.match(style, /#sidebar-quick-actions \.brand-export-folder-path\{display:none!important\}/);

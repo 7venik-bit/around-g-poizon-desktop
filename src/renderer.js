@@ -6027,10 +6027,7 @@ function renderBackupStatus(payload = {}) {
   if (!panel) return;
   panel.classList.remove("connected", "syncing", "warning", "disconnected");
   panel.classList.add(payload.state || "warning");
-  $("#backup-state-title").textContent = payload.state === "connected"
-    ? "OneDrive 백업 정상"
-    : payload.state === "syncing" ? "OneDrive 백업 중"
-      : payload.state === "disconnected" ? "OneDrive 로그인 필요" : "OneDrive 확인 필요";
+  $("#backup-state-title").textContent = "One Drive Backup";
   $("#backup-state-message").textContent = payload.message || "백업 상태를 확인합니다";
   const lamps = $("#onedrive-lamps");
   if (lamps) {
