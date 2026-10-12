@@ -127,8 +127,21 @@ export async function collectPoizonSuccessfulOrders(contents,{onProgress=()=>{},
       if(known.has(row.orderNumber)) {onProgress({checked:seen.size,total:expected});continue;}
       const opened=await evaluate(contents,id=>{
         const tr=[...document.querySelectorAll('tr.ant-table-row[data-row-key]')].find(n=>n.getAttribute('data-row-key')===id);
-        const link=[...tr?.querySelectorAll('a')||[]].find(n=>n.innerText.trim()==='주문 내역');
-        if(!link)return false;link.click();return true;
+        // The detail trigger is not always an anchor: fire a full pointer
+        // sequence on every exact-text candidate, innermost first. A real
+        // drawer for this order must appear; anything else keeps failing loud.
+        const candidates=[...tr?.querySelectorAll('a,button,span,div,[role="link"],[role="button"]')||[]]
+          .filter(n=>n.innerText.trim()==='주문 내역');
+        candidates.sort((a,b)=>{
+          const ra=a.getBoundingClientRect(),rb=b.getBoundingClientRect();
+          return (ra.width*ra.height)-(rb.width*rb.height);
+        });
+        for(const link of candidates) {
+          for(const type of ['mouseover','mousedown','mouseup','click']) {
+            link.dispatchEvent(new MouseEvent(type,{bubbles:true,cancelable:true,button:0}));
+          }
+        }
+        return candidates.length>0;
       },row.orderNumber);
       if(!opened)throw Error(`POIZON_ORDER_DETAIL_LINK_MISSING:${row.orderNumber}`);
       const detail=await until(contents,async()=>{

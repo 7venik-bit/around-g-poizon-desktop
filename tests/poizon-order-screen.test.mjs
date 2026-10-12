@@ -114,6 +114,24 @@ test('seller list and opened detail must agree before a sale is recorded',async(
   assert.match(result.orders[0].failure,/LIST_DETAIL_MISMATCH/);
 });
 
+test('order detail opens from a non-anchor trigger listening to the pointer sequence',async()=>{
+  const id='21315202429263299';
+  const cells=Array.from({length:23},(_,index)=>`<td>${index===1?'<img src="https://example.com/shoe.png">':index===2?'상품 번호: SR323LSN75':index===10?'거래 성공':index===12?'1':index===21?'<span>주문 내역</span>':''}</td>`).join('');
+  const {window,contents}=browser(`<div class="global-text-label-wrap global-text-label-wrap-selected">거래 성공 (1)</div><table><tr class="ant-table-row" data-row-key="${id}">${cells}</tr></table><ul class="ant-pagination"><li class="ant-pagination-item-active">1</li><li class="ant-pagination-next ant-pagination-disabled"></li></ul>`);
+  window.document.querySelector('span').addEventListener('mousedown',()=>{
+    const drawer=window.document.createElement('div');drawer.className='ant-drawer-open';
+    drawer.setAttribute('data-text',`주문 내역\n거래 성공\n일반판매\n주문 번호: ${id}\n상품 번호: SR323LSN75\n색상: 화이트-WHT0\n사이즈: EU 40\n입찰가(세금 별도) ₩84,550\n기본 수수료 (10%) -₩5,000\n운임 -₩2,000\n예상 수익: ₩77,000\n구매자 결제: 2026/09/19 12:00:00\n주문 체결 시간: 2026/09/26 12:00:00`);
+    drawer.innerHTML='<div class="ant-drawer-title"><span class="ant-tag">거래 성공</span></div><button class="ant-drawer-close">닫기</button>';
+    window.document.body.append(drawer);drawer.querySelector('button').addEventListener('click',()=>drawer.remove());
+  });
+  const result=await collectPoizonSuccessfulOrders(contents);
+  assert.equal(result.orders.length,1);
+  assert.equal(result.orders[0].orderNumber,id);
+  assert.equal(result.orders[0].salePrice,84550);
+  assert.equal(result.orders[0].freightFee,2000);
+  assert.equal(result.orders[0].income,77000);
+});
+
 test('an already recorded order is counted without reopening its detail',async()=>{
   const {window,contents}=browser('<div class="global-text-label-wrap global-text-label-wrap-selected">거래 성공 (1)</div><table><tr class="ant-table-row" data-row-key="21315202429263299"></tr></table><ul class="ant-pagination"><li class="ant-pagination-item-active">1</li><li class="ant-pagination-next ant-pagination-disabled"></li></ul>');
   const row=window.document.querySelector('tr');
