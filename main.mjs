@@ -3,7 +3,7 @@ import { createPoizonProductViewer } from "./services/poizon-product-viewer.mjs"
 import { createLocalLedger } from "./services/local-ledger.mjs";
 import { purchaseLedgerAwareness } from "./services/purchase-ledger-awareness.mjs";
 import { collectPoizonSuccessfulOrders } from "./services/poizon-order-screen.mjs";
-import { buildWatchAlarms, diffWatchSnapshots, mapWatchExportRows, watchDayKey } from "./services/poizon-order-watch.mjs";
+import { buildWatchAlarms, diffWatchSnapshots, mapWatchExportRows, waitForWatchOrderPage, watchDayKey } from "./services/poizon-order-watch.mjs";
 import { ledgerArticleKey } from "./services/ledger-categories.mjs";
 import {ledgerClipboardData,parseLedgerClipboard} from './services/ledger-clipboard.mjs';
 import { readReviewWorkbook, checkReviewWorkbookRevision } from "./services/poizon-review-workbook.mjs";
@@ -5932,13 +5932,16 @@ async function exportPoizonOrderWatchFile(watchWindow, onMessage = () => {}) {
   const session = watchWindow.webContents.session;
   const savePath = join(app.getPath("temp"), `around-g-orders-${Date.now()}.xlsx`);
   let release = null;
+  let markStarted = null;
+  const started = new Promise((resolve) => { markStarted = resolve; });
   const downloaded = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("POIZON_ORDER_EXPORT_MISSING")), 90000);
+    const timer = setTimeout(() => reject(new Error("POIZON_ORDER_EXPORT_MISSING")), 120000);
     const handler = (_event, item) => {
       try {
         const name = String(item.getFilename() || "");
         if (!/\.(xlsx|xls|csv)$/i.test(name) && !/내보내기|导出/.test(name)) return;
         item.setSavePath(savePath);
+        markStarted?.();
         item.once("done", (_doneEvent, state) => {
           clearTimeout(timer);
           if (state === "completed") resolve(savePath);
@@ -5953,22 +5956,29 @@ async function exportPoizonOrderWatchFile(watchWindow, onMessage = () => {}) {
     session.on("will-download", handler);
   });
   try {
+    onMessage("주문 페이지 확인 중");
+    await waitForWatchOrderPage(watchWindow.webContents, { timeout: 45000 });
     onMessage("내보내기 버튼 확인 중");
     const candidates = await watchWindow.webContents.executeJavaScript(`(() => {
       const same = (text) => String(text || "").replace(/\\s+/g, " ").trim();
-      return [...document.querySelectorAll('button,a')].filter((el) => {
+      return [...document.querySelectorAll('button,a,[role="button"],div,span')].filter((el) => {
+        if (el.closest('script,style')) return false;
         const rect = el.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0 && /내보내기|导出/.test(same(el.innerText));
+        const label = same(el.innerText);
+        return rect.width > 0 && rect.height > 0 && label
+          && (/내보내기|导出/.test(label)) && !/앱\\s*다운로드/.test(label);
       }).map((el) => {
         const label = same(el.innerText);
         const rect = el.getBoundingClientRect();
-        return { text: label.slice(0, 60), exact: /전체\\s*내보내기|全部导出/.test(label), x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        return { tag: el.tagName, text: label.slice(0, 60), exact: /전체\\s*내보내기|全部导出/.test(label), x: rect.x, y: rect.y, width: rect.width, height: rect.height };
       });
     })()`, true).catch(() => []);
-    const ordered = [...candidates].sort((a, b) => Number(b.exact) - Number(a.exact)).slice(0, 3);
+    const ordered = [...candidates]
+      .sort((a, b) => (Number(b.exact) - Number(a.exact)) || ((a.width * a.height) - (b.width * b.height)))
+      .slice(0, 4);
     if (!ordered.length) throw new Error("POIZON_ORDER_EXPORT_MISSING");
     onMessage("주문 내보내기 요청 중");
-    let clicked = false;
+    let filePath = "";
     for (const candidate of ordered) {
       try {
         const x = Math.round(candidate.x + candidate.width / 2);
@@ -5976,12 +5986,14 @@ async function exportPoizonOrderWatchFile(watchWindow, onMessage = () => {}) {
         watchWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
         watchWindow.webContents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
         watchWindow.webContents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
-        clicked = true;
-        break;
       } catch { /* try the next candidate */ }
+      const began = await Promise.race([started.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), 12000))]);
+      if (began) {
+        filePath = await downloaded;
+        break;
+      }
     }
-    if (!clicked) throw new Error("POIZON_ORDER_EXPORT_MISSING");
-    const filePath = await downloaded;
+    if (!filePath) throw new Error("POIZON_ORDER_EXPORT_MISSING");
     onMessage("내보내기 파일 분석 중");
     const sheet = await readSheet(await readFile(filePath), { sheet: 1 });
     return mapWatchExportRows(sheet);
@@ -6048,9 +6060,18 @@ async function syncPoizonOrderWatch({ manual = false } = {}) {
             tables: document.querySelectorAll('table').length,
             dataRows: document.querySelectorAll('tr.ant-table-row[data-row-key]').length,
             iframes: document.querySelectorAll('iframe').length,
+            exportTexts: [...document.querySelectorAll('button,a,[role="button"],div,span')]
+              .map((el) => String(el.innerText || "").replace(/\\s+/g, " ").trim())
+              .filter((label) => label && /내보내기|导出|엑셀|다운로드|Excel|Export/i.test(label))
+              .slice(0, 12),
           };
         })()`, true).catch(() => null);
-        if (info) diagnostics = { ...diagnostics, ...info };
+        if (info) {
+          diagnostics = { ...diagnostics, ...info };
+          try {
+            await writeFile(join(app.getPath("temp"), "around-g-order-watch-failure.json"), JSON.stringify({ code, diagnostics }, null, 2));
+          } catch { /* diagnostics best-effort */ }
+        }
         const image = await watchWindow.webContents.capturePage().catch(() => null);
         if (image) {
           screenshotPath = join(app.getPath("temp"), "around-g-order-watch-failure.png");
