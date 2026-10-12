@@ -5,6 +5,7 @@ import {
   buildWatchAlarms,
   detectWatchPageProblem,
   diffWatchSnapshots,
+  matchWatchTabLabel,
   normalizeWatchRow,
   summarizeWatchSnapshot,
   watchDayKey,
@@ -112,6 +113,16 @@ test("alarms aggregate with stable daily keys", () => {
   assert.ok(byTitle["거래 실패·취소 1건"].windows);
   assert.equal(byTitle["주문 상태 변경 1건"].windows, false);
   assert.deepEqual(buildWatchAlarms({ newOrders: [], statusChanges: [] }, "2026-10-12"), []);
+});
+
+test("countless tabs still match by exact label", () => {
+  assert.equal(matchWatchTabLabel("발송 대기", "발송 대기"), true);
+  assert.equal(matchWatchTabLabel("발송 대기 (3)", "발송 대기"), true);
+  assert.equal(matchWatchTabLabel("전체 (70)", "전체"), true);
+  assert.equal(matchWatchTabLabel("전체", "전체"), true);
+  assert.equal(matchWatchTabLabel("발송 완료 (1)", "발송 대기"), false);
+  assert.equal(matchWatchTabLabel("거래 성공 (51)", "거래 성공"), true);
+  assert.equal(matchWatchTabLabel("", "발송 대기"), false);
 });
 
 test("day keys are local calendar dates", () => {

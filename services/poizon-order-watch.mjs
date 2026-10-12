@@ -30,6 +30,13 @@ export function watchTabLabel(key = "") {
   return ORDER_WATCH_TABS.find((tab) => tab.key === key)?.label || "";
 }
 
+// Tab labels sometimes carry no count (observed: bare "발송 대기").
+// Keep this identical to the check embedded in the page-side click script.
+export function matchWatchTabLabel(text = "", label = "") {
+  const current = String(text || "").trim();
+  return current === label || current.startsWith(`${label} (`);
+}
+
 function firstLine(value = "") {
   return String(value || "").split("\n").map((line) => line.trim()).filter(Boolean)[0] || "";
 }
@@ -228,7 +235,7 @@ export async function collectPoizonOrderWatchSnapshot(webContents, { onProgress 
     const state = await evaluate(readState);
     const problem = problemOf(state);
     if (problem) throw new Error(problem);
-    return state.tabs.some((tab) => /^전체\s*\(\d+\)/.test(tab)) ? state : null;
+    return state.tabs.some((tab) => matchWatchTabLabel(tab, "전체")) ? state : null;
   });
   const tabCounts = {};
   for (const tab of initial.tabs) {
@@ -241,11 +248,18 @@ export async function collectPoizonOrderWatchSnapshot(webContents, { onProgress 
   for (const target of targets) {
     const expected = Number.isFinite(tabCounts[target.label]) ? tabCounts[target.label] : null;
     await evaluate((label) => {
-      const node = [...document.querySelectorAll('[class*="global-text-label-wrap"]')]
-        .find((el) => el.innerText.trim().startsWith(`${label} (`));
+      const same = (text) => { const current = String(text || "").trim(); return current === label || current.startsWith(`${label} (`); };
+      const node = [...document.querySelectorAll('[class*="global-text-label-wrap"]')].find((el) => same(el.innerText));
       node?.click();
     }, target.label).catch(() => {});
-    await pause(1500);
+    let switched = false;
+    for (let attempt = 0; attempt < 6 && !switched; attempt += 1) {
+      await pause(500);
+      const selected = await evaluate(() => [...document.querySelectorAll('[class*="global-text-label-wrap-selected"]')].map((node) => node.innerText.trim()).find(Boolean) || "").catch(() => "");
+      switched = String(selected || "").startsWith(target.label);
+    }
+    if (!switched) throw new Error(`POIZON_ORDER_TAB_MISSING:${target.label}`);
+    await pause(500);
     let page = 0;
     for (;;) {
       const state = await until(async () => {
