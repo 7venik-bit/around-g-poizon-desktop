@@ -5,28 +5,13 @@ import {
   buildWatchAlarms,
   detectWatchPageProblem,
   diffWatchSnapshots,
-  matchWatchTabLabel,
-  pickWatchTabCandidate,
-  normalizeWatchRow,
+  mapWatchExportColumns,
+  mapWatchExportRows,
   summarizeWatchSnapshot,
   watchDayKey,
   watchStatusKey,
   watchTabLabel,
 } from "../services/poizon-order-watch.mjs";
-
-const descenteRow = {
-  orderNumber: "2131512212287993299",
-  cells: [
-    "",
-    "상품 번호:SR323LSN75\n데상트 스니커즈 기타 남녀공용\nSPU_ID:62869190",
-    "색상: 화이트-WHT0\n사이즈: EU 40\nSKU_ID:116421647",
-    "--",
-    "No",
-    "2026/10/14(수요일) 00:00까지 발송\n발송 마감까지: 2일 06:11",
-  ],
-  imageUrl: "https://img.example/shoe.jpg",
-  status: "발송 대기",
-};
 
 test("watch tabs cover the five seller-center statuses", () => {
   assert.deepEqual(ORDER_WATCH_TABS.map((tab) => tab.key), ["all", "awaiting", "shipped", "success", "failed"]);
@@ -45,19 +30,40 @@ test("status labels map to watch keys", () => {
   assert.equal(watchStatusKey("준비 중"), "unknown");
 });
 
-test("list rows normalize to management fields", () => {
-  const row = normalizeWatchRow(descenteRow);
+test("export sheets map Korean columns to watch rows", () => {
+  const sheet = [
+    ["주문번호", "상품명", "상품 번호", "색상", "사이즈", "SKU_ID", "주문 상태", "발송 기한"],
+    ["2131512212287993299", "데상트 스니커즈 기타 남녀공용", "SR323LSN75", "화이트-WHT0", "EU 40", "116421647", "발송 대기", "2026-10-14까지 발송"],
+    ["invalid-row", "무시 상품", "XX", "", "", "", "발송 대기", ""],
+  ];
+  const mapped = mapWatchExportRows(sheet);
+  assert.equal(mapped.rows.length, 1);
+  const row = mapped.rows[0];
   assert.equal(row.orderNumber, "2131512212287993299");
   assert.equal(row.productName, "데상트 스니커즈 기타 남녀공용");
   assert.equal(row.articleNumber, "SR323LSN75");
-  assert.equal(row.spuId, "62869190");
-  assert.equal(row.color, "화이트-WHT0");
-  assert.equal(row.size, "EU 40");
-  assert.equal(row.skuId, "116421647");
-  assert.equal(row.status, "발송 대기");
   assert.equal(row.statusKey, "awaiting");
   assert.match(row.deadlineText, /발송/);
-  assert.equal(row.imageUrl, "https://img.example/shoe.jpg");
+});
+
+test("export sheets map Chinese columns and skip title rows", () => {
+  const sheet = [
+    ["POIZON 订单导出", "", "", ""],
+    ["订单号", "商品名称", "货号", "订单状态"],
+    ["2131512212287993299", "李宁T恤", "ABCD1234", "待发货"],
+  ];
+  const mapped = mapWatchExportRows(sheet);
+  assert.equal(mapped.rows.length, 1);
+  assert.equal(mapped.rows[0].statusKey, "awaiting");
+  assert.equal(mapped.rows[0].articleNumber, "ABCD1234");
+  assert.throws(() => mapWatchExportRows([["foo", "bar"]]), /POIZON_ORDER_EXPORT_COLUMNS_UNKNOWN/);
+  assert.deepEqual(mapWatchExportRows([]), { headers: [], rows: [] });
+});
+
+test("export column finder prefers exact headers", () => {
+  const columns = mapWatchExportColumns(["상태메모", "주문 상태", "상품명"]);
+  assert.equal(columns.status, 1);
+  assert.equal(columns.orderNumber, -1);
 });
 
 test("snapshots summarize per-status counts", () => {
@@ -114,26 +120,6 @@ test("alarms aggregate with stable daily keys", () => {
   assert.ok(byTitle["거래 실패·취소 1건"].windows);
   assert.equal(byTitle["주문 상태 변경 1건"].windows, false);
   assert.deepEqual(buildWatchAlarms({ newOrders: [], statusChanges: [] }, "2026-10-12"), []);
-});
-
-test("tab clicks target the smallest matching box", () => {
-  assert.deepEqual(pickWatchTabCandidate([
-    { x: 0, y: 0, width: 200, height: 40 },
-    { x: 10, y: 5, width: 80, height: 20 },
-    { x: 0, y: 0, width: 0, height: 0 },
-  ]), { x: 10, y: 5, width: 80, height: 20 });
-  assert.equal(pickWatchTabCandidate([]), null);
-  assert.equal(pickWatchTabCandidate([{ x: 0, y: 0, width: -5, height: 10 }]), null);
-});
-
-test("countless tabs still match by exact label", () => {
-  assert.equal(matchWatchTabLabel("발송 대기", "발송 대기"), true);
-  assert.equal(matchWatchTabLabel("발송 대기 (3)", "발송 대기"), true);
-  assert.equal(matchWatchTabLabel("전체 (70)", "전체"), true);
-  assert.equal(matchWatchTabLabel("전체", "전체"), true);
-  assert.equal(matchWatchTabLabel("발송 완료 (1)", "발송 대기"), false);
-  assert.equal(matchWatchTabLabel("거래 성공 (51)", "거래 성공"), true);
-  assert.equal(matchWatchTabLabel("", "발송 대기"), false);
 });
 
 test("day keys are local calendar dates", () => {

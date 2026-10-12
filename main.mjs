@@ -3,7 +3,7 @@ import { createPoizonProductViewer } from "./services/poizon-product-viewer.mjs"
 import { createLocalLedger } from "./services/local-ledger.mjs";
 import { purchaseLedgerAwareness } from "./services/purchase-ledger-awareness.mjs";
 import { collectPoizonSuccessfulOrders } from "./services/poizon-order-screen.mjs";
-import { buildWatchAlarms, collectPoizonOrderWatchSnapshot, diffWatchSnapshots, normalizeWatchRow, watchDayKey } from "./services/poizon-order-watch.mjs";
+import { buildWatchAlarms, diffWatchSnapshots, mapWatchExportRows, watchDayKey } from "./services/poizon-order-watch.mjs";
 import { ledgerArticleKey } from "./services/ledger-categories.mjs";
 import {ledgerClipboardData,parseLedgerClipboard} from './services/ledger-clipboard.mjs';
 import { readReviewWorkbook, checkReviewWorkbookRevision } from "./services/poizon-review-workbook.mjs";
@@ -5925,6 +5925,71 @@ async function syncPoizonSellerOrders({manual=false}={}) {
 }
 let poizonOrderWatchRunning = false, poizonOrderWatchTimer = null;
 let poizonOrderWatchStatus = { state: "idle", message: "주문 동기화 대기 중" };
+// Bulk-export collection: click the page's own export control once and wait
+// for the download event itself, so success never depends on guessing whether
+// a tab click landed. The temporary file is always removed afterwards.
+async function exportPoizonOrderWatchFile(watchWindow, onMessage = () => {}) {
+  const session = watchWindow.webContents.session;
+  const savePath = join(app.getPath("temp"), `around-g-orders-${Date.now()}.xlsx`);
+  let release = null;
+  const downloaded = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("POIZON_ORDER_EXPORT_MISSING")), 90000);
+    const handler = (_event, item) => {
+      try {
+        const name = String(item.getFilename() || "");
+        if (!/\.(xlsx|xls|csv)$/i.test(name) && !/내보내기|导出/.test(name)) return;
+        item.setSavePath(savePath);
+        item.once("done", (_doneEvent, state) => {
+          clearTimeout(timer);
+          if (state === "completed") resolve(savePath);
+          else reject(new Error(`POIZON_ORDER_EXPORT_INTERRUPTED:${state}`));
+        });
+      } catch (error) {
+        clearTimeout(timer);
+        reject(error);
+      }
+    };
+    release = () => { clearTimeout(timer); session.removeListener("will-download", handler); };
+    session.on("will-download", handler);
+  });
+  try {
+    onMessage("내보내기 버튼 확인 중");
+    const candidates = await watchWindow.webContents.executeJavaScript(`(() => {
+      const same = (text) => String(text || "").replace(/\\s+/g, " ").trim();
+      return [...document.querySelectorAll('button,a')].filter((el) => {
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && /내보내기|导出/.test(same(el.innerText));
+      }).map((el) => {
+        const label = same(el.innerText);
+        const rect = el.getBoundingClientRect();
+        return { text: label.slice(0, 60), exact: /전체\\s*내보내기|全部导出/.test(label), x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      });
+    })()`, true).catch(() => []);
+    const ordered = [...candidates].sort((a, b) => Number(b.exact) - Number(a.exact)).slice(0, 3);
+    if (!ordered.length) throw new Error("POIZON_ORDER_EXPORT_MISSING");
+    onMessage("주문 내보내기 요청 중");
+    let clicked = false;
+    for (const candidate of ordered) {
+      try {
+        const x = Math.round(candidate.x + candidate.width / 2);
+        const y = Math.round(candidate.y + candidate.height / 2);
+        watchWindow.webContents.sendInputEvent({ type: "mouseMove", x, y });
+        watchWindow.webContents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+        watchWindow.webContents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+        clicked = true;
+        break;
+      } catch { /* try the next candidate */ }
+    }
+    if (!clicked) throw new Error("POIZON_ORDER_EXPORT_MISSING");
+    const filePath = await downloaded;
+    onMessage("내보내기 파일 분석 중");
+    const sheet = await readSheet(await readFile(filePath), { sheet: 1 });
+    return mapWatchExportRows(sheet);
+  } finally {
+    release?.();
+    await unlink(savePath).catch(() => {});
+  }
+}
 function sendOrderWatchProgress(payload = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("order-watch:progress", { ...poizonOrderWatchStatus, ...payload });
 }
@@ -5946,16 +6011,14 @@ async function syncPoizonOrderWatch({ manual = false } = {}) {
     watchWindow = new BrowserWindow({ show: false, width: 1400, height: 950, webPreferences: { partition: "persist:around-g-poizon-seller", contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false } });
     try { await watchWindow.loadURL("https://seller.poizon.com/main/orders/management"); }
     catch (error) { if (!/ERR_ABORTED/.test(String(error?.message || error))) throw error; }
-    const collected = await collectPoizonOrderWatchSnapshot(watchWindow.webContents, {
-      onProgress: (progress) => {
-        poizonOrderWatchStatus = { ...poizonOrderWatchStatus, ...progress, message: `${progress.tab} 확인 중 · ${progress.checked}건` };
-        sendOrderWatchProgress();
-      },
+    const exported = await exportPoizonOrderWatchFile(watchWindow, (message) => {
+      poizonOrderWatchStatus = { ...poizonOrderWatchStatus, message };
+      sendOrderWatchProgress();
     });
-    const rows = collected.rows.map(normalizeWatchRow).filter((row) => /^\d{10,25}$/.test(row.orderNumber));
+    const rows = exported.rows;
     const diff = diffWatchSnapshots(previous || { rows: [] }, { rows });
     const alarms = previous ? buildWatchAlarms(diff, dayKey) : [];
-    const doc = await store.upsert("orderWatch", { id: "daily", dayKey, at: new Date().toISOString(), completedAt: new Date().toISOString(), counts: diff.counts, tabCounts: collected.tabCounts, rows, newOrderNumbers: diff.newOrders.map((row) => row.orderNumber), changedNumbers: diff.statusChanges.map((change) => change.orderNumber) });
+    const doc = await store.upsert("orderWatch", { id: "daily", dayKey, at: new Date().toISOString(), completedAt: new Date().toISOString(), counts: diff.counts, tabCounts: {}, rows, newOrderNumbers: diff.newOrders.map((row) => row.orderNumber), changedNumbers: diff.statusChanges.map((change) => change.orderNumber) });
     for (const alarm of alarms) {
       await addProgramNotification({ type: "warning", title: alarm.title, message: alarm.message, key: alarm.key, windows: alarm.windows });
     }
