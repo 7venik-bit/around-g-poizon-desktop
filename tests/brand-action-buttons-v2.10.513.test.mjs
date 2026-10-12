@@ -7,6 +7,7 @@ const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), 
 
 const buttons = [
   ["completed-brand-toggle", "최근 10개/전체보기"],
+  ["completed-brand-delete", "삭제"],
   ["frequent-brand-export", "포이즌 상품정보"],
   ["completed-brand-domestic-search", "국내 상품검색"],
   ["frequent-brand-category", "카테고리"],

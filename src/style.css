@@ -2448,6 +2448,8 @@ html body .brand small{color:#86868b}
 html body .nav{color:#515154;border-radius:10px;min-height:40px}
 html body .nav.active,html body .nav:hover{background:#e2e2e8;color:#1d1d1f}
 html body .local-state{background:#f5f5f7;border:1px solid #d2d2d7}
+html body .local-state.warning,html body .local-state.disconnected{color:#ffe9d6}
+html body .local-state.warning strong,html body .local-state.disconnected strong{color:#fff}
 html body .local-state small{color:#86868b}
 html body .local-state i{background:#30d158}
 html body .sidebar-search-sites{background:#f5f5f7;border-color:#d2d2d7}
@@ -2500,6 +2502,23 @@ html body main{padding:10px 28px 48px}
 .traffic-lights button[data-window-control="close"]{animation:titlebar-running-dot 1.8s ease-in-out infinite}
 .traffic-lights button[data-window-control="minimize"]{animation:titlebar-running-dot 1.8s ease-in-out .3s infinite}
 .traffic-lights button[data-window-control="maximize"]{animation:titlebar-running-dot 1.8s ease-in-out .6s infinite}
+/* Sidebar nav emoji: relevant glyph next to each menu label. */
+html body .nav[data-view="products"]::before{content:"📑"}
+html body .nav[data-view="profit"]::before{content:"🧮"}
+html body .nav[data-view="ledger"]::before{content:"📒"}
+html body .nav[data-view="stock-watch"]::before{content:"🔔"}
+html body .nav[data-view="settings"]::before{content:"🔗"}
+html body .search-service-button>i{display:none}
+html body .search-service-button::before{font-size:14px;line-height:1}
+html body .search-service-button[data-service-explorer="popular"]::before{content:"🔥"}
+html body .search-service-button[data-service-explorer="brand"]::before{content:"🔍"}
+html body .search-service-button[data-service-explorer="files"]::before{content:"📁"}
+/* Remove the logo badge block. */
+html body .brand{display:none}
+/* Remove the service group label; match service buttons to main nav type. */
+html body .search-service-menu>small{display:none}
+html body .search-service-menu{margin:2px 0 6px;padding:0;border-left:0}
+html body .search-service-button{min-height:44px;padding:11px 12px 11px 17px;font-size:13px;font-weight:650;border-radius:9px}
 @media (prefers-reduced-motion:reduce){.traffic-lights button{animation:none}}
 /* Sidebar quick actions: update, folder select, and product compare live here. */
 html body aside{overflow-y:auto}
@@ -2510,8 +2529,45 @@ html body aside{overflow-y:auto}
 #sidebar-quick-actions .brand-export-folder-setting{margin:0;display:grid;gap:6px}
 #sidebar-quick-actions .brand-export-folder-path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;color:#86868b}
 #sidebar-quick-actions .brand-export-folder-select{width:100%;padding:8px 10px;font-size:11px}
+#sidebar-quick-actions #brand-export-folder-select::after{content:none!important}
 #sidebar-quick-actions #poizon-review-brand-start{width:100%;padding:8px 10px;font-size:11px}
+/* Sidebar quick actions share one small neutral button treatment. */
+#sidebar-quick-actions .update-button,
+#sidebar-quick-actions .brand-search-action,
+#sidebar-quick-actions .brand-export-folder-select,
+#sidebar-quick-actions #poizon-review-brand-start,
+#sidebar-quick-actions .update-button:hover,
+#sidebar-quick-actions .brand-search-action:hover,
+#sidebar-quick-actions .brand-export-folder-select:hover,
+#sidebar-quick-actions #poizon-review-brand-start:hover{background:#fff;border-color:#d2d2d7;color:#333336;padding:6px 8px;font-size:11px;width:100%}
+/* Shape B: macOS squircle for quick-action buttons. */
+#sidebar-quick-actions .update-button,
+#sidebar-quick-actions .brand-search-action,
+#sidebar-quick-actions .brand-export-folder-select,
+#sidebar-quick-actions #poizon-review-brand-start,
+#sidebar-quick-actions .update-button:hover,
+#sidebar-quick-actions .brand-search-action:hover,
+#sidebar-quick-actions .brand-export-folder-select:hover,
+#sidebar-quick-actions #poizon-review-brand-start:hover{border-radius:14px;box-shadow:0 1px 3px #00000022}
+/* Quick-action buttons: centered bold labels with leading emoji. */
+#sidebar-quick-actions .update-button,
+#sidebar-quick-actions .brand-search-action,
+#sidebar-quick-actions .brand-export-folder-select,
+#sidebar-quick-actions #poizon-review-brand-start{display:flex;align-items:center;justify-content:center;gap:6px;text-align:center;font-weight:800}
+#sidebar-quick-actions .brand-search-action svg{display:none}
+#sidebar-quick-actions .update-button::before{content:"🔄"}
+#sidebar-quick-actions .brand-export-folder-select::before{content:"📁"}
+#sidebar-quick-actions #frequent-brand-export::before{content:"🔍"}
+#sidebar-quick-actions #poizon-review-brand-start::before{content:"🔃"}
 #sidebar-quick-actions .brand-search-action{width:100%;padding:8px 10px;font-size:11px;justify-content:center;text-align:center}
+/* Daily work does not use the files section. Button stays for logic. */
+#sidebar-quick-actions #update-panel{display:none!important}
+#backup-state-message{display:none!important}
+#backup-state{text-align:center;justify-content:center}
+#backup-state strong{font-size:11px}
+/* Hide the sidebar data-files group (label and button). */
+html body .search-service-menu .search-service-file-label,
+html body .search-service-menu .search-service-file{display:none!important}
 /* The folder path duplicates the folder dialog. The button stays. */
 #sidebar-quick-actions .brand-export-folder-path{display:none!important}
 /* Contrast pass: faint gray copy becomes readable ink. */

@@ -14,7 +14,7 @@ test("brand export folder button is visible and invokes the persisted folder cho
     readFile(join(root, "main.mjs"), "utf8"),
   ]);
 
-  assert.match(html, /id="brand-export-folder-select"[^>]*>폴더 지정<\/button>/);
+  assert.match(html, /id="brand-export-folder-select"[^>]*>저장폴더<\/button>/);
   assert.match(renderer, /#brand-export-folder-select/);
   assert.match(renderer, /window\.aroundG\.selectBrandExportFolder\(\)/);
   assert.match(preload, /selectBrandExportFolder: \(\) => ipcRenderer\.invoke\("brand-export:select-folder"\)/);

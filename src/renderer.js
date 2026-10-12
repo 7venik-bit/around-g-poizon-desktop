@@ -2414,6 +2414,7 @@ function updateBrandSelectionControls() {
   const search = $("#brand-export-selected");
   const frequentSearch = $("#frequent-brand-export");
   const domesticSearch = $("#completed-brand-domestic-search");
+  const completedDelete = $("#completed-brand-delete");
   const stopCurrent = $("#brand-stop-current");
   if (count) count.textContent = `${selectedCount}개 선택`;
   if (clear) clear.disabled = selectedCount === 0 || brandSelectionBusy;
@@ -2432,6 +2433,10 @@ function updateBrandSelectionControls() {
     domesticSearch.setAttribute("aria-busy", String(combinedBrandPreviewLoading));
   }
   if (stopCurrent) stopCurrent.disabled = !brandSelectionBusy && !activeExportBrand && !hasActiveBrandExportJobs();
+  if (completedDelete) {
+    completedDelete.disabled = brandSelectionBusy
+      || !selectedBrandsForExport().some((brand) => latestCompletedBrandDownload(brand));
+  }
   const lamps = $("#onedrive-lamps");
   if (lamps) {
     const sourcing = brandSelectionBusy || Boolean(activeExportBrand) || hasActiveBrandExportJobs();
@@ -2696,13 +2701,6 @@ window.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
   showRuntimeError(event.reason, "unhandled_rejection");
 });
-
-function renderRecords(collection) {
-  const host = $(`#${collection}-list`);
-  host.innerHTML = state[collection].length
-    ? state[collection].map((row) => `<div class="record"><div><strong>${text(row.name)}</strong><small>${text(row.brand)} · ${text(row.articleNumber)}</small></div><div>${money(row.price)} <button data-remove="${collection}:${row.id}">삭제</button></div></div>`).join("")
-    : `<div class="empty">저장된 항목이 없습니다.</div>`;
-}
 
 function renderLedgerRecords() {
   const host = $("#ledger-list");
@@ -3563,7 +3561,6 @@ async function refresh() {
   void refreshPurchaseAwareness();
   state.poizonSyncs = Array.isArray(state.poizonSyncs) ? state.poizonSyncs : [];
   renderLedgerRecords();
-  renderRecords("orders");
   renderStockWatches();
 }
 
@@ -3829,6 +3826,33 @@ $("#frequent-brand-export")?.addEventListener("click", () => {
     renderBrandCards($("#brand-filter")?.value || "");
   }
   $("#brand-export-selected")?.click();
+});
+$("#completed-brand-delete")?.addEventListener("click", async () => {
+  const targets = selectedBrandsForExport().filter((brand) => latestCompletedBrandDownload(brand));
+  if (!targets.length || brandSelectionBusy) return;
+  const files = [];
+  for (const brand of targets) {
+    const names = [brand.name, brand.ko].filter(Boolean);
+    for (const file of downloadedBrandFiles) {
+      if (names.some((name) => rendererBrandsMatch(name, file.brandName || file.brand))) files.push(file);
+    }
+  }
+  const unique = [...new Map(files.map((file) => [brandImportPathKey(file.path), file])).values()];
+  if (!unique.length) return;
+  if (!window.confirm(`선택한 ${targets.length}개 브랜드의 다운로드 파일 ${unique.length}개를 휴지통으로 이동할까요?`)) return;
+  const button = $("#completed-brand-delete");
+  if (button) { button.disabled = true; button.textContent = "삭제 중…"; }
+  try {
+    await window.aroundG.trashBrandExportFiles(unique.map((file) => file.path));
+  } finally {
+    if (button) button.textContent = "삭제";
+  }
+  for (const brand of targets) selectedBrandIds.delete(Number(brand.id));
+  if (selectedBrandId != null && ![...selectedBrandIds].some((id) => Number(id) === Number(selectedBrandId))) selectedBrandId = null;
+  saveBrandSelections();
+  await restoreDownloadedBrandFiles();
+  renderBrandCards($("#brand-filter")?.value || "");
+  updateBrandSelectionControls();
 });
 $("#completed-brand-domestic-search")?.addEventListener("click", async () => {
   if (combinedBrandPreviewLoading) return;
@@ -4817,7 +4841,7 @@ $("#brand-export-folder-select")?.addEventListener("click", async () => {
     status.textContent = `폴더 지정 실패: ${error?.message || "폴더를 선택할 수 없습니다."}`;
   } finally {
     button.disabled = false;
-    button.textContent = "폴더 지정";
+    button.textContent = "저장폴더";
   }
 });
 window.aroundG.onBrandWorkHistoryCleared?.(() => clearBrandWorkHistoryUi());
@@ -6003,10 +6027,7 @@ function renderBackupStatus(payload = {}) {
   if (!panel) return;
   panel.classList.remove("connected", "syncing", "warning", "disconnected");
   panel.classList.add(payload.state || "warning");
-  $("#backup-state-title").textContent = payload.state === "connected"
-    ? "OneDrive 백업 정상"
-    : payload.state === "syncing" ? "OneDrive 백업 중"
-      : payload.state === "disconnected" ? "OneDrive 로그인 필요" : "OneDrive 확인 필요";
+  $("#backup-state-title").textContent = "One Drive Backup";
   $("#backup-state-message").textContent = payload.message || "백업 상태를 확인합니다";
   const lamps = $("#onedrive-lamps");
   if (lamps) {

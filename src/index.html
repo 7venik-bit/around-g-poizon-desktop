@@ -28,7 +28,6 @@
       <button class="nav active" data-view="products">POIZON 원본 데이터</button>
       <button class="nav" data-view="profit">수익 계산</button>
       <button class="nav" data-view="ledger">구매 장부</button>
-      <button class="nav" data-view="orders">주문 관리</button>
       <button class="nav" data-view="stock-watch">재고 감시 등록</button>
       <button class="nav" data-view="settings">연동 관리</button>
     </nav>
@@ -44,7 +43,7 @@
       </div>
       <small id="sidebar-search-sites-summary">전체 6개 ON</small>
     </section>
-    <div id="backup-state" class="local-state" title="클릭하면 OneDrive 백업을 다시 실행합니다."><i></i><div><strong id="backup-state-title">OneDrive 확인 중</strong><small id="backup-state-message">백업 상태를 확인합니다</small></div></div>
+    <div id="backup-state" class="local-state" title="클릭하면 OneDrive 백업을 다시 실행합니다."><i></i><div><strong id="backup-state-title">One Drive Backup</strong><small id="backup-state-message">백업 상태를 확인합니다</small></div></div>
     <section id="sidebar-quick-actions" aria-label="빠른 실행">
       <div class="update-anchor">
         <button id="update-check" class="update-button">자동 업데이트<b id="update-alert" class="update-button-alert" hidden>NEW</b></button>
@@ -63,7 +62,7 @@
       </div>
       <div class="brand-export-folder-setting">
         <div id="brand-export-folder-path" class="brand-export-folder-path" title="브랜드별 원본 Excel 저장 폴더">브랜드별 저장: 바탕화면\Around G POIZON\POIZON 전체내보내기\브랜드명</div>
-        <button id="brand-export-folder-select" class="brand-export-folder-select" type="button">폴더 지정</button>
+        <button id="brand-export-folder-select" class="brand-export-folder-select" type="button">저장폴더</button>
       </div>
       <button id="brand-export-selected" class="primary brand-search-action" type="button" disabled>
         <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
@@ -220,6 +219,7 @@
               <div class="frequent-brand-heading-actions">
                 <small>원본 Excel 다운로드 완료 브랜드를 최신순으로 표시합니다.</small>
                 <button id="completed-brand-toggle" type="button" hidden>전체보기</button>
+                <button id="completed-brand-delete" class="danger" type="button" disabled>삭제</button>
                 <button id="completed-brand-domestic-search" class="completed-brand-domestic-search" type="button" disabled>국내 상품검색</button>
                 <button id="frequent-brand-category" class="brand-category-action frequent-brand-category-action" type="button">카테고리</button>
               </div>
@@ -400,7 +400,6 @@
         </form>
         <section class="panel"><div class="panel-title"><div><small>RECORD HISTORY</small><h2>장부 기록 내역</h2></div></div><div id="ledger-list" class="cards"></div></section>
       </section>
-      <section id="orders" class="view"><div class="panel"><div class="panel-title"><div><small>ORDER TRACKER</small><h2>주문 관리</h2></div><button class="add-record" data-collection="orders">주문 추가</button></div><div id="orders-list" class="cards"></div></div></section>
 
       <section id="stock-watch" class="view">
         <form id="stock-watch-form" class="panel stock-watch-form">

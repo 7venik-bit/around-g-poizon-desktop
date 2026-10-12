@@ -83,6 +83,29 @@ test("traffic lights shimmer red-yellow-green in order", () => {
   }
 });
 
+test("completed brands offer a delete action first", () => {
+  assert.match(indexHtml, /id="completed-brand-delete"[^>]*>삭제<\/button>/);
+  const heading = indexHtml.slice(
+    indexHtml.indexOf("frequent-brand-heading-actions"),
+    indexHtml.indexOf("frequent-brand-heading-actions") + 1200);
+  assert.ok(heading.indexOf("completed-brand-delete") < heading.indexOf("completed-brand-domestic-search"));
+  assert.match(renderer, /\$\("#completed-brand-delete"\)\?\.addEventListener\("click"/);
+  assert.match(renderer, /trashBrandExportFiles\(unique\.map\(\(file\) => file\.path\)\)/);
+});
+
+test("sidebar backup card uses the English title", () => {
+  assert.match(renderer, /One Drive Backup/);
+  assert.match(indexHtml, /One Drive Backup/);
+  assert.match(style, /#sidebar-quick-actions \.update-button,\n#sidebar-quick-actions \.brand-search-action/);
+});
+
+test("orders menu and view are removed", () => {
+  const html = fs.readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
+  assert.doesNotMatch(html, /data-view="orders"/);
+  assert.doesNotMatch(html, /id="orders"/);
+  assert.doesNotMatch(html, /주문 관리/);
+});
+
 test("quick actions live at the bottom of the sidebar", () => {
   const aside = indexHtml.slice(indexHtml.indexOf("<aside>"), indexHtml.indexOf("</aside>"));
   assert.match(aside, /id="sidebar-quick-actions"/);
@@ -97,9 +120,23 @@ test("quick actions live at the bottom of the sidebar", () => {
   assert.doesNotMatch(shell, /id="frequent-brand-export"/);
   assert.match(style, /#sidebar-quick-actions\{display:grid/);
   assert.match(style, /#sidebar-quick-actions #brand-export-selected\{display:none!important\}/);
+  assert.match(style, /#sidebar-quick-actions #update-panel\{display:none!important\}/);
+  assert.match(style, /#sidebar-quick-actions #poizon-review-brand-start:hover\{[^}]*border-radius:14px/);
+  assert.match(style, /#sidebar-quick-actions #frequent-brand-export::before\{content:"🔍"\}/);
+  assert.match(style, /justify-content:center;gap:6px;text-align:center;font-weight:800\}/);
+  assert.match(style, /#backup-state-message\{display:none!important\}/);
+  assert.match(style, /#backup-state\{text-align:center;justify-content:center\}/);
+  assert.match(style, /#backup-state strong\{font-size:11px\}/);
+  assert.match(style, /html body \.local-state\.warning strong,html body \.local-state\.disconnected strong\{color:#fff\}/);
+  assert.match(style, /html body \.search-service-menu \.search-service-file-label,\nhtml body \.search-service-menu \.search-service-file\{display:none!important\}/);
+  assert.match(style, /#sidebar-quick-actions #brand-export-folder-select::after\{content:none!important\}/);
   assert.match(style, /#sidebar-quick-actions \.brand-export-folder-path\{display:none!important\}/);
   assert.match(style, /#sidebar-quick-actions \.brand-search-action\{[^}]*justify-content:center/);
   assert.match(style, /html body \.search-service-button\{color:#333336\}/);
+  assert.match(style, /html body \.search-service-button\[data-service-explorer="brand"\]::before\{content:"🔍"\}/);
+  assert.match(style, /html body \.brand\{display:none\}/);
+  assert.match(style, /html body \.search-service-menu>small\{display:none\}/);
+  assert.match(style, /html body \.search-service-button\{min-height:44px;padding:11px 12px 11px 17px;font-size:13px;font-weight:650/);
 });
 
 test("hidden-header layout check skips header geometry", () => {
@@ -140,7 +177,7 @@ test("hidden chrome stays hidden through the real stylesheet cascade", () => {
     <aside><section id="sidebar-quick-actions">
       <div class="brand-export-folder-path"></div>
       <button class="brand-search-action" type="button">action</button>
-    </section></aside>
+    </section><div class="local-state warning" id="backup-state-probe"><strong>probe</strong></div></aside>
   </body></html>`, { pretendToBeVisual: true });
   const computed = (selector) => dom.window.getComputedStyle(
     dom.window.document.querySelector(selector)).display;
@@ -153,4 +190,6 @@ test("hidden chrome stays hidden through the real stylesheet cascade", () => {
   assert.equal(computed("#sidebar-quick-actions .brand-export-folder-path"), "none");
   assert.equal(dom.window.getComputedStyle(
     dom.window.document.querySelector("#sidebar-quick-actions .brand-search-action")).justifyContent, "center");
+  assert.equal(dom.window.getComputedStyle(
+    dom.window.document.querySelector("#backup-state-probe strong")).color, "rgb(255, 255, 255)");
 });
