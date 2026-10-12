@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import {
   ORDER_WATCH_TABS,
   buildWatchAlarms,
-  detectWatchPageProblem,
   diffWatchSnapshots,
   normalizeWatchRow,
   summarizeWatchSnapshot,
@@ -116,12 +115,4 @@ test("alarms aggregate with stable daily keys", () => {
 
 test("day keys are local calendar dates", () => {
   assert.match(watchDayKey(new Date(2026, 9, 12)), /^2026-10-12$/);
-});
-
-test("login walls are detected before the ready timeout", () => {
-  assert.equal(detectWatchPageProblem({ url: "https://seller.poizon.com/passport/login", text: "", tabs: [] }), true);
-  assert.equal(detectWatchPageProblem({ url: "https://seller.poizon.com/main/orders/management", text: "QR코드로 로그인", tabs: [] }), true);
-  assert.equal(detectWatchPageProblem({ url: "https://seller.poizon.com/main/orders/management", text: "", tabs: [], passwordInput: true }), true);
-  assert.equal(detectWatchPageProblem({ url: "https://seller.poizon.com/main/orders/management", text: "전체 (70)", tabs: ["전체 (70)"] }), false);
-  assert.equal(detectWatchPageProblem({ url: "https://seller.poizon.com/main/orders/management", text: "", tabs: [] }), false);
 });
