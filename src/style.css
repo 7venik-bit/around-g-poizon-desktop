@@ -2448,6 +2448,8 @@ html body .brand small{color:#86868b}
 html body .nav{color:#515154;border-radius:10px;min-height:40px}
 html body .nav.active,html body .nav:hover{background:#e2e2e8;color:#1d1d1f}
 html body .local-state{background:#f5f5f7;border:1px solid #d2d2d7}
+html body .local-state.warning,html body .local-state.disconnected{color:#ffe9d6}
+html body .local-state.warning strong,html body .local-state.disconnected strong{color:#fff}
 html body .local-state small{color:#86868b}
 html body .local-state i{background:#30d158}
 html body .sidebar-search-sites{background:#f5f5f7;border-color:#d2d2d7}
@@ -2537,7 +2539,7 @@ html body aside{overflow-y:auto}
 #sidebar-quick-actions .update-button:hover,
 #sidebar-quick-actions .brand-search-action:hover,
 #sidebar-quick-actions .brand-export-folder-select:hover,
-#sidebar-quick-actions #poizon-review-brand-start:hover{background:#fff;border-color:#d2d2d7;color:#333336;padding:6px 8px;font-size:10px;width:100%}
+#sidebar-quick-actions #poizon-review-brand-start:hover{background:#fff;border-color:#d2d2d7;color:#333336;padding:6px 8px;font-size:11px;width:100%}
 /* Shape B: macOS squircle for quick-action buttons. */
 #sidebar-quick-actions .update-button,
 #sidebar-quick-actions .brand-search-action,
@@ -2562,6 +2564,7 @@ html body aside{overflow-y:auto}
 #sidebar-quick-actions #update-panel{display:none!important}
 #backup-state-message{display:none!important}
 #backup-state{text-align:center;justify-content:center}
+#backup-state strong{font-size:11px}
 /* Hide the sidebar data-files group (label and button). */
 html body .search-service-menu .search-service-file-label,
 html body .search-service-menu .search-service-file{display:none!important}

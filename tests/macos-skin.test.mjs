@@ -126,6 +126,8 @@ test("quick actions live at the bottom of the sidebar", () => {
   assert.match(style, /justify-content:center;gap:6px;text-align:center;font-weight:800\}/);
   assert.match(style, /#backup-state-message\{display:none!important\}/);
   assert.match(style, /#backup-state\{text-align:center;justify-content:center\}/);
+  assert.match(style, /#backup-state strong\{font-size:11px\}/);
+  assert.match(style, /html body \.local-state\.warning strong,html body \.local-state\.disconnected strong\{color:#fff\}/);
   assert.match(style, /html body \.search-service-menu \.search-service-file-label,\nhtml body \.search-service-menu \.search-service-file\{display:none!important\}/);
   assert.match(style, /#sidebar-quick-actions #brand-export-folder-select::after\{content:none!important\}/);
   assert.match(style, /#sidebar-quick-actions \.brand-export-folder-path\{display:none!important\}/);
@@ -175,7 +177,7 @@ test("hidden chrome stays hidden through the real stylesheet cascade", () => {
     <aside><section id="sidebar-quick-actions">
       <div class="brand-export-folder-path"></div>
       <button class="brand-search-action" type="button">action</button>
-    </section></aside>
+    </section><div class="local-state warning" id="backup-state-probe"><strong>probe</strong></div></aside>
   </body></html>`, { pretendToBeVisual: true });
   const computed = (selector) => dom.window.getComputedStyle(
     dom.window.document.querySelector(selector)).display;
@@ -188,4 +190,6 @@ test("hidden chrome stays hidden through the real stylesheet cascade", () => {
   assert.equal(computed("#sidebar-quick-actions .brand-export-folder-path"), "none");
   assert.equal(dom.window.getComputedStyle(
     dom.window.document.querySelector("#sidebar-quick-actions .brand-search-action")).justifyContent, "center");
+  assert.equal(dom.window.getComputedStyle(
+    dom.window.document.querySelector("#backup-state-probe strong")).color, "rgb(255, 255, 255)");
 });
