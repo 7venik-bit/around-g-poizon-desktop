@@ -30,8 +30,16 @@ export function watchTabLabel(key = "") {
   return ORDER_WATCH_TABS.find((tab) => tab.key === key)?.label || "";
 }
 
-// Tab labels sometimes carry no count (observed: bare "발송 대기").
-// Keep this identical to the check embedded in the page-side click script.
+// Tab labels nest (wrapper and inner text share the marker class). The real
+// input target is the smallest matching box; page scripts keep an identical
+// inline copy because serialized page functions stay self-contained.
+export function pickWatchTabCandidate(rects = []) {
+  const boxes = (Array.isArray(rects) ? rects : []).filter((box) =>
+    Number.isFinite(box?.width) && Number.isFinite(box?.height) && box.width > 0 && box.height > 0);
+  boxes.sort((a, b) => (a.width * a.height) - (b.width * b.height));
+  return boxes[0] || null;
+}
+
 export function matchWatchTabLabel(text = "", label = "") {
   const current = String(text || "").trim();
   return current === label || current.startsWith(`${label} (`);
@@ -242,16 +250,46 @@ export async function collectPoizonOrderWatchSnapshot(webContents, { onProgress 
     const match = tab.match(/^(.+?)\s*\((\d+)\)$/);
     if (match) tabCounts[match[1]] = Number(match[2]);
   }
+  const clickTab = async (label) => {
+    const rects = await evaluate((wanted) => {
+      window.scrollTo(0, 0);
+      const same = (text) => { const current = String(text || "").trim(); return current === wanted || current.startsWith(`${wanted} (`); };
+      return [...document.querySelectorAll('[class*="global-text-label-wrap"]')]
+        .filter((el) => same(el.innerText))
+        .map((el) => { const box = el.getBoundingClientRect(); return { x: box.x, y: box.y, width: box.width, height: box.height }; });
+    }, label).catch(() => []);
+    const picked = pickWatchTabCandidate(rects);
+    if (picked) {
+      try {
+        const x = Math.round(picked.x + picked.width / 2);
+        const y = Math.round(picked.y + picked.height / 2);
+        webContents.sendInputEvent({ type: "mouseMove", x, y });
+        webContents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+        webContents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+        return true;
+      } catch { /* fall through to synthetic clicks */ }
+    }
+    await evaluate((wanted) => {
+      const same = (text) => { const current = String(text || "").trim(); return current === wanted || current.startsWith(`${wanted} (`); };
+      const all = [...document.querySelectorAll('[class*="global-text-label-wrap"]')].filter((el) => same(el.innerText));
+      all.sort((a, b) => {
+        const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+        return (ra.width * ra.height) - (rb.width * rb.height);
+      });
+      for (const node of all) {
+        for (const type of ["mouseover", "mousedown", "mouseup", "click"]) {
+          node.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0 }));
+        }
+      }
+    }, label).catch(() => {});
+    return false;
+  };
   const rows = [];
   const seen = new Set();
   const targets = ORDER_WATCH_TABS.filter((tab) => tab.key !== "all");
   for (const target of targets) {
     const expected = Number.isFinite(tabCounts[target.label]) ? tabCounts[target.label] : null;
-    await evaluate((label) => {
-      const same = (text) => { const current = String(text || "").trim(); return current === label || current.startsWith(`${label} (`); };
-      const node = [...document.querySelectorAll('[class*="global-text-label-wrap"]')].find((el) => same(el.innerText));
-      node?.click();
-    }, target.label).catch(() => {});
+    await clickTab(target.label);
     let switched = false;
     for (let attempt = 0; attempt < 6 && !switched; attempt += 1) {
       await pause(500);

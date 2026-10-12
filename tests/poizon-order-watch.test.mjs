@@ -6,6 +6,7 @@ import {
   detectWatchPageProblem,
   diffWatchSnapshots,
   matchWatchTabLabel,
+  pickWatchTabCandidate,
   normalizeWatchRow,
   summarizeWatchSnapshot,
   watchDayKey,
@@ -113,6 +114,16 @@ test("alarms aggregate with stable daily keys", () => {
   assert.ok(byTitle["거래 실패·취소 1건"].windows);
   assert.equal(byTitle["주문 상태 변경 1건"].windows, false);
   assert.deepEqual(buildWatchAlarms({ newOrders: [], statusChanges: [] }, "2026-10-12"), []);
+});
+
+test("tab clicks target the smallest matching box", () => {
+  assert.deepEqual(pickWatchTabCandidate([
+    { x: 0, y: 0, width: 200, height: 40 },
+    { x: 10, y: 5, width: 80, height: 20 },
+    { x: 0, y: 0, width: 0, height: 0 },
+  ]), { x: 10, y: 5, width: 80, height: 20 });
+  assert.equal(pickWatchTabCandidate([]), null);
+  assert.equal(pickWatchTabCandidate([{ x: 0, y: 0, width: -5, height: 10 }]), null);
 });
 
 test("countless tabs still match by exact label", () => {
