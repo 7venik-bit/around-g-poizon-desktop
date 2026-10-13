@@ -136,7 +136,7 @@ test('partial results retain prices below the product with an incomplete status'
   f.window.aroundG.searchDomestic = async () => ({ok:true,timedOut:true,data:{partial:true,message:'완료된 판매처 결과를 표시합니다.',products:[{store:'무신사',name:'데상트 테스트',price:84550,url:'https://www.musinsa.com/products/1'}],sources:[{store:'무신사',count:1,countVerified:true}]}});
   await f.run();
   const row = f.window.document.querySelector('.excel-verified-spu-row');
-  assert.match(row.textContent, /일부 결과/);
+  assert.doesNotMatch(row.textContent, /일부 결과|검색 완료/);
   assert.match(row.nextElementSibling.textContent, /84,550원/);
   assert.match(row.nextElementSibling.textContent, /완료된 판매처/);
   assert.equal(f.overlay().hidden, true);

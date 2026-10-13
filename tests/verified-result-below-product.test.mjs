@@ -22,7 +22,7 @@ test("verified brand product row keeps only search state and retry control at th
   const end = renderer.indexOf("function mergeDomesticSearchProducts(", start);
   const verifiedRenderer = renderer.slice(start, end);
 
-  assert.match(verifiedRenderer, /검색 완료/);
+  assert.match(verifiedRenderer, /검색 실패/);
   assert.match(verifiedRenderer, /다시 검색/);
   assert.match(verifiedRenderer, /수달 사원이 검색 중/);
 });
