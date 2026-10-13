@@ -689,9 +689,11 @@ function renderOriginalExcelRows(file, products = []) {
     const image = /^https?:\/\//.test(p.logoUrl || '') ? '<img class="excel-verified-image" src="' + text(p.logoUrl) + '" alt="">' : '';
     const result = excelPreviewSearchResults.get(key);
     const resultLabel = result?.loading ? '검색 중…' : result ? '다시 검색' : '상품검색';
-    const stateLabel = result?.error ? '검색 실패' : result?.partial ? '일부 결과' : '검색 완료';
     const resultCell = '<td class="excel-raw-search-cell">' + (result?.loading ? '<span class="excel-raw-search-state loading">' + resultLabel + '</span>'
-      : result ? '<div class="excel-raw-search-summary"><span class="excel-raw-search-state ' + (result.error || result.partial ? 'pending' : 'available') + '">' + stateLabel + '</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(key) + '">다시 검색</button>' + (typeof excelSizeFilterButton === "function" ? excelSizeFilterButton(key) : "") + '</div>'
+      : result
+        ? (result.error
+          ? '<div class="excel-raw-search-summary"><span class="excel-raw-search-state pending">검색 실패</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(key) + '">다시 검색</button></div>'
+          : '')
         : (repOf[key] && repOf[key] !== key)
           ? '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '" disabled title="같은 상품번호 중 최고금액 행' + (repRowByKey[key] ? `(원본 ${text(repRowByKey[key])}행)` : "") + '에서 검색합니다.">상품검색</button>'
           : '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '">' + resultLabel + '</button>' + (typeof excelSizeFilterButton === "function" ? excelSizeFilterButton(key) : ""))
@@ -753,7 +755,9 @@ function renderVerifiedSpuRows(file, products) {
     const resultCell = result?.loading
       ? '<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">수달 사원이 검색 중…</span></td>'
       : result
-        ? '<td class="excel-raw-search-cell"><div class="excel-raw-search-summary"><span class="excel-raw-search-state ' + (result.error || result.partial ? 'pending' : 'available') + '">' + (result.error ? '검색 실패' : result.partial ? '일부 결과' : '검색 완료') + '</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">다시 검색</button>' + (typeof excelSizeFilterButton === "function" ? excelSizeFilterButton(keys[i]) : "") + '</div></td>'
+        ? (result.error
+          ? '<td class="excel-raw-search-cell"><div class="excel-raw-search-summary"><span class="excel-raw-search-state pending">검색 실패</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">다시 검색</button></div></td>'
+          : '<td class="excel-raw-search-cell"></td>')
         : '<td class="excel-raw-search-cell excel-raw-search-pending"><button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">상품검색</button>' + (typeof excelSizeFilterButton === "function" ? excelSizeFilterButton(keys[i]) : "") + '</td>';
     const poizonButton = globalThis.AroundGPoizonProductView?.button(p) || '';
     const linkedResultCell = resultCell.replace('</td>', poizonButton + '</td>');
