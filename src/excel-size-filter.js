@@ -7,8 +7,13 @@
       "265", "270", "275", "280", "285", "290", "295", "300"],
     clothing: ["XS", "S", "M", "L", "XL", "2XL", "3XL",
       "85", "90", "95", "100", "105", "110", "115"],
+    headwear: ["F", "FREE", "S/M", "M/L", "L/XL",
+      "55", "56", "57", "58", "59", "60", "61", "62"],
   };
-  const CATEGORY_LABELS = { shoes: "신발", clothing: "의류" };
+  const CATEGORY_LABELS = { shoes: "신발", clothing: "의류", headwear: "모자" };
+  // Bags and accessories have no sizes. Anything else unrecognized stays manual.
+  const GROUP_CATEGORY = { "신발": "shoes", "의류": "clothing", "아우터": "clothing", "모자": "headwear" };
+  const FREE_ALIASES = { "프리": "FREE", "원사이즈": "FREE", "ONESIZE": "FREE" };
   const filters = new Map();
 
   const esc = (value) => String(value ?? "")
@@ -16,7 +21,8 @@
     .replace(/"/g, "&quot;");
 
   function sizeTokens(label) {
-    return String(label || "").toUpperCase().split(/[^A-Z0-9.]+/).filter(Boolean);
+    return String(label || "").toUpperCase().split(/[^A-Z0-9.가-힣]+/).filter(Boolean)
+      .map((token) => FREE_ALIASES[token] || token);
   }
 
   function sizeEquals(left, right) {
@@ -25,22 +31,47 @@
     return left === right;
   }
 
+  function sizeMatches(selected, tokens) {
+    // A compound choice (S/M) needs every part present; a plain choice (M)
+    // matches any option carrying it, including S/M and M/L ranges.
+    const parts = String(selected || "").toUpperCase().split(/[^A-Z0-9.가-힣]+/).filter(Boolean)
+      .map((token) => FREE_ALIASES[token] || token);
+    if (!parts.length) return false;
+    return parts.every((part) => tokens.some((token) => sizeEquals(token, part)));
+  }
+
   function productHasSizes(product, sizes) {
-    const wanted = (Array.isArray(sizes) ? sizes : []).map((size) => String(size).toUpperCase());
+    const wanted = (Array.isArray(sizes) ? sizes : []).map((size) => String(size));
     if (!wanted.length) return true;
     const options = Array.isArray(product?.sizes) ? product.sizes : [];
     return options.some((option) => {
       const labels = [option?.label, option?.name];
       if (Array.isArray(option?.optionPath)) labels.push(...option.optionPath);
       const tokens = labels.flatMap(sizeTokens);
-      return wanted.some((size) => tokens.some((token) => sizeEquals(token, size)));
+      return wanted.some((size) => sizeMatches(size, tokens));
     });
+  }
+
+  function autoCategory(product) {
+    try {
+      if (typeof categoryGroupFromProduct !== "function") return "shoes";
+      return GROUP_CATEGORY[categoryGroupFromProduct(product)] || "shoes";
+    } catch {
+      return "shoes";
+    }
   }
 
   function draftFor(key) {
     const saved = filters.get(key);
     if (saved) return { category: saved.category, sizes: new Set(saved.sizes) };
-    return { category: "shoes", sizes: new Set() };
+    let category = "shoes";
+    try {
+      if (typeof excelPreviewProductCache !== "undefined") {
+        const product = excelPreviewProductCache.get(key);
+        if (product) category = autoCategory(product);
+      }
+    } catch {}
+    return { category, sizes: new Set() };
   }
 
   function filterCount(key) {
