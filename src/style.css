@@ -657,6 +657,17 @@ body.excel-preview-active{overflow:hidden}
 .excel-raw-search-state{display:inline-flex;align-items:center;min-height:19px;padding:2px 5px;border-radius:999px;font-size:9px;font-weight:800;white-space:nowrap}
 .excel-raw-search-state.available{color:#287044;background:#e9f7ed}.excel-raw-search-state.missing{color:#667085;background:#eef1f4}.excel-raw-search-state.error{color:#a34b43;background:#fff0ee}.excel-raw-search-state.loading{color:#1768c5;background:#eaf3ff}.excel-raw-search-state.muted{color:#7b8794;background:#f3f4f6}
 .excel-raw-search-again{flex:0 0 auto;padding:2px 4px;border-color:#cad6e5;color:#52677f;background:#fff;font-size:8px;font-weight:700}
+.excel-size-filter{flex:0 0 auto;padding:2px 4px;border-color:#b9d3f4;color:#1768c5;background:#f7fbff;font-size:8px;font-weight:800}
+.excel-size-filter[aria-pressed="true"]{background:#e1edff;border-color:#287de0}
+.excel-size-panel{display:grid;gap:6px;margin-top:4px;padding:8px;border:1px solid #dbe2ec;border-radius:6px;background:#fff}
+.excel-size-categories{display:flex;gap:4px}
+.excel-size-category{flex:1;padding:4px;font-size:10px;font-weight:800;border-radius:5px}
+.excel-size-category[aria-pressed="true"]{background:#287de0;border-color:#287de0;color:#fff}
+.excel-size-chips{display:flex;flex-wrap:wrap;gap:4px;max-height:132px;overflow:auto}
+.excel-size-chip{padding:3px 8px;font-size:10px;border-radius:999px}
+.excel-size-chip[aria-pressed="true"]{background:#287de0;border-color:#287de0;color:#fff}
+.excel-size-actions{display:flex;gap:4px}
+.excel-size-actions button{flex:1;padding:4px;font-size:10px;font-weight:800;border-radius:5px}
 .excel-raw-search-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;align-items:center}.excel-raw-search-links button{min-width:0;max-width:none;padding:3px 4px;border-color:#b9d3f4;color:#1768c5;background:#f7fbff;font-size:8px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.excel-raw-search-links span{grid-column:1/-1;color:#8a96a5;font-size:8px}
 .excel-preview.product-view #excel-hide-common-columns,.excel-preview.product-view #excel-show-hidden-columns{display:none}
 .excel-preview.product-view .excel-preview-grid table{width:1000px;min-width:100%;table-layout:fixed}
