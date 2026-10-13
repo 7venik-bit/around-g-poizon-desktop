@@ -290,6 +290,20 @@ export function naverFashionChannelSearchUrl(channel, query) {
 
 export const NAVER_FASHION_FALLBACK_CHANNELS = Object.freeze(["outlet", "brand-store", "department"]);
 
+// Settles the channel-direct fallback: only channels that actually rendered
+// decide. A fallback where no channel page ever settled is inconclusive, not
+// an authoritative empty result, so it must surface as pending instead of
+// "상품 없음".
+export function summarizeNaverChannelFallback(channels = []) {
+  const settled = channels.filter((entry) => entry?.settled === true);
+  const nonEmpty = settled.filter((entry) => entry?.explicitEmpty !== true);
+  return {
+    settledCount: settled.length,
+    nonEmptyChannel: nonEmpty[0]?.channel || "",
+    allSettledEmpty: settled.length > 0 && nonEmpty.length === 0,
+  };
+}
+
 export function naverFashionTownPortalUrl(channel) {
   if (channel === "department") return "https://shopping.naver.com/window/department";
   if (channel === "outlet") return "https://shopping.naver.com/window/outlet";

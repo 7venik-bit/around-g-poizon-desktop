@@ -6,6 +6,7 @@ import {
   allowsConflictingArticleCard,
   naverFashionChannelSearchUrl,
   NAVER_FASHION_FALLBACK_CHANNELS,
+  summarizeNaverChannelFallback,
 } from "../relay/domestic-search.mjs";
 import { finalizeNaverFashionTownResult } from "../services/naver-fashiontown-result.mjs";
 import { isOfficialProductCandidateUrl } from "../services/official-product-candidate.mjs";
@@ -279,6 +280,37 @@ test("overview explicit empty falls back to channel-direct pages before absence"
   assert.match(main, /async function loadNaverFashionChannelsFallback\(searchWindow, query\)/);
   assert.match(main, /loadNaverFashionChannelsFallback\(searchWindow, attemptQuery\)/);
   assert.match(main, /NAVER_FASHION_FALLBACK_CHANNELS/);
+});
+
+test("an unsettled channel fallback stays pending instead of false absence", () => {
+  assert.deepEqual(summarizeNaverChannelFallback([]), { settledCount: 0, nonEmptyChannel: "", allSettledEmpty: false });
+  assert.deepEqual(
+    summarizeNaverChannelFallback([
+      { channel: "outlet", settled: false },
+      { channel: "brand-store", settled: false },
+      { channel: "department", settled: false },
+    ]),
+    { settledCount: 0, nonEmptyChannel: "", allSettledEmpty: false },
+  );
+  assert.deepEqual(
+    summarizeNaverChannelFallback([
+      { channel: "outlet", settled: true, explicitEmpty: true, cards: 0 },
+      { channel: "brand-store", settled: true, explicitEmpty: true, cards: 0 },
+      { channel: "department", settled: true, explicitEmpty: true, cards: 0 },
+    ]),
+    { settledCount: 3, nonEmptyChannel: "", allSettledEmpty: true },
+  );
+  assert.deepEqual(
+    summarizeNaverChannelFallback([
+      { channel: "outlet", settled: true, explicitEmpty: false, cards: 9 },
+      { channel: "brand-store", settled: false },
+    ]).nonEmptyChannel,
+    "outlet",
+  );
+  const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(main, /naver_channel_not_settled/);
+  assert.match(main, /summarizeNaverChannelFallback\(channelStates\)/);
+  assert.match(main, /fallbackChannels: \(channelPage && channelPage\.channels\)/);
 });
 
 test("outlet exact-code cards survive analyze for a code-priority naver query", () => {
