@@ -393,7 +393,7 @@
     }
     if (!lines.length) {
       const status = product.inStock === false ? "품절"
-        : product.inStock === true && product.stockVerified === true ? "구매 가능 · 수량 미공개" : "재고 확인 필요";
+        : product.inStock === true && product.stockVerified === true ? "구매 가능" : "재고 확인 필요";
       lines.push(`<div class="domestic-inline-stock${product.inStock === false ? " soldout" : ""}">${status}</div>`);
     }
     if (product.stockCoverage === "partial") lines.push(`<div class="domestic-inline-purchase-limit">일부 옵션 재고 확인 필요</div>`);

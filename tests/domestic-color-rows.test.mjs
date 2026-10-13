@@ -34,6 +34,13 @@ test('Naver renders six separate colour rows without dropping any of the 54 opti
   assert.deepEqual(product,before,'presentation must not change saved stock evidence');
 });
 
+test('verified stock without size options shows 구매 가능 without quantity wording', t => {
+  const rows = render(t, [{ ...base, store: '네이버 패션타운', url: 'https://shopping.naver.com/window-products/outlet/1' }]);
+  const cell = rows[0].querySelector('.domestic-inline-stock');
+  assert.equal(cell.textContent, '구매 가능');
+  assert.doesNotMatch(rows[0].textContent, /수량 미공개/);
+});
+
 test('stock chips share one calm palette across every style source',()=>{
   const css=readFileSync(new URL('../src/domestic-inline-results.css',import.meta.url),'utf8');
   const inline=readFileSync(new URL('../src/domestic-inline-results.js',import.meta.url),'utf8');
