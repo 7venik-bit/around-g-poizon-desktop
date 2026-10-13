@@ -17,6 +17,23 @@ test("verified brand results expand as a full-width list below the searched prod
   assert.doesNotMatch(verifiedRenderer, /renderRawExcelDomesticCell/);
 });
 
+test("successful original and verified searches keep the result cell slim; retry appears only on failure", () => {
+  const originalStart = renderer.indexOf("function renderOriginalExcelRows(file, products = []) {");
+  const originalEnd = renderer.indexOf("function renderOriginalSkuSales(", originalStart);
+  const originalRows = renderer.slice(originalStart, originalEnd);
+  assert.match(originalRows, /검색 실패/);
+  assert.match(originalRows, /다시 검색/);
+  assert.doesNotMatch(originalRows, /검색 완료/);
+  assert.doesNotMatch(originalRows, /일부 결과/);
+
+  const start = renderer.indexOf("function renderVerifiedSpuRows(");
+  const end = renderer.indexOf("function mergeDomesticSearchProducts(", start);
+  const verifiedRenderer = renderer.slice(start, end);
+  assert.match(verifiedRenderer, /<td class="excel-raw-search-cell"><\/td>/);
+  assert.doesNotMatch(verifiedRenderer, /검색 완료/);
+  assert.doesNotMatch(verifiedRenderer, /일부 결과/);
+});
+
 test("verified brand product row keeps only search state and retry control at the right edge", () => {
   const start = renderer.indexOf("function renderVerifiedSpuRows(");
   const end = renderer.indexOf("function mergeDomesticSearchProducts(", start);
