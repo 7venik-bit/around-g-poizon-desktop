@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("aroundG", {
   getPurchaseLedgerAwareness: () => ipcRenderer.invoke("ledger:purchase-awareness"),
   getPoizonLedgerSyncStatus: () => ipcRenderer.invoke('ledger:poizon-sales-status'),
   syncPoizonLedgerSales: () => ipcRenderer.invoke('ledger:poizon-sales-sync'),
+  applyPoizonReviewSale: (orderNumber) => ipcRenderer.invoke('ledger:poizon-review-apply', orderNumber),
   onPoizonLedgerSyncProgress: (callback) => {
     const handler=(_event,payload)=>callback(payload);
     ipcRenderer.on('ledger:poizon-sales-progress',handler);

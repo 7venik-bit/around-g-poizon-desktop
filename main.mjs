@@ -14235,6 +14235,19 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('ledger:poizon-sales-status',()=>poizonLedgerSyncStatus);
   ipcMain.handle('ledger:poizon-sales-sync',()=>syncPoizonSellerOrders({manual:true}));
+  ipcMain.handle('ledger:poizon-review-apply',async(_event,orderNumber)=>{
+    try {
+      const result=await purchaseWorkbook().applyPoizonReview(orderNumber);
+      const recorded=[...(poizonLedgerSyncStatus.recorded||[]),...result.recorded];
+      setPoizonLedgerSyncStatus({state:'complete',
+        message:`주문 확인 반영 · 신규 장부 기록 ${recorded.length}건 · 확인 필요 ${result.review.length}건`,
+        recorded,verified:(poizonLedgerSyncStatus.verified||0)+result.verified,review:result.review,
+        savedPages:(poizonLedgerSyncStatus.savedPages||0)+1,updated:true,at:new Date().toISOString()});
+      return {ok:true,status:poizonLedgerSyncStatus};
+    } catch(error) {
+      return {ok:false,message:String(error?.message||error)};
+    }
+  });
   // Keep the old IPC name for upgrade compatibility; it is now strictly local.
   ipcMain.handle('ledger:workbook-import',()=>localWorkbookResult(()=>purchaseWorkbook().view()));
   ipcMain.handle('ledger:workbook-edit',(_event,edit)=>localWorkbookResult(()=>purchaseWorkbook().edit(edit)));
