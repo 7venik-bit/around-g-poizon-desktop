@@ -659,6 +659,9 @@ body.excel-preview-active{overflow:hidden}
 .excel-raw-search-again{flex:0 0 auto;padding:2px 4px;border-color:#cad6e5;color:#52677f;background:#fff;font-size:8px;font-weight:700}
 .excel-size-filter{flex:0 0 auto;padding:2px 4px;border-color:#b9d3f4;color:#1768c5;background:#f7fbff;font-size:8px;font-weight:800}
 .excel-size-filter[aria-pressed="true"]{background:#e1edff;border-color:#287de0}
+/* The pending cell is narrow and the product search button takes its full
+width. Stack the size button on its own line instead of clipping it. */
+.excel-raw-search-cell.excel-raw-search-pending .excel-size-filter{display:flex;width:100%;margin-top:4px;padding:6px 7px;justify-content:center;align-items:center;font-size:10px;font-weight:800}
 .excel-size-panel{display:grid;gap:6px;margin-top:4px;padding:8px;border:1px solid #dbe2ec;border-radius:6px;background:#fff}
 .excel-size-categories{display:flex;gap:4px}
 .excel-size-category{flex:1;padding:4px;font-size:10px;font-weight:800;border-radius:5px}
