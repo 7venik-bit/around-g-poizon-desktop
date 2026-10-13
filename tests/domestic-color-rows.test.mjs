@@ -34,6 +34,21 @@ test('Naver renders six separate colour rows without dropping any of the 54 opti
   assert.deepEqual(product,before,'presentation must not change saved stock evidence');
 });
 
+test('option-name codes glued in front of sizes are dropped from chips and grouping', t => {
+  const rows = render(t, [{ ...base, store: '네이버 패션타운', url: 'https://shopping.naver.com/window-products/outlet/1', sizes: [
+    { label: 'FTWWHT/CBLACK/FTWWHT / 220', inStock: true },
+    { label: 'FTWWHT/CBLACK/FTWWHT / 225', inStock: true },
+    { label: '블랙 / 95', inStock: true },
+    { label: '265/EU42', inStock: true },
+  ]}]);
+  const chips = rows.flatMap(row => [...row.querySelectorAll('.domestic-inline-stock-option')].map(o => o.textContent));
+  assert.ok(chips.includes('220'));
+  assert.ok(chips.includes('225'));
+  assert.ok(!chips.some(chip => /FTWWHT|CBLACK/.test(chip)));
+  assert.ok(chips.some(chip => chip.includes('블랙 / 95')));
+  assert.ok(chips.some(chip => chip.includes('265/EU42')));
+});
+
 test('stock chips share one calm palette across every style source',()=>{
   const css=readFileSync(new URL('../src/domestic-inline-results.css',import.meta.url),'utf8');
   const inline=readFileSync(new URL('../src/domestic-inline-results.js',import.meta.url),'utf8');

@@ -24,6 +24,16 @@
     return `${Math.round(number).toLocaleString("ko-KR")}원`;
   }
 
+  // Option-name codes glued in front of a size (FTWWHT/CBLACK/FTWWHT / 220)
+  // are dropped only when a number follows and the dropped prefix itself
+  // holds slashes. Single colour names (블랙 / 95, WHT0_WHITE / 110,
+  // EU42/265) stay intact so colour groupings keep working.
+  function stripOptionCodePrefix(text) {
+    return String(text || "").replace(
+      /^((?:[A-Z0-9][A-Z0-9._-]*\s*\/\s*)+)(?=\d)/,
+      (match, prefix) => prefix.replace(/\s*\/\s*$/, "").includes("/") ? "" : match);
+  }
+
   function installStyles() {
     if (document.querySelector(`style[${STYLE_MARKER}]`)) return;
     const style = document.createElement("style");
@@ -365,7 +375,8 @@
       // notices, arrival guarantees, stock counts) repeat on every chip while
       // availability itself is already shown by the control: buttons are
       // available, grey labels are sold out. Saved option evidence stays exact.
-      const chipText = text => String(text || "")
+      const chipText = text => stripOptionCodePrefix(String(text || ""))
+        .replace(/^(?:선택\s*(?:가능|불가)|재고\s*확인\s*필요|구매\s*가능)$/i, "")
         .replace(/^(?:선택\s*(?:가능|불가)|재고\s*확인\s*필요|구매\s*가능)$/i, "")
         .replace(/재입고(\s*알림)?|입고\s*알림\s*받기|알림\s*받기/g, "")
         .replace(/\(\s*품절\s*\)|\[\s*품절\s*\]|품절(?!\s*임박)/g, "")
@@ -409,9 +420,12 @@
     for (const option of sizes) {
       // The retailer collector puts colour before size in an option path.
       // Older saved results retain the same path only in their label.
-      const path = Array.isArray(option?.optionPath) && option.optionPath.length
+      // Option-name codes glued in front (FTWWHT/CBLACK/FTWWHT / 220) are
+      // dropped only when a number follows, matching the chip cleanup below.
+      const rawPath = Array.isArray(option?.optionPath) && option.optionPath.length
         ? option.optionPath.map(part => String(part).trim())
         : String(option?.label || option?.name || (typeof option === "string" ? option : "")).split(" / ").map(part => part.trim());
+      const path = stripOptionCodePrefix(rawPath.join(" / ")).split(" / ").map(part => part.trim());
       const first = path[0] || "";
       const sizeOnly = /^(?:(?:EU|US|UK|KR)?\s*\d+(?:\.\d+)?(?:\s*(?:mm|cm))?|[2-6]?X{0,3}[SML]|FREE|ONE\s*SIZE)(?:\s*\([^)]*\))?$/i.test(first);
       const color = path.length > 1 && !sizeOnly ? first : "";
