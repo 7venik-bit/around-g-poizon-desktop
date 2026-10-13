@@ -78,3 +78,35 @@ test("clearing restores the full list", (t) => {
   assert.deepEqual(calls[1].products, ["A", "B", "C"]);
   assert.equal(document.querySelector("[data-excel-size-filter]").textContent, "사이즈검색");
 });
+
+test("filter globals narrow results and label the button", (t) => {
+  const { window } = setup(t);
+  assert.equal(typeof window.excelSizeFilterButton, "function");
+  assert.equal(typeof window.excelSizeFilteredResult, "function");
+  assert.match(window.excelSizeFilterButton("k1"), /사이즈검색/);
+  const view = window.excelSizeFilteredResult("k1", { products: PRODUCTS, sources: [] });
+  assert.deepEqual(view.products.map((item) => item.title), ["A", "B", "C"]);
+});
+
+test("applying before any search starts the product search", (t) => {
+  const dom = new JSDOM(`<body><table>
+    <tr class="excel-product-row"><td>
+      <button type="button" class="excel-product-search" data-excel-search-product="k9">상품검색</button><button type="button" class="excel-size-filter" data-excel-size-filter="k9">사이즈검색</button>
+    </td></tr>
+  </table></body>`, { runScripts: "outside-only" });
+  t.after(() => dom.window.close());
+  const { window } = dom;
+  const script = readFileSync(new URL("../src/excel-size-filter.js", import.meta.url), "utf8");
+  window.excelPreviewSearchResults = new Map();
+  window.excelPreviewProductCache = new Map();
+  let searches = 0;
+  window.document.querySelector("[data-excel-search-product]").addEventListener("click", () => { searches += 1; });
+  window.eval(script);
+  const { document } = window;
+  const fire = (element) => element.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  fire(document.querySelector("[data-excel-size-filter]"));
+  fire(document.querySelector('[data-size-chip="225"]'));
+  fire(document.querySelector("[data-size-apply]"));
+  assert.equal(searches, 1);
+  assert.equal(document.querySelector("[data-excel-size-filter]").textContent, "사이즈검색");
+});

@@ -12,7 +12,7 @@ test("verified brand results expand as a full-width list below the searched prod
 
   assert.match(verifiedRenderer, /excel-verified-search-detail/);
   assert.match(verifiedRenderer, /<td colspan="10">/);
-  assert.match(verifiedRenderer, /renderDomestic\(result, p, keys\[i\]\)/);
+  assert.match(verifiedRenderer, /renderDomestic\(.*?, p, keys\[i\]\)/);
   assert.match(verifiedRenderer, /result && !result\.loading/);
   assert.doesNotMatch(verifiedRenderer, /renderRawExcelDomesticCell/);
 });

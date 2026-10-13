@@ -691,10 +691,10 @@ function renderOriginalExcelRows(file, products = []) {
     const resultLabel = result?.loading ? '검색 중…' : result ? '다시 검색' : '상품검색';
     const stateLabel = result?.error ? '검색 실패' : result?.partial ? '일부 결과' : '검색 완료';
     const resultCell = '<td class="excel-raw-search-cell">' + (result?.loading ? '<span class="excel-raw-search-state loading">' + resultLabel + '</span>'
-      : result ? '<div class="excel-raw-search-summary"><span class="excel-raw-search-state ' + (result.error || result.partial ? 'pending' : 'available') + '">' + stateLabel + '</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(key) + '">다시 검색</button><button type="button" class="excel-size-filter" data-excel-size-filter="' + encodeURIComponent(key) + '">사이즈검색</button></div>'
+      : result ? '<div class="excel-raw-search-summary"><span class="excel-raw-search-state ' + (result.error || result.partial ? 'pending' : 'available') + '">' + stateLabel + '</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(key) + '">다시 검색</button>' + (typeof excelSizeFilterButton === "function" ? excelSizeFilterButton(key) : "") + '</div>'
         : (repOf[key] && repOf[key] !== key)
           ? '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '" disabled title="같은 상품번호 중 최고금액 행' + (repRowByKey[key] ? `(원본 ${text(repRowByKey[key])}행)` : "") + '에서 검색합니다.">상품검색</button>'
-          : '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '">' + resultLabel + '</button>')
+          : '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '">' + resultLabel + '</button>' + (typeof excelSizeFilterButton === "function" ? excelSizeFilterButton(key) : ""))
       + (globalThis.AroundGPoizonProductView?.button(p) || '') + '</td>';
     const sourceLabel = (p._sourceBrandName || '') + ' · 원본 ' + p.sourceRowNumber + '행';
     // Same highest-price metric the representative rows are selected with.
@@ -718,7 +718,7 @@ function renderOriginalExcelRows(file, products = []) {
       + '<td>' + text(source.brand ?? p.brandName) + '</td><td class="excel-source-price">' + (showsComputedHighest ? money(highest) : text(source.averagePrice ?? '')) + '</td>'
       + '<td class="excel-source-china">' + text(source.totalSales ?? p.totalSalesRaw) + '</td><td class="excel-source-local">' + text(source.localTotalSales ?? p.localTotalSalesRaw) + '</td><td>' + text(p.verificationStatus || '') + '</td>'
       + resultCell + '</tr>'
-      + (result && !result.loading ? '<tr class="excel-product-search-detail excel-verified-search-detail"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>' + text(p.title || p.articleNumber || '상품') + '</strong> 국내 검색 결과</div>' + renderDomestic(result, p, key) + '</td></tr>' : '')];
+      + (result && !result.loading ? '<tr class="excel-product-search-detail excel-verified-search-detail"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>' + text(p.title || p.articleNumber || '상품') + '</strong> 국내 검색 결과</div>' + renderDomestic((typeof excelSizeFilteredResult === "function" ? excelSizeFilteredResult(key, result) : result), p, key) + '</td></tr>' : '')];
   }).join('') : '<tr><td colspan="10">입력한 두 조건을 모두 충족하는 원본 행이 없습니다.</td></tr>';
   return shownKeys;
 }
@@ -753,12 +753,12 @@ function renderVerifiedSpuRows(file, products) {
     const resultCell = result?.loading
       ? '<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">수달 사원이 검색 중…</span></td>'
       : result
-        ? '<td class="excel-raw-search-cell"><div class="excel-raw-search-summary"><span class="excel-raw-search-state ' + (result.error || result.partial ? 'pending' : 'available') + '">' + (result.error ? '검색 실패' : result.partial ? '일부 결과' : '검색 완료') + '</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">다시 검색</button><button type="button" class="excel-size-filter" data-excel-size-filter="' + encodeURIComponent(keys[i]) + '">사이즈검색</button></div></td>'
-        : '<td class="excel-raw-search-cell excel-raw-search-pending"><button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">상품검색</button></td>';
+        ? '<td class="excel-raw-search-cell"><div class="excel-raw-search-summary"><span class="excel-raw-search-state ' + (result.error || result.partial ? 'pending' : 'available') + '">' + (result.error ? '검색 실패' : result.partial ? '일부 결과' : '검색 완료') + '</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">다시 검색</button>' + (typeof excelSizeFilterButton === "function" ? excelSizeFilterButton(keys[i]) : "") + '</div></td>'
+        : '<td class="excel-raw-search-cell excel-raw-search-pending"><button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">상품검색</button>' + (typeof excelSizeFilterButton === "function" ? excelSizeFilterButton(keys[i]) : "") + '</td>';
     const poizonButton = globalThis.AroundGPoizonProductView?.button(p) || '';
     const linkedResultCell = resultCell.replace('</td>', poizonButton + '</td>');
     const detailRow = result && !result.loading
-      ? '<tr class="excel-product-search-detail excel-verified-search-detail"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>' + text(p.title || p.articleNumber || '상품') + '</strong> 국내 검색 결과</div>' + renderDomestic(result, p, keys[i]) + '</td></tr>'
+      ? '<tr class="excel-product-search-detail excel-verified-search-detail"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>' + text(p.title || p.articleNumber || '상품') + '</strong> 국내 검색 결과</div>' + renderDomestic((typeof excelSizeFilteredResult === "function" ? excelSizeFilteredResult(keys[i], result) : result), p, keys[i]) + '</td></tr>'
       : '';
     return '<tr class="excel-product-row excel-verified-spu-row' + (originalRows ? ' excel-original-sku-row' : '') + '"><td><input type="checkbox" data-excel-product-select="' + encodeURIComponent(keys[i]) + '"></td><td class="excel-verified-image-cell">' + image + '</td><td><b>' + text(p.articleNumber) + '</b>' + (typeof purchaseAwarenessBadge === 'function' ? purchaseAwarenessBadge(p) : '') + '<small> SPU ' + text(p.spuId) + '</small></td><td>' + text(p.title) + '<details><summary>원본 사이즈 ' + p.optionCount + '행</summary>' + options + '</details></td><td>' + text(p.brandName) + '</td><td>' + (p.hasPriceData ? money(p.averagePrice) : '미확인') + '</td><td>' + chinaCell + basisHint + '</td><td>' + localCell + basisHint + '</td><td>' + text(p.verificationStatus) + '</td>' + linkedResultCell + '</tr>' + detailRow;
   }).join('') : '<tr><td colspan="10">입력한 조건에 맞는 상품이 없습니다.' + (['total', 'mixed'].includes(combinedBrandPreview?.salesBasis) ? ' 원본 판매량은 같은 사이즈 행에서 두 조건을 모두 충족해야 합니다.' : '') + '</td></tr>';
