@@ -182,8 +182,9 @@ async function checkOriginalProductLayout() {
       if(list.querySelectorAll('.domestic-inline-head>span').length!==6)errors.push('retailer headings missing');
       const bounds=grid.getBoundingClientRect();
       const actionCell=row.querySelector('.excel-raw-search-cell'),retry=actionCell.querySelector('[data-excel-search-product]');
-      const actionBounds=actionCell.getBoundingClientRect(),retryBounds=retry.getBoundingClientRect();
-      if(retryBounds.left<actionBounds.left||retryBounds.right>actionBounds.right||retry.scrollWidth>retry.clientWidth+1)errors.push('retry button clipped after search');
+      // Successful searches keep the result cell slim (POIZON action only);
+      // the retry control appears only after a failed search.
+      if(retry)errors.push('successful search keeps a retry control');
       for(const cell of list.querySelectorAll('.domestic-inline-price,.domestic-inline-actions')) {
         const r=cell.getBoundingClientRect();if(r.left<bounds.left-1||r.right>bounds.right+1)errors.push('price/link outside visible result');
       }
