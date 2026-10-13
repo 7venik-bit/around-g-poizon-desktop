@@ -1217,6 +1217,29 @@ test('Naver trio-channel cards approve by card code when the detail title shows 
   assert.equal(result.failedCount,0);
 });
 
+test('Naver embedded product data rescues sizes when option widgets fail', async t => {
+  const url='https://shopping.naver.com/window-products/outlet/555002';
+  const f=fixture(t,{pages:{[url]:'<main><div class="_copyable"><h3>네이버플러스 스토어</h3></div>'
+    + '<button>사이즈 선택</button><button>구매하기</button>'
+    + '<script type="application/json">{"product":{"id":"555002","name":"[ABC마트] ADIDAS 슈퍼스타 II J JH9976",'
+    + '"naverShoppingSearchInfo":{"modelName":"JH9976"},"salePrice":113000,'
+    + '"optionCombinations":[{"optionName1":"220","stockQuantity":5},{"optionName1":"225","stockQuantity":0}]}}</script></main>'}});
+  f.context.renderedStockSelectors=()=>[];
+  f.context.collectRenderedProductStock=async()=>{throw new Error('stock_collection_failed');};
+  runInContext(section('async function verifyApprovedNaverDomesticProducts(', '\nasync function filterApprovedNaverDomesticProducts('),f.context);
+  runInContext(section('async function waitForDomesticDetailReady(', '\nasync function collectRenderedProductStock('),f.context);
+  runInContext(section('function domesticPageAccessState(', '\nasync function waitForDomesticDetailReady('),f.context);
+  const result=await f.drive(f.context.verifyApprovedNaverDomesticProducts([{
+    url,title:'[ABC마트] ADIDAS 슈퍼스타 II J JH9976',text:'ABC마트 아울렛 113,000원',
+    price:113000,outletLabelMatched:true,naverWholeViewChannel:'outlet',
+  }],{articleNumber:'JH9976',brand:'아디다스 오리지널스',title:'(J) 아디다스 슈퍼스타 2 클라우드 화이트 코어 블랙',requireArticleIdentity:true}));
+  assert.equal(result.products.length,1);
+  const realmSafe = JSON.parse(JSON.stringify(result.products[0].sizes.map(s=>[s.label,s.inStock,s.quantity])));
+  assert.deepEqual(realmSafe,[['220',true,5],['225',false,0]]);
+  assert.equal(result.products[0].detailVerificationPending,false);
+  assert.equal(result.failedCount,0);
+});
+
 test('Naver Fashion Town route fallback still rejects barcode-removed sellers', async t => {
   const url=channels[0][2];
   const f=fixture(t,{pages:{[url]:'<main><h1>코오롱스포츠 JWJJM26321 남성 재킷</h1><p>품번 JWJJM26321</p><p>QR코드 제거 후 발송</p><div role="option">100</div></main>'}});

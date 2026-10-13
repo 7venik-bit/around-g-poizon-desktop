@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createContext, runInContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { sanitizeDomesticProductCode, sanitizeDomesticQuery } from '../relay/domestic-search.mjs';
-import { captureDomesticDetailPage } from '../services/domestic-detail-page.mjs';
+import { captureDomesticDetailPage, parseNaverWindowProductData } from '../services/domestic-detail-page.mjs';
 
 // Execute the real production functions. These are synthetic, network-free
 // boundary cases, not a claim of live retailer or Windows-session validation.
@@ -107,4 +107,29 @@ test('Detail scope text excludes header/nav/footer menu words', t => {
   assert.ok(/해외직구/.test(observed.fullText), 'full text keeps chrome for access diagnostics');
   assert.ok(!/해외직구|구매대행|국제배송/.test(observed.scopeText), 'scope text drops global chrome');
   assert.ok(/B75807/.test(observed.scopeText), 'scope text keeps the product area');
+});
+
+function embeddedDetail(t, bodyHtml) {
+  const dom = page(t, `<body>${bodyHtml}</body>`, 'https://shopping.naver.com/window-products/outlet/13655477659');
+  return dom.window.eval(`(${captureDomesticDetailPage.toString()})(() => ({options: [], stockTexts: [], purchaseAvailable: true}), [], ${parseNaverWindowProductData.toString()})`);
+}
+
+test('Naver store-only titles gain the embedded product code and sizes', t => {
+  const observed = embeddedDetail(t, '<main><div class="_copyable"><h3>네이버플러스 스토어</h3></div>'
+    + '<button>사이즈 선택</button><button>구매하기</button>'
+    + '<script type="application/json">{"product":{"id":"13655477659","name":"[ABC마트] ADIDAS 슈퍼스타 II J JH9976",'
+    + '"salePrice":119000,"naverShoppingSearchInfo":{"modelName":"JH9976"},'
+    + '"optionCombinations":[{"optionName1":"220","stockQuantity":29},{"optionName1":"225","stockQuantity":0}]}}</script></main>');
+  assert.match(observed.visibleTitleText, /JH9976/);
+  assert.ok(observed.structuredCodes.some((code) => String(code).includes('JH9976')));
+  assert.ok(observed.embeddedNaverProduct);
+  assert.equal(observed.embeddedNaverProduct.modelCode, 'JH9976');
+});
+
+test('Naver titles that already carry the code keep their exact headings', t => {
+  const observed = embeddedDetail(t, '<main><div class="_copyable"><h3>[ABC마트] ADIDAS 슈퍼스타 II J JH9976</h3></div>'
+    + '<button>사이즈 선택</button><button>구매하기</button>'
+    + '<script type="application/json">{"product":{"id":"13655477659","name":"[ABC마트] ADIDAS 슈퍼스타 II J JH9976",'
+    + '"naverShoppingSearchInfo":{"modelName":"JH9976"},"optionCombinations":[]}}</script></main>');
+  assert.equal(observed.visibleTitleText, '[ABC마트] ADIDAS 슈퍼스타 II J JH9976');
 });
