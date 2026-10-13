@@ -20,7 +20,9 @@ test("네이버 상세페이지는 판매처와 상품 정체성을 함께 검�
   assert.match(main, /domesticBrandEvidenceMatch\(brand, observedIdentityText\)/);
   assert.match(main, /titleIdentityMatch\(observedIdentityText, title\)/);
   assert.match(main, /domesticSellerVerified: true/);
-  assert.match(main, /matchBasis: articleVerified \? "article" : "brand_title"/);
+  assert.match(main, /matchBasis: articleVerified \|\| trioCardVerified \? "article" : "brand_title"/);
+  assert.match(main, /const trioCardVerified = naverTrioChannel && cardCodeVerified && !detailConflict/);
+  assert.match(main, /officialStoreVerified: naverTrioChannel === true/);
 });
 
 test("검증된 네이버 상품은 캠페인 이미지가 달라도 결과에서 제거하지 않는다", () => {

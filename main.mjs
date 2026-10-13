@@ -1544,8 +1544,21 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         const brandVerified = domesticBrandEvidenceMatch(brand, observedIdentityText);
         const productTitleVerified = !String(title || "").trim()
           || titleIdentityMatch(observedIdentityText, title);
+        // 아울렛·백화점·브랜드직영몰 = 공식몰. 이 3채널 상품은 카드의 품번과
+        // 열린 상세의 URL 바인딩이 맞고 상세 제목에 충돌 코드가 없으면, 상세
+        // 제목에 코드가 찍히지 않아도 동일 상품으로 인정한다. 상세 제목 추출이
+        // 스토어명만 읽는 경우가 있어 카드 증거를 버리면 안 된다.
+        const naverTrioChannel = /\/window-products\/(?:brandfashion|department|outlet|brand-store)\//i.test(productUrl)
+          || candidate?.naverWholeViewChannel === "department"
+          || candidate?.naverWholeViewChannel === "outlet"
+          || candidate?.naverWholeViewChannel === "brand-store"
+          || candidate?.officialBrandStoreLabelMatched === true
+          || candidate?.departmentStoreLabelMatched === true
+          || candidate?.outletLabelMatched === true;
+        const cardCodeVerified = exactArticleIdentityMatch(candidate.title, articleNumber);
+        const trioCardVerified = naverTrioChannel && cardCodeVerified && !detailConflict;
         const identityVerified = requireArticleIdentity
-          ? articleVerified
+          ? articleVerified || trioCardVerified
           : brandVerified && productTitleVerified;
         if (detailConflict || !sellerVerified || !identityVerified) {
           rejectedCount += 1;
@@ -1562,18 +1575,20 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         const initialStock = snapshot.stockEvidence ? normalizeRenderedStockEvidence(snapshot.stockEvidence) : {};
         const verifiedProduct = {
           ...candidate, ...initialStock,
-          title: String(snapshot.visibleTitleText || snapshot.titleText || candidate.title || ""),
+          title: String(cardCodeVerified && !articleVerified ? candidate.title
+            : (snapshot.visibleTitleText || snapshot.titleText || candidate.title || "")),
           inStock: null, stockVerified: false,
           stockCoverage: initialStock.sizes?.length ? "partial" : "unknown",
           stockStatus: "unknown", detailVerificationPending: true,
           domesticSellerVerified: true,
+          officialStoreVerified: naverTrioChannel === true,
           domesticSellerEvidence: String(snapshot.sellerEvidenceText || "").slice(0, 240),
           brandVerifiedFromCard: brandVerified,
-          articleNumber: articleVerified ? sanitizeDomesticProductCode(articleNumber) : "",
-          detectedArticleNumber: articleVerified ? sanitizeDomesticProductCode(articleNumber) : "",
-          articleNumberVerified: articleVerified,
+          articleNumber: articleVerified || trioCardVerified ? sanitizeDomesticProductCode(articleNumber) : "",
+          detectedArticleNumber: articleVerified || trioCardVerified ? sanitizeDomesticProductCode(articleNumber) : "",
+          articleNumberVerified: articleVerified || trioCardVerified,
           titleVerifiedFromDetail: productTitleVerified,
-          matchBasis: articleVerified ? "article" : "brand_title",
+          matchBasis: articleVerified || trioCardVerified ? "article" : "brand_title",
         };
         const approvedIndex = approved.length;
         approved.push(verifiedProduct);
