@@ -159,6 +159,7 @@ import {
   NAVER_FASHION_FALLBACK_CHANNELS,
   summarizeNaverChannelFallback,
   parseNaverFashionTownChannelCounts,
+  isNaverDetailVerifiedProduct,
   parseLotteInitialDataProducts,
   lotteServerSearchCard,
   mergeAnalyzedProducts,
@@ -773,6 +774,9 @@ async function addMatchConfidence(data, input) {
     const codeConflict = product.articleConflict === true || product.signals?.codeConflict === true;
     const titleScore = Number(product.signals?.titleScore || 0);
     const imageScore = product.signals?.imageScore;
+    // Detail-approved Naver products were verified against the stronger
+    // evidence above; title heuristics must not discard them afterwards.
+    if (isNaverDetailVerifiedProduct(product)) return true;
     if (codeConflict) return false;
     if (product.brandVerifiedFromCard === false) return false;
     const verifiedNaverIdentity = String(product?.sourceStore || product?.store || "") === "네이버 패션타운"
@@ -1462,6 +1466,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
   let rejectedCount = identityRejected.length;
   let failedCount = 0;
   const detailFailures = [];
+  const detailRejections = [];
   let securityVerificationRequired = false;
   let loginRequired = false;
   let rateLimited = false;
@@ -1545,6 +1550,10 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         if (detailConflict || !sellerVerified || !identityVerified) {
           rejectedCount += 1;
           rejectedUrls.add(domesticProductUrlIdentity(productUrl));
+          detailRejections.push({ url: productUrl,
+            reason: detailConflict ? "detail_code_conflict"
+              : !sellerVerified ? "seller_unverified" : "identity_unverified",
+            title: String(snapshot.visibleTitleText || snapshot.titleText || "").replace(/\s+/g, " ").trim().slice(0, 120) });
           continue;
         }
         // Publish verified identity/price before optional stock inspection.
@@ -1601,6 +1610,8 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           checkedCount += 1;
           rejectedCount += 1;
           rejectedUrls.add(domesticProductUrlIdentity(productUrl));
+          detailRejections.push({ url: productUrl, reason: "identity_mismatch",
+            title: String(candidate?.title || "").replace(/\s+/g, " ").trim().slice(0, 120) });
           detailVerified = true;
           continue;
         }
@@ -1648,6 +1659,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
     rejectedProductUrls: [...rejectedUrls],
     failedCount,
     detailFailures,
+    detailRejections,
     securityVerificationRequired,
     loginRequired,
     rateLimited,
@@ -4148,6 +4160,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           sellerRejectedCount: approval.rejectedCount,
           sellerFailedCount: approval.failedCount,
           detailFailures: approval.detailFailures || [],
+          detailRejections: approval.detailRejections || [],
           lastDetailFailure: approval.detailFailures?.at(-1)?.reason || "",
           lastDetailResolvedUrl: approval.detailFailures?.at(-1)?.resolvedUrl || "",
           lastDetailState: approval.detailFailures?.at(-1) ? {

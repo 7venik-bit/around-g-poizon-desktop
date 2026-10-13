@@ -4,6 +4,7 @@ import fs from "node:fs";
 import {
   analyzeRenderedChannelProducts,
   allowsConflictingArticleCard,
+  isNaverDetailVerifiedProduct,
   naverFashionChannelSearchUrl,
   NAVER_FASHION_FALLBACK_CHANNELS,
   summarizeNaverChannelFallback,
@@ -311,6 +312,33 @@ test("an unsettled channel fallback stays pending instead of false absence", () 
   assert.match(main, /naver_channel_not_settled/);
   assert.match(main, /summarizeNaverChannelFallback\(channelStates\)/);
   assert.match(main, /fallbackChannels: \(channelPage && channelPage\.channels\)/);
+});
+
+test("silent naver detail rejections record which gate failed", () => {
+  const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(main, /detail_code_conflict/);
+  assert.match(main, /seller_unverified/);
+  assert.match(main, /identity_unverified/);
+  assert.match(main, /detailRejections\.push/);
+  assert.match(main, /detailRejections: approval\.detailRejections/);
+  const inline = fs.readFileSync(new URL("../src/domestic-inline-results.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(inline, /상세 탈락 내역/);
+});
+
+test("detail-approved naver products bypass title heuristics in matching", () => {
+  const verified = {
+    store: "네이버 패션타운",
+    domesticSellerVerified: true,
+    articleNumberVerified: true,
+    brandVerifiedFromCard: false,
+    title: "[ABC마트] SUPERSTAR II J / JH9976",
+  };
+  assert.equal(isNaverDetailVerifiedProduct(verified), true);
+  assert.equal(isNaverDetailVerifiedProduct({ ...verified, articleNumberVerified: false }), false);
+  assert.equal(isNaverDetailVerifiedProduct({ ...verified, domesticSellerVerified: false }), false);
+  assert.equal(isNaverDetailVerifiedProduct({ ...verified, store: "무신사" }), false);
+  const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(main, /if \(isNaverDetailVerifiedProduct\(product\)\) return true;/);
 });
 
 test("outlet exact-code cards survive analyze for a code-priority naver query", () => {

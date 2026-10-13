@@ -38,6 +38,10 @@ const failedNaverSource = {
       { channel: "department", settled: false },
     ],
     fallbackUrl: "https://shopping.naver.com/window/department/search?q=JH9976&queryType=ac",
+    detailRejections: [
+      { url: "https://shopping.naver.com/window-products/outlet/234567", reason: "identity_unverified", title: "ABC마트 슈퍼스타 II" },
+      { url: "https://shopping.naver.com/window-products/department/123456", reason: "seller_unverified", title: "토박스 슈퍼스타 II JH9976" },
+    ],
   },
 };
 
@@ -51,4 +55,7 @@ test("naver diagnostics show per-attempt collection and channel fallback", (t) =
   assert.match(text, /brand-store: 미확정/);
   assert.match(text, /폴백 주소/);
   assert.match(text, /window\/department\/search/);
+  assert.match(text, /상세 탈락 내역/);
+  assert.match(text, /identity_unverified: ABC마트 슈퍼스타 II/);
+  assert.match(text, /seller_unverified: 토박스 슈퍼스타 II JH9976/);
 });

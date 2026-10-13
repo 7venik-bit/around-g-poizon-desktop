@@ -507,6 +507,16 @@ export function isPlatformShoppingProductUrl(value = "") {
   return false;
 }
 
+// A Naver product approved at its detail page (approved domestic seller plus
+// article identity from the product page) outranks title heuristics. Naver
+// titles routinely omit the brand (seller prefix instead) and bundle option
+// codes, which false-fails the code/brand gates during match comparison.
+export function isNaverDetailVerifiedProduct(product = {}) {
+  return String(product?.sourceStore || product?.store || "") === "네이버 패션타운"
+    && product.domesticSellerVerified === true
+    && product.articleNumberVerified === true;
+}
+
 export function isTrustedNaverFashionProductCard(card = {}) {
   const productUrl = String(card?.productUrl || "");
   if (isNaverAccountUrl(productUrl)) return false;
