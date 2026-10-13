@@ -170,7 +170,7 @@ import {
 import { scoreProductCandidate } from "./services/matcher.mjs";
 import { reconcileMatchedSources, reconcileSearchAttempt } from "./services/matcher.mjs";
 import { domesticBrandEvidenceMatch } from "./relay/domestic-search.mjs";
-import { domesticProductUrlIdentity, captureDomesticDetailPage } from "./services/domestic-detail-page.mjs";
+import { domesticProductUrlIdentity, captureDomesticDetailPage, parseNaverWindowProductData } from "./services/domestic-detail-page.mjs";
 import { captureOfficialProductPrice } from "./services/official-product-price.mjs";
 import {
   isApprovedNaverDomesticSellerEvidence,
@@ -1615,10 +1615,21 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           detailDiagnostics = error?.detailDiagnostics || {};
           detailFailures.push({url: productUrl, reason: detailFailure, ...detailDiagnostics});
         }
+        const embeddedOptions = Array.isArray(snapshot.embeddedNaverProduct?.options)
+          ? snapshot.embeddedNaverProduct.options.filter((option) => option && option.label) : [];
+        // The embedded product record carries exact per-size quantities, so a
+        // failed option-widget collection must not erase sizes that exist.
+        const embeddedRescue = embeddedOptions.length > 0 && !(optionStock?.sizes || []).length;
         approved[approvedIndex] = {
           ...verifiedProduct, ...(optionStock || {}),
-          detailVerificationPending: !optionStock || !stockObservationComplete(optionStock),
-          ...(optionError ? {detailVerificationReason: String(optionError.message || "stock_collection_failed")} : {}),
+          ...(embeddedRescue ? {
+            sizes: embeddedOptions,
+            inStock: embeddedOptions.some((option) => option.inStock === true) ? true
+              : embeddedOptions.every((option) => option.inStock === false) ? false : null,
+            stockCoverage: "observed",
+          } : {}),
+          detailVerificationPending: embeddedRescue ? false : (!optionStock || !stockObservationComplete(optionStock)),
+          ...(!embeddedRescue && optionError ? {detailVerificationReason: String(optionError.message || "stock_collection_failed")} : {}),
         };
       } catch (error) {
         if (error?.identityMismatch === true) {
@@ -2661,7 +2672,7 @@ async function waitForDomesticDetailReady(searchWindow, storeName, productUrl, g
   while (Date.now() < deadline) {
     if (domesticSearchCanceled(generation) || searchWindow.isDestroyed()) throw new Error("DOMESTIC_SEARCH_CANCELED");
     const observed = await searchWindow.webContents.mainFrame.executeJavaScript(
-      `(${captureDomesticDetailPage.toString()})(${captureRenderedStockEvidence.toString()}, ${JSON.stringify(renderedStockSelectors(storeName))})`, true).catch(() => null);
+      `(${captureDomesticDetailPage.toString()})(${captureRenderedStockEvidence.toString()}, ${JSON.stringify(renderedStockSelectors(storeName))}, (${parseNaverWindowProductData.toString()}))`, true).catch(() => null);
     if (observed) {
       // Strip query/hash and credentials before recording a redirect; a login
       // URL can contain OAuth state or other private tokens.

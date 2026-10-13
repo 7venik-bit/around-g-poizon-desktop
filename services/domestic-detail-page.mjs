@@ -24,8 +24,81 @@ export function domesticProductUrlIdentity(value = "") {
   } catch { return ""; }
 }
 
+// Naver window-products pages embed the product record (price, model code and
+// per-size quantities) as JSON. Reading it needs no option-widget clicks and
+// stays exact when the rendered title only shows the store name.
+// Serialized into the retailer frame with captureDomesticDetailPage: keep it
+// self-contained with no module references.
+export function parseNaverWindowProductData(html = "", productId = "") {
+  const source = String(html || "");
+  const pid = String(productId || "").match(/\d{5,}/)?.[0] || "";
+  if (!pid || source.indexOf('"product"') < 0) return null;
+  const starts = [];
+  const key = '"product"';
+  let from = 0;
+  while (starts.length < 60) {
+    const keyAt = source.indexOf(key, from);
+    if (keyAt < 0) break;
+    let cursor = keyAt + key.length;
+    while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+    if (source[cursor] !== ":") { from = cursor + 1; continue; }
+    cursor += 1;
+    while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+    if (source[cursor] !== "{") { from = cursor + 1; continue; }
+    starts.push(cursor);
+    from = cursor + 1;
+  }
+  const balance = (openAt) => {
+    let depth = 0, inStr = false, esc = false, quote = "";
+    for (let i = openAt; i < source.length && i - openAt < 500000; i++) {
+      const ch = source[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === quote) inStr = false;
+        continue;
+      }
+      if (ch === '"' || ch === "'") { inStr = true; quote = ch; continue; }
+      if (ch === "{") depth += 1;
+      else if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) return source.slice(openAt, i + 1);
+      }
+    }
+    return "";
+  };
+  const asText = (value) => (value === null || value === undefined ? "" : String(value).trim());
+  for (const openAt of starts) {
+    let product = null;
+    try { product = JSON.parse(balance(openAt) || "null"); } catch { product = null; }
+    if (!product || typeof product !== "object" || Array.isArray(product)) continue;
+    if (String(product.id || "") !== pid) continue;
+    const combos = Array.isArray(product.optionCombinations) ? product.optionCombinations : [];
+    const options = [];
+    for (const combo of combos.slice(0, 200)) {
+      if (!combo || typeof combo !== "object") continue;
+      const label = [combo.optionName1, combo.optionName2, combo.optionName3]
+        .map(asText).filter(Boolean).join(" / ");
+      if (!label) continue;
+      const quantity = Number.isSafeInteger(combo.stockQuantity) ? combo.stockQuantity : null;
+      options.push({ label, inStock: quantity === null ? null : quantity > 0,
+        ...(quantity === null ? {} : { quantity }) });
+    }
+    return {
+      id: String(product.id || pid),
+      name: asText(product.name),
+      modelCode: asText(product?.naverShoppingSearchInfo?.modelName || product?.manufactureDefineNo),
+      salePrice: Number.isSafeInteger(product.salePrice) ? product.salePrice
+        : Number.isSafeInteger(product.dispSalePrice) ? product.dispSalePrice : 0,
+      channelName: asText(product?.channel?.channelName),
+      options,
+    };
+  }
+  return null;
+}
+
 // Serialized into the retailer frame. Keep this function self-contained.
-export function captureDomesticDetailPage(captureStock, selectors = []) {
+export function captureDomesticDetailPage(captureStock, selectors = [], parseEmbedded = null) {
   const visible = element => {
     for (let node = element; node; node = node.parentElement) {
       const style = getComputedStyle(node);
@@ -56,8 +129,23 @@ export function captureDomesticDetailPage(captureStock, selectors = []) {
     .filter(line => /판매(?:중)?인?\s*상품|공식\s*판매처|브랜드\s*(?:공식|직영)|공식\s*(?:브랜드|스토어|온라인몰)|직영\s*(?:스토어|온라인몰)|관부가세|해외\s*직구|구매\s*대행/i.test(line)).slice(0, 20).join(" ");
   const titleElements = naverTitles.length ? naverTitles
     : [...document.querySelectorAll('h1,main h2,main h3,[itemprop="name"],[class*="product" i][class*="title" i],[class*="goods" i][class*="name" i]')];
-  const visibleTitleText = titleElements
-    .filter(visible).map(element => String(element.innerText || element.textContent || "").replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 8).join(" ").slice(0, 2000);
+  const ownTitles = titleElements
+    .filter(visible).map(element => String(element.innerText || element.textContent || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+  // Naver outlet/brand pages can render only the store name in the visible
+  // title while the embedded product record carries the real product name
+  // with its model code. Prefer the embedded name only when the visible
+  // title has no code-like token, so working pages keep their exact headings.
+  const codeLike = /[A-Z]{2,}[0-9]|[0-9][A-Z]{2,}/i;
+  let embeddedNaverProduct = null;
+  try {
+    if (naverDetail && typeof parseEmbedded === "function") {
+      const productNumericId = (location.pathname.match(/\/window-products\/\w+\/(\d+)/) || [])[1] || "";
+      embeddedNaverProduct = parseEmbedded(document.documentElement.outerHTML, productNumericId) || null;
+    }
+  } catch { embeddedNaverProduct = null; }
+  const embeddedName = String(embeddedNaverProduct?.name || "").replace(/\s+/g, " ").trim();
+  const useEmbeddedName = Boolean(embeddedName) && !codeLike.test(ownTitles.join(" ")) && codeLike.test(embeddedName);
+  const visibleTitleText = [...(useEmbeddedName ? [embeddedName] : []), ...ownTitles].slice(0, 8).join(" ").slice(0, 2000);
   const titleText = visibleTitleText
     || String(document.querySelector('meta[property="og:title"]')?.content || "")
     || String(document.title || "");
@@ -69,6 +157,8 @@ export function captureDomesticDetailPage(captureStock, selectors = []) {
     if (value != null && String(value).trim()) structuredCodes.push(String(value).trim());
   };
   for (const element of document.querySelectorAll('[itemprop="sku"],[itemprop="mpn"],[itemprop="model"]')) addCode(element.getAttribute("content") || element.textContent);
+  const embeddedCode = String(embeddedNaverProduct?.modelCode || "").trim();
+  if (embeddedCode) structuredCodes.push(embeddedCode);
   for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
     try {
       const walk = value => {
@@ -156,6 +246,6 @@ export function captureDomesticDetailPage(captureStock, selectors = []) {
     href: String(location.href || ""), fullText, pageText: fullText, sellerEvidenceText, sellerDetailText, scopeText,
     loginFormVisible, documentReadyState: document.readyState,
     titleText, visibleTitleText, labeledText, structuredCodes: [...new Set(structuredCodes)].slice(0, 30), stockEvidence,
-    hasOptions, busy, ready: Boolean(titleText && commerce && !busy),
+    hasOptions, busy, ready: Boolean(titleText && commerce && !busy), embeddedNaverProduct,
   };
 }
