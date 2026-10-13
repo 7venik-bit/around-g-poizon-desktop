@@ -43,6 +43,27 @@
     return { category: "shoes", sizes: new Set() };
   }
 
+  function filterCount(key) {
+    const saved = filters.get(String(key ?? ""));
+    return saved ? saved.sizes.length : 0;
+  }
+
+  function filterResult(key, result) {
+    const saved = filters.get(String(key ?? ""));
+    if (!saved || !saved.sizes.length || !result) return result;
+    return { ...result, products: (result.products || []).filter((item) => productHasSizes(item, saved.sizes)) };
+  }
+
+  function buttonHtml(key) {
+    const plain = String(key ?? "");
+    const count = filterCount(plain);
+    return `<button type="button" class="excel-size-filter" data-excel-size-filter="${encodeURIComponent(plain)}" aria-pressed="${count ? "true" : "false"}">${count ? `사이즈(${count})` : "사이즈검색"}</button>`;
+  }
+
+  globalThis.excelSizeFilterButton = (key) => buttonHtml(key);
+  globalThis.excelSizeFilteredResult = (key, result) => filterResult(key, result);
+  globalThis.excelSizeFilterCount = (key) => filterCount(key);
+
   function renderPanel(cell, key, draft) {
     cell.querySelector(".excel-size-panel")?.remove();
     const panel = document.createElement("div");
@@ -66,13 +87,11 @@
   }
 
   function refreshDetail(key) {
+    if (typeof excelPreviewSearchResults === "undefined" || typeof excelPreviewProductCache === "undefined") return;
     const result = excelPreviewSearchResults.get(key);
     const product = excelPreviewProductCache.get(key);
     if (!result || !product || typeof renderDomestic !== "function") return;
-    const filter = filters.get(key);
-    const view = filter && filter.sizes.length
-      ? { ...result, products: (result.products || []).filter((item) => productHasSizes(item, filter.sizes)) }
-      : result;
+    const view = filterResult(key, result);
     const cell = document.querySelector(`[data-excel-size-filter="${encodeURIComponent(key)}"]`)?.closest("td");
     const row = cell?.closest("tr");
     const detail = row?.nextElementSibling;
@@ -81,7 +100,7 @@
     if (host) host.innerHTML = detailLabelHtml(product) + renderDomestic(view, product, key);
     const button = cell.querySelector("[data-excel-size-filter]");
     if (button) {
-      const count = filter ? filter.sizes.length : 0;
+      const count = filterCount(key);
       button.textContent = count ? `사이즈(${count})` : "사이즈검색";
       button.setAttribute("aria-pressed", count ? "true" : "false");
     }
@@ -109,8 +128,12 @@
       if (panelButton.hasAttribute("data-size-apply")) {
         if (draft.sizes.size) filters.set(key, { category: draft.category, sizes: [...draft.sizes] });
         else filters.delete(key);
+        const cell = panel.parentElement;
         panel.remove();
-        refreshDetail(key);
+        const hasResult = typeof excelPreviewSearchResults !== "undefined" && excelPreviewSearchResults.get(key);
+        const searchButton = cell?.querySelector("[data-excel-search-product]:not([disabled])");
+        if (!hasResult && searchButton) searchButton.click();
+        else refreshDetail(key);
         return;
       }
       if (panelButton.hasAttribute("data-size-clear")) {
