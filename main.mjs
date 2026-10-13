@@ -157,6 +157,7 @@ import {
   naverFashionTownUrl,
   naverFashionChannelSearchUrl,
   NAVER_FASHION_FALLBACK_CHANNELS,
+  summarizeNaverChannelFallback,
   parseNaverFashionTownChannelCounts,
   parseLotteInitialDataProducts,
   lotteServerSearchCard,
@@ -2970,6 +2971,7 @@ async function loadNaverFashionTownResultPage(searchWindow, targetUrl, query) {
 async function loadNaverFashionChannelsFallback(searchWindow, query) {
   const expectedQuery = fitNaverFashionTownSearchQuery(query);
   const diagnostic = searchWindow.domesticDiagnostics || {};
+  const channelStates = [];
   for (const channel of NAVER_FASHION_FALLBACK_CHANNELS) {
     if (searchWindow.isDestroyed()) return { ok: false, verificationReason: "search_canceled" };
     const channelUrl = naverFashionChannelSearchUrl(channel, expectedQuery);
@@ -3007,13 +3009,26 @@ async function loadNaverFashionChannelsFallback(searchWindow, query) {
       const ready = Number(state.cards) > 0 || state.positiveCount
         || (state.explicitEmpty && emptySamples >= 3 && String(state.documentReadyState || "") === "complete");
       if (!ready) continue;
-      settled = { channel, resolvedUrl: state.href, explicitEmpty: state.explicitEmpty && Number(state.cards) === 0 };
+      settled = { channel, settled: true, resolvedUrl: state.href,
+        explicitEmpty: state.explicitEmpty && Number(state.cards) === 0,
+        cards: Number(state.cards) || 0, positiveCount: state.positiveCount === true };
       break;
     }
-    if (!settled) continue;
-    if (!settled.explicitEmpty) return { ok: true, ...settled };
+    if (settled) channelStates.push(settled);
+    else channelStates.push({ channel, settled: false });
+    if (settled && !settled.explicitEmpty) {
+      return { ok: true, resolvedUrl: settled.resolvedUrl, explicitEmpty: false,
+        channel, channels: channelStates, fallbackUrl: diagnostic.fallbackUrl };
+    }
   }
-  return { ok: true, resolvedUrl: String(searchWindow.webContents.getURL() || ""), explicitEmpty: true, channel: "" };
+  const summary = summarizeNaverChannelFallback(channelStates);
+  if (!summary.allSettledEmpty) {
+    return { ok: false, verificationReason: "naver_channel_not_settled",
+      resolvedUrl: String(searchWindow.webContents.getURL() || ""),
+      channel: "", channels: channelStates, fallbackUrl: diagnostic.fallbackUrl };
+  }
+  return { ok: true, resolvedUrl: String(searchWindow.webContents.getURL() || ""), explicitEmpty: true, channel: "",
+    channels: channelStates, fallbackUrl: diagnostic.fallbackUrl };
 }
 
 async function loadDomesticRetailerResultPage(searchWindow, targetUrl) {
@@ -3369,7 +3384,9 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
             naverAllSearchVerdict: "absent", verificationPending: false,
             verificationReason: "naver_explicit_empty", verificationStage: "naver_result_capture",
             verificationDiagnostics: { stage: "naver_result_capture", resolvedUrl: resultPage.resolvedUrl,
-              explicitEmptyText: true, productCardCount: 0, channelFallback: (channelPage && channelPage.channel) || "" },
+              explicitEmptyText: true, productCardCount: 0, channelFallback: (channelPage && channelPage.channel) || "",
+              fallbackChannels: (channelPage && channelPage.channels) || [],
+              fallbackUrl: (channelPage && channelPage.fallbackUrl) || "" },
           };
         }
       }
@@ -4899,7 +4916,8 @@ async function addRenderedSearchCounts(data, articleNumber, brand = "", title = 
         if (domesticSearchCanceled(generation)) throw new Error("DOMESTIC_SEARCH_CANCELED");
         queryResult = reconcileSearchAttempt(queryResult, compared.products);
         for (const url of queryResult.rejectedProductUrls || []) rejectedProductUrls.add(domesticProductUrlIdentity(url));
-        queryComparisons.push({query: queryAttempt.query, matched: compared.products.length,
+        queryComparisons.push({query: queryAttempt.query, collected: collectedProductCount,
+          matched: compared.products.length,
           rejected: Number(queryResult.identityRejectedCount || 0), reason: queryResult.verificationReason || ""});
         result = queryResult;
         if (!bestEvidenceAttempt && collectedProductCount > 0 && (compared.products || []).length === 0) {
