@@ -159,6 +159,7 @@ import {
   NAVER_FASHION_FALLBACK_CHANNELS,
   summarizeNaverChannelFallback,
   parseNaverFashionTownChannelCounts,
+  isNaverDetailVerifiedProduct,
   parseLotteInitialDataProducts,
   lotteServerSearchCard,
   mergeAnalyzedProducts,
@@ -773,6 +774,9 @@ async function addMatchConfidence(data, input) {
     const codeConflict = product.articleConflict === true || product.signals?.codeConflict === true;
     const titleScore = Number(product.signals?.titleScore || 0);
     const imageScore = product.signals?.imageScore;
+    // Detail-approved Naver products were verified against the stronger
+    // evidence above; title heuristics must not discard them afterwards.
+    if (isNaverDetailVerifiedProduct(product)) return true;
     if (codeConflict) return false;
     if (product.brandVerifiedFromCard === false) return false;
     const verifiedNaverIdentity = String(product?.sourceStore || product?.store || "") === "네이버 패션타운"
