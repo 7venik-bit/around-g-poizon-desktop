@@ -5,6 +5,11 @@ import { JSDOM } from "jsdom";
 
 const script = readFileSync(new URL("../src/excel-size-filter.js", import.meta.url), "utf8");
 
+test("pending cells stack the size button on its own line", () => {
+  const css = readFileSync(new URL("../src/style.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(css, /\.excel-raw-search-cell\.excel-raw-search-pending \.excel-size-filter\{[^}]*width:100%/);
+});
+
 const PRODUCTS = [
   { title: "A", url: "https://example.test/a", sizes: [{ label: "220", inStock: true }] },
   { title: "B", url: "https://example.test/b", sizes: [{ label: "230", inStock: true }, { label: "M", inStock: true }] },
