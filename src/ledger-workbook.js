@@ -490,7 +490,27 @@
     $('workbook-poizon-review').hidden=!review.length;
     $('workbook-poizon-review-count').textContent=String(review.length);
     $('workbook-poizon-review-list').replaceChildren(...review.slice(0,100).map(item=>{
-      const li=document.createElement('li');li.textContent=`주문 ${item.orderNumber||'번호 없음'} · ${item.reason}`;return li;
+      const li=document.createElement('li');li.className='poizon-review-item';
+      const head=document.createElement('div');head.className='poizon-review-head';head.textContent=`주문 ${item.orderNumber||'번호 없음'} · ${item.reason}`;li.append(head);
+      for(const change of item.applicable?.diff||[]) {
+        const line=document.createElement('div');line.className='poizon-review-diff';
+        line.textContent=`${change.label}(${change.sheet} ${change.row}행): ${change.before} → ${change.after}`;li.append(line);
+      }
+      if(item.applicable) {
+        const apply=document.createElement('button');apply.type='button';apply.className='poizon-review-apply';apply.textContent='반영';
+        apply.addEventListener('click',()=>{
+          apply.disabled=true;apply.textContent='반영 중…';
+          window.aroundG.applyPoizonReviewSale(item.orderNumber).then(result=>{
+            if(!result.ok)throw new Error(result.message||'반영 실패');
+            poizonStatus(result.status);
+          }).catch(error=>{
+            $('workbook-poizon-sync-status').textContent=`확인 반영 실패: ${error.message}`;
+            apply.disabled=false;apply.textContent='반영';
+          });
+        });
+        li.append(apply);
+      }
+      return li;
     }));
     const savedPages=Number(payload.savedPages)||0;
     if((payload.state==='complete'||savedPages>poizonRenderedPages)&&payload.updated&&!busy&&!hasPendingEdit()){

@@ -140,6 +140,114 @@ function firstFreeRow(sheet) {
   throw Error('POIZON_SALES_DESTINATION_FULL');
 }
 
+const won=n=>`₩${Number(n).toLocaleString('ko-KR')}`;
+function identitySaleRow(sheet,row,order) {
+  if(!Number.isInteger(row)||row<3||row>(sheet.rawValues?.length||0))return false;
+  if(/(?:\d+\s*개|\d+\s*PCS)/i.test(value(sheet,row,4)))return false; // grouped purchase cannot represent one sale
+  const article=norm(value(sheet,row,3)),name=norm(value(sheet,row,4)),key=norm(order.articleNumber);
+  if(!articleMatches(article,order)&&!(article===''&&name.includes(key)&&key.length>=7))return false;
+  if(colorConflict(`${value(sheet,row,4)} ${value(sheet,row,7)}`,order.color))return false;
+  return sizeMatches(sheet,row,order);
+}
+function saleCellText(sheet,row,column) {
+  const cell=raw(sheet,row,column);
+  if(cell?.type==='formula')return sheet.displayValues?.[row-1]?.[column-1]||'자동 계산';
+  if(blank(cell))return '비어 있음';
+  if(column===11)return datePart(cell);
+  if(cell.type==='number'&&[10,16,17].includes(column))return won(money(cell));
+  return String(cell.value);
+}
+function saleStatusAfter(sheet,row) {
+  const status=value(sheet,row,12);
+  return !status||status==='구매완료'?'일판완료':status;
+}
+function saleMemoDiff(sheet,sheetName,row,order) {
+  const prior=existingNote(sheet,row),current=sheet.notes?.[row-1]?.[9]||'';
+  if(!(prior&&prior!==String(order.orderNumber)||!prior&&current&&current!==orderNote(order)))return null;
+  return {sheet:sheetName,row,column:10,label:'메모',before:prior?`다른 주문(${prior})`:'다른 메모 있음',after:'주문 메모 기록'};
+}
+// Differences a confirmed apply would overwrite. Rows stay untouched until the
+// user applies a review item explicitly.
+function diffSaleCells(purchase,sales,order,purchaseRow,salesRow) {
+  const diffs=[];
+  const push=(sheet,sheetName,row,column,label,after)=>{
+    if(!Number.isInteger(row))return;
+    const before=saleCellText(sheet,row,column);
+    if(before!==after)diffs.push({sheet:sheetName,row,column,label,before,after});
+  };
+  push(purchase,'1-구매완료',purchaseRow,10,'판매가',won(order.salePrice));
+  push(purchase,'1-구매완료',purchaseRow,11,'판매일자',order.saleDate);
+  push(purchase,'1-구매완료',purchaseRow,12,'상태',saleStatusAfter(purchase,purchaseRow));
+  push(purchase,'1-구매완료',purchaseRow,16,'수수료',won(order.basicFee));
+  push(purchase,'1-구매완료',purchaseRow,17,'운임',won(order.freightFee));
+  const purchaseMemo=saleMemoDiff(purchase,'1-구매완료',purchaseRow,order);
+  if(purchaseMemo)diffs.push(purchaseMemo);
+  if(Number.isInteger(salesRow)) {
+    push(sales,'5-판매완료',salesRow,10,'판매가',won(order.salePrice));
+    push(sales,'5-판매완료',salesRow,11,'판매일자',order.saleDate);
+    push(sales,'5-판매완료',salesRow,12,'상태',saleStatusAfter(sales,salesRow));
+    push(sales,'5-판매완료',salesRow,16,'수수료',won(order.basicFee));
+    push(sales,'5-판매완료',salesRow,17,'운임',won(order.freightFee));
+    const salesMemo=saleMemoDiff(sales,'5-판매완료',salesRow,order);
+    if(salesMemo)diffs.push(salesMemo);
+  }
+  return diffs;
+}
+function writeSaleEdits(book,purchase,sales,order,row,salesRow,salesRowExists,edits,overwrite=false) {
+  const templateRow=lastProductRow(sales)||undefined;
+  const fee=order.basicFee,freight=order.freightFee,source=structuredClone(purchase.rawValues[row-1]||[]),sourceNotes=structuredClone(purchase.notes?.[row-1]||[]);
+  const sourceImages=structuredClone((purchase.images||[]).filter(image=>image.row===row));
+  for(const sheet of [purchase,...(salesRowExists?[]:[sales])]) {
+    const targetRow=sheet===purchase?row:salesRow;
+    ensure(sheet,targetRow,Math.max(sheet.columnCount,source.length));
+    if(sheet===sales) {
+      for(const field of ['numberFormats','backgrounds','fontColors','fontWeights'])sheet[field][targetRow-1]=structuredClone(purchase[field]?.[row-1]||[]);
+      for(let column=1;column<=Math.min(sheet.columnCount,source.length);column++) {
+        let next=structuredClone(source[column-1]||empty());
+        if(next.type==='formula')next.value=shiftLedgerFormula(next.value,salesRow-row);
+        if(column===10)next=number(order.salePrice);
+        if(column===11)next=date(order.saleDate);
+        if(column===12)next={type:'text',value:'일판완료'};
+        if(column===16)next=number(fee);
+        if(column===17)next=number(freight);
+        const image=sourceImages.find(x=>x.column===column)?.url;
+        write(sheet,targetRow,column,next,edits,{templateRow,...(image?{image}:{})});
+        sheet.notes[targetRow-1][column-1]=sourceNotes[column-1]||'';
+        if(image)(sheet.images||=[]).push({row:targetRow,column,url:image});
+      }
+    } else {
+      if(overwrite||blank(raw(sheet,row,10)))write(sheet,row,10,number(order.salePrice),edits);
+      if(overwrite||blank(raw(sheet,row,11)))write(sheet,row,11,date(order.saleDate),edits);
+      const status=value(sheet,row,12),rule=sheet.validations?.[row-1]?.[11];
+      if((overwrite||!status||status==='구매완료')&&(!rule||rule.type==='list'&&rule.values?.includes('일판완료')))
+        write(sheet,row,12,{type:'text',value:'일판완료'},edits);
+      if(overwrite||blank(raw(sheet,row,16))||raw(sheet,row,16)?.type==='formula')write(sheet,row,16,number(fee),edits);
+      if(overwrite||raw(sheet,row,17)?.type!=='number'||money(raw(sheet,row,17))!==freight)write(sheet,row,17,number(freight),edits);
+    }
+  }
+  if(salesRowExists) {
+    if(value(sales,salesRow,12)!=='일판완료')write(sales,salesRow,12,{type:'text',value:'일판완료'},edits);
+    if(overwrite) {
+      write(sales,salesRow,10,number(order.salePrice),edits);
+      write(sales,salesRow,11,date(order.saleDate),edits);
+    }
+    if(overwrite||blank(raw(sales,salesRow,16))||raw(sales,salesRow,16)?.type==='formula')write(sales,salesRow,16,number(fee),edits);
+    if(overwrite||raw(sales,salesRow,17)?.type!=='number'||money(raw(sales,salesRow,17))!==freight)write(sales,salesRow,17,number(freight),edits);
+  }
+  for(const [sheet,targetRow] of [[purchase,row],[sales,salesRow]]) {
+    if(sheet.notes?.[targetRow-1]?.[9]!==orderNote(order)) {
+      ensure(sheet,targetRow,10);sheet.notes[targetRow-1][9]=orderNote(order);
+      edits.push({sheetId:sheet.id,row:targetRow,column:10});
+    }
+    (book.local.formulaOverrides||={})[sheet.id]||={};
+    book.local.formulaOverrides[sheet.id][`${targetRow}:16`]=true;
+    book.local.formulaOverrides[sheet.id][`${targetRow}:17`]=true;
+    // A newly copied sales row may already have the right in-memory format
+    // while its worksheet XML still needs the corresponding style patch.
+    applyFormats(sheet,targetRow,saleFormats,edits,{force:sheet===sales&&!salesRowExists});
+  }
+}
+
 // Mutates an in-memory workbook only. Caller commits each completed seller-center
 // page; rows with conflicting sale evidence remain untouched.
 export function reconcilePoizonOrders(book,orders) {
@@ -151,85 +259,68 @@ export function reconcilePoizonOrders(book,orders) {
   const seen=new Set();
   for(const order of orders) {
     const id=String(order?.orderNumber||'');
-    if(seen.has(id)){review.push({orderNumber:id,reason:'중복 주문번호'});continue;}seen.add(id);
-    if(!validOrder(order)) {review.push({orderNumber:id,reason:order?.failure||'판매 진행 상태·일반판매·금액·체결일 검증 필요'});continue;}
+    if(seen.has(id)){review.push({orderNumber:id,reason:'중복 주문번호',order});continue;}seen.add(id);
+    if(!validOrder(order)) {review.push({orderNumber:id,reason:order?.failure||'판매 진행 상태·일반판매·금액·체결일 검증 필요',order});continue;}
     const linked=links[id];
     const candidates=linked?[linked.purchaseRow]:matchingRows(purchase,order).filter(row=>!usedPurchase.has(row));
     const noted=candidates.filter(row=>existingNote(purchase,row)===id);
     const available=candidates.filter(row=>blank(raw(purchase,row,10))&&blank(raw(purchase,row,11))&&!existingNote(purchase,row));
     const row=linked?candidates[0]:noted.length===1?noted[0]:candidates.length===1?candidates[0]
       :noted.length===0&&available.length===candidates.length?available[0]:undefined;
-    if(!Number.isInteger(row)){review.push({orderNumber:id,reason:candidates.length?'구매 행이 여러 개이거나 기존 판매값과 충돌합니다':'일치하는 구매 행이 없습니다'});continue;}
-    const actual=matchingRows(purchase,order);
-    if(!actual.includes(row)){review.push({orderNumber:id,reason:'기존 판매 값과 주문 상세가 다릅니다'});continue;}
+    if(!Number.isInteger(row)){review.push({orderNumber:id,reason:candidates.length?'구매 행이 여러 개이거나 기존 판매값과 충돌합니다':'일치하는 구매 행이 없습니다',order});continue;}
     const existingSales=linked?[linked.salesRow]:Array.from({length:Math.max(sales.rawValues.length,3)-2},(_,i)=>i+3).filter(n=>{
       const prior=existingNote(sales,n);
       return prior===id||!prior&&sameSale(sales,n,order);
     });
-    if(existingSales.length>1||linked&&(!Number.isInteger(existingSales[0])||!sameSale(sales,existingSales[0],order))){review.push({orderNumber:id,reason:'판매완료 행 확인 필요'});continue;}
-    const salesRow=existingSales[0]||firstFreeRow(sales),templateRow=lastProductRow(sales)||undefined;
-    if(existingSales.length&&!['','구매완료','일판완료'].includes(value(sales,salesRow,12))){review.push({orderNumber:id,reason:'판매완료 상태 확인 필요'});continue;}
-    if(!existingSales.length&&[1,3,4,10,11,14].some(column=>!blank(raw(sales,salesRow,column)))){review.push({orderNumber:id,reason:'판매완료 입력 위치가 사용 중입니다'});continue;}
+    const applicable=salesRow=>({purchaseRow:row,salesRow:salesRow??null,diff:diffSaleCells(purchase,sales,order,row,salesRow??null)});
+    const actual=matchingRows(purchase,order);
+    if(!actual.includes(row)){review.push({orderNumber:id,reason:'기존 판매 값과 주문 상세가 다릅니다',order,applicable:applicable(existingSales.length===1?existingSales[0]:null)});continue;}
+    if(existingSales.length>1||linked&&(!Number.isInteger(existingSales[0])||!sameSale(sales,existingSales[0],order))){review.push({orderNumber:id,reason:'판매완료 행 확인 필요',order,...(existingSales.length===1?{applicable:applicable(existingSales[0])}:{})});continue;}
+    const salesRow=existingSales[0]||firstFreeRow(sales);
+    if(existingSales.length&&!['','구매완료','일판완료'].includes(value(sales,salesRow,12))){review.push({orderNumber:id,reason:'판매완료 상태 확인 필요',order,applicable:applicable(salesRow)});continue;}
+    if(!existingSales.length&&[1,3,4,10,11,14].some(column=>!blank(raw(sales,salesRow,column)))){review.push({orderNumber:id,reason:'판매완료 입력 위치가 사용 중입니다',order,applicable:applicable(salesRow)});continue;}
     if([[purchase,row],[sales,salesRow]].some(([sheet,targetRow])=>{
       const fee=raw(sheet,targetRow,16);
       return fee&&!blank(fee)&&fee.type==='number'&&money(fee)!==order.basicFee;
-    })){review.push({orderNumber:id,reason:'기존 수수료와 주문 상세가 다릅니다'});continue;}
+    })){review.push({orderNumber:id,reason:'기존 수수료와 주문 상세가 다릅니다',order,applicable:applicable(salesRow)});continue;}
     if([[purchase,row],[sales,salesRow]].some(([sheet,targetRow])=>{
       const prior=existingNote(sheet,targetRow),current=sheet.notes?.[targetRow-1]?.[9]||'';
       return prior&&prior!==id||!prior&&current&&current!==orderNote(order);
-    })){review.push({orderNumber:id,reason:'판매가 셀에 다른 주문 메모가 있습니다'});continue;}
-    const fee=order.basicFee,freight=order.freightFee,source=structuredClone(purchase.rawValues[row-1]||[]),sourceNotes=structuredClone(purchase.notes?.[row-1]||[]);
-    const sourceImages=structuredClone((purchase.images||[]).filter(image=>image.row===row));
-    for(const sheet of [purchase,...(existingSales.length?[]:[sales])]) {
-      const targetRow=sheet===purchase?row:salesRow;
-      ensure(sheet,targetRow,Math.max(sheet.columnCount,source.length));
-      if(sheet===sales) {
-        for(const field of ['numberFormats','backgrounds','fontColors','fontWeights'])sheet[field][targetRow-1]=structuredClone(purchase[field]?.[row-1]||[]);
-        for(let column=1;column<=Math.min(sheet.columnCount,source.length);column++) {
-          let next=structuredClone(source[column-1]||empty());
-          if(next.type==='formula')next.value=shiftLedgerFormula(next.value,salesRow-row);
-          if(column===10)next=number(order.salePrice);
-          if(column===11)next=date(order.saleDate);
-          if(column===12)next={type:'text',value:'일판완료'};
-          if(column===16)next=number(fee);
-          if(column===17)next=number(freight);
-          const image=sourceImages.find(x=>x.column===column)?.url;
-          write(sheet,targetRow,column,next,edits,{templateRow,...(image?{image}:{})});
-          sheet.notes[targetRow-1][column-1]=sourceNotes[column-1]||'';
-          if(image)(sheet.images||=[]).push({row:targetRow,column,url:image});
-        }
-      } else {
-        if(blank(raw(sheet,row,10)))write(sheet,row,10,number(order.salePrice),edits);
-        if(blank(raw(sheet,row,11)))write(sheet,row,11,date(order.saleDate),edits);
-        const status=value(sheet,row,12),rule=sheet.validations?.[row-1]?.[11];
-        if((!status||status==='구매완료')&&(!rule||rule.type==='list'&&rule.values?.includes('일판완료')))
-          write(sheet,row,12,{type:'text',value:'일판완료'},edits);
-        if(blank(raw(sheet,row,16))||raw(sheet,row,16)?.type==='formula')write(sheet,row,16,number(fee),edits);
-        if(raw(sheet,row,17)?.type!=='number'||money(raw(sheet,row,17))!==freight)write(sheet,row,17,number(freight),edits);
-      }
-    }
-    if(existingSales.length) {
-      if(value(sales,salesRow,12)!=='일판완료')write(sales,salesRow,12,{type:'text',value:'일판완료'},edits);
-      if(blank(raw(sales,salesRow,16))||raw(sales,salesRow,16)?.type==='formula')write(sales,salesRow,16,number(fee),edits);
-      if(raw(sales,salesRow,17)?.type!=='number'||money(raw(sales,salesRow,17))!==freight)write(sales,salesRow,17,number(freight),edits);
-    }
-    for(const [sheet,targetRow] of [[purchase,row],[sales,salesRow]]) {
-      if(sheet.notes?.[targetRow-1]?.[9]!==orderNote(order)) {
-        ensure(sheet,targetRow,10);sheet.notes[targetRow-1][9]=orderNote(order);
-        edits.push({sheetId:sheet.id,row:targetRow,column:10});
-      }
-      (book.local.formulaOverrides||={})[sheet.id]||={};
-      book.local.formulaOverrides[sheet.id][`${targetRow}:16`]=true;
-      book.local.formulaOverrides[sheet.id][`${targetRow}:17`]=true;
-      // A newly copied sales row may already have the right in-memory format
-      // while its worksheet XML still needs the corresponding style patch.
-      applyFormats(sheet,targetRow,saleFormats,edits,{force:sheet===sales&&!existingSales.length});
-    }
-    links[id]={purchaseRow:row,salesRow,salePrice:order.salePrice,saleDate:order.saleDate,fee,freight};
+    })){review.push({orderNumber:id,reason:'판매가 셀에 다른 주문 메모가 있습니다',order,applicable:applicable(salesRow)});continue;}
+    writeSaleEdits(book,purchase,sales,order,row,salesRow,existingSales.length>0,edits);
+    links[id]={purchaseRow:row,salesRow,salePrice:order.salePrice,saleDate:order.saleDate,fee:order.basicFee,freight:order.freightFee};
     usedPurchase.add(row);if(!linked||edits.some(edit=>!edit.formatOnly&&(edit.row===row&&edit.sheetId===purchase.id||edit.row===salesRow&&edit.sheetId===sales.id)))recorded.push({orderNumber:id,purchaseRow:row,salesRow});
   }
   book.local.poizonOrders=links;
   return {edits,recorded,review};
+}
+
+// Applies one user-confirmed review item. Identity (article/colour/size) is
+// rechecked, but conflicting sale values are overwritten with the order
+// detail the user has reviewed. Returns edits for the caller to commit and
+// verify exactly like a normal recorded sale.
+export function applyPoizonReviewSale(book,pending) {
+  const purchase=book.sheets.find(s=>s.name==='1-구매완료'),sales=book.sheets.find(s=>s.name==='5-판매완료');
+  if(!purchase||!sales||purchase.columnCount<22||sales.columnCount<22)throw Error('POIZON_LEDGER_SHEETS_MISSING');
+  book.local||={};
+  const order=pending?.order,id=String(order?.orderNumber||'');
+  if(!id||!validOrder(order))throw Error('POIZON_REVIEW_NOT_APPLICABLE');
+  const row=pending?.applicable?.purchaseRow;
+  if(!identitySaleRow(purchase,row,order))throw Error('POIZON_REVIEW_TARGET_CHANGED');
+  let salesRow=pending?.applicable?.salesRow;
+  if(Number.isInteger(salesRow)&&(salesRow<3||salesRow>(sales.rowCount||sales.rawValues.length)))throw Error('POIZON_REVIEW_TARGET_CHANGED');
+  // A speculative free row may be blank: fill it like a new sales row instead
+  // of topping up missing sale values it never had.
+  const occupied=Number.isInteger(salesRow)&&(sales.notes?.[salesRow-1]?.some(Boolean)
+    ||(sales.rawValues?.[salesRow-1]||[]).some((cell,index)=>!blank(cell)&&cell.type!=='formula'&&![4,11].includes(index)));
+  const salesRowExists=occupied;
+  if(!Number.isInteger(salesRow)||!occupied)salesRow=occupied?salesRow:firstFreeRow(sales);
+  const edits=[];
+  writeSaleEdits(book,purchase,sales,order,row,salesRow,salesRowExists,edits,true);
+  const links=book.local.poizonOrders||={};
+  links[id]={purchaseRow:row,salesRow,salePrice:order.salePrice,saleDate:order.saleDate,fee:order.basicFee,freight:order.freightFee};
+  book.local.poizonOrders=links;
+  return {edits,recorded:[{orderNumber:id,purchaseRow:row,salesRow}]};
 }
 
 export function verifyPoizonRecordedSales(book,orders,recorded) {

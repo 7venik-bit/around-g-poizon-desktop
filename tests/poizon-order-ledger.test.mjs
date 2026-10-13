@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {reconcilePoizonOrders,verifyPoizonRecordedSales} from '../services/poizon-order-ledger.mjs';
+import {reconcilePoizonOrders,verifyPoizonRecordedSales,applyPoizonReviewSale} from '../services/poizon-order-ledger.mjs';
 
 const blank=()=>({type:'text',value:''});
 function sheet(id,name) {
@@ -193,4 +193,42 @@ test('a linked sale backfills both shipping cells from explicit seller freight a
   assert.equal(workbook.sheets[0].rawValues[4][16].value,'3000');
   assert.equal(workbook.sheets[1].rawValues[row-1][16].value,'3000');
   assert.equal(verifyPoizonRecordedSales(workbook,[order()],again.recorded),1);
+});
+
+test('a conflicting manual fee stays in review with an applicable diff',()=>{
+  const workbook=book();workbook.sheets[0].rawValues[4][15]={type:'number',value:'12000'};
+  const result=reconcilePoizonOrders(workbook,[order()]);
+  assert.equal(result.recorded.length,0);assert.equal(result.review.length,1);
+  const item=result.review[0];
+  assert.match(item.reason,/수수료/);
+  assert.equal(item.applicable.purchaseRow,5);
+  assert.equal(item.order.orderNumber,order().orderNumber);
+  const fee=item.applicable.diff.find(change=>change.label==='수수료'&&change.sheet==='1-구매완료');
+  assert.ok(fee);assert.equal(fee.before,'₩12,000');assert.equal(fee.after,'₩7,500');
+});
+
+test('an applied review overwrites the conflicting fee and verifies',()=>{
+  const workbook=book();workbook.sheets[0].rawValues[4][15]={type:'number',value:'12000'};
+  const pending=reconcilePoizonOrders(workbook,[order()]).review[0];
+  assert.ok(pending.applicable);
+  const applied=applyPoizonReviewSale(workbook,pending);
+  assert.equal(applied.recorded.length,1);
+  assert.equal(workbook.sheets[0].rawValues[4][15].value,'7500');
+  assert.equal(verifyPoizonRecordedSales(workbook,[order()],applied.recorded),1);
+});
+
+test('an applied review rejects a repurposed purchase row',()=>{
+  const workbook=book();workbook.sheets[0].rawValues[4][15]={type:'number',value:'12000'};
+  const pending=reconcilePoizonOrders(workbook,[order()]).review[0];
+  workbook.sheets[0].rawValues[4][2]={type:'text',value:'OTHERARTICLE11'};
+  workbook.sheets[0].rawValues[4][3]={type:'text',value:'다른 상품'};
+  assert.throws(()=>applyPoizonReviewSale(workbook,pending),/POIZON_REVIEW_TARGET_CHANGED/);
+});
+
+test('an invalid order review carries no applicable target',()=>{
+  const workbook=book(),broken={...order(),quantity:2};
+  const result=reconcilePoizonOrders(workbook,[broken]);
+  assert.equal(result.recorded.length,0);assert.equal(result.review.length,1);
+  assert.equal(result.review[0].applicable,undefined);
+  assert.throws(()=>applyPoizonReviewSale(workbook,result.review[0]),/POIZON_REVIEW_NOT_APPLICABLE/);
 });

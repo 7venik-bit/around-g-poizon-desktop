@@ -6,7 +6,7 @@ import {updateLedgerXlsx,readLedgerImages} from './ledger-xlsx.mjs';
 import {purchaseLedgerImageUrl,validatePurchaseLedgerRow} from './purchase-ledger.mjs';
 import {LEDGER_COPY_SCHEMA} from './ledger-clipboard.mjs';
 import {autofillLedger,LEDGER_FORMULA_VERSION,ledgerCalculationSheet} from './ledger-autofill.mjs';
-import {reconcilePoizonOrders,repairPoizonSaleFormats,verifyPoizonRecordedSales} from './poizon-order-ledger.mjs';
+import {reconcilePoizonOrders,repairPoizonSaleFormats,verifyPoizonRecordedSales,applyPoizonReviewSale} from './poizon-order-ledger.mjs';
 
 const fail=code=>{throw Error(code);};
 const empty=()=>({type:'text',value:''});
@@ -69,6 +69,9 @@ function validateChange(sheet,row,column,next) {
 export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedgerWorkbook,read=readLedgerWorkbook,categories}) {
   let queue=Promise.resolve();
   const serial=fn=>{const result=queue.then(fn);queue=result.catch(()=>{});return result;};
+  // User-confirmed review applications reuse the collected order details from
+  // the latest sync. Entries vanish on restart; the sync must run again then.
+  const pendingPoizonReviews=new Map();
   const readLocal=async()=>{
     try {return await read(path,decrypt);}
     catch(error) {if(error.code!=='ENOENT')throw error;}
@@ -207,6 +210,9 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
     export:destination=>serial(async()=>exportLedgerWorkbook(destination,await load())),
     syncPoizonSales:orders=>serial(async()=>{
       const book=await load(),result=reconcilePoizonOrders(book,orders);
+      for(const item of result.review) {
+        if(item?.applicable&&item?.orderNumber)pendingPoizonReviews.set(String(item.orderNumber),item);
+      }
       let verified=0;
       if(result.edits.length) {
         // A verified recovery point precedes every batch of external sales.
@@ -223,6 +229,26 @@ export function createLocalLedger({path,sourcePath,encrypt,decrypt,save=saveLedg
         }
       }
       return {ok:true,recorded:result.recorded,verified,review:result.review,updated:result.edits.length>0};
+    }),
+    applyPoizonReview:orderNumber=>serial(async()=>{
+      const key=String(orderNumber||''),pending=pendingPoizonReviews.get(key);
+      if(!pending?.applicable)fail('POIZON_REVIEW_NOT_FOUND');
+      const book=await load(),result=applyPoizonReviewSale(book,pending);
+      // Same recovery point, commit, and readback verification as a normal sale.
+      const backupPath=`${path}.before-poizon-sales-${randomUUID()}.encrypted`;
+      const before=await read(path,decrypt);
+      await save(backupPath,before,encrypt);
+      if((await read(backupPath,decrypt)).revision!==book.revision)fail('WORKBOOK_SAVE_VERIFY_FAILED');
+      const saved=await commit(book,result.edits,{manual:false});
+      let verified=0;
+      try {verified=verifyPoizonRecordedSales(saved,[pending.order],result.recorded);}
+      catch(error) {
+        await save(path,before,encrypt);
+        if((await read(path,decrypt)).revision!==before.revision)fail('WORKBOOK_SAVE_VERIFY_FAILED');
+        throw error;
+      }
+      pendingPoizonReviews.delete(key);
+      return {ok:true,recorded:result.recorded,verified,review:[...pendingPoizonReviews.values()],updated:true};
     }),
     edit:edit=>serial(async()=>{
       const book=await load(),sheet=book.sheets.find(s=>s.id===edit?.sheetId);
