@@ -88,6 +88,55 @@ test("filter globals narrow results and label the button", (t) => {
   assert.deepEqual(view.products.map((item) => item.title), ["A", "B", "C"]);
 });
 
+const HATS = [
+  { title: "H1", url: "https://example.test/h1", sizes: [{ label: "S/M", inStock: true }] },
+  { title: "H2", url: "https://example.test/h2", sizes: [{ label: "M/L", inStock: true }] },
+  { title: "H3", url: "https://example.test/h3", sizes: [{ label: "프리", inStock: true }] },
+];
+
+test("headwear ranges match by parts and free sizes by alias", (t) => {
+  const { document, calls, window } = setup(t);
+  window.excelPreviewSearchResults.set("k1", { products: HATS, sources: [] });
+  click(document.querySelector("[data-excel-size-filter]"));
+  click(document.querySelector('[data-size-category="headwear"]'));
+  assert.ok(document.querySelector('[data-size-chip="S/M"]'));
+  assert.ok(document.querySelector('[data-size-chip="57"]'));
+  click(document.querySelector('[data-size-chip="S/M"]'));
+  click(document.querySelector("[data-size-apply]"));
+  assert.deepEqual(calls[0].products, ["H1"]);
+  click(document.querySelector("[data-excel-size-filter]"));
+  click(document.querySelector("[data-size-clear]"));
+  click(document.querySelector("[data-excel-size-filter]"));
+  click(document.querySelector('[data-size-category="headwear"]'));
+  click(document.querySelector('[data-size-chip="FREE"]'));
+  click(document.querySelector("[data-size-apply]"));
+  assert.deepEqual(calls[2].products, ["H3"]);
+});
+
+test("plain M matches any range carrying it", (t) => {
+  const { document, calls, window } = setup(t);
+  window.excelPreviewSearchResults.set("k1", { products: [
+    { title: "H1", url: "https://example.test/h1", sizes: [{ label: "S/M", inStock: true }] },
+    { title: "H2", url: "https://example.test/h2", sizes: [{ label: "L/XL", inStock: true }] },
+  ], sources: [] });
+  click(document.querySelector("[data-excel-size-filter]"));
+  click(document.querySelector('[data-size-category="clothing"]'));
+  click(document.querySelector('[data-size-chip="M"]'));
+  click(document.querySelector("[data-size-apply]"));
+  assert.deepEqual(calls[0].products, ["H1"]);
+});
+
+test("hat rows open the panel on headwear", (t) => {
+  const { document, window } = setup(t);
+  window.categoryGroupFromProduct = () => "모자";
+  window.excelPreviewProductCache.set("k1", { title: "MLB 볼캡" });
+  click(document.querySelector("[data-excel-size-filter]"));
+  const panel = document.querySelector(".excel-size-panel");
+  assert.ok(panel.querySelector('[data-size-chip="S/M"]'));
+  assert.equal(panel.querySelector('[data-size-category="headwear"]').getAttribute("aria-pressed"), "true");
+  delete window.categoryGroupFromProduct;
+});
+
 test("applying before any search starts the product search", (t) => {
   const dom = new JSDOM(`<body><table>
     <tr class="excel-product-row"><td>
