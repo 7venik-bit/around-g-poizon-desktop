@@ -313,6 +313,17 @@ test("an unsettled channel fallback stays pending instead of false absence", () 
   assert.match(main, /fallbackChannels: \(channelPage && channelPage\.channels\)/);
 });
 
+test("silent naver detail rejections record which gate failed", () => {
+  const main = fs.readFileSync(new URL("../main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(main, /detail_code_conflict/);
+  assert.match(main, /seller_unverified/);
+  assert.match(main, /identity_unverified/);
+  assert.match(main, /detailRejections\.push/);
+  assert.match(main, /detailRejections: approval\.detailRejections/);
+  const inline = fs.readFileSync(new URL("../src/domestic-inline-results.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(inline, /상세 탈락 내역/);
+});
+
 test("outlet exact-code cards survive analyze for a code-priority naver query", () => {
   const snapshot = JSON.stringify({
     productCards: [{

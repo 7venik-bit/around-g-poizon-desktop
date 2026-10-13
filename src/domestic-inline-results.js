@@ -335,6 +335,7 @@
         ["접속 오류", d.navigationError], ["화면 읽기 오류", d.inspectionError], ["수집 오류", d.errorMessage],
         ["상세 처리 수", d.processedProducts], ["상세 전체 수", d.totalProducts], ["상세 확인 필요 수", d.failedDetails],
         ["마지막 상세 주소", safeUrl(d.lastDetailUrl)], ["마지막 상세 오류", d.lastDetailFailure],
+        ["상세 탈락 내역", (d.detailRejections || []).map(r => `${r.reason}: ${(r.title || "").slice(0, 80)} · ${safeUrl(r.url)}`).join("\n")],
         ["상세 실제 도착 주소", safeUrl(d.lastDetailResolvedUrl)],
         ["상세 확인 단계", d.lastDetailState?.readiness],
         ["상세 문서 상태", d.lastDetailState?.documentReadyState],

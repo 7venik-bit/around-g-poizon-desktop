@@ -1462,6 +1462,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
   let rejectedCount = identityRejected.length;
   let failedCount = 0;
   const detailFailures = [];
+  const detailRejections = [];
   let securityVerificationRequired = false;
   let loginRequired = false;
   let rateLimited = false;
@@ -1545,6 +1546,10 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
         if (detailConflict || !sellerVerified || !identityVerified) {
           rejectedCount += 1;
           rejectedUrls.add(domesticProductUrlIdentity(productUrl));
+          detailRejections.push({ url: productUrl,
+            reason: detailConflict ? "detail_code_conflict"
+              : !sellerVerified ? "seller_unverified" : "identity_unverified",
+            title: String(snapshot.visibleTitleText || snapshot.titleText || "").replace(/\s+/g, " ").trim().slice(0, 120) });
           continue;
         }
         // Publish verified identity/price before optional stock inspection.
@@ -1601,6 +1606,8 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
           checkedCount += 1;
           rejectedCount += 1;
           rejectedUrls.add(domesticProductUrlIdentity(productUrl));
+          detailRejections.push({ url: productUrl, reason: "identity_mismatch",
+            title: String(candidate?.title || "").replace(/\s+/g, " ").trim().slice(0, 120) });
           detailVerified = true;
           continue;
         }
@@ -1648,6 +1655,7 @@ async function verifyApprovedNaverDomesticProducts(products = [], {
     rejectedProductUrls: [...rejectedUrls],
     failedCount,
     detailFailures,
+    detailRejections,
     securityVerificationRequired,
     loginRequired,
     rateLimited,
@@ -4148,6 +4156,7 @@ async function renderedSearchSourceResult(source, articleNumber, brand = "", tit
           sellerRejectedCount: approval.rejectedCount,
           sellerFailedCount: approval.failedCount,
           detailFailures: approval.detailFailures || [],
+          detailRejections: approval.detailRejections || [],
           lastDetailFailure: approval.detailFailures?.at(-1)?.reason || "",
           lastDetailResolvedUrl: approval.detailFailures?.at(-1)?.resolvedUrl || "",
           lastDetailState: approval.detailFailures?.at(-1) ? {
