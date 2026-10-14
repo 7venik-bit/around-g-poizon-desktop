@@ -24,14 +24,13 @@
 #popular-progress .popular-radar-blip.b3{left:46%;top:72%;animation-delay:2.1s}
 @keyframes popular-radar-ping{0%,55%,100%{opacity:.25;transform:scale(.7)}12%{opacity:1;transform:scale(1.25)}}
 #popular-progress .popular-radar-dot{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:#d9f6e4}
-#popular-progress .popular-radar-tag{display:block;position:absolute;z-index:2;max-width:66px;height:auto;margin:0;padding:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#5cf08a;font-size:8px;font-weight:700;letter-spacing:.02em;text-shadow:0 0 6px #5cf08a88;pointer-events:none}
-#popular-progress .popular-radar-tag.t1{left:33%;top:29%}
-#popular-progress .popular-radar-tag.t2{right:39%;top:53%;text-align:right}
-#popular-progress .popular-radar-tag.t3{left:49%;top:67%}
+#popular-progress .popular-radar-tag{display:block;position:absolute;z-index:2;max-width:70px;height:auto;margin:0;padding:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#5cf08a;font-size:8px;font-weight:700;letter-spacing:.02em;text-shadow:0 0 6px #5cf08a88;pointer-events:none;opacity:0;animation:popular-tag-appear 4.5s ease-out forwards}
+#popular-progress .popular-radar-tag.tag-pos-0{left:10%;top:20%}#popular-progress .popular-radar-tag.tag-pos-1{left:56%;top:12%}#popular-progress .popular-radar-tag.tag-pos-2{left:70%;top:42%}#popular-progress .popular-radar-tag.tag-pos-3{left:50%;top:64%}#popular-progress .popular-radar-tag.tag-pos-4{left:18%;top:60%}#popular-progress .popular-radar-tag.tag-pos-5{left:34%;top:80%}#popular-progress .popular-radar-tag.tag-pos-6{left:62%;top:80%}#popular-progress .popular-radar-tag.tag-pos-7{left:8%;top:42%}
+@keyframes popular-tag-appear{0%{opacity:0}8%{opacity:1}75%{opacity:1}100%{opacity:0}}
 #popular-progress .popular-radar-caption{color:#3c5a6b;font-size:11px;font-weight:800;letter-spacing:.08em}
 #popular-progress[data-complete] .popular-radar-sweep{animation:none;transform:rotate(45deg)}
 #popular-progress[data-complete] .popular-radar-blip{animation:none;opacity:1;transform:scale(1)}
-@media(prefers-reduced-motion:reduce){#popular-progress .popular-radar-sweep,#popular-progress .popular-radar-blip{animation:none}#popular-progress .popular-radar-blip{opacity:.9}}
+@media(prefers-reduced-motion:reduce){#popular-progress .popular-radar-sweep,#popular-progress .popular-radar-blip{animation:none}#popular-progress .popular-radar-blip{opacity:.9}#popular-progress .popular-radar-tag{animation:none;opacity:1}}
 /* Radar power switch: simplified military hardware look. ON runs the scope and starts capture. */
 #popular-progress .popular-radar-switch{display:flex;gap:8px;justify-content:center}
 #popular-progress .popular-radar-power{min-width:66px;padding:7px 14px;border:2px solid #3a4a54;border-radius:6px;background:linear-gradient(180deg,#2c3b45,#1a252d);color:#8b98a1;font:800 11px Consolas,"Cascadia Code",monospace;letter-spacing:.18em;cursor:pointer;box-shadow:inset 0 1px 0 #ffffff22,0 2px 4px #00000033}

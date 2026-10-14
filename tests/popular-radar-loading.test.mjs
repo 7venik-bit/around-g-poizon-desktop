@@ -10,7 +10,7 @@ test("popular loading shows a radar scope without changing progress semantics", 
   assert.match(html, /id="popular-progress"[^>]*>[\s\S]*?class="popular-radar-face" aria-hidden="true"/);
   assert.match(html, /class="popular-radar-sweep"/);
   assert.equal((html.match(/class="popular-radar-blip b\d"/g) || []).length, 3);
-  assert.equal((html.match(/class="popular-radar-tag t\d"/g) || []).length, 3);
+  assert.equal((html.match(/class="popular-radar-tag"/g) || []).length, 6);
   assert.match(html, /class="popular-radar-caption"/);
   assert.match(html, /class="popular-radar-switch" role="group" aria-label="레이더 전원"/);
   assert.match(html, /data-radar-power="on" aria-pressed="true">ON/);
@@ -30,6 +30,8 @@ test("radar is decorative CSS with reduced-motion and completion states", () => 
   assert.match(css, /@keyframes popular-radar-ping/);
   assert.match(css, /#popular-progress \.popular-radar-face\{[^}]*width:240px/);
   assert.match(css, /#popular-progress \.popular-radar-tag\{[^}]*text-overflow:ellipsis/);
+  assert.match(css, /#popular-progress \.popular-radar-tag\.tag-pos-7\{/);
+  assert.match(css, /@keyframes popular-tag-appear/);
   assert.match(css, /#popular-progress\[data-complete\] \.popular-radar-sweep/);
   assert.match(css, /popular-radar-power\[aria-pressed="true"\]\[data-radar-power="on"\]/);
   assert.match(css, /#popular-progress\[data-radar="off"\] \.popular-radar-face/);
@@ -78,7 +80,8 @@ test("capture progress marks completion for the radar state", () => {
   assert.match(handler, /popular-progress-code/);
   assert.match(handler, /popular-progress-prices/);
   assert.match(handler, /popular-radar-tag/);
-  assert.match(handler, /names\.slice\(-3\)/);
+  assert.match(handler, /data-tag-slot/);
+  assert.match(handler, /tag-pos-\$\{slot % 8\}/);
   assert.doesNotMatch(handler, /위 수집/);
   assert.doesNotMatch(handler, /POIZON<\/span>/);
   assert.match(capture, /replaceChildren\(\)/);

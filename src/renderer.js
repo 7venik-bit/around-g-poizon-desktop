@@ -4138,16 +4138,23 @@ window.aroundG.onSellerCaptureProgress((progress) => {
     const recent = Array.isArray(progress.recent) ? progress.recent : [];
     const tags = host.querySelectorAll(".popular-radar-tag");
     if (tags.length) {
-      const names = [];
+      let slot = Number(host.dataset.tagSlot || 0);
       for (const item of recent) {
         const label = String(item?.name || item?.articleNumber || "").trim();
-        if (!label || names.includes(label)) continue;
-        names.push(label);
+        if (!label) continue;
+        let shown = false;
+        for (const tag of tags) {
+          if (tag.textContent === label) { shown = true; break; }
+        }
+        if (shown) continue;
+        const tag = tags[slot % tags.length];
+        slot += 1;
+        tag.className = "popular-radar-tag";
+        void tag.offsetWidth;
+        tag.classList.add(`tag-pos-${slot % 8}`);
+        tag.textContent = label;
       }
-      const latest = names.slice(-3);
-      tags.forEach((tag, index) => {
-        if (index < latest.length) tag.textContent = latest[index];
-      });
+      host.dataset.tagSlot = String(slot);
     }
     for (const item of recent.slice(-8)) {
       const code = String(item?.articleNumber || "").toUpperCase();
@@ -4194,7 +4201,8 @@ async function capturePopularProducts(options = {}) {
   $("#popular-progress").querySelectorAll("[data-radar-power]").forEach((sw) => sw.setAttribute("aria-pressed", String(sw.dataset.radarPower === "on")));
   const resetFeed = $("#popular-progress").querySelector(".popular-progress-items");
   if (resetFeed) resetFeed.replaceChildren();
-  $("#popular-progress").querySelectorAll(".popular-radar-tag").forEach((tag) => { tag.textContent = ""; });
+  $("#popular-progress").querySelectorAll(".popular-radar-tag").forEach((tag) => { tag.textContent = ""; tag.className = "popular-radar-tag"; });
+  $("#popular-progress").removeAttribute("data-tag-slot");
   const resetCounter = $("#popular-progress").querySelector(".popular-progress-count b");
   if (resetCounter) resetCounter.textContent = "0";
   $("#popular-progress").querySelector("i").style.width = "0%";
