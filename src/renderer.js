@@ -4146,10 +4146,18 @@ window.aroundG.onSellerCaptureProgress((progress) => {
       if (exists) continue;
       const image = String(item?.image || "");
       const price = Number(item?.averagePrice || 0);
+      const low = Number(item?.lowestPrice || 0);
+      const high = Number(item?.highestPrice || 0);
+      let range = "";
+      if (high > low && low > 0) {
+        const bucket = Math.max(0, Math.min(9, Math.floor(Math.max(0, Math.min(1, (price - low) / (high - low))) * 10)));
+        const won = (value) => `${Math.round(value).toLocaleString("ko-KR")}원`;
+        range = `<span class="popular-progress-range" title="최저 ${won(low)} · 최고 ${won(high)}"><i class="popular-range-p${bucket}"></i></span>`;
+      }
       const card = host.ownerDocument.createElement("div");
       card.className = "popular-progress-item";
       card.dataset.article = code;
-      card.innerHTML = `${/^https?:\/\//i.test(image) ? `<img src="${esc(image)}" alt="">` : `<span class="popular-progress-thumb">POIZON</span>`}<span class="popular-progress-name">${esc(item?.name || code)}</span><b>${price > 0 ? `${Math.round(price).toLocaleString("ko-KR")}원` : "가격 확인 중"}</b>`;
+      card.innerHTML = `${/^https?:\/\//i.test(image) ? `<img src="${esc(image)}" alt="">` : `<span class="popular-progress-thumb">POIZON</span>`}<span class="popular-progress-meta"><span class="popular-progress-name">${esc(item?.name || code)}</span>${range}</span><b>${price > 0 ? `${Math.round(price).toLocaleString("ko-KR")}원` : "가격 확인 중"}</b>`;
       feed.appendChild(card);
     }
     while (feed.children.length > 8) feed.removeChild(feed.firstChild);

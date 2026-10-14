@@ -11150,6 +11150,8 @@ async function captureSellerCenterProducts() {
         articleNumber: code,
         name: String(product.name || ""),
         averagePrice: Number(product.averagePrice || 0),
+        lowestPrice: Number(product.lowestPrice || 0),
+        highestPrice: Number(product.highestPrice || 0),
         image: String(product.logoUrl || product.imageUrl || ""),
       });
     }

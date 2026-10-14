@@ -46,6 +46,10 @@
 #popular-progress .popular-progress-item img{width:40px;height:40px;object-fit:contain;border-radius:8px;background:#f2f6fa;flex:0 0 auto}
 #popular-progress .popular-progress-thumb{display:grid;place-items:center;width:40px;height:40px;flex:0 0 auto;border-radius:8px;background:#e8edf4;color:#5b7186;font-size:8px;font-weight:800}
 #popular-progress .popular-progress-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:700;color:#1d2b3a}
+#popular-progress .popular-progress-meta{min-width:0;flex:1;display:grid;gap:3px}
+#popular-progress .popular-progress-range{position:relative;height:4px;border-radius:999px;background:#dfe7ef;overflow:hidden}
+#popular-progress .popular-progress-range i{position:absolute;top:0;bottom:0;width:3px;background:#0b6b50}
+#popular-progress .popular-range-p0{left:2%}#popular-progress .popular-range-p1{left:12%}#popular-progress .popular-range-p2{left:22%}#popular-progress .popular-range-p3{left:32%}#popular-progress .popular-range-p4{left:42%}#popular-progress .popular-range-p5{left:52%}#popular-progress .popular-range-p6{left:62%}#popular-progress .popular-range-p7{left:72%}#popular-progress .popular-range-p8{left:82%}#popular-progress .popular-range-p9{left:92%}
 #popular-progress .popular-progress-item>b{flex:0 0 auto;font-size:11px;font-weight:800;color:#0b6b50}
 @keyframes popular-item-rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){#popular-progress .popular-progress-item{animation:none}}

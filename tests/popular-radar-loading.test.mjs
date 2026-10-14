@@ -31,6 +31,8 @@ test("radar is decorative CSS with reduced-motion and completion states", () => 
   assert.match(css, /#popular-progress\[data-radar="off"\] \.popular-radar-face/);
   assert.match(css, /#popular-progress \.popular-progress-items\{[^}]*overflow:hidden/);
   assert.match(css, /#popular-progress \.popular-progress-item>b/);
+  assert.match(css, /#popular-progress \.popular-progress-range i/);
+  assert.match(css, /#popular-progress \.popular-range-p9\{left:92%\}/);
   assert.match(css, /@keyframes popular-item-rise/);
   assert.match(css, /prefers-reduced-motion:reduce[\s\S]{0,600}popular-radar-sweep/);
 });
@@ -65,6 +67,8 @@ test("capture progress marks completion for the radar state", () => {
   assert.match(handler, /popular-progress-items/);
   assert.match(handler, /ownerDocument\.createElement\("div"\)/);
   assert.match(handler, /popular-progress-item/);
+  assert.match(handler, /popular-progress-range/);
+  assert.match(handler, /popular-range-p\$\{bucket\}/);
   assert.doesNotMatch(handler, /위 수집/);
   assert.match(capture, /replaceChildren\(\)/);
 });
@@ -73,5 +77,7 @@ test("collection progress carries recent products without ranks", async () => {
   const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
   assert.match(main, /recent: recentConfirmedProducts\(\)/);
   assert.match(main, /articleNumber: code/);
-  assert.doesNotMatch(main, /recentConfirmedProducts[\s\S]{0,800}rank:/);
+  assert.match(main, /lowestPrice: Number\(product\.lowestPrice/);
+  assert.match(main, /highestPrice: Number\(product\.highestPrice/);
+  assert.doesNotMatch(main, /recentConfirmedProducts[\s\S]{0,900}rank:/);
 });
