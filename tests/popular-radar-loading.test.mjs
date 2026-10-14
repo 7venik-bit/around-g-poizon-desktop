@@ -9,7 +9,7 @@ const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), 
 test("popular loading shows a radar scope without changing progress semantics", () => {
   assert.match(html, /id="popular-progress"[^>]*>[\s\S]*?class="popular-radar-face" aria-hidden="true"/);
   assert.match(html, /class="popular-radar-sweep"/);
-  assert.equal((html.match(/class="popular-radar-blip b\d"/g) || []).length, 3);
+  assert.doesNotMatch(html, /popular-radar-blip/);
   assert.equal((html.match(/class="popular-radar-tag"/g) || []).length, 6);
   assert.match(html, /class="popular-radar-caption"/);
   assert.match(html, /class="popular-radar-switch" role="group" aria-label="레이더 전원"/);
@@ -27,7 +27,8 @@ test("popular loading shows a radar scope without changing progress semantics", 
 
 test("radar is decorative CSS with reduced-motion and completion states", () => {
   assert.match(css, /@keyframes popular-radar-sweep/);
-  assert.match(css, /@keyframes popular-radar-ping/);
+  assert.doesNotMatch(css, /popular-radar-blip/);
+  assert.doesNotMatch(css, /popular-radar-ping/);
   assert.match(css, /#popular-progress \.popular-radar-face\{[^}]*width:min\(400px,100%\)/);
   assert.match(css, /#popular-progress \.popular-radar-tag\{[^}]*text-overflow:ellipsis/);
   assert.match(css, /#popular-progress \.popular-radar-tag\.tag-pos-7\{/);
