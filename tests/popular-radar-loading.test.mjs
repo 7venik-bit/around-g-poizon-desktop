@@ -30,9 +30,8 @@ test("radar is decorative CSS with reduced-motion and completion states", () => 
   assert.match(css, /popular-radar-power\[aria-pressed="true"\]\[data-radar-power="on"\]/);
   assert.match(css, /#popular-progress\[data-radar="off"\] \.popular-radar-face/);
   assert.match(css, /#popular-progress \.popular-progress-items\{[^}]*overflow:hidden/);
-  assert.match(css, /#popular-progress \.popular-progress-item>b/);
-  assert.match(css, /#popular-progress \.popular-progress-range i/);
-  assert.match(css, /#popular-progress \.popular-range-p9\{left:92%\}/);
+  assert.match(css, /#popular-progress \.popular-progress-code\{/);
+  assert.match(css, /#popular-progress \.popular-progress-prices\{/);
   assert.match(css, /@keyframes popular-item-rise/);
   assert.match(css, /prefers-reduced-motion:reduce[\s\S]{0,600}popular-radar-sweep/);
 });
@@ -67,9 +66,10 @@ test("capture progress marks completion for the radar state", () => {
   assert.match(handler, /popular-progress-items/);
   assert.match(handler, /ownerDocument\.createElement\("div"\)/);
   assert.match(handler, /popular-progress-item/);
-  assert.match(handler, /popular-progress-range/);
-  assert.match(handler, /popular-range-p\$\{bucket\}/);
+  assert.match(handler, /popular-progress-code/);
+  assert.match(handler, /popular-progress-prices/);
   assert.doesNotMatch(handler, /위 수집/);
+  assert.doesNotMatch(handler, /POIZON<\/span>/);
   assert.match(capture, /replaceChildren\(\)/);
 });
 
