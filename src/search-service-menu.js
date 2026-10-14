@@ -108,9 +108,8 @@
   function autoStartPopularCapture() {
     try {
       if (typeof latestPopularExcelFile !== "undefined" && latestPopularExcelFile?.path) return;
-      const capture = document.querySelector("#popular-capture");
-      if (!capture || capture.disabled) return;
-      capture.click();
+      if (typeof capturePopularProducts !== "function") return;
+      void capturePopularProducts();
     } catch {
       // Stay on the idle panel if auto-start is unavailable.
     }

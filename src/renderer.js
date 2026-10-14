@@ -4166,10 +4166,13 @@ window.aroundG.onSellerCaptureProgress((progress) => {
     if (caption) caption.textContent = `/${target} 수집 중 · ${percent}%`;
   }
 });
+let popularCaptureRunning = false;
 async function capturePopularProducts(options = {}) {
-  const button = $("#popular-capture");
+  if (popularCaptureRunning) return { ok: false, message: "인기상품 수집이 이미 진행 중입니다." };
+  popularCaptureRunning = true;
   const searchButton = $("#popular-product-search");
-  button.disabled = true;
+  const workflow = searchButton.closest(".popular-workflow");
+  if (workflow) workflow.hidden = true;
   latestPopularExcelFile = null;
   searchButton.hidden = true;
   $("#popular-progress").hidden = false;
@@ -4216,6 +4219,7 @@ async function capturePopularProducts(options = {}) {
       jobId: `인기상품 ${excelResult.imported}/200`,
     };
     searchButton.hidden = !completedProducts.length;
+    if (workflow) workflow.hidden = searchButton.hidden;
     const verifiedPercent = partial ? Math.min(99, Math.round(excelResult.imported / 200 * 100)) : 100;
     $("#popular-progress").querySelector("i").style.width = `${verifiedPercent}%`;
     $("#popular-progress").querySelector("span").textContent = `${verifiedPercent}%`;
@@ -4235,19 +4239,16 @@ async function capturePopularProducts(options = {}) {
     $("#popular-status").textContent = message;
     return { ok: false, message };
   } finally {
-    button.disabled = false;
+    popularCaptureRunning = false;
   }
 }
-$("#popular-capture").addEventListener("click", async () => {
-  await capturePopularProducts();
-});
 $("#popular-product-search")?.addEventListener("click", async () => {
   if (!latestPopularExcelFile?.path) return;
   await openIntegratedPopularExcel(latestPopularExcelFile);
 });
 // Radar power switch: ON runs the scope and starts popular capture when idle.
 document.querySelectorAll("#popular-progress [data-radar-power]").forEach((button) => {
-  button.addEventListener("click", () => {
+  button.addEventListener("click", async () => {
     const on = button.dataset.radarPower === "on";
     document.querySelectorAll("#popular-progress [data-radar-power]").forEach((other) => other.setAttribute("aria-pressed", String(other === button)));
     const host = document.querySelector("#popular-progress");
@@ -4255,10 +4256,7 @@ document.querySelectorAll("#popular-progress [data-radar-power]").forEach((butto
       if (on) host.removeAttribute("data-radar");
       else host.setAttribute("data-radar", "off");
     }
-    if (on) {
-      const capture = document.querySelector("#popular-capture");
-      if (capture && !capture.disabled) capture.click();
-    }
+    if (on && typeof capturePopularProducts === "function") await capturePopularProducts();
   });
 });
 async function runDomesticBatch(options = {}) {

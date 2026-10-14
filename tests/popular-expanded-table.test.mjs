@@ -181,9 +181,9 @@ test("an expanded document scroller remains readable after its heading leaves th
 });
 
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
-const progressSource = renderer.slice(renderer.indexOf("window.aroundG.onSellerCaptureProgress((progress)"), renderer.indexOf('$("#popular-capture").addEventListener'));
+const progressSource = renderer.slice(renderer.indexOf("window.aroundG.onSellerCaptureProgress((progress)"), renderer.indexOf('$("#popular-product-search")?.addEventListener'));
 async function progressFixture(count) {
-  const dom = new JSDOM(`<button id="popular-capture"></button><button id="popular-product-search"></button>
+  const dom = new JSDOM(`<button id="popular-product-search"></button>
     <div id="popular-progress"><i></i><span></span></div><div id="popular-status"></div>`, { runScripts: "outside-only" });
   const w = dom.window;
   w.$ = (selector) => w.document.querySelector(selector);
