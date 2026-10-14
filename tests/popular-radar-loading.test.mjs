@@ -14,8 +14,11 @@ test("popular loading shows a radar scope without changing progress semantics", 
   assert.match(html, /class="popular-radar-switch" role="group" aria-label="레이더 전원"/);
   assert.match(html, /data-radar-power="on" aria-pressed="true">ON/);
   assert.match(html, /data-radar-power="off" aria-pressed="false">OFF/);
-  // Truthful progress elements keep their roles.
-  assert.match(html, /class="popular-progress-bar"><i><\/i><span>0%<\/span>/);
+  // Truthful progress elements keep their roles; collected ranks rise in the feed.
+  assert.match(html, /class="popular-progress-bar" hidden><i><\/i><span>0%<\/span>/);
+  assert.match(html, /class="popular-progress-feed"/);
+  assert.match(html, /class="popular-progress-count"><b>0<\/b>/);
+  assert.match(html, /class="popular-progress-ranks" aria-hidden="true"/);
   assert.match(html, /id="popular-status"/);
 });
 
@@ -26,6 +29,8 @@ test("radar is decorative CSS with reduced-motion and completion states", () => 
   assert.match(css, /#popular-progress\[data-complete\] \.popular-radar-sweep/);
   assert.match(css, /popular-radar-power\[aria-pressed="true"\]\[data-radar-power="on"\]/);
   assert.match(css, /#popular-progress\[data-radar="off"\] \.popular-radar-face/);
+  assert.match(css, /#popular-progress \.popular-progress-ranks\{[^}]*overflow:hidden/);
+  assert.match(css, /@keyframes popular-rank-rise/);
   assert.match(css, /prefers-reduced-motion:reduce[\s\S]{0,600}popular-radar-sweep/);
 });
 
@@ -56,4 +61,7 @@ test("capture progress marks completion for the radar state", () => {
   const capture = renderer.slice(captureStart, captureEnd);
   assert.match(capture, /removeAttribute\("data-complete"\)/);
   assert.match(capture, /toggleAttribute\("data-complete", verifiedPercent >= 100\)/);
+  assert.match(handler, /popular-progress-ranks/);
+  assert.match(handler, /ownerDocument\.createElement\("b"\)/);
+  assert.match(capture, /replaceChildren\(\)/);
 });
