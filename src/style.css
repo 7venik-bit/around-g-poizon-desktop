@@ -33,7 +33,7 @@
 #popular-progress[data-radar="off"] .popular-radar-sweep{animation:none}
 #popular-progress[data-radar="off"] .popular-radar-face{filter:saturate(.4) brightness(.72)}
 /* Collection feed replaces the bottom loading bar: completed ranks rise upward. */
-#popular-progress .popular-progress-feed{display:grid;gap:8px;margin-top:10px}
+#popular-progress .popular-progress-feed{display:grid;gap:8px;width:100%;max-width:680px;margin:10px auto 0}
 #popular-progress .popular-progress-count{display:flex;align-items:baseline;justify-content:center;gap:6px;color:#173229}
 #popular-progress .popular-progress-count b{font-size:20px;color:#0b6b50}
 #popular-progress .popular-progress-count span{display:block;height:auto;font-size:11px;font-weight:700}
