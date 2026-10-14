@@ -4139,6 +4139,8 @@ async function capturePopularProducts(options = {}) {
   searchButton.hidden = true;
   $("#popular-progress").hidden = false;
   $("#popular-progress").removeAttribute("data-complete");
+  $("#popular-progress").removeAttribute("data-radar");
+  $("#popular-progress").querySelectorAll("[data-radar-power]").forEach((sw) => sw.setAttribute("aria-pressed", String(sw.dataset.radarPower === "on")));
   $("#popular-progress").querySelector("i").style.width = "0%";
   $("#popular-progress").querySelector("span").textContent = "0%";
   $("#popular-status").className = "status";
@@ -4199,6 +4201,22 @@ $("#popular-capture").addEventListener("click", async () => {
 $("#popular-product-search")?.addEventListener("click", async () => {
   if (!latestPopularExcelFile?.path) return;
   await openIntegratedPopularExcel(latestPopularExcelFile);
+});
+// Radar power switch: ON runs the scope and starts popular capture when idle.
+document.querySelectorAll("#popular-progress [data-radar-power]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const on = button.dataset.radarPower === "on";
+    document.querySelectorAll("#popular-progress [data-radar-power]").forEach((other) => other.setAttribute("aria-pressed", String(other === button)));
+    const host = document.querySelector("#popular-progress");
+    if (host) {
+      if (on) host.removeAttribute("data-radar");
+      else host.setAttribute("data-radar", "off");
+    }
+    if (on) {
+      const capture = document.querySelector("#popular-capture");
+      if (capture && !capture.disabled) capture.click();
+    }
+  });
 });
 async function runDomesticBatch(options = {}) {
   const selectedOnly = Boolean(options?.selectedOnly);

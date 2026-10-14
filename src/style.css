@@ -13,7 +13,7 @@
 #popular-progress.capture-progress{height:auto;overflow:visible;background:none;border:0;box-shadow:none;padding:0}
 #popular-progress .popular-progress-bar{position:relative;height:34px;margin-top:10px;border:1px solid #d6dee8;border-radius:8px;background:#e8edf4;overflow:hidden;box-shadow:inset 0 1px 3px #52627a14}
 #popular-progress .popular-radar{display:grid;justify-items:center;gap:8px;padding:14px 12px 4px}
-#popular-progress .popular-radar-face{position:relative;width:168px;height:168px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#10222e 0%,#0a1822 62%,#060f16 100%);box-shadow:0 6px 18px #0a182233,inset 0 0 0 2px #1f3a4a;overflow:hidden}
+#popular-progress .popular-radar-face{position:relative;width:240px;height:240px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#10222e 0%,#0a1822 62%,#060f16 100%);box-shadow:0 6px 18px #0a182233,inset 0 0 0 2px #1f3a4a;overflow:hidden}
 #popular-progress .popular-radar-face::before{content:"";position:absolute;inset:0;background:repeating-radial-gradient(circle at 50% 50%,transparent 0 26px,#1f3a4a55 26px 27px)}
 #popular-progress .popular-radar-face::after{content:"";position:absolute;inset:0;background:linear-gradient(#1f3a4a55 0 0) center/100% 1px no-repeat,linear-gradient(#1f3a4a55 0 0) center/1px 100% no-repeat}
 #popular-progress .popular-radar-sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,#5cf08a99,transparent 22%);animation:popular-radar-sweep 3.2s linear infinite}
@@ -28,6 +28,14 @@
 #popular-progress[data-complete] .popular-radar-sweep{animation:none;transform:rotate(45deg)}
 #popular-progress[data-complete] .popular-radar-blip{animation:none;opacity:1;transform:scale(1)}
 @media(prefers-reduced-motion:reduce){#popular-progress .popular-radar-sweep,#popular-progress .popular-radar-blip{animation:none}#popular-progress .popular-radar-blip{opacity:.9}}
+/* Radar power switch: simplified military hardware look. ON runs the scope and starts capture. */
+#popular-progress .popular-radar-switch{display:flex;gap:8px;justify-content:center}
+#popular-progress .popular-radar-power{min-width:66px;padding:7px 14px;border:2px solid #3a4a54;border-radius:6px;background:linear-gradient(180deg,#2c3b45,#1a252d);color:#8b98a1;font:800 11px Consolas,"Cascadia Code",monospace;letter-spacing:.18em;cursor:pointer;box-shadow:inset 0 1px 0 #ffffff22,0 2px 4px #00000033}
+#popular-progress .popular-radar-power[aria-pressed="true"][data-radar-power="on"]{background:linear-gradient(180deg,#123a26,#0d2b1c);border-color:#30d158;color:#5cf08a;box-shadow:inset 0 1px 0 #ffffff22,0 0 10px #30d15866}
+#popular-progress .popular-radar-power[aria-pressed="true"][data-radar-power="off"]{background:linear-gradient(180deg,#3a1a1a,#2b1212);border-color:#e5484d;color:#ff8a8e;box-shadow:inset 0 1px 0 #ffffff22,0 0 10px #e5484d66}
+#popular-progress[data-radar="off"] .popular-radar-sweep,#popular-progress[data-radar="off"] .popular-radar-blip{animation:none}
+#popular-progress[data-radar="off"] .popular-radar-face{filter:saturate(.4) brightness(.72)}
+#popular-progress[data-radar="off"] .popular-radar-blip{opacity:.3}
 .brand-sales-action{align-items:center;justify-content:space-between}.brand-sales-action span{flex:1}.brand-sales-action button{flex:0 0 auto;margin-left:18px}
 .brand-sales-rank{width:max-content;margin:2px 0;padding:2px 6px;border-radius:10px;background:#e8f4ff;color:#1769bd;font-weight:800}
 .brand-fetch-action{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 16px;border:1px solid #c8dff0;border-radius:13px;background:#f3faff;color:#315b7d}.brand-fetch-action button{white-space:nowrap}.seller-manual-filters{display:grid;grid-template-columns:1.1fr 1fr .75fr 1fr 1.2fr auto;gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #d9e5ef;border-radius:12px;background:#f7faff}.seller-manual-filters label{display:grid;gap:5px;margin:0;color:#59677a;font-size:11px}.seller-manual-filters input,.seller-manual-filters select{width:100%;min-width:0;padding:8px 9px}.seller-manual-filters button{padding:8px 13px}@media(max-width:1200px){.seller-manual-filters{grid-template-columns:repeat(3,1fr)}}
