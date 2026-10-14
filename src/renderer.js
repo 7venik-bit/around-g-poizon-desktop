@@ -688,11 +688,11 @@ function renderOriginalExcelRows(file, products = []) {
       + text(header) + '</b><span class="excel-source-value">' + text(p.originalRow.values[index] ?? '') + '</span></div>').join('');
     const image = /^https?:\/\//.test(p.logoUrl || '') ? '<img class="excel-verified-image" src="' + text(p.logoUrl) + '" alt="">' : '';
     const result = excelPreviewSearchResults.get(key);
-    const resultLabel = result?.loading ? '검색 중…' : result ? '다시 검색' : '상품검색';
+    const resultLabel = result?.loading ? '검색 중…' : result ? '다시 검색' : '검색';
     const poizonButton = globalThis.AroundGPoizonProductView?.button(p) || '';
     const sizeButton = typeof excelSizeFilterButton === "function" ? excelSizeFilterButton(key) : "";
     const pendingSearchButton = (repOf[key] && repOf[key] !== key)
-      ? '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '" disabled title="같은 상품번호 중 최고금액 행' + (repRowByKey[key] ? `(원본 ${text(repRowByKey[key])}행)` : "") + '에서 검색합니다.">상품검색</button>'
+      ? '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '" disabled title="같은 상품번호 중 최고금액 행' + (repRowByKey[key] ? `(원본 ${text(repRowByKey[key])}행)` : "") + '에서 검색합니다.">검색</button>'
       : '<button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(key) + '">' + resultLabel + '</button>' + sizeButton;
     const resultCell = result?.loading
       ? '<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">' + resultLabel + '</span>' + poizonButton + '</td>'
@@ -763,7 +763,7 @@ function renderVerifiedSpuRows(file, products) {
         ? (result.error
           ? '<td class="excel-raw-search-cell"><div class="excel-raw-search-summary"><span class="excel-raw-search-state pending">검색 실패</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">다시 검색</button></div>' + poizonButton + '</td>'
           : '<td class="excel-raw-search-cell">' + poizonButton + '</td>')
-        : '<td class="excel-raw-search-cell excel-raw-search-pending"><div class="excel-pending-actions"><button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">상품검색</button>' + verifiedSizeButton + poizonButton + '</div></td>';
+        : '<td class="excel-raw-search-cell excel-raw-search-pending"><div class="excel-pending-actions"><button type="button" class="excel-product-search" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">검색</button>' + verifiedSizeButton + poizonButton + '</div></td>';
     const detailRow = result && !result.loading
       ? '<tr class="excel-product-search-detail excel-verified-search-detail"><td colspan="10"><div class="domestic-inline-detail-label"><span></span><strong>' + text(p.title || p.articleNumber || '상품') + '</strong> 국내 검색 결과</div>' + renderDomestic((typeof excelSizeFilteredResult === "function" ? excelSizeFilteredResult(keys[i], result) : result), p, keys[i]) + '</td></tr>'
       : '';
@@ -1014,7 +1014,7 @@ function renderBrandCompletedJobs() {
       <code>${file.jobId ? `작업번호 ${text(file.jobId)}` : "과거 파일 · 작업번호 기록 없음"}</code>
       <time>${text(brandTime(file.time))}</time>
       <div class="brand-export-completed-actions">
-        <button type="button" class="primary" data-completed-action="search">상품검색</button>
+        <button type="button" class="primary" data-completed-action="search">검색</button>
         <button type="button" data-completed-action="excel">Excel 보기</button>
         <button type="button" data-completed-action="folder">폴더 열기</button>
       </div>
@@ -1586,7 +1586,7 @@ function renderRawExcelDomesticCell(key, product, result) {
     return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">수달 사원이 검색 중…</span></td>`;
   }
   if (!result) {
-    return `<td class="excel-raw-search-cell excel-raw-search-pending"><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">상품검색</button></td>`;
+    return `<td class="excel-raw-search-cell excel-raw-search-pending"><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">검색</button></td>`;
   }
   const products = Array.isArray(result.products) ? result.products : [];
   const verifiedCount = (result.sources || []).reduce((sum, source) =>
@@ -1646,7 +1646,7 @@ function updateExcelPreviewSelectionUi(pageKeys = []) {
   if (profit) profit.disabled = selectedExcelPreviewProducts.size === 0;
   if (search) {
     search.disabled = selectedExcelPreviewProducts.size === 0 && !excelPreviewBatchSearching;
-    search.textContent = excelPreviewBatchSearching ? "검색 중지" : "상품검색";
+    search.textContent = excelPreviewBatchSearching ? "검색 중지" : "검색";
   }
   if (selectAll) {
     selectAll.disabled = excelPreviewSelectingAll || !activeExcelPreview?.totalRows;
@@ -1982,7 +1982,7 @@ async function showExcelPreview(file, offset = 0, filters = currentExcelPreviewF
     filesPanel?.classList.remove("excel-preview-mode");
     productsView?.classList.remove("excel-data-view-open");
     document.body.classList.remove("excel-preview-active");
-    $("#excel-preview-close").textContent = "상품검색 닫기";
+    $("#excel-preview-close").textContent = "검색 닫기";
   } else {
     if (excelPreviewFilesParent && preview?.parentElement !== excelPreviewFilesParent) excelPreviewFilesParent.append(preview);
     $("#brand-product-workspace").hidden = true;
@@ -4178,7 +4178,7 @@ async function capturePopularProducts(options = {}) {
     $("#popular-progress").querySelector("span").textContent = `${verifiedPercent}%`;
     $("#popular-status").className = partial ? "status error" : "status success";
     $("#popular-status").textContent = completedProducts.length
-      ? `${sourceLabel} · 인기리스트 Excel 저장이 완료되었습니다. 상품검색 버튼을 눌러 결과를 열 수 있습니다.`
+      ? `${sourceLabel} · 인기리스트 Excel 저장이 완료되었습니다. 검색 버튼을 눌러 결과를 열 수 있습니다.`
       : `${sourceLabel} · 검색 가능한 상품이 없습니다.`;
     return { ok: true, partial, products: storedProducts };
   } catch (error) {
@@ -4513,7 +4513,7 @@ $("#excel-preview-select-all-results")?.addEventListener("click", async () => {
       }
       readyToSearch = combinedKeys.length > 0;
       updateExcelPreviewSelectionUi(excelPreviewPageKeys);
-      $("#excel-filter-status").textContent = `통합 필터 결과 ${combinedKeys.length.toLocaleString("ko-KR")}개를 전체 선택했습니다. 상품검색을 누르면 모든 페이지를 검색합니다.`;
+      $("#excel-filter-status").textContent = `통합 필터 결과 ${combinedKeys.length.toLocaleString("ko-KR")}개를 전체 선택했습니다. 검색을 누르면 모든 페이지를 검색합니다.`;
       return;
     }
     const result = await window.aroundG.previewExcelFile(
@@ -4539,7 +4539,7 @@ $("#excel-preview-select-all-results")?.addEventListener("click", async () => {
     readyToSearch = products.length > 0;
     $("#excel-filter-status").textContent = selectedBrandDomesticQueueRunning
       ? `전체 목록에서 검색 가능한 상품 ${products.length.toLocaleString("ko-KR")}개를 선택했습니다. 자동 검색을 시작합니다.`
-      : `전체 목록에서 검색 가능한 상품 ${products.length.toLocaleString("ko-KR")}개를 선택했습니다. 오른쪽 상품검색을 누르면 전체 검색을 시작합니다.`;
+      : `전체 목록에서 검색 가능한 상품 ${products.length.toLocaleString("ko-KR")}개를 선택했습니다. 오른쪽 검색을 누르면 전체 검색을 시작합니다.`;
   } catch (error) {
     $("#excel-filter-status").textContent = `전체 목록 선택 실패: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
@@ -4643,7 +4643,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   const unavailableCount = Math.max(0, selectedExcelPreviewProducts.size - keys.length);
   if (!keys.length) {
     button.disabled = false;
-    button.textContent = "상품검색";
+    button.textContent = "검색";
     $("#excel-filter-status").textContent = "선택한 행에서 검색 가능한 상품번호를 찾지 못했습니다.";
     return;
   }
@@ -4661,7 +4661,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   const skippedCount = keys.length - searchKeys.length;
   if (!searchKeys.length) {
     button.disabled = false;
-    button.textContent = "상품검색";
+    button.textContent = "검색";
     $("#excel-filter-status").textContent = "선택한 행은 모두 대표 행이 아니어서 검색하지 않았습니다.";
     return;
   }

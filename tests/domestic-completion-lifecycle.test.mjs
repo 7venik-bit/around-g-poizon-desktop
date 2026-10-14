@@ -87,7 +87,7 @@ test('real enhanced renderer completes and places results beneath the selected p
   assert.equal(f.window.document.querySelector('#fixture-errors').textContent, '');
 });
 
-test('상품검색 once automatically displays prices and stock in the list directly below the product', async t => {
+test('검색 once automatically displays prices and stock in the list directly below the product', async t => {
   const f = createFixture(t);
   let requests = 0;
   f.window.aroundG.searchDomestic = async () => {

@@ -383,7 +383,7 @@ test("품번이 있으면 상품코드, 상품명, 상품명+상품코드 순으
   assert.doesNotMatch(naver.searchQuery, /가죽|로우탑|스니커즈/);
 });
 
-test("MLB 공식몰은 자동 상품검색에서 제외된다", async () => {
+test("MLB 공식몰은 자동 검색에서 제외된다", async () => {
   const result = await queryDomesticProducts({
     query: "MLB 3ASXCA12N-50WHS",
     articleNumber: "3ASXCA12N-50WHS",

@@ -5,7 +5,7 @@ import test from "node:test";
 const renderer = await readFile(new URL("../src/renderer.js", import.meta.url), "utf8");
 const main = await readFile(new URL("../main.mjs", import.meta.url), "utf8");
 
-test("인기리스트와 브랜드 Excel 상품검색은 공통 검색 엔진을 사용한다", () => {
+test("인기리스트와 브랜드 Excel 검색은 공통 검색 엔진을 사용한다", () => {
   const previewStart = renderer.indexOf('$("#excel-preview-search-selected")');
   const previewEnd = renderer.indexOf('$("#excel-preview-clear-selection")', previewStart);
   const previewSearch = renderer.slice(previewStart, previewEnd);

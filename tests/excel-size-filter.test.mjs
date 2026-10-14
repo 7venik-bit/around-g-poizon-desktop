@@ -5,6 +5,13 @@ import { JSDOM } from "jsdom";
 
 const script = readFileSync(new URL("../src/excel-size-filter.js", import.meta.url), "utf8");
 
+test("pending round actions use pastel macOS tones", () => {
+  const css = readFileSync(new URL("../src/style.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(css, /excel-pending-actions>\.excel-product-search\{[^}]*background:#E3EFFF/);
+  assert.match(css, /excel-pending-actions>\.excel-size-filter\{[^}]*background:#E4F5EA/);
+  assert.match(css, /excel-pending-actions>\.poizon-product-view\{[^}]*background:#FFEEE2/);
+});
+
 test("pending cells show three small round actions in one centered row", () => {
   const css = readFileSync(new URL("../src/style.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.match(css, /\.excel-pending-actions\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
@@ -34,7 +41,7 @@ const PRODUCTS = [
 function setup(t) {
   const dom = new JSDOM(`<body><table>
     <tr class="excel-product-row"><td><div class="excel-raw-search-summary">
-      <button type="button" data-excel-search-product="k1">다시 검색</button><button type="button" class="excel-size-filter" data-excel-size-filter="k1">사이즈검색</button>
+      <button type="button" data-excel-search-product="k1">다시 검색</button><button type="button" class="excel-size-filter" data-excel-size-filter="k1">사이즈</button>
     </div></td></tr>
     <tr class="excel-product-search-detail"><td><div class="domestic-inline-detail-label">old</div></td></tr>
   </table></body>`, { runScripts: "outside-only" });
@@ -96,14 +103,14 @@ test("clearing restores the full list", (t) => {
   click(document.querySelector("[data-size-clear]"));
   assert.equal(calls.length, 2);
   assert.deepEqual(calls[1].products, ["A", "B", "C"]);
-  assert.equal(document.querySelector("[data-excel-size-filter]").textContent, "사이즈검색");
+  assert.equal(document.querySelector("[data-excel-size-filter]").textContent, "사이즈");
 });
 
 test("filter globals narrow results and label the button", (t) => {
   const { window } = setup(t);
   assert.equal(typeof window.excelSizeFilterButton, "function");
   assert.equal(typeof window.excelSizeFilteredResult, "function");
-  assert.match(window.excelSizeFilterButton("k1"), /사이즈검색/);
+  assert.match(window.excelSizeFilterButton("k1"), /사이즈/);
   const view = window.excelSizeFilteredResult("k1", { products: PRODUCTS, sources: [] });
   assert.deepEqual(view.products.map((item) => item.title), ["A", "B", "C"]);
 });
@@ -160,7 +167,7 @@ test("hat rows open the panel on headwear", (t) => {
 test("applying before any search starts the product search", (t) => {
   const dom = new JSDOM(`<body><table>
     <tr class="excel-product-row"><td>
-      <button type="button" class="excel-product-search" data-excel-search-product="k9">상품검색</button><button type="button" class="excel-size-filter" data-excel-size-filter="k9">사이즈검색</button>
+      <button type="button" class="excel-product-search" data-excel-search-product="k9">검색</button><button type="button" class="excel-size-filter" data-excel-size-filter="k9">사이즈</button>
     </td></tr>
   </table></body>`, { runScripts: "outside-only" });
   t.after(() => dom.window.close());
@@ -177,5 +184,5 @@ test("applying before any search starts the product search", (t) => {
   fire(document.querySelector('[data-size-chip="225"]'));
   fire(document.querySelector("[data-size-apply]"));
   assert.equal(searches, 1);
-  assert.equal(document.querySelector("[data-excel-size-filter]").textContent, "사이즈검색");
+  assert.equal(document.querySelector("[data-excel-size-filter]").textContent, "사이즈");
 });

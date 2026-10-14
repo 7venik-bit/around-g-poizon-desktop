@@ -94,7 +94,7 @@ test("inline product rows expose the same per-row search as brand rows", () => {
   const start = inlineResults.indexOf("const inlineExcelRenderer = function inlineExcelProductRows(");
   const end = inlineResults.indexOf("inlineExcelRenderer.__aroundGSourcingView", start);
   const renderer = inlineResults.slice(start, end);
-  assert.match(renderer, /<th>상품검색<\/th>/);
+  assert.match(renderer, /<th>검색<\/th>/);
   assert.match(renderer, /data-excel-search-product="\$\{encodeURIComponent\(key\)\}"/);
   assert.match(renderer, /<td colspan="11"><div class="domestic-inline-detail-label">/);
   assert.match(renderer, /<tr><td class="empty" colspan="11">/);

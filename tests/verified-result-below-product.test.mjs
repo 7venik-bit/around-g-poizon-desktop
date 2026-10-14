@@ -23,15 +23,29 @@ test("successful original and verified searches keep the result cell slim; retry
   const originalRows = renderer.slice(originalStart, originalEnd);
   assert.match(originalRows, /검색 실패/);
   assert.match(originalRows, /다시 검색/);
+  assert.match(originalRows, /excel-pending-actions/);
   assert.doesNotMatch(originalRows, /검색 완료/);
   assert.doesNotMatch(originalRows, /일부 결과/);
+  assert.doesNotMatch(originalRows, /상품검색/);
+  assert.doesNotMatch(originalRows, /사이즈검색/);
+  assert.doesNotMatch(originalRows, /포이즌 상품 보기/);
 
   const start = renderer.indexOf("function renderVerifiedSpuRows(");
   const end = renderer.indexOf("function mergeDomesticSearchProducts(", start);
   const verifiedRenderer = renderer.slice(start, end);
   assert.match(verifiedRenderer, /excel-pending-actions/);
+  assert.match(verifiedRenderer, />검색<\/button>/);
   assert.doesNotMatch(verifiedRenderer, /검색 완료/);
   assert.doesNotMatch(verifiedRenderer, /일부 결과/);
+  assert.doesNotMatch(verifiedRenderer, /상품검색/);
+  assert.doesNotMatch(verifiedRenderer, /사이즈검색/);
+  assert.doesNotMatch(verifiedRenderer, /포이즌 상품 보기/);
+});
+
+test("poizon action button uses the short macOS label", async () => {
+  const poizonView = await readFile(new URL("../src/poizon-product-view.js", import.meta.url), "utf8");
+  assert.match(poizonView, />포이즌<\/button>/);
+  assert.doesNotMatch(poizonView, /포이즌 상품 보기/);
 });
 
 test("verified brand product row keeps only search state and retry control at the right edge", () => {
