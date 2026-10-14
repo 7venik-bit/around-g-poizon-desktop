@@ -6,7 +6,7 @@
     const value = product.globalSpuId ?? (product.source === 'kr-poizon-public-brand' ? '' : product.spuId);
     const id = String(value ?? '').trim().replace(/\.0+$/, '');
     if (!/^[1-9]\d{0,19}$/.test(id) || typeof value === 'number' && !Number.isSafeInteger(value)) return '';
-    return `<button type="button" class="poizon-product-view" data-poizon-product-spu="${id}" title="SPU ${id} · 판매자센터 상품 데이터 보기" aria-label="${escape(product.articleNumber || product.title || id)} 포이즌 상품 보기">포이즌 상품 보기</button>`;
+    return `<button type="button" class="poizon-product-view" data-poizon-product-spu="${id}" title="SPU ${id} · 판매자센터 상품 데이터 보기" aria-label="${escape(product.articleNumber || product.title || id)} 포이즌">포이즌</button>`;
   }
   document.addEventListener('click', async event => {
     const target = event.target.closest('[data-poizon-product-spu]');
@@ -32,7 +32,7 @@
       status.dataset.state = 'error';
     } finally {
       target.disabled = false;
-      target.textContent = '포이즌 상품 보기';
+      target.textContent = '포이즌';
     }
   });
   globalThis.AroundGPoizonProductView = { button };

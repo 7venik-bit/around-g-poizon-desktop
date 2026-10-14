@@ -88,7 +88,7 @@
   function buttonHtml(key) {
     const plain = String(key ?? "");
     const count = filterCount(plain);
-    return `<button type="button" class="excel-size-filter" data-excel-size-filter="${encodeURIComponent(plain)}" aria-pressed="${count ? "true" : "false"}">${count ? `사이즈(${count})` : "사이즈검색"}</button>`;
+    return `<button type="button" class="excel-size-filter" data-excel-size-filter="${encodeURIComponent(plain)}" aria-pressed="${count ? "true" : "false"}">${count ? `사이즈(${count})` : "사이즈"}</button>`;
   }
 
   globalThis.excelSizeFilterButton = (key) => buttonHtml(key);
@@ -132,7 +132,7 @@
     const button = cell.querySelector("[data-excel-size-filter]");
     if (button) {
       const count = filterCount(key);
-      button.textContent = count ? `사이즈(${count})` : "사이즈검색";
+      button.textContent = count ? `사이즈(${count})` : "사이즈";
       button.setAttribute("aria-pressed", count ? "true" : "false");
     }
   }

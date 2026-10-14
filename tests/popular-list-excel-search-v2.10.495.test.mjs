@@ -9,7 +9,7 @@ const html = fs.readFileSync(new URL("../src/index.html", import.meta.url), "utf
 test("popular capture saves Excel and opens search results in the brand-style product view", () => {
   assert.match(html, /id="popular-product-workspace"/);
   assert.match(html, /id="popular-integrated-preview-host"/);
-  assert.match(html, /id="popular-product-search"[^>]*hidden[^>]*>상품검색/);
+  assert.match(html, /id="popular-product-search"[^>]*hidden[^>]*>검색/);
   assert.match(renderer, /async function openIntegratedPopularExcel/);
   assert.match(renderer, /integratedHostId: "popular-integrated-preview-host"/);
   assert.doesNotMatch(renderer, /await openIntegratedPopularExcel\(popularFile\)/);

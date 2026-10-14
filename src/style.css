@@ -666,6 +666,10 @@ three small round buttons in one centered row. */
 #excel-preview-grid .excel-raw-search-cell.excel-raw-search-pending .excel-pending-actions>.excel-size-filter,
 #excel-preview-grid .excel-raw-search-cell.excel-raw-search-pending .excel-pending-actions>.poizon-product-view{display:inline-flex;align-items:center;justify-content:center;width:100%;min-width:0;max-width:100%;min-height:30px;margin:0;padding:3px 4px;border-radius:999px;font-size:8px;font-weight:800;line-height:1.35;white-space:normal;text-align:center;overflow:hidden}
 #excel-preview-grid .excel-raw-search-cell.excel-raw-search-pending .excel-pending-actions>:only-child{grid-column:1/-1}
+/* Pending round actions use pastel macOS tones: blue search, green size, peach POIZON. */
+#excel-preview-grid .excel-raw-search-cell.excel-raw-search-pending .excel-pending-actions>.excel-product-search{background:#E3EFFF;border-color:#BCD4F7;color:#1457B8}
+#excel-preview-grid .excel-raw-search-cell.excel-raw-search-pending .excel-pending-actions>.excel-size-filter{background:#E4F5EA;border-color:#B7E0C6;color:#177245}
+#excel-preview-grid .excel-raw-search-cell.excel-raw-search-pending .excel-pending-actions>.poizon-product-view{background:#FFEEE2;border-color:#F0C9AC;color:#9A5A24}
 .excel-size-panel{display:grid;gap:6px;margin-top:4px;padding:8px;border:1px solid #dbe2ec;border-radius:6px;background:#fff}
 .excel-size-categories{display:flex;gap:4px}
 .excel-size-category{flex:1;padding:4px;font-size:10px;font-weight:800;border-radius:5px}
