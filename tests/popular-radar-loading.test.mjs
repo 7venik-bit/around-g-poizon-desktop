@@ -39,7 +39,9 @@ test("radar is decorative CSS with reduced-motion and completion states", () => 
   assert.match(css, /#popular-progress \.popular-progress-items\{[^}]*overflow:hidden/);
   assert.match(css, /#popular-progress \.popular-progress-feed\{[^}]*max-width:680px/);
   assert.match(css, /#popular-progress \.popular-progress-feed\{[^}]*margin:10px auto 0/);
-  assert.match(css, /#popular-progress \.popular-progress-item\{[^}]*height:40px/);
+  assert.match(css, /#popular-progress \.popular-progress-item\{[^}]*min-height:52px/);
+  assert.match(css, /#popular-progress \.popular-progress-name\{[^}]*-webkit-line-clamp:2/);
+  assert.match(css, /#popular-progress \.popular-progress-items\{[^}]*height:240px/);
   assert.match(css, /#popular-progress \.popular-progress-item\{[^}]*justify-content:center/);
   assert.match(css, /#popular-progress \.popular-progress-meta\{[^}]*flex:0 1 auto/);
   assert.match(css, /#popular-progress \.popular-progress-meta\{[^}]*display:flex/);
