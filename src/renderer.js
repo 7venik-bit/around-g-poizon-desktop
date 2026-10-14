@@ -4149,10 +4149,10 @@ window.aroundG.onSellerCaptureProgress((progress) => {
         if (shown) continue;
         const tag = tags[slot % tags.length];
         slot += 1;
-        tag.className = "popular-radar-tag";
-        void tag.offsetWidth;
-        tag.classList.add(`tag-pos-${slot % 8}`);
         tag.textContent = label;
+        tag.className = "";
+        void tag.offsetWidth;
+        tag.classList.add("popular-radar-tag", `tag-pos-${slot % 8}`);
       }
       host.dataset.tagSlot = String(slot);
     }
