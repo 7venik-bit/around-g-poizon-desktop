@@ -103,10 +103,24 @@
 
   window.activateSearchServiceMode = activateMode;
 
+  // Entering the popular list skips the idle panel: capture starts at once
+  // so the radar screen appears immediately. Completed results are kept.
+  function autoStartPopularCapture() {
+    try {
+      if (typeof latestPopularExcelFile !== "undefined" && latestPopularExcelFile?.path) return;
+      const capture = document.querySelector("#popular-capture");
+      if (!capture || capture.disabled) return;
+      capture.click();
+    } catch {
+      // Stay on the idle panel if auto-start is unavailable.
+    }
+  }
+
   menu.addEventListener("click", (event) => {
     const button = event.target.closest("[data-service-explorer]");
     if (!button) return;
     activateMode(button.dataset.serviceExplorer);
+    if (button.dataset.serviceExplorer === "popular") autoStartPopularCapture();
   });
 
   productsNav.addEventListener("click", () => {

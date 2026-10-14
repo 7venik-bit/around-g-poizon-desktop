@@ -38,6 +38,14 @@ test("radar power switch starts capture on ON and powers down on OFF", () => {
   assert.match(wiring, /if \(capture && !capture\.disabled\) capture\.click\(\)/);
 });
 
+test("entering popular skips the idle panel by auto-starting capture", async () => {
+  const menu = await readFile(new URL("../src/search-service-menu.js", import.meta.url), "utf8");
+  assert.match(menu, /button\.dataset\.serviceExplorer === "popular"/);
+  assert.match(menu, /latestPopularExcelFile\?\.path/);
+  assert.match(menu, /#popular-capture/);
+  assert.match(menu, /capture\.click\(\)/);
+});
+
 test("capture progress marks completion for the radar state", () => {
   const start = renderer.indexOf("window.aroundG.onSellerCaptureProgress((progress)");
   const end = renderer.indexOf('$("#popular-capture").addEventListener', start);
