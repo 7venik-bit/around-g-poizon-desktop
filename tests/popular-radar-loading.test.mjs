@@ -28,7 +28,7 @@ test("popular loading shows a radar scope without changing progress semantics", 
 test("radar is decorative CSS with reduced-motion and completion states", () => {
   assert.match(css, /@keyframes popular-radar-sweep/);
   assert.match(css, /@keyframes popular-radar-ping/);
-  assert.match(css, /#popular-progress \.popular-radar-face\{[^}]*width:240px/);
+  assert.match(css, /#popular-progress \.popular-radar-face\{[^}]*width:min\(400px,100%\)/);
   assert.match(css, /#popular-progress \.popular-radar-tag\{[^}]*text-overflow:ellipsis/);
   assert.match(css, /#popular-progress \.popular-radar-tag\.tag-pos-7\{/);
   assert.match(css, /@keyframes popular-tag-appear/);
@@ -36,6 +36,8 @@ test("radar is decorative CSS with reduced-motion and completion states", () => 
   assert.match(css, /popular-radar-power\[aria-pressed="true"\]\[data-radar-power="on"\]/);
   assert.match(css, /#popular-progress\[data-radar="off"\] \.popular-radar-face/);
   assert.match(css, /#popular-progress \.popular-progress-items\{[^}]*overflow:hidden/);
+  assert.match(css, /#popular-progress \.popular-progress-item\{[^}]*height:40px/);
+  assert.match(css, /#popular-progress \.popular-progress-meta\{[^}]*display:flex/);
   assert.match(css, /#popular-progress \.popular-progress-code\{/);
   assert.match(css, /#popular-progress \.popular-progress-prices\{/);
   assert.match(css, /@keyframes popular-item-rise/);

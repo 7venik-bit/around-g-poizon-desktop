@@ -13,7 +13,7 @@
 #popular-progress.capture-progress{height:auto;overflow:visible;background:none;border:0;box-shadow:none;padding:0}
 #popular-progress .popular-progress-bar{position:relative;height:34px;margin-top:10px;border:1px solid #d6dee8;border-radius:8px;background:#e8edf4;overflow:hidden;box-shadow:inset 0 1px 3px #52627a14}
 #popular-progress .popular-radar{display:grid;justify-items:center;gap:8px;padding:14px 12px 4px}
-#popular-progress .popular-radar-face{position:relative;width:240px;height:240px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#10222e 0%,#0a1822 62%,#060f16 100%);box-shadow:0 6px 18px #0a182233,inset 0 0 0 2px #1f3a4a;overflow:hidden}
+#popular-progress .popular-radar-face{position:relative;width:min(400px,100%);aspect-ratio:1/1;border-radius:50%;background:radial-gradient(circle at 50% 50%,#10222e 0%,#0a1822 62%,#060f16 100%);box-shadow:0 6px 18px #0a182233,inset 0 0 0 2px #1f3a4a;overflow:hidden}
 #popular-progress .popular-radar-face::before{content:"";position:absolute;inset:0;background:repeating-radial-gradient(circle at 50% 50%,transparent 0 26px,#1f3a4a55 26px 27px)}
 #popular-progress .popular-radar-face::after{content:"";position:absolute;inset:0;background:linear-gradient(#1f3a4a55 0 0) center/100% 1px no-repeat,linear-gradient(#1f3a4a55 0 0) center/1px 100% no-repeat}
 #popular-progress .popular-radar-sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,#5cf08a99,transparent 22%);animation:popular-radar-sweep 3.2s linear infinite}
@@ -45,12 +45,12 @@
 #popular-progress .popular-progress-count b{font-size:20px;color:#0b6b50}
 #popular-progress .popular-progress-count span{display:block;height:auto;font-size:11px;font-weight:700}
 #popular-progress .popular-progress-items{display:flex;flex-direction:column;justify-content:flex-end;gap:6px;height:208px;overflow:hidden}
-#popular-progress .popular-progress-item{display:flex;align-items:center;gap:10px;padding:6px 10px;border:1px solid #d9e6f2;border-radius:12px;background:#fff;animation:popular-item-rise .45s ease-out}
-#popular-progress .popular-progress-item img{width:40px;height:40px;object-fit:contain;border-radius:8px;background:#f2f6fa;flex:0 0 auto}
+#popular-progress .popular-progress-item{display:flex;align-items:center;gap:8px;height:40px;padding:4px 10px;border:1px solid #d9e6f2;border-radius:12px;background:#fff;overflow:hidden;animation:popular-item-rise .45s ease-out}
+#popular-progress .popular-progress-item img{width:28px;height:28px;object-fit:contain;border-radius:8px;background:#f2f6fa;flex:0 0 auto}
 #popular-progress .popular-progress-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:700;color:#1d2b3a}
-#popular-progress .popular-progress-meta{min-width:0;flex:1;display:grid;gap:2px}
-#popular-progress .popular-progress-code{font-size:11px;font-weight:800;color:#1d2b3a}
-#popular-progress .popular-progress-prices{font-size:10px;font-weight:700;color:#3f6b58}
+#popular-progress .popular-progress-meta{min-width:0;flex:1;display:flex;align-items:center;gap:8px;overflow:hidden;white-space:nowrap}
+#popular-progress .popular-progress-code{flex:0 0 auto;font-size:11px;font-weight:800;color:#1d2b3a}
+#popular-progress .popular-progress-prices{flex:0 0 auto;font-size:10px;font-weight:700;color:#3f6b58;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @keyframes popular-item-rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){#popular-progress .popular-progress-item{animation:none}}
 .brand-sales-action{align-items:center;justify-content:space-between}.brand-sales-action span{flex:1}.brand-sales-action button{flex:0 0 auto;margin-left:18px}
