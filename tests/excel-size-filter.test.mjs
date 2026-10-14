@@ -5,9 +5,24 @@ import { JSDOM } from "jsdom";
 
 const script = readFileSync(new URL("../src/excel-size-filter.js", import.meta.url), "utf8");
 
-test("pending cells stack the size button on its own line", () => {
+test("pending cells show three small round actions in one centered row", () => {
   const css = readFileSync(new URL("../src/style.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
-  assert.match(css, /\.excel-raw-search-cell\.excel-raw-search-pending \.excel-size-filter\{[^}]*width:100%/);
+  assert.match(css, /\.excel-pending-actions\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(css, /excel-pending-actions>\.poizon-product-view\{[^}]*border-radius:999px/);
+});
+
+test("pending cells wrap search, size and poizon buttons for the round row", () => {
+  const renderer = readFileSync(new URL("../src/renderer.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const originalStart = renderer.indexOf("function renderOriginalExcelRows(file, products = []) {");
+  const originalEnd = renderer.indexOf("function renderOriginalSkuSales(", originalStart);
+  const originalRows = renderer.slice(originalStart, originalEnd);
+  assert.match(originalRows, /excel-raw-search-cell excel-raw-search-pending/);
+  assert.match(originalRows, /excel-pending-actions/);
+  const verifiedStart = renderer.indexOf("function renderVerifiedSpuRows(");
+  const verifiedEnd = renderer.indexOf("function mergeDomesticSearchProducts(", verifiedStart);
+  const verifiedRows = renderer.slice(verifiedStart, verifiedEnd);
+  assert.match(verifiedRows, /excel-raw-search-cell excel-raw-search-pending/);
+  assert.match(verifiedRows, /excel-pending-actions/);
 });
 
 const PRODUCTS = [

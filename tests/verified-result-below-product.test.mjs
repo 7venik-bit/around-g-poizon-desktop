@@ -29,7 +29,7 @@ test("successful original and verified searches keep the result cell slim; retry
   const start = renderer.indexOf("function renderVerifiedSpuRows(");
   const end = renderer.indexOf("function mergeDomesticSearchProducts(", start);
   const verifiedRenderer = renderer.slice(start, end);
-  assert.match(verifiedRenderer, /<td class="excel-raw-search-cell"><\/td>/);
+  assert.match(verifiedRenderer, /excel-pending-actions/);
   assert.doesNotMatch(verifiedRenderer, /검색 완료/);
   assert.doesNotMatch(verifiedRenderer, /일부 결과/);
 });
