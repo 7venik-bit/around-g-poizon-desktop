@@ -129,7 +129,9 @@ function measure() {
   if(colorRows.length!==8) errors.push('colour rows not separated');
   for(const row of colorRows) {
     const color=row.dataset.stockColor, options=[...row.querySelectorAll('.domestic-inline-stock-option')];
-    if(options.length!==9 || options.some(option=>!option.textContent.startsWith(color+' / '))) errors.push('mixed or missing colour options');
+    if(options.length!==9) errors.push('colour options lost');
+    if(options.map(option=>option.textContent).join('|')!=='85|90|92|95|100|105|110|115|120') errors.push('colour row does not show sizes only');
+    if(options.some(option=>option.textContent.includes(color))) errors.push('colour repeated in size chips');
     if(row.querySelector('.domestic-inline-color')?.textContent!==color) errors.push('colour heading missing');
     const style=getComputedStyle(row.nextElementSibling?row:row.closest('.domestic-inline-retailer-group'));
     if(style.borderBottomStyle!=='solid'||parseFloat(style.borderBottomWidth)*devicePixelRatio<0.99) errors.push('colour separator missing');

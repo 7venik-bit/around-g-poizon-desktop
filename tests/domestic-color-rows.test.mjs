@@ -26,7 +26,8 @@ test('Naver renders six separate colour rows without dropping any of the 54 opti
     assert.equal(row.querySelector('.domestic-inline-color').textContent,colors[index]);
     const options=[...row.querySelectorAll('.domestic-inline-stock-option')];
     assert.equal(options.length,9);
-    assert.ok(options.every(option=>option.textContent.startsWith(colors[index]+' / ')));
+    assert.deepEqual(options.map(option=>option.textContent),['85','90','92','95','100','105','110','115','120']);
+    assert.ok(options.every(option=>!option.textContent.includes(colors[index])));
     assert.equal(row.querySelector('.domestic-inline-price').textContent,'84,550원');
     assert.equal(decodeURIComponent(row.querySelector('.domestic-inline-actions [data-url]').dataset.url),product.url);
   }
@@ -45,7 +46,8 @@ test('option-name codes glued in front of sizes are dropped from chips and group
   assert.ok(chips.includes('220'));
   assert.ok(chips.includes('225'));
   assert.ok(!chips.some(chip => /FTWWHT|CBLACK/.test(chip)));
-  assert.ok(chips.some(chip => chip.includes('블랙 / 95')));
+  assert.ok(chips.includes('95'));
+  assert.ok(!chips.some(chip => chip.includes('블랙')));
   assert.ok(chips.some(chip => chip.includes('265/EU42')));
 });
 
@@ -93,9 +95,9 @@ test('Musinsa groups interleaved colour paths while retaining quantities, notice
   ]};
   const rows=render(t,[product]);
   assert.deepEqual(rows.map(row=>row.dataset.stockColor),['화이트','블랙']);
-  assert.equal(rows[0].querySelector('button.domestic-inline-stock-option').textContent,'화이트 / 110');
-  assert.equal(rows[0].querySelector('span.domestic-inline-stock-option').textContent,'화이트 / 115');
-  assert.equal(rows[1].querySelector('span.domestic-inline-stock-option.soldout').textContent,'블랙 / 90');
+  assert.equal(rows[0].querySelector('button.domestic-inline-stock-option').textContent,'110');
+  assert.equal(rows[0].querySelector('span.domestic-inline-stock-option').textContent,'115');
+  assert.equal(rows[1].querySelector('span.domestic-inline-stock-option.soldout').textContent,'90');
   assert.doesNotMatch(rows[1].textContent,/재입고 알림/);
   assert.equal(decodeURIComponent(rows[0].querySelector('button.domestic-inline-stock-option').dataset.url),url+'?size=110');
   for(const row of rows) {
@@ -127,6 +129,7 @@ test('unclassified options survive alongside escaped colour names',t=>{
   ]}]);
   assert.equal(rows.length,2);
   assert.equal(rows[0].querySelector('.domestic-inline-color').textContent,'블랙 <한정>');
+  assert.equal(rows[0].querySelector('.domestic-inline-stock-option').textContent,'95');
   assert.equal(rows[0].querySelector('한정'),null);
   assert.equal(rows[1].querySelector('.domestic-inline-stock-option').textContent,'FREE');
 });
