@@ -4130,6 +4130,24 @@ window.aroundG.onSellerCaptureProgress((progress) => {
   host.querySelector("i").style.width = `${percent}%`;
   host.querySelector("span").textContent = `${percent}%`;
   if (progress.message) $("#popular-status").textContent = progress.message;
+  const feed = host.querySelector(".popular-progress-ranks");
+  if (feed) {
+    const target = Number(progress.target || 200);
+    const count = Math.max(0, Number(progress.count || 0));
+    const shown = Number(feed.dataset.shown || 0);
+    for (let rank = Math.max(shown + 1, count - 9); rank <= count; rank += 1) {
+      const chip = host.ownerDocument.createElement("b");
+      chip.className = "popular-progress-rank";
+      chip.textContent = `${rank}위 수집`;
+      feed.appendChild(chip);
+    }
+    feed.dataset.shown = String(Math.max(shown, count));
+    while (feed.children.length > 10) feed.removeChild(feed.firstChild);
+    const counter = host.querySelector(".popular-progress-count b");
+    if (counter) counter.textContent = `${count}`;
+    const caption = host.querySelector(".popular-progress-count span");
+    if (caption) caption.textContent = `/${target} 수집 중 · ${percent}%`;
+  }
 });
 async function capturePopularProducts(options = {}) {
   const button = $("#popular-capture");
@@ -4141,6 +4159,13 @@ async function capturePopularProducts(options = {}) {
   $("#popular-progress").removeAttribute("data-complete");
   $("#popular-progress").removeAttribute("data-radar");
   $("#popular-progress").querySelectorAll("[data-radar-power]").forEach((sw) => sw.setAttribute("aria-pressed", String(sw.dataset.radarPower === "on")));
+  const resetFeed = $("#popular-progress").querySelector(".popular-progress-ranks");
+  if (resetFeed) {
+    resetFeed.replaceChildren();
+    delete resetFeed.dataset.shown;
+  }
+  const resetCounter = $("#popular-progress").querySelector(".popular-progress-count b");
+  if (resetCounter) resetCounter.textContent = "0";
   $("#popular-progress").querySelector("i").style.width = "0%";
   $("#popular-progress").querySelector("span").textContent = "0%";
   $("#popular-status").className = "status";
@@ -4181,6 +4206,10 @@ async function capturePopularProducts(options = {}) {
     $("#popular-progress").querySelector("i").style.width = `${verifiedPercent}%`;
     $("#popular-progress").querySelector("span").textContent = `${verifiedPercent}%`;
     $("#popular-progress").toggleAttribute("data-complete", verifiedPercent >= 100);
+    const finalCounter = $("#popular-progress").querySelector(".popular-progress-count b");
+    if (finalCounter) finalCounter.textContent = `${excelResult.imported}`;
+    const finalCaption = $("#popular-progress").querySelector(".popular-progress-count span");
+    if (finalCaption) finalCaption.textContent = `/200 수집 완료 · ${verifiedPercent}%`;
     $("#popular-status").className = partial ? "status error" : "status success";
     $("#popular-status").textContent = completedProducts.length
       ? `${sourceLabel} · 인기리스트 Excel 저장이 완료되었습니다. 검색 버튼을 눌러 결과를 열 수 있습니다.`
