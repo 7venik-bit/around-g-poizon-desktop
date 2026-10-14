@@ -141,17 +141,21 @@
         <div id="purchase-ledger-awareness" class="purchase-ledger-awareness" role="status">내부 구매 장부를 확인하고 있습니다.</div>
 
         <section id="explorer-popular" class="panel explorer-panel" hidden>
-          <div class="popular-workflow">
-            <button id="popular-capture" type="button" class="primary">현재 인기상품 가져오기</button>
+          <div class="popular-workflow" hidden>
             <button id="popular-product-search" type="button" hidden>검색</button>
           </div>
           <div id="popular-progress" class="capture-progress" hidden>
             <div class="popular-radar">
               <div class="popular-radar-face" aria-hidden="true">
                 <div class="popular-radar-sweep"></div>
-                <b class="popular-radar-blip b1"></b>
-                <b class="popular-radar-blip b2"></b>
-                <b class="popular-radar-blip b3"></b>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
                 <b class="popular-radar-dot"></b>
               </div>
               <div class="popular-radar-caption">인기상품 탐색 레이더</div>
@@ -163,7 +167,7 @@
             <div class="popular-progress-bar" hidden><i></i><span>0%</span></div>
             <div class="popular-progress-feed">
               <div class="popular-progress-count"><b>0</b><span>/200 수집 중 · 0%</span></div>
-              <div class="popular-progress-ranks" aria-hidden="true"></div>
+              <div class="popular-progress-items" aria-hidden="true"></div>
             </div>
           </div>
           <div class="explorer-actions"><span id="popular-status" class="status"></span></div>

@@ -4130,40 +4130,80 @@ window.aroundG.onSellerCaptureProgress((progress) => {
   host.querySelector("i").style.width = `${percent}%`;
   host.querySelector("span").textContent = `${percent}%`;
   if (progress.message) $("#popular-status").textContent = progress.message;
-  const feed = host.querySelector(".popular-progress-ranks");
+  const feed = host.querySelector(".popular-progress-items");
   if (feed) {
     const target = Number(progress.target || 200);
     const count = Math.max(0, Number(progress.count || 0));
-    const shown = Number(feed.dataset.shown || 0);
-    for (let rank = Math.max(shown + 1, count - 9); rank <= count; rank += 1) {
-      const chip = host.ownerDocument.createElement("b");
-      chip.className = "popular-progress-rank";
-      chip.textContent = `${rank}위 수집`;
-      feed.appendChild(chip);
+    const esc = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const recent = Array.isArray(progress.recent) ? progress.recent : [];
+    const tags = host.querySelectorAll(".popular-radar-tag");
+    if (tags.length) {
+      let slot = Number(host.dataset.tagSlot || 0);
+      for (const item of recent) {
+        const label = String(item?.name || item?.articleNumber || "").trim();
+        if (!label) continue;
+        let shown = false;
+        for (const tag of tags) {
+          if (tag.textContent === label) { shown = true; break; }
+        }
+        if (shown) continue;
+        const tag = tags[slot % tags.length];
+        slot += 1;
+        tag.textContent = label;
+        tag.className = "";
+        void tag.offsetWidth;
+        const order = [0, 5, 10, 3, 8, 1, 6, 11, 4, 9, 2, 7];
+        tag.classList.add("popular-radar-tag", `tag-pos-${order[slot % order.length]}`);
+      }
+      host.dataset.tagSlot = String(slot);
     }
-    feed.dataset.shown = String(Math.max(shown, count));
-    while (feed.children.length > 10) feed.removeChild(feed.firstChild);
+    for (const item of recent.slice(-8)) {
+      const code = String(item?.articleNumber || "").toUpperCase();
+      if (!code) continue;
+      let exists = false;
+      for (const child of feed.children) {
+        if (child.dataset.article === code) { exists = true; break; }
+      }
+      if (exists) continue;
+      const image = String(item?.image || "");
+      const price = Number(item?.averagePrice || 0);
+      const low = Number(item?.lowestPrice || 0);
+      const high = Number(item?.highestPrice || 0);
+      const won = (value) => `${Math.round(value).toLocaleString("ko-KR")}원`;
+      const priceParts = [];
+      if (price > 0) priceParts.push(`평균 ${won(price)}`);
+      if (low > 0) priceParts.push(`최저 ${won(low)}`);
+      if (high > low) priceParts.push(`최고 ${won(high)}`);
+      const card = host.ownerDocument.createElement("div");
+      card.className = "popular-progress-item";
+      card.dataset.article = code;
+      card.innerHTML = `${/^https?:\/\//i.test(image) ? `<img src="${esc(image)}" alt="">` : ""}<span class="popular-progress-meta"><b class="popular-progress-code">${esc(code)}</b><span class="popular-progress-name">${esc(item?.name || code)}</span>${priceParts.length ? `<span class="popular-progress-prices">${priceParts.join(" · ")}</span>` : ""}</span>`;
+      feed.appendChild(card);
+    }
+    while (feed.children.length > 8) feed.removeChild(feed.firstChild);
     const counter = host.querySelector(".popular-progress-count b");
     if (counter) counter.textContent = `${count}`;
     const caption = host.querySelector(".popular-progress-count span");
     if (caption) caption.textContent = `/${target} 수집 중 · ${percent}%`;
   }
 });
+let popularCaptureRunning = false;
 async function capturePopularProducts(options = {}) {
-  const button = $("#popular-capture");
+  if (popularCaptureRunning) return { ok: false, message: "인기상품 수집이 이미 진행 중입니다." };
+  popularCaptureRunning = true;
   const searchButton = $("#popular-product-search");
-  button.disabled = true;
+  const workflow = searchButton.closest(".popular-workflow");
+  if (workflow) workflow.hidden = true;
   latestPopularExcelFile = null;
   searchButton.hidden = true;
   $("#popular-progress").hidden = false;
   $("#popular-progress").removeAttribute("data-complete");
   $("#popular-progress").removeAttribute("data-radar");
   $("#popular-progress").querySelectorAll("[data-radar-power]").forEach((sw) => sw.setAttribute("aria-pressed", String(sw.dataset.radarPower === "on")));
-  const resetFeed = $("#popular-progress").querySelector(".popular-progress-ranks");
-  if (resetFeed) {
-    resetFeed.replaceChildren();
-    delete resetFeed.dataset.shown;
-  }
+  const resetFeed = $("#popular-progress").querySelector(".popular-progress-items");
+  if (resetFeed) resetFeed.replaceChildren();
+  $("#popular-progress").querySelectorAll(".popular-radar-tag").forEach((tag) => { tag.textContent = ""; tag.className = "popular-radar-tag"; });
+  $("#popular-progress").removeAttribute("data-tag-slot");
   const resetCounter = $("#popular-progress").querySelector(".popular-progress-count b");
   if (resetCounter) resetCounter.textContent = "0";
   $("#popular-progress").querySelector("i").style.width = "0%";
@@ -4202,6 +4242,7 @@ async function capturePopularProducts(options = {}) {
       jobId: `인기상품 ${excelResult.imported}/200`,
     };
     searchButton.hidden = !completedProducts.length;
+    if (workflow) workflow.hidden = searchButton.hidden;
     const verifiedPercent = partial ? Math.min(99, Math.round(excelResult.imported / 200 * 100)) : 100;
     $("#popular-progress").querySelector("i").style.width = `${verifiedPercent}%`;
     $("#popular-progress").querySelector("span").textContent = `${verifiedPercent}%`;
@@ -4221,19 +4262,16 @@ async function capturePopularProducts(options = {}) {
     $("#popular-status").textContent = message;
     return { ok: false, message };
   } finally {
-    button.disabled = false;
+    popularCaptureRunning = false;
   }
 }
-$("#popular-capture").addEventListener("click", async () => {
-  await capturePopularProducts();
-});
 $("#popular-product-search")?.addEventListener("click", async () => {
   if (!latestPopularExcelFile?.path) return;
   await openIntegratedPopularExcel(latestPopularExcelFile);
 });
 // Radar power switch: ON runs the scope and starts popular capture when idle.
 document.querySelectorAll("#popular-progress [data-radar-power]").forEach((button) => {
-  button.addEventListener("click", () => {
+  button.addEventListener("click", async () => {
     const on = button.dataset.radarPower === "on";
     document.querySelectorAll("#popular-progress [data-radar-power]").forEach((other) => other.setAttribute("aria-pressed", String(other === button)));
     const host = document.querySelector("#popular-progress");
@@ -4241,10 +4279,7 @@ document.querySelectorAll("#popular-progress [data-radar-power]").forEach((butto
       if (on) host.removeAttribute("data-radar");
       else host.setAttribute("data-radar", "off");
     }
-    if (on) {
-      const capture = document.querySelector("#popular-capture");
-      if (capture && !capture.disabled) capture.click();
-    }
+    if (on && typeof capturePopularProducts === "function") await capturePopularProducts();
   });
 });
 async function runDomesticBatch(options = {}) {
