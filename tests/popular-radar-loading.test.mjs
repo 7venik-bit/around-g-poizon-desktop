@@ -84,7 +84,7 @@ test("capture progress marks completion for the radar state", () => {
   assert.match(handler, /popular-progress-prices/);
   assert.match(handler, /popular-radar-tag/);
   assert.match(handler, /data-tag-slot/);
-  assert.match(handler, /tag-pos-\$\{slot % 12\}/);
+  assert.match(handler, /tag-pos-\$\{\(slot \* 5\) % 12\}/);
   assert.match(handler, /void tag\.offsetWidth/);
   assert.doesNotMatch(handler, /위 수집/);
   assert.doesNotMatch(handler, /POIZON<\/span>/);
