@@ -491,10 +491,11 @@ test('numeric inventory is displayed per colour/size and partial coverage stays 
   await f.run();
   const rows=[...f.window.document.querySelectorAll('.domestic-inline-row[data-stock-color]')];
   assert.deepEqual(rows.map(row=>row.dataset.stockColor),['블랙','화이트']);
-  assert.match(rows[0].textContent,/블랙 \/ 95/);
+  assert.equal(rows[0].querySelector('.domestic-inline-color').textContent,'블랙');
+  assert.deepEqual([...rows[0].querySelectorAll('.domestic-inline-stock-option')].map(o=>o.textContent),['95']);
   assert.doesNotMatch(rows[0].textContent,/화이트/);
-  assert.match(rows[1].textContent,/화이트 \/ 95/);
-  assert.deepEqual([...rows[1].querySelectorAll('.domestic-inline-stock-option')].map(o=>o.textContent),['화이트 / 95','화이트 / 100']);
+  assert.equal(rows[1].querySelector('.domestic-inline-color').textContent,'화이트');
+  assert.deepEqual([...rows[1].querySelectorAll('.domestic-inline-stock-option')].map(o=>o.textContent),['95','100']);
   for(const row of rows) assert.match(row.textContent,/일부 옵션 재고 확인 필요/);
   assert.equal(f.overlay().hidden,true);
 });

@@ -362,14 +362,25 @@
     return `<details class="domestic-inline-diagnostics"><summary>검색 진단 보기 (${failures.length})</summary>${blocks.join("")}</details>`;
   }
 
-  function renderStockCell(product = {}) {
+  function renderStockCell(product = {}, rowColor = "") {
     const sizes = Array.isArray(product.sizes) ? product.sizes : [];
     const stockText = String(product.stockText || "").trim();
     const lines = [];
     if (stockText) lines.push(`<div class="domestic-inline-stock${product.inStock === false ? " soldout" : ""}">${safeText(stockText)}</div>`);
     const seen = new Set();
     for (const option of sizes) {
-      const label = String(option?.label || option?.name || (typeof option === "string" ? option : "")).trim();
+      let label = String(option?.label || option?.name || (typeof option === "string" ? option : "")).trim();
+      // Colour-separated rows already show the colour in the product column,
+      // so chips show the size only. A slash after the colour guards against
+      // stripping a colour that merely prefixes another word. Saved option
+      // evidence stays exact.
+      if (rowColor && label !== rowColor && label.startsWith(rowColor)) {
+        const rest = label.slice(rowColor.length).trimStart();
+        if (rest.startsWith("/")) {
+          const sizeOnly = rest.slice(1).trimStart();
+          if (sizeOnly) label = sizeOnly;
+        }
+      }
       const raw = String(option?.stockText || option?.statusText || "").trim();
       // Chips show the size only. Availability phrases (sold out, restock
       // notices, arrival guarantees, stock counts) repeat on every chip while
@@ -464,7 +475,7 @@
       group.products.push(product);
       group.rows.push(...stockColorRows(product).map(({product: colorProduct, color}) => `<div class="domestic-inline-row"${color ? ` data-stock-color="${safeText(color)}"` : ""}>
         <div class="domestic-inline-product"><div class="domestic-inline-title" title="${safeText(rawTitle)}">${safeText(title)}</div>${color ? `<div class="domestic-inline-color">${safeText(color)}</div>` : ""}</div>
-        ${renderStockCell(colorProduct)}
+        ${renderStockCell(colorProduct, color)}
         <div class="domestic-inline-code" title="${safeText(article)}">${safeText(article)}</div>
         <div class="domestic-inline-price">${safeMoney(product?.price)}</div>
         <div class="domestic-inline-actions">${sourceAction(source, product, sourceProduct, contextKey)}${typeof stockWatchRegistrationButton === "function" ? stockWatchRegistrationButton(product, sourceProduct) : ""}</div>
