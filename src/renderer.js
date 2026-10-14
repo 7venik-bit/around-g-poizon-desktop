@@ -4126,6 +4126,7 @@ window.aroundG.onSellerCaptureProgress((progress) => {
     percent = Math.min(99, Math.round(Number(progress.count || 0) / Math.max(1, Number(progress.target || 200)) * 100));
   }
   host.hidden = false;
+  host.toggleAttribute("data-complete", percent >= 100);
   host.querySelector("i").style.width = `${percent}%`;
   host.querySelector("span").textContent = `${percent}%`;
   if (progress.message) $("#popular-status").textContent = progress.message;
@@ -4137,6 +4138,7 @@ async function capturePopularProducts(options = {}) {
   latestPopularExcelFile = null;
   searchButton.hidden = true;
   $("#popular-progress").hidden = false;
+  $("#popular-progress").removeAttribute("data-complete");
   $("#popular-progress").querySelector("i").style.width = "0%";
   $("#popular-progress").querySelector("span").textContent = "0%";
   $("#popular-status").className = "status";
@@ -4176,6 +4178,7 @@ async function capturePopularProducts(options = {}) {
     const verifiedPercent = partial ? Math.min(99, Math.round(excelResult.imported / 200 * 100)) : 100;
     $("#popular-progress").querySelector("i").style.width = `${verifiedPercent}%`;
     $("#popular-progress").querySelector("span").textContent = `${verifiedPercent}%`;
+    $("#popular-progress").toggleAttribute("data-complete", verifiedPercent >= 100);
     $("#popular-status").className = partial ? "status error" : "status success";
     $("#popular-status").textContent = completedProducts.length
       ? `${sourceLabel} · 인기리스트 Excel 저장이 완료되었습니다. 검색 버튼을 눌러 결과를 열 수 있습니다.`
