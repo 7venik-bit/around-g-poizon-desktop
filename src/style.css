@@ -2628,5 +2628,3 @@ html body input::placeholder{color:#515154!important}
    the selection button internally, so the selection button stays in the DOM
    hidden instead of being deleted. */
 #sidebar-quick-actions #brand-export-selected{display:none!important}
-/* Popular panel heading stays centered above the radar and progress. */
-#explorer-popular.panel>small,#explorer-popular.panel>h2{display:block;text-align:center}
