@@ -24,6 +24,10 @@
 #popular-progress .popular-radar-blip.b3{left:46%;top:72%;animation-delay:2.1s}
 @keyframes popular-radar-ping{0%,55%,100%{opacity:.25;transform:scale(.7)}12%{opacity:1;transform:scale(1.25)}}
 #popular-progress .popular-radar-dot{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:#d9f6e4}
+#popular-progress .popular-radar-tag{display:block;position:absolute;z-index:2;max-width:66px;height:auto;margin:0;padding:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#5cf08a;font-size:8px;font-weight:700;letter-spacing:.02em;text-shadow:0 0 6px #5cf08a88;pointer-events:none}
+#popular-progress .popular-radar-tag.t1{left:33%;top:29%}
+#popular-progress .popular-radar-tag.t2{right:39%;top:53%;text-align:right}
+#popular-progress .popular-radar-tag.t3{left:49%;top:67%}
 #popular-progress .popular-radar-caption{color:#3c5a6b;font-size:11px;font-weight:800;letter-spacing:.08em}
 #popular-progress[data-complete] .popular-radar-sweep{animation:none;transform:rotate(45deg)}
 #popular-progress[data-complete] .popular-radar-blip{animation:none;opacity:1;transform:scale(1)}

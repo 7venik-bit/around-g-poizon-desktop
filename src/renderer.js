@@ -4136,6 +4136,19 @@ window.aroundG.onSellerCaptureProgress((progress) => {
     const count = Math.max(0, Number(progress.count || 0));
     const esc = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     const recent = Array.isArray(progress.recent) ? progress.recent : [];
+    const tags = host.querySelectorAll(".popular-radar-tag");
+    if (tags.length) {
+      const names = [];
+      for (const item of recent) {
+        const label = String(item?.name || item?.articleNumber || "").trim();
+        if (!label || names.includes(label)) continue;
+        names.push(label);
+      }
+      const latest = names.slice(-3);
+      tags.forEach((tag, index) => {
+        if (index < latest.length) tag.textContent = latest[index];
+      });
+    }
     for (const item of recent.slice(-8)) {
       const code = String(item?.articleNumber || "").toUpperCase();
       if (!code) continue;
@@ -4181,6 +4194,7 @@ async function capturePopularProducts(options = {}) {
   $("#popular-progress").querySelectorAll("[data-radar-power]").forEach((sw) => sw.setAttribute("aria-pressed", String(sw.dataset.radarPower === "on")));
   const resetFeed = $("#popular-progress").querySelector(".popular-progress-items");
   if (resetFeed) resetFeed.replaceChildren();
+  $("#popular-progress").querySelectorAll(".popular-radar-tag").forEach((tag) => { tag.textContent = ""; });
   const resetCounter = $("#popular-progress").querySelector(".popular-progress-count b");
   if (resetCounter) resetCounter.textContent = "0";
   $("#popular-progress").querySelector("i").style.width = "0%";
