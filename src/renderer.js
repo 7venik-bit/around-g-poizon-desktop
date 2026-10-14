@@ -4130,19 +4130,29 @@ window.aroundG.onSellerCaptureProgress((progress) => {
   host.querySelector("i").style.width = `${percent}%`;
   host.querySelector("span").textContent = `${percent}%`;
   if (progress.message) $("#popular-status").textContent = progress.message;
-  const feed = host.querySelector(".popular-progress-ranks");
+  const feed = host.querySelector(".popular-progress-items");
   if (feed) {
     const target = Number(progress.target || 200);
     const count = Math.max(0, Number(progress.count || 0));
-    const shown = Number(feed.dataset.shown || 0);
-    for (let rank = Math.max(shown + 1, count - 9); rank <= count; rank += 1) {
-      const chip = host.ownerDocument.createElement("b");
-      chip.className = "popular-progress-rank";
-      chip.textContent = `${rank}위 수집`;
-      feed.appendChild(chip);
+    const esc = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const recent = Array.isArray(progress.recent) ? progress.recent : [];
+    for (const item of recent.slice(-8)) {
+      const code = String(item?.articleNumber || "").toUpperCase();
+      if (!code) continue;
+      let exists = false;
+      for (const child of feed.children) {
+        if (child.dataset.article === code) { exists = true; break; }
+      }
+      if (exists) continue;
+      const image = String(item?.image || "");
+      const price = Number(item?.averagePrice || 0);
+      const card = host.ownerDocument.createElement("div");
+      card.className = "popular-progress-item";
+      card.dataset.article = code;
+      card.innerHTML = `${/^https?:\/\//i.test(image) ? `<img src="${esc(image)}" alt="">` : `<span class="popular-progress-thumb">POIZON</span>`}<span class="popular-progress-name">${esc(item?.name || code)}</span><b>${price > 0 ? `${Math.round(price).toLocaleString("ko-KR")}원` : "가격 확인 중"}</b>`;
+      feed.appendChild(card);
     }
-    feed.dataset.shown = String(Math.max(shown, count));
-    while (feed.children.length > 10) feed.removeChild(feed.firstChild);
+    while (feed.children.length > 8) feed.removeChild(feed.firstChild);
     const counter = host.querySelector(".popular-progress-count b");
     if (counter) counter.textContent = `${count}`;
     const caption = host.querySelector(".popular-progress-count span");
@@ -4159,11 +4169,8 @@ async function capturePopularProducts(options = {}) {
   $("#popular-progress").removeAttribute("data-complete");
   $("#popular-progress").removeAttribute("data-radar");
   $("#popular-progress").querySelectorAll("[data-radar-power]").forEach((sw) => sw.setAttribute("aria-pressed", String(sw.dataset.radarPower === "on")));
-  const resetFeed = $("#popular-progress").querySelector(".popular-progress-ranks");
-  if (resetFeed) {
-    resetFeed.replaceChildren();
-    delete resetFeed.dataset.shown;
-  }
+  const resetFeed = $("#popular-progress").querySelector(".popular-progress-items");
+  if (resetFeed) resetFeed.replaceChildren();
   const resetCounter = $("#popular-progress").querySelector(".popular-progress-count b");
   if (resetCounter) resetCounter.textContent = "0";
   $("#popular-progress").querySelector("i").style.width = "0%";

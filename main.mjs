@@ -11137,6 +11137,24 @@ async function captureSellerCenterProducts() {
   const limit = 200;
   const capturedNodes = new Map();
   const rankSlots = new Map();
+  const recentConfirmedRanks = [];
+  const recentConfirmedProducts = (max = 5) => {
+    const seen = new Set();
+    const items = [];
+    for (let index = recentConfirmedRanks.length - 1; index >= 0 && items.length < max; index -= 1) {
+      const product = rankSlots.get(recentConfirmedRanks[index]);
+      const code = String(product?.articleNumber || "").toUpperCase();
+      if (!product || !code || seen.has(code)) continue;
+      seen.add(code);
+      items.unshift({
+        articleNumber: code,
+        name: String(product.name || ""),
+        averagePrice: Number(product.averagePrice || 0),
+        image: String(product.logoUrl || product.imageUrl || ""),
+      });
+    }
+    return items;
+  };
   const stableObservations = new Map();
   const rankPositions = new Map();
   const rankIsComplete = (rank) => {
@@ -11155,7 +11173,11 @@ async function captureSellerCenterProducts() {
     const name = String(product.name || "").trim();
     if (rank < 1 || rank > limit || (!articleNumber && !name)) return;
     const merged = mergeSellerProductsByRank([[rankSlots.get(rank)], [{ ...product, articleNumber, name }]], limit)[0];
-    if (merged) rankSlots.set(rank, merged);
+    if (merged) {
+      rankSlots.set(rank, merged);
+      recentConfirmedRanks.push(rank);
+      if (recentConfirmedRanks.length > 60) recentConfirmedRanks.splice(0, recentConfirmedRanks.length - 60);
+    }
   };
   const addNodesToSlots = (nodes, scrollTop = 0, scrollMaximum = 0) => {
     for (const product of parseSellerDomNodes(nodes, limit)) {
@@ -11247,6 +11269,7 @@ async function captureSellerCenterProducts() {
         count: completeRankCount(),
         target: limit,
         missing: limit - completeRankCount(),
+        recent: recentConfirmedProducts(),
         message: pass === 0
           ? `1~${limit}위 순위를 확인 중 · 표 위치 ${Math.round(tableRatio * 100)}%`
           : `누락 슬롯 재확인 ${pass}/2 · 표 위치 ${Math.round(tableRatio * 100)}%`,
@@ -11301,6 +11324,7 @@ async function captureSellerCenterProducts() {
       count: completeRankCount(),
       target: limit,
       missing: limit - completeRankCount(),
+      recent: recentConfirmedProducts(),
       message: `누락 순위만 정밀 재수집 ${recoveryRound + 1}/6 · ${groups.map((group) => group.start === group.end ? group.start : `${group.start}-${group.end}`).slice(0, 18).join(", ")}`,
     });
     for (const group of groups) {
