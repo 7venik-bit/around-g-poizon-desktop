@@ -2668,3 +2668,10 @@ html body input::placeholder{color:#515154!important}
    the selection button internally, so the selection button stays in the DOM
    hidden instead of being deleted. */
 #sidebar-quick-actions #brand-export-selected{display:none!important}
+/* Domestic batch loading banner: amplifier photo with popular-style search info. */
+#domestic-loading-banner{display:flex;gap:14px;align-items:center;margin:0 0 12px;padding:12px 16px;border:1px solid #d9e6f2;border-radius:14px;background:#fff}
+#domestic-loading-banner[hidden]{display:none}
+#domestic-loading-banner img{width:180px;height:auto;flex:0 0 auto;border-radius:10px}
+#domestic-loading-banner .domestic-loading-banner-info{display:grid;gap:4px;min-width:0}
+#domestic-loading-banner .domestic-loading-banner-info b{font-size:15px;color:#0b6b50}
+#domestic-loading-banner .domestic-loading-banner-info span{font-size:11px;color:#536b86}
