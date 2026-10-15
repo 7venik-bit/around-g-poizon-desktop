@@ -11,6 +11,7 @@ test("popular loading shows a radar scope without changing progress semantics", 
   assert.match(html, /class="popular-radar-sweep"/);
   assert.doesNotMatch(html, /popular-radar-blip/);
   assert.equal((html.match(/class="popular-radar-tag"/g) || []).length, 8);
+  assert.match(html, /class="popular-radar-percent"><b>0<\/b><span>%<\/span>/);
   assert.match(html, /class="popular-radar-caption"/);
   assert.match(html, /class="popular-radar-switch" role="group" aria-label="레이더 전원"/);
   assert.match(html, /data-radar-power="on" aria-pressed="true">ON/);
@@ -31,6 +32,8 @@ test("radar is decorative CSS with reduced-motion and completion states", () => 
   assert.doesNotMatch(css, /popular-radar-blip/);
   assert.doesNotMatch(css, /popular-radar-ping/);
   assert.match(css, /#popular-progress \.popular-radar-face\{[^}]*width:min\(400px,100%\)/);
+  assert.match(css, /#popular-progress \.popular-radar-percent b\{[^}]*font-size:26px/);
+  assert.match(css, /#popular-progress \.popular-radar-tag\{[^}]*font-size:10px/);
   assert.match(css, /#popular-progress \.popular-radar-tag\{[^}]*text-overflow:ellipsis/);
   assert.match(css, /#popular-progress \.popular-radar-tag\.tag-pos-11\{/);
   assert.match(css, /@keyframes popular-tag-appear\{0%\{opacity:0\}12%\{opacity:1\}100%\{opacity:1\}\}/);
@@ -77,6 +80,7 @@ test("capture progress marks completion for the radar state", () => {
   const end = renderer.indexOf('document.querySelectorAll("#popular-progress [data-radar-power]")', start);
   const handler = renderer.slice(start, end);
   assert.match(handler, /toggleAttribute\("data-complete", percent >= 100\)/);
+  assert.match(handler, /popular-radar-percent b/);
   const captureStart = renderer.indexOf("async function capturePopularProducts(");
   const captureEnd = renderer.indexOf('document.querySelectorAll("#popular-progress [data-radar-power]")', captureStart);
   const capture = renderer.slice(captureStart, captureEnd);
@@ -85,6 +89,7 @@ test("capture progress marks completion for the radar state", () => {
   assert.doesNotMatch(capture, /popular-product-search/);
   assert.doesNotMatch(capture, /searchButton/);
   assert.match(capture, /removeAttribute\("data-complete"\)/);
+  assert.match(capture, /popular-radar-percent b/);
   assert.match(capture, /toggleAttribute\("data-complete", verifiedPercent >= 100\)/);
   assert.match(handler, /popular-progress-items/);
   assert.match(handler, /ownerDocument\.createElement\("div"\)/);
