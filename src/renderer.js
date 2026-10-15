@@ -4129,6 +4129,8 @@ window.aroundG.onSellerCaptureProgress((progress) => {
   host.toggleAttribute("data-complete", percent >= 100);
   host.querySelector("i").style.width = `${percent}%`;
   host.querySelector("span").textContent = `${percent}%`;
+  const scopePercent = host.querySelector(".popular-radar-percent b");
+  if (scopePercent) scopePercent.textContent = `${percent}`;
   if (progress.message) $("#popular-status").textContent = progress.message;
   const feed = host.querySelector(".popular-progress-items");
   if (feed) {
@@ -4202,6 +4204,8 @@ async function capturePopularProducts(options = {}) {
   $("#popular-progress").removeAttribute("data-tag-slot");
   const resetCounter = $("#popular-progress").querySelector(".popular-progress-count b");
   if (resetCounter) resetCounter.textContent = "0";
+  const resetScope = $("#popular-progress").querySelector(".popular-radar-percent b");
+  if (resetScope) resetScope.textContent = "0";
   $("#popular-progress").querySelector("i").style.width = "0%";
   $("#popular-progress").querySelector("span").textContent = "0%";
   $("#popular-status").className = "status";
@@ -4246,6 +4250,8 @@ async function capturePopularProducts(options = {}) {
     if (finalCounter) finalCounter.textContent = `${excelResult.imported}`;
     const finalCaption = $("#popular-progress").querySelector(".popular-progress-count span");
     if (finalCaption) finalCaption.textContent = `/200 수집 완료 · ${verifiedPercent}%`;
+    const finalScope = $("#popular-progress").querySelector(".popular-radar-percent b");
+    if (finalScope) finalScope.textContent = `${verifiedPercent}`;
     $("#popular-status").className = partial ? "status error" : "status success";
     $("#popular-status").textContent = completedProducts.length
       ? `${sourceLabel} · 인기리스트 Excel 저장이 완료되어 결과를 열었습니다.`
