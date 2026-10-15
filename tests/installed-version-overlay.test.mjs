@@ -9,8 +9,9 @@ const [renderer, packageSource] = await Promise.all([
 
 test("domestic loading screen identifies the actually running app version", () => {
   assert.match(renderer, /let installedAppVersion = ""/);
-  assert.match(renderer, /실행 버전 \$\{installedAppVersion/);
   assert.match(renderer, /installedAppVersion = String\(appInfo\?\.version/);
+  assert.match(renderer, /titlebarVersion\.textContent = `v\$\{installedAppVersion\}`/);
+  assert.doesNotMatch(renderer, /실행 버전 \$\{installedAppVersion/);
 });
 
 test("Windows installer cannot create another user-selected install directory", () => {

@@ -19,10 +19,10 @@ test("retailer progress updates the guide without replacing product-batch progre
   assert.match(preload, /ipcRenderer\.on\("domestic-search:progress"/);
   assert.match(renderer, /onDomesticSearchProgress\?\.\(\(payload = \{\}\)/);
   const progressHandler = renderer.slice(renderer.indexOf('window.aroundG.onDomesticSearchProgress'), renderer.indexOf('function renderRawExcelDomesticCell'));
-  assert.match(progressHandler, /payload\.phase === "checkpoint"/);
+  assert.match(progressHandler, /payload\.checkpoint\?\.products/);
   assert.doesNotMatch(progressHandler, /count\.innerHTML/);
   assert.doesNotMatch(progressHandler, /progress\.value/);
-  assert.match(renderer, /showDomesticSearchOverlay\(batchStartedAt, completed, keys\.length/);
+  assert.match(renderer, /showDomesticSearchOverlay\(batchStartedAt, completedCount, searchKeys\.length/);
 });
 
 test("image fingerprints are reused across matching and final verification", () => {

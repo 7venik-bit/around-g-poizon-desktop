@@ -1513,34 +1513,11 @@ function stopExcelPreviewSearch() {
   updateExcelPreviewSelectionUi(excelPreviewPageKeys);
 }
 
+// Background execution mode: searches run inline without a blocking modal,
+// so showing the overlay is intentionally a no-op. The function shell stays
+// so existing batch, recovery and stop flows keep working unchanged.
 function showDomesticSearchOverlay(startedAt, completedCount, totalCount, currentProduct = null) {
-  let overlay = $("#domestic-search-overlay");
-  if (!overlay) {
-    overlay = document.createElement("div");
-    overlay.id = "domestic-search-overlay";
-    overlay.className = "domestic-search-overlay";
-    document.body.appendChild(overlay);
-  }
-  // The progress UI is a viewport modal. Remove geometry left by older builds
-  // so a previous grid-sized overlay can never reappear inside a result cell.
-  overlay.removeAttribute("style");
-  delete overlay.dataset.currentActivity;
-  const article = String(currentProduct?.articleNumber || currentProduct?.productNumber || "").trim();
-  const safeTotal = Math.max(1, Number(totalCount) || 1);
-  const percent = Math.min(100, Math.round((Number(completedCount) / safeTotal) * 100));
-  overlay.hidden = false;
-  overlay.innerHTML = `<div class="domestic-search-overlay-card">
-    ${renderDomesticLoading(startedAt)}
-    <p class="domestic-overlay-version">실행 버전 ${installedAppVersion ? `v${text(installedAppVersion)}` : "확인 중"}</p>
-    <p class="domestic-overlay-count"><strong>${Number(completedCount).toLocaleString("ko-KR")}</strong> / ${Number(totalCount).toLocaleString("ko-KR")}개 처리 · ${percent}%</p>
-    <progress class="domestic-overlay-progress" max="100" value="${percent}" aria-label="상품 검색 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}">${percent}%</progress>
-    <p class="domestic-overlay-current">${article ? `현재 상품번호 · <b>${text(article)}</b>` : "검색 준비 중입니다."}</p>
-    <p class="domestic-overlay-guide">수달 사원이 상품을 확인하고 있습니다. 완료될 때까지 잠시 기다려 주세요.</p>
-    <button type="button" class="domestic-overlay-stop">검색 중지</button>
-  </div>`;
-  overlay.querySelector(".domestic-overlay-stop")?.addEventListener("click", () => {
-    stopExcelPreviewSearch();
-  });
+  void startedAt; void completedCount; void totalCount; void currentProduct;
 }
 
 function hideDomesticSearchOverlay() {
@@ -1564,20 +1541,6 @@ window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
     // snapshot so Stop can persist exactly what was completed so far.
     activeDomesticCheckpoint = payload.checkpoint;
   }
-  const overlay = $("#domestic-search-overlay");
-  if (!overlay || overlay.hidden) return;
-  // The bar and count belong to the selected product batch (for example 1/3).
-  // Retailer checkpoint events may omit totals; they update only the guide so
-  // they cannot replace the real batch count with a misleading 0/1 stage.
-  const guide = overlay.querySelector(".domestic-overlay-guide");
-  if (payload.phase === "searching") overlay.dataset.currentActivity = String(payload.source || "판매처");
-  if (guide) guide.textContent = payload.phase === "checkpoint"
-    ? `${overlay.dataset.currentActivity ? `${overlay.dataset.currentActivity} · ` : ""}확인된 결과를 보관했습니다.`
-    : payload.phase === "searching"
-    ? `${String(payload.source || "판매처")} 상품과 가격을 확인하고 있습니다.`
-    : payload.phase === "authentication"
-    ? `${String(payload.source || "판매처")} 로그인 확인 중입니다.`
-    : `${String(payload.source || "판매처")} 확인 완료 · 다음 검색 단계를 진행하고 있습니다.`;
 });
 
 function renderRawExcelDomesticCell(key, product, result) {
@@ -4809,9 +4772,6 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       }
       renderBatchSearchProgress(completed, product);
       refreshDomesticSearchRows();
-      // Some preview renderers rebuild the workspace. Reassert the body-level
-      // modal afterwards so the mascot always remains above the whole screen.
-      showDomesticSearchOverlay(batchStartedAt, completed, keys.length, product);
       const response = await cachedDomesticSearch(product, true);
       if (runId !== excelPreviewSearchRunId) return;
       // A graceful stop waits for the in-flight response. When it comes back
