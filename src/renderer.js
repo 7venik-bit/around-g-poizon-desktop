@@ -4740,7 +4740,8 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
         banner.id = "domestic-loading-banner";
         banner.className = "domestic-loading-banner";
         banner.setAttribute("role", "status");
-        banner.innerHTML = `<div class="domestic-loading-banner-amp-wrap">`
+        banner.innerHTML = `<div class="domestic-loading-banner-stage">`
+          + `<div class="domestic-loading-banner-amp-wrap">`
           + `<img class="domestic-loading-banner-amp" src="./assets/aroundg-amp.jpg" alt="진공관 앰프">`
           + `<i class="domestic-loading-banner-needle is-left" aria-hidden="true"></i>`
           + `<i class="domestic-loading-banner-needle is-right" aria-hidden="true"></i>`
@@ -4748,9 +4749,13 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
           + `<i class="domestic-loading-banner-tube t2" aria-hidden="true"></i>`
           + `<i class="domestic-loading-banner-tube t3" aria-hidden="true"></i>`
           + `<i class="domestic-loading-banner-tube t4" aria-hidden="true"></i>`
+          + `<div class="domestic-loading-banner-percent" aria-hidden="true"><b>0</b><span>%</span></div>`
+          + `</div>`
+          + `<div class="domestic-loading-banner-caption">국내 상품 탐색 앰프</div>`
           + `</div>`
           + `<div class="domestic-loading-banner-info"><b></b><span></span>`
-          + `<div class="domestic-loading-banner-bar" aria-hidden="true"><i></i></div></div>`;
+          + `<div class="domestic-loading-banner-bar" aria-hidden="true"><i></i></div></div>`
+          + `<div class="domestic-loading-banner-items" aria-live="polite"></div>`;
         const grid = $("#excel-preview-grid");
         (grid?.parentElement || document.body).insertBefore(banner, grid || null);
       }
@@ -4765,6 +4770,48 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       if (bannerSub) bannerSub.textContent = article ? `현재 ${article}` : "검색 준비 중입니다.";
       const bannerBar = banner.querySelector(".domestic-loading-banner-bar i");
       if (bannerBar) bannerBar.style.width = `${percent}%`;
+      const stagePercent = banner.querySelector(".domestic-loading-banner-percent b");
+      if (stagePercent) stagePercent.textContent = `${percent}`;
+      // Popular-style live feed: newest searched products appear as rows below the stage.
+      const feed = banner.querySelector(".domestic-loading-banner-items");
+      if (feed && currentProduct) {
+        const code = String(currentProduct?.articleNumber || currentProduct?.productNumber || "").toUpperCase().trim();
+        if (code) {
+          let exists = false;
+          for (const child of feed.children) {
+            if (child.dataset.article === code) { exists = true; break; }
+          }
+          if (!exists) {
+            const itemName = String(currentProduct?.originalValues?.title ?? currentProduct?.title ?? code).trim() || code;
+            const itemImage = String(currentProduct?.logoUrl || "");
+            const itemPrice = Number(currentProduct?.averagePrice || 0);
+            const card = banner.ownerDocument.createElement("div");
+            card.className = "domestic-loading-banner-item";
+            card.dataset.article = code;
+            const thumb = /^https?:\/\//i.test(itemImage) ? banner.ownerDocument.createElement("img") : null;
+            if (thumb) { thumb.src = itemImage; thumb.alt = ""; card.appendChild(thumb); }
+            const meta = banner.ownerDocument.createElement("span");
+            meta.className = "domestic-loading-banner-meta";
+            const codeEl = banner.ownerDocument.createElement("b");
+            codeEl.className = "domestic-loading-banner-code";
+            codeEl.textContent = code;
+            const nameEl = banner.ownerDocument.createElement("span");
+            nameEl.className = "domestic-loading-banner-name";
+            nameEl.textContent = itemName;
+            meta.appendChild(codeEl);
+            meta.appendChild(nameEl);
+            if (itemPrice > 0) {
+              const priceEl = banner.ownerDocument.createElement("span");
+              priceEl.className = "domestic-loading-banner-prices";
+              priceEl.textContent = `평균 ${Math.round(itemPrice).toLocaleString("ko-KR")}원`;
+              meta.appendChild(priceEl);
+            }
+            card.appendChild(meta);
+            feed.appendChild(card);
+            while (feed.children.length > 8) feed.removeChild(feed.firstChild);
+          }
+        }
+      }
     };
     renderBatchSearchProgress(0);
     // A normal search must use the original, ordered, all-retailer request.
