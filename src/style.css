@@ -37,10 +37,10 @@
 #popular-progress .popular-progress-count{display:flex;align-items:baseline;justify-content:center;gap:6px;color:#173229}
 #popular-progress .popular-progress-count b{font-size:20px;color:#0b6b50}
 #popular-progress .popular-progress-count span{display:block;height:auto;font-size:11px;font-weight:700}
-#popular-progress .popular-progress-items{display:flex;flex-direction:column;justify-content:flex-end;gap:6px;height:240px;overflow:hidden}
+#popular-progress .popular-progress-items{display:flex;flex-direction:column;justify-content:flex-end;gap:6px;height:300px;overflow:hidden}
 #popular-progress .popular-progress-item{display:flex;align-items:flex-start;justify-content:center;gap:8px;height:auto;min-height:52px;padding:8px 10px;border:1px solid #d9e6f2;border-radius:12px;background:#fff;overflow:hidden;animation:popular-item-rise .45s ease-out}
 #popular-progress .popular-progress-item img{width:28px;height:28px;object-fit:contain;border-radius:8px;background:#f2f6fa;flex:0 0 auto}
-#popular-progress .popular-progress-name{min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;white-space:normal;font-size:11px;font-weight:700;color:#1d2b3a}
+#popular-progress .popular-progress-name{min-width:0;overflow:hidden;white-space:normal;overflow-wrap:anywhere;font-size:11px;font-weight:700;color:#1d2b3a}
 #popular-progress .popular-progress-meta{min-width:0;flex:0 1 auto;display:grid;gap:2px}
 #popular-progress .popular-progress-code{flex:0 0 auto;font-size:11px;font-weight:800;color:#1d2b3a}
 #popular-progress .popular-progress-prices{flex:0 0 auto;font-size:10px;font-weight:700;color:#3f6b58;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
