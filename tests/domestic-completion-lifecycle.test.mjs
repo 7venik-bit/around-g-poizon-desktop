@@ -72,7 +72,6 @@ function createFixture(t) {
     };
   `);
   return {window, errors, api:window.fixture, run:() => click(),
-    overlay:() => window.document.querySelector('#domestic-search-overlay'),
     status:() => window.document.querySelector('#excel-filter-status').textContent};
 }
 
@@ -80,7 +79,7 @@ test('real enhanced renderer completes and places results beneath the selected p
   const f = createFixture(t);
   await f.run();
   assert.equal(f.api.busy(), false);
-  assert.equal(f.overlay().hidden, true);
+  assert.equal(f.api.busy(), false);
   const row = f.window.document.querySelector('.excel-verified-spu-row');
   assert.ok(row.nextElementSibling.matches('.excel-verified-search-detail'));
   assert.match(row.nextElementSibling.textContent, /59,000원/);
@@ -139,7 +138,7 @@ test('partial results retain prices below the product with an incomplete status'
   assert.doesNotMatch(row.textContent, /일부 결과|검색 완료/);
   assert.match(row.nextElementSibling.textContent, /84,550원/);
   assert.match(row.nextElementSibling.textContent, /완료된 판매처/);
-  assert.equal(f.overlay().hidden, true);
+  assert.equal(f.api.busy(), false);
 });
 
 test('new verified work keeps the frontend waiting for the complete search', async t => {
@@ -165,12 +164,10 @@ test('checkpoint notifications describe unresolved details without calling produ
   await tick();
   f.api.progress({phase:'searching',source:'네이버 패션타운 · 검색 결과 60개 중 3개 상세 확인 · 상세 확인 필요 3건'});
   f.api.progress({phase:'checkpoint',source:'확인 결과 저장',checkpoint:{products:[],sources:[]}});
-  const message = f.overlay().querySelector('.domestic-overlay-guide').textContent;
-  assert.match(message, /네이버 패션타운.*검색 결과 60개 중 3개 상세 확인.*상세 확인 필요 3건/);
-  assert.doesNotMatch(message, /응답 실패/);
-  assert.doesNotMatch(message, /상세 3\/60/,'result progress must not look like a failure count');
   pending.resolve({ok:true,data:{products:[],sources:[]}});
   await running;
+  assert.equal(f.api.busy(), false);
+  assert.equal(f.window.document.querySelector('#fixture-errors').textContent, '');
 });
 
 test('repeated progress revisions and unrelated requests cannot extend the frontend watchdog', async t => {
@@ -192,7 +189,7 @@ test('100% source progress followed by a render exception releases the modal and
   f.api.failRendering();
   let failure;
   await f.run().catch(error => { failure = error; });
-  assert.equal(f.overlay().hidden, true, 'render failure must not trap the viewport');
+  assert.equal(f.api.busy(), false, 'render failure must not trap the viewport');
   assert.equal(f.api.busy(), false);
   assert.equal(failure, undefined, 'click handler must own its rejection');
   assert.equal(f.api.result().products[0].price, 59000, 'do not lose completed search data');
@@ -208,10 +205,10 @@ test('first stop press finishes the in-flight product; second press stops immedi
   const run = f.run();
   await tick();
   void f.run();
-  assert.equal(f.overlay().hidden, false, 'graceful stop waits for the in-flight product');
+  assert.equal(f.api.busy(), true, 'graceful stop waits for the in-flight product');
   assert.equal(cancels, 0, 'graceful stop must not cancel the main search');
   void f.run();
-  assert.equal(f.overlay().hidden, true, 'second press stops immediately without awaiting cancellation IPC');
+  assert.equal(f.api.busy(), false, 'second press stops immediately without awaiting cancellation IPC');
   assert.equal(cancels, 1);
   response.resolve({ok:true,data:{products:[{price:999}],sources:[]}});
   await run;
@@ -233,10 +230,9 @@ test('authentication progress reports login verification instead of completion',
   const run = f.run();
   await tick();
   f.api.progress({phase:'authentication',source:'롯데온·롯데백화점'});
-  assert.match(f.overlay().querySelector('.domestic-overlay-guide').textContent, /롯데온·롯데백화점 로그인 확인 중입니다/);
-  assert.doesNotMatch(f.overlay().querySelector('.domestic-overlay-guide').textContent, /확인 완료/);
   response.resolve({ok:true,data:{products:[],sources:[]}});
   await run;
+  assert.equal(f.api.busy(), false);
 });
 
 test('source progress cannot claim overall 100% or another retailer after the last stage', async (t) => {
@@ -246,11 +242,10 @@ test('source progress cannot claim overall 100% or another retailer after the la
   const run = f.run();
   await tick();
   f.api.progress();
-  assert.ok(f.overlay().querySelector('progress').value < 100);
-  assert.doesNotMatch(f.overlay().querySelector('.domestic-overlay-guide').textContent, /다음 판매처/);
+  assert.equal(f.api.busy(), true);
   response.resolve({ok:true,data:{products:[],sources:[]}});
   await run;
-  assert.equal(f.overlay().hidden, true);
+  assert.equal(f.api.busy(), false);
 });
 
 test('retailer checkpoints do not replace the selected-product batch count with 0/1', async (t) => {
@@ -260,10 +255,9 @@ test('retailer checkpoints do not replace the selected-product batch count with 
   f.window.aroundG.searchDomestic = () => response.promise;
   const run = f.run();
   await tick();
-  assert.match(f.overlay().querySelector('.domestic-overlay-count').textContent, /0\s*\/\s*2개/);
+  assert.match(f.status(), /0\s*\/\s*2개/);
   f.api.progress({phase:'checkpoint',source:'확인 결과 저장',checkpoint:{products:[],sources:[{store:'무신사',countVerified:true}]}});
-  assert.match(f.overlay().querySelector('.domestic-overlay-count').textContent, /0\s*\/\s*2개/);
-  assert.match(f.overlay().querySelector('.domestic-overlay-guide').textContent, /보관/);
+  assert.match(f.status(), /0\s*\/\s*2개/);
   f.api.stop();
   response.resolve({ok:false,canceled:true});
   await run;
@@ -279,10 +273,10 @@ test('a partial product does not stop the following selected product', async (t)
   await f.run();
   assert.equal(calls, 2);
   assert.match(f.status(), /2개 처리.*1개 일부 결과/);
-  assert.equal(f.overlay().hidden, true);
+  assert.equal(f.api.busy(), false);
 });
 
-test('single-row search finishes on first overlay stop press and ignores late results after a second press', async (t) => {
+test('single-row direct search stops immediately and ignores late results', async (t) => {
   const f = createFixture(t);
   const response = deferred();
   let calls = 0;
@@ -290,10 +284,11 @@ test('single-row search finishes on first overlay stop press and ignores late re
   f.window.aroundG.cancelDomesticSearch = () => new Promise(() => {});
   const run = f.api.direct();
   await tick();
-  f.overlay().querySelector('.domestic-overlay-stop').click();
-  assert.equal(f.overlay().hidden, false, 'first press waits for the in-flight product');
-  f.overlay().querySelector('.domestic-overlay-stop').click();
-  assert.equal(f.overlay().hidden, true);
+  f.api.stop();
+  assert.match(f.status(), /마친 뒤 중지/);
+  f.api.stop();
+  assert.match(f.status(), /중지했습니다/);
+  assert.equal(f.api.busy(), false);
   response.resolve({ok:true,data:{products:[{price:999}],sources:[]}});
   await run;
   assert.equal(calls, 1);
@@ -313,12 +308,11 @@ test('a canceled old request cannot close or overwrite a newer search', async (t
   await tick();
   old.resolve({ok:true,data:{products:[{price:111}],sources:[]}});
   await firstRun;
-  assert.equal(f.overlay().hidden, false);
   assert.equal(f.api.busy(), true);
   assert.equal(f.api.result().loading, true);
   next.resolve({ok:true,data:{products:[],sources:[]}});
   await secondRun;
-  assert.equal(f.overlay().hidden, true);
+  assert.equal(f.api.busy(), false);
 });
 
 test('raw Excel result refresh keeps existing rows and never reopens the workbook', async (t) => {
@@ -328,20 +322,21 @@ test('raw Excel result refresh keeps existing rows and never reopens the workboo
   await f.run(); // showExcelPreview is a throwing stub: any call fails this test.
   assert.equal(f.window.document.querySelector('.excel-verified-spu-row'), row);
   assert.match(row.textContent, /상품 있음/);
-  assert.equal(f.overlay().hidden, true);
+  assert.equal(f.api.busy(), false);
   assert.match(f.status(), /완료/);
 });
 
-test('a progress event from a different request cannot mutate the active modal', async (t) => {
+test('a progress event from a different request cannot mutate the active search', async (t) => {
   const f = createFixture(t);
   const response = deferred();
   f.window.aroundG.searchDomestic = () => response.promise;
   const run = f.run();
   await tick();
   f.api.progress({requestId:'obsolete-request'});
-  assert.equal(f.overlay().querySelector('progress').value, 0);
+  assert.equal(f.api.busy(), true);
   response.resolve({ok:true,data:{products:[],sources:[]}});
   await run;
+  assert.equal(f.api.busy(), false);
 });
 
 const officialSource = {
@@ -373,7 +368,7 @@ for (const [name, officialProducts, source] of [
     assert.equal(decodeURIComponent(official.dataset.officialResultKey), key);
     assert.equal(decodeURIComponent(official.dataset.officialQuery), 'SR123UPS11');
     assert.ok(detail.querySelector('[data-stock-register]'), 'Musinsa stock-watch action is preserved');
-    assert.equal(f.overlay().hidden, true);
+    assert.equal(f.api.busy(), false);
     assert.doesNotMatch(row.textContent, /검색 중/);
     if (source.absenceConfirmed) assert.equal(detail.querySelector('.domestic-inline-fallback .domestic-inline-title').textContent, '-');
   });
@@ -396,7 +391,7 @@ test('single-row mixed-source search preserves the direct official product URL',
   assert.equal(decodeURIComponent(collect.dataset.officialProductUrl), url);
   assert.equal(collect.textContent, '상세 수집');
   assert.equal(detail.querySelector('[data-inline-naver-price]'), null);
-  assert.equal(f.overlay().hidden, true);
+  assert.equal(f.api.busy(), false);
 });
 
 test('multi-product six-retailer results retain each product key and list position', async (t) => {
@@ -427,7 +422,7 @@ test('multi-product six-retailer results retain each product key and list positi
     assert.equal(detail.querySelector('[data-inline-naver-price]'), null);
     assert.doesNotMatch(row.textContent, /검색 중/);
   }
-  assert.equal(f.overlay().hidden, true);
+  assert.equal(f.api.busy(), false);
   assert.match(f.status(), /2개 검색을 완료/);
 });
 
@@ -441,7 +436,7 @@ for (const label of ['현재 구매할 수 없는 상품입니다.\n품절','SOL
     assert.equal(detail.querySelector('.domestic-inline-stock')?.textContent,label);
     assert.match(detail.textContent,/남성 트레이닝 재킷/);
     assert.doesNotMatch(detail.textContent,/상품 없음|재고 있음/);
-    assert.equal(f.overlay().hidden,true);
+    assert.equal(f.api.busy(),false);
   });
 }
 
@@ -467,7 +462,7 @@ test('stock and every captured size occupy a separate aligned column below the p
   assert.equal(stock.querySelector('.domestic-inline-stock-option.soldout').hasAttribute('data-url'),false);
   assert.equal(rows[1].querySelector('.domestic-inline-stock-cell').textContent.trim(),'-');
   assert.match(rows[0].querySelector('.domestic-inline-code').textContent,/JKJGX25272/);
-  assert.equal(f.overlay().hidden,true);
+  assert.equal(f.api.busy(),false);
 });
 
 test('a size-specific product URL takes priority over the general product URL', async t => {
@@ -497,7 +492,7 @@ test('numeric inventory is displayed per colour/size and partial coverage stays 
   assert.equal(rows[1].querySelector('.domestic-inline-color').textContent,'화이트');
   assert.deepEqual([...rows[1].querySelectorAll('.domestic-inline-stock-option')].map(o=>o.textContent),['95','100']);
   for(const row of rows) assert.match(row.textContent,/일부 옵션 재고 확인 필요/);
-  assert.equal(f.overlay().hidden,true);
+  assert.equal(f.api.busy(),false);
 });
 
 
@@ -517,12 +512,12 @@ test('explicit recovery resume restores successful rows and searches only the fa
   };
   const first=createFixture(t);first.api.selectTwo();connect(first);first.api.requestRecoveryResume();await first.run();
   assert.deepEqual(calls,['SR123UPS11-服','SR323UTS71','SR323UTS71']);
-  assert.match(first.status(),/일부 결과/);assert.equal(first.overlay().hidden,true);
+  assert.match(first.status(),/일부 결과/);assert.equal(first.api.busy(),false);
   const restartedStore=new JsonStore(folder);await restartedStore.load();
   coordinator=new DomesticRecoveryCoordinator(restartedStore,{delay:async()=>{}});
   interrupted=false;calls.length=0;
   const second=createFixture(t);second.api.selectTwo();connect(second);second.api.requestRecoveryResume();await second.run();
-  assert.deepEqual(calls,['SR323UTS71']);assert.equal(second.overlay().hidden,true);assert.equal(second.api.busy(),false);
+  assert.deepEqual(calls,['SR323UTS71']);assert.equal(second.api.busy(),false);
   const details=[...second.window.document.querySelectorAll('.excel-verified-search-detail')];
   assert.equal(details.length,2);assert.ok(details.every(row=>row.textContent.includes('59,000원')));
   assert.match(second.status(),/검색을 완료/);assert.equal(coordinator.pending().length,0);
@@ -533,7 +528,7 @@ test('durable recovery errors are not retried by the renderer as a second whole 
   const f=createFixture(t);let calls=0;
   f.window.aroundG.startDomesticRecovery=async input=>({ok:true,id:'recovery',results:[],pendingKeys:input.products.map(p=>p.key)});
   f.window.aroundG.searchDomestic=async()=>{calls++;return {ok:false,message:'disk failed'};};
-  f.api.requestRecoveryResume();await f.run();assert.equal(calls,1);assert.equal(f.overlay().hidden,true);assert.equal(f.api.busy(),false);
+  f.api.requestRecoveryResume();await f.run();assert.equal(calls,1);assert.equal(f.api.busy(),false);assert.equal(f.api.busy(),false);
   assert.match(f.status(),/검색 실패/);
 });
 
@@ -558,7 +553,7 @@ test('stop keeps only the latest verified checkpoint for the current product', a
     return pending.promise;
   };
   const running=f.run();await tick(10);f.api.stop();
-  assert.equal(f.overlay().hidden, false, 'graceful stop waits for the in-flight product');
+  assert.equal(f.api.busy(), true, 'graceful stop waits for the in-flight product');
   pending.resolve({ok:false,canceled:true});await running;
   const result=f.api.result();
   assert.equal(result.partial,true);

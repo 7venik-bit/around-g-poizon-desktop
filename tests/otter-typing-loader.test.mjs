@@ -35,17 +35,9 @@ test("typing motion advances all five artifact-free sprite frames without a crop
   assert.doesNotMatch(css, /\.domestic-loading-otter\.otter-single-tail-sprite\s*\{[^}]*background:\s*transparent\s*!important/);
 });
 
-test("loading modal covers the viewport and exposes live progress", () => {
-  assert.match(css, /\.domestic-search-overlay\s*\{[\s\S]*position:\s*fixed\s*!important/);
-  assert.match(css, /\.domestic-search-overlay\s*\{[\s\S]*inset:\s*0\s*!important/);
-  assert.match(css, /body:has\(> \.domestic-search-overlay:not\(\[hidden\]\)\)[\s\S]*overflow:\s*hidden\s*!important/);
-  assert.match(renderer, /<progress class="domestic-overlay-progress" max="100" value="\$\{percent\}"/);
-  assert.match(renderer, /aria-valuenow="\$\{percent\}"/);
-  assert.doesNotMatch(renderer, /domestic-overlay-progress[\s\S]{0,180}style="width:/);
-  assert.match(css, /\.domestic-overlay-progress::\-webkit-progress-bar/);
-  assert.match(css, /\.domestic-overlay-progress::\-webkit-progress-value/);
-  assert.match(renderer, /class="domestic-overlay-count"/);
-  assert.match(renderer, /현재 상품번호/);
-  assert.match(renderer, /수달 사원이 상품을 확인하고 있습니다/);
-  assert.doesNotMatch(renderer, /검색창은 백그라운드에서 작동합니다/);
+test("search runs background-only without overlay markup", () => {
+  assert.doesNotMatch(renderer, /domestic-search-overlay-card/);
+  assert.doesNotMatch(renderer, /domestic-overlay-stop/);
+  assert.doesNotMatch(renderer, /domestic-overlay-guide/);
+  assert.match(renderer, /function stopExcelPreviewSearch\(\)/);
 });
