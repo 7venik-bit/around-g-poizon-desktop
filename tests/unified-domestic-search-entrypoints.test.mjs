@@ -10,7 +10,7 @@ test("인기리스트와 브랜드 Excel 검색은 공통 검색 엔진을 사�
   const previewEnd = renderer.indexOf('$("#excel-preview-clear-selection")', previewStart);
   const previewSearch = renderer.slice(previewStart, previewEnd);
 
-  assert.match(renderer, /#popular-product-search[\s\S]*openIntegratedPopularExcel/);
+  assert.match(renderer, /async function capturePopularProducts\([\s\S]*?openIntegratedPopularExcel\(latestPopularExcelFile\)/);
   assert.match(renderer, /combined:\/\/selected-brands/);
   assert.match(previewSearch, /await cachedDomesticSearch\(product, true\)/);
 });

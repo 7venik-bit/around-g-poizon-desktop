@@ -4191,11 +4191,7 @@ let popularCaptureRunning = false;
 async function capturePopularProducts(options = {}) {
   if (popularCaptureRunning) return { ok: false, message: "인기상품 수집이 이미 진행 중입니다." };
   popularCaptureRunning = true;
-  const searchButton = $("#popular-product-search");
-  const workflow = searchButton.closest(".popular-workflow");
-  if (workflow) workflow.hidden = true;
   latestPopularExcelFile = null;
-  searchButton.hidden = true;
   $("#popular-progress").hidden = false;
   $("#popular-progress").removeAttribute("data-complete");
   $("#popular-progress").removeAttribute("data-radar");
@@ -4241,8 +4237,7 @@ async function capturePopularProducts(options = {}) {
       brandName: "POIZON 인기리스트",
       jobId: `인기상품 ${excelResult.imported}/200`,
     };
-    searchButton.hidden = !completedProducts.length;
-    if (workflow) workflow.hidden = searchButton.hidden;
+    if (completedProducts.length && typeof openIntegratedPopularExcel === "function") await openIntegratedPopularExcel(latestPopularExcelFile);
     const verifiedPercent = partial ? Math.min(99, Math.round(excelResult.imported / 200 * 100)) : 100;
     $("#popular-progress").querySelector("i").style.width = `${verifiedPercent}%`;
     $("#popular-progress").querySelector("span").textContent = `${verifiedPercent}%`;
@@ -4253,7 +4248,7 @@ async function capturePopularProducts(options = {}) {
     if (finalCaption) finalCaption.textContent = `/200 수집 완료 · ${verifiedPercent}%`;
     $("#popular-status").className = partial ? "status error" : "status success";
     $("#popular-status").textContent = completedProducts.length
-      ? `${sourceLabel} · 인기리스트 Excel 저장이 완료되었습니다. 검색 버튼을 눌러 결과를 열 수 있습니다.`
+      ? `${sourceLabel} · 인기리스트 Excel 저장이 완료되어 결과를 열었습니다.`
       : `${sourceLabel} · 검색 가능한 상품이 없습니다.`;
     return { ok: true, partial, products: storedProducts };
   } catch (error) {
@@ -4265,10 +4260,6 @@ async function capturePopularProducts(options = {}) {
     popularCaptureRunning = false;
   }
 }
-$("#popular-product-search")?.addEventListener("click", async () => {
-  if (!latestPopularExcelFile?.path) return;
-  await openIntegratedPopularExcel(latestPopularExcelFile);
-});
 // Radar power switch: ON runs the scope and starts popular capture when idle.
 document.querySelectorAll("#popular-progress [data-radar-power]").forEach((button) => {
   button.addEventListener("click", async () => {
