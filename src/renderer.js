@@ -4740,13 +4740,31 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
         banner.id = "domestic-loading-banner";
         banner.className = "domestic-loading-banner";
         banner.setAttribute("role", "status");
+        banner.innerHTML = `<div class="domestic-loading-banner-amp-wrap">`
+          + `<img class="domestic-loading-banner-amp" src="./assets/aroundg-amp.jpg" alt="진공관 앰프">`
+          + `<i class="domestic-loading-banner-needle is-left" aria-hidden="true"></i>`
+          + `<i class="domestic-loading-banner-needle is-right" aria-hidden="true"></i>`
+          + `<i class="domestic-loading-banner-tube t1" aria-hidden="true"></i>`
+          + `<i class="domestic-loading-banner-tube t2" aria-hidden="true"></i>`
+          + `<i class="domestic-loading-banner-tube t3" aria-hidden="true"></i>`
+          + `<i class="domestic-loading-banner-tube t4" aria-hidden="true"></i>`
+          + `</div>`
+          + `<div class="domestic-loading-banner-info"><b></b><span></span>`
+          + `<div class="domestic-loading-banner-bar" aria-hidden="true"><i></i></div></div>`;
         const grid = $("#excel-preview-grid");
         (grid?.parentElement || document.body).insertBefore(banner, grid || null);
       }
       banner.hidden = false;
-      banner.innerHTML = `<img class="domestic-loading-banner-amp" src="./assets/aroundg-amp.jpg" alt="진공관 앰프">`
-        + `<div class="domestic-loading-banner-info"><b>${Number(completedCount).toLocaleString("ko-KR")} / ${Number(searchKeys.length).toLocaleString("ko-KR")}개 · ${percent}%</b>`
-        + `<span>${article ? `현재 ${text(article)}` : "검색 준비 중입니다."}</span></div>`;
+      // Tube glow follows progress with jitter so the four tubes never change uniformly.
+      const tubeJitter = Math.random() * 24 - 12;
+      banner.style.setProperty("--banner-percent", `${percent}`);
+      banner.style.setProperty("--tube-hue", `${Math.round(140 + (Number(percent) || 0) * 0.6 + tubeJitter)}`);
+      const bannerLabel = banner.querySelector(".domestic-loading-banner-info b");
+      if (bannerLabel) bannerLabel.textContent = `${Number(completedCount).toLocaleString("ko-KR")} / ${Number(searchKeys.length).toLocaleString("ko-KR")}개 · ${percent}%`;
+      const bannerSub = banner.querySelector(".domestic-loading-banner-info span");
+      if (bannerSub) bannerSub.textContent = article ? `현재 ${article}` : "검색 준비 중입니다.";
+      const bannerBar = banner.querySelector(".domestic-loading-banner-bar i");
+      if (bannerBar) bannerBar.style.width = `${percent}%`;
     };
     renderBatchSearchProgress(0);
     // A normal search must use the original, ordered, all-retailer request.
