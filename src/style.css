@@ -2669,9 +2669,31 @@ html body input::placeholder{color:#515154!important}
    hidden instead of being deleted. */
 #sidebar-quick-actions #brand-export-selected{display:none!important}
 /* Domestic batch loading banner: amplifier photo with popular-style search info. */
-#domestic-loading-banner{display:flex;gap:14px;align-items:center;margin:0 0 12px;padding:12px 16px;border:1px solid #d9e6f2;border-radius:14px;background:#fff}
+#domestic-loading-banner{display:grid;gap:10px;margin:0 0 12px;padding:14px 16px;border:1px solid #d9e6f2;border-radius:14px;background:#fff}
 #domestic-loading-banner[hidden]{display:none}
-#domestic-loading-banner img{width:180px;height:auto;flex:0 0 auto;border-radius:10px}
+#domestic-loading-banner .domestic-loading-banner-stage{display:grid;justify-items:center;gap:8px}
+#domestic-loading-banner .domestic-loading-banner-amp-wrap{position:relative;width:min(480px,100%);line-height:0}
+#domestic-loading-banner img{width:100%;height:auto;border-radius:10px}
+#domestic-loading-banner .domestic-loading-banner-amp-wrap img{width:100%}
 #domestic-loading-banner .domestic-loading-banner-info{display:grid;gap:4px;min-width:0}
 #domestic-loading-banner .domestic-loading-banner-info b{font-size:15px;color:#0b6b50}
 #domestic-loading-banner .domestic-loading-banner-info span{font-size:11px;color:#536b86}
+#domestic-loading-banner .domestic-loading-banner-percent{position:absolute;z-index:3;left:50%;top:3%;transform:translateX(-50%);display:flex;align-items:baseline;gap:2px;color:#5cf08a;text-shadow:0 0 8px #5cf08a88;pointer-events:none}
+#domestic-loading-banner .domestic-loading-banner-percent b{font-size:26px;font-weight:800;line-height:1}
+#domestic-loading-banner .domestic-loading-banner-percent span{font-size:14px;font-weight:800}
+#domestic-loading-banner .domestic-loading-banner-caption{color:#3c5a6b;font-size:11px;font-weight:800;letter-spacing:.08em}
+#domestic-loading-banner .domestic-loading-banner-needle{position:absolute;top:21%;width:2px;height:26%;background:#1c2733;border-radius:2px;transform-origin:50% 100%;animation:banner-needle-shake 1.6s ease-in-out infinite}
+#domestic-loading-banner .domestic-loading-banner-needle.is-left{left:20.3%}
+#domestic-loading-banner .domestic-loading-banner-needle.is-right{right:19.3%;animation-duration:1.13s;animation-delay:-.4s}
+@keyframes banner-needle-shake{0%,100%{transform:rotate(-9deg)}20%{transform:rotate(7deg)}35%{transform:rotate(-5deg)}55%{transform:rotate(9deg)}70%{transform:rotate(-7deg)}85%{transform:rotate(4deg)}}
+#domestic-loading-banner .domestic-loading-banner-tube{position:absolute;top:86%;width:9%;aspect-ratio:1/1.5;border-radius:50%;background:radial-gradient(closest-side,hsla(var(--tube-hue,150),90%,58%,.95),hsla(var(--tube-hue,150),90%,45%,.35),transparent 72%);mix-blend-mode:screen;pointer-events:none;opacity:calc(.35 + var(--banner-percent,0)*.006);animation:banner-tube-flicker 1.8s linear infinite}
+#domestic-loading-banner .domestic-loading-banner-tube.t1{left:-4%;animation-delay:-.2s}
+#domestic-loading-banner .domestic-loading-banner-tube.t2{left:16.5%;animation-duration:1.37s;animation-delay:-.9s}
+#domestic-loading-banner .domestic-loading-banner-tube.t3{right:16.5%;animation-duration:2.11s;animation-delay:-.6s}
+#domestic-loading-banner .domestic-loading-banner-tube.t4{right:-4%;animation-duration:1.62s;animation-delay:-1.1s}
+@keyframes banner-tube-flicker{0%,100%{filter:brightness(1)}15%{filter:brightness(1.35)}30%{filter:brightness(.85)}45%{filter:brightness(1.25)}60%{filter:brightness(.9)}75%{filter:brightness(1.4)}90%{filter:brightness(1)}}
+#domestic-loading-banner .domestic-loading-banner-level{position:absolute;left:45.5%;top:63.5%;width:11%;height:11.5%;border-radius:2px;background:repeating-linear-gradient(90deg,rgba(77,227,255,.22) 0 4px,transparent 4px 6px);overflow:hidden;pointer-events:none}
+#domestic-loading-banner .domestic-loading-banner-level i{display:block;height:100%;width:0;background:repeating-linear-gradient(90deg,#4de3ff 0 4px,transparent 4px 6px);box-shadow:0 0 6px #4de3ffaa;transition:width .35s ease}
+#domestic-loading-banner .domestic-loading-banner-bar{height:6px;border-radius:999px;background:#e6eef5;overflow:hidden;margin-top:6px}
+#domestic-loading-banner .domestic-loading-banner-bar i{display:block;height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#0b6b50,#22b07d);transition:width .35s ease}
+@media (prefers-reduced-motion:reduce){#domestic-loading-banner .domestic-loading-banner-needle,#domestic-loading-banner .domestic-loading-banner-tube{animation:none}}

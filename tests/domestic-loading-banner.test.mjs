@@ -15,6 +15,25 @@ test("batch loading banner shows the amplifier photo with popular-style search i
   assert.ok(amp.length < 500 * 1024, "banner photo stays small for the installer");
 });
 
+test("banner needles, gauge bar, and tubes follow batch progress", () => {
+  assert.match(renderer, /domestic-loading-banner-needle is-left/);
+  assert.match(renderer, /domestic-loading-banner-needle is-right/);
+  assert.match(renderer, /domestic-loading-banner-tube t1/);
+  assert.match(renderer, /domestic-loading-banner-bar/);
+  assert.match(renderer, /bannerBar.*style\.width = `\$\{percent\}%`/);
+  assert.match(renderer, /setProperty\("--banner-percent"/);
+  assert.match(renderer, /setProperty\("--tube-hue"/);
+  assert.match(css, /@keyframes banner-needle-shake/);
+  assert.match(css, /@keyframes banner-tube-flicker/);
+  assert.match(css, /domestic-loading-banner-bar i/);
+  assert.match(renderer, /domestic-loading-banner-stage/);
+  assert.match(renderer, /domestic-loading-banner-percent/);
+  assert.match(renderer, /domestic-loading-banner-level/);
+  assert.match(renderer, /bannerLevel.*style\.width = `\$\{percent\}%`/);
+  assert.match(css, /domestic-loading-banner-stage/);
+  assert.match(css, /domestic-loading-banner-level i/);
+});
+
 test("banner hides when batch search settles or stops", () => {
   assert.equal(
     (renderer.match(/\$\("#domestic-loading-banner"\)\?\.remove\(\)/g) || []).length >= 3,
