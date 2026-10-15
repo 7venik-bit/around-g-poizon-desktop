@@ -1498,6 +1498,7 @@ function stopExcelPreviewSearch() {
   excelPreviewBatchSearching = false;
   domesticIdentitySearchCache.clear();
   hideDomesticSearchOverlay();
+  $("#domestic-loading-banner")?.remove();
   requestDomesticSearchCancel();
   for (const [key, result] of excelPreviewSearchResults) {
     if (!result?.loading) continue;
@@ -1920,6 +1921,7 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
       activeDomesticProgressRequestId = "";
       globalThis.aroundGActiveDomesticRecovery = null;
       hideDomesticSearchOverlay();
+      $("#domestic-loading-banner")?.remove();
       updateExcelPreviewSelectionUi(excelPreviewPageKeys);
     }
   }
@@ -4730,6 +4732,21 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       const skipNote = skippedCount > 0 ? ` · 같은 상품번호 ${skippedCount.toLocaleString("ko-KR")}행 생략` : "";
       status.textContent = `상품 검색 진행 중 · ${Number(completedCount).toLocaleString("ko-KR")} / ${searchKeys.length.toLocaleString("ko-KR")}개${article ? ` · 현재 ${article}` : ""}${skipNote}`;
       showDomesticSearchOverlay(batchStartedAt, completedCount, searchKeys.length, currentProduct);
+      const safeTotal = Math.max(1, Number(searchKeys.length) || 1);
+      const percent = Math.min(100, Math.round((Number(completedCount) / safeTotal) * 100));
+      let banner = $("#domestic-loading-banner");
+      if (!banner) {
+        banner = document.createElement("div");
+        banner.id = "domestic-loading-banner";
+        banner.className = "domestic-loading-banner";
+        banner.setAttribute("role", "status");
+        const grid = $("#excel-preview-grid");
+        (grid?.parentElement || document.body).insertBefore(banner, grid || null);
+      }
+      banner.hidden = false;
+      banner.innerHTML = `<img class="domestic-loading-banner-amp" src="./assets/aroundg-amp.jpg" alt="진공관 앰프">`
+        + `<div class="domestic-loading-banner-info"><b>${Number(completedCount).toLocaleString("ko-KR")} / ${Number(searchKeys.length).toLocaleString("ko-KR")}개 · ${percent}%</b>`
+        + `<span>${article ? `현재 ${text(article)}` : "검색 준비 중입니다."}</span></div>`;
     };
     renderBatchSearchProgress(0);
     // A normal search must use the original, ordered, all-retailer request.
@@ -4821,6 +4838,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       activeDomesticProgressRequestId = "";
       globalThis.aroundGActiveDomesticRecovery = null;
       hideDomesticSearchOverlay();
+      $("#domestic-loading-banner")?.remove();
       updateExcelPreviewSelectionUi(excelPreviewPageKeys);
     }
   }
