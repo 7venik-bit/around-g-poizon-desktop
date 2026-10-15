@@ -21,8 +21,9 @@ test("popular loading shows a radar scope without changing progress semantics", 
   assert.match(html, /class="popular-progress-count"><b>0<\/b>/);
   assert.match(html, /class="popular-progress-items" aria-hidden="true"/);
   assert.match(html, /id="popular-status"/);
+  assert.doesNotMatch(html, /popular-workflow/);
+  assert.doesNotMatch(html, /popular-product-search/);
   assert.doesNotMatch(html, /popular-capture/);
-  assert.match(html, /class="popular-workflow" hidden/);
 });
 
 test("radar is decorative CSS with reduced-motion and completion states", () => {
@@ -48,7 +49,6 @@ test("radar is decorative CSS with reduced-motion and completion states", () => 
   assert.match(css, /#popular-progress \.popular-progress-code\{/);
   assert.match(css, /#popular-progress \.popular-progress-prices\{/);
   assert.match(css, /@keyframes popular-item-rise/);
-  assert.match(css, /\.popular-workflow\[hidden\]\{display:none\}/);
   assert.match(css, /prefers-reduced-motion:reduce[\s\S]{0,600}popular-radar-sweep/);
 });
 
@@ -73,14 +73,16 @@ test("entering popular skips the idle panel by auto-starting capture", async () 
 
 test("capture progress marks completion for the radar state", () => {
   const start = renderer.indexOf("window.aroundG.onSellerCaptureProgress((progress)");
-  const end = renderer.indexOf('$("#popular-product-search")?.addEventListener', start);
+  const end = renderer.indexOf('document.querySelectorAll("#popular-progress [data-radar-power]")', start);
   const handler = renderer.slice(start, end);
   assert.match(handler, /toggleAttribute\("data-complete", percent >= 100\)/);
   const captureStart = renderer.indexOf("async function capturePopularProducts(");
-  const captureEnd = renderer.indexOf('$("#popular-product-search")?.addEventListener', captureStart);
+  const captureEnd = renderer.indexOf('document.querySelectorAll("#popular-progress [data-radar-power]")', captureStart);
   const capture = renderer.slice(captureStart, captureEnd);
   assert.match(capture, /popularCaptureRunning/);
-  assert.match(capture, /workflow\.hidden = searchButton\.hidden/);
+  assert.match(capture, /if \(completedProducts\.length && typeof openIntegratedPopularExcel === "function"\) await openIntegratedPopularExcel\(latestPopularExcelFile\)/);
+  assert.doesNotMatch(capture, /popular-product-search/);
+  assert.doesNotMatch(capture, /searchButton/);
   assert.match(capture, /removeAttribute\("data-complete"\)/);
   assert.match(capture, /toggleAttribute\("data-complete", verifiedPercent >= 100\)/);
   assert.match(handler, /popular-progress-items/);

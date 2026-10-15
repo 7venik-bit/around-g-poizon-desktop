@@ -9,13 +9,13 @@ const html = fs.readFileSync(new URL("../src/index.html", import.meta.url), "utf
 test("popular capture saves Excel and opens search results in the brand-style product view", () => {
   assert.match(html, /id="popular-product-workspace"/);
   assert.match(html, /id="popular-integrated-preview-host"/);
-  assert.match(html, /id="popular-product-search"[^>]*hidden[^>]*>검색/);
+  assert.doesNotMatch(html, /popular-product-search/);
   assert.match(renderer, /async function openIntegratedPopularExcel/);
   assert.match(renderer, /integratedHostId: "popular-integrated-preview-host"/);
   assert.doesNotMatch(renderer, /await openIntegratedPopularExcel\(popularFile\)/);
   assert.match(renderer, /await openIntegratedPopularExcel\(latestPopularExcelFile\)/);
-  assert.match(renderer, /searchButton\.hidden = !completedProducts\.length/);
-  assert.match(renderer, /인기리스트 Excel 저장이 완료되었습니다/);
+  assert.match(renderer, /if \(completedProducts\.length && typeof openIntegratedPopularExcel === "function"\)/);
+  assert.match(renderer, /인기리스트 Excel 저장이 완료되어 결과를 열었습니다/);
   const popularStart = renderer.indexOf("async function openIntegratedPopularExcel");
   const popularEnd = renderer.indexOf('$("#brand-export-completed-list")', popularStart);
   const popular = renderer.slice(popularStart, popularEnd);
