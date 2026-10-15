@@ -28,9 +28,10 @@ test("banner needles, gauge bar, and tubes follow batch progress", () => {
   assert.match(css, /domestic-loading-banner-bar i/);
   assert.match(renderer, /domestic-loading-banner-stage/);
   assert.match(renderer, /domestic-loading-banner-percent/);
-  assert.match(renderer, /domestic-loading-banner-items/);
-  assert.match(renderer, /domestic-loading-banner-item/);
-  assert.match(css, /domestic-loading-banner-items/);
+  assert.match(renderer, /domestic-loading-banner-level/);
+  assert.match(renderer, /bannerLevel.*style\.width = `\$\{percent\}%`/);
+  assert.match(css, /domestic-loading-banner-stage/);
+  assert.match(css, /domestic-loading-banner-level i/);
 });
 
 test("banner hides when batch search settles or stops", () => {

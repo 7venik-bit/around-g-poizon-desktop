@@ -2683,8 +2683,8 @@ html body input::placeholder{color:#515154!important}
 #domestic-loading-banner .domestic-loading-banner-percent span{font-size:14px;font-weight:800}
 #domestic-loading-banner .domestic-loading-banner-caption{color:#3c5a6b;font-size:11px;font-weight:800;letter-spacing:.08em}
 #domestic-loading-banner .domestic-loading-banner-needle{position:absolute;top:19%;width:2px;height:21%;background:#1c2733;border-radius:2px;transform-origin:50% 100%;animation:banner-needle-shake 1.6s ease-in-out infinite}
-#domestic-loading-banner .domestic-loading-banner-needle.is-left{left:21%}
-#domestic-loading-banner .domestic-loading-banner-needle.is-right{right:21%;animation-duration:1.13s;animation-delay:-.4s}
+#domestic-loading-banner .domestic-loading-banner-needle.is-left{left:22%}
+#domestic-loading-banner .domestic-loading-banner-needle.is-right{right:22%;animation-duration:1.13s;animation-delay:-.4s}
 @keyframes banner-needle-shake{0%,100%{transform:rotate(-9deg)}20%{transform:rotate(7deg)}35%{transform:rotate(-5deg)}55%{transform:rotate(9deg)}70%{transform:rotate(-7deg)}85%{transform:rotate(4deg)}}
 #domestic-loading-banner .domestic-loading-banner-tube{position:absolute;top:52%;width:9%;aspect-ratio:1/1.5;border-radius:50%;background:radial-gradient(closest-side,hsla(var(--tube-hue,150),90%,58%,.95),hsla(var(--tube-hue,150),90%,45%,.35),transparent 72%);mix-blend-mode:screen;pointer-events:none;opacity:calc(.35 + var(--banner-percent,0)*.006);animation:banner-tube-flicker 1.8s linear infinite}
 #domestic-loading-banner .domestic-loading-banner-tube.t1{left:13.5%;animation-delay:-.2s}
@@ -2692,14 +2692,8 @@ html body input::placeholder{color:#515154!important}
 #domestic-loading-banner .domestic-loading-banner-tube.t3{right:28.5%;animation-duration:2.11s;animation-delay:-.6s}
 #domestic-loading-banner .domestic-loading-banner-tube.t4{right:13.5%;animation-duration:1.62s;animation-delay:-1.1s}
 @keyframes banner-tube-flicker{0%,100%{filter:brightness(1)}15%{filter:brightness(1.35)}30%{filter:brightness(.85)}45%{filter:brightness(1.25)}60%{filter:brightness(.9)}75%{filter:brightness(1.4)}90%{filter:brightness(1)}}
+#domestic-loading-banner .domestic-loading-banner-level{position:absolute;left:44%;top:50.5%;width:13%;height:6.5%;border-radius:2px;background:repeating-linear-gradient(90deg,rgba(77,227,255,.22) 0 4px,transparent 4px 6px);overflow:hidden;pointer-events:none}
+#domestic-loading-banner .domestic-loading-banner-level i{display:block;height:100%;width:0;background:repeating-linear-gradient(90deg,#4de3ff 0 4px,transparent 4px 6px);box-shadow:0 0 6px #4de3ffaa;transition:width .35s ease}
 #domestic-loading-banner .domestic-loading-banner-bar{height:6px;border-radius:999px;background:#e6eef5;overflow:hidden;margin-top:6px}
 #domestic-loading-banner .domestic-loading-banner-bar i{display:block;height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#0b6b50,#22b07d);transition:width .35s ease}
-#domestic-loading-banner .domestic-loading-banner-items{display:flex;flex-direction:column;justify-content:flex-end;gap:6px;max-height:360px;overflow:hidden}
-#domestic-loading-banner .domestic-loading-banner-item{display:flex;align-items:center;gap:8px;min-height:40px;padding:4px 10px;border:1px solid #d9e6f2;border-radius:12px;background:#fff;overflow:hidden;animation:banner-item-rise .45s ease-out}
-#domestic-loading-banner .domestic-loading-banner-item img{width:28px;height:28px;object-fit:contain;border-radius:8px;background:#f2f6fa;flex:0 0 auto}
-#domestic-loading-banner .domestic-loading-banner-meta{min-width:0;flex:1 1 auto;display:flex;align-items:center;gap:8px;overflow:hidden;white-space:nowrap}
-#domestic-loading-banner .domestic-loading-banner-code{flex:0 0 auto;font-size:11px;font-weight:800;color:#1d2b3a}
-#domestic-loading-banner .domestic-loading-banner-name{min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:700;color:#1d2b3a}
-#domestic-loading-banner .domestic-loading-banner-prices{flex:0 0 auto;font-size:10px;font-weight:700;color:#3f6b58;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@keyframes banner-item-rise{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
-@media (prefers-reduced-motion:reduce){#domestic-loading-banner .domestic-loading-banner-needle,#domestic-loading-banner .domestic-loading-banner-tube,#domestic-loading-banner .domestic-loading-banner-item{animation:none}}
+@media (prefers-reduced-motion:reduce){#domestic-loading-banner .domestic-loading-banner-needle,#domestic-loading-banner .domestic-loading-banner-tube{animation:none}}
