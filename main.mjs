@@ -13791,6 +13791,38 @@ function naverLoginScopeRestriction(scopeId, failure = null, now = Date.now()) {
   return blockedNaverLoginScopes.get(key)?.failure || null;
 }
 
+// Batch-scope login memory: one interactive login wait per retailer per batch.
+// A retailer whose login already failed for an earlier product in the same
+// batch (same loginScopeId) reports the same explicit failure immediately
+// instead of reopening windows and waiting again for every next product.
+// Success still flows through the normal session/scope confirmation, a new
+// batch (new scope id) always re-checks, and failures stay explicit
+// (loginRequired) — they are only not re-attempted interactively.
+const BATCH_LOGIN_SCOPE_TTL_MS = 6 * 60 * 60 * 1000;
+const blockedBatchLoginScopes = new Map();
+function batchLoginScopeFailures(scopeId, now = Date.now()) {
+  for (const [savedKey, entry] of blockedBatchLoginScopes) {
+    if (now - Number(entry?.at || 0) > BATCH_LOGIN_SCOPE_TTL_MS) blockedBatchLoginScopes.delete(savedKey);
+  }
+  const key = String(scopeId || "").trim();
+  if (!key) return new Map();
+  const entry = blockedBatchLoginScopes.get(key);
+  return entry ? new Map(entry.failures) : new Map();
+}
+function rememberBatchLoginFailure(scopeId, failure, now = Date.now()) {  const key = String(scopeId || "").trim();
+  const sourceId = String(failure?.sourceId || "").trim();
+  if (!key || !sourceId) return;
+  batchLoginScopeFailures(key, now);
+  const entry = blockedBatchLoginScopes.get(key) || { at: now, failures: new Map() };
+  entry.failures.set(sourceId, failure);
+  blockedBatchLoginScopes.set(key, entry);
+  if (blockedBatchLoginScopes.size > 1000) blockedBatchLoginScopes.delete(blockedBatchLoginScopes.keys().next().value);
+}
+function noteBatchLoginFailure(scopeId, failure) {
+  // typeof-guarded: sliced-vm fixtures run the preflight without the ledger.
+  if (typeof rememberBatchLoginFailure === "function") rememberBatchLoginFailure(scopeId, failure);
+}
+
 // Moves the external window session cookies of one retailer into the
 // Electron search partition. Returns the imported count; one rejected cookie
 // never discards the rest. Shared by the login flow and the opportunistic
@@ -13968,6 +14000,16 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
       failures.push(domesticLoginFailure(source, restriction.code, restriction.message));
       continue;
     }
+    // A login that already failed for an earlier product in this batch reports
+    // the same explicit failure without reopening windows or waiting again.
+    // typeof-guarded: sliced-vm fixtures run the preflight without the ledger.
+    const rememberedBatchFailure = typeof batchLoginScopeFailures === "function"
+      ? batchLoginScopeFailures(loginScopeId).get(sourceId)
+      : null;
+    if (rememberedBatchFailure) {
+      failures.push(rememberedBatchFailure);
+      continue;
+    }
     // One product batch owns one login preflight. Naver can briefly hide both
     // rotating authentication cookies while navigating between Shopping and a
     // product detail. That transient gap is not a logout and must not create a
@@ -13990,8 +14032,10 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
         continue;
       }
       if (external?.fallbackInApp !== true) {
-        failures.push(domesticLoginFailure(source, external?.automatic?.code || "LOGIN_TIMEOUT",
-          external?.message || `${source.name} 외부 로그인을 완료하지 못했습니다.`));
+        const externalFailure = domesticLoginFailure(source, external?.automatic?.code || "LOGIN_TIMEOUT",
+          external?.message || `${source.name} 외부 로그인을 완료하지 못했습니다.`);
+        if (typeof noteBatchLoginFailure === "function") noteBatchLoginFailure(loginScopeId, externalFailure);
+        failures.push(externalFailure);
         continue;
       }
     }
@@ -14005,7 +14049,9 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
           code,
           message,
         });
-        failures.push(domesticLoginFailure(source, code, message));
+        const credentialFailure = domesticLoginFailure(source, code, message);
+        if (typeof noteBatchLoginFailure === "function") noteBatchLoginFailure(loginScopeId, credentialFailure);
+        failures.push(credentialFailure);
         continue;
       }
     }
@@ -14030,7 +14076,9 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
     // that window is waiting for the user. Only a window that was actually
     // closed cannot complete the current preflight.
     if (sourceId === "naver" && automaticErrorCode === "NAVER_LOGIN_WINDOW_CLOSED") {
-      failures.push(domesticLoginFailure(source, automaticErrorCode, "네이버 자동 로그인 화면을 확인하지 못했습니다."));
+      const closedFailure = domesticLoginFailure(source, automaticErrorCode, "네이버 자동 로그인 화면을 확인하지 못했습니다.");
+      if (typeof noteBatchLoginFailure === "function") noteBatchLoginFailure(loginScopeId, closedFailure);
+      failures.push(closedFailure);
       continue;
     }
     const deadline = Date.now() + (10 * 60_000);
@@ -14047,7 +14095,9 @@ async function waitForDomesticLoginsBeforeSearch(enabledSourceGroups, onProgress
       const message = errorCode === "NAVER_VERIFICATION_REQUIRED"
         ? "네이버 2단계 인증 또는 보안 확인이 필요합니다."
         : `${source.name} 로그인이 완료되지 않았습니다.`;
-      failures.push(domesticLoginFailure(source, errorCode, message));
+      const timeoutFailure = domesticLoginFailure(source, errorCode, message);
+      if (typeof noteBatchLoginFailure === "function") noteBatchLoginFailure(loginScopeId, timeoutFailure);
+      failures.push(timeoutFailure);
       continue;
     }
     if (sourceId === "naver") rememberNaverLoginScope(loginScopeId);

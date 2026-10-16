@@ -57,7 +57,7 @@ test("missing Naver credentials skip only Naver before opening a recurring login
   const end = main.indexOf("async function domesticLoginStatuses", start);
   const block = main.slice(start, end);
   assert.ok(block.indexOf("naverAccountCredentials()") < block.indexOf("await openDomesticLogin"));
-  assert.match(block, /failures\.push\(domesticLoginFailure\(source, code, message\)\)/);
+  assert.match(block, /failures\.push\(credentialFailure\)/);
   assert.match(block, /continue;/);
   assert.doesNotMatch(block, /return \{ ok: false, source, code: "NAVER_CREDENTIALS_REQUIRED"/);
   assert.match(block, /naverCredentialMessage\(code\)/);
