@@ -2722,3 +2722,10 @@ html body input::placeholder{color:#515154!important}
 #domestic-loading-banner.popular-radar-mode .popular-progress-code{flex:0 0 auto;font-size:11px;font-weight:800;color:#1d2b3a}
 #domestic-loading-banner.popular-radar-mode .popular-progress-name{min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:700;color:#1d2b3a}
 @media(prefers-reduced-motion:reduce){#domestic-loading-banner.popular-radar-mode .popular-radar-sweep{animation:none}#domestic-loading-banner.popular-radar-mode .popular-radar-tag{animation:none;opacity:1}#domestic-loading-banner.popular-radar-mode .popular-progress-item{animation:none}}
+/* Compact macOS buttons: smaller metrics, quiet emphasis. Class-sized
+   controls keep their own fills, tones and sizes; this pass only compacts the
+   generic base and the oversized action bars. */
+html body button{padding:6px 12px;font-size:12px;line-height:1.4}
+html body button.primary{font-weight:700}
+html body .search-service-button{min-height:32px;padding:6px 10px 6px 14px;font-size:12px}
+.frequent-brand-heading-actions>button{min-height:30px;padding:6px 12px;font-size:11px}
