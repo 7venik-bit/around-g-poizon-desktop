@@ -198,7 +198,7 @@
     const needsReview = (result?.sources || []).some((source) => source?.verificationPending || source?.verificationFailed);
     return needsReview
       ? { label: "확인 필요", className: "pending" }
-      : { label: "상품 없음", className: "missing" };
+      : { label: "-", className: "missing" };
   }
 
   function installDomesticStatus() {
@@ -328,13 +328,13 @@
             const approvedParallelMissing = source?.store === "병행수입·편집샵"
               && source?.parallelRetailerListEnforced === true && source?.absenceConfirmed === true;
             const message = source?.absenceConfirmed === true
-              ? "상품 없음"
+              ? "-"
               : officialMallSource
               ? "검색 결과"
               : source?.resultLinkOnly === true
               ? "검색 결과 링크"
               : approvedParallelMissing
-              ? "상품없음"
+              ? "-"
               : count > 0
               ? `검색 결과 ${count.toLocaleString("ko-KR")}개 확인 · 상품 상세는 판매처에서 직접 확인`
               : source?.verificationFailed ? "검색 결과 확인이 완료되지 않았습니다." : "판매처에서 직접 확인이 필요합니다.";

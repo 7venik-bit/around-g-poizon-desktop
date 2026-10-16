@@ -126,7 +126,7 @@
     const needsReview = (result?.sources || []).some((source) =>
       source?.verificationPending || source?.verificationFailed || source?.securityVerificationRequired || source?.loginRequired
     );
-    return needsReview ? { label: "확인 필요", className: "pending" } : { label: "상품 없음", className: "missing" };
+    return needsReview ? { label: "확인 필요", className: "pending" } : { label: "-", className: "missing" };
   }
 
   function sourceOwnsProduct(source, product) {
