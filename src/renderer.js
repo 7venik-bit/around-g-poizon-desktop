@@ -758,7 +758,7 @@ function renderVerifiedSpuRows(file, products) {
     const poizonButton = globalThis.AroundGPoizonProductView?.button(p) || '';
     const verifiedSizeButton = typeof excelSizeFilterButton === "function" ? excelSizeFilterButton(keys[i]) : "";
     const resultCell = result?.loading
-      ? '<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">수달 사원이 검색 중…</span>' + poizonButton + '</td>'
+      ? '<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">검색 중…</span>' + poizonButton + '</td>'
       : result
         ? (result.error
           ? '<td class="excel-raw-search-cell"><div class="excel-raw-search-summary"><span class="excel-raw-search-state pending">검색 실패</span><button type="button" class="excel-raw-search-again" data-excel-search-product="' + encodeURIComponent(keys[i]) + '">다시 검색</button></div>' + poizonButton + '</td>'
@@ -1547,7 +1547,7 @@ window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
 function renderRawExcelDomesticCell(key, product, result) {
   if (!product) return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state muted">검색 정보 없음</span></td>`;
   if (result?.loading) {
-    return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">수달 사원이 검색 중…</span></td>`;
+    return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state loading">검색 중…</span></td>`;
   }
   if (!result) {
     return `<td class="excel-raw-search-cell excel-raw-search-pending"><button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">검색</button></td>`;
@@ -1575,9 +1575,9 @@ function renderRawExcelDomesticCell(key, product, result) {
     : result.partial
     ? { label: "일부 결과", className: "pending" }
     : products.length
-    ? { label: `상품 있음 · ${products.length.toLocaleString("ko-KR")}개`, className: "available" }
+    ? { label: `상품 ${products.length.toLocaleString("ko-KR")}개`, className: "available" }
     : verifiedCount > 0
-      ? { label: `상품 있음 · ${verifiedCount.toLocaleString("ko-KR")}개`, className: "available" }
+      ? { label: `결과 ${verifiedCount.toLocaleString("ko-KR")}개`, className: "available" }
       : needsReview
         ? { label: "검색 실패", className: "error" }
         : { label: "상품 없음", className: "missing" };
@@ -1840,7 +1840,7 @@ function renderExcelProductRows(file, products = []) {
       <td>${text(product.brandName || product.searchBrandName || "-")}</td><td title="${text(product.categoryName)}">${text(product.categoryName || "-")}</td>
       <td>${poizonPrice ? money(poizonPrice) : "가격 없음"}</td>
       <td>${product.screenVerified ? excelProductMetric(product.sales30dRaw, product.sales30d) : "미동기화"}</td><td>${product.screenVerified ? excelProductMetric(product.localSales30dRaw, product.localSales30d) : "미동기화"}</td>
-      <td>${result?.loading ? `<span class="excel-raw-search-state loading">수달 사원이 검색 중…</span>` : `<button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">${status}</button>`}</td>
+      <td>${result?.loading ? `<span class="excel-raw-search-state loading">검색 중…</span>` : `<button type="button" class="excel-product-search" data-excel-search-product="${encodeURIComponent(key)}">${status}</button>`}</td>
     </tr>${result && !result.loading ? `<tr class="excel-product-search-detail ${groupClass} ${outcomeClass}"><td colspan="10"><div class="excel-product-search-result-label"><span></span><strong>${text(productLabel)}</strong>의 국내 검색 결과 <b class="excel-search-outcome-label">${text(outcome?.label || "확인 완료")}</b></div>${renderDomestic(result, product)}</td></tr>` : ""}`;
   }).join("") : `<tr><td class="empty" colspan="10">조건에 맞는 상품이 없습니다.</td></tr>`;
   if (typeof updatePurchaseAwarenessDisplay === "function") updatePurchaseAwarenessDisplay();
@@ -4734,46 +4734,74 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       showDomesticSearchOverlay(batchStartedAt, completedCount, searchKeys.length, currentProduct);
       const safeTotal = Math.max(1, Number(searchKeys.length) || 1);
       const percent = Math.min(100, Math.round((Number(completedCount) / safeTotal) * 100));
+      // Sourcing loading reuses the popular-list radar scope: the same sweep,
+      // percent, count/target feed and recent-product cards with popular values.
       let banner = $("#domestic-loading-banner");
       if (!banner) {
         banner = document.createElement("div");
         banner.id = "domestic-loading-banner";
-        banner.className = "domestic-loading-banner";
+        banner.className = "domestic-loading-banner popular-radar-mode";
         banner.setAttribute("role", "status");
-        banner.innerHTML = `<div class="domestic-loading-banner-stage">`
-          + `<div class="domestic-loading-banner-amp-wrap">`
-          + `<img class="domestic-loading-banner-amp" src="./assets/aroundg-amp.jpg" alt="진공관 앰프">`
-          + `<i class="domestic-loading-banner-needle is-left" aria-hidden="true"></i>`
-          + `<i class="domestic-loading-banner-needle is-right" aria-hidden="true"></i>`
-          + `<i class="domestic-loading-banner-tube t1" aria-hidden="true"></i>`
-          + `<i class="domestic-loading-banner-tube t2" aria-hidden="true"></i>`
-          + `<i class="domestic-loading-banner-tube t3" aria-hidden="true"></i>`
-          + `<i class="domestic-loading-banner-tube t4" aria-hidden="true"></i>`
-          + `<div class="domestic-loading-banner-level" aria-hidden="true"><i></i></div>`
-          + `<div class="domestic-loading-banner-percent" aria-hidden="true"><b>0</b><span>%</span></div>`
+        banner.innerHTML = `<div class="popular-radar">`
+          + `<div class="popular-radar-face" aria-hidden="true">`
+          + `<div class="popular-radar-sweep"></div>`
+          + `<span class="popular-radar-tag"></span>`.repeat(8)
+          + `<b class="popular-radar-dot"></b>`
+          + `<div class="popular-radar-percent" aria-hidden="true"><b>0</b><span>%</span></div>`
           + `</div>`
-          + `<div class="domestic-loading-banner-caption">국내 상품 탐색 앰프</div>`
+          + `<div class="popular-radar-caption">국내 상품 탐색 레이더</div>`
           + `</div>`
-          + `<div class="domestic-loading-banner-info"><b></b><span></span>`
-          + `<div class="domestic-loading-banner-bar" aria-hidden="true"><i></i></div></div>`;
+          + `<div class="popular-progress-feed">`
+          + `<div class="popular-progress-count"><b>0</b><span>/0 수집 중 · 0%</span></div>`
+          + `<div class="popular-progress-items" aria-hidden="true"></div>`
+          + `</div>`;
         const grid = $("#excel-preview-grid");
         (grid?.parentElement || document.body).insertBefore(banner, grid || null);
       }
       banner.hidden = false;
-      // Tube glow follows progress with jitter so the four tubes never change uniformly.
-      const tubeJitter = Math.random() * 24 - 12;
-      banner.style.setProperty("--banner-percent", `${percent}`);
-      banner.style.setProperty("--tube-hue", `${Math.round(140 + (Number(percent) || 0) * 0.6 + tubeJitter)}`);
-      const bannerLabel = banner.querySelector(".domestic-loading-banner-info b");
-      if (bannerLabel) bannerLabel.textContent = `${Number(completedCount).toLocaleString("ko-KR")} / ${Number(searchKeys.length).toLocaleString("ko-KR")}개 · ${percent}%`;
-      const bannerSub = banner.querySelector(".domestic-loading-banner-info span");
-      if (bannerSub) bannerSub.textContent = article ? `현재 ${article}` : "검색 준비 중입니다.";
-      const bannerBar = banner.querySelector(".domestic-loading-banner-bar i");
-      if (bannerBar) bannerBar.style.width = `${percent}%`;
-      const stagePercent = banner.querySelector(".domestic-loading-banner-percent b");
-      if (stagePercent) stagePercent.textContent = `${percent}`;
-      const bannerLevel = banner.querySelector(".domestic-loading-banner-level i");
-      if (bannerLevel) bannerLevel.style.width = `${percent}%`;
+      banner.toggleAttribute("data-complete", percent >= 100);
+      const scopePercent = banner.querySelector(".popular-radar-percent b");
+      if (scopePercent) scopePercent.textContent = `${percent}`;
+      const counter = banner.querySelector(".popular-progress-count b");
+      if (counter) counter.textContent = `${Number(completedCount).toLocaleString("ko-KR")}`;
+      const caption = banner.querySelector(".popular-progress-count span");
+      if (caption) caption.textContent = `/${Number(searchKeys.length).toLocaleString("ko-KR")} 수집 중 · ${percent}%`;
+      const currentLabel = String(currentProduct?.title || currentProduct?.name || article).trim() || article;
+      const tags = banner.querySelectorAll(".popular-radar-tag");
+      if (tags.length && currentLabel) {
+        let slot = Number(banner.dataset.tagSlot || 0);
+        let shown = false;
+        for (const tag of tags) {
+          if (tag.textContent === currentLabel) { shown = true; break; }
+        }
+        if (!shown) {
+          const tag = tags[slot % tags.length];
+          slot += 1;
+          tag.textContent = currentLabel;
+          tag.className = "";
+          void tag.offsetWidth;
+          const order = [0, 5, 10, 3, 8, 1, 6, 11, 4, 9, 2, 7];
+          tag.classList.add("popular-radar-tag", `tag-pos-${order[slot % order.length]}`);
+        }
+        banner.dataset.tagSlot = String(slot);
+      }
+      const feed = banner.querySelector(".popular-progress-items");
+      if (feed && article) {
+        const code = article.toUpperCase();
+        let exists = false;
+        for (const child of feed.children) {
+          if (child.dataset.article === code) { exists = true; break; }
+        }
+        if (!exists) {
+          const esc = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+          const card = banner.ownerDocument.createElement("div");
+          card.className = "popular-progress-item";
+          card.dataset.article = code;
+          card.innerHTML = `<span class="popular-progress-meta"><b class="popular-progress-code">${esc(code)}</b><span class="popular-progress-name">${esc(currentLabel || code)}</span></span>`;
+          feed.appendChild(card);
+        }
+        while (feed.children.length > 8) feed.removeChild(feed.firstChild);
+      }
     };
     renderBatchSearchProgress(0);
     // A normal search must use the original, ordered, all-retailer request.

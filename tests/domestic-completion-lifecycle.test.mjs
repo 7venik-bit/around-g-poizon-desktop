@@ -321,7 +321,7 @@ test('raw Excel result refresh keeps existing rows and never reopens the workboo
   const row = f.window.document.querySelector('.excel-verified-spu-row');
   await f.run(); // showExcelPreview is a throwing stub: any call fails this test.
   assert.equal(f.window.document.querySelector('.excel-verified-spu-row'), row);
-  assert.match(row.textContent, /상품 있음/);
+  assert.match(row.textContent, /상품 1개/);
   assert.equal(f.api.busy(), false);
   assert.match(f.status(), /완료/);
 });

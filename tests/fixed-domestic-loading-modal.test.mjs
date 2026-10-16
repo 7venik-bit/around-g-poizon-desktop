@@ -23,7 +23,8 @@ test("domestic search progress is a fixed viewport modal that locks page scrolli
 });
 
 test("batch search keeps results in product rows without a blocking overlay", () => {
-  assert.match(renderer, /excel-raw-search-state loading\">수달 사원이 검색 중/);
+  assert.match(renderer, /excel-raw-search-state loading">검색 중…/);
+  assert.doesNotMatch(renderer, /수달 사원이 검색 중/);
   assert.doesNotMatch(renderer, /<td class="excel-raw-search-cell">\$\{renderDomesticLoading/);
 });
 
