@@ -4362,6 +4362,12 @@ function hideExplorerBatchRadar() {
     const host = $("#explorer-batch-radar");
     if (host) host.hidden = true;
   } catch {}
+  // The product grid stays hidden while the radar owns the view; reveal it
+  // together with the completed results when the batch settles.
+  try {
+    const grid = $("#explorer-product-grid");
+    if (grid) grid.hidden = false;
+  } catch {}
 }
 async function runDomesticBatch(options = {}) {
   const selectedOnly = Boolean(options?.selectedOnly);
@@ -4400,7 +4406,11 @@ async function runDomesticBatch(options = {}) {
   }
   const batchId = domesticBatchId(batchProducts);
   if (typeof resetExplorerBatchRadar === "function") resetExplorerBatchRadar();
-  try { $("#explorer-batch-radar")?.scrollIntoView?.({ behavior: "auto", block: "start" }); } catch {}
+  try {
+    $("#explorer-batch-radar")?.scrollIntoView?.({ behavior: "auto", block: "start" });
+    const grid = $("#explorer-product-grid");
+    if (grid) grid.hidden = true;
+  } catch {}
   domesticBatchLoginScopeId = `explorer:${Date.now()}:${batchId}`;
   const savedProgress = selectedOnly ? null : readDomesticBatchProgress(batchId);
   if (!selectedOnly && savedProgress) {
