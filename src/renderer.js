@@ -5757,6 +5757,11 @@ $("#category-search").addEventListener("click", async () => {
     });
     if (runId !== categorySearchRunId) return;
     updateCategoryLoading({ title: `${selectionLabel} Excel 분류를 마쳤습니다.`, completed: completedCount, total: favoriteBrandIds.length, count: detailProducts.length, percent: 100 });
+    // One press runs end-to-end: classified products flow straight into the
+    // domestic batch so a second manual search is unnecessary. Guarded for
+    // sliced-vm fixtures; skipped when nothing was classified.
+    if (detailProducts.length && runId === categorySearchRunId
+      && typeof runDomesticBatch === "function") await runDomesticBatch();
   } catch (error) {
     if (runId !== categorySearchRunId) return;
     status.className = "status error";
