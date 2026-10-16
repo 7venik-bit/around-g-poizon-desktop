@@ -4843,6 +4843,11 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       }
     };
     renderBatchSearchProgress(0);
+    // Jump straight to the radar progress so the operator never has to
+    // scroll down manually to follow the batch.
+    try {
+      $("#domestic-loading-banner")?.scrollIntoView({ behavior: "auto", block: "start" });
+    } catch {}
     // A normal search must use the original, ordered, all-retailer request.
     // Recovery is activated only by the explicit "미완료 검색 이어하기"
     // action; otherwise splitting the request by retailer can delay or hide
