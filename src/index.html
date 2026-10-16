@@ -351,6 +351,28 @@
         <div id="explorer-results" class="panel" hidden>
           <div class="panel-title"><div><small>POIZON RESULTS</small><h2 id="explorer-result-title">탐색 결과</h2></div><div class="result-tools"><span id="explorer-result-count"></span><button id="domestic-stock-filter" type="button" aria-pressed="false">국내 재고만 보기</button><button id="domestic-search-all" type="button">표시 목록 국내 재고 검색</button></div></div>
           <div id="domestic-batch-status" class="status"></div>
+          <div id="explorer-batch-radar" hidden aria-live="polite">
+            <div class="popular-radar">
+              <div class="popular-radar-face" aria-hidden="true">
+                <div class="popular-radar-sweep"></div>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
+                <span class="popular-radar-tag"></span>
+                <b class="popular-radar-dot"></b>
+                <div class="popular-radar-percent" aria-hidden="true"><b>0</b><span>%</span></div>
+              </div>
+              <div class="popular-radar-caption">국내 상품 탐색 레이더</div>
+            </div>
+            <div class="popular-progress-feed">
+              <div class="popular-progress-count"><b>0</b><span>/0 수집 중 · 0%</span></div>
+              <div class="popular-progress-items" aria-hidden="true"></div>
+            </div>
+          </div>
           <div id="explorer-product-grid" class="explorer-product-grid"></div>
         </div>
 

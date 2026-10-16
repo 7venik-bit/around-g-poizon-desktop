@@ -4281,6 +4281,88 @@ document.querySelectorAll("#popular-progress [data-radar-power]").forEach((butto
     if (on && typeof capturePopularProducts === "function") await capturePopularProducts();
   });
 });
+function explorerBatchRadarHost() {
+  try {
+    const host = $("#explorer-batch-radar");
+    if (!host || typeof host.querySelector !== "function" || typeof host.querySelectorAll !== "function") return null;
+    return host;
+  } catch {
+    return null;
+  }
+}
+function resetExplorerBatchRadar() {
+  const host = explorerBatchRadarHost();
+  if (!host) return;
+  host.hidden = false;
+  if (typeof host.toggleAttribute === "function") host.toggleAttribute("data-complete", false);
+  const scopePercent = host.querySelector(".popular-radar-percent b");
+  if (scopePercent) scopePercent.textContent = "0";
+  const feedCount = host.querySelector(".popular-progress-count b");
+  if (feedCount) feedCount.textContent = "0";
+  const feedCaption = host.querySelector(".popular-progress-count span");
+  if (feedCaption) feedCaption.textContent = "/0 수집 중 · 0%";
+  host.querySelectorAll(".popular-radar-tag").forEach((tag) => { tag.textContent = ""; tag.className = "popular-radar-tag"; });
+  try { if (host.dataset) host.dataset.tagSlot = ""; } catch {}
+  const feed = host.querySelector(".popular-progress-items");
+  if (feed && typeof feed.replaceChildren === "function") feed.replaceChildren();
+}
+function updateExplorerBatchRadar({ done = 0, total = 0, article = "", label = "" } = {}) {
+  const host = explorerBatchRadarHost();
+  if (!host) return;
+  const safeTotal = Math.max(1, Number(total) || 1);
+  const percent = Math.min(100, Math.round((Number(done) / safeTotal) * 100));
+  host.hidden = false;
+  if (typeof host.toggleAttribute === "function") host.toggleAttribute("data-complete", percent >= 100);
+  const scopePercent = host.querySelector(".popular-radar-percent b");
+  if (scopePercent) scopePercent.textContent = `${percent}`;
+  const feedCount = host.querySelector(".popular-progress-count b");
+  if (feedCount) feedCount.textContent = `${Number(done).toLocaleString("ko-KR")}`;
+  const feedCaption = host.querySelector(".popular-progress-count span");
+  if (feedCaption) feedCaption.textContent = `/${Number(total).toLocaleString("ko-KR")} 수집 중 · ${percent}%`;
+  const currentLabel = String(label || article).trim() || String(article).trim();
+  const tags = host.querySelectorAll(".popular-radar-tag");
+  if (tags.length && currentLabel) {
+    let slot = 0;
+    try { slot = Number(host.dataset?.tagSlot || 0); } catch { slot = 0; }
+    let shown = false;
+    for (const tag of tags) {
+      if (tag.textContent === currentLabel) { shown = true; break; }
+    }
+    if (!shown) {
+      const tag = tags[slot % tags.length];
+      slot += 1;
+      tag.textContent = currentLabel;
+      tag.className = "";
+      void tag.offsetWidth;
+      const order = [0, 5, 10, 3, 8, 1, 6, 11, 4, 9, 2, 7];
+      tag.classList.add("popular-radar-tag", `tag-pos-${order[slot % order.length]}`);
+    }
+    try { if (host.dataset) host.dataset.tagSlot = String(slot); } catch {}
+  }
+  const code = String(article).trim().toUpperCase();
+  const feed = host.querySelector(".popular-progress-items");
+  if (feed && code && typeof host.ownerDocument?.createElement === "function") {
+    let exists = false;
+    for (const child of feed.children) {
+      if (child.dataset?.article === code) { exists = true; break; }
+    }
+    if (!exists) {
+      const esc = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const card = host.ownerDocument.createElement("div");
+      card.className = "popular-progress-item";
+      card.dataset.article = code;
+      card.innerHTML = `<span class="popular-progress-meta"><b class="popular-progress-code">${esc(code)}</b><span class="popular-progress-name">${esc(currentLabel || code)}</span></span>`;
+      feed.appendChild(card);
+    }
+    while (feed.children.length > 8) feed.removeChild(feed.firstChild);
+  }
+}
+function hideExplorerBatchRadar() {
+  try {
+    const host = $("#explorer-batch-radar");
+    if (host) host.hidden = true;
+  } catch {}
+}
 async function runDomesticBatch(options = {}) {
   const selectedOnly = Boolean(options?.selectedOnly);
   const button = $("#domestic-search-all");
@@ -4317,6 +4399,8 @@ async function runDomesticBatch(options = {}) {
     return;
   }
   const batchId = domesticBatchId(batchProducts);
+  if (typeof resetExplorerBatchRadar === "function") resetExplorerBatchRadar();
+  try { $("#explorer-batch-radar")?.scrollIntoView?.({ behavior: "auto", block: "start" }); } catch {}
   domesticBatchLoginScopeId = `explorer:${Date.now()}:${batchId}`;
   const savedProgress = selectedOnly ? null : readDomesticBatchProgress(batchId);
   if (!selectedOnly && savedProgress) {
@@ -4339,6 +4423,13 @@ async function runDomesticBatch(options = {}) {
     $("#domestic-batch-status").textContent = selectedOnly
       ? `국내 재고 및 네이버 결과 확인 ${processed + 1}/${pendingIndexes.length}`
       : `국내 재고 검색 ${index + 1}/${searchableIndexes.length} · 발견 결과를 즉시 표시하고 있습니다.`;
+    const currentBatchProduct = batchProducts[index] || {};
+    if (typeof updateExplorerBatchRadar === "function") updateExplorerBatchRadar({
+      done: processed,
+      total: pendingIndexes.length,
+      article: String(currentBatchProduct.articleNumber || currentBatchProduct.productNumber || ""),
+      label: String(currentBatchProduct.title || currentBatchProduct.name || ""),
+    });
     const searched = await searchDomesticAt(index, batchProducts);
     if (searched?.canceled || domesticBatchStopRequested) { domesticBatchStopRequested = true; break; }
     // One slow retailer/product is isolated. Keep its partial result and move
@@ -4361,6 +4452,7 @@ async function runDomesticBatch(options = {}) {
     const nextIndex = selectedOnly ? processed : Number(readDomesticBatchProgress(batchId)?.nextIndex || 0);
     $("#domestic-batch-status").className = "status error";
     $("#domestic-batch-status").textContent = `국내 재고 검색 중지 ${nextIndex}/${searchableIndexes.length} · 다시 누르면 이어서 검색합니다.`;
+    if (typeof hideExplorerBatchRadar === "function") hideExplorerBatchRadar();
     return;
   }
   if (!selectedOnly) localStorage.removeItem(DOMESTIC_BATCH_PROGRESS_KEY);
@@ -4368,6 +4460,7 @@ async function runDomesticBatch(options = {}) {
   $("#domestic-batch-status").textContent = failed || partial
     ? `국내 재고 검색 완료 ${searchableIndexes.length}/${searchableIndexes.length} · 일부 결과 ${partial}개 · 미응답 ${failed}개 · 확인된 결과 저장`
     : `국내 재고 검색 완료 ${searchableIndexes.length}/${searchableIndexes.length} · 원본 누락 슬롯 ${missingCount}개 유지`;
+  if (typeof hideExplorerBatchRadar === "function") hideExplorerBatchRadar();
 }
 $("#domestic-search-all").addEventListener("click", () => runDomesticBatch());
 $("#domestic-stock-filter").addEventListener("click", () => {
