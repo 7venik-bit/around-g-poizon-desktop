@@ -7,7 +7,8 @@ const style = readFileSync(new URL("../src/style.css", import.meta.url), "utf8")
 function compactBlock() {
   const start = style.indexOf("/* Compact macOS buttons:");
   assert.notEqual(start, -1);
-  return style.slice(start);
+  const end = style.indexOf("/* Category search reuses", start);
+  return style.slice(start, end === -1 ? undefined : end);
 }
 
 test("generic buttons use compact macOS metrics", () => {

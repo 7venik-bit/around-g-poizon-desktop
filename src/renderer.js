@@ -5347,7 +5347,7 @@ async function pruneCategorySearchHistory() {
   if (expired.length) state.categorySearches = searches.filter((entry) => !expired.some((old) => old.id === entry.id));
 }
 
-function updateCategoryLoading({ title, completed, total, count, percent } = {}) {
+function updateCategoryLoading({ title, completed, total, count, percent, brand = "", brandDone = false } = {}) {
   const host = $("#category-loading");
   if (!host) return;
   host.hidden = false;
@@ -5355,10 +5355,77 @@ function updateCategoryLoading({ title, completed, total, count, percent } = {})
   const done = Number(completed || 0);
   const maximum = Number(total || 0);
   const products = Number(count || 0);
+  const safePercent = Number.isFinite(Number(percent)) ? Math.max(0, Math.min(100, Number(percent))) : 0;
   if (maximum || products) {
     $("#category-loading-count").textContent = `브랜드 ${done}/${maximum} · 상품 ${products.toLocaleString("ko-KR")}개 분류`;
   }
-  if (Number.isFinite(Number(percent))) $("#category-loading-bar").style.width = `${Math.max(0, Math.min(100, Number(percent)))}%`;
+  if (Number.isFinite(Number(percent))) $("#category-loading-bar").style.width = `${safePercent}%`;
+  updateCategoryRadar(host, { done, maximum, products, safePercent, brand, brandDone });
+}
+
+// Popular-list radar scope for category search. Guarded for sliced-vm
+// fixtures whose stub nodes expose no DOM query helpers.
+function updateCategoryRadar(host, { done = 0, maximum = 0, products = 0, safePercent = 0, brand = "", brandDone = false } = {}) {
+  if (!host || typeof host.querySelector !== "function" || typeof host.querySelectorAll !== "function") return;
+  if (typeof host.toggleAttribute === "function") host.toggleAttribute("data-complete", safePercent >= 100);
+  const scopePercent = host.querySelector(".popular-radar-percent b");
+  if (scopePercent) scopePercent.textContent = `${safePercent}`;
+  const feedCount = host.querySelector(".popular-progress-count b");
+  if (feedCount) feedCount.textContent = `${done}`;
+  const feedCaption = host.querySelector(".popular-progress-count span");
+  if (feedCaption) feedCaption.textContent = `/${maximum} 브랜드 · 상품 ${Number(products).toLocaleString("ko-KR")}개 · ${safePercent}%`;
+  const label = String(brand).trim();
+  const tags = host.querySelectorAll(".popular-radar-tag");
+  if (tags.length && label) {
+    let slot = 0;
+    try { slot = Number(host.dataset?.tagSlot || 0); } catch { slot = 0; }
+    let shown = false;
+    for (const tag of tags) {
+      if (tag.textContent === label) { shown = true; break; }
+    }
+    if (!shown) {
+      const tag = tags[slot % tags.length];
+      slot += 1;
+      tag.textContent = label;
+      tag.className = "";
+      void tag.offsetWidth;
+      const order = [0, 5, 10, 3, 8, 1, 6, 11, 4, 9, 2, 7];
+      tag.classList.add("popular-radar-tag", `tag-pos-${order[slot % order.length]}`);
+    }
+    try { if (host.dataset) host.dataset.tagSlot = String(slot); } catch {}
+  }
+  const feed = host.querySelector(".popular-progress-items");
+  if (feed && brandDone && label && typeof host.ownerDocument?.createElement === "function") {
+    let exists = false;
+    for (const child of feed.children) {
+      if (child.dataset?.brand === label) { exists = true; break; }
+    }
+    if (!exists) {
+      const esc = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const card = host.ownerDocument.createElement("div");
+      card.className = "popular-progress-item";
+      card.dataset.brand = label;
+      card.innerHTML = `<span class="popular-progress-meta"><b class="popular-progress-code">${esc(label)}</b><span class="popular-progress-name">분류 완료</span></span>`;
+      feed.appendChild(card);
+    }
+    while (feed.children.length > 8) feed.removeChild(feed.firstChild);
+  }
+}
+
+function resetCategoryRadar() {
+  const host = $("#category-loading");
+  if (!host || typeof host.querySelector !== "function" || typeof host.querySelectorAll !== "function") return;
+  if (typeof host.toggleAttribute === "function") host.toggleAttribute("data-complete", false);
+  const scopePercent = host.querySelector(".popular-radar-percent b");
+  if (scopePercent) scopePercent.textContent = "0";
+  const feedCount = host.querySelector(".popular-progress-count b");
+  if (feedCount) feedCount.textContent = "0";
+  const feedCaption = host.querySelector(".popular-progress-count span");
+  if (feedCaption) feedCaption.textContent = "/0 브랜드 · 상품 0개 · 0%";
+  host.querySelectorAll(".popular-radar-tag").forEach((tag) => { tag.textContent = ""; tag.className = "popular-radar-tag"; });
+  try { if (host.dataset) host.dataset.tagSlot = ""; } catch {}
+  const feed = host.querySelector(".popular-progress-items");
+  if (feed && typeof feed.replaceChildren === "function") feed.replaceChildren();
 }
 
 function startCategoryLoading() {
@@ -5370,6 +5437,7 @@ function startCategoryLoading() {
   $("#category-loading-bar").style.width = "0%";
   $("#category-loading-time").textContent = "경과 00:00";
   $("#category-loading-count").textContent = "브랜드 0/0 · 상품 0개 분류";
+  resetCategoryRadar();
   categoryLoadingTimer = setInterval(() => {
     const seconds = Math.floor((Date.now() - categoryLoadingStartedAt) / 1000);
     $("#category-loading-time").textContent = `경과 ${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
@@ -5488,6 +5556,7 @@ $("#category-search").addEventListener("click", async () => {
         total: favoriteBrandIds.length,
         count: detailProductsByKey.size,
         percent: Math.round((completedCount / favoriteBrandIds.length) * 100),
+        brand: brandName,
       });
       try {
         const excelSales = await downloadedBrandSalesByArticle(brand);
@@ -5531,6 +5600,8 @@ $("#category-search").addEventListener("click", async () => {
         total: favoriteBrandIds.length,
         count: detailProductsByKey.size,
         percent: Math.round((completedCount / favoriteBrandIds.length) * 100),
+        brand: brandName,
+        brandDone: completedBrandIds.has(brandId),
       });
       return searchNextBrand();
     };
@@ -5548,7 +5619,7 @@ $("#category-search").addEventListener("click", async () => {
     }
     const detailProducts = [...detailProductsByKey.values()];
     status.className = failedSourceCount ? "status error" : "status success";
-    status.textContent = `저장된 Excel · ${selectionLabel} · 상품 ${detailProducts.length.toLocaleString("ko-KR")}개 · Excel ${sourceTotal.toLocaleString("ko-KR")}개 상품 분류 · 브랜드 ${sourceCount}/${favoriteBrandIds.length}개 완료${missingSalesCount ? ` · 판매량 값이 없는 상품 ${missingSalesCount}개는 조건 비교에서 제외했습니다.` : ""}${failureText ? ` · 실패: ${failureText}` : ""}`;
+    status.textContent = `${selectionLabel} · 상품 ${detailProducts.length.toLocaleString("ko-KR")}개 · 브랜드 ${sourceCount}/${favoriteBrandIds.length}개 완료 · Excel ${sourceTotal.toLocaleString("ko-KR")}개 분류${missingSalesCount ? ` · 판매량 값이 없는 상품 ${missingSalesCount}개 제외` : ""}${failureText ? ` · 실패: ${failureText}` : ""}`;
     renderExplorerResults(`${selectionLabel} 검색 · ${failedSourceCount ? "일부 완료" : "완료"}`, detailProducts, false,
       missingSalesCount ? "판매량 값이 없는 상품이 있습니다. 조건을 초기화하거나 별도 POIZON 검증 메뉴에서 데이터를 갱신해 주세요."
         : failedSourceCount ? "읽은 파일에서는 조건에 맞는 상품이 없습니다. 실패한 파일의 안내를 확인해 주세요." : "");
