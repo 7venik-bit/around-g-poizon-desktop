@@ -137,7 +137,7 @@ test("result summary uses the same canonical verdict", () => {
   assert.equal(available.label, "결과 1개");
   assert.equal(available.className, "available");
   const missing = resultPresentation({ products: [], sources: [{ count: 0, countVerified: true, absenceConfirmed: true }] });
-  assert.equal(missing.label, "상품 없음");
+  assert.equal(missing.label, "-");
   assert.equal(missing.className, "missing");
 });
 

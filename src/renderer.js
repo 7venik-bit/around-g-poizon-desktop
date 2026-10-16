@@ -1615,7 +1615,7 @@ function renderRawExcelDomesticCell(key, product, result) {
       ? { label: `결과 ${verifiedCount.toLocaleString("ko-KR")}개`, className: "available" }
       : needsReview
         ? { label: "검색 실패", className: "error" }
-        : { label: "상품 없음", className: "missing" };
+        : { label: "-", className: "missing" };
   const links = rawExcelDomesticResultLinks(result);
   return `<td class="excel-raw-search-cell">
     <div class="excel-raw-search-summary"><span class="excel-raw-search-state ${state.className}">${text(state.label)}</span><button type="button" class="excel-raw-search-again" data-excel-search-product="${encodeURIComponent(key)}">다시 검색</button></div>
@@ -3279,7 +3279,7 @@ function renderDomestic(result, sourceProduct = {}, contextKey = "") {
     }
     if (source.verificationPending) return { label: "상세 확인 필요", className: "pending" };
     if (source.countVerified && Number(source.count || 0) > 0) return { label: `상품 ${Number(source.count)}개`, className: "pending" };
-    if (source.countVerified || source.absenceConfirmed) return { label: "상품 없음", className: "missing" };
+    if (source.countVerified || source.absenceConfirmed) return { label: "-", className: "missing" };
     return { label: "검색 필요", className: "pending" };
   };
   const renderedProductKeys = new Set();
@@ -3296,7 +3296,7 @@ function renderDomestic(result, sourceProduct = {}, contextKey = "") {
     if (source.store === "병행수입·편집샵" && Number(source.count || 0) <= 0
       && !(source.parallelRetailerListEnforced === true && source.absenceConfirmed === true)) return [];
     const status = sourceStatus(source, matchedProducts);
-    const sourceResultLabel = status.className === "missing" ? "상품 없음" : "검색 결과";
+    const sourceResultLabel = status.className === "missing" ? "-" : "검색 결과";
     return [`<div class="domestic-result-line source-only ${status.className}">
       <strong class="domestic-result-store">${text(source.store)}</strong>
       <span class="domestic-result-product"><b>${sourceResultLabel}</b></span>

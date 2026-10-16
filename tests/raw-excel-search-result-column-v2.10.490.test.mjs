@@ -20,7 +20,7 @@ test("raw Excel keeps search status and retailer links in the final cell", () =>
   assert.doesNotMatch(rawCell, /상품 있음 ·/);
   assert.match(rawCell, /label: `상품 \${/);
   assert.match(rawCell, /label: `결과 \${/);
-  assert.match(rawCell, /label: "상품 없음"/);
+  assert.match(rawCell, /label: "-"/);
   assert.match(renderer, /label: "검색 실패", className: "error"/);
   assert.doesNotMatch(renderer, /buttonText[\s\S]{0,800}excel-product-search-detail/);
   assert.match(style, /\.excel-raw-search-cell/);

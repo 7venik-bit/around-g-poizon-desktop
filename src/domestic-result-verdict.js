@@ -170,7 +170,7 @@
     if (verdicts.some((verdict) => ["security", "login", "failed", "pending"].includes(verdict.state))) {
       return { label: "확인 필요", className: "pending" };
     }
-    return { label: "상품 없음", className: "missing" };
+    return { label: "-", className: "missing" };
   };
 
   // Six-stage pipeline progress in the operator's flow language:
