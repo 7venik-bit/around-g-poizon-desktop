@@ -556,13 +556,30 @@ function extractSellerApiProducts(document, limit = 200) {
   return products;
 }
 
+// Deadline for one seller-frame script. A hung frame is skipped so the
+// popular capture keeps moving instead of freezing mid-condition.
+const SELLER_FRAME_SCRIPT_TIMEOUT_MS = 20_000;
 async function executeAcrossSellerFrames(script) {
-  const mainFrame = sellerWindow.webContents.mainFrame;
-  const frames = [mainFrame, ...(mainFrame.framesInSubtree || [])]
-    .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
+  // A seller frame can stop responding mid-navigation (login redirect, SPA
+  // route change). An unbounded executeJavaScript would freeze the popular
+  // capture at 8% forever, so an unresponsive frame is skipped instead of
+  // blocking the whole run. A destroyed window reports "not found" so the
+  // caller fails cleanly instead of hanging.
+  let frames = [];
+  try {
+    const mainFrame = sellerWindow.webContents.mainFrame;
+    frames = [mainFrame, ...(mainFrame.framesInSubtree || [])]
+      .filter((frame, index, all) => all.findIndex((candidate) => candidate.routingId === frame.routingId) === index);
+  } catch {
+    return { found: false };
+  }
   for (const frame of frames) {
     try {
-      const result = await frame.executeJavaScript(script, true);
+      const result = await Promise.race([
+        frame.executeJavaScript(script, true),
+        wait(SELLER_FRAME_SCRIPT_TIMEOUT_MS).then(() => ({ __sellerFrameTimeout: true })),
+      ]);
+      if (result?.__sellerFrameTimeout) continue;
       if (result?.found) return result;
     } catch {
       // 접근할 수 없는 외부 프레임은 건너뜁니다.
