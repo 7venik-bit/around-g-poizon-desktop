@@ -1452,6 +1452,10 @@ let excelPreviewGracefulStop = false;
 let activeDomesticProgressRequestId = "";
 let activeDomesticProgressTouch = null;
 let activeDomesticCheckpoint = null;
+// Latest batch progress line, so an authentication-phase wait can name the
+// awaited login without losing the completed/total/current-article context.
+let lastBatchSearchProgress = null;
+let batchLoginWaitSource = "";
 
 function requestDomesticSearchCancel() {
   // Cancellation is best-effort cleanup, not a prerequisite for releasing UI.
@@ -1496,6 +1500,8 @@ function stopExcelPreviewSearch() {
   activeDomesticProgressRequestId = "";
   selectedBrandDomesticQueueRunning = false;
   excelPreviewBatchSearching = false;
+  lastBatchSearchProgress = null;
+  batchLoginWaitSource = "";
   domesticIdentitySearchCache.clear();
   hideDomesticSearchOverlay();
   $("#domestic-loading-banner")?.remove();
@@ -1534,6 +1540,14 @@ setInterval(() => {
   });
 }, 1_000);
 
+function batchSearchProgressText({ completed = 0, total = 0, article = "", skipNote = "" } = {}) {
+  return `상품 검색 진행 중 · ${Number(completed).toLocaleString("ko-KR")} / ${Number(total).toLocaleString("ko-KR")}개${article ? ` · 현재 ${article}` : ""}${skipNote}`;
+}
+
+function batchSearchBannerCountText({ total = 0, percent = 0 } = {}) {
+  return `/${Number(total).toLocaleString("ko-KR")} 수집 중 · ${percent}%`;
+}
+
 window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
   if (payload.requestId && payload.requestId !== activeDomesticProgressRequestId) return;
   if (payload.requestId === activeDomesticProgressRequestId) activeDomesticProgressTouch?.(payload.progressRevision);
@@ -1541,6 +1555,27 @@ window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
     // IPC already delivers a detached structured value. Keep that verified
     // snapshot so Stop can persist exactly what was completed so far.
     activeDomesticCheckpoint = payload.checkpoint;
+  }
+  // A batch product can wait minutes on a retailer login (external window or
+  // manual verification) while heartbeats keep the search watchdog alive.
+  // Name the awaited login so a bare "0/75 in progress" becomes actionable.
+  if (payload.requestId === activeDomesticProgressRequestId && excelPreviewBatchSearching && lastBatchSearchProgress) {
+    if (payload.phase === "authentication") {
+      const waitingSource = String(payload.source || "").replace(/\s*로그인 확인\s*$/, "").trim() || "판매처";
+      if (batchLoginWaitSource !== waitingSource) {
+        batchLoginWaitSource = waitingSource;
+        const status = $("#excel-filter-status");
+        if (status) status.textContent = `${batchSearchProgressText(lastBatchSearchProgress)} · ${waitingSource} 로그인 대기 중 — 로그인 창을 확인해 주세요`;
+        const bannerCount = $("#domestic-loading-banner .popular-progress-count span");
+        if (bannerCount) bannerCount.textContent = `${batchSearchBannerCountText(lastBatchSearchProgress)} · ${waitingSource} 로그인 대기 중`;
+      }
+    } else if (batchLoginWaitSource) {
+      batchLoginWaitSource = "";
+      const status = $("#excel-filter-status");
+      if (status) status.textContent = batchSearchProgressText(lastBatchSearchProgress);
+      const bannerCount = $("#domestic-loading-banner .popular-progress-count span");
+      if (bannerCount) bannerCount.textContent = batchSearchBannerCountText(lastBatchSearchProgress);
+    }
   }
 });
 
@@ -1919,6 +1954,8 @@ async function searchExcelPreviewProduct(key, { forceRefresh = true } = {}) {
     if (runId === excelPreviewSearchRunId) {
       excelPreviewBatchSearching = false;
       activeDomesticProgressRequestId = "";
+      lastBatchSearchProgress = null;
+      batchLoginWaitSource = "";
       globalThis.aroundGActiveDomesticRecovery = null;
       hideDomesticSearchOverlay();
       $("#domestic-loading-banner")?.remove();
@@ -4730,10 +4767,12 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       if (!status) return;
       const article = String(currentProduct?.articleNumber || currentProduct?.productNumber || "").trim();
       const skipNote = skippedCount > 0 ? ` · 같은 상품번호 ${skippedCount.toLocaleString("ko-KR")}행 생략` : "";
-      status.textContent = `상품 검색 진행 중 · ${Number(completedCount).toLocaleString("ko-KR")} / ${searchKeys.length.toLocaleString("ko-KR")}개${article ? ` · 현재 ${article}` : ""}${skipNote}`;
-      showDomesticSearchOverlay(batchStartedAt, completedCount, searchKeys.length, currentProduct);
       const safeTotal = Math.max(1, Number(searchKeys.length) || 1);
       const percent = Math.min(100, Math.round((Number(completedCount) / safeTotal) * 100));
+      lastBatchSearchProgress = { completed: completedCount, total: searchKeys.length, article, skipNote, percent };
+      batchLoginWaitSource = "";
+      status.textContent = batchSearchProgressText(lastBatchSearchProgress);
+      showDomesticSearchOverlay(batchStartedAt, completedCount, searchKeys.length, currentProduct);
       // Sourcing loading reuses the popular-list radar scope: the same sweep,
       // percent, count/target feed and recent-product cards with popular values.
       let banner = $("#domestic-loading-banner");
@@ -4765,7 +4804,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       const counter = banner.querySelector(".popular-progress-count b");
       if (counter) counter.textContent = `${Number(completedCount).toLocaleString("ko-KR")}`;
       const caption = banner.querySelector(".popular-progress-count span");
-      if (caption) caption.textContent = `/${Number(searchKeys.length).toLocaleString("ko-KR")} 수집 중 · ${percent}%`;
+      if (caption) caption.textContent = batchSearchBannerCountText(lastBatchSearchProgress);
       const currentLabel = String(currentProduct?.title || currentProduct?.name || article).trim() || article;
       const tags = banner.querySelectorAll(".popular-radar-tag");
       if (tags.length && currentLabel) {
@@ -4891,6 +4930,8 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     if (runId === excelPreviewSearchRunId) {
       excelPreviewBatchSearching = false;
       activeDomesticProgressRequestId = "";
+      lastBatchSearchProgress = null;
+      batchLoginWaitSource = "";
       globalThis.aroundGActiveDomesticRecovery = null;
       hideDomesticSearchOverlay();
       $("#domestic-loading-banner")?.remove();
