@@ -1068,6 +1068,11 @@ export function analyzeRenderedChannelProducts(content, store = "", articleNumbe
         ssgSearchChecked: /^SSG(?:\s|$)/.test(String(store || "")),
         parallelRetailerListEnforced: requiresExactParallelModel,
         identityDrops,
+        // Badged cards the identity gates examined but kept none of: feed the
+        // existing "no matching product" verdict instead of leaving a bare
+        // source that renders as never-searched. Only badged SSG/Lotte
+        // channels count drops, so other stores always report zero here.
+        identityRejectedCount: Math.max(0, (identityDrops.evaluated || 0) - matchingProducts.size),
       };
     } catch {
       return null;
