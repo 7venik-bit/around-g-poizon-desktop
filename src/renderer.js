@@ -1860,10 +1860,10 @@ function renderExcelProductRows(file, products = []) {
     const poizonPrice = verifiedExcelProductPoizonPrice(product);
     const outcome = result && !result.loading ? domesticStatus(result) : null;
     const status = result?.loading ? "검색 중…" : result?.error ? "검색 실패" : result
-      ? outcome?.className === "available" ? `${(result.products || []).length}개 상품 있음`
-        : outcome?.className === "soldout" ? "상품 있음·재고 없음"
-          : outcome?.className === "pending" ? "추가 확인 필요"
-            : "국내 상품 없음"
+      ? outcome?.className === "available" ? `상품 ${(result.products || []).length.toLocaleString("ko-KR")}개`
+        : outcome?.className === "soldout" ? `상품 ${(result.products || []).length.toLocaleString("ko-KR")}개`
+          : outcome?.className === "pending" ? "확인 필요"
+            : "-"
       : "상품 검색";
     const groupClass = index % 2 === 0 ? "excel-product-group-blue" : "excel-product-group-amber";
     const outcomeClass = outcome ? `excel-search-outcome-${outcome.className}` : "";
@@ -3151,11 +3151,11 @@ function domesticStatus(result) {
   const verifiedCount = (result.sources || []).reduce((sum, source) =>
     sum + (source.countVerified ? Number(source.count || 0) : 0), 0);
   const needsReview = (result.sources || []).some((source) => source.verificationPending || source.verificationFailed);
-  if (!products.length && verifiedCount > 0) return { label: "판매처 발견", className: "available" };
-  if (!products.length && needsReview) return { label: "추가 확인 필요", className: "pending" };
-  if (!products.length) return { label: "없음 확인", className: "missing" };
-  if (!products.some((product) => product.inStock)) return { label: "재고 없음", className: "soldout" };
-  return { label: "구매 가능", className: "available" };
+  if (!products.length && verifiedCount > 0) return { label: `결과 ${verifiedCount.toLocaleString("ko-KR")}개`, className: "available" };
+  if (!products.length && needsReview) return { label: "확인 필요", className: "pending" };
+  if (!products.length) return { label: "-", className: "missing" };
+  if (!products.some((product) => product.inStock)) return { label: `상품 ${products.length.toLocaleString("ko-KR")}개`, className: "soldout" };
+  return { label: `상품 ${products.length.toLocaleString("ko-KR")}개`, className: "available" };
 }
 
 function hasDomesticStock(result) {
