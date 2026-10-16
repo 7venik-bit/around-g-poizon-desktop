@@ -3364,12 +3364,12 @@ function renderExplorerResults(title, products, preserveDomestic = false, emptyM
           <div class="product-badges"><span class="badge">${text(product.categoryGroup || "인기상품")}</span>${product.apiMatched ? `<span class="badge">API 연결</span>` : product.apiMatched === false ? `<span class="badge muted">API 미일치</span>` : ""}</div>
           <h3>${text(product.title || product.name)}</h3>
           <p>${text(product.brandName || product.brand || "")}</p>
-          <div class="explorer-product-meta">${globalThis.AroundGPoizonProductView?.button(product) || ""}<code>${text(product.articleNumber || "")}</code><span>${product.averagePrice || product.minPrice?.value ? money(product.averagePrice || product.minPrice.value) : ""}</span>${typeof purchaseAwarenessBadge === "function" ? purchaseAwarenessBadge(product) : ""}</div>
+          <div class="explorer-product-meta"><code>${text(product.articleNumber || "")}</code><span>${product.averagePrice || product.minPrice?.value ? money(product.averagePrice || product.minPrice.value) : ""}</span>${typeof purchaseAwarenessBadge === "function" ? purchaseAwarenessBadge(product) : ""}</div>
         </div>
       </div>
       <label class="product-select-option"><input type="checkbox" data-product-select="${encodeURIComponent(key)}" ${selectedExplorerKeys.has(key) ? "checked" : ""}> 선택</label>
       <div class="domestic-inventory">
-        <div class="inventory-heading"><span class="inventory-status ${status.className}">${status.label}</span><button data-domestic="${encodeURIComponent(key)}" data-index="${index}" class="primary">국내 재고 검색</button></div>
+        <div class="inventory-heading"><span class="inventory-status ${status.className}">${status.label}</span><span class="inventory-actions">${globalThis.AroundGPoizonProductView?.button(product) || ""}<button data-domestic="${encodeURIComponent(key)}" data-index="${index}" class="primary">국내 재고 검색</button></span></div>
         ${renderDomestic(result, product, key)}
       </div>
     </article>`;
