@@ -4417,27 +4417,32 @@ async function runDomesticBatch(options = {}) {
   let processed = 0;
   let failed = 0;
   let partial = 0;
-  for (const index of pendingIndexes) {
-    if (domesticBatchStopRequested) break;
-    $("#domestic-batch-status").className = "status";
-    $("#domestic-batch-status").textContent = selectedOnly
-      ? `국내 재고 및 네이버 결과 확인 ${processed + 1}/${pendingIndexes.length}`
-      : `국내 재고 검색 ${index + 1}/${searchableIndexes.length} · 발견 결과를 즉시 표시하고 있습니다.`;
-    const currentBatchProduct = batchProducts[index] || {};
-    if (typeof updateExplorerBatchRadar === "function") updateExplorerBatchRadar({
-      done: processed,
-      total: pendingIndexes.length,
-      article: String(currentBatchProduct.articleNumber || currentBatchProduct.productNumber || ""),
-      label: String(currentBatchProduct.title || currentBatchProduct.name || ""),
-    });
-    const searched = await searchDomesticAt(index, batchProducts);
-    if (searched?.canceled || domesticBatchStopRequested) { domesticBatchStopRequested = true; break; }
-    // One slow retailer/product is isolated. Keep its partial result and move
-    // on instead of turning it into a batch-wide stop.
-    if (searched?.error) failed += 1;
-    if (searched?.partial) partial += 1;
-    processed += 1;
-    if (!selectedOnly) saveDomesticBatchProgress({ batchId, nextIndex: index + 1, total: searchableIndexes.length, complete: false });
+  let batchError = null;
+  try {
+    for (const index of pendingIndexes) {
+      if (domesticBatchStopRequested) break;
+      $("#domestic-batch-status").className = "status";
+      $("#domestic-batch-status").textContent = selectedOnly
+        ? `국내 재고 및 네이버 결과 확인 ${processed + 1}/${pendingIndexes.length}`
+        : `국내 재고 검색 ${index + 1}/${searchableIndexes.length} · 발견 결과를 즉시 표시하고 있습니다.`;
+      const currentBatchProduct = batchProducts[index] || {};
+      if (typeof updateExplorerBatchRadar === "function") updateExplorerBatchRadar({
+        done: processed,
+        total: pendingIndexes.length,
+        article: String(currentBatchProduct.articleNumber || currentBatchProduct.productNumber || ""),
+        label: String(currentBatchProduct.title || currentBatchProduct.name || ""),
+      });
+      const searched = await searchDomesticAt(index, batchProducts);
+      if (searched?.canceled || domesticBatchStopRequested) { domesticBatchStopRequested = true; break; }
+      // One slow retailer/product is isolated. Keep its partial result and move
+      // on instead of turning it into a batch-wide stop.
+      if (searched?.error) failed += 1;
+      if (searched?.partial) partial += 1;
+      processed += 1;
+      if (!selectedOnly) saveDomesticBatchProgress({ batchId, nextIndex: index + 1, total: searchableIndexes.length, complete: false });
+    }
+  } catch (error) {
+    batchError = error;
   }
   const stopped = domesticBatchStopRequested;
   domesticBatchRunning = false;
@@ -4448,6 +4453,12 @@ async function runDomesticBatch(options = {}) {
   button.textContent = "표시 목록 국내 재고 검색";
   updateExplorerSelectionUi();
   const missingCount = batchProducts.length - searchableIndexes.length;
+  if (batchError) {
+    $("#domestic-batch-status").className = "status error";
+    $("#domestic-batch-status").textContent = "국내 재고 검색 중 오류가 발생했습니다. 확인된 결과는 보관했습니다.";
+    if (typeof hideExplorerBatchRadar === "function") hideExplorerBatchRadar();
+    return;
+  }
   if (stopped) {
     const nextIndex = selectedOnly ? processed : Number(readDomesticBatchProgress(batchId)?.nextIndex || 0);
     $("#domestic-batch-status").className = "status error";
@@ -4946,7 +4957,10 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     const recovery = resumeRecovery
       ? await prepareDomesticRecovery(keys.map(key => excelPreviewProductCache.get(key)), activeExcelPreview?.file?.path || 'product-list')
       : null;
-    if (runId !== excelPreviewSearchRunId) return;
+    if (runId !== excelPreviewSearchRunId) {
+      if (excelPreviewBatchSearching) $("#excel-filter-status").textContent = "새 상품 검색이 시작되어 이전 배치를 종료했습니다.";
+      return;
+    }
     const recovered = new Map((recovery?.results || []).map(item => [item.key, item.result]));
     for (const key of keys) {
       const saved = recovered.get(productCrossCheckIdentity(excelPreviewProductCache.get(key)));
@@ -4967,7 +4981,10 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
     }
     let completed = 0;
     for (const groupKeys of groups.values()) {
-      if (runId !== excelPreviewSearchRunId) return;
+      if (runId !== excelPreviewSearchRunId) {
+        if (excelPreviewBatchSearching) $("#excel-filter-status").textContent = "새 상품 검색이 시작되어 이전 배치를 종료했습니다.";
+        return;
+      }
       const product = excelPreviewProductCache.get(groupKeys[0]);
       const saved = recovered.get(productCrossCheckIdentity(product));
       if (saved?.recovery?.status === 'complete') { completed += groupKeys.length; continue; }
@@ -4977,7 +4994,10 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       renderBatchSearchProgress(completed, product);
       refreshDomesticSearchRows();
       const response = await cachedDomesticSearch(product, true);
-      if (runId !== excelPreviewSearchRunId) return;
+      if (runId !== excelPreviewSearchRunId) {
+        if (excelPreviewBatchSearching) $("#excel-filter-status").textContent = "새 상품 검색이 시작되어 이전 배치를 종료했습니다.";
+        return;
+      }
       // A graceful stop waits for the in-flight response. When it comes back
       // canceled, keep the verified checkpoint instead of an empty error so
       // stopping never discards already confirmed results.
