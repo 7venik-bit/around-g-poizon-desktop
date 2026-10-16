@@ -1579,6 +1579,18 @@ window.aroundG.onDomesticSearchProgress?.((payload = {}) => {
   }
 });
 
+// A gated result (login/security/failed verification, no products, no error)
+// is neither failed nor partial, so without this it would report as a
+// successful completion. Verified absence (no error, nothing to do) is not
+// blocked and stays a completion.
+function isBlockedDomesticResult(result) {
+  if (!result || result.error || result.partial) return false;
+  if (Array.isArray(result.products) && result.products.length) return false;
+  return (result.sources || []).some((source) => source?.loginRequired
+    || source?.securityVerificationRequired || source?.verificationFailed
+    || source?.verificationPending);
+}
+
 function renderRawExcelDomesticCell(key, product, result) {
   if (!product) return `<td class="excel-raw-search-cell"><span class="excel-raw-search-state muted">검색 정보 없음</span></td>`;
   if (result?.loading) {
@@ -4759,6 +4771,7 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
   const runId = ++excelPreviewSearchRunId;
   let failed = 0;
   let partial = 0;
+  let blocked = 0;
   try {
     updateExcelPreviewSelectionUi([]);
     const batchStartedAt = Date.now();
@@ -4896,6 +4909,11 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
           : { products: [], sources: [], error: response?.message || "검색 응답이 없습니다." };
       if (!response?.ok) failed += groupKeys.length;
       if (result.partial) partial += groupKeys.length;
+      // A login/security-gated result arrives as ok:true with no products and
+      // no error, so it is neither failed nor partial above. Count it
+      // separately so completion never reports a blocked batch as success.
+      // Verified absence (no error, no action required) stays a completion.
+      if (response?.ok && isBlockedDomesticResult(result)) blocked += groupKeys.length;
       for (const key of groupKeys) excelPreviewSearchResults.set(key, result);
       if (typeof recordSearchDiagnostics === "function") recordSearchDiagnostics(result, product, "excel", groupKeys[0]);
       if (activeExcelPreview?.file?.path) persistExcelSearchResults(activeExcelPreview.file.path);
@@ -4918,6 +4936,8 @@ $("#excel-preview-search-selected")?.addEventListener("click", async () => {
       ? `선택 상품 ${searchKeys.length.toLocaleString("ko-KR")}개 처리 · ${partial.toLocaleString("ko-KR")}개 일부 결과. 완료된 판매처 결과를 표시했습니다.${skipSuffix}`
       : failed
       ? `선택 상품 ${searchKeys.length.toLocaleString("ko-KR")}개 처리 · ${failed.toLocaleString("ko-KR")}개 검색 실패. 각 상품의 안내를 확인해 주세요.${skipSuffix}`
+      : blocked
+      ? `선택 상품 ${searchKeys.length.toLocaleString("ko-KR")}개 처리 · ${blocked.toLocaleString("ko-KR")}개 로그인·확인 필요. 해당 상품은 로그인 확인 후 다시 검색해 주세요.${skipSuffix}`
       : `선택 상품 ${searchKeys.length.toLocaleString("ko-KR")}개 검색을 완료했습니다.${skipSuffix}`;
   } catch (error) {
     if (runId === excelPreviewSearchRunId) {
