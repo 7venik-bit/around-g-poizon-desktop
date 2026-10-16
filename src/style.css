@@ -2756,3 +2756,20 @@ html body .search-service-button{min-height:32px;padding:6px 10px 6px 14px;font-
 /* Explorer product card: POIZON button sits above the domestic search button. */
 .inventory-actions{display:flex;flex-direction:column;gap:6px;align-items:stretch}
 .inventory-actions button{width:100%}
+/* Compact category screen: sales filter sits right below the detail menu,
+   and every box uses smaller metrics. Later rules win by cascade order. */
+#explorer-category .category-screen-head{gap:10px}
+#explorer-category>p{margin:8px 0}
+.category-selection-path{margin:10px 0 4px;padding:8px 10px;font-size:12px}
+.category-detail-section{padding:10px 12px;margin:0 0 12px}
+.category-detail-buttons{gap:7px;margin-top:8px}
+.category-brand-section{margin:0 0 12px;padding:10px 12px}
+.category-brand-section>p{margin:5px 0 8px}
+.category-brand-cards{gap:7px;max-height:220px}
+.category-brand-card{grid-template-columns:30px minmax(0,1fr) auto;gap:7px;padding:7px 9px}
+.category-brand-card>i{width:28px;height:28px;border-radius:7px;font-size:12px}
+.category-sales-filter{padding:10px 12px;margin:0 0 12px}
+.category-sales-filter-heading{margin-bottom:8px;gap:10px}
+.category-sales-filter-heading strong{font-size:14px}
+.category-sales-filter-controls{gap:8px}
+.category-sales-filter>small{margin-top:6px}
