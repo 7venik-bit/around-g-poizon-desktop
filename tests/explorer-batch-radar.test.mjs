@@ -54,6 +54,14 @@ test("explorer batch drives and hides the radar, jumping to it on start", () => 
   assert.match(renderer, /typeof host\.querySelector !== "function"/);
 });
 
+test("explorer batch hides the product grid while the radar owns the view", () => {
+  const start = renderer.indexOf("async function runDomesticBatch(");
+  const end = renderer.indexOf('$("#domestic-search-all").addEventListener', start);
+  const fn = renderer.slice(start, end);
+  assert.match(fn, /const grid = \$\("#explorer-product-grid"\);\s*if \(grid\) grid\.hidden = true;/);
+  assert.match(renderer, /The product grid stays hidden while the radar owns the view/);
+});
+
 test("explorer batch radar styles mirror the popular radar scope", () => {
   assert.match(css, /#explorer-batch-radar\[hidden\]\{display:none\}/);
   assert.match(css, /#explorer-batch-radar \.popular-radar-face\{/);
@@ -89,5 +97,6 @@ test("explorer batch completes with stub nodes and parks the radar hidden", asyn
   await runInNewContext(`${body};runDomesticBatch()`, context);
   assert.equal(context.domesticBatchRunning, false);
   assert.equal(elements.get("#explorer-batch-radar").hidden, true);
+  assert.equal(elements.get("#explorer-product-grid").hidden, false);
   assert.match(elements.get("#domestic-batch-status").textContent, /검색 완료/);
 });
