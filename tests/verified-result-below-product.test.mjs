@@ -55,7 +55,8 @@ test("verified brand product row keeps only search state and retry control at th
 
   assert.match(verifiedRenderer, /검색 실패/);
   assert.match(verifiedRenderer, /다시 검색/);
-  assert.match(verifiedRenderer, /수달 사원이 검색 중/);
+  assert.match(verifiedRenderer, /excel-raw-search-state loading">검색 중…/);
+  assert.doesNotMatch(verifiedRenderer, /수달 사원이 검색 중/);
 });
 
 test("injected raw Excel renderer preserves verified SPU keys and result rows", () => {
