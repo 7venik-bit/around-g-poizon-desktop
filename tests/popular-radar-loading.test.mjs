@@ -10,7 +10,8 @@ test("popular loading shows a radar scope without changing progress semantics", 
   assert.match(html, /id="popular-progress"[^>]*>[\s\S]*?class="popular-radar-face" aria-hidden="true"/);
   assert.match(html, /class="popular-radar-sweep"/);
   assert.doesNotMatch(html, /popular-radar-blip/);
-  assert.equal((html.match(/class="popular-radar-tag"/g) || []).length, 8);
+  const popularBlock = html.slice(html.indexOf('id="popular-progress"'), html.indexOf('id="popular-status"'));
+  assert.equal((popularBlock.match(/class="popular-radar-tag"/g) || []).length, 8);
   assert.match(html, /class="popular-radar-percent"><b>0<\/b><span>%<\/span>/);
   assert.match(html, /class="popular-radar-caption"/);
   assert.match(html, /class="popular-radar-switch" role="group" aria-label="레이더 전원"/);

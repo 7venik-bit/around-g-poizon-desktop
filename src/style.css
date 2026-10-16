@@ -2729,3 +2729,27 @@ html body button{padding:6px 12px;font-size:12px;line-height:1.4}
 html body button.primary{font-weight:700}
 html body .search-service-button{min-height:32px;padding:6px 10px 6px 14px;font-size:12px}
 .frequent-brand-heading-actions>button{min-height:30px;padding:6px 12px;font-size:11px}
+/* Category search reuses the popular-list radar scope with popular values. */
+#category-loading .popular-radar{display:grid;justify-items:center;gap:8px;padding:14px 12px 4px}
+#category-loading .popular-radar-face{position:relative;width:min(400px,100%);aspect-ratio:1/1;border-radius:50%;background:radial-gradient(circle at 50% 50%,#10222e 0%,#0a1822 62%,#060f16 100%);box-shadow:0 6px 18px #0a182233,inset 0 0 0 2px #1f3a4a;overflow:hidden}
+#category-loading .popular-radar-face::before{content:"";position:absolute;inset:0;background:repeating-radial-gradient(circle at 50% 50%,transparent 0 26px,#1f3a4a55 26px 27px)}
+#category-loading .popular-radar-face::after{content:"";position:absolute;inset:0;background:linear-gradient(#1f3a4a55 0 0) center/100% 1px no-repeat,linear-gradient(#1f3a4a55 0 0) center/1px 100% no-repeat}
+#category-loading .popular-radar-sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,#5cf08a99,transparent 22%);animation:popular-radar-sweep 3.2s linear infinite}
+#category-loading .popular-radar-dot{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:#d9f6e4}
+#category-loading .popular-radar-percent{position:absolute;z-index:3;left:50%;top:5%;transform:translateX(-50%);display:flex;align-items:baseline;gap:2px;color:#5cf08a;text-shadow:0 0 8px #5cf08a88;pointer-events:none}
+#category-loading .popular-radar-percent b{font-size:26px;font-weight:800;line-height:1}
+#category-loading .popular-radar-percent span{display:block;height:auto;font-size:14px;font-weight:800}
+#category-loading .popular-radar-tag{display:block;position:absolute;z-index:2;max-width:70px;height:auto;margin:0;padding:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#5cf08a;font-size:10px;font-weight:700;letter-spacing:.02em;text-shadow:0 0 6px #5cf08a88;pointer-events:none;opacity:0;animation:popular-tag-appear 4.5s ease-out forwards}
+#category-loading .popular-radar-tag.tag-pos-0{left:42%;top:6%}#category-loading .popular-radar-tag.tag-pos-1{left:62%;top:12%}#category-loading .popular-radar-tag.tag-pos-2{left:76%;top:28%}#category-loading .popular-radar-tag.tag-pos-3{left:78%;top:50%}#category-loading .popular-radar-tag.tag-pos-4{left:70%;top:70%}#category-loading .popular-radar-tag.tag-pos-5{left:52%;top:82%}#category-loading .popular-radar-tag.tag-pos-6{left:28%;top:82%}#category-loading .popular-radar-tag.tag-pos-7{left:10%;top:68%}#category-loading .popular-radar-tag.tag-pos-8{left:6%;top:46%}#category-loading .popular-radar-tag.tag-pos-9{left:12%;top:26%}#category-loading .popular-radar-tag.tag-pos-10{left:36%;top:38%}#category-loading .popular-radar-tag.tag-pos-11{left:56%;top:56%}
+#category-loading .popular-radar-caption{color:#3c5a6b;font-size:11px;font-weight:800;letter-spacing:.08em}
+#category-loading[data-complete] .popular-radar-sweep{animation:none;transform:rotate(45deg)}
+#category-loading .popular-progress-feed{display:grid;gap:8px;width:100%;max-width:680px;margin:10px auto 0}
+#category-loading .popular-progress-count{display:flex;align-items:baseline;justify-content:center;gap:6px;color:#173229}
+#category-loading .popular-progress-count b{font-size:20px;color:#0b6b50}
+#category-loading .popular-progress-count span{display:block;height:auto;font-size:11px;font-weight:700}
+#category-loading .popular-progress-items{display:flex;flex-direction:column;justify-content:flex-end;gap:6px;height:300px;overflow:hidden}
+#category-loading .popular-progress-item{display:flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:4px 10px;border:1px solid #d9e6f2;border-radius:12px;background:#fff;overflow:hidden;animation:popular-item-rise .45s ease-out}
+#category-loading .popular-progress-meta{min-width:0;flex:0 1 auto;display:flex;align-items:center;gap:8px;overflow:hidden;white-space:nowrap}
+#category-loading .popular-progress-code{flex:0 0 auto;font-size:11px;font-weight:800;color:#1d2b3a}
+#category-loading .popular-progress-name{min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:700;color:#1d2b3a}
+@media(prefers-reduced-motion:reduce){#category-loading .popular-radar-sweep{animation:none}#category-loading .popular-radar-tag{animation:none;opacity:1}#category-loading .popular-progress-item{animation:none}}
