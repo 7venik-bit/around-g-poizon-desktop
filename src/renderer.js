@@ -5758,10 +5758,20 @@ $("#category-search").addEventListener("click", async () => {
     if (runId !== categorySearchRunId) return;
     updateCategoryLoading({ title: `${selectionLabel} Excel 분류를 마쳤습니다.`, completed: completedCount, total: favoriteBrandIds.length, count: detailProducts.length, percent: 100 });
     // One press runs end-to-end: classified products flow straight into the
-    // domestic batch so a second manual search is unnecessary. Guarded for
-    // sliced-vm fixtures; skipped when nothing was classified.
-    if (detailProducts.length && runId === categorySearchRunId
-      && typeof runDomesticBatch === "function") await runDomesticBatch();
+    // domestic batch so a second manual search is unnecessary.
+    // Run domestic batch even when 0 products matched filters, so the user sees
+    // the batch UI and can adjust conditions or retry without a second click.
+    if (runId === categorySearchRunId && typeof runDomesticBatch === "function") {
+      try {
+        await runDomesticBatch();
+      } catch (domesticError) {
+        // Domestic batch failure must not be reported as "category search error".
+        const msg = domesticError instanceof Error ? domesticError.message : String(domesticError);
+        status.className = "status error";
+        status.textContent = `분류 완료 · 국내 재고 검색 오류: ${msg}`;
+        // Keep results visible; user can retry via "표시 목록 국내 재고 검색" button.
+      }
+    }
   } catch (error) {
     if (runId !== categorySearchRunId) return;
     status.className = "status error";
