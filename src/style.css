@@ -13,7 +13,7 @@
 #popular-progress.capture-progress{height:auto;overflow:visible;background:none;border:0;box-shadow:none;padding:0}
 #popular-progress .popular-progress-bar{position:relative;height:34px;margin-top:10px;border:1px solid #d6dee8;border-radius:8px;background:#e8edf4;overflow:hidden;box-shadow:inset 0 1px 3px #52627a14}
 #popular-progress .popular-radar{display:grid;justify-items:center;gap:8px;padding:14px 12px 4px}
-#popular-progress .popular-radar-face{position:relative;width:min(400px,100%);aspect-ratio:1/1;border-radius:50%;background:radial-gradient(circle at 50% 50%,#10222e 0%,#0a1822 62%,#060f16 100%);box-shadow:0 6px 18px #0a182233,inset 0 0 0 2px #1f3a4a;overflow:hidden}
+#popular-progress .popular-radar-face{position:relative;width:min(540px,100%);aspect-ratio:1/1;border-radius:50%;background:radial-gradient(circle at 50% 50%,#10222e 0%,#0a1822 62%,#060f16 100%);box-shadow:0 6px 18px #0a182233,inset 0 0 0 2px #1f3a4a;overflow:hidden}
 #popular-progress .popular-radar-face::before{content:"";position:absolute;inset:0;background:repeating-radial-gradient(circle at 50% 50%,transparent 0 26px,#1f3a4a55 26px 27px)}
 #popular-progress .popular-radar-face::after{content:"";position:absolute;inset:0;background:linear-gradient(#1f3a4a55 0 0) center/100% 1px no-repeat,linear-gradient(#1f3a4a55 0 0) center/1px 100% no-repeat}
 #popular-progress .popular-radar-sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,#5cf08a99,transparent 22%);animation:popular-radar-sweep 3.2s linear infinite}
@@ -2700,7 +2700,7 @@ html body input::placeholder{color:#515154!important}
 /* Unified sourcing loading: the domestic batch banner reuses the popular-list radar scope. */
 #domestic-loading-banner.popular-radar-mode{margin:0 0 12px;padding:14px 16px 16px}
 #domestic-loading-banner.popular-radar-mode .popular-radar{display:grid;justify-items:center;gap:8px;padding:14px 12px 4px}
-#domestic-loading-banner.popular-radar-mode .popular-radar-face{position:relative;width:min(400px,100%);aspect-ratio:1/1;border-radius:50%;background:radial-gradient(circle at 50% 50%,#10222e 0%,#0a1822 62%,#060f16 100%);box-shadow:0 6px 18px #0a182233,inset 0 0 0 2px #1f3a4a;overflow:hidden}
+#domestic-loading-banner.popular-radar-mode .popular-radar-face{position:relative;width:min(540px,100%);aspect-ratio:1/1;border-radius:50%;background:radial-gradient(circle at 50% 50%,#10222e 0%,#0a1822 62%,#060f16 100%);box-shadow:0 6px 18px #0a182233,inset 0 0 0 2px #1f3a4a;overflow:hidden}
 #domestic-loading-banner.popular-radar-mode .popular-radar-face::before{content:"";position:absolute;inset:0;background:repeating-radial-gradient(circle at 50% 50%,transparent 0 26px,#1f3a4a55 26px 27px)}
 #domestic-loading-banner.popular-radar-mode .popular-radar-face::after{content:"";position:absolute;inset:0;background:linear-gradient(#1f3a4a55 0 0) center/100% 1px no-repeat,linear-gradient(#1f3a4a55 0 0) center/1px 100% no-repeat}
 #domestic-loading-banner.popular-radar-mode .popular-radar-sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,#5cf08a99,transparent 22%);animation:popular-radar-sweep 3.2s linear infinite}
@@ -2731,7 +2731,7 @@ html body .search-service-button{min-height:32px;padding:6px 10px 6px 14px;font-
 .frequent-brand-heading-actions>button{min-height:30px;padding:6px 12px;font-size:11px}
 /* Category search reuses the popular-list radar scope with popular values. */
 #category-loading .popular-radar{display:grid;justify-items:center;gap:8px;padding:14px 12px 4px}
-#category-loading .popular-radar-face{position:relative;width:min(400px,100%);aspect-ratio:1/1;border-radius:50%;background:radial-gradient(circle at 50% 50%,#10222e 0%,#0a1822 62%,#060f16 100%);box-shadow:0 6px 18px #0a182233,inset 0 0 0 2px #1f3a4a;overflow:hidden}
+#category-loading .popular-radar-face{position:relative;width:min(540px,100%);aspect-ratio:1/1;border-radius:50%;background:radial-gradient(circle at 50% 50%,#10222e 0%,#0a1822 62%,#060f16 100%);box-shadow:0 6px 18px #0a182233,inset 0 0 0 2px #1f3a4a;overflow:hidden}
 #category-loading .popular-radar-face::before{content:"";position:absolute;inset:0;background:repeating-radial-gradient(circle at 50% 50%,transparent 0 26px,#1f3a4a55 26px 27px)}
 #category-loading .popular-radar-face::after{content:"";position:absolute;inset:0;background:linear-gradient(#1f3a4a55 0 0) center/100% 1px no-repeat,linear-gradient(#1f3a4a55 0 0) center/1px 100% no-repeat}
 #category-loading .popular-radar-sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,#5cf08a99,transparent 22%);animation:popular-radar-sweep 3.2s linear infinite}
@@ -2777,7 +2777,7 @@ html body .search-service-button{min-height:32px;padding:6px 10px 6px 14px;font-
 #explorer-batch-radar{display:grid;gap:10px;margin:0 0 12px;padding:14px 16px 16px;border:1px solid #d9e6f2;border-radius:14px;background:#fff}
 #explorer-batch-radar[hidden]{display:none}
 #explorer-batch-radar .popular-radar{display:grid;justify-items:center;gap:8px;padding:14px 12px 4px}
-#explorer-batch-radar .popular-radar-face{position:relative;width:min(400px,100%);aspect-ratio:1/1;border-radius:50%;background:radial-gradient(circle at 50% 50%,#10222e 0%,#0a1822 62%,#060f16 100%);box-shadow:0 6px 18px #0a182233,inset 0 0 0 2px #1f3a4a;overflow:hidden}
+#explorer-batch-radar .popular-radar-face{position:relative;width:min(540px,100%);aspect-ratio:1/1;border-radius:50%;background:radial-gradient(circle at 50% 50%,#10222e 0%,#0a1822 62%,#060f16 100%);box-shadow:0 6px 18px #0a182233,inset 0 0 0 2px #1f3a4a;overflow:hidden}
 #explorer-batch-radar .popular-radar-face::before{content:"";position:absolute;inset:0;background:repeating-radial-gradient(circle at 50% 50%,transparent 0 26px,#1f3a4a55 26px 27px)}
 #explorer-batch-radar .popular-radar-face::after{content:"";position:absolute;inset:0;background:linear-gradient(#1f3a4a55 0 0) center/100% 1px no-repeat,linear-gradient(#1f3a4a55 0 0) center/1px 100% no-repeat}
 #explorer-batch-radar .popular-radar-sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,#5cf08a99,transparent 22%);animation:popular-radar-sweep 3.2s linear infinite}
