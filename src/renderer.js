@@ -3790,7 +3790,9 @@ document.addEventListener("click", async (event) => {
 
 $("#brand-open-category")?.addEventListener("click", () => {
   window.activateSearchServiceMode?.("category");
-  renderCategoryFavoriteBrands({ reset: true });
+  // Do not auto-select all pinned brands on category tab open.
+  // User must explicitly click "전체 선택" to select all.
+  renderCategoryFavoriteBrands();
   renderCategoryButtons();
 });
 $("#category-back-brand")?.addEventListener("click", () => window.activateSearchServiceMode?.("brand"));
